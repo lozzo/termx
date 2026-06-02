@@ -376,7 +376,7 @@ TUI store 至少表达：
 - 已有 core `HistoryWindow` 初版。
 - 已有 protocol `history.window` 初版。
 - 已有 `HistoryLineSpan` clipped before/after 初版。
-- 已扩展 protocol `history.window` line spans，新增 `LogicalLineID` 往返 harness，当前 core 初版以 canonical row id 作为等价 logical line boundary 标识，后续显式 logical line store 落地后替换为 stable logical line id。
+- 已扩展 protocol `history.window` line spans，新增 `LogicalLineID` 往返 harness；当前 core persisted projection 已提供非零 logical line boundary id，不再由当前窗口内 visual row 下标推断，但完整显式 logical line store 仍未落地。
 - 已新增 `tuiv2/historyview` authoritative window store 初版与 fake source harness，覆盖 latest replace、older prepend、stale token/generation 丢弃、边界重叠拒绝、clipped span 保留、pending request token、viewport top、cursor 与 selection 交互态。
 - 已新增 `tuiv2/historyview` protocol-backed source adapter，将 `snapshot` 仅用于 live surface 投影，将 `history.window` 映射为 authoritative window，并要求 older 请求显式携带 core 返回的 before cursor。
 - 已在 `tuiv2/bridge` 暴露 protocol `HistoryWindow` 入口并补齐测试 fake client。
@@ -398,6 +398,7 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 测试 fake 的 `GridViewport` 从 snapshot metadata 合成路径改为仅记录调用并返回空结果，避免测试继续把 snapshot totals、row ownership 或 wrapped 元数据伪装成 TUI history path。
 - 已将 `tuiv2/app` 测试用 snapshot window fixture 从 copy mode helper 中剥离为 legacy protocol snapshot window fixture，并改写重启端到端测试中的兼容 snapshot 文案，避免把 legacy snapshot 误读为新的 TUI history truth。
 - 已将 `tuiv2/runtime` 测试 fake 的 `GridViewport` 改为返回空结果，并删除未使用的 runtime grid viewport trace helper；TUI 测试层不再提供 grid viewport 历史数据占位。
+- 已将 core authoritative `history.window` 从 legacy protocol `grid.viewport` 派生路径改为直接消费内部 grid viewport，并让 persisted store projection 为每条投影 row 携带非零 logical line boundary id；`HistoryLineSpan.LogicalLineID` 不再由当前窗口内 visual row 下标推断。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。

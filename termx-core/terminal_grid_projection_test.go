@@ -45,6 +45,49 @@ func TestTerminalGridProjectionReflowsLogicalLinesAtRequestedWidth(t *testing.T)
 	}
 }
 
+func TestServerHistoryWindowLogicalLineIDsStayStableAcrossProjectionWidths(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "projection-stable-line-id")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("abcd"), rowKind: "line0", wrapped: true},
+		{cells: localVTermCellsFromString("ef"), rowKind: "line0", wrapped: false},
+		{cells: localVTermCellsFromString("gh"), rowKind: "line1", wrapped: false},
+	}); err != nil {
+		t.Fatalf("append logical rows: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(6, 2))
+	wide, err := srv.HistoryWindow(t.Context(), "projection-stable-line-id", HistoryWindowOptions{Limit: 10, Cols: 6})
+	if err != nil {
+		t.Fatalf("wide history window: %v", err)
+	}
+	narrow, err := srv.HistoryWindow(t.Context(), "projection-stable-line-id", HistoryWindowOptions{Limit: 10, Cols: 3})
+	if err != nil {
+		t.Fatalf("narrow history window: %v", err)
+	}
+	if len(wide.Lines) != 2 || len(narrow.Lines) != 2 {
+		t.Fatalf("expected two logical lines in both projections, wide=%#v narrow=%#v", wide.Lines, narrow.Lines)
+	}
+	if wide.Lines[0].LogicalLineID == 0 || narrow.Lines[0].LogicalLineID == 0 {
+		t.Fatalf("expected non-zero persisted logical line ids, wide=%#v narrow=%#v", wide.Lines, narrow.Lines)
+	}
+	if wide.Lines[0].LogicalLineID != narrow.Lines[0].LogicalLineID {
+		t.Fatalf("expected first logical line id stable across widths, wide=%d narrow=%d", wide.Lines[0].LogicalLineID, narrow.Lines[0].LogicalLineID)
+	}
+	if wide.Lines[1].LogicalLineID != narrow.Lines[1].LogicalLineID {
+		t.Fatalf("expected second logical line id stable across widths, wide=%d narrow=%d", wide.Lines[1].LogicalLineID, narrow.Lines[1].LogicalLineID)
+	}
+	if wide.Lines[0].LogicalLineID == wide.Lines[1].LogicalLineID {
+		t.Fatalf("expected distinct logical lines to have distinct ids, got %#v", wide.Lines)
+	}
+}
+
 func TestServerHistoryWindowMarksClippedLogicalLineAfterProjectionLimit(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-clipped-window")

@@ -1137,6 +1137,7 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTail termin
 			result.RowKinds = append(result.RowKinds, row.RowKind)
 			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
 			result.Ownership = append(result.Ownership, stringAt(window.ownership, i))
+			result.LogicalLineIDs = append(result.LogicalLineIDs, 0)
 		}
 		if window.hasCommitted {
 			result.LoadedRows += window.committed

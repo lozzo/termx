@@ -12,10 +12,11 @@ func TestHistoryLineSpansGroupsWrappedRows(t *testing.T) {
 	// 行0、行1 wrapped 续接到行2，组成一条逻辑行；行3 独立。
 	wrapped := []bool{true, true, false, false}
 	kinds := []string{"a", "a", "a", "b"}
-	spans := historyLineSpans(wrapped, kinds, 4, 0, 100)
+	lineIDs := []uint64{101, 101, 101, 104}
+	spans := historyLineSpans(wrapped, kinds, lineIDs, 4, 0)
 	want := []HistoryLineSpan{
-		{StartRow: 0, EndRow: 2, RowKind: "a", LogicalLineID: 100},
-		{StartRow: 3, EndRow: 3, RowKind: "b", LogicalLineID: 103},
+		{StartRow: 0, EndRow: 2, RowKind: "a", LogicalLineID: 101},
+		{StartRow: 3, EndRow: 3, RowKind: "b", LogicalLineID: 104},
 	}
 	if !reflect.DeepEqual(spans, want) {
 		t.Fatalf("unexpected line spans, got %#v want %#v", spans, want)
@@ -25,10 +26,10 @@ func TestHistoryLineSpansGroupsWrappedRows(t *testing.T) {
 func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 	// 末行即使 wrapped=true，也必须收口成一条逻辑行，不能越界。
 	wrapped := []bool{false, true}
-	spans := historyLineSpans(wrapped, nil, 2, 0, 0)
+	spans := historyLineSpans(wrapped, nil, []uint64{11, 12}, 2, 0)
 	want := []HistoryLineSpan{
-		{StartRow: 0, EndRow: 0},
-		{StartRow: 1, EndRow: 1, LogicalLineID: 1, ClippedAfter: true},
+		{StartRow: 0, EndRow: 0, LogicalLineID: 11},
+		{StartRow: 1, EndRow: 1, LogicalLineID: 12, ClippedAfter: true},
 	}
 	if !reflect.DeepEqual(spans, want) {
 		t.Fatalf("unexpected trailing wrapped spans, got %#v want %#v", spans, want)
@@ -36,10 +37,10 @@ func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 }
 
 func TestHistoryLineSpansMarksWindowClipping(t *testing.T) {
-	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, 2, 3, 10)
+	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, 3)
 	want := []HistoryLineSpan{
-		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 10, ClippedBefore: true},
-		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 11, ClippedAfter: true},
+		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 20, ClippedBefore: true},
+		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 21, ClippedAfter: true},
 	}
 	if !reflect.DeepEqual(spans, want) {
 		t.Fatalf("unexpected clipped spans, got %#v want %#v", spans, want)

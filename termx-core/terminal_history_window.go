@@ -2,6 +2,7 @@ package termx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -81,11 +82,12 @@ type HistoryWindowOptions struct {
 
 // HistoryWindow 返回终端在给定宽度下的权威历史投影窗口。
 func (s *Server) HistoryWindow(ctx context.Context, id string, opts ...HistoryWindowOptions) (*HistoryWindow, error) {
+	_ = ctx
 	var opt HistoryWindowOptions
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
-	viewport, err := s.GridViewport(ctx, id, GridViewportOptions{
+	viewport, err := s.historyCoreGridViewport(id, GridViewportOptions{
 		ScrollbackOffset: opt.BeforeOffset,
 		ScrollbackLimit:  opt.Limit,
 		Cols:             opt.Cols,
@@ -93,21 +95,64 @@ func (s *Server) HistoryWindow(ctx context.Context, id string, opts ...HistoryWi
 	if err != nil {
 		return nil, err
 	}
-	return historyWindowFromGridViewport(id, opt.BeforeOffset, viewport), nil
+	return historyWindowFromCoreGridViewport(id, opt.BeforeOffset, viewport), nil
 }
 
-func historyWindowFromGridViewport(id string, beforeOffset int, viewport *protocol.GridViewport) *HistoryWindow {
-	if viewport == nil {
+func (s *Server) historyCoreGridViewport(id string, opt GridViewportOptions) (terminalGridViewport, error) {
+	var result terminalGridViewport
+	term, err := s.getTerminal(id)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return result, err
+		}
+		store, storeErr := openTerminalGridStoreForReplay(s.cfg.gridRoot, id)
+		if storeErr != nil {
+			return result, storeErr
+		}
+		defer store.Close()
+		beforeOffset, limit := sanitizeGridViewportWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
+		cols := opt.Cols
+		if cols <= 0 {
+			cols = int(s.cfg.defaultSize.Cols)
+		}
+		if cols <= 0 {
+			cols = 80
+		}
+		viewport, viewportErr := store.Viewport(beforeOffset, limit, cols)
+		viewport.Size.Rows = s.cfg.defaultSize.Rows
+		return viewport, viewportErr
+	}
+	term.flushGridAppender()
+	offset, limit := sanitizeGridViewportWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
+	term.mu.RLock()
+	size := term.size
+	liveTail := term.primaryLiveTail.clone()
+	term.mu.RUnlock()
+	cols := opt.Cols
+	if cols <= 0 {
+		cols = int(size.Cols)
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	viewport, viewportErr := term.combinedGridViewport(offset, limit, cols, liveTail)
+	viewport.Size.Rows = size.Rows
+	return viewport, viewportErr
+}
+
+func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport terminalGridViewport) *HistoryWindow {
+	if len(viewport.Rows) == 0 && viewport.TotalRows == 0 {
 		return &HistoryWindow{TerminalID: id, Op: historyWindowOpForOffset(beforeOffset), Timestamp: time.Now().UTC()}
 	}
 	rows := make([]HistoryRow, len(viewport.Rows))
+	coreRows := convertRows(viewport.Rows)
 	for i := range viewport.Rows {
 		rows[i] = HistoryRow{
-			Cells:     viewport.Rows[i],
-			RowKind:   stringAt(viewport.ScrollbackRowKinds, i),
-			Ownership: stringAt(viewport.RowOwnership, i),
-			Wrapped:   boolAt(viewport.ScrollbackWrapped, i),
-			Timestamp: timeAt(viewport.ScrollbackTimestamps, i),
+			Cells:     protocolCompactRowFromCoreWithOptions(coreRows[i], true),
+			RowKind:   stringAt(viewport.RowKinds, i),
+			Ownership: stringAt(viewport.Ownership, i),
+			Wrapped:   boolAt(viewport.Wrapped, i),
+			Timestamp: timeAt(viewport.Timestamps, i),
 		}
 	}
 	return &HistoryWindow{
@@ -116,23 +161,20 @@ func historyWindowFromGridViewport(id string, beforeOffset int, viewport *protoc
 		Op:           historyWindowOpForOffset(beforeOffset),
 		Size:         Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
 		Rows:         rows,
-		Lines:        historyLineSpans(viewport.ScrollbackWrapped, viewport.ScrollbackRowKinds, len(viewport.Rows), beforeOffset, viewport.FirstRowID),
+		Lines:        historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), beforeOffset),
 		BeforeOffset: historyWindowBeforeCursor(beforeOffset, viewport),
 		LoadedRows:   viewport.LoadedRows,
-		TotalRows:    viewport.ScrollbackTotal,
-		LogicalTotal: viewport.ScrollbackLogicalTotal,
-		HasMore:      viewport.ScrollbackHasMore,
-		Generation:   viewport.HistoryGeneration,
+		TotalRows:    viewport.TotalRows,
+		LogicalTotal: viewport.LogicalTotal,
+		HasMore:      viewport.HasMore,
+		Generation:   viewport.Generation,
 		FirstRowID:   viewport.FirstRowID,
 		LastRowID:    viewport.LastRowID,
 		Timestamp:    time.Now().UTC(),
 	}
 }
 
-func historyWindowBeforeCursor(requestBeforeOffset int, viewport *protocol.GridViewport) int {
-	if viewport == nil {
-		return requestBeforeOffset
-	}
+func historyWindowBeforeCursor(requestBeforeOffset int, viewport terminalGridViewport) int {
 	if viewport.LoadedRows > requestBeforeOffset {
 		return viewport.LoadedRows
 	}
@@ -150,17 +192,17 @@ func historyWindowOpForOffset(beforeOffset int) HistoryWindowOp {
 //
 // 客户端只把它当作不透明的边界版本：相同 token 表示相同已提交边界，token 变化
 // 表示边界已经移动，旧的分页响应应当被丢弃。
-func historyWindowToken(viewport *protocol.GridViewport) string {
-	if viewport == nil {
+func historyWindowToken(viewport terminalGridViewport) string {
+	if len(viewport.Rows) == 0 && viewport.TotalRows == 0 {
 		return ""
 	}
-	return fmt.Sprintf("g%d:%d-%d:c%d", viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID, viewport.Size.Cols)
+	return fmt.Sprintf("g%d:%d-%d:c%d", viewport.Generation, viewport.FirstRowID, viewport.LastRowID, viewport.Size.Cols)
 }
 
 // historyLineSpans 根据 wrapped 元数据把 visual rows 归并成逻辑行区间。
 //
 // wrapped[i]==true 表示第 i 行与下一行属于同一条逻辑行。
-func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int, beforeOffset int, firstRowID uint64) []HistoryLineSpan {
+func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, beforeOffset int) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
 	}
@@ -174,20 +216,13 @@ func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int, beforeOff
 			StartRow:      start,
 			EndRow:        row,
 			RowKind:       stringAt(rowKinds, start),
-			LogicalLineID: historyLineSpanLogicalLineID(firstRowID, start),
+			LogicalLineID: uint64At(logicalLineIDs, start),
 			ClippedBefore: beforeOffset > 0 && start == 0,
 			ClippedAfter:  row == rowCount-1 && boolAt(wrapped, row),
 		})
 		start = row + 1
 	}
 	return spans
-}
-
-func historyLineSpanLogicalLineID(firstRowID uint64, startRow int) uint64 {
-	if firstRowID == 0 && startRow == 0 {
-		return 0
-	}
-	return firstRowID + uint64(startRow)
 }
 
 func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindow {
