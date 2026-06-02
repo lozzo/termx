@@ -99,15 +99,12 @@ func TestTerminalPrimaryLiveTailReclaimedZeroCoordinatesRequirePersistedIDs(t *t
 	}}, terminalLiveTailOriginReclaimed, false)
 
 	records := tail.logicalLineRecords()
-	if len(records) != 1 {
-		t.Fatalf("expected one reclaimed record, got %#v", records)
-	}
-	if records[0].rowIDKnown || records[0].firstRowID != 0 || records[0].lastRowID != 0 {
-		t.Fatalf("expected zero row coordinates without persisted ids to stay unknown, got %#v", records[0])
+	if len(records) != 0 {
+		t.Fatalf("expected reclaimed rows without persisted ids to skip recoverable records, got %#v", records)
 	}
 	metas := terminalGridLineRecordMetasFromLiveTailRecords(records)
-	if len(metas) != 1 || metas[0].RowIDKnown || metas[0].FirstRowID != 0 || metas[0].LastRowID != 0 {
-		t.Fatalf("expected metadata to omit unknown reclaimed row ids, got %#v", metas)
+	if len(metas) != 0 {
+		t.Fatalf("expected metadata to omit reclaimed rows without persisted ids, got %#v", metas)
 	}
 }
 
@@ -267,6 +264,22 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsPreferExplicitIDs(t *testing.T
 	}
 	if records[1].id != 92 || records[1].startRow != 1 || records[1].endRow != 1 {
 		t.Fatalf("unexpected second explicit-id record: %#v", records[1])
+	}
+}
+
+func TestTerminalPrimaryLiveTailLogicalLineRecordsRequireCompleteIDs(t *testing.T) {
+	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{{
+		origin:    terminalLiveTailOriginLive,
+		sealState: terminalLiveTailSealed,
+		rows: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+		},
+		logicalLineIDs: []uint64{terminalLiveTailLogicalLineIDBase + 1, 0},
+	}}}
+
+	if records := tail.logicalLineRecords(); len(records) != 0 {
+		t.Fatalf("expected incomplete live-tail logical ids to suppress record metadata, got %#v", records)
 	}
 }
 

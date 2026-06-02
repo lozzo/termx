@@ -455,9 +455,12 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 	}
 	records := make([]terminalLiveTailLogicalLineRecord, 0, len(segment.rows))
 	logicalLineIDs := terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)
+	if !terminalLiveTailLogicalLineIDsComplete(logicalLineIDs, len(segment.rows)) {
+		return nil
+	}
 	start := 0
 	for i := range segment.rows {
-		if terminalLiveTailRecordContinues(logicalLineIDs, segment.rows, i) {
+		if terminalLiveTailRecordContinues(logicalLineIDs, i) {
 			continue
 		}
 		record := terminalLiveTailLogicalLineRecord{
@@ -481,17 +484,23 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 	return records
 }
 
-func terminalLiveTailRecordContinues(logicalLineIDs []uint64, rows []vterm.DamageOp, row int) bool {
-	if row < 0 || row >= len(rows)-1 {
+func terminalLiveTailLogicalLineIDsComplete(logicalLineIDs []uint64, rowCount int) bool {
+	if rowCount <= 0 || len(logicalLineIDs) != rowCount {
 		return false
 	}
-	currentID := uint64At(logicalLineIDs, row)
-	nextID := uint64At(logicalLineIDs, row+1)
-	if currentID != 0 && nextID != 0 {
-		return currentID == nextID
+	for _, id := range logicalLineIDs {
+		if id == 0 {
+			return false
+		}
 	}
-	currentRow := rows[row]
-	return currentRow.WrappedSet && currentRow.Wrapped
+	return true
+}
+
+func terminalLiveTailRecordContinues(logicalLineIDs []uint64, row int) bool {
+	if row < 0 || row >= len(logicalLineIDs)-1 {
+		return false
+	}
+	return logicalLineIDs[row] == logicalLineIDs[row+1]
 }
 
 func terminalLiveTailRecordDirty(segment terminalLiveTailSegment) bool {
