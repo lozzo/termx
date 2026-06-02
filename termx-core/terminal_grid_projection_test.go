@@ -283,6 +283,12 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 				LastRowID:  40,
 			},
 		},
+		{
+			name: "unsealed-persisted-record",
+			record: terminalGridLineRecordMeta{
+				Sealed: false,
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -306,7 +312,9 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 			}
 			record.StartRow = 0
 			record.EndRow = 0
-			record.Sealed = true
+			if tc.name != "unsealed-persisted-record" {
+				record.Sealed = true
+			}
 			if record.Origin == "" {
 				record.Origin = terminalLiveTailOriginReclaimed
 			}

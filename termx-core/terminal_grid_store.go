@@ -1214,7 +1214,7 @@ func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogic
 		if record.generation != 0 && generation != 0 && record.generation != generation {
 			return nil, false
 		}
-		if !record.sealed && record.endRow != rowCount-1 {
+		if !record.sealed {
 			return nil, false
 		}
 		out = append(out, record)
@@ -2011,7 +2011,11 @@ func writeTerminalGridLineRecordsMetadata(dir string, baseRowID uint64, generati
 		return err
 	}
 	records := terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
-	metadata.Records = terminalGridLineRecordMetasFromRecords(records)
+	if complete, ok := terminalGridCompletePersistedLogicalLineRecords(records, len(refs), generation); ok {
+		metadata.Records = terminalGridLineRecordMetasFromRecords(complete)
+	} else {
+		metadata.Records = nil
+	}
 	return writeTerminalGridLineMetadata(dir, metadata)
 }
 
