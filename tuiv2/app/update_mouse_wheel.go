@@ -112,7 +112,7 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 	}
 	if _, changed := m.adjustPaneViewportOffset(paneID, delta); changed {
 		m.render.Invalidate()
-		return m.ensureActivePaneScrollbackCmd()
+		return nil
 	}
 	return nil
 }

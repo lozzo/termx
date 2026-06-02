@@ -486,7 +486,7 @@ func (m *Model) setCopyCursorLogicalPos(pos copyModeLogicalPos) tea.Cmd {
 	m.syncCopyModeViewport(buffer, next)
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
-	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
+	return nil
 }
 
 func (m *Model) moveCopyCursorLogicalOffset(delta int) tea.Cmd {
@@ -557,7 +557,7 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 	}
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
-	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
+	return nil
 }
 
 func (m *Model) jumpCopyCursorLogicalLine(line int) tea.Cmd {
@@ -588,5 +588,5 @@ func (m *Model) jumpCopyCursorLogicalLine(line int) tea.Cmd {
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
-	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
+	return nil
 }

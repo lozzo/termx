@@ -121,14 +121,14 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 				m.render.Invalidate()
 			}
 		}
-		return true, m.ensureActivePaneScrollbackCmd()
+		return true, nil
 	case input.ActionScrollDown:
 		if pane := m.workbench.ActivePane(); pane != nil {
 			if _, changed := m.adjustPaneViewportOffset(pane.ID, -1); changed {
 				m.render.Invalidate()
 			}
 		}
-		return true, m.ensureActivePaneScrollbackCmd()
+		return true, nil
 	default:
 		return false, nil
 	}

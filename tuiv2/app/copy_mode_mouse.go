@@ -106,11 +106,10 @@ func (m *Model) updateMouseCopySelection(screenX, screenY int) tea.Cmd {
 	m.copyMode.AutoScrollSeq = seq
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
-	cmds := []tea.Cmd{m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer)}
 	if dir != 0 {
-		cmds = append(cmds, copyModeAutoScrollTickCmd(seq))
+		return copyModeAutoScrollTickCmd(seq)
 	}
-	return batchCmds(cmds...)
+	return nil
 }
 
 func (m *Model) stopMouseCopySelection() {
@@ -135,9 +134,6 @@ func (m *Model) handleCopyModeAutoScroll(seq uint64) tea.Cmd {
 	next.Row += m.copyMode.AutoScrollDir
 	next = buffer.clampPoint(next)
 	if next == m.copyMode.Cursor && m.copyMode.AutoScrollDir != 0 {
-		if m.copyMode.AutoScrollDir < 0 {
-			return m.ensureCopyModeScrollbackCmd(buffer)
-		}
 		return nil
 	}
 	m.copyMode.Cursor = next
@@ -146,5 +142,5 @@ func (m *Model) handleCopyModeAutoScroll(seq uint64) tea.Cmd {
 	}
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
-	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer), copyModeAutoScrollTickCmd(seq))
+	return copyModeAutoScrollTickCmd(seq)
 }

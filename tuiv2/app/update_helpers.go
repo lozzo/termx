@@ -238,18 +238,6 @@ func (m *Model) visiblePaneProjection(paneID string) (workbench.VisiblePane, boo
 	return workbench.VisiblePane{}, false
 }
 
-func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
-	return nil
-}
-
-func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
-	return nil
-}
-
-func (m *Model) prefetchCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
-	return nil
-}
-
 func maxInt(a, b int) int {
 	if a > b {
 		return a
