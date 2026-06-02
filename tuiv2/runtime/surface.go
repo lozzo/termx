@@ -487,22 +487,6 @@ func surfaceRowHashMixString(hash uint64, value string) uint64 {
 }
 
 func syncSurfaceScrollbackState(terminal *TerminalRuntime) {
-	if terminal == nil {
-		return
-	}
-	if terminal.Snapshot == nil || !protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
-		return
-	}
-	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
-	if terminal.CommittedHistoryExhausted && loaded > terminal.CommittedLoadedDepth {
-		terminal.CommittedHistoryExhausted = false
-	}
-	if loaded > terminal.CommittedLoadedDepth {
-		terminal.CommittedLoadedDepth = loaded
-	}
-	if terminal.CommittedLoadingDepth > 0 && loaded >= terminal.CommittedLoadingDepth {
-		terminal.CommittedLoadingDepth = 0
-	}
 }
 
 func (r *Runtime) bumpSurfaceVersion(terminal *TerminalRuntime) {

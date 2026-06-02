@@ -379,7 +379,7 @@ func TestLoadSnapshotIntoVTermRoundTripsExplicitOwnershipProjection(t *testing.T
 		t.Fatalf("expected explicit scrollback ownership to round trip through vterm projection, got %#v", got.ScrollbackOwnership)
 	}
 	preserveSnapshotHistoryMetadataFromProjection(snapshot, got)
-	if loaded := snapshotScrollbackLoadedDepth(got); loaded != 1 {
+	if loaded := protocol.SnapshotCommittedLoadedDepth(got); loaded != 1 {
 		t.Fatalf("expected ownership projection to restore committed depth 1, got %d", loaded)
 	}
 	if got.HistoryGeneration != 7 || got.ScrollbackFirstRowID != 0 || got.ScrollbackLastRowID != 0 {
@@ -408,7 +408,7 @@ func TestPreserveSnapshotHistoryMetadataRequiresExplicitProjectionOwnership(t *t
 
 	preserveSnapshotHistoryMetadataFromProjection(previous, next)
 
-	if got := snapshotScrollbackLoadedDepth(next); got != 0 {
+	if got := protocol.SnapshotCommittedLoadedDepth(next); got != 0 {
 		t.Fatalf("expected missing projection ownership to keep committed depth 0, got %d", got)
 	}
 	if next.HistoryGeneration != 0 || next.ScrollbackLoadedRows != 0 {

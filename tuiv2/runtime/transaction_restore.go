@@ -30,8 +30,6 @@ type TerminalLiveStateSnapshot struct {
 	SurfaceVersion            uint64
 	ScreenUpdate              VisibleScreenUpdateSummary
 	VTerm                     VTermLike
-	CommittedLoadingDepth     int
-	CommittedHistoryExhausted bool
 	PreferSnapshot            bool
 	BootstrapPending          bool
 	Recovery                  RecoveryState
@@ -138,8 +136,6 @@ func (r *Runtime) TerminalLiveStateSnapshot(terminalID string) TerminalLiveState
 		SurfaceVersion:            terminal.SurfaceVersion,
 		ScreenUpdate:              cloneVisibleScreenUpdateSummary(terminal.ScreenUpdate),
 		VTerm:                     terminal.VTerm,
-		CommittedLoadingDepth:     terminal.CommittedLoadingDepth,
-		CommittedHistoryExhausted: terminal.CommittedHistoryExhausted,
 		PreferSnapshot:            terminal.PreferSnapshot,
 		BootstrapPending:          terminal.BootstrapPending,
 		Recovery:                  terminal.Recovery,
@@ -174,9 +170,6 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 		terminal.SurfaceVersion = 0
 		terminal.ScreenUpdate = VisibleScreenUpdateSummary{}
 		terminal.VTerm = nil
-		terminal.CommittedLoadedDepth = 0
-		terminal.CommittedLoadingDepth = 0
-		terminal.CommittedHistoryExhausted = false
 		terminal.PreferSnapshot = false
 		terminal.BootstrapPending = false
 		terminal.Recovery = RecoveryState{}
@@ -197,7 +190,6 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 	terminal.SurfaceVersion = snapshot.SurfaceVersion
 	terminal.ScreenUpdate = cloneVisibleScreenUpdateSummary(snapshot.ScreenUpdate)
 	terminal.VTerm = snapshot.VTerm
-	restoreTerminalScrollbackLoadState(terminal, snapshot)
 	terminal.PreferSnapshot = snapshot.PreferSnapshot
 	terminal.BootstrapPending = snapshot.BootstrapPending
 	terminal.Recovery = snapshot.Recovery
@@ -209,25 +201,6 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 	if snapshot.WasStreaming && snapshot.Channel != 0 {
 		_ = r.StartStream(context.Background(), terminalID)
 	}
-}
-
-func restoreTerminalScrollbackLoadState(terminal *TerminalRuntime, snapshot TerminalLiveStateSnapshot) {
-	if terminal == nil {
-		return
-	}
-	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
-	terminal.CommittedLoadedDepth = loaded
-	if loaded <= 0 {
-		terminal.CommittedLoadingDepth = 0
-		terminal.CommittedHistoryExhausted = false
-		return
-	}
-	if snapshot.CommittedLoadingDepth > loaded {
-		terminal.CommittedLoadingDepth = snapshot.CommittedLoadingDepth
-	} else {
-		terminal.CommittedLoadingDepth = 0
-	}
-	terminal.CommittedHistoryExhausted = snapshot.CommittedHistoryExhausted && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback))
 }
 
 func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {

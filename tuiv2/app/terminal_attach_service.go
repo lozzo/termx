@@ -331,9 +331,6 @@ func (s *terminalAttachService) restoredSnapshotFallbackMsg(hint bootstrap.PaneR
 		})
 	}
 	limit := defaultTerminalSnapshotScrollbackLimit
-	if terminal := s.model.runtime.Registry().Get(hint.TerminalID); terminal != nil && terminal.CommittedLoadedDepth > limit {
-		limit = terminal.CommittedLoadedDepth
-	}
 	snapshot, err := s.model.runtime.LoadSnapshot(context.Background(), hint.TerminalID, 0, limit)
 	if err != nil || snapshot == nil {
 		s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)

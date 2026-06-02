@@ -126,19 +126,6 @@ type Model struct {
 	copyMode       copyModeState
 	copyModes      map[string]copyModeState
 	copyModeResume copyModeResumeState
-	historyLoading map[string]historyLoadingState
-}
-
-type historyLoadingOwner uint8
-
-const (
-	historyLoadingOwnerLive historyLoadingOwner = iota + 1
-	historyLoadingOwnerCopyMode
-)
-
-type historyLoadingState struct {
-	Limit int
-	Owner historyLoadingOwner
 }
 
 type mouseDragMode int
@@ -190,7 +177,6 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		pendingPaneAttaches: make(map[string]string),
 		pendingPaneResizes:  make(map[string]pendingPaneResize),
 		copyModes:           make(map[string]copyModeState),
-		historyLoading:      make(map[string]historyLoadingState),
 	}
 	model.orchestrator = orchestrator.New(model.workbench)
 	model.render = render.NewCoordinatorWithVM(func() render.RenderVM { return model.renderVM() })

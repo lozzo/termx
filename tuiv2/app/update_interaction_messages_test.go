@@ -278,14 +278,12 @@ func TestHandleInteractionMessageTerminalInputSentStillSchedulesSharedResync(t *
 	}
 }
 
-func TestSharedTerminalSnapshotResyncCmdUsesKnownLoadedDepth(t *testing.T) {
+func TestSharedTerminalSnapshotResyncCmdUsesDefaultSnapshotLimit(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	client := model.runtime.Client().(*recordingBridgeClient)
-	terminal := model.runtime.Registry().Get("term-1")
-	if terminal == nil {
+	if terminal := model.runtime.Registry().Get("term-1"); terminal == nil {
 		t.Fatal("expected runtime terminal")
 	}
-	terminal.CommittedLoadedDepth = 1500
 	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
 		TerminalID:           "term-1",
 		Size:                 protocol.Size{Cols: 80, Rows: 24},
@@ -305,7 +303,7 @@ func TestSharedTerminalSnapshotResyncCmdUsesKnownLoadedDepth(t *testing.T) {
 	if got := len(client.snapshotRequests); got != 1 {
 		t.Fatalf("expected one snapshot reload, got %#v", client.snapshotRequests)
 	}
-	if got := client.snapshotRequests[0].limit; got != 1500 {
-		t.Fatalf("expected shared terminal resync to use loaded depth 1500, got %#v", client.snapshotRequests[0])
+	if got := client.snapshotRequests[0].limit; got != defaultTerminalSnapshotScrollbackLimit {
+		t.Fatalf("expected shared terminal resync to use default snapshot limit, got %#v", client.snapshotRequests[0])
 	}
 }

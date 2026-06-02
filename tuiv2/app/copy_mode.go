@@ -31,7 +31,6 @@ type copyModeRowRef struct {
 type copyModeState struct {
 	PaneID              string
 	Snapshot            *protocol.Snapshot
-	CommittedLoadedRows int
 	ViewTopRow          int
 	Cursor              copyModePoint
 	CursorLogical       copyModeLogicalPos
@@ -130,45 +129,8 @@ func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackLastRowID = 0
 }
 
-func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
-	return protocol.SnapshotCommittedLoadedDepth(snapshot)
-}
-
-func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
-	if current == nil || page == nil {
-		return false
-	}
-	currentCanonical := hasCanonicalHistoryWindow(current)
-	pageCanonical := hasCanonicalHistoryWindow(page)
-	if !currentCanonical || !pageCanonical {
-		return false
-	}
-	if current.HistoryGeneration != page.HistoryGeneration {
-		return false
-	}
-	if page.ScrollbackLastRowID+1 != current.ScrollbackFirstRowID {
-		return false
-	}
-	return true
-}
-
 func hasCanonicalHistoryWindow(snapshot *protocol.Snapshot) bool {
 	return protocol.SnapshotHasCanonicalCommittedWindow(snapshot)
-}
-
-func mergedCanonicalRowWindow(older, newer *protocol.Snapshot) (uint64, uint64) {
-	olderOK := hasCanonicalHistoryWindow(older)
-	newerOK := hasCanonicalHistoryWindow(newer)
-	switch {
-	case olderOK && newerOK:
-		return older.ScrollbackFirstRowID, newer.ScrollbackLastRowID
-	case olderOK:
-		return older.ScrollbackFirstRowID, older.ScrollbackLastRowID
-	case newerOK:
-		return newer.ScrollbackFirstRowID, newer.ScrollbackLastRowID
-	default:
-		return 0, 0
-	}
 }
 
 func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) int {
@@ -471,21 +433,6 @@ func (m *Model) activeCopyModeResumeSnapshot() (string, *protocol.Snapshot, bool
 }
 
 func (m *Model) clearCopyModeOwnedHistoryLoadingForPane(paneID string) {
-	if m == nil || m.runtime == nil || m.workbench == nil || strings.TrimSpace(paneID) == "" {
-		return
-	}
-	pane, _, ok := m.copyModePaneAndContentRect(paneID)
-	if !ok || pane == nil || pane.TerminalID == "" {
-		return
-	}
-	state, ok := m.historyLoading[pane.TerminalID]
-	if !ok || state.Owner != historyLoadingOwnerCopyMode || state.Limit <= 0 {
-		return
-	}
-	delete(m.historyLoading, pane.TerminalID)
-	if terminal := m.runtime.Registry().Get(pane.TerminalID); terminal != nil && terminal.CommittedLoadingDepth == state.Limit {
-		terminal.CommittedLoadingDepth = 0
-	}
 }
 
 func (m *Model) leaveCopyMode() {
@@ -526,11 +473,6 @@ func (m *Model) ensureCopyMode() bool {
 		if !ok || buffer.totalRows() == 0 {
 			return false
 		}
-		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.CommittedLoadedRows; delta > 0 {
-			m.copyMode.ViewTopRow += delta
-			m.reanchorCopyModePoints(buffer, delta, false, true)
-		}
-		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
 		m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
 		if logical, ok := buffer.logicalPosForPoint(m.copyMode.Cursor); ok {
@@ -563,12 +505,11 @@ func (m *Model) ensureCopyMode() bool {
 	start := copyModePoint{Row: maxInt(0, len(buffer.snapshot.Scrollback)+buffer.cursorRow()), Col: maxInt(0, buffer.cursorCol())}
 	start = buffer.clampPoint(start)
 	m.copyMode = copyModeState{
-		PaneID:              pane.ID,
-		Snapshot:            frozenSnapshot,
-		CommittedLoadedRows: snapshotScrollbackLoadedDepth(buffer.snapshot),
-		ViewTopRow:          maxInt(0, buffer.totalRows()-buffer.height),
-		Cursor:              start,
-		CursorRowRef:        buffer.pointRowRef(start),
+		PaneID:       pane.ID,
+		Snapshot:     frozenSnapshot,
+		ViewTopRow:   maxInt(0, buffer.totalRows()-buffer.height),
+		Cursor:       start,
+		CursorRowRef: buffer.pointRowRef(start),
 	}
 	if logical, ok := buffer.logicalPosForPoint(start); ok {
 		m.copyMode.CursorLogical = logical
@@ -579,194 +520,10 @@ func (m *Model) ensureCopyMode() bool {
 }
 
 func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *protocol.Snapshot) {
-	_ = m.adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID, snapshot, 0, false)
 }
 
 func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, snapshot *protocol.Snapshot, offset int, allowLatestReplace bool) bool {
-	if m == nil || terminalID == "" || m.workbench == nil {
-		return false
-	}
-	originalPaneID := m.copyMode.PaneID
-	consumedByFrozenCopyMode := false
-	for _, state := range m.allCopyModeStates() {
-		pane, _, ok := m.copyModePaneAndContentRect(state.PaneID)
-		if !ok || pane == nil || pane.ID != state.PaneID || pane.TerminalID != terminalID {
-			continue
-		}
-		m.copyMode = state
-		if m.copyMode.Snapshot != nil {
-			if allowLatestReplace {
-				if m.replaceFrozenCopyModeSnapshot(snapshot) {
-					consumedByFrozenCopyMode = true
-				}
-			} else if m.extendFrozenCopyModeSnapshot(snapshot, offset, allowLatestReplace) {
-				consumedByFrozenCopyMode = true
-			}
-			continue
-		}
-		buffer, ok := m.activeCopyModeBuffer()
-		if !ok {
-			continue
-		}
-		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.CommittedLoadedRows; delta > 0 {
-			m.copyMode.ViewTopRow += delta
-			m.reanchorCopyModePoints(buffer, delta, false, true)
-		}
-		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
-		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
-		m.saveCurrentCopyModeState()
-	}
-	if originalPaneID != "" {
-		_ = m.loadCopyModeStateForPane(originalPaneID)
-	}
-	return consumedByFrozenCopyMode
-}
-
-func (m *Model) replaceFrozenCopyModeSnapshot(loaded *protocol.Snapshot) bool {
-	if m == nil || m.copyMode.Snapshot == nil || loaded == nil {
-		return false
-	}
-	if snapshotUsesAlternateScreen(m.copyMode.Snapshot) || snapshotUsesAlternateScreen(loaded) {
-		return false
-	}
-	next := cloneSnapshot(m.copyMode.Snapshot)
-	if next == nil {
-		return false
-	}
-	next.Scrollback = protocol.CloneCompactRows(loaded.Scrollback)
-	next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
-	next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
-	next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
-	next.ScrollbackOwnership = append([]string(nil), loaded.ScrollbackOwnership...)
-	next.ScrollbackOffset = loaded.ScrollbackOffset
-	next.ScrollbackTotal = loaded.ScrollbackTotal
-	next.ScrollbackLogicalTotal = loaded.ScrollbackLogicalTotal
-	next.ScrollbackHasMore = loaded.ScrollbackHasMore
-	next.ScrollbackLoadedRows = loaded.ScrollbackLoadedRows
-	next.HistoryGeneration = loaded.HistoryGeneration
-	next.ScrollbackFirstRowID = loaded.ScrollbackFirstRowID
-	next.ScrollbackLastRowID = loaded.ScrollbackLastRowID
-	protocol.TrimSnapshotScrollbackScreenVisualOverlap(next)
-	trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, false)
-	prevCommitted := m.copyMode.CommittedLoadedRows
-	m.copyMode.Snapshot = next
-	m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(next)
-
-	buffer, ok := m.activeCopyModeBuffer()
-	if !ok {
-		return false
-	}
-	delta := m.copyMode.CommittedLoadedRows - prevCommitted
-	preserveTop := copyModePinnedAtTop(m.copyMode)
-	if !preserveTop {
-		m.copyMode.ViewTopRow += delta - trimmedNewest
-	}
-	m.reanchorCopyModePoints(buffer, delta-trimmedNewest, preserveTop, true)
-	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
-	m.saveCurrentCopyModeState()
-	return true
-}
-
-func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset int, allowLatestReplace bool) bool {
-	if m == nil || m.copyMode.Snapshot == nil || loaded == nil {
-		return false
-	}
-	if snapshotUsesAlternateScreen(m.copyMode.Snapshot) || snapshotUsesAlternateScreen(loaded) {
-		return false
-	}
-	next := cloneSnapshot(m.copyMode.Snapshot)
-	if next == nil {
-		return false
-	}
-	delta := 0
-	trimNewest := false
-	switch {
-	case offset > 0:
-		if offset != snapshotScrollbackLoadedDepth(next) {
-			return false
-		}
-		if !historyPageContinuesSnapshot(next, loaded) {
-			return false
-		}
-		delta = snapshotScrollbackLoadedDepth(loaded) - snapshotScrollbackLoadedDepth(next)
-		if delta == 0 {
-			return false
-		}
-		previousOffset := next.ScrollbackOffset
-		next.Scrollback = append(protocol.CloneCompactRows(loaded.Scrollback), next.Scrollback...)
-		next.ScrollbackTimestamps = append(append([]time.Time(nil), loaded.ScrollbackTimestamps...), next.ScrollbackTimestamps...)
-		next.ScrollbackRowKinds = append(append([]string(nil), loaded.ScrollbackRowKinds...), next.ScrollbackRowKinds...)
-		next.ScrollbackWrapped = append(append([]bool(nil), loaded.ScrollbackWrapped...), next.ScrollbackWrapped...)
-		next.ScrollbackOwnership = append(append([]string(nil), loaded.ScrollbackOwnership...), next.ScrollbackOwnership...)
-		next.ScrollbackOffset = previousOffset
-		trimNewest = true
-	default:
-		currentCommittedDepth := snapshotScrollbackLoadedDepth(next)
-		loadedCommittedDepth := snapshotScrollbackLoadedDepth(loaded)
-		delta = loadedCommittedDepth - currentCommittedDepth
-		if !allowLatestReplace && delta <= 0 {
-			return false
-		}
-		// When copy mode starts from a live-tail-only snapshot, a top jump issues
-		// an offset=0 latest replace to materialize the canonical committed
-		// window. In that case there is no canonical row ref to reanchor against,
-		// so applying the loaded-depth delta would incorrectly push the viewport
-		// down into the newly loaded history window.
-		preserveTop := allowLatestReplace &&
-			copyModePinnedAtTop(m.copyMode) &&
-			!hasCanonicalHistoryWindow(m.copyMode.Snapshot) &&
-			hasCanonicalHistoryWindow(loaded) &&
-			loaded.ScrollbackFirstRowID == 0
-		next.Scrollback = protocol.CloneCompactRows(loaded.Scrollback)
-		next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
-		next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
-		next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
-		next.ScrollbackOwnership = append([]string(nil), loaded.ScrollbackOwnership...)
-		next.ScrollbackOffset = loaded.ScrollbackOffset
-		next.ScrollbackTotal = loaded.ScrollbackTotal
-		next.ScrollbackLogicalTotal = loaded.ScrollbackLogicalTotal
-		next.ScrollbackHasMore = loaded.ScrollbackHasMore
-		next.ScrollbackLoadedRows = loaded.ScrollbackLoadedRows
-		next.HistoryGeneration = loaded.HistoryGeneration
-		next.ScrollbackFirstRowID = loaded.ScrollbackFirstRowID
-		next.ScrollbackLastRowID = loaded.ScrollbackLastRowID
-		protocol.TrimSnapshotScrollbackScreenVisualOverlap(next)
-		trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, false)
-		m.copyMode.Snapshot = next
-		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(next)
-
-		buffer, ok := m.activeCopyModeBuffer()
-		if !ok {
-			return false
-		}
-		if !preserveTop {
-			m.copyMode.ViewTopRow += delta - trimmedNewest
-		}
-		m.reanchorCopyModePoints(buffer, delta-trimmedNewest, preserveTop, true)
-		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
-		m.saveCurrentCopyModeState()
-		return true
-	}
-	next.ScrollbackTotal = loaded.ScrollbackTotal
-	next.ScrollbackLogicalTotal = loaded.ScrollbackLogicalTotal
-	next.ScrollbackHasMore = loaded.ScrollbackHasMore
-	next.ScrollbackLoadedRows = maxInt(loaded.ScrollbackLoadedRows, next.ScrollbackLoadedRows)
-	next.HistoryGeneration = loaded.HistoryGeneration
-	next.ScrollbackFirstRowID, next.ScrollbackLastRowID = mergedCanonicalRowWindow(loaded, next)
-	trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, trimNewest)
-	m.copyMode.Snapshot = next
-	m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(next)
-
-	buffer, ok := m.activeCopyModeBuffer()
-	if !ok {
-		return false
-	}
-	preserveTop := offset > 0 && copyModePinnedAtTop(m.copyMode)
-	m.copyMode.ViewTopRow += delta - trimmedNewest
-	m.reanchorCopyModePoints(buffer, delta-trimmedNewest, preserveTop, offset > 0)
-	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
-	m.saveCurrentCopyModeState()
-	return true
+	return false
 }
 
 func (m *Model) reanchorCopyModePoints(buffer copyModeBuffer, fallbackDelta int, preserveTop bool, preferRefs bool) {

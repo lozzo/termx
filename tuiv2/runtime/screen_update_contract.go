@@ -110,10 +110,6 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	}
 	update := classified.Contract.Update
 	summary := classified.Contract.Summary
-	if classified.Contract.Classification.HasScrollbackChange || classified.Contract.Classification.HasScreenScroll {
-		terminal.CommittedHistoryExhausted = false
-	}
-
 	r.captureAlternateScrollback(terminal, update)
 
 	snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
@@ -165,12 +161,6 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 }
 
 func resetLatestBoundaryStateForFullReplace(terminal *TerminalRuntime) {
-	if terminal == nil {
-		return
-	}
-	terminal.CommittedLoadedDepth = 0
-	terminal.CommittedLoadingDepth = 0
-	terminal.CommittedHistoryExhausted = false
 }
 
 func (r *Runtime) applyDecodedScreenUpdateContract(terminal *TerminalRuntime, terminalID string, contract ScreenUpdateContract) {

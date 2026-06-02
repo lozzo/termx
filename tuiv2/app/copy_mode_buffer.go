@@ -377,7 +377,7 @@ func (b copyModeBuffer) materializedCommittedScrollbackStart() int {
 	if b.snapshot == nil {
 		return 0
 	}
-	loadedCommittedRows := snapshotScrollbackLoadedDepth(b.snapshot)
+	loadedCommittedRows := protocol.CountCommittedRowOwnership(b.snapshot.ScrollbackOwnership, len(b.snapshot.Scrollback))
 	materializedCommittedRows := protocol.CountCommittedRowOwnership(b.snapshot.ScrollbackOwnership, len(b.snapshot.Scrollback))
 	if loadedCommittedRows <= 0 || materializedCommittedRows <= 0 {
 		return 0
@@ -513,8 +513,6 @@ func (m *Model) syncCopyModeViewport(buffer copyModeBuffer, point copyModePoint)
 			"snapshot_screen_rows", len(buffer.snapshot.Screen.Cells),
 			"snapshot_total_rows", buffer.totalRows(),
 			"snapshot_logical_total", buffer.snapshot.ScrollbackLogicalTotal,
-			"snapshot_loaded_rows", snapshotScrollbackLoadedDepth(buffer.snapshot),
-			"copy_committed_loaded_rows", m.copyMode.CommittedLoadedRows,
 			"render_offset", m.copyModeRenderOffset(buffer),
 		)
 	}
@@ -633,8 +631,6 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 			"snapshot_scrollback_rows", len(buffer.snapshot.Scrollback),
 			"snapshot_screen_rows", len(buffer.snapshot.Screen.Cells),
 			"snapshot_total_rows", buffer.totalRows(),
-			"snapshot_loaded_rows", snapshotScrollbackLoadedDepth(buffer.snapshot),
-			"copy_committed_loaded_rows", m.copyMode.CommittedLoadedRows,
 			"render_offset", m.copyModeRenderOffset(buffer),
 		)
 	}

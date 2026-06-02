@@ -278,6 +278,9 @@
   不再长期保有本地 committed history 深度推断状态机。
 - runtime transaction restore、attach / re-entry、stale-page guard 后续都必须围绕 authoritative history window token 工作，而不是围绕本地 `CommittedLoadedDepth` 或 row-level snapshot 推断工作。
 - 所有 stale response 过滤、latest boundary reset、older-page continuity 判定，应尽可能前移到 `core`/protocol authoritative 结果中；client 不再承担二次发明历史真相的责任。
+- 当前决议改为先破后立：`tuiv2` 中本地 history truth 重建、runtime 本地 viewport merge、copy-mode frozen snapshot 分页合并、`CommittedLoadedDepth` / `CommittedLoadingDepth` / `CommittedHistoryExhausted` 状态机，统一物理删除，不再作为过渡实现保留。
+- 新的 `tuiv2` 终端呈现接口先拆成两个输入面：实时 surface 用于本地 VT 解析后的当前屏幕渲染；authoritative history window 用于历史窗口、copy mode backing、older/latest 接纳规则。二者只在 render projection 层组合，不在 client 内部重新发明 history truth。
+- 新接口只表达 `core` 返回的窗口、窗口 token、窗口操作语义、最小 row/line span 元数据；实现未完成前，相关旧测试语义视为待删除或待重写，不作为回归基准。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 
 ### 当前不启动的工作

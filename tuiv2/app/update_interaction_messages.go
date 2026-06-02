@@ -224,9 +224,6 @@ func (m *Model) sharedTerminalSnapshotResyncCmd(terminalID string) tea.Cmd {
 		return nil
 	}
 	limit := defaultTerminalSnapshotScrollbackLimit
-	if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.CommittedLoadedDepth > limit {
-		limit = terminal.CommittedLoadedDepth
-	}
 	return func() tea.Msg {
 		if _, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, limit); err != nil {
 			return err

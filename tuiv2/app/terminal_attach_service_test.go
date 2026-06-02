@@ -228,8 +228,7 @@ func TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth(t *te
 		},
 	}
 	model := setupModel(t, modelOpts{client: client})
-	terminal := model.runtime.Registry().GetOrCreate("term-restore")
-	terminal.CommittedLoadedDepth = 1500
+	_ = model.runtime.Registry().GetOrCreate("term-restore")
 
 	service := model.terminalAttachService()
 	msg := service.restoredSnapshotFallbackMsg(bootstrap.PaneReattachHint{
@@ -243,8 +242,8 @@ func TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth(t *te
 	if got := len(client.snapshotRequests); got != 1 {
 		t.Fatalf("expected one snapshot request, got %#v", client.snapshotRequests)
 	}
-	if got := client.snapshotRequests[0].limit; got != 1500 {
-		t.Fatalf("expected restored fallback to use known loaded depth 1500, got %#v", client.snapshotRequests[0])
+	if got := client.snapshotRequests[0].limit; got != defaultTerminalSnapshotScrollbackLimit {
+		t.Fatalf("expected restored fallback to use default snapshot limit, got %#v", client.snapshotRequests[0])
 	}
 }
 

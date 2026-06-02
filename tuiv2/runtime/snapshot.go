@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	alternateScrollbackLimit       = 10000
-	materializedScrollbackRowLimit = 12000
+	alternateScrollbackLimit = 10000
 )
 
 type timestampedSnapshotLoader interface {
@@ -94,18 +93,10 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
 		terminal.Snapshot = snapshot
-		applyLatestSnapshotRuntimeState(terminal, snapshot)
 		if snapshot == nil || !snapshotUsesAlternateScreen(snapshot) {
 			terminal.AlternateScrollback = nil
 		}
 		terminal.PreferSnapshot = false
-		if offset == 0 && snapshot != nil {
-			if limit > 0 && protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-				terminal.CommittedHistoryExhausted = !snapshot.ScrollbackHasMore
-			} else if !protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-				terminal.CommittedHistoryExhausted = false
-			}
-		}
 		r.ensureVTerm(terminal)
 		loadSnapshotIntoVTerm(terminal.VTerm, snapshot)
 		if terminal.VTerm != nil {
@@ -114,7 +105,6 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		}
 		r.bumpSurfaceVersion(terminal)
 		terminal.SnapshotVersion = terminal.SurfaceVersion
-		terminal.CommittedLoadingDepth = 0
 		r.touch()
 	}
 	return snapshot, nil
@@ -134,166 +124,6 @@ func (r *Runtime) LoadGridViewport(ctx context.Context, terminalID string, offse
 	return snapshot, nil
 }
 
-func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapshot, offset int) bool {
-	if r == nil || r.registry == nil || terminalID == "" || page == nil || len(page.Scrollback) == 0 {
-		return false
-	}
-	terminal := r.registry.Get(terminalID)
-	if terminal == nil || terminal.Snapshot == nil {
-		return false
-	}
-	current := terminal.Snapshot
-	if offset < 0 {
-		return false
-	}
-	traceRuntimeSnapshot("runtime.apply_grid_viewport.current_before", current, "page_offset", offset)
-	traceRuntimeSnapshot("runtime.apply_grid_viewport.page", page, "page_offset", offset)
-	if page.Size.Cols > 0 && current.Size.Cols > 0 && page.Size.Cols != current.Size.Cols {
-		return false
-	}
-	if offset > 0 && offset != snapshotScrollbackLoadedDepth(current) {
-		return false
-	}
-	if offset > 0 && !historyPageContinuesSnapshot(current, page) {
-		return false
-	}
-	merged := cloneProtocolSnapshot(current)
-	if offset == 0 {
-		merged.Scrollback = protocol.CloneCompactRows(page.Scrollback)
-		merged.ScrollbackTimestamps = append([]time.Time(nil), page.ScrollbackTimestamps...)
-		merged.ScrollbackRowKinds = append([]string(nil), page.ScrollbackRowKinds...)
-		merged.ScrollbackWrapped = append([]bool(nil), page.ScrollbackWrapped...)
-		merged.ScrollbackOwnership = append([]string(nil), page.ScrollbackOwnership...)
-		merged.ScrollbackOffset = page.ScrollbackOffset
-		merged.ScrollbackTotal = page.ScrollbackTotal
-		merged.ScrollbackLogicalTotal = page.ScrollbackLogicalTotal
-		merged.ScrollbackHasMore = page.ScrollbackHasMore
-		merged.ScrollbackLoadedRows = page.ScrollbackLoadedRows
-		merged.HistoryGeneration = page.HistoryGeneration
-		merged.ScrollbackFirstRowID = page.ScrollbackFirstRowID
-		merged.ScrollbackLastRowID = page.ScrollbackLastRowID
-		protocol.TrimSnapshotScrollbackScreenVisualOverlap(merged)
-		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, false)
-	} else {
-		mergedOffset := current.ScrollbackOffset
-		merged.Scrollback = append(protocol.CloneCompactRows(page.Scrollback), merged.Scrollback...)
-		merged.ScrollbackTimestamps = append(append([]time.Time(nil), page.ScrollbackTimestamps...), merged.ScrollbackTimestamps...)
-		merged.ScrollbackRowKinds = append(append([]string(nil), page.ScrollbackRowKinds...), merged.ScrollbackRowKinds...)
-		merged.ScrollbackWrapped = append(append([]bool(nil), page.ScrollbackWrapped...), merged.ScrollbackWrapped...)
-		merged.ScrollbackOwnership = append(append([]string(nil), page.ScrollbackOwnership...), merged.ScrollbackOwnership...)
-		merged.ScrollbackOffset = mergedOffset
-		merged.ScrollbackTotal = maxInt(page.ScrollbackTotal, current.ScrollbackTotal)
-		merged.ScrollbackLogicalTotal = maxInt(page.ScrollbackLogicalTotal, current.ScrollbackLogicalTotal)
-		merged.ScrollbackHasMore = page.ScrollbackHasMore
-		merged.ScrollbackLoadedRows = maxInt(page.ScrollbackLoadedRows, current.ScrollbackLoadedRows)
-		merged.HistoryGeneration = page.HistoryGeneration
-		merged.ScrollbackFirstRowID, merged.ScrollbackLastRowID = mergedCanonicalRowWindow(page, current)
-		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, true)
-	}
-	merged.Timestamp = time.Now()
-	terminal.Snapshot = merged
-	if offset == 0 {
-		if terminal.VTerm != nil {
-			loadSnapshotIntoVTerm(terminal.VTerm, merged)
-		}
-		applyLatestSnapshotRuntimeState(terminal, merged)
-	} else if loadedDepth := snapshotScrollbackLoadedDepth(page); loadedDepth > terminal.CommittedLoadedDepth {
-		terminal.CommittedLoadedDepth = loadedDepth
-	}
-	terminal.CommittedHistoryExhausted = !page.ScrollbackHasMore
-	r.bumpSurfaceVersion(terminal)
-	terminal.SnapshotVersion = terminal.SurfaceVersion
-	terminal.PreferSnapshot = true
-	r.touch()
-	traceRuntimeSnapshot("runtime.apply_grid_viewport.merged_after", merged, "page_offset", offset)
-	return true
-}
-
-func applyLatestSnapshotRuntimeState(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
-	if terminal == nil {
-		return
-	}
-	if snapshot == nil {
-		terminal.CommittedLoadedDepth = 0
-		return
-	}
-	terminal.CommittedLoadedDepth = snapshotScrollbackLoadedDepth(snapshot)
-}
-
-func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
-	return protocol.SnapshotCommittedLoadedDepth(snapshot)
-}
-
-func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
-	if current == nil || page == nil {
-		return false
-	}
-	currentCanonical := hasCanonicalHistoryWindow(current)
-	pageCanonical := hasCanonicalHistoryWindow(page)
-	if !currentCanonical || !pageCanonical {
-		return false
-	}
-	if current.HistoryGeneration != page.HistoryGeneration {
-		return false
-	}
-	if page.ScrollbackLastRowID+1 != current.ScrollbackFirstRowID {
-		return false
-	}
-	return true
-}
-
-func hasCanonicalHistoryWindow(snapshot *protocol.Snapshot) bool {
-	return protocol.SnapshotHasCanonicalCommittedWindow(snapshot)
-}
-
-func mergedCanonicalRowWindow(older, newer *protocol.Snapshot) (uint64, uint64) {
-	olderOK := hasCanonicalHistoryWindow(older)
-	newerOK := hasCanonicalHistoryWindow(newer)
-	switch {
-	case olderOK && newerOK:
-		return older.ScrollbackFirstRowID, newer.ScrollbackLastRowID
-	case olderOK:
-		return older.ScrollbackFirstRowID, older.ScrollbackLastRowID
-	case newerOK:
-		return newer.ScrollbackFirstRowID, newer.ScrollbackLastRowID
-	default:
-		return 0, 0
-	}
-}
-
-func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) {
-	if snapshot == nil || limit <= 0 || len(snapshot.Scrollback) <= limit {
-		return
-	}
-	drop := len(snapshot.Scrollback) - limit
-	// Canonical committed-row coordinates describe the loaded row window, not
-	// the client-side materialized tail retained after bounded trimming.
-	if trimNewest {
-		keep := len(snapshot.Scrollback) - drop
-		committedDrop := protocol.CountCommittedRowOwnershipRange(snapshot.ScrollbackOwnership, keep, len(snapshot.ScrollbackOwnership))
-		snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[:keep])
-		snapshot.ScrollbackTimestamps = cloneTimePrefix(snapshot.ScrollbackTimestamps, keep)
-		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
-		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
-		snapshot.ScrollbackOwnership = cloneStringPrefix(snapshot.ScrollbackOwnership, keep)
-		snapshot.ScrollbackOffset += committedDrop
-		return
-	}
-	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
-	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
-	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
-	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
-	snapshot.ScrollbackOwnership = cloneStringSuffix(snapshot.ScrollbackOwnership, drop)
-	snapshot.ScrollbackHasMore = true
-}
-
-func cloneTimePrefix(values []time.Time, keep int) []time.Time {
-	if keep <= 0 || len(values) < keep {
-		return nil
-	}
-	return append([]time.Time(nil), values[:keep]...)
-}
-
 func repeatedOwnership(value string, count int) []string {
 	if count <= 0 || value == "" {
 		return nil
@@ -303,41 +133,6 @@ func repeatedOwnership(value string, count int) []string {
 		out[i] = value
 	}
 	return out
-}
-
-func cloneStringPrefix(values []string, keep int) []string {
-	if keep <= 0 || len(values) < keep {
-		return nil
-	}
-	return append([]string(nil), values[:keep]...)
-}
-
-func cloneBoolPrefix(values []bool, keep int) []bool {
-	if keep <= 0 || len(values) < keep {
-		return nil
-	}
-	return append([]bool(nil), values[:keep]...)
-}
-
-func cloneTimeSuffix(values []time.Time, drop int) []time.Time {
-	if drop < 0 || len(values) <= drop {
-		return nil
-	}
-	return append([]time.Time(nil), values[drop:]...)
-}
-
-func cloneStringSuffix(values []string, drop int) []string {
-	if drop < 0 || len(values) <= drop {
-		return nil
-	}
-	return append([]string(nil), values[drop:]...)
-}
-
-func cloneBoolSuffix(values []bool, drop int) []bool {
-	if drop < 0 || len(values) <= drop {
-		return nil
-	}
-	return append([]bool(nil), values[drop:]...)
 }
 
 func snapshotFromGridViewport(terminalID string, viewport *protocol.GridViewport) *protocol.Snapshot {
@@ -389,14 +184,6 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	}
 	terminal.PreferSnapshot = false
 	terminal.SnapshotVersion = terminal.SurfaceVersion
-	if terminal.Snapshot != nil {
-		if loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot); loaded > terminal.CommittedLoadedDepth {
-			terminal.CommittedLoadedDepth = loaded
-		}
-		if terminal.CommittedLoadingDepth > 0 && len(terminal.Snapshot.Scrollback) >= terminal.CommittedLoadingDepth {
-			terminal.CommittedLoadingDepth = 0
-		}
-	}
 	r.invalidate()
 }
 
