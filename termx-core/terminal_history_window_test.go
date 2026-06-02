@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -32,6 +33,27 @@ func TestHistoryLineSpansDoNotInferFromWrappedRowsWithoutLogicalLineIDs(t *testi
 	spans := historyLineSpans([]bool{true, false}, []string{"a", "a"}, nil, 2, 0)
 	if len(spans) != 0 {
 		t.Fatalf("expected no authoritative line spans without logical line ids, got %#v", spans)
+	}
+}
+
+func TestViewportTrimDoesNotInferClippedLineFromWrappedRowsWithoutLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("old"), vtermCells("new")},
+		Timestamps:     []time.Time{time.Unix(1, 0), time.Unix(2, 0)},
+		RowKinds:       []string{"old", "new"},
+		Wrapped:        []bool{true, false},
+		Ownership:      []string{RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs: []uint64{0, 0},
+		LoadedRows:     2,
+		FirstRowID:     10,
+		LastRowID:      11,
+	}
+
+	if cropped := trimTerminalGridViewportToTail(&viewport, 1); !cropped {
+		t.Fatal("expected viewport trim")
+	}
+	if viewport.FirstLineClippedBefore {
+		t.Fatalf("expected missing logical line ids not to infer clipped-before from wrapped rows, got %#v", viewport)
 	}
 }
 

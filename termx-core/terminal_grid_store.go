@@ -664,10 +664,7 @@ func terminalGridViewportTrimClipsLogicalLine(result *terminalGridViewport, star
 	}
 	currentID := uint64At(result.LogicalLineIDs, start)
 	previousID := uint64At(result.LogicalLineIDs, start-1)
-	if currentID != 0 && previousID != 0 {
-		return currentID == previousID
-	}
-	return boolAt(result.Wrapped, start-1)
+	return currentID != 0 && previousID != 0 && currentID == previousID
 }
 
 func clippedViewportLeadingRowKind(rowKinds []string, wrapped []bool, start int) string {
