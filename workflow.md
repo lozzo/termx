@@ -416,6 +416,7 @@ TUI store 至少表达：
 - 已将 mutable live tail record 的 residency、dirty、generation 写入 core grid line metadata sidecar，并开始随 live row payload 一起作为恢复输入；当前恢复入口限定在 `history.window` latest store-only projection。
 - 已让 core persisted store 在 replay/viewport/reclaim 路径优先使用 `grid.lines.json` 中完整有效的 persisted logical line record 恢复 logical line 边界、logical line id 与 logical total；metadata 缺失、损坏或与当前 index 不匹配时继续回退到 index/wrapped 推导。当前恢复范围覆盖 persisted screen projection。
 - 已将 mutable live tail row payload 随 `grid.lines.json` 的 live record 一起写入 sidecar，并在 terminal 不在内存时让 core `history.window` latest projection 从该 sidecar 恢复 mutable live tail rows、ownership 与 runtime logical line id；older offset 仍保持 persisted-only。当前恢复范围覆盖 `history.window` store-only latest projection，legacy snapshot/grid viewport 仍只是兼容投影接口。
+- 已收紧 mutable live tail metadata 恢复校验：`live_records` 的 origin 必须是 live/reclaimed/resize 之一，未知 origin 会被视为损坏 metadata 并忽略恢复。
 - 已让 legacy `snapshot` / `grid.viewport` 的 store-only latest 兼容投影复用同一个 recovered live tail projection helper；它们仍不是新 TUI history truth，只是避免恢复场景下兼容投影丢失 mutable live tail。
 - 已在 process exit force seal 后清空 recoverable mutable live tail metadata，避免已提交到 persisted store 的 live tail 又被 store-only latest projection 重复恢复；sidecar 写入同时跳过 closed/remove-on-close 临时 store。
 - 已将 core `history.window` line span 生成改为优先按 stable logical line id 归并 visual rows；只有 projection 缺失 logical line id 时才回退 wrapped 元数据，避免 screen projection 继续把 wrapped 当作首要历史真相。

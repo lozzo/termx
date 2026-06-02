@@ -3,6 +3,8 @@ package termx
 import (
 	"reflect"
 	"testing"
+
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestTerminalGridProjectionReflowsLogicalLinesAtRequestedWidth(t *testing.T) {
@@ -156,6 +158,35 @@ func TestTerminalGridProjectionAppliesMetadataLineMigrations(t *testing.T) {
 	}
 	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
 		t.Fatalf("expected migrated persisted logical line id, got %#v", got)
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailRejectsUnknownOrigin(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("tail"),
+		WrappedSet: true,
+		Wrapped:    true,
+	}})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        terminalLiveTailLogicalLineIDBase + 1,
+			StartRow:  0,
+			EndRow:    0,
+			Origin:    terminalLiveTailOrigin("bad-origin"),
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected corrupt live tail origin metadata to be ignored")
 	}
 }
 

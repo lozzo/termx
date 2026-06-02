@@ -1362,6 +1362,9 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		if record.Residency != terminalLogicalLineResidencyLiveTail || record.ID == 0 {
 			return nil, false
 		}
+		if !terminalLiveTailOriginKnown(record.Origin) {
+			return nil, false
+		}
 		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
 		lineIDs := make([]uint64, len(segmentRows))
 		for row := range lineIDs {
@@ -1396,6 +1399,15 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		segments = append(segments, segment)
 	}
 	return segments, true
+}
+
+func terminalLiveTailOriginKnown(origin terminalLiveTailOrigin) bool {
+	switch origin {
+	case terminalLiveTailOriginLive, terminalLiveTailOriginReclaimed, terminalLiveTailOriginResize:
+		return true
+	default:
+		return false
+	}
 }
 
 func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogicalLineRecord, rowCount int) ([]terminalGridLogicalLineRecord, bool) {
