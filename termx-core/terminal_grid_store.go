@@ -1602,7 +1602,7 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 			sealState:      terminalLiveTailOpen,
 			rows:           segmentRows,
 			logicalLineIDs: lineIDs,
-			wrapPending:    !record.Sealed,
+			wrapPending:    terminalLiveTailRecordWrapPendingFromMetadata(record, segmentRows),
 			generation:     record.Generation,
 		}
 		if record.Sealed {
@@ -1652,6 +1652,14 @@ func terminalLiveTailRecordRowsMatchSealState(record terminalGridLineRecordMeta,
 		return false
 	}
 	return true
+}
+
+func terminalLiveTailRecordWrapPendingFromMetadata(record terminalGridLineRecordMeta, rows []vterm.DamageOp) bool {
+	if record.Sealed || len(rows) == 0 {
+		return false
+	}
+	last := rows[len(rows)-1]
+	return last.WrappedSet && last.Wrapped
 }
 
 func terminalLiveTailOriginKnown(origin terminalLiveTailOrigin) bool {

@@ -653,6 +653,54 @@ func TestTerminalGridRecoveredLiveTailUsesLiveOnlyMetadataWithoutPersistedIndex(
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailKeepsOpenLineSeparateFromWrapPending(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		rowWrapped      bool
+		wantWrapPending bool
+	}{
+		{name: "open-unwrapped", rowWrapped: false, wantWrapPending: false},
+		{name: "open-wrapped", rowWrapped: true, wantWrapPending: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMemoryTerminalGridStoreForTest(t)
+			defer store.Close()
+			rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+				Cells:      localVTermCellsFromString("tail"),
+				WrappedSet: true,
+				Wrapped:    tc.rowWrapped,
+			}})
+			if err != nil {
+				t.Fatalf("encode live row metadata: %v", err)
+			}
+			if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+				LiveRecords: []terminalGridLineRecordMeta{{
+					ID:        terminalLiveTailLogicalLineIDBase + 1,
+					StartRow:  0,
+					EndRow:    0,
+					Sealed:    false,
+					Origin:    terminalLiveTailOriginLive,
+					Residency: terminalLogicalLineResidencyLiveTail,
+					Dirty:     true,
+				}},
+				LiveRows: rows,
+			}); err != nil {
+				t.Fatalf("write live tail metadata: %v", err)
+			}
+			tail, ok := store.recoveredLiveTailFromMetadata()
+			if !ok {
+				t.Fatal("expected open live tail metadata to recover")
+			}
+			if tail.wrapPending != tc.wantWrapPending {
+				t.Fatalf("expected recovered tail wrapPending=%v, got %#v", tc.wantWrapPending, tail)
+			}
+			if len(tail.segments) != 1 || tail.segments[0].sealState != terminalLiveTailOpen || tail.segments[0].wrapPending != tc.wantWrapPending {
+				t.Fatalf("unexpected recovered open segment: %#v", tail.segments)
+			}
+		})
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedRowIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
