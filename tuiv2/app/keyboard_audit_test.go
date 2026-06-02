@@ -607,24 +607,31 @@ func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 	})
 
 	t.Run("page-and-halfpage", func(t *testing.T) {
-		t.Skip("待改写：该子测试把 copy mode page/halfpage 定义为 frozen snapshot 本地游标移动；新基准必须围绕 authoritative history window 的 older prepend 与窗口内移动")
-
 		model := setupModel(t, modelOpts{width: 40, height: 8})
-		seedCopyModeSnapshot(t, model, []string{"s0", "s1", "s2", "s3", "s4", "s5"}, []string{"n0", "n1", "n2", "n3"})
-		dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
-		before := model.copyMode.Cursor.Row
-		dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyPgUp})
-		if got := model.copyMode.Cursor.Row; got >= before {
-			t.Fatalf("expected page-up to move cursor upward, before=%d after=%d", before, got)
+		latest := appHistoryFakeWindow("term-1", "replace", "token-1", 100, 105, []string{"s0", "s1", "s2", "s3", "s4", "s5"}, 6, true)
+		seedAuthoritativeCopyModeWindow(t, model, latest, copyModeLogicalPos{Line: 5, Offset: 0}, 2)
+		model.setMode(input.ModeState{Kind: input.ModeDisplay})
+		source := &appHistoryFakeSource{
+			older: appHistoryFakeWindow("term-1", "prepend", "token-1", 98, 99, []string{"old0", "old1"}, 8, false),
 		}
-		before = model.copyMode.Cursor.Row
+		model.historySource = source
+
+		before := model.copyMode.CursorLogical.Line
+		dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyPgUp})
+		if got := model.copyMode.CursorLogical.Line; got >= before {
+			t.Fatalf("expected page-up to move cursor upward within authoritative window, before=%d after=%d", before, got)
+		}
+		if source.olderRequests != 0 {
+			t.Fatalf("did not expect older request before reaching top, got %d", source.olderRequests)
+		}
+		before = model.copyMode.CursorLogical.Line
 		dispatchKey(t, model, runeKeyMsg('d'))
-		if got := model.copyMode.Cursor.Row; got <= before {
-			t.Fatalf("expected half-page-down to move cursor downward, before=%d after=%d", before, got)
+		if got := model.copyMode.CursorLogical.Line; got <= before {
+			t.Fatalf("expected half-page-down to move cursor downward within authoritative window, before=%d after=%d", before, got)
 		}
 		dispatchKey(t, model, runeKeyMsg('G'))
-		if got := model.copyMode.Cursor.Row; got == 0 {
-			t.Fatalf("expected bottom jump, got row %d", got)
+		if got, want := model.copyMode.CursorLogical.Line, len(latest.Lines)-1; got != want {
+			t.Fatalf("expected bottom jump to authoritative window end %d, got %d", want, got)
 		}
 	})
 

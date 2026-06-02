@@ -2648,57 +2648,6 @@ func TestMouseDoesNotForwardContentClickWhenTrackingDisabled(t *testing.T) {
 	}
 }
 
-func TestMouseWheelFallsBackWhenTrackingDisabled(t *testing.T) {
-	t.Skip("待改写：该测试断言鼠标滚轮进入本地 snapshot scrollback；新基准必须加载 authoritative history window")
-
-	m := setupModel(t, modelOpts{})
-	client, ok := m.runtime.Client().(*recordingBridgeClient)
-	if !ok {
-		t.Fatal("expected recording bridge client")
-	}
-	seedCopyModeSnapshot(t, m, []string{"hist-a", "hist-b", "hist-c"}, []string{"live-a", "live-b", "live-c"})
-	setActivePaneMouseTracking(t, m, false)
-	x, y := activePaneContentScreenOrigin(t, m)
-
-	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	if got := m.mode().Kind; got != input.ModeDisplay {
-		t.Fatalf("expected wheel fallback to enter display mode, got %q", got)
-	}
-	if m.copyMode.PaneID != "pane-1" {
-		t.Fatalf("expected wheel fallback copy mode on pane-1, got %#v", m.copyMode)
-	}
-	if got := m.runtime.PaneViewportOffset("pane-1"); got <= 0 {
-		t.Fatalf("expected wheel fallback to move into local scrollback, got %d", got)
-	}
-	if len(client.inputCalls) != 0 {
-		t.Fatalf("expected no forwarded mouse wheel with tracking off, got %#v", client.inputCalls)
-	}
-}
-
-func TestMouseWheelEnterCopyModeUsesSingleStepWhenBurstCoalesced(t *testing.T) {
-	t.Skip("待改写：该测试依赖 frozen snapshot 本地 copy mode 游标；新基准必须使用 authoritative history window 的 latest replace")
-
-	m := setupModel(t, modelOpts{})
-	seedCopyModeSnapshot(t, m,
-		[]string{"hist-0", "hist-1", "hist-2", "hist-3", "hist-4", "hist-5", "hist-6", "hist-7", "hist-8", "hist-9"},
-		[]string{"live-0", "live-1", "live-2"},
-	)
-	setActivePaneMouseTracking(t, m, false)
-	x, y := activePaneContentScreenOrigin(t, m)
-
-	cmd := m.handleMouseWheelRepeated(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress}, 8)
-	drainCmd(t, m, cmd, 20)
-
-	if got := m.mode().Kind; got != input.ModeDisplay {
-		t.Fatalf("expected wheel fallback to enter display mode, got %q", got)
-	}
-	if got, want := m.copyMode.CursorLogical.Line, 9; got != want {
-		t.Fatalf("expected first coalesced wheel to move one local step near live tail, got logical line %d want %d", got, want)
-	}
-}
-
 func TestMouseWheelAlternateScreenFallsBackToCursorKeysWhenTrackingDisabled(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)
