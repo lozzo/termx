@@ -9,35 +9,35 @@ import (
 )
 
 type paneRenderEntry struct {
-	PaneID                    string
-	OwnerID                   uint32
-	Rect                      workbench.Rect
-	Frameless                 bool
-	ConservativeRedraw        bool
-	SharedLeft                bool
-	SharedTop                 bool
-	Title                     string
-	Border                    paneBorderInfo
-	Theme                     uiTheme
-	Chrome                    UIChromeConfig
-	Overflow                  paneOverflowHints
-	ContentKey                paneContentKey
-	FrameKey                  paneFrameKey
-	TerminalID                string
-	Snapshot                  *protocol.Snapshot
-	Surface                   runtime.TerminalSurface
-	SurfaceVersion            uint64
-	Metrics                   renderTerminalMetrics
-	ScrollOffset              int
-	ContentOffsetX            int
-	ContentOffsetY            int
-	Active                    bool
-	Floating                  bool
-	EmptyActionSelected       int
-	ExitedActionSelected      int
-	ExitedActionPulse         bool
-	CopyModeActive            bool
-	CopyMode                  RenderCopyModeVM
+	PaneID               string
+	OwnerID              uint32
+	Rect                 workbench.Rect
+	Frameless            bool
+	ConservativeRedraw   bool
+	SharedLeft           bool
+	SharedTop            bool
+	Title                string
+	Border               paneBorderInfo
+	Theme                uiTheme
+	Chrome               UIChromeConfig
+	Overflow             paneOverflowHints
+	ContentKey           paneContentKey
+	FrameKey             paneFrameKey
+	TerminalID           string
+	Snapshot             *protocol.Snapshot
+	Surface              runtime.TerminalSurface
+	SurfaceVersion       uint64
+	Metrics              renderTerminalMetrics
+	ScrollOffset         int
+	ContentOffsetX       int
+	ContentOffsetY       int
+	Active               bool
+	Floating             bool
+	EmptyActionSelected  int
+	ExitedActionSelected int
+	ExitedActionPulse    bool
+	CopyModeActive       bool
+	CopyMode             RenderCopyModeVM
 }
 
 type paneFrameKey struct {
@@ -183,14 +183,18 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		surface = nil
 		surfaceVersion = 0
 	}
-	if copyModeActive && copyMode.Snapshot != nil {
+	if copyModeActive && copyMode.Projection != nil {
+		snapshot = nil
+		surface = nil
+		surfaceVersion = 0
+	} else if copyModeActive && copyMode.Snapshot != nil {
 		snapshot = copyMode.Snapshot
 		surface = nil
 		surfaceVersion = 0
 	}
 	if copyModeActive {
-		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, copyMode.CursorRow)
-		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, copyMode.CursorLogicalLine, copyMode.CursorRow)
+		border.CopyTimeLabel = copyModeTimestampLabelForVM(copyMode, snapshot, copyMode.CursorRow)
+		border.CopyRowLabel = copyModeRowPositionLabelForVM(copyMode, snapshot, copyMode.CursorLogicalLine, copyMode.CursorRow)
 	}
 	contentRect := rect
 	if !frameless {
@@ -199,13 +203,22 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	renderOffset := lookup.paneViewportOffset(pane.ID, legacyScrollOffset)
 	contentOffsetX, contentOffsetY := lookup.paneContentOffset(pane.ID)
 	if copyModeActive {
-		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, copyMode.ViewTopRow)
+		renderOffset = scrollOffsetForCopyMode(copyMode, snapshot, contentRect.H, copyMode.ViewTopRow)
 		contentOffsetX = 0
 		contentOffsetY = 0
 	}
 	contentVersion := uint64(0)
 	source := renderSource(snapshot, surface)
+	if copyModeActive {
+		if copySource := copyModeProjectionSource(copyMode, contentRect.H); copySource != nil {
+			source = copySource
+			renderOffset = 0
+		}
+	}
 	extent := terminalExtentProfileCached(snapshot, surface, surfaceVersion)
+	if copyModeActive && copyMode.Projection != nil {
+		extent = terminalExtentProfileForSource(source)
+	}
 	metrics := extent.Metrics
 	switch {
 	case surface != nil:
@@ -227,19 +240,19 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		}
 	}
 	contentKey := paneContentKey{
-		TerminalID:                pane.TerminalID,
-		ThemeBG:                   theme.panelBG,
-		TerminalKnown:             terminal != nil,
-		SharedLeft:                pane.SharedLeft,
-		SharedTop:                 pane.SharedTop,
-		ScrollOffset:              renderOffset,
-		ContentOffsetX:            contentOffsetX,
-		ContentOffsetY:            contentOffsetY,
-		EmptyActionSelected:       emptyActionSelected,
-		ExitedActionSelected:      exitedActionSelected,
-		ExitedActionPulse:         options.ExitedSelectionPulse,
-		CopyModeActive:            copyModeActive,
-		CopyMode:                  copyMode,
+		TerminalID:           pane.TerminalID,
+		ThemeBG:              theme.panelBG,
+		TerminalKnown:        terminal != nil,
+		SharedLeft:           pane.SharedLeft,
+		SharedTop:            pane.SharedTop,
+		ScrollOffset:         renderOffset,
+		ContentOffsetX:       contentOffsetX,
+		ContentOffsetY:       contentOffsetY,
+		EmptyActionSelected:  emptyActionSelected,
+		ExitedActionSelected: exitedActionSelected,
+		ExitedActionPulse:    options.ExitedSelectionPulse,
+		CopyModeActive:       copyModeActive,
+		CopyMode:             renderCopyModeKeyForVM(copyMode),
 	}
 	if terminal != nil {
 		if snapshot != nil && surface == nil {
@@ -276,21 +289,21 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 			Floating:        pane.Floating,
 			ChromeSignature: paneChromeLayoutSignature(rect, title, border, pane.Floating, chrome),
 		},
-		TerminalID:                pane.TerminalID,
-		Snapshot:                  snapshot,
-		Surface:                   surface,
-		SurfaceVersion:            surfaceVersion,
-		Metrics:                   metrics,
-		ScrollOffset:              renderOffset,
-		ContentOffsetX:            contentOffsetX,
-		ContentOffsetY:            contentOffsetY,
-		Active:                    active,
-		Floating:                  pane.Floating,
-		EmptyActionSelected:       emptyActionSelected,
-		ExitedActionSelected:      exitedActionSelected,
-		ExitedActionPulse:         options.ExitedSelectionPulse,
-		CopyModeActive:            copyModeActive,
-		CopyMode:                  copyMode,
+		TerminalID:           pane.TerminalID,
+		Snapshot:             snapshot,
+		Surface:              surface,
+		SurfaceVersion:       surfaceVersion,
+		Metrics:              metrics,
+		ScrollOffset:         renderOffset,
+		ContentOffsetX:       contentOffsetX,
+		ContentOffsetY:       contentOffsetY,
+		Active:               active,
+		Floating:             pane.Floating,
+		EmptyActionSelected:  emptyActionSelected,
+		ExitedActionSelected: exitedActionSelected,
+		ExitedActionPulse:    options.ExitedSelectionPulse,
+		CopyModeActive:       copyModeActive,
+		CopyMode:             copyMode,
 	}
 }
 

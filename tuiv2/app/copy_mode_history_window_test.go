@@ -153,37 +153,40 @@ func TestRenderCopyModeVMUsesAuthoritativeWindowProjection(t *testing.T) {
 	if len(vms) != 1 {
 		t.Fatalf("expected one render copy-mode VM, got %#v", vms)
 	}
-	if vms[0].Snapshot == nil || len(vms[0].Snapshot.Screen.Cells) != 1 {
-		t.Fatalf("expected render snapshot projection, got %#v", vms[0].Snapshot)
+	if vms[0].Snapshot != nil {
+		t.Fatalf("expected authoritative render path to avoid snapshot projection, got %#v", vms[0].Snapshot)
 	}
-	if got := rowTextFromCells(vms[0].Snapshot.Screen.Cells[0]); got != "auth-only" {
+	if vms[0].Projection == nil || len(vms[0].Projection.Rows) != 1 {
+		t.Fatalf("expected render-native authoritative projection, got %#v", vms[0].Projection)
+	}
+	if got := rowTextFromCells(vms[0].Projection.Rows[0].Cells); got != "auth-only" {
 		t.Fatalf("expected authoritative render row, got %q", got)
 	}
-	if vms[0].Snapshot.Scrollback != nil {
-		t.Fatalf("expected no scrollback truth in authoritative render projection, got %#v", vms[0].Snapshot.Scrollback)
+	if vms[0].Projection.Token != "token-1" || vms[0].Projection.FirstBoundaryID != window.FirstBoundaryID || vms[0].Projection.LastBoundaryID != window.LastBoundaryID {
+		t.Fatalf("expected authoritative metadata in projection, got %#v", vms[0].Projection)
 	}
 }
 
-func TestSnapshotFromHistoryWindowPreservesMetadata(t *testing.T) {
+func TestRenderCopyModeProjectionPreservesMetadata(t *testing.T) {
 	window := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 40, 41, []string{"one", "two"}, 2, true)
 	window.Rows[1].Kind = historyview.RowKindLiveTailReclaimed
 	window.Rows[1].Wrapped = true
-	snapshot := snapshotFromHistoryWindow(window)
+	projection := renderCopyModeProjectionFromHistoryWindow(window)
 
-	if snapshot == nil {
-		t.Fatal("expected snapshot projection")
+	if projection == nil {
+		t.Fatal("expected render projection")
 	}
-	if snapshot.TerminalID != "term-1" || snapshot.ScrollbackTotal != window.TotalRows || !snapshot.ScrollbackHasMore {
-		t.Fatalf("unexpected snapshot header: %#v", snapshot)
+	if projection.TerminalID != "term-1" || projection.TotalRows != window.TotalRows || !projection.HasMore {
+		t.Fatalf("unexpected projection header: %#v", projection)
 	}
-	if snapshot.HistoryGeneration != window.Generation || snapshot.ScrollbackFirstRowID != window.FirstBoundaryID || snapshot.ScrollbackLastRowID != window.LastBoundaryID {
-		t.Fatalf("unexpected snapshot boundary metadata: %#v", snapshot)
+	if projection.Generation != window.Generation || projection.FirstBoundaryID != window.FirstBoundaryID || projection.LastBoundaryID != window.LastBoundaryID {
+		t.Fatalf("unexpected projection boundary metadata: %#v", projection)
 	}
-	if snapshot.ScreenOwnership[1] != string(historyview.RowKindLiveTailReclaimed) || !snapshot.ScreenWrapped[1] {
-		t.Fatalf("unexpected row metadata ownership=%#v wrapped=%#v", snapshot.ScreenOwnership, snapshot.ScreenWrapped)
+	if projection.Rows[1].Kind != string(historyview.RowKindLiveTailReclaimed) || !projection.Rows[1].Wrapped {
+		t.Fatalf("unexpected row metadata kind=%#v wrapped=%#v", projection.Rows[1].Kind, projection.Rows[1].Wrapped)
 	}
-	if rowTextFromCells(snapshot.Screen.Cells[1]) != "two" {
-		t.Fatalf("unexpected row projection: %#v", snapshot.Screen.Cells[1])
+	if rowTextFromCells(projection.Rows[1].Cells) != "two" {
+		t.Fatalf("unexpected row projection: %#v", projection.Rows[1].Cells)
 	}
 }
 

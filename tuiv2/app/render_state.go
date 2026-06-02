@@ -1,6 +1,10 @@
 package app
 
 import (
+	"strings"
+
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/tuiv2/historyview"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
 )
@@ -44,8 +48,12 @@ func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
 	out := make([]render.RenderCopyModeVM, 0, len(states))
 	for _, state := range states {
 		snapshot := state.Snapshot
-		if buffer, ok := m.authoritativeCopyModeBufferForPane(state.PaneID, 1); ok && buffer.snapshot != nil {
-			snapshot = buffer.snapshot
+		projection := (*render.RenderCopyModeProjectionVM)(nil)
+		if buffer, ok := m.authoritativeCopyModeBufferForPane(state.PaneID, 1); ok && buffer.window != nil {
+			projection = renderCopyModeProjectionFromHistoryWindow(*buffer.window)
+			if projection != nil {
+				snapshot = nil
+			}
 		}
 		copyMode := render.RenderCopyModeVM{
 			PaneID:            state.PaneID,
@@ -55,6 +63,7 @@ func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
 			CursorLogicalCol:  state.CursorLogical.Offset,
 			ViewTopRow:        state.ViewTopRow,
 			Snapshot:          snapshot,
+			Projection:        projection,
 		}
 		if state.Mark != nil {
 			copyMode.MarkSet = true
@@ -68,6 +77,45 @@ func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
 		out = append(out, copyMode)
 	}
 	return out
+}
+
+func renderCopyModeProjectionFromHistoryWindow(window historyview.HistoryWindow) *render.RenderCopyModeProjectionVM {
+	if strings.TrimSpace(window.TerminalID) == "" || len(window.Rows) == 0 {
+		return nil
+	}
+	rows := make([]render.RenderCopyModeProjectionRowVM, 0, len(window.Rows))
+	for _, row := range window.Rows {
+		cells := append([]protocol.Cell(nil), row.Cells.DecodeCells()...)
+		rows = append(rows, render.RenderCopyModeProjectionRowVM{
+			Cells:     cells,
+			Timestamp: row.Timestamp,
+			Kind:      string(row.Kind),
+			Wrapped:   row.Wrapped,
+		})
+	}
+	lines := make([]render.RenderCopyModeProjectionLineVM, 0, len(window.Lines))
+	for _, line := range window.Lines {
+		lines = append(lines, render.RenderCopyModeProjectionLineVM{
+			StartRow:      line.StartRow,
+			EndRow:        line.EndRow,
+			LogicalLineID: line.LogicalLineID,
+			ClippedBefore: line.ClippedBefore,
+			ClippedAfter:  line.ClippedAfter,
+		})
+	}
+	return &render.RenderCopyModeProjectionVM{
+		TerminalID:      window.TerminalID,
+		Token:           string(window.Token),
+		Generation:      window.Generation,
+		Size:            window.Size,
+		Rows:            rows,
+		Lines:           lines,
+		TotalRows:       window.TotalRows,
+		TotalLines:      window.TotalLines,
+		HasMore:         window.HasMore,
+		FirstBoundaryID: window.FirstBoundaryID,
+		LastBoundaryID:  window.LastBoundaryID,
+	}
 }
 
 func (m *Model) withLiveSurfaceForSplitDragPreview(vm render.RenderVM) render.RenderVM {

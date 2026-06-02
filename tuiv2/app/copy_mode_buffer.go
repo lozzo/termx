@@ -2,7 +2,6 @@ package app
 
 import (
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/internal/protocol"
@@ -102,14 +101,9 @@ func (m *Model) authoritativeCopyModeBufferForPane(paneID string, height int) (c
 	if state.WindowToken != "" && string(window.Token) != state.WindowToken {
 		return copyModeBuffer{}, false
 	}
-	snapshot := snapshotFromHistoryWindow(window)
-	if snapshot == nil {
-		return copyModeBuffer{}, false
-	}
 	return copyModeBuffer{
-		snapshot: snapshot,
-		window:   &window,
-		height:   maxInt(1, height),
+		window: &window,
+		height: maxInt(1, height),
 	}, true
 }
 
@@ -419,6 +413,9 @@ func (b copyModeBuffer) viewportStart(offset int) int {
 		return 0
 	}
 	if offset <= 0 {
+		if b.window != nil {
+			return 0
+		}
 		start := len(b.snapshot.Scrollback)
 		if start < 0 {
 			start = 0
@@ -445,6 +442,9 @@ func (b copyModeBuffer) viewportEnd(offset int) int {
 		return 0
 	}
 	if offset <= 0 {
+		if b.window != nil {
+			return minInt(totalRows, maxInt(1, b.height))
+		}
 		end := len(b.snapshot.Scrollback) + maxInt(1, b.height)
 		if end > totalRows {
 			end = totalRows
@@ -463,41 +463,6 @@ func (b copyModeBuffer) viewportEnd(offset int) int {
 
 func (b copyModeBuffer) maxViewTopRow() int {
 	return maxInt(0, b.totalRows()-maxInt(1, b.height))
-}
-
-func snapshotFromHistoryWindow(window historyview.HistoryWindow) *protocol.Snapshot {
-	if strings.TrimSpace(window.TerminalID) == "" {
-		return nil
-	}
-	rows := make([][]protocol.Cell, 0, len(window.Rows))
-	timestamps := make([]time.Time, 0, len(window.Rows))
-	rowKinds := make([]string, 0, len(window.Rows))
-	wrapped := make([]bool, 0, len(window.Rows))
-	ownership := make([]string, 0, len(window.Rows))
-	for _, row := range window.Rows {
-		rows = append(rows, row.Cells.DecodeCells())
-		timestamps = append(timestamps, row.Timestamp)
-		rowKinds = append(rowKinds, string(row.Kind))
-		wrapped = append(wrapped, row.Wrapped)
-		ownership = append(ownership, string(row.Kind))
-	}
-	return &protocol.Snapshot{
-		TerminalID:             window.TerminalID,
-		Size:                   window.Size,
-		ScrollbackTotal:        window.TotalRows,
-		ScrollbackLogicalTotal: window.TotalLines,
-		ScrollbackLoadedRows:   window.LoadedRows,
-		ScrollbackHasMore:      window.HasMore,
-		Screen:                 protocol.ScreenData{Cells: rows},
-		ScreenTimestamps:       timestamps,
-		ScreenRowKinds:         rowKinds,
-		ScreenWrapped:          wrapped,
-		ScreenOwnership:        ownership,
-		HistoryGeneration:      window.Generation,
-		ScrollbackFirstRowID:   window.FirstBoundaryID,
-		ScrollbackLastRowID:    window.LastBoundaryID,
-		Modes:                  protocol.TerminalModes{AutoWrap: true},
-	}
 }
 
 func (b copyModeBuffer) windowToken() string {

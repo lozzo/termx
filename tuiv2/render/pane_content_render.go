@@ -57,8 +57,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	}
 	drawTerminalSourceWithPlacementAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, resolved.contentOffsetX, resolved.contentOffsetY, entry.Theme, resolved.metrics)
 	if entry.CopyModeActive {
-		copyMode := entry.CopyMode
-		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, copyMode.CursorRow, copyMode.CursorCol, copyMode.CursorLogicalLine, copyMode.CursorLogicalCol, copyMode.ViewTopRow, copyMode.MarkSet, copyMode.MarkRow, copyMode.MarkCol, copyMode.MarkLogicalLine, copyMode.MarkLogicalCol, resolved.contentOffsetX, resolved.contentOffsetY)
+		drawCopyModeOverlay(canvas, contentRect, entry.CopyMode, resolved.snapshot, entry.Theme, resolved.contentOffsetX, resolved.contentOffsetY)
 	}
 	if resolved.terminalState == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -198,15 +197,25 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 		}
 	}
 	resolved.source = renderSource(resolved.snapshot, resolved.surface)
+	if entry.CopyModeActive {
+		if copySource := copyModeProjectionSource(entry.CopyMode, resolved.contentRect.H); copySource != nil {
+			resolved.source = copySource
+		}
+	}
 	resolved.metrics = entry.Metrics
-	if resolved.metrics == (renderTerminalMetrics{}) || resolved.snapshot != entry.Snapshot || resolved.surface != entry.Surface {
+	if entry.CopyModeActive && entry.CopyMode.Projection != nil {
+		resolved.metrics = terminalExtentProfileForSource(resolved.source).Metrics
+	} else if resolved.metrics == (renderTerminalMetrics{}) || resolved.snapshot != entry.Snapshot || resolved.surface != entry.Surface {
 		resolved.metrics = terminalExtentProfileCached(resolved.snapshot, resolved.surface, entry.SurfaceVersion).Metrics
 	}
 	resolved.renderOffset = entry.ScrollOffset
 	resolved.contentOffsetX = clampTerminalContentOffset(entry.ContentOffsetX, resolved.contentRect.W, resolved.metrics.Cols)
 	resolved.contentOffsetY = clampTerminalContentOffset(entry.ContentOffsetY, resolved.contentRect.H, resolved.metrics.Rows)
 	if entry.CopyModeActive {
-		resolved.renderOffset = scrollOffsetForViewportTop(resolved.snapshot, resolved.contentRect.H, entry.CopyMode.ViewTopRow)
+		resolved.renderOffset = scrollOffsetForCopyMode(entry.CopyMode, resolved.snapshot, resolved.contentRect.H, entry.CopyMode.ViewTopRow)
+		if entry.CopyMode.Projection != nil {
+			resolved.renderOffset = 0
+		}
 		resolved.contentOffsetX = 0
 		resolved.contentOffsetY = 0
 	}

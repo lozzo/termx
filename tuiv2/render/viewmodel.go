@@ -1,6 +1,8 @@
 package render
 
 import (
+	"time"
+
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -81,6 +83,36 @@ type RenderCopyModeVM struct {
 	MarkLogicalLine   int
 	MarkLogicalCol    int
 	Snapshot          *protocol.Snapshot
+	Projection        *RenderCopyModeProjectionVM
+}
+
+type RenderCopyModeProjectionVM struct {
+	TerminalID      string
+	Token           string
+	Generation      uint64
+	Size            protocol.Size
+	Rows            []RenderCopyModeProjectionRowVM
+	Lines           []RenderCopyModeProjectionLineVM
+	TotalRows       int
+	TotalLines      int
+	HasMore         bool
+	FirstBoundaryID uint64
+	LastBoundaryID  uint64
+}
+
+type RenderCopyModeProjectionRowVM struct {
+	Cells     []protocol.Cell
+	Timestamp time.Time
+	Kind      string
+	Wrapped   bool
+}
+
+type RenderCopyModeProjectionLineVM struct {
+	StartRow      int
+	EndRow        int
+	LogicalLineID uint64
+	ClippedBefore bool
+	ClippedAfter  bool
 }
 
 type RenderFloatingDragPreviewVM struct {
@@ -346,6 +378,6 @@ func VisibleStateFromRenderVM(vm RenderVM) VisibleRenderState {
 		ExitedPaneSelectionIndex:   vm.Body.ExitedSelection.Index,
 		PaneSnapshotOverridePaneID: vm.Body.SnapshotOverride.PaneID,
 		PaneSnapshotOverride:       vm.Body.SnapshotOverride.Snapshot,
-		CopyMode:                  copyMode,
+		CopyMode:                   copyMode,
 	}
 }

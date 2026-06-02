@@ -121,26 +121,28 @@ type renderCopyModeKey struct {
 	MarkLogicalLine   int
 	MarkLogicalCol    int
 	Snapshot          *protocol.Snapshot
+	ProjectionToken   string
+	ProjectionSig     uint64
 }
 
 type paneContentKey struct {
-	TerminalID                string
-	Snapshot                  *protocol.Snapshot
-	SurfaceVersion            uint64
-	Name                      string
-	State                     string
-	ThemeBG                   string
-	TerminalKnown             bool
-	SharedLeft                bool
-	SharedTop                 bool
-	ScrollOffset              int
-	ContentOffsetX            int
-	ContentOffsetY            int
-	EmptyActionSelected       int
-	ExitedActionSelected      int
-	ExitedActionPulse         bool
-	CopyModeActive            bool
-	CopyMode                  RenderCopyModeVM
+	TerminalID           string
+	Snapshot             *protocol.Snapshot
+	SurfaceVersion       uint64
+	Name                 string
+	State                string
+	ThemeBG              string
+	TerminalKnown        bool
+	SharedLeft           bool
+	SharedTop            bool
+	ScrollOffset         int
+	ContentOffsetX       int
+	ContentOffsetY       int
+	EmptyActionSelected  int
+	ExitedActionSelected int
+	ExitedActionPulse    bool
+	CopyModeActive       bool
+	CopyMode             renderCopyModeKey
 }
 
 func NewCoordinator(fn VisibleStateFn) *Coordinator {
@@ -378,20 +380,7 @@ func renderVMKeyForVM(vm RenderVM) renderVMKey {
 				Rect:     vm.Body.FloatingDragPreview.Rect,
 				Snapshot: vm.Body.FloatingDragPreview.Snapshot,
 			},
-			CopyMode: renderCopyModeKey{
-				PaneID:            copyMode.PaneID,
-				CursorRow:         copyMode.CursorRow,
-				CursorCol:         copyMode.CursorCol,
-				CursorLogicalLine: copyMode.CursorLogicalLine,
-				CursorLogicalCol:  copyMode.CursorLogicalCol,
-				ViewTopRow:        copyMode.ViewTopRow,
-				MarkSet:           copyMode.MarkSet,
-				MarkRow:           copyMode.MarkRow,
-				MarkCol:           copyMode.MarkCol,
-				MarkLogicalLine:   copyMode.MarkLogicalLine,
-				MarkLogicalCol:    copyMode.MarkLogicalCol,
-				Snapshot:          copyMode.Snapshot,
-			},
+			CopyMode:     renderCopyModeKeyForVM(copyMode),
 			CopyModesSig: renderCopyModesSignature(vm.Body.CopyModes),
 		},
 	}
@@ -419,10 +408,83 @@ func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
 			strconv.Itoa(copyMode.MarkLogicalLine),
 			strconv.Itoa(copyMode.MarkLogicalCol),
 			strconv.FormatUint(uint64(copyModeSnapshotKey(copyMode.Snapshot)), 16),
+			copyModeProjectionToken(copyMode.Projection),
+			strconv.FormatUint(copyModeProjectionSignature(copyMode.Projection), 16),
 		}, "\x1e"))
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, "\x1f")
+}
+
+func renderCopyModeKeyForVM(copyMode RenderCopyModeVM) renderCopyModeKey {
+	return renderCopyModeKey{
+		PaneID:            copyMode.PaneID,
+		CursorRow:         copyMode.CursorRow,
+		CursorCol:         copyMode.CursorCol,
+		CursorLogicalLine: copyMode.CursorLogicalLine,
+		CursorLogicalCol:  copyMode.CursorLogicalCol,
+		ViewTopRow:        copyMode.ViewTopRow,
+		MarkSet:           copyMode.MarkSet,
+		MarkRow:           copyMode.MarkRow,
+		MarkCol:           copyMode.MarkCol,
+		MarkLogicalLine:   copyMode.MarkLogicalLine,
+		MarkLogicalCol:    copyMode.MarkLogicalCol,
+		Snapshot:          copyMode.Snapshot,
+		ProjectionToken:   copyModeProjectionToken(copyMode.Projection),
+		ProjectionSig:     copyModeProjectionSignature(copyMode.Projection),
+	}
+}
+
+func copyModeProjectionToken(projection *RenderCopyModeProjectionVM) string {
+	if projection == nil {
+		return ""
+	}
+	return projection.Token
+}
+
+func copyModeProjectionSignature(projection *RenderCopyModeProjectionVM) uint64 {
+	if projection == nil {
+		return 0
+	}
+	hash := fnvOffset64
+	hash = fnvMixString(hash, projection.TerminalID)
+	hash = fnvMixString(hash, projection.Token)
+	hash = fnvMixUint64(hash, projection.Generation)
+	hash = fnvMixUint64(hash, uint64(projection.Size.Cols))
+	hash = fnvMixUint64(hash, uint64(projection.Size.Rows))
+	hash = fnvMixUint64(hash, uint64(len(projection.Rows)))
+	hash = fnvMixUint64(hash, uint64(len(projection.Lines)))
+	hash = fnvMixUint64(hash, uint64(projection.TotalRows))
+	hash = fnvMixUint64(hash, uint64(projection.TotalLines))
+	hash = fnvMixBool(hash, projection.HasMore)
+	hash = fnvMixUint64(hash, projection.FirstBoundaryID)
+	hash = fnvMixUint64(hash, projection.LastBoundaryID)
+	for index := range projection.Rows {
+		hash = fnvMixUint64(hash, copyModeProjectionRowSignature(projection, index))
+	}
+	for _, line := range projection.Lines {
+		hash = fnvMixInt64(hash, int64(line.StartRow))
+		hash = fnvMixInt64(hash, int64(line.EndRow))
+		hash = fnvMixUint64(hash, line.LogicalLineID)
+		hash = fnvMixBool(hash, line.ClippedBefore)
+		hash = fnvMixBool(hash, line.ClippedAfter)
+	}
+	return hash
+}
+
+func copyModeProjectionRowSignature(projection *RenderCopyModeProjectionVM, rowIndex int) uint64 {
+	if projection == nil || rowIndex < 0 || rowIndex >= len(projection.Rows) {
+		return fnvMixUint64(fnvOffset64, 0)
+	}
+	row := projection.Rows[rowIndex]
+	hash := fnvOffset64
+	hash = fnvMixUint64(hash, uint64(rowIndex+1))
+	hash = fnvMixString(hash, projection.Token)
+	hash = fnvMixUint64(hash, projection.Generation)
+	hash = fnvMixString(hash, row.Kind)
+	hash = fnvMixBool(hash, row.Wrapped)
+	hash = fnvMixInt64(hash, row.Timestamp.UnixNano())
+	return hashProtocolRow(hash, row.Cells)
 }
 
 func copyModeSnapshotKey(snapshot *protocol.Snapshot) uintptr {

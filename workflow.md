@@ -383,7 +383,7 @@ TUI store 至少表达：
 - 已把 `tuiv2/historyview` store/source 注入 `tuiv2/app` model 构造路径；当前只是持有 authoritative history 依赖，尚未接入 copy mode 与滚动行为。
 - 已修正 core `HistoryWindow.BeforeOffset` 响应语义：返回窗口后可继续请求 older window 的 before cursor，而不是简单回显本次请求 offset。
 - 已在 `tuiv2/app` 新增 authoritative history window 加载消息路径，支持 latest replace 请求、older prepend 请求、pending token 记录、错误清理与通过 `historyview.Store` 接纳窗口；当前尚未由 copy mode 与滚动行为触发。
-- 已让 `tuiv2/app` copy mode buffer 在已有 authoritative history window 时优先使用 `historyview.Store`，并以 `HistoryWindow.Lines` 作为逻辑行边界；当前 render 仍通过临时 snapshot 投影兼容旧渲染接口，鼠标滚轮/page up/down 触发加载仍未接入。
+- 已让 `tuiv2/app` copy mode buffer 在已有 authoritative history window 时优先使用 `historyview.Store`，并以 `HistoryWindow.Lines` 作为逻辑行边界；render 已改为直接消费 render-native authoritative projection，不再通过 `snapshotFromHistoryWindow` 把权威窗口伪装成 `protocol.Snapshot`。
 - 已将 `tuiv2/app` 鼠标滚轮进入 copy mode 接到 authoritative history window latest replace 请求，并将 copy mode page up / half page up / top 的顶部边界接到 older prepend 请求。
 - 已将 `tuiv2/app` copy mode 连续鼠标上滚的顶部边界接到 authoritative history window older prepend 请求；只有移动前已经处于 authoritative window 顶部时才触发 older，不用本地深度或 snapshot totals 推断。
 - 已补齐 `tuiv2/app` copy mode page down / bottom 的 authoritative window harness，固定为只在当前 authoritative window 内移动并且不触发 older、本地 scrollback 或 snapshot totals 推断；如果后续需要 latest replace，必须基于明确 stale 或底部刷新信号实现。
@@ -401,5 +401,5 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 中 copy mode page/halfpage 与 copy mode top/exit 依赖 frozen snapshot + 本地 pane viewport 的旧测试标记为待 authoritative history window older prepend / 交互态清理重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中正常模式 scroll up/down 依赖本地 pane viewport offset 的旧测试基准移除或标记为待 authoritative history window 重写，不再作为新模型滚动回归基准。
 - 当前仍不是完整 logical-line based history。
-- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action 与 selection clipped span 约束已能消费 authoritative history window，但仍需继续审计并清理残留旧 snapshot truth 入口与临时 render projection。
-- 下一步继续切片六：继续收敛剩余旧 snapshot truth 入口与临时 render projection；不直接修补旧滚动逻辑。
+- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束与 copy mode render 均已能消费 authoritative history window，但仍需继续审计并清理残留旧 snapshot truth 入口。
+- 下一步继续切片六：继续收敛剩余旧 snapshot truth 入口；不直接修补旧滚动逻辑。
