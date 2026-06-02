@@ -640,7 +640,7 @@ func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedGeneration(t *testing
 	}
 }
 
-func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) {
+func TestTerminalGridRecoveredLiveTailRejectsMismatchedReclaimedLogicalLineID(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	if err := store.appendRows([]terminalGridRow{
@@ -675,6 +675,46 @@ func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("write live tail metadata: %v", err)
 	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected reclaimed logical line id mismatch to be rejected")
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("aa"), wrapped: true},
+		{cells: localVTermCellsFromString("bb"), wrapped: false},
+	}); err != nil {
+		t.Fatalf("append persisted rows: %v", err)
+	}
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:         1,
+			StartRow:   0,
+			EndRow:     1,
+			RowIDKnown: true,
+			FirstRowID: 0,
+			LastRowID:  1,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+			Generation: generation,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
 
 	tail, ok := store.recoveredLiveTailFromMetadata()
 	if !ok {
@@ -687,7 +727,7 @@ func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) 
 	if segment.origin != terminalLiveTailOriginReclaimed || segment.firstRowID != 0 || segment.lastRowID != 1 {
 		t.Fatalf("expected recovered row coordinates from metadata, got %#v", segment)
 	}
-	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{99, 99}) {
+	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{1, 1}) {
 		t.Fatalf("expected recovered logical line ids from metadata, got %#v", got)
 	}
 }
