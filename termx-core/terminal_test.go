@@ -2953,6 +2953,21 @@ func TestTerminalProcessExitForceSealsPrimaryLiveTail(t *testing.T) {
 	if snap.HistoryGeneration == 0 {
 		t.Fatal("expected committed history generation after exit force seal")
 	}
+
+	coreViewport, err := term.combinedGridViewport(0, 10, 4, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("exit force-seal history window viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport(term.id, 0, coreViewport)
+	if got := historyWindowTrimmedRowTexts(window); !reflect.DeepEqual(got, []string{"abcd", "efgh", "ij"}) {
+		t.Fatalf("expected history window to expose sealed logical line without live-tail duplication, got %#v", got)
+	}
+	if window.LoadedRows != 3 || window.LoadedLines != 1 || window.LogicalTotal != 1 {
+		t.Fatalf("expected history window to count one sealed logical line after exit, loaded_rows=%d loaded_lines=%d total=%d", window.LoadedRows, window.LoadedLines, window.LogicalTotal)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].StartRow != 0 || window.Lines[0].EndRow != 2 || window.Lines[0].ClippedBefore || window.Lines[0].ClippedAfter {
+		t.Fatalf("expected unclipped sealed logical line span after exit, got %#v", window.Lines)
+	}
 }
 
 func TestTerminalProcessExitClearsPersistedLiveTailMetadata(t *testing.T) {
@@ -3769,6 +3784,17 @@ func historyWindowRowTexts(window *HistoryWindow) []string {
 	out := make([]string, 0, len(window.Rows))
 	for _, row := range window.Rows {
 		out = append(out, rowTextFromHistoryRow(row))
+	}
+	return out
+}
+
+func historyWindowTrimmedRowTexts(window *HistoryWindow) []string {
+	if window == nil {
+		return nil
+	}
+	out := make([]string, 0, len(window.Rows))
+	for _, row := range window.Rows {
+		out = append(out, strings.TrimRight(rowTextFromHistoryRow(row), " "))
 	}
 	return out
 }
