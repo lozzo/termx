@@ -4,6 +4,8 @@
 
 本文件必须保持全中文。不得在聊天、临时说明或局部注释里替代本文件定义工作范围。
 
+本文件只记录当前工作范围、任务顺序、测试准入与进展状态。core-v2 的设计说明不在本文件内展开，统一以根目录 `core-v2-architecture.md` 为独立架构文档；如果本文件的任务表述与该架构文档的技术设计细节冲突，先更新两者使其一致，再进入实现。
+
 ## 1. 当前唯一目标
 
 当前唯一目标是：停止在旧 `termx-core/` 与 `tuiv2/` 上继续原地修补，改为在新目录 `termx-core-v2/` 与 `termx-tui-v3/` 中重新落地以 logical line 为基本单位的终端历史模型。
@@ -16,8 +18,7 @@
 - 历史的基本单位是 logical line，不是 visual row，不是 wrapped row，不是 snapshot scrollback。
 - `persisted history store` 只存已封口的 logical line。
 - `mutable live tail` 保存当前仍可被终端指令修改的尾部 logical line，包括 open line、sealed line、从 persisted history reclaim 回来的 sealed suffix。
-- core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨架构：历史记录必须按 logical line 记录；实时当前屏幕、snapshot、grid viewport 可以继续沿用现有数据方式。
-- `LiveSurfaceTrack` 只能作为当前屏幕与实时投影来源，不产生 committed history truth。
+- core-v2 架构以根目录 `core-v2-architecture.md` 为设计基准；该文档说明重构原因、目标、双轨架构、硬约束、风险和落地顺序。
 - `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不再本地重建历史真相。
 - copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。
 
@@ -82,16 +83,8 @@
 
 - `persisted history store` 是已封口 logical line 的存储层。
 - `mutable live tail` 是当前可变真相层。
-- `screen projection` 在历史侧只负责把 logical line history 投影成 authoritative history window。
-- 实时当前屏幕、snapshot、grid viewport 属于 `LiveSurfaceTrack`，本阶段不强制改成由 logical line store 生成；但它们不得作为 committed history truth。
-
-### 3.2.1 core 双轨架构
-
-- `HistoryTrack` 是 core-v2 的 authoritative history truth，负责 logical line store、persisted history store、mutable live tail、history window、older/latest cursor、token 与 generation。
-- `LiveSurfaceTrack` 负责当前屏幕、实时 snapshot、grid viewport 与兼容实时投影，可以沿用现有数据方式。
-- 两条轨道只能通过显式历史语义事件交互，不允许 `HistoryTrack` 从 snapshot、grid viewport、visual rows 或 wrapped rows 反推 history truth。
-- `HistoryTrack` 可以向 `LiveSurfaceTrack` 暴露当前需要显示的历史窗口投影，但不得依赖 `LiveSurfaceTrack` 反写 committed history。
-- `termx-tui-v3` 的 copy mode 和历史滚动只能消费 `HistoryTrack` 产生的 authoritative history window，不能消费 `LiveSurfaceTrack` 的 snapshot/grid viewport 作为 history truth。
+- 历史侧 projection 负责把 logical line history 投影成 authoritative history window。
+- 实时当前屏幕、snapshot、grid viewport 的处理边界以 `core-v2-architecture.md` 为准。
 
 ### 3.3 可变尾部
 
@@ -142,21 +135,6 @@
 - older window 使用 prepend。
 - stale response guard 使用 core 返回的 token、generation、logical line 边界，不使用本地深度计数。
 
-### 3.8 HistoryTrack 输入事件
-
-`LiveSurfaceTrack` 与外部终端事件进入 `HistoryTrack` 时，只能使用历史语义事件。禁止把 snapshot、grid viewport、visual row 切片、wrapped row 序列作为历史 truth 输入。
-
-HistoryTrack 至少需要表达：
-
-- `write-primary-cells`：写入 primary 当前 open logical line 的 cell runs 或 cells。
-- `seal-logical-line`：硬换行、滚出可变区或明确封口边界导致 logical line sealed。
-- `mutate-live-tail`：光标移动、覆写、erase、clear 局部可变内容等对仍可变 logical line 的修改。
-- `reclaim-persisted-suffix`：grow resize 或其他可变性恢复场景按完整 logical line reclaim persisted suffix。
-- `hide-live-tail`：shrink resize 把当前 screen 中不可见但仍可变的 logical lines 转入 hidden live tail。
-- `force-seal-all`：process exit 时强制封口 primary mutable live tail 并提交 persisted history。
-- `switch-alt-screen`：进入/退出 alt-screen 时冻结/恢复 primary history，不把 alt 内容写入 primary history。
-- `non-history-boundary`：attach、reattach、bootstrap、recovery、full replace、clear screen、resize 等非历史创建事件只影响状态边界，不凭空创建 persisted history。
-
 ## 4. 必删代码清单
 
 本轮不保留旧实现兼容。下面列出的代码形态如果仍存在，必须删除或改写，不能继续修补。
@@ -190,17 +168,6 @@ HistoryTrack 至少需要表达：
 - 不得把旧 TUI 测试语义作为 v3 回归基准。
 
 ## 5. 新模型必须提供的对象
-
-### 5.0 core-v2 双轨对象
-
-core-v2 必须显式区分：
-
-- `HistoryTrack`：历史真相轨道，保存 logical-line-first history。
-- `LiveSurfaceTrack`：实时当前屏幕轨道，保存当前 screen、snapshot、grid viewport 或兼容实时投影数据。
-- `HistoryEvent`：两轨之间唯一允许的历史语义接口。
-- `HistoryWindow`：HistoryTrack 生成的 authoritative history projection。
-
-`LiveSurfaceTrack` 的内部数据可以继续是当前 row/snapshot/grid viewport 风格；但它不得向 `HistoryTrack` 提供 history truth，也不得成为 TUI copy mode 的 history source。
 
 ### 5.1 core-v2 logical line store
 
@@ -299,7 +266,7 @@ TUI store 至少表达：
 - logical line ids
 - row 到 line 的映射
 - grow/shrink 前后不会创造新 history
-- projection 只作为 authoritative history window 输出，不要求替换 LiveSurfaceTrack 的实时 snapshot/grid viewport
+- projection 只作为 authoritative history window 输出，实时投影边界以 `core-v2-architecture.md` 为准
 
 ### 6.3 protocol harness
 
@@ -343,7 +310,7 @@ TUI store 至少表达：
 
 - 新增 `termx-core-v2/` Go module，并加入 `go.work`。
 - 新增 `termx-tui-v3/` Go module，并加入 `go.work`。
-- 新建 core-v2 与 tui-v3 的最小包结构、`HistoryTrack + LiveSurfaceTrack` 双轨 contract 草案和空实现。
+- 新建 core-v2 与 tui-v3 的最小包结构、公共 contract 草案和空实现。
 - 旧 `termx-core/`、`tuiv2/` 只作为参考，不在本切片继续修补。
 - 本切片必须能通过新模块最小测试。
 
@@ -352,8 +319,8 @@ TUI store 至少表达：
 - 从零实现 logical-line-first store，不从旧 visual-row store 迁移内部结构。
 - 给 logical line 分配 stable id。
 - 把 open/sealed/origin/dirty/generation 纳入核心结构。
-- persisted history store、mutable live tail、HistoryWindow projection 在 HistoryTrack 内结构上分离。
-- LiveSurfaceTrack 可以继续保留实时 snapshot/grid viewport 风格数据，不参与 committed history truth。
+- persisted history store、mutable live tail、history window projection 在历史侧结构上分离。
+- 实时 surface 边界以 `core-v2-architecture.md` 为准，不参与 committed history truth。
 - 通过 core-v2 logical line harness。
 
 ### 切片三：core-v2 HistoryWindow projection 从 logical line 生成
@@ -364,7 +331,7 @@ TUI store 至少表达：
 - 支持不同 cols 下重投影。
 - 支持 clipped before/after。
 - 支持 row 到 logical line id 映射。
-- 不要求替换实时 LiveSurfaceTrack 的 screen/snapshot/grid viewport 投影。
+- 不要求替换实时 screen/snapshot/grid viewport 投影，具体边界以 `core-v2-architecture.md` 为准。
 - 通过 projection harness。
 
 ### 切片四：core-v2 history.window contract 完整化
@@ -623,7 +590,7 @@ TUI store 至少表达：
 - 已将 core persisted/live-tail logical line payload 的 cells 与 wrapped 行视图改为从显式 row segment 对象派生，避免 payload 内继续并行维护 cells、wrapped 与 segment 三套读取路径。
 - 已将 core live-tail sidecar metadata 恢复路径接入 logical line payload 入口：恢复端不再直接按 `StartRow` / `EndRow` 手切 live rows，而是通过 record payload 校验范围、payload metadata 并物化 segment rows。
 - 已决策停止继续在旧 `termx-core/` 与 `tuiv2/` 上做原地 logical-line 修补；旧目录从当前切片起只作为参考范围，新的主线改为 `termx-core-v2/` 与 `termx-tui-v3/`。
-- 已决策 core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨方案：当前重构只强制历史记录按照 logical line 记录，实时当前屏幕、snapshot、grid viewport 可以继续沿用现有数据方式；两轨只能通过显式历史语义事件交互，禁止由 snapshot/wrapped/visual row 反推 history truth。
+- 已新增根目录 `core-v2-architecture.md` 作为 core-v2 历史模型独立设计文档，详细说明重构原因、目标、架构、硬约束、风险与落地顺序；该文档已完成子 Agent 两轮审核并按高/中风险意见收敛，下一步等待人工确认后再作为实现基准。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化；旧 `termx-core/` 与 `tuiv2/` 中已经积累的补丁不再继续作为主线推进。
 - 下一步创建 `termx-core-v2/` 与 `termx-tui-v3/` 最小模块骨架，先落地清晰 contract、logical-line store 数据结构与 fake-source harness；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
