@@ -1614,6 +1614,49 @@ func TestServerHistoryWindowLatestLimitKeepsReflowedSourceRowBoundary(t *testing
 	}
 }
 
+func TestServerHistoryWindowOlderLimitKeepsReflowedSourceRowBoundary(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "projection-older-limit-reflow-source-row")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("abcdef"), rowKind: "line0", wrapped: false},
+		{cells: localVTermCellsFromString("latest"), rowKind: "line1", wrapped: false},
+	})
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(2, 2))
+	window, err := srv.HistoryWindow(t.Context(), "projection-older-limit-reflow-source-row", HistoryWindowOptions{BeforeOffset: 1, Limit: 1, Cols: 2})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if window.Op != HistoryWindowPrepend {
+		t.Fatalf("expected older window to be prepend, got %q", window.Op)
+	}
+	if got := historyRowsToStrings(window.Rows); !reflect.DeepEqual(got, []string{"ef"}) {
+		t.Fatalf("expected older limit to keep only projected source row tail, got %#v", got)
+	}
+	if window.FirstRowID != 0 || window.LastRowID != 0 {
+		t.Fatalf("expected row boundary to stay on the older source persisted row, got %d..%d", window.FirstRowID, window.LastRowID)
+	}
+	if window.BeforeOffset != 2 || window.LoadedRows != 2 {
+		t.Fatalf("expected older cursor to reach two committed source rows, before=%d loaded=%d", window.BeforeOffset, window.LoadedRows)
+	}
+	if window.LoadedLines != 0 || window.LogicalTotal != 2 || window.TotalRows != 5 || !window.HasMore {
+		t.Fatalf("expected clipped older reflowed source row to preserve logical total and pagination signal, loaded=%d total=%d rows=%d has_more=%v", window.LoadedLines, window.LogicalTotal, window.TotalRows, window.HasMore)
+	}
+	if len(window.Lines) != 1 {
+		t.Fatalf("expected one clipped projected logical line span, got %#v", window.Lines)
+	}
+	span := window.Lines[0]
+	if span.StartRow != 0 || span.EndRow != 0 || span.RowKind != "line0" || !span.ClippedBefore || span.ClippedAfter {
+		t.Fatalf("expected older limit to mark projected source row tail clipped-before only, got %#v", span)
+	}
+}
+
 func historyRowsToStrings(rows []HistoryRow) []string {
 	if len(rows) == 0 {
 		return nil
