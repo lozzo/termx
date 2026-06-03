@@ -128,7 +128,7 @@
 | 0. 设计基线 | 完成 | `termx-core-v2/docs/`、`termx-tui-v3/docs/`、`workflow.md`、`AGENTS.md` | core-v2 与 tui-v3 架构文档存在；本文件和 `AGENTS.md` 指向新主线；旧实现只作为参考 |
 | 1. 新模块骨架 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`go.work` | 两个新 Go module 加入 workspace；建立最小包结构、空实现和 smoke tests；不依赖旧内部实现 |
 | 2. core-v2 domain 骨架 | 完成 | `termx-core-v2/` | 建立 `LogicalLine`、`LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend` 内存实现和基础 harness |
-| 3. core-v2 历史事件语义 | 待开始 | `termx-core-v2/` | 覆盖 write/seal/mutate/reset/commit/reclaim/hide/truncate/alt-screen/process-exit/resize 事件；非历史事件不创建 committed history |
+| 3. core-v2 历史事件语义 | 完成 | `termx-core-v2/` | 覆盖 write/seal/mutate/reset/commit/reclaim/hide/truncate/alt-screen/process-exit/resize 事件；非历史事件不创建 committed history |
 | 4. core-v2 HistoryWindow 投影 | 待开始 | `termx-core-v2/` | 从 logical lines 生成 visual rows、line spans、clipping、token、generation、cursor、latest replace、older prepend |
 | 5. protocol 契约联动 | 待开始 | `termx-proto/`、`internal/protocol/`、`termx-core-v2/` | 按需扩展 `history.window` contract；legacy snapshot/grid viewport 明确只作为实时兼容投影 |
 | 6. tui-v3 runtime 骨架 | 待开始 | `termx-tui-v3/` | 建立自有 `Msg`、`Effect`、`AppRuntime`、`EffectRunner`、`TerminalHost` fake、`FrameSink` contract 和 harness |
@@ -137,7 +137,7 @@
 | 9. services 与集成 | 待开始 | `termx-tui-v3/`、受限联动范围 | core client、terminal service、session、clipboard、真实 adapter 接入；fake 与最小 e2e 通过 |
 | 10. 收口与迁移入口 | 待开始 | 受限联动范围 | 新路径可运行；必要 CLI/adapter 入口接入；旧 helper/fixture 只在明确不再需要时删除 |
 
-当前下一步：执行切片 3。
+当前下一步：执行切片 4。
 
 ## 6. 必做 harness
 
@@ -225,5 +225,6 @@
 - 当前分支主线已切换到 `termx-core-v2/` 与 `termx-tui-v3/`。
 - 切片 1 已完成：`termx-core-v2/` 与 `termx-tui-v3/` 已建立 Go module、最小包结构、空实现和 smoke tests，并已加入 `go.work`。
 - 切片 2 已完成：`termx-core-v2/history` 已建立 logical line、单一 store、committed index、mutable frontier、内存 storage backend 和基础 harness。
+- 切片 3 已完成：`termx-core-v2/history` 已建立显式历史事件入口，覆盖 write、seal、mutate、reset、commit、reclaim、hide、truncate、alt-screen、process-exit、resize 与 non-history boundary harness。
 - 旧 `termx-core/` 与 `tuiv2/` 的历史修补进度不再作为当前主线状态；如需查阅只能通过 git 历史或只读参考。
-- 下一步执行切片 3：补齐 core-v2 历史事件语义。
+- 下一步执行切片 4：建立 core-v2 HistoryWindow 投影。

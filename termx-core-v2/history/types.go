@@ -117,6 +117,24 @@ func validateLine(line LogicalLine) error {
 	return nil
 }
 
+func normalizeLine(line LogicalLine) (LogicalLine, error) {
+	if line.ID == 0 {
+		return LogicalLine{}, ErrInvalidLineID
+	}
+	seal, err := normalizeSeal(line.Seal)
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	residency, err := normalizeResidency(line.Residency)
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	line.Seal = seal
+	line.Residency = residency
+	line.Cells = cloneCells(line.Cells)
+	return line, nil
+}
+
 func cloneCells(cells []Cell) []Cell {
 	if len(cells) == 0 {
 		return nil

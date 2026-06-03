@@ -1,0 +1,399 @@
+package history
+
+// HistoryTrack 持有一个 primary terminal history stream 的 authoritative
+// logical-line 状态。
+type HistoryTrack struct {
+	store     LogicalLineStore
+	committed *CommittedHistoryIndex
+	frontier  *MutableFrontier
+
+	activeLine LogicalLineID
+	altScreen  bool
+	generation Generation
+}
+
+func NewHistoryTrack() *HistoryTrack {
+	return NewHistoryTrackWith(NewMemoryLogicalLineStore(nil), NewCommittedHistoryIndex(), NewMutableFrontier())
+}
+
+func NewHistoryTrackWith(
+	store LogicalLineStore,
+	committed *CommittedHistoryIndex,
+	frontier *MutableFrontier,
+) *HistoryTrack {
+	if store == nil {
+		store = NewMemoryLogicalLineStore(nil)
+	}
+	if committed == nil {
+		committed = NewCommittedHistoryIndex()
+	}
+	if frontier == nil {
+		frontier = NewMutableFrontier()
+	}
+	return &HistoryTrack{
+		store:     store,
+		committed: committed,
+		frontier:  frontier,
+	}
+}
+
+func (track *HistoryTrack) Apply(event HistoryEvent) error {
+	switch event.Kind {
+	case EventWritePrimaryCells:
+		return track.writePrimaryCells(event.Cells)
+	case EventSealLogicalLine:
+		return track.sealActiveLine()
+	case EventMutateFrontier:
+		return track.mutateFrontierLine(event)
+	case EventResetFrontier:
+		return track.resetFrontier()
+	case EventCommitFrontier:
+		return track.commitFrontier(false)
+	case EventForceCommitFrontier:
+		return track.commitFrontier(true)
+	case EventReclaimCommittedSuffix:
+		return track.reclaimCommittedSuffix(event)
+	case EventHideFrontier:
+		return track.hideFrontier(event)
+	case EventTruncateCommittedHistory:
+		return track.truncateCommittedHistory(event)
+	case EventSwitchAltScreen:
+		track.switchAltScreen(event.EnterAltScreen)
+		return nil
+	case EventNonHistoryBoundary:
+		track.bumpGeneration()
+		return nil
+	case EventResize:
+		return track.resize(event)
+	default:
+		return ErrInvalidEventKind
+	}
+}
+
+func (track *HistoryTrack) Line(id LogicalLineID) (LogicalLine, bool) {
+	return track.store.Line(id)
+}
+
+func (track *HistoryTrack) LineIDs() []LogicalLineID {
+	return track.store.LineIDs()
+}
+
+func (track *HistoryTrack) CommittedIDs() []LogicalLineID {
+	return track.committed.IDs()
+}
+
+func (track *HistoryTrack) FrontierIDs() []LogicalLineID {
+	return track.frontier.IDs()
+}
+
+func (track *HistoryTrack) HiddenFrontierIDs() []LogicalLineID {
+	return track.frontier.HiddenIDs()
+}
+
+func (track *HistoryTrack) Generation() Generation {
+	return track.generation
+}
+
+func (track *HistoryTrack) InAltScreen() bool {
+	return track.altScreen
+}
+
+func (track *HistoryTrack) ActiveLineID() LogicalLineID {
+	return track.activeLine
+}
+
+func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
+	if track.altScreen || len(cells) == 0 {
+		return nil
+	}
+	line, err := track.ensureWritableActiveLine()
+	if err != nil {
+		return err
+	}
+	line.Cells = append(line.Cells, cloneCells(cells)...)
+	line.Dirty = true
+	line, err = track.store.ReplaceLine(line)
+	if err != nil {
+		return err
+	}
+	track.activeLine = line.ID
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
+	if track.activeLine != 0 && track.frontier.Contains(track.activeLine) {
+		line, ok := track.store.Line(track.activeLine)
+		if ok && line.Seal == SealStateOpen {
+			return line, nil
+		}
+	}
+	line, err := track.store.CreateLine(CreateLineRequest{
+		Seal:      SealStateOpen,
+		Residency: ResidencyMemory,
+	})
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	if err := track.frontier.Add(line.ID); err != nil {
+		return LogicalLine{}, err
+	}
+	track.activeLine = line.ID
+	return line, nil
+}
+
+func (track *HistoryTrack) sealActiveLine() error {
+	if track.altScreen || track.activeLine == 0 {
+		return nil
+	}
+	line, ok := track.store.Line(track.activeLine)
+	if !ok {
+		track.activeLine = 0
+		return nil
+	}
+	if line.Seal == SealStateSealed {
+		track.activeLine = 0
+		return nil
+	}
+	line.Seal = SealStateSealed
+	if _, err := track.store.ReplaceLine(line); err != nil {
+		return err
+	}
+	track.activeLine = 0
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
+	if track.altScreen {
+		return nil
+	}
+	lineID := event.LineID
+	if lineID == 0 {
+		lineID = track.activeLine
+	}
+	if lineID == 0 {
+		return ErrInvalidLineID
+	}
+	if !track.frontier.Contains(lineID) {
+		return ErrLineNotMutable
+	}
+	line, ok := track.store.Line(lineID)
+	if !ok {
+		return ErrUnknownLine
+	}
+	line.Cells = cloneCells(event.Cells)
+	line.Dirty = true
+	line, err := track.store.ReplaceLine(line)
+	if err != nil {
+		return err
+	}
+	track.activeLine = line.ID
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) resetFrontier() error {
+	if track.altScreen {
+		return nil
+	}
+	ids := track.frontier.IDs()
+	if len(ids) == 0 {
+		track.activeLine = 0
+		return nil
+	}
+	for _, id := range ids {
+		track.frontier.Remove(id)
+		if !track.committed.Contains(id) {
+			track.store.DeleteLine(id)
+		}
+	}
+	track.activeLine = 0
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) commitFrontier(force bool) error {
+	if track.altScreen && !force {
+		return nil
+	}
+	ids := track.frontier.IDs()
+	if len(ids) == 0 {
+		return nil
+	}
+
+	changed := false
+	for _, id := range ids {
+		line, ok := track.store.Line(id)
+		if !ok {
+			return ErrUnknownLine
+		}
+		if force && line.Seal != SealStateSealed {
+			line.Seal = SealStateSealed
+			line.Dirty = true
+		}
+		if !force && line.Seal != SealStateSealed {
+			continue
+		}
+		if line.Dirty {
+			line.Dirty = false
+			if _, err := track.store.ReplaceLine(line); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if !track.committed.Contains(id) {
+			if err := track.committed.Append(id); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+		}
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) reclaimCommittedSuffix(event HistoryEvent) error {
+	ids := track.reclaimIDs(event)
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, id := range ids {
+		if !track.committed.Contains(id) {
+			return ErrLineNotCommitted
+		}
+		if _, ok := track.store.Line(id); !ok {
+			return ErrUnknownLine
+		}
+	}
+	for _, id := range ids {
+		track.committed.Remove(id)
+		if !track.frontier.Contains(id) {
+			if err := track.frontier.Add(id); err != nil {
+				return err
+			}
+		}
+		track.frontier.Reveal(id)
+		track.activeLine = id
+	}
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) reclaimIDs(event HistoryEvent) []LogicalLineID {
+	if len(event.LineIDs) > 0 {
+		return cloneLineIDs(event.LineIDs)
+	}
+	ids := track.committed.IDs()
+	if event.Count <= 0 || event.Count > len(ids) {
+		return nil
+	}
+	return cloneLineIDs(ids[len(ids)-event.Count:])
+}
+
+func (track *HistoryTrack) hideFrontier(event HistoryEvent) error {
+	ids := track.frontierTargetIDs(event)
+	if len(ids) == 0 {
+		return nil
+	}
+	changed := false
+	for _, id := range ids {
+		wasHidden := track.frontier.IsHidden(id)
+		if err := track.frontier.Hide(id); err != nil {
+			return err
+		}
+		if !wasHidden {
+			changed = true
+		}
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) frontierTargetIDs(event HistoryEvent) []LogicalLineID {
+	if len(event.LineIDs) > 0 {
+		return cloneLineIDs(event.LineIDs)
+	}
+	ids := track.frontier.IDs()
+	if event.Count <= 0 || event.Count > len(ids) {
+		return ids
+	}
+	return cloneLineIDs(ids[len(ids)-event.Count:])
+}
+
+func (track *HistoryTrack) truncateCommittedHistory(event HistoryEvent) error {
+	ids := track.truncateIDs(event)
+	if len(ids) == 0 {
+		return nil
+	}
+	changed := false
+	for _, id := range ids {
+		if !track.committed.Remove(id) {
+			continue
+		}
+		if !track.frontier.Contains(id) {
+			track.store.DeleteLine(id)
+		}
+		changed = true
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) truncateIDs(event HistoryEvent) []LogicalLineID {
+	if len(event.LineIDs) > 0 {
+		return cloneLineIDs(event.LineIDs)
+	}
+	ids := track.committed.IDs()
+	if event.Count <= 0 || event.Count >= len(ids) {
+		return ids
+	}
+	return cloneLineIDs(ids[:event.Count])
+}
+
+func (track *HistoryTrack) switchAltScreen(enter bool) {
+	if track.altScreen == enter {
+		return
+	}
+	track.altScreen = enter
+	track.bumpGeneration()
+}
+
+func (track *HistoryTrack) resize(event HistoryEvent) error {
+	before := track.generation
+	switch event.ResizeDirection {
+	case ResizeGrow:
+		if err := track.reclaimCommittedSuffix(event); err != nil {
+			return err
+		}
+	case ResizeShrink:
+		if err := track.hideFrontier(event); err != nil {
+			return err
+		}
+	case ResizeSame, "":
+		// Resize 本身不是历史创建事件，但 projection 依赖 cols，所以必须让
+		// active history window 失效。
+	default:
+		return ErrInvalidResizeDirection
+	}
+	if track.generation == before {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) bumpGeneration() {
+	track.generation++
+}

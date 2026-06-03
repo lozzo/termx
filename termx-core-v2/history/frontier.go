@@ -5,12 +5,14 @@ package history
 type MutableFrontier struct {
 	ids        []LogicalLineID
 	present    map[LogicalLineID]struct{}
+	hidden     map[LogicalLineID]struct{}
 	generation Generation
 }
 
 func NewMutableFrontier() *MutableFrontier {
 	return &MutableFrontier{
 		present: make(map[LogicalLineID]struct{}),
+		hidden:  make(map[LogicalLineID]struct{}),
 	}
 }
 
@@ -32,6 +34,7 @@ func (frontier *MutableFrontier) Remove(id LogicalLineID) bool {
 		return false
 	}
 	delete(frontier.present, id)
+	delete(frontier.hidden, id)
 	next := frontier.ids[:0]
 	for _, existing := range frontier.ids {
 		if existing != id {
@@ -49,8 +52,48 @@ func (frontier *MutableFrontier) Clear() bool {
 	}
 	frontier.ids = nil
 	frontier.present = make(map[LogicalLineID]struct{})
+	frontier.hidden = make(map[LogicalLineID]struct{})
 	frontier.bumpGeneration()
 	return true
+}
+
+func (frontier *MutableFrontier) Hide(id LogicalLineID) error {
+	if id == 0 {
+		return ErrInvalidLineID
+	}
+	if _, ok := frontier.present[id]; !ok {
+		return ErrLineNotMutable
+	}
+	if _, ok := frontier.hidden[id]; ok {
+		return nil
+	}
+	frontier.hidden[id] = struct{}{}
+	frontier.bumpGeneration()
+	return nil
+}
+
+func (frontier *MutableFrontier) Reveal(id LogicalLineID) bool {
+	if _, ok := frontier.hidden[id]; !ok {
+		return false
+	}
+	delete(frontier.hidden, id)
+	frontier.bumpGeneration()
+	return true
+}
+
+func (frontier *MutableFrontier) IsHidden(id LogicalLineID) bool {
+	_, ok := frontier.hidden[id]
+	return ok
+}
+
+func (frontier *MutableFrontier) HiddenIDs() []LogicalLineID {
+	hidden := make([]LogicalLineID, 0, len(frontier.hidden))
+	for _, id := range frontier.ids {
+		if frontier.IsHidden(id) {
+			hidden = append(hidden, id)
+		}
+	}
+	return hidden
 }
 
 func (frontier *MutableFrontier) Contains(id LogicalLineID) bool {

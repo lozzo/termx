@@ -22,7 +22,8 @@ func NewMemoryStorageBackend() *MemoryStorageBackend {
 }
 
 func (backend *MemoryStorageBackend) SaveLine(line LogicalLine) error {
-	if err := validateLine(line); err != nil {
+	line, err := normalizeLine(line)
+	if err != nil {
 		return err
 	}
 	backend.lines[line.ID] = line.Clone()
