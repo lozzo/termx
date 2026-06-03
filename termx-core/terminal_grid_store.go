@@ -617,6 +617,9 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 		}
 		records := terminalGridExplicitLogicalLineRecordsForAppendedRowsWithMigrations(appendedRefs, s.baseRowID+uint64(appendStartRow), s.generation, 0, appendedLogicalLineIDs, s.lineMigrations)
 		if len(records) > 0 {
+			records = terminalGridLogicalLineRecordsWithPayloadMetadata(records, terminalGridRowsForAppendedLogicalLineMetadata(appendedRefs, s.dir))
+		}
+		if len(records) > 0 {
 			if merged := terminalGridMergeInMemoryPersistedLineRecords(s.lineRecords, records, appendStartRow, s.rowCount); len(merged) > 0 {
 				s.lineRecords = merged
 			}
@@ -3374,6 +3377,17 @@ func terminalGridPersistedLineRecordsWithPayloadMetadata(dir string, records []t
 		return records
 	}
 	return terminalGridLogicalLineRecordsWithPayloadMetadata(records, rows)
+}
+
+func terminalGridRowsForAppendedLogicalLineMetadata(refs []terminalGridRowRef, dir string) []terminalGridRow {
+	if len(refs) == 0 || strings.TrimSpace(dir) == "" {
+		return nil
+	}
+	rows, err := readTerminalGridRows(dir, refs)
+	if err != nil {
+		return nil
+	}
+	return rows
 }
 
 func terminalGridLineMigrationsForPersistedRecords(migrations []terminalGridLineMigration, records []terminalGridLineRecordMeta) []terminalGridLineMigration {

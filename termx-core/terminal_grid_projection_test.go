@@ -2425,6 +2425,42 @@ func TestTerminalGridViewportRuntimeLineRecordCarriesPayloadRowKind(t *testing.T
 	}
 }
 
+func TestTerminalGridTempStoreRuntimeLineRecordCarriesPayloadRowKind(t *testing.T) {
+	store, err := newTerminalGridStore("", "temp-runtime-record-row-kind")
+	if err != nil {
+		t.Fatalf("new temp grid store: %v", err)
+	}
+	defer store.Close()
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 4201
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), RowKind: "line0", WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("bbbb"), RowKind: "temp-kind", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("cccc"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("dd"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("ee"), RowKind: "line2", WrappedSet: true, Wrapped: false},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{0, runtimeID, runtimeID, runtimeID, 0}); err != nil {
+		t.Fatalf("append rows with runtime logical line id: %v", err)
+	}
+
+	viewport, err := store.Viewport(1, 2, 4)
+	if err != nil {
+		t.Fatalf("temp runtime viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport("temp-runtime-record-row-kind", 1, viewport)
+	if got := historyRowsToStrings(window.Rows); !reflect.DeepEqual(got, []string{"cccc", "dd"}) {
+		t.Fatalf("expected temp runtime window to contain visible logical line tail, got %#v", got)
+	}
+	if len(window.Lines) != 1 {
+		t.Fatalf("expected one logical line span, got %#v", window.Lines)
+	}
+	span := window.Lines[0]
+	if span.RowKind != "temp-kind" || !span.ClippedBefore {
+		t.Fatalf("expected temp runtime clipped line span to inherit row kind from in-memory logical line record, got %#v", span)
+	}
+}
+
 func TestServerHistoryWindowMarksLatestLimitClippedLogicalLineBefore(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-latest-limit-clipped")
