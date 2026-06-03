@@ -133,3 +133,89 @@ func TestTerminalResizeFullReplacePreservesHiddenLiveTailAcrossRepeatedResize(t 
 		t.Fatalf("expected repeated resize full-replace to preserve previously hidden live-tail rows, got %#v", got)
 	}
 }
+
+func TestTerminalResizeFullReplaceRecoverableHiddenLiveTailUsesResizeOrigin(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "resize-recoverable-hidden-live-tail")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}},
+		localvterm.CursorState{Row: 0, Col: 4, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	term := &Terminal{
+		id:    "resize-recoverable-hidden-live-tail",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("h0"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("h1"), WrappedSet: true, Wrapped: true},
+		},
+		RequiresFullReplace: true,
+		FullReplaceReason:   "resize",
+		ResizeLiveTailRows:  0,
+	}
+	term.appendGridFromDamageLocked(damage)
+	dir := store.dir
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	metadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil {
+		t.Fatalf("read live tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 1 {
+		t.Fatalf("expected one recoverable live-tail record, got %#v", metadata.LiveRecords)
+	}
+	runtimeID := metadata.LiveRecords[0].ID
+	if metadata.LiveRecords[0].Origin != terminalLiveTailOriginResize || !metadata.LiveRecords[0].Dirty || metadata.LiveRecords[0].Generation != 0 || !terminalRuntimeLogicalLineID(runtimeID) {
+		t.Fatalf("expected dirty resize runtime live-tail record, got %#v", metadata.LiveRecords[0])
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, "resize-recoverable-hidden-live-tail")
+	if err != nil {
+		t.Fatalf("reopen grid store: %v", err)
+	}
+	defer reopened.Close()
+	tail, ok := reopened.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected resize hidden live tail to recover from metadata")
+	}
+	if len(tail.segments) != 1 {
+		t.Fatalf("expected one recovered resize segment, got %#v", tail.segments)
+	}
+	segment := tail.segments[0]
+	if segment.origin != terminalLiveTailOriginResize || segment.sealState != terminalLiveTailOpen || !segment.wrapPending {
+		t.Fatalf("expected recovered hidden segment to stay open resize tail, got %#v", segment)
+	}
+	if got := damageRowsToStrings(segment.rows); !reflect.DeepEqual(got, []string{"h0", "h1"}) {
+		t.Fatalf("expected recovered resize rows, got %#v", got)
+	}
+	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{runtimeID, runtimeID}) {
+		t.Fatalf("expected recovered resize rows to keep runtime logical line id, got %#v", got)
+	}
+
+	viewport, err := historyCombinedGridViewportFromStore(reopened, 0, 10, 4, tail)
+	if err != nil {
+		t.Fatalf("history viewport with recovered resize live tail: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport("resize-recoverable-hidden-live-tail", 0, viewport)
+	if got := historyWindowTrimmedRowTexts(window); !reflect.DeepEqual(got, []string{"h0", "h1"}) {
+		t.Fatalf("expected recovered resize live tail in latest history projection, got %#v", got)
+	}
+	if window.LoadedRows != 0 || window.LoadedLines != 1 || window.LogicalTotal != 1 || window.Generation != 0 {
+		t.Fatalf("expected recovered resize live tail to stay mutable without committed depth, loaded_rows=%d loaded_lines=%d total=%d gen=%d", window.LoadedRows, window.LoadedLines, window.LogicalTotal, window.Generation)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID != runtimeID || !window.Lines[0].ClippedAfter {
+		t.Fatalf("expected recovered resize runtime logical line span, got %#v", window.Lines)
+	}
+}
