@@ -133,11 +133,11 @@
 | 5. protocol 契约联动 | 完成 | `termx-proto/`、`internal/protocol/`、`termx-core-v2/` | 按需扩展 `history.window` contract；legacy snapshot/grid viewport 明确只作为实时兼容投影 |
 | 6. tui-v3 runtime 骨架 | 完成 | `termx-tui-v3/` | 建立自有 `Msg`、`Effect`、`AppRuntime`、`EffectRunner`、`TerminalHost` fake、`FrameSink` contract 和 harness |
 | 7. tui-v3 history/copymode 状态 | 完成 | `termx-tui-v3/` | reducer-owned `HistoryStore`、`CopyModeStore`、latest/older/stale/resize/selection harness 完成 |
-| 8. tui-v3 input/render/UI 边界 | 待开始 | `termx-tui-v3/` | 自有 `InputEvent`、semantic intent、RenderVMBuilder、Renderer、hit regions、lipgloss style helper；无 Bubble Tea contract |
+| 8. tui-v3 input/render/UI 边界 | 完成 | `termx-tui-v3/` | 自有 `InputEvent`、semantic intent、RenderVMBuilder、Renderer、hit regions、lipgloss style helper；无 Bubble Tea contract |
 | 9. services 与集成 | 待开始 | `termx-tui-v3/`、受限联动范围 | core client、terminal service、session、clipboard、真实 adapter 接入；fake 与最小 e2e 通过 |
 | 10. 收口与迁移入口 | 待开始 | 受限联动范围 | 新路径可运行；必要 CLI/adapter 入口接入；旧 helper/fixture 只在明确不再需要时删除 |
 
-当前下一步：执行切片 8。
+当前下一步：执行切片 9。
 
 ## 6. 必做 harness
 
@@ -230,5 +230,6 @@
 - 切片 5 已完成：`history.window` protocol contract 已扩展 token/generation/logical cursor/boundary 与 row-to-line 映射字段，legacy snapshot/grid viewport 在代码注释中明确为实时兼容投影。
 - 切片 6 已完成：`termx-tui-v3/app` 已建立自有 `AppRuntime`、`Msg`、`Effect`、`EffectRunner`、`TerminalHost` fake、`FrameSink` contract 和 runtime harness。
 - 切片 7 已完成：`termx-tui-v3/state` 已建立 reducer-owned `HistoryStore` 与 `CopyModeStore`，覆盖 latest、older、stale、resize、selection harness。
+- 切片 8 已完成：`termx-tui-v3/input` 与 `termx-tui-v3/render` 已建立 semantic intent、RenderVMBuilder、Renderer、hit regions、lipgloss/x-ansi style helper 和无 Bubble Tea contract harness。
 - 旧 `termx-core/` 与 `tuiv2/` 的历史修补进度不再作为当前主线状态；如需查阅只能通过 git 历史或只读参考。
-- 下一步执行切片 8：建立 tui-v3 input/render/UI 边界。
+- 下一步执行切片 9：建立 tui-v3 services 与集成 fake。
