@@ -47,6 +47,33 @@ func TestCopyModeBufferPrefersAuthoritativeHistoryWindow(t *testing.T) {
 	}
 }
 
+func TestCopyModeBufferRejectsWindowMissingAuthoritativeLineSpans(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	window := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 10, 12, []string{"wrapped-a", "wrapped-b"}, 3, false)
+	window.Lines = nil
+	window.LoadedLines = 0
+	window.FirstLineID = 0
+	window.LastLineID = 0
+	window.FirstBoundaryID = 0
+	window.LastBoundaryID = 0
+	window.Rows[0].Wrapped = true
+	if !model.HistoryStore().ApplyHistoryWindow(window) {
+		t.Fatal("expected row-only history window to be stored")
+	}
+	model.copyMode = copyModeState{
+		PaneID:      "pane-1",
+		TerminalID:  "term-1",
+		WindowToken: "token-1",
+		Cursor:      copyModePoint{Row: 1, Col: 0},
+	}
+	model.saveCurrentCopyModeState()
+
+	buffer, ok := model.activeCopyModeBuffer()
+	if ok {
+		t.Fatalf("expected copy-mode buffer to reject rows without authoritative line spans, got %#v", buffer)
+	}
+}
+
 func TestCopyModeSelectionUsesAuthoritativeHistoryWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
 	seedTerminalSnapshotFixture(t, model, []string{"legacy"}, []string{"screen"})
