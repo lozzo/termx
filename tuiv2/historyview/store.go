@@ -48,7 +48,7 @@ func (s *MemoryStore) ApplyHistoryWindow(window HistoryWindow) bool {
 	defer s.mu.Unlock()
 	s.ensureLocked()
 	window = normalizeHistoryWindow(window)
-	if len(window.Rows) > 0 && len(window.Lines) == 0 {
+	if !historyWindowHasAuthoritativeLineCoverage(window) {
 		return false
 	}
 	current, hasCurrent := s.windows[window.TerminalID]
@@ -68,6 +68,23 @@ func (s *MemoryStore) ApplyHistoryWindow(window HistoryWindow) bool {
 		delete(s.pending, window.TerminalID)
 	}
 	return true
+}
+
+func historyWindowHasAuthoritativeLineCoverage(window HistoryWindow) bool {
+	if len(window.Rows) == 0 {
+		return true
+	}
+	if len(window.Lines) == 0 {
+		return false
+	}
+	nextRow := 0
+	for _, span := range window.Lines {
+		if span.StartRow != nextRow || span.EndRow < span.StartRow || span.EndRow >= len(window.Rows) {
+			return false
+		}
+		nextRow = span.EndRow + 1
+	}
+	return nextRow == len(window.Rows)
 }
 
 func (s *MemoryStore) LiveSurface(terminalID string) (LiveSurface, bool) {

@@ -75,6 +75,40 @@ func TestMemoryStoreRejectsRowsWithoutAuthoritativeLineSpans(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreRejectsNonCoveringAuthoritativeLineSpans(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []LineSpan
+	}{
+		{
+			name:  "gap",
+			lines: []LineSpan{{StartRow: 0, EndRow: 0, Kind: RowKindPersisted, LogicalLineID: 10}, {StartRow: 2, EndRow: 2, Kind: RowKindPersisted, LogicalLineID: 12}},
+		},
+		{
+			name:  "overlap",
+			lines: []LineSpan{{StartRow: 0, EndRow: 1, Kind: RowKindPersisted, LogicalLineID: 10}, {StartRow: 1, EndRow: 2, Kind: RowKindPersisted, LogicalLineID: 11}},
+		},
+		{
+			name:  "out-of-range",
+			lines: []LineSpan{{StartRow: 0, EndRow: 3, Kind: RowKindPersisted, LogicalLineID: 10}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewMemoryStore()
+			window := fakeWindow("term-1", WindowOpReplace, "g1:10-12:c80", 10, 12, []string{"a", "b", "c"})
+			window.Lines = tc.lines
+
+			if store.ApplyHistoryWindow(window) {
+				t.Fatalf("expected non-covering line spans to be rejected: %#v", tc.lines)
+			}
+			if _, ok := store.HistoryWindow("term-1"); ok {
+				t.Fatal("expected rejected window not to be stored")
+			}
+		})
+	}
+}
+
 func TestMemoryStoreOlderPrependDoesNotCountClippedBeforeFragmentAsLoadedLine(t *testing.T) {
 	store := NewMemoryStore()
 	latest := fakeWindow("term-1", WindowOpReplace, "g2:10-10:c80", 10, 10, []string{"latest"})
