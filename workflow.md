@@ -1,4 +1,4 @@
-# 工作流：完整逻辑行历史模型落地
+# 工作流：termx-core-v2 / termx-tui-v3 逻辑行模型重构
 
 本文件是当前分支唯一有效的活动驱动文件。后续所有分析、删除、实现、测试、提交都必须先读取本文件，并以本文件为准。
 
@@ -6,32 +6,34 @@
 
 ## 1. 当前唯一目标
 
-当前唯一目标是：把终端历史记录处理完整切换为以逻辑行为基本单位的模型。
+当前唯一目标是：停止在旧 `termx-core/` 与 `tuiv2/` 上继续原地修补，改为在新目录 `termx-core-v2/` 与 `termx-tui-v3/` 中重新落地以 logical line 为基本单位的终端历史模型。
+
+旧 `termx-core/` 与 `tuiv2/` 只能作为历史背景和行为参考，不再作为当前主线修补对象。新实现不得以旧实现内部结构为兼容目标，不得继续围绕旧 snapshot/grid viewport scrollback 路径补丁式推进。
 
 完成后的系统必须满足：
 
-- `termx-core` 拥有唯一历史真相。
+- `termx-core-v2` 拥有唯一历史真相。
 - 历史的基本单位是 logical line，不是 visual row，不是 wrapped row，不是 snapshot scrollback。
 - `persisted history store` 只存已封口的 logical line。
 - `mutable live tail` 保存当前仍可被终端指令修改的尾部 logical line，包括 open line、sealed line、从 persisted history reclaim 回来的 sealed suffix。
 - `screen projection` 只是当前宽度下的二维投影，不产生历史真相。
-- `tuiv2` 只消费 core 返回的 authoritative history window，不再本地重建历史真相。
+- `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不再本地重建历史真相。
 - copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。
 
 ## 2. 工作范围
 
 ### 2.1 当前主线范围
 
-允许主动修改、删除、重写、测试：
+允许主动新增、修改、删除、重写、测试：
 
-- `termx-core/`
-- `termx-vterm/`
-- `tuiv2/`
+- `termx-core-v2/`
+- `termx-tui-v3/`
 
 ### 2.2 受限联动范围
 
-只有当 core、vterm、tuiv2 契约变化确实需要时，才允许最小化触及：
+只有当 core-v2、tui-v3、vterm 或协议契约变化确实需要时，才允许最小化触及：
 
+- `termx-vterm/`
 - `internal/protocol/`
 - `termx-proto/`
 - `termx-cli/`
@@ -40,7 +42,16 @@
 - `scripts/`
 - 根目录直接相关文件：`workflow.md`、`AGENTS.md`、`go.work`、`go.work.sum`、`Makefile`、必要顶层说明文档
 
-### 2.3 冻结范围
+### 2.3 旧实现参考范围
+
+默认不得主动修改：
+
+- `termx-core/`
+- `tuiv2/`
+
+上述目录只允许读取、搜索、运行测试或摘取已明确验证过的外部契约作为参考。不得在其中继续做 logical-line 原地重构、helper 收敛、旧滚动路径修补或兼容桥接。若必须临时修改旧实现来迁移入口，必须先再次更新本文件，把该动作写入受限联动范围。
+
+### 2.4 冻结范围
 
 不得主动触碰：
 
@@ -114,9 +125,9 @@
 
 ### 3.7 TUI 语义
 
-- `tuiv2` 不拥有 committed history truth。
-- `tuiv2` 不得用本地 VTerm scrollback、snapshot totals、row ownership 数量、LoadedRows、hasMore、wrapped 拼接结果推断历史真相。
-- `tuiv2` copy mode 只保留交互态：光标、选区、viewport top、当前 authoritative window token。
+- `termx-tui-v3` 不拥有 committed history truth。
+- `termx-tui-v3` 不得用本地 VTerm scrollback、snapshot totals、row ownership 数量、LoadedRows、hasMore、wrapped 拼接结果推断历史真相。
+- `termx-tui-v3` copy mode 只保留交互态：光标、选区、viewport top、当前 authoritative window token。
 - latest window 使用 replace。
 - older window 使用 prepend。
 - stale response guard 使用 core 返回的 token、generation、logical line 边界，不使用本地深度计数。
@@ -140,24 +151,24 @@
 - 任何只传 row-level wrapped 而不传 authoritative logical line boundary 的新接口。
 - 如果保留 legacy `snapshot` / `grid.viewport`，必须明确它们只是兼容投影接口，不可作为新 TUI history path。
 
-### 4.3 tuiv2 侧必删或改写
+### 4.3 termx-tui-v3 侧禁止引入
 
-- 本地 committed history depth 状态机。
-- 本地 history loading depth 状态。
-- 本地 history exhausted 状态。
-- copy mode frozen snapshot 分页合并旧路径。
-- runtime 本地 viewport merge / snapshotFromGridViewport 旧路径。
-- canonical row ref 本地推断旧路径。
-- 任何通过 `wrapped` 自行拼完整 logical line 的 copy mode history truth 路径。
-- 任何用 `snapshot.ScrollbackTotal`、`ScrollbackLoadedRows`、`HistoryGeneration` 空值、row count 推断 older/latest 接纳规则的路径。
-- 任何把 local VTerm scrollback 当 committed history 的滚轮或 page up/down 主路径。
-- 相关旧测试语义必须删除或重写，不能作为回归基准。
+- 不得引入本地 committed history depth 状态机。
+- 不得引入本地 history loading depth 状态。
+- 不得引入本地 history exhausted 状态。
+- 不得引入 copy mode frozen snapshot 分页合并路径。
+- 不得引入 runtime 本地 viewport merge / snapshotFromGridViewport 路径。
+- 不得引入 canonical row ref 本地推断路径。
+- 不得通过 `wrapped` 自行拼完整 logical line 作为 copy mode history truth。
+- 不得用 `snapshot.ScrollbackTotal`、`ScrollbackLoadedRows`、`HistoryGeneration` 空值、row count 推断 older/latest 接纳规则。
+- 不得把 local VTerm scrollback 当 committed history 的滚轮或 page up/down 主路径。
+- 不得把旧 TUI 测试语义作为 v3 回归基准。
 
 ## 5. 新模型必须提供的对象
 
-### 5.1 core logical line store
+### 5.1 core-v2 logical line store
 
-core 必须显式维护 logical line 记录。每条 logical line 至少包含：
+`termx-core-v2` 必须从第一版开始显式维护 logical line 记录。每条 logical line 至少包含：
 
 - stable logical line id
 - seal 状态：open 或 sealed
@@ -191,9 +202,9 @@ core 对外返回的 history window 必须包含：
 - first/last logical line boundary
 - timestamp
 
-### 5.3 TUI history store
+### 5.3 TUI-v3 history store
 
-`tuiv2` 需要有独立的 authoritative history window store，只保存 core 返回的窗口和交互态。它不得把窗口反写成 local runtime truth。
+`termx-tui-v3` 需要有独立的 authoritative history window store，只保存 core-v2 返回的窗口和交互态。它不得把窗口反写成 local runtime truth。
 
 TUI store 至少表达：
 
@@ -213,9 +224,9 @@ TUI store 至少表达：
 
 测试必须准，不能只测 happy path。以下 harness 必须逐步做出来。
 
-### 6.1 core logical line harness
+### 6.1 core-v2 logical line harness
 
-新增或收敛 core harness，用于构造终端事件序列并断言 logical line store：
+在 `termx-core-v2/` 新增 harness，用于构造终端事件序列并断言 logical line store：
 
 - 普通输出无换行
 - 普通输出带换行
@@ -263,11 +274,11 @@ TUI store 至少表达：
 - token/generation/boundary 稳定
 - clipped span 不丢失
 - logical line id 不丢失
-- legacy snapshot/grid viewport 不被新 TUI history path 使用
+- legacy snapshot/grid viewport 不被 termx-tui-v3 history path 使用
 
-### 6.4 tuiv2 history harness
+### 6.4 termx-tui-v3 history harness
 
-新增 tuiv2 history harness，不依赖真实 PTY，使用 fake history source 驱动：
+在 `termx-tui-v3/` 新增 history harness，不依赖真实 PTY，使用 fake history source 驱动：
 
 - latest replace 初始化窗口
 - older prepend 前插窗口
@@ -291,23 +302,23 @@ TUI store 至少表达：
 
 ## 7. 实施顺序
 
-### 切片一：冻结旧路径并补准 harness
+### 切片一：建立新模块骨架和契约边界
 
-- 更新/新增 core logical line harness。
-- 更新/新增 projection harness。
-- 更新/新增 tuiv2 fake history source harness。
-- 把旧 TUI snapshot/grid viewport history truth 测试删除或标记重写。
-- 本切片可以先让部分新测试失败，但提交前必须明确失败测试对应的后续切片；如果仓库不允许失败测试提交，则先提交 harness helper 和禁用说明，再逐切片启用。
+- 新增 `termx-core-v2/` Go module，并加入 `go.work`。
+- 新增 `termx-tui-v3/` Go module，并加入 `go.work`。
+- 新建 core-v2 与 tui-v3 的最小包结构、公共 contract 草案和空实现。
+- 旧 `termx-core/`、`tuiv2/` 只作为参考，不在本切片继续修补。
+- 本切片必须能通过新模块最小测试。
 
-### 切片二：core 显式 logical line store
+### 切片二：core-v2 显式 logical line store
 
-- 把 persisted history store 从 visual row 主导改为 logical line 主导。
+- 从零实现 logical-line-first store，不从旧 visual-row store 迁移内部结构。
 - 给 logical line 分配 stable id。
 - 把 open/sealed/origin/dirty/generation 纳入核心结构。
-- 删除或改写仍以 wrapped row 作为 store truth 的代码。
-- 通过 core logical line harness。
+- persisted history store、mutable live tail、screen projection 三层在结构上分离。
+- 通过 core-v2 logical line harness。
 
-### 切片三：projection 从 logical line 生成
+### 切片三：core-v2 projection 从 logical line 生成
 
 - 从 logical line store 生成 visual rows。
 - 从 logical line store 生成 line spans。
@@ -317,7 +328,7 @@ TUI store 至少表达：
 - 支持 row 到 logical line id 映射。
 - 通过 projection harness。
 
-### 切片四：history.window contract 完整化
+### 切片四：core-v2 history.window contract 完整化
 
 - 扩展 `termx-proto` 与 `internal/protocol`，传递 logical line id 或等价边界。
 - 明确 cursor/token/generation/boundary 语义。
@@ -325,16 +336,16 @@ TUI store 至少表达：
 - legacy `snapshot` / `grid.viewport` 继续保留时，只作为兼容投影接口。
 - 通过 protocol harness。
 
-### 切片五：tuiv2 authoritative history store
+### 切片五：termx-tui-v3 authoritative history store
 
-- 新增 `tuiv2/historyview` store 与 source 实现。
-- bridge client 暴露 `HistoryWindow`。
-- app model 注入 history source/store。
-- 删除 copy mode 对 frozen snapshot 分页合并的依赖。
-- 删除 runtime 本地 history truth 相关入口。
-- 通过 tuiv2 fake history source harness。
+- 新增 `termx-tui-v3/historyview` store 与 source 实现。
+- v3 client 只暴露 authoritative `HistoryWindow`。
+- app model 从一开始注入 history source/store。
+- copy mode 不存在 frozen snapshot 分页合并入口。
+- runtime 不存在本地 history truth 入口。
+- 通过 termx-tui-v3 fake history source harness。
 
-### 切片六：copy mode 和滚动接入
+### 切片六：termx-tui-v3 copy mode 和滚动接入
 
 - copy mode backing 改为 authoritative history window。
 - 鼠标滚轮上滚进入 copy mode 时加载 latest history window。
@@ -342,23 +353,23 @@ TUI store 至少表达：
 - page down/bottom 只在已有 authoritative window 内移动，必要时 latest replace。
 - selection 使用 logical line spans 和 logical line ids。
 - clipped span 不当作完整 logical line。
-- 删除剩余 snapshot scrollback truth 依赖。
-- 通过 tuiv2 copy mode harness。
+- 不引入 snapshot scrollback truth 依赖。
+- 通过 termx-tui-v3 copy mode harness。
 
 ### 切片七：端到端收口
 
 - 补最小 e2e。
-- 跑 core、protocol、tuiv2 相关测试。
+- 跑 core-v2、protocol、termx-tui-v3 相关测试。
 - 更新文档。
-- 删除不再使用的旧 helper、旧测试 fixture、旧字段。
+- 只有在新路径可用后，才评估是否迁移外部入口或删除旧 helper、旧测试 fixture、旧字段。
 
 ## 8. 测试准入
 
 每个有效切片提交前至少运行与切片相关的测试：
 
-- core 改动：`go test ./termx-core/ -count=1`
+- core-v2 改动：`go test ./termx-core-v2/... -count=1`
 - protocol 改动：`go test ./internal/protocol/ ./termx-proto/... -count=1`
-- tuiv2 改动：`go test ./tuiv2/... -count=1`
+- tui-v3 改动：`go test ./termx-tui-v3/... -count=1`
 - 跨层改动：运行以上全部相关测试
 
 如果存在已知偶发测试，必须记录具体测试名、失败现象、重跑结果，不得把真实语义失败当偶发。
@@ -572,6 +583,7 @@ TUI store 至少表达：
 - 已将 core persisted/live-tail logical line payload 的 row segment 表达收敛为显式内部对象：每个 segment 同时携带 cells、wrapped、row kind 与 timestamp，避免调用方用多个并行数组重新拼装投影所需 segment 元数据。
 - 已将 core persisted/live-tail logical line payload 的 cells 与 wrapped 行视图改为从显式 row segment 对象派生，避免 payload 内继续并行维护 cells、wrapped 与 segment 三套读取路径。
 - 已将 core live-tail sidecar metadata 恢复路径接入 logical line payload 入口：恢复端不再直接按 `StartRow` / `EndRow` 手切 live rows，而是通过 record payload 校验范围、payload metadata 并物化 segment rows。
+- 已决策停止继续在旧 `termx-core/` 与 `tuiv2/` 上做原地 logical-line 修补；旧目录从当前切片起只作为参考范围，新的主线改为 `termx-core-v2/` 与 `termx-tui-v3/`。
 - 当前仍不是完整 logical-line based history。
-- 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
-- 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
+- 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化；旧 `termx-core/` 与 `tuiv2/` 中已经积累的补丁不再继续作为主线推进。
+- 下一步创建 `termx-core-v2/` 与 `termx-tui-v3/` 最小模块骨架，先落地清晰 contract、logical-line store 数据结构与 fake-source harness；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
