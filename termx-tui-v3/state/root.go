@@ -1,11 +1,13 @@
 package state
 
-// Root is the reducer-owned TUI-v3 state root.
+// Root 是 reducer-owned TUI-v3 state root。
 type Root struct {
 	Generation uint64
+	History    HistoryStore
+	CopyMode   CopyModeStore
 }
 
-// Advance returns a copy with an incremented generation.
+// Advance 返回 generation 递增后的副本。
 func (r Root) Advance() Root {
 	r.Generation++
 	return r
