@@ -1690,7 +1690,11 @@ func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLive
 	if !ok {
 		return terminalPrimaryLiveTail{}, false
 	}
-	return terminalPrimaryLiveTail{segments: segments, wrapPending: terminalLiveTailSegmentsWrapPending(segments)}, true
+	return terminalPrimaryLiveTail{
+		segments:                 segments,
+		wrapPending:              terminalLiveTailSegmentsWrapPending(segments),
+		nextRuntimeLogicalLineID: terminalLiveTailSegmentsMaxRuntimeLogicalLineID(segments),
+	}, true
 }
 
 func (s *terminalGridStore) persistedLogicalLineRecordsForRecoveredLiveTail(baseRowID uint64, generation uint64) ([]terminalGridLogicalLineRecord, bool) {
@@ -1884,6 +1888,18 @@ func terminalLiveTailSegmentsWrapPending(segments []terminalLiveTailSegment) boo
 		return segments[i].wrapPending
 	}
 	return false
+}
+
+func terminalLiveTailSegmentsMaxRuntimeLogicalLineID(segments []terminalLiveTailSegment) uint64 {
+	var maxID uint64
+	for _, segment := range segments {
+		for _, id := range segment.logicalLineIDs {
+			if terminalRuntimeLogicalLineID(id) && id > maxID {
+				maxID = id
+			}
+		}
+	}
+	return maxID
 }
 
 func terminalLiveTailReclaimedRowIDsFromMetadata(record terminalGridLineRecordMeta, rowCount int) (uint64, uint64, bool) {

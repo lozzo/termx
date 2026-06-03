@@ -440,6 +440,7 @@ TUI store 至少表达：
 - 已补齐 process exit force seal harness，固定隐藏 mutable live tail 前缀与当前 screen continuation 行必须作为同一条 persisted logical line 提交，并只产生一条 runtime->persisted logical line id 迁移。
 - 已将 mutable live tail 的旧通用 replaceRows 入口收敛到新语义：live/resize segment 创建时即写入 runtime logical line id，不再先生成无 id segment 后依赖读取端补推。
 - 已将 mutable live tail 的 live/resize segment ID 生成收敛为完整显式 stable logical line id 优先；当调用方已提供每 row logical line id 时，不再用 wrapped 元数据重新拆分或合并这些边界。
+- 已将 mutable live tail 的 runtime logical line id 分配改为 tail 生命周期内单调推进；hard newline seal、process exit seal 或 reset 清空尾部内容后，后续独立 live logical line 不复用旧 runtime id，`grid.lines.json` 恢复 live tail 时也会从已恢复的最大 runtime id 继续分配。
 - 已修正 reclaimed prefix 覆盖 resize live-tail 前缀后的裁剪逻辑：resize segment 裁剪 rows 时同步裁剪并保留 runtime logical line id，避免剩余 mutable live tail 回退成无 id 的 wrapped 推导。
 - 已收紧 mutable live tail record 生成：只有每个 live-tail row 都带 stable logical line id 时才生成 recoverable line records，缺 id 的 segment 不再通过 wrapped 元数据拼出可写 sidecar record。
 - 已将 mutable live tail record view 收敛为全尾部连续语义：任一 segment 缺少完整 stable logical line id 时不返回 partial records，避免上层误消费非连续 recoverable metadata。

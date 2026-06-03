@@ -31,8 +31,9 @@ type terminalLiveTailSegment struct {
 }
 
 type terminalPrimaryLiveTail struct {
-	segments    []terminalLiveTailSegment
-	wrapPending bool
+	segments                 []terminalLiveTailSegment
+	wrapPending              bool
+	nextRuntimeLogicalLineID uint64
 }
 
 type terminalLiveTailWindow struct {
@@ -73,11 +74,12 @@ func newTerminalPrimaryLiveTail(rows []vterm.DamageOp, wrapPending bool) termina
 
 func (tail terminalPrimaryLiveTail) clone() terminalPrimaryLiveTail {
 	if len(tail.segments) == 0 {
-		return terminalPrimaryLiveTail{wrapPending: tail.wrapPending}
+		return terminalPrimaryLiveTail{wrapPending: tail.wrapPending, nextRuntimeLogicalLineID: tail.nextRuntimeLogicalLineID}
 	}
 	out := terminalPrimaryLiveTail{
-		segments:    make([]terminalLiveTailSegment, 0, len(tail.segments)),
-		wrapPending: tail.wrapPending,
+		segments:                 make([]terminalLiveTailSegment, 0, len(tail.segments)),
+		wrapPending:              tail.wrapPending,
+		nextRuntimeLogicalLineID: tail.nextRuntimeLogicalLineID,
 	}
 	for _, segment := range tail.segments {
 		out.segments = append(out.segments, terminalLiveTailSegment{
@@ -215,7 +217,7 @@ func (tail *terminalPrimaryLiveTail) replaceRows(rows []vterm.DamageOp, origin t
 	}
 	logicalLineIDs := terminalLiveTailSegmentFallbackLogicalLineIDs(origin, rows, 0, 0)
 	if origin != terminalLiveTailOriginReclaimed {
-		logicalLineIDs = terminalLiveTailSegmentLiveLogicalLineIDs(nil, rows)
+		logicalLineIDs = tail.liveLogicalLineIDsForRows(nil, rows)
 	}
 	tail.segments = []terminalLiveTailSegment{{
 		origin:         origin,
@@ -256,7 +258,7 @@ func (tail *terminalPrimaryLiveTail) replaceResizeRowsWithLogicalLineIDs(rows []
 			origin:         terminalLiveTailOriginResize,
 			sealState:      terminalLiveTailSealStateForRows(rows, wrapPending),
 			rows:           cloneGridDamageOps(rows),
-			logicalLineIDs: terminalLiveTailSegmentLiveLogicalLineIDs(logicalLineIDs, rows),
+			logicalLineIDs: tail.liveLogicalLineIDsForRows(logicalLineIDs, rows),
 			wrapPending:    wrapPending,
 		})
 	}
@@ -293,7 +295,7 @@ func (tail *terminalPrimaryLiveTail) replaceLiveRowsWithLogicalLineIDs(rows []vt
 			origin:         terminalLiveTailOriginLive,
 			sealState:      terminalLiveTailSealStateForRows(rows, wrapPending),
 			rows:           cloneGridDamageOps(rows),
-			logicalLineIDs: terminalLiveTailSegmentLiveLogicalLineIDs(logicalLineIDs, rows),
+			logicalLineIDs: tail.liveLogicalLineIDsForRows(logicalLineIDs, rows),
 			wrapPending:    wrapPending,
 		})
 	}
@@ -381,6 +383,14 @@ func trimLiveTailResizeRowsCoveredByReclaimedPrefix(resizeRows []vterm.DamageOp,
 		rows:           cloneGridDamageOps(resizeRows),
 		logicalLineIDs: lineIDs,
 	}
+}
+
+func (tail *terminalPrimaryLiveTail) liveLogicalLineIDsForRows(logicalLineIDs []uint64, rows []vterm.DamageOp) []uint64 {
+	lineIDs, nextID := terminalLiveTailSegmentLiveLogicalLineIDsFrom(logicalLineIDs, rows, tail.nextRuntimeLogicalLineID)
+	if nextID > tail.nextRuntimeLogicalLineID {
+		tail.nextRuntimeLogicalLineID = nextID
+	}
+	return lineIDs
 }
 
 func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailWindow {
@@ -545,20 +555,25 @@ func terminalLiveTailSegmentLogicalLineIDs(lineIDs []uint64, rows []vterm.Damage
 }
 
 func terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs []uint64, rows []vterm.DamageOp) []uint64 {
+	out, _ := terminalLiveTailSegmentLiveLogicalLineIDsFrom(lineIDs, rows, 0)
+	return out
+}
+
+func terminalLiveTailSegmentLiveLogicalLineIDsFrom(lineIDs []uint64, rows []vterm.DamageOp, nextID uint64) ([]uint64, uint64) {
 	rowCount := len(rows)
 	if rowCount <= 0 {
-		return nil
+		return nil, nextID
 	}
 	aligned := alignLiveTailUint64s(lineIDs, rowCount)
 	if terminalLiveTailLogicalLineIDsComplete(aligned, rowCount) && terminalLiveTailLogicalLineIDsMatchOrigin(aligned, terminalLiveTailOriginLive) {
-		return aligned
+		return aligned, maxUint64(nextID, maxUint64Slice(aligned))
 	}
 	for i, id := range aligned {
 		if id != 0 && !terminalLiveTailRecordIDMatchesOrigin(id, terminalLiveTailOriginLive) {
 			aligned[i] = 0
 		}
 	}
-	nextID := maxUint64Slice(aligned)
+	nextID = maxUint64(nextID, maxUint64Slice(aligned))
 	if nextID < terminalLiveTailLogicalLineIDBase {
 		nextID = terminalLiveTailLogicalLineIDBase
 	}
@@ -577,7 +592,7 @@ func terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs []uint64, rows []vterm.Da
 		}
 		start = i + 1
 	}
-	return aligned
+	return aligned, nextID
 }
 
 func terminalLiveTailLogicalLineIDsMatchOrigin(lineIDs []uint64, origin terminalLiveTailOrigin) bool {
@@ -597,6 +612,13 @@ func maxUint64Slice(values []uint64) uint64 {
 		}
 	}
 	return maxValue
+}
+
+func maxUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func alignLiveTailUint64s(values []uint64, size int) []uint64 {

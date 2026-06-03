@@ -704,6 +704,16 @@ func TestTerminalGridRecoveredLiveTailUsesLiveOnlyMetadataWithoutPersistedIndex(
 	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{runtimeID, runtimeID}) {
 		t.Fatalf("expected recovered runtime logical line ids, got %#v", got)
 	}
+
+	tail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("next"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	nextIDs := tail.window(0, tail.rowCount()).logicalLineIDs
+	if len(nextIDs) != 1 || nextIDs[0] <= runtimeID {
+		t.Fatalf("expected recovered live tail to continue runtime id allocation, got %#v recovered=%d", nextIDs, runtimeID)
+	}
 }
 
 func TestTerminalGridRecoveredLiveTailUsesLogicalLineIDWithoutWrappedContinuation(t *testing.T) {

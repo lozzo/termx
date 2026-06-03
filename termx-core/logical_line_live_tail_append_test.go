@@ -150,6 +150,54 @@ func TestTerminalLiveLineMigrationUsesExplicitLogicalLineIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalLiveLineRuntimeIDsDoNotReuseAcrossIndependentSeals(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "live-line-runtime-id-no-reuse",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcd")
+	writeVTermDamageToGrid(t, term, vt, "efgh")
+	firstRuntimeIDs := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount()).logicalLineIDs
+	if len(firstRuntimeIDs) != 1 || !terminalRuntimeLogicalLineID(firstRuntimeIDs[0]) {
+		t.Fatalf("expected first live line runtime id, got %#v", firstRuntimeIDs)
+	}
+	writeVTermDamageToGrid(t, term, vt, "\r\n")
+	firstPersistedRows := store.RowCount()
+	if firstPersistedRows == 0 {
+		t.Fatal("expected first live line seal to append persisted rows")
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "ijkl")
+	writeVTermDamageToGrid(t, term, vt, "mnop")
+	secondRuntimeIDs := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount()).logicalLineIDs
+	if len(secondRuntimeIDs) != 1 || !terminalRuntimeLogicalLineID(secondRuntimeIDs[0]) {
+		t.Fatalf("expected second live line runtime id, got %#v", secondRuntimeIDs)
+	}
+	if firstRuntimeIDs[0] == secondRuntimeIDs[0] {
+		t.Fatalf("expected independent live lines to use distinct runtime ids, first=%#v second=%#v", firstRuntimeIDs, secondRuntimeIDs)
+	}
+	writeVTermDamageToGrid(t, term, vt, "\r\n")
+
+	wantMigrations := []terminalGridLineMigration{
+		{RuntimeID: firstRuntimeIDs[0], PersistedID: 1},
+		{RuntimeID: secondRuntimeIDs[0], PersistedID: persistedLogicalLineIDFromRowID(uint64(firstPersistedRows))},
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read migration metadata: %v", err)
+	}
+	if !reflect.DeepEqual(metadata.Migrations, wantMigrations) {
+		t.Fatalf("expected migrations for both independently sealed runtime ids, got %#v want %#v", metadata.Migrations, wantMigrations)
+	}
+}
+
 func TestTerminalExactWidthLineHardNewlineSealsToPersistedHistory(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
