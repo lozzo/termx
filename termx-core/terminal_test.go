@@ -1368,6 +1368,34 @@ func TestTerminalGridStoreRetentionPreservesExplicitPersistedLineMetadata(t *tes
 	}
 }
 
+func TestTerminalGridStoreRetentionPrunesDroppedRuntimeMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(1)
+
+	droppedRuntimeID := terminalLiveTailLogicalLineIDBase + 78
+	retainedRuntimeID := terminalLiveTailLogicalLineIDBase + 79
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("drop")},
+		{Cells: localVTermCellsFromString("keep")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{droppedRuntimeID, retainedRuntimeID}); err != nil {
+		t.Fatalf("append rows with explicit runtime ids: %v", err)
+	}
+	if store.RowCount() != 1 {
+		t.Fatalf("expected retention to keep one row, got %d", store.RowCount())
+	}
+
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after retention: %v", err)
+	}
+	want := []terminalGridLineMigration{{RuntimeID: retainedRuntimeID, PersistedID: 2}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, want) {
+		t.Fatalf("expected retention to prune dropped runtime migration, got %#v want %#v", lineMetadata.Migrations, want)
+	}
+}
+
 func TestTerminalGridStoreExplicitAppendRebuildsMissingMetadataPrefix(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

@@ -2558,7 +2558,34 @@ func writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir string, record
 	} else {
 		metadata.Records = nil
 	}
+	metadata.Migrations = terminalGridLineMigrationsForPersistedRecords(metadata.Migrations, metadata.Records)
 	return writeTerminalGridLineMetadata(dir, metadata)
+}
+
+func terminalGridLineMigrationsForPersistedRecords(migrations []terminalGridLineMigration, records []terminalGridLineRecordMeta) []terminalGridLineMigration {
+	if len(migrations) == 0 || len(records) == 0 {
+		return nil
+	}
+	persistedIDs := make(map[uint64]struct{}, len(records))
+	for _, record := range records {
+		if terminalPersistedLogicalLineID(record.ID) {
+			persistedIDs[record.ID] = struct{}{}
+		}
+	}
+	if len(persistedIDs) == 0 {
+		return nil
+	}
+	out := make([]terminalGridLineMigration, 0, len(migrations))
+	for _, migration := range migrations {
+		if !terminalRuntimeLogicalLineID(migration.RuntimeID) || !terminalPersistedLogicalLineID(migration.PersistedID) {
+			continue
+		}
+		if _, ok := persistedIDs[migration.PersistedID]; !ok {
+			continue
+		}
+		out = append(out, migration)
+	}
+	return out
 }
 
 func terminalGridLineRecordMetasFromRecords(records []terminalGridLogicalLineRecord) []terminalGridLineRecordMeta {
