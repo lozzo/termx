@@ -414,7 +414,6 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		return viewport
 	}
 	removedCommittedRows := 0
-	removedNonCommittedRows := 0
 	removedNonAuthoritativeLogicalLines := 0
 	inRemovedMissingIDLogicalLine := false
 	var removedNonAuthoritativeID uint64
@@ -431,8 +430,6 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		}
 		if historyWindowFilteredRowCountsAsCommitted(viewport, i) {
 			removedCommittedRows++
-		} else {
-			removedNonCommittedRows++
 		}
 		switch stringAt(viewport.Ownership, i) {
 		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:

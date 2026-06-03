@@ -524,11 +524,12 @@ TUI store 至少表达：
 - 已补齐 core persisted logical line 重投影 row-id range harness：单条 projected visual row 横跨多个 persisted source row 时，projection row boundary 会覆盖真实 source row id 区间，并保留 explicit authoritative logical line id。
 - 已补齐 core mixed-authority 重投影 harness：单条 projected visual row 横跨 fallback 与 explicit source row 时，不暴露 partial logical line id，不生成 authoritative history row，但仍保留物理 source row boundary 供兼容投影使用。
 - 已补齐 core history window limit 裁剪的 source row 去重 harness：同一 persisted source row 被重投影成多条 visual row 时，裁掉前缀 visual row 但尾部仍可见不会推进 committed cursor；只有该 source row 的所有投影都被裁掉后才按一个 committed row 计入分页深度。
-- 已修正 core history window 过滤 fallback/non-authoritative 重投影行后的分页深度：同一 persisted source row 的多个 visual 投影片段被过滤时，只扣减一个 committed source row，并同步按 source row 修正 `TotalRows`；缺少可靠 row-id range 时仍回退旧兼容计数。
+- 已修正 core history window 过滤 fallback/non-authoritative 重投影行后的分页深度：同一 persisted source row 的多个 visual 投影片段被过滤时，`LoadedRows` 只扣减一个 committed source row；缺少可靠 row-id range 时仍回退旧兼容计数。
 - 已修正 core history window 过滤缺 stable id 的 mutable 行后的 `TotalRows`：非 committed mutable 投影被过滤时不会影响 committed cursor，但会从 authoritative 投影总行数中扣除，避免 `HasMore` 与 clipped pagination 信号继续包含已过滤 row-only 片段。
 - 已补齐 core persisted explicit append 跨 page rotation harness：同一 runtime logical line 的多条 rows 即使被写入多个 grid page，`grid.lines.json` 仍生成单条 explicit persisted logical line record、单条 runtime->persisted migration，并按同一 logical line id 重投影。
 - 已收紧 core persisted sidecar duplicate logical line id harness：损坏 metadata 中的重复 id 记录显式携带 `source=explicit`，确保测试命中 duplicate-id 校验本身，而不是被 missing source 提前降级。
 - 已修正 core history window 过滤 fallback/non-authoritative 重投影行后的 `TotalRows` 语义：`LoadedRows` 继续按真实 committed source row 去重推进 cursor，但 `TotalRows` 按被过滤的 visual projection rows 扣减，避免 authoritative pagination 继续包含已过滤投影片段。
+- 已清理 core history window 过滤阶段遗留的旧 non-committed row 计数：`TotalRows` 已统一按 filtered visual projection rows 扣减，`LoadedRows` 继续使用 committed source row 去重。
 - 已补齐 core recovered reclaimed live-tail duplicate logical line id harness：即使 reclaimed metadata 的 row id、generation 与 persisted store 均有效，重复 stable logical line id 仍会被恢复端拒绝，避免把两个 reclaimed records 合成伪连续逻辑行。
 - 已补齐 core recovered live-tail segment merge harness：相邻 live records 恢复时可以合并底层 segment，但必须保留逐 row runtime logical line id，并在 record view 中继续输出独立 logical line records。
 - 当前仍不是完整 logical-line based history。

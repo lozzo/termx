@@ -265,7 +265,7 @@ func TestHistoryWindowFiltersReflowedFallbackDepthBySourceRows(t *testing.T) {
 		t.Fatalf("expected cursor to drop one filtered source row, not three visual rows, before=%d loaded=%d window=%#v", window.BeforeOffset, window.LoadedRows, window)
 	}
 	if window.TotalRows != 1 || window.LogicalTotal != 1 {
-		t.Fatalf("expected totals to drop one filtered source row/logical line, total_rows=%d logical_total=%d window=%#v", window.TotalRows, window.LogicalTotal, window)
+		t.Fatalf("expected totals to drop filtered visual rows and logical line, total_rows=%d logical_total=%d window=%#v", window.TotalRows, window.LogicalTotal, window)
 	}
 	if window.FirstRowID != 41 || window.LastRowID != 41 {
 		t.Fatalf("expected row boundary to narrow to kept source row, got %d..%d window=%#v", window.FirstRowID, window.LastRowID, window)
