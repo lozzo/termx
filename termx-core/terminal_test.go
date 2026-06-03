@@ -3279,6 +3279,74 @@ func TestTerminalProcessExitClearsPersistedLiveTailMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalProcessExitSealsLiveTailAndScreenContinuationAsOneLogicalLine(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "exit-seals-live-tail-screen-continuation",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcd")
+	writeVTermDamageToGrid(t, term, vt, "efgh")
+	writeVTermDamageToGrid(t, term, vt, "ij")
+	if got := store.RowCount(); got != 0 {
+		t.Fatalf("expected open line to stay out of persisted store before exit seal, got %d", got)
+	}
+	liveTailWindow := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount())
+	if got := liveTailWindow.logicalLineIDs; len(got) != 2 || !terminalRuntimeLogicalLineID(got[0]) || got[0] != got[1] {
+		t.Fatalf("expected hidden live-tail rows to share one runtime logical line id, got %#v", got)
+	}
+	runtimeLineID := liveTailWindow.logicalLineIDs[0]
+	if got := vtermRowsToStrings(vt.ScreenContent().Cells); !reflect.DeepEqual(got, []string{"ij"}) {
+		t.Fatalf("expected current screen to carry the visible continuation row before exit seal, got %#v", got)
+	}
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal live tail for exit: %v", err)
+	}
+	if got := term.primaryLiveTail.rowCount(); got != 0 {
+		t.Fatalf("expected process exit seal to clear mutable live tail, got %d rows", got)
+	}
+
+	viewport, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("read persisted viewport after exit seal: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"abcd", "efgh", "ij"}) {
+		t.Fatalf("expected process exit seal to persist live-tail plus screen continuation, got %#v", got)
+	}
+	if got := viewport.Wrapped; !reflect.DeepEqual(got, []bool{true, true, false}) {
+		t.Fatalf("expected persisted projection to preserve one logical line wrapping, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1, 1, 1}) {
+		t.Fatalf("expected hidden and screen rows to project as one persisted logical line, got %#v", got)
+	}
+	if got := store.LogicalLineCount(); got != 1 {
+		t.Fatalf("expected one persisted logical line after exit seal, got %d", got)
+	}
+
+	_, generation, _ := store.coordinates()
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after exit seal: %v", err)
+	}
+	wantRecords := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
+		t.Fatalf("expected process exit seal to write one persisted logical line record, got %#v want %#v", lineMetadata.Records, wantRecords)
+	}
+	wantMigrations := []terminalGridLineMigration{{RuntimeID: runtimeLineID, PersistedID: 1}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, wantMigrations) {
+		t.Fatalf("expected one runtime-to-persisted migration for the sealed line, got %#v want %#v", lineMetadata.Migrations, wantMigrations)
+	}
+}
+
 func TestTerminalProcessExitInAltScreenDropsAltAndSealsPrimaryTail(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)
