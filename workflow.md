@@ -21,6 +21,7 @@
 - `persisted` 或落盘不表示不可修改；clear scrollback、truncate、retention、reclaim、replace 都可以按完整 logical line 删除、撤回、替换或重新提交已提交历史。
 - core-v2 架构以 `termx-core-v2/docs/architecture.md` 为设计基准；该文档说明重构原因、目标、单一 logical line 模型、双轨边界、硬约束、风险和落地顺序。
 - tui-v3 架构以 `termx-tui-v3/docs/architecture.md` 为设计基准；该文档说明 TUI-v3 重构目标、tuiv2 可复用策略、模块边界、消息/副作用架构、history/copy mode 流程、render 边界和落地顺序。
+- `termx-tui-v3` 不以 Bubble Tea 作为主运行时；必须使用自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink` 边界。允许使用 `lipgloss/v2`、`x/ansi`、隔离在 terminal host/frame sink 内的 `ultraviolet` 等纯渲染或终端 primitive，但不得把 Bubble Tea `Model/Msg/Cmd` 或绑定该 contract 的 UI 组件作为 v3 主线结构。
 - `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不再本地重建历史真相。
 - copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。
 
@@ -172,6 +173,7 @@
 - 不得用 `snapshot.ScrollbackTotal`、`ScrollbackLoadedRows`、`HistoryGeneration` 空值、row count 推断 older/latest 接纳规则。
 - 不得把 local VTerm scrollback 当 committed history 的滚轮或 page up/down 主路径。
 - 不得把旧 TUI 测试语义作为 v3 回归基准。
+- 不得引入 Bubble Tea `Program`、`standardRenderer`、`tea.Model`、`tea.Msg`、`tea.Cmd`、`tea.KeyMsg`、`tea.MouseMsg`、`bubbles` 或依赖这些 contract 的 UI 组件作为 TUI-v3 主线结构。
 
 ## 5. 新模型必须提供的对象
 
@@ -331,6 +333,7 @@ Copy mode state 至少表达：
 - 新增 `termx-core-v2/` Go module，并加入 `go.work`。
 - 新增 `termx-tui-v3/` Go module，并加入 `go.work`。
 - 新建 core-v2 与 tui-v3 的最小包结构、公共 contract 草案和空实现。
+- TUI-v3 切片一必须建立自有 `Msg` / `Effect` 基础类型、`AppRuntime` fake harness、`TerminalHost` fake 与 `FrameSink` contract，不做真实 AppRuntime/TerminalHost 完整接入。
 - 旧 `termx-core/`、`tuiv2/` 只作为参考，不在本切片继续修补。
 - 本切片必须能通过新模块最小测试。
 

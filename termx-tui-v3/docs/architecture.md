@@ -21,6 +21,8 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 - TUI 内部状态和副作用分离：state reducer 不做 IO，service/effect 不直接绕过 message path 修改 UI state。
 - renderer 只消费 render view-model，不读取 runtime、history source 或 protocol client。
 - input 和 mouse 只输出 semantic intent，不直接修改 workspace/history/copy mode。
+- TUI-v3 不以 Bubble Tea 作为主运行时；消息循环、effect 调度、终端输入、终端模式和最终 frame 输出都由 v3 自己的 runtime/terminal host 管理。
+- 可以使用 `lipgloss/v2`、`x/ansi` 这类纯渲染、样式、ANSI 辅助库，但不得引入绑定 Bubble Tea `Model/Msg/Cmd` contract 的 UI 组件作为主结构。
 - 可以从 tuiv2 搬迁小而稳定的包，但迁入 v3 后必须去掉对 `tuiv2/` 的运行时依赖。
 
 ## 3. 总体架构图
@@ -38,13 +40,13 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 | termx-tui-v3                                                     |
 |                                                                  |
 |  +----------------+      +----------------+      +-------------+ |
-|  | BubbleTea Host | ---> | AppShell       | ---> | EffectRunner| |
+|  | AppRuntime     | ---> | AppShell       | ---> | EffectRunner| |
 |  +----------------+      +----------------+      +-------------+ |
-|                                |                         |        |
-|                                v                         v        |
-|                        +---------------+        +----------------+ |
-|                        | MessageRouter | <----- | Service Msgs   | |
-|                        +---------------+        +----------------+ |
+|          |                     |                         |        |
+|          v                     v                         v        |
+|  +----------------+    +---------------+        +----------------+ |
+|  | TerminalHost   | -> | MessageRouter | <----- | Service Msgs   | |
+|  +----------------+    +---------------+        +----------------+ |
 |                                |                                  |
 |                                v                                  |
 |  +-------------------------------------------------------------+ |
@@ -60,27 +62,36 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 |                        +---------------+                         |
 |                                |                                  |
 |                                v                                  |
-|                          +----------+                             |
-|                          | Renderer |                             |
-|                          +----------+                             |
+|                        +---------------+                         |
+|                        | Renderer      |                         |
+|                        +---------------+                         |
+|                                | frame                            |
+|                                v                                  |
+|                     +----------------------+                      |
+|                     | TerminalHost FrameSink |                    |
+|                     +----------------------+                      |
 +------------------------------------------------------------------+
 ```
 
 核心原则：
 
-- `AppShell` 只负责 Bubble Tea 生命周期、消息分发和 effect 调度。
+- `AppRuntime` 负责单线程消息循环、effect result 回投、timer、batch、cancel 和退出生命周期。
+- `TerminalHost` 负责宿主 TTY raw mode、stdin event stream、terminal capability probe、alt-screen、mouse、bracketed paste 和 stdout frame sink。
+- `AppShell` 只组合 runtime、message router、reducer、effect runner 和 render 调度，不持有所有业务细节。
 - `StateRoot` 是唯一 UI state 容器。
 - `Service` 只通过 message 返回结果，不直接改 `StateRoot`。
 - `RenderVMBuilder` 从 `StateRoot` 生成不可变 view-model。
-- `Renderer` 只画 view-model，不知道 core client、history source 或 runtime service。
+- `Renderer` 只画 view-model，不知道 core client、history source 或 terminal service；`FrameSink` 是 render 侧输出接口，由 `TerminalHost` 提供真实 TTY 实现。
+- Bubble Tea 只能作为旧 `tuiv2/` 行为参考，不作为 TUI-v3 主线依赖。
 
 ## 4. 模块图
 
 ```text
 app/
-  shell             Bubble Tea Model、Init/Update/View 边界
-  messages          跨模块消息类型
-  effects           Effect 类型、EffectRunner、异步命令包装
+  runtime           v3 自有事件循环、message queue、timer、batch、cancel、quit
+  shell             runtime、router、reducer、effect runner、render 调度组合边界
+  messages          跨模块消息类型，不依赖 Bubble Tea Msg/Cmd
+  effects           Effect 类型、EffectRunner、异步副作用包装
 
 state/
   root              StateRoot 与 reducer 协调
@@ -93,11 +104,15 @@ state/
 
 services/
   coreclient        protocol/core-v2 adapter
-  terminal          外部 runtime service：attach、input、resize、restart、ownership、event stream
+  terminal          外部终端进程/core service：attach、terminal input、resize、restart、ownership、surface/title event stream
   history           latest/older request IO，返回 response message，不做 stale 接纳
   session           load/save/restore
   clipboard         yank、clipboard history
-  host              emoji probe、theme probe、terminal capability
+
+terminalhost/
+  input             raw stdin、UV/xterm event -> v3 InputEvent
+  output            direct terminal enter/exit、FrameSink 实现、cursor/mouse/bracketed paste
+  capability        host theme、emoji、width、palette probe
 
 input/
   keymap            key binding catalog
@@ -107,6 +122,8 @@ input/
 render/
   viewmodel         StateRoot -> RenderVM
   renderer          RenderVM -> frame
+  framesink         frame 输出接口；TerminalHost、非 TTY、测试实现该接口
+  style             lipgloss/v2 纯样式 helper、主题 token、ANSI 宽度 helper
   hitregions        frame hit region metadata
 
 bridge/
@@ -123,7 +140,7 @@ bridge/
 - `tuiv2/input` 的 keymap、mode、router、terminal input translation。
 - `tuiv2/render` 的 canvas、compositor、pane chrome、hit regions、theme、glyph、render cache 思路。
 - `tuiv2/historyview` 的 authoritative window contract、source adapter 思路和 stale guard 测试。v3 不照搬其带 mutex 的可变 store。
-- `tuiv2/runtime` 的 terminal registry、pane binding、live surface adapter、terminal input/resize/attach 经验。v3 的 terminal process handle、event stream 和 IO 必须归外部 runtime service。
+- `tuiv2/runtime` 的 terminal registry、pane binding、live surface adapter、terminal input/resize/attach 经验。v3 的 terminal process handle、event stream 和 IO 必须归外部 terminal service。
 - `tuiv2/bootstrap`、`sessionstore`、`workbench`、`modal`、`uiinput`、clipboard 相关能力。
 - tuiv2 中已经覆盖的行为 harness，特别是 input、render、historyview、copy selection、mouse wheel 和 resize 场景。
 
@@ -132,6 +149,8 @@ bridge/
 下面结构不迁移为 v3 主结构：
 
 - `tuiv2/app.Model` 的大状态对象。
+- `tuiv2/app` 中以 Bubble Tea `Model/Msg/Cmd` 为中心的 host/runtime 结构。
+- `tuiv2/input` 中对 `tea.KeyMsg`、`tea.MouseMsg` 的直接类型依赖；v3 必须改为自己的 `InputEvent`。
 - 通过共享 model 字段互相耦合的 `update_*` 文件结构。
 - 带 mutex、可被 service 直接调用修改的 UI store。
 - copy mode 读取 snapshot/local scrollback 的历史路径。
@@ -139,6 +158,7 @@ bridge/
 - app 层本地 committed history depth、local loading depth、local exhausted truth。
 - mouse wheel/page up/page down 中任何 snapshot totals、LoadedRows、row count fallback。
 - runtime/local VTerm scrollback 作为 history source 的路径。
+- 任何把 Bubble Tea renderer、Bubble Tea `Cmd` 或 `bubbles` 组件作为 v3 主线 contract 的结构。
 
 ### 5.3 迁移方式
 
@@ -147,10 +167,88 @@ bridge/
 - 每个迁移包必须有自己的 v3 harness，不以 tuiv2 测试语义自动作为回归基准。
 - 如果迁移代码携带旧 history 语义，必须先删除旧语义再进入 v3。
 - store 迁移只能迁移数据结构和校验语义，不能迁移“外部对象持有指针并直接 Apply”的可变调用模式；v3 store 必须由 reducer 持有和更新。
+- 如果迁移代码携带 `tea.Msg`、`tea.Cmd`、`tea.Model`、`tea.KeyMsg` 或 `tea.MouseMsg`，必须在迁入时替换为 v3 自有 message、effect 和 input event 类型。
 
-## 6. 核心状态模型
+## 6. 运行时与终端主机
 
-### 6.1 StateRoot
+TUI-v3 使用自有 `AppRuntime`，不使用 Bubble Tea `Program` 作为主运行时。
+
+### 6.1 AppRuntime
+
+`AppRuntime` 是轻量事件运行时，职责限定为：
+
+- 维护单线程 message queue。
+- 串行执行 `Reducer(StateRoot, Msg) -> StateRoot + Effects`。
+- 接收 service、terminal host、timer 回投的 result message。
+- 调度 batch、delay、interval、cancel token 和 quit。
+- 在 state 或 host event 需要重绘时触发 render pass。
+- 保证 reducer 同一时刻只有一个调用栈。
+
+`AppRuntime` 不做业务决策，不读写 history，不直接访问 protocol client，不直接拼 frame。
+
+### 6.2 EffectRunner
+
+`EffectRunner` 替代 Bubble Tea `Cmd`。
+
+规则：
+
+- `Effect` 是 v3 自有类型，不是函数闭包随处捕获 `StateRoot`。
+- effect 可以调用 service IO，但只能通过 result message 回到 `AppRuntime`。
+- effect 必须支持 context/cancel，至少能取消 pending history request、terminal operation 和 timer。
+- batch 只是多个 effect 的调度组合，不改变 reducer 纯同步边界。
+- timer/interval 必须产出普通 message，不能直接改 state。
+
+### 6.3 TerminalHost
+
+`TerminalHost` 负责宿主 TTY 边界，不负责远端/core 终端进程的 attach、resize、restart 或 terminal input IO：
+
+- raw mode enter/restore。
+- alt-screen enter/exit。
+- cursor hide/show。
+- bracketed paste enable/disable。
+- mouse cell/SGR mode enable/disable。
+- stdin event stream。
+- terminal capability/theme/emoji/palette probe。
+- stdout `FrameSink` 实现。
+
+输入侧必须把宿主 TTY 的 UV/xterm/其他 reader 事件转换成 v3 自有 `InputEvent`，再进入 `MessageRouter`；不得把 Bubble Tea key/mouse 类型泄漏进 `input`、`state` 或 `render`。
+
+输出侧必须通过 `Renderer -> Frame -> FrameSink`，不得交给 Bubble Tea standard renderer。`FrameSink` contract 定义在 render 输出边界，真实 TTY 实现在 `TerminalHost`，非 TTY、测试和录制场景可以使用不同实现，但 contract 相同。
+
+职责边界：
+
+- 宿主 TTY 输入是用户按键、鼠标、粘贴、终端能力回报，归 `TerminalHost`。
+- terminal input 是写给 core/terminal 进程的输入字节或控制请求，归 terminal service。
+
+## 7. UI 组件与第三方库边界
+
+TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有事件循环、状态更新 contract 或 Bubble Tea `Model/Msg/Cmd` 绑定的 UI 组件作为主线结构。
+
+允许：
+
+- `charm.land/lipgloss/v2`：颜色、样式、border、padding、join、place、width、truncate 等纯字符串渲染能力。
+- `github.com/charmbracelet/x/ansi`：ANSI strip、宽度、cursor/control sequence 辅助。
+- `github.com/charmbracelet/ultraviolet`：作为 terminal input/output primitive 使用，必须隔离在 `TerminalHost` 或 `FrameSink` 内。
+- tuiv2 中 picker、modal、prompt、workspace tree 的视觉设计、样式 token、render helper 思路。
+
+禁止：
+
+- 引入 Bubble Tea `Program` 作为 v3 主运行时。
+- 引入 Bubble Tea `standardRenderer` 作为最终输出路径。
+- 在 v3 主线类型中暴露 `tea.Model`、`tea.Msg`、`tea.Cmd`、`tea.KeyMsg`、`tea.MouseMsg`。
+- 直接复用依赖 Bubble Tea contract 的 `bubbles` 组件。
+- 让 UI 组件持有自己的业务 truth 并绕过 `StateRoot` 更新。
+
+迁移组件时必须改成纯渲染/纯交互边界：
+
+- 状态归 `StateRoot` 或对应 reducer-owned store。
+- 输入只产出 semantic intent 或 v3 message。
+- 渲染只消费 view-model，返回 frame lines、spans 或 hit region metadata。
+- 组件内部不得发起 IO、history request、terminal input 或 session save。
+
+## 8. 核心状态模型
+
+### 8.1 StateRoot
 
 `StateRoot` 是 TUI-v3 的唯一 UI state。
 
@@ -168,9 +266,9 @@ bridge/
 
 `StateRoot` 不保存 protocol client、goroutine handle、terminal process handle 或 renderer cache。
 
-`StateRoot` 只保存 terminal id、pane binding、surface snapshot、运行状态标记和请求状态。terminal process handle、event stream subscription、protocol client、resize/input IO 都属于 runtime service 或 core client adapter。
+`StateRoot` 只保存 terminal id、pane binding、surface snapshot、运行状态标记和请求状态。terminal process handle、event stream subscription、protocol client、resize/input IO 都属于 terminal service 或 core client adapter。
 
-### 6.2 TerminalSurfaceStore
+### 8.2 TerminalSurfaceStore
 
 `TerminalSurfaceStore` 只保存实时显示所需状态。
 
@@ -179,7 +277,7 @@ bridge/
 - 不得成为 copy mode/history path 的 committed history source。
 - 不得向 `HistoryStore` 提供 rows 让其反推出 logical line。
 
-### 6.3 HistoryStore
+### 8.3 HistoryStore
 
 `HistoryStore` 是 reducer-owned 的纯状态，保存 core-v2 返回的 authoritative history window、请求状态和 exhausted marker。它不保存 copy mode 交互态。
 
@@ -210,7 +308,7 @@ history service 只能发起请求并把 response 映射成 message，不能在 
 
 `exhausted older marker` 只能绑定 core response、local request id、请求 cursor、core window token 和 cols；它不是本地推断的 history exhausted truth。
 
-### 6.4 CopyModeStore
+### 8.4 CopyModeStore
 
 `CopyModeStore` 只保存 copy mode 的交互态。
 
@@ -227,7 +325,7 @@ history service 只能发起请求并把 response 映射成 message，不能在 
 
 Copy mode 不读取 local VTerm scrollback，不用 wrapped rows 拼 logical line，不维护本地 committed depth。
 
-## 7. 消息和副作用架构
+## 9. 消息和副作用架构
 
 ```text
 input/mouse/protocol msg
@@ -253,9 +351,9 @@ input/mouse/protocol msg
 - renderer invalidate 是 effect 或 shell 级调度，不允许 service 直接调用 renderer。
 - terminal input、history request、session save、clipboard IO 都属于 effect。
 
-## 8. 历史和 copy mode 流程图
+## 10. 历史和 copy mode 流程图
 
-### 8.1 进入 copy mode
+### 10.1 进入 copy mode
 
 ```text
 wheel up / page up
@@ -282,7 +380,7 @@ HistoryStore stores core window token; CopyModeStore binds core token + cols + v
 RenderVMBuilder uses HistoryStore + CopyModeStore projection
 ```
 
-### 8.2 older prepend
+### 10.2 older prepend
 
 ```text
 copy mode viewport at top
@@ -303,7 +401,7 @@ Reducer receives response; HistoryStore validates request id/token/generation/cu
 prepend rows; CopyModeStore viewport top adjusted by inserted row count
 ```
 
-### 8.3 selection
+### 10.3 selection
 
 ```text
 cursor/mark visual position
@@ -320,7 +418,7 @@ copy text assembled by logical line spans
 
 clipped span 不能被当作完整 logical line。相邻片段只有在 stable logical line id 和 clipping 关系连续时才能拼接。
 
-## 9. Render 架构
+## 11. Render 架构
 
 Renderer 分两层：
 
@@ -348,7 +446,7 @@ renderer 禁止：
 - 从 snapshot/grid viewport 推断 copy mode history。
 - 修改 `StateRoot`。
 
-## 10. 与 core-v2 的接口
+## 12. 与 core-v2 的接口
 
 TUI-v3 只通过 `CoreClient` 访问 core-v2。
 
@@ -379,7 +477,7 @@ resize 接纳规则：
 - 旧 cols 的 latest/older response 必须拒绝。
 - page up/down 在等待新 latest replace 时不得从 live surface 或旧 window 推断历史。
 
-## 11. 包边界硬约束
+## 13. 包边界硬约束
 
 - `historyview` 不 import `render`、`runtime`、`app`。
 - `copymode` 不 import protocol client、runtime 或 renderer。
@@ -387,11 +485,14 @@ resize 接纳规则：
 - `services` 不 import renderer。
 - `input` 不 import app state。
 - `app` 可以组合各包，但不得持有所有业务细节字段。
+- `app/runtime` 不 import render implementation、core protocol client 或 terminal process handle。
+- `terminalhost` 不 import state reducer、historyview、copymode 或 services/coreclient。
+- `render/style` 可以 import `lipgloss/v2` 和 `x/ansi`，但不得 import Bubble Tea。
 - `TerminalSurfaceStore` 与 `HistoryStore` 不能互相反推数据。
-- runtime service 不持有或修改 `StateRoot`；它只通过 event/result message 反馈 attach、resize、restart、surface update 和 title/metadata 变化。
+- terminal service 不持有或修改 `StateRoot`；它只通过 event/result message 反馈 attach、resize、restart、surface update 和 title/metadata 变化。
 - history service 不持有 `HistoryStore`；它只返回 response message。
 
-## 12. 测试策略
+## 14. 测试策略
 
 优先用小 harness 固定边界，再做 e2e。
 
@@ -401,34 +502,42 @@ resize 接纳规则：
 - copymode harness：cursor、viewport、selection、clipped span、multi logical line copy。
 - render VM harness：live mode 与 copy mode projection 分流、copy mode 缺 window 时不从 live surface fallback。
 - service fake harness：core response 映射、local request id、error cleanup。
-- runtime service harness：attach、resize、restart、event stream 只回 message，不直接改 state。
+- terminal service harness：attach、resize、restart、event stream 只回 message，不直接改 state。
+- app runtime harness：message 顺序、effect result 回投、timer、batch、cancel、quit。
+- terminal host harness：input event 转换、direct terminal enter/exit、FrameSink 输出 contract。
+- UI render helper harness：lipgloss/v2 样式 helper 宽度、裁剪、ANSI 安全性，不依赖 Bubble Tea。
 - integration harness：wheel up 进入 copy mode、page up 请求 older、resize 后 latest replace、旧 cols response 被拒绝。
 
 tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback 语义带进 v3。
 
-## 13. 推荐落地顺序
+## 15. 推荐落地顺序
 
 1. 建立 `termx-tui-v3/` Go module、包目录和基础测试框架。
-2. 迁入或重写 `input`，只输出 semantic intent / terminal input。
-3. 建立 `StateRoot`、message、effect、reducer、EffectRunner 骨架。
-4. 实现 reducer-owned `historyview` 状态与 fake source harness。
-5. 实现 `copymode` 状态机和 selection harness。
-6. 建立 `RenderVMBuilder`，先用 fake state 渲染 live/copy 两种 projection。
-7. 迁移 render primitives、pane chrome、hit regions 和 render cache。
-8. 建立 `CoreClient` fake adapter，接入 history latest/older。
-9. 建立 runtime service fake，接入 terminal surface/update/resize/restart message。
-10. 接入 workspace/pane layout、modal、clipboard、session restore。
-11. 接入真实 protocol adapter、terminal input、resize、attach/restart。
-12. 补最小端到端 harness。
+2. 建立 v3 自有 `Msg`、`Effect`、`AppRuntime`、`EffectRunner` 骨架和 harness。
+3. 建立 `TerminalHost` fake 与 `FrameSink` contract，先不接真实 TTY。
+4. 迁入或重写 `input`，替换 Bubble Tea key/mouse 类型，只输出 semantic intent / terminal input。
+5. 建立 `StateRoot`、message、effect、reducer 骨架。
+6. 实现 reducer-owned `historyview` 状态与 fake source harness。
+7. 实现 `copymode` 状态机和 selection harness。
+8. 建立 `RenderVMBuilder`，先用 fake state 渲染 live/copy 两种 projection。
+9. 迁移 render primitives、pane chrome、hit regions、lipgloss/v2 style helper 和 render cache。
+10. 建立 `CoreClient` fake adapter，接入 history latest/older。
+11. 建立 terminal service fake，接入 terminal surface/update/resize/restart message。
+12. 接入 workspace/pane layout、modal、clipboard、session restore。
+13. 接入真实 protocol adapter、真实 `TerminalHost`、terminal input、resize、attach/restart。
+14. 补最小端到端 harness。
 
 每个切片都必须避免引入 local scrollback history fallback。
 
-## 14. 第一阶段范围
+## 16. 第一阶段范围
 
 第一阶段只做：
 
 - v3 module skeleton
 - package boundaries
+- v3 自有 `Msg` / `Effect` 基础类型
+- `AppRuntime` fake harness
+- `TerminalHost` fake 与 `FrameSink` contract
 - reducer-owned `historyview` state
 - fake `historyview.Source`
 - `copymode` state skeleton
@@ -440,7 +549,7 @@ tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback
 
 第一阶段不做：
 
-- Bubble Tea app 完整接入
+- 真实 AppRuntime/TerminalHost 完整接入
 - 真实 protocol adapter
 - 旧 `tuiv2/` 原地修补
 - local VTerm scrollback 迁移
