@@ -371,6 +371,7 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 			_, remove = invalidLineIDs[logicalLineID]
 		}
 		if !remove {
+			inMissingIDLogicalLine = false
 			continue
 		}
 		switch stringAt(viewport.Ownership, i) {

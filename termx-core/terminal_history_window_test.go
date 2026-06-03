@@ -85,6 +85,25 @@ func TestHistoryWindowDropsMissingLogicalLineIDsFromLogicalTotal(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowCountsSeparateMissingLogicalLineIDSegments(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("lost-a"), vtermCells("kept"), vtermCells("lost-b")},
+		Ownership:      []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs: []uint64{0, 10, 0},
+		LoadedRows:     3,
+		TotalRows:      3,
+		LogicalTotal:   3,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-total-separated-missing-line-id", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"kept"}) {
+		t.Fatalf("expected only stable-id row after filtering, got %#v", got)
+	}
+	if window.LogicalTotal != 1 {
+		t.Fatalf("expected logical total to drop both separate missing-id segments, got %d", window.LogicalTotal)
+	}
+}
+
 func TestHistoryWindowClearsBoundaryWhenAllRowsLackAuthoritativeLogicalLineIDs(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("lost-a"), vtermCells("lost-b")},
