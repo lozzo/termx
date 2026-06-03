@@ -4,11 +4,13 @@ use (
 	./internal
 	./termx-cli
 	./termx-core
+	./termx-core-v2
 	./termx-hub
 	./termx-proto
 	./termx-remote
 	./termx-shared
 	./termx-testkit
+	./termx-tui-v3
 	./termx-vterm
 	./tuiv2
 )

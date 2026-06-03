@@ -126,7 +126,7 @@
 | 切片 | 状态 | 范围 | 完成标准 |
 | --- | --- | --- | --- |
 | 0. 设计基线 | 完成 | `termx-core-v2/docs/`、`termx-tui-v3/docs/`、`workflow.md`、`AGENTS.md` | core-v2 与 tui-v3 架构文档存在；本文件和 `AGENTS.md` 指向新主线；旧实现只作为参考 |
-| 1. 新模块骨架 | 进行中 | `termx-core-v2/`、`termx-tui-v3/`、`go.work` | 两个新 Go module 加入 workspace；建立最小包结构、空实现和 smoke tests；不依赖旧内部实现 |
+| 1. 新模块骨架 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`go.work` | 两个新 Go module 加入 workspace；建立最小包结构、空实现和 smoke tests；不依赖旧内部实现 |
 | 2. core-v2 domain 骨架 | 待开始 | `termx-core-v2/` | 建立 `LogicalLine`、`LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend` 内存实现和基础 harness |
 | 3. core-v2 历史事件语义 | 待开始 | `termx-core-v2/` | 覆盖 write/seal/mutate/reset/commit/reclaim/hide/truncate/alt-screen/process-exit/resize 事件；非历史事件不创建 committed history |
 | 4. core-v2 HistoryWindow 投影 | 待开始 | `termx-core-v2/` | 从 logical lines 生成 visual rows、line spans、clipping、token、generation、cursor、latest replace、older prepend |
@@ -223,8 +223,6 @@
 ## 10. 当前状态
 
 - 当前分支主线已切换到 `termx-core-v2/` 与 `termx-tui-v3/`。
-- 正在执行切片 1：新模块骨架。
-- 两个新目录目前只有架构文档，尚未建立 Go module。
-- `go.work` 尚未包含 `termx-core-v2/` 与 `termx-tui-v3/`。
+- 切片 1 已完成：`termx-core-v2/` 与 `termx-tui-v3/` 已建立 Go module、最小包结构、空实现和 smoke tests，并已加入 `go.work`。
 - 旧 `termx-core/` 与 `tuiv2/` 的历史修补进度不再作为当前主线状态；如需查阅只能通过 git 历史或只读参考。
-- 下一步继续完成切片 1：建立两个新 Go module、最小包结构、空实现和 smoke tests。
+- 下一步执行切片 2：core-v2 domain 骨架。
