@@ -579,7 +579,11 @@ func (t *Terminal) Restart() error {
 		return ErrTerminalNotExited
 	}
 	liveTail := t.primaryLiveTail.clone()
-	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t, liveTail)
+	preservedRows := restartPreservedRows(t, liveTail)
+	preservedScrollback := terminalGridRowsToCellsRows(preservedRows)
+	preservedScrollbackTimestamps := terminalGridRowsTimestamps(preservedRows)
+	preservedScrollbackRowKinds := terminalGridRowsKinds(preservedRows)
+	preservedScrollbackWrapped := terminalGridRowsWrapped(preservedRows)
 	grid := t.grid
 	gridAppender := t.gridAppender
 	cfg := terminalConfig{
@@ -597,7 +601,10 @@ func (t *Terminal) Restart() error {
 		gridAppender.flush()
 	}
 	if grid != nil {
-		if err := grid.appendRows(terminalGridRowsFromPreserved(preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped)); err != nil {
+		t.mu.Lock()
+		t.recordTerminalGridRowLineMigrationsLocked(preservedRows)
+		t.mu.Unlock()
+		if err := grid.appendRows(preservedRows); err != nil {
 			return err
 		}
 	}
@@ -648,28 +655,17 @@ func (t *Terminal) Restart() error {
 	return nil
 }
 
-func restartPreservedRows(t *Terminal, liveTail terminalPrimaryLiveTail) ([][]vterm.Cell, []time.Time, []string, []bool) {
+func restartPreservedRows(t *Terminal, liveTail terminalPrimaryLiveTail) []terminalGridRow {
 	if t == nil || t.vterm == nil {
-		return nil, nil, nil, nil
+		return nil
 	}
 	restartAt := time.Now().UTC()
 	rows := t.primaryLiveTailRowsForExit(liveTail)
-	if len(rows) == 0 {
-		return appendRestartMarker(nil, nil, nil, nil, restartAt)
-	}
-	out := terminalGridRowsToCellsRows(rows)
-	timestamps := terminalGridRowsTimestamps(rows)
-	rowKinds := terminalGridRowsKinds(rows)
-	wrapped := terminalGridRowsWrapped(rows)
-	return appendRestartMarker(out, timestamps, rowKinds, wrapped, restartAt)
-}
-
-func appendRestartMarker(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, wrapped []bool, restartAt time.Time) ([][]vterm.Cell, []time.Time, []string, []bool) {
-	rows = append(rows, nil)
-	timestamps = append(timestamps, restartAt)
-	rowKinds = append(rowKinds, SnapshotRowKindRestart)
-	wrapped = append(wrapped, false)
-	return rows, timestamps, rowKinds, wrapped
+	rows = append(rows, terminalGridRow{
+		timestamp: restartAt,
+		rowKind:   SnapshotRowKindRestart,
+	})
+	return rows
 }
 
 func terminalGridRowsFromPreserved(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, wrapped []bool) []terminalGridRow {

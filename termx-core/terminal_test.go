@@ -3149,6 +3149,50 @@ func TestTerminalRestartPreservesScrollbackAcrossRestart(t *testing.T) {
 	t.Fatal("timed out waiting for restarted terminal output")
 }
 
+func TestTerminalRestartPreservedRowsKeepLogicalLineMetadata(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "restart-preserved-logical-lines",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcd")
+	writeVTermDamageToGrid(t, term, vt, "efgh")
+	writeVTermDamageToGrid(t, term, vt, "ij")
+	liveTailWindow := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount())
+	if got := liveTailWindow.logicalLineIDs; len(got) != 2 || !terminalRuntimeLogicalLineID(got[0]) || got[0] != got[1] {
+		t.Fatalf("expected restart input live tail rows to share runtime id, got %#v", got)
+	}
+	runtimeLineID := liveTailWindow.logicalLineIDs[0]
+
+	rows := restartPreservedRows(term, term.primaryLiveTail.clone())
+	term.recordTerminalGridRowLineMigrationsLocked(rows)
+	if err := store.appendRows(rows); err != nil {
+		t.Fatalf("append restart preserved rows: %v", err)
+	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after restart preserve append: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	wantRecords := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 4, StartRow: 3, EndRow: 3, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
+		t.Fatalf("expected restart preserve append to keep explicit logical line metadata, got %#v want %#v", lineMetadata.Records, wantRecords)
+	}
+	wantMigrations := []terminalGridLineMigration{{RuntimeID: runtimeLineID, PersistedID: 1}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, wantMigrations) {
+		t.Fatalf("expected restart preserve append to write runtime migration, got %#v want %#v", lineMetadata.Migrations, wantMigrations)
+	}
+}
+
 func TestTerminalProcessExitForceSealsPrimaryLiveTail(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)
