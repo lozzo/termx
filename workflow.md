@@ -523,6 +523,7 @@ TUI store 至少表达：
 - 已补齐 core persisted source row 重投影后 older limit 裁剪 harness：older prepend 在跳过最新 source row 后裁进前一条 source row 的投影尾段时，row boundary 仍保持真实 source row id，cursor 按 committed source row depth 推进，clipped span 不被当作完整 loaded logical line。
 - 已补齐 core persisted logical line 重投影 row-id range harness：单条 projected visual row 横跨多个 persisted source row 时，projection row boundary 会覆盖真实 source row id 区间，并保留 explicit authoritative logical line id。
 - 已补齐 core mixed-authority 重投影 harness：单条 projected visual row 横跨 fallback 与 explicit source row 时，不暴露 partial logical line id，不生成 authoritative history row，但仍保留物理 source row boundary 供兼容投影使用。
+- 已补齐 core history window limit 裁剪的 source row 去重 harness：同一 persisted source row 被重投影成多条 visual row 时，裁掉前缀 visual row 但尾部仍可见不会推进 committed cursor；只有该 source row 的所有投影都被裁掉后才按一个 committed row 计入分页深度。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

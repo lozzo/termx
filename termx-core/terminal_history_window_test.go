@@ -242,6 +242,51 @@ func TestHistoryWindowFiltersRowIDBoundaryWithRows(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowTrimLimitDeduplicatesReflowedSourceRows(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("ab"), vtermCells("cd"), vtermCells("ef")},
+		Ownership:                  []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs:             []uint64{10, 10, 11},
+		LogicalLineIDAuthoritative: []bool{true, true, true},
+		RowIDRanges:                []terminalGridRowIDRange{{First: 40, Last: 40, Known: true}, {First: 40, Last: 40, Known: true}, {First: 41, Last: 41, Known: true}},
+		LoadedRows:                 2,
+		TotalRows:                  2,
+		Limit:                      2,
+		FirstRowID:                 40,
+		LastRowID:                  41,
+	}
+
+	if got := terminalHistoryWindowCommittedDepthForRows(viewport, 1); got != 0 {
+		t.Fatalf("expected trimming one projected row to keep committed depth while source row remains visible, got %d", got)
+	}
+	if got := terminalHistoryWindowCommittedDepthForRows(viewport, 2); got != 1 {
+		t.Fatalf("expected trimming both projections of source row 40 to advance committed depth once, got %d", got)
+	}
+
+	trimmed := historyWindowTrimViewportToLimit(viewport)
+	if got := vtermRowsToStrings(trimmed.Rows); !reflect.DeepEqual(got, []string{"cd", "ef"}) {
+		t.Fatalf("expected trim to keep projected tail rows, got %#v", got)
+	}
+	if trimmed.LoadedRows != 2 {
+		t.Fatalf("expected loaded rows to keep source row 40 in cursor because its tail projection remains visible, got %d", trimmed.LoadedRows)
+	}
+	if trimmed.FirstRowID != 40 || trimmed.LastRowID != 41 {
+		t.Fatalf("expected row id boundary to follow kept source row ranges, got %d..%d", trimmed.FirstRowID, trimmed.LastRowID)
+	}
+
+	viewport.Limit = 1
+	trimmed = historyWindowTrimViewportToLimit(viewport)
+	if got := vtermRowsToStrings(trimmed.Rows); !reflect.DeepEqual(got, []string{"ef"}) {
+		t.Fatalf("expected second trim to keep latest source row only, got %#v", got)
+	}
+	if trimmed.LoadedRows != 1 {
+		t.Fatalf("expected loaded rows to advance after all projections of source row 40 are trimmed away, got %d", trimmed.LoadedRows)
+	}
+	if trimmed.FirstRowID != 41 || trimmed.LastRowID != 41 {
+		t.Fatalf("expected row id boundary to narrow to kept source row 41, got %d..%d", trimmed.FirstRowID, trimmed.LastRowID)
+	}
+}
+
 func TestServerHistoryWindowFiltersReflowedRowIDBoundary(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
