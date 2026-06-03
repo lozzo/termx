@@ -612,6 +612,35 @@ func TestTerminalGridRecoveredLiveTailRejectsDuplicateRecordIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailRejectsDuplicateReclaimedRecordIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("aa")},
+		{cells: localVTermCellsFromString("bb")},
+	})
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode reclaimed row metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{
+			{ID: 1, StartRow: 0, EndRow: 0, RowIDKnown: true, FirstRowID: 0, LastRowID: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyLiveTail, Dirty: false, Generation: generation},
+			{ID: 1, StartRow: 1, EndRow: 1, RowIDKnown: true, FirstRowID: 1, LastRowID: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyLiveTail, Dirty: false, Generation: generation},
+		},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write reclaimed live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected duplicate reclaimed live tail record ids to be rejected")
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsMigratedRuntimeID(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
