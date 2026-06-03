@@ -123,6 +123,25 @@ func TestTerminalPrimaryLiveTailWindowCarriesLogicalLineTimestampRange(t *testin
 	}
 }
 
+func TestTerminalPrimaryLiveTailLogicalLineRecordsUsePayloadMetadata(t *testing.T) {
+	start := time.Unix(10, 0).UTC()
+	end := time.Unix(30, 0).UTC()
+	var tail terminalPrimaryLiveTail
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), RowKind: "live-kind", Timestamp: end, WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), Timestamp: start, WrappedSet: true, Wrapped: false},
+	}, []uint64{terminalLiveTailLogicalLineIDBase + 1, terminalLiveTailLogicalLineIDBase + 1}, false)
+
+	records := tail.logicalLineRecords()
+	if len(records) != 1 {
+		t.Fatalf("expected one live-tail logical line record, got %#v", records)
+	}
+	record := records[0]
+	if record.rowKind != "live-kind" || !record.timestampStart.Equal(start) || !record.timestampEnd.Equal(end) {
+		t.Fatalf("expected live-tail record metadata from logical line payload, got %#v", record)
+	}
+}
+
 func TestTerminalPrimaryLiveTailReclaimedZeroCoordinatesRequirePersistedIDs(t *testing.T) {
 	var tail terminalPrimaryLiveTail
 	tail.replaceRows([]localvterm.DamageOp{{

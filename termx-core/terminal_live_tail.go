@@ -727,17 +727,22 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 			continue
 		}
 		record := terminalLiveTailLogicalLineRecord{
-			id:             uint64At(logicalLineIDs, start),
-			startRow:       baseRow + start,
-			endRow:         baseRow + i,
-			sealState:      terminalLiveTailRecordSealState(segment, i),
-			origin:         segment.origin,
-			residency:      terminalLogicalLineResidencyLiveTail,
-			rowKind:        terminalLogicalLineRowKindFromDamageRows(segment.rows[start : i+1]),
-			timestampStart: terminalLogicalLineTimestampStartFromDamageRows(segment.rows[start : i+1]),
-			timestampEnd:   terminalLogicalLineTimestampEndFromDamageRows(segment.rows[start : i+1]),
-			dirty:          terminalLiveTailRecordDirty(segment),
-			generation:     segment.generation,
+			id:         uint64At(logicalLineIDs, start),
+			startRow:   baseRow + start,
+			endRow:     baseRow + i,
+			sealState:  terminalLiveTailRecordSealState(segment, i),
+			origin:     segment.origin,
+			residency:  terminalLogicalLineResidencyLiveTail,
+			dirty:      terminalLiveTailRecordDirty(segment),
+			generation: segment.generation,
+		}
+		localRecord := record
+		localRecord.startRow = start
+		localRecord.endRow = i
+		if payload, ok := terminalLiveTailLogicalLineRecordPayload(localRecord, segment.rows); ok {
+			record.rowKind = payload.rowKind()
+			record.timestampStart = payload.timestampStart()
+			record.timestampEnd = payload.timestampEnd()
 		}
 		if terminalLiveTailReclaimedSegmentHasRowIDs(segment) {
 			record.rowIDKnown = true
