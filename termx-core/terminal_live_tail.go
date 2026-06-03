@@ -536,6 +536,9 @@ func terminalLiveTailSegmentLogicalLineIDs(lineIDs []uint64, rows []vterm.Damage
 	}
 	aligned := alignLiveTailUint64s(lineIDs, rowCount)
 	if hasNonZeroUint64(aligned) {
+		if !terminalLiveTailLogicalLineIDsComplete(aligned, rowCount) {
+			return make([]uint64, rowCount)
+		}
 		return aligned
 	}
 	return terminalLiveTailSegmentFallbackLogicalLineIDs(origin, rows, firstRowID, lastRowID)

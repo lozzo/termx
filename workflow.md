@@ -438,6 +438,7 @@ TUI store 至少表达：
 - 已修正 reclaimed prefix 覆盖 resize live-tail 前缀后的裁剪逻辑：resize segment 裁剪 rows 时同步裁剪并保留 runtime logical line id，避免剩余 mutable live tail 回退成无 id 的 wrapped 推导。
 - 已收紧 mutable live tail record 生成：只有每个 live-tail row 都带 stable logical line id 时才生成 recoverable line records，缺 id 的 segment 不再通过 wrapped 元数据拼出可写 sidecar record。
 - 已将 mutable live tail record view 收敛为全尾部连续语义：任一 segment 缺少完整 stable logical line id 时不返回 partial records，避免上层误消费非连续 recoverable metadata。
+- 已收紧 mutable live tail window 投影的 logical line id 输出：segment 内存在 partial id 时不再把半条 id 暴露给 authoritative projection，而是整体压成无 id，避免伪造逻辑行边界。
 - 已将 core `history.window` line span 生成改为只按 stable logical line id 归并 visual rows；projection 缺失 logical line id 时不再通过 wrapped 元数据伪造 authoritative line spans。
 - 已将 core screen projection 裁剪后的 clipped-before 判定收敛为只看相邻 stable logical line id；缺少 logical line id 时不再通过 wrapped 元数据推断窗口切断了逻辑行。
 - 已将 core grow resize reclaim 的投影裁剪起点收敛为只按 stable logical line id 向前扩展；缺少 logical line id 时不再通过 wrapped 元数据扩展 reclaim 窗口。

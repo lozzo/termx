@@ -283,6 +283,23 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsRequireCompleteIDs(t *testing.
 	}
 }
 
+func TestTerminalPrimaryLiveTailWindowSuppressesPartialLogicalLineIDs(t *testing.T) {
+	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{{
+		origin:    terminalLiveTailOriginLive,
+		sealState: terminalLiveTailSealed,
+		rows: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+		},
+		logicalLineIDs: []uint64{terminalLiveTailLogicalLineIDBase + 1, 0},
+	}}}
+
+	window := tail.window(0, tail.rowCount())
+	if got := window.logicalLineIDs; !reflect.DeepEqual(got, []uint64{0, 0}) {
+		t.Fatalf("expected partial live-tail ids to be suppressed in projection, got %#v", got)
+	}
+}
+
 func TestTerminalPrimaryLiveTailLogicalLineRecordsRejectPartialSegments(t *testing.T) {
 	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{
 		{
