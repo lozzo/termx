@@ -4384,6 +4384,46 @@ func TestTerminalClearScreenClearsRecoverableMutableLiveTail(t *testing.T) {
 	}
 }
 
+func TestTerminalPartialClearDoesNotClearMutableLiveTail(t *testing.T) {
+	vt := localvterm.New(12, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "partial-clear-keeps-live-tail",
+		size:  Size{Cols: 12, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("hidden-live"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	term.recordLiveTailMetadataLocked()
+
+	damage := localvterm.WriteDamage{
+		Ops: []localvterm.DamageOp{{
+			Code: localvterm.ScreenOpClearRect,
+			Rect: localvterm.DamageRect{X: 0, Y: 0, Width: 6, Height: 1},
+		}},
+		SizeCols: 12,
+		SizeRows: 2,
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"hidden-live"}) {
+		t.Fatalf("expected partial clear to keep mutable live tail, got %#v", got)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live-tail metadata after partial clear: %v", err)
+	}
+	if len(metadata.LiveRecords) != 1 || len(metadata.LiveRows) != 1 {
+		t.Fatalf("expected partial clear to keep recoverable live-tail metadata, got %#v", metadata)
+	}
+}
+
 func TestTerminalNonResizeFullReplaceDoesNotCreateCommittedHistory(t *testing.T) {
 	vt := localvterm.New(12, 2, 0, nil)
 	vt.DisableEmulatorScrollback()
