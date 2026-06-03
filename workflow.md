@@ -469,6 +469,7 @@ TUI store 至少表达：
 - 已将 core grow resize reclaim 的投影裁剪起点收敛为只按 stable logical line id 向前扩展；缺少 logical line id 时不再通过 wrapped 元数据扩展 reclaim 窗口。
 - 已将 core screen projection 裁剪后的 leading row kind 继承收敛为只在相邻 stable logical line id 连续时发生；缺少 logical line id 时不再通过 wrapped 元数据继承 clipped span 的 row kind。
 - 已将 reclaimed mutable live tail 的 logical line id 输出收敛为只接受显式 persisted logical line id；即使带有 reclaimed row 坐标，也不再用 row id 与 wrapped 元数据 fallback 生成 authoritative logical line boundary。
+- 已收紧 reclaimed mutable live tail metadata 的 generation 约束：写入和恢复都必须携带非零 reclaimed generation，并且恢复时必须与当前 persisted store generation 匹配。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与非零 logical line boundary id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。

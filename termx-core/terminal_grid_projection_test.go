@@ -1024,6 +1024,42 @@ func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedGeneration(t *testing
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailRejectsMissingReclaimedGeneration(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("persisted")},
+	}); err != nil {
+		t.Fatalf("append persisted row: %v", err)
+	}
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("persisted"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:         1,
+			StartRow:   0,
+			EndRow:     0,
+			RowIDKnown: true,
+			FirstRowID: 0,
+			LastRowID:  0,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected reclaimed live tail metadata without generation to be rejected")
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsMismatchedReclaimedLogicalLineID(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

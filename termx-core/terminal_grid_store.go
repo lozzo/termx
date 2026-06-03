@@ -1860,6 +1860,9 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 		if record.origin != terminalLiveTailOriginReclaimed && !record.sealed && i != len(records)-1 {
 			return nil, false
 		}
+		if record.origin == terminalLiveTailOriginReclaimed && record.generation == 0 {
+			return nil, false
+		}
 		out = append(out, record)
 		nextStart = record.endRow + 1
 	}
@@ -1934,7 +1937,7 @@ func terminalLiveTailReclaimedMetadataMatchesPersistedStore(record terminalGridL
 	if persistedRowCount <= 0 {
 		return false
 	}
-	if record.Generation != 0 && persistedGeneration != 0 && record.Generation != persistedGeneration {
+	if record.Generation == 0 || persistedGeneration == 0 || record.Generation != persistedGeneration {
 		return false
 	}
 	if firstRowID < persistedBaseRowID {
@@ -2660,7 +2663,7 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 				return false
 			}
 		} else {
-			if !sealed || !record.rowIDKnown || record.lastRowID < record.firstRowID {
+			if !sealed || !record.rowIDKnown || record.lastRowID < record.firstRowID || record.generation == 0 {
 				return false
 			}
 			if int(record.lastRowID-record.firstRowID)+1 != record.endRow-record.startRow+1 {

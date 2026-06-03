@@ -133,6 +133,7 @@ func TestTerminalGridLineRecordMetasOnlyWriteReclaimedRowIDs(t *testing.T) {
 			sealState:  terminalLiveTailSealed,
 			origin:     terminalLiveTailOriginReclaimed,
 			residency:  terminalLogicalLineResidencyLiveTail,
+			generation: 7,
 			rowIDKnown: true,
 			firstRowID: 40,
 			lastRowID:  40,
@@ -244,6 +245,37 @@ func TestTerminalGridStoreRecordLiveTailLineStateRejectsPartialCoverage(t *testi
 	}
 	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
 		t.Fatalf("expected partial live tail metadata to be cleared, got %#v", metadata)
+	}
+}
+
+func TestTerminalGridStoreRecordLiveTailLineStateRejectsReclaimedWithoutGeneration(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows := []localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("reclaimed"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}
+	records := []terminalLiveTailLogicalLineRecord{{
+		id:         41,
+		startRow:   0,
+		endRow:     0,
+		sealState:  terminalLiveTailSealed,
+		origin:     terminalLiveTailOriginReclaimed,
+		residency:  terminalLogicalLineResidencyLiveTail,
+		rowIDKnown: true,
+		firstRowID: 40,
+		lastRowID:  40,
+	}}
+	if err := store.recordLiveTailLineState(records, rows); err != nil {
+		t.Fatalf("record reclaimed live tail without generation: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read reclaimed live tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected reclaimed live tail without generation to be cleared, got %#v", metadata)
 	}
 }
 
