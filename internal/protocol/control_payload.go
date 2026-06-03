@@ -314,10 +314,17 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.HistoryWindowParams", params)
 		}
 		return proto.Marshal(&wirepb.HistoryWindowParams{
-			TerminalId:   value.TerminalID,
-			BeforeOffset: int32(value.BeforeOffset),
-			Limit:        int32(value.Limit),
-			Cols:         int32(value.Cols),
+			TerminalId:          value.TerminalID,
+			BeforeOffset:        int32(value.BeforeOffset),
+			Limit:               int32(value.Limit),
+			Cols:                int32(value.Cols),
+			Token:               value.Token,
+			HistoryGeneration:   value.Generation,
+			CursorValid:         value.CursorValid,
+			BeforeLineId:        value.BeforeLineID,
+			BeforeRowInLine:     int32(value.BeforeRowInLine),
+			BoundaryFirstLineId: value.BoundaryFirstLineID,
+			BoundaryLastLineId:  value.BoundaryLastLineID,
 		})
 	case "remote.pair.start":
 		switch value := params.(type) {
@@ -481,7 +488,19 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
 		}
-		return HistoryWindowParams{TerminalID: msg.GetTerminalId(), BeforeOffset: int(msg.GetBeforeOffset()), Limit: int(msg.GetLimit()), Cols: int(msg.GetCols())}, nil
+		return HistoryWindowParams{
+			TerminalID:          msg.GetTerminalId(),
+			BeforeOffset:        int(msg.GetBeforeOffset()),
+			Limit:               int(msg.GetLimit()),
+			Cols:                int(msg.GetCols()),
+			Token:               msg.GetToken(),
+			Generation:          msg.GetHistoryGeneration(),
+			CursorValid:         msg.GetCursorValid(),
+			BeforeLineID:        msg.GetBeforeLineId(),
+			BeforeRowInLine:     int(msg.GetBeforeRowInLine()),
+			BoundaryFirstLineID: msg.GetBoundaryFirstLineId(),
+			BoundaryLastLineID:  msg.GetBoundaryLastLineId(),
+		}, nil
 	case "remote.pair.start":
 		var msg wirepb.RemotePairStartParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {

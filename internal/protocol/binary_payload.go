@@ -184,6 +184,11 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 		LastRowId:                  window.LastRowID,
 		FirstLineId:                window.FirstLineID,
 		LastLineId:                 window.LastLineID,
+		CursorValid:                window.CursorValid,
+		CursorBeforeLineId:         window.CursorLineID,
+		CursorBeforeRowInLine:      int32(window.CursorRow),
+		RowLogicalLineIds:          append([]uint64(nil), window.RowLineIDs...),
+		RowInLine:                  encodeWireInt32Slice(window.RowInLine),
 		TimestampUnixNano:          timeToUnixNano(window.Timestamp),
 	}
 }
@@ -252,6 +257,11 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 		LastRowID:     msg.GetLastRowId(),
 		FirstLineID:   msg.GetFirstLineId(),
 		LastLineID:    msg.GetLastLineId(),
+		CursorValid:   msg.GetCursorValid(),
+		CursorLineID:  msg.GetCursorBeforeLineId(),
+		CursorRow:     int(msg.GetCursorBeforeRowInLine()),
+		RowLineIDs:    append([]uint64(nil), msg.GetRowLogicalLineIds()...),
+		RowInLine:     decodeWireInt32Slice(msg.GetRowInLine()),
 		Timestamp:     unixNanoToTime(msg.GetTimestampUnixNano()),
 	}, nil
 }
@@ -608,6 +618,28 @@ func encodeWireBoolSlice(values []bool) []bool {
 	}
 	if !nonEmpty {
 		return nil
+	}
+	return out
+}
+
+func encodeWireInt32Slice(values []int) []int32 {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]int32, len(values))
+	for i, value := range values {
+		out[i] = int32(value)
+	}
+	return out
+}
+
+func decodeWireInt32Slice(values []int32) []int {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]int, len(values))
+	for i, value := range values {
+		out[i] = int(value)
 	}
 	return out
 }

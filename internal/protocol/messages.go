@@ -312,6 +312,8 @@ type SnapshotParams struct {
 	ScrollbackLimit  int
 }
 
+// GridViewportParams 只服务 legacy realtime projection 兼容路径，不能作为
+// committed history truth 或 copy mode history source。
 type GridViewportParams struct {
 	TerminalID       string
 	ScrollbackOffset int
@@ -319,11 +321,21 @@ type GridViewportParams struct {
 	Cols             int
 }
 
+// HistoryWindowParams 是 authoritative history path 的请求参数。旧
+// BeforeOffset 保留为兼容字段；v3 应优先使用 token/generation/logical cursor
+// 与 logical line boundary 做 stale guard。
 type HistoryWindowParams struct {
-	TerminalID   string
-	BeforeOffset int
-	Limit        int
-	Cols         int
+	TerminalID          string
+	BeforeOffset        int
+	Limit               int
+	Cols                int
+	Token               string
+	Generation          uint64
+	CursorValid         bool
+	BeforeLineID        uint64
+	BeforeRowInLine     int
+	BoundaryFirstLineID uint64
+	BoundaryLastLineID  uint64
 }
 
 type ScreenRect struct {
@@ -1908,6 +1920,11 @@ type HistoryWindow struct {
 	LastRowID     uint64
 	FirstLineID   uint64
 	LastLineID    uint64
+	CursorValid   bool
+	CursorLineID  uint64
+	CursorRow     int
+	RowLineIDs    []uint64
+	RowInLine     []int
 	Timestamp     time.Time
 }
 

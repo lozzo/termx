@@ -2131,13 +2131,20 @@ func (x *GridViewportParams) GetCols() int32 {
 }
 
 type HistoryWindowParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	BeforeOffset  int32                  `protobuf:"varint,2,opt,name=before_offset,json=beforeOffset,proto3" json:"before_offset,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	Cols          int32                  `protobuf:"varint,4,opt,name=cols,proto3" json:"cols,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TerminalId          string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	BeforeOffset        int32                  `protobuf:"varint,2,opt,name=before_offset,json=beforeOffset,proto3" json:"before_offset,omitempty"`
+	Limit               int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Cols                int32                  `protobuf:"varint,4,opt,name=cols,proto3" json:"cols,omitempty"`
+	Token               string                 `protobuf:"bytes,5,opt,name=token,proto3" json:"token,omitempty"`
+	HistoryGeneration   uint64                 `protobuf:"varint,6,opt,name=history_generation,json=historyGeneration,proto3" json:"history_generation,omitempty"`
+	CursorValid         bool                   `protobuf:"varint,7,opt,name=cursor_valid,json=cursorValid,proto3" json:"cursor_valid,omitempty"`
+	BeforeLineId        uint64                 `protobuf:"varint,8,opt,name=before_line_id,json=beforeLineId,proto3" json:"before_line_id,omitempty"`
+	BeforeRowInLine     int32                  `protobuf:"varint,9,opt,name=before_row_in_line,json=beforeRowInLine,proto3" json:"before_row_in_line,omitempty"`
+	BoundaryFirstLineId uint64                 `protobuf:"varint,10,opt,name=boundary_first_line_id,json=boundaryFirstLineId,proto3" json:"boundary_first_line_id,omitempty"`
+	BoundaryLastLineId  uint64                 `protobuf:"varint,11,opt,name=boundary_last_line_id,json=boundaryLastLineId,proto3" json:"boundary_last_line_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *HistoryWindowParams) Reset() {
@@ -2194,6 +2201,55 @@ func (x *HistoryWindowParams) GetLimit() int32 {
 func (x *HistoryWindowParams) GetCols() int32 {
 	if x != nil {
 		return x.Cols
+	}
+	return 0
+}
+
+func (x *HistoryWindowParams) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *HistoryWindowParams) GetHistoryGeneration() uint64 {
+	if x != nil {
+		return x.HistoryGeneration
+	}
+	return 0
+}
+
+func (x *HistoryWindowParams) GetCursorValid() bool {
+	if x != nil {
+		return x.CursorValid
+	}
+	return false
+}
+
+func (x *HistoryWindowParams) GetBeforeLineId() uint64 {
+	if x != nil {
+		return x.BeforeLineId
+	}
+	return 0
+}
+
+func (x *HistoryWindowParams) GetBeforeRowInLine() int32 {
+	if x != nil {
+		return x.BeforeRowInLine
+	}
+	return 0
+}
+
+func (x *HistoryWindowParams) GetBoundaryFirstLineId() uint64 {
+	if x != nil {
+		return x.BoundaryFirstLineId
+	}
+	return 0
+}
+
+func (x *HistoryWindowParams) GetBoundaryLastLineId() uint64 {
+	if x != nil {
+		return x.BoundaryLastLineId
 	}
 	return 0
 }
@@ -2769,6 +2825,11 @@ type HistoryWindow struct {
 	LastLineId                 uint64                 `protobuf:"varint,23,opt,name=last_line_id,json=lastLineId,proto3" json:"last_line_id,omitempty"`
 	LineTimestampStartUnixNano []int64                `protobuf:"varint,24,rep,packed,name=line_timestamp_start_unix_nano,json=lineTimestampStartUnixNano,proto3" json:"line_timestamp_start_unix_nano,omitempty"`
 	LineTimestampEndUnixNano   []int64                `protobuf:"varint,25,rep,packed,name=line_timestamp_end_unix_nano,json=lineTimestampEndUnixNano,proto3" json:"line_timestamp_end_unix_nano,omitempty"`
+	CursorValid                bool                   `protobuf:"varint,26,opt,name=cursor_valid,json=cursorValid,proto3" json:"cursor_valid,omitempty"`
+	CursorBeforeLineId         uint64                 `protobuf:"varint,27,opt,name=cursor_before_line_id,json=cursorBeforeLineId,proto3" json:"cursor_before_line_id,omitempty"`
+	CursorBeforeRowInLine      int32                  `protobuf:"varint,28,opt,name=cursor_before_row_in_line,json=cursorBeforeRowInLine,proto3" json:"cursor_before_row_in_line,omitempty"`
+	RowLogicalLineIds          []uint64               `protobuf:"varint,29,rep,packed,name=row_logical_line_ids,json=rowLogicalLineIds,proto3" json:"row_logical_line_ids,omitempty"`
+	RowInLine                  []int32                `protobuf:"varint,30,rep,packed,name=row_in_line,json=rowInLine,proto3" json:"row_in_line,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
@@ -2974,6 +3035,41 @@ func (x *HistoryWindow) GetLineTimestampStartUnixNano() []int64 {
 func (x *HistoryWindow) GetLineTimestampEndUnixNano() []int64 {
 	if x != nil {
 		return x.LineTimestampEndUnixNano
+	}
+	return nil
+}
+
+func (x *HistoryWindow) GetCursorValid() bool {
+	if x != nil {
+		return x.CursorValid
+	}
+	return false
+}
+
+func (x *HistoryWindow) GetCursorBeforeLineId() uint64 {
+	if x != nil {
+		return x.CursorBeforeLineId
+	}
+	return 0
+}
+
+func (x *HistoryWindow) GetCursorBeforeRowInLine() int32 {
+	if x != nil {
+		return x.CursorBeforeRowInLine
+	}
+	return 0
+}
+
+func (x *HistoryWindow) GetRowLogicalLineIds() []uint64 {
+	if x != nil {
+		return x.RowLogicalLineIds
+	}
+	return nil
+}
+
+func (x *HistoryWindow) GetRowInLine() []int32 {
+	if x != nil {
+		return x.RowInLine
 	}
 	return nil
 }
@@ -4300,13 +4396,21 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"terminalId\x12+\n" +
 	"\x11scrollback_offset\x18\x02 \x01(\x05R\x10scrollbackOffset\x12)\n" +
 	"\x10scrollback_limit\x18\x03 \x01(\x05R\x0fscrollbackLimit\x12\x12\n" +
-	"\x04cols\x18\x04 \x01(\x05R\x04cols\"\x85\x01\n" +
+	"\x04cols\x18\x04 \x01(\x05R\x04cols\"\xa8\x03\n" +
 	"\x13HistoryWindowParams\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12#\n" +
 	"\rbefore_offset\x18\x02 \x01(\x05R\fbeforeOffset\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x12\n" +
-	"\x04cols\x18\x04 \x01(\x05R\x04cols\"O\n" +
+	"\x04cols\x18\x04 \x01(\x05R\x04cols\x12\x14\n" +
+	"\x05token\x18\x05 \x01(\tR\x05token\x12-\n" +
+	"\x12history_generation\x18\x06 \x01(\x04R\x11historyGeneration\x12!\n" +
+	"\fcursor_valid\x18\a \x01(\bR\vcursorValid\x12$\n" +
+	"\x0ebefore_line_id\x18\b \x01(\x04R\fbeforeLineId\x12+\n" +
+	"\x12before_row_in_line\x18\t \x01(\x05R\x0fbeforeRowInLine\x123\n" +
+	"\x16boundary_first_line_id\x18\n" +
+	" \x01(\x04R\x13boundaryFirstLineId\x121\n" +
+	"\x15boundary_last_line_id\x18\v \x01(\x04R\x12boundaryLastLineId\"O\n" +
 	"\n" +
 	"ListResult\x12A\n" +
 	"\tterminals\x18\x01 \x03(\v2#.termx.protocol.wirepb.TerminalInfoR\tterminals\"w\n" +
@@ -4362,7 +4466,7 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"\ffirst_row_id\x18\v \x01(\x04R\n" +
 	"firstRowId\x12\x1e\n" +
 	"\vlast_row_id\x18\f \x01(\x04R\tlastRowId\x128\n" +
-	"\x18scrollback_logical_total\x18\r \x01(\x03R\x16scrollbackLogicalTotal\"\xf0\a\n" +
+	"\x18scrollback_logical_total\x18\r \x01(\x03R\x16scrollbackLogicalTotal\"\xd1\t\n" +
 	"\rHistoryWindow\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12\x14\n" +
@@ -4394,7 +4498,12 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"\flast_line_id\x18\x17 \x01(\x04R\n" +
 	"lastLineId\x12B\n" +
 	"\x1eline_timestamp_start_unix_nano\x18\x18 \x03(\x03R\x1alineTimestampStartUnixNano\x12>\n" +
-	"\x1cline_timestamp_end_unix_nano\x18\x19 \x03(\x03R\x18lineTimestampEndUnixNano\"\xee\x01\n" +
+	"\x1cline_timestamp_end_unix_nano\x18\x19 \x03(\x03R\x18lineTimestampEndUnixNano\x12!\n" +
+	"\fcursor_valid\x18\x1a \x01(\bR\vcursorValid\x121\n" +
+	"\x15cursor_before_line_id\x18\x1b \x01(\x04R\x12cursorBeforeLineId\x128\n" +
+	"\x19cursor_before_row_in_line\x18\x1c \x01(\x05R\x15cursorBeforeRowInLine\x12/\n" +
+	"\x14row_logical_line_ids\x18\x1d \x03(\x04R\x11rowLogicalLineIds\x12\x1e\n" +
+	"\vrow_in_line\x18\x1e \x03(\x05R\trowInLine\"\xee\x01\n" +
 	"\fStorageEntry\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x129\n" +
 	"\x05scope\x18\x02 \x01(\x0e2#.termx.protocol.wirepb.StorageScopeR\x05scope\x12\x19\n" +

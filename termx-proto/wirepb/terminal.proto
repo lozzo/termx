@@ -224,6 +224,13 @@ message HistoryWindowParams {
   int32 before_offset = 2;
   int32 limit = 3;
   int32 cols = 4;
+  string token = 5;
+  uint64 history_generation = 6;
+  bool cursor_valid = 7;
+  uint64 before_line_id = 8;
+  int32 before_row_in_line = 9;
+  uint64 boundary_first_line_id = 10;
+  uint64 boundary_last_line_id = 11;
 }
 
 message ListResult {
@@ -311,6 +318,11 @@ message HistoryWindow {
   uint64 last_line_id = 23;
   repeated int64 line_timestamp_start_unix_nano = 24;
   repeated int64 line_timestamp_end_unix_nano = 25;
+  bool cursor_valid = 26;
+  uint64 cursor_before_line_id = 27;
+  int32 cursor_before_row_in_line = 28;
+  repeated uint64 row_logical_line_ids = 29;
+  repeated int32 row_in_line = 30;
 }
 
 message StorageEntry {

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 	"time"
 	"unsafe"
@@ -525,6 +526,11 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 		LastRowID:    2,
 		FirstLineID:  42,
 		LastLineID:   43,
+		CursorValid:  true,
+		CursorLineID: 42,
+		CursorRow:    1,
+		RowLineIDs:   []uint64{42},
+		RowInLine:    []int{1},
 		Timestamp:    time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
 	}
 	payload, err := EncodeHistoryWindowPayload(window)
@@ -544,6 +550,12 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 || decoded.FirstLineID != 42 || decoded.LastLineID != 43 {
 		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
 	}
+	if !decoded.CursorValid || decoded.CursorLineID != 42 || decoded.CursorRow != 1 {
+		t.Fatalf("unexpected decoded history cursor: %#v", decoded)
+	}
+	if !reflect.DeepEqual(decoded.RowLineIDs, []uint64{42}) || !reflect.DeepEqual(decoded.RowInLine, []int{1}) {
+		t.Fatalf("unexpected decoded row logical mapping: line_ids=%v row_in_line=%v", decoded.RowLineIDs, decoded.RowInLine)
+	}
 	if len(decoded.Lines) != 1 || decoded.Lines[0] != window.Lines[0] {
 		t.Fatalf("unexpected decoded history line spans: %#v", decoded.Lines)
 	}
@@ -557,10 +569,17 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 
 func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 	encoded, err := EncodeMethodParams("history.window", HistoryWindowParams{
-		TerminalID:   "term-hist",
-		BeforeOffset: 5,
-		Limit:        50,
-		Cols:         100,
+		TerminalID:          "term-hist",
+		BeforeOffset:        5,
+		Limit:               50,
+		Cols:                100,
+		Token:               "g7:c100:f42:l43",
+		Generation:          7,
+		CursorValid:         true,
+		BeforeLineID:        42,
+		BeforeRowInLine:     1,
+		BoundaryFirstLineID: 42,
+		BoundaryLastLineID:  43,
 	})
 	if err != nil {
 		t.Fatalf("encode control params failed: %v", err)
@@ -573,7 +592,19 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected HistoryWindowParams, got %T", decoded)
 	}
-	if params != (HistoryWindowParams{TerminalID: "term-hist", BeforeOffset: 5, Limit: 50, Cols: 100}) {
+	if params != (HistoryWindowParams{
+		TerminalID:          "term-hist",
+		BeforeOffset:        5,
+		Limit:               50,
+		Cols:                100,
+		Token:               "g7:c100:f42:l43",
+		Generation:          7,
+		CursorValid:         true,
+		BeforeLineID:        42,
+		BeforeRowInLine:     1,
+		BoundaryFirstLineID: 42,
+		BoundaryLastLineID:  43,
+	}) {
 		t.Fatalf("unexpected decoded history window params: %#v", params)
 	}
 }
