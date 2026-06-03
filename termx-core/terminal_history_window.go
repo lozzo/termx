@@ -602,7 +602,7 @@ func historyWindowToken(viewport terminalGridViewport) string {
 	if len(viewport.Rows) == 0 && viewport.TotalRows == 0 {
 		return ""
 	}
-	firstLineID, lastLineID := historyWindowLogicalLineIDBoundary(viewport.LogicalLineIDs)
+	firstLineID, lastLineID := historyWindowLogicalLineIDBoundary(historyWindowAuthoritativeLogicalLineIDs(viewport))
 	return fmt.Sprintf("g%d:%d-%d:l%d-%d:c%d", viewport.Generation, viewport.FirstRowID, viewport.LastRowID, firstLineID, lastLineID, viewport.Size.Cols)
 }
 

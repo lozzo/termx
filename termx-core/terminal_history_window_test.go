@@ -3,6 +3,7 @@ package termx
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -526,6 +527,26 @@ func TestHistoryWindowTokenIncludesLogicalLineBoundary(t *testing.T) {
 	viewport.LogicalLineIDs = []uint64{202}
 	if got := historyWindowToken(viewport); got == token {
 		t.Fatalf("expected logical line boundary to affect history window token, got %q", got)
+	}
+}
+
+func TestHistoryWindowTokenIgnoresNonAuthoritativeLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("fallback"), vtermCells("explicit")},
+		TotalRows:                  2,
+		Generation:                 7,
+		FirstRowID:                 10,
+		LastRowID:                  11,
+		Size:                       Size{Cols: 4},
+		LogicalLineIDs:             []uint64{101, 202},
+		LogicalLineIDAuthoritative: []bool{false, true},
+	}
+	if got := historyWindowToken(viewport); !strings.Contains(got, ":l202-202:") {
+		t.Fatalf("expected token to ignore non-authoritative fallback id, got %q", got)
+	}
+	viewport.LogicalLineIDs[0] = 303
+	if got := historyWindowToken(viewport); !strings.Contains(got, ":l202-202:") {
+		t.Fatalf("expected token to remain based on authoritative id only, got %q", got)
 	}
 }
 
