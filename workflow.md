@@ -20,7 +20,7 @@
 - core-v2 使用单一 `LogicalLineStore` 作为历史 truth；`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend` 只是索引、可变边界与存储落点。
 - `persisted` 或落盘不表示不可修改；clear scrollback、truncate、retention、reclaim、replace 都可以按完整 logical line 删除、撤回、替换或重新提交已提交历史。
 - core-v2 架构以 `termx-core-v2/docs/architecture.md` 为设计基准；该文档说明重构原因、目标、单一 logical line 模型、双轨边界、硬约束、风险和落地顺序。
-- tui-v3 架构以 `termx-tui-v3/docs/architecture.md` 为设计基准；该文档说明 TUI 作为 authoritative history window 消费者的边界、对象、输入语义和禁止事项。
+- tui-v3 架构以 `termx-tui-v3/docs/architecture.md` 为设计基准；该文档说明 TUI-v3 重构目标、tuiv2 可复用策略、模块边界、消息/副作用架构、history/copy mode 流程、render 边界和落地顺序。
 - `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不再本地重建历史真相。
 - copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。
 
@@ -212,23 +212,34 @@ HistoryTrack 对外返回的 history window 必须包含：
 - first/last logical line boundary
 - timestamp
 
-### 5.3 TUI-v3 history store
+### 5.3 TUI-v3 history state 与 copy mode state
 
-`termx-tui-v3` 需要有独立的 authoritative history window store，只保存 core-v2 返回的窗口和交互态。它不得把窗口反写成 local runtime truth。
+`termx-tui-v3` 需要有 reducer-owned authoritative history state，只保存 core-v2 返回的窗口、请求状态与 exhausted marker。它不得把窗口反写成 local runtime truth，也不得保存 copy mode 交互态。
 
-TUI store 至少表达：
+History state 至少表达：
 
 - 当前 terminal id
-- window token
+- core window token
 - rows
 - line spans
 - logical line ids
+- current older cursor / before cursor
+- first/last logical boundary
 - op 接纳结果
 - has more
+- pending local request id
+- pending request cursor / boundary / cols
+- exhausted older marker
+
+Copy mode state 至少表达：
+
+- active pane id
+- terminal id
 - viewport top
 - cursor
 - selection
-- pending request token
+- bound core window token
+- bound cols
 
 ## 6. 必做 harness
 
@@ -351,11 +362,11 @@ TUI store 至少表达：
 - legacy `snapshot` / `grid.viewport` 继续保留时，只作为兼容投影接口。
 - 通过 protocol harness。
 
-### 切片五：termx-tui-v3 authoritative history store
+### 切片五：termx-tui-v3 authoritative history state
 
-- 新增 `termx-tui-v3/historyview` store 与 source 实现。
+- 新增 reducer-owned `termx-tui-v3/historyview` state 与 fake source harness。
 - v3 client 只暴露 authoritative `HistoryWindow`。
-- app model 从一开始注入 history source/store。
+- AppShell 只注入 service dependency；UI state 由 reducer 持有，不引入可被 service 直接修改的 store/source。
 - copy mode 不存在 frozen snapshot 分页合并入口。
 - runtime 不存在本地 history truth 入口。
 - 通过 termx-tui-v3 fake history source harness。
@@ -599,7 +610,7 @@ TUI store 至少表达：
 - 已将 core persisted/live-tail logical line payload 的 cells 与 wrapped 行视图改为从显式 row segment 对象派生，避免 payload 内继续并行维护 cells、wrapped 与 segment 三套读取路径。
 - 已将 core live-tail sidecar metadata 恢复路径接入 logical line payload 入口：恢复端不再直接按 `StartRow` / `EndRow` 手切 live rows，而是通过 record payload 校验范围、payload metadata 并物化 segment rows。
 - 已决策停止继续在旧 `termx-core/` 与 `tuiv2/` 上做原地 logical-line 修补；旧目录从当前切片起只作为参考范围，新的主线改为 `termx-core-v2/` 与 `termx-tui-v3/`。
-- 已将 core-v2 历史模型独立设计文档移动到 `termx-core-v2/docs/architecture.md`，并新增 `termx-tui-v3/docs/architecture.md` 作为 tui-v3 历史视图设计文档；设计文档已进入子 Agent 审核与人工确认阶段。
+- 已将 core-v2 历史模型独立设计文档移动到 `termx-core-v2/docs/architecture.md`，并新增 `termx-tui-v3/docs/architecture.md` 作为 tui-v3 完整重构架构文档；设计文档已进入子 Agent 审核与人工确认阶段。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化；旧 `termx-core/` 与 `tuiv2/` 中已经积累的补丁不再继续作为主线推进。
 - 下一步创建 `termx-core-v2/` 与 `termx-tui-v3/` 最小模块骨架，先落地清晰 contract、logical-line store 数据结构与 fake-source harness；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
