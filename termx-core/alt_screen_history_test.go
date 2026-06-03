@@ -134,6 +134,65 @@ func TestTerminalAltScreenDoesNotCreatePrimaryHistoryAndRestoresPrimarySurface(t
 	}
 }
 
+func TestTerminalAltScreenPreservesPrimaryMutableLiveTail(t *testing.T) {
+	vt := localvterm.New(8, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "alt-screen-preserves-primary-live-tail",
+		size:  Size{Cols: 8, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("primary"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	term.recordLiveTailMetadataLocked()
+	beforeLiveRows := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest())
+	beforeRows := store.RowCount()
+	beforeLines := store.LogicalLineCount()
+
+	writeVTermDamageToGridAndAlternate(t, term, vt, "\x1b[?1049h")
+	writeVTermDamageToGridAndAlternate(t, term, vt, "ALT0\r\nALT1")
+	if !vt.Modes().AlternateScreen {
+		t.Fatal("expected vterm to enter alt-screen")
+	}
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, beforeLiveRows) {
+		t.Fatalf("expected alt-screen writes to preserve primary mutable live tail, got %#v want %#v", got, beforeLiveRows)
+	}
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected alt-screen not to append primary persisted rows, before=%d after=%d", beforeRows, got)
+	}
+	if got := store.LogicalLineCount(); got != beforeLines {
+		t.Fatalf("expected alt-screen not to create primary logical lines, before=%d after=%d", beforeLines, got)
+	}
+	altCoreViewport, err := term.combinedGridViewport(0, 10, 8, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("alt-screen primary live tail viewport: %v", err)
+	}
+	altWindow := historyWindowFromCoreGridViewport(term.id, 0, altCoreViewport)
+	if got := historyWindowRowTexts(altWindow); !reflect.DeepEqual(got, []string{"primary"}) {
+		t.Fatalf("expected primary live tail to remain latest authoritative projection during alt-screen, got %#v", got)
+	}
+	if historyWindowContainsText(altWindow, "ALT") {
+		t.Fatalf("expected alt-screen content not to enter primary history window, got %#v", altWindow.Rows)
+	}
+
+	writeVTermDamageToGridAndAlternate(t, term, vt, "\x1b[?1049l")
+	if vt.Modes().AlternateScreen {
+		t.Fatal("expected vterm to leave alt-screen")
+	}
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, beforeLiveRows) {
+		t.Fatalf("expected primary mutable live tail to survive alt-screen exit, got %#v want %#v", got, beforeLiveRows)
+	}
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected leaving alt-screen not to append primary rows, before=%d after=%d", beforeRows, got)
+	}
+}
+
 func writeVTermDamageToGridAndAlternate(t *testing.T, term *Terminal, vt *localvterm.VTerm, text string) {
 	t.Helper()
 	_, err, damage := vt.WriteWithDamage([]byte(text))
