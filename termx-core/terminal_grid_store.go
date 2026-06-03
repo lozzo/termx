@@ -130,6 +130,13 @@ func (payload terminalGridLogicalLinePayload) timestampEnd() time.Time {
 	return terminalLogicalLineTimestampEndFromGridRows(payload.rows)
 }
 
+func terminalGridLogicalLineRecordRowRefs(record terminalGridLogicalLineRecord, refs []terminalGridRowRef) ([]terminalGridRowRef, bool) {
+	if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(refs) {
+		return nil, false
+	}
+	return refs[record.startRow : record.endRow+1], true
+}
+
 func (payload terminalGridLogicalLinePayload) cellRows() [][]vterm.Cell {
 	if len(payload.rows) == 0 {
 		return nil
@@ -1537,8 +1544,12 @@ func terminalGridRetentionRowsForByteLimit(refs []terminalGridRowRef, records []
 	for i := len(records) - 1; i >= 0; i-- {
 		record := records[i]
 		var lineBytes int64
-		for row := record.startRow; row <= record.endRow && row < len(refs); row++ {
-			lineBytes += refs[row].length
+		recordRefs, ok := terminalGridLogicalLineRecordRowRefs(record, refs)
+		if !ok {
+			return 0
+		}
+		for _, ref := range recordRefs {
+			lineBytes += ref.length
 		}
 		if retainedBytes > 0 && retainedBytes+lineBytes > maxBytes {
 			return records[len(records)-1].endRow - records[i+1].startRow + 1
@@ -1563,12 +1574,11 @@ func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef,
 	retainStart := len(refs)
 	for i := len(records) - 1; i >= 0; i-- {
 		record := records[i]
-		newest := time.Time{}
-		for row := record.startRow; row <= record.endRow && row < len(rows); row++ {
-			if rows[row].timestamp.After(newest) {
-				newest = rows[row].timestamp
-			}
+		payload, ok := terminalGridLogicalLineRecordPayload(record, rows)
+		if !ok {
+			return 0, nil
 		}
+		newest := payload.timestampEnd()
 		if !newest.IsZero() && newest.Before(cutoff) {
 			break
 		}
