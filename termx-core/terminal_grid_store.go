@@ -671,6 +671,9 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		rowIDs := terminalGridRowIDs(firstRowID, len(gridRows))
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs, result.LogicalLineIDAuthoritative, result.RowIDRanges = reflowTerminalGridRowsWithRowIDRanges(gridRows, cols, lineRecords, rowIDs)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
+		result.Generation = generation
+		result.FirstRowID = firstRowID
+		result.LastRowID = lastRowID
 		cropped := false
 		if hasMore {
 			cropped = trimTerminalGridViewportToTail(&result, limit)
@@ -680,9 +683,6 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		result.BeforeOffset = beforeOffset
 		result.Limit = limit
 		result.Size = Size{Cols: uint16(cols)}
-		result.Generation = generation
-		result.FirstRowID = firstRowID
-		result.LastRowID = lastRowID
 		result.TotalRows = totalRows
 		result.LogicalTotal = s.LogicalLineCount()
 		traceGridVTermRows("core.grid_store.viewport.reflow_rows", s.terminalID, result.Rows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "loaded_rows", result.LoadedRows, "total", result.TotalRows, "has_more", result.HasMore, "cropped", cropped, "generation", result.Generation, "first_row_id", result.FirstRowID, "last_row_id", result.LastRowID)
@@ -752,6 +752,20 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 	result.LogicalLineIDAuthoritative = trimBoolSliceTail(result.LogicalLineIDAuthoritative, limit)
 	result.RowIDRanges = trimTerminalGridRowIDRangesTail(result.RowIDRanges, limit)
 	return true
+}
+
+func terminalGridViewportRefreshRowIDBoundary(result *terminalGridViewport) {
+	if result == nil || len(result.RowIDRanges) == 0 {
+		return
+	}
+	firstRowID, lastRowID, ok := terminalGridRowIDRangeBoundary(result.RowIDRanges)
+	if !ok {
+		result.FirstRowID = 0
+		result.LastRowID = 0
+		return
+	}
+	result.FirstRowID = firstRowID
+	result.LastRowID = lastRowID
 }
 
 func terminalGridViewportTrimClipsLogicalLine(result *terminalGridViewport, start int) bool {
@@ -923,6 +937,7 @@ func trimTerminalGridViewportPrefix(result *terminalGridViewport, start int) {
 	result.LogicalLineIDAuthoritative = cloneBoolSlice(result.LogicalLineIDAuthoritative[start:])
 	result.RowIDRanges = cloneTerminalGridRowIDRanges(result.RowIDRanges[start:])
 	result.LoadedRows = len(result.Rows)
+	terminalGridViewportRefreshRowIDBoundary(result)
 }
 
 func cloneVTermCellRows(rows [][]vterm.Cell) [][]vterm.Cell {

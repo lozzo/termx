@@ -346,6 +346,7 @@ func historyWindowTrimViewportToLimit(viewport terminalGridViewport) terminalGri
 	trimStart := len(viewport.Rows) - viewport.Limit
 	trimmedCommittedRows := terminalHistoryWindowCommittedOwnershipCount(viewport.Ownership[:trimStart])
 	if trimTerminalGridViewportToTail(&viewport, viewport.Limit) {
+		terminalGridViewportRefreshRowIDBoundary(&viewport)
 		viewport.LoadedRows -= trimmedCommittedRows
 		if viewport.LoadedRows < viewport.BeforeOffset {
 			viewport.LoadedRows = viewport.BeforeOffset

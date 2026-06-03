@@ -1387,6 +1387,9 @@ func TestServerHistoryWindowMarksLatestLimitClippedLogicalLineBefore(t *testing.
 	if window.FirstLineID != 0 || window.LastLineID != 0 {
 		t.Fatalf("expected latest clipped-before-only history window not to expose loaded line boundaries, first=%d last=%d", window.FirstLineID, window.LastLineID)
 	}
+	if window.FirstRowID != 1 || window.LastRowID != 2 {
+		t.Fatalf("expected latest limited window row ids to follow kept projection rows 1..2, got %d..%d", window.FirstRowID, window.LastRowID)
+	}
 }
 
 func historyRowsToStrings(rows []HistoryRow) []string {
