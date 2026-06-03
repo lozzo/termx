@@ -272,6 +272,34 @@ func TestHistoryWindowFiltersReflowedFallbackDepthBySourceRows(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowFiltersMutableRowsFromClippedTotalRows(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("tail"), vtermCells("lost")},
+		Ownership:                  []string{RowOwnershipLiveTailLive, RowOwnershipLiveTailLive},
+		LogicalLineIDs:             []uint64{10, 0},
+		LogicalLineIDAuthoritative: []bool{true, false},
+		LoadedRows:                 0,
+		TotalRows:                  3,
+		LogicalTotal:               1,
+		FirstLineClippedBefore:     true,
+		HasMore:                    true,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-mutable-clipped-total", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"tail"}) {
+		t.Fatalf("expected only authoritative mutable row after filtering, got %#v", got)
+	}
+	if window.LoadedRows != 0 || window.BeforeOffset != 0 {
+		t.Fatalf("expected filtered mutable row not to affect committed cursor, before=%d loaded=%d window=%#v", window.BeforeOffset, window.LoadedRows, window)
+	}
+	if window.TotalRows != 2 || window.LogicalTotal != 1 || !window.HasMore {
+		t.Fatalf("expected total rows to keep clipped authoritative prefix but drop filtered mutable row, total=%d logical=%d has_more=%v window=%#v", window.TotalRows, window.LogicalTotal, window.HasMore, window)
+	}
+	if len(window.Lines) != 1 || !window.Lines[0].ClippedBefore || window.Lines[0].LogicalLineID != 10 {
+		t.Fatalf("expected kept mutable row to remain clipped authoritative span, got %#v", window.Lines)
+	}
+}
+
 func TestHistoryWindowTrimLimitDeduplicatesReflowedSourceRows(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:                       [][]vterm.Cell{vtermCells("ab"), vtermCells("cd"), vtermCells("ef")},
