@@ -1328,6 +1328,10 @@ func TestTerminalGridStoreClosePreservesExplicitPersistedLineMetadata(t *testing
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected close to preserve explicit logical line metadata, got %#v want %#v", lineMetadata.Records, want)
 	}
+	wantMigrations := []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 1}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, wantMigrations) {
+		t.Fatalf("expected close to preserve runtime migration metadata, got %#v want %#v", lineMetadata.Migrations, wantMigrations)
+	}
 }
 
 func TestTerminalGridStoreRetentionPreservesExplicitPersistedLineMetadata(t *testing.T) {
