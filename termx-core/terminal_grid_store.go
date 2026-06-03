@@ -443,6 +443,10 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 				return err
 			}
 		}
+		if err := recordTerminalGridLineMigrationsForAppendedLogicalLineIDs(s.dir, s.generation, s.rowCount, appendStartRow, appendedLogicalLineIDs); err != nil {
+			finish(0)
+			return err
+		}
 	}
 	if err := s.enforceMaxRowsLocked(); err != nil {
 		finish(0)
@@ -2482,6 +2486,55 @@ func writeTerminalGridPersistedLineRecordsMetadataForAppend(dir string, baseRowI
 	return writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir, records, len(refs), generation)
 }
 
+func recordTerminalGridLineMigrationsForAppendedLogicalLineIDs(dir string, generation uint64, rowCount int, appendedStart int, logicalLineIDs []uint64) error {
+	if len(logicalLineIDs) == 0 {
+		return nil
+	}
+	metadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	records, ok := terminalGridCompletePersistedLogicalLineRecords(terminalGridLogicalLineRecordsFromMetadata(metadata.Records), rowCount, generation)
+	if !ok {
+		return nil
+	}
+	migrations := make(map[uint64]uint64)
+	seen := make(map[uint64]struct{})
+	for start := 0; start < len(logicalLineIDs); {
+		runtimeID := uint64At(logicalLineIDs, start)
+		end := start
+		for end+1 < len(logicalLineIDs) && uint64At(logicalLineIDs, end+1) == runtimeID {
+			end++
+		}
+		if terminalRuntimeLogicalLineID(runtimeID) {
+			if _, exists := seen[runtimeID]; exists {
+				return nil
+			}
+			seen[runtimeID] = struct{}{}
+			if record, ok := terminalGridLogicalLineRecordCoveringWindow(records, appendedStart+start, appendedStart+end+1); ok {
+				migrations[runtimeID] = record.id
+			}
+		}
+		start = end + 1
+	}
+	return recordTerminalGridLineMigrations(dir, migrations)
+}
+
+func terminalGridLogicalLineRecordCoveringWindow(records []terminalGridLogicalLineRecord, start int, end int) (terminalGridLogicalLineRecord, bool) {
+	if end <= start {
+		return terminalGridLogicalLineRecord{}, false
+	}
+	for _, record := range records {
+		if record.startRow <= start && record.endRow >= end-1 {
+			return record, terminalPersistedLogicalLineID(record.id)
+		}
+	}
+	return terminalGridLogicalLineRecord{}, false
+}
+
 func writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir string, records []terminalGridLogicalLineRecord, rowCount int, generation uint64) error {
 	metadata, err := readTerminalGridLineMetadata(dir)
 	if err != nil && !os.IsNotExist(err) {
@@ -2668,6 +2721,13 @@ func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) e
 	}
 	dir, ok := s.lineMetadataWritableDir()
 	if !ok {
+		return nil
+	}
+	return recordTerminalGridLineMigrations(dir, migrations)
+}
+
+func recordTerminalGridLineMigrations(dir string, migrations map[uint64]uint64) error {
+	if len(migrations) == 0 {
 		return nil
 	}
 	metadata, err := readTerminalGridLineMetadata(dir)

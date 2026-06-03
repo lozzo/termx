@@ -106,7 +106,6 @@ type Terminal struct {
 	screenRevision     uint64
 	alternateGrid      terminalAlternateGrid
 	primaryLiveTail    terminalPrimaryLiveTail
-	liveLineMigrations map[uint64]uint64
 
 	// This cache holds deep-copied metadata snapshots so frequent read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -655,9 +654,6 @@ func (t *Terminal) appendRestartPreservedRows(grid *terminalGridStore, rows []te
 	if t == nil || grid == nil {
 		return nil
 	}
-	t.mu.Lock()
-	t.recordTerminalGridRowLineMigrationsLocked(rows)
-	t.mu.Unlock()
 	if err := grid.appendRows(rows); err != nil {
 		return err
 	}
@@ -1121,7 +1117,6 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 	if t.gridAppender != nil {
 		t.gridAppender.flush()
 	}
-	t.recordTerminalGridRowLineMigrationsLocked(rows)
 	if err := t.grid.appendRows(rows); err != nil {
 		return err
 	}
@@ -1838,7 +1833,6 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if t.grid == nil || len(persistedRows) == 0 {
 		return
 	}
-	t.recordLiveTailLineMigrationsLocked(persistedRows, persistedLineIDs)
 	traceGridDamageOps("core.append_grid.damage", t.id, persistedRows, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend), "live_tail_rows", len(liveTailRows.rows))
 	if t.gridAppender != nil {
 		t.gridAppender.appendWithLogicalLineIDs(persistedRows, persistedLineIDs)
@@ -1987,54 +1981,6 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWra
 		persistedLineIDs = append(persistedLineIDs, 0)
 	}
 	return persistedRows, persistedLineIDs, terminalLiveTailRowsWithLogicalLineIDs{rows: liveTailRows, logicalLineIDs: liveTailLineIDs}, true
-}
-
-func (t *Terminal) recordLiveTailLineMigrationsLocked(rows []vterm.DamageOp, runtimeLineIDs []uint64) {
-	if t == nil || t.grid == nil || len(rows) == 0 || len(runtimeLineIDs) == 0 {
-		return
-	}
-	baseRowID, _, rowCount := t.grid.coordinates()
-	startRowID := baseRowID + uint64(rowCount)
-	start := 0
-	for i, row := range rows {
-		currentID := uint64At(runtimeLineIDs, i)
-		nextID := uint64At(runtimeLineIDs, i+1)
-		if i < len(rows)-1 && currentID != 0 && nextID != 0 && currentID == nextID {
-			continue
-		}
-		if currentID == 0 && row.WrappedSet && row.Wrapped && i < len(rows)-1 {
-			continue
-		}
-		runtimeID := uint64At(runtimeLineIDs, start)
-		if terminalRuntimeLogicalLineID(runtimeID) {
-			if t.liveLineMigrations == nil {
-				t.liveLineMigrations = make(map[uint64]uint64)
-			}
-			t.liveLineMigrations[runtimeID] = persistedLogicalLineIDFromRowID(startRowID + uint64(start))
-		}
-		start = i + 1
-	}
-	if len(t.liveLineMigrations) > 0 {
-		if err := t.grid.recordLineMigrations(t.liveLineMigrations); err != nil && t.logger != nil {
-			t.logger.Warn("termx terminal grid line metadata write failed", "terminal_id", t.id, "error", err)
-		}
-	}
-}
-
-func (t *Terminal) recordTerminalGridRowLineMigrationsLocked(rows []terminalGridRow) {
-	if len(rows) == 0 {
-		return
-	}
-	damageRows := make([]vterm.DamageOp, len(rows))
-	logicalLineIDs := make([]uint64, len(rows))
-	for i, row := range rows {
-		damageRows[i] = vterm.DamageOp{
-			WrappedSet: true,
-			Wrapped:    row.wrapped,
-		}
-		logicalLineIDs[i] = row.logicalLineID
-	}
-	t.recordLiveTailLineMigrationsLocked(damageRows, logicalLineIDs)
 }
 
 func (t *Terminal) recordLiveTailMetadataLocked() {

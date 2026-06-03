@@ -443,6 +443,7 @@ TUI store 至少表达：
 - 已将 restart preserved rows 的提交路径改为保留 `primaryLiveTailRowsForExit` 生成的 logical line id，并在 append 前记录 runtime->persisted migration；restart marker 作为独立 sealed persisted record 写入，避免重启保留行通过无 id wrapped fallback 生成 sidecar。
 - 已让 restart preserved rows 成功提交到 persisted store 后同步清空 mutable live tail 内存状态与 `grid.lines.json` 中的 recoverable live-tail metadata，避免重启保留行同时作为 persisted history 与 recovered live tail 暴露。
 - 已将 process exit / restart preserved rows 中 screen-only 行的 runtime logical line id 分配改为推进 primary mutable live tail 的单调游标，避免封口迁移后下一条 live line 复用已迁移 runtime id。
+- 已将 runtime live logical line id 到 persisted logical line id 的迁移写入下沉到 persisted store append 完成后按实际 append start 与最终 persisted records 生成；异步 grid appender 不再由 Terminal 按旧 row count 预估迁移目标。
 - 已将 mutable live tail 的旧通用 replaceRows 入口收敛到新语义：live/resize segment 创建时即写入 runtime logical line id，不再先生成无 id segment 后依赖读取端补推。
 - 已将 mutable live tail 的 live/resize segment ID 生成收敛为完整显式 stable logical line id 优先；当调用方已提供每 row logical line id 时，不再用 wrapped 元数据重新拆分或合并这些边界。
 - 已将 mutable live tail 的 runtime logical line id 分配改为 tail 生命周期内单调推进；hard newline seal、process exit seal 或 reset 清空尾部内容后，后续独立 live logical line 不复用旧 runtime id，`grid.lines.json` 恢复 live tail 时也会从已恢复的最大 runtime id 继续分配。

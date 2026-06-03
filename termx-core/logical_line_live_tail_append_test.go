@@ -110,9 +110,6 @@ func TestTerminalHardNewlineSealsAccumulatedLiveTailOpenLineToPersistedHistory(t
 	if got := store.LogicalLineCount(); got != 1 {
 		t.Fatalf("expected one sealed logical line after hard newline, got %d", got)
 	}
-	if got := term.liveLineMigrations[runtimeLineID]; got != 1 {
-		t.Fatalf("expected runtime live line id %d to migrate to persisted logical line id 1, got %d migrations=%#v", runtimeLineID, got, term.liveLineMigrations)
-	}
 	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
 	if err != nil {
 		t.Fatalf("read line metadata: %v", err)
@@ -125,20 +122,14 @@ func TestTerminalHardNewlineSealsAccumulatedLiveTailOpenLineToPersistedHistory(t
 func TestTerminalLiveLineMigrationUsesExplicitLogicalLineIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	term := &Terminal{
-		id:   "migration-explicit-line-id",
-		grid: store,
-	}
 
 	runtimeID := terminalLiveTailLogicalLineIDBase + 17
 	rows := []localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("first"), WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("second"), WrappedSet: true, Wrapped: false},
 	}
-	term.recordLiveTailLineMigrationsLocked(rows, []uint64{runtimeID, runtimeID})
-
-	if got := term.liveLineMigrations[runtimeID]; got != 1 {
-		t.Fatalf("expected runtime line id to migrate to first persisted line id, got %d migrations=%#v", got, term.liveLineMigrations)
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID}); err != nil {
+		t.Fatalf("append rows with explicit logical ids: %v", err)
 	}
 	metadata, err := readTerminalGridLineMetadata(store.dir)
 	if err != nil {

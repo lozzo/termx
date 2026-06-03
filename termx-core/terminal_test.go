@@ -1247,6 +1247,61 @@ func TestTerminalGridStoreAppendUsesExplicitLogicalLineIDsForPersistedMetadata(t
 	}
 }
 
+func TestTerminalGridStoreExplicitAppendWritesRuntimeLineMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("old")}); err != nil {
+		t.Fatalf("append prefix row: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 44
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("tail-a")},
+		{Cells: localVTermCellsFromString("tail-b")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID}); err != nil {
+		t.Fatalf("append rows with runtime logical id: %v", err)
+	}
+
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after explicit append: %v", err)
+	}
+	want := []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 2}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, want) {
+		t.Fatalf("expected store append to write runtime migration at actual append start, got %#v want %#v", lineMetadata.Migrations, want)
+	}
+}
+
+func TestTerminalGridAppenderRuntimeLineMigrationsUseActualAppendStart(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appender := newTerminalGridAppender(store, "appender-migration-start", terminalGridRetentionPolicy{}, nil)
+	defer appender.close()
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 45
+	appender.append([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("old"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}})
+	appender.appendWithLogicalLineIDs([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("tail"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, []uint64{runtimeID})
+	appender.flush()
+
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after appender flush: %v", err)
+	}
+	want := []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 2}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, want) {
+		t.Fatalf("expected appender migration to use actual append start, got %#v want %#v", lineMetadata.Migrations, want)
+	}
+}
+
 func TestTerminalGridStoreClosePreservesExplicitPersistedLineMetadata(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 
@@ -1376,6 +1431,9 @@ func TestTerminalGridStoreExplicitAppendFallsBackForNonContiguousLogicalLineID(t
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected rejected explicit metadata to fall back to persisted records, got %#v want %#v", lineMetadata.Records, want)
+	}
+	if len(lineMetadata.Migrations) != 0 {
+		t.Fatalf("expected rejected explicit metadata not to write runtime migrations, got %#v", lineMetadata.Migrations)
 	}
 }
 
@@ -3171,7 +3229,6 @@ func TestTerminalRestartPreservedRowsKeepLogicalLineMetadata(t *testing.T) {
 	runtimeLineID := liveTailWindow.logicalLineIDs[0]
 
 	rows := restartPreservedRows(term)
-	term.recordTerminalGridRowLineMigrationsLocked(rows)
 	if err := store.appendRows(rows); err != nil {
 		t.Fatalf("append restart preserved rows: %v", err)
 	}
