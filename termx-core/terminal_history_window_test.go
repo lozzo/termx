@@ -218,6 +218,36 @@ func TestHistoryWindowRejectsFallbackOnlyPersistedLogicalLineIDs(t *testing.T) {
 	}
 }
 
+func TestServerHistoryWindowLogicalTotalIgnoresWindowExternalFallback(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "history-total-explicit-tail")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.AppendRows([][]vterm.Cell{vtermCells("fallback-prefix")}); err != nil {
+		t.Fatalf("append fallback prefix: %v", err)
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: vtermCells("explicit-tail")},
+	})
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(20, 2))
+	window, err := srv.HistoryWindow(ctx, "history-total-explicit-tail", HistoryWindowOptions{Limit: 1, Cols: 20})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"explicit-tail"}) {
+		t.Fatalf("expected latest authoritative window to expose explicit tail only, got %#v", got)
+	}
+	if window.LogicalTotal != 1 || window.LoadedLines != 1 {
+		t.Fatalf("expected logical totals to ignore fallback prefix, loaded=%d total=%d window=%#v", window.LoadedLines, window.LogicalTotal, window)
+	}
+}
+
 func TestHistoryWindowFindsDiscontiguousLogicalLineIDs(t *testing.T) {
 	got := historyWindowDiscontiguousLogicalLineIDs([]uint64{10, 10, 0, 10, 11, 11, 12, 11}, 8)
 	if _, ok := got[10]; !ok {

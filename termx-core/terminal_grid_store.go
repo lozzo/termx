@@ -544,6 +544,18 @@ func (s *terminalGridStore) LogicalLineCount() int {
 	return len(terminalGridFallbackLogicalLineRecordsForRefs(refs, 0))
 }
 
+func (s *terminalGridStore) authoritativeLogicalLineCount() int {
+	if s == nil {
+		return 0
+	}
+	_, generation, rowCount := s.coordinates()
+	records, ok := s.persistedLogicalLineRecordsFromMetadata(rowCount, generation)
+	if !ok {
+		return 0
+	}
+	return terminalGridAuthoritativeLogicalLineRecordCount(records)
+}
+
 func (s *terminalGridStore) logicalLineCountForPrefix(rows int) int {
 	if s == nil || rows <= 0 {
 		return 0
@@ -569,6 +581,24 @@ func (s *terminalGridStore) logicalLineCountForPrefix(rows int) int {
 	}
 	records := terminalGridFallbackLogicalLineRecordsForRefs(refs, 0)
 	return terminalGridLogicalLineRecordPrefixCount(records, rows)
+}
+
+func (s *terminalGridStore) authoritativeLogicalLineCountForPrefix(rows int) int {
+	if s == nil || rows <= 0 {
+		return 0
+	}
+	_, generation, rowCount := s.coordinates()
+	if rows > rowCount {
+		rows = rowCount
+	}
+	if rows <= 0 {
+		return 0
+	}
+	records, ok := s.persistedLogicalLineRecordsFromMetadata(rowCount, generation)
+	if !ok {
+		return 0
+	}
+	return terminalGridAuthoritativeLogicalLineRecordPrefixCount(records, rows)
 }
 
 func (s *terminalGridStore) coordinatesLocked() (baseRowID uint64, generation uint64, rowCount int) {
@@ -1703,6 +1733,35 @@ func terminalGridLogicalLineRecordPrefixCount(records []terminalGridLogicalLineR
 			break
 		}
 		count++
+		if record.endRow >= rows-1 {
+			break
+		}
+	}
+	return count
+}
+
+func terminalGridAuthoritativeLogicalLineRecordCount(records []terminalGridLogicalLineRecord) int {
+	count := 0
+	for _, record := range records {
+		if terminalGridLogicalLineRecordAuthoritative(record) {
+			count++
+		}
+	}
+	return count
+}
+
+func terminalGridAuthoritativeLogicalLineRecordPrefixCount(records []terminalGridLogicalLineRecord, rows int) int {
+	if rows <= 0 || len(records) == 0 {
+		return 0
+	}
+	count := 0
+	for _, record := range records {
+		if record.startRow >= rows {
+			break
+		}
+		if terminalGridLogicalLineRecordAuthoritative(record) {
+			count++
+		}
 		if record.endRow >= rows-1 {
 			break
 		}

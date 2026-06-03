@@ -171,12 +171,13 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 			return result, err
 		}
 		if persistedViewport.TotalRows > 0 {
+			persistedViewport.WindowLogicalTotal = store.authoritativeLogicalLineCount()
 			return persistedViewport, nil
 		}
 		result.BeforeOffset = offset
 		result.Limit = limit
 		result.TotalRows = visiblePersistedRows
-		result.LogicalTotal = store.LogicalLineCount()
+		result.LogicalTotal = store.authoritativeLogicalLineCount()
 		result.LoadedRows = minInt(offset, visiblePersistedRows)
 		if visiblePersistedRows > 0 {
 			result.Generation = generation
@@ -190,7 +191,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 	if totalRows <= 0 {
 		return result, nil
 	}
-	logicalTotal := store.logicalLineCountForPrefix(visiblePersistedRows) + projectedLogicalLineCount(liveTailLineIDs)
+	logicalTotal := store.authoritativeLogicalLineCountForPrefix(visiblePersistedRows) + projectedLogicalLineCount(liveTailLineIDs)
 	end := totalRows
 	start := end - limit
 	if start < 0 {
@@ -204,7 +205,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 	result.BeforeOffset = offset
 	result.Limit = limit
 	result.TotalRows = totalRows
-	result.LogicalTotal = store.LogicalLineCount()
+	result.LogicalTotal = store.authoritativeLogicalLineCount()
 	result.WindowLogicalTotal = logicalTotal
 	if visiblePersistedRows > 0 {
 		result.Generation = generation

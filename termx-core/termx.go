@@ -623,7 +623,12 @@ func storeViewportWithRecoveredLiveTail(store *terminalGridStore, beforeOffset i
 			return combinedGridViewportFromStore(store, beforeOffset, limit, cols, liveTail)
 		}
 	}
-	return store.Viewport(beforeOffset, limit, cols)
+	viewport, err := store.Viewport(beforeOffset, limit, cols)
+	if err != nil {
+		return viewport, err
+	}
+	viewport.WindowLogicalTotal = store.authoritativeLogicalLineCount()
+	return viewport, nil
 }
 
 func splitGridSnapshotRows(rows [][]vterm.Cell, screenHeight int, cols int) ([][]vterm.Cell, [][]vterm.Cell) {
