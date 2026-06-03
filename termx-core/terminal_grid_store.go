@@ -2105,8 +2105,17 @@ func terminalGridLineMigrationMap(migrations []terminalGridLineMigration) map[ui
 		return nil
 	}
 	out := make(map[uint64]uint64, len(migrations))
+	conflicted := make(map[uint64]struct{})
 	for _, migration := range migrations {
 		if !terminalRuntimeLogicalLineID(migration.RuntimeID) || !terminalPersistedLogicalLineID(migration.PersistedID) {
+			continue
+		}
+		if _, bad := conflicted[migration.RuntimeID]; bad {
+			continue
+		}
+		if existing := out[migration.RuntimeID]; existing != 0 && existing != migration.PersistedID {
+			delete(out, migration.RuntimeID)
+			conflicted[migration.RuntimeID] = struct{}{}
 			continue
 		}
 		out[migration.RuntimeID] = migration.PersistedID

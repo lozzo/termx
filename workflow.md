@@ -547,6 +547,7 @@ TUI store 至少表达：
 - 已清理 `scripts/tmux_history_smoke.sh` 中旧 `hot/cold` history helper 命名：`deep-hot` smoke 场景改为 `deep-live-tail`，fixture 文本改为 `PERSISTED` / `LIVE`，避免当前测试脚本继续把旧单向模型作为活动语义。
 - 已修正 core store-only legacy `snapshot` 从 `grid.lines.json` 恢复 mutable live tail 后的 scrollback ownership 元数据：当较旧的 recovered live-tail row 被切到 snapshot scrollback 区时，归属会继续保留为 live-tail，而不是被兼容默认值误标为 persisted；缺失或未知 ownership 仍按 legacy persisted 默认归一化。
 - 已收紧 core mutable live-tail sidecar source 语义：`source=explicit/fallback` 只属于 persisted logical line record，恢复端会拒绝带 source 字段的 `live_records`，写入端继续不为 live-tail record 写出 source，避免 persisted metadata 来源语义泄漏进 mutable live tail。
+- 已收紧 core runtime->persisted migration sidecar 冲突处理：同一 runtime logical line id 如果在 `grid.lines.json` 中指向多个 persisted id，会整体忽略该 runtime 映射并回退到 persisted projection fallback，避免恢复结果受损坏 JSON 顺序影响。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

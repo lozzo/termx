@@ -343,6 +343,56 @@ func TestTerminalGridProjectionIgnoresInvalidLineMigrations(t *testing.T) {
 	}
 }
 
+func TestTerminalGridProjectionIgnoresConflictingLineMigrations(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "projection-conflicting-metadata-migration")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("abcd"), rowKind: "line0", wrapped: false},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	dir := store.dir
+	_, generation, _ := store.coordinates()
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 19
+	if err := writeTerminalGridLineMetadata(dir, terminalGridLineMetadata{
+		Records: []terminalGridLineRecordMeta{{
+			ID:         runtimeID,
+			StartRow:   0,
+			EndRow:     0,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginLive,
+			Residency:  terminalLogicalLineResidencyPersisted,
+			Generation: generation,
+			Source:     terminalLogicalLineRecordSourceExplicit,
+		}},
+		Migrations: []terminalGridLineMigration{
+			{RuntimeID: runtimeID, PersistedID: 77},
+			{RuntimeID: runtimeID, PersistedID: 78},
+		},
+	}); err != nil {
+		t.Fatalf("write line metadata: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, "projection-conflicting-metadata-migration")
+	if err != nil {
+		t.Fatalf("reopen grid store: %v", err)
+	}
+	defer reopened.Close()
+	viewport, err := reopened.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
+		t.Fatalf("expected conflicting runtime migration to be ignored and fall back, got %#v", got)
+	}
+}
+
 func TestTerminalGridStoreRecordsOnlyRuntimeToPersistedLineMigrations(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
