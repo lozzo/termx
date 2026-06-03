@@ -38,23 +38,24 @@ const (
 )
 
 type terminalGridStore struct {
-	mu              sync.Mutex
-	dir             string
-	terminalID      string
-	current         *os.File
-	index           *os.File
-	currentSeq      uint32
-	currentBytes    int64
-	baseRowID       uint64
-	generation      uint64
-	pageMaxBytes    int64
-	rowCount        int
-	retentionPolicy terminalGridRetentionPolicy
-	closed          bool
-	removeOnClose   bool
-	writable        bool
-	lineRecords     []terminalGridLogicalLineRecord
-	lineMigrations  map[uint64]uint64
+	mu               sync.Mutex
+	dir              string
+	terminalID       string
+	current          *os.File
+	index            *os.File
+	currentSeq       uint32
+	currentBytes     int64
+	baseRowID        uint64
+	generation       uint64
+	pageMaxBytes     int64
+	rowCount         int
+	retentionPolicy  terminalGridRetentionPolicy
+	closed           bool
+	removeOnClose    bool
+	writable         bool
+	lineRecords      []terminalGridLogicalLineRecord
+	lineMigrations   map[uint64]uint64
+	maxRuntimeLineID uint64
 }
 
 type terminalGridRetentionPolicy struct {
@@ -242,15 +243,16 @@ func openTerminalGridStoreDir(dir, terminalID string, create bool, removeOnClose
 		return nil, err
 	}
 	store := &terminalGridStore{
-		dir:           dir,
-		terminalID:    terminalID,
-		currentSeq:    indexState.lastSeq,
-		baseRowID:     metadata.BaseRowID,
-		generation:    metadata.Generation,
-		pageMaxBytes:  metadata.PageMaxBytes,
-		rowCount:      indexState.rowCount,
-		removeOnClose: removeOnClose,
-		writable:      create,
+		dir:              dir,
+		terminalID:       terminalID,
+		currentSeq:       indexState.lastSeq,
+		baseRowID:        metadata.BaseRowID,
+		generation:       metadata.Generation,
+		pageMaxBytes:     metadata.PageMaxBytes,
+		rowCount:         indexState.rowCount,
+		removeOnClose:    removeOnClose,
+		writable:         create,
+		maxRuntimeLineID: terminalGridMaxRuntimeLogicalLineIDFromSidecar(dir),
 	}
 	if !create {
 		return store, nil
@@ -482,6 +484,9 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 			finish(0)
 			return err
 		}
+		if migrationMax := terminalGridMaxRuntimeLogicalLineIDFromSidecar(s.dir); migrationMax > s.maxRuntimeLineID {
+			s.maxRuntimeLineID = migrationMax
+		}
 	}
 	if err := s.enforceMaxRowsLocked(); err != nil {
 		finish(0)
@@ -506,6 +511,9 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 			return err
 		}
 		s.lineRecords = cloneTerminalGridLogicalLineRecords(records)
+	}
+	if migrationMax := terminalGridLineMigrationMapMaxRuntimeID(s.lineMigrations); migrationMax > s.maxRuntimeLineID {
+		s.maxRuntimeLineID = migrationMax
 	}
 
 	finish(totalBytes)
@@ -1889,6 +1897,39 @@ func (s *terminalGridStore) persistedLogicalLineRecordsFromMemory(rowCount int, 
 	return records, true
 }
 
+func (s *terminalGridStore) maxRuntimeLogicalLineIDFromMetadata() uint64 {
+	if s == nil {
+		return 0
+	}
+	var maxID uint64
+	s.mu.Lock()
+	maxID = s.maxRuntimeLineID
+	for runtimeID := range s.lineMigrations {
+		if terminalRuntimeLogicalLineID(runtimeID) && runtimeID > maxID {
+			maxID = runtimeID
+		}
+	}
+	s.mu.Unlock()
+	return maxID
+}
+
+func terminalGridMaxRuntimeLogicalLineIDFromSidecar(dir string) uint64 {
+	if strings.TrimSpace(dir) == "" {
+		return 0
+	}
+	metadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil {
+		return 0
+	}
+	maxID := terminalGridLineMigrationMapMaxRuntimeID(terminalGridLineMigrationMap(metadata.Migrations))
+	for _, record := range metadata.LiveRecords {
+		if terminalRuntimeLogicalLineID(record.ID) && record.ID > maxID {
+			maxID = record.ID
+		}
+	}
+	return maxID
+}
+
 func (s *terminalGridStore) sealedPersistedLogicalLineRecordPrefixFromMetadata(rowCount int, generation uint64) ([]terminalGridLogicalLineRecord, bool) {
 	if s == nil || strings.TrimSpace(s.dir) == "" {
 		return nil, false
@@ -1938,6 +1979,16 @@ func terminalGridLineMigrationMapMaxRuntimeID(migrations map[uint64]uint64) uint
 	for runtimeID := range migrations {
 		if runtimeID > maxID {
 			maxID = runtimeID
+		}
+	}
+	return maxID
+}
+
+func terminalGridLineRecordMetasMaxRuntimeID(records []terminalGridLineRecordMeta) uint64 {
+	var maxID uint64
+	for _, record := range records {
+		if terminalRuntimeLogicalLineID(record.ID) && record.ID > maxID {
+			maxID = record.ID
 		}
 	}
 	return maxID
@@ -3213,7 +3264,15 @@ func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLo
 		return err
 	}
 	metadata.LiveRows = rowMetas
-	return writeTerminalGridLineMetadata(dir, metadata)
+	if err := writeTerminalGridLineMetadata(dir, metadata); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if liveMax := terminalGridLineRecordMetasMaxRuntimeID(metadata.LiveRecords); liveMax > s.maxRuntimeLineID {
+		s.maxRuntimeLineID = liveMax
+	}
+	s.mu.Unlock()
+	return nil
 }
 
 func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) error {

@@ -1826,6 +1826,7 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if t == nil {
 		return
 	}
+	t.syncLiveTailRuntimeCursorFromGridLocked()
 	wrapPending := t.currentWrapPendingLocked()
 	persistedRows, persistedLineIDs, liveTailRows, liveTailChanged := t.reconcileLiveTailRowsLocked(damage, wrapPending)
 	if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" && len(persistedRows) > 0 && t.grid != nil {
@@ -1859,6 +1860,13 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if err := t.grid.AppendDamageRowsWithLogicalLineIDs(persistedRows, persistedLineIDs); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
 	}
+}
+
+func (t *Terminal) syncLiveTailRuntimeCursorFromGridLocked() {
+	if t == nil || t.grid == nil {
+		return
+	}
+	t.primaryLiveTail.advanceRuntimeLogicalLineID(t.grid.maxRuntimeLogicalLineIDFromMetadata())
 }
 
 func (t *Terminal) trimResizePersistedRowsAlreadyAtGridTailLocked(rows []vterm.DamageOp) []vterm.DamageOp {

@@ -4014,6 +4014,82 @@ func TestTerminalNonResizeFullReplaceDoesNotCreateCommittedHistory(t *testing.T)
 	}
 }
 
+func TestTerminalNonResizeFullReplaceRecoveredLiveTailDoesNotCreateCommittedHistory(t *testing.T) {
+	const terminalID = "full-replace-recovered-no-history-create"
+	root := t.TempDir()
+	vt := localvterm.New(12, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store, err := newTerminalGridStore(root, terminalID)
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	defer store.Close()
+	term := &Terminal{
+		id:    terminalID,
+		size:  Size{Cols: 12, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("before-0")},
+	})
+	beforeRows := store.RowCount()
+	beforeLines := store.LogicalLineCount()
+
+	damage := localvterm.WriteDamage{
+		RequiresFullReplace: true,
+		FullReplaceReason:   "broad_direct_cell_damage",
+		ScrollbackAppend: []localvterm.DamageOp{{
+			Cells:      localVTermCellsFromString("full-replace-scroll"),
+			WrappedSet: true,
+			Wrapped:    false,
+		}},
+	}
+	term.appendGridFromDamageLocked(damage)
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected non-resize full replace not to append committed rows before replay, before=%d after=%d", beforeRows, got)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, terminalID)
+	if err != nil {
+		t.Fatalf("open replay grid store: %v", err)
+	}
+	defer reopened.Close()
+	if got := reopened.RowCount(); got != beforeRows {
+		t.Fatalf("expected replay store row count to stay committed-only, before=%d after=%d", beforeRows, got)
+	}
+	if got := reopened.LogicalLineCount(); got != beforeLines {
+		t.Fatalf("expected replay store logical lines to stay committed-only, before=%d after=%d", beforeLines, got)
+	}
+
+	viewport, err := storeViewportWithRecoveredLiveTailForHistory(reopened, 0, 10, 12)
+	if err != nil {
+		t.Fatalf("recovered history viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport(terminalID, 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"before-0", "full-replace-scroll"}) {
+		t.Fatalf("expected recovered history window to expose persisted row plus mutable full-replace tail, got %#v", got)
+	}
+	if window.LoadedRows != beforeRows || window.BeforeOffset != beforeRows {
+		t.Fatalf("expected recovered full replace tail not to increase committed depth, loaded_rows=%d before_offset=%d committed=%d", window.LoadedRows, window.BeforeOffset, beforeRows)
+	}
+	if window.LoadedLines != beforeLines+1 || window.LogicalTotal != beforeLines+1 {
+		t.Fatalf("expected recovered full replace tail to count only as latest mutable logical line, loaded=%d total=%d committed=%d", window.LoadedLines, window.LogicalTotal, beforeLines)
+	}
+
+	older, err := storeViewportWithRecoveredLiveTailForHistory(reopened, window.BeforeOffset, 10, 12)
+	if err != nil {
+		t.Fatalf("older replay history viewport: %v", err)
+	}
+	olderWindow := historyWindowFromCoreGridViewport(terminalID, window.BeforeOffset, older)
+	if historyWindowContainsText(olderWindow, "full-replace-scroll") {
+		t.Fatalf("expected older cursor not to repeat recovered mutable full-replace tail, got %#v", historyWindowRowTexts(olderWindow))
+	}
+}
+
 func TestSnapshotFromVTermPreservesWrappedScrollbackTrailingSpaces(t *testing.T) {
 	vt := localvterm.New(4, 2, 32, nil)
 	if _, err := vt.Write([]byte("AA  BB")); err != nil {

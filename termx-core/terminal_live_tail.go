@@ -236,6 +236,13 @@ func (tail *terminalPrimaryLiveTail) reset() {
 	tail.wrapPending = false
 }
 
+func (tail *terminalPrimaryLiveTail) advanceRuntimeLogicalLineID(id uint64) {
+	if tail == nil || id <= tail.nextRuntimeLogicalLineID || !terminalRuntimeLogicalLineID(id) {
+		return
+	}
+	tail.nextRuntimeLogicalLineID = id
+}
+
 func (tail *terminalPrimaryLiveTail) replaceRows(rows []vterm.DamageOp, origin terminalLiveTailOrigin, wrapPending bool) {
 	if tail == nil {
 		return
