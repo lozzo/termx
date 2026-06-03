@@ -253,7 +253,9 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 			result.RowKinds = append(result.RowKinds, row.RowKind)
 			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
 			result.Ownership = append(result.Ownership, stringAt(window.ownership, i))
-			result.LogicalLineIDs = append(result.LogicalLineIDs, uint64At(window.logicalLineIDs, i))
+			logicalLineID := uint64At(window.logicalLineIDs, i)
+			result.LogicalLineIDs = append(result.LogicalLineIDs, logicalLineID)
+			result.LogicalLineIDAuthoritative = append(result.LogicalLineIDAuthoritative, logicalLineID != 0)
 		}
 		if window.hasCommitted {
 			result.LoadedRows += window.committed
@@ -347,10 +349,11 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	if len(viewport.Rows) == 0 {
 		return viewport
 	}
-	invalidLineIDs := historyWindowDiscontiguousLogicalLineIDs(viewport.LogicalLineIDs, len(viewport.Rows))
+	authoritativeLineIDs := historyWindowAuthoritativeLogicalLineIDs(viewport)
+	invalidLineIDs := historyWindowDiscontiguousLogicalLineIDs(authoritativeLineIDs, len(viewport.Rows))
 	keep := make([]int, 0, len(viewport.Rows))
 	for i := range viewport.Rows {
-		logicalLineID := uint64At(viewport.LogicalLineIDs, i)
+		logicalLineID := uint64At(authoritativeLineIDs, i)
 		if logicalLineID != 0 {
 			if _, invalid := invalidLineIDs[logicalLineID]; invalid {
 				continue
@@ -365,7 +368,7 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	removedMissingIDLogicalLines := 0
 	inMissingIDLogicalLine := false
 	for i := range viewport.Rows {
-		logicalLineID := uint64At(viewport.LogicalLineIDs, i)
+		logicalLineID := uint64At(authoritativeLineIDs, i)
 		remove := logicalLineID == 0
 		if logicalLineID != 0 {
 			_, remove = invalidLineIDs[logicalLineID]
@@ -390,6 +393,7 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	filtered.Wrapped = filterBoolsByIndexes(viewport.Wrapped, keep)
 	filtered.Ownership = filterStringsByIndexes(viewport.Ownership, keep)
 	filtered.LogicalLineIDs = filterUint64sByIndexes(viewport.LogicalLineIDs, keep)
+	filtered.LogicalLineIDAuthoritative = filterBoolsByIndexes(viewport.LogicalLineIDAuthoritative, keep)
 	filtered.LoadedRows -= removedCommittedRows
 	if filtered.LoadedRows < filtered.BeforeOffset {
 		filtered.LoadedRows = filtered.BeforeOffset
@@ -424,6 +428,23 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		filtered.FirstLineClippedBefore = false
 	}
 	return filtered
+}
+
+func historyWindowAuthoritativeLogicalLineIDs(viewport terminalGridViewport) []uint64 {
+	if len(viewport.LogicalLineIDs) == 0 {
+		return nil
+	}
+	out := make([]uint64, len(viewport.LogicalLineIDs))
+	for i, id := range viewport.LogicalLineIDs {
+		if id == 0 {
+			continue
+		}
+		if len(viewport.LogicalLineIDAuthoritative) > 0 && !boolAt(viewport.LogicalLineIDAuthoritative, i) {
+			continue
+		}
+		out[i] = id
+	}
+	return out
 }
 
 func historyWindowDiscontiguousLogicalLineIDs(logicalLineIDs []uint64, rowCount int) map[uint64]struct{} {

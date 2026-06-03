@@ -255,12 +255,10 @@ func TestTerminalLatestLiveTailOnlyProjectionDoesNotInventCanonicalMetadata(t *t
 func TestTerminalLatestCombinedViewportLogicalTotalIncludesVisiblePersistedAndLiveTailLines(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("p0"), wrapped: false},
 		{cells: localVTermCellsFromString("r0"), wrapped: false},
-	}); err != nil {
-		t.Fatalf("append persisted rows: %v", err)
-	}
+	})
 	var tail terminalPrimaryLiveTail
 	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
@@ -291,14 +289,12 @@ func TestTerminalLatestCombinedViewportLogicalTotalIncludesVisiblePersistedAndLi
 func TestTerminalLatestCombinedViewportCountsReclaimedCommittedRowsOnce(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("p0"), wrapped: false},
 		{cells: localVTermCellsFromString("p1"), wrapped: false},
 		{cells: localVTermCellsFromString("r0"), wrapped: false},
 		{cells: localVTermCellsFromString("r1"), wrapped: false},
-	}); err != nil {
-		t.Fatalf("append persisted rows: %v", err)
-	}
+	})
 	var tail terminalPrimaryLiveTail
 	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
@@ -338,11 +334,9 @@ func TestTerminalLatestCombinedViewportCountsReclaimedCommittedRowsOnce(t *testi
 func TestTerminalLatestCombinedViewportLogicalTotalUsesProjectionIDsNotRecoverableRecords(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("persisted"), wrapped: false},
-	}); err != nil {
-		t.Fatalf("append persisted rows: %v", err)
-	}
+	})
 
 	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{
 		{

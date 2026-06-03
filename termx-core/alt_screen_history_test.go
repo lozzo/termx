@@ -20,9 +20,9 @@ func TestTerminalAltScreenDoesNotCreatePrimaryHistoryAndRestoresPrimarySurface(t
 		grid:  store,
 	}
 
-	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("base")}); err != nil {
-		t.Fatalf("seed primary history: %v", err)
-	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("base")},
+	})
 	vt.LoadSnapshot(
 		localvterm.ScreenData{Cells: [][]localvterm.Cell{
 			localVTermRowForTest("base", 8),

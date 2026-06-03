@@ -165,6 +165,36 @@ func TestHistoryWindowDoesNotMergeLogicalLineAcrossFilteredRows(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowRejectsFallbackOnlyPersistedLogicalLineIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.AppendRows([][]vterm.Cell{vtermCells("fallback")}); err != nil {
+		t.Fatalf("append fallback persisted row: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 10)
+	if err != nil {
+		t.Fatalf("fallback viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"fallback"}) {
+		t.Fatalf("expected legacy viewport to keep fallback row, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
+		t.Fatalf("expected legacy viewport fallback line id, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDAuthoritative; !reflect.DeepEqual(got, []bool{false}) {
+		t.Fatalf("expected fallback line id to be marked non-authoritative, got %#v", got)
+	}
+
+	window := historyWindowFromCoreGridViewport("fallback-only", 0, viewport)
+	if len(window.Rows) != 0 || len(window.Lines) != 0 {
+		t.Fatalf("expected authoritative history window to reject fallback-only row, rows=%#v lines=%#v", window.Rows, window.Lines)
+	}
+	if window.Token != "" || window.LogicalTotal != 0 || window.TotalRows != 0 {
+		t.Fatalf("expected fallback-only history window to clear authoritative boundary, got %#v", window)
+	}
+}
+
 func TestHistoryWindowFindsDiscontiguousLogicalLineIDs(t *testing.T) {
 	got := historyWindowDiscontiguousLogicalLineIDs([]uint64{10, 10, 0, 10, 11, 11, 12, 11}, 8)
 	if _, ok := got[10]; !ok {
@@ -283,13 +313,11 @@ func TestServerHistoryWindowLatestReplaceFromPersistedStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new grid store: %v", err)
 	}
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: vtermCells("alpha")},
 		{cells: vtermCells("bravo")},
 		{cells: vtermCells("charlie")},
-	}); err != nil {
-		t.Fatalf("append grid rows: %v", err)
-	}
+	})
 	if err := store.Close(); err != nil {
 		t.Fatalf("close grid store: %v", err)
 	}
@@ -333,9 +361,7 @@ func TestServerHistoryWindowOlderPrependUsesPersistedDepth(t *testing.T) {
 	for _, text := range []string{"l0", "l1", "l2", "l3", "l4", "l5"} {
 		rows = append(rows, terminalGridRow{cells: vtermCells(text)})
 	}
-	if err := store.appendRows(rows); err != nil {
-		t.Fatalf("append grid rows: %v", err)
-	}
+	appendExplicitTerminalGridRowsForTest(t, store, rows)
 	if err := store.Close(); err != nil {
 		t.Fatalf("close grid store: %v", err)
 	}

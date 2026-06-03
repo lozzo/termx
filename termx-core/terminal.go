@@ -654,7 +654,7 @@ func (t *Terminal) appendRestartPreservedRows(grid *terminalGridStore, rows []te
 	if t == nil || grid == nil {
 		return nil
 	}
-	if err := grid.appendRows(rows); err != nil {
+	if err := grid.appendGridRows(rows); err != nil {
 		return err
 	}
 	t.mu.Lock()
@@ -1108,16 +1108,16 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 		}
 		t.alternateGrid.reset()
 	}
+	if t.gridAppender != nil {
+		t.gridAppender.flush()
+	}
 	rows := t.primaryLiveTailRowsForExit()
 	if len(rows) == 0 {
 		t.primaryLiveTail.reset()
 		t.recordLiveTailMetadataLocked()
 		return nil
 	}
-	if t.gridAppender != nil {
-		t.gridAppender.flush()
-	}
-	if err := t.grid.appendRows(rows); err != nil {
+	if err := t.grid.appendGridRows(rows); err != nil {
 		return err
 	}
 	t.primaryLiveTail.reset()
@@ -1201,6 +1201,8 @@ func (t *Terminal) primaryLiveTailRowsForExit() []terminalGridRow {
 		continuedID := uint64(0)
 		if len(out) > 0 && out[len(out)-1].wrapped {
 			continuedID = out[len(out)-1].logicalLineID
+		} else if t.grid != nil {
+			continuedID = t.grid.openPersistedLogicalLineID()
 		}
 		screenLineIDs := terminalGridRowsLiveLogicalLineIDsForExit(&t.primaryLiveTail, screenRows, continuedID)
 		for i := range screenRows {
@@ -1222,6 +1224,19 @@ func terminalGridRowsLiveLogicalLineIDsForExit(liveTail *terminalPrimaryLiveTail
 	}
 	damageRows := make([]vterm.DamageOp, len(rows))
 	lineIDs := make([]uint64, len(rows))
+	if terminalPersistedLogicalLineID(continuedID) {
+		for i, row := range rows {
+			lineIDs[i] = continuedID
+			if !row.wrapped {
+				if i+1 < len(rows) {
+					tailIDs := terminalGridRowsLiveLogicalLineIDsForExit(liveTail, rows[i+1:], 0)
+					copy(lineIDs[i+1:], tailIDs)
+				}
+				return lineIDs
+			}
+		}
+		return lineIDs
+	}
 	if terminalRuntimeLogicalLineID(continuedID) {
 		lineIDs[0] = continuedID
 	}

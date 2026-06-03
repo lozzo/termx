@@ -93,6 +93,7 @@ func TestTerminalGridProjectionRestoresLogicalLineBoundariesFromMetadata(t *test
 		Origin:     terminalLiveTailOriginReclaimed,
 		Residency:  terminalLogicalLineResidencyPersisted,
 		Generation: generation,
+		Source:     terminalLogicalLineRecordSourceExplicit,
 	}}}); err != nil {
 		t.Fatalf("write line metadata: %v", err)
 	}
@@ -129,8 +130,8 @@ func TestTerminalGridProjectionUsesSealedMetadataPrefixForCoveredWindow(t *testi
 	}
 	_, generation, _ := store.coordinates()
 	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
-		{ID: 91, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 92, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 91, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
+		{ID: 92, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}}); err != nil {
 		t.Fatalf("write partial line metadata: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestTerminalGridProjectionUsesSealedMetadataPrefixForWindowStart(t *testing
 	}
 	_, generation, _ := store.coordinates()
 	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
-		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}}); err != nil {
 		t.Fatalf("write partial line metadata: %v", err)
 	}
@@ -191,7 +192,7 @@ func TestTerminalGridProjectionCountsSealedMetadataPrefixLogicalTotal(t *testing
 	}
 	_, generation, _ := store.coordinates()
 	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
-		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}}); err != nil {
 		t.Fatalf("write partial line metadata: %v", err)
 	}
@@ -385,6 +386,12 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 				Sealed: true,
 			},
 		},
+		{
+			name: "missing-source",
+			record: terminalGridLineRecordMeta{
+				Sealed: true,
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -417,6 +424,9 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 			record.Residency = terminalLogicalLineResidencyPersisted
 			if tc.name != "missing-generation" {
 				record.Generation = generation
+			}
+			if tc.name != "missing-source" {
+				record.Source = terminalLogicalLineRecordSourceExplicit
 			}
 			if err := writeTerminalGridLineMetadata(dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{record}}); err != nil {
 				t.Fatalf("write line metadata: %v", err)
@@ -591,30 +601,31 @@ func TestTerminalGridRecoveredLiveTailRejectsMigratedRuntimeID(t *testing.T) {
 func TestTerminalHistoryWindowIgnoresCorruptRecoveredLiveTailMetadata(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("hist")},
-	}); err != nil {
-		t.Fatalf("append persisted row: %v", err)
-	}
+	})
 	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: false},
 	})
 	if err != nil {
 		t.Fatalf("encode corrupt live row metadata: %v", err)
 	}
-	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
-		LiveRecords: []terminalGridLineRecordMeta{{
-			ID:         terminalLiveTailLogicalLineIDBase + 1,
-			StartRow:   0,
-			EndRow:     0,
-			Sealed:     true,
-			Origin:     terminalLiveTailOriginLive,
-			Residency:  terminalLogicalLineResidencyLiveTail,
-			Dirty:      true,
-			Generation: 7,
-		}},
-		LiveRows: rows,
-	}); err != nil {
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read persisted line metadata: %v", err)
+	}
+	metadata.LiveRecords = []terminalGridLineRecordMeta{{
+		ID:         terminalLiveTailLogicalLineIDBase + 1,
+		StartRow:   0,
+		EndRow:     0,
+		Sealed:     true,
+		Origin:     terminalLiveTailOriginLive,
+		Residency:  terminalLogicalLineResidencyLiveTail,
+		Dirty:      true,
+		Generation: 7,
+	}}
+	metadata.LiveRows = rows
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
 		t.Fatalf("write corrupt live tail metadata: %v", err)
 	}
 
@@ -1163,14 +1174,12 @@ func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) 
 func TestTerminalGridRecoveredReclaimedLiveTailCountsCommittedRowsOnce(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("p0"), wrapped: false},
 		{cells: localVTermCellsFromString("p1"), wrapped: false},
 		{cells: localVTermCellsFromString("r0"), wrapped: false},
 		{cells: localVTermCellsFromString("r1"), wrapped: false},
-	}); err != nil {
-		t.Fatalf("append persisted rows: %v", err)
-	}
+	})
 	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("r1"), WrappedSet: true, Wrapped: false},
@@ -1179,37 +1188,40 @@ func TestTerminalGridRecoveredReclaimedLiveTailCountsCommittedRowsOnce(t *testin
 		t.Fatalf("encode reclaimed row metadata: %v", err)
 	}
 	_, generation, _ := store.coordinates()
-	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
-		LiveRecords: []terminalGridLineRecordMeta{
-			{
-				ID:         3,
-				StartRow:   0,
-				EndRow:     0,
-				RowIDKnown: true,
-				FirstRowID: 2,
-				LastRowID:  2,
-				Sealed:     true,
-				Origin:     terminalLiveTailOriginReclaimed,
-				Residency:  terminalLogicalLineResidencyLiveTail,
-				Dirty:      false,
-				Generation: generation,
-			},
-			{
-				ID:         4,
-				StartRow:   1,
-				EndRow:     1,
-				RowIDKnown: true,
-				FirstRowID: 3,
-				LastRowID:  3,
-				Sealed:     true,
-				Origin:     terminalLiveTailOriginReclaimed,
-				Residency:  terminalLogicalLineResidencyLiveTail,
-				Dirty:      false,
-				Generation: generation,
-			},
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read persisted line metadata: %v", err)
+	}
+	metadata.LiveRecords = []terminalGridLineRecordMeta{
+		{
+			ID:         3,
+			StartRow:   0,
+			EndRow:     0,
+			RowIDKnown: true,
+			FirstRowID: 2,
+			LastRowID:  2,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+			Generation: generation,
 		},
-		LiveRows: rows,
-	}); err != nil {
+		{
+			ID:         4,
+			StartRow:   1,
+			EndRow:     1,
+			RowIDKnown: true,
+			FirstRowID: 3,
+			LastRowID:  3,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+			Generation: generation,
+		},
+	}
+	metadata.LiveRows = rows
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
 		t.Fatalf("write reclaimed live tail metadata: %v", err)
 	}
 
@@ -1246,13 +1258,11 @@ func TestServerHistoryWindowLogicalLineIDsStayStableAcrossProjectionWidths(t *te
 	if err != nil {
 		t.Fatalf("new grid store: %v", err)
 	}
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("abcd"), rowKind: "line0", wrapped: true},
 		{cells: localVTermCellsFromString("ef"), rowKind: "line0", wrapped: false},
 		{cells: localVTermCellsFromString("gh"), rowKind: "line1", wrapped: false},
-	}); err != nil {
-		t.Fatalf("append logical rows: %v", err)
-	}
+	})
 	if err := store.Close(); err != nil {
 		t.Fatalf("close grid store: %v", err)
 	}
@@ -1289,15 +1299,13 @@ func TestServerHistoryWindowMarksClippedLogicalLineAfterProjectionLimit(t *testi
 	if err != nil {
 		t.Fatalf("new grid store: %v", err)
 	}
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("aa"), rowKind: "line0", wrapped: false},
 		{cells: localVTermCellsFromString("bbbb"), rowKind: "line1", wrapped: true},
 		{cells: localVTermCellsFromString("cccc"), rowKind: "line1", wrapped: true},
 		{cells: localVTermCellsFromString("dd"), rowKind: "line1", wrapped: false},
 		{cells: localVTermCellsFromString("ee"), rowKind: "line2", wrapped: false},
-	}); err != nil {
-		t.Fatalf("append logical rows: %v", err)
-	}
+	})
 	if err := store.Close(); err != nil {
 		t.Fatalf("close grid store: %v", err)
 	}
@@ -1343,13 +1351,11 @@ func TestServerHistoryWindowMarksLatestLimitClippedLogicalLineBefore(t *testing.
 	if err != nil {
 		t.Fatalf("new grid store: %v", err)
 	}
-	if err := store.appendRows([]terminalGridRow{
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("aaaa"), rowKind: "line0", wrapped: true},
 		{cells: localVTermCellsFromString("bbbb"), rowKind: "line0", wrapped: true},
 		{cells: localVTermCellsFromString("cccc"), rowKind: "line0", wrapped: false},
-	}); err != nil {
-		t.Fatalf("append logical rows: %v", err)
-	}
+	})
 	if err := store.Close(); err != nil {
 		t.Fatalf("close grid store: %v", err)
 	}

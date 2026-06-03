@@ -684,9 +684,9 @@ func TestScreenSnapshotFallbackFullReplaceDoesNotCreateHistory(t *testing.T) {
 		stream: fanout.New(),
 		grid:   store,
 	}
-	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("hist0")}); err != nil {
-		t.Fatalf("append persisted seed: %v", err)
-	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("hist0")},
+	})
 	beforeRows := store.RowCount()
 	beforeLines := store.LogicalLineCount()
 
@@ -1203,8 +1203,8 @@ func TestTerminalGridStoreAppendRefreshesPersistedLineMetadata(t *testing.T) {
 		t.Fatalf("read line metadata after append: %v", err)
 	}
 	want := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
+		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected append to refresh persisted line metadata, got %#v want %#v", lineMetadata.Records, want)
@@ -1230,7 +1230,7 @@ func TestTerminalGridStoreAppendUsesExplicitLogicalLineIDsForPersistedMetadata(t
 		t.Fatalf("read line metadata after explicit append: %v", err)
 	}
 	want := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected explicit logical line metadata, got %#v want %#v", lineMetadata.Records, want)
@@ -1323,7 +1323,7 @@ func TestTerminalGridStoreClosePreservesExplicitPersistedLineMetadata(t *testing
 		t.Fatalf("read line metadata after close: %v", err)
 	}
 	want := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected close to preserve explicit logical line metadata, got %#v want %#v", lineMetadata.Records, want)
@@ -1363,7 +1363,7 @@ func TestTerminalGridStoreRetentionPreservesExplicitPersistedLineMetadata(t *tes
 		t.Fatalf("expected one retained explicit record, got %#v", lineMetadata.Records)
 	}
 	record := lineMetadata.Records[0]
-	if record.ID != 2 || record.StartRow != 0 || record.EndRow != 1 || !record.Sealed || record.Origin != terminalLiveTailOriginReclaimed || record.Residency != terminalLogicalLineResidencyPersisted || record.Dirty || record.Generation != viewport.Generation {
+	if record.ID != 2 || record.StartRow != 0 || record.EndRow != 1 || !record.Sealed || record.Origin != terminalLiveTailOriginReclaimed || record.Residency != terminalLogicalLineResidencyPersisted || record.Dirty || record.Generation != viewport.Generation || record.Source != terminalLogicalLineRecordSourceExplicit {
 		t.Fatalf("unexpected retained explicit record %#v viewport=%#v", record, viewport)
 	}
 }
@@ -1422,8 +1422,8 @@ func TestTerminalGridStoreExplicitAppendRebuildsMissingMetadataPrefix(t *testing
 		t.Fatalf("read rebuilt line metadata: %v", err)
 	}
 	want := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 2, StartRow: 1, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
+		{ID: 2, StartRow: 1, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected explicit append to rebuild fallback prefix and preserve explicit tail, got %#v want %#v", lineMetadata.Records, want)
@@ -1453,9 +1453,9 @@ func TestTerminalGridStoreExplicitAppendFallsBackForNonContiguousLogicalLineID(t
 	}
 	_, generation, _ := store.coordinates()
 	want := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 3, StartRow: 2, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
+		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
+		{ID: 3, StartRow: 2, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected rejected explicit metadata to fall back to persisted records, got %#v want %#v", lineMetadata.Records, want)
@@ -1489,8 +1489,8 @@ func TestTerminalGridStoreExplicitAppendRejectsPartialLogicalLineIDsWithinGroup(
 	}
 	_, generation, _ := store.coordinates()
 	want := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 2, StartRow: 1, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
+		{ID: 2, StartRow: 1, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected partial explicit metadata to fall back without inheriting missing row id, got %#v want %#v", lineMetadata.Records, want)
@@ -1522,6 +1522,7 @@ func TestTerminalGridStoreExplicitAppendAppliesPrefixLineMigrations(t *testing.T
 			Origin:     terminalLiveTailOriginLive,
 			Residency:  terminalLogicalLineResidencyPersisted,
 			Generation: generation,
+			Source:     terminalLogicalLineRecordSourceExplicit,
 		}},
 		Migrations: []terminalGridLineMigration{{RuntimeID: prefixRuntimeID, PersistedID: 7}},
 	}); err != nil {
@@ -1537,8 +1538,8 @@ func TestTerminalGridStoreExplicitAppendAppliesPrefixLineMigrations(t *testing.T
 		t.Fatalf("read line metadata: %v", err)
 	}
 	want := []terminalGridLineRecordMeta{
-		{ID: 7, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 7, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
+		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected migrated prefix to be preserved before explicit append, got %#v want %#v", lineMetadata.Records, want)
@@ -1562,7 +1563,7 @@ func TestTerminalGridStoreLineMetadataKeepsSealedPrefixBeforeWrappedTail(t *test
 		t.Fatalf("read line metadata after append: %v", err)
 	}
 	want := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceFallback},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, want) {
 		t.Fatalf("expected sidecar to keep sealed persisted prefix only, got %#v want %#v", lineMetadata.Records, want)
@@ -1642,7 +1643,7 @@ func TestTerminalGridStoreRetentionUsesSealedMetadataPrefix(t *testing.T) {
 	}
 	_, generation, _ := store.coordinates()
 	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
-		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}}); err != nil {
 		t.Fatalf("write partial line metadata: %v", err)
 	}
@@ -1680,9 +1681,9 @@ func TestTerminalGridFallbackLogicalLineRecordsExposePersistedBoundaries(t *test
 	}
 	records := terminalGridFallbackLogicalLineRecordsForRefs(refs, 40)
 	want := []terminalGridLogicalLineRecord{
-		{id: 41, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
-		{id: 43, startRow: 2, endRow: 2, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
-		{id: 44, startRow: 3, endRow: 3, sealed: false, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
+		{id: 41, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted, source: terminalLogicalLineRecordSourceFallback},
+		{id: 43, startRow: 2, endRow: 2, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted, source: terminalLogicalLineRecordSourceFallback},
+		{id: 44, startRow: 3, endRow: 3, sealed: false, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted, source: terminalLogicalLineRecordSourceFallback},
 	}
 	if !reflect.DeepEqual(records, want) {
 		t.Fatalf("unexpected fallback logical line records got %#v want %#v", records, want)
@@ -2635,6 +2636,7 @@ func TestTerminalWritePathAssignsRuntimeIDsBeforePersistedAppend(t *testing.T) {
 		Origin:     terminalLiveTailOriginReclaimed,
 		Residency:  terminalLogicalLineResidencyPersisted,
 		Generation: generation,
+		Source:     terminalLogicalLineRecordSourceExplicit,
 	}}
 	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
 		t.Fatalf("expected persisted append to write one explicit logical line record, got %#v want %#v", lineMetadata.Records, wantRecords)
@@ -3261,6 +3263,11 @@ func TestTerminalRestartPreservesScrollbackAcrossRestart(t *testing.T) {
 			if err := term.Kill(); err != nil {
 				t.Fatalf("kill restarted terminal failed: %v", err)
 			}
+			select {
+			case <-term.Done():
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for restarted terminal kill")
+			}
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -3300,8 +3307,8 @@ func TestTerminalRestartPreservedRowsKeepLogicalLineMetadata(t *testing.T) {
 	}
 	_, generation, _ := store.coordinates()
 	wantRecords := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
-		{ID: 4, StartRow: 3, EndRow: 3, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
+		{ID: 4, StartRow: 3, EndRow: 3, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
 		t.Fatalf("expected restart preserve append to keep explicit logical line metadata, got %#v want %#v", lineMetadata.Records, wantRecords)
@@ -3463,7 +3470,7 @@ func TestTerminalProcessExitClearsPersistedLiveTailMetadata(t *testing.T) {
 	}
 	_, generation, _ := store.coordinates()
 	wantRecords := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}
 	if !reflect.DeepEqual(after.Records, wantRecords) {
 		t.Fatalf("expected process exit seal to write persisted line metadata, got %#v want %#v", after.Records, wantRecords)
@@ -3541,7 +3548,7 @@ func TestTerminalProcessExitSealsLiveTailAndScreenContinuationAsOneLogicalLine(t
 		t.Fatalf("read line metadata after exit seal: %v", err)
 	}
 	wantRecords := []terminalGridLineRecordMeta{
-		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 	}
 	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
 		t.Fatalf("expected process exit seal to write one persisted logical line record, got %#v want %#v", lineMetadata.Records, wantRecords)
@@ -3890,12 +3897,10 @@ func TestTerminalClearScreenDoesNotCreateCommittedHistory(t *testing.T) {
 		vterm: vt,
 		grid:  store,
 	}
-	if err := store.AppendRows([][]localvterm.Cell{
-		localVTermCellsFromString("before-0"),
-		localVTermCellsFromString("before-1"),
-	}); err != nil {
-		t.Fatalf("append committed rows: %v", err)
-	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("before-0")},
+		{cells: localVTermCellsFromString("before-1")},
+	})
 	vt.LoadSnapshot(localvterm.ScreenData{
 		Cells: [][]localvterm.Cell{
 			localVTermRowForTest("live-tail", 12),
@@ -4311,6 +4316,41 @@ func localVTermCellsFromString(value string) []localvterm.Cell {
 		cells = append(cells, localvterm.Cell{Content: string(r), Width: 1})
 	}
 	return cells
+}
+
+func appendExplicitTerminalGridRowsForTest(t testing.TB, store *terminalGridStore, rows []terminalGridRow) {
+	t.Helper()
+	if store == nil || len(rows) == 0 {
+		return
+	}
+	damageRows := make([]localvterm.DamageOp, len(rows))
+	logicalLineIDs := make([]uint64, len(rows))
+	nextRuntimeID := terminalLiveTailLogicalLineIDBase + 1
+	currentID := uint64(0)
+	for i, row := range rows {
+		damageRows[i] = localvterm.DamageOp{
+			Cells:      row.cells,
+			Runs:       row.runs,
+			Timestamp:  row.timestamp,
+			RowKind:    row.rowKind,
+			WrappedSet: true,
+			Wrapped:    row.wrapped,
+		}
+		if row.logicalLineID != 0 {
+			currentID = row.logicalLineID
+		}
+		if currentID == 0 {
+			currentID = nextRuntimeID
+			nextRuntimeID++
+		}
+		logicalLineIDs[i] = currentID
+		if !row.wrapped {
+			currentID = 0
+		}
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(damageRows, logicalLineIDs); err != nil {
+		t.Fatalf("append explicit terminal grid rows: %v", err)
+	}
 }
 
 func writeVTermDamageToGrid(t *testing.T, term *Terminal, vt *localvterm.VTerm, text string) {
