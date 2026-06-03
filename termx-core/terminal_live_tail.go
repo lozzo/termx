@@ -681,13 +681,13 @@ func terminalLiveTailRecordDirty(segment terminalLiveTailSegment) bool {
 }
 
 func terminalLiveTailRecordSealState(segment terminalLiveTailSegment, row int) terminalLiveTailSealState {
-	if segment.origin == terminalLiveTailOriginReclaimed {
+	if segment.origin == terminalLiveTailOriginReclaimed || segment.sealState == terminalLiveTailSealed {
 		return segment.sealState
 	}
 	if row < len(segment.rows)-1 {
 		return terminalLiveTailSealed
 	}
-	return terminalLiveTailSealStateForRows(segment.rows, segment.wrapPending)
+	return terminalLiveTailOpen
 }
 
 func terminalLiveTailSegmentLogicalLineIDsWindow(segment terminalLiveTailSegment, localStart int, localEnd int) []uint64 {

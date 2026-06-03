@@ -1062,6 +1062,20 @@ func TestTerminalGridRecoveredLiveTailKeepsOpenLineSeparateFromWrapPending(t *te
 			if len(tail.segments) != 1 || tail.segments[0].sealState != terminalLiveTailOpen || tail.segments[0].wrapPending != tc.wantWrapPending {
 				t.Fatalf("unexpected recovered open segment: %#v", tail.segments)
 			}
+			records := tail.logicalLineRecords()
+			if len(records) != 1 || records[0].sealState != terminalLiveTailOpen {
+				t.Fatalf("expected recovered open line record to stay open, got %#v", records)
+			}
+			if err := store.recordLiveTailLineState(records, tail.rows()); err != nil {
+				t.Fatalf("rewrite recovered live tail metadata: %v", err)
+			}
+			metadata, err := readTerminalGridLineMetadata(store.dir)
+			if err != nil {
+				t.Fatalf("read rewritten live tail metadata: %v", err)
+			}
+			if len(metadata.LiveRecords) != 1 || metadata.LiveRecords[0].Sealed {
+				t.Fatalf("expected rewritten recovered live tail metadata to keep open seal state, got %#v", metadata.LiveRecords)
+			}
 		})
 	}
 }

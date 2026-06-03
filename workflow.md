@@ -532,6 +532,7 @@ TUI store 至少表达：
 - 已清理 core history window 过滤阶段遗留的旧 non-committed row 计数：`TotalRows` 已统一按 filtered visual projection rows 扣减，`LoadedRows` 继续使用 committed source row 去重。
 - 已补齐 core recovered reclaimed live-tail duplicate logical line id harness：即使 reclaimed metadata 的 row id、generation 与 persisted store 均有效，重复 stable logical line id 仍会被恢复端拒绝，避免把两个 reclaimed records 合成伪连续逻辑行。
 - 已补齐 core recovered live-tail segment merge harness：相邻 live records 恢复时可以合并底层 segment，但必须保留逐 row runtime logical line id，并在 record view 中继续输出独立 logical line records。
+- 已修正 core recovered open live-tail record 的封口状态恢复：metadata 明确为 open 的尾部 logical line 即使当前 row 未标记 wrapped，也不会在 `logicalLineRecords()` 或再次写入 `grid.lines.json` 时被重推为 sealed；非尾部 logical line 仍保持 sealed。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
