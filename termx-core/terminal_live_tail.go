@@ -324,7 +324,7 @@ func (tail *terminalPrimaryLiveTail) replaceReclaimedPrefixWithLogicalLineIDs(ro
 				origin:         segment.origin,
 				sealState:      terminalLiveTailSealStateForRows(resizeTail.rows, segment.wrapPending),
 				rows:           resizeTail.rows,
-				logicalLineIDs: terminalLiveTailSegmentLiveLogicalLineIDs(resizeTail.logicalLineIDs, resizeTail.rows),
+				logicalLineIDs: tail.liveLogicalLineIDsForRows(resizeTail.logicalLineIDs, resizeTail.rows),
 				wrapPending:    segment.wrapPending,
 				generation:     segment.generation,
 				firstRowID:     segment.firstRowID,
@@ -363,7 +363,7 @@ func trimLiveTailResizeRowsCoveredByReclaimedPrefix(resizeRows []vterm.DamageOp,
 	if len(resizeRows) == 0 {
 		return terminalLiveTailRowsWithLogicalLineIDs{}
 	}
-	lineIDs := terminalLiveTailSegmentLiveLogicalLineIDs(logicalLineIDs, resizeRows)
+	lineIDs := alignLiveTailUint64s(logicalLineIDs, len(resizeRows))
 	if len(reclaimedRows) == 0 {
 		return terminalLiveTailRowsWithLogicalLineIDs{
 			rows:           cloneGridDamageOps(resizeRows),

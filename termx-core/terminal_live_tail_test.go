@@ -448,3 +448,42 @@ func TestTerminalPrimaryLiveTailKeepsResizeLogicalLineIDAfterReclaimedTrim(t *te
 		t.Fatalf("expected resize record to keep runtime id after reclaimed trim, got %#v initial=%#v", records, initial)
 	}
 }
+
+func TestTerminalPrimaryLiveTailAllocatesFreshResizeIDAfterReclaimedTrim(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("old"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	oldIDs := tail.window(0, tail.rowCount()).logicalLineIDs
+	if len(oldIDs) != 1 || !terminalRuntimeLogicalLineID(oldIDs[0]) {
+		t.Fatalf("expected old live runtime id, got %#v", oldIDs)
+	}
+	tail.reset()
+	tail.segments = []terminalLiveTailSegment{{
+		origin:    terminalLiveTailOriginResize,
+		sealState: terminalLiveTailOpen,
+		rows: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: true},
+		},
+		logicalLineIDs: []uint64{0, 0},
+		wrapPending:    true,
+	}}
+	tail.wrapPending = true
+
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("aa"),
+		WrappedSet: true,
+		Wrapped:    true,
+	}}, []uint64{11}, 7, 10, 10)
+
+	window := tail.window(0, tail.rowCount())
+	if got := damageRowsToStrings(window.rows); !reflect.DeepEqual(got, []string{"aa", "bb"}) {
+		t.Fatalf("expected reclaimed prefix plus remaining resize row, got %#v", got)
+	}
+	if got := window.logicalLineIDs; len(got) != 2 || got[0] != 11 || got[1] <= oldIDs[0] {
+		t.Fatalf("expected remaining resize row to get fresh runtime id, got %#v old=%#v", got, oldIDs)
+	}
+}
