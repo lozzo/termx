@@ -252,6 +252,36 @@ func TestTerminalLatestLiveTailOnlyProjectionDoesNotInventCanonicalMetadata(t *t
 	}
 }
 
+func TestTerminalLatestLiveTailLimitDoesNotInventCommittedCursor(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	var tail terminalPrimaryLiveTail
+	firstID := terminalLiveTailLogicalLineIDBase + 10
+	secondID := terminalLiveTailLogicalLineIDBase + 11
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("a0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("b0"), WrappedSet: true, Wrapped: false},
+	}, []uint64{firstID, secondID}, false)
+
+	viewport, err := historyCombinedGridViewportFromStore(store, 0, 1, 4, tail)
+	if err != nil {
+		t.Fatalf("history viewport for limited mutable live tail: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport("live-tail-limit", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"b0"}) {
+		t.Fatalf("expected latest limit to return only newest mutable live row, got %#v", got)
+	}
+	if window.BeforeOffset != 0 || window.LoadedRows != 0 || window.Generation != 0 || window.FirstRowID != 0 || window.LastRowID != 0 {
+		t.Fatalf("expected mutable latest limit not to invent committed cursor or row boundary, window=%#v", window)
+	}
+	if window.LoadedLines != 1 || window.LogicalTotal != 2 || !window.HasMore {
+		t.Fatalf("expected mutable latest limit to count returned line separately from total live lines, loaded=%d total=%d has_more=%v", window.LoadedLines, window.LogicalTotal, window.HasMore)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID != secondID || window.Lines[0].ClippedBefore || window.Lines[0].ClippedAfter {
+		t.Fatalf("expected latest limit to expose complete newest mutable line only, got %#v", window.Lines)
+	}
+}
+
 func TestTerminalLatestCombinedViewportLogicalTotalIncludesVisiblePersistedAndLiveTailLines(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
