@@ -2610,6 +2610,40 @@ func TestTerminalWritePathSplitsPersistedAndLiveTailAppendRows(t *testing.T) {
 	}
 }
 
+func TestTerminalWritePathAssignsRuntimeIDsBeforePersistedAppend(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{id: "persisted-append-runtime-ids", grid: store}
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("hist0"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("hist1"), WrappedSet: true, Wrapped: false},
+		},
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after persisted append: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	wantRecords := []terminalGridLineRecordMeta{{
+		ID:         1,
+		StartRow:   0,
+		EndRow:     1,
+		Sealed:     true,
+		Origin:     terminalLiveTailOriginReclaimed,
+		Residency:  terminalLogicalLineResidencyPersisted,
+		Generation: generation,
+	}}
+	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
+		t.Fatalf("expected persisted append to write one explicit logical line record, got %#v want %#v", lineMetadata.Records, wantRecords)
+	}
+	if len(lineMetadata.Migrations) != 1 || lineMetadata.Migrations[0].RuntimeID < terminalLiveTailLogicalLineIDBase || lineMetadata.Migrations[0].PersistedID != 1 {
+		t.Fatalf("expected persisted append to record runtime->persisted migration, got %#v", lineMetadata.Migrations)
+	}
+}
+
 func TestTerminalLatestProjectionUsesPersistedAndLiveTailAppendRows(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()

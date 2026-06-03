@@ -102,10 +102,10 @@ type Terminal struct {
 	// streamMu serializes VTerm updates, bootstrap capture, broadcasts and
 	// resize/close notifications so subscribers can replay a consistent screen
 	// state before switching to live frames.
-	streamMu           sync.Mutex
-	screenRevision     uint64
-	alternateGrid      terminalAlternateGrid
-	primaryLiveTail    terminalPrimaryLiveTail
+	streamMu        sync.Mutex
+	screenRevision  uint64
+	alternateGrid   terminalAlternateGrid
+	primaryLiveTail terminalPrimaryLiveTail
 
 	// This cache holds deep-copied metadata snapshots so frequent read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -1819,6 +1819,9 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 		if trimmed := beforeTrim - len(persistedRows); trimmed > 0 {
 			persistedLineIDs = trimUint64Prefix(persistedLineIDs, trimmed)
 		}
+	}
+	if len(persistedRows) > 0 {
+		persistedLineIDs = t.primaryLiveTail.liveLogicalLineIDsForRows(persistedLineIDs, persistedRows)
 	}
 	if liveTailChanged {
 		if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" {
