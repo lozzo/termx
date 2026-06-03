@@ -1293,8 +1293,12 @@ func terminalGridExplicitLogicalLineRecordsForAppendedRows(refs []terminalGridRo
 		resolvedIDs[i] = rawID
 	}
 	records := make([]terminalGridLogicalLineRecord, 0, len(logicalLineIDs))
+	completedIDs := make(map[uint64]struct{}, len(logicalLineIDs))
 	for start := 0; start < len(resolvedIDs); {
 		id := resolvedIDs[start]
+		if _, exists := completedIDs[id]; exists {
+			return nil
+		}
 		end := start
 		for end+1 < len(resolvedIDs) && resolvedIDs[end+1] == id {
 			end++
@@ -1311,6 +1315,7 @@ func terminalGridExplicitLogicalLineRecordsForAppendedRows(refs []terminalGridRo
 			generation: generation,
 		}
 		records = append(records, record)
+		completedIDs[id] = struct{}{}
 		start = end + 1
 	}
 	return records

@@ -1347,6 +1347,32 @@ func TestTerminalGridStoreExplicitAppendRebuildsMissingMetadataPrefix(t *testing
 	}
 }
 
+func TestTerminalGridStoreExplicitAppendRejectsNonContiguousLogicalLineID(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 99
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("a")},
+		{Cells: localVTermCellsFromString("b")},
+		{Cells: localVTermCellsFromString("c")},
+	}
+	err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID + 1, runtimeID})
+	if err == nil {
+		t.Fatal("expected explicit append with non-contiguous logical line id to fail")
+	}
+	if got := store.RowCount(); got != 3 {
+		t.Fatalf("expected rows to remain appended despite metadata validation failure, got %d", got)
+	}
+	lineMetadata, metadataErr := readTerminalGridLineMetadata(store.dir)
+	if metadataErr != nil && !os.IsNotExist(metadataErr) {
+		t.Fatalf("read line metadata after rejected explicit append: %v", metadataErr)
+	}
+	if metadataErr == nil && len(lineMetadata.Records) != 0 {
+		t.Fatalf("expected rejected explicit metadata not to write records, got %#v", lineMetadata.Records)
+	}
+}
+
 func TestTerminalGridStoreLineMetadataKeepsSealedPrefixBeforeWrappedTail(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
