@@ -2382,23 +2382,13 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
 	seenIDs := make(map[uint64]struct{}, len(records))
-	seenMutableRecord := false
-	var mutableOrigin terminalLiveTailOrigin
+	var order terminalLiveTailRecordOrder
 	for i, record := range records {
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
-		if record.origin == terminalLiveTailOriginReclaimed {
-			if seenMutableRecord {
-				return nil, false
-			}
-		} else {
-			seenMutableRecord = true
-			if mutableOrigin == "" {
-				mutableOrigin = record.origin
-			} else if record.origin != mutableOrigin {
-				return nil, false
-			}
+		if !order.accept(record.origin) {
+			return nil, false
 		}
 		if _, exists := seenIDs[record.id]; exists {
 			return nil, false
@@ -2426,6 +2416,23 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 		return nil, false
 	}
 	return out, true
+}
+
+type terminalLiveTailRecordOrder struct {
+	seenMutableRecord bool
+	mutableOrigin     terminalLiveTailOrigin
+}
+
+func (order *terminalLiveTailRecordOrder) accept(origin terminalLiveTailOrigin) bool {
+	if origin == terminalLiveTailOriginReclaimed {
+		return !order.seenMutableRecord
+	}
+	order.seenMutableRecord = true
+	if order.mutableOrigin == "" {
+		order.mutableOrigin = origin
+		return true
+	}
+	return origin == order.mutableOrigin
 }
 
 func terminalLiveTailOriginDirty(origin terminalLiveTailOrigin) bool {
@@ -3308,23 +3315,13 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 	}
 	nextStart := 0
 	seenIDs := make(map[uint64]struct{}, len(records))
-	seenMutableRecord := false
-	var mutableOrigin terminalLiveTailOrigin
+	var order terminalLiveTailRecordOrder
 	for i, record := range records {
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || !terminalLiveTailSealStateKnown(record.sealState) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= len(rows) {
 			return false
 		}
-		if record.origin == terminalLiveTailOriginReclaimed {
-			if seenMutableRecord {
-				return false
-			}
-		} else {
-			seenMutableRecord = true
-			if mutableOrigin == "" {
-				mutableOrigin = record.origin
-			} else if record.origin != mutableOrigin {
-				return false
-			}
+		if !order.accept(record.origin) {
+			return false
 		}
 		if _, exists := seenIDs[record.id]; exists {
 			return false
