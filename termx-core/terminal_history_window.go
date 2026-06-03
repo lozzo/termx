@@ -305,7 +305,14 @@ func combinedGridViewportFromStoreWithOptions(store *terminalGridStore, offset, 
 
 func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport terminalGridViewport) *HistoryWindow {
 	if len(viewport.Rows) == 0 && viewport.TotalRows == 0 {
-		return &HistoryWindow{TerminalID: id, Op: historyWindowOpForOffset(beforeOffset), Timestamp: time.Now().UTC()}
+		cursor := historyWindowBeforeCursor(beforeOffset, viewport)
+		return &HistoryWindow{
+			TerminalID:   id,
+			Op:           historyWindowOpForOffset(beforeOffset),
+			BeforeOffset: cursor,
+			LoadedRows:   cursor,
+			Timestamp:    time.Now().UTC(),
+		}
 	}
 	viewport = historyWindowTrimViewportToLimit(viewport)
 	viewport = historyWindowFilterViewportToAuthoritativeRows(viewport)

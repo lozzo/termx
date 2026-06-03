@@ -303,6 +303,20 @@ func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
 	if window.Rows[1].Ownership != RowOwnershipLiveTailLive {
 		t.Fatalf("expected recovered live tail row ownership, got %#v", window.Rows)
 	}
+	if window.BeforeOffset != 1 {
+		t.Fatalf("expected recovered live tail latest cursor to stay at committed depth 1, got %d", window.BeforeOffset)
+	}
+
+	older, err := restarted.HistoryWindow(ctx, "recover-live-tail-window", HistoryWindowOptions{BeforeOffset: window.BeforeOffset, Limit: 10, Cols: 4})
+	if err != nil {
+		t.Fatalf("older history window after live-tail recovery: %v", err)
+	}
+	if got := historyWindowRowTexts(older); len(got) != 0 {
+		t.Fatalf("expected older exhausted window not to repeat recovered live tail, got %#v", got)
+	}
+	if older.BeforeOffset != window.BeforeOffset || older.LoadedRows != window.BeforeOffset || older.TotalRows != 0 || older.LogicalTotal != 0 {
+		t.Fatalf("expected exhausted older live-tail recovery window to keep requested cursor without synthetic history, before=%d loaded=%d total=%d", older.BeforeOffset, older.LoadedRows, older.LogicalTotal)
+	}
 
 	viewport, err := restarted.GridViewport(ctx, "recover-live-tail-window", GridViewportOptions{ScrollbackLimit: 10, Cols: 4})
 	if err != nil {

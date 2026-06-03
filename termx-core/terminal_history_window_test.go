@@ -158,6 +158,16 @@ func TestHistoryWindowClearsBoundaryWhenAllRowsLackAuthoritativeLogicalLineIDs(t
 	}
 }
 
+func TestHistoryWindowEmptyViewportPreservesRequestCursor(t *testing.T) {
+	window := historyWindowFromCoreGridViewport("empty-cursor", 7, terminalGridViewport{})
+	if len(window.Rows) != 0 || len(window.Lines) != 0 || window.Token != "" || window.Generation != 0 {
+		t.Fatalf("expected empty viewport to keep no authoritative rows or boundary metadata, got %#v", window)
+	}
+	if window.BeforeOffset != 7 || window.LoadedRows != 7 || window.TotalRows != 0 || window.LogicalTotal != 0 || window.HasMore {
+		t.Fatalf("expected empty viewport to preserve exhausted request cursor only, before=%d loaded=%d total=%d logical=%d has_more=%v", window.BeforeOffset, window.LoadedRows, window.TotalRows, window.LogicalTotal, window.HasMore)
+	}
+}
+
 func TestHistoryWindowDoesNotMergeLogicalLineAcrossFilteredRows(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("a"), vtermCells("lost"), vtermCells("b"), vtermCells("c")},
