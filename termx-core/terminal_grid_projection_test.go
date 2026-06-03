@@ -1172,6 +1172,43 @@ func TestTerminalGridLiveTailLineStateRejectsReclaimedAfterLiveRecord(t *testing
 	}
 }
 
+func TestTerminalGridLiveTailLineStateRejectsStaleReclaimedGeneration(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+	})
+	rows := []localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("r0"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}
+	_, generation, _ := store.coordinates()
+	records := []terminalLiveTailLogicalLineRecord{{
+		id:         1,
+		startRow:   0,
+		endRow:     0,
+		sealState:  terminalLiveTailSealed,
+		origin:     terminalLiveTailOriginReclaimed,
+		residency:  terminalLogicalLineResidencyLiveTail,
+		generation: generation + 1,
+		rowIDKnown: true,
+		firstRowID: 0,
+		lastRowID:  0,
+	}}
+
+	if err := store.recordLiveTailLineState(records, rows); err != nil {
+		t.Fatalf("record stale generation live tail metadata: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected stale reclaimed generation to suppress metadata, got records=%#v rows=%#v current_generation=%d", metadata.LiveRecords, metadata.LiveRows, generation)
+	}
+}
+
 func TestTerminalGridLiveTailLineStateRejectsMixedMutableOrigins(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
