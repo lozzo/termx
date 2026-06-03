@@ -1112,6 +1112,7 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 	if t.gridAppender != nil {
 		t.gridAppender.flush()
 	}
+	t.recordTerminalGridRowLineMigrationsLocked(rows)
 	if err := t.grid.appendRows(rows); err != nil {
 		return err
 	}
@@ -1124,7 +1125,9 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 	if t == nil || t.vterm == nil {
 		return nil
 	}
-	liveTailRows := liveTail.rows()
+	liveTailWithIDs := liveTail.rowsWithLogicalLineIDs()
+	liveTailRows := liveTailWithIDs.rows
+	liveTailLineIDs := liveTailWithIDs.logicalLineIDs
 	vt := t.vterm
 	screen := trimTrailingBlankVTermRows(vt.ScreenContent().Cells)
 	screenTimestamps := trimTrailingZeroTimes(vt.ScreenTimestamps(), len(screen))
@@ -1135,12 +1138,13 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 	}
 
 	out := make([]terminalGridRow, 0, len(liveTailRows)+len(screen))
-	for _, row := range liveTailRows {
+	for i, row := range liveTailRows {
 		out = append(out, terminalGridRow{
-			cells:     damageOpCells(row),
-			timestamp: row.Timestamp,
-			rowKind:   row.RowKind,
-			wrapped:   row.WrappedSet && row.Wrapped,
+			cells:         damageOpCells(row),
+			timestamp:     row.Timestamp,
+			rowKind:       row.RowKind,
+			wrapped:       row.WrappedSet && row.Wrapped,
+			logicalLineID: uint64At(liveTailLineIDs, i),
 		})
 	}
 
@@ -1190,6 +1194,14 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 				screenRows = screenRows[overlap:]
 			}
 		}
+		continuedID := uint64(0)
+		if len(out) > 0 && out[len(out)-1].wrapped {
+			continuedID = out[len(out)-1].logicalLineID
+		}
+		screenLineIDs := terminalGridRowsLiveLogicalLineIDsForExit(screenRows, continuedID)
+		for i := range screenRows {
+			screenRows[i].logicalLineID = uint64At(screenLineIDs, i)
+		}
 		out = append(out, screenRows...)
 	}
 
@@ -1198,6 +1210,24 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 	}
 	out[len(out)-1].wrapped = false
 	return out
+}
+
+func terminalGridRowsLiveLogicalLineIDsForExit(rows []terminalGridRow, continuedID uint64) []uint64 {
+	if len(rows) == 0 {
+		return nil
+	}
+	damageRows := make([]vterm.DamageOp, len(rows))
+	lineIDs := make([]uint64, len(rows))
+	if terminalRuntimeLogicalLineID(continuedID) {
+		lineIDs[0] = continuedID
+	}
+	for i, row := range rows {
+		damageRows[i] = vterm.DamageOp{
+			WrappedSet: true,
+			Wrapped:    row.wrapped,
+		}
+	}
+	return terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs, damageRows)
 }
 
 func terminalGridRowsToCellsRows(rows []terminalGridRow) [][]vterm.Cell {
@@ -1977,6 +2007,22 @@ func (t *Terminal) recordLiveTailLineMigrationsLocked(rows []vterm.DamageOp, run
 			t.logger.Warn("termx terminal grid line metadata write failed", "terminal_id", t.id, "error", err)
 		}
 	}
+}
+
+func (t *Terminal) recordTerminalGridRowLineMigrationsLocked(rows []terminalGridRow) {
+	if len(rows) == 0 {
+		return
+	}
+	damageRows := make([]vterm.DamageOp, len(rows))
+	logicalLineIDs := make([]uint64, len(rows))
+	for i, row := range rows {
+		damageRows[i] = vterm.DamageOp{
+			WrappedSet: true,
+			Wrapped:    row.wrapped,
+		}
+		logicalLineIDs[i] = row.logicalLineID
+	}
+	t.recordLiveTailLineMigrationsLocked(damageRows, logicalLineIDs)
 }
 
 func (t *Terminal) recordLiveTailMetadataLocked() {

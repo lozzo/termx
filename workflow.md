@@ -436,6 +436,7 @@ TUI store 至少表达：
 - 已将 reclaimed mutable live tail record 的 persisted row 坐标显式写入 `grid.lines.json`，恢复时必须使用 sidecar 中的 first/last row id；row 坐标写出和恢复都只允许出现在已知 persisted logical line id 的 reclaimed record 上，不再通过 logical line id 反推出 reclaimed row 坐标。
 - 已让 legacy `snapshot` / `grid.viewport` 的 store-only latest 兼容投影复用同一个 recovered live tail projection helper；它们仍不是新 TUI history truth，只是避免恢复场景下兼容投影丢失 mutable live tail。
 - 已在 process exit force seal 后清空 recoverable mutable live tail metadata，避免已提交到 persisted store 的 live tail 又被 store-only latest projection 重复恢复；sidecar 写入同时跳过 closed/remove-on-close 临时 store。
+- 已让 process exit force seal 在提交 primary mutable live tail 与剩余 screen projection 行时保留或分配 runtime logical line id，并在 append 前写出 runtime->persisted logical line id 迁移；封口后的 `grid.lines.json` 会保留 sealed persisted record，同时清空 recoverable live-tail metadata。
 - 已将 mutable live tail 的旧通用 replaceRows 入口收敛到新语义：live/resize segment 创建时即写入 runtime logical line id，不再先生成无 id segment 后依赖读取端补推。
 - 已将 mutable live tail 的 live/resize segment ID 生成收敛为完整显式 stable logical line id 优先；当调用方已提供每 row logical line id 时，不再用 wrapped 元数据重新拆分或合并这些边界。
 - 已修正 reclaimed prefix 覆盖 resize live-tail 前缀后的裁剪逻辑：resize segment 裁剪 rows 时同步裁剪并保留 runtime logical line id，避免剩余 mutable live tail 回退成无 id 的 wrapped 推导。

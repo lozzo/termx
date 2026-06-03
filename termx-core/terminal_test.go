@@ -3240,6 +3240,11 @@ func TestTerminalProcessExitClearsPersistedLiveTailMetadata(t *testing.T) {
 	if len(before.LiveRecords) == 0 || len(before.LiveRows) == 0 {
 		t.Fatalf("expected live tail metadata before seal, got %#v", before)
 	}
+	liveTailWindow := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount())
+	if got := liveTailWindow.logicalLineIDs; len(got) != 1 || !terminalRuntimeLogicalLineID(got[0]) {
+		t.Fatalf("expected live tail runtime logical line id before seal, got %#v", got)
+	}
+	runtimeLineID := liveTailWindow.logicalLineIDs[0]
 
 	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
 		t.Fatalf("seal live tail for exit: %v", err)
@@ -3251,8 +3256,26 @@ func TestTerminalProcessExitClearsPersistedLiveTailMetadata(t *testing.T) {
 	if len(after.LiveRecords) != 0 || len(after.LiveRows) != 0 {
 		t.Fatalf("expected live tail metadata cleared after process exit seal, got %#v", after)
 	}
+	_, generation, _ := store.coordinates()
+	wantRecords := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(after.Records, wantRecords) {
+		t.Fatalf("expected process exit seal to write persisted line metadata, got %#v want %#v", after.Records, wantRecords)
+	}
+	wantMigrations := []terminalGridLineMigration{{RuntimeID: runtimeLineID, PersistedID: 1}}
+	if !reflect.DeepEqual(after.Migrations, wantMigrations) {
+		t.Fatalf("expected process exit seal migration metadata, got %#v want %#v", after.Migrations, wantMigrations)
+	}
 	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
 		t.Fatal("expected process exit seal to remove recoverable live tail metadata")
+	}
+	viewport, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("read persisted viewport after process exit seal: %v", err)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
+		t.Fatalf("expected process exit projection to expose persisted logical line id, got %#v", got)
 	}
 }
 
