@@ -1117,6 +1117,13 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 		t.recordLiveTailMetadataLocked()
 		return nil
 	}
+	if baseRowID, _, persistedRows := t.grid.coordinates(); persistedRows > 0 {
+		if truncateRows := t.primaryLiveTail.authoritativeReclaimedTailRowCount(baseRowID, persistedRows); truncateRows > 0 {
+			if err := t.grid.truncateTailRows(truncateRows); err != nil {
+				return err
+			}
+		}
+	}
 	if err := t.grid.appendGridRows(rows); err != nil {
 		return err
 	}
@@ -1129,7 +1136,7 @@ func (t *Terminal) primaryLiveTailRowsForExit() []terminalGridRow {
 	if t == nil || t.vterm == nil {
 		return nil
 	}
-	liveTailWithIDs := t.primaryLiveTail.rowsWithLogicalLineIDs()
+	liveTailWithIDs := t.primaryLiveTail.nonReclaimedRowsWithLogicalLineIDs()
 	liveTailRows := liveTailWithIDs.rows
 	liveTailLineIDs := liveTailWithIDs.logicalLineIDs
 	vt := t.vterm

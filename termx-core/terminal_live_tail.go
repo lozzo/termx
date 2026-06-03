@@ -196,6 +196,27 @@ func (tail terminalPrimaryLiveTail) earliestAuthoritativeReclaimedRowID() (uint6
 	return earliest, found
 }
 
+func (tail terminalPrimaryLiveTail) authoritativeReclaimedTailRowCount(persistedBaseRowID uint64, persistedRows int) int {
+	if persistedRows <= 0 {
+		return 0
+	}
+	expectedLast := persistedBaseRowID + uint64(persistedRows-1)
+	for _, segment := range tail.segments {
+		if !terminalLiveTailReclaimedSegmentAuthoritative(segment) {
+			continue
+		}
+		if segment.lastRowID != expectedLast {
+			continue
+		}
+		count := len(segment.rows)
+		if segment.firstRowID+uint64(count)-1 != segment.lastRowID {
+			return 0
+		}
+		return count
+	}
+	return 0
+}
+
 func (tail terminalPrimaryLiveTail) liveRows() []vterm.DamageOp {
 	return tail.liveRowsWithLogicalLineIDs().rows
 }
@@ -221,6 +242,10 @@ func (tail terminalPrimaryLiveTail) nonReclaimedRowsForResizePrefix() []vterm.Da
 }
 
 func (tail terminalPrimaryLiveTail) nonReclaimedRowsForResizePrefixWithLogicalLineIDs() terminalLiveTailRowsWithLogicalLineIDs {
+	return tail.liveRowsWithLogicalLineIDs()
+}
+
+func (tail terminalPrimaryLiveTail) nonReclaimedRowsWithLogicalLineIDs() terminalLiveTailRowsWithLogicalLineIDs {
 	return tail.liveRowsWithLogicalLineIDs()
 }
 

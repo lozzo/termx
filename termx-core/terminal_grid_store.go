@@ -300,6 +300,95 @@ func (s *terminalGridStore) SetRetentionPolicy(policy terminalGridRetentionPolic
 	s.mu.Unlock()
 }
 
+func (s *terminalGridStore) truncateTailRows(count int) error {
+	if s == nil || count <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	if count >= s.rowCount {
+		count = s.rowCount
+	}
+	keepRows := s.rowCount - count
+	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
+	if err != nil {
+		return err
+	}
+	if keepRows < 0 {
+		keepRows = 0
+	}
+	if keepRows > len(refs) {
+		keepRows = len(refs)
+	}
+	refs = refs[:keepRows]
+	indexPath := filepath.Join(s.dir, terminalGridIndexName)
+	tmpPath := indexPath + ".tmp"
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := writeTerminalGridIndexRefs(tmp, refs); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if s.index != nil {
+		if err := s.index.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			return err
+		}
+		s.index = nil
+	}
+	if err := os.Rename(tmpPath, indexPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	s.rowCount = len(refs)
+	if len(refs) > 0 {
+		last := refs[len(refs)-1]
+		s.currentSeq = last.seq
+		truncateOffset := last.offset + last.length
+		if s.current != nil {
+			_ = s.current.Close()
+			s.current = nil
+		}
+		if err := os.Truncate(filepath.Join(s.dir, terminalGridPageName(last.seq)), truncateOffset); err != nil {
+			return err
+		}
+		if err := s.openCurrentPageLocked(); err != nil {
+			return err
+		}
+		s.currentBytes = truncateOffset
+	} else {
+		s.currentSeq = 0
+		s.currentBytes = 0
+		if s.current != nil {
+			_ = s.current.Close()
+			s.current = nil
+		}
+		if err := os.Truncate(filepath.Join(s.dir, terminalGridPageName(0)), 0); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if err := pruneUnreferencedTerminalGridPages(s.dir, refs); err != nil {
+		return err
+	}
+	if s.writable && !s.removeOnClose {
+		records, err := writeTerminalGridCompletePersistedLineRecordsMetadata(s.dir, s.baseRowID, s.generation)
+		s.lineRecords = cloneTerminalGridLogicalLineRecords(records)
+		return err
+	}
+	s.lineRecords = terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, s.baseRowID, s.generation)
+	return nil
+}
+
 type testTempDirProvider interface {
 	TempDir() string
 }

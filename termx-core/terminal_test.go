@@ -2538,6 +2538,144 @@ func TestTerminalGrowReclaimedLiveTailHistoryWindowKeepsLogicalLineID(t *testing
 	}
 }
 
+func TestTerminalProcessExitDoesNotRecommitCleanReclaimedTail(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "clean-reclaimed-tail-not-recommitted",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("older")},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+	})
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
+	}
+	if len(term.primaryLiveTail.segments) == 0 {
+		t.Fatal("expected reclaimed live-tail segment")
+	}
+	beforeRows := store.RowCount()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("")}},
+		localvterm.CursorState{Row: 0, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal clean reclaimed live tail: %v", err)
+	}
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected clean reclaimed tail not to be appended again, before=%d after=%d", beforeRows, got)
+	}
+	if got := term.primaryLiveTail.rowCount(); got != 0 {
+		t.Fatalf("expected process exit to clear in-memory reclaimed tail, got %d rows", got)
+	}
+	viewport, err := store.Viewport(0, 10, 5)
+	if err != nil {
+		t.Fatalf("viewport after clean reclaimed seal: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"older", "grow0", "grow1"}) {
+		t.Fatalf("expected persisted store to remain unchanged after clean reclaimed seal, got %#v", got)
+	}
+}
+
+func TestTerminalReclaimedTailModifiedBeforeExitCommitsAsNewLogicalLine(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "reclaimed-tail-modified-recommit",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("older")},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+	})
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
+	}
+	if len(term.primaryLiveTail.segments) == 0 {
+		t.Fatal("expected reclaimed live-tail segment")
+	}
+	modifiedRows := cloneGridDamageOps(term.primaryLiveTail.segments[0].rows)
+	modifiedRows[0].Cells = localVTermCellsFromString("EDIT0")
+	term.primaryLiveTail.replaceLiveRows(modifiedRows, false)
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("")}},
+		localvterm.CursorState{Row: 0, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	rowsForExit := term.primaryLiveTailRowsForExit()
+	rowTextsForExit := make([]string, 0, len(rowsForExit))
+	for _, row := range rowsForExit {
+		rowTextsForExit = append(rowTextsForExit, vtermRowToString(row.cells))
+	}
+	if !reflect.DeepEqual(rowTextsForExit, []string{"EDIT0", "grow1"}) {
+		t.Fatalf("expected modified reclaimed suffix to become dirty live rows for exit, got %#v", rowTextsForExit)
+	}
+	baseRowID, _, persistedRows := store.coordinates()
+	if got := term.primaryLiveTail.authoritativeReclaimedTailRowCount(baseRowID, persistedRows); got != 2 {
+		t.Fatalf("expected modified reclaimed commit to replace two persisted tail rows, got %d", got)
+	}
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal modified reclaimed live tail: %v", err)
+	}
+	if got := store.RowCount(); got != 3 {
+		t.Fatalf("expected modified reclaimed seal to replace persisted suffix and keep row count 3 before viewport assertion, got %d", got)
+	}
+	viewport, err := store.Viewport(0, 10, 5)
+	if err != nil {
+		t.Fatalf("viewport after modified reclaimed seal: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"older", "EDIT0", "grow1"}) {
+		t.Fatalf("expected modified reclaimed suffix to be appended as new persisted content, got %#v", got)
+	}
+	if len(viewport.LogicalLineIDs) != 3 {
+		t.Fatalf("expected logical line ids for all rows, got %#v", viewport.LogicalLineIDs)
+	}
+	oldReclaimedID := uint64(2)
+	newCommittedID := viewport.LogicalLineIDs[1]
+	if oldReclaimedID == 0 || newCommittedID == 0 {
+		t.Fatalf("expected non-zero logical line ids, got %#v", viewport.LogicalLineIDs)
+	}
+	if newCommittedID != oldReclaimedID {
+		t.Fatalf("expected modified reclaimed tail to keep reclaimed logical line identity after replacing persisted suffix, got old=%d new=%d ids=%#v", oldReclaimedID, newCommittedID, viewport.LogicalLineIDs)
+	}
+	if viewport.LogicalLineIDs[1] != viewport.LogicalLineIDs[2] {
+		t.Fatalf("expected modified reclaimed suffix to commit as one new logical line, got %#v", viewport.LogicalLineIDs)
+	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after modified reclaimed seal: %v", err)
+	}
+	if len(lineMetadata.Records) != 2 || lineMetadata.Records[1].Source != terminalLogicalLineRecordSourceExplicit {
+		t.Fatalf("expected modified reclaimed suffix to write explicit persisted metadata, got %#v", lineMetadata.Records)
+	}
+}
+
 func TestTerminalLatestGrowViewportDoesNotPullOlderLogicalLine(t *testing.T) {
 	vt := localvterm.New(5, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
