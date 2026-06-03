@@ -504,6 +504,7 @@ TUI store 至少表达：
 - 已补齐 core persisted tail reclaim 后修改再提交 harness，并修正 process exit seal 语义：clean reclaimed suffix 不会被重复 append；如果 reclaimed suffix 已转成 dirty live tail 后再提交，会先从 persisted store 裁掉对应 tail rows，再把修改后的 live rows 作为同一 logical line 身份重新落盘，避免旧内容和新内容同时存在。
 - 已继续收紧 core persisted tail 替换提交的版本语义：裁掉 reclaimed persisted tail 并写回修改内容时会 bump persisted store generation，刷新 `grid.meta` 与 persisted logical line metadata，使 `history.window` token/generation 能反映同一 logical line 边界内的内容变化，旧窗口响应可被 stale guard 识别。
 - 已继续收紧 core process exit seal 的 reclaimed/live 分流：clean reclaimed suffix 后追加独立 dirty live tail 时不会裁掉 persisted suffix，dirty live rows 只有通过显式 reclaimed-tail replacement 标记才会替换 persisted tail；退出封口前只避让已迁移 runtime logical line id，不把当前 recoverable live-tail record 误当成冲突。
+- 已修正 core 生产 resize 的 grow reclaim 顺序：`Terminal.Resize` 在更新 `t.size` 前会把目标 rows 显式传入 reclaimed suffix 计算，避免 grow resize 继续按旧窗口高度判断 `needed` 为 0 而漏回收 persisted logical line suffix。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

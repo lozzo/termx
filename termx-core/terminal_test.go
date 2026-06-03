@@ -2432,6 +2432,42 @@ func TestTerminalLatestGrowProjectionUsesMinimalCompletePersistedLogicalLineSuff
 	}
 }
 
+func TestTerminalGrowResizeReclaimUsesTargetRows(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "grow-reclaim-target-rows",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("older"), wrapped: false},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: false},
+	})
+
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim with old size rows: %v", err)
+	}
+	if got := term.primaryLiveTail.authoritativeReclaimedCommittedRowCount(); got != 0 {
+		t.Fatalf("expected old terminal rows not to reclaim suffix, got %d", got)
+	}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeToRowsLocked(5, 3); err != nil {
+		t.Fatalf("reclaim with target rows: %v", err)
+	}
+	if got := term.primaryLiveTail.authoritativeReclaimedCommittedRowCount(); got != 2 {
+		t.Fatalf("expected target rows to reclaim complete persisted suffix, got %d", got)
+	}
+}
+
 func TestTerminalGrowResizeStoresReclaimedSuffixInPrimaryLiveTail(t *testing.T) {
 	vt := localvterm.New(5, 1, 0, nil)
 	vt.DisableEmulatorScrollback()

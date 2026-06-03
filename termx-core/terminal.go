@@ -503,7 +503,7 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 	t.captureAlternateDamageLocked(damage)
 	t.appendGridFromDamageLocked(damage)
 	if int(cols) > int(old.Cols) || int(rows) > int(old.Rows) {
-		if err := t.reclaimPrimaryLiveTailForGrowResizeLocked(int(cols)); err != nil && t.logger != nil {
+		if err := t.reclaimPrimaryLiveTailForGrowResizeToRowsLocked(int(cols), int(rows)); err != nil && t.logger != nil {
 			t.logger.Warn("termx terminal grow resize live-tail reclaim failed", "terminal_id", t.id, "error", err)
 		}
 	}
@@ -1050,6 +1050,13 @@ func combinedRowWindowCoordinates(store *terminalGridStore, totalRows int, start
 }
 
 func (t *Terminal) reclaimPrimaryLiveTailForGrowResizeLocked(cols int) error {
+	if t == nil {
+		return nil
+	}
+	return t.reclaimPrimaryLiveTailForGrowResizeToRowsLocked(cols, int(t.size.Rows))
+}
+
+func (t *Terminal) reclaimPrimaryLiveTailForGrowResizeToRowsLocked(cols int, rows int) error {
 	if t == nil || t.grid == nil || t.vterm == nil || cols <= 0 {
 		return nil
 	}
@@ -1057,7 +1064,7 @@ func (t *Terminal) reclaimPrimaryLiveTailForGrowResizeLocked(cols int) error {
 		return nil
 	}
 	screenRows := trimTrailingBlankVTermRows(t.vterm.ScreenContent().Cells)
-	needed := maxInt(0, int(t.size.Rows)-len(screenRows)-t.primaryLiveTail.nonReclaimedRowCount())
+	needed := maxInt(0, rows-len(screenRows)-t.primaryLiveTail.nonReclaimedRowCount())
 	if needed <= 0 {
 		t.primaryLiveTail.replaceReclaimedPrefix(nil, 0, 0, 0)
 		return nil
