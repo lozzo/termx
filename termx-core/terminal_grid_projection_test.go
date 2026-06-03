@@ -1118,6 +1118,36 @@ func TestTerminalGridRecoveredLiveTailKeepsOpenLineSeparateFromWrapPending(t *te
 	}
 }
 
+func TestTerminalGridLiveTailLineStateRejectsUnknownSealState(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows := []localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("tail"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}
+	records := []terminalLiveTailLogicalLineRecord{{
+		id:        terminalLiveTailLogicalLineIDBase + 1,
+		startRow:  0,
+		endRow:    0,
+		sealState: terminalLiveTailSealState("unknown"),
+		origin:    terminalLiveTailOriginLive,
+		residency: terminalLogicalLineResidencyLiveTail,
+		dirty:     true,
+	}}
+
+	if err := store.recordLiveTailLineState(records, rows); err != nil {
+		t.Fatalf("record invalid live tail metadata: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected invalid seal state to suppress live tail metadata, got records=%#v rows=%#v", metadata.LiveRecords, metadata.LiveRows)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailPreservesResizeOrigin(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

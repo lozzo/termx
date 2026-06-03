@@ -3295,7 +3295,7 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 	nextStart := 0
 	seenIDs := make(map[uint64]struct{}, len(records))
 	for i, record := range records {
-		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= len(rows) {
+		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || !terminalLiveTailSealStateKnown(record.sealState) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= len(rows) {
 			return false
 		}
 		if _, exists := seenIDs[record.id]; exists {

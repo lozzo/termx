@@ -17,6 +17,15 @@ const (
 	terminalLiveTailSealed terminalLiveTailSealState = "sealed"
 )
 
+func terminalLiveTailSealStateKnown(sealState terminalLiveTailSealState) bool {
+	switch sealState {
+	case terminalLiveTailOpen, terminalLiveTailSealed:
+		return true
+	default:
+		return false
+	}
+}
+
 const terminalLiveTailLogicalLineIDBase uint64 = 1 << 63
 
 type terminalLiveTailSegment struct {
