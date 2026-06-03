@@ -673,6 +673,45 @@ func TestTerminalGridRecoveredLiveTailRejectsMigratedRuntimeID(t *testing.T) {
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailRejectsSourceField(t *testing.T) {
+	for _, source := range []terminalLogicalLineRecordSource{
+		terminalLogicalLineRecordSourceExplicit,
+		terminalLogicalLineRecordSourceFallback,
+		terminalLogicalLineRecordSource("unknown"),
+	} {
+		t.Run(string(source), func(t *testing.T) {
+			store := newMemoryTerminalGridStoreForTest(t)
+			defer store.Close()
+			rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+				Cells:      localVTermCellsFromString("tail"),
+				WrappedSet: true,
+				Wrapped:    false,
+			}})
+			if err != nil {
+				t.Fatalf("encode live row metadata: %v", err)
+			}
+			if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+				LiveRecords: []terminalGridLineRecordMeta{{
+					ID:        terminalLiveTailLogicalLineIDBase + 1,
+					StartRow:  0,
+					EndRow:    0,
+					Sealed:    true,
+					Origin:    terminalLiveTailOriginLive,
+					Residency: terminalLogicalLineResidencyLiveTail,
+					Dirty:     true,
+					Source:    source,
+				}},
+				LiveRows: rows,
+			}); err != nil {
+				t.Fatalf("write live tail metadata: %v", err)
+			}
+			if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+				t.Fatalf("expected live tail metadata with source=%q to be rejected", source)
+			}
+		})
+	}
+}
+
 func TestTerminalHistoryWindowIgnoresCorruptRecoveredLiveTailMetadata(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

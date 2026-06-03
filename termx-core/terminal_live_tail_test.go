@@ -205,6 +205,9 @@ func TestTerminalGridStoreRecordLiveTailLineStateValidatesRecordsBeforeWrite(t *
 	if len(metadata.LiveRecords) != 1 || len(metadata.LiveRows) != 1 {
 		t.Fatalf("expected valid live tail metadata to be written, got %#v", metadata)
 	}
+	if metadata.LiveRecords[0].Source != "" {
+		t.Fatalf("expected live tail metadata not to carry persisted record source, got %#v", metadata.LiveRecords[0])
+	}
 
 	invalid := valid
 	invalid[0].id = 0

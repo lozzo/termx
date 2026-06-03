@@ -2295,7 +2295,7 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		if record.StartRow < 0 || record.EndRow >= len(rows) || record.EndRow < record.StartRow {
 			return nil, false
 		}
-		if record.Residency != terminalLogicalLineResidencyLiveTail || record.ID == 0 {
+		if record.Residency != terminalLogicalLineResidencyLiveTail || record.ID == 0 || record.Source != "" {
 			return nil, false
 		}
 		if !terminalLiveTailOriginKnown(record.Origin) {
@@ -2393,7 +2393,7 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 	seenIDs := make(map[uint64]struct{}, len(records))
 	var order terminalLiveTailRecordOrder
 	for i, record := range records {
-		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
+		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || record.source != "" || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
 		if !order.accept(record.origin) {
