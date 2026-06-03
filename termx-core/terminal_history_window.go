@@ -365,8 +365,9 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		return viewport
 	}
 	removedCommittedRows := 0
-	removedMissingIDLogicalLines := 0
-	inMissingIDLogicalLine := false
+	removedNonAuthoritativeLogicalLines := 0
+	inRemovedMissingIDLogicalLine := false
+	var removedNonAuthoritativeID uint64
 	for i := range viewport.Rows {
 		logicalLineID := uint64At(authoritativeLineIDs, i)
 		remove := logicalLineID == 0
@@ -374,17 +375,28 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 			_, remove = invalidLineIDs[logicalLineID]
 		}
 		if !remove {
-			inMissingIDLogicalLine = false
+			inRemovedMissingIDLogicalLine = false
+			removedNonAuthoritativeID = 0
 			continue
 		}
 		switch stringAt(viewport.Ownership, i) {
 		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:
 			removedCommittedRows++
-			if logicalLineID == 0 && !inMissingIDLogicalLine {
-				removedMissingIDLogicalLines++
+			if logicalLineID == 0 {
+				rawLogicalLineID := uint64At(viewport.LogicalLineIDs, i)
+				if rawLogicalLineID != 0 {
+					if rawLogicalLineID != removedNonAuthoritativeID {
+						removedNonAuthoritativeLogicalLines++
+					}
+					removedNonAuthoritativeID = rawLogicalLineID
+					inRemovedMissingIDLogicalLine = false
+				} else if !inRemovedMissingIDLogicalLine {
+					removedNonAuthoritativeLogicalLines++
+					removedNonAuthoritativeID = 0
+					inRemovedMissingIDLogicalLine = true
+				}
 			}
 		}
-		inMissingIDLogicalLine = logicalLineID == 0
 	}
 	filtered := viewport
 	filtered.Rows = filterVTermRowsByIndexes(viewport.Rows, keep)
@@ -407,11 +419,11 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 			filtered.WindowLogicalTotal = maxInt(0, viewport.WindowLogicalTotal-len(invalidLineIDs))
 		}
 	}
-	if removedMissingIDLogicalLines > 0 {
+	if removedNonAuthoritativeLogicalLines > 0 {
 		minLogicalTotal := projectedLogicalLineCount(filtered.LogicalLineIDs)
-		filtered.LogicalTotal = maxInt(minLogicalTotal, filtered.LogicalTotal-removedMissingIDLogicalLines)
+		filtered.LogicalTotal = maxInt(minLogicalTotal, filtered.LogicalTotal-removedNonAuthoritativeLogicalLines)
 		if viewport.WindowLogicalTotal > 0 {
-			filtered.WindowLogicalTotal = maxInt(minLogicalTotal, filtered.WindowLogicalTotal-removedMissingIDLogicalLines)
+			filtered.WindowLogicalTotal = maxInt(minLogicalTotal, filtered.WindowLogicalTotal-removedNonAuthoritativeLogicalLines)
 		}
 	}
 	if len(keep) == 0 {

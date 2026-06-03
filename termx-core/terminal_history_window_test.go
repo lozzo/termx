@@ -104,6 +104,29 @@ func TestHistoryWindowCountsSeparateMissingLogicalLineIDSegments(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowDropsDistinctFallbackLogicalLinesFromLogicalTotal(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("fallback-a"), vtermCells("fallback-b"), vtermCells("kept")},
+		Ownership:                  []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs:             []uint64{10, 11, 12},
+		LogicalLineIDAuthoritative: []bool{false, false, true},
+		LoadedRows:                 3,
+		TotalRows:                  3,
+		LogicalTotal:               3,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-total-fallback-lines", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"kept"}) {
+		t.Fatalf("expected only authoritative row after filtering, got %#v", got)
+	}
+	if window.LogicalTotal != 1 {
+		t.Fatalf("expected logical total to drop both fallback logical lines, got %d", window.LogicalTotal)
+	}
+	if window.LoadedRows != 1 || window.TotalRows != 1 {
+		t.Fatalf("expected loaded and total rows to drop fallback rows, loaded=%d total=%d", window.LoadedRows, window.TotalRows)
+	}
+}
+
 func TestHistoryWindowClearsBoundaryWhenAllRowsLackAuthoritativeLogicalLineIDs(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("lost-a"), vtermCells("lost-b")},
