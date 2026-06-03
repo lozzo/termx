@@ -211,6 +211,49 @@ func TestMemoryStoreOlderPrependRequiresCurrentTokenAndGeneration(t *testing.T) 
 	}
 }
 
+func TestMemoryStoreEmptyOlderPrependMarksHistoryExhausted(t *testing.T) {
+	store := NewMemoryStore()
+	latest := fakeWindow("term-1", WindowOpReplace, "g2:20-22:c80", 20, 21, []string{"new-a", "new-b"})
+	latest.Generation = 2
+	latest.HasMore = true
+	if !store.ApplyHistoryWindow(latest) {
+		t.Fatal("expected latest replace")
+	}
+	store.SetViewportTop("term-1", 1)
+	store.SetPendingRequest("term-1", latest.Token)
+
+	exhausted := HistoryWindow{
+		TerminalID:   "term-1",
+		Token:        latest.Token,
+		Op:           WindowOpPrepend,
+		BeforeCursor: latest.BeforeCursor,
+		HasMore:      false,
+	}
+	if !store.ApplyHistoryWindow(exhausted) {
+		t.Fatal("expected empty older response to be accepted")
+	}
+
+	got, ok := store.HistoryWindow("term-1")
+	if !ok {
+		t.Fatal("expected current window to remain stored")
+	}
+	if got.HasMore {
+		t.Fatalf("expected exhausted older response to clear has-more, got %#v", got)
+	}
+	if got.Token != latest.Token || got.Generation != latest.Generation {
+		t.Fatalf("expected token/generation to be preserved, got %#v", got)
+	}
+	if len(got.Rows) != len(latest.Rows) || rowText(got.Rows[0]) != "new-a" || rowText(got.Rows[1]) != "new-b" {
+		t.Fatalf("expected existing rows to remain unchanged, got %#v", got.Rows)
+	}
+	if top := store.ViewportTop("term-1"); top != 1 {
+		t.Fatalf("expected viewport top to remain stable, got %d", top)
+	}
+	if pending := store.PendingRequest("term-1"); pending != "" {
+		t.Fatalf("expected pending token to be cleared, got %q", pending)
+	}
+}
+
 func TestMemoryStoreOlderPrependRejectsOverlappingBoundary(t *testing.T) {
 	store := NewMemoryStore()
 	latest := fakeWindow("term-1", WindowOpReplace, "g3:30-32:c80", 30, 32, []string{"new"})

@@ -548,6 +548,7 @@ TUI store 至少表达：
 - 已修正 core store-only legacy `snapshot` 从 `grid.lines.json` 恢复 mutable live tail 后的 scrollback ownership 元数据：当较旧的 recovered live-tail row 被切到 snapshot scrollback 区时，归属会继续保留为 live-tail，而不是被兼容默认值误标为 persisted；缺失或未知 ownership 仍按 legacy persisted 默认归一化。
 - 已收紧 core mutable live-tail sidecar source 语义：`source=explicit/fallback` 只属于 persisted logical line record，恢复端会拒绝带 source 字段的 `live_records`，写入端继续不为 live-tail record 写出 source，避免 persisted metadata 来源语义泄漏进 mutable live tail。
 - 已收紧 core runtime->persisted migration sidecar 冲突处理：同一 runtime logical line id 如果在 `grid.lines.json` 中指向多个 persisted id，会整体忽略该 runtime 映射并回退到 persisted projection fallback，避免恢复结果受损坏 JSON 顺序影响。
+- 已修正 `tuiv2/historyview` 对 core 空 older authoritative window 响应的接纳语义：当 older prepend 返回空 rows 且 `has-more=false` 时，TUI 会用请求 token/cursor 绑定该 exhausted 信号，只更新当前 authoritative window 的分页状态并保留 rows、line spans、generation 与 viewport，避免因 core 不暴露空窗口 token/boundary 而反复请求旧分页。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

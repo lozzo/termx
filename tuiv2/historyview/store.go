@@ -307,6 +307,10 @@ func prependHistoryWindow(older, current HistoryWindow) HistoryWindow {
 	older.FirstBoundaryID = firstNonZero(older.FirstBoundaryID, current.FirstBoundaryID)
 	older.LastBoundaryID = current.LastBoundaryID
 	older.Token = current.Token
+	older.Generation = firstNonZero(older.Generation, current.Generation)
+	if older.Size.Cols == 0 && older.Size.Rows == 0 {
+		older.Size = current.Size
+	}
 	if older.Timestamp.IsZero() {
 		older.Timestamp = current.Timestamp
 	}

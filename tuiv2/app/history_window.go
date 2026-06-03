@@ -18,10 +18,11 @@ var (
 const defaultAuthoritativeHistoryWindowRows = 500
 
 type historyWindowLoadedMsg struct {
-	TerminalID   string
-	RequestToken historyview.WindowToken
-	Window       historyview.HistoryWindow
-	Err          error
+	TerminalID          string
+	RequestToken        historyview.WindowToken
+	RequestBeforeCursor int
+	Window              historyview.HistoryWindow
+	Err                 error
 }
 
 func (m *Model) loadLatestHistoryWindowCmd(terminalID string, limit, cols int) tea.Cmd {
@@ -86,10 +87,11 @@ func (m *Model) loadOlderHistoryWindowCmd(terminalID string, limit, cols int) te
 	return func() tea.Msg {
 		window, err := source.OlderHistoryWindow(context.Background(), request)
 		return historyWindowLoadedMsg{
-			TerminalID:   terminalID,
-			RequestToken: current.Token,
-			Window:       window,
-			Err:          err,
+			TerminalID:          terminalID,
+			RequestToken:        current.Token,
+			RequestBeforeCursor: current.BeforeCursor,
+			Window:              window,
+			Err:                 err,
 		}
 	}
 }
@@ -120,17 +122,33 @@ func (m *Model) applyHistoryWindowLoadedMsg(msg historyWindowLoadedMsg) tea.Cmd 
 	if m.historyStore == nil {
 		return m.showError(errAuthoritativeHistoryStoreUnavailable)
 	}
-	if !m.historyStore.ApplyHistoryWindow(msg.Window) {
+	window := historyWindowForStoreApply(msg.Window, terminalID, msg.RequestToken, msg.RequestBeforeCursor)
+	if !m.historyStore.ApplyHistoryWindow(window) {
 		return nil
 	}
-	if msg.Window.Op == historyview.WindowOpReplace {
-		m.historyStore.ClearPendingRequest(msg.Window.TerminalID, "")
+	if window.Op == historyview.WindowOpReplace {
+		m.historyStore.ClearPendingRequest(window.TerminalID, "")
 	}
-	m.syncCopyModeStateAfterHistoryWindow(msg.Window)
+	m.syncCopyModeStateAfterHistoryWindow(window)
 	if m.render != nil {
 		m.render.Invalidate()
 	}
 	return nil
+}
+
+func historyWindowForStoreApply(window historyview.HistoryWindow, terminalID string, requestToken historyview.WindowToken, requestBeforeCursor int) historyview.HistoryWindow {
+	if strings.TrimSpace(window.TerminalID) == "" {
+		window.TerminalID = terminalID
+	}
+	if window.Op == historyview.WindowOpPrepend && len(window.Rows) == 0 && len(window.Lines) == 0 && !window.HasMore {
+		if window.Token == "" {
+			window.Token = requestToken
+		}
+		if window.BeforeCursor <= 0 {
+			window.BeforeCursor = requestBeforeCursor
+		}
+	}
+	return window
 }
 
 func (m *Model) syncCopyModeStateAfterHistoryWindow(window historyview.HistoryWindow) {

@@ -95,6 +95,58 @@ func TestModelLoadOlderAuthoritativeHistoryWindowPrependsStore(t *testing.T) {
 	}
 }
 
+func TestModelLoadOlderEmptyAuthoritativeWindowMarksExhausted(t *testing.T) {
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 10, 11, []string{"latest-a", "latest-b"}, 10, true)
+	if !model.HistoryStore().ApplyHistoryWindow(latest) {
+		t.Fatal("expected latest window seed to be accepted")
+	}
+	source := &appHistoryFakeSource{
+		older: historyview.HistoryWindow{
+			TerminalID: "term-1",
+			Op:         historyview.WindowOpPrepend,
+			HasMore:    false,
+		},
+	}
+	model.historySource = source
+
+	cmd := model.loadOlderHistoryWindowCmd("term-1", 25, 80)
+	if cmd == nil {
+		t.Fatal("expected older history window command")
+	}
+	if pending := model.HistoryStore().PendingRequest("term-1"); pending != "token-1" {
+		t.Fatalf("expected pending request token, got %q", pending)
+	}
+	msg, ok := cmd().(historyWindowLoadedMsg)
+	if !ok {
+		t.Fatalf("expected historyWindowLoadedMsg, got %T", msg)
+	}
+	if msg.RequestToken != "token-1" || msg.RequestBeforeCursor != latest.BeforeCursor {
+		t.Fatalf("expected request boundary metadata on loaded message, got %#v", msg)
+	}
+
+	_, next := model.Update(msg)
+	if next != nil {
+		t.Fatalf("expected no follow-up command, got %#v", next)
+	}
+	if pending := model.HistoryStore().PendingRequest("term-1"); pending != "" {
+		t.Fatalf("expected pending request cleared, got %q", pending)
+	}
+	window, ok := model.HistoryStore().HistoryWindow("term-1")
+	if !ok {
+		t.Fatal("expected existing authoritative history window")
+	}
+	if window.HasMore {
+		t.Fatalf("expected empty older response to mark window exhausted, got %#v", window)
+	}
+	if window.Token != latest.Token || window.Generation != latest.Generation {
+		t.Fatalf("expected token/generation preserved, got %#v", window)
+	}
+	if len(window.Rows) != len(latest.Rows) || appHistoryRowText(window.Rows[0]) != "latest-a" {
+		t.Fatalf("expected current rows preserved, got %#v", window.Rows)
+	}
+}
+
 func TestModelHistoryWindowLoadErrorDoesNotApplyAndClearsPending(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
 	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 10, 11, []string{"latest"}, 10, true)
