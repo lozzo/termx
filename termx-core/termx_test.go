@@ -340,6 +340,70 @@ func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
 	}
 }
 
+func TestServerHistoryWindowRestoresReclaimedLiveTailWithoutRepeatingOlderRows(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "recover-reclaimed-live-tail-window")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("p1"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+		{cells: localVTermCellsFromString("r1"), wrapped: false},
+	})
+	rows, err := terminalGridLineRowMetasFromDamageRows([]vterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r1"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode reclaimed live tail rows: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read persisted line metadata: %v", err)
+	}
+	metadata.LiveRecords = []terminalGridLineRecordMeta{
+		{ID: 3, StartRow: 0, EndRow: 0, RowIDKnown: true, FirstRowID: 2, LastRowID: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyLiveTail, Dirty: false, Generation: generation},
+		{ID: 4, StartRow: 1, EndRow: 1, RowIDKnown: true, FirstRowID: 3, LastRowID: 3, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyLiveTail, Dirty: false, Generation: generation},
+	}
+	metadata.LiveRows = rows
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
+		t.Fatalf("write reclaimed live tail metadata: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	restarted := NewServer(WithGridRoot(root), WithDefaultSize(20, 2))
+	latest, err := restarted.HistoryWindow(ctx, "recover-reclaimed-live-tail-window", HistoryWindowOptions{Limit: 3, Cols: 20})
+	if err != nil {
+		t.Fatalf("history window after restart: %v", err)
+	}
+	if got := historyWindowRowTexts(latest); !reflect.DeepEqual(got, []string{"p1", "r0", "r1"}) {
+		t.Fatalf("expected latest recovered reclaimed suffix once, got %#v", got)
+	}
+	if latest.LoadedRows != 3 || latest.BeforeOffset != 3 {
+		t.Fatalf("expected latest committed cursor to include recovered suffix once, loaded=%d before=%d", latest.LoadedRows, latest.BeforeOffset)
+	}
+	if latest.LoadedLines != 3 || latest.LogicalTotal != 4 || !latest.HasMore {
+		t.Fatalf("expected latest recovered reclaimed logical counts total=4 with older prefix, loaded_lines=%d total=%d has_more=%v", latest.LoadedLines, latest.LogicalTotal, latest.HasMore)
+	}
+
+	older, err := restarted.HistoryWindow(ctx, "recover-reclaimed-live-tail-window", HistoryWindowOptions{BeforeOffset: latest.BeforeOffset, Limit: 10, Cols: 20})
+	if err != nil {
+		t.Fatalf("older history window after reclaimed recovery: %v", err)
+	}
+	if got := historyWindowRowTexts(older); !reflect.DeepEqual(got, []string{"p0"}) {
+		t.Fatalf("expected older window not to repeat recovered reclaimed suffix, got %#v", got)
+	}
+	if older.LoadedRows != 4 || older.BeforeOffset != 4 || older.HasMore {
+		t.Fatalf("expected older cursor to reach full committed depth without more rows, loaded=%d before=%d has_more=%v", older.LoadedRows, older.BeforeOffset, older.HasMore)
+	}
+}
+
 func TestServerRemoveDeletesPersistentGridHistory(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
