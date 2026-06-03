@@ -974,6 +974,44 @@ func TestTerminalGridRecoveredLiveTailMergedSegmentPreservesLogicalLineRecords(t
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailMergedSegmentKeepsOnlyTailOpen(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("sealed"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("open"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	sealedID := terminalLiveTailLogicalLineIDBase + 40
+	openID := terminalLiveTailLogicalLineIDBase + 41
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{
+			{ID: sealedID, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+			{ID: openID, StartRow: 1, EndRow: 1, Sealed: false, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+		},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected adjacent sealed/open live metadata to recover")
+	}
+	if len(tail.segments) != 1 || tail.segments[0].sealState != terminalLiveTailOpen {
+		t.Fatalf("expected adjacent sealed/open records to merge into open tail segment, got %#v", tail.segments)
+	}
+	records := tail.logicalLineRecords()
+	if len(records) != 2 {
+		t.Fatalf("expected merged sealed/open segment to emit two records, got %#v", records)
+	}
+	if records[0].id != sealedID || records[0].sealState != terminalLiveTailSealed || records[1].id != openID || records[1].sealState != terminalLiveTailOpen {
+		t.Fatalf("expected merged segment to preserve sealed prefix and open tail records, got %#v", records)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailAdvancesRuntimeCursorPastMigrations(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
