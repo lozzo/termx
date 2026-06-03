@@ -1247,6 +1247,102 @@ func TestTerminalGridStoreAppendUsesExplicitLogicalLineIDsForPersistedMetadata(t
 	}
 }
 
+func TestTerminalGridStorePersistedLineMetadataWritesPayloadMetadata(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 1420
+	start := time.Unix(12, 10).UTC()
+	end := time.Unix(13, 20).UTC()
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("first"), Timestamp: end, RowKind: "persisted-output", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("second"), Timestamp: start, RowKind: "persisted-continuation", WrappedSet: true, Wrapped: false},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID}); err != nil {
+		t.Fatalf("append rows with logical ids: %v", err)
+	}
+
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after explicit append: %v", err)
+	}
+	if len(lineMetadata.Records) != 1 {
+		t.Fatalf("expected one persisted line record, got %#v", lineMetadata.Records)
+	}
+	record := lineMetadata.Records[0]
+	if record.RowKind != "persisted-output" {
+		t.Fatalf("expected persisted record row kind from payload, got %#v", record)
+	}
+	if record.TimestampStartUnixNano == nil || *record.TimestampStartUnixNano != start.UnixNano() {
+		t.Fatalf("expected persisted record timestamp start %d, got %#v", start.UnixNano(), record)
+	}
+	if record.TimestampEndUnixNano == nil || *record.TimestampEndUnixNano != end.UnixNano() {
+		t.Fatalf("expected persisted record timestamp end %d, got %#v", end.UnixNano(), record)
+	}
+}
+
+func TestTerminalGridStorePersistedLineMetadataRejectsMismatchedPayloadMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*terminalGridLineRecordMeta)
+	}{
+		{
+			name: "row-kind",
+			mutate: func(record *terminalGridLineRecordMeta) {
+				record.RowKind = "wrong-kind"
+			},
+		},
+		{
+			name: "timestamp-start",
+			mutate: func(record *terminalGridLineRecordMeta) {
+				wrong := time.Unix(40, 0).UTC().UnixNano()
+				record.TimestampStartUnixNano = &wrong
+			},
+		},
+		{
+			name: "timestamp-end",
+			mutate: func(record *terminalGridLineRecordMeta) {
+				wrong := time.Unix(41, 0).UTC().UnixNano()
+				record.TimestampEndUnixNano = &wrong
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMemoryTerminalGridStoreForTest(t)
+			defer store.Close()
+			runtimeID := terminalLiveTailLogicalLineIDBase + 1421
+			timestampStart := time.Unix(20, 0).UTC().UnixNano()
+			timestampEnd := time.Unix(21, 0).UTC().UnixNano()
+			rows := []localvterm.DamageOp{
+				{Cells: localVTermCellsFromString("first"), Timestamp: time.Unix(20, 0).UTC(), RowKind: "actual-kind", WrappedSet: true, Wrapped: true},
+				{Cells: localVTermCellsFromString("second"), Timestamp: time.Unix(21, 0).UTC(), RowKind: "actual-continuation", WrappedSet: true, Wrapped: false},
+			}
+			if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID}); err != nil {
+				t.Fatalf("append rows with logical ids: %v", err)
+			}
+			metadata, err := readTerminalGridLineMetadata(store.dir)
+			if err != nil {
+				t.Fatalf("read persisted metadata: %v", err)
+			}
+			if len(metadata.Records) != 1 {
+				t.Fatalf("expected one persisted record, got %#v", metadata.Records)
+			}
+			metadata.Records[0].RowKind = "actual-kind"
+			metadata.Records[0].TimestampStartUnixNano = &timestampStart
+			metadata.Records[0].TimestampEndUnixNano = &timestampEnd
+			tc.mutate(&metadata.Records[0])
+			if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
+				t.Fatalf("write damaged persisted metadata: %v", err)
+			}
+
+			_, generation, rowCount := store.coordinates()
+			if records, ok := store.persistedLogicalLineRecordsFromSidecar(rowCount, generation); ok {
+				t.Fatalf("expected mismatched persisted payload metadata to be rejected, got %#v", records)
+			}
+		})
+	}
+}
+
 func TestTerminalGridStoreExplicitLogicalLineIDsSpanPageRotation(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
@@ -3746,10 +3842,10 @@ func TestTerminalRestartPreservedRowsKeepLogicalLineMetadata(t *testing.T) {
 		t.Fatalf("read line metadata after restart preserve append: %v", err)
 	}
 	_, generation, _ := store.coordinates()
-	wantRecords := []terminalGridLineRecordMeta{
+	wantRecords := terminalGridLineRecordMetasForRowsForTest([]terminalGridLineRecordMeta{
 		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
 		{ID: 4, StartRow: 3, EndRow: 3, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
-	}
+	}, rows)
 	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
 		t.Fatalf("expected restart preserve append to keep explicit logical line metadata, got %#v want %#v", lineMetadata.Records, wantRecords)
 	}
@@ -3987,9 +4083,10 @@ func TestTerminalProcessExitSealsLiveTailAndScreenContinuationAsOneLogicalLine(t
 	if err != nil {
 		t.Fatalf("read line metadata after exit seal: %v", err)
 	}
-	wantRecords := []terminalGridLineRecordMeta{
+	persistedRows := terminalGridRowsFromStoreForTest(t, store)
+	wantRecords := terminalGridLineRecordMetasForRowsForTest([]terminalGridLineRecordMeta{
 		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
-	}
+	}, persistedRows)
 	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
 		t.Fatalf("expected process exit seal to write one persisted logical line record, got %#v want %#v", lineMetadata.Records, wantRecords)
 	}
@@ -5022,6 +5119,34 @@ func vtermRowsToStrings(rows [][]localvterm.Cell) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, vtermRowToString(row))
+	}
+	return out
+}
+
+func terminalGridRowsFromStoreForTest(t *testing.T, store *terminalGridStore) []terminalGridRow {
+	t.Helper()
+	refs, err := readAllTerminalGridIndexRefs(store.dir)
+	if err != nil {
+		t.Fatalf("read grid refs: %v", err)
+	}
+	rows, err := readTerminalGridRows(store.dir, refs)
+	if err != nil {
+		t.Fatalf("read grid rows: %v", err)
+	}
+	return rows
+}
+
+func terminalGridLineRecordMetasForRowsForTest(records []terminalGridLineRecordMeta, rows []terminalGridRow) []terminalGridLineRecordMeta {
+	out := append([]terminalGridLineRecordMeta(nil), records...)
+	for i := range out {
+		record := &out[i]
+		if record.StartRow < 0 || record.EndRow < record.StartRow || record.EndRow >= len(rows) {
+			continue
+		}
+		recordRows := rows[record.StartRow : record.EndRow+1]
+		record.RowKind = terminalLogicalLineRowKindFromGridRows(recordRows)
+		record.TimestampStartUnixNano = terminalGridLineRecordUnixNanoFromTime(terminalLogicalLineTimestampStartFromGridRows(recordRows))
+		record.TimestampEndUnixNano = terminalGridLineRecordUnixNanoFromTime(terminalLogicalLineTimestampEndFromGridRows(recordRows))
 	}
 	return out
 }

@@ -1991,7 +1991,28 @@ func (s *terminalGridStore) persistedLogicalLineRecordsFromSidecar(rowCount int,
 	if !ok {
 		return nil, false
 	}
+	if !s.persistedRecordPayloadMetadataMatchesRows(records) {
+		return nil, false
+	}
 	return records, true
+}
+
+func (s *terminalGridStore) persistedRecordPayloadMetadataMatchesRows(records []terminalGridLogicalLineRecord) bool {
+	if s == nil || len(records) == 0 {
+		return true
+	}
+	if !terminalGridLogicalLineRecordsHavePayloadMetadata(records) {
+		return true
+	}
+	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
+	if err != nil {
+		return false
+	}
+	rows, err := readTerminalGridRows(s.dir, refs)
+	if err != nil {
+		return false
+	}
+	return terminalGridLogicalLineRecordPayloadMetadataMatchesRows(records, rows)
 }
 
 func terminalGridLogicalLineRecordsAllExplicit(records []terminalGridLogicalLineRecord) bool {
@@ -2094,6 +2115,9 @@ func (s *terminalGridStore) sealedPersistedLogicalLineRecordPrefixFromMetadata(r
 	records := terminalGridLogicalLineRecordsFromMetadata(metadata.Records)
 	terminalGridApplyLineMigrationsToRecords(records, terminalGridLineMigrationMap(metadata.Migrations))
 	prefix := terminalGridSealedPersistedLogicalLineRecordPrefix(records, rowCount, generation)
+	if !s.persistedRecordPayloadMetadataMatchesRows(prefix) {
+		return nil, false
+	}
 	return prefix, len(prefix) > 0
 }
 
@@ -3315,6 +3339,7 @@ func writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir string, record
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	records = terminalGridPersistedLineRecordsWithPayloadMetadata(dir, records)
 	if complete, ok := terminalGridCompletePersistedLogicalLineRecords(records, rowCount, generation); ok {
 		metadata.Records = terminalGridLineRecordMetasFromRecords(complete)
 	} else if sealedPrefix := terminalGridSealedPersistedLogicalLineRecordPrefix(records, rowCount, generation); len(sealedPrefix) > 0 {
@@ -3324,6 +3349,21 @@ func writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir string, record
 	}
 	metadata.Migrations = terminalGridLineMigrationsForPersistedRecords(metadata.Migrations, metadata.Records)
 	return writeTerminalGridLineMetadata(dir, metadata)
+}
+
+func terminalGridPersistedLineRecordsWithPayloadMetadata(dir string, records []terminalGridLogicalLineRecord) []terminalGridLogicalLineRecord {
+	if len(records) == 0 || strings.TrimSpace(dir) == "" {
+		return records
+	}
+	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(dir, terminalGridIndexName))
+	if err != nil {
+		return records
+	}
+	rows, err := readTerminalGridRows(dir, refs)
+	if err != nil {
+		return records
+	}
+	return terminalGridLogicalLineRecordsWithPayloadMetadata(records, rows)
 }
 
 func terminalGridLineMigrationsForPersistedRecords(migrations []terminalGridLineMigration, records []terminalGridLineRecordMeta) []terminalGridLineMigration {
@@ -3380,6 +3420,96 @@ func terminalGridLineRecordMetasFromRecords(records []terminalGridLogicalLineRec
 			Generation:             record.generation,
 			Source:                 record.source,
 		})
+	}
+	return out
+}
+
+func terminalGridLogicalLineRecordsWithPayloadMetadata(records []terminalGridLogicalLineRecord, rows []terminalGridRow) []terminalGridLogicalLineRecord {
+	if len(records) == 0 || len(rows) == 0 {
+		return cloneTerminalGridLogicalLineRecords(records)
+	}
+	out := cloneTerminalGridLogicalLineRecords(records)
+	for i := range out {
+		record := &out[i]
+		if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(rows) {
+			continue
+		}
+		recordRows := rows[record.startRow : record.endRow+1]
+		record.rowKind = terminalLogicalLineRowKindFromGridRows(recordRows)
+		record.timestampStart = terminalLogicalLineTimestampStartFromGridRows(recordRows)
+		record.timestampEnd = terminalLogicalLineTimestampEndFromGridRows(recordRows)
+	}
+	return out
+}
+
+func terminalGridLogicalLineRecordsHavePayloadMetadata(records []terminalGridLogicalLineRecord) bool {
+	for _, record := range records {
+		if record.rowKind != "" || !record.timestampStart.IsZero() || !record.timestampEnd.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalGridLogicalLineRecordPayloadMetadataMatchesRows(records []terminalGridLogicalLineRecord, rows []terminalGridRow) bool {
+	for _, record := range records {
+		if record.rowKind == "" && record.timestampStart.IsZero() && record.timestampEnd.IsZero() {
+			continue
+		}
+		if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(rows) {
+			return false
+		}
+		recordRows := rows[record.startRow : record.endRow+1]
+		if record.rowKind != "" && record.rowKind != terminalLogicalLineRowKindFromGridRows(recordRows) {
+			return false
+		}
+		if !record.timestampStart.IsZero() {
+			start := terminalLogicalLineTimestampStartFromGridRows(recordRows)
+			if start.IsZero() || !start.Equal(record.timestampStart) {
+				return false
+			}
+		}
+		if !record.timestampEnd.IsZero() {
+			end := terminalLogicalLineTimestampEndFromGridRows(recordRows)
+			if end.IsZero() || !end.Equal(record.timestampEnd) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func terminalLogicalLineRowKindFromGridRows(rows []terminalGridRow) string {
+	for _, row := range rows {
+		if row.rowKind != "" {
+			return row.rowKind
+		}
+	}
+	return ""
+}
+
+func terminalLogicalLineTimestampStartFromGridRows(rows []terminalGridRow) time.Time {
+	var out time.Time
+	for _, row := range rows {
+		if row.timestamp.IsZero() {
+			continue
+		}
+		if out.IsZero() || row.timestamp.Before(out) {
+			out = row.timestamp
+		}
+	}
+	return out
+}
+
+func terminalLogicalLineTimestampEndFromGridRows(rows []terminalGridRow) time.Time {
+	var out time.Time
+	for _, row := range rows {
+		if row.timestamp.IsZero() {
+			continue
+		}
+		if out.IsZero() || row.timestamp.After(out) {
+			out = row.timestamp
+		}
 	}
 	return out
 }
