@@ -44,12 +44,14 @@ type HistoryRow struct {
 }
 
 type LineSpan struct {
-	StartRow      int
-	EndRow        int
-	Kind          RowKind
-	LogicalLineID uint64
-	ClippedBefore bool
-	ClippedAfter  bool
+	StartRow       int
+	EndRow         int
+	Kind           RowKind
+	LogicalLineID  uint64
+	TimestampStart time.Time
+	TimestampEnd   time.Time
+	ClippedBefore  bool
+	ClippedAfter   bool
 }
 
 type HistoryWindow struct {

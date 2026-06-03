@@ -33,6 +33,9 @@ func TestMemoryStoreLatestReplaceInitializesAuthoritativeWindow(t *testing.T) {
 	if len(got.Lines) != 2 || !got.Lines[0].ClippedBefore || !got.Lines[1].ClippedAfter {
 		t.Fatalf("expected clipped line spans to be preserved: %#v", got.Lines)
 	}
+	if got.Lines[0].TimestampStart.IsZero() || got.Lines[1].TimestampEnd.IsZero() {
+		t.Fatalf("expected line timestamp ranges to be preserved: %#v", got.Lines)
+	}
 }
 
 func TestMemoryStorePreservesExplicitZeroLoadedLinesForClippedBeforeWindow(t *testing.T) {
@@ -394,10 +397,12 @@ func fakeWindow(terminalID string, op WindowOp, token WindowToken, firstID, last
 			Timestamp: time.Date(2026, 6, 2, 1, i, 0, 0, time.UTC),
 		}
 		lines[i] = LineSpan{
-			StartRow:      i,
-			EndRow:        i,
-			Kind:          RowKindPersisted,
-			LogicalLineID: id,
+			StartRow:       i,
+			EndRow:         i,
+			Kind:           RowKindPersisted,
+			LogicalLineID:  id,
+			TimestampStart: rows[i].Timestamp.Add(-time.Minute),
+			TimestampEnd:   rows[i].Timestamp,
 		}
 	}
 	return HistoryWindow{

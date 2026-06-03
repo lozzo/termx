@@ -28,12 +28,14 @@ const (
 // 客户端 copy mode 用它理解窗口内逻辑行片段边界，不再根据 wrapped flag 自行拼接，
 // 也不能把被窗口裁断的片段当作完整逻辑行。
 type HistoryLineSpan struct {
-	StartRow      int
-	EndRow        int
-	RowKind       string
-	LogicalLineID uint64
-	ClippedBefore bool
-	ClippedAfter  bool
+	StartRow       int
+	EndRow         int
+	RowKind        string
+	LogicalLineID  uint64
+	TimestampStart time.Time
+	TimestampEnd   time.Time
+	ClippedBefore  bool
+	ClippedAfter   bool
 }
 
 // HistoryRow 是 history window 中的一条 visual row 及其权威元数据。
@@ -273,6 +275,8 @@ func combinedGridViewportFromStoreWithOptions(store *terminalGridStore, offset, 
 			logicalLineID := uint64At(window.logicalLineIDs, i)
 			result.LogicalLineIDs = append(result.LogicalLineIDs, logicalLineID)
 			result.LogicalLineIDAuthoritative = append(result.LogicalLineIDAuthoritative, logicalLineID != 0)
+			result.LineTimestampStart = append(result.LineTimestampStart, row.Timestamp)
+			result.LineTimestampEnd = append(result.LineTimestampEnd, row.Timestamp)
 			result.RowIDRanges = append(result.RowIDRanges, terminalGridRowIDRangeAt(window.rowIDRanges, i))
 		}
 		if window.hasCommitted {
@@ -327,7 +331,7 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 			Timestamp: timeAt(viewport.Timestamps, i),
 		}
 	}
-	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), viewport.FirstLineClippedBefore)
+	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, viewport.LineTimestampStart, viewport.LineTimestampEnd, len(viewport.Rows), viewport.FirstLineClippedBefore)
 	firstLineID, lastLineID := historyLineSpanIDBoundary(lines)
 	logicalTotal := viewport.LogicalTotal
 	if viewport.WindowLogicalTotal > 0 {
@@ -458,6 +462,8 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	filtered.Ownership = filterStringsByIndexes(viewport.Ownership, keep)
 	filtered.LogicalLineIDs = filterUint64sByIndexes(viewport.LogicalLineIDs, keep)
 	filtered.LogicalLineIDAuthoritative = filterBoolsByIndexes(viewport.LogicalLineIDAuthoritative, keep)
+	filtered.LineTimestampStart = filterTimesByIndexes(viewport.LineTimestampStart, keep)
+	filtered.LineTimestampEnd = filterTimesByIndexes(viewport.LineTimestampEnd, keep)
 	filtered.RowIDRanges = filterTerminalGridRowIDRangesByIndexes(viewport.RowIDRanges, keep)
 	if firstRowID, lastRowID, ok := terminalGridRowIDRangeBoundary(filtered.RowIDRanges); ok {
 		filtered.FirstRowID = firstRowID
@@ -859,7 +865,7 @@ func historyLineSpanIDBoundary(spans []HistoryLineSpan) (uint64, uint64) {
 
 // historyLineSpans 只按 core projection 给出的 stable logical line id 归并
 // visual rows。wrapped 仅用于表达窗口末尾是否裁断投影，不再作为逻辑行真相回退。
-func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, firstLineClippedBefore bool) []HistoryLineSpan {
+func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, timestampStart []time.Time, timestampEnd []time.Time, rowCount int, firstLineClippedBefore bool) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
 	}
@@ -874,15 +880,45 @@ func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64
 			row++
 		}
 		spans = append(spans, HistoryLineSpan{
-			StartRow:      start,
-			EndRow:        row,
-			RowKind:       stringAt(rowKinds, start),
-			LogicalLineID: logicalLineID,
-			ClippedBefore: firstLineClippedBefore && start == 0,
-			ClippedAfter:  historyLineSpanClippedAfter(wrapped, logicalLineIDs, row, rowCount),
+			StartRow:       start,
+			EndRow:         row,
+			RowKind:        stringAt(rowKinds, start),
+			LogicalLineID:  logicalLineID,
+			TimestampStart: historyLineSpanTimestampStart(timestampStart, start, row),
+			TimestampEnd:   historyLineSpanTimestampEnd(timestampEnd, start, row),
+			ClippedBefore:  firstLineClippedBefore && start == 0,
+			ClippedAfter:   historyLineSpanClippedAfter(wrapped, logicalLineIDs, row, rowCount),
 		})
 	}
 	return spans
+}
+
+func historyLineSpanTimestampStart(values []time.Time, start int, end int) time.Time {
+	var out time.Time
+	for i := start; i <= end; i++ {
+		value := timeAt(values, i)
+		if value.IsZero() {
+			continue
+		}
+		if out.IsZero() || value.Before(out) {
+			out = value
+		}
+	}
+	return out
+}
+
+func historyLineSpanTimestampEnd(values []time.Time, start int, end int) time.Time {
+	var out time.Time
+	for i := start; i <= end; i++ {
+		value := timeAt(values, i)
+		if value.IsZero() {
+			continue
+		}
+		if out.IsZero() || value.After(out) {
+			out = value
+		}
+	}
+	return out
 }
 
 func historyLineSpanClippedAfter(wrapped []bool, logicalLineIDs []uint64, row int, rowCount int) bool {
@@ -914,12 +950,14 @@ func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindo
 	lines := make([]protocol.HistoryLineSpan, len(window.Lines))
 	for i, span := range window.Lines {
 		lines[i] = protocol.HistoryLineSpan{
-			StartRow:      span.StartRow,
-			EndRow:        span.EndRow,
-			RowKind:       span.RowKind,
-			LogicalLineID: span.LogicalLineID,
-			ClippedBefore: span.ClippedBefore,
-			ClippedAfter:  span.ClippedAfter,
+			StartRow:       span.StartRow,
+			EndRow:         span.EndRow,
+			RowKind:        span.RowKind,
+			LogicalLineID:  span.LogicalLineID,
+			TimestampStart: span.TimestampStart,
+			TimestampEnd:   span.TimestampEnd,
+			ClippedBefore:  span.ClippedBefore,
+			ClippedAfter:   span.ClippedAfter,
 		}
 	}
 	return &protocol.HistoryWindow{

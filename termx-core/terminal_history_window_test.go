@@ -11,7 +11,7 @@ import (
 )
 
 func TestHistoryLineSpansUseLogicalLineIDs(t *testing.T) {
-	spans := historyLineSpans([]bool{false, false, false}, []string{"a", "a", "b"}, []uint64{101, 101, 103}, 3, false)
+	spans := historyLineSpans([]bool{false, false, false}, []string{"a", "a", "b"}, []uint64{101, 101, 103}, nil, nil, 3, false)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 1, RowKind: "a", LogicalLineID: 101},
 		{StartRow: 2, EndRow: 2, RowKind: "b", LogicalLineID: 103},
@@ -20,7 +20,7 @@ func TestHistoryLineSpansUseLogicalLineIDs(t *testing.T) {
 		t.Fatalf("expected same logical line id to group spans despite wrapped=false, got %#v want %#v", spans, want)
 	}
 
-	spans = historyLineSpans([]bool{true, false}, []string{"a", "b"}, []uint64{201, 202}, 2, false)
+	spans = historyLineSpans([]bool{true, false}, []string{"a", "b"}, []uint64{201, 202}, nil, nil, 2, false)
 	want = []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 201},
 		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 202},
@@ -31,9 +31,30 @@ func TestHistoryLineSpansUseLogicalLineIDs(t *testing.T) {
 }
 
 func TestHistoryLineSpansDoNotInferFromWrappedRowsWithoutLogicalLineIDs(t *testing.T) {
-	spans := historyLineSpans([]bool{true, false}, []string{"a", "a"}, nil, 2, false)
+	spans := historyLineSpans([]bool{true, false}, []string{"a", "a"}, nil, nil, nil, 2, false)
 	if len(spans) != 0 {
 		t.Fatalf("expected no authoritative line spans without logical line ids, got %#v", spans)
+	}
+}
+
+func TestHistoryLineSpansCarryTimestampRange(t *testing.T) {
+	start := time.Unix(10, 0).UTC()
+	middle := time.Unix(20, 0).UTC()
+	end := time.Unix(30, 0).UTC()
+	spans := historyLineSpans(
+		[]bool{false, false},
+		[]string{"line", ""},
+		[]uint64{101, 101},
+		[]time.Time{middle, start},
+		[]time.Time{middle, end},
+		2,
+		false,
+	)
+	if len(spans) != 1 {
+		t.Fatalf("expected one logical line span, got %#v", spans)
+	}
+	if !spans[0].TimestampStart.Equal(start) || !spans[0].TimestampEnd.Equal(end) {
+		t.Fatalf("expected span timestamp range to aggregate rows, got %#v", spans[0])
 	}
 }
 
@@ -615,7 +636,7 @@ func TestClippedViewportLeadingRowKindUsesLogicalLineIDs(t *testing.T) {
 func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 	// 末行即使 wrapped=true，也必须收口成一条逻辑行，不能越界。
 	wrapped := []bool{false, true}
-	spans := historyLineSpans(wrapped, nil, []uint64{11, 12}, 2, false)
+	spans := historyLineSpans(wrapped, nil, []uint64{11, 12}, nil, nil, 2, false)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, LogicalLineID: 11},
 		{StartRow: 1, EndRow: 1, LogicalLineID: 12, ClippedAfter: true},
@@ -626,7 +647,7 @@ func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 }
 
 func TestHistoryLineSpansMarksWindowClipping(t *testing.T) {
-	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, false)
+	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, nil, nil, 2, false)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 20},
 		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 21, ClippedAfter: true},
@@ -635,7 +656,7 @@ func TestHistoryLineSpansMarksWindowClipping(t *testing.T) {
 		t.Fatalf("expected older offset alone not to mark clipped-before, got %#v want %#v", spans, want)
 	}
 
-	spans = historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, true)
+	spans = historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, nil, nil, 2, true)
 	want = []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 20, ClippedBefore: true},
 		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 21, ClippedAfter: true},
@@ -821,13 +842,15 @@ func rowTextFromHistoryRow(row HistoryRow) string {
 }
 
 func TestProtocolHistoryWindowFromCoreMapsAllFields(t *testing.T) {
+	lineStart := time.Date(2026, 6, 2, 0, 59, 0, 0, time.UTC)
+	lineEnd := time.Date(2026, 6, 2, 1, 1, 0, 0, time.UTC)
 	core := &HistoryWindow{
 		TerminalID:   "term-map",
 		Token:        "g3:0-1:c40",
 		Op:           HistoryWindowPrepend,
 		Size:         Size{Cols: 40, Rows: 10},
 		Rows:         []HistoryRow{{Cells: protocolCompactRowFromCoreWithOptions([]Cell{{Content: "x", Width: 1}}, true), RowKind: "output", Ownership: RowOwnershipPersisted, Wrapped: true}},
-		Lines:        []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output", LogicalLineID: 42, ClippedBefore: true, ClippedAfter: true}},
+		Lines:        []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output", LogicalLineID: 42, TimestampStart: lineStart, TimestampEnd: lineEnd, ClippedBefore: true, ClippedAfter: true}},
 		BeforeOffset: 2,
 		LoadedRows:   6,
 		LoadedLines:  1,
@@ -859,7 +882,7 @@ func TestProtocolHistoryWindowFromCoreMapsAllFields(t *testing.T) {
 	if len(got.Rows) != 1 || len(got.RowKinds) != 1 || got.RowKinds[0] != "output" || len(got.RowWrapped) != 1 || !got.RowWrapped[0] || len(got.RowOwnership) != 1 || got.RowOwnership[0] != RowOwnershipPersisted {
 		t.Fatalf("unexpected mapped row metadata: kinds=%#v wrapped=%#v ownership=%#v", got.RowKinds, got.RowWrapped, got.RowOwnership)
 	}
-	if len(got.Lines) != 1 || got.Lines[0].StartRow != 0 || got.Lines[0].EndRow != 0 || got.Lines[0].RowKind != "output" || got.Lines[0].LogicalLineID != 42 || !got.Lines[0].ClippedBefore || !got.Lines[0].ClippedAfter {
+	if len(got.Lines) != 1 || got.Lines[0].StartRow != 0 || got.Lines[0].EndRow != 0 || got.Lines[0].RowKind != "output" || got.Lines[0].LogicalLineID != 42 || !got.Lines[0].TimestampStart.Equal(lineStart) || !got.Lines[0].TimestampEnd.Equal(lineEnd) || !got.Lines[0].ClippedBefore || !got.Lines[0].ClippedAfter {
 		t.Fatalf("unexpected mapped line spans: %#v", got.Lines)
 	}
 }

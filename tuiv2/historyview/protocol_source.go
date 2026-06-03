@@ -95,12 +95,14 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) HistoryWindow {
 	lines := make([]LineSpan, len(window.Lines))
 	for i, span := range window.Lines {
 		lines[i] = LineSpan{
-			StartRow:      span.StartRow,
-			EndRow:        span.EndRow,
-			Kind:          historyLineKind(span, window),
-			LogicalLineID: span.LogicalLineID,
-			ClippedBefore: span.ClippedBefore,
-			ClippedAfter:  span.ClippedAfter,
+			StartRow:       span.StartRow,
+			EndRow:         span.EndRow,
+			Kind:           historyLineKind(span, window),
+			LogicalLineID:  span.LogicalLineID,
+			TimestampStart: span.TimestampStart,
+			TimestampEnd:   span.TimestampEnd,
+			ClippedBefore:  span.ClippedBefore,
+			ClippedAfter:   span.ClippedAfter,
 		}
 	}
 	return HistoryWindow{

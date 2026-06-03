@@ -82,10 +82,10 @@ func TestProtocolSourceLatestHistoryWindowMapsProtocolMetadata(t *testing.T) {
 	if len(window.Lines) != 2 {
 		t.Fatalf("expected two line spans, got %#v", window.Lines)
 	}
-	if window.Lines[0] != (LineSpan{StartRow: 0, EndRow: 0, Kind: RowKindPersisted, LogicalLineID: 9001, ClippedBefore: true}) {
+	if window.Lines[0] != (LineSpan{StartRow: 0, EndRow: 0, Kind: RowKindPersisted, LogicalLineID: 9001, TimestampStart: time.Date(2026, 6, 2, 3, 59, 0, 0, time.UTC), TimestampEnd: time.Date(2026, 6, 2, 4, 0, 0, 0, time.UTC), ClippedBefore: true}) {
 		t.Fatalf("unexpected first line span: %#v", window.Lines[0])
 	}
-	if window.Lines[1] != (LineSpan{StartRow: 1, EndRow: 1, Kind: RowKindLiveTailReclaimed, LogicalLineID: 9002, ClippedAfter: true}) {
+	if window.Lines[1] != (LineSpan{StartRow: 1, EndRow: 1, Kind: RowKindLiveTailReclaimed, LogicalLineID: 9002, TimestampStart: time.Date(2026, 6, 2, 4, 1, 0, 0, time.UTC), TimestampEnd: time.Date(2026, 6, 2, 4, 2, 0, 0, time.UTC), ClippedAfter: true}) {
 		t.Fatalf("unexpected second line span: %#v", window.Lines[1])
 	}
 
@@ -186,8 +186,8 @@ func fakeProtocolHistoryWindow(op protocol.HistoryWindowOp, beforeOffset int) *p
 		RowWrapped:    []bool{false, true},
 		RowOwnership:  []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipLiveTailReclaimed},
 		Lines: []protocol.HistoryLineSpan{
-			{StartRow: 0, EndRow: 0, LogicalLineID: 9001, ClippedBefore: true},
-			{StartRow: 1, EndRow: 1, LogicalLineID: 9002, ClippedAfter: true},
+			{StartRow: 0, EndRow: 0, LogicalLineID: 9001, TimestampStart: time.Date(2026, 6, 2, 3, 59, 0, 0, time.UTC), TimestampEnd: time.Date(2026, 6, 2, 4, 0, 0, 0, time.UTC), ClippedBefore: true},
+			{StartRow: 1, EndRow: 1, LogicalLineID: 9002, TimestampStart: time.Date(2026, 6, 2, 4, 1, 0, 0, time.UTC), TimestampEnd: time.Date(2026, 6, 2, 4, 2, 0, 0, time.UTC), ClippedAfter: true},
 		},
 		BeforeOffset: beforeOffsetOrDefault(beforeOffset, 11),
 		LoadedRows:   2,

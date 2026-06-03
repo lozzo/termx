@@ -309,6 +309,8 @@ message HistoryWindow {
   int64 loaded_lines = 21;
   uint64 first_line_id = 22;
   uint64 last_line_id = 23;
+  repeated int64 line_timestamp_start_unix_nano = 24;
+  repeated int64 line_timestamp_end_unix_nano = 25;
 }
 
 message StorageEntry {

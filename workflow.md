@@ -559,6 +559,7 @@ TUI store 至少表达：
 - 已同步 core 运行期 persisted logical line record 的 payload metadata：persisted records 写入 `grid.lines.json` 时返回的增强后 records 会同步更新 `s.lineRecords`，append、retention 与 truncate 后的内存态 projection 和重启后的 store-only projection 使用同一份 row kind / timestamp range 记录语义。
 - 已补齐 remove-on-close 临时 persisted store 的内存态 payload metadata：临时 store 不写 `grid.lines.json` 时，explicit append 生成的 in-memory persisted logical line records 也会从刚落盘的 appended refs 读取 row payload，补入 row kind / timestamp range，避免临时 store projection 与持久 store projection 分叉。
 - 已收紧 core in-memory persisted logical line record 合并语义：相邻同一 stable id 的 persisted records 合并时会同步合并 row kind 与 timestamp range，避免 split append、open prefix continuation 或运行期 coalesce 后只保留前半段 payload metadata。
+- 已扩展 authoritative `history.window` logical line span contract：core projection 会把 logical line record 的 timestamp range 带到 line span，protocol wire payload 新增 line timestamp start/end 字段，`tuiv2/historyview` 会保留该范围作为 authoritative window 元数据，不再只暴露逐 visual row timestamp。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

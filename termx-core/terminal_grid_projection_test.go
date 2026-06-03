@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -76,7 +77,7 @@ func TestTerminalGridProjectionRowIDRangeSpansReflowedSourceRows(t *testing.T) {
 	records := []terminalGridLogicalLineRecord{
 		{id: 101, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted, source: terminalLogicalLineRecordSourceExplicit},
 	}
-	projected, _, _, _, lineIDs, authoritative, rowIDRanges := reflowTerminalGridRowsWithRowIDRanges(rows, 4, records, []uint64{40, 41})
+	projected, _, _, _, lineIDs, authoritative, _, _, rowIDRanges := reflowTerminalGridRowsWithRowIDRanges(rows, 4, records, []uint64{40, 41})
 	if got := vtermRowsToStrings(projected); !reflect.DeepEqual(got, []string{"abcd"}) {
 		t.Fatalf("expected reflowed row spanning both source rows, got %#v", got)
 	}
@@ -91,6 +92,29 @@ func TestTerminalGridProjectionRowIDRangeSpansReflowedSourceRows(t *testing.T) {
 	}
 }
 
+func TestTerminalGridProjectionCarriesLogicalLineRecordTimestampRange(t *testing.T) {
+	start := time.Unix(10, 0).UTC()
+	middle := time.Unix(20, 0).UTC()
+	end := time.Unix(30, 0).UTC()
+	rows := []terminalGridRow{
+		{cells: localVTermCellsFromString("ab"), timestamp: middle, rowKind: "line0", wrapped: true},
+		{cells: localVTermCellsFromString("cd"), timestamp: middle, rowKind: "line0", wrapped: false},
+	}
+	records := []terminalGridLogicalLineRecord{
+		{id: 101, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted, timestampStart: start, timestampEnd: end, source: terminalLogicalLineRecordSourceExplicit},
+	}
+	projected, _, _, _, _, _, timestampStart, timestampEnd, _ := reflowTerminalGridRowsWithRowIDRanges(rows, 4, records, []uint64{40, 41})
+	if got := vtermRowsToStrings(projected); !reflect.DeepEqual(got, []string{"abcd"}) {
+		t.Fatalf("expected reflowed row spanning both source rows, got %#v", got)
+	}
+	if len(timestampStart) != 1 || !timestampStart[0].Equal(start) {
+		t.Fatalf("expected projected row to carry logical line start timestamp, got %#v", timestampStart)
+	}
+	if len(timestampEnd) != 1 || !timestampEnd[0].Equal(end) {
+		t.Fatalf("expected projected row to carry logical line end timestamp, got %#v", timestampEnd)
+	}
+}
+
 func TestTerminalGridProjectionSuppressesMixedAuthorityReflowedSourceRows(t *testing.T) {
 	rows := []terminalGridRow{
 		{cells: localVTermCellsFromString("ab"), rowKind: "line0", wrapped: true},
@@ -99,7 +123,7 @@ func TestTerminalGridProjectionSuppressesMixedAuthorityReflowedSourceRows(t *tes
 	records := []terminalGridLogicalLineRecord{
 		{id: 101, startRow: 1, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted, source: terminalLogicalLineRecordSourceExplicit},
 	}
-	projected, _, _, _, lineIDs, authoritative, rowIDRanges := reflowTerminalGridRowsWithRowIDRanges(rows, 4, records, []uint64{40, 41})
+	projected, _, _, _, lineIDs, authoritative, _, _, rowIDRanges := reflowTerminalGridRowsWithRowIDRanges(rows, 4, records, []uint64{40, 41})
 	if got := vtermRowsToStrings(projected); !reflect.DeepEqual(got, []string{"abcd"}) {
 		t.Fatalf("expected reflowed row spanning mixed authority source rows, got %#v", got)
 	}

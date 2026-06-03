@@ -147,6 +147,8 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 	lineClippedBefore := make([]bool, len(window.Lines))
 	lineClippedAfter := make([]bool, len(window.Lines))
 	lineLogicalLineIDs := make([]uint64, len(window.Lines))
+	lineTimestampStart := make([]int64, len(window.Lines))
+	lineTimestampEnd := make([]int64, len(window.Lines))
 	for i, span := range window.Lines {
 		lineStart[i] = int32(span.StartRow)
 		lineEnd[i] = int32(span.EndRow)
@@ -154,31 +156,35 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 		lineClippedBefore[i] = span.ClippedBefore
 		lineClippedAfter[i] = span.ClippedAfter
 		lineLogicalLineIDs[i] = span.LogicalLineID
+		lineTimestampStart[i] = timeToUnixNano(span.TimestampStart)
+		lineTimestampEnd[i] = timeToUnixNano(span.TimestampEnd)
 	}
 	return &wirepb.HistoryWindow{
-		TerminalId:         window.TerminalID,
-		Token:              window.Token,
-		Op:                 string(window.Op),
-		Size:               sizeToWirePB(window.Size),
-		Rows:               rowSetToWirePB(window.Rows, window.RowTimestamps, window.RowKinds, window.RowWrapped, window.RowOwnership),
-		LineStartRows:      lineStart,
-		LineEndRows:        lineEnd,
-		LineRowKinds:       lineKinds,
-		LineClippedBefore:  lineClippedBefore,
-		LineClippedAfter:   lineClippedAfter,
-		LineLogicalLineIds: lineLogicalLineIDs,
-		BeforeOffset:       int64(window.BeforeOffset),
-		LoadedRows:         int64(window.LoadedRows),
-		TotalRows:          int64(window.TotalRows),
-		LoadedLines:        int64(window.LoadedLines),
-		LogicalTotal:       int64(window.LogicalTotal),
-		HasMore:            window.HasMore,
-		HistoryGeneration:  window.Generation,
-		FirstRowId:         window.FirstRowID,
-		LastRowId:          window.LastRowID,
-		FirstLineId:        window.FirstLineID,
-		LastLineId:         window.LastLineID,
-		TimestampUnixNano:  timeToUnixNano(window.Timestamp),
+		TerminalId:                 window.TerminalID,
+		Token:                      window.Token,
+		Op:                         string(window.Op),
+		Size:                       sizeToWirePB(window.Size),
+		Rows:                       rowSetToWirePB(window.Rows, window.RowTimestamps, window.RowKinds, window.RowWrapped, window.RowOwnership),
+		LineStartRows:              lineStart,
+		LineEndRows:                lineEnd,
+		LineRowKinds:               lineKinds,
+		LineClippedBefore:          lineClippedBefore,
+		LineClippedAfter:           lineClippedAfter,
+		LineLogicalLineIds:         lineLogicalLineIDs,
+		LineTimestampStartUnixNano: lineTimestampStart,
+		LineTimestampEndUnixNano:   lineTimestampEnd,
+		BeforeOffset:               int64(window.BeforeOffset),
+		LoadedRows:                 int64(window.LoadedRows),
+		TotalRows:                  int64(window.TotalRows),
+		LoadedLines:                int64(window.LoadedLines),
+		LogicalTotal:               int64(window.LogicalTotal),
+		HasMore:                    window.HasMore,
+		HistoryGeneration:          window.Generation,
+		FirstRowId:                 window.FirstRowID,
+		LastRowId:                  window.LastRowID,
+		FirstLineId:                window.FirstLineID,
+		LastLineId:                 window.LastLineID,
+		TimestampUnixNano:          timeToUnixNano(window.Timestamp),
 	}
 }
 
@@ -196,6 +202,8 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 	clippedBefore := msg.GetLineClippedBefore()
 	clippedAfter := msg.GetLineClippedAfter()
 	logicalLineIDs := msg.GetLineLogicalLineIds()
+	timestampStart := msg.GetLineTimestampStartUnixNano()
+	timestampEnd := msg.GetLineTimestampEndUnixNano()
 	lines := make([]HistoryLineSpan, 0, len(starts))
 	for i := range starts {
 		span := HistoryLineSpan{StartRow: int(starts[i])}
@@ -213,6 +221,12 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 		}
 		if i < len(logicalLineIDs) {
 			span.LogicalLineID = logicalLineIDs[i]
+		}
+		if i < len(timestampStart) {
+			span.TimestampStart = unixNanoToTime(timestampStart[i])
+		}
+		if i < len(timestampEnd) {
+			span.TimestampEnd = unixNanoToTime(timestampEnd[i])
 		}
 		lines = append(lines, span)
 	}

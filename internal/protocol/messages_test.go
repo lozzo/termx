@@ -504,19 +504,28 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 		RowWrapped:    []bool{false},
 		RowOwnership:  []string{RowOwnershipPersisted},
 		RowTimestamps: []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
-		Lines:         []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output", LogicalLineID: 42, ClippedBefore: true, ClippedAfter: true}},
-		BeforeOffset:  3,
-		LoadedRows:    9,
-		TotalRows:     12,
-		LoadedLines:   2,
-		LogicalTotal:  4,
-		HasMore:       true,
-		Generation:    7,
-		FirstRowID:    0,
-		LastRowID:     2,
-		FirstLineID:   42,
-		LastLineID:    43,
-		Timestamp:     time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
+		Lines: []HistoryLineSpan{{
+			StartRow:       0,
+			EndRow:         0,
+			RowKind:        "output",
+			LogicalLineID:  42,
+			TimestampStart: time.Date(2026, 6, 2, 0, 59, 0, 0, time.UTC),
+			TimestampEnd:   time.Date(2026, 6, 2, 1, 1, 0, 0, time.UTC),
+			ClippedBefore:  true,
+			ClippedAfter:   true,
+		}},
+		BeforeOffset: 3,
+		LoadedRows:   9,
+		TotalRows:    12,
+		LoadedLines:  2,
+		LogicalTotal: 4,
+		HasMore:      true,
+		Generation:   7,
+		FirstRowID:   0,
+		LastRowID:    2,
+		FirstLineID:  42,
+		LastLineID:   43,
+		Timestamp:    time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
 	}
 	payload, err := EncodeHistoryWindowPayload(window)
 	if err != nil {
@@ -535,7 +544,7 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 || decoded.FirstLineID != 42 || decoded.LastLineID != 43 {
 		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
 	}
-	if len(decoded.Lines) != 1 || decoded.Lines[0] != (HistoryLineSpan{StartRow: 0, EndRow: 0, RowKind: "output", LogicalLineID: 42, ClippedBefore: true, ClippedAfter: true}) {
+	if len(decoded.Lines) != 1 || decoded.Lines[0] != window.Lines[0] {
 		t.Fatalf("unexpected decoded history line spans: %#v", decoded.Lines)
 	}
 	if len(decoded.RowOwnership) != 1 || decoded.RowOwnership[0] != RowOwnershipPersisted {

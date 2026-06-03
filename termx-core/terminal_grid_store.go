@@ -797,7 +797,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		generation, firstRowID, lastRowID, totalRows := s.rowWindowCoordinates(beforeOffset, rows)
 		lineRecords := s.persistedLogicalLineRecordsForViewport(refs, firstRowID, totalRows, generation)
 		rowIDs := terminalGridRowIDs(firstRowID, len(gridRows))
-		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs, result.LogicalLineIDAuthoritative, result.RowIDRanges = reflowTerminalGridRowsWithRowIDRanges(gridRows, cols, lineRecords, rowIDs)
+		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs, result.LogicalLineIDAuthoritative, result.LineTimestampStart, result.LineTimestampEnd, result.RowIDRanges = reflowTerminalGridRowsWithRowIDRanges(gridRows, cols, lineRecords, rowIDs)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		result.Generation = generation
 		result.FirstRowID = firstRowID
@@ -841,6 +841,8 @@ type terminalGridViewport struct {
 	Ownership                  []string
 	LogicalLineIDs             []uint64
 	LogicalLineIDAuthoritative []bool
+	LineTimestampStart         []time.Time
+	LineTimestampEnd           []time.Time
 	RowIDRanges                []terminalGridRowIDRange
 	LoadedRows                 int
 	HasMore                    bool
@@ -878,6 +880,8 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 	result.Ownership = trimStringSliceTail(result.Ownership, limit)
 	result.LogicalLineIDs = trimUint64SliceTail(result.LogicalLineIDs, limit)
 	result.LogicalLineIDAuthoritative = trimBoolSliceTail(result.LogicalLineIDAuthoritative, limit)
+	result.LineTimestampStart = trimTimeSliceTail(result.LineTimestampStart, limit)
+	result.LineTimestampEnd = trimTimeSliceTail(result.LineTimestampEnd, limit)
 	result.RowIDRanges = trimTerminalGridRowIDRangesTail(result.RowIDRanges, limit)
 	return true
 }
@@ -987,7 +991,7 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 		firstRowID := baseRowID + uint64(start)
 		lineRecords := s.persistedLogicalLineRecordsForViewport(refs, firstRowID, totalRows, generation)
 		rowIDs := terminalGridRowIDs(firstRowID, len(gridRows))
-		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs, result.LogicalLineIDAuthoritative, result.RowIDRanges = reflowTerminalGridRowsWithRowIDRanges(gridRows, cols, lineRecords, rowIDs)
+		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs, result.LogicalLineIDAuthoritative, result.LineTimestampStart, result.LineTimestampEnd, result.RowIDRanges = reflowTerminalGridRowsWithRowIDRanges(gridRows, cols, lineRecords, rowIDs)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		result.Generation = generation
 		result.Size = Size{Cols: uint16(cols)}
@@ -1050,6 +1054,8 @@ func trimTerminalGridViewportPrefix(result *terminalGridViewport, start int) {
 		result.Ownership = nil
 		result.LogicalLineIDs = nil
 		result.LogicalLineIDAuthoritative = nil
+		result.LineTimestampStart = nil
+		result.LineTimestampEnd = nil
 		result.RowIDRanges = nil
 		result.LoadedRows = 0
 		result.FirstRowID = 0
@@ -1063,6 +1069,8 @@ func trimTerminalGridViewportPrefix(result *terminalGridViewport, start int) {
 	result.Ownership = cloneStringSlice(result.Ownership[start:])
 	result.LogicalLineIDs = cloneUint64Slice(result.LogicalLineIDs[start:])
 	result.LogicalLineIDAuthoritative = cloneBoolSlice(result.LogicalLineIDAuthoritative[start:])
+	result.LineTimestampStart = cloneTimeSlice(result.LineTimestampStart[start:])
+	result.LineTimestampEnd = cloneTimeSlice(result.LineTimestampEnd[start:])
 	result.RowIDRanges = cloneTerminalGridRowIDRanges(result.RowIDRanges[start:])
 	result.LoadedRows = len(result.Rows)
 	terminalGridViewportRefreshRowIDBoundary(result)
@@ -2723,13 +2731,13 @@ func reflowTerminalGridRows(rows []terminalGridRow, cols int, lineRecords []term
 }
 
 func reflowTerminalGridRowsWithAuthority(rows []terminalGridRow, cols int, lineRecords []terminalGridLogicalLineRecord) ([][]vterm.Cell, []time.Time, []string, []bool, []uint64, []bool) {
-	projected, timestamps, rowKinds, wrapped, lineIDs, authoritative, _ := reflowTerminalGridRowsWithRowIDRanges(rows, cols, lineRecords, nil)
+	projected, timestamps, rowKinds, wrapped, lineIDs, authoritative, _, _, _ := reflowTerminalGridRowsWithRowIDRanges(rows, cols, lineRecords, nil)
 	return projected, timestamps, rowKinds, wrapped, lineIDs, authoritative
 }
 
-func reflowTerminalGridRowsWithRowIDRanges(rows []terminalGridRow, cols int, lineRecords []terminalGridLogicalLineRecord, rowIDs []uint64) ([][]vterm.Cell, []time.Time, []string, []bool, []uint64, []bool, []terminalGridRowIDRange) {
+func reflowTerminalGridRowsWithRowIDRanges(rows []terminalGridRow, cols int, lineRecords []terminalGridLogicalLineRecord, rowIDs []uint64) ([][]vterm.Cell, []time.Time, []string, []bool, []uint64, []bool, []time.Time, []time.Time, []terminalGridRowIDRange) {
 	if len(rows) == 0 {
-		return nil, nil, nil, nil, nil, nil, nil
+		return nil, nil, nil, nil, nil, nil, nil, nil, nil
 	}
 	if cols <= 0 {
 		cols = 80
@@ -2743,6 +2751,8 @@ func reflowTerminalGridRowsWithRowIDRanges(rows []terminalGridRow, cols int, lin
 		wrapped:             make([]bool, 0, minInt(len(rows), 1024)),
 		lineIDs:             make([]uint64, 0, minInt(len(rows), 1024)),
 		lineIDAuthoritative: make([]bool, 0, minInt(len(rows), 1024)),
+		lineTimestampStart:  make([]time.Time, 0, minInt(len(rows), 1024)),
+		lineTimestampEnd:    make([]time.Time, 0, minInt(len(rows), 1024)),
 		trackRowIDRanges:    trackRowIDRanges,
 	}
 	if trackRowIDRanges {
@@ -2771,6 +2781,16 @@ func reflowTerminalGridRowsWithRowIDRanges(rows []terminalGridRow, cols int, lin
 		if hasRecord {
 			continuesLogicalLine = i < recordEnd || !recordSealed
 		}
+		lineTimestampStart := row.timestamp
+		lineTimestampEnd := row.timestamp
+		if hasRecord {
+			if !lineRecords[recordIndex].timestampStart.IsZero() {
+				lineTimestampStart = lineRecords[recordIndex].timestampStart
+			}
+			if !lineRecords[recordIndex].timestampEnd.IsZero() {
+				lineTimestampEnd = lineRecords[recordIndex].timestampEnd
+			}
+		}
 		rowKind := row.rowKind
 		if rowKind == "" && hasRecord {
 			rowKind = lineRecords[recordIndex].rowKind
@@ -2780,6 +2800,8 @@ func reflowTerminalGridRowsWithRowIDRanges(rows []terminalGridRow, cols int, lin
 			rowKind:                    rowKind,
 			logicalLineID:              logicalLineID,
 			logicalLineIDAuthoritative: lineIDAuthoritative,
+			timestampStart:             lineTimestampStart,
+			timestampEnd:               lineTimestampEnd,
 		}
 		if trackRowIDRanges {
 			meta.rowID = rowIDs[i]
@@ -2821,11 +2843,15 @@ func reflowTerminalGridRowsWithRowIDRanges(rows []terminalGridRow, cols int, lin
 		alignGridBools(reflow.wrapped, len(reflow.rows)),
 		alignGridUint64s(reflow.lineIDs, len(reflow.rows)),
 		alignGridBools(reflow.lineIDAuthoritative, len(reflow.rows)),
+		alignGridTimes(reflow.lineTimestampStart, len(reflow.rows)),
+		alignGridTimes(reflow.lineTimestampEnd, len(reflow.rows)),
 		alignGridRowIDRanges(reflow.rowIDRanges, len(reflow.rows))
 }
 
 type terminalGridReflowMeta struct {
 	timestamp                  time.Time
+	timestampStart             time.Time
+	timestampEnd               time.Time
 	rowKind                    string
 	logicalLineID              uint64
 	logicalLineIDAuthoritative bool
@@ -2847,6 +2873,8 @@ type terminalGridReflowState struct {
 	wrapped             []bool
 	lineIDs             []uint64
 	lineIDAuthoritative []bool
+	lineTimestampStart  []time.Time
+	lineTimestampEnd    []time.Time
 	rowIDRanges         []terminalGridRowIDRange
 	trackRowIDRanges    bool
 }
@@ -2900,9 +2928,51 @@ func (r *terminalGridReflowState) emitSegment(segment []terminalGridReflowCell, 
 	r.wrapped = append(r.wrapped, wrapped)
 	r.lineIDs = append(r.lineIDs, meta.logicalLineID)
 	r.lineIDAuthoritative = append(r.lineIDAuthoritative, meta.logicalLineIDAuthoritative)
+	r.lineTimestampStart = append(r.lineTimestampStart, terminalGridReflowSegmentTimestampStart(segment, meta))
+	r.lineTimestampEnd = append(r.lineTimestampEnd, terminalGridReflowSegmentTimestampEnd(segment, meta))
 	if r.trackRowIDRanges {
 		r.rowIDRanges = append(r.rowIDRanges, terminalGridRowIDRangeForSegment(segment, meta))
 	}
+}
+
+func terminalGridReflowSegmentTimestampStart(segment []terminalGridReflowCell, meta terminalGridReflowMeta) time.Time {
+	if len(segment) == 0 {
+		return meta.timestampStart
+	}
+	var out time.Time
+	for _, cell := range segment {
+		value := cell.meta.timestampStart
+		if value.IsZero() {
+			value = cell.meta.timestamp
+		}
+		if value.IsZero() {
+			continue
+		}
+		if out.IsZero() || value.Before(out) {
+			out = value
+		}
+	}
+	return out
+}
+
+func terminalGridReflowSegmentTimestampEnd(segment []terminalGridReflowCell, meta terminalGridReflowMeta) time.Time {
+	if len(segment) == 0 {
+		return meta.timestampEnd
+	}
+	var out time.Time
+	for _, cell := range segment {
+		value := cell.meta.timestampEnd
+		if value.IsZero() {
+			value = cell.meta.timestamp
+		}
+		if value.IsZero() {
+			continue
+		}
+		if out.IsZero() || value.After(out) {
+			out = value
+		}
+	}
+	return out
 }
 
 func terminalGridRowIDRangeForSegment(segment []terminalGridReflowCell, meta terminalGridReflowMeta) terminalGridRowIDRange {

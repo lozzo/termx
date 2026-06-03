@@ -1876,12 +1876,14 @@ const (
 )
 
 type HistoryLineSpan struct {
-	StartRow      int
-	EndRow        int
-	RowKind       string
-	LogicalLineID uint64
-	ClippedBefore bool
-	ClippedAfter  bool
+	StartRow       int
+	EndRow         int
+	RowKind        string
+	LogicalLineID  uint64
+	TimestampStart time.Time
+	TimestampEnd   time.Time
+	ClippedBefore  bool
+	ClippedAfter   bool
 }
 
 type HistoryWindow struct {
