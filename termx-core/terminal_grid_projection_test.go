@@ -1616,9 +1616,11 @@ func TestTerminalGridRecoveredLiveTailPreservesResizeOrigin(t *testing.T) {
 func TestTerminalGridRecoveredResizeLiveTailLatestLimitMarksClippedMutableLineBefore(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
+	start := time.Unix(20, 0).UTC()
+	end := time.Unix(40, 0).UTC()
 	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
-		{Cells: localVTermCellsFromString("r0"), RowKind: "recovered-resize", WrappedSet: true, Wrapped: true},
-		{Cells: localVTermCellsFromString("r1"), RowKind: "recovered-resize", WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r0"), RowKind: "recovered-resize", Timestamp: end, WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("r1"), RowKind: "recovered-resize", Timestamp: start, WrappedSet: true, Wrapped: false},
 	})
 	if err != nil {
 		t.Fatalf("encode resize live row metadata: %v", err)
@@ -1662,6 +1664,9 @@ func TestTerminalGridRecoveredResizeLiveTailLatestLimitMarksClippedMutableLineBe
 	span := window.Lines[0]
 	if span.StartRow != 0 || span.EndRow != 0 || span.RowKind != "recovered-resize" || span.LogicalLineID != runtimeID || !span.ClippedBefore || span.ClippedAfter {
 		t.Fatalf("expected latest limit to mark recovered resize line clipped-before only, got %#v", span)
+	}
+	if !span.TimestampStart.Equal(start) || !span.TimestampEnd.Equal(end) {
+		t.Fatalf("expected recovered clipped resize span to keep full logical line timestamp range, got %#v", span)
 	}
 }
 
@@ -2171,15 +2176,17 @@ func TestTerminalGridRecoveredLiveTailRejectsMixedMutableOrigins(t *testing.T) {
 func TestTerminalGridRecoveredReclaimedLiveTailLatestLimitMarksClippedCommittedLineBefore(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
+	start := time.Unix(30, 0).UTC()
+	end := time.Unix(50, 0).UTC()
 	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("p0"), wrapped: false},
 		{cells: localVTermCellsFromString("p1"), wrapped: false},
-		{cells: localVTermCellsFromString("r0"), rowKind: "recovered-reclaimed", wrapped: true},
-		{cells: localVTermCellsFromString("r1"), rowKind: "recovered-reclaimed", wrapped: false},
+		{cells: localVTermCellsFromString("r0"), rowKind: "recovered-reclaimed", timestamp: end, wrapped: true},
+		{cells: localVTermCellsFromString("r1"), rowKind: "recovered-reclaimed", timestamp: start, wrapped: false},
 	})
 	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
-		{Cells: localVTermCellsFromString("r0"), RowKind: "recovered-reclaimed", WrappedSet: true, Wrapped: true},
-		{Cells: localVTermCellsFromString("r1"), RowKind: "recovered-reclaimed", WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r0"), RowKind: "recovered-reclaimed", Timestamp: end, WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("r1"), RowKind: "recovered-reclaimed", Timestamp: start, WrappedSet: true, Wrapped: false},
 	})
 	if err != nil {
 		t.Fatalf("encode reclaimed row metadata: %v", err)
@@ -2233,6 +2240,9 @@ func TestTerminalGridRecoveredReclaimedLiveTailLatestLimitMarksClippedCommittedL
 	span := latest.Lines[0]
 	if span.StartRow != 0 || span.EndRow != 0 || span.RowKind != "recovered-reclaimed" || span.LogicalLineID != 3 || !span.ClippedBefore || span.ClippedAfter {
 		t.Fatalf("expected latest limit to mark recovered reclaimed line clipped-before only, got %#v", span)
+	}
+	if !span.TimestampStart.Equal(start) || !span.TimestampEnd.Equal(end) {
+		t.Fatalf("expected recovered clipped reclaimed span to keep full logical line timestamp range, got %#v", span)
 	}
 
 	older, err := storeViewportWithRecoveredLiveTailForHistory(store, latest.BeforeOffset, 10, 4)
