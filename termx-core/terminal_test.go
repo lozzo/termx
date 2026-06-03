@@ -4434,6 +4434,50 @@ func TestTerminalClearScreenClearsRecoverableMutableLiveTail(t *testing.T) {
 	}
 }
 
+func TestTerminalRecordLiveTailMetadataReassignsMigratedRuntimeID(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:   "record-live-tail-reassigns-migrated-runtime-id",
+		size: Size{Cols: 12, Rows: 2},
+		grid: store,
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 1
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		Migrations: []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 1}},
+	}); err != nil {
+		t.Fatalf("write migrated runtime metadata: %v", err)
+	}
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("hidden-live"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	if ids := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount()).logicalLineIDs; len(ids) != 1 || ids[0] != runtimeID {
+		t.Fatalf("expected test setup to reuse migrated runtime id, got %#v want %d", ids, runtimeID)
+	}
+
+	term.recordLiveTailMetadataLocked()
+
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live-tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 1 || len(metadata.LiveRows) != 1 {
+		t.Fatalf("expected recoverable live tail metadata to be preserved with fresh runtime id, got %#v", metadata)
+	}
+	freshID := metadata.LiveRecords[0].ID
+	if freshID <= runtimeID || !terminalRuntimeLogicalLineID(freshID) {
+		t.Fatalf("expected live tail record to use fresh runtime id above migrated id, got %#v migrated=%d", metadata.LiveRecords[0], runtimeID)
+	}
+	if ids := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount()).logicalLineIDs; len(ids) != 1 || ids[0] != freshID {
+		t.Fatalf("expected in-memory live tail to be updated to fresh runtime id, got %#v fresh=%d", ids, freshID)
+	}
+	if len(metadata.Migrations) != 1 || metadata.Migrations[0].RuntimeID != runtimeID || metadata.Migrations[0].PersistedID != 1 {
+		t.Fatalf("expected migrated runtime mapping to be preserved, got %#v", metadata.Migrations)
+	}
+}
+
 func TestTerminalPartialClearDoesNotClearMutableLiveTail(t *testing.T) {
 	vt := localvterm.New(12, 2, 0, nil)
 	vt.DisableEmulatorScrollback()

@@ -1283,6 +1283,55 @@ func TestTerminalGridLiveTailLineStateRejectsMismatchedReclaimedLogicalLineID(t 
 	}
 }
 
+func TestTerminalGridLiveTailLineStateRejectsMigratedRuntimeID(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		origin terminalLiveTailOrigin
+	}{
+		{name: "live", origin: terminalLiveTailOriginLive},
+		{name: "resize", origin: terminalLiveTailOriginResize},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMemoryTerminalGridStoreForTest(t)
+			defer store.Close()
+			runtimeID := terminalLiveTailLogicalLineIDBase + 7
+			if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+				Migrations: []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 1}},
+			}); err != nil {
+				t.Fatalf("write migrated runtime metadata: %v", err)
+			}
+			rows := []localvterm.DamageOp{{
+				Cells:      localVTermCellsFromString("tail"),
+				WrappedSet: true,
+				Wrapped:    false,
+			}}
+			records := []terminalLiveTailLogicalLineRecord{{
+				id:        runtimeID,
+				startRow:  0,
+				endRow:    0,
+				sealState: terminalLiveTailSealed,
+				origin:    tc.origin,
+				residency: terminalLogicalLineResidencyLiveTail,
+				dirty:     true,
+			}}
+
+			if err := store.recordLiveTailLineState(records, rows); err != nil {
+				t.Fatalf("record migrated runtime live tail metadata: %v", err)
+			}
+			metadata, err := readTerminalGridLineMetadata(store.dir)
+			if err != nil {
+				t.Fatalf("read live tail metadata: %v", err)
+			}
+			if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+				t.Fatalf("expected migrated runtime id to suppress live tail metadata, got records=%#v rows=%#v", metadata.LiveRecords, metadata.LiveRows)
+			}
+			if len(metadata.Migrations) != 1 || metadata.Migrations[0].RuntimeID != runtimeID || metadata.Migrations[0].PersistedID != 1 {
+				t.Fatalf("expected migrated runtime mapping to be preserved, got %#v", metadata.Migrations)
+			}
+		})
+	}
+}
+
 func TestTerminalGridLiveTailLineStateRejectsMixedMutableOrigins(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

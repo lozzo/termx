@@ -543,6 +543,7 @@ TUI store 至少表达：
 - 已收紧 core reclaimed live-tail line-state 写入 generation 校验：写入 `grid.lines.json` 前会要求 reclaimed record 的 generation 与当前 persisted store generation 匹配，避免 stale reclaimed suffix 成为恢复输入。
 - 已收紧 core reclaimed live-tail line-state 写入 row-id 范围校验：写入 `grid.lines.json` 前会要求 reclaimed record 的 row id 落在当前 persisted store 坐标内，避免越界 reclaimed suffix 成为恢复输入。
 - 已收紧 core reclaimed live-tail line-state 写入 logical line id 匹配校验：写入 `grid.lines.json` 前会要求 reclaimed record 的 stable id 覆盖当前 persisted logical line record，避免错误 id 的 reclaimed suffix 成为恢复输入。
+- 已收紧 core mutable live-tail line-state 写入 runtime migration 校验：Terminal 写 recoverable tail 前会把已迁移到 persisted logical line 的 runtime id 重分配为 fresh runtime id；store 写入端仍拒绝已迁移 runtime id 继续作为 live/resize dirty tail，避免写出恢复端随后必然丢弃的状态。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

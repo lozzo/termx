@@ -2059,6 +2059,8 @@ func (t *Terminal) recordLiveTailMetadataLocked() {
 	if t == nil || t.grid == nil {
 		return
 	}
+	t.syncLiveTailRuntimeCursorFromGridLocked()
+	t.primaryLiveTail.reassignConflictingRuntimeLogicalLineIDs(t.grid.maxMigratedRuntimeLogicalLineID())
 	if err := t.grid.recordLiveTailLineState(t.primaryLiveTail.logicalLineRecords(), t.primaryLiveTail.rows()); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal live tail metadata write failed", "terminal_id", t.id, "error", err)
 	}
