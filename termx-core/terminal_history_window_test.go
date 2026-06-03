@@ -57,6 +57,28 @@ func TestViewportTrimDoesNotInferClippedLineFromWrappedRowsWithoutLogicalLineIDs
 	}
 }
 
+func TestViewportReclaimStartUsesLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("old"), vtermCells("new"), vtermCells("tail")},
+		Wrapped:        []bool{false, false, false},
+		LogicalLineIDs: []uint64{10, 10, 11},
+	}
+	if got := terminalGridViewportReclaimStart(viewport, 2); got != 0 {
+		t.Fatalf("expected reclaim start to expand to logical line start by id, got %d", got)
+	}
+}
+
+func TestViewportReclaimStartDoesNotInferFromWrappedWithoutLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("old"), vtermCells("new"), vtermCells("tail")},
+		Wrapped:        []bool{true, true, false},
+		LogicalLineIDs: []uint64{0, 0, 0},
+	}
+	if got := terminalGridViewportReclaimStart(viewport, 2); got != 1 {
+		t.Fatalf("expected missing logical line ids not to expand reclaim start from wrapped rows, got %d", got)
+	}
+}
+
 func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 	// 末行即使 wrapped=true，也必须收口成一条逻辑行，不能越界。
 	wrapped := []bool{false, true}

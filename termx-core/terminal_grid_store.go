@@ -761,7 +761,12 @@ func terminalGridViewportReclaimStart(viewport terminalGridViewport, neededRows 
 		return 0
 	}
 	start := len(viewport.Rows) - neededRows
-	for start > 0 && boolAt(viewport.Wrapped, start-1) {
+	for start > 0 {
+		currentID := uint64At(viewport.LogicalLineIDs, start)
+		previousID := uint64At(viewport.LogicalLineIDs, start-1)
+		if currentID == 0 || previousID == 0 || currentID != previousID {
+			break
+		}
 		start--
 	}
 	return start
