@@ -91,6 +91,29 @@ func TestTerminalGridProjectionRowIDRangeSpansReflowedSourceRows(t *testing.T) {
 	}
 }
 
+func TestTerminalGridProjectionSuppressesMixedAuthorityReflowedSourceRows(t *testing.T) {
+	rows := []terminalGridRow{
+		{cells: localVTermCellsFromString("ab"), rowKind: "line0", wrapped: true},
+		{cells: localVTermCellsFromString("cd"), rowKind: "line0", wrapped: false},
+	}
+	records := []terminalGridLogicalLineRecord{
+		{id: 101, startRow: 1, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted, source: terminalLogicalLineRecordSourceExplicit},
+	}
+	projected, _, _, _, lineIDs, authoritative, rowIDRanges := reflowTerminalGridRowsWithRowIDRanges(rows, 4, records, []uint64{40, 41})
+	if got := vtermRowsToStrings(projected); !reflect.DeepEqual(got, []string{"abcd"}) {
+		t.Fatalf("expected reflowed row spanning mixed authority source rows, got %#v", got)
+	}
+	if got := lineIDs; !reflect.DeepEqual(got, []uint64{0}) {
+		t.Fatalf("expected mixed-authority reflowed row not to expose partial logical line id, got %#v", got)
+	}
+	if got := authoritative; !reflect.DeepEqual(got, []bool{false}) {
+		t.Fatalf("expected mixed-authority reflowed row to be non-authoritative, got %#v", got)
+	}
+	if len(rowIDRanges) != 1 || !rowIDRanges[0].Known || rowIDRanges[0].First != 40 || rowIDRanges[0].Last != 41 {
+		t.Fatalf("expected mixed-authority row boundary to still span physical source rows, got %#v", rowIDRanges)
+	}
+}
+
 func TestTerminalGridProjectionRestoresLogicalLineBoundariesFromMetadata(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-metadata-line-boundary")

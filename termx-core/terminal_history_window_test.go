@@ -272,6 +272,36 @@ func TestServerHistoryWindowFiltersReflowedRowIDBoundary(t *testing.T) {
 	}
 }
 
+func TestServerHistoryWindowRejectsMixedAuthorityReflowedRow(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "history-filter-mixed-reflow-authority")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs([]vterm.DamageOp{
+		{Cells: vtermCells("ab"), WrappedSet: true, Wrapped: true},
+		{Cells: vtermCells("cd"), WrappedSet: true, Wrapped: false},
+	}, []uint64{0, terminalLiveTailLogicalLineIDBase + 1}); err != nil {
+		t.Fatalf("append mixed-authority rows: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(4, 2))
+	window, err := srv.HistoryWindow(ctx, "history-filter-mixed-reflow-authority", HistoryWindowOptions{Limit: 10, Cols: 4})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 0 || len(window.Lines) != 0 {
+		t.Fatalf("expected mixed-authority reflowed row to be rejected, rows=%#v lines=%#v", window.Rows, window.Lines)
+	}
+	if window.Token != "" || window.Generation != 0 || window.FirstRowID != 0 || window.LastRowID != 0 || window.LogicalTotal != 0 {
+		t.Fatalf("expected mixed-authority rejection to clear authoritative boundary, got %#v", window)
+	}
+}
+
 func TestHistoryWindowRejectsFallbackOnlyPersistedLogicalLineIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
