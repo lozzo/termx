@@ -2274,6 +2274,15 @@ func terminalGridLineRecordMetasContainOrigin(records []terminalGridLineRecordMe
 	return false
 }
 
+func terminalLiveTailRecordsContainOrigin(records []terminalLiveTailLogicalLineRecord, origin terminalLiveTailOrigin) bool {
+	for _, record := range records {
+		if record.origin == origin {
+			return true
+		}
+	}
+	return false
+}
+
 func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int, persistedRecords []terminalGridLogicalLineRecord, migrations map[uint64]uint64) ([]terminalLiveTailSegment, bool) {
 	if len(records) == 0 || len(rows) == 0 {
 		return nil, false
@@ -3309,7 +3318,7 @@ func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLo
 	return out
 }
 
-func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp, baseRowID uint64, generation uint64, rowCount int) bool {
+func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp, baseRowID uint64, generation uint64, rowCount int, persistedRecords []terminalGridLogicalLineRecord) bool {
 	if len(records) == 0 || len(rows) == 0 {
 		return len(records) == 0 && len(rows) == 0
 	}
@@ -3353,6 +3362,10 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 				return false
 			}
 			if int(record.lastRowID-record.firstRowID)+1 != record.endRow-record.startRow+1 {
+				return false
+			}
+			meta := terminalGridLineRecordMeta{ID: record.id}
+			if !terminalLiveTailReclaimedMetadataMatchesPersistedRecord(meta, record.firstRowID, record.lastRowID, baseRowID, persistedRecords) {
 				return false
 			}
 		}
@@ -3429,7 +3442,14 @@ func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLo
 		return err
 	}
 	baseRowID, generation, rowCount := s.coordinates()
-	if !terminalLiveTailRecordsValidForLineState(records, rows, baseRowID, generation, rowCount) {
+	var persistedRecords []terminalGridLogicalLineRecord
+	if terminalLiveTailRecordsContainOrigin(records, terminalLiveTailOriginReclaimed) {
+		refs, refsErr := readTerminalGridIndexRefsFromPath(filepath.Join(dir, terminalGridIndexName))
+		if refsErr == nil {
+			persistedRecords = s.persistedLogicalLineRecordsForRetention(refs, baseRowID, generation)
+		}
+	}
+	if !terminalLiveTailRecordsValidForLineState(records, rows, baseRowID, generation, rowCount, persistedRecords) {
 		metadata.LiveRecords = nil
 		metadata.LiveRows = nil
 		return writeTerminalGridLineMetadata(dir, metadata)
