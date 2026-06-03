@@ -383,11 +383,13 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	if len(keep) == 0 {
 		filtered.FirstLineClippedBefore = false
 		filtered.HasMore = false
-		if filtered.TotalRows == 0 {
-			filtered.Generation = 0
-			filtered.FirstRowID = 0
-			filtered.LastRowID = 0
-		}
+		filtered.LoadedRows = filtered.BeforeOffset
+		filtered.TotalRows = 0
+		filtered.LogicalTotal = 0
+		filtered.WindowLogicalTotal = 0
+		filtered.Generation = 0
+		filtered.FirstRowID = 0
+		filtered.LastRowID = 0
 	} else if keep[0] != 0 {
 		filtered.FirstLineClippedBefore = false
 	}

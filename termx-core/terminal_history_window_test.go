@@ -60,6 +60,36 @@ func TestHistoryWindowFiltersRowsWithoutAuthoritativeLogicalLineIDs(t *testing.T
 	}
 }
 
+func TestHistoryWindowClearsBoundaryWhenAllRowsLackAuthoritativeLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("lost-a"), vtermCells("lost-b")},
+		Timestamps:     []time.Time{time.Unix(1, 0), time.Unix(2, 0)},
+		RowKinds:       []string{"lost", "lost"},
+		Wrapped:        []bool{false, false},
+		Ownership:      []string{RowOwnershipPersisted, RowOwnershipLiveTailReclaimed},
+		LogicalLineIDs: []uint64{0, 0},
+		BeforeOffset:   4,
+		LoadedRows:     6,
+		TotalRows:      6,
+		LogicalTotal:   3,
+		Generation:     7,
+		FirstRowID:     10,
+		LastRowID:      11,
+		HasMore:        true,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-all-missing-line-id", 4, viewport)
+	if len(window.Rows) != 0 || len(window.Lines) != 0 {
+		t.Fatalf("expected all non-authoritative rows to be omitted, rows=%#v lines=%#v", window.Rows, window.Lines)
+	}
+	if window.Token != "" || window.Generation != 0 || window.FirstRowID != 0 || window.LastRowID != 0 || window.FirstLineID != 0 || window.LastLineID != 0 {
+		t.Fatalf("expected empty authoritative window to clear boundary metadata, got %#v", window)
+	}
+	if window.TotalRows != 0 || window.LogicalTotal != 0 || window.LoadedRows != 4 || window.BeforeOffset != 4 || window.HasMore {
+		t.Fatalf("expected empty authoritative window to keep only request cursor, got loaded=%d before=%d total=%d logical=%d has_more=%v", window.LoadedRows, window.BeforeOffset, window.TotalRows, window.LogicalTotal, window.HasMore)
+	}
+}
+
 func TestViewportTrimDoesNotInferClippedLineFromWrappedRowsWithoutLogicalLineIDs(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("old"), vtermCells("new")},
