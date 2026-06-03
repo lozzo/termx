@@ -52,15 +52,17 @@ type terminalPrimaryLiveTail struct {
 }
 
 type terminalLiveTailWindow struct {
-	rows           []vterm.DamageOp
-	ownership      []string
-	logicalLineIDs []uint64
-	rowIDRanges    []terminalGridRowIDRange
-	committed      int
-	generation     uint64
-	firstRowID     uint64
-	lastRowID      uint64
-	hasCommitted   bool
+	rows               []vterm.DamageOp
+	ownership          []string
+	logicalLineIDs     []uint64
+	lineTimestampStart []time.Time
+	lineTimestampEnd   []time.Time
+	rowIDRanges        []terminalGridRowIDRange
+	committed          int
+	generation         uint64
+	firstRowID         uint64
+	lastRowID          uint64
+	hasCommitted       bool
 }
 
 type terminalLiveTailLogicalLineRecord struct {
@@ -578,7 +580,11 @@ func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailW
 		localStart := maxInt(start, segmentStart) - segmentStart
 		localEnd := minInt(end, segmentEnd) - segmentStart
 		out.rows = append(out.rows, cloneGridDamageOps(segment.rows[localStart:localEnd])...)
-		out.logicalLineIDs = append(out.logicalLineIDs, terminalLiveTailSegmentLogicalLineIDsWindow(segment, localStart, localEnd)...)
+		logicalLineIDs := terminalLiveTailSegmentLogicalLineIDsWindow(segment, localStart, localEnd)
+		out.logicalLineIDs = append(out.logicalLineIDs, logicalLineIDs...)
+		timestampStart, timestampEnd := terminalLiveTailSegmentLogicalLineTimestampWindow(segment, localStart, localEnd, logicalLineIDs)
+		out.lineTimestampStart = append(out.lineTimestampStart, timestampStart...)
+		out.lineTimestampEnd = append(out.lineTimestampEnd, timestampEnd...)
 		ownership := RowOwnershipLiveTailLive
 		if segment.origin == terminalLiveTailOriginReclaimed {
 			ownership = RowOwnershipLiveTailReclaimed
@@ -619,6 +625,40 @@ func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailW
 		}
 	}
 	return out
+}
+
+func terminalLiveTailSegmentLogicalLineTimestampWindow(segment terminalLiveTailSegment, start int, end int, logicalLineIDs []uint64) ([]time.Time, []time.Time) {
+	rowCount := maxInt(0, end-start)
+	timestampStart := make([]time.Time, rowCount)
+	timestampEnd := make([]time.Time, rowCount)
+	if rowCount == 0 {
+		return timestampStart, timestampEnd
+	}
+	fullLogicalLineIDs := terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)
+	if !terminalLiveTailLogicalLineIDsComplete(logicalLineIDs, rowCount) || !terminalLiveTailLogicalLineIDsComplete(fullLogicalLineIDs, len(segment.rows)) {
+		for i := 0; i < rowCount; i++ {
+			timestampStart[i] = segment.rows[start+i].Timestamp
+			timestampEnd[i] = segment.rows[start+i].Timestamp
+		}
+		return timestampStart, timestampEnd
+	}
+	for i := 0; i < rowCount; i++ {
+		row := start + i
+		lineID := fullLogicalLineIDs[row]
+		lineStart := row
+		for lineStart > 0 && fullLogicalLineIDs[lineStart-1] == lineID {
+			lineStart--
+		}
+		lineEnd := row
+		for lineEnd+1 < len(fullLogicalLineIDs) && fullLogicalLineIDs[lineEnd+1] == lineID {
+			lineEnd++
+		}
+		startTime := terminalLogicalLineTimestampStartFromDamageRows(segment.rows[lineStart : lineEnd+1])
+		endTime := terminalLogicalLineTimestampEndFromDamageRows(segment.rows[lineStart : lineEnd+1])
+		timestampStart[i] = startTime
+		timestampEnd[i] = endTime
+	}
+	return timestampStart, timestampEnd
 }
 
 func (tail terminalPrimaryLiveTail) logicalLineRecords() []terminalLiveTailLogicalLineRecord {

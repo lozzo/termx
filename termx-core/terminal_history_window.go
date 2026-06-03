@@ -275,8 +275,8 @@ func combinedGridViewportFromStoreWithOptions(store *terminalGridStore, offset, 
 			logicalLineID := uint64At(window.logicalLineIDs, i)
 			result.LogicalLineIDs = append(result.LogicalLineIDs, logicalLineID)
 			result.LogicalLineIDAuthoritative = append(result.LogicalLineIDAuthoritative, logicalLineID != 0)
-			result.LineTimestampStart = append(result.LineTimestampStart, row.Timestamp)
-			result.LineTimestampEnd = append(result.LineTimestampEnd, row.Timestamp)
+			result.LineTimestampStart = append(result.LineTimestampStart, timeAt(window.lineTimestampStart, i))
+			result.LineTimestampEnd = append(result.LineTimestampEnd, timeAt(window.lineTimestampEnd, i))
 			result.RowIDRanges = append(result.RowIDRanges, terminalGridRowIDRangeAt(window.rowIDRanges, i))
 		}
 		if window.hasCommitted {

@@ -91,6 +91,38 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsTrackReclaimedAndLiveRows(t *t
 	}
 }
 
+func TestTerminalPrimaryLiveTailWindowCarriesLogicalLineTimestampRange(t *testing.T) {
+	start := time.Unix(10, 0).UTC()
+	end := time.Unix(30, 0).UTC()
+	var tail terminalPrimaryLiveTail
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), Timestamp: end, WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), Timestamp: start, WrappedSet: true, Wrapped: false},
+	}, []uint64{terminalLiveTailLogicalLineIDBase + 1, terminalLiveTailLogicalLineIDBase + 1}, false)
+
+	window := tail.window(0, tail.rowCount())
+	if got := damageRowsToStrings(window.rows); !reflect.DeepEqual(got, []string{"aa", "bb"}) {
+		t.Fatalf("expected live tail rows in window, got %#v", got)
+	}
+	if len(window.lineTimestampStart) != 2 || !window.lineTimestampStart[0].Equal(start) || !window.lineTimestampStart[1].Equal(start) {
+		t.Fatalf("expected line start timestamp range on both rows, got %#v", window.lineTimestampStart)
+	}
+	if len(window.lineTimestampEnd) != 2 || !window.lineTimestampEnd[0].Equal(end) || !window.lineTimestampEnd[1].Equal(end) {
+		t.Fatalf("expected line end timestamp range on both rows, got %#v", window.lineTimestampEnd)
+	}
+
+	clipped := tail.window(1, tail.rowCount())
+	if got := damageRowsToStrings(clipped.rows); !reflect.DeepEqual(got, []string{"bb"}) {
+		t.Fatalf("expected clipped live tail row in window, got %#v", got)
+	}
+	if len(clipped.lineTimestampStart) != 1 || !clipped.lineTimestampStart[0].Equal(start) {
+		t.Fatalf("expected clipped row to keep full logical line start timestamp, got %#v", clipped.lineTimestampStart)
+	}
+	if len(clipped.lineTimestampEnd) != 1 || !clipped.lineTimestampEnd[0].Equal(end) {
+		t.Fatalf("expected clipped row to keep full logical line end timestamp, got %#v", clipped.lineTimestampEnd)
+	}
+}
+
 func TestTerminalPrimaryLiveTailReclaimedZeroCoordinatesRequirePersistedIDs(t *testing.T) {
 	var tail terminalPrimaryLiveTail
 	tail.replaceRows([]localvterm.DamageOp{{

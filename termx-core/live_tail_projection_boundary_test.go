@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -185,8 +186,8 @@ func TestTerminalLatestLiveTailOnlyProjectionDoesNotInventCanonicalMetadata(t *t
 	}
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
-			{Cells: localVTermCellsFromString("tail0"), WrappedSet: true, Wrapped: false},
-			{Cells: localVTermCellsFromString("tail1"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("tail0"), Timestamp: time.Unix(30, 0).UTC(), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail1"), Timestamp: time.Unix(10, 0).UTC(), WrappedSet: true, Wrapped: true},
 		},
 		LiveTailAppendRows: 2,
 	}
@@ -218,6 +219,9 @@ func TestTerminalLatestLiveTailOnlyProjectionDoesNotInventCanonicalMetadata(t *t
 	window := historyWindowFromCoreGridViewport(term.id, 0, coreViewport)
 	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID != coreViewport.LogicalLineIDs[0] {
 		t.Fatalf("expected history window to expose live-tail runtime logical line id, lines=%#v row_ids=%#v", window.Lines, coreViewport.LogicalLineIDs)
+	}
+	if !window.Lines[0].TimestampStart.Equal(time.Unix(10, 0).UTC()) || !window.Lines[0].TimestampEnd.Equal(time.Unix(30, 0).UTC()) {
+		t.Fatalf("expected history window live-tail span to carry logical line timestamp range, got %#v", window.Lines[0])
 	}
 	if window.LoadedLines != 1 || window.LogicalTotal != 1 {
 		t.Fatalf("expected live-tail-only history window to count its mutable logical line, loaded=%d total=%d", window.LoadedLines, window.LogicalTotal)
