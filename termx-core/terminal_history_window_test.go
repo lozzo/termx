@@ -60,6 +60,31 @@ func TestHistoryWindowFiltersRowsWithoutAuthoritativeLogicalLineIDs(t *testing.T
 	}
 }
 
+func TestHistoryWindowDropsMissingLogicalLineIDsFromLogicalTotal(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("a"), vtermCells("lost"), vtermCells("b")},
+		Ownership:      []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs: []uint64{10, 0, 11},
+		LoadedRows:     3,
+		TotalRows:      3,
+		LogicalTotal:   3,
+		Generation:     7,
+		FirstRowID:     20,
+		LastRowID:      22,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-total-missing-line-id", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Fatalf("expected only authoritative rows after filtering, got %#v", got)
+	}
+	if window.LoadedRows != 2 || window.TotalRows != 2 {
+		t.Fatalf("expected loaded and total rows to drop non-authoritative row, loaded=%d total=%d", window.LoadedRows, window.TotalRows)
+	}
+	if window.LogicalTotal != 2 {
+		t.Fatalf("expected logical total to drop missing-id logical row, got %d", window.LogicalTotal)
+	}
+}
+
 func TestHistoryWindowClearsBoundaryWhenAllRowsLackAuthoritativeLogicalLineIDs(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("lost-a"), vtermCells("lost-b")},

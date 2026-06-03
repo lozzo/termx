@@ -362,6 +362,8 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		return viewport
 	}
 	removedCommittedRows := 0
+	removedMissingIDLogicalLines := 0
+	inMissingIDLogicalLine := false
 	for i := range viewport.Rows {
 		logicalLineID := uint64At(viewport.LogicalLineIDs, i)
 		remove := logicalLineID == 0
@@ -374,7 +376,11 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		switch stringAt(viewport.Ownership, i) {
 		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:
 			removedCommittedRows++
+			if logicalLineID == 0 && !inMissingIDLogicalLine {
+				removedMissingIDLogicalLines++
+			}
 		}
+		inMissingIDLogicalLine = logicalLineID == 0
 	}
 	filtered := viewport
 	filtered.Rows = filterVTermRowsByIndexes(viewport.Rows, keep)
@@ -394,6 +400,13 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		filtered.LogicalTotal = maxInt(0, viewport.LogicalTotal-len(invalidLineIDs))
 		if viewport.WindowLogicalTotal > 0 {
 			filtered.WindowLogicalTotal = maxInt(0, viewport.WindowLogicalTotal-len(invalidLineIDs))
+		}
+	}
+	if removedMissingIDLogicalLines > 0 {
+		minLogicalTotal := projectedLogicalLineCount(filtered.LogicalLineIDs)
+		filtered.LogicalTotal = maxInt(minLogicalTotal, filtered.LogicalTotal-removedMissingIDLogicalLines)
+		if viewport.WindowLogicalTotal > 0 {
+			filtered.WindowLogicalTotal = maxInt(minLogicalTotal, filtered.WindowLogicalTotal-removedMissingIDLogicalLines)
 		}
 	}
 	if len(keep) == 0 {
