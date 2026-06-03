@@ -229,6 +229,31 @@ func TestViewportTrimDoesNotInferClippedLineFromWrappedRowsWithoutLogicalLineIDs
 	}
 }
 
+func TestViewportTrimDoesNotClipFromFallbackLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("old"), vtermCells("new")},
+		Timestamps:                 []time.Time{time.Unix(1, 0), time.Unix(2, 0)},
+		RowKinds:                   []string{"fallback", ""},
+		Wrapped:                    []bool{true, false},
+		Ownership:                  []string{RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs:             []uint64{10, 10},
+		LogicalLineIDAuthoritative: []bool{false, false},
+		LoadedRows:                 2,
+		FirstRowID:                 10,
+		LastRowID:                  11,
+	}
+
+	if cropped := trimTerminalGridViewportToTail(&viewport, 1); !cropped {
+		t.Fatal("expected viewport trim")
+	}
+	if viewport.FirstLineClippedBefore {
+		t.Fatalf("expected fallback logical line id not to mark clipped-before, got %#v", viewport)
+	}
+	if got := stringAt(viewport.RowKinds, 0); got != "" {
+		t.Fatalf("expected fallback logical line id not to inherit row kind, got %q", got)
+	}
+}
+
 func TestViewportReclaimStartUsesLogicalLineIDs(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("old"), vtermCells("new"), vtermCells("tail")},
@@ -251,16 +276,31 @@ func TestViewportReclaimStartDoesNotInferFromWrappedWithoutLogicalLineIDs(t *tes
 	}
 }
 
+func TestViewportReclaimStartDoesNotUseFallbackLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("old"), vtermCells("new"), vtermCells("tail")},
+		Wrapped:                    []bool{false, false, false},
+		LogicalLineIDs:             []uint64{10, 10, 11},
+		LogicalLineIDAuthoritative: []bool{false, false, true},
+	}
+	if got := terminalGridViewportReclaimStart(viewport, 2); got != 1 {
+		t.Fatalf("expected fallback logical line ids not to expand reclaim start, got %d", got)
+	}
+}
+
 func TestClippedViewportLeadingRowKindUsesLogicalLineIDs(t *testing.T) {
 	rowKinds := []string{"line", "", "next"}
-	if got := clippedViewportLeadingRowKind(rowKinds, []uint64{10, 10, 11}, 1); got != "line" {
+	if got := clippedViewportLeadingRowKind(rowKinds, []uint64{10, 10, 11}, nil, 1); got != "line" {
 		t.Fatalf("expected row kind inherited within same logical line id, got %q", got)
 	}
-	if got := clippedViewportLeadingRowKind(rowKinds, []uint64{0, 0, 11}, 1); got != "" {
+	if got := clippedViewportLeadingRowKind(rowKinds, []uint64{0, 0, 11}, nil, 1); got != "" {
 		t.Fatalf("expected missing logical line ids not to inherit row kind from wrapped rows, got %q", got)
 	}
-	if got := clippedViewportLeadingRowKind(rowKinds, []uint64{10, 11, 11}, 1); got != "" {
+	if got := clippedViewportLeadingRowKind(rowKinds, []uint64{10, 11, 11}, nil, 1); got != "" {
 		t.Fatalf("expected distinct logical line ids not to inherit row kind, got %q", got)
+	}
+	if got := clippedViewportLeadingRowKind(rowKinds, []uint64{10, 10, 11}, []bool{false, false, true}, 1); got != "" {
+		t.Fatalf("expected fallback logical line ids not to inherit row kind, got %q", got)
 	}
 }
 

@@ -700,7 +700,7 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 		return false
 	}
 	start := len(result.Rows) - limit
-	inheritedRowKind := clippedViewportLeadingRowKind(result.RowKinds, result.LogicalLineIDs, start)
+	inheritedRowKind := clippedViewportLeadingRowKind(result.RowKinds, result.LogicalLineIDs, result.LogicalLineIDAuthoritative, start)
 	result.FirstLineClippedBefore = terminalGridViewportTrimClipsLogicalLine(result, start)
 	result.Rows = result.Rows[start:]
 	result.Timestamps = trimTimeSliceTail(result.Timestamps, limit)
@@ -719,13 +719,19 @@ func terminalGridViewportTrimClipsLogicalLine(result *terminalGridViewport, star
 	if result == nil || start <= 0 || start >= len(result.Rows) {
 		return false
 	}
+	if !terminalGridViewportLogicalLineIDAuthoritative(result.LogicalLineIDAuthoritative, start) || !terminalGridViewportLogicalLineIDAuthoritative(result.LogicalLineIDAuthoritative, start-1) {
+		return false
+	}
 	currentID := uint64At(result.LogicalLineIDs, start)
 	previousID := uint64At(result.LogicalLineIDs, start-1)
 	return currentID != 0 && previousID != 0 && currentID == previousID
 }
 
-func clippedViewportLeadingRowKind(rowKinds []string, logicalLineIDs []uint64, start int) string {
+func clippedViewportLeadingRowKind(rowKinds []string, logicalLineIDs []uint64, logicalLineIDAuthoritative []bool, start int) string {
 	if start <= 0 {
+		return ""
+	}
+	if !terminalGridViewportLogicalLineIDAuthoritative(logicalLineIDAuthoritative, start) || !terminalGridViewportLogicalLineIDAuthoritative(logicalLineIDAuthoritative, start-1) {
 		return ""
 	}
 	currentID := uint64At(logicalLineIDs, start)
@@ -737,11 +743,24 @@ func clippedViewportLeadingRowKind(rowKinds []string, logicalLineIDs []uint64, s
 		if uint64At(logicalLineIDs, i) != currentID {
 			break
 		}
+		if !terminalGridViewportLogicalLineIDAuthoritative(logicalLineIDAuthoritative, i) {
+			break
+		}
 		if kind := stringAt(rowKinds, i); kind != "" {
 			return kind
 		}
 	}
 	return ""
+}
+
+func terminalGridViewportLogicalLineIDAuthoritative(authoritative []bool, row int) bool {
+	if row < 0 {
+		return false
+	}
+	if len(authoritative) == 0 {
+		return true
+	}
+	return boolAt(authoritative, row)
 }
 
 func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalGridViewport, error) {
@@ -824,6 +843,9 @@ func terminalGridViewportReclaimStart(viewport terminalGridViewport, neededRows 
 	}
 	start := len(viewport.Rows) - neededRows
 	for start > 0 {
+		if !terminalGridViewportLogicalLineIDAuthoritative(viewport.LogicalLineIDAuthoritative, start) || !terminalGridViewportLogicalLineIDAuthoritative(viewport.LogicalLineIDAuthoritative, start-1) {
+			break
+		}
 		currentID := uint64At(viewport.LogicalLineIDs, start)
 		previousID := uint64At(viewport.LogicalLineIDs, start-1)
 		if currentID == 0 || previousID == 0 || currentID != previousID {
