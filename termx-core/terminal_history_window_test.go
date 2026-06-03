@@ -247,6 +247,9 @@ func TestServerHistoryWindowLogicalTotalIgnoresWindowExternalFallback(t *testing
 	if window.LogicalTotal != 1 || window.LoadedLines != 1 {
 		t.Fatalf("expected logical totals to ignore fallback prefix, loaded=%d total=%d window=%#v", window.LoadedLines, window.LogicalTotal, window)
 	}
+	if window.HasMore || window.TotalRows != 1 {
+		t.Fatalf("expected fallback prefix not to expose authoritative older boundary, has_more=%v total_rows=%d window=%#v", window.HasMore, window.TotalRows, window)
+	}
 }
 
 func TestHistoryWindowFindsDiscontiguousLogicalLineIDs(t *testing.T) {

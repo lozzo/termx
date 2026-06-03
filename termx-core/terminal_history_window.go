@@ -309,6 +309,13 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 	if viewport.WindowLogicalTotal > 0 {
 		logicalTotal = viewport.WindowLogicalTotal
 	}
+	loadedLines := historyLoadedLogicalLineCount(lines)
+	totalRows := viewport.TotalRows
+	hasMore := viewport.HasMore
+	if beforeOffset == 0 && logicalTotal > 0 && loadedLines >= logicalTotal {
+		totalRows = len(viewport.Rows)
+		hasMore = false
+	}
 	return &HistoryWindow{
 		TerminalID:   id,
 		Token:        historyWindowToken(viewport),
@@ -318,10 +325,10 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 		Lines:        lines,
 		BeforeOffset: historyWindowBeforeCursor(beforeOffset, viewport),
 		LoadedRows:   viewport.LoadedRows,
-		LoadedLines:  historyLoadedLogicalLineCount(lines),
-		TotalRows:    viewport.TotalRows,
+		LoadedLines:  loadedLines,
+		TotalRows:    totalRows,
 		LogicalTotal: logicalTotal,
-		HasMore:      viewport.HasMore,
+		HasMore:      hasMore,
 		Generation:   viewport.Generation,
 		FirstRowID:   viewport.FirstRowID,
 		LastRowID:    viewport.LastRowID,
