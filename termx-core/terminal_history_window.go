@@ -443,7 +443,7 @@ func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64
 	if rowCount <= 0 {
 		return nil
 	}
-	clippedBeforeFirstLine := beforeOffset > 0
+	clippedBeforeFirstLine := false
 	if len(firstLineClippedBefore) > 0 && firstLineClippedBefore[0] {
 		clippedBeforeFirstLine = true
 	}

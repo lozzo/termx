@@ -108,11 +108,20 @@ func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 func TestHistoryLineSpansMarksWindowClipping(t *testing.T) {
 	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, 3)
 	want := []HistoryLineSpan{
+		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 20},
+		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 21, ClippedAfter: true},
+	}
+	if !reflect.DeepEqual(spans, want) {
+		t.Fatalf("expected older offset alone not to mark clipped-before, got %#v want %#v", spans, want)
+	}
+
+	spans = historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, 3, true)
+	want = []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 20, ClippedBefore: true},
 		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 21, ClippedAfter: true},
 	}
 	if !reflect.DeepEqual(spans, want) {
-		t.Fatalf("unexpected clipped spans, got %#v want %#v", spans, want)
+		t.Fatalf("expected explicit viewport clipping to mark clipped-before, got %#v want %#v", spans, want)
 	}
 }
 
@@ -202,6 +211,12 @@ func TestServerHistoryWindowOlderPrependUsesPersistedDepth(t *testing.T) {
 	}
 	if len(older.Rows) == 0 {
 		t.Fatal("expected older window to contain rows")
+	}
+	if older.LoadedLines != 2 || len(older.Lines) != 2 {
+		t.Fatalf("expected older window to count complete logical line starts, loaded=%d lines=%#v", older.LoadedLines, older.Lines)
+	}
+	if older.Lines[0].ClippedBefore {
+		t.Fatalf("expected older offset at row boundary not to mark clipped-before, got %#v", older.Lines)
 	}
 }
 

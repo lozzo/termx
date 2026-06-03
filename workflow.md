@@ -447,6 +447,7 @@ TUI store 至少表达：
 - 已修正 core latest combined viewport 中 reclaimed mutable live tail 的 committed depth 计算：visible persisted prefix 与 reclaimed suffix 只各计一次，latest 返回的 older cursor 不再把 store viewport offset depth 与 reclaimed suffix 重复相加，older prepend 也不会重复返回已随 latest 投影暴露的 reclaimed rows。
 - 已补齐 store-only recovered reclaimed mutable live tail 的 committed depth harness，固定重启恢复后 latest older cursor 同样只计 recovered reclaimed suffix 一次，older prepend 不重复返回已恢复到 live tail 的 persisted suffix。
 - 已将 core `history.window` line span 生成改为只按 stable logical line id 归并 visual rows；projection 缺失 logical line id 时不再通过 wrapped 元数据伪造 authoritative line spans。
+- 已收紧 core `history.window` 的 clipped-before 标记：older offset 本身不再表示首个 logical line span 被裁断，只有 screen projection 明确给出 logical line 裁剪标记时才设置 clipped-before，避免完整 older prepend 窗口被少计 loaded logical line。
 - 已将 core screen projection 裁剪后的 clipped-before 判定收敛为只看相邻 stable logical line id；缺少 logical line id 时不再通过 wrapped 元数据推断窗口切断了逻辑行。
 - 已将 core grow resize reclaim 的投影裁剪起点收敛为只按 stable logical line id 向前扩展；缺少 logical line id 时不再通过 wrapped 元数据扩展 reclaim 窗口。
 - 已将 core screen projection 裁剪后的 leading row kind 继承收敛为只在相邻 stable logical line id 连续时发生；缺少 logical line id 时不再通过 wrapped 元数据继承 clipped span 的 row kind。
