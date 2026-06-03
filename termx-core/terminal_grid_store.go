@@ -3267,7 +3267,8 @@ func terminalGridLineMigrationsForPersistedRecords(migrations []terminalGridLine
 	if len(persistedIDs) == 0 {
 		return nil
 	}
-	out := make([]terminalGridLineMigration, 0, len(migrations))
+	merged := make(map[uint64]uint64, len(migrations))
+	conflicted := make(map[uint64]struct{})
 	for _, migration := range migrations {
 		if !terminalRuntimeLogicalLineID(migration.RuntimeID) || !terminalPersistedLogicalLineID(migration.PersistedID) {
 			continue
@@ -3275,7 +3276,14 @@ func terminalGridLineMigrationsForPersistedRecords(migrations []terminalGridLine
 		if _, ok := persistedIDs[migration.PersistedID]; !ok {
 			continue
 		}
-		out = append(out, migration)
+		terminalGridAddLineMigration(merged, conflicted, migration.RuntimeID, migration.PersistedID)
+	}
+	out := make([]terminalGridLineMigration, 0, len(merged))
+	for runtimeID, persistedID := range merged {
+		out = append(out, terminalGridLineMigration{
+			RuntimeID:   runtimeID,
+			PersistedID: persistedID,
+		})
 	}
 	return out
 }

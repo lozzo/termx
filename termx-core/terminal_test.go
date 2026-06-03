@@ -1446,6 +1446,48 @@ func TestTerminalGridStoreRetentionPrunesDroppedRuntimeMigrations(t *testing.T) 
 	}
 }
 
+func TestTerminalGridStoreRetentionDropsConflictingRuntimeMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	conflictRuntimeID := terminalLiveTailLogicalLineIDBase + 80
+	stableRuntimeID := terminalLiveTailLogicalLineIDBase + 81
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("drop")},
+		{Cells: localVTermCellsFromString("keep-a")},
+		{Cells: localVTermCellsFromString("keep-b")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{0, conflictRuntimeID, stableRuntimeID}); err != nil {
+		t.Fatalf("append rows with explicit runtime ids: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata before conflict seed: %v", err)
+	}
+	metadata.Migrations = []terminalGridLineMigration{
+		{RuntimeID: conflictRuntimeID, PersistedID: 2},
+		{RuntimeID: conflictRuntimeID, PersistedID: 3},
+		{RuntimeID: stableRuntimeID, PersistedID: 3},
+	}
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
+		t.Fatalf("seed conflicting migration metadata: %v", err)
+	}
+
+	store.SetMaxRows(2)
+	if err := store.enforceMaxRowsLockedAt(time.Now().UTC()); err != nil {
+		t.Fatalf("enforce retention after conflict seed: %v", err)
+	}
+
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after retention: %v", err)
+	}
+	want := []terminalGridLineMigration{{RuntimeID: stableRuntimeID, PersistedID: 3}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, want) {
+		t.Fatalf("expected retention to drop conflicting runtime migration, got %#v want %#v", lineMetadata.Migrations, want)
+	}
+}
+
 func TestTerminalGridStoreExplicitAppendRebuildsMissingMetadataPrefix(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
