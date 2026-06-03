@@ -3347,6 +3347,53 @@ func TestTerminalProcessExitSealsLiveTailAndScreenContinuationAsOneLogicalLine(t
 	}
 }
 
+func TestTerminalProcessExitScreenOnlySealDoesNotReuseMigratedRuntimeID(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "exit-screen-only-runtime-id-no-reuse",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcd")
+	writeVTermDamageToGrid(t, term, vt, "efgh")
+	firstRuntimeIDs := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount()).logicalLineIDs
+	if len(firstRuntimeIDs) != 1 || !terminalRuntimeLogicalLineID(firstRuntimeIDs[0]) {
+		t.Fatalf("expected first hidden live-tail runtime logical line id, got %#v", firstRuntimeIDs)
+	}
+	writeVTermDamageToGrid(t, term, vt, "\r\n")
+	firstPersistedRows := store.RowCount()
+	if firstPersistedRows == 0 {
+		t.Fatal("expected first line to be persisted before process exit")
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "ijkl")
+	if got := term.primaryLiveTail.rowCount(); got != 0 {
+		t.Fatalf("expected exact-width second line to remain screen-only before exit, got %d live-tail rows", got)
+	}
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal live tail for exit: %v", err)
+	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after process exit: %v", err)
+	}
+	if len(lineMetadata.Migrations) != 2 {
+		t.Fatalf("expected two runtime migrations after screen-only exit seal, got %#v", lineMetadata.Migrations)
+	}
+	if lineMetadata.Migrations[0].RuntimeID != firstRuntimeIDs[0] || lineMetadata.Migrations[0].PersistedID != 1 {
+		t.Fatalf("expected first migration to remain intact, got %#v", lineMetadata.Migrations)
+	}
+	if lineMetadata.Migrations[1].RuntimeID <= firstRuntimeIDs[0] || lineMetadata.Migrations[1].PersistedID != persistedLogicalLineIDFromRowID(uint64(firstPersistedRows)) {
+		t.Fatalf("expected screen-only exit seal to allocate a fresh runtime id, got %#v first=%#v", lineMetadata.Migrations, firstRuntimeIDs)
+	}
+}
+
 func TestTerminalProcessExitInAltScreenDropsAltAndSealsPrimaryTail(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)

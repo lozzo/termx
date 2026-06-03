@@ -1198,7 +1198,7 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 		if len(out) > 0 && out[len(out)-1].wrapped {
 			continuedID = out[len(out)-1].logicalLineID
 		}
-		screenLineIDs := terminalGridRowsLiveLogicalLineIDsForExit(screenRows, continuedID)
+		screenLineIDs := terminalGridRowsLiveLogicalLineIDsForExit(&liveTail, screenRows, continuedID)
 		for i := range screenRows {
 			screenRows[i].logicalLineID = uint64At(screenLineIDs, i)
 		}
@@ -1212,7 +1212,7 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 	return out
 }
 
-func terminalGridRowsLiveLogicalLineIDsForExit(rows []terminalGridRow, continuedID uint64) []uint64 {
+func terminalGridRowsLiveLogicalLineIDsForExit(liveTail *terminalPrimaryLiveTail, rows []terminalGridRow, continuedID uint64) []uint64 {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -1226,6 +1226,9 @@ func terminalGridRowsLiveLogicalLineIDsForExit(rows []terminalGridRow, continued
 			WrappedSet: true,
 			Wrapped:    row.wrapped,
 		}
+	}
+	if liveTail != nil {
+		return liveTail.liveLogicalLineIDsForRows(lineIDs, damageRows)
 	}
 	return terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs, damageRows)
 }
