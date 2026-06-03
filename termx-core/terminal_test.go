@@ -1347,7 +1347,7 @@ func TestTerminalGridStoreExplicitAppendRebuildsMissingMetadataPrefix(t *testing
 	}
 }
 
-func TestTerminalGridStoreExplicitAppendRejectsNonContiguousLogicalLineID(t *testing.T) {
+func TestTerminalGridStoreExplicitAppendFallsBackForNonContiguousLogicalLineID(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 
@@ -1358,18 +1358,24 @@ func TestTerminalGridStoreExplicitAppendRejectsNonContiguousLogicalLineID(t *tes
 		{Cells: localVTermCellsFromString("c")},
 	}
 	err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID + 1, runtimeID})
-	if err == nil {
-		t.Fatal("expected explicit append with non-contiguous logical line id to fail")
+	if err != nil {
+		t.Fatalf("append with rejected explicit metadata should still append rows: %v", err)
 	}
 	if got := store.RowCount(); got != 3 {
-		t.Fatalf("expected rows to remain appended despite metadata validation failure, got %d", got)
+		t.Fatalf("expected rows to be appended despite metadata validation failure, got %d", got)
 	}
 	lineMetadata, metadataErr := readTerminalGridLineMetadata(store.dir)
-	if metadataErr != nil && !os.IsNotExist(metadataErr) {
+	if metadataErr != nil {
 		t.Fatalf("read line metadata after rejected explicit append: %v", metadataErr)
 	}
-	if metadataErr == nil && len(lineMetadata.Records) != 0 {
-		t.Fatalf("expected rejected explicit metadata not to write records, got %#v", lineMetadata.Records)
+	_, generation, _ := store.coordinates()
+	want := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 3, StartRow: 2, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, want) {
+		t.Fatalf("expected rejected explicit metadata to fall back to persisted records, got %#v want %#v", lineMetadata.Records, want)
 	}
 }
 

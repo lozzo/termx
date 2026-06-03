@@ -438,8 +438,10 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 	}
 	if s.writable && !s.removeOnClose && hasNonZeroUint64(appendedLogicalLineIDs) {
 		if err := writeTerminalGridPersistedLineRecordsMetadataForAppend(s.dir, s.baseRowID, s.generation, appendStartRow, appendedLogicalLineIDs); err != nil {
-			finish(0)
-			return err
+			if err := writeTerminalGridCompletePersistedLineRecordsMetadata(s.dir, s.baseRowID, s.generation); err != nil {
+				finish(0)
+				return err
+			}
 		}
 	}
 	if err := s.enforceMaxRowsLocked(); err != nil {
