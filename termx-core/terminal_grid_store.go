@@ -1686,7 +1686,7 @@ func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLive
 			return terminalPrimaryLiveTail{}, false
 		}
 	}
-	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount, persistedRecords)
+	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount, persistedRecords, terminalGridLineMigrationMap(metadata.Migrations))
 	if !ok {
 		return terminalPrimaryLiveTail{}, false
 	}
@@ -1717,7 +1717,7 @@ func terminalGridLineRecordMetasContainOrigin(records []terminalGridLineRecordMe
 	return false
 }
 
-func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int, persistedRecords []terminalGridLogicalLineRecord) ([]terminalLiveTailSegment, bool) {
+func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int, persistedRecords []terminalGridLogicalLineRecord, migrations map[uint64]uint64) ([]terminalLiveTailSegment, bool) {
 	if len(records) == 0 || len(rows) == 0 {
 		return nil, false
 	}
@@ -1740,6 +1740,9 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		}
 		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
 		if !terminalLiveTailRecordSealStateMatchesRows(record, segmentRows) {
+			return nil, false
+		}
+		if record.Origin != terminalLiveTailOriginReclaimed && migrations[record.ID] != 0 {
 			return nil, false
 		}
 		lineIDs := make([]uint64, len(segmentRows))

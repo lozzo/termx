@@ -548,6 +548,38 @@ func TestTerminalGridRecoveredLiveTailRejectsDuplicateRecordIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailRejectsMigratedRuntimeID(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("tail"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 1
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        runtimeID,
+			StartRow:  0,
+			EndRow:    0,
+			Sealed:    true,
+			Origin:    terminalLiveTailOriginLive,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows:   rows,
+		Migrations: []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 1}},
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected live tail record with already migrated runtime id to be rejected")
+	}
+}
+
 func TestTerminalHistoryWindowIgnoresCorruptRecoveredLiveTailMetadata(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
