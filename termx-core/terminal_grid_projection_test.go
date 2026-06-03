@@ -1030,6 +1030,86 @@ func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) 
 	}
 }
 
+func TestTerminalGridRecoveredReclaimedLiveTailCountsCommittedRowsOnce(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("p1"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+		{cells: localVTermCellsFromString("r1"), wrapped: false},
+	}); err != nil {
+		t.Fatalf("append persisted rows: %v", err)
+	}
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r1"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode reclaimed row metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{
+			{
+				ID:         3,
+				StartRow:   0,
+				EndRow:     0,
+				RowIDKnown: true,
+				FirstRowID: 2,
+				LastRowID:  2,
+				Sealed:     true,
+				Origin:     terminalLiveTailOriginReclaimed,
+				Residency:  terminalLogicalLineResidencyLiveTail,
+				Dirty:      false,
+				Generation: generation,
+			},
+			{
+				ID:         4,
+				StartRow:   1,
+				EndRow:     1,
+				RowIDKnown: true,
+				FirstRowID: 3,
+				LastRowID:  3,
+				Sealed:     true,
+				Origin:     terminalLiveTailOriginReclaimed,
+				Residency:  terminalLogicalLineResidencyLiveTail,
+				Dirty:      false,
+				Generation: generation,
+			},
+		},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write reclaimed live tail metadata: %v", err)
+	}
+
+	viewport, err := storeViewportWithRecoveredLiveTail(store, 0, 3, 20)
+	if err != nil {
+		t.Fatalf("latest viewport with recovered reclaimed tail: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"p1", "r0", "r1"}) {
+		t.Fatalf("expected latest recovered projection to include visible prefix and reclaimed suffix once, got %#v", got)
+	}
+	if viewport.LoadedRows != 3 {
+		t.Fatalf("expected latest committed depth to count recovered reclaimed rows once, got %d", viewport.LoadedRows)
+	}
+	latest := historyWindowFromCoreGridViewport("recovered-reclaimed-depth", 0, viewport)
+	if latest.BeforeOffset != 3 {
+		t.Fatalf("expected latest before cursor to count recovered reclaimed rows once, got %d", latest.BeforeOffset)
+	}
+
+	older, err := storeViewportWithRecoveredLiveTail(store, latest.BeforeOffset, 10, 20)
+	if err != nil {
+		t.Fatalf("older viewport with recovered reclaimed tail: %v", err)
+	}
+	if got := vtermRowsToStrings(older.Rows); !reflect.DeepEqual(got, []string{"p0"}) {
+		t.Fatalf("expected older recovered projection to skip reclaimed suffix, got %#v", got)
+	}
+	if older.LoadedRows != 4 {
+		t.Fatalf("expected older committed cursor to reach full persisted depth, got %d", older.LoadedRows)
+	}
+}
+
 func TestServerHistoryWindowLogicalLineIDsStayStableAcrossProjectionWidths(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-stable-line-id")
