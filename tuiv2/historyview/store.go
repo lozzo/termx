@@ -57,6 +57,9 @@ func (s *MemoryStore) ApplyHistoryWindow(window HistoryWindow) bool {
 	}
 	if window.Op == WindowOpPrepend && hasCurrent {
 		window = prependHistoryWindow(window, current)
+		if !historyWindowHasAuthoritativeLineCoverage(window) {
+			return false
+		}
 	}
 	s.windows[window.TerminalID] = cloneHistoryWindow(window)
 	if window.Op == WindowOpReplace {

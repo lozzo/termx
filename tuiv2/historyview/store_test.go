@@ -228,6 +228,34 @@ func TestMemoryStoreOlderPrependRejectsOverlappingBoundary(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreOlderPrependRejectsMergedDiscontiguousLogicalLineID(t *testing.T) {
+	store := NewMemoryStore()
+	latest := fakeWindow("term-1", WindowOpReplace, "g3:20-21:c80", 20, 21, []string{"current-a", "current-b"})
+	latest.Generation = 3
+	latest.Lines[0].LogicalLineID = 11
+	latest.Lines[1].LogicalLineID = 10
+	latest.FirstLineID = 11
+	latest.LastLineID = 10
+	if !store.ApplyHistoryWindow(latest) {
+		t.Fatal("expected latest replace")
+	}
+
+	older := fakeWindow("term-1", WindowOpPrepend, latest.Token, 8, 9, []string{"older"})
+	older.Generation = 3
+	older.LastBoundaryID = 9
+	older.Lines[0].LogicalLineID = 10
+	older.FirstLineID = 10
+	older.LastLineID = 10
+	if store.ApplyHistoryWindow(older) {
+		t.Fatal("expected prepend that creates discontiguous logical line id to be rejected")
+	}
+
+	got, ok := store.HistoryWindow("term-1")
+	if !ok || len(got.Rows) != 2 || rowText(got.Rows[0]) != "current-a" {
+		t.Fatalf("expected existing latest window to remain unchanged, got ok=%v window=%#v", ok, got)
+	}
+}
+
 func TestMemoryStoreReplaceResetsStaleWindowAndPendingToken(t *testing.T) {
 	store := NewMemoryStore()
 	store.SetPendingRequest("term-1", "stale-token")
