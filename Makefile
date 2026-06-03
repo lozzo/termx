@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-v2-migration
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -25,6 +25,7 @@ help:
 		'  make remote-pair     Build ./bin/termx and generate a termx:// pairing URI from one socket' \
 		'  make remote-open     Ensure local remote is enabled, then print the local remote URL' \
 		'  make remote-status   Show local remote status through ./bin/termx' \
+		'  make test-v2-migration Test termx-core-v2 and termx-tui-v3 migration modules' \
 		'' \
 		'Variables:' \
 		'  LOCAL_WEB_ADDR=<host:port>  default 127.0.0.1:18888' \
@@ -90,3 +91,11 @@ test-remote-ui:
 
 test-termx-cli:
 	go test ./termx-cli/...
+
+test-core-v2:
+	cd termx-core-v2 && go test ./... -count=1
+
+test-tui-v3:
+	cd termx-tui-v3 && go test ./... -count=1
+
+test-v2-migration: test-core-v2 test-tui-v3
