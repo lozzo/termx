@@ -1790,6 +1790,89 @@ func TestTerminalGridRecoveredReclaimedAndLiveTailCountsOnlyReclaimedCommittedRo
 	}
 }
 
+func TestTerminalGridRecoveredReclaimedAndResizeTailCountsOnlyReclaimedCommittedRows(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("p1"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+	})
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("resize"), WrappedSet: true, Wrapped: true},
+	})
+	if err != nil {
+		t.Fatalf("encode mixed recovered resize tail metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read persisted line metadata: %v", err)
+	}
+	resizeID := terminalLiveTailLogicalLineIDBase + 51
+	metadata.LiveRecords = []terminalGridLineRecordMeta{
+		{
+			ID:         3,
+			StartRow:   0,
+			EndRow:     0,
+			RowIDKnown: true,
+			FirstRowID: 2,
+			LastRowID:  2,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+			Generation: generation,
+		},
+		{
+			ID:        resizeID,
+			StartRow:  1,
+			EndRow:    1,
+			Sealed:    false,
+			Origin:    terminalLiveTailOriginResize,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		},
+	}
+	metadata.LiveRows = rows
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
+		t.Fatalf("write mixed recovered resize tail metadata: %v", err)
+	}
+
+	viewport, err := storeViewportWithRecoveredLiveTailForHistory(store, 0, 2, 20)
+	if err != nil {
+		t.Fatalf("latest viewport with recovered reclaimed and resize tail: %v", err)
+	}
+	latest := historyWindowFromCoreGridViewport("recovered-reclaimed-resize-tail-depth", 0, viewport)
+	if got := historyWindowRowTexts(latest); !reflect.DeepEqual(got, []string{"r0", "resize"}) {
+		t.Fatalf("expected latest limit to include recovered reclaimed suffix and dirty resize tail, got %#v", got)
+	}
+	if latest.BeforeOffset != 1 || latest.LoadedRows != 1 {
+		t.Fatalf("expected latest committed cursor to count only recovered reclaimed row, before=%d loaded=%d", latest.BeforeOffset, latest.LoadedRows)
+	}
+	if latest.LogicalTotal != 4 || latest.LoadedLines != 2 || latest.TotalRows != 4 || !latest.HasMore || latest.Generation != generation {
+		t.Fatalf("expected latest totals to preserve hidden prefix and dirty resize tail without dirty committed depth, loaded_lines=%d total_lines=%d total_rows=%d has_more=%v generation=%d", latest.LoadedLines, latest.LogicalTotal, latest.TotalRows, latest.HasMore, latest.Generation)
+	}
+	if latest.FirstRowID != 2 || latest.LastRowID != 2 {
+		t.Fatalf("expected latest row boundary to follow only reclaimed committed row, got %d..%d", latest.FirstRowID, latest.LastRowID)
+	}
+	if len(latest.Lines) != 2 || latest.Lines[1].LogicalLineID != resizeID || !latest.Lines[1].ClippedAfter {
+		t.Fatalf("expected resize dirty tail to stay open mutable line in history spans, got %#v", latest.Lines)
+	}
+
+	older, err := storeViewportWithRecoveredLiveTailForHistory(store, latest.BeforeOffset, 10, 20)
+	if err != nil {
+		t.Fatalf("older viewport after recovered reclaimed and resize tail: %v", err)
+	}
+	if got := vtermRowsToStrings(older.Rows); !reflect.DeepEqual(got, []string{"p0", "p1"}) {
+		t.Fatalf("expected older request to skip recovered tail and return persisted prefix only, got %#v", got)
+	}
+	if older.LoadedRows != 3 {
+		t.Fatalf("expected older cursor to reach full committed persisted depth, got %d", older.LoadedRows)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsReclaimedAfterLiveRecord(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

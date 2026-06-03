@@ -536,6 +536,7 @@ TUI store 至少表达：
 - 已补齐 core recovered live-tail sealed+open merge harness：相邻 sealed live record 与尾部 open live record 恢复后可以合并为一个 open segment，但 record view 必须保留 sealed prefix 与 open tail 的逐 logical line 封口状态。
 - 已收紧 core live-tail line-state 写入校验：内部 record view 的 seal state 只能是 open/sealed，未知状态不会写入 `grid.lines.json`，避免非法封口状态成为恢复输入。
 - 已补齐 core store-only recovered mixed tail harness：`grid.lines.json` 同时恢复 reclaimed committed suffix 与 dirty live tail 时，latest limit 只按 returned reclaimed rows 推进 committed cursor，dirty live line 只进入 logical total/projection，older 请求不重复 recovered suffix。
+- 已补齐 core store-only recovered reclaimed+resize tail harness：`grid.lines.json` 同时恢复 reclaimed committed suffix 与 dirty resize tail 时，latest limit 只按 returned reclaimed rows 推进 committed cursor，open resize line 只进入 mutable projection 与 logical total，older 请求不重复 recovered suffix。
 - 已收紧 core mutable live tail record 顺序校验：恢复端与 line-state 写入端都拒绝 live/resize record 之后再出现 reclaimed record；reclaimed committed suffix 只能作为 live/resize 尾部之前的 prefix。
 - 已收紧 core mutable live tail dirty origin 校验：恢复端与 line-state 写入端都拒绝同一个 live tail 中混用 live 与 resize dirty records；reclaimed prefix 后只能跟随一种 dirty mutable tail origin。
 - 已收敛 core mutable live tail record order 校验 helper：恢复端 metadata 校验与 line-state 写入校验共用同一顺序规则，避免 reclaimed prefix / dirty origin 约束后续漂移。
