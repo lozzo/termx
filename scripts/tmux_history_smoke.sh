@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-live-tail | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -33,7 +33,7 @@ Artifacts:
     copy-top-resized.raw.txt
     reattach-top.txt
     reattach-top.raw.txt
-  deep-hot:
+  deep-live-tail:
     latest-tail.txt
     latest-tail.raw.txt
     copy-committed-boundary.txt
@@ -694,9 +694,9 @@ copy_resize_log_artifact() {
   fi
 }
 
-deep_hot_expected_first_row() {
+deep_live_tail_expected_first_row() {
   local retained_committed_rows="$LINES"
-  local screen_committed_rows=$((ATTACH_ROWS - DEEP_HOT_SCREEN_HOT_ROWS))
+  local screen_committed_rows=$((ATTACH_ROWS - DEEP_LIVE_TAIL_SCREEN_LIVE_ROWS))
   if (( screen_committed_rows < 0 )); then
     screen_committed_rows=0
   fi
@@ -704,7 +704,7 @@ deep_hot_expected_first_row() {
   if (( retained_committed_rows < 0 )); then
     retained_committed_rows=0
   fi
-  printf '%d\n' $((retained_committed_rows - (2 * DEEP_HOT_PAGE_LIMIT)))
+  printf '%d\n' $((retained_committed_rows - (2 * DEEP_LIVE_TAIL_PAGE_LIMIT)))
 }
 
 wait_surface() {
@@ -768,7 +768,7 @@ wait_surface() {
       continue
     fi
     placeholder_streak="0"
-    if printf '%s\n' "$pane" | grep -Eq '([0-9]{6}|stress|COLD-[0-9]{5}|HOT-SCREEN-open-tail)'; then
+    if printf '%s\n' "$pane" | grep -Eq '([0-9]{6}|stress|PERSISTED-[0-9]{5}|LIVE-SCREEN-open-tail)'; then
       return 0
     fi
     sleep "$WAIT_DELAY"
@@ -1538,9 +1538,9 @@ build_generator_command() {
         "$BIN" "$SOCK" "$LOG" \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$(( SEED + 1 ))" "$WIDTH_HINT"
       ;;
-    deep-hot)
+    deep-live-tail)
       printf 'python3 -c %q %q %q; exec cat' \
-        'import sys; cold=int(sys.argv[1]); cols=int(sys.argv[2]); out=sys.stdout; pad=lambda label, width: label + ("." * max(0, width - len(label))); out.write("".join(f"COLD-{i:05d} committed row\n" for i in range(cold))); out.write(pad("HOT-ROW-0", cols) + pad("HOT-ROW-1", cols) + "HOT-SCREEN-open-tail"); out.flush()' \
+        'import sys; persisted=int(sys.argv[1]); cols=int(sys.argv[2]); out=sys.stdout; pad=lambda label, width: label + ("." * max(0, width - len(label))); out.write("".join(f"PERSISTED-{i:05d} committed row\n" for i in range(persisted))); out.write(pad("LIVE-ROW-0", cols) + pad("LIVE-ROW-1", cols) + "LIVE-SCREEN-open-tail"); out.flush()' \
         "$LINES" "$ATTACH_COLS"
       ;;
     *)
@@ -1607,27 +1607,27 @@ run_baseline_scenario() {
   log "PASS reattach-top -> $ROOT/reattach-top.txt"
 }
 
-run_deep_hot_scenario() {
+run_deep_live_tail_scenario() {
   local expected_first_row
   local expected_label
   local pane_main
   local pane_reattach
 
-  if (( LINES < DEEP_HOT_MATERIALIZED_LIMIT + DEEP_HOT_PAGE_LIMIT )); then
-    echo "deep-hot requires --lines >= $((DEEP_HOT_MATERIALIZED_LIMIT + DEEP_HOT_PAGE_LIMIT))" >&2
+  if (( LINES < DEEP_LIVE_TAIL_MATERIALIZED_LIMIT + DEEP_LIVE_TAIL_PAGE_LIMIT )); then
+    echo "deep-live-tail requires --lines >= $((DEEP_LIVE_TAIL_MATERIALIZED_LIMIT + DEEP_LIVE_TAIL_PAGE_LIMIT))" >&2
     exit 1
   fi
 
-  expected_first_row="$(deep_hot_expected_first_row)"
-  printf -v expected_label 'COLD-%05d committed row' "$expected_first_row"
+  expected_first_row="$(deep_live_tail_expected_first_row)"
+  printf -v expected_label 'PERSISTED-%05d committed row' "$expected_first_row"
 
   start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "main"
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_session "$SESSION_MAIN" "$pane_main" "latest-tail"
-  assert_contains "$ROOT/latest-tail.txt" "HOT-SCREEN-open-tail"
+  assert_contains "$ROOT/latest-tail.txt" "LIVE-SCREEN-open-tail"
 
-  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_MAIN" "$pane_main" "copy-committed-boundary" "$expected_label" "$DEEP_HOT_TOP_REPEATS"; then
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_MAIN" "$pane_main" "copy-committed-boundary" "$expected_label" "$DEEP_LIVE_TAIL_TOP_REPEATS"; then
     copy_gridtrace_artifact "$SESSION_MAIN" "copy-committed-boundary"
     return 1
   fi
@@ -1637,16 +1637,16 @@ run_deep_hot_scenario() {
     assert_contains "$ROOT/copy-committed-boundary.gridtrace.summary.txt" 'requested_offset="500" requested_limit="500"'
     assert_contains "$ROOT/copy-committed-boundary.gridtrace.summary.txt" "first_row_id=\"$expected_first_row\""
   fi
-  assert_first_match_equals "$ROOT/copy-committed-boundary.txt" 'COLD-[0-9]{5} committed row' "$expected_label"
+  assert_first_match_equals "$ROOT/copy-committed-boundary.txt" 'PERSISTED-[0-9]{5} committed row' "$expected_label"
 
   cleanup_tmux_session "$SESSION_MAIN"
   start_attach_tmux_session "$SESSION_REATTACH" "$TERM_ID" "reattach"
   pane_reattach="$ATTACH_SESSION_PANE"
   CLIENT_REATTACH_PID="$ATTACH_SESSION_CLIENT_PID"
   capture_session "$SESSION_REATTACH" "$pane_reattach" "reattach-latest-tail"
-  assert_contains "$ROOT/reattach-latest-tail.txt" "HOT-SCREEN-open-tail"
+  assert_contains "$ROOT/reattach-latest-tail.txt" "LIVE-SCREEN-open-tail"
 
-  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_REATTACH" "$pane_reattach" "reattach-committed-boundary" "$expected_label" "$DEEP_HOT_TOP_REPEATS"; then
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_REATTACH" "$pane_reattach" "reattach-committed-boundary" "$expected_label" "$DEEP_LIVE_TAIL_TOP_REPEATS"; then
     copy_gridtrace_artifact "$SESSION_REATTACH" "reattach-committed-boundary"
     return 1
   fi
@@ -1656,7 +1656,7 @@ run_deep_hot_scenario() {
     assert_contains "$ROOT/reattach-committed-boundary.gridtrace.summary.txt" 'requested_offset="500" requested_limit="500"'
     assert_contains "$ROOT/reattach-committed-boundary.gridtrace.summary.txt" "first_row_id=\"$expected_first_row\""
   fi
-  assert_first_match_equals "$ROOT/reattach-committed-boundary.txt" 'COLD-[0-9]{5} committed row' "$expected_label"
+  assert_first_match_equals "$ROOT/reattach-committed-boundary.txt" 'PERSISTED-[0-9]{5} committed row' "$expected_label"
 
   log "PASS latest-tail -> $ROOT/latest-tail.txt"
   log "PASS copy-committed-boundary -> $ROOT/copy-committed-boundary.txt"
@@ -2046,7 +2046,7 @@ attach_command() {
   local terminal_id="$1"
   local session_name="${2:-}"
   local trace_path=""
-  if [[ ( "$SCENARIO" == "deep-hot" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" || "$SCENARIO" == "floating-owner-marker-history" || "$SCENARIO" == "floating-owner-marker-wheel-history" || "$SCENARIO" == "floating-owner-remote-pair-wheel-history" ) && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
+  if [[ ( "$SCENARIO" == "deep-live-tail" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" || "$SCENARIO" == "floating-owner-marker-history" || "$SCENARIO" == "floating-owner-marker-wheel-history" || "$SCENARIO" == "floating-owner-remote-pair-wheel-history" ) && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
     trace_path="$ROOT/${session_name}.gridtrace.log"
   fi
   if [[ -n "$trace_path" ]]; then
@@ -2084,10 +2084,10 @@ main() {
   RESIZE_COLS="90"
   RESIZE_ROWS="28"
   G_REPEATS="24"
-  DEEP_HOT_MATERIALIZED_LIMIT="12000"
-  DEEP_HOT_PAGE_LIMIT="500"
-  DEEP_HOT_SCREEN_HOT_ROWS="3"
-  DEEP_HOT_TOP_REPEATS="4"
+  DEEP_LIVE_TAIL_MATERIALIZED_LIMIT="12000"
+  DEEP_LIVE_TAIL_PAGE_LIMIT="500"
+  DEEP_LIVE_TAIL_SCREEN_LIVE_ROWS="3"
+  DEEP_LIVE_TAIL_TOP_REPEATS="4"
   WAIT_ATTEMPTS="80"
   WAIT_DELAY="0.2"
   ATTACH_PLACEHOLDER_RETRY_ATTEMPTS="24"
@@ -2205,8 +2205,8 @@ main() {
     baseline|standard)
       run_baseline_scenario
       ;;
-    deep-hot)
-      run_deep_hot_scenario
+    deep-live-tail)
+      run_deep_live_tail_scenario
       ;;
     floating-owner-resize)
       run_floating_owner_resize_scenario
