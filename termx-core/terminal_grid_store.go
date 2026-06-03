@@ -1381,7 +1381,7 @@ func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogic
 			return nil, false
 		}
 		seenIDs[record.id] = struct{}{}
-		if record.generation != 0 && generation != 0 && record.generation != generation {
+		if generation != 0 && record.generation != generation {
 			return nil, false
 		}
 		if !record.sealed {
@@ -1411,7 +1411,7 @@ func terminalGridSealedPersistedLogicalLineRecordPrefix(records []terminalGridLo
 			return nil
 		}
 		seenIDs[record.id] = struct{}{}
-		if record.generation != 0 && generation != 0 && record.generation != generation {
+		if generation != 0 && record.generation != generation {
 			return nil
 		}
 		if !record.sealed {

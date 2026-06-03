@@ -379,6 +379,12 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 				Sealed: false,
 			},
 		},
+		{
+			name: "missing-generation",
+			record: terminalGridLineRecordMeta{
+				Sealed: true,
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -409,7 +415,9 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 				record.Origin = terminalLiveTailOriginReclaimed
 			}
 			record.Residency = terminalLogicalLineResidencyPersisted
-			record.Generation = generation
+			if tc.name != "missing-generation" {
+				record.Generation = generation
+			}
 			if err := writeTerminalGridLineMetadata(dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{record}}); err != nil {
 				t.Fatalf("write line metadata: %v", err)
 			}

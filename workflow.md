@@ -419,6 +419,7 @@ TUI store 至少表达：
 - 已将 mutable live tail record 的 residency、dirty、generation 写入 core grid line metadata sidecar，并开始随 live row payload 一起作为恢复输入；当前恢复入口限定在 `history.window` latest store-only projection。
 - 已让 core persisted store 在 replay/viewport/reclaim 路径优先使用 `grid.lines.json` 中完整有效的 persisted logical line record 恢复 logical line 边界、logical line id 与 logical total；metadata 缺失、损坏或与当前 index 不匹配时继续回退到 index/wrapped 推导。当前恢复范围覆盖 persisted screen projection。
 - 已收紧 core persisted logical line record metadata 恢复校验：persisted record 必须是 sealed、clean、归一后的 persisted/reclaimed origin、persisted id namespace、persisted residency、连续覆盖当前 index 且 generation 匹配，并且不能携带 row 坐标；未封口 record、未迁移的 runtime id、live/resize origin、dirty、未知 origin 或 row 坐标 sidecar 会被视为损坏并回退。
+- 已继续收紧 core persisted logical line record metadata 恢复校验：当当前 store generation 非零时，persisted record 必须携带完全匹配的 generation；generation=0 不再被当作可消费的 persisted sidecar truth。
 - 已收紧 core persisted logical line record metadata 写出：只有 sealed persisted logical line records 才写入 `grid.lines.json`，尾部未封口 wrapped prefix 不再伪装成 persisted sidecar truth；如果 index 中存在 sealed prefix 加未封口尾部，只写 sealed prefix，恢复端仍必须完整覆盖当前 index 才消费为 persisted screen projection truth。
 - 已让 core persisted retention 实际丢弃 rows 后立即刷新 `grid.lines.json` 中的 persisted logical line records，使 sidecar 在运行期跟随当前 index、base row id 与 generation 更新，不再只等 `Close()` 写出。
 - 已让 core persisted append 完成后立即刷新 sealed-only persisted logical line records sidecar；正常运行期追加已封口 rows 后不再等 `Close()` 才生成 persisted logical line metadata。
