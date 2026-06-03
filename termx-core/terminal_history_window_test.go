@@ -189,6 +189,29 @@ func TestHistoryWindowDoesNotMergeLogicalLineAcrossFilteredRows(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowFiltersRowIDBoundaryWithRows(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("fallback-a"), vtermCells("kept"), vtermCells("fallback-b")},
+		Ownership:                  []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs:             []uint64{10, 11, 12},
+		LogicalLineIDAuthoritative: []bool{false, true, false},
+		LoadedRows:                 3,
+		TotalRows:                  3,
+		LogicalTotal:               3,
+		Generation:                 7,
+		FirstRowID:                 20,
+		LastRowID:                  22,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-row-boundary", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"kept"}) {
+		t.Fatalf("expected only authoritative row after filtering, got %#v", got)
+	}
+	if window.FirstRowID != 21 || window.LastRowID != 21 {
+		t.Fatalf("expected row boundaries to follow kept authoritative row, first=%d last=%d window=%#v", window.FirstRowID, window.LastRowID, window)
+	}
+}
+
 func TestHistoryWindowRejectsFallbackOnlyPersistedLogicalLineIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

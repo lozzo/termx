@@ -495,6 +495,7 @@ TUI store 至少表达：
 - 已将 core `history.window` 的全局 logical total 来源收敛为 authoritative persisted logical line count 加 stable live tail count；store 级 `LogicalLineCount()` 可继续作为 legacy 投影兼容计数，但不再让窗口外 fallback/index/wrapped 推导污染 authoritative total。
 - 已将 core `history.window` token 的 logical line boundary 收敛为只使用 authoritative logical line id；fallback/non-authoritative id 不再进入 token，避免 legacy 投影推导影响 stale response guard 边界。
 - 已继续收紧 core latest `history.window` 的分页信号：当 latest window 已覆盖全部 authoritative logical lines 时，窗口外 fallback-only prefix 不再通过 `HasMore` 或 `TotalRows` 暴露为可继续请求的 older history。
+- 已继续收紧 core `history.window` 过滤后的 row boundary：过滤 fallback/non-authoritative rows 后，`FirstRowID` / `LastRowID` 会重算为实际保留的 authoritative row 范围，不再保留 raw legacy viewport 的被过滤边界。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

@@ -414,6 +414,10 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	filtered.Ownership = filterStringsByIndexes(viewport.Ownership, keep)
 	filtered.LogicalLineIDs = filterUint64sByIndexes(viewport.LogicalLineIDs, keep)
 	filtered.LogicalLineIDAuthoritative = filterBoolsByIndexes(viewport.LogicalLineIDAuthoritative, keep)
+	if len(keep) > 0 && (viewport.FirstRowID != 0 || viewport.LastRowID != 0) {
+		filtered.FirstRowID = viewport.FirstRowID + uint64(keep[0])
+		filtered.LastRowID = viewport.FirstRowID + uint64(keep[len(keep)-1])
+	}
 	filtered.LoadedRows -= removedCommittedRows
 	if filtered.LoadedRows < filtered.BeforeOffset {
 		filtered.LoadedRows = filtered.BeforeOffset
