@@ -149,11 +149,40 @@ func (tail terminalPrimaryLiveTail) reclaimedCommittedRowCount() int {
 	return total
 }
 
+func (tail terminalPrimaryLiveTail) authoritativeReclaimedCommittedRowCount() int {
+	total := 0
+	for _, segment := range tail.segments {
+		if !terminalLiveTailReclaimedSegmentAuthoritative(segment) {
+			continue
+		}
+		total += len(segment.rows)
+	}
+	return total
+}
+
 func (tail terminalPrimaryLiveTail) earliestReclaimedRowID() (uint64, bool) {
 	var earliest uint64
 	found := false
 	for _, segment := range tail.segments {
 		if segment.origin != terminalLiveTailOriginReclaimed {
+			continue
+		}
+		if segment.firstRowID == 0 && segment.lastRowID == 0 {
+			continue
+		}
+		if !found || segment.firstRowID < earliest {
+			earliest = segment.firstRowID
+			found = true
+		}
+	}
+	return earliest, found
+}
+
+func (tail terminalPrimaryLiveTail) earliestAuthoritativeReclaimedRowID() (uint64, bool) {
+	var earliest uint64
+	found := false
+	for _, segment := range tail.segments {
+		if !terminalLiveTailReclaimedSegmentAuthoritative(segment) {
 			continue
 		}
 		if segment.firstRowID == 0 && segment.lastRowID == 0 {
@@ -426,6 +455,10 @@ func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailW
 			out.rowIDRanges = append(out.rowIDRanges, make([]terminalGridRowIDRange, localEnd-localStart)...)
 			continue
 		}
+		if !terminalLiveTailReclaimedSegmentAuthoritative(segment) {
+			out.rowIDRanges = append(out.rowIDRanges, make([]terminalGridRowIDRange, localEnd-localStart)...)
+			continue
+		}
 		if terminalLiveTailReclaimedSegmentHasRowIDs(segment) {
 			for rowID := segment.firstRowID + uint64(localStart); rowID <= segment.firstRowID+uint64(localEnd-1); rowID++ {
 				out.rowIDRanges = append(out.rowIDRanges, terminalGridRowIDRange{First: rowID, Last: rowID, Known: true})
@@ -682,6 +715,10 @@ func terminalLiveTailReclaimedSegmentHasRowIDs(segment terminalLiveTailSegment) 
 		}
 	}
 	return true
+}
+
+func terminalLiveTailReclaimedSegmentAuthoritative(segment terminalLiveTailSegment) bool {
+	return segment.origin == terminalLiveTailOriginReclaimed && terminalLiveTailReclaimedSegmentHasRowIDs(segment)
 }
 
 func (tail *terminalPrimaryLiveTail) setWrapPending(wrapPending bool) {

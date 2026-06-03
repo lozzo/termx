@@ -631,6 +631,15 @@ func storeViewportWithRecoveredLiveTail(store *terminalGridStore, beforeOffset i
 	return viewport, nil
 }
 
+func storeViewportWithRecoveredLiveTailForHistory(store *terminalGridStore, beforeOffset int, limit int, cols int) (terminalGridViewport, error) {
+	if beforeOffset == 0 {
+		if liveTail, ok := store.recoveredLiveTailFromMetadata(); ok {
+			return historyCombinedGridViewportFromStore(store, beforeOffset, limit, cols, liveTail)
+		}
+	}
+	return storeViewportWithRecoveredLiveTail(store, beforeOffset, limit, cols)
+}
+
 func splitGridSnapshotRows(rows [][]vterm.Cell, screenHeight int, cols int) ([][]vterm.Cell, [][]vterm.Cell) {
 	if screenHeight <= 0 {
 		screenHeight = 1

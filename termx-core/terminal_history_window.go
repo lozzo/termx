@@ -123,7 +123,7 @@ func (s *Server) historyCoreGridViewport(id string, opt GridViewportOptions) (te
 		if cols <= 0 {
 			cols = 80
 		}
-		viewport, viewportErr := storeViewportWithRecoveredLiveTail(store, beforeOffset, limit, cols)
+		viewport, viewportErr := storeViewportWithRecoveredLiveTailForHistory(store, beforeOffset, limit, cols)
 		viewport.Size.Rows = s.cfg.defaultSize.Rows
 		return viewport, viewportErr
 	}
@@ -140,23 +140,39 @@ func (s *Server) historyCoreGridViewport(id string, opt GridViewportOptions) (te
 	if cols <= 0 {
 		cols = 80
 	}
-	viewport, viewportErr := term.combinedGridViewport(offset, limit, cols, liveTail)
+	viewport, viewportErr := historyCombinedGridViewportFromStore(term.grid, offset, limit, cols, liveTail)
 	viewport.Size.Rows = size.Rows
 	return viewport, viewportErr
 }
 
 func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols int, liveTail terminalPrimaryLiveTail) (terminalGridViewport, error) {
+	return combinedGridViewportFromStoreWithOptions(store, offset, limit, cols, liveTail, false)
+}
+
+func historyCombinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols int, liveTail terminalPrimaryLiveTail) (terminalGridViewport, error) {
+	return combinedGridViewportFromStoreWithOptions(store, offset, limit, cols, liveTail, true)
+}
+
+func combinedGridViewportFromStoreWithOptions(store *terminalGridStore, offset, limit, cols int, liveTail terminalPrimaryLiveTail, authoritativeHistory bool) (terminalGridViewport, error) {
 	var result terminalGridViewport
 	if store == nil {
 		return result, nil
 	}
 	offset, limit = sanitizeGridViewportWindow(offset, limit)
 	_, generation, persistedRows := store.coordinates()
-	visiblePersistedRows := persistedRows - liveTail.reclaimedCommittedRowCount()
-	if firstReclaimedRowID, ok := liveTail.earliestReclaimedRowID(); ok {
+	reclaimedCommittedRows := liveTail.reclaimedCommittedRowCount()
+	if authoritativeHistory {
+		reclaimedCommittedRows = liveTail.authoritativeReclaimedCommittedRowCount()
+	}
+	visiblePersistedRows := persistedRows - reclaimedCommittedRows
+	earliestReclaimedRowID, hasReclaimedRowID := liveTail.earliestReclaimedRowID()
+	if authoritativeHistory {
+		earliestReclaimedRowID, hasReclaimedRowID = liveTail.earliestAuthoritativeReclaimedRowID()
+	}
+	if hasReclaimedRowID {
 		baseRowID, _, _ := store.coordinates()
-		if firstReclaimedRowID >= baseRowID {
-			coveredStart := int(firstReclaimedRowID - baseRowID)
+		if earliestReclaimedRowID >= baseRowID {
+			coveredStart := int(earliestReclaimedRowID - baseRowID)
 			if coveredStart < visiblePersistedRows {
 				visiblePersistedRows = coveredStart
 			}
@@ -391,7 +407,9 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		}
 		switch stringAt(viewport.Ownership, i) {
 		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:
-			removedCommittedRows++
+			if historyWindowFilteredRowCountsAsCommitted(viewport, i) {
+				removedCommittedRows++
+			}
 			if logicalLineID == 0 {
 				rawLogicalLineID := uint64At(viewport.LogicalLineIDs, i)
 				if rawLogicalLineID != 0 {
@@ -458,6 +476,17 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		filtered.FirstLineClippedBefore = false
 	}
 	return filtered
+}
+
+func historyWindowFilteredRowCountsAsCommitted(viewport terminalGridViewport, row int) bool {
+	switch stringAt(viewport.Ownership, row) {
+	case RowOwnershipPersisted:
+		return true
+	case RowOwnershipLiveTailReclaimed:
+		return terminalGridRowIDRangeAt(viewport.RowIDRanges, row).Known
+	default:
+		return false
+	}
 }
 
 func historyWindowAuthoritativeLogicalLineIDs(viewport terminalGridViewport) []uint64 {

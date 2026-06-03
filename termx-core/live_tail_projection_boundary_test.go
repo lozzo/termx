@@ -331,6 +331,33 @@ func TestTerminalLatestCombinedViewportCountsReclaimedCommittedRowsOnce(t *testi
 	}
 }
 
+func TestTerminalLatestCombinedViewportDoesNotHidePersistedRowsForNonAuthoritativeReclaimedTail(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+		{cells: localVTermCellsFromString("r1"), wrapped: false},
+	})
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefix([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r1"), WrappedSet: true, Wrapped: false},
+	}, store.generation, 1, 2)
+
+	viewport, err := historyCombinedGridViewportFromStore(store, 0, 10, 20, tail)
+	if err != nil {
+		t.Fatalf("combined viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport("non-authoritative-reclaimed", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"p0", "r0", "r1"}) {
+		t.Fatalf("expected non-authoritative reclaimed rows not to hide persisted authoritative rows, got %#v window=%#v", got, window)
+	}
+	if window.LoadedRows != 3 || window.LogicalTotal != 3 || window.BeforeOffset != 3 {
+		t.Fatalf("expected persisted authoritative depth to stay intact, loaded=%d total=%d before=%d window=%#v", window.LoadedRows, window.LogicalTotal, window.BeforeOffset, window)
+	}
+}
+
 func TestTerminalLatestCombinedViewportLogicalTotalUsesProjectionIDsNotRecoverableRecords(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
