@@ -536,6 +536,7 @@ TUI store 至少表达：
 - 已补齐 core recovered live-tail sealed+open merge harness：相邻 sealed live record 与尾部 open live record 恢复后可以合并为一个 open segment，但 record view 必须保留 sealed prefix 与 open tail 的逐 logical line 封口状态。
 - 已收紧 core live-tail line-state 写入校验：内部 record view 的 seal state 只能是 open/sealed，未知状态不会写入 `grid.lines.json`，避免非法封口状态成为恢复输入。
 - 已补齐 core store-only recovered mixed tail harness：`grid.lines.json` 同时恢复 reclaimed committed suffix 与 dirty live tail 时，latest limit 只按 returned reclaimed rows 推进 committed cursor，dirty live line 只进入 logical total/projection，older 请求不重复 recovered suffix。
+- 已收紧 core mutable live tail record 顺序校验：恢复端与 line-state 写入端都拒绝 live/resize record 之后再出现 reclaimed record；reclaimed committed suffix 只能作为 live/resize 尾部之前的 prefix。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

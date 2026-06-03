@@ -1148,6 +1148,30 @@ func TestTerminalGridLiveTailLineStateRejectsUnknownSealState(t *testing.T) {
 	}
 }
 
+func TestTerminalGridLiveTailLineStateRejectsReclaimedAfterLiveRecord(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("live"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+	}
+	records := []terminalLiveTailLogicalLineRecord{
+		{id: terminalLiveTailLogicalLineIDBase + 1, startRow: 0, endRow: 0, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginLive, residency: terminalLogicalLineResidencyLiveTail, dirty: true},
+		{id: 1, startRow: 1, endRow: 1, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyLiveTail, generation: 7, rowIDKnown: true, firstRowID: 0, lastRowID: 0},
+	}
+
+	if err := store.recordLiveTailLineState(records, rows); err != nil {
+		t.Fatalf("record invalid ordered live tail metadata: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected invalid live-before-reclaimed record view to suppress metadata, got records=%#v rows=%#v", metadata.LiveRecords, metadata.LiveRows)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailPreservesResizeOrigin(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
@@ -1628,6 +1652,37 @@ func TestTerminalGridRecoveredReclaimedAndLiveTailCountsOnlyReclaimedCommittedRo
 	}
 	if older.LoadedRows != 3 {
 		t.Fatalf("expected older cursor to reach full committed persisted depth, got %d", older.LoadedRows)
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailRejectsReclaimedAfterLiveRecord(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+	})
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("live"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode invalid ordered tail metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read persisted line metadata: %v", err)
+	}
+	metadata.LiveRecords = []terminalGridLineRecordMeta{
+		{ID: terminalLiveTailLogicalLineIDBase + 60, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+		{ID: 1, StartRow: 1, EndRow: 1, RowIDKnown: true, FirstRowID: 0, LastRowID: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyLiveTail, Dirty: false, Generation: generation},
+	}
+	metadata.LiveRows = rows
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
+		t.Fatalf("write invalid ordered tail metadata: %v", err)
+	}
+	if tail, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatalf("expected reclaimed record after live record to be rejected, got %#v", tail)
 	}
 }
 
