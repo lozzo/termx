@@ -3309,7 +3309,7 @@ func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLo
 	return out
 }
 
-func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp, generation uint64) bool {
+func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp, baseRowID uint64, generation uint64, rowCount int) bool {
 	if len(records) == 0 || len(rows) == 0 {
 		return len(records) == 0 && len(rows) == 0
 	}
@@ -3343,6 +3343,13 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 				return false
 			}
 			if generation != 0 && record.generation != generation {
+				return false
+			}
+			if rowCount <= 0 || record.firstRowID < baseRowID {
+				return false
+			}
+			lastPersistedRowID := baseRowID + uint64(rowCount) - 1
+			if record.lastRowID > lastPersistedRowID {
 				return false
 			}
 			if int(record.lastRowID-record.firstRowID)+1 != record.endRow-record.startRow+1 {
@@ -3421,8 +3428,8 @@ func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLo
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	_, generation, _ := s.coordinates()
-	if !terminalLiveTailRecordsValidForLineState(records, rows, generation) {
+	baseRowID, generation, rowCount := s.coordinates()
+	if !terminalLiveTailRecordsValidForLineState(records, rows, baseRowID, generation, rowCount) {
 		metadata.LiveRecords = nil
 		metadata.LiveRows = nil
 		return writeTerminalGridLineMetadata(dir, metadata)
