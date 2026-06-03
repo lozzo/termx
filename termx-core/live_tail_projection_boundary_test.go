@@ -282,6 +282,42 @@ func TestTerminalLatestLiveTailLimitDoesNotInventCommittedCursor(t *testing.T) {
 	}
 }
 
+func TestTerminalLatestLiveTailLimitMarksClippedMutableLineBefore(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	var tail terminalPrimaryLiveTail
+	lineID := terminalLiveTailLogicalLineIDBase + 20
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("a0"), RowKind: "live-line", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("a1"), RowKind: "live-line", WrappedSet: true, Wrapped: false},
+	}, []uint64{lineID, lineID}, false)
+
+	viewport, err := historyCombinedGridViewportFromStore(store, 0, 1, 4, tail)
+	if err != nil {
+		t.Fatalf("history viewport for clipped mutable live tail: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport("live-tail-limit-clipped", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"a1"}) {
+		t.Fatalf("expected latest limit to return the visible tail of the mutable live line, got %#v", got)
+	}
+	if window.BeforeOffset != 0 || window.LoadedRows != 0 || window.Generation != 0 || window.FirstRowID != 0 || window.LastRowID != 0 {
+		t.Fatalf("expected clipped mutable latest limit not to invent committed cursor or row boundary, window=%#v", window)
+	}
+	if window.LoadedLines != 0 || window.LogicalTotal != 1 || window.TotalRows != 2 || !window.HasMore {
+		t.Fatalf("expected clipped mutable latest limit to expose clipped prefix without loaded line start, loaded=%d total=%d rows=%d has_more=%v", window.LoadedLines, window.LogicalTotal, window.TotalRows, window.HasMore)
+	}
+	if window.FirstLineID != 0 || window.LastLineID != 0 {
+		t.Fatalf("expected clipped-before mutable line not to expose loaded line boundaries, first=%d last=%d", window.FirstLineID, window.LastLineID)
+	}
+	if len(window.Lines) != 1 {
+		t.Fatalf("expected one clipped mutable logical line span, got %#v", window.Lines)
+	}
+	span := window.Lines[0]
+	if span.StartRow != 0 || span.EndRow != 0 || span.RowKind != "live-line" || span.LogicalLineID != lineID || !span.ClippedBefore || span.ClippedAfter {
+		t.Fatalf("expected latest limit to mark mutable live line clipped-before only, got %#v", span)
+	}
+}
+
 func TestTerminalLatestCombinedViewportLogicalTotalIncludesVisiblePersistedAndLiveTailLines(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

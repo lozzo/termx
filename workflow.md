@@ -514,6 +514,7 @@ TUI store 至少表达：
 - 已继续收紧 core `history.window` 空 rows 响应：即使内部 viewport 携带 advisory `TotalRows`、generation 或 row boundary，只要没有 authoritative rows，对外窗口也只保留 exhausted cursor，不暴露 token、row boundary 或 logical total。
 - 已补齐 core server 级 recovered resize mutable live tail harness：重启后 `HistoryWindow` latest 会把 `origin=resize` 的可恢复尾部作为 dirty runtime mutable live tail 暴露，不产生 committed depth；older 请求不会把 resize tail 当 persisted history 返回。
 - 已补齐 core latest mutable live tail limit harness：latest replace 裁掉较旧 mutable live line 时只返回当前窗口内的 authoritative mutable 行，`LogicalTotal` 仍覆盖完整 live tail logical lines，但不生成 committed `BeforeOffset`、generation 或 row boundary。
+- 已补齐 core latest mutable live tail 同一逻辑行 limit 裁剪 harness：latest replace 裁掉同一 runtime stable logical line 的前半段时会标记 `clipped-before`、`LoadedLines=0`、保留 `HasMore=true`，但不生成 committed cursor、generation、row boundary 或 loaded line boundary。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
