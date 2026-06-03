@@ -1343,6 +1343,49 @@ func TestTerminalGridStorePersistedLineMetadataRejectsMismatchedPayloadMetadata(
 	}
 }
 
+func TestTerminalGridCoalesceAdjacentLogicalLineRecordsMergesPayloadMetadata(t *testing.T) {
+	start := time.Unix(10, 0).UTC()
+	middle := time.Unix(20, 0).UTC()
+	end := time.Unix(30, 0).UTC()
+	records := terminalGridCoalesceAdjacentLogicalLineRecords([]terminalGridLogicalLineRecord{
+		{
+			id:             7,
+			startRow:       0,
+			endRow:         0,
+			sealed:         false,
+			origin:         terminalLiveTailOriginReclaimed,
+			residency:      terminalLogicalLineResidencyPersisted,
+			rowKind:        "line-kind",
+			timestampStart: middle,
+			timestampEnd:   middle,
+			generation:     11,
+			source:         terminalLogicalLineRecordSourceExplicit,
+		},
+		{
+			id:             7,
+			startRow:       1,
+			endRow:         1,
+			sealed:         true,
+			origin:         terminalLiveTailOriginReclaimed,
+			residency:      terminalLogicalLineResidencyPersisted,
+			timestampStart: start,
+			timestampEnd:   end,
+			generation:     11,
+			source:         terminalLogicalLineRecordSourceExplicit,
+		},
+	})
+	if len(records) != 1 {
+		t.Fatalf("expected adjacent records to coalesce, got %#v", records)
+	}
+	record := records[0]
+	if record.startRow != 0 || record.endRow != 1 || !record.sealed {
+		t.Fatalf("expected coalesced row range and seal state, got %#v", record)
+	}
+	if record.rowKind != "line-kind" || !record.timestampStart.Equal(start) || !record.timestampEnd.Equal(end) {
+		t.Fatalf("expected coalesced record to preserve payload metadata, got %#v", record)
+	}
+}
+
 func TestTerminalGridStoreExplicitLogicalLineIDsSpanPageRotation(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

@@ -1830,12 +1830,28 @@ func terminalGridCoalesceAdjacentLogicalLineRecords(records []terminalGridLogica
 			if prev.id == record.id && prev.endRow+1 == record.startRow && prev.source == record.source && prev.residency == record.residency && prev.origin == record.origin && prev.dirty == record.dirty && prev.generation == record.generation {
 				prev.endRow = record.endRow
 				prev.sealed = record.sealed
+				terminalGridMergeLogicalLineRecordPayloadMetadata(prev, record)
 				continue
 			}
 		}
 		out = append(out, record)
 	}
 	return out
+}
+
+func terminalGridMergeLogicalLineRecordPayloadMetadata(left *terminalGridLogicalLineRecord, right terminalGridLogicalLineRecord) {
+	if left == nil {
+		return
+	}
+	if left.rowKind == "" {
+		left.rowKind = right.rowKind
+	}
+	if !right.timestampStart.IsZero() && (left.timestampStart.IsZero() || right.timestampStart.Before(left.timestampStart)) {
+		left.timestampStart = right.timestampStart
+	}
+	if !right.timestampEnd.IsZero() && (left.timestampEnd.IsZero() || right.timestampEnd.After(left.timestampEnd)) {
+		left.timestampEnd = right.timestampEnd
+	}
 }
 
 func terminalGridInMemoryPersistedLineRecordsValid(records []terminalGridLogicalLineRecord, rowCount int) bool {
