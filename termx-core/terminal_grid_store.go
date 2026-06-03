@@ -107,6 +107,40 @@ func terminalGridLogicalLineRecordAuthoritative(record terminalGridLogicalLineRe
 	return record.source == terminalLogicalLineRecordSourceExplicit
 }
 
+type terminalGridLogicalLinePayload struct {
+	rows []terminalGridRow
+}
+
+func terminalGridLogicalLineRecordPayload(record terminalGridLogicalLineRecord, rows []terminalGridRow) (terminalGridLogicalLinePayload, bool) {
+	if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(rows) {
+		return terminalGridLogicalLinePayload{}, false
+	}
+	return terminalGridLogicalLinePayload{rows: rows[record.startRow : record.endRow+1]}, true
+}
+
+func (payload terminalGridLogicalLinePayload) rowKind() string {
+	return terminalLogicalLineRowKindFromGridRows(payload.rows)
+}
+
+func (payload terminalGridLogicalLinePayload) timestampStart() time.Time {
+	return terminalLogicalLineTimestampStartFromGridRows(payload.rows)
+}
+
+func (payload terminalGridLogicalLinePayload) timestampEnd() time.Time {
+	return terminalLogicalLineTimestampEndFromGridRows(payload.rows)
+}
+
+func (payload terminalGridLogicalLinePayload) cellRows() [][]vterm.Cell {
+	if len(payload.rows) == 0 {
+		return nil
+	}
+	out := make([][]vterm.Cell, 0, len(payload.rows))
+	for _, row := range payload.rows {
+		out = append(out, cloneVTermCells(row.cells))
+	}
+	return out
+}
+
 type terminalGridMetadata struct {
 	StoreVersion  int
 	TerminalID    string
@@ -3541,13 +3575,13 @@ func terminalGridLogicalLineRecordsWithPayloadMetadata(records []terminalGridLog
 	out := cloneTerminalGridLogicalLineRecords(records)
 	for i := range out {
 		record := &out[i]
-		if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(rows) {
+		payload, ok := terminalGridLogicalLineRecordPayload(*record, rows)
+		if !ok {
 			continue
 		}
-		recordRows := rows[record.startRow : record.endRow+1]
-		record.rowKind = terminalLogicalLineRowKindFromGridRows(recordRows)
-		record.timestampStart = terminalLogicalLineTimestampStartFromGridRows(recordRows)
-		record.timestampEnd = terminalLogicalLineTimestampEndFromGridRows(recordRows)
+		record.rowKind = payload.rowKind()
+		record.timestampStart = payload.timestampStart()
+		record.timestampEnd = payload.timestampEnd()
 	}
 	return out
 }
@@ -3566,21 +3600,21 @@ func terminalGridLogicalLineRecordPayloadMetadataMatchesRows(records []terminalG
 		if record.rowKind == "" && record.timestampStart.IsZero() && record.timestampEnd.IsZero() {
 			continue
 		}
-		if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(rows) {
+		payload, ok := terminalGridLogicalLineRecordPayload(record, rows)
+		if !ok {
 			return false
 		}
-		recordRows := rows[record.startRow : record.endRow+1]
-		if record.rowKind != "" && record.rowKind != terminalLogicalLineRowKindFromGridRows(recordRows) {
+		if record.rowKind != "" && record.rowKind != payload.rowKind() {
 			return false
 		}
 		if !record.timestampStart.IsZero() {
-			start := terminalLogicalLineTimestampStartFromGridRows(recordRows)
+			start := payload.timestampStart()
 			if start.IsZero() || !start.Equal(record.timestampStart) {
 				return false
 			}
 		}
 		if !record.timestampEnd.IsZero() {
-			end := terminalLogicalLineTimestampEndFromGridRows(recordRows)
+			end := payload.timestampEnd()
 			if end.IsZero() || !end.Equal(record.timestampEnd) {
 				return false
 			}

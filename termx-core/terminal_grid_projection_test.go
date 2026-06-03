@@ -115,6 +115,41 @@ func TestTerminalGridProjectionCarriesLogicalLineRecordTimestampRange(t *testing
 	}
 }
 
+func TestTerminalGridLogicalLineRecordPayloadCarriesCellsAndMetadata(t *testing.T) {
+	start := time.Unix(10, 0).UTC()
+	end := time.Unix(30, 0).UTC()
+	rows := []terminalGridRow{
+		{cells: localVTermCellsFromString("aa"), rowKind: "line-kind", timestamp: end, wrapped: true},
+		{cells: localVTermCellsFromString("bb"), timestamp: start, wrapped: false},
+		{cells: localVTermCellsFromString("cc"), rowKind: "next-kind", timestamp: end},
+	}
+	records := []terminalGridLogicalLineRecord{{
+		id:        101,
+		startRow:  0,
+		endRow:    1,
+		sealed:    true,
+		origin:    terminalLiveTailOriginReclaimed,
+		residency: terminalLogicalLineResidencyPersisted,
+		source:    terminalLogicalLineRecordSourceExplicit,
+	}}
+
+	payload, ok := terminalGridLogicalLineRecordPayload(records[0], rows)
+	if !ok {
+		t.Fatal("expected logical line record payload")
+	}
+	if got := vtermRowsToStrings(payload.cellRows()); !reflect.DeepEqual(got, []string{"aa", "bb"}) {
+		t.Fatalf("expected payload cells from record row range, got %#v", got)
+	}
+	if payload.rowKind() != "line-kind" || !payload.timestampStart().Equal(start) || !payload.timestampEnd().Equal(end) {
+		t.Fatalf("unexpected payload metadata row_kind=%q start=%v end=%v", payload.rowKind(), payload.timestampStart(), payload.timestampEnd())
+	}
+
+	withMetadata := terminalGridLogicalLineRecordsWithPayloadMetadata(records, rows)
+	if len(withMetadata) != 1 || withMetadata[0].rowKind != "line-kind" || !withMetadata[0].timestampStart.Equal(start) || !withMetadata[0].timestampEnd.Equal(end) {
+		t.Fatalf("expected record metadata to come from logical line payload, got %#v", withMetadata)
+	}
+}
+
 func TestTerminalGridProjectionSuppressesMixedAuthorityReflowedSourceRows(t *testing.T) {
 	rows := []terminalGridRow{
 		{cells: localVTermCellsFromString("ab"), rowKind: "line0", wrapped: true},
