@@ -2639,6 +2639,14 @@ func TestTerminalReclaimedTailModifiedBeforeExitCommitsAsNewLogicalLine(t *testi
 	if got := term.primaryLiveTail.authoritativeReclaimedTailRowCount(baseRowID, persistedRows); got != 2 {
 		t.Fatalf("expected modified reclaimed commit to replace two persisted tail rows, got %d", got)
 	}
+	beforeViewport, err := historyCombinedGridViewportFromStore(store, 0, 10, 5, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("history viewport before modified reclaimed seal: %v", err)
+	}
+	beforeWindow := historyWindowFromCoreGridViewport(term.id, 0, beforeViewport)
+	if beforeWindow.Token == "" || beforeWindow.Generation == 0 {
+		t.Fatalf("expected pre-recommit history window to carry generation and token, got token=%q generation=%d", beforeWindow.Token, beforeWindow.Generation)
+	}
 
 	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
 		t.Fatalf("seal modified reclaimed live tail: %v", err)
@@ -2652,6 +2660,14 @@ func TestTerminalReclaimedTailModifiedBeforeExitCommitsAsNewLogicalLine(t *testi
 	}
 	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"older", "EDIT0", "grow1"}) {
 		t.Fatalf("expected modified reclaimed suffix to be appended as new persisted content, got %#v", got)
+	}
+	afterViewport, err := historyCombinedGridViewportFromStore(store, 0, 10, 5, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("history viewport after modified reclaimed seal: %v", err)
+	}
+	afterWindow := historyWindowFromCoreGridViewport(term.id, 0, afterViewport)
+	if afterWindow.Generation <= beforeWindow.Generation || afterWindow.Token == beforeWindow.Token {
+		t.Fatalf("expected modified reclaimed recommit to bump history generation/token, before=%d/%q after=%d/%q", beforeWindow.Generation, beforeWindow.Token, afterWindow.Generation, afterWindow.Token)
 	}
 	if len(viewport.LogicalLineIDs) != 3 {
 		t.Fatalf("expected logical line ids for all rows, got %#v", viewport.LogicalLineIDs)

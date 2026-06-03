@@ -380,7 +380,28 @@ func (s *terminalGridStore) truncateTailRows(count int) error {
 	if err := pruneUnreferencedTerminalGridPages(s.dir, refs); err != nil {
 		return err
 	}
+	s.generation++
+	if s.generation == 0 {
+		s.generation = 1
+	}
 	if s.writable && !s.removeOnClose {
+		metadata := terminalGridMetadata{
+			StoreVersion: terminalGridStoreVersion,
+			TerminalID:   s.terminalID,
+			RowCodec:     terminalGridRowCodec,
+			IndexCodec:   terminalGridIndexCodec,
+			PageMaxBytes: s.pageMaxBytes,
+			RowCount:     s.rowCount,
+			PageCount:    int(s.currentSeq) + 1,
+			BaseRowID:    s.baseRowID,
+			Generation:   s.generation,
+		}
+		if existing, err := readTerminalGridMetadata(s.dir); err == nil {
+			metadata.CreatedAtUnix = existing.CreatedAtUnix
+		}
+		if err := writeTerminalGridMetadata(s.dir, metadata); err != nil {
+			return err
+		}
 		records, err := writeTerminalGridCompletePersistedLineRecordsMetadata(s.dir, s.baseRowID, s.generation)
 		s.lineRecords = cloneTerminalGridLogicalLineRecords(records)
 		return err
