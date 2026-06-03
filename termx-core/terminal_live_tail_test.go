@@ -3,6 +3,7 @@ package termx
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
@@ -175,6 +176,115 @@ func TestTerminalGridLineRecordMetasOnlyWriteReclaimedRowIDs(t *testing.T) {
 		if meta.RowIDKnown || meta.FirstRowID != 0 || meta.LastRowID != 0 {
 			t.Fatalf("expected non-reclaimed record to omit row ids, got %#v", meta)
 		}
+	}
+}
+
+func TestTerminalGridStoreRecordLiveTailLineStateWritesPayloadMetadata(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	start := time.Unix(9, 10).UTC()
+	end := time.Unix(10, 20).UTC()
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("a"), Timestamp: end, RowKind: "output", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("b"), Timestamp: start, RowKind: "continuation", WrappedSet: true, Wrapped: false},
+	}
+	records := []terminalLiveTailLogicalLineRecord{{
+		id:        terminalLiveTailLogicalLineIDBase + 1,
+		startRow:  0,
+		endRow:    1,
+		sealState: terminalLiveTailSealed,
+		origin:    terminalLiveTailOriginLive,
+		residency: terminalLogicalLineResidencyLiveTail,
+		dirty:     true,
+	}}
+
+	if err := store.recordLiveTailLineState(records, rows); err != nil {
+		t.Fatalf("record live tail line state: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 1 {
+		t.Fatalf("expected one live tail record, got %#v", metadata.LiveRecords)
+	}
+	record := metadata.LiveRecords[0]
+	if record.RowKind != "output" {
+		t.Fatalf("expected row kind from first payload row, got %#v", record)
+	}
+	if record.TimestampStartUnixNano == nil || *record.TimestampStartUnixNano != start.UnixNano() {
+		t.Fatalf("expected timestamp range start %d, got %#v", start.UnixNano(), record)
+	}
+	if record.TimestampEndUnixNano == nil || *record.TimestampEndUnixNano != end.UnixNano() {
+		t.Fatalf("expected timestamp range end %d, got %#v", end.UnixNano(), record)
+	}
+}
+
+func TestTerminalGridStoreRecoveredLiveTailRejectsMismatchedPayloadMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*terminalGridLineRecordMeta)
+	}{
+		{
+			name: "row-kind",
+			mutate: func(record *terminalGridLineRecordMeta) {
+				record.RowKind = "wrong-kind"
+			},
+		},
+		{
+			name: "timestamp-start",
+			mutate: func(record *terminalGridLineRecordMeta) {
+				wrong := time.Unix(30, 0).UTC().UnixNano()
+				record.TimestampStartUnixNano = &wrong
+			},
+		},
+		{
+			name: "timestamp-end",
+			mutate: func(record *terminalGridLineRecordMeta) {
+				wrong := time.Unix(31, 0).UTC().UnixNano()
+				record.TimestampEndUnixNano = &wrong
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMemoryTerminalGridStoreForTest(t)
+			defer store.Close()
+			rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+				Cells:      localVTermCellsFromString("tail"),
+				Timestamp:  time.Unix(20, 0).UTC(),
+				RowKind:    "actual-kind",
+				WrappedSet: true,
+				Wrapped:    false,
+			}})
+			if err != nil {
+				t.Fatalf("encode live row metadata: %v", err)
+			}
+			timestampStart := time.Unix(20, 0).UTC().UnixNano()
+			timestampEnd := time.Unix(20, 0).UTC().UnixNano()
+			record := terminalGridLineRecordMeta{
+				ID:                     terminalLiveTailLogicalLineIDBase + 1,
+				StartRow:               0,
+				EndRow:                 0,
+				Sealed:                 true,
+				Origin:                 terminalLiveTailOriginLive,
+				Residency:              terminalLogicalLineResidencyLiveTail,
+				RowKind:                "actual-kind",
+				TimestampStartUnixNano: &timestampStart,
+				TimestampEndUnixNano:   &timestampEnd,
+				Dirty:                  true,
+			}
+			tc.mutate(&record)
+			if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+				LiveRecords: []terminalGridLineRecordMeta{record},
+				LiveRows:    rows,
+			}); err != nil {
+				t.Fatalf("write live tail metadata: %v", err)
+			}
+
+			if tail, ok := store.recoveredLiveTailFromMetadata(); ok {
+				t.Fatalf("expected mismatched payload metadata to be rejected, got %#v", tail)
+			}
+		})
 	}
 }
 

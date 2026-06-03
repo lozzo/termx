@@ -1,6 +1,10 @@
 package termx
 
-import "github.com/lozzow/termx/termx-vterm/vterm"
+import (
+	"time"
+
+	"github.com/lozzow/termx/termx-vterm/vterm"
+)
 
 type terminalLiveTailOrigin string
 
@@ -60,17 +64,20 @@ type terminalLiveTailWindow struct {
 }
 
 type terminalLiveTailLogicalLineRecord struct {
-	id         uint64
-	startRow   int
-	endRow     int
-	sealState  terminalLiveTailSealState
-	origin     terminalLiveTailOrigin
-	residency  terminalLogicalLineResidency
-	dirty      bool
-	generation uint64
-	rowIDKnown bool
-	firstRowID uint64
-	lastRowID  uint64
+	id             uint64
+	startRow       int
+	endRow         int
+	sealState      terminalLiveTailSealState
+	origin         terminalLiveTailOrigin
+	residency      terminalLogicalLineResidency
+	rowKind        string
+	timestampStart time.Time
+	timestampEnd   time.Time
+	dirty          bool
+	generation     uint64
+	rowIDKnown     bool
+	firstRowID     uint64
+	lastRowID      uint64
 }
 
 type terminalLiveTailRowsWithLogicalLineIDs struct {
@@ -646,14 +653,17 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 			continue
 		}
 		record := terminalLiveTailLogicalLineRecord{
-			id:         uint64At(logicalLineIDs, start),
-			startRow:   baseRow + start,
-			endRow:     baseRow + i,
-			sealState:  terminalLiveTailRecordSealState(segment, i),
-			origin:     segment.origin,
-			residency:  terminalLogicalLineResidencyLiveTail,
-			dirty:      terminalLiveTailRecordDirty(segment),
-			generation: segment.generation,
+			id:             uint64At(logicalLineIDs, start),
+			startRow:       baseRow + start,
+			endRow:         baseRow + i,
+			sealState:      terminalLiveTailRecordSealState(segment, i),
+			origin:         segment.origin,
+			residency:      terminalLogicalLineResidencyLiveTail,
+			rowKind:        terminalLogicalLineRowKindFromDamageRows(segment.rows[start : i+1]),
+			timestampStart: terminalLogicalLineTimestampStartFromDamageRows(segment.rows[start : i+1]),
+			timestampEnd:   terminalLogicalLineTimestampEndFromDamageRows(segment.rows[start : i+1]),
+			dirty:          terminalLiveTailRecordDirty(segment),
+			generation:     segment.generation,
 		}
 		if terminalLiveTailReclaimedSegmentHasRowIDs(segment) {
 			record.rowIDKnown = true

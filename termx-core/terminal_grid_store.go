@@ -89,15 +89,18 @@ const (
 )
 
 type terminalGridLogicalLineRecord struct {
-	id         uint64
-	startRow   int
-	endRow     int
-	sealed     bool
-	origin     terminalLiveTailOrigin
-	residency  terminalLogicalLineResidency
-	dirty      bool
-	generation uint64
-	source     terminalLogicalLineRecordSource
+	id             uint64
+	startRow       int
+	endRow         int
+	sealed         bool
+	origin         terminalLiveTailOrigin
+	residency      terminalLogicalLineResidency
+	rowKind        string
+	timestampStart time.Time
+	timestampEnd   time.Time
+	dirty          bool
+	generation     uint64
+	source         terminalLogicalLineRecordSource
 }
 
 func terminalGridLogicalLineRecordAuthoritative(record terminalGridLogicalLineRecord) bool {
@@ -126,18 +129,21 @@ type terminalGridLineMetadata struct {
 }
 
 type terminalGridLineRecordMeta struct {
-	ID         uint64                          `json:"id"`
-	StartRow   int                             `json:"start_row"`
-	EndRow     int                             `json:"end_row"`
-	RowIDKnown bool                            `json:"row_id_known,omitempty"`
-	FirstRowID uint64                          `json:"first_row_id,omitempty"`
-	LastRowID  uint64                          `json:"last_row_id,omitempty"`
-	Sealed     bool                            `json:"sealed"`
-	Origin     terminalLiveTailOrigin          `json:"origin"`
-	Residency  terminalLogicalLineResidency    `json:"residency"`
-	Dirty      bool                            `json:"dirty"`
-	Generation uint64                          `json:"generation"`
-	Source     terminalLogicalLineRecordSource `json:"source,omitempty"`
+	ID                     uint64                          `json:"id"`
+	StartRow               int                             `json:"start_row"`
+	EndRow                 int                             `json:"end_row"`
+	RowIDKnown             bool                            `json:"row_id_known,omitempty"`
+	FirstRowID             uint64                          `json:"first_row_id,omitempty"`
+	LastRowID              uint64                          `json:"last_row_id,omitempty"`
+	Sealed                 bool                            `json:"sealed"`
+	Origin                 terminalLiveTailOrigin          `json:"origin"`
+	Residency              terminalLogicalLineResidency    `json:"residency"`
+	RowKind                string                          `json:"row_kind,omitempty"`
+	TimestampStartUnixNano *int64                          `json:"timestamp_start_unix_nano,omitempty"`
+	TimestampEndUnixNano   *int64                          `json:"timestamp_end_unix_nano,omitempty"`
+	Dirty                  bool                            `json:"dirty"`
+	Generation             uint64                          `json:"generation"`
+	Source                 terminalLogicalLineRecordSource `json:"source,omitempty"`
 }
 
 type terminalGridLineMigration struct {
@@ -1649,15 +1655,18 @@ func terminalGridLogicalLineRecordsFromMetadata(records []terminalGridLineRecord
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, terminalGridLogicalLineRecord{
-			id:         record.ID,
-			startRow:   record.StartRow,
-			endRow:     record.EndRow,
-			sealed:     record.Sealed,
-			origin:     record.Origin,
-			residency:  record.Residency,
-			dirty:      record.Dirty,
-			generation: record.Generation,
-			source:     record.Source,
+			id:             record.ID,
+			startRow:       record.StartRow,
+			endRow:         record.EndRow,
+			sealed:         record.Sealed,
+			origin:         record.Origin,
+			residency:      record.Residency,
+			rowKind:        record.RowKind,
+			timestampStart: terminalGridLineRecordTimeFromUnixNano(record.TimestampStartUnixNano),
+			timestampEnd:   terminalGridLineRecordTimeFromUnixNano(record.TimestampEndUnixNano),
+			dirty:          record.Dirty,
+			generation:     record.Generation,
+			source:         record.Source,
 		})
 	}
 	return out
@@ -2327,6 +2336,9 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		}
 		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
 		if !terminalLiveTailRecordSealStateMatchesRows(record, segmentRows) {
+			return nil, false
+		}
+		if !terminalLiveTailRecordPayloadMetadataMatchesRows(record, segmentRows) {
 			return nil, false
 		}
 		if record.Origin != terminalLiveTailOriginReclaimed && migrations[record.ID] != 0 {
@@ -3355,35 +3367,54 @@ func terminalGridLineRecordMetasFromRecords(records []terminalGridLogicalLineRec
 	out := make([]terminalGridLineRecordMeta, 0, len(records))
 	for _, record := range records {
 		out = append(out, terminalGridLineRecordMeta{
-			ID:         record.id,
-			StartRow:   record.startRow,
-			EndRow:     record.endRow,
-			Sealed:     record.sealed,
-			Origin:     record.origin,
-			Residency:  record.residency,
-			Dirty:      record.dirty,
-			Generation: record.generation,
-			Source:     record.source,
+			ID:                     record.id,
+			StartRow:               record.startRow,
+			EndRow:                 record.endRow,
+			Sealed:                 record.sealed,
+			Origin:                 record.origin,
+			Residency:              record.residency,
+			RowKind:                record.rowKind,
+			TimestampStartUnixNano: terminalGridLineRecordUnixNanoFromTime(record.timestampStart),
+			TimestampEndUnixNano:   terminalGridLineRecordUnixNanoFromTime(record.timestampEnd),
+			Dirty:                  record.dirty,
+			Generation:             record.generation,
+			Source:                 record.source,
 		})
 	}
 	return out
 }
 
 func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLogicalLineRecord) []terminalGridLineRecordMeta {
+	return terminalGridLineRecordMetasFromLiveTailRecordsWithRows(records, nil)
+}
+
+func terminalGridLineRecordMetasFromLiveTailRecordsWithRows(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp) []terminalGridLineRecordMeta {
 	if len(records) == 0 {
 		return nil
 	}
 	out := make([]terminalGridLineRecordMeta, 0, len(records))
 	for _, record := range records {
+		rowKind := record.rowKind
+		timestampStart := record.timestampStart
+		timestampEnd := record.timestampEnd
+		if record.startRow >= 0 && record.endRow >= record.startRow && record.endRow < len(rows) {
+			recordRows := rows[record.startRow : record.endRow+1]
+			rowKind = terminalLogicalLineRowKindFromDamageRows(recordRows)
+			timestampStart = terminalLogicalLineTimestampStartFromDamageRows(recordRows)
+			timestampEnd = terminalLogicalLineTimestampEndFromDamageRows(recordRows)
+		}
 		meta := terminalGridLineRecordMeta{
-			ID:         record.id,
-			StartRow:   record.startRow,
-			EndRow:     record.endRow,
-			Sealed:     record.sealState == terminalLiveTailSealed,
-			Origin:     record.origin,
-			Residency:  record.residency,
-			Dirty:      record.dirty,
-			Generation: record.generation,
+			ID:                     record.id,
+			StartRow:               record.startRow,
+			EndRow:                 record.endRow,
+			Sealed:                 record.sealState == terminalLiveTailSealed,
+			Origin:                 record.origin,
+			Residency:              record.residency,
+			RowKind:                rowKind,
+			TimestampStartUnixNano: terminalGridLineRecordUnixNanoFromTime(timestampStart),
+			TimestampEndUnixNano:   terminalGridLineRecordUnixNanoFromTime(timestampEnd),
+			Dirty:                  record.dirty,
+			Generation:             record.generation,
 		}
 		if record.origin == terminalLiveTailOriginReclaimed && record.rowIDKnown {
 			meta.RowIDKnown = true
@@ -3393,6 +3424,75 @@ func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLo
 		out = append(out, meta)
 	}
 	return out
+}
+
+func terminalLogicalLineRowKindFromDamageRows(rows []vterm.DamageOp) string {
+	for _, row := range rows {
+		if row.RowKind != "" {
+			return row.RowKind
+		}
+	}
+	return ""
+}
+
+func terminalLogicalLineTimestampStartFromDamageRows(rows []vterm.DamageOp) time.Time {
+	var out time.Time
+	for _, row := range rows {
+		if row.Timestamp.IsZero() {
+			continue
+		}
+		if out.IsZero() || row.Timestamp.Before(out) {
+			out = row.Timestamp
+		}
+	}
+	return out
+}
+
+func terminalLogicalLineTimestampEndFromDamageRows(rows []vterm.DamageOp) time.Time {
+	var out time.Time
+	for _, row := range rows {
+		if row.Timestamp.IsZero() {
+			continue
+		}
+		if out.IsZero() || row.Timestamp.After(out) {
+			out = row.Timestamp
+		}
+	}
+	return out
+}
+
+func terminalGridLineRecordUnixNanoFromTime(timestamp time.Time) *int64 {
+	if timestamp.IsZero() {
+		return nil
+	}
+	value := timestamp.UnixNano()
+	return &value
+}
+
+func terminalGridLineRecordTimeFromUnixNano(value *int64) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return time.Unix(0, *value).UTC()
+}
+
+func terminalLiveTailRecordPayloadMetadataMatchesRows(record terminalGridLineRecordMeta, rows []vterm.DamageOp) bool {
+	if record.RowKind != "" && record.RowKind != terminalLogicalLineRowKindFromDamageRows(rows) {
+		return false
+	}
+	if record.TimestampStartUnixNano != nil {
+		start := terminalLogicalLineTimestampStartFromDamageRows(rows)
+		if start.IsZero() || start.UnixNano() != *record.TimestampStartUnixNano {
+			return false
+		}
+	}
+	if record.TimestampEndUnixNano != nil {
+		end := terminalLogicalLineTimestampEndFromDamageRows(rows)
+		if end.IsZero() || end.UnixNano() != *record.TimestampEndUnixNano {
+			return false
+		}
+	}
+	return true
 }
 
 func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp, baseRowID uint64, generation uint64, rowCount int, persistedRecords []terminalGridLogicalLineRecord, migrations map[uint64]uint64) bool {
@@ -3450,10 +3550,17 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 			}
 		}
 		meta := terminalGridLineRecordMeta{
-			Sealed: sealed,
-			Origin: record.origin,
+			Sealed:                 sealed,
+			Origin:                 record.origin,
+			RowKind:                record.rowKind,
+			TimestampStartUnixNano: terminalGridLineRecordUnixNanoFromTime(record.timestampStart),
+			TimestampEndUnixNano:   terminalGridLineRecordUnixNanoFromTime(record.timestampEnd),
 		}
-		if !terminalLiveTailRecordSealStateMatchesRows(meta, rows[record.startRow:record.endRow+1]) {
+		recordRows := rows[record.startRow : record.endRow+1]
+		if !terminalLiveTailRecordSealStateMatchesRows(meta, recordRows) {
+			return false
+		}
+		if !terminalLiveTailRecordPayloadMetadataMatchesRows(meta, recordRows) {
 			return false
 		}
 		nextStart = record.endRow + 1
@@ -3534,7 +3641,7 @@ func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLo
 		metadata.LiveRows = nil
 		return writeTerminalGridLineMetadata(dir, metadata)
 	}
-	metadata.LiveRecords = terminalGridLineRecordMetasFromLiveTailRecords(records)
+	metadata.LiveRecords = terminalGridLineRecordMetasFromLiveTailRecordsWithRows(records, rows)
 	rowMetas, err := terminalGridLineRowMetasFromDamageRows(rows)
 	if err != nil {
 		return err

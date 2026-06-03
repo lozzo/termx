@@ -553,6 +553,7 @@ TUI store 至少表达：
 - 已继续收紧 core persisted logical line metadata 刷新路径的 migration 保留规则：retention、complete persisted records 写回 `grid.lines.json` 时，同一 runtime logical line id 的冲突映射会被整体删除，不再因为 persisted id 仍被保留就把损坏迁移原样写回。
 - 已修正 core runtime logical line id 游标推进：`grid.lines.json` 中冲突的 runtime->persisted migration 虽然不作为映射消费，但其中出现过的 runtime id 仍会参与 max runtime id 计算，恢复 mutable live tail 后不会复用损坏 sidecar 中已经出现过的 runtime logical line id。
 - 已收紧 core recovered reclaimed mutable live tail 的 payload 校验：对于当前可恢复的一一对应 reclaimed sidecar，恢复端不仅校验 row id、generation 与 logical line id，还会读取对应 persisted source rows，要求 `grid.lines.json` 中 clean reclaimed live rows 的 cells、wrapped、row kind 与 timestamp 与 persisted payload 完全一致，避免损坏 sidecar 把不同内容伪装成 clean reclaimed suffix。
+- 已为 core mutable live tail logical line record 补入 payload 维度元数据：内部 record view 与 `grid.lines.json` 的 `live_records` 会携带从 live row payload 计算的 row kind 与 timestamp range，写入端以实际 rows 重新生成这些字段，恢复端在字段存在时要求其与 live row payload 完全一致，避免损坏 sidecar 伪造 logical line payload 摘要；旧 sidecar 未携带字段时仍按其他语义校验兼容恢复。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
