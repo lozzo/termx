@@ -1379,6 +1379,45 @@ func TestTerminalGridStoreExplicitAppendFallsBackForNonContiguousLogicalLineID(t
 	}
 }
 
+func TestTerminalGridStoreExplicitAppendRejectsPartialLogicalLineIDsWithinGroup(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("old")}); err != nil {
+		t.Fatalf("append prefix row: %v", err)
+	}
+	explicitPersistedID := uint64(9)
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("a"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("b")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{explicitPersistedID, 0}); err != nil {
+		t.Fatalf("append with partial explicit metadata should still append rows: %v", err)
+	}
+	if got := store.RowCount(); got != 3 {
+		t.Fatalf("expected rows to be appended despite partial metadata rejection, got %d", got)
+	}
+	lineMetadata, metadataErr := readTerminalGridLineMetadata(store.dir)
+	if metadataErr != nil {
+		t.Fatalf("read line metadata after partial explicit append: %v", metadataErr)
+	}
+	_, generation, _ := store.coordinates()
+	want := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 2, StartRow: 1, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, want) {
+		t.Fatalf("expected partial explicit metadata to fall back without inheriting missing row id, got %#v want %#v", lineMetadata.Records, want)
+	}
+	viewport, err := store.Viewport(0, 10, 80)
+	if err != nil {
+		t.Fatalf("viewport after partial explicit append: %v", err)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1, 2}) {
+		t.Fatalf("expected fallback projection id only, got %#v", got)
+	}
+}
+
 func TestTerminalGridStoreExplicitAppendAppliesPrefixLineMigrations(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

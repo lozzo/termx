@@ -426,6 +426,7 @@ TUI store 至少表达：
 - 已让 core persisted explicit append 在旧 sidecar 缺失或前缀 metadata 不可用时，只对 append 前的既有前缀使用 index/wrapped fallback 重建；新追加的 sealed 后缀仍按 stable logical line id 写入 persisted records。
 - 已让 core persisted explicit append 在校验旧 metadata 前缀时先消费 runtime->persisted logical line id 迁移，避免已迁移的显式前缀被误降级为 index/wrapped fallback。
 - 已收紧 core persisted explicit append 的 logical line id 校验：同一 stable logical line id 只能形成连续 record，非连续重复 id 不再写入 persisted sidecar metadata。
+- 已继续收紧 core persisted explicit append 的 logical line id 覆盖校验：同一追加 logical line record 内如果混入显式 stable id 与缺失 id，会拒绝该显式 metadata 并刷新为 persisted fallback records，不再把缺失 row 继承进伪权威 stable line。
 - 已将 core persisted explicit append 的异常处理收敛为“rows append 成功优先”：显式 metadata 校验失败时刷新为 persisted fallback records，不再让已经落盘的 row append 对调用方表现为失败。
 - 已让 core persisted viewport 在请求窗口完全落入 sealed persisted metadata prefix 时消费该 prefix 的 logical line id；窗口触及未封口尾部时仍不把 partial sidecar 当完整 persisted truth。
 - 已将 mutable live tail row payload 随 `grid.lines.json` 的 live record 一起写入 sidecar，并在 terminal 不在内存时让 core `history.window` latest projection 从该 sidecar 恢复 mutable live tail rows、ownership 与 runtime logical line id；older offset 仍保持 persisted-only。当前恢复范围覆盖 `history.window` store-only latest projection，legacy snapshot/grid viewport 仍只是兼容投影接口。

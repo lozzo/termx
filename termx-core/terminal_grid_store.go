@@ -1267,9 +1267,13 @@ func terminalGridExplicitLogicalLineRecordsForAppendedRows(refs []terminalGridRo
 		return nil
 	}
 	resolvedIDs := make([]uint64, len(logicalLineIDs))
+	explicitIDs := make([]bool, len(logicalLineIDs))
 	runtimeIDMappings := make(map[uint64]uint64)
 	for i, rawID := range logicalLineIDs {
 		row := appendedStart + i
+		if rawID != 0 {
+			explicitIDs[i] = true
+		}
 		if rawID == 0 {
 			if i > 0 && terminalGridFallbackRowContinuesLogicalLine(refs[row-1]) {
 				rawID = resolvedIDs[i-1]
@@ -1304,6 +1308,18 @@ func terminalGridExplicitLogicalLineRecordsForAppendedRows(refs []terminalGridRo
 		end := start
 		for end+1 < len(resolvedIDs) && resolvedIDs[end+1] == id {
 			end++
+		}
+		hasExplicitID := false
+		hasMissingID := false
+		for i := start; i <= end; i++ {
+			if explicitIDs[i] {
+				hasExplicitID = true
+			} else {
+				hasMissingID = true
+			}
+		}
+		if hasExplicitID && hasMissingID {
+			return nil
 		}
 		row := appendedStart + end
 		record := terminalGridLogicalLineRecord{
