@@ -1719,7 +1719,7 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 			return nil, false
 		}
 		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
-		if !terminalLiveTailRecordRowsMatchSealState(record, segmentRows) {
+		if !terminalLiveTailRecordSealStateMatchesRows(record, segmentRows) {
 			return nil, false
 		}
 		lineIDs := make([]uint64, len(segmentRows))
@@ -1767,14 +1767,9 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 	return segments, true
 }
 
-func terminalLiveTailRecordRowsMatchSealState(record terminalGridLineRecordMeta, rows []vterm.DamageOp) bool {
+func terminalLiveTailRecordSealStateMatchesRows(record terminalGridLineRecordMeta, rows []vterm.DamageOp) bool {
 	if len(rows) == 0 {
 		return false
-	}
-	for i := 0; i < len(rows)-1; i++ {
-		if !(rows[i].WrappedSet && rows[i].Wrapped) {
-			return false
-		}
 	}
 	last := rows[len(rows)-1]
 	if record.Sealed && last.WrappedSet && last.Wrapped {
@@ -2550,7 +2545,7 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 			Sealed: sealed,
 			Origin: record.origin,
 		}
-		if !terminalLiveTailRecordRowsMatchSealState(meta, rows[record.startRow:record.endRow+1]) {
+		if !terminalLiveTailRecordSealStateMatchesRows(meta, rows[record.startRow:record.endRow+1]) {
 			return false
 		}
 		nextStart = record.endRow + 1

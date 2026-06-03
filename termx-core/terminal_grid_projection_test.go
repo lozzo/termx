@@ -594,7 +594,7 @@ func TestTerminalHistoryWindowIgnoresCorruptRecoveredLiveTailMetadata(t *testing
 	}
 }
 
-func TestTerminalGridRecoveredLiveTailRejectsSplitRecordWithoutContinuationRows(t *testing.T) {
+func TestTerminalGridRecoveredLiveTailAcceptsSplitRecordByLogicalLineID(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
@@ -618,8 +618,15 @@ func TestTerminalGridRecoveredLiveTailRejectsSplitRecordWithoutContinuationRows(
 	}); err != nil {
 		t.Fatalf("write live tail metadata: %v", err)
 	}
-	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
-		t.Fatal("expected split live tail record without continuation rows to be rejected")
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected split live tail record to recover by stable logical line id")
+	}
+	if len(tail.segments) != 1 {
+		t.Fatalf("expected one recovered live segment, got %#v", tail.segments)
+	}
+	if got := tail.segments[0].logicalLineIDs; !reflect.DeepEqual(got, []uint64{terminalLiveTailLogicalLineIDBase + 1, terminalLiveTailLogicalLineIDBase + 1}) {
+		t.Fatalf("expected recovered split rows to share logical line id, got %#v", got)
 	}
 }
 
@@ -696,6 +703,48 @@ func TestTerminalGridRecoveredLiveTailUsesLiveOnlyMetadataWithoutPersistedIndex(
 	}
 	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{runtimeID, runtimeID}) {
 		t.Fatalf("expected recovered runtime logical line ids, got %#v", got)
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailUsesLogicalLineIDWithoutWrappedContinuation(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("tail0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("tail1"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 10
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        runtimeID,
+			StartRow:  0,
+			EndRow:    1,
+			Sealed:    true,
+			Origin:    terminalLiveTailOriginLive,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected live metadata to recover by logical line id without wrapped continuation")
+	}
+	if len(tail.segments) != 1 {
+		t.Fatalf("expected one recovered live segment, got %#v", tail.segments)
+	}
+	segment := tail.segments[0]
+	if got := damageRowsToStrings(segment.rows); !reflect.DeepEqual(got, []string{"tail0", "tail1"}) {
+		t.Fatalf("expected recovered live rows, got %#v", got)
+	}
+	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{runtimeID, runtimeID}) {
+		t.Fatalf("expected recovered rows to share metadata logical line id, got %#v", got)
 	}
 }
 
