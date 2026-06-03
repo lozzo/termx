@@ -536,7 +536,7 @@ func terminalLiveTailSegmentLogicalLineIDs(lineIDs []uint64, rows []vterm.Damage
 	}
 	aligned := alignLiveTailUint64s(lineIDs, rowCount)
 	if hasNonZeroUint64(aligned) {
-		if !terminalLiveTailLogicalLineIDsComplete(aligned, rowCount) {
+		if !terminalLiveTailLogicalLineIDsComplete(aligned, rowCount) || !terminalLiveTailLogicalLineIDsMatchOrigin(aligned, origin) {
 			return make([]uint64, rowCount)
 		}
 		return aligned
@@ -550,8 +550,13 @@ func terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs []uint64, rows []vterm.Da
 		return nil
 	}
 	aligned := alignLiveTailUint64s(lineIDs, rowCount)
-	if terminalLiveTailLogicalLineIDsComplete(aligned, rowCount) {
+	if terminalLiveTailLogicalLineIDsComplete(aligned, rowCount) && terminalLiveTailLogicalLineIDsMatchOrigin(aligned, terminalLiveTailOriginLive) {
 		return aligned
+	}
+	for i, id := range aligned {
+		if id != 0 && !terminalLiveTailRecordIDMatchesOrigin(id, terminalLiveTailOriginLive) {
+			aligned[i] = 0
+		}
 	}
 	nextID := maxUint64Slice(aligned)
 	if nextID < terminalLiveTailLogicalLineIDBase {
@@ -573,6 +578,15 @@ func terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs []uint64, rows []vterm.Da
 		start = i + 1
 	}
 	return aligned
+}
+
+func terminalLiveTailLogicalLineIDsMatchOrigin(lineIDs []uint64, origin terminalLiveTailOrigin) bool {
+	for _, id := range lineIDs {
+		if !terminalLiveTailRecordIDMatchesOrigin(id, origin) {
+			return false
+		}
+	}
+	return true
 }
 
 func maxUint64Slice(values []uint64) uint64 {

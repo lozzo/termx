@@ -292,6 +292,54 @@ func TestTerminalPrimaryLiveTailLiveLogicalLineIDsPreferCompleteExplicitIDs(t *t
 	}
 }
 
+func TestTerminalPrimaryLiveTailLiveLogicalLineIDsIgnorePersistedNamespace(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	}, []uint64{1, 1}, false)
+
+	window := tail.window(0, tail.rowCount())
+	if got := window.logicalLineIDs; len(got) != 2 || got[0] < terminalLiveTailLogicalLineIDBase || got[0] != got[1] {
+		t.Fatalf("expected live rows to replace persisted namespace ids with runtime ids, got %#v", got)
+	}
+}
+
+func TestTerminalPrimaryLiveTailWindowSuppressesWrongNamespaceLogicalLineIDs(t *testing.T) {
+	runtimeID := terminalLiveTailLogicalLineIDBase + 20
+	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{
+		{
+			origin:    terminalLiveTailOriginLive,
+			sealState: terminalLiveTailSealed,
+			rows: []localvterm.DamageOp{
+				{Cells: localVTermCellsFromString("live-a"), WrappedSet: true, Wrapped: true},
+				{Cells: localVTermCellsFromString("live-b"), WrappedSet: true, Wrapped: false},
+			},
+			logicalLineIDs: []uint64{1, 1},
+		},
+		{
+			origin:    terminalLiveTailOriginReclaimed,
+			sealState: terminalLiveTailSealed,
+			rows: []localvterm.DamageOp{
+				{Cells: localVTermCellsFromString("rec-a"), WrappedSet: true, Wrapped: true},
+				{Cells: localVTermCellsFromString("rec-b"), WrappedSet: true, Wrapped: false},
+			},
+			logicalLineIDs: []uint64{runtimeID, runtimeID},
+			generation:     7,
+			firstRowID:     40,
+			lastRowID:      41,
+		},
+	}}
+
+	window := tail.window(0, tail.rowCount())
+	if got := window.logicalLineIDs; !reflect.DeepEqual(got, []uint64{0, 0, 0, 0}) {
+		t.Fatalf("expected wrong-namespace logical line ids to be suppressed in projection, got %#v", got)
+	}
+	if records := tail.logicalLineRecords(); len(records) != 0 {
+		t.Fatalf("expected wrong-namespace logical line ids to suppress record metadata, got %#v", records)
+	}
+}
+
 func TestTerminalPrimaryLiveTailLogicalLineRecordsRequireCompleteIDs(t *testing.T) {
 	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{{
 		origin:    terminalLiveTailOriginLive,
