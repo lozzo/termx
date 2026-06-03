@@ -1,6 +1,13 @@
 package services
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/lozzow/termx/termx-tui-v3/input"
+	"github.com/lozzow/termx/termx-tui-v3/state"
+)
 
 func TestRequestIDValid(t *testing.T) {
 	if !RequestID(1).Valid() {
@@ -8,5 +15,93 @@ func TestRequestIDValid(t *testing.T) {
 	}
 	if RequestID(0).Valid() {
 		t.Fatal("expected zero request id to be invalid")
+	}
+}
+
+func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
+	client := &FakeCoreClient{
+		LatestResponses: []HistoryResult{{Window: state.HistoryWindow{Token: "latest"}}},
+		OlderResponses:  []HistoryResult{{Window: state.HistoryWindow{Token: "older"}}},
+	}
+
+	latest, err := client.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	older, err := client.HistoryOlder(context.Background(), HistoryOlderRequest{
+		RequestID:  2,
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       10,
+		Token:      "latest",
+		Generation: 7,
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 10},
+		Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 20},
+	})
+	if err != nil {
+		t.Fatalf("older: %v", err)
+	}
+
+	if latest.RequestID != 1 || latest.Window.Token != "latest" {
+		t.Fatalf("unexpected latest result %#v", latest)
+	}
+	if older.RequestID != 2 || older.Window.Token != "older" {
+		t.Fatalf("unexpected older result %#v", older)
+	}
+	if len(client.LatestRequests) != 1 || client.LatestRequests[0].TerminalID != "term-1" {
+		t.Fatalf("unexpected latest requests %#v", client.LatestRequests)
+	}
+	if len(client.OlderRequests) != 1 || client.OlderRequests[0].Token != "latest" {
+		t.Fatalf("unexpected older requests %#v", client.OlderRequests)
+	}
+}
+
+func TestFakeCoreClientMissingResponse(t *testing.T) {
+	client := &FakeCoreClient{}
+	if _, err := client.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1}); !errors.Is(err, ErrMissingHistoryResponse) {
+		t.Fatalf("expected ErrMissingHistoryResponse, got %v", err)
+	}
+}
+
+func TestFakeTerminalSessionClipboardServices(t *testing.T) {
+	terminal := &FakeTerminalService{}
+	if err := terminal.SendInput(context.Background(), TerminalInputRequest{
+		TerminalID: "term-1",
+		Event:      input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"},
+		Bytes:      []byte("x"),
+	}); err != nil {
+		t.Fatalf("send input: %v", err)
+	}
+	if err := terminal.Resize(context.Background(), TerminalResizeRequest{TerminalID: "term-1", Cols: 100, Rows: 40}); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "x" {
+		t.Fatalf("unexpected terminal inputs %#v", terminal.Inputs)
+	}
+	if len(terminal.Resizes) != 1 || terminal.Resizes[0].Cols != 100 {
+		t.Fatalf("unexpected terminal resizes %#v", terminal.Resizes)
+	}
+
+	session := &FakeSessionService{Snapshot: SessionSnapshot{ActiveTerminalID: "term-1"}}
+	snapshot, err := session.Load(context.Background())
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if snapshot.ActiveTerminalID != "term-1" {
+		t.Fatalf("unexpected loaded session %#v", snapshot)
+	}
+	if err := session.Save(context.Background(), SessionSnapshot{ActiveTerminalID: "term-2"}); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+	if len(session.Saved) != 1 || session.Saved[0].ActiveTerminalID != "term-2" {
+		t.Fatalf("unexpected saved sessions %#v", session.Saved)
+	}
+
+	clipboard := &FakeClipboardService{}
+	if err := clipboard.Write(context.Background(), ClipboardWriteRequest{Text: "copy"}); err != nil {
+		t.Fatalf("write clipboard: %v", err)
+	}
+	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "copy" {
+		t.Fatalf("unexpected clipboard writes %#v", clipboard.Writes)
 	}
 }
