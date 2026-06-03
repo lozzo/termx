@@ -109,6 +109,19 @@ func TestMemoryStoreRejectsNonCoveringAuthoritativeLineSpans(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreRejectsLineSpansWithoutLogicalLineID(t *testing.T) {
+	store := NewMemoryStore()
+	window := fakeWindow("term-1", WindowOpReplace, "g1:10-12:c80", 10, 12, []string{"row"})
+	window.Lines[0].LogicalLineID = 0
+
+	if store.ApplyHistoryWindow(window) {
+		t.Fatal("expected line span without logical line id to be rejected")
+	}
+	if _, ok := store.HistoryWindow("term-1"); ok {
+		t.Fatal("expected rejected window not to be stored")
+	}
+}
+
 func TestMemoryStoreOlderPrependDoesNotCountClippedBeforeFragmentAsLoadedLine(t *testing.T) {
 	store := NewMemoryStore()
 	latest := fakeWindow("term-1", WindowOpReplace, "g2:10-10:c80", 10, 10, []string{"latest"})

@@ -79,7 +79,7 @@ func historyWindowHasAuthoritativeLineCoverage(window HistoryWindow) bool {
 	}
 	nextRow := 0
 	for _, span := range window.Lines {
-		if span.StartRow != nextRow || span.EndRow < span.StartRow || span.EndRow >= len(window.Rows) {
+		if span.LogicalLineID == 0 || span.StartRow != nextRow || span.EndRow < span.StartRow || span.EndRow >= len(window.Rows) {
 			return false
 		}
 		nextRow = span.EndRow + 1
