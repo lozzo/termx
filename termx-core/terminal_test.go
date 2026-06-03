@@ -4315,6 +4315,75 @@ func TestTerminalClearScreenDoesNotCreateCommittedHistory(t *testing.T) {
 	}
 }
 
+func TestTerminalClearScreenClearsRecoverableMutableLiveTail(t *testing.T) {
+	const terminalID = "clear-screen-clears-recoverable-live-tail"
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, terminalID)
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	vt := localvterm.New(12, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	term := &Terminal{
+		id:    terminalID,
+		size:  Size{Cols: 12, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("before-0")},
+	})
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("hidden-live"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	term.recordLiveTailMetadataLocked()
+	if metadata, err := readTerminalGridLineMetadata(store.dir); err != nil || len(metadata.LiveRecords) == 0 {
+		t.Fatalf("expected recoverable live-tail metadata before clear, metadata=%#v err=%v", metadata, err)
+	}
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[2J"))
+	if err != nil {
+		t.Fatalf("clear screen write: %v", err)
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
+		t.Fatalf("expected clear screen to clear mutable live tail, got %#v", got)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live-tail metadata after clear: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected clear screen to clear recoverable live-tail metadata, got %#v", metadata)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, terminalID)
+	if err != nil {
+		t.Fatalf("open replay grid store: %v", err)
+	}
+	defer reopened.Close()
+	if tail, ok := reopened.recoveredLiveTailFromMetadata(); ok {
+		t.Fatalf("expected no recovered live tail after clear screen, got %#v", tail)
+	}
+	viewport, err := storeViewportWithRecoveredLiveTailForHistory(reopened, 0, 10, 12)
+	if err != nil {
+		t.Fatalf("recovered history viewport after clear: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport(terminalID, 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"before-0"}) {
+		t.Fatalf("expected clear screen recovery to expose only committed history, got %#v", got)
+	}
+	if historyWindowContainsText(window, "hidden-live") {
+		t.Fatalf("expected cleared mutable live tail not to recover, got %#v", historyWindowRowTexts(window))
+	}
+}
+
 func TestTerminalNonResizeFullReplaceDoesNotCreateCommittedHistory(t *testing.T) {
 	vt := localvterm.New(12, 2, 0, nil)
 	vt.DisableEmulatorScrollback()
