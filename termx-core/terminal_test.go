@@ -1247,6 +1247,52 @@ func TestTerminalGridStoreAppendUsesExplicitLogicalLineIDsForPersistedMetadata(t
 	}
 }
 
+func TestTerminalGridStoreExplicitLogicalLineIDsSpanPageRotation(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.pageMaxBytes = 1
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 142
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa")},
+		{Cells: localVTermCellsFromString("bb")},
+		{Cells: localVTermCellsFromString("cc")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID, runtimeID}); err != nil {
+		t.Fatalf("append rotated explicit logical line: %v", err)
+	}
+	if pages := terminalGridPageFilesForTest(t, store.dir); len(pages) < 2 {
+		t.Fatalf("expected append to rotate across pages, got %#v", pages)
+	}
+
+	_, generation, _ := store.coordinates()
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read rotated explicit line metadata: %v", err)
+	}
+	wantRecords := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation, Source: terminalLogicalLineRecordSourceExplicit},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, wantRecords) {
+		t.Fatalf("expected rotated rows to stay one explicit persisted line record, got %#v want %#v", lineMetadata.Records, wantRecords)
+	}
+	wantMigrations := []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 1}}
+	if !reflect.DeepEqual(lineMetadata.Migrations, wantMigrations) {
+		t.Fatalf("expected rotated explicit logical line to write one migration, got %#v want %#v", lineMetadata.Migrations, wantMigrations)
+	}
+
+	viewport, err := store.Viewport(0, 10, 80)
+	if err != nil {
+		t.Fatalf("viewport after rotated explicit append: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"aabbcc"}) {
+		t.Fatalf("expected rotated explicit rows to project as one logical line, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
+		t.Fatalf("expected rotated explicit projection id 1, got %#v", got)
+	}
+}
+
 func TestTerminalGridStoreExplicitAppendWritesRuntimeLineMigrations(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
