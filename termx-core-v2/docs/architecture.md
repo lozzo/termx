@@ -8,12 +8,26 @@
 
 本设计不再把“已持久化”和“仍可变尾部”建成两套数据模型。`persisted` 只表示某一时刻的存储落点或提交状态，不表示不可修改。程序发出的 clear scrollback、truncate、resize reclaim、retention、process exit replacement 等语义都可以删除、撤回、替换或重新提交已经进入 committed history 的 logical line。
 
+### 1.1 为什么必须是 logical line
+
+termx 的目标不是只维护一个随当前 terminal size 变化的内存 grid，而是支持可落盘、可分页、可长期保留的历史记录。历史规模可能远大于当前屏幕，也不应该受进程内存中的固定行缓冲限制。
+
+如果把当前宽度下的 visual grid 当作历史 truth，会遇到几个不可接受的问题：
+
+- 历史内容被当前 cols 绑定；terminal resize 后，旧历史需要按新宽度重新折行。
+- 长历史必须全量留在内存里，或者把已经按某个 cols 切好的 visual rows 落盘，后续 resize 时仍然需要读取和重排大量历史。
+- older pagination、copy mode、selection、cursor boundary 会依赖 visual row 坐标；当 cols 改变时，旧 cursor 和边界会失效或需要全局重算。
+- 支持近似无限历史时，不能因为 terminal size 改变就把所有历史从 storage 读回内存并全量 reflow。
+
+logical line 是解决这些约束的最小稳定单位：写入和落盘按 logical line 保存，visual rows 只是某个 cols 下的派生投影。resize 只使当前 projection、window token 或 cursor generation 失效；后续按需对请求窗口内的 logical lines 重新投影，而不是重写整段历史。这样才能同时支持持久化、bounded memory、older pagination、retention/truncate、copy mode 选择和不同 terminal size 下的稳定历史边界。
+
 ## 2. 重构目标
 
 - `termx-core-v2` 拥有唯一历史真相。
 - 历史真相的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback 或 grid viewport。
 - 历史侧使用单一 `LogicalLineStore` 保存 logical line truth。
 - committed history 与 mutable frontier 是同一批 logical line 的索引、状态和可变边界，不是两套模型。
+- 历史存储必须支持长期保留和按需分页；不能要求 resize 时把全部历史读入内存并全量重排。
 - 实时当前屏幕、snapshot、grid viewport 可以继续作为 live surface 表达，但不能成为 committed history truth。
 - `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不本地重建历史。
 - copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。

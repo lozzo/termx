@@ -16,6 +16,7 @@
 
 - `termx-core-v2` 拥有唯一历史真相。
 - 历史的基本单位是 logical line，不是 visual row，不是 wrapped row，不是 snapshot scrollback。
+- 选择 logical line 的根因是支持可落盘、可分页、长期保留的历史记录；不得把当前 terminal size 下的内存 grid 当作历史 truth，也不得要求 resize 时全量读回并重排所有历史。
 - core-v2 使用单一 `LogicalLineStore` 作为历史 truth；`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend` 只是索引、可变边界与存储落点。
 - `persisted` 或落盘不表示不可修改；clear scrollback、truncate、retention、reclaim、replace 都可以按完整 logical line 删除、撤回、替换或重新提交已提交历史。
 - core-v2 架构以 `termx-core-v2/docs/architecture.md` 为设计基准；该文档说明重构原因、目标、单一 logical line 模型、双轨边界、硬约束、风险和落地顺序。
