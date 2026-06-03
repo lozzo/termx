@@ -516,7 +516,7 @@ func TestTerminalMetadataOnlyLiveTailOnlySnapshotDoesNotInventCanonicalMetadata(
 	}
 }
 
-func TestTerminalLatestGridViewportExpandsLiveTailWrappedStartToLogicalLine(t *testing.T) {
+func TestTerminalLatestGridViewportExpandsLiveTailStartByLogicalLineID(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	store := newMemoryTerminalGridStoreForTest(t)
@@ -561,6 +561,19 @@ func TestExpandDamageWindowStartToLogicalLinePrefersLogicalLineIDs(t *testing.T)
 	}
 	if got := expandDamageWindowStartToLogicalLine(rows, []uint64{lineID, lineID, lineID + 1}, 2); got != 2 {
 		t.Fatalf("expected distinct logical line id to keep start at 2, got %d", got)
+	}
+}
+
+func TestExpandDamageWindowStartToLogicalLineDoesNotInferFromWrappedRows(t *testing.T) {
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("tail0"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("tail1"), WrappedSet: true, Wrapped: true},
+	}
+	if got := expandDamageWindowStartToLogicalLine(rows, nil, 1); got != 1 {
+		t.Fatalf("expected missing logical line ids not to expand from wrapped rows, got %d", got)
+	}
+	if got := expandDamageWindowStartToLogicalLine(rows, []uint64{0, 0}, 1); got != 1 {
+		t.Fatalf("expected zero logical line ids not to expand from wrapped rows, got %d", got)
 	}
 }
 

@@ -1264,15 +1264,7 @@ func expandDamageWindowStartToLogicalLine(rows []vterm.DamageOp, logicalLineIDs 
 	for start > 0 {
 		currentID := uint64At(logicalLineIDs, start)
 		prevID := uint64At(logicalLineIDs, start-1)
-		if currentID != 0 && prevID != 0 {
-			if currentID != prevID {
-				break
-			}
-			start--
-			continue
-		}
-		prev := rows[start-1]
-		if !(prev.WrappedSet && prev.Wrapped) {
+		if currentID == 0 || prevID == 0 || currentID != prevID {
 			break
 		}
 		start--
