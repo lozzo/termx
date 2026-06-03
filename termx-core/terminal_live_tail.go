@@ -20,14 +20,16 @@ const (
 const terminalLiveTailLogicalLineIDBase uint64 = 1 << 63
 
 type terminalLiveTailSegment struct {
-	origin         terminalLiveTailOrigin
-	sealState      terminalLiveTailSealState
-	rows           []vterm.DamageOp
-	logicalLineIDs []uint64
-	wrapPending    bool
-	generation     uint64
-	firstRowID     uint64
-	lastRowID      uint64
+	origin            terminalLiveTailOrigin
+	sealState         terminalLiveTailSealState
+	rows              []vterm.DamageOp
+	logicalLineIDs    []uint64
+	wrapPending       bool
+	generation        uint64
+	firstRowID        uint64
+	lastRowID         uint64
+	replaceFirstRowID uint64
+	replaceLastRowID  uint64
 }
 
 type terminalPrimaryLiveTail struct {
@@ -84,14 +86,16 @@ func (tail terminalPrimaryLiveTail) clone() terminalPrimaryLiveTail {
 	}
 	for _, segment := range tail.segments {
 		out.segments = append(out.segments, terminalLiveTailSegment{
-			origin:         segment.origin,
-			sealState:      segment.sealState,
-			rows:           cloneGridDamageOps(segment.rows),
-			logicalLineIDs: cloneUint64Slice(segment.logicalLineIDs),
-			wrapPending:    segment.wrapPending,
-			generation:     segment.generation,
-			firstRowID:     segment.firstRowID,
-			lastRowID:      segment.lastRowID,
+			origin:            segment.origin,
+			sealState:         segment.sealState,
+			rows:              cloneGridDamageOps(segment.rows),
+			logicalLineIDs:    cloneUint64Slice(segment.logicalLineIDs),
+			wrapPending:       segment.wrapPending,
+			generation:        segment.generation,
+			firstRowID:        segment.firstRowID,
+			lastRowID:         segment.lastRowID,
+			replaceFirstRowID: segment.replaceFirstRowID,
+			replaceLastRowID:  segment.replaceLastRowID,
 		})
 	}
 	return out
@@ -217,6 +221,24 @@ func (tail terminalPrimaryLiveTail) authoritativeReclaimedTailRowCount(persisted
 	return 0
 }
 
+func (tail terminalPrimaryLiveTail) dirtyLiveRowsReplaceAuthoritativeReclaimedTail(persistedBaseRowID uint64, persistedRows int) bool {
+	reclaimedCount := tail.authoritativeReclaimedTailRowCount(persistedBaseRowID, persistedRows)
+	if reclaimedCount <= 0 {
+		return false
+	}
+	expectedFirst := persistedBaseRowID + uint64(persistedRows-reclaimedCount)
+	expectedLast := persistedBaseRowID + uint64(persistedRows-1)
+	for _, segment := range tail.segments {
+		if segment.origin != terminalLiveTailOriginLive && segment.origin != terminalLiveTailOriginResize {
+			continue
+		}
+		if segment.replaceFirstRowID == expectedFirst && segment.replaceLastRowID == expectedLast {
+			return true
+		}
+	}
+	return false
+}
+
 func (tail terminalPrimaryLiveTail) liveRows() []vterm.DamageOp {
 	return tail.liveRowsWithLogicalLineIDs().rows
 }
@@ -268,6 +290,32 @@ func (tail *terminalPrimaryLiveTail) advanceRuntimeLogicalLineID(id uint64) {
 	tail.nextRuntimeLogicalLineID = id
 }
 
+func (tail *terminalPrimaryLiveTail) reassignConflictingRuntimeLogicalLineIDs(maxRuntimeID uint64) {
+	if tail == nil || !terminalRuntimeLogicalLineID(maxRuntimeID) {
+		return
+	}
+	tail.advanceRuntimeLogicalLineID(maxRuntimeID)
+	replacements := make(map[uint64]uint64)
+	for segmentIndex := range tail.segments {
+		segment := &tail.segments[segmentIndex]
+		if segment.origin == terminalLiveTailOriginReclaimed || len(segment.logicalLineIDs) == 0 {
+			continue
+		}
+		for i, id := range segment.logicalLineIDs {
+			if id == 0 || id > maxRuntimeID || !terminalRuntimeLogicalLineID(id) {
+				continue
+			}
+			replacement := replacements[id]
+			if replacement == 0 {
+				tail.nextRuntimeLogicalLineID++
+				replacement = tail.nextRuntimeLogicalLineID
+				replacements[id] = replacement
+			}
+			segment.logicalLineIDs[i] = replacement
+		}
+	}
+}
+
 func (tail *terminalPrimaryLiveTail) replaceRows(rows []vterm.DamageOp, origin terminalLiveTailOrigin, wrapPending bool) {
 	if tail == nil {
 		return
@@ -305,14 +353,16 @@ func (tail *terminalPrimaryLiveTail) replaceResizeRowsWithLogicalLineIDs(rows []
 			continue
 		}
 		next = append(next, terminalLiveTailSegment{
-			origin:         segment.origin,
-			sealState:      segment.sealState,
-			rows:           cloneGridDamageOps(segment.rows),
-			logicalLineIDs: cloneUint64Slice(segment.logicalLineIDs),
-			wrapPending:    segment.wrapPending,
-			generation:     segment.generation,
-			firstRowID:     segment.firstRowID,
-			lastRowID:      segment.lastRowID,
+			origin:            segment.origin,
+			sealState:         segment.sealState,
+			rows:              cloneGridDamageOps(segment.rows),
+			logicalLineIDs:    cloneUint64Slice(segment.logicalLineIDs),
+			wrapPending:       segment.wrapPending,
+			generation:        segment.generation,
+			firstRowID:        segment.firstRowID,
+			lastRowID:         segment.lastRowID,
+			replaceFirstRowID: segment.replaceFirstRowID,
+			replaceLastRowID:  segment.replaceLastRowID,
 		})
 	}
 	if len(rows) > 0 {
@@ -331,6 +381,24 @@ func (tail *terminalPrimaryLiveTail) replaceLiveRows(rows []vterm.DamageOp, wrap
 	tail.replaceLiveRowsWithLogicalLineIDs(rows, nil, wrapPending)
 }
 
+func (tail *terminalPrimaryLiveTail) replaceReclaimedTailWithLiveRows(rows []vterm.DamageOp, wrapPending bool) {
+	tail.replaceReclaimedTailWithLiveRowsAndLogicalLineIDs(rows, nil, wrapPending)
+}
+
+func (tail *terminalPrimaryLiveTail) replaceReclaimedTailWithLiveRowsAndLogicalLineIDs(rows []vterm.DamageOp, logicalLineIDs []uint64, wrapPending bool) {
+	firstRowID, lastRowID := tail.reclaimedTailRowIDsForReplacement(len(rows))
+	tail.replaceLiveRowsWithLogicalLineIDs(rows, logicalLineIDs, wrapPending)
+	if len(tail.segments) == 0 || firstRowID == 0 && lastRowID == 0 {
+		return
+	}
+	segment := &tail.segments[len(tail.segments)-1]
+	if segment.origin != terminalLiveTailOriginLive && segment.origin != terminalLiveTailOriginResize {
+		return
+	}
+	segment.replaceFirstRowID = firstRowID
+	segment.replaceLastRowID = lastRowID
+}
+
 func (tail *terminalPrimaryLiveTail) replaceLiveRowsWithLogicalLineIDs(rows []vterm.DamageOp, logicalLineIDs []uint64, wrapPending bool) {
 	if tail == nil {
 		return
@@ -342,14 +410,16 @@ func (tail *terminalPrimaryLiveTail) replaceLiveRowsWithLogicalLineIDs(rows []vt
 			continue
 		}
 		next = append(next, terminalLiveTailSegment{
-			origin:         segment.origin,
-			sealState:      segment.sealState,
-			rows:           cloneGridDamageOps(segment.rows),
-			logicalLineIDs: cloneUint64Slice(segment.logicalLineIDs),
-			wrapPending:    segment.wrapPending,
-			generation:     segment.generation,
-			firstRowID:     segment.firstRowID,
-			lastRowID:      segment.lastRowID,
+			origin:            segment.origin,
+			sealState:         segment.sealState,
+			rows:              cloneGridDamageOps(segment.rows),
+			logicalLineIDs:    cloneUint64Slice(segment.logicalLineIDs),
+			wrapPending:       segment.wrapPending,
+			generation:        segment.generation,
+			firstRowID:        segment.firstRowID,
+			lastRowID:         segment.lastRowID,
+			replaceFirstRowID: segment.replaceFirstRowID,
+			replaceLastRowID:  segment.replaceLastRowID,
 		})
 	}
 	if len(rows) > 0 {
@@ -362,6 +432,21 @@ func (tail *terminalPrimaryLiveTail) replaceLiveRowsWithLogicalLineIDs(rows []vt
 		})
 	}
 	tail.segments = next
+}
+
+func (tail terminalPrimaryLiveTail) reclaimedTailRowIDsForReplacement(rowCount int) (uint64, uint64) {
+	if rowCount <= 0 {
+		return 0, 0
+	}
+	for _, segment := range tail.segments {
+		if !terminalLiveTailReclaimedSegmentAuthoritative(segment) {
+			continue
+		}
+		if rowCount >= len(segment.rows) {
+			return segment.firstRowID, segment.lastRowID
+		}
+	}
+	return 0, 0
 }
 
 func (tail *terminalPrimaryLiveTail) replaceReclaimedPrefix(rows []vterm.DamageOp, generation uint64, firstRowID uint64, lastRowID uint64) {

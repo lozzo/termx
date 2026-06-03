@@ -2557,7 +2557,7 @@ func TestTerminalProcessExitDoesNotRecommitCleanReclaimedTail(t *testing.T) {
 	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("older")},
 		{cells: localVTermCellsFromString("grow0"), wrapped: true},
-		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: false},
 	})
 	term.size = Size{Cols: 5, Rows: 3}
 	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
@@ -2610,7 +2610,7 @@ func TestTerminalReclaimedTailModifiedBeforeExitCommitsAsNewLogicalLine(t *testi
 	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("older")},
 		{cells: localVTermCellsFromString("grow0"), wrapped: true},
-		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: false},
 	})
 	term.size = Size{Cols: 5, Rows: 3}
 	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
@@ -2621,7 +2621,7 @@ func TestTerminalReclaimedTailModifiedBeforeExitCommitsAsNewLogicalLine(t *testi
 	}
 	modifiedRows := cloneGridDamageOps(term.primaryLiveTail.segments[0].rows)
 	modifiedRows[0].Cells = localVTermCellsFromString("EDIT0")
-	term.primaryLiveTail.replaceLiveRows(modifiedRows, false)
+	term.primaryLiveTail.replaceReclaimedTailWithLiveRows(modifiedRows, false)
 	vt.LoadSnapshot(
 		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("")}},
 		localvterm.CursorState{Row: 0, Col: 0, Visible: true},
@@ -2689,6 +2689,116 @@ func TestTerminalReclaimedTailModifiedBeforeExitCommitsAsNewLogicalLine(t *testi
 	}
 	if len(lineMetadata.Records) != 2 || lineMetadata.Records[1].Source != terminalLogicalLineRecordSourceExplicit {
 		t.Fatalf("expected modified reclaimed suffix to write explicit persisted metadata, got %#v", lineMetadata.Records)
+	}
+}
+
+func TestTerminalProcessExitKeepsCleanReclaimedTailWhenAppendingIndependentLiveRows(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "clean-reclaimed-tail-plus-independent-live",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("older")},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: false},
+	})
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
+	}
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("live"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("")}},
+		localvterm.CursorState{Row: 0, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	maxRuntimeID := term.syncLiveTailRuntimeCursorFromGridLocked()
+	term.primaryLiveTail.reassignConflictingRuntimeLogicalLineIDs(maxRuntimeID)
+	rowsForExit := term.primaryLiveTailRowsForExit()
+	if len(rowsForExit) != 1 || rowsForExit[0].logicalLineID <= maxRuntimeID {
+		t.Fatalf("expected independent live row to get fresh runtime id before exit, max=%d rows=%#v", maxRuntimeID, rowsForExit)
+	}
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal independent live rows after clean reclaimed tail: %v", err)
+	}
+	viewport, err := store.Viewport(0, 10, 5)
+	if err != nil {
+		t.Fatalf("viewport after independent live seal: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"older", "grow0", "grow1", "live"}) {
+		t.Fatalf("expected clean reclaimed suffix to remain and independent live rows to append, got %#v", got)
+	}
+	if len(viewport.LogicalLineIDs) != 4 || viewport.LogicalLineIDs[1] != viewport.LogicalLineIDs[2] || viewport.LogicalLineIDs[3] == viewport.LogicalLineIDs[2] {
+		t.Fatalf("expected independent live row to get a distinct persisted logical line id after reclaimed suffix, got %#v", viewport.LogicalLineIDs)
+	}
+}
+
+func TestTerminalProcessExitKeepsSingleRowCleanReclaimedTailWhenAppendingIndependentLiveRow(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("screen")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "single-clean-reclaimed-tail-plus-independent-live",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("older"), wrapped: false},
+		{cells: localVTermCellsFromString("keep"), wrapped: false},
+	})
+	term.size = Size{Cols: 5, Rows: 2}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
+	}
+	if got := term.primaryLiveTail.authoritativeReclaimedCommittedRowCount(); got != 1 {
+		t.Fatalf("expected one clean reclaimed row before live append, got %d", got)
+	}
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("live"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("")}},
+		localvterm.CursorState{Row: 0, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal independent live row after single clean reclaimed tail: %v", err)
+	}
+	viewport, err := store.Viewport(0, 10, 5)
+	if err != nil {
+		t.Fatalf("viewport after single clean reclaimed seal: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"older", "keep", "live"}) {
+		t.Fatalf("expected single clean reclaimed suffix to remain and live row to append, got %#v", got)
+	}
+	if len(viewport.LogicalLineIDs) != 3 || viewport.LogicalLineIDs[1] == viewport.LogicalLineIDs[2] {
+		t.Fatalf("expected appended live row to get distinct persisted logical line id, got %#v", viewport.LogicalLineIDs)
 	}
 }
 

@@ -1111,6 +1111,8 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 	if t.gridAppender != nil {
 		t.gridAppender.flush()
 	}
+	t.syncLiveTailRuntimeCursorFromGridLocked()
+	t.primaryLiveTail.reassignConflictingRuntimeLogicalLineIDs(t.grid.maxMigratedRuntimeLogicalLineID())
 	rows := t.primaryLiveTailRowsForExit()
 	if len(rows) == 0 {
 		t.primaryLiveTail.reset()
@@ -1118,7 +1120,7 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 		return nil
 	}
 	if baseRowID, _, persistedRows := t.grid.coordinates(); persistedRows > 0 {
-		if truncateRows := t.primaryLiveTail.authoritativeReclaimedTailRowCount(baseRowID, persistedRows); truncateRows > 0 {
+		if truncateRows := t.primaryLiveTail.authoritativeReclaimedTailRowCount(baseRowID, persistedRows); truncateRows > 0 && t.primaryLiveTail.dirtyLiveRowsReplaceAuthoritativeReclaimedTail(baseRowID, persistedRows) {
 			if err := t.grid.truncateTailRows(truncateRows); err != nil {
 				return err
 			}
@@ -1869,11 +1871,13 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	}
 }
 
-func (t *Terminal) syncLiveTailRuntimeCursorFromGridLocked() {
+func (t *Terminal) syncLiveTailRuntimeCursorFromGridLocked() uint64 {
 	if t == nil || t.grid == nil {
-		return
+		return 0
 	}
-	t.primaryLiveTail.advanceRuntimeLogicalLineID(t.grid.maxRuntimeLogicalLineIDFromMetadata())
+	maxRuntimeID := t.grid.maxRuntimeLogicalLineIDFromMetadata()
+	t.primaryLiveTail.advanceRuntimeLogicalLineID(maxRuntimeID)
+	return maxRuntimeID
 }
 
 func (t *Terminal) trimResizePersistedRowsAlreadyAtGridTailLocked(rows []vterm.DamageOp) []vterm.DamageOp {

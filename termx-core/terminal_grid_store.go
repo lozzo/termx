@@ -2023,6 +2023,25 @@ func (s *terminalGridStore) maxRuntimeLogicalLineIDFromMetadata() uint64 {
 	return maxID
 }
 
+func (s *terminalGridStore) maxMigratedRuntimeLogicalLineID() uint64 {
+	if s == nil {
+		return 0
+	}
+	var maxID uint64
+	s.mu.Lock()
+	for runtimeID := range s.lineMigrations {
+		if terminalRuntimeLogicalLineID(runtimeID) && runtimeID > maxID {
+			maxID = runtimeID
+		}
+	}
+	dir := s.dir
+	s.mu.Unlock()
+	if sidecarMax := terminalGridMaxMigratedRuntimeLogicalLineIDFromSidecar(dir); sidecarMax > maxID {
+		maxID = sidecarMax
+	}
+	return maxID
+}
+
 func terminalGridMaxRuntimeLogicalLineIDFromSidecar(dir string) uint64 {
 	if strings.TrimSpace(dir) == "" {
 		return 0
@@ -2038,6 +2057,17 @@ func terminalGridMaxRuntimeLogicalLineIDFromSidecar(dir string) uint64 {
 		}
 	}
 	return maxID
+}
+
+func terminalGridMaxMigratedRuntimeLogicalLineIDFromSidecar(dir string) uint64 {
+	if strings.TrimSpace(dir) == "" {
+		return 0
+	}
+	metadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil {
+		return 0
+	}
+	return terminalGridLineMigrationMapMaxRuntimeID(terminalGridLineMigrationMap(metadata.Migrations))
 }
 
 func (s *terminalGridStore) sealedPersistedLogicalLineRecordPrefixFromMetadata(rowCount int, generation uint64) ([]terminalGridLogicalLineRecord, bool) {

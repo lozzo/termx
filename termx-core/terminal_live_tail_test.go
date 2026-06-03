@@ -467,6 +467,38 @@ func TestTerminalPrimaryLiveTailKeepsLiveLogicalLineIDAcrossReplacement(t *testi
 	}
 }
 
+func TestTerminalPrimaryLiveTailOnlyExplicitReclaimedReplacementMarksPersistedTail(t *testing.T) {
+	var appendTail terminalPrimaryLiveTail
+	appendTail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("keep"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, []uint64{2}, 7, 1, 1)
+	appendTail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("live"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	if appendTail.dirtyLiveRowsReplaceAuthoritativeReclaimedTail(0, 2) {
+		t.Fatalf("expected ordinary live append after reclaimed suffix not to mark persisted tail replacement, tail=%#v", appendTail.segments)
+	}
+
+	var replaceTail terminalPrimaryLiveTail
+	replaceTail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("keep"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, []uint64{2}, 7, 1, 1)
+	replaceTail.replaceReclaimedTailWithLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("EDIT"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	if !replaceTail.dirtyLiveRowsReplaceAuthoritativeReclaimedTail(0, 2) {
+		t.Fatalf("expected explicit reclaimed tail replacement to mark persisted tail replacement, tail=%#v", replaceTail.segments)
+	}
+}
+
 func TestTerminalPrimaryLiveTailKeepsResizeLogicalLineIDAfterReclaimedTrim(t *testing.T) {
 	var tail terminalPrimaryLiveTail
 	tail.replaceResizeRows([]localvterm.DamageOp{
