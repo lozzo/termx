@@ -373,6 +373,9 @@ func TestTerminalLatestCombinedViewportLogicalTotalUsesProjectionIDsNotRecoverab
 		t.Fatalf("expected logical total to count persisted plus stable projected live line only, got %d", viewport.WindowLogicalTotal)
 	}
 	window := historyWindowFromCoreGridViewport("projection-total", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"persisted", "live0"}) {
+		t.Fatalf("expected history window to omit rows without authoritative logical line ids, got %#v", got)
+	}
 	if window.LoadedLines != 2 || window.LogicalTotal != 2 {
 		t.Fatalf("expected history window to ignore rows without authoritative logical line ids, loaded=%d total=%d lines=%#v", window.LoadedLines, window.LogicalTotal, window.Lines)
 	}

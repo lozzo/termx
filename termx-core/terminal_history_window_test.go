@@ -36,6 +36,30 @@ func TestHistoryLineSpansDoNotInferFromWrappedRowsWithoutLogicalLineIDs(t *testi
 	}
 }
 
+func TestHistoryWindowFiltersRowsWithoutAuthoritativeLogicalLineIDs(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("a"), vtermCells("lost"), vtermCells("b")},
+		Timestamps:     []time.Time{time.Unix(1, 0), time.Unix(2, 0), time.Unix(3, 0)},
+		RowKinds:       []string{"a", "lost", "b"},
+		Wrapped:        []bool{false, true, false},
+		Ownership:      []string{RowOwnershipPersisted, RowOwnershipLiveTailLive, RowOwnershipLiveTailLive},
+		LogicalLineIDs: []uint64{10, 0, 11},
+		LoadedRows:     1,
+		TotalRows:      3,
+		LogicalTotal:   2,
+	}
+	window := historyWindowFromCoreGridViewport("filter-missing-line-id", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Fatalf("expected rows without authoritative logical line ids to be omitted, got %#v", got)
+	}
+	if len(window.Lines) != 2 || window.Lines[0].StartRow != 0 || window.Lines[1].StartRow != 1 {
+		t.Fatalf("expected line spans to cover filtered rows contiguously, got %#v", window.Lines)
+	}
+	if window.TotalRows != 2 {
+		t.Fatalf("expected total rows to drop omitted non-authoritative row, got %d", window.TotalRows)
+	}
+}
+
 func TestViewportTrimDoesNotInferClippedLineFromWrappedRowsWithoutLogicalLineIDs(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("old"), vtermCells("new")},

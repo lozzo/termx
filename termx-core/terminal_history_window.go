@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 // HistoryWindowOp 描述一次 history window 投影相对客户端当前窗口应如何接纳。
@@ -287,6 +288,7 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 		return &HistoryWindow{TerminalID: id, Op: historyWindowOpForOffset(beforeOffset), Timestamp: time.Now().UTC()}
 	}
 	viewport = historyWindowTrimViewportToLimit(viewport)
+	viewport = historyWindowFilterViewportToAuthoritativeRows(viewport)
 	rows := make([]HistoryRow, len(viewport.Rows))
 	coreRows := convertRows(viewport.Rows)
 	for i := range viewport.Rows {
@@ -341,6 +343,57 @@ func historyWindowTrimViewportToLimit(viewport terminalGridViewport) terminalGri
 	return viewport
 }
 
+func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewport) terminalGridViewport {
+	if len(viewport.Rows) == 0 {
+		return viewport
+	}
+	keep := make([]int, 0, len(viewport.Rows))
+	for i := range viewport.Rows {
+		if uint64At(viewport.LogicalLineIDs, i) != 0 {
+			keep = append(keep, i)
+		}
+	}
+	if len(keep) == len(viewport.Rows) {
+		return viewport
+	}
+	removedCommittedRows := 0
+	for i := range viewport.Rows {
+		if uint64At(viewport.LogicalLineIDs, i) != 0 {
+			continue
+		}
+		switch stringAt(viewport.Ownership, i) {
+		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:
+			removedCommittedRows++
+		}
+	}
+	filtered := viewport
+	filtered.Rows = filterVTermRowsByIndexes(viewport.Rows, keep)
+	filtered.Timestamps = filterTimesByIndexes(viewport.Timestamps, keep)
+	filtered.RowKinds = filterStringsByIndexes(viewport.RowKinds, keep)
+	filtered.Wrapped = filterBoolsByIndexes(viewport.Wrapped, keep)
+	filtered.Ownership = filterStringsByIndexes(viewport.Ownership, keep)
+	filtered.LogicalLineIDs = filterUint64sByIndexes(viewport.LogicalLineIDs, keep)
+	filtered.LoadedRows -= removedCommittedRows
+	if filtered.LoadedRows < filtered.BeforeOffset {
+		filtered.LoadedRows = filtered.BeforeOffset
+	}
+	if viewport.TotalRows > 0 {
+		filtered.TotalRows = maxInt(0, viewport.TotalRows-(len(viewport.Rows)-len(keep)))
+	}
+	if len(keep) == 0 {
+		filtered.FirstLineClippedBefore = false
+		filtered.HasMore = false
+		if filtered.TotalRows == 0 {
+			filtered.Generation = 0
+			filtered.FirstRowID = 0
+			filtered.LastRowID = 0
+		}
+	} else if keep[0] != 0 {
+		filtered.FirstLineClippedBefore = false
+	}
+	return filtered
+}
+
 func terminalHistoryWindowCommittedOwnershipCount(ownership []string) int {
 	count := 0
 	for _, value := range ownership {
@@ -350,6 +403,64 @@ func terminalHistoryWindowCommittedOwnershipCount(ownership []string) int {
 		}
 	}
 	return count
+}
+
+func filterVTermRowsByIndexes(values [][]vterm.Cell, indexes []int) [][]vterm.Cell {
+	if len(values) == 0 || len(indexes) == 0 {
+		return nil
+	}
+	out := make([][]vterm.Cell, 0, len(indexes))
+	for _, index := range indexes {
+		if index < 0 || index >= len(values) {
+			continue
+		}
+		out = append(out, cloneVTermCells(values[index]))
+	}
+	return out
+}
+
+func filterTimesByIndexes(values []time.Time, indexes []int) []time.Time {
+	if len(values) == 0 || len(indexes) == 0 {
+		return nil
+	}
+	out := make([]time.Time, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, timeAt(values, index))
+	}
+	return out
+}
+
+func filterStringsByIndexes(values []string, indexes []int) []string {
+	if len(values) == 0 || len(indexes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, stringAt(values, index))
+	}
+	return out
+}
+
+func filterBoolsByIndexes(values []bool, indexes []int) []bool {
+	if len(values) == 0 || len(indexes) == 0 {
+		return nil
+	}
+	out := make([]bool, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, boolAt(values, index))
+	}
+	return out
+}
+
+func filterUint64sByIndexes(values []uint64, indexes []int) []uint64 {
+	if len(values) == 0 || len(indexes) == 0 {
+		return nil
+	}
+	out := make([]uint64, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, uint64At(values, index))
+	}
+	return out
 }
 
 func historyLoadedLogicalLineCount(lines []HistoryLineSpan) int {
