@@ -168,6 +168,25 @@ func TestHistoryWindowEmptyViewportPreservesRequestCursor(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowEmptyRowsClearsAdvisoryViewportMetadata(t *testing.T) {
+	viewport := terminalGridViewport{
+		BeforeOffset: 4,
+		LoadedRows:   4,
+		TotalRows:    4,
+		LogicalTotal: 4,
+		Generation:   7,
+		FirstRowID:   1,
+		LastRowID:    3,
+	}
+	window := historyWindowFromCoreGridViewport("empty-advisory", 4, viewport)
+	if len(window.Rows) != 0 || len(window.Lines) != 0 || window.Token != "" || window.Generation != 0 || window.FirstRowID != 0 || window.LastRowID != 0 {
+		t.Fatalf("expected empty rows to clear advisory viewport boundary metadata, got %#v", window)
+	}
+	if window.BeforeOffset != 4 || window.LoadedRows != 4 || window.TotalRows != 0 || window.LogicalTotal != 0 || window.HasMore {
+		t.Fatalf("expected empty rows to preserve only exhausted cursor, before=%d loaded=%d total=%d logical=%d has_more=%v", window.BeforeOffset, window.LoadedRows, window.TotalRows, window.LogicalTotal, window.HasMore)
+	}
+}
+
 func TestHistoryWindowDoesNotMergeLogicalLineAcrossFilteredRows(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("a"), vtermCells("lost"), vtermCells("b"), vtermCells("c")},
