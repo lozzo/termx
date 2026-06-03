@@ -131,13 +131,13 @@
 | 3. core-v2 历史事件语义 | 完成 | `termx-core-v2/` | 覆盖 write/seal/mutate/reset/commit/reclaim/hide/truncate/alt-screen/process-exit/resize 事件；非历史事件不创建 committed history |
 | 4. core-v2 HistoryWindow 投影 | 完成 | `termx-core-v2/` | 从 logical lines 生成 visual rows、line spans、clipping、token、generation、cursor、latest replace、older prepend |
 | 5. protocol 契约联动 | 完成 | `termx-proto/`、`internal/protocol/`、`termx-core-v2/` | 按需扩展 `history.window` contract；legacy snapshot/grid viewport 明确只作为实时兼容投影 |
-| 6. tui-v3 runtime 骨架 | 待开始 | `termx-tui-v3/` | 建立自有 `Msg`、`Effect`、`AppRuntime`、`EffectRunner`、`TerminalHost` fake、`FrameSink` contract 和 harness |
+| 6. tui-v3 runtime 骨架 | 完成 | `termx-tui-v3/` | 建立自有 `Msg`、`Effect`、`AppRuntime`、`EffectRunner`、`TerminalHost` fake、`FrameSink` contract 和 harness |
 | 7. tui-v3 history/copymode 状态 | 待开始 | `termx-tui-v3/` | reducer-owned `HistoryStore`、`CopyModeStore`、latest/older/stale/resize/selection harness 完成 |
 | 8. tui-v3 input/render/UI 边界 | 待开始 | `termx-tui-v3/` | 自有 `InputEvent`、semantic intent、RenderVMBuilder、Renderer、hit regions、lipgloss style helper；无 Bubble Tea contract |
 | 9. services 与集成 | 待开始 | `termx-tui-v3/`、受限联动范围 | core client、terminal service、session、clipboard、真实 adapter 接入；fake 与最小 e2e 通过 |
 | 10. 收口与迁移入口 | 待开始 | 受限联动范围 | 新路径可运行；必要 CLI/adapter 入口接入；旧 helper/fixture 只在明确不再需要时删除 |
 
-当前下一步：执行切片 6。
+当前下一步：执行切片 7。
 
 ## 6. 必做 harness
 
@@ -228,5 +228,6 @@
 - 切片 3 已完成：`termx-core-v2/history` 已建立显式历史事件入口，覆盖 write、seal、mutate、reset、commit、reclaim、hide、truncate、alt-screen、process-exit、resize 与 non-history boundary harness。
 - 切片 4 已完成：`termx-core-v2/history` 已建立 HistoryWindow authoritative projection，覆盖 latest replace、older prepend、cursor、token、generation、clipping、logical line span 和 mutable frontier 混合投影 harness。
 - 切片 5 已完成：`history.window` protocol contract 已扩展 token/generation/logical cursor/boundary 与 row-to-line 映射字段，legacy snapshot/grid viewport 在代码注释中明确为实时兼容投影。
+- 切片 6 已完成：`termx-tui-v3/app` 已建立自有 `AppRuntime`、`Msg`、`Effect`、`EffectRunner`、`TerminalHost` fake、`FrameSink` contract 和 runtime harness。
 - 旧 `termx-core/` 与 `tuiv2/` 的历史修补进度不再作为当前主线状态；如需查阅只能通过 git 历史或只读参考。
-- 下一步执行切片 6：建立 tui-v3 自有 runtime 骨架。
+- 下一步执行切片 7：建立 tui-v3 reducer-owned history/copy mode 状态。
