@@ -2398,11 +2398,13 @@ func TestServerHistoryWindowClippedLineRowKindUsesLogicalLineRecord(t *testing.T
 	if err != nil {
 		t.Fatalf("new grid store: %v", err)
 	}
+	start := time.Unix(20, 0).UTC()
+	end := time.Unix(40, 0).UTC()
 	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("aa"), rowKind: "line0", wrapped: false},
-		{cells: localVTermCellsFromString("bbbb"), rowKind: "record-kind", wrapped: true},
+		{cells: localVTermCellsFromString("bbbb"), rowKind: "record-kind", timestamp: start, wrapped: true},
 		{cells: localVTermCellsFromString("cccc"), wrapped: true},
-		{cells: localVTermCellsFromString("dd"), wrapped: false},
+		{cells: localVTermCellsFromString("dd"), timestamp: end, wrapped: false},
 		{cells: localVTermCellsFromString("ee"), rowKind: "line2", wrapped: false},
 	})
 	if err := store.Close(); err != nil {
@@ -2424,6 +2426,9 @@ func TestServerHistoryWindowClippedLineRowKindUsesLogicalLineRecord(t *testing.T
 	if span.RowKind != "record-kind" || !span.ClippedBefore {
 		t.Fatalf("expected clipped line span to inherit row kind from logical line record, got %#v", span)
 	}
+	if !span.TimestampStart.Equal(start) || !span.TimestampEnd.Equal(end) {
+		t.Fatalf("expected clipped line span to inherit timestamp range from logical line record, got %#v", span)
+	}
 }
 
 func TestTerminalGridViewportRuntimeLineRecordCarriesPayloadRowKind(t *testing.T) {
@@ -2431,11 +2436,13 @@ func TestTerminalGridViewportRuntimeLineRecordCarriesPayloadRowKind(t *testing.T
 	defer store.Close()
 
 	runtimeID := terminalLiveTailLogicalLineIDBase + 4200
+	start := time.Unix(30, 0).UTC()
+	end := time.Unix(50, 0).UTC()
 	rows := []localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("aa"), RowKind: "line0", WrappedSet: true, Wrapped: false},
-		{Cells: localVTermCellsFromString("bbbb"), RowKind: "runtime-kind", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bbbb"), RowKind: "runtime-kind", Timestamp: start, WrappedSet: true, Wrapped: true},
 		{Cells: localVTermCellsFromString("cccc"), WrappedSet: true, Wrapped: true},
-		{Cells: localVTermCellsFromString("dd"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("dd"), Timestamp: end, WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("ee"), RowKind: "line2", WrappedSet: true, Wrapped: false},
 	}
 	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{0, runtimeID, runtimeID, runtimeID, 0}); err != nil {
@@ -2457,6 +2464,9 @@ func TestTerminalGridViewportRuntimeLineRecordCarriesPayloadRowKind(t *testing.T
 	if span.RowKind != "runtime-kind" || !span.ClippedBefore {
 		t.Fatalf("expected runtime clipped line span to inherit row kind from in-memory logical line record, got %#v", span)
 	}
+	if !span.TimestampStart.Equal(start) || !span.TimestampEnd.Equal(end) {
+		t.Fatalf("expected runtime clipped line span to inherit timestamp range from in-memory logical line record, got %#v", span)
+	}
 }
 
 func TestTerminalGridTempStoreRuntimeLineRecordCarriesPayloadRowKind(t *testing.T) {
@@ -2467,11 +2477,13 @@ func TestTerminalGridTempStoreRuntimeLineRecordCarriesPayloadRowKind(t *testing.
 	defer store.Close()
 
 	runtimeID := terminalLiveTailLogicalLineIDBase + 4201
+	start := time.Unix(40, 0).UTC()
+	end := time.Unix(60, 0).UTC()
 	rows := []localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("aa"), RowKind: "line0", WrappedSet: true, Wrapped: false},
-		{Cells: localVTermCellsFromString("bbbb"), RowKind: "temp-kind", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bbbb"), RowKind: "temp-kind", Timestamp: start, WrappedSet: true, Wrapped: true},
 		{Cells: localVTermCellsFromString("cccc"), WrappedSet: true, Wrapped: true},
-		{Cells: localVTermCellsFromString("dd"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("dd"), Timestamp: end, WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("ee"), RowKind: "line2", WrappedSet: true, Wrapped: false},
 	}
 	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{0, runtimeID, runtimeID, runtimeID, 0}); err != nil {
@@ -2492,6 +2504,9 @@ func TestTerminalGridTempStoreRuntimeLineRecordCarriesPayloadRowKind(t *testing.
 	span := window.Lines[0]
 	if span.RowKind != "temp-kind" || !span.ClippedBefore {
 		t.Fatalf("expected temp runtime clipped line span to inherit row kind from in-memory logical line record, got %#v", span)
+	}
+	if !span.TimestampStart.Equal(start) || !span.TimestampEnd.Equal(end) {
+		t.Fatalf("expected temp runtime clipped line span to inherit timestamp range from in-memory logical line record, got %#v", span)
 	}
 }
 
