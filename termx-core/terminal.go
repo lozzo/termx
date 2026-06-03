@@ -1963,7 +1963,12 @@ func (t *Terminal) recordLiveTailLineMigrationsLocked(rows []vterm.DamageOp, run
 	startRowID := baseRowID + uint64(rowCount)
 	start := 0
 	for i, row := range rows {
-		if row.WrappedSet && row.Wrapped && i < len(rows)-1 {
+		currentID := uint64At(runtimeLineIDs, i)
+		nextID := uint64At(runtimeLineIDs, i+1)
+		if i < len(rows)-1 && currentID != 0 && nextID != 0 && currentID == nextID {
+			continue
+		}
+		if currentID == 0 && row.WrappedSet && row.Wrapped && i < len(rows)-1 {
 			continue
 		}
 		runtimeID := uint64At(runtimeLineIDs, start)

@@ -122,6 +122,34 @@ func TestTerminalHardNewlineSealsAccumulatedLiveTailOpenLineToPersistedHistory(t
 	}
 }
 
+func TestTerminalLiveLineMigrationUsesExplicitLogicalLineIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:   "migration-explicit-line-id",
+		grid: store,
+	}
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 17
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("first"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("second"), WrappedSet: true, Wrapped: false},
+	}
+	term.recordLiveTailLineMigrationsLocked(rows, []uint64{runtimeID, runtimeID})
+
+	if got := term.liveLineMigrations[runtimeID]; got != 1 {
+		t.Fatalf("expected runtime line id to migrate to first persisted line id, got %d migrations=%#v", got, term.liveLineMigrations)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read migration metadata: %v", err)
+	}
+	want := []terminalGridLineMigration{{RuntimeID: runtimeID, PersistedID: 1}}
+	if !reflect.DeepEqual(metadata.Migrations, want) {
+		t.Fatalf("expected one migration for explicit logical line id, got %#v want %#v", metadata.Migrations, want)
+	}
+}
+
 func TestTerminalExactWidthLineHardNewlineSealsToPersistedHistory(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
