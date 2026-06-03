@@ -474,7 +474,7 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		filtered.LoadedRows = filtered.BeforeOffset
 	}
 	if viewport.TotalRows > 0 {
-		filtered.TotalRows = maxInt(0, viewport.TotalRows-removedCommittedRows-removedNonCommittedRows)
+		filtered.TotalRows = maxInt(0, viewport.TotalRows-(len(viewport.Rows)-len(keep)))
 	}
 	if len(invalidLineIDs) > 0 {
 		filtered.LogicalTotal = maxInt(0, viewport.LogicalTotal-len(invalidLineIDs))

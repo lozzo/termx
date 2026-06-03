@@ -272,6 +272,41 @@ func TestHistoryWindowFiltersReflowedFallbackDepthBySourceRows(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowFiltersReflowedFallbackRowsFromClippedTotalRows(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("tail"), vtermCells("fo"), vtermCells("ob"), vtermCells("ar")},
+		Ownership:                  []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs:             []uint64{11, 10, 10, 10},
+		LogicalLineIDAuthoritative: []bool{true, false, false, false},
+		RowIDRanges:                []terminalGridRowIDRange{{First: 41, Last: 41, Known: true}, {First: 40, Last: 40, Known: true}, {First: 40, Last: 40, Known: true}, {First: 40, Last: 40, Known: true}},
+		LoadedRows:                 2,
+		TotalRows:                  5,
+		LogicalTotal:               2,
+		FirstLineClippedBefore:     true,
+		HasMore:                    true,
+		Generation:                 7,
+		FirstRowID:                 40,
+		LastRowID:                  41,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-reflow-fallback-clipped-total", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"tail"}) {
+		t.Fatalf("expected only authoritative clipped row after filtering reflowed fallback row, got %#v", got)
+	}
+	if window.LoadedRows != 1 || window.BeforeOffset != 1 {
+		t.Fatalf("expected cursor to drop one filtered source row, before=%d loaded=%d window=%#v", window.BeforeOffset, window.LoadedRows, window)
+	}
+	if window.TotalRows != 2 || window.LogicalTotal != 1 || !window.HasMore {
+		t.Fatalf("expected total rows to keep clipped authoritative prefix only, total=%d logical=%d has_more=%v window=%#v", window.TotalRows, window.LogicalTotal, window.HasMore, window)
+	}
+	if len(window.Lines) != 1 || !window.Lines[0].ClippedBefore || window.Lines[0].LogicalLineID != 11 {
+		t.Fatalf("expected kept row to remain clipped authoritative span, got %#v", window.Lines)
+	}
+	if window.FirstRowID != 41 || window.LastRowID != 41 {
+		t.Fatalf("expected row boundary to narrow to kept source row, got %d..%d window=%#v", window.FirstRowID, window.LastRowID, window)
+	}
+}
+
 func TestHistoryWindowFiltersMutableRowsFromClippedTotalRows(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:                       [][]vterm.Cell{vtermCells("tail"), vtermCells("lost")},
