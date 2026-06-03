@@ -687,10 +687,11 @@ func terminalLiveTailSegmentLogicalLineTimestampWindow(segment terminalLiveTailS
 		for lineEnd+1 < len(fullLogicalLineIDs) && fullLogicalLineIDs[lineEnd+1] == lineID {
 			lineEnd++
 		}
-		startTime := terminalLogicalLineTimestampStartFromDamageRows(segment.rows[lineStart : lineEnd+1])
-		endTime := terminalLogicalLineTimestampEndFromDamageRows(segment.rows[lineStart : lineEnd+1])
-		timestampStart[i] = startTime
-		timestampEnd[i] = endTime
+		record := terminalLiveTailLogicalLineRecord{startRow: lineStart, endRow: lineEnd}
+		if payload, ok := terminalLiveTailLogicalLineRecordPayload(record, segment.rows); ok {
+			timestampStart[i] = payload.timestampStart()
+			timestampEnd[i] = payload.timestampEnd()
+		}
 	}
 	return timestampStart, timestampEnd
 }
