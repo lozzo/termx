@@ -145,12 +145,13 @@ func terminalGridLogicalLineRecordRowRefs(record terminalGridLogicalLineRecord, 
 }
 
 func (payload terminalGridLogicalLinePayload) cellRows() [][]vterm.Cell {
-	if len(payload.rows) == 0 {
+	segments := payload.rowSegments()
+	if len(segments) == 0 {
 		return nil
 	}
-	out := make([][]vterm.Cell, 0, len(payload.rows))
-	for _, row := range payload.rows {
-		out = append(out, cloneVTermCells(row.cells))
+	out := make([][]vterm.Cell, 0, len(segments))
+	for _, segment := range segments {
+		out = append(out, cloneVTermCells(segment.cells))
 	}
 	return out
 }
@@ -172,12 +173,13 @@ func (payload terminalGridLogicalLinePayload) rowSegments() []terminalLogicalLin
 }
 
 func (payload terminalGridLogicalLinePayload) wrappedRows() []bool {
-	if len(payload.rows) == 0 {
+	segments := payload.rowSegments()
+	if len(segments) == 0 {
 		return nil
 	}
-	out := make([]bool, 0, len(payload.rows))
-	for _, row := range payload.rows {
-		out = append(out, row.wrapped)
+	out := make([]bool, 0, len(segments))
+	for _, segment := range segments {
+		out = append(out, segment.wrapped)
 	}
 	return out
 }
