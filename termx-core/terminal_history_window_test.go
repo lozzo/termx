@@ -10,7 +10,7 @@ import (
 )
 
 func TestHistoryLineSpansUseLogicalLineIDs(t *testing.T) {
-	spans := historyLineSpans([]bool{false, false, false}, []string{"a", "a", "b"}, []uint64{101, 101, 103}, 3, 0)
+	spans := historyLineSpans([]bool{false, false, false}, []string{"a", "a", "b"}, []uint64{101, 101, 103}, 3, false)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 1, RowKind: "a", LogicalLineID: 101},
 		{StartRow: 2, EndRow: 2, RowKind: "b", LogicalLineID: 103},
@@ -19,7 +19,7 @@ func TestHistoryLineSpansUseLogicalLineIDs(t *testing.T) {
 		t.Fatalf("expected same logical line id to group spans despite wrapped=false, got %#v want %#v", spans, want)
 	}
 
-	spans = historyLineSpans([]bool{true, false}, []string{"a", "b"}, []uint64{201, 202}, 2, 0)
+	spans = historyLineSpans([]bool{true, false}, []string{"a", "b"}, []uint64{201, 202}, 2, false)
 	want = []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 201},
 		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 202},
@@ -30,7 +30,7 @@ func TestHistoryLineSpansUseLogicalLineIDs(t *testing.T) {
 }
 
 func TestHistoryLineSpansDoNotInferFromWrappedRowsWithoutLogicalLineIDs(t *testing.T) {
-	spans := historyLineSpans([]bool{true, false}, []string{"a", "a"}, nil, 2, 0)
+	spans := historyLineSpans([]bool{true, false}, []string{"a", "a"}, nil, 2, false)
 	if len(spans) != 0 {
 		t.Fatalf("expected no authoritative line spans without logical line ids, got %#v", spans)
 	}
@@ -95,7 +95,7 @@ func TestClippedViewportLeadingRowKindUsesLogicalLineIDs(t *testing.T) {
 func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 	// 末行即使 wrapped=true，也必须收口成一条逻辑行，不能越界。
 	wrapped := []bool{false, true}
-	spans := historyLineSpans(wrapped, nil, []uint64{11, 12}, 2, 0)
+	spans := historyLineSpans(wrapped, nil, []uint64{11, 12}, 2, false)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, LogicalLineID: 11},
 		{StartRow: 1, EndRow: 1, LogicalLineID: 12, ClippedAfter: true},
@@ -106,7 +106,7 @@ func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 }
 
 func TestHistoryLineSpansMarksWindowClipping(t *testing.T) {
-	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, 3)
+	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, false)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 20},
 		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 21, ClippedAfter: true},
@@ -115,7 +115,7 @@ func TestHistoryLineSpansMarksWindowClipping(t *testing.T) {
 		t.Fatalf("expected older offset alone not to mark clipped-before, got %#v want %#v", spans, want)
 	}
 
-	spans = historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, 3, true)
+	spans = historyLineSpans([]bool{false, true}, []string{"a", "b"}, []uint64{20, 21}, 2, true)
 	want = []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 20, ClippedBefore: true},
 		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 21, ClippedAfter: true},

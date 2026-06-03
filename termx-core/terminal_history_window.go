@@ -298,7 +298,7 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 			Timestamp: timeAt(viewport.Timestamps, i),
 		}
 	}
-	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), beforeOffset, viewport.FirstLineClippedBefore)
+	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), viewport.FirstLineClippedBefore)
 	firstLineID, lastLineID := historyLineSpanIDBoundary(lines)
 	logicalTotal := viewport.LogicalTotal
 	if viewport.WindowLogicalTotal > 0 {
@@ -439,13 +439,9 @@ func historyLineSpanIDBoundary(spans []HistoryLineSpan) (uint64, uint64) {
 
 // historyLineSpans 只按 core projection 给出的 stable logical line id 归并
 // visual rows。wrapped 仅用于表达窗口末尾是否裁断投影，不再作为逻辑行真相回退。
-func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, beforeOffset int, firstLineClippedBefore ...bool) []HistoryLineSpan {
+func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, firstLineClippedBefore bool) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
-	}
-	clippedBeforeFirstLine := false
-	if len(firstLineClippedBefore) > 0 && firstLineClippedBefore[0] {
-		clippedBeforeFirstLine = true
 	}
 	spans := make([]HistoryLineSpan, 0, rowCount)
 	for row := 0; row < rowCount; row++ {
@@ -462,7 +458,7 @@ func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64
 			EndRow:        row,
 			RowKind:       stringAt(rowKinds, start),
 			LogicalLineID: logicalLineID,
-			ClippedBefore: clippedBeforeFirstLine && start == 0,
+			ClippedBefore: firstLineClippedBefore && start == 0,
 			ClippedAfter:  historyLineSpanClippedAfter(wrapped, logicalLineIDs, row, rowCount),
 		})
 	}
