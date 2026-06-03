@@ -2604,10 +2604,6 @@ func terminalGridDamageRowsFromLineRowMetas(rows []terminalGridLineRowMeta) ([]v
 	return out, nil
 }
 
-func (s *terminalGridStore) recordLiveTailLineMetadata(records []terminalLiveTailLogicalLineRecord) error {
-	return s.recordLiveTailLineState(records, nil)
-}
-
 func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp) error {
 	if s == nil {
 		return nil
