@@ -335,8 +335,11 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 	}
 	loadedLines := historyLoadedLogicalLineCount(lines)
 	totalRows := viewport.TotalRows
+	if viewport.FirstLineClippedBefore {
+		totalRows = maxInt(totalRows, viewport.BeforeOffset+viewport.LoadedRows+historyWindowTrimmedPrefixVisualRows(viewport))
+	}
 	hasMore := viewport.HasMore
-	if beforeOffset == 0 && logicalTotal > 0 && loadedLines >= logicalTotal {
+	if beforeOffset == 0 && logicalTotal > 0 && loadedLines >= logicalTotal && !historyLineSpansClipped(lines) {
 		totalRows = len(viewport.Rows)
 		hasMore = false
 	}
@@ -367,16 +370,28 @@ func historyWindowTrimViewportToLimit(viewport terminalGridViewport) terminalGri
 		return viewport
 	}
 	trimStart := len(viewport.Rows) - viewport.Limit
-	trimmedCommittedRows := terminalHistoryWindowCommittedOwnershipCount(viewport.Ownership[:trimStart])
+	trimmedCommittedRows := terminalHistoryWindowCommittedDepthForRows(viewport, trimStart)
+	untrimmedRows := len(viewport.Rows)
 	if trimTerminalGridViewportToTail(&viewport, viewport.Limit) {
 		terminalGridViewportRefreshRowIDBoundary(&viewport)
 		viewport.HasMore = true
+		viewport.TotalRows = maxInt(viewport.TotalRows, untrimmedRows)
 		viewport.LoadedRows -= trimmedCommittedRows
 		if viewport.LoadedRows < viewport.BeforeOffset {
 			viewport.LoadedRows = viewport.BeforeOffset
 		}
 	}
 	return viewport
+}
+
+func historyWindowTrimmedPrefixVisualRows(viewport terminalGridViewport) int {
+	if viewport.Limit <= 0 {
+		return 0
+	}
+	if viewport.TotalRows <= len(viewport.Rows) {
+		return 0
+	}
+	return maxInt(0, viewport.TotalRows-len(viewport.Rows))
 }
 
 func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewport) terminalGridViewport {
@@ -550,6 +565,60 @@ func terminalHistoryWindowCommittedOwnershipCount(ownership []string) int {
 	return count
 }
 
+func terminalHistoryWindowCommittedDepthForRows(viewport terminalGridViewport, end int) int {
+	if end <= 0 {
+		return 0
+	}
+	if end > len(viewport.Rows) {
+		end = len(viewport.Rows)
+	}
+	if len(viewport.RowIDRanges) > 0 {
+		prefixRows, ok := terminalHistoryWindowCommittedSourceRows(viewport, 0, end)
+		if !ok {
+			return terminalHistoryWindowCommittedOwnershipCount(viewport.Ownership[:end])
+		}
+		keptRows, ok := terminalHistoryWindowCommittedSourceRows(viewport, end, len(viewport.Rows))
+		if !ok {
+			return terminalHistoryWindowCommittedOwnershipCount(viewport.Ownership[:end])
+		}
+		count := 0
+		for rowID := range prefixRows {
+			if _, kept := keptRows[rowID]; kept {
+				continue
+			}
+			count++
+		}
+		return count
+	}
+	return terminalHistoryWindowCommittedOwnershipCount(viewport.Ownership[:end])
+}
+
+func terminalHistoryWindowCommittedSourceRows(viewport terminalGridViewport, start int, end int) (map[uint64]struct{}, bool) {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(viewport.Rows) {
+		end = len(viewport.Rows)
+	}
+	out := make(map[uint64]struct{})
+	for row := start; row < end; row++ {
+		if !historyWindowFilteredRowCountsAsCommitted(viewport, row) {
+			continue
+		}
+		rowIDRange := terminalGridRowIDRangeAt(viewport.RowIDRanges, row)
+		if !rowIDRange.Known || rowIDRange.Last < rowIDRange.First {
+			return nil, false
+		}
+		for rowID := rowIDRange.First; ; rowID++ {
+			out[rowID] = struct{}{}
+			if rowID == rowIDRange.Last {
+				break
+			}
+		}
+	}
+	return out, true
+}
+
 func filterVTermRowsByIndexes(values [][]vterm.Cell, indexes []int) [][]vterm.Cell {
 	if len(values) == 0 || len(indexes) == 0 {
 		return nil
@@ -659,6 +728,15 @@ func historyLoadedLogicalLineCount(lines []HistoryLineSpan) int {
 		count++
 	}
 	return count
+}
+
+func historyLineSpansClipped(lines []HistoryLineSpan) bool {
+	for _, span := range lines {
+		if span.ClippedBefore || span.ClippedAfter {
+			return true
+		}
+	}
+	return false
 }
 
 func projectedLogicalLineCount(logicalLineIDs []uint64) int {

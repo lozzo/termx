@@ -519,6 +519,7 @@ TUI store 至少表达：
 - 已补齐 core reclaimed mutable live tail 行内 limit 裁剪 harness：latest replace 裁掉 reclaimed persisted logical line 的前半段时只按已实际返回的 reclaimed committed row 推进 cursor，older 请求会补回未暴露的 persisted 前缀且不重复最新尾行。
 - 已补齐 core store-only recovered reclaimed mutable live tail 行内 limit 裁剪 harness：从 `grid.lines.json` 恢复的 reclaimed suffix 被 latest 行内裁剪时，与内存态一致只按已返回 reclaimed row 推进 cursor，并让 older 补回未暴露前缀。
 - 已补齐 core store-only recovered resize mutable live tail 行内 limit 裁剪 harness：从 `grid.lines.json` 恢复的 resize tail 被 latest 行内裁剪时，与 live origin 一致只暴露 dirty runtime mutable 投影，不生成 committed cursor、generation 或 row boundary。
+- 已补齐 core persisted source row 重投影后 latest limit 裁剪 harness：单条 persisted row 在窄宽度下投影为多条 visual row 后被裁剪时，row boundary 保持真实 source row id，cursor 不因裁掉同一 source row 的前缀投影片段而回退，并保留 projection `TotalRows` 与 `HasMore`。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
