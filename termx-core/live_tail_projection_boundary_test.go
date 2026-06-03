@@ -397,6 +397,64 @@ func TestTerminalLatestCombinedViewportCountsReclaimedCommittedRowsOnce(t *testi
 	}
 }
 
+func TestTerminalLatestReclaimedLiveTailLimitMarksClippedCommittedLineBefore(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("p1"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: true},
+		{cells: localVTermCellsFromString("r1"), wrapped: false},
+	})
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), RowKind: "reclaimed-line", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("r1"), RowKind: "reclaimed-line", WrappedSet: true, Wrapped: false},
+	}, []uint64{3, 3}, store.generation, 2, 3)
+
+	viewport, err := historyCombinedGridViewportFromStore(store, 0, 1, 4, tail)
+	if err != nil {
+		t.Fatalf("combined viewport: %v", err)
+	}
+	latest := historyWindowFromCoreGridViewport("reclaimed-limit-clipped", 0, viewport)
+	if got := historyWindowRowTexts(latest); !reflect.DeepEqual(got, []string{"r1"}) {
+		t.Fatalf("expected latest limit to return only visible reclaimed line tail, got %#v", got)
+	}
+	if latest.BeforeOffset != 1 || latest.LoadedRows != 1 {
+		t.Fatalf("expected latest cursor to count only returned reclaimed committed row, before=%d loaded=%d", latest.BeforeOffset, latest.LoadedRows)
+	}
+	if latest.Generation != store.generation || latest.FirstRowID != 3 || latest.LastRowID != 3 {
+		t.Fatalf("expected latest row boundary to follow kept reclaimed row, gen=%d rows=%d..%d", latest.Generation, latest.FirstRowID, latest.LastRowID)
+	}
+	if latest.LoadedLines != 0 || latest.LogicalTotal != 3 || latest.TotalRows != 4 || !latest.HasMore {
+		t.Fatalf("expected clipped reclaimed line to preserve pagination signal without loaded line start, loaded=%d total=%d rows=%d has_more=%v", latest.LoadedLines, latest.LogicalTotal, latest.TotalRows, latest.HasMore)
+	}
+	if latest.FirstLineID != 0 || latest.LastLineID != 0 {
+		t.Fatalf("expected clipped-before reclaimed line not to expose loaded line boundaries, first=%d last=%d", latest.FirstLineID, latest.LastLineID)
+	}
+	if len(latest.Rows) != 1 || latest.Rows[0].Ownership != RowOwnershipLiveTailReclaimed {
+		t.Fatalf("expected latest row to stay reclaimed live-tail owned, rows=%#v", latest.Rows)
+	}
+	if len(latest.Lines) != 1 {
+		t.Fatalf("expected one clipped reclaimed line span, got %#v", latest.Lines)
+	}
+	span := latest.Lines[0]
+	if span.StartRow != 0 || span.EndRow != 0 || span.RowKind != "reclaimed-line" || span.LogicalLineID != 3 || !span.ClippedBefore || span.ClippedAfter {
+		t.Fatalf("expected latest limit to mark reclaimed line clipped-before only, got %#v", span)
+	}
+
+	older, err := historyCombinedGridViewportFromStore(store, latest.BeforeOffset, 10, 4, tail)
+	if err != nil {
+		t.Fatalf("older viewport after clipped reclaimed latest: %v", err)
+	}
+	if got := vtermRowsToStrings(older.Rows); !reflect.DeepEqual(got, []string{"p0", "p1", "r0"}) {
+		t.Fatalf("expected older request to return unexposed reclaimed prefix without repeating r1, got %#v", got)
+	}
+	if older.LoadedRows != 4 {
+		t.Fatalf("expected older cursor to reach full committed depth, got %d", older.LoadedRows)
+	}
+}
+
 func TestTerminalLatestCombinedViewportDoesNotHidePersistedRowsForNonAuthoritativeReclaimedTail(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
