@@ -584,9 +584,12 @@ func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapsho
 	scrollbackTimestamps, screenTimestamps := splitGridSnapshotTimes(result.Timestamps, len(metaRows)-len(screenRows), len(screenRows))
 	scrollbackRowKinds, screenRowKinds := splitGridSnapshotStrings(result.RowKinds, len(metaRows)-len(screenRows), len(screenRows))
 	scrollbackWrapped, screenWrapped := splitGridSnapshotBools(result.Wrapped, len(metaRows)-len(screenRows), len(screenRows))
+	scrollbackOwnership, _ := splitGridSnapshotStrings(result.Ownership, len(metaRows)-len(screenRows), len(screenRows))
 	scrollbackTimestamps = tailTimeSlice(scrollbackTimestamps, scrollbackMetaRows)
 	scrollbackRowKinds = tailStringSlice(scrollbackRowKinds, scrollbackMetaRows)
 	scrollbackWrapped = tailBoolSlice(scrollbackWrapped, scrollbackMetaRows)
+	scrollbackOwnership = tailStringSlice(scrollbackOwnership, scrollbackMetaRows)
+	scrollbackOwnership = normalizeGridSnapshotScrollbackOwnership(scrollbackOwnership, len(scrollbackRows))
 	return &Snapshot{
 		TerminalID: id,
 		Size:       s.cfg.defaultSize,
@@ -610,11 +613,29 @@ func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapsho
 		ScreenWrapped:          screenWrapped,
 		ScrollbackWrapped:      scrollbackWrapped,
 		ScreenOwnership:        repeatedString(RowOwnershipScreen, len(screenRows)),
-		ScrollbackOwnership:    repeatedString(RowOwnershipPersisted, len(scrollbackRows)),
+		ScrollbackOwnership:    scrollbackOwnership,
 		Cursor:                 CursorState{Visible: true},
 		Modes:                  TerminalModes{AutoWrap: true},
 		Timestamp:              time.Now().UTC(),
 	}, nil
+}
+
+func normalizeGridSnapshotScrollbackOwnership(values []string, count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	if len(values) != count {
+		return repeatedString(RowOwnershipPersisted, count)
+	}
+	out := cloneStringSlice(values)
+	for i, value := range out {
+		switch value {
+		case RowOwnershipPersisted, RowOwnershipLiveTailLive, RowOwnershipLiveTailReclaimed:
+		default:
+			out[i] = RowOwnershipPersisted
+		}
+	}
+	return out
 }
 
 func storeViewportWithRecoveredLiveTail(store *terminalGridStore, beforeOffset int, limit int, cols int) (terminalGridViewport, error) {

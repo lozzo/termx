@@ -354,6 +354,54 @@ func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
 	}
 }
 
+func TestServerStoreOnlySnapshotPreservesRecoveredLiveTailScrollbackOwnership(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	const terminalID = "recover-live-tail-snapshot-ownership"
+	store, err := newTerminalGridStore(root, terminalID)
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	vt := vterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	term := &Terminal{
+		id:    terminalID,
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	damage := vterm.WriteDamage{
+		ScrollbackAppend: []vterm.DamageOp{
+			{Cells: localVTermCellsFromString("hist"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail0"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("tail1"), WrappedSet: true, Wrapped: true},
+		},
+		LiveTailAppendRows: 2,
+	}
+	term.appendGridFromDamageLocked(damage)
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	restarted := NewServer(WithGridRoot(root), WithDefaultSize(4, 1))
+	snap, err := restarted.Snapshot(ctx, terminalID, SnapshotOptions{ScrollbackLimit: 10})
+	if err != nil {
+		t.Fatalf("snapshot after restart: %v", err)
+	}
+	if got := rowsToStrings(snap.Scrollback); !reflect.DeepEqual(got, []string{"hist", "tail0"}) {
+		t.Fatalf("expected snapshot scrollback to include persisted row and older recovered live-tail row, got %#v", got)
+	}
+	if got := rowsToStrings(snap.Screen.Cells); !reflect.DeepEqual(got, []string{"tail1"}) {
+		t.Fatalf("expected latest recovered live-tail row on snapshot screen, got %#v", got)
+	}
+	if got := snap.ScrollbackOwnership; !reflect.DeepEqual(got, []string{RowOwnershipPersisted, RowOwnershipLiveTailLive}) {
+		t.Fatalf("expected snapshot scrollback ownership to preserve recovered live-tail row, got %#v", got)
+	}
+	if got := snap.ScreenOwnership; !reflect.DeepEqual(got, []string{RowOwnershipScreen}) {
+		t.Fatalf("expected snapshot screen ownership to remain screen projection, got %#v", got)
+	}
+}
+
 func TestServerHistoryWindowRestoresReclaimedLiveTailWithoutRepeatingOlderRows(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
