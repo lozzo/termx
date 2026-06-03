@@ -116,6 +116,17 @@ func (payload terminalLiveTailLogicalLinePayload) cellRows() [][]vterm.Cell {
 	return out
 }
 
+func (payload terminalLiveTailLogicalLinePayload) wrappedRows() []bool {
+	if len(payload.rows) == 0 {
+		return nil
+	}
+	out := make([]bool, 0, len(payload.rows))
+	for _, row := range payload.rows {
+		out = append(out, row.WrappedSet && row.Wrapped)
+	}
+	return out
+}
+
 type terminalLiveTailRowsWithLogicalLineIDs struct {
 	rows           []vterm.DamageOp
 	logicalLineIDs []uint64

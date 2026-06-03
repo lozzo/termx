@@ -437,6 +437,9 @@ func TestTerminalLiveTailLogicalLineRecordPayloadCarriesCellsAndMetadata(t *test
 	if got := vtermRowsToStrings(payload.cellRows()); !reflect.DeepEqual(got, []string{"aa", "bb"}) {
 		t.Fatalf("expected live-tail payload cells from record row range, got %#v", got)
 	}
+	if got := payload.wrappedRows(); !reflect.DeepEqual(got, []bool{true, false}) {
+		t.Fatalf("expected live-tail payload wrapped row segments from record row range, got %#v", got)
+	}
 	if payload.rowKind() != "live-kind" || !payload.timestampStart().Equal(start) || !payload.timestampEnd().Equal(end) {
 		t.Fatalf("unexpected live-tail payload metadata row_kind=%q start=%v end=%v", payload.rowKind(), payload.timestampStart(), payload.timestampEnd())
 	}

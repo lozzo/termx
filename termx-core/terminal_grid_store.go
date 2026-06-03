@@ -148,6 +148,17 @@ func (payload terminalGridLogicalLinePayload) cellRows() [][]vterm.Cell {
 	return out
 }
 
+func (payload terminalGridLogicalLinePayload) wrappedRows() []bool {
+	if len(payload.rows) == 0 {
+		return nil
+	}
+	out := make([]bool, 0, len(payload.rows))
+	for _, row := range payload.rows {
+		out = append(out, row.wrapped)
+	}
+	return out
+}
+
 type terminalGridMetadata struct {
 	StoreVersion  int
 	TerminalID    string
