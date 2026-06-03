@@ -499,6 +499,7 @@ TUI store 至少表达：
 - 已将 core screen projection 的内部 row boundary 元数据改为随每个投影 row 携带真实 persisted row id 区间；过滤 fallback/non-authoritative rows 后按保留投影 row 的真实区间重算 `FirstRowID` / `LastRowID`，不再用 visual row index 推导，覆盖单个 persisted row 重投影成多行的场景。
 - 已继续收紧 core `history.window` 最终 limit 裁剪后的 row boundary：latest replace 在输出阶段裁掉前缀投影 row 后会按保留 row 的真实 persisted row id 区间刷新 `FirstRowID` / `LastRowID`；reclaim prefix 裁剪同样同步刷新边界，避免 token 继续包含已丢弃的 raw row。
 - 已将 core latest `history.window` 的 combined viewport 与 legacy `grid.viewport` 兼容投影分流：缺少显式 persisted logical line id 的 reclaimed mutable live tail 仍可用 row 坐标服务 legacy 投影去重，但不会遮蔽 authoritative history window 中 persisted store 的权威 logical line rows，也不会作为已加载 committed depth 扣减。
+- 已收紧 core 非 resize full replace 语义：`broad_direct_cell_damage` 等 screen full replace 事件即使携带 `ScrollbackAppend`，也只进入 mutable live tail 投影，不写入 persisted history store，不凭空创建 committed logical line；resize full replace 仍按 resize 语义处理 hidden live tail。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

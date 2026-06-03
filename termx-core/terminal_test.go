@@ -3967,6 +3967,53 @@ func TestTerminalClearScreenDoesNotCreateCommittedHistory(t *testing.T) {
 	}
 }
 
+func TestTerminalNonResizeFullReplaceDoesNotCreateCommittedHistory(t *testing.T) {
+	vt := localvterm.New(12, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "full-replace-no-history-create",
+		size:  Size{Cols: 12, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("before-0")},
+	})
+	beforeRows := store.RowCount()
+	beforeLines := store.LogicalLineCount()
+
+	damage := localvterm.WriteDamage{
+		RequiresFullReplace: true,
+		FullReplaceReason:   "broad_direct_cell_damage",
+		ScrollbackAppend: []localvterm.DamageOp{{
+			Cells:      localVTermCellsFromString("full-replace-scroll"),
+			WrappedSet: true,
+			Wrapped:    false,
+		}},
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected non-resize full replace not to append committed rows, before=%d after=%d", beforeRows, got)
+	}
+	if got := store.LogicalLineCount(); got != beforeLines {
+		t.Fatalf("expected non-resize full replace not to create committed logical lines, before=%d after=%d", beforeLines, got)
+	}
+	coreViewportAfter, err := historyCombinedGridViewportFromStore(store, 0, 10, 12, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("post-full-replace history window viewport: %v", err)
+	}
+	windowAfter := historyWindowFromCoreGridViewport(term.id, 0, coreViewportAfter)
+	if got := historyWindowRowTexts(windowAfter); !reflect.DeepEqual(got, []string{"before-0", "full-replace-scroll"}) {
+		t.Fatalf("expected history window to expose persisted row plus mutable full-replace tail, got %#v", got)
+	}
+	if windowAfter.LoadedRows != beforeRows || windowAfter.LoadedLines != beforeLines+1 || windowAfter.LogicalTotal != beforeLines+1 {
+		t.Fatalf("expected full replace tail to stay mutable without committed depth, loaded_rows=%d loaded_lines=%d total=%d", windowAfter.LoadedRows, windowAfter.LoadedLines, windowAfter.LogicalTotal)
+	}
+}
+
 func TestSnapshotFromVTermPreservesWrappedScrollbackTrailingSpaces(t *testing.T) {
 	vt := localvterm.New(4, 2, 32, nil)
 	if _, err := vt.Write([]byte("AA  BB")); err != nil {

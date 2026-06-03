@@ -1950,6 +1950,12 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWra
 		liveTail.logicalLineIDs = append(liveTail.logicalLineIDs, resizeLineIDs...)
 		return nil, nil, liveTail, true
 	}
+	if damage.RequiresFullReplace {
+		liveTail := t.primaryLiveTail.liveRowsWithLogicalLineIDs()
+		liveTail.rows = append(liveTail.rows, cloneGridDamageOps(damage.ScrollbackAppend)...)
+		liveTail.logicalLineIDs = append(liveTail.logicalLineIDs, make([]uint64, len(damage.ScrollbackAppend))...)
+		return nil, nil, liveTail, true
+	}
 
 	persistedPrefix, _ := splitDamageRowsByLiveTailHint(damage.ScrollbackAppend, damage.LiveTailAppendRows)
 	liveTailStart := len(persistedPrefix)
