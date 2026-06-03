@@ -2150,8 +2150,8 @@ func TestTerminalGridRecoveredReclaimedLiveTailLatestLimitMarksClippedCommittedL
 	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
 		{cells: localVTermCellsFromString("p0"), wrapped: false},
 		{cells: localVTermCellsFromString("p1"), wrapped: false},
-		{cells: localVTermCellsFromString("r0"), wrapped: true},
-		{cells: localVTermCellsFromString("r1"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), rowKind: "recovered-reclaimed", wrapped: true},
+		{cells: localVTermCellsFromString("r1"), rowKind: "recovered-reclaimed", wrapped: false},
 	})
 	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("r0"), RowKind: "recovered-reclaimed", WrappedSet: true, Wrapped: true},
@@ -2220,6 +2220,48 @@ func TestTerminalGridRecoveredReclaimedLiveTailLatestLimitMarksClippedCommittedL
 	}
 	if older.LoadedRows != 4 {
 		t.Fatalf("expected older cursor to reach full committed depth, got %d", older.LoadedRows)
+	}
+}
+
+func TestTerminalGridRecoveredReclaimedLiveTailRejectsMismatchedPayload(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+	})
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("mutated"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}})
+	if err != nil {
+		t.Fatalf("encode mismatched reclaimed row metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read persisted line metadata: %v", err)
+	}
+	metadata.LiveRecords = []terminalGridLineRecordMeta{{
+		ID:         2,
+		StartRow:   0,
+		EndRow:     0,
+		RowIDKnown: true,
+		FirstRowID: 1,
+		LastRowID:  1,
+		Sealed:     true,
+		Origin:     terminalLiveTailOriginReclaimed,
+		Residency:  terminalLogicalLineResidencyLiveTail,
+		Dirty:      false,
+		Generation: generation,
+	}}
+	metadata.LiveRows = rows
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
+		t.Fatalf("write mismatched reclaimed live tail metadata: %v", err)
+	}
+	if tail, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatalf("expected reclaimed payload mismatch to be rejected, got %#v", tail)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -2254,15 +2255,16 @@ func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLive
 	}
 	baseRowID, generation, rowCount := s.coordinates()
 	var persistedRecords []terminalGridLogicalLineRecord
+	var persistedRefs []terminalGridRowRef
 	if terminalGridLineRecordMetasContainOrigin(metadata.LiveRecords, terminalLiveTailOriginReclaimed) {
 		var ok bool
-		persistedRecords, ok = s.persistedLogicalLineRecordsForRecoveredLiveTail(baseRowID, generation)
+		persistedRefs, persistedRecords, ok = s.persistedStateForRecoveredLiveTail(baseRowID, generation)
 		if !ok {
 			return terminalPrimaryLiveTail{}, false
 		}
 	}
 	migrations := terminalGridLineMigrationMap(metadata.Migrations)
-	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount, persistedRecords, migrations)
+	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount, persistedRecords, persistedRefs, s.dir, migrations)
 	if !ok {
 		return terminalPrimaryLiveTail{}, false
 	}
@@ -2273,15 +2275,15 @@ func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLive
 	}, true
 }
 
-func (s *terminalGridStore) persistedLogicalLineRecordsForRecoveredLiveTail(baseRowID uint64, generation uint64) ([]terminalGridLogicalLineRecord, bool) {
+func (s *terminalGridStore) persistedStateForRecoveredLiveTail(baseRowID uint64, generation uint64) ([]terminalGridRowRef, []terminalGridLogicalLineRecord, bool) {
 	if s == nil {
-		return nil, false
+		return nil, nil, false
 	}
 	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
 	if err != nil {
-		return nil, false
+		return nil, nil, false
 	}
-	return s.persistedLogicalLineRecordsForRetention(refs, baseRowID, generation), true
+	return refs, s.persistedLogicalLineRecordsForRetention(refs, baseRowID, generation), true
 }
 
 func terminalGridLineRecordMetasContainOrigin(records []terminalGridLineRecordMeta, origin terminalLiveTailOrigin) bool {
@@ -2302,7 +2304,7 @@ func terminalLiveTailRecordsContainOrigin(records []terminalLiveTailLogicalLineR
 	return false
 }
 
-func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int, persistedRecords []terminalGridLogicalLineRecord, migrations map[uint64]uint64) ([]terminalLiveTailSegment, bool) {
+func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int, persistedRecords []terminalGridLogicalLineRecord, persistedRefs []terminalGridRowRef, persistedDir string, migrations map[uint64]uint64) ([]terminalLiveTailSegment, bool) {
 	if len(records) == 0 || len(rows) == 0 {
 		return nil, false
 	}
@@ -2354,6 +2356,9 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 				return nil, false
 			}
 			if !terminalLiveTailReclaimedMetadataMatchesPersistedRecord(record, firstRowID, lastRowID, persistedBaseRowID, persistedRecords) {
+				return nil, false
+			}
+			if !terminalLiveTailReclaimedPayloadMatchesPersistedRows(firstRowID, lastRowID, persistedBaseRowID, persistedRefs, persistedDir, segmentRows) {
 				return nil, false
 			}
 			segment.firstRowID = firstRowID
@@ -2554,6 +2559,51 @@ func terminalLiveTailReclaimedMetadataMatchesPersistedRecord(record terminalGrid
 		return persisted.id == record.ID && persisted.startRow <= start && persisted.endRow >= end && persisted.sealed
 	}
 	return false
+}
+
+func terminalLiveTailReclaimedPayloadMatchesPersistedRows(firstRowID uint64, lastRowID uint64, persistedBaseRowID uint64, persistedRefs []terminalGridRowRef, persistedDir string, rows []vterm.DamageOp) bool {
+	if len(rows) == 0 || len(persistedRefs) == 0 || strings.TrimSpace(persistedDir) == "" {
+		return false
+	}
+	if firstRowID < persistedBaseRowID || lastRowID < firstRowID {
+		return false
+	}
+	startOffset := firstRowID - persistedBaseRowID
+	endOffset := lastRowID - persistedBaseRowID
+	if endOffset >= uint64(len(persistedRefs)) {
+		return false
+	}
+	if int(endOffset-startOffset)+1 != len(rows) {
+		return false
+	}
+	refs := persistedRefs[int(startOffset) : int(endOffset)+1]
+	persistedRows, err := readTerminalGridRows(persistedDir, refs)
+	if err != nil {
+		return false
+	}
+	return terminalGridRowsMatchRecoveredDamageRows(persistedRows, rows)
+}
+
+func terminalGridRowsMatchRecoveredDamageRows(gridRows []terminalGridRow, damageRows []vterm.DamageOp) bool {
+	if len(gridRows) != len(damageRows) {
+		return false
+	}
+	for i, gridRow := range gridRows {
+		damageRow := damageRows[i]
+		if gridRow.wrapped != (damageRow.WrappedSet && damageRow.Wrapped) {
+			return false
+		}
+		if !gridRow.timestamp.Equal(damageRow.Timestamp) {
+			return false
+		}
+		if gridRow.rowKind != damageRow.RowKind {
+			return false
+		}
+		if !reflect.DeepEqual(gridRow.cells, damageOpCells(damageRow)) {
+			return false
+		}
+	}
+	return true
 }
 
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {
