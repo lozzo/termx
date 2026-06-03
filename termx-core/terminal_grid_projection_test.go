@@ -428,6 +428,37 @@ func TestTerminalGridStoreRecordsOnlyRuntimeToPersistedLineMigrations(t *testing
 	}
 }
 
+func TestTerminalGridStoreDropsConflictingRuntimeLineMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	runtimeID := terminalLiveTailLogicalLineIDBase + 2
+	stableRuntimeID := terminalLiveTailLogicalLineIDBase + 3
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		Migrations: []terminalGridLineMigration{
+			{RuntimeID: runtimeID, PersistedID: 1},
+			{RuntimeID: stableRuntimeID, PersistedID: 3},
+		},
+	}); err != nil {
+		t.Fatalf("seed line metadata: %v", err)
+	}
+
+	if err := store.recordLineMigrations(map[uint64]uint64{
+		runtimeID:       2,
+		stableRuntimeID: 3,
+	}); err != nil {
+		t.Fatalf("record conflicting line migrations: %v", err)
+	}
+
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata: %v", err)
+	}
+	want := []terminalGridLineMigration{{RuntimeID: stableRuntimeID, PersistedID: 3}}
+	if !reflect.DeepEqual(metadata.Migrations, want) {
+		t.Fatalf("expected conflicting runtime migration to be dropped, got %#v want %#v", metadata.Migrations, want)
+	}
+}
+
 func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

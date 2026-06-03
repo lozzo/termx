@@ -3503,17 +3503,18 @@ func recordTerminalGridLineMigrations(dir string, migrations map[uint64]uint64) 
 		return err
 	}
 	merged := make(map[uint64]uint64, len(metadata.Migrations)+len(migrations))
+	conflicted := make(map[uint64]struct{})
 	for _, migration := range metadata.Migrations {
 		if !terminalRuntimeLogicalLineID(migration.RuntimeID) || !terminalPersistedLogicalLineID(migration.PersistedID) {
 			continue
 		}
-		merged[migration.RuntimeID] = migration.PersistedID
+		terminalGridAddLineMigration(merged, conflicted, migration.RuntimeID, migration.PersistedID)
 	}
 	for runtimeID, persistedID := range migrations {
 		if !terminalRuntimeLogicalLineID(runtimeID) || !terminalPersistedLogicalLineID(persistedID) {
 			continue
 		}
-		merged[runtimeID] = persistedID
+		terminalGridAddLineMigration(merged, conflicted, runtimeID, persistedID)
 	}
 	metadata.Migrations = metadata.Migrations[:0]
 	for runtimeID, persistedID := range merged {
@@ -3523,6 +3524,18 @@ func recordTerminalGridLineMigrations(dir string, migrations map[uint64]uint64) 
 		})
 	}
 	return writeTerminalGridLineMetadata(dir, metadata)
+}
+
+func terminalGridAddLineMigration(merged map[uint64]uint64, conflicted map[uint64]struct{}, runtimeID uint64, persistedID uint64) {
+	if _, bad := conflicted[runtimeID]; bad {
+		return
+	}
+	if existing := merged[runtimeID]; existing != 0 && existing != persistedID {
+		delete(merged, runtimeID)
+		conflicted[runtimeID] = struct{}{}
+		return
+	}
+	merged[runtimeID] = persistedID
 }
 
 func (s *terminalGridStore) lineMetadataWritableDir() (string, bool) {
