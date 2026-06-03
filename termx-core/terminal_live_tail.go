@@ -116,6 +116,22 @@ func (payload terminalLiveTailLogicalLinePayload) cellRows() [][]vterm.Cell {
 	return out
 }
 
+func (payload terminalLiveTailLogicalLinePayload) rowSegments() []terminalLogicalLineRowSegment {
+	if len(payload.rows) == 0 {
+		return nil
+	}
+	out := make([]terminalLogicalLineRowSegment, 0, len(payload.rows))
+	for _, row := range payload.rows {
+		out = append(out, terminalLogicalLineRowSegment{
+			cells:     damageOpCells(row),
+			wrapped:   row.WrappedSet && row.Wrapped,
+			rowKind:   row.RowKind,
+			timestamp: row.Timestamp,
+		})
+	}
+	return out
+}
+
 func (payload terminalLiveTailLogicalLinePayload) wrappedRows() []bool {
 	if len(payload.rows) == 0 {
 		return nil

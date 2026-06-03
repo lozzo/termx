@@ -111,6 +111,13 @@ type terminalGridLogicalLinePayload struct {
 	rows []terminalGridRow
 }
 
+type terminalLogicalLineRowSegment struct {
+	cells     []vterm.Cell
+	wrapped   bool
+	rowKind   string
+	timestamp time.Time
+}
+
 func terminalGridLogicalLineRecordPayload(record terminalGridLogicalLineRecord, rows []terminalGridRow) (terminalGridLogicalLinePayload, bool) {
 	if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(rows) {
 		return terminalGridLogicalLinePayload{}, false
@@ -144,6 +151,22 @@ func (payload terminalGridLogicalLinePayload) cellRows() [][]vterm.Cell {
 	out := make([][]vterm.Cell, 0, len(payload.rows))
 	for _, row := range payload.rows {
 		out = append(out, cloneVTermCells(row.cells))
+	}
+	return out
+}
+
+func (payload terminalGridLogicalLinePayload) rowSegments() []terminalLogicalLineRowSegment {
+	if len(payload.rows) == 0 {
+		return nil
+	}
+	out := make([]terminalLogicalLineRowSegment, 0, len(payload.rows))
+	for _, row := range payload.rows {
+		out = append(out, terminalLogicalLineRowSegment{
+			cells:     cloneVTermCells(row.cells),
+			wrapped:   row.wrapped,
+			rowKind:   row.rowKind,
+			timestamp: row.timestamp,
+		})
 	}
 	return out
 }

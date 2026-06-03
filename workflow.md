@@ -569,6 +569,7 @@ TUI store 至少表达：
 - 已将 core mutable live tail window projection 的 timestamp range 计算收敛到 payload 视图：latest/recovered tail window 为每个可见 row 聚合整条 stable logical line 时间范围时，也通过 record payload 读取，避免 projection 与 record/sidecar 路径分叉。
 - 已将 core persisted retention 的 byte/age 计算收敛到 logical line record 的 row segment 与 payload 入口：byte limit 按 record 覆盖的 row refs 统计，age limit 按 record payload 的 timestamp range 判断，不再在 retention 内部各自手切 row range。
 - 已为 core persisted/live-tail logical line payload 视图补入 row segment 信息：payload 现在不仅暴露 cells、row kind 与 timestamp range，也暴露当前 source rows 的 wrapped segment 序列，开始覆盖 `workflow.md` 要求的“当前投影所需 row segments”维度。
+- 已将 core persisted/live-tail logical line payload 的 row segment 表达收敛为显式内部对象：每个 segment 同时携带 cells、wrapped、row kind 与 timestamp，避免调用方用多个并行数组重新拼装投影所需 segment 元数据。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

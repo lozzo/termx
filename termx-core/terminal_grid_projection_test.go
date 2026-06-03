@@ -143,6 +143,10 @@ func TestTerminalGridLogicalLineRecordPayloadCarriesCellsAndMetadata(t *testing.
 	if got := payload.wrappedRows(); !reflect.DeepEqual(got, []bool{true, false}) {
 		t.Fatalf("expected payload wrapped row segments from record row range, got %#v", got)
 	}
+	segments := payload.rowSegments()
+	if len(segments) != 2 || !reflect.DeepEqual(vtermRowsToStrings([][]localvterm.Cell{segments[0].cells, segments[1].cells}), []string{"aa", "bb"}) || !segments[0].wrapped || segments[0].rowKind != "line-kind" || !segments[0].timestamp.Equal(end) || segments[1].wrapped || !segments[1].timestamp.Equal(start) {
+		t.Fatalf("expected payload row segments with projection metadata, got %#v", segments)
+	}
 	if payload.rowKind() != "line-kind" || !payload.timestampStart().Equal(start) || !payload.timestampEnd().Equal(end) {
 		t.Fatalf("unexpected payload metadata row_kind=%q start=%v end=%v", payload.rowKind(), payload.timestampStart(), payload.timestampEnd())
 	}
