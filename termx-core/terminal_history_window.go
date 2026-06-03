@@ -257,6 +257,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 			logicalLineID := uint64At(window.logicalLineIDs, i)
 			result.LogicalLineIDs = append(result.LogicalLineIDs, logicalLineID)
 			result.LogicalLineIDAuthoritative = append(result.LogicalLineIDAuthoritative, logicalLineID != 0)
+			result.RowIDRanges = append(result.RowIDRanges, terminalGridRowIDRangeAt(window.rowIDRanges, i))
 		}
 		if window.hasCommitted {
 			result.LoadedRows += window.committed
@@ -414,9 +415,13 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	filtered.Ownership = filterStringsByIndexes(viewport.Ownership, keep)
 	filtered.LogicalLineIDs = filterUint64sByIndexes(viewport.LogicalLineIDs, keep)
 	filtered.LogicalLineIDAuthoritative = filterBoolsByIndexes(viewport.LogicalLineIDAuthoritative, keep)
-	if len(keep) > 0 && (viewport.FirstRowID != 0 || viewport.LastRowID != 0) {
-		filtered.FirstRowID = viewport.FirstRowID + uint64(keep[0])
-		filtered.LastRowID = viewport.FirstRowID + uint64(keep[len(keep)-1])
+	filtered.RowIDRanges = filterTerminalGridRowIDRangesByIndexes(viewport.RowIDRanges, keep)
+	if firstRowID, lastRowID, ok := terminalGridRowIDRangeBoundary(filtered.RowIDRanges); ok {
+		filtered.FirstRowID = firstRowID
+		filtered.LastRowID = lastRowID
+	} else {
+		filtered.FirstRowID = 0
+		filtered.LastRowID = 0
 	}
 	filtered.LoadedRows -= removedCommittedRows
 	if filtered.LoadedRows < filtered.BeforeOffset {
@@ -563,6 +568,48 @@ func filterUint64sByIndexes(values []uint64, indexes []int) []uint64 {
 		out = append(out, uint64At(values, index))
 	}
 	return out
+}
+
+func filterTerminalGridRowIDRangesByIndexes(values []terminalGridRowIDRange, indexes []int) []terminalGridRowIDRange {
+	if len(values) == 0 || len(indexes) == 0 {
+		return nil
+	}
+	out := make([]terminalGridRowIDRange, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, terminalGridRowIDRangeAt(values, index))
+	}
+	return out
+}
+
+func terminalGridRowIDRangeAt(values []terminalGridRowIDRange, index int) terminalGridRowIDRange {
+	if index < 0 || index >= len(values) {
+		return terminalGridRowIDRange{}
+	}
+	return values[index]
+}
+
+func terminalGridRowIDRangeBoundary(values []terminalGridRowIDRange) (uint64, uint64, bool) {
+	var first uint64
+	var last uint64
+	found := false
+	for _, value := range values {
+		if !value.Known {
+			continue
+		}
+		if !found {
+			first = value.First
+			last = value.Last
+			found = true
+			continue
+		}
+		if value.First < first {
+			first = value.First
+		}
+		if value.Last > last {
+			last = value.Last
+		}
+	}
+	return first, last, found
 }
 
 func historyLoadedLogicalLineCount(lines []HistoryLineSpan) int {

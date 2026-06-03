@@ -40,6 +40,7 @@ type terminalLiveTailWindow struct {
 	rows           []vterm.DamageOp
 	ownership      []string
 	logicalLineIDs []uint64
+	rowIDRanges    []terminalGridRowIDRange
 	committed      int
 	generation     uint64
 	firstRowID     uint64
@@ -422,7 +423,15 @@ func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailW
 		}
 		out.ownership = appendRepeatedString(out.ownership, ownership, localEnd-localStart)
 		if segment.origin != terminalLiveTailOriginReclaimed {
+			out.rowIDRanges = append(out.rowIDRanges, make([]terminalGridRowIDRange, localEnd-localStart)...)
 			continue
+		}
+		if terminalLiveTailReclaimedSegmentHasRowIDs(segment) {
+			for rowID := segment.firstRowID + uint64(localStart); rowID <= segment.firstRowID+uint64(localEnd-1); rowID++ {
+				out.rowIDRanges = append(out.rowIDRanges, terminalGridRowIDRange{First: rowID, Last: rowID, Known: true})
+			}
+		} else {
+			out.rowIDRanges = append(out.rowIDRanges, make([]terminalGridRowIDRange, localEnd-localStart)...)
 		}
 		out.hasCommitted = true
 		if out.generation == 0 {

@@ -195,6 +195,7 @@ func TestHistoryWindowFiltersRowIDBoundaryWithRows(t *testing.T) {
 		Ownership:                  []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
 		LogicalLineIDs:             []uint64{10, 11, 12},
 		LogicalLineIDAuthoritative: []bool{false, true, false},
+		RowIDRanges:                []terminalGridRowIDRange{{First: 20, Last: 20, Known: true}, {First: 21, Last: 21, Known: true}, {First: 22, Last: 22, Known: true}},
 		LoadedRows:                 3,
 		TotalRows:                  3,
 		LogicalTotal:               3,
@@ -209,6 +210,36 @@ func TestHistoryWindowFiltersRowIDBoundaryWithRows(t *testing.T) {
 	}
 	if window.FirstRowID != 21 || window.LastRowID != 21 {
 		t.Fatalf("expected row boundaries to follow kept authoritative row, first=%d last=%d window=%#v", window.FirstRowID, window.LastRowID, window)
+	}
+}
+
+func TestServerHistoryWindowFiltersReflowedRowIDBoundary(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "history-filter-reflow-row-boundary")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.AppendRows([][]vterm.Cell{vtermCells("fallback")}); err != nil {
+		t.Fatalf("append fallback prefix: %v", err)
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: vtermCells("abcdef"), rowKind: "explicit"},
+	})
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(3, 2))
+	window, err := srv.HistoryWindow(ctx, "history-filter-reflow-row-boundary", HistoryWindowOptions{Limit: 10, Cols: 3})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"abc", "def"}) {
+		t.Fatalf("expected reflowed explicit row only, got %#v", got)
+	}
+	if window.FirstRowID != 1 || window.LastRowID != 1 {
+		t.Fatalf("expected row boundaries to use persisted source row id 1..1 after filtering reflowed rows, got %d..%d window=%#v", window.FirstRowID, window.LastRowID, window)
 	}
 }
 
