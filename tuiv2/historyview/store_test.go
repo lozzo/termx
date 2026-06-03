@@ -58,6 +58,23 @@ func TestMemoryStorePreservesExplicitZeroLoadedLinesForClippedBeforeWindow(t *te
 	}
 }
 
+func TestMemoryStoreRejectsRowsWithoutAuthoritativeLineSpans(t *testing.T) {
+	store := NewMemoryStore()
+	window := fakeWindow("term-1", WindowOpReplace, "g1:10-12:c80", 10, 12, []string{"row-only"})
+	window.Lines = nil
+	window.LoadedLines = 0
+	window.FirstLineID = 0
+	window.LastLineID = 0
+	window.Rows[0].Wrapped = true
+
+	if store.ApplyHistoryWindow(window) {
+		t.Fatal("expected row-only history window to be rejected")
+	}
+	if _, ok := store.HistoryWindow("term-1"); ok {
+		t.Fatal("expected rejected row-only history window not to be stored")
+	}
+}
+
 func TestMemoryStoreOlderPrependDoesNotCountClippedBeforeFragmentAsLoadedLine(t *testing.T) {
 	store := NewMemoryStore()
 	latest := fakeWindow("term-1", WindowOpReplace, "g2:10-10:c80", 10, 10, []string{"latest"})

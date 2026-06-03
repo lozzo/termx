@@ -48,6 +48,9 @@ func (s *MemoryStore) ApplyHistoryWindow(window HistoryWindow) bool {
 	defer s.mu.Unlock()
 	s.ensureLocked()
 	window = normalizeHistoryWindow(window)
+	if len(window.Rows) > 0 && len(window.Lines) == 0 {
+		return false
+	}
 	current, hasCurrent := s.windows[window.TerminalID]
 	if !s.acceptWindowLocked(current, hasCurrent, window) {
 		return false

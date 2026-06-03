@@ -57,8 +57,8 @@ func TestCopyModeBufferRejectsWindowMissingAuthoritativeLineSpans(t *testing.T) 
 	window.FirstBoundaryID = 0
 	window.LastBoundaryID = 0
 	window.Rows[0].Wrapped = true
-	if !model.HistoryStore().ApplyHistoryWindow(window) {
-		t.Fatal("expected row-only history window to be stored")
+	if model.HistoryStore().ApplyHistoryWindow(window) {
+		t.Fatal("expected row-only history window to be rejected")
 	}
 	model.copyMode = copyModeState{
 		PaneID:      "pane-1",
