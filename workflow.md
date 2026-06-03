@@ -484,6 +484,7 @@ TUI store 至少表达：
 - 已收紧 `tuiv2/historyview` authoritative store：带 visual rows 的 history window 必须同时带 authoritative line spans；缺少 `Lines` 的 row-only window 会被拒绝，避免 TUI store 保存无法支撑 copy mode logical-line 边界的伪权威窗口。
 - 已继续收紧 `tuiv2/historyview` authoritative store：line spans 必须连续覆盖窗口内所有 visual rows，存在缺口、重叠或越界的窗口会被拒绝，避免 TUI 保存部分 authoritative、部分无 logical-line 边界的混合窗口。
 - 已继续收紧 `tuiv2/historyview` authoritative store：带 visual rows 的 line span 必须携带非零 stable logical line id，避免 TUI 保存只有 row 覆盖、没有 logical-line 身份的伪权威窗口。
+- 已继续收紧 `tuiv2/historyview` authoritative store：同一 stable logical line id 不能在窗口内非连续重复出现，避免 TUI 合并出不连续逻辑行片段。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

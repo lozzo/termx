@@ -78,9 +78,20 @@ func historyWindowHasAuthoritativeLineCoverage(window HistoryWindow) bool {
 		return false
 	}
 	nextRow := 0
+	completed := make(map[uint64]struct{}, len(window.Lines))
+	var currentID uint64
 	for _, span := range window.Lines {
 		if span.LogicalLineID == 0 || span.StartRow != nextRow || span.EndRow < span.StartRow || span.EndRow >= len(window.Rows) {
 			return false
+		}
+		if span.LogicalLineID != currentID {
+			if currentID != 0 {
+				completed[currentID] = struct{}{}
+			}
+			if _, exists := completed[span.LogicalLineID]; exists {
+				return false
+			}
+			currentID = span.LogicalLineID
 		}
 		nextRow = span.EndRow + 1
 	}
