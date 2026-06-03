@@ -1172,6 +1172,30 @@ func TestTerminalGridLiveTailLineStateRejectsReclaimedAfterLiveRecord(t *testing
 	}
 }
 
+func TestTerminalGridLiveTailLineStateRejectsMixedMutableOrigins(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("live"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("resize"), WrappedSet: true, Wrapped: false},
+	}
+	records := []terminalLiveTailLogicalLineRecord{
+		{id: terminalLiveTailLogicalLineIDBase + 1, startRow: 0, endRow: 0, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginLive, residency: terminalLogicalLineResidencyLiveTail, dirty: true},
+		{id: terminalLiveTailLogicalLineIDBase + 2, startRow: 1, endRow: 1, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginResize, residency: terminalLogicalLineResidencyLiveTail, dirty: true},
+	}
+
+	if err := store.recordLiveTailLineState(records, rows); err != nil {
+		t.Fatalf("record mixed mutable origin metadata: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live tail metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected mixed live/resize record view to suppress metadata, got records=%#v rows=%#v", metadata.LiveRecords, metadata.LiveRows)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailPreservesResizeOrigin(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
@@ -1683,6 +1707,30 @@ func TestTerminalGridRecoveredLiveTailRejectsReclaimedAfterLiveRecord(t *testing
 	}
 	if tail, ok := store.recoveredLiveTailFromMetadata(); ok {
 		t.Fatalf("expected reclaimed record after live record to be rejected, got %#v", tail)
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailRejectsMixedMutableOrigins(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("live"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("resize"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode mixed mutable origin metadata: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{
+			{ID: terminalLiveTailLogicalLineIDBase + 70, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+			{ID: terminalLiveTailLogicalLineIDBase + 71, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginResize, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+		},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write mixed mutable origin metadata: %v", err)
+	}
+	if tail, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatalf("expected mixed live/resize records to be rejected, got %#v", tail)
 	}
 }
 

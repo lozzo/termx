@@ -2383,6 +2383,7 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 	nextStart := 0
 	seenIDs := make(map[uint64]struct{}, len(records))
 	seenMutableRecord := false
+	var mutableOrigin terminalLiveTailOrigin
 	for i, record := range records {
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
@@ -2393,6 +2394,11 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 			}
 		} else {
 			seenMutableRecord = true
+			if mutableOrigin == "" {
+				mutableOrigin = record.origin
+			} else if record.origin != mutableOrigin {
+				return nil, false
+			}
 		}
 		if _, exists := seenIDs[record.id]; exists {
 			return nil, false
@@ -3303,6 +3309,7 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 	nextStart := 0
 	seenIDs := make(map[uint64]struct{}, len(records))
 	seenMutableRecord := false
+	var mutableOrigin terminalLiveTailOrigin
 	for i, record := range records {
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || !terminalLiveTailSealStateKnown(record.sealState) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= len(rows) {
 			return false
@@ -3313,6 +3320,11 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 			}
 		} else {
 			seenMutableRecord = true
+			if mutableOrigin == "" {
+				mutableOrigin = record.origin
+			} else if record.origin != mutableOrigin {
+				return false
+			}
 		}
 		if _, exists := seenIDs[record.id]; exists {
 			return false
