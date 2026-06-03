@@ -441,6 +441,7 @@ TUI store 至少表达：
 - 已补齐 process exit force seal harness，固定隐藏 mutable live tail 前缀与当前 screen continuation 行必须作为同一条 persisted logical line 提交，并只产生一条 runtime->persisted logical line id 迁移。
 - 已将 process exit force seal 的 screen-only 行 runtime id 分配接入 mutable live tail 单调分配游标，避免此前已迁移的 runtime id 在退出封口时被 screen projection 行复用并覆盖迁移记录。
 - 已将 restart preserved rows 的提交路径改为保留 `primaryLiveTailRowsForExit` 生成的 logical line id，并在 append 前记录 runtime->persisted migration；restart marker 作为独立 sealed persisted record 写入，避免重启保留行通过无 id wrapped fallback 生成 sidecar。
+- 已让 restart preserved rows 成功提交到 persisted store 后同步清空 mutable live tail 内存状态与 `grid.lines.json` 中的 recoverable live-tail metadata，避免重启保留行同时作为 persisted history 与 recovered live tail 暴露。
 - 已将 mutable live tail 的旧通用 replaceRows 入口收敛到新语义：live/resize segment 创建时即写入 runtime logical line id，不再先生成无 id segment 后依赖读取端补推。
 - 已将 mutable live tail 的 live/resize segment ID 生成收敛为完整显式 stable logical line id 优先；当调用方已提供每 row logical line id 时，不再用 wrapped 元数据重新拆分或合并这些边界。
 - 已将 mutable live tail 的 runtime logical line id 分配改为 tail 生命周期内单调推进；hard newline seal、process exit seal 或 reset 清空尾部内容后，后续独立 live logical line 不复用旧 runtime id，`grid.lines.json` 恢复 live tail 时也会从已恢复的最大 runtime id 继续分配。

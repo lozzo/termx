@@ -601,10 +601,7 @@ func (t *Terminal) Restart() error {
 		gridAppender.flush()
 	}
 	if grid != nil {
-		t.mu.Lock()
-		t.recordTerminalGridRowLineMigrationsLocked(preservedRows)
-		t.mu.Unlock()
-		if err := grid.appendRows(preservedRows); err != nil {
+		if err := t.appendRestartPreservedRows(grid, preservedRows); err != nil {
 			return err
 		}
 	}
@@ -652,6 +649,23 @@ func (t *Terminal) Restart() error {
 		},
 	})
 	t.startProcessLoops()
+	return nil
+}
+
+func (t *Terminal) appendRestartPreservedRows(grid *terminalGridStore, rows []terminalGridRow) error {
+	if t == nil || grid == nil {
+		return nil
+	}
+	t.mu.Lock()
+	t.recordTerminalGridRowLineMigrationsLocked(rows)
+	t.mu.Unlock()
+	if err := grid.appendRows(rows); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	t.primaryLiveTail.reset()
+	t.recordLiveTailMetadataLocked()
+	t.mu.Unlock()
 	return nil
 }
 

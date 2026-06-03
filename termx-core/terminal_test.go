@@ -3193,6 +3193,48 @@ func TestTerminalRestartPreservedRowsKeepLogicalLineMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalRestartPreservedRowsClearRecoverableLiveTailMetadata(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "restart-clears-live-tail-metadata",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcd")
+	writeVTermDamageToGrid(t, term, vt, "efgh")
+	term.recordLiveTailMetadataLocked()
+	before, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata before restart preserve append: %v", err)
+	}
+	if len(before.LiveRecords) == 0 || len(before.LiveRows) == 0 {
+		t.Fatalf("expected recoverable live tail metadata before restart preserve append, got %#v", before)
+	}
+
+	rows := restartPreservedRows(term, term.primaryLiveTail.clone())
+	if err := term.appendRestartPreservedRows(store, rows); err != nil {
+		t.Fatalf("append restart preserved rows: %v", err)
+	}
+	after, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after restart preserve append: %v", err)
+	}
+	if len(after.LiveRecords) != 0 || len(after.LiveRows) != 0 {
+		t.Fatalf("expected restart preserve append to clear recoverable live tail metadata, got %#v", after)
+	}
+	if got := term.primaryLiveTail.rowCount(); got != 0 {
+		t.Fatalf("expected restart preserve append to clear mutable live tail, got %d rows", got)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected restart preserve append to remove recoverable live tail metadata")
+	}
+}
+
 func TestTerminalProcessExitForceSealsPrimaryLiveTail(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)
