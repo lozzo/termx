@@ -1582,6 +1582,16 @@ func terminalGridLineMigrationMap(migrations []terminalGridLineMigration) map[ui
 	return out
 }
 
+func terminalGridLineMigrationMapMaxRuntimeID(migrations map[uint64]uint64) uint64 {
+	var maxID uint64
+	for runtimeID := range migrations {
+		if runtimeID > maxID {
+			maxID = runtimeID
+		}
+	}
+	return maxID
+}
+
 func terminalGridApplyLineMigrationsToRecords(records []terminalGridLogicalLineRecord, migrations map[uint64]uint64) {
 	if len(records) == 0 || len(migrations) == 0 {
 		return
@@ -1690,14 +1700,15 @@ func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLive
 			return terminalPrimaryLiveTail{}, false
 		}
 	}
-	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount, persistedRecords, terminalGridLineMigrationMap(metadata.Migrations))
+	migrations := terminalGridLineMigrationMap(metadata.Migrations)
+	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount, persistedRecords, migrations)
 	if !ok {
 		return terminalPrimaryLiveTail{}, false
 	}
 	return terminalPrimaryLiveTail{
 		segments:                 segments,
 		wrapPending:              terminalLiveTailSegmentsWrapPending(segments),
-		nextRuntimeLogicalLineID: terminalLiveTailSegmentsMaxRuntimeLogicalLineID(segments),
+		nextRuntimeLogicalLineID: maxUint64(terminalLiveTailSegmentsMaxRuntimeLogicalLineID(segments), terminalGridLineMigrationMapMaxRuntimeID(migrations)),
 	}, true
 }
 

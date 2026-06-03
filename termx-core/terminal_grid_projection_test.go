@@ -790,6 +790,50 @@ func TestTerminalGridRecoveredLiveTailUsesLogicalLineIDWithoutWrappedContinuatio
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailAdvancesRuntimeCursorPastMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("tail"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	liveRuntimeID := terminalLiveTailLogicalLineIDBase + 1
+	migratedRuntimeID := terminalLiveTailLogicalLineIDBase + 8
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        liveRuntimeID,
+			StartRow:  0,
+			EndRow:    0,
+			Sealed:    true,
+			Origin:    terminalLiveTailOriginLive,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows:   rows,
+		Migrations: []terminalGridLineMigration{{RuntimeID: migratedRuntimeID, PersistedID: 1}},
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected live tail metadata to recover")
+	}
+	tail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("next"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	nextIDs := tail.window(0, tail.rowCount()).logicalLineIDs
+	if len(nextIDs) != 1 || nextIDs[0] <= migratedRuntimeID {
+		t.Fatalf("expected recovered live tail cursor to advance past migrated runtime id, got %#v migrated=%d", nextIDs, migratedRuntimeID)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailKeepsOpenLineSeparateFromWrapPending(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
