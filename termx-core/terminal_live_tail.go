@@ -82,6 +82,40 @@ type terminalLiveTailLogicalLineRecord struct {
 	lastRowID      uint64
 }
 
+type terminalLiveTailLogicalLinePayload struct {
+	rows []vterm.DamageOp
+}
+
+func terminalLiveTailLogicalLineRecordPayload(record terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp) (terminalLiveTailLogicalLinePayload, bool) {
+	if record.startRow < 0 || record.endRow < record.startRow || record.endRow >= len(rows) {
+		return terminalLiveTailLogicalLinePayload{}, false
+	}
+	return terminalLiveTailLogicalLinePayload{rows: rows[record.startRow : record.endRow+1]}, true
+}
+
+func (payload terminalLiveTailLogicalLinePayload) rowKind() string {
+	return terminalLogicalLineRowKindFromDamageRows(payload.rows)
+}
+
+func (payload terminalLiveTailLogicalLinePayload) timestampStart() time.Time {
+	return terminalLogicalLineTimestampStartFromDamageRows(payload.rows)
+}
+
+func (payload terminalLiveTailLogicalLinePayload) timestampEnd() time.Time {
+	return terminalLogicalLineTimestampEndFromDamageRows(payload.rows)
+}
+
+func (payload terminalLiveTailLogicalLinePayload) cellRows() [][]vterm.Cell {
+	if len(payload.rows) == 0 {
+		return nil
+	}
+	out := make([][]vterm.Cell, 0, len(payload.rows))
+	for _, row := range payload.rows {
+		out = append(out, damageOpCells(row))
+	}
+	return out
+}
+
 type terminalLiveTailRowsWithLogicalLineIDs struct {
 	rows           []vterm.DamageOp
 	logicalLineIDs []uint64

@@ -2426,7 +2426,9 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		if !terminalLiveTailRecordSealStateMatchesRows(record, segmentRows) {
 			return nil, false
 		}
-		if !terminalLiveTailRecordPayloadMetadataMatchesRows(record, segmentRows) {
+		recordView := terminalLiveTailLogicalLineRecord{startRow: 0, endRow: len(segmentRows) - 1}
+		payload, ok := terminalLiveTailLogicalLineRecordPayload(recordView, segmentRows)
+		if !ok || !terminalLiveTailRecordPayloadMetadataMatchesPayload(record, payload) {
 			return nil, false
 		}
 		if record.Origin != terminalLiveTailOriginReclaimed && migrations[record.ID] != 0 {
@@ -3671,11 +3673,10 @@ func terminalGridLineRecordMetasFromLiveTailRecordsWithRows(records []terminalLi
 		rowKind := record.rowKind
 		timestampStart := record.timestampStart
 		timestampEnd := record.timestampEnd
-		if record.startRow >= 0 && record.endRow >= record.startRow && record.endRow < len(rows) {
-			recordRows := rows[record.startRow : record.endRow+1]
-			rowKind = terminalLogicalLineRowKindFromDamageRows(recordRows)
-			timestampStart = terminalLogicalLineTimestampStartFromDamageRows(recordRows)
-			timestampEnd = terminalLogicalLineTimestampEndFromDamageRows(recordRows)
+		if payload, ok := terminalLiveTailLogicalLineRecordPayload(record, rows); ok {
+			rowKind = payload.rowKind()
+			timestampStart = payload.timestampStart()
+			timestampEnd = payload.timestampEnd()
 		}
 		meta := terminalGridLineRecordMeta{
 			ID:                     record.id,
@@ -3750,18 +3751,18 @@ func terminalGridLineRecordTimeFromUnixNano(value *int64) time.Time {
 	return time.Unix(0, *value).UTC()
 }
 
-func terminalLiveTailRecordPayloadMetadataMatchesRows(record terminalGridLineRecordMeta, rows []vterm.DamageOp) bool {
-	if record.RowKind != "" && record.RowKind != terminalLogicalLineRowKindFromDamageRows(rows) {
+func terminalLiveTailRecordPayloadMetadataMatchesPayload(record terminalGridLineRecordMeta, payload terminalLiveTailLogicalLinePayload) bool {
+	if record.RowKind != "" && record.RowKind != payload.rowKind() {
 		return false
 	}
 	if record.TimestampStartUnixNano != nil {
-		start := terminalLogicalLineTimestampStartFromDamageRows(rows)
+		start := payload.timestampStart()
 		if start.IsZero() || start.UnixNano() != *record.TimestampStartUnixNano {
 			return false
 		}
 	}
 	if record.TimestampEndUnixNano != nil {
-		end := terminalLogicalLineTimestampEndFromDamageRows(rows)
+		end := payload.timestampEnd()
 		if end.IsZero() || end.UnixNano() != *record.TimestampEndUnixNano {
 			return false
 		}
@@ -3830,11 +3831,14 @@ func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalL
 			TimestampStartUnixNano: terminalGridLineRecordUnixNanoFromTime(record.timestampStart),
 			TimestampEndUnixNano:   terminalGridLineRecordUnixNanoFromTime(record.timestampEnd),
 		}
-		recordRows := rows[record.startRow : record.endRow+1]
-		if !terminalLiveTailRecordSealStateMatchesRows(meta, recordRows) {
+		payload, ok := terminalLiveTailLogicalLineRecordPayload(record, rows)
+		if !ok {
 			return false
 		}
-		if !terminalLiveTailRecordPayloadMetadataMatchesRows(meta, recordRows) {
+		if !terminalLiveTailRecordSealStateMatchesRows(meta, payload.rows) {
+			return false
+		}
+		if !terminalLiveTailRecordPayloadMetadataMatchesPayload(meta, payload) {
 			return false
 		}
 		nextStart = record.endRow + 1

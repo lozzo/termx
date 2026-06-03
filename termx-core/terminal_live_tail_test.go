@@ -393,6 +393,41 @@ func TestTerminalGridStoreRecordLiveTailLineStateRejectsPartialCoverage(t *testi
 	}
 }
 
+func TestTerminalLiveTailLogicalLineRecordPayloadCarriesCellsAndMetadata(t *testing.T) {
+	start := time.Unix(10, 0).UTC()
+	end := time.Unix(30, 0).UTC()
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), RowKind: "live-kind", Timestamp: end, WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), Timestamp: start, WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("cc"), RowKind: "next-kind", Timestamp: end, WrappedSet: true, Wrapped: false},
+	}
+	record := terminalLiveTailLogicalLineRecord{
+		id:        terminalLiveTailLogicalLineIDBase + 1,
+		startRow:  0,
+		endRow:    1,
+		sealState: terminalLiveTailSealed,
+		origin:    terminalLiveTailOriginLive,
+		residency: terminalLogicalLineResidencyLiveTail,
+		dirty:     true,
+	}
+
+	payload, ok := terminalLiveTailLogicalLineRecordPayload(record, rows)
+	if !ok {
+		t.Fatal("expected live-tail logical line payload")
+	}
+	if got := vtermRowsToStrings(payload.cellRows()); !reflect.DeepEqual(got, []string{"aa", "bb"}) {
+		t.Fatalf("expected live-tail payload cells from record row range, got %#v", got)
+	}
+	if payload.rowKind() != "live-kind" || !payload.timestampStart().Equal(start) || !payload.timestampEnd().Equal(end) {
+		t.Fatalf("unexpected live-tail payload metadata row_kind=%q start=%v end=%v", payload.rowKind(), payload.timestampStart(), payload.timestampEnd())
+	}
+
+	metas := terminalGridLineRecordMetasFromLiveTailRecordsWithRows([]terminalLiveTailLogicalLineRecord{record}, rows)
+	if len(metas) != 1 || metas[0].RowKind != "live-kind" || metas[0].TimestampStartUnixNano == nil || *metas[0].TimestampStartUnixNano != start.UnixNano() || metas[0].TimestampEndUnixNano == nil || *metas[0].TimestampEndUnixNano != end.UnixNano() {
+		t.Fatalf("expected live-tail metadata to come from logical line payload, got %#v", metas)
+	}
+}
+
 func TestTerminalGridStoreRecordLiveTailLineStateRejectsReclaimedWithoutGeneration(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
