@@ -418,6 +418,72 @@ func TestServerHistoryWindowRestoresReclaimedLiveTailWithoutRepeatingOlderRows(t
 	}
 }
 
+func TestServerHistoryWindowRestoresResizeLiveTailWithoutCommittedDepth(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	const terminalID = "recover-resize-live-tail-window"
+	store, err := newTerminalGridStore(root, terminalID)
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	vt := vterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		vterm.ScreenData{Cells: [][]vterm.Cell{localVTermCellsFromString("live")}},
+		vterm.CursorState{Row: 0, Col: 4, Visible: true},
+		vterm.TerminalModes{AutoWrap: true},
+	)
+	term := &Terminal{
+		id:    terminalID,
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	damage := vterm.WriteDamage{
+		ScrollbackAppend: []vterm.DamageOp{
+			{Cells: localVTermCellsFromString("h0"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("h1"), WrappedSet: true, Wrapped: true},
+		},
+		RequiresFullReplace: true,
+		FullReplaceReason:   "resize",
+		ResizeLiveTailRows:  0,
+	}
+	term.appendGridFromDamageLocked(damage)
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	restarted := NewServer(WithGridRoot(root), WithDefaultSize(4, 1))
+	window, err := restarted.HistoryWindow(ctx, terminalID, HistoryWindowOptions{Limit: 10, Cols: 4})
+	if err != nil {
+		t.Fatalf("history window after resize live-tail recovery: %v", err)
+	}
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"h0", "h1"}) {
+		t.Fatalf("expected recovered resize live tail in latest history window, got %#v", got)
+	}
+	if window.LoadedRows != 0 || window.BeforeOffset != 0 || window.LoadedLines != 1 || window.LogicalTotal != 1 || window.Generation != 0 {
+		t.Fatalf("expected recovered resize tail to stay mutable without committed depth, loaded_rows=%d before=%d loaded_lines=%d total=%d gen=%d", window.LoadedRows, window.BeforeOffset, window.LoadedLines, window.LogicalTotal, window.Generation)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID < terminalLiveTailLogicalLineIDBase || !window.Lines[0].ClippedAfter {
+		t.Fatalf("expected recovered resize runtime open line span, got %#v", window.Lines)
+	}
+	if got := historyWindowRowTexts(window); len(window.Rows) != 2 || window.Rows[0].Ownership != RowOwnershipLiveTailLive || window.Rows[1].Ownership != RowOwnershipLiveTailLive || !reflect.DeepEqual(got, []string{"h0", "h1"}) {
+		t.Fatalf("expected recovered resize rows to stay live-tail owned, rows=%#v texts=%#v", window.Rows, got)
+	}
+
+	older, err := restarted.HistoryWindow(ctx, terminalID, HistoryWindowOptions{BeforeOffset: 1, Limit: 10, Cols: 4})
+	if err != nil {
+		t.Fatalf("older history window after resize live-tail recovery: %v", err)
+	}
+	if got := historyWindowRowTexts(older); len(got) != 0 {
+		t.Fatalf("expected older window not to expose recovered resize tail as committed history, got %#v", got)
+	}
+	if older.BeforeOffset != 1 || older.LoadedRows != 1 || older.TotalRows != 0 || older.LogicalTotal != 0 {
+		t.Fatalf("expected exhausted older resize recovery window to preserve only requested cursor, before=%d loaded=%d total=%d logical=%d", older.BeforeOffset, older.LoadedRows, older.TotalRows, older.LogicalTotal)
+	}
+}
+
 func TestServerRemoveDeletesPersistentGridHistory(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
