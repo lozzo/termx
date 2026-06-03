@@ -1304,6 +1304,85 @@ func TestTerminalGridRecoveredReclaimedLiveTailCountsCommittedRowsOnce(t *testin
 	}
 }
 
+func TestTerminalGridRecoveredReclaimedLiveTailLatestLimitMarksClippedCommittedLineBefore(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("p1"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: true},
+		{cells: localVTermCellsFromString("r1"), wrapped: false},
+	})
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), RowKind: "recovered-reclaimed", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("r1"), RowKind: "recovered-reclaimed", WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode reclaimed row metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read persisted line metadata: %v", err)
+	}
+	metadata.LiveRecords = []terminalGridLineRecordMeta{{
+		ID:         3,
+		StartRow:   0,
+		EndRow:     1,
+		RowIDKnown: true,
+		FirstRowID: 2,
+		LastRowID:  3,
+		Sealed:     true,
+		Origin:     terminalLiveTailOriginReclaimed,
+		Residency:  terminalLogicalLineResidencyLiveTail,
+		Dirty:      false,
+		Generation: generation,
+	}}
+	metadata.LiveRows = rows
+	if err := writeTerminalGridLineMetadata(store.dir, metadata); err != nil {
+		t.Fatalf("write reclaimed live tail metadata: %v", err)
+	}
+
+	viewport, err := storeViewportWithRecoveredLiveTailForHistory(store, 0, 1, 4)
+	if err != nil {
+		t.Fatalf("latest history viewport with recovered reclaimed tail: %v", err)
+	}
+	latest := historyWindowFromCoreGridViewport("recovered-reclaimed-limit-clipped", 0, viewport)
+	if got := historyWindowRowTexts(latest); !reflect.DeepEqual(got, []string{"r1"}) {
+		t.Fatalf("expected latest limit to return recovered reclaimed line tail, got %#v", got)
+	}
+	if latest.BeforeOffset != 1 || latest.LoadedRows != 1 {
+		t.Fatalf("expected latest cursor to count only returned recovered reclaimed row, before=%d loaded=%d", latest.BeforeOffset, latest.LoadedRows)
+	}
+	if latest.Generation != generation || latest.FirstRowID != 3 || latest.LastRowID != 3 {
+		t.Fatalf("expected latest row boundary to follow kept recovered reclaimed row, gen=%d rows=%d..%d", latest.Generation, latest.FirstRowID, latest.LastRowID)
+	}
+	if latest.LoadedLines != 0 || latest.LogicalTotal != 3 || latest.TotalRows != 4 || !latest.HasMore {
+		t.Fatalf("expected recovered reclaimed clipped line to preserve pagination signal, loaded=%d total=%d rows=%d has_more=%v", latest.LoadedLines, latest.LogicalTotal, latest.TotalRows, latest.HasMore)
+	}
+	if latest.FirstLineID != 0 || latest.LastLineID != 0 {
+		t.Fatalf("expected recovered reclaimed clipped-before line not to expose loaded line boundaries, first=%d last=%d", latest.FirstLineID, latest.LastLineID)
+	}
+	if len(latest.Lines) != 1 {
+		t.Fatalf("expected one recovered reclaimed clipped line span, got %#v", latest.Lines)
+	}
+	span := latest.Lines[0]
+	if span.StartRow != 0 || span.EndRow != 0 || span.RowKind != "recovered-reclaimed" || span.LogicalLineID != 3 || !span.ClippedBefore || span.ClippedAfter {
+		t.Fatalf("expected latest limit to mark recovered reclaimed line clipped-before only, got %#v", span)
+	}
+
+	older, err := storeViewportWithRecoveredLiveTailForHistory(store, latest.BeforeOffset, 10, 4)
+	if err != nil {
+		t.Fatalf("older viewport after recovered reclaimed clipped latest: %v", err)
+	}
+	if got := vtermRowsToStrings(older.Rows); !reflect.DeepEqual(got, []string{"p0", "p1", "r0"}) {
+		t.Fatalf("expected older request to return unexposed recovered reclaimed prefix without repeating r1, got %#v", got)
+	}
+	if older.LoadedRows != 4 {
+		t.Fatalf("expected older cursor to reach full committed depth, got %d", older.LoadedRows)
+	}
+}
+
 func TestServerHistoryWindowLogicalLineIDsStayStableAcrossProjectionWidths(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-stable-line-id")
