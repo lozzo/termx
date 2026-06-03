@@ -90,6 +90,47 @@ func TestHistoryWindowClearsBoundaryWhenAllRowsLackAuthoritativeLogicalLineIDs(t
 	}
 }
 
+func TestHistoryWindowDoesNotMergeLogicalLineAcrossFilteredRows(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("a"), vtermCells("lost"), vtermCells("b"), vtermCells("c")},
+		Timestamps:     []time.Time{time.Unix(1, 0), time.Unix(2, 0), time.Unix(3, 0), time.Unix(4, 0)},
+		RowKinds:       []string{"line-a", "lost", "line-b", "line-c"},
+		Wrapped:        []bool{true, true, false, false},
+		Ownership:      []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs: []uint64{10, 0, 10, 11},
+		LoadedRows:     4,
+		TotalRows:      4,
+		LogicalTotal:   2,
+		Generation:     7,
+		FirstRowID:     20,
+		LastRowID:      23,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-discontiguous-line-id", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"c"}) {
+		t.Fatalf("expected discontiguous logical line id rows to be omitted, got %#v", got)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID != 11 || window.Lines[0].StartRow != 0 || window.Lines[0].EndRow != 0 {
+		t.Fatalf("expected only unaffected logical line span, got %#v", window.Lines)
+	}
+	if window.LoadedRows != 1 || window.TotalRows != 1 {
+		t.Fatalf("expected committed depth and total rows to drop filtered rows, loaded=%d total=%d", window.LoadedRows, window.TotalRows)
+	}
+}
+
+func TestHistoryWindowFindsDiscontiguousLogicalLineIDs(t *testing.T) {
+	got := historyWindowDiscontiguousLogicalLineIDs([]uint64{10, 10, 0, 10, 11, 11, 12, 11}, 8)
+	if _, ok := got[10]; !ok {
+		t.Fatalf("expected logical line id 10 to be marked discontiguous, got %#v", got)
+	}
+	if _, ok := got[11]; !ok {
+		t.Fatalf("expected logical line id 11 to be marked discontiguous, got %#v", got)
+	}
+	if _, ok := got[12]; ok {
+		t.Fatalf("expected contiguous single id 12 not to be marked invalid, got %#v", got)
+	}
+}
+
 func TestViewportTrimDoesNotInferClippedLineFromWrappedRowsWithoutLogicalLineIDs(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:           [][]vterm.Cell{vtermCells("old"), vtermCells("new")},

@@ -347,9 +347,14 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	if len(viewport.Rows) == 0 {
 		return viewport
 	}
+	invalidLineIDs := historyWindowDiscontiguousLogicalLineIDs(viewport.LogicalLineIDs, len(viewport.Rows))
 	keep := make([]int, 0, len(viewport.Rows))
 	for i := range viewport.Rows {
-		if uint64At(viewport.LogicalLineIDs, i) != 0 {
+		logicalLineID := uint64At(viewport.LogicalLineIDs, i)
+		if logicalLineID != 0 {
+			if _, invalid := invalidLineIDs[logicalLineID]; invalid {
+				continue
+			}
 			keep = append(keep, i)
 		}
 	}
@@ -358,7 +363,12 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	}
 	removedCommittedRows := 0
 	for i := range viewport.Rows {
-		if uint64At(viewport.LogicalLineIDs, i) != 0 {
+		logicalLineID := uint64At(viewport.LogicalLineIDs, i)
+		remove := logicalLineID == 0
+		if logicalLineID != 0 {
+			_, remove = invalidLineIDs[logicalLineID]
+		}
+		if !remove {
 			continue
 		}
 		switch stringAt(viewport.Ownership, i) {
@@ -394,6 +404,31 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		filtered.FirstLineClippedBefore = false
 	}
 	return filtered
+}
+
+func historyWindowDiscontiguousLogicalLineIDs(logicalLineIDs []uint64, rowCount int) map[uint64]struct{} {
+	completed := make(map[uint64]struct{})
+	invalid := make(map[uint64]struct{})
+	var currentID uint64
+	for row := 0; row < rowCount; row++ {
+		logicalLineID := uint64At(logicalLineIDs, row)
+		if logicalLineID == currentID {
+			continue
+		}
+		if currentID != 0 {
+			completed[currentID] = struct{}{}
+		}
+		if logicalLineID != 0 {
+			if _, exists := completed[logicalLineID]; exists {
+				invalid[logicalLineID] = struct{}{}
+			}
+		}
+		currentID = logicalLineID
+	}
+	if len(invalid) == 0 {
+		return nil
+	}
+	return invalid
 }
 
 func terminalHistoryWindowCommittedOwnershipCount(ownership []string) int {
