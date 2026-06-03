@@ -578,8 +578,7 @@ func (t *Terminal) Restart() error {
 		t.mu.Unlock()
 		return ErrTerminalNotExited
 	}
-	liveTail := t.primaryLiveTail.clone()
-	preservedRows := restartPreservedRows(t, liveTail)
+	preservedRows := restartPreservedRows(t)
 	preservedScrollback := terminalGridRowsToCellsRows(preservedRows)
 	preservedScrollbackTimestamps := terminalGridRowsTimestamps(preservedRows)
 	preservedScrollbackRowKinds := terminalGridRowsKinds(preservedRows)
@@ -669,12 +668,12 @@ func (t *Terminal) appendRestartPreservedRows(grid *terminalGridStore, rows []te
 	return nil
 }
 
-func restartPreservedRows(t *Terminal, liveTail terminalPrimaryLiveTail) []terminalGridRow {
+func restartPreservedRows(t *Terminal) []terminalGridRow {
 	if t == nil || t.vterm == nil {
 		return nil
 	}
 	restartAt := time.Now().UTC()
-	rows := t.primaryLiveTailRowsForExit(liveTail)
+	rows := t.primaryLiveTailRowsForExit()
 	rows = append(rows, terminalGridRow{
 		timestamp: restartAt,
 		rowKind:   SnapshotRowKindRestart,
@@ -1113,7 +1112,7 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 		}
 		t.alternateGrid.reset()
 	}
-	rows := t.primaryLiveTailRowsForExit(t.primaryLiveTail.clone())
+	rows := t.primaryLiveTailRowsForExit()
 	if len(rows) == 0 {
 		t.primaryLiveTail.reset()
 		t.recordLiveTailMetadataLocked()
@@ -1131,11 +1130,11 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 	return nil
 }
 
-func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) []terminalGridRow {
+func (t *Terminal) primaryLiveTailRowsForExit() []terminalGridRow {
 	if t == nil || t.vterm == nil {
 		return nil
 	}
-	liveTailWithIDs := liveTail.rowsWithLogicalLineIDs()
+	liveTailWithIDs := t.primaryLiveTail.rowsWithLogicalLineIDs()
 	liveTailRows := liveTailWithIDs.rows
 	liveTailLineIDs := liveTailWithIDs.logicalLineIDs
 	vt := t.vterm
@@ -1143,7 +1142,7 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 	screenTimestamps := trimTrailingZeroTimes(vt.ScreenTimestamps(), len(screen))
 	screenRowKinds := trimTrailingStrings(vt.ScreenRowKinds(), len(screen))
 	screenWrapped := trimBoolSlice(vt.ScreenWrapped(), len(screen))
-	if len(screen) == 0 && len(liveTailRows) == 0 && !liveTail.wrapPending {
+	if len(screen) == 0 && len(liveTailRows) == 0 && !t.primaryLiveTail.wrapPending {
 		return nil
 	}
 
@@ -1208,7 +1207,7 @@ func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) 
 		if len(out) > 0 && out[len(out)-1].wrapped {
 			continuedID = out[len(out)-1].logicalLineID
 		}
-		screenLineIDs := terminalGridRowsLiveLogicalLineIDsForExit(&liveTail, screenRows, continuedID)
+		screenLineIDs := terminalGridRowsLiveLogicalLineIDsForExit(&t.primaryLiveTail, screenRows, continuedID)
 		for i := range screenRows {
 			screenRows[i].logicalLineID = uint64At(screenLineIDs, i)
 		}

@@ -3170,7 +3170,7 @@ func TestTerminalRestartPreservedRowsKeepLogicalLineMetadata(t *testing.T) {
 	}
 	runtimeLineID := liveTailWindow.logicalLineIDs[0]
 
-	rows := restartPreservedRows(term, term.primaryLiveTail.clone())
+	rows := restartPreservedRows(term)
 	term.recordTerminalGridRowLineMigrationsLocked(rows)
 	if err := store.appendRows(rows); err != nil {
 		t.Fatalf("append restart preserved rows: %v", err)
@@ -3216,7 +3216,7 @@ func TestTerminalRestartPreservedRowsClearRecoverableLiveTailMetadata(t *testing
 		t.Fatalf("expected recoverable live tail metadata before restart preserve append, got %#v", before)
 	}
 
-	rows := restartPreservedRows(term, term.primaryLiveTail.clone())
+	rows := restartPreservedRows(term)
 	if err := term.appendRestartPreservedRows(store, rows); err != nil {
 		t.Fatalf("append restart preserved rows: %v", err)
 	}

@@ -198,6 +198,45 @@ func TestTerminalLiveLineRuntimeIDsDoNotReuseAcrossIndependentSeals(t *testing.T
 	}
 }
 
+func TestTerminalScreenOnlySealAdvancesRuntimeIDCursor(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "screen-only-seal-runtime-cursor",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "ABCD")
+	if got := term.primaryLiveTail.rowCount(); got != 0 {
+		t.Fatalf("expected exact-width line to remain screen-only before seal, got %d live-tail rows", got)
+	}
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal screen-only line: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after screen-only seal: %v", err)
+	}
+	if len(metadata.Migrations) != 1 || !terminalRuntimeLogicalLineID(metadata.Migrations[0].RuntimeID) {
+		t.Fatalf("expected screen-only seal to allocate one runtime migration, got %#v", metadata.Migrations)
+	}
+	sealedRuntimeID := metadata.Migrations[0].RuntimeID
+
+	writeVTermDamageToGrid(t, term, vt, "EFGH")
+	writeVTermDamageToGrid(t, term, vt, "IJKL")
+	nextRuntimeIDs := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount()).logicalLineIDs
+	if len(nextRuntimeIDs) != 1 || !terminalRuntimeLogicalLineID(nextRuntimeIDs[0]) {
+		t.Fatalf("expected next live tail runtime id, got %#v", nextRuntimeIDs)
+	}
+	if nextRuntimeIDs[0] <= sealedRuntimeID {
+		t.Fatalf("expected next live tail runtime id to advance past screen-only sealed id, next=%#v sealed=%d", nextRuntimeIDs, sealedRuntimeID)
+	}
+}
+
 func TestTerminalExactWidthLineHardNewlineSealsToPersistedHistory(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
