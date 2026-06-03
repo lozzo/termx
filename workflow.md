@@ -441,6 +441,7 @@ TUI store 至少表达：
 - 已收紧 mutable live tail record 生成：只有每个 live-tail row 都带 stable logical line id 时才生成 recoverable line records，缺 id 的 segment 不再通过 wrapped 元数据拼出可写 sidecar record。
 - 已将 mutable live tail record view 收敛为全尾部连续语义：任一 segment 缺少完整 stable logical line id 时不返回 partial records，避免上层误消费非连续 recoverable metadata。
 - 已收紧 mutable live tail window 投影的 logical line id 输出：segment 内存在 partial id 时不再把半条 id 暴露给 authoritative projection，而是整体压成无 id，避免伪造逻辑行边界。
+- 已收紧 mutable live tail window 投影与 record metadata 的 logical line id 命名空间：live/resize 只能使用 runtime logical line id，reclaimed 只能使用 persisted logical line id；命名空间错误的 id 会被抑制，不暴露为权威边界。
 - 已将 core latest history window 的 live tail 逻辑行总量改为按投影中的 stable logical line id 分组统计，不再依赖 recoverable live-tail records；metadata 全尾部收敛策略不会抹掉其他已有稳定 id 的投影逻辑行。
 - 已将 core latest combined viewport 的 live-tail 起点扩展收敛为只按相邻非零 stable logical line id；缺少 logical line id 时不再通过 wrapped 元数据扩展 authoritative window 行集合。
 - 已将 core `history.window` line span 生成改为只按 stable logical line id 归并 visual rows；projection 缺失 logical line id 时不再通过 wrapped 元数据伪造 authoritative line spans。
