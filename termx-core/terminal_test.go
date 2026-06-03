@@ -2785,6 +2785,54 @@ func TestTerminalProcessExitKeepsCleanReclaimedTailWhenAppendingIndependentLiveR
 	}
 }
 
+func TestTerminalProcessExitSealsReclaimedOpenTailWithScreenContinuation(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("tail")}},
+		localvterm.CursorState{Row: 0, Col: 4, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "reclaimed-open-tail-plus-screen-continuation",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("older"), wrapped: false},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+	})
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim open persisted tail: %v", err)
+	}
+	rowsForExit := term.primaryLiveTailRowsForExit()
+	if got := vtermRowsToStrings(terminalGridRowsToCellsRows(rowsForExit)); !reflect.DeepEqual(got, []string{"tail"}) {
+		t.Fatalf("expected clean reclaimed rows to stay out of append rows before screen continuation seal, got %#v rows=%#v", got, rowsForExit)
+	}
+	if len(rowsForExit) != 1 || rowsForExit[0].logicalLineID != 2 {
+		t.Fatalf("expected screen continuation to inherit reclaimed persisted logical line id, got %#v", rowsForExit)
+	}
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal reclaimed open tail plus screen continuation: %v", err)
+	}
+	viewport, err := store.Viewport(0, 10, 5)
+	if err != nil {
+		t.Fatalf("viewport after reclaimed open tail seal: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"older", "grow0", "grow1", "tail"}) {
+		t.Fatalf("expected persisted open tail plus screen continuation, got %#v wrapped=%#v ids=%#v", got, viewport.Wrapped, viewport.LogicalLineIDs)
+	}
+	if len(viewport.LogicalLineIDs) != 4 || viewport.LogicalLineIDs[1] != viewport.LogicalLineIDs[2] || viewport.LogicalLineIDs[2] != viewport.LogicalLineIDs[3] {
+		t.Fatalf("expected reclaimed tail and screen continuation to stay one persisted logical line, got %#v", viewport.LogicalLineIDs)
+	}
+}
+
 func TestTerminalProcessExitKeepsSingleRowCleanReclaimedTailWhenAppendingIndependentLiveRow(t *testing.T) {
 	vt := localvterm.New(5, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
