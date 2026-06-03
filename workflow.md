@@ -437,10 +437,10 @@ TUI store 至少表达：
 - 已将 reclaimed mutable live tail record 的 persisted row 坐标显式写入 `grid.lines.json`，恢复时必须使用 sidecar 中的 first/last row id；row 坐标写出和恢复都只允许出现在已知 persisted logical line id 的 reclaimed record 上，不再通过 logical line id 反推出 reclaimed row 坐标。
 - 已让 legacy `snapshot` / `grid.viewport` 的 store-only latest 兼容投影复用同一个 recovered live tail projection helper；它们仍不是新 TUI history truth，只是避免恢复场景下兼容投影丢失 mutable live tail。
 - 已在 process exit force seal 后清空 recoverable mutable live tail metadata，避免已提交到 persisted store 的 live tail 又被 store-only latest projection 重复恢复；sidecar 写入同时跳过 closed/remove-on-close 临时 store。
-- 已让 process exit force seal 在提交 primary mutable live tail 与剩余 screen projection 行时保留或分配 runtime logical line id，并在 append 前写出 runtime->persisted logical line id 迁移；封口后的 `grid.lines.json` 会保留 sealed persisted record，同时清空 recoverable live-tail metadata。
+- 已让 process exit force seal 在提交 primary mutable live tail 与剩余 screen projection 行时保留或分配 runtime logical line id；封口后的 persisted store append 会按实际落盘位置写出 runtime->persisted logical line id 迁移，并清空 recoverable live-tail metadata。
 - 已补齐 process exit force seal harness，固定隐藏 mutable live tail 前缀与当前 screen continuation 行必须作为同一条 persisted logical line 提交，并只产生一条 runtime->persisted logical line id 迁移。
 - 已将 process exit force seal 的 screen-only 行 runtime id 分配接入 mutable live tail 单调分配游标，避免此前已迁移的 runtime id 在退出封口时被 screen projection 行复用并覆盖迁移记录。
-- 已将 restart preserved rows 的提交路径改为保留 `primaryLiveTailRowsForExit` 生成的 logical line id，并在 append 前记录 runtime->persisted migration；restart marker 作为独立 sealed persisted record 写入，避免重启保留行通过无 id wrapped fallback 生成 sidecar。
+- 已将 restart preserved rows 的提交路径改为保留 `primaryLiveTailRowsForExit` 生成的 logical line id，并由 persisted store append 按实际落盘位置记录 runtime->persisted migration；restart marker 作为独立 sealed persisted record 写入，避免重启保留行通过无 id wrapped fallback 生成 sidecar。
 - 已让 restart preserved rows 成功提交到 persisted store 后同步清空 mutable live tail 内存状态与 `grid.lines.json` 中的 recoverable live-tail metadata，避免重启保留行同时作为 persisted history 与 recovered live tail 暴露。
 - 已将 process exit / restart preserved rows 中 screen-only 行的 runtime logical line id 分配改为推进 primary mutable live tail 的单调游标，避免封口迁移后下一条 live line 复用已迁移 runtime id。
 - 已将 runtime live logical line id 到 persisted logical line id 的迁移写入下沉到 persisted store append 完成后按实际 append start 与最终 persisted records 生成；异步 grid appender 不再由 Terminal 按旧 row count 预估迁移目标。
