@@ -638,27 +638,7 @@ func terminalLiveTailSegmentFallbackLogicalLineIDs(origin terminalLiveTailOrigin
 	if rowCount <= 0 {
 		return nil
 	}
-	out := make([]uint64, rowCount)
-	if origin != terminalLiveTailOriginReclaimed {
-		return out
-	}
-	if firstRowID == 0 && lastRowID == 0 {
-		return out
-	}
-	if lastRowID >= firstRowID && int(lastRowID-firstRowID)+1 == rowCount {
-		start := 0
-		for i, row := range rows {
-			if row.WrappedSet && row.Wrapped && i < len(rows)-1 {
-				continue
-			}
-			id := persistedLogicalLineIDFromRowID(firstRowID + uint64(start))
-			for rowIndex := start; rowIndex <= i; rowIndex++ {
-				out[rowIndex] = id
-			}
-			start = i + 1
-		}
-	}
-	return out
+	return make([]uint64, rowCount)
 }
 
 func hasNonZeroUint64(values []uint64) bool {

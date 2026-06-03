@@ -62,10 +62,10 @@ func TestTerminalPrimaryLiveTailSegmentsTrackOriginAndSealState(t *testing.T) {
 
 func TestTerminalPrimaryLiveTailLogicalLineRecordsTrackReclaimedAndLiveRows(t *testing.T) {
 	var tail terminalPrimaryLiveTail
-	tail.replaceReclaimedPrefix([]localvterm.DamageOp{
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
 		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
-	}, 7, 40, 41)
+	}, []uint64{41, 41}, 7, 40, 41)
 	tail.replaceLiveRows([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("cc"), WrappedSet: true, Wrapped: true},
 	}, true)
@@ -105,6 +105,22 @@ func TestTerminalPrimaryLiveTailReclaimedZeroCoordinatesRequirePersistedIDs(t *t
 	metas := terminalGridLineRecordMetasFromLiveTailRecords(records)
 	if len(metas) != 0 {
 		t.Fatalf("expected metadata to omit reclaimed rows without persisted ids, got %#v", metas)
+	}
+}
+
+func TestTerminalPrimaryLiveTailReclaimedRowCoordinatesDoNotFallbackLogicalLineIDs(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefix([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	}, 7, 40, 41)
+
+	window := tail.window(0, tail.rowCount())
+	if got := window.logicalLineIDs; !reflect.DeepEqual(got, []uint64{0, 0}) {
+		t.Fatalf("expected reclaimed row coordinates without explicit ids to suppress logical line ids, got %#v", got)
+	}
+	if records := tail.logicalLineRecords(); len(records) != 0 {
+		t.Fatalf("expected reclaimed rows without explicit ids to suppress record metadata, got %#v", records)
 	}
 }
 
