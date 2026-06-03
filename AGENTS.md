@@ -35,7 +35,7 @@
 - 旧 `termx-core/` 与 `tuiv2/` 默认只读参考；不得继续原地修补旧 logical-line、copy mode、snapshot/grid viewport history path。
 - 如果确实必须修改旧目录，先修改 `workflow.md` 的范围表并说明原因。
 - 冻结目录不得触碰，除非 `workflow.md` 先明确解冻。
-
+- 关键代码需要写上注释,使用中文
 ## 目录职责
 
 - `termx-core-v2/`：新 core 主线目录，负责 logical-line-first 历史模型、`HistoryTrack`、`LiveSurfaceTrack`、`HistoryWindow`、storage/backend 与相关 harness。
