@@ -1423,9 +1423,12 @@ func (s *terminalGridStore) enforceMaxRowsLockedAt(now time.Time) error {
 	}
 	if s.writable && !s.removeOnClose {
 		retainedLineRecords := terminalGridLogicalLineRecordsAfterRowDrop(lineRecords, drop, s.generation)
-		if (len(refs) == 0 || len(retainedLineRecords) > 0) && writeTerminalGridPersistedLineRecordsMetadataFromRecords(s.dir, retainedLineRecords, len(refs), s.generation) == nil {
-			s.lineRecords = cloneTerminalGridLogicalLineRecords(retainedLineRecords)
-			return nil
+		if len(refs) == 0 || len(retainedLineRecords) > 0 {
+			records, err := writeTerminalGridPersistedLineRecordsMetadataFromRecords(s.dir, retainedLineRecords, len(refs), s.generation)
+			if err == nil {
+				s.lineRecords = cloneTerminalGridLogicalLineRecords(records)
+				return nil
+			}
 		}
 		records, err := writeTerminalGridCompletePersistedLineRecordsMetadata(s.dir, s.baseRowID, s.generation)
 		s.lineRecords = cloneTerminalGridLogicalLineRecords(records)
@@ -3247,13 +3250,13 @@ func writeTerminalGridCompletePersistedLineRecordsMetadata(dir string, baseRowID
 		records := terminalGridLogicalLineRecordsFromMetadata(metadata.Records)
 		terminalGridApplyLineMigrationsToRecords(records, terminalGridLineMigrationMap(metadata.Migrations))
 		if complete, ok := terminalGridCompletePersistedLogicalLineRecords(records, len(refs), generation); ok {
-			return complete, writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir, complete, len(refs), generation)
+			return writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir, complete, len(refs), generation)
 		}
 	} else if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	records := terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
-	return records, writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir, records, len(refs), generation)
+	return writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir, records, len(refs), generation)
 }
 
 func writeTerminalGridPersistedLineRecordsMetadataForAppend(dir string, baseRowID uint64, generation uint64, appendedStart int, logicalLineIDs []uint64) ([]terminalGridLogicalLineRecord, error) {
@@ -3286,7 +3289,7 @@ func writeTerminalGridPersistedLineRecordsMetadataForAppend(dir string, baseRowI
 		return nil, fmt.Errorf("terminal grid appended logical line metadata is incomplete")
 	}
 	records = append(records, appendedRecords...)
-	return records, writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir, records, len(refs), generation)
+	return writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir, records, len(refs), generation)
 }
 
 func recordTerminalGridLineMigrationsForAppendedLogicalLineIDs(dir string, generation uint64, rowCount int, appendedStart int, logicalLineIDs []uint64) error {
@@ -3338,21 +3341,24 @@ func terminalGridLogicalLineRecordCoveringWindow(records []terminalGridLogicalLi
 	return terminalGridLogicalLineRecord{}, false
 }
 
-func writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir string, records []terminalGridLogicalLineRecord, rowCount int, generation uint64) error {
+func writeTerminalGridPersistedLineRecordsMetadataFromRecords(dir string, records []terminalGridLogicalLineRecord, rowCount int, generation uint64) ([]terminalGridLogicalLineRecord, error) {
 	metadata, err := readTerminalGridLineMetadata(dir)
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return nil, err
 	}
 	records = terminalGridPersistedLineRecordsWithPayloadMetadata(dir, records)
 	if complete, ok := terminalGridCompletePersistedLogicalLineRecords(records, rowCount, generation); ok {
 		metadata.Records = terminalGridLineRecordMetasFromRecords(complete)
+		records = complete
 	} else if sealedPrefix := terminalGridSealedPersistedLogicalLineRecordPrefix(records, rowCount, generation); len(sealedPrefix) > 0 {
 		metadata.Records = terminalGridLineRecordMetasFromRecords(sealedPrefix)
+		records = sealedPrefix
 	} else {
 		metadata.Records = nil
+		records = nil
 	}
 	metadata.Migrations = terminalGridLineMigrationsForPersistedRecords(metadata.Migrations, metadata.Records)
-	return writeTerminalGridLineMetadata(dir, metadata)
+	return records, writeTerminalGridLineMetadata(dir, metadata)
 }
 
 func terminalGridPersistedLineRecordsWithPayloadMetadata(dir string, records []terminalGridLogicalLineRecord) []terminalGridLogicalLineRecord {
