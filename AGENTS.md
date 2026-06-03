@@ -17,8 +17,19 @@
 
 ## 当前提醒
 
-- 当前主线仍然只围绕 `termx-core/`、`termx-vterm/`、`tuiv2/` 展开。
+- 当前主线已切换到 `termx-core-v2/` 与 `termx-tui-v3/`。
 - 其他目录即使存在技术关联，也不能因为“看起来可能有关”就主动扩散过去，除非 `workflow.md` 已明确允许。
+
+## 目录职责
+
+- `termx-core-v2/`：新 core 主线目录，负责 logical-line-first 历史模型、`HistoryTrack`、`LiveSurfaceTrack`、history window 与相关 harness。技术设计文档放在 `termx-core-v2/docs/architecture.md`。
+- `termx-tui-v3/`：新 TUI 主线目录，负责 authoritative history window store/source、copy mode、滚动、selection 与相关 harness。技术设计文档放在 `termx-tui-v3/docs/architecture.md`。
+- `termx-core/`：旧 core 参考目录，只能读取、搜索、运行测试或摘取外部契约参考；不得继续原地做 logical-line 重构。
+- `tuiv2/`：旧 TUI 参考目录，只能读取、搜索、运行测试或摘取外部契约参考；不得继续修补旧 copy mode、snapshot/grid viewport history path。
+- `termx-vterm/`：受限联动目录，只在新 core-v2/tui-v3 的契约确实需要时最小化触及。
+- `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 history.window contract 或 protocol adapter 切片需要时最小化触及。
+- 根目录 `workflow.md`：唯一活动驱动文件，只记录范围、任务顺序、测试准入与进展状态，不展开技术设计正文。
+- 根目录 `AGENTS.md`：代理工作规则与目录职责说明，不替代 `workflow.md` 的范围判断。
 
 ## 当前开发阶段策略
 
@@ -26,7 +37,7 @@
 - 对 `workflow.md` 已明确拍板要替换的旧路径、旧结构、旧 helper、旧测试语义，可以直接删除或重写。
 - 不为了兼容旧的 `hot -> cold` 单向实现而保留双路径、适配层或临时桥接代码。
 - 从本阶段起，`hot/cold` 只能出现在旧模型问题说明或迁移记录中，不得继续作为代码、测试 helper、内部 contract 或运行时状态的主语义命名。
-- 新实现命名统一收敛到 `persisted history store / mutable live tail / screen projection` 三层模型。
+- 新实现命名统一收敛到 `LogicalLineStore / CommittedHistoryIndex / MutableFrontier / StorageBackend / HistoryWindow`，其中 `persisted` 或落盘只表示存储落点或提交状态，不表示不可修改。
 - 如果删除旧代码会改变已定死语义，必须先更新 `workflow.md` 和 RFC；如果只是落实已定死语义，可以直接改代码并提交。
 
 ## 提交规则

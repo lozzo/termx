@@ -4,7 +4,7 @@
 
 本文件必须保持全中文。不得在聊天、临时说明或局部注释里替代本文件定义工作范围。
 
-本文件只记录当前工作范围、任务顺序、测试准入与进展状态。core-v2 的设计说明不在本文件内展开，统一以根目录 `core-v2-architecture.md` 为独立架构文档；如果本文件的任务表述与该架构文档的技术设计细节冲突，先更新两者使其一致，再进入实现。
+本文件只记录当前工作范围、任务顺序、测试准入与进展状态。core-v2 与 tui-v3 的设计说明不在本文件内展开，分别以 `termx-core-v2/docs/architecture.md` 与 `termx-tui-v3/docs/architecture.md` 为独立架构文档；如果本文件的任务表述与对应架构文档的技术设计细节冲突，先更新两者使其一致，再进入实现。
 
 ## 1. 当前唯一目标
 
@@ -16,9 +16,10 @@
 
 - `termx-core-v2` 拥有唯一历史真相。
 - 历史的基本单位是 logical line，不是 visual row，不是 wrapped row，不是 snapshot scrollback。
-- `persisted history store` 只存已封口的 logical line。
-- `mutable live tail` 保存当前仍可被终端指令修改的尾部 logical line，包括 open line、sealed line、从 persisted history reclaim 回来的 sealed suffix。
-- core-v2 架构以根目录 `core-v2-architecture.md` 为设计基准；该文档说明重构原因、目标、双轨架构、硬约束、风险和落地顺序。
+- core-v2 使用单一 `LogicalLineStore` 作为历史 truth；`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend` 只是索引、可变边界与存储落点。
+- `persisted` 或落盘不表示不可修改；clear scrollback、truncate、retention、reclaim、replace 都可以按完整 logical line 删除、撤回、替换或重新提交已提交历史。
+- core-v2 架构以 `termx-core-v2/docs/architecture.md` 为设计基准；该文档说明重构原因、目标、单一 logical line 模型、双轨边界、硬约束、风险和落地顺序。
+- tui-v3 架构以 `termx-tui-v3/docs/architecture.md` 为设计基准；该文档说明 TUI 作为 authoritative history window 消费者的边界、对象、输入语义和禁止事项。
 - `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不再本地重建历史真相。
 - copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。
 
@@ -30,6 +31,8 @@
 
 - `termx-core-v2/`
 - `termx-tui-v3/`
+
+当前讨论阶段允许先在上述目录内建立 `docs/` 技术设计文档；Go module、代码骨架与测试 harness 仍按后续切片推进。
 
 ### 2.2 受限联动范围
 
@@ -79,25 +82,27 @@
 - wrapped metadata 可以作为投影辅助信息，但不能作为最终历史真相来源。
 - snapshot、grid viewport、TUI runtime scrollback 都不能作为 committed history truth。
 
-### 3.2 三层模型
+### 3.2 历史侧模型边界
 
-- `persisted history store` 是已封口 logical line 的存储层。
-- `mutable live tail` 是当前可变真相层。
+- `LogicalLineStore` 是唯一历史数据模型。
+- `CommittedHistoryIndex` 表示当前计入 authoritative committed history 的 logical line 顺序。
+- `MutableFrontier` 表示当前仍可被终端语义修改的 logical line 范围。
+- `StorageBackend` 只是内存、文件、mmap 等存储落点，不定义 mutability。
 - 历史侧 projection 负责把 logical line history 投影成 authoritative history window。
-- 实时当前屏幕、snapshot、grid viewport 的处理边界以 `core-v2-architecture.md` 为准。
+- 实时当前屏幕、snapshot、grid viewport 的处理边界以 `termx-core-v2/docs/architecture.md` 为准。
 
-### 3.3 可变尾部
+### 3.3 可变边界与提交索引
 
-- `mutable live tail` 可包含 open logical line。
-- `mutable live tail` 可包含 sealed logical line。
-- `mutable live tail` 可包含从 persisted history reclaim 回来的 sealed suffix。
-- `open/sealed` 与 `origin=live/reclaimed` 是正交属性。
-- 已落盘 logical line 后续仍可能因为终端行为被 reclaim、修改、重新提交。
+- `MutableFrontier` 可包含 open logical line。
+- `MutableFrontier` 可包含 sealed but still mutable logical line。
+- `MutableFrontier` 可包含从 `CommittedHistoryIndex` reclaim 回来的 committed suffix。
+- `open/sealed`、`dirty/clean`、`committed/uncommitted`、`mutable`、`residency` 是正交属性。
+- 已提交或已落盘 logical line 后续仍可能因为终端行为或 clear/truncate/retention 被删除、reclaim、修改、重新提交。
 - 落盘、mmap、内存驻留只是 residency 策略，不是语义边界。
 
 ### 3.4 非历史创建事件
 
-下面事件不得凭空创造 persisted history：
+下面事件不得凭空创造 committed history：
 
 - attach
 - reattach
@@ -113,8 +118,8 @@
 
 - resize 不是历史创建事件。
 - resize 不是历史重写事件。
-- grow resize 必须按完整 logical line reclaim persisted history tail 的最小充分后缀。
-- shrink resize 必须表达 `screen -> hidden mutable live tail`。
+- grow resize 必须按完整 logical line reclaim committed history tail 的最小充分后缀。
+- shrink resize 必须表达 `screen -> hidden mutable frontier`。
 - 不允许只 reclaim 半条 logical line。
 
 ### 3.6 alt-screen 与进程退出
@@ -123,7 +128,7 @@
 - 进入 alt-screen 时 primary history 语义冻结。
 - 退出 alt-screen 时恢复 primary surface，不把 alt 内容混入 primary history。
 - process exit 是显式 mutability 边界。
-- process exit 时 primary mutable live tail 中剩余内容必须 force seal 后进入 persisted history。
+- process exit 时 primary `MutableFrontier` 中剩余内容必须 force commit 后进入 committed history。
 - 如果退出时仍在 alt-screen，alt 内容直接丢弃。
 
 ### 3.7 TUI 语义
@@ -142,10 +147,10 @@
 ### 4.1 core 侧必删或改写
 
 - 任何以 `hot/cold` 作为当前实现主语义的命名、helper、测试断言。
-- 任何以 visual row 作为 persisted history 主键或唯一边界的实现。
+- 任何以 visual row 作为 committed history 主键或唯一边界的实现。
 - 任何只根据 wrapped row 反推出最终 logical line truth 的存储层实现。
 - 任何 resize 中只 reclaim 半条 logical line 的路径。
-- 任何 attach/bootstrap/recovery/full replace/clear screen 创建新 persisted history 的路径。
+- 任何 attach/bootstrap/recovery/full replace/clear screen 创建新 committed history 的路径。
 
 ### 4.2 protocol 侧必删或限制
 
@@ -158,7 +163,7 @@
 
 - 不得引入本地 committed history depth 状态机。
 - 不得引入本地 history loading depth 状态。
-- 不得引入本地 history exhausted 状态。
+- 不得引入本地推断的 history exhausted truth；允许保存与 core response、请求 cursor、token 绑定的 exhausted older 交互标记。
 - 不得引入 copy mode frozen snapshot 分页合并路径。
 - 不得引入 runtime 本地 viewport merge / snapshotFromGridViewport 路径。
 - 不得引入 canonical row ref 本地推断路径。
@@ -175,14 +180,15 @@
 
 - stable logical line id
 - seal 状态：open 或 sealed
-- origin：live 或 reclaimed
 - logical text/cell 内容或可重放 cell runs
 - 当前投影所需的 row segments
 - row kind
 - timestamp 范围
 - dirty 状态
 - generation 或版本
-- 与 persisted store 的 residency 信息
+- storage residency 信息
+
+`committed / uncommitted` 与 `mutable frontier membership` 必须由 `CommittedHistoryIndex` 和 `MutableFrontier` 派生，或作为可校验缓存存在；不得成为独立于索引/边界的第二份历史真相。
 
 ### 5.2 authoritative history window
 
@@ -238,19 +244,21 @@ TUI store 至少表达：
 - 光标移动后覆写
 - 清屏
 - alt-screen 进入与退出
-- grow resize reclaim
-- shrink resize hidden live tail
+- grow resize reclaim committed suffix
+- shrink resize hidden frontier
 - attach/bootstrap/recovery
-- process exit force seal
-- persisted tail reclaim 后修改再提交
+- process exit force commit
+- committed suffix reclaim 后修改再提交
+- clear scrollback / truncate committed history
 
 断言必须覆盖：
 
 - logical line id 稳定性
 - open/sealed 状态
-- origin live/reclaimed
-- persisted store 内容
-- mutable live tail 内容
+- dirty/clean 状态
+- committed index 内容
+- mutable frontier 内容
+- storage backend 内容
 - screen projection 内容
 - generation 变化
 - 不产生历史的事件确实不产生新 logical line
@@ -266,7 +274,7 @@ TUI store 至少表达：
 - logical line ids
 - row 到 line 的映射
 - grow/shrink 前后不会创造新 history
-- projection 只作为 authoritative history window 输出，实时投影边界以 `core-v2-architecture.md` 为准
+- projection 只作为 authoritative history window 输出，实时投影边界以 `termx-core-v2/docs/architecture.md` 为准
 
 ### 6.3 protocol harness
 
@@ -318,9 +326,9 @@ TUI store 至少表达：
 
 - 从零实现 logical-line-first store，不从旧 visual-row store 迁移内部结构。
 - 给 logical line 分配 stable id。
-- 把 open/sealed/origin/dirty/generation 纳入核心结构。
-- persisted history store、mutable live tail、history window projection 在历史侧结构上分离。
-- 实时 surface 边界以 `core-v2-architecture.md` 为准，不参与 committed history truth。
+- 把 open/sealed、dirty/clean、generation 纳入 logical line 核心结构；committed 状态与 mutable frontier membership 必须由 `CommittedHistoryIndex` 与 `MutableFrontier` 派生或校验。
+- `LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend`、history window projection 在历史侧结构上分离。
+- 实时 surface 边界以 `termx-core-v2/docs/architecture.md` 为准，不参与 committed history truth。
 - 通过 core-v2 logical line harness。
 
 ### 切片三：core-v2 HistoryWindow projection 从 logical line 生成
@@ -331,7 +339,7 @@ TUI store 至少表达：
 - 支持不同 cols 下重投影。
 - 支持 clipped before/after。
 - 支持 row 到 logical line id 映射。
-- 不要求替换实时 screen/snapshot/grid viewport 投影，具体边界以 `core-v2-architecture.md` 为准。
+- 不要求替换实时 screen/snapshot/grid viewport 投影，具体边界以 `termx-core-v2/docs/architecture.md` 为准。
 - 通过 projection harness。
 
 ### 切片四：core-v2 history.window contract 完整化
@@ -590,7 +598,7 @@ TUI store 至少表达：
 - 已将 core persisted/live-tail logical line payload 的 cells 与 wrapped 行视图改为从显式 row segment 对象派生，避免 payload 内继续并行维护 cells、wrapped 与 segment 三套读取路径。
 - 已将 core live-tail sidecar metadata 恢复路径接入 logical line payload 入口：恢复端不再直接按 `StartRow` / `EndRow` 手切 live rows，而是通过 record payload 校验范围、payload metadata 并物化 segment rows。
 - 已决策停止继续在旧 `termx-core/` 与 `tuiv2/` 上做原地 logical-line 修补；旧目录从当前切片起只作为参考范围，新的主线改为 `termx-core-v2/` 与 `termx-tui-v3/`。
-- 已新增根目录 `core-v2-architecture.md` 作为 core-v2 历史模型独立设计文档，详细说明重构原因、目标、架构、硬约束、风险与落地顺序；该文档已完成子 Agent 两轮审核并按高/中风险意见收敛，下一步等待人工确认后再作为实现基准。
+- 已将 core-v2 历史模型独立设计文档移动到 `termx-core-v2/docs/architecture.md`，并新增 `termx-tui-v3/docs/architecture.md` 作为 tui-v3 历史视图设计文档；设计文档已进入子 Agent 审核与人工确认阶段。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化；旧 `termx-core/` 与 `tuiv2/` 中已经积累的补丁不再继续作为主线推进。
 - 下一步创建 `termx-core-v2/` 与 `termx-tui-v3/` 最小模块骨架，先落地清晰 contract、logical-line store 数据结构与 fake-source harness；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

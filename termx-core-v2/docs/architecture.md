@@ -1,0 +1,349 @@
+# termx-core-v2 历史模型架构设计
+
+## 1. 背景
+
+当前终端历史相关问题的核心不在实时当前屏幕如何显示，而在历史记录的真相单位不稳定：旧实现长期混用 visual row、wrapped row、snapshot scrollback、grid viewport 与局部 metadata 来表达历史边界。这样会导致滚动、copy mode、older prepend、latest replace、resize、reclaim、process exit、clear scrollback 等路径在不同层各自推断历史真相。
+
+本次重构不要求同步重写所有实时 screen、snapshot、grid viewport 数据结构。实时当前屏幕可以继续沿用现有方式。重构的核心准则是：历史记录必须按照 logical line 记录，并且只有 core-v2 的历史侧拥有 committed history truth。
+
+本设计不再把“已持久化”和“仍可变尾部”建成两套数据模型。`persisted` 只表示某一时刻的存储落点或提交状态，不表示不可修改。程序发出的 clear scrollback、truncate、resize reclaim、retention、process exit replacement 等语义都可以删除、撤回、替换或重新提交已经进入 committed history 的 logical line。
+
+## 2. 重构目标
+
+- `termx-core-v2` 拥有唯一历史真相。
+- 历史真相的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback 或 grid viewport。
+- 历史侧使用单一 `LogicalLineStore` 保存 logical line truth。
+- committed history 与 mutable frontier 是同一批 logical line 的索引、状态和可变边界，不是两套模型。
+- 实时当前屏幕、snapshot、grid viewport 可以继续作为 live surface 表达，但不能成为 committed history truth。
+- `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不本地重建历史。
+- copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。
+
+## 3. 设计原则
+
+- 单一历史模型：所有历史内容、当前可变尾部、reclaimed suffix、待提交内容都以 `LogicalLine` 表达。
+- 分离 truth、index 与 storage：`LogicalLineStore` 是历史真相；`CommittedHistoryIndex` 决定哪些 line 当前计入 committed history；`MutableFrontier` 决定哪些 line 仍可被终端语义修改；`StorageBackend` 只是内存或磁盘落点。
+- `persisted` 不等于 immutable：已写入持久化后端的 line 仍可能被 truncate、clear、reclaim、replace 或 compact。
+- 历史 truth 与实时 surface 分轨：历史记录按 logical line 维护，实时当前屏幕继续按当前数据方式维护。
+- 明确边界优先：两轨之间只能传历史语义事件，不能传 snapshot 或 rows 让历史侧反推。
+- 不以旧内部实现兼容为目标：旧 `terminalGridStore`、sidecar、snapshot/grid viewport scrollback、copy-mode frozen snapshot 只能作为问题背景。
+- 先做纯内存模型和 harness，再设计持久化格式和协议适配。
+- protocol adapter 是边界层，不能让现有 wire 字段反向污染 core-v2 domain model。
+
+## 4. 总体架构
+
+core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨架构。双轨只区分历史真相与实时 surface，不在 HistoryTrack 内部拆成两套 logical line 模型。
+
+### 4.1 HistoryTrack
+
+`HistoryTrack` 是 authoritative history truth，内部由四类对象组成：
+
+- `LogicalLineStore`：唯一 logical line truth，保存 line id、cells/runs、封口状态、版本、投影缓存和 payload metadata。
+- `CommittedHistoryIndex`：当前计入 committed history 的 ordered line index，负责 older cursor、retention、clear scrollback、truncate、generation 与 logical boundary。
+- `MutableFrontier`：当前仍可能被终端语义修改的 line 范围，包含 open line、sealed but still mutable line、reclaimed committed suffix、shrink resize 隐藏尾部。
+- `StorageBackend`：内存、文件、mmap 或其他持久化实现，只负责保存和恢复 `LogicalLineStore` 与索引状态，不定义 mutability。
+
+`HistoryTrack` 只能从显式历史语义事件更新历史状态，不得从 snapshot、grid viewport、visual rows 或 wrapped rows 反推 committed history。
+
+### 4.2 LiveSurfaceTrack
+
+`LiveSurfaceTrack` 负责实时当前屏幕和兼容实时投影，包含：
+
+- 当前 screen
+- 实时 snapshot
+- grid viewport
+- 当前尺寸下的 live surface projection
+
+`LiveSurfaceTrack` 的内部数据可以继续沿用当前 row/snapshot/grid viewport 风格。它可以显示当前终端状态，但不能向历史侧提供 committed history truth，也不能成为 TUI copy mode 的 history source。
+
+### 4.3 EventRouter
+
+`EventRouter` 是 PTY / VT stream 进入 core-v2 后的唯一路由点。
+
+- 同一输入流只能解码一次，然后按顺序同时产生 `HistoryEvent` 与 `LiveSurfaceMutation`。
+- `HistoryEvent` 直接提交给 `HistoryTrack`。
+- `LiveSurfaceMutation` 直接提交给 `LiveSurfaceTrack`。
+- 两条轨道接收同一个递增 input sequence，用于测试与调试原子顺序。
+- `HistoryTrack` 永远不能读取 `LiveSurfaceTrack` 的 snapshot、grid viewport 或 diff。
+- `LiveSurfaceTrack` 也不能通过回调补写 committed history，只能在事件路由阶段接收同源 mutation。
+
+这样可以避免实现时先更新 live surface，再从 surface diff 反推历史。
+
+### 4.4 Protocol Adapter
+
+protocol adapter 负责把 core-v2 domain model 映射到外部协议。
+
+- core-v2 内部不直接依赖现有 `termx-proto` 或 `internal/protocol` 的 wire 结构。
+- `history.window` 的 wire contract 在 core-v2 domain model 稳定后再适配。
+- legacy `snapshot` / `grid.viewport` 如继续存在，只能作为实时兼容投影接口，不能作为新 TUI history path。
+- latest 请求必须由 core-v2 决定是否返回 replace。
+- older 请求必须携带 core-v2 上次返回的 cursor 或 logical boundary。
+- older response 的 op 必须由 core-v2 决定，client 不得自行把 response 解释成 prepend。
+- history response 必须携带 stable logical line id、line span clipping、token、generation、first/last logical line boundary、has-more 与 cursor。
+- stale guard 只能使用 token、generation、cursor、logical boundary，不能使用 snapshot totals、row count 或 LoadedRows。
+
+## 5. HistoryTrack 数据模型
+
+### 5.1 LogicalLine
+
+每条 logical line 至少包含：
+
+- stable logical line id
+- seal 状态：open 或 sealed
+- logical text、cells 或可重放 cell runs
+- projection segments：按 cols 和 generation 可重算的历史窗口投影派生视图
+- row kind
+- timestamp 范围
+- dirty 状态
+- generation 或版本
+- storage residency：memory、file、mmap、evicted 等实现状态
+
+LogicalLine 的 truth 是 logical boundary 与 cells/runs。projection segments 不能成为 stored truth，也不能作为 logical line boundary 的唯一来源。
+
+`open/sealed`、`dirty/clean`、`committed/uncommitted`、`mutable/immutable-for-now`、`memory/file` 是不同维度，不能混成一个字段。已写入 StorageBackend 的 line 仍可能重新进入 `MutableFrontier` 被修改，也可能因为 clear/truncate/retention 从 `CommittedHistoryIndex` 中删除。
+
+### 5.2 LogicalLineStore
+
+`LogicalLineStore` 是唯一历史数据模型。
+
+- 不能以 visual row 作为主键或唯一边界。
+- 不能只依赖 wrapped metadata 反推出 logical line truth。
+- 同一 logical line id 在 retained 范围内必须稳定。
+- 修改 line 内容必须 bump line generation 或 HistoryTrack generation。
+- 删除 line 必须同时更新 `CommittedHistoryIndex`、`MutableFrontier` 与相关 cursor/token。
+- 只有不再被 `CommittedHistoryIndex` 或 `MutableFrontier` 引用的 line payload 才能被物理删除或压缩。
+- 投影缓存只能由 line truth 派生，可以丢弃和重算。
+
+### 5.3 CommittedHistoryIndex
+
+`CommittedHistoryIndex` 表示当前 authoritative committed history 的顺序。
+
+- 它只保存 line id、边界、cursor、generation、retention metadata 等索引信息。
+- 它不是单独的 payload store。
+- append commit 是把 line id 加入 committed index，不是复制成另一套 line。
+- clear scrollback / truncate committed history 可以删除 index 覆盖的 line，并通知 StorageBackend 删除、标记 tombstone 或等待 compaction。
+- retention 必须以完整 logical line 为单位。
+- older cursor 只能基于 committed index 和 logical boundary 生成。
+
+`committed` 的含义是“当前会被 authoritative history window 和 older pagination 计入历史深度”，不是“永远不能修改或删除”。
+
+### 5.4 MutableFrontier
+
+`MutableFrontier` 表示当前仍可能被终端语义修改的 line 范围。
+
+它可以包含：
+
+- open logical line
+- sealed but still mutable logical line
+- 从 `CommittedHistoryIndex` reclaim 回来的 committed suffix
+- shrink resize 后隐藏但仍可变的 logical line
+
+reclaim 的含义是把 committed suffix 从 index 边界撤回到 mutable frontier，不是把数据从一个 store 搬到另一个 store。
+
+- clean reclaimed line 如果没有被修改，force commit 时只把 line id 与新的 committed boundary 放回 `CommittedHistoryIndex`，不重复写 payload，也不 bump line content generation；但 index generation 必须变化。
+- dirty reclaimed line force commit 时替换该 logical line 内容，并更新 line generation 与 index generation，不能让旧内容和新内容同时出现在 committed history 中。
+- 如果 reclaimed line 的原 committed source 已被 `truncate-committed-history` 删除，后续 force commit 只能把它作为当前 frontier 内容重新提交到新的 committed boundary，不能恢复旧 cursor 或旧 committed source。
+
+### 5.5 StorageBackend
+
+`StorageBackend` 负责内存和持久化实现。
+
+- 第一阶段只需要内存 backend。
+- 后续文件或 mmap backend 不能改变 domain model。
+- backend 中已有记录不代表 immutable。
+- backend 可以支持 append、overwrite、truncate、delete、tombstone、compaction。
+- backend 只能删除不再被 `CommittedHistoryIndex` 或 `MutableFrontier` 引用的 payload；如果 committed source 被 truncate 但 line 仍在 frontier，backend 必须先保留或转移 frontier payload。
+- 恢复时必须重建 `LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier` 和 generation，不能只恢复 row payload 后由 snapshot 反推历史。
+
+### 5.6 HistoryWindow
+
+`HistoryWindow` 是 `HistoryTrack` 对 TUI 和协议层输出的 authoritative projection。
+
+至少包含：
+
+- terminal id
+- window token
+- op：replace 或 prepend
+- size
+- visual rows
+- row metadata
+- logical line spans
+- stable logical line ids
+- clipped before / clipped after
+- before cursor 或 older cursor
+- loaded logical lines
+- total logical lines
+- has more
+- generation
+- first/last logical line boundary
+- timestamp
+
+latest window 可以投影 committed tail 和 eligible mutable frontier。older cursor 只能基于 committed index 推进；mutable frontier 不得让 TUI 自行推断 committed depth。
+
+## 6. HistoryTrack 输入事件
+
+`HistoryTrack` 的输入只能是历史语义事件。
+
+### 6.1 事件路由与事务边界
+
+- 每个 PTY / VT 输入批次必须形成一个有序事务。
+- 一个事务可以同时包含多条 `HistoryEvent` 和多条 `LiveSurfaceMutation`。
+- 同一事务内 `HistoryEvent` 与 `LiveSurfaceMutation` 使用相同 input sequence。
+- 事务提交顺序由 `EventRouter` 保证，不能由 `LiveSurfaceTrack` 的当前状态反推。
+- 如果某个输入既影响当前屏幕又影响历史，必须在同一事务中显式产生两侧事件。
+
+### 6.2 必须支持的事件
+
+- `write-primary-cells`：写入 primary 当前 logical line 的 cell runs 或 cells。
+- `seal-logical-line`：硬换行、滚出可变区或明确封口边界导致 logical line sealed。
+- `mutate-frontier`：光标移动、覆写、erase、clear 局部可变内容等对 `MutableFrontier` 内 line 的修改。
+- `reset-frontier`：clear screen 或明确重置场景清空当前 primary `MutableFrontier`，但不创建 committed history。
+- `commit-frontier`：把 frontier 中符合条件的 logical line 加入 `CommittedHistoryIndex`。
+- `force-commit-frontier`：process exit 时强制封口 primary frontier 并提交。
+- `reclaim-committed-suffix`：grow resize 或其他可变性恢复场景按完整 logical line 把 committed suffix 撤回到 frontier。
+- `hide-frontier`：shrink resize 把当前 screen 中不可见但仍可变的 logical lines 转入 hidden frontier。
+- `truncate-committed-history`：clear scrollback、retention 或显式删除历史时，从 `CommittedHistoryIndex` 删除完整 logical line 范围，并同步删除或标记 store 中相关 line。
+- `switch-alt-screen`：进入/退出 alt-screen 时冻结/恢复 primary history，不把 alt 内容写入 primary history。
+- `non-history-boundary`：attach、reattach、bootstrap、recovery、full replace、clear screen、resize 等非历史创建事件只影响事务边界、token 或 generation，不凭空创建 committed history。
+
+`non-history-boundary` 只能表达事务边界和 stale signal，不能替代 `mutate-frontier`、`reset-frontier`、`commit-frontier`、`reclaim-committed-suffix`、`hide-frontier`、`truncate-committed-history`、`force-commit-frontier` 等具体 history mutation 事件。
+
+### 6.3 resize 语义
+
+- resize 本身不是历史创建事件。
+- resize 本身不是历史重写事件。
+- grow resize 只允许触发 `reclaim-committed-suffix`，并且必须按完整 logical line reclaim committed suffix。
+- shrink resize 只允许触发 `hide-frontier`，表达 `screen -> hidden mutable frontier`。
+- 不允许 reclaim 半条 logical line。
+- resize 后 active history window 必须通过 new generation 或 new token 失效。
+- resize 后 TUI 应通过 latest replace 获取新的 authoritative history window。
+- resize 不得从 resized snapshot 或 grid viewport 重建 committed history。
+
+### 6.4 clear / erase / full replace 语义
+
+- 局部 erase 或光标覆写如果作用于仍可变 logical line，必须进入 `mutate-frontier`。
+- clear screen 可以清理 `LiveSurfaceTrack` 当前屏幕，但不得凭空创建 committed history。
+- clear screen 如果明确影响 primary frontier，必须以 `mutate-frontier` 或 `reset-frontier` 表达，不能从清屏后的 snapshot 反推历史。
+- clear scrollback 或程序明确删除历史时，必须使用 `truncate-committed-history`，并 bump generation、失效旧 token/cursor。
+- clear scrollback 可以删除已经写入 StorageBackend 的 line；StorageBackend 必须执行 delete、truncate、tombstone 或后续 compaction。
+- `truncate-committed-history` 只删除 committed index 覆盖的历史。它不得从当前 screen 或 `MutableFrontier` 反推删除内容。
+- 如果被 truncate 的 logical line 当前也在 `MutableFrontier` 中，truncate 必须切断其旧 committed source/boundary；除非同一事务还包含 `reset-frontier` 或 `mutate-frontier`，否则该 line 仍作为当前 frontier 内容保留。
+- 对仍保留在 frontier 的 line，StorageBackend 删除的是旧 committed reference 或旧 committed backing，不得丢失 frontier payload；必要时先把 payload 保留在 `LogicalLineStore` 或转移到新的 storage reference。
+- truncate 后保留在 frontier 的 line 后续 force commit 时进入新的 committed boundary，不能复用已删除的 old cursor/source。
+- full replace 不得把当前 screen 内容作为新 committed history。
+- full replace 可以重建 `LiveSurfaceTrack` 实时投影，但只能向 `HistoryTrack` 发送 `non-history-boundary` 或明确的 frontier mutation/truncate 事件。
+- 任何 clear/full replace 后的 active history window 必须根据 token/generation 规则失效或通过 latest replace 重置。
+
+### 6.5 alt-screen 与 process exit 组合语义
+
+- 进入 alt-screen 时 primary `HistoryTrack` 冻结。
+- alt-screen 期间输出只影响 alt `LiveSurfaceTrack`，不进入 primary history。
+- 退出 alt-screen 时恢复 primary surface，不把 alt 内容混入 primary history。
+- process exit 是 primary history 的 mutability 边界。
+- process exit 时 primary `MutableFrontier` 必须先 `force-commit-frontier`。
+- 如果 process exit 时仍在 alt-screen，alt 内容直接丢弃；primary frontier 仍按 process exit 规则 force commit。
+- force commit 与 index/storage 更新必须在同一 history transaction 中产生可验证 generation 变化。
+
+### 6.6 禁止的输入
+
+- snapshot 作为 history truth
+- grid viewport 作为 history truth
+- visual row 切片作为 committed history 边界
+- wrapped row 序列作为最终 logical line truth
+- TUI 本地 scrollback 作为 committed history
+
+## 7. TUI-v3 关系
+
+`termx-tui-v3` 不拥有 committed history truth。
+
+tui-v3 至少包含：
+
+- `historyview.Store`：只保存 core-v2 返回的 authoritative window、token、generation、rows、line spans、cursor、has-more、viewport、selection、pending request token。
+- `historyview.Source`：先使用 fake source 做 harness，后续通过 protocol adapter 接入。
+- `copymode`：只消费 `historyview.Store`，不读 local VTerm scrollback，不用 wrapped 推断 logical line。
+- `history renderer`：copy mode 和历史窗口只绘制 authoritative projection，不把 visual rows 拼回 logical truth。
+- `live renderer`：普通实时屏幕可以继续消费 `LiveSurfaceTrack` 的 snapshot 或 grid viewport。
+- `input`：滚轮、page up/down、selection 只改变交互态或发起 history window 请求，不维护本地 committed history depth。
+
+TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor 与 logical boundary。TUI-v3 不得使用 snapshot totals、row count、LoadedRows 或本地 scrollback depth 接纳 older/latest response。
+
+## 8. 关键硬约束
+
+- 历史 truth 只能来自 `HistoryTrack`。
+- `HistoryTrack` 内部只有一个 `LogicalLineStore` 数据模型。
+- committed history 与 mutable frontier 是索引、状态和边界，不是两套 payload store。
+- `persisted` 只表示存储落点或提交状态，不表示 immutable。
+- StorageBackend 不得定义 history mutability。
+- 实时 snapshot/grid viewport 可以保留，但只能属于 `LiveSurfaceTrack`。
+- 两轨不能通过 snapshot、wrapped rows、visual rows 传递历史 truth。
+- resize 不能创造 history，grow resize 必须按完整 logical line reclaim committed suffix。
+- clear screen、full replace、attach、reattach、bootstrap、recovery 不能凭空创建 committed history。
+- clear scrollback、truncate、retention 可以删除已提交和已持久化的 logical line，但必须按完整 logical line 更新 index、store、generation 与 cursor。
+- alt-screen 不写 primary history。
+- process exit 必须 force commit primary mutable frontier。
+- TUI 不得用本地深度计数、snapshot totals、LoadedRows、row count 推断 older/latest 接纳规则。
+
+## 9. 第一阶段范围
+
+第一阶段只做：
+
+- 纯内存 `HistoryTrack`
+- 明确的 `HistoryEvent` 类型
+- `LogicalLineStore`
+- `CommittedHistoryIndex`
+- `MutableFrontier`
+- 内存 `StorageBackend`
+- HistoryWindow 生成
+- fake event source harness
+- fake history source harness
+
+第一阶段不做：
+
+- 真实 PTY 接入
+- Bubble Tea app 接入
+- 旧 CLI 默认入口迁移
+- 最终持久化文件格式
+- 旧 `termx-core/` 原地修补
+- 旧 `tuiv2/` 原地修补
+
+## 10. 主要风险与应对
+
+### 10.1 事件接口退化成 row/snapshot 输入
+
+风险：`LiveSurfaceTrack` 为了方便直接把 rows 或 snapshot 交给 `HistoryTrack`。
+
+应对：`HistoryTrack` API 只接受历史语义事件，测试覆盖禁止 row/snapshot 反推 history truth。
+
+### 10.2 StorageBackend 被误当作历史真相
+
+风险：实现为了方便把“已经写到文件”解释成“不可修改”，导致 clear scrollback、truncate、reclaim、replacement 无法正确表达。
+
+应对：domain model 只认 `LogicalLineStore`、`CommittedHistoryIndex` 与 `MutableFrontier`；StorageBackend 只是读写实现。测试必须覆盖删除已提交历史、reclaim 后修改再提交、retention 后 cursor 失效。
+
+### 10.3 CommittedHistoryIndex 退化为 append-only ledger
+
+风险：只记录 sealed lines，无法表达删除、撤回、reclaim、dirty replacement、process exit force commit。
+
+应对：第一阶段就实现 `truncate-committed-history`、`reclaim-committed-suffix`、`mutate-frontier` 和 `force-commit-frontier` harness。
+
+### 10.4 过早绑定 protocol
+
+风险：为了兼容现有 wire 字段，把 core-v2 内部模型设计成 row-level contract。
+
+应对：先稳定 domain model，再写 protocol adapter。
+
+### 10.5 实时 surface 被误认为 history source
+
+风险：TUI 或协议为了滚动继续使用 snapshot/grid viewport。
+
+应对：TUI-v3 只接 `HistoryWindow`，legacy snapshot/grid viewport 文档明确为 live surface 兼容接口。
+
+## 11. 推荐落地顺序
+
+1. 创建 `termx-core-v2/` 与 `termx-tui-v3/` 最小模块。
+2. 在 core-v2 中定义 `HistoryTrack`、`LiveSurfaceTrack`、`HistoryEvent`、`LogicalLine`、`LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend`、`HistoryWindow` 类型。
+3. 实现纯内存 `LogicalLineStore`、`CommittedHistoryIndex` 与 `MutableFrontier`。
+4. 补 core-v2 logical line harness：普通输出、换行、自动折行、覆写、局部 erase、clear screen、clear scrollback、truncate committed history、full replace、attach、reattach、bootstrap、recovery、resize、alt-screen、exit-while-alt、process exit、reclaim 后修改再提交。
+5. 实现 HistoryWindow projection 和 pagination，覆盖 resize 后 latest replace、旧窗口 stale guard、clipped span、older cursor 与 logical boundary。
+6. 在 tui-v3 中实现 fake source + historyview store harness，覆盖 latest replace、older prepend、empty older exhausted、stale response、selection clipped span。
+7. 补 protocol round-trip 和 adapter harness。
+8. 稳定后再进入真实入口迁移。
