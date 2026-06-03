@@ -1176,6 +1176,53 @@ func TestTerminalGridRecoveredLiveTailAdvancesRuntimeCursorPastMigrations(t *tes
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailAdvancesRuntimeCursorPastConflictingMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("tail"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	liveRuntimeID := terminalLiveTailLogicalLineIDBase + 1
+	conflictingRuntimeID := terminalLiveTailLogicalLineIDBase + 9
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        liveRuntimeID,
+			StartRow:  0,
+			EndRow:    0,
+			Sealed:    true,
+			Origin:    terminalLiveTailOriginLive,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows: rows,
+		Migrations: []terminalGridLineMigration{
+			{RuntimeID: conflictingRuntimeID, PersistedID: 1},
+			{RuntimeID: conflictingRuntimeID, PersistedID: 2},
+		},
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected live tail metadata with conflicting migrations to recover")
+	}
+	tail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("next"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, false)
+	nextIDs := tail.window(0, tail.rowCount()).logicalLineIDs
+	if len(nextIDs) != 1 || nextIDs[0] <= conflictingRuntimeID {
+		t.Fatalf("expected recovered live tail cursor to advance past conflicting runtime id, got %#v conflicted=%d", nextIDs, conflictingRuntimeID)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailKeepsOpenLineSeparateFromWrapPending(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
