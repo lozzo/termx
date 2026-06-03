@@ -550,6 +550,9 @@ func terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs []uint64, rows []vterm.Da
 		return nil
 	}
 	aligned := alignLiveTailUint64s(lineIDs, rowCount)
+	if terminalLiveTailLogicalLineIDsComplete(aligned, rowCount) {
+		return aligned
+	}
 	nextID := maxUint64Slice(aligned)
 	if nextID < terminalLiveTailLogicalLineIDBase {
 		nextID = terminalLiveTailLogicalLineIDBase

@@ -267,6 +267,31 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsPreferExplicitIDs(t *testing.T
 	}
 }
 
+func TestTerminalPrimaryLiveTailLiveLogicalLineIDsPreferCompleteExplicitIDs(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	firstID := terminalLiveTailLogicalLineIDBase + 10
+	secondID := terminalLiveTailLogicalLineIDBase + 11
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	}, []uint64{firstID, secondID}, false)
+
+	window := tail.window(0, tail.rowCount())
+	if got := window.logicalLineIDs; !reflect.DeepEqual(got, []uint64{firstID, secondID}) {
+		t.Fatalf("expected complete explicit live ids to override wrapped grouping, got %#v", got)
+	}
+	records := tail.logicalLineRecords()
+	if len(records) != 2 {
+		t.Fatalf("expected complete explicit live ids to split records despite wrapped=true, got %#v", records)
+	}
+	if records[0].id != firstID || records[0].startRow != 0 || records[0].endRow != 0 {
+		t.Fatalf("unexpected first explicit live record: %#v", records[0])
+	}
+	if records[1].id != secondID || records[1].startRow != 1 || records[1].endRow != 1 {
+		t.Fatalf("unexpected second explicit live record: %#v", records[1])
+	}
+}
+
 func TestTerminalPrimaryLiveTailLogicalLineRecordsRequireCompleteIDs(t *testing.T) {
 	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{{
 		origin:    terminalLiveTailOriginLive,
