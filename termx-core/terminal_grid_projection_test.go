@@ -1019,6 +1019,58 @@ func TestTerminalGridRecoveredLiveTailPreservesResizeOrigin(t *testing.T) {
 	}
 }
 
+func TestTerminalGridRecoveredResizeLiveTailLatestLimitMarksClippedMutableLineBefore(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), RowKind: "recovered-resize", WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("r1"), RowKind: "recovered-resize", WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode resize live row metadata: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 30
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        runtimeID,
+			StartRow:  0,
+			EndRow:    1,
+			Sealed:    true,
+			Origin:    terminalLiveTailOriginResize,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write resize live tail metadata: %v", err)
+	}
+
+	viewport, err := storeViewportWithRecoveredLiveTailForHistory(store, 0, 1, 2)
+	if err != nil {
+		t.Fatalf("latest history viewport with recovered resize tail: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport("recovered-resize-limit-clipped", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"r1"}) {
+		t.Fatalf("expected latest limit to return recovered resize line tail, got %#v", got)
+	}
+	if window.BeforeOffset != 0 || window.LoadedRows != 0 || window.Generation != 0 || window.FirstRowID != 0 || window.LastRowID != 0 {
+		t.Fatalf("expected recovered clipped resize line not to invent committed cursor or row boundary, window=%#v", window)
+	}
+	if window.LoadedLines != 0 || window.LogicalTotal != 1 || window.TotalRows != 2 || !window.HasMore {
+		t.Fatalf("expected recovered resize clipped line to preserve pagination signal without loaded line start, loaded=%d total=%d rows=%d has_more=%v", window.LoadedLines, window.LogicalTotal, window.TotalRows, window.HasMore)
+	}
+	if window.FirstLineID != 0 || window.LastLineID != 0 {
+		t.Fatalf("expected recovered resize clipped-before line not to expose loaded line boundaries, first=%d last=%d", window.FirstLineID, window.LastLineID)
+	}
+	if len(window.Lines) != 1 {
+		t.Fatalf("expected one recovered resize clipped line span, got %#v", window.Lines)
+	}
+	span := window.Lines[0]
+	if span.StartRow != 0 || span.EndRow != 0 || span.RowKind != "recovered-resize" || span.LogicalLineID != runtimeID || !span.ClippedBefore || span.ClippedAfter {
+		t.Fatalf("expected latest limit to mark recovered resize line clipped-before only, got %#v", span)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedRowIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
