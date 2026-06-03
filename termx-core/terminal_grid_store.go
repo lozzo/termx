@@ -2749,9 +2749,13 @@ func reflowTerminalGridRowsWithRowIDRanges(rows []terminalGridRow, cols int, lin
 		if hasRecord {
 			continuesLogicalLine = i < recordEnd || !recordSealed
 		}
+		rowKind := row.rowKind
+		if rowKind == "" && hasRecord {
+			rowKind = lineRecords[recordIndex].rowKind
+		}
 		meta := terminalGridReflowMeta{
 			timestamp:                  row.timestamp,
-			rowKind:                    row.rowKind,
+			rowKind:                    rowKind,
 			logicalLineID:              logicalLineID,
 			logicalLineIDAuthoritative: lineIDAuthoritative,
 		}

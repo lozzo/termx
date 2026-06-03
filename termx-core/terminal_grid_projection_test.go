@@ -2358,6 +2358,40 @@ func TestServerHistoryWindowMarksClippedLogicalLineAfterProjectionLimit(t *testi
 	}
 }
 
+func TestServerHistoryWindowClippedLineRowKindUsesLogicalLineRecord(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "projection-clipped-record-row-kind")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	appendExplicitTerminalGridRowsForTest(t, store, []terminalGridRow{
+		{cells: localVTermCellsFromString("aa"), rowKind: "line0", wrapped: false},
+		{cells: localVTermCellsFromString("bbbb"), rowKind: "record-kind", wrapped: true},
+		{cells: localVTermCellsFromString("cccc"), wrapped: true},
+		{cells: localVTermCellsFromString("dd"), wrapped: false},
+		{cells: localVTermCellsFromString("ee"), rowKind: "line2", wrapped: false},
+	})
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(4, 2))
+	window, err := srv.HistoryWindow(t.Context(), "projection-clipped-record-row-kind", HistoryWindowOptions{BeforeOffset: 1, Limit: 2, Cols: 4})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if got := historyRowsToStrings(window.Rows); !reflect.DeepEqual(got, []string{"cccc", "dd"}) {
+		t.Fatalf("expected projected window to contain visible logical line tail, got %#v", got)
+	}
+	if len(window.Lines) != 1 {
+		t.Fatalf("expected one logical line span, got %#v", window.Lines)
+	}
+	span := window.Lines[0]
+	if span.RowKind != "record-kind" || !span.ClippedBefore {
+		t.Fatalf("expected clipped line span to inherit row kind from logical line record, got %#v", span)
+	}
+}
+
 func TestServerHistoryWindowMarksLatestLimitClippedLogicalLineBefore(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-latest-limit-clipped")
