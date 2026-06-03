@@ -437,6 +437,7 @@ TUI store 至少表达：
 - 已将 core `history.window` line span 生成改为只按 stable logical line id 归并 visual rows；projection 缺失 logical line id 时不再通过 wrapped 元数据伪造 authoritative line spans。
 - 已将 core screen projection 裁剪后的 clipped-before 判定收敛为只看相邻 stable logical line id；缺少 logical line id 时不再通过 wrapped 元数据推断窗口切断了逻辑行。
 - 已将 core grow resize reclaim 的投影裁剪起点收敛为只按 stable logical line id 向前扩展；缺少 logical line id 时不再通过 wrapped 元数据扩展 reclaim 窗口。
+- 已将 core screen projection 裁剪后的 leading row kind 继承收敛为只在相邻 stable logical line id 连续时发生；缺少 logical line id 时不再通过 wrapped 元数据继承 clipped span 的 row kind。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与非零 logical line boundary id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
