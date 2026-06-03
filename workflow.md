@@ -450,7 +450,7 @@ TUI store 至少表达：
 - 已将 core `history.window` line span 生成改为只按 stable logical line id 归并 visual rows；projection 缺失 logical line id 时不再通过 wrapped 元数据伪造 authoritative line spans。
 - 已将 core authoritative `history.window` 输出收敛为只包含带 stable logical line id 的 rows；screen/grid 兼容投影仍可保留缺 id 的 visual rows，但 history window 不再返回无法生成 authoritative line span 的 row-only 片段，避免 TUI authoritative store 拒绝 core 响应。
 - 已将 core authoritative `history.window` 的全过滤空窗口边界收敛为无权威边界：当窗口内所有 visual rows 都缺 stable logical line id 被过滤后，会清空 token、generation、row id 与 logical total，只保留本次请求 before cursor，避免把无 authoritative row 的窗口暴露成可接纳历史边界。
-- 已继续收紧 core authoritative `history.window` 行过滤：如果同一个 stable logical line id 在投影窗口内非连续出现，中间被缺 id 或其他 id 打断，则该 id 的所有 visual rows 都会从 authoritative window 中抑制，避免过滤后把不连续片段重新合并成伪完整逻辑行。
+- 已继续收紧 core authoritative `history.window` 行过滤：如果同一个 stable logical line id 在投影窗口内非连续出现，中间被缺 id 或其他 id 打断，则该 id 的所有 visual rows 都会从 authoritative window 中抑制，并同步从 authoritative logical total 中扣除，避免过滤后把不连续片段重新合并成伪完整逻辑行。
 - 已收紧 core `history.window` 的 clipped-before 标记：older offset 本身不再表示首个 logical line span 被裁断，`historyLineSpans` 不再接收 offset 作为裁剪输入，只有 screen projection 明确给出 logical line 裁剪标记时才设置 clipped-before，避免完整 older prepend 窗口被少计 loaded logical line。
 - 已将 core screen projection 裁剪后的 clipped-before 判定收敛为只看相邻 stable logical line id；缺少 logical line id 时不再通过 wrapped 元数据推断窗口切断了逻辑行。
 - 已将 core grow resize reclaim 的投影裁剪起点收敛为只按 stable logical line id 向前扩展；缺少 logical line id 时不再通过 wrapped 元数据扩展 reclaim 窗口。

@@ -390,6 +390,12 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 	if viewport.TotalRows > 0 {
 		filtered.TotalRows = maxInt(0, viewport.TotalRows-(len(viewport.Rows)-len(keep)))
 	}
+	if len(invalidLineIDs) > 0 {
+		filtered.LogicalTotal = maxInt(0, viewport.LogicalTotal-len(invalidLineIDs))
+		if viewport.WindowLogicalTotal > 0 {
+			filtered.WindowLogicalTotal = maxInt(0, viewport.WindowLogicalTotal-len(invalidLineIDs))
+		}
+	}
 	if len(keep) == 0 {
 		filtered.FirstLineClippedBefore = false
 		filtered.HasMore = false

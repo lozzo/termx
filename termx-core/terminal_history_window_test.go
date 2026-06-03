@@ -116,6 +116,9 @@ func TestHistoryWindowDoesNotMergeLogicalLineAcrossFilteredRows(t *testing.T) {
 	if window.LoadedRows != 1 || window.TotalRows != 1 {
 		t.Fatalf("expected committed depth and total rows to drop filtered rows, loaded=%d total=%d", window.LoadedRows, window.TotalRows)
 	}
+	if window.LogicalTotal != 1 {
+		t.Fatalf("expected logical total to drop discontiguous filtered logical line id, got %d", window.LogicalTotal)
+	}
 }
 
 func TestHistoryWindowFindsDiscontiguousLogicalLineIDs(t *testing.T) {
