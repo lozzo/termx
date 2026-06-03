@@ -452,6 +452,20 @@ func TestTerminalLiveTailLogicalLineRecordPayloadCarriesCellsAndMetadata(t *test
 	if len(metas) != 1 || metas[0].RowKind != "live-kind" || metas[0].TimestampStartUnixNano == nil || *metas[0].TimestampStartUnixNano != start.UnixNano() || metas[0].TimestampEndUnixNano == nil || *metas[0].TimestampEndUnixNano != end.UnixNano() {
 		t.Fatalf("expected live-tail metadata to come from logical line payload, got %#v", metas)
 	}
+	metaPayload, ok := terminalLiveTailLogicalLineRecordMetaPayload(metas[0], rows)
+	if !ok {
+		t.Fatal("expected sidecar live-tail record payload")
+	}
+	if got := vtermRowsToStrings(metaPayload.cellRows()); !reflect.DeepEqual(got, []string{"aa", "bb"}) {
+		t.Fatalf("expected sidecar payload cells from record row range, got %#v", got)
+	}
+	if got := metaPayload.wrappedRows(); !reflect.DeepEqual(got, []bool{true, false}) {
+		t.Fatalf("expected sidecar payload wrapped rows from record row range, got %#v", got)
+	}
+	metas[0].EndRow = len(rows)
+	if _, ok := terminalLiveTailLogicalLineRecordMetaPayload(metas[0], rows); ok {
+		t.Fatal("expected sidecar payload to reject out-of-range record")
+	}
 }
 
 func TestTerminalGridStoreRecordLiveTailLineStateRejectsReclaimedWithoutGeneration(t *testing.T) {

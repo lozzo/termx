@@ -2456,9 +2456,6 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 	}
 	segments := make([]terminalLiveTailSegment, 0, len(records))
 	for i, record := range records {
-		if record.StartRow < 0 || record.EndRow >= len(rows) || record.EndRow < record.StartRow {
-			return nil, false
-		}
 		if record.Residency != terminalLogicalLineResidencyLiveTail || record.ID == 0 || record.Source != "" {
 			return nil, false
 		}
@@ -2468,13 +2465,12 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		if record.Origin != terminalLiveTailOriginReclaimed && terminalGridLineRecordMetaHasRowIDs(record) {
 			return nil, false
 		}
-		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
-		if !terminalLiveTailRecordSealStateMatchesRows(record, segmentRows) {
+		payload, ok := terminalLiveTailLogicalLineRecordMetaPayload(record, rows)
+		if !ok || !terminalLiveTailRecordPayloadMetadataMatchesPayload(record, payload) {
 			return nil, false
 		}
-		recordView := terminalLiveTailLogicalLineRecord{startRow: 0, endRow: len(segmentRows) - 1}
-		payload, ok := terminalLiveTailLogicalLineRecordPayload(recordView, segmentRows)
-		if !ok || !terminalLiveTailRecordPayloadMetadataMatchesPayload(record, payload) {
+		segmentRows := payload.damageRows()
+		if !terminalLiveTailRecordSealStateMatchesRows(record, segmentRows) {
 			return nil, false
 		}
 		if record.Origin != terminalLiveTailOriginReclaimed && migrations[record.ID] != 0 {

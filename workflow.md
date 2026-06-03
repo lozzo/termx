@@ -571,6 +571,7 @@ TUI store 至少表达：
 - 已为 core persisted/live-tail logical line payload 视图补入 row segment 信息：payload 现在不仅暴露 cells、row kind 与 timestamp range，也暴露当前 source rows 的 wrapped segment 序列，开始覆盖 `workflow.md` 要求的“当前投影所需 row segments”维度。
 - 已将 core persisted/live-tail logical line payload 的 row segment 表达收敛为显式内部对象：每个 segment 同时携带 cells、wrapped、row kind 与 timestamp，避免调用方用多个并行数组重新拼装投影所需 segment 元数据。
 - 已将 core persisted/live-tail logical line payload 的 cells 与 wrapped 行视图改为从显式 row segment 对象派生，避免 payload 内继续并行维护 cells、wrapped 与 segment 三套读取路径。
+- 已将 core live-tail sidecar metadata 恢复路径接入 logical line payload 入口：恢复端不再直接按 `StartRow` / `EndRow` 手切 live rows，而是通过 record payload 校验范围、payload metadata 并物化 segment rows。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
 - 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐从 metadata 恢复 live tail 与 screen projection 的语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

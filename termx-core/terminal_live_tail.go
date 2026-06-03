@@ -21,6 +21,13 @@ const (
 	terminalLiveTailSealed terminalLiveTailSealState = "sealed"
 )
 
+func terminalLiveTailSealStateFromSealed(sealed bool) terminalLiveTailSealState {
+	if sealed {
+		return terminalLiveTailSealed
+	}
+	return terminalLiveTailOpen
+}
+
 func terminalLiveTailSealStateKnown(sealState terminalLiveTailSealState) bool {
 	switch sealState {
 	case terminalLiveTailOpen, terminalLiveTailSealed:
@@ -93,6 +100,26 @@ func terminalLiveTailLogicalLineRecordPayload(record terminalLiveTailLogicalLine
 	return terminalLiveTailLogicalLinePayload{rows: rows[record.startRow : record.endRow+1]}, true
 }
 
+func terminalLiveTailLogicalLineRecordMetaPayload(record terminalGridLineRecordMeta, rows []vterm.DamageOp) (terminalLiveTailLogicalLinePayload, bool) {
+	recordView := terminalLiveTailLogicalLineRecord{
+		id:             record.ID,
+		startRow:       record.StartRow,
+		endRow:         record.EndRow,
+		sealState:      terminalLiveTailSealStateFromSealed(record.Sealed),
+		origin:         record.Origin,
+		residency:      record.Residency,
+		rowKind:        record.RowKind,
+		timestampStart: terminalGridLineRecordTimeFromUnixNano(record.TimestampStartUnixNano),
+		timestampEnd:   terminalGridLineRecordTimeFromUnixNano(record.TimestampEndUnixNano),
+		dirty:          record.Dirty,
+		generation:     record.Generation,
+		rowIDKnown:     record.RowIDKnown,
+		firstRowID:     record.FirstRowID,
+		lastRowID:      record.LastRowID,
+	}
+	return terminalLiveTailLogicalLineRecordPayload(recordView, rows)
+}
+
 func (payload terminalLiveTailLogicalLinePayload) rowKind() string {
 	return terminalLogicalLineRowKindFromDamageRows(payload.rows)
 }
@@ -115,6 +142,10 @@ func (payload terminalLiveTailLogicalLinePayload) cellRows() [][]vterm.Cell {
 		out = append(out, cloneVTermCells(segment.cells))
 	}
 	return out
+}
+
+func (payload terminalLiveTailLogicalLinePayload) damageRows() []vterm.DamageOp {
+	return cloneGridDamageOps(payload.rows)
 }
 
 func (payload terminalLiveTailLogicalLinePayload) rowSegments() []terminalLogicalLineRowSegment {
