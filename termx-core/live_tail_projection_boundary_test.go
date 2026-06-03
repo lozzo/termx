@@ -288,6 +288,53 @@ func TestTerminalLatestCombinedViewportLogicalTotalIncludesVisiblePersistedAndLi
 	}
 }
 
+func TestTerminalLatestCombinedViewportCountsReclaimedCommittedRowsOnce(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("p1"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+		{cells: localVTermCellsFromString("r1"), wrapped: false},
+	}); err != nil {
+		t.Fatalf("append persisted rows: %v", err)
+	}
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("r1"), WrappedSet: true, Wrapped: false},
+	}, []uint64{3, 4}, store.generation, 2, 3)
+
+	viewport, err := combinedGridViewportFromStore(store, 0, 3, 20, tail)
+	if err != nil {
+		t.Fatalf("combined viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"p1", "r0", "r1"}) {
+		t.Fatalf("expected visible persisted prefix plus reclaimed suffix once, got %#v", got)
+	}
+	if viewport.LoadedRows != 3 {
+		t.Fatalf("expected loaded committed depth to count visible persisted plus reclaimed suffix once, got %d", viewport.LoadedRows)
+	}
+	if !viewport.HasMore {
+		t.Fatal("expected older persisted prefix to remain available")
+	}
+	latest := historyWindowFromCoreGridViewport("reclaimed-depth", 0, viewport)
+	if latest.BeforeOffset != 3 {
+		t.Fatalf("expected latest before cursor to cover three committed rows once, got %d", latest.BeforeOffset)
+	}
+
+	older, err := combinedGridViewportFromStore(store, latest.BeforeOffset, 10, 20, tail)
+	if err != nil {
+		t.Fatalf("older viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(older.Rows); !reflect.DeepEqual(got, []string{"p0"}) {
+		t.Fatalf("expected older request to return only unreclaimed prefix without duplicates, got %#v", got)
+	}
+	if older.LoadedRows != 4 {
+		t.Fatalf("expected exhausted older cursor to stay at committed depth 4, got %d", older.LoadedRows)
+	}
+}
+
 func TestTerminalLatestCombinedViewportLogicalTotalUsesProjectionIDsNotRecoverableRecords(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
