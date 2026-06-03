@@ -2427,6 +2427,7 @@ func writeTerminalGridPersistedLineRecordsMetadataForAppend(dir string, baseRowI
 		return err
 	}
 	records := terminalGridLogicalLineRecordsFromMetadata(metadata.Records)
+	terminalGridApplyLineMigrationsToRecords(records, terminalGridLineMigrationMap(metadata.Migrations))
 	if prefix, ok := terminalGridCompletePersistedLogicalLineRecords(records, appendedStart, generation); ok {
 		records = prefix
 	} else if prefix := terminalGridSealedPersistedLogicalLineRecordPrefix(records, appendedStart, generation); len(prefix) > 0 && prefix[len(prefix)-1].endRow+1 == appendedStart {

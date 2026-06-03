@@ -1373,6 +1373,47 @@ func TestTerminalGridStoreExplicitAppendRejectsNonContiguousLogicalLineID(t *tes
 	}
 }
 
+func TestTerminalGridStoreExplicitAppendAppliesPrefixLineMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("old")}); err != nil {
+		t.Fatalf("append initial row: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	prefixRuntimeID := terminalLiveTailLogicalLineIDBase + 100
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		Records: []terminalGridLineRecordMeta{{
+			ID:         prefixRuntimeID,
+			StartRow:   0,
+			EndRow:     0,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginLive,
+			Residency:  terminalLogicalLineResidencyPersisted,
+			Generation: generation,
+		}},
+		Migrations: []terminalGridLineMigration{{RuntimeID: prefixRuntimeID, PersistedID: 7}},
+	}); err != nil {
+		t.Fatalf("write migrated prefix metadata: %v", err)
+	}
+
+	tailRuntimeID := terminalLiveTailLogicalLineIDBase + 101
+	if err := store.AppendDamageRowsWithLogicalLineIDs([]localvterm.DamageOp{{Cells: localVTermCellsFromString("new")}}, []uint64{tailRuntimeID}); err != nil {
+		t.Fatalf("explicit append after migrated prefix: %v", err)
+	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata: %v", err)
+	}
+	want := []terminalGridLineRecordMeta{
+		{ID: 7, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, want) {
+		t.Fatalf("expected migrated prefix to be preserved before explicit append, got %#v want %#v", lineMetadata.Records, want)
+	}
+}
+
 func TestTerminalGridStoreLineMetadataKeepsSealedPrefixBeforeWrappedTail(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
