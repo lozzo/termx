@@ -117,8 +117,8 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) HistoryWindow {
 		TotalLines:      historyWindowTotalLines(window, len(lines)),
 		HasMore:         window.HasMore,
 		Generation:      window.Generation,
-		FirstLineID:     firstNonZero(window.FirstLineID, firstLineID(lines, window.FirstRowID)),
-		LastLineID:      firstNonZero(window.LastLineID, lastLineID(lines, window.LastRowID)),
+		FirstLineID:     firstNonZero(window.FirstLineID, firstLineID(lines)),
+		LastLineID:      firstNonZero(window.LastLineID, lastLineID(lines)),
 		FirstBoundaryID: window.FirstRowID,
 		LastBoundaryID:  window.LastRowID,
 		Timestamp:       window.Timestamp,
@@ -160,9 +160,9 @@ func historyWindowTotalLines(window *protocol.HistoryWindow, loadedLines int) in
 	return window.LogicalTotal
 }
 
-func firstLineID(lines []LineSpan, fallback uint64) uint64 {
+func firstLineID(lines []LineSpan) uint64 {
 	if len(lines) == 0 {
-		return fallback
+		return 0
 	}
 	for _, line := range lines {
 		if line.ClippedBefore {
@@ -175,9 +175,9 @@ func firstLineID(lines []LineSpan, fallback uint64) uint64 {
 	return 0
 }
 
-func lastLineID(lines []LineSpan, fallback uint64) uint64 {
+func lastLineID(lines []LineSpan) uint64 {
 	if len(lines) == 0 {
-		return fallback
+		return 0
 	}
 	for i := len(lines) - 1; i >= 0; i-- {
 		if lines[i].ClippedBefore {

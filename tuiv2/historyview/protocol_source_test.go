@@ -137,6 +137,31 @@ func TestProtocolSourcePreservesZeroLoadedLineBoundaryForClippedBeforeWindow(t *
 	}
 }
 
+func TestProtocolSourceDoesNotReconstructLineIDsFromRowBoundaries(t *testing.T) {
+	protocolWindow := fakeProtocolHistoryWindow(protocol.HistoryWindowReplace, 0)
+	protocolWindow.Lines = nil
+	protocolWindow.LoadedLines = 0
+	protocolWindow.LogicalTotal = 0
+	protocolWindow.FirstLineID = 0
+	protocolWindow.LastLineID = 0
+	protocolWindow.FirstRowID = 100
+	protocolWindow.LastRowID = 104
+	client := &fakeProtocolClient{window: protocolWindow}
+	source := NewProtocolSource(client)
+
+	window, err := source.LatestHistoryWindow(context.Background(), WindowRequest{TerminalID: "term-1", Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest history window: %v", err)
+	}
+
+	if window.FirstLineID != 0 || window.LastLineID != 0 {
+		t.Fatalf("expected missing core line ids not to be reconstructed from row ids, first=%d last=%d", window.FirstLineID, window.LastLineID)
+	}
+	if window.FirstBoundaryID != 100 || window.LastBoundaryID != 104 {
+		t.Fatalf("expected row boundaries to remain separate metadata, got first=%d last=%d", window.FirstBoundaryID, window.LastBoundaryID)
+	}
+}
+
 func TestProtocolSourceOlderHistoryWindowRequiresBeforeCursor(t *testing.T) {
 	client := &fakeProtocolClient{}
 	source := NewProtocolSource(client)
