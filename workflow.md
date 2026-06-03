@@ -455,6 +455,7 @@ TUI store 至少表达：
 - 已新增 core alt-screen 非退出路径 harness，覆盖进入 alt-screen 后 primary persisted history/logical line 计数冻结、alt surface 不混入 primary history、退出 alt-screen 后 primary surface/viewport/replay 恢复。
 - 已将 `tuiv2/app` 旧滚动测试基准收敛为 authoritative history window harness：snapshot scrollback wrapped guard、鼠标滚轮本地 snapshot 游标、copy mode page/halfpage/top/exit frozen snapshot、本地 pane viewport scroll up/down 均已删除或改写，不再作为新模型回归基准。
 - 已修正 `tuiv2/historyview` protocol source 对 clipped-before-only history window 的映射：core 返回 `LoadedLines=0`、`FirstLineID=0`、`LastLineID=0` 时不再由 line span 或 row id 本地重建已加载逻辑行边界。
+- 已收紧 `tuiv2/historyview` protocol source 的 line id 映射：`FirstLineID` / `LastLineID` 只来自 core 显式字段或 authoritative line spans，不再用 `FirstRowID` / `LastRowID` 伪造逻辑行边界。
 - 已修正 `tuiv2/historyview` authoritative store 的 older prepend 合并计数：`LoadedLines` 只累计实际包含起点的逻辑行，clipped-before 片段不再被按 span 数当作新加载逻辑行。
 - 已将 `tuiv2/render` copy mode projection 的逻辑行定位收敛到 authoritative line spans；projection 缺少 `Lines` 时不再根据 wrapped rows 反推出逻辑行数量、行号或 logical position。
 - 当前仍不是完整 logical-line based history。
