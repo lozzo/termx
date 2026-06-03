@@ -288,6 +288,49 @@ func TestTerminalLatestCombinedViewportLogicalTotalIncludesVisiblePersistedAndLi
 	}
 }
 
+func TestTerminalLatestCombinedViewportLogicalTotalUsesProjectionIDsNotRecoverableRecords(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("persisted"), wrapped: false},
+	}); err != nil {
+		t.Fatalf("append persisted rows: %v", err)
+	}
+
+	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{
+		{
+			origin:         terminalLiveTailOriginLive,
+			sealState:      terminalLiveTailSealed,
+			rows:           []localvterm.DamageOp{{Cells: localVTermCellsFromString("live0"), WrappedSet: true, Wrapped: false}},
+			logicalLineIDs: []uint64{terminalLiveTailLogicalLineIDBase + 1},
+		},
+		{
+			origin:         terminalLiveTailOriginLive,
+			sealState:      terminalLiveTailSealed,
+			rows:           []localvterm.DamageOp{{Cells: localVTermCellsFromString("lost0"), WrappedSet: true, Wrapped: false}},
+			logicalLineIDs: []uint64{0},
+		},
+	}}
+	if records := tail.logicalLineRecords(); len(records) != 0 {
+		t.Fatalf("expected partial live tail metadata records to be suppressed, got %#v", records)
+	}
+
+	viewport, err := combinedGridViewportFromStore(store, 0, 10, 20, tail)
+	if err != nil {
+		t.Fatalf("combined viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"persisted", "live0", "lost0"}) {
+		t.Fatalf("expected visible persisted row plus both live tail rows, got %#v", got)
+	}
+	if viewport.WindowLogicalTotal != 2 {
+		t.Fatalf("expected logical total to count persisted plus stable projected live line only, got %d", viewport.WindowLogicalTotal)
+	}
+	window := historyWindowFromCoreGridViewport("projection-total", 0, viewport)
+	if window.LoadedLines != 2 || window.LogicalTotal != 2 {
+		t.Fatalf("expected history window to ignore rows without authoritative logical line ids, loaded=%d total=%d lines=%#v", window.LoadedLines, window.LogicalTotal, window.Lines)
+	}
+}
+
 func TestTerminalMetadataOnlyLatestSnapshotKeepsCommittedWindowCanonicalOnly(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()

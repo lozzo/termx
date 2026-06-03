@@ -189,7 +189,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 	if totalRows <= 0 {
 		return result, nil
 	}
-	logicalTotal := store.logicalLineCountForPrefix(visiblePersistedRows) + len(liveTail.logicalLineRecords())
+	logicalTotal := store.logicalLineCountForPrefix(visiblePersistedRows) + projectedLogicalLineCount(liveTailLineIDs)
 	end := totalRows
 	start := end - limit
 	if start < 0 {
@@ -352,6 +352,21 @@ func historyLoadedLogicalLineCount(lines []HistoryLineSpan) int {
 			continue
 		}
 		count++
+	}
+	return count
+}
+
+func projectedLogicalLineCount(logicalLineIDs []uint64) int {
+	count := 0
+	for row := 0; row < len(logicalLineIDs); row++ {
+		logicalLineID := logicalLineIDs[row]
+		if logicalLineID == 0 {
+			continue
+		}
+		count++
+		for row+1 < len(logicalLineIDs) && logicalLineIDs[row+1] == logicalLineID {
+			row++
+		}
 	}
 	return count
 }
