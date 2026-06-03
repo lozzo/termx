@@ -242,6 +242,36 @@ func TestHistoryWindowFiltersRowIDBoundaryWithRows(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowFiltersReflowedFallbackDepthBySourceRows(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:                       [][]vterm.Cell{vtermCells("fo"), vtermCells("ob"), vtermCells("ar"), vtermCells("kept")},
+		Ownership:                  []string{RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted, RowOwnershipPersisted},
+		LogicalLineIDs:             []uint64{10, 10, 10, 11},
+		LogicalLineIDAuthoritative: []bool{false, false, false, true},
+		RowIDRanges:                []terminalGridRowIDRange{{First: 40, Last: 40, Known: true}, {First: 40, Last: 40, Known: true}, {First: 40, Last: 40, Known: true}, {First: 41, Last: 41, Known: true}},
+		LoadedRows:                 2,
+		TotalRows:                  2,
+		LogicalTotal:               2,
+		Generation:                 7,
+		FirstRowID:                 40,
+		LastRowID:                  41,
+	}
+
+	window := historyWindowFromCoreGridViewport("filter-reflow-fallback-depth", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"kept"}) {
+		t.Fatalf("expected only authoritative source row after filtering reflowed fallback row, got %#v", got)
+	}
+	if window.BeforeOffset != 1 || window.LoadedRows != 1 {
+		t.Fatalf("expected cursor to drop one filtered source row, not three visual rows, before=%d loaded=%d window=%#v", window.BeforeOffset, window.LoadedRows, window)
+	}
+	if window.TotalRows != 1 || window.LogicalTotal != 1 {
+		t.Fatalf("expected totals to drop one filtered source row/logical line, total_rows=%d logical_total=%d window=%#v", window.TotalRows, window.LogicalTotal, window)
+	}
+	if window.FirstRowID != 41 || window.LastRowID != 41 {
+		t.Fatalf("expected row boundary to narrow to kept source row, got %d..%d window=%#v", window.FirstRowID, window.LastRowID, window)
+	}
+}
+
 func TestHistoryWindowTrimLimitDeduplicatesReflowedSourceRows(t *testing.T) {
 	viewport := terminalGridViewport{
 		Rows:                       [][]vterm.Cell{vtermCells("ab"), vtermCells("cd"), vtermCells("ef")},

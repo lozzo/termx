@@ -428,11 +428,11 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 			removedNonAuthoritativeID = 0
 			continue
 		}
+		if historyWindowFilteredRowCountsAsCommitted(viewport, i) {
+			removedCommittedRows++
+		}
 		switch stringAt(viewport.Ownership, i) {
 		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:
-			if historyWindowFilteredRowCountsAsCommitted(viewport, i) {
-				removedCommittedRows++
-			}
 			if logicalLineID == 0 {
 				rawLogicalLineID := uint64At(viewport.LogicalLineIDs, i)
 				if rawLogicalLineID != 0 {
@@ -449,6 +449,7 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 			}
 		}
 	}
+	removedCommittedRows = historyWindowRemovedCommittedSourceRowCount(viewport, keep, removedCommittedRows)
 	filtered := viewport
 	filtered.Rows = filterVTermRowsByIndexes(viewport.Rows, keep)
 	filtered.Timestamps = filterTimesByIndexes(viewport.Timestamps, keep)
@@ -470,7 +471,7 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		filtered.LoadedRows = filtered.BeforeOffset
 	}
 	if viewport.TotalRows > 0 {
-		filtered.TotalRows = maxInt(0, viewport.TotalRows-(len(viewport.Rows)-len(keep)))
+		filtered.TotalRows = maxInt(0, viewport.TotalRows-removedCommittedRows)
 	}
 	if len(invalidLineIDs) > 0 {
 		filtered.LogicalTotal = maxInt(0, viewport.LogicalTotal-len(invalidLineIDs))
@@ -499,6 +500,17 @@ func historyWindowFilterViewportToAuthoritativeRows(viewport terminalGridViewpor
 		filtered.FirstLineClippedBefore = false
 	}
 	return filtered
+}
+
+func historyWindowRemovedCommittedSourceRowCount(viewport terminalGridViewport, keep []int, fallback int) int {
+	if fallback <= 0 || len(viewport.RowIDRanges) == 0 {
+		return fallback
+	}
+	removedRows, ok := terminalHistoryWindowCommittedSourceRowsForExcludingIndexes(viewport, keep)
+	if !ok {
+		return fallback
+	}
+	return len(removedRows)
 }
 
 func historyWindowFilteredRowCountsAsCommitted(viewport terminalGridViewport, row int) bool {
@@ -591,6 +603,38 @@ func terminalHistoryWindowCommittedDepthForRows(viewport terminalGridViewport, e
 		return count
 	}
 	return terminalHistoryWindowCommittedOwnershipCount(viewport.Ownership[:end])
+}
+
+func terminalHistoryWindowCommittedSourceRowsForExcludingIndexes(viewport terminalGridViewport, keep []int) (map[uint64]struct{}, bool) {
+	kept := make(map[int]struct{}, len(keep))
+	for _, index := range keep {
+		kept[index] = struct{}{}
+	}
+	keptRows := make(map[uint64]struct{})
+	removedRows := make(map[uint64]struct{})
+	for row := 0; row < len(viewport.Rows); row++ {
+		if !historyWindowFilteredRowCountsAsCommitted(viewport, row) {
+			continue
+		}
+		rowIDRange := terminalGridRowIDRangeAt(viewport.RowIDRanges, row)
+		if !rowIDRange.Known || rowIDRange.Last < rowIDRange.First {
+			return nil, false
+		}
+		target := removedRows
+		if _, keepRow := kept[row]; keepRow {
+			target = keptRows
+		}
+		for rowID := rowIDRange.First; ; rowID++ {
+			target[rowID] = struct{}{}
+			if rowID == rowIDRange.Last {
+				break
+			}
+		}
+	}
+	for rowID := range keptRows {
+		delete(removedRows, rowID)
+	}
+	return removedRows, true
 }
 
 func terminalHistoryWindowCommittedSourceRows(viewport terminalGridViewport, start int, end int) (map[uint64]struct{}, bool) {
