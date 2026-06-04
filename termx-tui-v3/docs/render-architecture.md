@@ -244,7 +244,7 @@ content renderer 不知道：
 
 ## 6. Content 类型
 
-架构上需要识别这些 content 类型，实际落地按第 17 节分阶段推进：
+架构上需要识别这些 content 类型，实际落地按第 18 节分阶段推进：
 
 - `terminal-live`：实时 terminal surface。
 - `copy-history`：authoritative HistoryWindow 投影。
@@ -378,7 +378,7 @@ header/footer 可以隐藏。
 
 overlay 是临时层。
 
-架构上需要覆盖这些 overlay 类型，实际落地按第 17 节分阶段推进：
+架构上需要覆盖这些 overlay 类型，实际落地按第 18 节分阶段推进：
 
 - Terminal Picker。
 - Workbench Tree。
@@ -493,7 +493,54 @@ cursor metadata
 - 每一层必须能裁切到 viewport。
 - 每一层产出的 hit region 必须随层级一起裁切和覆盖。
 
-## 14. 与 core-v2 的边界
+## 14. 宽度安全与字符单元
+
+render framework 必须以 terminal cell width 为布局单位。
+
+所有会影响边框、split line、toast、overlay、header/footer、panel chrome 和 content rect 的计算，都不得使用 byte length 或 rune count。
+
+必须使用 ANSI-aware / grapheme-aware 的宽度、裁切、填充和对齐 helper。
+
+至少要覆盖：
+
+- CJK 宽字符。
+- emoji。
+- variation selector emoji。
+- zero-width combining mark。
+- ANSI SGR 样式序列。
+- 控制序列或 erase 序列不会污染布局宽度。
+
+框架内部推荐使用 cell / segment primitive 表达内容：
+
+- `Text`：原始显示文本或 ANSI 片段。
+- `Width`：该片段占用的 terminal cell 数。
+- `Style`：可选样式 token。
+- `Safe`：是否可安全参与线性拼接、裁切和 diff。
+
+旧 `tuiv2` 中有两类经验可以迁入新边界：
+
+- `x/ansi.StringWidth` / `x/ansi.Truncate` / `lipgloss.Width` 一类 ANSI-aware helper，用于普通 UI 文本宽度、裁切和补齐。
+- presented row / width safety 一类 cell-level 思路，用于处理 wide cell、emoji variation selector、host width ambiguous cluster、erase 和 reanchor。
+
+迁入时不能复制旧 `tuiv2` 的 runtime/model 结构，但必须保留“最终每一行显示宽度等于目标 viewport 宽度”这个 contract。
+
+禁止：
+
+- 用 `len(string)` 决定可见宽度。
+- 用 `len([]rune(string))` 决定可见宽度。
+- 先按 rune 裁切再补边框。
+- 允许 content renderer 输出超过 content rect 的可见宽度并破坏右边框。
+- 允许宽字符覆盖 split line、toast 边框或 panel 边框。
+
+第一阶段 harness 必须加入：
+
+- panel 标题包含 emoji 时边框宽度稳定。
+- content 包含 CJK / emoji / combining mark 时右边框不漂移。
+- toast 文本包含 emoji 时 toast 宽度稳定。
+- split line 两侧 content 包含宽字符时分割线不被覆盖。
+- ANSI styled text 裁切后显示宽度等于目标宽度，且不留下未闭合样式。
+
+## 15. 与 core-v2 的边界
 
 render 不直接访问 core-v2。
 
@@ -516,7 +563,7 @@ copy history content：
 - render 请求 `history.window`。
 - render 触发 terminal input/resize。
 
-## 15. 与 tuiv2 的关系
+## 16. 与 tuiv2 的关系
 
 可以保留的产品行为：
 
@@ -548,7 +595,7 @@ copy history content：
 
 v2 的经验应该转化为边界和 harness，而不是复制旧结构。
 
-## 16. Cache 与性能
+## 17. Cache 与性能
 
 Phase 1 / 最小 framework 阶段不以复杂 cache 为目标。
 
@@ -571,9 +618,9 @@ cache 原则：
 - content cache 只归 content renderer 所有。
 - overlap / non-overlap 等几何信息应由 VM 或 layout 层显式表达，不靠 renderer 临时猜。
 
-## 17. 分阶段计划
+## 18. 分阶段计划
 
-### 17.1 Phase 0：文档和防回归基线
+### 18.1 Phase 0：文档和防回归基线
 
 目标：
 
@@ -592,12 +639,14 @@ cache 原则：
 - hit region 层级优先级覆盖 shell chrome、overlay、toast、floating 和 terminal mouse forwarding。
 - opaque overlay 自己产出 cursor，不复用 body cursor。
 - toast 不改变 body layout。
+- CJK、emoji、combining mark 和 ANSI styled text 不破坏 panel 边框、split line、toast 边框或 row width。
 
-### 17.2 Phase 1：最小 framework primitives
+### 18.2 Phase 1：最小 framework primitives
 
 目标：
 
 - 定义 rect / layer / panel / content / hit region / render result 概念。
+- 定义 width-safe cell / line / segment primitive 和宽度 helper。
 - 建立 workbench shell。
 - 支持 card panel 与 split line 两种 tiled panel 呈现，不得把 split line 延后到后续阶段才处理。
 - 支持最小多 pane layout，至少覆盖双 pane 横向和纵向分割，用于验证 split line 的真实合成。
@@ -605,6 +654,7 @@ cache 原则：
 - 支持 header/footer 显示与隐藏，隐藏时 body 必须回收空间，workspace、tab、mode、notice/error 不能彻底不可达。
 - 支持 toast 的真实渲染和基础生命周期，包括 severity、pending/progress、auto dismiss、close current、clear all 和窄屏退化。
 - 支持 terminal-live、copy-history pending/empty、Terminal Picker placeholder 的 content/overlay 接入路径。
+- 所有 chrome、panel、toast、overlay 和 content slot 都必须通过 width-safe helper 裁切、填充和对齐。
 
 非目标：
 
@@ -613,7 +663,7 @@ cache 原则：
 - Workbench Tree 完整页面。
 - cache。
 
-### 17.3 Phase 2：tiled panel layout refinement
+### 18.3 Phase 2：tiled panel layout refinement
 
 目标：
 
@@ -625,7 +675,7 @@ cache 原则：
 - panel resize / split geometry 的边界测试。
 - card/split 模式切换的状态保持测试。
 
-### 17.4 Phase 3：content renderer 完整分流
+### 18.4 Phase 3：content renderer 完整分流
 
 目标：
 
@@ -640,7 +690,7 @@ cache 原则：
 - copy-history 只消费 authoritative HistoryWindow。
 - terminal-live 不参与 history truth。
 
-### 17.5 Phase 4：floating / overlay
+### 18.5 Phase 4：floating / overlay
 
 目标：
 
@@ -650,7 +700,7 @@ cache 原则：
 - opaque overlay fast path。
 - cursor 归属。
 
-### 17.6 Phase 5：Terminal Pool / Workbench Tree / Prompt / Help
+### 18.6 Phase 5：Terminal Pool / Workbench Tree / Prompt / Help
 
 目标：
 
@@ -660,7 +710,7 @@ cache 原则：
 - Help overlay。
 - overlay hit region。
 
-### 17.7 Phase 6：性能和增量渲染
+### 18.7 Phase 6：性能和增量渲染
 
 目标：
 
@@ -669,7 +719,7 @@ cache 原则：
 - floating overlap 优化。
 - large terminal output 性能验证。
 
-## 18. 最小 render framework 阶段完成标准
+## 19. 最小 render framework 阶段完成标准
 
 最小 render framework 阶段完成后，render 主路径至少必须支撑：
 
@@ -683,11 +733,12 @@ cache 原则：
 - Display / Copy 状态激活时进入 copy-history content 路径。
 - copy mode 缺 authoritative history 时显示 panel 内 pending/empty。
 - toast 支持 severity、pending/progress、auto dismiss、close current、clear all 和窄屏退化。
+- CJK、emoji、combining mark 和 ANSI styled text 在标题、content、toast 中不会破坏边框、split line 或 row width。
 - `RenderResult` 是唯一主输出。
 - renderer 不读取 core client。
 - renderer 不修改 state。
 
-## 19. 不做什么
+## 20. 不做什么
 
 Phase 1 / 最小 framework 阶段不做：
 
@@ -699,10 +750,11 @@ Phase 1 / 最小 framework 阶段不做：
 - 复刻完整 tuiv2 renderer。
 - Terminal Pool 完整页面。
 - Workbench Tree 完整页面。
+- 完整复刻 `tuiv2` 的 cursor writer 和增量 diff pipeline。
 
 render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
-## 20. 已拍板决策
+## 21. 已拍板决策
 
 以下结论已经拍板。后续实现不得重新打开这些问题，除非先修改本文档：
 

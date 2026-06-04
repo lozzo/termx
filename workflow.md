@@ -1,34 +1,42 @@
-# 工作流：termx-core-v2 / termx-tui-v3 默认入口切换
+# 工作流：termx-tui-v3 render framework 最小阶段落地
 
 本文件是当前分支唯一有效的活动驱动文件。后续所有分析、实现、测试、提交都必须先读取本文件，并以本文件为准。
 
-本文件只记录目标、范围、硬约束、任务队列、测试准入和提交规则。架构正文不写在本文件里，分别以 `termx-core-v2/docs/architecture.md`、`termx-tui-v3/docs/architecture.md` 和 `termx-cli/docs/v2-v3-switch-audit.md` 为准。
+本文件只记录目标、范围、硬约束、任务队列、测试准入和提交规则。架构正文不写在本文件里，分别以 `termx-core-v2/docs/architecture.md`、`termx-tui-v3/docs/architecture.md`、`termx-tui-v3/docs/ui-interaction-spec.md`、`termx-tui-v3/docs/render-architecture.md` 和 `termx-cli/docs/v2-v3-switch-audit.md` 为准。
 
 本文件必须保持全中文。若本文件与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以本文件为准；若技术设计需要变化，必须先更新本文件或与实现同切片更新。
 
 ## 1. 当前唯一目标
 
-在已完成 `termx-core-v2/` 与 `termx-tui-v3/` 架构骨架的基础上，完成从旧 `termx-core/` + `tuiv2/` 到新 `termx-core-v2/` + `termx-tui-v3/` 的默认运行时切换。
+在默认入口已经切到 `termx-core-v2/` 与 `termx-tui-v3/` 的基础上，落地 `termx-tui-v3` 的最小 render framework 阶段，替换当前裸文本 `RenderVM{Lines, Status}` 主路径。
 
 当前事实：
 
-- `go run ./termx-cli/cmd/termx` 当前仍使用旧 `termx-core` 和旧 `tuiv2`。
-- `termx-core-v2` 已有 logical-line-first history domain、HistoryWindow 投影、独立 daemon/server 骨架、terminal lifecycle 与 protocol service，但尚未成为默认 CLI runtime。
-- `termx-tui-v3` 已有自有 runtime/state/render/services 骨架、history/copy mode 状态模型和 smoke 入口，但尚未完整替代旧 TUI 的真实终端交互路径。
-- 当前主线不是继续修补旧目录，而是按下面任务队列把新 core/tui 接到真实 CLI 默认路径。
+- `go run ./termx-cli/cmd/termx`、默认 `termx daemon`、`termx attach`、`termx new/ls/kill/rm` 已使用 `termx-core-v2` 与 `termx-tui-v3`。
+- `termx-tui-v3` 已有自有 runtime、input、state、services、terminalhost、copy mode 和最小 render 骨架，且不依赖 Bubble Tea contract。
+- 当前 `termx-tui-v3/render` 仍是临时裸文本输出模型，主要围绕 `Lines`、`Status` 和简单 hit region，尚未形成已拍板的 render framework / content renderer 分层。
+- 当前 `termx-tui-v3/state` 仍缺少 shell、panel tree、panel presentation、header/footer visibility、toast/message 和 overlay 的 reducer-owned 状态模型。
+- 当前主线不是继续讨论架构，也不是回到旧 `tuiv2` 原地修补，而是按下面任务队列把最小 render framework 落到 `termx-tui-v3` 主路径。
 
 完成定义：
 
-- `go run ./termx-cli/cmd/termx`、`termx daemon`、`termx attach` 默认使用 `termx-core-v2` 与 `termx-tui-v3`。
-- `termx-cli` 默认本地路径不再依赖旧 `termx-core` 或 `tuiv2` 作为 runtime backend。
-- 若保留旧入口，必须显式命名为 legacy 或 fallback；不能作为默认路径，也不能被当成切换完成的依据。
-- 本地单 session 主路径必须覆盖 create、attach、live render、input、resize、history window、copy mode、kill、remove。
-- remote 兼容可以分阶段完成，但未完成差异必须写入任务队列或迁移审计，不能隐式宣称完整替换。
+- `termx-tui-v3` render 主路径使用 `render framework + content renderer` 作为正式结构。
+- `RenderResult` 是唯一主输出，字符串、测试和真实 TTY 输出都只是适配层。
+- 默认 TUI 进入后不再只显示裸文本 `live surface pending` 或 `live: termx-main`，而是显示 workbench shell、header/footer、panel chrome 和 panel content。
+- 最小 render framework 阶段同时支持 card panel 与 split line 两种 tiled panel 呈现，并至少覆盖双 pane 横向和纵向分割。
+- header/footer hide 必须真实影响 layout，隐藏后 body 回收空间，workspace、tab、mode、notice/error 仍可通过短标识、toast 或 Help 入口恢复识别。
+- toast 支持真实渲染和基础生命周期：severity、pending/progress、auto dismiss、close current、clear all 和窄屏退化。
+- 所有 panel、split line、header/footer、toast、overlay 和 content slot 的布局、裁切、填充、对齐必须按 terminal cell display width 计算，emoji、CJK、combining mark、ANSI 样式和 host width ambiguous cluster 不得破坏边框或分割线。
+- Terminal Picker 状态激活时有 overlay 或明确占位渲染路径；Terminal Pool 与 Workbench Tree 完整页面在 framework 成型后再接入。
+- copy mode 仍只消费 core-v2 authoritative `HistoryWindow`，缺 window 或绑定不一致时显示 pending/empty/error，不得从 live surface、snapshot、grid viewport 或 local VTerm scrollback fallback。
+- `go run ./termx-cli/cmd/termx` 默认路径继续使用 core-v2/tui-v3，不得重新引入旧 `termx-core` 或 `tuiv2` 默认依赖。
 
 ## 2. 技术设计基准
 
 - core-v2 架构基准：`termx-core-v2/docs/architecture.md`。
 - tui-v3 架构基准：`termx-tui-v3/docs/architecture.md`。
+- tui-v3 UI 交互基准：`termx-tui-v3/docs/ui-interaction-spec.md`。
+- tui-v3 render framework 基准：`termx-tui-v3/docs/render-architecture.md`。
 - CLI 切换审计和迁移矩阵：`termx-cli/docs/v2-v3-switch-audit.md`。
 - 本文件不展开架构正文；实现遇到架构冲突时，先更新对应设计文档和本文件任务队列，再继续实现。
 
@@ -138,6 +146,21 @@
 - `hot/cold` 只能出现在旧模型问题说明或迁移记录中，不得继续作为代码、测试 helper、内部 contract 或运行时状态的主语义命名。
 - 若从旧实现迁移概念，迁入新目录时必须按新语义重命名，不能把旧语义带进 v2/v3。
 
+### 4.6 render framework 最小阶段约束
+
+- `render framework + content renderer` 是正式方向，不得继续把 terminal 内容写成 renderer 主抽象。
+- `RenderResult` 是唯一 render 主输出；字符串、测试和真实 TTY 输出都只能作为适配层。
+- 最小阶段必须同时处理 card panel 与 split line，不能只做 card panel。
+- 最小阶段必须处理 header/footer hide 的真实 layout 效果，不能只保留 VM 字段。
+- 最小阶段必须处理 toast 基础生命周期，不能只做静态文本。
+- Terminal Pool 与 Workbench Tree 完整页面不作为最小阶段阻塞项，但 Terminal Picker 状态必须有 overlay 或明确占位渲染路径。
+- `Ctrl-f` 进入 Terminal Picker、`Ctrl-v` 进入 Display / Copy 是已定产品基准。
+- card/split 切换、header/footer hide、toast close current、toast clear all 的具体快捷键尚未拍板；实现可以先提供 semantic action、reducer message、hit region 和测试入口，但不得临时发明新的产品快捷键并写死。
+- 鼠标和 hit region 语义可以先按稳定 action token 落地，具体视觉文案可以后续细化。
+- 所有 UI chrome 和 content slot 的宽度计算必须使用 ANSI-aware / grapheme-aware / cell-aware helper，不得用 byte length 或 rune count 作为可见宽度。
+- 旧 `tuiv2` 的 width safety 经验只能迁入为 v3 render primitive 和 harness，不能迁入旧 runtime/model/cursor writer 结构。
+- 最小阶段不得引入通用 widget/plugin UI 框架，也不得引入 Bubble Tea contract。
+
 ## 5. 任务队列
 
 状态只能使用：`待开始`、`进行中`、`完成`、`阻塞`。同一时间只能有一个切片处于 `进行中`。
@@ -183,8 +206,15 @@
 | 30. tui-v3 UI 交互规格增量 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 在 UI 交互规格中补充 pane chrome 模式：card panel 与 tmux-like split line 两种 tiled pane 呈现；支持隐藏全局 header/footer 以提升终端内容利用率；floating pane 保持独立带边框；补充右上角现代化弹出消息系统；不得写实现方案 |
 | 31. tui-v3 render framework 架构文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md`、只读参考 `tuiv2/docs/` 和 `tuiv2/render/` | 新增独立中文文档定义 tui-v3 render framework 与 content renderer 的职责边界、数据流、层级合成、panel/overlay/floating/toast/content 分类、禁止事项和分阶段落地计划；文档完成后必须由子 Agent 审核，审核结论需纳入最终交付说明 |
 | 32. tui-v3 render framework 拍板结论落档 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 把用户拍板结论写入 render 架构文档：`render framework + content renderer` 是正式方向；最小 render framework 阶段必须同时处理 card panel 与 split line、header/footer hide、toast 基础生命周期；Terminal Pool 与 Workbench Tree 在 framework 成型后再接入 |
+| 33. render framework 契约与 harness 基线 | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/docs/`、`workflow.md` | 建立 `RenderResult`、cursor、blink、metadata、rect/layer/cell 或 line primitive、content renderer contract、content kind、panel/floating/overlay/toast/header/footer VM 基础类型；建立 width-safe helper / primitive，覆盖 ANSI-aware、grapheme-aware、cell-aware 的宽度、裁切、填充和对齐；保留兼容适配层让现有 runtime 可编译；harness 覆盖 `RenderResult` 单一路径、string/frame adapter 一致、copy mode 无 authoritative history 不 fallback、emoji/CJK/combining mark/ANSI styled text 不破坏 row width、Bubble Tea contract 不进入 render |
+| 34. tui-v3 shell/panel/toast 状态模型 | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/` 按需 | 在 reducer-owned state 中加入 shell、workspace/tab/pane 最小树、panel presentation、active pane、header/footer visibility、toast/message、Terminal Picker overlay 占位状态；提供 action/reducer harness 覆盖 card/split 切换、header/footer hide、toast add/auto-dismiss/close/clear、Terminal Picker open/close；未拍板快捷键只能通过 semantic action 或测试消息进入 |
+| 35. RenderVMBuilder 分层重建 | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/state/` | 把当前大 `RenderVM{Lines, Status}` 替换为 shell/body/layout/panel/content/overlay/toast/cursor 子 VM；builder 不得退化成大 bag；copy-history VM 必须校验 terminal id、bound token 和 cols；缺 authoritative window 时只生成 pending/empty/error content；live content 只消费 `TerminalSurfaceStore` |
+| 36. render framework 最小渲染器 | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/terminalhost/` 按需 | 实现最小 render framework：viewport layout、header/footer 占位与隐藏、card panel、split line、最小双 pane 横向/纵向分割、panel chrome、content renderer dispatch、toast 层、Terminal Picker overlay/placeholder、hit region 合成、cursor 归属、最终 `RenderResult -> FrameSink` 适配；harness 覆盖宽窄屏、裁切、层级优先级、toast 不改变 body layout、opaque overlay cursor，以及 panel 标题/content/toast 中的 emoji、CJK、combining mark、ANSI styled text 不破坏边框、split line 或 row width |
+| 37. app/input 接线与交互入口 | 待开始 | `termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/state/`、`termx-tui-v3/render/` 按需 | 默认 runtime 使用新的 render framework 主路径；`Ctrl-f` 打开 Terminal Picker overlay/placeholder，`Ctrl-v` 进入 Display/Copy 并在缺 authoritative history 时显示 panel 内 pending/empty；card/split、header/footer hide、toast close/clear 先通过 semantic action、hit region 或测试消息接入，不临时发明未拍板快捷键；live input、resize、copy mode 原有主路径不回退 |
+| 38. 默认入口 UI smoke 与回归验收 | 待开始 | `termx-tui-v3/`、`termx-cli/`、`Makefile` 按需 | 默认 `go run ./termx-cli/cmd/termx` 和非交互 smoke 不再把裸文本 frame 当作可用界面；smoke 覆盖 workbench shell、header/footer、card/split、header/footer hide、toast、Terminal Picker placeholder、copy pending/empty、live surface panel content、emoji/CJK/ANSI 宽度安全；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1` 和按需 `make test-v2-migration` |
+| 39. render framework 收口与文档同步 | 待开始 | `termx-tui-v3/docs/`、`workflow.md`、`termx-tui-v3/` | 同步实现结果到 render 架构和 UI 交互文档，记录已落地、未落地和后续 Terminal Pool / Workbench Tree / floating / overlay 深化切片；删除或重命名过时的裸文本 render helper/test 语义；确认旧 `tuiv2` 仍只读参考，默认路径不引入旧依赖 |
 
-当前下一步：切片 32 已完成；后续如继续推进 render 实现，必须先新增下一轮任务切片，并以 `termx-tui-v3/docs/render-architecture.md` 和 `termx-tui-v3/docs/ui-interaction-spec.md` 作为基准。
+当前下一步：从切片 33 开始落地 render framework 最小阶段。自动执行时必须先把切片 33 标为进行中并提交，或与切片 33 首个实现提交同切片提交；不得跳过 33 直接改后续切片。
 
 ## 6. 必做 harness
 
@@ -319,4 +349,6 @@
 - 切片 30 已完成：`termx-tui-v3/docs/ui-interaction-spec.md` 已补充 card panel / tmux-like split line 两种 tiled pane 呈现、全局 header/footer 可隐藏、floating pane 保持带边框、右上角现代消息弹层；该切片只写产品需求，不写实现方案。
 - 切片 31 已完成：`termx-tui-v3/docs/render-architecture.md` 已新增，定义 render framework 与 content renderer 的边界、数据流、层级合成、panel/overlay/floating/toast/content 分类、禁止事项和分阶段落地计划；子 Agent 审核结论为无严重问题，小修后可进入用户拍板。
 - 切片 32 已完成：用户拍板结论已写入 `termx-tui-v3/docs/render-architecture.md`；render framework + content renderer 成为正式方向，最小 render framework 阶段必须处理 card/split 两种 panel、header/footer hide 和 toast 基础生命周期，Terminal Pool 与 Workbench Tree 等 framework 成型后再接入。
-- 后续如继续推进 render 实现、默认界面补齐、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。
+- 实现前检查已完成：当前 `termx-tui-v3/render` 仍是裸文本 `RenderVM{Lines, Status}` 模型，`state.Root` 仍缺少 shell/panel/toast/overlay 状态；这不是架构阻塞，但必须按切片 33-39 分阶段落地。
+- 当前未拍板但不阻塞编码的点：card/split 切换、header/footer hide、toast close current、toast clear all 的具体产品快捷键；实现只能先提供 semantic action、reducer message、hit region 和测试入口，不得临时发明产品快捷键。
+- 后续如继续推进 remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。
