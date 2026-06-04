@@ -4,8 +4,9 @@ package input
 type EventKind string
 
 const (
-	EventKindKey   EventKind = "key"
-	EventKindMouse EventKind = "mouse"
+	EventKindKey    EventKind = "key"
+	EventKindMouse  EventKind = "mouse"
+	EventKindResize EventKind = "resize"
 )
 
 type Key string
@@ -35,6 +36,8 @@ type InputEvent struct {
 	Mouse  MouseButton
 	Row    int
 	Col    int
+	Cols   int
+	Rows   int
 	Alt    bool
 	Ctrl   bool
 	Shift  bool

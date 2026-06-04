@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -44,6 +45,8 @@ func (ops *fakeTerminalOps) Restore(uintptr, TerminalState) error {
 }
 
 func (ops *fakeTerminalOps) GetSize(uintptr) (int, int, error) {
+	ops.mu.Lock()
+	defer ops.mu.Unlock()
 	return ops.cols, ops.rows, nil
 }
 
@@ -152,6 +155,44 @@ func TestHostReportsWindowSize(t *testing.T) {
 	}
 	if cols != 132 || rows != 43 {
 		t.Fatalf("unexpected size %dx%d", cols, rows)
+	}
+}
+
+func TestHostPublishesResizeEventsFromSignal(t *testing.T) {
+	ops := &fakeTerminalOps{terminal: true, cols: 90, rows: 30}
+	reader := newBlockingCancelReader()
+	resizeSignals := make(chan os.Signal, 2)
+	host := New(
+		WithInput(strings.NewReader(""), 7),
+		WithOutput(io.Discard),
+		WithTerminalOps(ops),
+		WithCancelReaderFactory(func(io.Reader) (CancelReader, error) {
+			return reader, nil
+		}),
+		WithResizeSignalChannel(resizeSignals),
+	)
+	if err := host.Enter(context.Background()); err != nil {
+		t.Fatalf("enter: %v", err)
+	}
+
+	resizeSignals <- testSignal{}
+	got := readEvent(t, host)
+	if got.Kind != input.EventKindResize || got.Cols != 90 || got.Rows != 30 {
+		t.Fatalf("expected resize event from signal, got %#v", got)
+	}
+
+	ops.mu.Lock()
+	ops.cols = 120
+	ops.rows = 40
+	ops.mu.Unlock()
+	resizeSignals <- testSignal{}
+	got = readEvent(t, host)
+	if got.Kind != input.EventKindResize || got.Cols != 120 || got.Rows != 40 {
+		t.Fatalf("expected updated resize event from signal, got %#v", got)
+	}
+
+	if err := host.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }
 
@@ -285,3 +326,11 @@ func readEvent(t *testing.T, host *Host) input.InputEvent {
 		return input.InputEvent{}
 	}
 }
+
+type testSignal struct{}
+
+func (testSignal) String() string {
+	return "test-signal"
+}
+
+func (testSignal) Signal() {}

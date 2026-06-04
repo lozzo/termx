@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -70,6 +72,9 @@ type CancelReader interface {
 	Cancel() bool
 }
 
+// ResizeSignalFactory 建立外部 terminal resize 信号流和对应清理函数。
+type ResizeSignalFactory func() (<-chan os.Signal, func())
+
 // Option 配置 Host，主要供 harness 注入 fake TTY。
 type Option func(*Host)
 
@@ -115,6 +120,22 @@ func WithInputBuffer(size int) Option {
 	}
 }
 
+// WithResizeSignalFactory 注入 resize 信号源，测试可用它避免依赖真实 SIGWINCH。
+func WithResizeSignalFactory(factory ResizeSignalFactory) Option {
+	return func(host *Host) {
+		if factory != nil {
+			host.resizeSignalFactory = factory
+		}
+	}
+}
+
+// WithResizeSignalChannel 注入固定 signal channel，供 deterministic harness 使用。
+func WithResizeSignalChannel(signals <-chan os.Signal) Option {
+	return WithResizeSignalFactory(func() (<-chan os.Signal, func()) {
+		return signals, func() {}
+	})
+}
+
 // Host 是 TUI-v3 真实 TerminalHost，实现 app.TerminalHost 所需契约。
 type Host struct {
 	input  io.Reader
@@ -124,6 +145,8 @@ type Host struct {
 
 	cancelReaderFactory func(io.Reader) (CancelReader, error)
 	cancelReader        CancelReader
+	resizeSignalFactory ResizeSignalFactory
+	resizeSignalStop    func()
 
 	inputBuffer int
 	events      chan input.InputEvent
@@ -149,6 +172,7 @@ func New(options ...Option) *Host {
 	host.cancelReaderFactory = func(reader io.Reader) (CancelReader, error) {
 		return cancelreader.NewReader(reader)
 	}
+	host.resizeSignalFactory = defaultResizeSignalFactory
 	for _, option := range options {
 		option(host)
 	}
@@ -194,6 +218,14 @@ func (host *Host) Enter(ctx context.Context) error {
 	done := host.done
 	host.wg.Add(1)
 	go host.readInput(ctx, cancelReader)
+	if host.resizeSignalFactory != nil {
+		resizeSignals, stop := host.resizeSignalFactory()
+		host.resizeSignalStop = stop
+		if resizeSignals != nil {
+			host.wg.Add(1)
+			go host.readResizeSignals(ctx, done, resizeSignals)
+		}
+	}
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -226,6 +258,10 @@ func (host *Host) restoreLocked() error {
 			closeErr = closer.Close()
 		}
 		host.cancelReader = nil
+	}
+	if host.resizeSignalStop != nil {
+		host.resizeSignalStop()
+		host.resizeSignalStop = nil
 	}
 	if host.done != nil {
 		close(host.done)
@@ -289,6 +325,34 @@ func (host *Host) readInput(ctx context.Context, reader io.Reader) {
 	}
 }
 
+func (host *Host) readResizeSignals(ctx context.Context, done <-chan struct{}, signals <-chan os.Signal) {
+	defer host.wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case _, ok := <-signals:
+			if !ok {
+				return
+			}
+			cols, rows, err := host.Size()
+			if err != nil || cols <= 0 || rows <= 0 {
+				continue
+			}
+			event := input.InputEvent{Kind: input.EventKindResize, Cols: cols, Rows: rows}
+			select {
+			case host.events <- event:
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			}
+		}
+	}
+}
+
 func enterSequence() string {
 	return enterAltScreen + hideCursor + enableBracketPaste + enableMouseCell + enableMouseSGR
 }
@@ -296,4 +360,12 @@ func enterSequence() string {
 func exitSequence() string {
 	// 恢复顺序与进入顺序相反，避免退出时遗留鼠标或隐藏光标状态。
 	return disableMouseSGR + disableMouseCell + disableBracketPaste + showCursor + exitAltScreen
+}
+
+func defaultResizeSignalFactory() (<-chan os.Signal, func()) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGWINCH)
+	return signals, func() {
+		signal.Stop(signals)
+	}
 }

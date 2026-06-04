@@ -36,6 +36,14 @@ type InputMsg struct {
 
 func (InputMsg) isMsg() {}
 
+// HostResizeMsg 是外部 terminal emulator 尺寸进入 reducer-owned state 的入口。
+type HostResizeMsg struct {
+	Cols int
+	Rows int
+}
+
+func (HostResizeMsg) isMsg() {}
+
 // TickMsg 是 timer/interval effect 回投后的普通消息。
 type TickMsg struct {
 	Token CancelToken
@@ -112,6 +120,7 @@ func ComposeReducers(reducers ...Reducer) Reducer {
 // TerminalHost 是宿主 TTY 边界。真实实现负责 raw mode、输入和 FrameSink；
 // fake 实现只用于 harness。
 type TerminalHost interface {
+	Size() (cols int, rows int, err error)
 	InputEvents() <-chan input.InputEvent
 	FrameSink() render.FrameSink
 }
@@ -129,14 +138,15 @@ var (
 
 // AppRuntime 是 TUI-v3 自有单线程消息循环。
 type AppRuntime struct {
-	state   state.Root
-	reduce  Reducer
-	render  RenderFunc
-	host    TerminalHost
-	runner  EffectRunner
-	queue   []Msg
-	running bool
-	quit    bool
+	state               state.Root
+	reduce              Reducer
+	render              RenderFunc
+	host                TerminalHost
+	runner              EffectRunner
+	queue               []Msg
+	hostSizeInitialized bool
+	running             bool
+	quit                bool
 }
 
 func NewAppRuntime(
@@ -183,8 +193,12 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	defer func() {
 		runtime.running = false
 	}()
+	runtime.ingestHostInitialSize()
 	runtime.ingestHostInput()
-	for len(runtime.queue) > 0 {
+	for {
+		if len(runtime.queue) == 0 {
+			return nil
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -194,6 +208,13 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 		if _, ok := msg.(QuitMsg); ok {
 			runtime.quit = true
 			return nil
+		}
+		if !runtime.prepareRuntimeMessage(msg) {
+			runtime.ingestHostInput()
+			if runtime.quit {
+				return nil
+			}
+			continue
 		}
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
@@ -230,6 +251,34 @@ func (runtime *AppRuntime) scheduleEffect(ctx context.Context, effect Effect) {
 	}
 }
 
+func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
+	switch msg := msg.(type) {
+	case HostResizeMsg:
+		next, changed := runtime.state.Viewport.Resize(msg.Cols, msg.Rows)
+		if !changed {
+			return false
+		}
+		runtime.state.Viewport = next
+		runtime.state = runtime.state.Advance()
+		return true
+	default:
+		return true
+	}
+}
+
+func (runtime *AppRuntime) ingestHostInitialSize() {
+	if runtime.host == nil || runtime.hostSizeInitialized {
+		return
+	}
+	runtime.hostSizeInitialized = true
+	cols, rows, err := runtime.host.Size()
+	if err != nil || cols <= 0 || rows <= 0 {
+		return
+	}
+	msg := HostResizeMsg{Cols: cols, Rows: rows}
+	runtime.queue = append([]Msg{msg}, runtime.queue...)
+}
+
 func (runtime *AppRuntime) ingestHostInput() {
 	if runtime.host == nil {
 		return
@@ -238,7 +287,11 @@ func (runtime *AppRuntime) ingestHostInput() {
 	for {
 		select {
 		case event := <-events:
-			runtime.queue = append(runtime.queue, InputMsg{Event: event})
+			if event.Kind == input.EventKindResize {
+				runtime.queue = append(runtime.queue, HostResizeMsg{Cols: event.Cols, Rows: event.Rows})
+			} else {
+				runtime.queue = append(runtime.queue, InputMsg{Event: event})
+			}
 		default:
 			return
 		}
@@ -294,6 +347,8 @@ func (runner *SyncEffectRunner) Cancel(token CancelToken) {
 type FakeTerminalHost struct {
 	events chan input.InputEvent
 	sink   *FakeFrameSink
+	cols   int
+	rows   int
 }
 
 func NewFakeTerminalHost(buffer int) *FakeTerminalHost {
@@ -309,6 +364,25 @@ func NewFakeTerminalHost(buffer int) *FakeTerminalHost {
 func (host *FakeTerminalHost) SendInput(event input.InputEvent) error {
 	select {
 	case host.events <- event:
+		return nil
+	default:
+		return ErrInputQueueFull
+	}
+}
+
+func (host *FakeTerminalHost) SetSize(cols int, rows int) {
+	host.cols = cols
+	host.rows = rows
+}
+
+func (host *FakeTerminalHost) Size() (int, int, error) {
+	return host.cols, host.rows, nil
+}
+
+func (host *FakeTerminalHost) SendResize(cols int, rows int) error {
+	host.SetSize(cols, rows)
+	select {
+	case host.events <- input.InputEvent{Kind: input.EventKindResize, Cols: cols, Rows: rows}:
 		return nil
 	default:
 		return ErrInputQueueFull

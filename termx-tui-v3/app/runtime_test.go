@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"path/filepath"
@@ -214,6 +215,96 @@ func TestAppRuntimeIngestsTerminalHostInput(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeInitializesViewportFromHostSizeAndRenders(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	host.SetSize(132, 43)
+	var seen []Msg
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			seen = append(seen, msg)
+			if root.Viewport.Cols != 132 || root.Viewport.Rows != 43 {
+				t.Fatalf("reducer must see updated viewport before message handling, got %#v", root.Viewport)
+			}
+			return root, nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{viewportLabel(root)}}
+		},
+		host,
+		nil,
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := runtime.State().Viewport; !got.Valid || got.Cols != 132 || got.Rows != 43 {
+		t.Fatalf("expected viewport initialized from host size, got %#v", got)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("expected one initial HostResizeMsg through reducer chain, got %d", len(seen))
+	}
+	if _, ok := seen[0].(HostResizeMsg); !ok {
+		t.Fatalf("expected HostResizeMsg, got %T", seen[0])
+	}
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"132x43"}) {
+		t.Fatalf("expected initial viewport render, got %v", got)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("second drain: %v", err)
+	}
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"132x43"}) {
+		t.Fatalf("initial size must be ingested once, got %v", got)
+	}
+}
+
+func TestAppRuntimeIngestsHostResizeEventsAndDeduplicates(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	var seen []Msg
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			seen = append(seen, msg)
+			return root, nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{viewportLabel(root)}}
+		},
+		host,
+		nil,
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+	if len(host.Frames()) != 0 {
+		t.Fatalf("invalid initial host size must not render, got %#v", host.Frames())
+	}
+	if err := host.SendResize(90, 30); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if err := host.SendResize(90, 30); err != nil {
+		t.Fatalf("send duplicate resize: %v", err)
+	}
+	if err := host.SendResize(100, 32); err != nil {
+		t.Fatalf("send second resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := runtime.State().Viewport; !got.Valid || got.Cols != 100 || got.Rows != 32 {
+		t.Fatalf("expected latest viewport, got %#v", got)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("expected duplicate resize to be filtered before reducer, got %d messages", len(seen))
+	}
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"90x30", "100x32"}) {
+		t.Fatalf("expected resize frames without duplicate, got %v", got)
+	}
+}
+
 func TestFakeTerminalHostReportsFullInputQueue(t *testing.T) {
 	host := NewFakeTerminalHost(1)
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey}); err != nil {
@@ -222,6 +313,13 @@ func TestFakeTerminalHostReportsFullInputQueue(t *testing.T) {
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse}); !errors.Is(err, ErrInputQueueFull) {
 		t.Fatalf("expected ErrInputQueueFull, got %v", err)
 	}
+}
+
+func viewportLabel(root state.Root) string {
+	if !root.Viewport.Valid {
+		return "unset"
+	}
+	return fmt.Sprintf("%dx%d", root.Viewport.Cols, root.Viewport.Rows)
 }
 
 func TestAppRuntimeQuitStopsQueue(t *testing.T) {
