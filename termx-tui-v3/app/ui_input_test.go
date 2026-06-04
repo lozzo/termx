@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -210,6 +212,170 @@ func TestInteractiveRuntimePaneAndResizeModeKeymapUsesPaneCommandPath(t *testing
 	if !frameContains(last, "mode:resize") {
 		t.Fatalf("footer should show resize mode, got %#v", last.Lines)
 	}
+}
+
+func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(96, 28)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send keyboard event %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain keyboard event %#v: %v", event, err)
+		}
+	}
+	keyboardFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" {
+		t.Fatalf("keyboard split should activate pane-2, got %#v", runtime.State().Shell)
+	}
+	assertPaneVisualState(t, keyboardFrame, "pane", render.StyleAccent)
+	assertPaneVisualState(t, keyboardFrame, "shell", render.StyleMuted)
+	if !frameContains(keyboardFrame, "active:pane:pane") {
+		t.Fatalf("footer should reflect keyboard split active pane, got %#v", keyboardFrame.Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"}); err != nil {
+		t.Fatalf("send keyboard focus: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain keyboard focus: %v", err)
+	}
+	focusFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
+		t.Fatalf("keyboard focus-next should activate default pane, got %#v", runtime.State().Shell)
+	}
+	assertPaneVisualState(t, focusFrame, "shell", render.StyleAccent)
+	assertPaneVisualState(t, focusFrame, "pane", render.StyleMuted)
+	if !frameContains(focusFrame, "pane.focus-next") || !frameContains(focusFrame, "active:pane:shell") {
+		t.Fatalf("keyboard focus should update toast/footer immediately, got %#v", focusFrame.Lines)
+	}
+
+	paneContent := frameHitRegion(t, focusFrame, render.HitRegionPaneContent, "pane-2")
+	if err := host.SendInput(mouseEventAt(paneContent.Rect)); err != nil {
+		t.Fatalf("send mouse focus: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain mouse focus: %v", err)
+	}
+	mouseFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" {
+		t.Fatalf("mouse focus should activate pane-2, got %#v", runtime.State().Shell)
+	}
+	assertPaneVisualState(t, mouseFrame, "pane", render.StyleAccent)
+	assertPaneVisualState(t, mouseFrame, "shell", render.StyleMuted)
+	if !frameContains(mouseFrame, "pane.focus") || !frameContains(mouseFrame, "active:pane:pane") {
+		t.Fatalf("mouse focus should update toast/footer immediately, got %#v", mouseFrame.Lines)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x12", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyRight},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send post-focus event %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain post-focus event %#v: %v", event, err)
+		}
+	}
+	zoomFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.ZoomedPaneID != "pane-2" {
+		t.Fatalf("zoom should keep active pane zoomed, got %#v", runtime.State().Shell)
+	}
+	if !frameContains(zoomFrame, "mode:pane") || !frameContains(zoomFrame, "pane.toggle-zoom") || !frameContains(zoomFrame, "active:pane:pane") {
+		t.Fatalf("resize/presentation/zoom should keep visible active feedback, got %#v", zoomFrame.Lines)
+	}
+	assertPaneVisualState(t, zoomFrame, "pane", render.StyleAccent)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"}); err != nil {
+		t.Fatalf("send unzoom before close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain unzoom before close: %v", err)
+	}
+	unzoomFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.ZoomedPaneID != "" {
+		t.Fatalf("unzoom before close should restore split layout, got %#v", runtime.State().Shell)
+	}
+	assertPaneVisualState(t, unzoomFrame, "pane", render.StyleAccent)
+
+	if err := runtime.Post(ShellClearToastsMsg{}); err != nil {
+		t.Fatalf("post clear toasts before close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain clear toasts before close: %v", err)
+	}
+	clearFrame := lastFrame(t, host.Frames())
+	action := frameHitRegion(t, clearFrame, render.HitRegionPaneAction, "pane-2")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send close click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain close click: %v", err)
+	}
+	closeFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("mouse close should remove active pane, got %#v", runtime.State().Shell)
+	}
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
+		t.Fatalf("close should choose stable next active pane, got %#v", runtime.State().Shell)
+	}
+	if !frameContains(closeFrame, "pane.close") || !frameContains(closeFrame, "active:pane:shell") {
+		t.Fatalf("close should update active pane visuals/footer/toast, got %#v", closeFrame.Lines)
+	}
+	assertPaneVisualState(t, closeFrame, "shell", render.StyleAccent)
+}
+
+func assertPaneVisualState(t *testing.T, frame render.Frame, text string, style render.StyleToken) {
+	t.Helper()
+	for _, line := range frame.StyledLines {
+		var span strings.Builder
+		flush := func() bool {
+			if strings.Contains(span.String(), text) {
+				return true
+			}
+			span.Reset()
+			return false
+		}
+		for _, cell := range line.Cells {
+			if cell.Style == style {
+				span.WriteString(cell.Text)
+				continue
+			}
+			if flush() {
+				return
+			}
+		}
+		if flush() {
+			return
+		}
+	}
+	t.Fatalf("expected styled pane text %q with style %s, got %#v", text, style, frame.StyledLines)
 }
 
 func TestInteractiveRuntimeGlobalModeTogglesChromeAndEscExitsMode(t *testing.T) {
