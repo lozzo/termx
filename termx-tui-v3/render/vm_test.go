@@ -431,18 +431,52 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		Shell:   emptyShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace empty"}},
 	})
-	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "slot empty") {
+	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "empty pane slot") {
 		t.Fatalf("expected active empty pane placeholder, got %#v", content)
+	} else if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") || !contentHasAction(content, "empty.close") {
+		t.Fatalf("expected empty pane CTA action regions, got %#v", content.HitRegions)
 	}
 
 	exitedShell := state.DefaultShell()
-	exitedShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "old shell", Kind: state.PaneExited, Active: true}
+	exitedShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "old shell", Kind: state.PaneExited, TerminalID: "term-old", Active: true}
 	exitedVM := NewRenderVMBuilder().Build(state.Root{
 		Shell:   exitedShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace exited"}},
 	})
-	if content := activeContent(exitedVM.Shell); content.Kind != ContentExitedPane || content.Status != "exited" || !strings.Contains(content.Lines[0].PlainString(), "old shell exited") {
+	if content := activeContent(exitedVM.Shell); content.Kind != ContentExitedPane || content.Status != "exited: restart/reconnect/close" || !strings.Contains(content.Lines[0].PlainString(), "exited pane old shell") || !strings.Contains(content.Lines[1].PlainString(), "term-old") {
 		t.Fatalf("expected active exited pane placeholder, got %#v", content)
+	} else if !contentHasAction(content, "exited.restart") || !contentHasAction(content, "exited.reconnect") || !contentHasAction(content, "exited.close") {
+		t.Fatalf("expected exited pane CTA action regions, got %#v", content.HitRegions)
+	}
+}
+
+func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志🚀", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
+		OpenTerminalPicker()
+	shell.Overlay.Query = "term"
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	content := vm.Shell.Overlay.Content
+	if vm.Shell.Overlay.Kind != OverlayTerminalPicker || content.Kind != ContentTerminalPicker {
+		t.Fatalf("expected terminal picker content, got %#v", vm.Shell.Overlay)
+	}
+	if !strings.Contains(content.Lines[0].PlainString(), "search term") ||
+		!strings.Contains(content.Lines[1].PlainString(), "> shell") ||
+		!strings.Contains(content.Lines[2].PlainString(), "日志🚀") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[new] new terminal") {
+		t.Fatalf("expected picker search/list/new rows, got %#v", content.Lines)
+	}
+	if content.Status != "terminal picker: 2 items" {
+		t.Fatalf("expected picker item count status, got %q", content.Status)
+	}
+	if !content.Cursor.Visible || content.Cursor.Shape != CursorShapeBar {
+		t.Fatalf("expected picker search cursor, got %#v", content.Cursor)
+	}
+	if !contentHasAction(content, "picker.attach") || !contentHasAction(content, "picker.new") {
+		t.Fatalf("expected picker action hit regions, got %#v", content.HitRegions)
 	}
 }
 
@@ -505,6 +539,15 @@ func containsString(values []string, want string) bool {
 func lineHasStyledCell(line Line, text string, style StyleToken) bool {
 	for _, cell := range line.Cells {
 		if cell.Text == text && cell.Style == style {
+			return true
+		}
+	}
+	return false
+}
+
+func contentHasAction(content ContentVM, actionID string) bool {
+	for _, region := range content.HitRegions {
+		if region.Kind == HitRegionContentAction && region.ActionID == actionID {
 			return true
 		}
 	}

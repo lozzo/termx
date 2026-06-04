@@ -1266,12 +1266,13 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 - terminal-live 内容 renderer 一期必须在当前 styled chrome 基线上工作：真实 live 行只进入 pane content slot，基础 ANSI SGR 映射为 semantic style token，live cursor 表达为 content-local cursor，pending、empty、exited 状态显示在所属 pane 内，emoji/CJK/combining mark 裁切不得破坏 pane 边框。
 - copy-history 内容 renderer 一期必须继续只消费 core-v2 authoritative `HistoryWindow`：历史行显示 logical-line、continuation 和 clipped marker，selection 使用 styled cell 表达，copy cursor 是 content-local cursor，footer/status 显示当前位置摘要，复制成功通过 toast 反馈；resize 或 content cols 变化后仍重新绑定 authoritative window，不显示旧 cols rows。
+- empty/exited/Terminal Picker 内容 renderer 一期必须把旧 placeholder 推进为可操作内容：empty pane 显示 attach/create/manager/close CTA，exited pane 显示 last state 与 restart/reconnect/close CTA，Terminal Picker overlay 显示 search、当前 workspace terminal list、selected row、new terminal row 和 action hit region；未接入的 create/restart/manager 只能显示 toast 反馈，不得伪实现 Terminal Pool。
 
 当前未完成但产品要求仍保留：
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
-- Terminal Picker 完整内容：搜索、terminal list、selected row、new terminal row、preview 和 attach/create action。
+- Terminal Picker 深化：真实过滤、preview、跨 workspace terminal source、attach/create action 的真实服务接线和键盘选择移动。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
 - Terminal Pool 完整页面。
 - Workbench Tree 完整 overlay。
@@ -1298,7 +1299,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 - terminal-live 内容已经具备完整 styled cell、cursor、selection 或 search。
 - copy-history 内容已经具备完整 scrollbar、搜索、content-local mouse selection 或最终视觉 polish。
-- Terminal Picker 已经是完整列表和搜索页面。
+- Terminal Picker 已经接入完整 Terminal Pool、preview、跨 workspace 过滤或真实 create/attach 服务。
 - Terminal Pool、Workbench Tree、Prompt、Help、floating pane 已经完整产品化。
 
 基本手工测试入口：
@@ -1369,7 +1370,30 @@ copy-history 内容 renderer 一期的目标是把 authoritative `HistoryWindow`
 - content-local mouse selection。
 - logical-line 级拼接提示的最终视觉 polish。
 
-## 24. 后续讨论入口
+## 24. Empty / Exited / Terminal Picker 内容 Renderer 一期验收线
+
+empty/exited/Terminal Picker 内容 renderer 一期的目标是把旧 placeholder 变成用户可识别、可点击且不会漏发到底层 terminal 的产品内容。
+
+一期必须满足：
+
+- empty pane 只消费当前 `PaneState`，显示 pane title、empty 状态和 attach/create/manager/close CTA。
+- exited pane 只消费当前 `PaneState`，显示 pane title、last state 或 terminal id，以及 restart/reconnect/close CTA。
+- Terminal Picker 只消费 reducer-owned `ShellStore`、当前 workspace panes、active session/surface/history terminal id 和 overlay query；不得伪造 Terminal Pool store。
+- Terminal Picker overlay 必须显示 search row、当前 workspace terminal list、selected row、new terminal row 和 content action hit region。
+- Terminal Picker 搜索框 cursor 归属于 overlay content；overlay 打开时 cursor 不得继续落到 pane 内容。
+- content action hit region 必须先于 broad pane content 或 overlay background 命中，点击 CTA 或 picker row 不得漏发到底层 terminal。
+- picker row 点击可以执行当前已可证明的 pane focus / overlay close；未实现的 attach/create/restart/manager 只能显示 toast 反馈，不得伪装已接服务。
+- 所有文本必须按 terminal cell width 裁切，emoji、CJK 和 combining mark 不得破坏 pane border、overlay border 或整行宽度。
+
+一期不要求：
+
+- 完整 Terminal Pool。
+- 跨 workspace terminal source。
+- 真实 create/restart/reconnect 服务接线。
+- 搜索过滤和键盘移动选择。
+- preview/detail panel。
+
+## 25. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

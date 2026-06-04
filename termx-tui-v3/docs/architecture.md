@@ -479,6 +479,15 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - copy/yank 成功反馈由 reducer 添加 shell toast；clipboard IO 仍通过 effect 和 result message 完成，不进入 renderer。
 - `RenderVM.Lines` 临时兼容投影保留 raw authoritative row text；logical-line marker 和 clipped marker 属于 UI content，不得污染历史 truth 或兼容 raw rows。
 
+当前 empty/exited/Terminal Picker content renderer 一期的架构边界：
+
+- empty pane 与 exited pane content 只消费对应 `PaneState`，由 `RenderVMBuilder` 投影为 CTA 行和 content action hit region；renderer 只负责裁切、合成和输出。
+- Terminal Picker 一期只消费 reducer-owned `ShellStore`、当前 workspace panes、active session/surface/history terminal id 和 overlay query；不得引入临时 Terminal Pool store 或从服务端同步列表伪装完整管理页。
+- Terminal Picker search cursor 是 overlay content-local cursor；layout measurement 必须让 Terminal Picker overlay 拥有 cursor，而不是让 cursor 落回 pane 内容。
+- content action hit region 由 render framework 转换为全局坐标；runtime 可以把已可落地的 picker row focus/overlay close、empty/exited close 反馈回 reducer。
+- create、manager、restart、reconnect、Terminal Pool attach 等尚未接入真实服务的动作只能显示 toast 反馈，不得直接修改 service state 或伪造 terminal lifecycle。
+- content action 不得漏发为 terminal input；未命中 content action 的鼠标事件仍按现有 hit region / terminal forwarding 边界处理。
+
 ## 12. 与 core-v2 的接口
 
 TUI-v3 只通过 `CoreClient` 访问 core-v2。
@@ -563,7 +572,8 @@ tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback
 16. 完成 UI framework 交互产品化总验收：header/footer 信息层、pane/resize/global mode、鼠标命中、active pane 反馈、toast 操作、layout/effect 同步和基本手工测试入口。
 17. 深化 terminal-live content renderer：styled terminal cells、cursor、pending/empty/exited、宽字符裁切、content-local metadata 和 no chrome leak。
 18. 深化 copy-history content renderer：authoritative rows、logical-line marker、selection、cursor、position token、copy/yank feedback、宽字符裁切和 no chrome leak。
-19. 深化 Terminal Picker、Terminal Pool、Workbench Tree、floating、Prompt、Help 和性能。
+19. 深化 empty/exited/Terminal Picker content renderer：CTA、workspace pane list、overlay cursor、content action hit region 和 no chrome leak。
+20. 深化 Terminal Pool、Workbench Tree、floating、Prompt、Help 和性能。
 
 每个切片都必须避免引入 local scrollback history fallback。
 

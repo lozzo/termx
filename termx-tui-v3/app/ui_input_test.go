@@ -63,8 +63,8 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		t.Fatalf("ctrl-f must not be sent to terminal, got %#v", terminal.Inputs)
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "terminal-picker") && !frameContains(last, "terminal picker pending") {
-		t.Fatalf("expected terminal picker placeholder in frame, got %#v", last.Lines)
+	if !frameContains(last, "terminal-picker") || !frameContains(last, "search [type to filter]") {
+		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
 	}
 }
 

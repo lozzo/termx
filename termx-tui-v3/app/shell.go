@@ -60,6 +60,13 @@ type ShellCloseOverlayMsg struct{}
 
 func (ShellCloseOverlayMsg) isMsg() {}
 
+type ShellContentActionMsg struct {
+	ActionID string
+	PaneID   string
+}
+
+func (ShellContentActionMsg) isMsg() {}
+
 type ShellSplitActivePaneMsg struct {
 	Pane      state.PaneState
 	Direction state.SplitDirection
@@ -122,6 +129,8 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.OpenTerminalPicker()
 		case ShellCloseOverlayMsg:
 			root.Shell = root.Shell.CloseOverlay()
+		case ShellContentActionMsg:
+			return reduceShellContentAction(root, msg)
 		case ShellSplitActivePaneMsg:
 			return reducePaneCommand(root, state.PaneCommand{
 				Action:         state.PaneCommandSplit,
@@ -136,6 +145,29 @@ func NewShellReducer() Reducer {
 		}
 		return root.Advance(), nil
 	}
+}
+
+func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {
+	switch msg.ActionID {
+	case "empty.close", "exited.close":
+		return reducePaneCommand(root, state.PaneCommand{
+			Action: state.PaneCommandClose,
+			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
+			Source: state.PaneCommandSourceMouse,
+		})
+	case "picker.attach":
+		if msg.PaneID != "" {
+			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: msg.PaneID})
+			root.Shell = root.Shell.CloseOverlay()
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: msg.PaneID})
+			return root.Advance(), nil
+		}
+	case "empty.attach", "empty.create", "empty.manager", "exited.restart", "exited.reconnect", "picker.new":
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: msg.ActionID, Body: "not implemented"})
+		return root.Advance(), nil
+	}
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
+	return root.Advance(), nil
 }
 
 func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {

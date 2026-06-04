@@ -64,8 +64,10 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
 	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
-	if !frameContains(cases["terminal-picker"].Lines, "terminal picker pending") {
-		t.Fatalf("terminal picker smoke missing placeholder: %#v", cases["terminal-picker"].Lines)
+	if !frameContains(cases["terminal-picker"].Lines, "search [type to filter]") ||
+		!frameContains(cases["terminal-picker"].Lines, "termx-picker") ||
+		!frameContains(cases["terminal-picker"].Lines, "[new] new terminal") {
+		t.Fatalf("terminal picker smoke missing product content: %#v", cases["terminal-picker"].Lines)
 	}
 	if !frameContains(cases["copy-empty"].Lines, "copy history empty") {
 		t.Fatalf("copy empty smoke missing pending/empty content: %#v", cases["copy-empty"].Lines)

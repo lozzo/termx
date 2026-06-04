@@ -999,7 +999,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - active pane 样式已经存在，但键盘与鼠标 focus、split、close、resize、zoom、card/split 切换后的端到端视觉反馈仍需要独立验收并固定为 UI framework 闭环。
 - terminal-live content renderer 一期已进入当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，content 仍由 framework 裁切到 content rect；但 selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
 - copy-history content renderer 一期已进入当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，status 输出 row、line、cols 位置摘要，copy/yank 成功通过 toast 反馈；完整 scrollbar、content-local mouse selection、搜索和 logical-line 拼接提示仍待后续深化。
-- Terminal Picker 目前是 styled overlay/placeholder 路径，不是完整 terminal picker 内容。
+- empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region；但 Terminal Pool 数据源、搜索过滤、preview、键盘移动选择和真实 create/restart/reconnect 服务仍未接入。
 - Terminal Pool、Workbench Tree、Prompt、Help 的完整内容未落地。
 - floating panel 仍未落地，当前只有架构类型和后续边界。
 - overlay 只落地 Terminal Picker placeholder 与基础 opaque cursor 归属，未完成 Workbench Tree、Prompt、Help、Floating Overview 的产品内容。
@@ -1019,7 +1019,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - UI framework 交互产品化总验收：在接 terminal-live content renderer 前，把 header/footer、pane/resize/global mode、鼠标命中、active feedback、toast、content rect resize 和 copy rebind 做成可基本操作的产品闭环。
 - terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
 - copy-history content renderer 深化：在一期基础上完善 scrollbar 视觉、position token 精细化、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和滚动交互。
-- empty/exited/terminal-picker content renderer：把当前 placeholder 和基础文案拆成独立 renderer，补齐 CTA、列表、preview、状态 token 和 action region。
+- Terminal Picker 深化：在一期 workspace pane list 基础上接真实 Terminal Pool 数据源、搜索过滤、preview、键盘移动选择、attach/create/restart/reconnect 服务接线和错误反馈。
 - tiled layout refinement：支持多层 split 的完整产品交互、resize affordance、active pane hit region 和 card/split 模式切换保持。
 - floating / overlay：实现 floating pane z-order、裁切、遮挡、置顶、drag/resize affordance，以及 Prompt、Help、Floating Overview overlay。
 - Terminal Pool：实现 Terminal Pool page content、列表、搜索、detail、preview 和 attach/kill/edit action。

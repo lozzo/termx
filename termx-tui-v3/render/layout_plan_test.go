@@ -265,3 +265,38 @@ func TestMeasureLayoutOpaqueOverlayOwnsHitRegionsAndCursorRect(t *testing.T) {
 		t.Fatalf("expected toast, overlay content, overlay hit priority, got %#v", plan.HitRegions)
 	}
 }
+
+func TestMeasureLayoutTerminalPickerOwnsCursorAndActionHits(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Cursor: Cursor{Visible: true, Row: 2, Col: 3}},
+		}}},
+		Overlay: OverlayVM{
+			Kind: OverlayTerminalPicker,
+			Content: ContentVM{
+				Kind:   ContentTerminalPicker,
+				Cursor: Cursor{Visible: true, Row: 0, Col: 7, Shape: CursorShapeBar},
+				HitRegions: []HitRegion{{
+					Kind:     HitRegionContentAction,
+					Rect:     Rect{Y: 1, W: 20, H: 1},
+					ActionID: "picker.attach",
+					PaneID:   "pane-1",
+				}},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 50, H: 14})
+	if !plan.Cursor.Visible || plan.Cursor.Shape != CursorShapeBar {
+		t.Fatalf("terminal picker should own cursor, got %#v", plan.Cursor)
+	}
+	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+7 || got.Y != plan.OverlayContentRect.Y {
+		t.Fatalf("unexpected picker cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
+	}
+	if len(plan.HitRegions) < 2 || plan.HitRegions[0].Kind != HitRegionContentAction || plan.HitRegions[0].ActionID != "picker.attach" || plan.HitRegions[1].Kind != HitRegionOverlay {
+		t.Fatalf("picker content action should precede overlay background, got %#v", plan.HitRegions)
+	}
+}

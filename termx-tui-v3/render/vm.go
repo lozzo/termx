@@ -24,15 +24,16 @@ type RenderVM struct {
 type HitRegionKind string
 
 const (
-	HitRegionHistoryRow  HitRegionKind = "history-row"
-	HitRegionStatus      HitRegionKind = "status"
-	HitRegionOverlay     HitRegionKind = "overlay"
-	HitRegionToast       HitRegionKind = "toast"
-	HitRegionToastClose  HitRegionKind = "toast-close"
-	HitRegionPaneChrome  HitRegionKind = "pane-chrome"
-	HitRegionPaneAction  HitRegionKind = "pane-action"
-	HitRegionPaneResize  HitRegionKind = "pane-resize"
-	HitRegionPaneContent HitRegionKind = "pane-content"
+	HitRegionHistoryRow    HitRegionKind = "history-row"
+	HitRegionStatus        HitRegionKind = "status"
+	HitRegionOverlay       HitRegionKind = "overlay"
+	HitRegionToast         HitRegionKind = "toast"
+	HitRegionToastClose    HitRegionKind = "toast-close"
+	HitRegionPaneChrome    HitRegionKind = "pane-chrome"
+	HitRegionPaneAction    HitRegionKind = "pane-action"
+	HitRegionPaneResize    HitRegionKind = "pane-resize"
+	HitRegionPaneContent   HitRegionKind = "pane-content"
+	HitRegionContentAction HitRegionKind = "content-action"
 )
 
 type Rect struct {
@@ -73,7 +74,7 @@ func buildShellVM(root state.Root) ShellVM {
 		Header:  buildHeaderVM(shellState, root),
 		Footer:  buildFooterVM(root, activeContent),
 		Layout:  buildLayoutVM(shellState, activeContent, root.Viewport),
-		Overlay: buildOverlayVM(shellState),
+		Overlay: buildOverlayVM(root, shellState),
 		Toasts:  buildToastVMs(shellState),
 		Cursor:  activeContent.Cursor,
 	}
@@ -441,21 +442,16 @@ func liveCursorShape(shape string) CursorShape {
 	}
 }
 
-func buildOverlayVM(shell state.ShellStore) OverlayVM {
+func buildOverlayVM(root state.Root, shell state.ShellStore) OverlayVM {
 	if !shell.Overlay.Open {
 		return OverlayVM{}
 	}
 	switch shell.Overlay.Kind {
 	case state.OverlayTerminalPicker:
 		return OverlayVM{
-			Kind:   OverlayTerminalPicker,
-			Opaque: false,
-			Content: ContentVM{
-				Kind:    ContentTerminalPicker,
-				Lines:   []Line{NewLine("terminal picker pending")},
-				Status:  "terminal picker",
-				Pending: true,
-			},
+			Kind:    OverlayTerminalPicker,
+			Opaque:  false,
+			Content: buildTerminalPickerContent(root, shell),
 		}
 	case state.OverlayPrompt:
 		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: ContentVM{Kind: ContentPrompt, Pending: true}}
@@ -568,9 +564,9 @@ func placeholderContentForPane(pane state.PaneState) ContentVM {
 	title := activePaneTitle(pane)
 	switch pane.Kind {
 	case state.PaneEmpty:
-		return ContentVM{Kind: ContentEmptyPane, Lines: []Line{NewLine(title + " empty")}, Empty: true}
+		return buildEmptyPaneContent(pane)
 	case state.PaneExited:
-		return ContentVM{Kind: ContentExitedPane, Lines: []Line{NewLine(title + " exited")}, Status: "exited"}
+		return buildExitedPaneContent(pane)
 	case state.PaneCopyHistory:
 		return ContentVM{Kind: ContentCopyHistory, Lines: []Line{NewLine(title + " copy pending")}, Pending: true}
 	default:

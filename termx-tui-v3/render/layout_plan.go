@@ -220,7 +220,7 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 }
 
 func overlayOwnsCursor(overlay OverlayVM) bool {
-	return overlay.Kind != OverlayNone && overlay.Content.Kind != "" && (overlay.Opaque || overlay.Content.Kind == ContentPrompt)
+	return overlay.Kind != OverlayNone && overlay.Content.Kind != "" && (overlay.Opaque || overlay.Content.Kind == ContentPrompt || overlay.Content.Kind == ContentTerminalPicker)
 }
 
 func cursorWithRect(cursor Cursor, origin Rect) (Cursor, Rect) {

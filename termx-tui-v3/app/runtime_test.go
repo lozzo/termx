@@ -430,6 +430,75 @@ func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
+	pickerHost := NewFakeTerminalHost(8)
+	pickerRoot := state.Root{
+		Shell: state.DefaultShell().
+			SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
+			OpenTerminalPicker(),
+	}
+	pickerRuntime := newShellHitRuntime(pickerRoot, pickerHost)
+	if err := pickerRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post picker render: %v", err)
+	}
+	if err := pickerRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain picker render: %v", err)
+	}
+	pickerAction := frameActionHitRegion(t, lastRuntimeFrame(t, pickerHost), "picker.attach", "pane-2")
+	if err := pickerHost.SendInput(mouseEventAt(pickerAction.Rect)); err != nil {
+		t.Fatalf("send picker attach click: %v", err)
+	}
+	if err := pickerRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain picker attach: %v", err)
+	}
+	if pickerRuntime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" || pickerRuntime.State().Shell.Overlay.Open {
+		t.Fatalf("picker attach should focus pane-2 and close overlay, got %#v", pickerRuntime.State().Shell)
+	}
+
+	emptyHost := NewFakeTerminalHost(8)
+	emptyShell := state.DefaultShell()
+	emptyShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "slot", Kind: state.PaneEmpty, Active: true}
+	emptyRuntime := newShellHitRuntime(state.Root{Shell: emptyShell}, emptyHost)
+	if err := emptyRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post empty render: %v", err)
+	}
+	if err := emptyRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain empty render: %v", err)
+	}
+	emptyAttach := frameActionHitRegion(t, lastRuntimeFrame(t, emptyHost), "empty.attach", state.DefaultPaneID)
+	if err := emptyHost.SendInput(mouseEventAt(emptyAttach.Rect)); err != nil {
+		t.Fatalf("send empty attach click: %v", err)
+	}
+	if err := emptyRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain empty attach: %v", err)
+	}
+	if len(emptyRuntime.State().Shell.Toasts) == 0 || emptyRuntime.State().Shell.Toasts[len(emptyRuntime.State().Shell.Toasts)-1].Title != "empty.attach" {
+		t.Fatalf("empty attach should show feedback toast, got %#v", emptyRuntime.State().Shell.Toasts)
+	}
+
+	closeHost := NewFakeTerminalHost(8)
+	closeShell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "empty", Kind: state.PaneEmpty}, state.SplitDirectionVertical)
+	closeRuntime := newShellHitRuntime(state.Root{Shell: closeShell}, closeHost)
+	if err := closeRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post close render: %v", err)
+	}
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain close render: %v", err)
+	}
+	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, closeHost), "empty.close", "pane-2")
+	if err := closeHost.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
+		t.Fatalf("send empty close click: %v", err)
+	}
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain empty close: %v", err)
+	}
+	if closeRuntime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("empty close action should close pane-2, got %#v", closeRuntime.State().Shell)
+	}
+}
+
 func newShellHitRuntime(root state.Root, host *FakeTerminalHost) *AppRuntime {
 	host.SetSize(80, 20)
 	return NewAppRuntime(
@@ -464,6 +533,17 @@ func frameHitRegion(t *testing.T, frame render.Frame, kind render.HitRegionKind,
 		}
 	}
 	t.Fatalf("missing hit region kind=%s pane=%s in %#v", kind, paneID, frame.HitRegions)
+	return render.HitRegion{}
+}
+
+func frameActionHitRegion(t *testing.T, frame render.Frame, actionID string, paneID string) render.HitRegion {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.Kind == render.HitRegionContentAction && region.ActionID == actionID && (paneID == "" || region.PaneID == paneID) {
+			return region
+		}
+	}
+	t.Fatalf("missing content action=%s pane=%s in %#v", actionID, paneID, frame.HitRegions)
 	return render.HitRegion{}
 }
 
