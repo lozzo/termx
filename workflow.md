@@ -163,7 +163,7 @@
 | 10. 收口与迁移入口 | 完成 | 受限联动范围 | 新路径可运行；必要 CLI/adapter 入口接入；旧 helper/fixture 只在明确不再需要时删除 |
 | 11. 切换审计与迁移矩阵 | 完成 | `termx-cli/docs/`、`termx-core-v2/docs/`、`termx-tui-v3/docs/`、只读参考旧目录 | 已在 `termx-cli/docs/v2-v3-switch-audit.md` 明确当前 CLI 命令到旧依赖的映射、目标 v2/v3 命令矩阵、协议方法矩阵、daemon 能力矩阵、TUI 能力矩阵和分阶段验收口径 |
 | 12. core-v2 server API 与 daemon 骨架 | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-cli/` 按需 | core-v2 已提供独立 server/daemon API、options、listen/shutdown、terminal registry、事件订阅 fake harness；静态 harness 确认不调用旧 `termx-core`/`tuiv2` |
-| 13. core-v2 terminal lifecycle 与 PTY 管线 | 待开始 | `termx-core-v2/`、`termx-vterm/`、`termx-shared/` 按需 | create/input/resize/exit/restart/remove 跑通；PTY 输出进入 live surface 与 history ingest 边界；基础 process lifecycle harness 通过 |
+| 13. core-v2 terminal lifecycle 与 PTY 管线 | 进行中 | `termx-core-v2/`、`termx-vterm/`、`termx-shared/` 按需 | create/input/resize/exit/restart/remove 跑通；PTY 输出进入 live surface 与 history ingest 边界；基础 process lifecycle harness 通过 |
 | 14. core-v2 protocol service 与 HistoryWindow 实服务 | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` | create/get/list/set metadata/restart/remove/events/input/resize/history.window 由 core-v2 服务；HistoryWindow 来自 logical line truth；协议测试通过 |
 | 15. tui-v3 真实 TerminalHost 与 FrameSink | 待开始 | `termx-tui-v3/` | 建立真实 raw mode、输入读取、窗口尺寸、帧输出、恢复终端状态和取消/退出 harness；不得引入 Bubble Tea runtime |
 | 16. tui-v3 本地 live app 主路径 | 待开始 | `termx-tui-v3/`、`termx-cli/` 按需 | attach 本地 session 后可渲染 live surface、发送键盘输入、处理 resize、显示基础状态与错误；fake 和最小真实协议 harness 通过 |
@@ -174,7 +174,7 @@
 | 21. 默认入口切换 | 待开始 | `termx-cli/`、`Makefile`、`go.work` 按需 | `go run ./termx-cli/cmd/termx`、`termx attach`、`termx daemon` 默认使用 core-v2/tui-v3；旧入口若保留必须显式命名；回归测试通过 |
 | 22. 旧默认依赖清理与冻结 | 待开始 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认依赖不再包含旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成 |
 
-当前下一步：从切片 13“core-v2 terminal lifecycle 与 PTY 管线”开始。
+当前下一步：继续切片 13“core-v2 terminal lifecycle 与 PTY 管线”。
 
 ## 6. 必做 harness
 
@@ -286,4 +286,4 @@
 - 旧 `termx-core/` 与 `tuiv2/` 的历史修补进度不再作为当前主线状态；如需查阅只能通过 git 历史或只读参考。
 - 切片 11 已完成：`termx-cli/docs/v2-v3-switch-audit.md` 已建立默认入口切换审计、迁移矩阵和分阶段验收口径。
 - 切片 12 已完成：`termx-core-v2` 已建立独立 server/daemon API、listener factory、listen/shutdown、terminal registry、event broker 和 fake harness，不依赖旧 `termx-core`/`tuiv2`。
-- 当前下一步是切片 13“core-v2 terminal lifecycle 与 PTY 管线”。
+- 当前正在执行切片 13“core-v2 terminal lifecycle 与 PTY 管线”。
