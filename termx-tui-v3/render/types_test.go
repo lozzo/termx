@@ -35,6 +35,9 @@ func TestFrameFromRenderResultUsesSingleResultPath(t *testing.T) {
 	if len(frame.Lines) != 2 || frame.Lines[0] != "hello" || frame.Lines[1] != "世界" {
 		t.Fatalf("unexpected frame %#v", frame)
 	}
+	if len(frame.HitRegions) != 1 || frame.HitRegions[0].Kind != HitRegionStatus {
+		t.Fatalf("frame must preserve hit regions for runtime dispatch, got %#v", frame.HitRegions)
+	}
 }
 
 func TestFrameFromRenderResultPreservesStyledANSIAndMetadata(t *testing.T) {

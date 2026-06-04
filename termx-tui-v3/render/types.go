@@ -10,6 +10,7 @@ type Frame struct {
 	ANSILines   []string
 	Cursor      Cursor
 	Blink       bool
+	HitRegions  []HitRegion
 	Metadata    RenderMetadata
 	Theme       Theme
 }
@@ -34,6 +35,9 @@ func (frame Frame) Clone() Frame {
 			cloned.StyledLines[i] = line.Clone()
 		}
 	}
+	if len(frame.HitRegions) > 0 {
+		cloned.HitRegions = cloneHitRegions(frame.HitRegions)
+	}
 	return cloned
 }
 
@@ -44,6 +48,7 @@ func FrameFromRenderResult(result RenderResult) Frame {
 		ANSILines:   result.ANSILines(),
 		Cursor:      result.Cursor,
 		Blink:       result.Blink,
+		HitRegions:  cloneHitRegions(result.HitRegions),
 		Metadata:    result.Metadata,
 		Theme:       result.Theme.WithFallback(),
 	}

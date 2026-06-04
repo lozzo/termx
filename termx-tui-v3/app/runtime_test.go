@@ -315,6 +315,158 @@ func TestFakeTerminalHostReportsFullInputQueue(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
+	focusHost := NewFakeTerminalHost(8)
+	focusRoot := state.Root{
+		Shell: state.DefaultShell().
+			SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+			FocusPane(state.PaneCommandTarget{PaneID: "pane-main"}),
+	}
+	focusRuntime := newShellHitRuntime(focusRoot, focusHost)
+	if err := focusRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post focus initial render: %v", err)
+	}
+	if err := focusRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("focus initial drain: %v", err)
+	}
+
+	content := frameHitRegion(t, lastRuntimeFrame(t, focusHost), render.HitRegionPaneContent, "pane-2")
+	if err := focusHost.SendInput(mouseEventAt(content.Rect)); err != nil {
+		t.Fatalf("send content click: %v", err)
+	}
+	if err := focusRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("focus drain: %v", err)
+	}
+	if focusRuntime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" {
+		t.Fatalf("content click should focus pane-2, got %#v", focusRuntime.State().Shell)
+	}
+
+	closeHost := NewFakeTerminalHost(8)
+	closeRoot := state.Root{
+		Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical),
+	}
+	closeRuntime := newShellHitRuntime(closeRoot, closeHost)
+	if err := closeRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post close initial render: %v", err)
+	}
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("close initial drain: %v", err)
+	}
+
+	action := frameHitRegion(t, lastRuntimeFrame(t, closeHost), render.HitRegionPaneAction, "pane-2")
+	if err := closeHost.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send action click: %v", err)
+	}
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("close drain: %v", err)
+	}
+	if closeRuntime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("action click should close pane-2, got %#v", closeRuntime.State().Shell)
+	}
+}
+
+func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	root := state.Root{
+		Shell: state.DefaultShell().
+			OpenTerminalPicker().
+			AddToast(state.ToastSpec{ID: "toast-1", Title: "notice"}),
+	}
+	var inputSeen int
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewShellReducer(), func(root state.Root, msg Msg) (state.Root, []Effect) {
+			if _, ok := msg.(InputMsg); ok {
+				inputSeen++
+			}
+			return root, nil
+		}),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	toastClose := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionToastClose, "")
+	if err := host.SendInput(mouseEventAt(toastClose.Rect)); err != nil {
+		t.Fatalf("send toast close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("toast drain: %v", err)
+	}
+	if len(runtime.State().Shell.Toasts) != 0 {
+		t.Fatalf("toast close hit should clear current toast, got %#v", runtime.State().Shell.Toasts)
+	}
+	if !runtime.State().Shell.Overlay.Open {
+		t.Fatalf("toast hit should take priority over overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+
+	overlay := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionOverlay, "")
+	if err := host.SendInput(mouseEventAt(overlay.Rect)); err != nil {
+		t.Fatalf("send overlay click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("overlay drain: %v", err)
+	}
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("overlay hit should close overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: 999, Col: 999}); err != nil {
+		t.Fatalf("send miss click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("miss drain: %v", err)
+	}
+	if inputSeen == 0 {
+		t.Fatal("missed mouse hit should continue through InputMsg fallback")
+	}
+}
+
+func newShellHitRuntime(root state.Root, host *FakeTerminalHost) *AppRuntime {
+	host.SetSize(80, 20)
+	return NewAppRuntime(
+		root,
+		NewShellReducer(),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+}
+
+func mouseEventAt(rect render.Rect) input.InputEvent {
+	return input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: rect.Y + 1, Col: rect.X + 1}
+}
+
+func lastRuntimeFrame(t *testing.T, host *FakeTerminalHost) render.Frame {
+	t.Helper()
+	frames := host.Frames()
+	if len(frames) == 0 {
+		t.Fatal("expected at least one rendered frame")
+	}
+	return frames[len(frames)-1]
+}
+
+func frameHitRegion(t *testing.T, frame render.Frame, kind render.HitRegionKind, paneID string) render.HitRegion {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.Kind == kind && (paneID == "" || region.PaneID == paneID) {
+			return region
+		}
+	}
+	t.Fatalf("missing hit region kind=%s pane=%s in %#v", kind, paneID, frame.HitRegions)
+	return render.HitRegion{}
+}
+
 func viewportLabel(root state.Root) string {
 	if !root.Viewport.Valid {
 		return "unset"

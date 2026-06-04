@@ -144,6 +144,7 @@ type AppRuntime struct {
 	host                TerminalHost
 	runner              EffectRunner
 	queue               []Msg
+	lastHitRegions      []render.HitRegion
 	hostSizeInitialized bool
 	running             bool
 	quit                bool
@@ -184,6 +185,7 @@ func (runtime *AppRuntime) Post(msg Msg) error {
 	if runtime.quit {
 		return ErrRuntimeStopped
 	}
+	msg = runtime.dispatchMouseHitRegion(msg)
 	runtime.queue = append(runtime.queue, msg)
 	return nil
 }
@@ -290,7 +292,7 @@ func (runtime *AppRuntime) ingestHostInput() {
 			if event.Kind == input.EventKindResize {
 				runtime.queue = append(runtime.queue, HostResizeMsg{Cols: event.Cols, Rows: event.Rows})
 			} else {
-				runtime.queue = append(runtime.queue, InputMsg{Event: event})
+				runtime.queue = append(runtime.queue, runtime.dispatchMouseHitRegion(InputMsg{Event: event}))
 			}
 		default:
 			return
@@ -302,7 +304,61 @@ func (runtime *AppRuntime) renderFrame() {
 	if runtime.host == nil {
 		return
 	}
-	_ = runtime.host.FrameSink().WriteFrame(runtime.render(runtime.state))
+	frame := runtime.render(runtime.state)
+	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
+	_ = runtime.host.FrameSink().WriteFrame(frame)
+}
+
+func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
+	inputMsg, ok := msg.(InputMsg)
+	if !ok || inputMsg.Event.Kind != input.EventKindMouse || inputMsg.Event.Mouse != input.MouseLeft {
+		return msg
+	}
+	region, ok := hitRegionAt(runtime.lastHitRegions, inputMsg.Event)
+	if !ok {
+		return msg
+	}
+	if command, ok := PaneCommandFromHitRegion(region); ok {
+		return ShellPaneCommandMsg{Command: command}
+	}
+	switch region.Kind {
+	case render.HitRegionToastClose:
+		return ShellCloseCurrentToastMsg{}
+	case render.HitRegionOverlay:
+		return ShellCloseOverlayMsg{}
+	default:
+		return msg
+	}
+}
+
+func hitRegionAt(regions []render.HitRegion, event input.InputEvent) (render.HitRegion, bool) {
+	col := event.Col - 1
+	row := event.Row - 1
+	if event.Col <= 0 {
+		col = event.Col
+	}
+	if event.Row <= 0 {
+		row = event.Row
+	}
+	for _, region := range regions {
+		if pointInRect(col, row, region.Rect) {
+			return region, true
+		}
+	}
+	return render.HitRegion{}, false
+}
+
+func pointInRect(col int, row int, rect render.Rect) bool {
+	return col >= rect.X && col < rect.X+rect.W && row >= rect.Y && row < rect.Y+rect.H
+}
+
+func cloneRenderHitRegions(regions []render.HitRegion) []render.HitRegion {
+	if len(regions) == 0 {
+		return nil
+	}
+	cloned := make([]render.HitRegion, len(regions))
+	copy(cloned, regions)
+	return cloned
 }
 
 func (runtime *AppRuntime) Running() bool {
