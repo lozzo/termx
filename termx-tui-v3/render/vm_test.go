@@ -79,6 +79,32 @@ func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderShowsPendingAfterCopyResizeInvalidation(t *testing.T) {
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Lines:      []string{"live-row"},
+		},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundCols:  98,
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentCopyHistory || !content.Pending {
+		t.Fatalf("expected pending copy-history after resize invalidation, got %#v", content)
+	}
+	if len(vm.Lines) != 1 || !strings.Contains(vm.Lines[0], "authoritative history window pending") {
+		t.Fatalf("copy mode resize pending must not fallback to live rows, got %v", vm.Lines)
+	}
+}
+
 func TestRenderVMBuilderShowsCopyHistoryEmptyWithoutLiveFallback(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{

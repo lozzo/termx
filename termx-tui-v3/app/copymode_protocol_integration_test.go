@@ -29,6 +29,7 @@ func TestCopyModeUsesProtocolHistoryWindowClient(t *testing.T) {
 	}
 
 	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(
@@ -36,7 +37,10 @@ func TestCopyModeUsesProtocolHistoryWindowClient(t *testing.T) {
 			Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
 			Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24, Lines: []string{"live"}},
 		},
-		NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+		ComposeReducers(
+			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
 		},
@@ -85,14 +89,14 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 80 || params.Limit != 20 {
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 78 || params.Limit != 20 {
 		return fmt.Errorf("unexpected latest params %#v", params)
 	}
 	if err := sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{
 		TerminalID:   "term-1",
 		Token:        "tok-1",
 		Op:           protocol.HistoryWindowReplace,
-		Size:         protocol.Size{Cols: 80, Rows: 24},
+		Size:         protocol.Size{Cols: 78, Rows: 20},
 		Rows:         []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "new"}})},
 		Lines:        []protocol.HistoryLineSpan{{LogicalLineID: 20, StartRow: 0, EndRow: 0}},
 		RowLineIDs:   []uint64{20},
@@ -120,7 +124,7 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 		TerminalID:   "term-1",
 		Token:        "tok-1",
 		Op:           protocol.HistoryWindowPrepend,
-		Size:         protocol.Size{Cols: 80, Rows: 24},
+		Size:         protocol.Size{Cols: 78, Rows: 20},
 		Rows:         []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "old"}})},
 		Lines:        []protocol.HistoryLineSpan{{LogicalLineID: 10, StartRow: 0, EndRow: 0}},
 		RowLineIDs:   []uint64{10},

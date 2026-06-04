@@ -75,12 +75,13 @@ func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			80,
+			78,
 			1,
 			nil,
 		)}},
 	}
 	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
 	runtime := NewInteractiveRuntime(
 		state.Root{},
 		host,

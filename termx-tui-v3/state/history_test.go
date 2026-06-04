@@ -189,8 +189,35 @@ func TestCopyModeResizeInvalidatesBindingAndSelection(t *testing.T) {
 	if copyMode.BoundToken != "" || copyMode.BoundCols != 100 || copyMode.ViewportTop != 0 {
 		t.Fatalf("unexpected resized copy mode %#v", copyMode)
 	}
+	if !copyMode.Empty {
+		t.Fatalf("resize should enter pending/empty state, got %#v", copyMode)
+	}
 	if copyMode.Mark != nil || copyMode.Selection != nil {
 		t.Fatalf("resize should clear selection, got mark=%#v selection=%#v", copyMode.Mark, copyMode.Selection)
+	}
+}
+
+func TestHistoryInvalidateWindowClearsAuthoritativeRowsAndPending(t *testing.T) {
+	store := HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		Rows:       []HistoryRow{{Text: "old", LineID: 10}},
+		Lines:      []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0}},
+		Cursor:     HistoryCursor{Valid: true, BeforeLineID: 10},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+		HasMore:    true,
+		Exhausted:  ExhaustedMarker{Valid: true, Token: "tok-1", Cols: 80},
+		Pending:    &HistoryPendingRequest{ID: 9, TerminalID: "term-1", Cols: 80},
+	}
+
+	store = store.InvalidateWindow()
+	if store.Token != "" || store.Cols != 0 || len(store.Rows) != 0 || len(store.Lines) != 0 || store.Pending != nil {
+		t.Fatalf("history invalidate must clear window and pending request, got %#v", store)
+	}
+	if store.TerminalID != "term-1" {
+		t.Fatalf("history invalidate should keep terminal binding, got %#v", store)
 	}
 }
 

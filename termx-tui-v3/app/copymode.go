@@ -98,13 +98,14 @@ func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 	if terminalID == "" {
 		terminalID = root.Surface.TerminalID
 	}
-	cols := root.Session.Cols
-	if cols == 0 {
-		cols = root.Surface.Cols
-	}
-	if terminalID == "" || cols == 0 {
+	rect, ok := copyModeContentRect(root)
+	if terminalID == "" || !ok || rect.W <= 0 {
 		return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
 	}
+	return beginCopyModeLatestForCols(root, deps, terminalID, rect.W, rect.H)
+}
+
+func beginCopyModeLatestForCols(root state.Root, deps CopyModeDeps, terminalID string, cols int, rowsHint int) (state.Root, []Effect) {
 	requestID := nextHistoryRequestID(root)
 	nextHistory, err := root.History.BeginLatest(state.HistoryPendingRequest{
 		ID:         requestID,
@@ -116,7 +117,7 @@ func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 	}
 	root.History = nextHistory
 	root.CopyMode = root.CopyMode.BindLatest(terminalID, requestID, cols)
-	rows := requestRows(deps, root.Session.Rows)
+	rows := requestRows(deps, rowsHint)
 	return root.Advance(), []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Core.HistoryLatest(ctx, services.HistoryLatestRequest{
@@ -162,7 +163,7 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	rows := requestRows(deps, root.Session.Rows)
+	rows := requestRows(deps, copyModeRowsHint(root))
 	return root.Advance(), []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Core.HistoryOlder(ctx, services.HistoryOlderRequest{

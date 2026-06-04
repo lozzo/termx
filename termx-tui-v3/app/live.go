@@ -46,7 +46,7 @@ func NewInteractiveRuntime(
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewCopyModeReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), func(root state.Root) render.Frame {
+	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, runner)
 }
@@ -121,7 +121,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			}
 			root.Session = root.Session.Resize(msg.Cols, msg.Rows)
 			root.Surface = root.Surface.Resize(msg.Cols, msg.Rows)
-			root.CopyMode = root.CopyMode.Resize(msg.Cols)
+			if root.CopyMode.Active && root.CopyMode.BoundCols != msg.Cols {
+				root.CopyMode = root.CopyMode.Resize(msg.Cols)
+			}
 			return root.Advance(), nil
 		default:
 			return root, nil

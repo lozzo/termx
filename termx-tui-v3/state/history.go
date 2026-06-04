@@ -190,6 +190,20 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 	}
 }
 
+func (store HistoryStore) InvalidateWindow() HistoryStore {
+	store.Token = ""
+	store.Cols = 0
+	store.Rows = nil
+	store.Lines = nil
+	store.Cursor = HistoryCursor{}
+	store.Generation = 0
+	store.Boundary = HistoryBoundary{}
+	store.HasMore = false
+	store.Exhausted = ExhaustedMarker{}
+	store.Pending = nil
+	return store
+}
+
 func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryWindow) error {
 	if pending.TerminalID != "" && pending.TerminalID != window.TerminalID {
 		return ErrHistoryWindowMismatch
@@ -283,6 +297,7 @@ func (store CopyModeStore) Resize(cols int) CopyModeStore {
 	store.Cursor = CopyPosition{}
 	store.Mark = nil
 	store.Selection = nil
+	store.Empty = true
 	return store
 }
 
