@@ -44,12 +44,13 @@ type InputEvent struct {
 type IntentKind string
 
 const (
-	IntentNone          IntentKind = "none"
-	IntentEnterCopyMode IntentKind = "enter-copy-mode"
-	IntentRequestOlder  IntentKind = "request-older"
-	IntentExitCopyMode  IntentKind = "exit-copy-mode"
-	IntentTerminalInput IntentKind = "terminal-input"
-	IntentMouseSelect   IntentKind = "mouse-select"
+	IntentNone               IntentKind = "none"
+	IntentOpenTerminalPicker IntentKind = "open-terminal-picker"
+	IntentEnterCopyMode      IntentKind = "enter-copy-mode"
+	IntentRequestOlder       IntentKind = "request-older"
+	IntentExitCopyMode       IntentKind = "exit-copy-mode"
+	IntentTerminalInput      IntentKind = "terminal-input"
+	IntentMouseSelect        IntentKind = "mouse-select"
 )
 
 // Intent 是 input router 输出的 semantic intent，不直接修改 state。
@@ -72,6 +73,14 @@ func Route(event InputEvent, copyModeActive bool) Intent {
 }
 
 func routeKey(event InputEvent, copyModeActive bool) Intent {
+	if event.Ctrl && event.Key == KeyChar {
+		switch event.Char {
+		case "f", "\x06":
+			return Intent{Kind: IntentOpenTerminalPicker, Event: event}
+		case "v", "\x16":
+			return Intent{Kind: IntentEnterCopyMode, Event: event}
+		}
+	}
 	switch event.Key {
 	case KeyPageUp:
 		if copyModeActive {

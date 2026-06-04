@@ -29,7 +29,7 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewLiveReducer(deps)), func(root state.Root) render.Frame {
+	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewLiveReducer(deps)), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, runner)
 }
@@ -46,7 +46,7 @@ func NewInteractiveRuntime(
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewCopyModeReducer(copyMode), NewLiveReducer(live)), func(root state.Root) render.Frame {
+	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewCopyModeReducer(copyMode), NewLiveReducer(live)), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, runner)
 }

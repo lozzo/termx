@@ -48,3 +48,18 @@ func TestRouteTerminalInputAndCopyModeSelection(t *testing.T) {
 		t.Fatalf("unexpected mouse selection intent %#v", mouse)
 	}
 }
+
+func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
+	ctrlF := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x06", Ctrl: true}, false)
+	if ctrlF.Kind != IntentOpenTerminalPicker {
+		t.Fatalf("expected terminal picker intent, got %#v", ctrlF)
+	}
+	ctrlV := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x16", Ctrl: true}, false)
+	if ctrlV.Kind != IntentEnterCopyMode {
+		t.Fatalf("expected display/copy intent, got %#v", ctrlV)
+	}
+	namedCtrlF := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f", Ctrl: true}, false)
+	if namedCtrlF.Kind != IntentOpenTerminalPicker {
+		t.Fatalf("expected named ctrl-f terminal picker intent, got %#v", namedCtrlF)
+	}
+}

@@ -237,6 +237,18 @@ func TestInputParserConvertsMouseAndKeys(t *testing.T) {
 	}
 }
 
+func TestInputParserMarksCtrlFAndCtrlV(t *testing.T) {
+	parser := NewInputParser()
+	got := parser.Feed([]byte("\x06\x16"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true, RawSeq: "\x06"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true, RawSeq: "\x16"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected parsed ctrl events\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestInputParserKeepsPartialEscapeUntilComplete(t *testing.T) {
 	parser := NewInputParser()
 	if got := parser.Feed([]byte("\x1b[5")); len(got) != 0 {
