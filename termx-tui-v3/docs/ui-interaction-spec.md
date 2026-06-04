@@ -1262,6 +1262,16 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 明确选中态。
 - 明确焦点态。
 
+当前视觉参考补充：
+
+- 顶栏和底栏参考 `tuiv2` 的产品形态：高信息密度、整行稳定占位、左侧工作区和 tab token、右侧短摘要或状态 token，隐藏后 body 必须真实回收空间。
+- pane 参考 `tuiv2` 的 square 细线 panel 风格：边框连续、顶边 title/state/action 槽位稳定，active pane 使用 accent，inactive pane 使用 muted；默认界面不得退回 ASCII `+ - |` 或无样式 Unicode 线框。
+- 单个 pane 的产品风格参考 `tuiv2` 截图中的紫色 accent 细边框、顶部 owner/action token 和内容区裁切；TUI-v3 可调整 theme token，但必须保持 styled chrome 层级和边框连续性。
+- 右上角消息参考现代 CLI/TUI 的 toast：实体卡片、短文本、severity 或 accent 侧边，不改变 pane layout；复制成功等短反馈可以使用这种形态。
+- modal/overlay 参考现代 command palette 的实体卡片：前景是 solid dark card 或等价主题卡片，可以有标题、搜索行、selected row 和 action row。
+- overlay 不要求灰度遮罩背景；中文、emoji、CJK、combining mark 或 ambiguous width 字符若无法安全套用 dim 样式，必须优先保证文本可见和宽度正确，不得为了背景灰度让非英文文本消失。
+- floating pane、Prompt、Help 和 Workbench Tree 后续都必须使用 styled chrome；它们可以有不同尺寸和内容密度，但不得绕过 render framework 直接写临时线框。
+
 ## 19. 硬约束
 
 - TUI-v3 主线不得引入 Bubble Tea runtime 或 Bubble Tea contract。
@@ -1538,7 +1548,43 @@ Terminal Pool 管理页一期的目标是实现独立 Terminal Pool page/content
 - 点击 row、Attach Here、Edit、Kill，确认都有可见反馈。
 - 按 `Esc` 关闭页面并回到 workbench。
 
-## 28. 后续讨论入口
+## 28. Workbench Tree overlay 一期验收线
+
+Workbench Tree overlay 一期的目标是实现 workspace / tab / pane / floating 的结构导航层，让用户能搜索当前 workbench 结构、选择 row，并把焦点/open 操作回投到当前 workbench。
+
+本阶段必须满足：
+
+- 可以从全局入口打开，并可以用 `Esc` 关闭。
+- overlay 采用页面级实体卡片，不是 Terminal Picker 小弹层；打开期间 cursor 归属于 search field，不复用底层 pane cursor。
+- row 至少包含 workspace、tab、pane、floating 四类结构。floating 一期可以是结构占位或摘要行，但不得提前实现 floating drag/resize。
+- search query 过滤 workspace 名、tab 标题、pane 标题、pane id、terminal id、pane kind 和 summary；普通字符和 Backspace 不得漏发给底层 terminal。
+- 上下方向键移动 selected row；过滤后 selected row 必须稳定落在第一条可见 row 或 empty 状态。
+- 鼠标点击 row 与键盘选择使用同一 selected row 语义。
+- detail/preview 区展示 selected row 的结构路径、类型、active 状态、terminal binding 或 floating 摘要。
+- pane row 的 open/focus action 必须聚焦对应 pane、关闭 overlay 并显示 toast 反馈。
+- tab row 的 open/focus action 必须聚焦该 tab 的 active pane 或第一个 pane、关闭 overlay 并显示 toast 反馈。
+- workspace row 和 floating row 可以只显示结构反馈 toast，不得伪造 workspace/floating 生命周期。
+- row、detail、preview、action 和 cursor 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏 overlay 边框或整行宽度。
+- 鼠标 row/action hit region、键盘 Enter 和全局入口必须最终进入同一 app message / reducer 边界，不能各自实现局部逻辑。
+- overlay 打开期间，普通字符、Backspace、方向键、Enter、row click 和 action click 都不得漏发到底层 terminal。
+
+本阶段不要求：
+
+- Terminal Pool 数据混入 Workbench Tree。
+- floating pane 创建、拖拽、resize、z-order 管理。
+- remote workspace 或 remote terminal 管理。
+- workspace/tab rename/create/delete 的最终入口。
+
+本阶段完成后的基本手工测试入口：
+
+- `go run ./termx-cli/cmd/termx` 进入默认 TUI。
+- 按 `Ctrl-g` 进入 global mode，再按 Workbench Tree 对应入口键打开结构导航。
+- 在页面中输入中文或 emoji 搜索词，确认 terminal 不收到这些字符。
+- 使用上下方向键移动 selected row，按 `Enter` 聚焦 pane 或 tab。
+- 点击 row 和 Open / Focus action，确认都有可见反馈。
+- 按 `Esc` 关闭页面并回到 workbench。
+
+## 29. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

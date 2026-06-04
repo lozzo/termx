@@ -366,6 +366,101 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
+	}
+	initialShell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志🚀", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	host := NewFakeTerminalHost(32)
+	host.SetSize(96, 28)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: initialShell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "w"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "日"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "志"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send tree input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain tree input %#v: %v", event, err)
+		}
+	}
+	if runtime.State().Shell.Overlay.Kind != state.OverlayWorkbenchTree || runtime.State().Shell.Overlay.Query != "日志" {
+		t.Fatalf("expected workbench tree queried, shell=%#v", runtime.State().Shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("tree query must not leak terminal input, got %#v", terminal.Inputs)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "Workbench Tree") || !frameContains(frame, ">     pane 日志🚀") || !frameContains(frame, "[open] Open / Focus") {
+		t.Fatalf("expected workbench tree frame, got %#v", frame.Lines)
+	}
+	if frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("tree overlay should own search cursor, got %#v", frame.Cursor)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send tree enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tree enter: %v", err)
+	}
+	if runtime.State().Shell.ActivePaneID != "pane-2" || runtime.State().Shell.Overlay.Open {
+		t.Fatalf("tree enter should focus pane and close overlay, got %#v", runtime.State().Shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("tree enter must not leak terminal input, got %#v", terminal.Inputs)
+	}
+
+	if err := runtime.Post(ShellOpenWorkbenchTreeMsg{}); err != nil {
+		t.Fatalf("post tree open: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tree open: %v", err)
+	}
+	frame = lastFrame(t, host.Frames())
+	selectRegion := frameActionHitRegion(t, frame, "workbench.select", "")
+	if err := host.SendInput(mouseEventAt(selectRegion.Rect)); err != nil {
+		t.Fatalf("send tree select click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tree select click: %v", err)
+	}
+	if runtime.State().Shell.Overlay.SelectedIndex != 0 {
+		t.Fatalf("expected row click to select first workbench node, got %#v", runtime.State().Shell.Overlay)
+	}
+	openRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "workbench.open", "")
+	if err := host.SendInput(mouseEventAt(openRegion.Rect)); err != nil {
+		t.Fatalf("send tree open click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tree open click: %v", err)
+	}
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("workspace open should close tree overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+	if len(runtime.State().Shell.Toasts) == 0 || runtime.State().Shell.Toasts[len(runtime.State().Shell.Toasts)-1].Title != "workbench.open" {
+		t.Fatalf("expected workbench open feedback toast, got %#v", runtime.State().Shell.Toasts)
+	}
+}
+
 func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

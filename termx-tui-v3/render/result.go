@@ -403,6 +403,7 @@ const (
 	OverlayNone           OverlayKind = ""
 	OverlayTerminalPicker OverlayKind = "terminal-picker"
 	OverlayTerminalPool   OverlayKind = "terminal-pool"
+	OverlayWorkbenchTree  OverlayKind = "workbench-tree"
 	OverlayPrompt         OverlayKind = "prompt"
 	OverlayHelp           OverlayKind = "help"
 )

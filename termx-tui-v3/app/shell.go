@@ -64,6 +64,10 @@ type ShellOpenTerminalPoolMsg struct{}
 
 func (ShellOpenTerminalPoolMsg) isMsg() {}
 
+type ShellOpenWorkbenchTreeMsg struct{}
+
+func (ShellOpenWorkbenchTreeMsg) isMsg() {}
+
 type ShellCloseOverlayMsg struct{}
 
 func (ShellCloseOverlayMsg) isMsg() {}
@@ -140,6 +144,8 @@ func NewShellReducer() Reducer {
 		case ShellOpenTerminalPoolMsg:
 			root.Shell = root.Shell.OpenTerminalPool()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		case ShellOpenWorkbenchTreeMsg:
+			root.Shell = root.Shell.OpenWorkbenchTree()
 		case ShellCloseOverlayMsg:
 			root.Shell = root.Shell.CloseOverlay()
 		case ShellContentActionMsg:
@@ -218,6 +224,17 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: tags}
 			}}}
 		}
+	case "workbench.select":
+		items := state.WorkbenchTreeItems(root)
+		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
+		return root.Advance(), nil
+	case "workbench.open":
+		items := state.WorkbenchTreeItems(root)
+		if msg.Row >= 0 {
+			root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
+			items = state.WorkbenchTreeItems(root)
+		}
+		return reduceWorkbenchTreeOpen(root, items)
 	case "exited.restart":
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
@@ -264,6 +281,62 @@ func terminalPoolPageItemForAction(root state.Root, row int) (state.TerminalPool
 		}
 	}
 	return state.TerminalPoolPageItem{}, false
+}
+
+func reduceWorkbenchTreeOpen(root state.Root, items []state.WorkbenchTreeItem) (state.Root, []Effect) {
+	selected, ok := workbenchTreeSelectedItem(items)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.open", Body: "no node"})
+		return root.Advance(), nil
+	}
+	switch selected.Kind {
+	case state.WorkbenchTreeKindPane:
+		root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID})
+		root.Shell = root.Shell.CloseOverlay()
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.open", Body: selected.PaneID})
+	case state.WorkbenchTreeKindTab:
+		targetPaneID := selected.PaneID
+		if targetPaneID == "" {
+			targetPaneID = firstPaneIDForTab(root.Shell, selected.TabID)
+		}
+		if targetPaneID != "" {
+			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: targetPaneID})
+			root.Shell = root.Shell.CloseOverlay()
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.open", Body: selected.TabID})
+		} else {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.open", Body: "tab has no pane"})
+		}
+	case state.WorkbenchTreeKindWorkspace:
+		root.Shell = root.Shell.CloseOverlay()
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.open", Body: selected.WorkspaceName})
+	case state.WorkbenchTreeKindFloating:
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating", Body: "not implemented"})
+	default:
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.open", Body: "unknown node"})
+	}
+	return root.Advance(), nil
+}
+
+func workbenchTreeSelectedItem(items []state.WorkbenchTreeItem) (state.WorkbenchTreeItem, bool) {
+	if len(items) == 0 {
+		return state.WorkbenchTreeItem{}, false
+	}
+	for _, item := range items {
+		if item.Selected {
+			return item, true
+		}
+	}
+	return items[0], true
+}
+
+func firstPaneIDForTab(shell state.ShellStore, tabID string) string {
+	shell = shell.EnsureDefaults()
+	for _, tab := range shell.Workspace.Tabs {
+		if tab.ID == tabID && len(tab.Panes) > 0 {
+			return tab.Panes[0].ID
+		}
+	}
+	return ""
 }
 
 func terminalIDForContentAction(root state.Root, paneID string) string {

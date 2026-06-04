@@ -174,6 +174,40 @@ func TestTerminalPoolStoreAppliesListWithStaleGuardAndError(t *testing.T) {
 	}
 }
 
+func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-2", Title: "日志🚀", Kind: PaneTerminalLive, TerminalID: "term-2"}, SplitDirectionVertical).
+		FocusPane(PaneCommandTarget{PaneID: DefaultPaneID}).
+		OpenWorkbenchTree()
+	root := Root{Shell: shell, Session: TerminalSessionStore{TerminalID: "term-main"}}
+
+	items := WorkbenchTreeItems(root)
+	if len(items) != 5 {
+		t.Fatalf("expected workspace/tab/two panes/floating rows, got %#v", items)
+	}
+	if items[0].Kind != WorkbenchTreeKindWorkspace || !items[0].Selected {
+		t.Fatalf("expected workspace selected first, got %#v", items)
+	}
+	if items[3].Kind != WorkbenchTreeKindPane || items[3].PaneID != "pane-2" || items[3].TerminalID != "term-2" {
+		t.Fatalf("expected pane-2 row with terminal binding, got %#v", items[3])
+	}
+	if items[4].Kind != WorkbenchTreeKindFloating || items[4].Summary != "float:0" {
+		t.Fatalf("expected floating summary row, got %#v", items[4])
+	}
+
+	root.Shell = root.Shell.SetWorkbenchTreeQuery("日志")
+	items = WorkbenchTreeItems(root)
+	if len(items) != 1 || items[0].PaneID != "pane-2" || !items[0].Selected {
+		t.Fatalf("query should filter to matching wide-char pane row, got %#v", items)
+	}
+	root.Shell = root.Shell.SetWorkbenchTreeQuery("")
+	root.Shell = root.Shell.MoveWorkbenchTreeSelection(2, len(WorkbenchTreeItems(root)))
+	items = WorkbenchTreeItems(root)
+	if len(items) != 5 || !items[2].Selected || items[2].PaneID != DefaultPaneID {
+		t.Fatalf("selection should move to default pane row, got %#v", items)
+	}
+}
+
 func TestShellSplitActivePaneCreatesMinimalPaneTree(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{
 		ID:         "pane-2",

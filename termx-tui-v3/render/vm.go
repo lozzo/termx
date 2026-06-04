@@ -160,13 +160,15 @@ func footerActions(mode string) []string {
 	case "resize":
 		return []string{"←/h", "→/l", "↑/k", "↓/j", "b balance", "esc"}
 	case "global":
-		return []string{"h header", "f footer", "t clear", "esc"}
+		return []string{"h header", "f footer", "p pool", "w tree", "T toast", "t clear", "esc"}
 	case "copy":
 		return []string{"pgup older", "wheel", "esc"}
 	case string(state.OverlayTerminalPicker):
 		return []string{"select", "attach", "esc"}
 	case string(state.OverlayTerminalPool):
 		return []string{"search", "attach", "edit", "kill", "esc"}
+	case string(state.OverlayWorkbenchTree):
+		return []string{"search", "open", "focus", "esc"}
 	case "floating":
 		return []string{"stub", "esc"}
 	default:
@@ -460,6 +462,12 @@ func buildOverlayVM(root state.Root, shell state.ShellStore) OverlayVM {
 			Kind:    OverlayTerminalPool,
 			Opaque:  true,
 			Content: buildTerminalPoolContent(root, shell),
+		}
+	case state.OverlayWorkbenchTree:
+		return OverlayVM{
+			Kind:    OverlayWorkbenchTree,
+			Opaque:  true,
+			Content: buildWorkbenchTreeContent(root, shell),
 		}
 	case state.OverlayPrompt:
 		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: ContentVM{Kind: ContentPrompt, Pending: true}}

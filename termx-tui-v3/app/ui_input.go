@@ -35,6 +35,9 @@ func NewUIInputReducer() Reducer {
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPool {
 			return reduceTerminalPoolPageInput(root, inputMsg.Event)
 		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayWorkbenchTree {
+			return reduceWorkbenchTreeInput(root, inputMsg.Event)
+		}
 		intent := input.RouteWithMode(inputMsg.Event, root.CopyMode.Active, inputMode(root.Shell.EnsureDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
@@ -175,6 +178,36 @@ func reduceTerminalPoolPageAttach(root state.Root, items []state.TerminalPoolPag
 	}
 }
 
+func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return root, nil
+	}
+	items := state.WorkbenchTreeItems(root)
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = root.Shell.MoveWorkbenchTreeSelection(-1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = root.Shell.MoveWorkbenchTreeSelection(1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		next, effects := reduceWorkbenchTreeOpen(root, items)
+		return next, append([]Effect{handledEffect{}}, effects...)
+	case input.KeyChar:
+		if isBackspaceEvent(event) {
+			root.Shell = root.Shell.SetWorkbenchTreeQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		if event.Ctrl || event.Char == "" {
+			return root, []Effect{handledEffect{}}
+		}
+		root.Shell = root.Shell.SetWorkbenchTreeQuery(root.Shell.EnsureDefaults().Overlay.Query + event.Char)
+		return root.Advance(), []Effect{handledEffect{}}
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
 func isBackspaceEvent(event input.InputEvent) bool {
 	return event.Key == input.KeyChar && (event.Char == "\x7f" || event.Char == "\b")
 }
@@ -220,6 +253,8 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.ShellActionOpenPool:
 		msg = ShellOpenTerminalPoolMsg{}
+	case input.ShellActionOpenTree:
+		msg = ShellOpenWorkbenchTreeMsg{}
 	default:
 		return root, []Effect{handledEffect{}}
 	}

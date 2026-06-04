@@ -286,6 +286,15 @@ styled chrome renderer 是当前新阶段正式方向。
 - host-aware theme token 和 semantic color。
 - ANSI serializer 的 style diff / reset / width-safety 思路。
 
+当前视觉方向补充：
+
+- shell top/bottom bar 需要保持 `tuiv2` 式高信息密度和整行 styled background，不应退回孤立文本 header/footer。
+- tiled pane 默认使用 `tuiv2` 式 square 细线 panel chrome：连续边框、顶边 title/state/action 槽位、active accent、inactive muted；不能使用 ASCII 线框，也不能只输出无样式 Unicode glyph。
+- 单 pane 的视觉重心是 styled chrome 和 content rect 裁切，terminal 内容只是 content renderer 的输入，不能覆盖 pane border、header/footer、toast 或 overlay。
+- toast/message 使用实体卡片和 severity/accent token，适合右上角短反馈；它不改变 layout，不承担页面级状态展示。
+- modal/overlay 使用实体前景卡片，允许标题、搜索、selected row、detail 和 action。默认不要求背景灰度遮罩，因为 dim 背景对中文、emoji、CJK、combining mark 或 ambiguous width 文本存在丢字风险；实现应优先保证文本可见和 cell width 正确。
+- 后续 Prompt、Help、Workbench Tree 和 floating 都必须沿用 render framework 的 styled layer、layout plan、hit region 和 cursor ownership，不得各自写临时 frame。
+
 不得迁入：
 
 - `VisibleRenderState` 大 bag。
@@ -947,7 +956,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期和 Terminal Pool 管理页一期已落地。当前下一步是 Workbench Tree overlay 一期。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期和 Terminal Pool 管理页一期已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。当前下一步是 Workbench Tree overlay 一期。
 
 已落地：
 

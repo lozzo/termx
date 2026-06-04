@@ -87,8 +87,8 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" {
 		return Rect{}
 	}
-	if overlay.Content.Kind == ContentTerminalPool {
-		return measureTerminalPoolOverlay(viewport)
+	if overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree {
+		return measurePageOverlay(viewport)
 	}
 	width := minInt(viewport.W-4, 48)
 	height := minInt(viewport.H-4, 8)
@@ -104,7 +104,7 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 	}
 }
 
-func measureTerminalPoolOverlay(viewport Rect) Rect {
+func measurePageOverlay(viewport Rect) Rect {
 	width := minInt(viewport.W-4, 88)
 	height := minInt(viewport.H-4, 16)
 	if width < 40 {
@@ -242,7 +242,7 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 }
 
 func overlayOwnsCursor(overlay OverlayVM) bool {
-	return overlay.Kind != OverlayNone && overlay.Content.Kind != "" && (overlay.Opaque || overlay.Content.Kind == ContentPrompt || overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentTerminalPool)
+	return overlay.Kind != OverlayNone && overlay.Content.Kind != "" && (overlay.Opaque || overlay.Content.Kind == ContentPrompt || overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree)
 }
 
 func cursorWithRect(cursor Cursor, origin Rect) (Cursor, Rect) {

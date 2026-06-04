@@ -124,6 +124,34 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	}
 }
 
+// Workbench Tree 只展示 reducer-owned workbench 结构，不读取 Terminal Pool 或远端状态。
+func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentVM {
+	shell = shell.EnsureDefaults()
+	query := strings.TrimSpace(shell.Overlay.Query)
+	rows := state.WorkbenchTreeItems(root)
+	lines := []Line{
+		{Cells: []Cell{styledCell("Workbench Tree", StyleAccent), NewCell(" structure navigator")}},
+		{Cells: []Cell{styledCell("search ", StyleMuted), NewCell(searchLabel(query))}},
+	}
+	rowOffset := len(lines)
+	for _, row := range rows {
+		lines = append(lines, workbenchTreeRowLine(row))
+	}
+	lines = append(lines, workbenchTreeDetailLines(rows)...)
+	actionOffset := len(lines)
+	lines = append(lines, contentActionLine("open", "Open / Focus"))
+	regions := workbenchTreeHitRegions(rows, rowOffset)
+	regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: "workbench.open"})
+	return ContentVM{
+		Kind:       ContentWorkbenchTree,
+		Lines:      lines,
+		Status:     workbenchTreeStatus(len(rows), query),
+		Cursor:     Cursor{Visible: true, Row: 1, Col: DisplayWidth("search ") + DisplayWidth(query), Shape: CursorShapeBar},
+		HitRegions: regions,
+		Empty:      len(rows) == 0,
+	}
+}
+
 func terminalPickerLine(row state.TerminalPickerItem) Line {
 	marker := "  "
 	style := StyleMuted
@@ -184,6 +212,28 @@ func terminalPoolPageRowLine(row state.TerminalPoolPageItem) Line {
 	}}
 }
 
+func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
+	marker := "  "
+	style := StyleMuted
+	if row.Selected {
+		marker = "> "
+		style = StyleAccent
+	}
+	active := ""
+	if row.Active {
+		active = " active"
+	}
+	return Line{Cells: []Cell{
+		styledCell(marker, style),
+		NewCell(strings.Repeat("  ", row.Depth)),
+		styledCell(workbenchTreeKindLabel(row), style),
+		NewCell(" "),
+		styledCell(workbenchTreeTitle(row), style),
+		NewCell("  "),
+		styledCell(row.Summary+active, StyleMuted),
+	}}
+}
+
 func terminalPoolDetailLines(rows []state.TerminalPoolPageItem) []Line {
 	if len(rows) == 0 {
 		return []Line{
@@ -215,6 +265,28 @@ func terminalPoolDetailLines(rows []state.TerminalPoolPageItem) []Line {
 	}
 }
 
+func workbenchTreeDetailLines(rows []state.WorkbenchTreeItem) []Line {
+	if len(rows) == 0 {
+		return []Line{
+			{Cells: []Cell{styledCell("detail ", StyleMuted), NewCell("no workbench node selected")}},
+			{Cells: []Cell{styledCell("preview ", StyleMuted), NewCell("type to search workspace, tab, pane or floating")}},
+		}
+	}
+	selected := rows[0]
+	for _, row := range rows {
+		if row.Selected {
+			selected = row
+			break
+		}
+	}
+	return []Line{
+		{Cells: []Cell{styledCell("detail ", StyleMuted), styledCell(workbenchTreeTitle(selected), StyleAccent)}},
+		NewLine("kind: " + selected.Kind + "  path: " + workbenchTreePath(selected)),
+		NewLine("target: " + workbenchTreeTarget(selected)),
+		{Cells: []Cell{styledCell("preview ", StyleMuted), NewCell(workbenchTreePreview(selected))}},
+	}
+}
+
 func terminalPoolPageHitRegions(rows []state.TerminalPoolPageItem, rowOffset int) []HitRegion {
 	regions := make([]HitRegion, 0, len(rows)+3)
 	for index := range rows {
@@ -223,6 +295,20 @@ func terminalPoolPageHitRegions(rows []state.TerminalPoolPageItem, rowOffset int
 			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
 			Row:      index,
 			ActionID: "pool.select",
+		})
+	}
+	return regions
+}
+
+func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int) []HitRegion {
+	regions := make([]HitRegion, 0, len(rows)+1)
+	for index, row := range rows {
+		regions = append(regions, HitRegion{
+			Kind:     HitRegionContentAction,
+			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
+			Row:      index,
+			PaneID:   row.PaneID,
+			ActionID: "workbench.select",
 		})
 	}
 	return regions
@@ -240,6 +326,91 @@ func terminalPickerHitRegions(rows []state.TerminalPickerItem, rowOffset int) []
 		})
 	}
 	return regions
+}
+
+func workbenchTreeKindLabel(row state.WorkbenchTreeItem) string {
+	switch row.Kind {
+	case state.WorkbenchTreeKindWorkspace:
+		return "workspace"
+	case state.WorkbenchTreeKindTab:
+		return "tab"
+	case state.WorkbenchTreeKindPane:
+		return "pane"
+	case state.WorkbenchTreeKindFloating:
+		return "floating"
+	default:
+		return row.Kind
+	}
+}
+
+func workbenchTreeTitle(row state.WorkbenchTreeItem) string {
+	switch row.Kind {
+	case state.WorkbenchTreeKindWorkspace:
+		if row.WorkspaceName != "" {
+			return row.WorkspaceName
+		}
+		return row.WorkspaceID
+	case state.WorkbenchTreeKindTab:
+		if row.TabTitle != "" {
+			return row.TabTitle
+		}
+		return row.TabID
+	case state.WorkbenchTreeKindPane:
+		if row.PaneTitle != "" {
+			return row.PaneTitle
+		}
+		return row.PaneID
+	case state.WorkbenchTreeKindFloating:
+		return "floating panes"
+	default:
+		return "node"
+	}
+}
+
+func workbenchTreePath(row state.WorkbenchTreeItem) string {
+	parts := []string{}
+	if row.WorkspaceName != "" {
+		parts = append(parts, "ws:"+row.WorkspaceName)
+	}
+	if row.TabTitle != "" {
+		parts = append(parts, "tab:"+row.TabTitle)
+	}
+	if row.PaneTitle != "" {
+		parts = append(parts, "pane:"+row.PaneTitle)
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " / ")
+}
+
+func workbenchTreeTarget(row state.WorkbenchTreeItem) string {
+	switch row.Kind {
+	case state.WorkbenchTreeKindPane:
+		terminalID := row.TerminalID
+		if terminalID == "" {
+			terminalID = "none"
+		}
+		return "pane:" + row.PaneID + " term:" + terminalID
+	case state.WorkbenchTreeKindTab:
+		return "tab:" + row.TabID + " active-pane:" + row.PaneID
+	case state.WorkbenchTreeKindWorkspace:
+		return "workspace:" + row.WorkspaceID
+	case state.WorkbenchTreeKindFloating:
+		return row.Summary
+	default:
+		return "-"
+	}
+}
+
+func workbenchTreePreview(row state.WorkbenchTreeItem) string {
+	if row.Kind == state.WorkbenchTreeKindFloating {
+		return "floating overview placeholder; drag/resize belongs to later floating slice"
+	}
+	if row.Summary != "" {
+		return row.Summary
+	}
+	return "ready"
 }
 
 func terminalPoolPageStateLine(pool state.TerminalPoolStore, rowCount int) (Line, bool) {
@@ -293,6 +464,13 @@ func terminalPoolPageStatus(pool state.TerminalPoolStore, count int, query strin
 		prefix += " query:" + query
 	}
 	return prefix
+}
+
+func workbenchTreeStatus(count int, query string) string {
+	if query == "" {
+		return fmt.Sprintf("workbench tree: %d items", count)
+	}
+	return fmt.Sprintf("workbench tree: %d items query:%s", count, query)
 }
 
 func terminalPoolSizeLabel(cols int, rows int) string {

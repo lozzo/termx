@@ -342,6 +342,45 @@ func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Cursor: Cursor{Visible: true, Row: 2, Col: 3}},
+		}}},
+		Overlay: OverlayVM{
+			Kind:   OverlayWorkbenchTree,
+			Opaque: true,
+			Content: ContentVM{
+				Kind:   ContentWorkbenchTree,
+				Cursor: Cursor{Visible: true, Row: 1, Col: 10, Shape: CursorShapeBar},
+				HitRegions: []HitRegion{
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "workbench.select"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "workbench.open"},
+				},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if plan.Overlay.W < 70 || plan.Overlay.H < 14 || plan.OverlayContentRect.H < 12 {
+		t.Fatalf("workbench tree must use page-sized overlay, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
+	}
+	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+10 || got.Y != plan.OverlayContentRect.Y+1 {
+		t.Fatalf("unexpected tree cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
+	}
+	for _, action := range []string{"workbench.select", "workbench.open"} {
+		if hitRegionIndexByAction(plan.HitRegions, action) < 0 {
+			t.Fatalf("expected visible workbench tree action %s in hit regions %#v", action, plan.HitRegions)
+		}
+	}
+	if hitRegionIndex(plan.HitRegions, HitRegionPaneContent) >= 0 {
+		t.Fatalf("opaque workbench tree must hide body hit regions, got %#v", plan.HitRegions)
+	}
+}
+
 func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
 	for i, region := range regions {
 		if region.ActionID == actionID {

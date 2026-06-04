@@ -1,6 +1,9 @@
 package state
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	DefaultWorkspaceID = "workspace-main"
@@ -37,6 +40,7 @@ const (
 	OverlayNone           OverlayKind = ""
 	OverlayTerminalPicker OverlayKind = "terminal-picker"
 	OverlayTerminalPool   OverlayKind = "terminal-pool"
+	OverlayWorkbenchTree  OverlayKind = "workbench-tree"
 	OverlayPrompt         OverlayKind = "prompt"
 	OverlayHelp           OverlayKind = "help"
 )
@@ -141,6 +145,29 @@ type TerminalPoolPageItem struct {
 	Attached   bool
 	Selected   bool
 }
+
+type WorkbenchTreeItem struct {
+	Kind          string
+	WorkspaceID   string
+	WorkspaceName string
+	TabID         string
+	TabTitle      string
+	PaneID        string
+	PaneTitle     string
+	PaneKind      PaneKind
+	TerminalID    string
+	Depth         int
+	Active        bool
+	Selected      bool
+	Summary       string
+}
+
+const (
+	WorkbenchTreeKindWorkspace = "workspace"
+	WorkbenchTreeKindTab       = "tab"
+	WorkbenchTreeKindPane      = "pane"
+	WorkbenchTreeKindFloating  = "floating"
+)
 
 type ToastState struct {
 	ID                string
@@ -338,6 +365,17 @@ func (store ShellStore) OpenTerminalPool() ShellStore {
 	return store
 }
 
+func (store ShellStore) OpenWorkbenchTree() ShellStore {
+	store = store.EnsureDefaults()
+	store.Overlay = OverlayState{
+		Kind:          OverlayWorkbenchTree,
+		Open:          true,
+		TargetID:      store.ActivePaneID,
+		SelectedIndex: 0,
+	}
+	return store
+}
+
 func (store ShellStore) SetTerminalPickerQuery(query string) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open {
@@ -351,6 +389,16 @@ func (store ShellStore) SetTerminalPickerQuery(query string) ShellStore {
 func (store ShellStore) SetTerminalPoolQuery(query string) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPool || !store.Overlay.Open {
+		return store
+	}
+	store.Overlay.Query = query
+	store.Overlay.SelectedIndex = 0
+	return store
+}
+
+func (store ShellStore) SetWorkbenchTreeQuery(query string) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayWorkbenchTree || !store.Overlay.Open {
 		return store
 	}
 	store.Overlay.Query = query
@@ -386,6 +434,20 @@ func (store ShellStore) MoveTerminalPoolSelection(delta int, itemCount int) Shel
 	return store
 }
 
+func (store ShellStore) MoveWorkbenchTreeSelection(delta int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayWorkbenchTree || !store.Overlay.Open || itemCount <= 0 || delta == 0 {
+		return store
+	}
+	next := store.Overlay.SelectedIndex + delta
+	next %= itemCount
+	if next < 0 {
+		next += itemCount
+	}
+	store.Overlay.SelectedIndex = next
+	return store
+}
+
 func (store ShellStore) SetTerminalPickerSelectedIndex(index int, itemCount int) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open || itemCount <= 0 {
@@ -404,6 +466,21 @@ func (store ShellStore) SetTerminalPickerSelectedIndex(index int, itemCount int)
 func (store ShellStore) SetTerminalPoolSelectedIndex(index int, itemCount int) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPool || !store.Overlay.Open || itemCount <= 0 {
+		return store
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= itemCount {
+		index = itemCount - 1
+	}
+	store.Overlay.SelectedIndex = index
+	return store
+}
+
+func (store ShellStore) SetWorkbenchTreeSelectedIndex(index int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayWorkbenchTree || !store.Overlay.Open || itemCount <= 0 {
 		return store
 	}
 	if index < 0 {
@@ -820,6 +897,77 @@ func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
 	return items
 }
 
+func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
+	shell := root.Shell.EnsureDefaults()
+	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
+	workspace := shell.Workspace
+	items := make([]WorkbenchTreeItem, 0, 2+len(workspace.Tabs)*2)
+	appendItem := func(item WorkbenchTreeItem) {
+		if matchesWorkbenchTreeQuery(item, query) {
+			items = append(items, item)
+		}
+	}
+
+	appendItem(WorkbenchTreeItem{
+		Kind:          WorkbenchTreeKindWorkspace,
+		WorkspaceID:   workspace.ID,
+		WorkspaceName: workspace.Name,
+		Depth:         0,
+		Active:        true,
+		Summary:       workbenchWorkspaceSummary(workspace),
+	})
+	for _, tab := range workspace.Tabs {
+		tabActive := tab.ID == workspace.ActiveTabID
+		appendItem(WorkbenchTreeItem{
+			Kind:          WorkbenchTreeKindTab,
+			WorkspaceID:   workspace.ID,
+			WorkspaceName: workspace.Name,
+			TabID:         tab.ID,
+			TabTitle:      tab.Title,
+			PaneID:        tab.ActivePaneID,
+			Depth:         1,
+			Active:        tabActive,
+			Summary:       workbenchTabSummary(tab),
+		})
+		for _, pane := range tab.Panes {
+			terminalID := pickerTerminalID(root, pane)
+			appendItem(WorkbenchTreeItem{
+				Kind:          WorkbenchTreeKindPane,
+				WorkspaceID:   workspace.ID,
+				WorkspaceName: workspace.Name,
+				TabID:         tab.ID,
+				TabTitle:      tab.Title,
+				PaneID:        pane.ID,
+				PaneTitle:     paneTitle(pane),
+				PaneKind:      pane.Kind,
+				TerminalID:    terminalID,
+				Depth:         2,
+				Active:        tabActive && pane.ID == shell.ActivePaneID,
+				Summary:       workbenchPaneSummary(pane, terminalID),
+			})
+		}
+	}
+	appendItem(WorkbenchTreeItem{
+		Kind:          WorkbenchTreeKindFloating,
+		WorkspaceID:   workspace.ID,
+		WorkspaceName: workspace.Name,
+		Depth:         1,
+		Active:        false,
+		Summary:       "float:0",
+	})
+	if len(items) > 0 {
+		selected := shell.Overlay.SelectedIndex
+		if selected < 0 {
+			selected = 0
+		}
+		if selected >= len(items) {
+			selected = len(items) - 1
+		}
+		items[selected].Selected = true
+	}
+	return items
+}
+
 func pickerTerminalID(root Root, pane PaneState) string {
 	if pane.TerminalID != "" {
 		return pane.TerminalID
@@ -863,6 +1011,46 @@ func matchesTerminalPoolPageQuery(item TerminalPoolPageItem, query string) bool 
 		}
 	}
 	return false
+}
+
+func matchesWorkbenchTreeQuery(item WorkbenchTreeItem, query string) bool {
+	if query == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(item.Kind), query) ||
+		strings.Contains(strings.ToLower(item.WorkspaceName), query) ||
+		strings.Contains(strings.ToLower(item.WorkspaceID), query) ||
+		strings.Contains(strings.ToLower(item.TabTitle), query) ||
+		strings.Contains(strings.ToLower(item.TabID), query) ||
+		strings.Contains(strings.ToLower(item.PaneTitle), query) ||
+		strings.Contains(strings.ToLower(item.PaneID), query) ||
+		strings.Contains(strings.ToLower(string(item.PaneKind)), query) ||
+		strings.Contains(strings.ToLower(item.TerminalID), query) ||
+		strings.Contains(strings.ToLower(item.Summary), query)
+}
+
+func workbenchWorkspaceSummary(workspace WorkspaceState) string {
+	return fmt.Sprintf("tabs:%d panes:%d float:0", len(workspace.Tabs), workspacePaneCount(workspace))
+}
+
+func workbenchTabSummary(tab TabState) string {
+	return fmt.Sprintf("panes:%d active:%s", len(tab.Panes), tab.ActivePaneID)
+}
+
+func workbenchPaneSummary(pane PaneState, terminalID string) string {
+	summary := string(pane.Kind)
+	if terminalID != "" {
+		summary += " term:" + terminalID
+	}
+	return summary
+}
+
+func workspacePaneCount(workspace WorkspaceState) int {
+	count := 0
+	for _, tab := range workspace.Tabs {
+		count += len(tab.Panes)
+	}
+	return count
 }
 
 func paneTitle(pane PaneState) string {
