@@ -1,0 +1,94 @@
+package termxcorev2
+
+import (
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+type terminalRegistry struct {
+	mu        sync.RWMutex
+	terminals map[string]TerminalInfo
+}
+
+func newTerminalRegistry() *terminalRegistry {
+	return &terminalRegistry{terminals: make(map[string]TerminalInfo)}
+}
+
+func (registry *terminalRegistry) register(record TerminalRecord, defaultSize Size) (TerminalInfo, error) {
+	id := strings.TrimSpace(record.ID)
+	if id == "" {
+		return TerminalInfo{}, ErrInvalidTerminalID
+	}
+	if len(record.Command) == 0 {
+		return TerminalInfo{}, ErrInvalidCommand
+	}
+	size := record.Size
+	if !size.Valid() {
+		size = defaultSize
+	}
+	if !size.Valid() {
+		return TerminalInfo{}, ErrInvalidServerSize
+	}
+	name := strings.TrimSpace(record.Name)
+	if name == "" {
+		name = id
+	}
+	info := TerminalInfo{
+		ID:        id,
+		Name:      name,
+		Command:   append([]string(nil), record.Command...),
+		Size:      size,
+		State:     TerminalStateCreated,
+		CreatedAt: time.Now().UTC(),
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if _, exists := registry.terminals[id]; exists {
+		return TerminalInfo{}, ErrDuplicateTerminal
+	}
+	registry.terminals[id] = info.Clone()
+	return info, nil
+}
+
+func (registry *terminalRegistry) get(id string) (TerminalInfo, error) {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	info, ok := registry.terminals[id]
+	if !ok {
+		return TerminalInfo{}, ErrTerminalNotFound
+	}
+	return info.Clone(), nil
+}
+
+func (registry *terminalRegistry) list() []TerminalInfo {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	out := make([]TerminalInfo, 0, len(registry.terminals))
+	for _, info := range registry.terminals {
+		out = append(out, info.Clone())
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func (registry *terminalRegistry) remove(id string) (TerminalInfo, error) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	info, ok := registry.terminals[id]
+	if !ok {
+		return TerminalInfo{}, ErrTerminalNotFound
+	}
+	delete(registry.terminals, id)
+	info.State = TerminalStateRemoved
+	return info.Clone(), nil
+}
+
+func (registry *terminalRegistry) clear() {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	registry.terminals = make(map[string]TerminalInfo)
+}
