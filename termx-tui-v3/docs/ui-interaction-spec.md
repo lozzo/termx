@@ -1265,11 +1265,12 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
 - `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 - terminal-live 内容 renderer 一期必须在当前 styled chrome 基线上工作：真实 live 行只进入 pane content slot，基础 ANSI SGR 映射为 semantic style token，live cursor 表达为 content-local cursor，pending、empty、exited 状态显示在所属 pane 内，emoji/CJK/combining mark 裁切不得破坏 pane 边框。
+- copy-history 内容 renderer 一期必须继续只消费 core-v2 authoritative `HistoryWindow`：历史行显示 logical-line、continuation 和 clipped marker，selection 使用 styled cell 表达，copy cursor 是 content-local cursor，footer/status 显示当前位置摘要，复制成功通过 toast 反馈；resize 或 content cols 变化后仍重新绑定 authoritative window，不显示旧 cols rows。
 
 当前未完成但产品要求仍保留：
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
-- copy-history 内容 renderer 完整化：selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和滚动交互。
+- copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
 - Terminal Picker 完整内容：搜索、terminal list、selected row、new terminal row、preview 和 attach/create action。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
 - Terminal Pool 完整页面。
@@ -1296,7 +1297,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 这条验收线不要求：
 
 - terminal-live 内容已经具备完整 styled cell、cursor、selection 或 search。
-- copy-history 内容已经具备完整 scrollbar、logical-line marker 或 yank 反馈。
+- copy-history 内容已经具备完整 scrollbar、搜索、content-local mouse selection 或最终视觉 polish。
 - Terminal Picker 已经是完整列表和搜索页面。
 - Terminal Pool、Workbench Tree、Prompt、Help、floating pane 已经完整产品化。
 
@@ -1345,7 +1346,30 @@ terminal-live 内容 renderer 一期的目标是把真实 terminal live 内容�
 - selection/search、content-local mouse hit region、scrollbar 或 clipped marker。
 - 从 protocol 扩展精确 styled cell stream；当前可先基于 raw live 行和基础 SGR 做等价投影。
 
-## 23. 后续讨论入口
+## 23. Copy-History 内容 Renderer 一期验收线
+
+copy-history 内容 renderer 一期的目标是把 authoritative `HistoryWindow` 变成可浏览、可选择、可复制且不会破坏 chrome 的内容视图。
+
+一期必须满足：
+
+- 只消费 `HistoryStore + CopyModeStore`，并且只有 terminal id、bound token、bound cols 与 authoritative window 一致时才渲染历史内容。
+- 缺 authoritative window、绑定不一致或 resize 后等待新 window 时，只显示 pending、empty 或 error；不得从 live surface、snapshot、grid viewport 或 local VTerm scrollback fallback。
+- 每个 visual row 显示 logical-line marker：新 logical line、continuation row、clipped before、clipped after 必须可见。
+- copy selection 显示为 styled cells，跨 visual row 时仍按 authoritative row 投影工作。
+- copy cursor 是 content-local cursor，必须考虑左侧 marker 宽度，不得复用 live cursor。
+- status/footer hint 必须包含当前 row、总 row、line id 和 cols 摘要，方便用户确认当前位置。
+- copy/yank 成功必须有 toast 反馈；clipboard IO 仍通过 effect/result message，不由 renderer 直接执行。
+- resize、header/footer hide 或 pane size change 导致 copy content cols 改变时，旧 window、selection、cursor 必须失效并重新请求 authoritative latest window。
+- emoji、CJK、combining mark 和 styled selection 必须按 terminal cell width 裁切，不得破坏 pane border 或 split line。
+
+一期不要求：
+
+- 完整 scrollbar。
+- 搜索和过滤。
+- content-local mouse selection。
+- logical-line 级拼接提示的最终视觉 polish。
+
+## 24. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

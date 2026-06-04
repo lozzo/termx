@@ -41,8 +41,62 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[1].Rect.Y != 1 {
 		t.Fatalf("unexpected hit regions %#v", content.HitRegions)
 	}
-	if !vm.Shell.Cursor.Visible || vm.Shell.Cursor.Row != 1 || vm.Shell.Cursor.Col != 2 {
+	if !vm.Shell.Cursor.Visible || vm.Shell.Cursor.Row != 1 || vm.Shell.Cursor.Col != 4 {
 		t.Fatalf("expected copy cursor VM, got %#v", vm.Shell.Cursor)
+	}
+}
+
+func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows: []state.HistoryRow{
+				{Text: "alpha", LineID: 10, RowInLine: 0, ClippedStart: true},
+				{Text: "beta好", LineID: 10, RowInLine: 1, ClippedEnd: true},
+				{Text: "gamma", LineID: 11, RowInLine: 0},
+			},
+			Lines: []state.HistoryLineSpan{
+				{LineID: 10, StartRow: 0, EndRow: 1, ClippedBefore: true, ClippedAfter: true},
+				{LineID: 11, StartRow: 2, EndRow: 2},
+			},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  12,
+			Cursor:     state.CopyPosition{Row: 1, Col: 4},
+			Selection: &state.CopySelection{
+				Anchor: state.CopyPosition{Row: 0, Col: 2},
+				Focus:  state.CopyPosition{Row: 1, Col: 4},
+			},
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "⇡ alpha") {
+		t.Fatalf("expected clipped-before marker, got %#v", content.Lines)
+	}
+	if got := content.Lines[1].PlainString(); !strings.Contains(got, "╎ beta好 ⇣") {
+		t.Fatalf("expected continuation and clipped-end markers, got %#v", content.Lines)
+	}
+	if !lineHasStyledCell(content.Lines[0], "pha", StyleAccent) || !lineHasStyledCell(content.Lines[1], "beta", StyleAccent) {
+		t.Fatalf("expected selection rendered as styled cells, got %#v", content.Lines)
+	}
+	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != 6 {
+		t.Fatalf("expected cursor offset by copy marker, got %#v", content.Cursor)
+	}
+	if !strings.Contains(content.Status, "row 2/3 line:10 cols:12") {
+		t.Fatalf("expected position status, got %q", content.Status)
+	}
+	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 || content.HitRegions[1].Rect.W <= 12 {
+		t.Fatalf("expected history hit regions with marker width, got %#v", content.HitRegions)
+	}
+	if len(vm.Lines) != 3 || vm.Lines[0] != "alpha" || strings.Contains(vm.Lines[0], "⇡") {
+		t.Fatalf("compatibility projection should keep raw authoritative row text, got %#v", vm.Lines)
 	}
 }
 

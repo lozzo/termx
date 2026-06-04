@@ -60,6 +60,9 @@ func NewRenderVMBuilder() RenderVMBuilder {
 func (RenderVMBuilder) Build(root state.Root) RenderVM {
 	shell := buildShellVM(root)
 	vm := RenderVM{Shell: shell}
+	if root.CopyMode.Active && canRenderCopyHistory(root.History, root.CopyMode) {
+		vm.Lines = copyHistoryPlainRows(root.History)
+	}
 	return vm.withCompatibilityProjection()
 }
 
@@ -335,7 +338,7 @@ func buildCopyHistoryContentVM(history state.HistoryStore, copyMode state.CopyMo
 		content := ContentVM{
 			Kind:    ContentCopyHistory,
 			Lines:   []Line{NewLine(reason)},
-			Status:  copyModeStatus(copyMode),
+			Status:  copyHistoryStatus(history, copyMode),
 			Pending: true,
 		}
 		if reason == "copy history empty" {
@@ -348,23 +351,12 @@ func buildCopyHistoryContentVM(history state.HistoryStore, copyMode state.CopyMo
 		}
 		return content
 	}
-	lines := make([]Line, len(history.Rows))
-	regions := make([]HitRegion, len(history.Rows))
-	for i, row := range history.Rows {
-		lines[i] = NewLine(row.Text)
-		regions[i] = HitRegion{
-			Kind:   HitRegionHistoryRow,
-			Rect:   Rect{Y: i, W: history.Cols, H: 1},
-			LineID: row.LineID,
-			Row:    i,
-		}
-	}
 	return ContentVM{
 		Kind:       ContentCopyHistory,
-		Lines:      lines,
-		Status:     copyModeStatus(copyMode),
-		Cursor:     copyModeCursor(copyMode),
-		HitRegions: regions,
+		Lines:      copyHistoryLines(history, copyMode),
+		Status:     copyHistoryStatus(history, copyMode),
+		Cursor:     copyHistoryCursor(history, copyMode),
+		HitRegions: copyHistoryHitRegions(history),
 	}
 }
 
@@ -392,13 +384,6 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 		content.Cursor = Cursor{}
 	}
 	return content
-}
-
-func copyModeStatus(copyMode state.CopyModeStore) string {
-	if copyMode.Empty {
-		return "copy: empty"
-	}
-	return "copy"
 }
 
 func liveStatus(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {
@@ -456,18 +441,6 @@ func liveCursorShape(shape string) CursorShape {
 	}
 }
 
-func copyModeCursor(copyMode state.CopyModeStore) Cursor {
-	if !copyMode.Active {
-		return Cursor{}
-	}
-	return Cursor{
-		Visible: true,
-		Row:     copyMode.Cursor.Row,
-		Col:     copyMode.Cursor.Col,
-		Shape:   CursorShapeBlock,
-	}
-}
-
 func buildOverlayVM(shell state.ShellStore) OverlayVM {
 	if !shell.Overlay.Open {
 		return OverlayVM{}
@@ -516,11 +489,24 @@ func (vm RenderVM) withCompatibilityProjection() RenderVM {
 	if content.Kind == ContentCopyHistory {
 		vm.Mode = ModeCopy
 	}
-	vm.Lines = stringsFromLines(content.Lines)
+	if len(vm.Lines) == 0 {
+		vm.Lines = stringsFromLines(content.Lines)
+	}
 	vm.Status = content.Status
 	vm.HitRegions = cloneHitRegions(content.HitRegions)
 	vm.Shell.Cursor = content.Cursor
 	return vm
+}
+
+func copyHistoryPlainRows(history state.HistoryStore) []string {
+	if len(history.Rows) == 0 {
+		return nil
+	}
+	lines := make([]string, len(history.Rows))
+	for i, row := range history.Rows {
+		lines[i] = row.Text
+	}
+	return lines
 }
 
 func activeContent(shell ShellVM) ContentVM {

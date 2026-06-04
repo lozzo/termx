@@ -72,6 +72,9 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 	if len(last.Lines) == 0 || !frameContains(last, "old") || !frameContains(last, "new") {
 		t.Fatalf("expected latest rendered copy frame to start with older row, got %#v", last.Lines)
 	}
+	if !frameContains(last, "● old") || !frameContains(last, "● new") {
+		t.Fatalf("expected copy-history logical line markers in frame, got %#v", last.Lines)
+	}
 }
 
 func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
@@ -445,6 +448,12 @@ func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 	}
 	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "lpha\nbe" {
 		t.Fatalf("unexpected clipboard writes %#v", clipboard.Writes)
+	}
+	last := lastFrame(t, host.Frames())
+	assertPaneVisualState(t, last, "lpha", render.StyleAccent)
+	assertPaneVisualState(t, last, "be", render.StyleAccent)
+	if !frameContains(last, "selection yanked") {
+		t.Fatalf("copy feedback toast should be visible, got %#v", last.Lines)
 	}
 }
 

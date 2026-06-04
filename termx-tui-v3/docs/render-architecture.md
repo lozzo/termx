@@ -998,7 +998,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - render 已能合成 hit region，app/runtime 已开始把真实鼠标坐标派发到最新 hit region；但 resize handle、split divider、复杂 overlay/floating、terminal mouse forwarding 的完整产品边界仍需继续验收。
 - active pane 样式已经存在，但键盘与鼠标 focus、split、close、resize、zoom、card/split 切换后的端到端视觉反馈仍需要独立验收并固定为 UI framework 闭环。
 - terminal-live content renderer 一期已进入当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，content 仍由 framework 裁切到 content rect；但 selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
-- copy-history content 目前只保证 authoritative window、pending/empty/error、cols rebind 和 no-fallback 语义，尚未完整表达 copy mode selection、logical-line marker、clipped before/after、scrollbar 或位置摘要。
+- copy-history content renderer 一期已进入当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，status 输出 row、line、cols 位置摘要，copy/yank 成功通过 toast 反馈；完整 scrollbar、content-local mouse selection、搜索和 logical-line 拼接提示仍待后续深化。
 - Terminal Picker 目前是 styled overlay/placeholder 路径，不是完整 terminal picker 内容。
 - Terminal Pool、Workbench Tree、Prompt、Help 的完整内容未落地。
 - floating panel 仍未落地，当前只有架构类型和后续边界。
@@ -1018,7 +1018,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - active pane 视觉反馈验收：键盘和鼠标导致的 focus、split、close、zoom、resize、card/split 切换必须立即反映到 active/inactive border、title、footer 和 toast。
 - UI framework 交互产品化总验收：在接 terminal-live content renderer 前，把 header/footer、pane/resize/global mode、鼠标命中、active feedback、toast、content rect resize 和 copy rebind 做成可基本操作的产品闭环。
 - terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
-- copy-history content renderer：完善 selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和宽度变化后的交互恢复。
+- copy-history content renderer 深化：在一期基础上完善 scrollbar 视觉、position token 精细化、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和滚动交互。
 - empty/exited/terminal-picker content renderer：把当前 placeholder 和基础文案拆成独立 renderer，补齐 CTA、列表、preview、状态 token 和 action region。
 - tiled layout refinement：支持多层 split 的完整产品交互、resize affordance、active pane hit region 和 card/split 模式切换保持。
 - floating / overlay：实现 floating pane z-order、裁切、遮挡、置顶、drag/resize affordance，以及 Prompt、Help、Floating Overview overlay。

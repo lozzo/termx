@@ -470,6 +470,15 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - `FrameSink` 只消费 `Frame` / `RenderResult` 的 ANSI styled frame；不得为了 live 内容绕过 `RenderResult` 直接写 TTY。
 - 若未来协议提供 styled cell、精确 cursor、link、truecolor 或 terminal mode metadata，应作为 live content VM 的输入增强，而不是改变 render framework 与 history/copy mode 边界。
 
+当前 copy-history content renderer 一期的架构边界：
+
+- `HistoryStore + CopyModeStore` 是唯一输入；copy-history content 不读取 `TerminalSurfaceStore`、snapshot、grid viewport 或 local VTerm scrollback。
+- `RenderVMBuilder` 只在 terminal id、bound token 和 bound cols 与 authoritative `HistoryWindow` 一致时生成历史内容；绑定不一致、缺 window 或 resize 后等待新 window 时只能生成 pending、empty 或 error。
+- `RenderVMBuilder` 负责把 authoritative rows 投影为 `ContentVM`：logical-line / continuation / clipped marker、styled selection、content-local copy cursor 和 row/line/cols 位置摘要都在 VM 层表达。
+- `Renderer` 和 render framework 只按 content rect 裁切、合成和输出 styled frame；renderer 不请求 history、不执行 selection 语义、不调用 clipboard，也不从 live content 补齐历史。
+- copy/yank 成功反馈由 reducer 添加 shell toast；clipboard IO 仍通过 effect 和 result message 完成，不进入 renderer。
+- `RenderVM.Lines` 临时兼容投影保留 raw authoritative row text；logical-line marker 和 clipped marker 属于 UI content，不得污染历史 truth 或兼容 raw rows。
+
 ## 12. 与 core-v2 的接口
 
 TUI-v3 只通过 `CoreClient` 访问 core-v2。
@@ -553,7 +562,8 @@ tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback
 15. 完成 styled chrome renderer、cell matrix、theme token、ANSI FrameSink、header/footer、toast/overlay、pane chrome 和 pane command 基础。
 16. 完成 UI framework 交互产品化总验收：header/footer 信息层、pane/resize/global mode、鼠标命中、active pane 反馈、toast 操作、layout/effect 同步和基本手工测试入口。
 17. 深化 terminal-live content renderer：styled terminal cells、cursor、pending/empty/exited、宽字符裁切、content-local metadata 和 no chrome leak。
-18. 深化 copy-history、Terminal Picker、Terminal Pool、Workbench Tree、floating、Prompt、Help 和性能。
+18. 深化 copy-history content renderer：authoritative rows、logical-line marker、selection、cursor、position token、copy/yank feedback、宽字符裁切和 no chrome leak。
+19. 深化 Terminal Picker、Terminal Pool、Workbench Tree、floating、Prompt、Help 和性能。
 
 每个切片都必须避免引入 local scrollback history fallback。
 
