@@ -170,8 +170,8 @@
 - 最小阶段必须处理 toast 基础生命周期，不能只做静态文本。
 - Terminal Pool 与 Workbench Tree 完整页面不作为最小阶段阻塞项，但 Terminal Picker 状态必须有 overlay 或明确占位渲染路径。
 - `Ctrl-f` 进入 Terminal Picker、`Ctrl-v` 进入 Display / Copy 是已定产品基准。
-- card/split 切换、header/footer hide、toast close current、toast clear all 的具体快捷键尚未拍板；实现可以先提供 semantic action、reducer message、hit region 和测试入口，但不得临时发明新的产品快捷键并写死。
-- 鼠标和 hit region 语义可以先按稳定 action token 落地，具体视觉文案可以后续细化。
+- `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 是当前第一版结构操作入口；card/split 切换、header/footer hide、toast close current、toast clear all 已通过 mode 快捷键进入 semantic action，不得再绕过 reducer 临时实现第二套逻辑。
+- 鼠标和 hit region 必须复用同一 semantic action；render 可以只产出稳定 action token，但 app/input 必须把真实鼠标坐标派发到最新 hit region，UI chrome 区域不得漏发到 terminal。
 - 所有 UI chrome 和 content slot 的宽度计算必须使用 ANSI-aware / grapheme-aware / cell-aware helper，不得用 byte length 或 rune count 作为可见宽度。
 - 旧 `tuiv2` 的 width safety 经验只能迁入为 v3 render primitive 和 harness，不能迁入旧 runtime/model/cursor writer 结构。
 - 最小阶段不得引入通用 widget/plugin UI 框架，也不得引入 Bubble Tea contract。
@@ -286,8 +286,12 @@
 | 58. styled chrome / pane command 文档收口与后续内容 renderer 边界 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 同步 styled chrome 与 pane command 已落地、未落地和后续 terminal-live/copy-history/Terminal Pool/Workbench Tree/floating 内容 renderer 深化边界；明确当前阶段完成 chrome/frame 视觉等级和 pane 结构命令基础，不宣称内容 renderer 完整；文档-only 至少运行 `git diff --check`，若同切片有代码则运行相关测试 |
 | 59. split-line 顶边视觉修复与测试口径 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 修复 split-line pane 顶边端点退化和隐藏 header 时顶边不完整的问题；harness 覆盖顶边使用 pane chrome 连接语义、行宽恒等和宽字符不破坏顶边；最终说明必须明确当前可测的 split/resize/zoom/close 入口，以及 floating pane 完整交互尚未落地 |
 | 60. pane/resize/global 第一版交互产品化 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 建立 reducer-owned interaction mode；`Ctrl-p` 进入 pane mode、`Ctrl-r` 进入 resize mode、`Ctrl-g` 进入 global mode；pane mode 可触发 split right/down、close、focus next/previous、zoom/unzoom、balance、card/split 切换；resize mode 可用方向键语义调整大小并保留同一 `ShellPaneCommandMsg` 路径；global mode 可切换 header/footer、清理 toast；`Esc` 退出 mode/overlay 且不漏发 terminal；footer 显示当前 mode；card/split 顶部 title 到 action 之间保留连续线段；floating 完整交互仍作为后续独立切片，不在本切片伪实现 |
+| 61. shell header/footer 产品化 | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/docs/`、`workflow.md` | 把当前 styled top/bottom bar 从视觉占位推进到产品信息层：header 必须展示 workspace/tab/active pane/terminal count/notice 或窄屏摘要；footer 必须展示当前 mode、mode-specific shortcut hints、active pane/terminal 状态和窄屏退化；header/footer hide 后 body 回收空间且上下文仍通过短 token、toast 或 Help 入口可达；harness 覆盖 live/pane/resize/global/copy/overlay 不同 mode 提示、宽字符安全和隐藏回收；准入运行 `cd termx-tui-v3 && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`git diff --check` |
+| 62. 鼠标 hit region dispatch 与 pane focus | 待开始 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/state/`、`termx-tui-v3/terminalhost/` 按需 | app/runtime 必须持有或接收最新 render hit regions，把真实鼠标坐标映射到 pane content、pane chrome、action slot、split divider、resize handle、toast/overlay 等可见对象；点击 pane content/chrome 聚焦 pane，点击 close/action 执行同一 semantic command，点击 divider/resize handle 进入 resize 语义或调整大小；UI chrome 优先于 terminal mouse forwarding；harness 覆盖多 pane 点击焦点转移、action 命中、overlay/toast 优先级和未命中事件转发边界；准入运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check` |
+| 63. active pane 视觉反馈与交互验收 | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-cli/` 按需 | 键盘和鼠标导致的 focus、split、close、zoom、resize、card/split 切换必须立即反映到 active pane border/title/footer/toast；active/inactive 样式不得只在 smoke 静态 case 中存在；close 后 active pane 选择稳定，resize/zoom 后 content rect 与视觉高亮一致；harness 覆盖双 pane、多 pane、隐藏 header/footer、card/split 两种 presentation 下的 active 变化；准入运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check` |
+| 64. terminal-live content renderer 一期 | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-cli/` 按需 | 在 chrome/framework 稳定后接真实 terminal live 内容：content renderer 只绘制到 pane content rect，消费 live surface / terminal session 的行、styled cell 或等价数据，表达 cursor、basic style、pending/empty/exited 状态和宽字符裁切；不得把 live surface 当作 history truth，也不得破坏边框、split line、overlay/toast 或 content rect resize；harness 覆盖真实 live 输出、ANSI/style、emoji/CJK、cursor 归属、resize 后裁切和 no chrome leak；准入运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check` |
 
-当前下一步：切片 60 已完成。当前第一版键盘交互产品化和顶栏连续线验收已收口；后续若继续推进 floating 完整交互、Terminal Pool、Workbench Tree、content renderer 完整化、remote 迁移或旧依赖拆分，必须先在本文件新增或调整任务队列后再开始。
+当前下一步：切片 61 待开始。下一阶段先把 UI 框架交互补完整：header/footer 产品化、真实鼠标 hit region dispatch、active pane 视觉反馈，再接 terminal-live content renderer；Terminal Pool、Workbench Tree、floating 完整交互、remote 迁移和旧依赖拆分不作为下一刀，必须继续按任务队列显式新增。
 
 ## 6. 必做 harness
 
@@ -414,7 +418,7 @@
 - 完成切片后更新本文件中对应状态和必要的下一步说明，与实现同提交。
 - 如果发现设计文档需要变化，必须与实现同切片更新，或先提交设计更新。
 - 如果遇到阻塞，必须把对应切片状态改为 `阻塞` 并说明阻塞条件；不要继续扩散到其他目录。
-- 自动执行不能因为局部测试暂时通过就跳过后续切片；当前 styled chrome renderer 阶段只有切片 58 完成且测试准入通过后才算完成。
+- 自动执行不能因为局部测试暂时通过就跳过后续切片；当前 UI 框架完善阶段必须从切片 61 开始按顺序推进，不得跳过 header/footer、鼠标 hit region 或 active pane 反馈直接做 Terminal Pool、Workbench Tree、floating 或大内容 renderer。
 
 ## 9. 提交规则
 
@@ -471,7 +475,7 @@
 - 当前新阶段目标已拍板：把 v3 从“Unicode glyph 可见”推进到 `tuiv2` 截图级 styled chrome renderer；该阶段已经完成 styled `RenderResult`、ANSI `FrameSink`、cell matrix、theme token、pane chrome、shell chrome、toast/overlay styled chrome 和 pane command smoke 验收。
 - 切片 46 已完成：`workflow.md`、`termx-tui-v3/docs/render-architecture.md`、`termx-tui-v3/docs/ui-interaction-spec.md` 已把 styled chrome renderer 目标落档；明确 `tuiv2/render` 只读参考，优先实现 shell/chrome/pane/frame 的 styled visual parity，terminal-live/copy-history/Terminal Pool/Workbench Tree/floating 内容 renderer 后续分阶段深化。
 - 当前补充拍板：pane split、close、resize/size change、focus、zoom 必须纳入当前阶段，并作为 command-first 的统一 semantic action contract；分屏创建、分屏关闭、按方向调整大小、固定尺寸/比例尺寸、等分/balance 不得只做成快捷键局部逻辑；快捷键、鼠标、测试入口和后续 CLI mini command 只能作为 adapter 调用该 contract。
-- 当前未拍板但不阻塞编码的点：card/split 切换、header/footer hide、toast close current、toast clear all 以及 pane command 的具体产品快捷键；实现只能先提供 semantic action、reducer message、hit region、CLI mini command adapter 边界和测试入口，不得临时发明产品快捷键。
+- 当前 pane/resize/global 第一版入口已拍板并落地：`Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode；card/split 切换、header/footer hide、toast close current、toast clear all 必须继续通过 semantic action 和 reducer 路径执行，不得分叉成局部快捷键逻辑。
 - 切片 47 已完成：`RenderResult` 可生成 plain snapshot、styled lines 和 ANSI lines；`Frame` 保留 plain/styled/ANSI lines、cursor、blink 和 metadata；真实 `FrameSink` 优先写 ANSI styled frame 并在行尾和帧尾 reset；旧 smoke 和测试仍可读取 plain `Frame.Lines`；测试准入 `cd termx-tui-v3 && go test ./... -count=1` 已通过。
 - 切片 48 已完成：renderer canvas 已从 `[]string` 升级为 cell matrix compositor，内部 cell 记录 text、width、style、owner、layer、continuation 和 safe flag；写入宽字符、emoji 或覆盖 continuation cell 时会清理 wide-cell footprint；raw ANSI 输入进入 matrix 前会 strip 控制序列，最终仍通过 `Frame.ANSILines` serializer 输出 styled frame；测试准入 `cd termx-tui-v3 && go test ./... -count=1` 已通过。
 - 切片 49 已完成：`Theme` 已扩展 host fg/bg、chrome fg/bg、accent、muted、success/warning/danger/info、panel border、muted border、active/inactive pane、toast/overlay 和 status token；`RenderResult` 与 `Frame` 保留 theme fallback；ANSI serializer 按 theme token 输出 24-bit SGR；harness 覆盖 semantic token 输出、自定义 palette、active/inactive token 区分和 fallback；测试准入 `cd termx-tui-v3 && go test ./... -count=1` 已通过。
@@ -486,4 +490,4 @@
 - 切片 58 已完成：`termx-tui-v3/docs/render-architecture.md` 与 `termx-tui-v3/docs/ui-interaction-spec.md` 已同步 styled chrome renderer、pane command、FrameSink ANSI 输出、cell matrix、theme token、active/inactive pane、styled top/bottom bar、styled toast/overlay 已落地；同时明确当前阶段只完成 chrome/frame 视觉等级和 pane 结构命令基础，不宣称 terminal-live、copy-history、Terminal Picker、Terminal Pool、Workbench Tree、floating、Prompt、Help 内容 renderer 完整；测试准入 `git diff --check` 已通过。
 - 切片 59 已完成：split-line pane 顶边改为使用 pane chrome 连接语义绘制，标题/action 只覆盖内部槽位，不再用填充文本擦掉剩余顶线；隐藏 header 的 split smoke 已断言 `┌ ... ┬ ... ┐` 顶边形态；测试准入 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check` 已通过。
 - 切片 60 已完成：`ShellStore` 已拥有 reducer-owned interaction mode；真实输入可用 `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode、`Ctrl-o` floating stub mode；pane/resize 快捷键通过标准 `ShellPaneCommandMsg` 回投，继续触发布局 resize 和 copy rebind；global 快捷键通过标准 shell message 回投；`Esc` 可退出 mode 或关闭 overlay 且不漏发 terminal；footer 显示当前 mode；card/split 顶栏 title 到 action 之间保留线段；floating 完整交互仍未伪实现，只显示 not implemented 反馈；测试准入 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check` 已通过。
-- 当前 styled chrome renderer 阶段任务队列已完成。后续如继续推进 Terminal Pool、Workbench Tree、floating 深化、content renderer 完整化、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增或调整任务队列后再开始。
+- 当前下一阶段任务队列已建立：切片 61-64 依次推进 shell header/footer 产品化、鼠标 hit region dispatch、active pane 视觉反馈和 terminal-live content renderer 一期。后续如继续推进 Terminal Pool、Workbench Tree、floating 深化、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须继续在本文件新增或调整任务队列后再开始。

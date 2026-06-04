@@ -904,7 +904,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer 和 pane command 基础已落地。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础和第一版键盘交互已落地。
 
 已落地：
 
@@ -914,7 +914,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - renderer canvas 已升级为 cell matrix / compositor，cell 记录 text、width、style、owner、layer、continuation 和 safe flag，并处理 wide-cell footprint。
 - theme token 已覆盖 host fg/bg、chrome fg/bg、accent、muted、success/warning/danger/info、active/inactive pane、toast/overlay 和 status bar。
 - `RenderVMBuilder` 已输出 header/footer、layout/panel、content、overlay、toast 和 cursor 子 VM。
-- `state.Root` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message 和 Terminal Picker overlay 状态。
+- `state.Root` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message、interaction mode 和 Terminal Picker overlay 状态。
 - `state.Root` 已拥有 reducer-owned 外部 viewport state；真实 `TerminalHost` 查询初始尺寸并监听宿主 resize，fake host 可 deterministic 注入 resize。
 - 外部尺寸只通过 `HostResizeMsg` 进入 reducer-owned state；service、renderer、terminalhost 不直接改 state。
 - `RenderVMBuilder` 已把外部 viewport 投影为 `ShellVM.Layout.Viewport` truth，不再把 session size 或 live surface size 当 UI canvas truth。
@@ -938,7 +938,9 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - header/footer 已升级为 styled top/bottom bar，status background 填满整行，workspace/tab/mode/hint/status 通过 style token 输出。
 - toast 与 Terminal Picker overlay 已升级为 styled chrome，覆盖 border/background/severity token/close action region/ANSI reset 和宽字符安全。
 - `state.PaneCommand` 已成为 pane split、close、close and kill、focus、zoom、resize、set size、balance 和 panel presentation 的统一 semantic command contract。
-- pane mode、resize mode、鼠标 hit region 和 CLI mini command adapter 已接入同一 pane command contract；具体产品快捷键未拍板时不得临时写死。
+- `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 和 `Ctrl-o` floating stub 已作为第一版键盘入口落地；`Esc` 退出 mode/overlay 且不漏发 terminal。
+- pane mode、resize mode、鼠标 hit region 和 CLI mini command adapter 已接入同一 pane command contract；后续入口不得绕过 reducer 或另建局部 command path。
+- footer 已能显示当前 interaction mode，但 mode-specific shortcut hints 和完整产品摘要仍需后续切片补齐。
 - pane command 后会重新测量 layout plan；active terminal content rect 变化会触发 terminal resize 去重；active copy pane content width 变化会 invalid/rebind authoritative `HistoryWindow`。
 - `TerminalSessionStore` 已记录 terminal resize 目标尺寸和序号，连续 split/resize/zoom 等 pane command 下旧 resize result 不会覆盖最新 content rect。
 - `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
@@ -949,6 +951,9 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 当前仍是最小实现，不应误读为完整产品态：
 
 - 当前完成的是 chrome/frame 视觉等级和 pane 结构命令基础，不代表 terminal-live、copy-history、Terminal Picker 等内容 renderer 已经完整产品化。
+- header/footer 仍停留在 styled bar 与基础 mode/status 层，不是完整产品信息层；workspace/tab/pane/terminal/notice 摘要、mode-specific shortcut hints 和窄屏退化还需要补齐。
+- render 已能合成 hit region，但 app/runtime 尚未把真实鼠标坐标完整派发到最新 hit region；多 pane 点击聚焦、pane action、resize handle、toast/overlay 优先级和 terminal mouse forwarding 边界不能宣称完成。
+- active pane 样式已经存在，但键盘与鼠标 focus、split、close、resize、zoom 后的端到端视觉反馈仍需要独立验收。
 - terminal-live content 目前仍是基础行展示，尚未完整表达 terminal styled cells、live cursor、selection、search、clipped markers 或 rich terminal metadata。
 - copy-history content 目前只保证 authoritative window、pending/empty/error、cols rebind 和 no-fallback 语义，尚未完整表达 copy mode selection、logical-line marker、clipped before/after、scrollbar 或位置摘要。
 - Terminal Picker 目前是 styled overlay/placeholder 路径，不是完整 terminal picker 内容。
@@ -965,13 +970,15 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 建议后续切片：
 
-- terminal-live content renderer：完善 terminal styled cell、cursor、selection/search、clipping、status metadata 和 content-local hit region。
+- shell header/footer 产品化：header 输出 workspace/tab/active pane/terminal count/notice 或窄屏摘要；footer 输出当前 mode、mode-specific shortcut hints、active pane/terminal 状态和全局短摘要，隐藏后 body 回收且上下文仍可恢复识别。
+- input / hit region dispatch：app/runtime 持有或接收最新 render hit regions，把真实鼠标坐标映射到 pane content、pane chrome、action slot、split divider、resize handle、toast/overlay；UI chrome 优先于 terminal mouse forwarding。
+- active pane 视觉反馈验收：键盘和鼠标导致的 focus、split、close、zoom、resize、card/split 切换必须立即反映到 active/inactive border、title、footer 和 toast。
+- terminal-live content renderer：在 UI framework 交互闭环后完善 terminal styled cell、cursor、selection/search、clipping、status metadata 和 content-local hit region。
 - copy-history content renderer：完善 selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和宽度变化后的交互恢复。
 - empty/exited/terminal-picker content renderer：把当前 placeholder 和基础文案拆成独立 renderer，补齐 CTA、列表、preview、状态 token 和 action region。
 - tiled layout refinement：支持多层 split 的完整产品交互、resize affordance、active pane hit region 和 card/split 模式切换保持。
 - floating / overlay：实现 floating pane z-order、裁切、遮挡、置顶、drag/resize affordance，以及 Prompt、Help、Floating Overview overlay。
 - Terminal Pool：实现 Terminal Pool page content、列表、搜索、detail、preview 和 attach/kill/edit action。
 - Workbench Tree：实现 workspace/tab/pane/floating 结构导航 overlay。
-- input / hit region：把 card/split、header/footer hide、toast close/clear、overlay close 等未拍板快捷键继续保持 semantic action，在产品拍板后再落具体快捷键。
 - cleanup：删除或重命名剩余旧 `RenderVM{Lines, Status}` 兼容字段和相关测试命名，前提是 runtime、CLI smoke 和 harness 已全部迁到 `ShellVM/RenderResult` 语义。
 - performance：引入 content-level cache、layer dirty region 和 large terminal output 性能验证。

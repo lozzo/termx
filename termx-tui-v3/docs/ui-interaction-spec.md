@@ -208,6 +208,14 @@
 - 长帮助文案。
 - 长运行态摘要。
 
+顶栏产品化后必须表达：
+
+- 当前 workspace。
+- 当前 tab 或 tab strip 摘要。
+- active pane 的短标识。
+- terminal 数量和 floating 数量摘要。
+- 短 notice / error。
+
 顶栏可以被用户隐藏。
 
 隐藏顶栏时：
@@ -267,6 +275,21 @@ floating pane 不跟随 tiled pane 呈现模式变化，始终保持独立带边
 - 长帮助文案。
 - 当前 pane 的详细状态。
 - 当前 terminal 的长标题。
+
+底栏产品化后必须表达：
+
+- 当前 mode。
+- 当前 mode 下可执行的快捷键提示。
+- active pane / terminal 的短状态。
+- workspace、terminal、floating 的短摘要。
+
+底栏提示必须按 mode 变化：
+
+- live mode 显示 pane、resize、copy、picker、global 的入口。
+- pane mode 显示 split、close、focus、zoom、balance、presentation。
+- resize mode 显示方向 resize、balance、退出。
+- global mode 显示 header/footer hide、toast clear、help。
+- copy / overlay mode 显示退出、选择、提交或关闭等当前上下文动作。
 
 底栏可以被用户隐藏。
 
@@ -660,6 +683,23 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 - `Ctrl-g`：global mode。
 - `Esc`：退出当前 mode / modal。
 
+当前已落地的第一版入口：
+
+- `Ctrl-p`：pane mode，承载 split right / split down / close / focus next / focus previous / zoom / balance / card / split。
+- `Ctrl-r`：resize mode，承载方向 resize 和 balance。
+- `Ctrl-g`：global mode，承载 header/footer hide 与 toast 清理。
+- `Ctrl-o`：floating mode stub，只显示尚未实现反馈，不得伪装成完整 floating。
+- `Ctrl-f`：Terminal Picker placeholder / overlay。
+- `Ctrl-v`：Display / Copy authoritative history 路径。
+- `Esc`：退出 mode 或关闭 overlay，不得漏发给 terminal。
+
+当前尚未产品化的入口：
+
+- `Ctrl-t` tab mode 尚未形成完整产品交互。
+- `Ctrl-w` workspace mode 尚未形成完整产品交互。
+- floating mode 尚未有 create、move、resize、z-order。
+- footer 的 mode-specific shortcut hints 还需要补齐为可读、可裁剪的产品提示。
+
 ### 13.3 Mode 职责
 
 pane mode：
@@ -802,6 +842,14 @@ pane 结构命令是 Workbench 的核心操作面，不应只存在于快捷键 
 - 在 Terminal Pool 中用于移动列表选择。
 
 UI chrome 优先级高于 terminal mouse forwarding。点击边框、标题、按钮、footer 等 UI 区域时，不应把事件发给 terminal。
+
+当前下一阶段必须补齐：
+
+- app/runtime 必须把真实鼠标坐标派发到最新 render hit region，而不是只在 render 结果中生成 hit region。
+- 点击 pane content 或 pane chrome 必须切换 active pane，并立即改变 active / inactive pane 视觉状态。
+- 点击 pane action slot 必须执行同一 semantic command，例如 close，不得写成 renderer 私有逻辑。
+- 点击 split divider 或 resize handle 必须进入 resize 语义或触发 resize command。
+- toast、overlay、pane chrome、pane content 的命中优先级必须稳定，UI chrome 命中不得继续转发到 terminal。
 
 ## 15. 状态与反馈
 
@@ -1214,10 +1262,14 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - top bar 和 bottom bar 已是 styled bar，背景填满整行，workspace/tab/mode/hint/status 通过 token 输出。
 - toast 和 Terminal Picker overlay 已使用 styled rounded card；floating/modal 后续仍必须保持独立 styled chrome。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
+- `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
 - `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 
 当前未完成但产品要求仍保留：
 
+- header/footer 还没有达到完整产品信息层：header 需要 workspace/tab/pane/terminal/notice 摘要，footer 需要 mode-specific shortcut hints、active target 和窄屏退化。
+- 真实鼠标点击尚未完整接入最新 hit region：多 pane 点击聚焦、pane action、resize handle、toast/overlay 优先级和 terminal mouse forwarding 边界需要补齐。
+- active pane 视觉反馈需要端到端验收：键盘和鼠标 focus、split、close、resize、zoom 后必须立即反映到边框、标题、footer 和 toast。
 - terminal-live 内容 renderer 完整化：styled terminal cells、cursor、selection/search、content-local hit region、status metadata 和宽度安全深化。
 - copy-history 内容 renderer 完整化：selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和滚动交互。
 - Terminal Picker 完整内容：搜索、terminal list、selected row、new terminal row、preview 和 attach/create action。
@@ -1226,7 +1278,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - Workbench Tree 完整 overlay。
 - Prompt、Help、Floating Overview overlay。
 - 多层 split、复杂 pane 管理和 resize affordance 的产品化。
-- header/footer hide、card/split、toast close/clear 的最终产品快捷键；当前只允许通过 semantic action 或测试消息接入，不能临时发明快捷键。
+- tab/workspace/floating 的最终产品快捷键和交互闭环；当前已落地的 pane/resize/global 第一版入口不得被局部 handler 分叉实现。
 
 ## 21. 后续讨论入口
 
