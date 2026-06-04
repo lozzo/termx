@@ -1,4 +1,4 @@
-# 工作流：termx-tui-v3 render framework 最小阶段落地
+# 工作流：termx-tui-v3 外部 viewport 驱动重绘与线框硬化
 
 本文件是当前分支唯一有效的活动驱动文件。后续所有分析、实现、测试、提交都必须先读取本文件，并以本文件为准。
 
@@ -8,7 +8,7 @@
 
 ## 1. 当前唯一目标
 
-在默认入口已经切到 `termx-core-v2/` 与 `termx-tui-v3/` 的基础上，落地 `termx-tui-v3` 的最小 render framework 阶段，替换当前裸文本 `RenderVM{Lines, Status}` 主路径。
+在默认入口已经切到 `termx-core-v2/` 与 `termx-tui-v3/`，且最小 render framework 已落地的基础上，补齐 `termx-tui-v3` 的外部终端尺寸驱动重绘、layout measurement、active content resize、copy mode resize rebind 和 Unicode 线框绘制硬化。
 
 当前事实：
 
@@ -16,7 +16,8 @@
 - `termx-tui-v3` 已有自有 runtime、input、state、services、terminalhost、copy mode 和最小 render 骨架，且不依赖 Bubble Tea contract。
 - `termx-tui-v3/render` 已建立最小 render framework / content renderer 分层，`RenderVMBuilder` 输出 `ShellVM`，`Renderer.RenderResult` 通过 workbench shell、panel、overlay 和 toast 合成 `RenderResult`；旧 `RenderVM{Lines, Status}` 字段只作为临时兼容投影存在。
 - `termx-tui-v3/state` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message 和 Terminal Picker overlay 状态模型。
-- 当前主线不是继续讨论架构，也不是回到旧 `tuiv2` 原地修补，而是完成最小 render framework 的文档同步、清理和后续边界记录。
+- 当前已知缺口：`TerminalHost.Size()` 已存在，但外部 terminal emulator resize 尚未作为 runtime message 流进入 reducer-owned state；`RenderVMBuilder` 尚未把外部 viewport 作为 shell layout 尺寸 truth；renderer 在缺 viewport 时仍会回退默认 `80x24`；active terminal resize 尚未从 panel content rect 计算；线框 glyph 仍存在 ASCII 兼容输出路径。
+- 当前主线不是继续讨论架构，也不是回到旧 `tuiv2` 原地修补，而是把外部 viewport 驱动的真实重绘链路补齐，并把线框绘制收敛到 v2 同等级的 Unicode box drawing 视觉质量。
 
 完成定义：
 
@@ -30,6 +31,13 @@
 - Terminal Picker 状态激活时有 overlay 或明确占位渲染路径；Terminal Pool 与 Workbench Tree 完整页面在 framework 成型后再接入。
 - copy mode 仍只消费 core-v2 authoritative `HistoryWindow`，缺 window 或绑定不一致时显示 pending/empty/error，不得从 live surface、snapshot、grid viewport 或 local VTerm scrollback fallback。
 - `go run ./termx-cli/cmd/termx` 默认路径继续使用 core-v2/tui-v3，不得重新引入旧 `termx-core` 或 `tuiv2` 默认依赖。
+- 外部 terminal emulator 的 cols/rows 必须成为独立 reducer-owned viewport truth，不能混用 `Session.Cols/Rows` 或 `Surface.Cols/Rows` 充当 UI canvas truth。
+- 真实 `TerminalHost` 必须在进入 TUI 后提供初始尺寸，并把外部窗口变化作为 resize event/message 进入 `AppRuntime`；fake host 必须能 deterministic 地注入 resize。
+- renderer 输出必须以当前 viewport 填满整个上下文；当 viewport 已知时不得输出超过 viewport cols 的行，也不得因为默认 80 列导致宿主终端自动换行破坏边框。
+- `RenderVMBuilder` 和 renderer 必须通过纯 layout measurement 得到 body、panel、content、overlay、toast 和 hit region rect；renderer 只消费 view-model/layout plan，不直接读取 host、service 或 core client。
+- 发给 core-v2 terminal 的 resize 必须使用 active pane content rect 的 cols/rows，而不是外部 terminal emulator 总尺寸；card panel、split line、header/footer hide 和后续 floating/overlay 都必须能影响 content rect。
+- host resize、header/footer hide、panel presentation 切换或 split 变化导致 copy content cols 改变时，copy mode 必须 invalid/rebind authoritative `HistoryWindow`，不得继续使用旧 bound cols，也不得从 live surface fallback。
+- card/modal/floating 线框必须使用 Unicode box drawing glyph；card/modal 默认采用 `╭╮╰╯─│`，pane/split 默认采用 `┌┐└┘─│├┤┬┴┼` 同类连续线条；ASCII `+ - |` 只能出现在测试说明或兼容文档中，不得作为默认 UI chrome。
 
 ## 2. 技术设计基准
 
@@ -161,6 +169,18 @@
 - 旧 `tuiv2` 的 width safety 经验只能迁入为 v3 render primitive 和 harness，不能迁入旧 runtime/model/cursor writer 结构。
 - 最小阶段不得引入通用 widget/plugin UI 框架，也不得引入 Bubble Tea contract。
 
+### 4.7 外部 viewport 与 resize 约束
+
+- `ViewportStore` 或等价 reducer-owned state 必须表达外部 terminal emulator 当前可绘制区域；它是 UI canvas truth。
+- `TerminalSessionStore` 和 `TerminalSurfaceStore` 表达 PTY/session/live surface 状态；它们不是 UI canvas truth。
+- `HostResizeMsg` 或等价 message 是外部尺寸进入 app 的唯一写状态入口；service、renderer、terminalhost 不得直接修改 reducer-owned state。
+- 初始 render 必须使用 host 初始尺寸；若真实 host 无法获得尺寸，必须显式 fallback 并在测试中覆盖，而不是无条件默认 `80x24`。
+- layout measurement 必须是纯函数；同一 `ShellVM + viewport` 必须稳定产出相同 body/panel/content/overlay/toast rect 和 hit region plan。
+- renderer 必须严格按 plan 绘制；content renderer 只能在分配给它的 content rect 内绘制和裁切。
+- active terminal resize 必须由 app 根据 layout plan 触发 effect，并做尺寸去重，避免每帧重复向 core-v2 发送相同 resize。
+- copy mode 绑定的 cols 必须等于 copy content rect width；宽度变化必须让旧 window 失效并重新请求 authoritative window。
+- Unicode box drawing glyph 统一按 cell width 1 处理；emoji、CJK、combining mark、ANSI 样式和 ambiguous width 不得覆盖、推开或截断边框。
+
 ## 5. 任务队列
 
 状态只能使用：`待开始`、`进行中`、`完成`、`阻塞`。同一时间只能有一个切片处于 `进行中`。
@@ -213,8 +233,14 @@
 | 37. app/input 接线与交互入口 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/state/`、`termx-tui-v3/render/` 按需 | 默认 runtime 使用新的 render framework 主路径；`Ctrl-f` 打开 Terminal Picker overlay/placeholder，`Ctrl-v` 进入 Display/Copy 并在缺 authoritative history 时显示 panel 内 pending/empty；card/split、header/footer hide、toast close/clear 先通过 semantic action、hit region 或测试消息接入，不临时发明未拍板快捷键；live input、resize、copy mode 原有主路径不回退 |
 | 38. 默认入口 UI smoke 与回归验收 | 完成 | `termx-tui-v3/`、`termx-cli/`、`Makefile` 按需 | 默认 `go run ./termx-cli/cmd/termx` 和非交互 smoke 不再把裸文本 frame 当作可用界面；smoke 覆盖 workbench shell、header/footer、card/split、header/footer hide、toast、Terminal Picker placeholder、copy pending/empty、live surface panel content、emoji/CJK/ANSI 宽度安全；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1` 和按需 `make test-v2-migration` |
 | 39. render framework 收口与文档同步 | 完成 | `termx-tui-v3/docs/`、`workflow.md`、`termx-tui-v3/` | 同步实现结果到 render 架构和 UI 交互文档，记录已落地、未落地和后续 Terminal Pool / Workbench Tree / floating / overlay 深化切片；删除或重命名过时的裸文本 render helper/test 语义；确认旧 `tuiv2` 仍只读参考，默认路径不引入旧依赖 |
+| 40. viewport state 与 host resize contract | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/terminalhost/`、`termx-tui-v3/docs/` 按需 | 建立 reducer-owned 外部 viewport 状态；扩展 `TerminalHost` contract 以提供初始尺寸和 resize event 流；真实 host 监听外部 terminal emulator resize，fake host 可注入 resize；`HostResizeMsg` 或等价 message 是尺寸入 state 的唯一入口；harness 覆盖初始尺寸、重复尺寸去重、fake resize、真实 host size 查询和 runtime resize 后重绘 |
+| 41. layout measurement 与 viewport 驱动 renderer | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/state/`、`termx-tui-v3/app/` 按需 | 建立纯 layout measurement/plan：输入 `ShellVM + viewport`，输出 body、panel、content、overlay、toast、hit region 和 cursor rect；`RenderVMBuilder` 使用外部 viewport 作为 `Layout.Viewport` truth；renderer 严格按 plan 绘制并填满 viewport；已知 viewport 下不得默认 80 列输出或输出超过 viewport cols；harness 覆盖窄屏、宽屏、header/footer hide、card/split 双 pane、overlay/toast 不改变 body layout 和所有行 display width 等于 viewport cols |
+| 42. active content rect 驱动 terminal resize | 待开始 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/services/`、`termx-cli/` 按需 | app 根据 layout plan 计算 active terminal content rect，并只用 content rect cols/rows 向 core-v2 terminal 发送 resize；外部 viewport、header/footer hide、card/split 切换和 split 变化导致 content rect 变化时触发 resize effect，重复尺寸不重复发送；attach 初始尺寸也以 content rect 为准；harness 覆盖 card 扣边框、split 分割、header/footer 隐藏回收空间、resize effect 去重和真实 protocol adapter 参数 |
+| 43. copy mode resize rebind 与 history window cols | 待开始 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/`、`internal/protocol/` 按需 | copy mode 绑定 cols 使用 copy content rect width；host resize、layout chrome 变化或 active copy panel content width 变化时 invalid 旧 bound token/window 并重新请求 authoritative latest window，期间显示 pending/empty/error，不从 live surface fallback；older request 和 stale guard 使用新 cols；harness 覆盖 resize 后旧 window 不再渲染、latest replace 重新绑定、新旧 response stale、selection/cursor 清理和 `HistoryWindow` 请求 cols |
+| 44. Unicode 线框与 cell-width 硬化 | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/docs/`、只读参考 `tuiv2/render/` | 默认 UI chrome 去除 ASCII `+ - |` 线框；card/modal/floating 使用 `╭╮╰╯─│`，pane/split 使用 `┌┐└┘─│├┤┬┴┼` 同类连续 box drawing glyph；split 连接点按邻接线合成；标题、content、toast、overlay 中 emoji、CJK、combining mark、ANSI 样式不得破坏边框；harness 覆盖 Unicode glyph、连接点、窄屏裁切、右边框不丢失、无默认 ASCII chrome、行宽恒等和旧 `tuiv2` 只读参考结论 |
+| 45. 默认入口 resize/UI 验收与文档收口 | 待开始 | `termx-tui-v3/`、`termx-cli/`、`Makefile`、`workflow.md`、`termx-tui-v3/docs/` 按需 | 默认 `go run ./termx-cli/cmd/termx`、`termx attach` 和非交互 smoke 覆盖外部 viewport 初始尺寸、resize 重绘、content rect terminal resize、copy mode rebind、Unicode 线框、card/split/header/footer/toast/overlay 宽度安全；更新 render/UI 文档记录本轮已落地和后续 Terminal Pool / Workbench Tree / floating 深化边界；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`，并按需运行 `make test-v2-migration` |
 
-当前下一步：切片 33-39 已全部完成；后续若继续 Terminal Pool、Workbench Tree、floating、复杂 split 或删除 `RenderVM{Lines, Status}` 兼容字段，必须先在本文件新增下一轮任务队列。
+当前下一步：切片 40 待开始。自动执行必须从切片 40 开始，先建立外部 viewport state 与 host resize contract；不得跳到 Unicode 线框、copy mode rebind 或默认入口验收。
 
 ## 6. 必做 harness
 
@@ -267,6 +293,15 @@
 - RenderVM live mode 与 copy mode projection 分流。
 - copy mode 缺 authoritative window 时不得从 live surface fallback。
 - lipgloss/v2 style helper 宽度、裁剪、ANSI 安全性。
+- 外部 viewport 初始尺寸进入 reducer-owned state。
+- host resize event 通过 message path 触发重绘。
+- fake host deterministic 注入 resize。
+- `RenderVMBuilder` 使用外部 viewport，不以 `Session` 或 `Surface` 尺寸作为 UI canvas truth。
+- layout measurement 纯函数输出 panel/content/overlay/toast rect。
+- renderer 输出行数和每行 display width 严格等于 viewport。
+- active terminal resize 使用 content rect cols/rows，且重复尺寸去重。
+- copy mode resize 后旧 bound cols/window 失效并重新请求 authoritative window。
+- Unicode box drawing glyph、split 连接点、右边框和宽字符内容同时保持 cell-width 安全。
 
 ### 6.4 CLI / 集成 harness
 
@@ -282,7 +317,10 @@
 - PTY 输出 -> core-v2 live surface -> tui-v3 render。
 - tui-v3 input -> protocol input -> PTY。
 - resize -> core-v2 live/history boundary -> tui-v3 frame。
+- 外部 terminal emulator resize -> tui-v3 viewport -> render frame。
+- 外部 terminal emulator resize -> active content rect -> core-v2 terminal resize。
 - copy mode -> core-v2 HistoryWindow -> selection/copy。
+- copy mode viewport/content cols 变化 -> authoritative HistoryWindow 重新绑定。
 - 默认入口切换后，`termx-cli` 默认路径不再 import 旧 `termx-core` 或 `tuiv2`。
 - Bubble Tea contract 不进入 tui-v3 主线。
 
@@ -298,6 +336,8 @@
 - 切片 18 改动：至少运行 `cd termx-cli && go test ./... -count=1`、`make test-v2-migration`。
 - 切片 19-24 改动：至少运行 `cd termx-cli && go test ./... -count=1`，涉及 core-v2、tui-v3、protocol、remote 或共享模块时同步运行对应模块测试，并按需运行 `make test-v2-migration`。
 - 默认入口切换相关改动：至少运行 `make test-v2-migration`、`cd termx-cli && go test ./... -count=1`，并用非交互命令验证 `go run ./termx-cli/cmd/termx --help` 可编译运行。
+- 切片 40-44 改动：至少运行 `cd termx-tui-v3 && go test ./... -count=1`；涉及 CLI 装配、protocol adapter 或默认入口时同步运行 `cd termx-cli && go test ./... -count=1`。
+- 切片 45 改动：至少运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`，并按需运行 `make test-v2-migration`。
 - 文档-only 改动：至少运行 `git diff --check`。
 
 如果测试无法运行，必须在最终说明和必要时在提交前记录原因。不能把真实语义失败当作偶发失败。
@@ -311,7 +351,7 @@
 - 完成切片后更新本文件中对应状态和必要的下一步说明，与实现同提交。
 - 如果发现设计文档需要变化，必须与实现同切片更新，或先提交设计更新。
 - 如果遇到阻塞，必须把对应切片状态改为 `阻塞` 并说明阻塞条件；不要继续扩散到其他目录。
-- 自动执行不能因为局部测试暂时通过就跳过后续切片；只有切片 28 完成且测试准入通过，当前目标才算完成。
+- 自动执行不能因为局部测试暂时通过就跳过后续切片；只有切片 45 完成且测试准入通过，当前目标才算完成。
 
 ## 9. 提交规则
 
@@ -357,5 +397,8 @@
 - 切片 38 已完成：`termx-tui-v3` detailed smoke 已覆盖 workbench shell、card panel、split line、header/footer hide、toast、Terminal Picker placeholder、copy empty、copy history、live surface panel content、emoji/CJK/ANSI 宽度安全；`termx v3 smoke` 输出多 case UI frame，`make test-v2-migration` 已通过默认 CLI 与 v2/v3 迁移回归。
 - 切片 39 已完成：`termx-tui-v3/docs/render-architecture.md` 和 `termx-tui-v3/docs/ui-interaction-spec.md` 已同步最小 render framework 已落地、未落地边界和后续 Terminal Pool / Workbench Tree / floating / overlay 深化切片；过时的 no-fallback 测试命名已收敛；旧 `tuiv2` 仍只读参考，默认路径未引入旧依赖。
 - 当前 render framework 最小阶段目标已完成：默认入口继续使用 core-v2/tui-v3；render 主路径已走 `render framework + content renderer`；默认 TUI 和非交互 smoke 不再把裸文本 frame 当作可用界面。
+- 当前新阶段目标已拍板：补齐外部 terminal emulator viewport 驱动重绘、layout measurement、active terminal content rect resize、copy mode resize rebind 和 Unicode box drawing 线框硬化。
+- 当前已知运行缺口：默认 TUI 仍可能在真实终端中按默认 80 列输出，外部窗口窄于 80 时会自动换行导致边框错位；renderer 默认线框仍有 ASCII `+ - |` 路径；外部 host resize 尚未自动进入 reducer-owned state。
+- 切片 40 待开始：下一次 `/goal` 或自动推进必须先处理 viewport state 与 host resize contract，不能先改线框或直接修默认入口 smoke。
 - 当前未拍板但不阻塞编码的点：card/split 切换、header/footer hide、toast close current、toast clear all 的具体产品快捷键；实现只能先提供 semantic action、reducer message、hit region 和测试入口，不得临时发明产品快捷键。
-- 后续如继续推进 remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。
+- 后续如继续推进 Terminal Pool、Workbench Tree、floating 深化、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。
