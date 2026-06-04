@@ -141,6 +141,20 @@ type OverlayState struct {
 	TargetID      string
 	Query         string
 	SelectedIndex int
+	Prompt        PromptState
+	HelpSection   string
+}
+
+type PromptState struct {
+	Title       string
+	Context     string
+	Value       string
+	Placeholder string
+	Destructive bool
+	ConfirmText string
+	Submitted   bool
+	Canceled    bool
+	LastResult  string
 }
 
 type TerminalPickerItem struct {
@@ -627,6 +641,71 @@ func (store ShellStore) OpenWorkbenchTree() ShellStore {
 		TargetID:      store.ActivePaneID,
 		SelectedIndex: 0,
 	}
+	return store
+}
+
+func (store ShellStore) OpenPrompt(prompt PromptState) ShellStore {
+	store = store.EnsureDefaults()
+	if prompt.Title == "" {
+		prompt.Title = "Command Prompt"
+	}
+	if prompt.Placeholder == "" {
+		prompt.Placeholder = "type command"
+	}
+	if prompt.Destructive && prompt.ConfirmText == "" {
+		prompt.ConfirmText = "confirm"
+	}
+	store.Overlay = OverlayState{
+		Kind:   OverlayPrompt,
+		Open:   true,
+		Prompt: prompt,
+	}
+	return store
+}
+
+func (store ShellStore) OpenHelp(section string) ShellStore {
+	store = store.EnsureDefaults()
+	store.Overlay = OverlayState{
+		Kind:        OverlayHelp,
+		Open:        true,
+		HelpSection: section,
+	}
+	return store
+}
+
+func (store ShellStore) SetPromptValue(value string) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayPrompt || !store.Overlay.Open {
+		return store
+	}
+	store.Overlay.Prompt.Value = value
+	return store
+}
+
+func (store ShellStore) SubmitPrompt() ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayPrompt || !store.Overlay.Open {
+		return store
+	}
+	prompt := store.Overlay.Prompt
+	value := strings.TrimSpace(prompt.Value)
+	if prompt.Destructive && value != prompt.ConfirmText {
+		prompt.LastResult = "confirm required: " + prompt.ConfirmText
+		store.Overlay.Prompt = prompt
+		return store
+	}
+	prompt.Submitted = true
+	prompt.LastResult = value
+	store.Overlay.Prompt = prompt
+	return store
+}
+
+func (store ShellStore) CancelPrompt() ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayPrompt || !store.Overlay.Open {
+		return store
+	}
+	store.Overlay.Prompt.Canceled = true
 	return store
 }
 

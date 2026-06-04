@@ -50,6 +50,8 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 		{name: "terminal-picker", root: smokeTerminalPickerRoot()},
 		{name: "copy-empty", root: smokeCopyEmptyRoot()},
 		{name: "copy-history", root: smokeCopyHistoryRoot()},
+		{name: "prompt-overlay", root: smokePromptRoot()},
+		{name: "help-overlay", root: smokeHelpRoot()},
 	}
 	result := SmokeResult{Cases: make([]SmokeCase, 0, len(rootCases)+1)}
 	for _, item := range rootCases {
@@ -150,6 +152,20 @@ func smokeCopyHistoryRoot() state.Root {
 			BoundCols:  80,
 		},
 	}
+}
+
+func smokePromptRoot() state.Root {
+	shell := state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Command Prompt",
+		Context:     "Rename tab before switching workspace",
+		Value:       "重命名",
+		Placeholder: "name",
+	})
+	return state.Root{Shell: shell}
+}
+
+func smokeHelpRoot() state.Root {
+	return state.Root{Shell: state.DefaultShell().OpenHelp("most-used")}
 }
 
 func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, renderer render.Renderer) (render.Frame, error) {

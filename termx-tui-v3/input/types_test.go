@@ -81,6 +81,14 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	if globalFooter.Kind != IntentShellAction || globalFooter.Action != ShellActionToggleFooter {
 		t.Fatalf("expected global footer action, got %#v", globalFooter)
 	}
+	globalPrompt := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal)
+	if globalPrompt.Kind != IntentShellAction || globalPrompt.Action != ShellActionOpenPrompt {
+		t.Fatalf("expected global prompt action, got %#v", globalPrompt)
+	}
+	globalHelp := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "?"}, false, InteractionModeGlobal)
+	if globalHelp.Kind != IntentShellAction || globalHelp.Action != ShellActionOpenHelp {
+		t.Fatalf("expected global help action, got %#v", globalHelp)
+	}
 	esc := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyEsc}, false, InteractionModePane)
 	if esc.Kind != IntentExitInteraction {
 		t.Fatalf("expected interaction exit, got %#v", esc)

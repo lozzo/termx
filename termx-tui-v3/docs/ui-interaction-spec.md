@@ -1332,14 +1332,15 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - empty/exited/Terminal Picker 内容 renderer 一期已把旧 placeholder 推进为可操作内容：empty pane 显示 attach/create/manager/close CTA，exited pane 显示 last state 与 restart/reconnect/close CTA，Terminal Picker overlay 显示 search、当前 workspace terminal list、selected row、new terminal row 和 action hit region。
 - Terminal Pool 数据源与 Picker 服务接线一期已完成：Terminal Picker 可以请求 terminal list，展示 loading/empty/error，把 pool row 与当前 workspace pane row 合并去重，并把 attach/create/restart/reconnect 接到 service result 反馈。
 - Terminal Pool 管理页一期已完成：独立页面、搜索、列表、selected row、detail、metadata、preview 摘要、Attach/Edit/Kill action、键盘/鼠标操作、service/effect/result 反馈、常规 viewport 下关键内容可见和 no terminal input leak 已落地。
+- Prompt / Help overlay 一期已完成：Prompt 具备 title/context/input/submit/cancel/destructive confirm 边界，Help 可按 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 展示概念和动作，键盘、鼠标 close、overlay cursor 和 no terminal input leak 已接入。
 
 当前未完成但产品要求仍保留：
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
-- Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit Prompt、kill confirm 和更完整 preview。
-- Workbench Tree 完整 overlay。
-- Prompt、Help、Floating Overview overlay。
+- Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。
+- Prompt/Help 深化：命令面板、Help 搜索/分页、Prompt input click 光标定位和真实业务命令执行。
+- Floating Overview overlay。
 - floating pane 标题拖拽移动、resize handle 连续拖拽、attach as floating 和 Floating Overview。
 - 多层 split、复杂 pane 管理和 resize affordance 的产品化。
 - tab/workspace 的最终产品快捷键和交互闭环；当前已落地的 pane/resize/global/floating 第一版入口不得被局部 handler 分叉实现。
@@ -1618,7 +1619,41 @@ Floating Pane 一期的目标是让 floating pane 成为可操作的 workbench �
 - 用鼠标点击 floating 顶部 close action，floating 必须关闭。
 - 当右上角 toast 遮挡 floating 时，点击 toast 区域只处理 toast，不得穿透并操作 floating。
 
-## 30. 后续讨论入口
+## 30. Prompt / Help Overlay 一期验收线
+
+Prompt / Help overlay 一期的目标是补齐全局短输入和帮助入口，让 UI 产品壳具备可操作的基础对话层。
+
+本阶段必须满足：
+
+- Prompt state 归 reducer-owned shell 管理，至少包含 title、context、input value、placeholder、submit/cancel 状态和 destructive confirm 边界。
+- Prompt 打开期间普通字符、Backspace 和 Enter 都只作用于 Prompt，不得漏发到底层 terminal。
+- Prompt 提交必须通过 shell message / reducer 路径反馈；本阶段可以显示 toast 或状态，不直接执行业务 IO。
+- destructive Prompt 在确认文本不匹配时必须保持打开并给出 warning feedback，不得误提交。
+- Prompt cancel、Esc 和鼠标 cancel action 必须能关闭 overlay，不得改变 terminal lifecycle。
+- Help 必须按 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 等分类展示概念和动作，而不是只堆快捷键。
+- Help 打开期间普通输入不得漏发到底层 terminal；Enter、Esc 或 mouse close 可以关闭。
+- Prompt / Help 都必须使用 styled overlay chrome，内容和 cursor 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏边框或整行宽度。
+- footer 在 Prompt / Help 打开时必须显示 mode-specific hint，用户能看到 submit/cancel 或 close 行为。
+- `termx v3 smoke` 必须覆盖 Prompt / Help overlay，避免后续退回为只存在状态但默认渲染不可见。
+
+本阶段不要求：
+
+- 命令面板和命令执行器。
+- 多字段表单。
+- Prompt input click 精确移动光标。
+- Help 搜索、分页、分类折叠或可配置 keymap 生成。
+- rename tab/workspace、metadata edit、kill confirm 等业务动作全部接入 Prompt；这些由后续 Tab/Workspace 和 Terminal Pool 深化切片接入。
+
+本阶段完成后的基本手工测试入口：
+
+- `go run ./termx-cli/cmd/termx` 进入默认 TUI。
+- 按 `Ctrl-g` 进入 global mode，再按 `:` 打开 Prompt；输入中文或 emoji，确认 terminal 不收到这些字符。
+- 在 Prompt 中按 Backspace 和 Enter，确认 input 编辑、提交反馈和 overlay 关闭正常。
+- 打开 destructive Prompt 的测试入口或 harness，输入非确认文本时应保持打开并显示 warning feedback。
+- 按 `Ctrl-g` 进入 global mode，再按 `?` 打开 Help；确认能看到 Most used、Pane、Tab、Workspace、Floating、Terminal Pool 和 Display/Copy 分类。
+- 在 Help 中按 Enter、Esc 或点击 close action，确认 overlay 关闭且底层 terminal 不收到输入。
+
+## 31. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

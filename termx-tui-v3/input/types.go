@@ -87,6 +87,8 @@ const (
 	ShellActionFloatingSize ShellAction = "shell.floating-size"
 	ShellActionOpenPool     ShellAction = "shell.open-terminal-pool"
 	ShellActionOpenTree     ShellAction = "shell.open-workbench-tree"
+	ShellActionOpenPrompt   ShellAction = "shell.open-prompt"
+	ShellActionOpenHelp     ShellAction = "shell.open-help"
 )
 
 // Intent 是 input router 输出的 semantic intent，不直接修改 state。
@@ -241,6 +243,10 @@ func routeGlobalModeKey(event InputEvent) Intent {
 		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionOpenPool}
 	case "w":
 		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionOpenTree}
+	case ":":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionOpenPrompt}
+	case "?":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionOpenHelp}
 	}
 	return Intent{Kind: IntentNone, Event: event}
 }

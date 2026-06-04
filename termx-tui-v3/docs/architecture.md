@@ -454,8 +454,9 @@ renderer 禁止：
 - Terminal Pool 管理页一期已经完成。
 - Workbench Tree overlay 一期已经完成。
 - Floating pane 一期已经完成。
-- 当前下一步是 Prompt/Help overlay 一期。
-- 后续再继续 Tab/Workspace、terminal-live 深化、copy-history 深化和 render cleanup/performance。
+- Prompt/Help overlay 一期已经完成。
+- 当前下一步是 Tab/Workspace 产品入口一期。
+- 后续再继续 TUI 产品壳总验收、terminal-live 深化、copy-history 深化和 render cleanup/performance。
 
 UI framework 交互产品化总验收包括：
 

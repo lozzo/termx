@@ -38,6 +38,12 @@ func NewUIInputReducer() Reducer {
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayWorkbenchTree {
 			return reduceWorkbenchTreeInput(root, inputMsg.Event)
 		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayPrompt {
+			return reducePromptInput(root, inputMsg.Event)
+		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayHelp {
+			return reduceHelpInput(root, inputMsg.Event)
+		}
 		intent := input.RouteWithMode(inputMsg.Event, root.CopyMode.Active, inputMode(root.Shell.EnsureDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
@@ -208,6 +214,46 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 	}
 }
 
+func reducePromptInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return root, nil
+	}
+	switch event.Key {
+	case input.KeyEnter:
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg { return ShellPromptSubmitMsg{} }},
+		}
+	case input.KeyChar:
+		if isBackspaceEvent(event) {
+			value := root.Shell.EnsureDefaults().Overlay.Prompt.Value
+			root.Shell = root.Shell.SetPromptValue(trimLastRune(value))
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		if event.Ctrl || event.Char == "" {
+			return root, []Effect{handledEffect{}}
+		}
+		value := root.Shell.EnsureDefaults().Overlay.Prompt.Value + event.Char
+		root.Shell = root.Shell.SetPromptValue(value)
+		return root.Advance(), []Effect{handledEffect{}}
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceHelpInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return root, nil
+	}
+	switch event.Key {
+	case input.KeyEnter:
+		root.Shell = root.Shell.CloseOverlay()
+		return root.Advance(), []Effect{handledEffect{}}
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
 func isBackspaceEvent(event input.InputEvent) bool {
 	return event.Key == input.KeyChar && (event.Char == "\x7f" || event.Char == "\b")
 }
@@ -258,6 +304,14 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		msg = ShellOpenTerminalPoolMsg{}
 	case input.ShellActionOpenTree:
 		msg = ShellOpenWorkbenchTreeMsg{}
+	case input.ShellActionOpenPrompt:
+		msg = ShellOpenPromptMsg{Prompt: state.PromptState{
+			Title:       "Command Prompt",
+			Context:     "Type a command. Execution is intentionally a reducer-owned placeholder in this phase.",
+			Placeholder: "command",
+		}}
+	case input.ShellActionOpenHelp:
+		msg = ShellOpenHelpMsg{Section: "most-used"}
 	default:
 		return root, []Effect{handledEffect{}}
 	}

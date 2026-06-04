@@ -461,6 +461,96 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(48)
+	host.SetSize(90, 26)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: ":"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "重"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "命"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "名"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send prompt input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain prompt input %#v: %v", event, err)
+		}
+	}
+	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || runtime.State().Shell.Overlay.Prompt.Value != "重命名" {
+		t.Fatalf("expected prompt input captured, shell=%#v", runtime.State().Shell)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "Command Prompt") || !frameContains(frame, "input 重命名") || frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("expected prompt frame and cursor, got %#v", frame)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("prompt input must not leak to terminal, got %#v", terminal.Inputs)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
+		t.Fatalf("send prompt backspace: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send prompt enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain prompt submit: %v", err)
+	}
+	if runtime.State().Shell.Overlay.Open || len(runtime.State().Shell.Toasts) == 0 || runtime.State().Shell.Toasts[len(runtime.State().Shell.Toasts)-1].Body != "重命" {
+		t.Fatalf("expected prompt submit close overlay and toast, shell=%#v", runtime.State().Shell)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "?"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send help input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain help input %#v: %v", event, err)
+		}
+	}
+	if runtime.State().Shell.Overlay.Kind != state.OverlayHelp {
+		t.Fatalf("expected help overlay, shell=%#v", runtime.State().Shell)
+	}
+	frame = lastFrame(t, host.Frames())
+	if !frameContains(frame, "Help") || !frameContains(frame, "Most used") || !frameContains(frame, "Floating") {
+		t.Fatalf("expected help content, got %#v", frame.Lines)
+	}
+	closeRegion := frameActionHitRegion(t, frame, "help.close", "")
+	if err := host.SendInput(mouseEventAt(closeRegion.Rect)); err != nil {
+		t.Fatalf("send help close click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain help close click: %v", err)
+	}
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("help close action should close overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("help input must not leak to terminal, got %#v", terminal.Inputs)
+	}
+}
+
 func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

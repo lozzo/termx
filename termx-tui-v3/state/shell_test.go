@@ -349,6 +349,25 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	}
 }
 
+func TestShellPromptOverlaySubmitCancelAndConfirm(t *testing.T) {
+	shell := DefaultShell().OpenPrompt(PromptState{Title: "Danger", Destructive: true, ConfirmText: "DELETE"})
+	if !shell.Overlay.Open || shell.Overlay.Kind != OverlayPrompt || !shell.Overlay.Prompt.Destructive {
+		t.Fatalf("expected prompt overlay, got %#v", shell.Overlay)
+	}
+	shell = shell.SetPromptValue("nope").SubmitPrompt()
+	if shell.Overlay.Prompt.Submitted || shell.Overlay.Prompt.LastResult != "confirm required: DELETE" {
+		t.Fatalf("expected destructive confirm guard, got %#v", shell.Overlay.Prompt)
+	}
+	shell = shell.SetPromptValue("DELETE").SubmitPrompt()
+	if !shell.Overlay.Prompt.Submitted || shell.Overlay.Prompt.LastResult != "DELETE" {
+		t.Fatalf("expected prompt submitted, got %#v", shell.Overlay.Prompt)
+	}
+	shell = shell.OpenPrompt(PromptState{Title: "Rename"}).CancelPrompt()
+	if !shell.Overlay.Prompt.Canceled {
+		t.Fatalf("expected prompt canceled, got %#v", shell.Overlay.Prompt)
+	}
+}
+
 func TestShellUpdatesDoNotMutatePreviousSlices(t *testing.T) {
 	original := DefaultShell().AddToast(ToastSpec{ID: "old"})
 	next := original.AddToast(ToastSpec{ID: "new"})

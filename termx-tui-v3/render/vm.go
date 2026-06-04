@@ -170,8 +170,12 @@ func footerActions(mode string) []string {
 		return []string{"search", "attach", "edit", "kill", "esc"}
 	case string(state.OverlayWorkbenchTree):
 		return []string{"search", "open", "focus", "esc"}
+	case string(state.OverlayPrompt):
+		return []string{"type", "enter submit", "esc cancel"}
+	case string(state.OverlayHelp):
+		return []string{"read", "enter close", "esc"}
 	case "floating":
-		return []string{"stub", "esc"}
+		return []string{"n new", "arrows move", "HJKL size", "x close", "esc"}
 	default:
 		return []string{"^P pane", "^R size", "^V copy", "^F pick", "^G"}
 	}
@@ -494,9 +498,9 @@ func buildOverlayVM(root state.Root, shell state.ShellStore) OverlayVM {
 			Content: buildWorkbenchTreeContent(root, shell),
 		}
 	case state.OverlayPrompt:
-		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: ContentVM{Kind: ContentPrompt, Pending: true}}
+		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: buildPromptContent(shell)}
 	case state.OverlayHelp:
-		return OverlayVM{Kind: OverlayHelp, Opaque: true, Content: ContentVM{Kind: ContentHelp, Pending: true}}
+		return OverlayVM{Kind: OverlayHelp, Opaque: true, Content: buildHelpContent(shell)}
 	default:
 		return OverlayVM{}
 	}

@@ -68,9 +68,35 @@ type ShellOpenWorkbenchTreeMsg struct{}
 
 func (ShellOpenWorkbenchTreeMsg) isMsg() {}
 
+type ShellOpenPromptMsg struct {
+	Prompt state.PromptState
+}
+
+func (ShellOpenPromptMsg) isMsg() {}
+
+type ShellOpenHelpMsg struct {
+	Section string
+}
+
+func (ShellOpenHelpMsg) isMsg() {}
+
 type ShellCloseOverlayMsg struct{}
 
 func (ShellCloseOverlayMsg) isMsg() {}
+
+type ShellPromptSetValueMsg struct {
+	Value string
+}
+
+func (ShellPromptSetValueMsg) isMsg() {}
+
+type ShellPromptSubmitMsg struct{}
+
+func (ShellPromptSubmitMsg) isMsg() {}
+
+type ShellPromptCancelMsg struct{}
+
+func (ShellPromptCancelMsg) isMsg() {}
 
 type ShellContentActionMsg struct {
 	ActionID string
@@ -152,8 +178,19 @@ func NewShellReducer() Reducer {
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 		case ShellOpenWorkbenchTreeMsg:
 			root.Shell = root.Shell.OpenWorkbenchTree()
+		case ShellOpenPromptMsg:
+			root.Shell = root.Shell.OpenPrompt(msg.Prompt)
+		case ShellOpenHelpMsg:
+			root.Shell = root.Shell.OpenHelp(msg.Section)
 		case ShellCloseOverlayMsg:
 			root.Shell = root.Shell.CloseOverlay()
+		case ShellPromptSetValueMsg:
+			root.Shell = root.Shell.SetPromptValue(msg.Value)
+		case ShellPromptSubmitMsg:
+			return reducePromptSubmit(root)
+		case ShellPromptCancelMsg:
+			root.Shell = root.Shell.CancelPrompt().CloseOverlay()
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		case ShellContentActionMsg:
 			return reduceShellContentAction(root, msg)
 		case ShellSplitActivePaneMsg:
@@ -243,6 +280,15 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			items = state.WorkbenchTreeItems(root)
 		}
 		return reduceWorkbenchTreeOpen(root, items)
+	case "prompt.submit":
+		return reducePromptSubmit(root)
+	case "prompt.cancel":
+		root.Shell = root.Shell.CloseOverlay()
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
+		return root.Advance(), nil
+	case "help.close":
+		root.Shell = root.Shell.CloseOverlay()
+		return root.Advance(), nil
 	case "floating.raise":
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case "floating.close":
@@ -265,6 +311,30 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), nil
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
+	return root.Advance(), nil
+}
+
+func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
+	shell := root.Shell.EnsureDefaults()
+	if shell.Overlay.Kind != state.OverlayPrompt || !shell.Overlay.Open {
+		return root, nil
+	}
+	before := shell.Overlay.Prompt
+	shell = shell.SubmitPrompt()
+	after := shell.Overlay.Prompt
+	root.Shell = shell
+	if after.Submitted {
+		root.Shell = root.Shell.CloseOverlay()
+		body := after.LastResult
+		if body == "" {
+			body = "(empty)"
+		}
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.submit", Body: body})
+		return root.Advance(), nil
+	}
+	if after.LastResult != "" && after.LastResult != before.LastResult {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "prompt.confirm", Body: after.LastResult})
+	}
 	return root.Advance(), nil
 }
 

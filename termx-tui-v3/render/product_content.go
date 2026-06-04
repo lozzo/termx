@@ -152,6 +152,78 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	}
 }
 
+// Prompt 是 reducer-owned 表单 overlay；提交只回投 shell message，不直接执行业务 IO。
+func buildPromptContent(shell state.ShellStore) ContentVM {
+	shell = shell.EnsureDefaults()
+	prompt := shell.Overlay.Prompt
+	title := prompt.Title
+	if title == "" {
+		title = "Command Prompt"
+	}
+	placeholder := prompt.Placeholder
+	if placeholder == "" {
+		placeholder = "command"
+	}
+	value := prompt.Value
+	displayValue := value
+	if displayValue == "" {
+		displayValue = "[" + placeholder + "]"
+	}
+	lines := []Line{
+		{Cells: []Cell{styledCell(title, StyleAccent), NewCell("  esc")}},
+		NewLine(prompt.Context),
+		{Cells: []Cell{styledCell("input ", StyleMuted), NewCell(displayValue)}},
+	}
+	if prompt.Destructive {
+		lines = append(lines, Line{Cells: []Cell{styledCell("confirm ", StyleWarning), NewCell("type " + prompt.ConfirmText + " before submit")}})
+	}
+	if prompt.LastResult != "" && !prompt.Submitted {
+		lines = append(lines, Line{Cells: []Cell{styledCell("status ", StyleWarning), NewCell(prompt.LastResult)}})
+	}
+	actionOffset := len(lines)
+	lines = append(lines,
+		contentActionLine("submit", "Submit"),
+		contentActionLine("cancel", "Cancel"),
+	)
+	return ContentVM{
+		Kind:   ContentPrompt,
+		Lines:  lines,
+		Status: "prompt: submit/cancel",
+		Cursor: Cursor{Visible: true, Row: 2, Col: DisplayWidth("input ") + DisplayWidth(value), Shape: CursorShapeBar},
+		HitRegions: []HitRegion{
+			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: "prompt.submit"},
+			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: "prompt.cancel"},
+		},
+	}
+}
+
+func buildHelpContent(shell state.ShellStore) ContentVM {
+	shell = shell.EnsureDefaults()
+	lines := []Line{
+		{Cells: []Cell{styledCell("Help", StyleAccent), NewCell(" concepts and actions")}},
+		NewLine("Most used: Ctrl-p pane, Ctrl-r resize, Ctrl-g global, Ctrl-o floating, Ctrl-v copy, Ctrl-f picker"),
+		NewLine("Pane: split, close, focus, zoom, balance, card/split presentation"),
+		NewLine("Tab: create, switch, rename, close; product entry follows next slice"),
+		NewLine("Workspace: switch, create, rename, tree navigation"),
+		NewLine("Floating: new, move, resize, center, collapse, close"),
+		NewLine("Terminal Pool: search, attach, edit metadata, kill with service result feedback"),
+		NewLine("Display/Copy: authoritative HistoryWindow only; no live surface fallback"),
+		NewLine("Prompt: local reducer-owned input, submit/cancel, destructive confirm boundary"),
+		contentActionLine("close", "Close Help"),
+	}
+	return ContentVM{
+		Kind:   ContentHelp,
+		Lines:  lines,
+		Status: "help: concepts/actions",
+		Cursor: Cursor{Visible: false},
+		HitRegions: []HitRegion{{
+			Kind:     HitRegionContentAction,
+			Rect:     Rect{Y: len(lines) - 1, W: contentActionWidth, H: 1},
+			ActionID: "help.close",
+		}},
+	}
+}
+
 func terminalPickerLine(row state.TerminalPickerItem) Line {
 	marker := "  "
 	style := StyleMuted

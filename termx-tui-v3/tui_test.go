@@ -30,7 +30,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("smoke run detailed: %v", err)
 	}
 	cases := smokeCasesByName(result)
-	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "pane-command-flow"}
+	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "pane-command-flow"}
 	for _, name := range required {
 		if len(cases[name].Lines) == 0 {
 			t.Fatalf("missing smoke case %s in %#v", name, result.Cases)
@@ -74,6 +74,17 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["copy-history"].Lines, "termx-tui-v3") {
 		t.Fatalf("copy history smoke missing authoritative row: %#v", cases["copy-history"].Lines)
+	}
+	if !frameContains(cases["prompt-overlay"].Lines, "Command Prompt") ||
+		!frameContains(cases["prompt-overlay"].Lines, "重命名") ||
+		!frameContains(cases["prompt-overlay"].Lines, "Submit") {
+		t.Fatalf("prompt overlay smoke missing prompt content: %#v", cases["prompt-overlay"].Lines)
+	}
+	if !frameContains(cases["help-overlay"].Lines, "Help") ||
+		!frameContains(cases["help-overlay"].Lines, "Most used") ||
+		!frameContains(cases["help-overlay"].Lines, "Floating") ||
+		!frameContains(cases["help-overlay"].Lines, "Terminal Pool") {
+		t.Fatalf("help overlay smoke missing help content: %#v", cases["help-overlay"].Lines)
 	}
 	if !frameContains(cases["pane-command-flow"].Lines, "pane.close") ||
 		!frameContains(cases["pane-command-flow"].Lines, "pane command live") {

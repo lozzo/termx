@@ -381,6 +381,38 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutHelpUsesPageSizedOverlay(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Cursor: Cursor{Visible: true, Row: 2, Col: 3}},
+		}}},
+		Overlay: OverlayVM{
+			Kind:   OverlayHelp,
+			Opaque: true,
+			Content: ContentVM{
+				Kind: ContentHelp,
+				HitRegions: []HitRegion{
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "help.close"},
+				},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if plan.Overlay.W < 70 || plan.Overlay.H < 14 || plan.OverlayContentRect.H < 12 {
+		t.Fatalf("help must use page-sized overlay, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
+	}
+	if hitRegionIndexByAction(plan.HitRegions, "help.close") < 0 {
+		t.Fatalf("expected help close action hit region, got %#v", plan.HitRegions)
+	}
+	if hitRegionIndex(plan.HitRegions, HitRegionPaneContent) >= 0 {
+		t.Fatalf("opaque help page must hide body hit regions, got %#v", plan.HitRegions)
+	}
+}
+
 func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{

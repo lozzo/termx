@@ -656,6 +656,39 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
+	shell := state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Rename Pane",
+		Context:     "输入新名称",
+		Value:       "日志🚀",
+		Placeholder: "name",
+	})
+	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
+	if content.Kind != ContentPrompt ||
+		!strings.Contains(content.Lines[0].PlainString(), "Rename Pane") ||
+		!strings.Contains(content.Lines[1].PlainString(), "输入新名称") ||
+		!strings.Contains(content.Lines[2].PlainString(), "input 日志🚀") ||
+		!contentHasAction(content, "prompt.submit") ||
+		!contentHasAction(content, "prompt.cancel") {
+		t.Fatalf("expected prompt content, got %#v", content)
+	}
+	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("input 日志🚀") {
+		t.Fatalf("expected prompt cursor after input, got %#v", content.Cursor)
+	}
+
+	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenHelp("most-used")}).Shell.Overlay.Content
+	if content.Kind != ContentHelp ||
+		!strings.Contains(content.Lines[0].PlainString(), "Help") ||
+		!strings.Contains(content.Lines[1].PlainString(), "Most used") ||
+		!strings.Contains(content.Lines[5].PlainString(), "Floating") ||
+		!contentHasAction(content, "help.close") {
+		t.Fatalf("expected help content, got %#v", content)
+	}
+	if content.Cursor.Visible {
+		t.Fatalf("help overlay should not show input cursor, got %#v", content.Cursor)
+	}
+}
+
 func TestRenderVMBuilderShowsLiveError(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{Err: "boom"},
