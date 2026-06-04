@@ -123,9 +123,14 @@ const (
 )
 
 type ContentVM struct {
-	Kind   ContentKind
-	Lines  []Line
-	Status string
+	Kind       ContentKind
+	Lines      []Line
+	Status     string
+	Pending    bool
+	Empty      bool
+	Error      string
+	Cursor     Cursor
+	HitRegions []HitRegion
 }
 
 type ContentRenderRequest struct {
@@ -225,6 +230,7 @@ type ShellVM struct {
 	Layout  LayoutVM
 	Overlay OverlayVM
 	Toasts  []ToastVM
+	Cursor  Cursor
 }
 
 func maxInt(left int, right int) int {
