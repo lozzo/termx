@@ -208,6 +208,15 @@
 - 长帮助文案。
 - 长运行态摘要。
 
+顶栏可以被用户隐藏。
+
+隐藏顶栏时：
+
+- 主体区域向上扩展，占用原顶栏高度。
+- workspace、tab、notice、error 不再常驻占用第一行。
+- workspace / tab 仍必须能通过底栏、临时浮层、命令入口或 Workbench Tree 被识别和操作。
+- 全局错误和通知优先进入右上角弹出消息系统。
+
 ### 5.2 主体区域
 
 主体区域默认是 pane grid。
@@ -227,6 +236,15 @@ pane 内容区显示：
 - copy mode history projection。
 - empty pane CTA。
 - exited pane recovery state。
+
+tiled pane 支持两种呈现模式：
+
+- `card panel`：每个 pane 都有独立完整包围，类似当前 tuiv2 的卡片式 pane。
+- `split line`：pane 之间像 tmux 一样共享分割线，减少重复边框，提升内容利用率。
+
+两种模式只改变 tiled pane 的视觉呈现，不改变 pane、terminal、copy mode、鼠标命中和快捷键语义。
+
+floating pane 不跟随 tiled pane 呈现模式变化，始终保持独立带边框的卡片式 panel。
 
 ### 5.3 底栏
 
@@ -249,6 +267,15 @@ pane 内容区显示：
 - 长帮助文案。
 - 当前 pane 的详细状态。
 - 当前 terminal 的长标题。
+
+底栏可以被用户隐藏。
+
+隐藏底栏时：
+
+- 主体区域向下扩展，占用原底栏高度。
+- mode hint、workspace summary、terminal summary 不再常驻显示。
+- 当前 mode 必须仍可通过短暂浮层、右上角消息、或 Help 被用户识别。
+- 需要长期存在的结构信息不应依赖隐藏后的底栏作为唯一入口。
 
 ## 6. Pane 规格
 
@@ -282,7 +309,35 @@ pane chrome 负责局部上下文。
 - 右侧状态优先使用短 token。
 - 宽度不足时优先隐藏低优先级状态，不挤压内容区。
 
-### 6.2 Connected Pane
+### 6.2 Tiled Pane 呈现模式
+
+tiled pane 必须支持两种产品形态。
+
+card panel：
+
+- 每个 pane 都有自己的完整外框。
+- 相邻 pane 之间可以出现双边框或间隔感。
+- pane 的标题、状态和 action 明确属于该 pane。
+- 适合默认可读性、鼠标操作和多 pane 管理。
+
+split line：
+
+- 相邻 pane 共享分割线。
+- 视觉上接近 tmux。
+- 尽量减少 chrome 占用，把更多行列留给 terminal 内容。
+- pane 的标题和状态可以采用更紧凑的 inline token 或仅在 active pane 上强化显示。
+
+两种模式的共同约束：
+
+- active pane 必须可识别。
+- pane 边界必须可识别。
+- pane action 的命中区域必须稳定。
+- copy mode、empty pane、exited pane、loading / pending 都必须仍显示在所属 pane 内。
+- 切换模式不能改变 pane 与 terminal 的绑定关系。
+
+floating pane 不参与该模式切换，始终使用独立完整边框。
+
+### 6.3 Connected Pane
 
 连接 terminal 的 pane 必须显示：
 
@@ -293,7 +348,7 @@ pane chrome 负责局部上下文。
 
 如果 terminal 正在运行但 live surface 尚未到达，pane 内容区可以显示 pending，但 pending 必须位于 pane 内，不能让整屏退化成裸文本。
 
-### 6.3 Empty Pane
+### 6.4 Empty Pane
 
 未连接 terminal 的 pane 不能是空白。
 
@@ -312,7 +367,7 @@ pane chrome 负责局部上下文。
 - Open terminal manager 是 secondary。
 - Close pane 是 danger 或低优先级破坏动作。
 
-### 6.4 Exited Pane
+### 6.5 Exited Pane
 
 terminal 退出后 pane 不应立即变成空白。
 
@@ -323,7 +378,7 @@ terminal 退出后 pane 不应立即变成空白。
 - exit code 或简短原因，如果 core 提供。
 - restart / reconnect / close / close and kill 等 recovery 动作。
 
-### 6.5 Copy Mode Pane
+### 6.6 Copy Mode Pane
 
 copy mode 激活后，pane 内容区显示 authoritative history window。
 
@@ -700,6 +755,7 @@ notice / error 是全局短反馈。
 位置：
 
 - 顶栏右侧。
+- 顶栏隐藏时进入右上角弹出消息系统。
 
 规则：
 
@@ -707,7 +763,59 @@ notice / error 是全局短反馈。
 - error 优先级高于 notice。
 - 消失后不使用其他内容补位。
 
-### 15.2 Mode Feedback
+### 15.2 右上角弹出消息系统
+
+TUI-v3 需要一个现代化消息系统，而不是只把消息写成一段简单文本。
+
+消息系统用于展示：
+
+- command 成功反馈。
+- attach / create / kill / remove 等操作结果。
+- warning。
+- error。
+- copy 完成提示。
+- daemon / connection / resize 等系统状态变化。
+
+默认位置：
+
+- 右上角。
+- 浮在主界面之上。
+- 不改变 pane layout。
+- 不抢占 terminal 内容的永久高度。
+
+消息形态：
+
+- 类似现代 CLI/TUI 工具的 toast。
+- 有短标题。
+- 有正文摘要。
+- 有 severity 标识。
+- 可以有进度或 pending 状态。
+- 多条消息按时间堆叠，但数量必须受限。
+
+severity：
+
+- info。
+- success。
+- warning。
+- error。
+
+产品规则：
+
+- error 停留时间应长于 info / success。
+- 操作成功消息可以自动消失。
+- 用户必须能通过统一动作关闭当前消息或清空消息。
+- 消息不应遮挡 active pane 的关键输入位置过久。
+- 在极窄屏下，消息可以退化为单行顶部或底部提示。
+- 当全局顶栏隐藏时，消息系统承担 notice / error 的主要可见反馈职责。
+
+消息系统不替代：
+
+- pane 内 loading / pending。
+- copy mode 状态。
+- Terminal Pool 页面内的列表状态。
+- Help。
+
+### 15.3 Mode Feedback
 
 mode feedback 在底栏左侧。
 
@@ -721,7 +829,7 @@ mode feedback 在底栏左侧。
 - 全部快捷键表。
 - 与当前 mode 无关的动作。
 
-### 15.3 Pane State
+### 15.4 Pane State
 
 pane state 在 pane chrome 内表达。
 
@@ -736,7 +844,7 @@ pane state 在 pane chrome 内表达。
 - shared。
 - copy mode。
 
-### 15.4 Loading / Pending
+### 15.5 Loading / Pending
 
 loading / pending 必须归属于具体区域。
 
@@ -754,6 +862,8 @@ loading / pending 必须归属于具体区域。
 
 ### 16.1 Workbench
 
+card panel 模式：
+
 ```text
  workspace: main | tab 1 | tab 2 | + ---------------------- notice / error +
 | shell                                          run x2 owner  [z][|][-][x] |
@@ -765,6 +875,47 @@ loading / pending 必须归属于具体区域。
 |                                                                            |
 |              floating pane can appear above the tiled pane grid             |
 |                                                                            |
++ normal | Ctrl-p pane | Ctrl-f picker | Ctrl-v copy -------- ws:main terms:4 +
+```
+
+split line 模式：
+
+```text
+ workspace: main | tab 1 | tab 2 | + ---------------------- notice / error +
+| shell run owner                      | logs run follower                    |
+| terminal content                     | terminal content                      |
+|                                      |                                       |
+|                                      |                                       |
+|--------------------------------------+---------------------------------------|
+| worker run                           | htop run                              |
+| terminal content                     | terminal content                      |
+|                                      |                                       |
++ normal | Ctrl-p pane | Ctrl-f picker | Ctrl-v copy -------- ws:main terms:4 +
+```
+
+最大内容利用率模式可以隐藏 header 和 footer：
+
+```text
+| shell run owner                      | logs run follower                    |
+| terminal content                     | terminal content                      |
+|                                      |                                       |
+|                                      |                                       |
+|--------------------------------------+---------------------------------------|
+| worker run                           | htop run                              |
+| terminal content                     | terminal content                      |
+|                                      |                                       |
+```
+
+右上角消息可以浮在 workbench 上方，不改变布局：
+
+```text
+ workspace: main | tab 1 | tab 2 | + --------------------------------------+
+| shell                                          run x2 owner  [z][|][-][x] |
+| +-------------------------------+----------------------------------------+ |
+| | terminal content              | + success ---------------------------+ | |
+| |                               | | Terminal created: worker           | | |
+| |                               | +------------------------------------+ | |
+| +-------------------------------+----------------------------------------+ |
 + normal | Ctrl-p pane | Ctrl-f picker | Ctrl-v copy -------- ws:main terms:4 +
 ```
 
@@ -853,6 +1004,20 @@ loading / pending 必须归属于具体区域。
 +----------------------------------------------------------------------------+
 ```
 
+### 16.8 Floating Pane
+
+floating pane 始终保持独立带边框，不随 tiled pane 的 card / split line 模式变化。
+
+```text
+| tiled pane content                    | tiled pane content                    |
+|                                       |                                       |
+|             + floating: logs -----------------------------+               |
+|             | terminal content                            |               |
+|             |                                             |               |
+|             +---------------------------------------------+               |
+|                                       |                                       |
+```
+
 ## 17. 宽窄屏退化
 
 ### 17.1 宽屏
@@ -864,6 +1029,8 @@ loading / pending 必须归属于具体区域。
 - floating pane。
 - Workbench Tree 两栏。
 - Terminal Pool list + detail + preview。
+- card panel 或 split line 模式都应成立。
+- 右上角消息可以使用完整 toast 形态。
 
 ### 17.2 中等宽度
 
@@ -881,6 +1048,8 @@ loading / pending 必须归属于具体区域。
 - 低优先级 pane state。
 - terminal pool 低优先级字段。
 - 底栏右侧低优先级摘要。
+- 非关键 header/footer 内容。
+- 低优先级 toast 正文。
 
 ### 17.3 窄屏
 
@@ -891,6 +1060,8 @@ loading / pending 必须归属于具体区域。
 - active pane 边界可识别。
 - 当前 mode 可识别。
 - overlay 可退化为单栏。
+- split line 模式可以优先用于提升内容利用率。
+- header/footer 可以隐藏，但当前上下文必须能通过短标识、消息或命令入口恢复识别。
 
 窄屏可以隐藏：
 
@@ -898,6 +1069,9 @@ loading / pending 必须归属于具体区域。
 - pane action 的部分低优先级按钮。
 - preview 详情。
 - terminal pool 的部分 metadata。
+- 顶栏。
+- 底栏。
+- toast 的正文，只保留 severity 和短标题。
 
 ## 18. 视觉语言
 
@@ -921,6 +1095,7 @@ loading / pending 必须归属于具体区域。
 - token。
 - chip。
 - badge。
+- toast。
 - 短 action。
 - 稳定槽位。
 - 明确选中态。
@@ -933,6 +1108,10 @@ loading / pending 必须归属于具体区域。
 - copy mode 历史来源只能是 core-v2 authoritative HistoryWindow。
 - live surface pending、copy history loading 等状态必须显示在所属区域内。
 - pane chrome 的点击区域必须稳定。
+- tiled pane 必须支持 card panel 与 split line 两种呈现模式。
+- floating pane 必须保持独立带边框，不受 tiled pane 呈现模式影响。
+- 全局 header/footer 可以隐藏，但隐藏后不能导致 workspace、tab、mode、notice/error 彻底不可达。
+- 右上角弹出消息系统不得永久改变 pane layout。
 - 任何 UI 设计必须有宽窄屏退化策略。
 - 任何会影响默认界面形态的实现，都必须先满足本文档。
 
@@ -944,6 +1123,10 @@ loading / pending 必须归属于具体区域。
 - 有底栏。
 - 有至少一个可识别 pane。
 - pane 有边界、标题和状态。
+- tiled pane 至少先落地 card panel 或 split line 之一，但设计和状态必须预留两种呈现模式。
+- floating pane 不受 tiled pane 呈现模式影响，保持独立带边框。
+- header/footer 隐藏可以后续实现，但不得把它们设计成不可关闭的唯一信息入口。
+- 全局 notice / error 先可落在顶栏右侧，但后续必须收敛到右上角弹出消息系统。
 - live surface pending 显示在 pane 内。
 - terminal 内容到达后显示在 pane 内容区。
 - `Ctrl-f` 能进入 Terminal Picker。
