@@ -20,6 +20,7 @@ import (
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	"github.com/lozzow/termx/termx-shared/transport"
+	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -406,15 +407,15 @@ func TestDefaultRootDoesNotRunTUIv2OrV3Smoke(t *testing.T) {
 }
 
 func TestV3SmokeRunsTUIv3Smoke(t *testing.T) {
-	oldRunSmoke := runTUIv3Smoke
+	oldRunSmoke := runTUIv3SmokeDetailed
 	t.Cleanup(func() {
-		runTUIv3Smoke = oldRunSmoke
+		runTUIv3SmokeDetailed = oldRunSmoke
 	})
 
 	called := false
-	runTUIv3Smoke = func(ctx context.Context) (render.Frame, error) {
+	runTUIv3SmokeDetailed = func(ctx context.Context) (tuiv3.SmokeResult, error) {
 		called = true
-		return render.Frame{Lines: []string{"v3-line"}}, nil
+		return tuiv3.SmokeResult{Cases: []tuiv3.SmokeCase{{Name: "case-a", Frame: render.Frame{Lines: []string{"v3-line"}}}}}, nil
 	}
 
 	var out bytes.Buffer
@@ -432,6 +433,7 @@ func TestV3SmokeRunsTUIv3Smoke(t *testing.T) {
 	text := out.String()
 	if !strings.Contains(text, "termx v3 smoke ok") ||
 		!strings.Contains(text, "termx-tui-v3") ||
+		!strings.Contains(text, "case: case-a") ||
 		!strings.Contains(text, "v3-line") {
 		t.Fatalf("unexpected v3 smoke output:\n%s", text)
 	}

@@ -20,7 +20,8 @@ var (
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		return corev2.NewServer(opts...)
 	}
-	runTUIv3Smoke = tuiv3.SmokeRun
+	runTUIv3Smoke         = tuiv3.SmokeRun
+	runTUIv3SmokeDetailed = tuiv3.SmokeRunDetailed
 )
 
 func v3Command(socket *string, logFile *string) *cobra.Command {
@@ -105,13 +106,16 @@ func v3SmokeCommand() *cobra.Command {
 		Use:   "smoke",
 		Short: "Run a non-interactive tui-v3 smoke render",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			frame, err := runTUIv3Smoke(cmd.Context())
+			result, err := runTUIv3SmokeDetailed(cmd.Context())
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "termx v3 smoke ok: tui=%s lines=%d\n", tuiv3.ModuleName, len(frame.Lines))
-			for _, line := range frame.Lines {
-				fmt.Fprintln(cmd.OutOrStdout(), line)
+			fmt.Fprintf(cmd.OutOrStdout(), "termx v3 smoke ok: tui=%s cases=%d\n", tuiv3.ModuleName, len(result.Cases))
+			for _, item := range result.Cases {
+				fmt.Fprintf(cmd.OutOrStdout(), "case: %s lines=%d\n", item.Name, len(item.Frame.Lines))
+				for _, line := range item.Frame.Lines {
+					fmt.Fprintln(cmd.OutOrStdout(), line)
+				}
 			}
 			return nil
 		},
