@@ -39,7 +39,8 @@ func copyModeLayoutMayNeedRebind(msg Msg) bool {
 		ShellToggleHeaderVisibleMsg,
 		ShellSetFooterVisibleMsg,
 		ShellToggleFooterVisibleMsg,
-		ShellSplitActivePaneMsg:
+		ShellSplitActivePaneMsg,
+		ShellPaneCommandMsg:
 		return true
 	default:
 		return false

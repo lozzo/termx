@@ -9,11 +9,11 @@ import (
 func TestShellReducerHandlesPanelPresentationSemanticActions(t *testing.T) {
 	reducer := NewShellReducer()
 	root, effects := reducer(state.Root{}, ShellTogglePanelPresentationMsg{})
-	if len(effects) != 0 {
-		t.Fatalf("shell reducer should not emit effects, got %#v", effects)
-	}
 	if root.Generation != 1 || root.Shell.PanelPresentation != state.PanelPresentationSplitLine {
 		t.Fatalf("expected split line after toggle, got %#v", root)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("expected pane command feedback effect, got %#v", effects)
 	}
 
 	root, _ = reducer(root, ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationCard})
@@ -99,6 +99,105 @@ func TestShellReducerHandlesPaneSplitSemanticAction(t *testing.T) {
 	}
 	if tab.RootSplit.Direction != state.SplitDirectionVertical {
 		t.Fatalf("expected vertical split, got %#v", tab.RootSplit)
+	}
+}
+
+func TestShellReducerRoutesUnifiedPaneCommandContract(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		SplitDirection: state.SplitDirectionHorizontal,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive},
+		Source:         state.PaneCommandSourceTest,
+	}})
+
+	if root.Shell.ActivePaneID != "pane-2" || len(root.Shell.Workspace.Tabs[0].Panes) != 2 {
+		t.Fatalf("expected split through unified contract, got %#v", root.Shell)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("expected command feedback effect, got %#v", effects)
+	}
+	feedback, ok := effects[0].(PaneCommandFeedbackEffect)
+	if !ok || feedback.Result.Status != state.PaneCommandOK || feedback.Command.Target.PaneID != state.DefaultPaneID {
+		t.Fatalf("unexpected command feedback %#v", effects[0])
+	}
+}
+
+func TestShellReducerRejectsInvalidPaneCommandWithoutStateMutation(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell()}
+
+	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action: state.PaneCommandFocus,
+		Target: state.PaneCommandTarget{PaneID: "missing"},
+		Source: state.PaneCommandSourceMouse,
+	}})
+
+	if next.Generation != root.Generation || next.Shell.ActivePaneID != root.Shell.ActivePaneID {
+		t.Fatalf("invalid command must not mutate root, got %#v", next)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("expected one feedback effect, got %#v", effects)
+	}
+	feedback, ok := effects[0].(PaneCommandFeedbackEffect)
+	if !ok || feedback.Result.Status != state.PaneCommandInvalid {
+		t.Fatalf("expected invalid feedback, got %#v", effects[0])
+	}
+}
+
+func TestShellReducerKeepsCloseAndKillBehindConfirmPolicy(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+
+	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandCloseAndKill}})
+	if next.Generation != root.Generation {
+		t.Fatalf("unconfirmed kill must not mutate root, got %#v", next)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("expected confirmation feedback only, got %#v", effects)
+	}
+	feedback, ok := effects[0].(PaneCommandFeedbackEffect)
+	if !ok || feedback.Result.Status != state.PaneCommandNeedsConfirmation {
+		t.Fatalf("expected confirmation feedback, got %#v", effects[0])
+	}
+
+	next, effects = reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandCloseAndKill, Confirm: state.PaneConfirmAccepted}})
+	if next.Generation != root.Generation+1 {
+		t.Fatalf("accepted command should advance state boundary, got %#v", next)
+	}
+	if len(effects) != 2 {
+		t.Fatalf("expected feedback and terminal kill effect boundary, got %#v", effects)
+	}
+	kill, ok := effects[1].(PaneTerminalKillEffect)
+	if !ok || kill.TerminalID != "term-main" || kill.PaneID != state.DefaultPaneID {
+		t.Fatalf("expected terminal kill effect boundary, got %#v", effects[1])
+	}
+}
+
+func TestShellReducerAcceptsPaneResizeAndSetSizeContractWithoutGeometryMutation(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell()}
+
+	for _, command := range []state.PaneCommand{
+		{Action: state.PaneCommandResize, ResizeDirection: state.PaneResizeDown, Delta: 3, Source: state.PaneCommandSourceKeyboard},
+		{Action: state.PaneCommandSetSize, SizeMode: state.PaneSizeRatio, Ratio: 0.4, Source: state.PaneCommandSourceCLIMini},
+		{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse},
+		{Action: state.PaneCommandZoom, Source: state.PaneCommandSourcePalette},
+	} {
+		next, effects := reducer(root, ShellPaneCommandMsg{Command: command})
+		if next.Generation != root.Generation+1 {
+			t.Fatalf("valid command should advance reducer boundary command=%#v next=%#v", command, next)
+		}
+		if next.Shell.ActivePaneID != root.Shell.ActivePaneID || len(next.Shell.Workspace.Tabs[0].Panes) != 1 {
+			t.Fatalf("slice 53 must not implement geometry mutation command=%#v next=%#v", command, next)
+		}
+		feedback, ok := effects[0].(PaneCommandFeedbackEffect)
+		if len(effects) != 1 || !ok || feedback.Result.Status != state.PaneCommandOK {
+			t.Fatalf("expected ok feedback command=%#v effects=%#v", command, effects)
+		}
 	}
 }
 

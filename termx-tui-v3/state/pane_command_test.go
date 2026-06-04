@@ -1,0 +1,99 @@
+package state
+
+import "testing"
+
+func TestPaneCommandDefaultsTargetToActivePane(t *testing.T) {
+	shell := DefaultShell()
+	command := PaneCommand{Action: PaneCommandFocus}.WithDefaults(shell)
+
+	if command.Target.WorkspaceID != DefaultWorkspaceID || command.Target.TabID != DefaultTabID || command.Target.PaneID != DefaultPaneID {
+		t.Fatalf("expected active target defaults, got %#v", command.Target)
+	}
+}
+
+func TestPaneCommandValidateSplitRequiresDirectionAndNewPane(t *testing.T) {
+	shell := DefaultShell()
+	missingDirection := PaneCommand{Action: PaneCommandSplit, NewPane: PaneState{ID: "pane-2"}}
+	if result := missingDirection.Validate(shell); result.Status != PaneCommandInvalid || result.Reason != "invalid split direction" {
+		t.Fatalf("expected invalid split direction, got %#v", result)
+	}
+
+	valid := PaneCommand{Action: PaneCommandSplit, SplitDirection: SplitDirectionVertical, NewPane: PaneState{ID: "pane-2"}}
+	if result := valid.Validate(shell); result.Status != PaneCommandOK {
+		t.Fatalf("expected valid split command, got %#v", result)
+	}
+}
+
+func TestPaneCommandValidateRejectsUnknownTarget(t *testing.T) {
+	shell := DefaultShell()
+	command := PaneCommand{Action: PaneCommandFocus, Target: PaneCommandTarget{PaneID: "missing"}}
+
+	if result := command.Validate(shell); result.Status != PaneCommandInvalid || result.Reason != "target pane not found" {
+		t.Fatalf("expected missing target, got %#v", result)
+	}
+}
+
+func TestPaneCommandValidateCloseAndKillRequiresAcceptedConfirmation(t *testing.T) {
+	shell := DefaultShell()
+	command := PaneCommand{Action: PaneCommandCloseAndKill}
+
+	if result := command.Validate(shell); result.Status != PaneCommandNeedsConfirmation {
+		t.Fatalf("expected confirmation requirement, got %#v", result)
+	}
+	command.Confirm = PaneConfirmAccepted
+	if result := command.Validate(shell); result.Status != PaneCommandOK {
+		t.Fatalf("expected accepted destructive command, got %#v", result)
+	}
+}
+
+func TestPaneCommandValidateResizeAndSetSizeParameters(t *testing.T) {
+	shell := DefaultShell()
+	resize := PaneCommand{Action: PaneCommandResize, ResizeDirection: PaneResizeRight, Delta: 4}
+	if result := resize.Validate(shell); result.Status != PaneCommandOK {
+		t.Fatalf("expected valid resize, got %#v", result)
+	}
+
+	ratio := PaneCommand{Action: PaneCommandSetSize, SizeMode: PaneSizeRatio, Ratio: 0.5}
+	if result := ratio.Validate(shell); result.Status != PaneCommandOK {
+		t.Fatalf("expected valid ratio set size, got %#v", result)
+	}
+	cells := PaneCommand{Action: PaneCommandSetSize, SizeMode: PaneSizeCells, Cols: 80}
+	if result := cells.Validate(shell); result.Status != PaneCommandOK {
+		t.Fatalf("expected valid cell set size, got %#v", result)
+	}
+	invalid := PaneCommand{Action: PaneCommandSetSize, SizeMode: PaneSizeRatio, Ratio: 1.5}
+	if result := invalid.Validate(shell); result.Status != PaneCommandInvalid || result.Reason != "invalid size ratio" {
+		t.Fatalf("expected invalid ratio, got %#v", result)
+	}
+}
+
+func TestApplyPaneCommandReusesExistingPresentationAndSplitState(t *testing.T) {
+	shell, result := DefaultShell().ApplyPaneCommand(PaneCommand{
+		Action:         PaneCommandSplit,
+		SplitDirection: SplitDirectionHorizontal,
+		NewPane:        PaneState{ID: "pane-2", Title: "logs", Kind: PaneTerminalLive},
+	})
+	if result.Status != PaneCommandOK {
+		t.Fatalf("expected split ok, got %#v", result)
+	}
+	if shell.ActivePaneID != "pane-2" || len(shell.Workspace.Tabs[0].Panes) != 2 {
+		t.Fatalf("expected split pane state, got %#v", shell)
+	}
+
+	shell, result = shell.ApplyPaneCommand(PaneCommand{Action: PaneCommandSetPresentation, Presentation: PanelPresentationSplitLine})
+	if result.Status != PaneCommandOK || shell.PanelPresentation != PanelPresentationSplitLine {
+		t.Fatalf("expected split-line presentation, shell=%#v result=%#v", shell, result)
+	}
+}
+
+func TestApplyPaneCommandDoesNotMutateForFutureGeometryCommandsYet(t *testing.T) {
+	shell := DefaultShell()
+	next, result := shell.ApplyPaneCommand(PaneCommand{Action: PaneCommandResize, ResizeDirection: PaneResizeRight, Delta: 2})
+
+	if result.Status != PaneCommandOK {
+		t.Fatalf("expected contract-valid resize, got %#v", result)
+	}
+	if next.ActivePaneID != shell.ActivePaneID || len(next.Workspace.Tabs[0].Panes) != len(shell.Workspace.Tabs[0].Panes) {
+		t.Fatalf("slice 53 must not implement resize geometry yet, before=%#v after=%#v", shell, next)
+	}
+}

@@ -67,13 +67,41 @@ type ShellSplitActivePaneMsg struct {
 
 func (ShellSplitActivePaneMsg) isMsg() {}
 
+type ShellPaneCommandMsg struct {
+	Command state.PaneCommand
+}
+
+func (ShellPaneCommandMsg) isMsg() {}
+
+type PaneCommandFeedbackEffect struct {
+	Result  state.PaneCommandResult
+	Command state.PaneCommand
+}
+
+func (PaneCommandFeedbackEffect) isEffect() {}
+
+type PaneTerminalKillEffect struct {
+	TerminalID string
+	PaneID     string
+	Command    state.PaneCommand
+}
+
+func (PaneTerminalKillEffect) isEffect() {}
+
 func NewShellReducer() Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
 		case ShellSetPanelPresentationMsg:
-			root.Shell = root.Shell.SetPanelPresentation(msg.Presentation)
+			return reducePaneCommand(root, state.PaneCommand{
+				Action:       state.PaneCommandSetPresentation,
+				Presentation: msg.Presentation,
+				Source:       state.PaneCommandSourceTest,
+			})
 		case ShellTogglePanelPresentationMsg:
-			root.Shell = root.Shell.TogglePanelPresentation()
+			return reducePaneCommand(root, state.PaneCommand{
+				Action: state.PaneCommandTogglePresentation,
+				Source: state.PaneCommandSourceTest,
+			})
 		case ShellSetHeaderVisibleMsg:
 			root.Shell = root.Shell.SetHeaderVisible(msg.Visible)
 		case ShellToggleHeaderVisibleMsg:
@@ -95,10 +123,40 @@ func NewShellReducer() Reducer {
 		case ShellCloseOverlayMsg:
 			root.Shell = root.Shell.CloseOverlay()
 		case ShellSplitActivePaneMsg:
-			root.Shell = root.Shell.SplitActivePane(msg.Pane, msg.Direction)
+			return reducePaneCommand(root, state.PaneCommand{
+				Action:         state.PaneCommandSplit,
+				SplitDirection: msg.Direction,
+				NewPane:        msg.Pane,
+				Source:         state.PaneCommandSourceTest,
+			})
+		case ShellPaneCommandMsg:
+			return reducePaneCommand(root, msg.Command)
 		default:
 			return root, nil
 		}
 		return root.Advance(), nil
 	}
+}
+
+func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {
+	command = command.WithDefaults(root.Shell)
+	nextShell, result := root.Shell.ApplyPaneCommand(command)
+	if result.Status == state.PaneCommandOK {
+		root.Shell = nextShell
+		effects := paneCommandEffects(root, command, result)
+		return root.Advance(), effects
+	}
+	return root, []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
+}
+
+func paneCommandEffects(root state.Root, command state.PaneCommand, result state.PaneCommandResult) []Effect {
+	effects := []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
+	if command.Action != state.PaneCommandCloseAndKill {
+		return effects
+	}
+	pane, ok := root.Shell.Pane(command.Target)
+	if ok && pane.TerminalID != "" {
+		effects = append(effects, PaneTerminalKillEffect{TerminalID: pane.TerminalID, PaneID: pane.ID, Command: command})
+	}
+	return effects
 }
