@@ -165,7 +165,7 @@
 | 12. core-v2 server API 与 daemon 骨架 | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-cli/` 按需 | core-v2 已提供独立 server/daemon API、options、listen/shutdown、terminal registry、事件订阅 fake harness；静态 harness 确认不调用旧 `termx-core`/`tuiv2` |
 | 13. core-v2 terminal lifecycle 与 PTY 管线 | 完成 | `termx-core-v2/`、`termx-vterm/`、`termx-shared/` 按需 | core-v2 已建立 `TerminalProcess`/`ProcessFactory`、terminal lifecycle、create/input/resize/exit/restart/remove harness；输出进入 live surface 与 `HistoryTrack` ingest；exit force commit、late output guard、resize grow/shrink 和 shutdown lifecycle harness 通过 |
 | 14. core-v2 protocol service 与 HistoryWindow 实服务 | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` | core-v2 protocol session 已服务 create/get/list/set metadata/restart/remove/events/input/resize/history.window；HistoryWindow 来自 `HistoryTrack` logical line truth，包含 token/generation/cursor/boundary 与 stale guard；协议测试通过 |
-| 15. tui-v3 真实 TerminalHost 与 FrameSink | 待开始 | `termx-tui-v3/` | 建立真实 raw mode、输入读取、窗口尺寸、帧输出、恢复终端状态和取消/退出 harness；不得引入 Bubble Tea runtime |
+| 15. tui-v3 真实 TerminalHost 与 FrameSink | 进行中 | `termx-tui-v3/` | 建立真实 raw mode、输入读取、窗口尺寸、帧输出、恢复终端状态和取消/退出 harness；不得引入 Bubble Tea runtime |
 | 16. tui-v3 本地 live app 主路径 | 待开始 | `termx-tui-v3/`、`termx-cli/` 按需 | attach 本地 session 后可渲染 live surface、发送键盘输入、处理 resize、显示基础状态与错误；fake 和最小真实协议 harness 通过 |
 | 17. tui-v3 copy mode 主路径 | 待开始 | `termx-tui-v3/`、`internal/protocol/` 按需 | page up/down、鼠标滚轮、older prepend、latest replace、selection、copy、stale response guard 在真实 core client 路径通过 |
 | 18. CLI v3 实验入口 | 待开始 | `termx-cli/`、`Makefile` | 增加显式 v3 实验入口，能启动 core-v2 daemon 并运行 tui-v3；默认 `termx` 仍保持旧入口；CLI 测试和迁移 smoke 通过 |
@@ -174,7 +174,7 @@
 | 21. 默认入口切换 | 待开始 | `termx-cli/`、`Makefile`、`go.work` 按需 | `go run ./termx-cli/cmd/termx`、`termx attach`、`termx daemon` 默认使用 core-v2/tui-v3；旧入口若保留必须显式命名；回归测试通过 |
 | 22. 旧默认依赖清理与冻结 | 待开始 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认依赖不再包含旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成 |
 
-当前下一步：开始切片 15“tui-v3 真实 TerminalHost 与 FrameSink”。
+当前下一步：继续切片 15“tui-v3 真实 TerminalHost 与 FrameSink”。
 
 ## 6. 必做 harness
 
