@@ -672,6 +672,27 @@ func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 	}
 }
 
+func TestV3RemoteIsExplicitlyNotMounted(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "remote", "status"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("expected v3 remote to remain unavailable, got %v", err)
+	}
+
+	root := newRootCmd()
+	remote, _, err := root.Find([]string{"remote"})
+	if err != nil {
+		t.Fatalf("legacy/default remote command should remain mounted: %v", err)
+	}
+	if remote == nil || remote.Name() != "remote" {
+		t.Fatalf("expected default remote command, got %#v", remote)
+	}
+}
+
 func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()

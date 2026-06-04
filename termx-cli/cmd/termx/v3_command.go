@@ -27,6 +27,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "v3",
 		Short: "Run experimental termx-core-v2 and termx-tui-v3 commands",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},

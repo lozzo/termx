@@ -12,7 +12,7 @@
 | `termx attach <id>` | 调用 `runTUIv2` | `termx-cli/cmd/termx/tui_launcher.go` | 切片 26 后默认调用 tui-v3 attach |
 | `termx daemon` | 调用旧 `termx-core.NewServer` | `termx-cli/cmd/termx/daemon_command.go` | 切片 26 后默认调用 core-v2 server |
 | `termx new/ls/kill/rm` | 通过 `internal/protocol.Client` 自动连接或启动旧 daemon | `termx-cli/cmd/termx/terminal_commands.go`、`termx-cli/cmd/termx/daemon_client.go` | 切片 20 后在 v3 实验入口下等价可用，切片 26 后默认可用 |
-| `termx remote ...` | 依赖 CLI remote glue、旧配置 helper 和 daemon protocol extension | `termx-cli/cmd/termx/remote_commands.go`、`termx-cli/cmd/termx/remote_login.go`、`termx-cli/cmd/termx/remote_runtime.go` | 切片 24 收口，默认切换不能隐式丢 remote 或旧 `tuiv2/shared` 配置依赖 |
+| `termx remote ...` | 依赖 CLI remote glue、旧配置 helper 和 daemon protocol extension | `termx-cli/cmd/termx/remote_commands.go`、`termx-cli/cmd/termx/remote_login.go`、`termx-cli/cmd/termx/remote_runtime.go` | 切片 24 已明确暂留 legacy/fallback 隔离；默认切换不能隐式丢 remote 或旧 `tuiv2/shared` 配置依赖 |
 
 当前新模块状态：
 
@@ -53,9 +53,9 @@
 | `termx ls` | `protocol.Client.List` + 旧 daemon | core-v2 protocol `list` | 20、26 | 输出 id/name/command/state/size |
 | `termx kill <id>` | `protocol.Client.Kill` + 旧 daemon | core-v2 protocol `kill` | 20、26 | running 进程退出；事件发出 |
 | `termx rm <id>` | `protocol.Client.Remove` + 旧 daemon | core-v2 protocol `remove` | 20、26 | inventory 删除；attach channel 清理 |
-| `termx remote login` | CLI HTTP login + 旧 `tuiv2/shared` 配置 helper | CLI 配置 helper 从 tuiv2 解耦，认证存储行为保持 | 23、24、28 | 登录、保存 token、配置路径和敏感信息保护测试通过 |
-| `termx remote status/info/open` | daemon remote protocol methods | core-v2 daemon 暴露 remote extension handler，或显式 legacy/fallback 隔离 | 24 | status/local status 与旧输出兼容或延期记录明确 |
-| `termx remote enable/disable/pair` | CLI remote glue + daemon extension | core-v2 daemon 支撑 local runtime 和 pair，或显式 legacy/fallback 隔离 | 24 | remote CLI 测试通过或延期记录明确；敏感信息不泄漏 |
+| `termx remote login` | CLI HTTP login + 旧 `tuiv2/shared` 配置 helper | 暂留 legacy/fallback；后续若进入默认路径，配置 helper 必须从 tuiv2 解耦 | 23、24、28 | 登录、保存 token、配置路径和敏感信息保护测试通过，或默认切换时明确 legacy/fallback |
+| `termx remote status/info/open` | daemon remote protocol methods | 暂留 legacy/fallback；未迁移到 `termx v3` | 24 | `termx v3 remote ...` 不挂载；旧 `termx remote ...` 保留 |
+| `termx remote enable/disable/pair` | CLI remote glue + daemon extension | 暂留 legacy/fallback；未迁移到 `termx v3` | 24 | `termx v3 remote ...` 不挂载；旧 remote CLI 测试继续通过 |
 
 ## 3.1 v3 实验入口路径策略
 
@@ -69,6 +69,19 @@
 | state | v3 本地实验入口暂不读取或创建 workspace state | 旧 root 会使用 workspace-state；v3 后续如需 state，必须使用新路径 helper 或共享 helper，不得回引旧 TUI 配置层 |
 
 当前保留限制：remote login/config 仍在旧 CLI remote glue 内，切片 24 必须给出迁移或 legacy/fallback 隔离结论。
+
+## 3.2 remote 兼容与隔离结论
+
+切片 24 的结论：remote 暂不迁移到 `termx v3 ...` 实验命令组，保持 legacy/fallback 隔离。
+
+| 项目 | 当前结论 | 后续默认切换要求 |
+| --- | --- | --- |
+| `termx v3 remote ...` | 不挂载，命令应返回 unknown command | 防止用户误以为 remote 已经跑在 core-v2 extension 上 |
+| `termx remote login` | 暂留旧 CLI remote glue，用于账号、token、auth store 和配置文件行为 | 切片 28 前必须清理默认路径对 `tuiv2/shared` 的依赖，或把 remote 明确移动到 legacy/fallback 入口 |
+| `termx remote status/info/open` | 仍依赖旧 daemon remote protocol methods | 默认切换时不能宣称 core-v2 remote 完成；若未迁移，必须显式 legacy/fallback |
+| `termx remote enable/disable/pair` | 仍依赖旧 daemon extension 和本地 remote runtime 装配 | 默认切换前需二选一：迁移到 core-v2 extension，或在默认 v2/v3 切换后保留为显式 legacy/fallback |
+
+因此，切片 25-27 只能切换本地 root/daemon/attach/control 主路径。remote 不得作为“已默认迁移到 core-v2”的证据；如果仍未迁移，必须在默认入口切换提交中保持显式隔离说明。
 
 ## 4. Protocol 方法迁移矩阵
 
