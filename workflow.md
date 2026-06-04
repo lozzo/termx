@@ -169,8 +169,8 @@
 | 16. tui-v3 本地 live app 主路径 | 完成 | `termx-tui-v3/`、`termx-cli/` 按需 | attach 本地 session 后可渲染 live surface、发送键盘输入、处理 resize、显示基础状态与错误；fake 和最小真实协议 harness 通过 |
 | 17. tui-v3 copy mode 主路径 | 完成 | `termx-tui-v3/`、`internal/protocol/` 按需 | page up/down、鼠标滚轮、older prepend、latest replace、selection、copy、stale response guard 在真实 core client 路径通过 |
 | 18. CLI v3 命令组与 daemon 骨架 | 完成 | `termx-cli/`、`Makefile` | 增加显式 `termx v3` 实验命令组；`termx v3 daemon` 以前台方式启动 core-v2 server；提供非交互 v3 smoke 入口验证 tui-v3 可被 CLI 装配运行；默认 root、`daemon`、`attach` 仍保持旧入口；CLI 测试和迁移 smoke 通过 |
-| 19. CLI v3 daemon 连接与自动启动基础 | 进行中 | `termx-cli/`、`termx-core-v2/` 按需 | v3 实验入口能连接已存在 core-v2 daemon；需要 daemon 时只能自动启动 core-v2 daemon，不能复用旧 `termx-core` 自动启动路径；socket、日志路径、启动失败和关闭行为有测试 |
-| 20. CLI v3 本地控制命令 | 待开始 | `termx-cli/`、`termx-core-v2/`、`internal/protocol/` 按需 | `termx v3 new`、`termx v3 ls`、`termx v3 kill`、`termx v3 rm` 通过 core-v2 protocol service 工作；命令输出和错误语义与旧默认入口可对照；CLI tests 覆盖本地单 session |
+| 19. CLI v3 daemon 连接与自动启动基础 | 完成 | `termx-cli/`、`termx-core-v2/` 按需 | v3 实验入口能连接已存在 core-v2 daemon；需要 daemon 时只能自动启动 core-v2 daemon，不能复用旧 `termx-core` 自动启动路径；socket、日志路径、启动失败和关闭行为有测试 |
+| 20. CLI v3 本地控制命令 | 进行中 | `termx-cli/`、`termx-core-v2/`、`internal/protocol/` 按需 | `termx v3 new`、`termx v3 ls`、`termx v3 kill`、`termx v3 rm` 通过 core-v2 protocol service 工作；命令输出和错误语义与旧默认入口可对照；CLI tests 覆盖本地单 session |
 | 21. CLI v3 attach/TUI 装配 | 待开始 | `termx-cli/`、`termx-tui-v3/` 按需 | `termx v3 attach <id>` 使用 tui-v3 `TerminalHost`、protocol adapters 和 `NewInteractiveRuntime` 装配真实交互路径；非交互环境给出明确错误或运行专用 harness；不得调用 `tuiv2/app.RunWithClient` |
 | 22. v3 本地端到端 smoke | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`Makefile` 按需 | 建立可重复的本地单 session smoke：启动 core-v2 daemon、创建 PTY、读取 live surface、发送 input、处理 resize、请求 `history.window`、触发 copy mode 主路径；默认入口仍未切换 |
 | 23. 配置、日志与状态路径收口 | 待开始 | `termx-cli/`、`termx-shared/` 按需 | v3 实验入口的 socket、log、config、state 路径语义明确且有测试；v3 路径不得为了配置加载依赖 `tuiv2/shared`；与旧默认入口的差异写入迁移审计 |
@@ -180,7 +180,7 @@
 | 27. 默认入口回归验收 | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`termx-proto/`、`Makefile` 按需 | 默认入口切换后运行 CLI tests、core-v2 tests、tui-v3 tests、protocol tests、`make test-v2-migration` 和默认入口非交互 smoke；remote 未完成项必须在文档和任务结论中显式保留 |
 | 28. 旧默认依赖清理与冻结 | 待开始 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认路径不再 import 旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成；切片 28 完成后本轮默认入口切换目标才算完成 |
 
-当前下一步：继续切片 19“CLI v3 daemon 连接与自动启动基础”。
+当前下一步：继续切片 20“CLI v3 本地控制命令”。
 
 ## 6. 必做 harness
 
@@ -300,6 +300,7 @@
 - 切片 16 已完成：`termx-tui-v3` 已建立 reducer-owned live surface/session、`NewLiveRuntime`、attach/render/input/resize/error 主路径、terminal service fake，以及真实 protocol client 的 attach/input/ensure_resize harness。
 - 切片 17 已完成：`termx-tui-v3` 已建立 copy mode app reducer、page up/鼠标滚轮 latest/older 主路径、older prepend、selection/copy、stale response guard、真实 protocol history.window client harness，以及 live/copy reducer 组合入口。
 - 切片 18 已完成：`termx-cli` 已建立显式 `termx v3` 实验命令组、`termx v3 daemon` core-v2 前台 daemon 入口、`termx v3 smoke` tui-v3 非交互 smoke 入口，并把 v3 smoke 纳入 `make test-v2-migration`；默认 root、`daemon`、`attach` 仍保持旧入口。
-- 当前正在执行切片 19：`CLI v3 daemon 连接与自动启动基础`。
+- 切片 19 已完成：`termx-cli` 已建立 v3 专用 daemon client、`termx v3 ping` probe、core-v2 socket 默认解析、连接已有 core-v2 daemon、自动启动 `termx v3 daemon`、启动失败传播和旧 daemon 自动启动隔离测试。
+- 当前正在执行切片 20：`CLI v3 本地控制命令`。
 - 当前 CLI 默认运行时尚未切换：`go run ./termx-cli/cmd/termx` 仍通过旧 `termx-core` daemon 和旧 `tuiv2` TUI 工作。
 - 下一阶段目标按切片 18-28 顺序执行：先完成显式 `termx v3` 实验入口，再完成 v3 daemon 连接、本地控制命令、attach/TUI 装配、本地端到端 smoke、配置和 remote 收口，然后切换默认 root/daemon/attach/control，最后清理并冻结旧默认依赖。

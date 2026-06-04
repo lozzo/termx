@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/internal/protocol"
 	termx "github.com/lozzow/termx/termx-core"
 	corev2 "github.com/lozzow/termx/termx-core-v2"
 	"github.com/lozzow/termx/termx-remote/discovery"
@@ -334,6 +336,187 @@ func TestV3DaemonUsesCoreV2Server(t *testing.T) {
 	}
 	if fakeV3.newServerCalls != 1 || fakeV3.listenCalls != 1 || fakeV3.shutdownCalls != 1 {
 		t.Fatalf("unexpected core-v2 fake server calls: new=%d listen=%d shutdown=%d", fakeV3.newServerCalls, fakeV3.listenCalls, fakeV3.shutdownCalls)
+	}
+}
+
+func TestV3PingConnectsExistingCoreV2Daemon(t *testing.T) {
+	oldDial := v3DialClient
+	oldStart := startV3Daemon
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		startV3Daemon = oldStart
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	dialed := false
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		if path != socketPath {
+			t.Fatalf("expected v3 ping to dial socket %q, got %q", socketPath, path)
+		}
+		dialed = true
+		return nil, nil
+	}
+	startV3Daemon = func(path string, logFile string) error {
+		t.Fatal("v3 ping must not auto-start when existing daemon is reachable")
+		return nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "ping"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !dialed {
+		t.Fatal("expected v3 ping to dial core-v2 daemon")
+	}
+	if !strings.Contains(out.String(), "termx v3 daemon ok") || !strings.Contains(out.String(), socketPath) {
+		t.Fatalf("unexpected v3 ping output:\n%s", out.String())
+	}
+}
+
+func TestV3PingAutoStartsCoreV2Daemon(t *testing.T) {
+	oldDial := v3DialClient
+	oldStart := startV3Daemon
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		startV3Daemon = oldStart
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	dialCalls := 0
+	startCalls := 0
+	var startedSocket string
+	var startedLog string
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		dialCalls++
+		if path != socketPath {
+			t.Fatalf("expected dial socket %q, got %q", socketPath, path)
+		}
+		if dialCalls == 1 {
+			return nil, os.ErrNotExist
+		}
+		return nil, nil
+	}
+	startV3Daemon = func(path string, logFile string) error {
+		startCalls++
+		startedSocket = path
+		startedLog = logFile
+		return nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "ping"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if dialCalls < 2 {
+		t.Fatalf("expected initial dial and post-start dial, got %d", dialCalls)
+	}
+	if startCalls != 1 || startedSocket != socketPath || startedLog != logPath {
+		t.Fatalf("unexpected v3 daemon auto-start: calls=%d socket=%q log=%q", startCalls, startedSocket, startedLog)
+	}
+	if !strings.Contains(out.String(), "termx v3 daemon ok") {
+		t.Fatalf("unexpected v3 ping output:\n%s", out.String())
+	}
+}
+
+func TestV3PingReturnsAutoStartError(t *testing.T) {
+	oldDial := v3DialClient
+	oldStart := startV3Daemon
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		startV3Daemon = oldStart
+	})
+
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		return nil, os.ErrNotExist
+	}
+	startV3Daemon = func(path string, logFile string) error {
+		return os.ErrPermission
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "ping"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "start core-v2 daemon") || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected auto-start error, got %v", err)
+	}
+}
+
+func TestV3PingConnectsRealCoreV2Daemon(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop in time")
+		}
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "ping"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "termx v3 daemon ok") || !strings.Contains(out.String(), socketPath) {
+		t.Fatalf("unexpected v3 ping output:\n%s", out.String())
+	}
+}
+
+func TestStartCoreV2DaemonCommandUsesV3Daemon(t *testing.T) {
+	oldExecutable := osExecutable
+	t.Cleanup(func() {
+		osExecutable = oldExecutable
+	})
+
+	exe := filepath.Join(t.TempDir(), "termx")
+	osExecutable = func() (string, error) {
+		return exe, nil
+	}
+	got, err := buildStartCoreV2DaemonCommand("/tmp/termx-v2.sock", "/tmp/termx.log")
+	if err != nil {
+		t.Fatalf("buildStartCoreV2DaemonCommand returned error: %v", err)
+	}
+	if got.Path != exe {
+		t.Fatalf("expected executable %q, got %q", exe, got.Path)
+	}
+	wantArgs := []string{exe, "--socket", "/tmp/termx-v2.sock", "--log-file", "/tmp/termx.log", "v3", "daemon"}
+	if !reflect.DeepEqual(got.Args, wantArgs) {
+		t.Fatalf("unexpected v3 daemon args: %#v", got.Args)
 	}
 }
 
