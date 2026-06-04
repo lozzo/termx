@@ -128,6 +128,52 @@ func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
 	}
 }
 
+func TestTerminalPickerItemsMergeTerminalPoolAndWorkspacePanes(t *testing.T) {
+	shell := DefaultShell().OpenTerminalPicker()
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	root := Root{
+		Shell: shell,
+		TerminalPool: TerminalPoolStore{
+			Status: TerminalPoolReady,
+			Items: []TerminalPoolItem{
+				{TerminalID: "term-main", Title: "duplicate"},
+				{TerminalID: "term-pool", Title: "远程🚀", State: "running"},
+			},
+		},
+	}
+
+	items := TerminalPickerItems(root)
+	if len(items) != 2 || items[0].PaneID != DefaultPaneID || items[1].TerminalID != "term-pool" || !items[1].FromPool {
+		t.Fatalf("expected pane item plus deduped pool item, got %#v", items)
+	}
+	root.Shell = root.Shell.SetTerminalPickerQuery("远程")
+	items = TerminalPickerItems(root)
+	if len(items) != 1 || items[0].TerminalID != "term-pool" || !items[0].Selected {
+		t.Fatalf("expected query to match pool item and reset selection, got %#v", items)
+	}
+}
+
+func TestTerminalPoolStoreAppliesListWithStaleGuardAndError(t *testing.T) {
+	pool := TerminalPoolStore{}
+	pool = pool.RequestList()
+	firstSeq := pool.RequestSeq
+	pool = pool.RequestList()
+	secondSeq := pool.RequestSeq
+
+	next, applied := pool.ApplyList(firstSeq, []TerminalPoolItem{{TerminalID: "old"}}, "")
+	if applied || len(next.Items) != 0 {
+		t.Fatalf("stale list result must be ignored, got applied=%v pool=%#v", applied, next)
+	}
+	next, applied = pool.ApplyList(secondSeq, []TerminalPoolItem{{TerminalID: "term-1", Title: "main"}}, "")
+	if !applied || next.Status != TerminalPoolReady || len(next.Items) != 1 || next.Items[0].TerminalID != "term-1" {
+		t.Fatalf("expected fresh list applied, got applied=%v pool=%#v", applied, next)
+	}
+	next, applied = next.ApplyList(secondSeq, nil, "boom")
+	if !applied || next.Status != TerminalPoolError || next.LastError != "boom" {
+		t.Fatalf("expected error state, got applied=%v pool=%#v", applied, next)
+	}
+}
+
 func TestShellSplitActivePaneCreatesMinimalPaneTree(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{
 		ID:         "pane-2",

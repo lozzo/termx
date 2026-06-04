@@ -36,7 +36,10 @@ func NewUIInputReducer() Reducer {
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
 			root.Shell = root.Shell.OpenTerminalPicker()
-			return root.Advance(), []Effect{handledEffect{}}
+			return root.Advance(), []Effect{
+				handledEffect{},
+				FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }},
+			}
 		case input.IntentSetInteractionMode:
 			root.Shell = root.Shell.SetInteractionMode(stateInteractionMode(intent.Mode))
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(root.Shell.InteractionMode) + " mode"})
@@ -99,8 +102,16 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 		}
 	}
 	if selected.PaneID == "" {
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no pane"})
-		return root.Advance(), []Effect{handledEffect{}}
+		if selected.TerminalID == "" {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no terminal"})
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+			}},
+		}
 	}
 	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
 	root.Shell = root.Shell.CloseOverlay()

@@ -20,12 +20,17 @@ func (client *fakeProtocolHistoryClient) HistoryWindow(_ context.Context, params
 
 type fakeProtocolTerminalClient struct {
 	attachParams   []protocol.AttachParams
+	listCalls      int
+	createParams   []protocol.CreateParams
+	restartIDs     []string
 	inputChannel   []uint16
 	inputData      [][]byte
 	resizeChannels []uint16
 	resizes        []protocol.Size
 	ensureParams   []protocol.EnsureResizeParams
 	attachResult   *protocol.AttachResult
+	listResult     *protocol.ListResult
+	createResult   *protocol.CreateResult
 }
 
 func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
@@ -34,6 +39,27 @@ func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, p
 		return client.attachResult, nil
 	}
 	return &protocol.AttachResult{Channel: 11}, nil
+}
+
+func (client *fakeProtocolTerminalClient) List(context.Context) (*protocol.ListResult, error) {
+	client.listCalls++
+	if client.listResult != nil {
+		return client.listResult, nil
+	}
+	return &protocol.ListResult{}, nil
+}
+
+func (client *fakeProtocolTerminalClient) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
+	client.createParams = append(client.createParams, params)
+	if client.createResult != nil {
+		return client.createResult, nil
+	}
+	return &protocol.CreateResult{TerminalID: params.ID, State: "running"}, nil
+}
+
+func (client *fakeProtocolTerminalClient) Restart(_ context.Context, terminalID string) error {
+	client.restartIDs = append(client.restartIDs, terminalID)
+	return nil
 }
 
 func (client *fakeProtocolTerminalClient) Input(_ context.Context, channel uint16, data []byte) error {
@@ -163,5 +189,41 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	}
 	if len(client.ensureParams) != 1 || client.ensureParams[0].Cols != 120 || client.ensureParams[0].Rows != 50 {
 		t.Fatalf("unexpected ensure resize params %#v", client.ensureParams)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-pool",
+			Name:  "日志🚀",
+			State: "running",
+			CWD:   "/tmp",
+			Tags:  map[string]string{"role": "shell"},
+		}}},
+		createResult: &protocol.CreateResult{TerminalID: "term-new", State: "running"},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	list, err := adapter.List(context.Background(), TerminalListRequest{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if client.listCalls != 1 || len(list.Items) != 1 || list.Items[0].TerminalID != "term-pool" || list.Items[0].Title != "日志🚀" || list.Items[0].Tags["role"] != "shell" {
+		t.Fatalf("unexpected list mapping calls=%d result=%#v", client.listCalls, list)
+	}
+
+	created, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-new", Title: "new", Command: []string{"sh"}, Cols: 100, Rows: 30})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.TerminalID != "term-new" || len(client.createParams) != 1 || client.createParams[0].Size.Cols != 100 || client.createParams[0].Name != "new" {
+		t.Fatalf("unexpected create mapping created=%#v params=%#v", created, client.createParams)
+	}
+	if err := adapter.Restart(context.Background(), TerminalRestartRequest{TerminalID: "term-pool"}); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if len(client.restartIDs) != 1 || client.restartIDs[0] != "term-pool" {
+		t.Fatalf("unexpected restart ids %#v", client.restartIDs)
 	}
 }

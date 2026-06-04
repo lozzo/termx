@@ -491,12 +491,22 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 当前 Terminal Picker 真实交互深化的架构边界：
 
 - `OverlayState.Query` 与 `OverlayState.SelectedIndex` 是 reducer-owned picker 交互状态；query 更新、过滤后重置 selection、上下移动 selection 都必须由 `ShellStore` 方法完成。
-- `state.TerminalPickerItems(root)` 是 app 与 render 共享的当前 picker item 推导入口；它只从 reducer-owned root、当前 workspace panes 和当前 active session/surface/history terminal id 推导列表，不读取服务端 Terminal Pool。
+- `state.TerminalPickerItems(root)` 是 app 与 render 共享的当前 picker item 推导入口；它只从 reducer-owned root、当前 workspace panes、当前 active session/surface/history terminal id 和 reducer-owned `TerminalPoolStore` 推导列表，不直接读取服务端 Terminal Pool。
 - UI input reducer 在 Terminal Picker overlay 打开时优先消费字符、Backspace、上下方向键和 Enter；这些输入不得进入 terminal input path。
 - Enter 和 picker row click 最小可落地语义都是 focus 目标 pane、关闭 overlay、添加 toast 反馈；不得把该路径伪装成跨 workspace attach 或服务端 Terminal Pool attach。
-- `picker.new` 当前只能显示 create feedback toast，不能直接创建 terminal，也不能修改 terminal service state；真实 create 必须通过后续服务/effect 切片接入。
+- `picker.new` 只能通过 terminal service create effect/result 接线，result 到达后显示反馈 toast；不得直接修改 service state 或在 result 前伪造 terminal lifecycle。
 - preview/detail 行只投影 selected item 的 pane id、terminal id 和 kind；renderer 不读取 service、core client 或 Terminal Pool。
 - overlay cursor、row action 和 preview 内容继续由 render framework 按 content rect 裁切合成，不得覆盖 pane chrome、toast 或 shell chrome。
+
+当前 Terminal Pool 数据源与 Picker 服务接线一期的架构边界：
+
+- `TerminalPoolStore` 是 reducer-owned list/source 状态，只保存 list 请求状态、当前 items、错误、stale guard 序号和最近 create/attach 结果；它不是完整 Terminal Pool 管理页状态。
+- `TerminalService` 已扩展最小 Terminal Pool contract：`List`、`Create`、`Restart`、`Reconnect`、`Attach` 均只能通过 effect/result message 回到 reducer；service 不得直接修改 `StateRoot`。
+- Terminal Picker 打开时可以触发 `TerminalPoolListRequestMsg`，服务端 list result 只能先写入 `TerminalPoolStore`，再由 `state.TerminalPickerItems(root)` 合并当前 workspace panes 与 pool items。
+- picker attach 对当前 pane row 仍只执行 pane focus/close overlay；对 pool row 才通过 terminal service attach/reconnect result 更新 session/surface，并显示 toast。
+- `picker.new` 通过 terminal service create result 显示反馈并触发 list refresh；不得在 result 到达前伪造 terminal lifecycle。
+- list/create/attach/restart/reconnect 失败必须写入 reducer-owned error/toast；stale list result 必须被拒绝。
+- 本阶段不实现 Terminal Pool 管理页、跨 workspace 管理、跨 remote 管理、metadata edit、kill/remove UI 或 Workbench Tree。
 
 ## 12. 与 core-v2 的接口
 

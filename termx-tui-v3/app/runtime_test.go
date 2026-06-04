@@ -13,6 +13,7 @@ import (
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
+	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -457,7 +458,8 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	}
 
 	newHost := NewFakeTerminalHost(8)
-	newRuntime := newShellHitRuntime(pickerRoot, newHost)
+	newTerminal := &services.FakeTerminalService{CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"}}
+	newRuntime := newShellHitRuntimeWithTerminal(pickerRoot, newHost, newTerminal)
 	if err := newRuntime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("post picker new render: %v", err)
 	}
@@ -471,8 +473,11 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	if err := newRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain picker new: %v", err)
 	}
+	if len(newTerminal.Creates) != 1 {
+		t.Fatalf("picker new should call terminal create, got %#v", newTerminal.Creates)
+	}
 	toasts := newRuntime.State().Shell.Toasts
-	if len(toasts) == 0 || toasts[len(toasts)-1].Title != "picker.new" {
+	if len(toasts) == 0 || toasts[len(toasts)-1].Title != "picker.new" || toasts[len(toasts)-1].Body != "term-created" {
 		t.Fatalf("picker new should show feedback toast, got %#v", toasts)
 	}
 
@@ -524,6 +529,19 @@ func newShellHitRuntime(root state.Root, host *FakeTerminalHost) *AppRuntime {
 	return NewAppRuntime(
 		root,
 		NewShellReducer(),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+}
+
+func newShellHitRuntimeWithTerminal(root state.Root, host *FakeTerminalHost, terminal services.TerminalService) *AppRuntime {
+	host.SetSize(80, 20)
+	return NewAppRuntime(
+		root,
+		ComposeReducers(NewShellReducer(), NewTerminalPoolReducer(LiveDeps{Terminal: terminal})),
 		func(root state.Root) render.Frame {
 			return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
 		},

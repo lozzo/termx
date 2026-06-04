@@ -125,6 +125,8 @@ type TerminalPickerItem struct {
 	TerminalID string
 	Active     bool
 	Selected   bool
+	FromPool   bool
+	PoolState  string
 }
 
 type ToastState struct {
@@ -650,12 +652,13 @@ func (workspace WorkspaceState) ensureActiveTab() WorkspaceState {
 	return workspace
 }
 
-// TerminalPickerItems 只从 reducer-owned root 推导当前 picker 列表，不读取服务端 Terminal Pool。
+// TerminalPickerItems 从 reducer-owned root 推导 picker 列表；服务端 Terminal Pool 必须先回投到 TerminalPoolStore。
 func TerminalPickerItems(root Root) []TerminalPickerItem {
 	shell := root.Shell.EnsureDefaults()
 	tab := shell.activeTab()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
-	items := make([]TerminalPickerItem, 0, len(tab.Panes))
+	items := make([]TerminalPickerItem, 0, len(tab.Panes)+len(root.TerminalPool.Items))
+	seenTerminal := map[string]struct{}{}
 	for _, pane := range tab.Panes {
 		terminalID := pickerTerminalID(root, pane)
 		if pane.Kind == PaneEmpty && terminalID == "" {
@@ -667,6 +670,29 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			Kind:       pane.Kind,
 			TerminalID: terminalID,
 			Active:     pane.Active,
+		}
+		if !matchesTerminalPickerQuery(item, query) {
+			continue
+		}
+		items = append(items, item)
+		if terminalID != "" && terminalID != "none" {
+			seenTerminal[terminalID] = struct{}{}
+		}
+	}
+	for _, poolItem := range root.TerminalPool.Items {
+		if poolItem.TerminalID == "" {
+			continue
+		}
+		if _, seen := seenTerminal[poolItem.TerminalID]; seen {
+			continue
+		}
+		item := TerminalPickerItem{
+			Title:      terminalPoolTitle(poolItem),
+			Kind:       PaneTerminalLive,
+			TerminalID: poolItem.TerminalID,
+			Active:     poolItem.Attached,
+			FromPool:   true,
+			PoolState:  poolItem.State,
 		}
 		if !matchesTerminalPickerQuery(item, query) {
 			continue
@@ -718,7 +744,8 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	return strings.Contains(strings.ToLower(item.Title), query) ||
 		strings.Contains(strings.ToLower(item.PaneID), query) ||
 		strings.Contains(strings.ToLower(item.TerminalID), query) ||
-		strings.Contains(strings.ToLower(string(item.Kind)), query)
+		strings.Contains(strings.ToLower(string(item.Kind)), query) ||
+		strings.Contains(strings.ToLower(item.PoolState), query)
 }
 
 func paneTitle(pane PaneState) string {
@@ -732,6 +759,16 @@ func paneTitle(pane PaneState) string {
 		return pane.ID
 	}
 	return "pane"
+}
+
+func terminalPoolTitle(item TerminalPoolItem) string {
+	if item.Title != "" {
+		return item.Title
+	}
+	if item.TerminalID != "" {
+		return item.TerminalID
+	}
+	return "terminal"
 }
 
 func formatToastID(seq uint64) string {

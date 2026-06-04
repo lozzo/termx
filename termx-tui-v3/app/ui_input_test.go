@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -23,11 +24,14 @@ func TestUIInputReducerOpensTerminalPickerFromCtrlF(t *testing.T) {
 	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker {
 		t.Fatalf("expected terminal picker overlay, got %#v", root.Shell.Overlay)
 	}
-	if len(effects) != 1 {
-		t.Fatalf("expected handled effect, got %#v", effects)
+	if len(effects) != 2 {
+		t.Fatalf("expected handled and pool list effects, got %#v", effects)
 	}
 	if _, ok := effects[0].(handledEffect); !ok {
 		t.Fatalf("expected handled effect, got %#v", effects)
+	}
+	if effect, ok := effects[1].(FuncEffect); !ok || effect.Run == nil {
+		t.Fatalf("expected terminal pool list effect, got %#v", effects[1])
 	}
 }
 
@@ -132,6 +136,129 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("picker navigation must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeTerminalPickerUsesTerminalPoolService(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-pool", Channel: 9, Cols: 80, Rows: 24},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{
+			TerminalID: "term-pool",
+			Title:      "远程🚀",
+			State:      "running",
+		}}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-f: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain picker list: %v", err)
+	}
+	if len(terminal.Lists) != 1 || runtime.State().TerminalPool.Status != state.TerminalPoolReady {
+		t.Fatalf("expected picker open to load terminal pool, lists=%#v pool=%#v", terminal.Lists, runtime.State().TerminalPool)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "远程🚀") || !frameContains(frame, "pool") {
+		t.Fatalf("expected pool row in picker frame, got %#v", frame.Lines)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool attach: %v", err)
+	}
+	if len(terminal.Attaches) != 1 || terminal.Attaches[0].TerminalID != "term-pool" {
+		t.Fatalf("expected pool attach through service, got %#v", terminal.Attaches)
+	}
+	if !runtime.State().Session.Attached || runtime.State().Session.TerminalID != "term-pool" || runtime.State().Shell.Overlay.Open {
+		t.Fatalf("expected attached pool terminal and closed overlay, got session=%#v shell=%#v", runtime.State().Session, runtime.State().Shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("picker pool navigation must not leak terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
+	terminal := &services.FakeTerminalService{ListErr: errors.New("list failed")}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root, effects := reducer(state.Root{Shell: state.DefaultShell()}, TerminalPoolListRequestMsg{})
+	if root.TerminalPool.Status != state.TerminalPoolLoading || len(effects) != 1 {
+		t.Fatalf("expected loading pool and list effect, got root=%#v effects=%#v", root, effects)
+	}
+	root, _ = reducer(root, TerminalPoolListResultMsg{Seq: root.TerminalPool.RequestSeq, Err: errors.New("list failed")})
+	if root.TerminalPool.Status != state.TerminalPoolError || root.TerminalPool.LastError != "list failed" || len(root.Shell.Toasts) == 0 {
+		t.Fatalf("expected list error state and toast, got %#v", root)
+	}
+	staleSeq := root.TerminalPool.RequestSeq
+	root.TerminalPool = root.TerminalPool.RequestList()
+	root, _ = reducer(root, TerminalPoolListResultMsg{Seq: staleSeq, Result: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "stale"}}}})
+	if len(root.TerminalPool.Items) != 0 {
+		t.Fatalf("stale result must not update pool, got %#v", root.TerminalPool)
+	}
+
+	terminal = &services.FakeTerminalService{CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"}}
+	reducer = NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root, effects = reducer(root, TerminalPoolCreateRequestMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("expected create effect, got %#v", effects)
+	}
+	root, effects = reducer(root, TerminalPoolCreateResultMsg{Result: services.TerminalCreateResult{TerminalID: "term-created", State: "running"}})
+	if root.TerminalPool.LastCreatedID != "term-created" || len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Body != "term-created" || len(effects) != 1 {
+		t.Fatalf("expected create feedback and refresh effect, got root=%#v effects=%#v", root, effects)
+	}
+}
+
+func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},
+	}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, TerminalPoolRestartRequestMsg{TerminalID: "term-1"})
+	if len(effects) != 1 {
+		t.Fatalf("expected restart effect, got %#v", effects)
+	}
+	restartEffect, ok := effects[0].(FuncEffect)
+	if !ok {
+		t.Fatalf("expected restart FuncEffect, got %#v", effects[0])
+	}
+	restartMsg, ok := restartEffect.Run(context.Background()).(TerminalPoolRestartResultMsg)
+	if !ok || restartMsg.TerminalID != "term-1" || len(terminal.Restarts) != 1 {
+		t.Fatalf("expected restart service result, msg=%#v restarts=%#v", restartMsg, terminal.Restarts)
+	}
+	root, effects = reducer(root, restartMsg)
+	if len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Title != "picker.restart" || len(effects) != 1 {
+		t.Fatalf("expected restart result feedback and refresh effect, terminal=%#v root=%#v effects=%#v", terminal, root, effects)
+	}
+
+	root, effects = reducer(root, TerminalPoolReconnectRequestMsg{TerminalID: "term-1"})
+	if len(effects) != 1 {
+		t.Fatalf("expected reconnect effect, got %#v", effects)
+	}
+	reconnectEffect, ok := effects[0].(FuncEffect)
+	if !ok {
+		t.Fatalf("expected reconnect FuncEffect, got %#v", effects[0])
+	}
+	reconnectMsg, ok := reconnectEffect.Run(context.Background()).(TerminalPoolReconnectResultMsg)
+	if !ok || reconnectMsg.TerminalID != "term-1" || len(terminal.Reconnects) != 1 {
+		t.Fatalf("expected reconnect service result, msg=%#v reconnects=%#v", reconnectMsg, terminal.Reconnects)
+	}
+	root, _ = reducer(root, reconnectMsg)
+	if !root.Session.Attached || root.Session.TerminalID != "term-1" || root.TerminalPool.LastAttachedID != "term-1" {
+		t.Fatalf("expected reconnect result to attach session, got session=%#v pool=%#v", root.Session, root.TerminalPool)
 	}
 }
 

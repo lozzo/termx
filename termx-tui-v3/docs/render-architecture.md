@@ -1002,7 +1002,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - terminal-live content renderer 一期已进入当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，content 仍由 framework 裁切到 content rect；但 selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
 - copy-history content renderer 一期已进入当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，status 输出 row、line、cols 位置摘要，copy/yank 成功通过 toast 反馈；完整 scrollbar、content-local mouse selection、搜索和 logical-line 拼接提示仍待后续深化。
 - empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region。
-- Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/close overlay、picker row click、new action feedback、最小 preview/detail 行和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达；但 Terminal Pool 数据源、跨 workspace source、真实 create/restart/reconnect 服务和完整管理页仍未接入。
+- Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/close overlay、picker row click、new action feedback、最小 preview/detail 行和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达。
+- Terminal Pool 数据源与 Picker 服务接线一期已进入当前阶段：Terminal Picker 打开可请求 terminal list，`TerminalPoolStore` 保存 loading/empty/error/items/stale guard，picker rows 会合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 均通过 terminal service effect/result message 回到 reducer；但完整 Terminal Pool 管理页、跨 workspace/remote 管理、metadata edit、kill/remove UI 和 detail/preview 面板仍未落地。
 - Terminal Pool、Workbench Tree、Prompt、Help 的完整内容未落地。
 - floating panel 仍未落地，当前只有架构类型和后续边界。
 - overlay 已落地 Terminal Picker 真实交互和基础 opaque cursor 归属，未完成 Workbench Tree、Prompt、Help、Floating Overview 的产品内容。
@@ -1016,12 +1017,11 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 建议后续切片：
 
-- Terminal Picker / Terminal Pool 接线：在当前 query/filter/selection/preview 基础上接真实 Terminal Pool 数据源、跨 workspace source、attach/create/restart/reconnect 服务/effect、错误反馈和 stale guard；不得伪造服务端生命周期。
+- Terminal Pool 管理页：在当前 picker service 接线基础上实现 Terminal Pool page content、列表、搜索、detail、preview、attach/kill/edit action 和跨 workspace source；不得伪造服务端生命周期。
 - terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
 - copy-history content renderer 深化：在一期基础上完善 scrollbar 视觉、position token 精细化、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和滚动交互。
 - tiled layout refinement：支持多层 split 的完整产品交互、resize affordance、active pane hit region 和 card/split 模式切换保持。
 - floating / overlay：实现 floating pane z-order、裁切、遮挡、置顶、drag/resize affordance，以及 Prompt、Help、Floating Overview overlay。
-- Terminal Pool：实现 Terminal Pool page content、列表、搜索、detail、preview 和 attach/kill/edit action。
 - Workbench Tree：实现 workspace/tab/pane/floating 结构导航 overlay。
 - cleanup：删除或重命名剩余旧 `RenderVM{Lines, Status}` 兼容字段和相关测试命名，前提是 runtime、CLI smoke 和 harness 已全部迁到 `ShellVM/RenderResult` 语义。
 - performance：引入 content-level cache、layer dirty region 和 large terminal output 性能验证。

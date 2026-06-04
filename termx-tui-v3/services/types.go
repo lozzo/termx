@@ -46,8 +46,39 @@ type CoreClient interface {
 
 type TerminalService interface {
 	Attach(context.Context, TerminalAttachRequest) (TerminalAttachResult, error)
+	List(context.Context, TerminalListRequest) (TerminalListResult, error)
+	Create(context.Context, TerminalCreateRequest) (TerminalCreateResult, error)
+	Restart(context.Context, TerminalRestartRequest) error
+	Reconnect(context.Context, TerminalReconnectRequest) (TerminalAttachResult, error)
 	SendInput(context.Context, TerminalInputRequest) error
 	Resize(context.Context, TerminalResizeRequest) error
+}
+
+type TerminalPoolItem struct {
+	TerminalID string
+	Title      string
+	State      string
+	CWD        string
+	Tags       map[string]string
+}
+
+type TerminalListRequest struct{}
+
+type TerminalListResult struct {
+	Items []TerminalPoolItem
+}
+
+type TerminalCreateRequest struct {
+	TerminalID string
+	Title      string
+	Command    []string
+	Cols       int
+	Rows       int
+}
+
+type TerminalCreateResult struct {
+	TerminalID string
+	State      string
 }
 
 type TerminalAttachRequest struct {
@@ -66,6 +97,20 @@ type TerminalAttachResult struct {
 	Cols       int
 	Rows       int
 	CanResize  bool
+}
+
+type TerminalRestartRequest struct {
+	TerminalID string
+}
+
+type TerminalReconnectRequest struct {
+	TerminalID   string
+	Cols         int
+	Rows         int
+	Mode         string
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
 }
 
 type TerminalInputRequest struct {
@@ -142,10 +187,20 @@ func (client *FakeCoreClient) HistoryOlder(_ context.Context, req HistoryOlderRe
 
 type FakeTerminalService struct {
 	AttachResult TerminalAttachResult
+	ListResult   TerminalListResult
+	CreateResult TerminalCreateResult
 	AttachErr    error
+	ListErr      error
+	CreateErr    error
+	RestartErr   error
+	ReconnectErr error
 	InputErr     error
 	ResizeErr    error
 	Attaches     []TerminalAttachRequest
+	Lists        []TerminalListRequest
+	Creates      []TerminalCreateRequest
+	Restarts     []TerminalRestartRequest
+	Reconnects   []TerminalReconnectRequest
 	Inputs       []TerminalInputRequest
 	Resizes      []TerminalResizeRequest
 }
@@ -168,6 +223,50 @@ func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttach
 	return result, nil
 }
 
+func (service *FakeTerminalService) List(_ context.Context, req TerminalListRequest) (TerminalListResult, error) {
+	service.Lists = append(service.Lists, req)
+	if service.ListErr != nil {
+		return TerminalListResult{}, service.ListErr
+	}
+	return TerminalListResult{Items: cloneTerminalPoolItems(service.ListResult.Items)}, nil
+}
+
+func (service *FakeTerminalService) Create(_ context.Context, req TerminalCreateRequest) (TerminalCreateResult, error) {
+	service.Creates = append(service.Creates, req)
+	if service.CreateErr != nil {
+		return TerminalCreateResult{}, service.CreateErr
+	}
+	result := service.CreateResult
+	if result.TerminalID == "" {
+		result.TerminalID = req.TerminalID
+	}
+	if result.State == "" {
+		result.State = "running"
+	}
+	return result, nil
+}
+
+func (service *FakeTerminalService) Restart(_ context.Context, req TerminalRestartRequest) error {
+	service.Restarts = append(service.Restarts, req)
+	return service.RestartErr
+}
+
+func (service *FakeTerminalService) Reconnect(ctx context.Context, req TerminalReconnectRequest) (TerminalAttachResult, error) {
+	service.Reconnects = append(service.Reconnects, req)
+	if service.ReconnectErr != nil {
+		return TerminalAttachResult{}, service.ReconnectErr
+	}
+	return service.Attach(ctx, TerminalAttachRequest{
+		TerminalID:   req.TerminalID,
+		Cols:         req.Cols,
+		Rows:         req.Rows,
+		Mode:         req.Mode,
+		ResizePolicy: req.ResizePolicy,
+		SurfaceID:    req.SurfaceID,
+		ViewID:       req.ViewID,
+	})
+}
+
 func (service *FakeTerminalService) SendInput(_ context.Context, req TerminalInputRequest) error {
 	service.Inputs = append(service.Inputs, req)
 	return service.InputErr
@@ -176,6 +275,34 @@ func (service *FakeTerminalService) SendInput(_ context.Context, req TerminalInp
 func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResizeRequest) error {
 	service.Resizes = append(service.Resizes, req)
 	return service.ResizeErr
+}
+
+func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {
+	if len(items) == 0 {
+		return nil
+	}
+	cloned := make([]TerminalPoolItem, len(items))
+	for i, item := range items {
+		cloned[i] = item
+		if len(item.Tags) > 0 {
+			cloned[i].Tags = make(map[string]string, len(item.Tags))
+			for key, value := range item.Tags {
+				cloned[i].Tags[key] = value
+			}
+		}
+	}
+	return cloned
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 type FakeSessionService struct {

@@ -1,0 +1,110 @@
+package state
+
+type TerminalPoolStatus string
+
+const (
+	TerminalPoolIdle    TerminalPoolStatus = ""
+	TerminalPoolLoading TerminalPoolStatus = "loading"
+	TerminalPoolReady   TerminalPoolStatus = "ready"
+	TerminalPoolError   TerminalPoolStatus = "error"
+)
+
+type TerminalPoolStore struct {
+	Status         TerminalPoolStatus
+	Items          []TerminalPoolItem
+	RequestSeq     uint64
+	AppliedSeq     uint64
+	LastError      string
+	LastCreatedID  string
+	LastAttachedID string
+}
+
+type TerminalPoolItem struct {
+	TerminalID string
+	Title      string
+	State      string
+	CWD        string
+	Tags       map[string]string
+	Attached   bool
+}
+
+func (store TerminalPoolStore) RequestList() TerminalPoolStore {
+	store.RequestSeq++
+	store.Status = TerminalPoolLoading
+	store.LastError = ""
+	return store
+}
+
+func (store TerminalPoolStore) ApplyList(seq uint64, items []TerminalPoolItem, err string) (TerminalPoolStore, bool) {
+	if store.IsStale(seq) {
+		return store, false
+	}
+	store.AppliedSeq = seq
+	if err != "" {
+		store.Status = TerminalPoolError
+		store.LastError = err
+		return store, true
+	}
+	store.Status = TerminalPoolReady
+	store.Items = cloneTerminalPoolItems(items)
+	store.LastError = ""
+	return store, true
+}
+
+func (store TerminalPoolStore) ApplyCreated(terminalID string, err string) TerminalPoolStore {
+	if err != "" {
+		store.LastError = err
+		store.Status = TerminalPoolError
+		return store
+	}
+	store.LastCreatedID = terminalID
+	store.LastError = ""
+	return store
+}
+
+func (store TerminalPoolStore) ApplyAttached(terminalID string, err string) TerminalPoolStore {
+	if err != "" {
+		store.LastError = err
+		store.Status = TerminalPoolError
+		return store
+	}
+	store.LastAttachedID = terminalID
+	store.LastError = ""
+	store.Items = markTerminalPoolAttached(store.Items, terminalID)
+	return store
+}
+
+func (store TerminalPoolStore) IsStale(seq uint64) bool {
+	return seq != 0 && seq < store.RequestSeq
+}
+
+func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {
+	if len(items) == 0 {
+		return nil
+	}
+	cloned := make([]TerminalPoolItem, len(items))
+	for i, item := range items {
+		cloned[i] = item
+		cloned[i].Tags = cloneStringMap(item.Tags)
+	}
+	return cloned
+}
+
+func markTerminalPoolAttached(items []TerminalPoolItem, terminalID string) []TerminalPoolItem {
+	cloned := cloneTerminalPoolItems(items)
+	for index := range cloned {
+		cloned[index].Attached = cloned[index].TerminalID == terminalID
+	}
+	return cloned
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}

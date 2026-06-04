@@ -1412,12 +1412,34 @@ Terminal Picker 真实交互深化的目标是把一期静态列表推进为可�
 
 本阶段不要求：
 
-- 完整 Terminal Pool 数据源。
 - 跨 workspace terminal source。
-- 真实 create/restart/reconnect 服务。
-- Terminal Pool 管理页、preview 面板或详情编辑。
+- 完整 Terminal Pool 管理页。
+- Terminal Pool preview 面板或详情编辑。
 
-## 26. 后续讨论入口
+## 26. Terminal Pool 数据源与 Picker 服务接线一期验收线
+
+Terminal Pool 数据源与 Picker 服务接线一期的目标是让 Terminal Picker 可以消费真实 terminal list，并把 attach/create/restart/reconnect 作为 service/effect/result message 表达，而不是继续显示未实现 toast。
+
+本阶段必须满足：
+
+- 打开 Terminal Picker 可以触发 terminal list service request；list 结果必须先进入 reducer-owned `TerminalPoolStore`，renderer 不直接读取 service。
+- Picker row 必须合并当前 workspace panes 与 Terminal Pool items，并按 terminal id 去重；已有 pane 绑定的 terminal 不应重复出现 pool row。
+- Terminal Pool list loading、empty、error 必须在 overlay 内容中可见。
+- Query 必须同时过滤 pane row 和 pool row 的 title、pane id、terminal id、kind/state。
+- 对 pane row 执行 attach 仍然只做 focus pane / close overlay；对 pool row 执行 attach 必须通过 terminal service attach result 更新 session/surface，并显示 toast。
+- `new terminal` 必须通过 terminal service create result 反馈，并触发 list refresh；result 到达前不得伪造 terminal 生命周期。
+- restart / reconnect 必须存在 service/effect/result 边界和失败反馈，不得由 renderer 或 service 直接改 state。
+- stale list result 必须被拒绝；失败必须进入 reducer-owned error/toast。
+- 所有键盘和鼠标路径仍不得漏发到底层 terminal input。
+
+本阶段不要求：
+
+- 完整 Terminal Pool 管理页。
+- 跨 workspace 或跨 remote terminal 管理。
+- metadata edit、kill/remove UI。
+- Terminal Pool detail/preview 面板的最终产品视觉。
+
+## 27. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

@@ -1,6 +1,10 @@
 package app
 
-import "github.com/lozzow/termx/termx-tui-v3/state"
+import (
+	"context"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
+)
 
 type ShellSetPanelPresentationMsg struct {
 	Presentation state.PanelPresentation
@@ -128,6 +132,7 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.ClearToasts()
 		case ShellOpenTerminalPickerMsg:
 			root.Shell = root.Shell.OpenTerminalPicker()
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 		case ShellCloseOverlayMsg:
 			root.Shell = root.Shell.CloseOverlay()
 		case ShellContentActionMsg:
@@ -157,22 +162,61 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			Source: state.PaneCommandSourceMouse,
 		})
 	case "picker.attach":
-		if msg.PaneID != "" {
-			items := state.TerminalPickerItems(root)
-			if msg.Row >= 0 {
-				root.Shell = root.Shell.SetTerminalPickerSelectedIndex(msg.Row, len(items))
-			}
-			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: msg.PaneID})
+		items := state.TerminalPickerItems(root)
+		if msg.Row >= 0 {
+			root.Shell = root.Shell.SetTerminalPickerSelectedIndex(msg.Row, len(items))
+		}
+		selected, ok := terminalPickerItemAt(items, msg.Row)
+		if !ok && msg.PaneID != "" {
+			selected = state.TerminalPickerItem{PaneID: msg.PaneID}
+			ok = true
+		}
+		if ok && selected.PaneID != "" {
+			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
 			root.Shell = root.Shell.CloseOverlay()
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: msg.PaneID})
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: selected.PaneID})
 			return root.Advance(), nil
 		}
-	case "empty.attach", "empty.create", "empty.manager", "exited.restart", "exited.reconnect", "picker.new":
+		if ok && selected.TerminalID != "" {
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+			}}}
+		}
+	case "picker.new":
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolCreateRequestMsg{} }}}
+	case "exited.restart":
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
+		}}}
+	case "exited.reconnect":
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
+		}}}
+	case "empty.attach", "empty.create", "empty.manager":
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: msg.ActionID, Body: "not implemented"})
 		return root.Advance(), nil
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
 	return root.Advance(), nil
+}
+
+func terminalPickerItemAt(items []state.TerminalPickerItem, row int) (state.TerminalPickerItem, bool) {
+	if row >= 0 && row < len(items) {
+		return items[row], true
+	}
+	for _, item := range items {
+		if item.Selected {
+			return item, true
+		}
+	}
+	return state.TerminalPickerItem{}, false
+}
+
+func terminalIDForContentAction(root state.Root, paneID string) string {
+	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: paneID}); ok {
+		return pane.TerminalID
+	}
+	return ""
 }
 
 func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {

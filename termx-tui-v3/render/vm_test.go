@@ -507,6 +507,48 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 	}
 }
 
+func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
+	shell := state.DefaultShell().OpenTerminalPicker()
+	root := state.Root{
+		Shell: shell,
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{{
+				TerminalID: "term-pool",
+				Title:      "远程🚀",
+				State:      "running",
+			}},
+		},
+	}
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !strings.Contains(content.Lines[1].PlainString(), "shell") ||
+		!strings.Contains(content.Lines[2].PlainString(), "远程🚀") ||
+		!strings.Contains(content.Lines[2].PlainString(), "pool") ||
+		!strings.Contains(content.Lines[3].PlainString(), "preview pane:pane-main") {
+		t.Fatalf("expected pane and pool rows, got %#v", content.Lines)
+	}
+	if len(content.HitRegions) < 3 || content.HitRegions[1].Row != 1 || content.HitRegions[1].PaneID != "" {
+		t.Fatalf("expected pool row action region without pane id, got %#v", content.HitRegions)
+	}
+
+	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolLoading}
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !strings.Contains(content.Lines[1].PlainString(), "pool loading terminals") {
+		t.Fatalf("expected loading row, got %#v", content.Lines)
+	}
+	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolReady}
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !strings.Contains(content.Lines[1].PlainString(), "pool empty") {
+		t.Fatalf("expected empty row, got %#v", content.Lines)
+	}
+	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolError, LastError: "boom"}
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !strings.Contains(content.Lines[1].PlainString(), "pool error boom") {
+		t.Fatalf("expected error row, got %#v", content.Lines)
+	}
+}
+
 func TestRenderVMBuilderShowsLiveError(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{Err: "boom"},
