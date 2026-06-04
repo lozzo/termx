@@ -1333,6 +1333,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - Terminal Pool 管理页一期已完成：独立页面、搜索、列表、selected row、detail、metadata、preview 摘要、Attach/Edit/Kill action、键盘/鼠标操作、service/effect/result 反馈、常规 viewport 下关键内容可见和 no terminal input leak 已落地。
 - Prompt / Help overlay 一期已完成：Prompt 具备 title/context/input/submit/cancel/destructive confirm 边界，Help 可按 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 展示概念和动作，键盘、鼠标 close、overlay cursor 和 no terminal input leak 已接入。
 - Tab / Workspace 产品入口一期已完成：`Ctrl-t` 和 `Ctrl-w` 已进入 reducer-owned interaction mode，支持 tab create/switch/rename/close、workspace create/switch/rename 和 Workbench Tree 入口；rename 走同一个 Prompt 提交流程，header 展示 tab strip，footer 展示 mode-specific hints，输入不漏发到底层 terminal。
+- TUI 产品壳总验收已完成：除 terminal-live/copy-history 的深层内容体验仍可继续深化外，header/footer、pane、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace、toast、overlay、快捷键、鼠标和 no terminal input leak 已形成第一版可基本操作闭环。
 
 当前未完成但产品要求仍保留：
 
@@ -1694,7 +1695,47 @@ Tab / Workspace 产品入口一期的目标是让 `Ctrl-t` 和 `Ctrl-w` 从声�
 - 在 workspace mode 中按 `r` 打开 Prompt，输入中文或 emoji 后提交；workspace name 必须更新。
 - 在 workspace mode 中按 `t` 打开 Workbench Tree；关闭后仍回到稳定 workbench。
 
-## 32. 后续讨论入口
+## 32. TUI 产品壳总验收线
+
+TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-live/copy-history 的深层内容体验仍可继续深化外，默认 TUI 的界面、壳层功能和基础交互已经是可基本操作的产品闭环。
+
+本验收线已经完成，当前可用能力包括：
+
+- header/footer：显示 workspace、tab、mode、active pane、terminal/floating 摘要和 mode-specific hints；可隐藏并真实回收 body 空间。
+- pane：支持 split right/down、close、focus、zoom/unzoom、resize、balance、card/split presentation，键盘、鼠标和测试入口都走统一 semantic command。
+- floating：支持创建、移动、resize、居中、collapse/restore、close、鼠标 raise/resize/close，并始终使用独立 styled bordered chrome。
+- Terminal Pool：支持全局页面打开、搜索、列表、selected row、detail/preview、Attach/Edit/Kill action、service/effect/result 反馈和 no terminal input leak。
+- Workbench Tree：支持 workspace/tab/pane/floating 结构导航、搜索、selected row、Open/Focus action、键盘/鼠标操作和 no terminal input leak。
+- Prompt/Help：Prompt 支持短输入、提交、取消和 destructive confirm 边界；Help 展示 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 分类。
+- Tab/Workspace：`Ctrl-t` 支持 tab create/switch/rename/close；`Ctrl-w` 支持 workspace create/switch/rename 和 Workbench Tree 入口；rename 走同一 Prompt。
+- toast/overlay：toast 可 close current / clear all，overlay 可关闭且拥有自己的 cursor；toast 和 overlay 命中优先级高于底层 pane/terminal。
+- 鼠标：pane content/chrome focus、pane action close、floating raise/resize/close、Terminal Pool row/action、Workbench Tree row/action、Prompt/Help close 均走最新 hit region。
+- no terminal input leak：UI mode、overlay、Prompt、Terminal Pool、Workbench Tree、tab/workspace 等交互输入不会误发给底层 terminal。
+
+本验收线不宣称已经完成：
+
+- terminal live 的最终内容体验，例如 truecolor、underline、reverse、link、复杂 terminal mode、selection/search、content-local hit region 和 richer terminal cell attributes。
+- copy-history 的最终内容体验，例如 scrollbar、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和精细 position token。
+- Terminal Pool 的跨 workspace/remote 管理、attach as tab、attach as floating、metadata 表单和 kill confirm。
+- floating 连续拖拽、attach as floating 和 Floating Overview。
+- tab reorder、workspace delete、鼠标 tab strip 和完整 session persist/restore 树。
+
+当前 goal 完成后的基本手工测试入口：
+
+- 启动：`go run ./termx-cli/cmd/termx`。
+- 分屏与 pane：按 `Ctrl-p`，再用 `v` / `s` 分屏，`n` / `N` 切焦点，`z` zoom，`x` 关闭，`c` / `p` 切 card/split。
+- resize：按 `Ctrl-r`，再用方向键或 `h/j/k/l` 调整 active pane；边框、footer、terminal content rect resize 必须同步。
+- floating：按 `Ctrl-o`，再用 `n` 创建，方向键移动，`H/J/K/L` resize，`c` 居中，`z` collapse/restore，`x` 关闭；也可用鼠标点击 floating title/resize/close。
+- Terminal Pool：按 `Ctrl-g p` 打开，输入搜索词，使用上下键和 `Enter` attach；点击 row、Attach/Edit/Kill 必须有可见反馈，输入不得漏给 terminal。
+- Workbench Tree：按 `Ctrl-g w` 打开，输入搜索词，使用上下键和 `Enter` 聚焦结构对象；点击 Open/Focus 必须有反馈。
+- Prompt/Help：按 `Ctrl-g :` 打开 Prompt，输入中文或 emoji 并 `Enter` 提交；按 `Ctrl-g ?` 打开 Help，确认分类可见并可关闭。
+- Tab/Workspace：按 `Ctrl-t` 后用 `n/h/l/r/x` 操作 tab；按 `Ctrl-w` 后用 `n/h/l/r/t` 操作 workspace 和 Workbench Tree。
+- Toast/Header/Footer：按 `Ctrl-g h` / `Ctrl-g f` 隐藏或恢复 header/footer；按 `Ctrl-g T` 关闭当前 toast，按 `Ctrl-g t` 清空 toast。
+- 非交互回归：`go run ./termx-cli/cmd/termx v3 smoke` 和 `go run ./termx-cli/cmd/termx v3 e2e-smoke`。
+
+后续如果要把项目往前推，应优先进入 terminal live 连接展示与交互前推：在不破坏上述产品壳闭环的前提下，继续提升真实 terminal 内容展示、输入回显、cursor、连接/退出/错误状态和 no chrome leak。
+
+## 33. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

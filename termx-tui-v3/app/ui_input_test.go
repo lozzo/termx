@@ -975,6 +975,202 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{Channel: 4, Cols: 100, Rows: 30},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{
+			TerminalID: "term-shell",
+			Title:      "shell",
+			State:      "running",
+			Cols:       100,
+			Rows:       30,
+		}, {
+			TerminalID: "term-logs",
+			Title:      "日志🚀",
+			State:      "running",
+			CWD:        "/tmp/logs",
+			Cols:       120,
+			Rows:       40,
+			Tags:       map[string]string{"role": "logs"},
+		}}},
+		CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"},
+	}
+	host := NewFakeTerminalHost(160)
+	host.SetSize(110, 32)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 30}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	send := func(event input.InputEvent) {
+		t.Helper()
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send acceptance input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain acceptance input %#v: %v", event, err)
+		}
+	}
+	sendKey := func(key input.Key) {
+		t.Helper()
+		send(input.InputEvent{Kind: input.EventKindKey, Key: key})
+	}
+	sendChar := func(char string) {
+		t.Helper()
+		send(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: char})
+	}
+	sendCtrl := func(char string) {
+		t.Helper()
+		send(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: char, Ctrl: true})
+	}
+
+	sendCtrl("\x10")
+	sendChar("v")
+	sendChar("n")
+	sendCtrl("\x12")
+	sendKey(input.KeyRight)
+	sendKey(input.KeyEsc)
+	sendCtrl("\x10")
+	sendChar("p")
+	sendChar("b")
+
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.PanelPresentation != state.PanelPresentationSplitLine {
+		t.Fatalf("expected split-line presentation in product shell flow, got %#v", shell.PanelPresentation)
+	}
+	if tab := shell.Workspace.Tabs[0]; len(tab.Panes) != 2 || tab.RootSplit.Direction != state.SplitDirectionVertical {
+		t.Fatalf("expected split/focus/balance to keep a vertical pane tree, got %#v", tab)
+	}
+	if len(terminal.Resizes) == 0 {
+		t.Fatalf("resize mode should drive content rect terminal resize")
+	}
+	paneFrame := lastFrame(t, host.Frames())
+	if !frameContains(paneFrame, "mode:pane") || !frameContains(paneFrame, "active:pane:") {
+		t.Fatalf("expected pane mode footer and active feedback, got %#v", paneFrame.Lines)
+	}
+
+	sendCtrl("\x0f")
+	sendChar("n")
+	sendKey(input.KeyRight)
+	sendKey(input.KeyDown)
+	sendChar("L")
+	sendChar("J")
+	sendCtrl("\x07")
+	sendChar("t")
+	sendKey(input.KeyEsc)
+	floatingFrame := lastFrame(t, host.Frames())
+	if len(runtime.State().Shell.Floatings) != 1 || !frameContains(floatingFrame, "floating active") {
+		t.Fatalf("expected floating pane product shell content, shell=%#v frame=%#v", runtime.State().Shell, floatingFrame.Lines)
+	}
+	floatingClose := frameActionHitRegion(t, floatingFrame, "floating.close", "floating-1")
+	send(mouseEventAt(floatingClose.Rect))
+	if len(runtime.State().Shell.Floatings) != 0 {
+		t.Fatalf("floating close action should remove floating pane, got %#v", runtime.State().Shell.Floatings)
+	}
+
+	sendCtrl("\x07")
+	sendChar("p")
+	sendChar("日")
+	sendChar("志")
+	poolFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPool || !frameContains(poolFrame, "Terminal Pool") || !frameContains(poolFrame, "日志🚀") {
+		t.Fatalf("expected Terminal Pool page in product shell flow, shell=%#v frame=%#v", runtime.State().Shell, poolFrame.Lines)
+	}
+	sendKey(input.KeyEnter)
+	if len(terminal.Attaches) < 2 || runtime.State().Session.TerminalID != "term-logs" {
+		t.Fatalf("Terminal Pool attach should use terminal service, attaches=%#v session=%#v", terminal.Attaches, runtime.State().Session)
+	}
+
+	sendCtrl("\x07")
+	sendChar("w")
+	workbenchFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.Overlay.Kind != state.OverlayWorkbenchTree || !frameContains(workbenchFrame, "Workbench Tree") {
+		t.Fatalf("expected Workbench Tree overlay, shell=%#v frame=%#v", runtime.State().Shell, workbenchFrame.Lines)
+	}
+	sendKey(input.KeyEnter)
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("Workbench Tree enter should close overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+
+	sendCtrl("\x07")
+	sendChar(":")
+	sendChar("重")
+	sendChar("命")
+	sendKey(input.KeyEnter)
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("Prompt submit should close overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+	sendCtrl("\x07")
+	sendChar("?")
+	helpFrame := lastFrame(t, host.Frames())
+	if runtime.State().Shell.Overlay.Kind != state.OverlayHelp || !frameContains(helpFrame, "Most used") {
+		t.Fatalf("expected Help overlay, shell=%#v frame=%#v", runtime.State().Shell, helpFrame.Lines)
+	}
+	sendKey(input.KeyEnter)
+
+	sendCtrl("\x14")
+	sendChar("n")
+	sendChar("r")
+	sendChar("构")
+	sendKey(input.KeyEnter)
+	sendCtrl("\x17")
+	sendChar("n")
+	sendChar("r")
+	sendChar("云")
+	sendKey(input.KeyEnter)
+	sendKey(input.KeyEsc)
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.Workspace.Name != "workspace 2云" || len(shell.Workspaces) != 2 {
+		t.Fatalf("workspace mode should create and rename workspace, got %#v", shell)
+	}
+	mainWorkspace, ok := findWorkspaceForTest(shell.Workspaces, state.DefaultWorkspaceID)
+	if !ok || len(mainWorkspace.Tabs) != 2 || mainWorkspace.Tabs[1].Title != "tab 2构" {
+		t.Fatalf("tab mode should create and rename tab in original workspace, ok=%v workspace=%#v", ok, mainWorkspace)
+	}
+	tabWorkspaceFrame := lastFrame(t, host.Frames())
+	if !frameContains(tabWorkspaceFrame, "ws:workspace 2云") || !frameContains(tabWorkspaceFrame, "mode:live") {
+		t.Fatalf("expected live footer/header after tab/workspace flow, got %#v", tabWorkspaceFrame.Lines)
+	}
+
+	sendCtrl("\x07")
+	sendChar("h")
+	sendChar("f")
+	sendChar("T")
+	sendChar("t")
+	sendKey(input.KeyEsc)
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.HeaderVisible || shell.FooterVisible || len(shell.Toasts) != 0 || shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("global mode should hide chrome, clear toasts and return normal, got %#v", shell)
+	}
+	finalFrame := lastFrame(t, host.Frames())
+	if len(finalFrame.Lines) != 32 {
+		t.Fatalf("final frame must fill viewport rows, got %d", len(finalFrame.Lines))
+	}
+	for row, line := range finalFrame.Lines {
+		if width := render.DisplayWidth(line); width != 110 {
+			t.Fatalf("final frame row %d width=%d want=110 line=%q", row, width, line)
+		}
+	}
+	if frameContains(finalFrame, " ws:") || frameContains(finalFrame, " mode:") {
+		t.Fatalf("hidden header/footer must reclaim shell rows, got %#v", finalFrame.Lines)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("product shell UI operations must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+	if len(terminal.Resizes) == 0 {
+		t.Fatalf("product shell layout operations should drive content rect resize")
+	}
+}
+
 func assertPaneVisualState(t *testing.T, frame render.Frame, text string, style render.StyleToken) {
 	t.Helper()
 	for _, line := range frame.StyledLines {

@@ -956,7 +956,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期和 Tab / Workspace 产品入口一期已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。当前下一步是 TUI 产品壳总验收。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期和 TUI 产品壳总验收已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。当前下一步是 terminal live 连接展示与交互前推。
 
 已落地：
 
@@ -1003,6 +1003,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - Floating pane 一期已落地：reducer-owned floating state、z-order、active/collapsed、styled bordered chrome、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close、content rect 裁切、viewport clamp 和 width-safe harness 已接入。
 - Prompt / Help overlay 一期已落地：Prompt 作为 reducer-owned 短输入 overlay 支持 title/context/input/submit/cancel/destructive confirm 边界，Help 按 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 展示概念和动作；键盘、鼠标 close、overlay cursor、footer hint、宽字符安全和 no terminal input leak 已接入。
 - Tab / Workspace 产品入口一期已落地：`Ctrl-t` / `Ctrl-w` 已作为 reducer-owned interaction mode 接入，tab create/switch/rename/close、workspace create/switch/rename、Prompt rename 回投、header tab strip、footer mode hints、smoke case 和 no terminal input leak 已接入。
+- TUI 产品壳总验收已落地：`TestInteractiveRuntimeTUIProductShellAcceptanceFlow` 串联 pane split/focus/resize/presentation、floating create/move/resize/close、Terminal Pool 搜索/attach、Workbench Tree open/focus、Prompt/Help、Tab/Workspace rename、toast/header/footer 操作，并统一验证 no terminal input leak、viewport 行宽恒等和 layout 操作触发 content rect resize。
 - `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
 - `termx v3 smoke` 已覆盖 `pane-command-flow`，验证 pane command feedback、styled active pane ANSI、无默认 ASCII chrome 和行宽恒等。
 - `termx v3 e2e-smoke` 已覆盖 core-v2 daemon、默认 attach 装配、fake host 初始 viewport、host resize 重绘、content rect terminal resize、copy mode authoritative history、resized copy cols、split/resize/zoom/unzoom/close pane command，以及最终 panes/active/zoom 状态。
@@ -1010,7 +1011,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前仍是阶段性实现，不应误读为完整最终产品态：
 
-- 当前完成的是 chrome/frame 视觉等级、pane 结构命令基础、UI framework 第一版可操作闭环、三类内容 renderer 一期、Terminal Pool 管理页一期、Workbench Tree 一期、Floating pane 一期、Prompt/Help 一期和 Tab/Workspace 一期，不代表跨 workspace/remote Terminal Pool 深化或最终 terminal/copy 内容体验完整。
+- 当前完成的是 chrome/frame 视觉等级、pane 结构命令基础、UI framework 第一版可操作闭环、三类内容 renderer 一期、Terminal Pool 管理页一期、Workbench Tree 一期、Floating pane 一期、Prompt/Help 一期、Tab/Workspace 一期和 TUI 产品壳总验收，不代表跨 workspace/remote Terminal Pool 深化或最终 terminal/copy 内容体验完整。
 - header/footer 已有第一版产品信息层，但复杂 notice/error 汇总、更多 workspace/tab 管理信息和更精细的窄屏退化仍可继续 polish。
 - render 已能合成 hit region，app/runtime 已把真实鼠标坐标派发到最新 hit region；但 floating 连续拖拽、复杂 overlay、Prompt/Help 和 terminal mouse forwarding 的完整产品边界仍需继续深化。
 - active pane 视觉反馈已有端到端验收，但最终视觉 polish、更多状态 token 和复杂多层 split 的 focus affordance 仍可继续增强。
@@ -1034,7 +1035,6 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 建议后续切片：
 
-- TUI 产品壳总验收：确认 header/footer、pane、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace、toast、overlay、快捷键、鼠标和 no terminal input leak 都形成基本可操作闭环。
 - terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
 - copy-history content renderer 深化：在一期基础上完善 scrollbar 视觉、position token 精细化、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和滚动交互。
 - render cleanup / performance：删除或重命名剩余旧 `RenderVM{Lines, Status}` 兼容字段，建立 content-level cache、layer dirty region 和 large terminal output 性能基线。
