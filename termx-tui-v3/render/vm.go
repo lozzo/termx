@@ -47,11 +47,7 @@ func (RenderVMBuilder) Build(root state.Root) RenderVM {
 	if canRenderCopyMode(root.History, root.CopyMode) {
 		return buildCopyModeVM(root.History, root.CopyMode)
 	}
-	return RenderVM{
-		Mode:   ModeLive,
-		Lines:  []string{"live surface pending"},
-		Status: "live",
-	}
+	return buildLiveVM(root.Surface, root.Session)
 }
 
 func canRenderCopyMode(history state.HistoryStore, copyMode state.CopyModeStore) bool {
@@ -80,6 +76,27 @@ func buildCopyModeVM(history state.HistoryStore, copyMode state.CopyModeStore) R
 		Lines:      lines,
 		Status:     copyModeStatus(copyMode),
 		HitRegions: regions,
+	}
+}
+
+func buildLiveVM(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) RenderVM {
+	lines := append([]string(nil), surface.Lines...)
+	if len(lines) == 0 {
+		lines = []string{"live surface pending"}
+	}
+	status := "live"
+	if surface.TerminalID != "" {
+		status = "live: " + surface.TerminalID
+	}
+	if session.LastError != "" {
+		status = "error: " + session.LastError
+	} else if surface.Err != "" {
+		status = "error: " + surface.Err
+	}
+	return RenderVM{
+		Mode:   ModeLive,
+		Lines:  lines,
+		Status: status,
 	}
 }
 

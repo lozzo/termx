@@ -45,20 +45,47 @@ type CoreClient interface {
 }
 
 type TerminalService interface {
+	Attach(context.Context, TerminalAttachRequest) (TerminalAttachResult, error)
 	SendInput(context.Context, TerminalInputRequest) error
 	Resize(context.Context, TerminalResizeRequest) error
 }
 
+type TerminalAttachRequest struct {
+	TerminalID   string
+	Cols         int
+	Rows         int
+	Mode         string
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
+}
+
+type TerminalAttachResult struct {
+	TerminalID string
+	Channel    uint16
+	Cols       int
+	Rows       int
+	CanResize  bool
+}
+
 type TerminalInputRequest struct {
 	TerminalID string
+	Channel    uint16
 	Event      input.InputEvent
 	Bytes      []byte
 }
 
 type TerminalResizeRequest struct {
 	TerminalID string
+	Channel    uint16
 	Cols       int
 	Rows       int
+	SurfaceID  string
+	ViewID     string
+}
+
+type TerminalSurfaceResult struct {
+	Snapshot state.LiveSurfaceSnapshot
 }
 
 type SessionService interface {
@@ -81,6 +108,7 @@ type ClipboardWriteRequest struct {
 var (
 	ErrMissingHistoryResponse = errors.New("missing history response")
 	ErrUnexpectedHistoryCall  = errors.New("unexpected history call")
+	ErrMissingTerminalClient  = errors.New("missing terminal client")
 )
 
 type FakeCoreClient struct {
@@ -113,18 +141,41 @@ func (client *FakeCoreClient) HistoryOlder(_ context.Context, req HistoryOlderRe
 }
 
 type FakeTerminalService struct {
-	Inputs  []TerminalInputRequest
-	Resizes []TerminalResizeRequest
+	AttachResult TerminalAttachResult
+	AttachErr    error
+	InputErr     error
+	ResizeErr    error
+	Attaches     []TerminalAttachRequest
+	Inputs       []TerminalInputRequest
+	Resizes      []TerminalResizeRequest
+}
+
+func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
+	service.Attaches = append(service.Attaches, req)
+	if service.AttachErr != nil {
+		return TerminalAttachResult{}, service.AttachErr
+	}
+	result := service.AttachResult
+	if result.TerminalID == "" {
+		result.TerminalID = req.TerminalID
+	}
+	if result.Cols == 0 {
+		result.Cols = req.Cols
+	}
+	if result.Rows == 0 {
+		result.Rows = req.Rows
+	}
+	return result, nil
 }
 
 func (service *FakeTerminalService) SendInput(_ context.Context, req TerminalInputRequest) error {
 	service.Inputs = append(service.Inputs, req)
-	return nil
+	return service.InputErr
 }
 
 func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResizeRequest) error {
 	service.Resizes = append(service.Resizes, req)
-	return nil
+	return service.ResizeErr
 }
 
 type FakeSessionService struct {

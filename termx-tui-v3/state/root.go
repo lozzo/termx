@@ -5,6 +5,8 @@ type Root struct {
 	Generation uint64
 	History    HistoryStore
 	CopyMode   CopyModeStore
+	Surface    TerminalSurfaceStore
+	Session    TerminalSessionStore
 }
 
 // Advance 返回 generation 递增后的副本。

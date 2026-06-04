@@ -18,6 +18,41 @@ func (client *fakeProtocolHistoryClient) HistoryWindow(_ context.Context, params
 	return client.window, nil
 }
 
+type fakeProtocolTerminalClient struct {
+	attachParams   []protocol.AttachParams
+	inputChannel   []uint16
+	inputData      [][]byte
+	resizeChannels []uint16
+	resizes        []protocol.Size
+	ensureParams   []protocol.EnsureResizeParams
+	attachResult   *protocol.AttachResult
+}
+
+func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
+	client.attachParams = append(client.attachParams, params)
+	if client.attachResult != nil {
+		return client.attachResult, nil
+	}
+	return &protocol.AttachResult{Channel: 11}, nil
+}
+
+func (client *fakeProtocolTerminalClient) Input(_ context.Context, channel uint16, data []byte) error {
+	client.inputChannel = append(client.inputChannel, channel)
+	client.inputData = append(client.inputData, append([]byte(nil), data...))
+	return nil
+}
+
+func (client *fakeProtocolTerminalClient) Resize(_ context.Context, channel uint16, cols uint16, rows uint16) error {
+	client.resizeChannels = append(client.resizeChannels, channel)
+	client.resizes = append(client.resizes, protocol.Size{Cols: cols, Rows: rows})
+	return nil
+}
+
+func (client *fakeProtocolTerminalClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	client.ensureParams = append(client.ensureParams, params)
+	return &protocol.EnsureResizeResult{Size: protocol.Size{Cols: params.Cols, Rows: params.Rows}, Resized: true}, nil
+}
+
 func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{
@@ -73,5 +108,60 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	params := client.requests[1]
 	if params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected older params %#v", params)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		attachResult: &protocol.AttachResult{
+			Channel: 11,
+			ResizeControl: &protocol.ResizeControl{
+				CanResize: true,
+				ResizeOwnership: &protocol.ResizeOwnership{
+					Size: protocol.Size{Cols: 100, Rows: 40},
+				},
+			},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	attached, err := adapter.Attach(context.Background(), TerminalAttachRequest{
+		TerminalID:   "term-1",
+		Cols:         80,
+		Rows:         24,
+		Mode:         "collaborator",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "surface-1",
+		ViewID:       "view-1",
+	})
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if attached.Channel != 11 || attached.Cols != 100 || attached.Rows != 40 || !attached.CanResize {
+		t.Fatalf("unexpected attach result %#v", attached)
+	}
+	params := client.attachParams[0]
+	if params.TerminalID != "term-1" || params.SurfaceID != "surface-1" || params.ViewID != "view-1" {
+		t.Fatalf("unexpected attach params %#v", params)
+	}
+
+	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: 11, Bytes: []byte("x")}); err != nil {
+		t.Fatalf("input: %v", err)
+	}
+	if len(client.inputData) != 1 || string(client.inputData[0]) != "x" || client.inputChannel[0] != 11 {
+		t.Fatalf("unexpected input call channels=%#v data=%#v", client.inputChannel, client.inputData)
+	}
+	if err := adapter.Resize(context.Background(), TerminalResizeRequest{
+		TerminalID: "term-1",
+		Channel:    11,
+		Cols:       120,
+		Rows:       50,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-1",
+	}); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	if len(client.ensureParams) != 1 || client.ensureParams[0].Cols != 120 || client.ensureParams[0].Rows != 50 {
+		t.Fatalf("unexpected ensure resize params %#v", client.ensureParams)
 	}
 }

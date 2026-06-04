@@ -82,6 +82,9 @@ func routeKey(event InputEvent, copyModeActive bool) Intent {
 		if copyModeActive {
 			return Intent{Kind: IntentExitCopyMode, Event: event}
 		}
+		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte{'\x1b'}}
+	case KeyEnter:
+		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte{'\r'}}
 	case KeyChar:
 		if event.Char != "" {
 			return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte(event.Char)}

@@ -64,15 +64,23 @@ func TestFakeCoreClientMissingResponse(t *testing.T) {
 }
 
 func TestFakeTerminalSessionClipboardServices(t *testing.T) {
-	terminal := &FakeTerminalService{}
+	terminal := &FakeTerminalService{AttachResult: TerminalAttachResult{Channel: 3}}
+	attached, err := terminal.Attach(context.Background(), TerminalAttachRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if attached.TerminalID != "term-1" || attached.Channel != 3 || attached.Cols != 80 {
+		t.Fatalf("unexpected attach result %#v", attached)
+	}
 	if err := terminal.SendInput(context.Background(), TerminalInputRequest{
 		TerminalID: "term-1",
+		Channel:    3,
 		Event:      input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"},
 		Bytes:      []byte("x"),
 	}); err != nil {
 		t.Fatalf("send input: %v", err)
 	}
-	if err := terminal.Resize(context.Background(), TerminalResizeRequest{TerminalID: "term-1", Cols: 100, Rows: 40}); err != nil {
+	if err := terminal.Resize(context.Background(), TerminalResizeRequest{TerminalID: "term-1", Channel: 3, Cols: 100, Rows: 40}); err != nil {
 		t.Fatalf("resize: %v", err)
 	}
 	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "x" {

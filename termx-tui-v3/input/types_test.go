@@ -34,6 +34,14 @@ func TestRouteTerminalInputAndCopyModeSelection(t *testing.T) {
 	if key.Kind != IntentTerminalInput || string(key.Bytes) != "x" {
 		t.Fatalf("unexpected terminal input intent %#v", key)
 	}
+	enter := Route(InputEvent{Kind: EventKindKey, Key: KeyEnter}, false)
+	if enter.Kind != IntentTerminalInput || string(enter.Bytes) != "\r" {
+		t.Fatalf("unexpected enter intent %#v", enter)
+	}
+	esc := Route(InputEvent{Kind: EventKindKey, Key: KeyEsc}, false)
+	if esc.Kind != IntentTerminalInput || string(esc.Bytes) != "\x1b" {
+		t.Fatalf("unexpected esc intent %#v", esc)
+	}
 
 	mouse := Route(InputEvent{Kind: EventKindMouse, Mouse: MouseLeft, Row: 2, Col: 3}, true)
 	if mouse.Kind != IntentMouseSelect || mouse.Event.Row != 2 || mouse.Event.Col != 3 {

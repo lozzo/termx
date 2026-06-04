@@ -40,6 +40,10 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 
 func TestRenderVMBuilderDoesNotFallbackWithoutAuthoritativeHistory(t *testing.T) {
 	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Lines:      []string{"live-row"},
+		},
 		History: state.HistoryStore{
 			TerminalID: "term-1",
 			Token:      "tok-history",
@@ -58,8 +62,36 @@ func TestRenderVMBuilderDoesNotFallbackWithoutAuthoritativeHistory(t *testing.T)
 	if vm.Mode != ModeLive {
 		t.Fatalf("expected live fallback placeholder, got %q", vm.Mode)
 	}
-	if len(vm.Lines) != 1 || vm.Lines[0] != "live surface pending" {
+	if len(vm.Lines) != 1 || vm.Lines[0] != "live-row" {
 		t.Fatalf("unexpected fallback lines %v", vm.Lines)
+	}
+}
+
+func TestRenderVMBuilderUsesLiveSurface(t *testing.T) {
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Lines:      []string{"prompt", "output"},
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	if vm.Mode != ModeLive {
+		t.Fatalf("expected live vm, got %q", vm.Mode)
+	}
+	if len(vm.Lines) != 2 || vm.Lines[0] != "prompt" || vm.Status != "live: term-live" {
+		t.Fatalf("unexpected live vm %#v", vm)
+	}
+}
+
+func TestRenderVMBuilderShowsLiveError(t *testing.T) {
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{Err: "boom"},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	if vm.Status != "error: boom" {
+		t.Fatalf("expected error status, got %q", vm.Status)
 	}
 }
 
