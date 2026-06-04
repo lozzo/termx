@@ -31,6 +31,8 @@
 - 最小 render framework 阶段同时支持 card panel 与 split line 两种 tiled panel 呈现，并至少覆盖双 pane 横向和纵向分割。
 - header/footer hide 必须真实影响 layout，隐藏后 body 回收空间，workspace、tab、mode、notice/error 仍可通过短标识、toast 或 Help 入口恢复识别。
 - toast 支持真实渲染和基础生命周期：severity、pending/progress、auto dismiss、close current、clear all 和窄屏退化。
+- pane 分屏、关闭、focus、zoom、resize/size change 必须作为统一 semantic command 落地，快捷键、鼠标 hit region、测试入口和后续 CLI mini command 都只能调用同一命令契约。
+- pane 结构命令至少覆盖横向/纵向 split、close pane、close and kill terminal、focus/activate、zoom/unzoom、按方向和步长 resize、按比例或固定尺寸 set size、balance/equalize，以及 card/split 呈现切换；结构变化必须触发 layout measurement、active terminal content rect resize、copy mode rebind 和 toast 反馈。
 - 所有 panel、split line、header/footer、toast、overlay 和 content slot 的布局、裁切、填充、对齐必须按 terminal cell display width 计算，emoji、CJK、combining mark、ANSI 样式和 host width ambiguous cluster 不得破坏边框或分割线。
 - Terminal Picker 状态激活时有 overlay 或明确占位渲染路径；Terminal Pool 与 Workbench Tree 完整页面在 framework 成型后再接入。
 - copy mode 仍只消费 core-v2 authoritative `HistoryWindow`，缺 window 或绑定不一致时显示 pending/empty/error，不得从 live surface、snapshot、grid viewport 或 local VTerm scrollback fallback。
@@ -200,6 +202,17 @@
 - `tuiv2/render` 只能作为只读参考：可参考 `drawStyle`、`composedCanvas`、theme token、pane chrome slot、ANSI serializer 和宽度安全思路；不得复制旧 runtime/model、VisibleRenderState 大 bag、cache key 或业务状态耦合结构。
 - 当前阶段优先让 shell/chrome/pane/frame 达到视觉等级；terminal live/copy history 内容 renderer 深化可以分阶段推进，但内容必须被 content rect 裁切，不能破坏 styled chrome。
 
+### 4.9 pane 结构命令约束
+
+- pane split、close、resize、zoom、focus 等结构操作必须 command-first，不得只作为快捷键 handler 的局部逻辑。
+- 命令来源可以是 pane mode、resize mode、鼠标 hit region、测试 harness、后续 CLI mini command 或 command palette，但最终必须进入同一组 semantic command。
+- semantic command 必须携带稳定 action id、target workspace/tab/pane、orientation、direction、delta、ratio、absolute size、confirm policy 等必要参数；不得把显示文案或具体按键当作业务语义。
+- reducer 负责 workspace/tab/pane/floating 结构状态变化；service 不得直接改 reducer-owned state；需要创建、kill、resize terminal 时必须通过 effect/message 回到主循环。
+- split、close、resize、balance、zoom 和 panel presentation 切换后，必须重新测量 layout plan，并以 active content rect 触发 terminal resize 去重。
+- active copy pane 的 content width 变化后，必须 invalid/rebind authoritative `HistoryWindow`，不得沿用旧 cols，也不得 fallback 到 live surface。
+- close pane 与 close and kill terminal 必须区分：关闭 pane 只移除当前工作位；kill terminal 是破坏性 terminal lifecycle 操作，必须能走确认或明确 danger 语义。
+- 后续 CLI mini command 只能作为 command adapter，不能绕过 TUI reducer、layout measurement、terminal resize、copy rebind 或 toast feedback。
+
 ## 5. 任务队列
 
 状态只能使用：`待开始`、`进行中`、`完成`、`阻塞`。同一时间只能有一个切片处于 `进行中`。
@@ -265,8 +278,12 @@
 | 50. pane chrome 视觉对齐 | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/state/` 按需 | tiled pane 默认达到 tuiv2 截图级 styled chrome：square Unicode 细线边框、active pane accent、inactive pane muted、标题/状态/action 槽位、pane top chrome token、split/card 两种模式均保持 content rect 和 hit region；harness 覆盖单 pane、多 pane 横纵 split、active 切换、标题含宽字符、ANSI 样式不破坏边框 |
 | 51. shell chrome / top bar / bottom bar 视觉对齐 | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/state/`、`termx-cli/` 按需 | header/footer 从占位文本升级为 styled top/bottom bar：workspace/tab/mode/hint/status token、active tab/创建 token、右侧摘要、隐藏 header/footer 后状态仍可达；harness 覆盖 ANSI 背景填满整行、token 宽度安全、hide 后 body 回收、默认入口 smoke 包含 styled top/bottom bar |
 | 52. toast / overlay styled chrome | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/state/` 按需 | toast 和 Terminal Picker overlay 使用 styled chrome：border/background/severity token/pending token/close action region/opaque cursor 归属；floating/modal 仍可 rounded card 但必须有独立样式；harness 覆盖 toast 不改 body layout、overlay 遮挡优先级、窄屏退化、ANSI reset 和宽字符安全 |
-| 53. 默认入口 styled UI smoke 与视觉验收 | 待开始 | `termx-tui-v3/`、`termx-cli/`、`Makefile` 按需 | `termx v3 smoke`、`termx v3 e2e-smoke` 和默认入口非交互 smoke 覆盖 styled frame：ANSI SGR 存在、active/inactive pane 样式不同、top/bottom bar styled、pane border continuous、frame 行宽恒等；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`make test-v2-migration` |
-| 54. styled chrome 文档收口与后续内容 renderer 边界 | 待开始 | `termx-tui-v3/docs/`、`workflow.md` | 同步 styled chrome 已落地、未落地和后续 terminal-live/copy-history/Terminal Pool/Workbench Tree/floating 内容 renderer 深化边界；明确当前阶段只完成 chrome/frame 视觉等级，不宣称内容 renderer 完整；文档-only 至少运行 `git diff --check`，若同切片有代码则运行相关测试 |
+| 53. pane 结构命令 contract | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/docs/` 按需 | 建立 pane structural command/semantic action contract，覆盖 split、close、close and kill、focus、zoom、resize、set size、balance、panel presentation；快捷键、鼠标、测试和后续 CLI mini command 都只能作为 adapter 调用该 contract；harness 覆盖 command 参数、target pane、无效目标、confirm policy 和 reducer/effect 边界 |
+| 54. pane split / close / zoom 状态语义 | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/` 按需 | reducer-owned pane tree 支持横向/纵向 split、close pane、close and kill terminal effect、focus/activate、zoom/unzoom；结构变化保持 terminal binding、active pane、tab invariants、toast 反馈和 render VM 投影；不得直接修改 service state |
+| 55. pane resize / size change geometry | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/services/` 按需 | pane resize 支持按方向/步长调整、按比例或固定尺寸 set size、balance/equalize；layout measurement 产出稳定 panel/content rect，外部 viewport、header/footer hide、card/split、resize 变化都触发 active terminal content rect resize 去重和 copy mode authoritative window rebind |
+| 56. pane command adapters：快捷键、鼠标、CLI mini | 待开始 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-cli/` 按需 | pane mode、resize mode、鼠标 hit region 和 CLI mini command adapter 调用同一 semantic command；不临时发明未拍板产品快捷键，但保留稳定 command id、测试入口和后续 CLI mini 解析边界；UI chrome region 优先于 terminal mouse forwarding |
+| 57. 默认入口 styled UI + pane command smoke 与视觉验收 | 待开始 | `termx-tui-v3/`、`termx-cli/`、`Makefile` 按需 | `termx v3 smoke`、`termx v3 e2e-smoke` 和默认入口非交互 smoke 覆盖 styled frame 与 pane command：ANSI SGR 存在、active/inactive pane 样式不同、top/bottom bar styled、pane border continuous、split/close/resize/zoom 后 frame 行宽恒等、content rect terminal resize、copy rebind；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`make test-v2-migration` |
+| 58. styled chrome / pane command 文档收口与后续内容 renderer 边界 | 待开始 | `termx-tui-v3/docs/`、`workflow.md` | 同步 styled chrome 与 pane command 已落地、未落地和后续 terminal-live/copy-history/Terminal Pool/Workbench Tree/floating 内容 renderer 深化边界；明确当前阶段完成 chrome/frame 视觉等级和 pane 结构命令基础，不宣称内容 renderer 完整；文档-only 至少运行 `git diff --check`，若同切片有代码则运行相关测试 |
 
 当前下一步：切片 46 已完成。自动执行必须从切片 47 开始推进 styled RenderResult / Frame contract，不得跳过到内容 renderer 或 Terminal Pool。
 
@@ -336,6 +353,9 @@
 - top/bottom bar 背景填满整行，token 裁切后 display width 恒等。
 - pane chrome 标题、状态、action 槽位带 ANSI 样式时不破坏边框。
 - toast/overlay styled chrome 不改变 body layout，且窄屏退化仍宽度安全。
+- pane structural command 覆盖 split、close、close and kill、focus、zoom、resize、set size、balance 和 panel presentation。
+- pane split/close/resize/zoom 后 active pane、terminal binding、layout plan、content rect、terminal resize、copy rebind 和 toast feedback 保持一致。
+- keyboard adapter、mouse hit region、测试入口和后续 CLI mini command adapter 调用同一 semantic command contract。
 - `termx v3 smoke` 输出 styled frame，不能退化为纯文本线框。
 
 ### 6.4 CLI / 集成 harness
@@ -354,6 +374,8 @@
 - resize -> core-v2 live/history boundary -> tui-v3 frame。
 - 外部 terminal emulator resize -> tui-v3 viewport -> render frame。
 - 外部 terminal emulator resize -> active content rect -> core-v2 terminal resize。
+- pane split/close/resize/zoom -> tui-v3 semantic command -> reducer/effect -> render frame。
+- CLI mini command -> tui-v3 semantic command adapter -> reducer/effect，不绕过 TUI state 和 layout measurement。
 - copy mode -> core-v2 HistoryWindow -> selection/copy。
 - copy mode viewport/content cols 变化 -> authoritative HistoryWindow 重新绑定。
 - 默认入口切换后，`termx-cli` 默认路径不再 import 旧 `termx-core` 或 `tuiv2`。
@@ -374,8 +396,9 @@
 - 切片 40-44 改动：至少运行 `cd termx-tui-v3 && go test ./... -count=1`；涉及 CLI 装配、protocol adapter 或默认入口时同步运行 `cd termx-cli && go test ./... -count=1`。
 - 切片 45 改动：至少运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`，并按需运行 `make test-v2-migration`。
 - 切片 47-52 改动：至少运行 `cd termx-tui-v3 && go test ./... -count=1`；涉及真实 `FrameSink`、CLI smoke 或默认入口时同步运行 `cd termx-cli && go test ./... -count=1`。
-- 切片 53 改动：必须运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`make test-v2-migration`。
-- 切片 54 改动：文档-only 至少运行 `git diff --check`；若同切片含代码，按代码范围运行相关测试。
+- 切片 53-56 改动：至少运行 `cd termx-tui-v3 && go test ./... -count=1`；涉及 CLI mini command adapter、默认入口或 protocol 装配时同步运行 `cd termx-cli && go test ./... -count=1`。
+- 切片 57 改动：必须运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`make test-v2-migration`。
+- 切片 58 改动：文档-only 至少运行 `git diff --check`；若同切片含代码，按代码范围运行相关测试。
 - 文档-only 改动：至少运行 `git diff --check`。
 
 如果测试无法运行，必须在最终说明和必要时在提交前记录原因。不能把真实语义失败当作偶发失败。
@@ -389,7 +412,7 @@
 - 完成切片后更新本文件中对应状态和必要的下一步说明，与实现同提交。
 - 如果发现设计文档需要变化，必须与实现同切片更新，或先提交设计更新。
 - 如果遇到阻塞，必须把对应切片状态改为 `阻塞` 并说明阻塞条件；不要继续扩散到其他目录。
-- 自动执行不能因为局部测试暂时通过就跳过后续切片；当前 styled chrome renderer 阶段只有切片 54 完成且测试准入通过后才算完成。
+- 自动执行不能因为局部测试暂时通过就跳过后续切片；当前 styled chrome renderer 阶段只有切片 58 完成且测试准入通过后才算完成。
 
 ## 9. 提交规则
 
@@ -445,6 +468,7 @@
 - 切片 45 已完成：`termx v3 e2e-smoke` 已通过 fake host 初始尺寸和 host resize event 覆盖默认 attach 装配、外部 viewport 初始尺寸、resize 重绘、content rect terminal resize、copy mode resized cols 绑定和 frame 行宽恒等；`termx-tui-v3/docs/render-architecture.md` 与 `termx-tui-v3/docs/ui-interaction-spec.md` 已同步本轮已落地内容和后续 Terminal Pool / Workbench Tree / floating 深化边界；测试准入 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`make test-v2-migration` 已通过。
 - 当前新阶段目标已拍板：把 v3 从“Unicode glyph 可见”推进到 `tuiv2` 截图级 styled chrome renderer。当前 v3 的 `Frame` 仍会丢弃 style，真实 `FrameSink` 仍写纯文本，因此不能把现状视作视觉完成。
 - 切片 46 已完成：`workflow.md`、`termx-tui-v3/docs/render-architecture.md`、`termx-tui-v3/docs/ui-interaction-spec.md` 已把 styled chrome renderer 目标落档；明确 `tuiv2/render` 只读参考，优先实现 shell/chrome/pane/frame 的 styled visual parity，terminal-live/copy-history/Terminal Pool/Workbench Tree/floating 内容 renderer 后续分阶段深化。
-- 当前未拍板但不阻塞编码的点：card/split 切换、header/footer hide、toast close current、toast clear all 的具体产品快捷键；实现只能先提供 semantic action、reducer message、hit region 和测试入口，不得临时发明产品快捷键。
-- 当前下一步是切片 47：先建立 styled `RenderResult` / `Frame` / `FrameSink` contract，再进入 cell matrix compositor、theme token、pane chrome、shell chrome、toast/overlay 和 styled smoke 验收。
+- 当前补充拍板：pane split、close、resize/size change、focus、zoom 必须纳入当前阶段，并作为 command-first 的统一 semantic action contract；快捷键、鼠标、测试入口和后续 CLI mini command 只能作为 adapter 调用该 contract。
+- 当前未拍板但不阻塞编码的点：card/split 切换、header/footer hide、toast close current、toast clear all 以及 pane command 的具体产品快捷键；实现只能先提供 semantic action、reducer message、hit region、CLI mini command adapter 边界和测试入口，不得临时发明产品快捷键。
+- 当前下一步是切片 47：先建立 styled `RenderResult` / `Frame` / `FrameSink` contract，再进入 cell matrix compositor、theme token、pane chrome、shell chrome、toast/overlay、pane command 和 styled smoke 验收。
 - 后续如继续推进 Terminal Pool、Workbench Tree、floating 深化、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须在 styled chrome 阶段完成或明确调整本文件任务队列后再开始。

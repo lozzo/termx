@@ -644,6 +644,8 @@ normal 状态主要负责 terminal 输入直通。
 
 `Esc` 必须能安全退出当前 mode 或 modal。
 
+pane、tab、workspace、floating 等结构操作必须先定义为稳定动作语义，再映射到快捷键、鼠标或后续 CLI mini command。快捷键只是入口，不是产品语义本身。
+
 ### 13.2 Root Keymap
 
 第一阶段 root keymap：
@@ -716,6 +718,60 @@ global mode：
 - 保存 / 退出。
 - 其他全局动作。
 
+### 13.4 Pane 结构命令
+
+pane 结构命令是 Workbench 的核心操作面，不应只存在于快捷键 handler 中。
+
+这些命令必须能被多个入口触发：
+
+- pane mode。
+- resize mode。
+- 鼠标点击 pane chrome、resize handle 或 split divider。
+- 测试和 smoke harness。
+- 后续 CLI mini command 或 command palette。
+
+这些入口触发后应表现为同一类用户动作，不应出现“快捷键能做、鼠标做的是另一套逻辑、CLI mini command 又绕过状态”的分裂。
+
+第一阶段必须覆盖：
+
+- split right / split down：在当前 pane 周围创建左右或上下分屏。
+- close pane：关闭当前 pane，但不 kill terminal。
+- close and kill：关闭 pane 并 kill 其绑定 terminal，属于破坏性动作。
+- focus pane：切换 active pane。
+- zoom / unzoom：最大化当前 pane 或恢复原布局。
+- resize by direction：按方向和步长调整 pane 大小。
+- set pane size：按比例或固定 cell size 设置 pane 大小。
+- balance / equalize：重新均分当前 split group。
+- switch panel presentation：在 card panel 和 split line 之间切换。
+
+命令成功后必须有可见反馈：
+
+- active pane 变化必须立即通过 pane chrome 表达。
+- split、close、resize、zoom 后主体区域必须立即重新布局。
+- close and kill 必须进入确认或明确 danger 反馈。
+- 无效命令必须显示短提示或 toast，不得静默破坏状态。
+- resize 结果应在 pane chrome、几何提示或 toast 中短暂表达。
+
+命令至少需要表达：
+
+- 目标 workspace / tab / pane。
+- split orientation。
+- resize direction。
+- resize delta。
+- size ratio 或 fixed cell size。
+- 是否需要 destructive confirm。
+- 命令来源。
+
+命令来源只用于反馈、审计或冲突处理，不应改变同一个命令的核心行为。
+
+产品规则：
+
+- split 可以创建空 pane、attach existing terminal 或 create new terminal，但这些是后续 attach 语义，不应和 split layout 本身混成一个动作。
+- close pane 默认只关闭当前工作位。
+- kill terminal 必须显式表达，不得作为 close pane 的隐含副作用。
+- resize pane 后，绑定 terminal 的内容区域大小必须随之变化。
+- copy mode 中的 pane 宽度变化后，历史窗口必须按新宽度重新绑定。
+
 ## 14. 鼠标交互
 
 鼠标交互必须基于可见对象。
@@ -728,6 +784,7 @@ global mode：
 - 点击 tab create token 创建 tab。
 - 点击 pane interior 聚焦 pane。
 - 点击 pane chrome action 执行动作。
+- 点击 split divider 或 resize handle 进入 resize 语义。
 - 点击 floating pane 聚焦并提升。
 - 拖动 floating pane 移动。
 - 拖动 floating pane resize handle 调整大小。
@@ -770,6 +827,7 @@ TUI-v3 需要一个现代化消息系统，而不是只把消息写成一段简�
 消息系统用于展示：
 
 - command 成功反馈。
+- pane split / close / resize / zoom 结果。
 - attach / create / kill / remove 等操作结果。
 - warning。
 - error。

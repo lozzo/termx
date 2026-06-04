@@ -401,6 +401,60 @@ panel chrome 只表达 panel 局部状态。
 - Terminal Pool 页面状态。
 - 长帮助文案。
 
+### 7.4 Pane 结构命令边界
+
+pane split、close、focus、zoom、resize 和 size change 是 app/state 的结构命令，不是 render framework 的业务逻辑。
+
+render framework 负责：
+
+- 在 panel chrome、split divider、resize handle 和 content rect 周围产出稳定 hit region。
+- 为 hit region 绑定稳定 action id 和目标 pane id。
+- 在 layout plan 中表达 panel rect、content rect、divider rect 和 resize handle rect。
+- 在 resize 或 split 预览需要时产出可见 affordance。
+- 在命令执行后的新 VM 上重新绘制布局。
+
+render framework 不负责：
+
+- 修改 workspace/tab/pane tree。
+- 判断 split 是否创建 terminal。
+- kill terminal。
+- 直接调整 terminal size。
+- 请求或失效 copy mode history window。
+- 解析 CLI mini command。
+
+统一结构命令必须从入口 adapter 进入 app/reducer：
+
+```text
+keyboard / mouse hit region / test / CLI mini command
+  |
+  v
+PaneStructuralCommand
+  |
+  v
+reducer-owned workspace/tab/pane state
+  |
+  +--> effects: terminal resize / terminal kill / history rebind / toast
+  |
+  v
+RenderVMBuilder -> MeasureLayout -> RenderResult
+```
+
+第一阶段必须覆盖的命令语义：
+
+- split horizontal / split vertical。
+- close pane。
+- close pane and kill terminal。
+- focus / activate pane。
+- zoom / unzoom pane。
+- resize by direction and delta。
+- set size by ratio or fixed cell size。
+- balance / equalize split group。
+- switch card panel / split line presentation。
+
+这些命令必须能被快捷键、鼠标 hit region、测试入口和后续 CLI mini command 复用。CLI mini command 只能作为 adapter，不得绕过 reducer、layout measurement、terminal resize、copy history rebind 或 toast feedback。
+
+结构命令执行后必须重新测量 layout。若 active terminal content rect 改变，app 必须通过 effect 去重发送 terminal resize。若 active copy pane content width 改变，必须 invalid/rebind authoritative `HistoryWindow`，不得沿用旧 cols 或从 live surface fallback。
+
 ## 8. Shell Chrome
 
 shell chrome 是 workbench 外层。
