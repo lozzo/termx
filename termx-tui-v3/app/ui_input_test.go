@@ -351,6 +351,147 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	assertPaneVisualState(t, closeFrame, "shell", render.StyleAccent)
 }
 
+func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 68, Rows: 18},
+	}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 36, 7, []state.HistoryRow{{Text: "copy-old", LineID: 20}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 33, 8, []state.HistoryRow{{Text: "copy-sized", LineID: 30}})},
+		},
+	}
+	host := NewFakeTerminalHost(64)
+	host.SetSize(70, 22)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core, Rows: 20},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 70, Rows: 22}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x12", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyLeft},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "T"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "t"},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send product flow input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain product flow input %#v: %v", event, err)
+		}
+	}
+
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("global esc should return to normal mode, got %#v", shell.InteractionMode)
+	}
+	if shell.HeaderVisible || shell.FooterVisible {
+		t.Fatalf("global mode should hide header/footer, got %#v", shell)
+	}
+	if len(shell.Toasts) != 0 {
+		t.Fatalf("global close/clear toast actions should clear toasts, got %#v", shell.Toasts)
+	}
+	if shell.PanelPresentation != state.PanelPresentationSplitLine {
+		t.Fatalf("pane mode presentation switch should use split-line, got %#v", shell.PanelPresentation)
+	}
+	tab := shell.Workspace.Tabs[0]
+	if len(tab.Panes) != 2 || tab.RootSplit.BiasCells == 0 {
+		t.Fatalf("split and resize should update pane tree geometry, got %#v", tab)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("framework shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+	if len(terminal.Resizes) == 0 {
+		t.Fatalf("split/header/footer/resize changes should drive content rect terminal resize")
+	}
+	hiddenFrame := lastFrame(t, host.Frames())
+	if len(hiddenFrame.Lines) != 22 {
+		t.Fatalf("hidden chrome frame should still fill viewport rows, got %d", len(hiddenFrame.Lines))
+	}
+	for i, line := range hiddenFrame.Lines {
+		if render.DisplayWidth(line) != 70 {
+			t.Fatalf("hidden chrome frame row %d width must fill viewport, got %d line=%q", i, render.DisplayWidth(line), line)
+		}
+	}
+	if frameContains(hiddenFrame, " ws:") || frameContains(hiddenFrame, " mode:") {
+		t.Fatalf("hidden header/footer must reclaim shell bar rows, got %#v", hiddenFrame.Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: 999, Col: 999}); err != nil {
+		t.Fatalf("send missed mouse: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "q"}); err != nil {
+		t.Fatalf("send terminal input after missed mouse: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain missed mouse and terminal input: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "q" {
+		t.Fatalf("missed mouse must not steal following terminal input, got %#v", terminal.Inputs)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy entry: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy entry: %v", err)
+	}
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 36 {
+		t.Fatalf("copy mode should bind to hidden split content cols, got %#v", core.LatestRequests)
+	}
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 36 {
+		t.Fatalf("copy mode should accept first authoritative window, got %#v", runtime.State().CopyMode)
+	}
+
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:   state.PaneCommandSetSize,
+		Target:   state.PaneCommandTarget{PaneID: "pane-2"},
+		SizeMode: state.PaneSizeCells,
+		Cols:     34,
+	}}); err != nil {
+		t.Fatalf("post pane size rebind: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane size rebind: %v", err)
+	}
+	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 33 {
+		t.Fatalf("pane size should rebind copy mode through content rect cols, got %#v", core.LatestRequests)
+	}
+	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().History.Token != "tok-2" {
+		t.Fatalf("copy rebind should replace authoritative window, got copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
+	}
+	if err := runtime.Post(ShellClearToastsMsg{}); err != nil {
+		t.Fatalf("post clear toasts after copy rebind: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain clear toasts after copy rebind: %v", err)
+	}
+	copyFrame := lastFrame(t, host.Frames())
+	if !frameContains(copyFrame, "copy-sized") || frameContains(copyFrame, "copy-old") {
+		t.Fatalf("copy rebind should render only the latest authoritative window, got %#v", copyFrame.Lines)
+	}
+}
+
 func assertPaneVisualState(t *testing.T, frame render.Frame, text string, style render.StyleToken) {
 	t.Helper()
 	for _, line := range frame.StyledLines {

@@ -1311,6 +1311,19 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 真实 TUI 中 `Ctrl-g` 进入 global mode，隐藏/恢复 header/footer，关闭或清空 toast。
 - 鼠标点击 pane 内容区或 pane chrome 时，active pane 必须切换并立即高亮。
 
+推荐真实 TUI 验收步骤：
+
+- 启动：`go run ./termx-cli/cmd/termx`。
+- 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。
+- 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题、footer 和 toast 必须同步变化。
+- 关闭：先聚焦目标 pane，在 pane mode 中按 `x` 关闭 pane，或点击 pane 顶部 action slot；关闭后 active pane 必须稳定落到仍存在的 pane，不得留下已删除 pane 的高亮或 footer target。
+- resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化。
+- zoom：在 pane mode 中按 `z` zoom / unzoom；zoom 后只显示目标 pane，unzoom 后恢复 split layout，footer 和 toast 必须显示对应反馈。
+- card/split：在 pane mode 中按 `c` 切到 card panel，按 `p` 切到 split line；presentation 变化不得改变 pane id、terminal binding、active pane 或 copy mode 语义。
+- header/footer：按 `Ctrl-g` 进入 global mode，按 `h` 隐藏/恢复 header，按 `f` 隐藏/恢复 footer；隐藏后 body 必须回收空间，pane frame 仍填满 viewport。
+- toast：在 global mode 中按 `T` 关闭当前 toast，按 `t` 清空全部 toast；toast 不得改变 pane layout，也不得把操作绕过 shell message。
+- copy rebind：进入 copy mode 后，执行 resize、header/footer hide 或 pane size change；历史窗口必须按新的 content cols 重新请求 authoritative window，不得显示旧 cols 的历史。
+
 如果上述基本操作还不能稳定工作，不应优先进入 terminal-live content renderer。否则真实 terminal 内容接进来后，交互 bug 会被内容渲染噪音掩盖。
 
 ## 22. 后续讨论入口
