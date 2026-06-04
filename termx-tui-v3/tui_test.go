@@ -2,6 +2,7 @@ package termxtuiv3
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -16,7 +17,16 @@ func TestSmokeRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("smoke run: %v", err)
 	}
-	if len(frame.Lines) == 0 || frame.Lines[0] != "termx-tui-v3" {
+	if len(frame.Lines) == 0 || !frameContains(frame.Lines, "termx-tui-v3") {
 		t.Fatalf("unexpected smoke frame %#v", frame)
 	}
+}
+
+func frameContains(lines []string, value string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
 }

@@ -170,6 +170,20 @@ type LayoutVM struct {
 	Body     Rect
 	Panels   []PanelVM
 	Floating []FloatingVM
+	Split    SplitVM
+}
+
+type SplitDirection string
+
+const (
+	SplitHorizontal SplitDirection = "horizontal"
+	SplitVertical   SplitDirection = "vertical"
+)
+
+type SplitVM struct {
+	PaneID    string
+	Direction SplitDirection
+	Children  []SplitVM
 }
 
 type FloatingVM struct {

@@ -69,7 +69,7 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 		t.Fatalf("expected viewport shifted by older prepend, got %#v", runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
-	if len(last.Lines) == 0 || last.Lines[0] != "old" {
+	if len(last.Lines) == 0 || !frameContains(last, "old") || !frameContains(last, "new") {
 		t.Fatalf("expected latest rendered copy frame to start with older row, got %#v", last.Lines)
 	}
 }

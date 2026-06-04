@@ -17,6 +17,13 @@ func TruncateCells(value string, width int) string {
 	return xansi.Truncate(SafeLine(value), width, "")
 }
 
+func SliceCells(value string, left int, right int) string {
+	if right <= left {
+		return ""
+	}
+	return xansi.Cut(SafeLine(value), left, right)
+}
+
 func PadRightCells(value string, width int) string {
 	if width <= 0 {
 		return ""

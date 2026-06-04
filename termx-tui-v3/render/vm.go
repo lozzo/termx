@@ -22,6 +22,8 @@ type HitRegionKind string
 const (
 	HitRegionHistoryRow HitRegionKind = "history-row"
 	HitRegionStatus     HitRegionKind = "status"
+	HitRegionOverlay    HitRegionKind = "overlay"
+	HitRegionToast      HitRegionKind = "toast"
 )
 
 type Rect struct {
@@ -94,6 +96,7 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 func buildLayoutVM(shell state.ShellStore, activeContent ContentVM) LayoutVM {
 	return LayoutVM{
 		Panels: buildPanelVMs(shell, activeContent),
+		Split:  buildSplitVM(activeTab(shell).RootSplit),
 	}
 }
 
@@ -343,6 +346,31 @@ func activeTab(shell state.ShellStore) state.TabState {
 	return state.TabState{}
 }
 
+func buildSplitVM(node state.SplitNode) SplitVM {
+	out := SplitVM{
+		PaneID:    node.PaneID,
+		Direction: renderSplitDirection(node.Direction),
+	}
+	if len(node.Children) > 0 {
+		out.Children = make([]SplitVM, len(node.Children))
+		for i, child := range node.Children {
+			out.Children[i] = buildSplitVM(child)
+		}
+	}
+	return out
+}
+
+func renderSplitDirection(direction state.SplitDirection) SplitDirection {
+	switch direction {
+	case state.SplitDirectionVertical:
+		return SplitVertical
+	case state.SplitDirectionHorizontal:
+		return SplitHorizontal
+	default:
+		return ""
+	}
+}
+
 func placeholderContentForPane(pane state.PaneState) ContentVM {
 	title := activePaneTitle(pane)
 	switch pane.Kind {
@@ -426,27 +454,7 @@ func NewRenderer(theme Theme) Renderer {
 }
 
 func (renderer Renderer) RenderResult(vm RenderVM) RenderResult {
-	lines := make([]Line, 0, len(vm.Lines)+1)
-	for _, line := range vm.Lines {
-		lines = append(lines, NewLine(SafeLine(line)))
-	}
-	if vm.Status != "" {
-		lines = append(lines, NewLine(StatusStyle(renderer.Theme).Render(SafeLine(vm.Status))))
-	}
-	return RenderResult{
-		Content:    lines,
-		Cursor:     vm.Shell.Cursor,
-		HitRegions: cloneHitRegions(vm.HitRegions),
-		Metadata: RenderMetadata{
-			Width:  maxLineWidth(lines),
-			Height: len(lines),
-		},
-		Layers: []Layer{{
-			Kind:  LayerBase,
-			Rect:  Rect{W: maxLineWidth(lines), H: len(lines)},
-			Lines: lines,
-		}},
-	}
+	return renderer.renderFramework(vm)
 }
 
 func (renderer Renderer) Render(vm RenderVM) Frame {

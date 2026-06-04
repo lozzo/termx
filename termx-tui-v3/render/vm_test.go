@@ -213,21 +213,30 @@ func TestRendererConsumesVMAndSanitizesLines(t *testing.T) {
 	})
 	frame := result.Frame()
 
-	if len(frame.Lines) != 2 {
-		t.Fatalf("expected content and status line, got %v", frame.Lines)
+	if len(frame.Lines) != minFrameHeight {
+		t.Fatalf("expected framework minimum frame height %d, got %d", minFrameHeight, len(frame.Lines))
 	}
-	if frame.Lines[0] != "hello world" {
-		t.Fatalf("expected sanitized line, got %q", frame.Lines[0])
+	if !frameContains(frame, "hello world") {
+		t.Fatalf("expected sanitized content inside panel, got %#v", frame.Lines)
 	}
-	if !strings.Contains(frame.Lines[1], "copy") {
+	if !frameContains(frame, "copy") {
 		t.Fatalf("expected styled status line to contain text, got %q", frame.Lines[1])
 	}
-	if result.Metadata.Height != 2 || result.Metadata.Width == 0 {
+	if result.Metadata.Height != minFrameHeight || result.Metadata.Width != defaultWidth {
 		t.Fatalf("expected render metadata, got %#v", result.Metadata)
 	}
 	if !result.Cursor.Visible || result.Cursor.Row != 2 || result.Cursor.Col != 3 {
 		t.Fatalf("expected cursor passthrough, got %#v", result.Cursor)
 	}
+}
+
+func frameContains(frame Frame, value string) bool {
+	for _, line := range frame.Lines {
+		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStyleHelpersWidthAndTruncateANSI(t *testing.T) {

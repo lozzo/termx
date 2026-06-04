@@ -67,7 +67,7 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 		t.Fatalf("resize was not reflected in state %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
-	if len(last.Lines) == 0 || last.Lines[0] != "$ echo hi" {
+	if len(last.Lines) == 0 || !frameContains(last, "$ echo hi") {
 		t.Fatalf("expected live surface frame, got %#v", last.Lines)
 	}
 }
@@ -156,4 +156,13 @@ func lastFrame(t *testing.T, frames []render.Frame) render.Frame {
 		t.Fatal("expected rendered frames")
 	}
 	return frames[len(frames)-1]
+}
+
+func frameContains(frame render.Frame, value string) bool {
+	for _, line := range frame.Lines {
+		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
 }
