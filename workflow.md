@@ -161,7 +161,7 @@
 | 8. tui-v3 input/render/UI 边界 | 完成 | `termx-tui-v3/` | 自有 `InputEvent`、semantic intent、RenderVMBuilder、Renderer、hit regions、lipgloss style helper；无 Bubble Tea contract |
 | 9. services 与集成 | 完成 | `termx-tui-v3/`、受限联动范围 | core client、terminal service、session、clipboard contract、fake、protocol history adapter 和最小 runtime e2e harness |
 | 10. 收口与迁移入口 | 完成 | 受限联动范围 | 新路径可运行；必要 CLI/adapter 入口接入；旧 helper/fixture 只在明确不再需要时删除 |
-| 11. 切换审计与迁移矩阵 | 待开始 | `termx-cli/docs/`、`termx-core-v2/docs/`、`termx-tui-v3/docs/`、只读参考旧目录 | 明确当前 CLI 命令到旧依赖的映射、目标 v2/v3 命令矩阵、协议方法矩阵、daemon 能力矩阵、TUI 能力矩阵和分阶段验收口径 |
+| 11. 切换审计与迁移矩阵 | 进行中 | `termx-cli/docs/`、`termx-core-v2/docs/`、`termx-tui-v3/docs/`、只读参考旧目录 | 明确当前 CLI 命令到旧依赖的映射、目标 v2/v3 命令矩阵、协议方法矩阵、daemon 能力矩阵、TUI 能力矩阵和分阶段验收口径 |
 | 12. core-v2 server API 与 daemon 骨架 | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-cli/` 按需 | core-v2 提供独立 server/daemon API、options、listen/shutdown、terminal registry、事件订阅 fake harness；不调用旧 `termx-core.NewServer` |
 | 13. core-v2 terminal lifecycle 与 PTY 管线 | 待开始 | `termx-core-v2/`、`termx-vterm/`、`termx-shared/` 按需 | create/input/resize/exit/restart/remove 跑通；PTY 输出进入 live surface 与 history ingest 边界；基础 process lifecycle harness 通过 |
 | 14. core-v2 protocol service 与 HistoryWindow 实服务 | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` | create/get/list/set metadata/restart/remove/events/input/resize/history.window 由 core-v2 服务；HistoryWindow 来自 logical line truth；协议测试通过 |
@@ -174,7 +174,7 @@
 | 21. 默认入口切换 | 待开始 | `termx-cli/`、`Makefile`、`go.work` 按需 | `go run ./termx-cli/cmd/termx`、`termx attach`、`termx daemon` 默认使用 core-v2/tui-v3；旧入口若保留必须显式命名；回归测试通过 |
 | 22. 旧默认依赖清理与冻结 | 待开始 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认依赖不再包含旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成 |
 
-当前下一步：从切片 11“切换审计与迁移矩阵”开始。
+当前下一步：继续切片 11“切换审计与迁移矩阵”。
 
 ## 6. 必做 harness
 
@@ -284,4 +284,4 @@
 - 当前 CLI 默认运行时尚未切换：`go run ./termx-cli/cmd/termx` 仍通过旧 `termx-core` daemon 和旧 `tuiv2` TUI 工作。
 - 下一阶段目标不是继续扩展 smoke，而是完成真实 CLI/daemon/TUI runtime 切换。
 - 旧 `termx-core/` 与 `tuiv2/` 的历史修补进度不再作为当前主线状态；如需查阅只能通过 git 历史或只读参考。
-- 当前下一步是切片 11“切换审计与迁移矩阵”。
+- 当前正在执行切片 11“切换审计与迁移矩阵”。
