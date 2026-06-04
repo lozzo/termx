@@ -713,6 +713,24 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	}
 }
 
+func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "e2e-smoke"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 e2e-smoke returned error: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "termx v3 e2e smoke ok") ||
+		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "frames=") {
+		t.Fatalf("unexpected v3 e2e smoke output:\n%s", text)
+	}
+}
+
 func TestRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

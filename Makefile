@@ -103,6 +103,7 @@ test-cli-v3-smoke:
 	tmp="$$(mktemp -d)"; \
 	go build -o "$$tmp/termx" ./termx-cli/cmd/termx; \
 	"$$tmp/termx" v3 smoke; \
+	"$$tmp/termx" v3 e2e-smoke; \
 	rm -rf "$$tmp"
 
 test-v2-migration: test-core-v2 test-tui-v3 test-cli-v3-smoke

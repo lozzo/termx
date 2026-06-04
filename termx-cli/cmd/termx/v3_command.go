@@ -34,6 +34,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3DaemonCommand(socket, logFile))
 	cmd.AddCommand(v3PingCommand(socket, logFile))
 	cmd.AddCommand(v3SmokeCommand())
+	cmd.AddCommand(v3E2ESmokeCommand())
 	cmd.AddCommand(v3NewCommand(socket, logFile))
 	cmd.AddCommand(v3LsCommand(socket, logFile))
 	cmd.AddCommand(v3KillCommand(socket, logFile))
@@ -112,6 +113,21 @@ func v3SmokeCommand() *cobra.Command {
 			for _, line := range frame.Lines {
 				fmt.Fprintln(cmd.OutOrStdout(), line)
 			}
+			return nil
+		},
+	}
+}
+
+func v3E2ESmokeCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "e2e-smoke",
+		Short: "Run a non-interactive local core-v2/tui-v3 end-to-end smoke",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := runV3E2ESmoke(cmd.Context())
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "termx v3 e2e smoke ok: terminal=%s frames=%d\n", result.TerminalID, result.Frames)
 			return nil
 		},
 	}
