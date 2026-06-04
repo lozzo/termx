@@ -448,9 +448,11 @@ renderer 禁止：
 
 当前 render 主线已经从最小 frame 推进到 styled chrome renderer 和 render framework。后续实现必须保持下面的顺序：
 
-- 先完成 UI framework 交互产品化总验收。
-- 再深化 terminal-live content renderer。
-- 最后继续 copy-history、Terminal Picker、Terminal Pool、Workbench Tree、floating、Prompt 和 Help。
+- UI framework 交互产品化总验收已经完成。
+- terminal-live、copy-history、empty/exited、Terminal Picker 内容 renderer 一期已经完成。
+- Terminal Picker 数据源与 Terminal Pool service 接线一期已经完成。
+- 当前下一步是独立 Terminal Pool 管理页一期。
+- 后续再继续 Workbench Tree、floating、Prompt/Help、Tab/Workspace、terminal-live 深化、copy-history 深化和 render cleanup/performance。
 
 UI framework 交互产品化总验收包括：
 
@@ -479,13 +481,13 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - copy/yank 成功反馈由 reducer 添加 shell toast；clipboard IO 仍通过 effect 和 result message 完成，不进入 renderer。
 - `RenderVM.Lines` 临时兼容投影保留 raw authoritative row text；logical-line marker 和 clipped marker 属于 UI content，不得污染历史 truth 或兼容 raw rows。
 
-当前 empty/exited/Terminal Picker content renderer 一期的架构边界：
+已完成的 empty/exited/Terminal Picker content renderer 一期的架构边界：
 
 - empty pane 与 exited pane content 只消费对应 `PaneState`，由 `RenderVMBuilder` 投影为 CTA 行和 content action hit region；renderer 只负责裁切、合成和输出。
-- Terminal Picker 一期只消费 reducer-owned `ShellStore`、当前 workspace panes、active session/surface/history terminal id 和 overlay query；不得引入临时 Terminal Pool store 或从服务端同步列表伪装完整管理页。
+- Terminal Picker 一期最初只消费 reducer-owned `ShellStore`、当前 workspace panes、active session/surface/history terminal id 和 overlay query；切片 69 后 item source 已扩展为 reducer-owned `TerminalPoolStore`，但 renderer 仍不得直接读取 service 或伪装完整管理页。
 - Terminal Picker search cursor 是 overlay content-local cursor；layout measurement 必须让 Terminal Picker overlay 拥有 cursor，而不是让 cursor 落回 pane 内容。
 - content action hit region 由 render framework 转换为全局坐标；runtime 可以把已可落地的 picker row focus/overlay close、empty/exited close 反馈回 reducer。
-- create、manager、restart、reconnect、Terminal Pool attach 等尚未接入真实服务的动作只能显示 toast 反馈，不得直接修改 service state 或伪造 terminal lifecycle。
+- create、restart、reconnect 和 pool row attach 已在切片 69 接入 service/effect/result message；尚未接入的 manager、edit、kill 等动作只能显示明确反馈或进入后续 Terminal Pool 页面切片，不得直接修改 service state 或伪造 terminal lifecycle。
 - content action 不得漏发为 terminal input；未命中 content action 的鼠标事件仍按现有 hit region / terminal forwarding 边界处理。
 
 当前 Terminal Picker 真实交互深化的架构边界：
@@ -507,6 +509,21 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - `picker.new` 通过 terminal service create result 显示反馈并触发 list refresh；不得在 result 到达前伪造 terminal lifecycle。
 - list/create/attach/restart/reconnect 失败必须写入 reducer-owned error/toast；stale list result 必须被拒绝。
 - 本阶段不实现 Terminal Pool 管理页、跨 workspace 管理、跨 remote 管理、metadata edit、kill/remove UI 或 Workbench Tree。
+
+当前 Terminal Pool 管理页一期的架构边界：
+
+- Terminal Pool Page 是独立 surface/content，不是 Terminal Picker overlay 的字段扩展。
+- 页面状态必须 reducer-owned，至少表达 open/closed、query、selected index、loading/empty/error、last action status 和必要的 detail/preview VM 输入。
+- TerminalPoolStore 仍是 terminal list/source 状态；页面可以复用该 store，但不得让 renderer 或 content renderer 直接读取 service。
+- 页面打开、关闭、query 更新、selection 移动、row click、action click 都必须进入 app message / reducer 路径；普通输入不得漏发到底层 terminal。
+- TerminalService 需要覆盖 Terminal Pool 页面动作的 effect/result 边界：attach、kill、edit metadata 至少要有明确 request/result message；service 不得直接修改 StateRoot 或伪造 terminal lifecycle。
+- attach 成功可以更新当前 active pane/session/surface，并通过 toast 或页面状态反馈；attach 失败只能反馈错误，不得改写本地 terminal truth。
+- kill 成功前不得从本地 list 中预删 terminal；kill result 到达后可以触发 list refresh 或标记 action 状态，但 lifecycle truth 仍以后续 service/list/event 为准。
+- edit metadata 一期可以只做最小 service 边界和反馈；如果需要 Prompt，应通过后续 Prompt overlay 切片完善，不得在 Terminal Pool 页面内临时实现第二套表单状态机。
+- RenderVMBuilder 负责把 Terminal Pool page state 投影为 terminal-pool ContentVM：list rows、selected row、detail、preview、footer action 和 cursor；renderer 只按 content rect 裁切、合成和输出。
+- Terminal Pool 页面不得混入 Workbench Tree、floating drag/resize、remote 管理、tab/workspace 结构操作或 copy-history 逻辑。
+- 页面 action hit region 必须由 render framework 转换到全局坐标，并由 runtime 按最新 hit region 派发；content action 命中不得转发成 terminal input。
+- 页面内所有文本继续通过 cell-width helper 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏 overlay/page chrome。
 
 ## 12. 与 core-v2 的接口
 
@@ -590,10 +607,17 @@ tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback
 14. 补最小端到端 harness。
 15. 完成 styled chrome renderer、cell matrix、theme token、ANSI FrameSink、header/footer、toast/overlay、pane chrome 和 pane command 基础。
 16. 完成 UI framework 交互产品化总验收：header/footer 信息层、pane/resize/global mode、鼠标命中、active pane 反馈、toast 操作、layout/effect 同步和基本手工测试入口。
-17. 深化 terminal-live content renderer：styled terminal cells、cursor、pending/empty/exited、宽字符裁切、content-local metadata 和 no chrome leak。
-18. 深化 copy-history content renderer：authoritative rows、logical-line marker、selection、cursor、position token、copy/yank feedback、宽字符裁切和 no chrome leak。
-19. 深化 empty/exited/Terminal Picker content renderer：CTA、workspace pane list、overlay cursor、content action hit region 和 no chrome leak。
-20. 深化 Terminal Pool、Workbench Tree、floating、Prompt、Help 和性能。
+17. 完成 terminal-live content renderer 一期：live 行、基础 style、cursor、pending/empty/exited、宽字符裁切和 no chrome leak。
+18. 完成 copy-history content renderer 一期：authoritative rows、logical-line marker、selection、cursor、position token、copy/yank feedback、宽字符裁切和 no chrome leak。
+19. 完成 empty/exited/Terminal Picker content renderer 与 Terminal Picker 真实交互。
+20. 完成 Terminal Pool 数据源与 Picker 服务接线。
+21. 实现 Terminal Pool 管理页一期。
+22. 实现 Workbench Tree overlay 一期。
+23. 实现 floating pane 一期。
+24. 实现 Prompt / Help overlay 一期。
+25. 实现 Tab / Workspace 产品入口一期。
+26. 深化 terminal-live 与 copy-history 内容 renderer。
+27. 清理 render 兼容投影并建立性能基线。
 
 每个切片都必须避免引入 local scrollback history fallback。
 

@@ -617,6 +617,44 @@ footer action 使用纯动作词：
 
 footer action 在窄屏可以裁剪，但必须保持高优先级动作优先可见。
 
+### 10.5 一期落地边界
+
+Terminal Pool 管理页一期的目标是让用户离开小型 picker，进入一个可持续停留的 terminal 管理 surface。
+
+一期必须可见：
+
+- 页面打开和关闭。
+- search field。
+- terminal list。
+- list loading / empty / error 状态。
+- selected row。
+- selected terminal detail。
+- preview 区域。
+- Attach Here、Edit、Kill 三类核心动作。
+
+一期必须可操作：
+
+- 键盘输入进入 search，不漏发给底层 terminal。
+- 上下选择 terminal row。
+- 鼠标点击 row 后切换 selected row。
+- 鼠标点击 footer action 执行动作。
+- `Esc` 关闭页面并回到原 workbench。
+
+一期不要求：
+
+- 跨 remote terminal 管理。
+- attach as new tab / attach as floating 的完整闭环。
+- metadata 表单的最终 Prompt 体验。
+- kill destructive confirm 的最终样式。
+- preview 使用完整 terminal emulator cell model。
+
+产品边界：
+
+- Terminal Pool Page 是全局资源管理页面，不是 Terminal Picker overlay 的放大版。
+- Terminal Picker 保持快速 attach / create 入口；Terminal Pool Page 负责更完整的列表、详情、预览和管理动作。
+- Terminal Pool Page 的 action 结果必须通过 toast 或页面内状态反馈给用户，不得静默修改列表。
+- kill、edit、attach 结果到达前不得伪造 terminal lifecycle。
+
 ## 11. Prompt
 
 Prompt 用于短输入任务。
@@ -687,7 +725,7 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 
 - `Ctrl-p`：pane mode，承载 split right / split down / close / focus next / focus previous / zoom / balance / card / split。
 - `Ctrl-r`：resize mode，承载方向 resize 和 balance。
-- `Ctrl-g`：global mode，承载 header/footer hide 与 toast 清理。
+- `Ctrl-g`：global mode，承载 header/footer hide、toast 清理，并作为 Terminal Pool / Help 等全局入口的承载 mode。
 - `Ctrl-o`：floating mode stub，只显示尚未实现反馈，不得伪装成完整 floating。
 - `Ctrl-f`：Terminal Picker overlay，承载 query、过滤、键盘选择和确认 attach/focus。
 - `Ctrl-v`：Display / Copy authoritative history 路径。
@@ -698,7 +736,8 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 - `Ctrl-t` tab mode 尚未形成完整产品交互。
 - `Ctrl-w` workspace mode 尚未形成完整产品交互。
 - floating mode 尚未有 create、move、resize、z-order。
-- footer 的 mode-specific shortcut hints 还需要补齐为可读、可裁剪的产品提示。
+- Terminal Pool 管理页尚未形成独立页面入口和 action 闭环。
+- Help overlay 尚未形成完整产品交互。
 
 ### 13.3 Mode 职责
 
@@ -843,13 +882,22 @@ pane 结构命令是 Workbench 的核心操作面，不应只存在于快捷键 
 
 UI chrome 优先级高于 terminal mouse forwarding。点击边框、标题、按钮、footer 等 UI 区域时，不应把事件发给 terminal。
 
-当前下一阶段必须补齐：
+当前已落地的鼠标基础：
 
-- app/runtime 必须把真实鼠标坐标派发到最新 render hit region，而不是只在 render 结果中生成 hit region。
-- 点击 pane content 或 pane chrome 必须切换 active pane，并立即改变 active / inactive pane 视觉状态。
-- 点击 pane action slot 必须执行同一 semantic command，例如 close，不得写成 renderer 私有逻辑。
-- 点击 split divider 或 resize handle 必须进入 resize 语义或触发 resize command。
-- toast、overlay、pane chrome、pane content 的命中优先级必须稳定，UI chrome 命中不得继续转发到 terminal。
+- app/runtime 已把真实鼠标坐标派发到最新 render hit region。
+- 点击 pane content 或 pane chrome 可以切换 active pane，并立即改变 active / inactive pane 视觉状态。
+- 点击 pane action slot 可以执行同一 semantic command，例如 close。
+- 点击 split divider 或 resize handle 已进入 resize 语义或触发 resize command。
+- toast、overlay、pane chrome、pane content 的命中优先级已经固定，UI chrome 命中不得继续转发到 terminal。
+
+当前后续必须补齐：
+
+- Terminal Pool row click 选择。
+- Terminal Pool footer action click 执行 attach / edit / kill。
+- Workbench Tree row click 选择和 open / focus。
+- floating pane 点击聚焦并提升 z-order。
+- floating pane drag / resize handle。
+- Prompt input click 定位输入光标。
 
 ## 15. 状态与反馈
 
@@ -1266,15 +1314,16 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 - terminal-live 内容 renderer 一期必须在当前 styled chrome 基线上工作：真实 live 行只进入 pane content slot，基础 ANSI SGR 映射为 semantic style token，live cursor 表达为 content-local cursor，pending、empty、exited 状态显示在所属 pane 内，emoji/CJK/combining mark 裁切不得破坏 pane 边框。
 - copy-history 内容 renderer 一期必须继续只消费 core-v2 authoritative `HistoryWindow`：历史行显示 logical-line、continuation 和 clipped marker，selection 使用 styled cell 表达，copy cursor 是 content-local cursor，footer/status 显示当前位置摘要，复制成功通过 toast 反馈；resize 或 content cols 变化后仍重新绑定 authoritative window，不显示旧 cols rows。
-- empty/exited/Terminal Picker 内容 renderer 一期必须把旧 placeholder 推进为可操作内容：empty pane 显示 attach/create/manager/close CTA，exited pane 显示 last state 与 restart/reconnect/close CTA，Terminal Picker overlay 显示 search、当前 workspace terminal list、selected row、new terminal row 和 action hit region；未接入的 create/restart/manager 只能显示 toast 反馈，不得伪实现 Terminal Pool。
+- empty/exited/Terminal Picker 内容 renderer 一期已把旧 placeholder 推进为可操作内容：empty pane 显示 attach/create/manager/close CTA，exited pane 显示 last state 与 restart/reconnect/close CTA，Terminal Picker overlay 显示 search、当前 workspace terminal list、selected row、new terminal row 和 action hit region。
+- Terminal Pool 数据源与 Picker 服务接线一期已完成：Terminal Picker 可以请求 terminal list，展示 loading/empty/error，把 pool row 与当前 workspace pane row 合并去重，并把 attach/create/restart/reconnect 接到 service result 反馈。
 
 当前未完成但产品要求仍保留：
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
-- Terminal Picker / Terminal Pool 服务接线：跨 workspace terminal source、attach/create/restart/reconnect 的真实服务接线、错误反馈和 Terminal Pool 管理页。
+- Terminal Pool 管理页：独立页面、搜索、列表、selected row、detail、preview、attach/edit/kill action 和反馈闭环。
+- Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit Prompt、kill confirm 和更完整 preview。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
-- Terminal Pool 完整页面。
 - Workbench Tree 完整 overlay。
 - Prompt、Help、Floating Overview overlay。
 - 多层 split、复杂 pane 管理和 resize affordance 的产品化。
@@ -1439,7 +1488,37 @@ Terminal Pool 数据源与 Picker 服务接线一期的目标是让 Terminal Pic
 - metadata edit、kill/remove UI。
 - Terminal Pool detail/preview 面板的最终产品视觉。
 
-## 27. 后续讨论入口
+## 27. Terminal Pool 管理页一期验收线
+
+Terminal Pool 管理页一期的目标是实现独立 Terminal Pool page/content，让用户能在一个稳定页面中查看、搜索、选择和管理 terminal。
+
+本阶段必须满足：
+
+- 页面可以从全局入口或 empty pane manager action 打开，并可以用 `Esc` 关闭。
+- 页面打开时触发 terminal list loading，list 结果进入页面状态后展示。
+- loading、empty、error 三种列表状态必须清晰显示在页面内。
+- search query 过滤 terminal id、title、state、cwd 或 metadata 摘要；普通字符和 Backspace 不得漏发给底层 terminal。
+- 上下方向键移动 selected row；过滤后 selected row 必须稳定落在第一条可见 row 或 empty 状态。
+- 鼠标点击 row 与键盘选择使用同一 selected row 语义。
+- detail 区显示 selected terminal 的 id、title、state、cwd、size、attached/bound 摘要和 metadata 摘要。
+- preview 区允许先显示 summary / last known live preview / pending placeholder，但必须在页面内，不得覆盖 chrome。
+- Attach Here 执行后必须反馈结果，并把成功 attach 反映到当前 active pane/session。
+- Edit 执行后必须有明确反馈；一期可以只接 metadata edit service 边界或 Prompt stub，但不得静默成功。
+- Kill 执行后必须有明确 danger 反馈；结果到达前不得从本地列表伪造 terminal 已退出或已删除。
+- 所有 action 结果必须通过 toast 或页面内状态反馈。
+- 页面内容、row、detail、preview、footer action 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏页面边框或整行宽度。
+
+本阶段不要求：
+
+- Workbench Tree。
+- floating pane 管理。
+- remote terminal 管理。
+- attach as tab / attach as floating 的完整闭环。
+- metadata edit 的最终表单体验。
+- kill destructive confirm 的最终交互样式。
+- 完整 terminal emulator preview。
+
+## 28. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 
