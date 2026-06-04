@@ -26,9 +26,10 @@ type LiveDeps struct {
 // NewLiveRuntime 组合 live app 主路径：TerminalHost 输入 -> reducer/effect ->
 // terminal service -> render VM -> FrameSink。
 func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, deps LiveDeps) *AppRuntime {
+	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, NewLiveReducer(deps), func(root state.Root) render.Frame {
+	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewLiveReducer(deps)), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, runner)
 }
@@ -42,9 +43,10 @@ func NewInteractiveRuntime(
 	live LiveDeps,
 	copyMode CopyModeDeps,
 ) *AppRuntime {
+	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, ComposeReducers(NewCopyModeReducer(copyMode), NewLiveReducer(live)), func(root state.Root) render.Frame {
+	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewCopyModeReducer(copyMode), NewLiveReducer(live)), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, runner)
 }

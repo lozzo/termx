@@ -101,6 +101,55 @@ func TestLiveAppShowsTerminalServiceError(t *testing.T) {
 	}
 }
 
+func TestLiveRuntimeIncludesShellReducer(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+	)
+
+	if err := runtime.Post(ShellSetHeaderVisibleMsg{Visible: false}); err != nil {
+		t.Fatalf("post shell action: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post panel action: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if runtime.State().Shell.HeaderVisible {
+		t.Fatalf("expected hidden header, got %#v", runtime.State().Shell)
+	}
+	if runtime.State().Shell.PanelPresentation != state.PanelPresentationSplitLine {
+		t.Fatalf("expected split line presentation, got %#v", runtime.State().Shell)
+	}
+}
+
+func TestInteractiveRuntimeIncludesShellReducer(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := runtime.Post(ShellOpenTerminalPickerMsg{}); err != nil {
+		t.Fatalf("post terminal picker action: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if !runtime.State().Shell.Overlay.Open || runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPicker {
+		t.Fatalf("expected terminal picker overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+}
+
 func lastFrame(t *testing.T, frames []render.Frame) render.Frame {
 	t.Helper()
 	if len(frames) == 0 {

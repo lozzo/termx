@@ -7,6 +7,7 @@ type Root struct {
 	CopyMode   CopyModeStore
 	Surface    TerminalSurfaceStore
 	Session    TerminalSessionStore
+	Shell      ShellStore
 }
 
 // Advance 返回 generation 递增后的副本。

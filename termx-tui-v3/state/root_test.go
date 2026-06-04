@@ -8,3 +8,10 @@ func TestRootAdvance(t *testing.T) {
 		t.Fatalf("expected generation 1, got %d", next.Generation)
 	}
 }
+
+func TestRootContainsReducerOwnedShellStore(t *testing.T) {
+	root := Root{Shell: DefaultShell()}
+	if root.Shell.ActivePaneID != DefaultPaneID {
+		t.Fatalf("expected root shell active pane, got %#v", root.Shell)
+	}
+}
