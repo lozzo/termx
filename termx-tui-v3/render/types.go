@@ -1,6 +1,9 @@
 package render
 
-// Frame 是 Renderer 输出给 FrameSink 的不可变帧契约。
+// Frame 是 FrameSink 使用的线性输出适配结果。
+//
+// Render framework 的主输出是 RenderResult；Frame 只保留给现有
+// TerminalHost、测试和 CLI smoke 适配层使用。
 type Frame struct {
 	Lines []string
 }
@@ -13,6 +16,10 @@ func (frame Frame) Clone() Frame {
 	lines := make([]string, len(frame.Lines))
 	copy(lines, frame.Lines)
 	return Frame{Lines: lines}
+}
+
+func FrameFromRenderResult(result RenderResult) Frame {
+	return Frame{Lines: result.Lines()}
 }
 
 // FrameSink 把渲染帧写入 host、recorder 或 test sink。

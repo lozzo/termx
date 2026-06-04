@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	xansi "github.com/charmbracelet/x/ansi"
 )
 
 type Theme struct {
@@ -33,12 +32,9 @@ func SafeLine(value string) string {
 }
 
 func Width(value string) int {
-	return xansi.StringWidth(value)
+	return DisplayWidth(value)
 }
 
 func Truncate(value string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	return xansi.Truncate(value, width, "")
+	return TruncateCells(value, width)
 }

@@ -118,13 +118,46 @@ func NewRenderer(theme Theme) Renderer {
 	return Renderer{Theme: theme}
 }
 
-func (renderer Renderer) Render(vm RenderVM) Frame {
-	lines := make([]string, 0, len(vm.Lines)+1)
+func (renderer Renderer) RenderResult(vm RenderVM) RenderResult {
+	lines := make([]Line, 0, len(vm.Lines)+1)
 	for _, line := range vm.Lines {
-		lines = append(lines, SafeLine(line))
+		lines = append(lines, NewLine(SafeLine(line)))
 	}
 	if vm.Status != "" {
-		lines = append(lines, StatusStyle(renderer.Theme).Render(SafeLine(vm.Status)))
+		lines = append(lines, NewLine(StatusStyle(renderer.Theme).Render(SafeLine(vm.Status))))
 	}
-	return Frame{Lines: lines}
+	return RenderResult{
+		Content:    lines,
+		HitRegions: cloneHitRegions(vm.HitRegions),
+		Metadata: RenderMetadata{
+			Width:  maxLineWidth(lines),
+			Height: len(lines),
+		},
+		Layers: []Layer{{
+			Kind:  LayerBase,
+			Rect:  Rect{W: maxLineWidth(lines), H: len(lines)},
+			Lines: lines,
+		}},
+	}
+}
+
+func (renderer Renderer) Render(vm RenderVM) Frame {
+	return renderer.RenderResult(vm).Frame()
+}
+
+func cloneHitRegions(regions []HitRegion) []HitRegion {
+	if len(regions) == 0 {
+		return nil
+	}
+	cloned := make([]HitRegion, len(regions))
+	copy(cloned, regions)
+	return cloned
+}
+
+func maxLineWidth(lines []Line) int {
+	width := 0
+	for _, line := range lines {
+		width = maxInt(width, line.Width())
+	}
+	return width
 }

@@ -96,11 +96,13 @@ func TestRenderVMBuilderShowsLiveError(t *testing.T) {
 }
 
 func TestRendererConsumesVMAndSanitizesLines(t *testing.T) {
-	frame := NewRenderer(DefaultTheme()).Render(RenderVM{
+	renderer := NewRenderer(DefaultTheme())
+	result := renderer.RenderResult(RenderVM{
 		Mode:   ModeCopy,
 		Lines:  []string{"hello\nworld"},
 		Status: "copy",
 	})
+	frame := result.Frame()
 
 	if len(frame.Lines) != 2 {
 		t.Fatalf("expected content and status line, got %v", frame.Lines)
@@ -110,6 +112,9 @@ func TestRendererConsumesVMAndSanitizesLines(t *testing.T) {
 	}
 	if !strings.Contains(frame.Lines[1], "copy") {
 		t.Fatalf("expected styled status line to contain text, got %q", frame.Lines[1])
+	}
+	if result.Metadata.Height != 2 || result.Metadata.Width == 0 {
+		t.Fatalf("expected render metadata, got %#v", result.Metadata)
 	}
 }
 
@@ -123,5 +128,40 @@ func TestStyleHelpersWidthAndTruncateANSI(t *testing.T) {
 	}
 	if got := SafeLine("a\nb"); got != "a b" {
 		t.Fatalf("unexpected safe line %q", got)
+	}
+}
+
+func TestWidthSafeHelpersKeepRowsAtTargetDisplayWidth(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		width int
+	}{
+		{name: "cjk", value: "世界", width: 6},
+		{name: "emoji", value: "ok 🚀", width: 8},
+		{name: "combining", value: "e\u0301cho", width: 7},
+		{name: "ansi", value: StatusStyle(DefaultTheme()).Render("warn 🚀"), width: 10},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fitted := FitText(tc.value, tc.width)
+			if got := DisplayWidth(fitted); got != tc.width {
+				t.Fatalf("expected fitted width %d, got %d for %q", tc.width, got, fitted)
+			}
+			line := LineFromText(tc.value, tc.width)
+			if got := line.Width(); got != tc.width {
+				t.Fatalf("expected line width %d, got %d for %#v", tc.width, got, line)
+			}
+		})
+	}
+}
+
+func TestWidthSafeTruncateDoesNotExceedTargetWidth(t *testing.T) {
+	value := StatusStyle(DefaultTheme()).Render("title 🚀 世界")
+	for width := 1; width <= 8; width++ {
+		truncated := TruncateCells(value, width)
+		if got := DisplayWidth(truncated); got > width {
+			t.Fatalf("truncated width exceeds target width=%d got=%d value=%q", width, got, truncated)
+		}
 	}
 }
