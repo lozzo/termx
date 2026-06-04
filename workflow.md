@@ -1,48 +1,36 @@
-# 工作流：termx-core-v2 / termx-tui-v3 默认入口切换主线
+# 工作流：termx-core-v2 / termx-tui-v3 默认入口切换
 
 本文件是当前分支唯一有效的活动驱动文件。后续所有分析、实现、测试、提交都必须先读取本文件，并以本文件为准。
 
-本文件只记录当前目标、范围、硬约束、任务队列、测试准入和提交规则。技术设计正文不写在本文件里，分别以 `termx-core-v2/docs/architecture.md` 和 `termx-tui-v3/docs/architecture.md` 为准。切换审计、迁移计划和命令矩阵可以写入 `termx-cli/docs/`。
+本文件只记录目标、范围、硬约束、任务队列、测试准入和提交规则。架构正文不写在本文件里，分别以 `termx-core-v2/docs/architecture.md`、`termx-tui-v3/docs/architecture.md` 和 `termx-cli/docs/v2-v3-switch-audit.md` 为准。
 
-本文件必须保持全中文。若本文件与旧说明、聊天记录、旧代码行为、局部假设冲突，默认以本文件为准；若技术设计需要变化，必须先更新本文件或与实现同切片更新。
+本文件必须保持全中文。若本文件与旧说明、聊天记录、旧代码行为或局部假设冲突，默认以本文件为准；若技术设计需要变化，必须先更新本文件或与实现同切片更新。
 
 ## 1. 当前唯一目标
 
-在已完成 `termx-core-v2/` 与 `termx-tui-v3/` 架构骨架的基础上，继续完成从旧 `termx-core/` + `tuiv2/` 到新 `termx-core-v2/` + `termx-tui-v3/` 的默认运行时切换。
+在已完成 `termx-core-v2/` 与 `termx-tui-v3/` 架构骨架的基础上，完成从旧 `termx-core/` + `tuiv2/` 到新 `termx-core-v2/` + `termx-tui-v3/` 的默认运行时切换。
 
-当前事实必须明确记录：
+当前事实：
 
 - `go run ./termx-cli/cmd/termx` 当前仍使用旧 `termx-core` 和旧 `tuiv2`。
-- `termx-core-v2` 当前已有 logical-line-first history domain、HistoryWindow 投影和 smoke 入口，但尚未完整替代旧 daemon/server runtime。
-- `termx-tui-v3` 当前已有自有 runtime/state/render/services 骨架和 smoke 入口，但尚未完整替代旧 TUI 的真实终端交互路径。
+- `termx-core-v2` 已有 logical-line-first history domain、HistoryWindow 投影、独立 daemon/server 骨架、terminal lifecycle 与 protocol service，但尚未成为默认 CLI runtime。
+- `termx-tui-v3` 已有自有 runtime/state/render/services 骨架、history/copy mode 状态模型和 smoke 入口，但尚未完整替代旧 TUI 的真实终端交互路径。
+- 当前主线不是继续修补旧目录，而是按下面任务队列把新 core/tui 接到真实 CLI 默认路径。
 
-本阶段目标按顺序推进：
+完成定义：
 
-- 先建立 v2/v3 切换审计文档，明确旧 CLI 命令、协议方法、daemon 能力、TUI 能力到新实现的迁移矩阵。
-- 先新增显式实验入口，跑通本地单 session 的 create/attach/render/input/resize/history window/copy mode 主路径；不得一开始直接替换默认入口。
-- 实验入口稳定后，将 `go run ./termx-cli/cmd/termx`、`termx attach`、`termx daemon` 默认切到 `termx-core-v2` 与 `termx-tui-v3`。
-- 默认切换完成后，`termx-cli` 不得继续依赖旧 `termx-core` 或 `tuiv2` 作为默认 runtime backend。若必须保留回退入口，必须单独命名、显式启用，并先更新本文件；保留回退不能算作完整切换完成。
-
-完成后的系统必须满足：
-
-- `termx-core-v2` 拥有唯一 committed history truth。
-- 历史基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback 或 grid viewport。
-- logical line 选择的根因是支持可落盘、可分页、长期保留、接近无限的历史记录；不得因为 terminal size 改变而要求读回并重排全部历史。
-- core-v2 使用单一 `LogicalLineStore` 作为历史 truth；`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend` 只是索引、可变边界和存储落点。
-- `persisted` 或落盘不表示不可修改；clear scrollback、truncate、retention、reclaim、replace 都可以按完整 logical line 删除、撤回、替换或重新提交已提交历史。
-- `termx-tui-v3` 不拥有 committed history truth，只消费 core-v2 返回的 authoritative `HistoryWindow`。
-- copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative `HistoryWindow` 工作。
-- `termx-tui-v3` 不以 Bubble Tea 作为主运行时，必须使用自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink` 边界。
-- 允许使用 `lipgloss/v2`、`x/ansi`、隔离在 terminal host/frame sink 内的 `ultraviolet` 等纯渲染或终端 primitive；不得把 Bubble Tea `Model/Msg/Cmd` 或绑定该 contract 的 UI 组件作为 v3 主线结构。
-- `termx-cli` 默认 root、attach、daemon、new、ls、kill、rm 本地路径必须走新 core/tui 链路。
+- `go run ./termx-cli/cmd/termx`、`termx daemon`、`termx attach` 默认使用 `termx-core-v2` 与 `termx-tui-v3`。
+- `termx-cli` 默认本地路径不再依赖旧 `termx-core` 或 `tuiv2` 作为 runtime backend。
+- 若保留旧入口，必须显式命名为 legacy 或 fallback；不能作为默认路径，也不能被当成切换完成的依据。
+- 本地单 session 主路径必须覆盖 create、attach、live render、input、resize、history window、copy mode、kill、remove。
+- remote 兼容可以分阶段完成，但未完成差异必须写入任务队列或迁移审计，不能隐式宣称完整替换。
 
 ## 2. 技术设计基准
 
 - core-v2 架构基准：`termx-core-v2/docs/architecture.md`。
 - tui-v3 架构基准：`termx-tui-v3/docs/architecture.md`。
-- CLI 切换审计和迁移矩阵：`termx-cli/docs/`，首次创建时必须在切片 11 内完成。
-- 若实现与设计文档冲突，先更新对应设计文档和本文件的任务队列，再继续实现。
-- `workflow.md` 不展开架构正文，只记录自动执行时需要遵守的范围、顺序和准入条件。
+- CLI 切换审计和迁移矩阵：`termx-cli/docs/v2-v3-switch-audit.md`。
+- 本文件不展开架构正文；实现遇到架构冲突时，先更新对应设计文档和本文件任务队列，再继续实现。
 
 ## 3. 工作范围
 
@@ -95,7 +83,15 @@
 
 ## 4. 不可违反的语义约束
 
-### 4.1 core-v2 约束
+### 4.1 为什么必须使用 logical line
+
+- 目标是支持可落盘、可分页、长期保留、接近无限的历史记录。
+- 历史 truth 不能依赖当前 terminal size，因为窗口大小随时会变。
+- 如果历史只存在内存 grid、snapshot scrollback 或 visual row 中，resize 后就必须读回大量历史并按新列宽重排；这不适合无限历史，也不适合稳定分页。
+- logical line 是 shell/程序输出语义下的稳定历史单位；visual row 只是某个 `cols` 下的投影结果。
+- 因此 core-v2 只能按 logical line 存储和分页，再按当前列宽生成 HistoryWindow。
+
+### 4.2 core-v2 约束
 
 - primary history 的基本单位必须是 logical line。
 - logical line 必须有稳定身份，不能只靠当前窗口内 row index 表达。
@@ -106,23 +102,27 @@
 - `CommittedHistoryIndex` 只表达当前计入 authoritative committed history 的 logical line 顺序。
 - `MutableFrontier` 只表达当前仍可被终端语义修改的 logical line 范围。
 - `StorageBackend` 只是内存、文件、mmap 等存储落点，不定义 mutability。
+- `persisted`、落盘或 committed 不表示永远不可修改；clear scrollback、truncate、retention、reclaim、replace 都可以按完整 logical line 删除、撤回、替换或重新提交已提交历史。
 - `open/sealed`、`dirty/clean`、`committed/uncommitted`、`mutable`、`residency` 是正交属性，不得混成一个状态。
 - attach、reattach、bootstrap、recovery、full replace、clear screen、resize 不得凭空创造 committed history。
 - resize 不是历史创建事件，也不是历史重写事件；grow resize 只能按完整 logical line reclaim committed suffix，shrink resize 必须表达 `screen -> hidden mutable frontier`。
 - alt-screen 不写入 primary history；process exit 是显式 mutability 边界，退出时 primary `MutableFrontier` 必须 force commit。
 
-### 4.2 tui-v3 约束
+### 4.3 tui-v3 约束
 
-- `termx-tui-v3` 不得用本地 VTerm scrollback、snapshot totals、row ownership 数量、LoadedRows、hasMore、wrapped 拼接结果推断历史真相。
+- `termx-tui-v3` 不拥有 committed history truth，只消费 core-v2 返回的 authoritative `HistoryWindow`。
 - `HistoryStore` 只保存 core-v2 返回的 authoritative window、请求状态和 exhausted marker。
 - `CopyModeStore` 只保存交互态：active pane、terminal id、viewport top、cursor、selection、bound token、bound cols。
 - latest window 使用 replace。
 - older window 使用 prepend。
 - stale response guard 使用 core 返回的 token、generation、cursor、logical line boundary 和 cols，不使用本地深度计数。
 - `TerminalSurfaceStore` 只服务实时显示，不得向 `HistoryStore` 提供 rows 让其反推出 logical line。
+- copy mode、鼠标滚轮、page up/down、selection、copy 必须围绕 authoritative `HistoryWindow` 工作。
+- copy mode 缺 authoritative window 时不得从 live surface、snapshot 或 VTerm scrollback fallback。
 - TUI 主线不得引入 Bubble Tea `Program`、`standardRenderer`、`tea.Model`、`tea.Msg`、`tea.Cmd`、`tea.KeyMsg`、`tea.MouseMsg`、`bubbles` 或依赖这些 contract 的 UI 组件。
+- 允许使用 `lipgloss/v2`、`x/ansi`、隔离在 terminal host/frame sink 内的 `ultraviolet` 等纯渲染或终端 primitive。
 
-### 4.3 CLI / daemon 切换约束
+### 4.4 CLI / daemon 切换约束
 
 - 默认入口切换前必须存在显式实验入口，并通过本地单 session 主路径 smoke。
 - 实验入口可以暂时与旧入口并存，但必须显式命名；不能让用户误以为默认 `termx` 已完成切换。
@@ -130,9 +130,9 @@
 - `termx-cli` 默认路径不得通过 `tuiv2/app.RunWithClient` 启动 tui-v3。
 - core-v2 daemon 必须自己拥有 terminal lifecycle、protocol service、event stream、history window service 和 shutdown 语义；不能把旧 daemon 当作 runtime backend。
 - tui-v3 必须自己拥有 terminal raw mode、input loop、frame sink、effect loop 和 copy mode 交互；不能把旧 tuiv2 当作 runtime backend。
-- remote 兼容可以分阶段落地，但默认本地路径完成后，remote 相关差异必须在任务队列中显式保留，不得隐式宣称完整替换。
+- 默认本地路径完成后，remote 相关差异必须在任务队列中显式保留，不得隐式宣称完整替换。
 
-### 4.4 命名约束
+### 4.5 命名约束
 
 - 新实现命名收敛到 `LogicalLineStore`、`CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend`、`HistoryWindow`、`AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`。
 - `hot/cold` 只能出现在旧模型问题说明或迁移记录中，不得继续作为代码、测试 helper、内部 contract 或运行时状态的主语义命名。
@@ -146,7 +146,7 @@
 
 - 如果最早未完成切片是 `阻塞`，必须停止并向用户说明阻塞，不得跳到后续 `待开始` 切片。
 - 如果最早未完成切片是 `进行中`，继续该切片。
-- 如果最早未完成切片是 `待开始`，先把它改为 `进行中` 并提交或与本切片首个实现提交同切片提交，然后只执行该切片。
+- 如果最早未完成切片是 `待开始`，先把它改为 `进行中` 并提交，或与本切片首个实现提交同切片提交，然后只执行该切片。
 
 | 切片 | 状态 | 范围 | 完成标准 |
 | --- | --- | --- | --- |
@@ -161,7 +161,7 @@
 | 8. tui-v3 input/render/UI 边界 | 完成 | `termx-tui-v3/` | 自有 `InputEvent`、semantic intent、RenderVMBuilder、Renderer、hit regions、lipgloss style helper；无 Bubble Tea contract |
 | 9. services 与集成 | 完成 | `termx-tui-v3/`、受限联动范围 | core client、terminal service、session、clipboard contract、fake、protocol history adapter 和最小 runtime e2e harness |
 | 10. 收口与迁移入口 | 完成 | 受限联动范围 | 新路径可运行；必要 CLI/adapter 入口接入；旧 helper/fixture 只在明确不再需要时删除 |
-| 11. 切换审计与迁移矩阵 | 完成 | `termx-cli/docs/`、`termx-core-v2/docs/`、`termx-tui-v3/docs/`、只读参考旧目录 | 已在 `termx-cli/docs/v2-v3-switch-audit.md` 明确当前 CLI 命令到旧依赖的映射、目标 v2/v3 命令矩阵、协议方法矩阵、daemon 能力矩阵、TUI 能力矩阵和分阶段验收口径 |
+| 11. 切换审计与迁移矩阵 | 完成 | `termx-cli/docs/`、`termx-core-v2/docs/`、`termx-tui-v3/docs/`、只读参考旧目录 | `termx-cli/docs/v2-v3-switch-audit.md` 已明确当前 CLI 命令到旧依赖的映射、目标 v2/v3 命令矩阵、协议方法矩阵、daemon 能力矩阵、TUI 能力矩阵和分阶段验收口径 |
 | 12. core-v2 server API 与 daemon 骨架 | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-cli/` 按需 | core-v2 已提供独立 server/daemon API、options、listen/shutdown、terminal registry、事件订阅 fake harness；静态 harness 确认不调用旧 `termx-core`/`tuiv2` |
 | 13. core-v2 terminal lifecycle 与 PTY 管线 | 完成 | `termx-core-v2/`、`termx-vterm/`、`termx-shared/` 按需 | core-v2 已建立 `TerminalProcess`/`ProcessFactory`、terminal lifecycle、create/input/resize/exit/restart/remove harness；输出进入 live surface 与 `HistoryTrack` ingest；exit force commit、late output guard、resize grow/shrink 和 shutdown lifecycle harness 通过 |
 | 14. core-v2 protocol service 与 HistoryWindow 实服务 | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` | core-v2 protocol session 已服务 create/get/list/set metadata/restart/remove/events/input/resize/history.window；HistoryWindow 来自 `HistoryTrack` logical line truth，包含 token/generation/cursor/boundary 与 stale guard；协议测试通过 |
@@ -260,13 +260,14 @@
 
 ## 8. 自动执行规则
 
-- 每次开始工作先检查 `git status --short --branch`。
+- 每次开始工作先读取本文件，再检查 `git status --short --branch`。
 - 按任务队列表格顺序选择最早未完成切片；遇到 `阻塞` 必须停止，遇到 `进行中` 继续，遇到 `待开始` 必须先标为 `进行中`。
 - 切片范围不清时，先更新本文件，不要自行扩大范围。
 - 每个切片尽量保持小而可提交；不要跨多个切片堆叠未提交改动。
 - 完成切片后更新本文件中对应状态和必要的下一步说明，与实现同提交。
 - 如果发现设计文档需要变化，必须与实现同切片更新，或先提交设计更新。
 - 如果遇到阻塞，必须把对应切片状态改为 `阻塞` 并说明阻塞条件；不要继续扩散到其他目录。
+- 自动执行不能因为局部测试暂时通过就跳过后续切片；只有切片 22 完成且测试准入通过，当前目标才算完成。
 
 ## 9. 提交规则
 
@@ -281,9 +282,10 @@
 
 - 当前分支主线已切换到 `termx-core-v2/` 与 `termx-tui-v3/` 的重构方向。
 - 切片 0-10 已完成：新 core/tui module、logical line history domain、HistoryWindow projection、protocol 字段、tui-v3 runtime/state/render/services 骨架、smoke 入口和 `make test-v2-migration` 均已建立。
-- 当前 CLI 默认运行时尚未切换：`go run ./termx-cli/cmd/termx` 仍通过旧 `termx-core` daemon 和旧 `tuiv2` TUI 工作。
-- 下一阶段目标不是继续扩展 smoke，而是完成真实 CLI/daemon/TUI runtime 切换。
-- 旧 `termx-core/` 与 `tuiv2/` 的历史修补进度不再作为当前主线状态；如需查阅只能通过 git 历史或只读参考。
 - 切片 11 已完成：`termx-cli/docs/v2-v3-switch-audit.md` 已建立默认入口切换审计、迁移矩阵和分阶段验收口径。
 - 切片 12 已完成：`termx-core-v2` 已建立独立 server/daemon API、listener factory、listen/shutdown、terminal registry、event broker 和 fake harness，不依赖旧 `termx-core`/`tuiv2`。
-- 当前正在执行切片 13“core-v2 terminal lifecycle 与 PTY 管线”。
+- 切片 13 已完成：`termx-core-v2` 已建立 terminal lifecycle、PTY 管线、输出 ingest、live surface、history track、exit force commit、late output guard、resize grow/shrink 和 shutdown lifecycle harness。
+- 切片 14 已完成：`termx-core-v2` protocol session 已服务控制面、输入、resize、events 和 `history.window`，并从 `HistoryTrack` logical line truth 返回 authoritative window。
+- 当前正在执行切片 15：`tui-v3 真实 TerminalHost 与 FrameSink`。
+- 当前 CLI 默认运行时尚未切换：`go run ./termx-cli/cmd/termx` 仍通过旧 `termx-core` daemon 和旧 `tuiv2` TUI 工作。
+- 下一阶段目标不是扩展 smoke，而是完成真实 TUI runtime、v3 实验入口、本地命令等价迁移、remote/config 收口、默认入口切换和旧默认依赖冻结。
