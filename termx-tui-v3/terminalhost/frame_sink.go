@@ -30,13 +30,19 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	var builder strings.Builder
 	builder.WriteString(cursorHome)
 	builder.WriteString(clearScreen)
-	for i, line := range frame.Lines {
+	lines := frame.ANSILines
+	if len(lines) == 0 {
+		lines = frame.Lines
+	}
+	for i, line := range lines {
 		if i > 0 {
 			builder.WriteByte('\n')
 		}
 		builder.WriteString(clearLine)
 		builder.WriteString(line)
+		builder.WriteString(render.ANSIReset)
 	}
+	builder.WriteString(render.ANSIReset)
 	_, err := io.WriteString(sink.writer, builder.String())
 	return err
 }

@@ -316,6 +316,29 @@ func TestFrameSinkWritesFrameToOutput(t *testing.T) {
 	}
 }
 
+func TestFrameSinkPrefersANSIStyledFrame(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Lines:     []string{"plain"},
+		ANSILines: []string{"\x1b[31mstyled\x1b[0m"},
+		Metadata:  render.RenderMetadata{Width: 6, Height: 1},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "\x1b[31mstyled\x1b[0m") {
+		t.Fatalf("expected ANSI styled line in output, got %q", got)
+	}
+	if strings.Contains(got, "plain") {
+		t.Fatalf("FrameSink must not use plain snapshot when ANSI lines are present, got %q", got)
+	}
+	if !strings.HasSuffix(got, render.ANSIReset) {
+		t.Fatalf("FrameSink must reset style at frame end, got %q", got)
+	}
+}
+
 func readEvent(t *testing.T, host *Host) input.InputEvent {
 	t.Helper()
 	select {

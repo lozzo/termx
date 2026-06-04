@@ -1,6 +1,13 @@
 package render
 
-import "strings"
+import (
+	"strings"
+
+	xansi "github.com/charmbracelet/x/ansi"
+)
+
+// ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。
+const ANSIReset = "\x1b[0m"
 
 type CursorShape string
 
@@ -30,6 +37,16 @@ type Cell struct {
 
 type StyleToken string
 
+const (
+	StyleAccent  StyleToken = "accent"
+	StyleMuted   StyleToken = "muted"
+	StyleStatus  StyleToken = "status"
+	StyleInfo    StyleToken = "info"
+	StyleSuccess StyleToken = "success"
+	StyleWarning StyleToken = "warning"
+	StyleDanger  StyleToken = "danger"
+)
+
 type Line struct {
 	Cells []Cell
 }
@@ -55,6 +72,37 @@ func (line Line) String() string {
 		out.WriteString(cell.Text)
 	}
 	return out.String()
+}
+
+func (line Line) PlainString() string {
+	return xansi.Strip(line.String())
+}
+
+func (line Line) ANSIString() string {
+	if len(line.Cells) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	for _, cell := range line.Cells {
+		text := SafeLine(cell.Text)
+		if cell.Style == "" {
+			out.WriteString(text)
+			continue
+		}
+		out.WriteString(ansiForStyleToken(cell.Style))
+		out.WriteString(text)
+		out.WriteString(ANSIReset)
+	}
+	return out.String()
+}
+
+func (line Line) Clone() Line {
+	if len(line.Cells) == 0 {
+		return Line{}
+	}
+	cells := make([]Cell, len(line.Cells))
+	copy(cells, line.Cells)
+	return Line{Cells: cells}
 }
 
 func (line Line) Width() int {
@@ -97,13 +145,63 @@ func (result RenderResult) Lines() []string {
 	}
 	lines := make([]string, len(result.Content))
 	for i, line := range result.Content {
-		lines[i] = line.String()
+		lines[i] = line.PlainString()
+	}
+	return lines
+}
+
+func (result RenderResult) StyledLines() []Line {
+	if len(result.Content) == 0 {
+		return nil
+	}
+	lines := make([]Line, len(result.Content))
+	for i, line := range result.Content {
+		lines[i] = line.Clone()
+	}
+	return lines
+}
+
+func (result RenderResult) ANSILines() []string {
+	if len(result.Content) == 0 {
+		return nil
+	}
+	lines := make([]string, len(result.Content))
+	for i, line := range result.Content {
+		lines[i] = ensureANSIReset(line.ANSIString())
 	}
 	return lines
 }
 
 func (result RenderResult) Frame() Frame {
 	return FrameFromRenderResult(result)
+}
+
+func ensureANSIReset(value string) string {
+	if strings.HasSuffix(value, ANSIReset) || strings.HasSuffix(value, "\x1b[m") {
+		return value
+	}
+	return value + ANSIReset
+}
+
+func ansiForStyleToken(token StyleToken) string {
+	switch token {
+	case StyleAccent:
+		return "\x1b[1;36m"
+	case StyleMuted:
+		return "\x1b[2m"
+	case StyleStatus:
+		return "\x1b[7m"
+	case StyleInfo:
+		return "\x1b[34m"
+	case StyleSuccess:
+		return "\x1b[32m"
+	case StyleWarning:
+		return "\x1b[33m"
+	case StyleDanger:
+		return "\x1b[31m"
+	default:
+		return "\x1b[1m"
+	}
 }
 
 type ContentKind string
