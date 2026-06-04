@@ -631,6 +631,8 @@ Terminal Pool 管理页一期的目标是让用户离开小型 picker，进入�
 - selected terminal detail。
 - preview 区域。
 - Attach Here、Edit、Kill 三类核心动作。
+- 在 80x24 级别的常规 viewport 中，上述 list、selected detail、preview 摘要和核心 footer action 不得被 overlay/page 高度裁掉。
+- 窄高不足时按优先级退化：保留 search、至少一个 list row、selected row 状态和核心 action；detail 可以压缩为单行摘要，preview 可以显示 pending/summary 占位。
 
 一期必须可操作：
 
@@ -639,6 +641,9 @@ Terminal Pool 管理页一期的目标是让用户离开小型 picker，进入�
 - 鼠标点击 row 后切换 selected row。
 - 鼠标点击 footer action 执行动作。
 - `Esc` 关闭页面并回到原 workbench。
+- `Enter` 对 selected row 执行 Attach Here。
+- Edit 和 Kill 至少接入 service/effect/result 边界，并通过 toast 或页面状态反馈结果；不得在 result 到达前改写列表或 terminal lifecycle。
+- empty pane 的 manager action 可以打开 Terminal Pool Page，但不得绕过同一页面状态和 list loading 语义。
 
 一期不要求：
 
@@ -654,6 +659,8 @@ Terminal Pool 管理页一期的目标是让用户离开小型 picker，进入�
 - Terminal Picker 保持快速 attach / create 入口；Terminal Pool Page 负责更完整的列表、详情、预览和管理动作。
 - Terminal Pool Page 的 action 结果必须通过 toast 或页面内状态反馈给用户，不得静默修改列表。
 - kill、edit、attach 结果到达前不得伪造 terminal lifecycle。
+- 页面内容由 render framework 分配的 page/overlay content rect 承载；content renderer 不得直接覆盖 pane border、top bar、bottom bar、toast 或其他 overlay。
+- 页面 hit region 必须优先于 terminal input forwarding；row、footer action、close 区域命中后不得生成 terminal input。
 
 ## 11. Prompt
 
@@ -1507,6 +1514,9 @@ Terminal Pool 管理页一期的目标是实现独立 Terminal Pool page/content
 - Kill 执行后必须有明确 danger 反馈；结果到达前不得从本地列表伪造 terminal 已退出或已删除。
 - 所有 action 结果必须通过 toast 或页面内状态反馈。
 - 页面内容、row、detail、preview、footer action 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏页面边框或整行宽度。
+- 常规 viewport 中必须能同时看到 list、selected detail、preview 摘要和 Attach/Edit/Kill action；如果高度不足，必须按产品优先级压缩内容，而不是直接裁掉 action 或 detail。
+- 鼠标 action hit region、键盘 Enter、empty manager action 和 global mode 入口必须最终进入同一 app message / reducer / effect 边界，不能各自实现局部逻辑。
+- 页面打开期间，普通字符、Backspace、方向键、Enter、footer action click 和 row click 都不得漏发到底层 terminal。
 
 本阶段不要求：
 
@@ -1517,6 +1527,16 @@ Terminal Pool 管理页一期的目标是实现独立 Terminal Pool page/content
 - metadata edit 的最终表单体验。
 - kill destructive confirm 的最终交互样式。
 - 完整 terminal emulator preview。
+
+本阶段完成后的基本手工测试入口：
+
+- `go run ./termx-cli/cmd/termx` 进入默认 TUI。
+- 按 `Ctrl-g` 进入 global mode，再按 Terminal Pool 对应入口键打开 Terminal Pool Page。
+- 或在 empty pane 中点击 manager action 打开 Terminal Pool Page。
+- 在页面中输入搜索词，确认 terminal 不收到这些字符。
+- 使用上下方向键移动 selected row，按 `Enter` attach 到当前 pane。
+- 点击 row、Attach Here、Edit、Kill，确认都有可见反馈。
+- 按 `Esc` 关闭页面并回到 workbench。
 
 ## 28. 后续讨论入口
 

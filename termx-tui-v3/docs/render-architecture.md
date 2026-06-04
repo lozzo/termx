@@ -947,7 +947,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化和 Terminal Pool 数据源与 Picker 服务接线一期已落地。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化和 Terminal Pool 数据源与 Picker 服务接线一期已落地。当前正在推进 Terminal Pool 管理页一期。
 
 已落地：
 
@@ -1005,7 +1005,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region。
 - Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/close overlay、picker row click、new action feedback、最小 preview/detail 行和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达。
 - Terminal Pool 数据源与 Picker 服务接线一期已进入当前阶段：Terminal Picker 打开可请求 terminal list，`TerminalPoolStore` 保存 loading/empty/error/items/stale guard，picker rows 会合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 均通过 terminal service effect/result message 回到 reducer；但完整 Terminal Pool 管理页、跨 workspace/remote 管理、metadata edit、kill/remove UI 和 detail/preview 面板仍未落地。
-- Terminal Pool 管理页一期是当前下一步；它必须作为独立 terminal-pool content/page 实现，不得把 Terminal Picker overlay 临时加字段后伪装成管理页。
+- Terminal Pool 管理页一期正在推进；它必须作为独立 terminal-pool content/page 实现，不得把 Terminal Picker overlay 临时加字段后伪装成管理页。
+- Terminal Pool 管理页一期不得只输出被裁切的临时 overlay：常规 viewport 下必须可见 list、selected detail、preview 摘要和 Attach/Edit/Kill action，窄高时必须按明确优先级压缩内容。
 - Workbench Tree、Prompt、Help 的完整内容未落地。
 - floating panel 仍未落地，当前只有架构类型和后续边界。
 - overlay 已落地 Terminal Picker 真实交互和基础 opaque cursor 归属，未完成 Workbench Tree、Prompt、Help、Floating Overview 的产品内容。
@@ -1019,7 +1020,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 建议后续切片：
 
-- Terminal Pool 管理页一期：在当前 picker service 接线基础上实现独立 terminal-pool content/page，覆盖列表、搜索、selected row、detail、preview、attach/edit/kill action、loading/empty/error 和 no terminal input leak；不得混入 Workbench Tree、floating 或 remote 管理。
+- Terminal Pool 管理页一期：在当前 picker service 接线基础上实现独立 terminal-pool content/page，覆盖列表、搜索、selected row、detail、preview、attach/edit/kill action、loading/empty/error、可见 action 不被裁切和 no terminal input leak；不得混入 Workbench Tree、floating 或 remote 管理。
 - Workbench Tree overlay 一期：实现 workspace/tab/pane/floating 结构导航 overlay、搜索、selected row、detail/preview 和 open/focus action；不得混入 Terminal Pool 或 floating drag/resize。
 - Floating pane 一期：实现 floating state、z-order、styled bordered chrome、focus/raise、close、center、collapse/restore、move/resize 语义和 hit region；floating content 复用已有 content renderer。
 - Prompt / Help overlay 一期：实现 Prompt 的 title/context/input/submit/cancel 和 Help 的概念/动作说明；不得引入 Bubble Tea component。
@@ -1037,3 +1038,7 @@ Terminal Pool 管理页的 render 边界：
 - loading/empty/error 是页面内容状态，不是 toast 的替代；toast 只用于操作结果和全局反馈。
 - preview 一期可以是 summary 或 last known live preview，但必须被 content rect 裁切，不能覆盖 chrome。
 - 宽字符、emoji、combining mark 和 ANSI styled text 必须继续经过 cell-width helper，不得破坏页面边框或整行宽度。
+- Terminal Pool Page layout 必须区别于小型 Terminal Picker：Terminal Picker 可以保持紧凑 overlay，Terminal Pool 需要更大的 page/overlay rect。
+- 如果 viewport 高度不足，content renderer 必须主动压缩 preview/detail，而不是让 framework 裁掉 footer action 或 selected row。
+- content action hit region 必须随 content rect 裁切同步收敛；不可见 action 不应保留可点击 region，可见 action 不得缺失 region。
+- 页面 cursor 归属于 search field；overlay/page 打开期间不得复用底层 pane cursor。

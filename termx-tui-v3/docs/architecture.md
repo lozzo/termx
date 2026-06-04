@@ -451,7 +451,7 @@ renderer 禁止：
 - UI framework 交互产品化总验收已经完成。
 - terminal-live、copy-history、empty/exited、Terminal Picker 内容 renderer 一期已经完成。
 - Terminal Picker 数据源与 Terminal Pool service 接线一期已经完成。
-- 当前下一步是独立 Terminal Pool 管理页一期。
+- 当前下一步是独立 Terminal Pool 管理页一期，重点是独立 page/content、可见 list/detail/preview/action、service/effect/result 动作闭环和 no terminal input leak。
 - 后续再继续 Workbench Tree、floating、Prompt/Help、Tab/Workspace、terminal-live 深化、copy-history 深化和 render cleanup/performance。
 
 UI framework 交互产品化总验收包括：
@@ -515,12 +515,16 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - Terminal Pool Page 是独立 surface/content，不是 Terminal Picker overlay 的字段扩展。
 - 页面状态必须 reducer-owned，至少表达 open/closed、query、selected index、loading/empty/error、last action status 和必要的 detail/preview VM 输入。
 - TerminalPoolStore 仍是 terminal list/source 状态；页面可以复用该 store，但不得让 renderer 或 content renderer 直接读取 service。
+- 页面打开必须触发 list request；list result 先写入 reducer-owned TerminalPoolStore，再由页面 VM 推导 list/detail/preview。
+- 页面 query 和 selected index 属于 Shell/Page state，不能塞进 TerminalPoolStore 变成服务端列表状态。
 - 页面打开、关闭、query 更新、selection 移动、row click、action click 都必须进入 app message / reducer 路径；普通输入不得漏发到底层 terminal。
 - TerminalService 需要覆盖 Terminal Pool 页面动作的 effect/result 边界：attach、kill、edit metadata 至少要有明确 request/result message；service 不得直接修改 StateRoot 或伪造 terminal lifecycle。
 - attach 成功可以更新当前 active pane/session/surface，并通过 toast 或页面状态反馈；attach 失败只能反馈错误，不得改写本地 terminal truth。
 - kill 成功前不得从本地 list 中预删 terminal；kill result 到达后可以触发 list refresh 或标记 action 状态，但 lifecycle truth 仍以后续 service/list/event 为准。
 - edit metadata 一期可以只做最小 service 边界和反馈；如果需要 Prompt，应通过后续 Prompt overlay 切片完善，不得在 Terminal Pool 页面内临时实现第二套表单状态机。
 - RenderVMBuilder 负责把 Terminal Pool page state 投影为 terminal-pool ContentVM：list rows、selected row、detail、preview、footer action 和 cursor；renderer 只按 content rect 裁切、合成和输出。
+- layout measurement 必须给 Terminal Pool Page 足够的可见内容空间；在常规 80x24 / e2e viewport 下不得裁掉 detail、preview 摘要或 Attach/Edit/Kill action。
+- 窄高退化必须由页面 VM 或 content renderer 明确压缩内容优先级，不能靠 renderer 最后裁切把关键 action 隐藏掉。
 - Terminal Pool 页面不得混入 Workbench Tree、floating drag/resize、remote 管理、tab/workspace 结构操作或 copy-history 逻辑。
 - 页面 action hit region 必须由 render framework 转换到全局坐标，并由 runtime 按最新 hit region 派发；content action 命中不得转发成 terminal input。
 - 页面内所有文本继续通过 cell-width helper 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏 overlay/page chrome。
