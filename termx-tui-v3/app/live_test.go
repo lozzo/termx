@@ -261,6 +261,49 @@ func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
 	}
 }
 
+func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post split presentation: %v", err)
+	}
+	if err := runtime.Post(ShellSplitActivePaneMsg{
+		Pane:      state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive},
+		Direction: state.SplitDirectionVertical,
+	}); err != nil {
+		t.Fatalf("post split active pane: %v", err)
+	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:   state.PaneCommandSetSize,
+		Target:   state.PaneCommandTarget{PaneID: "pane-2"},
+		SizeMode: state.PaneSizeCells,
+		Cols:     24,
+	}}); err != nil {
+		t.Fatalf("post fixed size command: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain size command: %v", err)
+	}
+
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 23 || got.Rows != 21 {
+		t.Fatalf("fixed right pane size must drive active content resize, got %#v all=%#v", got, terminal.Resizes)
+	}
+}
+
 func TestLiveAppShowsTerminalServiceError(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachErr: errors.New("attach failed"),

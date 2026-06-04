@@ -232,6 +232,17 @@ func TestRenderVMBuilderDoesNotProjectClosedPane(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsPaneGeometryHints(t *testing.T) {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+		SetPaneSize(state.PaneCommand{Target: state.PaneCommandTarget{PaneID: "pane-2"}, SizeMode: state.PaneSizeCells, Cols: 12})
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Layout.Split.FixedPaneID != "pane-2" || vm.Shell.Layout.Split.FixedCols != 12 {
+		t.Fatalf("expected fixed pane size hint in render VM, got %#v", vm.Shell.Layout.Split)
+	}
+}
+
 func TestRenderVMBuilderUsesRootViewportAsLayoutTruth(t *testing.T) {
 	root := state.Root{
 		Viewport: state.ViewportStore{Valid: true, Cols: 37, Rows: 13},

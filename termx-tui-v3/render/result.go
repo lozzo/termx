@@ -342,9 +342,14 @@ const (
 )
 
 type SplitVM struct {
-	PaneID    string
-	Direction SplitDirection
-	Children  []SplitVM
+	PaneID      string
+	Direction   SplitDirection
+	Children    []SplitVM
+	Ratio       float64
+	BiasCells   int
+	FixedPaneID string
+	FixedCols   int
+	FixedRows   int
 }
 
 type FloatingVM struct {

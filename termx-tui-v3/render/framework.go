@@ -505,16 +505,70 @@ func assignSplitRects(split SplitVM, rect Rect, out map[string]Rect) {
 	second := split.Children[1]
 	switch split.Direction {
 	case SplitVertical:
-		leftWidth := rect.W / 2
+		leftWidth := splitFirstExtent(split, rect.W)
 		rightWidth := rect.W - leftWidth
 		assignSplitRects(first, Rect{X: rect.X, Y: rect.Y, W: leftWidth, H: rect.H}, out)
 		assignSplitRects(second, Rect{X: rect.X + leftWidth, Y: rect.Y, W: rightWidth, H: rect.H}, out)
 	default:
-		topHeight := rect.H / 2
+		topHeight := splitFirstExtent(split, rect.H)
 		bottomHeight := rect.H - topHeight
 		assignSplitRects(first, Rect{X: rect.X, Y: rect.Y, W: rect.W, H: topHeight}, out)
 		assignSplitRects(second, Rect{X: rect.X, Y: rect.Y + topHeight, W: rect.W, H: bottomHeight}, out)
 	}
+}
+
+func splitFirstExtent(split SplitVM, total int) int {
+	if total <= 1 {
+		return total
+	}
+	// SplitVM 的 size hint 已由 state/reducer 投影完成；这里仅做纯 layout measurement。
+	if split.FixedPaneID != "" {
+		fixed := splitFixedExtent(split)
+		if fixed > 0 {
+			fixed = clampInt(fixed, 1, total-1)
+			if splitContainsPane(split.Children[0], split.FixedPaneID) {
+				return fixed
+			}
+			if splitContainsPane(split.Children[1], split.FixedPaneID) {
+				return total - fixed
+			}
+		}
+	}
+	first := total / 2
+	if split.Ratio > 0 && split.Ratio < 1 {
+		first = int(float64(total) * split.Ratio)
+	}
+	first += split.BiasCells
+	return clampInt(first, 1, total-1)
+}
+
+func splitFixedExtent(split SplitVM) int {
+	if split.Direction == SplitVertical {
+		return split.FixedCols
+	}
+	return split.FixedRows
+}
+
+func splitContainsPane(split SplitVM, paneID string) bool {
+	if split.PaneID == paneID {
+		return true
+	}
+	for _, child := range split.Children {
+		if splitContainsPane(child, paneID) {
+			return true
+		}
+	}
+	return false
+}
+
+func clampInt(value int, min int, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }
 
 func renderCardPanel(c *canvas, layout PanelLayoutPlan) {

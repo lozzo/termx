@@ -173,6 +173,42 @@ func TestShellCloseLastPaneIsIgnoredByStateMethod(t *testing.T) {
 	}
 }
 
+func TestShellResizeSetSizeAndBalancePaneGeometry(t *testing.T) {
+	shell := DefaultShell().SplitActivePane(PaneState{ID: "pane-2"}, SplitDirectionVertical)
+
+	shell = shell.ResizePane(PaneCommandTarget{PaneID: DefaultPaneID}, PaneResizeRight, 4)
+	if shell.Workspace.Tabs[0].RootSplit.BiasCells != 4 {
+		t.Fatalf("expected resize bias for first pane, got %#v", shell.Workspace.Tabs[0].RootSplit)
+	}
+
+	shell = shell.SetPaneSize(PaneCommand{
+		Action:   PaneCommandSetSize,
+		Target:   PaneCommandTarget{PaneID: "pane-2"},
+		SizeMode: PaneSizeRatio,
+		Ratio:    0.25,
+	})
+	if got := shell.Workspace.Tabs[0].RootSplit.Ratio; got != 0.75 {
+		t.Fatalf("ratio is stored as first child ratio, got %#v", shell.Workspace.Tabs[0].RootSplit)
+	}
+
+	shell = shell.SetPaneSize(PaneCommand{
+		Action:   PaneCommandSetSize,
+		Target:   PaneCommandTarget{PaneID: "pane-2"},
+		SizeMode: PaneSizeCells,
+		Cols:     12,
+	})
+	root := shell.Workspace.Tabs[0].RootSplit
+	if root.FixedPaneID != "pane-2" || root.FixedCols != 12 || root.Ratio != 0 {
+		t.Fatalf("expected fixed cols for pane-2, got %#v", root)
+	}
+
+	shell = shell.BalancePanes(PaneCommandTarget{PaneID: "pane-2"})
+	root = shell.Workspace.Tabs[0].RootSplit
+	if root.BiasCells != 0 || root.Ratio != 0 || root.FixedPaneID != "" || root.FixedCols != 0 {
+		t.Fatalf("expected balanced split hints, got %#v", root)
+	}
+}
+
 func TestShellUpdatesDoNotMutatePreviousSlices(t *testing.T) {
 	original := DefaultShell().AddToast(ToastSpec{ID: "old"})
 	next := original.AddToast(ToastSpec{ID: "new"})

@@ -209,6 +209,61 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 	}
 }
 
+func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 39, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 23, 8, []state.HistoryRow{{Text: "sized-window", LineID: 30}})},
+		},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	initialShell := state.DefaultShell().
+		SetPanelPresentation(state.PanelPresentationSplitLine).
+		SplitActivePane(state.PaneState{ID: "pane-2", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: initialShell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4}}},
+		CopyModeDeps{Core: core, Rows: 20},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:   state.PaneCommandSetSize,
+		Target:   state.PaneCommandTarget{PaneID: "pane-2"},
+		SizeMode: state.PaneSizeCells,
+		Cols:     24,
+	}}); err != nil {
+		t.Fatalf("post pane size command: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane size rebind: %v", err)
+	}
+
+	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 23 {
+		t.Fatalf("pane size command must rebind copy mode at active content cols, got %#v", core.LatestRequests)
+	}
+	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().CopyMode.BoundCols != 23 {
+		t.Fatalf("expected copy mode rebound to sized window, got %#v", runtime.State().CopyMode)
+	}
+	if runtime.State().History.Token != "tok-2" || runtime.State().History.Cols != 23 || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "sized-window" {
+		t.Fatalf("pane size rebind must replace authoritative history window, got %#v", runtime.State().History)
+	}
+}
+
 func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeResult(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20}}
 	core := &services.FakeCoreClient{

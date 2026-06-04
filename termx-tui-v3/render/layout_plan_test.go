@@ -98,6 +98,33 @@ func TestMeasureLayoutSplitsPanelsFromPurePlan(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutUsesSplitSizeHints(t *testing.T) {
+	panels := []PanelVM{
+		{ID: "left", Presentation: PanelPresentationSplitLine},
+		{ID: "right", Presentation: PanelPresentationSplitLine, Active: true},
+	}
+	shell := ShellVM{Layout: LayoutVM{
+		Panels: panels,
+		Split:  SplitVM{Direction: SplitVertical, Ratio: 0.25, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}},
+	}}
+	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
+	if got, want := plan.Panels[0].Rect.W, 10; got != want {
+		t.Fatalf("ratio split should allocate left width got=%d want=%d", got, want)
+	}
+
+	shell.Layout.Split = SplitVM{Direction: SplitVertical, BiasCells: 5, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}}
+	plan = MeasureLayout(shell, Rect{W: 40, H: 10})
+	if got, want := plan.Panels[0].Rect.W, 25; got != want {
+		t.Fatalf("bias split should adjust left width got=%d want=%d", got, want)
+	}
+
+	shell.Layout.Split = SplitVM{Direction: SplitVertical, FixedPaneID: "right", FixedCols: 12, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}}
+	plan = MeasureLayout(shell, Rect{W: 40, H: 10})
+	if got, want := plan.Panels[1].Rect.W, 12; got != want {
+		t.Fatalf("fixed split should allocate right width got=%d want=%d", got, want)
+	}
+}
+
 func TestMeasureLayoutHeaderFooterHideReclaimsBodyInPurePlan(t *testing.T) {
 	shell := ShellVM{
 		Header: HeaderVM{Visible: true},

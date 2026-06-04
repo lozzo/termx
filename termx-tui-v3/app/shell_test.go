@@ -205,26 +205,28 @@ func TestShellReducerHandlesCloseFocusAndZoomPaneCommands(t *testing.T) {
 	}
 }
 
-func TestShellReducerAcceptsPaneResizeAndSetSizeContractWithoutGeometryMutation(t *testing.T) {
+func TestShellReducerAppliesPaneResizeSetSizeAndBalanceGeometry(t *testing.T) {
 	reducer := NewShellReducer()
-	root := state.Root{Shell: state.DefaultShell()}
+	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2"}, state.SplitDirectionVertical)}
 
-	for _, command := range []state.PaneCommand{
-		{Action: state.PaneCommandResize, ResizeDirection: state.PaneResizeDown, Delta: 3, Source: state.PaneCommandSourceKeyboard},
-		{Action: state.PaneCommandSetSize, SizeMode: state.PaneSizeRatio, Ratio: 0.4, Source: state.PaneCommandSourceCLIMini},
-		{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse},
-	} {
-		next, effects := reducer(root, ShellPaneCommandMsg{Command: command})
-		if next.Generation != root.Generation+1 {
-			t.Fatalf("valid command should advance reducer boundary command=%#v next=%#v", command, next)
-		}
-		if next.Shell.ActivePaneID != root.Shell.ActivePaneID || len(next.Shell.Workspace.Tabs[0].Panes) != 1 {
-			t.Fatalf("slice 53 must not implement geometry mutation command=%#v next=%#v", command, next)
-		}
-		feedback, ok := effects[0].(PaneCommandFeedbackEffect)
-		if len(effects) != 1 || !ok || feedback.Result.Status != state.PaneCommandOK {
-			t.Fatalf("expected ok feedback command=%#v effects=%#v", command, effects)
-		}
+	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandResize, Target: state.PaneCommandTarget{PaneID: "pane-2"}, ResizeDirection: state.PaneResizeLeft, Delta: 3, Source: state.PaneCommandSourceKeyboard}})
+	if next.Generation != root.Generation+1 || next.Shell.Workspace.Tabs[0].RootSplit.BiasCells != -3 {
+		t.Fatalf("expected resize geometry command, root=%#v effects=%#v", next, effects)
+	}
+	feedback, ok := effects[0].(PaneCommandFeedbackEffect)
+	if len(effects) != 1 || !ok || feedback.Result.Status != state.PaneCommandOK {
+		t.Fatalf("expected ok resize feedback, got %#v", effects)
+	}
+
+	next, effects = reducer(next, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandSetSize, Target: state.PaneCommandTarget{PaneID: "pane-2"}, SizeMode: state.PaneSizeRatio, Ratio: 0.4, Source: state.PaneCommandSourceCLIMini}})
+	if next.Shell.Workspace.Tabs[0].RootSplit.Ratio != 0.6 {
+		t.Fatalf("expected set-size ratio geometry, got %#v effects=%#v", next.Shell.Workspace.Tabs[0].RootSplit, effects)
+	}
+
+	next, effects = reducer(next, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandBalance, Target: state.PaneCommandTarget{PaneID: "pane-2"}, Source: state.PaneCommandSourceMouse}})
+	rootSplit := next.Shell.Workspace.Tabs[0].RootSplit
+	if rootSplit.Ratio != 0 || rootSplit.BiasCells != 0 || rootSplit.FixedPaneID != "" {
+		t.Fatalf("expected balanced geometry, got %#v effects=%#v", rootSplit, effects)
 	}
 }
 

@@ -89,6 +89,12 @@ type SplitNode struct {
 	PaneID    string
 	Direction SplitDirection
 	Children  []SplitNode
+	// 几何 hint 属于 reducer-owned pane tree；renderer 只消费投影后的 SplitVM，不反写 state。
+	Ratio       float64
+	BiasCells   int
+	FixedPaneID string
+	FixedCols   int
+	FixedRows   int
 }
 
 type OverlayState struct {
@@ -391,6 +397,45 @@ func (store ShellStore) ToggleZoomPane(target PaneCommandTarget) ShellStore {
 	return store.ZoomPane(target)
 }
 
+func (store ShellStore) ResizePane(target PaneCommandTarget, direction PaneResizeDirection, delta int) ShellStore {
+	store = store.EnsureDefaults()
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta == 0 {
+		return store
+	}
+	tabIndex := store.tabIndexForTarget(target)
+	if tabIndex < 0 {
+		return store
+	}
+	tab := &store.Workspace.Tabs[tabIndex]
+	tab.RootSplit, _ = resizeSplitNode(tab.RootSplit, target.PaneID, direction, delta)
+	return store
+}
+
+func (store ShellStore) SetPaneSize(command PaneCommand) ShellStore {
+	store = store.EnsureDefaults()
+	tabIndex := store.tabIndexForTarget(command.Target)
+	if tabIndex < 0 {
+		return store
+	}
+	tab := &store.Workspace.Tabs[tabIndex]
+	tab.RootSplit, _ = setSplitNodeSize(tab.RootSplit, command)
+	return store
+}
+
+func (store ShellStore) BalancePanes(target PaneCommandTarget) ShellStore {
+	store = store.EnsureDefaults()
+	tabIndex := store.tabIndexForTarget(target)
+	if tabIndex < 0 {
+		return store
+	}
+	tab := &store.Workspace.Tabs[tabIndex]
+	tab.RootSplit = balanceSplitNode(tab.RootSplit)
+	return store
+}
+
 func (store ShellStore) activeTab() TabState {
 	for _, tab := range store.Workspace.Tabs {
 		if tab.ID == store.Workspace.ActiveTabID {
@@ -563,6 +608,153 @@ func firstPaneIDInSplit(node SplitNode) string {
 		}
 	}
 	return ""
+}
+
+func resizeSplitNode(node SplitNode, paneID string, direction PaneResizeDirection, delta int) (SplitNode, bool) {
+	if node.PaneID != "" || len(node.Children) < 2 {
+		return node, node.PaneID == paneID
+	}
+	firstContains := splitContainsPane(node.Children[0], paneID)
+	secondContains := splitContainsPane(node.Children[1], paneID)
+	if firstContains || secondContains {
+		if splitDirectionMatchesResize(node.Direction, direction) {
+			node.BiasCells += resizeBiasDelta(node.Direction, direction, firstContains, delta)
+			node.FixedPaneID = ""
+			node.FixedCols = 0
+			node.FixedRows = 0
+			node.Ratio = 0
+			return node, true
+		}
+		childIndex := 0
+		if secondContains {
+			childIndex = 1
+		}
+		children := cloneSplitNodes(node.Children)
+		children[childIndex], _ = resizeSplitNode(children[childIndex], paneID, direction, delta)
+		node.Children = children
+		return node, true
+	}
+	children := cloneSplitNodes(node.Children)
+	changed := false
+	for i, child := range children {
+		children[i], changed = resizeSplitNode(child, paneID, direction, delta)
+		if changed {
+			break
+		}
+	}
+	node.Children = children
+	return node, changed
+}
+
+func setSplitNodeSize(node SplitNode, command PaneCommand) (SplitNode, bool) {
+	if node.PaneID != "" || len(node.Children) < 2 {
+		return node, node.PaneID == command.Target.PaneID
+	}
+	firstContains := splitContainsPane(node.Children[0], command.Target.PaneID)
+	secondContains := splitContainsPane(node.Children[1], command.Target.PaneID)
+	if firstContains || secondContains {
+		node.BiasCells = 0
+		node.FixedPaneID = ""
+		node.FixedCols = 0
+		node.FixedRows = 0
+		node.Ratio = 0
+		switch command.SizeMode {
+		case PaneSizeRatio:
+			if firstContains {
+				node.Ratio = command.Ratio
+			} else {
+				node.Ratio = 1 - command.Ratio
+			}
+		case PaneSizeCells:
+			node.FixedPaneID = command.Target.PaneID
+			if node.Direction == SplitDirectionVertical {
+				node.FixedCols = command.Cols
+				if node.FixedCols <= 0 {
+					node.FixedCols = command.Rows
+				}
+			} else {
+				node.FixedRows = command.Rows
+				if node.FixedRows <= 0 {
+					node.FixedRows = command.Cols
+				}
+			}
+		}
+		return node, true
+	}
+	children := cloneSplitNodes(node.Children)
+	changed := false
+	for i, child := range children {
+		children[i], changed = setSplitNodeSize(child, command)
+		if changed {
+			break
+		}
+	}
+	node.Children = children
+	return node, changed
+}
+
+func balanceSplitNode(node SplitNode) SplitNode {
+	node.Ratio = 0
+	node.BiasCells = 0
+	node.FixedPaneID = ""
+	node.FixedCols = 0
+	node.FixedRows = 0
+	for i, child := range node.Children {
+		node.Children[i] = balanceSplitNode(child)
+	}
+	return node
+}
+
+func splitContainsPane(node SplitNode, paneID string) bool {
+	if node.PaneID == paneID {
+		return true
+	}
+	for _, child := range node.Children {
+		if splitContainsPane(child, paneID) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitDirectionMatchesResize(splitDirection SplitDirection, resizeDirection PaneResizeDirection) bool {
+	switch splitDirection {
+	case SplitDirectionVertical:
+		return resizeDirection == PaneResizeLeft || resizeDirection == PaneResizeRight
+	case SplitDirectionHorizontal:
+		return resizeDirection == PaneResizeUp || resizeDirection == PaneResizeDown
+	default:
+		return false
+	}
+}
+
+func resizeBiasDelta(splitDirection SplitDirection, resizeDirection PaneResizeDirection, firstContains bool, delta int) int {
+	switch splitDirection {
+	case SplitDirectionVertical:
+		if firstContains && resizeDirection == PaneResizeRight {
+			return delta
+		}
+		if firstContains && resizeDirection == PaneResizeLeft {
+			return -delta
+		}
+		if !firstContains && resizeDirection == PaneResizeLeft {
+			return -delta
+		}
+		return delta
+	case SplitDirectionHorizontal:
+		if firstContains && resizeDirection == PaneResizeDown {
+			return delta
+		}
+		if firstContains && resizeDirection == PaneResizeUp {
+			return -delta
+		}
+		if !firstContains && resizeDirection == PaneResizeUp {
+			return -delta
+		}
+		return delta
+	default:
+		return 0
+	}
 }
 
 func cloneToasts(toasts []ToastState) []ToastState {

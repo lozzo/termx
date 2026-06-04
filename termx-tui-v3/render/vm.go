@@ -380,8 +380,13 @@ func activeTab(shell state.ShellStore) state.TabState {
 
 func buildSplitVM(node state.SplitNode) SplitVM {
 	out := SplitVM{
-		PaneID:    node.PaneID,
-		Direction: renderSplitDirection(node.Direction),
+		PaneID:      node.PaneID,
+		Direction:   renderSplitDirection(node.Direction),
+		Ratio:       node.Ratio,
+		BiasCells:   node.BiasCells,
+		FixedPaneID: node.FixedPaneID,
+		FixedCols:   node.FixedCols,
+		FixedRows:   node.FixedRows,
 	}
 	if len(node.Children) > 0 {
 		out.Children = make([]SplitVM, len(node.Children))

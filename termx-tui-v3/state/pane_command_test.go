@@ -86,14 +86,14 @@ func TestApplyPaneCommandReusesExistingPresentationAndSplitState(t *testing.T) {
 	}
 }
 
-func TestApplyPaneCommandDoesNotMutateForFutureResizeGeometryCommandsYet(t *testing.T) {
-	shell := DefaultShell()
+func TestApplyPaneCommandAppliesResizeGeometryHints(t *testing.T) {
+	shell := DefaultShell().SplitActivePane(PaneState{ID: "pane-2"}, SplitDirectionVertical)
 	next, result := shell.ApplyPaneCommand(PaneCommand{Action: PaneCommandResize, ResizeDirection: PaneResizeRight, Delta: 2})
 
 	if result.Status != PaneCommandOK {
 		t.Fatalf("expected contract-valid resize, got %#v", result)
 	}
-	if next.ActivePaneID != shell.ActivePaneID || len(next.Workspace.Tabs[0].Panes) != len(shell.Workspace.Tabs[0].Panes) {
-		t.Fatalf("slice 53 must not implement resize geometry yet, before=%#v after=%#v", shell, next)
+	if next.Workspace.Tabs[0].RootSplit.BiasCells != 2 {
+		t.Fatalf("expected resize bias on split root, got %#v", next.Workspace.Tabs[0].RootSplit)
 	}
 }

@@ -186,6 +186,12 @@ func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneC
 		return store.UnzoomPane(), result
 	case PaneCommandToggleZoom:
 		return store.ToggleZoomPane(command.Target), result
+	case PaneCommandResize:
+		return store.ResizePane(command.Target, command.ResizeDirection, command.Delta), result
+	case PaneCommandSetSize:
+		return store.SetPaneSize(command), result
+	case PaneCommandBalance:
+		return store.BalancePanes(command.Target), result
 	case PaneCommandSetPresentation:
 		return store.SetPanelPresentation(command.Presentation), result
 	case PaneCommandTogglePresentation:
