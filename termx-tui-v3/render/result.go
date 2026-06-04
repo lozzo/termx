@@ -402,6 +402,7 @@ type OverlayKind string
 const (
 	OverlayNone           OverlayKind = ""
 	OverlayTerminalPicker OverlayKind = "terminal-picker"
+	OverlayTerminalPool   OverlayKind = "terminal-pool"
 	OverlayPrompt         OverlayKind = "prompt"
 	OverlayHelp           OverlayKind = "help"
 )

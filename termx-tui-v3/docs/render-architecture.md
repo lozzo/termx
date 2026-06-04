@@ -947,7 +947,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化和 Terminal Pool 数据源与 Picker 服务接线一期已落地。当前正在推进 Terminal Pool 管理页一期。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期和 Terminal Pool 管理页一期已落地。当前下一步是 Workbench Tree overlay 一期。
 
 已落地：
 
@@ -989,6 +989,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - active pane border/title/footer/toast 会跟随键盘和鼠标 focus、split、close、resize、zoom、card/split 切换更新。
 - Terminal Picker query、过滤、selected row、上下键移动、Enter attach/focus、row click attach/focus、new action feedback、preview/detail 行和 no terminal input leak 已落地。
 - Terminal Pool 数据源与 Picker 服务接线一期已落地：`TerminalPoolStore` 保存 list loading/empty/error/items/stale guard，Terminal Picker 打开可触发 terminal list request，picker rows 合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 通过 service/effect/result message 回到 reducer。
+- Terminal Pool 管理页一期已落地：独立 terminal-pool content/page 已接入，支持全局入口和 empty manager action 打开、list loading、搜索、selected row、键盘选择、Enter attach、鼠标 row/action 命中、detail、metadata、preview 摘要、Attach/Edit/Kill action、可见 action 不被裁切、service/effect/result 反馈和 no terminal input leak。
 - `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
 - `termx v3 smoke` 已覆盖 `pane-command-flow`，验证 pane command feedback、styled active pane ANSI、无默认 ASCII chrome 和行宽恒等。
 - `termx v3 e2e-smoke` 已覆盖 core-v2 daemon、默认 attach 装配、fake host 初始 viewport、host resize 重绘、content rect terminal resize、copy mode authoritative history、resized copy cols、split/resize/zoom/unzoom/close pane command，以及最终 panes/active/zoom 状态。
@@ -996,17 +997,16 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前仍是阶段性实现，不应误读为完整最终产品态：
 
-- 当前完成的是 chrome/frame 视觉等级、pane 结构命令基础、UI framework 第一版可操作闭环和三类内容 renderer 一期，不代表 Terminal Pool、Workbench Tree、floating、Prompt、Help 或最终 terminal/copy 内容体验完整。
+- 当前完成的是 chrome/frame 视觉等级、pane 结构命令基础、UI framework 第一版可操作闭环、三类内容 renderer 一期和 Terminal Pool 管理页一期，不代表 Workbench Tree、floating、Prompt、Help、跨 workspace/remote Terminal Pool 深化或最终 terminal/copy 内容体验完整。
 - header/footer 已有第一版产品信息层，但复杂 notice/error 汇总、更多 workspace/tab 管理信息和更精细的窄屏退化仍可继续 polish。
-- render 已能合成 hit region，app/runtime 已把真实鼠标坐标派发到最新 hit region；但 floating drag/resize、复杂 overlay、Terminal Pool 管理页和 terminal mouse forwarding 的完整产品边界仍需继续深化。
+- render 已能合成 hit region，app/runtime 已把真实鼠标坐标派发到最新 hit region；但 floating drag/resize、复杂 overlay、Workbench Tree 和 terminal mouse forwarding 的完整产品边界仍需继续深化。
 - active pane 视觉反馈已有端到端验收，但最终视觉 polish、更多状态 token 和复杂多层 split 的 focus affordance 仍可继续增强。
 - terminal-live content renderer 一期已进入当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，content 仍由 framework 裁切到 content rect；但 selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
 - copy-history content renderer 一期已进入当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，status 输出 row、line、cols 位置摘要，copy/yank 成功通过 toast 反馈；完整 scrollbar、content-local mouse selection、搜索和 logical-line 拼接提示仍待后续深化。
 - empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region。
 - Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/close overlay、picker row click、new action feedback、最小 preview/detail 行和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达。
-- Terminal Pool 数据源与 Picker 服务接线一期已进入当前阶段：Terminal Picker 打开可请求 terminal list，`TerminalPoolStore` 保存 loading/empty/error/items/stale guard，picker rows 会合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 均通过 terminal service effect/result message 回到 reducer；但完整 Terminal Pool 管理页、跨 workspace/remote 管理、metadata edit、kill/remove UI 和 detail/preview 面板仍未落地。
-- Terminal Pool 管理页一期正在推进；它必须作为独立 terminal-pool content/page 实现，不得把 Terminal Picker overlay 临时加字段后伪装成管理页。
-- Terminal Pool 管理页一期不得只输出被裁切的临时 overlay：常规 viewport 下必须可见 list、selected detail、preview 摘要和 Attach/Edit/Kill action，窄高时必须按明确优先级压缩内容。
+- Terminal Pool 数据源与 Picker 服务接线一期已进入当前阶段：Terminal Picker 打开可请求 terminal list，`TerminalPoolStore` 保存 loading/empty/error/items/stale guard，picker rows 会合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 均通过 terminal service effect/result message 回到 reducer。
+- Terminal Pool 管理页一期已进入当前阶段：页面作为独立 terminal-pool content/page 实现，常规 viewport 下可见 list、selected detail、preview 摘要和 Attach/Edit/Kill action，窄高时按明确优先级压缩内容；跨 workspace/remote 管理、metadata Prompt、kill confirm、attach as tab/floating 和完整 terminal emulator preview 仍属后续深化。
 - Workbench Tree、Prompt、Help 的完整内容未落地。
 - floating panel 仍未落地，当前只有架构类型和后续边界。
 - overlay 已落地 Terminal Picker 真实交互和基础 opaque cursor 归属，未完成 Workbench Tree、Prompt、Help、Floating Overview 的产品内容。
@@ -1020,7 +1020,6 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 建议后续切片：
 
-- Terminal Pool 管理页一期：在当前 picker service 接线基础上实现独立 terminal-pool content/page，覆盖列表、搜索、selected row、detail、preview、attach/edit/kill action、loading/empty/error、可见 action 不被裁切和 no terminal input leak；不得混入 Workbench Tree、floating 或 remote 管理。
 - Workbench Tree overlay 一期：实现 workspace/tab/pane/floating 结构导航 overlay、搜索、selected row、detail/preview 和 open/focus action；不得混入 Terminal Pool 或 floating drag/resize。
 - Floating pane 一期：实现 floating state、z-order、styled bordered chrome、focus/raise、close、center、collapse/restore、move/resize 语义和 hit region；floating content 复用已有 content renderer。
 - Prompt / Help overlay 一期：实现 Prompt 的 title/context/input/submit/cancel 和 Help 的概念/动作说明；不得引入 Bubble Tea component。

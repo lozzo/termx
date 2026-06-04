@@ -60,6 +60,10 @@ type ShellOpenTerminalPickerMsg struct{}
 
 func (ShellOpenTerminalPickerMsg) isMsg() {}
 
+type ShellOpenTerminalPoolMsg struct{}
+
+func (ShellOpenTerminalPoolMsg) isMsg() {}
+
 type ShellCloseOverlayMsg struct{}
 
 func (ShellCloseOverlayMsg) isMsg() {}
@@ -133,6 +137,9 @@ func NewShellReducer() Reducer {
 		case ShellOpenTerminalPickerMsg:
 			root.Shell = root.Shell.OpenTerminalPicker()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		case ShellOpenTerminalPoolMsg:
+			root.Shell = root.Shell.OpenTerminalPool()
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 		case ShellCloseOverlayMsg:
 			root.Shell = root.Shell.CloseOverlay()
 		case ShellContentActionMsg:
@@ -184,6 +191,33 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}
 	case "picker.new":
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolCreateRequestMsg{} }}}
+	case "pool.select":
+		items := state.TerminalPoolPageItems(root)
+		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
+		return root.Advance(), nil
+	case "pool.attach":
+		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+			}}}
+		}
+	case "pool.kill":
+		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolKillRequestMsg{TerminalID: selected.TerminalID}
+			}}}
+		}
+	case "pool.edit":
+		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			tags := cloneStringMap(selected.Tags)
+			if tags == nil {
+				tags = map[string]string{}
+			}
+			tags["edited-by"] = "termx-tui-v3"
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: tags}
+			}}}
+		}
 	case "exited.restart":
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
@@ -192,7 +226,10 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
 		}}}
-	case "empty.attach", "empty.create", "empty.manager":
+	case "empty.manager":
+		root.Shell = root.Shell.OpenTerminalPool()
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	case "empty.attach", "empty.create":
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: msg.ActionID, Body: "not implemented"})
 		return root.Advance(), nil
 	}
@@ -210,6 +247,23 @@ func terminalPickerItemAt(items []state.TerminalPickerItem, row int) (state.Term
 		}
 	}
 	return state.TerminalPickerItem{}, false
+}
+
+func terminalPoolPageItemForAction(root state.Root, row int) (state.TerminalPoolPageItem, bool) {
+	items := state.TerminalPoolPageItems(root)
+	if row >= 0 {
+		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(row, len(items))
+		items = state.TerminalPoolPageItems(root)
+	}
+	if row >= 0 && row < len(items) {
+		return items[row], true
+	}
+	for _, item := range items {
+		if item.Selected {
+			return item, true
+		}
+	}
+	return state.TerminalPoolPageItem{}, false
 }
 
 func terminalIDForContentAction(root state.Root, paneID string) string {

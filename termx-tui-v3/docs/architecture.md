@@ -451,8 +451,9 @@ renderer 禁止：
 - UI framework 交互产品化总验收已经完成。
 - terminal-live、copy-history、empty/exited、Terminal Picker 内容 renderer 一期已经完成。
 - Terminal Picker 数据源与 Terminal Pool service 接线一期已经完成。
-- 当前下一步是独立 Terminal Pool 管理页一期，重点是独立 page/content、可见 list/detail/preview/action、service/effect/result 动作闭环和 no terminal input leak。
-- 后续再继续 Workbench Tree、floating、Prompt/Help、Tab/Workspace、terminal-live 深化、copy-history 深化和 render cleanup/performance。
+- Terminal Pool 管理页一期已经完成。
+- 当前下一步是 Workbench Tree overlay 一期。
+- 后续再继续 floating、Prompt/Help、Tab/Workspace、terminal-live 深化、copy-history 深化和 render cleanup/performance。
 
 UI framework 交互产品化总验收包括：
 

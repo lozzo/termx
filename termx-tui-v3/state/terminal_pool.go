@@ -17,6 +17,8 @@ type TerminalPoolStore struct {
 	LastError      string
 	LastCreatedID  string
 	LastAttachedID string
+	LastKilledID   string
+	LastEditedID   string
 }
 
 type TerminalPoolItem struct {
@@ -25,6 +27,8 @@ type TerminalPoolItem struct {
 	State      string
 	CWD        string
 	Tags       map[string]string
+	Cols       int
+	Rows       int
 	Attached   bool
 }
 
@@ -71,6 +75,28 @@ func (store TerminalPoolStore) ApplyAttached(terminalID string, err string) Term
 	store.LastAttachedID = terminalID
 	store.LastError = ""
 	store.Items = markTerminalPoolAttached(store.Items, terminalID)
+	return store
+}
+
+func (store TerminalPoolStore) ApplyKilled(terminalID string, err string) TerminalPoolStore {
+	if err != "" {
+		store.LastError = err
+		store.Status = TerminalPoolError
+		return store
+	}
+	store.LastKilledID = terminalID
+	store.LastError = ""
+	return store
+}
+
+func (store TerminalPoolStore) ApplyEdited(terminalID string, err string) TerminalPoolStore {
+	if err != "" {
+		store.LastError = err
+		store.Status = TerminalPoolError
+		return store
+	}
+	store.LastEditedID = terminalID
+	store.LastError = ""
 	return store
 }
 

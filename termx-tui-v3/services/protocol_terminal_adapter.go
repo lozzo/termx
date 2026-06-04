@@ -12,6 +12,8 @@ type ProtocolTerminalClient interface {
 	List(context.Context) (*protocol.ListResult, error)
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
 	Restart(context.Context, string) error
+	Kill(context.Context, string) error
+	SetMetadata(context.Context, string, string, map[string]string) error
 	Input(context.Context, uint16, []byte) error
 	Resize(context.Context, uint16, uint16, uint16) error
 	EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
@@ -73,6 +75,8 @@ func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ Termin
 			State:      terminal.State,
 			CWD:        terminal.CWD,
 			Tags:       cloneStringMap(terminal.Tags),
+			Cols:       int(terminal.Size.Cols),
+			Rows:       int(terminal.Size.Rows),
 		})
 	}
 	return TerminalListResult{Items: items}, nil
@@ -111,6 +115,20 @@ func (adapter ProtocolTerminalServiceAdapter) Reconnect(ctx context.Context, req
 		SurfaceID:    req.SurfaceID,
 		ViewID:       req.ViewID,
 	})
+}
+
+func (adapter ProtocolTerminalServiceAdapter) Kill(ctx context.Context, req TerminalKillRequest) error {
+	if adapter.Client == nil {
+		return ErrMissingTerminalClient
+	}
+	return adapter.Client.Kill(ctx, req.TerminalID)
+}
+
+func (adapter ProtocolTerminalServiceAdapter) EditMetadata(ctx context.Context, req TerminalEditMetadataRequest) error {
+	if adapter.Client == nil {
+		return ErrMissingTerminalClient
+	}
+	return adapter.Client.SetMetadata(ctx, req.TerminalID, req.Title, cloneStringMap(req.Tags))
 }
 
 func (adapter ProtocolTerminalServiceAdapter) SendInput(ctx context.Context, req TerminalInputRequest) error {

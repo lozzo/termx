@@ -300,3 +300,53 @@ func TestMeasureLayoutTerminalPickerOwnsCursorAndActionHits(t *testing.T) {
 		t.Fatalf("picker content action should precede overlay background, got %#v", plan.HitRegions)
 	}
 }
+
+func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Cursor: Cursor{Visible: true, Row: 2, Col: 3}},
+		}}},
+		Overlay: OverlayVM{
+			Kind:   OverlayTerminalPool,
+			Opaque: true,
+			Content: ContentVM{
+				Kind:   ContentTerminalPool,
+				Cursor: Cursor{Visible: true, Row: 1, Col: 9, Shape: CursorShapeBar},
+				HitRegions: []HitRegion{
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "pool.select"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "pool.attach"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 10, W: 12, H: 1}, ActionID: "pool.edit"},
+					{Kind: HitRegionContentAction, Rect: Rect{Y: 11, W: 12, H: 1}, ActionID: "pool.kill"},
+				},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if plan.Overlay.W < 70 || plan.Overlay.H < 14 || plan.OverlayContentRect.H < 12 {
+		t.Fatalf("terminal pool page must not use compact picker overlay, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
+	}
+	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+9 || got.Y != plan.OverlayContentRect.Y+1 {
+		t.Fatalf("unexpected pool cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
+	}
+	for _, action := range []string{"pool.select", "pool.attach", "pool.edit", "pool.kill"} {
+		if hitRegionIndexByAction(plan.HitRegions, action) < 0 {
+			t.Fatalf("expected visible terminal pool action %s in hit regions %#v", action, plan.HitRegions)
+		}
+	}
+	if hitRegionIndex(plan.HitRegions, HitRegionPaneContent) >= 0 {
+		t.Fatalf("opaque terminal pool page must hide body hit regions, got %#v", plan.HitRegions)
+	}
+}
+
+func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
+	for i, region := range regions {
+		if region.ActionID == actionID {
+			return i
+		}
+	}
+	return -1
+}

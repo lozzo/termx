@@ -262,6 +262,110 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-logs", Channel: 9, Cols: 100, Rows: 30},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{
+			TerminalID: "term-shell",
+			Title:      "shell",
+			State:      "running",
+			Cols:       80,
+			Rows:       24,
+		}, {
+			TerminalID: "term-logs",
+			Title:      "日志🚀",
+			State:      "running",
+			CWD:        "/tmp/logs",
+			Cols:       100,
+			Rows:       30,
+			Tags:       map[string]string{"role": "logs"},
+		}}},
+	}
+	host := NewFakeTerminalHost(64)
+	host.SetSize(96, 28)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "日"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "志"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send pool input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain pool input %#v: %v", event, err)
+		}
+	}
+	if len(terminal.Lists) != 1 || runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPool || runtime.State().Shell.Overlay.Query != "日志" {
+		t.Fatalf("expected pool page loaded and queried, lists=%#v shell=%#v", terminal.Lists, runtime.State().Shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("pool query must not leak terminal input, got %#v", terminal.Inputs)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "Terminal Pool") || !frameContains(frame, "> 日志🚀") || !frameContains(frame, "role=logs") {
+		t.Fatalf("expected terminal pool page frame, got %#v", frame.Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send pool enter attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool attach: %v", err)
+	}
+	if len(terminal.Attaches) != 1 || terminal.Attaches[0].TerminalID != "term-logs" || !runtime.State().Session.Attached {
+		t.Fatalf("expected pool attach service result, attaches=%#v session=%#v", terminal.Attaches, runtime.State().Session)
+	}
+
+	if err := runtime.Post(ShellOpenTerminalPoolMsg{}); err != nil {
+		t.Fatalf("post pool open: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool reopen: %v", err)
+	}
+	frame = lastFrame(t, host.Frames())
+	selectRegion := frameActionHitRegion(t, frame, "pool.select", "")
+	if err := host.SendInput(mouseEventAt(selectRegion.Rect)); err != nil {
+		t.Fatalf("send pool select click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool select: %v", err)
+	}
+	if runtime.State().Shell.Overlay.SelectedIndex != 0 {
+		t.Fatalf("expected row click to select first row, got %#v", runtime.State().Shell.Overlay)
+	}
+	editRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "pool.edit", "")
+	if err := host.SendInput(mouseEventAt(editRegion.Rect)); err != nil {
+		t.Fatalf("send pool edit click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool edit: %v", err)
+	}
+	if len(terminal.Edits) != 1 || terminal.Edits[0].TerminalID != "term-shell" {
+		t.Fatalf("expected edit metadata service result, edits=%#v", terminal.Edits)
+	}
+	if terminal.Edits[0].Tags["edited-by"] != "termx-tui-v3" {
+		t.Fatalf("expected edit action to populate metadata tags safely, edits=%#v", terminal.Edits)
+	}
+	killRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "pool.kill", "")
+	if err := host.SendInput(mouseEventAt(killRegion.Rect)); err != nil {
+		t.Fatalf("send pool kill click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool kill: %v", err)
+	}
+	if len(terminal.Kills) != 1 || terminal.Kills[0].TerminalID != "term-shell" || runtime.State().TerminalPool.LastKilledID != "term-shell" {
+		t.Fatalf("expected kill service result without local lifecycle spoofing, kills=%#v pool=%#v", terminal.Kills, runtime.State().TerminalPool)
+	}
+}
+
 func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

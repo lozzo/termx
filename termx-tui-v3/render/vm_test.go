@@ -549,6 +549,70 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
+	shell := state.DefaultShell().OpenTerminalPool().SetTerminalPoolQuery("日志")
+	root := state.Root{
+		Shell: shell,
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{{
+				TerminalID: "term-pool",
+				Title:      "日志🚀",
+				State:      "running",
+				CWD:        "/tmp/日志",
+				Cols:       120,
+				Rows:       36,
+				Tags:       map[string]string{"role": "shell"},
+			}, {
+				TerminalID: "term-other",
+				Title:      "worker",
+				State:      "exited",
+			}},
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := vm.Shell.Overlay.Content
+	if vm.Shell.Overlay.Kind != OverlayTerminalPool || content.Kind != ContentTerminalPool {
+		t.Fatalf("expected terminal pool content, got %#v", vm.Shell.Overlay)
+	}
+	if !strings.Contains(content.Lines[0].PlainString(), "Terminal Pool") ||
+		!strings.Contains(content.Lines[1].PlainString(), "search 日志") ||
+		!strings.Contains(content.Lines[2].PlainString(), "> 日志🚀") ||
+		!strings.Contains(content.Lines[3].PlainString(), "detail 日志🚀") ||
+		!strings.Contains(content.Lines[4].PlainString(), "120x36") ||
+		!strings.Contains(content.Lines[6].PlainString(), "role=shell") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[kill] Kill Terminal") {
+		t.Fatalf("expected pool list/detail/preview/actions, got %#v", content.Lines)
+	}
+	if strings.Contains(content.Lines[2].PlainString(), "worker") {
+		t.Fatalf("query should filter non-matching row, got %#v", content.Lines)
+	}
+	if !contentHasAction(content, "pool.select") || !contentHasAction(content, "pool.attach") || !contentHasAction(content, "pool.edit") || !contentHasAction(content, "pool.kill") {
+		t.Fatalf("expected pool action hit regions, got %#v", content.HitRegions)
+	}
+	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("search 日志") {
+		t.Fatalf("expected pool search cursor, got %#v", content.Cursor)
+	}
+
+	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolLoading}
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !content.Pending || !strings.Contains(content.Lines[2].PlainString(), "loading terminals") {
+		t.Fatalf("expected pool loading page, got %#v", content)
+	}
+	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolError, LastError: "boom"}
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if content.Error != "boom" || !strings.Contains(content.Lines[2].PlainString(), "list error boom") {
+		t.Fatalf("expected pool error page, got %#v", content)
+	}
+	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolReady}
+	root.Shell = state.DefaultShell().OpenTerminalPool()
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !content.Empty || !strings.Contains(content.Lines[2].PlainString(), "list empty") {
+		t.Fatalf("expected pool empty page, got %#v", content)
+	}
+}
+
 func TestRenderVMBuilderShowsLiveError(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{Err: "boom"},

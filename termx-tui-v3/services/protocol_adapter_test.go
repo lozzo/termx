@@ -23,6 +23,10 @@ type fakeProtocolTerminalClient struct {
 	listCalls      int
 	createParams   []protocol.CreateParams
 	restartIDs     []string
+	killIDs        []string
+	metadataIDs    []string
+	metadataNames  []string
+	metadataTags   []map[string]string
 	inputChannel   []uint16
 	inputData      [][]byte
 	resizeChannels []uint16
@@ -59,6 +63,18 @@ func (client *fakeProtocolTerminalClient) Create(_ context.Context, params proto
 
 func (client *fakeProtocolTerminalClient) Restart(_ context.Context, terminalID string) error {
 	client.restartIDs = append(client.restartIDs, terminalID)
+	return nil
+}
+
+func (client *fakeProtocolTerminalClient) Kill(_ context.Context, terminalID string) error {
+	client.killIDs = append(client.killIDs, terminalID)
+	return nil
+}
+
+func (client *fakeProtocolTerminalClient) SetMetadata(_ context.Context, terminalID string, name string, tags map[string]string) error {
+	client.metadataIDs = append(client.metadataIDs, terminalID)
+	client.metadataNames = append(client.metadataNames, name)
+	client.metadataTags = append(client.metadataTags, cloneStringMap(tags))
 	return nil
 }
 
@@ -199,6 +215,7 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 			Name:  "日志🚀",
 			State: "running",
 			CWD:   "/tmp",
+			Size:  protocol.Size{Cols: 120, Rows: 36},
 			Tags:  map[string]string{"role": "shell"},
 		}}},
 		createResult: &protocol.CreateResult{TerminalID: "term-new", State: "running"},
@@ -209,7 +226,7 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if client.listCalls != 1 || len(list.Items) != 1 || list.Items[0].TerminalID != "term-pool" || list.Items[0].Title != "日志🚀" || list.Items[0].Tags["role"] != "shell" {
+	if client.listCalls != 1 || len(list.Items) != 1 || list.Items[0].TerminalID != "term-pool" || list.Items[0].Title != "日志🚀" || list.Items[0].Tags["role"] != "shell" || list.Items[0].Cols != 120 || list.Items[0].Rows != 36 {
 		t.Fatalf("unexpected list mapping calls=%d result=%#v", client.listCalls, list)
 	}
 
@@ -225,5 +242,17 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	}
 	if len(client.restartIDs) != 1 || client.restartIDs[0] != "term-pool" {
 		t.Fatalf("unexpected restart ids %#v", client.restartIDs)
+	}
+	if err := adapter.Kill(context.Background(), TerminalKillRequest{TerminalID: "term-pool"}); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if len(client.killIDs) != 1 || client.killIDs[0] != "term-pool" {
+		t.Fatalf("unexpected kill ids %#v", client.killIDs)
+	}
+	if err := adapter.EditMetadata(context.Background(), TerminalEditMetadataRequest{TerminalID: "term-pool", Title: "renamed", Tags: map[string]string{"role": "ops"}}); err != nil {
+		t.Fatalf("edit metadata: %v", err)
+	}
+	if len(client.metadataIDs) != 1 || client.metadataIDs[0] != "term-pool" || client.metadataNames[0] != "renamed" || client.metadataTags[0]["role"] != "ops" {
+		t.Fatalf("unexpected metadata calls ids=%#v names=%#v tags=%#v", client.metadataIDs, client.metadataNames, client.metadataTags)
 	}
 }

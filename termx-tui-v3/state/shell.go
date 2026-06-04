@@ -36,6 +36,7 @@ type OverlayKind string
 const (
 	OverlayNone           OverlayKind = ""
 	OverlayTerminalPicker OverlayKind = "terminal-picker"
+	OverlayTerminalPool   OverlayKind = "terminal-pool"
 	OverlayPrompt         OverlayKind = "prompt"
 	OverlayHelp           OverlayKind = "help"
 )
@@ -127,6 +128,18 @@ type TerminalPickerItem struct {
 	Selected   bool
 	FromPool   bool
 	PoolState  string
+}
+
+type TerminalPoolPageItem struct {
+	TerminalID string
+	Title      string
+	State      string
+	CWD        string
+	Tags       map[string]string
+	Cols       int
+	Rows       int
+	Attached   bool
+	Selected   bool
 }
 
 type ToastState struct {
@@ -314,9 +327,30 @@ func (store ShellStore) OpenTerminalPicker() ShellStore {
 	return store
 }
 
+func (store ShellStore) OpenTerminalPool() ShellStore {
+	store = store.EnsureDefaults()
+	store.Overlay = OverlayState{
+		Kind:          OverlayTerminalPool,
+		Open:          true,
+		TargetID:      store.ActivePaneID,
+		SelectedIndex: 0,
+	}
+	return store
+}
+
 func (store ShellStore) SetTerminalPickerQuery(query string) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open {
+		return store
+	}
+	store.Overlay.Query = query
+	store.Overlay.SelectedIndex = 0
+	return store
+}
+
+func (store ShellStore) SetTerminalPoolQuery(query string) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayTerminalPool || !store.Overlay.Open {
 		return store
 	}
 	store.Overlay.Query = query
@@ -338,9 +372,38 @@ func (store ShellStore) MoveTerminalPickerSelection(delta int, itemCount int) Sh
 	return store
 }
 
+func (store ShellStore) MoveTerminalPoolSelection(delta int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayTerminalPool || !store.Overlay.Open || itemCount <= 0 || delta == 0 {
+		return store
+	}
+	next := store.Overlay.SelectedIndex + delta
+	next %= itemCount
+	if next < 0 {
+		next += itemCount
+	}
+	store.Overlay.SelectedIndex = next
+	return store
+}
+
 func (store ShellStore) SetTerminalPickerSelectedIndex(index int, itemCount int) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open || itemCount <= 0 {
+		return store
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= itemCount {
+		index = itemCount - 1
+	}
+	store.Overlay.SelectedIndex = index
+	return store
+}
+
+func (store ShellStore) SetTerminalPoolSelectedIndex(index int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayTerminalPool || !store.Overlay.Open || itemCount <= 0 {
 		return store
 	}
 	if index < 0 {
@@ -721,6 +784,42 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 	return items
 }
 
+func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
+	shell := root.Shell.EnsureDefaults()
+	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
+	items := make([]TerminalPoolPageItem, 0, len(root.TerminalPool.Items))
+	for _, poolItem := range root.TerminalPool.Items {
+		if poolItem.TerminalID == "" {
+			continue
+		}
+		item := TerminalPoolPageItem{
+			TerminalID: poolItem.TerminalID,
+			Title:      terminalPoolTitle(poolItem),
+			State:      poolItem.State,
+			CWD:        poolItem.CWD,
+			Tags:       cloneStringMap(poolItem.Tags),
+			Cols:       poolItem.Cols,
+			Rows:       poolItem.Rows,
+			Attached:   poolItem.Attached,
+		}
+		if !matchesTerminalPoolPageQuery(item, query) {
+			continue
+		}
+		items = append(items, item)
+	}
+	if len(items) > 0 {
+		selected := shell.Overlay.SelectedIndex
+		if selected < 0 {
+			selected = 0
+		}
+		if selected >= len(items) {
+			selected = len(items) - 1
+		}
+		items[selected].Selected = true
+	}
+	return items
+}
+
 func pickerTerminalID(root Root, pane PaneState) string {
 	if pane.TerminalID != "" {
 		return pane.TerminalID
@@ -746,6 +845,24 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 		strings.Contains(strings.ToLower(item.TerminalID), query) ||
 		strings.Contains(strings.ToLower(string(item.Kind)), query) ||
 		strings.Contains(strings.ToLower(item.PoolState), query)
+}
+
+func matchesTerminalPoolPageQuery(item TerminalPoolPageItem, query string) bool {
+	if query == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(item.Title), query) ||
+		strings.Contains(strings.ToLower(item.TerminalID), query) ||
+		strings.Contains(strings.ToLower(item.State), query) ||
+		strings.Contains(strings.ToLower(item.CWD), query) {
+		return true
+	}
+	for key, value := range item.Tags {
+		if strings.Contains(strings.ToLower(key), query) || strings.Contains(strings.ToLower(value), query) {
+			return true
+		}
+	}
+	return false
 }
 
 func paneTitle(pane PaneState) string {

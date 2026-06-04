@@ -72,6 +72,34 @@ type TerminalPoolReconnectResultMsg struct {
 
 func (TerminalPoolReconnectResultMsg) isMsg() {}
 
+type TerminalPoolKillRequestMsg struct {
+	TerminalID string
+}
+
+func (TerminalPoolKillRequestMsg) isMsg() {}
+
+type TerminalPoolKillResultMsg struct {
+	TerminalID string
+	Err        error
+}
+
+func (TerminalPoolKillResultMsg) isMsg() {}
+
+type TerminalPoolEditRequestMsg struct {
+	TerminalID string
+	Title      string
+	Tags       map[string]string
+}
+
+func (TerminalPoolEditRequestMsg) isMsg() {}
+
+type TerminalPoolEditResultMsg struct {
+	TerminalID string
+	Err        error
+}
+
+func (TerminalPoolEditResultMsg) isMsg() {}
+
 func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
@@ -95,6 +123,14 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 			return reduceTerminalPoolReconnectRequest(root, msg, deps)
 		case TerminalPoolReconnectResultMsg:
 			return reduceTerminalPoolReconnectResult(root, msg)
+		case TerminalPoolKillRequestMsg:
+			return reduceTerminalPoolKillRequest(root, msg, deps)
+		case TerminalPoolKillResultMsg:
+			return reduceTerminalPoolKillResult(root, msg)
+		case TerminalPoolEditRequestMsg:
+			return reduceTerminalPoolEditRequest(root, msg, deps)
+		case TerminalPoolEditResultMsg:
+			return reduceTerminalPoolEditResult(root, msg)
 		default:
 			return root, nil
 		}
@@ -242,6 +278,55 @@ func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnec
 	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, Result: msg.Result, Err: msg.Err})
 }
 
+func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestMsg, deps LiveDeps) (state.Root, []Effect) {
+	if msg.TerminalID == "" || deps.Terminal == nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: "terminal unavailable"})
+		return root.Advance(), nil
+	}
+	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+		err := deps.Terminal.Kill(ctx, services.TerminalKillRequest{TerminalID: msg.TerminalID})
+		return TerminalPoolKillResultMsg{TerminalID: msg.TerminalID, Err: err}
+	}}}
+}
+
+func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg) (state.Root, []Effect) {
+	errText := errorString(msg.Err)
+	root.TerminalPool = root.TerminalPool.ApplyKilled(msg.TerminalID, errText)
+	if errText != "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: errText})
+		return root.Advance(), nil
+	}
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+}
+
+func reduceTerminalPoolEditRequest(root state.Root, msg TerminalPoolEditRequestMsg, deps LiveDeps) (state.Root, []Effect) {
+	if msg.TerminalID == "" || deps.Terminal == nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.edit", Body: "terminal unavailable"})
+		return root.Advance(), nil
+	}
+	title := msg.Title
+	if title == "" {
+		title = msg.TerminalID
+	}
+	tags := cloneStringMap(msg.Tags)
+	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+		err := deps.Terminal.EditMetadata(ctx, services.TerminalEditMetadataRequest{TerminalID: msg.TerminalID, Title: title, Tags: tags})
+		return TerminalPoolEditResultMsg{TerminalID: msg.TerminalID, Err: err}
+	}}}
+}
+
+func reduceTerminalPoolEditResult(root state.Root, msg TerminalPoolEditResultMsg) (state.Root, []Effect) {
+	errText := errorString(msg.Err)
+	root.TerminalPool = root.TerminalPool.ApplyEdited(msg.TerminalID, errText)
+	if errText != "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.edit", Body: errText})
+		return root.Advance(), nil
+	}
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "pool.edit", Body: msg.TerminalID})
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+}
+
 func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.TerminalPoolItem {
 	out := make([]state.TerminalPoolItem, len(items))
 	for i, item := range items {
@@ -251,6 +336,8 @@ func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.Ter
 			State:      item.State,
 			CWD:        item.CWD,
 			Tags:       cloneStringMap(item.Tags),
+			Cols:       item.Cols,
+			Rows:       item.Rows,
 		}
 	}
 	return out

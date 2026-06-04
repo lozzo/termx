@@ -50,6 +50,8 @@ type TerminalService interface {
 	Create(context.Context, TerminalCreateRequest) (TerminalCreateResult, error)
 	Restart(context.Context, TerminalRestartRequest) error
 	Reconnect(context.Context, TerminalReconnectRequest) (TerminalAttachResult, error)
+	Kill(context.Context, TerminalKillRequest) error
+	EditMetadata(context.Context, TerminalEditMetadataRequest) error
 	SendInput(context.Context, TerminalInputRequest) error
 	Resize(context.Context, TerminalResizeRequest) error
 }
@@ -60,6 +62,8 @@ type TerminalPoolItem struct {
 	State      string
 	CWD        string
 	Tags       map[string]string
+	Cols       int
+	Rows       int
 }
 
 type TerminalListRequest struct{}
@@ -111,6 +115,16 @@ type TerminalReconnectRequest struct {
 	ResizePolicy string
 	SurfaceID    string
 	ViewID       string
+}
+
+type TerminalKillRequest struct {
+	TerminalID string
+}
+
+type TerminalEditMetadataRequest struct {
+	TerminalID string
+	Title      string
+	Tags       map[string]string
 }
 
 type TerminalInputRequest struct {
@@ -194,6 +208,8 @@ type FakeTerminalService struct {
 	CreateErr    error
 	RestartErr   error
 	ReconnectErr error
+	KillErr      error
+	EditErr      error
 	InputErr     error
 	ResizeErr    error
 	Attaches     []TerminalAttachRequest
@@ -201,6 +217,8 @@ type FakeTerminalService struct {
 	Creates      []TerminalCreateRequest
 	Restarts     []TerminalRestartRequest
 	Reconnects   []TerminalReconnectRequest
+	Kills        []TerminalKillRequest
+	Edits        []TerminalEditMetadataRequest
 	Inputs       []TerminalInputRequest
 	Resizes      []TerminalResizeRequest
 }
@@ -265,6 +283,20 @@ func (service *FakeTerminalService) Reconnect(ctx context.Context, req TerminalR
 		SurfaceID:    req.SurfaceID,
 		ViewID:       req.ViewID,
 	})
+}
+
+func (service *FakeTerminalService) Kill(_ context.Context, req TerminalKillRequest) error {
+	service.Kills = append(service.Kills, req)
+	return service.KillErr
+}
+
+func (service *FakeTerminalService) EditMetadata(_ context.Context, req TerminalEditMetadataRequest) error {
+	service.Edits = append(service.Edits, TerminalEditMetadataRequest{
+		TerminalID: req.TerminalID,
+		Title:      req.Title,
+		Tags:       cloneStringMap(req.Tags),
+	})
+	return service.EditErr
 }
 
 func (service *FakeTerminalService) SendInput(_ context.Context, req TerminalInputRequest) error {

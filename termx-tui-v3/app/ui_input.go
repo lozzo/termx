@@ -32,6 +32,9 @@ func NewUIInputReducer() Reducer {
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPicker {
 			return reduceTerminalPickerInput(root, inputMsg.Event)
 		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPool {
+			return reduceTerminalPoolPageInput(root, inputMsg.Event)
+		}
 		intent := input.RouteWithMode(inputMsg.Event, root.CopyMode.Active, inputMode(root.Shell.EnsureDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
@@ -119,6 +122,59 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 	return root.Advance(), []Effect{handledEffect{}}
 }
 
+func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return root, nil
+	}
+	items := state.TerminalPoolPageItems(root)
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = root.Shell.MoveTerminalPoolSelection(-1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = root.Shell.MoveTerminalPoolSelection(1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		return reduceTerminalPoolPageAttach(root, items)
+	case input.KeyChar:
+		if isBackspaceEvent(event) {
+			root.Shell = root.Shell.SetTerminalPoolQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		if event.Ctrl || event.Char == "" {
+			return root, []Effect{handledEffect{}}
+		}
+		root.Shell = root.Shell.SetTerminalPoolQuery(root.Shell.EnsureDefaults().Overlay.Query + event.Char)
+		return root.Advance(), []Effect{handledEffect{}}
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceTerminalPoolPageAttach(root state.Root, items []state.TerminalPoolPageItem) (state.Root, []Effect) {
+	if len(items) == 0 {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.attach", Body: "no terminal"})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
+	selected := items[0]
+	for _, item := range items {
+		if item.Selected {
+			selected = item
+			break
+		}
+	}
+	if selected.TerminalID == "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.attach", Body: "no terminal"})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
+	return root, []Effect{
+		handledEffect{},
+		FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+		}},
+	}
+}
+
 func isBackspaceEvent(event input.InputEvent) bool {
 	return event.Key == input.KeyChar && (event.Char == "\x7f" || event.Char == "\b")
 }
@@ -162,6 +218,8 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 	case input.ShellActionFloatingStub:
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating", Body: "not implemented"})
 		return root.Advance(), []Effect{handledEffect{}}
+	case input.ShellActionOpenPool:
+		msg = ShellOpenTerminalPoolMsg{}
 	default:
 		return root, []Effect{handledEffect{}}
 	}

@@ -1323,12 +1323,12 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - copy-history 内容 renderer 一期必须继续只消费 core-v2 authoritative `HistoryWindow`：历史行显示 logical-line、continuation 和 clipped marker，selection 使用 styled cell 表达，copy cursor 是 content-local cursor，footer/status 显示当前位置摘要，复制成功通过 toast 反馈；resize 或 content cols 变化后仍重新绑定 authoritative window，不显示旧 cols rows。
 - empty/exited/Terminal Picker 内容 renderer 一期已把旧 placeholder 推进为可操作内容：empty pane 显示 attach/create/manager/close CTA，exited pane 显示 last state 与 restart/reconnect/close CTA，Terminal Picker overlay 显示 search、当前 workspace terminal list、selected row、new terminal row 和 action hit region。
 - Terminal Pool 数据源与 Picker 服务接线一期已完成：Terminal Picker 可以请求 terminal list，展示 loading/empty/error，把 pool row 与当前 workspace pane row 合并去重，并把 attach/create/restart/reconnect 接到 service result 反馈。
+- Terminal Pool 管理页一期已完成：独立页面、搜索、列表、selected row、detail、metadata、preview 摘要、Attach/Edit/Kill action、键盘/鼠标操作、service/effect/result 反馈、常规 viewport 下关键内容可见和 no terminal input leak 已落地。
 
 当前未完成但产品要求仍保留：
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
-- Terminal Pool 管理页：独立页面、搜索、列表、selected row、detail、preview、attach/edit/kill action 和反馈闭环。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit Prompt、kill confirm 和更完整 preview。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
 - Workbench Tree 完整 overlay。

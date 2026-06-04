@@ -165,6 +165,8 @@ func footerActions(mode string) []string {
 		return []string{"pgup older", "wheel", "esc"}
 	case string(state.OverlayTerminalPicker):
 		return []string{"select", "attach", "esc"}
+	case string(state.OverlayTerminalPool):
+		return []string{"search", "attach", "edit", "kill", "esc"}
 	case "floating":
 		return []string{"stub", "esc"}
 	default:
@@ -452,6 +454,12 @@ func buildOverlayVM(root state.Root, shell state.ShellStore) OverlayVM {
 			Kind:    OverlayTerminalPicker,
 			Opaque:  false,
 			Content: buildTerminalPickerContent(root, shell),
+		}
+	case state.OverlayTerminalPool:
+		return OverlayVM{
+			Kind:    OverlayTerminalPool,
+			Opaque:  true,
+			Content: buildTerminalPoolContent(root, shell),
 		}
 	case state.OverlayPrompt:
 		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: ContentVM{Kind: ContentPrompt, Pending: true}}
