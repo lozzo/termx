@@ -956,7 +956,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收、terminal live 连接展示与交互前推和 copy-history content renderer 深化已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。当前下一步是 render 兼容投影清理与性能基线。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收、terminal live 连接展示与交互前推、copy-history content renderer 深化和 render 兼容投影清理与性能基线已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。当前任务队列已完成，后续新工作必须新增切片。
 
 已落地：
 
@@ -1032,7 +1032,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - overlay 已落地 Terminal Picker、Terminal Pool Page、Workbench Tree、Prompt、Help 和基础 opaque cursor 归属，未完成 Floating Overview 的产品内容。
 - toast 具备基础生命周期和 styled 渲染，不代表最终视觉 polish、动画或完整消息队列策略。
 - hit region 已有内容、overlay、toast 合成基础，不代表完整鼠标交互产品语义。
-- `RenderVM{Lines, Status}` 字段仍保留为兼容投影，后续可以在默认 runtime 和测试全部迁到 `ShellVM/RenderResult` 后继续删除或重命名。
+- `RenderVM{Lines, Status}` 兼容输入字段已删除，`RenderVM` 只承载 `ShellVM`；`Frame.Lines`、`Frame.StyledLines`、`Frame.ANSILines` 只作为 `RenderResult` 的 plain/styled/ANSI 输出适配保留。
+- large terminal output 性能基线已建立：`go test ./render -run '^$' -bench BenchmarkRendererLargeTerminalOutput -benchtime=1x` 当前单次基线约 6.91ms/op、6.75MB/op、12648 allocs/op。
 
 ## 23. 后续深化切片建议
 
@@ -1041,9 +1042,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 建议后续切片：
 
 - terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
-- render cleanup / performance：删除或重命名剩余旧 `RenderVM{Lines, Status}` 兼容字段，建立 content-level cache、layer dirty region 和 large terminal output 性能基线。
+- render performance 优化：在已有 large output benchmark 基线上继续做 content-level cache、layer dirty region、allocation 降低和 diff output；不得恢复旧 `RenderVM` 裸行输入。
 - copy-history polish：在已完成搜索、滚动、scrollbar、鼠标选择和 position token 的基础上继续增强 logical-line 拼接提示、最终视觉层级、跨 logical-line 选择 affordance 和窄屏退化。
-- terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
 
 Terminal Pool 管理页的 render 边界：
 

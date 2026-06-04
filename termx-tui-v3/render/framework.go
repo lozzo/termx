@@ -459,9 +459,6 @@ func blankCanvasCell() canvasCell {
 
 func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	shell := vm.Shell
-	if len(shell.Layout.Panels) == 0 && len(vm.Lines) > 0 {
-		shell = RenderVM{Shell: shell, Lines: vm.Lines, Status: vm.Status}.withFallbackShell()
-	}
 	plan := MeasureLayout(shell, shell.Layout.Viewport)
 	c := newCanvas(plan.Viewport.W, plan.Viewport.H)
 
@@ -507,25 +504,6 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		Metadata:   RenderMetadata{Width: c.width, Height: c.height},
 		Layers:     layers,
 		Theme:      renderer.Theme.WithFallback(),
-	}
-}
-
-func (vm RenderVM) withFallbackShell() ShellVM {
-	content := ContentVM{Kind: ContentTerminalLive, Lines: lineVMsFromStrings(vm.Lines), Status: vm.Status, HitRegions: vm.HitRegions}
-	if len(content.Lines) == 0 {
-		content.Lines = []Line{NewLine("live surface pending")}
-	}
-	return ShellVM{
-		Header: HeaderVM{Visible: true, Title: "termx"},
-		Footer: FooterVM{Visible: true, Mode: string(vm.Mode), Hint: vm.Status},
-		Layout: LayoutVM{Panels: []PanelVM{{
-			ID:           "pane",
-			Title:        "pane",
-			Presentation: PanelPresentationCard,
-			Active:       true,
-			Content:      content,
-		}}},
-		Cursor: vm.Shell.Cursor,
 	}
 }
 

@@ -6,19 +6,8 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
-type Mode string
-
-const (
-	ModeLive Mode = "live"
-	ModeCopy Mode = "copy"
-)
-
 type RenderVM struct {
-	Shell      ShellVM
-	Mode       Mode
-	Lines      []string
-	Status     string
-	HitRegions []HitRegion
+	Shell ShellVM
 }
 
 type HitRegionKind string
@@ -60,11 +49,7 @@ func NewRenderVMBuilder() RenderVMBuilder {
 
 func (RenderVMBuilder) Build(root state.Root) RenderVM {
 	shell := buildShellVM(root)
-	vm := RenderVM{Shell: shell}
-	if root.CopyMode.Active && canRenderCopyHistory(root.History, root.CopyMode) {
-		vm.Lines = copyHistoryPlainRows(root.History)
-	}
-	return vm.withCompatibilityProjection()
+	return RenderVM{Shell: shell}
 }
 
 func buildShellVM(root state.Root) ShellVM {
@@ -619,32 +604,6 @@ func buildToastVMs(shell state.ShellStore) []ToastVM {
 	return toasts
 }
 
-func (vm RenderVM) withCompatibilityProjection() RenderVM {
-	content := activeContent(vm.Shell)
-	vm.Mode = ModeLive
-	if content.Kind == ContentCopyHistory {
-		vm.Mode = ModeCopy
-	}
-	if len(vm.Lines) == 0 {
-		vm.Lines = stringsFromLines(content.Lines)
-	}
-	vm.Status = content.Status
-	vm.HitRegions = cloneHitRegions(content.HitRegions)
-	vm.Shell.Cursor = content.Cursor
-	return vm
-}
-
-func copyHistoryPlainRows(history state.HistoryStore) []string {
-	if len(history.Rows) == 0 {
-		return nil
-	}
-	lines := make([]string, len(history.Rows))
-	for i, row := range history.Rows {
-		lines[i] = row.Text
-	}
-	return lines
-}
-
 func activeContent(shell ShellVM) ContentVM {
 	for _, panel := range shell.Layout.Panels {
 		if panel.Active {
@@ -749,17 +708,6 @@ func renderToastSeverity(severity state.ToastSeverity) ToastSeverity {
 	}
 }
 
-func lineVMsFromStrings(lines []string) []Line {
-	if len(lines) == 0 {
-		return nil
-	}
-	out := make([]Line, len(lines))
-	for i, line := range lines {
-		out[i] = NewLine(line)
-	}
-	return out
-}
-
 func terminalLiveLineVMsFromStrings(lines []string) []Line {
 	if len(lines) == 0 {
 		return nil
@@ -767,17 +715,6 @@ func terminalLiveLineVMsFromStrings(lines []string) []Line {
 	out := make([]Line, len(lines))
 	for i, line := range lines {
 		out[i] = terminalLiveLineFromANSI(line)
-	}
-	return out
-}
-
-func stringsFromLines(lines []Line) []string {
-	if len(lines) == 0 {
-		return nil
-	}
-	out := make([]string, len(lines))
-	for i, line := range lines {
-		out[i] = line.String()
 	}
 	return out
 }

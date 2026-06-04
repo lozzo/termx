@@ -28,15 +28,12 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	}
 
 	vm := NewRenderVMBuilder().Build(root)
-	if vm.Mode != ModeCopy {
-		t.Fatalf("expected copy mode vm, got %q", vm.Mode)
-	}
 	content := activeContent(vm.Shell)
 	if content.Kind != ContentCopyHistory {
 		t.Fatalf("expected copy-history content, got %#v", content)
 	}
-	if len(vm.Lines) != 2 || vm.Lines[0] != "old" || vm.Lines[1] != "new" {
-		t.Fatalf("unexpected vm lines %v", vm.Lines)
+	if len(content.Lines) < 4 || content.Lines[1].PlainString() != "● old" || content.Lines[2].PlainString() != "● new" {
+		t.Fatalf("unexpected copy-history content lines %#v", content.Lines)
 	}
 	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[0].Rect.Y != 1 || content.HitRegions[1].Rect.Y != 2 {
 		t.Fatalf("unexpected hit regions %#v", content.HitRegions)
@@ -98,9 +95,6 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 || content.HitRegions[1].Rect.Y != 2 || content.HitRegions[1].Rect.W <= 12 {
 		t.Fatalf("expected history hit regions with marker width, got %#v", content.HitRegions)
 	}
-	if len(vm.Lines) != 3 || vm.Lines[0] != "alpha" || strings.Contains(vm.Lines[0], "⇡") {
-		t.Fatalf("compatibility projection should keep raw authoritative row text, got %#v", vm.Lines)
-	}
 }
 
 func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
@@ -124,15 +118,12 @@ func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
 	}
 
 	vm := NewRenderVMBuilder().Build(root)
-	if vm.Mode != ModeCopy {
-		t.Fatalf("expected copy pending vm, got %q", vm.Mode)
-	}
 	content := activeContent(vm.Shell)
 	if content.Kind != ContentCopyHistory || !content.Pending {
 		t.Fatalf("expected pending copy-history content, got %#v", content)
 	}
-	if len(vm.Lines) != 1 || !strings.Contains(vm.Lines[0], "stale history token") {
-		t.Fatalf("copy mode must not fallback to live rows, got %v", vm.Lines)
+	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "stale history token") {
+		t.Fatalf("copy mode must not fallback to live rows, got %#v", content.Lines)
 	}
 }
 
@@ -157,8 +148,8 @@ func TestRenderVMBuilderShowsPendingAfterCopyResizeInvalidation(t *testing.T) {
 	if content.Kind != ContentCopyHistory || !content.Pending {
 		t.Fatalf("expected pending copy-history after resize invalidation, got %#v", content)
 	}
-	if len(vm.Lines) != 1 || !strings.Contains(vm.Lines[0], "authoritative history window pending") {
-		t.Fatalf("copy mode resize pending must not fallback to live rows, got %v", vm.Lines)
+	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "authoritative history window pending") {
+		t.Fatalf("copy mode resize pending must not fallback to live rows, got %#v", content.Lines)
 	}
 }
 
@@ -186,8 +177,8 @@ func TestRenderVMBuilderShowsCopyHistoryEmptyWithoutLiveFallback(t *testing.T) {
 	if content.Kind != ContentCopyHistory || !content.Empty || content.Pending {
 		t.Fatalf("expected empty copy-history content, got %#v", content)
 	}
-	if len(vm.Lines) != 1 || vm.Lines[0] != "copy history empty" {
-		t.Fatalf("copy mode empty must not fallback to live rows, got %v", vm.Lines)
+	if len(content.Lines) != 1 || content.Lines[0].PlainString() != "copy history empty" {
+		t.Fatalf("copy mode empty must not fallback to live rows, got %#v", content.Lines)
 	}
 }
 
@@ -294,8 +285,8 @@ func TestRenderVMBuilderShowsCopyHistoryBindingErrorWithoutLiveFallback(t *testi
 	if content.Kind != ContentCopyHistory || content.Error == "" {
 		t.Fatalf("expected copy-history binding error, got %#v", content)
 	}
-	if len(vm.Lines) != 1 || !strings.Contains(vm.Lines[0], "terminal mismatch") {
-		t.Fatalf("copy mode error must not fallback to live rows, got %v", vm.Lines)
+	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "terminal mismatch") {
+		t.Fatalf("copy mode error must not fallback to live rows, got %#v", content.Lines)
 	}
 }
 
@@ -419,11 +410,9 @@ func TestRenderVMBuilderUsesLiveSurface(t *testing.T) {
 	}
 
 	vm := NewRenderVMBuilder().Build(root)
-	if vm.Mode != ModeLive {
-		t.Fatalf("expected live vm, got %q", vm.Mode)
-	}
-	if len(vm.Lines) != 2 || vm.Lines[0] != "prompt" || vm.Status != "live: term-live attached 80x24" {
-		t.Fatalf("unexpected live vm %#v", vm)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentTerminalLive || len(content.Lines) != 2 || content.Lines[0].PlainString() != "prompt" || content.Status != "live: term-live attached 80x24" {
+		t.Fatalf("unexpected live content %#v", content)
 	}
 	if vm.Shell.Footer.ActiveTarget != "pane:shell attached" {
 		t.Fatalf("expected attached footer active target, got %#v", vm.Shell.Footer)
@@ -760,18 +749,29 @@ func TestRenderVMBuilderShowsLiveError(t *testing.T) {
 	}
 
 	vm := NewRenderVMBuilder().Build(root)
-	if vm.Status != "error: boom" {
-		t.Fatalf("expected error status, got %q", vm.Status)
+	content := activeContent(vm.Shell)
+	if content.Status != "error: boom" || content.Error != "boom" {
+		t.Fatalf("expected error content, got %#v", content)
 	}
 }
 
-func TestRendererConsumesVMAndSanitizesLines(t *testing.T) {
+func TestRendererConsumesShellVMAndSanitizesContent(t *testing.T) {
 	renderer := NewRenderer(DefaultTheme())
 	result := renderer.RenderResult(RenderVM{
-		Shell:  ShellVM{Cursor: Cursor{Visible: true, Row: 2, Col: 3, Shape: CursorShapeBlock}},
-		Mode:   ModeCopy,
-		Lines:  []string{"hello\nworld"},
-		Status: "copy",
+		Shell: ShellVM{
+			Cursor: Cursor{Visible: true, Row: 2, Col: 3, Shape: CursorShapeBlock},
+			Footer: FooterVM{Visible: true, Mode: "copy", Hint: "copy"},
+			Layout: LayoutVM{Panels: []PanelVM{{
+				ID:           "pane-1",
+				Title:        "copy",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content: ContentVM{
+					Kind:  ContentCopyHistory,
+					Lines: []Line{NewLine("hello\nworld")},
+				},
+			}}},
+		},
 	})
 	frame := result.Frame()
 

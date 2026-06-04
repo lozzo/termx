@@ -1769,7 +1769,7 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 - Copy History：按 `Ctrl-v` 进入 copy mode，输入搜索词，使用 `Enter` 或上下方向键在匹配间移动，使用 `PageDown` 或鼠标滚轮滚动，点击历史行时 cursor/selection 应移动且 terminal 不应收到鼠标事件。
 - 非交互回归：`go run ./termx-cli/cmd/termx v3 smoke` 和 `go run ./termx-cli/cmd/termx v3 e2e-smoke`。
 
-后续如果要把项目往前推，应优先进入 render 兼容投影清理与性能基线：在不破坏上述产品壳、terminal live 前推和 copy-history 深化闭环的前提下，清理旧 `RenderVM{Lines, Status}` 兼容语义，并建立 content-level cache、dirty region 或 large terminal output 性能基线。
+render 兼容投影清理与性能基线已经完成：旧 `RenderVM{Lines, Status}` 兼容输入语义已删除，large terminal output benchmark 已建立。后续如果要把项目往前推，应新增切片，并在不破坏上述产品壳、terminal live 前推、copy-history 深化和 `RenderResult` 单一路径的前提下，继续 terminal-live rich attributes、copy-history 最终 polish 或 render performance 优化。
 
 ## 33. 后续讨论入口
 

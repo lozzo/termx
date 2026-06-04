@@ -459,7 +459,7 @@ renderer 禁止：
 - TUI 产品壳总验收已经完成。
 - terminal live 连接展示与交互前推已经完成：attach 后会通过 terminal service 拉取 core-v2 live snapshot 初始化 live surface，输入仍只经 terminal service 发送，画面更新只来自 live surface 回投。
 - copy-history content renderer 深化已经完成：搜索、match navigation、viewport scroll、scrollbar/status、content-local mouse selection、selection/match 颜色层级和 position token 都继续建立在 authoritative `HistoryWindow` 之上。
-- 当前下一步是 render cleanup/performance：清理剩余 `RenderVM{Lines, Status}` 兼容投影语义，并建立 content-level cache、dirty region 或 large output 性能基线。
+- render cleanup/performance 已完成：`RenderVM` 不再暴露 `Mode`、`Lines`、`Status`、`HitRegions` 兼容输入字段，renderer 主路径只消费 `ShellVM`，并已建立 large output benchmark 基线。
 - 后续再继续 terminal-live streaming/rich attributes、copy-history 最终 polish 和 remote/legacy 边界拆分等独立切片。
 
 UI framework 交互产品化总验收包括：
@@ -489,7 +489,7 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - `RenderVMBuilder` 负责把 authoritative rows 投影为 `ContentVM`：logical-line / continuation / clipped marker、styled selection、content-local copy cursor 和 row/line/cols 位置摘要都在 VM 层表达。
 - `Renderer` 和 render framework 只按 content rect 裁切、合成和输出 styled frame；renderer 不请求 history、不执行 selection 语义、不调用 clipboard，也不从 live content 补齐历史。
 - copy/yank 成功反馈由 reducer 添加 shell toast；clipboard IO 仍通过 effect 和 result message 完成，不进入 renderer。
-- `RenderVM.Lines` 临时兼容投影保留 raw authoritative row text；logical-line marker 和 clipped marker 属于 UI content，不得污染历史 truth 或兼容 raw rows。
+- `RenderVM` 不再保留 raw authoritative row text 兼容投影；logical-line marker、clipped marker、plain frame snapshot 都只是 UI/output adapter，不得污染历史 truth。
 
 当前 copy-history content renderer 深化的架构边界：
 
