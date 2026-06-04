@@ -520,6 +520,96 @@ func TestStartCoreV2DaemonCommandUsesV3Daemon(t *testing.T) {
 	}
 }
 
+func TestV3LocalControlCommandsUseCoreV2Protocol(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop in time")
+		}
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	var newOut bytes.Buffer
+	newCmd := newRootCmd()
+	newCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "new", "--name", "v3-demo", "--", "demo-shell"})
+	newCmd.SetOut(&newOut)
+	newCmd.SetErr(io.Discard)
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("v3 new returned error: %v", err)
+	}
+	terminalID := strings.TrimSpace(newOut.String())
+	if terminalID == "" {
+		t.Fatalf("expected v3 new to print terminal id, got %q", newOut.String())
+	}
+
+	var lsOut bytes.Buffer
+	lsCmd := newRootCmd()
+	lsCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "ls"})
+	lsCmd.SetOut(&lsOut)
+	lsCmd.SetErr(io.Discard)
+	if err := lsCmd.Execute(); err != nil {
+		t.Fatalf("v3 ls returned error: %v", err)
+	}
+	lsText := lsOut.String()
+	if !strings.Contains(lsText, terminalID) ||
+		!strings.Contains(lsText, "v3-demo") ||
+		!strings.Contains(lsText, "demo-shell") ||
+		!strings.Contains(lsText, "running") {
+		t.Fatalf("unexpected v3 ls output:\n%s", lsText)
+	}
+
+	killCmd := newRootCmd()
+	killCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "kill", terminalID})
+	killCmd.SetOut(io.Discard)
+	killCmd.SetErr(io.Discard)
+	if err := killCmd.Execute(); err != nil {
+		t.Fatalf("v3 kill returned error: %v", err)
+	}
+
+	rmCmd := newRootCmd()
+	rmCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "rm", terminalID})
+	rmCmd.SetOut(io.Discard)
+	rmCmd.SetErr(io.Discard)
+	if err := rmCmd.Execute(); err != nil {
+		t.Fatalf("v3 rm returned error: %v", err)
+	}
+	if _, err := server.GetTerminal(terminalID); err == nil || !strings.Contains(err.Error(), "terminal not found") {
+		t.Fatalf("expected removed terminal lookup to fail, got %v", err)
+	}
+
+	var emptyLs bytes.Buffer
+	emptyCmd := newRootCmd()
+	emptyCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "ls"})
+	emptyCmd.SetOut(&emptyLs)
+	emptyCmd.SetErr(io.Discard)
+	if err := emptyCmd.Execute(); err != nil {
+		t.Fatalf("v3 ls after remove returned error: %v", err)
+	}
+	if strings.Contains(emptyLs.String(), terminalID) {
+		t.Fatalf("removed terminal still listed:\n%s", emptyLs.String())
+	}
+}
+
 func TestRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

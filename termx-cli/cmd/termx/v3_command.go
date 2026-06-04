@@ -34,6 +34,10 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3DaemonCommand(socket, logFile))
 	cmd.AddCommand(v3PingCommand(socket, logFile))
 	cmd.AddCommand(v3SmokeCommand())
+	cmd.AddCommand(v3NewCommand(socket, logFile))
+	cmd.AddCommand(v3LsCommand(socket, logFile))
+	cmd.AddCommand(v3KillCommand(socket, logFile))
+	cmd.AddCommand(v3RemoveCommand(socket, logFile))
 	return cmd
 }
 
