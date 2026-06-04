@@ -1,0 +1,704 @@
+# termx-tui-v3 Render Framework 架构
+
+状态：草案
+日期：2026-06-04
+
+## 1. 文档目的
+
+本文档定义 `termx-tui-v3` 的 render 架构方向。
+
+本文档回答：
+
+- 为什么 `termx-tui-v3` 需要一个内部 render framework。
+- render framework 与 content renderer 的职责边界是什么。
+- 产品级 UI 如何映射到 `StateRoot -> RenderVM -> RenderResult -> FrameSink`。
+- panel、floating、overlay、toast、header/footer、content slot 如何组合。
+- 哪些 `tuiv2` 产品行为可以保留，哪些实现结构不能迁入。
+- 后续应如何分阶段落地，避免先写临时线框。
+
+本文档不回答：
+
+- 具体 Go 文件如何命名。
+- 具体函数签名和字段名。
+- canvas、cache、裁切、ANSI 输出的最终实现细节。
+- 具体 PR 如何拆分。
+
+本文档必须以 `termx-tui-v3/docs/ui-interaction-spec.md` 为产品基准。
+
+## 2. 结论
+
+`termx-tui-v3` 应把 render 做成内部 composition framework，而不是 terminal 专用 renderer。
+
+核心拆分：
+
+- render framework：负责布局、panel、chrome、split、floating、overlay、toast、裁切、层级合成、hit region 和最终 frame。
+- content renderer：负责在 framework 分配好的内容矩形里渲染具体内容。
+
+terminal live surface 只是 content 类型之一。
+
+未来新增非 terminal 内容时，应通过新增 content renderer 接入，而不是改造 panel、floating、overlay 或 frame sink。
+
+## 3. 为什么需要 render framework
+
+如果 renderer 只围绕 terminal 内容写，短期可以更快补出一个可见界面，但会产生这些问题：
+
+- pane 边框、split、floating、overlay、toast、hit region 会和 terminal 渲染混在一起。
+- Terminal Pool、Workbench Tree、Help、Prompt 等非 terminal 页面会被迫复用 terminal renderer 的假设。
+- 后续新增文件查看器、任务列表、agent 状态、日志面板等非 terminal 内容时，需要反复改 renderer 主路径。
+- copy mode 很容易再次退回从 live surface 或 snapshot fallback 的旧路径。
+
+因此 render 的主抽象不应该是 terminal，而应该是：
+
+- shell。
+- layer。
+- panel。
+- content slot。
+- overlay。
+- toast。
+- frame。
+
+terminal 只是一种 content。
+
+## 4. 总体数据流
+
+目标数据流：
+
+```text
+StateRoot
+  |
+  v
+RenderVMBuilder
+  |
+  v
+ShellVM
+  |
+  +--> HeaderVM
+  +--> FooterVM
+  +--> LayoutVM
+  |     |
+  |     +--> PanelVM[]
+  |     |     |
+  |     |     +--> PanelChromeVM
+  |     |     +--> ContentVM
+  |     |
+  |     +--> FloatingVM[]
+  |
+  +--> OverlayVM[]
+  +--> ToastVM[]
+  |
+  v
+Render Framework
+  |
+  +--> layout
+  +--> panel chrome
+  +--> content renderer dispatch
+  +--> layer composition
+  +--> hit region composition
+  +--> cursor selection
+  |
+  v
+RenderResult
+  |
+  v
+FrameSink
+```
+
+输出侧只能有一个主结果类型：
+
+```text
+RenderResult
+  Lines
+  Cursor
+  Blink
+  HitRegions
+  Metadata
+```
+
+字符串输出、测试输出、真实 TTY 输出都只是 `RenderResult` 的适配层。
+
+不允许再次出现 `RenderFrame()` 和 `RenderFrameLines()` 两条独立主流程。
+
+## 5. 分层职责
+
+### 5.1 StateRoot
+
+`StateRoot` 是 reducer-owned UI state。
+
+它可以保存：
+
+- workspace / tab / pane / floating pane 状态。
+- active pane。
+- panel mode。
+- header/footer visibility。
+- terminal live surface。
+- authoritative history window。
+- copy mode 交互态。
+- overlay state。
+- toast/message state。
+
+它不负责：
+
+- 计算最终屏幕矩形。
+- 画线框。
+- 合成 layer。
+- 格式化最终 frame。
+
+### 5.2 RenderVMBuilder
+
+`RenderVMBuilder` 把 `StateRoot` 投影为 render 可消费的 VM。
+
+它负责：
+
+- 从产品状态选择当前 surface。
+- 计算 workspace / tab / pane / floating 的 view-model。
+- 给 panel 分配内容类型。
+- 准备 header/footer/toast/overlay VM。
+- 把业务状态转换成短 token、label、action descriptor。
+- 判断 copy mode 是否绑定 authoritative history window。
+- 计算 content 是否 pending、empty、error。
+
+它不负责：
+
+- 画字符。
+- 合成 layer。
+- 计算 ANSI 输出。
+- 直接写 frame。
+- 请求 core client。
+- 修改 state。
+
+`RenderVMBuilder` 不应退化成新的大 bag。
+
+推荐按子域拆分：
+
+- shell VM builder。
+- body/layout VM builder。
+- panel VM builder。
+- content VM builder。
+- overlay VM builder。
+- toast VM builder。
+- cursor VM builder。
+
+如果某个 builder 的输入或输出同时覆盖 workspace、runtime、history、overlay、toast、cache 和 terminal lifecycle，应视为边界失效，必须继续拆分。
+
+copy-history VM 的生成条件必须写实：
+
+- `CopyModeStore` 的 terminal id 必须与 `HistoryStore` 当前 window 的 terminal id 一致。
+- `CopyModeStore` 的 bound core window token 必须与 `HistoryStore` 当前 window token 一致。
+- `CopyModeStore` 的 bound cols 必须与 `HistoryStore` 当前 window cols 一致。
+- 任一条件不满足时，只能生成 pending、empty 或 error content VM。
+- 不得从 `TerminalSurfaceStore`、snapshot、grid viewport 或 local VTerm scrollback 补齐 copy-history VM。
+
+### 5.3 Render Framework
+
+render framework 消费 VM，产出 `RenderResult`。
+
+它负责：
+
+- 屏幕矩形和安全裁切。
+- header/footer 是否占用空间。
+- card panel 与 split line panel 的 layout。
+- floating panel 的 z-order、遮挡和裁切。
+- overlay 和 toast 的层级合成。
+- panel chrome。
+- 全局 hit region 汇总。
+- cursor 的最终归属。
+- 宽窄屏退化。
+
+它不负责：
+
+- 判断业务动作是否可用。
+- 读取 core client。
+- 请求 history window。
+- 从 live surface 推断 copy mode history。
+- 解释 terminal 生命周期语义。
+- 修改 `StateRoot`。
+
+### 5.4 Content Renderer
+
+content renderer 只负责在给定内容矩形内画内容。
+
+输入是：
+
+- content rect。
+- content VM。
+- theme / style token。
+- content-local focus/cursor 信息。
+
+输出是：
+
+- content lines 或 cells。
+- content-local cursor。
+- content-local hit regions。
+- content-local metadata。
+
+content renderer 不知道：
+
+- header/footer 是否存在。
+- 当前 panel 是 floating 还是 tiled。
+- 当前 panel 是否被 overlay 遮挡。
+- 其他 panel 的位置。
+- frame sink。
+- core client。
+
+## 6. Content 类型
+
+架构上需要识别这些 content 类型，实际落地按第 17 节分阶段推进：
+
+- `terminal-live`：实时 terminal surface。
+- `copy-history`：authoritative HistoryWindow 投影。
+- `empty-pane`：未连接 terminal 的 CTA。
+- `exited-pane`：退出 terminal 的最后状态和 recovery CTA。
+- `terminal-picker`：Terminal Picker overlay 内容。
+- `terminal-pool`：terminal list/detail/preview。
+- `workbench-tree`：workspace/tab/pane 树和 preview。
+- `floating-overview`：floating pane overview 内容。
+- `prompt`：输入表单。
+- `help`：帮助内容。
+- `placeholder`：尚未实现内容的明确占位。
+
+后续可扩展：
+
+- file viewer。
+- log viewer。
+- task list。
+- agent status。
+- metrics panel。
+- remote/session inspector。
+
+Content 类型是内部枚举和内部契约，不是第一阶段对外插件 API。
+
+新增 content 类型不得修改 panel/floating/overlay 的基本合成规则。
+
+## 7. Panel 模型
+
+### 7.1 Tiled Panel
+
+tiled panel 是 workbench 主体里的 pane。
+
+必须支持两种视觉模式：
+
+- card panel。
+- split line。
+
+card panel：
+
+- 每个 panel 拥有独立完整边框。
+- chrome 明确属于该 panel。
+- 适合默认可读性和鼠标操作。
+
+split line：
+
+- 相邻 panel 共享分割线。
+- 更接近 tmux。
+- 提升 terminal 内容利用率。
+- chrome 必须更克制。
+
+两种模式共享同一组 panel/content 语义。
+
+切换模式不能改变：
+
+- pane id。
+- terminal binding。
+- active pane。
+- copy mode 绑定。
+- hit region 语义。
+
+### 7.2 Floating Panel
+
+floating panel 始终是独立完整边框。
+
+它不跟随 tiled panel 的 card/split-line 模式变化。
+
+floating panel 需要：
+
+- rect。
+- z-order。
+- title。
+- state token。
+- action token。
+- resize handle。
+- drag affordance。
+- content slot。
+
+### 7.3 Panel Chrome
+
+panel chrome 只表达 panel 局部状态。
+
+它可以显示：
+
+- title。
+- lifecycle token。
+- share count。
+- owner/follower/follow action。
+- copy mode token。
+- pane action。
+
+它不能显示：
+
+- 全局 workspace 摘要。
+- 全局 notice。
+- Terminal Pool 页面状态。
+- 长帮助文案。
+
+## 8. Shell Chrome
+
+shell chrome 是 workbench 外层。
+
+它包含：
+
+- header。
+- footer。
+- toast anchor。
+
+header：
+
+- workspace。
+- tab strip。
+- create tab token。
+- 短 notice/error 的轻量入口。
+
+footer：
+
+- mode。
+- mode hints。
+- workspace / terminal / floating 短摘要。
+
+header/footer 可以隐藏。
+
+隐藏时：
+
+- body 占用更多空间。
+- 状态不能完全丢失。
+- notice/error 主要进入 toast。
+- mode 必须能通过短暂反馈或 Help 被识别。
+
+## 9. Overlay
+
+overlay 是临时层。
+
+架构上需要覆盖这些 overlay 类型，实际落地按第 17 节分阶段推进：
+
+- Terminal Picker。
+- Workbench Tree。
+- Prompt。
+- Help。
+- Floating Overview。
+
+overlay 可以是：
+
+- 透明覆盖。
+- 半透明/遮罩语义覆盖。
+- opaque 全屏覆盖。
+
+opaque overlay 可以跳过 body render，但必须独立产出 cursor。
+
+不能依赖上一帧 body cursor。
+
+overlay 内不显示快捷键字符串。
+
+overlay 输出：
+
+- overlay layer。
+- overlay hit regions。
+- overlay cursor。
+- overlay metadata。
+
+## 10. Toast / Message
+
+toast 是右上角现代消息系统。
+
+toast 属于 shell 层，不属于 panel 内容。
+
+toast 必须：
+
+- 浮在主界面之上。
+- 不永久改变 layout。
+- 支持 info/success/warning/error。
+- 支持 pending/progress 语义。
+- 支持自动消失。
+- 支持关闭当前消息或清空消息。
+- 在窄屏退化为单行短提示。
+
+toast 不替代：
+
+- pane 内 loading。
+- copy mode 状态。
+- Terminal Pool 列表状态。
+- Help。
+
+## 11. Hit Region
+
+hit region 是 render framework 的一等输出。
+
+来源：
+
+- shell chrome。
+- panel chrome。
+- content renderer。
+- floating panel。
+- overlay。
+- toast。
+
+规则：
+
+- region 必须绑定稳定语义，不绑定临时文案。
+- UI chrome region 优先于 terminal mouse forwarding。
+- overlay region 优先于 body region。
+- toast region 优先于被遮挡的 body region。
+- floating panel region 优先于 tiled panel region。
+- region 必须经过 layer composition 裁切。
+
+content renderer 可以产出局部 region，但 framework 负责把它们转换到全局坐标。
+
+## 12. Cursor
+
+cursor 的最终归属由 render framework 决定。
+
+优先级：
+
+1. active opaque overlay cursor。
+2. active prompt/input cursor。
+3. active content cursor。
+4. hidden cursor。
+
+body 被 opaque overlay 跳过时，overlay 必须自己提供 cursor。
+
+copy mode cursor 不等同于 terminal live cursor。
+
+terminal live cursor 只来自 live surface content。
+
+copy mode cursor 只来自 authoritative history content。
+
+## 13. Layer 合成
+
+推荐概念层级：
+
+```text
+base background
+tiled panels
+floating panels
+shell chrome
+overlay
+toast
+cursor metadata
+```
+
+合成规则：
+
+- 后层覆盖前层。
+- opaque layer 可以阻止下层 render。
+- 半透明语义可以通过 style 表达，但最终仍输出确定字符/cell。
+- 每一层必须能裁切到 viewport。
+- 每一层产出的 hit region 必须随层级一起裁切和覆盖。
+
+## 14. 与 core-v2 的边界
+
+render 不直接访问 core-v2。
+
+render 只消费 state 中已经接纳的数据。
+
+terminal live content：
+
+- 消费 `TerminalSurfaceStore`。
+- 只用于实时显示。
+
+copy history content：
+
+- 消费 `HistoryStore + CopyModeStore`。
+- 只使用 core-v2 authoritative `HistoryWindow`。
+
+禁止：
+
+- copy mode 从 live surface fallback。
+- copy mode 从 snapshot/grid viewport fallback。
+- render 请求 `history.window`。
+- render 触发 terminal input/resize。
+
+## 15. 与 tuiv2 的关系
+
+可以保留的产品行为：
+
+- top bar / bottom bar 信息分区。
+- pane chrome 稳定槽位。
+- empty pane CTA。
+- exited pane recovery。
+- Terminal Picker。
+- Terminal Pool。
+- Workbench Tree。
+- floating pane 带边框、z-order、drag/resize。
+- hit region 驱动鼠标语义。
+- UI chrome 优先于 terminal mouse forwarding。
+
+不能迁入的实现结构：
+
+- `VisibleRenderState` 大 bag。
+- `Workbench` / `Runtime` 旧状态模型。
+- render 层回看业务状态。
+- render cache key 直接平铺业务状态。
+- pane render entry 参数爆炸。
+- snapshot/grid/scrollback copy mode fallback。
+- Bubble Tea `Program`。
+- Bubble Tea `standardRenderer`。
+- Bubble Tea `tea.Model` / `tea.Msg` / `tea.Cmd`。
+- Bubble Tea `tea.KeyMsg` / `tea.MouseMsg`。
+- `bubbles` 或任何依赖 Bubble Tea contract 的 UI 组件。
+- `RenderFrame` / `RenderFrameLines` 双主路径。
+
+v2 的经验应该转化为边界和 harness，而不是复制旧结构。
+
+## 16. Cache 与性能
+
+Phase 1 / 最小 framework 阶段不以复杂 cache 为目标。
+
+先保证：
+
+- 单一路径输出。
+- 正确裁切。
+- 正确层级。
+- 正确 hit region。
+- 正确 cursor。
+
+后续再引入 cache。
+
+cache 原则：
+
+- cache key 只基于 VM。
+- cache 不读取业务 state。
+- body cache 不理解 overlay 业务。
+- status/header cache 不理解 modal 业务。
+- content cache 只归 content renderer 所有。
+- overlap / non-overlap 等几何信息应由 VM 或 layout 层显式表达，不靠 renderer 临时猜。
+
+## 17. 分阶段计划
+
+### 17.1 Phase 0：文档和防回归基线
+
+目标：
+
+- 本文档定稿。
+- UI 交互规格和 render 架构一致。
+- 明确不再用裸文本 frame 作为默认界面完成标准。
+
+建议 harness：
+
+- `RenderResult` 单一路径。
+- frame lines 与 string adapter 一致。
+- copy mode 缺 authoritative history 不 fallback。
+- pending 状态显示在所属 panel 内。
+- card panel 和 split line 都能产出稳定 content rect。
+- header/footer hide 不导致 workspace、tab、mode、notice/error 完全不可达。
+- hit region 层级优先级覆盖 shell chrome、overlay、toast、floating 和 terminal mouse forwarding。
+- opaque overlay 自己产出 cursor，不复用 body cursor。
+- toast 不改变 body layout。
+
+### 17.2 Phase 1：最小 framework primitives
+
+目标：
+
+- 定义 rect / layer / panel / content / hit region / render result 概念。
+- 先支持单 panel workbench。
+- 支持 header/footer。
+- 支持 toast 占位。
+- 支持 card panel。
+
+非目标：
+
+- 多 pane split。
+- floating。
+- overlay。
+- cache。
+
+### 17.3 Phase 2：tiled panel layout
+
+目标：
+
+- 多 pane layout。
+- card panel。
+- split line。
+- active pane。
+- header/footer hide。
+- panel content rect 分配。
+
+### 17.4 Phase 3：content renderer 分流
+
+目标：
+
+- terminal-live content。
+- empty-pane content。
+- exited-pane content。
+- copy-history content。
+
+约束：
+
+- copy-history 只消费 authoritative HistoryWindow。
+- terminal-live 不参与 history truth。
+
+### 17.5 Phase 4：floating / overlay / toast
+
+目标：
+
+- floating panel z-order。
+- floating 裁切和遮挡。
+- overlay 合成。
+- opaque overlay fast path。
+- toast 堆叠和退化。
+- cursor 归属。
+
+### 17.6 Phase 5：Terminal Pool / Workbench Tree / Prompt / Help
+
+目标：
+
+- Terminal Pool page content。
+- Workbench Tree overlay。
+- Prompt overlay。
+- Help overlay。
+- overlay hit region。
+
+### 17.7 Phase 6：性能和增量渲染
+
+目标：
+
+- content-level cache。
+- layer-level dirty region。
+- floating overlap 优化。
+- large terminal output 性能验证。
+
+## 18. 最小 render framework 阶段完成标准
+
+最小 render framework 阶段完成后，render 主路径至少必须支撑：
+
+- 进入 TUI 后有 workbench shell。
+- 有 header/footer，且能表达后续隐藏能力。
+- 有一个 card panel。
+- live surface pending 在 panel 内显示。
+- terminal live 内容在 panel content rect 内显示。
+- Terminal Picker 状态激活时有 overlay 或明确占位渲染路径。
+- Display / Copy 状态激活时进入 copy-history content 路径。
+- copy mode 缺 authoritative history 时显示 panel 内 pending/empty。
+- 有 toast VM 和占位渲染路径。
+- `RenderResult` 是唯一主输出。
+- renderer 不读取 core client。
+- renderer 不修改 state。
+
+## 19. 不做什么
+
+Phase 1 / 最小 framework 阶段不做：
+
+- 通用 widget 系统。
+- 插件 UI 框架。
+- 复杂主题系统。
+- 高级动画。
+- 对外 API 稳定承诺。
+- 复刻完整 tuiv2 renderer。
+
+render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
+
+## 20. 决策点
+
+需要用户拍板的点：
+
+- `render framework + content renderer` 是否作为正式方向。
+- 第一阶段是否只做 card panel，split line 留到第二阶段。
+- header/footer hide 是否第一阶段只保留 VM 字段和测试，不先做交互入口。
+- toast 是否第一阶段先做静态渲染，后续再做生命周期和自动消失。
+- Terminal Pool 与 Workbench Tree 是否在 framework 成型后再接入。
