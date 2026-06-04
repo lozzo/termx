@@ -136,7 +136,7 @@ func v3E2ESmokeCommand() *cobra.Command {
 			}
 			fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"termx v3 e2e smoke ok: terminal=%s frames=%d viewport=%dx%d session=%dx%d copy_cols=%d\n",
+				"termx v3 e2e smoke ok: terminal=%s frames=%d viewport=%dx%d session=%dx%d copy_cols=%d pane_commands=%d panes=%d active=%s zoom_checked=%v\n",
 				result.TerminalID,
 				result.Frames,
 				result.ViewportCols,
@@ -144,6 +144,10 @@ func v3E2ESmokeCommand() *cobra.Command {
 				result.SessionCols,
 				result.SessionRows,
 				result.CopyCols,
+				result.PaneCommands,
+				result.PaneCount,
+				result.ActivePaneID,
+				result.ZoomChecked,
 			)
 			return nil
 		},

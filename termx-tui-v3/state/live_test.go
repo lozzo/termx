@@ -35,3 +35,24 @@ func TestTerminalSessionAttachResizeAndError(t *testing.T) {
 		t.Fatalf("expected session error, got %#v", session)
 	}
 }
+
+func TestTerminalSessionTracksRequestedResizeAndRejectsStaleResults(t *testing.T) {
+	session := (TerminalSessionStore{}).Attach("term-1", 7, 80, 24)
+	session = session.RequestResize(40, 20)
+	firstSeq := session.ResizeRequestSeq
+	session = session.RequestResize(98, 36)
+	if cols, rows := session.DesiredSize(); cols != 98 || rows != 36 {
+		t.Fatalf("expected latest desired size, got %dx%d in %#v", cols, rows, session)
+	}
+	if !session.IsStaleResizeResult(firstSeq) {
+		t.Fatalf("expected first resize result to be stale, got %#v", session)
+	}
+	next, applied := session.ApplyResizeResult(firstSeq, 40, 20)
+	if applied || next.Cols != 80 || next.Rows != 24 || next.DesiredCols != 98 || next.DesiredRows != 36 {
+		t.Fatalf("stale resize result must not mutate session, next=%#v applied=%v", next, applied)
+	}
+	next, applied = session.ApplyResizeResult(session.ResizeRequestSeq, 98, 36)
+	if !applied || next.Cols != 98 || next.Rows != 36 || next.DesiredCols != 98 || next.DesiredRows != 36 {
+		t.Fatalf("latest resize result must apply, next=%#v applied=%v", next, applied)
+	}
+}

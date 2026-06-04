@@ -73,6 +73,7 @@ func (LiveSurfaceMsg) isMsg() {}
 type LiveResizeMsg struct {
 	Cols int
 	Rows int
+	Seq  uint64
 }
 
 func (LiveResizeMsg) isMsg() {}
@@ -80,6 +81,7 @@ func (LiveResizeMsg) isMsg() {}
 type LiveResizeResultMsg struct {
 	Cols int
 	Rows int
+	Seq  uint64
 	Err  error
 }
 
@@ -114,12 +116,19 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveResizeMsg:
 			return reduceLiveResize(root, msg, deps)
 		case LiveResizeResultMsg:
+			if root.Session.IsStaleResizeResult(msg.Seq) {
+				return root, nil
+			}
 			if msg.Err != nil {
 				root.Session = root.Session.SetError(msg.Err.Error())
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				return root.Advance(), nil
 			}
-			root.Session = root.Session.Resize(msg.Cols, msg.Rows)
+			nextSession, applied := root.Session.ApplyResizeResult(msg.Seq, msg.Cols, msg.Rows)
+			if !applied {
+				return root, nil
+			}
+			root.Session = nextSession
 			root.Surface = root.Surface.Resize(msg.Cols, msg.Rows)
 			if root.CopyMode.Active && root.CopyMode.BoundCols != msg.Cols {
 				root.CopyMode = root.CopyMode.Resize(msg.Cols)
@@ -198,6 +207,10 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 	if !root.Session.Attached {
 		return setLiveError(root, "terminal is not attached"), nil
 	}
+	if msg.Seq == 0 {
+		root.Session = root.Session.RequestResize(msg.Cols, msg.Rows)
+		msg.Seq = root.Session.ResizeRequestSeq
+	}
 	session := root.Session
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
@@ -207,7 +220,7 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 				Cols:       msg.Cols,
 				Rows:       msg.Rows,
 			})
-			return LiveResizeResultMsg{Cols: msg.Cols, Rows: msg.Rows, Err: err}
+			return LiveResizeResultMsg{Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, Err: err}
 		},
 	}}
 }

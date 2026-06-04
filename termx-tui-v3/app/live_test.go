@@ -304,6 +304,52 @@ func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 	}
 }
 
+func TestBatchedPaneCommandsResizeTerminalToLatestContentRect(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 40)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 40}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	terminal.Resizes = nil
+	for _, command := range []state.PaneCommand{
+		{
+			Action:         state.PaneCommandSplit,
+			SplitDirection: state.SplitDirectionVertical,
+			NewPane:        state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive},
+		},
+		{Action: state.PaneCommandResize, Target: state.PaneCommandTarget{PaneID: "pane-2"}, ResizeDirection: state.PaneResizeLeft, Delta: 6},
+		{Action: state.PaneCommandZoom, Target: state.PaneCommandTarget{PaneID: "pane-2"}},
+	} {
+		if err := runtime.Post(ShellPaneCommandMsg{Command: command}); err != nil {
+			t.Fatalf("post pane command: %v", err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane commands: %v", err)
+	}
+
+	if len(terminal.Resizes) < 2 {
+		t.Fatalf("expected split and zoom resize requests, got %#v", terminal.Resizes)
+	}
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 98 || got.Rows != 36 {
+		t.Fatalf("latest zoomed pane content rect must win, got %#v all=%#v", got, terminal.Resizes)
+	}
+	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 36 {
+		t.Fatalf("stale split resize result must not override latest session size, state=%#v", runtime.State().Session)
+	}
+}
+
 func TestLiveAppShowsTerminalServiceError(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachErr: errors.New("attach failed"),

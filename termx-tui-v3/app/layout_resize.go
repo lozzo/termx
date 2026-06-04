@@ -15,14 +15,17 @@ func NewTerminalLayoutResizeReducer() Reducer {
 			return root, nil
 		}
 		rect, ok := activeTerminalContentRect(root, render.Rect{})
-		if !ok || rect.W == root.Session.Cols && rect.H == root.Session.Rows {
+		desiredCols, desiredRows := root.Session.DesiredSize()
+		if !ok || rect.W == desiredCols && rect.H == desiredRows {
 			return root, nil
 		}
 		cols := rect.W
 		rows := rect.H
+		root.Session = root.Session.RequestResize(cols, rows)
+		seq := root.Session.ResizeRequestSeq
 		return root, []Effect{FuncEffect{
 			Run: func(context.Context) Msg {
-				return LiveResizeMsg{Cols: cols, Rows: rows}
+				return LiveResizeMsg{Cols: cols, Rows: rows, Seq: seq}
 			},
 		}}
 	}

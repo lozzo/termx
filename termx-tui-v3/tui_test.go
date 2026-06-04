@@ -30,7 +30,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("smoke run detailed: %v", err)
 	}
 	cases := smokeCasesByName(result)
-	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history"}
+	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "pane-command-flow"}
 	for _, name := range required {
 		if len(cases[name].Lines) == 0 {
 			t.Fatalf("missing smoke case %s in %#v", name, result.Cases)
@@ -52,6 +52,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("workbench live smoke missing shell bar background ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
 	assertNoASCIIChrome(t, "workbench-live", cases["workbench-live"])
+	assertContinuousCardPaneBorder(t, "workbench-live", cases["workbench-live"])
 	if frameContains(cases["split-hidden-toast"].Lines, " main ") ||
 		frameContains(cases["split-hidden-toast"].Lines, " live ") ||
 		!frameContains(cases["split-hidden-toast"].Lines, "[warning] warn 🚀 ... 世界") {
@@ -67,6 +68,14 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["copy-history"].Lines, "termx-tui-v3") {
 		t.Fatalf("copy history smoke missing authoritative row: %#v", cases["copy-history"].Lines)
 	}
+	if !frameContains(cases["pane-command-flow"].Lines, "pane.close") ||
+		!frameContains(cases["pane-command-flow"].Lines, "pane command live") {
+		t.Fatalf("pane command smoke missing close feedback or live content: %#v", cases["pane-command-flow"].Lines)
+	}
+	if !frameContains(cases["pane-command-flow"].ANSILines, "\x1b[1;38;2;88;213;201m") {
+		t.Fatalf("pane command smoke missing styled active pane ANSI: %#v", cases["pane-command-flow"].ANSILines)
+	}
+	assertNoASCIIChrome(t, "pane-command-flow", cases["pane-command-flow"])
 	for name, frame := range cases {
 		assertSmokeWidth(t, name, frame)
 	}
@@ -99,6 +108,30 @@ func assertNoASCIIChrome(t *testing.T, name string, frame render.Frame) {
 		if strings.ContainsAny(line, "+|") {
 			t.Fatalf("smoke case %s row %d contains ASCII chrome: %q", name, row, line)
 		}
+	}
+}
+
+func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Frame) {
+	t.Helper()
+	if len(frame.Lines) < 3 {
+		t.Fatalf("smoke case %s too small for pane border: %#v", name, frame.Lines)
+	}
+	width := render.DisplayWidth(frame.Lines[0])
+	for row := 1; row < len(frame.Lines)-1; row++ {
+		left := render.SliceCells(frame.Lines[row], 0, 1)
+		right := render.SliceCells(frame.Lines[row], width-1, width)
+		if !isVerticalPaneBorderGlyph(left) || !isVerticalPaneBorderGlyph(right) {
+			t.Fatalf("smoke case %s pane border discontinuity row=%d left=%q right=%q frame=%#v", name, row, left, right, frame.Lines)
+		}
+	}
+}
+
+func isVerticalPaneBorderGlyph(value string) bool {
+	switch value {
+	case "│", "┌", "┐", "└", "┘", "├", "┤", "┼":
+		return true
+	default:
+		return false
 	}
 }
 

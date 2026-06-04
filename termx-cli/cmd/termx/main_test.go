@@ -1112,7 +1112,11 @@ func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 		!strings.Contains(text, "frames=") ||
 		!strings.Contains(text, "viewport=100x40") ||
 		!strings.Contains(text, "session=98x36") ||
-		!strings.Contains(text, "copy_cols=98") {
+		!strings.Contains(text, "copy_cols=98") ||
+		!strings.Contains(text, "pane_commands=5") ||
+		!strings.Contains(text, "panes=1") ||
+		!strings.Contains(text, "active=pane-main") ||
+		!strings.Contains(text, "zoom_checked=true") {
 		t.Fatalf("unexpected v3 e2e smoke output:\n%s", text)
 	}
 }

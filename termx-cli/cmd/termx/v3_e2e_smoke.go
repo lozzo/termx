@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 type v3E2ESmokeResult struct {
@@ -24,6 +25,10 @@ type v3E2ESmokeResult struct {
 	SessionCols  int
 	SessionRows  int
 	CopyCols     int
+	PaneCommands int
+	PaneCount    int
+	ActivePaneID string
+	ZoomChecked  bool
 }
 
 func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
@@ -141,6 +146,13 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if err := validateV3E2EFrameSize(host.Frames(), 100, 40); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
+	paneCommands, zoomChecked, err := runV3E2EPaneCommands(ctx, runtime)
+	if err != nil {
+		return v3E2ESmokeResult{}, err
+	}
+	if err := validateV3E2EFrameSize(host.Frames(), 100, 40); err != nil {
+		return v3E2ESmokeResult{}, err
+	}
 	if err := client.Kill(ctx, created.TerminalID); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
@@ -155,7 +167,79 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 		SessionCols:  runtime.State().Session.Cols,
 		SessionRows:  runtime.State().Session.Rows,
 		CopyCols:     runtime.State().CopyMode.BoundCols,
+		PaneCommands: paneCommands,
+		PaneCount:    len(runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0].Panes),
+		ActivePaneID: runtime.State().Shell.EnsureDefaults().ActivePaneID,
+		ZoomChecked:  zoomChecked,
 	}, nil
+}
+
+func runV3E2EPaneCommands(ctx context.Context, runtime *app.AppRuntime) (int, bool, error) {
+	commands := []app.Msg{
+		app.ShellPaneCommandMsg{Command: state.PaneCommand{
+			Action:         state.PaneCommandSplit,
+			SplitDirection: state.SplitDirectionVertical,
+			NewPane:        state.PaneState{ID: "pane-e2e", Title: "e2e", Kind: state.PaneTerminalLive},
+			Source:         state.PaneCommandSourceTest,
+		}},
+		app.ShellPaneCommandMsg{Command: state.PaneCommand{
+			Action:          state.PaneCommandResize,
+			Target:          state.PaneCommandTarget{PaneID: "pane-e2e"},
+			ResizeDirection: state.PaneResizeLeft,
+			Delta:           6,
+			Source:          state.PaneCommandSourceTest,
+		}},
+		app.ShellPaneCommandMsg{Command: state.PaneCommand{
+			Action: state.PaneCommandZoom,
+			Target: state.PaneCommandTarget{PaneID: "pane-e2e"},
+			Source: state.PaneCommandSourceTest,
+		}},
+	}
+	for _, msg := range commands {
+		if err := runtime.Post(msg); err != nil {
+			return 0, false, err
+		}
+	}
+	if err := runtime.Drain(ctx); err != nil {
+		return 0, false, err
+	}
+	if runtime.State().Shell.ZoomedPaneID != "pane-e2e" {
+		return 0, false, fmt.Errorf("v3 e2e smoke: zoom command did not set zoomed pane, shell=%#v", runtime.State().Shell)
+	}
+	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 36 {
+		return 0, false, fmt.Errorf("v3 e2e smoke: zoom command should restore full card content rect, state=%#v", runtime.State())
+	}
+	if runtime.State().CopyMode.BoundCols != 98 || runtime.State().History.Cols != 98 {
+		return 0, false, fmt.Errorf("v3 e2e smoke: zoom command should keep copy window rebound to content cols, state=%#v", runtime.State())
+	}
+	trailing := []app.Msg{
+		app.ShellPaneCommandMsg{Command: state.PaneCommand{
+			Action: state.PaneCommandUnzoom,
+			Target: state.PaneCommandTarget{PaneID: "pane-e2e"},
+			Source: state.PaneCommandSourceTest,
+		}},
+		app.ShellPaneCommandMsg{Command: state.PaneCommand{
+			Action: state.PaneCommandClose,
+			Target: state.PaneCommandTarget{PaneID: "pane-e2e"},
+			Source: state.PaneCommandSourceTest,
+		}},
+	}
+	for _, msg := range trailing {
+		if err := runtime.Post(msg); err != nil {
+			return 0, false, err
+		}
+	}
+	if err := runtime.Drain(ctx); err != nil {
+		return 0, false, err
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.ZoomedPaneID != "" || len(shell.Workspace.Tabs[0].Panes) != 1 || shell.ActivePaneID != state.DefaultPaneID {
+		return 0, false, fmt.Errorf("v3 e2e smoke: close/unzoom command did not restore single-pane shell, shell=%#v", shell)
+	}
+	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 36 {
+		return 0, false, fmt.Errorf("v3 e2e smoke: close command did not keep terminal at content rect, state=%#v", runtime.State())
+	}
+	return len(commands) + len(trailing), true, nil
 }
 
 // validateV3E2EFrameSize 固化非交互 smoke 的 UI 画布 contract：
