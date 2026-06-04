@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	corev2 "github.com/lozzow/termx/termx-core-v2"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
+	tuiapp "github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +44,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3KillCommand(socket, logFile))
 	cmd.AddCommand(v3RemoveCommand(socket, logFile))
 	cmd.AddCommand(v3AttachCommand(socket, logFile))
+	cmd.AddCommand(v3PaneCommandAdapterCommand())
 	return cmd
 }
 
@@ -142,6 +145,25 @@ func v3E2ESmokeCommand() *cobra.Command {
 				result.SessionRows,
 				result.CopyCols,
 			)
+			return nil
+		},
+	}
+}
+
+func v3PaneCommandAdapterCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pane-command -- COMMAND",
+		Short: "Parse a tui-v3 pane mini command without mutating runtime state",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf("pane-command requires a mini command")
+			}
+			parsed, err := tuiapp.ParsePaneMiniCommand(strings.Join(args, " "))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "pane command: action=%s pane=%s source=%s\n", parsed.Action, parsed.Target.PaneID, parsed.Source)
 			return nil
 		},
 	}

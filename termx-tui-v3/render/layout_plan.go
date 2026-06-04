@@ -146,9 +146,43 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 		return regions
 	}
 	for _, panel := range plan.Panels {
+		regions = appendPanelChromeHitRegions(regions, panel, plan.Viewport)
 		regions = appendTranslatedRegions(regions, panel.Panel.Content.HitRegions, panel.ContentRect, plan.Viewport)
+		regions = appendPanelContentHitRegion(regions, panel, plan.Viewport)
 	}
 	return regions
+}
+
+func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {
+	if panel.Rect.W <= 0 || panel.Rect.H <= 0 {
+		return out
+	}
+	paneID := panel.Panel.ID
+	out = appendRegion(out, HitRegion{Kind: HitRegionPaneAction, Rect: paneActionRect(panel.Rect), PaneID: paneID, ActionID: "pane.close"}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: paneResizeRect(panel.Rect), PaneID: paneID, ActionID: "pane.resize"}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: "pane.focus"}, viewport)
+	return out
+}
+
+func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {
+	if panel.ContentRect.W <= 0 || panel.ContentRect.H <= 0 {
+		return out
+	}
+	paneID := panel.Panel.ID
+	out = appendRegion(out, HitRegion{Kind: HitRegionPaneContent, Rect: panel.ContentRect, PaneID: paneID, ActionID: "pane.focus"}, viewport)
+	return out
+}
+
+func paneActionRect(rect Rect) Rect {
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-4), Y: rect.Y, W: minInt(3, rect.W), H: 1}
+}
+
+func paneResizeRect(rect Rect) Rect {
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-1), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: 1, H: 1}
+}
+
+func paneChromeRect(rect Rect) Rect {
+	return Rect{X: rect.X, Y: rect.Y, W: rect.W, H: minInt(1, rect.H)}
 }
 
 func appendTranslatedRegions(out []HitRegion, regions []HitRegion, origin Rect, viewport Rect) []HitRegion {

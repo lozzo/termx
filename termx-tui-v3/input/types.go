@@ -54,14 +54,16 @@ const (
 	IntentExitCopyMode       IntentKind = "exit-copy-mode"
 	IntentTerminalInput      IntentKind = "terminal-input"
 	IntentMouseSelect        IntentKind = "mouse-select"
+	IntentPaneCommand        IntentKind = "pane-command"
 )
 
 // Intent 是 input router 输出的 semantic intent，不直接修改 state。
 type Intent struct {
-	Kind   IntentKind
-	Event  InputEvent
-	Bytes  []byte
-	Reason string
+	Kind    IntentKind
+	Event   InputEvent
+	Bytes   []byte
+	Reason  string
+	Command string
 }
 
 func Route(event InputEvent, copyModeActive bool) Intent {

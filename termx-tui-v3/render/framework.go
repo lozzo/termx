@@ -152,6 +152,51 @@ func (c *canvas) drawStyledBox(rect Rect, style boxStyle, token StyleToken, owne
 	}
 }
 
+func (c *canvas) drawStyledPaneFrame(rect Rect, style StyleToken, owner string, layer LayerKind) {
+	if rect.W < 2 || rect.H < 2 {
+		return
+	}
+	// 参考 tuiv2 的 pane frame 语义：按连接位逐格绘制边框，再让标题槽位覆盖顶边内部。
+	c.drawStyledPaneHBorder(rect.X, rect.X+rect.W-1, rect.Y, style, owner, layer, true)
+	c.drawStyledPaneHBorder(rect.X, rect.X+rect.W-1, rect.Y+rect.H-1, style, owner, layer, false)
+	c.drawStyledPaneVBorder(rect.X, rect.Y+1, rect.Y+rect.H-2, style, owner, layer)
+	c.drawStyledPaneVBorder(rect.X+rect.W-1, rect.Y+1, rect.Y+rect.H-2, style, owner, layer)
+}
+
+func (c *canvas) drawStyledPaneHBorder(startX int, endX int, y int, style StyleToken, owner string, layer LayerKind, top bool) {
+	if startX > endX {
+		return
+	}
+	for x := startX; x <= endX; x++ {
+		connections := uint8(boxConnLeft | boxConnRight)
+		if x == startX {
+			connections = boxConnRight
+			if top {
+				connections |= boxConnDown
+			} else {
+				connections |= boxConnUp
+			}
+		} else if x == endX {
+			connections = boxConnLeft
+			if top {
+				connections |= boxConnDown
+			} else {
+				connections |= boxConnUp
+			}
+		}
+		c.mergeStyledBoxCell(x, y, connections, style, owner, layer)
+	}
+}
+
+func (c *canvas) drawStyledPaneVBorder(x int, startY int, endY int, style StyleToken, owner string, layer LayerKind) {
+	if startY > endY {
+		return
+	}
+	for y := startY; y <= endY; y++ {
+		c.mergeStyledBoxCell(x, y, boxConnUp|boxConnDown, style, owner, layer)
+	}
+}
+
 func (c *canvas) drawConnectedHLine(x int, y int, width int) {
 	c.drawStyledConnectedHLine(x, y, width, StyleMuted, "chrome", LayerChrome)
 }
@@ -579,7 +624,7 @@ func renderCardPanel(c *canvas, layout PanelLayoutPlan) {
 	title := panelTitle(layout.Panel)
 	style := paneChromeStyle(layout.Panel)
 	owner := "pane:" + layout.Panel.ID
-	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerPanel)
+	c.drawStyledPaneFrame(rect, style, owner, LayerPanel)
 	if rect.W > 4 {
 		c.writeTextStyled(rect.X+2, rect.Y, rect.W-4, " "+title+" ", style, owner, LayerPanel)
 	}

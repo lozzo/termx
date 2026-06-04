@@ -32,6 +32,23 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 	assertAllRowsWidth(t, result.Lines(), 40)
 }
 
+func TestFrameworkRendersContinuousCardPaneVerticalBorders(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 24, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+		}}},
+	}})
+
+	lines := result.Lines()
+	assertColumnGlyphs(t, lines, 0, 1, 7, "│")
+	assertColumnGlyphs(t, lines, 23, 1, 7, "│")
+	assertAllRowsWidth(t, lines, 24)
+}
+
 func TestFrameworkUsesKnownViewportExactly(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Title: "narrow"},
@@ -67,9 +84,7 @@ func TestFrameworkRendersSplitLineHorizontalAndVertical(t *testing.T) {
 	if !linesContain(horizontal.Lines(), "right") || !linesContain(vertical.Lines(), "right") {
 		t.Fatalf("expected active panel content in both split modes")
 	}
-	if !frameHasRowPrefix(vertical.Lines(), 20, "│") {
-		t.Fatalf("expected Unicode vertical split line near midpoint, got %#v", vertical.Lines())
-	}
+	assertColumnGlyphs(t, vertical.Lines(), 20, 0, 12, "│")
 	if !linesContain(horizontal.Lines(), "─ logs active") {
 		t.Fatalf("expected horizontal split chrome/separator, got %#v", horizontal.Lines())
 	}
@@ -335,7 +350,14 @@ func TestFrameworkTranslatesContentHitRegionsAndCursor(t *testing.T) {
 	if !result.Cursor.Visible || result.Cursor.Row != 1 || result.Cursor.Col != 2 {
 		t.Fatalf("expected cursor passthrough, got %#v", result.Cursor)
 	}
-	if len(result.HitRegions) != 1 || result.HitRegions[0].LineID != 42 || result.HitRegions[0].Rect.Y == 0 {
+	var contentRegion HitRegion
+	for _, region := range result.HitRegions {
+		if region.Kind == HitRegionHistoryRow && region.LineID == 42 {
+			contentRegion = region
+			break
+		}
+	}
+	if contentRegion.Kind != HitRegionHistoryRow || contentRegion.Rect.Y == 0 {
 		t.Fatalf("expected translated content hit region, got %#v", result.HitRegions)
 	}
 }
@@ -403,6 +425,19 @@ func frameHasRowPrefix(lines []string, col int, prefix string) bool {
 		}
 	}
 	return false
+}
+
+func assertColumnGlyphs(t *testing.T, lines []string, col int, startRow int, endRow int, allowed string) {
+	t.Helper()
+	for row := startRow; row < endRow; row++ {
+		if row < 0 || row >= len(lines) {
+			t.Fatalf("row %d out of frame bounds lines=%d", row, len(lines))
+		}
+		got := SliceCells(lines[row], col, col+1)
+		if !strings.Contains(allowed, got) {
+			t.Fatalf("expected continuous border glyph at row=%d col=%d got=%q allowed=%q frame=%#v", row, col, got, allowed, lines)
+		}
+	}
 }
 
 func firstLayer(t *testing.T, result RenderResult, kind LayerKind) Layer {

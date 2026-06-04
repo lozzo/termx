@@ -16,6 +16,12 @@ func NewUIInputReducer() Reducer {
 		case input.IntentOpenTerminalPicker:
 			root.Shell = root.Shell.OpenTerminalPicker()
 			return root.Advance(), []Effect{handledEffect{}}
+		case input.IntentPaneCommand:
+			command, ok := PaneCommandFromIntent(intent)
+			if !ok {
+				return root, nil
+			}
+			return reducePaneCommand(root, command)
 		default:
 			return root, nil
 		}

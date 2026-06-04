@@ -309,10 +309,29 @@ func TestFrameSinkWritesFrameToOutput(t *testing.T) {
 		t.Fatalf("write frame: %v", err)
 	}
 	got := output.String()
-	for _, part := range []string{cursorHome, clearScreen, clearLine + "one", "\n" + clearLine + "two"} {
+	for _, part := range []string{cursorHome, clearScreen, cursorPosition(1, 1) + clearLine + "one", cursorPosition(2, 1) + clearLine + "two"} {
 		if !strings.Contains(got, part) {
 			t.Fatalf("missing frame part %q in %q", part, got)
 		}
+	}
+	if strings.Contains(got, "\n") {
+		t.Fatalf("FrameSink must not use linefeed row progression, got %q", got)
+	}
+}
+
+func TestFrameSinkPositionsFullWidthRowsWithoutLinefeeds(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{Lines: []string{strings.Repeat("─", 8), "│      │"}, Metadata: render.RenderMetadata{Width: 8, Height: 2}}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+	got := output.String()
+	if strings.Contains(got, "\n") {
+		t.Fatalf("full-width frame must use absolute row positioning instead of linefeeds, got %q", got)
+	}
+	if !strings.Contains(got, cursorPosition(2, 1)+clearLine+"│      │") {
+		t.Fatalf("expected second row absolute position, got %q", got)
 	}
 }
 

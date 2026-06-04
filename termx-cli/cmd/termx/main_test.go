@@ -439,6 +439,22 @@ func TestV3SmokeRunsTUIv3Smoke(t *testing.T) {
 	}
 }
 
+func TestV3PaneCommandAdapterParsesMiniCommand(t *testing.T) {
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "pane-command", "pane", "resize", "right", "delta=4", "pane=main"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "action=pane.resize") || !strings.Contains(text, "pane=main") || !strings.Contains(text, "source=cli-mini") {
+		t.Fatalf("unexpected pane command adapter output:\n%s", text)
+	}
+}
+
 func TestV3DaemonUsesCoreV2Server(t *testing.T) {
 	oldNewCoreV2Server := newCoreV2Server
 	oldNewServer := newServer

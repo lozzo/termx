@@ -161,10 +161,17 @@ func TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect(t *testing.T) {
 	}
 
 	plan := MeasureLayout(shell, Rect{W: 30, H: 10})
-	if len(plan.HitRegions) != 1 {
-		t.Fatalf("expected one content hit region, got %#v", plan.HitRegions)
+	var contentRegion HitRegion
+	for _, region := range plan.HitRegions {
+		if region.Kind == HitRegionHistoryRow {
+			contentRegion = region
+			break
+		}
 	}
-	if got, want := plan.HitRegions[0].Rect, (Rect{X: 2, Y: 1, W: 5, H: 1}); got != want {
+	if contentRegion.Kind != HitRegionHistoryRow {
+		t.Fatalf("expected content hit region, got %#v", plan.HitRegions)
+	}
+	if got, want := contentRegion.Rect, (Rect{X: 2, Y: 1, W: 5, H: 1}); got != want {
 		t.Fatalf("unexpected global hit region got=%#v want=%#v", got, want)
 	}
 	if !plan.Cursor.Visible || plan.Cursor.Row != 1 || plan.Cursor.Col != 2 {
@@ -173,6 +180,50 @@ func TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect(t *testing.T) {
 	if got, want := plan.CursorRect, (Rect{X: 3, Y: 2, W: 1, H: 1}); got != want {
 		t.Fatalf("unexpected global cursor rect got=%#v want=%#v", got, want)
 	}
+}
+
+func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{
+				HitRegions: []HitRegion{{Kind: HitRegionHistoryRow, Rect: Rect{W: 10, H: 1}, LineID: 7}},
+			},
+		}}},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
+	if len(plan.HitRegions) < 5 {
+		t.Fatalf("expected pane command and content hit regions, got %#v", plan.HitRegions)
+	}
+	if plan.HitRegions[0].Kind != HitRegionPaneAction || plan.HitRegions[0].PaneID != "pane-1" || plan.HitRegions[0].ActionID != "pane.close" {
+		t.Fatalf("pane action region should be first, got %#v", plan.HitRegions)
+	}
+	if plan.HitRegions[1].Kind != HitRegionPaneResize || plan.HitRegions[1].ActionID != "pane.resize" {
+		t.Fatalf("pane resize region should precede content, got %#v", plan.HitRegions)
+	}
+	if plan.HitRegions[2].Kind != HitRegionPaneChrome || plan.HitRegions[2].ActionID != "pane.focus" {
+		t.Fatalf("pane chrome region should precede content, got %#v", plan.HitRegions)
+	}
+	historyIndex := hitRegionIndex(plan.HitRegions, HitRegionHistoryRow)
+	paneContentIndex := hitRegionIndex(plan.HitRegions, HitRegionPaneContent)
+	if historyIndex <= 2 {
+		t.Fatalf("content hit region should remain after chrome regions, got %#v", plan.HitRegions)
+	}
+	if paneContentIndex <= historyIndex {
+		t.Fatalf("broad pane content focus region must not cover specific content hits, got %#v", plan.HitRegions)
+	}
+}
+
+func hitRegionIndex(regions []HitRegion, kind HitRegionKind) int {
+	for i, region := range regions {
+		if region.Kind == kind {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestMeasureLayoutOpaqueOverlayOwnsHitRegionsAndCursorRect(t *testing.T) {

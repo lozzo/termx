@@ -1,6 +1,7 @@
 package terminalhost
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -35,9 +36,9 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 		lines = frame.Lines
 	}
 	for i, line := range lines {
-		if i > 0 {
-			builder.WriteByte('\n')
-		}
+		// 满宽 frame 写到最后一列后继续输出换行，会在部分终端触发额外自动换行；
+		// 每行绝对定位可以保持 pane 竖向边框连续。
+		builder.WriteString(cursorPosition(i+1, 1))
 		builder.WriteString(clearLine)
 		builder.WriteString(line)
 		builder.WriteString(render.ANSIReset)
@@ -45,4 +46,14 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	builder.WriteString(render.ANSIReset)
 	_, err := io.WriteString(sink.writer, builder.String())
 	return err
+}
+
+func cursorPosition(row int, col int) string {
+	if row < 1 {
+		row = 1
+	}
+	if col < 1 {
+		col = 1
+	}
+	return fmt.Sprintf("\x1b[%d;%dH", row, col)
 }

@@ -20,11 +20,15 @@ type RenderVM struct {
 type HitRegionKind string
 
 const (
-	HitRegionHistoryRow HitRegionKind = "history-row"
-	HitRegionStatus     HitRegionKind = "status"
-	HitRegionOverlay    HitRegionKind = "overlay"
-	HitRegionToast      HitRegionKind = "toast"
-	HitRegionToastClose HitRegionKind = "toast-close"
+	HitRegionHistoryRow  HitRegionKind = "history-row"
+	HitRegionStatus      HitRegionKind = "status"
+	HitRegionOverlay     HitRegionKind = "overlay"
+	HitRegionToast       HitRegionKind = "toast"
+	HitRegionToastClose  HitRegionKind = "toast-close"
+	HitRegionPaneChrome  HitRegionKind = "pane-chrome"
+	HitRegionPaneAction  HitRegionKind = "pane-action"
+	HitRegionPaneResize  HitRegionKind = "pane-resize"
+	HitRegionPaneContent HitRegionKind = "pane-content"
 )
 
 type Rect struct {
@@ -35,10 +39,12 @@ type Rect struct {
 }
 
 type HitRegion struct {
-	Kind   HitRegionKind
-	Rect   Rect
-	LineID uint64
-	Row    int
+	Kind     HitRegionKind
+	Rect     Rect
+	LineID   uint64
+	Row      int
+	PaneID   string
+	ActionID string
 }
 
 type RenderVMBuilder struct{}
