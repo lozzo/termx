@@ -61,9 +61,9 @@ func tuiSharedConfig(workspace, sessionID, attachID, socket, logPath, workspaceS
 }
 
 func legacyCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "legacy",
-		Short: "Run the legacy termx-core and tuiv2 root TUI",
+		Short: "Run legacy termx-core and tuiv2 commands",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
@@ -86,6 +86,13 @@ func legacyCommand(socket *string, logFile *string, configPath *string) *cobra.C
 			return runTUIv2(cfg, os.Stdin, os.Stdout)
 		},
 	}
+	cmd.AddCommand(daemonCommand(socket, configPath))
+	cmd.AddCommand(newCommand(socket, logFile))
+	cmd.AddCommand(lsCommand(socket, logFile))
+	cmd.AddCommand(killCommand(socket, logFile))
+	cmd.AddCommand(removeCommand(socket, logFile))
+	cmd.AddCommand(attachCommand(socket, logFile, configPath))
+	return cmd
 }
 
 func attachCommand(socket *string, logFile *string, configPath *string) *cobra.Command {

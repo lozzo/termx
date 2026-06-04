@@ -71,16 +71,10 @@ func waitForSocket(path string, timeout time.Duration, try func() error) error {
 }
 
 func startDaemon(path string, logFile string) error {
-	exe, err := os.Executable()
+	cmd, err := buildStartLegacyDaemonCommand(path, logFile)
 	if err != nil {
 		return err
 	}
-	args := []string{"--socket", path}
-	if logFile != "" {
-		args = append(args, "--log-file", logFile)
-	}
-	args = append(args, "daemon")
-	cmd := exec.Command(exe, args...)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
 		return err
@@ -94,6 +88,19 @@ func startDaemon(path string, logFile string) error {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+func buildStartLegacyDaemonCommand(path string, logFile string) (*exec.Cmd, error) {
+	exe, err := osExecutable()
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"--socket", path}
+	if logFile != "" {
+		args = append(args, "--log-file", logFile)
+	}
+	args = append(args, "legacy", "daemon")
+	return exec.Command(exe, args...), nil
 }
 
 func resolveSocket(path string) string {

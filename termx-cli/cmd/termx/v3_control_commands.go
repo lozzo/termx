@@ -119,7 +119,7 @@ func v3RemoveCommand(socket *string, logFile *string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm <id>",
 		Aliases: []string{"delete", "remove", "del"},
-		Short:   "Delete a terminal from the experimental core-v2 daemon inventory",
+		Short:   "Delete a terminal from the core-v2 daemon inventory",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)

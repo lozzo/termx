@@ -47,7 +47,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "daemon",
-		Short: "Run the experimental core-v2 daemon in the foreground",
+		Short: "Run the core-v2 daemon in the foreground",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
 			if err != nil {
@@ -55,7 +55,6 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			defer closeLogger()
 
-			// v3 daemon 是显式实验入口，默认 daemon 仍保留旧 runtime。
 			socketPath := resolveV3Socket(*socket)
 			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath)}
 			srv := newCoreV2Server(opts...)
@@ -65,12 +64,12 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 				_ = srv.Shutdown(context.Background())
 			}()
 
-			logger.Info("starting core-v2 experimental daemon", "socket", socketPath, "log_file", logPath)
+			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath)
 			err = srv.ListenAndServe(ctx)
 			if err != nil {
-				logger.Error("core-v2 experimental daemon exited with error", "error", err)
+				logger.Error("core-v2 daemon exited with error", "error", err)
 			} else {
-				logger.Info("core-v2 experimental daemon exited")
+				logger.Info("core-v2 daemon exited")
 			}
 			return err
 		},

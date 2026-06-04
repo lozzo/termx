@@ -170,7 +170,44 @@ func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
 	}
 }
 
-func TestAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
+func TestAttachCmdRoutesToTUIv3ByDefault(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunAttach := runV3Attach
+	oldRunv2 := runTUIv2
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Attach = oldRunAttach
+		runTUIv2 = oldRunv2
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	isInteractiveTerminal = func() bool { return true }
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		t.Fatal("default attach command must not call tuiv2")
+		return nil
+	}
+	var got v3AttachConfig
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		got = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "attach", "term-001"})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("expected attach command to succeed, got %v", err)
+	}
+	if got.TerminalID != "term-001" || got.SocketPath != socketPath || got.LogFile != logPath {
+		t.Fatalf("unexpected v3 attach config %#v", got)
+	}
+}
+
+func TestLegacyAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
 	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		runTUIv2 = oldRunv2
@@ -188,16 +225,16 @@ func TestAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"attach", "term-001"})
+	cmd.SetArgs([]string{"legacy", "attach", "term-001"})
 	cmd.SetIn(bytes.NewBuffer(nil))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("expected attach command to succeed, got %v", err)
+		t.Fatalf("expected legacy attach command to succeed, got %v", err)
 	}
 	if !called {
-		t.Fatal("expected attach command to call runTUIv2")
+		t.Fatal("expected legacy attach command to call runTUIv2")
 	}
 	if gotCfg.AttachID != "term-001" {
 		t.Fatalf("expected attach id term-001, got %q", gotCfg.AttachID)
@@ -214,14 +251,23 @@ func TestAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
 }
 
 func TestAttachCmdAllowsNestedTUIWhenOverrideIsSet(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunAttach := runV3Attach
 	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Attach = oldRunAttach
 		runTUIv2 = oldRunv2
 	})
 
+	isInteractiveTerminal = func() bool { return true }
 	called := false
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
 		called = true
+		return nil
+	}
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		t.Fatal("default attach command must not call tuiv2")
 		return nil
 	}
 
@@ -238,16 +284,25 @@ func TestAttachCmdAllowsNestedTUIWhenOverrideIsSet(t *testing.T) {
 		t.Fatalf("expected attach override to succeed, got %v", err)
 	}
 	if !called {
-		t.Fatal("expected attach command to reach runTUIv2 when override is set")
+		t.Fatal("expected attach command to reach tui-v3 runner when override is set")
 	}
 }
 
 func TestAttachCmdBlocksNestedTUIByDefault(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunAttach := runV3Attach
 	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Attach = oldRunAttach
 		runTUIv2 = oldRunv2
 	})
 
+	isInteractiveTerminal = func() bool { return true }
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		t.Fatal("runV3Attach should not be called when nested attach is blocked")
+		return nil
+	}
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
 		t.Fatal("runTUIv2 should not be called when nested attach is blocked")
 		return nil
@@ -402,6 +457,37 @@ func TestV3DaemonUsesCoreV2Server(t *testing.T) {
 
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if fakeV3.newServerCalls != 1 || fakeV3.listenCalls != 1 || fakeV3.shutdownCalls != 1 {
+		t.Fatalf("unexpected core-v2 fake server calls: new=%d listen=%d shutdown=%d", fakeV3.newServerCalls, fakeV3.listenCalls, fakeV3.shutdownCalls)
+	}
+}
+
+func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
+	oldNewCoreV2Server := newCoreV2Server
+	oldNewServer := newServer
+	t.Cleanup(func() {
+		newCoreV2Server = oldNewCoreV2Server
+		newServer = oldNewServer
+	})
+
+	fakeV3 := &fakeCoreV2Server{}
+	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
+		fakeV3.newServerCalls++
+		return fakeV3
+	}
+	newServer = func(opts ...termx.ServerOption) termxServer {
+		t.Fatal("default daemon must not construct legacy termx-core server")
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "daemon"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
@@ -588,13 +674,36 @@ func TestStartCoreV2DaemonCommandUsesV3Daemon(t *testing.T) {
 	if got.Path != exe {
 		t.Fatalf("expected executable %q, got %q", exe, got.Path)
 	}
-	wantArgs := []string{exe, "--socket", "/tmp/termx-v2.sock", "--log-file", "/tmp/termx.log", "v3", "daemon"}
+	wantArgs := []string{exe, "--socket", "/tmp/termx-v2.sock", "--log-file", "/tmp/termx.log", "daemon"}
 	if !reflect.DeepEqual(got.Args, wantArgs) {
 		t.Fatalf("unexpected v3 daemon args: %#v", got.Args)
 	}
 }
 
-func TestV3LocalControlCommandsUseCoreV2Protocol(t *testing.T) {
+func TestStartLegacyDaemonCommandUsesLegacyDaemon(t *testing.T) {
+	oldExecutable := osExecutable
+	t.Cleanup(func() {
+		osExecutable = oldExecutable
+	})
+
+	exe := filepath.Join(t.TempDir(), "termx")
+	osExecutable = func() (string, error) {
+		return exe, nil
+	}
+	got, err := buildStartLegacyDaemonCommand("/tmp/termx.sock", "/tmp/termx.log")
+	if err != nil {
+		t.Fatalf("buildStartLegacyDaemonCommand returned error: %v", err)
+	}
+	if got.Path != exe {
+		t.Fatalf("expected executable %q, got %q", exe, got.Path)
+	}
+	wantArgs := []string{exe, "--socket", "/tmp/termx.sock", "--log-file", "/tmp/termx.log", "legacy", "daemon"}
+	if !reflect.DeepEqual(got.Args, wantArgs) {
+		t.Fatalf("unexpected legacy daemon args: %#v", got.Args)
+	}
+}
+
+func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -625,11 +734,11 @@ func TestV3LocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "termx.log")
 	var newOut bytes.Buffer
 	newCmd := newRootCmd()
-	newCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "new", "--name", "v3-demo", "--", "demo-shell"})
+	newCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "new", "--name", "v3-demo", "--", "demo-shell"})
 	newCmd.SetOut(&newOut)
 	newCmd.SetErr(io.Discard)
 	if err := newCmd.Execute(); err != nil {
-		t.Fatalf("v3 new returned error: %v", err)
+		t.Fatalf("new returned error: %v", err)
 	}
 	terminalID := strings.TrimSpace(newOut.String())
 	if terminalID == "" {
@@ -638,11 +747,11 @@ func TestV3LocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 
 	var lsOut bytes.Buffer
 	lsCmd := newRootCmd()
-	lsCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "ls"})
+	lsCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "ls"})
 	lsCmd.SetOut(&lsOut)
 	lsCmd.SetErr(io.Discard)
 	if err := lsCmd.Execute(); err != nil {
-		t.Fatalf("v3 ls returned error: %v", err)
+		t.Fatalf("ls returned error: %v", err)
 	}
 	lsText := lsOut.String()
 	if !strings.Contains(lsText, terminalID) ||
@@ -653,19 +762,19 @@ func TestV3LocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	}
 
 	killCmd := newRootCmd()
-	killCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "kill", terminalID})
+	killCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "kill", terminalID})
 	killCmd.SetOut(io.Discard)
 	killCmd.SetErr(io.Discard)
 	if err := killCmd.Execute(); err != nil {
-		t.Fatalf("v3 kill returned error: %v", err)
+		t.Fatalf("kill returned error: %v", err)
 	}
 
 	rmCmd := newRootCmd()
-	rmCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "rm", terminalID})
+	rmCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "rm", terminalID})
 	rmCmd.SetOut(io.Discard)
 	rmCmd.SetErr(io.Discard)
 	if err := rmCmd.Execute(); err != nil {
-		t.Fatalf("v3 rm returned error: %v", err)
+		t.Fatalf("rm returned error: %v", err)
 	}
 	if _, err := server.GetTerminal(terminalID); err == nil || !strings.Contains(err.Error(), "terminal not found") {
 		t.Fatalf("expected removed terminal lookup to fail, got %v", err)
@@ -673,14 +782,55 @@ func TestV3LocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 
 	var emptyLs bytes.Buffer
 	emptyCmd := newRootCmd()
-	emptyCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "ls"})
+	emptyCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "ls"})
 	emptyCmd.SetOut(&emptyLs)
 	emptyCmd.SetErr(io.Discard)
 	if err := emptyCmd.Execute(); err != nil {
-		t.Fatalf("v3 ls after remove returned error: %v", err)
+		t.Fatalf("ls after remove returned error: %v", err)
 	}
 	if strings.Contains(emptyLs.String(), terminalID) {
 		t.Fatalf("removed terminal still listed:\n%s", emptyLs.String())
+	}
+}
+
+func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop in time")
+		}
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "new", "--name", "v3-demo", "--", "demo-shell"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 new returned error after default switch: %v", err)
+	}
+	if strings.TrimSpace(out.String()) == "" {
+		t.Fatalf("expected v3 new to print terminal id, got %q", out.String())
 	}
 }
 
@@ -910,7 +1060,7 @@ func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 	}
 }
 
-func TestRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
+func TestLegacyRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	socketPath := filepath.Join(t.TempDir(), "termx.sock")
@@ -948,7 +1098,7 @@ func TestRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "rm", created.ID})
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "legacy", "rm", created.ID})
 	cmd.SetIn(bytes.NewBuffer(nil))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -960,7 +1110,7 @@ func TestRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
 	}
 
 	aliasCmd := newRootCmd()
-	aliasCmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "delete", "missing"})
+	aliasCmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "legacy", "delete", "missing"})
 	aliasCmd.SetIn(bytes.NewBuffer(nil))
 	aliasCmd.SetOut(io.Discard)
 	aliasCmd.SetErr(io.Discard)
@@ -1320,7 +1470,7 @@ func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetArgs([]string{"--config", configPath, "legacy", "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
@@ -1368,7 +1518,7 @@ func TestDaemonStartsConfiguredLocalRuntime(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetArgs([]string{"--config", configPath, "legacy", "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 

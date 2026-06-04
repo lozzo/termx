@@ -97,7 +97,7 @@ func buildStartCoreV2DaemonCommand(path string, logFile string) (*exec.Cmd, erro
 	if logFile != "" {
 		args = append(args, "--log-file", logFile)
 	}
-	// 自动启动必须显式进入 v3 daemon，不能落回默认 legacy daemon。
-	args = append(args, "v3", "daemon")
+	// 默认 daemon 已切换为 core-v2；自动启动不得落回 legacy daemon。
+	args = append(args, "daemon")
 	return exec.Command(exe, args...), nil
 }

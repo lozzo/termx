@@ -4,14 +4,14 @@
 
 ## 1. 当前结论
 
-当前 `go run ./termx-cli/cmd/termx` 的 root TUI 已在切片 25 切换到新链路；其余默认本地控制入口仍待切片 26：
+当前本地默认入口已在切片 25-26 切换到新链路；remote 仍保持 legacy/fallback 隔离：
 
 | 入口 | 当前实现 | 证据 | 迁移目标 |
 | --- | --- | --- | --- |
 | `termx` root | 调用 `runV3RootCommand`，自动连接/启动 core-v2 daemon，并进入 tui-v3 attach runtime | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_root_command.go` | 切片 25 已完成；旧 root 仅保留为 `termx legacy` |
-| `termx attach <id>` | 调用 `runTUIv2` | `termx-cli/cmd/termx/tui_launcher.go` | 切片 26 后默认调用 tui-v3 attach |
-| `termx daemon` | 调用旧 `termx-core.NewServer` | `termx-cli/cmd/termx/daemon_command.go` | 切片 26 后默认调用 core-v2 server |
-| `termx new/ls/kill/rm` | 通过 `internal/protocol.Client` 自动连接或启动旧 daemon | `termx-cli/cmd/termx/terminal_commands.go`、`termx-cli/cmd/termx/daemon_client.go` | 切片 20 后在 v3 实验入口下等价可用，切片 26 后默认可用 |
+| `termx attach <id>` | 调用 `v3AttachCommand`，使用 tui-v3 attach runtime | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_attach_command.go` | 切片 26 已完成；旧 attach 仅保留为 `termx legacy attach` |
+| `termx daemon` | 调用 `v3DaemonCommand`，启动 core-v2 server | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_command.go` | 切片 26 已完成；旧 daemon 仅保留为 `termx legacy daemon` |
+| `termx new/ls/kill/rm` | 调用 v3 控制命令，通过 core-v2 protocol client 工作 | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_control_commands.go` | 切片 26 已完成；旧控制命令仅保留为 `termx legacy ...` |
 | `termx remote ...` | 依赖 CLI remote glue、旧配置 helper 和 daemon protocol extension | `termx-cli/cmd/termx/remote_commands.go`、`termx-cli/cmd/termx/remote_login.go`、`termx-cli/cmd/termx/remote_runtime.go` | 切片 24 已明确暂留 legacy/fallback 隔离；默认切换不能隐式丢 remote 或旧 `tuiv2/shared` 配置依赖 |
 
 当前新模块状态：
@@ -29,8 +29,9 @@
 | --- | --- | --- |
 | 切片 18-24 | `termx v3 ...` | 明确标识为 v3 实验入口；默认 `termx` 仍走旧链路 |
 | 切片 25 | `termx` root | 默认 root 已切到 v2/v3；旧 root 移到 `termx legacy` |
-| 切片 26-27 | `termx ...` | 默认 attach、daemon、new、ls、kill、rm 切到 v2/v3，并完成回归验收 |
-| 切片 25 之后 | `termx legacy ...` | 保留旧 root 链路只能显式命名；不得用隐藏环境变量作为默认回退 |
+| 切片 26 | `termx ...` | 默认 attach、daemon、new、ls、kill、rm 已切到 v2/v3；旧本地命令移到 `termx legacy ...` |
+| 切片 27 | `termx ...` | 对默认入口做全量回归验收 |
+| 切片 25 之后 | `termx legacy ...` | 保留旧本地链路只能显式命名；不得用隐藏环境变量作为默认回退 |
 
 推荐实验命令矩阵：
 
@@ -48,12 +49,12 @@
 | 命令 | 当前依赖 | v2/v3 目标 | 最早切片 | 验收证据 |
 | --- | --- | --- | --- | --- |
 | `termx` | `runV3RootCommand` -> core-v2 daemon -> tui-v3 attach runtime | tui-v3 root app，默认 session `main/main` | 25 | 非交互 `--help` 可编译；CLI test 断言默认 root 不再调用 `runTUIv2` |
-| `termx attach <id>` | `tuiv2/app.RunWithClient` | tui-v3 attach app，绑定指定 terminal | 21、26 | attach 后能渲染 live surface、输入、resize、copy mode |
-| `termx daemon` | 旧 `termx-core.NewServer` | core-v2 `NewServer` 或等价 constructor | 18、26 | socket listen、shutdown、events、protocol smoke 通过 |
-| `termx new -- CMD` | `protocol.Client.Create` + 旧 daemon | core-v2 protocol `create` | 20、26 | 返回 terminal id；`ls` 可见；PTY 有输出 |
-| `termx ls` | `protocol.Client.List` + 旧 daemon | core-v2 protocol `list` | 20、26 | 输出 id/name/command/state/size |
-| `termx kill <id>` | `protocol.Client.Kill` + 旧 daemon | core-v2 protocol `kill` | 20、26 | running 进程退出；事件发出 |
-| `termx rm <id>` | `protocol.Client.Remove` + 旧 daemon | core-v2 protocol `remove` | 20、26 | inventory 删除；attach channel 清理 |
+| `termx attach <id>` | tui-v3 attach app，绑定指定 terminal | tui-v3 attach app，绑定指定 terminal | 21、26 | attach 后能渲染 live surface、输入、resize、copy mode |
+| `termx daemon` | core-v2 `NewServer` | core-v2 `NewServer` 或等价 constructor | 18、26 | socket listen、shutdown、events、protocol smoke 通过 |
+| `termx new -- CMD` | core-v2 protocol `create` | core-v2 protocol `create` | 20、26 | 返回 terminal id；`ls` 可见；PTY 有输出 |
+| `termx ls` | core-v2 protocol `list` | core-v2 protocol `list` | 20、26 | 输出 id/name/command/state/size |
+| `termx kill <id>` | core-v2 protocol `kill` | core-v2 protocol `kill` | 20、26 | running 进程退出；事件发出 |
+| `termx rm <id>` | core-v2 protocol `remove` | core-v2 protocol `remove` | 20、26 | inventory 删除；attach channel 清理 |
 | `termx remote login` | CLI HTTP login + 旧 `tuiv2/shared` 配置 helper | 暂留 legacy/fallback；后续若进入默认路径，配置 helper 必须从 tuiv2 解耦 | 23、24、28 | 登录、保存 token、配置路径和敏感信息保护测试通过，或默认切换时明确 legacy/fallback |
 | `termx remote status/info/open` | daemon remote protocol methods | 暂留 legacy/fallback；未迁移到 `termx v3` | 24 | `termx v3 remote ...` 不挂载；旧 `termx remote ...` 保留 |
 | `termx remote enable/disable/pair` | CLI remote glue + daemon extension | 暂留 legacy/fallback；未迁移到 `termx v3` | 24 | `termx v3 remote ...` 不挂载；旧 remote CLI 测试继续通过 |
