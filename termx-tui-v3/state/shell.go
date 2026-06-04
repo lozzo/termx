@@ -1,5 +1,7 @@
 package state
 
+import "strings"
+
 const (
 	DefaultWorkspaceID = "workspace-main"
 	DefaultTabID       = "tab-main"
@@ -109,10 +111,20 @@ type SplitNode struct {
 }
 
 type OverlayState struct {
-	Kind     OverlayKind
-	Open     bool
-	TargetID string
-	Query    string
+	Kind          OverlayKind
+	Open          bool
+	TargetID      string
+	Query         string
+	SelectedIndex int
+}
+
+type TerminalPickerItem struct {
+	PaneID     string
+	Title      string
+	Kind       PaneKind
+	TerminalID string
+	Active     bool
+	Selected   bool
 }
 
 type ToastState struct {
@@ -292,10 +304,50 @@ func (store ShellStore) ClearToasts() ShellStore {
 func (store ShellStore) OpenTerminalPicker() ShellStore {
 	store = store.EnsureDefaults()
 	store.Overlay = OverlayState{
-		Kind:     OverlayTerminalPicker,
-		Open:     true,
-		TargetID: store.ActivePaneID,
+		Kind:          OverlayTerminalPicker,
+		Open:          true,
+		TargetID:      store.ActivePaneID,
+		SelectedIndex: 0,
 	}
+	return store
+}
+
+func (store ShellStore) SetTerminalPickerQuery(query string) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open {
+		return store
+	}
+	store.Overlay.Query = query
+	store.Overlay.SelectedIndex = 0
+	return store
+}
+
+func (store ShellStore) MoveTerminalPickerSelection(delta int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open || itemCount <= 0 || delta == 0 {
+		return store
+	}
+	next := store.Overlay.SelectedIndex + delta
+	next %= itemCount
+	if next < 0 {
+		next += itemCount
+	}
+	store.Overlay.SelectedIndex = next
+	return store
+}
+
+func (store ShellStore) SetTerminalPickerSelectedIndex(index int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open || itemCount <= 0 {
+		return store
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= itemCount {
+		index = itemCount - 1
+	}
+	store.Overlay.SelectedIndex = index
 	return store
 }
 
@@ -596,6 +648,90 @@ func (workspace WorkspaceState) ensureActiveTab() WorkspaceState {
 	}
 	workspace.ActiveTabID = workspace.Tabs[0].ID
 	return workspace
+}
+
+// TerminalPickerItems 只从 reducer-owned root 推导当前 picker 列表，不读取服务端 Terminal Pool。
+func TerminalPickerItems(root Root) []TerminalPickerItem {
+	shell := root.Shell.EnsureDefaults()
+	tab := shell.activeTab()
+	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
+	items := make([]TerminalPickerItem, 0, len(tab.Panes))
+	for _, pane := range tab.Panes {
+		terminalID := pickerTerminalID(root, pane)
+		if pane.Kind == PaneEmpty && terminalID == "" {
+			continue
+		}
+		item := TerminalPickerItem{
+			PaneID:     pane.ID,
+			Title:      paneTitle(pane),
+			Kind:       pane.Kind,
+			TerminalID: terminalID,
+			Active:     pane.Active,
+		}
+		if !matchesTerminalPickerQuery(item, query) {
+			continue
+		}
+		items = append(items, item)
+	}
+	if len(items) == 0 && query == "" {
+		items = append(items, TerminalPickerItem{
+			PaneID:     shell.ActivePaneID,
+			Title:      "current pane",
+			Kind:       PaneEmpty,
+			TerminalID: "none",
+			Active:     true,
+		})
+	}
+	if len(items) > 0 {
+		selected := shell.Overlay.SelectedIndex
+		if selected < 0 {
+			selected = 0
+		}
+		if selected >= len(items) {
+			selected = len(items) - 1
+		}
+		items[selected].Selected = true
+	}
+	return items
+}
+
+func pickerTerminalID(root Root, pane PaneState) string {
+	if pane.TerminalID != "" {
+		return pane.TerminalID
+	}
+	if pane.Active && root.Session.TerminalID != "" {
+		return root.Session.TerminalID
+	}
+	if pane.Active && root.Surface.TerminalID != "" {
+		return root.Surface.TerminalID
+	}
+	if pane.Active && root.History.TerminalID != "" {
+		return root.History.TerminalID
+	}
+	return ""
+}
+
+func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
+	if query == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(item.Title), query) ||
+		strings.Contains(strings.ToLower(item.PaneID), query) ||
+		strings.Contains(strings.ToLower(item.TerminalID), query) ||
+		strings.Contains(strings.ToLower(string(item.Kind)), query)
+}
+
+func paneTitle(pane PaneState) string {
+	if pane.Title != "" {
+		return pane.Title
+	}
+	if pane.TerminalID != "" {
+		return pane.TerminalID
+	}
+	if pane.ID != "" {
+		return pane.ID
+	}
+	return "pane"
 }
 
 func formatToastID(seq uint64) string {

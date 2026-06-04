@@ -58,10 +58,11 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	lines := []Line{
 		{Cells: []Cell{styledCell("search ", StyleMuted), NewCell(searchLabel(query))}},
 	}
-	rows := terminalPickerRows(root, shell)
+	rows := state.TerminalPickerItems(root)
 	for _, row := range rows {
-		lines = append(lines, terminalPickerLine(row, shell.Overlay.TargetID))
+		lines = append(lines, terminalPickerLine(row))
 	}
+	lines = append(lines, terminalPickerPreviewLine(rows))
 	lines = append(lines, contentActionLine("new", "new terminal"))
 	regions := terminalPickerHitRegions(rows)
 	regions = append(regions, HitRegion{
@@ -72,68 +73,16 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	return ContentVM{
 		Kind:       ContentTerminalPicker,
 		Lines:      lines,
-		Status:     fmt.Sprintf("terminal picker: %d items", len(rows)),
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("search "), Shape: CursorShapeBar},
+		Status:     terminalPickerStatus(len(rows), query),
+		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("search ") + DisplayWidth(query), Shape: CursorShapeBar},
 		HitRegions: regions,
 	}
 }
 
-type terminalPickerRow struct {
-	PaneID     string
-	Title      string
-	Kind       state.PaneKind
-	TerminalID string
-	Active     bool
-}
-
-func terminalPickerRows(root state.Root, shell state.ShellStore) []terminalPickerRow {
-	tab := activeTab(shell)
-	rows := make([]terminalPickerRow, 0, len(tab.Panes))
-	for _, pane := range tab.Panes {
-		terminalID := pickerTerminalID(root, pane)
-		if pane.Kind == state.PaneEmpty && terminalID == "" {
-			continue
-		}
-		rows = append(rows, terminalPickerRow{
-			PaneID:     pane.ID,
-			Title:      activePaneTitle(pane),
-			Kind:       pane.Kind,
-			TerminalID: terminalID,
-			Active:     pane.Active,
-		})
-	}
-	if len(rows) == 0 {
-		rows = append(rows, terminalPickerRow{
-			PaneID:     shell.ActivePaneID,
-			Title:      "current pane",
-			Kind:       state.PaneEmpty,
-			TerminalID: "none",
-			Active:     true,
-		})
-	}
-	return rows
-}
-
-func pickerTerminalID(root state.Root, pane state.PaneState) string {
-	if pane.TerminalID != "" {
-		return pane.TerminalID
-	}
-	if pane.Active && root.Session.TerminalID != "" {
-		return root.Session.TerminalID
-	}
-	if pane.Active && root.Surface.TerminalID != "" {
-		return root.Surface.TerminalID
-	}
-	if pane.Active && root.History.TerminalID != "" {
-		return root.History.TerminalID
-	}
-	return ""
-}
-
-func terminalPickerLine(row terminalPickerRow, targetPaneID string) Line {
+func terminalPickerLine(row state.TerminalPickerItem) Line {
 	marker := "  "
 	style := StyleMuted
-	if row.Active || row.PaneID == targetPaneID {
+	if row.Selected {
 		marker = "> "
 		style = StyleAccent
 	}
@@ -151,17 +100,48 @@ func terminalPickerLine(row terminalPickerRow, targetPaneID string) Line {
 	}}
 }
 
-func terminalPickerHitRegions(rows []terminalPickerRow) []HitRegion {
+func terminalPickerHitRegions(rows []state.TerminalPickerItem) []HitRegion {
 	regions := make([]HitRegion, 0, len(rows)+1)
 	for index, row := range rows {
 		regions = append(regions, HitRegion{
 			Kind:     HitRegionContentAction,
 			Rect:     Rect{Y: index + 1, W: 48, H: 1},
 			PaneID:   row.PaneID,
+			Row:      index,
 			ActionID: "picker.attach",
 		})
 	}
 	return regions
+}
+
+func terminalPickerPreviewLine(rows []state.TerminalPickerItem) Line {
+	if len(rows) == 0 {
+		return Line{Cells: []Cell{styledCell("preview ", StyleMuted), NewCell("no terminal")}}
+	}
+	selected := rows[0]
+	for _, row := range rows {
+		if row.Selected {
+			selected = row
+			break
+		}
+	}
+	terminalID := selected.TerminalID
+	if terminalID == "" {
+		terminalID = "none"
+	}
+	return Line{Cells: []Cell{
+		styledCell("preview ", StyleMuted),
+		NewCell("pane:" + selected.PaneID + " "),
+		NewCell("term:" + terminalID + " "),
+		styledCell("kind:"+string(selected.Kind), StyleMuted),
+	}}
+}
+
+func terminalPickerStatus(count int, query string) string {
+	if query == "" {
+		return fmt.Sprintf("terminal picker: %d items", count)
+	}
+	return fmt.Sprintf("terminal picker: %d items query:%s", count, query)
 }
 
 func searchLabel(query string) string {

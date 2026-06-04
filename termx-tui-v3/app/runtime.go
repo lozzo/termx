@@ -327,7 +327,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	case render.HitRegionOverlay:
 		return ShellCloseOverlayMsg{}
 	case render.HitRegionContentAction:
-		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID}
+		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
 		return msg
 	}

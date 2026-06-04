@@ -466,10 +466,11 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 	if !strings.Contains(content.Lines[0].PlainString(), "search term") ||
 		!strings.Contains(content.Lines[1].PlainString(), "> shell") ||
 		!strings.Contains(content.Lines[2].PlainString(), "日志🚀") ||
+		!strings.Contains(content.Lines[3].PlainString(), "preview pane:pane-main term:term-main") ||
 		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[new] new terminal") {
-		t.Fatalf("expected picker search/list/new rows, got %#v", content.Lines)
+		t.Fatalf("expected picker search/list/preview/new rows, got %#v", content.Lines)
 	}
-	if content.Status != "terminal picker: 2 items" {
+	if content.Status != "terminal picker: 2 items query:term" {
 		t.Fatalf("expected picker item count status, got %q", content.Status)
 	}
 	if !content.Cursor.Visible || content.Cursor.Shape != CursorShapeBar {
@@ -477,6 +478,32 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 	}
 	if !contentHasAction(content, "picker.attach") || !contentHasAction(content, "picker.new") {
 		t.Fatalf("expected picker action hit regions, got %#v", content.HitRegions)
+	}
+}
+
+func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing.T) {
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志🚀", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
+		OpenTerminalPicker().
+		SetTerminalPickerQuery("日志")
+
+	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
+	if !strings.Contains(content.Lines[0].PlainString(), "search 日志") ||
+		!strings.Contains(content.Lines[1].PlainString(), "> 日志🚀") ||
+		!strings.Contains(content.Lines[2].PlainString(), "preview pane:pane-2 term:term-2") ||
+		strings.Contains(content.Lines[1].PlainString(), "shell") {
+		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
+	}
+	if !lineHasStyledCell(content.Lines[1], "日志🚀", StyleAccent) {
+		t.Fatalf("expected selected picker row to use accent style, got %#v", content.Lines[1])
+	}
+	if content.Cursor.Col != DisplayWidth("search 日志") {
+		t.Fatalf("expected cursor after query text, got %#v", content.Cursor)
+	}
+	if content.Status != "terminal picker: 1 items query:日志" {
+		t.Fatalf("expected query status, got %q", content.Status)
 	}
 }
 

@@ -947,7 +947,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础和第一版键盘交互已落地。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期和 Terminal Picker 真实交互深化已落地。
 
 已落地：
 
@@ -967,7 +967,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - split line 已覆盖最小双 pane 横向和纵向分割。
 - header/footer hide 已真实影响 body layout，隐藏后 panel body 回收空间。
 - toast 已支持 severity、pending、auto dismiss、close current、clear all；renderer 中 toast 不改变 body layout。
-- Terminal Picker 已有 overlay/placeholder 渲染路径。
+- Terminal Picker 已有 styled overlay 渲染路径，并已接入 query/filter/selection/preview 交互。
 - `Ctrl-f` 已接入 Terminal Picker intent。
 - `Ctrl-v` 已接入 Display / Copy intent，并进入 authoritative history request 路径。
 - active terminal resize 已由 app 通过 layout plan 计算 active pane content rect，并只把 content rect cols/rows 发给 core-v2 terminal service；attach 初始尺寸、host resize、header/footer hide、card/split 切换和 split 变化都会触发去重后的 resize。
@@ -978,31 +978,34 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - 默认 UI chrome 已使用 Unicode box drawing；card、overlay、toast 使用 `╭╮╰╯─│`，split line 使用连接感知 `┌┐└┘─│├┤┬┴┼`，ASCII `+ - |` 不作为默认 UI chrome。
 - tiled card pane 已使用 `tuiv2` 风格 square Unicode 细线 pane chrome；active pane 使用 accent style，inactive pane 使用 muted style，pane 顶边包含 title、state 和 action slot。
 - v3 pane border 只迁入 `tuiv2/render` 的 cell 级连接位合成经验，不迁入旧 runtime/model、VisibleRenderState、cursor writer 或 snapshot/grid/copy fallback。
-- header/footer 已升级为 styled top/bottom bar，status background 填满整行，workspace/tab/mode/hint/status 通过 style token 输出。
+- header/footer 已升级为 styled top/bottom bar 和第一版产品信息层，status background 填满整行，workspace/tab/active pane/terminal count/mode-specific shortcut hints/status 通过 style token 输出。
 - toast 与 Terminal Picker overlay 已升级为 styled chrome，覆盖 border/background/severity token/close action region/ANSI reset 和宽字符安全。
 - `state.PaneCommand` 已成为 pane split、close、close and kill、focus、zoom、resize、set size、balance 和 panel presentation 的统一 semantic command contract。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 和 `Ctrl-o` floating stub 已作为第一版键盘入口落地；`Esc` 退出 mode/overlay 且不漏发 terminal。
 - pane mode、resize mode、鼠标 hit region 和 CLI mini command adapter 已接入同一 pane command contract；后续入口不得绕过 reducer 或另建局部 command path。
-- footer 已能显示当前 interaction mode，但 mode-specific shortcut hints 和完整产品摘要仍需后续切片补齐。
 - pane command 后会重新测量 layout plan；active terminal content rect 变化会触发 terminal resize 去重；active copy pane content width 变化会 invalid/rebind authoritative `HistoryWindow`。
 - `TerminalSessionStore` 已记录 terminal resize 目标尺寸和序号，连续 split/resize/zoom 等 pane command 下旧 resize result 不会覆盖最新 content rect。
+- app/runtime 已缓存最新 render hit regions，把真实鼠标坐标派发到 pane content、pane chrome、pane action、toast 和 overlay content action；UI chrome 命中优先于 terminal forwarding。
+- active pane border/title/footer/toast 会跟随键盘和鼠标 focus、split、close、resize、zoom、card/split 切换更新。
+- Terminal Picker query、过滤、selected row、上下键移动、Enter attach/focus、row click attach/focus、new action feedback、preview/detail 行和 no terminal input leak 已落地。
 - `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
 - `termx v3 smoke` 已覆盖 `pane-command-flow`，验证 pane command feedback、styled active pane ANSI、无默认 ASCII chrome 和行宽恒等。
 - `termx v3 e2e-smoke` 已覆盖 core-v2 daemon、默认 attach 装配、fake host 初始 viewport、host resize 重绘、content rect terminal resize、copy mode authoritative history、resized copy cols、split/resize/zoom/unzoom/close pane command，以及最终 panes/active/zoom 状态。
 - `make test-v2-migration` 已纳入当前默认入口、v3 smoke、e2e smoke 和默认依赖守卫回归。
 
-当前仍是最小实现，不应误读为完整产品态：
+当前仍是阶段性实现，不应误读为完整最终产品态：
 
-- 当前完成的是 chrome/frame 视觉等级和 pane 结构命令基础，不代表 terminal-live、copy-history、Terminal Picker 等内容 renderer 已经完整产品化。
-- header/footer 仍停留在 styled bar 与基础 mode/status 层，不是完整产品信息层；workspace/tab/pane/terminal/notice 摘要、mode-specific shortcut hints 和窄屏退化还需要补齐。
-- render 已能合成 hit region，app/runtime 已开始把真实鼠标坐标派发到最新 hit region；但 resize handle、split divider、复杂 overlay/floating、terminal mouse forwarding 的完整产品边界仍需继续验收。
-- active pane 样式已经存在，但键盘与鼠标 focus、split、close、resize、zoom、card/split 切换后的端到端视觉反馈仍需要独立验收并固定为 UI framework 闭环。
+- 当前完成的是 chrome/frame 视觉等级、pane 结构命令基础、UI framework 第一版可操作闭环和三类内容 renderer 一期，不代表 Terminal Pool、Workbench Tree、floating、Prompt、Help 或最终 terminal/copy 内容体验完整。
+- header/footer 已有第一版产品信息层，但复杂 notice/error 汇总、更多 workspace/tab 管理信息和更精细的窄屏退化仍可继续 polish。
+- render 已能合成 hit region，app/runtime 已把真实鼠标坐标派发到最新 hit region；但 floating drag/resize、复杂 overlay、Terminal Pool 管理页和 terminal mouse forwarding 的完整产品边界仍需继续深化。
+- active pane 视觉反馈已有端到端验收，但最终视觉 polish、更多状态 token 和复杂多层 split 的 focus affordance 仍可继续增强。
 - terminal-live content renderer 一期已进入当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，content 仍由 framework 裁切到 content rect；但 selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
 - copy-history content renderer 一期已进入当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，status 输出 row、line、cols 位置摘要，copy/yank 成功通过 toast 反馈；完整 scrollbar、content-local mouse selection、搜索和 logical-line 拼接提示仍待后续深化。
-- empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region；但 Terminal Pool 数据源、搜索过滤、preview、键盘移动选择和真实 create/restart/reconnect 服务仍未接入。
+- empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region。
+- Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/close overlay、picker row click、new action feedback、最小 preview/detail 行和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达；但 Terminal Pool 数据源、跨 workspace source、真实 create/restart/reconnect 服务和完整管理页仍未接入。
 - Terminal Pool、Workbench Tree、Prompt、Help 的完整内容未落地。
 - floating panel 仍未落地，当前只有架构类型和后续边界。
-- overlay 只落地 Terminal Picker placeholder 与基础 opaque cursor 归属，未完成 Workbench Tree、Prompt、Help、Floating Overview 的产品内容。
+- overlay 已落地 Terminal Picker 真实交互和基础 opaque cursor 归属，未完成 Workbench Tree、Prompt、Help、Floating Overview 的产品内容。
 - toast 具备基础生命周期和 styled 渲染，不代表最终视觉 polish、动画或完整消息队列策略。
 - hit region 已有内容、overlay、toast 合成基础，不代表完整鼠标交互产品语义。
 - `RenderVM{Lines, Status}` 字段仍保留为兼容投影，后续可以在默认 runtime 和测试全部迁到 `ShellVM/RenderResult` 后继续删除或重命名。
@@ -1013,13 +1016,9 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 建议后续切片：
 
-- shell header/footer 产品化：header 输出 workspace/tab/active pane/terminal count/notice 或窄屏摘要；footer 输出当前 mode、mode-specific shortcut hints、active pane/terminal 状态和全局短摘要，隐藏后 body 回收且上下文仍可恢复识别。
-- input / hit region dispatch：app/runtime 持有或接收最新 render hit regions，把真实鼠标坐标映射到 pane content、pane chrome、action slot、split divider、resize handle、toast/overlay；UI chrome 优先于 terminal mouse forwarding。
-- active pane 视觉反馈验收：键盘和鼠标导致的 focus、split、close、zoom、resize、card/split 切换必须立即反映到 active/inactive border、title、footer 和 toast。
-- UI framework 交互产品化总验收：在接 terminal-live content renderer 前，把 header/footer、pane/resize/global mode、鼠标命中、active feedback、toast、content rect resize 和 copy rebind 做成可基本操作的产品闭环。
+- Terminal Picker / Terminal Pool 接线：在当前 query/filter/selection/preview 基础上接真实 Terminal Pool 数据源、跨 workspace source、attach/create/restart/reconnect 服务/effect、错误反馈和 stale guard；不得伪造服务端生命周期。
 - terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
 - copy-history content renderer 深化：在一期基础上完善 scrollbar 视觉、position token 精细化、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和滚动交互。
-- Terminal Picker 深化：在一期 workspace pane list 基础上接真实 Terminal Pool 数据源、搜索过滤、preview、键盘移动选择、attach/create/restart/reconnect 服务接线和错误反馈。
 - tiled layout refinement：支持多层 split 的完整产品交互、resize affordance、active pane hit region 和 card/split 模式切换保持。
 - floating / overlay：实现 floating pane z-order、裁切、遮挡、置顶、drag/resize affordance，以及 Prompt、Help、Floating Overview overlay。
 - Terminal Pool：实现 Terminal Pool page content、列表、搜索、detail、preview 和 attach/kill/edit action。

@@ -29,6 +29,9 @@ func NewUIInputReducer() Reducer {
 			root.Shell = shell.CloseOverlay()
 			return root.Advance(), []Effect{handledEffect{}}
 		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPicker {
+			return reduceTerminalPickerInput(root, inputMsg.Event)
+		}
 		intent := input.RouteWithMode(inputMsg.Event, root.CopyMode.Active, inputMode(root.Shell.EnsureDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
@@ -52,6 +55,69 @@ func NewUIInputReducer() Reducer {
 			return root, nil
 		}
 	}
+}
+
+func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return root, nil
+	}
+	items := state.TerminalPickerItems(root)
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = root.Shell.MoveTerminalPickerSelection(-1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = root.Shell.MoveTerminalPickerSelection(1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		return reduceTerminalPickerConfirm(root, items)
+	case input.KeyChar:
+		if isBackspaceEvent(event) {
+			root.Shell = root.Shell.SetTerminalPickerQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		if event.Ctrl || event.Char == "" {
+			return root, []Effect{handledEffect{}}
+		}
+		root.Shell = root.Shell.SetTerminalPickerQuery(root.Shell.EnsureDefaults().Overlay.Query + event.Char)
+		return root.Advance(), []Effect{handledEffect{}}
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerItem) (state.Root, []Effect) {
+	if len(items) == 0 {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no terminal"})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
+	selected := items[0]
+	for _, item := range items {
+		if item.Selected {
+			selected = item
+			break
+		}
+	}
+	if selected.PaneID == "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no pane"})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
+	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
+	root.Shell = root.Shell.CloseOverlay()
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: selected.PaneID})
+	return root.Advance(), []Effect{handledEffect{}}
+}
+
+func isBackspaceEvent(event input.InputEvent) bool {
+	return event.Key == input.KeyChar && (event.Char == "\x7f" || event.Char == "\b")
+}
+
+func trimLastRune(value string) string {
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	return string(runes[:len(runes)-1])
 }
 
 func reducePaneCommandIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {

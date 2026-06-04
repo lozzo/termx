@@ -689,7 +689,7 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 - `Ctrl-r`：resize mode，承载方向 resize 和 balance。
 - `Ctrl-g`：global mode，承载 header/footer hide 与 toast 清理。
 - `Ctrl-o`：floating mode stub，只显示尚未实现反馈，不得伪装成完整 floating。
-- `Ctrl-f`：Terminal Picker placeholder / overlay。
+- `Ctrl-f`：Terminal Picker overlay，承载 query、过滤、键盘选择和确认 attach/focus。
 - `Ctrl-v`：Display / Copy authoritative history 路径。
 - `Esc`：退出 mode 或关闭 overlay，不得漏发给 terminal。
 
@@ -1272,7 +1272,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
-- Terminal Picker 深化：真实过滤、preview、跨 workspace terminal source、attach/create action 的真实服务接线和键盘选择移动。
+- Terminal Picker / Terminal Pool 服务接线：跨 workspace terminal source、attach/create/restart/reconnect 的真实服务接线、错误反馈和 Terminal Pool 管理页。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
 - Terminal Pool 完整页面。
 - Workbench Tree 完整 overlay。
@@ -1393,7 +1393,31 @@ empty/exited/Terminal Picker 内容 renderer 一期的目标是把旧 placeholde
 - 搜索过滤和键盘移动选择。
 - preview/detail panel。
 
-## 25. 后续讨论入口
+## 25. Terminal Picker 真实交互深化验收线
+
+Terminal Picker 真实交互深化的目标是把一期静态列表推进为可键盘操作、可过滤、可确认选择且不会漏发到底层 terminal 的 overlay。
+
+本阶段必须满足：
+
+- `Ctrl-f` 打开 Terminal Picker 后，普通字符输入进入 picker query，不得继续发送到 terminal input。
+- Backspace 修改 picker query，`Esc` 关闭 overlay，关闭时不得产生 terminal input。
+- Terminal Picker 行来源仍只允许是 reducer-owned 当前 workspace panes 与现有 session/surface/history terminal id；不得伪造完整 Terminal Pool。
+- query 必须能过滤 title、pane id、terminal id 和 pane kind；过滤后 selected row 回到第一项。
+- 上下方向键移动 selected row，并且在列表内循环；selected row 必须有明确高亮。
+- `Enter` 确认 selected row 后，当前可证明的行为是 focus 对应 pane、关闭 overlay 并显示 toast 反馈。
+- 点击 picker row 与 `Enter` 使用同一 attach/focus/close overlay 语义；不得写第二套路由。
+- picker 必须显示最小 preview/detail 行，内容来自 selected item 的 pane id、terminal id 和 kind；不得读取服务端 Terminal Pool。
+- `new terminal` action 当前只允许显示反馈 toast，不能伪装已经创建 terminal；真实 create 只能在后续服务接线切片完成。
+- overlay cursor、列表行、preview 行和 action hit region 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 styled cell 不得破坏 overlay border 或整行宽度。
+
+本阶段不要求：
+
+- 完整 Terminal Pool 数据源。
+- 跨 workspace terminal source。
+- 真实 create/restart/reconnect 服务。
+- Terminal Pool 管理页、preview 面板或详情编辑。
+
+## 26. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

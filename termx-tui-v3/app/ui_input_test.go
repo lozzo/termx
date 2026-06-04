@@ -68,6 +68,73 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
+	}
+	initialShell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志🚀", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: initialShell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-f: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "日"}); err != nil {
+		t.Fatalf("send query char: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "志"}); err != nil {
+		t.Fatalf("send query char: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain query: %v", err)
+	}
+	if runtime.State().Shell.EnsureDefaults().Overlay.Query != "日志" {
+		t.Fatalf("expected picker query retained in reducer state, got %#v", runtime.State().Shell.Overlay)
+	}
+	queryFrame := lastFrame(t, host.Frames())
+	if !frameContains(queryFrame, "search 日志") || !frameContains(queryFrame, "> 日志🚀") {
+		t.Fatalf("expected filtered picker frame, got %#v", queryFrame.Lines)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("picker query must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
+		t.Fatalf("send backspace: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
+		t.Fatalf("send backspace: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain enter: %v", err)
+	}
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" || runtime.State().Shell.Overlay.Open {
+		t.Fatalf("enter should attach/focus selected picker row and close overlay, got %#v", runtime.State().Shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("picker navigation must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

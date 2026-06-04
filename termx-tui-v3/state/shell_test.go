@@ -104,6 +104,30 @@ func TestShellTerminalPickerOverlayTargetsActivePane(t *testing.T) {
 	}
 }
 
+func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-2", Title: "日志🚀", Kind: PaneTerminalLive, TerminalID: "term-2"}, SplitDirectionVertical).
+		FocusPane(PaneCommandTarget{PaneID: DefaultPaneID}).
+		OpenTerminalPicker()
+	root := Root{Shell: shell, Session: TerminalSessionStore{TerminalID: "term-main"}}
+
+	items := TerminalPickerItems(root)
+	if len(items) != 2 || !items[0].Selected || items[0].PaneID != DefaultPaneID {
+		t.Fatalf("expected two picker items with first selected, got %#v", items)
+	}
+	root.Shell = root.Shell.SetTerminalPickerQuery("日志")
+	items = TerminalPickerItems(root)
+	if len(items) != 1 || items[0].PaneID != "pane-2" || !items[0].Selected {
+		t.Fatalf("query should filter and reset selected item, got %#v", items)
+	}
+	root.Shell = root.Shell.SetTerminalPickerQuery("")
+	root.Shell = root.Shell.MoveTerminalPickerSelection(1, len(TerminalPickerItems(root)))
+	items = TerminalPickerItems(root)
+	if len(items) != 2 || !items[1].Selected {
+		t.Fatalf("selection should move to second item, got %#v", items)
+	}
+}
+
 func TestShellSplitActivePaneCreatesMinimalPaneTree(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{
 		ID:         "pane-2",

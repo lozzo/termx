@@ -456,6 +456,26 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 		t.Fatalf("picker attach should focus pane-2 and close overlay, got %#v", pickerRuntime.State().Shell)
 	}
 
+	newHost := NewFakeTerminalHost(8)
+	newRuntime := newShellHitRuntime(pickerRoot, newHost)
+	if err := newRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post picker new render: %v", err)
+	}
+	if err := newRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain picker new render: %v", err)
+	}
+	newAction := frameActionHitRegion(t, lastRuntimeFrame(t, newHost), "picker.new", "")
+	if err := newHost.SendInput(mouseEventAt(newAction.Rect)); err != nil {
+		t.Fatalf("send picker new click: %v", err)
+	}
+	if err := newRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain picker new: %v", err)
+	}
+	toasts := newRuntime.State().Shell.Toasts
+	if len(toasts) == 0 || toasts[len(toasts)-1].Title != "picker.new" {
+		t.Fatalf("picker new should show feedback toast, got %#v", toasts)
+	}
+
 	emptyHost := NewFakeTerminalHost(8)
 	emptyShell := state.DefaultShell()
 	emptyShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "slot", Kind: state.PaneEmpty, Active: true}

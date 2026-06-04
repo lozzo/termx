@@ -63,6 +63,7 @@ func (ShellCloseOverlayMsg) isMsg() {}
 type ShellContentActionMsg struct {
 	ActionID string
 	PaneID   string
+	Row      int
 }
 
 func (ShellContentActionMsg) isMsg() {}
@@ -157,6 +158,10 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		})
 	case "picker.attach":
 		if msg.PaneID != "" {
+			items := state.TerminalPickerItems(root)
+			if msg.Row >= 0 {
+				root.Shell = root.Shell.SetTerminalPickerSelectedIndex(msg.Row, len(items))
+			}
 			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: msg.PaneID})
 			root.Shell = root.Shell.CloseOverlay()
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: msg.PaneID})

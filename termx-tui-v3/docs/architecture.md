@@ -488,6 +488,16 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - create、manager、restart、reconnect、Terminal Pool attach 等尚未接入真实服务的动作只能显示 toast 反馈，不得直接修改 service state 或伪造 terminal lifecycle。
 - content action 不得漏发为 terminal input；未命中 content action 的鼠标事件仍按现有 hit region / terminal forwarding 边界处理。
 
+当前 Terminal Picker 真实交互深化的架构边界：
+
+- `OverlayState.Query` 与 `OverlayState.SelectedIndex` 是 reducer-owned picker 交互状态；query 更新、过滤后重置 selection、上下移动 selection 都必须由 `ShellStore` 方法完成。
+- `state.TerminalPickerItems(root)` 是 app 与 render 共享的当前 picker item 推导入口；它只从 reducer-owned root、当前 workspace panes 和当前 active session/surface/history terminal id 推导列表，不读取服务端 Terminal Pool。
+- UI input reducer 在 Terminal Picker overlay 打开时优先消费字符、Backspace、上下方向键和 Enter；这些输入不得进入 terminal input path。
+- Enter 和 picker row click 最小可落地语义都是 focus 目标 pane、关闭 overlay、添加 toast 反馈；不得把该路径伪装成跨 workspace attach 或服务端 Terminal Pool attach。
+- `picker.new` 当前只能显示 create feedback toast，不能直接创建 terminal，也不能修改 terminal service state；真实 create 必须通过后续服务/effect 切片接入。
+- preview/detail 行只投影 selected item 的 pane id、terminal id 和 kind；renderer 不读取 service、core client 或 Terminal Pool。
+- overlay cursor、row action 和 preview 内容继续由 render framework 按 content rect 裁切合成，不得覆盖 pane chrome、toast 或 shell chrome。
+
 ## 12. 与 core-v2 的接口
 
 TUI-v3 只通过 `CoreClient` 访问 core-v2。
