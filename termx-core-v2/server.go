@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
@@ -22,18 +23,22 @@ type serverConfig struct {
 	defaultSize     Size
 	logger          *slog.Logger
 	listenerFactory ListenerFactory
+	processFactory  ProcessFactory
 	eventBuffer     int
 }
 
 type Server struct {
-	cfg        serverConfig
-	registry   *terminalRegistry
-	events     *eventBroker
-	closed     atomic.Bool
-	mu         sync.Mutex
-	listeners  []transport.Listener
-	transports map[transport.Transport]struct{}
-	wg         sync.WaitGroup
+	cfg         serverConfig
+	registry    *terminalRegistry
+	terminals   map[string]*Terminal
+	events      *eventBroker
+	closed      atomic.Bool
+	lifecycleMu sync.Mutex
+	mu          sync.Mutex
+	listeners   []transport.Listener
+	transports  map[transport.Transport]struct{}
+	wgMu        sync.Mutex
+	wg          sync.WaitGroup
 }
 
 func NewServer(opts ...ServerOption) *Server {
@@ -42,6 +47,7 @@ func NewServer(opts ...ServerOption) *Server {
 		defaultSize:     Size{Cols: 80, Rows: 24},
 		logger:          slog.Default(),
 		listenerFactory: unixListenerFactory,
+		processFactory:  newScriptedProcessFactory(),
 		eventBuffer:     64,
 	}
 	for _, opt := range opts {
@@ -55,9 +61,13 @@ func NewServer(opts ...ServerOption) *Server {
 	if cfg.listenerFactory == nil {
 		cfg.listenerFactory = unixListenerFactory
 	}
+	if cfg.processFactory == nil {
+		cfg.processFactory = newScriptedProcessFactory()
+	}
 	return &Server{
 		cfg:        cfg,
 		registry:   newTerminalRegistry(),
+		terminals:  make(map[string]*Terminal),
 		events:     newEventBroker(cfg.eventBuffer),
 		transports: make(map[transport.Transport]struct{}),
 	}
@@ -89,6 +99,12 @@ func WithListenerFactory(factory ListenerFactory) ServerOption {
 	}
 }
 
+func WithProcessFactory(factory ProcessFactory) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.processFactory = factory
+	}
+}
+
 func WithEventBuffer(size int) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.eventBuffer = size
@@ -104,6 +120,8 @@ func (server *Server) DefaultSize() Size {
 }
 
 func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, error) {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
 	if server.closed.Load() {
 		return TerminalInfo{}, ErrServerClosed
 	}
@@ -111,6 +129,19 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 	if err != nil {
 		return TerminalInfo{}, err
 	}
+	process, err := server.cfg.processFactory.Spawn(context.Background(), ProcessSpec{
+		TerminalID: info.ID,
+		Command:    info.Command,
+		Size:       info.Size,
+	})
+	if err != nil {
+		_, _ = server.registry.remove(info.ID)
+		return TerminalInfo{}, err
+	}
+	terminal := newTerminal(info, process, server.events, server.updateTerminalInfo)
+	server.mu.Lock()
+	server.terminals[info.ID] = terminal
+	server.mu.Unlock()
 	server.publishTerminalEvent(EventTerminalCreated, info)
 	return info, nil
 }
@@ -124,6 +155,8 @@ func (server *Server) ListTerminals() []TerminalInfo {
 }
 
 func (server *Server) RemoveTerminal(id string) error {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
 	if server.closed.Load() {
 		return ErrServerClosed
 	}
@@ -131,8 +164,86 @@ func (server *Server) RemoveTerminal(id string) error {
 	if err != nil {
 		return err
 	}
+	terminal := server.removeTerminalHandle(id)
+	if terminal != nil {
+		_ = terminal.Close()
+	}
 	server.publishTerminalEvent(EventTerminalRemoved, info)
 	return nil
+}
+
+func (server *Server) updateTerminalInfo(info TerminalInfo) {
+	_ = server.registry.replace(info)
+}
+
+func (server *Server) Terminal(id string) (*Terminal, error) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	terminal, ok := server.terminals[id]
+	if !ok {
+		return nil, ErrTerminalNotFound
+	}
+	return terminal, nil
+}
+
+func (server *Server) WriteInput(ctx context.Context, id string, data []byte) error {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return err
+	}
+	return terminal.Input(data)
+}
+
+func (server *Server) IngestOutput(ctx context.Context, id string, output string) error {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return err
+	}
+	return terminal.IngestOutput(output)
+}
+
+func (server *Server) ResizeTerminal(ctx context.Context, id string, cols, rows uint16) error {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return err
+	}
+	return terminal.Resize(Size{Cols: cols, Rows: rows})
+}
+
+func (server *Server) KillTerminal(ctx context.Context, id string) error {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return err
+	}
+	return terminal.Kill()
+}
+
+func (server *Server) RestartTerminal(ctx context.Context, id string) error {
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return err
+	}
+	return terminal.Restart(ctx, server.cfg.processFactory)
+}
+
+func (server *Server) LiveRows(id string) ([]string, error) {
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return nil, err
+	}
+	return terminal.LiveRows(), nil
+}
+
+func (server *Server) LatestWindow(id string, cols, rows int) (history.HistoryWindow, error) {
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
+	return terminal.LatestWindow(cols, rows)
 }
 
 func (server *Server) Events(ctx context.Context, filter EventFilter) <-chan Event {
@@ -158,7 +269,7 @@ func (server *Server) ListenAndServe(ctx context.Context) error {
 	server.mu.Unlock()
 	server.events.publish(Event{Type: EventServerListening, SocketPath: listener.Addr()})
 	server.cfg.logger.Info("core-v2 server listening", "socket_path", listener.Addr())
-	defer server.wg.Wait()
+	defer server.waitTransports()
 	defer func() {
 		_ = listener.Close()
 	}()
@@ -174,14 +285,16 @@ func (server *Server) ListenAndServe(ctx context.Context) error {
 			server.cfg.logger.Warn("core-v2 server accept failed", "socket_path", listener.Addr(), "error", err)
 			continue
 		}
-		server.trackTransport(conn)
-		server.wg.Add(1)
-		go server.handleTransport(ctx, conn)
+		if !server.startTransport(ctx, conn) {
+			return nil
+		}
 	}
 }
 
 func (server *Server) Shutdown(ctx context.Context) error {
 	_ = ctx
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
 	if !server.closed.CompareAndSwap(false, true) {
 		return nil
 	}
@@ -198,12 +311,30 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	for _, conn := range transports {
 		_ = conn.Close()
 	}
+	server.mu.Lock()
+	terminals := make([]*Terminal, 0, len(server.terminals))
+	for _, terminal := range server.terminals {
+		terminals = append(terminals, terminal)
+	}
+	server.terminals = make(map[string]*Terminal)
+	server.mu.Unlock()
+	for _, terminal := range terminals {
+		_ = terminal.Close()
+	}
 	server.registry.clear()
 	server.events.publish(Event{Type: EventServerStopped, SocketPath: server.cfg.socketPath})
 	server.events.close()
-	server.wg.Wait()
+	server.waitTransports()
 	server.cfg.logger.Info("core-v2 server stopped", "socket_path", server.cfg.socketPath)
 	return nil
+}
+
+func (server *Server) removeTerminalHandle(id string) *Terminal {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	terminal := server.terminals[id]
+	delete(server.terminals, id)
+	return terminal
 }
 
 func (server *Server) handleTransport(ctx context.Context, conn transport.Transport) {
@@ -214,6 +345,25 @@ func (server *Server) handleTransport(ctx context.Context, conn transport.Transp
 	case <-ctx.Done():
 	case <-conn.Done():
 	}
+}
+
+func (server *Server) startTransport(ctx context.Context, conn transport.Transport) bool {
+	server.wgMu.Lock()
+	defer server.wgMu.Unlock()
+	if server.closed.Load() {
+		_ = conn.Close()
+		return false
+	}
+	server.trackTransport(conn)
+	server.wg.Add(1)
+	go server.handleTransport(ctx, conn)
+	return true
+}
+
+func (server *Server) waitTransports() {
+	server.wgMu.Lock()
+	defer server.wgMu.Unlock()
+	server.wg.Wait()
 }
 
 func (server *Server) trackTransport(conn transport.Transport) {

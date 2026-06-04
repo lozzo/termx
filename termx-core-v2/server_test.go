@@ -204,6 +204,11 @@ func isLegacyRuntimeImport(importPath string) bool {
 
 func assertEvent(t *testing.T, events <-chan Event, typ EventType, terminalID string) {
 	t.Helper()
+	_ = assertEventValue(t, events, typ, terminalID)
+}
+
+func assertEventValue(t *testing.T, events <-chan Event, typ EventType, terminalID string) Event {
+	t.Helper()
 	select {
 	case event, ok := <-events:
 		if !ok {
@@ -212,9 +217,11 @@ func assertEvent(t *testing.T, events <-chan Event, typ EventType, terminalID st
 		if event.Type != typ || event.TerminalID != terminalID {
 			t.Fatalf("unexpected event %#v", event)
 		}
+		return event
 	case <-time.After(time.Second):
 		t.Fatalf("timed out waiting for %s event", typ)
 	}
+	return Event{}
 }
 
 type fakeListener struct {

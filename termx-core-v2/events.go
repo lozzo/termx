@@ -12,6 +12,7 @@ const (
 	EventServerListening EventType = "server.listening"
 	EventServerStopped   EventType = "server.stopped"
 	EventTerminalCreated EventType = "terminal.created"
+	EventTerminalExited  EventType = "terminal.exited"
 	EventTerminalRemoved EventType = "terminal.removed"
 	EventTerminalChanged EventType = "terminal.changed"
 )

@@ -18,6 +18,8 @@ type TerminalState string
 
 const (
 	TerminalStateCreated TerminalState = "created"
+	TerminalStateRunning TerminalState = "running"
+	TerminalStateExited  TerminalState = "exited"
 	TerminalStateRemoved TerminalState = "removed"
 )
 
@@ -28,10 +30,15 @@ type TerminalInfo struct {
 	Size      Size
 	State     TerminalState
 	CreatedAt time.Time
+	ExitCode  *int
 }
 
 func (info TerminalInfo) Clone() TerminalInfo {
 	info.Command = append([]string(nil), info.Command...)
+	if info.ExitCode != nil {
+		code := *info.ExitCode
+		info.ExitCode = &code
+	}
 	return info
 }
 
@@ -48,6 +55,7 @@ var (
 	ErrInvalidCommand     = errors.New("invalid command")
 	ErrDuplicateTerminal  = errors.New("duplicate terminal")
 	ErrTerminalNotFound   = errors.New("terminal not found")
+	ErrTerminalExited     = errors.New("terminal exited")
 	ErrInvalidServerSize  = errors.New("invalid server size")
 	ErrNilListenerFactory = errors.New("nil listener factory")
 )

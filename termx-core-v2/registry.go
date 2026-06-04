@@ -40,7 +40,7 @@ func (registry *terminalRegistry) register(record TerminalRecord, defaultSize Si
 		Name:      name,
 		Command:   append([]string(nil), record.Command...),
 		Size:      size,
-		State:     TerminalStateCreated,
+		State:     TerminalStateRunning,
 		CreatedAt: time.Now().UTC(),
 	}
 	registry.mu.Lock()
@@ -85,6 +85,16 @@ func (registry *terminalRegistry) remove(id string) (TerminalInfo, error) {
 	delete(registry.terminals, id)
 	info.State = TerminalStateRemoved
 	return info.Clone(), nil
+}
+
+func (registry *terminalRegistry) replace(info TerminalInfo) error {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if _, ok := registry.terminals[info.ID]; !ok {
+		return ErrTerminalNotFound
+	}
+	registry.terminals[info.ID] = info.Clone()
+	return nil
 }
 
 func (registry *terminalRegistry) clear() {
