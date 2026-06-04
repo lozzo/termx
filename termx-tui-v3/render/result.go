@@ -361,15 +361,23 @@ type FloatingVM struct {
 }
 
 type HeaderVM struct {
-	Visible bool
-	Title   string
-	Notice  string
+	Visible         bool
+	Workspace       string
+	Tab             string
+	ActivePane      string
+	TerminalSummary string
+	FloatingSummary string
+	Notice          string
+	Title           string
 }
 
 type FooterVM struct {
-	Visible bool
-	Mode    string
-	Hint    string
+	Visible       bool
+	Mode          string
+	Hint          string
+	Actions       []string
+	ActiveTarget  string
+	GlobalSummary string
 }
 
 type ToastSeverity string

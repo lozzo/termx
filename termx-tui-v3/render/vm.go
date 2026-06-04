@@ -1,6 +1,10 @@
 package render
 
-import "github.com/lozzow/termx/termx-tui-v3/state"
+import (
+	"fmt"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
+)
 
 type Mode string
 
@@ -77,29 +81,129 @@ func buildHeaderVM(shell state.ShellStore, root state.Root) HeaderVM {
 	if root.Session.LastError != "" {
 		notice = root.Session.LastError
 	}
+	tab := activeTab(shell)
 	return HeaderVM{
-		Visible: shell.HeaderVisible,
-		Title:   shell.Workspace.Name,
-		Notice:  notice,
+		Visible:         shell.HeaderVisible,
+		Workspace:       shell.Workspace.Name,
+		Tab:             tab.Title,
+		ActivePane:      shell.ActivePaneID,
+		TerminalSummary: terminalSummary(root),
+		FloatingSummary: floatingSummary(shell),
+		Notice:          notice,
+		Title:           shell.Workspace.Name,
 	}
 }
 
 func buildFooterVM(root state.Root, content ContentVM) FooterVM {
-	mode := "live"
-	if root.CopyMode.Active {
-		mode = "copy"
-	}
-	if shellMode := root.Shell.EnsureDefaults().InteractionMode; shellMode != state.InteractionModeNormal {
-		mode = string(shellMode)
-	}
+	shell := root.Shell.EnsureDefaults()
+	mode := footerMode(root, shell)
 	hint := content.Status
 	if hint == "" {
 		hint = liveStatus(root.Surface, root.Session)
 	}
 	return FooterVM{
-		Visible: root.Shell.EnsureDefaults().FooterVisible,
-		Mode:    mode,
-		Hint:    hint,
+		Visible:       shell.FooterVisible,
+		Mode:          mode,
+		Hint:          hint,
+		Actions:       footerActions(mode),
+		ActiveTarget:  activeTargetSummary(shell, root),
+		GlobalSummary: globalSummary(shell),
+	}
+}
+
+func terminalSummary(root state.Root) string {
+	ids := map[string]struct{}{}
+	if root.Surface.TerminalID != "" {
+		ids[root.Surface.TerminalID] = struct{}{}
+	}
+	if root.Session.TerminalID != "" {
+		ids[root.Session.TerminalID] = struct{}{}
+	}
+	if root.History.TerminalID != "" {
+		ids[root.History.TerminalID] = struct{}{}
+	}
+	if root.CopyMode.TerminalID != "" {
+		ids[root.CopyMode.TerminalID] = struct{}{}
+	}
+	count := len(ids)
+	if count == 0 {
+		return "term:0"
+	}
+	return fmt.Sprintf("term:%d", count)
+}
+
+func floatingSummary(shell state.ShellStore) string {
+	return "float:0"
+}
+
+func footerMode(root state.Root, shell state.ShellStore) string {
+	if shell.Overlay.Open {
+		return string(shell.Overlay.Kind)
+	}
+	if shell.InteractionMode != state.InteractionModeNormal {
+		return string(shell.InteractionMode)
+	}
+	if root.CopyMode.Active {
+		return "copy"
+	}
+	return "live"
+}
+
+func footerActions(mode string) []string {
+	switch mode {
+	case "pane":
+		return []string{"v split", "x close", "n focus", "z zoom", "esc"}
+	case "resize":
+		return []string{"←/h", "→/l", "↑/k", "↓/j", "b balance", "esc"}
+	case "global":
+		return []string{"h header", "f footer", "t clear", "esc"}
+	case "copy":
+		return []string{"pgup older", "wheel", "esc"}
+	case string(state.OverlayTerminalPicker):
+		return []string{"select", "attach", "esc"}
+	case "floating":
+		return []string{"stub", "esc"}
+	default:
+		return []string{"^P pane", "^R size", "^V copy", "^F pick", "^G"}
+	}
+}
+
+func activeTargetSummary(shell state.ShellStore, root state.Root) string {
+	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+	paneTitle := shell.ActivePaneID
+	if ok && pane.Title != "" {
+		paneTitle = pane.Title
+	}
+	terminalState := terminalStateSummary(root, pane)
+	if terminalState == "" {
+		return "pane:" + paneTitle
+	}
+	return "pane:" + paneTitle + " " + terminalState
+}
+
+func globalSummary(shell state.ShellStore) string {
+	tab := activeTab(shell)
+	paneCount := len(tab.Panes)
+	if paneCount == 0 {
+		paneCount = 1
+	}
+	return fmt.Sprintf("ws:%s panes:%d %s", shell.Workspace.Name, paneCount, floatingSummary(shell))
+}
+
+func terminalStateSummary(root state.Root, pane state.PaneState) string {
+	switch {
+	case root.Session.LastError != "" || root.Surface.Err != "":
+		return "error"
+	case root.CopyMode.Active:
+		return "copy"
+	case root.Session.Attached:
+		return "attached"
+	case root.Surface.TerminalID != "":
+		return "live"
+	case pane.TerminalID != "":
+		return "bound"
+	default:
+		return ""
 	}
 }
 

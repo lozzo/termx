@@ -524,11 +524,28 @@ func (vm RenderVM) withFallbackShell() ShellVM {
 }
 
 func renderHeader(c *canvas, header HeaderVM, rect Rect) {
-	title := header.Title
-	if title == "" {
-		title = "termx"
+	workspace := header.Workspace
+	if workspace == "" {
+		workspace = header.Title
 	}
-	text := " ws:" + title + "  tab:1  ⊕"
+	if workspace == "" {
+		workspace = "termx"
+	}
+	tab := header.Tab
+	if tab == "" {
+		tab = "main"
+	}
+	text := " ws:" + workspace + "  tab:" + tab
+	if header.ActivePane != "" {
+		text += "  active:" + header.ActivePane
+	}
+	if header.TerminalSummary != "" {
+		text += "  " + header.TerminalSummary
+	}
+	if header.FloatingSummary != "" {
+		text += "  " + header.FloatingSummary
+	}
+	text += "  ⊕"
 	if header.Notice != "" {
 		text += "  notice:" + header.Notice
 	}
@@ -541,11 +558,31 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 		mode = "live"
 	}
 	text := " mode:" + mode
-	if footer.Hint != "" {
-		text += "  hint:" + footer.Hint
+	text = appendFooterSegment(text, "active:"+footer.ActiveTarget, rect.W)
+	hintIsError := strings.HasPrefix(footer.Hint, "error:")
+	if hintIsError {
+		text = appendFooterSegment(text, "hint:"+footer.Hint, rect.W)
 	}
-	text += "  status:ready"
+	if len(footer.Actions) > 0 {
+		text = appendFooterSegment(text, "keys:"+strings.Join(footer.Actions, " "), rect.W)
+	}
+	if !hintIsError {
+		text = appendFooterSegment(text, "hint:"+footer.Hint, rect.W)
+	}
+	text = appendFooterSegment(text, footer.GlobalSummary, rect.W)
+	text = appendFooterSegment(text, "status:ready", rect.W)
 	c.writeTextStyled(rect.X, rect.Y, rect.W, text, StyleStatus, "shell:footer", LayerChrome)
+}
+
+func appendFooterSegment(base string, segment string, width int) string {
+	if segment == "" {
+		return base
+	}
+	next := base + "  " + segment
+	if width <= 0 || DisplayWidth(next) <= width {
+		return next
+	}
+	return base
 }
 
 func splitPanelRects(layout LayoutVM, body Rect) map[string]Rect {

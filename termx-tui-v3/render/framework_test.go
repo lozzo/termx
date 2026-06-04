@@ -204,9 +204,9 @@ func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
 
 func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
-		Header: HeaderVM{Visible: true, Title: "main", Notice: "ok"},
-		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1"},
-		Layout: LayoutVM{Viewport: Rect{W: 42, H: 10}, Panels: []PanelVM{{
+		Header: HeaderVM{Visible: true, Workspace: "main", Tab: "1", ActivePane: "pane-1", TerminalSummary: "term:1", FloatingSummary: "float:0", Notice: "ok"},
+		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", Actions: []string{"^P pane", "^R resize"}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main panes:1 float:0"},
+		Layout: LayoutVM{Viewport: Rect{W: 120, H: 10}, Panels: []PanelVM{{
 			ID:           "pane-1",
 			Title:        "shell",
 			Presentation: PanelPresentationCard,
@@ -216,10 +216,10 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !strings.Contains(frame.Lines[0], "ws:main") || !strings.Contains(frame.Lines[0], "tab:1") || !strings.Contains(frame.Lines[0], "⊕") || !strings.Contains(frame.Lines[0], "notice:ok") {
+	if !strings.Contains(frame.Lines[0], "ws:main") || !strings.Contains(frame.Lines[0], "tab:1") || !strings.Contains(frame.Lines[0], "active:pane-1") || !strings.Contains(frame.Lines[0], "term:1") || !strings.Contains(frame.Lines[0], "float:0") || !strings.Contains(frame.Lines[0], "⊕") || !strings.Contains(frame.Lines[0], "notice:ok") {
 		t.Fatalf("top bar should contain workspace/tab/create/notice tokens, got %#v", frame.Lines[0])
 	}
-	if !strings.Contains(frame.Lines[len(frame.Lines)-1], "mode:live") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "hint:term-1") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "status:ready") {
+	if !strings.Contains(frame.Lines[len(frame.Lines)-1], "mode:live") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "keys:^P pane") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "active:pane:shell") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "hint:term-1") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "ws:main") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "status:ready") {
 		t.Fatalf("bottom bar should contain mode/hint/status tokens, got %#v", frame.Lines[len(frame.Lines)-1])
 	}
 	if !styledLinesContain(frame.StyledLines[:1], "w", StyleStatus) || !styledLinesContain(frame.StyledLines[len(frame.StyledLines)-1:], "m", StyleStatus) {
@@ -228,7 +228,41 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if !strings.Contains(frame.ANSILines[0], "\x1b[48;2;24;50;74m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;24;50;74m") {
 		t.Fatalf("top/bottom bars should output status background SGR, got %#v", frame.ANSILines)
 	}
-	assertAllRowsWidth(t, frame.Lines, 42)
+	assertAllRowsWidth(t, frame.Lines, 120)
+}
+
+func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
+	cases := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "pane", mode: "pane", want: "v split"},
+		{name: "resize", mode: "resize", want: "←/h"},
+		{name: "global", mode: "global", want: "h header"},
+		{name: "copy", mode: "copy", want: "pgup older"},
+		{name: "overlay", mode: "terminal-picker", want: "attach"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := NewRenderer(DefaultTheme()).Render(RenderVM{Shell: ShellVM{
+				Header: HeaderVM{Visible: true, Workspace: "main"},
+				Footer: FooterVM{Visible: true, Mode: tc.mode, Actions: footerActions(tc.mode), ActiveTarget: "pane:shell", GlobalSummary: "ws:main panes:1 float:0"},
+				Layout: LayoutVM{Viewport: Rect{W: 96, H: 9}, Panels: []PanelVM{{
+					ID:           "pane-1",
+					Title:        "shell",
+					Presentation: PanelPresentationCard,
+					Active:       true,
+					Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+				}}},
+			}})
+			footer := frame.Lines[len(frame.Lines)-1]
+			if !strings.Contains(footer, "mode:"+tc.mode) || !strings.Contains(footer, tc.want) || !strings.Contains(footer, "active:pane:shell") {
+				t.Fatalf("footer missing mode-specific product hints for %s: %#v", tc.mode, footer)
+			}
+			assertAllRowsWidth(t, frame.Lines, 96)
+		})
+	}
 }
 
 func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {

@@ -134,6 +134,54 @@ func TestRenderVMBuilderShowsCopyHistoryEmptyWithoutLiveFallback(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
+	shell := state.DefaultShell().
+		SetInteractionMode(state.InteractionModePane).
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志 🚀", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell: shell,
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Title:      "termx",
+			Lines:      []string{"live"},
+		},
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-live",
+			Attached:   true,
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	header := vm.Shell.Header
+	if !header.Visible || header.Workspace != "main" || header.Tab != "main" || header.ActivePane != "pane-2" || header.TerminalSummary != "term:1" || header.FloatingSummary != "float:0" {
+		t.Fatalf("unexpected product header %#v", header)
+	}
+	footer := vm.Shell.Footer
+	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" || !containsString(footer.Actions, "v split") || !strings.Contains(footer.GlobalSummary, "panes:2") {
+		t.Fatalf("unexpected product footer %#v", footer)
+	}
+}
+
+func TestRenderVMBuilderDerivesFooterModePrecedence(t *testing.T) {
+	builder := NewRenderVMBuilder()
+	if got := builder.Build(state.Root{
+		CopyMode: state.CopyModeStore{Active: true, TerminalID: "term-copy", BoundCols: 80},
+	}).Shell.Footer.Mode; got != "copy" {
+		t.Fatalf("expected copy footer mode, got %q", got)
+	}
+	if got := builder.Build(state.Root{
+		Shell:    state.DefaultShell().OpenTerminalPicker().SetInteractionMode(state.InteractionModeGlobal),
+		CopyMode: state.CopyModeStore{Active: true, TerminalID: "term-copy", BoundCols: 80},
+	}).Shell.Footer.Mode; got != "terminal-picker" {
+		t.Fatalf("overlay should win footer mode, got %q", got)
+	}
+	if got := builder.Build(state.Root{
+		Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeResize),
+	}).Shell.Footer.Mode; got != "resize" {
+		t.Fatalf("expected interaction footer mode, got %q", got)
+	}
+}
+
 func TestRenderVMBuilderShowsCopyHistoryBindingErrorWithoutLiveFallback(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{
@@ -324,6 +372,15 @@ func TestRendererConsumesVMAndSanitizesLines(t *testing.T) {
 func frameContains(frame Frame, value string) bool {
 	for _, line := range frame.Lines {
 		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}

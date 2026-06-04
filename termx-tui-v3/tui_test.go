@@ -45,7 +45,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;88;213;201m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, "ws:main") || !frameContains(cases["workbench-live"].Lines, "mode:live") {
+	if !frameContains(cases["workbench-live"].Lines, "ws:main") || !frameContains(cases["workbench-live"].Lines, "mode:live") || !frameContains(cases["workbench-live"].Lines, "keys:^P pane") {
 		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;24;50;74m") {
