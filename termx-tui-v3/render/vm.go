@@ -58,7 +58,7 @@ func buildShellVM(root state.Root) ShellVM {
 	return ShellVM{
 		Header:  buildHeaderVM(shellState, root),
 		Footer:  buildFooterVM(root, activeContent),
-		Layout:  buildLayoutVM(shellState, activeContent),
+		Layout:  buildLayoutVM(shellState, activeContent, root.Viewport),
 		Overlay: buildOverlayVM(shellState),
 		Toasts:  buildToastVMs(shellState),
 		Cursor:  activeContent.Cursor,
@@ -93,11 +93,19 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 	}
 }
 
-func buildLayoutVM(shell state.ShellStore, activeContent ContentVM) LayoutVM {
+func buildLayoutVM(shell state.ShellStore, activeContent ContentVM, viewport state.ViewportStore) LayoutVM {
 	return LayoutVM{
-		Panels: buildPanelVMs(shell, activeContent),
-		Split:  buildSplitVM(activeTab(shell).RootSplit),
+		Viewport: viewportRect(viewport),
+		Panels:   buildPanelVMs(shell, activeContent),
+		Split:    buildSplitVM(activeTab(shell).RootSplit),
 	}
+}
+
+func viewportRect(viewport state.ViewportStore) Rect {
+	if !viewport.Valid {
+		return Rect{}
+	}
+	return Rect{W: viewport.Cols, H: viewport.Rows}
 }
 
 func buildPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
@@ -468,12 +476,4 @@ func cloneHitRegions(regions []HitRegion) []HitRegion {
 	cloned := make([]HitRegion, len(regions))
 	copy(cloned, regions)
 	return cloned
-}
-
-func maxLineWidth(lines []Line) int {
-	width := 0
-	for _, line := range lines {
-		width = maxInt(width, line.Width())
-	}
-	return width
 }

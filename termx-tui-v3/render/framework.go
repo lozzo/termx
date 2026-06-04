@@ -16,8 +16,12 @@ type canvas struct {
 }
 
 func newCanvas(width int, height int) *canvas {
-	width = maxInt(width, minFrameWidth)
-	height = maxInt(height, minFrameHeight)
+	if width <= 0 {
+		width = 1
+	}
+	if height <= 0 {
+		height = 1
+	}
 	rows := make([]string, height)
 	blank := strings.Repeat(" ", width)
 	for i := range rows {
@@ -69,39 +73,23 @@ func (c *canvas) lines() []Line {
 	return lines
 }
 
-type panelLayout struct {
-	Panel       PanelVM
-	Rect        Rect
-	ContentRect Rect
-}
-
 func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
-	width, height := inferViewport(vm)
-	c := newCanvas(width, height)
 	shell := vm.Shell
 	if len(shell.Layout.Panels) == 0 && len(vm.Lines) > 0 {
 		shell = RenderVM{Shell: shell, Lines: vm.Lines, Status: vm.Status}.withFallbackShell()
 	}
+	plan := MeasureLayout(shell, shell.Layout.Viewport)
+	c := newCanvas(plan.Viewport.W, plan.Viewport.H)
 
-	body := Rect{X: 0, Y: 0, W: c.width, H: c.height}
-	if shell.Header.Visible && c.height > 0 {
-		renderHeader(c, shell.Header)
-		body.Y++
-		body.H--
+	if plan.Header.W > 0 && plan.Header.H > 0 {
+		renderHeader(c, shell.Header, plan.Header)
 	}
-	if shell.Footer.Visible && body.H > 0 {
-		body.H--
-		renderFooter(c, shell.Footer, body.Y+body.H)
+	if plan.Footer.W > 0 && plan.Footer.H > 0 {
+		renderFooter(c, shell.Footer, plan.Footer)
 	}
-	if body.H < 1 {
-		body.H = 1
-	}
-	finalCursor := shell.Cursor
 
-	panelLayouts := layoutPanels(shell.Layout, body)
-	hitRegions := make([]HitRegion, 0)
 	layers := make([]Layer, 0)
-	for _, layout := range panelLayouts {
+	for _, layout := range plan.Panels {
 		switch layout.Panel.Presentation {
 		case PanelPresentationSplitLine:
 			renderSplitPanel(c, layout)
@@ -109,29 +97,23 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 			renderCardPanel(c, layout)
 		}
 		contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect)
-		hitRegions = append(hitRegions, translateHitRegions(layout.Panel.Content.HitRegions, layout.ContentRect)...)
 		layers = append(layers, Layer{Kind: LayerPanel, Rect: layout.Rect, Lines: contentResult})
 	}
 
-	overlayLayer := renderOverlay(c, shell.Overlay)
+	overlayLayer := renderOverlay(c, shell.Overlay, plan.Overlay, plan.OverlayContentRect)
 	if overlayLayer.Rect.W > 0 && overlayLayer.Rect.H > 0 {
 		layers = append(layers, overlayLayer)
-		hitRegions = append(hitRegions, HitRegion{Kind: HitRegionOverlay, Rect: overlayLayer.Rect})
-		if shell.Overlay.Opaque {
-			finalCursor = shell.Overlay.Content.Cursor
-		}
 	}
-	toastLayers := renderToasts(c, shell.Toasts)
+	toastLayers := renderToasts(c, shell.Toasts, plan.Toasts)
 	for _, layer := range toastLayers {
 		layers = append(layers, layer)
-		hitRegions = append(hitRegions, HitRegion{Kind: HitRegionToast, Rect: layer.Rect})
 	}
 
 	lines := c.lines()
 	return RenderResult{
 		Content:    lines,
-		Cursor:     finalCursor,
-		HitRegions: hitRegions,
+		Cursor:     plan.Cursor,
+		HitRegions: plan.HitRegions,
 		Metadata:   RenderMetadata{Width: c.width, Height: c.height},
 		Layers:     layers,
 	}
@@ -156,22 +138,7 @@ func (vm RenderVM) withFallbackShell() ShellVM {
 	}
 }
 
-func inferViewport(vm RenderVM) (int, int) {
-	width := vm.Shell.Layout.Viewport.W
-	height := vm.Shell.Layout.Viewport.H
-	if width <= 0 {
-		width = maxInt(defaultWidth, maxLineWidth(lineVMsFromStrings(vm.Lines)))
-	}
-	if height <= 0 {
-		height = defaultHeight
-		if len(vm.Lines) > 0 {
-			height = maxInt(minFrameHeight, len(vm.Lines)+4)
-		}
-	}
-	return width, height
-}
-
-func renderHeader(c *canvas, header HeaderVM) {
+func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	title := header.Title
 	if title == "" {
 		title = "termx"
@@ -180,10 +147,10 @@ func renderHeader(c *canvas, header HeaderVM) {
 	if header.Notice != "" {
 		text += "  " + header.Notice
 	}
-	c.writeText(0, 0, c.width, text)
+	c.writeText(rect.X, rect.Y, rect.W, text)
 }
 
-func renderFooter(c *canvas, footer FooterVM, y int) {
+func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 	mode := footer.Mode
 	if mode == "" {
 		mode = "live"
@@ -192,29 +159,7 @@ func renderFooter(c *canvas, footer FooterVM, y int) {
 	if footer.Hint != "" {
 		text += "  " + footer.Hint
 	}
-	c.writeText(0, y, c.width, text)
-}
-
-func layoutPanels(layout LayoutVM, body Rect) []panelLayout {
-	if body.W <= 0 || body.H <= 0 || len(layout.Panels) == 0 {
-		return nil
-	}
-	rects := splitPanelRects(layout, body)
-	out := make([]panelLayout, len(layout.Panels))
-	for i, panel := range layout.Panels {
-		rect := rects[panel.ID]
-		if rect.W == 0 || rect.H == 0 {
-			rect = body
-		}
-		contentRect := rect
-		if panel.Presentation == PanelPresentationCard {
-			contentRect = Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
-		} else {
-			contentRect = Rect{X: rect.X, Y: rect.Y + 1, W: rect.W, H: maxInt(0, rect.H-1)}
-		}
-		out[i] = panelLayout{Panel: panel, Rect: rect, ContentRect: contentRect}
-	}
-	return out
+	c.writeText(rect.X, rect.Y, rect.W, text)
 }
 
 func splitPanelRects(layout LayoutVM, body Rect) map[string]Rect {
@@ -255,7 +200,7 @@ func assignSplitRects(split SplitVM, rect Rect, out map[string]Rect) {
 	}
 }
 
-func renderCardPanel(c *canvas, layout panelLayout) {
+func renderCardPanel(c *canvas, layout PanelLayoutPlan) {
 	rect := layout.Rect
 	if rect.W <= 0 || rect.H <= 0 {
 		return
@@ -272,7 +217,7 @@ func renderCardPanel(c *canvas, layout panelLayout) {
 	}
 }
 
-func renderSplitPanel(c *canvas, layout panelLayout) {
+func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 	rect := layout.Rect
 	if rect.W <= 0 || rect.H <= 0 {
 		return
@@ -324,44 +269,34 @@ func renderContent(c *canvas, content ContentVM, rect Rect) []Line {
 	return rendered
 }
 
-func renderOverlay(c *canvas, overlay OverlayVM) Layer {
-	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" {
+func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) Layer {
+	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" || rect.W <= 0 || rect.H <= 0 {
 		return Layer{}
 	}
-	width := minInt(c.width-4, 48)
-	height := minInt(c.height-4, 8)
-	if width < 16 || height < 4 {
-		width = maxInt(8, c.width)
-		height = maxInt(3, minInt(c.height, 4))
-	}
-	rect := Rect{X: maxInt(0, (c.width-width)/2), Y: maxInt(0, (c.height-height)/2), W: minInt(width, c.width), H: minInt(height, c.height)}
 	c.drawHLine(rect.X, rect.Y, rect.W, "+", "-", "+")
 	c.drawHLine(rect.X, rect.Y+rect.H-1, rect.W, "+", "-", "+")
 	c.drawVLine(rect.X, rect.Y+1, rect.H-2, "|")
 	c.drawVLine(rect.X+rect.W-1, rect.Y+1, rect.H-2, "|")
 	title := string(overlay.Kind)
 	c.writeText(rect.X+2, rect.Y, maxInt(0, rect.W-4), " "+title+" ")
-	contentLines := renderContent(c, overlay.Content, Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)})
+	contentLines := renderContent(c, overlay.Content, contentRect)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
 }
 
-func renderToasts(c *canvas, toasts []ToastVM) []Layer {
-	if len(toasts) == 0 {
+func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
+	if len(toasts) == 0 || len(rects) == 0 {
 		return nil
 	}
 	layers := make([]Layer, 0, len(toasts))
-	y := 1
-	for i := len(toasts) - 1; i >= 0 && y < c.height; i-- {
-		toast := toasts[i]
-		width := minInt(c.width, 36)
-		if c.width < 40 {
-			width = c.width
+	for i, rect := range rects {
+		toastIndex := len(toasts) - 1 - i
+		if toastIndex < 0 {
+			break
 		}
-		height := 3
-		rect := Rect{X: maxInt(0, c.width-width), Y: y, W: width, H: minInt(height, c.height-y)}
 		if rect.H <= 0 {
 			break
 		}
+		toast := toasts[toastIndex]
 		text := "[" + string(toast.Severity) + "] " + toast.Title
 		if toast.Pending {
 			text += " ..."
@@ -377,22 +312,8 @@ func renderToasts(c *canvas, toasts []ToastVM) []Layer {
 			c.drawHLine(rect.X, rect.Y+2, rect.W, "+", "-", "+")
 		}
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
-		y += rect.H
 	}
 	return layers
-}
-
-func translateHitRegions(regions []HitRegion, origin Rect) []HitRegion {
-	if len(regions) == 0 {
-		return nil
-	}
-	out := make([]HitRegion, len(regions))
-	for i, region := range regions {
-		out[i] = region
-		out[i].Rect.X += origin.X
-		out[i].Rect.Y += origin.Y
-	}
-	return out
 }
 
 func replaceCellRange(row string, x int, width int, value string) string {

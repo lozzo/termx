@@ -175,6 +175,29 @@ func TestRenderVMBuilderBuildsShellPanelToastAndOverlayVM(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderUsesRootViewportAsLayoutTruth(t *testing.T) {
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 37, Rows: 13},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"prompt"},
+		},
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-live",
+			Attached:   true,
+			Cols:       120,
+			Rows:       40,
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	if got, want := vm.Shell.Layout.Viewport, (Rect{W: 37, H: 13}); got != want {
+		t.Fatalf("expected external viewport as layout truth got=%#v want=%#v", got, want)
+	}
+}
+
 func TestRenderVMBuilderUsesLiveSurface(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{
@@ -213,8 +236,8 @@ func TestRendererConsumesVMAndSanitizesLines(t *testing.T) {
 	})
 	frame := result.Frame()
 
-	if len(frame.Lines) != minFrameHeight {
-		t.Fatalf("expected framework minimum frame height %d, got %d", minFrameHeight, len(frame.Lines))
+	if len(frame.Lines) != defaultHeight {
+		t.Fatalf("expected default frame height %d, got %d", defaultHeight, len(frame.Lines))
 	}
 	if !frameContains(frame, "hello world") {
 		t.Fatalf("expected sanitized content inside panel, got %#v", frame.Lines)
@@ -222,7 +245,7 @@ func TestRendererConsumesVMAndSanitizesLines(t *testing.T) {
 	if !frameContains(frame, "copy") {
 		t.Fatalf("expected styled status line to contain text, got %q", frame.Lines[1])
 	}
-	if result.Metadata.Height != minFrameHeight || result.Metadata.Width != defaultWidth {
+	if result.Metadata.Height != defaultHeight || result.Metadata.Width != defaultWidth {
 		t.Fatalf("expected render metadata, got %#v", result.Metadata)
 	}
 	if !result.Cursor.Visible || result.Cursor.Row != 2 || result.Cursor.Col != 3 {

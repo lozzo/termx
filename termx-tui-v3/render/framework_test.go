@@ -29,6 +29,26 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 	assertAllRowsWidth(t, result.Lines(), 40)
 }
 
+func TestFrameworkUsesKnownViewportExactly(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{Visible: true, Title: "narrow"},
+		Footer: FooterVM{Visible: true, Mode: "live"},
+		Layout: LayoutVM{
+			Viewport: Rect{W: 12, H: 6},
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Title:        "shell",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+			}},
+		},
+	}})
+
+	assertFrameSize(t, result, 12, 6)
+	assertAllRowsWidth(t, result.Lines(), 12)
+}
+
 func TestFrameworkRendersSplitLineHorizontalAndVertical(t *testing.T) {
 	panels := []PanelVM{
 		{ID: "pane-1", Title: "shell", Presentation: PanelPresentationSplitLine, Active: false, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("left")}}},
