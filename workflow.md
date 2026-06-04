@@ -177,10 +177,10 @@
 | 24. remote 兼容与隔离结论 | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-shared/` 按需 | remote 命令在默认切换前有明确结论：已迁移到 core-v2 extension，或显式保留 legacy/fallback 边界；不能把未完成 remote 能力伪装成默认已兼容 |
 | 25. 默认 root 入口切换 | 完成 | `termx-cli/`、`Makefile`、`go.work` 按需 | `go run ./termx-cli/cmd/termx` 默认 root TUI 使用 tui-v3；默认 root 不再调用旧 `runTUIv2`；旧 root 若保留必须移动到显式 legacy/fallback 入口；`--help` 可编译运行 |
 | 26. 默认 daemon/attach/control 切换 | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`Makefile` 按需 | `termx daemon`、`termx attach`、`termx new`、`termx ls`、`termx kill`、`termx rm` 默认使用 core-v2/tui-v3；旧路径只允许显式 legacy/fallback；本地单 session 主路径回归通过 |
-| 27. 默认入口回归验收 | 进行中 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`termx-proto/`、`Makefile` 按需 | 默认入口切换后运行 CLI tests、core-v2 tests、tui-v3 tests、protocol tests、`make test-v2-migration` 和默认入口非交互 smoke；remote 未完成项必须在文档和任务结论中显式保留 |
-| 28. 旧默认依赖清理与冻结 | 待开始 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认路径不再 import 旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成；切片 28 完成后本轮默认入口切换目标才算完成 |
+| 27. 默认入口回归验收 | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`termx-proto/`、`Makefile` 按需 | 默认入口切换后运行 CLI tests、core-v2 tests、tui-v3 tests、protocol tests、`make test-v2-migration` 和默认入口非交互 smoke；remote 未完成项必须在文档和任务结论中显式保留 |
+| 28. 旧默认依赖清理与冻结 | 进行中 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认路径不再 import 旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成；切片 28 完成后本轮默认入口切换目标才算完成 |
 
-当前下一步：继续切片 27“默认入口回归验收”。
+当前下一步：继续切片 28“旧默认依赖清理与冻结”。
 
 ## 6. 必做 harness
 
@@ -308,6 +308,7 @@
 - 切片 24 已完成：remote 暂不迁移到 `termx v3` 实验命令组，审计文档明确 legacy/fallback 隔离结论；`termx v3 remote ...` 不挂载，旧 `termx remote ...` 保留，默认切换不得把 remote 伪称为 core-v2 已兼容。
 - 切片 25 已完成：`go run ./termx-cli/cmd/termx` 默认 root 已调用 tui-v3 root runner，自动连接/启动 core-v2 daemon 并进入 tui-v3 attach runtime；旧 root 仅保留为显式 `termx legacy`。
 - 切片 26 已完成：`termx daemon`、`termx attach`、`termx new/ls/kill/rm` 默认入口已切到 core-v2/tui-v3；旧本地 root/daemon/attach/control 仅保留在显式 `termx legacy ...` 下，旧 remote 仍按切片 24 结论保持 legacy/fallback 隔离。
-- 当前正在执行切片 27：`默认入口回归验收`。
-- 当前 CLI 本地默认运行时已完成 root、daemon、attach、control 切换，但仍需切片 27 统一运行默认入口回归验收，并在切片 28 清理和冻结旧默认依赖。
+- 切片 27 已完成：CLI、core-v2、tui-v3、protocol、proto 测试均通过；`make test-v2-migration` 已纳入并通过默认入口非交互 smoke，覆盖默认 `termx daemon/new/ls/kill/rm` 和 `termx --help`。
+- 当前正在执行切片 28：`旧默认依赖清理与冻结`。
+- 当前 CLI 本地默认运行时已完成 root、daemon、attach、control 切换并通过回归验收；仍需切片 28 清理默认路径对旧 `termx-core`/`tuiv2` 的 import 依赖、补依赖守卫并冻结旧目录。
 - 下一阶段目标按切片 18-28 顺序执行：先完成显式 `termx v3` 实验入口，再完成 v3 daemon 连接、本地控制命令、attach/TUI 装配、本地端到端 smoke、配置和 remote 收口，然后切换默认 root/daemon/attach/control，最后清理并冻结旧默认依赖。

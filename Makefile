@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-cli-v3-smoke test-v2-migration
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-default-smoke test-v2-migration
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -25,7 +25,7 @@ help:
 		'  make remote-pair     Build ./bin/termx and generate a termx:// pairing URI from one socket' \
 		'  make remote-open     Ensure local remote is enabled, then print the local remote URL' \
 		'  make remote-status   Show local remote status through ./bin/termx' \
-		'  make test-v2-migration Test termx-core-v2 and termx-tui-v3 migration modules' \
+		'  make test-v2-migration Test v2/v3 migration modules and default CLI smoke' \
 		'' \
 		'Variables:' \
 		'  LOCAL_WEB_ADDR=<host:port>  default 127.0.0.1:18888' \
@@ -106,4 +106,40 @@ test-cli-v3-smoke:
 	"$$tmp/termx" v3 e2e-smoke; \
 	rm -rf "$$tmp"
 
-test-v2-migration: test-core-v2 test-tui-v3 test-cli-v3-smoke
+test-cli-default-smoke:
+	set -e; \
+	tmp="$$(mktemp -d)"; \
+	daemon_pid=""; \
+	cleanup() { \
+		if [ -n "$$daemon_pid" ]; then \
+			kill "$$daemon_pid" 2>/dev/null || true; \
+			wait "$$daemon_pid" 2>/dev/null || true; \
+		fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT; \
+	go build -o "$$tmp/termx" ./termx-cli/cmd/termx; \
+	"$$tmp/termx" --help >/dev/null; \
+	socket="$$tmp/termx-default.sock"; \
+	log="$$tmp/termx-default.log"; \
+	"$$tmp/termx" --socket "$$socket" --log-file "$$log" daemon >/dev/null 2>&1 & \
+	daemon_pid="$$!"; \
+	for _ in $$(seq 1 50); do \
+		[ -S "$$socket" ] && break; \
+		sleep 0.1; \
+	done; \
+	if [ ! -S "$$socket" ]; then \
+		echo "default core-v2 daemon did not create socket" >&2; \
+		exit 1; \
+	fi; \
+	id="$$("$$tmp/termx" --socket "$$socket" --log-file "$$log" new --name default-smoke -- smoke-shell)"; \
+	test -n "$$id"; \
+	"$$tmp/termx" --socket "$$socket" --log-file "$$log" ls | grep "$$id" >/dev/null; \
+	"$$tmp/termx" --socket "$$socket" --log-file "$$log" kill "$$id"; \
+	"$$tmp/termx" --socket "$$socket" --log-file "$$log" rm "$$id"; \
+	if "$$tmp/termx" --socket "$$socket" --log-file "$$log" ls | grep "$$id" >/dev/null; then \
+		echo "removed default smoke terminal is still listed" >&2; \
+		exit 1; \
+	fi
+
+test-v2-migration: test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-default-smoke

@@ -180,6 +180,24 @@ core-v2 必须先实现本地默认路径所需方法，再收口 remote。
 | 切片 27 | 默认入口回归验收 | CLI/core-v2/tui-v3/protocol 相关 tests、`make test-v2-migration`、默认入口 smoke |
 | 切片 28 | 旧默认依赖清理与冻结 | grep 守卫：默认路径不 import `termx-core`/`tuiv2`；文档-only 部分至少 `git diff --check` |
 
+## 7.1 切片 27 默认入口回归验收记录
+
+切片 27 已完成默认入口回归验收，结论如下：
+
+| 验收项 | 命令 | 结论 |
+| --- | --- | --- |
+| CLI tests | `cd termx-cli && go test ./... -count=1` | 通过 |
+| core-v2 tests | `cd termx-core-v2 && go test ./... -count=1` | 通过 |
+| tui-v3 tests | `cd termx-tui-v3 && go test ./... -count=1` | 通过 |
+| protocol tests | `cd internal && go test ./protocol/... -count=1` | 通过 |
+| proto tests | `cd termx-proto && go test ./... -count=1` | 通过 |
+| 迁移 smoke | `make test-v2-migration` | 通过 |
+| 默认入口非交互 smoke | `make test-cli-default-smoke`，并已纳入 `make test-v2-migration` | 通过 |
+
+默认入口 smoke 覆盖 `termx --help`、默认 `termx daemon`、默认 `termx new`、默认 `termx ls`、默认 `termx kill`、默认 `termx rm`。`termx attach` 的真实交互路径仍通过 CLI fake harness 和 tui-v3/core-v2 protocol harness 覆盖，非交互环境只允许明确错误或专用 smoke。
+
+remote 仍按切片 24 结论保持 legacy/fallback 隔离：`termx remote ...` 未迁移到 core-v2 extension，不得被计入本地默认入口完成证据；切片 28 必须继续显式保留或冻结该差异。
+
 ## 8. 非目标与延期项
 
 - 切片 11 不写 runtime 代码，只建立迁移审计基准。
