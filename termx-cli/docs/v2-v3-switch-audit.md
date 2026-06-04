@@ -57,6 +57,19 @@
 | `termx remote status/info/open` | daemon remote protocol methods | core-v2 daemon 暴露 remote extension handler，或显式 legacy/fallback 隔离 | 24 | status/local status 与旧输出兼容或延期记录明确 |
 | `termx remote enable/disable/pair` | CLI remote glue + daemon extension | core-v2 daemon 支撑 local runtime 和 pair，或显式 legacy/fallback 隔离 | 24 | remote CLI 测试通过或延期记录明确；敏感信息不泄漏 |
 
+## 3.1 v3 实验入口路径策略
+
+切片 23 起，`termx v3 ...` 实验入口的路径策略如下：
+
+| 项目 | v3 实验入口策略 | 与旧默认入口差异 |
+| --- | --- | --- |
+| socket | `--socket` 显式值优先；未指定时使用 `XDG_RUNTIME_DIR/termx-v2.sock` 或 `/tmp/termx-v2-$UID.sock` | 旧默认入口使用 `termx.sock` 或 `/tmp/termx-$UID.sock`；v3 在实验期必须避免误连旧 daemon |
+| log | 复用 CLI 全局 `--log-file`、`TERMX_LOG_FILE`、`XDG_STATE_HOME/termx/termx.log`、用户 state dir fallback | 与旧默认入口保持一致，便于对照调试 |
+| config | v3 本地实验入口暂不读取或创建 `termx.yaml` | 旧 TUI root/attach 会通过 `tuiv2/shared` 创建和读取配置；v3 在默认切换前不得为了本地 attach 依赖 `tuiv2/shared` |
+| state | v3 本地实验入口暂不读取或创建 workspace state | 旧 root 会使用 workspace-state；v3 后续如需 state，必须使用新路径 helper 或共享 helper，不得回引旧 TUI 配置层 |
+
+当前保留限制：remote login/config 仍在旧 CLI remote glue 内，切片 24 必须给出迁移或 legacy/fallback 隔离结论。
+
 ## 4. Protocol 方法迁移矩阵
 
 core-v2 必须先实现本地默认路径所需方法，再收口 remote。

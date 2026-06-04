@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -63,6 +65,58 @@ func TestResolveGridStatePathFallsBackToXDGStateHome(t *testing.T) {
 	want := filepath.Join(base, "termx", "grid")
 	if got != want {
 		t.Fatalf("expected grid state path %q, got %q", want, got)
+	}
+}
+
+func TestV3PathPolicy(t *testing.T) {
+	runtimeDir := t.TempDir()
+	stateHome := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	if got := resolveV3Socket(""); got != filepath.Join(runtimeDir, "termx-v2.sock") {
+		t.Fatalf("expected v3 socket in runtime dir, got %q", got)
+	}
+	explicitSocket := filepath.Join(t.TempDir(), "explicit.sock")
+	if got := resolveV3Socket(explicitSocket); got != explicitSocket {
+		t.Fatalf("expected explicit v3 socket to win, got %q", got)
+	}
+	if got := resolveV3LogFilePath(""); got != filepath.Join(stateHome, "termx", "termx.log") {
+		t.Fatalf("expected v3 log path to reuse global log policy, got %q", got)
+	}
+	if got := v3ConfigPathPolicy(); got != "unused" {
+		t.Fatalf("expected v3 config path policy unused, got %q", got)
+	}
+	if got := v3StatePathPolicy(); got != "unused" {
+		t.Fatalf("expected v3 state path policy unused, got %q", got)
+	}
+}
+
+func TestV3AttachDoesNotCreateTuiv2Config(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunAttach := runV3Attach
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Attach = oldRunAttach
+	})
+
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	isInteractiveTerminal = func() bool { return true }
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "attach", "term-1"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 attach returned error: %v", err)
+	}
+	configPath := filepath.Join(configHome, "termx", "termx.yaml")
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("v3 attach must not create tuiv2 config at %s, stat err=%v", configPath, err)
 	}
 }
 

@@ -48,7 +48,7 @@ func v3AttachCommand(socket *string, logFile *string) *cobra.Command {
 			if err := rejectNestedTUI(); err != nil {
 				return err
 			}
-			logPath := resolveLogFilePath(*logFile)
+			logPath := resolveV3LogFilePath(*logFile)
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 			return runV3Attach(ctx, v3AttachConfig{

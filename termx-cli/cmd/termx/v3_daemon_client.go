@@ -101,13 +101,3 @@ func buildStartCoreV2DaemonCommand(path string, logFile string) (*exec.Cmd, erro
 	args = append(args, "v3", "daemon")
 	return exec.Command(exe, args...), nil
 }
-
-func resolveV3Socket(path string) string {
-	if path != "" {
-		return path
-	}
-	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
-		return runtimeDir + "/termx-v2.sock"
-	}
-	return fmt.Sprintf("%s/termx-v2-%d.sock", os.TempDir(), os.Getuid())
-}
