@@ -6,6 +6,8 @@ toolchain go1.26.1
 
 require (
 	github.com/lozzow/termx/termx-core v0.0.0
+	github.com/lozzow/termx/termx-core-v2 v0.0.0
+	github.com/lozzow/termx/termx-tui-v3 v0.0.0
 	github.com/lozzow/termx/tuiv2 v0.0.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.41.0
@@ -79,6 +81,10 @@ require (
 )
 
 replace github.com/lozzow/termx/termx-core => ../termx-core
+
+replace github.com/lozzow/termx/termx-core-v2 => ../termx-core-v2
+
+replace github.com/lozzow/termx/termx-tui-v3 => ../termx-tui-v3
 
 replace github.com/lozzow/termx/tuiv2 => ../tuiv2
 

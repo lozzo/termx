@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-v2-migration
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-cli-v3-smoke test-v2-migration
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -98,4 +98,11 @@ test-core-v2:
 test-tui-v3:
 	cd termx-tui-v3 && go test ./... -count=1
 
-test-v2-migration: test-core-v2 test-tui-v3
+test-cli-v3-smoke:
+	set -e; \
+	tmp="$$(mktemp -d)"; \
+	go build -o "$$tmp/termx" ./termx-cli/cmd/termx; \
+	"$$tmp/termx" v3 smoke; \
+	rm -rf "$$tmp"
+
+test-v2-migration: test-core-v2 test-tui-v3 test-cli-v3-smoke

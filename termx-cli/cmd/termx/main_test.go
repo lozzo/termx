@@ -13,10 +13,12 @@ import (
 	"time"
 
 	termx "github.com/lozzow/termx/termx-core"
+	corev2 "github.com/lozzow/termx/termx-core-v2"
 	"github.com/lozzow/termx/termx-remote/discovery"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	"github.com/lozzow/termx/termx-shared/transport"
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/spf13/cobra"
 )
@@ -230,6 +232,108 @@ func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
 	}
 	if gotCfg.ConfigPath != configPath {
 		t.Fatalf("expected explicit config path %q, got %q", configPath, gotCfg.ConfigPath)
+	}
+}
+
+func TestV3CommandGroupDoesNotChangeDefaultTUIRoute(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunv2 := runTUIv2
+	oldRunSmoke := runTUIv3Smoke
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runTUIv2 = oldRunv2
+		runTUIv3Smoke = oldRunSmoke
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	calledV2 := false
+	calledV3Smoke := false
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		calledV2 = true
+		return nil
+	}
+	runTUIv3Smoke = func(ctx context.Context) (render.Frame, error) {
+		calledV3Smoke = true
+		return render.Frame{}, nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !calledV2 {
+		t.Fatal("expected default root command to keep routing to tuiv2")
+	}
+	if calledV3Smoke {
+		t.Fatal("default root command must not run tui-v3 smoke")
+	}
+}
+
+func TestV3SmokeRunsTUIv3Smoke(t *testing.T) {
+	oldRunSmoke := runTUIv3Smoke
+	t.Cleanup(func() {
+		runTUIv3Smoke = oldRunSmoke
+	})
+
+	called := false
+	runTUIv3Smoke = func(ctx context.Context) (render.Frame, error) {
+		called = true
+		return render.Frame{Lines: []string{"v3-line"}}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "smoke"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected v3 smoke to call tui-v3 smoke runner")
+	}
+	text := out.String()
+	if !strings.Contains(text, "termx v3 smoke ok") ||
+		!strings.Contains(text, "termx-tui-v3") ||
+		!strings.Contains(text, "v3-line") {
+		t.Fatalf("unexpected v3 smoke output:\n%s", text)
+	}
+}
+
+func TestV3DaemonUsesCoreV2Server(t *testing.T) {
+	oldNewCoreV2Server := newCoreV2Server
+	oldNewServer := newServer
+	t.Cleanup(func() {
+		newCoreV2Server = oldNewCoreV2Server
+		newServer = oldNewServer
+	})
+
+	fakeV3 := &fakeCoreV2Server{}
+	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
+		fakeV3.newServerCalls++
+		return fakeV3
+	}
+	newServer = func(opts ...termx.ServerOption) termxServer {
+		t.Fatal("termx v3 daemon must not construct legacy termx-core server")
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if fakeV3.newServerCalls != 1 || fakeV3.listenCalls != 1 || fakeV3.shutdownCalls != 1 {
+		t.Fatalf("unexpected core-v2 fake server calls: new=%d listen=%d shutdown=%d", fakeV3.newServerCalls, fakeV3.listenCalls, fakeV3.shutdownCalls)
 	}
 }
 
@@ -1836,6 +1940,22 @@ func (s *fakeTermxServer) Events(context.Context, ...termx.EventsOption) <-chan 
 	ch := make(chan termx.Event)
 	close(ch)
 	return ch
+}
+
+type fakeCoreV2Server struct {
+	newServerCalls int
+	listenCalls    int
+	shutdownCalls  int
+}
+
+func (s *fakeCoreV2Server) ListenAndServe(context.Context) error {
+	s.listenCalls++
+	return nil
+}
+
+func (s *fakeCoreV2Server) Shutdown(context.Context) error {
+	s.shutdownCalls++
+	return nil
 }
 
 func (s *fakeTermxServer) StorageGet(context.Context, termx.StorageGetRequest) (termx.StorageEntry, error) {
