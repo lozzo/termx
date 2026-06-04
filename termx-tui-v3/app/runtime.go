@@ -79,6 +79,36 @@ type Reducer func(state.Root, Msg) (state.Root, []Effect)
 // RenderFunc 把 reducer-owned state 投影成 frame。
 type RenderFunc func(state.Root) render.Frame
 
+type handledEffect struct{}
+
+func (handledEffect) isEffect() {}
+
+// ComposeReducers 按顺序执行多个 reducer，并合并它们产生的 effects。
+func ComposeReducers(reducers ...Reducer) Reducer {
+	return func(root state.Root, msg Msg) (state.Root, []Effect) {
+		var effects []Effect
+		for _, reducer := range reducers {
+			if reducer == nil {
+				continue
+			}
+			next, nextEffects := reducer(root, msg)
+			root = next
+			handled := false
+			for _, effect := range nextEffects {
+				if _, ok := effect.(handledEffect); ok {
+					handled = true
+					continue
+				}
+				effects = append(effects, effect)
+			}
+			if handled {
+				break
+			}
+		}
+		return root, effects
+	}
+}
+
 // TerminalHost 是宿主 TTY 边界。真实实现负责 raw mode、输入和 FrameSink；
 // fake 实现只用于 harness。
 type TerminalHost interface {

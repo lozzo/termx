@@ -5,117 +5,333 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
-type enterCopyModeMsg struct {
-	TerminalID string
-	Cols       int
-}
-
-func (enterCopyModeMsg) isMsg() {}
-
-type historyResultMsg struct {
-	Result services.HistoryResult
-	Err    error
-}
-
-func (historyResultMsg) isMsg() {}
-
-func TestRuntimeServiceHistoryLatestE2E(t *testing.T) {
+func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 	core := &services.FakeCoreClient{
-		LatestResponses: []services.HistoryResult{{
-			Window: state.HistoryWindow{
-				TerminalID: "term-1",
-				Token:      "tok-1",
-				Op:         state.HistoryWindowReplace,
-				Cols:       80,
-				Rows:       []state.HistoryRow{{Text: "history-row", LineID: 42}},
-				Lines:      []state.HistoryLineSpan{{LineID: 42, StartRow: 0, EndRow: 0}},
-				Generation: 9,
-				Boundary:   state.HistoryBoundary{FirstLineID: 42, LastLineID: 42},
-			},
-		}},
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			80,
+			7,
+			[]state.HistoryRow{{Text: "new", LineID: 20}},
+		)}},
+		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowPrepend,
+			"term-1",
+			"tok-1",
+			80,
+			7,
+			[]state.HistoryRow{{Text: "old", LineID: 10}},
+		)}},
 	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 20}
+	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 20}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].TerminalID != "term-1" || core.LatestRequests[0].Cols != 80 {
+		t.Fatalf("expected latest request, got %#v", core.LatestRequests)
+	}
+	if runtime.State().History.Token != "tok-1" || runtime.State().CopyMode.BoundToken != "tok-1" {
+		t.Fatalf("state did not accept latest response %#v", runtime.State())
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send older page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain older: %v", err)
+	}
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("expected older request, got %#v", core.OlderRequests)
+	}
+	olderReq := core.OlderRequests[0]
+	if olderReq.Token != "tok-1" || olderReq.Generation != 7 || olderReq.Boundary.LastLineID != 20 {
+		t.Fatalf("unexpected older request %#v", olderReq)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"old", "new"}) {
+		t.Fatalf("unexpected history rows %v", got)
+	}
+	if runtime.State().CopyMode.ViewportTop != 1 {
+		t.Fatalf("expected viewport shifted by older prepend, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if len(last.Lines) == 0 || last.Lines[0] != "old" {
+		t.Fatalf("expected latest rendered copy frame to start with older row, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			80,
+			7,
+			[]state.HistoryRow{{Text: "new", LineID: 20}},
+		)}},
+		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowPrepend,
+			"term-1",
+			"tok-1",
+			80,
+			7,
+			[]state.HistoryRow{{Text: "old", LineID: 10}},
+		)}},
+	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 20}
+	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 20}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		t.Fatalf("send wheel latest: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		t.Fatalf("send wheel older: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain older: %v", err)
+	}
+	if len(core.LatestRequests) != 1 || len(core.OlderRequests) != 1 {
+		t.Fatalf("unexpected history requests latest=%#v older=%#v", core.LatestRequests, core.OlderRequests)
+	}
+}
+
+func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			80,
+			7,
+			[]state.HistoryRow{{Text: "copy-row", LineID: 20}},
+		)}},
+	}
+	host := NewFakeTerminalHost(8)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core, Rows: 20},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
+		t.Fatalf("send terminal char: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain terminal input: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "x" {
+		t.Fatalf("expected terminal input, got %#v", terminal.Inputs)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy mode: %v", err)
+	}
+	if len(core.LatestRequests) != 1 {
+		t.Fatalf("expected history latest request, got %#v", core.LatestRequests)
+	}
+	if len(terminal.Inputs) != 1 {
+		t.Fatalf("copy mode page up should not be terminal input %#v", terminal.Inputs)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain esc: %v", err)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("expected copy mode to exit %#v", runtime.State().CopyMode)
+	}
+	if len(terminal.Inputs) != 1 {
+		t.Fatalf("copy mode esc should not be terminal input %#v", terminal.Inputs)
+	}
+}
+
+func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
+	clipboard := &services.FakeClipboardService{}
 	host := NewFakeTerminalHost(4)
+	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, clipboard)
+	runtime.state.History = historyStoreForCopySelection()
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  80,
+	}
+
+	if err := runtime.Post(CopyModeSetMarkMsg{Position: state.CopyPosition{Row: 0, Col: 1}}); err != nil {
+		t.Fatalf("post mark: %v", err)
+	}
+	if err := runtime.Post(CopyModeMoveCursorMsg{Position: state.CopyPosition{Row: 1, Col: 2}}); err != nil {
+		t.Fatalf("post move: %v", err)
+	}
+	if err := runtime.Post(CopyModeCopySelectionMsg{}); err != nil {
+		t.Fatalf("post copy: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "lpha\nbe" {
+		t.Fatalf("unexpected clipboard writes %#v", clipboard.Writes)
+	}
+}
+
+func TestSelectedTextSupportsReversedMultiRowSelection(t *testing.T) {
+	history := historyStoreForCopySelection()
+	copyMode := state.CopyModeStore{
+		Active: true,
+		Selection: &state.CopySelection{
+			Anchor: state.CopyPosition{Row: 1, Col: 2},
+			Focus:  state.CopyPosition{Row: 0, Col: 1},
+		},
+	}
+	if got := SelectedText(history, copyMode); got != "lpha\nbe" {
+		t.Fatalf("unexpected selected text %q", got)
+	}
+}
+
+func TestSelectedTextUsesRuneColumns(t *testing.T) {
+	history := state.HistoryStore{
+		Rows: []state.HistoryRow{{Text: "你好abc", LineID: 1}},
+	}
+	copyMode := state.CopyModeStore{
+		Active: true,
+		Selection: &state.CopySelection{
+			Anchor: state.CopyPosition{Row: 0, Col: 1},
+			Focus:  state.CopyPosition{Row: 0, Col: 4},
+		},
+	}
+	if got := SelectedText(history, copyMode); got != "好ab" {
+		t.Fatalf("unexpected selected text %q", got)
+	}
+}
+
+func TestCopyModeRejectsStaleHistoryResult(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime.state.History = state.HistoryStore{
+		Pending: &state.HistoryPendingRequest{ID: 2, Kind: state.HistoryRequestOlder, TerminalID: "term-1", Cols: 80, Token: "tok-1", Generation: 7},
+	}
+
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{
+		RequestID: 2,
+		Window:    historyWindowForApp(state.HistoryWindowPrepend, "term-1", "stale", 80, 7, []state.HistoryRow{{Text: "old", LineID: 1}}),
+	}}); err != nil {
+		t.Fatalf("post stale result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if runtime.State().History.Token != "" {
+		t.Fatalf("stale response should not mutate history %#v", runtime.State().History)
+	}
+	if runtime.State().Session.LastError == "" {
+		t.Fatalf("expected stale error in state %#v", runtime.State())
+	}
+}
+
+func newCopyModeRuntime(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService) *AppRuntime {
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-
-	runtime := NewAppRuntime(
-		state.Root{},
-		func(root state.Root, msg Msg) (state.Root, []Effect) {
-			switch msg := msg.(type) {
-			case enterCopyModeMsg:
-				requestID := state.RequestID(1)
-				var err error
-				root.History, err = root.History.BeginLatest(state.HistoryPendingRequest{
-					ID:         requestID,
-					TerminalID: msg.TerminalID,
-					Cols:       msg.Cols,
-				})
-				if err != nil {
-					t.Fatalf("begin latest: %v", err)
-				}
-				root.CopyMode = root.CopyMode.BindLatest(msg.TerminalID, requestID, msg.Cols)
-				return root, []Effect{FuncEffect{
-					Run: func(ctx context.Context) Msg {
-						result, err := core.HistoryLatest(ctx, services.HistoryLatestRequest{
-							RequestID:  services.RequestID(requestID),
-							TerminalID: msg.TerminalID,
-							Cols:       msg.Cols,
-							Rows:       20,
-						})
-						return historyResultMsg{Result: result, Err: err}
-					},
-				}}
-			case historyResultMsg:
-				if msg.Err != nil {
-					t.Fatalf("history result: %v", msg.Err)
-				}
-				nextHistory, _, err := root.History.ApplyWindow(state.RequestID(msg.Result.RequestID), msg.Result.Window)
-				if err != nil {
-					t.Fatalf("apply history: %v", err)
-				}
-				root.History = nextHistory
-				root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window)
-				return root, nil
-			default:
-				return root, nil
-			}
+	return NewAppRuntime(
+		state.Root{
+			Session: state.TerminalSessionStore{
+				TerminalID: "term-1",
+				Attached:   true,
+				Cols:       80,
+				Rows:       24,
+			},
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-1",
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"live"},
+			},
 		},
+		NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
 		},
 		host,
 		NewSyncEffectRunner(),
 	)
+}
 
-	if err := runtime.Post(enterCopyModeMsg{TerminalID: "term-1", Cols: 80}); err != nil {
-		t.Fatalf("post enter copy mode: %v", err)
+func historyWindowForApp(
+	op state.HistoryWindowOp,
+	terminalID string,
+	token string,
+	cols int,
+	generation uint64,
+	rows []state.HistoryRow,
+) state.HistoryWindow {
+	firstLine := uint64(0)
+	lastLine := uint64(0)
+	if len(rows) > 0 {
+		firstLine = rows[0].LineID
+		lastLine = rows[len(rows)-1].LineID
 	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain: %v", err)
-	}
-
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].TerminalID != "term-1" {
-		t.Fatalf("expected latest service request, got %#v", core.LatestRequests)
-	}
-	if runtime.State().History.Token != "tok-1" || runtime.State().CopyMode.BoundToken != "tok-1" {
-		t.Fatalf("state did not accept history response: %#v", runtime.State())
-	}
-	if got := firstLines(host.Frames()); !reflect.DeepEqual(got, []string{"live surface pending", "history-row"}) {
-		t.Fatalf("expected pending frame then copy frame, got %v", got)
+	return state.HistoryWindow{
+		TerminalID: terminalID,
+		Token:      token,
+		Op:         op,
+		Cols:       cols,
+		Rows:       rows,
+		Lines:      []state.HistoryLineSpan{{LineID: firstLine, StartRow: 0, EndRow: len(rows) - 1}},
+		Generation: generation,
+		Boundary:   state.HistoryBoundary{FirstLineID: firstLine, LastLineID: lastLine},
 	}
 }
 
-func firstLines(frames []render.Frame) []string {
-	lines := make([]string, 0, len(frames))
-	for _, frame := range frames {
-		if len(frame.Lines) > 0 {
-			lines = append(lines, frame.Lines[0])
-		}
+func historyStoreForCopySelection() state.HistoryStore {
+	return state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		Rows: []state.HistoryRow{
+			{Text: "alpha", LineID: 10},
+			{Text: "beta", LineID: 11},
+		},
 	}
-	return lines
+}
+
+func historyRowTexts(rows []state.HistoryRow) []string {
+	texts := make([]string, len(rows))
+	for i, row := range rows {
+		texts[i] = row.Text
+	}
+	return texts
 }

@@ -167,14 +167,14 @@
 | 14. core-v2 protocol service 与 HistoryWindow 实服务 | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` | core-v2 protocol session 已服务 create/get/list/set metadata/restart/remove/events/input/resize/history.window；HistoryWindow 来自 `HistoryTrack` logical line truth，包含 token/generation/cursor/boundary 与 stale guard；协议测试通过 |
 | 15. tui-v3 真实 TerminalHost 与 FrameSink | 完成 | `termx-tui-v3/` | 建立真实 raw mode、输入读取、窗口尺寸、帧输出、恢复终端状态和取消/退出 harness；不得引入 Bubble Tea runtime |
 | 16. tui-v3 本地 live app 主路径 | 完成 | `termx-tui-v3/`、`termx-cli/` 按需 | attach 本地 session 后可渲染 live surface、发送键盘输入、处理 resize、显示基础状态与错误；fake 和最小真实协议 harness 通过 |
-| 17. tui-v3 copy mode 主路径 | 进行中 | `termx-tui-v3/`、`internal/protocol/` 按需 | page up/down、鼠标滚轮、older prepend、latest replace、selection、copy、stale response guard 在真实 core client 路径通过 |
-| 18. CLI v3 实验入口 | 待开始 | `termx-cli/`、`Makefile` | 增加显式 v3 实验入口，能启动 core-v2 daemon 并运行 tui-v3；默认 `termx` 仍保持旧入口；CLI 测试和迁移 smoke 通过 |
+| 17. tui-v3 copy mode 主路径 | 完成 | `termx-tui-v3/`、`internal/protocol/` 按需 | page up/down、鼠标滚轮、older prepend、latest replace、selection、copy、stale response guard 在真实 core client 路径通过 |
+| 18. CLI v3 实验入口 | 进行中 | `termx-cli/`、`Makefile` | 增加显式 v3 实验入口，能启动 core-v2 daemon 并运行 tui-v3；默认 `termx` 仍保持旧入口；CLI 测试和迁移 smoke 通过 |
 | 19. CLI 本地命令等价迁移 | 待开始 | `termx-cli/`、`termx-core-v2/`、`internal/protocol/` | `new`、`ls`、`attach`、`kill`、`rm`、`daemon` 本地路径在 v3 实验入口下等价可用；自动启动 daemon、socket、日志、配置路径行为有测试 |
 | 20. remote 与配置兼容收口 | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-shared/` 按需 | remote runtime、配置加载、认证存储、日志、workspace state 与 core-v2 默认路径兼容；不能阻塞本地默认切换的问题必须显式记录 |
 | 21. 默认入口切换 | 待开始 | `termx-cli/`、`Makefile`、`go.work` 按需 | `go run ./termx-cli/cmd/termx`、`termx attach`、`termx daemon` 默认使用 core-v2/tui-v3；旧入口若保留必须显式命名；回归测试通过 |
 | 22. 旧默认依赖清理与冻结 | 待开始 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认依赖不再包含旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成 |
 
-当前下一步：继续切片 17“tui-v3 copy mode 主路径”。
+当前下一步：继续切片 18“CLI v3 实验入口”。
 
 ## 6. 必做 harness
 
@@ -288,6 +288,7 @@
 - 切片 14 已完成：`termx-core-v2` protocol session 已服务控制面、输入、resize、events 和 `history.window`，并从 `HistoryTrack` logical line truth 返回 authoritative window。
 - 切片 15 已完成：`termx-tui-v3/terminalhost` 已建立真实 raw mode、输入读取、窗口尺寸、frame sink 输出、终端状态恢复和取消退出 harness，且未引入 Bubble Tea runtime。
 - 切片 16 已完成：`termx-tui-v3` 已建立 reducer-owned live surface/session、`NewLiveRuntime`、attach/render/input/resize/error 主路径、terminal service fake，以及真实 protocol client 的 attach/input/ensure_resize harness。
-- 当前正在执行切片 17：`tui-v3 copy mode 主路径`。
+- 切片 17 已完成：`termx-tui-v3` 已建立 copy mode app reducer、page up/鼠标滚轮 latest/older 主路径、older prepend、selection/copy、stale response guard、真实 protocol history.window client harness，以及 live/copy reducer 组合入口。
+- 当前正在执行切片 18：`CLI v3 实验入口`。
 - 当前 CLI 默认运行时尚未切换：`go run ./termx-cli/cmd/termx` 仍通过旧 `termx-core` daemon 和旧 `tuiv2` TUI 工作。
 - 下一阶段目标不是扩展 smoke，而是完成真实 TUI runtime、v3 实验入口、本地命令等价迁移、remote/config 收口、默认入口切换和旧默认依赖冻结。

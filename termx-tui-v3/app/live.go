@@ -33,6 +33,22 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	}, host, runner)
 }
 
+// NewInteractiveRuntime 组合 live 与 copy mode 主路径。copy mode 会消费
+// page up、wheel、selection/copy 等交互；普通 terminal input 仍交给 live path。
+func NewInteractiveRuntime(
+	initial state.Root,
+	host TerminalHost,
+	runner EffectRunner,
+	live LiveDeps,
+	copyMode CopyModeDeps,
+) *AppRuntime {
+	builder := render.NewRenderVMBuilder()
+	renderer := render.NewRenderer(render.DefaultTheme())
+	return NewAppRuntime(initial, ComposeReducers(NewCopyModeReducer(copyMode), NewLiveReducer(live)), func(root state.Root) render.Frame {
+		return renderer.Render(builder.Build(root))
+	}, host, runner)
+}
+
 type LiveAttachMsg struct {
 	Config LiveConfig
 }
@@ -150,6 +166,9 @@ func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, 
 		return setLiveError(root, "terminal is not attached"), nil
 	}
 	intent := input.Route(msg.Event, root.CopyMode.Active)
+	if root.CopyMode.Active && intent.Kind != input.IntentTerminalInput {
+		return root, nil
+	}
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
 		return root, nil
 	}

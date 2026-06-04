@@ -54,6 +54,31 @@ func TestAppPackageDoesNotImportBubbleTea(t *testing.T) {
 	}
 }
 
+func TestComposeReducersStopsAtHandledEffect(t *testing.T) {
+	var seen []string
+	reducer := ComposeReducers(
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			seen = append(seen, "first")
+			return root.Advance(), []Effect{handledEffect{}}
+		},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			seen = append(seen, "second")
+			return root.Advance(), []Effect{NoopEffect{}}
+		},
+	)
+
+	root, effects := reducer(state.Root{}, NoopMsg{})
+	if root.Generation != 1 {
+		t.Fatalf("expected only first reducer to run, got generation %d", root.Generation)
+	}
+	if !reflect.DeepEqual(seen, []string{"first"}) {
+		t.Fatalf("unexpected reducer sequence %v", seen)
+	}
+	if len(effects) != 0 {
+		t.Fatalf("handled marker must not leak as effect %#v", effects)
+	}
+}
+
 func TestAppRuntimeProcessesMessagesInOrderAndRenders(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	var seen []string
