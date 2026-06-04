@@ -24,6 +24,7 @@ const (
 	HitRegionStatus     HitRegionKind = "status"
 	HitRegionOverlay    HitRegionKind = "overlay"
 	HitRegionToast      HitRegionKind = "toast"
+	HitRegionToastClose HitRegionKind = "toast-close"
 )
 
 type Rect struct {

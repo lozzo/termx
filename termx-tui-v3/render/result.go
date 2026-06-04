@@ -46,6 +46,8 @@ const (
 	StyleSuccess StyleToken = "success"
 	StyleWarning StyleToken = "warning"
 	StyleDanger  StyleToken = "danger"
+	StyleOverlay StyleToken = "overlay"
+	StyleToast   StyleToken = "toast"
 )
 
 type Line struct {
@@ -203,6 +205,10 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(theme.Warning, false)
 	case StyleDanger:
 		return sgrForeground(theme.Danger, false)
+	case StyleOverlay:
+		return sgrForegroundBackground(theme.ChromeFG, theme.OverlayBG, false)
+	case StyleToast:
+		return sgrForegroundBackground(theme.ChromeFG, theme.ToastBG, false)
 	default:
 		return "\x1b[1m"
 	}

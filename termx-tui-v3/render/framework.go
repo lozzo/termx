@@ -51,7 +51,8 @@ func (c *canvas) writeText(x int, y int, width int, text string) {
 }
 
 func (c *canvas) writeTextStyled(x int, y int, width int, text string, style StyleToken, owner string, layer LayerKind) {
-	c.writeLine(x, y, width, Line{Cells: []Cell{{Text: text, Width: DisplayWidth(text), Style: style, Safe: true}}}, owner, layer)
+	fitted := FitText(text, width)
+	c.writeLine(x, y, width, Line{Cells: []Cell{{Text: fitted, Width: DisplayWidth(fitted), Style: style, Safe: true}}}, owner, layer)
 }
 
 func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, layer LayerKind) {
@@ -114,6 +115,15 @@ func (c *canvas) mergeStyledBoxCell(x int, y int, connections uint8, style Style
 
 func (c *canvas) drawRoundedBox(rect Rect) {
 	c.drawBox(rect, roundedBoxStyle)
+}
+
+func (c *canvas) fillStyledRect(rect Rect, style StyleToken, owner string, layer LayerKind) {
+	if rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	for y := rect.Y; y < rect.Y+rect.H; y++ {
+		c.writeTextStyled(rect.X, y, rect.W, "", style, owner, layer)
+	}
 }
 
 func (c *canvas) drawBox(rect Rect, style boxStyle) {
@@ -613,9 +623,11 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" || rect.W <= 0 || rect.H <= 0 {
 		return Layer{}
 	}
-	c.drawRoundedBox(rect)
+	owner := "overlay:" + string(overlay.Kind)
+	c.fillStyledRect(rect, StyleOverlay, owner, LayerOverlay)
+	c.drawStyledBox(rect, roundedBoxStyle, StyleOverlay, owner, LayerOverlay)
 	title := string(overlay.Kind)
-	c.writeText(rect.X+2, rect.Y, maxInt(0, rect.W-4), " "+title+" ")
+	c.writeTextStyled(rect.X+2, rect.Y, maxInt(0, rect.W-4), " "+title+" ", StyleAccent, owner, LayerOverlay)
 	contentLines := renderContent(c, overlay.Content, contentRect)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
 }
@@ -641,13 +653,32 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 		if c.width >= 40 && toast.Body != "" {
 			text += " " + toast.Body
 		}
-		c.drawRoundedBox(rect)
+		owner := "toast:" + toast.ID
+		c.fillStyledRect(rect, StyleToast, owner, LayerToast)
+		c.drawStyledBox(rect, roundedBoxStyle, toastSeverityStyle(toast.Severity), owner, LayerToast)
 		if rect.H > 1 {
-			c.writeText(rect.X+1, rect.Y+1, maxInt(0, rect.W-2), text)
+			textWidth := minInt(DisplayWidth(text), maxInt(0, rect.W-5))
+			c.writeTextStyled(rect.X+1, rect.Y+1, textWidth, text, toastSeverityStyle(toast.Severity), owner, LayerToast)
+			if rect.W >= 8 {
+				c.writeTextStyled(rect.X+rect.W-4, rect.Y+1, 3, "[×]", StyleMuted, owner, LayerToast)
+			}
 		}
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
 	}
 	return layers
+}
+
+func toastSeverityStyle(severity ToastSeverity) StyleToken {
+	switch severity {
+	case ToastSuccess:
+		return StyleSuccess
+	case ToastWarning:
+		return StyleWarning
+	case ToastError:
+		return StyleDanger
+	default:
+		return StyleInfo
+	}
 }
 
 func minInt(left int, right int) int {

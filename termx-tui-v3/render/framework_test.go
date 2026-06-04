@@ -295,8 +295,14 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if !linesContain(result.Lines(), "[warning] warn 🚀 ... 世界") {
 		t.Fatalf("expected toast, got %#v", result.Lines())
 	}
+	if !linesContain(result.Lines(), "[×]") {
+		t.Fatalf("expected toast close action token, got %#v", result.Lines())
+	}
 	if firstLayer(t, result, LayerOverlay).Rect.W == 0 || firstLayer(t, result, LayerToast).Rect.W == 0 {
 		t.Fatalf("expected overlay and toast layers, got %#v", result.Layers)
+	}
+	if !linesContain(result.ANSILines(), "\x1b[38;2;240;196;92m") || !linesContain(result.ANSILines(), "\x1b[48;2;17;22;20m") || !linesContain(result.ANSILines(), "\x1b[48;2;20;24;22m") {
+		t.Fatalf("expected styled warning toast and overlay ANSI, got %#v", result.ANSILines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 50)
 }
