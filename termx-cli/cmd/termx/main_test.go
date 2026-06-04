@@ -1044,6 +1044,42 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	}
 }
 
+func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
+	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "resize-demo",
+		Command: []string{"demo-shell"},
+		Size:    protocol.Size{Cols: 100, Rows: 30},
+	}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	_ = server
+	host := app.NewFakeTerminalHost(8)
+	host.SetSize(100, 30)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host)
+
+	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
+		TerminalID:   "term-1",
+		Cols:         100,
+		Rows:         30,
+		Mode:         "collaborator",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "test-surface",
+		ViewID:       "test-view",
+	}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 26 {
+		t.Fatalf("runtime must correct protocol terminal size to content rect, got %#v", runtime.State().Session)
+	}
+}
+
 func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 	var out bytes.Buffer
 	cmd := newRootCmd()

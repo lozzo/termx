@@ -17,8 +17,8 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 		AttachResult: services.TerminalAttachResult{
 			TerminalID: "term-1",
 			Channel:    9,
-			Cols:       80,
-			Rows:       24,
+			Cols:       78,
+			Rows:       22,
 			CanResize:  true,
 		},
 	}
@@ -69,6 +69,160 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 	last := lastFrame(t, host.Frames())
 	if len(last.Lines) == 0 || !frameContains(last, "$ echo hi") {
 		t.Fatalf("expected live surface frame, got %#v", last.Lines)
+	}
+}
+
+func TestLiveAttachUsesCardContentRectForInitialTerminalSize(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7}}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(terminal.Attaches) != 1 {
+		t.Fatalf("expected one attach, got %#v", terminal.Attaches)
+	}
+	if got := terminal.Attaches[0]; got.Cols != 78 || got.Rows != 20 {
+		t.Fatalf("attach must use card content rect, got %#v", got)
+	}
+}
+
+func TestAttachResultWithExistingSizeIsCorrectedToContentRect(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24}}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := terminal.Attaches[0]; got.Cols != 78 || got.Rows != 20 {
+		t.Fatalf("attach request must use content rect, got %#v", got)
+	}
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("expected attach result correction resize, got %#v", terminal.Resizes)
+	}
+	if got := terminal.Resizes[0]; got.Cols != 78 || got.Rows != 20 {
+		t.Fatalf("resize correction must use content rect, got %#v", got)
+	}
+}
+
+func TestHostResizeUsesActiveContentRectAndDeduplicates(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send duplicate resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain resize: %v", err)
+	}
+
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("expected one deduplicated content resize, got %#v", terminal.Resizes)
+	}
+	if got := terminal.Resizes[0]; got.Cols != 98 || got.Rows != 36 {
+		t.Fatalf("host resize must use card content rect, got %#v", got)
+	}
+}
+
+func TestHeaderFooterHideResizesTerminalWithReclaimedContentRows(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 6}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetHeaderVisibleMsg{Visible: false}); err != nil {
+		t.Fatalf("post header hide: %v", err)
+	}
+	if err := runtime.Post(ShellSetFooterVisibleMsg{Visible: false}); err != nil {
+		t.Fatalf("post footer hide: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain chrome resize: %v", err)
+	}
+
+	if len(terminal.Resizes) != 2 {
+		t.Fatalf("expected one resize per chrome layout change, got %#v", terminal.Resizes)
+	}
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 78 || got.Rows != 22 {
+		t.Fatalf("hidden header/footer must reclaim content rows, got %#v", got)
+	}
+}
+
+func TestSplitPresentationUsesSplitContentRectForResize(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post split presentation: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("expected presentation change resize, got %#v", terminal.Resizes)
+	}
+	if got := terminal.Resizes[0]; got.Cols != 80 || got.Rows != 21 {
+		t.Fatalf("split line content rect should not deduct side borders, got %#v", got)
 	}
 }
 
