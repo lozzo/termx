@@ -15,6 +15,7 @@
 - panel、floating、overlay、toast、header/footer、content slot 如何组合。
 - 哪些 `tuiv2` 产品行为可以保留，哪些实现结构不能迁入。
 - 后续应如何分阶段落地，避免先写临时线框。
+- styled chrome renderer 如何在不复制 `tuiv2` 旧结构的前提下，达到 `tuiv2` 截图级视觉等级。
 
 本文档不回答：
 
@@ -109,7 +110,9 @@ FrameSink
 
 ```text
 RenderResult
-  Lines
+  Styled cells / styled lines
+  Plain text adapter
+  ANSI frame adapter
   Cursor
   Blink
   HitRegions
@@ -117,6 +120,8 @@ RenderResult
 ```
 
 字符串输出、测试输出、真实 TTY 输出都只是 `RenderResult` 的适配层。
+
+styled chrome renderer 阶段开始后，`RenderResult` 不能在主路径中过早压成纯 `[]string`。真实 TTY 输出必须通过 ANSI frame adapter 保留 foreground、background、bold、reset、cursor 和必要 metadata。
 
 不允许再次出现 `RenderFrame()` 和 `RenderFrameLines()` 两条独立主流程。
 
@@ -205,6 +210,8 @@ render framework 消费 VM，产出 `RenderResult`。
 - 全局 hit region 汇总。
 - cursor 的最终归属。
 - 宽窄屏退化。
+- styled chrome cell 合成。
+- ANSI frame serialization 之前的 style 保真。
 
 它不负责：
 
@@ -241,6 +248,58 @@ content renderer 不知道：
 - 其他 panel 的位置。
 - frame sink。
 - core client。
+
+content renderer 可以产出 styled content，但只能在 framework 分配的 content rect 内生效。content renderer 不允许直接覆盖 pane border、shell chrome、overlay 或 toast chrome。
+
+## 5.5 Styled Chrome Renderer
+
+styled chrome renderer 是当前新阶段正式方向。
+
+它的目标不是“出现 Unicode 线框”，而是让默认 TUI 的 shell chrome、pane chrome、边框、状态栏、toast 和 overlay 达到 `tuiv2` 截图级视觉等级。
+
+必须具备：
+
+- styled cell / styled line / styled layer primitive。
+- foreground、background、bold、muted、accent、semantic severity 等 style token。
+- active pane accent border。
+- inactive pane muted border。
+- top/bottom bar 背景填满整行。
+- pane title、state、action 的稳定 chrome slot。
+- toast/overlay/floating 独立 chrome style。
+- ANSI frame serializer。
+- plain text snapshot adapter。
+
+不能继续依赖：
+
+- renderer 主路径只维护 `[]string` canvas。
+- `Frame` 只包含纯 `[]string`。
+- `FrameSink` 直接写纯文本。
+- 用标题里的 `active` 字样代替真实 focus style。
+- 用“Unicode glyph 已存在”代替视觉验收。
+
+`tuiv2/render` 中可参考的经验：
+
+- `drawStyle` / styled cell 的分层思想。
+- `composedCanvas` 的 cell matrix 思想。
+- pane chrome slot 的产品结构。
+- active/inactive border 的视觉语义。
+- host-aware theme token 和 semantic color。
+- ANSI serializer 的 style diff / reset / width-safety 思路。
+
+不得迁入：
+
+- `VisibleRenderState` 大 bag。
+- 旧 Workbench / Runtime 状态模型。
+- 旧 render cache key。
+- 旧 cursor writer / incremental diff pipeline 的结构。
+- render 层回看业务状态。
+- 旧 snapshot/grid/copy fallback。
+
+本阶段优先级：
+
+1. shell/chrome/pane/frame 达到视觉等级。
+2. 保证 content rect 裁切不破坏 chrome。
+3. terminal-live 和 copy-history 内容 renderer 可以先保持最小内容展示，再进入后续深化。
 
 ## 6. Content 类型
 
@@ -710,7 +769,26 @@ cache 原则：
 - Help overlay。
 - overlay hit region。
 
-### 18.7 Phase 6：性能和增量渲染
+### 18.7 Phase 6：styled chrome renderer
+
+目标：
+
+- `RenderResult` 保留 styled cell / styled line / metadata。
+- `Frame` 和 `FrameSink` 支持 ANSI styled frame。
+- canvas 升级为 cell matrix 或等价 compositor。
+- theme token 覆盖 host-aware palette、accent、semantic severity、active/inactive pane、chrome bg/fg。
+- tiled pane 默认达到 `tuiv2` 截图级 styled chrome：square Unicode 细线边框、active accent、inactive muted、pane top chrome slot。
+- header/footer 达到 styled top/bottom bar 级别。
+- toast 和 overlay 使用 styled chrome。
+- smoke 和 harness 检查 ANSI SGR、active/inactive 差异和行宽恒等。
+
+非目标：
+
+- 复制 `tuiv2` renderer。
+- 复制 cursor writer / incremental diff pipeline。
+- 一次性完成 Terminal Pool、Workbench Tree、floating 全量内容。
+
+### 18.8 Phase 7：性能和增量渲染
 
 目标：
 
@@ -766,7 +844,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework 阶段已落地，外部 viewport / resize / Unicode 线框收口已落地。
+状态：最小 render framework 阶段已落地，外部 viewport / resize / Unicode 线框收口已落地；styled chrome renderer 尚未落地。
 
 已落地：
 
@@ -798,6 +876,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前仍是最小实现，不应误读为完整产品态：
 
+- `Frame` 当前仍会把 render 输出压成纯文本 `[]string`，真实 `FrameSink` 仍写纯文本；ANSI styled chrome 尚未保真到 TTY 输出。
+- 当前 UI 只满足 Unicode glyph 和 cell-width 安全，不满足 `tuiv2` 截图级 active/inactive border、top/bottom bar、pane chrome slot 和 semantic color 视觉标准。
 - split layout 只覆盖最小双 pane 横向/纵向，不覆盖复杂多层 split、resize handle 或动态 pane resize。
 - content renderer 目前是最小分流，terminal-live、copy-history、empty/exited/placeholder 已有基础路径，但 Terminal Pool、Workbench Tree、Prompt、Help 的完整内容未落地。
 - floating panel 仍未落地，当前只有架构类型和后续边界。
@@ -812,6 +892,12 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 建议后续切片：
 
+- styled output contract：让 `RenderResult`、`Frame` 和 `FrameSink` 保留 styled cell / ANSI line，真实 TTY 输出不丢样式。
+- cell matrix compositor：引入 v3 自有 cell matrix 或等价 compositor，支持 styled glyph、wide cell footprint、owner/layer 和 ANSI serializer。
+- theme token：建立 host-aware palette、accent、semantic severity、active/inactive pane、chrome bg/fg、toast/overlay token。
+- pane chrome parity：把 tiled pane 默认视觉推进到 `tuiv2` 截图级 square Unicode styled frame。
+- shell chrome parity：把 header/footer 推进到 styled top/bottom bar。
+- styled toast / overlay：toast 和 Terminal Picker overlay 使用 styled chrome。
 - tiled layout refinement：支持多层 split、pane resize、复杂 content rect 分配、active pane hit region 和 card/split 模式切换保持。
 - content renderer 分流：把 terminal-live、copy-history、empty/exited、terminal-picker、help、prompt 独立成更小 content renderer。
 - floating / overlay：实现 floating pane z-order、裁切、遮挡、置顶、drag/resize affordance，以及 Workbench Tree、Prompt、Help、Floating Overview overlay。

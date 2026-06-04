@@ -1112,6 +1112,9 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - floating pane 必须保持独立带边框，不受 tiled pane 呈现模式影响。
 - 全局 header/footer 可以隐藏，但隐藏后不能导致 workspace、tab、mode、notice/error 彻底不可达。
 - 右上角弹出消息系统不得永久改变 pane layout。
+- 默认 TUI 必须支持 styled chrome renderer；纯文本 Unicode 线框不满足最终视觉要求。
+- pane active/inactive 必须通过颜色、亮度或等价 style 明确区分，不能只靠标题文字。
+- top bar、bottom bar、pane chrome、toast、overlay 的颜色和背景必须通过 semantic style token 输出到真实 TTY。
 - 任何 UI 设计必须有宽窄屏退化策略。
 - 任何会影响默认界面形态的实现，都必须先满足本文档。
 
@@ -1144,8 +1147,18 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 默认 card、overlay、toast 线框使用圆角 Unicode box drawing；split line 使用连续 Unicode box drawing；默认 UI chrome 不使用 ASCII 线框。
 - emoji、CJK、combining mark 和 ANSI styled text 不得破坏 pane、split line、toast、overlay 或整行宽度。
 
+当前 styled chrome 视觉目标：
+
+- 默认界面应向 `tuiv2` 截图级视觉对齐，而不是停留在纯文本线框。
+- tiled pane 默认使用 square Unicode 细线边框，active pane 使用 accent / strong border，inactive pane 使用 muted border。
+- pane 顶部 chrome 必须有稳定槽位：title、state、owner/follower、action、copy/resize 等短 token 可逐步接入。
+- top bar 和 bottom bar 必须是 styled bar，背景填满整行，token 有明确颜色层级。
+- toast、overlay、floating/modal 可以使用 rounded card，但必须带独立 border/background/severity style。
+- 真实 TTY 输出必须保留 ANSI 样式；非交互 smoke 也必须能验证 styled frame 没有退化成纯文本。
+
 当前未完成但产品要求仍保留：
 
+- styled chrome renderer：styled `RenderResult`、ANSI `FrameSink`、theme token、active/inactive pane border、styled top/bottom bar、styled toast/overlay。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
 - Terminal Pool 完整页面。
 - Workbench Tree 完整 overlay。
