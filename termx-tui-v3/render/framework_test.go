@@ -133,6 +133,35 @@ func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
 	}
 }
 
+func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{Visible: true, Title: "main", Notice: "ok"},
+		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1"},
+		Layout: LayoutVM{Viewport: Rect{W: 42, H: 10}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+		}}},
+	}})
+	frame := result.Frame()
+
+	if !strings.Contains(frame.Lines[0], "ws:main") || !strings.Contains(frame.Lines[0], "tab:1") || !strings.Contains(frame.Lines[0], "⊕") || !strings.Contains(frame.Lines[0], "notice:ok") {
+		t.Fatalf("top bar should contain workspace/tab/create/notice tokens, got %#v", frame.Lines[0])
+	}
+	if !strings.Contains(frame.Lines[len(frame.Lines)-1], "mode:live") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "hint:term-1") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "status:ready") {
+		t.Fatalf("bottom bar should contain mode/hint/status tokens, got %#v", frame.Lines[len(frame.Lines)-1])
+	}
+	if !styledLinesContain(frame.StyledLines[:1], "w", StyleStatus) || !styledLinesContain(frame.StyledLines[len(frame.StyledLines)-1:], "m", StyleStatus) {
+		t.Fatalf("top/bottom bar cells should use status style, got %#v", frame.StyledLines)
+	}
+	if !strings.Contains(frame.ANSILines[0], "\x1b[48;2;24;50;74m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;24;50;74m") {
+		t.Fatalf("top/bottom bars should output status background SGR, got %#v", frame.ANSILines)
+	}
+	assertAllRowsWidth(t, frame.Lines, 42)
+}
+
 func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
 	panels := []PanelVM{
 		{ID: "left-top", Title: "lt", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("lt")}}},

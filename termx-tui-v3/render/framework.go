@@ -449,11 +449,11 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	if title == "" {
 		title = "termx"
 	}
-	text := " " + title
+	text := " ws:" + title + "  tab:1  ⊕"
 	if header.Notice != "" {
-		text += "  " + header.Notice
+		text += "  notice:" + header.Notice
 	}
-	c.writeText(rect.X, rect.Y, rect.W, text)
+	c.writeTextStyled(rect.X, rect.Y, rect.W, text, StyleStatus, "shell:header", LayerChrome)
 }
 
 func renderFooter(c *canvas, footer FooterVM, rect Rect) {
@@ -461,11 +461,12 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 	if mode == "" {
 		mode = "live"
 	}
-	text := " " + mode
+	text := " mode:" + mode
 	if footer.Hint != "" {
-		text += "  " + footer.Hint
+		text += "  hint:" + footer.Hint
 	}
-	c.writeText(rect.X, rect.Y, rect.W, text)
+	text += "  status:ready"
+	c.writeTextStyled(rect.X, rect.Y, rect.W, text, StyleStatus, "shell:footer", LayerChrome)
 }
 
 func splitPanelRects(layout LayoutVM, body Rect) map[string]Rect {

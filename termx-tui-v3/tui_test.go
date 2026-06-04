@@ -45,6 +45,12 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;88;213;201m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
+	if !frameContains(cases["workbench-live"].Lines, "ws:main") || !frameContains(cases["workbench-live"].Lines, "mode:live") {
+		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
+	}
+	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;24;50;74m") {
+		t.Fatalf("workbench live smoke missing shell bar background ANSI: %#v", cases["workbench-live"].ANSILines)
+	}
 	assertNoASCIIChrome(t, "workbench-live", cases["workbench-live"])
 	if frameContains(cases["split-hidden-toast"].Lines, " main ") ||
 		frameContains(cases["split-hidden-toast"].Lines, " live ") ||
