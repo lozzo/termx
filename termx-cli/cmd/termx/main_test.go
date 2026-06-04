@@ -26,11 +26,62 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
+func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
+	oldRunRoot := runV3Root
 	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
+		runV3Root = oldRunRoot
+		runTUIv2 = oldRunv2
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	var gotCfg v3RootConfig
+	calledRoot := false
+	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
+		calledRoot = true
+		gotCfg = cfg
+		return nil
+	}
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		t.Fatal("default root command must not call tuiv2")
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "--config", filepath.Join(t.TempDir(), "ignored.yaml")})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !calledRoot {
+		t.Fatal("expected default root command to call tui-v3 root runner")
+	}
+	if gotCfg.SocketPath != socketPath || gotCfg.LogFile != logPath {
+		t.Fatalf("unexpected v3 root config %#v", gotCfg)
+	}
+	configPath := filepath.Join(configHome, "termx", "termx.yaml")
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("default root must not create tuiv2 config at %s, stat err=%v", configPath, err)
+	}
+}
+
+func TestLegacyRootRoutesToTUIv2(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunRoot := runV3Root
+	oldRunv2 := runTUIv2
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Root = oldRunRoot
 		runTUIv2 = oldRunv2
 	})
 
@@ -40,6 +91,10 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 
+	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
+		t.Fatal("legacy root command must not call tui-v3 root runner")
+		return nil
+	}
 	var gotCfg shared.Config
 	called := false
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
@@ -49,7 +104,7 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log"), "legacy"})
 	cmd.SetIn(bytes.NewBuffer(nil))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -58,7 +113,7 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if !called {
-		t.Fatal("expected runTUIv2 to be called")
+		t.Fatal("expected legacy root command to call runTUIv2")
 	}
 	if gotCfg.Workspace != "main" {
 		t.Fatalf("expected workspace=main, got %q", gotCfg.Workspace)
@@ -67,7 +122,7 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 		t.Fatalf("expected session=main, got %q", gotCfg.SessionID)
 	}
 	if gotCfg.AttachID != "" {
-		t.Fatalf("expected empty attach id for root command, got %q", gotCfg.AttachID)
+		t.Fatalf("expected empty attach id for legacy root command, got %q", gotCfg.AttachID)
 	}
 	if want := filepath.Join(stateHome, "termx", "workspace-state.json"); gotCfg.WorkspaceStatePath != want {
 		t.Fatalf("expected workspace state path %q, got %q", want, gotCfg.WorkspaceStatePath)
@@ -82,13 +137,19 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 
 func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
+	oldRunRoot := runV3Root
 	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
+		runV3Root = oldRunRoot
 		runTUIv2 = oldRunv2
 	})
 
 	isInteractiveTerminal = func() bool { return true }
+	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
+		t.Fatal("runV3Root should not be called when nested TUI is blocked")
+		return nil
+	}
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
 		t.Fatal("runTUIv2 should not be called when nested TUI is blocked")
 		return nil
@@ -207,17 +268,23 @@ func TestAttachCmdBlocksNestedTUIByDefault(t *testing.T) {
 	}
 }
 
-func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
+func TestLegacyRootUsesExplicitConfigPath(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
+	oldRunRoot := runV3Root
 	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
+		runV3Root = oldRunRoot
 		runTUIv2 = oldRunv2
 	})
 
 	isInteractiveTerminal = func() bool { return true }
 	configPath := filepath.Join(t.TempDir(), "custom-termx.yaml")
 
+	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
+		t.Fatal("legacy root command must not call tui-v3 root runner")
+		return nil
+	}
 	var gotCfg shared.Config
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
 		gotCfg = cfg
@@ -225,7 +292,7 @@ func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath})
+	cmd.SetArgs([]string{"--config", configPath, "legacy"})
 	cmd.SetIn(bytes.NewBuffer(nil))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -238,21 +305,27 @@ func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
 	}
 }
 
-func TestV3CommandGroupDoesNotChangeDefaultTUIRoute(t *testing.T) {
+func TestDefaultRootDoesNotRunTUIv2OrV3Smoke(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
+	oldRunRoot := runV3Root
 	oldRunv2 := runTUIv2
 	oldRunSmoke := runTUIv3Smoke
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
+		runV3Root = oldRunRoot
 		runTUIv2 = oldRunv2
 		runTUIv3Smoke = oldRunSmoke
 	})
 
 	isInteractiveTerminal = func() bool { return true }
-	calledV2 := false
+	calledRoot := false
 	calledV3Smoke := false
+	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
+		calledRoot = true
+		return nil
+	}
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		calledV2 = true
+		t.Fatal("default root command must not call tuiv2")
 		return nil
 	}
 	runTUIv3Smoke = func(ctx context.Context) (render.Frame, error) {
@@ -269,8 +342,8 @@ func TestV3CommandGroupDoesNotChangeDefaultTUIRoute(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if !calledV2 {
-		t.Fatal("expected default root command to keep routing to tuiv2")
+	if !calledRoot {
+		t.Fatal("expected default root command to call tui-v3 root runner")
 	}
 	if calledV3Smoke {
 		t.Fatal("default root command must not run tui-v3 smoke")
@@ -669,6 +742,91 @@ func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 	}
 	if got.TerminalID != "term-1" || got.SocketPath != socketPath || got.LogFile != logPath {
 		t.Fatalf("unexpected v3 attach config %#v", got)
+	}
+}
+
+func TestV3RootRuntimeCreatesDefaultTerminalAndAttaches(t *testing.T) {
+	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	oldDial := v3DialClient
+	oldStart := startV3Daemon
+	oldRunAttach := runV3Attach
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		startV3Daemon = oldStart
+		runV3Attach = oldRunAttach
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		if path != socketPath {
+			t.Fatalf("expected v3 root to dial socket %q, got %q", socketPath, path)
+		}
+		return client, nil
+	}
+	startV3Daemon = func(path string, logFile string) error {
+		t.Fatal("v3 root must not auto-start when injected client is available")
+		return nil
+	}
+	var gotAttach v3AttachConfig
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		gotAttach = cfg
+		return nil
+	}
+
+	if err := runV3RootRuntime(context.Background(), v3RootConfig{SocketPath: socketPath, LogFile: logPath}); err != nil {
+		t.Fatalf("runV3RootRuntime returned error: %v", err)
+	}
+	if gotAttach.TerminalID != v3RootTerminalID || gotAttach.SocketPath != socketPath || gotAttach.LogFile != logPath {
+		t.Fatalf("unexpected v3 root attach config %#v", gotAttach)
+	}
+	info, err := server.GetTerminal(v3RootTerminalID)
+	if err != nil {
+		t.Fatalf("expected v3 root terminal to be created: %v", err)
+	}
+	if info.Name != "main" || len(info.Command) == 0 || info.Size.Cols == 0 || info.Size.Rows == 0 {
+		t.Fatalf("unexpected v3 root terminal info %#v", info)
+	}
+}
+
+func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
+	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-existing",
+		Name:    "existing",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 100, Rows: 30},
+	}); err != nil {
+		t.Fatalf("create existing terminal: %v", err)
+	}
+	oldDial := v3DialClient
+	oldRunAttach := runV3Attach
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		runV3Attach = oldRunAttach
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		return client, nil
+	}
+	var gotAttach v3AttachConfig
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		gotAttach = cfg
+		return nil
+	}
+
+	if err := runV3RootRuntime(context.Background(), v3RootConfig{SocketPath: socketPath, LogFile: logPath}); err != nil {
+		t.Fatalf("runV3RootRuntime returned error: %v", err)
+	}
+	if gotAttach.TerminalID != "term-existing" {
+		t.Fatalf("expected v3 root to attach existing terminal, got %#v", gotAttach)
+	}
+	if _, err := server.GetTerminal(v3RootTerminalID); err == nil {
+		t.Fatal("v3 root should not create default terminal when a running terminal exists")
 	}
 }
 

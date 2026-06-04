@@ -60,6 +60,34 @@ func tuiSharedConfig(workspace, sessionID, attachID, socket, logPath, workspaceS
 	return fileCfg, nil
 }
 
+func legacyCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "legacy",
+		Short: "Run the legacy termx-core and tuiv2 root TUI",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+			logger.Info("starting legacy tuiv2 root command", "log_file", logPath)
+			if !isInteractiveTerminal() {
+				return fmt.Errorf("termx legacy TUI requires an interactive terminal; use `termx --help`")
+			}
+			if err := rejectNestedTUI(); err != nil {
+				logger.Warn("blocked nested legacy tui launch")
+				return err
+			}
+			cfg, err := tuiSharedConfig("main", "main", "", *socket, logPath, resolveWorkspaceStatePath(), *configPath)
+			if err != nil {
+				return err
+			}
+			return runTUIv2(cfg, os.Stdin, os.Stdout)
+		},
+	}
+}
+
 func attachCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:  "attach <id>",

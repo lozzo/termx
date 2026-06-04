@@ -21,24 +21,7 @@ func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "termx",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logger, closeLogger, logPath, err := openLogFileLogger(logFile)
-			if err != nil {
-				return err
-			}
-			defer closeLogger()
-			logger.Info("starting tuiv2 root command", "log_file", logPath)
-			if !isInteractiveTerminal() {
-				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `rm`, `daemon`")
-			}
-			if err := rejectNestedTUI(); err != nil {
-				logger.Warn("blocked nested tui launch")
-				return err
-			}
-			cfg, err := tuiSharedConfig("main", "main", "", socket, logPath, resolveWorkspaceStatePath(), configPath)
-			if err != nil {
-				return err
-			}
-			return runTUIv2(cfg, os.Stdin, os.Stdout)
+			return runV3RootCommand(cmd, socket, logFile)
 		},
 	}
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
@@ -51,6 +34,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(removeCommand(&socket, &logFile))
 	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
 	cmd.AddCommand(remoteCommand(&socket, &logFile, &configPath))
+	cmd.AddCommand(legacyCommand(&socket, &logFile, &configPath))
 	cmd.AddCommand(v3Command(&socket, &logFile))
 	return cmd
 }
