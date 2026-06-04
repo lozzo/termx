@@ -1,6 +1,7 @@
 package render
 
 import (
+	"strconv"
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
@@ -78,7 +79,7 @@ func (line Line) PlainString() string {
 	return xansi.Strip(line.String())
 }
 
-func (line Line) ANSIString() string {
+func (line Line) ANSIString(theme Theme) string {
 	if len(line.Cells) == 0 {
 		return ""
 	}
@@ -89,7 +90,7 @@ func (line Line) ANSIString() string {
 			out.WriteString(text)
 			continue
 		}
-		out.WriteString(ansiForStyleToken(cell.Style))
+		out.WriteString(ansiForStyleToken(cell.Style, theme))
 		out.WriteString(text)
 		out.WriteString(ANSIReset)
 	}
@@ -137,6 +138,7 @@ type RenderResult struct {
 	HitRegions []HitRegion
 	Metadata   RenderMetadata
 	Layers     []Layer
+	Theme      Theme
 }
 
 func (result RenderResult) Lines() []string {
@@ -166,8 +168,9 @@ func (result RenderResult) ANSILines() []string {
 		return nil
 	}
 	lines := make([]string, len(result.Content))
+	theme := result.Theme.WithFallback()
 	for i, line := range result.Content {
-		lines[i] = ensureANSIReset(line.ANSIString())
+		lines[i] = ensureANSIReset(line.ANSIString(theme))
 	}
 	return lines
 }
@@ -183,25 +186,79 @@ func ensureANSIReset(value string) string {
 	return value + ANSIReset
 }
 
-func ansiForStyleToken(token StyleToken) string {
+func ansiForStyleToken(token StyleToken, theme Theme) string {
+	theme = theme.WithFallback()
 	switch token {
 	case StyleAccent:
-		return "\x1b[1;36m"
+		return sgrForeground(theme.Accent, true)
 	case StyleMuted:
-		return "\x1b[2m"
+		return sgrForeground(theme.Muted, false) + "\x1b[2m"
 	case StyleStatus:
-		return "\x1b[7m"
+		return sgrForegroundBackground(theme.StatusFG, theme.StatusBG, false)
 	case StyleInfo:
-		return "\x1b[34m"
+		return sgrForeground(theme.Info, false)
 	case StyleSuccess:
-		return "\x1b[32m"
+		return sgrForeground(theme.Success, false)
 	case StyleWarning:
-		return "\x1b[33m"
+		return sgrForeground(theme.Warning, false)
 	case StyleDanger:
-		return "\x1b[31m"
+		return sgrForeground(theme.Danger, false)
 	default:
 		return "\x1b[1m"
 	}
+}
+
+func sgrForeground(hex string, bold bool) string {
+	prefix := "\x1b["
+	if bold {
+		prefix += "1;"
+	}
+	r, g, b, ok := parseHexColor(hex)
+	if !ok {
+		if bold {
+			return "\x1b[1m"
+		}
+		return ""
+	}
+	return prefix + "38;2;" + r + ";" + g + ";" + b + "m"
+}
+
+func sgrForegroundBackground(fg string, bg string, bold bool) string {
+	fgSeq := sgrForeground(fg, bold)
+	r, g, b, ok := parseHexColor(bg)
+	if !ok {
+		return fgSeq
+	}
+	return fgSeq + "\x1b[48;2;" + r + ";" + g + ";" + b + "m"
+}
+
+func parseHexColor(value string) (string, string, string, bool) {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "#")
+	if len(value) != 6 {
+		return "", "", "", false
+	}
+	for _, ch := range value {
+		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+			return "", "", "", false
+		}
+	}
+	return decimalByte(value[0:2]), decimalByte(value[2:4]), decimalByte(value[4:6]), true
+}
+
+func decimalByte(hex string) string {
+	value := 0
+	for _, ch := range hex {
+		value *= 16
+		switch {
+		case ch >= '0' && ch <= '9':
+			value += int(ch - '0')
+		case ch >= 'a' && ch <= 'f':
+			value += int(ch-'a') + 10
+		case ch >= 'A' && ch <= 'F':
+			value += int(ch-'A') + 10
+		}
+	}
+	return strconv.Itoa(value)
 }
 
 type ContentKind string

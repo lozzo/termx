@@ -68,6 +68,43 @@ func TestFrameFromRenderResultPreservesStyledANSIAndMetadata(t *testing.T) {
 	}
 }
 
+func TestThemeTokenPaletteDrivesANSILines(t *testing.T) {
+	result := RenderResult{
+		Content: []Line{{Cells: []Cell{
+			{Text: "accent", Width: 6, Style: StyleAccent, Safe: true},
+			{Text: " warn", Width: 5, Style: StyleWarning, Safe: true},
+		}}},
+		Theme: Theme{
+			Accent:  "#010203",
+			Warning: "#a0b0c0",
+		},
+	}
+
+	frame := FrameFromRenderResult(result)
+	if len(frame.ANSILines) != 1 || !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;1;2;3m") {
+		t.Fatalf("accent token should use custom theme color, got %#v", frame.ANSILines)
+	}
+	if !strings.Contains(frame.ANSILines[0], "\x1b[38;2;160;176;192m") {
+		t.Fatalf("warning token should use semantic theme color, got %#v", frame.ANSILines)
+	}
+	if frame.Theme.HostFG == "" || frame.Theme.StatusBG == "" {
+		t.Fatalf("frame theme should be filled with fallback values, got %#v", frame.Theme)
+	}
+}
+
+func TestThemeFallbackAndPaneTokensAreDistinct(t *testing.T) {
+	theme := Theme{ActivePaneBorder: "#010203"}.WithFallback()
+	if theme.ActivePaneBorder != "#010203" {
+		t.Fatalf("explicit active pane border should be preserved, got %#v", theme)
+	}
+	if theme.InactivePane == "" || theme.MutedBorder == "" || theme.Accent == "" {
+		t.Fatalf("fallback should populate missing pane tokens, got %#v", theme)
+	}
+	if theme.ActivePaneBorder == theme.InactivePane {
+		t.Fatalf("active/inactive pane tokens must be distinct, got %#v", theme)
+	}
+}
+
 func TestFrameCloneDetachesLines(t *testing.T) {
 	frame := Frame{
 		Lines:       []string{"one"},

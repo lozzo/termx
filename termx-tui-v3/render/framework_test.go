@@ -140,7 +140,7 @@ func TestFrameworkPreservesStyledContentThroughMatrixAndANSIFrame(t *testing.T) 
 	if !linesContain(frame.Lines, "accent plain") {
 		t.Fatalf("plain snapshot should keep text without ANSI, got %#v", frame.Lines)
 	}
-	if !linesContain(frame.ANSILines, "\x1b[1;36m") || !linesContain(frame.ANSILines, ANSIReset) {
+	if !linesContain(frame.ANSILines, "\x1b[1;38;2;88;213;201m") || !linesContain(frame.ANSILines, ANSIReset) {
 		t.Fatalf("ANSI frame should retain styled matrix cells and reset, got %#v", frame.ANSILines)
 	}
 	if !styledLinesContain(frame.StyledLines, "a", StyleAccent) {

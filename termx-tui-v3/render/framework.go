@@ -401,6 +401,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		HitRegions: plan.HitRegions,
 		Metadata:   RenderMetadata{Width: c.width, Height: c.height},
 		Layers:     layers,
+		Theme:      renderer.Theme.WithFallback(),
 	}
 }
 

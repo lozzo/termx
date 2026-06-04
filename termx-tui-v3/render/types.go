@@ -11,6 +11,7 @@ type Frame struct {
 	Cursor      Cursor
 	Blink       bool
 	Metadata    RenderMetadata
+	Theme       Theme
 }
 
 // Clone 返回 detached frame，防止测试或 host 共享修改 frame lines。
@@ -19,6 +20,7 @@ func (frame Frame) Clone() Frame {
 		Cursor:   frame.Cursor,
 		Blink:    frame.Blink,
 		Metadata: frame.Metadata,
+		Theme:    frame.Theme,
 	}
 	if len(frame.Lines) > 0 {
 		cloned.Lines = cloneStrings(frame.Lines)
@@ -43,6 +45,7 @@ func FrameFromRenderResult(result RenderResult) Frame {
 		Cursor:      result.Cursor,
 		Blink:       result.Blink,
 		Metadata:    result.Metadata,
+		Theme:       result.Theme.WithFallback(),
 	}
 }
 
