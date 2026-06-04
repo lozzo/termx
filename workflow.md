@@ -182,8 +182,9 @@
 | 29. tui-v3 UI 交互规格文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md`、只读参考 `tuiv2/docs/` 和 `tuiv2/` | 新增独立中文文档定义 tui-v3 的产品级 UI 交互、界面结构、功能清单、页面线稿、快捷键与鼠标交互、宽窄屏退化和硬约束；可参考 tuiv2 的页面设计，但不得写实现方案、渲染算法、Go 包拆分或从旧实现迁移代码的技术步骤 |
 | 30. tui-v3 UI 交互规格增量 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 在 UI 交互规格中补充 pane chrome 模式：card panel 与 tmux-like split line 两种 tiled pane 呈现；支持隐藏全局 header/footer 以提升终端内容利用率；floating pane 保持独立带边框；补充右上角现代化弹出消息系统；不得写实现方案 |
 | 31. tui-v3 render framework 架构文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md`、只读参考 `tuiv2/docs/` 和 `tuiv2/render/` | 新增独立中文文档定义 tui-v3 render framework 与 content renderer 的职责边界、数据流、层级合成、panel/overlay/floating/toast/content 分类、禁止事项和分阶段落地计划；文档完成后必须由子 Agent 审核，审核结论需纳入最终交付说明 |
+| 32. tui-v3 render framework 拍板结论落档 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 把用户拍板结论写入 render 架构文档：`render framework + content renderer` 是正式方向；最小 render framework 阶段必须同时处理 card panel 与 split line、header/footer hide、toast 基础生命周期；Terminal Pool 与 Workbench Tree 在 framework 成型后再接入 |
 
-当前下一步：切片 31 已完成；后续如继续推进 render 实现，必须先新增下一轮任务切片，并以 `termx-tui-v3/docs/render-architecture.md` 和 `termx-tui-v3/docs/ui-interaction-spec.md` 作为基准。
+当前下一步：切片 32 已完成；后续如继续推进 render 实现，必须先新增下一轮任务切片，并以 `termx-tui-v3/docs/render-architecture.md` 和 `termx-tui-v3/docs/ui-interaction-spec.md` 作为基准。
 
 ## 6. 必做 harness
 
@@ -317,4 +318,5 @@
 - 切片 29 已完成：`termx-tui-v3/docs/ui-interaction-spec.md` 已新增，定义 tui-v3 的产品级 UI 交互、界面结构、功能清单、页面线稿、快捷键与鼠标交互、宽窄屏退化和硬约束；该文档不写实现方案，后续 render 架构和默认界面补齐必须以它作为产品基准。
 - 切片 30 已完成：`termx-tui-v3/docs/ui-interaction-spec.md` 已补充 card panel / tmux-like split line 两种 tiled pane 呈现、全局 header/footer 可隐藏、floating pane 保持带边框、右上角现代消息弹层；该切片只写产品需求，不写实现方案。
 - 切片 31 已完成：`termx-tui-v3/docs/render-architecture.md` 已新增，定义 render framework 与 content renderer 的边界、数据流、层级合成、panel/overlay/floating/toast/content 分类、禁止事项和分阶段落地计划；子 Agent 审核结论为无严重问题，小修后可进入用户拍板。
+- 切片 32 已完成：用户拍板结论已写入 `termx-tui-v3/docs/render-architecture.md`；render framework + content renderer 成为正式方向，最小 render framework 阶段必须处理 card/split 两种 panel、header/footer hide 和 toast 基础生命周期，Terminal Pool 与 Workbench Tree 等 framework 成型后再接入。
 - 后续如继续推进 render 实现、默认界面补齐、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。

@@ -1,6 +1,6 @@
 # termx-tui-v3 Render Framework 架构
 
-状态：草案
+状态：已拍板
 日期：2026-06-04
 
 ## 1. 文档目的
@@ -28,6 +28,8 @@
 ## 2. 结论
 
 `termx-tui-v3` 应把 render 做成内部 composition framework，而不是 terminal 专用 renderer。
+
+该方向已经拍板，后续实现应以 `render framework + content renderer` 作为正式架构方向。
 
 核心拆分：
 
@@ -596,30 +598,34 @@ cache 原则：
 目标：
 
 - 定义 rect / layer / panel / content / hit region / render result 概念。
-- 先支持单 panel workbench。
-- 支持 header/footer。
-- 支持 toast 占位。
-- 支持 card panel。
+- 建立 workbench shell。
+- 支持 card panel 与 split line 两种 tiled panel 呈现，不得把 split line 延后到后续阶段才处理。
+- 支持最小多 pane layout，至少覆盖双 pane 横向和纵向分割，用于验证 split line 的真实合成。
+- 支持 active pane、panel chrome、content rect 和 hit region 在两种 panel 模式下语义一致。
+- 支持 header/footer 显示与隐藏，隐藏时 body 必须回收空间，workspace、tab、mode、notice/error 不能彻底不可达。
+- 支持 toast 的真实渲染和基础生命周期，包括 severity、pending/progress、auto dismiss、close current、clear all 和窄屏退化。
+- 支持 terminal-live、copy-history pending/empty、Terminal Picker placeholder 的 content/overlay 接入路径。
 
 非目标：
 
-- 多 pane split。
 - floating。
-- overlay。
+- Terminal Pool 完整页面。
+- Workbench Tree 完整页面。
 - cache。
 
-### 17.3 Phase 2：tiled panel layout
+### 17.3 Phase 2：tiled panel layout refinement
 
 目标：
 
-- 多 pane layout。
+- 复杂多 pane layout。
 - card panel。
 - split line。
 - active pane。
-- header/footer hide。
 - panel content rect 分配。
+- panel resize / split geometry 的边界测试。
+- card/split 模式切换的状态保持测试。
 
-### 17.4 Phase 3：content renderer 分流
+### 17.4 Phase 3：content renderer 完整分流
 
 目标：
 
@@ -627,13 +633,14 @@ cache 原则：
 - empty-pane content。
 - exited-pane content。
 - copy-history content。
+- terminal-picker content。
 
 约束：
 
 - copy-history 只消费 authoritative HistoryWindow。
 - terminal-live 不参与 history truth。
 
-### 17.5 Phase 4：floating / overlay / toast
+### 17.5 Phase 4：floating / overlay
 
 目标：
 
@@ -641,7 +648,6 @@ cache 原则：
 - floating 裁切和遮挡。
 - overlay 合成。
 - opaque overlay fast path。
-- toast 堆叠和退化。
 - cursor 归属。
 
 ### 17.6 Phase 5：Terminal Pool / Workbench Tree / Prompt / Help
@@ -668,14 +674,15 @@ cache 原则：
 最小 render framework 阶段完成后，render 主路径至少必须支撑：
 
 - 进入 TUI 后有 workbench shell。
-- 有 header/footer，且能表达后续隐藏能力。
-- 有一个 card panel。
+- 有 header/footer，且能真正隐藏并回收 body 空间。
+- card panel 与 split line 两种 tiled panel 呈现都可用。
+- 两种 panel 模式下 active pane、panel chrome、content rect 和 hit region 语义一致。
 - live surface pending 在 panel 内显示。
 - terminal live 内容在 panel content rect 内显示。
 - Terminal Picker 状态激活时有 overlay 或明确占位渲染路径。
 - Display / Copy 状态激活时进入 copy-history content 路径。
 - copy mode 缺 authoritative history 时显示 panel 内 pending/empty。
-- 有 toast VM 和占位渲染路径。
+- toast 支持 severity、pending/progress、auto dismiss、close current、clear all 和窄屏退化。
 - `RenderResult` 是唯一主输出。
 - renderer 不读取 core client。
 - renderer 不修改 state。
@@ -690,15 +697,17 @@ Phase 1 / 最小 framework 阶段不做：
 - 高级动画。
 - 对外 API 稳定承诺。
 - 复刻完整 tuiv2 renderer。
+- Terminal Pool 完整页面。
+- Workbench Tree 完整页面。
 
 render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
-## 20. 决策点
+## 20. 已拍板决策
 
-需要用户拍板的点：
+以下结论已经拍板。后续实现不得重新打开这些问题，除非先修改本文档：
 
-- `render framework + content renderer` 是否作为正式方向。
-- 第一阶段是否只做 card panel，split line 留到第二阶段。
-- header/footer hide 是否第一阶段只保留 VM 字段和测试，不先做交互入口。
-- toast 是否第一阶段先做静态渲染，后续再做生命周期和自动消失。
-- Terminal Pool 与 Workbench Tree 是否在 framework 成型后再接入。
+- `render framework + content renderer` 是正式方向。
+- 最小 render framework 阶段不能只做 card panel；card panel 与 split line 都必须处理。
+- header/footer hide 不能只保留 VM 字段和测试；最小 render framework 阶段必须处理实际隐藏、空间回收和状态可达性。
+- toast 不能只做静态渲染；最小 render framework 阶段必须处理基础生命周期和自动消失。
+- Terminal Pool 与 Workbench Tree 在 framework 成型后再接入，不作为最小 render framework 阶段的阻塞项。
