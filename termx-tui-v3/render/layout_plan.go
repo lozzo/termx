@@ -75,7 +75,12 @@ func measurePanelContentRect(panel PanelVM, rect Rect) Rect {
 	if panel.Presentation == PanelPresentationCard {
 		return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
 	}
-	return Rect{X: rect.X, Y: rect.Y + 1, W: rect.W, H: maxInt(0, rect.H-1)}
+	content := Rect{X: rect.X, Y: rect.Y + 1, W: rect.W, H: maxInt(0, rect.H-1)}
+	if rect.X > 0 {
+		content.X++
+		content.W = maxInt(0, content.W-1)
+	}
+	return content
 }
 
 func measureOverlay(overlay OverlayVM, viewport Rect) Rect {

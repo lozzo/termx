@@ -38,14 +38,16 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["workbench-live"].Lines, "termx live 🚀") ||
 		!frameContains(cases["workbench-live"].Lines, "你好 output") ||
-		!frameContains(cases["workbench-live"].Lines, "+- shell active") {
+		!frameContains(cases["workbench-live"].Lines, "╭─ shell active") {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
 	}
+	assertNoASCIIChrome(t, "workbench-live", cases["workbench-live"])
 	if frameContains(cases["split-hidden-toast"].Lines, " main ") ||
 		frameContains(cases["split-hidden-toast"].Lines, " live ") ||
 		!frameContains(cases["split-hidden-toast"].Lines, "[warning] warn 🚀 ... 世界") {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
 	}
+	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
 	if !frameContains(cases["terminal-picker"].Lines, "terminal picker pending") {
 		t.Fatalf("terminal picker smoke missing placeholder: %#v", cases["terminal-picker"].Lines)
 	}
@@ -77,6 +79,15 @@ func assertSmokeWidth(t *testing.T, name string, frame render.Frame) {
 	for row, line := range frame.Lines {
 		if got := render.DisplayWidth(line); got != width {
 			t.Fatalf("smoke case %s row %d width=%d want=%d line=%q", name, row, got, width, line)
+		}
+	}
+}
+
+func assertNoASCIIChrome(t *testing.T, name string, frame render.Frame) {
+	t.Helper()
+	for row, line := range frame.Lines {
+		if strings.ContainsAny(line, "+|") {
+			t.Fatalf("smoke case %s row %d contains ASCII chrome: %q", name, row, line)
 		}
 	}
 }

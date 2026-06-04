@@ -45,23 +45,86 @@ func (c *canvas) writeText(x int, y int, width int, text string) {
 	c.rows[y] = replaceCellRange(c.rows[y], x, width, FitText(text, width))
 }
 
-func (c *canvas) drawHLine(x int, y int, width int, left string, fill string, right string) {
-	if width <= 0 {
+func (c *canvas) writeBoxCell(x int, y int, glyph string) {
+	c.writeText(x, y, 1, glyph)
+}
+
+func (c *canvas) mergeBoxCell(x int, y int, connections uint8) {
+	if x < 0 || y < 0 || x >= c.width || y >= c.height {
 		return
 	}
-	switch {
-	case width == 1:
-		c.writeText(x, y, 1, fill)
-	case width == 2:
-		c.writeText(x, y, 2, left+right)
-	default:
-		c.writeText(x, y, width, left+strings.Repeat(fill, width-2)+right)
+	existing := SliceCells(c.rows[y], x, x+1)
+	if existingConnections, ok := boxConnectionsForGlyph(existing); ok {
+		connections |= existingConnections
+	}
+	glyph, ok := boxGlyphForConnections(connections)
+	if !ok {
+		return
+	}
+	c.writeBoxCell(x, y, glyph)
+}
+
+func (c *canvas) drawRoundedBox(rect Rect) {
+	c.drawBox(rect, roundedBoxStyle)
+}
+
+func (c *canvas) drawBox(rect Rect, style boxStyle) {
+	if rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	if rect.W == 1 {
+		for y := 0; y < rect.H; y++ {
+			c.writeBoxCell(rect.X, rect.Y+y, style.Vertical)
+		}
+		return
+	}
+	if rect.H == 1 {
+		c.writeText(rect.X, rect.Y, rect.W, style.TopLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.TopRight)
+		return
+	}
+	c.writeText(rect.X, rect.Y, rect.W, style.TopLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.TopRight)
+	c.writeText(rect.X, rect.Y+rect.H-1, rect.W, style.BottomLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.BottomRight)
+	for y := rect.Y + 1; y < rect.Y+rect.H-1; y++ {
+		c.writeBoxCell(rect.X, y, style.Vertical)
+		c.writeBoxCell(rect.X+rect.W-1, y, style.Vertical)
 	}
 }
 
-func (c *canvas) drawVLine(x int, y int, height int, fill string) {
+func (c *canvas) drawConnectedHLine(x int, y int, width int) {
+	if width <= 0 {
+		return
+	}
+	for col := 0; col < width; col++ {
+		connections := uint8(boxConnLeft | boxConnRight)
+		if col == 0 {
+			connections = boxConnRight
+		}
+		if col == width-1 {
+			connections = boxConnLeft
+		}
+		if width == 1 {
+			connections = boxConnLeft | boxConnRight
+		}
+		c.mergeBoxCell(x+col, y, connections)
+	}
+}
+
+func (c *canvas) drawConnectedVLine(x int, y int, height int) {
+	if height <= 0 {
+		return
+	}
 	for row := 0; row < height; row++ {
-		c.writeText(x, y+row, 1, fill)
+		connections := uint8(boxConnUp | boxConnDown)
+		if row == 0 {
+			connections = boxConnDown
+		}
+		if row == height-1 {
+			connections = boxConnUp
+		}
+		if height == 1 {
+			connections = boxConnUp | boxConnDown
+		}
+		c.mergeBoxCell(x, y+row, connections)
 	}
 }
 
@@ -206,12 +269,7 @@ func renderCardPanel(c *canvas, layout PanelLayoutPlan) {
 		return
 	}
 	title := panelTitle(layout.Panel)
-	c.drawHLine(rect.X, rect.Y, rect.W, "+", "-", "+")
-	if rect.H > 1 {
-		c.drawHLine(rect.X, rect.Y+rect.H-1, rect.W, "+", "-", "+")
-		c.drawVLine(rect.X, rect.Y+1, rect.H-2, "|")
-		c.drawVLine(rect.X+rect.W-1, rect.Y+1, rect.H-2, "|")
-	}
+	c.drawRoundedBox(rect)
 	if rect.W > 4 {
 		c.writeText(rect.X+2, rect.Y, rect.W-4, " "+title+" ")
 	}
@@ -229,10 +287,14 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 	}
 	c.writeText(rect.X, rect.Y, rect.W, chrome)
 	if rect.X > 0 {
-		c.drawVLine(rect.X, rect.Y, rect.H, "|")
+		c.drawConnectedVLine(rect.X, rect.Y, rect.H)
 	}
 	if rect.Y > 0 {
-		c.drawHLine(rect.X, rect.Y, rect.W, "+", "-", "+")
+		lineWidth := rect.W
+		if rect.X+rect.W < c.width {
+			lineWidth++
+		}
+		c.drawConnectedHLine(rect.X, rect.Y, lineWidth)
 		c.writeText(rect.X+1, rect.Y, maxInt(0, rect.W-2), chrome)
 	}
 }
@@ -273,10 +335,7 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" || rect.W <= 0 || rect.H <= 0 {
 		return Layer{}
 	}
-	c.drawHLine(rect.X, rect.Y, rect.W, "+", "-", "+")
-	c.drawHLine(rect.X, rect.Y+rect.H-1, rect.W, "+", "-", "+")
-	c.drawVLine(rect.X, rect.Y+1, rect.H-2, "|")
-	c.drawVLine(rect.X+rect.W-1, rect.Y+1, rect.H-2, "|")
+	c.drawRoundedBox(rect)
 	title := string(overlay.Kind)
 	c.writeText(rect.X+2, rect.Y, maxInt(0, rect.W-4), " "+title+" ")
 	contentLines := renderContent(c, overlay.Content, contentRect)
@@ -304,12 +363,9 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 		if c.width >= 40 && toast.Body != "" {
 			text += " " + toast.Body
 		}
-		c.drawHLine(rect.X, rect.Y, rect.W, "+", "-", "+")
+		c.drawRoundedBox(rect)
 		if rect.H > 1 {
-			c.writeText(rect.X, rect.Y+1, rect.W, "|"+FitText(text, maxInt(0, rect.W-2))+"|")
-		}
-		if rect.H > 2 {
-			c.drawHLine(rect.X, rect.Y+2, rect.W, "+", "-", "+")
+			c.writeText(rect.X+1, rect.Y+1, maxInt(0, rect.W-2), text)
 		}
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
 	}

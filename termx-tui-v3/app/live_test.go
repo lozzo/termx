@@ -222,7 +222,42 @@ func TestSplitPresentationUsesSplitContentRectForResize(t *testing.T) {
 		t.Fatalf("expected presentation change resize, got %#v", terminal.Resizes)
 	}
 	if got := terminal.Resizes[0]; got.Cols != 80 || got.Rows != 21 {
-		t.Fatalf("split line content rect should not deduct side borders, got %#v", got)
+		t.Fatalf("single split-line pane should not deduct side borders, got %#v", got)
+	}
+}
+
+func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post split presentation: %v", err)
+	}
+	if err := runtime.Post(ShellSplitActivePaneMsg{
+		Pane:      state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive},
+		Direction: state.SplitDirectionVertical,
+	}); err != nil {
+		t.Fatalf("post split active pane: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split: %v", err)
+	}
+
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 39 || got.Rows != 21 {
+		t.Fatalf("active pane right of divider must reserve split cell, got %#v", got)
 	}
 }
 

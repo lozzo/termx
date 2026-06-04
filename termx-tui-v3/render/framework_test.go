@@ -64,14 +64,62 @@ func TestFrameworkRendersSplitLineHorizontalAndVertical(t *testing.T) {
 	if !linesContain(horizontal.Lines(), "right") || !linesContain(vertical.Lines(), "right") {
 		t.Fatalf("expected active panel content in both split modes")
 	}
-	if !frameHasRowPrefix(vertical.Lines(), 20, "|") {
-		t.Fatalf("expected vertical split line near midpoint, got %#v", vertical.Lines())
+	if !frameHasRowPrefix(vertical.Lines(), 20, "│") {
+		t.Fatalf("expected Unicode vertical split line near midpoint, got %#v", vertical.Lines())
 	}
-	if !linesContain(horizontal.Lines(), "+ logs active") {
+	if !linesContain(horizontal.Lines(), "─ logs active") {
 		t.Fatalf("expected horizontal split chrome/separator, got %#v", horizontal.Lines())
 	}
 	assertAllRowsWidth(t, horizontal.Lines(), 40)
 	assertAllRowsWidth(t, vertical.Lines(), 40)
+}
+
+func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{Visible: true, Title: "main"},
+		Footer: FooterVM{Visible: true, Mode: "live"},
+		Layout: LayoutVM{Viewport: Rect{W: 42, H: 12}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell 🚀",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("你好 e\u0301 output")}},
+		}}},
+		Overlay: OverlayVM{Kind: OverlayTerminalPicker, Content: ContentVM{Kind: ContentTerminalPicker, Lines: []Line{NewLine("picker 世界")}}},
+		Toasts:  []ToastVM{{ID: "toast-1", Severity: ToastInfo, Title: "notice 🚀", Body: "世界"}},
+	}})
+
+	lines := result.Lines()
+	if !linesContain(lines, "╭") || !linesContain(lines, "╮") || !linesContain(lines, "╰") || !linesContain(lines, "╯") {
+		t.Fatalf("expected rounded Unicode card/overlay/toast chrome, got %#v", lines)
+	}
+	for _, line := range lines {
+		if strings.ContainsAny(line, "+|") {
+			t.Fatalf("default UI chrome must not contain ASCII + or |, got %q", line)
+		}
+	}
+	assertAllRowsWidth(t, lines, 42)
+}
+
+func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
+	panels := []PanelVM{
+		{ID: "left-top", Title: "lt", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("lt")}}},
+		{ID: "left-bottom", Title: "lb", Presentation: PanelPresentationSplitLine, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("lb")}}},
+		{ID: "right", Title: "right", Presentation: PanelPresentationSplitLine, Active: true, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("right")}}},
+	}
+	split := SplitVM{Direction: SplitVertical, Children: []SplitVM{
+		{Direction: SplitHorizontal, Children: []SplitVM{{PaneID: "left-top"}, {PaneID: "left-bottom"}}},
+		{PaneID: "right"},
+	}}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 40, H: 12}, Panels: panels, Split: split},
+	}})
+
+	if !linesContain(result.Lines(), "┼") {
+		t.Fatalf("expected composed split intersection, got %#v", result.Lines())
+	}
+	assertAllRowsWidth(t, result.Lines(), 40)
 }
 
 func TestFrameworkHeaderFooterHideReclaimsBody(t *testing.T) {
