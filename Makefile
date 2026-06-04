@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-default-smoke test-v2-migration
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-default-smoke test-cli-default-deps test-v2-migration
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -25,6 +25,7 @@ help:
 		'  make remote-pair     Build ./bin/termx and generate a termx:// pairing URI from one socket' \
 		'  make remote-open     Ensure local remote is enabled, then print the local remote URL' \
 		'  make remote-status   Show local remote status through ./bin/termx' \
+		'  make test-cli-default-deps Guard default CLI source against legacy imports' \
 		'  make test-v2-migration Test v2/v3 migration modules and default CLI smoke' \
 		'' \
 		'Variables:' \
@@ -142,4 +143,7 @@ test-cli-default-smoke:
 		exit 1; \
 	fi
 
-test-v2-migration: test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-default-smoke
+test-cli-default-deps:
+	cd termx-cli && go test ./cmd/termx -count=1 -run TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI
+
+test-v2-migration: test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-default-smoke test-cli-default-deps

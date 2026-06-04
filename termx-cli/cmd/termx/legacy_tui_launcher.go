@@ -9,34 +9,17 @@ import (
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
-var (
-	isInteractiveTerminal = func() bool {
-		return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+var runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+	socketPath := resolveSocket(cfg.SocketPath)
+	cfg.SocketPath = socketPath
+	client, err := dialOrStartClient(socketPath, cfg.LogFilePath, nil)
+	if err != nil {
+		return err
 	}
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		socketPath := resolveSocket(cfg.SocketPath)
-		cfg.SocketPath = socketPath
-		client, err := dialOrStartClient(socketPath, cfg.LogFilePath, nil)
-		if err != nil {
-			return err
-		}
-		defer client.Close()
-		return tuiv2app.RunWithClient(cfg, bridge.NewProtocolClient(client), stdin, stdout)
-	}
-)
-
-func nestedTUIBlocked() bool {
-	return os.Getenv("TERMX") == "1" && os.Getenv("TERMX_ALLOW_NESTED") != "1"
-}
-
-func rejectNestedTUI() error {
-	if !nestedTUIBlocked() {
-		return nil
-	}
-	return fmt.Errorf("refusing to start termx TUI inside a termx remote terminal; use a normal shell, or set TERMX_ALLOW_NESTED=1 if you really want nesting")
+	defer client.Close()
+	return tuiv2app.RunWithClient(cfg, bridge.NewProtocolClient(client), stdin, stdout)
 }
 
 func tuiSharedConfig(workspace, sessionID, attachID, socket, logPath, workspaceStatePath, configPath string) (shared.Config, error) {

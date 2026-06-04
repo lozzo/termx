@@ -85,6 +85,20 @@
 
 因此，切片 25-27 只能切换本地 root/daemon/attach/control 主路径。remote 不得作为“已默认迁移到 core-v2”的证据；如果仍未迁移，必须在默认入口切换提交中保持显式隔离说明。
 
+## 3.3 切片 28 旧依赖冻结结论
+
+切片 28 的冻结口径如下：
+
+| 项目 | 结论 |
+| --- | --- |
+| 默认本地入口 | `termx`、`termx daemon`、`termx attach`、`termx new`、`termx ls`、`termx kill`、`termx rm` 的源文件不得 import 旧 `termx-core` 或 `tuiv2` |
+| 旧本地入口 | 仅允许存在于 `termx-cli/cmd/termx/legacy_*.go`，通过 `termx legacy ...` 显式调用 |
+| remote fallback | 仅允许存在于 `termx-cli/cmd/termx/remote_*.go`；仍是 legacy/fallback，不计入 core-v2 默认本地切换完成证据 |
+| 依赖守卫 | `TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI` 和 `make test-cli-default-deps` 检查默认源文件不回引旧 runtime import |
+| module 依赖 | `termx-cli/go.mod` 暂时保留旧 `termx-core`/`tuiv2`，只服务 legacy/remote 隔离文件；移除需等待 remote 迁移或独立 legacy binary |
+
+后续如果要彻底从 `termx-cli` module 移除旧依赖，必须先把 remote 迁移到 core-v2 extension，或把 legacy/remote fallback 拆成独立 module/binary；不得在默认本地入口中重新引入旧 runtime。
+
 ## 4. Protocol 方法迁移矩阵
 
 core-v2 必须先实现本地默认路径所需方法，再收口 remote。
@@ -178,7 +192,7 @@ core-v2 必须先实现本地默认路径所需方法，再收口 remote。
 | 切片 25 | 默认 root 入口切换 | `go run ./termx-cli/cmd/termx --help`、CLI tests、迁移 smoke |
 | 切片 26 | 默认 daemon/attach/control 切换 | CLI tests、迁移 smoke、默认本地单 session smoke |
 | 切片 27 | 默认入口回归验收 | CLI/core-v2/tui-v3/protocol 相关 tests、`make test-v2-migration`、默认入口 smoke |
-| 切片 28 | 旧默认依赖清理与冻结 | grep 守卫：默认路径不 import `termx-core`/`tuiv2`；文档-only 部分至少 `git diff --check` |
+| 切片 28 | 旧默认依赖清理与冻结 | `make test-cli-default-deps`；grep 守卫默认路径不 import `termx-core`/`tuiv2`；文档-only 部分至少 `git diff --check` |
 
 ## 7.1 切片 27 默认入口回归验收记录
 

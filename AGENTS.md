@@ -33,6 +33,10 @@
 - 允许主动工作目录只能来自 `workflow.md` 的“当前主线范围”和“受限联动范围”。
 - 不允许因为“看起来有关”自行扩散到其他目录。
 - 旧 `termx-core/` 与 `tuiv2/` 默认只读参考；不得继续原地修补旧 logical-line、copy mode、snapshot/grid viewport history path。
+- 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；旧 `termx-core/` 和 `tuiv2/` 只能通过 `termx legacy ...` 或 remote legacy/fallback 隔离文件间接存在。
+- `termx-cli/cmd/termx/legacy_*.go` 是显式旧本地入口隔离文件；不得被默认 root、daemon、attach、new、ls、kill、rm 路径调用。
+- `termx-cli/cmd/termx/remote_*.go` 当前是 remote legacy/fallback 隔离文件；remote 未迁移到 core-v2 extension 前，不得把它作为默认本地切换完成证据。
+- `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - 如果确实必须修改旧目录，先修改 `workflow.md` 的范围表并说明原因。
 - 冻结目录不得触碰，除非 `workflow.md` 先明确解冻。
 - 关键代码需要写上注释,使用中文
@@ -42,8 +46,8 @@
 - `termx-core-v2/docs/architecture.md`：core-v2 技术设计基准。
 - `termx-tui-v3/`：新 TUI 主线目录，负责自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`、authoritative history store/source、copy mode、滚动、selection、render 与相关 harness。
 - `termx-tui-v3/docs/architecture.md`：tui-v3 技术设计基准。
-- `termx-core/`：旧 core 参考目录，只能读取、搜索、运行测试或摘取外部契约参考。
-- `tuiv2/`：旧 TUI 参考目录，只能读取、搜索、运行测试或摘取外部契约参考。
+- `termx-core/`：旧 core 参考目录，只能读取、搜索、运行测试或摘取外部契约参考；默认本地 CLI 不得直接依赖。
+- `tuiv2/`：旧 TUI 参考目录，只能读取、搜索、运行测试或摘取外部契约参考；默认本地 CLI 不得直接依赖。
 - `termx-vterm/`：受限联动目录，只在新 core-v2/tui-v3 的 terminal 或 protocol 契约确实需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 `history.window` contract 或 protocol adapter 切片需要时最小化触及。
 - `termx-cli/`、`termx-shared/`、`termx-testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
