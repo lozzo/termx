@@ -58,6 +58,11 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["split-hidden-toast"].Lines, "[warning] warn 🚀 ... 世界") {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
 	}
+	if !frameContains(cases["split-hidden-toast"].Lines, "┌ shell pending") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "┬ logs active") ||
+		render.SliceCells(cases["split-hidden-toast"].Lines[0], render.DisplayWidth(cases["split-hidden-toast"].Lines[0])-1, render.DisplayWidth(cases["split-hidden-toast"].Lines[0])) != "┐" {
+		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
+	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
 	if !frameContains(cases["terminal-picker"].Lines, "terminal picker pending") {
 		t.Fatalf("terminal picker smoke missing placeholder: %#v", cases["terminal-picker"].Lines)

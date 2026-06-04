@@ -84,12 +84,39 @@ func TestFrameworkRendersSplitLineHorizontalAndVertical(t *testing.T) {
 	if !linesContain(horizontal.Lines(), "right") || !linesContain(vertical.Lines(), "right") {
 		t.Fatalf("expected active panel content in both split modes")
 	}
-	assertColumnGlyphs(t, vertical.Lines(), 20, 0, 12, "│")
-	if !linesContain(horizontal.Lines(), "─ logs active") {
+	assertColumnGlyphs(t, vertical.Lines(), 20, 0, 12, "│┬┼")
+	if !linesContain(horizontal.Lines(), "┌ logs active") {
 		t.Fatalf("expected horizontal split chrome/separator, got %#v", horizontal.Lines())
 	}
 	assertAllRowsWidth(t, horizontal.Lines(), 40)
 	assertAllRowsWidth(t, vertical.Lines(), 40)
+}
+
+func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 42, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell 🚀",
+			Presentation: PanelPresentationSplitLine,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("你好 output")}},
+		}}},
+	}})
+	lines := result.Lines()
+
+	if got := SliceCells(lines[0], 0, 1); got != "┌" {
+		t.Fatalf("split-line top boundary should keep top-left corner, got %q frame=%#v", got, lines)
+	}
+	if got := SliceCells(lines[0], 41, 42); got != "┐" {
+		t.Fatalf("split-line top boundary should keep top-right corner, got %q frame=%#v", got, lines)
+	}
+	if !strings.Contains(lines[0], " shell 🚀 active") || !strings.Contains(lines[0], "active──") {
+		t.Fatalf("split-line title should overlay only the title slot and keep the remaining top border, got %#v", lines[0])
+	}
+	if !linesContain(lines, "你好 output") {
+		t.Fatalf("expected split-line content, got %#v", lines)
+	}
+	assertAllRowsWidth(t, lines, 42)
 }
 
 func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
@@ -192,8 +219,8 @@ func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
 		Layout: LayoutVM{Viewport: Rect{W: 40, H: 12}, Panels: panels, Split: split},
 	}})
 
-	if !linesContain(result.Lines(), "┼") {
-		t.Fatalf("expected composed split intersection, got %#v", result.Lines())
+	if !linesContain(result.Lines(), "┬ right active") || !linesContain(result.Lines(), "┤") {
+		t.Fatalf("expected composed split top divider and nested split joint, got %#v", result.Lines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 40)
 }

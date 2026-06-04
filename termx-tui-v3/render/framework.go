@@ -55,6 +55,30 @@ func (c *canvas) writeTextStyled(x int, y int, width int, text string, style Sty
 	c.writeLine(x, y, width, Line{Cells: []Cell{{Text: fitted, Width: DisplayWidth(fitted), Style: style, Safe: true}}}, owner, layer)
 }
 
+func (c *canvas) overlayTextStyled(x int, y int, maxWidth int, text string, style StyleToken, owner string, layer LayerKind) {
+	if y < 0 || y >= c.height || maxWidth <= 0 || x >= c.width {
+		return
+	}
+	if x < 0 {
+		text = SliceCells(text, -x, DisplayWidth(text))
+		maxWidth += x
+		x = 0
+	}
+	maxWidth = minInt(maxWidth, c.width-x)
+	text = TruncateCells(text, maxWidth)
+	if text == "" {
+		return
+	}
+	cursor := x
+	for _, segment := range cellSegments(text, style, owner, layer) {
+		if cursor+segment.width > x+maxWidth {
+			break
+		}
+		c.writeSegment(cursor, y, segment)
+		cursor += segment.width
+	}
+}
+
 func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, layer LayerKind) {
 	if y < 0 || y >= c.height || width <= 0 || x >= c.width {
 		return
@@ -626,7 +650,7 @@ func renderCardPanel(c *canvas, layout PanelLayoutPlan) {
 	owner := "pane:" + layout.Panel.ID
 	c.drawStyledPaneFrame(rect, style, owner, LayerPanel)
 	if rect.W > 4 {
-		c.writeTextStyled(rect.X+2, rect.Y, rect.W-4, " "+title+" ", style, owner, LayerPanel)
+		c.overlayTextStyled(rect.X+2, rect.Y, rect.W-4, " "+title+" ", style, owner, LayerPanel)
 	}
 	renderPaneActionSlot(c, rect, layout.Panel, style, owner)
 }
@@ -640,18 +664,15 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 	style := paneChromeStyle(layout.Panel)
 	owner := "pane:" + layout.Panel.ID
 	chrome := paneChromeText(layout.Panel, title)
-	c.writeTextStyled(rect.X, rect.Y, rect.W, chrome, style, owner, LayerPanel)
 	if rect.X > 0 {
 		c.drawStyledConnectedVLine(rect.X, rect.Y, rect.H, style, owner, LayerPanel)
 	}
-	if rect.Y > 0 {
-		lineWidth := rect.W
-		if rect.X+rect.W < c.width {
-			lineWidth++
-		}
-		c.drawStyledConnectedHLine(rect.X, rect.Y, lineWidth, style, owner, LayerPanel)
-		c.writeTextStyled(rect.X+1, rect.Y, maxInt(0, rect.W-2), chrome, style, owner, LayerPanel)
+	topEndX := rect.X + rect.W - 1
+	if rect.X+rect.W < c.width {
+		topEndX++
 	}
+	c.drawStyledPaneHBorder(rect.X, topEndX, rect.Y, style, owner, LayerPanel, true)
+	c.overlayTextStyled(rect.X+1, rect.Y, maxInt(0, rect.W-2), chrome, style, owner, LayerPanel)
 	renderPaneActionSlot(c, rect, layout.Panel, style, owner)
 }
 
