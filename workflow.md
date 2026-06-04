@@ -179,8 +179,9 @@
 | 26. 默认 daemon/attach/control 切换 | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`Makefile` 按需 | `termx daemon`、`termx attach`、`termx new`、`termx ls`、`termx kill`、`termx rm` 默认使用 core-v2/tui-v3；旧路径只允许显式 legacy/fallback；本地单 session 主路径回归通过 |
 | 27. 默认入口回归验收 | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`termx-proto/`、`Makefile` 按需 | 默认入口切换后运行 CLI tests、core-v2 tests、tui-v3 tests、protocol tests、`make test-v2-migration` 和默认入口非交互 smoke；remote 未完成项必须在文档和任务结论中显式保留 |
 | 28. 旧默认依赖清理与冻结 | 完成 | `termx-cli/`、`workflow.md`、`AGENTS.md`、必要顶层说明文档 | `termx-cli` 默认路径不再 import 旧 `termx-core`/`tuiv2`；旧目录冻结状态明确；依赖守卫、测试入口和文档完成；切片 28 完成后本轮默认入口切换目标才算完成 |
+| 29. tui-v3 UI 交互规格文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md`、只读参考 `tuiv2/docs/` 和 `tuiv2/` | 新增独立中文文档定义 tui-v3 的产品级 UI 交互、界面结构、功能清单、页面线稿、快捷键与鼠标交互、宽窄屏退化和硬约束；可参考 tuiv2 的页面设计，但不得写实现方案、渲染算法、Go 包拆分或从旧实现迁移代码的技术步骤 |
 
-当前下一步：本轮默认入口切换目标已完成；后续如继续推进，应先在 `workflow.md` 新增下一轮任务队列。
+当前下一步：切片 29 已完成；后续如继续推进 render 架构或默认界面补齐，必须先新增下一轮任务切片，并以 `termx-tui-v3/docs/ui-interaction-spec.md` 作为产品交互基准。
 
 ## 6. 必做 harness
 
@@ -311,4 +312,5 @@
 - 切片 27 已完成：CLI、core-v2、tui-v3、protocol、proto 测试均通过；`make test-v2-migration` 已纳入并通过默认入口非交互 smoke，覆盖默认 `termx daemon/new/ls/kill/rm` 和 `termx --help`。
 - 切片 28 已完成：旧本地实现文件已收敛为 `legacy_*.go` 显式隔离入口，remote 仍按 `remote_*.go` legacy/fallback 隔离；`TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI` 和 `make test-cli-default-deps` 守卫默认源文件不得 import 旧 `termx-core`/`tuiv2`。
 - 当前本轮默认入口切换目标已完成：`go run ./termx-cli/cmd/termx`、默认 `termx daemon`、`termx attach`、`termx new/ls/kill/rm` 已使用 core-v2/tui-v3；旧本地路径只能通过 `termx legacy ...` 显式调用；remote 未迁移项保持文档化 legacy/fallback 边界。
-- 后续如继续推进 remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。
+- 切片 29 已完成：`termx-tui-v3/docs/ui-interaction-spec.md` 已新增，定义 tui-v3 的产品级 UI 交互、界面结构、功能清单、页面线稿、快捷键与鼠标交互、宽窄屏退化和硬约束；该文档不写实现方案，后续 render 架构和默认界面补齐必须以它作为产品基准。
+- 后续如继续推进 render 架构、默认界面补齐、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。
