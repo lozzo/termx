@@ -238,9 +238,9 @@
 | 42. active content rect 驱动 terminal resize | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/services/`、`termx-cli/` 按需 | app 根据 layout plan 计算 active terminal content rect，并只用 content rect cols/rows 向 core-v2 terminal 发送 resize；外部 viewport、header/footer hide、card/split 切换和 split 变化导致 content rect 变化时触发 resize effect，重复尺寸不重复发送；attach 初始尺寸也以 content rect 为准；harness 覆盖 card 扣边框、split 分割、header/footer 隐藏回收空间、resize effect 去重和真实 protocol adapter 参数 |
 | 43. copy mode resize rebind 与 history window cols | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/`、`internal/protocol/` 按需 | copy mode 绑定 cols 使用 copy content rect width；host resize、layout chrome 变化或 active copy panel content width 变化时 invalid 旧 bound token/window 并重新请求 authoritative latest window，期间显示 pending/empty/error，不从 live surface fallback；older request 和 stale guard 使用新 cols；harness 覆盖 resize 后旧 window 不再渲染、latest replace 重新绑定、新旧 response stale、selection/cursor 清理和 `HistoryWindow` 请求 cols |
 | 44. Unicode 线框与 cell-width 硬化 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/docs/`、只读参考 `tuiv2/render/` | 默认 UI chrome 去除 ASCII `+ - |` 线框；card/modal/floating 使用 `╭╮╰╯─│`，pane/split 使用 `┌┐└┘─│├┤┬┴┼` 同类连续 box drawing glyph；split 连接点按邻接线合成；标题、content、toast、overlay 中 emoji、CJK、combining mark、ANSI 样式不得破坏边框；harness 覆盖 Unicode glyph、连接点、窄屏裁切、右边框不丢失、无默认 ASCII chrome、行宽恒等和旧 `tuiv2` 只读参考结论 |
-| 45. 默认入口 resize/UI 验收与文档收口 | 待开始 | `termx-tui-v3/`、`termx-cli/`、`Makefile`、`workflow.md`、`termx-tui-v3/docs/` 按需 | 默认 `go run ./termx-cli/cmd/termx`、`termx attach` 和非交互 smoke 覆盖外部 viewport 初始尺寸、resize 重绘、content rect terminal resize、copy mode rebind、Unicode 线框、card/split/header/footer/toast/overlay 宽度安全；更新 render/UI 文档记录本轮已落地和后续 Terminal Pool / Workbench Tree / floating 深化边界；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`，并按需运行 `make test-v2-migration` |
+| 45. 默认入口 resize/UI 验收与文档收口 | 进行中 | `termx-tui-v3/`、`termx-cli/`、`Makefile`、`workflow.md`、`termx-tui-v3/docs/` 按需 | 默认 `go run ./termx-cli/cmd/termx`、`termx attach` 和非交互 smoke 覆盖外部 viewport 初始尺寸、resize 重绘、content rect terminal resize、copy mode rebind、Unicode 线框、card/split/header/footer/toast/overlay 宽度安全；更新 render/UI 文档记录本轮已落地和后续 Terminal Pool / Workbench Tree / floating 深化边界；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`，并按需运行 `make test-v2-migration` |
 
-当前下一步：切片 45 待开始。自动执行必须从切片 45 开始，完成默认入口 resize/UI 验收与文档收口。
+当前下一步：切片 45 进行中。自动执行必须继续完成默认入口 resize/UI 验收与文档收口。
 
 ## 6. 必做 harness
 
@@ -404,6 +404,6 @@
 - 切片 42 已完成：app 已通过 `render.MeasureLayout` 计算 active terminal content rect，并把 attach 初始尺寸、host resize、header/footer hide、panel presentation 和 split 变化转换为去重后的 `LiveResizeMsg`；terminal resize service 只收到 content rect cols/rows，CLI 真实 protocol 装配已覆盖 attach 后 content rect resize correction。
 - 切片 43 已完成：copy mode latest/older 已使用 copy content rect cols/rows 请求 authoritative `HistoryWindow`；host resize、layout chrome 变化和 active copy content width 变化会失效旧 history window、清理 selection/cursor、重新 latest rebind，并在 pending 期间不从 live surface fallback；旧 cols response 会被 stale guard 拒绝。
 - 切片 44 已完成：render 默认 UI chrome 已改为 Unicode box drawing；card、overlay、toast 使用 `╭╮╰╯─│`，split line 使用连接感知 `┌┐└┘─│├┤┬┴┼` primitive；split content rect 避开 divider cell，emoji/CJK/combining/ANSI 内容继续通过 cell-width helper 裁切填充；旧 `tuiv2/render` 仅只读参考了连接位合成思路，未迁入旧 runtime/model。
-- 切片 45 待开始：下一次自动推进必须完成默认入口 resize/UI 验收与文档收口。
+- 切片 45 进行中：本切片完成默认入口 resize/UI 验收与文档收口。
 - 当前未拍板但不阻塞编码的点：card/split 切换、header/footer hide、toast close current、toast clear all 的具体产品快捷键；实现只能先提供 semantic action、reducer message、hit region 和测试入口，不得临时发明产品快捷键。
 - 后续如继续推进 Terminal Pool、Workbench Tree、floating 深化、remote 迁移、彻底移除 `termx-cli` module 级旧依赖或拆分 legacy binary，必须先在本文件新增下一轮任务队列。
