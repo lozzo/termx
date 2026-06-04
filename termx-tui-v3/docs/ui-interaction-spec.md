@@ -1134,6 +1134,16 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - `Esc` 能退出当前 mode / modal。
 - 非交互 smoke 不得把裸文本 frame 当作可用默认界面完成标准。
 
+当前第一阶段 resize/UI 验收状态：
+
+- 默认界面、`termx attach` 装配路径和非交互 smoke 均以 core-v2/tui-v3 为主路径。
+- 默认界面不再以裸 `live surface pending` 文本作为可用 UI，而是显示 shell、header/footer、pane chrome、content slot、toast 或 overlay。
+- 外部 terminal emulator 初始尺寸和 resize 后尺寸必须反映到整屏 frame；frame 行数等于 viewport rows，每行 display width 等于 viewport cols。
+- terminal live 内容只显示在 pane content slot 内；content slot 尺寸变化后，terminal resize 使用 content rect，而不是外部 viewport 总尺寸。
+- copy mode 进入后只显示 authoritative history window、pending、empty 或 error；resize 或 chrome 变化导致 cols 不一致时必须重新绑定 window，不显示旧 cols 的历史内容。
+- 默认 card、overlay、toast 线框使用圆角 Unicode box drawing；split line 使用连续 Unicode box drawing；默认 UI chrome 不使用 ASCII 线框。
+- emoji、CJK、combining mark 和 ANSI styled text 不得破坏 pane、split line、toast、overlay 或整行宽度。
+
 当前未完成但产品要求仍保留：
 
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。

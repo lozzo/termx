@@ -766,7 +766,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework 阶段已落地。
+状态：最小 render framework 阶段已落地，外部 viewport / resize / Unicode 线框收口已落地。
 
 已落地：
 
@@ -774,6 +774,11 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - `RenderResult` 是 renderer 主输出；`Frame` 只作为 `FrameSink`、测试和 CLI smoke 的线性输出适配。
 - `RenderVMBuilder` 已输出 header/footer、layout/panel、content、overlay、toast 和 cursor 子 VM。
 - `state.Root` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message 和 Terminal Picker overlay 状态。
+- `state.Root` 已拥有 reducer-owned 外部 viewport state；真实 `TerminalHost` 查询初始尺寸并监听宿主 resize，fake host 可 deterministic 注入 resize。
+- 外部尺寸只通过 `HostResizeMsg` 进入 reducer-owned state；service、renderer、terminalhost 不直接改 state。
+- `RenderVMBuilder` 已把外部 viewport 投影为 `ShellVM.Layout.Viewport` truth，不再把 session size 或 live surface size 当 UI canvas truth。
+- `render.MeasureLayout` 已作为纯函数产出 viewport、body、panel、content、overlay、toast、hit region、cursor 和 cursor rect。
+- renderer 已严格按 layout plan 绘制；已知 viewport 下 frame 行数等于 viewport rows，每行 display width 等于 viewport cols，不再因默认 80 列破坏宿主自动换行。
 - tiled panel 已支持 card panel 与 split line 两种呈现。
 - split line 已覆盖最小双 pane 横向和纵向分割。
 - header/footer hide 已真实影响 body layout，隐藏后 panel body 回收空间。
@@ -781,11 +786,15 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - Terminal Picker 已有 overlay/placeholder 渲染路径。
 - `Ctrl-f` 已接入 Terminal Picker intent。
 - `Ctrl-v` 已接入 Display / Copy intent，并进入 authoritative history request 路径。
+- active terminal resize 已由 app 通过 layout plan 计算 active pane content rect，并只把 content rect cols/rows 发给 core-v2 terminal service；attach 初始尺寸、host resize、header/footer hide、card/split 切换和 split 变化都会触发去重后的 resize。
+- copy mode latest/older request 使用 copy content rect cols/rows；host resize 或 layout chrome 变化导致 content width 改变时会失效旧 `HistoryWindow`、清理 selection/cursor、重新请求 authoritative latest window。
 - copy-history content 只在 terminal id、bound token、cols 与 authoritative `HistoryStore` 一致时渲染历史内容。
 - copy mode 缺 authoritative window 或绑定不一致时显示 panel 内 pending、empty 或 error，不从 live surface fallback。
 - 宽度相关渲染通过 `DisplayWidth`、`FitText`、`SliceCells` 等 helper 处理 emoji、CJK、combining mark 和 ANSI styled text。
-- `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history 和 live surface content。
-- `make test-v2-migration` 已纳入并通过当前最小 render framework 回归。
+- 默认 UI chrome 已使用 Unicode box drawing；card、overlay、toast 使用 `╭╮╰╯─│`，split line 使用连接感知 `┌┐└┘─│├┤┬┴┼`，ASCII `+ - |` 不作为默认 UI chrome。
+- `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
+- `termx v3 e2e-smoke` 已覆盖 core-v2 daemon、默认 attach 装配、fake host 初始 viewport、host resize 重绘、content rect terminal resize、copy mode authoritative history 和 resized copy cols。
+- `make test-v2-migration` 已纳入当前默认入口、v3 smoke、e2e smoke 和默认依赖守卫回归。
 
 当前仍是最小实现，不应误读为完整产品态：
 

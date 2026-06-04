@@ -1093,7 +1093,10 @@ func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 	text := out.String()
 	if !strings.Contains(text, "termx v3 e2e smoke ok") ||
 		!strings.Contains(text, "terminal=term-") ||
-		!strings.Contains(text, "frames=") {
+		!strings.Contains(text, "frames=") ||
+		!strings.Contains(text, "viewport=100x40") ||
+		!strings.Contains(text, "session=98x36") ||
+		!strings.Contains(text, "copy_cols=98") {
 		t.Fatalf("unexpected v3 e2e smoke output:\n%s", text)
 	}
 }
