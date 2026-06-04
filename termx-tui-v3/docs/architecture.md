@@ -446,6 +446,22 @@ renderer 禁止：
 - 从 snapshot/grid viewport 推断 copy mode history。
 - 修改 `StateRoot`。
 
+当前 render 主线已经从最小 frame 推进到 styled chrome renderer 和 render framework。后续实现必须保持下面的顺序：
+
+- 先完成 UI framework 交互产品化总验收。
+- 再深化 terminal-live content renderer。
+- 最后继续 copy-history、Terminal Picker、Terminal Pool、Workbench Tree、floating、Prompt 和 Help。
+
+UI framework 交互产品化总验收包括：
+
+- header/footer 产品信息层和 mode-specific hints。
+- pane/resize/global mode 的键盘入口。
+- 鼠标 hit region 到 pane focus、pane action、toast/overlay 的派发。
+- active pane border/title/footer/toast 的实时反馈。
+- split、close、resize、zoom、card/split、header/footer hide 后的 layout measurement、terminal content rect resize 和 copy rebind。
+
+terminal-live content renderer 只能在上述交互闭环完成后深化。terminal live 内容只是 content renderer 的一种，不得为了接真实 terminal 内容绕过 render framework、命令 contract、layout plan 或 hit region。
+
 ## 12. 与 core-v2 的接口
 
 TUI-v3 只通过 `CoreClient` 访问 core-v2。
@@ -526,6 +542,10 @@ tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback
 12. 接入 workspace/pane layout、modal、clipboard、session restore。
 13. 接入真实 protocol adapter、真实 `TerminalHost`、terminal input、resize、attach/restart。
 14. 补最小端到端 harness。
+15. 完成 styled chrome renderer、cell matrix、theme token、ANSI FrameSink、header/footer、toast/overlay、pane chrome 和 pane command 基础。
+16. 完成 UI framework 交互产品化总验收：header/footer 信息层、pane/resize/global mode、鼠标命中、active pane 反馈、toast 操作、layout/effect 同步和基本手工测试入口。
+17. 深化 terminal-live content renderer：styled terminal cells、cursor、pending/empty/exited、宽字符裁切、content-local metadata 和 no chrome leak。
+18. 深化 copy-history、Terminal Picker、Terminal Pool、Workbench Tree、floating、Prompt、Help 和性能。
 
 每个切片都必须避免引入 local scrollback history fallback。
 

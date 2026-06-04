@@ -1280,7 +1280,40 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 多层 split、复杂 pane 管理和 resize affordance 的产品化。
 - tab/workspace/floating 的最终产品快捷键和交互闭环；当前已落地的 pane/resize/global 第一版入口不得被局部 handler 分叉实现。
 
-## 21. 后续讨论入口
+## 21. 当前 UI Framework 产品化验收线
+
+在继续深化 terminal-live 内容 renderer 前，必须先让当前 UI framework 成为一个可基本操作的产品壳，而不是只有静态视觉框架。
+
+该验收线的目标：
+
+- 用户能通过键盘完成 pane split、close、focus、zoom、resize、balance、card/split presentation 切换。
+- 用户能通过鼠标点击 pane content 或 pane chrome 聚焦 pane。
+- 用户能通过鼠标点击 pane action 执行同一套 pane semantic command。
+- 用户能通过鼠标命中 resize handle 或 split divider 进入 resize 语义或执行 resize command。
+- 用户能隐藏和恢复 header/footer，并看到 body 空间真实回收。
+- 用户能看到 mode-specific footer hints，知道当前 mode 下可执行什么动作。
+- 用户能关闭当前 toast 或清空 toast，并看到 toast 不改变 pane layout。
+- 每次结构操作后，active pane border/title、footer active target、toast feedback、content rect terminal resize 和 copy mode rebind 必须同步发生。
+
+这条验收线不要求：
+
+- terminal-live 内容已经具备完整 styled cell、cursor、selection 或 search。
+- copy-history 内容已经具备完整 scrollbar、logical-line marker 或 yank 反馈。
+- Terminal Picker 已经是完整列表和搜索页面。
+- Terminal Pool、Workbench Tree、Prompt、Help、floating pane 已经完整产品化。
+
+基本手工测试入口：
+
+- `go run ./termx-cli/cmd/termx v3 smoke`：查看静态 smoke 中 styled chrome、header/footer、card/split、toast、overlay 和 pane command case。
+- `go run ./termx-cli/cmd/termx v3 e2e-smoke`：查看端到端 smoke 中 split、resize、zoom、close、content rect resize 和 copy rebind。
+- 真实 TUI 中 `Ctrl-p` 进入 pane mode，执行 split、close、focus、zoom、balance、card/split。
+- 真实 TUI 中 `Ctrl-r` 进入 resize mode，使用方向键调整 pane size。
+- 真实 TUI 中 `Ctrl-g` 进入 global mode，隐藏/恢复 header/footer，关闭或清空 toast。
+- 鼠标点击 pane 内容区或 pane chrome 时，active pane 必须切换并立即高亮。
+
+如果上述基本操作还不能稳定工作，不应优先进入 terminal-live content renderer。否则真实 terminal 内容接进来后，交互 bug 会被内容渲染噪音掩盖。
+
+## 22. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

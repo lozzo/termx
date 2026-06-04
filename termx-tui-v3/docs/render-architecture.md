@@ -848,7 +848,49 @@ cache 原则：
 - 复制 cursor writer / incremental diff pipeline。
 - 一次性完成 Terminal Pool、Workbench Tree、floating 全量内容。
 
-### 18.8 Phase 7：性能和增量渲染
+### 18.8 Phase 7：UI framework 交互产品化
+
+目标：
+
+- 把 styled chrome framework 从静态视觉基线推进到可基本操作的产品壳。
+- 键盘、鼠标、测试入口和后续 CLI mini command 都复用同一 semantic command 或 shell message。
+- active pane、footer active target、toast feedback、content rect resize 和 copy rebind 在结构操作后同步更新。
+- header/footer hide、card/split presentation、toast close/clear、overlay close、terminal mouse forwarding 边界具备端到端 harness。
+- 用户能在不依赖真实 terminal 内容 renderer 完整化的情况下测试 split、close、focus、resize、zoom、card/split、header/footer hide 和 toast 操作。
+
+必须覆盖：
+
+- pane mode：split right/down、close、focus next/previous、zoom/unzoom、balance、card/split presentation。
+- resize mode：方向 resize、balance、退出。
+- global mode：header/footer hide、toast close current、toast clear all。
+- 鼠标：pane content/chrome focus、pane action、resize handle 或 split divider、toast/overlay 优先级、未命中 fallback。
+- 视觉反馈：active/inactive border style、pane title/state、footer active target、toast command feedback。
+- layout/effect：每次结构变化都重新 measurement，active terminal content rect resize 去重，copy mode cols 变化 invalid/rebind。
+
+非目标：
+
+- terminal-live styled cells 完整化。
+- copy-history selection/scrollbar 完整化。
+- Terminal Pool、Workbench Tree、floating 完整页面。
+
+该阶段必须排在 terminal-live content renderer 深化之前。原因是 terminal live 内容只是一种 content；如果 framework 的 hit region、active feedback、layout/effect 同步和 chrome 操作还不稳定，先接真实 terminal 内容会把边界问题和内容问题混在一起。
+
+### 18.9 Phase 8：terminal-live content renderer
+
+目标：
+
+- terminal live content renderer 只消费 pane content rect 和 live surface / terminal session 投影。
+- terminal 内容只能绘制在 content rect 内，不能覆盖 pane border、split line、header/footer、toast 或 overlay。
+- 表达 basic style、cursor、pending、empty、exited、resize 后裁切和宽字符安全。
+- 后续可继续深化 selection/search、content-local hit region、status metadata 和 richer terminal style。
+
+非目标：
+
+- 把 live surface 变成 history truth。
+- 从 terminal-live content renderer 反推 copy mode history。
+- 绕过 render framework 直接写 FrameSink。
+
+### 18.10 Phase 9：性能和增量渲染
 
 目标：
 
@@ -952,8 +994,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 - 当前完成的是 chrome/frame 视觉等级和 pane 结构命令基础，不代表 terminal-live、copy-history、Terminal Picker 等内容 renderer 已经完整产品化。
 - header/footer 仍停留在 styled bar 与基础 mode/status 层，不是完整产品信息层；workspace/tab/pane/terminal/notice 摘要、mode-specific shortcut hints 和窄屏退化还需要补齐。
-- render 已能合成 hit region，但 app/runtime 尚未把真实鼠标坐标完整派发到最新 hit region；多 pane 点击聚焦、pane action、resize handle、toast/overlay 优先级和 terminal mouse forwarding 边界不能宣称完成。
-- active pane 样式已经存在，但键盘与鼠标 focus、split、close、resize、zoom 后的端到端视觉反馈仍需要独立验收。
+- render 已能合成 hit region，app/runtime 已开始把真实鼠标坐标派发到最新 hit region；但 resize handle、split divider、复杂 overlay/floating、terminal mouse forwarding 的完整产品边界仍需继续验收。
+- active pane 样式已经存在，但键盘与鼠标 focus、split、close、resize、zoom、card/split 切换后的端到端视觉反馈仍需要独立验收并固定为 UI framework 闭环。
 - terminal-live content 目前仍是基础行展示，尚未完整表达 terminal styled cells、live cursor、selection、search、clipped markers 或 rich terminal metadata。
 - copy-history content 目前只保证 authoritative window、pending/empty/error、cols rebind 和 no-fallback 语义，尚未完整表达 copy mode selection、logical-line marker、clipped before/after、scrollbar 或位置摘要。
 - Terminal Picker 目前是 styled overlay/placeholder 路径，不是完整 terminal picker 内容。
@@ -973,6 +1015,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - shell header/footer 产品化：header 输出 workspace/tab/active pane/terminal count/notice 或窄屏摘要；footer 输出当前 mode、mode-specific shortcut hints、active pane/terminal 状态和全局短摘要，隐藏后 body 回收且上下文仍可恢复识别。
 - input / hit region dispatch：app/runtime 持有或接收最新 render hit regions，把真实鼠标坐标映射到 pane content、pane chrome、action slot、split divider、resize handle、toast/overlay；UI chrome 优先于 terminal mouse forwarding。
 - active pane 视觉反馈验收：键盘和鼠标导致的 focus、split、close、zoom、resize、card/split 切换必须立即反映到 active/inactive border、title、footer 和 toast。
+- UI framework 交互产品化总验收：在接 terminal-live content renderer 前，把 header/footer、pane/resize/global mode、鼠标命中、active feedback、toast、content rect resize 和 copy rebind 做成可基本操作的产品闭环。
 - terminal-live content renderer：在 UI framework 交互闭环后完善 terminal styled cell、cursor、selection/search、clipping、status metadata 和 content-local hit region。
 - copy-history content renderer：完善 selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和宽度变化后的交互恢复。
 - empty/exited/terminal-picker content renderer：把当前 placeholder 和基础文案拆成独立 renderer，补齐 CTA、列表、preview、状态 token 和 action region。
