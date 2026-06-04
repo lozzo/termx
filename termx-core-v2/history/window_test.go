@@ -206,6 +206,9 @@ func TestLatestWindowIncludesEligibleMutableFrontier(t *testing.T) {
 	if got := rowLineIDs(window.Rows); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
 		t.Fatalf("unexpected latest row line ids %v", got)
 	}
+	if !window.Rows[0].Committed || window.Rows[1].Committed {
+		t.Fatalf("unexpected committed row markers %#v", window.Rows)
+	}
 
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventHideFrontier, LineIDs: []LogicalLineID{2}})
 	window, err = track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 10})

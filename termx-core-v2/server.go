@@ -154,6 +154,23 @@ func (server *Server) ListTerminals() []TerminalInfo {
 	return server.registry.list()
 }
 
+func (server *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) (TerminalInfo, error) {
+	_ = ctx
+	terminal, err := server.Terminal(id)
+	if err == nil {
+		return terminal.SetMetadata(name, tags), nil
+	}
+	if !errors.Is(err, ErrTerminalNotFound) {
+		return TerminalInfo{}, err
+	}
+	info, err := server.registry.setMetadata(id, name, tags)
+	if err != nil {
+		return TerminalInfo{}, err
+	}
+	server.publishTerminalEvent(EventTerminalChanged, info)
+	return info, nil
+}
+
 func (server *Server) RemoveTerminal(id string) error {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
@@ -244,6 +261,14 @@ func (server *Server) LatestWindow(id string, cols, rows int) (history.HistoryWi
 		return history.HistoryWindow{}, err
 	}
 	return terminal.LatestWindow(cols, rows)
+}
+
+func (server *Server) OlderWindow(id string, cols, rows int, cursor history.HistoryCursor) (history.HistoryWindow, error) {
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return history.HistoryWindow{}, err
+	}
+	return terminal.OlderWindow(cols, rows, cursor)
 }
 
 func (server *Server) Events(ctx context.Context, filter EventFilter) <-chan Event {
@@ -341,9 +366,9 @@ func (server *Server) handleTransport(ctx context.Context, conn transport.Transp
 	defer server.wg.Done()
 	defer server.untrackTransport(conn)
 	defer func() { _ = conn.Close() }()
-	select {
-	case <-ctx.Done():
-	case <-conn.Done():
+	session := newProtocolSession(server, conn)
+	if err := session.run(ctx); err != nil && !errors.Is(err, transport.ErrListenerClosed) {
+		server.cfg.logger.Debug("core-v2 protocol session stopped", "error", err)
 	}
 }
 

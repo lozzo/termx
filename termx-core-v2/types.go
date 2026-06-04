@@ -27,6 +27,7 @@ type TerminalInfo struct {
 	ID        string
 	Name      string
 	Command   []string
+	Tags      map[string]string
 	Size      Size
 	State     TerminalState
 	CreatedAt time.Time
@@ -35,6 +36,7 @@ type TerminalInfo struct {
 
 func (info TerminalInfo) Clone() TerminalInfo {
 	info.Command = append([]string(nil), info.Command...)
+	info.Tags = cloneStringMap(info.Tags)
 	if info.ExitCode != nil {
 		code := *info.ExitCode
 		info.ExitCode = &code
@@ -46,6 +48,7 @@ type TerminalRecord struct {
 	ID      string
 	Name    string
 	Command []string
+	Tags    map[string]string
 	Size    Size
 }
 
@@ -56,6 +59,18 @@ var (
 	ErrDuplicateTerminal  = errors.New("duplicate terminal")
 	ErrTerminalNotFound   = errors.New("terminal not found")
 	ErrTerminalExited     = errors.New("terminal exited")
+	ErrStaleHistoryWindow = errors.New("stale history window")
 	ErrInvalidServerSize  = errors.New("invalid server size")
 	ErrNilListenerFactory = errors.New("nil listener factory")
 )
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}

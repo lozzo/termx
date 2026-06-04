@@ -39,6 +39,17 @@ func (terminal *Terminal) Info() TerminalInfo {
 	return terminal.info.Clone()
 }
 
+func (terminal *Terminal) SetMetadata(name string, tags map[string]string) TerminalInfo {
+	terminal.mu.Lock()
+	terminal.info.Name = name
+	terminal.info.Tags = cloneStringMap(tags)
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	terminal.syncInfo(info)
+	terminal.publish(EventTerminalMetadataChanged, info)
+	return info
+}
+
 func (terminal *Terminal) Input(data []byte) error {
 	terminal.mu.Lock()
 	process := terminal.process
@@ -112,7 +123,7 @@ func (terminal *Terminal) Resize(size Size) error {
 		return err
 	}
 	terminal.syncInfo(info)
-	terminal.publish(EventTerminalChanged, info)
+	terminal.publishResize(info, oldSize, size)
 	return nil
 }
 
@@ -175,6 +186,12 @@ func (terminal *Terminal) LatestWindow(cols, rows int) (history.HistoryWindow, e
 	return terminal.history.LatestWindow(history.HistoryWindowRequest{Cols: cols, Rows: rows})
 }
 
+func (terminal *Terminal) OlderWindow(cols, rows int, cursor history.HistoryCursor) (history.HistoryWindow, error) {
+	terminal.mu.Lock()
+	defer terminal.mu.Unlock()
+	return terminal.history.OlderWindow(history.HistoryWindowRequest{Cols: cols, Rows: rows, Cursor: cursor})
+}
+
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
 	if terminal.events == nil {
 		return
@@ -184,6 +201,20 @@ func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
 		Type:       typ,
 		TerminalID: info.ID,
 		Terminal:   &terminalCopy,
+	})
+}
+
+func (terminal *Terminal) publishResize(info TerminalInfo, oldSize Size, newSize Size) {
+	if terminal.events == nil {
+		return
+	}
+	terminalCopy := info.Clone()
+	terminal.events.publish(Event{
+		Type:       EventTerminalResized,
+		TerminalID: info.ID,
+		Terminal:   &terminalCopy,
+		OldSize:    oldSize,
+		NewSize:    newSize,
 	})
 }
 

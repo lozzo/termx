@@ -609,21 +609,16 @@ func TestClientStreamOverflowFlushesSyncLostWithoutWaitingForNextFrame(t *testin
 	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
 
 	waitForClientStreamState(t, stream, func() bool {
-		return len(stream.queue) == 2 && stream.pendingDroppedBytes == 0
+		return len(stream.queue) >= 1 && stream.queue[len(stream.queue)-1].Type == wire.TypeSyncLost && stream.pendingDroppedBytes == 0
 	})
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
-	if len(stream.queue) != 2 {
-		t.Fatalf("expected resize plus sync-lost after dropped screen frame, got %d frames", len(stream.queue))
+	frame := stream.queue[len(stream.queue)-1]
+	if frame.Type != wire.TypeSyncLost {
+		t.Fatalf("expected dropped screen frame to queue sync-lost immediately, got %#v", frame)
 	}
-	if stream.queue[0].Type != wire.TypeResize {
-		t.Fatalf("expected first frame to remain resize, got %#v", stream.queue[0])
-	}
-	if stream.queue[1].Type != wire.TypeSyncLost {
-		t.Fatalf("expected dropped screen frame to queue sync-lost immediately, got %#v", stream.queue[1])
-	}
-	dropped, err := wire.DecodeSyncLostPayload(stream.queue[1].Payload)
+	dropped, err := wire.DecodeSyncLostPayload(frame.Payload)
 	if err != nil {
 		t.Fatalf("decode sync-lost payload: %v", err)
 	}

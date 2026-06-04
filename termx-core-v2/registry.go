@@ -39,6 +39,7 @@ func (registry *terminalRegistry) register(record TerminalRecord, defaultSize Si
 		ID:        id,
 		Name:      name,
 		Command:   append([]string(nil), record.Command...),
+		Tags:      cloneStringMap(record.Tags),
 		Size:      size,
 		State:     TerminalStateRunning,
 		CreatedAt: time.Now().UTC(),
@@ -95,6 +96,19 @@ func (registry *terminalRegistry) replace(info TerminalInfo) error {
 	}
 	registry.terminals[info.ID] = info.Clone()
 	return nil
+}
+
+func (registry *terminalRegistry) setMetadata(id string, name string, tags map[string]string) (TerminalInfo, error) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	info, ok := registry.terminals[id]
+	if !ok {
+		return TerminalInfo{}, ErrTerminalNotFound
+	}
+	info.Name = name
+	info.Tags = cloneStringMap(tags)
+	registry.terminals[id] = info.Clone()
+	return info.Clone(), nil
 }
 
 func (registry *terminalRegistry) clear() {

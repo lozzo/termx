@@ -31,7 +31,8 @@ func TestTerminalLifecycleAndPipeline(t *testing.T) {
 	if err := server.WriteInput(context.Background(), "term-1", []byte("echo hi\n")); err != nil {
 		t.Fatalf("write input: %v", err)
 	}
-	if got := process.inputs[0]; string(got) != "echo hi\n" {
+	inputs, _, _, _ := process.snapshot()
+	if got := inputs[0]; string(got) != "echo hi\n" {
 		t.Fatalf("unexpected input %q", string(got))
 	}
 	if err := server.IngestOutput(context.Background(), "term-1", "hello\nworld"); err != nil {
@@ -54,7 +55,8 @@ func TestTerminalLifecycleAndPipeline(t *testing.T) {
 	if err := server.ResizeTerminal(context.Background(), "term-1", 20, 5); err != nil {
 		t.Fatalf("resize: %v", err)
 	}
-	if got := process.resizes[0]; got != (Size{Cols: 20, Rows: 5}) {
+	_, resizes, _, _ := process.snapshot()
+	if got := resizes[0]; got != (Size{Cols: 20, Rows: 5}) {
 		t.Fatalf("unexpected resize %#v", got)
 	}
 	info, err = server.GetTerminal("term-1")
@@ -77,8 +79,9 @@ func TestTerminalResizeProcessFailureDoesNotChangeRegistryOrLiveSize(t *testing.
 		t.Fatalf("register terminal: %v", err)
 	}
 	process := factory.process("term-1")
-	process.resizeErr = errors.New("resize failed")
-	if err := server.ResizeTerminal(context.Background(), "term-1", 20, 5); !errors.Is(err, process.resizeErr) {
+	resizeErr := errors.New("resize failed")
+	process.setResizeErr(resizeErr)
+	if err := server.ResizeTerminal(context.Background(), "term-1", 20, 5); !errors.Is(err, resizeErr) {
 		t.Fatalf("expected resize failure, got %v", err)
 	}
 	info, err := server.GetTerminal("term-1")
@@ -145,7 +148,8 @@ func TestTerminalRestartReplacesProcessAndClearsLiveAndHistory(t *testing.T) {
 	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
 		t.Fatalf("restart: %v", err)
 	}
-	if !first.closed {
+	_, _, _, firstClosed := first.snapshot()
+	if !firstClosed {
 		t.Fatal("expected old process to be closed")
 	}
 	second := factory.process("term-1")
@@ -226,13 +230,15 @@ func TestTerminalKillAndRemoveCloseProcess(t *testing.T) {
 	if err := server.KillTerminal(context.Background(), "term-1"); err != nil {
 		t.Fatalf("kill terminal: %v", err)
 	}
-	if !process.killed {
+	_, _, killed, _ := process.snapshot()
+	if !killed {
 		t.Fatal("expected process to be killed")
 	}
 	if err := server.RemoveTerminal("term-1"); err != nil {
 		t.Fatalf("remove terminal: %v", err)
 	}
-	if !process.closed {
+	_, _, _, closed := process.snapshot()
+	if !closed {
 		t.Fatal("expected process to be closed")
 	}
 	if _, err := server.Terminal("term-1"); !errors.Is(err, ErrTerminalNotFound) {
@@ -285,6 +291,7 @@ func (factory *recordingProcessFactory) process(id string) *recordingProcess {
 }
 
 type recordingProcess struct {
+	mu        sync.Mutex
 	id        string
 	inputs    [][]byte
 	resizes   []Size
@@ -296,6 +303,8 @@ type recordingProcess struct {
 }
 
 func (process *recordingProcess) Input(data []byte) error {
+	process.mu.Lock()
+	defer process.mu.Unlock()
 	if process.closed {
 		return io.ErrClosedPipe
 	}
@@ -304,6 +313,8 @@ func (process *recordingProcess) Input(data []byte) error {
 }
 
 func (process *recordingProcess) Resize(size Size) error {
+	process.mu.Lock()
+	defer process.mu.Unlock()
 	if process.closed {
 		return io.ErrClosedPipe
 	}
@@ -314,8 +325,16 @@ func (process *recordingProcess) Resize(size Size) error {
 	return nil
 }
 
+func (process *recordingProcess) setResizeErr(err error) {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	process.resizeErr = err
+}
+
 func (process *recordingProcess) Kill() error {
+	process.mu.Lock()
 	process.killed = true
+	process.mu.Unlock()
 	process.exit(-1)
 	return nil
 }
@@ -325,9 +344,22 @@ func (process *recordingProcess) Wait() <-chan ProcessExit {
 }
 
 func (process *recordingProcess) Close() error {
+	process.mu.Lock()
 	process.closed = true
+	process.mu.Unlock()
 	process.exit(-1)
 	return nil
+}
+
+func (process *recordingProcess) snapshot() ([][]byte, []Size, bool, bool) {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	inputs := make([][]byte, len(process.inputs))
+	for i, input := range process.inputs {
+		inputs[i] = append([]byte(nil), input...)
+	}
+	resizes := append([]Size(nil), process.resizes...)
+	return inputs, resizes, process.killed, process.closed
 }
 
 func (process *recordingProcess) exit(code int) {

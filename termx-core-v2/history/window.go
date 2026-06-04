@@ -45,6 +45,7 @@ type HistoryWindow struct {
 	FirstLineID LogicalLineID
 	LastLineID  LogicalLineID
 	LoadedLines int
+	TotalRows   int
 	TotalLines  int
 }
 
@@ -53,6 +54,7 @@ type VisualRow struct {
 	Text           string
 	LineID         LogicalLineID
 	RowInLine      int
+	Committed      bool
 	ClippedBefore  bool
 	ClippedAfter   bool
 	LineGeneration Generation
@@ -91,6 +93,7 @@ func (track *HistoryTrack) LatestWindow(req HistoryWindowRequest) (HistoryWindow
 		FirstLineID: firstLine,
 		LastLineID:  lastLine,
 		LoadedLines: len(spans),
+		TotalRows:   len(rows),
 		TotalLines:  len(track.committed.IDs()),
 	}, nil
 }
@@ -121,6 +124,7 @@ func (track *HistoryTrack) OlderWindow(req HistoryWindowRequest) (HistoryWindow,
 		FirstLineID: firstLine,
 		LastLineID:  lastLine,
 		LoadedLines: len(spans),
+		TotalRows:   len(rows),
 		TotalLines:  len(track.committed.IDs()),
 	}, nil
 }
@@ -256,6 +260,7 @@ func buildWindowRows(rows []projectedRow) ([]LogicalLineSpan, []VisualRow, Logic
 		clippedAfter := rows[end].row.RowInLine < rows[end].lineRowCount-1
 		for rowIndex := start; rowIndex <= end; rowIndex++ {
 			row := rows[rowIndex].row
+			row.Committed = rows[rowIndex].committed
 			row.ClippedBefore = clippedBefore
 			row.ClippedAfter = clippedAfter
 			visualRows[rowIndex] = row

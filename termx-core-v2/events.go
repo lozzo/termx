@@ -9,12 +9,14 @@ import (
 type EventType string
 
 const (
-	EventServerListening EventType = "server.listening"
-	EventServerStopped   EventType = "server.stopped"
-	EventTerminalCreated EventType = "terminal.created"
-	EventTerminalExited  EventType = "terminal.exited"
-	EventTerminalRemoved EventType = "terminal.removed"
-	EventTerminalChanged EventType = "terminal.changed"
+	EventServerListening         EventType = "server.listening"
+	EventServerStopped           EventType = "server.stopped"
+	EventTerminalCreated         EventType = "terminal.created"
+	EventTerminalExited          EventType = "terminal.exited"
+	EventTerminalResized         EventType = "terminal.resized"
+	EventTerminalMetadataChanged EventType = "terminal.metadata_changed"
+	EventTerminalRemoved         EventType = "terminal.removed"
+	EventTerminalChanged         EventType = "terminal.changed"
 )
 
 type Event struct {
@@ -22,6 +24,8 @@ type Event struct {
 	TerminalID string
 	Terminal   *TerminalInfo
 	SocketPath string
+	OldSize    Size
+	NewSize    Size
 	Timestamp  time.Time
 }
 
