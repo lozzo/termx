@@ -211,10 +211,10 @@
 | 35. RenderVMBuilder 分层重建 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/state/` | 把当前大 `RenderVM{Lines, Status}` 替换为 shell/body/layout/panel/content/overlay/toast/cursor 子 VM；builder 不得退化成大 bag；copy-history VM 必须校验 terminal id、bound token 和 cols；缺 authoritative window 时只生成 pending/empty/error content；live content 只消费 `TerminalSurfaceStore` |
 | 36. render framework 最小渲染器 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/terminalhost/` 按需 | 实现最小 render framework：viewport layout、header/footer 占位与隐藏、card panel、split line、最小双 pane 横向/纵向分割、panel chrome、content renderer dispatch、toast 层、Terminal Picker overlay/placeholder、hit region 合成、cursor 归属、最终 `RenderResult -> FrameSink` 适配；harness 覆盖宽窄屏、裁切、层级优先级、toast 不改变 body layout、opaque overlay cursor，以及 panel 标题/content/toast 中的 emoji、CJK、combining mark、ANSI styled text 不破坏边框、split line 或 row width |
 | 37. app/input 接线与交互入口 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/state/`、`termx-tui-v3/render/` 按需 | 默认 runtime 使用新的 render framework 主路径；`Ctrl-f` 打开 Terminal Picker overlay/placeholder，`Ctrl-v` 进入 Display/Copy 并在缺 authoritative history 时显示 panel 内 pending/empty；card/split、header/footer hide、toast close/clear 先通过 semantic action、hit region 或测试消息接入，不临时发明未拍板快捷键；live input、resize、copy mode 原有主路径不回退 |
-| 38. 默认入口 UI smoke 与回归验收 | 待开始 | `termx-tui-v3/`、`termx-cli/`、`Makefile` 按需 | 默认 `go run ./termx-cli/cmd/termx` 和非交互 smoke 不再把裸文本 frame 当作可用界面；smoke 覆盖 workbench shell、header/footer、card/split、header/footer hide、toast、Terminal Picker placeholder、copy pending/empty、live surface panel content、emoji/CJK/ANSI 宽度安全；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1` 和按需 `make test-v2-migration` |
+| 38. 默认入口 UI smoke 与回归验收 | 进行中 | `termx-tui-v3/`、`termx-cli/`、`Makefile` 按需 | 默认 `go run ./termx-cli/cmd/termx` 和非交互 smoke 不再把裸文本 frame 当作可用界面；smoke 覆盖 workbench shell、header/footer、card/split、header/footer hide、toast、Terminal Picker placeholder、copy pending/empty、live surface panel content、emoji/CJK/ANSI 宽度安全；运行 `cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1` 和按需 `make test-v2-migration` |
 | 39. render framework 收口与文档同步 | 待开始 | `termx-tui-v3/docs/`、`workflow.md`、`termx-tui-v3/` | 同步实现结果到 render 架构和 UI 交互文档，记录已落地、未落地和后续 Terminal Pool / Workbench Tree / floating / overlay 深化切片；删除或重命名过时的裸文本 render helper/test 语义；确认旧 `tuiv2` 仍只读参考，默认路径不引入旧依赖 |
 
-当前下一步：从切片 38 开始做默认入口 UI smoke 与回归验收；自动执行时必须先把切片 38 标为进行中并提交，或与切片 38 首个实现提交同切片提交。
+当前下一步：继续切片 38，补默认入口 UI smoke 与回归验收；不得扩展到切片 39 的文档收口。
 
 ## 6. 必做 harness
 
