@@ -1117,22 +1117,31 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 ## 20. 第一阶段验收标准
 
-第一阶段不要求所有高级功能都完成，但默认 `termx` 进入 TUI 后必须满足：
+第一阶段不要求所有高级功能都完成。当前最小 render framework 阶段已经落地，默认 `termx` 进入 TUI 后必须满足：
 
 - 有顶栏。
 - 有底栏。
 - 有至少一个可识别 pane。
 - pane 有边界、标题和状态。
-- tiled pane 至少先落地 card panel 或 split line 之一，但设计和状态必须预留两种呈现模式。
-- floating pane 不受 tiled pane 呈现模式影响，保持独立带边框。
-- header/footer 隐藏可以后续实现，但不得把它们设计成不可关闭的唯一信息入口。
-- 全局 notice / error 先可落在顶栏右侧，但后续必须收敛到右上角弹出消息系统。
+- tiled pane 已支持 card panel 与 split line 两种呈现模式。
+- 最小双 pane 横向和纵向 split 已可渲染。
+- header/footer 已支持隐藏，隐藏后 body 回收空间。
+- 右上角 toast 已作为全局 notice / error 的主要展示入口之一。
 - live surface pending 显示在 pane 内。
 - terminal 内容到达后显示在 pane 内容区。
 - `Ctrl-f` 能进入 Terminal Picker。
 - `Ctrl-v` 能进入 Display / Copy 路径，并且没有 authoritative history 时显示 pane 内 loading / empty。
 - `Esc` 能退出当前 mode / modal。
 - 非交互 smoke 不得把裸文本 frame 当作可用默认界面完成标准。
+
+当前未完成但产品要求仍保留：
+
+- floating pane 完整交互、z-order、drag/resize 和带边框渲染。
+- Terminal Pool 完整页面。
+- Workbench Tree 完整 overlay。
+- Prompt、Help、Floating Overview overlay。
+- 多层 split、pane resize 和复杂 pane 管理。
+- header/footer hide、card/split、toast close/clear 的最终产品快捷键；当前只允许通过 semantic action 或测试消息接入，不能临时发明快捷键。
 
 ## 21. 后续讨论入口
 

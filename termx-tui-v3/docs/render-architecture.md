@@ -763,3 +763,51 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - header/footer hide 不能只保留 VM 字段和测试；最小 render framework 阶段必须处理实际隐藏、空间回收和状态可达性。
 - toast 不能只做静态渲染；最小 render framework 阶段必须处理基础生命周期和自动消失。
 - Terminal Pool 与 Workbench Tree 在 framework 成型后再接入，不作为最小 render framework 阶段的阻塞项。
+
+## 22. 当前实现落地记录
+
+状态：最小 render framework 阶段已落地。
+
+已落地：
+
+- `StateRoot -> RenderVMBuilder -> ShellVM -> Renderer.RenderResult -> FrameSink` 主路径已建立。
+- `RenderResult` 是 renderer 主输出；`Frame` 只作为 `FrameSink`、测试和 CLI smoke 的线性输出适配。
+- `RenderVMBuilder` 已输出 header/footer、layout/panel、content、overlay、toast 和 cursor 子 VM。
+- `state.Root` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message 和 Terminal Picker overlay 状态。
+- tiled panel 已支持 card panel 与 split line 两种呈现。
+- split line 已覆盖最小双 pane 横向和纵向分割。
+- header/footer hide 已真实影响 body layout，隐藏后 panel body 回收空间。
+- toast 已支持 severity、pending、auto dismiss、close current、clear all；renderer 中 toast 不改变 body layout。
+- Terminal Picker 已有 overlay/placeholder 渲染路径。
+- `Ctrl-f` 已接入 Terminal Picker intent。
+- `Ctrl-v` 已接入 Display / Copy intent，并进入 authoritative history request 路径。
+- copy-history content 只在 terminal id、bound token、cols 与 authoritative `HistoryStore` 一致时渲染历史内容。
+- copy mode 缺 authoritative window 或绑定不一致时显示 panel 内 pending、empty 或 error，不从 live surface fallback。
+- 宽度相关渲染通过 `DisplayWidth`、`FitText`、`SliceCells` 等 helper 处理 emoji、CJK、combining mark 和 ANSI styled text。
+- `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history 和 live surface content。
+- `make test-v2-migration` 已纳入并通过当前最小 render framework 回归。
+
+当前仍是最小实现，不应误读为完整产品态：
+
+- split layout 只覆盖最小双 pane 横向/纵向，不覆盖复杂多层 split、resize handle 或动态 pane resize。
+- content renderer 目前是最小分流，terminal-live、copy-history、empty/exited/placeholder 已有基础路径，但 Terminal Pool、Workbench Tree、Prompt、Help 的完整内容未落地。
+- floating panel 仍未落地，当前只有架构类型和后续边界。
+- overlay 只落地 Terminal Picker placeholder 与基础 opaque cursor 归属，未完成 Workbench Tree、Prompt、Help、Floating Overview。
+- toast 具备基础生命周期和渲染，不代表最终视觉 polish、动画或完整消息队列策略。
+- hit region 已有内容、overlay、toast 合成基础，不代表完整鼠标交互产品语义。
+- `RenderVM{Lines, Status}` 字段仍保留为兼容投影，后续可以在默认 runtime 和测试全部迁到 `ShellVM/RenderResult` 后继续删除或重命名。
+
+## 23. 后续深化切片建议
+
+后续任务必须继续遵守本文档，不得回退到裸文本 frame 或 terminal-only renderer。
+
+建议后续切片：
+
+- tiled layout refinement：支持多层 split、pane resize、复杂 content rect 分配、active pane hit region 和 card/split 模式切换保持。
+- content renderer 分流：把 terminal-live、copy-history、empty/exited、terminal-picker、help、prompt 独立成更小 content renderer。
+- floating / overlay：实现 floating pane z-order、裁切、遮挡、置顶、drag/resize affordance，以及 Workbench Tree、Prompt、Help、Floating Overview overlay。
+- Terminal Pool：实现 Terminal Pool page content、列表、搜索、detail、preview 和 attach/kill/edit action。
+- Workbench Tree：实现 workspace/tab/pane/floating 结构导航 overlay。
+- input / hit region：把 card/split、header/footer hide、toast close/clear、overlay close 等未拍板快捷键继续保持 semantic action，在产品拍板后再落具体快捷键。
+- cleanup：删除或重命名剩余旧 `RenderVM{Lines, Status}` 兼容字段和相关测试命名，前提是 runtime、CLI smoke 和 harness 已全部迁到 `ShellVM/RenderResult` 语义。
+- performance：引入 content-level cache、layer dirty region 和 large terminal output 性能验证。

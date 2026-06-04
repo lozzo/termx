@@ -46,7 +46,7 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderDoesNotFallbackWithoutAuthoritativeHistory(t *testing.T) {
+func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
