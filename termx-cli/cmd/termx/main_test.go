@@ -20,6 +20,7 @@ import (
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	"github.com/lozzow/termx/termx-shared/transport"
+	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/spf13/cobra"
@@ -607,6 +608,108 @@ func TestV3LocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	}
 	if strings.Contains(emptyLs.String(), terminalID) {
 		t.Fatalf("removed terminal still listed:\n%s", emptyLs.String())
+	}
+}
+
+func TestV3AttachRejectsNonInteractiveTerminal(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunAttach := runV3Attach
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Attach = oldRunAttach
+	})
+
+	isInteractiveTerminal = func() bool { return false }
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		t.Fatal("non-interactive v3 attach must not start runtime")
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "attach", "term-1"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "termx v3 attach requires an interactive terminal") {
+		t.Fatalf("expected non-interactive attach error, got %v", err)
+	}
+}
+
+func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunAttach := runV3Attach
+	oldRunv2 := runTUIv2
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runV3Attach = oldRunAttach
+		runTUIv2 = oldRunv2
+	})
+
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	isInteractiveTerminal = func() bool { return true }
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		t.Fatal("termx v3 attach must not call tuiv2")
+		return nil
+	}
+	var got v3AttachConfig
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		got = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "v3", "attach", "term-1"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got.TerminalID != "term-1" || got.SocketPath != socketPath || got.LogFile != logPath {
+		t.Fatalf("unexpected v3 attach config %#v", got)
+	}
+}
+
+func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
+	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "attach-demo",
+		Command: []string{"demo-shell"},
+		Size:    protocol.Size{Cols: 100, Rows: 30},
+	}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	_ = server
+	host := app.NewFakeTerminalHost(8)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host)
+
+	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
+		TerminalID:   "term-1",
+		Cols:         100,
+		Rows:         30,
+		Mode:         "collaborator",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "test-surface",
+		ViewID:       "test-view",
+	}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if !runtime.State().Session.Attached ||
+		runtime.State().Session.TerminalID != "term-1" ||
+		runtime.State().Session.Channel == 0 ||
+		runtime.State().Session.Cols != 100 ||
+		runtime.State().Session.Rows != 30 {
+		t.Fatalf("runtime did not attach through protocol client %#v", runtime.State().Session)
+	}
+	if len(host.Frames()) == 0 {
+		t.Fatal("expected attach drain to render at least one frame")
 	}
 }
 
@@ -2229,6 +2332,45 @@ func (s *fakeCoreV2Server) ListenAndServe(context.Context) error {
 func (s *fakeCoreV2Server) Shutdown(context.Context) error {
 	s.shutdownCalls++
 	return nil
+}
+
+func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.Client, func()) {
+	t.Helper()
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+	client, err := dialV3Client(socketPath)
+	if err != nil {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		t.Fatalf("dial core-v2 daemon: %v", err)
+	}
+	closeFn := func() {
+		_ = client.Close()
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop in time")
+		}
+	}
+	return server, client, closeFn
 }
 
 func (s *fakeTermxServer) StorageGet(context.Context, termx.StorageGetRequest) (termx.StorageEntry, error) {

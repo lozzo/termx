@@ -38,6 +38,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3LsCommand(socket, logFile))
 	cmd.AddCommand(v3KillCommand(socket, logFile))
 	cmd.AddCommand(v3RemoveCommand(socket, logFile))
+	cmd.AddCommand(v3AttachCommand(socket, logFile))
 	return cmd
 }
 
