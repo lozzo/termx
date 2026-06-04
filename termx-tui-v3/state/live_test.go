@@ -10,11 +10,15 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 		Rows:       24,
 		Lines:      lines,
 		Title:      "shell",
+		Cursor:     LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
 	})
 	lines[0] = "mutated"
 
-	if store.TerminalID != "term-1" || store.Cols != 80 || store.Rows != 24 || store.Title != "shell" {
+	if store.TerminalID != "term-1" || store.Cols != 80 || store.Rows != 24 || store.Title != "shell" || !store.Ready {
 		t.Fatalf("unexpected surface store %#v", store)
+	}
+	if !store.Cursor.Visible || store.Cursor.Row != 1 || store.Cursor.Col != 2 || store.Cursor.Shape != "bar" {
+		t.Fatalf("expected detached cursor metadata, got %#v", store.Cursor)
 	}
 	if store.Lines[0] != "one" {
 		t.Fatalf("expected detached lines, got %#v", store.Lines)

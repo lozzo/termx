@@ -462,6 +462,14 @@ UI framework 交互产品化总验收包括：
 
 terminal-live content renderer 只能在上述交互闭环完成后深化。terminal live 内容只是 content renderer 的一种，不得为了接真实 terminal 内容绕过 render framework、命令 contract、layout plan 或 hit region。
 
+当前 terminal-live content renderer 一期的架构边界：
+
+- `TerminalSurfaceStore` 可以保存 live surface 是否已到达、实时行、基础 cursor metadata 和错误状态；这些只服务实时显示，不是 history truth。
+- `RenderVMBuilder` 负责把 live 行投影为 `ContentVM`：基础 ANSI SGR 转成 semantic style token，pending/empty/exited 转成所属 pane 内的 content 状态，live cursor 转成 content-local cursor。
+- `Renderer` 和 render framework 只按 content rect 裁切、合成和输出 styled frame，不解释 terminal lifecycle，也不从 live surface 推断 copy/history。
+- `FrameSink` 只消费 `Frame` / `RenderResult` 的 ANSI styled frame；不得为了 live 内容绕过 `RenderResult` 直接写 TTY。
+- 若未来协议提供 styled cell、精确 cursor、link、truecolor 或 terminal mode metadata，应作为 live content VM 的输入增强，而不是改变 render framework 与 history/copy mode 边界。
+
 ## 12. 与 core-v2 的接口
 
 TUI-v3 只通过 `CoreClient` 访问 core-v2。

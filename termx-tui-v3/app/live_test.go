@@ -72,6 +72,66 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 	}
 }
 
+func TestLiveContentRendererKeepsStyleCursorAndChromeSafe(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 9, Cols: 28, Rows: 10},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(30, 12)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 30, Rows: 12}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       28,
+		Rows:       8,
+		Lines: []string{
+			"\x1b[31mERR\x1b[0m 你好🚀 output that must clip before chrome",
+			"\x1b[32mOK\x1b[0m done",
+		},
+		Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 7, Shape: "bar"},
+	}}); err != nil {
+		t.Fatalf("post surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain surface: %v", err)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "ERR 你好🚀") || !frameContains(frame, "OK done") {
+		t.Fatalf("expected live content in pane content rect, got %#v", frame.Lines)
+	}
+	if frameContains(frame, "\x1b[") {
+		t.Fatalf("plain frame must not leak raw ANSI, got %#v", frame.Lines)
+	}
+	assertPaneVisualState(t, frame, "ERR", render.StyleDanger)
+	assertPaneVisualState(t, frame, "OK", render.StyleSuccess)
+	if !ansiFrameContains(frame, "\x1b[38;2;") {
+		t.Fatalf("ANSI frame must contain SGR styled live content, got %#v", frame.ANSILines)
+	}
+	if !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("expected live content cursor metadata, got %#v", frame.Cursor)
+	}
+	for i, line := range frame.Lines {
+		if width := render.DisplayWidth(line); width != 30 {
+			t.Fatalf("row %d width=%d want=30 line=%q", i, width, line)
+		}
+	}
+	if right := render.SliceCells(frame.Lines[2], 29, 30); right != "│" {
+		t.Fatalf("right pane border must survive live ANSI/wide clipping, got %q in %#v", right, frame.Lines)
+	}
+}
+
 func TestLiveAttachUsesCardContentRectForInitialTerminalSize(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7}}
 	host := NewFakeTerminalHost(8)
@@ -438,6 +498,15 @@ func lastFrame(t *testing.T, frames []render.Frame) render.Frame {
 
 func frameContains(frame render.Frame, value string) bool {
 	for _, line := range frame.Lines {
+		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func ansiFrameContains(frame render.Frame, value string) bool {
+	for _, line := range frame.ANSILines {
 		if strings.Contains(line, value) {
 			return true
 		}

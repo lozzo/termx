@@ -331,6 +331,67 @@ func TestRenderVMBuilderUsesLiveSurface(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T) {
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Cols:       20,
+			Rows:       5,
+			Ready:      true,
+			Lines:      []string{"\x1b[31mERR\x1b[0m ok \x1b[32m好🚀\x1b[0m"},
+			Cursor:     state.LiveCursor{Visible: true, Row: 0, Col: 10, Shape: "bar"},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 20, Rows: 5},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentTerminalLive || len(content.Lines) != 1 {
+		t.Fatalf("expected terminal-live content, got %#v", content)
+	}
+	if got := content.Lines[0].PlainString(); got != "ERR ok 好🚀" {
+		t.Fatalf("expected sanitized live text, got %q", got)
+	}
+	if !lineHasStyledCell(content.Lines[0], "ERR", StyleDanger) || !lineHasStyledCell(content.Lines[0], "好🚀", StyleSuccess) {
+		t.Fatalf("expected basic SGR mapped to styled cells, got %#v", content.Lines[0])
+	}
+	if !content.Cursor.Visible || content.Cursor.Row != 0 || content.Cursor.Col != 10 || content.Cursor.Shape != CursorShapeBar {
+		t.Fatalf("expected live cursor projection, got %#v", content.Cursor)
+	}
+
+	pending := NewRenderVMBuilder().Build(state.Root{})
+	if content := activeContent(pending.Shell); !content.Pending || content.Empty || content.Lines[0].PlainString() != "live surface pending" {
+		t.Fatalf("expected pending live surface content, got %#v", content)
+	}
+
+	empty := NewRenderVMBuilder().Build(state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true}})
+	if content := activeContent(empty.Shell); !content.Empty || content.Pending || content.Lines[0].PlainString() != "live surface empty" {
+		t.Fatalf("expected empty live surface content, got %#v", content)
+	}
+}
+
+func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
+	emptyShell := state.DefaultShell()
+	emptyShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "slot", Kind: state.PaneEmpty, Active: true}
+	emptyVM := NewRenderVMBuilder().Build(state.Root{
+		Shell:   emptyShell,
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace empty"}},
+	})
+	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "slot empty") {
+		t.Fatalf("expected active empty pane placeholder, got %#v", content)
+	}
+
+	exitedShell := state.DefaultShell()
+	exitedShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "old shell", Kind: state.PaneExited, Active: true}
+	exitedVM := NewRenderVMBuilder().Build(state.Root{
+		Shell:   exitedShell,
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace exited"}},
+	})
+	if content := activeContent(exitedVM.Shell); content.Kind != ContentExitedPane || content.Status != "exited" || !strings.Contains(content.Lines[0].PlainString(), "old shell exited") {
+		t.Fatalf("expected active exited pane placeholder, got %#v", content)
+	}
+}
+
 func TestRenderVMBuilderShowsLiveError(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{Err: "boom"},
@@ -381,6 +442,15 @@ func frameContains(frame Frame, value string) bool {
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func lineHasStyledCell(line Line, text string, style StyleToken) bool {
+	for _, cell := range line.Cells {
+		if cell.Text == text && cell.Style == style {
 			return true
 		}
 	}

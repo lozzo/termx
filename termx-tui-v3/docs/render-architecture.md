@@ -882,7 +882,8 @@ cache 原则：
 - terminal live content renderer 只消费 pane content rect 和 live surface / terminal session 投影。
 - terminal 内容只能绘制在 content rect 内，不能覆盖 pane border、split line、header/footer、toast 或 overlay。
 - 表达 basic style、cursor、pending、empty、exited、resize 后裁切和宽字符安全。
-- 后续可继续深化 selection/search、content-local hit region、status metadata 和 richer terminal style。
+- 一期允许把 raw live 行中的基础 ANSI SGR 投影为 semantic style token；更完整的 styled cell stream 可以作为后续 protocol/content renderer 增强。
+- 后续可继续深化 selection/search、content-local hit region、status metadata、truecolor、link、reverse/underline 和 richer terminal style。
 
 非目标：
 
@@ -996,7 +997,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - header/footer 仍停留在 styled bar 与基础 mode/status 层，不是完整产品信息层；workspace/tab/pane/terminal/notice 摘要、mode-specific shortcut hints 和窄屏退化还需要补齐。
 - render 已能合成 hit region，app/runtime 已开始把真实鼠标坐标派发到最新 hit region；但 resize handle、split divider、复杂 overlay/floating、terminal mouse forwarding 的完整产品边界仍需继续验收。
 - active pane 样式已经存在，但键盘与鼠标 focus、split、close、resize、zoom、card/split 切换后的端到端视觉反馈仍需要独立验收并固定为 UI framework 闭环。
-- terminal-live content 目前仍是基础行展示，尚未完整表达 terminal styled cells、live cursor、selection、search、clipped markers 或 rich terminal metadata。
+- terminal-live content renderer 一期已进入当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，content 仍由 framework 裁切到 content rect；但 selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
 - copy-history content 目前只保证 authoritative window、pending/empty/error、cols rebind 和 no-fallback 语义，尚未完整表达 copy mode selection、logical-line marker、clipped before/after、scrollbar 或位置摘要。
 - Terminal Picker 目前是 styled overlay/placeholder 路径，不是完整 terminal picker 内容。
 - Terminal Pool、Workbench Tree、Prompt、Help 的完整内容未落地。
@@ -1016,7 +1017,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - input / hit region dispatch：app/runtime 持有或接收最新 render hit regions，把真实鼠标坐标映射到 pane content、pane chrome、action slot、split divider、resize handle、toast/overlay；UI chrome 优先于 terminal mouse forwarding。
 - active pane 视觉反馈验收：键盘和鼠标导致的 focus、split、close、zoom、resize、card/split 切换必须立即反映到 active/inactive border、title、footer 和 toast。
 - UI framework 交互产品化总验收：在接 terminal-live content renderer 前，把 header/footer、pane/resize/global mode、鼠标命中、active feedback、toast、content rect resize 和 copy rebind 做成可基本操作的产品闭环。
-- terminal-live content renderer：在 UI framework 交互闭环后完善 terminal styled cell、cursor、selection/search、clipping、status metadata 和 content-local hit region。
+- terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
 - copy-history content renderer：完善 selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和宽度变化后的交互恢复。
 - empty/exited/terminal-picker content renderer：把当前 placeholder 和基础文案拆成独立 renderer，补齐 CTA、列表、preview、状态 token 和 action region。
 - tiled layout refinement：支持多层 split 的完整产品交互、resize affordance、active pane hit region 和 card/split 模式切换保持。

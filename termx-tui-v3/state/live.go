@@ -7,7 +7,17 @@ type TerminalSurfaceStore struct {
 	Rows       int
 	Lines      []string
 	Title      string
+	Cursor     LiveCursor
+	Ready      bool
 	Err        string
+}
+
+// LiveCursor 是 live surface 的 content-local 光标状态。
+type LiveCursor struct {
+	Visible bool
+	Row     int
+	Col     int
+	Shape   string
 }
 
 // TerminalSessionStore 保存当前 attach/live path 的 reducer-owned 会话状态。
@@ -32,6 +42,7 @@ type LiveSurfaceSnapshot struct {
 	Rows       int
 	Lines      []string
 	Title      string
+	Cursor     LiveCursor
 }
 
 func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) TerminalSurfaceStore {
@@ -40,6 +51,8 @@ func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) Te
 	store.Rows = snapshot.Rows
 	store.Lines = cloneStrings(snapshot.Lines)
 	store.Title = snapshot.Title
+	store.Cursor = snapshot.Cursor
+	store.Ready = true
 	store.Err = ""
 	return store
 }

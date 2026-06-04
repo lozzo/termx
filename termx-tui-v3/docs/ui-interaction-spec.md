@@ -1264,13 +1264,11 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
 - `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
+- terminal-live 内容 renderer 一期必须在当前 styled chrome 基线上工作：真实 live 行只进入 pane content slot，基础 ANSI SGR 映射为 semantic style token，live cursor 表达为 content-local cursor，pending、empty、exited 状态显示在所属 pane 内，emoji/CJK/combining mark 裁切不得破坏 pane 边框。
 
 当前未完成但产品要求仍保留：
 
-- header/footer 还没有达到完整产品信息层：header 需要 workspace/tab/pane/terminal/notice 摘要，footer 需要 mode-specific shortcut hints、active target 和窄屏退化。
-- 真实鼠标点击尚未完整接入最新 hit region：多 pane 点击聚焦、pane action、resize handle、toast/overlay 优先级和 terminal mouse forwarding 边界需要补齐。
-- active pane 视觉反馈需要端到端验收：键盘和鼠标 focus、split、close、resize、zoom 后必须立即反映到边框、标题、footer 和 toast。
-- terminal-live 内容 renderer 完整化：styled terminal cells、cursor、selection/search、content-local hit region、status metadata 和宽度安全深化。
+- terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 完整化：selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和滚动交互。
 - Terminal Picker 完整内容：搜索、terminal list、selected row、new terminal row、preview 和 attach/create action。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
@@ -1282,7 +1280,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 ## 21. 当前 UI Framework 产品化验收线
 
-在继续深化 terminal-live 内容 renderer 前，必须先让当前 UI framework 成为一个可基本操作的产品壳，而不是只有静态视觉框架。
+当前 UI framework 产品化验收线已经完成。后续 terminal-live 内容 renderer 必须以这条产品壳为前提继续深化，而不是绕过 shell、pane command、layout measurement 或 styled chrome。
 
 该验收线的目标：
 
@@ -1324,9 +1322,30 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - toast：在 global mode 中按 `T` 关闭当前 toast，按 `t` 清空全部 toast；toast 不得改变 pane layout，也不得把操作绕过 shell message。
 - copy rebind：进入 copy mode 后，执行 resize、header/footer hide 或 pane size change；历史窗口必须按新的 content cols 重新请求 authoritative window，不得显示旧 cols 的历史。
 
-如果上述基本操作还不能稳定工作，不应优先进入 terminal-live content renderer。否则真实 terminal 内容接进来后，交互 bug 会被内容渲染噪音掩盖。
+如果上述基本操作出现回归，应先修复 UI framework 产品壳，再继续 terminal-live、copy-history 或 Terminal Pool 等内容深化。否则真实 terminal 内容会掩盖 chrome、hit region、layout/effect 同步问题。
 
-## 22. 后续讨论入口
+## 22. Terminal-Live 内容 Renderer 一期验收线
+
+terminal-live 内容 renderer 一期的目标是把真实 terminal live 内容接入现有 render framework，而不是重写 renderer 主路径。
+
+一期必须满足：
+
+- 只消费 `TerminalSurfaceStore` / terminal session 的实时投影，不读取 core client，不请求 history window。
+- 只绘制到 active pane 的 content rect 内；不得覆盖 pane border、split line、header/footer、toast 或 overlay。
+- raw live 行中的基础 ANSI SGR 被转换为 semantic style token，真实 TTY 通过 `Frame.ANSILines` 输出 styled frame；plain snapshot 不包含 raw ANSI 控制序列。
+- live cursor 作为 content-local cursor 输出；没有精确 cursor 时可使用 live 行尾作为保守 fallback，但不得使用 copy mode cursor 或 history cursor 伪装。
+- live surface 未到达时显示 pending；已到达但无行时显示 empty；active pane 是 exited/empty 时显示对应 pane 状态，不用 live 行覆盖。
+- emoji、CJK、combining mark 和 ANSI styled text 必须按 terminal cell width 裁切，resize 后仍保持 frame 行宽等于 viewport cols。
+- copy mode 仍只消费 authoritative `HistoryWindow`，不得从 live surface fallback。
+
+一期不要求：
+
+- 完整 terminal emulator style model。
+- truecolor、underline、reverse、link、OSC metadata 的完整还原。
+- selection/search、content-local mouse hit region、scrollbar 或 clipped marker。
+- 从 protocol 扩展精确 styled cell stream；当前可先基于 raw live 行和基础 SGR 做等价投影。
+
+## 23. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

@@ -279,6 +279,13 @@ func buildActiveContentVM(root state.Root) ContentVM {
 	if root.CopyMode.Active {
 		return buildCopyHistoryContentVM(root.History, root.CopyMode)
 	}
+	shell := root.Shell.EnsureDefaults()
+	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
+		switch pane.Kind {
+		case state.PaneEmpty, state.PaneExited:
+			return placeholderContentForPane(pane)
+		}
+	}
 	return buildLiveContentVM(root.Surface, root.Session)
 }
 
@@ -362,19 +369,27 @@ func buildCopyHistoryContentVM(history state.HistoryStore, copyMode state.CopyMo
 }
 
 func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) ContentVM {
-	lines := lineVMsFromStrings(surface.Lines)
-	if len(lines) == 0 {
-		lines = []Line{NewLine("live surface pending")}
-	}
+	lines := terminalLiveLineVMsFromStrings(surface.Lines)
 	content := ContentVM{
 		Kind:   ContentTerminalLive,
 		Lines:  lines,
 		Status: liveStatus(surface, session),
+		Cursor: liveContentCursor(surface, session, lines),
 	}
 	if session.LastError != "" {
 		content.Error = session.LastError
 	} else if surface.Err != "" {
 		content.Error = surface.Err
+	}
+	if len(content.Lines) == 0 {
+		if surface.Ready {
+			content.Lines = []Line{NewLine("live surface empty")}
+			content.Empty = true
+		} else {
+			content.Lines = []Line{NewLine("live surface pending")}
+			content.Pending = true
+		}
+		content.Cursor = Cursor{}
 	}
 	return content
 }
@@ -397,6 +412,48 @@ func liveStatus(surface state.TerminalSurfaceStore, session state.TerminalSessio
 		status = "error: " + surface.Err
 	}
 	return status
+}
+
+func liveContentCursor(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, lines []Line) Cursor {
+	if session.LastError != "" || surface.Err != "" {
+		return Cursor{}
+	}
+	if surface.Cursor.Visible {
+		return Cursor{
+			Visible: true,
+			Row:     maxInt(0, surface.Cursor.Row),
+			Col:     maxInt(0, surface.Cursor.Col),
+			Shape:   liveCursorShape(surface.Cursor.Shape),
+		}
+	}
+	if !session.Attached || len(lines) == 0 {
+		return Cursor{}
+	}
+	row := len(lines) - 1
+	if surface.Rows > 0 && row >= surface.Rows {
+		row = surface.Rows - 1
+	}
+	col := lines[len(lines)-1].Width()
+	cols := surface.Cols
+	if cols <= 0 {
+		cols = session.Cols
+	}
+	if cols > 0 && col >= cols {
+		col = cols - 1
+	}
+	if col < 0 {
+		col = 0
+	}
+	return Cursor{Visible: true, Row: row, Col: col, Shape: CursorShapeBlock}
+}
+
+func liveCursorShape(shape string) CursorShape {
+	switch shape {
+	case string(CursorShapeBar):
+		return CursorShapeBar
+	default:
+		return CursorShapeBlock
+	}
 }
 
 func copyModeCursor(copyMode state.CopyModeStore) Cursor {
@@ -577,6 +634,17 @@ func lineVMsFromStrings(lines []string) []Line {
 	out := make([]Line, len(lines))
 	for i, line := range lines {
 		out[i] = NewLine(line)
+	}
+	return out
+}
+
+func terminalLiveLineVMsFromStrings(lines []string) []Line {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]Line, len(lines))
+	for i, line := range lines {
+		out[i] = terminalLiveLineFromANSI(line)
 	}
 	return out
 }
