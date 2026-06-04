@@ -119,6 +119,33 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 	assertAllRowsWidth(t, lines, 42)
 }
 
+func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
+	for _, presentation := range []PanelPresentation{PanelPresentationCard, PanelPresentationSplitLine} {
+		result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+			Layout: LayoutVM{Viewport: Rect{W: 44, H: 8}, Panels: []PanelVM{{
+				ID:           "pane-1",
+				Title:        "shell",
+				Presentation: presentation,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+			}}},
+		}})
+		line := result.Lines()[0]
+		actionCol := cellIndex(line, "[x]")
+		if actionCol < 0 {
+			t.Fatalf("presentation=%s missing action slot in %#v", presentation, result.Lines())
+		}
+		beforeAction := SliceCells(line, actionCol-2, actionCol)
+		if !strings.Contains(beforeAction, "─") {
+			t.Fatalf("presentation=%s should keep line segment before action slot, got row=%q beforeAction=%q", presentation, line, beforeAction)
+		}
+		if strings.Contains(SliceCells(line, actionCol-4, actionCol), "    ") {
+			t.Fatalf("presentation=%s should not leave blank gap before action slot, got row=%q", presentation, line)
+		}
+		assertAllRowsWidth(t, result.Lines(), 44)
+	}
+}
+
 func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},
@@ -443,6 +470,15 @@ func styledLinesContain(lines []Line, value string, style StyleToken) bool {
 		}
 	}
 	return false
+}
+
+func cellIndex(line string, needle string) int {
+	for col := 0; col <= DisplayWidth(line)-DisplayWidth(needle); col++ {
+		if SliceCells(line, col, col+DisplayWidth(needle)) == needle {
+			return col
+		}
+	}
+	return -1
 }
 
 func frameHasRowPrefix(lines []string, col int, prefix string) bool {

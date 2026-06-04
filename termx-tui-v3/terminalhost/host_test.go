@@ -213,10 +213,12 @@ func TestHostReadsInputEventsAndStopsOnClose(t *testing.T) {
 
 	reader.events <- []byte("x")
 	reader.events <- []byte("\x1b[5~")
-	got := []input.InputEvent{readEvent(t, host), readEvent(t, host)}
+	reader.events <- []byte("\x1b[C")
+	got := []input.InputEvent{readEvent(t, host), readEvent(t, host), readEvent(t, host)}
 	want := []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", RawSeq: "x"},
 		{Kind: input.EventKindKey, Key: input.KeyPageUp, RawSeq: "\x1b[5~"},
+		{Kind: input.EventKindKey, Key: input.KeyRight, RawSeq: "\x1b[C"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected events\n got: %#v\nwant: %#v", got, want)

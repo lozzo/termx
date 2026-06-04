@@ -7,6 +7,8 @@ const (
 	PaneCommandClose              PaneCommandAction = "pane.close"
 	PaneCommandCloseAndKill       PaneCommandAction = "pane.close-and-kill"
 	PaneCommandFocus              PaneCommandAction = "pane.focus"
+	PaneCommandFocusNext          PaneCommandAction = "pane.focus-next"
+	PaneCommandFocusPrevious      PaneCommandAction = "pane.focus-previous"
 	PaneCommandZoom               PaneCommandAction = "pane.zoom"
 	PaneCommandUnzoom             PaneCommandAction = "pane.unzoom"
 	PaneCommandToggleZoom         PaneCommandAction = "pane.toggle-zoom"
@@ -160,7 +162,7 @@ func (command PaneCommand) Validate(shell ShellStore) PaneCommandResult {
 		if command.Presentation != PanelPresentationCard && command.Presentation != PanelPresentationSplitLine {
 			return paneCommandInvalid(command.Action, "invalid panel presentation")
 		}
-	case PaneCommandFocus, PaneCommandZoom, PaneCommandUnzoom, PaneCommandToggleZoom, PaneCommandBalance, PaneCommandTogglePresentation:
+	case PaneCommandFocus, PaneCommandFocusNext, PaneCommandFocusPrevious, PaneCommandZoom, PaneCommandUnzoom, PaneCommandToggleZoom, PaneCommandBalance, PaneCommandTogglePresentation:
 	default:
 		return paneCommandInvalid(command.Action, "unknown action")
 	}
@@ -180,6 +182,10 @@ func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneC
 		return store.ClosePane(command.Target), result
 	case PaneCommandFocus:
 		return store.FocusPane(command.Target), result
+	case PaneCommandFocusNext:
+		return store.FocusRelativePane(1), result
+	case PaneCommandFocusPrevious:
+		return store.FocusRelativePane(-1), result
 	case PaneCommandZoom:
 		return store.ZoomPane(command.Target), result
 	case PaneCommandUnzoom:

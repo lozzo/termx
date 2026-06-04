@@ -89,6 +89,9 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 	if root.CopyMode.Active {
 		mode = "copy"
 	}
+	if shellMode := root.Shell.EnsureDefaults().InteractionMode; shellMode != state.InteractionModeNormal {
+		mode = string(shellMode)
+	}
 	hint := content.Status
 	if hint == "" {
 		hint = liveStatus(root.Surface, root.Session)

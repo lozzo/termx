@@ -63,3 +63,26 @@ func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 		t.Fatalf("expected named ctrl-f terminal picker intent, got %#v", namedCtrlF)
 	}
 }
+
+func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
+	ctrlP := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x10", Ctrl: true}, false)
+	if ctrlP.Kind != IntentSetInteractionMode || ctrlP.Mode != InteractionModePane {
+		t.Fatalf("expected pane mode intent, got %#v", ctrlP)
+	}
+	paneSplit := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "v"}, false, InteractionModePane)
+	if paneSplit.Kind != IntentPaneCommand || paneSplit.Command != "pane split-right" {
+		t.Fatalf("expected split-right pane command, got %#v", paneSplit)
+	}
+	resizeRight := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyRight}, false, InteractionModeResize)
+	if resizeRight.Kind != IntentPaneCommand || resizeRight.Command != "pane resize right delta=2" {
+		t.Fatalf("expected resize-right pane command, got %#v", resizeRight)
+	}
+	globalFooter := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, false, InteractionModeGlobal)
+	if globalFooter.Kind != IntentShellAction || globalFooter.Action != ShellActionToggleFooter {
+		t.Fatalf("expected global footer action, got %#v", globalFooter)
+	}
+	esc := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyEsc}, false, InteractionModePane)
+	if esc.Kind != IntentExitInteraction {
+		t.Fatalf("expected interaction exit, got %#v", esc)
+	}
+}

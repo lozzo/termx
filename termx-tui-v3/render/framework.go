@@ -716,7 +716,7 @@ func renderPaneActionSlot(c *canvas, rect Rect, panel PanelVM, style StyleToken,
 	if panel.Active {
 		token = "[x]"
 	}
-	c.writeTextStyled(rect.X+rect.W-4, rect.Y, 3, token, style, owner, LayerPanel)
+	c.overlayTextStyled(rect.X+rect.W-4, rect.Y, 3, token, style, owner, LayerPanel)
 }
 
 func renderContent(c *canvas, content ContentVM, rect Rect) []Line {

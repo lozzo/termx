@@ -47,6 +47,16 @@ const (
 	ToastError   ToastSeverity = "error"
 )
 
+type InteractionMode string
+
+const (
+	InteractionModeNormal   InteractionMode = ""
+	InteractionModePane     InteractionMode = "pane"
+	InteractionModeResize   InteractionMode = "resize"
+	InteractionModeGlobal   InteractionMode = "global"
+	InteractionModeFloating InteractionMode = "floating"
+)
+
 // ShellStore 保存 Workbench 外壳相关的 reducer-owned 产品状态。
 // 它只描述用户可操作的结构，不计算最终屏幕矩形，也不画 panel chrome。
 type ShellStore struct {
@@ -54,6 +64,7 @@ type ShellStore struct {
 	PanelPresentation PanelPresentation
 	ActivePaneID      string
 	ZoomedPaneID      string
+	InteractionMode   InteractionMode
 	HeaderVisible     bool
 	FooterVisible     bool
 	Overlay           OverlayState
@@ -213,6 +224,21 @@ func (store ShellStore) ToggleFooterVisible() ShellStore {
 	return store
 }
 
+func (store ShellStore) SetInteractionMode(mode InteractionMode) ShellStore {
+	store = store.EnsureDefaults()
+	switch mode {
+	case InteractionModeNormal, InteractionModePane, InteractionModeResize, InteractionModeGlobal, InteractionModeFloating:
+		store.InteractionMode = mode
+	}
+	return store
+}
+
+func (store ShellStore) ExitInteractionMode() ShellStore {
+	store = store.EnsureDefaults()
+	store.InteractionMode = InteractionModeNormal
+	return store
+}
+
 func (store ShellStore) AddToast(spec ToastSpec) ShellStore {
 	store = store.EnsureDefaults()
 	if spec.Severity == "" {
@@ -333,6 +359,33 @@ func (store ShellStore) FocusPane(target PaneCommandTarget) ShellStore {
 	}
 	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
 	return store
+}
+
+func (store ShellStore) FocusRelativePane(offset int) ShellStore {
+	store = store.EnsureDefaults()
+	if offset == 0 {
+		return store
+	}
+	tabIndex := store.activeTabIndex()
+	if tabIndex < 0 {
+		return store
+	}
+	tab := store.Workspace.Tabs[tabIndex]
+	if len(tab.Panes) <= 1 {
+		return store
+	}
+	current := 0
+	for i, pane := range tab.Panes {
+		if pane.ID == store.ActivePaneID {
+			current = i
+			break
+		}
+	}
+	next := (current + offset) % len(tab.Panes)
+	if next < 0 {
+		next += len(tab.Panes)
+	}
+	return store.FocusPane(PaneCommandTarget{WorkspaceID: store.Workspace.ID, TabID: tab.ID, PaneID: tab.Panes[next].ID})
 }
 
 func (store ShellStore) ClosePane(target PaneCommandTarget) ShellStore {

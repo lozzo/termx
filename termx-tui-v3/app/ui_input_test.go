@@ -158,3 +158,100 @@ func TestInteractiveRuntimeShellSemanticActionsReachRenderPath(t *testing.T) {
 		t.Fatalf("hidden header/footer should not render shell bars, got %#v", last.Lines)
 	}
 }
+
+func TestInteractiveRuntimePaneAndResizeModeKeymapUsesPaneCommandPath(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x12", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyRight},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain input %#v: %v", event, err)
+		}
+	}
+
+	if runtime.State().Shell.InteractionMode != state.InteractionModeResize {
+		t.Fatalf("expected resize mode, got %#v", runtime.State().Shell.InteractionMode)
+	}
+	tab := runtime.State().Shell.Workspace.Tabs[0]
+	if len(tab.Panes) != 2 || tab.RootSplit.Direction != state.SplitDirectionVertical {
+		t.Fatalf("expected keyboard split through pane command path, got %#v", tab)
+	}
+	if tab.RootSplit.BiasCells == 0 {
+		t.Fatalf("expected resize key to update split bias, got %#v", tab.RootSplit)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("pane/resize shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "mode:resize") {
+		t.Fatalf("footer should show resize mode, got %#v", last.Lines)
+	}
+}
+
+func TestInteractiveRuntimeGlobalModeTogglesChromeAndEscExitsMode(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain input %#v: %v", event, err)
+		}
+	}
+
+	if runtime.State().Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("expected normal mode after esc, got %#v", runtime.State().Shell.InteractionMode)
+	}
+	if runtime.State().Shell.HeaderVisible || runtime.State().Shell.FooterVisible {
+		t.Fatalf("expected global mode toggles to hide header/footer, got %#v", runtime.State().Shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("global shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}

@@ -39,6 +39,10 @@ func ParsePaneMiniCommand(text string) (state.PaneCommand, error) {
 		command.Action = state.PaneCommandCloseAndKill
 	case "focus":
 		command.Action = state.PaneCommandFocus
+	case "focus-next":
+		command.Action = state.PaneCommandFocusNext
+	case "focus-prev", "focus-previous":
+		command.Action = state.PaneCommandFocusPrevious
 	case "zoom":
 		command.Action = state.PaneCommandZoom
 	case "unzoom":

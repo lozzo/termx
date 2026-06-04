@@ -89,6 +89,14 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 		return input.InputEvent{}, 0, false
 	}
 	switch buffer[2] {
+	case 'A':
+		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyUp, RawSeq: string(buffer[:3])}, 3, true
+	case 'B':
+		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown, RawSeq: string(buffer[:3])}, 3, true
+	case 'C':
+		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight, RawSeq: string(buffer[:3])}, 3, true
+	case 'D':
+		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyLeft, RawSeq: string(buffer[:3])}, 3, true
 	case '5':
 		if len(buffer) < 4 {
 			return input.InputEvent{}, 0, false
