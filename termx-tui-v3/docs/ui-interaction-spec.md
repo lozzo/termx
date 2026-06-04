@@ -1712,9 +1712,16 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 - 鼠标：pane content/chrome focus、pane action close、floating raise/resize/close、Terminal Pool row/action、Workbench Tree row/action、Prompt/Help close 均走最新 hit region。
 - no terminal input leak：UI mode、overlay、Prompt、Terminal Pool、Workbench Tree、tab/workspace 等交互输入不会误发给底层 terminal。
 
-本验收线不宣称已经完成：
+本验收线完成后，terminal live 连接展示与交互前推也已经完成当前阶段：
 
-- terminal live 的最终内容体验，例如 truecolor、underline、reverse、link、复杂 terminal mode、selection/search、content-local hit region 和 richer terminal cell attributes。
+- attach 后会从 core-v2 live snapshot 初始化 panel 内 live rows。
+- 普通键盘输入只发送给 terminal service，不做 TUI 本地假回显；输入内容必须来自 live surface 回投后显示。
+- pending、empty、attached、exited、error 状态都在所属 pane/footer 中表达，不退化成裸文本整屏。
+- live 内容继续只绘制在 pane content slot 内，resize 使用 content rect，不使用外部 viewport 总尺寸。
+
+本验收线和 terminal live 前推仍不宣称已经完成：
+
+- terminal live 的最终内容体验，例如 streaming event loop、truecolor、underline、reverse、link、复杂 terminal mode、selection/search、content-local hit region 和 richer terminal cell attributes。
 - copy-history 的最终内容体验，例如 scrollbar、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和精细 position token。
 - Terminal Pool 的跨 workspace/remote 管理、attach as tab、attach as floating、metadata 表单和 kill confirm。
 - floating 连续拖拽、attach as floating 和 Floating Overview。
@@ -1733,7 +1740,7 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 - Toast/Header/Footer：按 `Ctrl-g h` / `Ctrl-g f` 隐藏或恢复 header/footer；按 `Ctrl-g T` 关闭当前 toast，按 `Ctrl-g t` 清空 toast。
 - 非交互回归：`go run ./termx-cli/cmd/termx v3 smoke` 和 `go run ./termx-cli/cmd/termx v3 e2e-smoke`。
 
-后续如果要把项目往前推，应优先进入 terminal live 连接展示与交互前推：在不破坏上述产品壳闭环的前提下，继续提升真实 terminal 内容展示、输入回显、cursor、连接/退出/错误状态和 no chrome leak。
+后续如果要把项目往前推，应优先进入 copy-history content renderer 深化：在不破坏上述产品壳和 terminal live 前推闭环的前提下，继续提升 scrollbar、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和 position token。
 
 ## 33. 后续讨论入口
 

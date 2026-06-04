@@ -32,6 +32,8 @@ type fakeProtocolTerminalClient struct {
 	resizeChannels []uint16
 	resizes        []protocol.Size
 	ensureParams   []protocol.EnsureResizeParams
+	snapshotIDs    []string
+	snapshotResult *protocol.Snapshot
 	attachResult   *protocol.AttachResult
 	listResult     *protocol.ListResult
 	createResult   *protocol.CreateResult
@@ -93,6 +95,14 @@ func (client *fakeProtocolTerminalClient) Resize(_ context.Context, channel uint
 func (client *fakeProtocolTerminalClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
 	client.ensureParams = append(client.ensureParams, params)
 	return &protocol.EnsureResizeResult{Size: protocol.Size{Cols: params.Cols, Rows: params.Rows}, Resized: true}, nil
+}
+
+func (client *fakeProtocolTerminalClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
+	client.snapshotIDs = append(client.snapshotIDs, terminalID)
+	if client.snapshotResult != nil {
+		return client.snapshotResult, nil
+	}
+	return &protocol.Snapshot{TerminalID: terminalID}, nil
 }
 
 func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
@@ -205,6 +215,43 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	}
 	if len(client.ensureParams) != 1 || client.ensureParams[0].Cols != 120 || client.ensureParams[0].Rows != 50 {
 		t.Fatalf("unexpected ensure resize params %#v", client.ensureParams)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 12, Rows: 2},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				{{Content: "$ "}, {Content: "你好"}, {Content: "🚀"}},
+				{{Content: "done"}},
+			}},
+			Cursor: protocol.CursorState{Visible: true, Row: 1, Col: 4, Shape: "bar"},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{
+		TerminalID: "term-1",
+		Cols:       12,
+		Rows:       2,
+	})
+	if err != nil {
+		t.Fatalf("live surface: %v", err)
+	}
+
+	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
+		t.Fatalf("expected snapshot request, got %#v", client.snapshotIDs)
+	}
+	if !result.Ready || result.Snapshot.Cols != 12 || result.Snapshot.Rows != 2 || len(result.Snapshot.Lines) != 2 {
+		t.Fatalf("unexpected live surface result %#v", result)
+	}
+	if result.Snapshot.Lines[0] != "$ 你好🚀" || result.Snapshot.Lines[1] != "done" {
+		t.Fatalf("unexpected live surface lines %#v", result.Snapshot.Lines)
+	}
+	if !result.Snapshot.Cursor.Visible || result.Snapshot.Cursor.Row != 1 || result.Snapshot.Cursor.Col != 4 || result.Snapshot.Cursor.Shape != "bar" {
+		t.Fatalf("unexpected live cursor %#v", result.Snapshot.Cursor)
 	}
 }
 

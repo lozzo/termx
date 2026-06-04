@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 type ProtocolTerminalClient interface {
@@ -17,6 +18,7 @@ type ProtocolTerminalClient interface {
 	Input(context.Context, uint16, []byte) error
 	Resize(context.Context, uint16, uint16, uint16) error
 	EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
+	Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error)
 }
 
 // ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 termx protocol。
@@ -163,6 +165,49 @@ func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req Te
 		return err
 	}
 	return adapter.Client.Resize(ctx, req.Channel, cols, rows)
+}
+
+func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, req TerminalSurfaceRequest) (TerminalSurfaceResult, error) {
+	if adapter.Client == nil {
+		return TerminalSurfaceResult{}, ErrMissingTerminalClient
+	}
+	limit := req.Rows
+	if limit <= 0 {
+		limit = 24
+	}
+	snapshot, err := adapter.Client.Snapshot(ctx, req.TerminalID, 0, limit)
+	if err != nil {
+		return TerminalSurfaceResult{}, err
+	}
+	lines := liveSurfaceLinesFromSnapshot(snapshot)
+	return TerminalSurfaceResult{
+		Ready: true,
+		Snapshot: state.LiveSurfaceSnapshot{
+			TerminalID: req.TerminalID,
+			Cols:       int(snapshot.Size.Cols),
+			Rows:       int(snapshot.Size.Rows),
+			Lines:      lines,
+			Cursor: state.LiveCursor{
+				Visible: snapshot.Cursor.Visible,
+				Row:     snapshot.Cursor.Row,
+				Col:     snapshot.Cursor.Col,
+				Shape:   snapshot.Cursor.Shape,
+			},
+		},
+	}, nil
+}
+
+func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {
+	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
+		return nil
+	}
+	lines := make([]string, len(snapshot.Screen.Cells))
+	for rowIndex, row := range snapshot.Screen.Cells {
+		for _, cell := range row {
+			lines[rowIndex] += cell.Content
+		}
+	}
+	return lines
 }
 
 func terminalPoolTitleFromProtocol(terminal protocol.TerminalInfo) string {

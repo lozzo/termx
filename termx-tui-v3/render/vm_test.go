@@ -402,7 +402,16 @@ func TestRenderVMBuilderUsesLiveSurface(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-live",
+			Cols:       80,
+			Rows:       24,
 			Lines:      []string{"prompt", "output"},
+		},
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-live",
+			Attached:   true,
+			Cols:       80,
+			Rows:       24,
+			State:      state.TerminalLiveAttached,
 		},
 	}
 
@@ -410,8 +419,11 @@ func TestRenderVMBuilderUsesLiveSurface(t *testing.T) {
 	if vm.Mode != ModeLive {
 		t.Fatalf("expected live vm, got %q", vm.Mode)
 	}
-	if len(vm.Lines) != 2 || vm.Lines[0] != "prompt" || vm.Status != "live: term-live" {
+	if len(vm.Lines) != 2 || vm.Lines[0] != "prompt" || vm.Status != "live: term-live attached 80x24" {
 		t.Fatalf("unexpected live vm %#v", vm)
+	}
+	if vm.Shell.Footer.ActiveTarget != "pane:shell attached" {
+		t.Fatalf("expected attached footer active target, got %#v", vm.Shell.Footer)
 	}
 }
 
@@ -451,6 +463,35 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 	empty := NewRenderVMBuilder().Build(state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true}})
 	if content := activeContent(empty.Shell); !content.Empty || content.Pending || content.Lines[0].PlainString() != "live surface empty" {
 		t.Fatalf("expected empty live surface content, got %#v", content)
+	}
+}
+
+func TestRenderVMBuilderProjectsLiveExitLifecycle(t *testing.T) {
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			State:      state.TerminalLiveExited,
+			ExitCode:   0,
+			ExitReason: "done",
+		},
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-live",
+			State:      state.TerminalLiveExited,
+			ExitCode:   0,
+			ExitReason: "done",
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentTerminalLive || !content.Empty || content.Pending || content.Cursor.Visible {
+		t.Fatalf("expected exited live content lifecycle, got %#v", content)
+	}
+	if content.Lines[0].PlainString() != "terminal exited: term-live code:0 done" || content.Status != "exited: term-live code:0 done" {
+		t.Fatalf("unexpected exited live projection content=%#v status=%q", content.Lines, content.Status)
+	}
+	if vm.Shell.Footer.ActiveTarget != "pane:shell exited" {
+		t.Fatalf("expected exited footer active target, got %#v", vm.Shell.Footer)
 	}
 }
 

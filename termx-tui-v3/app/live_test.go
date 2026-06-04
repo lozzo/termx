@@ -72,6 +72,143 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 	}
 }
 
+func TestLiveAppInputDisplaysOnlyAfterSurfaceEventAndExitState(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
+		t.Fatalf("send input: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain input: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "x" || terminal.Inputs[0].Channel != 4 {
+		t.Fatalf("expected terminal service input, got %#v", terminal.Inputs)
+	}
+	beforeSurface := lastFrame(t, host.Frames())
+	if frameContains(beforeSurface, "typed x") {
+		t.Fatalf("runtime must not fake local echo before live surface event, got %#v", beforeSurface.Lines)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       78,
+		Rows:       20,
+		Lines:      []string{"$ typed x", "echo x"},
+		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 6, Shape: "bar"},
+	}}); err != nil {
+		t.Fatalf("post surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain surface: %v", err)
+	}
+	afterSurface := lastFrame(t, host.Frames())
+	if !frameContains(afterSurface, "$ typed x") || !afterSurface.Cursor.Visible || afterSurface.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("expected service-returned live content and cursor, got lines=%#v cursor=%#v", afterSurface.Lines, afterSurface.Cursor)
+	}
+	if err := runtime.Post(LiveExitMsg{TerminalID: "term-1", ExitCode: 0, Reason: "shell exited"}); err != nil {
+		t.Fatalf("post exit: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exit: %v", err)
+	}
+	if runtime.State().Session.Attached || runtime.State().Session.State != state.TerminalLiveExited {
+		t.Fatalf("expected detached exited session, got %#v", runtime.State().Session)
+	}
+	exitFrame := lastFrame(t, host.Frames())
+	if !frameContains(exitFrame, "exited: term-1 code:0 shell exited") || !frameContains(exitFrame, "$ typed x") {
+		t.Fatalf("expected exit status with preserved last surface, got %#v", exitFrame.Lines)
+	}
+}
+
+func TestLiveAppAttachSwitchClearsStaleSurfaceRows(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-new", Channel: 5, Cols: 78, Rows: 20},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-old",
+				Ready:      true,
+				Lines:      []string{"old terminal output"},
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-new", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "old terminal output") {
+		t.Fatalf("new attach must not render stale live rows, got %#v", frame.Lines)
+	}
+	if !frameContains(frame, "live surface pending") || runtime.State().Surface.Ready {
+		t.Fatalf("expected pending surface after terminal switch, frame=%#v state=%#v", frame.Lines, runtime.State().Surface)
+	}
+}
+
+func TestLiveAppAttachHydratesReadySurfaceFromService(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Cols:       78,
+				Rows:       20,
+				Lines:      []string{"alpha", "beta 你好🚀"},
+				Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 8, Shape: "bar"},
+			},
+		},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	if len(terminal.Surfaces) != 1 || terminal.Surfaces[0].TerminalID != "term-1" || terminal.Surfaces[0].Rows != 20 {
+		t.Fatalf("expected live surface request after attach, got %#v", terminal.Surfaces)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "alpha") || !frameContains(frame, "beta 你好🚀") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("expected hydrated live surface in frame, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
 func TestLiveContentRendererKeepsStyleCursorAndChromeSafe(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 9, Cols: 28, Rows: 10},

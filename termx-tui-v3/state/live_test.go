@@ -27,7 +27,7 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 
 func TestTerminalSessionAttachResizeAndError(t *testing.T) {
 	session := (TerminalSessionStore{}).Attach("term-1", 7, 80, 24)
-	if !session.Attached || session.Channel != 7 || session.TerminalID != "term-1" {
+	if !session.Attached || session.Channel != 7 || session.TerminalID != "term-1" || session.State != TerminalLiveAttached {
 		t.Fatalf("unexpected attached session %#v", session)
 	}
 	session = session.Resize(100, 40)
@@ -35,8 +35,34 @@ func TestTerminalSessionAttachResizeAndError(t *testing.T) {
 		t.Fatalf("unexpected resized session %#v", session)
 	}
 	session = session.SetError("boom")
-	if session.LastError != "boom" {
+	if session.LastError != "boom" || session.State != TerminalLiveError || session.Attached {
 		t.Fatalf("expected session error, got %#v", session)
+	}
+}
+
+func TestTerminalLiveLifecycleTracksAttachSwitchExitAndError(t *testing.T) {
+	surface := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"old"},
+	})
+	surface = surface.Attach("term-2", 100, 40)
+	if surface.TerminalID != "term-2" || surface.Ready || len(surface.Lines) != 0 || surface.State != TerminalLiveAttached {
+		t.Fatalf("attach switch must clear stale surface projection, got %#v", surface)
+	}
+	surface = surface.MarkExited("term-2", 130, "closed")
+	if surface.State != TerminalLiveExited || surface.ExitCode != 130 || surface.ExitReason != "closed" || surface.Cursor.Visible {
+		t.Fatalf("expected exited surface lifecycle, got %#v", surface)
+	}
+	surface = surface.SetError("transport lost")
+	if surface.State != TerminalLiveError || surface.Err != "transport lost" {
+		t.Fatalf("expected surface error lifecycle, got %#v", surface)
+	}
+
+	session := (TerminalSessionStore{}).Attach("term-2", 3, 100, 40).MarkExited("term-2", 0, "done")
+	if session.Attached || session.State != TerminalLiveExited || session.ExitReason != "done" || session.LastError != "" {
+		t.Fatalf("expected exited session lifecycle, got %#v", session)
 	}
 }
 

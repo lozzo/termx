@@ -66,9 +66,18 @@ func (LiveAttachResultMsg) isMsg() {}
 
 type LiveSurfaceMsg struct {
 	Snapshot state.LiveSurfaceSnapshot
+	Err      error
 }
 
 func (LiveSurfaceMsg) isMsg() {}
+
+type LiveExitMsg struct {
+	TerminalID string
+	ExitCode   int
+	Reason     string
+}
+
+func (LiveExitMsg) isMsg() {}
 
 type LiveResizeMsg struct {
 	Cols int
@@ -100,9 +109,17 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveAttachMsg:
 			return reduceLiveAttach(root, msg, deps)
 		case LiveAttachResultMsg:
-			return reduceLiveAttachResult(root, msg)
+			return reduceLiveAttachResult(root, msg, deps)
 		case LiveSurfaceMsg:
+			if msg.Err != nil {
+				root.Surface = root.Surface.SetError(msg.Err.Error())
+				return root.Advance(), nil
+			}
 			root.Surface = root.Surface.ApplySnapshot(msg.Snapshot)
+			return root.Advance(), nil
+		case LiveExitMsg:
+			root.Session = root.Session.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
+			root.Surface = root.Surface.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
 			return root.Advance(), nil
 		case InputMsg:
 			return reduceLiveInput(root, msg, deps)
@@ -162,14 +179,36 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 	}}
 }
 
-func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg) (state.Root, []Effect) {
+func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		return setLiveError(root, msg.Err.Error()), nil
 	}
 	root.Session = root.Session.Attach(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows)
-	root.Surface.TerminalID = msg.Result.TerminalID
-	root.Surface = root.Surface.Resize(msg.Result.Cols, msg.Result.Rows)
-	return root.Advance(), nil
+	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
+	return root.Advance(), liveSurfaceEffect(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
+}
+
+func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
+	source, ok := deps.Terminal.(services.TerminalSurfaceService)
+	if !ok || terminalID == "" {
+		return nil
+	}
+	return []Effect{FuncEffect{
+		Run: func(ctx context.Context) Msg {
+			result, err := source.LiveSurface(ctx, services.TerminalSurfaceRequest{
+				TerminalID: terminalID,
+				Cols:       cols,
+				Rows:       rows,
+			})
+			if err != nil {
+				return LiveSurfaceMsg{Err: err}
+			}
+			if !result.Ready {
+				return nil
+			}
+			return LiveSurfaceMsg{Snapshot: result.Snapshot}
+		},
+	}}
 }
 
 func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, []Effect) {

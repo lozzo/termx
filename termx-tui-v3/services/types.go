@@ -56,6 +56,10 @@ type TerminalService interface {
 	Resize(context.Context, TerminalResizeRequest) error
 }
 
+type TerminalSurfaceService interface {
+	LiveSurface(context.Context, TerminalSurfaceRequest) (TerminalSurfaceResult, error)
+}
+
 type TerminalPoolItem struct {
 	TerminalID string
 	Title      string
@@ -145,6 +149,13 @@ type TerminalResizeRequest struct {
 
 type TerminalSurfaceResult struct {
 	Snapshot state.LiveSurfaceSnapshot
+	Ready    bool
+}
+
+type TerminalSurfaceRequest struct {
+	TerminalID string
+	Cols       int
+	Rows       int
 }
 
 type SessionService interface {
@@ -200,27 +211,30 @@ func (client *FakeCoreClient) HistoryOlder(_ context.Context, req HistoryOlderRe
 }
 
 type FakeTerminalService struct {
-	AttachResult TerminalAttachResult
-	ListResult   TerminalListResult
-	CreateResult TerminalCreateResult
-	AttachErr    error
-	ListErr      error
-	CreateErr    error
-	RestartErr   error
-	ReconnectErr error
-	KillErr      error
-	EditErr      error
-	InputErr     error
-	ResizeErr    error
-	Attaches     []TerminalAttachRequest
-	Lists        []TerminalListRequest
-	Creates      []TerminalCreateRequest
-	Restarts     []TerminalRestartRequest
-	Reconnects   []TerminalReconnectRequest
-	Kills        []TerminalKillRequest
-	Edits        []TerminalEditMetadataRequest
-	Inputs       []TerminalInputRequest
-	Resizes      []TerminalResizeRequest
+	AttachResult  TerminalAttachResult
+	ListResult    TerminalListResult
+	CreateResult  TerminalCreateResult
+	SurfaceResult TerminalSurfaceResult
+	AttachErr     error
+	ListErr       error
+	CreateErr     error
+	RestartErr    error
+	ReconnectErr  error
+	KillErr       error
+	EditErr       error
+	InputErr      error
+	ResizeErr     error
+	SurfaceErr    error
+	Attaches      []TerminalAttachRequest
+	Lists         []TerminalListRequest
+	Creates       []TerminalCreateRequest
+	Restarts      []TerminalRestartRequest
+	Reconnects    []TerminalReconnectRequest
+	Kills         []TerminalKillRequest
+	Edits         []TerminalEditMetadataRequest
+	Inputs        []TerminalInputRequest
+	Resizes       []TerminalResizeRequest
+	Surfaces      []TerminalSurfaceRequest
 }
 
 func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
@@ -307,6 +321,27 @@ func (service *FakeTerminalService) SendInput(_ context.Context, req TerminalInp
 func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResizeRequest) error {
 	service.Resizes = append(service.Resizes, req)
 	return service.ResizeErr
+}
+
+func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalSurfaceRequest) (TerminalSurfaceResult, error) {
+	service.Surfaces = append(service.Surfaces, req)
+	if service.SurfaceErr != nil {
+		return TerminalSurfaceResult{}, service.SurfaceErr
+	}
+	result := service.SurfaceResult
+	if result.Snapshot.TerminalID == "" {
+		result.Snapshot.TerminalID = req.TerminalID
+	}
+	if result.Snapshot.Cols == 0 {
+		result.Snapshot.Cols = req.Cols
+	}
+	if result.Snapshot.Rows == 0 {
+		result.Snapshot.Rows = req.Rows
+	}
+	if result.Ready || len(result.Snapshot.Lines) > 0 || result.Snapshot.Cursor.Visible {
+		result.Ready = true
+	}
+	return result, nil
 }
 
 func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {

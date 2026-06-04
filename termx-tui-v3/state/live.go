@@ -1,5 +1,14 @@
 package state
 
+type TerminalLiveState string
+
+const (
+	TerminalLivePending  TerminalLiveState = "pending"
+	TerminalLiveAttached TerminalLiveState = "attached"
+	TerminalLiveExited   TerminalLiveState = "exited"
+	TerminalLiveError    TerminalLiveState = "error"
+)
+
 // TerminalSurfaceStore 保存当前实时 terminal surface 投影，不是历史 truth。
 type TerminalSurfaceStore struct {
 	TerminalID string
@@ -9,6 +18,9 @@ type TerminalSurfaceStore struct {
 	Title      string
 	Cursor     LiveCursor
 	Ready      bool
+	State      TerminalLiveState
+	ExitCode   int
+	ExitReason string
 	Err        string
 }
 
@@ -33,6 +45,9 @@ type TerminalSessionStore struct {
 	ResizeRequestSeq   uint64
 	ResizeConfirmedSeq uint64
 	LastError          string
+	State              TerminalLiveState
+	ExitCode           int
+	ExitReason         string
 }
 
 // LiveSurfaceSnapshot 是 terminal service/event 回投给 reducer 的实时投影。
@@ -53,12 +68,44 @@ func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) Te
 	store.Title = snapshot.Title
 	store.Cursor = snapshot.Cursor
 	store.Ready = true
+	store.State = TerminalLiveAttached
+	store.ExitCode = 0
+	store.ExitReason = ""
 	store.Err = ""
+	return store
+}
+
+func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) TerminalSurfaceStore {
+	if store.TerminalID != "" && store.TerminalID != terminalID {
+		store.Lines = nil
+		store.Cursor = LiveCursor{}
+		store.Ready = false
+	}
+	store.TerminalID = terminalID
+	store.Cols = cols
+	store.Rows = rows
+	store.State = TerminalLiveAttached
+	store.ExitCode = 0
+	store.ExitReason = ""
+	store.Err = ""
+	return store
+}
+
+func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSurfaceStore {
+	if terminalID != "" {
+		store.TerminalID = terminalID
+	}
+	store.State = TerminalLiveExited
+	store.ExitCode = exitCode
+	store.ExitReason = reason
+	store.Err = ""
+	store.Cursor = LiveCursor{}
 	return store
 }
 
 func (store TerminalSurfaceStore) SetError(err string) TerminalSurfaceStore {
 	store.Err = err
+	store.State = TerminalLiveError
 	return store
 }
 
@@ -79,6 +126,9 @@ func (store TerminalSessionStore) Attach(terminalID string, channel uint16, cols
 	store.ResizeRequestSeq = 0
 	store.ResizeConfirmedSeq = 0
 	store.LastError = ""
+	store.State = TerminalLiveAttached
+	store.ExitCode = 0
+	store.ExitReason = ""
 	return store
 }
 
@@ -89,6 +139,7 @@ func (store TerminalSessionStore) Resize(cols int, rows int) TerminalSessionStor
 	store.DesiredRows = rows
 	store.ResizeConfirmedSeq = store.ResizeRequestSeq
 	store.LastError = ""
+	store.State = TerminalLiveAttached
 	return store
 }
 
@@ -97,6 +148,7 @@ func (store TerminalSessionStore) RequestResize(cols int, rows int) TerminalSess
 	store.DesiredCols = cols
 	store.DesiredRows = rows
 	store.LastError = ""
+	store.State = TerminalLiveAttached
 	return store
 }
 
@@ -119,6 +171,7 @@ func (store TerminalSessionStore) ApplyResizeResult(seq uint64, cols int, rows i
 		store.ResizeConfirmedSeq = seq
 	}
 	store.LastError = ""
+	store.State = TerminalLiveAttached
 	return store, true
 }
 
@@ -128,6 +181,20 @@ func (store TerminalSessionStore) IsStaleResizeResult(seq uint64) bool {
 
 func (store TerminalSessionStore) SetError(err string) TerminalSessionStore {
 	store.LastError = err
+	store.State = TerminalLiveError
+	store.Attached = false
+	return store
+}
+
+func (store TerminalSessionStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSessionStore {
+	if terminalID != "" {
+		store.TerminalID = terminalID
+	}
+	store.Attached = false
+	store.State = TerminalLiveExited
+	store.ExitCode = exitCode
+	store.ExitReason = reason
+	store.LastError = ""
 	return store
 }
 

@@ -246,6 +246,17 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 				SurfaceID: in.SurfaceID,
 			},
 		})
+	case "snapshot":
+		in := params.(protocol.SnapshotParams)
+		snapshot, err := session.liveSnapshot(in)
+		if err != nil {
+			return nil, true, errorCode(err), err
+		}
+		payload, err := protocol.EncodeSnapshotPayload(snapshot)
+		if err != nil {
+			return nil, true, protocolErrorInternal, err
+		}
+		return payload, true, 0, nil
 	case "events":
 		in := params.(protocol.EventsParams)
 		session.startEvents(ctx, in)
@@ -264,6 +275,51 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 	default:
 		return nil, false, protocolErrorNotFound, fmt.Errorf("unknown method: %s", req.Method)
 	}
+}
+
+func (session *protocolSession) liveSnapshot(params protocol.SnapshotParams) (*protocol.Snapshot, error) {
+	info, err := session.server.GetTerminal(params.TerminalID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := session.server.LiveRows(params.TerminalID)
+	if err != nil {
+		return nil, err
+	}
+	if params.ScrollbackLimit > 0 && len(rows) > params.ScrollbackLimit {
+		rows = rows[len(rows)-params.ScrollbackLimit:]
+	}
+	return &protocol.Snapshot{
+		TerminalID: params.TerminalID,
+		Size:       protocolSizeFromCore(info.Size),
+		Screen: protocol.ScreenData{
+			Cells: liveRowsToProtocolCells(rows),
+		},
+		ScreenOwnership: repeatString(protocol.RowOwnershipScreen, len(rows)),
+		Timestamp:       time.Now().UTC(),
+	}, nil
+}
+
+func liveRowsToProtocolCells(rows []string) [][]protocol.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, len(rows))
+	for rowIndex, row := range rows {
+		out[rowIndex] = []protocol.Cell{{Content: row}}
+	}
+	return out
+}
+
+func repeatString(value string, count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	out := make([]string, count)
+	for i := range out {
+		out[i] = value
+	}
+	return out
 }
 
 func encodeMethodResult(method string, result any) ([]byte, bool, int, error) {

@@ -202,6 +202,33 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "alpha\nbeta\nwide 你好🚀"); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	snapshot, err := client.Snapshot(context.Background(), "term-1", 0, 2)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if snapshot.TerminalID != "term-1" || snapshot.Size != (protocol.Size{Cols: 12, Rows: 4}) {
+		t.Fatalf("unexpected snapshot metadata %#v", snapshot)
+	}
+	if len(snapshot.Screen.Cells) != 2 {
+		t.Fatalf("expected latest live rows only, got %#v", snapshot.Screen.Cells)
+	}
+	got := []string{cellsText(snapshot.Screen.Cells[0]), cellsText(snapshot.Screen.Cells[1])}
+	if got[0] != "beta" || got[1] != "wide 你好🚀" || len(snapshot.Scrollback) != 0 {
+		t.Fatalf("snapshot must expose live screen rows without scrollback truth, got rows=%#v scrollback=%#v", got, snapshot.Scrollback)
+	}
+}
+
 func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {
 	t.Helper()
 	clientTransport, serverTransport := memory.NewPair()
@@ -275,6 +302,14 @@ func requireProtocolEvent(t *testing.T, events <-chan protocol.Event) protocol.E
 func rowText(row protocol.CompactRow) string {
 	var builder strings.Builder
 	for _, cell := range row.DecodeCells() {
+		builder.WriteString(cell.Content)
+	}
+	return builder.String()
+}
+
+func cellsText(row []protocol.Cell) string {
+	var builder strings.Builder
+	for _, cell := range row {
 		builder.WriteString(cell.Content)
 	}
 	return builder.String()

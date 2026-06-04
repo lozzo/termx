@@ -235,6 +235,8 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 		return "error"
 	case root.CopyMode.Active:
 		return "copy"
+	case root.Session.State == state.TerminalLiveExited || root.Surface.State == state.TerminalLiveExited:
+		return "exited"
 	case root.Session.Attached:
 		return "attached"
 	case root.Surface.TerminalID != "":
@@ -433,7 +435,10 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 		content.Error = surface.Err
 	}
 	if len(content.Lines) == 0 {
-		if surface.Ready {
+		if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
+			content.Lines = []Line{liveExitedLine(surface, session)}
+			content.Empty = true
+		} else if surface.Ready {
 			content.Lines = []Line{NewLine("live surface empty")}
 			content.Empty = true
 		} else {
@@ -449,6 +454,25 @@ func liveStatus(surface state.TerminalSurfaceStore, session state.TerminalSessio
 	status := "live"
 	if surface.TerminalID != "" {
 		status = "live: " + surface.TerminalID
+	} else if session.TerminalID != "" {
+		status = "live: " + session.TerminalID
+	}
+	if session.Attached || surface.State == state.TerminalLiveAttached {
+		cols, rows := liveStatusSize(surface, session)
+		if cols > 0 && rows > 0 {
+			status += fmt.Sprintf(" attached %dx%d", cols, rows)
+		} else {
+			status += " attached"
+		}
+	}
+	if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
+		status = "exited: " + liveTerminalID(surface, session)
+		if code, ok := liveExitCode(surface, session); ok {
+			status += fmt.Sprintf(" code:%d", code)
+		}
+		if reason := liveExitReason(surface, session); reason != "" {
+			status += " " + reason
+		}
 	}
 	if session.LastError != "" {
 		status = "error: " + session.LastError
@@ -456,6 +480,52 @@ func liveStatus(surface state.TerminalSurfaceStore, session state.TerminalSessio
 		status = "error: " + surface.Err
 	}
 	return status
+}
+
+func liveExitedLine(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) Line {
+	text := "terminal exited"
+	if terminalID := liveTerminalID(surface, session); terminalID != "" {
+		text += ": " + terminalID
+	}
+	if code, ok := liveExitCode(surface, session); ok {
+		text += fmt.Sprintf(" code:%d", code)
+	}
+	if reason := liveExitReason(surface, session); reason != "" {
+		text += " " + reason
+	}
+	return Line{Cells: []Cell{styledCell(text, StyleWarning)}}
+}
+
+func liveTerminalID(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {
+	if surface.TerminalID != "" {
+		return surface.TerminalID
+	}
+	return session.TerminalID
+}
+
+func liveExitCode(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) (int, bool) {
+	switch {
+	case session.State == state.TerminalLiveExited:
+		return session.ExitCode, true
+	case surface.State == state.TerminalLiveExited:
+		return surface.ExitCode, true
+	default:
+		return 0, false
+	}
+}
+
+func liveExitReason(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {
+	if session.ExitReason != "" {
+		return session.ExitReason
+	}
+	return surface.ExitReason
+}
+
+func liveStatusSize(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) (int, int) {
+	if surface.Cols > 0 && surface.Rows > 0 {
+		return surface.Cols, surface.Rows
+	}
+	return session.Cols, session.Rows
 }
 
 func liveContentCursor(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, lines []Line) Cursor {

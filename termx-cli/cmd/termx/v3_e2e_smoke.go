@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
@@ -109,6 +110,12 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	}
 	if got := runtime.State().Session; got.Cols != 78 || got.Rows != 20 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: initial attach did not use content rect, got %#v", got)
+	}
+	if len(runtime.State().Surface.Lines) < 2 || runtime.State().Surface.Lines[0] != "alpha" || runtime.State().Surface.Lines[1] != "beta" {
+		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: attach did not hydrate live surface rows, surface=%#v", runtime.State().Surface)
+	}
+	if !v3E2EFramesContain(host.Frames(), "alpha") || !v3E2EFramesContain(host.Frames(), "beta") {
+		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: hydrated live rows were not rendered")
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
 		return v3E2ESmokeResult{}, err
@@ -258,4 +265,15 @@ func validateV3E2EFrameSize(frames []render.Frame, cols int, rows int) error {
 		}
 	}
 	return nil
+}
+
+func v3E2EFramesContain(frames []render.Frame, value string) bool {
+	for _, frame := range frames {
+		for _, line := range frame.Lines {
+			if strings.Contains(line, value) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -457,8 +457,9 @@ renderer 禁止：
 - Prompt/Help overlay 一期已经完成。
 - Tab/Workspace 产品入口一期已经完成。
 - TUI 产品壳总验收已经完成。
-- 当前下一步是 terminal live 连接展示与交互前推。
-- 后续再继续 terminal-live 深化、copy-history 深化和 render cleanup/performance。
+- terminal live 连接展示与交互前推已经完成：attach 后会通过 terminal service 拉取 core-v2 live snapshot 初始化 live surface，输入仍只经 terminal service 发送，画面更新只来自 live surface 回投。
+- 当前下一步是 copy-history content renderer 深化。
+- 后续再继续 terminal-live streaming/rich attributes、copy-history 深化和 render cleanup/performance。
 
 UI framework 交互产品化总验收包括：
 
@@ -473,6 +474,8 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 当前 terminal-live content renderer 一期的架构边界：
 
 - `TerminalSurfaceStore` 可以保存 live surface 是否已到达、实时行、基础 cursor metadata 和错误状态；这些只服务实时显示，不是 history truth。
+- `TerminalSurfaceStore` 还表达 attached/exited/error lifecycle；退出态保留最后 live surface 行并在 panel/footer 中显示 exited 状态，但不写入 history。
+- attach result 后可以通过 `TerminalSurfaceService.LiveSurface` 拉取一次 core-v2 live snapshot 作为 live surface 初始化；该 snapshot 只服务实时显示，不得作为 copy mode 或 committed history source。
 - `RenderVMBuilder` 负责把 live 行投影为 `ContentVM`：基础 ANSI SGR 转成 semantic style token，pending/empty/exited 转成所属 pane 内的 content 状态，live cursor 转成 content-local cursor。
 - `Renderer` 和 render framework 只按 content rect 裁切、合成和输出 styled frame，不解释 terminal lifecycle，也不从 live surface 推断 copy/history。
 - `FrameSink` 只消费 `Frame` / `RenderResult` 的 ANSI styled frame；不得为了 live 内容绕过 `RenderResult` 直接写 TTY。
