@@ -125,6 +125,12 @@ type ShellFloatingCommandMsg struct {
 
 func (ShellFloatingCommandMsg) isMsg() {}
 
+type ShellWorkbenchCommandMsg struct {
+	Command state.WorkbenchCommand
+}
+
+func (ShellWorkbenchCommandMsg) isMsg() {}
+
 type PaneCommandFeedbackEffect struct {
 	Result  state.PaneCommandResult
 	Command state.PaneCommand
@@ -204,6 +210,8 @@ func NewShellReducer() Reducer {
 			return reducePaneCommand(root, msg.Command)
 		case ShellFloatingCommandMsg:
 			return reduceFloatingCommand(root, msg.Command)
+		case ShellWorkbenchCommandMsg:
+			return reduceWorkbenchCommand(root, msg.Command)
 		default:
 			return root, nil
 		}
@@ -329,6 +337,11 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 		if body == "" {
 			body = "(empty)"
 		}
+		if command, ok := promptWorkbenchCommand(after); ok {
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return ShellWorkbenchCommandMsg{Command: command}
+			}}}
+		}
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.submit", Body: body})
 		return root.Advance(), nil
 	}
@@ -336,6 +349,21 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "prompt.confirm", Body: after.LastResult})
 	}
 	return root.Advance(), nil
+}
+
+func promptWorkbenchCommand(prompt state.PromptState) (state.WorkbenchCommand, bool) {
+	name := prompt.LastResult
+	if name == "" {
+		name = prompt.Value
+	}
+	switch prompt.Purpose {
+	case "tab.rename":
+		return state.WorkbenchCommand{Action: state.WorkbenchCommandTabRename, Name: name, Source: state.PaneCommandSourcePalette}, true
+	case "workspace.rename":
+		return state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceRename, Name: name, Source: state.PaneCommandSourcePalette}, true
+	default:
+		return state.WorkbenchCommand{}, false
+	}
 }
 
 func terminalPickerItemAt(items []state.TerminalPickerItem, row int) (state.TerminalPickerItem, bool) {
@@ -451,6 +479,12 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 	return root.Advance(), nil
 }
 
+func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (state.Root, []Effect) {
+	nextShell, result := root.Shell.ApplyWorkbenchCommand(command)
+	root.Shell = addWorkbenchCommandToast(nextShell, result)
+	return root.Advance(), nil
+}
+
 func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand) state.FloatingCommand {
 	if command.BoundsW <= 0 {
 		command.BoundsW = root.Viewport.Cols
@@ -472,6 +506,13 @@ func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand)
 
 func addFloatingCommandToast(shell state.ShellStore, result state.FloatingCommandResult) state.ShellStore {
 	if result.Status == state.FloatingCommandOK {
+		return shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(result.Action), Body: result.ID})
+	}
+	return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(result.Action), Body: result.Reason})
+}
+
+func addWorkbenchCommandToast(shell state.ShellStore, result state.WorkbenchCommandResult) state.ShellStore {
+	if result.Status == state.WorkbenchCommandOK {
 		return shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(result.Action), Body: result.ID})
 	}
 	return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(result.Action), Body: result.Reason})

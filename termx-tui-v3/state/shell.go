@@ -57,17 +57,57 @@ const (
 type InteractionMode string
 
 const (
-	InteractionModeNormal   InteractionMode = ""
-	InteractionModePane     InteractionMode = "pane"
-	InteractionModeResize   InteractionMode = "resize"
-	InteractionModeGlobal   InteractionMode = "global"
-	InteractionModeFloating InteractionMode = "floating"
+	InteractionModeNormal    InteractionMode = ""
+	InteractionModePane      InteractionMode = "pane"
+	InteractionModeResize    InteractionMode = "resize"
+	InteractionModeGlobal    InteractionMode = "global"
+	InteractionModeFloating  InteractionMode = "floating"
+	InteractionModeTab       InteractionMode = "tab"
+	InteractionModeWorkspace InteractionMode = "workspace"
 )
+
+type WorkbenchCommandAction string
+
+const (
+	WorkbenchCommandTabCreate         WorkbenchCommandAction = "tab.create"
+	WorkbenchCommandTabNext           WorkbenchCommandAction = "tab.next"
+	WorkbenchCommandTabPrevious       WorkbenchCommandAction = "tab.previous"
+	WorkbenchCommandTabRename         WorkbenchCommandAction = "tab.rename"
+	WorkbenchCommandTabClose          WorkbenchCommandAction = "tab.close"
+	WorkbenchCommandWorkspaceCreate   WorkbenchCommandAction = "workspace.create"
+	WorkbenchCommandWorkspaceNext     WorkbenchCommandAction = "workspace.next"
+	WorkbenchCommandWorkspacePrevious WorkbenchCommandAction = "workspace.previous"
+	WorkbenchCommandWorkspaceRename   WorkbenchCommandAction = "workspace.rename"
+)
+
+type WorkbenchCommand struct {
+	Action   WorkbenchCommandAction
+	TargetID string
+	Name     string
+	Source   PaneCommandSource
+	Confirm  PaneConfirmPolicy
+}
+
+type WorkbenchCommandStatus string
+
+const (
+	WorkbenchCommandOK                WorkbenchCommandStatus = "ok"
+	WorkbenchCommandNeedsConfirmation WorkbenchCommandStatus = "needs-confirmation"
+	WorkbenchCommandInvalid           WorkbenchCommandStatus = "invalid"
+)
+
+type WorkbenchCommandResult struct {
+	Status WorkbenchCommandStatus
+	Action WorkbenchCommandAction
+	Reason string
+	ID     string
+}
 
 // ShellStore 保存 Workbench 外壳相关的 reducer-owned 产品状态。
 // 它只描述用户可操作的结构，不计算最终屏幕矩形，也不画 panel chrome。
 type ShellStore struct {
 	Workspace         WorkspaceState
+	Workspaces        []WorkspaceState
 	Floatings         []FloatingPaneState
 	ActiveFloatingID  string
 	PanelPresentation PanelPresentation
@@ -148,6 +188,7 @@ type OverlayState struct {
 type PromptState struct {
 	Title       string
 	Context     string
+	Purpose     string
 	Value       string
 	Placeholder string
 	Destructive bool
@@ -269,6 +310,7 @@ func DefaultShell() ShellStore {
 
 func (store ShellStore) EnsureDefaults() ShellStore {
 	store.Workspace = cloneWorkspace(store.Workspace)
+	store.Workspaces = cloneWorkspaces(store.Workspaces)
 	store.Floatings = cloneFloatings(store.Floatings)
 	store.Toasts = cloneToasts(store.Toasts)
 	if !store.initialized {
@@ -297,6 +339,8 @@ func (store ShellStore) EnsureDefaults() ShellStore {
 			RootSplit: SplitNode{PaneID: DefaultPaneID},
 		}}
 	}
+	store.Workspace = store.Workspace.ensureDefaults()
+	store.Workspaces = upsertWorkspace(ensureWorkspaceList(store.Workspaces, store.Workspace), store.Workspace)
 	store.Workspace = store.Workspace.ensureTabDefaults()
 	store.Workspace = store.Workspace.ensureActiveTab()
 	if store.ActivePaneID == "" {
@@ -310,6 +354,7 @@ func (store ShellStore) EnsureDefaults() ShellStore {
 	}
 	store = store.ensureFloatingDefaults()
 	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
 	return store
 }
 
@@ -403,7 +448,7 @@ func (store ShellStore) ToggleFooterVisible() ShellStore {
 func (store ShellStore) SetInteractionMode(mode InteractionMode) ShellStore {
 	store = store.EnsureDefaults()
 	switch mode {
-	case InteractionModeNormal, InteractionModePane, InteractionModeResize, InteractionModeGlobal, InteractionModeFloating:
+	case InteractionModeNormal, InteractionModePane, InteractionModeResize, InteractionModeGlobal, InteractionModeFloating, InteractionModeTab, InteractionModeWorkspace:
 		store.InteractionMode = mode
 	}
 	return store
@@ -432,6 +477,218 @@ func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStor
 	default:
 		return store, floatingCommandInvalid(command.Action, "unknown action")
 	}
+}
+
+func (store ShellStore) ApplyWorkbenchCommand(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	store = store.EnsureDefaults()
+	if command.Source == "" {
+		command.Source = PaneCommandSourceKeyboard
+	}
+	switch command.Action {
+	case WorkbenchCommandTabCreate:
+		return store.createTab(command)
+	case WorkbenchCommandTabNext:
+		return store.switchRelativeTab(1, command.Action)
+	case WorkbenchCommandTabPrevious:
+		return store.switchRelativeTab(-1, command.Action)
+	case WorkbenchCommandTabRename:
+		return store.renameTab(command)
+	case WorkbenchCommandTabClose:
+		return store.closeTab(command)
+	case WorkbenchCommandWorkspaceCreate:
+		return store.createWorkspace(command)
+	case WorkbenchCommandWorkspaceNext:
+		return store.switchRelativeWorkspace(1, command.Action)
+	case WorkbenchCommandWorkspacePrevious:
+		return store.switchRelativeWorkspace(-1, command.Action)
+	case WorkbenchCommandWorkspaceRename:
+		return store.renameWorkspace(command)
+	default:
+		return store, workbenchCommandInvalid(command.Action, "unknown action")
+	}
+}
+
+func (store ShellStore) createTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	id := strings.TrimSpace(command.TargetID)
+	if id == "" {
+		id = nextTabID(store.Workspace)
+	}
+	if store.tabIndexByID(id) >= 0 {
+		return store, workbenchCommandInvalid(command.Action, "tab already exists")
+	}
+	name := strings.TrimSpace(command.Name)
+	if name == "" {
+		name = id
+	}
+	paneID := id + "-pane"
+	tab := TabState{
+		ID:           id,
+		Title:        name,
+		ActivePaneID: paneID,
+		Panes:        []PaneState{{ID: paneID, Title: "shell", Kind: PaneTerminalLive, Active: true}},
+		RootSplit:    SplitNode{PaneID: paneID},
+	}
+	store.Workspace.Tabs = append(cloneTabs(store.Workspace.Tabs), tab)
+	return store.focusTabByIndex(len(store.Workspace.Tabs) - 1), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: id}
+}
+
+func (store ShellStore) switchRelativeTab(offset int, action WorkbenchCommandAction) (ShellStore, WorkbenchCommandResult) {
+	if len(store.Workspace.Tabs) == 0 {
+		return store, workbenchCommandInvalid(action, "no tab")
+	}
+	index := store.activeTabIndex()
+	if index < 0 {
+		index = 0
+	}
+	next := (index + offset) % len(store.Workspace.Tabs)
+	if next < 0 {
+		next += len(store.Workspace.Tabs)
+	}
+	store = store.focusTabByIndex(next)
+	return store, WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: action, ID: store.Workspace.ActiveTabID}
+}
+
+func (store ShellStore) renameTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	name := strings.TrimSpace(command.Name)
+	if name == "" {
+		return store, workbenchCommandInvalid(command.Action, "missing tab name")
+	}
+	index := store.activeTabIndex()
+	if command.TargetID != "" {
+		index = store.tabIndexByID(command.TargetID)
+	}
+	if index < 0 {
+		return store, workbenchCommandInvalid(command.Action, "tab not found")
+	}
+	store.Workspace.Tabs[index].Title = name
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: store.Workspace.Tabs[index].ID}
+}
+
+func (store ShellStore) closeTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	if len(store.Workspace.Tabs) <= 1 {
+		return store, workbenchCommandInvalid(command.Action, "cannot close last tab")
+	}
+	index := store.activeTabIndex()
+	if command.TargetID != "" {
+		index = store.tabIndexByID(command.TargetID)
+	}
+	if index < 0 {
+		return store, workbenchCommandInvalid(command.Action, "tab not found")
+	}
+	closedID := store.Workspace.Tabs[index].ID
+	nextTabs := make([]TabState, 0, len(store.Workspace.Tabs)-1)
+	for i, tab := range store.Workspace.Tabs {
+		if i != index {
+			nextTabs = append(nextTabs, tab)
+		}
+	}
+	store.Workspace.Tabs = nextTabs
+	if index >= len(nextTabs) {
+		index = len(nextTabs) - 1
+	}
+	store = store.focusTabByIndex(index)
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	return store, WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: closedID}
+}
+
+func (store ShellStore) createWorkspace(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	id := strings.TrimSpace(command.TargetID)
+	if id == "" {
+		id = nextWorkspaceID(store.Workspaces)
+	}
+	if _, ok := workspaceByID(store.Workspaces, id); ok {
+		return store, workbenchCommandInvalid(command.Action, "workspace already exists")
+	}
+	name := strings.TrimSpace(command.Name)
+	if name == "" {
+		name = id
+	}
+	paneID := id + "-pane"
+	workspace := WorkspaceState{
+		ID:          id,
+		Name:        name,
+		ActiveTabID: DefaultTabID,
+		Tabs: []TabState{{
+			ID:           DefaultTabID,
+			Title:        "main",
+			ActivePaneID: paneID,
+			Panes:        []PaneState{{ID: paneID, Title: "shell", Kind: PaneTerminalLive, Active: true}},
+			RootSplit:    SplitNode{PaneID: paneID},
+		}},
+	}
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	store.Workspaces = appendWorkspaceIfMissing(store.Workspaces, workspace.ensureDefaults())
+	return store.switchWorkspace(id, command.Action)
+}
+
+func (store ShellStore) switchRelativeWorkspace(offset int, action WorkbenchCommandAction) (ShellStore, WorkbenchCommandResult) {
+	store.Workspaces = upsertWorkspace(ensureWorkspaceList(store.Workspaces, store.Workspace), store.Workspace)
+	if len(store.Workspaces) == 0 {
+		return store, workbenchCommandInvalid(action, "no workspace")
+	}
+	current := workspaceIndexByID(store.Workspaces, store.Workspace.ID)
+	if current < 0 {
+		current = 0
+	}
+	next := (current + offset) % len(store.Workspaces)
+	if next < 0 {
+		next += len(store.Workspaces)
+	}
+	return store.switchWorkspace(store.Workspaces[next].ID, action)
+}
+
+func (store ShellStore) renameWorkspace(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	name := strings.TrimSpace(command.Name)
+	if name == "" {
+		return store, workbenchCommandInvalid(command.Action, "missing workspace name")
+	}
+	id := command.TargetID
+	if id == "" {
+		id = store.Workspace.ID
+	}
+	index := workspaceIndexByID(store.Workspaces, id)
+	if index < 0 {
+		return store, workbenchCommandInvalid(command.Action, "workspace not found")
+	}
+	store.Workspaces[index].Name = name
+	if store.Workspace.ID == id {
+		store.Workspace.Name = name
+	}
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: id}
+}
+
+func (store ShellStore) switchWorkspace(id string, action WorkbenchCommandAction) (ShellStore, WorkbenchCommandResult) {
+	index := workspaceIndexByID(store.Workspaces, id)
+	if index < 0 {
+		return store, workbenchCommandInvalid(action, "workspace not found")
+	}
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	next := cloneWorkspace(store.Workspaces[index]).ensureDefaults()
+	store.Workspace = next
+	store.ActivePaneID = next.activeTab().ActivePaneID
+	store.ZoomedPaneID = ""
+	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: action, ID: id}
+}
+
+func (store ShellStore) focusTabByIndex(index int) ShellStore {
+	if index < 0 || index >= len(store.Workspace.Tabs) {
+		return store.EnsureDefaults()
+	}
+	tab := store.Workspace.Tabs[index]
+	store.Workspace.ActiveTabID = tab.ID
+	if tab.ActivePaneID == "" && len(tab.Panes) > 0 {
+		tab.ActivePaneID = tab.Panes[0].ID
+		store.Workspace.Tabs[index] = tab
+	}
+	store.ActivePaneID = tab.ActivePaneID
+	store.ZoomedPaneID = ""
+	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	return store.EnsureDefaults()
 }
 
 func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -1125,6 +1382,47 @@ func (workspace WorkspaceState) ensureActiveTab() WorkspaceState {
 	return workspace
 }
 
+func (workspace WorkspaceState) ensureDefaults() WorkspaceState {
+	if workspace.ID == "" {
+		workspace.ID = DefaultWorkspaceID
+	}
+	if workspace.Name == "" {
+		workspace.Name = workspace.ID
+		if workspace.Name == DefaultWorkspaceID {
+			workspace.Name = "main"
+		}
+	}
+	if len(workspace.Tabs) == 0 {
+		workspace.ActiveTabID = DefaultTabID
+		workspace.Tabs = []TabState{{
+			ID:           DefaultTabID,
+			Title:        "main",
+			ActivePaneID: DefaultPaneID,
+			Panes: []PaneState{{
+				ID:     DefaultPaneID,
+				Title:  "shell",
+				Kind:   PaneTerminalLive,
+				Active: true,
+			}},
+			RootSplit: SplitNode{PaneID: DefaultPaneID},
+		}}
+	}
+	workspace = workspace.ensureTabDefaults()
+	return workspace.ensureActiveTab()
+}
+
+func (workspace WorkspaceState) activeTab() TabState {
+	for _, tab := range workspace.Tabs {
+		if tab.ID == workspace.ActiveTabID {
+			return tab
+		}
+	}
+	if len(workspace.Tabs) > 0 {
+		return workspace.Tabs[0]
+	}
+	return TabState{}
+}
+
 // TerminalPickerItems 从 reducer-owned root 推导 picker 列表；服务端 Terminal Pool 必须先回投到 TerminalPoolStore。
 func TerminalPickerItems(root Root) []TerminalPickerItem {
 	shell := root.Shell.EnsureDefaults()
@@ -1386,6 +1684,91 @@ func workspacePaneCount(workspace WorkspaceState) int {
 	return count
 }
 
+func (store ShellStore) tabIndexByID(id string) int {
+	for index, tab := range store.Workspace.Tabs {
+		if tab.ID == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func ensureWorkspaceList(workspaces []WorkspaceState, active WorkspaceState) []WorkspaceState {
+	active = active.ensureDefaults()
+	if len(workspaces) == 0 {
+		return []WorkspaceState{active}
+	}
+	out := cloneWorkspaces(workspaces)
+	for index := range out {
+		out[index] = out[index].ensureDefaults()
+	}
+	return out
+}
+
+func workspaceByID(workspaces []WorkspaceState, id string) (WorkspaceState, bool) {
+	index := workspaceIndexByID(workspaces, id)
+	if index < 0 {
+		return WorkspaceState{}, false
+	}
+	return cloneWorkspace(workspaces[index]).ensureDefaults(), true
+}
+
+func workspaceIndexByID(workspaces []WorkspaceState, id string) int {
+	for index, workspace := range workspaces {
+		if workspace.ID == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func upsertWorkspace(workspaces []WorkspaceState, workspace WorkspaceState) []WorkspaceState {
+	workspace = workspace.ensureDefaults()
+	out := cloneWorkspaces(workspaces)
+	if len(out) == 0 {
+		return []WorkspaceState{workspace}
+	}
+	for index := range out {
+		if out[index].ID == workspace.ID {
+			out[index] = workspace
+			return out
+		}
+	}
+	return append(out, workspace)
+}
+
+func appendWorkspaceIfMissing(workspaces []WorkspaceState, workspace WorkspaceState) []WorkspaceState {
+	if _, ok := workspaceByID(workspaces, workspace.ID); ok {
+		return cloneWorkspaces(workspaces)
+	}
+	return append(cloneWorkspaces(workspaces), workspace.ensureDefaults())
+}
+
+func nextTabID(workspace WorkspaceState) string {
+	for i := 2; ; i++ {
+		id := fmt.Sprintf("tab-%d", i)
+		exists := false
+		for _, tab := range workspace.Tabs {
+			if tab.ID == id {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			return id
+		}
+	}
+}
+
+func nextWorkspaceID(workspaces []WorkspaceState) string {
+	for i := 2; ; i++ {
+		id := fmt.Sprintf("workspace-%d", i)
+		if workspaceIndexByID(workspaces, id) < 0 {
+			return id
+		}
+	}
+}
+
 func (store ShellStore) floatingIndex(id string) int {
 	for index, floating := range store.Floatings {
 		if floating.ID == id {
@@ -1546,6 +1929,10 @@ func formatFloatingID(seq uint64) string {
 
 func floatingCommandInvalid(action FloatingCommandAction, reason string) FloatingCommandResult {
 	return FloatingCommandResult{Status: FloatingCommandInvalid, Action: action, Reason: reason}
+}
+
+func workbenchCommandInvalid(action WorkbenchCommandAction, reason string) WorkbenchCommandResult {
+	return WorkbenchCommandResult{Status: WorkbenchCommandInvalid, Action: action, Reason: reason}
 }
 
 func insertSplitNode(node SplitNode, targetPaneID string, newPaneID string, direction SplitDirection) SplitNode {
@@ -1757,6 +2144,17 @@ func cloneToasts(toasts []ToastState) []ToastState {
 func cloneWorkspace(workspace WorkspaceState) WorkspaceState {
 	workspace.Tabs = cloneTabs(workspace.Tabs)
 	return workspace
+}
+
+func cloneWorkspaces(workspaces []WorkspaceState) []WorkspaceState {
+	if len(workspaces) == 0 {
+		return nil
+	}
+	cloned := make([]WorkspaceState, len(workspaces))
+	for index, workspace := range workspaces {
+		cloned[index] = cloneWorkspace(workspace)
+	}
+	return cloned
 }
 
 func cloneFloatings(floatings []FloatingPaneState) []FloatingPaneState {

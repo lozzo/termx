@@ -30,7 +30,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("smoke run detailed: %v", err)
 	}
 	cases := smokeCasesByName(result)
-	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "pane-command-flow"}
+	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "tab-workspace", "pane-command-flow"}
 	for _, name := range required {
 		if len(cases[name].Lines) == 0 {
 			t.Fatalf("missing smoke case %s in %#v", name, result.Cases)
@@ -45,7 +45,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;88;213;201m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, "ws:main") || !frameContains(cases["workbench-live"].Lines, "mode:live") || !frameContains(cases["workbench-live"].Lines, "keys:^P pane") {
+	if !frameContains(cases["workbench-live"].Lines, "ws:main") || !frameContains(cases["workbench-live"].Lines, "tab:[main]") || !frameContains(cases["workbench-live"].Lines, "mode:live") {
 		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;24;50;74m") {
@@ -85,6 +85,12 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["help-overlay"].Lines, "Floating") ||
 		!frameContains(cases["help-overlay"].Lines, "Terminal Pool") {
 		t.Fatalf("help overlay smoke missing help content: %#v", cases["help-overlay"].Lines)
+	}
+	if !frameContains(cases["tab-workspace"].Lines, "ws:remote") ||
+		!frameContains(cases["tab-workspace"].Lines, "tab:[main]") ||
+		!frameContains(cases["tab-workspace"].Lines, "mode:workspace") ||
+		!frameContains(cases["tab-workspace"].Lines, "workspace live") {
+		t.Fatalf("tab/workspace smoke missing product entry content: %#v", cases["tab-workspace"].Lines)
 	}
 	if !frameContains(cases["pane-command-flow"].Lines, "pane.close") ||
 		!frameContains(cases["pane-command-flow"].Lines, "pane command live") {

@@ -52,6 +52,7 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 		{name: "copy-history", root: smokeCopyHistoryRoot()},
 		{name: "prompt-overlay", root: smokePromptRoot()},
 		{name: "help-overlay", root: smokeHelpRoot()},
+		{name: "tab-workspace", root: smokeTabWorkspaceRoot()},
 	}
 	result := SmokeResult{Cases: make([]SmokeCase, 0, len(rootCases)+1)}
 	for _, item := range rootCases {
@@ -166,6 +167,22 @@ func smokePromptRoot() state.Root {
 
 func smokeHelpRoot() state.Root {
 	return state.Root{Shell: state.DefaultShell().OpenHelp("most-used")}
+}
+
+func smokeTabWorkspaceRoot() state.Root {
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
+	shell = shell.SetInteractionMode(state.InteractionModeWorkspace)
+	return state.Root{
+		Shell: shell,
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "termx-workspace",
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"workspace live"},
+		},
+	}
 }
 
 func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, renderer render.Renderer) (render.Frame, error) {

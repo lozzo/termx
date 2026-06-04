@@ -69,9 +69,29 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	if ctrlP.Kind != IntentSetInteractionMode || ctrlP.Mode != InteractionModePane {
 		t.Fatalf("expected pane mode intent, got %#v", ctrlP)
 	}
+	ctrlT := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x14", Ctrl: true}, false)
+	if ctrlT.Kind != IntentSetInteractionMode || ctrlT.Mode != InteractionModeTab {
+		t.Fatalf("expected tab mode intent, got %#v", ctrlT)
+	}
+	ctrlW := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x17", Ctrl: true}, false)
+	if ctrlW.Kind != IntentSetInteractionMode || ctrlW.Mode != InteractionModeWorkspace {
+		t.Fatalf("expected workspace mode intent, got %#v", ctrlW)
+	}
 	paneSplit := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "v"}, false, InteractionModePane)
 	if paneSplit.Kind != IntentPaneCommand || paneSplit.Command != "pane split-right" {
 		t.Fatalf("expected split-right pane command, got %#v", paneSplit)
+	}
+	tabNew := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModeTab)
+	if tabNew.Kind != IntentWorkbenchCommand || tabNew.Command != "tab create" {
+		t.Fatalf("expected tab create command, got %#v", tabNew)
+	}
+	tabRename := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, false, InteractionModeTab)
+	if tabRename.Kind != IntentWorkbenchCommand || tabRename.Command != "tab rename" {
+		t.Fatalf("expected tab rename command, got %#v", tabRename)
+	}
+	workspaceNext := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "l"}, false, InteractionModeWorkspace)
+	if workspaceNext.Kind != IntentWorkbenchCommand || workspaceNext.Command != "workspace next" {
+		t.Fatalf("expected workspace next command, got %#v", workspaceNext)
 	}
 	resizeRight := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyRight}, false, InteractionModeResize)
 	if resizeRight.Kind != IntentPaneCommand || resizeRight.Command != "pane resize right delta=2" {

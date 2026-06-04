@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -122,6 +123,35 @@ func TestShellReducerRoutesUnifiedPaneCommandContract(t *testing.T) {
 	feedback, ok := effects[0].(PaneCommandFeedbackEffect)
 	if !ok || feedback.Result.Status != state.PaneCommandOK || feedback.Command.Target.PaneID != state.DefaultPaneID {
 		t.Fatalf("unexpected command feedback %#v", effects[0])
+	}
+}
+
+func TestShellReducerWorkbenchCommandAndPromptRename(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"}})
+	if len(effects) != 0 {
+		t.Fatalf("workbench command should not emit effects, got %#v", effects)
+	}
+	if len(root.Shell.Workspace.Tabs) != 2 || root.Shell.Workspace.Tabs[1].Title != "logs" {
+		t.Fatalf("expected created tab, got %#v", root.Shell.Workspace.Tabs)
+	}
+
+	root.Shell = root.Shell.OpenPrompt(state.PromptState{Purpose: "tab.rename", Value: "构建"})
+	root, effects = reducer(root, ShellPromptSubmitMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("expected prompt rename effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, msg)
+	if root.Shell.Workspace.Tabs[1].Title != "构建" {
+		t.Fatalf("expected prompt to rename active tab, got %#v", root.Shell.Workspace.Tabs)
+	}
+
+	root, _ = reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"}})
+	if len(root.Shell.Workspaces) != 2 || root.Shell.Workspace.Name != "remote" {
+		t.Fatalf("expected created workspace, got %#v", root.Shell)
 	}
 }
 

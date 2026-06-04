@@ -63,6 +63,8 @@ func NewUIInputReducer() Reducer {
 			return reduceShellActionIntent(root, intent)
 		case input.IntentPaneCommand:
 			return reducePaneCommandIntent(root, intent)
+		case input.IntentWorkbenchCommand:
+			return reduceWorkbenchCommandIntent(root, intent)
 		default:
 			if root.Shell.EnsureDefaults().InteractionMode != state.InteractionModeNormal {
 				return root, []Effect{handledEffect{}}
@@ -283,6 +285,24 @@ func reducePaneCommandIntent(root state.Root, intent input.Intent) (state.Root, 
 	}
 }
 
+func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {
+	command, prompt, ok := workbenchCommandFromIntent(root, intent)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench command", Body: "invalid shortcut"})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
+	if prompt.Title != "" {
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg { return ShellOpenPromptMsg{Prompt: prompt} }},
+		}
+	}
+	return root, []Effect{
+		handledEffect{},
+		FuncEffect{Run: func(context.Context) Msg { return ShellWorkbenchCommandMsg{Command: command} }},
+	}
+}
+
 func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {
 	var msg Msg
 	switch intent.Action {
@@ -320,6 +340,54 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		FuncEffect{Run: func(context.Context) Msg {
 			return msg
 		}},
+	}
+}
+
+func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.WorkbenchCommand, state.PromptState, bool) {
+	shell := root.Shell.EnsureDefaults()
+	command := state.WorkbenchCommand{Source: state.PaneCommandSourceKeyboard}
+	switch intent.Command {
+	case "tab create":
+		command.Action = state.WorkbenchCommandTabCreate
+		command.Name = nextTabName(shell)
+		return command, state.PromptState{}, true
+	case "tab next":
+		command.Action = state.WorkbenchCommandTabNext
+		return command, state.PromptState{}, true
+	case "tab previous":
+		command.Action = state.WorkbenchCommandTabPrevious
+		return command, state.PromptState{}, true
+	case "tab rename":
+		return command, state.PromptState{
+			Title:       "Rename Tab",
+			Context:     "Rename current tab. Submit applies through workbench command.",
+			Purpose:     "tab.rename",
+			Value:       activeTabTitle(shell),
+			Placeholder: "tab name",
+		}, true
+	case "tab close":
+		command.Action = state.WorkbenchCommandTabClose
+		return command, state.PromptState{}, true
+	case "workspace create":
+		command.Action = state.WorkbenchCommandWorkspaceCreate
+		command.Name = nextWorkspaceName(shell)
+		return command, state.PromptState{}, true
+	case "workspace next":
+		command.Action = state.WorkbenchCommandWorkspaceNext
+		return command, state.PromptState{}, true
+	case "workspace previous":
+		command.Action = state.WorkbenchCommandWorkspacePrevious
+		return command, state.PromptState{}, true
+	case "workspace rename":
+		return command, state.PromptState{
+			Title:       "Rename Workspace",
+			Context:     "Rename current workspace. Submit applies through workbench command.",
+			Purpose:     "workspace.rename",
+			Value:       shell.Workspace.Name,
+			Placeholder: "workspace name",
+		}, true
+	default:
+		return state.WorkbenchCommand{}, state.PromptState{}, false
 	}
 }
 
@@ -393,6 +461,10 @@ func inputMode(mode state.InteractionMode) input.InteractionMode {
 		return input.InteractionModeGlobal
 	case state.InteractionModeFloating:
 		return input.InteractionModeFloating
+	case state.InteractionModeTab:
+		return input.InteractionModeTab
+	case state.InteractionModeWorkspace:
+		return input.InteractionModeWorkspace
 	default:
 		return input.InteractionModeNormal
 	}
@@ -408,9 +480,33 @@ func stateInteractionMode(mode input.InteractionMode) state.InteractionMode {
 		return state.InteractionModeGlobal
 	case input.InteractionModeFloating:
 		return state.InteractionModeFloating
+	case input.InteractionModeTab:
+		return state.InteractionModeTab
+	case input.InteractionModeWorkspace:
+		return state.InteractionModeWorkspace
 	default:
 		return state.InteractionModeNormal
 	}
+}
+
+func activeTabTitle(shell state.ShellStore) string {
+	shell = shell.EnsureDefaults()
+	for _, tab := range shell.Workspace.Tabs {
+		if tab.ID == shell.Workspace.ActiveTabID {
+			return tab.Title
+		}
+	}
+	return "main"
+}
+
+func nextTabName(shell state.ShellStore) string {
+	shell = shell.EnsureDefaults()
+	return fmt.Sprintf("tab %d", len(shell.Workspace.Tabs)+1)
+}
+
+func nextWorkspaceName(shell state.ShellStore) string {
+	shell = shell.EnsureDefaults()
+	return fmt.Sprintf("workspace %d", len(shell.Workspaces)+1)
 }
 
 func nextKeyboardPaneID(shell state.ShellStore) string {

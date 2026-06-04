@@ -734,15 +734,15 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 - `Ctrl-r`：resize mode，承载方向 resize 和 balance。
 - `Ctrl-g`：global mode，承载 header/footer hide、toast 清理，并作为 Terminal Pool / Help 等全局入口的承载 mode。
 - `Ctrl-o`：floating mode，承载 create、move、resize、center、collapse / restore 和 close。
+- `Ctrl-t`：tab mode，承载 create、switch、rename 和 close。
+- `Ctrl-w`：workspace mode，承载 create、switch、rename 和 Workbench Tree。
 - `Ctrl-f`：Terminal Picker overlay，承载 query、过滤、键盘选择和确认 attach/focus。
 - `Ctrl-v`：Display / Copy authoritative history 路径。
 - `Esc`：退出 mode 或关闭 overlay，不得漏发给 terminal。
 
 当前尚未产品化的入口：
 
-- `Ctrl-t` tab mode 尚未形成完整产品交互。
-- `Ctrl-w` workspace mode 尚未形成完整产品交互。
-- Help overlay 尚未形成完整产品交互。
+- 更完整的 command palette、可配置 keymap 和跨 workspace terminal attach 尚未产品化。
 
 ### 13.3 Mode 职责
 
@@ -774,7 +774,6 @@ workspace mode：
 - switch。
 - create。
 - rename。
-- delete。
 - open Workbench Tree。
 
 floating mode：
@@ -1333,17 +1332,18 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - Terminal Pool 数据源与 Picker 服务接线一期已完成：Terminal Picker 可以请求 terminal list，展示 loading/empty/error，把 pool row 与当前 workspace pane row 合并去重，并把 attach/create/restart/reconnect 接到 service result 反馈。
 - Terminal Pool 管理页一期已完成：独立页面、搜索、列表、selected row、detail、metadata、preview 摘要、Attach/Edit/Kill action、键盘/鼠标操作、service/effect/result 反馈、常规 viewport 下关键内容可见和 no terminal input leak 已落地。
 - Prompt / Help overlay 一期已完成：Prompt 具备 title/context/input/submit/cancel/destructive confirm 边界，Help 可按 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 展示概念和动作，键盘、鼠标 close、overlay cursor 和 no terminal input leak 已接入。
+- Tab / Workspace 产品入口一期已完成：`Ctrl-t` 和 `Ctrl-w` 已进入 reducer-owned interaction mode，支持 tab create/switch/rename/close、workspace create/switch/rename 和 Workbench Tree 入口；rename 走同一个 Prompt 提交流程，header 展示 tab strip，footer 展示 mode-specific hints，输入不漏发到底层 terminal。
 
 当前未完成但产品要求仍保留：
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。
-- Prompt/Help 深化：命令面板、Help 搜索/分页、Prompt input click 光标定位和真实业务命令执行。
+- Prompt/Help 深化：命令面板、Help 搜索/分页、Prompt input click 光标定位和更多真实业务命令执行。
 - Floating Overview overlay。
 - floating pane 标题拖拽移动、resize handle 连续拖拽、attach as floating 和 Floating Overview。
 - 多层 split、复杂 pane 管理和 resize affordance 的产品化。
-- tab/workspace 的最终产品快捷键和交互闭环；当前已落地的 pane/resize/global/floating 第一版入口不得被局部 handler 分叉实现。
+- tab/workspace 深化：workspace delete、tab reorder、鼠标点击 tab strip、跨 workspace terminal attach 和更完整的 rename/confirm 策略；当前已落地的 pane/resize/global/floating/tab/workspace 第一版入口不得被局部 handler 分叉实现。
 
 ## 21. 当前 UI Framework 产品化验收线
 
@@ -1642,7 +1642,7 @@ Prompt / Help overlay 一期的目标是补齐全局短输入和帮助入口，�
 - 多字段表单。
 - Prompt input click 精确移动光标。
 - Help 搜索、分页、分类折叠或可配置 keymap 生成。
-- rename tab/workspace、metadata edit、kill confirm 等业务动作全部接入 Prompt；这些由后续 Tab/Workspace 和 Terminal Pool 深化切片接入。
+- metadata edit、kill confirm 等更多业务动作全部接入 Prompt；这些由后续 Terminal Pool 深化切片接入。
 
 本阶段完成后的基本手工测试入口：
 
@@ -1653,7 +1653,48 @@ Prompt / Help overlay 一期的目标是补齐全局短输入和帮助入口，�
 - 按 `Ctrl-g` 进入 global mode，再按 `?` 打开 Help；确认能看到 Most used、Pane、Tab、Workspace、Floating、Terminal Pool 和 Display/Copy 分类。
 - 在 Help 中按 Enter、Esc 或点击 close action，确认 overlay 关闭且底层 terminal 不收到输入。
 
-## 31. 后续讨论入口
+## 31. Tab / Workspace 产品入口一期验收线
+
+Tab / Workspace 产品入口一期的目标是让 `Ctrl-t` 和 `Ctrl-w` 从声明入口变成可操作的 workbench 结构入口。
+
+本阶段必须满足：
+
+- Tab 和 Workspace 操作必须通过 reducer-owned workbench command 或 shell message，不得在快捷键 handler 里直接临时改字段。
+- `Ctrl-t` 进入 tab mode，footer 显示 tab-specific hints。
+- tab mode 至少支持 create、next/previous switch、rename 和 close。
+- tab create 必须创建新 tab、切换 active tab、生成默认 pane，并让 header tab strip 和 active pane 同步更新。
+- tab switch 必须更新 active tab、active pane、header/footer 和 content rect，不得改变 terminal lifecycle。
+- tab rename 必须走同一个 Prompt overlay 提交流程，提交后通过 workbench command 更新 tab title。
+- tab close 必须拒绝关闭最后一个 tab；关闭成功后 active tab 和 active pane 必须稳定落到仍存在的 tab。
+- `Ctrl-w` 进入 workspace mode，footer 显示 workspace-specific hints。
+- workspace mode 至少支持 create、next/previous switch、rename 和 Workbench Tree 入口。
+- workspace create 必须创建 reducer-owned workspace、切换 active workspace、生成默认 tab/pane，并让 header workspace、tab strip 和 footer summary 同步更新。
+- workspace switch 必须保留原 workspace 的 tab/pane 状态，切回后能恢复原 active tab 和 tab title。
+- workspace rename 必须走同一个 Prompt overlay 提交流程，提交后通过 workbench command 更新 workspace name。
+- tab/workspace mode 下普通结构按键、Prompt 输入、Enter 和 Esc 不得漏发到底层 terminal。
+- `termx v3 smoke` 必须覆盖 tab/workspace case，证明默认 render 路径可见。
+
+本阶段不要求：
+
+- workspace delete。
+- tab reorder。
+- 鼠标点击 tab strip 创建、切换或关闭 tab。
+- 跨 workspace terminal attach。
+- session persist / restore 的完整 workspace/tab 树。
+
+本阶段完成后的基本手工测试入口：
+
+- `go run ./termx-cli/cmd/termx` 进入默认 TUI。
+- 按 `Ctrl-t` 进入 tab mode，再按 `n` 创建 tab；header tab strip 应显示新 active tab。
+- 在 tab mode 中按 `h` / `l` 或 `[` / `]` 切换 tab；active pane、header 和 footer 必须同步变化。
+- 在 tab mode 中按 `r` 打开 Prompt，输入中文或 emoji 后提交；tab title 必须更新且 terminal 不收到这些字符。
+- 在 tab mode 中按 `x` 关闭当前 tab；关闭最后一个 tab 时必须显示 warning feedback，不得破坏 workbench。
+- 按 `Ctrl-w` 进入 workspace mode，再按 `n` 创建 workspace；header workspace 名称和 footer summary 必须同步更新。
+- 在 workspace mode 中按 `h` / `l` 或 `[` / `]` 切换 workspace；切回原 workspace 后 tab/pane 状态必须恢复。
+- 在 workspace mode 中按 `r` 打开 Prompt，输入中文或 emoji 后提交；workspace name 必须更新。
+- 在 workspace mode 中按 `t` 打开 Workbench Tree；关闭后仍回到稳定 workbench。
+
+## 32. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

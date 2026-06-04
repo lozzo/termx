@@ -213,7 +213,7 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 
 	vm := NewRenderVMBuilder().Build(root)
 	header := vm.Shell.Header
-	if !header.Visible || header.Workspace != "main" || header.Tab != "main" || header.ActivePane != "pane-2" || header.TerminalSummary != "term:1" || header.FloatingSummary != "float:1" {
+	if !header.Visible || header.Workspace != "main" || header.Tab != "[main]" || header.ActivePane != "pane-2" || header.TerminalSummary != "term:1" || header.FloatingSummary != "float:1" {
 		t.Fatalf("unexpected product header %#v", header)
 	}
 	footer := vm.Shell.Footer
@@ -222,6 +222,27 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	}
 	if len(vm.Shell.Layout.Floating) != 1 || vm.Shell.Layout.Floating[0].Title != "浮窗" || !vm.Shell.Layout.Floating[0].Active {
 		t.Fatalf("expected floating VM projection, got %#v", vm.Shell.Layout.Floating)
+	}
+}
+
+func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
+	shell = shell.SetInteractionMode(state.InteractionModeWorkspace)
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Header.Workspace != "remote" || vm.Shell.Header.Tab != "[main]" {
+		t.Fatalf("expected active workspace header, got %#v", vm.Shell.Header)
+	}
+	if vm.Shell.Footer.Mode != "workspace" || !containsString(vm.Shell.Footer.Actions, "t tree") || !strings.Contains(vm.Shell.Footer.GlobalSummary, "tabs:1") {
+		t.Fatalf("expected workspace footer summary, got %#v", vm.Shell.Footer)
+	}
+
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspacePrevious})
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Header.Workspace != "main" || vm.Shell.Header.Tab != "main [logs]" {
+		t.Fatalf("expected original workspace tab strip, got %#v", vm.Shell.Header)
 	}
 }
 

@@ -85,11 +85,10 @@ func buildHeaderVM(shell state.ShellStore, root state.Root) HeaderVM {
 	if root.Session.LastError != "" {
 		notice = root.Session.LastError
 	}
-	tab := activeTab(shell)
 	return HeaderVM{
 		Visible:         shell.HeaderVisible,
 		Workspace:       shell.Workspace.Name,
-		Tab:             tab.Title,
+		Tab:             tabStripSummary(shell),
 		ActivePane:      shell.ActivePaneID,
 		TerminalSummary: terminalSummary(root),
 		FloatingSummary: floatingSummary(shell),
@@ -176,8 +175,12 @@ func footerActions(mode string) []string {
 		return []string{"read", "enter close", "esc"}
 	case "floating":
 		return []string{"n new", "arrows move", "HJKL size", "x close", "esc"}
+	case "tab":
+		return []string{"n new", "h/l switch", "r rename", "x close", "esc"}
+	case "workspace":
+		return []string{"n new", "h/l switch", "r rename", "t tree", "esc"}
 	default:
-		return []string{"^P pane", "^R size", "^V copy", "^F pick", "^G"}
+		return []string{"^P pane", "^R size", "^T tab", "^W ws", "^V copy", "^F pick", "^G"}
 	}
 }
 
@@ -200,7 +203,30 @@ func globalSummary(shell state.ShellStore) string {
 	if paneCount == 0 {
 		paneCount = 1
 	}
-	return fmt.Sprintf("ws:%s panes:%d %s", shell.Workspace.Name, paneCount, floatingSummary(shell))
+	return fmt.Sprintf("ws:%s tabs:%d panes:%d %s", shell.Workspace.Name, len(shell.Workspace.Tabs), paneCount, floatingSummary(shell))
+}
+
+func tabStripSummary(shell state.ShellStore) string {
+	shell = shell.EnsureDefaults()
+	if len(shell.Workspace.Tabs) == 0 {
+		return "main"
+	}
+	out := ""
+	for index, tab := range shell.Workspace.Tabs {
+		if index > 0 {
+			out += " "
+		}
+		title := tab.Title
+		if title == "" {
+			title = tab.ID
+		}
+		if tab.ID == shell.Workspace.ActiveTabID {
+			out += "[" + title + "]"
+		} else {
+			out += title
+		}
+	}
+	return out
 }
 
 func terminalStateSummary(root state.Root, pane state.PaneState) string {

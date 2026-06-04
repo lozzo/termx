@@ -62,16 +62,19 @@ const (
 	IntentExitInteraction    IntentKind = "exit-interaction"
 	IntentShellAction        IntentKind = "shell-action"
 	IntentPaneCommand        IntentKind = "pane-command"
+	IntentWorkbenchCommand   IntentKind = "workbench-command"
 )
 
 type InteractionMode string
 
 const (
-	InteractionModeNormal   InteractionMode = ""
-	InteractionModePane     InteractionMode = "pane"
-	InteractionModeResize   InteractionMode = "resize"
-	InteractionModeGlobal   InteractionMode = "global"
-	InteractionModeFloating InteractionMode = "floating"
+	InteractionModeNormal    InteractionMode = ""
+	InteractionModePane      InteractionMode = "pane"
+	InteractionModeResize    InteractionMode = "resize"
+	InteractionModeGlobal    InteractionMode = "global"
+	InteractionModeFloating  InteractionMode = "floating"
+	InteractionModeTab       InteractionMode = "tab"
+	InteractionModeWorkspace InteractionMode = "workspace"
 )
 
 type ShellAction string
@@ -137,6 +140,10 @@ func routeKey(event InputEvent, copyModeActive bool, mode InteractionMode) Inten
 			return Intent{Kind: IntentSetInteractionMode, Event: event, Mode: InteractionModeGlobal}
 		case "o", "\x0f":
 			return Intent{Kind: IntentSetInteractionMode, Event: event, Mode: InteractionModeFloating}
+		case "t", "\x14":
+			return Intent{Kind: IntentSetInteractionMode, Event: event, Mode: InteractionModeTab}
+		case "w", "\x17":
+			return Intent{Kind: IntentSetInteractionMode, Event: event, Mode: InteractionModeWorkspace}
 		case "f", "\x06":
 			return Intent{Kind: IntentOpenTerminalPicker, Event: event}
 		case "v", "\x16":
@@ -152,6 +159,10 @@ func routeKey(event InputEvent, copyModeActive bool, mode InteractionMode) Inten
 		return routeGlobalModeKey(event)
 	case InteractionModeFloating:
 		return routeFloatingModeKey(event)
+	case InteractionModeTab:
+		return routeTabModeKey(event)
+	case InteractionModeWorkspace:
+		return routeWorkspaceModeKey(event)
 	}
 	switch event.Key {
 	case KeyPageUp:
@@ -290,6 +301,44 @@ func routeFloatingModeKey(event InputEvent) Intent {
 		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingSize, Reason: "short"}
 	case "J":
 		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingSize, Reason: "tall"}
+	}
+	return Intent{Kind: IntentNone, Event: event}
+}
+
+func routeTabModeKey(event InputEvent) Intent {
+	if event.Key != KeyChar {
+		return Intent{Kind: IntentNone, Event: event}
+	}
+	switch event.Char {
+	case "n":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "tab create"}
+	case "l", "]":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "tab next"}
+	case "h", "[":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "tab previous"}
+	case "r":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "tab rename"}
+	case "x":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "tab close"}
+	}
+	return Intent{Kind: IntentNone, Event: event}
+}
+
+func routeWorkspaceModeKey(event InputEvent) Intent {
+	if event.Key != KeyChar {
+		return Intent{Kind: IntentNone, Event: event}
+	}
+	switch event.Char {
+	case "n":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "workspace create"}
+	case "l", "]":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "workspace next"}
+	case "h", "[":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "workspace previous"}
+	case "r":
+		return Intent{Kind: IntentWorkbenchCommand, Event: event, Command: "workspace rename"}
+	case "t":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionOpenTree}
 	}
 	return Intent{Kind: IntentNone, Event: event}
 }

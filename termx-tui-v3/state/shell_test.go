@@ -55,6 +55,60 @@ func TestShellHeaderFooterVisibilityCanBeHiddenAndRestored(t *testing.T) {
 	}
 }
 
+func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
+	shell := DefaultShell()
+
+	var result WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabCreate, Name: "build"})
+	if result.Status != WorkbenchCommandOK || result.ID == "" {
+		t.Fatalf("expected tab create ok, result=%#v shell=%#v", result, shell)
+	}
+	if len(shell.Workspace.Tabs) != 2 || shell.Workspace.ActiveTabID != result.ID || shell.ActivePaneID != result.ID+"-pane" {
+		t.Fatalf("expected new tab active, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabRename, Name: "构建🚀"})
+	if result.Status != WorkbenchCommandOK || shell.activeTab().Title != "构建🚀" {
+		t.Fatalf("expected tab rename, result=%#v tab=%#v", result, shell.activeTab())
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabPrevious})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != DefaultTabID || shell.ActivePaneID != DefaultPaneID {
+		t.Fatalf("expected previous tab active, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabClose})
+	if result.Status != WorkbenchCommandOK || len(shell.Workspace.Tabs) != 1 || shell.Workspace.ActiveTabID != "tab-2" {
+		t.Fatalf("expected close current tab and keep remaining active, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabClose})
+	if result.Status != WorkbenchCommandInvalid || len(shell.Workspace.Tabs) != 1 {
+		t.Fatalf("last tab close must be rejected, result=%#v shell=%#v", result, shell)
+	}
+}
+
+func TestShellWorkbenchWorkspaceCommandsSwitchAndRename(t *testing.T) {
+	shell := DefaultShell()
+
+	var result WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceCreate, Name: "work-2"})
+	if result.Status != WorkbenchCommandOK || result.ID == "" {
+		t.Fatalf("expected workspace create ok, result=%#v shell=%#v", result, shell)
+	}
+	if shell.Workspace.ID != result.ID || shell.Workspace.Name != "work-2" || len(shell.Workspaces) != 2 {
+		t.Fatalf("expected new workspace active and stored, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceRename, Name: "云端🚀"})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.Name != "云端🚀" {
+		t.Fatalf("expected active workspace rename, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspacePrevious})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ID != DefaultWorkspaceID || shell.ActivePaneID != DefaultPaneID {
+		t.Fatalf("expected previous workspace active, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceNext})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.Name != "云端🚀" {
+		t.Fatalf("expected next workspace to restore renamed workspace, result=%#v shell=%#v", result, shell)
+	}
+}
+
 func TestShellToastLifecycle(t *testing.T) {
 	shell := DefaultShell().
 		AddToast(ToastSpec{ID: "keep", Severity: ToastInfo, Title: "sync"}).

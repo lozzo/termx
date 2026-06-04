@@ -1141,6 +1141,84 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(40)
+	host.SetSize(90, 26)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "构"},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x17", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "云"},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain input %#v: %v", event, err)
+		}
+	}
+	workspaceModeFrame := lastFrame(t, host.Frames())
+	if !frameContains(workspaceModeFrame, "ws:workspace 2云") || !frameContains(workspaceModeFrame, "mode:workspace") {
+		t.Fatalf("expected frame to expose workspace mode and active workspace, got %#v", workspaceModeFrame.Lines)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send workspace esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workspace esc: %v", err)
+	}
+
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("expected normal mode after esc, got %#v", shell.InteractionMode)
+	}
+	if len(shell.Workspaces) != 2 || shell.Workspace.Name != "workspace 2云" {
+		t.Fatalf("expected created and renamed workspace active, got %#v", shell)
+	}
+	if len(shell.Workspace.Tabs) != 1 {
+		t.Fatalf("new workspace should start with one tab, got %#v", shell.Workspace.Tabs)
+	}
+	mainWorkspace, ok := findWorkspaceForTest(shell.Workspaces, state.DefaultWorkspaceID)
+	if !ok || len(mainWorkspace.Tabs) != 2 || mainWorkspace.ActiveTabID != state.DefaultTabID {
+		t.Fatalf("expected original workspace to retain two tabs and previous active tab, got ok=%v workspace=%#v all=%#v", ok, mainWorkspace, shell.Workspaces)
+	}
+	if mainWorkspace.Tabs[1].Title != "tab 2构" {
+		t.Fatalf("expected renamed tab in original workspace, got %#v", mainWorkspace.Tabs)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("tab/workspace shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "ws:workspace 2云") || !frameContains(frame, "mode:live") {
+		t.Fatalf("expected frame to return to live mode and keep active workspace, got %#v", frame.Lines)
+	}
+}
+
 func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	shell := state.DefaultShell()
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -1163,4 +1241,13 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	if len(root.Shell.Floatings) != 0 {
 		t.Fatalf("floating close action should remove floating, got %#v", root.Shell.Floatings)
 	}
+}
+
+func findWorkspaceForTest(workspaces []state.WorkspaceState, id string) (state.WorkspaceState, bool) {
+	for _, workspace := range workspaces {
+		if workspace.ID == id {
+			return workspace, true
+		}
+	}
+	return state.WorkspaceState{}, false
 }
