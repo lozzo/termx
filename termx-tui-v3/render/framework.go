@@ -1,6 +1,10 @@
 package render
 
-import "strings"
+import (
+	"strings"
+
+	xansi "github.com/charmbracelet/x/ansi"
+)
 
 const (
 	minFrameWidth  = 24
@@ -12,7 +16,17 @@ const (
 type canvas struct {
 	width  int
 	height int
-	rows   []string
+	rows   [][]canvasCell
+}
+
+type canvasCell struct {
+	text         string
+	width        int
+	style        StyleToken
+	owner        string
+	layer        LayerKind
+	continuation bool
+	safe         bool
 }
 
 func newCanvas(width int, height int) *canvas {
@@ -22,15 +36,25 @@ func newCanvas(width int, height int) *canvas {
 	if height <= 0 {
 		height = 1
 	}
-	rows := make([]string, height)
-	blank := strings.Repeat(" ", width)
+	rows := make([][]canvasCell, height)
 	for i := range rows {
-		rows[i] = blank
+		rows[i] = make([]canvasCell, width)
+		for col := range rows[i] {
+			rows[i][col] = blankCanvasCell()
+		}
 	}
 	return &canvas{width: width, height: height, rows: rows}
 }
 
 func (c *canvas) writeText(x int, y int, width int, text string) {
+	c.writeTextStyled(x, y, width, text, "", "", LayerBase)
+}
+
+func (c *canvas) writeTextStyled(x int, y int, width int, text string, style StyleToken, owner string, layer LayerKind) {
+	c.writeLine(x, y, width, Line{Cells: []Cell{{Text: text, Width: DisplayWidth(text), Style: style, Safe: true}}}, owner, layer)
+}
+
+func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, layer LayerKind) {
 	if y < 0 || y >= c.height || width <= 0 || x >= c.width {
 		return
 	}
@@ -42,18 +66,34 @@ func (c *canvas) writeText(x int, y int, width int, text string) {
 	if width <= 0 {
 		return
 	}
-	c.rows[y] = replaceCellRange(c.rows[y], x, width, FitText(text, width))
+	c.clearCellRange(y, x, width)
+	cursor := x
+	remaining := width
+	for _, segment := range cellSegmentsFromLine(line, width, owner, layer) {
+		if remaining <= 0 {
+			break
+		}
+		if segment.width <= 0 {
+			continue
+		}
+		if segment.width > remaining {
+			break
+		}
+		c.writeSegment(cursor, y, segment)
+		cursor += segment.width
+		remaining -= segment.width
+	}
 }
 
 func (c *canvas) writeBoxCell(x int, y int, glyph string) {
-	c.writeText(x, y, 1, glyph)
+	c.writeTextStyled(x, y, 1, glyph, StyleMuted, "chrome", LayerChrome)
 }
 
 func (c *canvas) mergeBoxCell(x int, y int, connections uint8) {
 	if x < 0 || y < 0 || x >= c.width || y >= c.height {
 		return
 	}
-	existing := SliceCells(c.rows[y], x, x+1)
+	existing := c.cellText(x, y)
 	if existingConnections, ok := boxConnectionsForGlyph(existing); ok {
 		connections |= existingConnections
 	}
@@ -131,9 +171,191 @@ func (c *canvas) drawConnectedVLine(x int, y int, height int) {
 func (c *canvas) lines() []Line {
 	lines := make([]Line, len(c.rows))
 	for i, row := range c.rows {
-		lines[i] = NewLine(row)
+		cells := make([]Cell, 0, len(row))
+		for _, cell := range row {
+			if cell.continuation {
+				continue
+			}
+			width := cell.width
+			if width <= 0 {
+				width = 1
+			}
+			cells = append(cells, Cell{
+				Text:  cell.text,
+				Width: width,
+				Style: cell.style,
+				Safe:  cell.safe,
+			})
+		}
+		lines[i] = Line{Cells: cells}
 	}
 	return lines
+}
+
+func (c *canvas) clearCellRange(y int, x int, width int) {
+	for col := x; col < x+width && col < c.width; col++ {
+		c.clearCell(y, col)
+	}
+}
+
+func (c *canvas) clearCell(y int, x int) {
+	if y < 0 || y >= c.height || x < 0 || x >= c.width {
+		return
+	}
+	if c.rows[y][x].continuation {
+		for col := x - 1; col >= 0; col-- {
+			if !c.rows[y][col].continuation {
+				c.clearCellFootprint(y, col)
+				break
+			}
+		}
+	}
+	c.clearCellFootprint(y, x)
+}
+
+func (c *canvas) clearCellFootprint(y int, x int) {
+	cell := c.rows[y][x]
+	width := maxInt(1, cell.width)
+	for col := x; col < x+width && col < c.width; col++ {
+		c.rows[y][col] = blankCanvasCell()
+	}
+}
+
+func (c *canvas) writeSegment(x int, y int, segment canvasSegment) {
+	if y < 0 || y >= c.height || x < 0 || x >= c.width || segment.width <= 0 {
+		return
+	}
+	if x+segment.width > c.width {
+		return
+	}
+	c.clearCellRange(y, x, segment.width)
+	c.rows[y][x] = canvasCell{
+		text:  segment.text,
+		width: segment.width,
+		style: segment.style,
+		owner: segment.owner,
+		layer: segment.layer,
+		safe:  segment.safe,
+	}
+	for col := x + 1; col < x+segment.width; col++ {
+		c.rows[y][col] = canvasCell{
+			width:        0,
+			style:        segment.style,
+			owner:        segment.owner,
+			layer:        segment.layer,
+			continuation: true,
+			safe:         segment.safe,
+		}
+	}
+}
+
+func (c *canvas) cellText(x int, y int) string {
+	if y < 0 || y >= c.height || x < 0 || x >= c.width {
+		return ""
+	}
+	if c.rows[y][x].continuation {
+		for col := x - 1; col >= 0; col-- {
+			if !c.rows[y][col].continuation {
+				return c.rows[y][col].text
+			}
+		}
+		return ""
+	}
+	return c.rows[y][x].text
+}
+
+type canvasSegment struct {
+	text  string
+	width int
+	style StyleToken
+	owner string
+	layer LayerKind
+	safe  bool
+}
+
+func cellSegments(text string, style StyleToken, owner string, layer LayerKind) []canvasSegment {
+	text = xansi.Strip(SafeLine(text))
+	segments := make([]canvasSegment, 0, DisplayWidth(text))
+	for len(text) > 0 {
+		cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+		if cluster == "" {
+			break
+		}
+		if width < 0 {
+			width = 0
+		}
+		if width > 0 {
+			segments = append(segments, canvasSegment{
+				text:  cluster,
+				width: width,
+				style: style,
+				owner: owner,
+				layer: layer,
+				safe:  true,
+			})
+		}
+		text = text[len(cluster):]
+	}
+	return segments
+}
+
+func cellSegmentsFromLine(line Line, width int, owner string, layer LayerKind) []canvasSegment {
+	if width <= 0 {
+		return nil
+	}
+	segments := make([]canvasSegment, 0, width)
+	remaining := width
+	for _, cell := range line.Cells {
+		if remaining <= 0 {
+			break
+		}
+		text := cell.Text
+		if text == "" {
+			continue
+		}
+		if DisplayWidth(text) > remaining {
+			text = TruncateCells(text, remaining)
+		}
+		for _, segment := range cellSegments(text, cell.Style, owner, layer) {
+			if segment.width > remaining {
+				break
+			}
+			segment.safe = cell.Safe
+			segments = append(segments, segment)
+			remaining -= segment.width
+		}
+	}
+	for remaining > 0 {
+		segments = append(segments, canvasSegment{
+			text:  " ",
+			width: 1,
+			owner: owner,
+			layer: layer,
+			safe:  true,
+		})
+		remaining--
+	}
+	return segments
+}
+
+func cellsFromSegments(segments []canvasSegment) []Cell {
+	if len(segments) == 0 {
+		return nil
+	}
+	cells := make([]Cell, len(segments))
+	for i, segment := range segments {
+		cells[i] = Cell{
+			Text:  segment.text,
+			Width: segment.width,
+			Style: segment.style,
+			Safe:  segment.safe,
+		}
+	}
+	return cells
+}
+
+func blankCanvasCell() canvasCell {
+	return canvasCell{text: " ", width: 1, safe: true}
 }
 
 func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
@@ -320,13 +542,12 @@ func renderContent(c *canvas, content ContentVM, rect Rect) []Line {
 	}
 	rendered := make([]Line, 0, rect.H)
 	for i := 0; i < rect.H; i++ {
-		text := ""
+		line := Line{}
 		if i < len(lines) {
-			text = lines[i].String()
+			line = lines[i]
 		}
-		fitted := FitText(text, rect.W)
-		c.writeText(rect.X, rect.Y+i, rect.W, fitted)
-		rendered = append(rendered, NewLine(fitted))
+		c.writeLine(rect.X, rect.Y+i, rect.W, line, string(content.Kind), LayerPanel)
+		rendered = append(rendered, Line{Cells: cellsFromSegments(cellSegmentsFromLine(line, rect.W, string(content.Kind), LayerPanel))})
 	}
 	return rendered
 }
@@ -370,12 +591,6 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
 	}
 	return layers
-}
-
-func replaceCellRange(row string, x int, width int, value string) string {
-	prefix := FitText(SliceCells(row, 0, x), x)
-	suffix := SliceCells(row, x+width, DisplayWidth(row))
-	return prefix + FitText(value, width) + suffix
 }
 
 func minInt(left int, right int) int {

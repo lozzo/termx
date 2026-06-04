@@ -122,6 +122,85 @@ func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
 	assertAllRowsWidth(t, result.Lines(), 40)
 }
 
+func TestFrameworkPreservesStyledContentThroughMatrixAndANSIFrame(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 36, H: 10}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "pane",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{{Cells: []Cell{
+				{Text: "accent", Width: 6, Style: StyleAccent, Safe: true},
+				{Text: " plain", Width: 6, Safe: true},
+			}}}},
+		}}},
+	}})
+	frame := result.Frame()
+
+	if !linesContain(frame.Lines, "accent plain") {
+		t.Fatalf("plain snapshot should keep text without ANSI, got %#v", frame.Lines)
+	}
+	if !linesContain(frame.ANSILines, "\x1b[1;36m") || !linesContain(frame.ANSILines, ANSIReset) {
+		t.Fatalf("ANSI frame should retain styled matrix cells and reset, got %#v", frame.ANSILines)
+	}
+	if !styledLinesContain(frame.StyledLines, "a", StyleAccent) {
+		t.Fatalf("styled frame should retain StyleAccent cells, got %#v", frame.StyledLines)
+	}
+	assertAllRowsWidth(t, frame.Lines, 36)
+}
+
+func TestCanvasMatrixTracksOwnerLayerContinuationAndSafeFlag(t *testing.T) {
+	c := newCanvas(6, 1)
+	c.writeTextStyled(0, 0, 2, "你", StyleAccent, "pane-1", LayerPanel)
+
+	if cell := c.rows[0][0]; cell.text != "你" || cell.width != 2 || cell.style != StyleAccent || cell.owner != "pane-1" || cell.layer != LayerPanel || !cell.safe {
+		t.Fatalf("unexpected matrix anchor cell %#v", cell)
+	}
+	if cell := c.rows[0][1]; !cell.continuation || cell.owner != "pane-1" || cell.layer != LayerPanel {
+		t.Fatalf("expected wide-cell continuation footprint, got %#v", cell)
+	}
+}
+
+func TestCanvasMatrixClearsWideCellFootprintBeforeOverwrite(t *testing.T) {
+	c := newCanvas(6, 1)
+	c.writeText(0, 0, 6, "你你你")
+	c.writeText(1, 0, 1, "x")
+
+	line := c.lines()[0].PlainString()
+	if got := DisplayWidth(line); got != 6 {
+		t.Fatalf("matrix overwrite must keep row width 6, got %d line=%q cells=%#v", got, line, c.rows[0])
+	}
+	if !strings.HasPrefix(line, " x") {
+		t.Fatalf("overwrite at continuation cell should clear old wide footprint, got %q cells=%#v", line, c.rows[0])
+	}
+}
+
+func TestFrameworkStripsRawANSIInputBeforeMatrixLayout(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 30, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "pane",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("\x1b[31mred 世界\x1b[0m")}},
+		}}},
+	}})
+
+	lines := result.Lines()
+	if !linesContain(lines, "red 世界") {
+		t.Fatalf("plain matrix output should strip raw ANSI and keep text, got %#v", lines)
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "\x1b[") {
+			t.Fatalf("plain matrix output must not contain raw ANSI, got %q", line)
+		}
+	}
+	assertAllRowsWidth(t, lines, 30)
+	if right := SliceCells(lines[1], 29, 30); right != "│" {
+		t.Fatalf("right border should survive ANSI/wide content, got %#v", lines)
+	}
+}
+
 func TestFrameworkHeaderFooterHideReclaimsBody(t *testing.T) {
 	base := ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},
@@ -234,6 +313,17 @@ func linesContain(lines []string, value string) bool {
 	for _, line := range lines {
 		if strings.Contains(line, value) {
 			return true
+		}
+	}
+	return false
+}
+
+func styledLinesContain(lines []Line, value string, style StyleToken) bool {
+	for _, line := range lines {
+		for _, cell := range line.Cells {
+			if cell.Text == value && cell.Style == style {
+				return true
+			}
 		}
 	}
 	return false
