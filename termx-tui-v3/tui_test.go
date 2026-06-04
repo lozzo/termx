@@ -38,8 +38,12 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["workbench-live"].Lines, "termx live 🚀") ||
 		!frameContains(cases["workbench-live"].Lines, "你好 output") ||
-		!frameContains(cases["workbench-live"].Lines, "╭─ shell active") {
+		!frameContains(cases["workbench-live"].Lines, "┌─ shell") ||
+		!frameContains(cases["workbench-live"].Lines, "[x]") {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
+	}
+	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;88;213;201m") {
+		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
 	assertNoASCIIChrome(t, "workbench-live", cases["workbench-live"])
 	if frameContains(cases["split-hidden-toast"].Lines, " main ") ||

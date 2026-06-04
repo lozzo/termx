@@ -23,8 +23,11 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(vm)
 	assertFrameSize(t, result, 40, 12)
-	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀 active") || !linesContain(result.Lines(), "你好 output") {
+	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), "[x]") || !linesContain(result.Lines(), "你好 output") {
 		t.Fatalf("expected shell, panel title and content, got %#v", result.Lines())
+	}
+	if !linesContain(result.Lines(), "┌") || !linesContain(result.Lines(), "┐") || !linesContain(result.Lines(), "└") || !linesContain(result.Lines(), "┘") {
+		t.Fatalf("expected square Unicode pane chrome, got %#v", result.Lines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 40)
 }
@@ -99,6 +102,35 @@ func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
 		}
 	}
 	assertAllRowsWidth(t, lines, 42)
+}
+
+func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
+	panels := []PanelVM{
+		{ID: "pane-1", Title: "shell 🚀", Presentation: PanelPresentationCard, Active: true, Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("left")}}},
+		{ID: "pane-2", Title: "logs 世界", Presentation: PanelPresentationCard, Active: false, Content: ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("right")}}},
+	}
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 54, H: 10},
+			Panels:   panels,
+			Split:    SplitVM{Direction: SplitVertical, Children: []SplitVM{{PaneID: "pane-1"}, {PaneID: "pane-2"}}},
+		},
+	}})
+	frame := result.Frame()
+
+	if !styledLinesContain(frame.StyledLines, "┌", StyleAccent) || !styledLinesContain(frame.StyledLines, "┐", StyleAccent) {
+		t.Fatalf("active card pane border should use accent style, got %#v", frame.StyledLines)
+	}
+	if !styledLinesContain(frame.StyledLines, "┌", StyleMuted) || !styledLinesContain(frame.StyledLines, "┐", StyleMuted) {
+		t.Fatalf("inactive card pane border should use muted style, got %#v", frame.StyledLines)
+	}
+	if !linesContain(frame.ANSILines, "\x1b[1;38;2;88;213;201m") || !linesContain(frame.ANSILines, "\x1b[38;2;111;119;113m") {
+		t.Fatalf("pane chrome should output active accent and inactive muted SGR, got %#v", frame.ANSILines)
+	}
+	assertAllRowsWidth(t, frame.Lines, 54)
+	if right := SliceCells(frame.Lines[1], 53, 54); right != "┐" && right != "│" {
+		t.Fatalf("wide title should not break right pane border, got %#v", frame.Lines)
+	}
 }
 
 func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {

@@ -89,7 +89,15 @@ func (c *canvas) writeBoxCell(x int, y int, glyph string) {
 	c.writeTextStyled(x, y, 1, glyph, StyleMuted, "chrome", LayerChrome)
 }
 
+func (c *canvas) writeStyledBoxCell(x int, y int, glyph string, style StyleToken, owner string, layer LayerKind) {
+	c.writeTextStyled(x, y, 1, glyph, style, owner, layer)
+}
+
 func (c *canvas) mergeBoxCell(x int, y int, connections uint8) {
+	c.mergeStyledBoxCell(x, y, connections, StyleMuted, "chrome", LayerChrome)
+}
+
+func (c *canvas) mergeStyledBoxCell(x int, y int, connections uint8, style StyleToken, owner string, layer LayerKind) {
 	if x < 0 || y < 0 || x >= c.width || y >= c.height {
 		return
 	}
@@ -101,7 +109,7 @@ func (c *canvas) mergeBoxCell(x int, y int, connections uint8) {
 	if !ok {
 		return
 	}
-	c.writeBoxCell(x, y, glyph)
+	c.writeStyledBoxCell(x, y, glyph, style, owner, layer)
 }
 
 func (c *canvas) drawRoundedBox(rect Rect) {
@@ -109,28 +117,36 @@ func (c *canvas) drawRoundedBox(rect Rect) {
 }
 
 func (c *canvas) drawBox(rect Rect, style boxStyle) {
+	c.drawStyledBox(rect, style, StyleMuted, "chrome", LayerChrome)
+}
+
+func (c *canvas) drawStyledBox(rect Rect, style boxStyle, token StyleToken, owner string, layer LayerKind) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
 	}
 	if rect.W == 1 {
 		for y := 0; y < rect.H; y++ {
-			c.writeBoxCell(rect.X, rect.Y+y, style.Vertical)
+			c.writeStyledBoxCell(rect.X, rect.Y+y, style.Vertical, token, owner, layer)
 		}
 		return
 	}
 	if rect.H == 1 {
-		c.writeText(rect.X, rect.Y, rect.W, style.TopLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.TopRight)
+		c.writeTextStyled(rect.X, rect.Y, rect.W, style.TopLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.TopRight, token, owner, layer)
 		return
 	}
-	c.writeText(rect.X, rect.Y, rect.W, style.TopLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.TopRight)
-	c.writeText(rect.X, rect.Y+rect.H-1, rect.W, style.BottomLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.BottomRight)
+	c.writeTextStyled(rect.X, rect.Y, rect.W, style.TopLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.TopRight, token, owner, layer)
+	c.writeTextStyled(rect.X, rect.Y+rect.H-1, rect.W, style.BottomLeft+strings.Repeat(style.Horizontal, maxInt(0, rect.W-2))+style.BottomRight, token, owner, layer)
 	for y := rect.Y + 1; y < rect.Y+rect.H-1; y++ {
-		c.writeBoxCell(rect.X, y, style.Vertical)
-		c.writeBoxCell(rect.X+rect.W-1, y, style.Vertical)
+		c.writeStyledBoxCell(rect.X, y, style.Vertical, token, owner, layer)
+		c.writeStyledBoxCell(rect.X+rect.W-1, y, style.Vertical, token, owner, layer)
 	}
 }
 
 func (c *canvas) drawConnectedHLine(x int, y int, width int) {
+	c.drawStyledConnectedHLine(x, y, width, StyleMuted, "chrome", LayerChrome)
+}
+
+func (c *canvas) drawStyledConnectedHLine(x int, y int, width int, style StyleToken, owner string, layer LayerKind) {
 	if width <= 0 {
 		return
 	}
@@ -145,11 +161,15 @@ func (c *canvas) drawConnectedHLine(x int, y int, width int) {
 		if width == 1 {
 			connections = boxConnLeft | boxConnRight
 		}
-		c.mergeBoxCell(x+col, y, connections)
+		c.mergeStyledBoxCell(x+col, y, connections, style, owner, layer)
 	}
 }
 
 func (c *canvas) drawConnectedVLine(x int, y int, height int) {
+	c.drawStyledConnectedVLine(x, y, height, StyleMuted, "chrome", LayerChrome)
+}
+
+func (c *canvas) drawStyledConnectedVLine(x int, y int, height int, style StyleToken, owner string, layer LayerKind) {
 	if height <= 0 {
 		return
 	}
@@ -164,7 +184,7 @@ func (c *canvas) drawConnectedVLine(x int, y int, height int) {
 		if height == 1 {
 			connections = boxConnUp | boxConnDown
 		}
-		c.mergeBoxCell(x, y+row, connections)
+		c.mergeStyledBoxCell(x, y+row, connections, style, owner, layer)
 	}
 }
 
@@ -492,10 +512,13 @@ func renderCardPanel(c *canvas, layout PanelLayoutPlan) {
 		return
 	}
 	title := panelTitle(layout.Panel)
-	c.drawRoundedBox(rect)
+	style := paneChromeStyle(layout.Panel)
+	owner := "pane:" + layout.Panel.ID
+	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerPanel)
 	if rect.W > 4 {
-		c.writeText(rect.X+2, rect.Y, rect.W-4, " "+title+" ")
+		c.writeTextStyled(rect.X+2, rect.Y, rect.W-4, " "+title+" ", style, owner, LayerPanel)
 	}
+	renderPaneActionSlot(c, rect, layout.Panel, style, owner)
 }
 
 func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
@@ -504,22 +527,22 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 		return
 	}
 	title := panelTitle(layout.Panel)
-	chrome := " " + title
-	if layout.Panel.Active {
-		chrome += " *"
-	}
-	c.writeText(rect.X, rect.Y, rect.W, chrome)
+	style := paneChromeStyle(layout.Panel)
+	owner := "pane:" + layout.Panel.ID
+	chrome := paneChromeText(layout.Panel, title)
+	c.writeTextStyled(rect.X, rect.Y, rect.W, chrome, style, owner, LayerPanel)
 	if rect.X > 0 {
-		c.drawConnectedVLine(rect.X, rect.Y, rect.H)
+		c.drawStyledConnectedVLine(rect.X, rect.Y, rect.H, style, owner, LayerPanel)
 	}
 	if rect.Y > 0 {
 		lineWidth := rect.W
 		if rect.X+rect.W < c.width {
 			lineWidth++
 		}
-		c.drawConnectedHLine(rect.X, rect.Y, lineWidth)
-		c.writeText(rect.X+1, rect.Y, maxInt(0, rect.W-2), chrome)
+		c.drawStyledConnectedHLine(rect.X, rect.Y, lineWidth, style, owner, LayerPanel)
+		c.writeTextStyled(rect.X+1, rect.Y, maxInt(0, rect.W-2), chrome, style, owner, LayerPanel)
 	}
+	renderPaneActionSlot(c, rect, layout.Panel, style, owner)
 }
 
 func panelTitle(panel PanelVM) string {
@@ -527,10 +550,42 @@ func panelTitle(panel PanelVM) string {
 	if title == "" {
 		title = panel.ID
 	}
-	if panel.Active {
-		title += " active"
-	}
 	return title
+}
+
+func paneChromeStyle(panel PanelVM) StyleToken {
+	if panel.Active {
+		return StyleAccent
+	}
+	return StyleMuted
+}
+
+func paneChromeText(panel PanelVM, title string) string {
+	state := "idle"
+	if panel.Active {
+		state = "active"
+	}
+	if panel.Content.Pending {
+		state = "pending"
+	}
+	if panel.Content.Error != "" {
+		state = "error"
+	}
+	if panel.Content.Empty {
+		state = "empty"
+	}
+	return " " + title + " " + state
+}
+
+func renderPaneActionSlot(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string) {
+	if rect.W < 12 || rect.H <= 0 {
+		return
+	}
+	token := "[·]"
+	if panel.Active {
+		token = "[x]"
+	}
+	c.writeTextStyled(rect.X+rect.W-4, rect.Y, 3, token, style, owner, LayerPanel)
 }
 
 func renderContent(c *canvas, content ContentVM, rect Rect) []Line {
