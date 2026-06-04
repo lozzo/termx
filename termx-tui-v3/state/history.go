@@ -1,6 +1,9 @@
 package state
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // RequestID 是 TUI 本地请求 id，只用于关联 async response。
 type RequestID uint64
@@ -113,9 +116,13 @@ type CopyModeStore struct {
 	PaneID      string
 	TerminalID  string
 	ViewportTop int
+	ViewRows    int
 	Cursor      CopyPosition
 	Mark        *CopyPosition
 	Selection   *CopySelection
+	Query       string
+	Matches     []CopyMatch
+	ActiveMatch int
 	BoundToken  string
 	BoundCols   int
 	RequestID   RequestID
@@ -125,6 +132,12 @@ type CopyModeStore struct {
 type CopyPosition struct {
 	Row int
 	Col int
+}
+
+type CopyMatch struct {
+	Row      int
+	StartCol int
+	EndCol   int
 }
 
 type CopySelection struct {
@@ -261,11 +274,12 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	return store
 }
 
-func (store CopyModeStore) BindLatest(terminalID string, requestID RequestID, cols int) CopyModeStore {
+func (store CopyModeStore) BindLatest(terminalID string, requestID RequestID, cols int, rows int) CopyModeStore {
 	store.Active = true
 	store.TerminalID = terminalID
 	store.RequestID = requestID
 	store.BoundCols = cols
+	store.ViewRows = rows
 	store.Empty = true
 	return store
 }
@@ -276,6 +290,8 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow) CopyModeStore {
 	store.BoundCols = window.Cols
 	store.ViewportTop = 0
 	store.Cursor = CopyPosition{}
+	store.Matches = nil
+	store.ActiveMatch = 0
 	store.Empty = len(window.Rows) == 0
 	return store
 }
@@ -290,14 +306,23 @@ func (store CopyModeStore) AcceptOlder(insertedRows int, window HistoryWindow) C
 	return store
 }
 
-func (store CopyModeStore) Resize(cols int) CopyModeStore {
+func (store CopyModeStore) Resize(cols int, rows int) CopyModeStore {
 	store.BoundCols = cols
+	store.ViewRows = rows
 	store.BoundToken = ""
 	store.ViewportTop = 0
 	store.Cursor = CopyPosition{}
 	store.Mark = nil
 	store.Selection = nil
+	store.Query = ""
+	store.Matches = nil
+	store.ActiveMatch = 0
 	store.Empty = true
+	return store
+}
+
+func (store CopyModeStore) SetViewRows(rows int) CopyModeStore {
+	store.ViewRows = rows
 	return store
 }
 
@@ -313,6 +338,54 @@ func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
 func (store CopyModeStore) SetMark(pos CopyPosition) CopyModeStore {
 	store.Mark = &pos
 	store.Selection = &CopySelection{Anchor: pos, Focus: pos}
+	return store
+}
+
+func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeStore {
+	store.Query = query
+	store.Matches = cloneCopyMatches(matches)
+	store.ActiveMatch = 0
+	if len(store.Matches) > 0 {
+		store.Cursor = CopyPosition{Row: store.Matches[0].Row, Col: store.Matches[0].StartCol}
+	}
+	return store
+}
+
+func FindCopyMatches(history HistoryStore, query string) []CopyMatch {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+	matches := make([]CopyMatch, 0)
+	queryRunes := []rune(query)
+	for rowIndex, row := range history.Rows {
+		textRunes := []rune(row.Text)
+		for start := 0; start+len(queryRunes) <= len(textRunes); start++ {
+			if string(textRunes[start:start+len(queryRunes)]) == query {
+				matches = append(matches, CopyMatch{Row: rowIndex, StartCol: start, EndCol: start + len(queryRunes)})
+			}
+		}
+	}
+	return matches
+}
+
+func (store CopyModeStore) MoveMatch(delta int) CopyModeStore {
+	if len(store.Matches) == 0 {
+		return store
+	}
+	store.ActiveMatch += delta
+	for store.ActiveMatch < 0 {
+		store.ActiveMatch += len(store.Matches)
+	}
+	store.ActiveMatch %= len(store.Matches)
+	match := store.Matches[store.ActiveMatch]
+	store.Cursor = CopyPosition{Row: match.Row, Col: match.StartCol}
+	return store
+}
+
+func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
+	maxTop := maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
+	store.ViewportTop = clampCopyInt(store.ViewportTop+delta, 0, maxTop)
 	return store
 }
 
@@ -334,10 +407,43 @@ func cloneHistoryLineSpans(spans []HistoryLineSpan) []HistoryLineSpan {
 	return cloned
 }
 
+func cloneCopyMatches(matches []CopyMatch) []CopyMatch {
+	if len(matches) == 0 {
+		return nil
+	}
+	cloned := make([]CopyMatch, len(matches))
+	copy(cloned, matches)
+	return cloned
+}
+
 func rebaseExistingLineSpans(spans []HistoryLineSpan, delta int) []HistoryLineSpan {
 	for i := range spans {
 		spans[i].StartRow += delta
 		spans[i].EndRow += delta
 	}
 	return spans
+}
+
+func clampCopyInt(value int, min int, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+func maxCopyInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func copyVisibleRowsForStore(store CopyModeStore) int {
+	if store.ViewRows > 2 {
+		return maxCopyInt(1, store.ViewRows-2)
+	}
+	return 8
 }

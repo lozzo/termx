@@ -956,7 +956,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收和 terminal live 连接展示与交互前推已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。当前下一步是 copy-history content renderer 深化。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收、terminal live 连接展示与交互前推和 copy-history content renderer 深化已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。当前下一步是 render 兼容投影清理与性能基线。
 
 已落地：
 
@@ -983,6 +983,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - copy mode latest/older request 使用 copy content rect cols/rows；host resize 或 layout chrome 变化导致 content width 改变时会失效旧 `HistoryWindow`、清理 selection/cursor、重新请求 authoritative latest window。
 - copy-history content 只在 terminal id、bound token、cols 与 authoritative `HistoryStore` 一致时渲染历史内容。
 - copy mode 缺 authoritative window 或绑定不一致时显示 panel 内 pending、empty 或 error，不从 live surface fallback。
+- copy-history content renderer 深化已支持搜索栏、query/match state、match navigation、PageDown/滚轮滚动、selection/match 颜色层级、content-local mouse selection、scrollbar/status 和 position token；所有内容仍只来自 authoritative `HistoryWindow`。
+- copy mode 高度变化只更新 view rows 并夹紧 viewport；宽度变化仍 invalid/rebind authoritative `HistoryWindow`，不得显示旧 cols rows。
 - terminal live attach 后会通过 terminal service 可选 `LiveSurface` 能力拉取一次 core-v2 live snapshot 初始化 `TerminalSurfaceStore`；该 snapshot 只用于实时显示，不进入 copy-history authoritative path。
 - terminal live 输入只通过 `TerminalService.SendInput` effect 发送；TUI 不做本地假回显，输入显示必须来自后续 live surface 回投。
 - terminal live lifecycle 已区分 attached、exited 和 error；exited 会保留最后 live 行并在 panel/footer 中显示 exited 状态，error 仍走 notice/error status。
@@ -1019,7 +1021,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - render 已能合成 hit region，app/runtime 已把真实鼠标坐标派发到最新 hit region；但 floating 连续拖拽、复杂 overlay、Prompt/Help 和 terminal mouse forwarding 的完整产品边界仍需继续深化。
 - active pane 视觉反馈已有端到端验收，但最终视觉 polish、更多状态 token 和复杂多层 split 的 focus affordance 仍可继续增强。
 - terminal-live content renderer 与连接展示前推已完成当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，attach 后会初始化真实 core-v2 live rows，content 仍由 framework 裁切到 content rect；但 streaming event loop、selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
-- copy-history content renderer 一期已进入当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，status 输出 row、line、cols 位置摘要，copy/yank 成功通过 toast 反馈；完整 scrollbar、content-local mouse selection、搜索和 logical-line 拼接提示仍待后续深化。
+- copy-history content renderer 深化已完成当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 和 active match 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，顶部 search row、底部 scrollbar/status、PageDown/滚轮滚动、match navigation、content-local mouse selection 和 row/line/part/cols/span/search/older 位置摘要已接入；logical-line 拼接提示和最终视觉 polish 仍可后续继续增强。
 - empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region。
 - Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/close overlay、picker row click、new action feedback、最小 preview/detail 行和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达。
 - Terminal Pool 数据源与 Picker 服务接线一期已进入当前阶段：Terminal Picker 打开可请求 terminal list，`TerminalPoolStore` 保存 loading/empty/error/items/stale guard，picker rows 会合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 均通过 terminal service effect/result message 回到 reducer。
@@ -1039,8 +1041,9 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 建议后续切片：
 
 - terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
-- copy-history content renderer 深化：在一期基础上完善 scrollbar 视觉、position token 精细化、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和滚动交互。
 - render cleanup / performance：删除或重命名剩余旧 `RenderVM{Lines, Status}` 兼容字段，建立 content-level cache、layer dirty region 和 large terminal output 性能基线。
+- copy-history polish：在已完成搜索、滚动、scrollbar、鼠标选择和 position token 的基础上继续增强 logical-line 拼接提示、最终视觉层级、跨 logical-line 选择 affordance 和窄屏退化。
+- terminal-live content renderer 深化：在一期基础上完善 richer terminal styled cell、selection/search、clipped markers、status metadata、content-local hit region、truecolor/link/reverse/underline 和更完整的 terminal mode token。
 
 Terminal Pool 管理页的 render 边界：
 

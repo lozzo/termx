@@ -148,7 +148,10 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			root.Session = nextSession
 			root.Surface = root.Surface.Resize(msg.Cols, msg.Rows)
 			if root.CopyMode.Active && root.CopyMode.BoundCols != msg.Cols {
-				root.CopyMode = root.CopyMode.Resize(msg.Cols)
+				root.CopyMode = root.CopyMode.Resize(msg.Cols, msg.Rows)
+			} else if root.CopyMode.Active {
+				root.CopyMode = root.CopyMode.SetViewRows(msg.Rows)
+				root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 			}
 			return root.Advance(), nil
 		default:

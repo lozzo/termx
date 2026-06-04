@@ -155,8 +155,8 @@ func TestHistoryStoreRejectsStaleResponses(t *testing.T) {
 }
 
 func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
-	copyMode := CopyModeStore{}.BindLatest("term-1", 1, 80)
-	if !copyMode.Active || !copyMode.Empty || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 {
+	copyMode := CopyModeStore{}.BindLatest("term-1", 1, 80, 20)
+	if !copyMode.Active || !copyMode.Empty || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {
 		t.Fatalf("unexpected bound copy mode %#v", copyMode)
 	}
 
@@ -185,8 +185,8 @@ func TestCopyModeResizeInvalidatesBindingAndSelection(t *testing.T) {
 		Selection:   &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 2, Col: 3}},
 	}
 
-	copyMode = copyMode.Resize(100)
-	if copyMode.BoundToken != "" || copyMode.BoundCols != 100 || copyMode.ViewportTop != 0 {
+	copyMode = copyMode.Resize(100, 30)
+	if copyMode.BoundToken != "" || copyMode.BoundCols != 100 || copyMode.ViewRows != 30 || copyMode.ViewportTop != 0 {
 		t.Fatalf("unexpected resized copy mode %#v", copyMode)
 	}
 	if !copyMode.Empty {
@@ -230,6 +230,30 @@ func TestCopyModeSelectionFollowsMarkAndCursor(t *testing.T) {
 	}
 	if copyMode.Selection.Anchor != (CopyPosition{Row: 1, Col: 0}) || copyMode.Selection.Focus != (CopyPosition{Row: 2, Col: 4}) {
 		t.Fatalf("unexpected selection %#v", copyMode.Selection)
+	}
+}
+
+func TestCopyModeSearchMatchesAndScrollClamp(t *testing.T) {
+	history := HistoryStore{Rows: []HistoryRow{
+		{Text: "alpha beta", LineID: 1},
+		{Text: "beta gamma", LineID: 2},
+		{Text: "delta", LineID: 3},
+	}}
+	matches := FindCopyMatches(history, "beta")
+	if len(matches) != 2 || matches[0] != (CopyMatch{Row: 0, StartCol: 6, EndCol: 10}) || matches[1].Row != 1 {
+		t.Fatalf("unexpected matches %#v", matches)
+	}
+	copyMode := (CopyModeStore{ViewRows: 3}).SetQuery("beta", matches)
+	if copyMode.Cursor.Row != 0 || copyMode.Cursor.Col != 6 {
+		t.Fatalf("expected cursor on first match, got %#v", copyMode)
+	}
+	copyMode = copyMode.MoveMatch(1)
+	if copyMode.ActiveMatch != 1 || copyMode.Cursor.Row != 1 {
+		t.Fatalf("expected second active match, got %#v", copyMode)
+	}
+	copyMode = copyMode.Scroll(20, len(history.Rows))
+	if copyMode.ViewportTop != 2 {
+		t.Fatalf("scroll should clamp to max top for one visible row, got %#v", copyMode)
 	}
 }
 

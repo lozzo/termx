@@ -13,8 +13,16 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			return root, nil
 		}
 		rect, ok := copyModeContentRect(root)
-		if !ok || rect.W == root.CopyMode.BoundCols {
+		if !ok {
 			return root, nil
+		}
+		if rect.W == root.CopyMode.BoundCols {
+			if rect.H == root.CopyMode.ViewRows {
+				return root, nil
+			}
+			root.CopyMode = root.CopyMode.SetViewRows(rect.H)
+			root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+			return root.Advance(), nil
 		}
 		terminalID := root.CopyMode.TerminalID
 		if terminalID == "" {
@@ -24,7 +32,7 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
 		}
 		root.History = root.History.InvalidateWindow()
-		root.CopyMode = root.CopyMode.Resize(rect.W)
+		root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
 		return beginCopyModeLatestForCols(root, deps, terminalID, rect.W, rect.H)
 	}
 }

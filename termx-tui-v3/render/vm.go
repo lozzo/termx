@@ -417,7 +417,7 @@ func buildCopyHistoryContentVM(history state.HistoryStore, copyMode state.CopyMo
 		Lines:      copyHistoryLines(history, copyMode),
 		Status:     copyHistoryStatus(history, copyMode),
 		Cursor:     copyHistoryCursor(history, copyMode),
-		HitRegions: copyHistoryHitRegions(history),
+		HitRegions: copyHistoryHitRegions(history, copyMode),
 	}
 }
 

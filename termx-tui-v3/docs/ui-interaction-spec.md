@@ -1327,7 +1327,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
 - `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 - terminal-live 内容 renderer 一期必须在当前 styled chrome 基线上工作：真实 live 行只进入 pane content slot，基础 ANSI SGR 映射为 semantic style token，live cursor 表达为 content-local cursor，pending、empty、exited 状态显示在所属 pane 内，emoji/CJK/combining mark 裁切不得破坏 pane 边框。
-- copy-history 内容 renderer 一期必须继续只消费 core-v2 authoritative `HistoryWindow`：历史行显示 logical-line、continuation 和 clipped marker，selection 使用 styled cell 表达，copy cursor 是 content-local cursor，footer/status 显示当前位置摘要，复制成功通过 toast 反馈；resize 或 content cols 变化后仍重新绑定 authoritative window，不显示旧 cols rows。
+- copy-history 内容 renderer 已从一期推进到深化阶段，必须继续只消费 core-v2 authoritative `HistoryWindow`：历史行显示 logical-line、continuation 和 clipped marker，selection 与 active match 使用 styled cell 表达，copy cursor 是 content-local cursor，顶部 search row、底部 scrollbar/status、滚动、match navigation、content-local mouse selection 和 position token 都在 content rect 内工作；resize 或 content cols 变化后仍重新绑定 authoritative window，不显示旧 cols rows。
 - empty/exited/Terminal Picker 内容 renderer 一期已把旧 placeholder 推进为可操作内容：empty pane 显示 attach/create/manager/close CTA，exited pane 显示 last state 与 restart/reconnect/close CTA，Terminal Picker overlay 显示 search、当前 workspace terminal list、selected row、new terminal row 和 action hit region。
 - Terminal Pool 数据源与 Picker 服务接线一期已完成：Terminal Picker 可以请求 terminal list，展示 loading/empty/error，把 pool row 与当前 workspace pane row 合并去重，并把 attach/create/restart/reconnect 接到 service result 反馈。
 - Terminal Pool 管理页一期已完成：独立页面、搜索、列表、selected row、detail、metadata、preview 摘要、Attach/Edit/Kill action、键盘/鼠标操作、service/effect/result 反馈、常规 viewport 下关键内容可见和 no terminal input leak 已落地。
@@ -1338,7 +1338,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 当前未完成但产品要求仍保留：
 
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
-- copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
+- copy-history 最终 polish：logical-line 拼接提示、跨 logical-line selection affordance、窄屏退化和最终视觉层级。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。
 - Prompt/Help 深化：命令面板、Help 搜索/分页、Prompt input click 光标定位和更多真实业务命令执行。
 - Floating Overview overlay。
@@ -1364,7 +1364,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 这条验收线不要求：
 
 - terminal-live 内容已经具备完整 styled cell、cursor、selection 或 search。
-- copy-history 内容已经具备完整 scrollbar、搜索、content-local mouse selection 或最终视觉 polish。
+- copy-history 内容已经具备最终 visual polish、完整 logical-line 拼接提示或跨 logical-line selection affordance。
 - Terminal Picker 已经接入完整 Terminal Pool、preview、跨 workspace 过滤或真实 create/attach 服务。
 - Terminal Pool、Workbench Tree、floating pane、Prompt、Help 已经完整产品化。
 
@@ -1435,6 +1435,27 @@ copy-history 内容 renderer 一期的目标是把 authoritative `HistoryWindow`
 - 搜索和过滤。
 - content-local mouse selection。
 - logical-line 级拼接提示的最终视觉 polish。
+
+## 23.1 Copy-History 内容 Renderer 深化验收线
+
+copy-history 内容 renderer 深化的目标是把一期内容视图推进到可搜索、可滚动、可用鼠标定位且仍严格依赖 authoritative `HistoryWindow` 的产品体验。
+
+深化阶段必须满足：
+
+- 顶部显示 search row；用户在 copy mode 中输入字符会更新 query，Backspace 删除 query，Enter 或有 query 时的上下方向键在匹配之间移动。
+- 匹配结果必须来自当前 authoritative rows；active match 会移动 copy cursor 并保证 cursor 进入 viewport。
+- PageDown 和鼠标滚轮可以滚动 copy viewport；底部 status/scrollbar 显示当前可见范围、总 row、row/line/part/cols/span/search/older 摘要。
+- selection 与 active match 有不同样式层级；selection 仍按 authoritative row/col 投影，不从 visual text 反推历史。
+- 鼠标点击 copy history row 会把 cursor/selection 移到对应 authoritative row；该事件不得漏发为 terminal input。
+- content 高度变化只更新可见行数并夹紧 viewport；content 宽度变化必须重新绑定 authoritative window。
+- search row、history rows、scrollbar/status 都必须被 content rect 裁切，不得覆盖 pane border、header/footer、toast 或 overlay。
+
+深化阶段仍不宣称完成：
+
+- logical-line 拼接提示的最终视觉 polish。
+- 跨 logical-line selection affordance 的最终形态。
+- 搜索高亮之外的高级过滤、正则搜索或搜索历史。
+- 复制内容的复杂格式化策略。
 
 ## 24. Empty / Exited / Terminal Picker 内容 Renderer 一期验收线
 
@@ -1719,10 +1740,17 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 - pending、empty、attached、exited、error 状态都在所属 pane/footer 中表达，不退化成裸文本整屏。
 - live 内容继续只绘制在 pane content slot 内，resize 使用 content rect，不使用外部 viewport 总尺寸。
 
+本验收线完成后，copy-history content renderer 深化也已经完成当前阶段：
+
+- copy mode 顶部 search row、底部 scrollbar/status 和 position token 已进入 content renderer。
+- 用户可以通过键盘 query、Backspace、Enter、方向键、PageDown 和鼠标滚轮浏览 authoritative history。
+- 鼠标点击 copy history row 可以移动 copy cursor/selection，且不会漏发到底层 terminal。
+- 高度变化保留 authoritative window 并夹紧 viewport；宽度变化仍重新绑定 authoritative history window。
+
 本验收线和 terminal live 前推仍不宣称已经完成：
 
 - terminal live 的最终内容体验，例如 streaming event loop、truecolor、underline、reverse、link、复杂 terminal mode、selection/search、content-local hit region 和 richer terminal cell attributes。
-- copy-history 的最终内容体验，例如 scrollbar、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和精细 position token。
+- copy-history 的最终内容体验，例如 logical-line 拼接提示、跨 logical-line selection affordance、搜索历史、复杂复制格式和最终视觉 polish。
 - Terminal Pool 的跨 workspace/remote 管理、attach as tab、attach as floating、metadata 表单和 kill confirm。
 - floating 连续拖拽、attach as floating 和 Floating Overview。
 - tab reorder、workspace delete、鼠标 tab strip 和完整 session persist/restore 树。
@@ -1738,9 +1766,10 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 - Prompt/Help：按 `Ctrl-g :` 打开 Prompt，输入中文或 emoji 并 `Enter` 提交；按 `Ctrl-g ?` 打开 Help，确认分类可见并可关闭。
 - Tab/Workspace：按 `Ctrl-t` 后用 `n/h/l/r/x` 操作 tab；按 `Ctrl-w` 后用 `n/h/l/r/t` 操作 workspace 和 Workbench Tree。
 - Toast/Header/Footer：按 `Ctrl-g h` / `Ctrl-g f` 隐藏或恢复 header/footer；按 `Ctrl-g T` 关闭当前 toast，按 `Ctrl-g t` 清空 toast。
+- Copy History：按 `Ctrl-v` 进入 copy mode，输入搜索词，使用 `Enter` 或上下方向键在匹配间移动，使用 `PageDown` 或鼠标滚轮滚动，点击历史行时 cursor/selection 应移动且 terminal 不应收到鼠标事件。
 - 非交互回归：`go run ./termx-cli/cmd/termx v3 smoke` 和 `go run ./termx-cli/cmd/termx v3 e2e-smoke`。
 
-后续如果要把项目往前推，应优先进入 copy-history content renderer 深化：在不破坏上述产品壳和 terminal live 前推闭环的前提下，继续提升 scrollbar、搜索、content-local mouse selection、selection 颜色层级、logical-line 拼接提示和 position token。
+后续如果要把项目往前推，应优先进入 render 兼容投影清理与性能基线：在不破坏上述产品壳、terminal live 前推和 copy-history 深化闭环的前提下，清理旧 `RenderVM{Lines, Status}` 兼容语义，并建立 content-level cache、dirty region 或 large terminal output 性能基线。
 
 ## 33. 后续讨论入口
 

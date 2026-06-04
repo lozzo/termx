@@ -458,8 +458,9 @@ renderer 禁止：
 - Tab/Workspace 产品入口一期已经完成。
 - TUI 产品壳总验收已经完成。
 - terminal live 连接展示与交互前推已经完成：attach 后会通过 terminal service 拉取 core-v2 live snapshot 初始化 live surface，输入仍只经 terminal service 发送，画面更新只来自 live surface 回投。
-- 当前下一步是 copy-history content renderer 深化。
-- 后续再继续 terminal-live streaming/rich attributes、copy-history 深化和 render cleanup/performance。
+- copy-history content renderer 深化已经完成：搜索、match navigation、viewport scroll、scrollbar/status、content-local mouse selection、selection/match 颜色层级和 position token 都继续建立在 authoritative `HistoryWindow` 之上。
+- 当前下一步是 render cleanup/performance：清理剩余 `RenderVM{Lines, Status}` 兼容投影语义，并建立 content-level cache、dirty region 或 large output 性能基线。
+- 后续再继续 terminal-live streaming/rich attributes、copy-history 最终 polish 和 remote/legacy 边界拆分等独立切片。
 
 UI framework 交互产品化总验收包括：
 
@@ -489,6 +490,15 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - `Renderer` 和 render framework 只按 content rect 裁切、合成和输出 styled frame；renderer 不请求 history、不执行 selection 语义、不调用 clipboard，也不从 live content 补齐历史。
 - copy/yank 成功反馈由 reducer 添加 shell toast；clipboard IO 仍通过 effect 和 result message 完成，不进入 renderer。
 - `RenderVM.Lines` 临时兼容投影保留 raw authoritative row text；logical-line marker 和 clipped marker 属于 UI content，不得污染历史 truth 或兼容 raw rows。
+
+当前 copy-history content renderer 深化的架构边界：
+
+- `CopyModeStore` 只新增交互态：可见行数、搜索 query、匹配列表、active match、viewport top 和 cursor clamp；这些字段不保存历史 truth。
+- 高度变化只更新 copy view rows 并夹紧 viewport；content cols 变化仍必须失效旧 window 并重新请求 authoritative latest window。
+- 搜索只在已接纳的 authoritative rows 上计算 match；输入字符、Backspace、Enter、方向键和 PageDown 只改变 copy mode 交互态，不触发 live surface fallback。
+- match navigation 会把 copy cursor 移动到 authoritative row/col，并保证 cursor 进入当前 viewport。
+- content-local mouse selection 使用 render hit region 给出的 authoritative row，回到 reducer 更新 cursor/selection；未命中 copy history row 的鼠标事件不得漏发为 terminal input。
+- renderer 负责显示搜索栏、可见 rows、selection/match 样式层级、scrollbar/status 和 row/line/part/cols/span/search/older position token；这些都只属于 UI 投影，不写回 `HistoryStore` 或 core-v2。
 
 已完成的 empty/exited/Terminal Picker content renderer 一期的架构边界：
 

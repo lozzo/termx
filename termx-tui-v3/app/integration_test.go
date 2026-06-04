@@ -65,8 +65,8 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"old", "new"}) {
 		t.Fatalf("unexpected history rows %v", got)
 	}
-	if runtime.State().CopyMode.ViewportTop != 1 {
-		t.Fatalf("expected viewport shifted by older prepend, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.ViewportTop != 0 {
+		t.Fatalf("viewport should clamp to top when visible rows cover loaded history, got %#v", runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
 	if len(last.Lines) == 0 || !frameContains(last, "old") || !frameContains(last, "new") {
@@ -454,6 +454,90 @@ func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 	assertPaneVisualState(t, last, "be", render.StyleAccent)
 	if !frameContains(last, "selection yanked") {
 		t.Fatalf("copy feedback toast should be visible, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{
+				{Text: "alpha", LineID: 10},
+				{Text: "beta", LineID: 11},
+				{Text: "gamma beta", LineID: 12},
+				{Text: "delta", LineID: 13},
+			},
+		)}},
+	}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(80, 8)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	for _, ch := range []string{"b", "e", "t", "a"} {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: ch}); err != nil {
+			t.Fatalf("send query %q: %v", ch, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain query: %v", err)
+	}
+	if runtime.State().CopyMode.Query != "beta" || len(runtime.State().CopyMode.Matches) != 2 || runtime.State().CopyMode.Cursor.Row != 1 {
+		t.Fatalf("expected search matches and cursor on first beta, got %#v", runtime.State().CopyMode)
+	}
+	queryFrame := lastFrame(t, host.Frames())
+	if !frameContains(queryFrame, "search beta match:1/2") || !frameContains(queryFrame, "scroll") {
+		t.Fatalf("expected search row and scrollbar, got %#v", queryFrame.Lines)
+	}
+	assertPaneVisualState(t, queryFrame, "beta", render.StyleWarning)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send next match: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain next match: %v", err)
+	}
+	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 2 {
+		t.Fatalf("expected next search match, got %#v", runtime.State().CopyMode)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}); err != nil {
+		t.Fatalf("send page down: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain page down: %v", err)
+	}
+	if runtime.State().CopyMode.ViewportTop == 0 {
+		t.Fatalf("expected copy viewport to scroll down, got %#v", runtime.State().CopyMode)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	var target render.HitRegion
+	for _, region := range frame.HitRegions {
+		if region.Kind == render.HitRegionHistoryRow && region.Row == 2 {
+			target = region
+			break
+		}
+	}
+	if target.Kind == "" {
+		t.Fatalf("expected visible history row hit region, got %#v", frame.HitRegions)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: target.Rect.Y + 1, Col: target.Rect.X + 6}); err != nil {
+		t.Fatalf("send row click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain row click: %v", err)
+	}
+	if runtime.State().CopyMode.Mark == nil || runtime.State().CopyMode.Cursor.Row != 2 {
+		t.Fatalf("expected content-local mouse selection on history row, got %#v", runtime.State().CopyMode)
 	}
 }
 

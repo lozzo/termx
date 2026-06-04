@@ -38,10 +38,10 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	if len(vm.Lines) != 2 || vm.Lines[0] != "old" || vm.Lines[1] != "new" {
 		t.Fatalf("unexpected vm lines %v", vm.Lines)
 	}
-	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[1].Rect.Y != 1 {
+	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[0].Rect.Y != 1 || content.HitRegions[1].Rect.Y != 2 {
 		t.Fatalf("unexpected hit regions %#v", content.HitRegions)
 	}
-	if !vm.Shell.Cursor.Visible || vm.Shell.Cursor.Row != 1 || vm.Shell.Cursor.Col != 4 {
+	if !vm.Shell.Cursor.Visible || vm.Shell.Cursor.Row != 2 || vm.Shell.Cursor.Col != 4 {
 		t.Fatalf("expected copy cursor VM, got %#v", vm.Shell.Cursor)
 	}
 }
@@ -77,22 +77,25 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
-	if got := content.Lines[0].PlainString(); !strings.Contains(got, "⇡ alpha") {
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "search") {
+		t.Fatalf("expected copy search row, got %#v", content.Lines)
+	}
+	if got := content.Lines[1].PlainString(); !strings.Contains(got, "⇡ alpha") {
 		t.Fatalf("expected clipped-before marker, got %#v", content.Lines)
 	}
-	if got := content.Lines[1].PlainString(); !strings.Contains(got, "╎ beta好 ⇣") {
+	if got := content.Lines[2].PlainString(); !strings.Contains(got, "╎ beta好 ⇣") {
 		t.Fatalf("expected continuation and clipped-end markers, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[0], "pha", StyleAccent) || !lineHasStyledCell(content.Lines[1], "beta", StyleAccent) {
+	if !lineHasStyledCell(content.Lines[1], "pha", StyleAccent) || !lineHasStyledCell(content.Lines[2], "beta", StyleAccent) {
 		t.Fatalf("expected selection rendered as styled cells, got %#v", content.Lines)
 	}
-	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != 6 {
+	if !content.Cursor.Visible || content.Cursor.Row != 2 || content.Cursor.Col != 6 {
 		t.Fatalf("expected cursor offset by copy marker, got %#v", content.Cursor)
 	}
-	if !strings.Contains(content.Status, "row 2/3 line:10 cols:12") {
+	if !strings.Contains(content.Status, "row 2/3 line:10 part:2 cols:12") || !strings.Contains(content.Status, "span:1-2") {
 		t.Fatalf("expected position status, got %q", content.Status)
 	}
-	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 || content.HitRegions[1].Rect.W <= 12 {
+	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 || content.HitRegions[1].Rect.Y != 2 || content.HitRegions[1].Rect.W <= 12 {
 		t.Fatalf("expected history hit regions with marker width, got %#v", content.HitRegions)
 	}
 	if len(vm.Lines) != 3 || vm.Lines[0] != "alpha" || strings.Contains(vm.Lines[0], "⇡") {
