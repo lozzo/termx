@@ -353,11 +353,13 @@ type SplitVM struct {
 }
 
 type FloatingVM struct {
-	ID      string
-	Title   string
-	Rect    Rect
-	Z       int
-	Content ContentVM
+	ID        string
+	Title     string
+	Rect      Rect
+	Z         int
+	Active    bool
+	Collapsed bool
+	Content   ContentVM
 }
 
 type HeaderVM struct {

@@ -381,6 +381,38 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentTerminalLive},
+			}},
+			Floating: []FloatingVM{{
+				ID:      "float-1",
+				Title:   "float",
+				Rect:    Rect{X: 10, Y: 4, W: 30, H: 8},
+				Z:       2,
+				Active:  true,
+				Content: ContentVM{Kind: ContentEmptyPane},
+			}},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if len(plan.Floatings) != 1 || plan.Floatings[0].ContentRect != (Rect{X: 11, Y: 5, W: 28, H: 6}) {
+		t.Fatalf("expected measured floating content rect, got %#v", plan.Floatings)
+	}
+	raise := hitRegionIndexByAction(plan.HitRegions, "floating.raise")
+	close := hitRegionIndexByAction(plan.HitRegions, "floating.close")
+	pane := hitRegionIndex(plan.HitRegions, HitRegionPaneContent)
+	if raise < 0 || close < 0 || pane < 0 || raise > pane || close > pane {
+		t.Fatalf("floating hit regions should precede tiled pane regions, got %#v", plan.HitRegions)
+	}
+}
+
 func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
 	for i, region := range regions {
 		if region.ActionID == actionID {

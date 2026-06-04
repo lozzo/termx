@@ -93,6 +93,12 @@ type ShellPaneCommandMsg struct {
 
 func (ShellPaneCommandMsg) isMsg() {}
 
+type ShellFloatingCommandMsg struct {
+	Command state.FloatingCommand
+}
+
+func (ShellFloatingCommandMsg) isMsg() {}
+
 type PaneCommandFeedbackEffect struct {
 	Result  state.PaneCommandResult
 	Command state.PaneCommand
@@ -159,6 +165,8 @@ func NewShellReducer() Reducer {
 			})
 		case ShellPaneCommandMsg:
 			return reducePaneCommand(root, msg.Command)
+		case ShellFloatingCommandMsg:
+			return reduceFloatingCommand(root, msg.Command)
 		default:
 			return root, nil
 		}
@@ -235,6 +243,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			items = state.WorkbenchTreeItems(root)
 		}
 		return reduceWorkbenchTreeOpen(root, items)
+	case "floating.raise":
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+	case "floating.close":
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+	case "floating.resize":
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
 	case "exited.restart":
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
@@ -358,6 +372,39 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	}
 	root.Shell = addPaneCommandToast(root.Shell, command, result)
 	return root.Advance(), []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
+}
+
+func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (state.Root, []Effect) {
+	command = withFloatingCommandDefaults(root, command)
+	nextShell, result := root.Shell.ApplyFloatingCommand(command)
+	root.Shell = addFloatingCommandToast(nextShell, result)
+	return root.Advance(), nil
+}
+
+func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand) state.FloatingCommand {
+	if command.BoundsW <= 0 {
+		command.BoundsW = root.Viewport.Cols
+	}
+	if command.BoundsH <= 0 {
+		command.BoundsH = root.Viewport.Rows
+	}
+	if command.BoundsW <= 0 {
+		command.BoundsW = 80
+	}
+	if command.BoundsH <= 0 {
+		command.BoundsH = 24
+	}
+	if command.Action == state.FloatingCommandCreate && command.Pane.ID == "" {
+		command.Pane = state.PaneState{ID: "floating-pane", Title: "floating", Kind: state.PaneEmpty}
+	}
+	return command
+}
+
+func addFloatingCommandToast(shell state.ShellStore, result state.FloatingCommandResult) state.ShellStore {
+	if result.Status == state.FloatingCommandOK {
+		return shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(result.Action), Body: result.ID})
+	}
+	return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(result.Action), Body: result.Reason})
 }
 
 func paneCommandEffects(command state.PaneCommand, result state.PaneCommandResult, targetPane state.PaneState, hasTargetPane bool) []Effect {

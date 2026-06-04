@@ -137,7 +137,8 @@ func terminalSummary(root state.Root) string {
 }
 
 func floatingSummary(shell state.ShellStore) string {
-	return "float:0"
+	shell = shell.EnsureDefaults()
+	return fmt.Sprintf("float:%d", len(shell.Floatings))
 }
 
 func footerMode(root state.Root, shell state.ShellStore) string {
@@ -220,12 +221,14 @@ func buildLayoutVM(shell state.ShellStore, activeContent ContentVM, viewport sta
 		return LayoutVM{
 			Viewport: viewportRect(viewport),
 			Panels:   buildZoomedPanelVMs(shell, activeContent),
+			Floating: buildFloatingVMs(shell),
 			Split:    SplitVM{PaneID: shell.ZoomedPaneID},
 		}
 	}
 	return LayoutVM{
 		Viewport: viewportRect(viewport),
 		Panels:   buildPanelVMs(shell, activeContent),
+		Floating: buildFloatingVMs(shell),
 		Split:    buildSplitVM(activeTab(shell).RootSplit),
 	}
 }
@@ -281,6 +284,27 @@ func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM) []Pane
 		}
 	}
 	return buildPanelVMs(shell, activeContent)
+}
+
+func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
+	shell = shell.EnsureDefaults()
+	if len(shell.Floatings) == 0 {
+		return nil
+	}
+	out := make([]FloatingVM, 0, len(shell.Floatings))
+	for _, floating := range shell.Floatings {
+		content := placeholderContentForPane(floating.Pane)
+		out = append(out, FloatingVM{
+			ID:        floating.ID,
+			Title:     floating.Title,
+			Rect:      Rect{X: floating.Rect.X, Y: floating.Rect.Y, W: floating.Rect.W, H: floating.Rect.H},
+			Z:         floating.Z,
+			Active:    floating.Active,
+			Collapsed: floating.Collapsed,
+			Content:   content,
+		})
+	}
+	return out
 }
 
 func buildActiveContentVM(root state.Root) ContentVM {

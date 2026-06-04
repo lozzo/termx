@@ -483,6 +483,12 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect)
 		layers = append(layers, Layer{Kind: LayerPanel, Rect: layout.Rect, Lines: contentResult})
 	}
+	for _, floating := range plan.Floatings {
+		layer := renderFloating(c, floating)
+		if layer.Rect.W > 0 && layer.Rect.H > 0 {
+			layers = append(layers, layer)
+		}
+	}
 
 	overlayLayer := renderOverlay(c, shell.Overlay, plan.Overlay, plan.OverlayContentRect)
 	if overlayLayer.Rect.W > 0 && overlayLayer.Rect.H > 0 {
@@ -754,6 +760,44 @@ func renderPaneActionSlot(c *canvas, rect Rect, panel PanelVM, style StyleToken,
 		token = "[x]"
 	}
 	c.overlayTextStyled(rect.X+rect.W-4, rect.Y, 3, token, style, owner, LayerPanel)
+}
+
+func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
+	rect := layout.Rect
+	if rect.W <= 0 || rect.H <= 0 {
+		return Layer{}
+	}
+	floating := layout.Floating
+	style := StyleMuted
+	if floating.Active {
+		style = StyleAccent
+	}
+	owner := "floating:" + floating.ID
+	c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
+	c.drawStyledBox(rect, roundedBoxStyle, style, owner, LayerFloating)
+	title := floating.Title
+	if title == "" {
+		title = floating.ID
+	}
+	state := "float"
+	if floating.Active {
+		state = "active"
+	}
+	if floating.Collapsed {
+		state = "collapsed"
+	}
+	c.overlayTextStyled(rect.X+2, rect.Y, maxInt(0, rect.W-6), " "+title+" "+state+" ", style, owner, LayerFloating)
+	if rect.W >= 12 {
+		c.overlayTextStyled(rect.X+rect.W-4, rect.Y, 3, "[x]", style, owner, LayerFloating)
+	}
+	if rect.W >= 2 && rect.H >= 2 {
+		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "◢", style, owner, LayerFloating)
+	}
+	var contentLines []Line
+	if !floating.Collapsed {
+		contentLines = renderContent(c, floating.Content, layout.ContentRect)
+	}
+	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentLines}
 }
 
 func renderContent(c *canvas, content ContentVM, rect Rect) []Line {

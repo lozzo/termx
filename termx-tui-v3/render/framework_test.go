@@ -231,6 +231,42 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 120)
 }
 
+func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 64, H: 18},
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Title:        "shell",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("tiled background")}},
+			}},
+			Floating: []FloatingVM{{
+				ID:      "float-1",
+				Title:   "浮窗🚀",
+				Rect:    Rect{X: 8, Y: 4, W: 36, H: 8},
+				Z:       1,
+				Active:  true,
+				Content: ContentVM{Kind: ContentEmptyPane, Lines: []Line{NewLine("floating body 世界")}},
+			}},
+		},
+	}})
+	frame := result.Frame()
+
+	if !linesContain(frame.Lines, "浮窗🚀 active") || !linesContain(frame.Lines, "floating body 世界") {
+		t.Fatalf("expected floating title/content, got %#v", frame.Lines)
+	}
+	if !styledLinesContain(frame.StyledLines, "╭", StyleAccent) || !styledLinesContain(frame.StyledLines, "╯", StyleAccent) {
+		t.Fatalf("active floating border should use accent style, got %#v", frame.StyledLines)
+	}
+	layer := firstLayer(t, result, LayerFloating)
+	if layer.Rect != (Rect{X: 8, Y: 4, W: 36, H: 8}) {
+		t.Fatalf("unexpected floating layer rect %#v", layer)
+	}
+	assertAllRowsWidth(t, frame.Lines, 64)
+}
+
 func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 	cases := []struct {
 		name string

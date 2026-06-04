@@ -452,8 +452,10 @@ renderer 禁止：
 - terminal-live、copy-history、empty/exited、Terminal Picker 内容 renderer 一期已经完成。
 - Terminal Picker 数据源与 Terminal Pool service 接线一期已经完成。
 - Terminal Pool 管理页一期已经完成。
-- 当前下一步是 Workbench Tree overlay 一期。
-- 后续再继续 floating、Prompt/Help、Tab/Workspace、terminal-live 深化、copy-history 深化和 render cleanup/performance。
+- Workbench Tree overlay 一期已经完成。
+- Floating pane 一期已经完成。
+- 当前下一步是 Prompt/Help overlay 一期。
+- 后续再继续 Tab/Workspace、terminal-live 深化、copy-history 深化和 render cleanup/performance。
 
 UI framework 交互产品化总验收包括：
 
@@ -621,8 +623,10 @@ tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback
 23. 实现 floating pane 一期。
 24. 实现 Prompt / Help overlay 一期。
 25. 实现 Tab / Workspace 产品入口一期。
-26. 深化 terminal-live 与 copy-history 内容 renderer。
-27. 清理 render 兼容投影并建立性能基线。
+26. 完成 TUI 产品壳总验收。
+27. 前推 terminal live 连接展示与交互。
+28. 深化 copy-history 内容 renderer。
+29. 清理 render 兼容投影并建立性能基线。
 
 每个切片都必须避免引入 local scrollback history fallback。
 

@@ -955,3 +955,122 @@ func TestInteractiveRuntimeGlobalModeTogglesChromeAndEscExitsMode(t *testing.T) 
 		t.Fatalf("global shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
+
+func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(90, 28)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0f", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"},
+		{Kind: input.EventKindKey, Key: input.KeyRight},
+		{Kind: input.EventKindKey, Key: input.KeyDown},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "L"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "J"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send floating input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain floating input %#v: %v", event, err)
+		}
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if len(shell.Floatings) != 1 || !shell.Floatings[0].Active || shell.Floatings[0].Collapsed {
+		t.Fatalf("expected active restored floating, got %#v", shell.Floatings)
+	}
+	if shell.Floatings[0].Rect.W <= 44 || shell.Floatings[0].Rect.H <= 12 {
+		t.Fatalf("expected keyboard resize to grow floating rect, got %#v", shell.Floatings[0].Rect)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("floating shortcuts must not leak terminal input, got %#v", terminal.Inputs)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "t"},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send clear toast input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain clear toast input %#v: %v", event, err)
+		}
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "floating active") || !frameContains(frame, "empty pane") {
+		t.Fatalf("expected rendered floating pane, got %#v", frame.Lines)
+	}
+
+	raiseRegion := frameActionHitRegion(t, frame, "floating.raise", "floating-1")
+	if err := host.SendInput(mouseEventAt(raiseRegion.Rect)); err != nil {
+		t.Fatalf("send floating raise click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating raise: %v", err)
+	}
+	resizeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.resize", "floating-1")
+	before := runtime.State().Shell.Floatings[0].Rect
+	if err := host.SendInput(mouseEventAt(resizeRegion.Rect)); err != nil {
+		t.Fatalf("send floating resize click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating resize: %v", err)
+	}
+	after := runtime.State().Shell.Floatings[0].Rect
+	if after.W <= before.W || after.H <= before.H {
+		t.Fatalf("mouse resize should grow floating rect, before=%#v after=%#v", before, after)
+	}
+	closeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.close", "floating-1")
+	if err := host.SendInput(mouseEventAt(closeRegion.Rect)); err != nil {
+		t.Fatalf("send floating close click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating close: %v", err)
+	}
+	if len(runtime.State().Shell.Floatings) != 0 {
+		t.Fatalf("mouse close should remove floating pane, got %#v", runtime.State().Shell.Floatings)
+	}
+}
+
+func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "floating", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 2, Y: 2, W: 30, H: 8},
+		BoundsW:  80,
+		BoundsH:  24,
+	})
+	reducer := NewShellReducer()
+	root, _ := reducer(state.Root{
+		Shell:    shell,
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
+	}, ShellContentActionMsg{ActionID: "floating.resize", PaneID: "floating-1"})
+	if got := root.Shell.Floatings[0].Rect; got.W != 32 || got.H != 9 {
+		t.Fatalf("floating resize action should update rect, got %#v", got)
+	}
+	root, _ = reducer(root, ShellContentActionMsg{ActionID: "floating.close", PaneID: "floating-1"})
+	if len(root.Shell.Floatings) != 0 {
+		t.Fatalf("floating close action should remove floating, got %#v", root.Shell.Floatings)
+	}
+}

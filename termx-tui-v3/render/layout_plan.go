@@ -6,6 +6,7 @@ type LayoutPlan struct {
 	Footer             Rect
 	Body               Rect
 	Panels             []PanelLayoutPlan
+	Floatings          []FloatingLayoutPlan
 	Overlay            Rect
 	OverlayContentRect Rect
 	Toasts             []Rect
@@ -16,6 +17,12 @@ type LayoutPlan struct {
 
 type PanelLayoutPlan struct {
 	Panel       PanelVM
+	Rect        Rect
+	ContentRect Rect
+}
+
+type FloatingLayoutPlan struct {
+	Floating    FloatingVM
 	Rect        Rect
 	ContentRect Rect
 }
@@ -39,6 +46,7 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	}
 	plan.Body = body
 	plan.Panels = measurePanels(shell.Layout, body)
+	plan.Floatings = measureFloatings(shell.Layout.Floating, viewport)
 	plan.Overlay = measureOverlay(shell.Overlay, viewport)
 	plan.OverlayContentRect = measureOverlayContentRect(plan.Overlay)
 	plan.Toasts = measureToasts(shell.Toasts, viewport)
@@ -81,6 +89,31 @@ func measurePanelContentRect(panel PanelVM, rect Rect) Rect {
 		content.W = maxInt(0, content.W-1)
 	}
 	return content
+}
+
+func measureFloatings(floatings []FloatingVM, viewport Rect) []FloatingLayoutPlan {
+	if len(floatings) == 0 {
+		return nil
+	}
+	sorted := append([]FloatingVM(nil), floatings...)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && sorted[j-1].Z > sorted[j].Z; j-- {
+			sorted[j-1], sorted[j] = sorted[j], sorted[j-1]
+		}
+	}
+	out := make([]FloatingLayoutPlan, 0, len(sorted))
+	for _, floating := range sorted {
+		rect := intersectRect(floating.Rect, viewport)
+		if rect.W <= 0 || rect.H <= 0 {
+			continue
+		}
+		contentRect := Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
+		if floating.Collapsed {
+			contentRect = Rect{}
+		}
+		out = append(out, FloatingLayoutPlan{Floating: floating, Rect: rect, ContentRect: contentRect})
+	}
+	return out
 }
 
 func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
@@ -167,12 +200,30 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	if shell.Overlay.Opaque {
 		return regions
 	}
+	for i := len(plan.Floatings) - 1; i >= 0; i-- {
+		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
+	}
 	for _, panel := range plan.Panels {
 		regions = appendPanelChromeHitRegions(regions, panel, plan.Viewport)
 		regions = appendTranslatedRegions(regions, panel.Panel.Content.HitRegions, panel.ContentRect, plan.Viewport)
 		regions = appendPanelContentHitRegion(regions, panel, plan.Viewport)
 	}
 	return regions
+}
+
+func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, viewport Rect) []HitRegion {
+	if floating.Rect.W <= 0 || floating.Rect.H <= 0 {
+		return out
+	}
+	id := floating.Floating.ID
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneActionRect(floating.Rect), PaneID: id, ActionID: "floating.close"}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: "floating.resize"}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: "floating.raise"}, viewport)
+	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
+		out = appendTranslatedRegions(out, floating.Floating.Content.HitRegions, floating.ContentRect, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: id, ActionID: "floating.raise"}, viewport)
+	}
+	return out
 }
 
 func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {
@@ -203,6 +254,10 @@ func paneResizeRect(rect Rect) Rect {
 	return Rect{X: maxInt(rect.X, rect.X+rect.W-1), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: 1, H: 1}
 }
 
+func floatingResizeRect(rect Rect) Rect {
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-2), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: minInt(2, rect.W), H: 1}
+}
+
 func paneChromeRect(rect Rect) Rect {
 	return Rect{X: rect.X, Y: rect.Y, W: rect.W, H: minInt(1, rect.H)}
 }
@@ -227,6 +282,16 @@ func appendRegion(out []HitRegion, region HitRegion, viewport Rect) []HitRegion 
 func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 	if overlayOwnsCursor(shell.Overlay) {
 		return cursorWithRect(shell.Overlay.Content.Cursor, plan.OverlayContentRect)
+	}
+	for i := len(plan.Floatings) - 1; i >= 0; i-- {
+		floating := plan.Floatings[i]
+		if !floating.Floating.Active {
+			continue
+		}
+		cursor := floating.Floating.Content.Cursor
+		if cursor.Visible {
+			return cursorWithRect(cursor, floating.ContentRect)
+		}
 	}
 	for _, panel := range plan.Panels {
 		if !panel.Panel.Active {

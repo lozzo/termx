@@ -313,6 +313,42 @@ func TestShellResizeSetSizeAndBalancePaneGeometry(t *testing.T) {
 	}
 }
 
+func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
+	shell := DefaultShell()
+	var result FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     PaneState{ID: "float-pane", Title: "日志🚀", Kind: PaneEmpty},
+		BoundsW:  80,
+		BoundsH:  24,
+	})
+	if result.Status != FloatingCommandOK || len(shell.Floatings) != 1 || shell.ActiveFloatingID != "float-1" {
+		t.Fatalf("expected created active floating, result=%#v shell=%#v", result, shell)
+	}
+	created := shell.Floatings[0]
+	if created.Rect.X <= 0 || created.Rect.Y <= 0 || created.Rect.W < 16 || created.Rect.H < 4 || !created.Active {
+		t.Fatalf("expected centered clamped floating, got %#v", created)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandMove, TargetID: "float-1", DeltaX: -999, DeltaY: -999, BoundsW: 80, BoundsH: 24})
+	if result.Status != FloatingCommandOK || shell.Floatings[0].Rect.X != 0 || shell.Floatings[0].Rect.Y != 0 {
+		t.Fatalf("move should clamp to viewport, result=%#v floating=%#v", result, shell.Floatings[0])
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandResize, TargetID: "float-1", DeltaW: -999, DeltaH: -999, BoundsW: 80, BoundsH: 24})
+	if result.Status != FloatingCommandOK || shell.Floatings[0].Rect.W != 16 || shell.Floatings[0].Rect.H != 4 {
+		t.Fatalf("resize should keep minimum floating size, result=%#v floating=%#v", result, shell.Floatings[0])
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleCollapse, TargetID: "float-1"})
+	if result.Status != FloatingCommandOK || !shell.Floatings[0].Collapsed {
+		t.Fatalf("expected collapsed floating, result=%#v floating=%#v", result, shell.Floatings[0])
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandClose, TargetID: "float-1"})
+	if result.Status != FloatingCommandOK || len(shell.Floatings) != 0 || shell.ActiveFloatingID != "" {
+		t.Fatalf("expected closed floating, result=%#v shell=%#v", result, shell)
+	}
+}
+
 func TestShellUpdatesDoNotMutatePreviousSlices(t *testing.T) {
 	original := DefaultShell().AddToast(ToastSpec{ID: "old"})
 	next := original.AddToast(ToastSpec{ID: "new"})

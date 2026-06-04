@@ -81,7 +81,10 @@ const (
 	ShellActionToggleFooter ShellAction = "shell.toggle-footer"
 	ShellActionClearToasts  ShellAction = "shell.clear-toasts"
 	ShellActionCloseToast   ShellAction = "shell.close-toast"
-	ShellActionFloatingStub ShellAction = "shell.floating-stub"
+	ShellActionFloatingCtrl ShellAction = "shell.floating-control"
+	ShellActionFloatingNew  ShellAction = "shell.floating-new"
+	ShellActionFloatingMove ShellAction = "shell.floating-move"
+	ShellActionFloatingSize ShellAction = "shell.floating-size"
 	ShellActionOpenPool     ShellAction = "shell.open-terminal-pool"
 	ShellActionOpenTree     ShellAction = "shell.open-workbench-tree"
 )
@@ -243,8 +246,44 @@ func routeGlobalModeKey(event InputEvent) Intent {
 }
 
 func routeFloatingModeKey(event InputEvent) Intent {
-	if event.Key == KeyChar {
-		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingStub}
+	switch event.Key {
+	case KeyLeft:
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "left"}
+	case KeyRight:
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "right"}
+	case KeyUp:
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "up"}
+	case KeyDown:
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "down"}
+	}
+	if event.Key != KeyChar {
+		return Intent{Kind: IntentNone, Event: event}
+	}
+	switch event.Char {
+	case "n":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingNew}
+	case "x":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingCtrl, Reason: "close"}
+	case "z":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingCtrl, Reason: "collapse"}
+	case "c":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingCtrl, Reason: "center"}
+	case "h":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "left"}
+	case "l":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "right"}
+	case "k":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "up"}
+	case "j":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingMove, Reason: "down"}
+	case "H":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingSize, Reason: "narrow"}
+	case "L":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingSize, Reason: "wide"}
+	case "K":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingSize, Reason: "short"}
+	case "J":
+		return Intent{Kind: IntentShellAction, Event: event, Action: ShellActionFloatingSize, Reason: "tall"}
 	}
 	return Intent{Kind: IntentNone, Event: event}
 }

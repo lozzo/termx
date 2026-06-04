@@ -733,7 +733,7 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 - `Ctrl-p`：pane mode，承载 split right / split down / close / focus next / focus previous / zoom / balance / card / split。
 - `Ctrl-r`：resize mode，承载方向 resize 和 balance。
 - `Ctrl-g`：global mode，承载 header/footer hide、toast 清理，并作为 Terminal Pool / Help 等全局入口的承载 mode。
-- `Ctrl-o`：floating mode stub，只显示尚未实现反馈，不得伪装成完整 floating。
+- `Ctrl-o`：floating mode，承载 create、move、resize、center、collapse / restore 和 close。
 - `Ctrl-f`：Terminal Picker overlay，承载 query、过滤、键盘选择和确认 attach/focus。
 - `Ctrl-v`：Display / Copy authoritative history 路径。
 - `Esc`：退出 mode 或关闭 overlay，不得漏发给 terminal。
@@ -742,8 +742,6 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 
 - `Ctrl-t` tab mode 尚未形成完整产品交互。
 - `Ctrl-w` workspace mode 尚未形成完整产品交互。
-- floating mode 尚未有 create、move、resize、z-order。
-- Terminal Pool 管理页尚未形成独立页面入口和 action 闭环。
 - Help overlay 尚未形成完整产品交互。
 
 ### 13.3 Mode 职责
@@ -895,16 +893,15 @@ UI chrome 优先级高于 terminal mouse forwarding。点击边框、标题、�
 - 点击 pane content 或 pane chrome 可以切换 active pane，并立即改变 active / inactive pane 视觉状态。
 - 点击 pane action slot 可以执行同一 semantic command，例如 close。
 - 点击 split divider 或 resize handle 已进入 resize 语义或触发 resize command。
-- toast、overlay、pane chrome、pane content 的命中优先级已经固定，UI chrome 命中不得继续转发到 terminal。
+- 点击 floating pane title/content 会聚焦并提升 z-order。
+- 点击 floating pane 顶部 close action 会关闭 floating pane。
+- 点击 floating pane 右下 resize handle 会进入 floating resize 语义。
+- toast、overlay、floating、pane chrome、pane content 的命中优先级已经固定，UI chrome 命中不得继续转发到 terminal；toast/overlay 遮挡 floating 时不允许鼠标穿透到底层 floating。
 
 当前后续必须补齐：
 
-- Terminal Pool row click 选择。
-- Terminal Pool footer action click 执行 attach / edit / kill。
-- Workbench Tree row click 选择和 open / focus。
-- floating pane 点击聚焦并提升 z-order。
-- floating pane drag / resize handle。
 - Prompt input click 定位输入光标。
+- floating pane 标题拖拽移动和 resize handle 连续拖拽。
 
 ## 15. 状态与反馈
 
@@ -1327,6 +1324,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - top bar 和 bottom bar 已是 styled bar，背景填满整行，workspace/tab/mode/hint/status 通过 token 输出。
 - toast 和 Terminal Picker overlay 已使用 styled rounded card；floating/modal 后续仍必须保持独立 styled chrome。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
+- floating pane 一期已使用独立 styled bordered chrome，具备 reducer-owned state、z-order、active 状态、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close 和 content rect 裁切。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
 - `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 - terminal-live 内容 renderer 一期必须在当前 styled chrome 基线上工作：真实 live 行只进入 pane content slot，基础 ANSI SGR 映射为 semantic style token，live cursor 表达为 content-local cursor，pending、empty、exited 状态显示在所属 pane 内，emoji/CJK/combining mark 裁切不得破坏 pane 边框。
@@ -1340,11 +1338,11 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 内容 renderer 深化：scrollbar 视觉 polish、position token 精细化、滚动交互、content-local mouse hit region、selection 颜色层级和 logical-line 拼接提示。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit Prompt、kill confirm 和更完整 preview。
-- floating pane 完整交互、z-order、drag/resize 和带边框渲染。
 - Workbench Tree 完整 overlay。
 - Prompt、Help、Floating Overview overlay。
+- floating pane 标题拖拽移动、resize handle 连续拖拽、attach as floating 和 Floating Overview。
 - 多层 split、复杂 pane 管理和 resize affordance 的产品化。
-- tab/workspace/floating 的最终产品快捷键和交互闭环；当前已落地的 pane/resize/global 第一版入口不得被局部 handler 分叉实现。
+- tab/workspace 的最终产品快捷键和交互闭环；当前已落地的 pane/resize/global/floating 第一版入口不得被局部 handler 分叉实现。
 
 ## 21. 当前 UI Framework 产品化验收线
 
@@ -1366,7 +1364,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - terminal-live 内容已经具备完整 styled cell、cursor、selection 或 search。
 - copy-history 内容已经具备完整 scrollbar、搜索、content-local mouse selection 或最终视觉 polish。
 - Terminal Picker 已经接入完整 Terminal Pool、preview、跨 workspace 过滤或真实 create/attach 服务。
-- Terminal Pool、Workbench Tree、Prompt、Help、floating pane 已经完整产品化。
+- Terminal Pool、Workbench Tree、floating pane、Prompt、Help 已经完整产品化。
 
 基本手工测试入口：
 
@@ -1556,7 +1554,7 @@ Workbench Tree overlay 一期的目标是实现 workspace / tab / pane / floatin
 
 - 可以从全局入口打开，并可以用 `Esc` 关闭。
 - overlay 采用页面级实体卡片，不是 Terminal Picker 小弹层；打开期间 cursor 归属于 search field，不复用底层 pane cursor。
-- row 至少包含 workspace、tab、pane、floating 四类结构。floating 一期可以是结构占位或摘要行，但不得提前实现 floating drag/resize。
+- row 至少包含 workspace、tab、pane、floating 四类结构。floating row 必须能展示当前 floating 数量或具体 floating 摘要；Workbench Tree 不直接实现 floating move/resize。
 - search query 过滤 workspace 名、tab 标题、pane 标题、pane id、terminal id、pane kind 和 summary；普通字符和 Backspace 不得漏发给底层 terminal。
 - 上下方向键移动 selected row；过滤后 selected row 必须稳定落在第一条可见 row 或 empty 状态。
 - 鼠标点击 row 与键盘选择使用同一 selected row 语义。
@@ -1584,7 +1582,43 @@ Workbench Tree overlay 一期的目标是实现 workspace / tab / pane / floatin
 - 点击 row 和 Open / Focus action，确认都有可见反馈。
 - 按 `Esc` 关闭页面并回到 workbench。
 
-## 29. 后续讨论入口
+## 29. Floating Pane 一期验收线
+
+Floating Pane 一期的目标是让 floating pane 成为可操作的 workbench 结构对象，而不是只在 Workbench Tree 中显示一个占位摘要。
+
+本阶段必须满足：
+
+- floating pane state 归 reducer-owned shell 管理，至少包含 id、title、pane content、rect、z-order、active 和 collapsed。
+- `Ctrl-o` 进入 floating mode 后，`n` 创建 floating pane，方向键或 `h/j/k/l` 移动 active floating，`H/J/K/L` 调整 active floating 尺寸，`c` 居中，`z` collapse / restore，`x` 关闭。
+- floating pane 必须有独立 styled bordered chrome，active 使用 accent，inactive 使用 muted，且不受 tiled pane card / split line 呈现模式影响。
+- floating pane 必须位于 tiled pane 之上、overlay / toast 之下；toast 或 overlay 遮挡 floating 时鼠标不得穿透到底层 floating。
+- mouse click floating title 或内容区域必须 focus / raise 该 floating pane。
+- mouse click floating close action 必须关闭该 floating pane。
+- mouse click floating 右下 resize handle 必须进入同一 floating resize 语义。
+- floating content 必须复用已有 content renderer，只能绘制在 floating content rect 内，不得覆盖 floating border、tiled pane、header/footer、overlay 或 toast。
+- move / resize 必须 clamp 到当前 viewport 内，并保留最小宽高。
+- Workbench Tree 的 floating row 必须能反映当前 floating 数量或结构摘要。
+- 所有标题、content、toast 和边框必须继续按 terminal cell width 裁切，emoji、CJK、combining mark 和 ANSI styled text 不得破坏 floating 边框或整行宽度。
+
+本阶段不要求：
+
+- 连续鼠标拖拽移动。
+- 连续鼠标拖拽 resize。
+- attach as floating 的真实 terminal lifecycle。
+- Floating Overview overlay。
+- remote floating 管理。
+
+本阶段完成后的基本手工测试入口：
+
+- `go run ./termx-cli/cmd/termx` 进入默认 TUI。
+- 按 `Ctrl-o` 进入 floating mode，再按 `n` 创建 floating pane；页面应出现独立带边框 floating，footer mode 显示 floating。
+- 在 floating mode 中按方向键移动，按 `H/J/K/L` resize，按 `c` 居中，按 `z` collapse / restore，按 `x` close。
+- 用鼠标点击 floating title 或内容区域，floating 必须成为 active 并提升到最前。
+- 用鼠标点击 floating 右下角 resize handle，floating 尺寸必须变化。
+- 用鼠标点击 floating 顶部 close action，floating 必须关闭。
+- 当右上角 toast 遮挡 floating 时，点击 toast 区域只处理 toast，不得穿透并操作 floating。
+
+## 30. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

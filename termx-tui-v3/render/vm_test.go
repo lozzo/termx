@@ -192,6 +192,12 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	shell := state.DefaultShell().
 		SetInteractionMode(state.InteractionModePane).
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志 🚀", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical)
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     state.PaneState{ID: "float-pane", Title: "浮窗", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 4, Y: 3, W: 30, H: 8},
+	})
 	root := state.Root{
 		Shell: shell,
 		Surface: state.TerminalSurfaceStore{
@@ -207,12 +213,15 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 
 	vm := NewRenderVMBuilder().Build(root)
 	header := vm.Shell.Header
-	if !header.Visible || header.Workspace != "main" || header.Tab != "main" || header.ActivePane != "pane-2" || header.TerminalSummary != "term:1" || header.FloatingSummary != "float:0" {
+	if !header.Visible || header.Workspace != "main" || header.Tab != "main" || header.ActivePane != "pane-2" || header.TerminalSummary != "term:1" || header.FloatingSummary != "float:1" {
 		t.Fatalf("unexpected product header %#v", header)
 	}
 	footer := vm.Shell.Footer
-	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" || !containsString(footer.Actions, "v split") || !strings.Contains(footer.GlobalSummary, "panes:2") {
+	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" || !containsString(footer.Actions, "v split") || !strings.Contains(footer.GlobalSummary, "panes:2") || !strings.Contains(footer.GlobalSummary, "float:1") {
 		t.Fatalf("unexpected product footer %#v", footer)
+	}
+	if len(vm.Shell.Layout.Floating) != 1 || vm.Shell.Layout.Floating[0].Title != "浮窗" || !vm.Shell.Layout.Floating[0].Active {
+		t.Fatalf("expected floating VM projection, got %#v", vm.Shell.Layout.Floating)
 	}
 }
 

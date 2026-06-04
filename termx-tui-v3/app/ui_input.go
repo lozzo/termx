@@ -248,9 +248,12 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		msg = ShellClearToastsMsg{}
 	case input.ShellActionCloseToast:
 		msg = ShellCloseCurrentToastMsg{}
-	case input.ShellActionFloatingStub:
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating", Body: "not implemented"})
-		return root.Advance(), []Effect{handledEffect{}}
+	case input.ShellActionFloatingNew, input.ShellActionFloatingCtrl, input.ShellActionFloatingMove, input.ShellActionFloatingSize:
+		command, ok := floatingCommandFromIntent(root, intent)
+		if !ok {
+			return root, []Effect{handledEffect{}}
+		}
+		msg = ShellFloatingCommandMsg{Command: command}
 	case input.ShellActionOpenPool:
 		msg = ShellOpenTerminalPoolMsg{}
 	case input.ShellActionOpenTree:
@@ -263,6 +266,66 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		FuncEffect{Run: func(context.Context) Msg {
 			return msg
 		}},
+	}
+}
+
+func floatingCommandFromIntent(root state.Root, intent input.Intent) (state.FloatingCommand, bool) {
+	command := state.FloatingCommand{
+		Source:  state.PaneCommandSourceKeyboard,
+		BoundsW: root.Viewport.Cols,
+		BoundsH: root.Viewport.Rows,
+	}
+	switch intent.Action {
+	case input.ShellActionFloatingNew:
+		command.Action = state.FloatingCommandCreate
+		command.TargetID = nextFloatingID(root.Shell)
+		command.Pane = state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty}
+		command.Title = "floating"
+		return command, true
+	case input.ShellActionFloatingCtrl:
+		switch intent.Reason {
+		case "close":
+			command.Action = state.FloatingCommandClose
+		case "collapse":
+			command.Action = state.FloatingCommandToggleCollapse
+		case "center":
+			command.Action = state.FloatingCommandCenter
+		default:
+			return state.FloatingCommand{}, false
+		}
+		return command, true
+	case input.ShellActionFloatingMove:
+		command.Action = state.FloatingCommandMove
+		switch intent.Reason {
+		case "left":
+			command.DeltaX = -2
+		case "right":
+			command.DeltaX = 2
+		case "up":
+			command.DeltaY = -1
+		case "down":
+			command.DeltaY = 1
+		default:
+			return state.FloatingCommand{}, false
+		}
+		return command, true
+	case input.ShellActionFloatingSize:
+		command.Action = state.FloatingCommandResize
+		switch intent.Reason {
+		case "narrow":
+			command.DeltaW = -2
+		case "wide":
+			command.DeltaW = 2
+		case "short":
+			command.DeltaH = -1
+		case "tall":
+			command.DeltaH = 1
+		default:
+			return state.FloatingCommand{}, false
+		}
+		return command, true
+	default:
+		return state.FloatingCommand{}, false
 	}
 }
 
@@ -301,6 +364,40 @@ func nextKeyboardPaneID(shell state.ShellStore) string {
 	for i := 2; ; i++ {
 		id := fmt.Sprintf("pane-%d", i)
 		if !shell.HasPane(state.PaneCommandTarget{PaneID: id}) {
+			return id
+		}
+	}
+}
+
+func nextFloatingPaneID(shell state.ShellStore) string {
+	shell = shell.EnsureDefaults()
+	for i := 1; ; i++ {
+		id := fmt.Sprintf("floating-pane-%d", i)
+		exists := false
+		for _, floating := range shell.Floatings {
+			if floating.Pane.ID == id {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			return id
+		}
+	}
+}
+
+func nextFloatingID(shell state.ShellStore) string {
+	shell = shell.EnsureDefaults()
+	for i := 1; ; i++ {
+		id := fmt.Sprintf("floating-%d", i)
+		exists := false
+		for _, floating := range shell.Floatings {
+			if floating.ID == id {
+				exists = true
+				break
+			}
+		}
+		if !exists {
 			return id
 		}
 	}

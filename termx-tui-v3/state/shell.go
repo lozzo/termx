@@ -68,6 +68,8 @@ const (
 // 它只描述用户可操作的结构，不计算最终屏幕矩形，也不画 panel chrome。
 type ShellStore struct {
 	Workspace         WorkspaceState
+	Floatings         []FloatingPaneState
+	ActiveFloatingID  string
 	PanelPresentation PanelPresentation
 	ActivePaneID      string
 	ZoomedPaneID      string
@@ -77,6 +79,7 @@ type ShellStore struct {
 	Overlay           OverlayState
 	Toasts            []ToastState
 	nextToastSeq      uint64
+	nextFloatingSeq   uint64
 	initialized       bool
 }
 
@@ -101,6 +104,23 @@ type PaneState struct {
 	Kind       PaneKind
 	TerminalID string
 	Active     bool
+}
+
+type FloatingPaneState struct {
+	ID        string
+	Title     string
+	Pane      PaneState
+	Rect      FloatingRect
+	Z         int
+	Active    bool
+	Collapsed bool
+}
+
+type FloatingRect struct {
+	X int
+	Y int
+	W int
+	H int
 }
 
 type SplitNode struct {
@@ -162,6 +182,47 @@ type WorkbenchTreeItem struct {
 	Summary       string
 }
 
+type FloatingCommandAction string
+
+const (
+	FloatingCommandCreate         FloatingCommandAction = "floating.create"
+	FloatingCommandFocusRaise     FloatingCommandAction = "floating.focus-raise"
+	FloatingCommandClose          FloatingCommandAction = "floating.close"
+	FloatingCommandCenter         FloatingCommandAction = "floating.center"
+	FloatingCommandToggleCollapse FloatingCommandAction = "floating.toggle-collapse"
+	FloatingCommandMove           FloatingCommandAction = "floating.move"
+	FloatingCommandResize         FloatingCommandAction = "floating.resize"
+)
+
+type FloatingCommand struct {
+	Action   FloatingCommandAction
+	TargetID string
+	Pane     PaneState
+	Title    string
+	Rect     FloatingRect
+	DeltaX   int
+	DeltaY   int
+	DeltaW   int
+	DeltaH   int
+	BoundsW  int
+	BoundsH  int
+	Source   PaneCommandSource
+}
+
+type FloatingCommandStatus string
+
+const (
+	FloatingCommandOK      FloatingCommandStatus = "ok"
+	FloatingCommandInvalid FloatingCommandStatus = "invalid"
+)
+
+type FloatingCommandResult struct {
+	Status FloatingCommandStatus
+	Action FloatingCommandAction
+	Reason string
+	ID     string
+}
+
 const (
 	WorkbenchTreeKindWorkspace = "workspace"
 	WorkbenchTreeKindTab       = "tab"
@@ -194,6 +255,7 @@ func DefaultShell() ShellStore {
 
 func (store ShellStore) EnsureDefaults() ShellStore {
 	store.Workspace = cloneWorkspace(store.Workspace)
+	store.Floatings = cloneFloatings(store.Floatings)
 	store.Toasts = cloneToasts(store.Toasts)
 	if !store.initialized {
 		store.HeaderVisible = true
@@ -232,7 +294,53 @@ func (store ShellStore) EnsureDefaults() ShellStore {
 	if store.ZoomedPaneID != "" && !store.hasPaneInActiveTab(store.ZoomedPaneID) {
 		store.ZoomedPaneID = ""
 	}
+	store = store.ensureFloatingDefaults()
 	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+	return store
+}
+
+func (store ShellStore) ensureFloatingDefaults() ShellStore {
+	if len(store.Floatings) == 0 {
+		store.ActiveFloatingID = ""
+		return store
+	}
+	activeFound := false
+	for index := range store.Floatings {
+		floating := &store.Floatings[index]
+		if floating.ID == "" {
+			continue
+		}
+		if floating.Title == "" {
+			floating.Title = floating.ID
+		}
+		if floating.Pane.ID == "" {
+			floating.Pane = PaneState{ID: floating.ID + "-pane", Title: floating.Title, Kind: PaneEmpty}
+		}
+		if floating.Pane.Title == "" {
+			floating.Pane.Title = floating.Title
+		}
+		if floating.Pane.Kind == "" {
+			floating.Pane.Kind = PaneEmpty
+		}
+		if floating.Rect.W <= 0 {
+			floating.Rect.W = 40
+		}
+		if floating.Rect.H <= 0 {
+			floating.Rect.H = 10
+		}
+		if floating.Z <= 0 {
+			floating.Z = index + 1
+		}
+		if floating.ID == store.ActiveFloatingID {
+			activeFound = true
+		}
+	}
+	if !activeFound {
+		store.ActiveFloatingID = topFloatingID(store.Floatings)
+	}
+	for index := range store.Floatings {
+		store.Floatings[index].Active = store.Floatings[index].ID == store.ActiveFloatingID
+	}
 	return store
 }
 
@@ -285,6 +393,152 @@ func (store ShellStore) SetInteractionMode(mode InteractionMode) ShellStore {
 		store.InteractionMode = mode
 	}
 	return store
+}
+
+func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStore, FloatingCommandResult) {
+	store = store.EnsureDefaults()
+	if command.Source == "" {
+		command.Source = PaneCommandSourceKeyboard
+	}
+	switch command.Action {
+	case FloatingCommandCreate:
+		return store.createFloating(command)
+	case FloatingCommandFocusRaise:
+		return store.focusRaiseFloating(command.TargetID, command.Action)
+	case FloatingCommandClose:
+		return store.closeFloating(command.TargetID)
+	case FloatingCommandCenter:
+		return store.centerFloating(command)
+	case FloatingCommandToggleCollapse:
+		return store.toggleCollapseFloating(command.TargetID)
+	case FloatingCommandMove:
+		return store.moveFloating(command)
+	case FloatingCommandResize:
+		return store.resizeFloating(command)
+	default:
+		return store, floatingCommandInvalid(command.Action, "unknown action")
+	}
+}
+
+func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
+	pane := command.Pane
+	if pane.ID == "" {
+		store.nextFloatingSeq++
+		pane.ID = formatFloatingID(store.nextFloatingSeq) + "-pane"
+	}
+	if pane.Title == "" {
+		pane.Title = "floating"
+	}
+	if pane.Kind == "" {
+		pane.Kind = PaneEmpty
+	}
+	id := command.TargetID
+	if id == "" {
+		id = strings.TrimSuffix(pane.ID, "-pane")
+		if id == "" || id == pane.ID {
+			store.nextFloatingSeq++
+			id = formatFloatingID(store.nextFloatingSeq)
+		}
+	}
+	if store.floatingIndex(id) >= 0 {
+		return store, floatingCommandInvalid(command.Action, "floating already exists")
+	}
+	rect := command.Rect
+	if rect.W <= 0 {
+		rect.W = 44
+	}
+	if rect.H <= 0 {
+		rect.H = 12
+	}
+	if rect.X == 0 && rect.Y == 0 && command.BoundsW > 0 && command.BoundsH > 0 {
+		rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
+	}
+	rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
+	floating := FloatingPaneState{
+		ID:     id,
+		Title:  floatingTitle(command.Title, pane),
+		Pane:   pane,
+		Rect:   rect,
+		Z:      store.nextFloatingZ() + 1,
+		Active: true,
+	}
+	store.Floatings = append(cloneFloatings(store.Floatings), floating)
+	store.ActiveFloatingID = id
+	store = store.ensureFloatingDefaults()
+	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: command.Action, ID: id}
+}
+
+func (store ShellStore) focusRaiseFloating(id string, action FloatingCommandAction) (ShellStore, FloatingCommandResult) {
+	index := store.floatingIndexOrActive(id)
+	if index < 0 {
+		return store, floatingCommandInvalid(action, "floating not found")
+	}
+	id = store.Floatings[index].ID
+	store.Floatings[index].Z = store.nextFloatingZ() + 1
+	store.ActiveFloatingID = id
+	store = store.ensureFloatingDefaults()
+	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action, ID: id}
+}
+
+func (store ShellStore) closeFloating(id string) (ShellStore, FloatingCommandResult) {
+	index := store.floatingIndexOrActive(id)
+	if index < 0 {
+		return store, floatingCommandInvalid(FloatingCommandClose, "floating not found")
+	}
+	id = store.Floatings[index].ID
+	next := make([]FloatingPaneState, 0, len(store.Floatings)-1)
+	for i, floating := range store.Floatings {
+		if i != index {
+			next = append(next, floating)
+		}
+	}
+	store.Floatings = next
+	store.ActiveFloatingID = topFloatingID(store.Floatings)
+	store = store.ensureFloatingDefaults()
+	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: FloatingCommandClose, ID: id}
+}
+
+func (store ShellStore) centerFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
+	index := store.floatingIndexOrActive(command.TargetID)
+	if index < 0 {
+		return store, floatingCommandInvalid(command.Action, "floating not found")
+	}
+	rect := store.Floatings[index].Rect
+	store.Floatings[index].Rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
+	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
+}
+
+func (store ShellStore) toggleCollapseFloating(id string) (ShellStore, FloatingCommandResult) {
+	index := store.floatingIndexOrActive(id)
+	if index < 0 {
+		return store, floatingCommandInvalid(FloatingCommandToggleCollapse, "floating not found")
+	}
+	store.Floatings[index].Collapsed = !store.Floatings[index].Collapsed
+	return store.focusRaiseFloating(store.Floatings[index].ID, FloatingCommandToggleCollapse)
+}
+
+func (store ShellStore) moveFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
+	index := store.floatingIndexOrActive(command.TargetID)
+	if index < 0 {
+		return store, floatingCommandInvalid(command.Action, "floating not found")
+	}
+	rect := store.Floatings[index].Rect
+	rect.X += command.DeltaX
+	rect.Y += command.DeltaY
+	store.Floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
+	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
+}
+
+func (store ShellStore) resizeFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
+	index := store.floatingIndexOrActive(command.TargetID)
+	if index < 0 {
+		return store, floatingCommandInvalid(command.Action, "floating not found")
+	}
+	rect := store.Floatings[index].Rect
+	rect.W += command.DeltaW
+	rect.H += command.DeltaH
+	store.Floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
+	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
 }
 
 func (store ShellStore) ExitInteractionMode() ShellStore {
@@ -952,8 +1206,8 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 		WorkspaceID:   workspace.ID,
 		WorkspaceName: workspace.Name,
 		Depth:         1,
-		Active:        false,
-		Summary:       "float:0",
+		Active:        len(shell.Floatings) > 0,
+		Summary:       fmt.Sprintf("float:%d", len(shell.Floatings)),
 	})
 	if len(items) > 0 {
 		selected := shell.Overlay.SelectedIndex
@@ -1030,7 +1284,7 @@ func matchesWorkbenchTreeQuery(item WorkbenchTreeItem, query string) bool {
 }
 
 func workbenchWorkspaceSummary(workspace WorkspaceState) string {
-	return fmt.Sprintf("tabs:%d panes:%d float:0", len(workspace.Tabs), workspacePaneCount(workspace))
+	return fmt.Sprintf("tabs:%d panes:%d", len(workspace.Tabs), workspacePaneCount(workspace))
 }
 
 func workbenchTabSummary(tab TabState) string {
@@ -1051,6 +1305,119 @@ func workspacePaneCount(workspace WorkspaceState) int {
 		count += len(tab.Panes)
 	}
 	return count
+}
+
+func (store ShellStore) floatingIndex(id string) int {
+	for index, floating := range store.Floatings {
+		if floating.ID == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func (store ShellStore) floatingIndexOrActive(id string) int {
+	if id != "" {
+		return store.floatingIndex(id)
+	}
+	if store.ActiveFloatingID != "" {
+		return store.floatingIndex(store.ActiveFloatingID)
+	}
+	if len(store.Floatings) == 0 {
+		return -1
+	}
+	topID := topFloatingID(store.Floatings)
+	return store.floatingIndex(topID)
+}
+
+func (store ShellStore) nextFloatingZ() int {
+	maxZ := 0
+	for _, floating := range store.Floatings {
+		if floating.Z > maxZ {
+			maxZ = floating.Z
+		}
+	}
+	return maxZ
+}
+
+func topFloatingID(floatings []FloatingPaneState) string {
+	if len(floatings) == 0 {
+		return ""
+	}
+	top := floatings[0]
+	for _, floating := range floatings {
+		if floating.Z >= top.Z {
+			top = floating
+		}
+	}
+	return top.ID
+}
+
+func floatingTitle(title string, pane PaneState) string {
+	if title != "" {
+		return title
+	}
+	if pane.Title != "" {
+		return pane.Title
+	}
+	if pane.ID != "" {
+		return pane.ID
+	}
+	return "floating"
+}
+
+func centerFloatingRect(rect FloatingRect, boundsW int, boundsH int) FloatingRect {
+	if boundsW > 0 {
+		rect.X = maxIntState(0, (boundsW-rect.W)/2)
+	}
+	if boundsH > 0 {
+		rect.Y = maxIntState(0, (boundsH-rect.H)/2)
+	}
+	return clampFloatingRect(rect, boundsW, boundsH)
+}
+
+func clampFloatingRect(rect FloatingRect, boundsW int, boundsH int) FloatingRect {
+	const minW = 16
+	const minH = 4
+	rect.W = maxIntState(minW, rect.W)
+	rect.H = maxIntState(minH, rect.H)
+	if boundsW > 0 {
+		rect.W = minIntState(rect.W, maxIntState(minW, boundsW))
+		rect.X = clampIntState(rect.X, 0, maxIntState(0, boundsW-rect.W))
+	} else if rect.X < 0 {
+		rect.X = 0
+	}
+	if boundsH > 0 {
+		rect.H = minIntState(rect.H, maxIntState(minH, boundsH))
+		rect.Y = clampIntState(rect.Y, 0, maxIntState(0, boundsH-rect.H))
+	} else if rect.Y < 0 {
+		rect.Y = 0
+	}
+	return rect
+}
+
+func clampIntState(value int, min int, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+func minIntState(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maxIntState(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func paneTitle(pane PaneState) string {
@@ -1089,6 +1456,17 @@ func formatToastID(seq uint64) string {
 		digits[left], digits[right] = digits[right], digits[left]
 	}
 	return "toast-" + string(digits)
+}
+
+func formatFloatingID(seq uint64) string {
+	if seq == 0 {
+		return "floating-0"
+	}
+	return "floating-" + formatToastID(seq)[len("toast-"):]
+}
+
+func floatingCommandInvalid(action FloatingCommandAction, reason string) FloatingCommandResult {
+	return FloatingCommandResult{Status: FloatingCommandInvalid, Action: action, Reason: reason}
 }
 
 func insertSplitNode(node SplitNode, targetPaneID string, newPaneID string, direction SplitDirection) SplitNode {
@@ -1300,6 +1678,15 @@ func cloneToasts(toasts []ToastState) []ToastState {
 func cloneWorkspace(workspace WorkspaceState) WorkspaceState {
 	workspace.Tabs = cloneTabs(workspace.Tabs)
 	return workspace
+}
+
+func cloneFloatings(floatings []FloatingPaneState) []FloatingPaneState {
+	if len(floatings) == 0 {
+		return nil
+	}
+	cloned := make([]FloatingPaneState, len(floatings))
+	copy(cloned, floatings)
+	return cloned
 }
 
 func cloneTabs(tabs []TabState) []TabState {
