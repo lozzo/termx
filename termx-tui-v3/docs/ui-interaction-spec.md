@@ -1207,21 +1207,25 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前 styled chrome 视觉目标：
 
-- 默认界面应向 `tuiv2` 截图级视觉对齐，而不是停留在纯文本线框。
-- tiled pane 默认使用 square Unicode 细线边框，active pane 使用 accent / strong border，inactive pane 使用 muted border。
-- pane 顶部 chrome 必须有稳定槽位：title、state、owner/follower、action、copy/resize 等短 token 可逐步接入。
-- top bar 和 bottom bar 必须是 styled bar，背景填满整行，token 有明确颜色层级。
-- toast、overlay、floating/modal 可以使用 rounded card，但必须带独立 border/background/severity style。
-- 真实 TTY 输出必须保留 ANSI 样式；非交互 smoke 也必须能验证 styled frame 没有退化成纯文本。
+- 默认界面已从纯文本线框推进到 styled chrome renderer 基线；后续不得把无样式 Unicode 线框当作完成标准。
+- `RenderResult`、`Frame` 和真实 `FrameSink` 已保留 ANSI styled frame；非交互 smoke 已能验证 styled frame 没有退化成纯文本。
+- tiled pane 默认已使用 square Unicode 细线边框，active pane 使用 accent / strong border，inactive pane 使用 muted border。
+- pane 顶部 chrome 已有稳定槽位基础：title、state、action；owner/follower、copy/resize 等更细 token 后续逐步接入。
+- top bar 和 bottom bar 已是 styled bar，背景填满整行，workspace/tab/mode/hint/status 通过 token 输出。
+- toast 和 Terminal Picker overlay 已使用 styled rounded card；floating/modal 后续仍必须保持独立 styled chrome。
+- pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
+- `termx v3 smoke` 和 `termx v3 e2e-smoke` 已覆盖 styled frame、pane command feedback、行宽恒等、content rect terminal resize 和 copy rebind。
 
 当前未完成但产品要求仍保留：
 
-- styled chrome renderer：styled `RenderResult`、ANSI `FrameSink`、theme token、active/inactive pane border、styled top/bottom bar、styled toast/overlay。
+- terminal-live 内容 renderer 完整化：styled terminal cells、cursor、selection/search、content-local hit region、status metadata 和宽度安全深化。
+- copy-history 内容 renderer 完整化：selection、logical-line marker、clipped before/after、scrollbar、position token、copy/yank feedback 和滚动交互。
+- Terminal Picker 完整内容：搜索、terminal list、selected row、new terminal row、preview 和 attach/create action。
 - floating pane 完整交互、z-order、drag/resize 和带边框渲染。
 - Terminal Pool 完整页面。
 - Workbench Tree 完整 overlay。
 - Prompt、Help、Floating Overview overlay。
-- 多层 split、pane resize 和复杂 pane 管理。
+- 多层 split、复杂 pane 管理和 resize affordance 的产品化。
 - header/footer hide、card/split、toast close/clear 的最终产品快捷键；当前只允许通过 semantic action 或测试消息接入，不能临时发明快捷键。
 
 ## 21. 后续讨论入口
