@@ -53,6 +53,7 @@ type ShellStore struct {
 	Workspace         WorkspaceState
 	PanelPresentation PanelPresentation
 	ActivePaneID      string
+	ZoomedPaneID      string
 	HeaderVisible     bool
 	FooterVisible     bool
 	Overlay           OverlayState
@@ -156,6 +157,9 @@ func (store ShellStore) EnsureDefaults() ShellStore {
 	}
 	if store.PanelPresentation == "" {
 		store.PanelPresentation = PanelPresentationCard
+	}
+	if store.ZoomedPaneID != "" && !store.hasPaneInActiveTab(store.ZoomedPaneID) {
+		store.ZoomedPaneID = ""
 	}
 	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
 	return store
@@ -297,17 +301,94 @@ func (store ShellStore) SplitActivePane(newPane PaneState, direction SplitDirect
 		previousActive = store.ActivePaneID
 	}
 	tab.Panes = append(clonePanes(tab.Panes), newPane)
-	tab.RootSplit = SplitNode{
-		Direction: direction,
-		Children: []SplitNode{
-			{PaneID: previousActive},
-			{PaneID: newPane.ID},
-		},
-	}
+	tab.RootSplit = insertSplitNode(tab.RootSplit, previousActive, newPane.ID, direction)
 	tab.ActivePaneID = newPane.ID
 	store.ActivePaneID = newPane.ID
+	store.ZoomedPaneID = ""
 	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
 	return store
+}
+
+func (store ShellStore) FocusPane(target PaneCommandTarget) ShellStore {
+	store = store.EnsureDefaults()
+	if !store.HasPane(target) {
+		return store
+	}
+	tabIndex := store.tabIndexForTarget(target)
+	if tabIndex < 0 {
+		return store
+	}
+	paneID := target.PaneID
+	store.Workspace.ActiveTabID = store.Workspace.Tabs[tabIndex].ID
+	store.Workspace.Tabs[tabIndex].ActivePaneID = paneID
+	store.ActivePaneID = paneID
+	if store.ZoomedPaneID != "" {
+		store.ZoomedPaneID = paneID
+	}
+	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+	return store
+}
+
+func (store ShellStore) ClosePane(target PaneCommandTarget) ShellStore {
+	store = store.EnsureDefaults()
+	tabIndex := store.tabIndexForTarget(target)
+	if tabIndex < 0 {
+		return store
+	}
+	tab := &store.Workspace.Tabs[tabIndex]
+	if len(tab.Panes) <= 1 {
+		return store
+	}
+	paneID := target.PaneID
+	nextPanes := make([]PaneState, 0, len(tab.Panes)-1)
+	for _, pane := range tab.Panes {
+		if pane.ID != paneID {
+			nextPanes = append(nextPanes, pane)
+		}
+	}
+	if len(nextPanes) == len(tab.Panes) || len(nextPanes) == 0 {
+		return store
+	}
+	tab.Panes = nextPanes
+	if nextRoot, ok := removePaneFromSplit(tab.RootSplit, paneID); ok {
+		tab.RootSplit = nextRoot
+	} else {
+		tab.RootSplit = SplitNode{PaneID: nextPanes[0].ID}
+	}
+	if tab.ActivePaneID == paneID || store.ActivePaneID == paneID {
+		tab.ActivePaneID = firstPaneIDInSplit(tab.RootSplit)
+		if tab.ActivePaneID == "" {
+			tab.ActivePaneID = nextPanes[0].ID
+		}
+		store.ActivePaneID = tab.ActivePaneID
+	}
+	if store.ZoomedPaneID == paneID {
+		store.ZoomedPaneID = ""
+	}
+	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+	return store
+}
+
+func (store ShellStore) ZoomPane(target PaneCommandTarget) ShellStore {
+	store = store.FocusPane(target)
+	if store.HasPane(target) {
+		store.ZoomedPaneID = target.PaneID
+	}
+	return store
+}
+
+func (store ShellStore) UnzoomPane() ShellStore {
+	store = store.EnsureDefaults()
+	store.ZoomedPaneID = ""
+	return store
+}
+
+func (store ShellStore) ToggleZoomPane(target PaneCommandTarget) ShellStore {
+	store = store.EnsureDefaults()
+	if store.ZoomedPaneID == target.PaneID && store.ZoomedPaneID != "" {
+		return store.UnzoomPane()
+	}
+	return store.ZoomPane(target)
 }
 
 func (store ShellStore) activeTab() TabState {
@@ -332,6 +413,44 @@ func (store ShellStore) activeTabIndex() int {
 		return 0
 	}
 	return -1
+}
+
+func (store ShellStore) tabIndexForTarget(target PaneCommandTarget) int {
+	store = store.EnsureDefaults()
+	for index, tab := range store.Workspace.Tabs {
+		if target.TabID != "" && tab.ID != target.TabID {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane.ID == target.PaneID {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func (store ShellStore) paneCountForTarget(target PaneCommandTarget) int {
+	index := store.tabIndexForTarget(target)
+	if index < 0 {
+		return 0
+	}
+	return len(store.Workspace.Tabs[index].Panes)
+}
+
+func (store ShellStore) hasPaneInActiveTab(paneID string) bool {
+	activeTabID := store.Workspace.ActiveTabID
+	for _, tab := range store.Workspace.Tabs {
+		if activeTabID != "" && tab.ID != activeTabID {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane.ID == paneID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (workspace WorkspaceState) ensureActive(activePaneID string) WorkspaceState {
@@ -394,6 +513,56 @@ func formatToastID(seq uint64) string {
 		digits[left], digits[right] = digits[right], digits[left]
 	}
 	return "toast-" + string(digits)
+}
+
+func insertSplitNode(node SplitNode, targetPaneID string, newPaneID string, direction SplitDirection) SplitNode {
+	if node.PaneID == targetPaneID || (node.PaneID == "" && len(node.Children) == 0) {
+		return SplitNode{
+			Direction: direction,
+			Children: []SplitNode{
+				{PaneID: targetPaneID},
+				{PaneID: newPaneID},
+			},
+		}
+	}
+	children := cloneSplitNodes(node.Children)
+	for i, child := range children {
+		children[i] = insertSplitNode(child, targetPaneID, newPaneID, direction)
+	}
+	node.Children = children
+	return node
+}
+
+func removePaneFromSplit(node SplitNode, paneID string) (SplitNode, bool) {
+	if node.PaneID != "" || len(node.Children) == 0 {
+		return node, node.PaneID != paneID
+	}
+	children := make([]SplitNode, 0, len(node.Children))
+	for _, child := range node.Children {
+		if next, keep := removePaneFromSplit(child, paneID); keep {
+			children = append(children, next)
+		}
+	}
+	if len(children) == 0 {
+		return SplitNode{}, false
+	}
+	if len(children) == 1 {
+		return children[0], true
+	}
+	node.Children = children
+	return node, true
+}
+
+func firstPaneIDInSplit(node SplitNode) string {
+	if node.PaneID != "" {
+		return node.PaneID
+	}
+	for _, child := range node.Children {
+		if paneID := firstPaneIDInSplit(child); paneID != "" {
+			return paneID
+		}
+	}
+	return ""
 }
 
 func cloneToasts(toasts []ToastState) []ToastState {

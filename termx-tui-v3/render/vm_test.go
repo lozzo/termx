@@ -201,6 +201,37 @@ func TestRenderVMBuilderBuildsShellPanelToastAndOverlayVM(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsZoomedPaneOnly(t *testing.T) {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionHorizontal).
+		ZoomPane(state.PaneCommandTarget{PaneID: "pane-2"})
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell, Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Lines: []string{"prompt"}}})
+	if len(vm.Shell.Layout.Panels) != 1 {
+		t.Fatalf("expected one zoomed panel, got %#v", vm.Shell.Layout.Panels)
+	}
+	if panel := vm.Shell.Layout.Panels[0]; panel.ID != "pane-2" || !panel.Active || panel.Content.Kind != ContentTerminalLive {
+		t.Fatalf("unexpected zoomed panel projection %#v", panel)
+	}
+	if vm.Shell.Layout.Split.PaneID != "pane-2" || len(vm.Shell.Layout.Split.Children) != 0 {
+		t.Fatalf("expected zoom split root to target pane, got %#v", vm.Shell.Layout.Split)
+	}
+}
+
+func TestRenderVMBuilderDoesNotProjectClosedPane(t *testing.T) {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionHorizontal).
+		ClosePane(state.PaneCommandTarget{PaneID: "pane-2"})
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if len(vm.Shell.Layout.Panels) != 1 || vm.Shell.Layout.Panels[0].ID != state.DefaultPaneID {
+		t.Fatalf("expected closed pane removed from render VM, got %#v", vm.Shell.Layout.Panels)
+	}
+	if vm.Shell.Layout.Split.PaneID != state.DefaultPaneID {
+		t.Fatalf("expected split tree pruned to default pane, got %#v", vm.Shell.Layout.Split)
+	}
+}
+
 func TestRenderVMBuilderUsesRootViewportAsLayoutTruth(t *testing.T) {
 	root := state.Root{
 		Viewport: state.ViewportStore{Valid: true, Cols: 37, Rows: 13},

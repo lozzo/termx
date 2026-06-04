@@ -135,8 +135,11 @@ func TestShellReducerRejectsInvalidPaneCommandWithoutStateMutation(t *testing.T)
 		Source: state.PaneCommandSourceMouse,
 	}})
 
-	if next.Generation != root.Generation || next.Shell.ActivePaneID != root.Shell.ActivePaneID {
-		t.Fatalf("invalid command must not mutate root, got %#v", next)
+	if next.Generation != root.Generation+1 || next.Shell.ActivePaneID != root.Shell.ActivePaneID || len(next.Shell.Workspace.Tabs[0].Panes) != len(root.Shell.Workspace.Tabs[0].Panes) {
+		t.Fatalf("invalid command must not mutate pane tree, got %#v", next)
+	}
+	if len(next.Shell.Toasts) != 1 || next.Shell.Toasts[0].Body != "target pane not found" {
+		t.Fatalf("invalid command should show toast feedback, got %#v", next.Shell.Toasts)
 	}
 	if len(effects) != 1 {
 		t.Fatalf("expected one feedback effect, got %#v", effects)
@@ -149,12 +152,14 @@ func TestShellReducerRejectsInvalidPaneCommandWithoutStateMutation(t *testing.T)
 
 func TestShellReducerKeepsCloseAndKillBehindConfirmPolicy(t *testing.T) {
 	reducer := NewShellReducer()
-	root := state.Root{Shell: state.DefaultShell()}
-	root.Shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", TerminalID: "term-2"}, state.SplitDirectionVertical)}
 
-	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandCloseAndKill}})
-	if next.Generation != root.Generation {
-		t.Fatalf("unconfirmed kill must not mutate root, got %#v", next)
+	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandCloseAndKill, Target: state.PaneCommandTarget{PaneID: "pane-2"}}})
+	if next.Generation != root.Generation+1 || len(next.Shell.Workspace.Tabs[0].Panes) != len(root.Shell.Workspace.Tabs[0].Panes) {
+		t.Fatalf("unconfirmed kill must not mutate pane tree, got %#v", next)
+	}
+	if len(next.Shell.Toasts) != 1 || !next.Shell.Toasts[0].Pending {
+		t.Fatalf("unconfirmed kill should show pending confirmation toast, got %#v", next.Shell.Toasts)
 	}
 	if len(effects) != 1 {
 		t.Fatalf("expected confirmation feedback only, got %#v", effects)
@@ -164,16 +169,39 @@ func TestShellReducerKeepsCloseAndKillBehindConfirmPolicy(t *testing.T) {
 		t.Fatalf("expected confirmation feedback, got %#v", effects[0])
 	}
 
-	next, effects = reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandCloseAndKill, Confirm: state.PaneConfirmAccepted}})
+	next, effects = reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandCloseAndKill, Target: state.PaneCommandTarget{PaneID: "pane-2"}, Confirm: state.PaneConfirmAccepted}})
 	if next.Generation != root.Generation+1 {
 		t.Fatalf("accepted command should advance state boundary, got %#v", next)
+	}
+	if len(next.Shell.Workspace.Tabs[0].Panes) != 1 || next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("accepted close-and-kill should remove pane from shell state, got %#v", next.Shell)
 	}
 	if len(effects) != 2 {
 		t.Fatalf("expected feedback and terminal kill effect boundary, got %#v", effects)
 	}
 	kill, ok := effects[1].(PaneTerminalKillEffect)
-	if !ok || kill.TerminalID != "term-main" || kill.PaneID != state.DefaultPaneID {
+	if !ok || kill.TerminalID != "term-2" || kill.PaneID != "pane-2" {
 		t.Fatalf("expected terminal kill effect boundary, got %#v", effects[1])
+	}
+}
+
+func TestShellReducerHandlesCloseFocusAndZoomPaneCommands(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs"}, state.SplitDirectionHorizontal)}
+
+	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandFocus, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}}})
+	if next.Shell.ActivePaneID != state.DefaultPaneID || len(effects) != 1 {
+		t.Fatalf("expected focus command, root=%#v effects=%#v", next, effects)
+	}
+
+	next, effects = reducer(next, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandZoom, Target: state.PaneCommandTarget{PaneID: "pane-2"}}})
+	if next.Shell.ZoomedPaneID != "pane-2" || next.Shell.ActivePaneID != "pane-2" || len(effects) != 1 {
+		t.Fatalf("expected zoom command, root=%#v effects=%#v", next, effects)
+	}
+
+	next, effects = reducer(next, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandClose, Target: state.PaneCommandTarget{PaneID: "pane-2"}}})
+	if next.Shell.ZoomedPaneID != "" || next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(next.Shell.Workspace.Tabs[0].Panes) != 1 || len(effects) != 1 {
+		t.Fatalf("expected close to prune pane and zoom state, root=%#v effects=%#v", next, effects)
 	}
 }
 
@@ -185,7 +213,6 @@ func TestShellReducerAcceptsPaneResizeAndSetSizeContractWithoutGeometryMutation(
 		{Action: state.PaneCommandResize, ResizeDirection: state.PaneResizeDown, Delta: 3, Source: state.PaneCommandSourceKeyboard},
 		{Action: state.PaneCommandSetSize, SizeMode: state.PaneSizeRatio, Ratio: 0.4, Source: state.PaneCommandSourceCLIMini},
 		{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse},
-		{Action: state.PaneCommandZoom, Source: state.PaneCommandSourcePalette},
 	} {
 		next, effects := reducer(root, ShellPaneCommandMsg{Command: command})
 		if next.Generation != root.Generation+1 {

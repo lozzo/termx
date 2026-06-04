@@ -34,7 +34,7 @@ func TestPaneCommandValidateRejectsUnknownTarget(t *testing.T) {
 }
 
 func TestPaneCommandValidateCloseAndKillRequiresAcceptedConfirmation(t *testing.T) {
-	shell := DefaultShell()
+	shell := DefaultShell().SplitActivePane(PaneState{ID: "pane-2"}, SplitDirectionVertical)
 	command := PaneCommand{Action: PaneCommandCloseAndKill}
 
 	if result := command.Validate(shell); result.Status != PaneCommandNeedsConfirmation {
@@ -86,7 +86,7 @@ func TestApplyPaneCommandReusesExistingPresentationAndSplitState(t *testing.T) {
 	}
 }
 
-func TestApplyPaneCommandDoesNotMutateForFutureGeometryCommandsYet(t *testing.T) {
+func TestApplyPaneCommandDoesNotMutateForFutureResizeGeometryCommandsYet(t *testing.T) {
 	shell := DefaultShell()
 	next, result := shell.ApplyPaneCommand(PaneCommand{Action: PaneCommandResize, ResizeDirection: PaneResizeRight, Delta: 2})
 

@@ -140,23 +140,38 @@ func NewShellReducer() Reducer {
 
 func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {
 	command = command.WithDefaults(root.Shell)
+	targetPane, hasTargetPane := root.Shell.Pane(command.Target)
 	nextShell, result := root.Shell.ApplyPaneCommand(command)
 	if result.Status == state.PaneCommandOK {
 		root.Shell = nextShell
-		effects := paneCommandEffects(root, command, result)
+		root.Shell = addPaneCommandToast(root.Shell, command, result)
+		effects := paneCommandEffects(command, result, targetPane, hasTargetPane)
 		return root.Advance(), effects
 	}
-	return root, []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
+	root.Shell = addPaneCommandToast(root.Shell, command, result)
+	return root.Advance(), []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
 }
 
-func paneCommandEffects(root state.Root, command state.PaneCommand, result state.PaneCommandResult) []Effect {
+func paneCommandEffects(command state.PaneCommand, result state.PaneCommandResult, targetPane state.PaneState, hasTargetPane bool) []Effect {
 	effects := []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
 	if command.Action != state.PaneCommandCloseAndKill {
 		return effects
 	}
-	pane, ok := root.Shell.Pane(command.Target)
-	if ok && pane.TerminalID != "" {
-		effects = append(effects, PaneTerminalKillEffect{TerminalID: pane.TerminalID, PaneID: pane.ID, Command: command})
+	if hasTargetPane && targetPane.TerminalID != "" {
+		effects = append(effects, PaneTerminalKillEffect{TerminalID: targetPane.TerminalID, PaneID: targetPane.ID, Command: command})
 	}
 	return effects
+}
+
+func addPaneCommandToast(shell state.ShellStore, command state.PaneCommand, result state.PaneCommandResult) state.ShellStore {
+	switch result.Status {
+	case state.PaneCommandOK:
+		return shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(command.Action)})
+	case state.PaneCommandNeedsConfirmation:
+		return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(command.Action), Body: result.Reason, Pending: true})
+	case state.PaneCommandInvalid:
+		return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(command.Action), Body: result.Reason})
+	default:
+		return shell
+	}
 }

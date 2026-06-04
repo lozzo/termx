@@ -95,6 +95,13 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 }
 
 func buildLayoutVM(shell state.ShellStore, activeContent ContentVM, viewport state.ViewportStore) LayoutVM {
+	if shell.ZoomedPaneID != "" {
+		return LayoutVM{
+			Viewport: viewportRect(viewport),
+			Panels:   buildZoomedPanelVMs(shell, activeContent),
+			Split:    SplitVM{PaneID: shell.ZoomedPaneID},
+		}
+	}
 	return LayoutVM{
 		Viewport: viewportRect(viewport),
 		Panels:   buildPanelVMs(shell, activeContent),
@@ -137,6 +144,22 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
 		}
 	}
 	return panels
+}
+
+func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
+	shell = shell.EnsureDefaults()
+	for _, pane := range activeTab(shell).Panes {
+		if pane.ID == shell.ZoomedPaneID {
+			return []PanelVM{{
+				ID:           pane.ID,
+				Title:        activePaneTitle(pane),
+				Presentation: renderPanelPresentation(shell.PanelPresentation),
+				Active:       true,
+				Content:      activeContent,
+			}}
+		}
+	}
+	return buildPanelVMs(shell, activeContent)
 }
 
 func buildActiveContentVM(root state.Root) ContentVM {

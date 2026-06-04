@@ -125,7 +125,14 @@ func (command PaneCommand) Validate(shell ShellStore) PaneCommandResult {
 		if shell.HasPane(PaneCommandTarget{WorkspaceID: command.Target.WorkspaceID, TabID: command.Target.TabID, PaneID: command.NewPane.ID}) {
 			return paneCommandInvalid(command.Action, "new pane already exists")
 		}
+	case PaneCommandClose:
+		if shell.paneCountForTarget(command.Target) <= 1 {
+			return paneCommandInvalid(command.Action, "cannot close last pane")
+		}
 	case PaneCommandCloseAndKill:
+		if shell.paneCountForTarget(command.Target) <= 1 {
+			return paneCommandInvalid(command.Action, "cannot close last pane")
+		}
 		if command.Confirm != PaneConfirmAccepted {
 			return PaneCommandResult{Status: PaneCommandNeedsConfirmation, Action: command.Action, Reason: "confirmation required"}
 		}
@@ -153,15 +160,13 @@ func (command PaneCommand) Validate(shell ShellStore) PaneCommandResult {
 		if command.Presentation != PanelPresentationCard && command.Presentation != PanelPresentationSplitLine {
 			return paneCommandInvalid(command.Action, "invalid panel presentation")
 		}
-	case PaneCommandClose, PaneCommandFocus, PaneCommandZoom, PaneCommandUnzoom, PaneCommandToggleZoom, PaneCommandBalance, PaneCommandTogglePresentation:
+	case PaneCommandFocus, PaneCommandZoom, PaneCommandUnzoom, PaneCommandToggleZoom, PaneCommandBalance, PaneCommandTogglePresentation:
 	default:
 		return paneCommandInvalid(command.Action, "unknown action")
 	}
 	return PaneCommandResult{Status: PaneCommandOK, Action: command.Action}
 }
 
-// ApplyPaneCommand 只应用当前已存在的安全状态动作。
-// close、kill、zoom、resize、set-size、balance 的真实状态语义在后续切片实现。
 func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneCommandResult) {
 	command = command.WithDefaults(store)
 	result := command.Validate(store)
@@ -171,6 +176,16 @@ func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneC
 	switch command.Action {
 	case PaneCommandSplit:
 		return store.SplitActivePane(command.NewPane, command.SplitDirection), result
+	case PaneCommandClose, PaneCommandCloseAndKill:
+		return store.ClosePane(command.Target), result
+	case PaneCommandFocus:
+		return store.FocusPane(command.Target), result
+	case PaneCommandZoom:
+		return store.ZoomPane(command.Target), result
+	case PaneCommandUnzoom:
+		return store.UnzoomPane(), result
+	case PaneCommandToggleZoom:
+		return store.ToggleZoomPane(command.Target), result
 	case PaneCommandSetPresentation:
 		return store.SetPanelPresentation(command.Presentation), result
 	case PaneCommandTogglePresentation:

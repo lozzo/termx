@@ -137,6 +137,42 @@ func TestShellSplitActivePaneSupportsVerticalDirection(t *testing.T) {
 	}
 }
 
+func TestShellFocusCloseAndZoomPaneState(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-2", Title: "logs", Kind: PaneTerminalLive, TerminalID: "term-2"}, SplitDirectionVertical).
+		SplitActivePane(PaneState{ID: "pane-3", Title: "build", Kind: PaneTerminalLive, TerminalID: "term-3"}, SplitDirectionHorizontal)
+
+	shell = shell.FocusPane(PaneCommandTarget{PaneID: DefaultPaneID})
+	if shell.ActivePaneID != DefaultPaneID || !shell.Workspace.Tabs[0].Panes[0].Active {
+		t.Fatalf("expected focused default pane, got %#v", shell)
+	}
+
+	shell = shell.ZoomPane(PaneCommandTarget{PaneID: "pane-2"})
+	if shell.ZoomedPaneID != "pane-2" || shell.ActivePaneID != "pane-2" {
+		t.Fatalf("expected zoomed pane-2, got %#v", shell)
+	}
+	shell = shell.UnzoomPane()
+	if shell.ZoomedPaneID != "" {
+		t.Fatalf("expected unzoomed shell, got %#v", shell)
+	}
+
+	shell = shell.ClosePane(PaneCommandTarget{PaneID: "pane-2"})
+	tab := shell.Workspace.Tabs[0]
+	if len(tab.Panes) != 2 || shell.HasPane(PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("expected pane-2 closed, got %#v", shell)
+	}
+	if containsPaneID(tab.RootSplit, "pane-2") {
+		t.Fatalf("closed pane must be removed from split tree, got %#v", tab.RootSplit)
+	}
+}
+
+func TestShellCloseLastPaneIsIgnoredByStateMethod(t *testing.T) {
+	shell := DefaultShell().ClosePane(PaneCommandTarget{PaneID: DefaultPaneID})
+	if len(shell.Workspace.Tabs[0].Panes) != 1 || shell.ActivePaneID != DefaultPaneID {
+		t.Fatalf("last pane close must be ignored, got %#v", shell)
+	}
+}
+
 func TestShellUpdatesDoNotMutatePreviousSlices(t *testing.T) {
 	original := DefaultShell().AddToast(ToastSpec{ID: "old"})
 	next := original.AddToast(ToastSpec{ID: "new"})
@@ -148,4 +184,16 @@ func TestShellUpdatesDoNotMutatePreviousSlices(t *testing.T) {
 	if original.Workspace.Tabs[0].Panes[0].Title != "shell" {
 		t.Fatalf("original pane mutated: %#v", original.Workspace.Tabs[0].Panes[0])
 	}
+}
+
+func containsPaneID(node SplitNode, paneID string) bool {
+	if node.PaneID == paneID {
+		return true
+	}
+	for _, child := range node.Children {
+		if containsPaneID(child, paneID) {
+			return true
+		}
+	}
+	return false
 }
