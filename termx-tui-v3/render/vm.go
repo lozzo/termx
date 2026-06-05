@@ -460,7 +460,7 @@ func buildCopyHistoryContentVM(history state.HistoryStore, copyMode state.CopyMo
 }
 
 func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) ContentVM {
-	lines := terminalLiveLineVMsFromStrings(surface.Lines)
+	lines := terminalLiveLineVMs(surface)
 	content := ContentVM{
 		Kind:   ContentTerminalLive,
 		Lines:  lines,
@@ -761,15 +761,107 @@ func renderToastSeverity(severity state.ToastSeverity) ToastSeverity {
 	}
 }
 
-func terminalLiveLineVMsFromStrings(lines []string) []Line {
-	if len(lines) == 0 {
+func terminalLiveLineVMs(surface state.TerminalSurfaceStore) []Line {
+	if len(surface.Screen) > 0 {
+		return terminalLiveLineVMsFromCells(surface.Screen)
+	}
+	if len(surface.Lines) == 0 {
 		return nil
 	}
-	out := make([]Line, len(lines))
-	for i, line := range lines {
+	out := make([]Line, len(surface.Lines))
+	for i, line := range surface.Lines {
 		out[i] = terminalLiveLineFromANSI(line)
 	}
 	return out
+}
+
+func terminalLiveLineVMsFromCells(rows [][]state.LiveCell) []Line {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]Line, len(rows))
+	for rowIndex, row := range rows {
+		out[rowIndex] = terminalLiveLineFromCells(row)
+	}
+	return out
+}
+
+func terminalLiveLineFromCells(row []state.LiveCell) Line {
+	if len(row) == 0 {
+		return Line{}
+	}
+	cells := make([]Cell, 0, len(row))
+	for _, liveCell := range row {
+		text := SafeLine(liveCell.Text)
+		width := liveCell.Width
+		if width <= 0 {
+			width = DisplayWidth(text)
+		}
+		if width <= 0 {
+			continue
+		}
+		cells = append(cells, Cell{
+			Text:  text,
+			Width: width,
+			Style: terminalLiveStyle(liveCell),
+			Safe:  true,
+		})
+	}
+	return Line{Cells: cells}
+}
+
+func terminalLiveStyle(cell state.LiveCell) StyleToken {
+	if cell.Bold {
+		return StyleAccent
+	}
+	switch terminalLiveColorToken(cell.FG) {
+	case "red":
+		return StyleDanger
+	case "green":
+		return StyleSuccess
+	case "yellow":
+		return StyleWarning
+	case "blue", "cyan":
+		return StyleInfo
+	case "magenta":
+		return StyleAccent
+	case "muted":
+		return StyleMuted
+	}
+	switch terminalLiveColorToken(cell.BG) {
+	case "red":
+		return StyleDanger
+	case "green":
+		return StyleSuccess
+	case "yellow":
+		return StyleWarning
+	case "blue", "cyan":
+		return StyleInfo
+	case "magenta":
+		return StyleAccent
+	}
+	return ""
+}
+
+func terminalLiveColorToken(value string) string {
+	switch value {
+	case "ansi:1", "ansi:9":
+		return "red"
+	case "ansi:2", "ansi:10":
+		return "green"
+	case "ansi:3", "ansi:11":
+		return "yellow"
+	case "ansi:4", "ansi:12":
+		return "blue"
+	case "ansi:5", "ansi:13":
+		return "magenta"
+	case "ansi:6", "ansi:14":
+		return "cyan"
+	case "ansi:8", "ansi:7", "ansi:0":
+		return "muted"
+	default:
+		return ""
+	}
 }
 
 type Renderer struct {

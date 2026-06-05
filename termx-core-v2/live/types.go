@@ -1,6 +1,10 @@
 package live
 
-import "strings"
+import (
+	"strings"
+
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
+)
 
 // SurfaceSize describes the current host projection size.
 type SurfaceSize struct {
@@ -15,14 +19,22 @@ func (s SurfaceSize) Valid() bool {
 
 type SurfaceTrack struct {
 	size SurfaceSize
-	rows []string
+	vt   *vterm.VTerm
+}
+
+// SurfaceSnapshot 是真实 live terminal 的 size-bound cell matrix，不是 history truth。
+type SurfaceSnapshot struct {
+	Size   SurfaceSize
+	Screen vterm.ScreenData
+	Cursor vterm.CursorState
+	Modes  vterm.TerminalModes
 }
 
 func NewSurfaceTrack(size SurfaceSize) *SurfaceTrack {
 	if !size.Valid() {
 		size = SurfaceSize{Cols: 80, Rows: 24}
 	}
-	return &SurfaceTrack{size: size, rows: []string{""}}
+	return &SurfaceTrack{size: size, vt: vterm.New(size.Cols, size.Rows, 0, nil)}
 }
 
 func (surface *SurfaceTrack) Size() SurfaceSize {
@@ -34,41 +46,67 @@ func (surface *SurfaceTrack) Resize(size SurfaceSize) {
 		return
 	}
 	surface.size = size
-	surface.trimRows()
+	surface.ensureVTerm()
+	surface.vt.ResizeWithDamage(size.Cols, size.Rows)
 }
 
 func (surface *SurfaceTrack) Write(text string) {
-	for _, part := range strings.SplitAfter(text, "\n") {
-		if part == "" {
-			continue
-		}
-		if strings.HasSuffix(part, "\n") {
-			surface.appendText(strings.TrimSuffix(part, "\n"))
-			surface.rows = append(surface.rows, "")
-			continue
-		}
-		surface.appendText(part)
+	if text == "" {
+		return
 	}
-	surface.trimRows()
+	surface.ensureVTerm()
+	_, _, _ = surface.vt.WriteWithDamage([]byte(text))
 }
 
 func (surface *SurfaceTrack) Rows() []string {
-	out := make([]string, len(surface.rows))
-	copy(out, surface.rows)
-	return out
-}
-
-func (surface *SurfaceTrack) appendText(text string) {
-	if len(surface.rows) == 0 {
-		surface.rows = append(surface.rows, "")
+	snapshot := surface.Snapshot()
+	if len(snapshot.Screen.Cells) == 0 {
+		return nil
 	}
-	last := len(surface.rows) - 1
-	surface.rows[last] += text
+	out := make([]string, len(snapshot.Screen.Cells))
+	for rowIndex, row := range snapshot.Screen.Cells {
+		out[rowIndex] = strings.TrimRight(vtermRowText(row), " ")
+	}
+	return trimTrailingEmptyRows(out)
 }
 
-func (surface *SurfaceTrack) trimRows() {
-	if surface.size.Rows <= 0 || len(surface.rows) <= surface.size.Rows {
+func (surface *SurfaceTrack) Snapshot() SurfaceSnapshot {
+	surface.ensureVTerm()
+	return SurfaceSnapshot{
+		Size:   surface.size,
+		Screen: surface.vt.ScreenContent(),
+		Cursor: surface.vt.CursorState(),
+		Modes:  surface.vt.Modes(),
+	}
+}
+
+func (surface *SurfaceTrack) ensureVTerm() {
+	if surface.vt != nil {
 		return
 	}
-	surface.rows = append([]string(nil), surface.rows[len(surface.rows)-surface.size.Rows:]...)
+	if !surface.size.Valid() {
+		surface.size = SurfaceSize{Cols: 80, Rows: 24}
+	}
+	surface.vt = vterm.New(surface.size.Cols, surface.size.Rows, 0, nil)
+}
+
+func vtermRowText(row []vterm.Cell) string {
+	var out strings.Builder
+	for _, cell := range row {
+		out.WriteString(cell.Content)
+	}
+	return out.String()
+}
+
+func trimTrailingEmptyRows(rows []string) []string {
+	last := len(rows) - 1
+	for last >= 0 && rows[last] == "" {
+		last--
+	}
+	if last < 0 {
+		return []string{""}
+	}
+	out := make([]string, last+1)
+	copy(out, rows[:last+1])
+	return out
 }

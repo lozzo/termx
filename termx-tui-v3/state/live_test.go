@@ -4,15 +4,18 @@ import "testing"
 
 func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	lines := []string{"one", "two"}
+	screen := [][]LiveCell{{{Text: "one", Width: 3, FG: "ansi:2"}}}
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Cols:       80,
 		Rows:       24,
 		Lines:      lines,
+		Screen:     screen,
 		Title:      "shell",
 		Cursor:     LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
 	})
 	lines[0] = "mutated"
+	screen[0][0].Text = "mutated"
 
 	if store.TerminalID != "term-1" || store.Cols != 80 || store.Rows != 24 || store.Title != "shell" || !store.Ready {
 		t.Fatalf("unexpected surface store %#v", store)
@@ -22,6 +25,9 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	}
 	if store.Lines[0] != "one" {
 		t.Fatalf("expected detached lines, got %#v", store.Lines)
+	}
+	if store.Screen[0][0].Text != "one" || store.Screen[0][0].FG != "ansi:2" {
+		t.Fatalf("expected detached live screen cells, got %#v", store.Screen)
 	}
 }
 

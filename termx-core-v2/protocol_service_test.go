@@ -209,7 +209,7 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 12, Rows: 4}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-1", "alpha\nbeta\nwide 你好🚀"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-1", "alpha\n\x1b[31mERR\x1b[0m ok\r\x1b[32mOK\x1b[0m"); err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
 
@@ -220,12 +220,18 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	if snapshot.TerminalID != "term-1" || snapshot.Size != (protocol.Size{Cols: 12, Rows: 4}) {
 		t.Fatalf("unexpected snapshot metadata %#v", snapshot)
 	}
-	if len(snapshot.Screen.Cells) != 2 {
-		t.Fatalf("expected latest live rows only, got %#v", snapshot.Screen.Cells)
+	if len(snapshot.Screen.Cells) != 4 {
+		t.Fatalf("expected size-bound live screen rows, got %#v", snapshot.Screen.Cells)
 	}
 	got := []string{cellsText(snapshot.Screen.Cells[0]), cellsText(snapshot.Screen.Cells[1])}
-	if got[0] != "beta" || got[1] != "wide 你好🚀" || len(snapshot.Scrollback) != 0 {
-		t.Fatalf("snapshot must expose live screen rows without scrollback truth, got rows=%#v scrollback=%#v", got, snapshot.Scrollback)
+	if got[0] != "alpha       " || !strings.HasPrefix(got[1], "OK   ERR ok ") || len(snapshot.Scrollback) != 0 {
+		t.Fatalf("snapshot must expose live screen cell matrix without scrollback truth, got rows=%#v scrollback=%#v", got, snapshot.Scrollback)
+	}
+	if snapshot.Screen.Cells[1][0].Style.FG != "ansi:2" {
+		t.Fatalf("snapshot must preserve live cell style, got %#v", snapshot.Screen.Cells[1][0])
+	}
+	if !snapshot.Cursor.Visible || snapshot.Cursor.Row != 1 || snapshot.Cursor.Col == 0 {
+		t.Fatalf("snapshot must preserve live cursor, got %#v", snapshot.Cursor)
 	}
 }
 

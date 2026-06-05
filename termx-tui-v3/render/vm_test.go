@@ -470,8 +470,13 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 			Cols:       20,
 			Rows:       5,
 			Ready:      true,
-			Lines:      []string{"\x1b[31mERR\x1b[0m ok \x1b[32m好🚀\x1b[0m"},
-			Cursor:     state.LiveCursor{Visible: true, Row: 0, Col: 10, Shape: "bar"},
+			Screen: [][]state.LiveCell{{
+				{Text: "ERR", Width: 3, FG: "ansi:1"},
+				{Text: " ok ", Width: 4},
+				{Text: "好", Width: 2, FG: "ansi:2"},
+				{Text: "🚀", Width: 2, FG: "ansi:2"},
+			}},
+			Cursor: state.LiveCursor{Visible: true, Row: 0, Col: 10, Shape: "bar"},
 		},
 		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 20, Rows: 5},
 	}
@@ -484,11 +489,22 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 	if got := content.Lines[0].PlainString(); got != "ERR ok 好🚀" {
 		t.Fatalf("expected sanitized live text, got %q", got)
 	}
-	if !lineHasStyledCell(content.Lines[0], "ERR", StyleDanger) || !lineHasStyledCell(content.Lines[0], "好🚀", StyleSuccess) {
+	if !lineHasStyledCell(content.Lines[0], "ERR", StyleDanger) ||
+		!lineHasStyledCell(content.Lines[0], "好", StyleSuccess) ||
+		!lineHasStyledCell(content.Lines[0], "🚀", StyleSuccess) {
 		t.Fatalf("expected basic SGR mapped to styled cells, got %#v", content.Lines[0])
 	}
 	if !content.Cursor.Visible || content.Cursor.Row != 0 || content.Cursor.Col != 10 || content.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("expected live cursor projection, got %#v", content.Cursor)
+	}
+
+	legacy := NewRenderVMBuilder().Build(state.Root{Surface: state.TerminalSurfaceStore{
+		TerminalID: "term-live",
+		Ready:      true,
+		Lines:      []string{"\x1b[31mERR\x1b[0m"},
+	}})
+	if content := activeContent(legacy.Shell); !lineHasStyledCell(content.Lines[0], "ERR", StyleDanger) {
+		t.Fatalf("expected legacy ANSI line fallback to keep working, got %#v", content.Lines[0])
 	}
 
 	pending := NewRenderVMBuilder().Build(state.Root{})

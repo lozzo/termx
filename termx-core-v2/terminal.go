@@ -62,14 +62,15 @@ func (terminal *Terminal) Input(data []byte) error {
 }
 
 func (terminal *Terminal) IngestOutput(output string) error {
-	output = normalizeTerminalOutput(output)
+	rawOutput := output
+	historyOutput := normalizeTerminalOutput(output)
 	terminal.mu.Lock()
 	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
 		terminal.mu.Unlock()
 		return ErrTerminalExited
 	}
-	terminal.live.Write(output)
-	for _, part := range strings.SplitAfter(output, "\n") {
+	terminal.live.Write(rawOutput)
+	for _, part := range strings.SplitAfter(historyOutput, "\n") {
 		if part == "" {
 			continue
 		}
@@ -194,6 +195,12 @@ func (terminal *Terminal) LiveRows() []string {
 	terminal.mu.Lock()
 	defer terminal.mu.Unlock()
 	return terminal.live.Rows()
+}
+
+func (terminal *Terminal) LiveSnapshot() live.SurfaceSnapshot {
+	terminal.mu.Lock()
+	defer terminal.mu.Unlock()
+	return terminal.live.Snapshot()
 }
 
 func (terminal *Terminal) LatestWindow(cols, rows int) (history.HistoryWindow, error) {

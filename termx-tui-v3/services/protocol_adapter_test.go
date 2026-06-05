@@ -234,7 +234,7 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 12, Rows: 2},
 			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "$ "}, {Content: "你好"}, {Content: "🚀"}},
+				{{Content: "$ "}, {Content: "你好", Width: 2, Style: protocol.CellStyle{FG: "ansi:2"}}, {Content: "🚀", Width: 2}},
 				{{Content: "done"}},
 			}},
 			Cursor: protocol.CursorState{Visible: true, Row: 1, Col: 4, Shape: "bar"},
@@ -260,6 +260,9 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	if result.Snapshot.Lines[0] != "$ 你好🚀" || result.Snapshot.Lines[1] != "done" {
 		t.Fatalf("unexpected live surface lines %#v", result.Snapshot.Lines)
 	}
+	if len(result.Snapshot.Screen) != 2 || len(result.Snapshot.Screen[0]) != 3 || result.Snapshot.Screen[0][1].FG != "ansi:2" || result.Snapshot.Screen[0][1].Width != 2 {
+		t.Fatalf("expected live surface cells and style to be preserved, got %#v", result.Snapshot.Screen)
+	}
 	if !result.Snapshot.Cursor.Visible || result.Snapshot.Cursor.Row != 1 || result.Snapshot.Cursor.Col != 4 || result.Snapshot.Cursor.Shape != "bar" {
 		t.Fatalf("unexpected live cursor %#v", result.Snapshot.Cursor)
 	}
@@ -273,7 +276,7 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 80, Rows: 24},
 			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "backend"}},
+				{{Content: "backend", Width: 7, Style: protocol.CellStyle{FG: "ansi:3"}}},
 				{{Content: "update"}},
 			}},
 		},
@@ -288,6 +291,9 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 	got := <-events
 	if !got.Ready || got.Snapshot.TerminalID != "term-1" || len(got.Snapshot.Lines) != 2 || got.Snapshot.Lines[0] != "backend" || got.Snapshot.Lines[1] != "update" {
 		t.Fatalf("unexpected live event %#v", got)
+	}
+	if len(got.Snapshot.Screen) != 2 || got.Snapshot.Screen[0][0].FG != "ansi:3" {
+		t.Fatalf("expected live event to keep styled screen cells, got %#v", got.Snapshot.Screen)
 	}
 	if len(client.eventParams) != 1 || client.eventParams[0].TerminalID != "term-1" {
 		t.Fatalf("expected protocol events subscription, got %#v", client.eventParams)

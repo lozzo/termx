@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-core-v2/live"
 	"github.com/lozzow/termx/termx-shared/transport"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
@@ -253,6 +254,14 @@ func (server *Server) LiveRows(id string) ([]string, error) {
 		return nil, err
 	}
 	return terminal.LiveRows(), nil
+}
+
+func (server *Server) LiveSnapshot(id string) (live.SurfaceSnapshot, error) {
+	terminal, err := server.Terminal(id)
+	if err != nil {
+		return live.SurfaceSnapshot{}, err
+	}
+	return terminal.LiveSnapshot(), nil
 }
 
 func (server *Server) LatestWindow(id string, cols, rows int) (history.HistoryWindow, error) {

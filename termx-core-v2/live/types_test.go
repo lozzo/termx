@@ -11,16 +11,27 @@ func TestSurfaceSizeValid(t *testing.T) {
 	}
 }
 
-func TestSurfaceTrackWritesAndTrimsRows(t *testing.T) {
-	surface := NewSurfaceTrack(SurfaceSize{Cols: 80, Rows: 2})
-	surface.Write("one\ntwo\nthree")
-	rows := surface.Rows()
-	if len(rows) != 2 || rows[0] != "two" || rows[1] != "three" {
-		t.Fatalf("unexpected rows %#v", rows)
+func TestSurfaceTrackKeepsScreenSizeCursorAndStyle(t *testing.T) {
+	surface := NewSurfaceTrack(SurfaceSize{Cols: 10, Rows: 2})
+	surface.Write("one\rT\x1b[31mR\x1b[0m")
+	snapshot := surface.Snapshot()
+
+	if snapshot.Size != (SurfaceSize{Cols: 10, Rows: 2}) || len(snapshot.Screen.Cells) != 2 {
+		t.Fatalf("expected size-bound screen snapshot, got %#v", snapshot)
 	}
-	surface.Resize(SurfaceSize{Cols: 80, Rows: 1})
-	rows = surface.Rows()
-	if len(rows) != 1 || rows[0] != "three" {
-		t.Fatalf("unexpected resized rows %#v", rows)
+	if got := vtermRowText(snapshot.Screen.Cells[0]); got[:3] != "TRe" {
+		t.Fatalf("expected CR overwrite to stay in live grid, got %q", got)
+	}
+	if snapshot.Screen.Cells[0][1].Style.FG != "ansi:1" {
+		t.Fatalf("expected ANSI style in live cell matrix, got %#v", snapshot.Screen.Cells[0][1])
+	}
+	if !snapshot.Cursor.Visible || snapshot.Cursor.Row != 0 || snapshot.Cursor.Col != 2 {
+		t.Fatalf("expected live cursor from vterm, got %#v", snapshot.Cursor)
+	}
+
+	surface.Resize(SurfaceSize{Cols: 5, Rows: 1})
+	snapshot = surface.Snapshot()
+	if snapshot.Size != (SurfaceSize{Cols: 5, Rows: 1}) || len(snapshot.Screen.Cells) != 1 {
+		t.Fatalf("unexpected resized snapshot %#v", snapshot)
 	}
 }

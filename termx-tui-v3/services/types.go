@@ -371,7 +371,7 @@ func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalS
 	if result.Snapshot.Rows == 0 {
 		result.Snapshot.Rows = req.Rows
 	}
-	if result.Ready || len(result.Snapshot.Lines) > 0 || result.Snapshot.Cursor.Visible {
+	if result.Ready || len(result.Snapshot.Lines) > 0 || len(result.Snapshot.Screen) > 0 || result.Snapshot.Cursor.Visible {
 		result.Ready = true
 	}
 	return result, nil

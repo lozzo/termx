@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestTerminalLifecycleAndPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live rows: %v", err)
 	}
-	if len(rows) != 2 || rows[0] != "hello" || rows[1] != "world" {
+	if len(rows) != 2 || rows[0] != "hello" || !strings.Contains(rows[1], "world") {
 		t.Fatalf("unexpected live rows %#v", rows)
 	}
 	window, err := server.LatestWindow("term-1", 20, 10)

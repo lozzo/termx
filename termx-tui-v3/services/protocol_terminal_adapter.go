@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -185,6 +186,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 		return TerminalSurfaceResult{}, err
 	}
 	lines := liveSurfaceLinesFromSnapshot(snapshot)
+	screen := liveSurfaceScreenFromSnapshot(snapshot)
 	return TerminalSurfaceResult{
 		Ready: true,
 		Snapshot: state.LiveSurfaceSnapshot{
@@ -192,6 +194,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 			Cols:       int(snapshot.Size.Cols),
 			Rows:       int(snapshot.Size.Rows),
 			Lines:      lines,
+			Screen:     screen,
 			Cursor: state.LiveCursor{
 				Visible: snapshot.Cursor.Visible,
 				Row:     snapshot.Cursor.Row,
@@ -276,8 +279,61 @@ func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {
 		for _, cell := range row {
 			lines[rowIndex] += cell.Content
 		}
+		lines[rowIndex] = strings.TrimRight(lines[rowIndex], " ")
 	}
-	return lines
+	return trimTrailingEmptySurfaceLines(lines)
+}
+
+func trimTrailingEmptySurfaceLines(lines []string) []string {
+	last := len(lines) - 1
+	for last >= 0 && lines[last] == "" {
+		last--
+	}
+	if last < 0 {
+		return nil
+	}
+	out := make([]string, last+1)
+	copy(out, lines[:last+1])
+	return out
+}
+
+func liveSurfaceScreenFromSnapshot(snapshot *protocol.Snapshot) [][]state.LiveCell {
+	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
+		return nil
+	}
+	screen := make([][]state.LiveCell, len(snapshot.Screen.Cells))
+	for rowIndex, row := range snapshot.Screen.Cells {
+		screen[rowIndex] = liveSurfaceCellsFromProtocol(row)
+	}
+	return screen
+}
+
+func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]state.LiveCell, len(cells))
+	for i, cell := range cells {
+		width := cell.Width
+		if width <= 0 {
+			width = 1
+		}
+		out[i] = state.LiveCell{
+			Text:          cell.Content,
+			Width:         width,
+			FG:            cell.Style.FG,
+			BG:            cell.Style.BG,
+			Bold:          cell.Style.Bold,
+			Italic:        cell.Style.Italic,
+			Underline:     cell.Style.Underline,
+			Blink:         cell.Style.Blink,
+			Reverse:       cell.Style.Reverse,
+			Strikethrough: cell.Style.Strikethrough,
+			LinkURL:       cell.LinkURL,
+			LinkParams:    cell.LinkParams,
+		}
+	}
+	return out
 }
 
 func terminalPoolTitleFromProtocol(terminal protocol.TerminalInfo) string {

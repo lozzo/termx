@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 const (
@@ -282,33 +283,89 @@ func (session *protocolSession) liveSnapshot(params protocol.SnapshotParams) (*p
 	if err != nil {
 		return nil, err
 	}
-	rows, err := session.server.LiveRows(params.TerminalID)
+	snapshot, err := session.server.LiveSnapshot(params.TerminalID)
 	if err != nil {
 		return nil, err
-	}
-	if params.ScrollbackLimit > 0 && len(rows) > params.ScrollbackLimit {
-		rows = rows[len(rows)-params.ScrollbackLimit:]
 	}
 	return &protocol.Snapshot{
 		TerminalID: params.TerminalID,
 		Size:       protocolSizeFromCore(info.Size),
 		Screen: protocol.ScreenData{
-			Cells: liveRowsToProtocolCells(rows),
+			Cells:             vtermRowsToProtocolCells(snapshot.Screen.Cells),
+			IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
 		},
-		ScreenOwnership: repeatString(protocol.RowOwnershipScreen, len(rows)),
+		Cursor:          vtermCursorToProtocol(snapshot.Cursor),
+		Modes:           vtermModesToProtocol(snapshot.Modes),
+		ScreenOwnership: repeatString(protocol.RowOwnershipScreen, len(snapshot.Screen.Cells)),
 		Timestamp:       time.Now().UTC(),
 	}, nil
 }
 
-func liveRowsToProtocolCells(rows []string) [][]protocol.Cell {
+func vtermRowsToProtocolCells(rows [][]vterm.Cell) [][]protocol.Cell {
 	if len(rows) == 0 {
 		return nil
 	}
 	out := make([][]protocol.Cell, len(rows))
 	for rowIndex, row := range rows {
-		out[rowIndex] = []protocol.Cell{{Content: row}}
+		out[rowIndex] = vtermCellsToProtocol(row)
 	}
 	return out
+}
+
+func vtermCellsToProtocol(cells []vterm.Cell) []protocol.Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]protocol.Cell, len(cells))
+	for i, cell := range cells {
+		out[i] = protocol.Cell{
+			Content:    cell.Content,
+			Width:      cell.Width,
+			Style:      vtermStyleToProtocol(cell.Style),
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
+		}
+	}
+	return out
+}
+
+func vtermStyleToProtocol(style vterm.CellStyle) protocol.CellStyle {
+	return protocol.CellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
+}
+
+func vtermCursorToProtocol(cursor vterm.CursorState) protocol.CursorState {
+	return protocol.CursorState{
+		Row:     cursor.Row,
+		Col:     cursor.Col,
+		Visible: cursor.Visible,
+		Shape:   string(cursor.Shape),
+		Blink:   cursor.Blink,
+	}
+}
+
+func vtermModesToProtocol(modes vterm.TerminalModes) protocol.TerminalModes {
+	return protocol.TerminalModes{
+		AlternateScreen:   modes.AlternateScreen,
+		AlternateScroll:   modes.AlternateScroll,
+		MouseTracking:     modes.MouseTracking,
+		MouseX10:          modes.MouseX10,
+		MouseNormal:       modes.MouseNormal,
+		MouseButtonEvent:  modes.MouseButtonEvent,
+		MouseAnyEvent:     modes.MouseAnyEvent,
+		MouseSGR:          modes.MouseSGR,
+		BracketedPaste:    modes.BracketedPaste,
+		ApplicationCursor: modes.ApplicationCursor,
+		AutoWrap:          modes.AutoWrap,
+	}
 }
 
 func repeatString(value string, count int) []string {

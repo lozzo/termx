@@ -15,6 +15,7 @@ type TerminalSurfaceStore struct {
 	Cols       int
 	Rows       int
 	Lines      []string
+	Screen     [][]LiveCell
 	Title      string
 	Cursor     LiveCursor
 	Ready      bool
@@ -31,6 +32,22 @@ type LiveCursor struct {
 	Row     int
 	Col     int
 	Shape   string
+}
+
+// LiveCell 是 protocol snapshot cell 的 reducer-owned 副本，只服务实时 terminal 展示。
+type LiveCell struct {
+	Text          string
+	Width         int
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
+	LinkURL       string
+	LinkParams    string
 }
 
 // TerminalSessionStore 保存当前 attach/live path 的 reducer-owned 会话状态。
@@ -57,6 +74,7 @@ type LiveSurfaceSnapshot struct {
 	Cols       int
 	Rows       int
 	Lines      []string
+	Screen     [][]LiveCell
 	Title      string
 	Cursor     LiveCursor
 	State      TerminalLiveState
@@ -73,6 +91,7 @@ func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) Te
 		return store
 	}
 	snapshot.Lines = cloneStrings(snapshot.Lines)
+	snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
 	if snapshot.State == "" {
 		snapshot.State = TerminalLiveAttached
 	}
@@ -87,6 +106,7 @@ func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) Te
 func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) TerminalSurfaceStore {
 	if store.TerminalID != "" && store.TerminalID != terminalID {
 		store.Lines = nil
+		store.Screen = nil
 		store.Cursor = LiveCursor{}
 		store.Ready = false
 	}
@@ -187,6 +207,7 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 	store.Cols = snapshot.Cols
 	store.Rows = snapshot.Rows
 	store.Lines = cloneStrings(snapshot.Lines)
+	store.Screen = cloneLiveCellRows(snapshot.Screen)
 	store.Title = snapshot.Title
 	store.Cursor = snapshot.Cursor
 	store.Ready = ready
@@ -198,6 +219,21 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 	store.ExitReason = snapshot.ExitReason
 	store.Err = snapshot.Err
 	return store
+}
+
+func cloneLiveCellRows(rows [][]LiveCell) [][]LiveCell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]LiveCell, len(rows))
+	for i, row := range rows {
+		if len(row) == 0 {
+			continue
+		}
+		out[i] = make([]LiveCell, len(row))
+		copy(out[i], row)
+	}
+	return out
 }
 
 func (store TerminalSessionStore) Attach(terminalID string, channel uint16, cols int, rows int) TerminalSessionStore {
