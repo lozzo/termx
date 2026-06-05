@@ -77,8 +77,8 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	)
 	regions := terminalPickerHitRegions(rows, rowOffset)
 	regions = append(regions,
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: "picker.attach"},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: "picker.new"},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionPickerAttach.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPickerNew.String()},
 	)
 	return ContentVM{
 		Kind:       ContentTerminalPicker,
@@ -114,9 +114,9 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	)
 	regions := terminalPoolPageHitRegions(rows, rowOffset)
 	regions = append(regions,
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: "pool.attach"},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: "pool.edit"},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: "pool.kill"},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionPoolAttach.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionPoolEdit.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionPoolKill.String()},
 	)
 	return ContentVM{
 		Kind:       ContentTerminalPool,
@@ -147,7 +147,7 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	actionOffset := len(lines)
 	lines = append(lines, contentActionLine("open", "Open / Focus"))
 	regions := workbenchTreeHitRegions(rows, rowOffset)
-	regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: "workbench.open"})
+	regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchOpen.String()})
 	return ContentVM{
 		Kind:       ContentWorkbenchTree,
 		Lines:      lines,
@@ -197,8 +197,8 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 		Status: "prompt: submit/cancel",
 		Cursor: Cursor{Visible: true, Row: 2, Col: DisplayWidth("INPUT ") + DisplayWidth(value), Shape: CursorShapeBar},
 		HitRegions: []HitRegion{
-			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: "prompt.submit"},
-			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: "prompt.cancel"},
+			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: ActionPromptSubmit.String()},
+			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPromptCancel.String()},
 		},
 	}
 }
@@ -225,7 +225,7 @@ func buildHelpContent(shell state.ShellStore) ContentVM {
 		HitRegions: []HitRegion{{
 			Kind:     HitRegionContentAction,
 			Rect:     Rect{Y: len(lines) - 1, W: contentActionWidth, H: 1},
-			ActionID: "help.close",
+			ActionID: ActionHelpClose.String(),
 		}},
 	}
 }
@@ -391,7 +391,7 @@ func terminalPoolPageHitRegions(rows []state.TerminalPoolPageItem, rowOffset int
 			Kind:     HitRegionContentAction,
 			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
 			Row:      index,
-			ActionID: "pool.select",
+			ActionID: ActionPoolSelect.String(),
 		})
 	}
 	return regions
@@ -405,7 +405,7 @@ func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int) []Hi
 			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
 			Row:      index,
 			PaneID:   row.PaneID,
-			ActionID: "workbench.select",
+			ActionID: ActionWorkbenchSelect.String(),
 		})
 	}
 	return regions
@@ -419,7 +419,7 @@ func terminalPickerHitRegions(rows []state.TerminalPickerItem, rowOffset int) []
 			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
 			PaneID:   row.PaneID,
 			Row:      index,
-			ActionID: "picker.attach",
+			ActionID: ActionPickerAttach.String(),
 		})
 	}
 	return regions

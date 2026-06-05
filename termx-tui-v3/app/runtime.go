@@ -675,9 +675,9 @@ func floatingDragState(region render.HitRegion, event input.InputEvent) (mouseDr
 	}
 	var kind mouseDragKind
 	switch region.ActionID {
-	case "floating.move-drag":
+	case render.ActionFloatingMoveDrag.String():
 		kind = mouseDragFloatingMove
-	case "floating.resize-drag":
+	case render.ActionFloatingResizeDrag.String():
 		kind = mouseDragFloatingResize
 	default:
 		return mouseDragState{}, false

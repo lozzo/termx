@@ -1267,12 +1267,12 @@ func paneChromeActionItems(width int) []paneChromeActionItem {
 	}
 	items := []paneChromeActionItem{{
 		Text:     paneChromeCloseActionText(),
-		ActionID: "pane.close",
+		ActionID: ActionPaneClose.String(),
 	}}
 	full := []paneChromeActionItem{
-		{Text: paneChromeSplitHorizontalActionText(), ActionID: "pane.split-down"},
-		{Text: paneChromeSplitVerticalActionText(), ActionID: "pane.split-right"},
-		{Text: paneChromeCloseActionText(), ActionID: "pane.close"},
+		{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String()},
+		{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String()},
+		{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
 	}
 	fullWidth := paneChromeActionItemsWidth(full)
 	if fullWidth <= maxInt(0, width-4) {

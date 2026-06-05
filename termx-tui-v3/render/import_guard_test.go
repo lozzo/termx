@@ -9,6 +9,30 @@ import (
 )
 
 func TestRenderPackageDoesNotImportBubbleTea(t *testing.T) {
+	assertRenderImports(t, func(file string, path string) {
+		if path == "github.com/charmbracelet/bubbletea" || strings.Contains(path, "/bubbles") {
+			t.Fatalf("%s imports Bubble Tea contract package %s", file, path)
+		}
+	})
+}
+
+func TestRenderPackageDoesNotImportRuntimeOrServices(t *testing.T) {
+	forbidden := []string{
+		"github.com/lozzow/termx/termx-tui-v3/app",
+		"github.com/lozzow/termx/termx-tui-v3/services",
+		"github.com/lozzow/termx/termx-tui-v3/terminalhost",
+	}
+	assertRenderImports(t, func(file string, path string) {
+		for _, prefix := range forbidden {
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				t.Fatalf("%s imports runtime/service boundary package %s", file, path)
+			}
+		}
+	})
+}
+
+func assertRenderImports(t *testing.T, check func(file string, path string)) {
+	t.Helper()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("glob render files: %v", err)
@@ -23,9 +47,7 @@ func TestRenderPackageDoesNotImportBubbleTea(t *testing.T) {
 		}
 		for _, imported := range parsed.Imports {
 			path := strings.Trim(imported.Path.Value, `"`)
-			if path == "github.com/charmbracelet/bubbletea" || strings.Contains(path, "/bubbles") {
-				t.Fatalf("%s imports Bubble Tea contract package %s", file, path)
-			}
+			check(file, path)
 		}
 	}
 }

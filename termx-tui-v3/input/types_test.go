@@ -1,6 +1,13 @@
 package input
 
-import "testing"
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestInputEventKind(t *testing.T) {
 	event := InputEvent{Kind: EventKindKey}
@@ -145,6 +152,38 @@ func TestBindingCatalogIsUniqueAndContainsTUIV2AlignedAliases(t *testing.T) {
 		if intent.Kind != tc.kind || intent.Command != tc.command || intent.Action != tc.action {
 			t.Fatalf("%s: unexpected intent %#v", tc.name, intent)
 		}
+	}
+}
+
+func TestInputBindingCatalogHasSingleProductionOwner(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob input files: %v", err)
+	}
+	owners := []string{}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			spec, ok := node.(*ast.ValueSpec)
+			if !ok {
+				return true
+			}
+			for _, name := range spec.Names {
+				if name.Name == "bindingCatalog" {
+					owners = append(owners, file)
+				}
+			}
+			return true
+		})
+	}
+	if len(owners) != 1 || owners[0] != "bindings.go" {
+		t.Fatalf("input binding catalog must have a single production owner bindings.go, got %#v", owners)
 	}
 }
 

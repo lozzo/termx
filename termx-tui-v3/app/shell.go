@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -233,13 +234,13 @@ func NewShellReducer() Reducer {
 
 func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {
 	switch msg.ActionID {
-	case "empty.close", "exited.close":
+	case render.ActionEmptyClose.String(), render.ActionExitedClose.String():
 		return reducePaneCommand(root, state.PaneCommand{
 			Action: state.PaneCommandClose,
 			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
 			Source: state.PaneCommandSourceMouse,
 		})
-	case "picker.attach":
+	case render.ActionPickerAttach.String():
 		items := state.TerminalPickerItems(root)
 		if msg.Row >= 0 {
 			root.Shell = root.Shell.SetTerminalPickerSelectedIndex(msg.Row, len(items))
@@ -260,25 +261,25 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
 			}}}
 		}
-	case "picker.new":
+	case render.ActionPickerNew.String():
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolCreateRequestMsg{} }}}
-	case "pool.select":
+	case render.ActionPoolSelect.String():
 		items := state.TerminalPoolPageItems(root)
 		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
 		return root.Advance(), nil
-	case "pool.attach":
+	case render.ActionPoolAttach.String():
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
 			}}}
 		}
-	case "pool.kill":
+	case render.ActionPoolKill.String():
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolKillRequestMsg{TerminalID: selected.TerminalID}
 			}}}
 		}
-	case "pool.edit":
+	case render.ActionPoolEdit.String():
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			tags := cloneStringMap(selected.Tags)
 			if tags == nil {
@@ -289,44 +290,44 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: tags}
 			}}}
 		}
-	case "workbench.select":
+	case render.ActionWorkbenchSelect.String():
 		items := state.WorkbenchTreeItems(root)
 		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
 		return root.Advance(), nil
-	case "workbench.open":
+	case render.ActionWorkbenchOpen.String():
 		items := state.WorkbenchTreeItems(root)
 		if msg.Row >= 0 {
 			root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
 			items = state.WorkbenchTreeItems(root)
 		}
 		return reduceWorkbenchTreeOpen(root, items)
-	case "prompt.submit":
+	case render.ActionPromptSubmit.String():
 		return reducePromptSubmit(root)
-	case "prompt.cancel":
+	case render.ActionPromptCancel.String():
 		root.Shell = root.Shell.CloseOverlay()
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		return root.Advance(), nil
-	case "help.close":
+	case render.ActionHelpClose.String():
 		root.Shell = root.Shell.CloseOverlay()
 		return root.Advance(), nil
-	case "floating.raise":
+	case render.ActionFloatingRaise.String():
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
-	case "floating.close":
+	case render.ActionFloatingClose.String():
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
-	case "floating.resize":
+	case render.ActionFloatingResize.String():
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
-	case "exited.restart":
+	case render.ActionExitedRestart.String():
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
 		}}}
-	case "exited.reconnect":
+	case render.ActionExitedReconnect.String():
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
 		}}}
-	case "empty.manager":
+	case render.ActionEmptyManager.String():
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	case "empty.attach", "empty.create":
+	case render.ActionEmptyAttach.String(), render.ActionEmptyCreate.String():
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: msg.ActionID, Body: "not implemented"})
 		return root.Advance(), nil
 	}
