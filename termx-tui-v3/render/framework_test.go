@@ -23,7 +23,7 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(vm)
 	assertFrameSize(t, result, 40, 12)
-	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), paneChromeRunningGlyph()) || !linesContain(result.Lines(), "⇄2") || !linesContain(result.Lines(), paneChromeCompactActionText()) || !linesContain(result.Lines(), "你好 output") {
+	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), paneChromeRunningGlyph()) || !linesContain(result.Lines(), "⇄2") || !linesContain(result.Lines(), paneChromeCloseActionText()) || !linesContain(result.Lines(), "你好 output") {
 		t.Fatalf("expected shell, panel title and content, got %#v", result.Lines())
 	}
 	if !linesContain(result.Lines(), "┌") || !linesContain(result.Lines(), "┐") || !linesContain(result.Lines(), "└") || !linesContain(result.Lines(), "┘") {
@@ -111,7 +111,7 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 	if got := SliceCells(lines[0], 41, 42); got != "┐" {
 		t.Fatalf("split-line top boundary should keep top-right corner, got %q frame=%#v", got, lines)
 	}
-	if !strings.Contains(lines[0], " shell 🚀 ") || !strings.Contains(lines[0], " "+paneChromeRunningGlyph()) || !strings.Contains(lines[0], "⇄2") || !strings.Contains(lines[0], "─"+paneChromeCompactActionText()) {
+	if !strings.Contains(lines[0], " shell 🚀 ") || !strings.Contains(lines[0], " "+paneChromeRunningGlyph()) || !strings.Contains(lines[0], "⇄2") || !strings.Contains(lines[0], "─"+paneChromeCloseActionText()) {
 		t.Fatalf("split-line title/state/action slots should keep the remaining top border, got %#v", lines[0])
 	}
 	if !linesContain(lines, "你好 output") {
@@ -161,7 +161,7 @@ func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 		if actionCol < 0 {
 			t.Fatalf("presentation=%s missing action slot in %#v", presentation, result.Lines())
 		}
-		if !strings.Contains(line, paneChromeCompactActionText()) || !strings.Contains(line, "⇄2") {
+		if !strings.Contains(line, paneChromeCloseActionText()) || !strings.Contains(line, "⇄2") {
 			t.Fatalf("presentation=%s should render target pane action/meta slots, got row=%q", presentation, line)
 		}
 		beforeAction := SliceCells(line, actionCol-2, actionCol)
@@ -191,8 +191,8 @@ func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
 	}})
 
 	lines := result.Lines()
-	if !linesContain(lines, "╭") || !linesContain(lines, "╮") || !linesContain(lines, "╰") || !linesContain(lines, "╯") {
-		t.Fatalf("expected rounded Unicode card/overlay/toast chrome, got %#v", lines)
+	if !linesContain(lines, "┌") || !linesContain(lines, "┐") || !linesContain(lines, "└") || !linesContain(lines, "┘") || !linesContain(lines, "│") {
+		t.Fatalf("expected square Unicode card/overlay/toast chrome, got %#v", lines)
 	}
 	for _, line := range lines {
 		if strings.ContainsAny(line, "+|-") {
@@ -291,7 +291,7 @@ func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	if !linesContain(frame.Lines, "浮窗🚀") || !linesContain(frame.Lines, paneChromeRunningGlyph()+" float") || !linesContain(frame.Lines, "floating body 世界") {
 		t.Fatalf("expected floating title/content, got %#v", frame.Lines)
 	}
-	if !styledLinesContain(frame.StyledLines, "╭", StyleAccent) || !styledLinesContain(frame.StyledLines, "╯", StyleAccent) {
+	if !styledLinesContain(frame.StyledLines, "┌", StyleAccent) || !styledLinesContain(frame.StyledLines, "┘", StyleAccent) {
 		t.Fatalf("active floating border should use accent style, got %#v", frame.StyledLines)
 	}
 	layer := firstLayer(t, result, LayerFloating)
@@ -492,14 +492,14 @@ func TestFrameworkToastDoesNotOverwritePaneTopChrome(t *testing.T) {
 	}})
 	lines := result.Lines()
 
-	if !strings.Contains(lines[0], "┌─ shell") || !strings.Contains(lines[0], " "+paneChromeRunningGlyph()) || !strings.Contains(lines[0], "⇄2") || !strings.Contains(lines[0], paneChromeActionClusterText()) {
+	if !strings.Contains(lines[0], "┌─ shell") || !strings.Contains(lines[0], " "+paneChromeRunningGlyph()) || !strings.Contains(lines[0], "⇄2") || !strings.Contains(lines[0], paneChromeCloseActionText()) {
 		t.Fatalf("toast must not overwrite pane top chrome, got %#v", lines)
 	}
 	if strings.Contains(lines[0], "pane.split") {
 		t.Fatalf("toast should start below pane top chrome, got %#v", lines)
 	}
-	if !linesContain(lines, "pane.split") || !linesContain(lines, "info") || !linesContain(lines, "created") {
-		t.Fatalf("expected multi-line modern toast below chrome, got %#v", lines)
+	if !linesContain(lines, "pane.split") || linesContain(lines, "created") || linesContain(lines[3:], paneChromeCloseActionText()) {
+		t.Fatalf("expected centered no-action toast below chrome, got %#v", lines)
 	}
 	assertAllRowsWidth(t, lines, 64)
 }

@@ -281,8 +281,8 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 	}
 	frame := frames[len(frames)-1]
 	glyphs := render.DefaultPaneChromeGlyphs()
-	actionCluster := "[" + glyphs.SplitHorizontal + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
-	required := []string{" main ", "▎ 1 main ×", "┌─ shell", " " + glyphs.Running, "◆ owner", actionCluster, "LIVE"}
+	closeAction := "[" + glyphs.Close + "]"
+	required := []string{" main ", "▎ 1 main ×", "┌─ shell", " " + glyphs.Running, "◆ owner", closeAction, "LIVE"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {

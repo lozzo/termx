@@ -1314,7 +1314,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 外部 terminal emulator 初始尺寸和 resize 后尺寸必须反映到整屏 frame；frame 行数等于 viewport rows，每行 display width 等于 viewport cols。
 - terminal live 内容只显示在 pane content slot 内；content slot 尺寸变化后，terminal resize 使用 content rect，而不是外部 viewport 总尺寸。
 - copy mode 进入后只显示 authoritative history window、pending、empty 或 error；resize 或 chrome 变化导致 cols 不一致时必须重新绑定 window，不显示旧 cols 的历史内容。
-- 默认 card、overlay、toast 线框使用圆角 Unicode box drawing；split line 使用连续 Unicode box drawing；默认 UI chrome 不使用 ASCII 线框。
+- 默认 pane、floating、overlay、toast 线框使用直角 Unicode box drawing；split line 使用连续 Unicode box drawing；默认 UI chrome 不使用 ASCII 线框。
 - emoji、CJK、combining mark 和 ANSI styled text 不得破坏 pane、split line、toast、overlay 或整行宽度。
 
 当前 styled chrome 视觉目标：

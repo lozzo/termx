@@ -51,12 +51,12 @@
 
 ### 3.3 Overlay / Toast / Floating
 
-当前 toast 和 overlay 已经是实体 card，但仍只是第一轮 framework 视觉：
+当前 toast 和 overlay 已经是实体 chrome，但仍只是第一轮 framework 视觉：
 
 - Terminal Pool、Workbench Tree、Prompt/Help 的内容区仍偏功能表格。
 - selected row、search row、detail/preview、action row 的视觉层级需要统一。
 - copy-history 的 search、selection、match、scrollbar/status 仍偏工程占位。
-- toast 可以继续保留右上角实体 card，不要求灰度遮罩背景。
+- toast 使用右上角深色直角矩形、左右紫色竖线和居中文案，不要求灰度遮罩背景。
 
 ### 3.4 验收口径错误风险
 

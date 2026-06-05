@@ -113,10 +113,11 @@
 - 切片 82 已把 toast 从功能占位推进到右上角实体消息：rounded card、severity accent 竖条、title/body 合并裁切、close action、右侧/顶部留白和 ANSI style 已落地。
 - 切片 88 已把 toast title/body 分隔改为 `·` 分层，并沿用深色实体 card 与 severity 侧边。
 - 切片 90 已确认整体视觉仍未通过，toast 不能单独视为参考图级别；不得回退成简单文本。
+- 切片 92 按用户截图反馈把 toast 收敛为深色直角实体矩形、左右紫色竖线和居中文案；toast 不再绘制 close token，点击 toast 本体只负责遮挡命中，不穿透到底层 UI。
 
 目标要求：
 
-- 右上角实体弹出消息，短标题优先，正文按宽度退化。
+- 右上角实体弹出消息，短标题优先；复制成功等短反馈使用居中文案，不显示多行 title/body 表格感。
 - severity、pending/progress、close current、clear all、auto dismiss 都保留。
 - 不改变 pane layout，不遮挡 header/footer 关键 token。
 - 宽字符内容优先保证可见和行宽正确。

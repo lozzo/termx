@@ -203,10 +203,7 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	regions := make([]HitRegion, 0)
 	// 命中区域按前景到背景排序，后续鼠标分发可以直接取第一个匹配项。
 	for _, rect := range plan.Toasts {
-		closeWidth := DisplayWidth(paneChromeCloseActionText())
-		if rect.W >= closeWidth+5 && rect.H >= 2 {
-			regions = appendRegion(regions, HitRegion{Kind: HitRegionToastClose, Rect: Rect{X: rect.X + rect.W - closeWidth - 2, Y: rect.Y + 1, W: closeWidth, H: 1}}, plan.Viewport)
-		}
+		// toast 不再绘制 close token；这里只保留遮挡命中，避免鼠标穿透到底层 pane/overlay。
 		regions = appendRegion(regions, HitRegion{Kind: HitRegionToast, Rect: rect}, plan.Viewport)
 	}
 	if plan.Overlay.W > 0 && plan.Overlay.H > 0 {

@@ -999,13 +999,13 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - terminal live 输入只通过 `TerminalService.SendInput` effect 发送；TUI 不做本地假回显，输入显示必须来自后续 live surface 回投。
 - terminal live lifecycle 已区分 attached、exited 和 error；exited 会保留最后 live 行并在 panel/footer 中显示 exited 状态，error 仍走 notice/error status。
 - 宽度相关渲染通过 `DisplayWidth`、`FitText`、`SliceCells` 等 helper 处理 emoji、CJK、combining mark 和 ANSI styled text。
-- 默认 UI chrome 已使用 Unicode box drawing；card、overlay、toast 使用 `╭╮╰╯─│`，split line 使用连接感知 `┌┐└┘─│├┤┬┴┼`，ASCII `+ - |` 不作为默认 UI chrome。
+- 默认 UI chrome 已使用 Unicode box drawing；pane、floating、overlay、toast 默认使用直角 `┌┐└┘─│`，split line 使用连接感知 `┌┐└┘─│├┤┬┴┼`，ASCII `+ - |` 不作为默认 UI chrome。
 - tiled card pane 已使用 square Unicode 细线 pane chrome 基础；active pane 使用 accent style，inactive pane 使用 muted style，pane 顶边包含 title、state 和 action slot，但仍需按视觉审计继续对齐 `tuiv2` 截图级密度、槽位和层级。
 - v3 pane border 只迁入 `tuiv2/render` 的 cell 级连接位合成经验，不迁入旧 runtime/model、VisibleRenderState、cursor writer 或 snapshot/grid/copy fallback。
 - header/footer 已按切片 80 从基础信息条重绘为 `tuiv2` 风格分段产品栏：status background 填满整行，workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔；窄屏下快捷键 token 按优先级压缩，error/exited 关键状态优先保留。
-- pane chrome 已按切片 85 从单一 `title/state/[x]` 推进到目标截图式槽位：title、状态点、`↔0` 元信息、`◆ owner`、宽 pane full action cluster 和窄/分屏 compact action cluster，且 title 与 action 之间保留连续横线。
+- pane chrome 已按切片 92 收敛为只绘制当前鼠标命中区真实可派发的 close action；split/zoom 等未接通按钮先不绘制，后续功能完成后再恢复为可点击入口。
 - shell/pane 已按切片 88 完成二轮视觉重绘：默认 palette 使用紫色 accent 和深色 chrome/status 背景；header tab/action 改为 `×` 与 `[＋]`；footer 快捷键改为 `[Ctrl] · [P]` 形态；pane top chrome 改为 `· ↔2`、`· ◆ owner`、`· 1/31` 高密度槽位；toast/floating/overlay title 使用 `·` 分层。
-- toast 与 Terminal Picker overlay 已升级为 styled chrome，覆盖 border/background/severity token/close action region/ANSI reset 和宽字符安全。
+- toast 与 Terminal Picker overlay 已升级为 styled chrome，覆盖直角 border/background、toast 双侧 accent 竖线、ANSI reset 和宽字符安全；toast 本体只作为遮挡命中，不再显示 close token。
 - `state.PaneCommand` 已成为 pane split、close、close and kill、focus、zoom、resize、set size、balance 和 panel presentation 的统一 semantic command contract。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 和 `Ctrl-o` floating mode 已作为第一版键盘入口落地；`Esc` 退出 mode/overlay 且不漏发 terminal。
 - pane mode、resize mode、鼠标 hit region 和 CLI mini command adapter 已接入同一 pane command contract；后续入口不得绕过 reducer 或另建局部 command path。

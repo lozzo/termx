@@ -335,7 +335,7 @@ func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root
 	if deps.Clipboard == nil {
 		return setCopyModeError(root, "clipboard service missing"), nil
 	}
-	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "copy", Body: "selection yanked", DismissAfterTicks: 3})
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Copied to clipboard", DismissAfterTicks: 3})
 	root = root.Advance()
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {

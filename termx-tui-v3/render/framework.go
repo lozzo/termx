@@ -1242,16 +1242,11 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 }
 
 func paneChromeActionText(width int) string {
-	switch {
-	case width >= 54:
-		return paneChromeActionClusterText()
-	case width >= 24:
-		return paneChromeCompactActionText()
-	case width >= 8:
-		return paneChromeBracketToken(paneChromeCloseGlyph())
-	default:
-		return ""
+	// 只绘制当前鼠标命中区能真实派发的动作，避免 split/zoom glyph 看起来可点但实际关闭 pane。
+	if width >= 8 {
+		return paneChromeCloseActionText()
 	}
+	return ""
 }
 
 func paneChromeActionClusterText() string {
@@ -1415,7 +1410,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	owner := "floating:" + floating.ID
 	c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
-	c.drawStyledBox(rect, roundedBoxStyle, style, owner, LayerFloating)
+	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
 	title := floating.Title
 	if title == "" {
 		title = floating.ID
@@ -1464,7 +1459,7 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	}
 	owner := "overlay:" + string(overlay.Kind)
 	c.fillStyledRect(rect, StyleOverlay, owner, LayerOverlay)
-	c.drawStyledBox(rect, roundedBoxStyle, StyleOverlay, owner, LayerOverlay)
+	c.drawStyledBox(rect, squareBoxStyle, StyleOverlay, owner, LayerOverlay)
 	title := overlayTitle(overlay.Kind)
 	renderChromeCardTitle(c, rect, title, overlayChromeState(overlay), "esc", StyleAccent, owner, LayerOverlay)
 	contentLines := renderContent(c, overlay.Content, contentRect)
@@ -1539,24 +1534,15 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 		toast := toasts[toastIndex]
 		owner := "toast:" + toast.ID
 		c.fillStyledRect(rect, StyleToast, owner, LayerToast)
-		c.drawStyledBox(rect, roundedBoxStyle, toastSeverityStyle(toast.Severity), owner, LayerToast)
-		if rect.H > 2 && rect.W > 8 {
-			c.writeTextStyled(rect.X+1, rect.Y+1, 1, "▌", toastSeverityStyle(toast.Severity), owner, LayerToast)
-			titleWidth := maxInt(0, rect.W-10)
-			c.writeTextStyled(rect.X+3, rect.Y+1, titleWidth, toastTitleLine(toast), toastSeverityStyle(toast.Severity), owner, LayerToast)
-			closeAction := paneChromeCloseActionText()
-			closeWidth := DisplayWidth(closeAction)
-			c.writeTextStyled(rect.X+rect.W-closeWidth-2, rect.Y+1, closeWidth, closeAction, StyleMuted, owner, LayerToast)
-			if rect.H > 3 {
-				meta := string(toast.Severity)
-				if toast.Pending {
-					meta += " · pending"
-				}
-				c.writeTextStyled(rect.X+3, rect.Y+2, maxInt(0, rect.W-6), meta, StyleMuted, owner, LayerToast)
+		if rect.W >= 2 {
+			for y := rect.Y; y < rect.Y+rect.H; y++ {
+				c.writeTextStyled(rect.X, y, 1, "│", StyleToastAccent, owner, LayerToast)
+				c.writeTextStyled(rect.X+rect.W-1, y, 1, "│", StyleToastAccent, owner, LayerToast)
 			}
-			if rect.H > 4 && toast.Body != "" {
-				c.writeTextStyled(rect.X+3, rect.Y+3, maxInt(0, rect.W-6), toast.Body, StyleToast, owner, LayerToast)
-			}
+		}
+		if rect.H > 0 && rect.W > 4 {
+			textRect := Rect{X: rect.X + 2, Y: rect.Y + rect.H/2, W: maxInt(0, rect.W-4), H: 1}
+			c.writeTextStyled(textRect.X, textRect.Y, textRect.W, centerToastText(toastMessageLine(toast), textRect.W), StyleToast, owner, LayerToast)
 		}
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
 	}
@@ -1572,6 +1558,34 @@ func toastTitleLine(toast ToastVM) string {
 		title += " ..."
 	}
 	return title
+}
+
+func toastMessageLine(toast ToastVM) string {
+	title := strings.TrimSpace(toast.Title)
+	if title == "" {
+		title = strings.TrimSpace(toast.Body)
+	}
+	if title == "" {
+		title = string(toast.Severity)
+	}
+	if toast.Pending {
+		title += " ..."
+	}
+	return title
+}
+
+func centerToastText(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	text = TruncateCells(text, width)
+	pad := width - DisplayWidth(text)
+	if pad <= 0 {
+		return text
+	}
+	left := pad / 2
+	right := pad - left
+	return strings.Repeat(" ", left) + text + strings.Repeat(" ", right)
 }
 
 func paneChromeCloseActionText() string {

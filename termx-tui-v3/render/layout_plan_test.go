@@ -267,7 +267,7 @@ func TestMeasureLayoutOpaqueOverlayOwnsHitRegionsAndCursorRect(t *testing.T) {
 			t.Fatalf("opaque overlay must hide body hit regions, got %#v", plan.HitRegions)
 		}
 	}
-	if len(plan.HitRegions) < 4 || plan.HitRegions[0].Kind != HitRegionToastClose || plan.HitRegions[1].Kind != HitRegionToast || plan.HitRegions[2].Kind != HitRegionStatus || plan.HitRegions[3].Kind != HitRegionOverlay {
+	if len(plan.HitRegions) < 3 || plan.HitRegions[0].Kind != HitRegionToast || plan.HitRegions[1].Kind != HitRegionStatus || plan.HitRegions[2].Kind != HitRegionOverlay {
 		t.Fatalf("expected toast, overlay content, overlay hit priority, got %#v", plan.HitRegions)
 	}
 }

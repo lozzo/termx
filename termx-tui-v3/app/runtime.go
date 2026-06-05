@@ -324,6 +324,8 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	switch region.Kind {
 	case render.HitRegionToastClose:
 		return ShellCloseCurrentToastMsg{}
+	case render.HitRegionToast:
+		return NoopMsg{}
 	case render.HitRegionOverlay:
 		return ShellCloseOverlayMsg{}
 	case render.HitRegionHistoryRow:

@@ -40,7 +40,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-live"].Lines, "你好 output") ||
 		!frameContains(cases["workbench-live"].Lines, "┌─ shell") ||
 		!frameContains(cases["workbench-live"].Lines, "◆ owner") ||
-		!frameContains(cases["workbench-live"].Lines, paneChromeFullActionMarker()) {
+		!frameContains(cases["workbench-live"].Lines, paneChromeCloseActionMarker()) {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;169;112;255m") {
@@ -56,9 +56,10 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	assertContinuousCardPaneBorder(t, "workbench-live", cases["workbench-live"])
 	if frameContains(cases["split-hidden-toast"].Lines, " ws:") ||
 		frameContains(cases["split-hidden-toast"].Lines, " mode:") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "▌ warn 🚀 ...") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "warning · pending") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "世界") {
+		!frameContains(cases["split-hidden-toast"].Lines, "│") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "warn 🚀 ...") ||
+		frameContains(cases["split-hidden-toast"].Lines, "warning · pending") ||
+		frameContains(cases["split-hidden-toast"].Lines, "世界") {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
 	}
 	if !frameContains(cases["split-hidden-toast"].Lines, "┌─ shell") ||
@@ -66,7 +67,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["split-hidden-toast"].Lines, "┬─ logs") ||
 		!frameContains(cases["split-hidden-toast"].Lines, " "+render.DefaultPaneChromeGlyphs().Running) ||
 		!frameContains(cases["split-hidden-toast"].Lines, "⇄2") ||
-		!frameContains(cases["split-hidden-toast"].Lines, paneChromeCompactActionMarker()) ||
+		!frameContains(cases["split-hidden-toast"].Lines, paneChromeCloseActionMarker()) ||
 		render.SliceCells(cases["split-hidden-toast"].Lines[0], render.DisplayWidth(cases["split-hidden-toast"].Lines[0])-1, render.DisplayWidth(cases["split-hidden-toast"].Lines[0])) != "┐" {
 		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
 	}
@@ -130,8 +131,6 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["visual-audit-current"].Lines, "visual review baseli") ||
 		!frameContains(cases["visual-audit-current"].Lines, "visual review") ||
 		!frameContains(cases["visual-audit-current"].Lines, "quick actio") ||
-		!frameContains(cases["visual-audit-current"].Lines, "needs screenshot polish") ||
-		!frameContains(cases["visual-audit-current"].Lines, "warning") ||
 		!frameContains(cases["visual-audit-current"].Lines, paneChromeCloseActionMarker()) {
 		t.Fatalf("visual review smoke missing fixed visual markers: %#v", cases["visual-audit-current"].Lines)
 	}
@@ -196,18 +195,18 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{" main ", "▎ 1 main ×", "┬─ logs", "┴", " " + render.DefaultPaneChromeGlyphs().Running, "⇄2", paneChromeFullActionMarker(), "…", "▌ visual review", paneChromeCloseActionMarker(), "╭─ quick actio", "◢", "LIVE"}
+	requiredReview := []string{" main ", "▎ 1 main ×", "┬─ logs", "┴", " " + render.DefaultPaneChromeGlyphs().Running, "⇄2", "…", "visual review", paneChromeCloseActionMarker(), "┌─ quick actio", "◢", "LIVE"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)
 		}
 	}
 	requiredOverlays := map[string][]string{
-		"terminal-picker":     {"╭─ terminal picker", "● open", "esc", "⌕ search [filter terminals]", "[new]  new terminal"},
-		"terminal-pool-page":  {"╭─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill Terminal"},
-		"workbench-tree-page": {"╭─ workbench tree", "● open", "esc", "Workbench Tree", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open / Focus"},
-		"prompt-overlay":      {"╭─ prompt", "● open", "esc", "Command Prompt", "重命名"},
-		"help-overlay":        {"╭─ help", "● open", "esc", "Most used", "Terminal Pool"},
+		"terminal-picker":     {"┌─ terminal picker", "● open", "esc", "⌕ search [filter terminals]", "[new]  new terminal"},
+		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill Terminal"},
+		"workbench-tree-page": {"┌─ workbench tree", "● open", "esc", "Workbench Tree", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open / Focus"},
+		"prompt-overlay":      {"┌─ prompt", "● open", "esc", "Command Prompt", "重命名"},
+		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Pool"},
 	}
 	for name, markers := range requiredOverlays {
 		frame := cases[name]
@@ -218,7 +217,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	split := cases["split-hidden-toast"]
-	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴", "⇄2", paneChromeCompactActionMarker(), "▌ warn 🚀", paneChromeCloseActionMarker()} {
+	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴", "⇄2", "warn 🚀", paneChromeCloseActionMarker()} {
 		if !frameContains(split.Lines, marker) {
 			t.Fatalf("split hidden toast missing styled split marker %q: %#v", marker, split.Lines)
 		}

@@ -452,7 +452,7 @@ func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 	last := lastFrame(t, host.Frames())
 	assertPaneVisualState(t, last, "lpha", render.StyleAccent)
 	assertPaneVisualState(t, last, "be", render.StyleAccent)
-	if !frameContains(last, "copy") || !frameContains(last, "success") || !frameContains(last, "selection") {
+	if !frameContains(last, "Copied to clipboard") || !frameContains(last, "│") || frameContains(last, "selection yanked") {
 		t.Fatalf("copy feedback toast should be visible, got %#v", last.Lines)
 	}
 }
