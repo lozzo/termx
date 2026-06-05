@@ -162,12 +162,22 @@ type AppRuntime struct {
 }
 
 type mouseDragState struct {
-	Active    bool
-	PaneID    string
-	Direction state.PaneResizeDirection
-	LastCol   int
-	LastRow   int
+	Active     bool
+	Kind       mouseDragKind
+	PaneID     string
+	FloatingID string
+	Direction  state.PaneResizeDirection
+	LastCol    int
+	LastRow    int
 }
+
+type mouseDragKind string
+
+const (
+	mouseDragPaneResize     mouseDragKind = "pane-resize"
+	mouseDragFloatingMove   mouseDragKind = "floating-move"
+	mouseDragFloatingResize mouseDragKind = "floating-resize"
+)
 
 func NewAppRuntime(
 	initial state.Root,
@@ -387,6 +397,14 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			return NoopMsg{}
 		}
 	}
+	if drag, ok := floatingDragState(region, inputMsg.Event); ok {
+		runtime.mouseDrag = drag
+		return ShellFloatingCommandMsg{Command: state.FloatingCommand{
+			Action:   state.FloatingCommandFocusRaise,
+			TargetID: drag.FloatingID,
+			Source:   state.PaneCommandSourceMouse,
+		}}
+	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
 		runtime.fillMousePaneCommandDefaults(&command)
 		return ShellPaneCommandMsg{Command: command}
@@ -434,19 +452,54 @@ func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool)
 		if !runtime.mouseDrag.Active {
 			return nil, false
 		}
-		direction, delta := mouseDragResize(runtime.mouseDrag, event)
-		if delta <= 0 {
+		switch runtime.mouseDrag.Kind {
+		case mouseDragPaneResize:
+			direction, delta := mouseDragResize(runtime.mouseDrag, event)
+			if delta <= 0 {
+				return NoopMsg{}, true
+			}
+			runtime.mouseDrag.LastCol = event.Col
+			runtime.mouseDrag.LastRow = event.Row
+			return ShellPaneCommandMsg{Command: state.PaneCommand{
+				Action:          state.PaneCommandResize,
+				Target:          state.PaneCommandTarget{PaneID: runtime.mouseDrag.PaneID},
+				ResizeDirection: direction,
+				Delta:           delta,
+				Source:          state.PaneCommandSourceMouse,
+			}}, true
+		case mouseDragFloatingMove:
+			deltaX := event.Col - runtime.mouseDrag.LastCol
+			deltaY := event.Row - runtime.mouseDrag.LastRow
+			if deltaX == 0 && deltaY == 0 {
+				return NoopMsg{}, true
+			}
+			runtime.mouseDrag.LastCol = event.Col
+			runtime.mouseDrag.LastRow = event.Row
+			return ShellFloatingCommandMsg{Command: state.FloatingCommand{
+				Action:   state.FloatingCommandMove,
+				TargetID: runtime.mouseDrag.FloatingID,
+				DeltaX:   deltaX,
+				DeltaY:   deltaY,
+				Source:   state.PaneCommandSourceMouse,
+			}}, true
+		case mouseDragFloatingResize:
+			deltaW := event.Col - runtime.mouseDrag.LastCol
+			deltaH := event.Row - runtime.mouseDrag.LastRow
+			if deltaW == 0 && deltaH == 0 {
+				return NoopMsg{}, true
+			}
+			runtime.mouseDrag.LastCol = event.Col
+			runtime.mouseDrag.LastRow = event.Row
+			return ShellFloatingCommandMsg{Command: state.FloatingCommand{
+				Action:   state.FloatingCommandResize,
+				TargetID: runtime.mouseDrag.FloatingID,
+				DeltaW:   deltaW,
+				DeltaH:   deltaH,
+				Source:   state.PaneCommandSourceMouse,
+			}}, true
+		default:
 			return NoopMsg{}, true
 		}
-		runtime.mouseDrag.LastCol = event.Col
-		runtime.mouseDrag.LastRow = event.Row
-		return ShellPaneCommandMsg{Command: state.PaneCommand{
-			Action:          state.PaneCommandResize,
-			Target:          state.PaneCommandTarget{PaneID: runtime.mouseDrag.PaneID},
-			ResizeDirection: direction,
-			Delta:           delta,
-			Source:          state.PaneCommandSourceMouse,
-		}}, true
 	default:
 		return nil, false
 	}
@@ -459,10 +512,33 @@ func paneResizeDragState(region render.HitRegion, event input.InputEvent) (mouse
 	}
 	return mouseDragState{
 		Active:    true,
+		Kind:      mouseDragPaneResize,
 		PaneID:    region.PaneID,
 		Direction: direction,
 		LastCol:   event.Col,
 		LastRow:   event.Row,
+	}, true
+}
+
+func floatingDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
+	if region.Kind != render.HitRegionContentAction || region.PaneID == "" {
+		return mouseDragState{}, false
+	}
+	var kind mouseDragKind
+	switch region.ActionID {
+	case "floating.move-drag":
+		kind = mouseDragFloatingMove
+	case "floating.resize-drag":
+		kind = mouseDragFloatingResize
+	default:
+		return mouseDragState{}, false
+	}
+	return mouseDragState{
+		Active:     true,
+		Kind:       kind,
+		FloatingID: region.PaneID,
+		LastCol:    event.Col,
+		LastRow:    event.Row,
 	}, true
 }
 

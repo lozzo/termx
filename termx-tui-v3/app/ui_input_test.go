@@ -1313,13 +1313,43 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating raise: %v", err)
 	}
-	resizeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.resize", "floating-1")
-	before := runtime.State().Shell.Floatings[0].Rect
-	if err := host.SendInput(mouseEventAt(resizeRegion.Rect)); err != nil {
-		t.Fatalf("send floating resize click: %v", err)
+	moveRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.move-drag", "floating-1")
+	beforeMove := runtime.State().Shell.Floatings[0].Rect
+	moveStart := mouseEventAt(moveRegion.Rect)
+	moveDrag := moveStart
+	moveDrag.Mouse = input.MouseLeftDrag
+	moveDrag.Col += 3
+	moveDrag.Row += 2
+	moveRelease := moveDrag
+	moveRelease.Mouse = input.MouseLeftUp
+	for _, event := range []input.InputEvent{moveStart, moveDrag, moveRelease} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send floating move event %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain floating move event %#v: %v", event, err)
+		}
 	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain floating resize: %v", err)
+	afterMove := runtime.State().Shell.Floatings[0].Rect
+	if afterMove.X != beforeMove.X+3 || afterMove.Y != beforeMove.Y+2 {
+		t.Fatalf("mouse move should move floating rect, before=%#v after=%#v", beforeMove, afterMove)
+	}
+	resizeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.resize-drag", "floating-1")
+	before := runtime.State().Shell.Floatings[0].Rect
+	resizeStart := mouseEventAt(resizeRegion.Rect)
+	resizeDrag := resizeStart
+	resizeDrag.Mouse = input.MouseLeftDrag
+	resizeDrag.Col += 4
+	resizeDrag.Row += 2
+	resizeRelease := resizeDrag
+	resizeRelease.Mouse = input.MouseLeftUp
+	for _, event := range []input.InputEvent{resizeStart, resizeDrag, resizeRelease} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send floating resize event %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain floating resize event %#v: %v", event, err)
+		}
 	}
 	after := runtime.State().Shell.Floatings[0].Rect
 	if after.W <= before.W || after.H <= before.H {

@@ -540,6 +540,126 @@ func TestAppRuntimeDragsHorizontalPaneDividerResize(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	shell, result := state.DefaultShell().ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "floating", Kind: state.PaneEmpty},
+		Title:    "floating",
+		Rect:     state.FloatingRect{X: 10, Y: 4, W: 30, H: 8},
+		BoundsW:  80,
+		BoundsH:  24,
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating for test: %#v", result)
+	}
+	root := state.Root{
+		Shell: shell,
+	}
+	runtime := newShellHitRuntimeWithTerminal(root, host, terminal)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post floating initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating initial render: %v", err)
+	}
+	beforeInputCount := len(terminal.Inputs)
+
+	moveRegion := frameActionHitRegion(t, lastRuntimeFrame(t, host), "floating.move-drag", "floating-1")
+	moveStart := mouseEventAt(moveRegion.Rect)
+	if err := host.SendInput(moveStart); err != nil {
+		t.Fatalf("send floating move start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating move start: %v", err)
+	}
+	if runtime.mouseDrag.Kind != mouseDragFloatingMove || runtime.mouseDrag.FloatingID != "floating-1" {
+		t.Fatalf("expected floating move drag state, got %#v", runtime.mouseDrag)
+	}
+	moveDrag := moveStart
+	moveDrag.Mouse = input.MouseLeftDrag
+	moveDrag.Col += 4
+	moveDrag.Row += 3
+	if err := host.SendInput(moveDrag); err != nil {
+		t.Fatalf("send floating move drag: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating move drag: %v", err)
+	}
+	moved := runtime.State().Shell.Floatings[0].Rect
+	if moved.X != 14 || moved.Y != 7 {
+		t.Fatalf("floating title drag should move rect, got %#v", moved)
+	}
+	moveRelease := moveDrag
+	moveRelease.Mouse = input.MouseLeftUp
+	if err := host.SendInput(moveRelease); err != nil {
+		t.Fatalf("send floating move release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating move release: %v", err)
+	}
+	if runtime.mouseDrag.Active {
+		t.Fatalf("floating move release should clear drag state, got %#v", runtime.mouseDrag)
+	}
+
+	resizeRegion := frameActionHitRegion(t, lastRuntimeFrame(t, host), "floating.resize-drag", "floating-1")
+	resizeStart := mouseEventAt(resizeRegion.Rect)
+	if err := host.SendInput(resizeStart); err != nil {
+		t.Fatalf("send floating resize start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating resize start: %v", err)
+	}
+	if runtime.mouseDrag.Kind != mouseDragFloatingResize || runtime.mouseDrag.FloatingID != "floating-1" {
+		t.Fatalf("expected floating resize drag state, got %#v", runtime.mouseDrag)
+	}
+	beforeResize := runtime.State().Shell.Floatings[0].Rect
+	resizeDrag := resizeStart
+	resizeDrag.Mouse = input.MouseLeftDrag
+	resizeDrag.Col += 6
+	resizeDrag.Row += 2
+	if err := host.SendInput(resizeDrag); err != nil {
+		t.Fatalf("send floating resize drag: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating resize drag: %v", err)
+	}
+	resized := runtime.State().Shell.Floatings[0].Rect
+	if resized.W != beforeResize.W+6 || resized.H != beforeResize.H+2 {
+		t.Fatalf("floating resize drag should resize rect, before=%#v after=%#v", beforeResize, resized)
+	}
+	resizeRelease := resizeDrag
+	resizeRelease.Mouse = input.MouseLeftUp
+	if err := host.SendInput(resizeRelease); err != nil {
+		t.Fatalf("send floating resize release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating resize release: %v", err)
+	}
+	afterRelease := resizeRelease
+	afterRelease.Mouse = input.MouseLeftDrag
+	afterRelease.Col += 3
+	afterRelease.Row += 3
+	if err := host.SendInput(afterRelease); err != nil {
+		t.Fatalf("send floating drag after release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating drag after release: %v", err)
+	}
+	if got := runtime.State().Shell.Floatings[0].Rect; got != resized {
+		t.Fatalf("drag after release must not resize floating, before=%#v after=%#v", resized, got)
+	}
+	if len(terminal.Inputs) != beforeInputCount {
+		t.Fatalf("floating drag must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{

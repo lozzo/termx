@@ -231,8 +231,8 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 	}
 	id := floating.Floating.ID
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingActionRect(floating.Rect), PaneID: id, ActionID: "floating.close"}, viewport)
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: "floating.resize"}, viewport)
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: "floating.raise"}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: "floating.resize-drag"}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: "floating.move-drag"}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
 		out = appendTranslatedRegions(out, floating.Floating.Content.HitRegions, floating.ContentRect, viewport)
 		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: id, ActionID: "floating.raise"}, viewport)

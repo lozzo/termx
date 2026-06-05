@@ -483,9 +483,17 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	}
 	raise := hitRegionIndexByAction(plan.HitRegions, "floating.raise")
 	close := hitRegionIndexByAction(plan.HitRegions, "floating.close")
+	move := hitRegionIndexByAction(plan.HitRegions, "floating.move-drag")
+	resize := hitRegionIndexByAction(plan.HitRegions, "floating.resize-drag")
 	pane := hitRegionIndex(plan.HitRegions, HitRegionPaneContent)
-	if raise < 0 || close < 0 || pane < 0 || raise > pane || close > pane {
+	if raise < 0 || close < 0 || move < 0 || resize < 0 || pane < 0 || raise > pane || close > pane || move > pane || resize > pane {
 		t.Fatalf("floating hit regions should precede tiled pane regions, got %#v", plan.HitRegions)
+	}
+	if plan.HitRegions[move].Rect != paneChromeRect(plan.Floatings[0].Rect) {
+		t.Fatalf("floating title drag should cover chrome title row, got %#v", plan.HitRegions[move])
+	}
+	if plan.HitRegions[resize].Rect != floatingResizeRect(plan.Floatings[0].Rect) {
+		t.Fatalf("floating resize drag should cover resize handle, got %#v", plan.HitRegions[resize])
 	}
 }
 
