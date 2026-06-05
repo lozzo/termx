@@ -57,7 +57,8 @@
 当前问题：
 
 - 切片 80 已修复稀疏拼接文本条问题，top bar 现在是分段产品栏。
-- 仍未完全达到 `tuiv2` 截图里的 tab strip 密度、右侧 owner/action token 和更精细的 inactive tab 视觉。
+- 切片 84 已把 top bar 推进到高密度产品栏：左侧 workspace + tab strip + `[⊕]`，右侧 active pane、`◆ owner`、terminal/floating summary 和 action token。
+- 仍可继续 polish inactive tab 视觉和最终品牌密度，但不再允许回退到 `ws:/tab:/active:` 工程标签。
 
 目标要求：
 
@@ -71,7 +72,8 @@
 当前问题：
 
 - 切片 80 已修复 mode、快捷键、active target、右侧 summary 缺少稳定槽位的问题。
-- 仍未完全达到 `tuiv2` 底栏里的多组彩色快捷键 taxonomy、右侧细粒度状态 summary 和更密集的视觉层级。
+- 切片 84 已把 bottom bar 推进到 `MODE • [KEY] ACTION` 快捷键 taxonomy，并在窄屏退化时保留尾部关键动作。
+- 右侧细粒度状态 summary 和最终品牌视觉仍可在切片 87 前继续 polish，但不再允许回退到 `mode:/keys:` 工程标签。
 
 目标要求：
 
@@ -193,6 +195,12 @@
 - 复核结论是未通过，不能标记为截图级视觉完成。
 - 已把失败原因、手工复核入口和后续切片写入 `termx-tui-v3/docs/default-tui-visual-review.md`。
 - 后续继续通过切片 84-87 处理 shell bar、pane chrome、overlay/page/copy polish 和最终截图级验收。
+
+切片 84 负责：
+
+- 已完成 shell bar 高密度重绘第一轮。
+- 已把 fixed smoke 和 e2e visual guard 更新为新的 top/bottom bar 视觉合同。
+- 截图级总体验收仍留到切片 87。
 
 ## 7. 验收方式
 

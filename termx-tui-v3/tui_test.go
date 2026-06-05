@@ -45,7 +45,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;88;213;201m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, "ws:main") || !frameContains(cases["workbench-live"].Lines, "tab:[main]") || !frameContains(cases["workbench-live"].Lines, "mode:live") {
+	if !frameContains(cases["workbench-live"].Lines, " main ") || !frameContains(cases["workbench-live"].Lines, "[main]") || !frameContains(cases["workbench-live"].Lines, "LIVE") || !frameContains(cases["workbench-live"].Lines, "[^P] PANE") {
 		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;24;50;74m") {
@@ -89,9 +89,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["help-overlay"].Lines, "Terminal Pool") {
 		t.Fatalf("help overlay smoke missing help content: %#v", cases["help-overlay"].Lines)
 	}
-	if !frameContains(cases["tab-workspace"].Lines, "ws:remote") ||
-		!frameContains(cases["tab-workspace"].Lines, "tab:[main]") ||
-		!frameContains(cases["tab-workspace"].Lines, "mode:workspace") ||
+	if !frameContains(cases["tab-workspace"].Lines, " remote ") ||
+		!frameContains(cases["tab-workspace"].Lines, "[main]") ||
+		!frameContains(cases["tab-workspace"].Lines, "WORKSPACE") ||
 		!frameContains(cases["tab-workspace"].Lines, "workspace live") {
 		t.Fatalf("tab/workspace smoke missing product entry content: %#v", cases["tab-workspace"].Lines)
 	}
@@ -170,7 +170,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{" ws:main ", " tab:[main] ", "active:pane-logs", "┬─ logs", "┴", "● active", "… pending", "▌ visual review", "[×]", "╭─ quick actions", "◢", "mode:live"}
+	requiredReview := []string{" main ", " [main] ", "● pane-logs", "◆ owner", "┬─ logs", "┴", "● active", "… pending", "▌ visual review", "[×]", "╭─ quick actions", "◢", "LIVE"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)

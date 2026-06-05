@@ -692,7 +692,7 @@ func TestInteractiveRuntimePaneAndResizeModeKeymapUsesPaneCommandPath(t *testing
 		t.Fatalf("pane/resize shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "mode:resize") {
+	if !frameContains(last, "RESIZE") {
 		t.Fatalf("footer should show resize mode, got %#v", last.Lines)
 	}
 }
@@ -734,7 +734,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, keyboardFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, keyboardFrame, "shell", render.StyleMuted)
-	if !frameContains(keyboardFrame, "active:pane:pane") {
+	if !frameContains(keyboardFrame, "● pane") {
 		t.Fatalf("footer should reflect keyboard split active pane, got %#v", keyboardFrame.Lines)
 	}
 
@@ -750,7 +750,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, focusFrame, "shell", render.StyleAccent)
 	assertPaneVisualState(t, focusFrame, "pane", render.StyleMuted)
-	if !frameContains(focusFrame, "pane.focus-next") || !frameContains(focusFrame, "active:pane:shell") {
+	if !frameContains(focusFrame, "pane.focus-next") || !frameContains(focusFrame, "● shell") {
 		t.Fatalf("keyboard focus should update toast/footer immediately, got %#v", focusFrame.Lines)
 	}
 
@@ -767,7 +767,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, mouseFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, mouseFrame, "shell", render.StyleMuted)
-	if !frameContains(mouseFrame, "pane.focus") || !frameContains(mouseFrame, "active:pane:pane") {
+	if !frameContains(mouseFrame, "pane.focus") || !frameContains(mouseFrame, "● pane") {
 		t.Fatalf("mouse focus should update toast/footer immediately, got %#v", mouseFrame.Lines)
 	}
 
@@ -790,7 +790,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	if runtime.State().Shell.ZoomedPaneID != "pane-2" {
 		t.Fatalf("zoom should keep active pane zoomed, got %#v", runtime.State().Shell)
 	}
-	if !frameContains(zoomFrame, "mode:pane") || !frameContains(zoomFrame, "pane.toggle-zoom") || !frameContains(zoomFrame, "active:pane:pane") {
+	if !frameContains(zoomFrame, "PANE") || !frameContains(zoomFrame, "pane.toggle-zoom") || !frameContains(zoomFrame, "● pane") {
 		t.Fatalf("resize/presentation/zoom should keep visible active feedback, got %#v", zoomFrame.Lines)
 	}
 	assertPaneVisualState(t, zoomFrame, "pane", render.StyleAccent)
@@ -828,7 +828,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
 		t.Fatalf("close should choose stable next active pane, got %#v", runtime.State().Shell)
 	}
-	if !frameContains(closeFrame, "pane.close") || !frameContains(closeFrame, "active:pane:shell") {
+	if !frameContains(closeFrame, "pane.close") || !frameContains(closeFrame, "● shell") {
 		t.Fatalf("close should update active pane visuals/footer/toast, got %#v", closeFrame.Lines)
 	}
 	assertPaneVisualState(t, closeFrame, "shell", render.StyleAccent)
@@ -1054,7 +1054,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("resize mode should drive content rect terminal resize")
 	}
 	paneFrame := lastFrame(t, host.Frames())
-	if !frameContains(paneFrame, "mode:pane") || !frameContains(paneFrame, "active:pane:") {
+	if !frameContains(paneFrame, "PANE") || !frameContains(paneFrame, "● ") {
 		t.Fatalf("expected pane mode footer and active feedback, got %#v", paneFrame.Lines)
 	}
 
@@ -1137,7 +1137,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("tab mode should create and rename tab in original workspace, ok=%v workspace=%#v", ok, mainWorkspace)
 	}
 	tabWorkspaceFrame := lastFrame(t, host.Frames())
-	if !frameContains(tabWorkspaceFrame, "ws:workspace 2云") || !frameContains(tabWorkspaceFrame, "mode:live") {
+	if !frameContains(tabWorkspaceFrame, "workspace 2云") || !frameContains(tabWorkspaceFrame, "LIVE") {
 		t.Fatalf("expected live footer/header after tab/workspace flow, got %#v", tabWorkspaceFrame.Lines)
 	}
 
@@ -1379,7 +1379,7 @@ func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
 		}
 	}
 	workspaceModeFrame := lastFrame(t, host.Frames())
-	if !frameContains(workspaceModeFrame, "ws:workspace 2云") || !frameContains(workspaceModeFrame, "mode:workspace") {
+	if !frameContains(workspaceModeFrame, "workspace 2云") || !frameContains(workspaceModeFrame, "WORKSPACE") {
 		t.Fatalf("expected frame to expose workspace mode and active workspace, got %#v", workspaceModeFrame.Lines)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
@@ -1410,7 +1410,7 @@ func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
 		t.Fatalf("tab/workspace shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "ws:workspace 2云") || !frameContains(frame, "mode:live") {
+	if !frameContains(frame, "workspace 2云") || !frameContains(frame, "LIVE") {
 		t.Fatalf("expected frame to return to live mode and keep active workspace, got %#v", frame.Lines)
 	}
 }

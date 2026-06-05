@@ -242,17 +242,18 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !strings.Contains(frame.Lines[0], "ws:main") || !strings.Contains(frame.Lines[0], "tab:1") || !strings.Contains(frame.Lines[0], "active:pane-1") || !strings.Contains(frame.Lines[0], "term:1") || !strings.Contains(frame.Lines[0], "float:0") || !strings.Contains(frame.Lines[0], "⊕") || !strings.Contains(frame.Lines[0], "notice:ok") || !strings.Contains(frame.Lines[0], "│") {
-		t.Fatalf("top bar should contain workspace/tab/create/notice tokens, got %#v", frame.Lines[0])
+	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], " 1 ") || !strings.Contains(frame.Lines[0], "[⊕]") || !strings.Contains(frame.Lines[0], "● pane-1") || !strings.Contains(frame.Lines[0], "◆ owner") || !strings.Contains(frame.Lines[0], "term:1") || !strings.Contains(frame.Lines[0], "float:0") || !strings.Contains(frame.Lines[0], "! ok") || !strings.Contains(frame.Lines[0], "│") {
+		t.Fatalf("top bar should contain high-density workspace/tab/action/owner tokens, got %#v", frame.Lines[0])
 	}
-	if !strings.Contains(frame.Lines[len(frame.Lines)-1], "mode:live") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "keys:^P pane") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "active:pane:shell") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "hint:term-1") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "ws:main") {
-		t.Fatalf("bottom bar should contain mode/hint/status tokens, got %#v", frame.Lines[len(frame.Lines)-1])
+	footer := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footer, "LIVE") || !strings.Contains(footer, "[^P] PANE") || !strings.Contains(footer, "[^R] RESIZE") || !strings.Contains(footer, "● shell term:term-1") || !strings.Contains(footer, "ws main") || !strings.Contains(footer, "» term-1") {
+		t.Fatalf("bottom bar should contain high-density mode/action/summary tokens, got %#v", footer)
 	}
-	if !styledLinesContainText(frame.StyledLines[:1], "ws:main", StyleStatusAccent) ||
+	if !styledLinesContainText(frame.StyledLines[:1], " main ", StyleStatusAccent) ||
 		!styledLinesContainText(frame.StyledLines[:1], "term:1", StyleStatusMuted) ||
-		!styledLinesContainText(frame.StyledLines[:1], "notice:ok", StyleStatusWarning) ||
-		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "mode:live", StyleStatusAccent) ||
-		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "keys:^P pane", StyleStatus) {
+		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "LIVE", StyleStatusAccent) ||
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[^P]", StyleStatusAccent) {
 		t.Fatalf("top/bottom bar cells should use status token styles, got %#v", frame.StyledLines)
 	}
 	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;88;213;201m\x1b[48;2;24;50;74m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[1;38;2;88;213;201m\x1b[48;2;24;50;74m") {
@@ -303,13 +304,13 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 		mode string
 		want string
 	}{
-		{name: "pane", mode: "pane", want: "v split"},
-		{name: "resize", mode: "resize", want: "←/h"},
-		{name: "global", mode: "global", want: "h header"},
-		{name: "tab", mode: "tab", want: "n new"},
-		{name: "workspace", mode: "workspace", want: "t tree"},
-		{name: "copy", mode: "copy", want: "pgup older"},
-		{name: "overlay", mode: "terminal-picker", want: "attach"},
+		{name: "pane", mode: "pane", want: "[v] SPLIT"},
+		{name: "resize", mode: "resize", want: "[←/h]"},
+		{name: "global", mode: "global", want: "[h] HEADER"},
+		{name: "tab", mode: "tab", want: "[n] NEW"},
+		{name: "workspace", mode: "workspace", want: "[t] TREE"},
+		{name: "copy", mode: "copy", want: "[pgup] OLDER"},
+		{name: "overlay", mode: "terminal-picker", want: "[attach]"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -325,7 +326,7 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 				}}},
 			}})
 			footer := frame.Lines[len(frame.Lines)-1]
-			if !strings.Contains(footer, "mode:"+tc.mode) || !strings.Contains(footer, tc.want) || !strings.Contains(footer, "active:pane:shell") {
+			if !strings.Contains(footer, strings.ToUpper(tc.mode)) || !strings.Contains(footer, tc.want) || !strings.Contains(footer, "● shell") {
 				t.Fatalf("footer missing mode-specific product hints for %s: %#v", tc.mode, footer)
 			}
 			assertAllRowsWidth(t, frame.Lines, 96)

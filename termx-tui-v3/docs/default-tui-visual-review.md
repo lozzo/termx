@@ -67,6 +67,8 @@
 - 切片 86：overlay/page/copy 视觉产品化 polish。
 - 切片 87：默认入口截图级视觉验收。
 
+切片 84 已完成第一轮 shell bar 重绘：顶部不再使用 `ws:/tab:/active:` 这类工程标签，而是使用 workspace、tab strip、`[⊕]`、active pane、`◆ owner`、terminal/floating 和 action token；底部不再使用 `mode:/keys:`，而是使用 `MODE • [KEY] ACTION` 快捷键 taxonomy、active target 和 summary。最终是否达到截图级视觉仍以后续切片 87 的真实默认入口验收为准。
+
 ## 5. 手工复核入口
 
 每次视觉返工后都必须手工复核：
