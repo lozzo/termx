@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-v3-tmux-smoke test-cli-v3-tmux-terminal-smoke test-cli-v3-tmux-resize-smoke test-cli-v3-tmux-ansi-smoke test-cli-default-smoke test-cli-default-deps test-v2-migration
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli test-core-v2 test-tui-v3 test-cli-v3-smoke test-cli-v3-tmux-smoke test-cli-v3-tmux-terminal-smoke test-cli-v3-tmux-resize-smoke test-cli-v3-tmux-ansi-smoke test-cli-v3-tmux-stability-smoke test-cli-default-smoke test-cli-default-deps test-v2-migration
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -30,6 +30,7 @@ help:
 		'  make test-cli-v3-tmux-terminal-smoke Run optional tmux terminal create/attach/input smoke' \
 		'  make test-cli-v3-tmux-resize-smoke Run optional tmux resize/layout smoke' \
 		'  make test-cli-v3-tmux-ansi-smoke Run optional tmux ANSI/theme/live surface smoke' \
+		'  make test-cli-v3-tmux-stability-smoke Run optional tmux short stability smoke' \
 		'  make test-v2-migration Test v2/v3 migration modules and default CLI smoke' \
 		'' \
 		'Variables:' \
@@ -153,6 +154,17 @@ test-cli-v3-tmux-ansi-smoke:
 	tmp="$$(mktemp -d)"; \
 	go build -o "$$tmp/termx" ./termx-cli/cmd/termx; \
 	"$$tmp/termx" v3 tmux-ansi-smoke --termx-bin "$$tmp/termx"; \
+	rm -rf "$$tmp"
+
+test-cli-v3-tmux-stability-smoke:
+	set -e; \
+	if ! command -v tmux >/dev/null 2>&1; then \
+		echo "tmux not installed; skipping tmux stability smoke"; \
+		exit 0; \
+	fi; \
+	tmp="$$(mktemp -d)"; \
+	go build -o "$$tmp/termx" ./termx-cli/cmd/termx; \
+	"$$tmp/termx" v3 tmux-stability-smoke --termx-bin "$$tmp/termx" --rounds 2; \
 	rm -rf "$$tmp"
 
 test-cli-default-smoke:

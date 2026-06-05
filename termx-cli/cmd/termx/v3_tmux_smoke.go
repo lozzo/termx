@@ -61,6 +61,13 @@ type v3TmuxANSISmokeResult struct {
 	ANSICaptured string
 }
 
+type v3TmuxStabilitySmokeResult struct {
+	ArtifactDir  string
+	TimelinePath string
+	Rounds       int
+	Artifacts    []string
+}
+
 func runV3TmuxSmoke(ctx context.Context) (v3TmuxSmokeResult, error) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		return v3TmuxSmokeResult{}, fmt.Errorf("tmux smoke requires tmux in PATH: %w", err)
@@ -591,6 +598,70 @@ func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeRe
 		TimelinePath: timelinePath,
 		Captured:     plain,
 		ANSICaptured: ansi,
+	}, nil
+}
+
+func runV3TmuxStabilitySmoke(ctx context.Context, termxBin string, rounds int) (v3TmuxStabilitySmokeResult, error) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return v3TmuxStabilitySmokeResult{}, fmt.Errorf("tmux stability smoke requires tmux in PATH: %w", err)
+	}
+	if termxBin == "" {
+		return v3TmuxStabilitySmokeResult{}, fmt.Errorf("tmux stability smoke requires a termx binary path")
+	}
+	if rounds <= 0 {
+		rounds = 1
+	}
+	artifactDir, err := os.MkdirTemp("", "termx-v3-tmux-stability-*")
+	if err != nil {
+		return v3TmuxStabilitySmokeResult{}, err
+	}
+	removeArtifacts := true
+	defer func() {
+		if removeArtifacts {
+			_ = os.RemoveAll(artifactDir)
+		}
+	}()
+	timelinePath := filepath.Join(artifactDir, "timeline.txt")
+	appendTimeline := func(format string, args ...any) {
+		line := fmt.Sprintf(format, args...) + "\n"
+		_ = appendFile(timelinePath, line)
+	}
+	var artifacts []string
+	for round := 1; round <= rounds; round++ {
+		appendTimeline("round %d terminal smoke start", round)
+		terminal, err := runV3TmuxTerminalSmoke(ctx, termxBin)
+		if err != nil {
+			return v3TmuxStabilitySmokeResult{}, fmt.Errorf("round %d terminal smoke: %w", round, err)
+		}
+		artifacts = append(artifacts, terminal.ArtifactDir)
+		appendTimeline("round %d terminal smoke ok artifact=%s", round, terminal.ArtifactDir)
+
+		appendTimeline("round %d resize smoke start", round)
+		resize, err := runV3TmuxResizeSmoke(ctx, termxBin)
+		if err != nil {
+			return v3TmuxStabilitySmokeResult{}, fmt.Errorf("round %d resize smoke: %w", round, err)
+		}
+		artifacts = append(artifacts, resize.ArtifactDir)
+		appendTimeline("round %d resize smoke ok artifact=%s before=%s after=%s", round, resize.ArtifactDir, resize.BeforeSize, resize.AfterSize)
+
+		appendTimeline("round %d ansi smoke start", round)
+		ansi, err := runV3TmuxANSISmoke(ctx, termxBin)
+		if err != nil {
+			return v3TmuxStabilitySmokeResult{}, fmt.Errorf("round %d ansi smoke: %w", round, err)
+		}
+		artifacts = append(artifacts, ansi.ArtifactDir)
+		appendTimeline("round %d ansi smoke ok artifact=%s", round, ansi.ArtifactDir)
+	}
+	manifest := strings.Join(append([]string{"tmux stability artifacts:"}, artifacts...), "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(artifactDir, "artifacts.txt"), []byte(manifest), 0o600); err != nil {
+		return v3TmuxStabilitySmokeResult{}, err
+	}
+	removeArtifacts = false
+	return v3TmuxStabilitySmokeResult{
+		ArtifactDir:  artifactDir,
+		TimelinePath: timelinePath,
+		Rounds:       rounds,
+		Artifacts:    artifacts,
 	}, nil
 }
 

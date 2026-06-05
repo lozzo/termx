@@ -43,6 +43,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3TmuxTerminalSmokeCommand())
 	cmd.AddCommand(v3TmuxResizeSmokeCommand())
 	cmd.AddCommand(v3TmuxANSISmokeCommand())
+	cmd.AddCommand(v3TmuxStabilitySmokeCommand())
 	cmd.AddCommand(v3NewCommand(socket, logFile))
 	cmd.AddCommand(v3LsCommand(socket, logFile))
 	cmd.AddCommand(v3KillCommand(socket, logFile))
@@ -290,6 +291,43 @@ func v3TmuxANSISmokeCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&termxBin, "termx-bin", "", "termx binary path to run inside tmux")
+	return cmd
+}
+
+func v3TmuxStabilitySmokeCommand() *cobra.Command {
+	var termxBin string
+	var rounds int
+	cmd := &cobra.Command{
+		Use:   "tmux-stability-smoke",
+		Short: "Run a short tmux black-box stability smoke",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if termxBin == "" {
+				exe, err := osExecutable()
+				if err != nil {
+					return err
+				}
+				termxBin = exe
+			}
+			result, err := runV3TmuxStabilitySmoke(cmd.Context(), termxBin, rounds)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"termx v3 tmux stability smoke ok: rounds=%d artifacts=%d artifact_dir=%s timeline=%s\n",
+				result.Rounds,
+				len(result.Artifacts),
+				result.ArtifactDir,
+				result.TimelinePath,
+			)
+			for _, artifact := range result.Artifacts {
+				fmt.Fprintf(cmd.OutOrStdout(), "artifact: %s\n", artifact)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&termxBin, "termx-bin", "", "termx binary path to run inside tmux")
+	cmd.Flags().IntVar(&rounds, "rounds", 1, "number of stability rounds")
 	return cmd
 }
 

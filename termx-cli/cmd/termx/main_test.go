@@ -1683,6 +1683,80 @@ func TestV3TmuxANSISmokeCommandReportsArtifacts(t *testing.T) {
 	}
 }
 
+func TestV3TmuxStabilitySmokeRunsShortRound(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	result, err := runV3TmuxStabilitySmoke(ctx, termxBin, 1)
+	if err != nil {
+		t.Fatalf("tmux stability smoke: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(result.ArtifactDir)
+		for _, artifact := range result.Artifacts {
+			_ = os.RemoveAll(artifact)
+		}
+	})
+	if result.Rounds != 1 || len(result.Artifacts) != 3 || result.ArtifactDir == "" || result.TimelinePath == "" {
+		t.Fatalf("unexpected stability result %#v", result)
+	}
+	timeline, err := os.ReadFile(result.TimelinePath)
+	if err != nil {
+		t.Fatalf("read stability timeline: %v", err)
+	}
+	if !strings.Contains(string(timeline), "terminal smoke ok") ||
+		!strings.Contains(string(timeline), "resize smoke ok") ||
+		!strings.Contains(string(timeline), "ansi smoke ok") {
+		t.Fatalf("stability timeline missing child smoke results:\n%s", timeline)
+	}
+	for _, artifact := range result.Artifacts {
+		if _, err := os.Stat(filepath.Join(artifact, "capture.txt")); err != nil {
+			t.Fatalf("child artifact %s missing capture.txt: %v", artifact, err)
+		}
+	}
+}
+
+func TestV3TmuxStabilitySmokeCommandReportsArtifacts(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "tmux-stability-smoke", "--termx-bin", termxBin, "--rounds", "1"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 tmux-stability-smoke returned error: %v", err)
+	}
+	text := out.String()
+	if artifactDir := v3TmuxSmokeOutputValue(text, "artifact_dir"); artifactDir != "" {
+		t.Cleanup(func() {
+			_ = os.RemoveAll(artifactDir)
+		})
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "artifact: ") {
+			artifact := strings.TrimSpace(strings.TrimPrefix(line, "artifact: "))
+			t.Cleanup(func() {
+				_ = os.RemoveAll(artifact)
+			})
+		}
+	}
+	if !strings.Contains(text, "termx v3 tmux stability smoke ok") ||
+		!strings.Contains(text, "rounds=1") ||
+		!strings.Contains(text, "artifacts=3") ||
+		!strings.Contains(text, "artifact_dir=") ||
+		!strings.Contains(text, "timeline=") ||
+		!strings.Contains(text, "artifact: ") {
+		t.Fatalf("unexpected tmux stability smoke output:\n%s", text)
+	}
+}
+
 func v3TmuxSmokeOutputValue(output string, key string) string {
 	prefix := key + "="
 	for _, field := range strings.Fields(output) {
