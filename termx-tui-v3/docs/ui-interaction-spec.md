@@ -891,7 +891,7 @@ UI chrome 优先级高于 terminal mouse forwarding。点击边框、标题、�
 - app/runtime 已把真实鼠标坐标派发到最新 render hit region。
 - 点击 pane content 或 pane chrome 可以切换 active pane，并立即改变 active / inactive pane 视觉状态。
 - 点击 pane action slot 可以执行同一 semantic command，例如 close。
-- 点击 split divider 或 resize handle 已进入 resize 语义或触发 resize command。
+- 按住并拖动 pane split divider 或 pane 边框 resize handle 会持续派发同一 `PaneCommandResize` 语义；拖动过程中不会漏发到底层 terminal。
 - 点击 floating pane title/content 会聚焦并提升 z-order。
 - 点击 floating pane 顶部 close action 会关闭 floating pane。
 - 点击 floating pane 右下 resize handle 会进入 floating resize 语义。
@@ -1392,7 +1392,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。
 - 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题、footer 和 toast 必须同步变化。
 - 关闭：先聚焦目标 pane，在 pane mode 中按 `x` 关闭 pane，或点击 pane 顶部 action slot；关闭后 active pane 必须稳定落到仍存在的 pane，不得留下已删除 pane 的高亮或 footer target。
-- resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化。
+- resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；也可以用鼠标按住 split divider 或 pane 边框 resize handle 并拖动；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化，拖动事件不得漏发给 terminal。
 - zoom：在 pane mode 中按 `z` zoom / unzoom；zoom 后只显示目标 pane，unzoom 后恢复 split layout，footer 和 toast 必须显示对应反馈。
 - card/split：在 pane mode 中按 `c` 切到 card panel，按 `p` 切到 split line；presentation 变化不得改变 pane id、terminal binding、active pane 或 copy mode 语义。
 - header/footer：按 `Ctrl-g` 进入 global mode，按 `h` 隐藏/恢复 header，按 `f` 隐藏/恢复 footer；隐藏后 body 必须回收空间，pane frame 仍填满 viewport。

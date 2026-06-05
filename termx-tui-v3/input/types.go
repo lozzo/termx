@@ -30,6 +30,8 @@ const (
 	MouseWheelUp   MouseButton = "wheel-up"
 	MouseWheelDown MouseButton = "wheel-down"
 	MouseLeft      MouseButton = "left"
+	MouseLeftDrag  MouseButton = "left-drag"
+	MouseLeftUp    MouseButton = "left-up"
 )
 
 // InputEvent 是 TerminalHost 拥有的宿主输入边界。
@@ -350,7 +352,7 @@ func routeMouse(event InputEvent, copyModeActive bool) Intent {
 			return Intent{Kind: IntentRequestOlder, Event: event}
 		}
 		return Intent{Kind: IntentEnterCopyMode, Event: event}
-	case MouseLeft:
+	case MouseLeft, MouseLeftDrag:
 		if copyModeActive {
 			return Intent{Kind: IntentMouseSelect, Event: event}
 		}

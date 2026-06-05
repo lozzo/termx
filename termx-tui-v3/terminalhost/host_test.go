@@ -118,7 +118,7 @@ func TestHostEnterCloseRestoresTerminal(t *testing.T) {
 		t.Fatalf("expected raw mode once, got %d", got)
 	}
 	gotEnter := output.String()
-	for _, seq := range []string{enterAltScreen, hideCursor, enableBracketPaste, enableMouseCell, enableMouseSGR} {
+	for _, seq := range []string{enterAltScreen, hideCursor, enableBracketPaste, enableMouseCell, enableMouseButton, enableMouseSGR} {
 		if !strings.Contains(gotEnter, seq) {
 			t.Fatalf("missing enter sequence %q in %q", seq, gotEnter)
 		}
@@ -133,7 +133,7 @@ func TestHostEnterCloseRestoresTerminal(t *testing.T) {
 		t.Fatalf("expected restore once, got %d", got)
 	}
 	gotAll := output.String()
-	for _, seq := range []string{disableMouseSGR, disableMouseCell, disableBracketPaste, showCursor, exitAltScreen} {
+	for _, seq := range []string{disableMouseSGR, disableMouseButton, disableMouseCell, disableBracketPaste, showCursor, exitAltScreen} {
 		if !strings.Contains(gotAll, seq) {
 			t.Fatalf("missing exit sequence %q in %q", seq, gotAll)
 		}
@@ -268,10 +268,13 @@ func TestHostRestoresTerminalWhenContextIsCanceled(t *testing.T) {
 
 func TestInputParserConvertsMouseAndKeys(t *testing.T) {
 	parser := NewInputParser()
-	got := parser.Feed([]byte("\x1b[<64;10;4M\x1b[<65;11;5M\r好"))
+	got := parser.Feed([]byte("\x1b[<64;10;4M\x1b[<65;11;5M\x1b[<0;12;6M\x1b[<32;13;6M\x1b[<0;13;6m\r好"))
 	want := []input.InputEvent{
 		{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp, Row: 4, Col: 10, RawSeq: "\x1b[<64;10;4M"},
 		{Kind: input.EventKindMouse, Mouse: input.MouseWheelDown, Row: 5, Col: 11, RawSeq: "\x1b[<65;11;5M"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: 6, Col: 12, RawSeq: "\x1b[<0;12;6M"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseLeftDrag, Row: 6, Col: 13, RawSeq: "\x1b[<32;13;6M"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseLeftUp, Row: 6, Col: 13, RawSeq: "\x1b[<0;13;6m"},
 		{Kind: input.EventKindKey, Key: input.KeyEnter, RawSeq: "\r"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "好", RawSeq: "好"},
 	}

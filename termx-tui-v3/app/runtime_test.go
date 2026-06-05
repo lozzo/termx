@@ -367,6 +367,134 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post split-line: %v", err)
+	}
+	if err := runtime.Post(ShellSplitActivePaneMsg{Pane: state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive}, Direction: state.SplitDirectionVertical}); err != nil {
+		t.Fatalf("post split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split: %v", err)
+	}
+	beforeInputCount := len(terminal.Inputs)
+	beforeResizeCount := len(terminal.Resizes)
+	resizeRegion := framePaneResizeRegion(t, lastRuntimeFrame(t, host), state.DefaultPaneID, state.PaneResizeRight)
+	start := mouseEventAt(resizeRegion.Rect)
+	start.Mouse = input.MouseLeft
+	if err := host.SendInput(start); err != nil {
+		t.Fatalf("send drag start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain drag start: %v", err)
+	}
+	if runtime.mouseDrag.PaneID != state.DefaultPaneID || runtime.mouseDrag.Direction != state.PaneResizeRight {
+		t.Fatalf("expected active pane resize drag state, got %#v", runtime.mouseDrag)
+	}
+
+	drag := start
+	drag.Mouse = input.MouseLeftDrag
+	drag.Col += 5
+	if err := host.SendInput(drag); err != nil {
+		t.Fatalf("send drag move: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain drag move: %v", err)
+	}
+	split := runtime.State().Shell.Workspace.Tabs[0].RootSplit
+	if split.BiasCells != 5 {
+		t.Fatalf("expected horizontal divider drag to resize split bias, got %#v", split)
+	}
+	if len(terminal.Resizes) <= beforeResizeCount {
+		t.Fatalf("pane drag resize should schedule active terminal content resize, got %#v", terminal.Resizes)
+	}
+	if len(terminal.Inputs) != beforeInputCount {
+		t.Fatalf("pane resize drag must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+
+	release := drag
+	release.Mouse = input.MouseLeftUp
+	if err := host.SendInput(release); err != nil {
+		t.Fatalf("send drag release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain drag release: %v", err)
+	}
+	if runtime.mouseDrag.Active {
+		t.Fatalf("release should clear drag state, got %#v", runtime.mouseDrag)
+	}
+
+	afterRelease := release
+	afterRelease.Mouse = input.MouseLeftDrag
+	afterRelease.Col += 3
+	if err := host.SendInput(afterRelease); err != nil {
+		t.Fatalf("send drag after release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain drag after release: %v", err)
+	}
+	if got := runtime.State().Shell.Workspace.Tabs[0].RootSplit.BiasCells; got != 5 {
+		t.Fatalf("drag after release must not resize, bias=%d", got)
+	}
+}
+
+func TestAppRuntimeDragsHorizontalPaneDividerResize(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newShellHitRuntime(
+		state.Root{Shell: state.DefaultShell().
+			SetPanelPresentation(state.PanelPresentationSplitLine).
+			SplitActivePane(state.PaneState{ID: "pane-bottom", Title: "bottom", Kind: state.PaneTerminalLive}, state.SplitDirectionHorizontal)},
+		host,
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	resizeRegion := framePaneResizeRegion(t, lastRuntimeFrame(t, host), state.DefaultPaneID, state.PaneResizeDown)
+	if resizeRegion.Direction != string(state.PaneResizeDown) {
+		t.Fatalf("expected horizontal split divider direction down, got %#v", resizeRegion)
+	}
+	start := mouseEventAt(resizeRegion.Rect)
+	start.Mouse = input.MouseLeft
+	drag := start
+	drag.Mouse = input.MouseLeftDrag
+	drag.Row += 3
+	release := drag
+	release.Mouse = input.MouseLeftUp
+	for _, event := range []input.InputEvent{start, drag, release} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send event %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain event %#v: %v", event, err)
+		}
+	}
+	if got := runtime.State().Shell.Workspace.Tabs[0].RootSplit.BiasCells; got != 3 {
+		t.Fatalf("expected vertical drag to update horizontal split bias, got %#v", runtime.State().Shell.Workspace.Tabs[0].RootSplit)
+	}
+}
+
 func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{
@@ -653,6 +781,28 @@ func frameActionHitRegion(t *testing.T, frame render.Frame, actionID string, pan
 		}
 	}
 	t.Fatalf("missing content action=%s pane=%s in %#v", actionID, paneID, frame.HitRegions)
+	return render.HitRegion{}
+}
+
+func frameHitRegionByAction(t *testing.T, frame render.Frame, kind render.HitRegionKind, actionID string, paneID string) render.HitRegion {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.Kind == kind && region.ActionID == actionID && (paneID == "" || region.PaneID == paneID) {
+			return region
+		}
+	}
+	t.Fatalf("missing hit region kind=%s action=%s pane=%s in %#v", kind, actionID, paneID, frame.HitRegions)
+	return render.HitRegion{}
+}
+
+func framePaneResizeRegion(t *testing.T, frame render.Frame, paneID string, direction state.PaneResizeDirection) render.HitRegion {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.Kind == render.HitRegionPaneResize && region.ActionID == "pane.resize" && region.PaneID == paneID && region.Direction == string(direction) {
+			return region
+		}
+	}
+	t.Fatalf("missing pane resize region pane=%s direction=%s in %#v", paneID, direction, frame.HitRegions)
 	return render.HitRegion{}
 }
 

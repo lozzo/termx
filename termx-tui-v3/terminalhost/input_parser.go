@@ -192,6 +192,12 @@ func mouseButton(code int, final byte) (input.MouseButton, bool) {
 		}
 		return input.MouseWheelUp, true
 	}
+	if final == 'm' && code&3 == 0 {
+		return input.MouseLeftUp, true
+	}
+	if final == 'M' && code&32 != 0 && code&3 == 0 {
+		return input.MouseLeftDrag, true
+	}
 	if final == 'M' && code&3 == 0 {
 		return input.MouseLeft, true
 	}

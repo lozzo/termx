@@ -33,12 +33,13 @@ type Rect struct {
 }
 
 type HitRegion struct {
-	Kind     HitRegionKind
-	Rect     Rect
-	LineID   uint64
-	Row      int
-	PaneID   string
-	ActionID string
+	Kind      HitRegionKind
+	Rect      Rect
+	LineID    uint64
+	Row       int
+	PaneID    string
+	ActionID  string
+	Direction string
 }
 
 type RenderVMBuilder struct{}

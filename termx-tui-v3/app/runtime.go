@@ -152,12 +152,21 @@ type AppRuntime struct {
 	runner              EffectRunner
 	queue               []Msg
 	lastHitRegions      []render.HitRegion
+	mouseDrag           mouseDragState
 	hostSizeInitialized bool
 	now                 func() time.Time
 	toastTickInterval   time.Duration
 	lastToastTick       time.Time
 	running             bool
 	quit                bool
+}
+
+type mouseDragState struct {
+	Active    bool
+	PaneID    string
+	Direction state.PaneResizeDirection
+	LastCol   int
+	LastRow   int
 }
 
 func NewAppRuntime(
@@ -359,12 +368,24 @@ func (runtime *AppRuntime) renderFrame() {
 
 func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	inputMsg, ok := msg.(InputMsg)
-	if !ok || inputMsg.Event.Kind != input.EventKindMouse || inputMsg.Event.Mouse != input.MouseLeft {
+	if !ok || inputMsg.Event.Kind != input.EventKindMouse {
+		return msg
+	}
+	if dragMsg, handled := runtime.dispatchMouseDrag(inputMsg.Event); handled {
+		return dragMsg
+	}
+	if inputMsg.Event.Mouse != input.MouseLeft {
 		return msg
 	}
 	region, ok := hitRegionAt(runtime.lastHitRegions, inputMsg.Event)
 	if !ok {
 		return msg
+	}
+	if region.Kind == render.HitRegionPaneResize {
+		if drag, ok := paneResizeDragState(region, inputMsg.Event); ok {
+			runtime.mouseDrag = drag
+			return NoopMsg{}
+		}
 	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
 		return ShellPaneCommandMsg{Command: command}
@@ -390,6 +411,84 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
 		return msg
+	}
+}
+
+func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool) {
+	switch event.Mouse {
+	case input.MouseLeftUp:
+		if runtime.mouseDrag.Active {
+			runtime.mouseDrag = mouseDragState{}
+			return NoopMsg{}, true
+		}
+		return nil, false
+	case input.MouseLeftDrag:
+		if !runtime.mouseDrag.Active {
+			return nil, false
+		}
+		direction, delta := mouseDragResize(runtime.mouseDrag, event)
+		if delta <= 0 {
+			return NoopMsg{}, true
+		}
+		runtime.mouseDrag.LastCol = event.Col
+		runtime.mouseDrag.LastRow = event.Row
+		return ShellPaneCommandMsg{Command: state.PaneCommand{
+			Action:          state.PaneCommandResize,
+			Target:          state.PaneCommandTarget{PaneID: runtime.mouseDrag.PaneID},
+			ResizeDirection: direction,
+			Delta:           delta,
+			Source:          state.PaneCommandSourceMouse,
+		}}, true
+	default:
+		return nil, false
+	}
+}
+
+func paneResizeDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
+	direction, ok := paneResizeDirectionFromHitRegion(region)
+	if !ok || region.PaneID == "" {
+		return mouseDragState{}, false
+	}
+	return mouseDragState{
+		Active:    true,
+		PaneID:    region.PaneID,
+		Direction: direction,
+		LastCol:   event.Col,
+		LastRow:   event.Row,
+	}, true
+}
+
+func paneResizeDirectionFromHitRegion(region render.HitRegion) (state.PaneResizeDirection, bool) {
+	switch region.Direction {
+	case string(state.PaneResizeLeft):
+		return state.PaneResizeLeft, true
+	case string(state.PaneResizeRight), "":
+		return state.PaneResizeRight, true
+	case string(state.PaneResizeUp):
+		return state.PaneResizeUp, true
+	case string(state.PaneResizeDown):
+		return state.PaneResizeDown, true
+	default:
+		return "", false
+	}
+}
+
+func mouseDragResize(drag mouseDragState, event input.InputEvent) (state.PaneResizeDirection, int) {
+	switch drag.Direction {
+	case state.PaneResizeLeft, state.PaneResizeRight:
+		delta := event.Col - drag.LastCol
+		if delta < 0 {
+			return state.PaneResizeLeft, -delta
+		}
+		return state.PaneResizeRight, delta
+	case state.PaneResizeUp, state.PaneResizeDown:
+		delta := event.Row - drag.LastRow
+		if delta < 0 {
+			return state.PaneResizeUp, -delta
+		}
+		return state.PaneResizeDown, delta
+	default:
+		return "", 0
 	}
 }
 

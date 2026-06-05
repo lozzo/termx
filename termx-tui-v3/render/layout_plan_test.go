@@ -210,16 +210,50 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if plan.HitRegions[1].Kind != HitRegionPaneResize || plan.HitRegions[1].ActionID != "pane.resize" {
 		t.Fatalf("pane resize region should precede content, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[2].Kind != HitRegionPaneChrome || plan.HitRegions[2].ActionID != "pane.focus" {
+	if plan.HitRegions[1].Direction != "right" || plan.HitRegions[1].Rect.H != plan.Panels[0].Rect.H {
+		t.Fatalf("pane resize region should cover right border with direction, got %#v panel=%#v", plan.HitRegions[1], plan.Panels[0])
+	}
+	if plan.HitRegions[2].Kind != HitRegionPaneResize || plan.HitRegions[2].Direction != "down" {
+		t.Fatalf("pane bottom resize region should precede content, got %#v", plan.HitRegions)
+	}
+	if plan.HitRegions[3].Kind != HitRegionPaneChrome || plan.HitRegions[3].ActionID != "pane.focus" {
 		t.Fatalf("pane chrome region should precede content, got %#v", plan.HitRegions)
 	}
 	historyIndex := hitRegionIndex(plan.HitRegions, HitRegionHistoryRow)
 	paneContentIndex := hitRegionIndex(plan.HitRegions, HitRegionPaneContent)
-	if historyIndex <= 2 {
+	if historyIndex <= 3 {
 		t.Fatalf("content hit region should remain after chrome regions, got %#v", plan.HitRegions)
 	}
 	if paneContentIndex <= historyIndex {
 		t.Fatalf("broad pane content focus region must not cover specific content hits, got %#v", plan.HitRegions)
+	}
+}
+
+func TestMeasureLayoutAddsSplitDividerResizeHitRegions(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{
+				{ID: "left", Presentation: PanelPresentationSplitLine},
+				{ID: "right", Presentation: PanelPresentationSplitLine, Active: true},
+			},
+			Split: SplitVM{Direction: SplitVertical, Children: []SplitVM{{PaneID: "left"}, {PaneID: "right"}}},
+		},
+	}
+	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
+	region := hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "left")
+	if region.Direction != "right" || region.Rect != (Rect{X: 20, Y: 0, W: 1, H: 10}) {
+		t.Fatalf("expected vertical divider resize region, got %#v", region)
+	}
+
+	shell.Layout.Split = SplitVM{Direction: SplitHorizontal, Children: []SplitVM{{PaneID: "top"}, {PaneID: "bottom"}}}
+	shell.Layout.Panels = []PanelVM{
+		{ID: "top", Presentation: PanelPresentationSplitLine},
+		{ID: "bottom", Presentation: PanelPresentationSplitLine, Active: true},
+	}
+	plan = MeasureLayout(shell, Rect{W: 40, H: 10})
+	region = hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "top")
+	if region.Direction != "down" || region.Rect != (Rect{X: 0, Y: 5, W: 40, H: 1}) {
+		t.Fatalf("expected horizontal divider resize region, got %#v", region)
 	}
 }
 
@@ -458,4 +492,15 @@ func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
 		}
 	}
 	return -1
+}
+
+func hitRegionByActionAndPane(t *testing.T, regions []HitRegion, actionID string, paneID string) HitRegion {
+	t.Helper()
+	for _, region := range regions {
+		if region.ActionID == actionID && region.PaneID == paneID {
+			return region
+		}
+	}
+	t.Fatalf("missing action=%s pane=%s in %#v", actionID, paneID, regions)
+	return HitRegion{}
 }

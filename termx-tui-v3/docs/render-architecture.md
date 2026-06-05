@@ -1012,7 +1012,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - pane mode、resize mode、鼠标 hit region 和 CLI mini command adapter 已接入同一 pane command contract；后续入口不得绕过 reducer 或另建局部 command path。
 - pane command 后会重新测量 layout plan；active terminal content rect 变化会触发 terminal resize 去重；active copy pane content width 变化会 invalid/rebind authoritative `HistoryWindow`。
 - `TerminalSessionStore` 已记录 terminal resize 目标尺寸和序号，连续 split/resize/zoom 等 pane command 下旧 resize result 不会覆盖最新 content rect。
-- app/runtime 已缓存最新 render hit regions，把真实鼠标坐标派发到 pane content、pane chrome、pane action、toast 和 overlay content action；UI chrome 命中优先于 terminal forwarding。
+- app/runtime 已缓存最新 render hit regions，把真实鼠标坐标派发到 pane content、pane chrome、pane action、pane 边框/分隔线 resize drag、toast 和 overlay content action；UI chrome 命中优先于 terminal forwarding。
 - active pane border/title/footer/toast 会跟随键盘和鼠标 focus、split、close、resize、zoom、card/split 切换更新。
 - Terminal Picker query、过滤、selected row、上下键移动、Enter attach/focus、row click attach/focus、new action feedback、preview/detail 行和 no terminal input leak 已落地。
 - Terminal Pool 数据源与 Picker 服务接线一期已落地：`TerminalPoolStore` 保存 list loading/empty/error/items/stale guard，Terminal Picker 打开可触发 terminal list request，picker rows 合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 通过 service/effect/result message 回到 reducer。

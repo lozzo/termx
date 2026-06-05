@@ -216,6 +216,7 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	for i := len(plan.Floatings) - 1; i >= 0; i-- {
 		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
 	}
+	regions = appendSplitResizeHitRegions(regions, shell.Layout.Split, plan.Body, plan.Viewport)
 	for _, panel := range plan.Panels {
 		regions = appendPanelChromeHitRegions(regions, panel, plan.Viewport)
 		regions = appendTranslatedRegions(regions, panel.Panel.Content.HitRegions, panel.ContentRect, plan.Viewport)
@@ -245,8 +246,67 @@ func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, viewpor
 	}
 	paneID := panel.Panel.ID
 	out = appendRegion(out, HitRegion{Kind: HitRegionPaneAction, Rect: paneActionRect(panel.Rect), PaneID: paneID, ActionID: "pane.close"}, viewport)
-	out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: paneResizeRect(panel.Rect), PaneID: paneID, ActionID: "pane.resize"}, viewport)
+	out = appendPanelEdgeResizeRegions(out, panel, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: "pane.focus"}, viewport)
+	return out
+}
+
+func appendSplitResizeHitRegions(out []HitRegion, split SplitVM, rect Rect, viewport Rect) []HitRegion {
+	if rect.W <= 1 || rect.H <= 1 || split.PaneID != "" || len(split.Children) < 2 {
+		return out
+	}
+	first := split.Children[0]
+	second := split.Children[1]
+	targetPaneID := firstPaneIDInSplit(first)
+	switch split.Direction {
+	case SplitVertical:
+		firstWidth := splitFirstExtent(split, rect.W)
+		dividerX := rect.X + firstWidth
+		if targetPaneID != "" {
+			out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: dividerX, Y: rect.Y, W: 1, H: rect.H}, PaneID: targetPaneID, ActionID: "pane.resize", Direction: "right"}, viewport)
+		}
+		out = appendSplitResizeHitRegions(out, first, Rect{X: rect.X, Y: rect.Y, W: firstWidth, H: rect.H}, viewport)
+		out = appendSplitResizeHitRegions(out, second, Rect{X: dividerX, Y: rect.Y, W: rect.W - firstWidth, H: rect.H}, viewport)
+	default:
+		firstHeight := splitFirstExtent(split, rect.H)
+		dividerY := rect.Y + firstHeight
+		if targetPaneID != "" {
+			out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rect.X, Y: dividerY, W: rect.W, H: 1}, PaneID: targetPaneID, ActionID: "pane.resize", Direction: "down"}, viewport)
+		}
+		out = appendSplitResizeHitRegions(out, first, Rect{X: rect.X, Y: rect.Y, W: rect.W, H: firstHeight}, viewport)
+		out = appendSplitResizeHitRegions(out, second, Rect{X: rect.X, Y: dividerY, W: rect.W, H: rect.H - firstHeight}, viewport)
+	}
+	return out
+}
+
+func firstPaneIDInSplit(split SplitVM) string {
+	if split.PaneID != "" {
+		return split.PaneID
+	}
+	for _, child := range split.Children {
+		if paneID := firstPaneIDInSplit(child); paneID != "" {
+			return paneID
+		}
+	}
+	return ""
+}
+
+func appendPanelEdgeResizeRegions(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {
+	rect := panel.Rect
+	if rect.W <= 0 || rect.H <= 0 {
+		return out
+	}
+	paneID := panel.Panel.ID
+	rightX := rect.X + rect.W - 1
+	if panel.Panel.Presentation == PanelPresentationSplitLine && rect.X+rect.W >= panel.Body.X+panel.Body.W {
+		rightX = panel.Body.X + panel.Body.W - 1
+	}
+	if rect.W > 1 {
+		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rightX, Y: rect.Y, W: 1, H: rect.H}, PaneID: paneID, ActionID: "pane.resize", Direction: "right"}, viewport)
+	}
+	if rect.H > 1 {
+		out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rect.X, Y: rect.Y + rect.H - 1, W: rect.W, H: 1}, PaneID: paneID, ActionID: "pane.resize", Direction: "down"}, viewport)
+	}
 	return out
 }
 

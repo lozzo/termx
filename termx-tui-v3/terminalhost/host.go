@@ -25,6 +25,8 @@ const (
 	disableBracketPaste = "\x1b[?2004l"
 	enableMouseCell     = "\x1b[?1000h"
 	disableMouseCell    = "\x1b[?1000l"
+	enableMouseButton   = "\x1b[?1002h"
+	disableMouseButton  = "\x1b[?1002l"
 	enableMouseSGR      = "\x1b[?1006h"
 	disableMouseSGR     = "\x1b[?1006l"
 )
@@ -354,12 +356,12 @@ func (host *Host) readResizeSignals(ctx context.Context, done <-chan struct{}, s
 }
 
 func enterSequence() string {
-	return enterAltScreen + hideCursor + enableBracketPaste + enableMouseCell + enableMouseSGR
+	return enterAltScreen + hideCursor + enableBracketPaste + enableMouseCell + enableMouseButton + enableMouseSGR
 }
 
 func exitSequence() string {
 	// 恢复顺序与进入顺序相反，避免退出时遗留鼠标或隐藏光标状态。
-	return disableMouseSGR + disableMouseCell + disableBracketPaste + showCursor + exitAltScreen
+	return disableMouseSGR + disableMouseButton + disableMouseCell + disableBracketPaste + showCursor + exitAltScreen
 }
 
 func defaultResizeSignalFactory() (<-chan os.Signal, func()) {
