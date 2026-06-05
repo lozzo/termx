@@ -833,7 +833,7 @@ pane 结构命令是 Workbench 的核心操作面，不应只存在于快捷键 
 - split、close、resize、zoom 后主体区域必须立即重新布局。
 - close and kill 必须进入确认或明确 danger 反馈。
 - 无效命令必须显示短提示或 toast，不得静默破坏状态。
-- resize 结果应在 pane chrome、几何提示或 toast 中短暂表达。
+- resize / move / focus 这类直接操控成功结果应优先通过 pane/floating 几何、active border、footer active target 等视觉反馈表达，不应在连续拖动时刷出 toast。错误、确认、copy、split/close 等离散结果仍可以显示 toast。
 
 命令至少需要表达：
 
@@ -895,7 +895,7 @@ UI chrome 优先级高于 terminal mouse forwarding。点击边框、标题、�
 - 点击 floating pane title/content 会聚焦并提升 z-order。
 - 点击 floating pane 顶部 close action 会关闭 floating pane。
 - 按住 floating pane 标题栏并拖动会持续派发同一 `FloatingCommandMove` 语义；按住右下 resize handle 并拖动会持续派发同一 `FloatingCommandResize` 语义；release 后清理 runtime drag state。
-- toast、overlay、floating、pane chrome、pane content 的命中优先级已经固定，UI chrome 命中不得继续转发到 terminal；toast/overlay 遮挡 floating 时不允许鼠标穿透到底层 floating。
+- toast、overlay、floating、pane action、split divider resize、pane chrome、pane content 的命中优先级已经固定，UI chrome 命中不得继续转发到 terminal；toast/overlay 遮挡 floating 时不允许鼠标穿透到底层 floating。pane action 必须优先于 split divider resize，避免横向分屏下方 pane 顶边的 split 图标被 resize 抢占。
 
 当前后续必须补齐：
 
@@ -1367,7 +1367,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 用户能隐藏和恢复 header/footer，并看到 body 空间真实回收。
 - 用户能看到 mode-specific footer hints，知道当前 mode 下可执行什么动作。
 - 用户能关闭当前 toast 或清空 toast，并看到 toast 按真实 runtime timer 自动消失且不改变 pane layout。
-- 每次结构操作后，active pane border/title、footer active target、toast feedback、content rect terminal resize 和 copy mode rebind 必须同步发生。
+- 每次结构操作后，active pane border/title、footer active target、content rect terminal resize 和 copy mode rebind 必须同步发生；toast feedback 只用于离散结果、错误或确认，不用于连续拖动和普通 focus 成功。
 
 这条验收线不要求：
 
@@ -1388,14 +1388,15 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 推荐真实 TUI 验收步骤：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
-- 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；也可以点击 pane 顶部的 split right / split down action token。新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。
-- 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题、footer 和 toast 必须同步变化。
+- 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；也可以点击 pane 顶部的 split right / split down action token。新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。横向分屏后，下方 pane 顶边 action token 必须仍可点击分屏，不能被 divider resize 命中抢占。
+- 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题和 footer 必须同步变化；普通 focus 成功不应额外弹出 toast。
 - 关闭：先聚焦目标 pane，在 pane mode 中按 `x` 关闭 pane，或点击 pane 顶部 action slot；关闭后 active pane 必须稳定落到仍存在的 pane，不得留下已删除 pane 的高亮或 footer target。
-- resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；也可以用鼠标按住 split divider 或 pane 边框 resize handle 并拖动；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化，拖动事件不得漏发给 terminal。
+- resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；也可以用鼠标按住 split divider 或 pane 边框 resize handle 并拖动；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化，拖动事件不得漏发给 terminal，也不得连续刷出 toast。
 - zoom：在 pane mode 中按 `z` zoom / unzoom；zoom 后只显示目标 pane，unzoom 后恢复 split layout，footer 和 toast 必须显示对应反馈。
 - card/split：在 pane mode 中按 `c` 切到 card panel，按 `p` 切到 split line；presentation 变化不得改变 pane id、terminal binding、active pane 或 copy mode 语义。
 - header/footer：按 `Ctrl-g` 进入 global mode，按 `h` 隐藏/恢复 header，按 `f` 隐藏/恢复 footer；隐藏后 body 必须回收空间，pane frame 仍填满 viewport。
-- toast：在 global mode 中按 `T` 关闭当前 toast，按 `t` 清空全部 toast；普通反馈会按真实 runtime timer 自动消失，pending 或错误反馈保留更久但也有明确生命周期；toast 不得改变 pane layout，也不得把操作绕过 shell message。
+- toast：在 global mode 中按 `T` 关闭当前 toast，按 `t` 清空全部 toast；同内容 toast 会去重并刷新生命周期，普通反馈会按真实 runtime timer 自动消失，pending 或错误反馈保留更久但也有明确生命周期；toast 不得改变 pane layout，也不得把操作绕过 shell message。
+- 中文输入法：真实 TUI 中 host cursor 默认隐藏；有 pane、overlay、Prompt 或 live cursor 时，隐藏 host cursor 应停在全局 cursor rect。切到中文输入法输入拼音字母时，预编辑文本不应出现在窗口底部并顶起整个界面。
 - copy rebind：进入 copy mode 后，执行 resize、header/footer hide 或 pane size change；历史窗口必须按新的 content cols 重新请求 authoritative window，不得显示旧 cols 的历史。
 
 如果上述基本操作出现回归，应先修复 UI framework 产品壳，再继续 terminal-live、copy-history 或 Terminal Pool 等内容深化。否则真实 terminal 内容会掩盖 chrome、hit region、layout/effect 同步问题。
