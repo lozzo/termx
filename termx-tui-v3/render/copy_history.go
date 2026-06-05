@@ -45,15 +45,17 @@ func copyHistorySearchLine(copyMode state.CopyModeStore, totalRows int) Line {
 	query := copyMode.Query
 	if query == "" {
 		return Line{Cells: []Cell{
-			styledCell("search ", StyleMuted),
+			styledCell("⌕ search ", StyleMuted),
 			styledCell("[/ query]", StyleMuted),
-			styledCell(fmt.Sprintf(" rows:%d", totalRows), StyleMuted),
+			NewCell(" "),
+			styledCell(fmt.Sprintf(" rows:%d ", totalRows), StyleMuted),
 		}}
 	}
 	return Line{Cells: []Cell{
-		styledCell("search ", StyleMuted),
+		styledCell("⌕ search ", StyleMuted),
 		styledCell(query, StyleAccent),
-		styledCell(fmt.Sprintf(" match:%d/%d", activeCopyMatchOrdinal(copyMode), len(copyMode.Matches)), StyleMuted),
+		NewCell(" "),
+		styledCell(fmt.Sprintf(" match:%d/%d ", activeCopyMatchOrdinal(copyMode), len(copyMode.Matches)), StyleMuted),
 	}}
 }
 
@@ -261,9 +263,10 @@ func copyHistoryScrollbarLine(history state.HistoryStore, copyMode state.CopyMod
 		}
 	}
 	return Line{Cells: []Cell{
-		styledCell("scroll ", StyleMuted),
+		styledCell("SCROLL ", StyleMuted),
 		styledCell(thumb, StyleAccent),
-		styledCell(fmt.Sprintf(" %d-%d/%d", top+1, minInt(total, top+visible), total), StyleMuted),
+		NewCell(" "),
+		styledCell(fmt.Sprintf("%d-%d/%d", top+1, minInt(total, top+visible), total), StyleMuted),
 	}}
 }
 

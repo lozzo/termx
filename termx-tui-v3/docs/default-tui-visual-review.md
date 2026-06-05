@@ -71,6 +71,8 @@
 
 切片 85 已完成第一轮 pane chrome 槽位重绘：tiled pane 顶边不再只显示单一 close token，而是显示 title、状态点、`↔0` 元信息、`◆ owner` 和 action cluster；宽 pane 使用 `[o]─[_]─[Z]─[x]`，窄分屏 pane 使用 `[Z]─[x]` 退化，title 与 action 之间继续保留连续横线。最终是否达到截图级视觉仍以后续切片 87 的真实默认入口验收为准。
 
+切片 86 已完成第一轮 overlay/page/copy 内容层视觉产品化 polish：Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 不再使用工程表格式文本作为主要视觉语言，而是统一 search affordance、selected row marker、detail/preview/context/input label、action row 和 copy search/match/scrollbar/status。最终是否达到截图级视觉仍以后续切片 87 的真实默认入口验收为准。
+
 ## 5. 手工复核入口
 
 每次视觉返工后都必须手工复核：

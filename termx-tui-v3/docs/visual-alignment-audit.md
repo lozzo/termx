@@ -31,6 +31,7 @@
 - card/split panel、header/footer hide、toast lifecycle、overlay、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace 的第一版产品壳。
 - 切片 80 后，header/footer 已从拼接文本条改为分段产品栏：workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔。
 - 切片 81 后，pane chrome 已从基础线框推进到 `tuiv2` 风格的 shared chrome：card panel 与 split line 都使用 square 细线、顶边 title/state/action 槽位、active accent、inactive muted、连续外框和宽字符安全 content rect。
+- 切片 86 后，Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 内容层已从工程表格/占位推进到第一轮产品视觉：统一 search affordance、selected row marker、detail/preview/context/input label、action row 和 copy search/match/scrollbar/status。
 - `go run ./termx-cli/cmd/termx v3 smoke` 可输出多个非交互 smoke case。
 
 当前仍不足：
@@ -118,7 +119,8 @@
 当前问题：
 
 - 切片 82 已把 Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 的 framework chrome 推进为带 padding 的实体 card：title/state/action 槽位、content padding、ANSI reset 和 cursor/hit region 语义已同步。
-- overlay 内部 content 的 selected row、detail、preview 仍可继续做最终产品视觉 polish。
+- 切片 86 已完成 overlay 内部 content 第一轮产品化 polish：Terminal Picker 使用统一搜索行、选中 marker、preview 和 new action；Terminal Pool / Workbench Tree 使用页面标题、搜索行、selected row、detail / preview / action 槽位；Prompt / Help 使用标题、context/input 或分类 topic 行。
+- overlay 内容层仍需在切片 87 真实默认入口中对照截图检查整体密度、窄屏退化和真实 TTY ANSI 视觉。
 
 目标要求：
 
@@ -145,8 +147,9 @@
 
 当前问题：
 
-- copy-history 已有 authoritative window、search、selection、scrollbar/status，但视觉层级仍偏工程占位。
-- logical-line marker、continuation、clipped marker、selection 和 active match 还需要最终 polish。
+- copy-history 已有 authoritative window、search、selection、scrollbar/status。
+- 切片 86 已把 search row 推进为 `⌕ search` 形态，把 match state 和 `SCROLL` status 从工程占位推进到更清晰的产品层级。
+- logical-line marker、continuation、clipped marker、selection 和 active match 的最终截图级 polish 仍留给切片 87 验收发现后处理。
 
 目标要求：
 
@@ -159,8 +162,9 @@
 
 当前问题：
 
-- Terminal Pool 和 Workbench Tree 已有页面内容，但视觉更像功能表格，不像产品级 overlay。
-- detail、preview、action、selected row 和 search 的层级需要统一。
+- Terminal Pool 和 Workbench Tree 已有页面内容。
+- 切片 86 已统一 search、selected row、detail、preview、action 的产品层级，不再允许回退到 `> row`、`detail xxx`、`preview xxx` 这类工程表格文本。
+- 常规 viewport 下的整体密度、和用户截图的最终接近程度仍在切片 87 做真实默认入口验收。
 
 目标要求：
 
@@ -208,6 +212,12 @@
 - 已完成 pane chrome 目标截图级槽位重绘第一轮。
 - 已把 fixed smoke、render harness 和 e2e visual guard 更新为新的 pane 顶边槽位合同。
 - 截图级总体验收仍留到切片 87。
+
+切片 86 负责：
+
+- 已完成 overlay/page/copy 内容层视觉产品化 polish 第一轮。
+- 已把 Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的 render harness 与 smoke 断言更新为新的内容层视觉合同。
+- 截图级总体验收仍留到切片 87；切片 86 不能单独作为默认 TUI 已达到目标截图的证据。
 
 ## 7. 验收方式
 

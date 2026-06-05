@@ -70,9 +70,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
 	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
-	if !frameContains(cases["terminal-picker"].Lines, "search [type to filter]") ||
+	if !frameContains(cases["terminal-picker"].Lines, "⌕ search [filter terminals]") ||
 		!frameContains(cases["terminal-picker"].Lines, "termx-picker") ||
-		!frameContains(cases["terminal-picker"].Lines, "[new] new terminal") {
+		!frameContains(cases["terminal-picker"].Lines, "[new]  new terminal") {
 		t.Fatalf("terminal picker smoke missing product content: %#v", cases["terminal-picker"].Lines)
 	}
 	if !frameContains(cases["copy-empty"].Lines, "copy history empty") {
@@ -83,7 +83,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["prompt-overlay"].Lines, "Command Prompt") ||
 		!frameContains(cases["prompt-overlay"].Lines, "重命名") ||
-		!frameContains(cases["prompt-overlay"].Lines, "Submit") {
+		!frameContains(cases["prompt-overlay"].Lines, "[submit]  Submit") {
 		t.Fatalf("prompt overlay smoke missing prompt content: %#v", cases["prompt-overlay"].Lines)
 	}
 	if !frameContains(cases["help-overlay"].Lines, "Help") ||
@@ -180,7 +180,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	requiredOverlays := map[string][]string{
-		"terminal-picker": {"╭─ terminal-picker", "● open", "esc", "search [type to filter]", "[new] new terminal"},
+		"terminal-picker": {"╭─ terminal-picker", "● open", "esc", "⌕ search [filter terminals]", "[new]  new terminal"},
 		"prompt-overlay":  {"╭─ prompt", "● open", "esc", "Command Prompt", "重命名"},
 		"help-overlay":    {"╭─ help", "● open", "esc", "Most used", "Terminal Pool"},
 	}

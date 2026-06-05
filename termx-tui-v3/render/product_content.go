@@ -56,7 +56,7 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	shell = shell.EnsureDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	lines := []Line{
-		{Cells: []Cell{styledCell("search ", StyleMuted), NewCell(searchLabel(query))}},
+		searchRowLine(query, "filter terminals"),
 	}
 	if poolLine, ok := terminalPoolStateLine(root.TerminalPool); ok {
 		lines = append(lines, poolLine)
@@ -66,7 +66,7 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	for _, row := range rows {
 		lines = append(lines, terminalPickerLine(row))
 	}
-	lines = append(lines, terminalPickerPreviewLine(rows))
+	lines = append(lines, detailHeaderLine("preview", terminalPickerPreviewText(rows)))
 	lines = append(lines, contentActionLine("new", "new terminal"))
 	regions := terminalPickerHitRegions(rows, rowOffset)
 	regions = append(regions, HitRegion{
@@ -78,7 +78,7 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 		Kind:       ContentTerminalPicker,
 		Lines:      lines,
 		Status:     terminalPickerStatus(len(rows), query),
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("search ") + DisplayWidth(query), Shape: CursorShapeBar},
+		Cursor:     Cursor{Visible: true, Row: 0, Col: searchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: regions,
 	}
 }
@@ -89,8 +89,8 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.TerminalPoolPageItems(root)
 	lines := []Line{
-		{Cells: []Cell{styledCell("Terminal Pool", StyleAccent), NewCell(" global terminal manager")}},
-		{Cells: []Cell{styledCell("search ", StyleMuted), NewCell(searchLabel(query))}},
+		pageTitleLine("Terminal Pool", "global terminal manager"),
+		searchRowLine(query, "terminal id / title / cwd / tag"),
 	}
 	if statusLine, ok := terminalPoolPageStateLine(root.TerminalPool, len(rows)); ok {
 		lines = append(lines, statusLine)
@@ -116,7 +116,7 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 		Kind:       ContentTerminalPool,
 		Lines:      lines,
 		Status:     terminalPoolPageStatus(root.TerminalPool, len(rows), query),
-		Cursor:     Cursor{Visible: true, Row: 1, Col: DisplayWidth("search ") + DisplayWidth(query), Shape: CursorShapeBar},
+		Cursor:     Cursor{Visible: true, Row: 1, Col: searchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: regions,
 		Pending:    root.TerminalPool.Status == state.TerminalPoolLoading,
 		Empty:      root.TerminalPool.Status == state.TerminalPoolReady && len(rows) == 0,
@@ -130,8 +130,8 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.WorkbenchTreeItems(root)
 	lines := []Line{
-		{Cells: []Cell{styledCell("Workbench Tree", StyleAccent), NewCell(" structure navigator")}},
-		{Cells: []Cell{styledCell("search ", StyleMuted), NewCell(searchLabel(query))}},
+		pageTitleLine("Workbench Tree", "structure navigator"),
+		searchRowLine(query, "workspace / tab / pane"),
 	}
 	rowOffset := len(lines)
 	for _, row := range rows {
@@ -146,7 +146,7 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 		Kind:       ContentWorkbenchTree,
 		Lines:      lines,
 		Status:     workbenchTreeStatus(len(rows), query),
-		Cursor:     Cursor{Visible: true, Row: 1, Col: DisplayWidth("search ") + DisplayWidth(query), Shape: CursorShapeBar},
+		Cursor:     Cursor{Visible: true, Row: 1, Col: searchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: regions,
 		Empty:      len(rows) == 0,
 	}
@@ -170,15 +170,15 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 		displayValue = "[" + placeholder + "]"
 	}
 	lines := []Line{
-		{Cells: []Cell{styledCell(title, StyleAccent), NewCell("  esc")}},
-		NewLine(prompt.Context),
-		{Cells: []Cell{styledCell("input ", StyleMuted), NewCell(displayValue)}},
+		pageTitleLine(title, "esc to cancel"),
+		detailHeaderLine("context", prompt.Context),
+		formFieldLine("input", displayValue, value != ""),
 	}
 	if prompt.Destructive {
-		lines = append(lines, Line{Cells: []Cell{styledCell("confirm ", StyleWarning), NewCell("type " + prompt.ConfirmText + " before submit")}})
+		lines = append(lines, Line{Cells: []Cell{styledCell(" ! confirm ", StyleWarning), NewCell("type " + prompt.ConfirmText + " before submit")}})
 	}
 	if prompt.LastResult != "" && !prompt.Submitted {
-		lines = append(lines, Line{Cells: []Cell{styledCell("status ", StyleWarning), NewCell(prompt.LastResult)}})
+		lines = append(lines, detailHeaderLine("status", prompt.LastResult))
 	}
 	actionOffset := len(lines)
 	lines = append(lines,
@@ -189,7 +189,7 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 		Kind:   ContentPrompt,
 		Lines:  lines,
 		Status: "prompt: submit/cancel",
-		Cursor: Cursor{Visible: true, Row: 2, Col: DisplayWidth("input ") + DisplayWidth(value), Shape: CursorShapeBar},
+		Cursor: Cursor{Visible: true, Row: 2, Col: DisplayWidth("INPUT ") + DisplayWidth(value), Shape: CursorShapeBar},
 		HitRegions: []HitRegion{
 			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: "prompt.submit"},
 			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: "prompt.cancel"},
@@ -200,15 +200,15 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 func buildHelpContent(shell state.ShellStore) ContentVM {
 	shell = shell.EnsureDefaults()
 	lines := []Line{
-		{Cells: []Cell{styledCell("Help", StyleAccent), NewCell(" concepts and actions")}},
-		NewLine("Most used: Ctrl-p pane, Ctrl-r resize, Ctrl-g global, Ctrl-o floating, Ctrl-v copy, Ctrl-f picker"),
-		NewLine("Pane: split, close, focus, zoom, balance, card/split presentation"),
-		NewLine("Tab: create, switch, rename, close through tab mode"),
-		NewLine("Workspace: switch, create, rename, tree navigation through workspace mode"),
-		NewLine("Floating: new, move, resize, center, collapse, close"),
-		NewLine("Terminal Pool: search, attach, edit metadata, kill with service result feedback"),
-		NewLine("Display/Copy: authoritative HistoryWindow only; no live surface fallback"),
-		NewLine("Prompt: local reducer-owned input, submit/cancel, destructive confirm boundary"),
+		pageTitleLine("Help", "concepts and actions"),
+		helpTopicLine("Most used", "Ctrl-p pane  Ctrl-r resize  Ctrl-g global  Ctrl-o floating"),
+		helpTopicLine("Pane", "split / close / focus / zoom / balance / card-split"),
+		helpTopicLine("Tab", "create / switch / rename / close"),
+		helpTopicLine("Workspace", "switch / create / rename / tree navigation"),
+		helpTopicLine("Floating", "new / move / resize / center / collapse / close"),
+		helpTopicLine("Terminal Pool", "search / attach / edit metadata / kill feedback"),
+		helpTopicLine("Display/Copy", "authoritative HistoryWindow only; no live fallback"),
+		helpTopicLine("Prompt", "local reducer-owned input / submit / cancel / confirm"),
 		contentActionLine("close", "Close Help"),
 	}
 	return ContentVM{
@@ -228,7 +228,7 @@ func terminalPickerLine(row state.TerminalPickerItem) Line {
 	marker := "  "
 	style := StyleMuted
 	if row.Selected {
-		marker = "> "
+		marker = "▌ "
 		style = StyleAccent
 	}
 	terminalID := row.TerminalID
@@ -246,12 +246,12 @@ func terminalPickerLine(row state.TerminalPickerItem) Line {
 	return Line{Cells: []Cell{
 		styledCell(marker, style),
 		styledCell(row.Title, style),
-		NewCell("  "),
+		NewCell(" "),
+		tokenCell(source, StyleInfo),
+		NewCell(" "),
+		tokenCell(stateText, StyleMuted),
+		NewCell(" "),
 		styledCell(terminalID, StyleMuted),
-		NewCell("  "),
-		styledCell(source, StyleMuted),
-		NewCell("  "),
-		styledCell(stateText, StyleMuted),
 	}}
 }
 
@@ -259,7 +259,7 @@ func terminalPoolPageRowLine(row state.TerminalPoolPageItem) Line {
 	marker := "  "
 	style := StyleMuted
 	if row.Selected {
-		marker = "> "
+		marker = "▌ "
 		style = StyleAccent
 	}
 	stateText := row.State
@@ -273,13 +273,13 @@ func terminalPoolPageRowLine(row state.TerminalPoolPageItem) Line {
 	return Line{Cells: []Cell{
 		styledCell(marker, style),
 		styledCell(row.Title, style),
-		NewCell("  "),
-		styledCell(stateText, StyleMuted),
-		NewCell("  "),
-		styledCell(attached, StyleMuted),
-		NewCell("  "),
-		styledCell(terminalPoolSizeLabel(row.Cols, row.Rows), StyleMuted),
-		NewCell("  "),
+		NewCell(" "),
+		tokenCell(stateText, terminalPoolStateStyle(stateText)),
+		NewCell(" "),
+		tokenCell(attached, StyleMuted),
+		NewCell(" "),
+		tokenCell(terminalPoolSizeLabel(row.Cols, row.Rows), StyleMuted),
+		NewCell(" "),
 		styledCell(row.TerminalID, StyleMuted),
 	}}
 }
@@ -288,7 +288,7 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 	marker := "  "
 	style := StyleMuted
 	if row.Selected {
-		marker = "> "
+		marker = "▌ "
 		style = StyleAccent
 	}
 	active := ""
@@ -298,10 +298,10 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 	return Line{Cells: []Cell{
 		styledCell(marker, style),
 		NewCell(strings.Repeat("  ", row.Depth)),
-		styledCell(workbenchTreeKindLabel(row), style),
+		tokenCell(workbenchTreeKindLabel(row), style),
 		NewCell(" "),
 		styledCell(workbenchTreeTitle(row), style),
-		NewCell("  "),
+		NewCell(" "),
 		styledCell(row.Summary+active, StyleMuted),
 	}}
 }
@@ -329,11 +329,11 @@ func terminalPoolDetailLines(rows []state.TerminalPoolPageItem) []Line {
 		cwd = "-"
 	}
 	return []Line{
-		{Cells: []Cell{styledCell("detail ", StyleMuted), styledCell(selected.Title, StyleAccent)}},
-		NewLine("id: " + selected.TerminalID + "  state: " + stateText + "  size: " + terminalPoolSizeLabel(selected.Cols, selected.Rows)),
-		NewLine("cwd: " + cwd),
-		NewLine("metadata: " + terminalPoolTagsLabel(selected.Tags)),
-		{Cells: []Cell{styledCell("preview ", StyleMuted), NewCell(terminalPoolPreviewLabel(selected))}},
+		detailHeaderLine("detail", selected.Title),
+		detailTokenLine([]string{"id " + selected.TerminalID, "state " + stateText, terminalPoolSizeLabel(selected.Cols, selected.Rows)}),
+		detailHeaderLine("cwd", cwd),
+		detailHeaderLine("metadata", terminalPoolTagsLabel(selected.Tags)),
+		detailHeaderLine("preview", terminalPoolPreviewLabel(selected)),
 	}
 }
 
@@ -352,10 +352,10 @@ func workbenchTreeDetailLines(rows []state.WorkbenchTreeItem) []Line {
 		}
 	}
 	return []Line{
-		{Cells: []Cell{styledCell("detail ", StyleMuted), styledCell(workbenchTreeTitle(selected), StyleAccent)}},
-		NewLine("kind: " + selected.Kind + "  path: " + workbenchTreePath(selected)),
-		NewLine("target: " + workbenchTreeTarget(selected)),
-		{Cells: []Cell{styledCell("preview ", StyleMuted), NewCell(workbenchTreePreview(selected))}},
+		detailHeaderLine("detail", workbenchTreeTitle(selected)),
+		detailTokenLine([]string{"kind " + selected.Kind, "path " + workbenchTreePath(selected)}),
+		detailHeaderLine("target", workbenchTreeTarget(selected)),
+		detailHeaderLine("preview", workbenchTreePreview(selected)),
 	}
 }
 
@@ -522,6 +522,24 @@ func terminalPickerPreviewLine(rows []state.TerminalPickerItem) Line {
 	}}
 }
 
+func terminalPickerPreviewText(rows []state.TerminalPickerItem) string {
+	if len(rows) == 0 {
+		return "no terminal"
+	}
+	selected := rows[0]
+	for _, row := range rows {
+		if row.Selected {
+			selected = row
+			break
+		}
+	}
+	terminalID := selected.TerminalID
+	if terminalID == "" {
+		terminalID = "none"
+	}
+	return "pane:" + selected.PaneID + " term:" + terminalID + " source:" + terminalPickerSource(selected)
+}
+
 func terminalPoolPageStatus(pool state.TerminalPoolStore, count int, query string) string {
 	prefix := "terminal pool"
 	switch pool.Status {
@@ -608,9 +626,91 @@ func searchLabel(query string) string {
 
 func contentActionLine(action string, label string) Line {
 	return Line{Cells: []Cell{
-		styledCell("["+action+"]", StyleAccent),
+		styledCell(" ["+action+"] ", StyleAccent),
 		NewCell(" " + label),
 	}}
+}
+
+func pageTitleLine(title string, subtitle string) Line {
+	return Line{Cells: []Cell{
+		styledCell("◆ "+title, StyleAccent),
+		NewCell(" "),
+		styledCell(subtitle, StyleMuted),
+	}}
+}
+
+func searchRowLine(query string, placeholder string) Line {
+	value := searchLabel(query)
+	if query == "" && placeholder != "" {
+		value = "[" + placeholder + "]"
+	}
+	style := StyleAccent
+	if query == "" {
+		style = StyleMuted
+	}
+	return Line{Cells: []Cell{
+		styledCell("⌕ search ", StyleMuted),
+		styledCell(value, style),
+	}}
+}
+
+func searchCursorCol(query string) int {
+	return DisplayWidth("⌕ search ") + DisplayWidth(query)
+}
+
+func detailHeaderLine(label string, value string) Line {
+	if strings.TrimSpace(value) == "" {
+		value = "-"
+	}
+	return Line{Cells: []Cell{
+		styledCell(strings.ToUpper(label)+" ", StyleMuted),
+		NewCell(value),
+	}}
+}
+
+func detailTokenLine(tokens []string) Line {
+	cells := make([]Cell, 0, len(tokens)*2)
+	for index, token := range tokens {
+		if index > 0 {
+			cells = append(cells, NewCell(" "))
+		}
+		cells = append(cells, tokenCell(token, StyleMuted))
+	}
+	return Line{Cells: cells}
+}
+
+func formFieldLine(label string, value string, filled bool) Line {
+	style := StyleMuted
+	if filled {
+		style = StyleAccent
+	}
+	return Line{Cells: []Cell{
+		styledCell(strings.ToUpper(label)+" ", StyleMuted),
+		styledCell(value, style),
+	}}
+}
+
+func helpTopicLine(label string, value string) Line {
+	return Line{Cells: []Cell{
+		tokenCell(label, StyleAccent),
+		NewCell(" "),
+		NewCell(value),
+	}}
+}
+
+func tokenCell(text string, style StyleToken) Cell {
+	return styledCell(" "+text+" ", style)
+}
+
+func terminalPoolStateStyle(stateText string) StyleToken {
+	switch strings.ToLower(stateText) {
+	case "ready", "running", "attached", "live":
+		return StyleSuccess
+	case "failed", "error", "exited":
+		return StyleWarning
+	default:
+		return StyleMuted
+	}
 }
 
 func contentActionRegions(prefix string, actions []string, paneID string) []HitRegion {

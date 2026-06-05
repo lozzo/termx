@@ -965,7 +965,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer 工程基线、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收、terminal live 连接展示与交互前推、copy-history content renderer 深化和 render 兼容投影清理与性能基线已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。切片 79 已重新打开视觉差距审计与验收基线，切片 80-83 继续推进真实视觉对齐；不得把现有基础 styled chrome 误判为截图级视觉完成。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer 工程基线、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收、terminal live 连接展示与交互前推、copy-history content renderer 深化和 render 兼容投影清理与性能基线已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。切片 79 已重新打开视觉差距审计与验收基线，切片 80-86 继续推进真实视觉对齐；不得把现有基础 styled chrome 或内容层第一轮 polish 误判为截图级视觉完成。
 
 已落地：
 
@@ -1002,6 +1002,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - tiled card pane 已使用 square Unicode 细线 pane chrome 基础；active pane 使用 accent style，inactive pane 使用 muted style，pane 顶边包含 title、state 和 action slot，但仍需按视觉审计继续对齐 `tuiv2` 截图级密度、槽位和层级。
 - v3 pane border 只迁入 `tuiv2/render` 的 cell 级连接位合成经验，不迁入旧 runtime/model、VisibleRenderState、cursor writer 或 snapshot/grid/copy fallback。
 - header/footer 已按切片 80 从基础信息条重绘为 `tuiv2` 风格分段产品栏：status background 填满整行，workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔；窄屏下快捷键 token 按优先级压缩，error/exited 关键状态优先保留。
+- pane chrome 已按切片 85 从单一 `title/state/[x]` 推进到目标截图式槽位：title、状态点、`↔0` 元信息、`◆ owner`、宽 pane full action cluster 和窄/分屏 compact action cluster，且 title 与 action 之间保留连续横线。
 - toast 与 Terminal Picker overlay 已升级为 styled chrome，覆盖 border/background/severity token/close action region/ANSI reset 和宽字符安全。
 - `state.PaneCommand` 已成为 pane split、close、close and kill、focus、zoom、resize、set size、balance 和 panel presentation 的统一 semantic command contract。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 和 `Ctrl-o` floating mode 已作为第一版键盘入口落地；`Esc` 退出 mode/overlay 且不漏发 terminal。
@@ -1016,6 +1017,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - Workbench Tree overlay 一期已落地：页面级结构导航 overlay、workspace/tab/pane/floating row、搜索、selected row、detail/preview、Open/Focus action、键盘/鼠标选择和 no terminal input leak 已接入。
 - Floating pane 一期已落地：reducer-owned floating state、z-order、active/collapsed、styled bordered chrome、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close、content rect 裁切、viewport clamp 和 width-safe harness 已接入。
 - Prompt / Help overlay 一期已落地：Prompt 作为 reducer-owned 短输入 overlay 支持 title/context/input/submit/cancel/destructive confirm 边界，Help 按 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 展示概念和动作；键盘、鼠标 close、overlay cursor、footer hint、宽字符安全和 no terminal input leak 已接入。
+- overlay/page/copy 内容层已按切片 86 完成第一轮产品化 polish：Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的 content renderer 统一输出 search affordance、selected row marker、detail / preview / context / input label、action row、copy match 和 scrollbar/status；这些内容仍只在 framework 分配的 content rect 内绘制。
 - Tab / Workspace 产品入口一期已落地：`Ctrl-t` / `Ctrl-w` 已作为 reducer-owned interaction mode 接入，tab create/switch/rename/close、workspace create/switch/rename、Prompt rename 回投、header tab strip、footer mode hints、smoke case 和 no terminal input leak 已接入。
 - TUI 产品壳总验收已落地：`TestInteractiveRuntimeTUIProductShellAcceptanceFlow` 串联 pane split/focus/resize/presentation、floating create/move/resize/close、Terminal Pool 搜索/attach、Workbench Tree open/focus、Prompt/Help、Tab/Workspace rename、toast/header/footer 操作，并统一验证 no terminal input leak、viewport 行宽恒等和 layout 操作触发 content rect resize。
 - `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
@@ -1031,6 +1033,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - active pane 视觉反馈已有端到端验收，但最终视觉 polish、更多状态 token 和复杂多层 split 的 focus affordance 仍可继续增强。
 - terminal-live content renderer 与连接展示前推已完成当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，attach 后会初始化真实 core-v2 live rows，content 仍由 framework 裁切到 content rect；但 streaming event loop、selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
 - copy-history content renderer 深化已完成当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 和 active match 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，顶部 search row、底部 scrollbar/status、PageDown/滚轮滚动、match navigation、content-local mouse selection 和 row/line/part/cols/span/search/older 位置摘要已接入；logical-line 拼接提示和最终视觉 polish 仍可后续继续增强。
+- 切片 86 后，copy-history 的 search row 和 scrollbar/status 已从工程占位推进到产品化视觉语言；仍不得把它作为 committed history truth 或从 live surface 反推历史。
 - empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region。
 - Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/close overlay、picker row click、new action feedback、最小 preview/detail 行和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达。
 - Terminal Pool 数据源与 Picker 服务接线一期已进入当前阶段：Terminal Picker 打开可请求 terminal list，`TerminalPoolStore` 保存 loading/empty/error/items/stale guard，picker rows 会合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 均通过 terminal service effect/result message 回到 reducer。
@@ -1041,6 +1044,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - overlay 已落地 Terminal Picker、Terminal Pool Page、Workbench Tree、Prompt、Help 和基础 opaque cursor 归属，未完成 Floating Overview 的产品内容。
 - toast 具备基础生命周期和 styled 渲染，不代表最终视觉 polish、动画或完整消息队列策略。
 - hit region 已有内容、overlay、toast 合成基础，不代表完整鼠标交互产品语义。
+- 切片 84-86 只完成 shell bar、pane chrome 和 overlay/page/copy 内容层的第一轮视觉返工；真实默认入口是否达到用户截图目标，仍必须由切片 87 的真实 TTY 复核决定。
 - `RenderVM{Lines, Status}` 兼容输入字段已删除，`RenderVM` 只承载 `ShellVM`；`Frame.Lines`、`Frame.StyledLines`、`Frame.ANSILines` 只作为 `RenderResult` 的 plain/styled/ANSI 输出适配保留。
 - large terminal output 性能基线已建立：`go test ./render -run '^$' -bench BenchmarkRendererLargeTerminalOutput -benchtime=1x` 当前单次基线约 6.91ms/op、6.75MB/op、12648 allocs/op。
 
@@ -1050,7 +1054,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前优先级：
 
-- 先按 `visual-alignment-audit.md` 与 `default-tui-visual-review.md` 完成切片 84-87：shell bar 高密度重绘、pane chrome 目标截图级槽位重绘、overlay/page/copy 视觉产品化 polish 和真实默认入口截图级验收。
+- 先按 `visual-alignment-audit.md` 与 `default-tui-visual-review.md` 完成切片 87：在 shell bar 高密度重绘、pane chrome 目标截图级槽位重绘和 overlay/page/copy 视觉产品化 polish 已完成后，做真实默认入口截图级验收。
 - 在视觉验收完成前，不得再把基础 styled chrome、Unicode glyph 或 smoke 文本线框当作视觉完成证据。
 
 建议后续切片：

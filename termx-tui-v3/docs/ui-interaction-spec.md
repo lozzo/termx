@@ -1266,6 +1266,8 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 单个 pane 的产品风格参考 `tuiv2` 截图中的紫色 accent 细边框、顶部 owner/action token 和内容区裁切；TUI-v3 可调整 theme token，但必须保持 styled chrome 层级和边框连续性。
 - 右上角消息参考现代 CLI/TUI 的 toast：实体卡片、短文本、severity 或 accent 侧边，不改变 pane layout；复制成功等短反馈可以使用这种形态。
 - modal/overlay 参考现代 command palette 的实体卡片：前景是 solid dark card 或等价主题卡片，可以有标题、搜索行、selected row 和 action row。
+- Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的内容层不能退回工程表格：搜索行统一使用短 search affordance，selected row 必须有强视觉 marker，detail / preview / context / input 使用稳定 label，action row 使用短 token + 动作文案。
+- copy-history 的内容层必须有清晰的 search row、match state、scrollbar/status row 和历史行层级；这些视觉元素只能来自 authoritative `HistoryWindow` 投影，不能为了显示效果从 live surface fallback。
 - overlay 不要求灰度遮罩背景；中文、emoji、CJK、combining mark 或 ambiguous width 字符若无法安全套用 dim 样式，必须优先保证文本可见和宽度正确，不得为了背景灰度让非英文文本消失。
 - floating pane、Prompt、Help 和 Workbench Tree 后续都必须使用 styled chrome；它们可以有不同尺寸和内容密度，但不得绕过 render framework 直接写临时线框。
 
@@ -1324,6 +1326,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - split line 使用共享外框加内部共享 divider，content rect 会避开外框和 divider；terminal resize 与 copy-history rebind 必须使用新的 content cols/rows。
 - top bar 和 bottom bar 已在切片 80 重绘为分段产品栏：背景填满整行，workspace/tab/mode/action/active/summary 通过稳定 token 输出，accent/muted/warning 语义可见，Unicode `│` 分隔，窄屏下快捷键按优先级压缩且 error/exited 关键状态优先保留。
 - toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 已在切片 82 完成第一轮实体 card 视觉对齐：toast 具备 severity accent 竖条、右上角留白、close action 和 title/body 合并裁切；overlay/floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
+- Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 已在切片 86 完成第一轮内容层产品化 polish：搜索行、selected row、detail/preview/context/input、action row、copy search/match/scrollbar/status 已统一为更接近目标截图的产品语言；该结论不表示默认入口截图级视觉验收已经通过。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
 - floating pane 一期已使用独立 styled bordered chrome，具备 reducer-owned state、z-order、active 状态、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close 和 content rect 裁切。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
@@ -1339,7 +1342,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前未完成但产品要求仍保留：
 
-- 视觉对齐返工：top bar、bottom bar、pane chrome、split line、toast、overlay 和 floating 已完成第一轮重绘；后续按 `visual-alignment-audit.md` 推进 copy-history、Terminal Pool/Workbench Tree 内容细节和真实默认入口截图级验收。
+- 视觉对齐返工：top bar、bottom bar、pane chrome、split line、toast、overlay、floating、copy-history 和 Terminal Pool/Workbench Tree 内容层已完成第一轮重绘；后续按 `visual-alignment-audit.md` 进入真实默认入口截图级验收，并只针对验收发现继续返工。
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 最终 polish：logical-line 拼接提示、跨 logical-line selection affordance、窄屏退化和最终视觉层级。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。

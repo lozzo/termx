@@ -495,7 +495,7 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 		t.Fatalf("expected search matches and cursor on first beta, got %#v", runtime.State().CopyMode)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if !frameContains(queryFrame, "search beta match:1/2") || !frameContains(queryFrame, "scroll") {
+	if !frameContains(queryFrame, "⌕ search beta") || !frameContains(queryFrame, "match:1/2") || !frameContains(queryFrame, "SCROLL") {
 		t.Fatalf("expected search row and scrollbar, got %#v", queryFrame.Lines)
 	}
 	assertPaneVisualState(t, queryFrame, "beta", render.StyleWarning)

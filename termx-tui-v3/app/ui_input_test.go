@@ -67,7 +67,7 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		t.Fatalf("ctrl-f must not be sent to terminal, got %#v", terminal.Inputs)
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "terminal-picker") || !frameContains(last, "search [type to filter]") {
+	if !frameContains(last, "terminal-picker") || !frameContains(last, "⌕ search [filter terminals]") {
 		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
 	}
 }
@@ -110,7 +110,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 		t.Fatalf("expected picker query retained in reducer state, got %#v", runtime.State().Shell.Overlay)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if !frameContains(queryFrame, "search 日志") || !frameContains(queryFrame, "> 日志🚀") {
+	if !frameContains(queryFrame, "⌕ search 日志") || !frameContains(queryFrame, "▌ 日志🚀") {
 		t.Fatalf("expected filtered picker frame, got %#v", queryFrame.Lines)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -310,7 +310,7 @@ func TestInteractiveRuntimeTerminalPoolPageFlow(t *testing.T) {
 		t.Fatalf("pool query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Terminal Pool") || !frameContains(frame, "> 日志🚀") || !frameContains(frame, "role=logs") {
+	if !frameContains(frame, "Terminal Pool") || !frameContains(frame, "▌ 日志🚀") || !frameContains(frame, "role=logs") {
 		t.Fatalf("expected terminal pool page frame, got %#v", frame.Lines)
 	}
 
@@ -409,7 +409,7 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 		t.Fatalf("tree query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Workbench Tree") || !frameContains(frame, ">     pane 日志🚀") || !frameContains(frame, "[open] Open / Focus") {
+	if !frameContains(frame, "Workbench Tree") || !frameContains(frame, "▌      pane  日志🚀") || !frameContains(frame, "[open]  Open / Focus") {
 		t.Fatalf("expected workbench tree frame, got %#v", frame.Lines)
 	}
 	if frame.Cursor.Shape != render.CursorShapeBar {
@@ -498,7 +498,7 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 		t.Fatalf("expected prompt input captured, shell=%#v", runtime.State().Shell)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Command Prompt") || !frameContains(frame, "input 重命名") || frame.Cursor.Shape != render.CursorShapeBar {
+	if !frameContains(frame, "Command Prompt") || !frameContains(frame, "INPUT 重命名") || frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("expected prompt frame and cursor, got %#v", frame)
 	}
 	if len(terminal.Inputs) != 0 {

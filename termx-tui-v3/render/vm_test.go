@@ -526,11 +526,11 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 	if vm.Shell.Overlay.Kind != OverlayTerminalPicker || content.Kind != ContentTerminalPicker {
 		t.Fatalf("expected terminal picker content, got %#v", vm.Shell.Overlay)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "search term") ||
-		!strings.Contains(content.Lines[1].PlainString(), "> shell") ||
+	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search term") ||
+		!strings.Contains(content.Lines[1].PlainString(), "▌ shell") ||
 		!strings.Contains(content.Lines[2].PlainString(), "日志🚀") ||
-		!strings.Contains(content.Lines[3].PlainString(), "preview pane:pane-main term:term-main") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[new] new terminal") {
+		!strings.Contains(content.Lines[3].PlainString(), "PREVIEW pane:pane-main term:term-main") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[new]  new terminal") {
 		t.Fatalf("expected picker search/list/preview/new rows, got %#v", content.Lines)
 	}
 	if content.Status != "terminal picker: 2 items query:term" {
@@ -553,16 +553,16 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 		SetTerminalPickerQuery("日志")
 
 	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[0].PlainString(), "search 日志") ||
-		!strings.Contains(content.Lines[1].PlainString(), "> 日志🚀") ||
-		!strings.Contains(content.Lines[2].PlainString(), "preview pane:pane-2 term:term-2") ||
+	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search 日志") ||
+		!strings.Contains(content.Lines[1].PlainString(), "▌ 日志🚀") ||
+		!strings.Contains(content.Lines[2].PlainString(), "PREVIEW pane:pane-2 term:term-2") ||
 		strings.Contains(content.Lines[1].PlainString(), "shell") {
 		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
 	}
 	if !lineHasStyledCell(content.Lines[1], "日志🚀", StyleAccent) {
 		t.Fatalf("expected selected picker row to use accent style, got %#v", content.Lines[1])
 	}
-	if content.Cursor.Col != DisplayWidth("search 日志") {
+	if content.Cursor.Col != DisplayWidth("⌕ search 日志") {
 		t.Fatalf("expected cursor after query text, got %#v", content.Cursor)
 	}
 	if content.Status != "terminal picker: 1 items query:日志" {
@@ -588,7 +588,7 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	if !strings.Contains(content.Lines[1].PlainString(), "shell") ||
 		!strings.Contains(content.Lines[2].PlainString(), "远程🚀") ||
 		!strings.Contains(content.Lines[2].PlainString(), "pool") ||
-		!strings.Contains(content.Lines[3].PlainString(), "preview pane:pane-main") {
+		!strings.Contains(content.Lines[3].PlainString(), "PREVIEW pane:pane-main") {
 		t.Fatalf("expected pane and pool rows, got %#v", content.Lines)
 	}
 	if len(content.HitRegions) < 3 || content.HitRegions[1].Row != 1 || content.HitRegions[1].PaneID != "" {
@@ -640,12 +640,12 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		t.Fatalf("expected terminal pool content, got %#v", vm.Shell.Overlay)
 	}
 	if !strings.Contains(content.Lines[0].PlainString(), "Terminal Pool") ||
-		!strings.Contains(content.Lines[1].PlainString(), "search 日志") ||
-		!strings.Contains(content.Lines[2].PlainString(), "> 日志🚀") ||
-		!strings.Contains(content.Lines[3].PlainString(), "detail 日志🚀") ||
+		!strings.Contains(content.Lines[1].PlainString(), "⌕ search 日志") ||
+		!strings.Contains(content.Lines[2].PlainString(), "▌ 日志🚀") ||
+		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
 		!strings.Contains(content.Lines[4].PlainString(), "120x36") ||
 		!strings.Contains(content.Lines[6].PlainString(), "role=shell") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[kill] Kill Terminal") {
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[kill]  Kill Terminal") {
 		t.Fatalf("expected pool list/detail/preview/actions, got %#v", content.Lines)
 	}
 	if strings.Contains(content.Lines[2].PlainString(), "worker") {
@@ -654,7 +654,7 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 	if !contentHasAction(content, "pool.select") || !contentHasAction(content, "pool.attach") || !contentHasAction(content, "pool.edit") || !contentHasAction(content, "pool.kill") {
 		t.Fatalf("expected pool action hit regions, got %#v", content.HitRegions)
 	}
-	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("search 日志") {
+	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
 		t.Fatalf("expected pool search cursor, got %#v", content.Cursor)
 	}
 
@@ -690,16 +690,16 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		t.Fatalf("expected workbench tree opaque overlay, got %#v", vm.Shell.Overlay)
 	}
 	if !strings.Contains(content.Lines[0].PlainString(), "Workbench Tree") ||
-		!strings.Contains(content.Lines[1].PlainString(), "search 日志") ||
-		!strings.Contains(content.Lines[2].PlainString(), ">     pane 日志🚀") ||
-		!strings.Contains(content.Lines[3].PlainString(), "detail 日志🚀") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[open] Open / Focus") {
+		!strings.Contains(content.Lines[1].PlainString(), "⌕ search 日志") ||
+		!strings.Contains(content.Lines[2].PlainString(), "▌      pane  日志🚀") ||
+		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[open]  Open / Focus") {
 		t.Fatalf("expected tree header/search/row/detail/action, got %#v", content.Lines)
 	}
 	if !contentHasAction(content, "workbench.select") || !contentHasAction(content, "workbench.open") {
 		t.Fatalf("expected workbench hit regions, got %#v", content.HitRegions)
 	}
-	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("search 日志") {
+	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
 		t.Fatalf("expected workbench search cursor, got %#v", content.Cursor)
 	}
 
@@ -721,12 +721,12 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 	if content.Kind != ContentPrompt ||
 		!strings.Contains(content.Lines[0].PlainString(), "Rename Pane") ||
 		!strings.Contains(content.Lines[1].PlainString(), "输入新名称") ||
-		!strings.Contains(content.Lines[2].PlainString(), "input 日志🚀") ||
+		!strings.Contains(content.Lines[2].PlainString(), "INPUT 日志🚀") ||
 		!contentHasAction(content, "prompt.submit") ||
 		!contentHasAction(content, "prompt.cancel") {
 		t.Fatalf("expected prompt content, got %#v", content)
 	}
-	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("input 日志🚀") {
+	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("INPUT 日志🚀") {
 		t.Fatalf("expected prompt cursor after input, got %#v", content.Cursor)
 	}
 
