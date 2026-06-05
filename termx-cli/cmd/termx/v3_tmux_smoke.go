@@ -33,6 +33,21 @@ type v3TmuxTerminalSmokeResult struct {
 	SentInput    string
 }
 
+type v3TmuxResizeSmokeResult struct {
+	Session      string
+	TerminalID   string
+	ArtifactDir  string
+	ANSIPath     string
+	PlainPath    string
+	DaemonLog    string
+	SocketPath   string
+	TimelinePath string
+	Captured     string
+	BeforeSize   string
+	AfterSize    string
+	WindowSize   string
+}
+
 func runV3TmuxSmoke(ctx context.Context) (v3TmuxSmokeResult, error) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		return v3TmuxSmokeResult{}, fmt.Errorf("tmux smoke requires tmux in PATH: %w", err)
@@ -255,6 +270,175 @@ func runV3TmuxTerminalSmoke(ctx context.Context, termxBin string) (v3TmuxTermina
 	}, nil
 }
 
+func runV3TmuxResizeSmoke(ctx context.Context, termxBin string) (v3TmuxResizeSmokeResult, error) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return v3TmuxResizeSmokeResult{}, fmt.Errorf("tmux resize smoke requires tmux in PATH: %w", err)
+	}
+	if termxBin == "" {
+		return v3TmuxResizeSmokeResult{}, fmt.Errorf("tmux resize smoke requires a termx binary path")
+	}
+	artifactDir, err := os.MkdirTemp("", "termx-v3-tmux-resize-*")
+	if err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	removeArtifacts := true
+	defer func() {
+		if removeArtifacts {
+			_ = os.RemoveAll(artifactDir)
+		}
+	}()
+
+	socketPath := filepath.Join(artifactDir, "termx-core-v2.sock")
+	daemonLog := filepath.Join(artifactDir, "daemon.log")
+	timelinePath := filepath.Join(artifactDir, "timeline.txt")
+	session := fmt.Sprintf("termx-v3-resize-%d", time.Now().UnixNano())
+	target := session + ":0.0"
+	appendTimeline := func(format string, args ...any) {
+		line := fmt.Sprintf(format, args...) + "\n"
+		_ = appendFile(timelinePath, line)
+	}
+
+	daemonCtx, stopDaemonCtx := context.WithCancel(ctx)
+	defer stopDaemonCtx()
+	daemonCmd := exec.CommandContext(daemonCtx, termxBin, "--socket", socketPath, "--log-file", daemonLog, "daemon")
+	daemonCmd.Stdout = io.Discard
+	daemonCmd.Stderr = io.Discard
+	if err := daemonCmd.Start(); err != nil {
+		return v3TmuxResizeSmokeResult{}, fmt.Errorf("start core-v2 daemon: %w", err)
+	}
+	defer func() {
+		stopDaemonCtx()
+		if daemonCmd.Process != nil {
+			_ = daemonCmd.Process.Kill()
+		}
+		_ = daemonCmd.Wait()
+	}()
+	appendTimeline("daemon start socket=%s log=%s", socketPath, daemonLog)
+	if err := waitForSocket(socketPath, 5*time.Second, func() error {
+		client, dialErr := dialV3Client(socketPath)
+		if dialErr != nil {
+			return dialErr
+		}
+		return client.Close()
+	}); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	appendTimeline("daemon ready")
+
+	terminalIDPath := filepath.Join(artifactDir, "terminal.id")
+	scriptPath := filepath.Join(artifactDir, "tmux-resize-smoke.sh")
+	terminalScript := "printf 'termx-pty-ready\\n'\n" +
+		"while IFS= read -r line; do\n" +
+		"  case \"$line\" in\n" +
+		"    size-*) set -- $(stty size); printf 'termx-pty-size:%s:%sx%s\\n' \"$line\" \"$2\" \"$1\" ;;\n" +
+		"    *) printf 'termx-pty-echo:%s\\n' \"$line\" ;;\n" +
+		"  esac\n" +
+		"done\n"
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"set -eu",
+		"export TERM=xterm-256color",
+		"export TERMX=0",
+		"termx_bin=" + shellQuote(termxBin),
+		"socket=" + shellQuote(socketPath),
+		"log_file=" + shellQuote(daemonLog),
+		"terminal_id_path=" + shellQuote(terminalIDPath),
+		"printf 'termx tmux resize harness ready\\n'",
+		"id=\"$($termx_bin --socket \"$socket\" --log-file \"$log_file\" v3 new --name tmux-resize -- /bin/sh -c " + shellQuote(terminalScript) + ")\"",
+		"printf '%s\\n' \"$id\" > \"$terminal_id_path\"",
+		"printf 'termx resize terminal id:%s\\n' \"$id\"",
+		"exec $termx_bin --socket \"$socket\" --log-file \"$log_file\" v3 attach \"$id\"",
+		"",
+	}, "\n")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	appendTimeline("tmux script=%s", scriptPath)
+
+	cleanupTmux := func() {
+		_ = runTmuxCommand(context.Background(), "kill-session", "-t", session)
+	}
+	defer cleanupTmux()
+	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "100", "-y", "30", "-s", session, "/bin/sh", scriptPath); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	appendTimeline("tmux session=%s initial=100x30", session)
+	terminalIDBytes, err := waitForFileContent(ctx, terminalIDPath, 5*time.Second)
+	if err != nil {
+		return v3TmuxResizeSmokeResult{}, fmt.Errorf("read terminal id artifact: %w", err)
+	}
+	terminalID := strings.TrimSpace(string(terminalIDBytes))
+	appendTimeline("terminal created id=%s", terminalID)
+	if err := waitForTmuxCapture(ctx, target, "termx-pty-ready", 5*time.Second); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "size-before", "Enter"); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	beforeMarker := "termx-pty-size:size-before:"
+	if err := waitForTmuxCapture(ctx, target, beforeMarker, 5*time.Second); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	beforeCapture, _ := captureTmuxPane(ctx, target, false)
+	beforeSize := lastMarkerSuffix(beforeCapture, beforeMarker)
+	appendTimeline("before size=%s", beforeSize)
+
+	windowSize := "120x40"
+	if err := runTmuxCommand(ctx, "resize-window", "-t", session, "-x", "120", "-y", "40"); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	appendTimeline("tmux resize-window=%s", windowSize)
+	time.Sleep(250 * time.Millisecond)
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "size-after", "Enter"); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	afterMarker := "termx-pty-size:size-after:"
+	if err := waitForTmuxCapture(ctx, target, afterMarker, 5*time.Second); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	afterCapture, _ := captureTmuxPane(ctx, target, false)
+	afterSize := lastMarkerSuffix(afterCapture, afterMarker)
+	appendTimeline("after size=%s", afterSize)
+
+	ansi, err := captureTmuxPane(ctx, target, true)
+	if err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	plain, err := captureTmuxPane(ctx, target, false)
+	if err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	ansiPath := filepath.Join(artifactDir, "capture.ansi")
+	plainPath := filepath.Join(artifactDir, "capture.txt")
+	if err := os.WriteFile(ansiPath, []byte(ansi), 0o600); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	if err := os.WriteFile(plainPath, []byte(plain), 0o600); err != nil {
+		return v3TmuxResizeSmokeResult{}, err
+	}
+	appendTimeline("captured ansi=%s plain=%s", ansiPath, plainPath)
+
+	_ = runTermxCommand(context.Background(), termxBin, "--socket", socketPath, "--log-file", daemonLog, "v3", "kill", terminalID)
+	_ = runTermxCommand(context.Background(), termxBin, "--socket", socketPath, "--log-file", daemonLog, "v3", "rm", terminalID)
+	appendTimeline("terminal cleanup id=%s", terminalID)
+	removeArtifacts = false
+	return v3TmuxResizeSmokeResult{
+		Session:      session,
+		TerminalID:   terminalID,
+		ArtifactDir:  artifactDir,
+		ANSIPath:     ansiPath,
+		PlainPath:    plainPath,
+		DaemonLog:    daemonLog,
+		SocketPath:   socketPath,
+		TimelinePath: timelinePath,
+		Captured:     plain,
+		BeforeSize:   beforeSize,
+		AfterSize:    afterSize,
+		WindowSize:   windowSize,
+	}, nil
+}
+
 func runTmuxCommand(ctx context.Context, args ...string) error {
 	output, err := exec.CommandContext(ctx, "tmux", args...).CombinedOutput()
 	if err != nil {
@@ -333,4 +517,18 @@ func appendFile(path string, text string) error {
 	defer file.Close()
 	_, err = io.WriteString(file, text)
 	return err
+}
+
+func lastMarkerSuffix(text string, marker string) string {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if index := strings.Index(lines[i], marker); index >= 0 {
+			fields := strings.Fields(lines[i][index+len(marker):])
+			if len(fields) > 0 {
+				return fields[0]
+			}
+			return ""
+		}
+	}
+	return ""
 }
