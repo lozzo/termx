@@ -44,8 +44,9 @@ const (
 )
 
 type PaneResizeGroupItem struct {
-	PaneID string
-	Cells  int
+	PaneID    string
+	Cells     int
+	DeltaSign int
 }
 
 type PaneCommandSource string
@@ -77,7 +78,8 @@ type PaneCommand struct {
 	Delta int
 	// ResizeSplitPath 只用于鼠标拖拽真实 divider，避免按 pane id 向上误改外层 split。
 	ResizeSplitPath string
-	// ResizeGroupCells 是鼠标 divider 在同轴 pane 链中的叶子目标尺寸，保证只调整视觉相邻 pane。
+	// ResizeGroupCells 是鼠标 divider 在同轴 pane 链中的叶子目标尺寸。
+	// DeltaSign 表达该 pane 跟随 divider 哪一侧变化，用于 stacked pane 共享宽/高场景。
 	ResizeGroupCells []PaneResizeGroupItem
 	SizeMode         PaneSizeMode
 	Ratio            float64

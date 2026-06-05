@@ -33,8 +33,9 @@ type Rect struct {
 }
 
 type ResizeGroupItem struct {
-	PaneID string
-	Cells  int
+	PaneID    string
+	Cells     int
+	DeltaSign int
 }
 
 type HitRegion struct {

@@ -462,6 +462,64 @@ func TestShellResizePaneGroupKeepsNonAdjacentColumnsFixed(t *testing.T) {
 	}
 }
 
+func TestShellResizePaneGroupKeepsStackedRightColumnSharedWidth(t *testing.T) {
+	shell := DefaultShell()
+	tab := &shell.Workspace.Tabs[0]
+	tab.Panes = []PaneState{
+		{ID: "left", Kind: PaneTerminalLive},
+		{ID: "top", Kind: PaneTerminalLive},
+		{ID: "middle-left", Kind: PaneTerminalLive},
+		{ID: "middle-right", Kind: PaneTerminalLive},
+		{ID: "bottom", Kind: PaneTerminalLive},
+	}
+	tab.ActivePaneID = "middle-left"
+	tab.RootSplit = SplitNode{
+		Direction: SplitDirectionVertical,
+		Children: []SplitNode{
+			{PaneID: "left"},
+			{
+				Direction: SplitDirectionHorizontal,
+				Children: []SplitNode{
+					{PaneID: "top"},
+					{
+						Direction: SplitDirectionHorizontal,
+						Children: []SplitNode{
+							{
+								Direction: SplitDirectionVertical,
+								Children:  []SplitNode{{PaneID: "middle-left"}, {PaneID: "middle-right"}},
+							},
+							{PaneID: "bottom"},
+						},
+					},
+				},
+			},
+		},
+	}
+	shell.ActivePaneID = "middle-left"
+	shell = shell.EnsureDefaults()
+
+	shell = shell.ResizePaneGroup(PaneCommandTarget{PaneID: "left"}, PaneResizeRight, []PaneResizeGroupItem{
+		{PaneID: "left", Cells: 36, DeltaSign: 1},
+		{PaneID: "top", Cells: 44, DeltaSign: -1},
+		{PaneID: "middle-left", Cells: 24, DeltaSign: -1},
+		{PaneID: "middle-right", Cells: 20},
+		{PaneID: "bottom", Cells: 44, DeltaSign: -1},
+	})
+
+	root := shell.Workspace.Tabs[0].RootSplit
+	if root.FixedPaneID != "left" || root.FixedCols != 36 {
+		t.Fatalf("root divider should fix the left column width, got %#v", root)
+	}
+	rightColumn := root.Children[1]
+	if rightColumn.FixedCols != 0 || rightColumn.FixedRows != 0 {
+		t.Fatalf("orthogonal stacked column should keep height geometry independent, got %#v", rightColumn)
+	}
+	middleRow := rightColumn.Children[1].Children[0]
+	if middleRow.FixedPaneID != "middle-left" || middleRow.FixedCols != 24 {
+		t.Fatalf("nested middle row should resize its left child while preserving right child anchor, got %#v", middleRow)
+	}
+}
+
 func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	shell := DefaultShell()
 	var result FloatingCommandResult

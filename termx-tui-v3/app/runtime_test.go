@@ -758,6 +758,65 @@ func TestAppRuntimeDragsFourColumnPaneResizeOnlyAdjacentColumns(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDragsStackedRightColumnResizeAsSharedWidthGroup(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 12, Cols: 80, Rows: 20},
+	}
+	host := NewFakeTerminalHost(64)
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 20},
+		Shell:    stackedRightColumnShellForTest(),
+	}
+	runtime := newShellHitRuntimeWithTerminal(root, host, terminal)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post stacked initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stacked initial render: %v", err)
+	}
+	beforeRects := paneLayoutRects(runtime.State())
+	beforeInputCount := len(terminal.Inputs)
+	beforeToastCount := len(runtime.State().Shell.Toasts)
+
+	divider := framePaneResizeRegion(t, lastRuntimeFrame(t, host), "left", state.PaneResizeRight)
+	if divider.ResizeBeforePaneID != "left" || divider.ResizeAfterPaneID != "top" {
+		t.Fatalf("expected root divider to target left/top boundary panes, got %#v", divider)
+	}
+	start := mouseEventAt(divider.Rect)
+	start.Mouse = input.MouseLeft
+	if err := host.SendInput(start); err != nil {
+		t.Fatalf("send stacked drag start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stacked drag start: %v", err)
+	}
+	drag := start
+	drag.Mouse = input.MouseLeftDrag
+	drag.Col -= 6
+	if err := host.SendInput(drag); err != nil {
+		t.Fatalf("send stacked drag move: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stacked drag move: %v", err)
+	}
+
+	afterRects := paneLayoutRects(runtime.State())
+	if afterRects["left"].W != beforeRects["left"].W-6 {
+		t.Fatalf("left column should shrink by drag delta, before=%#v after=%#v", beforeRects["left"], afterRects["left"])
+	}
+	for _, paneID := range []string{"top", "middle-left", "bottom"} {
+		if afterRects[paneID].X != beforeRects[paneID].X-6 || afterRects[paneID].W != beforeRects[paneID].W+6 {
+			t.Fatalf("%s should move with the shared right-column boundary, before=%#v after=%#v", paneID, beforeRects[paneID], afterRects[paneID])
+		}
+	}
+	if afterRects["middle-right"].X != beforeRects["middle-right"].X || afterRects["middle-right"].W != beforeRects["middle-right"].W {
+		t.Fatalf("nested right child should keep its outer anchor and width, before=%#v after=%#v", beforeRects["middle-right"], afterRects["middle-right"])
+	}
+	if len(terminal.Inputs) != beforeInputCount || len(runtime.State().Shell.Toasts) != beforeToastCount {
+		t.Fatalf("stacked column drag should not leak input or add toast, inputs=%#v toasts=%#v", terminal.Inputs, runtime.State().Shell.Toasts)
+	}
+}
+
 func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},
@@ -1165,6 +1224,43 @@ func newFourColumnPaneRuntime(t *testing.T) (*AppRuntime, *FakeTerminalHost, *se
 		t.Fatalf("drain four-column setup: %v", err)
 	}
 	return runtime, host, terminal
+}
+
+func stackedRightColumnShellForTest() state.ShellStore {
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	tab := &shell.Workspace.Tabs[0]
+	tab.Panes = []state.PaneState{
+		{ID: "left", Title: "left", Kind: state.PaneTerminalLive},
+		{ID: "top", Title: "top", Kind: state.PaneTerminalLive},
+		{ID: "middle-left", Title: "middle-left", Kind: state.PaneTerminalLive},
+		{ID: "middle-right", Title: "middle-right", Kind: state.PaneTerminalLive},
+		{ID: "bottom", Title: "bottom", Kind: state.PaneTerminalLive},
+	}
+	tab.ActivePaneID = "middle-left"
+	tab.RootSplit = state.SplitNode{
+		Direction: state.SplitDirectionVertical,
+		Children: []state.SplitNode{
+			{PaneID: "left"},
+			{
+				Direction: state.SplitDirectionHorizontal,
+				Children: []state.SplitNode{
+					{PaneID: "top"},
+					{
+						Direction: state.SplitDirectionHorizontal,
+						Children: []state.SplitNode{
+							{
+								Direction: state.SplitDirectionVertical,
+								Children:  []state.SplitNode{{PaneID: "middle-left"}, {PaneID: "middle-right"}},
+							},
+							{PaneID: "bottom"},
+						},
+					},
+				},
+			},
+		},
+	}
+	shell.ActivePaneID = "middle-left"
+	return shell.EnsureDefaults()
 }
 
 func newShellHitRuntimeWithTerminal(root state.Root, host *FakeTerminalHost, terminal services.TerminalService) *AppRuntime {

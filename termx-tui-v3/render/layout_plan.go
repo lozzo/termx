@@ -377,14 +377,30 @@ func resizeGroupItems(split SplitVM, rect Rect, axis SplitDirection) []ResizeGro
 	rects := make(map[string]Rect)
 	assignSplitRects(split, Rect{W: rect.W, H: rect.H}, rects)
 	panes := paneIDsInSplitOrder(split, nil)
+	divider := splitFirstExtent(split, rect.H)
+	if axis == SplitVertical {
+		divider = splitFirstExtent(split, rect.W)
+	}
 	out := make([]ResizeGroupItem, 0, len(panes))
 	for _, paneID := range panes {
 		paneRect := rects[paneID]
 		cells := paneRect.H
+		deltaSign := 0
 		if axis == SplitVertical {
 			cells = paneRect.W
+			if paneRect.X+paneRect.W == divider {
+				deltaSign = 1
+			} else if paneRect.X == divider {
+				deltaSign = -1
+			}
+		} else {
+			if paneRect.Y+paneRect.H == divider {
+				deltaSign = 1
+			} else if paneRect.Y == divider {
+				deltaSign = -1
+			}
 		}
-		out = append(out, ResizeGroupItem{PaneID: paneID, Cells: cells})
+		out = append(out, ResizeGroupItem{PaneID: paneID, Cells: cells, DeltaSign: deltaSign})
 	}
 	return out
 }

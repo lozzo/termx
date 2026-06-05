@@ -354,6 +354,57 @@ func TestMeasureLayoutFourColumnResizeRegionsCarryAdjacentLeafGroup(t *testing.T
 	if got := resizeGroupSignature(rightOfSecond.ResizeGroup); got != "pane-2:20,pane-3:10,pane-4:10" {
 		t.Fatalf("right subtree group should preserve pane-4 independently, got %s from %#v", got, rightOfSecond.ResizeGroup)
 	}
+	if got := resizeGroupSignSignature(rightOfSecond.ResizeGroup); got != "pane-2:+1,pane-3:-1,pane-4:0" {
+		t.Fatalf("right subtree group should mark only divider-adjacent leaves, got %s from %#v", got, rightOfSecond.ResizeGroup)
+	}
+}
+
+func TestMeasureLayoutStackedRightColumnResizeGroupMarksSharedBoundary(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{
+				{ID: "left", Presentation: PanelPresentationSplitLine},
+				{ID: "top", Presentation: PanelPresentationSplitLine},
+				{ID: "middle-left", Presentation: PanelPresentationSplitLine, Active: true},
+				{ID: "middle-right", Presentation: PanelPresentationSplitLine},
+				{ID: "bottom", Presentation: PanelPresentationSplitLine},
+			},
+			Split: SplitVM{
+				Direction: SplitVertical,
+				Children: []SplitVM{
+					{PaneID: "left"},
+					{
+						Direction: SplitHorizontal,
+						Children: []SplitVM{
+							{PaneID: "top"},
+							{
+								Direction: SplitHorizontal,
+								Children: []SplitVM{
+									{
+										Direction: SplitVertical,
+										Children:  []SplitVM{{PaneID: "middle-left"}, {PaneID: "middle-right"}},
+									},
+									{PaneID: "bottom"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 18})
+	divider := hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "left")
+	if divider.ResizeBeforePaneID != "left" || divider.ResizeAfterPaneID != "top" {
+		t.Fatalf("root divider should target visible left/right-column neighbors, got %#v", divider)
+	}
+	if got := resizeGroupSignature(divider.ResizeGroup); got != "left:40,top:40,middle-left:20,middle-right:20,bottom:40" {
+		t.Fatalf("stacked right column group should carry current widths, got %s from %#v", got, divider.ResizeGroup)
+	}
+	if got := resizeGroupSignSignature(divider.ResizeGroup); got != "left:+1,top:-1,middle-left:-1,middle-right:0,bottom:-1" {
+		t.Fatalf("only panes sharing the dragged boundary should change width, got %s from %#v", got, divider.ResizeGroup)
+	}
 }
 
 func TestMeasureLayoutKeepsSplitActionsAboveDividerResize(t *testing.T) {
@@ -666,6 +717,18 @@ func resizeGroupSignature(group []ResizeGroupItem) string {
 	parts := make([]string, 0, len(group))
 	for _, item := range group {
 		parts = append(parts, item.PaneID+":"+strconv.Itoa(item.Cells))
+	}
+	return strings.Join(parts, ",")
+}
+
+func resizeGroupSignSignature(group []ResizeGroupItem) string {
+	parts := make([]string, 0, len(group))
+	for _, item := range group {
+		sign := strconv.Itoa(item.DeltaSign)
+		if item.DeltaSign > 0 {
+			sign = "+" + sign
+		}
+		parts = append(parts, item.PaneID+":"+sign)
 	}
 	return strings.Join(parts, ",")
 }

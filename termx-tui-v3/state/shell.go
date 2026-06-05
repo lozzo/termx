@@ -2172,9 +2172,11 @@ func parseSplitPath(path string) ([]int, bool) {
 }
 
 func resizePaneGroupNode(node SplitNode, axis SplitDirection, group []PaneResizeGroupItem) (SplitNode, bool) {
-	panes, ok := flattenSameAxisSplit(node, axis, nil)
-	if ok && samePaneOrder(panes, group) {
-		return buildFixedAxisSplit(axis, group), true
+	panes := paneIDsInSplitOrder(node, nil)
+	if samePaneOrder(panes, group) {
+		// 鼠标命中的是一条真实 divider；group 带有每个叶子在该轴上的目标尺寸。
+		// 这里保留原有异轴 stacked 结构，只给同轴 split 写入固定尺寸 hint。
+		return applyPaneResizeGroupNode(node, axis, paneResizeGroupByPane(group))
 	}
 	if node.PaneID != "" || len(node.Children) == 0 {
 		return node, false
@@ -2189,6 +2191,84 @@ func resizePaneGroupNode(node SplitNode, axis SplitDirection, group []PaneResize
 		}
 	}
 	return node, false
+}
+
+func paneIDsInSplitOrder(node SplitNode, out []string) []string {
+	if node.PaneID != "" {
+		return append(out, node.PaneID)
+	}
+	for _, child := range node.Children {
+		out = paneIDsInSplitOrder(child, out)
+	}
+	return out
+}
+
+func paneResizeGroupByPane(group []PaneResizeGroupItem) map[string]PaneResizeGroupItem {
+	out := make(map[string]PaneResizeGroupItem, len(group))
+	for _, item := range group {
+		out[item.PaneID] = item
+	}
+	return out
+}
+
+func applyPaneResizeGroupNode(node SplitNode, axis SplitDirection, group map[string]PaneResizeGroupItem) (SplitNode, bool) {
+	if node.PaneID != "" {
+		_, ok := group[node.PaneID]
+		return node, ok
+	}
+	children := cloneSplitNodes(node.Children)
+	changed := false
+	for i, child := range children {
+		next, childChanged := applyPaneResizeGroupNode(child, axis, group)
+		if childChanged {
+			children[i] = next
+			changed = true
+		}
+	}
+	if !changed {
+		return node, false
+	}
+	node.Children = children
+	if node.Direction == axis && len(node.Children) >= 2 {
+		firstExtent, firstOK := paneResizeGroupExtent(node.Children[0], axis, group)
+		secondExtent, secondOK := paneResizeGroupExtent(node.Children[1], axis, group)
+		if firstOK && secondOK && firstExtent > 0 && secondExtent > 0 {
+			node.BiasCells = 0
+			node.Ratio = 0
+			node.FixedPaneID = firstPaneIDInSplit(node.Children[0])
+			if axis == SplitDirectionVertical {
+				node.FixedCols = firstExtent
+				node.FixedRows = 0
+			} else {
+				node.FixedRows = firstExtent
+				node.FixedCols = 0
+			}
+		}
+	}
+	return node, true
+}
+
+func paneResizeGroupExtent(node SplitNode, axis SplitDirection, group map[string]PaneResizeGroupItem) (int, bool) {
+	if node.PaneID != "" {
+		item, ok := group[node.PaneID]
+		return item.Cells, ok && item.Cells > 0
+	}
+	if len(node.Children) == 0 {
+		return 0, false
+	}
+	extent := 0
+	for _, child := range node.Children {
+		childExtent, ok := paneResizeGroupExtent(child, axis, group)
+		if !ok {
+			return 0, false
+		}
+		if node.Direction == axis {
+			extent += childExtent
+		} else if childExtent > extent {
+			extent = childExtent
+		}
+	}
+	return extent, extent > 0
 }
 
 func flattenSameAxisSplit(node SplitNode, axis SplitDirection, out []string) ([]string, bool) {

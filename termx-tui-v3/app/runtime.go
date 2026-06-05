@@ -547,7 +547,7 @@ func paneResizeGroupFromHitRegion(region render.HitRegion) []state.PaneResizeGro
 	}
 	out := make([]state.PaneResizeGroupItem, 0, len(region.ResizeGroup))
 	for _, item := range region.ResizeGroup {
-		out = append(out, state.PaneResizeGroupItem{PaneID: item.PaneID, Cells: item.Cells})
+		out = append(out, state.PaneResizeGroupItem{PaneID: item.PaneID, Cells: item.Cells, DeltaSign: item.DeltaSign})
 	}
 	return out
 }
@@ -564,6 +564,13 @@ func mouseDragResizeGroupCells(drag mouseDragState, delta int) []state.PaneResiz
 	out := make([]state.PaneResizeGroupItem, len(drag.ResizeGroup))
 	for i, item := range drag.ResizeGroup {
 		out[i] = item
+		if item.DeltaSign != 0 {
+			out[i].Cells = item.Cells + delta*item.DeltaSign
+			if out[i].Cells <= 0 {
+				return nil
+			}
+			continue
+		}
 		switch item.PaneID {
 		case drag.ResizeBeforePaneID:
 			out[i].Cells = beforeCells
