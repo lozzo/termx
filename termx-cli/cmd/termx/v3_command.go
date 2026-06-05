@@ -40,6 +40,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3SmokeCommand())
 	cmd.AddCommand(v3E2ESmokeCommand())
 	cmd.AddCommand(v3TmuxSmokeCommand())
+	cmd.AddCommand(v3TmuxTerminalSmokeCommand())
 	cmd.AddCommand(v3NewCommand(socket, logFile))
 	cmd.AddCommand(v3LsCommand(socket, logFile))
 	cmd.AddCommand(v3KillCommand(socket, logFile))
@@ -176,6 +177,43 @@ func v3TmuxSmokeCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func v3TmuxTerminalSmokeCommand() *cobra.Command {
+	var termxBin string
+	cmd := &cobra.Command{
+		Use:   "tmux-terminal-smoke",
+		Short: "Run a tmux black-box terminal create/attach/input smoke",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if termxBin == "" {
+				exe, err := osExecutable()
+				if err != nil {
+					return err
+				}
+				termxBin = exe
+			}
+			result, err := runV3TmuxTerminalSmoke(cmd.Context(), termxBin)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"termx v3 tmux terminal smoke ok: terminal=%s session=%s input=%s artifact_dir=%s ansi=%s plain=%s daemon_log=%s socket=%s timeline=%s\n",
+				result.TerminalID,
+				result.Session,
+				result.SentInput,
+				result.ArtifactDir,
+				result.ANSIPath,
+				result.PlainPath,
+				result.DaemonLog,
+				result.SocketPath,
+				result.TimelinePath,
+			)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&termxBin, "termx-bin", "", "termx binary path to run inside tmux")
+	return cmd
 }
 
 func v3PaneCommandAdapterCommand() *cobra.Command {

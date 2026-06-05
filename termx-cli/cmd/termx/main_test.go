@@ -1474,6 +1474,72 @@ func TestV3TmuxSmokeCommandReportsArtifactPaths(t *testing.T) {
 	}
 }
 
+func TestV3TmuxTerminalSmokeCreatesAttachesAndSendsInput(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := runV3TmuxTerminalSmoke(ctx, termxBin)
+	if err != nil {
+		t.Fatalf("tmux terminal smoke: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(result.ArtifactDir)
+	})
+	if result.TerminalID == "" || result.Session == "" || result.SocketPath == "" || result.DaemonLog == "" || result.TimelinePath == "" {
+		t.Fatalf("tmux terminal smoke should return ids and artifact paths, got %#v", result)
+	}
+	if !strings.Contains(result.Captured, "termx-pty-ready") || !strings.Contains(result.Captured, "termx-pty-echo:tmux-live-input") {
+		t.Fatalf("tmux terminal capture missing live surface markers:\n%s", result.Captured)
+	}
+	for _, path := range []string{result.ANSIPath, result.PlainPath, result.DaemonLog, result.TimelinePath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read artifact %s: %v", path, err)
+		}
+		if len(data) == 0 {
+			t.Fatalf("artifact %s should not be empty", path)
+		}
+	}
+	if err := runTmuxCommand(context.Background(), "has-session", "-t", result.Session); err == nil {
+		t.Fatalf("tmux session %s should be cleaned up", result.Session)
+	}
+}
+
+func TestV3TmuxTerminalSmokeCommandReportsArtifacts(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "tmux-terminal-smoke", "--termx-bin", termxBin})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 tmux-terminal-smoke returned error: %v", err)
+	}
+	text := out.String()
+	if artifactDir := v3TmuxSmokeOutputValue(text, "artifact_dir"); artifactDir != "" {
+		t.Cleanup(func() {
+			_ = os.RemoveAll(artifactDir)
+		})
+	}
+	if !strings.Contains(text, "termx v3 tmux terminal smoke ok") ||
+		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "session=termx-v3-terminal-") ||
+		!strings.Contains(text, "input=tmux-live-input") ||
+		!strings.Contains(text, "artifact_dir=") ||
+		!strings.Contains(text, "daemon_log=") ||
+		!strings.Contains(text, "socket=") ||
+		!strings.Contains(text, "timeline=") {
+		t.Fatalf("unexpected tmux terminal smoke output:\n%s", text)
+	}
+}
+
 func v3TmuxSmokeOutputValue(output string, key string) string {
 	prefix := key + "="
 	for _, field := range strings.Fields(output) {
@@ -1482,6 +1548,18 @@ func v3TmuxSmokeOutputValue(output string, key string) string {
 		}
 	}
 	return ""
+}
+
+func buildTermxBinaryForTest(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "termx-test-bin")
+	cmd := exec.Command("go", "build", "-o", path, ".")
+	cmd.Dir = "."
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("build termx test binary: %v\n%s", err, output)
+	}
+	return path
 }
 
 func TestLegacyRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
