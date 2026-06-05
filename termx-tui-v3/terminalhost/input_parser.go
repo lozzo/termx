@@ -49,8 +49,20 @@ func parseOneInput(buffer []byte) (input.InputEvent, int, bool) {
 			Key:    input.KeyEnter,
 			RawSeq: string(buffer[:1]),
 		}, 1, true
+	case '\t':
+		return input.InputEvent{
+			Kind:   input.EventKindKey,
+			Key:    input.KeyTab,
+			RawSeq: string(buffer[:1]),
+		}, 1, true
+	case 0x7f:
+		return input.InputEvent{
+			Kind:   input.EventKindKey,
+			Key:    input.KeyBackspace,
+			RawSeq: string(buffer[:1]),
+		}, 1, true
 	}
-	if first < 0x20 || first == 0x7f {
+	if first < 0x20 {
 		return input.InputEvent{
 			Kind:   input.EventKindKey,
 			Key:    input.KeyChar,
@@ -78,6 +90,9 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 	if len(buffer) == 1 {
 		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc, RawSeq: "\x1b"}, 1, true
 	}
+	if buffer[1] == 'O' {
+		return parseSS3(buffer)
+	}
 	if buffer[1] != '[' {
 		event, consumed, ok := parseAltChar(buffer)
 		if ok {
@@ -88,46 +103,169 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 	if len(buffer) == 2 {
 		return input.InputEvent{}, 0, false
 	}
-	switch buffer[2] {
-	case 'A':
-		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyUp, RawSeq: string(buffer[:3])}, 3, true
-	case 'B':
-		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown, RawSeq: string(buffer[:3])}, 3, true
-	case 'C':
-		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight, RawSeq: string(buffer[:3])}, 3, true
-	case 'D':
-		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyLeft, RawSeq: string(buffer[:3])}, 3, true
-	case '5':
-		if len(buffer) < 4 {
-			return input.InputEvent{}, 0, false
-		}
-		if buffer[3] == '~' {
-			return input.InputEvent{
-				Kind:   input.EventKindKey,
-				Key:    input.KeyPageUp,
-				RawSeq: string(buffer[:4]),
-			}, 4, true
-		}
-	case '6':
-		if len(buffer) < 4 {
-			return input.InputEvent{}, 0, false
-		}
-		if buffer[3] == '~' {
-			return input.InputEvent{
-				Kind:   input.EventKindKey,
-				Key:    input.KeyPageDn,
-				RawSeq: string(buffer[:4]),
-			}, 4, true
-		}
-	case '<':
+	if buffer[2] == '<' {
 		return parseSGRMouse(buffer)
 	}
 	for i := 2; i < len(buffer); i++ {
 		if buffer[i] >= 0x40 && buffer[i] <= 0x7e {
+			if event, ok := csiKeyEvent(buffer[:i+1]); ok {
+				return event, i + 1, true
+			}
 			return unknownKey(buffer[:i+1]), i + 1, true
 		}
 	}
 	return input.InputEvent{}, 0, false
+}
+
+func parseSS3(buffer []byte) (input.InputEvent, int, bool) {
+	if len(buffer) == 2 {
+		return input.InputEvent{}, 0, false
+	}
+	seq := buffer[:3]
+	event := input.InputEvent{Kind: input.EventKindKey, RawSeq: string(seq)}
+	switch buffer[2] {
+	case 'A':
+		event.Key = input.KeyUp
+	case 'B':
+		event.Key = input.KeyDown
+	case 'C':
+		event.Key = input.KeyRight
+	case 'D':
+		event.Key = input.KeyLeft
+	case 'F':
+		event.Key = input.KeyEnd
+	case 'H':
+		event.Key = input.KeyHome
+	case 'P':
+		event.Key = input.KeyF1
+	case 'Q':
+		event.Key = input.KeyF2
+	case 'R':
+		event.Key = input.KeyF3
+	case 'S':
+		event.Key = input.KeyF4
+	default:
+		return unknownKey(seq), 3, true
+	}
+	return event, 3, true
+}
+
+func csiKeyEvent(seq []byte) (input.InputEvent, bool) {
+	if len(seq) < 3 || seq[0] != '\x1b' || seq[1] != '[' {
+		return input.InputEvent{}, false
+	}
+	body := string(seq[2 : len(seq)-1])
+	final := seq[len(seq)-1]
+	event := input.InputEvent{Kind: input.EventKindKey, RawSeq: string(seq)}
+	switch final {
+	case 'A', 'B', 'C', 'D', 'F', 'H', 'Z':
+		parts := splitCSIParams(body)
+		applyKeyModifier(&event, modifierParam(parts, 1))
+		switch final {
+		case 'A':
+			event.Key = input.KeyUp
+		case 'B':
+			event.Key = input.KeyDown
+		case 'C':
+			event.Key = input.KeyRight
+		case 'D':
+			event.Key = input.KeyLeft
+		case 'F':
+			event.Key = input.KeyEnd
+		case 'H':
+			event.Key = input.KeyHome
+		case 'Z':
+			event.Key = input.KeyShiftTab
+			event.Shift = true
+		}
+		return event, true
+	case '~':
+		parts := splitCSIParams(body)
+		code, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return input.InputEvent{}, false
+		}
+		key, ok := tildeKey(code)
+		if !ok {
+			return input.InputEvent{}, false
+		}
+		event.Key = key
+		applyKeyModifier(&event, modifierParam(parts, 1))
+		return event, true
+	default:
+		return input.InputEvent{}, false
+	}
+}
+
+func splitCSIParams(body string) []string {
+	if body == "" {
+		return []string{""}
+	}
+	return strings.Split(body, ";")
+}
+
+func modifierParam(parts []string, index int) int {
+	if index >= len(parts) {
+		return 0
+	}
+	value, err := strconv.Atoi(parts[index])
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func applyKeyModifier(event *input.InputEvent, encoded int) {
+	if encoded <= 1 {
+		return
+	}
+	mask := encoded - 1
+	event.Shift = mask&1 != 0
+	event.Alt = mask&2 != 0
+	event.Ctrl = mask&4 != 0
+}
+
+func tildeKey(code int) (input.Key, bool) {
+	switch code {
+	case 1, 7:
+		return input.KeyHome, true
+	case 2:
+		return input.KeyInsert, true
+	case 3:
+		return input.KeyDelete, true
+	case 4, 8:
+		return input.KeyEnd, true
+	case 5:
+		return input.KeyPageUp, true
+	case 6:
+		return input.KeyPageDn, true
+	case 11:
+		return input.KeyF1, true
+	case 12:
+		return input.KeyF2, true
+	case 13:
+		return input.KeyF3, true
+	case 14:
+		return input.KeyF4, true
+	case 15:
+		return input.KeyF5, true
+	case 17:
+		return input.KeyF6, true
+	case 18:
+		return input.KeyF7, true
+	case 19:
+		return input.KeyF8, true
+	case 20:
+		return input.KeyF9, true
+	case 21:
+		return input.KeyF10, true
+	case 23:
+		return input.KeyF11, true
+	case 24:
+		return input.KeyF12, true
+	default:
+		return "", false
+	}
 }
 
 func parseAltChar(buffer []byte) (input.InputEvent, int, bool) {
@@ -192,16 +330,44 @@ func mouseButton(code int, final byte) (input.MouseButton, bool) {
 		}
 		return input.MouseWheelUp, true
 	}
-	if final == 'm' && code&3 == 0 {
-		return input.MouseLeftUp, true
+	button := code & 3
+	if final == 'm' {
+		switch button {
+		case 0:
+			return input.MouseLeftUp, true
+		case 1:
+			return input.MouseMiddleUp, true
+		case 2:
+			return input.MouseRightUp, true
+		default:
+			return input.MouseRelease, true
+		}
 	}
-	if final == 'M' && code&32 != 0 && code&3 == 0 {
-		return input.MouseLeftDrag, true
+	if final != 'M' {
+		return "", false
 	}
-	if final == 'M' && code&3 == 0 {
+	if code&32 != 0 {
+		switch button {
+		case 0:
+			return input.MouseLeftDrag, true
+		case 1:
+			return input.MouseMiddleDrag, true
+		case 2:
+			return input.MouseRightDrag, true
+		default:
+			return input.MouseMove, true
+		}
+	}
+	switch button {
+	case 0:
 		return input.MouseLeft, true
+	case 1:
+		return input.MouseMiddle, true
+	case 2:
+		return input.MouseRight, true
+	default:
+		return input.MouseMove, true
 	}
-	return "", false
 }
 
 func unknownKey(seq []byte) input.InputEvent {

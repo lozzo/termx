@@ -283,6 +283,42 @@ func TestInputParserConvertsMouseAndKeys(t *testing.T) {
 	}
 }
 
+func TestInputParserConvertsExtendedKeysAndModifiers(t *testing.T) {
+	parser := NewInputParser()
+	got := parser.Feed([]byte("\x1b[Z\x1b[H\x1b[F\x1b[2~\x1b[3~\x1bOP\x1b[15~\x1b[1;5D\x1b[1;3C"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyShiftTab, Shift: true, RawSeq: "\x1b[Z"},
+		{Kind: input.EventKindKey, Key: input.KeyHome, RawSeq: "\x1b[H"},
+		{Kind: input.EventKindKey, Key: input.KeyEnd, RawSeq: "\x1b[F"},
+		{Kind: input.EventKindKey, Key: input.KeyInsert, RawSeq: "\x1b[2~"},
+		{Kind: input.EventKindKey, Key: input.KeyDelete, RawSeq: "\x1b[3~"},
+		{Kind: input.EventKindKey, Key: input.KeyF1, RawSeq: "\x1bOP"},
+		{Kind: input.EventKindKey, Key: input.KeyF5, RawSeq: "\x1b[15~"},
+		{Kind: input.EventKindKey, Key: input.KeyLeft, Ctrl: true, RawSeq: "\x1b[1;5D"},
+		{Kind: input.EventKindKey, Key: input.KeyRight, Alt: true, RawSeq: "\x1b[1;3C"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected extended key events\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestInputParserConvertsSGRMouseButtonsAndRelease(t *testing.T) {
+	parser := NewInputParser()
+	got := parser.Feed([]byte("\x1b[<1;2;3M\x1b[<33;2;3M\x1b[<1;2;3m\x1b[<2;4;5M\x1b[<34;4;5M\x1b[<2;4;5m\x1b[<35;6;7M"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindMouse, Mouse: input.MouseMiddle, Row: 3, Col: 2, RawSeq: "\x1b[<1;2;3M"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseMiddleDrag, Row: 3, Col: 2, RawSeq: "\x1b[<33;2;3M"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseMiddleUp, Row: 3, Col: 2, RawSeq: "\x1b[<1;2;3m"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseRight, Row: 5, Col: 4, RawSeq: "\x1b[<2;4;5M"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseRightDrag, Row: 5, Col: 4, RawSeq: "\x1b[<34;4;5M"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseRightUp, Row: 5, Col: 4, RawSeq: "\x1b[<2;4;5m"},
+		{Kind: input.EventKindMouse, Mouse: input.MouseMove, Row: 7, Col: 6, RawSeq: "\x1b[<35;6;7M"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected SGR mouse events\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestInputParserMarksCtrlFAndCtrlV(t *testing.T) {
 	parser := NewInputParser()
 	got := parser.Feed([]byte("\x06\x16"))

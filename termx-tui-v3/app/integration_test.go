@@ -422,6 +422,107 @@ func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeCopyModeSwallowsUnboundRawKeys(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{{Text: "copy-row", LineID: 20}},
+		)}},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core, Rows: 20},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy mode: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyF5, RawSeq: "\x1b[15~"}); err != nil {
+		t.Fatalf("send copy unbound raw key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy unbound raw key: %v", err)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("copy mode unbound raw key must not leak to terminal, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimePassesRawSpecialKeysAndSwallowsUIModeUnboundKeys(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyLeft, RawSeq: "\x1b[D"},
+		{Kind: input.EventKindKey, Key: input.KeyDelete, RawSeq: "\x1b[3~"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x03", Ctrl: true, RawSeq: "\x03"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", Alt: true, RawSeq: "\x1bx"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send raw key %#v: %v", event, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain raw keys: %v", err)
+	}
+	got := make([]string, 0, len(terminal.Inputs))
+	for _, req := range terminal.Inputs {
+		got = append(got, string(req.Bytes))
+	}
+	want := []string{"\x1b[D", "\x1b[3~", "\x03", "\x1bx"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected raw key passthrough got=%q want=%q", got, want)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true}); err != nil {
+		t.Fatalf("enter pane mode: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDelete, RawSeq: "\x1b[3~"}); err != nil {
+		t.Fatalf("send ui unbound key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain ui unbound: %v", err)
+	}
+	if len(terminal.Inputs) != len(want) {
+		t.Fatalf("ui mode unbound key must not leak to terminal, got %#v", terminal.Inputs)
+	}
+}
+
 func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 	clipboard := &services.FakeClipboardService{}
 	host := NewFakeTerminalHost(4)
@@ -454,6 +555,41 @@ func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 	assertPaneVisualState(t, last, "be", render.StyleAccent)
 	if !frameContains(last, "Copied to clipboard") || !frameContains(last, "│") || frameContains(last, "selection yanked") {
 		t.Fatalf("copy feedback toast should be visible, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
+	clipboard := &services.FakeClipboardService{}
+	host := NewFakeTerminalHost(16)
+	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, clipboard)
+	runtime.state.History = historyStoreForCopySelection()
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   4,
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "G"},
+		{Kind: input.EventKindKey, Key: input.KeyHome},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: " "},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"},
+		{Kind: input.EventKindKey, Key: input.KeyEnd},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "y"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send copy key %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain copy key %#v: %v", event, err)
+		}
+	}
+	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "beta" {
+		t.Fatalf("expected y to copy selected authoritative row, got %#v", clipboard.Writes)
+	}
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 1, Col: 4}) {
+		t.Fatalf("expected copy cursor at end of beta, got %#v", runtime.State().CopyMode.Cursor)
 	}
 }
 

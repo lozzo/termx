@@ -114,3 +114,79 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 		t.Fatalf("expected interaction exit, got %#v", esc)
 	}
 }
+
+func TestBindingCatalogIsUniqueAndContainsTUIV2AlignedAliases(t *testing.T) {
+	seen := map[string]string{}
+	for _, binding := range BindingCatalog() {
+		key := string(binding.Mode) + "|" + string(binding.Key) + "|" + binding.Char + "|" + boolKey(binding.Ctrl) + boolKey(binding.Alt) + boolKey(binding.Shift)
+		if previous, ok := seen[key]; ok {
+			t.Fatalf("duplicate binding %s and %s for %s", previous, binding.ID, key)
+		}
+		seen[key] = binding.ID
+	}
+	cases := []struct {
+		name    string
+		event   InputEvent
+		mode    InteractionMode
+		kind    IntentKind
+		command string
+		action  ShellAction
+	}{
+		{name: "pane percent split", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, kind: IntentPaneCommand, command: "pane split-right"},
+		{name: "pane quote split", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, kind: IntentPaneCommand, command: "pane split-down"},
+		{name: "pane w close", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w"}, kind: IntentPaneCommand, command: "pane close"},
+		{name: "resize equals balance", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "="}, kind: IntentPaneCommand, command: "pane balance"},
+		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "tab create"},
+		{name: "workspace p previous", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, kind: IntentWorkbenchCommand, command: "workspace previous"},
+		{name: "workspace f tree", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, kind: IntentShellAction, action: ShellActionOpenTree},
+	}
+	for _, tc := range cases {
+		intent := RouteWithMode(tc.event, false, tc.mode)
+		if intent.Kind != tc.kind || intent.Command != tc.command || intent.Action != tc.action {
+			t.Fatalf("%s: unexpected intent %#v", tc.name, intent)
+		}
+	}
+}
+
+func TestNormalModePassesUnboundRawKeysAndCommonCtrlToTerminal(t *testing.T) {
+	cases := []struct {
+		name  string
+		event InputEvent
+		want  string
+	}{
+		{name: "ctrl-c", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x03", Ctrl: true, RawSeq: "\x03"}, want: "\x03"},
+		{name: "arrow", event: InputEvent{Kind: EventKindKey, Key: KeyLeft, RawSeq: "\x1b[D"}, want: "\x1b[D"},
+		{name: "home", event: InputEvent{Kind: EventKindKey, Key: KeyHome, RawSeq: "\x1b[H"}, want: "\x1b[H"},
+		{name: "delete", event: InputEvent{Kind: EventKindKey, Key: KeyDelete, RawSeq: "\x1b[3~"}, want: "\x1b[3~"},
+		{name: "shift-tab", event: InputEvent{Kind: EventKindKey, Key: KeyShiftTab, Shift: true, RawSeq: "\x1b[Z"}, want: "\x1b[Z"},
+		{name: "alt-x", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "x", Alt: true, RawSeq: "\x1bx"}, want: "\x1bx"},
+	}
+	for _, tc := range cases {
+		intent := Route(tc.event, false)
+		if intent.Kind != IntentTerminalInput || string(intent.Bytes) != tc.want {
+			t.Fatalf("%s: unexpected terminal passthrough %#v", tc.name, intent)
+		}
+	}
+}
+
+func TestUIModesSwallowUnboundKeysAndMouseRequiresTracking(t *testing.T) {
+	key := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyDelete, RawSeq: "\x1b[3~"}, false, InteractionModePane)
+	if key.Kind != IntentNone {
+		t.Fatalf("ui mode should swallow unbound delete, got %#v", key)
+	}
+	mouse := InputEvent{Kind: EventKindMouse, Mouse: MouseRight, RawSeq: "\x1b[<2;10;4M"}
+	if intent := RouteWithOptions(mouse, RouteOptions{}); intent.Kind != IntentNone {
+		t.Fatalf("mouse without tracking should not passthrough, got %#v", intent)
+	}
+	intent := RouteWithOptions(mouse, RouteOptions{TerminalMousePassthrough: true})
+	if intent.Kind != IntentTerminalInput || !intent.RawMouse || string(intent.Bytes) != mouse.RawSeq {
+		t.Fatalf("mouse tracking should raw passthrough, got %#v", intent)
+	}
+}
+
+func boolKey(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
+}

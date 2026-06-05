@@ -302,10 +302,13 @@ func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, 
 	if !root.Session.Attached {
 		return setLiveError(root, "terminal is not attached"), nil
 	}
-	intent := input.Route(msg.Event, root.CopyMode.Active)
-	if root.CopyMode.Active && intent.Kind != input.IntentTerminalInput {
-		return root, nil
+	if root.CopyMode.Active {
+		return root, []Effect{handledEffect{}}
 	}
+	intent := input.RouteWithOptions(msg.Event, input.RouteOptions{
+		CopyModeActive:           root.CopyMode.Active,
+		TerminalMousePassthrough: liveMousePassthroughEnabled(root, msg.Event),
+	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
 		return root, nil
 	}
@@ -321,6 +324,16 @@ func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, 
 			return LiveInputResultMsg{Event: msg.Event, Err: err}
 		},
 	}}
+}
+
+func liveMousePassthroughEnabled(root state.Root, event input.InputEvent) bool {
+	if event.Kind != input.EventKindMouse || event.RawSeq == "" {
+		return false
+	}
+	if root.Shell.EnsureDefaults().Overlay.Open || root.CopyMode.Active {
+		return false
+	}
+	return root.Surface.Modes.MousePassthroughEnabled()
 }
 
 func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.Root, []Effect) {

@@ -433,6 +433,12 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		return dragMsg
 	}
 	if inputMsg.Event.Mouse != input.MouseLeft {
+		if runtime.mouseEventCanPassthrough(inputMsg.Event) {
+			return msg
+		}
+		if runtime.mouseEventHitsUI(inputMsg.Event) {
+			return NoopMsg{}
+		}
 		return msg
 	}
 	region, ok := hitRegionAt(runtime.lastHitRegions, inputMsg.Event)
@@ -479,6 +485,49 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	default:
 		return msg
 	}
+}
+
+func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent) bool {
+	if event.RawSeq == "" {
+		return false
+	}
+	region, ok := hitRegionAt(runtime.lastHitRegions, event)
+	if !ok || region.Kind != render.HitRegionPaneContent {
+		return false
+	}
+	if region.PaneID != runtime.state.Shell.EnsureDefaults().ActivePaneID {
+		return false
+	}
+	return runtime.paneMouseTrackingEnabled(region.PaneID)
+}
+
+func (runtime *AppRuntime) mouseEventHitsUI(event input.InputEvent) bool {
+	region, ok := hitRegionAt(runtime.lastHitRegions, event)
+	if !ok {
+		return false
+	}
+	switch region.Kind {
+	case render.HitRegionPaneContent, render.HitRegionHistoryRow:
+		return false
+	default:
+		return true
+	}
+}
+
+func (runtime *AppRuntime) paneMouseTrackingEnabled(paneID string) bool {
+	if paneID == "" {
+		return false
+	}
+	pane, ok := runtime.state.Shell.PaneByID(paneID)
+	if !ok {
+		return false
+	}
+	terminalID := pane.TerminalID
+	if terminalID == "" && pane.Active {
+		terminalID = runtime.state.Session.TerminalID
+	}
+	surface := runtime.state.Surface.SurfaceForTerminal(terminalID)
+	return surface.Modes.MousePassthroughEnabled()
 }
 
 func (runtime *AppRuntime) fillMousePaneCommandDefaults(command *state.PaneCommand) {

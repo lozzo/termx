@@ -138,9 +138,9 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 			if handled {
 				return next, []Effect{handledEffect{}}
 			}
-			next, handled = reduceCopyModeKeyInput(root, intent.Event)
+			next, keyEffects, handled := reduceCopyModeKeyInput(root, intent.Event, deps)
 			if handled {
-				return next, []Effect{handledEffect{}}
+				return next, append([]Effect{handledEffect{}}, keyEffects...)
 			}
 		}
 		return root, nil
@@ -160,14 +160,30 @@ func reduceCopyModeMouseInput(root state.Root, event input.InputEvent) (state.Ro
 	}
 }
 
-func reduceCopyModeKeyInput(root state.Root, event input.InputEvent) (state.Root, bool) {
+func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyModeDeps) (state.Root, []Effect, bool) {
 	if event.Kind != input.EventKindKey {
-		return root, false
+		return root, nil, false
 	}
 	switch event.Key {
 	case input.KeyPageDn:
 		root.CopyMode = root.CopyMode.Scroll(copyModePageRows(root.CopyMode), len(root.History.Rows))
-		return root.Advance(), true
+		return root.Advance(), nil, true
+	case input.KeyHome:
+		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: 0})
+		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+		return root.Advance(), nil, true
+	case input.KeyEnd:
+		root.CopyMode = root.CopyMode.MoveCursor(copyModeLineEndPosition(root.History, root.CopyMode.Cursor.Row))
+		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+		return root.Advance(), nil, true
+	case input.KeyLeft:
+		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col - 1})
+		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+		return root.Advance(), nil, true
+	case input.KeyRight:
+		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col + 1})
+		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+		return root.Advance(), nil, true
 	case input.KeyDown:
 		if root.CopyMode.Query != "" {
 			root.CopyMode = root.CopyMode.MoveMatch(1)
@@ -176,7 +192,7 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent) (state.Root
 		}
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 		root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-		return root.Advance(), true
+		return root.Advance(), nil, true
 	case input.KeyUp:
 		if root.CopyMode.Query != "" {
 			root.CopyMode = root.CopyMode.MoveMatch(-1)
@@ -185,33 +201,84 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent) (state.Root
 		}
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 		root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-		return root.Advance(), true
+		return root.Advance(), nil, true
 	case input.KeyEnter:
 		if root.CopyMode.Query != "" {
 			root.CopyMode = root.CopyMode.MoveMatch(1)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-			return root.Advance(), true
+			return root.Advance(), nil, true
+		}
+		if root.CopyMode.Selection != nil {
+			next, effects := reduceCopyModeCopySelection(root, deps)
+			return next, effects, true
 		}
 	case input.KeyChar:
 		if isBackspaceEvent(event) {
 			query := trimLastRune(root.CopyMode.Query)
 			root.CopyMode = root.CopyMode.SetQuery(query, state.FindCopyMatches(root.History, query))
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-			return root.Advance(), true
+			return root.Advance(), nil, true
 		}
 		if event.Ctrl || event.Char == "" {
-			return root, false
+			return root, nil, false
+		}
+		switch event.Char {
+		case "h":
+			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col - 1})
+			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+			return root.Advance(), nil, true
+		case "l":
+			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col + 1})
+			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+			return root.Advance(), nil, true
+		case "j":
+			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row + 1, Col: root.CopyMode.Cursor.Col})
+			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			return root.Advance(), nil, true
+		case "k":
+			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row - 1, Col: root.CopyMode.Cursor.Col})
+			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			return root.Advance(), nil, true
+		case "g":
+			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: 0, Col: root.CopyMode.Cursor.Col})
+			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			return root.Advance(), nil, true
+		case "G":
+			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: len(root.History.Rows) - 1, Col: root.CopyMode.Cursor.Col})
+			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
+			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			return root.Advance(), nil, true
+		case " ":
+			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
+			return root.Advance(), nil, true
+		case "y":
+			if root.CopyMode.Selection != nil {
+				next, effects := reduceCopyModeCopySelection(root, deps)
+				return next, effects, true
+			}
+			return root, nil, true
 		}
 		if event.Char == "/" && root.CopyMode.Query == "" {
 			root.CopyMode = root.CopyMode.SetQuery("", nil)
-			return root.Advance(), true
+			return root.Advance(), nil, true
 		}
 		query := root.CopyMode.Query + event.Char
 		root.CopyMode = root.CopyMode.SetQuery(query, state.FindCopyMatches(root.History, query))
 		root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-		return root.Advance(), true
+		return root.Advance(), nil, true
 	}
-	return root, false
+	return root, nil, false
+}
+
+func copyModeLineEndPosition(history state.HistoryStore, row int) state.CopyPosition {
+	if len(history.Rows) == 0 {
+		return state.CopyPosition{}
+	}
+	row = clampColumn(row, 0, len(history.Rows)-1)
+	return state.CopyPosition{Row: row, Col: len([]rune(history.Rows[row].Text))}
 }
 
 func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {

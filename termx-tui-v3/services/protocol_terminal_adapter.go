@@ -208,6 +208,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 				Col:     snapshot.Cursor.Col,
 				Shape:   snapshot.Cursor.Shape,
 			},
+			Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
 		},
 	}, nil
 }
@@ -313,6 +314,17 @@ func liveSurfaceScreenFromSnapshot(snapshot *protocol.Snapshot) [][]state.LiveCe
 		screen[rowIndex] = liveSurfaceCellsFromProtocol(row)
 	}
 	return screen
+}
+
+func liveSurfaceModesFromProtocol(modes protocol.TerminalModes) state.LiveTerminalModes {
+	return state.LiveTerminalModes{
+		MouseTracking: modes.MouseTracking,
+		MouseX10:      modes.MouseX10,
+		MouseNormal:   modes.MouseNormal,
+		MouseButton:   modes.MouseButtonEvent,
+		MouseAny:      modes.MouseAnyEvent,
+		MouseSGR:      modes.MouseSGR,
+	}
 }
 
 func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {

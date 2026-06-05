@@ -31,6 +31,27 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	}
 }
 
+func TestTerminalSurfaceTracksMouseModesForPassthrough(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       24,
+		Modes:      LiveTerminalModes{MouseTracking: true, MouseSGR: true},
+	})
+	if !store.Modes.MousePassthroughEnabled() || !store.SurfaceForTerminal("term-1").Modes.MouseSGR {
+		t.Fatalf("expected mouse modes preserved on surface snapshot, got %#v", store)
+	}
+	store = store.Attach("term-2", 80, 24)
+	if store.Modes.MousePassthroughEnabled() {
+		t.Fatalf("attach switch must clear projected mouse modes, got %#v", store.Modes)
+	}
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{TerminalID: "term-2", Modes: LiveTerminalModes{MouseNormal: true}})
+	store = store.MarkExited("term-2", 0, "done")
+	if store.Modes.MousePassthroughEnabled() {
+		t.Fatalf("exited surface must clear mouse passthrough modes, got %#v", store.Modes)
+	}
+}
+
 func TestTerminalSessionAttachResizeAndError(t *testing.T) {
 	session := (TerminalSessionStore{}).Attach("term-1", 7, 80, 24)
 	if !session.Attached || session.Channel != 7 || session.TerminalID != "term-1" || session.State != TerminalLiveAttached {

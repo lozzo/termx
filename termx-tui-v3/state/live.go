@@ -18,6 +18,7 @@ type TerminalSurfaceStore struct {
 	Screen     [][]LiveCell
 	Title      string
 	Cursor     LiveCursor
+	Modes      LiveTerminalModes
 	Ready      bool
 	State      TerminalLiveState
 	ExitCode   int
@@ -32,6 +33,20 @@ type LiveCursor struct {
 	Row     int
 	Col     int
 	Shape   string
+}
+
+// LiveTerminalModes 只保存影响 TUI 输入转发的终端模式位。
+type LiveTerminalModes struct {
+	MouseTracking bool
+	MouseX10      bool
+	MouseNormal   bool
+	MouseButton   bool
+	MouseAny      bool
+	MouseSGR      bool
+}
+
+func (modes LiveTerminalModes) MousePassthroughEnabled() bool {
+	return modes.MouseTracking || modes.MouseX10 || modes.MouseNormal || modes.MouseButton || modes.MouseAny || modes.MouseSGR
 }
 
 // LiveCell 是 protocol snapshot cell 的 reducer-owned 副本，只服务实时 terminal 展示。
@@ -80,6 +95,7 @@ type LiveSurfaceSnapshot struct {
 	Screen     [][]LiveCell
 	Title      string
 	Cursor     LiveCursor
+	Modes      LiveTerminalModes
 	State      TerminalLiveState
 	ExitCode   int
 	ExitReason string
@@ -111,6 +127,7 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 		store.Lines = nil
 		store.Screen = nil
 		store.Cursor = LiveCursor{}
+		store.Modes = LiveTerminalModes{}
 		store.Ready = false
 	}
 	store.TerminalID = terminalID
@@ -148,6 +165,7 @@ func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, re
 		snapshot.ExitReason = reason
 		snapshot.Err = ""
 		snapshot.Cursor = LiveCursor{}
+		snapshot.Modes = LiveTerminalModes{}
 		store.Surfaces[terminalID] = snapshot
 	}
 	if terminalID == "" || store.TerminalID == "" || store.TerminalID == terminalID {
@@ -159,6 +177,7 @@ func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, re
 		store.ExitReason = reason
 		store.Err = ""
 		store.Cursor = LiveCursor{}
+		store.Modes = LiveTerminalModes{}
 	}
 	return store
 }
@@ -213,6 +232,7 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 	store.Screen = cloneLiveCellRows(snapshot.Screen)
 	store.Title = snapshot.Title
 	store.Cursor = snapshot.Cursor
+	store.Modes = snapshot.Modes
 	store.Ready = ready
 	store.State = snapshot.State
 	if store.State == "" {

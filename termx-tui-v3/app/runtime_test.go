@@ -1015,6 +1015,77 @@ func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTerminalMouseTrackingPassthroughOnlyFromContent(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	frame := lastRuntimeFrame(t, host)
+	content := frameHitRegion(t, frame, render.HitRegionPaneContent, state.DefaultPaneID)
+	mouse := mouseEventAt(content.Rect)
+	mouse.Mouse = input.MouseRight
+	mouse.RawSeq = "\x1b[<2;10;4M"
+	if err := host.SendInput(mouse); err != nil {
+		t.Fatalf("send mouse without tracking: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain mouse without tracking: %v", err)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("mouse without terminal tracking must not passthrough, got %#v", terminal.Inputs)
+	}
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       78,
+		Rows:       22,
+		Lines:      []string{"tracking"},
+		Modes:      state.LiveTerminalModes{MouseTracking: true, MouseSGR: true},
+	}}); err != nil {
+		t.Fatalf("post live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain live surface: %v", err)
+	}
+	if err := host.SendInput(mouse); err != nil {
+		t.Fatalf("send tracked content mouse: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tracked content mouse: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != mouse.RawSeq {
+		t.Fatalf("tracked content mouse should passthrough raw SGR, got %#v", terminal.Inputs)
+	}
+
+	chrome := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionPaneChrome, state.DefaultPaneID)
+	chromeMouse := mouseEventAt(chrome.Rect)
+	chromeMouse.Mouse = input.MouseRight
+	chromeMouse.RawSeq = "\x1b[<2;1;1M"
+	if err := host.SendInput(chromeMouse); err != nil {
+		t.Fatalf("send chrome mouse: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain chrome mouse: %v", err)
+	}
+	if len(terminal.Inputs) != 1 {
+		t.Fatalf("chrome mouse must not passthrough to terminal, got %#v", terminal.Inputs)
+	}
+}
+
 func TestAppRuntimeAutoDismissesToastsOnRuntimeTick(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 20)

@@ -1426,6 +1426,18 @@ func (store ShellStore) activeTabIndex() int {
 	return -1
 }
 
+func (store ShellStore) PaneByID(paneID string) (PaneState, bool) {
+	store = store.EnsureDefaults()
+	for _, tab := range store.Workspace.Tabs {
+		for _, pane := range tab.Panes {
+			if pane.ID == paneID {
+				return pane, true
+			}
+		}
+	}
+	return PaneState{}, false
+}
+
 func (store ShellStore) tabIndexForTarget(target PaneCommandTarget) int {
 	store = store.EnsureDefaults()
 	for index, tab := range store.Workspace.Tabs {

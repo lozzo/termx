@@ -257,7 +257,7 @@ func reduceHelpInput(root state.Root, event input.InputEvent) (state.Root, []Eff
 }
 
 func isBackspaceEvent(event input.InputEvent) bool {
-	return event.Key == input.KeyChar && (event.Char == "\x7f" || event.Char == "\b")
+	return event.Key == input.KeyBackspace || (event.Key == input.KeyChar && (event.Char == "\x7f" || event.Char == "\b"))
 }
 
 func trimLastRune(value string) string {

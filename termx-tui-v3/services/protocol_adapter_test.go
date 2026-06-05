@@ -238,6 +238,7 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 				{{Content: "done"}},
 			}},
 			Cursor: protocol.CursorState{Visible: true, Row: 1, Col: 4, Shape: "bar"},
+			Modes:  protocol.TerminalModes{MouseTracking: true, MouseButtonEvent: true, MouseSGR: true},
 		},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
@@ -265,6 +266,9 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	}
 	if !result.Snapshot.Cursor.Visible || result.Snapshot.Cursor.Row != 1 || result.Snapshot.Cursor.Col != 4 || result.Snapshot.Cursor.Shape != "bar" {
 		t.Fatalf("unexpected live cursor %#v", result.Snapshot.Cursor)
+	}
+	if !result.Snapshot.Modes.MousePassthroughEnabled() || !result.Snapshot.Modes.MouseButton || !result.Snapshot.Modes.MouseSGR {
+		t.Fatalf("expected protocol terminal mouse modes to be preserved, got %#v", result.Snapshot.Modes)
 	}
 }
 
