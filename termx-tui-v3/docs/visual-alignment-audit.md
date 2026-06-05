@@ -4,7 +4,7 @@
 
 本文档是切片 79 的视觉基线文档，用来纠正一个关键判断：当前 `termx-tui-v3` 已经具备 styled chrome renderer 和第一版可操作产品壳，但还没有达到用户要求的 `tuiv2` 截图级界面效果。
 
-切片 83 已完成真实默认 TUI 复核，结论仍是未通过。切片 84-86 已完成对应返工，但切片 87 根据用户真实反馈再次确认当前 TUI 仍与目标截图不一致。切片 88 已完成 shell/pane 二轮视觉重绘，切片 89 已完成默认入口真实 PTY 证据归档；最终是否通过仍必须进入切片 90 的用户真实截图拍板。复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。
+切片 83 已完成真实默认 TUI 复核，结论仍是未通过。切片 84-86 已完成对应返工，但切片 87 根据用户真实反馈再次确认当前 TUI 仍与目标截图不一致。切片 88 已完成 shell/pane 二轮视觉重绘，切片 89 已完成默认入口真实 PTY 证据归档；切片 90 根据用户反馈确认视觉仍不通过。后续必须进入切片 91 的整体 UI 构图三轮重绘。复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。
 
 视觉返工必须以本文档作为验收入口。实现仍必须遵守 `termx-tui-v3/docs/architecture.md` 与 `termx-tui-v3/docs/render-architecture.md`，不得因为追求视觉相似而复制旧 `tuiv2` runtime/model、Bubble Tea contract、snapshot/grid history fallback 或旧 renderer 大状态结构。
 
@@ -35,11 +35,12 @@
 - 切片 87 后，`go run ./termx-cli/cmd/termx v3 smoke` 输出 12 个非交互视觉 case，包含 `terminal-pool-page`、`workbench-tree-page` 和 `visual-audit-current` review baseline。
 - 切片 88 后，shell/pane 视觉完成二轮重绘：theme accent 改为紫色系，status bar 改为深色背景，top bar 使用 `×`、`[＋]` 和 compact summary，bottom bar 使用 `[Ctrl] · [P]` 类快捷键 taxonomy，pane top chrome 使用 `· ↔2`、`· ◆ owner`、`· 1/31` 与 action cluster。
 - 切片 89 后，默认 `go run ./termx-cli/cmd/termx` 已在隔离 `120x40` 真实 PTY 中证明可进入 alternate screen 并输出二轮 styled ANSI frame。
+- 切片 90 后，用户确认当前真实 TUI 样子仍与目标不一致，当前视觉 goal 不能完成。
 
 当前仍不足：
 
-- 用户真实复核已经暴露关键差距：切片 87 前的 TUI 整体风格、密度、层级和目标 `tuiv2` 截图仍不一致；切片 88 只是对应差距的二轮重绘，不是最终验收。
-- 切片 90 前仍不能宣称当前视觉对齐 workflow 完成；切片 87 不能作为完成结论，切片 88 和切片 89 也不能替代用户真实截图级复核。
+- 用户真实复核已经暴露关键差距：当前 TUI 整体风格、密度、比例、层级和目标 `tuiv2` 截图仍不一致；切片 88 只是对应差距的二轮重绘，不是最终验收。
+- 切片 91 前仍不能宣称当前视觉对齐 workflow 完成；切片 87、88、89、90 都不能作为完成结论。
 - 有 Unicode 线框、ANSI 颜色、可操作命令和真实 PTY ANSI frame 仍不能单独作为未来视觉验收证据；必须由用户对照目标截图拍板。
 
 ## 4. 固定 viewport smoke 基线
@@ -51,7 +52,7 @@
 - 覆盖元素：header、footer、split tiled pane、active/inactive pane、floating card、toast、emoji/CJK 宽度安全文本。
 - 目的：记录视觉复核的稳定快照，供后续切片 84-87 对比。
 
-切片 89 后，该 case 仍保持为 `visual review` 基线，并明确包含 `needs polish` 语义。只有通过切片 90 用户真实截图拍板后，才允许把它改为完成类基线。
+切片 90 后，该 case 仍保持为 `visual review` 基线，并明确包含 `needs polish` 语义。只有切片 91 或后续真实截图复核通过后，才允许把它改为完成类基线。
 
 ## 5. 差距清单
 
@@ -62,7 +63,7 @@
 - 切片 80 已修复稀疏拼接文本条问题，top bar 现在是分段产品栏。
 - 切片 84 已把 top bar 推进到高密度产品栏：左侧 workspace + tab strip + `[⊕]`，右侧 active pane、`◆ owner`、terminal/floating summary 和 action token。
 - 切片 88 已把 top bar 继续推进到紫色 accent + 深色背景方向：tab strip 改为 active tab、关闭 `×`、新增 `[＋]`，右侧使用 active pane、owner、compact terminal/floating summary 和 action cluster。
-- 切片 90 前不能判断该 top bar 已达到目标截图级别。
+- 切片 90 已确认该 top bar 仍未达到目标截图级别；切片 91 必须按整体构图重新处理。
 
 目标要求：
 
@@ -78,7 +79,7 @@
 - 切片 80 已修复 mode、快捷键、active target、右侧 summary 缺少稳定槽位的问题。
 - 切片 84 已把 bottom bar 推进到 `MODE • [KEY] ACTION` 快捷键 taxonomy，并在窄屏退化时保留尾部关键动作。
 - 切片 88 已把 bottom bar 继续收敛到 `[Ctrl] · [P] PANE` 类快捷键 taxonomy，并把 ready token 简化为 `termx`。
-- 切片 90 前不能判断该 bottom bar 已达到目标截图级别。
+- 切片 90 已确认该 bottom bar 仍未达到目标截图级别；切片 91 必须按整体构图重新处理。
 
 目标要求：
 
@@ -95,7 +96,7 @@
 - split line 现在使用共享外框与共享分割线，content rect 会避开外边框和 divider；terminal resize 与 copy rebind 也按新的 content rect cols/rows 计算。
 - 切片 85 已把 pane 顶边推进到目标截图式槽位：title、状态点、`↔0`、`◆ owner`、宽 pane full action cluster `[o]─[_]─[Z]─[x]`、窄分屏 compact action cluster `[Z]─[x]`，并让 action hit region 与可见 cluster 同宽。
 - 切片 88 已把 pane top chrome 元信息改为更高密度的 `· ↔2`、`· ◆ owner`、`· 1/31`，并让 active accent 改为紫色系；floating active state 改为 `● float`。
-- 切片 90 前不能判断该 pane chrome 已达到目标截图级别。
+- 切片 90 已确认该 pane chrome 仍未达到目标截图级别；切片 91 必须按整体构图重新处理。
 
 目标要求：
 
@@ -111,7 +112,7 @@
 
 - 切片 82 已把 toast 从功能占位推进到右上角实体消息：rounded card、severity accent 竖条、title/body 合并裁切、close action、右侧/顶部留白和 ANSI style 已落地。
 - 切片 88 已把 toast title/body 分隔改为 `·` 分层，并沿用深色实体 card 与 severity 侧边。
-- 切片 90 前不能确认 toast 已达到参考图级别；不得回退成简单文本。
+- 切片 90 已确认整体视觉仍未通过，toast 不能单独视为参考图级别；不得回退成简单文本。
 
 目标要求：
 
@@ -205,25 +206,25 @@
 - 已完成真实默认入口视觉复核。
 - 复核结论是未通过，不能标记为截图级视觉完成。
 - 已把失败原因、手工复核入口和后续切片写入 `termx-tui-v3/docs/default-tui-visual-review.md`。
-- 后续继续通过切片 84-90 处理 shell bar、pane chrome、overlay/page/copy polish、二轮重绘、真实 PTY 证据和最终用户截图级验收。
+- 后续继续通过切片 84-91 处理 shell bar、pane chrome、overlay/page/copy polish、二轮重绘、真实 PTY 证据、用户不通过归档和整体 UI 构图三轮重绘。
 
 切片 84 负责：
 
 - 已完成 shell bar 高密度重绘第一轮。
 - 已把 fixed smoke 和 e2e visual guard 更新为新的 top/bottom bar 视觉合同。
-- 截图级总体验收仍留到切片 90。
+- 截图级总体验收仍未通过，后续留到切片 91 或之后。
 
 切片 85 负责：
 
 - 已完成 pane chrome 目标截图级槽位重绘第一轮。
 - 已把 fixed smoke、render harness 和 e2e visual guard 更新为新的 pane 顶边槽位合同。
-- 截图级总体验收仍留到切片 90。
+- 截图级总体验收仍未通过，后续留到切片 91 或之后。
 
 切片 86 负责：
 
 - 已完成 overlay/page/copy 内容层视觉产品化 polish 第一轮。
 - 已把 Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的 render harness 与 smoke 断言更新为新的内容层视觉合同。
-- 截图级总体验收仍留到切片 90；切片 86 不能单独作为默认 TUI 已达到目标截图的证据。
+- 截图级总体验收仍未通过，后续留到切片 91 或之后；切片 86 不能单独作为默认 TUI 已达到目标截图的证据。
 
 切片 87 负责：
 
@@ -240,7 +241,7 @@
 - 已把默认 theme 切到紫色 accent、深色 host/chrome/status 背景和 muted 边框层级。
 - 已更新 top bar、bottom bar、pane top chrome、toast、floating 和 overlay title 分隔符，使默认视觉更接近用户给出的 `tuiv2` 紫色边框与高密度 chrome 风格。
 - 已把 render harness、tui smoke 和 CLI smoke 更新到二轮视觉合同，覆盖紫色 ANSI、暗色 status 背景、无默认 ASCII chrome、宽字符安全和固定 12 case。
-- 切片 88 不能作为最终视觉完成证据；切片 89 必须做真实默认入口 PTY 证据归档，切片 90 必须做用户截图级拍板。
+- 切片 88 不能作为最终视觉完成证据；切片 89 必须做真实默认入口 PTY 证据归档，切片 90 必须归档用户不通过结论，切片 91 必须做整体 UI 构图三轮重绘。
 
 切片 89 负责：
 
@@ -252,10 +253,16 @@
 
 切片 90 负责：
 
-- 必须由用户在真实 terminal 中运行默认 `go run ./termx-cli/cmd/termx` 并提供截图或明确拍板。
-- 必须对照用户截图检查 top bar、bottom bar、pane chrome、toast、floating、Terminal Pool、Workbench Tree、Prompt/Help 和 copy mode。
-- 如果用户确认视觉已达标，才能把当前视觉对齐 goal 标记完成。
-- 如果用户确认仍不一致，必须归档差距并新增后续重绘切片。
+- 已根据用户反馈确认当前真实 TUI 样子仍与目标不一致。
+- 已明确当前视觉对齐 goal 不能完成。
+- 已把不通过结论作为切片 91 的返工入口。
+
+切片 91 负责：
+
+- 必须按目标截图重新处理默认 TUI 整体构图，而不是只替换局部 token。
+- 必须覆盖 top bar、bottom bar、pane card/split、floating、toast、modal/overlay、默认首屏占位、active/inactive 层级、留白比例和窄屏退化。
+- 必须继续使用 render framework + content renderer，不复制 `tuiv2` runtime/model，不引入 Bubble Tea。
+- 必须以真实 ANSI frame、固定 viewport smoke、e2e smoke 和用户截图复核共同验收。
 
 ## 7. 验收方式
 
