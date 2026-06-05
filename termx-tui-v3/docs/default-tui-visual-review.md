@@ -12,6 +12,8 @@
 
 切片 88 已完成第二轮 shell/pane 视觉重绘：默认 theme 改为更接近用户截图的紫色 accent + 深色 chrome，top bar、bottom bar、pane top chrome、toast 和 floating title 的视觉密度继续提高。但切片 88 仍不是最终截图级验收，是否真正像目标截图必须进入切片 89，在真实默认入口中对照复核。
 
+切片 89 已完成默认入口真实 PTY 证据归档：在隔离 socket/log 和 `120x40` 真实 PTY 下运行 `go run ./termx-cli/cmd/termx`，确认默认入口进入 alternate screen，并输出 styled ANSI header、pane、footer、紫色 active border 和二轮 chrome token。该证据只证明真实 TTY 路径可绘制二轮 styled chrome，不能替代用户对目标截图风格的人工拍板。后续切片 90 必须等待用户真实终端截图或明确结论。
+
 ## 2. 当前已经成立的工程事实
 
 - 默认入口仍走 `termx-core-v2` 与 `termx-tui-v3`。
@@ -21,7 +23,7 @@
 - header/footer hide、pane split/focus/resize/zoom/close、floating、Terminal Pool、Workbench Tree、Prompt/Help、copy mode 都已有基本操作入口。
 - terminal 内容、copy-history 和 overlay content 都被限制在自己的 content rect 内，不应冲破 UI chrome。
 
-这些事实只说明“产品壳可运行”，不说明“视觉已经像目标截图”。切片 88 后，自动证据覆盖了 header/footer、pane chrome、toast、floating、Terminal Pool、Workbench Tree、Prompt/Help 和 copy-history 固定视觉快照，并确认二轮 styled chrome token 没有退化，但这些自动证据仍不能替代真实 TTY 截图复核。
+这些事实只说明“产品壳可运行”和“默认入口真实 PTY 路径可绘制”，不说明“视觉已经像目标截图”。切片 89 后，自动证据覆盖了 header/footer、pane chrome、toast、floating、Terminal Pool、Workbench Tree、Prompt/Help 和 copy-history 固定视觉快照，并确认二轮 styled chrome token 没有退化；真实 PTY 证据确认默认入口能输出 styled ANSI frame。但这些证据仍不能替代用户对真实终端截图的人工复核。
 
 ## 3. 切片 83 未通过原因
 
@@ -75,7 +77,8 @@
 - 切片 86：overlay/page/copy 视觉产品化 polish。
 - 切片 87：默认入口截图级视觉复核未通过归档。
 - 切片 88：目标截图级 shell/pane 视觉重绘二轮。
-- 切片 89：真实默认入口截图级验收。
+- 切片 89：真实默认入口截图级验收证据归档。
+- 切片 90：用户真实截图拍板与后续返工入口。
 
 切片 84 已完成第一轮 shell bar 重绘：顶部不再使用 `ws:/tab:/active:` 这类工程标签，而是使用 workspace、tab strip、`[⊕]`、active pane、`◆ owner`、terminal/floating 和 action token；底部不再使用 `mode:/keys:`，而是使用 `MODE • [KEY] ACTION` 快捷键 taxonomy、active target 和 summary。最终是否达到截图级视觉仍以后续切片 89 的真实默认入口验收为准。
 
@@ -102,11 +105,22 @@
 - toast、floating 和 overlay title 使用 `·` 分层，避免回到 ASCII 分隔；floating active state 改为 `● float`。
 - 自动 harness 已覆盖紫色 ANSI、暗色 status 背景、无默认 ASCII chrome、宽字符安全、固定 smoke 12 case 和 CLI smoke 输出。
 
-切片 88 的结论只能是“二轮视觉重绘完成”。切片 89 仍必须打开真实 `go run ./termx-cli/cmd/termx`，对照用户目标截图做最终复核；如果仍不一致，必须继续归档差距并新增后续切片。
+切片 88 的结论只能是“二轮视觉重绘完成”。
+
+切片 89 已完成默认入口真实 PTY 证据归档：
+
+- 使用隔离 socket/log 启动默认 `go run ./termx-cli/cmd/termx`，避免污染用户已有 daemon。
+- 固定 PTY viewport 为 `120x40`。
+- 观测到真实 TUI 进入 alternate screen，并输出 styled ANSI header、pane、footer。
+- 首屏包含紫色 active border、深色 status background、`×`、`[＋]`、`[Ctrl] · [P]`、`· ↔2`、`· ◆ owner`、`· 1/31` 等二轮 chrome token。
+- 隔离验收进程已清理。
+- 发现当前默认 TUI 没有全局 quit 快捷键；`Ctrl-C` 会进入底层 shell，这是后续交互 polish 项，不作为本次视觉绘制通过或失败的依据。
+
+切片 89 不能作为“截图级视觉通过”结论。切片 90 仍必须由用户在真实终端对照目标截图拍板；如果仍不一致，必须继续归档差距并新增后续重绘切片。
 
 ## 5. 手工复核入口
 
-后续切片 89 必须手工复核：
+后续切片 90 必须手工复核：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
 - viewport：至少检查 `80x24`、`100x32`、`120x40`。
@@ -119,7 +133,7 @@
 
 ## 6. 自动准入
 
-切片 88 自动准入：
+切片 89 自动准入：
 
 - `cd termx-tui-v3 && go test ./... -count=1`
 - `cd termx-cli && go test ./... -count=1`
@@ -127,4 +141,4 @@
 - `go run ./termx-cli/cmd/termx v3 e2e-smoke`
 - `git diff --check`
 
-自动准入只能证明固定 contract 没有回退。切片 88 完成后，当前真实视觉仍需切片 89 复核；不得只凭 smoke 文本、Unicode 线框或 ANSI 颜色判定完成。
+自动准入只能证明固定 contract 没有回退。切片 89 加入了真实 PTY 证据，但当前真实视觉仍需切片 90 用户拍板；不得只凭 smoke 文本、Unicode 线框、ANSI 颜色或 PTY 捕获判定完成。
