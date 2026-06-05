@@ -314,12 +314,15 @@ func TestFrameSinkWritesFrameToOutput(t *testing.T) {
 		t.Fatalf("write frame: %v", err)
 	}
 	got := output.String()
+	if !strings.HasPrefix(got, synchronizedOutputBegin+hideCursor) || !strings.HasSuffix(got, synchronizedOutputEnd) {
+		t.Fatalf("FrameSink should wrap frame in synchronized output and hide cursor before repaint, got %q", got)
+	}
 	for _, part := range []string{cursorHome, clearScreen, cursorPosition(1, 1) + clearLine + "one", cursorPosition(2, 1) + clearLine + "two"} {
 		if !strings.Contains(got, part) {
 			t.Fatalf("missing frame part %q in %q", part, got)
 		}
 	}
-	if !strings.HasSuffix(got, render.ANSIReset+hideCursor) {
+	if !strings.Contains(got, render.ANSIReset+hideCursor+synchronizedOutputEnd) {
 		t.Fatalf("FrameSink should hide host cursor by default, got %q", got)
 	}
 	if strings.Contains(got, "\n") {
@@ -339,7 +342,7 @@ func TestFrameSinkParksHiddenCursorAtFrameCursorRect(t *testing.T) {
 		t.Fatalf("write frame: %v", err)
 	}
 	got := output.String()
-	if !strings.HasSuffix(got, render.ANSIReset+hideCursor+cursorPosition(3, 5)) {
+	if !strings.Contains(got, render.ANSIReset+hideCursor+cursorPosition(3, 5)+synchronizedOutputEnd) {
 		t.Fatalf("FrameSink should park hidden host cursor at global cursor rect for IME anchor, got %q", got)
 	}
 	if strings.Contains(got, showCursor) {

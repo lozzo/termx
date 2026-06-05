@@ -219,6 +219,20 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderAnchorsEmptyPaneCursorForIME(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "浮窗", Kind: state.PaneEmpty, Active: true}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentEmptyPane || !content.Cursor.Visible {
+		t.Fatalf("empty pane should expose a cursor anchor for IME, got %#v", content)
+	}
+	if content.Cursor.Col != DisplayWidth("empty pane ")+DisplayWidth("浮窗") {
+		t.Fatalf("empty pane cursor should follow title text, got %#v", content.Cursor)
+	}
+}
+
 func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	shell := state.DefaultShell()
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})

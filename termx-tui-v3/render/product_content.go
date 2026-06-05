@@ -24,6 +24,7 @@ func buildEmptyPaneContent(pane state.PaneState) ContentVM {
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
 		Status:     "empty: attach/create/manager/close",
+		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("empty pane ") + DisplayWidth(title), Shape: CursorShapeBar},
 		Empty:      true,
 		HitRegions: contentActionRegions("empty", []string{"attach", "create", "manager", "close"}, pane.ID),
 	}
@@ -47,6 +48,7 @@ func buildExitedPaneContent(pane state.PaneState) ContentVM {
 		Kind:       ContentExitedPane,
 		Lines:      lines,
 		Status:     "exited: restart/reconnect/close",
+		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("exited pane ") + DisplayWidth(title), Shape: CursorShapeBar},
 		HitRegions: contentActionRegions("exited", []string{"restart", "reconnect", "close"}, pane.ID),
 	}
 }

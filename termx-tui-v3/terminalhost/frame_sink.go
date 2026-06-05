@@ -10,9 +10,11 @@ import (
 )
 
 const (
-	cursorHome  = "\x1b[H"
-	clearScreen = "\x1b[2J"
-	clearLine   = "\x1b[2K"
+	cursorHome              = "\x1b[H"
+	clearScreen             = "\x1b[2J"
+	clearLine               = "\x1b[2K"
+	synchronizedOutputBegin = "\x1b[?2026h"
+	synchronizedOutputEnd   = "\x1b[?2026l"
 )
 
 // FrameSink 把 Renderer 生成的 frame 直接写到宿主输出。
@@ -29,6 +31,8 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
 	var builder strings.Builder
+	builder.WriteString(synchronizedOutputBegin)
+	builder.WriteString(hideCursor)
 	builder.WriteString(cursorHome)
 	builder.WriteString(clearScreen)
 	lines := frame.ANSILines
@@ -45,6 +49,7 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	}
 	builder.WriteString(render.ANSIReset)
 	builder.WriteString(frameCursorSequence(frame))
+	builder.WriteString(synchronizedOutputEnd)
 	_, err := io.WriteString(sink.writer, builder.String())
 	return err
 }

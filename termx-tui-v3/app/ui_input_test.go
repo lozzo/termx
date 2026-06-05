@@ -1283,6 +1283,12 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	if len(shell.Floatings) != 1 || !shell.Floatings[0].Active || shell.Floatings[0].Collapsed {
 		t.Fatalf("expected active restored floating, got %#v", shell.Floatings)
 	}
+	floatingRect := shell.Floatings[0].Rect
+	frameAfterFloating := lastFrame(t, host.Frames())
+	if frameAfterFloating.CursorRect.X < floatingRect.X+1 || frameAfterFloating.CursorRect.X >= floatingRect.X+floatingRect.W-1 ||
+		frameAfterFloating.CursorRect.Y < floatingRect.Y+1 || frameAfterFloating.CursorRect.Y >= floatingRect.Y+floatingRect.H-1 {
+		t.Fatalf("floating input should anchor hidden host cursor inside floating content for IME, floating=%#v cursor=%#v frame=%#v", floatingRect, frameAfterFloating.CursorRect, frameAfterFloating.Cursor)
+	}
 	if shell.Floatings[0].Rect.W <= 44 || shell.Floatings[0].Rect.H <= 12 {
 		t.Fatalf("expected keyboard resize to grow floating rect, got %#v", shell.Floatings[0].Rect)
 	}

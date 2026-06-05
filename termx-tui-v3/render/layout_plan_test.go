@@ -185,6 +185,28 @@ func TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutAnchorsCursorWhenContentHasNoVisibleCursor(t *testing.T) {
+	shell := ShellVM{
+		Header: HeaderVM{Visible: true, Title: "main"},
+		Footer: FooterVM{Visible: true, Mode: "live"},
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine("pending")}},
+		}}},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
+	want := plan.Panels[0].ContentRect
+	if !plan.Cursor.Visible || plan.Cursor.Shape != CursorShapeBar {
+		t.Fatalf("missing IME cursor anchor, cursor=%#v rect=%#v", plan.Cursor, plan.CursorRect)
+	}
+	if plan.CursorRect != (Rect{X: want.X, Y: want.Y, W: 1, H: 1}) {
+		t.Fatalf("cursor anchor should park at active content origin, content=%#v cursor=%#v", want, plan.CursorRect)
+	}
+}
+
 func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{Panels: []PanelVM{{

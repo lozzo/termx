@@ -393,7 +393,7 @@ func appendRegion(out []HitRegion, region HitRegion, viewport Rect) []HitRegion 
 
 func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 	if overlayOwnsCursor(shell.Overlay) {
-		return cursorWithRect(shell.Overlay.Content.Cursor, plan.OverlayContentRect)
+		return cursorWithRectOrAnchor(shell.Overlay.Content.Cursor, plan.OverlayContentRect)
 	}
 	for i := len(plan.Floatings) - 1; i >= 0; i-- {
 		floating := plan.Floatings[i]
@@ -401,9 +401,7 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 			continue
 		}
 		cursor := floating.Floating.Content.Cursor
-		if cursor.Visible {
-			return cursorWithRect(cursor, floating.ContentRect)
-		}
+		return cursorWithRectOrAnchor(cursor, floating.ContentRect)
 	}
 	for _, panel := range plan.Panels {
 		if !panel.Panel.Active {
@@ -413,9 +411,9 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 		if !cursor.Visible {
 			cursor = shell.Cursor
 		}
-		return cursorWithRect(cursor, panel.ContentRect)
+		return cursorWithRectOrAnchor(cursor, panel.ContentRect)
 	}
-	return cursorWithRect(shell.Cursor, plan.Body)
+	return cursorWithRectOrAnchor(shell.Cursor, plan.Body)
 }
 
 func overlayOwnsCursor(overlay OverlayVM) bool {
@@ -431,6 +429,18 @@ func cursorWithRect(cursor Cursor, origin Rect) (Cursor, Rect) {
 		return Cursor{}, Rect{}
 	}
 	return cursor, rect
+}
+
+func cursorWithRectOrAnchor(cursor Cursor, origin Rect) (Cursor, Rect) {
+	if measured, rect := cursorWithRect(cursor, origin); measured.Visible {
+		return measured, rect
+	}
+	if origin.W <= 0 || origin.H <= 0 {
+		return Cursor{}, Rect{}
+	}
+	// 中文输入法候选区跟随宿主真实光标；内容暂无 cursor 时也要把隐藏光标锚到输入目标内。
+	anchor := Cursor{Visible: true, Row: 0, Col: 0, Shape: CursorShapeBar}
+	return anchor, Rect{X: origin.X, Y: origin.Y, W: 1, H: 1}
 }
 
 func intersectRect(left Rect, right Rect) Rect {
