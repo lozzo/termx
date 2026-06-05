@@ -359,6 +359,53 @@ func TestHostResizeUsesActiveContentRectAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestHostResizeUsesBusinessActivePaneWhenFloatingOwnsVisualFocus(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 10, Y: 4, W: 30, H: 8},
+		Source:   state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post floating: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating: %v", err)
+	}
+	if !runtime.State().Shell.Floatings[0].Active {
+		t.Fatalf("test expects active floating, got %#v", runtime.State().Shell.Floatings)
+	}
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain resize: %v", err)
+	}
+
+	if len(terminal.Resizes) == 0 {
+		t.Fatalf("floating visual focus must not block business active pane resize")
+	}
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 98 || got.Rows != 36 {
+		t.Fatalf("resize should still use tiled business active pane content rect, got %#v all=%#v", got, terminal.Resizes)
+	}
+}
+
 func TestHeaderFooterHideResizesTerminalWithReclaimedContentRows(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 6}}
 	host := NewFakeTerminalHost(16)

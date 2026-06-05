@@ -195,7 +195,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{" main ", "▎ 1 main ×", "┬─ logs", "┴", " " + render.DefaultPaneChromeGlyphs().Running, "⇄2", "…", "visual review", paneChromeCloseActionMarker(), "┌─ quick actio", "◢", "LIVE"}
+	requiredReview := []string{" main ", "▎ 1 main ×", "┬─ logs", "┴", " " + render.DefaultPaneChromeGlyphs().Waiting, "⇄2", "…", "visual review", paneChromeCloseActionMarker(), "┌─ quick actio", "◢", "LIVE"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)

@@ -233,6 +233,36 @@ func TestRenderVMBuilderAnchorsEmptyPaneCursorForIME(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderDimsTiledPaneWhenFloatingOwnsFocus(t *testing.T) {
+	shell := state.DefaultShell()
+	shell, result := shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 4, Y: 3, W: 30, H: 8},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if len(vm.Shell.Layout.Panels) != 1 || vm.Shell.Layout.Panels[0].Active {
+		t.Fatalf("active floating should dim tiled pane chrome, panels=%#v floating=%#v", vm.Shell.Layout.Panels, vm.Shell.Layout.Floating)
+	}
+	if len(vm.Shell.Layout.Floating) != 1 || !vm.Shell.Layout.Floating[0].Active {
+		t.Fatalf("expected active floating VM, got %#v", vm.Shell.Layout.Floating)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: "float-1"})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("close floating: %#v", result)
+	}
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if len(vm.Shell.Layout.Panels) != 1 || !vm.Shell.Layout.Panels[0].Active {
+		t.Fatalf("tiled pane active visual should restore after floating closes, got %#v", vm.Shell.Layout.Panels)
+	}
+}
+
 func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	shell := state.DefaultShell()
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})

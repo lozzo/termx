@@ -261,12 +261,13 @@ func viewportRect(viewport state.ViewportStore) Rect {
 func buildPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
 	shell = shell.EnsureDefaults()
 	tab := activeTab(shell)
+	floatingOwnsFocus := shell.ActiveFloatingID != ""
 	if len(tab.Panes) == 0 {
 		return []PanelVM{{
 			ID:           state.DefaultPaneID,
 			Title:        "shell",
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
-			Active:       true,
+			Active:       !floatingOwnsFocus,
 			Content:      activeContent,
 		}}
 	}
@@ -281,7 +282,7 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
 			ID:           pane.ID,
 			Title:        activePaneTitle(pane),
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
-			Active:       active,
+			Active:       active && !floatingOwnsFocus,
 			Content:      content,
 		}
 	}

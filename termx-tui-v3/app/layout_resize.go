@@ -66,8 +66,9 @@ func activeTerminalContentRect(root state.Root, fallbackViewport render.Rect) (r
 	}
 	vm := render.NewRenderVMBuilder().Build(root)
 	plan := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
+	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	for _, panel := range plan.Panels {
-		if panel.Panel.Active && panel.ContentRect.W > 0 && panel.ContentRect.H > 0 {
+		if panel.Panel.ID == activePaneID && panel.ContentRect.W > 0 && panel.ContentRect.H > 0 {
 			return panel.ContentRect, true
 		}
 	}

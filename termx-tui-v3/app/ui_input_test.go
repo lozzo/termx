@@ -1289,6 +1289,10 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		frameAfterFloating.CursorRect.Y < floatingRect.Y+1 || frameAfterFloating.CursorRect.Y >= floatingRect.Y+floatingRect.H-1 {
 		t.Fatalf("floating input should anchor hidden host cursor inside floating content for IME, floating=%#v cursor=%#v frame=%#v", floatingRect, frameAfterFloating.CursorRect, frameAfterFloating.Cursor)
 	}
+	vmAfterFloating := render.NewRenderVMBuilder().Build(runtime.State())
+	if len(vmAfterFloating.Shell.Layout.Panels) == 0 || vmAfterFloating.Shell.Layout.Panels[0].Active {
+		t.Fatalf("active floating should dim tiled pane visual active state, panels=%#v floating=%#v", vmAfterFloating.Shell.Layout.Panels, vmAfterFloating.Shell.Layout.Floating)
+	}
 	if shell.Floatings[0].Rect.W <= 44 || shell.Floatings[0].Rect.H <= 12 {
 		t.Fatalf("expected keyboard resize to grow floating rect, got %#v", shell.Floatings[0].Rect)
 	}
@@ -1376,6 +1380,10 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	}
 	if len(runtime.State().Shell.Floatings) != 0 {
 		t.Fatalf("mouse close should remove floating pane, got %#v", runtime.State().Shell.Floatings)
+	}
+	vmAfterClose := render.NewRenderVMBuilder().Build(runtime.State())
+	if len(vmAfterClose.Shell.Layout.Panels) == 0 || !vmAfterClose.Shell.Layout.Panels[0].Active {
+		t.Fatalf("tiled pane visual active state should restore after floating closes, panels=%#v", vmAfterClose.Shell.Layout.Panels)
 	}
 }
 

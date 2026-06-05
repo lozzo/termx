@@ -93,6 +93,7 @@
 - 可以创建、移动、resize、置顶、居中、折叠、关闭。
 - floating pane 必须有明确 z-order。
 - 鼠标点击 floating pane 时应聚焦并提升到最前。
+- active floating pane 获得视觉焦点时，后方 tiled pane 不得继续显示 active 高亮边框；tiled pane 只保留业务 active target，视觉上必须降级为 inactive / muted。
 - floating pane 的边界和 tiled pane 的边界必须一眼可区分。
 
 ### 3.5 Terminal
@@ -1623,6 +1624,7 @@ Floating Pane 一期的目标是让 floating pane 成为可操作的 workbench �
 - floating pane state 归 reducer-owned shell 管理，至少包含 id、title、pane content、rect、z-order、active 和 collapsed。
 - `Ctrl-o` 进入 floating mode 后，`n` 创建 floating pane，方向键或 `h/j/k/l` 移动 active floating，`H/J/K/L` 调整 active floating 尺寸，`c` 居中，`z` collapse / restore，`x` 关闭。
 - floating pane 必须有独立 styled bordered chrome，active 使用 accent，inactive 使用 muted，且不受 tiled pane card / split line 呈现模式影响。
+- active floating pane 存在时，后方 tiled pane 的 active chrome 必须降级为 inactive/muted；关闭或失焦 floating 后，tiled pane active chrome 恢复。
 - floating pane 必须位于 tiled pane 之上、overlay / toast 之下；toast 或 overlay 遮挡 floating 时鼠标不得穿透到底层 floating。
 - mouse click floating title 或内容区域必须 focus / raise 该 floating pane。
 - mouse click floating close action 必须关闭该 floating pane。
