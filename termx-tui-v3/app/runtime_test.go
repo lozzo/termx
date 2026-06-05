@@ -682,6 +682,82 @@ func TestAppRuntimeDragsNestedPaneResizeOnlyChangesExactDivider(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDragsFourColumnPaneResizeOnlyAdjacentColumns(t *testing.T) {
+	leftRuntime, leftHost, leftTerminal := newFourColumnPaneRuntime(t)
+	beforeLeftRects := paneLayoutRects(leftRuntime.State())
+	beforeLeftInputCount := len(leftTerminal.Inputs)
+	beforeLeftToastCount := len(leftRuntime.State().Shell.Toasts)
+
+	leftDivider := framePaneResizeRegion(t, lastRuntimeFrame(t, leftHost), state.DefaultPaneID, state.PaneResizeRight)
+	if leftDivider.ResizeBeforePaneID != state.DefaultPaneID || leftDivider.ResizeAfterPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 left divider to target pane-main/pane-2, got %#v", leftDivider)
+	}
+	leftStart := mouseEventAt(leftDivider.Rect)
+	leftStart.Mouse = input.MouseLeft
+	if err := leftHost.SendInput(leftStart); err != nil {
+		t.Fatalf("send left divider start: %v", err)
+	}
+	if err := leftRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain left divider start: %v", err)
+	}
+	leftDrag := leftStart
+	leftDrag.Mouse = input.MouseLeftDrag
+	leftDrag.Col -= 4
+	if err := leftHost.SendInput(leftDrag); err != nil {
+		t.Fatalf("send left divider drag: %v", err)
+	}
+	if err := leftRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain left divider drag: %v", err)
+	}
+	afterLeftRects := paneLayoutRects(leftRuntime.State())
+	if afterLeftRects[state.DefaultPaneID].W != beforeLeftRects[state.DefaultPaneID].W-4 || afterLeftRects["pane-2"].X != beforeLeftRects["pane-2"].X-4 || afterLeftRects["pane-2"].W != beforeLeftRects["pane-2"].W+4 {
+		t.Fatalf("dragging pane-2 left edge left should only trade width with pane-main, before=%#v after=%#v", beforeLeftRects, afterLeftRects)
+	}
+	if afterLeftRects["pane-3"] != beforeLeftRects["pane-3"] || afterLeftRects["pane-4"] != beforeLeftRects["pane-4"] {
+		t.Fatalf("dragging pane-2 left edge must not grow later panes, before=%#v after=%#v", beforeLeftRects, afterLeftRects)
+	}
+	if len(leftTerminal.Inputs) != beforeLeftInputCount || len(leftRuntime.State().Shell.Toasts) != beforeLeftToastCount {
+		t.Fatalf("four-column left drag should not leak input or add toast, inputs=%#v toasts=%#v", leftTerminal.Inputs, leftRuntime.State().Shell.Toasts)
+	}
+
+	rightRuntime, rightHost, rightTerminal := newFourColumnPaneRuntime(t)
+	beforeRightRects := paneLayoutRects(rightRuntime.State())
+	beforeRightInputCount := len(rightTerminal.Inputs)
+	beforeRightToastCount := len(rightRuntime.State().Shell.Toasts)
+
+	rightDivider := framePaneResizeRegion(t, lastRuntimeFrame(t, rightHost), "pane-2", state.PaneResizeRight)
+	if rightDivider.ResizeBeforePaneID != "pane-2" || rightDivider.ResizeAfterPaneID != "pane-3" {
+		t.Fatalf("expected pane-2 right divider to target pane-2/pane-3, got %#v", rightDivider)
+	}
+	rightStart := mouseEventAt(rightDivider.Rect)
+	rightStart.Mouse = input.MouseLeft
+	if err := rightHost.SendInput(rightStart); err != nil {
+		t.Fatalf("send right divider start: %v", err)
+	}
+	if err := rightRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain right divider start: %v", err)
+	}
+	rightDrag := rightStart
+	rightDrag.Mouse = input.MouseLeftDrag
+	rightDrag.Col += 5
+	if err := rightHost.SendInput(rightDrag); err != nil {
+		t.Fatalf("send right divider drag: %v", err)
+	}
+	if err := rightRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain right divider drag: %v", err)
+	}
+	afterRightRects := paneLayoutRects(rightRuntime.State())
+	if afterRightRects["pane-2"].W != beforeRightRects["pane-2"].W+5 || afterRightRects["pane-3"].X != beforeRightRects["pane-3"].X+5 || afterRightRects["pane-3"].W != beforeRightRects["pane-3"].W-5 {
+		t.Fatalf("dragging pane-2 right edge right should only trade width with pane-3, before=%#v after=%#v", beforeRightRects, afterRightRects)
+	}
+	if afterRightRects["pane-4"] != beforeRightRects["pane-4"] {
+		t.Fatalf("dragging pane-2 right edge must not shrink pane-4, before=%#v after=%#v", beforeRightRects["pane-4"], afterRightRects["pane-4"])
+	}
+	if len(rightTerminal.Inputs) != beforeRightInputCount || len(rightRuntime.State().Shell.Toasts) != beforeRightToastCount {
+		t.Fatalf("four-column right drag should not leak input or add toast, inputs=%#v toasts=%#v", rightTerminal.Inputs, rightRuntime.State().Shell.Toasts)
+	}
+}
+
 func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},
@@ -1058,6 +1134,37 @@ func paneLayoutRects(root state.Root) map[string]render.Rect {
 		rects[panel.Panel.ID] = panel.Rect
 	}
 	return rects
+}
+
+func newFourColumnPaneRuntime(t *testing.T) (*AppRuntime, *FakeTerminalHost, *services.FakeTerminalService) {
+	t.Helper()
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 12, Cols: 100, Rows: 24},
+	}
+	host := NewFakeTerminalHost(64)
+	host.SetSize(100, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post split-line: %v", err)
+	}
+	for _, paneID := range []string{"pane-2", "pane-3", "pane-4"} {
+		if err := runtime.Post(ShellSplitActivePaneMsg{Pane: state.PaneState{ID: paneID, Title: paneID, Kind: state.PaneTerminalLive}, Direction: state.SplitDirectionVertical}); err != nil {
+			t.Fatalf("post split %s: %v", paneID, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain four-column setup: %v", err)
+	}
+	return runtime, host, terminal
 }
 
 func newShellHitRuntimeWithTerminal(root state.Root, host *FakeTerminalHost, terminal services.TerminalService) *AppRuntime {

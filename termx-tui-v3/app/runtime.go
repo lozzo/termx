@@ -162,17 +162,22 @@ type AppRuntime struct {
 }
 
 type mouseDragState struct {
-	Active     bool
-	Kind       mouseDragKind
-	PaneID     string
-	FloatingID string
-	Direction  state.PaneResizeDirection
-	SplitPath  string
-	StartCol   int
-	StartRow   int
-	LastDelta  int
-	LastCol    int
-	LastRow    int
+	Active             bool
+	Kind               mouseDragKind
+	PaneID             string
+	FloatingID         string
+	Direction          state.PaneResizeDirection
+	SplitPath          string
+	ResizeBeforePaneID string
+	ResizeAfterPaneID  string
+	ResizeBeforeCells  int
+	ResizeAfterCells   int
+	ResizeGroup        []state.PaneResizeGroupItem
+	StartCol           int
+	StartRow           int
+	LastDelta          int
+	LastCol            int
+	LastRow            int
 }
 
 type mouseDragKind string
@@ -467,12 +472,13 @@ func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool)
 			runtime.mouseDrag.LastCol = event.Col
 			runtime.mouseDrag.LastRow = event.Row
 			return ShellPaneCommandMsg{Command: state.PaneCommand{
-				Action:          state.PaneCommandResize,
-				Target:          state.PaneCommandTarget{PaneID: runtime.mouseDrag.PaneID},
-				ResizeDirection: runtime.mouseDrag.Direction,
-				ResizeSplitPath: runtime.mouseDrag.SplitPath,
-				Delta:           step,
-				Source:          state.PaneCommandSourceMouse,
+				Action:           state.PaneCommandResize,
+				Target:           state.PaneCommandTarget{PaneID: runtime.mouseDrag.PaneID},
+				ResizeDirection:  runtime.mouseDrag.Direction,
+				ResizeSplitPath:  runtime.mouseDrag.SplitPath,
+				ResizeGroupCells: mouseDragResizeGroupCells(runtime.mouseDrag, delta),
+				Delta:            step,
+				Source:           state.PaneCommandSourceMouse,
 			}}, true
 		case mouseDragFloatingMove:
 			deltaX := event.Col - runtime.mouseDrag.LastCol
@@ -518,16 +524,54 @@ func paneResizeDragState(region render.HitRegion, event input.InputEvent) (mouse
 		return mouseDragState{}, false
 	}
 	return mouseDragState{
-		Active:    true,
-		Kind:      mouseDragPaneResize,
-		PaneID:    region.PaneID,
-		Direction: direction,
-		SplitPath: region.SplitPath,
-		StartCol:  event.Col,
-		StartRow:  event.Row,
-		LastCol:   event.Col,
-		LastRow:   event.Row,
+		Active:             true,
+		Kind:               mouseDragPaneResize,
+		PaneID:             region.PaneID,
+		Direction:          direction,
+		SplitPath:          region.SplitPath,
+		ResizeBeforePaneID: region.ResizeBeforePaneID,
+		ResizeAfterPaneID:  region.ResizeAfterPaneID,
+		ResizeBeforeCells:  region.ResizeBeforeCells,
+		ResizeAfterCells:   region.ResizeAfterCells,
+		ResizeGroup:        paneResizeGroupFromHitRegion(region),
+		StartCol:           event.Col,
+		StartRow:           event.Row,
+		LastCol:            event.Col,
+		LastRow:            event.Row,
 	}, true
+}
+
+func paneResizeGroupFromHitRegion(region render.HitRegion) []state.PaneResizeGroupItem {
+	if len(region.ResizeGroup) < 3 {
+		return nil
+	}
+	out := make([]state.PaneResizeGroupItem, 0, len(region.ResizeGroup))
+	for _, item := range region.ResizeGroup {
+		out = append(out, state.PaneResizeGroupItem{PaneID: item.PaneID, Cells: item.Cells})
+	}
+	return out
+}
+
+func mouseDragResizeGroupCells(drag mouseDragState, delta int) []state.PaneResizeGroupItem {
+	if len(drag.ResizeGroup) == 0 || drag.ResizeBeforePaneID == "" || drag.ResizeAfterPaneID == "" {
+		return nil
+	}
+	beforeCells := drag.ResizeBeforeCells + delta
+	afterCells := drag.ResizeAfterCells - delta
+	if beforeCells <= 0 || afterCells <= 0 {
+		return nil
+	}
+	out := make([]state.PaneResizeGroupItem, len(drag.ResizeGroup))
+	for i, item := range drag.ResizeGroup {
+		out[i] = item
+		switch item.PaneID {
+		case drag.ResizeBeforePaneID:
+			out[i].Cells = beforeCells
+		case drag.ResizeAfterPaneID:
+			out[i].Cells = afterCells
+		}
+	}
+	return out
 }
 
 func floatingDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
@@ -605,6 +649,11 @@ func cloneRenderHitRegions(regions []render.HitRegion) []render.HitRegion {
 	}
 	cloned := make([]render.HitRegion, len(regions))
 	copy(cloned, regions)
+	for i := range cloned {
+		if len(cloned[i].ResizeGroup) > 0 {
+			cloned[i].ResizeGroup = append([]render.ResizeGroupItem(nil), cloned[i].ResizeGroup...)
+		}
+	}
 	return cloned
 }
 

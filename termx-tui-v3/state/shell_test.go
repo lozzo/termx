@@ -438,6 +438,30 @@ func TestShellResizeSplitPathOnlyChangesExactNestedDivider(t *testing.T) {
 	}
 }
 
+func TestShellResizePaneGroupKeepsNonAdjacentColumnsFixed(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-2"}, SplitDirectionVertical).
+		SplitActivePane(PaneState{ID: "pane-3"}, SplitDirectionVertical).
+		SplitActivePane(PaneState{ID: "pane-4"}, SplitDirectionVertical)
+
+	shell = shell.ResizePaneGroup(PaneCommandTarget{PaneID: "pane-2"}, PaneResizeRight, []PaneResizeGroupItem{
+		{PaneID: "pane-2", Cells: 25},
+		{PaneID: "pane-3", Cells: 15},
+		{PaneID: "pane-4", Cells: 20},
+	})
+	root := shell.Workspace.Tabs[0].RootSplit
+	right := root.Children[1]
+	if right.FixedPaneID != "pane-2" || right.FixedCols != 25 {
+		t.Fatalf("right subtree should fix pane-2 width, got %#v", right)
+	}
+	if right.Children[1].FixedPaneID != "pane-3" || right.Children[1].FixedCols != 15 {
+		t.Fatalf("right subtree should fix pane-3 width without resizing pane-4, got %#v", right.Children[1])
+	}
+	if right.Children[1].Children[1].PaneID != "pane-4" {
+		t.Fatalf("pane-4 should remain an independent leaf, got %#v", right)
+	}
+}
+
 func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	shell := DefaultShell()
 	var result FloatingCommandResult

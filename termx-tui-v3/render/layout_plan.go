@@ -282,12 +282,26 @@ func appendSplitResizeHitRegions(out []HitRegion, split SplitVM, rect Rect, view
 	first := split.Children[0]
 	second := split.Children[1]
 	targetPaneID := firstPaneIDInSplit(first)
+	beforePaneID := lastPaneIDInSplit(first)
+	afterPaneID := firstPaneIDInSplit(second)
 	switch split.Direction {
 	case SplitVertical:
 		firstWidth := splitFirstExtent(split, rect.W)
 		dividerX := rect.X + firstWidth
 		if targetPaneID != "" {
-			out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: dividerX, Y: rect.Y, W: 1, H: rect.H}, PaneID: targetPaneID, ActionID: "pane.resize", Direction: "right", SplitPath: splitPath}, viewport)
+			out = appendRegion(out, HitRegion{
+				Kind:               HitRegionPaneResize,
+				Rect:               Rect{X: dividerX, Y: rect.Y, W: 1, H: rect.H},
+				PaneID:             targetPaneID,
+				ActionID:           "pane.resize",
+				Direction:          "right",
+				SplitPath:          splitPath,
+				ResizeBeforePaneID: beforePaneID,
+				ResizeAfterPaneID:  afterPaneID,
+				ResizeBeforeCells:  paneExtent(first, beforePaneID, firstWidth, rect.H, SplitVertical),
+				ResizeAfterCells:   paneExtent(second, afterPaneID, rect.W-firstWidth, rect.H, SplitVertical),
+				ResizeGroup:        resizeGroupItems(split, rect, SplitVertical),
+			}, viewport)
 		}
 		out = appendSplitResizeHitRegions(out, first, Rect{X: rect.X, Y: rect.Y, W: firstWidth, H: rect.H}, viewport, childSplitPath(splitPath, 0))
 		out = appendSplitResizeHitRegions(out, second, Rect{X: dividerX, Y: rect.Y, W: rect.W - firstWidth, H: rect.H}, viewport, childSplitPath(splitPath, 1))
@@ -295,7 +309,19 @@ func appendSplitResizeHitRegions(out []HitRegion, split SplitVM, rect Rect, view
 		firstHeight := splitFirstExtent(split, rect.H)
 		dividerY := rect.Y + firstHeight
 		if targetPaneID != "" {
-			out = appendRegion(out, HitRegion{Kind: HitRegionPaneResize, Rect: Rect{X: rect.X, Y: dividerY, W: rect.W, H: 1}, PaneID: targetPaneID, ActionID: "pane.resize", Direction: "down", SplitPath: splitPath}, viewport)
+			out = appendRegion(out, HitRegion{
+				Kind:               HitRegionPaneResize,
+				Rect:               Rect{X: rect.X, Y: dividerY, W: rect.W, H: 1},
+				PaneID:             targetPaneID,
+				ActionID:           "pane.resize",
+				Direction:          "down",
+				SplitPath:          splitPath,
+				ResizeBeforePaneID: beforePaneID,
+				ResizeAfterPaneID:  afterPaneID,
+				ResizeBeforeCells:  paneExtent(first, beforePaneID, rect.W, firstHeight, SplitHorizontal),
+				ResizeAfterCells:   paneExtent(second, afterPaneID, rect.W, rect.H-firstHeight, SplitHorizontal),
+				ResizeGroup:        resizeGroupItems(split, rect, SplitHorizontal),
+			}, viewport)
 		}
 		out = appendSplitResizeHitRegions(out, first, Rect{X: rect.X, Y: rect.Y, W: rect.W, H: firstHeight}, viewport, childSplitPath(splitPath, 0))
 		out = appendSplitResizeHitRegions(out, second, Rect{X: rect.X, Y: dividerY, W: rect.W, H: rect.H - firstHeight}, viewport, childSplitPath(splitPath, 1))
@@ -323,6 +349,54 @@ func firstPaneIDInSplit(split SplitVM) string {
 		}
 	}
 	return ""
+}
+
+func lastPaneIDInSplit(split SplitVM) string {
+	if split.PaneID != "" {
+		return split.PaneID
+	}
+	for i := len(split.Children) - 1; i >= 0; i-- {
+		if paneID := lastPaneIDInSplit(split.Children[i]); paneID != "" {
+			return paneID
+		}
+	}
+	return ""
+}
+
+func paneExtent(split SplitVM, paneID string, width int, height int, axis SplitDirection) int {
+	rects := make(map[string]Rect)
+	assignSplitRects(split, Rect{W: width, H: height}, rects)
+	rect := rects[paneID]
+	if axis == SplitVertical {
+		return rect.W
+	}
+	return rect.H
+}
+
+func resizeGroupItems(split SplitVM, rect Rect, axis SplitDirection) []ResizeGroupItem {
+	rects := make(map[string]Rect)
+	assignSplitRects(split, Rect{W: rect.W, H: rect.H}, rects)
+	panes := paneIDsInSplitOrder(split, nil)
+	out := make([]ResizeGroupItem, 0, len(panes))
+	for _, paneID := range panes {
+		paneRect := rects[paneID]
+		cells := paneRect.H
+		if axis == SplitVertical {
+			cells = paneRect.W
+		}
+		out = append(out, ResizeGroupItem{PaneID: paneID, Cells: cells})
+	}
+	return out
+}
+
+func paneIDsInSplitOrder(split SplitVM, out []string) []string {
+	if split.PaneID != "" {
+		return append(out, split.PaneID)
+	}
+	for _, child := range split.Children {
+		out = paneIDsInSplitOrder(child, out)
+	}
+	return out
 }
 
 func appendPanelEdgeResizeRegions(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {

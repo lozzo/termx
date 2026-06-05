@@ -32,15 +32,25 @@ type Rect struct {
 	H int
 }
 
+type ResizeGroupItem struct {
+	PaneID string
+	Cells  int
+}
+
 type HitRegion struct {
-	Kind      HitRegionKind
-	Rect      Rect
-	LineID    uint64
-	Row       int
-	PaneID    string
-	ActionID  string
-	Direction string
-	SplitPath string
+	Kind               HitRegionKind
+	Rect               Rect
+	LineID             uint64
+	Row                int
+	PaneID             string
+	ActionID           string
+	Direction          string
+	SplitPath          string
+	ResizeBeforePaneID string
+	ResizeAfterPaneID  string
+	ResizeBeforeCells  int
+	ResizeAfterCells   int
+	ResizeGroup        []ResizeGroupItem
 }
 
 type RenderVMBuilder struct{}

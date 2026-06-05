@@ -892,7 +892,7 @@ UI chrome 优先级高于 terminal mouse forwarding。点击边框、标题、�
 - app/runtime 已把真实鼠标坐标派发到最新 render hit region。
 - 点击 pane content 或 pane chrome 可以切换 active pane，并立即改变 active / inactive pane 视觉状态。
 - 点击 pane action slot 可以执行同一 semantic command；当前可见 pane action 只包含真实接通的 split down、split right 和 close，zoom 等未恢复接线的 action 不绘制。
-- 按住并拖动 pane split divider 会持续派发同一 `PaneCommandResize` 语义；拖动时绑定起始命中的具体 split 节点，只调整该 divider 两侧的邻近 pane/subtree，嵌套分屏不得误改外层 split；拖动过程中不会漏发到底层 terminal。
+- 按住并拖动 pane split divider 会持续派发同一 `PaneCommandResize` 语义；拖动时绑定起始命中的 divider。多列同轴 pane 中优先只调整 divider 两侧的视觉相邻叶 pane，不得把第 3/4 列这类非相邻 pane 一起缩放；复杂嵌套分屏至少不得误改外层 split；拖动过程中不会漏发到底层 terminal。
 - 点击 floating pane title/content 会聚焦并提升 z-order。
 - 点击 floating pane 顶部 close action 会关闭 floating pane。
 - 按住 floating pane 标题栏并拖动会持续派发同一 `FloatingCommandMove` 语义；按住右下 resize handle 并拖动会持续派发同一 `FloatingCommandResize` 语义；release 后清理 runtime drag state。
@@ -1392,7 +1392,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；也可以点击 pane 顶部的 split right / split down action token。新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。横向分屏后，下方 pane 顶边 action token 必须仍可点击分屏，不能被 divider resize 命中抢占。
 - 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题和 footer 必须同步变化；普通 focus 成功不应额外弹出 toast。
 - 关闭：先聚焦目标 pane，在 pane mode 中按 `x` 关闭 pane，或点击 pane 顶部 action slot；关闭后 active pane 必须稳定落到仍存在的 pane，不得留下已删除 pane 的高亮或 footer target。
-- resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；也可以用鼠标按住 split divider 并拖动。拖动某条 divider 时只能调整该 divider 所属 split 的两侧邻居：例如三列布局中拖动中/右之间的 divider，左侧整列必须保持锚定不动；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化，拖动事件不得漏发给 terminal，也不得连续刷出 toast。
+- resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；也可以用鼠标按住 split divider 并拖动。拖动某条 divider 时只能调整视觉相邻 pane 对：例如四列布局中拖第 2 列左边线向左，只允许第 1 列变小、第 2 列变大，第 3/4 列不变；拖第 2 列右边线向右，只允许第 2 列变大、第 3 列变小，第 4 列不变；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化，拖动事件不得漏发给 terminal，也不得连续刷出 toast。
 - zoom：在 pane mode 中按 `z` zoom / unzoom；zoom 后只显示目标 pane，unzoom 后恢复 split layout，footer 和 toast 必须显示对应反馈。
 - card/split：在 pane mode 中按 `c` 切到 card panel，按 `p` 切到 split line；presentation 变化不得改变 pane id、terminal binding、active pane 或 copy mode 语义。
 - header/footer：按 `Ctrl-g` 进入 global mode，按 `h` 隐藏/恢复 header，按 `f` 隐藏/恢复 footer；隐藏后 body 必须回收空间，pane frame 仍填满 viewport。

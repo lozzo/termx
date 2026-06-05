@@ -1,6 +1,10 @@
 package render
 
-import "testing"
+import (
+	"strconv"
+	"strings"
+	"testing"
+)
 
 func TestMeasureLayoutPlansBodyPanelOverlayAndToastRects(t *testing.T) {
 	shell := ShellVM{
@@ -310,6 +314,48 @@ func TestMeasureLayoutAddsNestedSplitDividerPath(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutFourColumnResizeRegionsCarryAdjacentLeafGroup(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{
+				{ID: "pane-1", Presentation: PanelPresentationSplitLine},
+				{ID: "pane-2", Presentation: PanelPresentationSplitLine},
+				{ID: "pane-3", Presentation: PanelPresentationSplitLine},
+				{ID: "pane-4", Presentation: PanelPresentationSplitLine, Active: true},
+			},
+			Split: SplitVM{
+				Direction: SplitVertical,
+				Children: []SplitVM{
+					{PaneID: "pane-1"},
+					{
+						Direction: SplitVertical,
+						Children: []SplitVM{
+							{PaneID: "pane-2"},
+							{
+								Direction: SplitVertical,
+								Children:  []SplitVM{{PaneID: "pane-3"}, {PaneID: "pane-4"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 10})
+	leftOfSecond := hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "pane-1")
+	rightOfSecond := hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "pane-2")
+	if leftOfSecond.ResizeBeforePaneID != "pane-1" || leftOfSecond.ResizeAfterPaneID != "pane-2" {
+		t.Fatalf("left divider should target adjacent pane-1/pane-2, got %#v", leftOfSecond)
+	}
+	if rightOfSecond.ResizeBeforePaneID != "pane-2" || rightOfSecond.ResizeAfterPaneID != "pane-3" {
+		t.Fatalf("right divider should target adjacent pane-2/pane-3, got %#v", rightOfSecond)
+	}
+	if got := resizeGroupSignature(rightOfSecond.ResizeGroup); got != "pane-2:20,pane-3:10,pane-4:10" {
+		t.Fatalf("right subtree group should preserve pane-4 independently, got %s from %#v", got, rightOfSecond.ResizeGroup)
+	}
+}
+
 func TestMeasureLayoutKeepsSplitActionsAboveDividerResize(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{
@@ -614,4 +660,12 @@ func hitRegionByActionAndPane(t *testing.T, regions []HitRegion, actionID string
 	}
 	t.Fatalf("missing action=%s pane=%s in %#v", actionID, paneID, regions)
 	return HitRegion{}
+}
+
+func resizeGroupSignature(group []ResizeGroupItem) string {
+	parts := make([]string, 0, len(group))
+	for _, item := range group {
+		parts = append(parts, item.PaneID+":"+strconv.Itoa(item.Cells))
+	}
+	return strings.Join(parts, ",")
 }

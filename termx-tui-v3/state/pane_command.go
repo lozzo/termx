@@ -43,6 +43,11 @@ const (
 	PaneSizeCells PaneSizeMode = "cells"
 )
 
+type PaneResizeGroupItem struct {
+	PaneID string
+	Cells  int
+}
+
 type PaneCommandSource string
 
 const (
@@ -72,14 +77,16 @@ type PaneCommand struct {
 	Delta int
 	// ResizeSplitPath 只用于鼠标拖拽真实 divider，避免按 pane id 向上误改外层 split。
 	ResizeSplitPath string
-	SizeMode        PaneSizeMode
-	Ratio           float64
-	Cols            int
-	Rows            int
-	Presentation    PanelPresentation
-	NewPane         PaneState
-	Source          PaneCommandSource
-	Confirm         PaneConfirmPolicy
+	// ResizeGroupCells 是鼠标 divider 在同轴 pane 链中的叶子目标尺寸，保证只调整视觉相邻 pane。
+	ResizeGroupCells []PaneResizeGroupItem
+	SizeMode         PaneSizeMode
+	Ratio            float64
+	Cols             int
+	Rows             int
+	Presentation     PanelPresentation
+	NewPane          PaneState
+	Source           PaneCommandSource
+	Confirm          PaneConfirmPolicy
 }
 
 type PaneCommandStatus string
@@ -199,6 +206,9 @@ func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneC
 	case PaneCommandToggleZoom:
 		return store.ToggleZoomPane(command.Target), result
 	case PaneCommandResize:
+		if len(command.ResizeGroupCells) > 0 {
+			return store.ResizePaneGroup(command.Target, command.ResizeDirection, command.ResizeGroupCells), result
+		}
 		if command.ResizeSplitPath != "" {
 			return store.ResizeSplitPath(command.Target, command.ResizeSplitPath, command.ResizeDirection, command.Delta), result
 		}
