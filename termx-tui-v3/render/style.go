@@ -35,30 +35,30 @@ type Theme struct {
 
 func DefaultTheme() Theme {
 	return Theme{
-		HostFG: "#d7d7d0",
-		HostBG: "#060807",
+		HostFG: "#dedbe6",
+		HostBG: "#050507",
 
-		ChromeFG: "#d7d7d0",
-		ChromeBG: "#141816",
+		ChromeFG: "#dedbe6",
+		ChromeBG: "#111016",
 
-		Accent: "#58d5c9",
-		Muted:  "#6f7771",
+		Accent: "#a970ff",
+		Muted:  "#77717f",
 
 		Success: "#8adf7a",
 		Warning: "#f0c45c",
 		Danger:  "#ff6b6b",
 		Info:    "#7ab8ff",
 
-		PanelBorder:      "#9aa39c",
-		MutedBorder:      "#4f5651",
-		ActivePaneBorder: "#58d5c9",
-		InactivePane:     "#6f7771",
+		PanelBorder:      "#9b93a6",
+		MutedBorder:      "#4b4754",
+		ActivePaneBorder: "#a970ff",
+		InactivePane:     "#77717f",
 
-		ToastBG:   "#141816",
-		OverlayBG: "#111614",
+		ToastBG:   "#15131d",
+		OverlayBG: "#14121b",
 
-		StatusFG: "#d9e7ff",
-		StatusBG: "#18324a",
+		StatusFG: "#e7e2ef",
+		StatusBG: "#08080d",
 	}
 }
 

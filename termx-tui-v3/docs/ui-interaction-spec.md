@@ -1263,7 +1263,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 视觉验收基线见 `termx-tui-v3/docs/visual-alignment-audit.md`。当前 v3 已有基础 styled chrome 和可操作产品壳，但尚未达到用户提供的 `tuiv2` 截图级视觉效果；后续不得把现有 smoke 线框误判为视觉完成。
 - 顶栏和底栏参考 `tuiv2` 的产品形态：高信息密度、整行稳定占位、左侧工作区和 tab token、右侧短摘要或状态 token，隐藏后 body 必须真实回收空间。
 - pane 参考 `tuiv2` 的 square 细线 panel 风格：边框连续、顶边 title/state/action 槽位稳定，active pane 使用 accent，inactive pane 使用 muted；默认界面不得退回 ASCII `+ - |` 或无样式 Unicode 线框。
-- 单个 pane 的产品风格参考 `tuiv2` 截图中的紫色 accent 细边框、顶部 owner/action token 和内容区裁切；TUI-v3 可调整 theme token，但必须保持 styled chrome 层级和边框连续性。
+- 单个 pane 的产品风格参考 `tuiv2` 截图中的紫色 accent 细边框、顶部 owner/action token 和内容区裁切；切片 88 后默认 theme 已改为紫色 accent + 深色 chrome，但仍必须通过真实截图级复核确认是否达标。
 - 右上角消息参考现代 CLI/TUI 的 toast：实体卡片、短文本、severity 或 accent 侧边，不改变 pane layout；复制成功等短反馈可以使用这种形态。
 - modal/overlay 参考现代 command palette 的实体卡片：前景是 solid dark card 或等价主题卡片，可以有标题、搜索行、selected row 和 action row。
 - Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的内容层不能退回工程表格：搜索行统一使用短 search affordance，selected row 必须有强视觉 marker，detail / preview / context / input 使用稳定 label，action row 使用短 token + 动作文案。
@@ -1325,9 +1325,11 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - pane 顶部 chrome 已有稳定 title、state、action 槽位；owner/follower、copy/resize 等更细 token 和目标截图级布局后续逐步接入。
 - split line 使用共享外框加内部共享 divider，content rect 会避开外框和 divider；terminal resize 与 copy-history rebind 必须使用新的 content cols/rows。
 - top bar 和 bottom bar 已在切片 80 重绘为分段产品栏：背景填满整行，workspace/tab/mode/action/active/summary 通过稳定 token 输出，accent/muted/warning 语义可见，Unicode `│` 分隔，窄屏下快捷键按优先级压缩且 error/exited 关键状态优先保留。
+- shell/pane 已在切片 88 完成二轮视觉重绘：top bar 使用 active tab、关闭 `×`、新增 `[＋]`、active pane、owner、compact summary 和 action cluster；bottom bar 使用 `[Ctrl] · [P] PANE` 类快捷键 taxonomy；pane top chrome 使用 `· ↔2`、`· ◆ owner`、`· 1/31` 和 action cluster；toast/floating/overlay title 使用 `·` 分层。
 - toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 已在切片 82 完成第一轮实体 card 视觉对齐：toast 具备 severity accent 竖条、右上角留白、close action 和 title/body 合并裁切；overlay/floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
 - Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 已在切片 86 完成第一轮内容层产品化 polish：搜索行、selected row、detail/preview/context/input、action row、copy search/match/scrollbar/status 已统一为更接近目标截图的产品语言。
-- 切片 87 已完成真实视觉复核未通过归档：`termx v3 smoke` 固定 case 覆盖 Terminal Pool Page、Workbench Tree Page、copy-history 和 `120x40` visual review baseline，`termx v3 e2e-smoke` 覆盖默认 attach 装配、viewport、resize、content rect terminal resize、copy rebind 和 pane command，但当前 TUI 仍不能宣称达到目标截图。
+- 切片 87 已完成真实视觉复核未通过归档：`termx v3 smoke` 固定 case 覆盖 Terminal Pool Page、Workbench Tree Page、copy-history 和 `120x40` visual review baseline，`termx v3 e2e-smoke` 覆盖默认 attach 装配、viewport、resize、content rect terminal resize、copy rebind 和 pane command。
+- 切片 88 已完成二轮视觉重绘和自动准入，但当前 TUI 仍不能宣称达到目标截图；切片 89 必须在真实默认入口中复核。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
 - floating pane 一期已使用独立 styled bordered chrome，具备 reducer-owned state、z-order、active 状态、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close 和 content rect 裁切。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
@@ -1343,7 +1345,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前未完成但产品要求仍保留：
 
-- 视觉对齐返工：top bar、bottom bar、pane chrome、split line、toast、overlay、floating、copy-history 和 Terminal Pool/Workbench Tree 内容层已有固定 smoke 回归证据，但真实视觉仍未达到用户目标截图；后续按 `workflow.md` 切片 88-89 继续重绘和验收。
+- 视觉对齐返工：top bar、bottom bar、pane chrome、split line、toast、overlay、floating、copy-history 和 Terminal Pool/Workbench Tree 内容层已有固定 smoke 回归证据，切片 88 已完成二轮 shell/pane 重绘；后续必须按 `workflow.md` 切片 89 做真实默认入口截图级验收。
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 最终 polish：logical-line 拼接提示、跨 logical-line selection affordance、窄屏退化和最终视觉层级。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。
@@ -1780,14 +1782,14 @@ render 兼容投影清理与性能基线已经完成：旧 `RenderVM{Lines, Stat
 
 ## 33. 默认视觉复核结论
 
-当前默认 TUI 已经可以通过上述交互入口完成基本操作，但切片 83 的真实视觉复核结论是未通过：界面仍不像用户给出的 `tuiv2` 目标截图。
+当前默认 TUI 已经可以通过上述交互入口完成基本操作。切片 83 和切片 87 的真实视觉复核结论均是未通过：界面仍不像用户给出的 `tuiv2` 目标截图。切片 88 已完成二轮视觉重绘，但不是最终截图级验收。
 
 复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。后续产品验收必须区分两个层级：
 
 - 工程可运行：header/footer、pane、overlay、toast、floating、copy mode 和鼠标/键盘入口可操作。
 - 截图级视觉完成：shell bar、pane chrome、active/inactive、toast、overlay、floating 和内容页视觉密度接近目标截图。
 
-当前只满足第一层级。第二层级必须继续通过 workflow 中的后续视觉返工切片完成。
+当前满足第一层级，并已完成第二层级的二轮重绘实现。第二层级是否真正通过，必须由 workflow 中的切片 89 真实默认入口截图级验收决定；如果仍不一致，需要新增后续视觉返工切片。
 
 ## 34. 后续讨论入口
 

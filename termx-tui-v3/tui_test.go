@@ -43,13 +43,13 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-live"].Lines, "[o]─[_]─[Z]─[x]") {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
 	}
-	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;88;213;201m") {
+	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;169;112;255m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, " main ") || !frameContains(cases["workbench-live"].Lines, "[main]") || !frameContains(cases["workbench-live"].Lines, "LIVE") || !frameContains(cases["workbench-live"].Lines, "[^P] PANE") {
+	if !frameContains(cases["workbench-live"].Lines, " main ") || !frameContains(cases["workbench-live"].Lines, "[main]") || !frameContains(cases["workbench-live"].Lines, "[＋]") || !frameContains(cases["workbench-live"].Lines, "LIVE") || !frameContains(cases["workbench-live"].Lines, "[Ctrl] · [G] GLOBAL") {
 		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
 	}
-	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;24;50;74m") {
+	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;8;8;13m") {
 		t.Fatalf("workbench live smoke missing shell bar background ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
 	assertNoASCIIChrome(t, "workbench-live", cases["workbench-live"])
@@ -119,7 +119,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["pane-command-flow"].Lines, "pane command live") {
 		t.Fatalf("pane command smoke missing close feedback or live content: %#v", cases["pane-command-flow"].Lines)
 	}
-	if !frameContains(cases["pane-command-flow"].ANSILines, "\x1b[1;38;2;88;213;201m") {
+	if !frameContains(cases["pane-command-flow"].ANSILines, "\x1b[1;38;2;169;112;255m") {
 		t.Fatalf("pane command smoke missing styled active pane ANSI: %#v", cases["pane-command-flow"].ANSILines)
 	}
 	assertNoASCIIChrome(t, "pane-command-flow", cases["pane-command-flow"])
@@ -136,7 +136,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if frameContains(cases["visual-audit-current"].Lines, "visual acceptance") {
 		t.Fatalf("visual review smoke must not claim acceptance: %#v", cases["visual-audit-current"].Lines)
 	}
-	if !frameContains(cases["visual-audit-current"].ANSILines, "\x1b[1;38;2;88;213;201m") {
+	if !frameContains(cases["visual-audit-current"].ANSILines, "\x1b[1;38;2;169;112;255m") {
 		t.Fatalf("visual audit smoke missing active accent ANSI: %#v", cases["visual-audit-current"].ANSILines)
 	}
 	assertDefaultVisualReviewChrome(t, cases)
@@ -170,7 +170,7 @@ func assertSmokeWidth(t *testing.T, name string, frame render.Frame) {
 func assertNoASCIIChrome(t *testing.T, name string, frame render.Frame) {
 	t.Helper()
 	for row, line := range frame.Lines {
-		if strings.ContainsAny(line, "+|") {
+		if strings.ContainsAny(line, "+|") || strings.Contains(line, "---") || strings.Contains(line, "-[") {
 			t.Fatalf("smoke case %s row %d contains ASCII chrome: %q", name, row, line)
 		}
 	}

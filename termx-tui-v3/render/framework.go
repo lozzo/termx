@@ -7,12 +7,12 @@ import (
 )
 
 const (
-	minFrameWidth                = 24
-	minFrameHeight               = 8
-	defaultWidth                 = 80
-	defaultHeight                = 24
-	paneChromeActionCluster      = "─[o]─[_]─[Z]─[x]"
-	paneChromeCompactActions     = "─[Z]─[x]"
+	minFrameWidth            = 24
+	minFrameHeight           = 8
+	defaultWidth             = 80
+	defaultHeight            = 24
+	paneChromeActionCluster  = "─[o]─[_]─[Z]─[x]"
+	paneChromeCompactActions = "─[Z]─[x]"
 )
 
 type canvas struct {
@@ -527,8 +527,9 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	left := []barSegment{
 		barText(" "+workspace+" ", StyleStatusAccent, 1),
 		barSep(),
-		barText(" "+tab+" ", StyleStatus, 1),
-		barText(" [⊕] ", StyleStatusAccent, 3),
+		barText(" "+tab+" ", StyleStatusAccent, 1),
+		barText(" × ", StyleStatusWarning, 2),
+		barText(" [＋] ", StyleStatusAccent, 3),
 	}
 	if header.Notice != "" {
 		left = append(left, barSep(), barText(" ! "+header.Notice+" ", StyleStatusWarning, 2))
@@ -537,14 +538,15 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	if header.ActivePane != "" {
 		right = append(right, barText(" ● "+header.ActivePane+" ", StyleStatusAccent, 1))
 	}
+	right = append(right, barText(" · ", StyleStatusMuted, 3))
 	right = append(right, barText(" ◆ owner ", StyleStatus, 2))
 	if header.TerminalSummary != "" {
-		right = append(right, barText(" "+header.TerminalSummary+" ", StyleStatusMuted, 2))
+		right = append(right, barText(" · "+compactHeaderSummary(header.TerminalSummary)+" ", StyleStatusMuted, 2))
 	}
 	if header.FloatingSummary != "" {
-		right = append(right, barText(" "+header.FloatingSummary+" ", StyleStatusMuted, 2))
+		right = append(right, barText(" · "+compactHeaderSummary(header.FloatingSummary)+" ", StyleStatusMuted, 2))
 	}
-	right = append(right, barText(" [Z] [x] ", StyleStatusMuted, 3))
+	right = append(right, barText(" · [o]─[_]─[Z]─[x] ", StyleStatusMuted, 3))
 	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:header", LayerChrome)
 }
 
@@ -576,9 +578,7 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 		}
 		left = appendBarSegment(left, "» "+footer.Hint, style, priority)
 	}
-	right := []barSegment{
-		barText(" ready ", StyleStatusAccent, 3),
-	}
+	right := []barSegment{barText(" "+footerReadyToken(footer)+" ", StyleStatusMuted, 3)}
 	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
 }
 
@@ -639,9 +639,8 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 		if key == "" {
 			continue
 		}
-		keyToken := "[" + key + "]"
 		textToken := strings.ToUpper(label)
-		tokenWidth := DisplayWidth(" • ") + DisplayWidth(keyToken)
+		tokenWidth := DisplayWidth(" · ") + DisplayWidth(formatFooterKeyToken(key))
 		if textToken != "" {
 			tokenWidth += 1 + DisplayWidth(textToken)
 		}
@@ -651,8 +650,8 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 		if used == 0 && tokenWidth > limit {
 			break
 		}
-		segments = append(segments, barText(" • ", StyleStatusMuted, 1))
-		segments = append(segments, barText(keyToken, footerActionKeyStyle(key, textToken), 1))
+		segments = append(segments, barText(" · ", StyleStatusMuted, 1))
+		segments = append(segments, barText(formatFooterKeyToken(key), footerActionKeyStyle(key, textToken), 1))
 		if textToken != "" {
 			segments = append(segments, barText(" "+textToken, StyleStatus, 1))
 		}
@@ -699,11 +698,19 @@ func footerActionDisplayWidth(action string) int {
 	if key == "" {
 		return 0
 	}
-	width := DisplayWidth(" • ") + DisplayWidth("["+key+"]")
+	width := DisplayWidth(" · ") + DisplayWidth(formatFooterKeyToken(key))
 	if label != "" {
 		width += 1 + DisplayWidth(strings.ToUpper(label))
 	}
 	return width
+}
+
+func formatFooterKeyToken(key string) string {
+	key = strings.TrimSpace(key)
+	if strings.HasPrefix(key, "^") && len(key) > 1 {
+		return "[Ctrl] · [" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"
+	}
+	return "[" + key + "]"
 }
 
 func compactFooterActions(actions []string) []string {
@@ -765,6 +772,23 @@ func compactActiveTarget(value string) string {
 	value = strings.ReplaceAll(value, " live", "")
 	value = strings.ReplaceAll(value, " copy", "")
 	return "● " + value
+}
+
+func compactHeaderSummary(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "term:")
+	value = strings.TrimPrefix(value, "float:")
+	return value
+}
+
+func footerReadyToken(footer FooterVM) string {
+	if strings.HasPrefix(footer.Hint, "error:") {
+		return "ERR"
+	}
+	if strings.HasPrefix(footer.Hint, "exited:") {
+		return "EXIT"
+	}
+	return "termx"
 }
 
 func compactGlobalSummary(value string) string {
@@ -1211,10 +1235,13 @@ func paneChromeRightSlots(panel PanelVM, borderStyle StyleToken, width int) []pa
 	state := " " + paneChromeStateMarker(panel) + " "
 	slots := []paneChromeTopSlot{
 		{text: state, style: paneChromeStateStyle(panel, borderStyle), priority: 2},
-		{text: " ◆ owner ", style: paneChromeOwnerStyle(panel, borderStyle), priority: 1},
+		{text: " · ◆ owner ", style: paneChromeOwnerStyle(panel, borderStyle), priority: 1},
 	}
 	if width >= 58 {
-		slots = append(slots[:1], append([]paneChromeTopSlot{{text: " ↔0 ", style: paneChromeMetaStyle(panel), priority: 3}}, slots[1:]...)...)
+		slots = append(slots[:1], append([]paneChromeTopSlot{{text: " · ↔2 ", style: paneChromeMetaStyle(panel), priority: 3}}, slots[1:]...)...)
+	}
+	if width >= 74 {
+		slots = append(slots, paneChromeTopSlot{text: " · 1/31 ", style: paneChromeMetaStyle(panel), priority: 4})
 	}
 	return slots
 }
@@ -1346,7 +1373,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	state := "float"
 	if floating.Active {
-		state = "● active"
+		state = "● float"
 	}
 	if floating.Collapsed {
 		state = "▾ collapsed"
@@ -1411,7 +1438,7 @@ func renderChromeCardTitle(c *canvas, rect Rect, title string, state string, act
 	}
 	stateText := ""
 	if state != "" {
-		stateText = " " + state + " "
+		stateText = " · " + state + " "
 	}
 	if stateText != "" && rect.W >= 34 {
 		stateWidth := DisplayWidth(stateText)
@@ -1461,7 +1488,7 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 			title := toastTitleLine(toast)
 			body := toastBodyLine(toast)
 			if body != "" && rect.W >= 28 {
-				title += "  " + body
+				title += "  ·  " + body
 			}
 			c.writeTextStyled(rect.X+3, rect.Y+1, maxInt(0, rect.W-8), title, toastSeverityStyle(toast.Severity), owner, LayerToast)
 			if rect.W >= 10 {

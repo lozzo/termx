@@ -855,10 +855,11 @@ cache 原则：
 - 切片 84 已把 shell header/footer 从工程 key-value 标签继续推进到高密度产品栏：top bar 使用 workspace、tab strip、`[⊕]`、active pane、`◆ owner`、terminal/floating 和 action token；bottom bar 使用 `MODE • [KEY] ACTION`、active target 和 summary。
 - 切片 81 已把 pane chrome / split line 从基础线框推进到 shared chrome：card panel 与 split line 都使用 square 细线、title/state/action 槽位、active accent、inactive muted、共享外框、连接点合成和 content rect 宽度安全。
 - 切片 85 已把 pane chrome 继续推进到目标截图式槽位：title、状态点、`↔0`、`◆ owner`、宽 pane full action cluster、窄分屏 compact action cluster 和同宽 hit region，顶边剩余空间继续由横线承接。
+- 切片 88 已完成 shell/pane 二轮视觉重绘：theme accent 改为紫色系，status bar 改为深色背景，top bar 使用关闭 `×`、新增 `[＋]`、compact summary 和 action cluster，bottom bar 使用 `[Ctrl] · [P]` 类快捷键 taxonomy，pane top chrome 使用 `· ↔2`、`· ◆ owner`、`· 1/31` 等高密度槽位。
 - 切片 82 已把 overlay/toast/floating 从基础可见 chrome 推进到实体 card：toast 具备 severity accent 竖条、title/body 合并裁切、close action 和右上角留白；overlay 与 floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
 - 切片 83 已复核失败：当前默认 TUI 是可运行的 styled chrome 产品壳，但不是截图级视觉完成。
 - 后续不得再把无样式纯文本线框、基础 ANSI 色或 smoke 行宽恒等当作默认 UI 完成标准。
-- 后续深化应继续按 shell bar、pane chrome、overlay/page/copy polish 和最终默认入口截图级验收推进，不得回退到 terminal-only renderer。
+- 后续深化应继续按切片 89 的真实默认入口截图级验收推进；若仍不一致，再新增明确的视觉重绘切片，不得回退到 terminal-only renderer。
 
 非目标：
 
@@ -965,7 +966,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 ## 22. 当前实现落地记录
 
-状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer 工程基线、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收、terminal live 连接展示与交互前推、copy-history content renderer 深化和 render 兼容投影清理与性能基线已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。切片 79 已重新打开视觉差距审计与验收基线，切片 80-86 继续推进真实视觉对齐；不得把现有基础 styled chrome 或内容层第一轮 polish 误判为截图级视觉完成。
+状态：最小 render framework、外部 viewport / resize / Unicode 线框、styled chrome renderer 工程基线、pane command 基础、UI framework 第一版产品交互、terminal-live / copy-history / empty / exited 内容 renderer 一期、Terminal Picker 真实交互深化、Terminal Pool 数据源与 Picker 服务接线一期、Terminal Pool 管理页一期、Workbench Tree overlay 一期、Floating pane 一期、Prompt / Help overlay 一期、Tab / Workspace 产品入口一期、TUI 产品壳总验收、terminal live 连接展示与交互前推、copy-history content renderer 深化和 render 兼容投影清理与性能基线已落地。当前用户确认的视觉方向已经补充落档：TUI-v3 必须延续 `tuiv2` 风格的 header/footer、square pane chrome、active accent、toast 卡片和实体 overlay，且不要求灰度遮罩背景。切片 79 已重新打开视觉差距审计与验收基线，切片 80-88 已推进多轮真实视觉对齐；不得把现有 styled chrome、二轮重绘或 smoke 证据误判为最终截图级视觉完成。
 
 已落地：
 
@@ -1003,6 +1004,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - v3 pane border 只迁入 `tuiv2/render` 的 cell 级连接位合成经验，不迁入旧 runtime/model、VisibleRenderState、cursor writer 或 snapshot/grid/copy fallback。
 - header/footer 已按切片 80 从基础信息条重绘为 `tuiv2` 风格分段产品栏：status background 填满整行，workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔；窄屏下快捷键 token 按优先级压缩，error/exited 关键状态优先保留。
 - pane chrome 已按切片 85 从单一 `title/state/[x]` 推进到目标截图式槽位：title、状态点、`↔0` 元信息、`◆ owner`、宽 pane full action cluster 和窄/分屏 compact action cluster，且 title 与 action 之间保留连续横线。
+- shell/pane 已按切片 88 完成二轮视觉重绘：默认 palette 使用紫色 accent 和深色 chrome/status 背景；header tab/action 改为 `×` 与 `[＋]`；footer 快捷键改为 `[Ctrl] · [P]` 形态；pane top chrome 改为 `· ↔2`、`· ◆ owner`、`· 1/31` 高密度槽位；toast/floating/overlay title 使用 `·` 分层。
 - toast 与 Terminal Picker overlay 已升级为 styled chrome，覆盖 border/background/severity token/close action region/ANSI reset 和宽字符安全。
 - `state.PaneCommand` 已成为 pane split、close、close and kill、focus、zoom、resize、set size、balance 和 panel presentation 的统一 semantic command contract。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 和 `Ctrl-o` floating mode 已作为第一版键盘入口落地；`Esc` 退出 mode/overlay 且不漏发 terminal。
@@ -1046,6 +1048,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - toast 具备基础生命周期和 styled 渲染，不代表最终视觉 polish、动画或完整消息队列策略。
 - hit region 已有内容、overlay、toast 合成基础，不代表完整鼠标交互产品语义。
 - 切片 87 已根据真实复核反馈确认当前 TUI 仍未达到目标截图级视觉，只能作为复核未通过归档和 smoke 证据扩展。后续不得回退到旧 `tuiv2` 或恢复基础线框路径。
+- 切片 88 已完成二轮 shell/pane 视觉重绘，但不能替代真实默认入口截图级复核；切片 89 前不得宣称当前 TUI 已达到用户截图目标。
 - `RenderVM{Lines, Status}` 兼容输入字段已删除，`RenderVM` 只承载 `ShellVM`；`Frame.Lines`、`Frame.StyledLines`、`Frame.ANSILines` 只作为 `RenderResult` 的 plain/styled/ANSI 输出适配保留。
 - large terminal output 性能基线已建立：`go test ./render -run '^$' -bench BenchmarkRendererLargeTerminalOutput -benchtime=1x` 当前单次基线约 6.91ms/op、6.75MB/op、12648 allocs/op。
 
@@ -1055,8 +1058,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前优先级：
 
-- 当前优先完成切片 88：继续按用户目标截图重绘 shell bar、pane chrome、active/inactive/floating/toast 的视觉密度和层级。
-- 切片 89 才能做真实默认入口截图级验收；不得再把基础 styled chrome、Unicode glyph、ANSI 颜色或 smoke 文本线框单独当作视觉完成证据。
+- 当前优先完成切片 89：真实默认入口截图级验收。
+- 不得再把基础 styled chrome、Unicode glyph、ANSI 颜色、二轮重绘或 smoke 文本线框单独当作视觉完成证据。
 
 建议后续切片：
 

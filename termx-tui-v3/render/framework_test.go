@@ -23,7 +23,7 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(vm)
 	assertFrameSize(t, result, 40, 12)
-	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), "●") || !linesContain(result.Lines(), "◆ owner") || !linesContain(result.Lines(), "[Z]─[x]") || !linesContain(result.Lines(), "你好 output") {
+	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), "●") || !linesContain(result.Lines(), "◆ owner") || !linesContain(result.Lines(), "·") || !linesContain(result.Lines(), "[Z]─[x]") || !linesContain(result.Lines(), "你好 output") {
 		t.Fatalf("expected shell, panel title and content, got %#v", result.Lines())
 	}
 	if !linesContain(result.Lines(), "┌") || !linesContain(result.Lines(), "┐") || !linesContain(result.Lines(), "└") || !linesContain(result.Lines(), "┘") {
@@ -111,7 +111,7 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 	if got := SliceCells(lines[0], 41, 42); got != "┐" {
 		t.Fatalf("split-line top boundary should keep top-right corner, got %q frame=%#v", got, lines)
 	}
-	if !strings.Contains(lines[0], " shell 🚀 ") || !strings.Contains(lines[0], " ● ") || !strings.Contains(lines[0], "◆ owner") || !strings.Contains(lines[0], "──[Z]─[x]") {
+	if !strings.Contains(lines[0], " shell 🚀 ") || !strings.Contains(lines[0], " ● ") || !strings.Contains(lines[0], "· ◆ owner") || !strings.Contains(lines[0], "──[Z]─[x]") {
 		t.Fatalf("split-line title/state/action slots should keep the remaining top border, got %#v", lines[0])
 	}
 	if !linesContain(lines, "你好 output") {
@@ -161,7 +161,7 @@ func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 		if actionCol < 0 {
 			t.Fatalf("presentation=%s missing action slot in %#v", presentation, result.Lines())
 		}
-		if !strings.Contains(line, "[Z]─[x]") || !strings.Contains(line, "◆ owner") {
+		if !strings.Contains(line, "[Z]─[x]") || !strings.Contains(line, "· ◆ owner") {
 			t.Fatalf("presentation=%s should render target pane action/owner slots, got row=%q", presentation, line)
 		}
 		beforeAction := SliceCells(line, actionCol-2, actionCol)
@@ -195,8 +195,8 @@ func TestFrameworkUsesUnicodeChromeAndNoDefaultASCIIBorders(t *testing.T) {
 		t.Fatalf("expected rounded Unicode card/overlay/toast chrome, got %#v", lines)
 	}
 	for _, line := range lines {
-		if strings.ContainsAny(line, "+|") {
-			t.Fatalf("default UI chrome must not contain ASCII + or |, got %q", line)
+		if strings.ContainsAny(line, "+|-") {
+			t.Fatalf("default UI chrome must not contain ASCII + - or |, got %q", line)
 		}
 	}
 	assertAllRowsWidth(t, lines, 42)
@@ -222,7 +222,7 @@ func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
 	if !styledLinesContain(frame.StyledLines, "┌", StyleMuted) || !styledLinesContain(frame.StyledLines, "┐", StyleMuted) {
 		t.Fatalf("inactive card pane border should use muted style, got %#v", frame.StyledLines)
 	}
-	if !linesContain(frame.ANSILines, "\x1b[1;38;2;88;213;201m") || !linesContain(frame.ANSILines, "\x1b[38;2;111;119;113m") {
+	if !linesContain(frame.ANSILines, "\x1b[1;38;2;169;112;255m") || !linesContain(frame.ANSILines, "\x1b[38;2;119;113;127m") {
 		t.Fatalf("pane chrome should output active accent and inactive muted SGR, got %#v", frame.ANSILines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 54)
@@ -245,21 +245,21 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], " 1 ") || !strings.Contains(frame.Lines[0], "[⊕]") || !strings.Contains(frame.Lines[0], "● pane-1") || !strings.Contains(frame.Lines[0], "◆ owner") || !strings.Contains(frame.Lines[0], "term:1") || !strings.Contains(frame.Lines[0], "float:0") || !strings.Contains(frame.Lines[0], "! ok") || !strings.Contains(frame.Lines[0], "│") {
+	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], " 1 ") || !strings.Contains(frame.Lines[0], "[＋]") || !strings.Contains(frame.Lines[0], "×") || !strings.Contains(frame.Lines[0], "● pane-1") || !strings.Contains(frame.Lines[0], "◆ owner") || !strings.Contains(frame.Lines[0], "· 1") || !strings.Contains(frame.Lines[0], "· 0") || !strings.Contains(frame.Lines[0], "! ok") || !strings.Contains(frame.Lines[0], "│") {
 		t.Fatalf("top bar should contain high-density workspace/tab/action/owner tokens, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "LIVE") || !strings.Contains(footer, "[^P] PANE") || !strings.Contains(footer, "[^R] RESIZE") || !strings.Contains(footer, "● shell term:term-1") || !strings.Contains(footer, "ws main") || !strings.Contains(footer, "» term-1") {
+	if !strings.Contains(footer, "LIVE") || !strings.Contains(footer, "[Ctrl] · [P] PANE") || !strings.Contains(footer, "[Ctrl] · [R] RESIZE") || !strings.Contains(footer, "● shell term:term-1") || !strings.Contains(footer, "ws main") || !strings.Contains(footer, "» term-1") {
 		t.Fatalf("bottom bar should contain high-density mode/action/summary tokens, got %#v", footer)
 	}
 	if !styledLinesContainText(frame.StyledLines[:1], " main ", StyleStatusAccent) ||
-		!styledLinesContainText(frame.StyledLines[:1], "term:1", StyleStatusMuted) ||
+		!styledLinesContainText(frame.StyledLines[:1], "· 1", StyleStatusMuted) ||
 		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
 		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "LIVE", StyleStatusAccent) ||
-		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[^P]", StyleStatusAccent) {
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[Ctrl] · [P]", StyleStatusAccent) {
 		t.Fatalf("top/bottom bar cells should use status token styles, got %#v", frame.StyledLines)
 	}
-	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;88;213;201m\x1b[48;2;24;50;74m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[1;38;2;88;213;201m\x1b[48;2;24;50;74m") {
+	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;169;112;255m\x1b[48;2;8;8;13m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[1;38;2;169;112;255m\x1b[48;2;8;8;13m") {
 		t.Fatalf("top/bottom bars should output status background SGR, got %#v", frame.ANSILines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 120)
@@ -288,7 +288,7 @@ func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !linesContain(frame.Lines, "浮窗🚀") || !linesContain(frame.Lines, "● active") || !linesContain(frame.Lines, "floating body 世界") {
+	if !linesContain(frame.Lines, "浮窗🚀") || !linesContain(frame.Lines, "● float") || !linesContain(frame.Lines, "floating body 世界") {
 		t.Fatalf("expected floating title/content, got %#v", frame.Lines)
 	}
 	if !styledLinesContain(frame.StyledLines, "╭", StyleAccent) || !styledLinesContain(frame.StyledLines, "╯", StyleAccent) {
@@ -376,7 +376,7 @@ func TestFrameworkPreservesStyledContentThroughMatrixAndANSIFrame(t *testing.T) 
 	if !linesContain(frame.Lines, "accent plain") {
 		t.Fatalf("plain snapshot should keep text without ANSI, got %#v", frame.Lines)
 	}
-	if !linesContain(frame.ANSILines, "\x1b[1;38;2;88;213;201m") || !linesContain(frame.ANSILines, ANSIReset) {
+	if !linesContain(frame.ANSILines, "\x1b[1;38;2;169;112;255m") || !linesContain(frame.ANSILines, ANSIReset) {
 		t.Fatalf("ANSI frame should retain styled matrix cells and reset, got %#v", frame.ANSILines)
 	}
 	if !styledLinesContain(frame.StyledLines, "a", StyleAccent) {
@@ -467,7 +467,7 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if !linesContain(result.Lines(), "picker pending") {
 		t.Fatalf("expected terminal picker overlay, got %#v", result.Lines())
 	}
-	if !linesContain(result.Lines(), "warn 🚀 ...  warning  世界") || !linesContain(result.Lines(), "▌") {
+	if !linesContain(result.Lines(), "warn 🚀 ...  ·  warning  世界") || !linesContain(result.Lines(), "▌") {
 		t.Fatalf("expected toast, got %#v", result.Lines())
 	}
 	if !linesContain(result.Lines(), "[×]") {
@@ -476,7 +476,7 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if firstLayer(t, result, LayerOverlay).Rect.W == 0 || firstLayer(t, result, LayerToast).Rect.W == 0 {
 		t.Fatalf("expected overlay and toast layers, got %#v", result.Layers)
 	}
-	if !linesContain(result.ANSILines(), "\x1b[38;2;240;196;92m") || !linesContain(result.ANSILines(), "\x1b[48;2;17;22;20m") || !linesContain(result.ANSILines(), "\x1b[48;2;20;24;22m") {
+	if !linesContain(result.ANSILines(), "\x1b[38;2;240;196;92m") || !linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") || !linesContain(result.ANSILines(), "\x1b[48;2;21;19;29m") {
 		t.Fatalf("expected styled warning toast and overlay ANSI, got %#v", result.ANSILines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 50)
@@ -495,13 +495,13 @@ func TestFrameworkToastDoesNotOverwritePaneTopChrome(t *testing.T) {
 	}})
 	lines := result.Lines()
 
-	if !strings.Contains(lines[0], "┌─ shell") || !strings.Contains(lines[0], " ● ") || !strings.Contains(lines[0], "◆ owner") || !strings.Contains(lines[0], "[o]─[_]─[Z]─[x]") {
+	if !strings.Contains(lines[0], "┌─ shell") || !strings.Contains(lines[0], " ● ") || !strings.Contains(lines[0], "· ◆ owner") || !strings.Contains(lines[0], "[o]─[_]─[Z]─[x]") {
 		t.Fatalf("toast must not overwrite pane top chrome, got %#v", lines)
 	}
 	if strings.Contains(lines[0], "pane.split") {
 		t.Fatalf("toast should start below pane top chrome, got %#v", lines)
 	}
-	if !linesContain(lines, "pane.split  info  created") {
+	if !linesContain(lines, "pane.split  ·  info  created") {
 		t.Fatalf("expected modern toast title/body below chrome, got %#v", lines)
 	}
 	assertAllRowsWidth(t, lines, 64)
