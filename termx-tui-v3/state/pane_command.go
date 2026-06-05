@@ -66,6 +66,7 @@ type PaneCommand struct {
 	Target          PaneCommandTarget
 	SplitDirection  SplitDirection
 	ResizeDirection PaneResizeDirection
+	// Delta 对键盘/CLI 是正向步长；鼠标拖拽固定某条边时可为负，表示该边向反方向移动。
 	Delta           int
 	SizeMode        PaneSizeMode
 	Ratio           float64

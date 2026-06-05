@@ -251,7 +251,6 @@ func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, include
 	if includeActions {
 		out = appendPaneActionRegions(out, panel.Rect, paneID, viewport)
 	}
-	out = appendPanelEdgeResizeRegions(out, panel, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: "pane.focus"}, viewport)
 	return out
 }

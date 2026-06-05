@@ -1294,9 +1294,6 @@ func (store ShellStore) ToggleZoomPane(target PaneCommandTarget) ShellStore {
 
 func (store ShellStore) ResizePane(target PaneCommandTarget, direction PaneResizeDirection, delta int) ShellStore {
 	store = store.EnsureDefaults()
-	if delta < 0 {
-		delta = -delta
-	}
 	if delta == 0 {
 		return store
 	}

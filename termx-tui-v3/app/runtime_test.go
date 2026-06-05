@@ -480,6 +480,7 @@ func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 	beforeInputCount := len(terminal.Inputs)
 	beforeResizeCount := len(terminal.Resizes)
 	beforeToastCount := len(runtime.State().Shell.Toasts)
+	beforeRects := paneLayoutRects(runtime.State())
 	resizeRegion := framePaneResizeRegion(t, lastRuntimeFrame(t, host), state.DefaultPaneID, state.PaneResizeRight)
 	start := mouseEventAt(resizeRegion.Rect)
 	start.Mouse = input.MouseLeft
@@ -506,6 +507,27 @@ func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 	if split.BiasCells != 5 {
 		t.Fatalf("expected horizontal divider drag to resize split bias, got %#v", split)
 	}
+	grownRects := paneLayoutRects(runtime.State())
+	if grownRects[state.DefaultPaneID].X != beforeRects[state.DefaultPaneID].X || grownRects["pane-2"].X+grownRects["pane-2"].W != beforeRects["pane-2"].X+beforeRects["pane-2"].W {
+		t.Fatalf("dragging right divider should keep opposite pane edges anchored, before=%#v after=%#v", beforeRects, grownRects)
+	}
+	reverseDrag := start
+	reverseDrag.Mouse = input.MouseLeftDrag
+	reverseDrag.Col -= 2
+	if err := host.SendInput(reverseDrag); err != nil {
+		t.Fatalf("send reverse drag move: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain reverse drag move: %v", err)
+	}
+	split = runtime.State().Shell.Workspace.Tabs[0].RootSplit
+	if split.BiasCells != -2 || runtime.mouseDrag.Direction != state.PaneResizeRight {
+		t.Fatalf("dragging the same right edge back must keep the left edge anchored, split=%#v drag=%#v", split, runtime.mouseDrag)
+	}
+	shrunkRects := paneLayoutRects(runtime.State())
+	if shrunkRects[state.DefaultPaneID].X != beforeRects[state.DefaultPaneID].X || shrunkRects["pane-2"].X+shrunkRects["pane-2"].W != beforeRects["pane-2"].X+beforeRects["pane-2"].W {
+		t.Fatalf("dragging right divider backward should still keep opposite pane edges anchored, before=%#v after=%#v", beforeRects, shrunkRects)
+	}
 	if len(terminal.Resizes) <= beforeResizeCount {
 		t.Fatalf("pane drag resize should schedule active terminal content resize, got %#v", terminal.Resizes)
 	}
@@ -516,7 +538,7 @@ func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 		t.Fatalf("pane resize drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
 	}
 
-	release := drag
+	release := reverseDrag
 	release.Mouse = input.MouseLeftUp
 	if err := host.SendInput(release); err != nil {
 		t.Fatalf("send drag release: %v", err)
@@ -537,7 +559,7 @@ func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain drag after release: %v", err)
 	}
-	if got := runtime.State().Shell.Workspace.Tabs[0].RootSplit.BiasCells; got != 5 {
+	if got := runtime.State().Shell.Workspace.Tabs[0].RootSplit.BiasCells; got != -2 {
 		t.Fatalf("drag after release must not resize, bias=%d", got)
 	}
 }
@@ -947,6 +969,16 @@ func newShellHitRuntime(root state.Root, host *FakeTerminalHost) *AppRuntime {
 		host,
 		NewSyncEffectRunner(),
 	)
+}
+
+func paneLayoutRects(root state.Root) map[string]render.Rect {
+	vm := render.NewRenderVMBuilder().Build(root)
+	plan := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
+	rects := make(map[string]render.Rect, len(plan.Panels))
+	for _, panel := range plan.Panels {
+		rects[panel.Panel.ID] = panel.Rect
+	}
+	return rects
 }
 
 func newShellHitRuntimeWithTerminal(root state.Root, host *FakeTerminalHost, terminal services.TerminalService) *AppRuntime {

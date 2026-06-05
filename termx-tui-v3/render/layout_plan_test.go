@@ -211,21 +211,16 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if got, want := actionWidth, DisplayWidth(paneChromeActionText(40)); got != want {
 		t.Fatalf("pane action regions should cover visible action cluster got=%d want=%d regions=%#v", got, want, plan.HitRegions[:3])
 	}
-	if plan.HitRegions[3].Kind != HitRegionPaneResize || plan.HitRegions[3].ActionID != "pane.resize" {
-		t.Fatalf("pane resize region should precede content, got %#v", plan.HitRegions)
-	}
-	if plan.HitRegions[3].Direction != "right" || plan.HitRegions[3].Rect.H != plan.Panels[0].Rect.H {
-		t.Fatalf("pane resize region should cover right border with direction, got %#v panel=%#v", plan.HitRegions[3], plan.Panels[0])
-	}
-	if plan.HitRegions[4].Kind != HitRegionPaneResize || plan.HitRegions[4].Direction != "down" {
-		t.Fatalf("pane bottom resize region should precede content, got %#v", plan.HitRegions)
-	}
-	if plan.HitRegions[5].Kind != HitRegionPaneChrome || plan.HitRegions[5].ActionID != "pane.focus" {
+	if plan.HitRegions[3].Kind != HitRegionPaneChrome || plan.HitRegions[3].ActionID != "pane.focus" {
 		t.Fatalf("pane chrome region should precede content, got %#v", plan.HitRegions)
 	}
 	historyIndex := hitRegionIndex(plan.HitRegions, HitRegionHistoryRow)
 	paneContentIndex := hitRegionIndex(plan.HitRegions, HitRegionPaneContent)
-	if historyIndex <= 5 {
+	resizeIndex := hitRegionIndex(plan.HitRegions, HitRegionPaneResize)
+	if resizeIndex >= 0 {
+		t.Fatalf("single pane outer border is fixed and must not expose resize handle, got %#v", plan.HitRegions)
+	}
+	if historyIndex <= 3 {
 		t.Fatalf("content hit region should remain after chrome regions, got %#v", plan.HitRegions)
 	}
 	if paneContentIndex <= historyIndex {

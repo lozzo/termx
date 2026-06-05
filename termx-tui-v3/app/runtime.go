@@ -167,6 +167,9 @@ type mouseDragState struct {
 	PaneID     string
 	FloatingID string
 	Direction  state.PaneResizeDirection
+	StartCol   int
+	StartRow   int
+	LastDelta  int
 	LastCol    int
 	LastRow    int
 }
@@ -454,17 +457,19 @@ func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool)
 		}
 		switch runtime.mouseDrag.Kind {
 		case mouseDragPaneResize:
-			direction, delta := mouseDragResize(runtime.mouseDrag, event)
-			if delta <= 0 {
+			delta := mouseDragResizeDelta(runtime.mouseDrag, event)
+			step := delta - runtime.mouseDrag.LastDelta
+			if step == 0 {
 				return NoopMsg{}, true
 			}
+			runtime.mouseDrag.LastDelta = delta
 			runtime.mouseDrag.LastCol = event.Col
 			runtime.mouseDrag.LastRow = event.Row
 			return ShellPaneCommandMsg{Command: state.PaneCommand{
 				Action:          state.PaneCommandResize,
 				Target:          state.PaneCommandTarget{PaneID: runtime.mouseDrag.PaneID},
-				ResizeDirection: direction,
-				Delta:           delta,
+				ResizeDirection: runtime.mouseDrag.Direction,
+				Delta:           step,
 				Source:          state.PaneCommandSourceMouse,
 			}}, true
 		case mouseDragFloatingMove:
@@ -515,6 +520,8 @@ func paneResizeDragState(region render.HitRegion, event input.InputEvent) (mouse
 		Kind:      mouseDragPaneResize,
 		PaneID:    region.PaneID,
 		Direction: direction,
+		StartCol:  event.Col,
+		StartRow:  event.Row,
 		LastCol:   event.Col,
 		LastRow:   event.Row,
 	}, true
@@ -557,22 +564,14 @@ func paneResizeDirectionFromHitRegion(region render.HitRegion) (state.PaneResize
 	}
 }
 
-func mouseDragResize(drag mouseDragState, event input.InputEvent) (state.PaneResizeDirection, int) {
+func mouseDragResizeDelta(drag mouseDragState, event input.InputEvent) int {
 	switch drag.Direction {
 	case state.PaneResizeLeft, state.PaneResizeRight:
-		delta := event.Col - drag.LastCol
-		if delta < 0 {
-			return state.PaneResizeLeft, -delta
-		}
-		return state.PaneResizeRight, delta
+		return event.Col - drag.StartCol
 	case state.PaneResizeUp, state.PaneResizeDown:
-		delta := event.Row - drag.LastRow
-		if delta < 0 {
-			return state.PaneResizeUp, -delta
-		}
-		return state.PaneResizeDown, delta
+		return event.Row - drag.StartRow
 	default:
-		return "", 0
+		return 0
 	}
 }
 
