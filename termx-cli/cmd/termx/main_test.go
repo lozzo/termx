@@ -23,6 +23,7 @@ import (
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/render"
+	tuiservices "github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/spf13/cobra"
 )
@@ -1136,6 +1137,32 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 
 	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 26 {
 		t.Fatalf("runtime must correct protocol terminal size to content rect, got %#v", runtime.State().Session)
+	}
+}
+
+func TestV3TerminalServiceCreateDefaultsCommandAgainstCoreV2(t *testing.T) {
+	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	adapter := tuiservices.ProtocolTerminalServiceAdapter{Client: client}
+	result, err := adapter.Create(context.Background(), tuiservices.TerminalCreateRequest{
+		TerminalID: "term-default-command",
+		Title:      "default command",
+		Cols:       80,
+		Rows:       24,
+	})
+	if err != nil {
+		t.Fatalf("create through tui-v3 service adapter must not send empty command: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = server.KillTerminal(context.Background(), result.TerminalID)
+		_ = server.RemoveTerminal(result.TerminalID)
+	})
+	info, err := server.GetTerminal(result.TerminalID)
+	if err != nil {
+		t.Fatalf("get created terminal: %v", err)
+	}
+	if len(info.Command) == 0 {
+		t.Fatalf("created core-v2 terminal must have default command, info=%#v", info)
 	}
 }
 

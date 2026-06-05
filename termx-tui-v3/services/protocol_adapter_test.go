@@ -326,6 +326,12 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	if created.TerminalID != "term-new" || len(client.createParams) != 1 || client.createParams[0].Size.Cols != 100 || client.createParams[0].Name != "new" {
 		t.Fatalf("unexpected create mapping created=%#v params=%#v", created, client.createParams)
 	}
+	if _, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-default", Title: "default", Cols: 80, Rows: 24}); err != nil {
+		t.Fatalf("create with default command: %v", err)
+	}
+	if len(client.createParams) != 2 || len(client.createParams[1].Command) == 0 {
+		t.Fatalf("adapter must not send empty create command, params=%#v", client.createParams)
+	}
 	if err := adapter.Restart(context.Background(), TerminalRestartRequest{TerminalID: "term-pool"}); err != nil {
 		t.Fatalf("restart: %v", err)
 	}

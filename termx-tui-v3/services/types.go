@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"os"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -91,6 +92,15 @@ type TerminalCreateRequest struct {
 type TerminalCreateResult struct {
 	TerminalID string
 	State      string
+}
+
+func DefaultTerminalCommand() []string {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	// TUI-v3 的 first-party create 必须总是给 core-v2 一个真实命令，不能发送空 command。
+	return []string{shell}
 }
 
 type TerminalAttachRequest struct {

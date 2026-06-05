@@ -214,6 +214,17 @@ func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
 	if len(effects) != 1 {
 		t.Fatalf("expected create effect, got %#v", effects)
 	}
+	createEffect, ok := effects[0].(FuncEffect)
+	if !ok {
+		t.Fatalf("expected create FuncEffect, got %#v", effects[0])
+	}
+	createMsg, ok := createEffect.Run(context.Background()).(TerminalPoolCreateResultMsg)
+	if !ok {
+		t.Fatalf("expected create result message, got %#v", createMsg)
+	}
+	if len(terminal.Creates) != 1 || len(terminal.Creates[0].Command) == 0 {
+		t.Fatalf("terminal pool create must send a default shell command, creates=%#v", terminal.Creates)
+	}
 	root, effects = reducer(root, TerminalPoolCreateResultMsg{Result: services.TerminalCreateResult{TerminalID: "term-created", State: "running"}})
 	if root.TerminalPool.LastCreatedID != "term-created" || len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Body != "term-created" || len(effects) != 1 {
 		t.Fatalf("expected create feedback and refresh effect, got root=%#v effects=%#v", root, effects)

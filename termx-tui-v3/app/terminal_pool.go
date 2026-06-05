@@ -221,6 +221,7 @@ func reduceTerminalPoolCreateRequest(root state.Root, deps LiveDeps) (state.Root
 			result, err := deps.Terminal.Create(ctx, services.TerminalCreateRequest{
 				TerminalID: terminalID,
 				Title:      terminalID,
+				Command:    services.DefaultTerminalCommand(),
 				Cols:       cols,
 				Rows:       rows,
 			})

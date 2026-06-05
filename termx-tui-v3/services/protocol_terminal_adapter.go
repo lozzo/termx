@@ -89,10 +89,14 @@ func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req Te
 	if adapter.Client == nil {
 		return TerminalCreateResult{}, ErrMissingTerminalClient
 	}
+	command := append([]string(nil), req.Command...)
+	if len(command) == 0 {
+		command = DefaultTerminalCommand()
+	}
 	result, err := adapter.Client.Create(ctx, protocol.CreateParams{
 		ID:      req.TerminalID,
 		Name:    req.Title,
-		Command: append([]string(nil), req.Command...),
+		Command: command,
 		Size:    protocol.Size{Cols: uint16(req.Cols), Rows: uint16(req.Rows)},
 	})
 	if err != nil {
