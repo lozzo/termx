@@ -99,6 +99,39 @@ func TestThemeTokenPaletteDrivesANSILines(t *testing.T) {
 	}
 }
 
+func TestANSICellStyleUsesHostPaletteCodes(t *testing.T) {
+	result := RenderResult{
+		Content: []Line{{Cells: []Cell{
+			{Text: "dir", Width: 3, ANSIStyle: ANSICellStyle{FG: "ansi:4", Bold: true}, Safe: true},
+			{Text: " err", Width: 4, ANSIStyle: ANSICellStyle{FG: "ansi:9", BG: "ansi:0"}, Safe: true},
+			{Text: " rgb", Width: 4, ANSIStyle: ANSICellStyle{FG: "#010203", BG: "#0a0b0c"}, Safe: true},
+			{Text: " idx", Width: 4, ANSIStyle: ANSICellStyle{FG: "idx:17", BG: "idx:236"}, Safe: true},
+		}}},
+		Theme: Theme{Info: "#7ab8ff"},
+	}
+
+	frame := FrameFromRenderResult(result)
+	if len(frame.ANSILines) != 1 {
+		t.Fatalf("expected one ANSI line, got %#v", frame.ANSILines)
+	}
+	got := frame.ANSILines[0]
+	if !strings.Contains(got, "\x1b[1;34mdir") {
+		t.Fatalf("terminal ansi:4 should pass through as host palette blue, got %#v", got)
+	}
+	if !strings.Contains(got, "\x1b[91;40m err") {
+		t.Fatalf("bright foreground/background palette codes should pass through, got %#v", got)
+	}
+	if !strings.Contains(got, "\x1b[38;2;1;2;3;48;2;10;11;12m rgb") {
+		t.Fatalf("terminal truecolor style should serialize as cell SGR, got %#v", got)
+	}
+	if !strings.Contains(got, "\x1b[38;5;17;48;5;236m idx") {
+		t.Fatalf("terminal indexed color style should serialize as 256-color SGR, got %#v", got)
+	}
+	if strings.Contains(got, "38;2;122;184;255") {
+		t.Fatalf("terminal ansi:4 must not be remapped to theme info truecolor, got %#v", got)
+	}
+}
+
 func TestThemeFallbackAndPaneTokensAreDistinct(t *testing.T) {
 	theme := Theme{ActivePaneBorder: "#010203"}.WithFallback()
 	if theme.ActivePaneBorder != "#010203" {

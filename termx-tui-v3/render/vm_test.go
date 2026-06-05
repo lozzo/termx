@@ -489,10 +489,10 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 	if got := content.Lines[0].PlainString(); got != "ERR ok 好🚀" {
 		t.Fatalf("expected sanitized live text, got %q", got)
 	}
-	if !lineHasStyledCell(content.Lines[0], "ERR", StyleDanger) ||
-		!lineHasStyledCell(content.Lines[0], "好", StyleSuccess) ||
-		!lineHasStyledCell(content.Lines[0], "🚀", StyleSuccess) {
-		t.Fatalf("expected basic SGR mapped to styled cells, got %#v", content.Lines[0])
+	if !lineHasANSICell(content.Lines[0], "ERR", ANSICellStyle{FG: "ansi:1"}) ||
+		!lineHasANSICell(content.Lines[0], "好", ANSICellStyle{FG: "ansi:2"}) ||
+		!lineHasANSICell(content.Lines[0], "🚀", ANSICellStyle{FG: "ansi:2"}) {
+		t.Fatalf("expected live terminal SGR preserved as ANSI cell style, got %#v", content.Lines[0])
 	}
 	if !content.Cursor.Visible || content.Cursor.Row != 0 || content.Cursor.Col != 10 || content.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("expected live cursor projection, got %#v", content.Cursor)
@@ -878,6 +878,15 @@ func containsString(values []string, want string) bool {
 func lineHasStyledCell(line Line, text string, style StyleToken) bool {
 	for _, cell := range line.Cells {
 		if cell.Text == text && cell.Style == style {
+			return true
+		}
+	}
+	return false
+}
+
+func lineHasANSICell(line Line, text string, style ANSICellStyle) bool {
+	for _, cell := range line.Cells {
+		if cell.Text == text && cell.ANSIStyle == style && cell.Style == "" {
 			return true
 		}
 	}

@@ -30,10 +30,27 @@ type RenderMetadata struct {
 }
 
 type Cell struct {
-	Text  string
-	Width int
-	Style StyleToken
-	Safe  bool
+	Text      string
+	Width     int
+	Style     StyleToken
+	ANSIStyle ANSICellStyle
+	Safe      bool
+}
+
+// ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 TermX chrome theme token。
+type ANSICellStyle struct {
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
+}
+
+func (style ANSICellStyle) IsZero() bool {
+	return style == ANSICellStyle{}
 }
 
 type StyleToken string
@@ -92,11 +109,17 @@ func (line Line) ANSIString(theme Theme) string {
 	var out strings.Builder
 	for _, cell := range line.Cells {
 		text := SafeLine(cell.Text)
-		if cell.Style == "" {
+		styleSeq := ""
+		if !cell.ANSIStyle.IsZero() {
+			styleSeq = ansiForCellStyle(cell.ANSIStyle)
+		} else if cell.Style != "" {
+			styleSeq = ansiForStyleToken(cell.Style, theme)
+		}
+		if styleSeq == "" {
 			out.WriteString(text)
 			continue
 		}
-		out.WriteString(ansiForStyleToken(cell.Style, theme))
+		out.WriteString(styleSeq)
 		out.WriteString(text)
 		out.WriteString(ANSIReset)
 	}
@@ -225,6 +248,91 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	default:
 		return "\x1b[1m"
 	}
+}
+
+func ansiForCellStyle(style ANSICellStyle) string {
+	var params []string
+	if style.Bold {
+		params = append(params, "1")
+	}
+	if style.Italic {
+		params = append(params, "3")
+	}
+	if style.Underline {
+		params = append(params, "4")
+	}
+	if style.Blink {
+		params = append(params, "5")
+	}
+	if style.Reverse {
+		params = append(params, "7")
+	}
+	if style.Strikethrough {
+		params = append(params, "9")
+	}
+	params = appendANSIColorParams(params, style.FG, true)
+	params = appendANSIColorParams(params, style.BG, false)
+	if len(params) == 0 {
+		return ""
+	}
+	return "\x1b[" + strings.Join(params, ";") + "m"
+}
+
+func appendANSIColorParams(params []string, value string, foreground bool) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return params
+	}
+	if code, ok := ansiPaletteColorCode(value, foreground); ok {
+		return append(params, strconv.Itoa(code))
+	}
+	if index, ok := ansiIndexedColor(value); ok {
+		prefix := "38"
+		if !foreground {
+			prefix = "48"
+		}
+		return append(params, prefix, "5", strconv.Itoa(index))
+	}
+	r, g, b, ok := parseHexColor(value)
+	if !ok {
+		return params
+	}
+	prefix := "38"
+	if !foreground {
+		prefix = "48"
+	}
+	return append(params, prefix, "2", r, g, b)
+}
+
+func ansiPaletteColorCode(value string, foreground bool) (int, bool) {
+	if !strings.HasPrefix(value, "ansi:") {
+		return 0, false
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(value, "ansi:"))
+	if err != nil || index < 0 || index > 15 {
+		return 0, false
+	}
+	if index < 8 {
+		if foreground {
+			return 30 + index, true
+		}
+		return 40 + index, true
+	}
+	if foreground {
+		return 90 + (index - 8), true
+	}
+	return 100 + (index - 8), true
+}
+
+func ansiIndexedColor(value string) (int, bool) {
+	if !strings.HasPrefix(value, "idx:") {
+		return 0, false
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(value, "idx:"))
+	if err != nil || index < 0 || index > 255 {
+		return 0, false
+	}
+	return index, true
 }
 
 func sgrForeground(hex string, bold bool) string {

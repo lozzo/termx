@@ -801,66 +801,25 @@ func terminalLiveLineFromCells(row []state.LiveCell) Line {
 			continue
 		}
 		cells = append(cells, Cell{
-			Text:  text,
-			Width: width,
-			Style: terminalLiveStyle(liveCell),
-			Safe:  true,
+			Text:      text,
+			Width:     width,
+			ANSIStyle: terminalLiveANSIStyle(liveCell),
+			Safe:      true,
 		})
 	}
 	return Line{Cells: cells}
 }
 
-func terminalLiveStyle(cell state.LiveCell) StyleToken {
-	if cell.Bold {
-		return StyleAccent
-	}
-	switch terminalLiveColorToken(cell.FG) {
-	case "red":
-		return StyleDanger
-	case "green":
-		return StyleSuccess
-	case "yellow":
-		return StyleWarning
-	case "blue", "cyan":
-		return StyleInfo
-	case "magenta":
-		return StyleAccent
-	case "muted":
-		return StyleMuted
-	}
-	switch terminalLiveColorToken(cell.BG) {
-	case "red":
-		return StyleDanger
-	case "green":
-		return StyleSuccess
-	case "yellow":
-		return StyleWarning
-	case "blue", "cyan":
-		return StyleInfo
-	case "magenta":
-		return StyleAccent
-	}
-	return ""
-}
-
-func terminalLiveColorToken(value string) string {
-	switch value {
-	case "ansi:1", "ansi:9":
-		return "red"
-	case "ansi:2", "ansi:10":
-		return "green"
-	case "ansi:3", "ansi:11":
-		return "yellow"
-	case "ansi:4", "ansi:12":
-		return "blue"
-	case "ansi:5", "ansi:13":
-		return "magenta"
-	case "ansi:6", "ansi:14":
-		return "cyan"
-	case "ansi:8", "ansi:7", "ansi:0":
-		return "muted"
-	default:
-		return ""
+func terminalLiveANSIStyle(cell state.LiveCell) ANSICellStyle {
+	return ANSICellStyle{
+		FG:            cell.FG,
+		BG:            cell.BG,
+		Bold:          cell.Bold,
+		Italic:        cell.Italic,
+		Underline:     cell.Underline,
+		Blink:         cell.Blink,
+		Reverse:       cell.Reverse,
+		Strikethrough: cell.Strikethrough,
 	}
 }
 

@@ -372,19 +372,26 @@ func TestFrameworkPreservesStyledContentThroughMatrixAndANSIFrame(t *testing.T) 
 			Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{{Cells: []Cell{
 				{Text: "accent", Width: 6, Style: StyleAccent, Safe: true},
 				{Text: " plain", Width: 6, Safe: true},
+				{Text: " dir", Width: 4, ANSIStyle: ANSICellStyle{FG: "ansi:4", Bold: true}, Safe: true},
 			}}}},
 		}}},
 	}})
 	frame := result.Frame()
 
-	if !linesContain(frame.Lines, "accent plain") {
+	if !linesContain(frame.Lines, "accent plain dir") {
 		t.Fatalf("plain snapshot should keep text without ANSI, got %#v", frame.Lines)
 	}
 	if !linesContain(frame.ANSILines, "\x1b[1;38;2;169;112;255m") || !linesContain(frame.ANSILines, ANSIReset) {
 		t.Fatalf("ANSI frame should retain styled matrix cells and reset, got %#v", frame.ANSILines)
 	}
+	if !linesContain(frame.ANSILines, "\x1b[1;34md") || !linesContain(frame.ANSILines, "\x1b[1;34mr") || linesContain(frame.ANSILines, "38;2;122;184;255m") {
+		t.Fatalf("terminal ANSI cell style should survive compositor as host palette code, got %#v", frame.ANSILines)
+	}
 	if !styledLinesContain(frame.StyledLines, "a", StyleAccent) {
 		t.Fatalf("styled frame should retain StyleAccent cells, got %#v", frame.StyledLines)
+	}
+	if !styledLinesContainANSI(frame.StyledLines, " ", ANSICellStyle{FG: "ansi:4", Bold: true}) {
+		t.Fatalf("styled frame should retain terminal ANSI cell style, got %#v", frame.StyledLines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 36)
 }
@@ -614,6 +621,17 @@ func styledLinesContainText(lines []Line, value string, style StyleToken) bool {
 		}
 		if strings.Contains(styledText.String(), value) {
 			return true
+		}
+	}
+	return false
+}
+
+func styledLinesContainANSI(lines []Line, value string, style ANSICellStyle) bool {
+	for _, line := range lines {
+		for _, cell := range line.Cells {
+			if cell.Text == value && cell.ANSIStyle == style && cell.Style == "" {
+				return true
+			}
 		}
 	}
 	return false
