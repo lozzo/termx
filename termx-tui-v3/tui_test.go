@@ -39,7 +39,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["workbench-live"].Lines, "termx live 🚀") ||
 		!frameContains(cases["workbench-live"].Lines, "你好 output") ||
 		!frameContains(cases["workbench-live"].Lines, "┌─ shell") ||
-		!frameContains(cases["workbench-live"].Lines, "[x]") {
+		!frameContains(cases["workbench-live"].Lines, "◆ owner") ||
+		!frameContains(cases["workbench-live"].Lines, "[o]─[_]─[Z]─[x]") {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;88;213;201m") {
@@ -60,9 +61,11 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
 	}
 	if !frameContains(cases["split-hidden-toast"].Lines, "┌─ shell") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "… pending") ||
+		!frameContains(cases["split-hidden-toast"].Lines, " … ") ||
 		!frameContains(cases["split-hidden-toast"].Lines, "┬─ logs") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "● active") ||
+		!frameContains(cases["split-hidden-toast"].Lines, " ● ") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "◆ owner") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "[Z]─[x]") ||
 		render.SliceCells(cases["split-hidden-toast"].Lines[0], render.DisplayWidth(cases["split-hidden-toast"].Lines[0])-1, render.DisplayWidth(cases["split-hidden-toast"].Lines[0])) != "┐" {
 		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
 	}
@@ -170,7 +173,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{" main ", " [main] ", "● pane-logs", "◆ owner", "┬─ logs", "┴", "● active", "… pending", "▌ visual review", "[×]", "╭─ quick actions", "◢", "LIVE"}
+	requiredReview := []string{" main ", " [main] ", "● pane-logs", "◆ owner", "┬─ logs", "┴", " ● ", "[o]─[_]─[Z]─[x]", "…", "▌ visual review", "[×]", "╭─ quick actions", "◢", "LIVE"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)
@@ -190,7 +193,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	split := cases["split-hidden-toast"]
-	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴", "▌ warn 🚀", "[×]"} {
+	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴", "◆ owner", "[Z]─[x]", "▌ warn 🚀", "[×]"} {
 		if !frameContains(split.Lines, marker) {
 			t.Fatalf("split hidden toast missing styled split marker %q: %#v", marker, split.Lines)
 		}

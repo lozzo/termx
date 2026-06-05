@@ -854,6 +854,7 @@ cache 原则：
 - 切片 80 已把 shell header/footer 从稀疏文本条推进到分段产品栏。
 - 切片 84 已把 shell header/footer 从工程 key-value 标签继续推进到高密度产品栏：top bar 使用 workspace、tab strip、`[⊕]`、active pane、`◆ owner`、terminal/floating 和 action token；bottom bar 使用 `MODE • [KEY] ACTION`、active target 和 summary。
 - 切片 81 已把 pane chrome / split line 从基础线框推进到 shared chrome：card panel 与 split line 都使用 square 细线、title/state/action 槽位、active accent、inactive muted、共享外框、连接点合成和 content rect 宽度安全。
+- 切片 85 已把 pane chrome 继续推进到目标截图式槽位：title、状态点、`↔0`、`◆ owner`、宽 pane full action cluster、窄分屏 compact action cluster 和同宽 hit region，顶边剩余空间继续由横线承接。
 - 切片 82 已把 overlay/toast/floating 从基础可见 chrome 推进到实体 card：toast 具备 severity accent 竖条、title/body 合并裁切、close action 和右上角留白；overlay 与 floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
 - 切片 83 已复核失败：当前默认 TUI 是可运行的 styled chrome 产品壳，但不是截图级视觉完成。
 - 后续不得再把无样式纯文本线框、基础 ANSI 色或 smoke 行宽恒等当作默认 UI 完成标准。

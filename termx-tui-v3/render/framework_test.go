@@ -23,7 +23,7 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(vm)
 	assertFrameSize(t, result, 40, 12)
-	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), "● active") || !linesContain(result.Lines(), "[x]") || !linesContain(result.Lines(), "你好 output") {
+	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), "●") || !linesContain(result.Lines(), "◆ owner") || !linesContain(result.Lines(), "[Z]─[x]") || !linesContain(result.Lines(), "你好 output") {
 		t.Fatalf("expected shell, panel title and content, got %#v", result.Lines())
 	}
 	if !linesContain(result.Lines(), "┌") || !linesContain(result.Lines(), "┐") || !linesContain(result.Lines(), "└") || !linesContain(result.Lines(), "┘") {
@@ -86,7 +86,7 @@ func TestFrameworkRendersSplitLineHorizontalAndVertical(t *testing.T) {
 	}
 	assertColumnGlyphs(t, vertical.Lines(), 20, 0, 12, "│┬┴┼")
 	assertColumnGlyphs(t, vertical.Lines(), 39, 0, 12, "│┐┘┤")
-	if !linesContain(horizontal.Lines(), "logs") || !linesContain(horizontal.Lines(), "● active") || !linesContain(horizontal.Lines(), "├") {
+	if !linesContain(horizontal.Lines(), "logs") || !linesContain(horizontal.Lines(), "●") || !linesContain(horizontal.Lines(), "◆ owner") || !linesContain(horizontal.Lines(), "├") {
 		t.Fatalf("expected horizontal split chrome/separator, got %#v", horizontal.Lines())
 	}
 	assertAllRowsWidth(t, horizontal.Lines(), 40)
@@ -111,7 +111,7 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 	if got := SliceCells(lines[0], 41, 42); got != "┐" {
 		t.Fatalf("split-line top boundary should keep top-right corner, got %q frame=%#v", got, lines)
 	}
-	if !strings.Contains(lines[0], " shell 🚀 ") || !strings.Contains(lines[0], "● active") || !strings.Contains(lines[0], "──[x]") {
+	if !strings.Contains(lines[0], " shell 🚀 ") || !strings.Contains(lines[0], " ● ") || !strings.Contains(lines[0], "◆ owner") || !strings.Contains(lines[0], "──[Z]─[x]") {
 		t.Fatalf("split-line title/state/action slots should keep the remaining top border, got %#v", lines[0])
 	}
 	if !linesContain(lines, "你好 output") {
@@ -160,6 +160,9 @@ func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 		actionCol := cellIndex(line, "[x]")
 		if actionCol < 0 {
 			t.Fatalf("presentation=%s missing action slot in %#v", presentation, result.Lines())
+		}
+		if !strings.Contains(line, "[Z]─[x]") || !strings.Contains(line, "◆ owner") {
+			t.Fatalf("presentation=%s should render target pane action/owner slots, got row=%q", presentation, line)
 		}
 		beforeAction := SliceCells(line, actionCol-2, actionCol)
 		if !strings.Contains(beforeAction, "─") {
@@ -492,7 +495,7 @@ func TestFrameworkToastDoesNotOverwritePaneTopChrome(t *testing.T) {
 	}})
 	lines := result.Lines()
 
-	if !strings.Contains(lines[0], "┌─ shell") || !strings.Contains(lines[0], "● active") || !strings.Contains(lines[0], "[x]") {
+	if !strings.Contains(lines[0], "┌─ shell") || !strings.Contains(lines[0], " ● ") || !strings.Contains(lines[0], "◆ owner") || !strings.Contains(lines[0], "[o]─[_]─[Z]─[x]") {
 		t.Fatalf("toast must not overwrite pane top chrome, got %#v", lines)
 	}
 	if strings.Contains(lines[0], "pane.split") {

@@ -204,6 +204,9 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if plan.HitRegions[0].Kind != HitRegionPaneAction || plan.HitRegions[0].PaneID != "pane-1" || plan.HitRegions[0].ActionID != "pane.close" {
 		t.Fatalf("pane action region should be first, got %#v", plan.HitRegions)
 	}
+	if got, want := plan.HitRegions[0].Rect.W, DisplayWidth(paneChromeActionText(40)); got != want {
+		t.Fatalf("pane action region should cover visible action cluster got=%d want=%d region=%#v", got, want, plan.HitRegions[0])
+	}
 	if plan.HitRegions[1].Kind != HitRegionPaneResize || plan.HitRegions[1].ActionID != "pane.resize" {
 		t.Fatalf("pane resize region should precede content, got %#v", plan.HitRegions)
 	}

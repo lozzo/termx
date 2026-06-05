@@ -227,7 +227,7 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 		return out
 	}
 	id := floating.Floating.ID
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneActionRect(floating.Rect), PaneID: id, ActionID: "floating.close"}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingActionRect(floating.Rect), PaneID: id, ActionID: "floating.close"}, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: "floating.resize"}, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: "floating.raise"}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
@@ -258,7 +258,20 @@ func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewpor
 }
 
 func paneActionRect(rect Rect) Rect {
-	return Rect{X: maxInt(rect.X, rect.X+rect.W-4), Y: rect.Y, W: minInt(3, rect.W), H: 1}
+	return chromeActionRect(rect, DisplayWidth(paneChromeActionText(rect.W)))
+}
+
+func floatingActionRect(rect Rect) Rect {
+	return chromeActionRect(rect, 3)
+}
+
+func chromeActionRect(rect Rect, width int) Rect {
+	inner := maxInt(0, rect.W-2)
+	if rect.W <= 0 || width <= 0 || inner <= 0 {
+		return Rect{X: rect.X, Y: rect.Y, W: 0, H: 1}
+	}
+	width = minInt(width, inner)
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-1-width), Y: rect.Y, W: width, H: 1}
 }
 
 func paneResizeRect(rect Rect) Rect {

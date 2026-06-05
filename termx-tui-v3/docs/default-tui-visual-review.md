@@ -69,6 +69,8 @@
 
 切片 84 已完成第一轮 shell bar 重绘：顶部不再使用 `ws:/tab:/active:` 这类工程标签，而是使用 workspace、tab strip、`[⊕]`、active pane、`◆ owner`、terminal/floating 和 action token；底部不再使用 `mode:/keys:`，而是使用 `MODE • [KEY] ACTION` 快捷键 taxonomy、active target 和 summary。最终是否达到截图级视觉仍以后续切片 87 的真实默认入口验收为准。
 
+切片 85 已完成第一轮 pane chrome 槽位重绘：tiled pane 顶边不再只显示单一 close token，而是显示 title、状态点、`↔0` 元信息、`◆ owner` 和 action cluster；宽 pane 使用 `[o]─[_]─[Z]─[x]`，窄分屏 pane 使用 `[Z]─[x]` 退化，title 与 action 之间继续保留连续横线。最终是否达到截图级视觉仍以后续切片 87 的真实默认入口验收为准。
+
 ## 5. 手工复核入口
 
 每次视觉返工后都必须手工复核：

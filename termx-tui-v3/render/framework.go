@@ -7,10 +7,12 @@ import (
 )
 
 const (
-	minFrameWidth  = 24
-	minFrameHeight = 8
-	defaultWidth   = 80
-	defaultHeight  = 24
+	minFrameWidth                = 24
+	minFrameHeight               = 8
+	defaultWidth                 = 80
+	defaultHeight                = 24
+	paneChromeActionCluster      = "─[o]─[_]─[Z]─[x]"
+	paneChromeCompactActions     = "─[Z]─[x]"
 )
 
 type canvas struct {
@@ -1137,34 +1139,192 @@ func renderPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style StyleToken
 	if rect.W < 4 || rect.H <= 0 {
 		return
 	}
-	actionX := paneActionRect(rect).X
-	if actionX <= rect.X {
-		actionX = rect.X + rect.W
+	for _, slot := range paneChromeTopSlots(rect, panel, style) {
+		c.overlayTextStyled(slot.x, rect.Y, DisplayWidth(slot.text), slot.text, slot.style, owner, LayerPanel)
 	}
-	titleLimit := minInt(actionX-1, rect.X+rect.W-2)
-	stateText := " " + paneChromeStateText(panel) + " "
-	stateWidth := DisplayWidth(stateText)
-	if rect.W >= 28 && actionX-stateWidth-2 > rect.X+4 {
-		stateX := actionX - stateWidth - 2
-		c.overlayTextStyled(stateX, rect.Y, stateWidth, stateText, style, owner, LayerPanel)
-		titleLimit = minInt(titleLimit, stateX-1)
-	}
-	titleX := rect.X + 2
-	if titleLimit > titleX {
-		c.overlayTextStyled(titleX, rect.Y, titleLimit-titleX, " "+panelTitle(panel)+" ", style, owner, LayerPanel)
-	}
-	renderPaneActionSlot(c, rect, panel, style, owner)
 }
 
-func renderPaneActionSlot(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string) {
-	if rect.W < 12 || rect.H <= 0 {
-		return
+type paneChromeTopSlot struct {
+	x        int
+	text     string
+	style    StyleToken
+	priority int
+}
+
+func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []paneChromeTopSlot {
+	innerLeft := rect.X + 2
+	innerRight := rect.X + rect.W - 1
+	if innerRight <= innerLeft {
+		return nil
 	}
-	token := "[·]"
+
+	// 顶边槽位只覆盖必要 token，其余单元格保留底层横线，避免标题和按钮之间出现断线。
+	actions := paneChromeActionText(rect.W)
+	actionWidth := DisplayWidth(actions)
+	rightLimit := innerRight
+	slots := make([]paneChromeTopSlot, 0, 5)
+	if actionWidth > 0 {
+		actionX := innerRight - actionWidth
+		if actionX >= innerLeft {
+			slots = append(slots, paneChromeTopSlot{x: actionX, text: actions, style: paneChromeActionStyle(panel, borderStyle)})
+			rightLimit = actionX - 1
+		}
+	}
+
+	rightSlots := paneChromeRightSlots(panel, borderStyle, rect.W)
+	rightSlots = fitPaneChromeRightSlots(rightSlots, maxInt(0, rightLimit-innerLeft-1))
+	for i := len(rightSlots) - 1; i >= 0; i-- {
+		slot := rightSlots[i]
+		width := DisplayWidth(slot.text)
+		x := rightLimit - width
+		if width <= 0 || x < innerLeft {
+			continue
+		}
+		slots = append(slots, paneChromeTopSlot{x: x, text: slot.text, style: slot.style})
+		rightLimit = x - 1
+	}
+
+	titleWidth := maxInt(0, rightLimit-innerLeft)
+	if titleWidth > 0 {
+		title := paneChromeTitleText(panel, titleWidth)
+		if strings.TrimSpace(title) != "" {
+			slots = append(slots, paneChromeTopSlot{x: innerLeft, text: title, style: paneChromeTitleStyle(panel, borderStyle)})
+		}
+	}
+	return slots
+}
+
+func paneChromeActionText(width int) string {
+	switch {
+	case width >= 52:
+		return paneChromeActionCluster
+	case width >= 20:
+		return paneChromeCompactActions
+	case width >= 8:
+		return "[x]"
+	default:
+		return ""
+	}
+}
+
+func paneChromeRightSlots(panel PanelVM, borderStyle StyleToken, width int) []paneChromeTopSlot {
+	state := " " + paneChromeStateMarker(panel) + " "
+	slots := []paneChromeTopSlot{
+		{text: state, style: paneChromeStateStyle(panel, borderStyle), priority: 2},
+		{text: " ◆ owner ", style: paneChromeOwnerStyle(panel, borderStyle), priority: 1},
+	}
+	if width >= 58 {
+		slots = append(slots[:1], append([]paneChromeTopSlot{{text: " ↔0 ", style: paneChromeMetaStyle(panel), priority: 3}}, slots[1:]...)...)
+	}
+	return slots
+}
+
+func paneChromeTitleText(panel PanelVM, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	title := strings.TrimSpace(panelTitle(panel))
+	if title == "" {
+		return ""
+	}
+	if width <= 2 {
+		return TruncateCells(title, width)
+	}
+	return " " + TruncateCells(title, width-2) + " "
+}
+
+func fitPaneChromeRightSlots(slots []paneChromeTopSlot, width int) []paneChromeTopSlot {
+	if width <= 0 || len(slots) == 0 {
+		return nil
+	}
+	out := append([]paneChromeTopSlot(nil), slots...)
+	for paneChromeSlotsWidth(out) > width && len(out) > 0 {
+		remove := paneChromeRightSlotRemovalIndex(out)
+		out = append(out[:remove], out[remove+1:]...)
+	}
+	if paneChromeSlotsWidth(out) > width {
+		return nil
+	}
+	return out
+}
+
+func paneChromeRightSlotRemovalIndex(slots []paneChromeTopSlot) int {
+	index := len(slots) - 1
+	for i, slot := range slots {
+		if slot.priority > slots[index].priority {
+			index = i
+		}
+	}
+	return index
+}
+
+func paneChromeSlotsWidth(slots []paneChromeTopSlot) int {
+	width := 0
+	for i, slot := range slots {
+		width += DisplayWidth(slot.text)
+		if i > 0 {
+			width++
+		}
+	}
+	return width
+}
+
+func paneChromeTitleStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
 	if panel.Active {
-		token = "[x]"
+		return StyleAccent
 	}
-	c.overlayTextStyled(rect.X+rect.W-4, rect.Y, 3, token, style, owner, LayerPanel)
+	return borderStyle
+}
+
+func paneChromeActionStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
+	if panel.Active {
+		return StyleAccent
+	}
+	return borderStyle
+}
+
+func paneChromeOwnerStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
+	if panel.Active {
+		return StyleMuted
+	}
+	return borderStyle
+}
+
+func paneChromeMetaStyle(panel PanelVM) StyleToken {
+	if panel.Active {
+		return StyleMuted
+	}
+	return StyleMuted
+}
+
+func paneChromeStateStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
+	switch {
+	case panel.Content.Error != "":
+		return StyleDanger
+	case panel.Content.Pending:
+		return StyleWarning
+	case panel.Content.Empty:
+		return StyleMuted
+	case panel.Active:
+		return StyleAccent
+	default:
+		return borderStyle
+	}
+}
+
+func paneChromeStateMarker(panel PanelVM) string {
+	switch {
+	case panel.Content.Error != "":
+		return "×"
+	case panel.Content.Pending:
+		return "…"
+	case panel.Content.Empty:
+		return "○"
+	case panel.Active:
+		return "●"
+	default:
+		return "◦"
+	}
 }
 
 func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {

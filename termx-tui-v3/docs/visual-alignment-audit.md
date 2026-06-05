@@ -88,7 +88,8 @@
 
 - 切片 81 已完成第一轮 pane chrome 视觉重绘，card panel 与 split line 都具备稳定 title/state/action 槽位、连续 square 外框和 active/inactive style。
 - split line 现在使用共享外框与共享分割线，content rect 会避开外边框和 divider；terminal resize 与 copy rebind 也按新的 content rect cols/rows 计算。
-- 仍未完全达到 `tuiv2` 截图中 owner/follower/action token、tab strip 侧信息和更高密度 pane 状态的完整细节。
+- 切片 85 已把 pane 顶边推进到目标截图式槽位：title、状态点、`↔0`、`◆ owner`、宽 pane full action cluster `[o]─[_]─[Z]─[x]`、窄分屏 compact action cluster `[Z]─[x]`，并让 action hit region 与可见 cluster 同宽。
+- 仍未完全达到 `tuiv2` 截图中真实 owner/follower 数据、tab strip 侧信息和更高密度 pane 状态的完整细节。
 
 目标要求：
 
@@ -200,6 +201,12 @@
 
 - 已完成 shell bar 高密度重绘第一轮。
 - 已把 fixed smoke 和 e2e visual guard 更新为新的 top/bottom bar 视觉合同。
+- 截图级总体验收仍留到切片 87。
+
+切片 85 负责：
+
+- 已完成 pane chrome 目标截图级槽位重绘第一轮。
+- 已把 fixed smoke、render harness 和 e2e visual guard 更新为新的 pane 顶边槽位合同。
 - 截图级总体验收仍留到切片 87。
 
 ## 7. 验收方式
