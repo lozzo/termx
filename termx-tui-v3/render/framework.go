@@ -1030,15 +1030,12 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	state := "float"
 	if floating.Active {
-		state = "active"
+		state = "● active"
 	}
 	if floating.Collapsed {
-		state = "collapsed"
+		state = "▾ collapsed"
 	}
-	c.overlayTextStyled(rect.X+2, rect.Y, maxInt(0, rect.W-6), " "+title+" "+state+" ", style, owner, LayerFloating)
-	if rect.W >= 12 {
-		c.overlayTextStyled(rect.X+rect.W-4, rect.Y, 3, "[x]", style, owner, LayerFloating)
-	}
+	renderChromeCardTitle(c, rect, title, state, "[x]", style, owner, LayerFloating)
 	if rect.W >= 2 && rect.H >= 2 {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "◢", style, owner, LayerFloating)
 	}
@@ -1077,9 +1074,53 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	c.fillStyledRect(rect, StyleOverlay, owner, LayerOverlay)
 	c.drawStyledBox(rect, roundedBoxStyle, StyleOverlay, owner, LayerOverlay)
 	title := string(overlay.Kind)
-	c.writeTextStyled(rect.X+2, rect.Y, maxInt(0, rect.W-4), " "+title+" ", StyleAccent, owner, LayerOverlay)
+	renderChromeCardTitle(c, rect, title, overlayChromeState(overlay), "esc", StyleAccent, owner, LayerOverlay)
 	contentLines := renderContent(c, overlay.Content, contentRect)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
+}
+
+func renderChromeCardTitle(c *canvas, rect Rect, title string, state string, action string, style StyleToken, owner string, layer LayerKind) {
+	if rect.W < 4 || rect.H <= 0 {
+		return
+	}
+	titleX := rect.X + 2
+	actionWidth := DisplayWidth(action)
+	actionX := rect.X + rect.W - actionWidth - 2
+	if action != "" && rect.W >= actionWidth+8 {
+		c.overlayTextStyled(actionX, rect.Y, actionWidth, action, style, owner, layer)
+	}
+	titleLimit := rect.X + rect.W - 3
+	if action != "" && actionX > titleX {
+		titleLimit = actionX - 1
+	}
+	stateText := ""
+	if state != "" {
+		stateText = " " + state + " "
+	}
+	if stateText != "" && rect.W >= 34 {
+		stateWidth := DisplayWidth(stateText)
+		stateX := titleLimit - stateWidth
+		if stateX > titleX+DisplayWidth(title)+2 {
+			c.overlayTextStyled(stateX, rect.Y, stateWidth, stateText, style, owner, layer)
+			titleLimit = stateX - 1
+		}
+	}
+	if titleLimit > titleX {
+		c.overlayTextStyled(titleX, rect.Y, titleLimit-titleX, " "+title+" ", style, owner, layer)
+	}
+}
+
+func overlayChromeState(overlay OverlayVM) string {
+	if overlay.Content.Pending {
+		return "… pending"
+	}
+	if overlay.Content.Error != "" {
+		return "× error"
+	}
+	if overlay.Content.Empty {
+		return "○ empty"
+	}
+	return "● open"
 }
 
 func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
@@ -1096,26 +1137,42 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 			break
 		}
 		toast := toasts[toastIndex]
-		text := "[" + string(toast.Severity) + "] " + toast.Title
-		if toast.Pending {
-			text += " ..."
-		}
-		if c.width >= 40 && toast.Body != "" {
-			text += " " + toast.Body
-		}
 		owner := "toast:" + toast.ID
 		c.fillStyledRect(rect, StyleToast, owner, LayerToast)
 		c.drawStyledBox(rect, roundedBoxStyle, toastSeverityStyle(toast.Severity), owner, LayerToast)
-		if rect.H > 1 {
-			textWidth := minInt(DisplayWidth(text), maxInt(0, rect.W-5))
-			c.writeTextStyled(rect.X+1, rect.Y+1, textWidth, text, toastSeverityStyle(toast.Severity), owner, LayerToast)
-			if rect.W >= 8 {
+		if rect.H > 2 && rect.W > 4 {
+			c.writeTextStyled(rect.X+1, rect.Y+1, 1, "▌", toastSeverityStyle(toast.Severity), owner, LayerToast)
+			title := toastTitleLine(toast)
+			body := toastBodyLine(toast)
+			if body != "" && rect.W >= 28 {
+				title += "  " + body
+			}
+			c.writeTextStyled(rect.X+3, rect.Y+1, maxInt(0, rect.W-8), title, toastSeverityStyle(toast.Severity), owner, LayerToast)
+			if rect.W >= 10 {
 				c.writeTextStyled(rect.X+rect.W-4, rect.Y+1, 3, "[×]", StyleMuted, owner, LayerToast)
 			}
 		}
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
 	}
 	return layers
+}
+
+func toastTitleLine(toast ToastVM) string {
+	title := toast.Title
+	if title == "" {
+		title = string(toast.Severity)
+	}
+	if toast.Pending {
+		title += " ..."
+	}
+	return title
+}
+
+func toastBodyLine(toast ToastVM) string {
+	if toast.Body == "" {
+		return string(toast.Severity)
+	}
+	return string(toast.Severity) + "  " + toast.Body
 }
 
 func toastSeverityStyle(severity ToastSeverity) StyleToken {

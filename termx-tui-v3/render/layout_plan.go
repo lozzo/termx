@@ -166,6 +166,9 @@ func measureOverlayContentRect(rect Rect) Rect {
 	if rect.W <= 0 || rect.H <= 0 {
 		return Rect{}
 	}
+	if rect.W >= 28 && rect.H >= 6 {
+		return Rect{X: rect.X + 3, Y: rect.Y + 2, W: maxInt(0, rect.W-6), H: maxInt(0, rect.H-3)}
+	}
 	return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
 }
 
@@ -174,18 +177,20 @@ func measureToasts(toasts []ToastVM, viewport Rect) []Rect {
 		return nil
 	}
 	rects := make([]Rect, 0, len(toasts))
-	y := 1
-	for i := len(toasts) - 1; i >= 0 && y < viewport.H; i-- {
-		width := minInt(viewport.W, 36)
+	y := 2
+	bottomLimit := maxInt(0, viewport.H-1)
+	for i := len(toasts) - 1; i >= 0 && y < bottomLimit; i-- {
+		width := minInt(viewport.W-2, 38)
 		if viewport.W < 40 {
 			width = viewport.W
 		}
-		rect := Rect{X: maxInt(0, viewport.W-width), Y: y, W: width, H: minInt(3, viewport.H-y)}
-		if rect.H <= 0 {
+		height := minInt(3, bottomLimit-y)
+		if height < 3 {
 			break
 		}
+		rect := Rect{X: maxInt(0, viewport.W-width-1), Y: y, W: width, H: height}
 		rects = append(rects, rect)
-		y += rect.H
+		y += rect.H + 1
 	}
 	return rects
 }

@@ -284,7 +284,7 @@ func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !linesContain(frame.Lines, "浮窗🚀 active") || !linesContain(frame.Lines, "floating body 世界") {
+	if !linesContain(frame.Lines, "浮窗🚀") || !linesContain(frame.Lines, "● active") || !linesContain(frame.Lines, "floating body 世界") {
 		t.Fatalf("expected floating title/content, got %#v", frame.Lines)
 	}
 	if !styledLinesContain(frame.StyledLines, "╭", StyleAccent) || !styledLinesContain(frame.StyledLines, "╯", StyleAccent) {
@@ -463,7 +463,7 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if !linesContain(result.Lines(), "picker pending") {
 		t.Fatalf("expected terminal picker overlay, got %#v", result.Lines())
 	}
-	if !linesContain(result.Lines(), "[warning] warn 🚀 ... 世界") {
+	if !linesContain(result.Lines(), "warn 🚀 ...  warning  世界") || !linesContain(result.Lines(), "▌") {
 		t.Fatalf("expected toast, got %#v", result.Lines())
 	}
 	if !linesContain(result.Lines(), "[×]") {
@@ -476,6 +476,31 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 		t.Fatalf("expected styled warning toast and overlay ANSI, got %#v", result.ANSILines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 50)
+}
+
+func TestFrameworkToastDoesNotOverwritePaneTopChrome(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 64, H: 16}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+		}}},
+		Toasts: []ToastVM{{ID: "toast-1", Severity: ToastInfo, Title: "pane.split", Body: "created"}},
+	}})
+	lines := result.Lines()
+
+	if !strings.Contains(lines[0], "┌─ shell") || !strings.Contains(lines[0], "● active") || !strings.Contains(lines[0], "[x]") {
+		t.Fatalf("toast must not overwrite pane top chrome, got %#v", lines)
+	}
+	if strings.Contains(lines[0], "pane.split") {
+		t.Fatalf("toast should start below pane top chrome, got %#v", lines)
+	}
+	if !linesContain(lines, "pane.split  info  created") {
+		t.Fatalf("expected modern toast title/body below chrome, got %#v", lines)
+	}
+	assertAllRowsWidth(t, lines, 64)
 }
 
 func TestFrameworkToastDoesNotChangeBodyLayout(t *testing.T) {

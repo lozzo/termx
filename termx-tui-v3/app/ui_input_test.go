@@ -1068,7 +1068,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendChar("t")
 	sendKey(input.KeyEsc)
 	floatingFrame := lastFrame(t, host.Frames())
-	if len(runtime.State().Shell.Floatings) != 1 || !frameContains(floatingFrame, "floating active") {
+	if len(runtime.State().Shell.Floatings) != 1 || !frameContains(floatingFrame, "floating") || !frameContains(floatingFrame, "● active") {
 		t.Fatalf("expected floating pane product shell content, shell=%#v frame=%#v", runtime.State().Shell, floatingFrame.Lines)
 	}
 	floatingClose := frameActionHitRegion(t, floatingFrame, "floating.close", "floating-1")
@@ -1302,7 +1302,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		}
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "floating active") || !frameContains(frame, "empty pane") {
+	if !frameContains(frame, "floating") || !frameContains(frame, "● active") || !frameContains(frame, "empty pane") {
 		t.Fatalf("expected rendered floating pane, got %#v", frame.Lines)
 	}
 

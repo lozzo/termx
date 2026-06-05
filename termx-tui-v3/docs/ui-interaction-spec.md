@@ -1323,7 +1323,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - pane 顶部 chrome 已有稳定 title、state、action 槽位；owner/follower、copy/resize 等更细 token 和目标截图级布局后续逐步接入。
 - split line 使用共享外框加内部共享 divider，content rect 会避开外框和 divider；terminal resize 与 copy-history rebind 必须使用新的 content cols/rows。
 - top bar 和 bottom bar 已在切片 80 重绘为分段产品栏：背景填满整行，workspace/tab/mode/action/active/summary 通过稳定 token 输出，accent/muted/warning 语义可见，Unicode `│` 分隔，窄屏下快捷键按优先级压缩且 error/exited 关键状态优先保留。
-- toast 和 Terminal Picker overlay 已使用 styled rounded card；toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 仍需按视觉审计做实体卡片质感、padding、selected row 和 action 槽位对齐。
+- toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 已在切片 82 完成第一轮实体 card 视觉对齐：toast 具备 severity accent 竖条、右上角留白、close action 和 title/body 合并裁切；overlay/floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
 - floating pane 一期已使用独立 styled bordered chrome，具备 reducer-owned state、z-order、active 状态、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close 和 content rect 裁切。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
@@ -1339,7 +1339,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前未完成但产品要求仍保留：
 
-- 视觉对齐返工：top bar、bottom bar、pane chrome 和 split line 已完成第一轮重绘；后续按 `visual-alignment-audit.md` 推进 toast、overlay、floating、copy-history、Terminal Pool/Workbench Tree 和真实默认入口截图级验收。
+- 视觉对齐返工：top bar、bottom bar、pane chrome、split line、toast、overlay 和 floating 已完成第一轮重绘；后续按 `visual-alignment-audit.md` 推进 copy-history、Terminal Pool/Workbench Tree 内容细节和真实默认入口截图级验收。
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 最终 polish：logical-line 拼接提示、跨 logical-line selection affordance、窄屏退化和最终视觉层级。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。

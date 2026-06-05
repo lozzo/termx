@@ -98,8 +98,8 @@
 
 当前问题：
 
-- toast 已有卡片和 lifecycle，但现代感、padding、severity/accent 侧边和右上角定位仍需 polish。
-- 当前 smoke 中 toast 更像功能占位，不像用户第一张参考图的消息系统。
+- 切片 82 已把 toast 从功能占位推进到右上角实体消息：rounded card、severity accent 竖条、title/body 合并裁切、close action、右侧/顶部留白和 ANSI style 已落地。
+- toast 仍不是最终品牌视觉；后续可继续 polish 动画、progress 和更细的 severity icon，但不得回退成简单文本。
 
 目标要求：
 
@@ -112,8 +112,8 @@
 
 当前问题：
 
-- Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 已能显示，但视觉仍偏基础。
-- modal padding、title/action 槽位、selected row、search row 和实体卡片感需要统一。
+- 切片 82 已把 Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 的 framework chrome 推进为带 padding 的实体 card：title/state/action 槽位、content padding、ANSI reset 和 cursor/hit region 语义已同步。
+- overlay 内部 content 的 selected row、detail、preview 仍可继续做最终产品视觉 polish。
 
 目标要求：
 
@@ -126,8 +126,8 @@
 
 当前问题：
 
-- floating 已有独立边框和基本操作，但视觉还没有达到目标截图里的 pane/card 层级。
-- active/focus、title/action、遮挡、裁切和底层 pane 关系需要 polish。
+- 切片 82 已把 floating chrome 推进为独立实体 pane card：title/state/action 槽位、active accent、resize affordance、content rect 裁切和遮挡层级已对齐。
+- floating 的 drag affordance、attach as floating 和更细的 z-order 视觉仍可继续深化。
 
 目标要求：
 
@@ -181,8 +181,9 @@
 
 切片 82 负责：
 
-- toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 视觉对齐。
-- modal/card padding、title/action、selected row、severity/accent、ANSI reset 和宽字符安全。
+- 已完成 toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 的第一轮视觉对齐。
+- 已完成 modal/card padding、title/action、severity/accent、ANSI reset 和宽字符安全的 framework 层验收。
+- selected row、detail/preview 和最终品牌视觉仍允许在切片 83 后继续 polish。
 
 切片 83 负责：
 

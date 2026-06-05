@@ -43,7 +43,7 @@ func TestMeasureLayoutPlansBodyPanelOverlayAndToastRects(t *testing.T) {
 	if plan.OverlayContentRect.W > plan.Overlay.W || plan.OverlayContentRect.H > plan.Overlay.H {
 		t.Fatalf("overlay content must stay inside overlay rect overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
-	if len(plan.Toasts) != 1 || plan.Toasts[0].Y != 1 || plan.Toasts[0].W == 0 {
+	if len(plan.Toasts) != 1 || plan.Toasts[0].Y != 2 || plan.Toasts[0].W == 0 {
 		t.Fatalf("unexpected toast rects %#v", plan.Toasts)
 	}
 }

@@ -853,8 +853,9 @@ cache 原则：
 - 根据 `termx-tui-v3/docs/visual-alignment-audit.md`，当前默认 TUI 仍未达到用户截图要求的完整 `tuiv2` 视觉等级；后续必须继续按视觉返工切片推进。
 - 切片 80 已把 shell header/footer 从稀疏文本条推进到分段产品栏。
 - 切片 81 已把 pane chrome / split line 从基础线框推进到 shared chrome：card panel 与 split line 都使用 square 细线、title/state/action 槽位、active accent、inactive muted、共享外框、连接点合成和 content rect 宽度安全。
+- 切片 82 已把 overlay/toast/floating 从基础可见 chrome 推进到实体 card：toast 具备 severity accent 竖条、title/body 合并裁切、close action 和右上角留白；overlay 与 floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
 - 后续不得再把无样式纯文本线框当作默认 UI 完成标准。
-- 后续深化应先完成 overlay/toast/floating 和真实默认入口视觉验收，不得回退到 terminal-only renderer。
+- 后续深化应先完成真实默认入口视觉验收，不得回退到 terminal-only renderer。
 
 非目标：
 

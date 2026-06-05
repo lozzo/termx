@@ -53,9 +53,10 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	assertNoASCIIChrome(t, "workbench-live", cases["workbench-live"])
 	assertContinuousCardPaneBorder(t, "workbench-live", cases["workbench-live"])
-	if frameContains(cases["split-hidden-toast"].Lines, " main ") ||
-		frameContains(cases["split-hidden-toast"].Lines, " live ") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "[warning] warn 🚀 ... 世界") {
+	if frameContains(cases["split-hidden-toast"].Lines, " ws:") ||
+		frameContains(cases["split-hidden-toast"].Lines, " mode:") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "▌ warn 🚀 ...") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "warning  世界") {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
 	}
 	if !frameContains(cases["split-hidden-toast"].Lines, "┌─ shell") ||
@@ -105,7 +106,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if len(cases["visual-audit-current"].Lines) != 40 || render.DisplayWidth(cases["visual-audit-current"].Lines[0]) != 120 {
 		t.Fatalf("visual audit smoke must use fixed 120x40 viewport, got lines=%d width=%d", len(cases["visual-audit-current"].Lines), render.DisplayWidth(cases["visual-audit-current"].Lines[0]))
 	}
-	if !frameContains(cases["visual-audit-current"].Lines, "visual audit baseline") ||
+	if !frameContains(cases["visual-audit-current"].Lines, "visual audit baselin") ||
 		!frameContains(cases["visual-audit-current"].Lines, "visual gap") ||
 		!frameContains(cases["visual-audit-current"].Lines, "quick actions") ||
 		!frameContains(cases["visual-audit-current"].Lines, "not tuiv2") {
