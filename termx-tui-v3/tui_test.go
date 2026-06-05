@@ -72,9 +72,13 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
 	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
-	if !frameContains(cases["terminal-picker"].Lines, "⌕ search [filter terminals]") ||
+	if !frameContains(cases["terminal-picker"].Lines, "Search terminal name") ||
+		!frameContains(cases["terminal-picker"].Lines, "Select terminal source state target") ||
 		!frameContains(cases["terminal-picker"].Lines, "termx-picker") ||
-		!frameContains(cases["terminal-picker"].Lines, "[new]  new terminal") {
+		!frameContains(cases["terminal-picker"].Lines, "[attach]  Attach Selected") ||
+		!frameContains(cases["terminal-picker"].Lines, "[new]  New Shell") ||
+		frameContains(cases["terminal-picker"].Lines, "filter terminals") ||
+		frameContains(cases["terminal-picker"].Lines, "PREVIEW pane:") {
 		t.Fatalf("terminal picker smoke missing product content: %#v", cases["terminal-picker"].Lines)
 	}
 	if !frameContains(cases["terminal-pool-page"].Lines, "Terminal Pool") ||
@@ -202,7 +206,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	requiredOverlays := map[string][]string{
-		"terminal-picker":     {"┌─ terminal picker", "● open", "esc", "⌕ search [filter terminals]", "[new]  new terminal"},
+		"terminal-picker":     {"┌─ terminal picker", "● open", "esc", "Search terminal name", "Select terminal source state target", "[attach]  Attach Selected", "[new]  New Shell"},
 		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill Terminal"},
 		"workbench-tree-page": {"┌─ workbench tree", "● open", "esc", "Workbench Tree", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open / Focus"},
 		"prompt-overlay":      {"┌─ prompt", "● open", "esc", "Command Prompt", "重命名"},
@@ -214,6 +218,12 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 			if !frameContains(frame.Lines, marker) {
 				t.Fatalf("smoke case %s missing overlay visual marker %q: %#v", name, marker, frame.Lines)
 			}
+		}
+	}
+	picker := cases["terminal-picker"]
+	for _, stale := range []string{"filter terminals", "PREVIEW pane:"} {
+		if frameContains(picker.Lines, stale) {
+			t.Fatalf("terminal picker regressed to engineering label %q: %#v", stale, picker.Lines)
 		}
 	}
 	split := cases["split-hidden-toast"]

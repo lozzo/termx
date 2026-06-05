@@ -67,7 +67,10 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		t.Fatalf("ctrl-f must not be sent to terminal, got %#v", terminal.Inputs)
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "terminal picker") || !frameContains(last, "⌕ search [filter terminals]") {
+	if !frameContains(last, "terminal picker") ||
+		!frameContains(last, "Search terminal name") ||
+		!frameContains(last, "Select terminal source state target") ||
+		frameContains(last, "filter terminals") {
 		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
 	}
 }
@@ -110,7 +113,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 		t.Fatalf("expected picker query retained in reducer state, got %#v", runtime.State().Shell.Overlay)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if !frameContains(queryFrame, "⌕ search 日志") || !frameContains(queryFrame, "▌ 日志🚀") {
+	if !frameContains(queryFrame, "Search 日志") || !frameContains(queryFrame, "▌ 日志🚀") || !frameContains(queryFrame, "DETAIL 日志🚀") {
 		t.Fatalf("expected filtered picker frame, got %#v", queryFrame.Lines)
 	}
 	if len(terminal.Inputs) != 0 {

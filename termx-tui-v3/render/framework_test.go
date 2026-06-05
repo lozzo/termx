@@ -477,8 +477,8 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if firstLayer(t, result, LayerOverlay).Rect.W == 0 || firstLayer(t, result, LayerToast).Rect.W == 0 {
 		t.Fatalf("expected overlay and toast layers, got %#v", result.Layers)
 	}
-	if !linesContain(result.ANSILines(), "\x1b[38;2;240;196;92m") || !linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") || !linesContain(result.ANSILines(), "\x1b[48;2;21;19;29m") {
-		t.Fatalf("expected styled warning toast and overlay ANSI, got %#v", result.ANSILines())
+	if !linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") {
+		t.Fatalf("expected styled overlay ANSI, got %#v", result.ANSILines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 50)
 }
