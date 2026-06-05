@@ -1,18 +1,17 @@
 package render
 
 import (
+	"strconv"
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
 )
 
 const (
-	minFrameWidth            = 24
-	minFrameHeight           = 8
-	defaultWidth             = 80
-	defaultHeight            = 24
-	paneChromeActionCluster  = "─[o]─[_]─[Z]─[x]"
-	paneChromeCompactActions = "─[Z]─[x]"
+	minFrameWidth  = 24
+	minFrameHeight = 8
+	defaultWidth   = 80
+	defaultHeight  = 24
 )
 
 type canvas struct {
@@ -489,13 +488,13 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		}
 	}
 
-	overlayLayer := renderOverlay(c, shell.Overlay, plan.Overlay, plan.OverlayContentRect)
-	if overlayLayer.Rect.W > 0 && overlayLayer.Rect.H > 0 {
-		layers = append(layers, overlayLayer)
-	}
 	toastLayers := renderToasts(c, shell.Toasts, plan.Toasts)
 	for _, layer := range toastLayers {
 		layers = append(layers, layer)
+	}
+	overlayLayer := renderOverlay(c, shell.Overlay, plan.Overlay, plan.OverlayContentRect)
+	if overlayLayer.Rect.W > 0 && overlayLayer.Rect.H > 0 {
+		layers = append(layers, overlayLayer)
 	}
 
 	lines := c.lines()
@@ -526,27 +525,14 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	}
 	left := []barSegment{
 		barText(" "+workspace+" ", StyleStatusAccent, 1),
-		barSep(),
-		barText(" "+tab+" ", StyleStatusAccent, 1),
-		barText(" × ", StyleStatusWarning, 2),
-		barText(" [＋] ", StyleStatusAccent, 3),
 	}
-	if header.Notice != "" {
-		left = append(left, barSep(), barText(" ! "+header.Notice+" ", StyleStatusWarning, 2))
-	}
+	left = append(left, headerTabSegments(tab)...)
+	left = append(left, barText(" [＋] ", StyleStatusAccent, 3))
+	left = append(left, barText(" [ ] ", StyleStatusMuted, 4))
 	right := []barSegment{}
-	if header.ActivePane != "" {
-		right = append(right, barText(" ● "+header.ActivePane+" ", StyleStatusAccent, 1))
+	if header.Notice != "" {
+		right = append(right, barText(" ! "+header.Notice+" ", StyleStatusWarning, 0))
 	}
-	right = append(right, barText(" · ", StyleStatusMuted, 3))
-	right = append(right, barText(" ◆ owner ", StyleStatus, 2))
-	if header.TerminalSummary != "" {
-		right = append(right, barText(" · "+compactHeaderSummary(header.TerminalSummary)+" ", StyleStatusMuted, 2))
-	}
-	if header.FloatingSummary != "" {
-		right = append(right, barText(" · "+compactHeaderSummary(header.FloatingSummary)+" ", StyleStatusMuted, 2))
-	}
-	right = append(right, barText(" · [o]─[_]─[Z]─[x] ", StyleStatusMuted, 3))
 	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:header", LayerChrome)
 }
 
@@ -559,15 +545,13 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 		mode = "live"
 	}
 	hintIsCritical := strings.HasPrefix(footer.Hint, "error:") || strings.HasPrefix(footer.Hint, "exited:")
-	left := []barSegment{
-		barText(" "+strings.ToUpper(mode)+" ", StyleStatusAccent, 1),
-	}
+	left := []barSegment{barText(" "+strings.ToUpper(mode)+" ", StyleStatusAccent, 1)}
 	if len(footer.Actions) > 0 {
 		left = appendFooterActionSegments(left, footer.Actions, rect.W)
 	}
-	left = appendBarSegment(left, compactActiveTarget(footer.ActiveTarget), StyleStatus, 1)
+	left = appendBarSegment(left, compactActiveTarget(footer.ActiveTarget), StyleStatusAccent, 2)
 	if footer.GlobalSummary != "" {
-		left = appendBarSegment(left, compactGlobalSummary(footer.GlobalSummary), StyleStatusMuted, 2)
+		left = appendBarSegment(left, compactGlobalSummary(footer.GlobalSummary), StyleStatusMuted, 3)
 	}
 	if footer.Hint != "" {
 		style := StyleStatusMuted
@@ -580,6 +564,45 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 	}
 	right := []barSegment{barText(" "+footerReadyToken(footer)+" ", StyleStatusMuted, 3)}
 	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
+}
+
+func headerTabSegments(tab string) []barSegment {
+	fields := strings.Fields(tab)
+	if len(fields) == 0 {
+		fields = []string{"[main]"}
+	}
+	segments := make([]barSegment, 0, len(fields)*3)
+	for index, field := range fields {
+		active := strings.HasPrefix(field, "[") && strings.HasSuffix(field, "]")
+		if len(fields) == 1 {
+			active = true
+		}
+		label := strings.Trim(field, "[]")
+		if label == "" {
+			label = field
+		}
+		if active {
+			segments = append(segments,
+				barText(" ▎", StyleStatusAccent, 1),
+				barText(" "+intLabel(index+1)+" ", StyleStatusAccent, 1),
+				barText(label+" ", StyleStatus, 1),
+				barText("× ", StyleStatusWarning, 2),
+			)
+			continue
+		}
+		segments = append(segments,
+			barText(" "+intLabel(index+1)+" ", StyleStatusMuted, 2),
+			barText(label+" ", StyleStatusMuted, 2),
+		)
+	}
+	return segments
+}
+
+func intLabel(value int) string {
+	if value < 0 {
+		value = 0
+	}
+	return strconv.Itoa(value)
 }
 
 func appendFooterSegment(base string, segment string, width int) string {
@@ -1083,18 +1106,18 @@ func paneChromeStateText(panel PanelVM) string {
 	if panel.Content.Empty {
 		state = "empty"
 	}
-	marker := "◦"
+	marker := paneChromeWaitingGlyph()
 	if panel.Active {
-		marker = "●"
+		marker = paneChromeRunningGlyph()
 	}
 	if panel.Content.Pending {
 		marker = "…"
 	}
 	if panel.Content.Error != "" {
-		marker = "×"
+		marker = paneChromeExitedGlyph()
 	}
 	if panel.Content.Empty {
-		marker = "○"
+		marker = paneChromeWaitingGlyph()
 	}
 	return marker + " " + state
 }
@@ -1182,7 +1205,7 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 		return nil
 	}
 
-	// 顶边槽位只覆盖必要 token，其余单元格保留底层横线，避免标题和按钮之间出现断线。
+	// 参考 tuiv2：顶边先画完整线，再只用固定槽位覆盖 title/state/share/role/action。
 	actions := paneChromeActionText(rect.W)
 	actionWidth := DisplayWidth(actions)
 	rightLimit := innerRight
@@ -1220,28 +1243,54 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 
 func paneChromeActionText(width int) string {
 	switch {
-	case width >= 52:
-		return paneChromeActionCluster
-	case width >= 20:
-		return paneChromeCompactActions
+	case width >= 54:
+		return paneChromeActionClusterText()
+	case width >= 24:
+		return paneChromeCompactActionText()
 	case width >= 8:
-		return "[x]"
+		return paneChromeBracketToken(paneChromeCloseGlyph())
 	default:
 		return ""
 	}
 }
 
+func paneChromeActionClusterText() string {
+	return strings.Join([]string{
+		paneChromeBracketToken(paneChromeSplitHorizontalGlyph()),
+		paneChromeBracketToken(paneChromeSplitVerticalGlyph()),
+		paneChromeBracketToken(paneChromeZoomGlyph()),
+		paneChromeBracketToken(paneChromeCloseGlyph()),
+	}, "─")
+}
+
+func paneChromeCompactActionText() string {
+	return strings.Join([]string{
+		paneChromeBracketToken(paneChromeZoomGlyph()),
+		paneChromeBracketToken(paneChromeCloseGlyph()),
+	}, "─")
+}
+
+func paneChromeBracketToken(glyph string) string {
+	glyph = strings.TrimSpace(glyph)
+	if glyph == "" {
+		glyph = "?"
+	}
+	return "[" + glyph + "]"
+}
+
 func paneChromeRightSlots(panel PanelVM, borderStyle StyleToken, width int) []paneChromeTopSlot {
-	state := " " + paneChromeStateMarker(panel) + " "
+	state := " " + paneChromeStateMarker(panel)
 	slots := []paneChromeTopSlot{
 		{text: state, style: paneChromeStateStyle(panel, borderStyle), priority: 2},
-		{text: " · ◆ owner ", style: paneChromeOwnerStyle(panel, borderStyle), priority: 1},
 	}
-	if width >= 58 {
-		slots = append(slots[:1], append([]paneChromeTopSlot{{text: " · ↔2 ", style: paneChromeMetaStyle(panel), priority: 3}}, slots[1:]...)...)
+	if width >= 36 {
+		slots = append(slots, paneChromeTopSlot{text: " ⇄2 ", style: paneChromeMetaStyle(panel), priority: 3})
+	}
+	if width >= 46 {
+		slots = append(slots, paneChromeTopSlot{text: " ◆ owner ", style: paneChromeOwnerStyle(panel, borderStyle), priority: 1})
 	}
 	if width >= 74 {
-		slots = append(slots, paneChromeTopSlot{text: " · 1/31 ", style: paneChromeMetaStyle(panel), priority: 4})
+		slots = append(slots, paneChromeTopSlot{text: " 1/31 ", style: paneChromeMetaStyle(panel), priority: 4})
 	}
 	return slots
 }
@@ -1342,15 +1391,15 @@ func paneChromeStateStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
 func paneChromeStateMarker(panel PanelVM) string {
 	switch {
 	case panel.Content.Error != "":
-		return "×"
+		return paneChromeExitedGlyph()
 	case panel.Content.Pending:
 		return "…"
 	case panel.Content.Empty:
-		return "○"
+		return paneChromeWaitingGlyph()
 	case panel.Active:
-		return "●"
+		return paneChromeRunningGlyph()
 	default:
-		return "◦"
+		return paneChromeWaitingGlyph()
 	}
 }
 
@@ -1373,12 +1422,12 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	state := "float"
 	if floating.Active {
-		state = "● float"
+		state = paneChromeRunningGlyph() + " float"
 	}
 	if floating.Collapsed {
-		state = "▾ collapsed"
+		state = paneChromeFloatingCollapseGlyph() + " collapsed"
 	}
-	renderChromeCardTitle(c, rect, title, state, "[x]", style, owner, LayerFloating)
+	renderChromeCardTitle(c, rect, title, state, paneChromeCloseActionText(), style, owner, LayerFloating)
 	if rect.W >= 2 && rect.H >= 2 {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "◢", style, owner, LayerFloating)
 	}
@@ -1416,10 +1465,18 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	owner := "overlay:" + string(overlay.Kind)
 	c.fillStyledRect(rect, StyleOverlay, owner, LayerOverlay)
 	c.drawStyledBox(rect, roundedBoxStyle, StyleOverlay, owner, LayerOverlay)
-	title := string(overlay.Kind)
+	title := overlayTitle(overlay.Kind)
 	renderChromeCardTitle(c, rect, title, overlayChromeState(overlay), "esc", StyleAccent, owner, LayerOverlay)
 	contentLines := renderContent(c, overlay.Content, contentRect)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
+}
+
+func overlayTitle(kind OverlayKind) string {
+	title := strings.TrimSpace(string(kind))
+	if title == "" {
+		return "overlay"
+	}
+	return strings.ReplaceAll(title, "-", " ")
 }
 
 func renderChromeCardTitle(c *canvas, rect Rect, title string, state string, action string, style StyleToken, owner string, layer LayerKind) {
@@ -1483,16 +1540,22 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 		owner := "toast:" + toast.ID
 		c.fillStyledRect(rect, StyleToast, owner, LayerToast)
 		c.drawStyledBox(rect, roundedBoxStyle, toastSeverityStyle(toast.Severity), owner, LayerToast)
-		if rect.H > 2 && rect.W > 4 {
+		if rect.H > 2 && rect.W > 8 {
 			c.writeTextStyled(rect.X+1, rect.Y+1, 1, "▌", toastSeverityStyle(toast.Severity), owner, LayerToast)
-			title := toastTitleLine(toast)
-			body := toastBodyLine(toast)
-			if body != "" && rect.W >= 28 {
-				title += "  ·  " + body
+			titleWidth := maxInt(0, rect.W-10)
+			c.writeTextStyled(rect.X+3, rect.Y+1, titleWidth, toastTitleLine(toast), toastSeverityStyle(toast.Severity), owner, LayerToast)
+			closeAction := paneChromeCloseActionText()
+			closeWidth := DisplayWidth(closeAction)
+			c.writeTextStyled(rect.X+rect.W-closeWidth-2, rect.Y+1, closeWidth, closeAction, StyleMuted, owner, LayerToast)
+			if rect.H > 3 {
+				meta := string(toast.Severity)
+				if toast.Pending {
+					meta += " · pending"
+				}
+				c.writeTextStyled(rect.X+3, rect.Y+2, maxInt(0, rect.W-6), meta, StyleMuted, owner, LayerToast)
 			}
-			c.writeTextStyled(rect.X+3, rect.Y+1, maxInt(0, rect.W-8), title, toastSeverityStyle(toast.Severity), owner, LayerToast)
-			if rect.W >= 10 {
-				c.writeTextStyled(rect.X+rect.W-4, rect.Y+1, 3, "[×]", StyleMuted, owner, LayerToast)
+			if rect.H > 4 && toast.Body != "" {
+				c.writeTextStyled(rect.X+3, rect.Y+3, maxInt(0, rect.W-6), toast.Body, StyleToast, owner, LayerToast)
 			}
 		}
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
@@ -1509,6 +1572,10 @@ func toastTitleLine(toast ToastVM) string {
 		title += " ..."
 	}
 	return title
+}
+
+func paneChromeCloseActionText() string {
+	return paneChromeBracketToken(paneChromeCloseGlyph())
 }
 
 func toastBodyLine(toast ToastVM) string {

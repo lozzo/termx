@@ -129,8 +129,8 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 	if overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentHelp {
 		return measurePageOverlay(viewport)
 	}
-	width := minInt(viewport.W-4, 48)
-	height := minInt(viewport.H-4, 8)
+	width := minInt(maxInt(54, viewport.W*3/5), viewport.W-8)
+	height := minInt(maxInt(10, viewport.H/3), viewport.H-4)
 	if width < 16 || height < 4 {
 		width = maxInt(8, viewport.W)
 		height = maxInt(3, minInt(viewport.H, 4))
@@ -144,8 +144,8 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 }
 
 func measurePageOverlay(viewport Rect) Rect {
-	width := minInt(viewport.W-4, 88)
-	height := minInt(viewport.H-4, 16)
+	width := minInt(maxInt(76, viewport.W-12), 132)
+	height := minInt(maxInt(18, viewport.H-8), viewport.H-6)
 	if width < 40 {
 		width = maxInt(8, viewport.W)
 	}
@@ -166,8 +166,11 @@ func measureOverlayContentRect(rect Rect) Rect {
 	if rect.W <= 0 || rect.H <= 0 {
 		return Rect{}
 	}
+	if rect.W >= 48 && rect.H >= 10 {
+		return Rect{X: rect.X + 4, Y: rect.Y + 3, W: maxInt(0, rect.W-8), H: maxInt(0, rect.H-5)}
+	}
 	if rect.W >= 28 && rect.H >= 6 {
-		return Rect{X: rect.X + 3, Y: rect.Y + 2, W: maxInt(0, rect.W-6), H: maxInt(0, rect.H-3)}
+		return Rect{X: rect.X + 2, Y: rect.Y + 2, W: maxInt(0, rect.W-4), H: maxInt(0, rect.H-3)}
 	}
 	return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
 }
@@ -177,18 +180,19 @@ func measureToasts(toasts []ToastVM, viewport Rect) []Rect {
 		return nil
 	}
 	rects := make([]Rect, 0, len(toasts))
-	y := 2
+	y := 3
 	bottomLimit := maxInt(0, viewport.H-1)
 	for i := len(toasts) - 1; i >= 0 && y < bottomLimit; i-- {
-		width := minInt(viewport.W-2, 38)
+		width := minInt(maxInt(42, viewport.W/3), 56)
+		width = minInt(width, viewport.W-4)
 		if viewport.W < 40 {
 			width = viewport.W
 		}
-		height := minInt(3, bottomLimit-y)
-		if height < 3 {
+		height := minInt(5, bottomLimit-y)
+		if height < 4 {
 			break
 		}
-		rect := Rect{X: maxInt(0, viewport.W-width-1), Y: y, W: width, H: height}
+		rect := Rect{X: maxInt(0, viewport.W-width-2), Y: y, W: width, H: height}
 		rects = append(rects, rect)
 		y += rect.H + 1
 	}
@@ -199,8 +203,9 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	regions := make([]HitRegion, 0)
 	// 命中区域按前景到背景排序，后续鼠标分发可以直接取第一个匹配项。
 	for _, rect := range plan.Toasts {
-		if rect.W >= 8 && rect.H >= 2 {
-			regions = appendRegion(regions, HitRegion{Kind: HitRegionToastClose, Rect: Rect{X: rect.X + rect.W - 4, Y: rect.Y + 1, W: 3, H: 1}}, plan.Viewport)
+		closeWidth := DisplayWidth(paneChromeCloseActionText())
+		if rect.W >= closeWidth+5 && rect.H >= 2 {
+			regions = appendRegion(regions, HitRegion{Kind: HitRegionToastClose, Rect: Rect{X: rect.X + rect.W - closeWidth - 2, Y: rect.Y + 1, W: closeWidth, H: 1}}, plan.Viewport)
 		}
 		regions = appendRegion(regions, HitRegion{Kind: HitRegionToast, Rect: rect}, plan.Viewport)
 	}
@@ -262,7 +267,11 @@ func paneActionRect(rect Rect) Rect {
 }
 
 func floatingActionRect(rect Rect) Rect {
-	return chromeActionRect(rect, 3)
+	if rect.W <= 0 {
+		return Rect{X: rect.X, Y: rect.Y, W: 0, H: 1}
+	}
+	width := minInt(DisplayWidth(paneChromeCloseActionText()), maxInt(0, rect.W-2))
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-width-2), Y: rect.Y, W: width, H: 1}
 }
 
 func chromeActionRect(rect Rect, width int) Rect {

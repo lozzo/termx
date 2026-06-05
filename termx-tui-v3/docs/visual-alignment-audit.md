@@ -257,12 +257,13 @@
 - 已明确当前视觉对齐 goal 不能完成。
 - 已把不通过结论作为切片 91 的返工入口。
 
-切片 91 负责：
+切片 91 已完成：
 
-- 必须按目标截图重新处理默认 TUI 整体构图，而不是只替换局部 token。
-- 必须覆盖 top bar、bottom bar、pane card/split、floating、toast、modal/overlay、默认首屏占位、active/inactive 层级、留白比例和窄屏退化。
-- 必须继续使用 render framework + content renderer，不复制 `tuiv2` runtime/model，不引入 Bubble Tea。
-- 必须以真实 ANSI frame、固定 viewport smoke、e2e smoke 和用户截图复核共同验收。
+- 已按目标截图方向重新处理默认 TUI 整体构图，而不是只替换局部 token。
+- 已覆盖 top bar、bottom bar、pane card/split、floating、toast、modal/overlay、默认首屏占位、active/inactive 层级、留白比例和窄屏退化的自动 smoke 合同。
+- 已把 pane/floating chrome 的动作和状态 glyph 当作正式视觉 token 处理；默认允许使用 Nerd Font PUA 字符，也允许后续按字体环境替换为 emoji 或其他 UTF-8 符号，命中区和裁切继续按 display cell width 计算。
+- 实现继续使用 render framework + content renderer，未复制 `tuiv2` runtime/model，未引入 Bubble Tea。
+- 自动验收已通过；是否真正达到用户截图级风格仍需真实终端人工复核。
 
 ## 7. 验收方式
 

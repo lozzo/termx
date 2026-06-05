@@ -127,10 +127,13 @@
 - 当前视觉对齐 goal 不能标记完成。
 - 自动 smoke、e2e、PTY ANSI 捕获、Unicode 线框、ANSI 颜色和 chrome token 都不能解除该不通过结论。
 - 后续切片 91 必须回到整体 UI 构图和视觉层级，重点处理 top/bottom bar 整屏感、pane/floating/toast 比例、留白、层级、active/inactive 强弱、默认首屏占位和真实截图级对照。
+- 切片 91 可以使用 Nerd Font、emoji 和其他 UTF-8 glyph 作为正式 chrome token；关键要求是通过 width helper 和 harness 保证显示宽度、裁切、命中区和 ANSI styled frame 一致，而不是退回纯 ASCII action 文案。
+
+切片 91 已完成三轮整体 UI 构图重绘，并通过自动准入；该结论仍不替代用户对目标截图风格的真实终端复核。
 
 ## 5. 手工复核入口
 
-后续切片 91 必须手工复核：
+切片 91 完成后必须手工复核：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
 - viewport：至少检查 `80x24`、`100x32`、`120x40`。
@@ -147,4 +150,4 @@
 
 - `git diff --check`
 
-切片 90 是文档归档切片，只要求 `git diff --check`。切片 91 进入实现后必须恢复完整准入：`cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check`。
+切片 90 是文档归档切片，只要求 `git diff --check`。切片 91 已恢复并通过完整准入：`cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check`。

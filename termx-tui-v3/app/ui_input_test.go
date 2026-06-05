@@ -67,7 +67,7 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		t.Fatalf("ctrl-f must not be sent to terminal, got %#v", terminal.Inputs)
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "terminal-picker") || !frameContains(last, "⌕ search [filter terminals]") {
+	if !frameContains(last, "terminal picker") || !frameContains(last, "⌕ search [filter terminals]") {
 		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
 	}
 }
@@ -1068,7 +1068,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendChar("t")
 	sendKey(input.KeyEsc)
 	floatingFrame := lastFrame(t, host.Frames())
-	if len(runtime.State().Shell.Floatings) != 1 || !frameContains(floatingFrame, "floating") || !frameContains(floatingFrame, "● float") {
+	if len(runtime.State().Shell.Floatings) != 1 || !frameContains(floatingFrame, "floating") || !frameContains(floatingFrame, render.DefaultPaneChromeGlyphs().Running+" float") {
 		t.Fatalf("expected floating pane product shell content, shell=%#v frame=%#v", runtime.State().Shell, floatingFrame.Lines)
 	}
 	floatingClose := frameActionHitRegion(t, floatingFrame, "floating.close", "floating-1")
@@ -1302,7 +1302,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		}
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "floating") || !frameContains(frame, "● float") || !frameContains(frame, "empty pane") {
+	if !frameContains(frame, "floating") || !frameContains(frame, render.DefaultPaneChromeGlyphs().Running+" float") || !frameContains(frame, "empty pane") {
 		t.Fatalf("expected rendered floating pane, got %#v", frame.Lines)
 	}
 
@@ -1324,6 +1324,12 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	after := runtime.State().Shell.Floatings[0].Rect
 	if after.W <= before.W || after.H <= before.H {
 		t.Fatalf("mouse resize should grow floating rect, before=%#v after=%#v", before, after)
+	}
+	if err := runtime.Post(ShellClearToastsMsg{}); err != nil {
+		t.Fatalf("post clear toasts before floating close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain clear toasts before floating close: %v", err)
 	}
 	closeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.close", "floating-1")
 	if err := host.SendInput(mouseEventAt(closeRegion.Rect)); err != nil {

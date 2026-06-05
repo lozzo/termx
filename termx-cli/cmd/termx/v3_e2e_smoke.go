@@ -280,7 +280,9 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		return fmt.Errorf("v3 e2e smoke: no frames rendered")
 	}
 	frame := frames[len(frames)-1]
-	required := []string{" main ", "[main]", "┌─ shell", " ● ", "◆ owner", "[o]─[_]─[Z]─[x]", "LIVE"}
+	glyphs := render.DefaultPaneChromeGlyphs()
+	actionCluster := "[" + glyphs.SplitHorizontal + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
+	required := []string{" main ", "▎ 1 main ×", "┌─ shell", " " + glyphs.Running, "◆ owner", actionCluster, "LIVE"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {

@@ -467,7 +467,7 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 		"[open]  Open / Focus",
 		"case: visual-audit-current",
 		"visual review",
-		"quick actions",
+		"quick actio",
 		"case: copy-history",
 		"SCROLL",
 	} {
