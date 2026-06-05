@@ -359,6 +359,8 @@ card panel：
 split line：
 
 - 相邻 panel 共享分割线。
+- 当前实现使用共享外框加内部共享 divider，而不是只画内部竖线或横线；外框和 divider 必须通过 box connection 合成为 `┬`、`┴`、`├`、`┤`、`┼`。
+- content rect 必须避开共享外框和 divider；terminal resize 与 copy-history rebind 使用 content rect 的 cols/rows，不使用 split leaf rect 的总宽高。
 - 更接近 tmux。
 - 提升 terminal 内容利用率。
 - chrome 必须更克制。
@@ -848,9 +850,11 @@ cache 原则：
 当前状态：
 
 - 上述目标中的 renderer 结构、styled `RenderResult`、ANSI `FrameSink`、cell matrix、theme token、基础 pane/header/footer/toast/overlay 路径已经作为工程基线落地。
-- 根据 `termx-tui-v3/docs/visual-alignment-audit.md`，当前默认 TUI 仍未达到用户截图要求的 `tuiv2` 视觉等级；后续必须继续按视觉返工切片推进。
+- 根据 `termx-tui-v3/docs/visual-alignment-audit.md`，当前默认 TUI 仍未达到用户截图要求的完整 `tuiv2` 视觉等级；后续必须继续按视觉返工切片推进。
+- 切片 80 已把 shell header/footer 从稀疏文本条推进到分段产品栏。
+- 切片 81 已把 pane chrome / split line 从基础线框推进到 shared chrome：card panel 与 split line 都使用 square 细线、title/state/action 槽位、active accent、inactive muted、共享外框、连接点合成和 content rect 宽度安全。
 - 后续不得再把无样式纯文本线框当作默认 UI 完成标准。
-- 后续深化应先完成 shell header/footer、pane chrome、overlay/toast/floating 和真实默认入口视觉验收，不得回退到 terminal-only renderer。
+- 后续深化应先完成 overlay/toast/floating 和真实默认入口视觉验收，不得回退到 terminal-only renderer。
 
 非目标：
 

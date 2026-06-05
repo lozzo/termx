@@ -93,7 +93,10 @@ func TestMeasureLayoutSplitsPanelsFromPurePlan(t *testing.T) {
 	if got, want := plan.Panels[1].Rect, (Rect{X: 20, Y: 0, W: 21, H: 10}); got != want {
 		t.Fatalf("unexpected right split rect got=%#v want=%#v", got, want)
 	}
-	if got, want := plan.Panels[1].ContentRect, (Rect{X: 21, Y: 1, W: 20, H: 9}); got != want {
+	if got, want := plan.Panels[0].ContentRect, (Rect{X: 1, Y: 1, W: 19, H: 8}); got != want {
+		t.Fatalf("unexpected left split content rect got=%#v want=%#v", got, want)
+	}
+	if got, want := plan.Panels[1].ContentRect, (Rect{X: 21, Y: 1, W: 19, H: 8}); got != want {
 		t.Fatalf("unexpected split content rect got=%#v want=%#v", got, want)
 	}
 }

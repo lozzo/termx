@@ -851,14 +851,10 @@ func renderCardPanel(c *canvas, layout PanelLayoutPlan) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	title := panelTitle(layout.Panel)
 	style := paneChromeStyle(layout.Panel)
 	owner := "pane:" + layout.Panel.ID
 	c.drawStyledPaneFrame(rect, style, owner, LayerPanel)
-	if rect.W > 4 {
-		c.overlayTextStyled(rect.X+2, rect.Y, rect.W-4, " "+title+" ", style, owner, LayerPanel)
-	}
-	renderPaneActionSlot(c, rect, layout.Panel, style, owner)
+	renderPaneChromeSlots(c, rect, layout.Panel, style, owner)
 }
 
 func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
@@ -866,20 +862,14 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	title := panelTitle(layout.Panel)
 	style := paneChromeStyle(layout.Panel)
 	owner := "pane:" + layout.Panel.ID
-	chrome := paneChromeText(layout.Panel, title)
-	if rect.X > 0 {
-		c.drawStyledConnectedVLine(rect.X, rect.Y, rect.H, style, owner, LayerPanel)
+	body := layout.Body
+	if body.W <= 0 || body.H <= 0 {
+		body = rect
 	}
-	topEndX := rect.X + rect.W - 1
-	if rect.X+rect.W < c.width {
-		topEndX++
-	}
-	c.drawStyledPaneHBorder(rect.X, topEndX, rect.Y, style, owner, LayerPanel, true)
-	c.overlayTextStyled(rect.X+1, rect.Y, maxInt(0, rect.W-2), chrome, style, owner, LayerPanel)
-	renderPaneActionSlot(c, rect, layout.Panel, style, owner)
+	c.drawStyledSplitPaneChrome(rect, body, style, owner, LayerPanel)
+	renderPaneChromeSlots(c, rect, layout.Panel, style, owner)
 }
 
 func panelTitle(panel PanelVM) string {
@@ -897,7 +887,7 @@ func paneChromeStyle(panel PanelVM) StyleToken {
 	return StyleMuted
 }
 
-func paneChromeText(panel PanelVM, title string) string {
+func paneChromeStateText(panel PanelVM) string {
 	state := "idle"
 	if panel.Active {
 		state = "active"
@@ -911,7 +901,103 @@ func paneChromeText(panel PanelVM, title string) string {
 	if panel.Content.Empty {
 		state = "empty"
 	}
-	return " " + title + " " + state
+	marker := "◦"
+	if panel.Active {
+		marker = "●"
+	}
+	if panel.Content.Pending {
+		marker = "…"
+	}
+	if panel.Content.Error != "" {
+		marker = "×"
+	}
+	if panel.Content.Empty {
+		marker = "○"
+	}
+	return marker + " " + state
+}
+
+func (c *canvas) drawStyledSplitPaneChrome(rect Rect, body Rect, style StyleToken, owner string, layer LayerKind) {
+	startX := rect.X
+	endX := splitPaneBorderEndX(rect, body)
+	topY := rect.Y
+	bottomY := body.Y + body.H - 1
+	c.drawStyledSplitHBorder(startX, endX, topY, body, style, owner, layer)
+	if rect.Y+rect.H >= body.Y+body.H {
+		c.drawStyledSplitHBorder(startX, endX, bottomY, body, style, owner, layer)
+	}
+	leftStartY, leftEndY := splitPaneVerticalRange(rect, body)
+	c.drawStyledPaneVBorder(rect.X, leftStartY, leftEndY, style, owner, layer)
+	if rect.X+rect.W >= body.X+body.W {
+		c.drawStyledPaneVBorder(body.X+body.W-1, leftStartY, leftEndY, style, owner, layer)
+	}
+}
+
+func splitPaneBorderEndX(rect Rect, body Rect) int {
+	endX := rect.X + rect.W - 1
+	if rect.X+rect.W < body.X+body.W {
+		endX++
+	}
+	return minInt(endX, body.X+body.W-1)
+}
+
+func splitPaneVerticalRange(rect Rect, body Rect) (int, int) {
+	startY := rect.Y + 1
+	endY := rect.Y + rect.H - 1
+	if rect.Y+rect.H >= body.Y+body.H {
+		endY--
+	}
+	return startY, endY
+}
+
+func (c *canvas) drawStyledSplitHBorder(startX int, endX int, y int, body Rect, style StyleToken, owner string, layer LayerKind) {
+	if startX > endX {
+		return
+	}
+	for x := startX; x <= endX; x++ {
+		connections := uint8(boxConnLeft | boxConnRight)
+		if x == startX {
+			connections = boxConnRight
+			if y > body.Y {
+				connections |= boxConnUp
+			}
+			if y < body.Y+body.H-1 {
+				connections |= boxConnDown
+			}
+		} else if x == endX {
+			connections = boxConnLeft
+			if y > body.Y {
+				connections |= boxConnUp
+			}
+			if y < body.Y+body.H-1 {
+				connections |= boxConnDown
+			}
+		}
+		c.mergeStyledBoxCell(x, y, connections, style, owner, layer)
+	}
+}
+
+func renderPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string) {
+	if rect.W < 4 || rect.H <= 0 {
+		return
+	}
+	actionX := paneActionRect(rect).X
+	if actionX <= rect.X {
+		actionX = rect.X + rect.W
+	}
+	titleLimit := minInt(actionX-1, rect.X+rect.W-2)
+	stateText := " " + paneChromeStateText(panel) + " "
+	stateWidth := DisplayWidth(stateText)
+	if rect.W >= 28 && actionX-stateWidth-2 > rect.X+4 {
+		stateX := actionX - stateWidth - 2
+		c.overlayTextStyled(stateX, rect.Y, stateWidth, stateText, style, owner, LayerPanel)
+		titleLimit = minInt(titleLimit, stateX-1)
+	}
+	titleX := rect.X + 2
+	if titleLimit > titleX {
+		c.overlayTextStyled(titleX, rect.Y, titleLimit-titleX, " "+panelTitle(panel)+" ", style, owner, LayerPanel)
+	}
+	renderPaneActionSlot(c, rect, panel, style, owner)
 }
 
 func renderPaneActionSlot(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string) {

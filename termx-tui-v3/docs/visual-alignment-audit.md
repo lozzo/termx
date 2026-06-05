@@ -28,6 +28,7 @@
 - reducer-owned viewport，固定 viewport 下 frame 行数和每行 display width 可以稳定。
 - card/split panel、header/footer hide、toast lifecycle、overlay、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace 的第一版产品壳。
 - 切片 80 后，header/footer 已从拼接文本条改为分段产品栏：workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔。
+- 切片 81 后，pane chrome 已从基础线框推进到 `tuiv2` 风格的 shared chrome：card panel 与 split line 都使用 square 细线、顶边 title/state/action 槽位、active accent、inactive muted、连续外框和宽字符安全 content rect。
 - `go run ./termx-cli/cmd/termx v3 smoke` 可输出多个非交互 smoke case。
 
 当前仍不足：
@@ -81,9 +82,9 @@
 
 当前问题：
 
-- pane chrome 已有 square glyph 和 ANSI accent，但视觉密度、title/state/action 槽位仍不足。
-- active/inactive 的差异在 smoke 中存在，但真实观感不够接近 `tuiv2` 截图。
-- split line 与 card panel 需要统一 slot 语义，避免“线是连续的，但不像产品面板”。
+- 切片 81 已完成第一轮 pane chrome 视觉重绘，card panel 与 split line 都具备稳定 title/state/action 槽位、连续 square 外框和 active/inactive style。
+- split line 现在使用共享外框与共享分割线，content rect 会避开外边框和 divider；terminal resize 与 copy rebind 也按新的 content rect cols/rows 计算。
+- 仍未完全达到 `tuiv2` 截图中 owner/follower/action token、tab strip 侧信息和更高密度 pane 状态的完整细节。
 
 目标要求：
 
@@ -173,9 +174,10 @@
 
 切片 81 负责：
 
-- pane chrome 与 split line 重绘。
-- active/inactive accent/muted 视觉对齐。
-- card/split 两种 tiled panel 的 border、slot、content rect 和 hit region 对齐。
+- 已完成 pane chrome 与 split line 重绘。
+- 已完成 active/inactive accent/muted 视觉对齐。
+- 已完成 card/split 两种 tiled panel 的 border、slot、content rect 和 hit region 对齐。
+- 已明确 split line 使用共享外框语义，不能再用裸内部 divider 造成边界感弱或纵线不连续。
 
 切片 82 负责：
 

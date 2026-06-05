@@ -216,7 +216,7 @@ func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 39, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 23, 8, []state.HistoryRow{{Text: "sized-window", LineID: 30}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 22, 8, []state.HistoryRow{{Text: "sized-window", LineID: 30}})},
 		},
 	}
 	host := NewFakeTerminalHost(16)
@@ -256,13 +256,13 @@ func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
 		t.Fatalf("drain pane size rebind: %v", err)
 	}
 
-	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 23 {
+	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 22 {
 		t.Fatalf("pane size command must rebind copy mode at active content cols, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().CopyMode.BoundCols != 23 {
+	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().CopyMode.BoundCols != 22 {
 		t.Fatalf("expected copy mode rebound to sized window, got %#v", runtime.State().CopyMode)
 	}
-	if runtime.State().History.Token != "tok-2" || runtime.State().History.Cols != 23 || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "sized-window" {
+	if runtime.State().History.Token != "tok-2" || runtime.State().History.Cols != 22 || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "sized-window" {
 		t.Fatalf("pane size rebind must replace authoritative history window, got %#v", runtime.State().History)
 	}
 }

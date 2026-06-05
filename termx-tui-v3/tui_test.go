@@ -58,8 +58,10 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["split-hidden-toast"].Lines, "[warning] warn 🚀 ... 世界") {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
 	}
-	if !frameContains(cases["split-hidden-toast"].Lines, "┌ shell pending") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "┬ logs active") ||
+	if !frameContains(cases["split-hidden-toast"].Lines, "┌─ shell") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "… pending") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "┬─ logs") ||
+		!frameContains(cases["split-hidden-toast"].Lines, "● active") ||
 		render.SliceCells(cases["split-hidden-toast"].Lines[0], render.DisplayWidth(cases["split-hidden-toast"].Lines[0])-1, render.DisplayWidth(cases["split-hidden-toast"].Lines[0])) != "┐" {
 		t.Fatalf("split hidden toast smoke should keep a complete split-line top boundary, got %#v", cases["split-hidden-toast"].Lines)
 	}

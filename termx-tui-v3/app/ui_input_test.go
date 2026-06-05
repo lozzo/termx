@@ -840,8 +840,8 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	}
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 36, 7, []state.HistoryRow{{Text: "copy-old", LineID: 20}})},
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 33, 8, []state.HistoryRow{{Text: "copy-sized", LineID: 30}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 35, 7, []state.HistoryRow{{Text: "copy-old", LineID: 20}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 32, 8, []state.HistoryRow{{Text: "copy-sized", LineID: 30}})},
 		},
 	}
 	host := NewFakeTerminalHost(64)
@@ -939,10 +939,10 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain copy entry: %v", err)
 	}
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 36 {
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 35 {
 		t.Fatalf("copy mode should bind to hidden split content cols, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 36 {
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 35 {
 		t.Fatalf("copy mode should accept first authoritative window, got %#v", runtime.State().CopyMode)
 	}
 
@@ -957,7 +957,7 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain pane size rebind: %v", err)
 	}
-	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 33 {
+	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 32 {
 		t.Fatalf("pane size should rebind copy mode through content rect cols, got %#v", core.LatestRequests)
 	}
 	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().History.Token != "tok-2" {

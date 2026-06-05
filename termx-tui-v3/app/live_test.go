@@ -415,11 +415,8 @@ func TestSplitPresentationUsesSplitContentRectForResize(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if len(terminal.Resizes) != 1 {
-		t.Fatalf("expected presentation change resize, got %#v", terminal.Resizes)
-	}
-	if got := terminal.Resizes[0]; got.Cols != 80 || got.Rows != 21 {
-		t.Fatalf("single split-line pane should not deduct side borders, got %#v", got)
+	if len(terminal.Resizes) != 0 {
+		t.Fatalf("single split-line pane now shares the same outer-frame content rect as card, got %#v", terminal.Resizes)
 	}
 }
 
@@ -453,8 +450,8 @@ func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
 		t.Fatalf("drain split: %v", err)
 	}
 
-	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 39 || got.Rows != 21 {
-		t.Fatalf("active pane right of divider must reserve split cell, got %#v", got)
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 38 || got.Rows != 20 {
+		t.Fatalf("active pane right of divider must reserve shared outer frame and split divider, got %#v", got)
 	}
 }
 
@@ -496,7 +493,7 @@ func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 		t.Fatalf("drain size command: %v", err)
 	}
 
-	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 23 || got.Rows != 21 {
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 22 || got.Rows != 20 {
 		t.Fatalf("fixed right pane size must drive active content resize, got %#v all=%#v", got, terminal.Resizes)
 	}
 }

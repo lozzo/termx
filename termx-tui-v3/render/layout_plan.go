@@ -18,6 +18,7 @@ type LayoutPlan struct {
 type PanelLayoutPlan struct {
 	Panel       PanelVM
 	Rect        Rect
+	Body        Rect
 	ContentRect Rect
 }
 
@@ -73,20 +74,25 @@ func measurePanels(layout LayoutVM, body Rect) []PanelLayoutPlan {
 		if rect.W == 0 || rect.H == 0 {
 			rect = body
 		}
-		contentRect := measurePanelContentRect(panel, rect)
-		out[i] = PanelLayoutPlan{Panel: panel, Rect: rect, ContentRect: contentRect}
+		contentRect := measurePanelContentRect(panel, rect, body)
+		out[i] = PanelLayoutPlan{Panel: panel, Rect: rect, Body: body, ContentRect: contentRect}
 	}
 	return out
 }
 
-func measurePanelContentRect(panel PanelVM, rect Rect) Rect {
+func measurePanelContentRect(panel PanelVM, rect Rect, body Rect) Rect {
 	if panel.Presentation == PanelPresentationCard {
 		return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
 	}
-	content := Rect{X: rect.X, Y: rect.Y + 1, W: rect.W, H: maxInt(0, rect.H-1)}
-	if rect.X > 0 {
-		content.X++
+	if body.W <= 0 || body.H <= 0 {
+		body = rect
+	}
+	content := Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-1), H: maxInt(0, rect.H-1)}
+	if rect.X+rect.W >= body.X+body.W {
 		content.W = maxInt(0, content.W-1)
+	}
+	if rect.Y+rect.H >= body.Y+body.H {
+		content.H = maxInt(0, content.H-1)
 	}
 	return content
 }
