@@ -1611,6 +1611,78 @@ func TestV3TmuxResizeSmokeCommandReportsArtifacts(t *testing.T) {
 	}
 }
 
+func TestV3TmuxANSISmokeCapturesLiveSurfaceSGR(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := runV3TmuxANSISmoke(ctx, termxBin)
+	if err != nil {
+		t.Fatalf("tmux ansi smoke: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(result.ArtifactDir)
+	})
+	for _, marker := range []string{"ANSI16_RED", "ANSI16_BLUE_BOLD", "ANSI256_ORANGE", "ANSI256_BG", "TRUECOLOR_MINT", "CR_REPLACED", "PRIMARY_AFTER_ALT"} {
+		if !strings.Contains(result.Captured, marker) {
+			t.Fatalf("plain capture missing marker %q:\n%s", marker, result.Captured)
+		}
+	}
+	for _, sgr := range []string{"\x1b[31m", "\x1b[1m", "\x1b[34m", "\x1b[38;5;202m", "\x1b[48;5;24m", "\x1b[38;2;12;200;155m"} {
+		if !strings.Contains(result.ANSICaptured, sgr) {
+			t.Fatalf("ANSI capture missing SGR %q:\n%q", sgr, result.ANSICaptured)
+		}
+	}
+	if strings.Contains(result.Captured, "\x1b]") {
+		t.Fatalf("OSC theme responses must not leak into plain terminal capture:\n%q", result.Captured)
+	}
+	for _, path := range []string{result.ANSIPath, result.PlainPath, result.DaemonLog, result.TimelinePath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read artifact %s: %v", path, err)
+		}
+		if len(data) == 0 {
+			t.Fatalf("artifact %s should not be empty", path)
+		}
+	}
+	if err := runTmuxCommand(context.Background(), "has-session", "-t", result.Session); err == nil {
+		t.Fatalf("tmux session %s should be cleaned up", result.Session)
+	}
+}
+
+func TestV3TmuxANSISmokeCommandReportsArtifacts(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "tmux-ansi-smoke", "--termx-bin", termxBin})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 tmux-ansi-smoke returned error: %v", err)
+	}
+	text := out.String()
+	if artifactDir := v3TmuxSmokeOutputValue(text, "artifact_dir"); artifactDir != "" {
+		t.Cleanup(func() {
+			_ = os.RemoveAll(artifactDir)
+		})
+	}
+	if !strings.Contains(text, "termx v3 tmux ansi smoke ok") ||
+		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "session=termx-v3-ansi-") ||
+		!strings.Contains(text, "artifact_dir=") ||
+		!strings.Contains(text, "ansi=") ||
+		!strings.Contains(text, "plain=") ||
+		!strings.Contains(text, "timeline=") {
+		t.Fatalf("unexpected tmux ansi smoke output:\n%s", text)
+	}
+}
+
 func v3TmuxSmokeOutputValue(output string, key string) string {
 	prefix := key + "="
 	for _, field := range strings.Fields(output) {

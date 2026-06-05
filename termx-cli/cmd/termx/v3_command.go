@@ -42,6 +42,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3TmuxSmokeCommand())
 	cmd.AddCommand(v3TmuxTerminalSmokeCommand())
 	cmd.AddCommand(v3TmuxResizeSmokeCommand())
+	cmd.AddCommand(v3TmuxANSISmokeCommand())
 	cmd.AddCommand(v3NewCommand(socket, logFile))
 	cmd.AddCommand(v3LsCommand(socket, logFile))
 	cmd.AddCommand(v3KillCommand(socket, logFile))
@@ -242,6 +243,42 @@ func v3TmuxResizeSmokeCommand() *cobra.Command {
 				result.WindowSize,
 				result.BeforeSize,
 				result.AfterSize,
+				result.ArtifactDir,
+				result.ANSIPath,
+				result.PlainPath,
+				result.DaemonLog,
+				result.SocketPath,
+				result.TimelinePath,
+			)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&termxBin, "termx-bin", "", "termx binary path to run inside tmux")
+	return cmd
+}
+
+func v3TmuxANSISmokeCommand() *cobra.Command {
+	var termxBin string
+	cmd := &cobra.Command{
+		Use:   "tmux-ansi-smoke",
+		Short: "Run a tmux black-box ANSI/theme/live surface smoke",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if termxBin == "" {
+				exe, err := osExecutable()
+				if err != nil {
+					return err
+				}
+				termxBin = exe
+			}
+			result, err := runV3TmuxANSISmoke(cmd.Context(), termxBin)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"termx v3 tmux ansi smoke ok: terminal=%s session=%s artifact_dir=%s ansi=%s plain=%s daemon_log=%s socket=%s timeline=%s\n",
+				result.TerminalID,
+				result.Session,
 				result.ArtifactDir,
 				result.ANSIPath,
 				result.PlainPath,

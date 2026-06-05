@@ -48,6 +48,19 @@ type v3TmuxResizeSmokeResult struct {
 	WindowSize   string
 }
 
+type v3TmuxANSISmokeResult struct {
+	Session      string
+	TerminalID   string
+	ArtifactDir  string
+	ANSIPath     string
+	PlainPath    string
+	DaemonLog    string
+	SocketPath   string
+	TimelinePath string
+	Captured     string
+	ANSICaptured string
+}
+
 func runV3TmuxSmoke(ctx context.Context) (v3TmuxSmokeResult, error) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		return v3TmuxSmokeResult{}, fmt.Errorf("tmux smoke requires tmux in PATH: %w", err)
@@ -436,6 +449,148 @@ func runV3TmuxResizeSmoke(ctx context.Context, termxBin string) (v3TmuxResizeSmo
 		BeforeSize:   beforeSize,
 		AfterSize:    afterSize,
 		WindowSize:   windowSize,
+	}, nil
+}
+
+func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeResult, error) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return v3TmuxANSISmokeResult{}, fmt.Errorf("tmux ansi smoke requires tmux in PATH: %w", err)
+	}
+	if termxBin == "" {
+		return v3TmuxANSISmokeResult{}, fmt.Errorf("tmux ansi smoke requires a termx binary path")
+	}
+	artifactDir, err := os.MkdirTemp("", "termx-v3-tmux-ansi-*")
+	if err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	removeArtifacts := true
+	defer func() {
+		if removeArtifacts {
+			_ = os.RemoveAll(artifactDir)
+		}
+	}()
+
+	socketPath := filepath.Join(artifactDir, "termx-core-v2.sock")
+	daemonLog := filepath.Join(artifactDir, "daemon.log")
+	timelinePath := filepath.Join(artifactDir, "timeline.txt")
+	session := fmt.Sprintf("termx-v3-ansi-%d", time.Now().UnixNano())
+	target := session + ":0.0"
+	appendTimeline := func(format string, args ...any) {
+		line := fmt.Sprintf(format, args...) + "\n"
+		_ = appendFile(timelinePath, line)
+	}
+
+	daemonCtx, stopDaemonCtx := context.WithCancel(ctx)
+	defer stopDaemonCtx()
+	daemonCmd := exec.CommandContext(daemonCtx, termxBin, "--socket", socketPath, "--log-file", daemonLog, "daemon")
+	daemonCmd.Stdout = io.Discard
+	daemonCmd.Stderr = io.Discard
+	if err := daemonCmd.Start(); err != nil {
+		return v3TmuxANSISmokeResult{}, fmt.Errorf("start core-v2 daemon: %w", err)
+	}
+	defer func() {
+		stopDaemonCtx()
+		if daemonCmd.Process != nil {
+			_ = daemonCmd.Process.Kill()
+		}
+		_ = daemonCmd.Wait()
+	}()
+	appendTimeline("daemon start socket=%s log=%s", socketPath, daemonLog)
+	if err := waitForSocket(socketPath, 5*time.Second, func() error {
+		client, dialErr := dialV3Client(socketPath)
+		if dialErr != nil {
+			return dialErr
+		}
+		return client.Close()
+	}); err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	appendTimeline("daemon ready")
+
+	terminalIDPath := filepath.Join(artifactDir, "terminal.id")
+	scriptPath := filepath.Join(artifactDir, "tmux-ansi-smoke.sh")
+	terminalScript := "printf 'termx-ansi-ready\\n'\n" +
+		"printf '\\033[31mANSI16_RED\\033[0m \\033[1;34mANSI16_BLUE_BOLD\\033[0m\\n'\n" +
+		"printf '\\033[38;5;202mANSI256_ORANGE\\033[0m \\033[48;5;24mANSI256_BG\\033[0m\\n'\n" +
+		"printf '\\033[38;2;12;200;155mTRUECOLOR_MINT\\033[0m\\n'\n" +
+		"printf 'CR_START\\rCR_REPLACED\\n'\n" +
+		"printf '\\033[?1049hALT_SCREEN_MARK\\033[?1049lPRIMARY_AFTER_ALT\\n'\n" +
+		"while IFS= read -r line; do printf 'termx-ansi-echo:%s\\n' \"$line\"; done\n"
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"set -eu",
+		"export TERM=xterm-256color",
+		"export TERMX=0",
+		"termx_bin=" + shellQuote(termxBin),
+		"socket=" + shellQuote(socketPath),
+		"log_file=" + shellQuote(daemonLog),
+		"terminal_id_path=" + shellQuote(terminalIDPath),
+		"printf 'termx tmux ansi harness ready\\n'",
+		"id=\"$($termx_bin --socket \"$socket\" --log-file \"$log_file\" v3 new --name tmux-ansi -- /bin/sh -c " + shellQuote(terminalScript) + ")\"",
+		"printf '%s\\n' \"$id\" > \"$terminal_id_path\"",
+		"printf 'termx ansi terminal id:%s\\n' \"$id\"",
+		"exec $termx_bin --socket \"$socket\" --log-file \"$log_file\" v3 attach \"$id\"",
+		"",
+	}, "\n")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	appendTimeline("tmux script=%s", scriptPath)
+
+	cleanupTmux := func() {
+		_ = runTmuxCommand(context.Background(), "kill-session", "-t", session)
+	}
+	defer cleanupTmux()
+	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "100", "-y", "30", "-s", session, "/bin/sh", scriptPath); err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	appendTimeline("tmux session=%s", session)
+	terminalIDBytes, err := waitForFileContent(ctx, terminalIDPath, 5*time.Second)
+	if err != nil {
+		return v3TmuxANSISmokeResult{}, fmt.Errorf("read terminal id artifact: %w", err)
+	}
+	terminalID := strings.TrimSpace(string(terminalIDBytes))
+	appendTimeline("terminal created id=%s", terminalID)
+	for _, marker := range []string{"termx-ansi-ready", "ANSI16_RED", "ANSI256_ORANGE", "TRUECOLOR_MINT", "CR_REPLACED", "PRIMARY_AFTER_ALT"} {
+		if err := waitForTmuxCapture(ctx, target, marker, 5*time.Second); err != nil {
+			return v3TmuxANSISmokeResult{}, err
+		}
+		appendTimeline("marker rendered=%s", marker)
+	}
+
+	ansi, err := captureTmuxPane(ctx, target, true)
+	if err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	plain, err := captureTmuxPane(ctx, target, false)
+	if err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	ansiPath := filepath.Join(artifactDir, "capture.ansi")
+	plainPath := filepath.Join(artifactDir, "capture.txt")
+	if err := os.WriteFile(ansiPath, []byte(ansi), 0o600); err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	if err := os.WriteFile(plainPath, []byte(plain), 0o600); err != nil {
+		return v3TmuxANSISmokeResult{}, err
+	}
+	appendTimeline("captured ansi=%s plain=%s", ansiPath, plainPath)
+
+	_ = runTermxCommand(context.Background(), termxBin, "--socket", socketPath, "--log-file", daemonLog, "v3", "kill", terminalID)
+	_ = runTermxCommand(context.Background(), termxBin, "--socket", socketPath, "--log-file", daemonLog, "v3", "rm", terminalID)
+	appendTimeline("terminal cleanup id=%s", terminalID)
+	removeArtifacts = false
+	return v3TmuxANSISmokeResult{
+		Session:      session,
+		TerminalID:   terminalID,
+		ArtifactDir:  artifactDir,
+		ANSIPath:     ansiPath,
+		PlainPath:    plainPath,
+		DaemonLog:    daemonLog,
+		SocketPath:   socketPath,
+		TimelinePath: timelinePath,
+		Captured:     plain,
+		ANSICaptured: ansi,
 	}, nil
 }
 
