@@ -75,13 +75,10 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	created, err := client.Create(ctx, protocol.CreateParams{
 		ID:      newV3TerminalID(),
 		Name:    "v3-e2e-smoke",
-		Command: []string{"smoke-shell"},
+		Command: []string{"/bin/sh", "-c", "printf 'alpha\\nbeta\\n'; while IFS= read -r line; do printf 'echo:%s\\n' \"$line\"; done"},
 		Size:    protocol.Size{Cols: 80, Rows: 24},
 	})
 	if err != nil {
-		return v3E2ESmokeResult{}, err
-	}
-	if err := server.IngestOutput(ctx, created.TerminalID, "alpha\nbeta\n"); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
 
@@ -111,13 +108,19 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if got := runtime.State().Session; got.Cols != 78 || got.Rows != 20 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: initial attach did not use content rect, got %#v", got)
 	}
+	if err := drainV3RuntimeUntilFrameContains(ctx, runtime, host, "beta"); err != nil {
+		return v3E2ESmokeResult{}, err
+	}
 	if len(runtime.State().Surface.Lines) < 2 || runtime.State().Surface.Lines[0] != "alpha" || runtime.State().Surface.Lines[1] != "beta" {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: attach did not hydrate live surface rows, surface=%#v", runtime.State().Surface)
 	}
 	if !v3E2EFramesContain(host.Frames(), "alpha") || !v3E2EFramesContain(host.Frames(), "beta") {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: hydrated live rows were not rendered")
 	}
-	if err := server.IngestOutput(ctx, created.TerminalID, "gamma\n"); err != nil {
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "gamma"}); err != nil {
+		return v3E2ESmokeResult{}, err
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
 	if err := drainV3RuntimeUntilFrameContains(ctx, runtime, host, "gamma"); err != nil {

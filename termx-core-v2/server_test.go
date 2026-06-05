@@ -37,7 +37,7 @@ func TestServerOptions(t *testing.T) {
 func TestServerRegistryPublishesEvents(t *testing.T) {
 	server := NewServer(WithListenerFactory(func(string) (transport.Listener, error) {
 		return newFakeListener("unused"), nil
-	}))
+	}), WithProcessFactory(newRecordingProcessFactory()))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	events := server.Events(ctx, EventFilter{})
@@ -66,7 +66,7 @@ func TestServerRegistryPublishesEvents(t *testing.T) {
 }
 
 func TestServerRegistryValidatesRecords(t *testing.T) {
-	server := NewServer()
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{Command: []string{"sh"}}); !errors.Is(err, ErrInvalidTerminalID) {
 		t.Fatalf("expected ErrInvalidTerminalID, got %v", err)
 	}

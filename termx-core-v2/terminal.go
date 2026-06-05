@@ -29,7 +29,7 @@ func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker
 		events:  events,
 		update:  update,
 	}
-	terminal.watchExit(process)
+	terminal.watchProcess(process)
 	return terminal
 }
 
@@ -62,6 +62,7 @@ func (terminal *Terminal) Input(data []byte) error {
 }
 
 func (terminal *Terminal) IngestOutput(output string) error {
+	output = normalizeTerminalOutput(output)
 	terminal.mu.Lock()
 	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
 		terminal.mu.Unlock()
@@ -99,6 +100,14 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Unlock()
 	terminal.publish(EventTerminalChanged, info)
 	return nil
+}
+
+func normalizeTerminalOutput(output string) string {
+	if output == "" || !strings.Contains(output, "\r") {
+		return output
+	}
+	output = strings.ReplaceAll(output, "\r\n", "\n")
+	return strings.ReplaceAll(output, "\r", "")
 }
 
 func (terminal *Terminal) Resize(size Size) error {
@@ -170,7 +179,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.mu.Unlock()
 	_ = old.Close()
 	terminal.syncInfo(info)
-	terminal.watchExit(process)
+	terminal.watchProcess(process)
 	terminal.publish(EventTerminalChanged, info)
 	return nil
 }
@@ -225,14 +234,56 @@ func (terminal *Terminal) publishResize(info TerminalInfo, oldSize Size, newSize
 	})
 }
 
-func (terminal *Terminal) watchExit(process TerminalProcess) {
+func (terminal *Terminal) watchProcess(process TerminalProcess) {
+	outputDone := terminal.watchOutput(process)
+	terminal.watchExit(process, outputDone)
+}
+
+func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
+	done := make(chan struct{})
+	output := process.Output()
+	if output == nil {
+		close(done)
+		return done
+	}
+	go func() {
+		defer close(done)
+		for chunk := range output {
+			if len(chunk) == 0 {
+				continue
+			}
+			// 真实 PTY 输出只能回到 Terminal.IngestOutput，同源更新 live surface 与 logical-line history。
+			_ = terminal.ingestProcessOutput(process, string(chunk))
+		}
+	}()
+	return done
+}
+
+func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan struct{}) {
 	go func() {
 		exit, ok := <-process.Wait()
 		if !ok {
 			return
 		}
+		if outputDone != nil {
+			<-outputDone
+		}
 		terminal.markExited(process, exit)
 	}()
+}
+
+func (terminal *Terminal) ingestProcessOutput(process TerminalProcess, output string) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
+	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.mu.Unlock()
+	return terminal.IngestOutput(output)
 }
 
 func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) {

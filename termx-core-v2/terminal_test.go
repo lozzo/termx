@@ -69,7 +69,7 @@ func TestTerminalLifecycleAndPipeline(t *testing.T) {
 }
 
 func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
-	server := NewServer()
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalChanged}})
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
 		t.Fatalf("register terminal: %v", err)
@@ -80,6 +80,30 @@ func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
 	event := assertEventValue(t, events, EventTerminalChanged, "term-1")
 	if event.Terminal == nil || event.Terminal.State != TerminalStateRunning {
 		t.Fatalf("expected running terminal info on live changed event, got %#v", event)
+	}
+}
+
+func TestTerminalIngestOutputNormalizesPTYCRLF(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "alpha\r\nbeta\r\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	rows, err := server.LiveRows("term-1")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	if len(rows) < 2 || rows[0] != "alpha" || rows[1] != "beta" {
+		t.Fatalf("expected CRLF-normalized live rows, got %#v", rows)
+	}
+	window, err := server.LatestWindow("term-1", 80, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "alpha" || window.Rows[1].Text != "beta" {
+		t.Fatalf("expected CRLF-normalized history rows, got %#v", window.Rows)
 	}
 }
 
@@ -235,6 +259,28 @@ func TestTerminalExitForceCommitsOpenLineAndRejectsMutation(t *testing.T) {
 	}
 }
 
+func TestTerminalProcessDrainsOutputBeforeExit(t *testing.T) {
+	factory := &exitBeforeOutputProcessFactory{}
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalExited}})
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process
+	process.exitThenOutput(0, "tail\n")
+	event := assertEventValue(t, events, EventTerminalExited, "term-1")
+	if event.Terminal == nil || event.Terminal.ExitCode == nil || *event.Terminal.ExitCode != 0 {
+		t.Fatalf("unexpected exit event %#v", event)
+	}
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "tail" || window.TotalLines != 1 {
+		t.Fatalf("expected output produced before channel close to be committed before exit, got %#v", window)
+	}
+}
+
 func TestTerminalKillAndRemoveCloseProcess(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
@@ -286,9 +332,11 @@ func newRecordingProcessFactory() *recordingProcessFactory {
 
 func (factory *recordingProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (TerminalProcess, error) {
 	process := &recordingProcess{
-		id:     spec.TerminalID,
-		waitCh: make(chan ProcessExit, 1),
+		id:       spec.TerminalID,
+		outputCh: make(chan []byte),
+		waitCh:   make(chan ProcessExit, 1),
 	}
+	close(process.outputCh)
 	factory.mu.Lock()
 	factory.processes[spec.TerminalID] = append(factory.processes[spec.TerminalID], process)
 	factory.mu.Unlock()
@@ -311,6 +359,7 @@ type recordingProcess struct {
 	inputs    [][]byte
 	resizes   []Size
 	resizeErr error
+	outputCh  chan []byte
 	waitCh    chan ProcessExit
 	exitOnce  sync.Once
 	killed    bool
@@ -344,6 +393,10 @@ func (process *recordingProcess) setResizeErr(err error) {
 	process.mu.Lock()
 	defer process.mu.Unlock()
 	process.resizeErr = err
+}
+
+func (process *recordingProcess) Output() <-chan []byte {
+	return process.outputCh
 }
 
 func (process *recordingProcess) Kill() error {
@@ -382,4 +435,59 @@ func (process *recordingProcess) exit(code int) {
 		process.waitCh <- ProcessExit{Code: code}
 		close(process.waitCh)
 	})
+}
+
+type exitBeforeOutputProcessFactory struct {
+	process *exitBeforeOutputProcess
+}
+
+func (factory *exitBeforeOutputProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (TerminalProcess, error) {
+	process := &exitBeforeOutputProcess{
+		id:       spec.TerminalID,
+		outputCh: make(chan []byte, 1),
+		waitCh:   make(chan ProcessExit, 1),
+	}
+	factory.process = process
+	return process, nil
+}
+
+type exitBeforeOutputProcess struct {
+	id       string
+	outputCh chan []byte
+	waitCh   chan ProcessExit
+}
+
+func (process *exitBeforeOutputProcess) Input([]byte) error {
+	return nil
+}
+
+func (process *exitBeforeOutputProcess) Resize(Size) error {
+	return nil
+}
+
+func (process *exitBeforeOutputProcess) Output() <-chan []byte {
+	return process.outputCh
+}
+
+func (process *exitBeforeOutputProcess) Kill() error {
+	process.exitThenOutput(-1, "")
+	return nil
+}
+
+func (process *exitBeforeOutputProcess) Wait() <-chan ProcessExit {
+	return process.waitCh
+}
+
+func (process *exitBeforeOutputProcess) Close() error {
+	process.exitThenOutput(-1, "")
+	return nil
+}
+
+func (process *exitBeforeOutputProcess) exitThenOutput(code int, output string) {
+	process.waitCh <- ProcessExit{Code: code}
+	close(process.waitCh)
+	if output != "" {
+		process.outputCh <- []byte(output)
+	}
+	close(process.outputCh)
 }

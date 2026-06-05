@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.1
 
 require (
+	github.com/creack/pty v1.1.24
 	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-proto v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0

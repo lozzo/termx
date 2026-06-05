@@ -47,7 +47,7 @@ func NewServer(opts ...ServerOption) *Server {
 		defaultSize:     Size{Cols: 80, Rows: 24},
 		logger:          slog.Default(),
 		listenerFactory: unixListenerFactory,
-		processFactory:  newScriptedProcessFactory(),
+		processFactory:  newPTYProcessFactory(),
 		eventBuffer:     64,
 	}
 	for _, opt := range opts {
@@ -62,7 +62,7 @@ func NewServer(opts ...ServerOption) *Server {
 		cfg.listenerFactory = unixListenerFactory
 	}
 	if cfg.processFactory == nil {
-		cfg.processFactory = newScriptedProcessFactory()
+		cfg.processFactory = newPTYProcessFactory()
 	}
 	return &Server{
 		cfg:        cfg,

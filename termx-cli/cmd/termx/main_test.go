@@ -795,7 +795,7 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "termx.log")
 	var newOut bytes.Buffer
 	newCmd := newRootCmd()
-	newCmd.SetArgs([]string{"--socket", socketPath, "--log-file", logPath, "new", "--name", "v3-demo", "--", "demo-shell"})
+	newCmd.SetArgs(append([]string{"--socket", socketPath, "--log-file", logPath, "new", "--name", "v3-demo", "--"}, testShellSleepCommand()...))
 	newCmd.SetOut(&newOut)
 	newCmd.SetErr(io.Discard)
 	if err := newCmd.Execute(); err != nil {
@@ -817,7 +817,7 @@ func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	lsText := lsOut.String()
 	if !strings.Contains(lsText, terminalID) ||
 		!strings.Contains(lsText, "v3-demo") ||
-		!strings.Contains(lsText, "demo-shell") ||
+		!strings.Contains(lsText, "/bin/sh") ||
 		!strings.Contains(lsText, "running") {
 		t.Fatalf("unexpected v3 ls output:\n%s", lsText)
 	}
@@ -884,7 +884,7 @@ func TestV3LocalControlCommandsRemainAvailable(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "new", "--name", "v3-demo", "--", "demo-shell"})
+	cmd.SetArgs(append([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "new", "--name", "v3-demo", "--"}, testShellSleepCommand()...))
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -1007,7 +1007,7 @@ func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	if _, err := client.Create(context.Background(), protocol.CreateParams{
 		ID:      "term-existing",
 		Name:    "existing",
-		Command: []string{"shell"},
+		Command: testShellSleepCommand(),
 		Size:    protocol.Size{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create existing terminal: %v", err)
@@ -1068,7 +1068,7 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	if _, err := client.Create(context.Background(), protocol.CreateParams{
 		ID:      "term-1",
 		Name:    "attach-demo",
-		Command: []string{"demo-shell"},
+		Command: testShellSleepCommand(),
 		Size:    protocol.Size{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create terminal: %v", err)
@@ -1109,7 +1109,7 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 	if _, err := client.Create(context.Background(), protocol.CreateParams{
 		ID:      "term-1",
 		Name:    "resize-demo",
-		Command: []string{"demo-shell"},
+		Command: testShellSleepCommand(),
 		Size:    protocol.Size{Cols: 100, Rows: 30},
 	}); err != nil {
 		t.Fatalf("create terminal: %v", err)
@@ -2822,6 +2822,10 @@ func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.
 		}
 	}
 	return server, client, closeFn
+}
+
+func testShellSleepCommand() []string {
+	return []string{"/bin/sh", "-c", "while true; do sleep 1; done"}
 }
 
 func (s *fakeTermxServer) StorageGet(context.Context, termx.StorageGetRequest) (termx.StorageEntry, error) {

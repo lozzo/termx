@@ -4,7 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"os/exec"
 	"sync"
+	"sync/atomic"
+	"syscall"
+
+	creackpty "github.com/creack/pty"
 )
 
 type ProcessFactory interface {
@@ -26,9 +32,187 @@ type ProcessSpec struct {
 type TerminalProcess interface {
 	Input([]byte) error
 	Resize(Size) error
+	Output() <-chan []byte
 	Kill() error
 	Wait() <-chan ProcessExit
 	Close() error
+}
+
+// ptyProcessFactory 是 core-v2 真实 terminal process 边界；外部客户端仍只通过 protocol/socket 访问。
+type ptyProcessFactory struct{}
+
+func newPTYProcessFactory() ProcessFactory {
+	return ptyProcessFactory{}
+}
+
+func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalProcess, error) {
+	if len(spec.Command) == 0 {
+		return nil, ErrInvalidCommand
+	}
+	size := spec.Size
+	if !size.Valid() {
+		size = Size{Cols: 80, Rows: 24}
+	}
+	cmd := exec.CommandContext(ctx, spec.Command[0], spec.Command[1:]...)
+	cmd.Env = ptyProcessEnv(spec.TerminalID, nil)
+	file, err := creackpty.StartWithSize(cmd, &creackpty.Winsize{Cols: size.Cols, Rows: size.Rows})
+	if err != nil {
+		return nil, err
+	}
+	process := &ptyProcess{
+		file:     file,
+		cmd:      cmd,
+		outputCh: make(chan []byte, 64),
+		waitCh:   make(chan ProcessExit, 1),
+		readDone: make(chan struct{}),
+	}
+	go process.readLoop()
+	go process.waitLoop()
+	return process, nil
+}
+
+type ptyProcess struct {
+	mu            sync.Mutex
+	file          *os.File
+	cmd           *exec.Cmd
+	outputCh      chan []byte
+	waitCh        chan ProcessExit
+	readDone      chan struct{}
+	closeOnce     sync.Once
+	waitOnce      sync.Once
+	killRequested atomic.Bool
+}
+
+const ptyReadBufferBytes = 64 * 1024
+
+func (process *ptyProcess) Input(data []byte) error {
+	process.mu.Lock()
+	file := process.file
+	process.mu.Unlock()
+	if file == nil {
+		return io.ErrClosedPipe
+	}
+	_, err := file.Write(data)
+	return err
+}
+
+func (process *ptyProcess) Resize(size Size) error {
+	if !size.Valid() {
+		return ErrInvalidServerSize
+	}
+	process.mu.Lock()
+	file := process.file
+	process.mu.Unlock()
+	if file == nil {
+		return io.ErrClosedPipe
+	}
+	return creackpty.Setsize(file, &creackpty.Winsize{Cols: size.Cols, Rows: size.Rows})
+}
+
+func (process *ptyProcess) Output() <-chan []byte {
+	return process.outputCh
+}
+
+func (process *ptyProcess) Kill() error {
+	process.mu.Lock()
+	cmd := process.cmd
+	process.killRequested.Store(true)
+	process.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	// creack/pty 会让子进程成为独立 session；优先给进程组发 HUP，失败时回退到主进程。
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGHUP); err != nil {
+		if signalErr := cmd.Process.Signal(syscall.SIGHUP); signalErr != nil && !errors.Is(signalErr, os.ErrProcessDone) {
+			return errors.Join(err, signalErr)
+		}
+	}
+	return nil
+}
+
+func (process *ptyProcess) Wait() <-chan ProcessExit {
+	return process.waitCh
+}
+
+func (process *ptyProcess) Close() error {
+	var err error
+	process.closeOnce.Do(func() {
+		_ = process.Kill()
+		process.mu.Lock()
+		file := process.file
+		process.file = nil
+		process.mu.Unlock()
+		if file != nil {
+			err = file.Close()
+		}
+	})
+	return err
+}
+
+func (process *ptyProcess) readLoop() {
+	defer close(process.outputCh)
+	defer close(process.readDone)
+	buf := make([]byte, ptyReadBufferBytes)
+	for {
+		process.mu.Lock()
+		file := process.file
+		process.mu.Unlock()
+		if file == nil {
+			return
+		}
+		n, err := file.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			process.outputCh <- chunk
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (process *ptyProcess) waitLoop() {
+	process.waitOnce.Do(func() {
+		err := process.cmd.Wait()
+		<-process.readDone
+		process.waitCh <- ProcessExit{
+			Code: processExitCode(err, process.killRequested.Load()),
+			Err:  err,
+		}
+		close(process.waitCh)
+	})
+}
+
+func processExitCode(err error, killed bool) int {
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+			if killed && status.Signaled() {
+				return -1
+			}
+			if status.Exited() {
+				return status.ExitStatus()
+			}
+			if status.Signaled() {
+				return -1
+			}
+		}
+	}
+	return -1
+}
+
+func ptyProcessEnv(id string, extra []string) []string {
+	env := os.Environ()
+	env = append(env,
+		"TERM=xterm-256color",
+		"TERMX=1",
+		"TERMX_TERMINAL_ID="+id,
+	)
+	return append(env, extra...)
 }
 
 type ProcessExit struct {
@@ -47,18 +231,21 @@ func (scriptedProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (Termin
 		return nil, ErrInvalidCommand
 	}
 	process := &scriptedProcess{
-		waitCh: make(chan ProcessExit, 1),
+		outputCh: make(chan []byte),
+		waitCh:   make(chan ProcessExit, 1),
 	}
+	close(process.outputCh)
 	return process, nil
 }
 
 type scriptedProcess struct {
-	mu      sync.Mutex
-	closed  bool
-	waitCh  chan ProcessExit
-	waited  bool
-	inputs  [][]byte
-	resizes []Size
+	mu       sync.Mutex
+	closed   bool
+	waitCh   chan ProcessExit
+	waited   bool
+	inputs   [][]byte
+	resizes  []Size
+	outputCh chan []byte
 }
 
 func (process *scriptedProcess) Input(data []byte) error {
@@ -82,6 +269,10 @@ func (process *scriptedProcess) Resize(size Size) error {
 	}
 	process.resizes = append(process.resizes, size)
 	return nil
+}
+
+func (process *scriptedProcess) Output() <-chan []byte {
+	return process.outputCh
 }
 
 func (process *scriptedProcess) Kill() error {
