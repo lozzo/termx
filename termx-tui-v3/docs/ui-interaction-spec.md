@@ -890,7 +890,7 @@ UI chrome 优先级高于 terminal mouse forwarding。点击边框、标题、�
 
 - app/runtime 已把真实鼠标坐标派发到最新 render hit region。
 - 点击 pane content 或 pane chrome 可以切换 active pane，并立即改变 active / inactive pane 视觉状态。
-- 点击 pane action slot 可以执行同一 semantic command，例如 close。
+- 点击 pane action slot 可以执行同一 semantic command；当前可见 pane action 只包含真实接通的 split down、split right 和 close，zoom 等未恢复接线的 action 不绘制。
 - 按住并拖动 pane split divider 或 pane 边框 resize handle 会持续派发同一 `PaneCommandResize` 语义；拖动过程中不会漏发到底层 terminal。
 - 点击 floating pane title/content 会聚焦并提升 z-order。
 - 点击 floating pane 顶部 close action 会关闭 floating pane。
@@ -1389,7 +1389,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 推荐真实 TUI 验收步骤：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
-- 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。
+- 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；也可以点击 pane 顶部的 split right / split down action token。新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。
 - 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题、footer 和 toast 必须同步变化。
 - 关闭：先聚焦目标 pane，在 pane mode 中按 `x` 关闭 pane，或点击 pane 顶部 action slot；关闭后 active pane 必须稳定落到仍存在的 pane，不得留下已删除 pane 的高亮或 footer target。
 - resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；也可以用鼠标按住 split divider 或 pane 边框 resize handle 并拖动；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化，拖动事件不得漏发给 terminal。
@@ -1739,7 +1739,7 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 - Prompt/Help：Prompt 支持短输入、提交、取消和 destructive confirm 边界；Help 展示 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 分类。
 - Tab/Workspace：`Ctrl-t` 支持 tab create/switch/rename/close；`Ctrl-w` 支持 workspace create/switch/rename 和 Workbench Tree 入口；rename 走同一 Prompt。
 - toast/overlay：toast 可 close current / clear all，overlay 可关闭且拥有自己的 cursor；toast 和 overlay 命中优先级高于底层 pane/terminal。
-- 鼠标：pane content/chrome focus、pane action close、floating raise/resize/close、Terminal Pool row/action、Workbench Tree row/action、Prompt/Help close 均走最新 hit region。
+- 鼠标：pane content/chrome focus、pane action split/close、floating raise/resize/close、Terminal Pool row/action、Workbench Tree row/action、Prompt/Help close 均走最新 hit region。
 - no terminal input leak：UI mode、overlay、Prompt、Terminal Pool、Workbench Tree、tab/workspace 等交互输入不会误发给底层 terminal。
 
 本验收线完成后，terminal live 连接展示与交互前推也已经完成当前阶段：

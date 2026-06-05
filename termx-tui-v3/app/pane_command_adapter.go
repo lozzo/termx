@@ -76,7 +76,18 @@ func PaneCommandFromHitRegion(region render.HitRegion) (state.PaneCommand, bool)
 	}
 	switch region.Kind {
 	case render.HitRegionPaneAction:
-		command.Action = state.PaneCommandClose
+		switch region.ActionID {
+		case "pane.split-down":
+			command.Action = state.PaneCommandSplit
+			command.SplitDirection = state.SplitDirectionHorizontal
+		case "pane.split-right":
+			command.Action = state.PaneCommandSplit
+			command.SplitDirection = state.SplitDirectionVertical
+		case "pane.close", "":
+			command.Action = state.PaneCommandClose
+		default:
+			return state.PaneCommand{}, false
+		}
 	case render.HitRegionPaneResize:
 		command.Action = state.PaneCommandResize
 		command.ResizeDirection = state.PaneResizeRight

@@ -355,7 +355,7 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 		t.Fatalf("close initial drain: %v", err)
 	}
 
-	action := frameHitRegion(t, lastRuntimeFrame(t, closeHost), render.HitRegionPaneAction, "pane-2")
+	action := frameHitRegionByAction(t, lastRuntimeFrame(t, closeHost), render.HitRegionPaneAction, "pane.close", "pane-2")
 	if err := closeHost.SendInput(mouseEventAt(action.Rect)); err != nil {
 		t.Fatalf("send action click: %v", err)
 	}
@@ -364,6 +364,51 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 	}
 	if closeRuntime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
 		t.Fatalf("action click should close pane-2, got %#v", closeRuntime.State().Shell)
+	}
+}
+
+func TestAppRuntimeDispatchesMouseSplitActions(t *testing.T) {
+	downHost := NewFakeTerminalHost(8)
+	downRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, downHost)
+	if err := downRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post split-down initial render: %v", err)
+	}
+	if err := downRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-down initial render: %v", err)
+	}
+	downAction := frameHitRegionByAction(t, lastRuntimeFrame(t, downHost), render.HitRegionPaneAction, "pane.split-down", state.DefaultPaneID)
+	if err := downHost.SendInput(mouseEventAt(downAction.Rect)); err != nil {
+		t.Fatalf("send split-down click: %v", err)
+	}
+	if err := downRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-down click: %v", err)
+	}
+	downSplit := downRuntime.State().Shell.Workspace.Tabs[0].RootSplit
+	if len(downRuntime.State().Shell.Workspace.Tabs[0].Panes) != 2 || downSplit.Direction != state.SplitDirectionHorizontal {
+		t.Fatalf("split-down action should create horizontal split, shell=%#v", downRuntime.State().Shell)
+	}
+
+	rightHost := NewFakeTerminalHost(8)
+	rightRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, rightHost)
+	if err := rightRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post split-right initial render: %v", err)
+	}
+	if err := rightRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-right initial render: %v", err)
+	}
+	rightAction := frameHitRegionByAction(t, lastRuntimeFrame(t, rightHost), render.HitRegionPaneAction, "pane.split-right", state.DefaultPaneID)
+	if err := rightHost.SendInput(mouseEventAt(rightAction.Rect)); err != nil {
+		t.Fatalf("send split-right click: %v", err)
+	}
+	if err := rightRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-right click: %v", err)
+	}
+	rightSplit := rightRuntime.State().Shell.Workspace.Tabs[0].RootSplit
+	if len(rightRuntime.State().Shell.Workspace.Tabs[0].Panes) != 2 || rightSplit.Direction != state.SplitDirectionVertical {
+		t.Fatalf("split-right action should create vertical split, shell=%#v", rightRuntime.State().Shell)
+	}
+	if rightRuntime.State().Shell.ActivePaneID == state.DefaultPaneID || downRuntime.State().Shell.ActivePaneID == state.DefaultPaneID {
+		t.Fatalf("mouse split actions should activate new panes, down=%#v right=%#v", downRuntime.State().Shell.ActivePaneID, rightRuntime.State().Shell.ActivePaneID)
 	}
 }
 

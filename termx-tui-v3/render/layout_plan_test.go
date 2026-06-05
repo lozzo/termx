@@ -201,27 +201,31 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if len(plan.HitRegions) < 5 {
 		t.Fatalf("expected pane command and content hit regions, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[0].Kind != HitRegionPaneAction || plan.HitRegions[0].PaneID != "pane-1" || plan.HitRegions[0].ActionID != "pane.close" {
+	if plan.HitRegions[0].Kind != HitRegionPaneAction || plan.HitRegions[0].PaneID != "pane-1" || plan.HitRegions[0].ActionID != "pane.split-down" {
 		t.Fatalf("pane action region should be first, got %#v", plan.HitRegions)
 	}
-	if got, want := plan.HitRegions[0].Rect.W, DisplayWidth(paneChromeActionText(40)); got != want {
-		t.Fatalf("pane action region should cover visible action cluster got=%d want=%d region=%#v", got, want, plan.HitRegions[0])
+	if plan.HitRegions[1].Kind != HitRegionPaneAction || plan.HitRegions[1].ActionID != "pane.split-right" || plan.HitRegions[2].Kind != HitRegionPaneAction || plan.HitRegions[2].ActionID != "pane.close" {
+		t.Fatalf("pane action regions should expose visible split/close tokens, got %#v", plan.HitRegions[:3])
 	}
-	if plan.HitRegions[1].Kind != HitRegionPaneResize || plan.HitRegions[1].ActionID != "pane.resize" {
+	actionWidth := plan.HitRegions[0].Rect.W + plan.HitRegions[1].Rect.W + plan.HitRegions[2].Rect.W + 2
+	if got, want := actionWidth, DisplayWidth(paneChromeActionText(40)); got != want {
+		t.Fatalf("pane action regions should cover visible action cluster got=%d want=%d regions=%#v", got, want, plan.HitRegions[:3])
+	}
+	if plan.HitRegions[3].Kind != HitRegionPaneResize || plan.HitRegions[3].ActionID != "pane.resize" {
 		t.Fatalf("pane resize region should precede content, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[1].Direction != "right" || plan.HitRegions[1].Rect.H != plan.Panels[0].Rect.H {
-		t.Fatalf("pane resize region should cover right border with direction, got %#v panel=%#v", plan.HitRegions[1], plan.Panels[0])
+	if plan.HitRegions[3].Direction != "right" || plan.HitRegions[3].Rect.H != plan.Panels[0].Rect.H {
+		t.Fatalf("pane resize region should cover right border with direction, got %#v panel=%#v", plan.HitRegions[3], plan.Panels[0])
 	}
-	if plan.HitRegions[2].Kind != HitRegionPaneResize || plan.HitRegions[2].Direction != "down" {
+	if plan.HitRegions[4].Kind != HitRegionPaneResize || plan.HitRegions[4].Direction != "down" {
 		t.Fatalf("pane bottom resize region should precede content, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[3].Kind != HitRegionPaneChrome || plan.HitRegions[3].ActionID != "pane.focus" {
+	if plan.HitRegions[5].Kind != HitRegionPaneChrome || plan.HitRegions[5].ActionID != "pane.focus" {
 		t.Fatalf("pane chrome region should precede content, got %#v", plan.HitRegions)
 	}
 	historyIndex := hitRegionIndex(plan.HitRegions, HitRegionHistoryRow)
 	paneContentIndex := hitRegionIndex(plan.HitRegions, HitRegionPaneContent)
-	if historyIndex <= 3 {
+	if historyIndex <= 5 {
 		t.Fatalf("content hit region should remain after chrome regions, got %#v", plan.HitRegions)
 	}
 	if paneContentIndex <= historyIndex {

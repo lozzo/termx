@@ -814,7 +814,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 		t.Fatalf("drain clear toasts before close: %v", err)
 	}
 	clearFrame := lastFrame(t, host.Frames())
-	action := frameHitRegion(t, clearFrame, render.HitRegionPaneAction, "pane-2")
+	action := frameHitRegionByAction(t, clearFrame, render.HitRegionPaneAction, "pane.close", "pane-2")
 	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
 		t.Fatalf("send close click: %v", err)
 	}

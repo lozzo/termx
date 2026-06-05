@@ -388,6 +388,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
+		runtime.fillMousePaneCommandDefaults(&command)
 		return ShellPaneCommandMsg{Command: command}
 	}
 	switch region.Kind {
@@ -412,6 +413,13 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	default:
 		return msg
 	}
+}
+
+func (runtime *AppRuntime) fillMousePaneCommandDefaults(command *state.PaneCommand) {
+	if command == nil || command.Action != state.PaneCommandSplit || command.NewPane.ID != "" {
+		return
+	}
+	command.NewPane = state.PaneState{ID: nextKeyboardPaneID(runtime.state.Shell), Title: "pane", Kind: state.PaneEmpty}
 }
 
 func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool) {

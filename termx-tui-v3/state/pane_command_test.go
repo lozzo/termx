@@ -86,6 +86,33 @@ func TestApplyPaneCommandReusesExistingPresentationAndSplitState(t *testing.T) {
 	}
 }
 
+func TestApplyPaneCommandSplitsExplicitTargetPane(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-2"}, SplitDirectionVertical).
+		FocusPane(PaneCommandTarget{PaneID: DefaultPaneID})
+
+	next, result := shell.ApplyPaneCommand(PaneCommand{
+		Action:         PaneCommandSplit,
+		Target:         PaneCommandTarget{PaneID: "pane-2"},
+		SplitDirection: SplitDirectionHorizontal,
+		NewPane:        PaneState{ID: "pane-3"},
+	})
+
+	if result.Status != PaneCommandOK {
+		t.Fatalf("expected split ok, got %#v", result)
+	}
+	rightChild := next.Workspace.Tabs[0].RootSplit.Children[1]
+	if rightChild.Direction != SplitDirectionHorizontal || len(rightChild.Children) != 2 {
+		t.Fatalf("expected target pane to be split in place, got %#v", next.Workspace.Tabs[0].RootSplit)
+	}
+	if rightChild.Children[0].PaneID != "pane-2" || rightChild.Children[1].PaneID != "pane-3" {
+		t.Fatalf("expected split to preserve target pane order, got %#v", rightChild.Children)
+	}
+	if next.ActivePaneID != "pane-3" {
+		t.Fatalf("expected new pane active, got %#v", next.ActivePaneID)
+	}
+}
+
 func TestApplyPaneCommandAppliesResizeGeometryHints(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{ID: "pane-2"}, SplitDirectionVertical)
 	next, result := shell.ApplyPaneCommand(PaneCommand{Action: PaneCommandResize, ResizeDirection: PaneResizeRight, Delta: 2})

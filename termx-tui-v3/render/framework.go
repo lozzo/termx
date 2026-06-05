@@ -1242,11 +1242,54 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 }
 
 func paneChromeActionText(width int) string {
-	// 只绘制当前鼠标命中区能真实派发的动作，避免 split/zoom glyph 看起来可点但实际关闭 pane。
-	if width >= 8 {
-		return paneChromeCloseActionText()
+	items := paneChromeActionItems(width)
+	if len(items) == 0 {
+		return ""
 	}
-	return ""
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, item.Text)
+	}
+	return strings.Join(parts, "─")
+}
+
+func paneChromeActionItems(width int) []paneChromeActionItem {
+	if width < 8 {
+		return nil
+	}
+	items := []paneChromeActionItem{{
+		Text:     paneChromeCloseActionText(),
+		ActionID: "pane.close",
+	}}
+	full := []paneChromeActionItem{
+		{Text: paneChromeSplitHorizontalActionText(), ActionID: "pane.split-down"},
+		{Text: paneChromeSplitVerticalActionText(), ActionID: "pane.split-right"},
+		{Text: paneChromeCloseActionText(), ActionID: "pane.close"},
+	}
+	fullWidth := paneChromeActionItemsWidth(full)
+	if fullWidth <= maxInt(0, width-4) {
+		return full
+	}
+	return items
+}
+
+func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
+	if len(items) == 0 {
+		return 0
+	}
+	width := 0
+	for i, item := range items {
+		if i > 0 {
+			width++
+		}
+		width += DisplayWidth(item.Text)
+	}
+	return width
+}
+
+type paneChromeActionItem struct {
+	Text     string
+	ActionID string
 }
 
 func paneChromeActionClusterText() string {
@@ -1590,6 +1633,14 @@ func centerToastText(text string, width int) string {
 
 func paneChromeCloseActionText() string {
 	return paneChromeBracketToken(paneChromeCloseGlyph())
+}
+
+func paneChromeSplitHorizontalActionText() string {
+	return paneChromeBracketToken(paneChromeSplitHorizontalGlyph())
+}
+
+func paneChromeSplitVerticalActionText() string {
+	return paneChromeBracketToken(paneChromeSplitVerticalGlyph())
 }
 
 func toastBodyLine(toast ToastVM) string {

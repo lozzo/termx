@@ -177,7 +177,8 @@ func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneC
 	}
 	switch command.Action {
 	case PaneCommandSplit:
-		return store.SplitActivePane(command.NewPane, command.SplitDirection), result
+		// 鼠标命中区会携带 target pane；先聚焦 target，保证 split 的结构落在被点击的 pane 上。
+		return store.FocusPane(command.Target).SplitActivePane(command.NewPane, command.SplitDirection), result
 	case PaneCommandClose, PaneCommandCloseAndKill:
 		return store.ClosePane(command.Target), result
 	case PaneCommandFocus:

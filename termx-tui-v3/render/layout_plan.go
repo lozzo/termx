@@ -245,9 +245,27 @@ func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, viewpor
 		return out
 	}
 	paneID := panel.Panel.ID
-	out = appendRegion(out, HitRegion{Kind: HitRegionPaneAction, Rect: paneActionRect(panel.Rect), PaneID: paneID, ActionID: "pane.close"}, viewport)
+	out = appendPaneActionRegions(out, panel.Rect, paneID, viewport)
 	out = appendPanelEdgeResizeRegions(out, panel, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: "pane.focus"}, viewport)
+	return out
+}
+
+func appendPaneActionRegions(out []HitRegion, rect Rect, paneID string, viewport Rect) []HitRegion {
+	actionRect := paneActionRect(rect)
+	items := paneChromeActionItems(rect.W)
+	x := actionRect.X
+	for i, item := range items {
+		if i > 0 {
+			x++
+		}
+		width := DisplayWidth(item.Text)
+		if width <= 0 {
+			continue
+		}
+		out = appendRegion(out, HitRegion{Kind: HitRegionPaneAction, Rect: Rect{X: x, Y: actionRect.Y, W: width, H: actionRect.H}, PaneID: paneID, ActionID: item.ActionID}, viewport)
+		x += width
+	}
 	return out
 }
 

@@ -352,10 +352,14 @@ func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
 		Layout: LayoutVM{Viewport: Rect{W: 40, H: 12}, Panels: panels, Split: split},
 	}})
 
-	if !linesContain(result.Lines(), "┬─ right") || !linesContain(result.Lines(), "├─ lb") || !linesContain(result.Lines(), "┤") {
-		t.Fatalf("expected composed split top divider and nested split joint, got %#v", result.Lines())
+	lines := result.Lines()
+	if SliceCells(lines[0], 20, 21) != "┬" || SliceCells(lines[6], 0, 1) != "├" || SliceCells(lines[6], 20, 21) != "┤" || SliceCells(lines[11], 20, 21) != "┴" {
+		t.Fatalf("expected composed split divider joints, got %#v", lines)
 	}
-	assertAllRowsWidth(t, result.Lines(), 40)
+	if !linesContain(lines, paneChromeSplitHorizontalActionText()) || !linesContain(lines, paneChromeSplitVerticalActionText()) || !linesContain(lines, paneChromeCloseActionText()) {
+		t.Fatalf("expected real split and close action tokens in split chrome, got %#v", lines)
+	}
+	assertAllRowsWidth(t, lines, 40)
 }
 
 func TestFrameworkPreservesStyledContentThroughMatrixAndANSIFrame(t *testing.T) {

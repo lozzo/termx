@@ -43,9 +43,19 @@ func TestParsePaneMiniCommandCoversStructuralActions(t *testing.T) {
 }
 
 func TestPaneCommandAdaptersFromHitRegionAndIntent(t *testing.T) {
-	command, ok := PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1"})
+	command, ok := PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: "pane.close"})
 	if !ok || command.Action != state.PaneCommandClose || command.Target.PaneID != "pane-1" || command.Source != state.PaneCommandSourceMouse {
 		t.Fatalf("unexpected action hit command command=%#v ok=%v", command, ok)
+	}
+
+	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: "pane.split-down"})
+	if !ok || command.Action != state.PaneCommandSplit || command.SplitDirection != state.SplitDirectionHorizontal || command.Target.PaneID != "pane-1" {
+		t.Fatalf("unexpected split-down hit command command=%#v ok=%v", command, ok)
+	}
+
+	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: "pane.split-right"})
+	if !ok || command.Action != state.PaneCommandSplit || command.SplitDirection != state.SplitDirectionVertical || command.Target.PaneID != "pane-1" {
+		t.Fatalf("unexpected split-right hit command command=%#v ok=%v", command, ok)
 	}
 
 	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneResize, PaneID: "pane-1"})

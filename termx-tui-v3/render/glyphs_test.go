@@ -1,6 +1,9 @@
 package render
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPaneChromeGlyphsDefaultToNerdFontAndRemainCellSafe(t *testing.T) {
 	ResetPaneChromeGlyphs()
@@ -22,6 +25,27 @@ func TestPaneChromeGlyphsDefaultToNerdFontAndRemainCellSafe(t *testing.T) {
 	}
 	if got, want := paneChromeCompactActionText(), "["+glyphs.Zoom+"]─["+glyphs.Close+"]"; got != want {
 		t.Fatalf("compact action text got=%q want=%q", got, want)
+	}
+}
+
+func TestPaneChromeActionTextOnlyShowsWiredSplitAndCloseActions(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	defer ResetPaneChromeGlyphs()
+
+	glyphs := DefaultPaneChromeGlyphs()
+	got := paneChromeActionText(40)
+	want := "[" + glyphs.SplitHorizontal + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.Close + "]"
+	if got != want {
+		t.Fatalf("wired action text got=%q want=%q", got, want)
+	}
+	if strings.Contains(got, glyphs.Zoom) {
+		t.Fatalf("zoom action is not wired yet and must stay hidden, got=%q", got)
+	}
+	if got := paneChromeActionText(8); got != "["+glyphs.Close+"]" {
+		t.Fatalf("narrow pane should degrade to close-only action, got=%q", got)
+	}
+	if got := paneChromeActionText(7); got != "" {
+		t.Fatalf("too-narrow pane should hide action text, got=%q", got)
 	}
 }
 
