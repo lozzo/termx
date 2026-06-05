@@ -1020,8 +1020,9 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - overlay/page/copy 内容层已按切片 86 完成第一轮产品化 polish：Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的 content renderer 统一输出 search affordance、selected row marker、detail / preview / context / input label、action row、copy match 和 scrollbar/status；这些内容仍只在 framework 分配的 content rect 内绘制。
 - Tab / Workspace 产品入口一期已落地：`Ctrl-t` / `Ctrl-w` 已作为 reducer-owned interaction mode 接入，tab create/switch/rename/close、workspace create/switch/rename、Prompt rename 回投、header tab strip、footer mode hints、smoke case 和 no terminal input leak 已接入。
 - TUI 产品壳总验收已落地：`TestInteractiveRuntimeTUIProductShellAcceptanceFlow` 串联 pane split/focus/resize/presentation、floating create/move/resize/close、Terminal Pool 搜索/attach、Workbench Tree open/focus、Prompt/Help、Tab/Workspace rename、toast/header/footer 操作，并统一验证 no terminal input leak、viewport 行宽恒等和 layout 操作触发 content rect resize。
-- `termx v3 smoke` 已输出多 case UI frame，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
+- `termx v3 smoke` 已输出 12 个固定视觉 case，覆盖 workbench shell、card/split、header/footer hide、toast、Terminal Picker、Terminal Pool Page、Workbench Tree Page、Prompt/Help、copy empty、copy history、live surface content、Unicode 线框和宽字符宽度安全。
 - `termx v3 smoke` 已覆盖 `pane-command-flow`，验证 pane command feedback、styled active pane ANSI、无默认 ASCII chrome 和行宽恒等。
+- `termx v3 smoke` 已覆盖 `visual-audit-current` 的 `120x40` visual review baseline，验证 split line、active/inactive pane、toast、floating、header/footer、emoji/CJK 宽度安全，并明确当前仍需 screenshot polish。
 - `termx v3 e2e-smoke` 已覆盖 core-v2 daemon、默认 attach 装配、fake host 初始 viewport、host resize 重绘、content rect terminal resize、copy mode authoritative history、resized copy cols、split/resize/zoom/unzoom/close pane command，以及最终 panes/active/zoom 状态。
 - `make test-v2-migration` 已纳入当前默认入口、v3 smoke、e2e smoke 和默认依赖守卫回归。
 
@@ -1044,7 +1045,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - overlay 已落地 Terminal Picker、Terminal Pool Page、Workbench Tree、Prompt、Help 和基础 opaque cursor 归属，未完成 Floating Overview 的产品内容。
 - toast 具备基础生命周期和 styled 渲染，不代表最终视觉 polish、动画或完整消息队列策略。
 - hit region 已有内容、overlay、toast 合成基础，不代表完整鼠标交互产品语义。
-- 切片 84-86 只完成 shell bar、pane chrome 和 overlay/page/copy 内容层的第一轮视觉返工；真实默认入口是否达到用户截图目标，仍必须由切片 87 的真实 TTY 复核决定。
+- 切片 87 已根据真实复核反馈确认当前 TUI 仍未达到目标截图级视觉，只能作为复核未通过归档和 smoke 证据扩展。后续不得回退到旧 `tuiv2` 或恢复基础线框路径。
 - `RenderVM{Lines, Status}` 兼容输入字段已删除，`RenderVM` 只承载 `ShellVM`；`Frame.Lines`、`Frame.StyledLines`、`Frame.ANSILines` 只作为 `RenderResult` 的 plain/styled/ANSI 输出适配保留。
 - large terminal output 性能基线已建立：`go test ./render -run '^$' -bench BenchmarkRendererLargeTerminalOutput -benchtime=1x` 当前单次基线约 6.91ms/op、6.75MB/op、12648 allocs/op。
 
@@ -1054,8 +1055,8 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前优先级：
 
-- 先按 `visual-alignment-audit.md` 与 `default-tui-visual-review.md` 完成切片 87：在 shell bar 高密度重绘、pane chrome 目标截图级槽位重绘和 overlay/page/copy 视觉产品化 polish 已完成后，做真实默认入口截图级验收。
-- 在视觉验收完成前，不得再把基础 styled chrome、Unicode glyph 或 smoke 文本线框当作视觉完成证据。
+- 当前优先完成切片 88：继续按用户目标截图重绘 shell bar、pane chrome、active/inactive/floating/toast 的视觉密度和层级。
+- 切片 89 才能做真实默认入口截图级验收；不得再把基础 styled chrome、Unicode glyph、ANSI 颜色或 smoke 文本线框单独当作视觉完成证据。
 
 建议后续切片：
 

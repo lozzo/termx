@@ -48,6 +48,8 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 		{name: "workbench-live", root: smokeLiveRoot()},
 		{name: "split-hidden-toast", root: smokeSplitHiddenToastRoot()},
 		{name: "terminal-picker", root: smokeTerminalPickerRoot()},
+		{name: "terminal-pool-page", root: smokeTerminalPoolRoot()},
+		{name: "workbench-tree-page", root: smokeWorkbenchTreeRoot()},
 		{name: "copy-empty", root: smokeCopyEmptyRoot()},
 		{name: "copy-history", root: smokeCopyHistoryRoot()},
 		{name: "prompt-overlay", root: smokePromptRoot()},
@@ -57,6 +59,9 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 	result := SmokeResult{Cases: make([]SmokeCase, 0, len(rootCases)+2)}
 	for _, item := range rootCases {
 		host := app.NewFakeTerminalHost(1)
+		if item.root.Viewport.Valid {
+			host.SetSize(item.root.Viewport.Cols, item.root.Viewport.Rows)
+		}
 		runtime := app.NewAppRuntime(item.root, nil, func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))
 		}, host, nil)
@@ -123,6 +128,56 @@ func smokeTerminalPickerRoot() state.Root {
 			Cols:       80,
 			Rows:       24,
 			Lines:      []string{"picker base"},
+		},
+	}
+}
+
+func smokeTerminalPoolRoot() state.Root {
+	shell := state.DefaultShell().OpenTerminalPool().SetTerminalPoolQuery("日志")
+	return state.Root{
+		Shell:    shell,
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{{
+				TerminalID: "term-logs",
+				Title:      "日志🚀",
+				State:      "running",
+				CWD:        "/Users/termx/project/日志",
+				Cols:       120,
+				Rows:       36,
+				Attached:   true,
+				Tags:       map[string]string{"role": "logs", "owner": "local"},
+			}, {
+				TerminalID: "term-worker",
+				Title:      "worker",
+				State:      "exited",
+				CWD:        "/tmp/worker",
+			}},
+		},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-logs",
+			Cols:       100,
+			Rows:       30,
+			Lines:      []string{"pool page base"},
+		},
+	}
+}
+
+func smokeWorkbenchTreeRoot() state.Root {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "日志🚀", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
+		OpenWorkbenchTree().
+		SetWorkbenchTreeQuery("日志")
+	return state.Root{
+		Shell:    shell,
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-logs",
+			Cols:       100,
+			Rows:       30,
+			Lines:      []string{"tree page base"},
 		},
 	}
 }
@@ -238,7 +293,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	shell := state.DefaultShell().
 		SetPanelPresentation(state.PanelPresentationSplitLine).
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
-		AddToast(state.ToastSpec{ID: "visual-review", Severity: state.ToastWarning, Title: "visual review", Body: "polish"})
+		AddToast(state.ToastSpec{ID: "visual-review", Severity: state.ToastWarning, Title: "visual review", Body: "needs screenshot polish"})
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
 		TargetID: "float-visual",
@@ -258,7 +313,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 			Rows:       36,
 			Lines: []string{
 				"visual review baseline",
-				"current v3 is functional chrome, screenshot parity pending",
+				"target visual mismatch still needs polish",
 				"emoji 🚀 and 中文 must not break chrome",
 			},
 		},

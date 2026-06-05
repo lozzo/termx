@@ -4,7 +4,11 @@
 
 切片 80-82 完成后，`termx-tui-v3` 已经具备 styled chrome renderer、连续 Unicode pane 线框、header/footer、toast、overlay、floating 和基础交互闭环，但真实视觉仍未达到用户提供的 `tuiv2` 截图目标。
 
-因此切片 83 的结论是：复核未通过，不能把当前默认 TUI 标记为截图级视觉完成。
+切片 83 的结论是：复核未通过，不能把当时的默认 TUI 标记为截图级视觉完成。
+
+切片 84-86 已完成三轮返工：shell bar 高密度重绘、pane chrome 槽位重绘、overlay/page/copy 内容层产品化 polish。
+
+切片 87 的结论是：真实默认入口视觉复核仍未通过。当前 TUI 仍与用户提供的 `tuiv2` 目标截图不一致，不能宣称截图级视觉验收完成。切片 87 只保留固定 viewport smoke 证据扩展，作为后续重绘的回归基线。
 
 ## 2. 当前已经成立的工程事实
 
@@ -15,9 +19,11 @@
 - header/footer hide、pane split/focus/resize/zoom/close、floating、Terminal Pool、Workbench Tree、Prompt/Help、copy mode 都已有基本操作入口。
 - terminal 内容、copy-history 和 overlay content 都被限制在自己的 content rect 内，不应冲破 UI chrome。
 
-这些事实只说明“产品壳可运行”，不说明“视觉已经像目标截图”。
+这些事实只说明“产品壳可运行”，不说明“视觉已经像目标截图”。切片 87 后，自动证据覆盖了 header/footer、pane chrome、toast、floating、Terminal Pool、Workbench Tree、Prompt/Help 和 copy-history 固定视觉快照，但这些自动证据仍不能替代真实 TTY 截图复核。
 
-## 3. 未通过原因
+## 3. 切片 83 未通过原因
+
+以下问题是切片 83 复核失败时的原因，已由切片 84-86 分别处理。
 
 ### 3.1 Shell Bar
 
@@ -60,12 +66,14 @@
 
 ## 4. 后续返工切片
 
-后续必须按 `workflow.md` 新增切片继续：
+切片 83 后按 `workflow.md` 增加并完成了以下返工切片：
 
 - 切片 84：`tuiv2` 风格 shell bar 高密度重绘。
 - 切片 85：pane chrome 目标截图级槽位重绘。
 - 切片 86：overlay/page/copy 视觉产品化 polish。
-- 切片 87：默认入口截图级视觉验收。
+- 切片 87：默认入口截图级视觉复核未通过归档。
+- 切片 88：目标截图级 shell/pane 视觉重绘二轮。
+- 切片 89：真实默认入口截图级验收。
 
 切片 84 已完成第一轮 shell bar 重绘：顶部不再使用 `ws:/tab:/active:` 这类工程标签，而是使用 workspace、tab strip、`[⊕]`、active pane、`◆ owner`、terminal/floating 和 action token；底部不再使用 `mode:/keys:`，而是使用 `MODE • [KEY] ACTION` 快捷键 taxonomy、active target 和 summary。最终是否达到截图级视觉仍以后续切片 87 的真实默认入口验收为准。
 
@@ -73,9 +81,19 @@
 
 切片 86 已完成第一轮 overlay/page/copy 内容层视觉产品化 polish：Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 不再使用工程表格式文本作为主要视觉语言，而是统一 search affordance、selected row marker、detail/preview/context/input label、action row 和 copy search/match/scrollbar/status。最终是否达到截图级视觉仍以后续切片 87 的真实默认入口验收为准。
 
+切片 87 已完成默认入口截图级视觉复核未通过归档和自动证据扩展：
+
+- `go run ./termx-cli/cmd/termx v3 smoke` 现在输出 12 个固定视觉 case，新增 `terminal-pool-page` 和 `workbench-tree-page` 页面级快照。
+- `visual-audit-current` 保留为 `visual review` 基线，固定 `120x40` viewport，覆盖 split line、active/inactive pane、toast、floating、header/footer、emoji/CJK 宽度安全，并明确当前仍需 screenshot polish。
+- `TestSmokeRunDetailedCoversUIFramework` 固化 header/footer、pane chrome、toast、floating、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help、copy-history 的视觉 marker、ANSI style 和行宽恒等。
+- `TestV3SmokeCommandIncludesVisualReviewCases` 固化 CLI 可执行 `termx v3 smoke` 输出必须包含视觉复核 case，避免只在包内测试通过。
+- `termx v3 e2e-smoke` 继续覆盖默认 attach 装配、host viewport、resize、content rect terminal resize、copy rebind 和 pane command。
+- 默认 `go run ./termx-cli/cmd/termx` 在非交互环境会按设计拒绝启动；可验证证据链是 `TestRootCmdRoutesToTUIv3ByDefault` 证明默认 root 路由到 v3 root runner，`v3 e2e-smoke` 证明同一 v3 TUI render/frame 路径可渲染和交互。
+- 用户真实复核指出当前 TUI 仍不像目标截图，因此切片 88 必须继续做 shell/pane 视觉重绘，切片 89 再做真实默认入口截图级验收。
+
 ## 5. 手工复核入口
 
-每次视觉返工后都必须手工复核：
+后续切片 88-89 必须手工复核：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
 - viewport：至少检查 `80x24`、`100x32`、`120x40`。
@@ -88,7 +106,7 @@
 
 ## 6. 自动准入
 
-视觉返工仍必须保留自动准入：
+切片 87 自动准入：
 
 - `cd termx-tui-v3 && go test ./... -count=1`
 - `cd termx-cli && go test ./... -count=1`
@@ -96,4 +114,4 @@
 - `go run ./termx-cli/cmd/termx v3 e2e-smoke`
 - `git diff --check`
 
-自动准入只能证明没有破坏 contract。最终视觉是否通过，仍以用户目标截图和真实 terminal 人工复核为准。
+自动准入只能证明固定 contract 没有回退。当前真实视觉仍未通过，后续必须按 `workflow.md` 切片 88-89 继续推进。

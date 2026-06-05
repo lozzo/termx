@@ -439,6 +439,49 @@ func TestV3SmokeRunsTUIv3Smoke(t *testing.T) {
 	}
 }
 
+func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
+	oldRunSmoke := runTUIv3SmokeDetailed
+	t.Cleanup(func() {
+		runTUIv3SmokeDetailed = oldRunSmoke
+	})
+	runTUIv3SmokeDetailed = tuiv3.SmokeRunDetailed
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "smoke"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	text := out.String()
+	for _, want := range []string{
+		"termx v3 smoke ok: tui=termx-tui-v3 cases=12",
+		"case: terminal-pool-page",
+		"Terminal Pool",
+		"⌕ search 日志",
+		"[kill]  Kill Terminal",
+		"case: workbench-tree-page",
+		"Workbench Tree",
+		"[open]  Open / Focus",
+		"case: visual-audit-current",
+		"visual review",
+		"quick actions",
+		"case: copy-history",
+		"SCROLL",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("v3 smoke output missing visual review marker %q:\n%s", want, text)
+		}
+	}
+	for _, stale := range []string{"visual acceptance"} {
+		if strings.Contains(text, stale) {
+			t.Fatalf("v3 smoke output must not claim visual acceptance %q:\n%s", stale, text)
+		}
+	}
+}
+
 func TestV3PaneCommandAdapterParsesMiniCommand(t *testing.T) {
 	var out bytes.Buffer
 	cmd := newRootCmd()

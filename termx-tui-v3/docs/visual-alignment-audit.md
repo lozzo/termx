@@ -4,9 +4,9 @@
 
 本文档是切片 79 的视觉基线文档，用来纠正一个关键判断：当前 `termx-tui-v3` 已经具备 styled chrome renderer 和第一版可操作产品壳，但还没有达到用户要求的 `tuiv2` 截图级界面效果。
 
-切片 83 已完成真实默认 TUI 复核，结论仍是未通过。复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。后续不得把切片 80-82 的工程进展误标为截图级视觉完成。
+切片 83 已完成真实默认 TUI 复核，结论仍是未通过。切片 84-86 已完成对应返工，但切片 87 根据用户真实反馈再次确认当前 TUI 仍与目标截图不一致。复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。
 
-后续切片 80-83 必须以本文档作为视觉验收入口。实现仍必须遵守 `termx-tui-v3/docs/architecture.md` 与 `termx-tui-v3/docs/render-architecture.md`，不得因为追求视觉相似而复制旧 `tuiv2` runtime/model、Bubble Tea contract、snapshot/grid history fallback 或旧 renderer 大状态结构。
+视觉返工必须以本文档作为验收入口。实现仍必须遵守 `termx-tui-v3/docs/architecture.md` 与 `termx-tui-v3/docs/render-architecture.md`，不得因为追求视觉相似而复制旧 `tuiv2` runtime/model、Bubble Tea contract、snapshot/grid history fallback 或旧 renderer 大状态结构。
 
 ## 2. 视觉目标来源
 
@@ -32,13 +32,13 @@
 - 切片 80 后，header/footer 已从拼接文本条改为分段产品栏：workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔。
 - 切片 81 后，pane chrome 已从基础线框推进到 `tuiv2` 风格的 shared chrome：card panel 与 split line 都使用 square 细线、顶边 title/state/action 槽位、active accent、inactive muted、连续外框和宽字符安全 content rect。
 - 切片 86 后，Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 内容层已从工程表格/占位推进到第一轮产品视觉：统一 search affordance、selected row marker、detail/preview/context/input label、action row 和 copy search/match/scrollbar/status。
-- `go run ./termx-cli/cmd/termx v3 smoke` 可输出多个非交互 smoke case。
+- 切片 87 后，`go run ./termx-cli/cmd/termx v3 smoke` 输出 12 个非交互视觉 case，包含 `terminal-pool-page`、`workbench-tree-page` 和 `visual-audit-current` review baseline。
 
 当前仍不足：
 
-- 切片 83 复核确认：当前 smoke 和默认入口的视觉密度、槽位、状态表达和整体层级仍不像用户给出的 `tuiv2` 截图。
-- 有 Unicode 线框、ANSI 颜色和可操作命令，并不等于视觉对齐完成。
-- 文档中所有“styled chrome 已达到 tuiv2 截图级视觉等级”的历史表述都应按“基础结构已落地，但视觉仍需返工”理解。
+- 用户真实复核已经暴露关键差距：当前 TUI 的整体风格、密度、层级和目标 `tuiv2` 截图仍不一致。
+- 这些差距阻塞当前视觉对齐 workflow；切片 87 不能作为完成结论，只能作为复核未通过归档。
+- 有 Unicode 线框、ANSI 颜色和可操作命令仍不能单独作为未来视觉验收证据；必须继续使用固定 viewport smoke、e2e smoke、真实默认入口路由和文档记录共同验收。
 
 ## 4. 固定 viewport smoke 基线
 
@@ -49,7 +49,7 @@
 - 覆盖元素：header、footer、split tiled pane、active/inactive pane、floating card、toast、emoji/CJK 宽度安全文本。
 - 目的：记录视觉复核的稳定快照，供后续切片 84-87 对比。
 
-该 case 是“复核快照”，不是目标完成快照。切片 83 后该 case 的文案已经从 `visual gap / not tuiv2` 改成 `visual review / needs polish`，用于提醒当前仍需截图级返工。后续实现如果让该 case 更接近目标，应同步更新本文档或相关验收说明。
+切片 87 后，该 case 保持为 `visual review` 基线，并明确包含 `needs polish` 语义。后续切片 88 只有在真实视觉重绘完成并通过切片 89 复核后，才允许把它改为完成类基线。
 
 ## 5. 差距清单
 
@@ -59,7 +59,7 @@
 
 - 切片 80 已修复稀疏拼接文本条问题，top bar 现在是分段产品栏。
 - 切片 84 已把 top bar 推进到高密度产品栏：左侧 workspace + tab strip + `[⊕]`，右侧 active pane、`◆ owner`、terminal/floating summary 和 action token。
-- 仍可继续 polish inactive tab 视觉和最终品牌密度，但不再允许回退到 `ws:/tab:/active:` 工程标签。
+- 切片 87 只通过固定 smoke 证明当前 top bar 不再是旧工程标签，但真实视觉仍不像目标截图；切片 88 必须继续重绘密度、层级和 style。
 
 目标要求：
 
@@ -74,7 +74,7 @@
 
 - 切片 80 已修复 mode、快捷键、active target、右侧 summary 缺少稳定槽位的问题。
 - 切片 84 已把 bottom bar 推进到 `MODE • [KEY] ACTION` 快捷键 taxonomy，并在窄屏退化时保留尾部关键动作。
-- 右侧细粒度状态 summary 和最终品牌视觉仍可在切片 87 前继续 polish，但不再允许回退到 `mode:/keys:` 工程标签。
+- 切片 87 只通过固定 smoke 证明当前 bottom bar 不再是旧工程标签，但真实视觉仍不像目标截图；切片 88 必须继续重绘快捷键 taxonomy、色块层级和右侧 summary。
 
 目标要求：
 
@@ -90,7 +90,7 @@
 - 切片 81 已完成第一轮 pane chrome 视觉重绘，card panel 与 split line 都具备稳定 title/state/action 槽位、连续 square 外框和 active/inactive style。
 - split line 现在使用共享外框与共享分割线，content rect 会避开外边框和 divider；terminal resize 与 copy rebind 也按新的 content rect cols/rows 计算。
 - 切片 85 已把 pane 顶边推进到目标截图式槽位：title、状态点、`↔0`、`◆ owner`、宽 pane full action cluster `[o]─[_]─[Z]─[x]`、窄分屏 compact action cluster `[Z]─[x]`，并让 action hit region 与可见 cluster 同宽。
-- 仍未完全达到 `tuiv2` 截图中真实 owner/follower 数据、tab strip 侧信息和更高密度 pane 状态的完整细节。
+- 切片 87 确认当前 pane chrome 仍未达到目标截图级别；切片 88 必须继续重绘 title、状态点、owner、序号/action cluster、active/inactive/floating 层级。
 
 目标要求：
 
@@ -105,7 +105,7 @@
 当前问题：
 
 - 切片 82 已把 toast 从功能占位推进到右上角实体消息：rounded card、severity accent 竖条、title/body 合并裁切、close action、右侧/顶部留白和 ANSI style 已落地。
-- toast 仍不是最终品牌视觉；后续可继续 polish 动画、progress 和更细的 severity icon，但不得回退成简单文本。
+- 切片 87 只确认 toast 是实体消息，不确认视觉已经达到参考图；切片 88 可以继续调整 toast 的尺寸、色块、padding 和 severity 层级，但不得回退成简单文本。
 
 目标要求：
 
@@ -120,7 +120,7 @@
 
 - 切片 82 已把 Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 的 framework chrome 推进为带 padding 的实体 card：title/state/action 槽位、content padding、ANSI reset 和 cursor/hit region 语义已同步。
 - 切片 86 已完成 overlay 内部 content 第一轮产品化 polish：Terminal Picker 使用统一搜索行、选中 marker、preview 和 new action；Terminal Pool / Workbench Tree 使用页面标题、搜索行、selected row、detail / preview / action 槽位；Prompt / Help 使用标题、context/input 或分类 topic 行。
-- overlay 内容层仍需在切片 87 真实默认入口中对照截图检查整体密度、窄屏退化和真实 TTY ANSI 视觉。
+- 切片 87 已把 Terminal Pool Page 和 Workbench Tree Page 加入 `termx v3 smoke` 固定快照，但这只是回归证据，不是截图级视觉完成证据。
 
 目标要求：
 
@@ -149,7 +149,7 @@
 
 - copy-history 已有 authoritative window、search、selection、scrollbar/status。
 - 切片 86 已把 search row 推进为 `⌕ search` 形态，把 match state 和 `SCROLL` status 从工程占位推进到更清晰的产品层级。
-- logical-line marker、continuation、clipped marker、selection 和 active match 的最终截图级 polish 仍留给切片 87 验收发现后处理。
+- 切片 87 已把 copy-history 的 search row、authoritative row 和 `SCROLL` status 纳入 smoke 断言。logical-line marker、continuation、clipped marker、selection 和 active match 的更细视觉仍可在后续切片继续增强。
 
 目标要求：
 
@@ -164,7 +164,7 @@
 
 - Terminal Pool 和 Workbench Tree 已有页面内容。
 - 切片 86 已统一 search、selected row、detail、preview、action 的产品层级，不再允许回退到 `> row`、`detail xxx`、`preview xxx` 这类工程表格文本。
-- 常规 viewport 下的整体密度、和用户截图的最终接近程度仍在切片 87 做真实默认入口验收。
+- 切片 87 已在 `100x30` 固定 viewport 下把 Terminal Pool Page 和 Workbench Tree Page 纳入 smoke 输出，常规 viewport 下关键 action 不被裁切；视觉密度和品牌层级仍以后续真实复核为准。
 
 目标要求：
 
@@ -218,6 +218,15 @@
 - 已完成 overlay/page/copy 内容层视觉产品化 polish 第一轮。
 - 已把 Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的 render harness 与 smoke 断言更新为新的内容层视觉合同。
 - 截图级总体验收仍留到切片 87；切片 86 不能单独作为默认 TUI 已达到目标截图的证据。
+
+切片 87 负责：
+
+- 已完成默认入口截图级视觉复核未通过归档。
+- 已把 `termx v3 smoke` 扩展到 12 个 case，覆盖 workbench live、split hidden toast、Terminal Picker、Terminal Pool Page、Workbench Tree Page、copy empty、copy history、Prompt、Help、Tab/Workspace、pane command flow 和 `120x40` visual review baseline。
+- 已在 `termx-cli` 测试中固化 CLI smoke 输出必须包含 Terminal Pool / Workbench Tree / visual review / copy-history status marker，并禁止出现 `visual acceptance` 完成声明。
+- 已保留 `termx v3 e2e-smoke` 对默认 attach 装配、host viewport、resize、content rect terminal resize、copy rebind 和 pane command 的证明。
+- 默认 root 在非交互环境拒绝启动；其可验证证据是默认 root 路由到 v3 root runner，v3 smoke/e2e 证明同一 TUI render/frame path。
+- 切片 87 不能作为视觉完成证据；切片 88 必须继续 shell/pane 视觉重绘，切片 89 再做真实默认入口截图级验收。
 
 ## 7. 验收方式
 

@@ -30,7 +30,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("smoke run detailed: %v", err)
 	}
 	cases := smokeCasesByName(result)
-	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "tab-workspace", "pane-command-flow", "visual-audit-current"}
+	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "terminal-pool-page", "workbench-tree-page", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "tab-workspace", "pane-command-flow", "visual-audit-current"}
 	for _, name := range required {
 		if len(cases[name].Lines) == 0 {
 			t.Fatalf("missing smoke case %s in %#v", name, result.Cases)
@@ -75,10 +75,27 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["terminal-picker"].Lines, "[new]  new terminal") {
 		t.Fatalf("terminal picker smoke missing product content: %#v", cases["terminal-picker"].Lines)
 	}
+	if !frameContains(cases["terminal-pool-page"].Lines, "Terminal Pool") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "⌕ search 日志") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "▌ 日志🚀") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "DETAIL 日志🚀") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "[attach]  Attach Here") ||
+		!frameContains(cases["terminal-pool-page"].Lines, "[kill]  Kill Terminal") {
+		t.Fatalf("terminal pool smoke missing page visual contract: %#v", cases["terminal-pool-page"].Lines)
+	}
+	if !frameContains(cases["workbench-tree-page"].Lines, "Workbench Tree") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "⌕ search 日志") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "▌      pane  日志🚀") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "DETAIL 日志🚀") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "[open]  Open / Focus") {
+		t.Fatalf("workbench tree smoke missing page visual contract: %#v", cases["workbench-tree-page"].Lines)
+	}
 	if !frameContains(cases["copy-empty"].Lines, "copy history empty") {
 		t.Fatalf("copy empty smoke missing pending/empty content: %#v", cases["copy-empty"].Lines)
 	}
-	if !frameContains(cases["copy-history"].Lines, "termx-tui-v3") {
+	if !frameContains(cases["copy-history"].Lines, "⌕ search [/ query]") ||
+		!frameContains(cases["copy-history"].Lines, "termx-tui-v3") ||
+		!frameContains(cases["copy-history"].Lines, "SCROLL") {
 		t.Fatalf("copy history smoke missing authoritative row: %#v", cases["copy-history"].Lines)
 	}
 	if !frameContains(cases["prompt-overlay"].Lines, "Command Prompt") ||
@@ -112,8 +129,12 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["visual-audit-current"].Lines, "visual review baseli") ||
 		!frameContains(cases["visual-audit-current"].Lines, "visual review") ||
 		!frameContains(cases["visual-audit-current"].Lines, "quick actions") ||
-		!frameContains(cases["visual-audit-current"].Lines, "polish") {
-		t.Fatalf("visual review smoke missing fixed visual review markers: %#v", cases["visual-audit-current"].Lines)
+		!frameContains(cases["visual-audit-current"].Lines, "target visual misma") ||
+		!frameContains(cases["visual-audit-current"].Lines, "warning") {
+		t.Fatalf("visual review smoke missing fixed visual markers: %#v", cases["visual-audit-current"].Lines)
+	}
+	if frameContains(cases["visual-audit-current"].Lines, "visual acceptance") {
+		t.Fatalf("visual review smoke must not claim acceptance: %#v", cases["visual-audit-current"].Lines)
 	}
 	if !frameContains(cases["visual-audit-current"].ANSILines, "\x1b[1;38;2;88;213;201m") {
 		t.Fatalf("visual audit smoke missing active accent ANSI: %#v", cases["visual-audit-current"].ANSILines)
@@ -180,9 +201,11 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	requiredOverlays := map[string][]string{
-		"terminal-picker": {"╭─ terminal-picker", "● open", "esc", "⌕ search [filter terminals]", "[new]  new terminal"},
-		"prompt-overlay":  {"╭─ prompt", "● open", "esc", "Command Prompt", "重命名"},
-		"help-overlay":    {"╭─ help", "● open", "esc", "Most used", "Terminal Pool"},
+		"terminal-picker":     {"╭─ terminal-picker", "● open", "esc", "⌕ search [filter terminals]", "[new]  new terminal"},
+		"terminal-pool-page":  {"╭─ terminal-pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill Terminal"},
+		"workbench-tree-page": {"╭─ workbench-tree", "● open", "esc", "Workbench Tree", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open / Focus"},
+		"prompt-overlay":      {"╭─ prompt", "● open", "esc", "Command Prompt", "重命名"},
+		"help-overlay":        {"╭─ help", "● open", "esc", "Most used", "Terminal Pool"},
 	}
 	for name, markers := range requiredOverlays {
 		frame := cases[name]
