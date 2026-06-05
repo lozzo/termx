@@ -52,11 +52,14 @@ type LiveCell struct {
 
 // TerminalSessionStore 保存当前 attach/live path 的 reducer-owned 会话状态。
 type TerminalSessionStore struct {
-	TerminalID string
-	Channel    uint16
-	Attached   bool
-	Cols       int
-	Rows       int
+	TerminalID   string
+	Channel      uint16
+	Attached     bool
+	Cols         int
+	Rows         int
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
 	// Desired* 只记录已发出的 terminal resize 目标，用于连续 pane command 去重和 stale response guard。
 	DesiredCols        int
 	DesiredRows        int
@@ -237,11 +240,18 @@ func cloneLiveCellRows(rows [][]LiveCell) [][]LiveCell {
 }
 
 func (store TerminalSessionStore) Attach(terminalID string, channel uint16, cols int, rows int) TerminalSessionStore {
+	return store.AttachWithResizeOwner(terminalID, channel, cols, rows, "", "", "")
+}
+
+func (store TerminalSessionStore) AttachWithResizeOwner(terminalID string, channel uint16, cols int, rows int, resizePolicy string, surfaceID string, viewID string) TerminalSessionStore {
 	store.TerminalID = terminalID
 	store.Channel = channel
 	store.Attached = true
 	store.Cols = cols
 	store.Rows = rows
+	store.ResizePolicy = resizePolicy
+	store.SurfaceID = surfaceID
+	store.ViewID = viewID
 	store.DesiredCols = cols
 	store.DesiredRows = rows
 	store.ResizeRequestSeq = 0
@@ -304,6 +314,9 @@ func (store TerminalSessionStore) SetError(err string) TerminalSessionStore {
 	store.LastError = err
 	store.State = TerminalLiveError
 	store.Attached = false
+	store.ResizePolicy = ""
+	store.SurfaceID = ""
+	store.ViewID = ""
 	return store
 }
 
@@ -316,6 +329,9 @@ func (store TerminalSessionStore) MarkExited(terminalID string, exitCode int, re
 	store.ExitCode = exitCode
 	store.ExitReason = reason
 	store.LastError = ""
+	store.ResizePolicy = ""
+	store.SurfaceID = ""
+	store.ViewID = ""
 	return store
 }
 

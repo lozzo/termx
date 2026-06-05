@@ -47,11 +47,14 @@ func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req Te
 		return TerminalAttachResult{}, err
 	}
 	out := TerminalAttachResult{
-		TerminalID: req.TerminalID,
-		Channel:    result.Channel,
-		Cols:       req.Cols,
-		Rows:       req.Rows,
-		CanResize:  true,
+		TerminalID:   req.TerminalID,
+		Channel:      result.Channel,
+		Cols:         req.Cols,
+		Rows:         req.Rows,
+		CanResize:    true,
+		ResizePolicy: req.ResizePolicy,
+		SurfaceID:    req.SurfaceID,
+		ViewID:       req.ViewID,
 	}
 	if result.ResizeControl != nil {
 		out.CanResize = result.ResizeControl.CanResize
@@ -159,12 +162,16 @@ func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req Te
 	cols := uint16(req.Cols)
 	rows := uint16(req.Rows)
 	if req.SurfaceID != "" || req.ViewID != "" {
+		resizePolicy := req.ResizePolicy
+		if resizePolicy == "" {
+			resizePolicy = protocol.ResizePolicyOwner
+		}
 		_, err := adapter.Client.EnsureResize(ctx, protocol.EnsureResizeParams{
 			TerminalID:   req.TerminalID,
 			Channel:      req.Channel,
 			Cols:         cols,
 			Rows:         rows,
-			ResizePolicy: protocol.ResizePolicyOwner,
+			ResizePolicy: resizePolicy,
 			SurfaceID:    req.SurfaceID,
 			ViewID:       req.ViewID,
 		})

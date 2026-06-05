@@ -196,7 +196,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	if msg.Err != nil {
 		return setLiveError(root, msg.Err.Error()), nil
 	}
-	root.Session = root.Session.Attach(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows)
+	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID)
 	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, msg.Result.TerminalID)
 	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
@@ -338,10 +338,13 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.Resize(ctx, services.TerminalResizeRequest{
-				TerminalID: session.TerminalID,
-				Channel:    session.Channel,
-				Cols:       msg.Cols,
-				Rows:       msg.Rows,
+				TerminalID:   session.TerminalID,
+				Channel:      session.Channel,
+				Cols:         msg.Cols,
+				Rows:         msg.Rows,
+				ResizePolicy: session.ResizePolicy,
+				SurfaceID:    session.SurfaceID,
+				ViewID:       session.ViewID,
 			})
 			return LiveResizeResultMsg{Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, Err: err}
 		},

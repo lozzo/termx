@@ -92,3 +92,16 @@ func TestTerminalSessionTracksRequestedResizeAndRejectsStaleResults(t *testing.T
 		t.Fatalf("latest resize result must apply, next=%#v applied=%v", next, applied)
 	}
 }
+
+func TestTerminalSessionTracksResizeOwner(t *testing.T) {
+	session := (TerminalSessionStore{}).AttachWithResizeOwner("term-1", 7, 80, 24, "owner", "surface-1", "view-1")
+	if session.ResizePolicy != "owner" || session.SurfaceID != "surface-1" || session.ViewID != "view-1" {
+		t.Fatalf("expected resize owner metadata, got %#v", session)
+	}
+	if errored := session.SetError("boom"); errored.ResizePolicy != "" || errored.SurfaceID != "" || errored.ViewID != "" {
+		t.Fatalf("error state must clear resize owner metadata, got %#v", errored)
+	}
+	if exited := session.MarkExited("term-1", 0, "done"); exited.ResizePolicy != "" || exited.SurfaceID != "" || exited.ViewID != "" {
+		t.Fatalf("exit state must clear resize owner metadata, got %#v", exited)
+	}
+}

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,8 +24,10 @@ import (
 	"github.com/lozzow/termx/termx-shared/transport"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	"github.com/lozzow/termx/termx-tui-v3/app"
+	tuiinput "github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	tuiservices "github.com/lozzow/termx/termx-tui-v3/services"
+	tuistate "github.com/lozzow/termx/termx-tui-v3/state"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/spf13/cobra"
 )
@@ -1105,7 +1109,8 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 }
 
 func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
-	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	processes := newCoreV2ResizeRecordingProcessFactory()
+	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
 	defer closeClient()
 	if _, err := client.Create(context.Background(), protocol.CreateParams{
 		ID:      "term-1",
@@ -1137,6 +1142,221 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 
 	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 26 {
 		t.Fatalf("runtime must correct protocol terminal size to content rect, got %#v", runtime.State().Session)
+	}
+	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
+	waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	if runtime.State().Session.SurfaceID != "test-surface" || runtime.State().Session.ViewID != "test-view" {
+		t.Fatalf("runtime must keep protocol resize owner metadata, session=%#v", runtime.State().Session)
+	}
+}
+
+func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
+	processes := newCoreV2ResizeRecordingProcessFactory()
+	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "resize-flow",
+		Command: testShellSleepCommand(),
+		Size:    protocol.Size{Cols: 100, Rows: 30},
+	}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	_ = server
+	host := app.NewFakeTerminalHost(32)
+	host.SetSize(100, 30)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host)
+
+	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
+		TerminalID:   "term-1",
+		Cols:         100,
+		Rows:         30,
+		Mode:         "collaborator",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "test-surface",
+		ViewID:       "test-view",
+	}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
+	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+
+	if err := host.SendResize(120, 40); err != nil {
+		t.Fatalf("host resize: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, seenResize)
+
+	if err := runtime.Post(app.ShellSetHeaderVisibleMsg{Visible: false}); err != nil {
+		t.Fatalf("post header hide: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 37}, seenResize)
+	if err := runtime.Post(app.ShellSetFooterVisibleMsg{Visible: false}); err != nil {
+		t.Fatalf("post footer hide: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, seenResize)
+
+	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
+		Action:         tuistate.PaneCommandSplit,
+		SplitDirection: tuistate.SplitDirectionVertical,
+		NewPane:        tuistate.PaneState{ID: "pane-2", Title: "right", Kind: tuistate.PaneTerminalLive},
+		Source:         tuistate.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post split: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 58, Rows: 38}, seenResize)
+
+	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
+		Action:          tuistate.PaneCommandResize,
+		Target:          tuistate.PaneCommandTarget{PaneID: "pane-2"},
+		ResizeDirection: tuistate.PaneResizeLeft,
+		Delta:           6,
+		Source:          tuistate.PaneCommandSourceKeyboard,
+	}}); err != nil {
+		t.Fatalf("post keyboard resize: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, seenResize)
+
+	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
+		Action: tuistate.PaneCommandZoom,
+		Target: tuistate.PaneCommandTarget{PaneID: "pane-2"},
+		Source: tuistate.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post zoom: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, seenResize)
+
+	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
+		Action: tuistate.PaneCommandUnzoom,
+		Source: tuistate.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post unzoom: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 64, Rows: 38}, seenResize)
+
+	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
+		Action: tuistate.PaneCommandClose,
+		Target: tuistate.PaneCommandTarget{PaneID: "pane-2"},
+		Source: tuistate.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post close: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, seenResize)
+}
+
+func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T) {
+	processes := newCoreV2ResizeRecordingProcessFactory()
+	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "mouse-resize-flow",
+		Command: testShellSleepCommand(),
+		Size:    protocol.Size{Cols: 100, Rows: 30},
+	}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	_ = server
+	host := app.NewFakeTerminalHost(32)
+	host.SetSize(100, 30)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host)
+
+	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
+		TerminalID:   "term-1",
+		Cols:         100,
+		Rows:         30,
+		Mode:         "collaborator",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "test-surface",
+		ViewID:       "test-view",
+	}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
+	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+
+	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
+		Action:         tuistate.PaneCommandSplit,
+		SplitDirection: tuistate.SplitDirectionVertical,
+		NewPane:        tuistate.PaneState{ID: "pane-2", Title: "right", Kind: tuistate.PaneTerminalLive},
+		Source:         tuistate.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post split: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 48, Rows: 26}, seenResize)
+	inputsBefore, _ := process.snapshot()
+
+	divider := lastFramePaneResizeRegionForCLITest(t, host, tuistate.DefaultPaneID, tuistate.PaneResizeRight)
+	start := mouseEventAtCLITest(divider.Rect)
+	if err := host.SendInput(start); err != nil {
+		t.Fatalf("send mouse drag start: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	drag := start
+	drag.Mouse = tuiinput.MouseLeftDrag
+	drag.Col += 6
+	if err := host.SendInput(drag); err != nil {
+		t.Fatalf("send mouse drag move: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 42, Rows: 26}, seenResize)
+
+	inputsAfter, _ := process.snapshot()
+	if len(inputsAfter) != len(inputsBefore) {
+		t.Fatalf("mouse divider drag must not leak terminal input, before=%#v after=%#v", inputsBefore, inputsAfter)
+	}
+}
+
+func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) {
+	processes := newCoreV2ResizeRecordingProcessFactory()
+	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "resize-failure-flow",
+		Command: testShellSleepCommand(),
+		Size:    protocol.Size{Cols: 100, Rows: 30},
+	}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	_ = server
+	host := app.NewFakeTerminalHost(32)
+	host.SetSize(100, 30)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, host)
+
+	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
+		TerminalID:   "term-1",
+		Cols:         100,
+		Rows:         30,
+		Mode:         "collaborator",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "test-surface",
+		ViewID:       "test-view",
+	}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
+	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	process.setResizeErr(errors.New("pty resize failed"))
+
+	if err := host.SendResize(120, 40); err != nil {
+		t.Fatalf("host resize: %v", err)
+	}
+	drainV3RuntimeForCLITest(t, runtime)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, seenResize)
+	if !strings.Contains(runtime.State().Session.LastError, "pty resize failed") || runtime.State().Session.Attached {
+		t.Fatalf("core-v2 process resize failure must surface in live session, session=%#v", runtime.State().Session)
 	}
 }
 
@@ -2813,9 +3033,14 @@ func (s *fakeCoreV2Server) Shutdown(context.Context) error {
 }
 
 func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.Client, func()) {
+	return newCoreV2ProtocolClientForCLITestWithOptions(t)
+}
+
+func newCoreV2ProtocolClientForCLITestWithOptions(t *testing.T, opts ...corev2.ServerOption) (*corev2.Server, *protocol.Client, func()) {
 	t.Helper()
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
-	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
+	serverOpts := append([]corev2.ServerOption{corev2.WithSocketPath(socketPath)}, opts...)
+	server := corev2.NewServer(serverOpts...)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -2849,6 +3074,173 @@ func newCoreV2ProtocolClientForCLITest(t *testing.T) (*corev2.Server, *protocol.
 		}
 	}
 	return server, client, closeFn
+}
+
+type coreV2ResizeRecordingProcessFactory struct {
+	mu        sync.Mutex
+	processes map[string]*coreV2ResizeRecordingProcess
+}
+
+func newCoreV2ResizeRecordingProcessFactory() *coreV2ResizeRecordingProcessFactory {
+	return &coreV2ResizeRecordingProcessFactory{processes: make(map[string]*coreV2ResizeRecordingProcess)}
+}
+
+func (factory *coreV2ResizeRecordingProcessFactory) Spawn(_ context.Context, spec corev2.ProcessSpec) (corev2.TerminalProcess, error) {
+	process := &coreV2ResizeRecordingProcess{
+		outputCh: make(chan []byte, 16),
+		waitCh:   make(chan corev2.ProcessExit, 1),
+	}
+	factory.mu.Lock()
+	factory.processes[spec.TerminalID] = process
+	factory.mu.Unlock()
+	return process, nil
+}
+
+func (factory *coreV2ResizeRecordingProcessFactory) process(id string) *coreV2ResizeRecordingProcess {
+	factory.mu.Lock()
+	defer factory.mu.Unlock()
+	return factory.processes[id]
+}
+
+type coreV2ResizeRecordingProcess struct {
+	mu        sync.Mutex
+	inputs    [][]byte
+	resizes   []corev2.Size
+	resizeErr error
+	outputCh  chan []byte
+	waitCh    chan corev2.ProcessExit
+	closed    bool
+}
+
+func (process *coreV2ResizeRecordingProcess) Input(data []byte) error {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	if process.closed {
+		return io.ErrClosedPipe
+	}
+	process.inputs = append(process.inputs, append([]byte(nil), data...))
+	return nil
+}
+
+func (process *coreV2ResizeRecordingProcess) Resize(size corev2.Size) error {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	if process.closed {
+		return io.ErrClosedPipe
+	}
+	process.resizes = append(process.resizes, size)
+	if process.resizeErr != nil {
+		return process.resizeErr
+	}
+	return nil
+}
+
+func (process *coreV2ResizeRecordingProcess) Output() <-chan []byte {
+	return process.outputCh
+}
+
+func (process *coreV2ResizeRecordingProcess) Kill() error {
+	process.mu.Lock()
+	process.closed = true
+	process.mu.Unlock()
+	select {
+	case process.waitCh <- corev2.ProcessExit{Code: -1}:
+	default:
+	}
+	return nil
+}
+
+func (process *coreV2ResizeRecordingProcess) Wait() <-chan corev2.ProcessExit {
+	return process.waitCh
+}
+
+func (process *coreV2ResizeRecordingProcess) Close() error {
+	process.mu.Lock()
+	process.closed = true
+	process.mu.Unlock()
+	return nil
+}
+
+func (process *coreV2ResizeRecordingProcess) setResizeErr(err error) {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	process.resizeErr = err
+}
+
+func (process *coreV2ResizeRecordingProcess) snapshot() ([][]byte, []corev2.Size) {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	inputs := make([][]byte, len(process.inputs))
+	for i, input := range process.inputs {
+		inputs[i] = append([]byte(nil), input...)
+	}
+	resizes := append([]corev2.Size(nil), process.resizes...)
+	return inputs, resizes
+}
+
+func drainV3RuntimeForCLITest(t *testing.T, runtime *app.AppRuntime) {
+	t.Helper()
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain runtime: %v", err)
+	}
+}
+
+func waitForCoreV2ResizeRecordingProcess(t *testing.T, factory *coreV2ResizeRecordingProcessFactory, terminalID string) *coreV2ResizeRecordingProcess {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if process := factory.process(terminalID); process != nil {
+			return process
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for core-v2 recording process %s", terminalID)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func waitForCoreV2ProcessResize(t *testing.T, process *coreV2ResizeRecordingProcess, want corev2.Size) int {
+	t.Helper()
+	return waitForCoreV2ProcessResizeAfter(t, process, want, 0)
+}
+
+func waitForCoreV2ProcessResizeAfter(t *testing.T, process *coreV2ResizeRecordingProcess, want corev2.Size, after int) int {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, resizes := process.snapshot()
+		if after < 0 {
+			after = 0
+		}
+		for index := after; index < len(resizes); index++ {
+			if resizes[index] == want {
+				return index + 1
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for process resize %#v after %d, got %#v", want, after, resizes)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func mouseEventAtCLITest(rect render.Rect) tuiinput.InputEvent {
+	return tuiinput.InputEvent{Kind: tuiinput.EventKindMouse, Mouse: tuiinput.MouseLeft, Row: rect.Y + 1, Col: rect.X + 1}
+}
+
+func lastFramePaneResizeRegionForCLITest(t *testing.T, host *app.FakeTerminalHost, paneID string, direction tuistate.PaneResizeDirection) render.HitRegion {
+	t.Helper()
+	frames := host.Frames()
+	if len(frames) == 0 {
+		t.Fatal("expected runtime frame")
+	}
+	for _, region := range frames[len(frames)-1].HitRegions {
+		if region.Kind == render.HitRegionPaneResize && region.ActionID == "pane.resize" && region.PaneID == paneID && region.Direction == string(direction) {
+			return region
+		}
+	}
+	t.Fatalf("missing pane resize region pane=%s direction=%s in %#v", paneID, direction, frames[len(frames)-1].HitRegions)
+	return render.HitRegion{}
 }
 
 func testShellSleepCommand() []string {

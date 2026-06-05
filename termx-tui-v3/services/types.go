@@ -114,11 +114,14 @@ type TerminalAttachRequest struct {
 }
 
 type TerminalAttachResult struct {
-	TerminalID string
-	Channel    uint16
-	Cols       int
-	Rows       int
-	CanResize  bool
+	TerminalID   string
+	Channel      uint16
+	Cols         int
+	Rows         int
+	CanResize    bool
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
 }
 
 type TerminalRestartRequest struct {
@@ -153,12 +156,13 @@ type TerminalInputRequest struct {
 }
 
 type TerminalResizeRequest struct {
-	TerminalID string
-	Channel    uint16
-	Cols       int
-	Rows       int
-	SurfaceID  string
-	ViewID     string
+	TerminalID   string
+	Channel      uint16
+	Cols         int
+	Rows         int
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
 }
 
 type TerminalSurfaceResult struct {
@@ -284,6 +288,15 @@ func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttach
 	}
 	if result.Rows == 0 {
 		result.Rows = req.Rows
+	}
+	if result.ResizePolicy == "" {
+		result.ResizePolicy = req.ResizePolicy
+	}
+	if result.SurfaceID == "" {
+		result.SurfaceID = req.SurfaceID
+	}
+	if result.ViewID == "" {
+		result.ViewID = req.ViewID
 	}
 	return result, nil
 }

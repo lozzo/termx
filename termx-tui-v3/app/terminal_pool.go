@@ -184,6 +184,8 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				Rows:         rows,
 				Mode:         "collaborator",
 				ResizePolicy: "owner",
+				SurfaceID:    "termx-tui-v3",
+				ViewID:       "terminal-pool",
 			})
 			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, Result: result, Err: err}
 		},
@@ -201,7 +203,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	if result.TerminalID == "" {
 		result.TerminalID = msg.TerminalID
 	}
-	root.Session = root.Session.Attach(result.TerminalID, result.Channel, result.Cols, result.Rows)
+	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, result.TerminalID)
 	root.Shell = root.Shell.CloseOverlay()
@@ -270,7 +272,7 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 	}
 	cols, rows := terminalPoolAttachSize(root)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: "owner"})
+		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: "owner", SurfaceID: "termx-tui-v3", ViewID: "terminal-pool"})
 		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, Result: result, Err: err}
 	}}}
 }

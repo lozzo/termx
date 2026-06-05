@@ -73,6 +73,51 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 	}
 }
 
+func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-1",
+			Channel:      9,
+			Cols:         80,
+			Rows:         24,
+			CanResize:    true,
+			ResizePolicy: "owner",
+			SurfaceID:    "surface-1",
+			ViewID:       "view-1",
+		},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{
+		TerminalID:   "term-1",
+		Cols:         80,
+		Rows:         24,
+		Mode:         "collaborator",
+		ResizePolicy: "owner",
+		SurfaceID:    "surface-1",
+		ViewID:       "view-1",
+	}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("expected attach correction resize, got %#v", terminal.Resizes)
+	}
+	got := terminal.Resizes[0]
+	if got.Cols != 78 || got.Rows != 20 || got.ResizePolicy != "owner" || got.SurfaceID != "surface-1" || got.ViewID != "view-1" {
+		t.Fatalf("layout resize must preserve attach owner metadata, got %#v", got)
+	}
+}
+
 func TestLiveAppInputDisplaysOnlyAfterSurfaceEventAndExitState(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20},
