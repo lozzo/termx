@@ -850,12 +850,13 @@ cache 原则：
 当前状态：
 
 - 上述目标中的 renderer 结构、styled `RenderResult`、ANSI `FrameSink`、cell matrix、theme token、基础 pane/header/footer/toast/overlay 路径已经作为工程基线落地。
-- 根据 `termx-tui-v3/docs/visual-alignment-audit.md`，当前默认 TUI 仍未达到用户截图要求的完整 `tuiv2` 视觉等级；后续必须继续按视觉返工切片推进。
+- 根据 `termx-tui-v3/docs/visual-alignment-audit.md` 与 `termx-tui-v3/docs/default-tui-visual-review.md`，当前默认 TUI 仍未达到用户截图要求的完整 `tuiv2` 视觉等级；后续必须继续按视觉返工切片推进。
 - 切片 80 已把 shell header/footer 从稀疏文本条推进到分段产品栏。
 - 切片 81 已把 pane chrome / split line 从基础线框推进到 shared chrome：card panel 与 split line 都使用 square 细线、title/state/action 槽位、active accent、inactive muted、共享外框、连接点合成和 content rect 宽度安全。
 - 切片 82 已把 overlay/toast/floating 从基础可见 chrome 推进到实体 card：toast 具备 severity accent 竖条、title/body 合并裁切、close action 和右上角留白；overlay 与 floating 具备 title/state/action 槽位、content padding、active/focus token、ANSI reset 和宽字符安全。
-- 后续不得再把无样式纯文本线框当作默认 UI 完成标准。
-- 后续深化应先完成真实默认入口视觉验收，不得回退到 terminal-only renderer。
+- 切片 83 已复核失败：当前默认 TUI 是可运行的 styled chrome 产品壳，但不是截图级视觉完成。
+- 后续不得再把无样式纯文本线框、基础 ANSI 色或 smoke 行宽恒等当作默认 UI 完成标准。
+- 后续深化应继续按 shell bar、pane chrome、overlay/page/copy polish 和最终默认入口截图级验收推进，不得回退到 terminal-only renderer。
 
 非目标：
 
@@ -1047,7 +1048,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前优先级：
 
-- 先按 `visual-alignment-audit.md` 完成切片 81-83：pane chrome、overlay/toast/floating 和真实默认入口视觉验收；shell header/footer 已在切片 80 完成第一轮重绘。
+- 先按 `visual-alignment-audit.md` 与 `default-tui-visual-review.md` 完成切片 84-87：shell bar 高密度重绘、pane chrome 目标截图级槽位重绘、overlay/page/copy 视觉产品化 polish 和真实默认入口截图级验收。
 - 在视觉验收完成前，不得再把基础 styled chrome、Unicode glyph 或 smoke 文本线框当作视觉完成证据。
 
 建议后续切片：

@@ -1774,7 +1774,18 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 
 render 兼容投影清理与性能基线已经完成：旧 `RenderVM{Lines, Status}` 兼容输入语义已删除，large terminal output benchmark 已建立。后续如果要把项目往前推，应新增切片，并在不破坏上述产品壳、terminal live 前推、copy-history 深化和 `RenderResult` 单一路径的前提下，继续 terminal-live rich attributes、copy-history 最终 polish 或 render performance 优化。
 
-## 33. 后续讨论入口
+## 33. 默认视觉复核结论
+
+当前默认 TUI 已经可以通过上述交互入口完成基本操作，但切片 83 的真实视觉复核结论是未通过：界面仍不像用户给出的 `tuiv2` 目标截图。
+
+复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。后续产品验收必须区分两个层级：
+
+- 工程可运行：header/footer、pane、overlay、toast、floating、copy mode 和鼠标/键盘入口可操作。
+- 截图级视觉完成：shell bar、pane chrome、active/inactive、toast、overlay、floating 和内容页视觉密度接近目标截图。
+
+当前只满足第一层级。第二层级必须继续通过 workflow 中的后续视觉返工切片完成。
+
+## 34. 后续讨论入口
 
 后续讨论 render 架构时，应以本文档为产品基准。
 

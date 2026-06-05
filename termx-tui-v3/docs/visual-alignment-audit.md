@@ -4,6 +4,8 @@
 
 本文档是切片 79 的视觉基线文档，用来纠正一个关键判断：当前 `termx-tui-v3` 已经具备 styled chrome renderer 和第一版可操作产品壳，但还没有达到用户要求的 `tuiv2` 截图级界面效果。
 
+切片 83 已完成真实默认 TUI 复核，结论仍是未通过。复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。后续不得把切片 80-82 的工程进展误标为截图级视觉完成。
+
 后续切片 80-83 必须以本文档作为视觉验收入口。实现仍必须遵守 `termx-tui-v3/docs/architecture.md` 与 `termx-tui-v3/docs/render-architecture.md`，不得因为追求视觉相似而复制旧 `tuiv2` runtime/model、Bubble Tea contract、snapshot/grid history fallback 或旧 renderer 大状态结构。
 
 ## 2. 视觉目标来源
@@ -33,7 +35,7 @@
 
 当前仍不足：
 
-- 当前 smoke 和默认入口的视觉密度、槽位、状态表达和整体层级仍不像用户给出的 `tuiv2` 截图。
+- 切片 83 复核确认：当前 smoke 和默认入口的视觉密度、槽位、状态表达和整体层级仍不像用户给出的 `tuiv2` 截图。
 - 有 Unicode 线框、ANSI 颜色和可操作命令，并不等于视觉对齐完成。
 - 文档中所有“styled chrome 已达到 tuiv2 截图级视觉等级”的历史表述都应按“基础结构已落地，但视觉仍需返工”理解。
 
@@ -44,9 +46,9 @@
 - case 名称：`visual-audit-current`
 - 固定 viewport：`120x40`
 - 覆盖元素：header、footer、split tiled pane、active/inactive pane、floating card、toast、emoji/CJK 宽度安全文本。
-- 目的：记录当前 visual gap 的稳定现状基线，供切片 80-83 对比。
+- 目的：记录视觉复核的稳定快照，供后续切片 84-87 对比。
 
-该 case 是“当前不足的审计快照”，不是目标完成快照。后续实现如果让该 case 更接近目标，应同步更新本文档或相关验收说明。
+该 case 是“复核快照”，不是目标完成快照。切片 83 后该 case 的文案已经从 `visual gap / not tuiv2` 改成 `visual review / needs polish`，用于提醒当前仍需截图级返工。后续实现如果让该 case 更接近目标，应同步更新本文档或相关验收说明。
 
 ## 5. 差距清单
 
@@ -187,15 +189,17 @@
 
 切片 83 负责：
 
-- 真实默认入口视觉验收。
-- `go run ./termx-cli/cmd/termx` 在常用 viewport 下人工对照目标截图。
-- 分屏、focus、resize、floating、Terminal Pool/Tree、Prompt/Help、copy mode 的视觉检查。
+- 已完成真实默认入口视觉复核。
+- 复核结论是未通过，不能标记为截图级视觉完成。
+- 已把失败原因、手工复核入口和后续切片写入 `termx-tui-v3/docs/default-tui-visual-review.md`。
+- 后续继续通过切片 84-87 处理 shell bar、pane chrome、overlay/page/copy polish 和最终截图级验收。
 
 ## 7. 验收方式
 
 自动验收：
 
 - `cd termx-tui-v3 && go test ./... -count=1`
+- `cd termx-cli && go test ./... -count=1`
 - `go run ./termx-cli/cmd/termx v3 smoke`
 - `go run ./termx-cli/cmd/termx v3 e2e-smoke`
 - `git diff --check`

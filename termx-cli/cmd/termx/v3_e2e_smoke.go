@@ -117,6 +117,9 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if !v3E2EFramesContain(host.Frames(), "alpha") || !v3E2EFramesContain(host.Frames(), "beta") {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: hydrated live rows were not rendered")
 	}
+	if err := validateV3E2EStyledChrome(host.Frames()); err != nil {
+		return v3E2ESmokeResult{}, err
+	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
@@ -136,6 +139,9 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: host resize did not resize terminal to content rect, got %#v", got)
 	}
 	if err := validateV3E2EFrameSize(host.Frames(), 100, 40); err != nil {
+		return v3E2ESmokeResult{}, err
+	}
+	if err := validateV3E2EStyledChrome(host.Frames()); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
@@ -265,6 +271,34 @@ func validateV3E2EFrameSize(frames []render.Frame, cols int, rows int) error {
 		}
 	}
 	return nil
+}
+
+// validateV3E2EStyledChrome 固定真实装配路径必须输出 styled chrome，
+// 不能退回到裸 terminal 内容或纯文本占位。
+func validateV3E2EStyledChrome(frames []render.Frame) error {
+	if len(frames) == 0 {
+		return fmt.Errorf("v3 e2e smoke: no frames rendered")
+	}
+	frame := frames[len(frames)-1]
+	required := []string{"ws:main", "tab:[main]", "┌─ shell", "● active", "[x]", "mode:"}
+	for _, marker := range required {
+		found := false
+		for _, line := range frame.Lines {
+			if strings.Contains(line, marker) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("v3 e2e smoke: styled chrome marker %q missing from frame %#v", marker, frame.Lines)
+		}
+	}
+	for _, line := range frame.ANSILines {
+		if strings.Contains(line, "\x1b[") {
+			return nil
+		}
+	}
+	return fmt.Errorf("v3 e2e smoke: styled chrome ANSI missing from frame %#v", frame.ANSILines)
 }
 
 func v3E2EFramesContain(frames []render.Frame, value string) bool {

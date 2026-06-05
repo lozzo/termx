@@ -238,7 +238,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	shell := state.DefaultShell().
 		SetPanelPresentation(state.PanelPresentationSplitLine).
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
-		AddToast(state.ToastSpec{ID: "visual-gap", Severity: state.ToastWarning, Title: "visual gap", Body: "not tuiv2"})
+		AddToast(state.ToastSpec{ID: "visual-review", Severity: state.ToastWarning, Title: "visual review", Body: "polish"})
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
 		TargetID: "float-visual",
@@ -257,8 +257,8 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 			Cols:       56,
 			Rows:       36,
 			Lines: []string{
-				"visual audit baseline",
-				"current v3 is functional chrome, not target visual parity",
+				"visual review baseline",
+				"current v3 is functional chrome, screenshot parity pending",
 				"emoji 🚀 and 中文 must not break chrome",
 			},
 		},

@@ -106,15 +106,16 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if len(cases["visual-audit-current"].Lines) != 40 || render.DisplayWidth(cases["visual-audit-current"].Lines[0]) != 120 {
 		t.Fatalf("visual audit smoke must use fixed 120x40 viewport, got lines=%d width=%d", len(cases["visual-audit-current"].Lines), render.DisplayWidth(cases["visual-audit-current"].Lines[0]))
 	}
-	if !frameContains(cases["visual-audit-current"].Lines, "visual audit baselin") ||
-		!frameContains(cases["visual-audit-current"].Lines, "visual gap") ||
+	if !frameContains(cases["visual-audit-current"].Lines, "visual review baseli") ||
+		!frameContains(cases["visual-audit-current"].Lines, "visual review") ||
 		!frameContains(cases["visual-audit-current"].Lines, "quick actions") ||
-		!frameContains(cases["visual-audit-current"].Lines, "not tuiv2") {
-		t.Fatalf("visual audit smoke missing fixed visual baseline markers: %#v", cases["visual-audit-current"].Lines)
+		!frameContains(cases["visual-audit-current"].Lines, "polish") {
+		t.Fatalf("visual review smoke missing fixed visual review markers: %#v", cases["visual-audit-current"].Lines)
 	}
 	if !frameContains(cases["visual-audit-current"].ANSILines, "\x1b[1;38;2;88;213;201m") {
 		t.Fatalf("visual audit smoke missing active accent ANSI: %#v", cases["visual-audit-current"].ANSILines)
 	}
+	assertDefaultVisualReviewChrome(t, cases)
 	assertNoASCIIChrome(t, "visual-audit-current", cases["visual-audit-current"])
 	for name, frame := range cases {
 		assertSmokeWidth(t, name, frame)
@@ -162,6 +163,36 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 		right := render.SliceCells(frame.Lines[row], width-1, width)
 		if !isVerticalPaneBorderGlyph(left) || !isVerticalPaneBorderGlyph(right) {
 			t.Fatalf("smoke case %s pane border discontinuity row=%d left=%q right=%q frame=%#v", name, row, left, right, frame.Lines)
+		}
+	}
+}
+
+func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
+	t.Helper()
+	review := cases["visual-audit-current"]
+	requiredReview := []string{" ws:main ", " tab:[main] ", "active:pane-logs", "┬─ logs", "┴", "● active", "… pending", "▌ visual review", "[×]", "╭─ quick actions", "◢", "mode:live"}
+	for _, marker := range requiredReview {
+		if !frameContains(review.Lines, marker) {
+			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)
+		}
+	}
+	requiredOverlays := map[string][]string{
+		"terminal-picker": {"╭─ terminal-picker", "● open", "esc", "search [type to filter]", "[new] new terminal"},
+		"prompt-overlay":  {"╭─ prompt", "● open", "esc", "Command Prompt", "重命名"},
+		"help-overlay":    {"╭─ help", "● open", "esc", "Most used", "Terminal Pool"},
+	}
+	for name, markers := range requiredOverlays {
+		frame := cases[name]
+		for _, marker := range markers {
+			if !frameContains(frame.Lines, marker) {
+				t.Fatalf("smoke case %s missing overlay visual marker %q: %#v", name, marker, frame.Lines)
+			}
+		}
+	}
+	split := cases["split-hidden-toast"]
+	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴", "▌ warn 🚀", "[×]"} {
+		if !frameContains(split.Lines, marker) {
+			t.Fatalf("split hidden toast missing styled split marker %q: %#v", marker, split.Lines)
 		}
 	}
 }
