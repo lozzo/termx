@@ -750,8 +750,8 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, focusFrame, "shell", render.StyleAccent)
 	assertPaneVisualState(t, focusFrame, "pane", render.StyleMuted)
-	if !frameContains(focusFrame, "pane.focus-next") || !frameContains(focusFrame, "● shell") {
-		t.Fatalf("keyboard focus should update toast/footer immediately, got %#v", focusFrame.Lines)
+	if frameContains(focusFrame, "pane.focus-next") || !frameContains(focusFrame, "● shell") {
+		t.Fatalf("keyboard focus should update footer without low-value toast, got %#v", focusFrame.Lines)
 	}
 
 	paneContent := frameHitRegion(t, focusFrame, render.HitRegionPaneContent, "pane-2")
@@ -767,8 +767,8 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, mouseFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, mouseFrame, "shell", render.StyleMuted)
-	if !frameContains(mouseFrame, "pane.focus") || !frameContains(mouseFrame, "● pane") {
-		t.Fatalf("mouse focus should update toast/footer immediately, got %#v", mouseFrame.Lines)
+	if frameContains(mouseFrame, "pane.focus") || !frameContains(mouseFrame, "● pane") {
+		t.Fatalf("mouse focus should update footer without low-value toast, got %#v", mouseFrame.Lines)
 	}
 
 	for _, event := range []input.InputEvent{

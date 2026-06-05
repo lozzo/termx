@@ -442,6 +442,7 @@ func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 	}
 	beforeInputCount := len(terminal.Inputs)
 	beforeResizeCount := len(terminal.Resizes)
+	beforeToastCount := len(runtime.State().Shell.Toasts)
 	resizeRegion := framePaneResizeRegion(t, lastRuntimeFrame(t, host), state.DefaultPaneID, state.PaneResizeRight)
 	start := mouseEventAt(resizeRegion.Rect)
 	start.Mouse = input.MouseLeft
@@ -473,6 +474,9 @@ func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 	}
 	if len(terminal.Inputs) != beforeInputCount {
 		t.Fatalf("pane resize drag must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+	if len(runtime.State().Shell.Toasts) != beforeToastCount {
+		t.Fatalf("pane resize drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
 	}
 
 	release := drag
@@ -570,6 +574,7 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 		t.Fatalf("drain floating initial render: %v", err)
 	}
 	beforeInputCount := len(terminal.Inputs)
+	beforeToastCount := len(runtime.State().Shell.Toasts)
 
 	moveRegion := frameActionHitRegion(t, lastRuntimeFrame(t, host), "floating.move-drag", "floating-1")
 	moveStart := mouseEventAt(moveRegion.Rect)
@@ -595,6 +600,9 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	moved := runtime.State().Shell.Floatings[0].Rect
 	if moved.X != 14 || moved.Y != 7 {
 		t.Fatalf("floating title drag should move rect, got %#v", moved)
+	}
+	if len(runtime.State().Shell.Toasts) != beforeToastCount {
+		t.Fatalf("floating move drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
 	}
 	moveRelease := moveDrag
 	moveRelease.Mouse = input.MouseLeftUp
@@ -633,6 +641,9 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	resized := runtime.State().Shell.Floatings[0].Rect
 	if resized.W != beforeResize.W+6 || resized.H != beforeResize.H+2 {
 		t.Fatalf("floating resize drag should resize rect, before=%#v after=%#v", beforeResize, resized)
+	}
+	if len(runtime.State().Shell.Toasts) != beforeToastCount {
+		t.Fatalf("floating resize drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
 	}
 	resizeRelease := resizeDrag
 	resizeRelease.Mouse = input.MouseLeftUp

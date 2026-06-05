@@ -487,7 +487,7 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (state.Root, []Effect) {
 	command = withFloatingCommandDefaults(root, command)
 	nextShell, result := root.Shell.ApplyFloatingCommand(command)
-	root.Shell = addFloatingCommandToast(nextShell, result)
+	root.Shell = addFloatingCommandToast(nextShell, command, result)
 	return root.Advance(), nil
 }
 
@@ -516,11 +516,23 @@ func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand)
 	return command
 }
 
-func addFloatingCommandToast(shell state.ShellStore, result state.FloatingCommandResult) state.ShellStore {
+func addFloatingCommandToast(shell state.ShellStore, command state.FloatingCommand, result state.FloatingCommandResult) state.ShellStore {
 	if result.Status == state.FloatingCommandOK {
+		if shouldSuppressFloatingCommandSuccessToast(command) {
+			return shell
+		}
 		return shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(result.Action), Body: result.ID})
 	}
 	return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(result.Action), Body: result.Reason})
+}
+
+func shouldSuppressFloatingCommandSuccessToast(command state.FloatingCommand) bool {
+	switch command.Action {
+	case state.FloatingCommandFocusRaise, state.FloatingCommandMove, state.FloatingCommandResize:
+		return true
+	default:
+		return false
+	}
 }
 
 func addWorkbenchCommandToast(shell state.ShellStore, result state.WorkbenchCommandResult) state.ShellStore {
@@ -544,6 +556,9 @@ func paneCommandEffects(command state.PaneCommand, result state.PaneCommandResul
 func addPaneCommandToast(shell state.ShellStore, command state.PaneCommand, result state.PaneCommandResult) state.ShellStore {
 	switch result.Status {
 	case state.PaneCommandOK:
+		if shouldSuppressPaneCommandSuccessToast(command) {
+			return shell
+		}
 		return shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(command.Action)})
 	case state.PaneCommandNeedsConfirmation:
 		return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(command.Action), Body: result.Reason, Pending: true})
@@ -551,5 +566,14 @@ func addPaneCommandToast(shell state.ShellStore, command state.PaneCommand, resu
 		return shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: string(command.Action), Body: result.Reason})
 	default:
 		return shell
+	}
+}
+
+func shouldSuppressPaneCommandSuccessToast(command state.PaneCommand) bool {
+	switch command.Action {
+	case state.PaneCommandFocus, state.PaneCommandFocusNext, state.PaneCommandFocusPrevious, state.PaneCommandResize:
+		return true
+	default:
+		return false
 	}
 }

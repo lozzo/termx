@@ -829,13 +829,29 @@ func (store ShellStore) AddToast(spec ToastSpec) ShellStore {
 	if spec.Severity == "" {
 		spec.Severity = ToastInfo
 	}
-	if spec.ID == "" {
-		store.nextToastSeq++
-		spec.ID = formatToastID(store.nextToastSeq)
-	}
 	dismissAfterTicks := spec.DismissAfterTicks
 	if dismissAfterTicks == 0 {
 		dismissAfterTicks = defaultToastDismissAfterTicks(spec)
+	}
+	if index := store.findMatchingToast(spec); index >= 0 {
+		// 同内容 toast 只刷新生命周期并移到当前 toast，避免拖动等连续操作刷屏。
+		toasts := cloneToasts(store.Toasts)
+		toast := ToastState{
+			ID:                toasts[index].ID,
+			Severity:          spec.Severity,
+			Title:             spec.Title,
+			Body:              spec.Body,
+			Pending:           spec.Pending,
+			DismissAfterTicks: dismissAfterTicks,
+		}
+		toasts = append(toasts[:index], toasts[index+1:]...)
+		toasts = append(toasts, toast)
+		store.Toasts = toasts
+		return store
+	}
+	if spec.ID == "" {
+		store.nextToastSeq++
+		spec.ID = formatToastID(store.nextToastSeq)
 	}
 	toast := ToastState{
 		ID:                spec.ID,
@@ -847,6 +863,25 @@ func (store ShellStore) AddToast(spec ToastSpec) ShellStore {
 	}
 	store.Toasts = append(cloneToasts(store.Toasts), toast)
 	return store
+}
+
+func (store ShellStore) findMatchingToast(spec ToastSpec) int {
+	if spec.ID != "" {
+		for index, toast := range store.Toasts {
+			if toast.ID == spec.ID {
+				return index
+			}
+		}
+	}
+	for index, toast := range store.Toasts {
+		if toast.Severity == spec.Severity &&
+			toast.Title == spec.Title &&
+			toast.Body == spec.Body &&
+			toast.Pending == spec.Pending {
+			return index
+		}
+	}
+	return -1
 }
 
 func (store ShellStore) TickToasts(ticks uint64) ShellStore {

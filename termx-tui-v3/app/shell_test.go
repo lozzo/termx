@@ -260,6 +260,48 @@ func TestShellReducerAppliesPaneResizeSetSizeAndBalanceGeometry(t *testing.T) {
 	}
 }
 
+func TestShellReducerSuppressesLowValueSuccessToasts(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2"}, state.SplitDirectionVertical)}
+
+	next, _ := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandResize, Target: state.PaneCommandTarget{PaneID: "pane-2"}, ResizeDirection: state.PaneResizeLeft, Delta: 2, Source: state.PaneCommandSourceMouse}})
+	if len(next.Shell.Toasts) != 0 {
+		t.Fatalf("mouse resize success should not show toast, got %#v", next.Shell.Toasts)
+	}
+
+	next, _ = reducer(next, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandFocus, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, Source: state.PaneCommandSourceMouse}})
+	if len(next.Shell.Toasts) != 0 {
+		t.Fatalf("focus success should be visual/footer feedback only, got %#v", next.Shell.Toasts)
+	}
+
+	next, _ = reducer(next, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, SplitDirection: state.SplitDirectionHorizontal, NewPane: state.PaneState{ID: "pane-3"}, Source: state.PaneCommandSourceMouse}})
+	if len(next.Shell.Toasts) != 1 || next.Shell.Toasts[0].Title != string(state.PaneCommandSplit) {
+		t.Fatalf("discrete split action should keep toast feedback, got %#v", next.Shell.Toasts)
+	}
+
+	floating, result := next.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "floating"},
+		BoundsW:  80,
+		BoundsH:  24,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating setup failed: %#v", result)
+	}
+	next.Shell = floating.ClearToasts()
+	next, _ = reducer(next, ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandMove, TargetID: "floating-1", DeltaX: 1, Source: state.PaneCommandSourceMouse}})
+	next, _ = reducer(next, ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: "floating-1", DeltaW: 1, Source: state.PaneCommandSourceMouse}})
+	if len(next.Shell.Toasts) != 0 {
+		t.Fatalf("floating drag move/resize success should not show toast, got %#v", next.Shell.Toasts)
+	}
+
+	next, _ = reducer(next, ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandMove, TargetID: "missing", DeltaX: 1, Source: state.PaneCommandSourceMouse}})
+	if len(next.Shell.Toasts) != 1 || next.Shell.Toasts[0].Severity != state.ToastWarning {
+		t.Fatalf("invalid floating command should still show warning toast, got %#v", next.Shell.Toasts)
+	}
+}
+
 func TestShellReducerIgnoresUnknownMessages(t *testing.T) {
 	reducer := NewShellReducer()
 	root, effects := reducer(state.Root{}, NoopMsg{})

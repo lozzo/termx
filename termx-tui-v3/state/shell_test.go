@@ -163,6 +163,27 @@ func TestShellToastDefaultDismissTicks(t *testing.T) {
 	}
 }
 
+func TestShellToastDeduplicatesByVisibleMessage(t *testing.T) {
+	shell := DefaultShell().
+		AddToast(ToastSpec{ID: "first", Severity: ToastInfo, Title: "floating.move", Body: "floating-1"}).
+		TickToasts(2).
+		AddToast(ToastSpec{Severity: ToastInfo, Title: "floating.move", Body: "floating-1"})
+
+	if len(shell.Toasts) != 1 {
+		t.Fatalf("expected duplicate toast to be refreshed, got %#v", shell.Toasts)
+	}
+	if shell.Toasts[0].ID != "first" || shell.Toasts[0].AgeTicks != 0 {
+		t.Fatalf("expected refreshed duplicate to keep stable id and reset age, got %#v", shell.Toasts[0])
+	}
+
+	shell = shell.
+		AddToast(ToastSpec{Severity: ToastWarning, Title: "floating.move", Body: "blocked"}).
+		AddToast(ToastSpec{Severity: ToastWarning, Title: "floating.move", Body: "blocked"})
+	if len(shell.Toasts) != 2 || shell.Toasts[1].AgeTicks != 0 {
+		t.Fatalf("expected severity/body scoped dedupe without losing distinct messages, got %#v", shell.Toasts)
+	}
+}
+
 func TestShellToastAutoIDAndDefaultSeverity(t *testing.T) {
 	shell := DefaultShell().AddToast(ToastSpec{Title: "hello"})
 	if len(shell.Toasts) != 1 {
