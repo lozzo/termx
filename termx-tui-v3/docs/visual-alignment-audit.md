@@ -4,7 +4,7 @@
 
 本文档是切片 79 的视觉基线文档，用来纠正一个关键判断：当前 `termx-tui-v3` 已经具备 styled chrome renderer 和第一版可操作产品壳，但还没有达到用户要求的 `tuiv2` 截图级界面效果。
 
-切片 83 已完成真实默认 TUI 复核，结论仍是未通过。切片 84-86 已完成对应返工，但切片 87 根据用户真实反馈再次确认当前 TUI 仍与目标截图不一致。切片 88 已完成 shell/pane 二轮视觉重绘，切片 89 已完成默认入口真实 PTY 证据归档；切片 90 根据用户反馈确认视觉仍不通过。后续必须进入切片 91 的整体 UI 构图三轮重绘。复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。
+切片 83 已完成真实默认 TUI 复核，结论仍是未通过。切片 84-86 已完成对应返工，但切片 87 根据用户真实反馈再次确认当前 TUI 仍与目标截图不一致。切片 88 已完成 shell/pane 二轮视觉重绘，切片 89 已完成默认入口真实 PTY 证据归档；切片 90 根据用户反馈确认视觉仍不通过。切片 91 已完成整体 UI 构图三轮重绘；切片 92-96 已继续按用户最新反馈收敛按钮可见性、toast 样式/生命周期、pane 鼠标拖动 resize、横纵分屏入口和 floating 鼠标连续拖动。复核记录见 `termx-tui-v3/docs/default-tui-visual-review.md`。
 
 视觉返工必须以本文档作为验收入口。实现仍必须遵守 `termx-tui-v3/docs/architecture.md` 与 `termx-tui-v3/docs/render-architecture.md`，不得因为追求视觉相似而复制旧 `tuiv2` runtime/model、Bubble Tea contract、snapshot/grid history fallback 或旧 renderer 大状态结构。
 
@@ -36,12 +36,13 @@
 - 切片 88 后，shell/pane 视觉完成二轮重绘：theme accent 改为紫色系，status bar 改为深色背景，top bar 使用 `×`、`[＋]` 和 compact summary，bottom bar 使用 `[Ctrl] · [P]` 类快捷键 taxonomy，pane top chrome 使用 `· ↔2`、`· ◆ owner`、`· 1/31` 与 action cluster。
 - 切片 89 后，默认 `go run ./termx-cli/cmd/termx` 已在隔离 `120x40` 真实 PTY 中证明可进入 alternate screen 并输出二轮 styled ANSI frame。
 - 切片 90 后，用户确认当前真实 TUI 样子仍与目标不一致，当前视觉 goal 不能完成。
+- 切片 92-96 后，用户指出的可操作性问题已完成当前轮收敛：默认可见 action 只保留真实接通按钮，toast 使用深色直角实体矩形、左右紫色竖线、居中文案和真实 auto-dismiss 生命周期，pane 分隔线/边框支持 SGR 鼠标连续拖动 resize，pane chrome 恢复真实可用的 split-down/split-right/close 入口，floating 标题栏和右下 resize handle 支持连续拖动。
 
 当前仍不足：
 
 - 用户真实复核已经暴露关键差距：当前 TUI 整体风格、密度、比例、层级和目标 `tuiv2` 截图仍不一致；切片 88 只是对应差距的二轮重绘，不是最终验收。
-- 切片 91 前仍不能宣称当前视觉对齐 workflow 完成；切片 87、88、89、90 都不能作为完成结论。
-- 有 Unicode 线框、ANSI 颜色、可操作命令和真实 PTY ANSI frame 仍不能单独作为未来视觉验收证据；必须由用户对照目标截图拍板。
+- 切片 91-96 的自动回归只能证明当前功能和视觉合同没有退化；仍不能宣称当前视觉对齐 workflow 已经通过用户截图级验收。
+- 有 Unicode 线框、ANSI 颜色、可操作命令、真实 PTY ANSI frame、固定 smoke 和 e2e smoke 仍不能单独作为未来视觉验收证据；必须由用户对照目标截图拍板。
 
 ## 4. 固定 viewport smoke 基线
 
@@ -97,6 +98,7 @@
 - 切片 85 已把 pane 顶边推进到目标截图式槽位：title、状态点、`↔0`、`◆ owner`、宽 pane full action cluster `[o]─[_]─[Z]─[x]`、窄分屏 compact action cluster `[Z]─[x]`，并让 action hit region 与可见 cluster 同宽。
 - 切片 88 已把 pane top chrome 元信息改为更高密度的 `· ↔2`、`· ◆ owner`、`· 1/31`，并让 active accent 改为紫色系；floating active state 改为 `● float`。
 - 切片 90 已确认该 pane chrome 仍未达到目标截图级别；切片 91 必须按整体构图重新处理。
+- 切片 95 已恢复真实可用的 split-down、split-right 和 close action token；zoom 等未恢复接线的按钮继续隐藏，避免出现看起来可点但不工作的假按钮。
 
 目标要求：
 
@@ -115,6 +117,7 @@
 - 切片 90 已确认整体视觉仍未通过，toast 不能单独视为参考图级别；不得回退成简单文本。
 - 切片 92 按用户截图反馈把 toast 收敛为深色直角实体矩形、左右紫色竖线和居中文案；toast 不再绘制 close token，点击 toast 本体只负责遮挡命中，不穿透到底层 UI。
 - 切片 93 已把自动消失接入真实 runtime timer；普通反馈默认短 TTL，pending/error 默认更长但仍有明确生命周期。
+- 切片 97 复核口径确认：当前自动回归可以验证 toast 样式和生命周期没有回退，但仍需要用户在真实终端中确认其视觉是否达到截图预期。
 
 目标要求：
 
@@ -143,7 +146,7 @@
 当前问题：
 
 - 切片 82 已把 floating chrome 推进为独立实体 pane card：title/state/action 槽位、active accent、resize affordance、content rect 裁切和遮挡层级已对齐。
-- floating 的 drag affordance、attach as floating 和更细的 z-order 视觉仍可继续深化。
+- 切片 96 已把 floating 标题栏连续拖动移动和右下 resize handle 连续拖动 resize 接入真实鼠标路径；attach as floating、Floating Overview 和更细的 z-order 视觉仍可继续深化。
 
 目标要求：
 
@@ -266,6 +269,15 @@
 - 已把 pane/floating chrome 的动作和状态 glyph 当作正式视觉 token 处理；默认允许使用 Nerd Font PUA 字符，也允许后续按字体环境替换为 emoji 或其他 UTF-8 符号，命中区和裁切继续按 display cell width 计算。
 - 实现继续使用 render framework + content renderer，未复制 `tuiv2` runtime/model，未引入 Bubble Tea。
 - 自动验收已通过；是否真正达到用户截图级风格仍需真实终端人工复核。
+
+切片 92-96 已完成用户复核后的功能和可见性收敛：
+
+- 切片 92 已隐藏未真实接线的 pane split/zoom 可见按钮，并把 floating、overlay、toast 收敛为直角 chrome；toast 使用深色矩形、左右紫色竖线和居中文案。
+- 切片 93 已接入 toast auto-dismiss 的真实 runtime timer，普通反馈短生命周期，pending/error 保留更久但仍会消失。
+- 切片 94 已支持 pane 分隔线和边框 resize handle 的真实鼠标连续拖动。
+- 切片 95 已恢复真实接通的横向/纵向分屏可见入口，点击 split-down / split-right token 会走同一 `PaneCommandSplit` 并创建对应方向分屏，zoom 等未接线按钮继续隐藏。
+- 切片 96 已支持 floating 标题栏连续拖动移动和右下 resize handle 连续拖动 resize，拖动不漏发到底层 terminal。
+- 这些切片解决的是用户指出的可操作性、按钮真实性和 toast 行为问题；自动验收通过不等于用户已经确认目标截图级视觉完成。
 
 ## 7. 验收方式
 

@@ -16,6 +16,8 @@
 
 切片 90 的结论是：用户明确反馈当前 TUI 样子仍与目标不一致，因此当前视觉对齐 goal 不能完成。后续必须进入切片 91，按目标截图重做整体 UI 构图和视觉层级，而不是继续用局部 token、smoke 文本或 PTY ANSI 捕获证明视觉完成。
 
+切片 91 已完成整体 UI 构图三轮重绘；切片 92-96 已按用户最新复核继续收敛功能和可见性：未接线按钮不再绘制，toast 改为深色直角实体矩形、左右紫色竖线和居中文案并支持自动消失，pane 边框/分隔线支持鼠标连续拖动 resize，横纵分屏按钮恢复为真实可点击入口，floating 支持标题栏拖动移动和右下 resize handle 连续拖动。这些结论说明当前轮用户指出的可操作问题已完成回归，不等于用户已经确认截图级视觉通过。
+
 ## 2. 当前已经成立的工程事实
 
 - 默认入口仍走 `termx-core-v2` 与 `termx-tui-v3`。
@@ -23,6 +25,9 @@
 - `RenderResult` / `Frame` 保留 styled cell、styled line 和 ANSI 输出。
 - tiled pane 默认不再使用 ASCII `+ - |`，而是 square Unicode box drawing。
 - header/footer hide、pane split/focus/resize/zoom/close、floating、Terminal Pool、Workbench Tree、Prompt/Help、copy mode 都已有基本操作入口。
+- pane chrome 当前只显示真实可用 action：split-down、split-right 和 close；zoom 等未恢复接线的按钮继续隐藏。
+- pane 分隔线/边框 resize 和 floating 移动/resize 都已走真实 SGR mouse drag/release 与 runtime transient drag state，不再是一次性假点击。
+- toast 当前使用用户截图方向的直角深色实体消息样式，copy 成功显示 `Copied to clipboard`，普通 toast 会自动消失。
 - terminal 内容、copy-history 和 overlay content 都被限制在自己的 content rect 内，不应冲破 UI chrome。
 
 这些事实只说明“产品壳可运行”和“默认入口真实 PTY 路径可绘制”，不说明“视觉已经像目标截图”。切片 90 已经确认用户复核不通过，因此自动证据、真实 PTY 证据、Unicode 线框、ANSI 颜色和 chrome token 都只能作为回归基线，不能作为完成证据。
@@ -131,18 +136,27 @@
 
 切片 91 已完成三轮整体 UI 构图重绘，并通过自动准入；该结论仍不替代用户对目标截图风格的真实终端复核。
 
+切片 92-96 已完成用户最新反馈项：
+
+- 切片 92：隐藏未真实接线的 pane split/zoom 可见按钮；floating、overlay、toast 改为直角 chrome；toast 改为深色矩形、左右紫色竖线和居中文案。
+- 切片 93：toast 自动消失接入真实 runtime timer；普通反馈短生命周期，pending/error 更长但仍有明确生命周期。
+- 切片 94：pane 分隔线和边框 resize handle 支持真实鼠标连续拖动，拖动事件不漏发到底层 terminal。
+- 切片 95：恢复真实可用的横纵分屏入口；pane chrome 只显示 split-down、split-right 和 close，点击 split token 创建对应方向分屏。
+- 切片 96：floating 标题栏支持连续拖动移动，右下 resize handle 支持连续拖动 resize，release 后清理拖动状态。
+- 切片 97：本切片只归档上述回归和测试结果；是否达到目标截图级视觉仍需用户人工复核。
+
 ## 5. 手工复核入口
 
-切片 91 完成后必须手工复核：
+切片 97 完成后必须手工复核：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
 - viewport：至少检查 `80x24`、`100x32`、`120x40`。
-- pane：`Ctrl-p` 后检查 `v/s/n/N/z/x/c/p` 的 split、focus、zoom、close、card/split 视觉反馈。
-- resize：`Ctrl-r` 后检查方向键和 `h/j/k/l` 调整大小时边框、footer、content rect 是否同步。
-- floating：`Ctrl-o` 后检查 create、move、resize、center、collapse、close 和 active chrome。
+- pane：`Ctrl-p` 后检查 `v/s/n/N/z/x/c/p` 的 split、focus、zoom、close、card/split 视觉反馈；同时点击 pane 顶部 split-down、split-right 和 close token，确认只有真实可用按钮可见且可点击。
+- resize：`Ctrl-r` 后检查方向键和 `h/j/k/l` 调整大小时边框、footer、content rect 是否同步；同时按住 pane 分隔线或边框 resize handle 拖动，确认尺寸连续变化且不把事件发给 terminal。
+- floating：`Ctrl-o` 后检查 create、move、resize、center、collapse、close 和 active chrome；同时按住 floating 标题栏拖动移动、按住右下 resize handle 拖动 resize。
 - overlay：`Ctrl-g p`、`Ctrl-g w`、`Ctrl-g :`、`Ctrl-g ?` 检查 Terminal Pool、Workbench Tree、Prompt、Help。
 - copy：`Ctrl-v` 检查 copy-history search、selection、scrollbar/status 和 no terminal input leak。
-- toast/header/footer：`Ctrl-g h/f/T/t` 检查隐藏、恢复、关闭和清空消息。
+- toast/header/footer：`Ctrl-g h/f/T/t` 检查隐藏、恢复、关闭和清空消息；触发 copy 成功或 pane/floating 操作后确认 toast 样式为直角深色矩形、左右紫色竖线、居中文案，并会自动消失。
 
 ## 6. 自动准入
 
@@ -151,3 +165,13 @@
 - `git diff --check`
 
 切片 90 是文档归档切片，只要求 `git diff --check`。切片 91 已恢复并通过完整准入：`cd termx-tui-v3 && go test ./... -count=1`、`cd termx-cli && go test ./... -count=1`、`go run ./termx-cli/cmd/termx v3 smoke`、`go run ./termx-cli/cmd/termx v3 e2e-smoke`、`git diff --check`。
+
+切片 97 自动准入：
+
+- `cd termx-tui-v3 && go test ./... -count=1`
+- `cd termx-cli && go test ./... -count=1`
+- `go run ./termx-cli/cmd/termx v3 smoke`
+- `go run ./termx-cli/cmd/termx v3 e2e-smoke`
+- `git diff --check`
+
+自动准入只能证明切片 92-96 的功能和回归合同成立，不能替代用户对目标截图级视觉的人工拍板。
