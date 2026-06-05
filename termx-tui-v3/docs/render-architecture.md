@@ -993,7 +993,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - 默认 UI chrome 已使用 Unicode box drawing；card、overlay、toast 使用 `╭╮╰╯─│`，split line 使用连接感知 `┌┐└┘─│├┤┬┴┼`，ASCII `+ - |` 不作为默认 UI chrome。
 - tiled card pane 已使用 square Unicode 细线 pane chrome 基础；active pane 使用 accent style，inactive pane 使用 muted style，pane 顶边包含 title、state 和 action slot，但仍需按视觉审计继续对齐 `tuiv2` 截图级密度、槽位和层级。
 - v3 pane border 只迁入 `tuiv2/render` 的 cell 级连接位合成经验，不迁入旧 runtime/model、VisibleRenderState、cursor writer 或 snapshot/grid/copy fallback。
-- header/footer 已升级为 styled top/bottom bar 和第一版产品信息层，status background 填满整行，workspace/tab/active pane/terminal count/mode-specific shortcut hints/status 通过 style token 输出；但当前视觉仍偏基础信息条，后续必须按视觉审计重绘为 `tuiv2` 风格产品栏。
+- header/footer 已按切片 80 从基础信息条重绘为 `tuiv2` 风格分段产品栏：status background 填满整行，workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔；窄屏下快捷键 token 按优先级压缩，error/exited 关键状态优先保留。
 - toast 与 Terminal Picker overlay 已升级为 styled chrome，覆盖 border/background/severity token/close action region/ANSI reset 和宽字符安全。
 - `state.PaneCommand` 已成为 pane split、close、close and kill、focus、zoom、resize、set size、balance 和 panel presentation 的统一 semantic command contract。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 和 `Ctrl-o` floating mode 已作为第一版键盘入口落地；`Esc` 退出 mode/overlay 且不漏发 terminal。
@@ -1018,7 +1018,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 当前仍是阶段性实现，不应误读为完整最终产品态：
 
 - 当前完成的是 chrome/frame 工程基线、pane 结构命令基础、UI framework 第一版可操作闭环、三类内容 renderer 一期、Terminal Pool 管理页一期、Workbench Tree 一期、Floating pane 一期、Prompt/Help 一期、Tab/Workspace 一期和 TUI 产品壳总验收，不代表已经达到用户截图要求的最终视觉，也不代表跨 workspace/remote Terminal Pool 深化或最终 terminal/copy 内容体验完整。
-- header/footer 已有第一版产品信息层，但复杂 notice/error 汇总、更多 workspace/tab 管理信息和更精细的窄屏退化仍可继续 polish。
+- header/footer 已有切片 80 的分段产品栏；复杂 notice/error 汇总、更多 workspace/tab 管理信息和更精细的 `tuiv2` tab strip 密度仍可继续 polish。
 - render 已能合成 hit region，app/runtime 已把真实鼠标坐标派发到最新 hit region；但 floating 连续拖拽、复杂 overlay、Prompt/Help 和 terminal mouse forwarding 的完整产品边界仍需继续深化。
 - active pane 视觉反馈已有端到端验收，但最终视觉 polish、更多状态 token 和复杂多层 split 的 focus affordance 仍可继续增强。
 - terminal-live content renderer 与连接展示前推已完成当前阶段：raw live 行会在 VM 层转换为 styled `Line`，基础 ANSI SGR 映射为 semantic style token，live cursor 输出为 content-local cursor，pending/empty/exited 状态在所属 pane 内表达，attach 后会初始化真实 core-v2 live rows，content 仍由 framework 裁切到 content rect；但 streaming event loop、selection、search、content-local hit region、clipped markers、truecolor/link/reverse/underline 和 rich terminal metadata 尚未完整产品化。
@@ -1042,7 +1042,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 
 当前优先级：
 
-- 先按 `visual-alignment-audit.md` 完成切片 80-83：shell header/footer、pane chrome、overlay/toast/floating 和真实默认入口视觉验收。
+- 先按 `visual-alignment-audit.md` 完成切片 81-83：pane chrome、overlay/toast/floating 和真实默认入口视觉验收；shell header/footer 已在切片 80 完成第一轮重绘。
 - 在视觉验收完成前，不得再把基础 styled chrome、Unicode glyph 或 smoke 文本线框当作视觉完成证据。
 
 建议后续切片：

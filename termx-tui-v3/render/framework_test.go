@@ -216,16 +216,20 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !strings.Contains(frame.Lines[0], "ws:main") || !strings.Contains(frame.Lines[0], "tab:1") || !strings.Contains(frame.Lines[0], "active:pane-1") || !strings.Contains(frame.Lines[0], "term:1") || !strings.Contains(frame.Lines[0], "float:0") || !strings.Contains(frame.Lines[0], "⊕") || !strings.Contains(frame.Lines[0], "notice:ok") {
+	if !strings.Contains(frame.Lines[0], "ws:main") || !strings.Contains(frame.Lines[0], "tab:1") || !strings.Contains(frame.Lines[0], "active:pane-1") || !strings.Contains(frame.Lines[0], "term:1") || !strings.Contains(frame.Lines[0], "float:0") || !strings.Contains(frame.Lines[0], "⊕") || !strings.Contains(frame.Lines[0], "notice:ok") || !strings.Contains(frame.Lines[0], "│") {
 		t.Fatalf("top bar should contain workspace/tab/create/notice tokens, got %#v", frame.Lines[0])
 	}
 	if !strings.Contains(frame.Lines[len(frame.Lines)-1], "mode:live") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "keys:^P pane") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "active:pane:shell") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "hint:term-1") || !strings.Contains(frame.Lines[len(frame.Lines)-1], "ws:main") {
 		t.Fatalf("bottom bar should contain mode/hint/status tokens, got %#v", frame.Lines[len(frame.Lines)-1])
 	}
-	if !styledLinesContain(frame.StyledLines[:1], "w", StyleStatus) || !styledLinesContain(frame.StyledLines[len(frame.StyledLines)-1:], "m", StyleStatus) {
-		t.Fatalf("top/bottom bar cells should use status style, got %#v", frame.StyledLines)
+	if !styledLinesContainText(frame.StyledLines[:1], "ws:main", StyleStatusAccent) ||
+		!styledLinesContainText(frame.StyledLines[:1], "term:1", StyleStatusMuted) ||
+		!styledLinesContainText(frame.StyledLines[:1], "notice:ok", StyleStatusWarning) ||
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "mode:live", StyleStatusAccent) ||
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "keys:^P pane", StyleStatus) {
+		t.Fatalf("top/bottom bar cells should use status token styles, got %#v", frame.StyledLines)
 	}
-	if !strings.Contains(frame.ANSILines[0], "\x1b[48;2;24;50;74m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;24;50;74m") {
+	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;88;213;201m\x1b[48;2;24;50;74m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[1;38;2;88;213;201m\x1b[48;2;24;50;74m") {
 		t.Fatalf("top/bottom bars should output status background SGR, got %#v", frame.ANSILines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 120)
@@ -539,6 +543,21 @@ func styledLinesContain(lines []Line, value string, style StyleToken) bool {
 			if cell.Text == value && cell.Style == style {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func styledLinesContainText(lines []Line, value string, style StyleToken) bool {
+	for _, line := range lines {
+		var styledText strings.Builder
+		for _, cell := range line.Cells {
+			if cell.Style == style {
+				styledText.WriteString(cell.Text)
+			}
+		}
+		if strings.Contains(styledText.String(), value) {
+			return true
 		}
 	}
 	return false

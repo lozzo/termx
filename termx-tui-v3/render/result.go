@@ -39,15 +39,18 @@ type Cell struct {
 type StyleToken string
 
 const (
-	StyleAccent  StyleToken = "accent"
-	StyleMuted   StyleToken = "muted"
-	StyleStatus  StyleToken = "status"
-	StyleInfo    StyleToken = "info"
-	StyleSuccess StyleToken = "success"
-	StyleWarning StyleToken = "warning"
-	StyleDanger  StyleToken = "danger"
-	StyleOverlay StyleToken = "overlay"
-	StyleToast   StyleToken = "toast"
+	StyleAccent        StyleToken = "accent"
+	StyleMuted         StyleToken = "muted"
+	StyleStatus        StyleToken = "status"
+	StyleStatusAccent  StyleToken = "status-accent"
+	StyleStatusMuted   StyleToken = "status-muted"
+	StyleStatusWarning StyleToken = "status-warning"
+	StyleInfo          StyleToken = "info"
+	StyleSuccess       StyleToken = "success"
+	StyleWarning       StyleToken = "warning"
+	StyleDanger        StyleToken = "danger"
+	StyleOverlay       StyleToken = "overlay"
+	StyleToast         StyleToken = "toast"
 )
 
 type Line struct {
@@ -197,6 +200,12 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(theme.Muted, false) + "\x1b[2m"
 	case StyleStatus:
 		return sgrForegroundBackground(theme.StatusFG, theme.StatusBG, false)
+	case StyleStatusAccent:
+		return sgrForegroundBackground(theme.Accent, theme.StatusBG, true)
+	case StyleStatusMuted:
+		return sgrForegroundBackground(theme.Muted, theme.StatusBG, false) + "\x1b[2m"
+	case StyleStatusWarning:
+		return sgrForegroundBackground(theme.Warning, theme.StatusBG, false)
 	case StyleInfo:
 		return sgrForeground(theme.Info, false)
 	case StyleSuccess:

@@ -1321,7 +1321,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - `RenderResult`、`Frame` 和真实 `FrameSink` 已保留 ANSI styled frame；非交互 smoke 已能验证 styled frame 没有退化成纯文本。
 - tiled pane 默认已使用 square Unicode 细线边框基础，active pane 使用 accent / strong border，inactive pane 使用 muted border；但密度、槽位、线段连续观感和真实截图级层级仍需在后续视觉重绘中收敛。
 - pane 顶部 chrome 已有槽位基础：title、state、action；owner/follower、copy/resize 等更细 token 和目标截图级布局后续逐步接入。
-- top bar 和 bottom bar 已是 styled bar，背景填满整行，workspace/tab/mode/hint/status 通过 token 输出；但它们仍偏基础信息条，后续需要重绘成 `tuiv2` 风格产品栏。
+- top bar 和 bottom bar 已在切片 80 重绘为分段产品栏：背景填满整行，workspace/tab/mode/action/active/summary 通过稳定 token 输出，accent/muted/warning 语义可见，Unicode `│` 分隔，窄屏下快捷键按优先级压缩且 error/exited 关键状态优先保留。
 - toast 和 Terminal Picker overlay 已使用 styled rounded card；toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 仍需按视觉审计做实体卡片质感、padding、selected row 和 action 槽位对齐。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
 - floating pane 一期已使用独立 styled bordered chrome，具备 reducer-owned state、z-order、active 状态、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close 和 content rect 裁切。
@@ -1338,7 +1338,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前未完成但产品要求仍保留：
 
-- 视觉对齐返工：按 `visual-alignment-audit.md` 推进 top bar、bottom bar、pane chrome、active/inactive、toast、overlay、floating、copy-history、Terminal Pool/Workbench Tree 和真实默认入口截图级验收。
+- 视觉对齐返工：top bar 和 bottom bar 已完成第一轮重绘；后续按 `visual-alignment-audit.md` 推进 pane chrome、active/inactive、toast、overlay、floating、copy-history、Terminal Pool/Workbench Tree 和真实默认入口截图级验收。
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 最终 polish：logical-line 拼接提示、跨 logical-line selection affordance、窄屏退化和最终视觉层级。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。

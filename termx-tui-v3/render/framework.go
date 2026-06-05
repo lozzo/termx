@@ -508,6 +508,9 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 }
 
 func renderHeader(c *canvas, header HeaderVM, rect Rect) {
+	if rect.W <= 0 || rect.H <= 0 {
+		return
+	}
 	workspace := header.Workspace
 	if workspace == "" {
 		workspace = header.Title
@@ -519,43 +522,60 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	if tab == "" {
 		tab = "main"
 	}
-	text := " ws:" + workspace + "  tab:" + tab
+	left := []barSegment{
+		barText(" ws:"+workspace+" ", StyleStatusAccent, 1),
+		barSep(),
+		barText(" tab:"+tab+" ", StyleStatus, 1),
+		barText(" ⊕ ", StyleStatusAccent, 3),
+	}
+	if header.Notice != "" {
+		left = append(left, barSep(), barText(" notice:"+header.Notice+" ", StyleStatusWarning, 2))
+	}
+	right := []barSegment{}
 	if header.ActivePane != "" {
-		text += "  active:" + header.ActivePane
+		right = append(right, barText(" active:"+header.ActivePane+" ", StyleStatus, 1))
 	}
 	if header.TerminalSummary != "" {
-		text += "  " + header.TerminalSummary
+		right = append(right, barText(" "+header.TerminalSummary+" ", StyleStatusMuted, 2))
 	}
 	if header.FloatingSummary != "" {
-		text += "  " + header.FloatingSummary
+		right = append(right, barText(" "+header.FloatingSummary+" ", StyleStatusMuted, 2))
 	}
-	text += "  ⊕"
-	if header.Notice != "" {
-		text += "  notice:" + header.Notice
-	}
-	c.writeTextStyled(rect.X, rect.Y, rect.W, text, StyleStatus, "shell:header", LayerChrome)
+	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:header", LayerChrome)
 }
 
 func renderFooter(c *canvas, footer FooterVM, rect Rect) {
+	if rect.W <= 0 || rect.H <= 0 {
+		return
+	}
 	mode := footer.Mode
 	if mode == "" {
 		mode = "live"
 	}
-	text := " mode:" + mode
-	text = appendFooterSegment(text, "active:"+footer.ActiveTarget, rect.W)
-	hintIsError := strings.HasPrefix(footer.Hint, "error:")
-	if hintIsError {
-		text = appendFooterSegment(text, "hint:"+footer.Hint, rect.W)
+	hintIsCritical := strings.HasPrefix(footer.Hint, "error:") || strings.HasPrefix(footer.Hint, "exited:")
+	left := []barSegment{
+		barText(" mode:"+mode+" ", StyleStatusAccent, 1),
 	}
+	left = appendBarSegment(left, "active:"+footer.ActiveTarget, StyleStatus, 1)
 	if len(footer.Actions) > 0 {
-		text = appendFooterSegment(text, "keys:"+strings.Join(footer.Actions, " "), rect.W)
+		left = appendBarSegment(left, footerActionsLabel(footer.Actions, rect.W), StyleStatus, 1)
 	}
-	if !hintIsError {
-		text = appendFooterSegment(text, "hint:"+footer.Hint, rect.W)
+	if footer.Hint != "" {
+		style := StyleStatusMuted
+		priority := 3
+		if hintIsCritical {
+			style = StyleStatusWarning
+			priority = 0
+		}
+		left = appendBarSegment(left, "hint:"+footer.Hint, style, priority)
 	}
-	text = appendFooterSegment(text, footer.GlobalSummary, rect.W)
-	text = appendFooterSegment(text, "status:ready", rect.W)
-	c.writeTextStyled(rect.X, rect.Y, rect.W, text, StyleStatus, "shell:footer", LayerChrome)
+	right := []barSegment{
+		barText(" status:ready ", StyleStatusAccent, 3),
+	}
+	if footer.GlobalSummary != "" {
+		right = append([]barSegment{barText(" "+footer.GlobalSummary+" ", StyleStatusMuted, 2)}, right...)
+	}
+	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
 }
 
 func appendFooterSegment(base string, segment string, width int) string {
@@ -567,6 +587,171 @@ func appendFooterSegment(base string, segment string, width int) string {
 		return next
 	}
 	return base
+}
+
+func footerActionsLabel(actions []string, width int) string {
+	if len(actions) == 0 {
+		return ""
+	}
+	limit := 56
+	if width < 100 {
+		limit = 34
+	}
+	if width >= 140 {
+		limit = 72
+	}
+	kept := make([]string, 0, len(actions))
+	for _, action := range actions {
+		next := append(append([]string{}, kept...), action)
+		if DisplayWidth("keys:"+strings.Join(next, " ")) > limit && len(kept) > 0 {
+			break
+		}
+		kept = next
+	}
+	if len(kept) < len(actions) {
+		tail := footerTailAction(actions)
+		if !containsStringValue(kept, tail) {
+			withTail := append(append([]string{}, kept...), tail)
+			for len(withTail) > 1 && DisplayWidth("keys:"+strings.Join(withTail, " ")) > limit {
+				withTail = append(withTail[:len(withTail)-2], withTail[len(withTail)-1])
+			}
+			kept = withTail
+		}
+	}
+	return "keys:" + strings.Join(kept, " ")
+}
+
+func footerTailAction(actions []string) string {
+	for i := len(actions) - 1; i >= 0; i-- {
+		action := strings.TrimSpace(actions[i])
+		if action != "" && !strings.HasPrefix(action, "esc") {
+			return actions[i]
+		}
+	}
+	if len(actions) == 0 {
+		return ""
+	}
+	return actions[len(actions)-1]
+}
+
+func containsStringValue(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+type barSegment struct {
+	text     string
+	style    StyleToken
+	priority int
+}
+
+func barText(text string, style StyleToken, priority int) barSegment {
+	return barSegment{text: text, style: style, priority: priority}
+}
+
+func barSep() barSegment {
+	return barText("│", StyleStatusMuted, 1)
+}
+
+func appendBarSegment(segments []barSegment, text string, style StyleToken, priority int) []barSegment {
+	if text == "" {
+		return segments
+	}
+	return append(segments, barSep(), barText(" "+text+" ", style, priority))
+}
+
+func composeBarLine(left []barSegment, right []barSegment, width int) Line {
+	if width <= 0 {
+		return Line{}
+	}
+	left = trimBarSegments(left, width)
+	right = trimBarSegments(right, width-barSegmentsWidth(left))
+	total := barSegmentsWidth(left) + barSegmentsWidth(right)
+	if total > width {
+		right = trimBarSegments(right, width-barSegmentsWidth(left))
+		total = barSegmentsWidth(left) + barSegmentsWidth(right)
+	}
+	spacer := width - total
+	cells := make([]Cell, 0, len(left)+len(right)+1)
+	cells = append(cells, cellsFromBarSegments(left)...)
+	if spacer > 0 {
+		cells = append(cells, Cell{Text: strings.Repeat(" ", spacer), Width: spacer, Style: StyleStatus, Safe: true})
+	}
+	cells = append(cells, cellsFromBarSegments(right)...)
+	return Line{Cells: cells}
+}
+
+func trimBarSegments(segments []barSegment, width int) []barSegment {
+	if width <= 0 {
+		return nil
+	}
+	out := append([]barSegment(nil), segments...)
+	for barSegmentsWidth(out) > width && len(out) > 0 {
+		drop := lowestPriorityBarSegment(out)
+		out = append(out[:drop], out[drop+1:]...)
+	}
+	if barSegmentsWidth(out) <= width {
+		return cleanBarSegments(out)
+	}
+	return nil
+}
+
+func lowestPriorityBarSegment(segments []barSegment) int {
+	index := len(segments) - 1
+	for i, segment := range segments {
+		if segment.priority > segments[index].priority {
+			index = i
+		}
+	}
+	return index
+}
+
+func barSegmentsWidth(segments []barSegment) int {
+	width := 0
+	for _, segment := range segments {
+		width += DisplayWidth(segment.text)
+	}
+	return width
+}
+
+func cellsFromBarSegments(segments []barSegment) []Cell {
+	cells := make([]Cell, 0, len(segments))
+	for _, segment := range segments {
+		if segment.text == "" {
+			continue
+		}
+		style := segment.style
+		if style == "" {
+			style = StyleStatus
+		}
+		cells = append(cells, Cell{Text: segment.text, Width: DisplayWidth(segment.text), Style: style, Safe: true})
+	}
+	return cells
+}
+
+func cleanBarSegments(segments []barSegment) []barSegment {
+	if len(segments) == 0 {
+		return nil
+	}
+	out := make([]barSegment, 0, len(segments))
+	for _, segment := range segments {
+		isSep := segment.text == "│"
+		if isSep && len(out) == 0 {
+			continue
+		}
+		if isSep && len(out) > 0 && out[len(out)-1].text == "│" {
+			continue
+		}
+		out = append(out, segment)
+	}
+	for len(out) > 0 && out[len(out)-1].text == "│" {
+		out = out[:len(out)-1]
+	}
+	return out
 }
 
 func splitPanelRects(layout LayoutVM, body Rect) map[string]Rect {

@@ -27,6 +27,7 @@
 - `RenderResult` 单一路径、styled cells、ANSI frame adapter 和 width-safe helper。
 - reducer-owned viewport，固定 viewport 下 frame 行数和每行 display width 可以稳定。
 - card/split panel、header/footer hide、toast lifecycle、overlay、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace 的第一版产品壳。
+- 切片 80 后，header/footer 已从拼接文本条改为分段产品栏：workspace/tab/mode/action/active/summary 使用稳定 token，active token 使用 accent，次级 summary 使用 muted，notice/error/exited 使用 warning，行内使用 Unicode `│` 分隔。
 - `go run ./termx-cli/cmd/termx v3 smoke` 可输出多个非交互 smoke case。
 
 当前仍不足：
@@ -52,9 +53,8 @@
 
 当前问题：
 
-- 信息密度不足，和 `tuiv2` 的 top bar / tab strip 感受不同。
-- workspace、tab、active pane、terminal/floating summary、mode/status token 的槽位不够稳定。
-- 背景虽有 style，但视觉上仍像拼出来的文本段，不像完整产品栏。
+- 切片 80 已修复稀疏拼接文本条问题，top bar 现在是分段产品栏。
+- 仍未完全达到 `tuiv2` 截图里的 tab strip 密度、右侧 owner/action token 和更精细的 inactive tab 视觉。
 
 目标要求：
 
@@ -67,8 +67,8 @@
 
 当前问题：
 
-- footer hints 已可用，但视觉层级和 `tuiv2` 底栏差距明显。
-- mode token、快捷键 token、active target、右侧 summary 没有形成稳定产品栏。
+- 切片 80 已修复 mode、快捷键、active target、右侧 summary 缺少稳定槽位的问题。
+- 仍未完全达到 `tuiv2` 底栏里的多组彩色快捷键 taxonomy、右侧细粒度状态 summary 和更密集的视觉层级。
 
 目标要求：
 
@@ -167,9 +167,9 @@
 
 切片 80 负责：
 
-- top bar 和 bottom bar 重绘。
-- header/footer hide 后的视觉退化。
-- smoke 和真实 TTY 中 ANSI styled bar 可见。
+- 已完成 top bar 和 bottom bar 重绘。
+- 已保留 header/footer hide 后的 body 回收语义。
+- 已通过 smoke 和 ANSI styled frame 验证：status background、accent/muted/warning token、Unicode 分隔、关键状态优先保留和窄屏快捷键压缩。
 
 切片 81 负责：
 
