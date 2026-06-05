@@ -261,6 +261,34 @@ func TestMeasureLayoutAddsSplitDividerResizeHitRegions(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutKeepsSplitActionsAboveDividerResize(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{
+				{ID: "top", Presentation: PanelPresentationSplitLine, Active: true},
+				{ID: "bottom", Presentation: PanelPresentationSplitLine},
+			},
+			Split: SplitVM{
+				Direction: SplitHorizontal,
+				Children:  []SplitVM{{PaneID: "top"}, {PaneID: "bottom"}},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	bottomSplit := hitRegionIndexByPaneAndAction(plan.HitRegions, HitRegionPaneAction, "bottom", "pane.split-down")
+	divider := hitRegionIndexByActionAndDirection(plan.HitRegions, "pane.resize", "down")
+	if bottomSplit < 0 || divider < 0 {
+		t.Fatalf("expected bottom split action and divider resize regions, got %#v", plan.HitRegions)
+	}
+	if bottomSplit > divider {
+		t.Fatalf("visible bottom pane action must win over shared divider resize, action=%d divider=%d regions=%#v", bottomSplit, divider, plan.HitRegions)
+	}
+	if !rectsOverlap(plan.HitRegions[bottomSplit].Rect, plan.HitRegions[divider].Rect) {
+		t.Fatalf("test precondition should cover action on divider row, action=%#v divider=%#v", plan.HitRegions[bottomSplit], plan.HitRegions[divider])
+	}
+}
+
 func hitRegionIndex(regions []HitRegion, kind HitRegionKind) int {
 	for i, region := range regions {
 		if region.Kind == kind {
@@ -504,6 +532,28 @@ func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
 		}
 	}
 	return -1
+}
+
+func hitRegionIndexByPaneAndAction(regions []HitRegion, kind HitRegionKind, paneID string, actionID string) int {
+	for i, region := range regions {
+		if region.Kind == kind && region.PaneID == paneID && region.ActionID == actionID {
+			return i
+		}
+	}
+	return -1
+}
+
+func hitRegionIndexByActionAndDirection(regions []HitRegion, actionID string, direction string) int {
+	for i, region := range regions {
+		if region.ActionID == actionID && region.Direction == direction {
+			return i
+		}
+	}
+	return -1
+}
+
+func rectsOverlap(a Rect, b Rect) bool {
+	return a.X < b.X+b.W && a.X+a.W > b.X && a.Y < b.Y+b.H && a.Y+a.H > b.Y
 }
 
 func hitRegionByActionAndPane(t *testing.T, regions []HitRegion, actionID string, paneID string) HitRegion {

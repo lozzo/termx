@@ -216,9 +216,12 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	for i := len(plan.Floatings) - 1; i >= 0; i-- {
 		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
 	}
+	for _, panel := range plan.Panels {
+		regions = appendPaneActionRegions(regions, panel.Rect, panel.Panel.ID, plan.Viewport)
+	}
 	regions = appendSplitResizeHitRegions(regions, shell.Layout.Split, plan.Body, plan.Viewport)
 	for _, panel := range plan.Panels {
-		regions = appendPanelChromeHitRegions(regions, panel, plan.Viewport)
+		regions = appendPanelChromeHitRegions(regions, panel, false, plan.Viewport)
 		regions = appendTranslatedRegions(regions, panel.Panel.Content.HitRegions, panel.ContentRect, plan.Viewport)
 		regions = appendPanelContentHitRegion(regions, panel, plan.Viewport)
 	}
@@ -240,12 +243,14 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 	return out
 }
 
-func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, viewport Rect) []HitRegion {
+func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, includeActions bool, viewport Rect) []HitRegion {
 	if panel.Rect.W <= 0 || panel.Rect.H <= 0 {
 		return out
 	}
 	paneID := panel.Panel.ID
-	out = appendPaneActionRegions(out, panel.Rect, paneID, viewport)
+	if includeActions {
+		out = appendPaneActionRegions(out, panel.Rect, paneID, viewport)
+	}
 	out = appendPanelEdgeResizeRegions(out, panel, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: "pane.focus"}, viewport)
 	return out

@@ -412,6 +412,43 @@ func TestAppRuntimeDispatchesMouseSplitActions(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeSplitActionOnHorizontalDividerPaneWinsOverResize(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SetPanelPresentation(state.PanelPresentationSplitLine).
+			SplitActivePane(state.PaneState{ID: "pane-bottom", Title: "bottom", Kind: state.PaneTerminalLive}, state.SplitDirectionHorizontal),
+	}
+	runtime := newShellHitRuntime(root, host)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+
+	action := frameHitRegionByAction(t, lastRuntimeFrame(t, host), render.HitRegionPaneAction, "pane.split-down", "pane-bottom")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send bottom split action: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain bottom split action: %v", err)
+	}
+
+	shell := runtime.State().Shell.EnsureDefaults()
+	if len(shell.Workspace.Tabs[0].Panes) != 3 || !shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("bottom pane split icon should create a new pane instead of starting divider resize, shell=%#v", shell)
+	}
+	if shell.ActivePaneID != "pane-2" || runtime.mouseDrag.Active {
+		t.Fatalf("split action should activate new pane and not leave resize drag state, active=%q drag=%#v", shell.ActivePaneID, runtime.mouseDrag)
+	}
+	for _, toast := range shell.Toasts {
+		if toast.Body == "missing new pane id" || toast.Body == "target pane not found" {
+			t.Fatalf("split action should not produce invalid toast, got %#v", shell.Toasts)
+		}
+	}
+}
+
 func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24},
