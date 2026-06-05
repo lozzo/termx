@@ -608,6 +608,7 @@ resize 接纳规则：
 - app runtime harness：message 顺序、effect result 回投、timer、batch、cancel、quit。
 - terminal host harness：input event 转换、direct terminal enter/exit、FrameSink 输出 contract。
 - UI render helper harness：lipgloss/v2 样式 helper 宽度、裁剪、ANSI 安全性，不依赖 Bubble Tea。
+- visual alignment harness：固定 viewport smoke snapshot、真实 TTY ANSI frame、截图/录制和人工对照 `tuiv2` 视觉目标；不得只凭 Unicode 线框存在判定完成。
 - integration harness：wheel up 进入 copy mode、page up 请求 older、resize 后 latest replace、旧 cols response 被拒绝。
 
 tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback 语义带进 v3。
@@ -643,6 +644,11 @@ tuiv2 测试可以作为行为参考，但不得把旧 snapshot/local scrollback
 27. 前推 terminal live 连接展示与交互。
 28. 深化 copy-history 内容 renderer。
 29. 清理 render 兼容投影并建立性能基线。
+30. 做视觉差距审计与固定 viewport smoke 基线。
+31. 重绘 `tuiv2` 风格 shell header/footer。
+32. 重绘 `tuiv2` 风格 pane chrome 与 split 视觉。
+33. 对齐 overlay、toast 和 floating 视觉。
+34. 做真实默认 TUI 视觉验收。
 
 每个切片都必须避免引入 local scrollback history fallback。
 

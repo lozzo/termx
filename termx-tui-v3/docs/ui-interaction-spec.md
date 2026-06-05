@@ -1260,6 +1260,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前视觉参考补充：
 
+- 视觉验收基线见 `termx-tui-v3/docs/visual-alignment-audit.md`。当前 v3 已有基础 styled chrome 和可操作产品壳，但尚未达到用户提供的 `tuiv2` 截图级视觉效果；后续不得把现有 smoke 线框误判为视觉完成。
 - 顶栏和底栏参考 `tuiv2` 的产品形态：高信息密度、整行稳定占位、左侧工作区和 tab token、右侧短摘要或状态 token，隐藏后 body 必须真实回收空间。
 - pane 参考 `tuiv2` 的 square 细线 panel 风格：边框连续、顶边 title/state/action 槽位稳定，active pane 使用 accent，inactive pane 使用 muted；默认界面不得退回 ASCII `+ - |` 或无样式 Unicode 线框。
 - 单个 pane 的产品风格参考 `tuiv2` 截图中的紫色 accent 细边框、顶部 owner/action token 和内容区裁切；TUI-v3 可调整 theme token，但必须保持 styled chrome 层级和边框连续性。
@@ -1316,12 +1317,12 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 当前 styled chrome 视觉目标：
 
-- 默认界面已从纯文本线框推进到 styled chrome renderer 基线；后续不得把无样式 Unicode 线框当作完成标准。
+- 默认界面已从纯文本线框推进到 styled chrome renderer 工程基线；根据视觉审计，后续仍必须继续把 header/footer、pane chrome、toast、overlay、floating 推进到 `tuiv2` 截图级视觉效果。
 - `RenderResult`、`Frame` 和真实 `FrameSink` 已保留 ANSI styled frame；非交互 smoke 已能验证 styled frame 没有退化成纯文本。
-- tiled pane 默认已使用 square Unicode 细线边框，active pane 使用 accent / strong border，inactive pane 使用 muted border。
-- pane 顶部 chrome 已有稳定槽位基础：title、state、action；owner/follower、copy/resize 等更细 token 后续逐步接入。
-- top bar 和 bottom bar 已是 styled bar，背景填满整行，workspace/tab/mode/hint/status 通过 token 输出。
-- toast 和 Terminal Picker overlay 已使用 styled rounded card；floating/modal 后续仍必须保持独立 styled chrome。
+- tiled pane 默认已使用 square Unicode 细线边框基础，active pane 使用 accent / strong border，inactive pane 使用 muted border；但密度、槽位、线段连续观感和真实截图级层级仍需在后续视觉重绘中收敛。
+- pane 顶部 chrome 已有槽位基础：title、state、action；owner/follower、copy/resize 等更细 token 和目标截图级布局后续逐步接入。
+- top bar 和 bottom bar 已是 styled bar，背景填满整行，workspace/tab/mode/hint/status 通过 token 输出；但它们仍偏基础信息条，后续需要重绘成 `tuiv2` 风格产品栏。
+- toast 和 Terminal Picker overlay 已使用 styled rounded card；toast、Terminal Picker、Terminal Pool、Workbench Tree、Prompt/Help 和 floating 仍需按视觉审计做实体卡片质感、padding、selected row 和 action 槽位对齐。
 - pane split、close、focus、zoom、resize、set size、balance、presentation 已有统一 semantic command 基础，快捷键、鼠标、测试和 CLI mini command 只能作为 adapter。
 - floating pane 一期已使用独立 styled bordered chrome，具备 reducer-owned state、z-order、active 状态、keyboard create/move/resize/center/collapse/close、mouse raise/resize/close 和 content rect 裁切。
 - `Ctrl-p` pane mode、`Ctrl-r` resize mode、`Ctrl-g` global mode 已作为第一版键盘产品入口落地，footer 能显示当前 mode。
@@ -1333,10 +1334,11 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - Terminal Pool 管理页一期已完成：独立页面、搜索、列表、selected row、detail、metadata、preview 摘要、Attach/Edit/Kill action、键盘/鼠标操作、service/effect/result 反馈、常规 viewport 下关键内容可见和 no terminal input leak 已落地。
 - Prompt / Help overlay 一期已完成：Prompt 具备 title/context/input/submit/cancel/destructive confirm 边界，Help 可按 Most used、Pane、Tab、Workspace、Floating、Terminal Pool、Display/Copy 展示概念和动作，键盘、鼠标 close、overlay cursor 和 no terminal input leak 已接入。
 - Tab / Workspace 产品入口一期已完成：`Ctrl-t` 和 `Ctrl-w` 已进入 reducer-owned interaction mode，支持 tab create/switch/rename/close、workspace create/switch/rename 和 Workbench Tree 入口；rename 走同一个 Prompt 提交流程，header 展示 tab strip，footer 展示 mode-specific hints，输入不漏发到底层 terminal。
-- TUI 产品壳总验收已完成：除 terminal-live/copy-history 的深层内容体验仍可继续深化外，header/footer、pane、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace、toast、overlay、快捷键、鼠标和 no terminal input leak 已形成第一版可基本操作闭环。
+- TUI 产品壳总验收已完成的是第一版功能闭环：除 terminal-live/copy-history 的深层内容体验仍可继续深化外，header/footer、pane、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace、toast、overlay、快捷键、鼠标和 no terminal input leak 已可基本操作。该结论不表示视觉已经达到用户截图目标。
 
 当前未完成但产品要求仍保留：
 
+- 视觉对齐返工：按 `visual-alignment-audit.md` 推进 top bar、bottom bar、pane chrome、active/inactive、toast、overlay、floating、copy-history、Terminal Pool/Workbench Tree 和真实默认入口截图级验收。
 - terminal-live 内容 renderer 深化：selection/search、content-local hit region、状态 metadata、复杂 SGR/truecolor、终端模式 token、clipped markers 和 richer terminal cell attributes。
 - copy-history 最终 polish：logical-line 拼接提示、跨 logical-line selection affordance、窄屏退化和最终视觉层级。
 - Terminal Pool 深化：跨 workspace terminal source、attach as tab、attach as floating、metadata edit 业务表单接线、kill confirm 和更完整 preview。

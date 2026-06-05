@@ -30,7 +30,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("smoke run detailed: %v", err)
 	}
 	cases := smokeCasesByName(result)
-	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "tab-workspace", "pane-command-flow"}
+	required := []string{"workbench-live", "split-hidden-toast", "terminal-picker", "copy-empty", "copy-history", "prompt-overlay", "help-overlay", "tab-workspace", "pane-command-flow", "visual-audit-current"}
 	for _, name := range required {
 		if len(cases[name].Lines) == 0 {
 			t.Fatalf("missing smoke case %s in %#v", name, result.Cases)
@@ -100,6 +100,19 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("pane command smoke missing styled active pane ANSI: %#v", cases["pane-command-flow"].ANSILines)
 	}
 	assertNoASCIIChrome(t, "pane-command-flow", cases["pane-command-flow"])
+	if len(cases["visual-audit-current"].Lines) != 40 || render.DisplayWidth(cases["visual-audit-current"].Lines[0]) != 120 {
+		t.Fatalf("visual audit smoke must use fixed 120x40 viewport, got lines=%d width=%d", len(cases["visual-audit-current"].Lines), render.DisplayWidth(cases["visual-audit-current"].Lines[0]))
+	}
+	if !frameContains(cases["visual-audit-current"].Lines, "visual audit baseline") ||
+		!frameContains(cases["visual-audit-current"].Lines, "visual gap") ||
+		!frameContains(cases["visual-audit-current"].Lines, "quick actions") ||
+		!frameContains(cases["visual-audit-current"].Lines, "not tuiv2") {
+		t.Fatalf("visual audit smoke missing fixed visual baseline markers: %#v", cases["visual-audit-current"].Lines)
+	}
+	if !frameContains(cases["visual-audit-current"].ANSILines, "\x1b[1;38;2;88;213;201m") {
+		t.Fatalf("visual audit smoke missing active accent ANSI: %#v", cases["visual-audit-current"].ANSILines)
+	}
+	assertNoASCIIChrome(t, "visual-audit-current", cases["visual-audit-current"])
 	for name, frame := range cases {
 		assertSmokeWidth(t, name, frame)
 	}

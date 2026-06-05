@@ -54,7 +54,7 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 		{name: "help-overlay", root: smokeHelpRoot()},
 		{name: "tab-workspace", root: smokeTabWorkspaceRoot()},
 	}
-	result := SmokeResult{Cases: make([]SmokeCase, 0, len(rootCases)+1)}
+	result := SmokeResult{Cases: make([]SmokeCase, 0, len(rootCases)+2)}
 	for _, item := range rootCases {
 		host := app.NewFakeTerminalHost(1)
 		runtime := app.NewAppRuntime(item.root, nil, func(root state.Root) render.Frame {
@@ -77,6 +77,11 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 		return SmokeResult{}, err
 	}
 	result.Cases = append(result.Cases, SmokeCase{Name: "pane-command-flow", Frame: paneCommandFrame})
+	visualFrame, err := smokeVisualAuditFrame(ctx, builder, renderer)
+	if err != nil {
+		return SmokeResult{}, err
+	}
+	result.Cases = append(result.Cases, SmokeCase{Name: "visual-audit-current", Frame: visualFrame})
 	return result, nil
 }
 
@@ -223,6 +228,53 @@ func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	frames := host.Frames()
 	if len(frames) == 0 {
 		return render.Frame{}, fmt.Errorf("pane command smoke produced no frames")
+	}
+	return frames[len(frames)-1], nil
+}
+
+func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, renderer render.Renderer) (render.Frame, error) {
+	host := app.NewFakeTerminalHost(4)
+	host.SetSize(120, 40)
+	shell := state.DefaultShell().
+		SetPanelPresentation(state.PanelPresentationSplitLine).
+		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
+		AddToast(state.ToastSpec{ID: "visual-gap", Severity: state.ToastWarning, Title: "visual gap", Body: "not tuiv2"})
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-visual",
+		Title:    "quick actions",
+		Pane:     state.PaneState{ID: "float-visual-pane", Title: "actions", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 62, Y: 7, W: 46, H: 13},
+		BoundsW:  120,
+		BoundsH:  40,
+		Source:   state.PaneCommandSourceTest,
+	})
+	root := state.Root{
+		Shell:    shell,
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-logs",
+			Cols:       56,
+			Rows:       36,
+			Lines: []string{
+				"visual audit baseline",
+				"current v3 is functional chrome, not target visual parity",
+				"emoji 🚀 and 中文 must not break chrome",
+			},
+		},
+	}
+	runtime := app.NewAppRuntime(root, nil, func(root state.Root) render.Frame {
+		return renderer.Render(builder.Build(root))
+	}, host, nil)
+	if err := runtime.Post(app.NoopMsg{}); err != nil {
+		return render.Frame{}, err
+	}
+	if err := runtime.Drain(ctx); err != nil {
+		return render.Frame{}, err
+	}
+	frames := host.Frames()
+	if len(frames) == 0 {
+		return render.Frame{}, fmt.Errorf("visual audit smoke produced no frames")
 	}
 	return frames[len(frames)-1], nil
 }
