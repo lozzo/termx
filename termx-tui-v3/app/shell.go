@@ -107,6 +107,12 @@ type ShellContentActionMsg struct {
 
 func (ShellContentActionMsg) isMsg() {}
 
+type HostThemeMsg struct {
+	Update state.HostThemeUpdate
+}
+
+func (HostThemeMsg) isMsg() {}
+
 type ShellSplitActivePaneMsg struct {
 	Pane      state.PaneState
 	Direction state.SplitDirection
@@ -212,6 +218,8 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		case ShellContentActionMsg:
 			return reduceShellContentAction(root, msg)
+		case HostThemeMsg:
+			root.HostTheme = root.HostTheme.ApplyUpdate(msg.Update)
 		case ShellSplitActivePaneMsg:
 			return reducePaneCommand(root, state.PaneCommand{
 				Action:         state.PaneCommandSplit,

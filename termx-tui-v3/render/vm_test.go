@@ -949,3 +949,35 @@ func TestWidthSafeTruncateDoesNotExceedTargetWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderVMBuilderCarriesHostAwareTheme(t *testing.T) {
+	root := state.Root{}
+	root.HostTheme = root.HostTheme.ApplyUpdate(state.HostThemeUpdate{DefaultFG: "#eeeeee"})
+	root.HostTheme = root.HostTheme.ApplyUpdate(state.HostThemeUpdate{DefaultBG: "#101010"})
+	root.HostTheme = root.HostTheme.ApplyUpdate(state.HostThemeUpdate{PaletteIndex: 5, PaletteColor: "#bb66ff"})
+	vm := NewRenderVMBuilder().Build(root)
+	if vm.Theme.HostFG != "#eeeeee" || vm.Theme.HostBG != "#101010" || vm.Theme.Accent != "#bb66ff" {
+		t.Fatalf("expected host-aware theme in render VM, got %#v", vm.Theme)
+	}
+	frame := NewRenderer(DefaultTheme()).Render(RenderVM{
+		Shell: ShellVM{
+			Layout: LayoutVM{
+				Viewport: Rect{W: 20, H: 3},
+				Panels: []PanelVM{{
+					ID:           "pane-1",
+					Title:        "pane",
+					Active:       true,
+					Presentation: PanelPresentationCard,
+					Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("ok")}},
+				}},
+			},
+		},
+		Theme: vm.Theme,
+	})
+	if frame.Theme.Accent != "#bb66ff" {
+		t.Fatalf("renderer should prefer VM host-aware theme, got %#v", frame.Theme)
+	}
+	if !strings.Contains(strings.Join(frame.ANSILines, "\n"), "38;2;187;102;255") {
+		t.Fatalf("styled frame should use host-aware accent, got %#v", frame.ANSILines)
+	}
+}

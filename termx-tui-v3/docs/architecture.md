@@ -213,12 +213,15 @@ TUI-v3 使用自有 `AppRuntime`，不使用 Bubble Tea `Program` 作为主运�
 
 输入侧必须把宿主 TTY 的 UV/xterm/其他 reader 事件转换成 v3 自有 `InputEvent`，再进入 `MessageRouter`；不得把 Bubble Tea key/mouse 类型泄漏进 `input`、`state` 或 `render`。
 
+当前宿主 theme/palette probe 已按 reducer-owned capability 路径落地：真实 `TerminalHost` 进入 TUI 后发送 OSC 10/11/4 查询，`InputParser` 消费 OSC response 并产生 host theme event；`AppRuntime` 把它转换为 `HostThemeMsg`，由 reducer 更新 `StateRoot.HostTheme`。这些响应不得作为普通 terminal input 透传给 core-v2 terminal。
+
 输出侧必须通过 `Renderer -> Frame -> FrameSink`，不得交给 Bubble Tea standard renderer。`FrameSink` contract 定义在 render 输出边界，真实 TTY 实现在 `TerminalHost`，非 TTY、测试和录制场景可以使用不同实现，但 contract 相同。
 
 职责边界：
 
 - 宿主 TTY 输入是用户按键、鼠标、粘贴、终端能力回报，归 `TerminalHost`。
 - terminal input 是写给 core/terminal 进程的输入字节或控制请求，归 terminal service。
+- 宿主 theme/palette 只推导 TermX chrome theme；PTY live 内容中的 `ansi:N`、`idx:N` 和 truecolor 仍作为 terminal 内容 SGR 语义直通，不重新映射为 semantic token。
 
 ## 7. UI 组件与第三方库边界
 

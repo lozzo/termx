@@ -3,6 +3,8 @@ package render
 import (
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 type recordingSink struct {
@@ -142,6 +144,47 @@ func TestThemeFallbackAndPaneTokensAreDistinct(t *testing.T) {
 	}
 	if theme.ActivePaneBorder == theme.InactivePane {
 		t.Fatalf("active/inactive pane tokens must be distinct, got %#v", theme)
+	}
+}
+
+func TestThemeFromEmptyHostThemeKeepsDefaultTheme(t *testing.T) {
+	if got, want := ThemeFromHostTheme(state.HostThemeStore{}), DefaultTheme().WithFallback(); got != want {
+		t.Fatalf("empty host theme should keep default theme\n got=%#v\nwant=%#v", got, want)
+	}
+}
+
+func TestThemeFromHostThemeUsesHostPaletteForChromeOnly(t *testing.T) {
+	host := state.HostThemeStore{}
+	host = host.ApplyUpdate(state.HostThemeUpdate{DefaultFG: "#eeeeee"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{DefaultBG: "#101010"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{PaletteIndex: 5, PaletteColor: "#bb66ff"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{PaletteIndex: 4, PaletteColor: "#3366dd"})
+	theme := ThemeFromHostTheme(host)
+	if theme.HostFG != "#eeeeee" || theme.HostBG != "#101010" {
+		t.Fatalf("host fg/bg should be preserved, got %#v", theme)
+	}
+	if theme.Accent != "#bb66ff" || theme.ActivePaneBorder != "#bb66ff" {
+		t.Fatalf("palette index 5 should drive chrome accent, got %#v", theme)
+	}
+	if theme.Info != "#3366dd" {
+		t.Fatalf("palette index 4 should drive info token, got %#v", theme)
+	}
+
+	result := RenderResult{
+		Content: []Line{{
+			Cells: []Cell{
+				{Text: "chrome", Width: 6, Style: StyleAccent, Safe: true},
+				{Text: "term", Width: 4, ANSIStyle: ANSICellStyle{FG: "ansi:4"}, Safe: true},
+			},
+		}},
+		Theme: theme,
+	}
+	frame := result.Frame()
+	if !strings.Contains(frame.ANSILines[0], "38;2;187;102;255") {
+		t.Fatalf("chrome accent should use host-derived truecolor, got %#v", frame.ANSILines)
+	}
+	if !strings.Contains(frame.ANSILines[0], "\x1b[34mterm") {
+		t.Fatalf("terminal content ansi:4 must still pass through host palette code, got %#v", frame.ANSILines)
 	}
 }
 

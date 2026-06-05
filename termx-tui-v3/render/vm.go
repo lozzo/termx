@@ -8,6 +8,7 @@ import (
 
 type RenderVM struct {
 	Shell ShellVM
+	Theme Theme
 }
 
 type HitRegionKind string
@@ -62,7 +63,7 @@ func NewRenderVMBuilder() RenderVMBuilder {
 
 func (RenderVMBuilder) Build(root state.Root) RenderVM {
 	shell := buildShellVM(root)
-	return RenderVM{Shell: shell}
+	return RenderVM{Shell: shell, Theme: ThemeFromHostTheme(root.HostTheme)}
 }
 
 func buildShellVM(root state.Root) ShellVM {
@@ -835,6 +836,9 @@ func NewRenderer(theme Theme) Renderer {
 }
 
 func (renderer Renderer) RenderResult(vm RenderVM) RenderResult {
+	if vm.Theme != (Theme{}) {
+		renderer.Theme = vm.Theme
+	}
 	return renderer.renderFramework(vm)
 }
 

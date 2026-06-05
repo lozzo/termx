@@ -10,6 +10,7 @@ type Root struct {
 	TerminalPool TerminalPoolStore
 	Viewport     ViewportStore
 	Shell        ShellStore
+	HostTheme    HostThemeStore
 }
 
 // Advance 返回 generation 递增后的副本。

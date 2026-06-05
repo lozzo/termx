@@ -976,6 +976,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - 真实 `FrameSink` 优先写 ANSI styled frame，每行使用绝对定位输出，避免满宽行依赖换行推进导致宿主自动换行破坏竖向边框。
 - renderer canvas 已升级为 cell matrix / compositor，cell 记录 text、width、style、owner、layer、continuation 和 safe flag，并处理 wide-cell footprint。
 - theme token 已覆盖 host fg/bg、chrome fg/bg、accent、muted、success/warning/danger/info、active/inactive pane、toast/overlay 和 status bar。
+- host-aware theme 已从静态 fallback 推进到 reducer-owned capability：`StateRoot.HostTheme` 保存 OSC 10/11/4 probe 得到的 default fg/bg 与 16 色 palette，`RenderVMBuilder` 把它推导为 `RenderVM.Theme`，renderer 优先使用 VM theme 输出 TermX chrome；该路径只影响 chrome semantic token，terminal live cell 的 ANSI palette / 256 色 / truecolor 继续直通宿主。
 - `RenderVMBuilder` 已输出 header/footer、layout/panel、content、overlay、toast 和 cursor 子 VM。
 - `state.Root` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message、interaction mode 和 Terminal Picker overlay 状态。
 - `state.Root` 已拥有 reducer-owned 外部 viewport state；真实 `TerminalHost` 查询初始尺寸并监听宿主 resize，fake host 可 deterministic 注入 resize。

@@ -123,6 +123,11 @@ func TestHostEnterCloseRestoresTerminal(t *testing.T) {
 			t.Fatalf("missing enter sequence %q in %q", seq, gotEnter)
 		}
 	}
+	for _, seq := range []string{requestHostFG, requestHostBG, "\x1b]4;0;?\x07", "\x1b]4;15;?\x07"} {
+		if !strings.Contains(gotEnter, seq) {
+			t.Fatalf("missing theme probe sequence %q in %q", seq, gotEnter)
+		}
+	}
 	if err := host.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -137,6 +142,30 @@ func TestHostEnterCloseRestoresTerminal(t *testing.T) {
 		if !strings.Contains(gotAll, seq) {
 			t.Fatalf("missing exit sequence %q in %q", seq, gotAll)
 		}
+	}
+}
+
+func TestHostThemeProbeCanBeDisabled(t *testing.T) {
+	ops := &fakeTerminalOps{terminal: true}
+	reader := newBlockingCancelReader()
+	var output bytes.Buffer
+	host := New(
+		WithInput(strings.NewReader(""), 7),
+		WithOutput(&output),
+		WithTerminalOps(ops),
+		WithThemeProbe(false),
+		WithCancelReaderFactory(func(io.Reader) (CancelReader, error) {
+			return reader, nil
+		}),
+	)
+	if err := host.Enter(context.Background()); err != nil {
+		t.Fatalf("enter: %v", err)
+	}
+	if got := output.String(); strings.Contains(got, requestHostFG) || strings.Contains(got, "\x1b]4;0;?\x07") {
+		t.Fatalf("theme probe should be disabled, got %q", got)
+	}
+	if err := host.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }
 
@@ -166,6 +195,7 @@ func TestHostPublishesResizeEventsFromSignal(t *testing.T) {
 		WithInput(strings.NewReader(""), 7),
 		WithOutput(io.Discard),
 		WithTerminalOps(ops),
+		WithThemeProbe(false),
 		WithCancelReaderFactory(func(io.Reader) (CancelReader, error) {
 			return reader, nil
 		}),
@@ -280,6 +310,24 @@ func TestInputParserConvertsMouseAndKeys(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected parsed events\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestInputParserConsumesOSCThemeResponses(t *testing.T) {
+	parser := NewInputParser()
+	got := parser.Feed([]byte("\x1b]10;rgb:aaaa/bbbb/cccc\a\x1b]11;#010203\x1b\\\x1b]4;5;rgb:4444/8888/cccc\a"))
+	want := []input.InputEvent{
+		{Kind: input.EventKindHostTheme, Theme: input.HostThemeEvent{DefaultFG: "#aabbcc"}, RawSeq: "\x1b]10;rgb:aaaa/bbbb/cccc\a"},
+		{Kind: input.EventKindHostTheme, Theme: input.HostThemeEvent{DefaultBG: "#010203"}, RawSeq: "\x1b]11;#010203\x1b\\"},
+		{Kind: input.EventKindHostTheme, Theme: input.HostThemeEvent{PaletteIndex: 5, PaletteColor: "#4488cc"}, RawSeq: "\x1b]4;5;rgb:4444/8888/cccc\a"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected OSC theme events\n got: %#v\nwant: %#v", got, want)
+	}
+	for _, event := range got {
+		if event.Kind == input.EventKindKey {
+			t.Fatalf("theme OSC response must not leak as key input: %#v", event)
+		}
 	}
 }
 

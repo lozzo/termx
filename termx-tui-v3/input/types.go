@@ -4,9 +4,10 @@ package input
 type EventKind string
 
 const (
-	EventKindKey    EventKind = "key"
-	EventKindMouse  EventKind = "mouse"
-	EventKindResize EventKind = "resize"
+	EventKindKey       EventKind = "key"
+	EventKindMouse     EventKind = "mouse"
+	EventKindResize    EventKind = "resize"
+	EventKindHostTheme EventKind = "host-theme"
 )
 
 type Key string
@@ -71,10 +72,18 @@ type InputEvent struct {
 	Col    int
 	Cols   int
 	Rows   int
+	Theme  HostThemeEvent
 	Alt    bool
 	Ctrl   bool
 	Shift  bool
 	RawSeq string
+}
+
+type HostThemeEvent struct {
+	DefaultFG    string
+	DefaultBG    string
+	PaletteIndex int
+	PaletteColor string
 }
 
 type IntentKind string
@@ -155,6 +164,8 @@ func RouteWithOptions(event InputEvent, options RouteOptions) Intent {
 		return routeKey(event, options)
 	case EventKindMouse:
 		return routeMouse(event, options)
+	case EventKindHostTheme:
+		return Intent{Kind: IntentNone, Event: event, Reason: "host theme capability event"}
 	default:
 		return Intent{Kind: IntentNone, Event: event, Reason: "unknown input kind"}
 	}

@@ -56,6 +56,16 @@ func TestRouteTerminalInputAndCopyModeSelection(t *testing.T) {
 	}
 }
 
+func TestRouteHostThemeEventDoesNotBecomeTerminalInput(t *testing.T) {
+	intent := Route(InputEvent{
+		Kind:  EventKindHostTheme,
+		Theme: HostThemeEvent{DefaultFG: "#aabbcc"},
+	}, false)
+	if intent.Kind != IntentNone {
+		t.Fatalf("host theme event must not become terminal input, got %#v", intent)
+	}
+}
+
 func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 	ctrlF := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x06", Ctrl: true}, false)
 	if ctrlF.Kind != IntentOpenTerminalPicker {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -29,6 +30,8 @@ const (
 	disableMouseButton  = "\x1b[?1002l"
 	enableMouseSGR      = "\x1b[?1006h"
 	disableMouseSGR     = "\x1b[?1006l"
+	requestHostFG       = "\x1b]10;?\x07"
+	requestHostBG       = "\x1b]11;?\x07"
 )
 
 var (
@@ -138,6 +141,13 @@ func WithResizeSignalChannel(signals <-chan os.Signal) Option {
 	})
 }
 
+// WithThemeProbe 控制宿主 palette/theme probe，测试可关闭以断言 enter 序列。
+func WithThemeProbe(enabled bool) Option {
+	return func(host *Host) {
+		host.themeProbe = enabled
+	}
+}
+
 // Host 是 TUI-v3 真实 TerminalHost，实现 app.TerminalHost 所需契约。
 type Host struct {
 	input  io.Reader
@@ -153,6 +163,7 @@ type Host struct {
 	inputBuffer int
 	events      chan input.InputEvent
 	sink        *FrameSink
+	themeProbe  bool
 
 	mu      sync.Mutex
 	state   TerminalState
@@ -170,6 +181,7 @@ func New(options ...Option) *Host {
 		fd:          os.Stdin.Fd(),
 		ops:         xTermOps{},
 		inputBuffer: 64,
+		themeProbe:  true,
 	}
 	host.cancelReaderFactory = func(reader io.Reader) (CancelReader, error) {
 		return cancelreader.NewReader(reader)
@@ -203,7 +215,12 @@ func (host *Host) Enter(ctx context.Context) error {
 	host.entered = true
 	host.closed = false
 	host.done = make(chan struct{})
-	if _, err := io.WriteString(host.output, enterSequence()); err != nil {
+	sequence := enterSequence()
+	if host.themeProbe {
+		// theme probe 必须在 alt-screen/raw mode 后发送，避免宿主把响应回到普通 shell。
+		sequence += hostThemeProbeSequence()
+	}
+	if _, err := io.WriteString(host.output, sequence); err != nil {
 		_ = host.ops.Restore(host.fd, state)
 		host.state = nil
 		host.entered = false
@@ -357,6 +374,16 @@ func (host *Host) readResizeSignals(ctx context.Context, done <-chan struct{}, s
 
 func enterSequence() string {
 	return enterAltScreen + hideCursor + enableBracketPaste + enableMouseCell + enableMouseButton + enableMouseSGR
+}
+
+func hostThemeProbeSequence() string {
+	var builder strings.Builder
+	builder.WriteString(requestHostFG)
+	builder.WriteString(requestHostBG)
+	for index := 0; index < 16; index++ {
+		builder.WriteString(fmt.Sprintf("\x1b]4;%d;?\x07", index))
+	}
+	return builder.String()
 }
 
 func exitSequence() string {

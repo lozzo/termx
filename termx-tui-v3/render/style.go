@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 type Theme struct {
@@ -60,6 +61,50 @@ func DefaultTheme() Theme {
 		StatusFG: "#e7e2ef",
 		StatusBG: "#08080d",
 	}
+}
+
+func ThemeFromHostTheme(host state.HostThemeStore) Theme {
+	theme := DefaultTheme()
+	paletteDrivenBorder := false
+	if host.DefaultFG != "" {
+		theme.HostFG = host.DefaultFG
+		theme.ChromeFG = host.DefaultFG
+		theme.StatusFG = host.DefaultFG
+	}
+	if host.DefaultBG != "" {
+		theme.HostBG = host.DefaultBG
+		theme.StatusBG = host.DefaultBG
+		theme.ChromeBG = mixHostColor(host.DefaultBG, "#ffffff", 0.06)
+		theme.ToastBG = mixHostColor(host.DefaultBG, "#ffffff", 0.08)
+		theme.OverlayBG = mixHostColor(host.DefaultBG, "#ffffff", 0.10)
+	}
+	if color, ok := host.PaletteColor(5); ok {
+		theme.Accent = color
+		theme.ActivePaneBorder = color
+		paletteDrivenBorder = true
+	}
+	if color, ok := host.PaletteColor(8); ok {
+		theme.Muted = color
+		theme.MutedBorder = color
+		theme.InactivePane = color
+		paletteDrivenBorder = true
+	}
+	if color, ok := host.PaletteColor(2); ok {
+		theme.Success = color
+	}
+	if color, ok := host.PaletteColor(3); ok {
+		theme.Warning = color
+	}
+	if color, ok := host.PaletteColor(1); ok {
+		theme.Danger = color
+	}
+	if color, ok := host.PaletteColor(4); ok {
+		theme.Info = color
+	}
+	if paletteDrivenBorder && theme.PanelBorder == DefaultTheme().PanelBorder && theme.Muted != "" {
+		theme.PanelBorder = mixHostColor(theme.Muted, theme.Accent, 0.45)
+	}
+	return theme.WithFallback()
 }
 
 func (theme Theme) WithFallback() Theme {
@@ -126,6 +171,74 @@ func StatusStyle(theme Theme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.StatusFG)).
 		Background(lipgloss.Color(theme.StatusBG))
+}
+
+func mixHostColor(base string, overlay string, ratio float64) string {
+	baseR, baseG, baseB, okBase := parseHexColorBytes(base)
+	overlayR, overlayG, overlayB, okOverlay := parseHexColorBytes(overlay)
+	if !okBase || !okOverlay {
+		return base
+	}
+	if ratio < 0 {
+		ratio = 0
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+	mix := func(a int, b int) int {
+		return int(float64(a)*(1-ratio) + float64(b)*ratio + 0.5)
+	}
+	return formatHexColor(mix(baseR, overlayR), mix(baseG, overlayG), mix(baseB, overlayB))
+}
+
+func parseHexColorBytes(value string) (int, int, int, bool) {
+	if len(value) != 7 || value[0] != '#' {
+		return 0, 0, 0, false
+	}
+	parse := func(part string) (int, bool) {
+		var out int
+		for _, r := range part {
+			out <<= 4
+			switch {
+			case r >= '0' && r <= '9':
+				out += int(r - '0')
+			case r >= 'a' && r <= 'f':
+				out += int(r-'a') + 10
+			case r >= 'A' && r <= 'F':
+				out += int(r-'A') + 10
+			default:
+				return 0, false
+			}
+		}
+		return out, true
+	}
+	r, okR := parse(value[1:3])
+	g, okG := parse(value[3:5])
+	b, okB := parse(value[5:7])
+	return r, g, b, okR && okG && okB
+}
+
+func formatHexColor(r int, g int, b int) string {
+	const hex = "0123456789abcdef"
+	if r < 0 {
+		r = 0
+	}
+	if r > 255 {
+		r = 255
+	}
+	if g < 0 {
+		g = 0
+	}
+	if g > 255 {
+		g = 255
+	}
+	if b < 0 {
+		b = 0
+	}
+	if b > 255 {
+		b = 255
+	}
+	return string([]byte{'#', hex[r>>4], hex[r&15], hex[g>>4], hex[g&15], hex[b>>4], hex[b&15]})
 }
 
 func SafeLine(value string) string {

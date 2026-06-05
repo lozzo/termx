@@ -1,6 +1,7 @@
 package terminalhost
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -90,6 +91,9 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 	if len(buffer) == 1 {
 		return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc, RawSeq: "\x1b"}, 1, true
 	}
+	if buffer[1] == ']' {
+		return parseOSC(buffer)
+	}
 	if buffer[1] == 'O' {
 		return parseSS3(buffer)
 	}
@@ -115,6 +119,114 @@ func parseEscape(buffer []byte) (input.InputEvent, int, bool) {
 		}
 	}
 	return input.InputEvent{}, 0, false
+}
+
+func parseOSC(buffer []byte) (input.InputEvent, int, bool) {
+	if len(buffer) < 3 {
+		return input.InputEvent{}, 0, false
+	}
+	end := -1
+	st := false
+	for i := 2; i < len(buffer); i++ {
+		if buffer[i] == '\a' {
+			end = i
+			break
+		}
+		if buffer[i] == '\\' && i > 2 && buffer[i-1] == '\x1b' {
+			end = i
+			st = true
+			break
+		}
+	}
+	if end < 0 {
+		return input.InputEvent{}, 0, false
+	}
+	consumed := end + 1
+	bodyEnd := end
+	if st {
+		bodyEnd = end - 1
+	}
+	seq := buffer[:consumed]
+	body := string(buffer[2:bodyEnd])
+	if event, ok := oscThemeEvent(body, string(seq)); ok {
+		return event, consumed, true
+	}
+	return input.InputEvent{Kind: input.EventKindKey, Key: input.KeyUnknown, RawSeq: string(seq)}, consumed, true
+}
+
+func oscThemeEvent(body string, raw string) (input.InputEvent, bool) {
+	parts := strings.Split(body, ";")
+	if len(parts) < 2 {
+		return input.InputEvent{}, false
+	}
+	switch parts[0] {
+	case "10":
+		colorValue, ok := parseOSCColor(parts[1])
+		if !ok {
+			return input.InputEvent{}, false
+		}
+		return input.InputEvent{Kind: input.EventKindHostTheme, Theme: input.HostThemeEvent{DefaultFG: colorValue}, RawSeq: raw}, true
+	case "11":
+		colorValue, ok := parseOSCColor(parts[1])
+		if !ok {
+			return input.InputEvent{}, false
+		}
+		return input.InputEvent{Kind: input.EventKindHostTheme, Theme: input.HostThemeEvent{DefaultBG: colorValue}, RawSeq: raw}, true
+	case "4":
+		if len(parts) < 3 {
+			return input.InputEvent{}, false
+		}
+		index, err := strconv.Atoi(parts[1])
+		if err != nil || index < 0 || index > 255 {
+			return input.InputEvent{}, false
+		}
+		colorValue, ok := parseOSCColor(parts[2])
+		if !ok {
+			return input.InputEvent{}, false
+		}
+		return input.InputEvent{Kind: input.EventKindHostTheme, Theme: input.HostThemeEvent{PaletteIndex: index, PaletteColor: colorValue}, RawSeq: raw}, true
+	default:
+		return input.InputEvent{}, false
+	}
+}
+
+func parseOSCColor(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "?" {
+		return "", false
+	}
+	if strings.HasPrefix(value, "#") && len(value) == 7 {
+		return strings.ToLower(value), true
+	}
+	if strings.HasPrefix(value, "rgb:") {
+		parts := strings.Split(strings.TrimPrefix(value, "rgb:"), "/")
+		if len(parts) != 3 {
+			return "", false
+		}
+		r, okR := parseOSCColorComponent(parts[0])
+		g, okG := parseOSCColorComponent(parts[1])
+		b, okB := parseOSCColorComponent(parts[2])
+		if !okR || !okG || !okB {
+			return "", false
+		}
+		return fmt.Sprintf("#%02x%02x%02x", r, g, b), true
+	}
+	return "", false
+}
+
+func parseOSCColorComponent(value string) (int, bool) {
+	if len(value) == 0 {
+		return 0, false
+	}
+	parsed, err := strconv.ParseUint(value, 16, 16)
+	if err != nil {
+		return 0, false
+	}
+	max := uint64(1)<<(len(value)*4) - 1
+	if max == 0 {
+		return 0, false
+	}
+	return int((parsed*255 + max/2) / max), true
 }
 
 func parseSS3(buffer []byte) (input.InputEvent, int, bool) {

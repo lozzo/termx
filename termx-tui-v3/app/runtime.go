@@ -341,9 +341,17 @@ func (runtime *AppRuntime) ingestHostInput() {
 	for {
 		select {
 		case event := <-events:
-			if event.Kind == input.EventKindResize {
+			switch event.Kind {
+			case input.EventKindResize:
 				runtime.enqueue(HostResizeMsg{Cols: event.Cols, Rows: event.Rows})
-			} else {
+			case input.EventKindHostTheme:
+				runtime.enqueue(HostThemeMsg{Update: state.HostThemeUpdate{
+					DefaultFG:    event.Theme.DefaultFG,
+					DefaultBG:    event.Theme.DefaultBG,
+					PaletteIndex: event.Theme.PaletteIndex,
+					PaletteColor: event.Theme.PaletteColor,
+				}})
+			default:
 				runtime.enqueue(runtime.dispatchMouseHitRegion(InputMsg{Event: event}))
 			}
 		default:

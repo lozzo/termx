@@ -217,6 +217,42 @@ func TestAppRuntimeIngestsTerminalHostInput(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeIngestsHostThemeWithoutTerminalInputLeak(t *testing.T) {
+	host := NewFakeTerminalHost(2)
+	if err := host.SendInput(input.InputEvent{
+		Kind:  input.EventKindHostTheme,
+		Theme: input.HostThemeEvent{DefaultFG: "#aabbcc", PaletteIndex: 5, PaletteColor: "#445566"},
+	}); err != nil {
+		t.Fatalf("send host theme: %v", err)
+	}
+	var leaked bool
+	runtime := NewAppRuntime(
+		state.Root{},
+		ComposeReducers(NewShellReducer(), func(root state.Root, msg Msg) (state.Root, []Effect) {
+			if _, ok := msg.(InputMsg); ok {
+				leaked = true
+			}
+			return root, nil
+		}),
+		func(state.Root) render.Frame { return render.Frame{} },
+		host,
+		NewSyncEffectRunner(),
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	got := runtime.State().HostTheme
+	if got.DefaultFG != "#aabbcc" {
+		t.Fatalf("expected host default fg update, got %#v", got)
+	}
+	if color, ok := got.PaletteColor(5); !ok || color != "#445566" {
+		t.Fatalf("expected palette update, got %#v ok=%v", color, ok)
+	}
+	if leaked {
+		t.Fatal("host theme event must not leak as terminal InputMsg")
+	}
+}
+
 func TestAppRuntimeInitializesViewportFromHostSizeAndRenders(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	host.SetSize(132, 43)
