@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -1306,6 +1307,24 @@ func (store ShellStore) ResizePane(target PaneCommandTarget, direction PaneResiz
 	return store
 }
 
+func (store ShellStore) ResizeSplitPath(target PaneCommandTarget, splitPath string, direction PaneResizeDirection, delta int) ShellStore {
+	store = store.EnsureDefaults()
+	if delta == 0 {
+		return store
+	}
+	tabIndex := store.tabIndexForTarget(target)
+	if tabIndex < 0 {
+		return store
+	}
+	path, ok := parseSplitPath(splitPath)
+	if !ok {
+		return store
+	}
+	tab := &store.Workspace.Tabs[tabIndex]
+	tab.RootSplit, _ = resizeSplitNodeByPath(tab.RootSplit, path, direction, delta)
+	return store
+}
+
 func (store ShellStore) SetPaneSize(command PaneCommand) ShellStore {
 	store = store.EnsureDefaults()
 	tabIndex := store.tabIndexForTarget(command.Target)
@@ -2074,6 +2093,56 @@ func resizeSplitNode(node SplitNode, paneID string, direction PaneResizeDirectio
 	}
 	node.Children = children
 	return node, changed
+}
+
+func resizeSplitNodeByPath(node SplitNode, path []int, direction PaneResizeDirection, delta int) (SplitNode, bool) {
+	if len(path) == 0 {
+		if node.PaneID != "" || len(node.Children) < 2 || !splitDirectionMatchesResize(node.Direction, direction) {
+			return node, false
+		}
+		// 鼠标拖拽 divider 时目标就是当前 split，delta 已按拖拽方向带符号；不能再按 pane 所在侧反推祖先。
+		node.BiasCells += delta
+		node.FixedPaneID = ""
+		node.FixedCols = 0
+		node.FixedRows = 0
+		node.Ratio = 0
+		return node, true
+	}
+	index := path[0]
+	if index < 0 || index >= len(node.Children) {
+		return node, false
+	}
+	children := cloneSplitNodes(node.Children)
+	next, changed := resizeSplitNodeByPath(children[index], path[1:], direction, delta)
+	if !changed {
+		return node, false
+	}
+	children[index] = next
+	node.Children = children
+	return node, true
+}
+
+func parseSplitPath(path string) ([]int, bool) {
+	if path == PaneResizeRootSplitPath {
+		return nil, true
+	}
+	prefix := PaneResizeRootSplitPath + "/"
+	if !strings.HasPrefix(path, prefix) {
+		return nil, false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
+	if len(parts) == 0 {
+		return nil, false
+	}
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
+		index, err := strconv.Atoi(part)
+		if err != nil || (index != 0 && index != 1) {
+			return nil, false
+		}
+		out = append(out, index)
+	}
+	return out, true
 }
 
 func setSplitNodeSize(node SplitNode, command PaneCommand) (SplitNode, bool) {

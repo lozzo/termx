@@ -603,6 +603,85 @@ func TestAppRuntimeDragsHorizontalPaneDividerResize(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDragsNestedPaneResizeOnlyChangesExactDivider(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 9, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(90, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 90, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post split-line: %v", err)
+	}
+	if err := runtime.Post(ShellSplitActivePaneMsg{Pane: state.PaneState{ID: "pane-middle", Title: "middle", Kind: state.PaneTerminalLive}, Direction: state.SplitDirectionVertical}); err != nil {
+		t.Fatalf("post middle split: %v", err)
+	}
+	if err := runtime.Post(ShellSplitActivePaneMsg{Pane: state.PaneState{ID: "pane-right", Title: "right", Kind: state.PaneTerminalLive}, Direction: state.SplitDirectionVertical}); err != nil {
+		t.Fatalf("post right split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+	beforeInputCount := len(terminal.Inputs)
+	beforeToastCount := len(runtime.State().Shell.Toasts)
+	beforeRects := paneLayoutRects(runtime.State())
+
+	resizeRegion := framePaneResizeRegion(t, lastRuntimeFrame(t, host), "pane-middle", state.PaneResizeRight)
+	if resizeRegion.SplitPath != "root/1" {
+		t.Fatalf("expected nested divider split path, got %#v", resizeRegion)
+	}
+	start := mouseEventAt(resizeRegion.Rect)
+	start.Mouse = input.MouseLeft
+	if err := host.SendInput(start); err != nil {
+		t.Fatalf("send nested drag start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain nested drag start: %v", err)
+	}
+	if runtime.mouseDrag.SplitPath != "root/1" || runtime.mouseDrag.PaneID != "pane-middle" {
+		t.Fatalf("drag state should keep exact nested split path, got %#v", runtime.mouseDrag)
+	}
+
+	drag := start
+	drag.Mouse = input.MouseLeftDrag
+	drag.Col -= 5
+	if err := host.SendInput(drag); err != nil {
+		t.Fatalf("send nested drag move: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain nested drag move: %v", err)
+	}
+	root := runtime.State().Shell.Workspace.Tabs[0].RootSplit
+	if root.BiasCells != 0 || len(root.Children) < 2 || root.Children[1].BiasCells != -5 {
+		t.Fatalf("nested divider drag should not mutate outer split, got %#v", root)
+	}
+	afterRects := paneLayoutRects(runtime.State())
+	if afterRects[state.DefaultPaneID] != beforeRects[state.DefaultPaneID] {
+		t.Fatalf("outer left pane must stay anchored, before=%#v after=%#v", beforeRects[state.DefaultPaneID], afterRects[state.DefaultPaneID])
+	}
+	if afterRects["pane-middle"].X != beforeRects["pane-middle"].X || afterRects["pane-middle"].W != beforeRects["pane-middle"].W-5 {
+		t.Fatalf("left side of nested divider should shrink by drag delta, before=%#v after=%#v", beforeRects["pane-middle"], afterRects["pane-middle"])
+	}
+	if afterRects["pane-right"].X != beforeRects["pane-right"].X-5 || afterRects["pane-right"].X+afterRects["pane-right"].W != beforeRects["pane-right"].X+beforeRects["pane-right"].W {
+		t.Fatalf("right side of nested divider should grow while outer edge stays anchored, before=%#v after=%#v", beforeRects["pane-right"], afterRects["pane-right"])
+	}
+	if len(terminal.Inputs) != beforeInputCount {
+		t.Fatalf("nested pane resize drag must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+	if len(runtime.State().Shell.Toasts) != beforeToastCount {
+		t.Fatalf("nested pane resize drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
+	}
+}
+
 func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},

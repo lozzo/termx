@@ -262,7 +262,7 @@ func TestMeasureLayoutAddsSplitDividerResizeHitRegions(t *testing.T) {
 	}
 	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
 	region := hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "left")
-	if region.Direction != "right" || region.Rect != (Rect{X: 20, Y: 0, W: 1, H: 10}) {
+	if region.Direction != "right" || region.SplitPath != "root" || region.Rect != (Rect{X: 20, Y: 0, W: 1, H: 10}) {
 		t.Fatalf("expected vertical divider resize region, got %#v", region)
 	}
 
@@ -273,8 +273,40 @@ func TestMeasureLayoutAddsSplitDividerResizeHitRegions(t *testing.T) {
 	}
 	plan = MeasureLayout(shell, Rect{W: 40, H: 10})
 	region = hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "top")
-	if region.Direction != "down" || region.Rect != (Rect{X: 0, Y: 5, W: 40, H: 1}) {
+	if region.Direction != "down" || region.SplitPath != "root" || region.Rect != (Rect{X: 0, Y: 5, W: 40, H: 1}) {
 		t.Fatalf("expected horizontal divider resize region, got %#v", region)
+	}
+}
+
+func TestMeasureLayoutAddsNestedSplitDividerPath(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{
+				{ID: "left", Presentation: PanelPresentationSplitLine},
+				{ID: "middle", Presentation: PanelPresentationSplitLine},
+				{ID: "right", Presentation: PanelPresentationSplitLine, Active: true},
+			},
+			Split: SplitVM{
+				Direction: SplitVertical,
+				Children: []SplitVM{
+					{PaneID: "left"},
+					{
+						Direction: SplitVertical,
+						Children:  []SplitVM{{PaneID: "middle"}, {PaneID: "right"}},
+					},
+				},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 60, H: 10})
+	root := hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "left")
+	nested := hitRegionByActionAndPane(t, plan.HitRegions, "pane.resize", "middle")
+	if root.SplitPath != "root" || root.Rect.X != 30 {
+		t.Fatalf("expected root divider path, got %#v", root)
+	}
+	if nested.SplitPath != "root/1" || nested.Rect.X != 45 {
+		t.Fatalf("expected nested divider path, got %#v", nested)
 	}
 }
 

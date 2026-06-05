@@ -92,6 +92,7 @@ func PaneCommandFromHitRegion(region render.HitRegion) (state.PaneCommand, bool)
 		command.Action = state.PaneCommandResize
 		command.ResizeDirection = state.PaneResizeRight
 		command.Delta = 1
+		command.ResizeSplitPath = region.SplitPath
 	case render.HitRegionPaneChrome, render.HitRegionPaneContent:
 		command.Action = state.PaneCommandFocus
 	default:

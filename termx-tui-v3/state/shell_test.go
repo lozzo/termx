@@ -418,6 +418,26 @@ func TestShellResizeSetSizeAndBalancePaneGeometry(t *testing.T) {
 	}
 }
 
+func TestShellResizeSplitPathOnlyChangesExactNestedDivider(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-middle"}, SplitDirectionVertical).
+		SplitActivePane(PaneState{ID: "pane-right"}, SplitDirectionVertical)
+
+	shell = shell.ResizeSplitPath(PaneCommandTarget{PaneID: "pane-middle"}, "root/1", PaneResizeRight, -4)
+	root := shell.Workspace.Tabs[0].RootSplit
+	if root.BiasCells != 0 {
+		t.Fatalf("exact nested divider resize must not change root split, got %#v", root)
+	}
+	if len(root.Children) < 2 || root.Children[1].BiasCells != -4 {
+		t.Fatalf("expected right nested split bias only, got %#v", root)
+	}
+
+	unchanged := shell.ResizeSplitPath(PaneCommandTarget{PaneID: "pane-middle"}, "root/9", PaneResizeRight, 3)
+	if unchanged.Workspace.Tabs[0].RootSplit.Children[1].BiasCells != -4 {
+		t.Fatalf("invalid split path must not mutate layout, got %#v", unchanged.Workspace.Tabs[0].RootSplit)
+	}
+}
+
 func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	shell := DefaultShell()
 	var result FloatingCommandResult

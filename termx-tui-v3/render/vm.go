@@ -40,6 +40,7 @@ type HitRegion struct {
 	PaneID    string
 	ActionID  string
 	Direction string
+	SplitPath string
 }
 
 type RenderVMBuilder struct{}

@@ -34,6 +34,8 @@ const (
 	PaneResizeDown  PaneResizeDirection = "down"
 )
 
+const PaneResizeRootSplitPath = "root"
+
 type PaneSizeMode string
 
 const (
@@ -67,7 +69,9 @@ type PaneCommand struct {
 	SplitDirection  SplitDirection
 	ResizeDirection PaneResizeDirection
 	// Delta 对键盘/CLI 是正向步长；鼠标拖拽固定某条边时可为负，表示该边向反方向移动。
-	Delta           int
+	Delta int
+	// ResizeSplitPath 只用于鼠标拖拽真实 divider，避免按 pane id 向上误改外层 split。
+	ResizeSplitPath string
 	SizeMode        PaneSizeMode
 	Ratio           float64
 	Cols            int
@@ -195,6 +199,9 @@ func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneC
 	case PaneCommandToggleZoom:
 		return store.ToggleZoomPane(command.Target), result
 	case PaneCommandResize:
+		if command.ResizeSplitPath != "" {
+			return store.ResizeSplitPath(command.Target, command.ResizeSplitPath, command.ResizeDirection, command.Delta), result
+		}
 		return store.ResizePane(command.Target, command.ResizeDirection, command.Delta), result
 	case PaneCommandSetSize:
 		return store.SetPaneSize(command), result

@@ -16,7 +16,7 @@
 
 切片 90 的结论是：用户明确反馈当前 TUI 样子仍与目标不一致，因此当前视觉对齐 goal 不能完成。后续必须进入切片 91，按目标截图重做整体 UI 构图和视觉层级，而不是继续用局部 token、smoke 文本或 PTY ANSI 捕获证明视觉完成。
 
-切片 91 已完成整体 UI 构图三轮重绘；切片 92-96 已按用户最新复核继续收敛功能和可见性：未接线按钮不再绘制，toast 改为深色直角实体矩形、左右紫色竖线和居中文案并支持自动消失，pane 边框/分隔线支持鼠标连续拖动 resize，横纵分屏按钮恢复为真实可点击入口，floating 支持标题栏拖动移动和右下 resize handle 连续拖动。切片 98-100 继续收敛本轮真实使用反馈：toast 去重并降低拖动/聚焦类低价值反馈，横向 split divider 上的下方 pane 分屏图标不再被 resize 命中抢占，真实 FrameSink 默认隐藏并锚定 host cursor 以避免中文输入法预编辑跑到窗口底部。切片 103 进一步收敛中文输入法复现：FrameSink 使用同步输出包裹整帧、写帧前先隐藏 cursor、写帧后重新锚定隐藏 cursor；empty/exited pane 和 active floating 即使没有真实 terminal cursor，也会在内容区提供 IME anchor。切片 104 已把 floating visual focus 与 tiled pane business active 分离：active floating 存在时后方 tiled pane chrome 使用 inactive/muted 视觉，关闭 floating 后恢复 pane active 高亮，同时 terminal resize 仍按业务 active pane content rect 计算。这些结论说明当前轮用户指出的可操作问题已完成回归，不等于用户已经确认截图级视觉通过。
+切片 91 已完成整体 UI 构图三轮重绘；切片 92-96 已按用户最新复核继续收敛功能和可见性：未接线按钮不再绘制，toast 改为深色直角实体矩形、左右紫色竖线和居中文案并支持自动消失，pane split divider 支持鼠标连续拖动 resize，横纵分屏按钮恢复为真实可点击入口，floating 支持标题栏拖动移动和右下 resize handle 连续拖动。切片 98-100 继续收敛本轮真实使用反馈：toast 去重并降低拖动/聚焦类低价值反馈，横向 split divider 上的下方 pane 分屏图标不再被 resize 命中抢占，真实 FrameSink 默认隐藏并锚定 host cursor 以避免中文输入法预编辑跑到窗口底部。切片 103 进一步收敛中文输入法复现：FrameSink 使用同步输出包裹整帧、写帧前先隐藏 cursor、写帧后重新锚定隐藏 cursor；empty/exited pane 和 active floating 即使没有真实 terminal cursor，也会在内容区提供 IME anchor。切片 104 已把 floating visual focus 与 tiled pane business active 分离：active floating 存在时后方 tiled pane chrome 使用 inactive/muted 视觉，关闭 floating 后恢复 pane active 高亮，同时 terminal resize 仍按业务 active pane content rect 计算。切片 105 已把 pane 鼠标 resize 改成精确 split divider 目标：嵌套分屏中拖动某条 divider 只调整该 split 两侧邻居，不能误改外层 split。这些结论说明当前轮用户指出的可操作问题已完成回归，不等于用户已经确认截图级视觉通过。
 
 ## 2. 当前已经成立的工程事实
 
@@ -26,7 +26,7 @@
 - tiled pane 默认不再使用 ASCII `+ - |`，而是 square Unicode box drawing。
 - header/footer hide、pane split/focus/resize/zoom/close、floating、Terminal Pool、Workbench Tree、Prompt/Help、copy mode 都已有基本操作入口。
 - pane chrome 当前只显示真实可用 action：split-down、split-right 和 close；zoom 等未恢复接线的按钮继续隐藏。
-- pane 分隔线/边框 resize 和 floating 移动/resize 都已走真实 SGR mouse drag/release 与 runtime transient drag state，不再是一次性假点击。
+- pane split divider resize 和 floating 移动/resize 都已走真实 SGR mouse drag/release 与 runtime transient drag state，不再是一次性假点击。
 - toast 当前使用用户截图方向的直角深色实体消息样式，copy 成功显示 `Copied to clipboard`，普通 toast 会自动消失；同内容 toast 会去重并刷新生命周期，鼠标拖动 resize/move 和 focus 成功不再制造低价值弹窗。
 - host cursor 在真实 FrameSink 中默认隐藏；FrameSink 写帧时使用同步输出并先隐藏 cursor，写帧结束后把隐藏 cursor 停在全局 cursor rect。pane、overlay、Prompt、live surface、empty pane 和 active floating 都必须有稳定 cursor anchor，避免中文输入法预编辑跟随最后一行输出位置顶起窗口。
 - terminal 内容、copy-history 和 overlay content 都被限制在自己的 content rect 内，不应冲破 UI chrome。
@@ -151,6 +151,7 @@
 - 切片 102：pane resize 拖拽期间固定起始命中的边方向；同一次拖拽来回移动不会切换锚点，拖右/下分隔线时对侧 pane 外边保持不动。
 - 切片 103：FrameSink 使用同步输出包裹整帧、写前隐藏 cursor、写后锚定隐藏 cursor；empty/exited pane 也输出 content-local cursor，active floating 创建后中文输入法候选区应跟随 floating 内容区而不是窗口底部。
 - 切片 104：active floating 获焦时，后方 tiled pane 不再保留 active 高亮边框，而是使用 inactive/muted 视觉；关闭 floating 后 tiled pane active 高亮恢复，terminal resize 仍使用业务 active pane。
+- 切片 105：pane split divider hit region 携带精确 split path；鼠标拖动嵌套 divider 时只改该 split 节点，外层 pane/subtree 保持锚定。
 
 ## 5. 手工复核入口
 
@@ -159,7 +160,7 @@
 - 启动：`go run ./termx-cli/cmd/termx`。
 - viewport：至少检查 `80x24`、`100x32`、`120x40`。
 - pane：`Ctrl-p` 后检查 `v/s/n/N/z/x/c/p` 的 split、focus、zoom、close、card/split 视觉反馈；同时点击 pane 顶部 split-down、split-right 和 close token，确认只有真实可用按钮可见且可点击。横向分屏后必须特别点击下方 pane 顶边的 split-down / split-right token，确认它们不会被 divider resize 抢占。
-- resize：`Ctrl-r` 后检查方向键和 `h/j/k/l` 调整大小时边框、footer、content rect 是否同步；同时按住 pane split divider 拖动，确认尺寸连续变化、被拖分隔线移动而对侧 pane 外边锚定不动，且不把事件发给 terminal，也不会连续产生 toast。
+- resize：`Ctrl-r` 后检查方向键和 `h/j/k/l` 调整大小时边框、footer、content rect 是否同步；同时按住 pane split divider 拖动，确认尺寸连续变化、被拖分隔线只调整该 split 两侧邻居，嵌套分屏下外层 pane/subtree 锚定不动，且不把事件发给 terminal，也不会连续产生 toast。
 - floating：`Ctrl-o` 后检查 create、move、resize、center、collapse、close 和 active chrome；active floating 获焦时，后方 tiled pane 边框应降级为灰色 inactive 视觉，关闭 floating 后 tiled pane active 高亮恢复；同时按住 floating 标题栏拖动移动、按住右下 resize handle 拖动 resize。
 - overlay：`Ctrl-g p`、`Ctrl-g w`、`Ctrl-g :`、`Ctrl-g ?` 检查 Terminal Pool、Workbench Tree、Prompt、Help。
 - copy：`Ctrl-v` 检查 copy-history search、selection、scrollbar/status 和 no terminal input leak。

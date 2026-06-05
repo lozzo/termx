@@ -167,6 +167,7 @@ type mouseDragState struct {
 	PaneID     string
 	FloatingID string
 	Direction  state.PaneResizeDirection
+	SplitPath  string
 	StartCol   int
 	StartRow   int
 	LastDelta  int
@@ -469,6 +470,7 @@ func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool)
 				Action:          state.PaneCommandResize,
 				Target:          state.PaneCommandTarget{PaneID: runtime.mouseDrag.PaneID},
 				ResizeDirection: runtime.mouseDrag.Direction,
+				ResizeSplitPath: runtime.mouseDrag.SplitPath,
 				Delta:           step,
 				Source:          state.PaneCommandSourceMouse,
 			}}, true
@@ -520,6 +522,7 @@ func paneResizeDragState(region render.HitRegion, event input.InputEvent) (mouse
 		Kind:      mouseDragPaneResize,
 		PaneID:    region.PaneID,
 		Direction: direction,
+		SplitPath: region.SplitPath,
 		StartCol:  event.Col,
 		StartRow:  event.Row,
 		LastCol:   event.Col,
