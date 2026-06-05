@@ -140,6 +140,7 @@ type Layer struct {
 type RenderResult struct {
 	Content    []Line
 	Cursor     Cursor
+	CursorRect Rect
 	Blink      bool
 	HitRegions []HitRegion
 	Metadata   RenderMetadata

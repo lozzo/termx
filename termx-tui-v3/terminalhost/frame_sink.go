@@ -44,8 +44,18 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 		builder.WriteString(render.ANSIReset)
 	}
 	builder.WriteString(render.ANSIReset)
+	builder.WriteString(frameCursorSequence(frame))
 	_, err := io.WriteString(sink.writer, builder.String())
 	return err
+}
+
+func frameCursorSequence(frame render.Frame) string {
+	if !frame.Cursor.Visible || frame.CursorRect.W <= 0 || frame.CursorRect.H <= 0 {
+		return hideCursor
+	}
+	// 参考 tuiv2：宿主光标保持隐藏，但停在 pane/overlay 内的输入点，
+	// 让中文输入法预编辑文本跟随真实输入位置，而不是落到最后一行输出位置。
+	return hideCursor + cursorPosition(frame.CursorRect.Y+1, frame.CursorRect.X+1)
 }
 
 func cursorPosition(row int, col int) string {

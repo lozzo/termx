@@ -48,9 +48,10 @@ func TestFrameFromRenderResultPreservesStyledANSIAndMetadata(t *testing.T) {
 				{Text: "\x1b[31mraw\x1b[0m", Width: 3, Safe: true},
 			},
 		}},
-		Cursor:   Cursor{Visible: true, Row: 2, Col: 3, Shape: CursorShapeBar},
-		Blink:    true,
-		Metadata: RenderMetadata{Width: 6, Height: 1},
+		Cursor:     Cursor{Visible: true, Row: 2, Col: 3, Shape: CursorShapeBar},
+		CursorRect: Rect{X: 10, Y: 4, W: 1, H: 1},
+		Blink:      true,
+		Metadata:   RenderMetadata{Width: 6, Height: 1},
 	}
 
 	frame := FrameFromRenderResult(result)
@@ -65,6 +66,9 @@ func TestFrameFromRenderResultPreservesStyledANSIAndMetadata(t *testing.T) {
 	}
 	if !frame.Cursor.Visible || frame.Cursor.Row != 2 || frame.Cursor.Col != 3 || frame.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("cursor metadata lost: %#v", frame.Cursor)
+	}
+	if frame.CursorRect != (Rect{X: 10, Y: 4, W: 1, H: 1}) {
+		t.Fatalf("cursor rect metadata lost: %#v", frame.CursorRect)
 	}
 	if !frame.Blink || frame.Metadata.Width != 6 || frame.Metadata.Height != 1 {
 		t.Fatalf("frame metadata lost: blink=%v metadata=%#v", frame.Blink, frame.Metadata)
@@ -114,6 +118,7 @@ func TestFrameCloneDetachesLines(t *testing.T) {
 		ANSILines:   []string{"\x1b[31mone\x1b[0m"},
 		StyledLines: []Line{{Cells: []Cell{{Text: "one", Width: 3, Style: StyleAccent, Safe: true}}}},
 		Cursor:      Cursor{Visible: true, Row: 1, Col: 2},
+		CursorRect:  Rect{X: 2, Y: 1, W: 1, H: 1},
 		Metadata:    RenderMetadata{Width: 3, Height: 1},
 	}
 	cloned := frame.Clone()
@@ -126,7 +131,7 @@ func TestFrameCloneDetachesLines(t *testing.T) {
 	if cloned.ANSILines[0] != "\x1b[31mone\x1b[0m" {
 		t.Fatalf("expected detached ANSI clone, got %#v", cloned)
 	}
-	if cloned.StyledLines[0].Cells[0].Text != "one" || cloned.Cursor.Row != 1 || cloned.Metadata.Width != 3 {
+	if cloned.StyledLines[0].Cells[0].Text != "one" || cloned.Cursor.Row != 1 || cloned.CursorRect.X != 2 || cloned.Metadata.Width != 3 {
 		t.Fatalf("expected detached styled clone with metadata, got %#v", cloned)
 	}
 }

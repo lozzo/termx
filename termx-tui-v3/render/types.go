@@ -9,6 +9,7 @@ type Frame struct {
 	StyledLines []Line
 	ANSILines   []string
 	Cursor      Cursor
+	CursorRect  Rect
 	Blink       bool
 	HitRegions  []HitRegion
 	Metadata    RenderMetadata
@@ -18,10 +19,11 @@ type Frame struct {
 // Clone 返回 detached frame，防止测试或 host 共享修改 frame lines。
 func (frame Frame) Clone() Frame {
 	cloned := Frame{
-		Cursor:   frame.Cursor,
-		Blink:    frame.Blink,
-		Metadata: frame.Metadata,
-		Theme:    frame.Theme,
+		Cursor:     frame.Cursor,
+		CursorRect: frame.CursorRect,
+		Blink:      frame.Blink,
+		Metadata:   frame.Metadata,
+		Theme:      frame.Theme,
 	}
 	if len(frame.Lines) > 0 {
 		cloned.Lines = cloneStrings(frame.Lines)
@@ -47,6 +49,7 @@ func FrameFromRenderResult(result RenderResult) Frame {
 		StyledLines: result.StyledLines(),
 		ANSILines:   result.ANSILines(),
 		Cursor:      result.Cursor,
+		CursorRect:  result.CursorRect,
 		Blink:       result.Blink,
 		HitRegions:  cloneHitRegions(result.HitRegions),
 		Metadata:    result.Metadata,

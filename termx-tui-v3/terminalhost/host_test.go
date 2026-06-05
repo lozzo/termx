@@ -319,8 +319,31 @@ func TestFrameSinkWritesFrameToOutput(t *testing.T) {
 			t.Fatalf("missing frame part %q in %q", part, got)
 		}
 	}
+	if !strings.HasSuffix(got, render.ANSIReset+hideCursor) {
+		t.Fatalf("FrameSink should hide host cursor by default, got %q", got)
+	}
 	if strings.Contains(got, "\n") {
 		t.Fatalf("FrameSink must not use linefeed row progression, got %q", got)
+	}
+}
+
+func TestFrameSinkParksHiddenCursorAtFrameCursorRect(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Lines:      []string{"one", "two"},
+		Cursor:     render.Cursor{Visible: true, Row: 0, Col: 0, Shape: render.CursorShapeBar},
+		CursorRect: render.Rect{X: 4, Y: 2, W: 1, H: 1},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+	got := output.String()
+	if !strings.HasSuffix(got, render.ANSIReset+hideCursor+cursorPosition(3, 5)) {
+		t.Fatalf("FrameSink should park hidden host cursor at global cursor rect for IME anchor, got %q", got)
+	}
+	if strings.Contains(got, showCursor) {
+		t.Fatalf("FrameSink must keep host cursor hidden during TUI frames, got %q", got)
 	}
 }
 
@@ -358,8 +381,8 @@ func TestFrameSinkPrefersANSIStyledFrame(t *testing.T) {
 	if strings.Contains(got, "plain") {
 		t.Fatalf("FrameSink must not use plain snapshot when ANSI lines are present, got %q", got)
 	}
-	if !strings.HasSuffix(got, render.ANSIReset) {
-		t.Fatalf("FrameSink must reset style at frame end, got %q", got)
+	if !strings.Contains(got, render.ANSIReset+hideCursor) {
+		t.Fatalf("FrameSink must reset style before hiding cursor at frame end, got %q", got)
 	}
 }
 

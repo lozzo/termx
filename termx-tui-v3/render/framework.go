@@ -501,6 +501,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	return RenderResult{
 		Content:    lines,
 		Cursor:     plan.Cursor,
+		CursorRect: plan.CursorRect,
 		HitRegions: plan.HitRegions,
 		Metadata:   RenderMetadata{Width: c.width, Height: c.height},
 		Layers:     layers,
