@@ -117,6 +117,12 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if !v3E2EFramesContain(host.Frames(), "alpha") || !v3E2EFramesContain(host.Frames(), "beta") {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: hydrated live rows were not rendered")
 	}
+	if err := server.IngestOutput(ctx, created.TerminalID, "gamma\n"); err != nil {
+		return v3E2ESmokeResult{}, err
+	}
+	if err := drainV3RuntimeUntilFrameContains(ctx, runtime, host, "gamma"); err != nil {
+		return v3E2ESmokeResult{}, err
+	}
 	if err := validateV3E2EStyledChrome(host.Frames()); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
@@ -312,4 +318,24 @@ func v3E2EFramesContain(frames []render.Frame, value string) bool {
 		}
 	}
 	return false
+}
+
+func drainV3RuntimeUntilFrameContains(ctx context.Context, runtime *app.AppRuntime, host *app.FakeTerminalHost, value string) error {
+	deadlineCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := runtime.Drain(deadlineCtx); err != nil {
+			return err
+		}
+		if v3E2EFramesContain(host.Frames(), value) {
+			return nil
+		}
+		select {
+		case <-deadlineCtx.Done():
+			return fmt.Errorf("v3 e2e smoke: timed out waiting for live backend update %q", value)
+		case <-ticker.C:
+		}
+	}
 }

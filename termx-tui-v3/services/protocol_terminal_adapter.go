@@ -10,6 +10,7 @@ import (
 
 type ProtocolTerminalClient interface {
 	AttachWithOptions(context.Context, protocol.AttachParams) (*protocol.AttachResult, error)
+	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 	List(context.Context) (*protocol.ListResult, error)
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
 	Restart(context.Context, string) error
@@ -195,6 +196,71 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 			},
 		},
 	}, nil
+}
+
+func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, req TerminalLiveEventRequest) (<-chan TerminalLiveEvent, error) {
+	if adapter.Client == nil {
+		return nil, ErrMissingTerminalClient
+	}
+	events, err := adapter.Client.Events(ctx, protocol.EventsParams{
+		TerminalID: req.TerminalID,
+		Types: []protocol.EventType{
+			protocol.EventTerminalStateChanged,
+			protocol.EventTerminalResized,
+			protocol.EventTerminalMetadataChanged,
+			protocol.EventTerminalReadError,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan TerminalLiveEvent, 16)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				liveEvent := adapter.liveEventFromProtocol(ctx, req, event)
+				select {
+				case out <- liveEvent:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.Context, req TerminalLiveEventRequest, event protocol.Event) TerminalLiveEvent {
+	out := TerminalLiveEvent{TerminalID: req.TerminalID}
+	if event.TerminalID != "" {
+		out.TerminalID = event.TerminalID
+	}
+	if event.ReadError != nil {
+		out.Err = fmt.Errorf("%s", event.ReadError.Error)
+		return out
+	}
+	if event.StateChanged != nil && event.StateChanged.NewState == "exited" {
+		out.Exited = true
+		if event.StateChanged.ExitCode != nil {
+			out.ExitCode = *event.StateChanged.ExitCode
+		}
+		out.Reason = "exited"
+	}
+	surface, err := adapter.LiveSurface(ctx, TerminalSurfaceRequest{TerminalID: out.TerminalID, Cols: req.Cols, Rows: req.Rows})
+	if err != nil {
+		out.Err = err
+		return out
+	}
+	out.Snapshot = surface.Snapshot
+	out.Ready = surface.Ready
+	return out
 }
 
 func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {

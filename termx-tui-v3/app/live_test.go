@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -206,6 +207,91 @@ func TestLiveAppAttachHydratesReadySurfaceFromService(t *testing.T) {
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "alpha") || !frameContains(frame, "beta 你好🚀") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("expected hydrated live surface in frame, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
+func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
+	liveEvents := make(chan services.TerminalLiveEvent, 2)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 78, Rows: 20},
+		LiveEventsCh: liveEvents,
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewAsyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	liveEvents <- services.TerminalLiveEvent{
+		TerminalID: "term-1",
+		Ready:      true,
+		Snapshot: state.LiveSurfaceSnapshot{
+			TerminalID: "term-1",
+			Cols:       78,
+			Rows:       20,
+			Lines:      []string{"backend live update"},
+		},
+	}
+	if err := drainUntilFrameContains(context.Background(), runtime, host, "backend live update"); err != nil {
+		t.Fatal(err)
+	}
+	if len(terminal.LiveEventRequests) != 1 || terminal.LiveEventRequests[0].TerminalID != "term-1" {
+		t.Fatalf("expected live event subscription after attach, got %#v", terminal.LiveEventRequests)
+	}
+}
+
+func TestLiveSurfaceStoreKeepsPaneTerminalBindingsIsolated(t *testing.T) {
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	host := NewFakeTerminalHost(8)
+	host.SetSize(100, 24)
+	runtime := NewLiveRuntime(
+		state.Root{Shell: shell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+	)
+
+	for _, msg := range []Msg{
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 48, Rows: 20, Lines: []string{"main-only"}}},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-logs", Cols: 48, Rows: 20, Lines: []string{"logs-only"}}},
+		NoopMsg{},
+	} {
+		if err := runtime.Post(msg); err != nil {
+			t.Fatalf("post %T: %v", msg, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "main-only") || !frameContains(frame, "logs-only") {
+		t.Fatalf("expected both pane-bound live surfaces, got %#v", frame.Lines)
+	}
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-old", Cols: 48, Rows: 20, Lines: []string{"old-stale"}}}); err != nil {
+		t.Fatalf("post stale surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stale surface: %v", err)
+	}
+	frame = lastFrame(t, host.Frames())
+	if frameContains(frame, "old-stale") {
+		t.Fatalf("unbound old terminal update must not render into active panes, got %#v", frame.Lines)
+	}
+	if got := runtime.State().Surface.SurfaceForTerminal("term-main").Lines[0]; got != "main-only" {
+		t.Fatalf("old terminal update polluted main binding, got %q", got)
 	}
 }
 
@@ -693,4 +779,26 @@ func ansiFrameContains(frame render.Frame, value string) bool {
 		}
 	}
 	return false
+}
+
+func drainUntilFrameContains(ctx context.Context, runtime *AppRuntime, host *FakeTerminalHost, value string) error {
+	deadlineCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := runtime.Drain(deadlineCtx); err != nil {
+			return err
+		}
+		for _, frame := range host.Frames() {
+			if frameContains(frame, value) {
+				return nil
+			}
+		}
+		select {
+		case <-deadlineCtx.Done():
+			return deadlineCtx.Err()
+		case <-ticker.C:
+		}
+	}
 }

@@ -71,7 +71,7 @@ func buildShellVM(root state.Root) ShellVM {
 	return ShellVM{
 		Header:  buildHeaderVM(shellState, root),
 		Footer:  buildFooterVM(root, activeContent),
-		Layout:  buildLayoutVM(shellState, activeContent, root.Viewport),
+		Layout:  buildLayoutVM(shellState, activeContent, root),
 		Overlay: buildOverlayVM(root, shellState),
 		Toasts:  buildToastVMs(shellState),
 		Cursor:  activeContent.Cursor,
@@ -114,6 +114,19 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 
 func terminalSummary(root state.Root) string {
 	ids := map[string]struct{}{}
+	for terminalID := range root.Surface.Surfaces {
+		if terminalID != "" {
+			ids[terminalID] = struct{}{}
+		}
+	}
+	shell := root.Shell.EnsureDefaults()
+	for _, tab := range shell.Workspace.Tabs {
+		for _, pane := range tab.Panes {
+			if pane.TerminalID != "" {
+				ids[pane.TerminalID] = struct{}{}
+			}
+		}
+	}
 	if root.Surface.TerminalID != "" {
 		ids[root.Surface.TerminalID] = struct{}{}
 	}
@@ -246,18 +259,18 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 	}
 }
 
-func buildLayoutVM(shell state.ShellStore, activeContent ContentVM, viewport state.ViewportStore) LayoutVM {
+func buildLayoutVM(shell state.ShellStore, activeContent ContentVM, root state.Root) LayoutVM {
 	if shell.ZoomedPaneID != "" {
 		return LayoutVM{
-			Viewport: viewportRect(viewport),
-			Panels:   buildZoomedPanelVMs(shell, activeContent),
+			Viewport: viewportRect(root.Viewport),
+			Panels:   buildZoomedPanelVMs(shell, activeContent, root),
 			Floating: buildFloatingVMs(shell),
 			Split:    SplitVM{PaneID: shell.ZoomedPaneID},
 		}
 	}
 	return LayoutVM{
-		Viewport: viewportRect(viewport),
-		Panels:   buildPanelVMs(shell, activeContent),
+		Viewport: viewportRect(root.Viewport),
+		Panels:   buildPanelVMs(shell, activeContent, root),
 		Floating: buildFloatingVMs(shell),
 		Split:    buildSplitVM(activeTab(shell).RootSplit),
 	}
@@ -270,7 +283,7 @@ func viewportRect(viewport state.ViewportStore) Rect {
 	return Rect{W: viewport.Cols, H: viewport.Rows}
 }
 
-func buildPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
+func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
 	shell = shell.EnsureDefaults()
 	tab := activeTab(shell)
 	floatingOwnsFocus := shell.ActiveFloatingID != ""
@@ -286,7 +299,7 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
 	panels := make([]PanelVM, len(tab.Panes))
 	for i, pane := range tab.Panes {
 		active := pane.ID == shell.ActivePaneID
-		content := placeholderContentForPane(pane)
+		content := contentForPane(root, pane, activeContent, active)
 		if active {
 			content = activeContent
 		}
@@ -301,7 +314,7 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
 	return panels
 }
 
-func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM) []PanelVM {
+func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
 	shell = shell.EnsureDefaults()
 	for _, pane := range activeTab(shell).Panes {
 		if pane.ID == shell.ZoomedPaneID {
@@ -314,7 +327,7 @@ func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM) []Pane
 			}}
 		}
 	}
-	return buildPanelVMs(shell, activeContent)
+	return buildPanelVMs(shell, activeContent, root)
 }
 
 func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
@@ -347,9 +360,35 @@ func buildActiveContentVM(root state.Root) ContentVM {
 		switch pane.Kind {
 		case state.PaneEmpty, state.PaneExited:
 			return placeholderContentForPane(pane)
+		case state.PaneTerminalLive:
+			return buildLiveContentVM(surfaceForPane(root, pane), root.Session)
 		}
 	}
 	return buildLiveContentVM(root.Surface, root.Session)
+}
+
+func contentForPane(root state.Root, pane state.PaneState, activeContent ContentVM, active bool) ContentVM {
+	if active {
+		return activeContent
+	}
+	if pane.Kind == state.PaneTerminalLive && pane.TerminalID != "" {
+		return buildLiveContentVM(surfaceForPane(root, pane), state.TerminalSessionStore{TerminalID: pane.TerminalID})
+	}
+	return placeholderContentForPane(pane)
+}
+
+func surfaceForPane(root state.Root, pane state.PaneState) state.TerminalSurfaceStore {
+	terminalID := pane.TerminalID
+	if terminalID == "" && pane.Active {
+		terminalID = root.Session.TerminalID
+	}
+	if terminalID == "" && pane.ID == root.Shell.EnsureDefaults().ActivePaneID {
+		terminalID = root.Session.TerminalID
+	}
+	if terminalID == "" {
+		return root.Surface
+	}
+	return root.Surface.SurfaceForTerminal(terminalID)
 }
 
 func canRenderCopyHistory(history state.HistoryStore, copyMode state.CopyModeStore) bool {

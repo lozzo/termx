@@ -123,7 +123,7 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 	return app.NewInteractiveRuntime(
 		initial,
 		host,
-		app.NewSyncEffectRunner(),
+		app.NewAsyncEffectRunner(),
 		app.LiveDeps{Terminal: terminal},
 		app.CopyModeDeps{Core: core, Clipboard: &services.FakeClipboardService{}, Rows: rows},
 	)

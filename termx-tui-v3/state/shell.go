@@ -1204,6 +1204,35 @@ func (store ShellStore) FocusPane(target PaneCommandTarget) ShellStore {
 	return store
 }
 
+func (store ShellStore) BindPaneTerminal(target PaneCommandTarget, terminalID string) ShellStore {
+	store = store.EnsureDefaults()
+	if terminalID == "" {
+		return store
+	}
+	tabIndex := store.tabIndexForTarget(target)
+	if tabIndex < 0 {
+		return store
+	}
+	paneID := target.PaneID
+	if paneID == "" {
+		paneID = store.ActivePaneID
+	}
+	for index := range store.Workspace.Tabs[tabIndex].Panes {
+		if store.Workspace.Tabs[tabIndex].Panes[index].ID != paneID {
+			continue
+		}
+		store.Workspace.Tabs[tabIndex].Panes[index].TerminalID = terminalID
+		store.Workspace.Tabs[tabIndex].Panes[index].Kind = PaneTerminalLive
+		if store.Workspace.Tabs[tabIndex].Panes[index].Title == "" {
+			store.Workspace.Tabs[tabIndex].Panes[index].Title = terminalID
+		}
+		store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+		store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+		return store
+	}
+	return store
+}
+
 func (store ShellStore) FocusRelativePane(offset int) ShellStore {
 	store = store.EnsureDefaults()
 	if offset == 0 {

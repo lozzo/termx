@@ -32,6 +32,8 @@ type fakeProtocolTerminalClient struct {
 	resizeChannels []uint16
 	resizes        []protocol.Size
 	ensureParams   []protocol.EnsureResizeParams
+	eventParams    []protocol.EventsParams
+	eventCh        chan protocol.Event
 	snapshotIDs    []string
 	snapshotResult *protocol.Snapshot
 	attachResult   *protocol.AttachResult
@@ -45,6 +47,14 @@ func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, p
 		return client.attachResult, nil
 	}
 	return &protocol.AttachResult{Channel: 11}, nil
+}
+
+func (client *fakeProtocolTerminalClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
+	client.eventParams = append(client.eventParams, params)
+	if client.eventCh == nil {
+		client.eventCh = make(chan protocol.Event, 1)
+	}
+	return client.eventCh, nil
 }
 
 func (client *fakeProtocolTerminalClient) List(context.Context) (*protocol.ListResult, error) {
@@ -252,6 +262,38 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	}
 	if !result.Snapshot.Cursor.Visible || result.Snapshot.Cursor.Row != 1 || result.Snapshot.Cursor.Col != 4 || result.Snapshot.Cursor.Shape != "bar" {
 		t.Fatalf("unexpected live cursor %#v", result.Snapshot.Cursor)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testing.T) {
+	eventCh := make(chan protocol.Event, 1)
+	client := &fakeProtocolTerminalClient{
+		eventCh: eventCh,
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				{{Content: "backend"}},
+				{{Content: "update"}},
+			}},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("live events: %v", err)
+	}
+	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+
+	got := <-events
+	if !got.Ready || got.Snapshot.TerminalID != "term-1" || len(got.Snapshot.Lines) != 2 || got.Snapshot.Lines[0] != "backend" || got.Snapshot.Lines[1] != "update" {
+		t.Fatalf("unexpected live event %#v", got)
+	}
+	if len(client.eventParams) != 1 || client.eventParams[0].TerminalID != "term-1" {
+		t.Fatalf("expected protocol events subscription, got %#v", client.eventParams)
+	}
+	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
+		t.Fatalf("expected live event to refresh snapshot, got %#v", client.snapshotIDs)
 	}
 }
 

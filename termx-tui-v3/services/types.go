@@ -60,6 +60,10 @@ type TerminalSurfaceService interface {
 	LiveSurface(context.Context, TerminalSurfaceRequest) (TerminalSurfaceResult, error)
 }
 
+type TerminalLiveEventService interface {
+	LiveEvents(context.Context, TerminalLiveEventRequest) (<-chan TerminalLiveEvent, error)
+}
+
 type TerminalPoolItem struct {
 	TerminalID string
 	Title      string
@@ -158,6 +162,22 @@ type TerminalSurfaceRequest struct {
 	Rows       int
 }
 
+type TerminalLiveEventRequest struct {
+	TerminalID string
+	Cols       int
+	Rows       int
+}
+
+type TerminalLiveEvent struct {
+	TerminalID string
+	Snapshot   state.LiveSurfaceSnapshot
+	Exited     bool
+	ExitCode   int
+	Reason     string
+	Err        error
+	Ready      bool
+}
+
 type SessionService interface {
 	Load(context.Context) (SessionSnapshot, error)
 	Save(context.Context, SessionSnapshot) error
@@ -211,30 +231,33 @@ func (client *FakeCoreClient) HistoryOlder(_ context.Context, req HistoryOlderRe
 }
 
 type FakeTerminalService struct {
-	AttachResult  TerminalAttachResult
-	ListResult    TerminalListResult
-	CreateResult  TerminalCreateResult
-	SurfaceResult TerminalSurfaceResult
-	AttachErr     error
-	ListErr       error
-	CreateErr     error
-	RestartErr    error
-	ReconnectErr  error
-	KillErr       error
-	EditErr       error
-	InputErr      error
-	ResizeErr     error
-	SurfaceErr    error
-	Attaches      []TerminalAttachRequest
-	Lists         []TerminalListRequest
-	Creates       []TerminalCreateRequest
-	Restarts      []TerminalRestartRequest
-	Reconnects    []TerminalReconnectRequest
-	Kills         []TerminalKillRequest
-	Edits         []TerminalEditMetadataRequest
-	Inputs        []TerminalInputRequest
-	Resizes       []TerminalResizeRequest
-	Surfaces      []TerminalSurfaceRequest
+	AttachResult      TerminalAttachResult
+	ListResult        TerminalListResult
+	CreateResult      TerminalCreateResult
+	SurfaceResult     TerminalSurfaceResult
+	AttachErr         error
+	ListErr           error
+	CreateErr         error
+	RestartErr        error
+	ReconnectErr      error
+	KillErr           error
+	EditErr           error
+	InputErr          error
+	ResizeErr         error
+	SurfaceErr        error
+	LiveEventsCh      chan TerminalLiveEvent
+	LiveEventsErr     error
+	Attaches          []TerminalAttachRequest
+	Lists             []TerminalListRequest
+	Creates           []TerminalCreateRequest
+	Restarts          []TerminalRestartRequest
+	Reconnects        []TerminalReconnectRequest
+	Kills             []TerminalKillRequest
+	Edits             []TerminalEditMetadataRequest
+	Inputs            []TerminalInputRequest
+	Resizes           []TerminalResizeRequest
+	Surfaces          []TerminalSurfaceRequest
+	LiveEventRequests []TerminalLiveEventRequest
 }
 
 func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
@@ -342,6 +365,22 @@ func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalS
 		result.Ready = true
 	}
 	return result, nil
+}
+
+func (service *FakeTerminalService) LiveEvents(ctx context.Context, req TerminalLiveEventRequest) (<-chan TerminalLiveEvent, error) {
+	service.LiveEventRequests = append(service.LiveEventRequests, req)
+	if service.LiveEventsErr != nil {
+		return nil, service.LiveEventsErr
+	}
+	if service.LiveEventsCh != nil {
+		return service.LiveEventsCh, nil
+	}
+	ch := make(chan TerminalLiveEvent)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
 }
 
 func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {

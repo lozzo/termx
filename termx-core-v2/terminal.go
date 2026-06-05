@@ -63,8 +63,8 @@ func (terminal *Terminal) Input(data []byte) error {
 
 func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Lock()
-	defer terminal.mu.Unlock()
 	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
 		return ErrTerminalExited
 	}
 	terminal.live.Write(output)
@@ -76,21 +76,28 @@ func (terminal *Terminal) IngestOutput(output string) error {
 			text := strings.TrimSuffix(part, "\n")
 			if text != "" {
 				if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{Text: text}}}); err != nil {
+					terminal.mu.Unlock()
 					return err
 				}
 			}
 			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
+				terminal.mu.Unlock()
 				return err
 			}
 			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventCommitFrontier}); err != nil {
+				terminal.mu.Unlock()
 				return err
 			}
 			continue
 		}
 		if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{Text: part}}}); err != nil {
+			terminal.mu.Unlock()
 			return err
 		}
 	}
+	info := terminal.info.Clone()
+	terminal.mu.Unlock()
+	terminal.publish(EventTerminalChanged, info)
 	return nil
 }
 

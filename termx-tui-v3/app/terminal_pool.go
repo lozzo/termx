@@ -110,7 +110,7 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 		case TerminalPoolAttachRequestMsg:
 			return reduceTerminalPoolAttachRequest(root, msg, deps)
 		case TerminalPoolAttachResultMsg:
-			return reduceTerminalPoolAttachResult(root, msg)
+			return reduceTerminalPoolAttachResult(root, msg, deps)
 		case TerminalPoolCreateRequestMsg:
 			return reduceTerminalPoolCreateRequest(root, deps)
 		case TerminalPoolCreateResultMsg:
@@ -122,7 +122,7 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 		case TerminalPoolReconnectRequestMsg:
 			return reduceTerminalPoolReconnectRequest(root, msg, deps)
 		case TerminalPoolReconnectResultMsg:
-			return reduceTerminalPoolReconnectResult(root, msg)
+			return reduceTerminalPoolReconnectResult(root, msg, deps)
 		case TerminalPoolKillRequestMsg:
 			return reduceTerminalPoolKillRequest(root, msg, deps)
 		case TerminalPoolKillResultMsg:
@@ -190,7 +190,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 	}}
 }
 
-func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResultMsg) (state.Root, []Effect) {
+func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
 	root.TerminalPool = root.TerminalPool.ApplyAttached(msg.TerminalID, errText)
 	if errText != "" {
@@ -202,11 +202,11 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		result.TerminalID = msg.TerminalID
 	}
 	root.Session = root.Session.Attach(result.TerminalID, result.Channel, result.Cols, result.Rows)
-	root.Surface.TerminalID = result.TerminalID
-	root.Surface = root.Surface.Resize(result.Cols, result.Rows)
+	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, result.TerminalID)
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
-	return root.Advance(), nil
+	return root.Advance(), liveEffects(result.TerminalID, result.Cols, result.Rows, deps)
 }
 
 func reduceTerminalPoolCreateRequest(root state.Root, deps LiveDeps) (state.Root, []Effect) {
@@ -274,8 +274,8 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 	}}}
 }
 
-func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg) (state.Root, []Effect) {
-	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, Result: msg.Result, Err: msg.Err})
+func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, Result: msg.Result, Err: msg.Err}, deps)
 }
 
 func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestMsg, deps LiveDeps) (state.Root, []Effect) {

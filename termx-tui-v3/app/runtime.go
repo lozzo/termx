@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -61,10 +62,19 @@ func (NoopEffect) isEffect() {}
 // FuncEffect 是 harness 和 service adapter 使用的最小副作用包装。
 type FuncEffect struct {
 	Token CancelToken
+	Async bool
 	Run   func(context.Context) Msg
 }
 
 func (FuncEffect) isEffect() {}
+
+// StreamEffect 表达会多次回投消息的长生命周期 service 订阅。
+type StreamEffect struct {
+	Token CancelToken
+	Run   func(context.Context, func(Msg))
+}
+
+func (StreamEffect) isEffect() {}
 
 // BatchEffect 表达多个 effect 的调度组合。
 type BatchEffect struct {
@@ -145,6 +155,7 @@ var (
 
 // AppRuntime 是 TUI-v3 自有单线程消息循环。
 type AppRuntime struct {
+	mu                  sync.Mutex
 	state               state.Root
 	reduce              Reducer
 	render              RenderFunc
@@ -226,7 +237,7 @@ func (runtime *AppRuntime) Post(msg Msg) error {
 		return ErrRuntimeStopped
 	}
 	msg = runtime.dispatchMouseHitRegion(msg)
-	runtime.queue = append(runtime.queue, msg)
+	runtime.enqueue(msg)
 	return nil
 }
 
@@ -240,15 +251,13 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	runtime.enqueueDueToastTick()
 	for {
 		runtime.enqueueDueToastTick()
-		if len(runtime.queue) == 0 {
+		msg, ok := runtime.dequeue()
+		if !ok {
 			return nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		msg := runtime.queue[0]
-		copy(runtime.queue, runtime.queue[1:])
-		runtime.queue = runtime.queue[:len(runtime.queue)-1]
 		if _, ok := msg.(QuitMsg); ok {
 			runtime.quit = true
 			return nil
@@ -290,7 +299,7 @@ func (runtime *AppRuntime) scheduleEffect(ctx context.Context, effect Effect) {
 	default:
 		runtime.runner.Run(ctx, effect, func(msg Msg) {
 			if msg != nil && !runtime.quit {
-				runtime.queue = append(runtime.queue, msg)
+				runtime.enqueue(msg)
 			}
 		})
 	}
@@ -321,7 +330,7 @@ func (runtime *AppRuntime) ingestHostInitialSize() {
 		return
 	}
 	msg := HostResizeMsg{Cols: cols, Rows: rows}
-	runtime.queue = append([]Msg{msg}, runtime.queue...)
+	runtime.prepend(msg)
 }
 
 func (runtime *AppRuntime) ingestHostInput() {
@@ -333,9 +342,9 @@ func (runtime *AppRuntime) ingestHostInput() {
 		select {
 		case event := <-events:
 			if event.Kind == input.EventKindResize {
-				runtime.queue = append(runtime.queue, HostResizeMsg{Cols: event.Cols, Rows: event.Rows})
+				runtime.enqueue(HostResizeMsg{Cols: event.Cols, Rows: event.Rows})
 			} else {
-				runtime.queue = append(runtime.queue, runtime.dispatchMouseHitRegion(InputMsg{Event: event}))
+				runtime.enqueue(runtime.dispatchMouseHitRegion(InputMsg{Event: event}))
 			}
 		default:
 			return
@@ -366,7 +375,37 @@ func (runtime *AppRuntime) enqueueDueToastTick() {
 		return
 	}
 	runtime.lastToastTick = runtime.lastToastTick.Add(time.Duration(ticks) * interval)
-	runtime.queue = append(runtime.queue, TickMsg{Token: toastTickToken, Ticks: ticks})
+	runtime.enqueue(TickMsg{Token: toastTickToken, Ticks: ticks})
+}
+
+func (runtime *AppRuntime) enqueue(msg Msg) {
+	if msg == nil {
+		return
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.queue = append(runtime.queue, msg)
+}
+
+func (runtime *AppRuntime) prepend(msg Msg) {
+	if msg == nil {
+		return
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.queue = append([]Msg{msg}, runtime.queue...)
+}
+
+func (runtime *AppRuntime) dequeue() (Msg, bool) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.queue) == 0 {
+		return nil, false
+	}
+	msg := runtime.queue[0]
+	copy(runtime.queue, runtime.queue[1:])
+	runtime.queue = runtime.queue[:len(runtime.queue)-1]
+	return msg, true
 }
 
 func (runtime *AppRuntime) currentTime() time.Time {
@@ -682,16 +721,28 @@ func NewSyncEffectRunner() *SyncEffectRunner {
 }
 
 func (runner *SyncEffectRunner) Run(ctx context.Context, effect Effect, post func(Msg)) {
-	funcEffect, ok := effect.(FuncEffect)
-	if !ok || funcEffect.Run == nil {
+	switch effect := effect.(type) {
+	case FuncEffect:
+		if effect.Run == nil {
+			return
+		}
+		if _, canceled := runner.canceled[effect.Token]; canceled && effect.Token != "" {
+			return
+		}
+		msg := effect.Run(ctx)
+		if msg != nil {
+			post(msg)
+		}
+	case StreamEffect:
+		if effect.Run == nil {
+			return
+		}
+		if _, canceled := runner.canceled[effect.Token]; canceled && effect.Token != "" {
+			return
+		}
+		effect.Run(ctx, post)
+	default:
 		return
-	}
-	if _, canceled := runner.canceled[funcEffect.Token]; canceled && funcEffect.Token != "" {
-		return
-	}
-	msg := funcEffect.Run(ctx)
-	if msg != nil {
-		post(msg)
 	}
 }
 
@@ -700,6 +751,100 @@ func (runner *SyncEffectRunner) Cancel(token CancelToken) {
 		return
 	}
 	runner.canceled[token] = struct{}{}
+}
+
+// AsyncEffectRunner 同步执行普通 effect，异步执行标记为 Async 的 FuncEffect 和 StreamEffect。
+type AsyncEffectRunner struct {
+	mu      sync.Mutex
+	nextID  uint64
+	cancels map[CancelToken]asyncEffectHandle
+}
+
+type asyncEffectHandle struct {
+	ID     uint64
+	Cancel context.CancelFunc
+}
+
+func NewAsyncEffectRunner() *AsyncEffectRunner {
+	return &AsyncEffectRunner{cancels: make(map[CancelToken]asyncEffectHandle)}
+}
+
+func (runner *AsyncEffectRunner) Run(ctx context.Context, effect Effect, post func(Msg)) {
+	switch effect := effect.(type) {
+	case FuncEffect:
+		if effect.Run == nil {
+			return
+		}
+		if effect.Async {
+			runner.runAsyncFunc(ctx, effect, post)
+			return
+		}
+		msg := effect.Run(ctx)
+		if msg != nil {
+			post(msg)
+		}
+	case StreamEffect:
+		if effect.Run == nil {
+			return
+		}
+		runner.runStream(ctx, effect, post)
+	}
+}
+
+func (runner *AsyncEffectRunner) runAsyncFunc(ctx context.Context, effect FuncEffect, post func(Msg)) {
+	effectCtx, done := runner.start(effect.Token, ctx)
+	go func() {
+		defer done()
+		msg := effect.Run(effectCtx)
+		if msg != nil {
+			post(msg)
+		}
+	}()
+}
+
+func (runner *AsyncEffectRunner) runStream(ctx context.Context, effect StreamEffect, post func(Msg)) {
+	effectCtx, done := runner.start(effect.Token, ctx)
+	go func() {
+		defer done()
+		effect.Run(effectCtx, post)
+	}()
+}
+
+func (runner *AsyncEffectRunner) start(token CancelToken, parent context.Context) (context.Context, func()) {
+	if token == "" {
+		ctx, cancel := context.WithCancel(parent)
+		return ctx, cancel
+	}
+	runner.Cancel(token)
+	ctx, cancel := context.WithCancel(parent)
+	runner.mu.Lock()
+	runner.nextID++
+	id := runner.nextID
+	runner.cancels[token] = asyncEffectHandle{ID: id, Cancel: cancel}
+	runner.mu.Unlock()
+	return ctx, func() {
+		runner.mu.Lock()
+		if current := runner.cancels[token]; current.ID == id {
+			delete(runner.cancels, token)
+		}
+		runner.mu.Unlock()
+		cancel()
+	}
+}
+
+func (runner *AsyncEffectRunner) Cancel(token CancelToken) {
+	if token == "" {
+		return
+	}
+	runner.mu.Lock()
+	handle := runner.cancels[token]
+	if handle.Cancel != nil {
+		delete(runner.cancels, token)
+	}
+	runner.mu.Unlock()
+	if handle.Cancel != nil {
+		handle.Cancel()
+	}
 }
 
 // FakeTerminalHost 是 runtime harness 使用的 TerminalHost fake。

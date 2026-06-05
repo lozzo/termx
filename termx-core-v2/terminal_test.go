@@ -68,6 +68,21 @@ func TestTerminalLifecycleAndPipeline(t *testing.T) {
 	}
 }
 
+func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
+	server := NewServer()
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalChanged}})
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "live update\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	event := assertEventValue(t, events, EventTerminalChanged, "term-1")
+	if event.Terminal == nil || event.Terminal.State != TerminalStateRunning {
+		t.Fatalf("expected running terminal info on live changed event, got %#v", event)
+	}
+}
+
 func TestTerminalResizeProcessFailureDoesNotChangeRegistryOrLiveSize(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
