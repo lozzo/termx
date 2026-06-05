@@ -304,6 +304,12 @@ type ToastSpec struct {
 	DismissAfterTicks uint64
 }
 
+const (
+	defaultToastDismissTicks   uint64 = 3
+	attentionToastDismissTicks uint64 = 6
+	pendingToastDismissTicks   uint64 = 8
+)
+
 func DefaultShell() ShellStore {
 	return (ShellStore{}).EnsureDefaults()
 }
@@ -827,13 +833,17 @@ func (store ShellStore) AddToast(spec ToastSpec) ShellStore {
 		store.nextToastSeq++
 		spec.ID = formatToastID(store.nextToastSeq)
 	}
+	dismissAfterTicks := spec.DismissAfterTicks
+	if dismissAfterTicks == 0 {
+		dismissAfterTicks = defaultToastDismissAfterTicks(spec)
+	}
 	toast := ToastState{
 		ID:                spec.ID,
 		Severity:          spec.Severity,
 		Title:             spec.Title,
 		Body:              spec.Body,
 		Pending:           spec.Pending,
-		DismissAfterTicks: spec.DismissAfterTicks,
+		DismissAfterTicks: dismissAfterTicks,
 	}
 	store.Toasts = append(cloneToasts(store.Toasts), toast)
 	return store
@@ -866,6 +876,19 @@ func (store ShellStore) CloseCurrentToast() ShellStore {
 func (store ShellStore) ClearToasts() ShellStore {
 	store.Toasts = nil
 	return store
+}
+
+// defaultToastDismissAfterTicks 给新增 toast 明确生命周期，避免真实 runtime 中遗留静态消息。
+func defaultToastDismissAfterTicks(spec ToastSpec) uint64 {
+	if spec.Pending {
+		return pendingToastDismissTicks
+	}
+	switch spec.Severity {
+	case ToastWarning, ToastError:
+		return attentionToastDismissTicks
+	default:
+		return defaultToastDismissTicks
+	}
 }
 
 func (store ShellStore) OpenTerminalPicker() ShellStore {

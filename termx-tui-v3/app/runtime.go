@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -47,6 +48,7 @@ func (HostResizeMsg) isMsg() {}
 // TickMsg 是 timer/interval effect 回投后的普通消息。
 type TickMsg struct {
 	Token CancelToken
+	Ticks uint64
 }
 
 func (TickMsg) isMsg() {}
@@ -90,6 +92,11 @@ type RenderFunc func(state.Root) render.Frame
 type handledEffect struct{}
 
 func (handledEffect) isEffect() {}
+
+const (
+	defaultToastTickInterval = time.Second
+	toastTickToken           = CancelToken("toast.tick")
+)
 
 // ComposeReducers 按顺序执行多个 reducer，并合并它们产生的 effects。
 func ComposeReducers(reducers ...Reducer) Reducer {
@@ -146,6 +153,9 @@ type AppRuntime struct {
 	queue               []Msg
 	lastHitRegions      []render.HitRegion
 	hostSizeInitialized bool
+	now                 func() time.Time
+	toastTickInterval   time.Duration
+	lastToastTick       time.Time
 	running             bool
 	quit                bool
 }
@@ -169,11 +179,13 @@ func NewAppRuntime(
 		runner = NewSyncEffectRunner()
 	}
 	return &AppRuntime{
-		state:  initial,
-		reduce: reducer,
-		render: renderer,
-		host:   host,
-		runner: runner,
+		state:             initial,
+		reduce:            reducer,
+		render:            renderer,
+		host:              host,
+		runner:            runner,
+		now:               time.Now,
+		toastTickInterval: defaultToastTickInterval,
 	}
 }
 
@@ -197,7 +209,9 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	}()
 	runtime.ingestHostInitialSize()
 	runtime.ingestHostInput()
+	runtime.enqueueDueToastTick()
 	for {
+		runtime.enqueueDueToastTick()
 		if len(runtime.queue) == 0 {
 			return nil
 		}
@@ -225,6 +239,7 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 			runtime.scheduleEffect(ctx, effect)
 		}
 		runtime.ingestHostInput()
+		runtime.enqueueDueToastTick()
 		if runtime.quit {
 			return nil
 		}
@@ -298,6 +313,39 @@ func (runtime *AppRuntime) ingestHostInput() {
 			return
 		}
 	}
+}
+
+func (runtime *AppRuntime) enqueueDueToastTick() {
+	if len(runtime.state.Shell.Toasts) == 0 {
+		runtime.lastToastTick = time.Time{}
+		return
+	}
+	interval := runtime.toastTickInterval
+	if interval <= 0 {
+		interval = defaultToastTickInterval
+	}
+	now := runtime.currentTime()
+	if runtime.lastToastTick.IsZero() {
+		runtime.lastToastTick = now
+		return
+	}
+	elapsed := now.Sub(runtime.lastToastTick)
+	if elapsed < interval {
+		return
+	}
+	ticks := uint64(elapsed / interval)
+	if ticks == 0 {
+		return
+	}
+	runtime.lastToastTick = runtime.lastToastTick.Add(time.Duration(ticks) * interval)
+	runtime.queue = append(runtime.queue, TickMsg{Token: toastTickToken, Ticks: ticks})
+}
+
+func (runtime *AppRuntime) currentTime() time.Time {
+	if runtime.now != nil {
+		return runtime.now()
+	}
+	return time.Now()
 }
 
 func (runtime *AppRuntime) renderFrame() {

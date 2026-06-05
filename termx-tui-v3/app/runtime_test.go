@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -434,6 +435,70 @@ func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
 	}
 	if inputSeen == 0 {
 		t.Fatal("missed mouse hit should continue through InputMsg fallback")
+	}
+}
+
+func TestAppRuntimeAutoDismissesToastsOnRuntimeTick(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 20)
+	root := state.Root{
+		Shell: state.DefaultShell().
+			AddToast(state.ToastSpec{ID: "short", Severity: state.ToastInfo, Title: "short notice"}).
+			AddToast(state.ToastSpec{ID: "pending", Severity: state.ToastError, Title: "pending notice", Pending: true}),
+	}
+	var inputSeen int
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewShellReducer(), func(root state.Root, msg Msg) (state.Root, []Effect) {
+			if _, ok := msg.(InputMsg); ok {
+				inputSeen++
+			}
+			return root, nil
+		}),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	now := time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
+	runtime.now = func() time.Time { return now }
+	runtime.toastTickInterval = time.Second
+
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+	initialFrameCount := len(host.Frames())
+	if !frameContains(lastRuntimeFrame(t, host), "pending notice") {
+		t.Fatalf("expected pending toast in initial frame, got %#v", lastRuntimeFrame(t, host).Lines)
+	}
+
+	now = now.Add(3 * time.Second)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("first timer drain: %v", err)
+	}
+	if len(host.Frames()) <= initialFrameCount {
+		t.Fatalf("runtime timer should trigger redraw, before=%d after=%d", initialFrameCount, len(host.Frames()))
+	}
+	if len(runtime.State().Shell.Toasts) != 1 || runtime.State().Shell.Toasts[0].ID != "pending" {
+		t.Fatalf("short toast should auto-dismiss while pending remains, got %#v", runtime.State().Shell.Toasts)
+	}
+	if frameContains(lastRuntimeFrame(t, host), "short notice") || !frameContains(lastRuntimeFrame(t, host), "pending notice") {
+		t.Fatalf("expected only pending toast after first timer, got %#v", lastRuntimeFrame(t, host).Lines)
+	}
+
+	now = now.Add(5 * time.Second)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("second timer drain: %v", err)
+	}
+	if len(runtime.State().Shell.Toasts) != 0 || frameContains(lastRuntimeFrame(t, host), "pending notice") {
+		t.Fatalf("pending toast should eventually auto-dismiss, state=%#v frame=%#v", runtime.State().Shell.Toasts, lastRuntimeFrame(t, host).Lines)
+	}
+	if inputSeen != 0 {
+		t.Fatalf("runtime toast timer must not leak through terminal input path, inputSeen=%d", inputSeen)
 	}
 }
 

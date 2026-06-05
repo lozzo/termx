@@ -133,6 +133,36 @@ func TestShellToastLifecycle(t *testing.T) {
 	}
 }
 
+func TestShellToastDefaultDismissTicks(t *testing.T) {
+	shell := DefaultShell().
+		AddToast(ToastSpec{ID: "info", Severity: ToastInfo, Title: "info"}).
+		AddToast(ToastSpec{ID: "error", Severity: ToastError, Title: "error"}).
+		AddToast(ToastSpec{ID: "pending", Severity: ToastWarning, Title: "pending", Pending: true})
+
+	if shell.Toasts[0].DismissAfterTicks != defaultToastDismissTicks {
+		t.Fatalf("expected info default dismiss ticks, got %#v", shell.Toasts[0])
+	}
+	if shell.Toasts[1].DismissAfterTicks != attentionToastDismissTicks {
+		t.Fatalf("expected error default dismiss ticks, got %#v", shell.Toasts[1])
+	}
+	if shell.Toasts[2].DismissAfterTicks != pendingToastDismissTicks {
+		t.Fatalf("expected pending default dismiss ticks, got %#v", shell.Toasts[2])
+	}
+
+	shell = shell.TickToasts(defaultToastDismissTicks)
+	if len(shell.Toasts) != 2 || shell.Toasts[0].ID != "error" || shell.Toasts[1].ID != "pending" {
+		t.Fatalf("expected short info toast to disappear first, got %#v", shell.Toasts)
+	}
+	shell = shell.TickToasts(attentionToastDismissTicks - defaultToastDismissTicks)
+	if len(shell.Toasts) != 1 || shell.Toasts[0].ID != "pending" {
+		t.Fatalf("expected error toast to disappear before pending, got %#v", shell.Toasts)
+	}
+	shell = shell.TickToasts(pendingToastDismissTicks - attentionToastDismissTicks)
+	if len(shell.Toasts) != 0 {
+		t.Fatalf("expected pending toast to have explicit lifecycle, got %#v", shell.Toasts)
+	}
+}
+
 func TestShellToastAutoIDAndDefaultSeverity(t *testing.T) {
 	shell := DefaultShell().AddToast(ToastSpec{Title: "hello"})
 	if len(shell.Toasts) != 1 {

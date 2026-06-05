@@ -1367,7 +1367,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 用户能通过鼠标命中 resize handle 或 split divider 进入 resize 语义或执行 resize command。
 - 用户能隐藏和恢复 header/footer，并看到 body 空间真实回收。
 - 用户能看到 mode-specific footer hints，知道当前 mode 下可执行什么动作。
-- 用户能关闭当前 toast 或清空 toast，并看到 toast 不改变 pane layout。
+- 用户能关闭当前 toast 或清空 toast，并看到 toast 按真实 runtime timer 自动消失且不改变 pane layout。
 - 每次结构操作后，active pane border/title、footer active target、toast feedback、content rect terminal resize 和 copy mode rebind 必须同步发生。
 
 这条验收线不要求：
@@ -1396,7 +1396,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - zoom：在 pane mode 中按 `z` zoom / unzoom；zoom 后只显示目标 pane，unzoom 后恢复 split layout，footer 和 toast 必须显示对应反馈。
 - card/split：在 pane mode 中按 `c` 切到 card panel，按 `p` 切到 split line；presentation 变化不得改变 pane id、terminal binding、active pane 或 copy mode 语义。
 - header/footer：按 `Ctrl-g` 进入 global mode，按 `h` 隐藏/恢复 header，按 `f` 隐藏/恢复 footer；隐藏后 body 必须回收空间，pane frame 仍填满 viewport。
-- toast：在 global mode 中按 `T` 关闭当前 toast，按 `t` 清空全部 toast；toast 不得改变 pane layout，也不得把操作绕过 shell message。
+- toast：在 global mode 中按 `T` 关闭当前 toast，按 `t` 清空全部 toast；普通反馈会按真实 runtime timer 自动消失，pending 或错误反馈保留更久但也有明确生命周期；toast 不得改变 pane layout，也不得把操作绕过 shell message。
 - copy rebind：进入 copy mode 后，执行 resize、header/footer hide 或 pane size change；历史窗口必须按新的 content cols 重新请求 authoritative window，不得显示旧 cols 的历史。
 
 如果上述基本操作出现回归，应先修复 UI framework 产品壳，再继续 terminal-live、copy-history 或 Terminal Pool 等内容深化。否则真实 terminal 内容会掩盖 chrome、hit region、layout/effect 同步问题。

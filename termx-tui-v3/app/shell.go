@@ -172,6 +172,18 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.AddToast(msg.Toast)
 		case ShellTickToastsMsg:
 			root.Shell = root.Shell.TickToasts(msg.Ticks)
+		case TickMsg:
+			if msg.Token != "" && msg.Token != toastTickToken {
+				return root, nil
+			}
+			if len(root.Shell.Toasts) == 0 {
+				return root, nil
+			}
+			ticks := msg.Ticks
+			if ticks == 0 {
+				ticks = 1
+			}
+			root.Shell = root.Shell.TickToasts(ticks)
 		case ShellCloseCurrentToastMsg:
 			root.Shell = root.Shell.CloseCurrentToast()
 		case ShellClearToastsMsg:

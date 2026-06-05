@@ -114,6 +114,7 @@
 - 切片 88 已把 toast title/body 分隔改为 `·` 分层，并沿用深色实体 card 与 severity 侧边。
 - 切片 90 已确认整体视觉仍未通过，toast 不能单独视为参考图级别；不得回退成简单文本。
 - 切片 92 按用户截图反馈把 toast 收敛为深色直角实体矩形、左右紫色竖线和居中文案；toast 不再绘制 close token，点击 toast 本体只负责遮挡命中，不穿透到底层 UI。
+- 切片 93 已把自动消失接入真实 runtime timer；普通反馈默认短 TTL，pending/error 默认更长但仍有明确生命周期。
 
 目标要求：
 

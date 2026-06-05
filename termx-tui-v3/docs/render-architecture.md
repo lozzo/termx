@@ -542,6 +542,7 @@ toast 必须：
 - 支持 info/success/warning/error。
 - 支持 pending/progress 语义。
 - 支持自动消失。
+- 自动消失必须由真实 runtime timer 派发普通 tick message 进入 reducer，不得只停留在测试 harness 手动 tick。
 - 支持关闭当前消息或清空消息。
 - 在窄屏退化为单行短提示。
 
@@ -985,7 +986,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - tiled panel 已支持 card panel 与 split line 两种呈现。
 - split line 已覆盖最小双 pane 横向和纵向分割。
 - header/footer hide 已真实影响 body layout，隐藏后 panel body 回收空间。
-- toast 已支持 severity、pending、auto dismiss、close current、clear all；renderer 中 toast 不改变 body layout。
+- toast 已支持 severity、pending、auto dismiss、close current、clear all；新增 toast 默认带明确 TTL，真实 runtime 定期派发 toast tick 并触发重绘；renderer 中 toast 不改变 body layout。
 - Terminal Picker 已有 styled overlay 渲染路径，并已接入 query/filter/selection/preview 交互。
 - `Ctrl-f` 已接入 Terminal Picker intent。
 - `Ctrl-v` 已接入 Display / Copy intent，并进入 authoritative history request 路径。
