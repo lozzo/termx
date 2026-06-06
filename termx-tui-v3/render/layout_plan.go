@@ -36,14 +36,22 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 
 	body := viewport
 	plan := LayoutPlan{Viewport: viewport}
+	if shellFrameVisible(shell) && body.W > 2 {
+		body.X = 1
+		body.W = maxInt(0, body.W-2)
+	}
 	if shell.Header.Visible && body.H > 0 {
-		plan.Header = Rect{X: 0, Y: 0, W: viewport.W, H: 1}
-		body.Y++
-		body.H--
+		headerH := shellBandHeight(viewport.H)
+		headerH = minInt(headerH, body.H)
+		plan.Header = Rect{X: 0, Y: 0, W: viewport.W, H: headerH}
+		body.Y += headerH
+		body.H -= headerH
 	}
 	if shell.Footer.Visible && body.H > 0 {
-		body.H--
-		plan.Footer = Rect{X: 0, Y: body.Y + body.H, W: viewport.W, H: 1}
+		footerH := shellBandHeight(viewport.H)
+		footerH = minInt(footerH, body.H)
+		body.H -= footerH
+		plan.Footer = Rect{X: 0, Y: body.Y + body.H, W: viewport.W, H: footerH}
 	}
 	plan.Body = body
 	plan.Panels = measurePanels(shell.Layout, body)
@@ -54,6 +62,17 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	plan.Cursor, plan.CursorRect = measureCursor(shell, plan)
 	plan.HitRegions = measureHitRegions(shell, plan)
 	return plan
+}
+
+func shellFrameVisible(shell ShellVM) bool {
+	return shell.Header.Visible && shell.Footer.Visible
+}
+
+func shellBandHeight(viewportHeight int) int {
+	if viewportHeight >= 8 {
+		return 2
+	}
+	return 1
 }
 
 func normalizeViewportDimension(value int, fallback int) int {

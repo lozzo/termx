@@ -1142,11 +1142,11 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 		t.Fatalf("drain attach: %v", err)
 	}
 
-	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 26 {
+	if runtime.State().Session.Cols != 96 || runtime.State().Session.Rows != 24 {
 		t.Fatalf("runtime must correct protocol terminal size to content rect, got %#v", runtime.State().Session)
 	}
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
-	waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 96, Rows: 24})
 	if runtime.State().Session.SurfaceID != "test-surface" || runtime.State().Session.ViewID != "test-view" {
 		t.Fatalf("runtime must keep protocol resize owner metadata, session=%#v", runtime.State().Session)
 	}
@@ -1182,19 +1182,19 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	}
 	drainV3RuntimeForCLITest(t, runtime)
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
-	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 96, Rows: 24})
 
 	if err := host.SendResize(120, 40); err != nil {
 		t.Fatalf("host resize: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, seenResize)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 116, Rows: 34}, seenResize)
 
 	if err := runtime.Post(app.ShellSetHeaderVisibleMsg{Visible: false}); err != nil {
 		t.Fatalf("post header hide: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 37}, seenResize)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, seenResize)
 	if err := runtime.Post(app.ShellSetFooterVisibleMsg{Visible: false}); err != nil {
 		t.Fatalf("post footer hide: %v", err)
 	}
@@ -1284,7 +1284,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	}
 	drainV3RuntimeForCLITest(t, runtime)
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
-	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 96, Rows: 24})
 
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
 		Action:         tuistate.PaneCommandSplit,
@@ -1295,7 +1295,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 		t.Fatalf("post split: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 48, Rows: 26}, seenResize)
+	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 47, Rows: 24}, seenResize)
 	inputsBefore, _ := process.snapshot()
 
 	divider := lastFramePaneResizeRegionForCLITest(t, host, tuistate.DefaultPaneID, tuistate.PaneResizeRight)
@@ -1311,7 +1311,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 		t.Fatalf("send mouse drag move: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 42, Rows: 26}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 41, Rows: 24}, seenResize)
 
 	inputsAfter, _ := process.snapshot()
 	if len(inputsAfter) != len(inputsBefore) {
@@ -1349,14 +1349,14 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	}
 	drainV3RuntimeForCLITest(t, runtime)
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
-	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
+	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 96, Rows: 24})
 	process.setResizeErr(errors.New("pty resize failed"))
 
 	if err := host.SendResize(120, 40); err != nil {
 		t.Fatalf("host resize: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, seenResize)
+	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 116, Rows: 34}, seenResize)
 	if !strings.Contains(runtime.State().Session.LastError, "pty resize failed") || runtime.State().Session.Attached {
 		t.Fatalf("core-v2 process resize failure must surface in live session, session=%#v", runtime.State().Session)
 	}
@@ -1405,7 +1405,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"┌ main", "visual review baseline", "quick actio", "[Ctrl+P] PANE"} {
+	for _, want := range []string{"┌ main", "visual review", "quick actio", "[Ctrl+P] PANE"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}
@@ -1457,8 +1457,8 @@ func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 		!strings.Contains(text, "terminal=term-") ||
 		!strings.Contains(text, "frames=") ||
 		!strings.Contains(text, "viewport=100x40") ||
-		!strings.Contains(text, "session=98x36") ||
-		!strings.Contains(text, "copy_cols=98") ||
+		!strings.Contains(text, "session=96x34") ||
+		!strings.Contains(text, "copy_cols=96") ||
 		!strings.Contains(text, "pane_commands=5") ||
 		!strings.Contains(text, "panes=1") ||
 		!strings.Contains(text, "active=pane-main") ||
@@ -1615,8 +1615,8 @@ func TestV3TmuxResizeSmokePropagatesHostResizeToPTY(t *testing.T) {
 	if result.BeforeSize == result.AfterSize {
 		t.Fatalf("resize should change PTY size, before=%s after=%s", result.BeforeSize, result.AfterSize)
 	}
-	if result.AfterSize != "118x36" {
-		t.Fatalf("120x40 host viewport should resize PTY to active content rect 118x36, got %s", result.AfterSize)
+	if result.AfterSize != "116x34" {
+		t.Fatalf("120x40 host viewport should resize PTY to shell-framed active content rect 116x34, got %s", result.AfterSize)
 	}
 	if !strings.Contains(result.Captured, "termx-pty-size:size-before:") || !strings.Contains(result.Captured, "termx-pty-size:size-after:"+result.AfterSize) {
 		t.Fatalf("tmux resize capture missing PTY size markers:\n%s", result.Captured)
@@ -1659,7 +1659,7 @@ func TestV3TmuxResizeSmokeCommandReportsArtifacts(t *testing.T) {
 		!strings.Contains(text, "terminal=term-") ||
 		!strings.Contains(text, "session=termx-v3-resize-") ||
 		!strings.Contains(text, "window=120x40") ||
-		!strings.Contains(text, "after=118x36") ||
+		!strings.Contains(text, "after=116x34") ||
 		!strings.Contains(text, "artifact_dir=") ||
 		!strings.Contains(text, "timeline=") {
 		t.Fatalf("unexpected tmux resize smoke output:\n%s", text)
@@ -1776,7 +1776,7 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read diff: %v", err)
 	}
-	if !strings.Contains(string(current), "visual review baseline") || !strings.Contains(string(target), "ws:main tabs:2 panes:2") || !strings.Contains(string(diff), "tmux visual diff") {
+	if !strings.Contains(string(current), "quick actio") || !strings.Contains(string(target), "ws:main tabs:2 panes:2") || !strings.Contains(string(diff), "tmux visual diff") {
 		t.Fatalf("visual compare artifacts missing expected markers current=%q target=%q diff=%q", current, target, diff)
 	}
 	if result.Mismatches <= 0 || !strings.Contains(string(diff), "@@ row") {

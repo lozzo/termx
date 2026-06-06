@@ -20,6 +20,7 @@ func TestCopyModeUsesProtocolHistoryWindowClient(t *testing.T) {
 	clientTransport, serverTransport := memory.NewPair()
 	errCh := make(chan error, 1)
 	go func() {
+		defer func() { _ = serverTransport.Close() }()
 		errCh <- runCopyModeHistoryProtocolServer(serverTransport)
 	}()
 	client := protocol.NewClient(clientTransport)
@@ -89,14 +90,14 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 78 || params.Limit != 20 {
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 76 || params.Limit != 20 {
 		return fmt.Errorf("unexpected latest params %#v", params)
 	}
 	if err := sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{
 		TerminalID:   "term-1",
 		Token:        "tok-1",
 		Op:           protocol.HistoryWindowReplace,
-		Size:         protocol.Size{Cols: 78, Rows: 20},
+		Size:         protocol.Size{Cols: 76, Rows: 20},
 		Rows:         []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "new"}})},
 		Lines:        []protocol.HistoryLineSpan{{LogicalLineID: 20, StartRow: 0, EndRow: 0}},
 		RowLineIDs:   []uint64{20},
@@ -124,7 +125,7 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 		TerminalID:   "term-1",
 		Token:        "tok-1",
 		Op:           protocol.HistoryWindowPrepend,
-		Size:         protocol.Size{Cols: 78, Rows: 20},
+		Size:         protocol.Size{Cols: 76, Rows: 20},
 		Rows:         []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "old"}})},
 		Lines:        []protocol.HistoryLineSpan{{LogicalLineID: 10, StartRow: 0, EndRow: 0}},
 		RowLineIDs:   []uint64{10},

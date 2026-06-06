@@ -290,7 +290,10 @@ func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, 
 func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, renderer render.Renderer) (render.Frame, error) {
 	host := app.NewFakeTerminalHost(4)
 	host.SetSize(120, 40)
-	shell := state.DefaultShell().
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabPrevious})
+	shell = shell.
 		SetPanelPresentation(state.PanelPresentationSplitLine).
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
 		AddToast(state.ToastSpec{ID: "visual-review", Severity: state.ToastWarning, Title: "visual review", Body: "needs screenshot polish"})

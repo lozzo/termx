@@ -110,7 +110,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if got := runtime.State().Viewport; !got.Valid || got.Cols != 80 || got.Rows != 24 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: initial host viewport was not ingested, got %#v", got)
 	}
-	if got := runtime.State().Session; got.Cols != 78 || got.Rows != 20 {
+	if got := runtime.State().Session; got.Cols != 76 || got.Rows != 18 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: initial attach did not use content rect, got %#v", got)
 	}
 	if err := drainV3RuntimeUntilFrameContains(ctx, runtime, host, "beta"); err != nil {
@@ -149,7 +149,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if got := runtime.State().Viewport; !got.Valid || got.Cols != 100 || got.Rows != 40 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: host resize viewport was not ingested, got %#v", got)
 	}
-	if got := runtime.State().Session; got.Cols != 98 || got.Rows != 36 {
+	if got := runtime.State().Session; got.Cols != 96 || got.Rows != 34 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: host resize did not resize terminal to content rect, got %#v", got)
 	}
 	if err := validateV3E2EFrameSize(host.Frames(), 100, 40); err != nil {
@@ -167,7 +167,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if !runtime.State().CopyMode.Active || len(runtime.State().History.Rows) == 0 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: copy mode did not load authoritative history")
 	}
-	if runtime.State().CopyMode.BoundCols != 98 || runtime.State().History.Cols != 98 {
+	if runtime.State().CopyMode.BoundCols != 96 || runtime.State().History.Cols != 96 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: copy mode did not bind resized content cols, state=%#v", runtime.State())
 	}
 	if err := validateV3E2EFrameSize(host.Frames(), 100, 40); err != nil {
@@ -233,10 +233,10 @@ func runV3E2EPaneCommands(ctx context.Context, runtime *app.AppRuntime) (int, bo
 	if runtime.State().Shell.ZoomedPaneID != "pane-e2e" {
 		return 0, false, fmt.Errorf("v3 e2e smoke: zoom command did not set zoomed pane, shell=%#v", runtime.State().Shell)
 	}
-	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 36 {
+	if runtime.State().Session.Cols != 96 || runtime.State().Session.Rows != 34 {
 		return 0, false, fmt.Errorf("v3 e2e smoke: zoom command should restore full card content rect, state=%#v", runtime.State())
 	}
-	if runtime.State().CopyMode.BoundCols != 98 || runtime.State().History.Cols != 98 {
+	if runtime.State().CopyMode.BoundCols != 96 || runtime.State().History.Cols != 96 {
 		return 0, false, fmt.Errorf("v3 e2e smoke: zoom command should keep copy window rebound to content cols, state=%#v", runtime.State())
 	}
 	trailing := []app.Msg{
@@ -263,7 +263,7 @@ func runV3E2EPaneCommands(ctx context.Context, runtime *app.AppRuntime) (int, bo
 	if shell.ZoomedPaneID != "" || len(shell.Workspace.Tabs[0].Panes) != 1 || shell.ActivePaneID != state.DefaultPaneID {
 		return 0, false, fmt.Errorf("v3 e2e smoke: close/unzoom command did not restore single-pane shell, shell=%#v", shell)
 	}
-	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 36 {
+	if runtime.State().Session.Cols != 96 || runtime.State().Session.Rows != 34 {
 		return 0, false, fmt.Errorf("v3 e2e smoke: close command did not keep terminal at content rect, state=%#v", runtime.State())
 	}
 	return len(commands) + len(trailing), true, nil
@@ -294,7 +294,7 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		return fmt.Errorf("v3 e2e smoke: no frames rendered")
 	}
 	frame := frames[len(frames)-1]
-	required := []string{" main ", "│ 1:main ×", "│ ＋ ", "┌─ shell", "ws:main"}
+	required := []string{" main ", "─┬─ 1:main ×", "─┬─ ＋ ", "┌─ shell", "ws:main"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {

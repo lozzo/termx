@@ -574,7 +574,7 @@ func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			1,
 			nil,
 		)}},
@@ -1151,7 +1151,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("tab mode should create and rename tab in original workspace, ok=%v workspace=%#v", ok, mainWorkspace)
 	}
 	tabWorkspaceFrame := lastFrame(t, host.Frames())
-	if !frameContains(tabWorkspaceFrame, "workspace 2云") || !frameContains(tabWorkspaceFrame, "│ 1:main ×") || !frameContains(tabWorkspaceFrame, "│ ＋ ") || !frameContains(tabWorkspaceFrame, "ws:workspace") {
+	if !frameContains(tabWorkspaceFrame, "workspace 2云") || !frameContains(tabWorkspaceFrame, "─┬─ 1:main ×") || !frameContains(tabWorkspaceFrame, "─┬─ ＋ ") || !frameContains(tabWorkspaceFrame, "ws:workspace") {
 		t.Fatalf("expected live footer/header after tab/workspace flow, got %#v", tabWorkspaceFrame.Lines)
 	}
 
@@ -1474,7 +1474,7 @@ func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
 		t.Fatalf("tab/workspace shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "workspace 2云") || !frameContains(frame, "│ 1:main ×") || !frameContains(frame, "│ ＋ ") || !frameContains(frame, "ws:workspace") {
+	if !frameContains(frame, "workspace 2云") || !frameContains(frame, "─┬─ 1:main ×") || !frameContains(frame, "─┬─ ＋ ") || !frameContains(frame, "ws:workspace") {
 		t.Fatalf("expected frame to return to live mode and keep active workspace, got %#v", frame.Lines)
 	}
 }

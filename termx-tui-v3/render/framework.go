@@ -470,6 +470,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	plan := MeasureLayout(shell, shell.Layout.Viewport)
 	c := newCanvas(plan.Viewport.W, plan.Viewport.H)
 
+	renderShellFrame(c, plan)
 	if plan.Header.W > 0 && plan.Header.H > 0 {
 		renderHeader(c, shell.Header, plan.Header)
 	}
@@ -516,6 +517,20 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	}
 }
 
+func renderShellFrame(c *canvas, plan LayoutPlan) {
+	if plan.Header.H == 0 || plan.Footer.H == 0 {
+		return
+	}
+	if plan.Viewport.W < 2 || plan.Viewport.H < 2 {
+		return
+	}
+	// shell 外框只包住 body，header/footer 自己绘制上下边，避免 body 直接顶到顶栏。
+	for y := plan.Body.Y; y < plan.Body.Y+plan.Body.H; y++ {
+		c.writeTextStyled(0, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
+		c.writeTextStyled(plan.Viewport.W-1, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
+	}
+}
+
 func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
@@ -526,6 +541,9 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 		right = append(right, barText(" ! "+header.Notice+" ", StyleStatusWarning, 0))
 	}
 	c.writeLine(rect.X, rect.Y, rect.W, composeFramedBarLine(left, right, rect.W, "┌", "┐", "─"), "shell:header", LayerChrome)
+	if rect.H > 1 {
+		c.writeLine(rect.X, rect.Y+rect.H-1, rect.W, shellHeaderDividerLine(rect.W, left, right), "shell:header", LayerChrome)
+	}
 }
 
 func headerLeftSegments(header HeaderVM) []barSegment {
@@ -544,7 +562,7 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 		barText(" "+workspace+" ", StyleStatusAccent, 1),
 	}
 	left = append(left, headerTabSegments(tab)...)
-	left = append(left, barSep(), barText(" ＋ ", StyleSuccess, 3).withAction(ActionTabCreate.String()))
+	left = append(left, headerSep(), barText(" ＋ ", StyleSuccess, 3).withAction(ActionTabCreate.String()))
 	if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
 		left = append(left, barSep(), barText(" "+active+" ", StyleStatusMuted, 4))
 	}
@@ -571,6 +589,11 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 		left = append(left, barText(" [Ctrl+G] GLOBAL ", StyleStatusAccent, 1))
 	}
 	right := footerMetadataSegments(footer, hintIsCritical)
+	if rect.H > 1 {
+		c.writeLine(rect.X, rect.Y, rect.W, shellDividerLine(rect.W, "┌", "┐"), "shell:footer", LayerChrome)
+		c.writeLine(rect.X, rect.Y+rect.H-1, rect.W, composeFramedBarLine(left, right, rect.W, "└", "┘", "─"), "shell:footer", LayerChrome)
+		return
+	}
 	c.writeLine(rect.X, rect.Y, rect.W, composeFramedBarLine(left, right, rect.W, "└", "┘", "─"), "shell:footer", LayerChrome)
 }
 
@@ -613,14 +636,14 @@ func headerTabSegments(tab string) []barSegment {
 		}
 		if active {
 			segments = append(segments,
-				barSep(),
+				headerSep(),
 				barText(" "+intLabel(index+1)+":"+label+" ", StyleStatus, 1),
 				barText("× ", StyleStatusWarning, 2).withAction(ActionTabClose.String()),
 			)
 			continue
 		}
 		segments = append(segments,
-			barSep(),
+			headerSep(),
 			barText(" "+intLabel(index+1)+":"+label+" ", StyleStatusMuted, 2),
 		)
 	}
@@ -875,6 +898,7 @@ type barSegment struct {
 	style    StyleToken
 	priority int
 	actionID string
+	joint    bool
 }
 
 func barText(text string, style StyleToken, priority int) barSegment {
@@ -888,6 +912,12 @@ func (segment barSegment) withAction(actionID string) barSegment {
 
 func barSep() barSegment {
 	return barText("│", StyleStatusMuted, 1)
+}
+
+func headerSep() barSegment {
+	segment := barText("─┬─", StyleStatusMuted, 1)
+	segment.joint = true
+	return segment
 }
 
 func appendBarSegment(segments []barSegment, text string, style StyleToken, priority int) []barSegment {
@@ -931,6 +961,65 @@ func composeFramedBarLine(left []barSegment, right []barSegment, width int, left
 	cells = append(cells, inner.Cells...)
 	cells = append(cells, Cell{Text: rightGlyph, Width: DisplayWidth(rightGlyph), Style: StyleStatus, Safe: true})
 	return Line{Cells: cells}
+}
+
+func shellDividerLine(width int, leftGlyph string, rightGlyph string) Line {
+	if width <= 0 {
+		return Line{}
+	}
+	if width == 1 {
+		return NewLine(TruncateCells(leftGlyph, 1))
+	}
+	return Line{Cells: []Cell{
+		{Text: leftGlyph, Width: DisplayWidth(leftGlyph), Style: StyleStatus, Safe: true},
+		{Text: strings.Repeat("─", maxInt(0, width-2)), Width: maxInt(0, width-2), Style: StyleStatus, Safe: true},
+		{Text: rightGlyph, Width: DisplayWidth(rightGlyph), Style: StyleStatus, Safe: true},
+	}}
+}
+
+func shellHeaderDividerLine(width int, left []barSegment, right []barSegment) Line {
+	if width <= 0 {
+		return Line{}
+	}
+	if width == 1 {
+		return NewLine(TruncateCells("├", 1))
+	}
+	cells := make([]Cell, 0, width)
+	cells = append(cells, Cell{Text: "├", Width: 1, Style: StyleStatus, Safe: true})
+	left = trimBarSegments(left, width-2)
+	right = trimBarSegments(right, width-2-barSegmentsWidth(left))
+	// 第一行 tab strip 的 ┬ 位置必须在第二行落成 ┴，否则 header/body 分隔无法贴近目标线稿。
+	joints := headerJointColumns(left, 1)
+	rightStart := width - 1 - barSegmentsWidth(right)
+	joints = append(joints, headerJointColumns(right, rightStart)...)
+	jointSet := make(map[int]struct{}, len(joints))
+	for _, column := range joints {
+		if column > 0 && column < width-1 {
+			jointSet[column] = struct{}{}
+		}
+	}
+	for x := 1; x < width-1; x++ {
+		glyph := "─"
+		if _, ok := jointSet[x]; ok {
+			glyph = "┴"
+		}
+		cells = append(cells, Cell{Text: glyph, Width: 1, Style: StyleStatus, Safe: true})
+	}
+	cells = append(cells, Cell{Text: "┤", Width: 1, Style: StyleStatus, Safe: true})
+	return Line{Cells: cells}
+}
+
+func headerJointColumns(segments []barSegment, start int) []int {
+	columns := []int{}
+	x := start
+	for _, segment := range segments {
+		width := DisplayWidth(segment.text)
+		if segment.joint && width > 0 {
+			columns = append(columns, x+width/2)
+		}
+		x += width
+	}
+	return columns
 }
 
 func composeBarLineWithSpacer(left []barSegment, right []barSegment, width int, spacerGlyph string) Line {
@@ -1011,16 +1100,16 @@ func cleanBarSegments(segments []barSegment) []barSegment {
 	}
 	out := make([]barSegment, 0, len(segments))
 	for _, segment := range segments {
-		isSep := segment.text == "│"
+		isSep := segment.text == "│" || segment.joint
 		if isSep && len(out) == 0 {
 			continue
 		}
-		if isSep && len(out) > 0 && out[len(out)-1].text == "│" {
+		if isSep && len(out) > 0 && (out[len(out)-1].text == "│" || out[len(out)-1].joint) {
 			continue
 		}
 		out = append(out, segment)
 	}
-	for len(out) > 0 && out[len(out)-1].text == "│" {
+	for len(out) > 0 && (out[len(out)-1].text == "│" || out[len(out)-1].joint) {
 		out = out[:len(out)-1]
 	}
 	return out

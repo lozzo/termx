@@ -17,7 +17,7 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{{Text: "new", LineID: 20}},
 		)}},
@@ -25,7 +25,7 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 			state.HistoryWindowPrepend,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{{Text: "old", LineID: 10}},
 		)}},
@@ -42,7 +42,7 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain latest: %v", err)
 	}
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].TerminalID != "term-1" || core.LatestRequests[0].Cols != 78 {
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].TerminalID != "term-1" || core.LatestRequests[0].Cols != 76 {
 		t.Fatalf("expected latest request, got %#v", core.LatestRequests)
 	}
 	if runtime.State().History.Token != "tok-1" || runtime.State().CopyMode.BoundToken != "tok-1" {
@@ -83,7 +83,7 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{{Text: "new", LineID: 20}},
 		)}},
@@ -91,7 +91,7 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 			state.HistoryWindowPrepend,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{{Text: "old", LineID: 10}},
 		)}},
@@ -125,7 +125,7 @@ func TestCopyModeLatestUsesCopyContentRectCols(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{{Text: "new", LineID: 20}},
 		)}},
@@ -141,10 +141,10 @@ func TestCopyModeLatestUsesCopyContentRectCols(t *testing.T) {
 		t.Fatalf("drain latest: %v", err)
 	}
 
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 78 {
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 76 {
 		t.Fatalf("copy latest must use content rect cols, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundCols != 78 || runtime.State().History.Cols != 78 {
+	if runtime.State().CopyMode.BoundCols != 76 || runtime.State().History.Cols != 76 {
 		t.Fatalf("expected copy/history bound to content cols, got %#v", runtime.State())
 	}
 }
@@ -156,7 +156,7 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 				state.HistoryWindowReplace,
 				"term-1",
 				"tok-1",
-				78,
+				76,
 				7,
 				[]state.HistoryRow{{Text: "old-window", LineID: 20}},
 			)},
@@ -164,7 +164,7 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 				state.HistoryWindowReplace,
 				"term-1",
 				"tok-2",
-				98,
+				96,
 				8,
 				[]state.HistoryRow{{Text: "new-window", LineID: 30}},
 			)},
@@ -197,10 +197,10 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 		t.Fatalf("drain rebind: %v", err)
 	}
 
-	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 98 {
+	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 96 {
 		t.Fatalf("expected second latest request at resized content cols, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().CopyMode.BoundCols != 98 {
+	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().CopyMode.BoundCols != 96 {
 		t.Fatalf("expected rebound copy mode, got %#v", runtime.State().CopyMode)
 	}
 	if runtime.State().CopyMode.Mark != nil || runtime.State().CopyMode.Selection != nil || runtime.State().CopyMode.Cursor != (state.CopyPosition{}) {
@@ -268,11 +268,11 @@ func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
 }
 
 func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeResult(t *testing.T) {
-	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20}}
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 76, Rows: 18}}
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 78, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 98, 8, []state.HistoryRow{{Text: "new-window", LineID: 30}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 76, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 96, 8, []state.HistoryRow{{Text: "new-window", LineID: 30}})},
 		},
 	}
 	host := NewFakeTerminalHost(16)
@@ -304,7 +304,7 @@ func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeRe
 		t.Fatalf("drain resize/rebind: %v", err)
 	}
 
-	if len(terminal.Resizes) != 1 || terminal.Resizes[0].Cols != 98 || terminal.Resizes[0].Rows != 36 {
+	if len(terminal.Resizes) != 1 || terminal.Resizes[0].Cols != 96 || terminal.Resizes[0].Rows != 34 {
 		t.Fatalf("expected terminal resize to content rect, got %#v", terminal.Resizes)
 	}
 	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().History.Token != "tok-2" {
@@ -317,11 +317,11 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := newCopyModeRuntime(host, core, nil)
-	runtime.state.CopyMode = state.CopyModeStore{Active: true, TerminalID: "term-1", BoundToken: "tok-1", BoundCols: 78}
+	runtime.state.CopyMode = state.CopyModeStore{Active: true, TerminalID: "term-1", BoundToken: "tok-1", BoundCols: 76}
 	runtime.state.History = state.HistoryStore{
 		TerminalID: "term-1",
 		Token:      "tok-1",
-		Cols:       78,
+		Cols:       76,
 		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
 	}
 
@@ -332,12 +332,12 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 		t.Fatalf("drain resize: %v", err)
 	}
 	pending := runtime.State().History.Pending
-	if pending == nil || pending.Cols != 98 {
+	if pending == nil || pending.Cols != 96 {
 		t.Fatalf("expected pending rebind request at new cols, got %#v", runtime.State().History)
 	}
 	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{
 		RequestID: services.RequestID(pending.ID),
-		Window:    historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-old", 78, 7, []state.HistoryRow{{Text: "stale", LineID: 1}}),
+		Window:    historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-old", 76, 7, []state.HistoryRow{{Text: "stale", LineID: 1}}),
 	}}); err != nil {
 		t.Fatalf("post stale response: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{{Text: "copy-row", LineID: 20}},
 		)}},
@@ -431,7 +431,7 @@ func TestInteractiveRuntimeCopyModeSwallowsUnboundRawKeys(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{{Text: "copy-row", LineID: 20}},
 		)}},
@@ -532,7 +532,7 @@ func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 		Active:     true,
 		TerminalID: "term-1",
 		BoundToken: "tok-1",
-		BoundCols:  78,
+		BoundCols:  76,
 	}
 
 	if err := runtime.Post(CopyModeSetMarkMsg{Position: state.CopyPosition{Row: 0, Col: 1}}); err != nil {
@@ -567,7 +567,7 @@ func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 		Active:     true,
 		TerminalID: "term-1",
 		BoundToken: "tok-1",
-		BoundCols:  78,
+		BoundCols:  76,
 		ViewRows:   4,
 	}
 	for _, event := range []input.InputEvent{
@@ -599,7 +599,7 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 			state.HistoryWindowReplace,
 			"term-1",
 			"tok-1",
-			78,
+			76,
 			7,
 			[]state.HistoryRow{
 				{Text: "alpha", LineID: 10},
@@ -610,7 +610,7 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 		)}},
 	}
 	host := NewFakeTerminalHost(32)
-	host.SetSize(80, 8)
+	host.SetSize(80, 10)
 	runtime := newCopyModeRuntime(host, core, nil)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
@@ -794,7 +794,7 @@ func historyStoreForCopySelection() state.HistoryStore {
 	return state.HistoryStore{
 		TerminalID: "term-1",
 		Token:      "tok-1",
-		Cols:       78,
+		Cols:       76,
 		Rows: []state.HistoryRow{
 			{Text: "alpha", LineID: 10},
 			{Text: "beta", LineID: 11},

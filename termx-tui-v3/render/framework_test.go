@@ -259,7 +259,7 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if !strings.HasPrefix(frame.Lines[0], "┌") || !strings.HasSuffix(frame.Lines[0], "┐") {
 		t.Fatalf("top bar should be framed like the target wireframe, got %#v", frame.Lines[0])
 	}
-	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], "│ 1:1 ×") || !strings.Contains(frame.Lines[0], "│ ＋ ") || !strings.Contains(frame.Lines[0], "│ pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
+	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], "─┬─ 1:1 ×") || !strings.Contains(frame.Lines[0], "─┬─ ＋ ") || !strings.Contains(frame.Lines[0], "│ pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
 		t.Fatalf("top bar should contain tuiv2-like workspace/tab/create/notice slots, got %#v", frame.Lines[0])
 	}
 	if strings.Contains(frame.Lines[0], "[＋]") || strings.Contains(frame.Lines[0], "[ ]") || strings.Contains(frame.Lines[0], "▎") {
