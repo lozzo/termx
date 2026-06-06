@@ -269,6 +269,30 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.StorageListParams", params)
 		}
 		return proto.Marshal(storageListParamsToWirePB(value))
+	case "workbench.get":
+		value, ok := params.(WorkbenchGetParams)
+		if !ok {
+			if ptr, ptrOK := params.(*WorkbenchGetParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.WorkbenchGetParams", params)
+		}
+		return proto.Marshal(workbenchGetParamsToWirePB(value))
+	case "workbench.apply":
+		value, ok := params.(WorkbenchMutateParams)
+		if !ok {
+			if ptr, ptrOK := params.(*WorkbenchMutateParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.WorkbenchMutateParams", params)
+		}
+		return proto.Marshal(workbenchMutateParamsToWirePB(value))
 	case "snapshot":
 		value, ok := params.(SnapshotParams)
 		if !ok {
@@ -471,6 +495,18 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return storageListParamsFromWirePB(&msg), nil
+	case "workbench.get":
+		var msg wirepb.WorkbenchGetParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return workbenchGetParamsFromWirePB(&msg), nil
+	case "workbench.apply":
+		var msg wirepb.WorkbenchMutateParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return workbenchMutateParamsFromWirePB(&msg), nil
 	case "snapshot":
 		var msg wirepb.SnapshotParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -619,6 +655,30 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.StorageListResult", result)
 		}
 		return proto.Marshal(storageListResultToWirePB(value))
+	case "workbench.get":
+		value, ok := result.(WorkbenchSnapshot)
+		if !ok {
+			if ptr, ptrOK := result.(*WorkbenchSnapshot); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.WorkbenchSnapshot", result)
+		}
+		return proto.Marshal(workbenchSnapshotToWirePB(value))
+	case "workbench.apply":
+		value, ok := result.(WorkbenchMutateResult)
+		if !ok {
+			if ptr, ptrOK := result.(*WorkbenchMutateResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.WorkbenchMutateResult", result)
+		}
+		return proto.Marshal(workbenchMutateResultToWirePB(value))
 	case "remote.status":
 		msg, ok := result.(*wirepb.RemoteStatus)
 		if !ok || msg == nil {
@@ -734,6 +794,28 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 			return methodOutTypeError(method, "*protocol.StorageListResult", out)
 		}
 		*ptr = storageListResultFromWirePB(&msg)
+		return nil
+	case "workbench.get":
+		var msg wirepb.WorkbenchSnapshot
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*WorkbenchSnapshot)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.WorkbenchSnapshot", out)
+		}
+		*ptr = workbenchSnapshotFromWirePB(&msg)
+		return nil
+	case "workbench.apply":
+		var msg wirepb.WorkbenchMutateResult
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return err
+		}
+		ptr, ok := out.(*WorkbenchMutateResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.WorkbenchMutateResult", out)
+		}
+		*ptr = workbenchMutateResultFromWirePB(&msg)
 		return nil
 	case "remote.status":
 		var msg wirepb.RemoteStatus
@@ -1113,6 +1195,7 @@ func eventsParamsToWirePB(params EventsParams) *wirepb.EventsParams {
 		StorageScope:     storageScopeToWirePB(params.StorageScope),
 		StorageOwnerId:   params.StorageOwnerID,
 		StorageKeyPrefix: params.StorageKeyPrefix,
+		WorkbenchId:      params.WorkbenchID,
 	}
 	for _, typ := range params.Types {
 		out.Types = append(out.Types, uint32(typ))
@@ -1131,6 +1214,7 @@ func eventsParamsFromWirePB(msg *wirepb.EventsParams) EventsParams {
 		StorageScope:     storageScopeFromWirePB(msg.GetStorageScope()),
 		StorageOwnerID:   msg.GetStorageOwnerId(),
 		StorageKeyPrefix: msg.GetStorageKeyPrefix(),
+		WorkbenchID:      msg.GetWorkbenchId(),
 	}
 	for _, typ := range msg.GetTypes() {
 		out.Types = append(out.Types, EventType(typ))
@@ -1305,6 +1389,216 @@ func storageListResultFromWirePB(msg *wirepb.StorageListResult) StorageListResul
 	return out
 }
 
+func workbenchSnapshotToWirePB(snapshot WorkbenchSnapshot) *wirepb.WorkbenchSnapshot {
+	out := &wirepb.WorkbenchSnapshot{
+		Version:           snapshot.Version,
+		ActiveWorkspaceId: snapshot.ActiveWorkspaceID,
+		Workspaces:        make([]*wirepb.WorkbenchWorkspace, 0, len(snapshot.Workspaces)),
+	}
+	for _, workspace := range snapshot.Workspaces {
+		out.Workspaces = append(out.Workspaces, workbenchWorkspaceToWirePB(workspace))
+	}
+	return out
+}
+
+func workbenchSnapshotFromWirePB(msg *wirepb.WorkbenchSnapshot) WorkbenchSnapshot {
+	if msg == nil {
+		return WorkbenchSnapshot{}
+	}
+	out := WorkbenchSnapshot{
+		Version:           msg.GetVersion(),
+		ActiveWorkspaceID: msg.GetActiveWorkspaceId(),
+		Workspaces:        make([]WorkbenchWorkspace, 0, len(msg.GetWorkspaces())),
+	}
+	for _, workspace := range msg.GetWorkspaces() {
+		out.Workspaces = append(out.Workspaces, workbenchWorkspaceFromWirePB(workspace))
+	}
+	return out
+}
+
+func workbenchWorkspaceToWirePB(workspace WorkbenchWorkspace) *wirepb.WorkbenchWorkspace {
+	out := &wirepb.WorkbenchWorkspace{
+		Id:          workspace.ID,
+		Name:        workspace.Name,
+		ActiveTabId: workspace.ActiveTabID,
+		Tabs:        make([]*wirepb.WorkbenchTab, 0, len(workspace.Tabs)),
+	}
+	for _, tab := range workspace.Tabs {
+		out.Tabs = append(out.Tabs, workbenchTabToWirePB(tab))
+	}
+	return out
+}
+
+func workbenchWorkspaceFromWirePB(msg *wirepb.WorkbenchWorkspace) WorkbenchWorkspace {
+	if msg == nil {
+		return WorkbenchWorkspace{}
+	}
+	out := WorkbenchWorkspace{
+		ID:          msg.GetId(),
+		Name:        msg.GetName(),
+		ActiveTabID: msg.GetActiveTabId(),
+		Tabs:        make([]WorkbenchTab, 0, len(msg.GetTabs())),
+	}
+	for _, tab := range msg.GetTabs() {
+		out.Tabs = append(out.Tabs, workbenchTabFromWirePB(tab))
+	}
+	return out
+}
+
+func workbenchTabToWirePB(tab WorkbenchTab) *wirepb.WorkbenchTab {
+	out := &wirepb.WorkbenchTab{
+		Id:           tab.ID,
+		Title:        tab.Title,
+		ActivePaneId: tab.ActivePaneID,
+		Panes:        make([]*wirepb.WorkbenchPane, 0, len(tab.Panes)),
+		RootSplit:    workbenchSplitNodeToWirePB(tab.RootSplit),
+	}
+	for _, pane := range tab.Panes {
+		out.Panes = append(out.Panes, workbenchPaneToWirePB(pane))
+	}
+	return out
+}
+
+func workbenchTabFromWirePB(msg *wirepb.WorkbenchTab) WorkbenchTab {
+	if msg == nil {
+		return WorkbenchTab{}
+	}
+	out := WorkbenchTab{
+		ID:           msg.GetId(),
+		Title:        msg.GetTitle(),
+		ActivePaneID: msg.GetActivePaneId(),
+		Panes:        make([]WorkbenchPane, 0, len(msg.GetPanes())),
+		RootSplit:    workbenchSplitNodeFromWirePB(msg.GetRootSplit()),
+	}
+	for _, pane := range msg.GetPanes() {
+		out.Panes = append(out.Panes, workbenchPaneFromWirePB(pane))
+	}
+	return out
+}
+
+func workbenchPaneToWirePB(pane WorkbenchPane) *wirepb.WorkbenchPane {
+	return &wirepb.WorkbenchPane{
+		Id:         pane.ID,
+		Title:      pane.Title,
+		Kind:       string(pane.Kind),
+		TerminalId: pane.TerminalID,
+	}
+}
+
+func workbenchPaneFromWirePB(msg *wirepb.WorkbenchPane) WorkbenchPane {
+	if msg == nil {
+		return WorkbenchPane{}
+	}
+	return WorkbenchPane{
+		ID:         msg.GetId(),
+		Title:      msg.GetTitle(),
+		Kind:       WorkbenchPaneKind(msg.GetKind()),
+		TerminalID: msg.GetTerminalId(),
+	}
+}
+
+func workbenchSplitNodeToWirePB(node WorkbenchSplitNode) *wirepb.WorkbenchSplitNode {
+	out := &wirepb.WorkbenchSplitNode{
+		PaneId:      node.PaneID,
+		Direction:   string(node.Direction),
+		Ratio:       node.Ratio,
+		BiasCells:   int32(node.BiasCells),
+		FixedPaneId: node.FixedPaneID,
+		FixedCols:   int32(node.FixedCols),
+		FixedRows:   int32(node.FixedRows),
+		Children:    make([]*wirepb.WorkbenchSplitNode, 0, len(node.Children)),
+	}
+	for _, child := range node.Children {
+		out.Children = append(out.Children, workbenchSplitNodeToWirePB(child))
+	}
+	return out
+}
+
+func workbenchSplitNodeFromWirePB(msg *wirepb.WorkbenchSplitNode) WorkbenchSplitNode {
+	if msg == nil {
+		return WorkbenchSplitNode{}
+	}
+	out := WorkbenchSplitNode{
+		PaneID:      msg.GetPaneId(),
+		Direction:   WorkbenchSplitDirection(msg.GetDirection()),
+		Ratio:       msg.GetRatio(),
+		BiasCells:   int(msg.GetBiasCells()),
+		FixedPaneID: msg.GetFixedPaneId(),
+		FixedCols:   int(msg.GetFixedCols()),
+		FixedRows:   int(msg.GetFixedRows()),
+		Children:    make([]WorkbenchSplitNode, 0, len(msg.GetChildren())),
+	}
+	for _, child := range msg.GetChildren() {
+		out.Children = append(out.Children, workbenchSplitNodeFromWirePB(child))
+	}
+	return out
+}
+
+func workbenchGetParamsToWirePB(params WorkbenchGetParams) *wirepb.WorkbenchGetParams {
+	return &wirepb.WorkbenchGetParams{WorkspaceId: params.WorkspaceID}
+}
+
+func workbenchGetParamsFromWirePB(msg *wirepb.WorkbenchGetParams) WorkbenchGetParams {
+	if msg == nil {
+		return WorkbenchGetParams{}
+	}
+	return WorkbenchGetParams{WorkspaceID: msg.GetWorkspaceId()}
+}
+
+func workbenchMutateParamsToWirePB(params WorkbenchMutateParams) *wirepb.WorkbenchMutateParams {
+	return &wirepb.WorkbenchMutateParams{
+		Action:          string(params.Action),
+		WorkspaceId:     params.WorkspaceID,
+		TabId:           params.TabID,
+		PaneId:          params.PaneID,
+		TargetId:        params.TargetID,
+		Name:            params.Name,
+		Kind:            string(params.Kind),
+		TerminalId:      params.TerminalID,
+		SplitDirection:  string(params.SplitDirection),
+		CheckVersion:    params.CheckVersion,
+		ExpectedVersion: params.ExpectedVersion,
+	}
+}
+
+func workbenchMutateParamsFromWirePB(msg *wirepb.WorkbenchMutateParams) WorkbenchMutateParams {
+	if msg == nil {
+		return WorkbenchMutateParams{}
+	}
+	return WorkbenchMutateParams{
+		Action:          WorkbenchMutationAction(msg.GetAction()),
+		WorkspaceID:     msg.GetWorkspaceId(),
+		TabID:           msg.GetTabId(),
+		PaneID:          msg.GetPaneId(),
+		TargetID:        msg.GetTargetId(),
+		Name:            msg.GetName(),
+		Kind:            WorkbenchPaneKind(msg.GetKind()),
+		TerminalID:      msg.GetTerminalId(),
+		SplitDirection:  WorkbenchSplitDirection(msg.GetSplitDirection()),
+		CheckVersion:    msg.GetCheckVersion(),
+		ExpectedVersion: msg.GetExpectedVersion(),
+	}
+}
+
+func workbenchMutateResultToWirePB(result WorkbenchMutateResult) *wirepb.WorkbenchMutateResult {
+	return &wirepb.WorkbenchMutateResult{
+		Snapshot:   workbenchSnapshotToWirePB(result.Snapshot),
+		Action:     string(result.Action),
+		ResourceId: result.ResourceID,
+	}
+}
+
+func workbenchMutateResultFromWirePB(msg *wirepb.WorkbenchMutateResult) WorkbenchMutateResult {
+	if msg == nil {
+		return WorkbenchMutateResult{}
+	}
+	return WorkbenchMutateResult{
+		Snapshot:   workbenchSnapshotFromWirePB(msg.GetSnapshot()),
+		Action:     WorkbenchMutationAction(msg.GetAction()),
+		ResourceID: msg.GetResourceId(),
+	}
+}
+
 func eventToWirePB(event Event) *wirepb.Event {
 	out := &wirepb.Event{
 		Type:              uint32(event.Type),
@@ -1341,6 +1635,14 @@ func eventToWirePB(event Event) *wirepb.Event {
 			Key:     event.Storage.Key,
 			Version: event.Storage.Version,
 			Op:      event.Storage.Op,
+		}
+	}
+	if event.Workbench != nil {
+		out.Workbench = &wirepb.WorkbenchChangedData{
+			WorkspaceId: event.Workbench.WorkspaceID,
+			Version:     event.Workbench.Version,
+			Action:      event.Workbench.Action,
+			ResourceId:  event.Workbench.ResourceID,
 		}
 	}
 	return out
@@ -1385,6 +1687,14 @@ func eventFromWirePB(msg *wirepb.Event) Event {
 			Key:     msg.Storage.GetKey(),
 			Version: msg.Storage.GetVersion(),
 			Op:      msg.Storage.GetOp(),
+		}
+	}
+	if msg.Workbench != nil {
+		out.Workbench = &WorkbenchChangedData{
+			WorkspaceID: msg.Workbench.GetWorkspaceId(),
+			Version:     msg.Workbench.GetVersion(),
+			Action:      msg.Workbench.GetAction(),
+			ResourceID:  msg.Workbench.GetResourceId(),
 		}
 	}
 	return out

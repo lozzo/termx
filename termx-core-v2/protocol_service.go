@@ -313,6 +313,20 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			out.Entries = append(out.Entries, protocolStorageEntryFromCore(entry))
 		}
 		return encodeMethodResult(req.Method, out)
+	case "workbench.get":
+		in := params.(protocol.WorkbenchGetParams)
+		snapshot, err := session.server.WorkbenchSnapshot(ctx, in.WorkspaceID)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, snapshot)
+	case "workbench.apply":
+		in := params.(protocol.WorkbenchMutateParams)
+		result, err := session.server.ApplyWorkbenchMutation(ctx, in)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, result)
 	case "history.window":
 		in := params.(protocol.HistoryWindowParams)
 		window, err := session.historyWindow(in)
@@ -728,6 +742,16 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 				Op:      event.Storage.Op,
 			}
 		}
+	case EventWorkbenchChanged:
+		out.Type = protocol.EventWorkbenchChanged
+		if event.Workbench != nil {
+			out.Workbench = &protocol.WorkbenchChangedData{
+				WorkspaceID: event.Workbench.WorkspaceID,
+				Version:     event.Workbench.Version,
+				Action:      event.Workbench.Action,
+				ResourceID:  event.Workbench.ResourceID,
+			}
+		}
 	default:
 		out.Type = protocol.EventTerminalStateChanged
 	}
@@ -752,12 +776,15 @@ func eventFilterFromProtocol(params protocol.EventsParams) EventFilter {
 			}
 		case protocol.EventStorageChanged:
 			out.Types = append(out.Types, EventStorageChanged)
+		case protocol.EventWorkbenchChanged:
+			out.Types = append(out.Types, EventWorkbenchChanged)
 		}
 	}
 	out.StorageAppID = params.StorageAppID
 	out.StorageScope = storageScopeFromProtocol(params.StorageScope)
 	out.StorageOwnerID = params.StorageOwnerID
 	out.StorageKeyPrefix = params.StorageKeyPrefix
+	out.WorkbenchID = params.WorkbenchID
 	return out
 }
 
@@ -840,9 +867,9 @@ func errorCode(err error) int {
 	switch {
 	case errors.Is(err, ErrTerminalNotFound):
 		return protocolErrorNotFound
-	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrStaleHistoryWindow), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict):
+	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrStaleHistoryWindow), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict), errors.Is(err, ErrInvalidWorkbenchMutation), errors.Is(err, ErrDuplicateWorkbenchResource), errors.Is(err, ErrWorkbenchVersionConflict):
 		return protocolErrorBadRequest
-	case errors.Is(err, ErrStorageEntryNotFound):
+	case errors.Is(err, ErrStorageEntryNotFound), errors.Is(err, ErrWorkbenchNotFound):
 		return protocolErrorNotFound
 	default:
 		return protocolErrorInternal

@@ -57,6 +57,17 @@ core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨架构。双轨只区分�
 - storage mutation 必须通过 daemon 事件流广播 `storage.changed`，客户端以事件再拉取或重建本地投影。
 - workspace/tab/pane 后续必须在该 daemon-owned storage/domain store 上建模，TUI 本地 reducer 只保留当前交互投影，不再作为多客户端 truth。
 
+### 4.0.1 Daemon Workbench Store
+
+`Daemon Workbench Store` 是 core-v2 daemon 内部的 workspace/tab/pane 协作结构 truth，承载多客户端共享的 workbench snapshot。它和 terminal history truth 分离，也不能反推出 committed history。
+
+- workbench snapshot 至少包含 version、active workspace、workspace、tab、pane、split tree 和 pane 与 terminal 的绑定关系。
+- workbench mutation 只能通过 daemon-owned store 应用，TUI reducer 只能保存本地交互投影和当前焦点，不再作为多客户端 truth。
+- mutation 必须支持 check-version CAS；版本不匹配时返回冲突，避免第三方客户端覆盖较新的布局状态。
+- 协议层正式暴露 `workbench.get` 和 `workbench.apply`，返回 authoritative snapshot 或 mutation result。
+- mutation 成功后必须通过既有 socket event stream 广播 `workbench.changed`，事件携带 workspace id、version、action 和 resource id，客户端收到事件后按需重新拉取 snapshot。
+- 本阶段 workbench store 只覆盖 workspace/tab/pane 与 split tree；floating/overlay 的 daemon 化必须单独设计，不得半接入 UI 状态。
+
 ### 4.1 HistoryTrack
 
 `HistoryTrack` 是 authoritative history truth，内部由四类对象组成：

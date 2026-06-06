@@ -179,6 +179,7 @@ const (
 	EventTerminalReadError       EventType = 6
 	EventTerminalMetadataChanged EventType = 10
 	EventStorageChanged          EventType = 11
+	EventWorkbenchChanged        EventType = 12
 )
 
 type TerminalCreatedData struct {
@@ -280,6 +281,13 @@ type StorageChangedData struct {
 	Op      string
 }
 
+type WorkbenchChangedData struct {
+	WorkspaceID string
+	Version     uint64
+	Action      string
+	ResourceID  string
+}
+
 type Event struct {
 	Type                 EventType
 	TerminalID           string
@@ -291,6 +299,7 @@ type Event struct {
 	CollaboratorsRevoked *CollaboratorsRevokedData
 	ReadError            *TerminalReadErrorData
 	Storage              *StorageChangedData
+	Workbench            *WorkbenchChangedData
 }
 
 type DetachParams struct {
@@ -304,6 +313,105 @@ type EventsParams struct {
 	StorageScope     StorageScope
 	StorageOwnerID   string
 	StorageKeyPrefix string
+	WorkbenchID      string
+}
+
+type WorkbenchPaneKind string
+
+const (
+	WorkbenchPaneEmpty        WorkbenchPaneKind = "empty"
+	WorkbenchPaneTerminalLive WorkbenchPaneKind = "terminal-live"
+	WorkbenchPaneCopyHistory  WorkbenchPaneKind = "copy-history"
+	WorkbenchPaneExited       WorkbenchPaneKind = "exited"
+)
+
+type WorkbenchSplitDirection string
+
+const (
+	WorkbenchSplitHorizontal WorkbenchSplitDirection = "horizontal"
+	WorkbenchSplitVertical   WorkbenchSplitDirection = "vertical"
+)
+
+type WorkbenchSnapshot struct {
+	Version           uint64
+	ActiveWorkspaceID string
+	Workspaces        []WorkbenchWorkspace
+}
+
+type WorkbenchWorkspace struct {
+	ID          string
+	Name        string
+	ActiveTabID string
+	Tabs        []WorkbenchTab
+}
+
+type WorkbenchTab struct {
+	ID           string
+	Title        string
+	ActivePaneID string
+	Panes        []WorkbenchPane
+	RootSplit    WorkbenchSplitNode
+}
+
+type WorkbenchPane struct {
+	ID         string
+	Title      string
+	Kind       WorkbenchPaneKind
+	TerminalID string
+}
+
+type WorkbenchSplitNode struct {
+	PaneID      string
+	Direction   WorkbenchSplitDirection
+	Children    []WorkbenchSplitNode
+	Ratio       float64
+	BiasCells   int
+	FixedPaneID string
+	FixedCols   int
+	FixedRows   int
+}
+
+type WorkbenchMutationAction string
+
+const (
+	WorkbenchMutationWorkspaceCreate  WorkbenchMutationAction = "workspace.create"
+	WorkbenchMutationWorkspaceRename  WorkbenchMutationAction = "workspace.rename"
+	WorkbenchMutationWorkspaceDelete  WorkbenchMutationAction = "workspace.delete"
+	WorkbenchMutationWorkspaceFocus   WorkbenchMutationAction = "workspace.focus"
+	WorkbenchMutationTabCreate        WorkbenchMutationAction = "tab.create"
+	WorkbenchMutationTabRename        WorkbenchMutationAction = "tab.rename"
+	WorkbenchMutationTabDelete        WorkbenchMutationAction = "tab.delete"
+	WorkbenchMutationTabFocus         WorkbenchMutationAction = "tab.focus"
+	WorkbenchMutationPaneCreate       WorkbenchMutationAction = "pane.create"
+	WorkbenchMutationPaneRename       WorkbenchMutationAction = "pane.rename"
+	WorkbenchMutationPaneDelete       WorkbenchMutationAction = "pane.delete"
+	WorkbenchMutationPaneFocus        WorkbenchMutationAction = "pane.focus"
+	WorkbenchMutationPaneSplit        WorkbenchMutationAction = "pane.split"
+	WorkbenchMutationPaneBindTerminal WorkbenchMutationAction = "pane.bind-terminal"
+)
+
+type WorkbenchGetParams struct {
+	WorkspaceID string
+}
+
+type WorkbenchMutateParams struct {
+	Action          WorkbenchMutationAction
+	WorkspaceID     string
+	TabID           string
+	PaneID          string
+	TargetID        string
+	Name            string
+	Kind            WorkbenchPaneKind
+	TerminalID      string
+	SplitDirection  WorkbenchSplitDirection
+	CheckVersion    bool
+	ExpectedVersion uint64
+}
+
+type WorkbenchMutateResult struct {
+	Snapshot   WorkbenchSnapshot
+	Action     WorkbenchMutationAction
+	ResourceID string
 }
 
 type SnapshotParams struct {

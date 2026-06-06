@@ -284,6 +284,58 @@ func TestProtocolServiceStorageMethodsAndEvents(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceWorkbenchMethodsAndEvents(t *testing.T) {
+	_, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	events, err := client.Events(context.Background(), protocol.EventsParams{
+		Types:       []protocol.EventType{protocol.EventWorkbenchChanged},
+		WorkbenchID: "workspace-main",
+	})
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	snapshot, err := client.WorkbenchGet(context.Background(), protocol.WorkbenchGetParams{})
+	if err != nil {
+		t.Fatalf("workbench get: %v", err)
+	}
+	if snapshot.Version != 1 || snapshot.ActiveWorkspaceID != "workspace-main" {
+		t.Fatalf("unexpected initial snapshot %#v", snapshot)
+	}
+	result, err := client.WorkbenchApply(context.Background(), protocol.WorkbenchMutateParams{
+		Action:          protocol.WorkbenchMutationPaneSplit,
+		WorkspaceID:     "workspace-main",
+		TabID:           "tab-main",
+		PaneID:          "pane-main",
+		TargetID:        "pane-two",
+		Name:            "logs",
+		SplitDirection:  protocol.WorkbenchSplitHorizontal,
+		CheckVersion:    true,
+		ExpectedVersion: snapshot.Version,
+	})
+	if err != nil {
+		t.Fatalf("workbench apply: %v", err)
+	}
+	if result.Snapshot.Version != 2 || result.ResourceID != "pane-two" {
+		t.Fatalf("unexpected apply result %#v", result)
+	}
+	event := requireProtocolEvent(t, events)
+	if event.Type != protocol.EventWorkbenchChanged || event.Workbench == nil || event.Workbench.ResourceID != "pane-two" || event.Workbench.Version != 2 {
+		t.Fatalf("unexpected workbench event %#v", event)
+	}
+	if _, err := client.WorkbenchApply(context.Background(), protocol.WorkbenchMutateParams{
+		Action:          protocol.WorkbenchMutationPaneRename,
+		WorkspaceID:     "workspace-main",
+		TabID:           "tab-main",
+		PaneID:          "pane-two",
+		Name:            "stale",
+		CheckVersion:    true,
+		ExpectedVersion: 1,
+	}); err == nil || !strings.Contains(err.Error(), ErrWorkbenchVersionConflict.Error()) {
+		t.Fatalf("expected workbench conflict, got %v", err)
+	}
+}
+
 func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

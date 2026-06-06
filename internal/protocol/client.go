@@ -414,6 +414,22 @@ func (c *Client) StorageList(ctx context.Context, params StorageListParams) (*St
 	return &out, nil
 }
 
+func (c *Client) WorkbenchGet(ctx context.Context, params WorkbenchGetParams) (*WorkbenchSnapshot, error) {
+	var out WorkbenchSnapshot
+	if err := c.doRequest(ctx, "workbench.get", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) WorkbenchApply(ctx context.Context, params WorkbenchMutateParams) (*WorkbenchMutateResult, error) {
+	var out WorkbenchMutateResult
+	if err := c.doRequest(ctx, "workbench.apply", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
 	c.mu.Lock()
 	if c.events == nil {

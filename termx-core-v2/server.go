@@ -32,6 +32,7 @@ type Server struct {
 	cfg         serverConfig
 	registry    *terminalRegistry
 	storage     *storageStore
+	workbench   *workbenchStore
 	terminals   map[string]*Terminal
 	events      *eventBroker
 	closed      atomic.Bool
@@ -70,6 +71,7 @@ func NewServer(opts ...ServerOption) *Server {
 		cfg:        cfg,
 		registry:   newTerminalRegistry(),
 		storage:    newStorageStore(),
+		workbench:  newWorkbenchStore(),
 		terminals:  make(map[string]*Terminal),
 		events:     newEventBroker(cfg.eventBuffer),
 		transports: make(map[transport.Transport]struct{}),
@@ -199,6 +201,21 @@ func (server *Server) StorageDelete(ctx context.Context, request StorageDeleteRe
 func (server *Server) StorageList(ctx context.Context, appID string, scope StorageScope, ownerID string, prefix string) []StorageEntry {
 	_ = ctx
 	return server.storage.list(appID, scope, ownerID, prefix)
+}
+
+func (server *Server) WorkbenchSnapshot(ctx context.Context, workspaceID string) (WorkbenchSnapshot, error) {
+	_ = ctx
+	return server.workbench.get(workspaceID)
+}
+
+func (server *Server) ApplyWorkbenchMutation(ctx context.Context, params WorkbenchMutateParams) (WorkbenchMutateResult, error) {
+	_ = ctx
+	result, change, err := server.workbench.apply(params)
+	if err != nil {
+		return WorkbenchMutateResult{}, err
+	}
+	server.publishWorkbenchEvent(change)
+	return result, nil
 }
 
 func (server *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) (TerminalInfo, error) {
@@ -469,6 +486,10 @@ func (server *Server) publishTerminalEvent(typ EventType, info TerminalInfo) {
 
 func (server *Server) publishStorageEvent(change StorageChanged) {
 	server.events.publish(Event{Type: EventStorageChanged, Storage: &change})
+}
+
+func (server *Server) publishWorkbenchEvent(change WorkbenchChanged) {
+	server.events.publish(Event{Type: EventWorkbenchChanged, Workbench: &change})
 }
 
 func unixListenerFactory(socketPath string) (transport.Listener, error) {

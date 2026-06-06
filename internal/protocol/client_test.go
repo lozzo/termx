@@ -58,6 +58,8 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"StoragePut",
 		"Stream",
 		"StreamReady",
+		"WorkbenchApply",
+		"WorkbenchGet",
 	}
 	clientType := reflect.TypeOf((*Client)(nil))
 	got := make([]string, 0, clientType.NumMethod())
@@ -544,22 +546,23 @@ func TestClientStreamKeepsControlFrameBetweenScreenUpdates(t *testing.T) {
 	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "b")})
 	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "c")})
 
-	stream.mu.Lock()
-	defer stream.mu.Unlock()
-	if len(stream.queue) != 4 {
-		t.Fatalf("expected control frame and screen updates to be preserved, got %d queued frames", len(stream.queue))
+	frames := []StreamFrame{
+		waitClientStreamFrame(t, stream),
+		waitClientStreamFrame(t, stream),
+		waitClientStreamFrame(t, stream),
+		waitClientStreamFrame(t, stream),
 	}
-	if stream.queue[0].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "a") {
-		t.Fatalf("unexpected first queued frame: %#v", stream.queue[0])
+	if frames[0].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, frames[0].Payload, "a") {
+		t.Fatalf("unexpected first queued frame: %#v", frames[0])
 	}
-	if stream.queue[1].Type != wire.TypeResize {
-		t.Fatalf("unexpected control frame: %#v", stream.queue[1])
+	if frames[1].Type != wire.TypeResize {
+		t.Fatalf("unexpected control frame: %#v", frames[1])
 	}
-	if stream.queue[2].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[2].Payload, "b") {
-		t.Fatalf("unexpected second screen frame: %#v", stream.queue[2])
+	if frames[2].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, frames[2].Payload, "b") {
+		t.Fatalf("unexpected second screen frame: %#v", frames[2])
 	}
-	if stream.queue[3].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[3].Payload, "c") {
-		t.Fatalf("unexpected final screen frame: %#v", stream.queue[3])
+	if frames[3].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, frames[3].Payload, "c") {
+		t.Fatalf("unexpected final screen frame: %#v", frames[3])
 	}
 }
 
