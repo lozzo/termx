@@ -448,13 +448,15 @@ type PanelVM struct {
 }
 
 type LayoutVM struct {
-	Viewport   Rect
-	Body       Rect
-	ShellFrame Rect
-	FooterFrame Rect
-	Panels     []PanelVM
-	Floating   []FloatingVM
-	Split      SplitVM
+	Viewport           Rect
+	Body               Rect
+	ShellFrame         Rect
+	HeaderTopFrame     Rect
+	HeaderDividerFrame Rect
+	FooterFrame        Rect
+	Panels             []PanelVM
+	Floating           []FloatingVM
+	Split              SplitVM
 }
 
 type SplitDirection string

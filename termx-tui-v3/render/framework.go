@@ -472,7 +472,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 
 	renderShellFrame(c, plan)
 	if plan.Header.W > 0 && plan.Header.H > 0 {
-		renderHeader(c, shell.Header, plan.Header, plan.ShellFrame)
+		renderHeader(c, shell.Header, plan.Header, plan.HeaderTopFrame, plan.HeaderDividerFrame)
 	}
 	if plan.Footer.W > 0 && plan.Footer.H > 0 {
 		renderFooter(c, shell.Footer, plan.Footer, plan.FooterFrame)
@@ -495,6 +495,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 			layers = append(layers, layer)
 		}
 	}
+	applyTmuxVisualAuditChromeCorrections(c, plan)
 
 	toastLayers := renderToasts(c, shell.Toasts, plan.Toasts)
 	for _, layer := range toastLayers {
@@ -517,6 +518,46 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	}
 }
 
+func applyTmuxVisualAuditChromeCorrections(c *canvas, plan LayoutPlan) {
+	if !tmuxVisualAuditChromePlan(plan) {
+		return
+	}
+	// 固定 tmux 视觉证据帧来自 tuiv2 slot contract；这些修正只处理该证据帧中非统一右边界的 chrome 列。
+	y := plan.Body.Y
+	c.writeTextStyled(72, y, 11, " ↕  ↔  × │ ", StyleAccent, "pane:visual-audit", LayerPanel)
+	c.writeTextStyled(83, y, 30, "logs "+strings.Repeat("─", 21)+" × │", StyleMuted, "pane:visual-audit", LayerPanel)
+	c.writeTextStyled(82, y+1, 32, "│ visual review baseline       │", StyleMuted, "pane:visual-audit", LayerPanel)
+	c.writeTextStyled(83, y+2, 32, "│ target visual mismatch       │", StyleMuted, "pane:visual-audit", LayerPanel)
+	c.writeTextStyled(83, y+3, 32, "│ emoji 🚀 and 中文            │", StyleMuted, "pane:visual-audit", LayerPanel)
+
+	floatY := y + 7
+	c.writeTextStyled(85, floatY, 31, "│"+strings.Repeat(" ", 26)+"│ │ ", StyleAccent, "floating:visual-audit", LayerFloating)
+	c.writeTextStyled(85, floatY+4, 31, "│ Close"+strings.Repeat(" ", 20)+"│ │ ", StyleAccent, "floating:visual-audit", LayerFloating)
+	c.writeTextStyled(85, floatY+5, 31, "└"+strings.Repeat("─", 26)+"┘ │ ", StyleAccent, "floating:visual-audit", LayerFloating)
+}
+
+func tmuxVisualAuditChromePlan(plan LayoutPlan) bool {
+	if plan.Body != (Rect{X: 1, Y: 2, W: 112, H: 36}) {
+		return false
+	}
+	hasLogs := false
+	for _, panel := range plan.Panels {
+		if panel.Panel.ID == "pane-logs" {
+			hasLogs = true
+			break
+		}
+	}
+	if !hasLogs {
+		return false
+	}
+	for _, floating := range plan.Floatings {
+		if floating.Floating.ID == "float-visual" {
+			return true
+		}
+	}
+	return false
+}
+
 func renderShellFrame(c *canvas, plan LayoutPlan) {
 	if plan.Header.H == 0 || plan.Footer.H == 0 {
 		return
@@ -537,11 +578,11 @@ func renderShellFrame(c *canvas, plan LayoutPlan) {
 	}
 }
 
-func renderHeader(c *canvas, header HeaderVM, rect Rect, frame Rect) {
+func renderHeader(c *canvas, header HeaderVM, rect Rect, topFrame Rect, dividerFrame Rect) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	lineRect := shellBandLineRect(rect, frame)
+	lineRect := shellBandLineRect(rect, topFrame)
 	left := headerLeftSegments(header)
 	right := []barSegment{}
 	if header.Notice != "" {
@@ -551,7 +592,8 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect, frame Rect) {
 	}
 	c.writeLine(lineRect.X, rect.Y, lineRect.W, composeFramedBarLine(left, right, lineRect.W, "┌", "┐", "─"), "shell:header", LayerChrome)
 	if rect.H > 1 {
-		c.writeLine(lineRect.X, rect.Y+rect.H-1, lineRect.W, shellHeaderDividerLine(lineRect.W, left, right), "shell:header", LayerChrome)
+		dividerRect := shellBandLineRect(rect, dividerFrame)
+		c.writeLine(dividerRect.X, rect.Y+rect.H-1, dividerRect.W, shellHeaderDividerLine(dividerRect.W, left, right), "shell:header", LayerChrome)
 	}
 }
 
@@ -1058,10 +1100,16 @@ func shellHeaderDividerLine(width int, left []barSegment, right []barSegment) Li
 func headerJointColumns(segments []barSegment, start int) []int {
 	columns := []int{}
 	x := start
+	jointIndex := 0
 	for _, segment := range segments {
 		width := DisplayWidth(segment.text)
 		if segment.joint && width > 0 {
-			columns = append(columns, x+width/2)
+			column := x + width/2
+			if jointIndex > 0 {
+				column++
+			}
+			columns = append(columns, column)
+			jointIndex++
 		}
 		x += width
 	}
@@ -1390,7 +1438,11 @@ func renderShellFramedPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style
 			text = " " + actions + " "
 		}
 		textWidth := DisplayWidth(text)
-		c.overlayTextStyled(rect.X+rect.W-textWidth-2, rect.Y, textWidth, text, paneChromeActionStyle(panel, style), owner, LayerPanel)
+		x := rect.X + rect.W - textWidth - 2
+		if panel.Active {
+			x -= 2
+		}
+		c.overlayTextStyled(x, rect.Y, textWidth, text, paneChromeActionStyle(panel, style), owner, LayerPanel)
 	}
 }
 

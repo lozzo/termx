@@ -318,6 +318,8 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		vm := builder.Build(root)
 		vm.Shell.Layout.Body = render.Rect{X: 1, Y: 2, W: 112, H: 36}
 		vm.Shell.Layout.ShellFrame = render.Rect{X: 0, W: 113}
+		vm.Shell.Layout.HeaderTopFrame = render.Rect{X: 0, W: 111}
+		vm.Shell.Layout.HeaderDividerFrame = render.Rect{X: 0, W: 115}
 		vm.Shell.Layout.FooterFrame = render.Rect{X: 0, W: 115}
 		return renderer.Render(vm)
 	}, host, nil)

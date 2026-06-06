@@ -4,8 +4,10 @@ type LayoutPlan struct {
 	Viewport           Rect
 	Header             Rect
 	Footer             Rect
-	ShellFrame          Rect
-	FooterFrame         Rect
+	ShellFrame         Rect
+	HeaderTopFrame     Rect
+	HeaderDividerFrame Rect
+	FooterFrame        Rect
 	Body               Rect
 	Panels             []PanelLayoutPlan
 	Floatings          []FloatingLayoutPlan
@@ -59,6 +61,8 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	body = layoutBodyOverride(body, shell.Layout.Body, viewport)
 	plan.Body = body
 	plan.ShellFrame = shellFrameRect(body, shell.Layout.ShellFrame, viewport)
+	plan.HeaderTopFrame = footerFrameRect(plan.ShellFrame, shell.Layout.HeaderTopFrame, viewport)
+	plan.HeaderDividerFrame = footerFrameRect(plan.ShellFrame, shell.Layout.HeaderDividerFrame, viewport)
 	plan.FooterFrame = footerFrameRect(plan.ShellFrame, shell.Layout.FooterFrame, viewport)
 	plan.Panels = measurePanels(shell.Layout, body, plan.ShellFrame)
 	plan.Floatings = measureFloatings(shell.Layout.Floating, viewport)

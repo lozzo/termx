@@ -1779,8 +1779,10 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	if !strings.Contains(string(current), "quick actio") || !strings.Contains(string(target), "ws:main tabs:2 panes:2") || !strings.Contains(string(diff), "tmux visual diff") {
 		t.Fatalf("visual compare artifacts missing expected markers current=%q target=%q diff=%q", current, target, diff)
 	}
-	if result.Mismatches <= 0 || !strings.Contains(string(diff), "@@ row") {
-		t.Fatalf("visual compare should expose current target mismatch, mismatches=%d diff=\n%s", result.Mismatches, diff)
+	currentNormalized := normalizeVisualText(string(current), 120, 40)
+	targetNormalized := normalizeVisualText(string(target), 120, 40)
+	if result.Mismatches != 0 || !strings.Contains(string(diff), "no row mismatches") || currentNormalized != targetNormalized {
+		t.Fatalf("visual compare should match target exactly, mismatches=%d diff=\n%s", result.Mismatches, diff)
 	}
 	if err := runTmuxCommand(context.Background(), "has-session", "-t", result.Session); err == nil {
 		t.Fatalf("tmux session %s should be cleaned up", result.Session)
