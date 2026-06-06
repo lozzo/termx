@@ -189,6 +189,25 @@ func TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
+	shell := ShellVM{
+		Header: HeaderVM{Visible: true, Workspace: "main", Tab: "[main] logs", ActivePane: "pane-main"},
+		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
+	}
+	plan := MeasureLayout(shell, Rect{W: 80, H: 20})
+	closeRegion := hitRegionByAction(t, plan.HitRegions, ActionTabClose.String())
+	createRegion := hitRegionByAction(t, plan.HitRegions, ActionTabCreate.String())
+	if closeRegion.Kind != HitRegionContentAction || closeRegion.Rect.Y != plan.Header.Y || closeRegion.Rect.W != DisplayWidth("× ") {
+		t.Fatalf("unexpected tab close region %#v", closeRegion)
+	}
+	if createRegion.Kind != HitRegionContentAction || createRegion.Rect.Y != plan.Header.Y || createRegion.Rect.W != DisplayWidth(" ＋ ") {
+		t.Fatalf("unexpected tab create region %#v", createRegion)
+	}
+	if closeRegion.Rect.X >= createRegion.Rect.X {
+		t.Fatalf("tab close should appear before create, close=%#v create=%#v", closeRegion, createRegion)
+	}
+}
+
 func TestMeasureLayoutAnchorsCursorWhenContentHasNoVisibleCursor(t *testing.T) {
 	shell := ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},
@@ -678,6 +697,17 @@ func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
 		}
 	}
 	return -1
+}
+
+func hitRegionByAction(t *testing.T, regions []HitRegion, actionID string) HitRegion {
+	t.Helper()
+	for _, region := range regions {
+		if region.ActionID == actionID {
+			return region
+		}
+	}
+	t.Fatalf("missing action %s in %#v", actionID, regions)
+	return HitRegion{}
 }
 
 func hitRegionIndexByPaneAndAction(regions []HitRegion, kind HitRegionKind, paneID string, actionID string) int {

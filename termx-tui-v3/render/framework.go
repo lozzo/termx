@@ -520,6 +520,15 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
 	}
+	left := headerLeftSegments(header)
+	right := []barSegment{}
+	if header.Notice != "" {
+		right = append(right, barText(" ! "+header.Notice+" ", StyleStatusWarning, 0))
+	}
+	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:header", LayerChrome)
+}
+
+func headerLeftSegments(header HeaderVM) []barSegment {
 	workspace := header.Workspace
 	if workspace == "" {
 		workspace = header.Title
@@ -535,15 +544,11 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 		barText(" "+workspace+" ", StyleStatusAccent, 1),
 	}
 	left = append(left, headerTabSegments(tab)...)
-	left = append(left, barSep(), barText(" ＋ ", StyleSuccess, 3))
+	left = append(left, barSep(), barText(" ＋ ", StyleSuccess, 3).withAction(ActionTabCreate.String()))
 	if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
 		left = append(left, barSep(), barText(" "+active+" ", StyleStatusMuted, 4))
 	}
-	right := []barSegment{}
-	if header.Notice != "" {
-		right = append(right, barText(" ! "+header.Notice+" ", StyleStatusWarning, 0))
-	}
-	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:header", LayerChrome)
+	return left
 }
 
 func renderFooter(c *canvas, footer FooterVM, rect Rect) {
@@ -610,7 +615,7 @@ func headerTabSegments(tab string) []barSegment {
 			segments = append(segments,
 				barSep(),
 				barText(" "+intLabel(index+1)+":"+label+" ", StyleStatus, 1),
-				barText("× ", StyleStatusWarning, 2),
+				barText("× ", StyleStatusWarning, 2).withAction(ActionTabClose.String()),
 			)
 			continue
 		}
@@ -869,10 +874,16 @@ type barSegment struct {
 	text     string
 	style    StyleToken
 	priority int
+	actionID string
 }
 
 func barText(text string, style StyleToken, priority int) barSegment {
 	return barSegment{text: text, style: style, priority: priority}
+}
+
+func (segment barSegment) withAction(actionID string) barSegment {
+	segment.actionID = actionID
+	return segment
 }
 
 func barSep() barSegment {

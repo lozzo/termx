@@ -15,6 +15,9 @@ const (
 	ActionPaneSplitRight ActionID = "pane.split-right"
 	ActionPaneClose      ActionID = "pane.close"
 
+	ActionTabCreate ActionID = "tab.create"
+	ActionTabClose  ActionID = "tab.close"
+
 	ActionFloatingRaise      ActionID = "floating.raise"
 	ActionFloatingClose      ActionID = "floating.close"
 	ActionFloatingResize     ActionID = "floating.resize"
@@ -64,6 +67,8 @@ func ActionIDCatalog() []ActionID {
 		ActionPaneSplitDown,
 		ActionPaneSplitRight,
 		ActionPaneClose,
+		ActionTabCreate,
+		ActionTabClose,
 		ActionFloatingRaise,
 		ActionFloatingClose,
 		ActionFloatingResize,

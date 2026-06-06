@@ -403,6 +403,50 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
+	closeHost := NewFakeTerminalHost(8)
+	closeShell, _ := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	closeRoot := state.Root{
+		Shell: closeShell,
+	}
+	closeRuntime := newShellHitRuntime(closeRoot, closeHost)
+	if err := closeRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post close initial render: %v", err)
+	}
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("close initial drain: %v", err)
+	}
+	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, closeHost), render.ActionTabClose.String(), "")
+	if err := closeHost.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
+		t.Fatalf("send tab close click: %v", err)
+	}
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("close drain: %v", err)
+	}
+	if tabs := closeRuntime.State().Shell.EnsureDefaults().Workspace.Tabs; len(tabs) != 1 || tabs[0].Title != "main" {
+		t.Fatalf("tab close click should remove active tab and keep main, got %#v", tabs)
+	}
+
+	createHost := NewFakeTerminalHost(8)
+	createRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, createHost)
+	if err := createRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post create initial render: %v", err)
+	}
+	if err := createRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("create initial drain: %v", err)
+	}
+	createAction := frameActionHitRegion(t, lastRuntimeFrame(t, createHost), render.ActionTabCreate.String(), "")
+	if err := createHost.SendInput(mouseEventAt(createAction.Rect)); err != nil {
+		t.Fatalf("send tab create click: %v", err)
+	}
+	if err := createRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("create drain: %v", err)
+	}
+	if tabs := createRuntime.State().Shell.EnsureDefaults().Workspace.Tabs; len(tabs) != 2 || createRuntime.State().Shell.EnsureDefaults().Workspace.ActiveTabID == state.DefaultTabID {
+		t.Fatalf("tab create click should add and activate a tab, got %#v", createRuntime.State().Shell)
+	}
+}
+
 func TestAppRuntimeTiledPaneClickDeactivatesFloatingFocus(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{

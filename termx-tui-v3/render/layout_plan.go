@@ -213,6 +213,7 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	if shell.Overlay.Opaque {
 		return regions
 	}
+	regions = appendHeaderHitRegions(regions, shell.Header, plan.Header, plan.Viewport)
 	for i := len(plan.Floatings) - 1; i >= 0; i-- {
 		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
 	}
@@ -226,6 +227,27 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 		regions = appendPanelContentHitRegion(regions, panel, plan.Viewport)
 	}
 	return regions
+}
+
+func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewport Rect) []HitRegion {
+	if rect.W <= 0 || rect.H <= 0 || !header.Visible {
+		return out
+	}
+	x := rect.X
+	for _, segment := range headerLeftSegments(header) {
+		width := DisplayWidth(segment.text)
+		if width <= 0 {
+			continue
+		}
+		if segment.actionID != "" {
+			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: Rect{X: x, Y: rect.Y, W: width, H: rect.H}, ActionID: segment.actionID}, viewport)
+		}
+		x += width
+		if x >= rect.X+rect.W {
+			break
+		}
+	}
+	return out
 }
 
 func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, viewport Rect) []HitRegion {
