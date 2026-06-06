@@ -295,14 +295,15 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabPrevious})
 	shell = shell.
 		SetPanelPresentation(state.PanelPresentationSplitLine).
-		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
-		AddToast(state.ToastSpec{ID: "visual-review", Severity: state.ToastWarning, Title: "visual review", Body: "needs screenshot polish"})
+		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical)
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-shell"
+	shell.Workspace.Tabs[0].RootSplit.Ratio = 0.70
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
 		TargetID: "float-visual",
 		Title:    "quick actions",
 		Pane:     state.PaneState{ID: "float-visual-pane", Title: "actions", Kind: state.PaneEmpty},
-		Rect:     state.FloatingRect{X: 62, Y: 7, W: 46, H: 13},
+		Rect:     state.FloatingRect{X: 84, Y: 7, W: 29, H: 8},
 		BoundsW:  120,
 		BoundsH:  40,
 		Source:   state.PaneCommandSourceTest,
@@ -310,16 +311,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	root := state.Root{
 		Shell:    shell,
 		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
-		Surface: state.TerminalSurfaceStore{
-			TerminalID: "term-logs",
-			Cols:       56,
-			Rows:       36,
-			Lines: []string{
-				"visual review baseline",
-				"target visual mismatch still needs polish",
-				"emoji 🚀 and 中文 must not break chrome",
-			},
-		},
+		Surface:  visualAuditSurfaceStore(),
 	}
 	runtime := app.NewAppRuntime(root, nil, func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
@@ -335,4 +327,28 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		return render.Frame{}, fmt.Errorf("visual audit smoke produced no frames")
 	}
 	return frames[len(frames)-1], nil
+}
+
+func visualAuditSurfaceStore() state.TerminalSurfaceStore {
+	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-shell",
+		Cols:       82,
+		Rows:       34,
+		Lines: []string{
+			"termx git:termx-core-v2-tui-v3-migration  go v1.26.0",
+			"> make test",
+			"ok   termx-tui-v3/render",
+			">",
+		},
+	})
+	return surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: "term-logs",
+		Cols:       30,
+		Rows:       34,
+		Lines: []string{
+			" visual review baseline",
+			" target visual mismatch",
+			" emoji 🚀 and 中文",
+		},
+	})
 }

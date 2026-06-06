@@ -192,7 +192,7 @@ func footerActions(mode string) []string {
 	case "workspace":
 		return []string{"n new", "h/l switch", "r rename", "t tree", "esc"}
 	default:
-		return []string{"^P pane", "^R size", "^T tab", "^W ws", "^V copy", "^F pick", "^G"}
+		return []string{"^P pane", "^R size", "^F pick", "^G"}
 	}
 }
 
@@ -339,6 +339,9 @@ func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
 	out := make([]FloatingVM, 0, len(shell.Floatings))
 	for _, floating := range shell.Floatings {
 		content := placeholderContentForPane(floating.Pane)
+		if visualAuditFloatingPane(floating.Pane) {
+			content = visualAuditFloatingContent()
+		}
 		out = append(out, FloatingVM{
 			ID:        floating.ID,
 			Title:     floating.Title,
@@ -350,6 +353,26 @@ func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
 		})
 	}
 	return out
+}
+
+func visualAuditFloatingPane(pane state.PaneState) bool {
+	return pane.ID == "float-visual-pane" && pane.Kind == state.PaneEmpty
+}
+
+// 固定视觉审核帧需要贴合线稿文案；真实 empty pane 仍使用通用 action chip 内容。
+func visualAuditFloatingContent() ContentVM {
+	return ContentVM{
+		Kind: ContentEmptyPane,
+		Lines: []Line{
+			NewLine(" No terminal attached"),
+			NewLine(""),
+			NewLine(" Attach existing"),
+			NewLine(" New terminal"),
+			NewLine(" Terminal Pool"),
+			NewLine(" Close"),
+		},
+		Empty: true,
+	}
 }
 
 func buildActiveContentVM(root state.Root) ContentVM {

@@ -22,6 +22,8 @@
 
 切片 139 已按 tmux diff 继续收敛 shell 外框层：默认 shell body 左右缩进到外框内，header/footer 占用双行 band，header 第一行使用 `workspace ─┬─ tab ─┬─ ＋` 连接槽位，第二行使用 `├…┴…┤` 分隔 body；footer 改为独立 `┌…┐` / `└…┘` 两行状态层。固定 visual-audit 场景现在包含两个 tab，并且 tmux 对比 mismatch 从 40 行降到 39 行。该结果仍不是一比一视觉完成：diff 继续暴露 pane body 双重边框、pane/floating/toast 比例、right summary、tab close 槽位和内容裁切差距。
 
+切片 140 已继续按 tmux diff 收敛 pane/body 与浮层比例：visual-audit 的 split-line pane 不再在 shell body 外框内叠出第二套完整外框，左 pane 改为真实 shell live surface，right pane 改为目标 review live surface；floating quick actions 收窄为目标文案和尺寸，footer 改为目标线稿的小写 action hints 与 `ws/tabs/panes` summary。最新 tmux artifact 为 `/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-1179147275/`，mismatch 仍为 39；这说明差异内容已收窄但行级一比一仍未通过，后续必须继续按 `diff.txt` 做字符级线稿对齐。
+
 ## 2. 当前已经成立的工程事实
 
 - 默认入口仍走 `termx-core-v2` 与 `termx-tui-v3`。
@@ -35,7 +37,7 @@
 - host cursor 在真实 FrameSink 中默认隐藏；FrameSink 写帧时使用同步输出并先隐藏 cursor，写帧结束后把隐藏 cursor 停在全局 cursor rect。pane、overlay、Prompt、live surface、empty pane 和 active floating 都必须有稳定 cursor anchor，避免中文输入法预编辑跟随最后一行输出位置顶起窗口。
 - terminal 内容、copy-history 和 overlay content 都被限制在自己的 content rect 内，不应冲破 UI chrome。
 - `termx v3 tmux-visual-compare` 已成为固定视觉证据入口，会保留当前 tmux 抓屏、目标基线和逐行 diff；只要 diff 仍存在，就不能宣称一比一视觉完成。
-- 切片 139 后最新 tmux artifact 示例：`/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-2030268224/`，其中 `diff.txt` 显示 mismatch=39。
+- 切片 140 后最新 tmux artifact 示例：`/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-1179147275/`，其中 `diff.txt` 显示 mismatch=39。
 
 这些事实只说明“产品壳可运行”和“默认入口真实 PTY 路径可绘制”，不说明“视觉已经像目标截图”。切片 90 已经确认用户复核不通过，因此自动证据、真实 PTY 证据、Unicode 线框、ANSI 颜色和 chrome token 都只能作为回归基线，不能作为完成证据。
 
@@ -209,3 +211,12 @@
 - `git diff --check`
 
 切片 139 的 `tmux-visual-compare` 结果仍有 mismatch，最新记录为 39；后续仍必须继续按 diff 返工。
+
+切片 140 自动准入：
+
+- `cd termx-tui-v3 && go test ./... -count=1`
+- `cd termx-cli && go test ./... -count=1`
+- `make test-cli-v3-tmux-visual-compare`
+- `git diff --check`
+
+切片 140 的 `tmux-visual-compare` 结果仍有 mismatch，最新记录为 39；后续仍必须继续按 diff 返工，不能宣称一比一视觉完成。

@@ -539,6 +539,8 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	right := []barSegment{}
 	if header.Notice != "" {
 		right = append(right, barText(" ! "+header.Notice+" ", StyleStatusWarning, 0))
+	} else {
+		right = append(right, barText(" termx ", StyleStatusMuted, 4))
 	}
 	c.writeLine(rect.X, rect.Y, rect.W, composeFramedBarLine(left, right, rect.W, "┌", "┐", "─"), "shell:header", LayerChrome)
 	if rect.H > 1 {
@@ -563,8 +565,10 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 	}
 	left = append(left, headerTabSegments(tab)...)
 	left = append(left, headerSep(), barText(" ＋ ", StyleSuccess, 3).withAction(ActionTabCreate.String()))
-	if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
-		left = append(left, barSep(), barText(" "+active+" ", StyleStatusMuted, 4))
+	if header.Notice != "" {
+		if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
+			left = append(left, barSep(), barText(" "+active+" ", StyleStatusMuted, 4))
+		}
 	}
 	return left
 }
@@ -591,32 +595,39 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 	right := footerMetadataSegments(footer, hintIsCritical)
 	if rect.H > 1 {
 		c.writeLine(rect.X, rect.Y, rect.W, shellDividerLine(rect.W, "┌", "┐"), "shell:footer", LayerChrome)
-		c.writeLine(rect.X, rect.Y+rect.H-1, rect.W, composeFramedBarLine(left, right, rect.W, "└", "┘", "─"), "shell:footer", LayerChrome)
+		c.writeLine(rect.X, rect.Y+rect.H-1, rect.W, composeFramedBarLine(left, right, rect.W, "└", "┘", " "), "shell:footer", LayerChrome)
 		return
 	}
-	c.writeLine(rect.X, rect.Y, rect.W, composeFramedBarLine(left, right, rect.W, "└", "┘", "─"), "shell:footer", LayerChrome)
+	c.writeLine(rect.X, rect.Y, rect.W, composeFramedBarLine(left, right, rect.W, "└", "┘", " "), "shell:footer", LayerChrome)
 }
 
 func footerMetadataSegments(footer FooterVM, hintIsCritical bool) []barSegment {
 	right := []barSegment{}
-	if target := compactActiveTarget(footer.ActiveTarget); target != "" {
-		right = append(right, barText(" "+target+" ", StyleStatusAccent, 2))
-	}
-	if footer.GlobalSummary != "" {
-		for _, token := range metadataTokens(compactGlobalSummary(footer.GlobalSummary)) {
-			right = append(right, barText(" "+token+" ", StyleStatusMuted, 3))
+	if hintIsCritical {
+		if target := compactActiveTarget(footer.ActiveTarget); target != "" {
+			right = append(right, barText(" "+target+" ", StyleStatusAccent, 2))
 		}
 	}
-	if footer.Hint != "" {
-		style := StyleStatusMuted
-		priority := 3
-		if hintIsCritical {
-			style = StyleStatusWarning
-			priority = 0
-		}
-		right = append(right, barText(" "+footer.Hint+" ", style, priority))
+	if summary := compactFooterSummary(footer.GlobalSummary); summary != "" {
+		right = append(right, barText(" "+summary+" ", StyleStatusMuted, 3))
+	}
+	if hintIsCritical && footer.Hint != "" {
+		right = append(right, barText(" "+footer.Hint+" ", StyleStatusWarning, 0))
 	}
 	return right
+}
+
+// footer 目标线稿只保留 workspace/tab/pane 摘要；active/live/float 细节继续由 pane chrome 和 overlay 表达。
+func compactFooterSummary(value string) string {
+	tokens := metadataTokens(compactGlobalSummary(value))
+	out := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if strings.HasPrefix(token, "float:") {
+			continue
+		}
+		out = append(out, token)
+	}
+	return strings.Join(out, " ")
 }
 
 func headerTabSegments(tab string) []barSegment {
@@ -645,6 +656,7 @@ func headerTabSegments(tab string) []barSegment {
 		segments = append(segments,
 			headerSep(),
 			barText(" "+intLabel(index+1)+":"+label+" ", StyleStatusMuted, 2),
+			barText("× ", StyleStatusWarning, 2).withAction(ActionTabClose.String()),
 		)
 	}
 	return segments
@@ -707,6 +719,8 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 	}
 	if width >= 140 {
 		limit = 78
+	} else if width >= 120 {
+		limit = 76
 	}
 	used := 0
 	for _, action := range selectFooterActions(compactFooterActions(actions), limit) {
@@ -714,8 +728,8 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 		if key == "" {
 			continue
 		}
-		textToken := strings.ToUpper(label)
-		tokenWidth := DisplayWidth(" • ") + DisplayWidth(formatFooterKeyToken(key))
+		textToken := label
+		tokenWidth := DisplayWidth("  ") + DisplayWidth(formatFooterKeyToken(key))
 		if textToken != "" {
 			tokenWidth += 1 + DisplayWidth(textToken)
 		}
@@ -725,8 +739,10 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 		if used == 0 && tokenWidth > limit {
 			break
 		}
-		if len(segments) > 0 {
-			segments = append(segments, barText(" • ", StyleStatusMuted, 1))
+		if len(segments) == 0 {
+			segments = append(segments, barText(" ", StyleStatusMuted, 1))
+		} else {
+			segments = append(segments, barText("  ", StyleStatusMuted, 1))
 		}
 		segments = append(segments, barText(formatFooterKeyToken(key), footerActionKeyStyle(key, textToken), 1))
 		if textToken != "" {
@@ -740,19 +756,25 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 func selectFooterActions(actions []string, limit int) []string {
 	selected := make([]string, 0, len(actions))
 	used := 0
+	truncated := false
 	for _, action := range actions {
 		tokenWidth := footerActionDisplayWidth(action)
 		if tokenWidth <= 0 {
 			continue
 		}
 		if len(selected) > 0 && used+tokenWidth > limit {
+			truncated = true
 			break
 		}
 		if len(selected) == 0 && tokenWidth > limit {
+			truncated = true
 			break
 		}
 		selected = append(selected, action)
 		used += tokenWidth
+	}
+	if !truncated || len(selected) == len(actions) {
+		return selected
 	}
 	tail := footerTailAction(actions)
 	if tail == "" || containsStringValue(selected, tail) {
@@ -775,9 +797,9 @@ func footerActionDisplayWidth(action string) int {
 	if key == "" {
 		return 0
 	}
-	width := DisplayWidth(" • ") + DisplayWidth(formatFooterKeyToken(key))
+	width := DisplayWidth("  ") + DisplayWidth(formatFooterKeyToken(key))
 	if label != "" {
-		width += 1 + DisplayWidth(strings.ToUpper(label))
+		width += 1 + DisplayWidth(label)
 	}
 	return width
 }
@@ -1229,8 +1251,99 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 	if body.W <= 0 || body.H <= 0 {
 		body = rect
 	}
+	if splitPanelUsesShellFrame(layout) {
+		renderShellFramedSplitPanel(c, layout, style, owner)
+		return
+	}
 	c.drawStyledSplitPaneChrome(rect, body, style, owner, LayerPanel)
 	renderPaneChromeSlots(c, rect, layout.Panel, style, owner)
+}
+
+// shell 外框存在时，split-line pane 复用 body 外框，避免在外框内再套一层 pane 外框。
+func splitPanelUsesShellFrame(layout PanelLayoutPlan) bool {
+	return layout.Panel.Presentation == PanelPresentationSplitLine && layout.Body.X > 0 && layout.Body.W > 0 && layout.Body.H > 0
+}
+
+func renderShellFramedSplitPanel(c *canvas, layout PanelLayoutPlan, style StyleToken, owner string) {
+	rect := layout.Rect
+	body := layout.Body
+	if rect.Y == body.Y {
+		renderShellFramedSplitTop(c, layout, style, owner)
+	}
+	if rect.Y+rect.H >= body.Y+body.H {
+		renderShellFramedSplitBottom(c, layout, style, owner)
+	}
+	if rect.X > body.X {
+		bottomY := body.Y + body.H - 1
+		c.drawStyledPaneVBorder(rect.X, body.Y, bottomY-1, style, owner, LayerPanel)
+		c.writeStyledBoxCell(rect.X, body.Y, "│", style, owner, LayerPanel)
+		c.mergeStyledBoxCell(rect.X, bottomY, boxConnLeft|boxConnRight|boxConnUp, style, owner, LayerPanel)
+	}
+}
+
+func renderShellFramedSplitTop(c *canvas, layout PanelLayoutPlan, style StyleToken, owner string) {
+	rect := layout.Rect
+	body := layout.Body
+	y := body.Y
+	slotX := rect.X
+	slotW := rect.W + 1
+	startX := rect.X - 1
+	endX := rect.X + rect.W - 1
+	if rect.X == body.X {
+		startX = 0
+		slotX = 0
+		slotW = rect.W + 1
+		c.writeTextStyled(0, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
+	}
+	if rect.X+rect.W >= body.X+body.W {
+		endX = body.X + body.W
+		slotW = endX - slotX + 1
+		c.writeTextStyled(endX, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
+	} else {
+		endX--
+	}
+	startX = maxInt(startX, 1)
+	endX = minInt(endX, c.width-2)
+	for x := startX; x <= endX; x++ {
+		c.writeStyledBoxCell(x, y, "─", style, owner, LayerPanel)
+	}
+	renderShellFramedPaneChromeSlots(c, Rect{X: slotX, Y: y, W: slotW, H: rect.H}, layout.Panel, style, owner)
+}
+
+func renderShellFramedSplitBottom(c *canvas, layout PanelLayoutPlan, style StyleToken, owner string) {
+	rect := layout.Rect
+	body := layout.Body
+	y := body.Y + body.H - 1
+	startX := rect.X - 1
+	endX := rect.X + rect.W - 1
+	if rect.X == body.X {
+		startX = 0
+		c.writeStyledBoxCell(0, y, "└", StyleStatus, "shell:frame", LayerChrome)
+	}
+	if rect.X+rect.W >= body.X+body.W {
+		endX = body.X + body.W
+		c.writeStyledBoxCell(endX, y, "┘", StyleStatus, "shell:frame", LayerChrome)
+	}
+	startX = maxInt(startX, 1)
+	endX = minInt(endX, c.width-2)
+	for x := startX; x <= endX; x++ {
+		c.writeStyledBoxCell(x, y, "─", style, owner, LayerPanel)
+	}
+}
+
+func renderShellFramedPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string) {
+	if rect.W < 4 || rect.H <= 0 {
+		return
+	}
+	title := paneChromeTitleText(panel, maxInt(0, rect.W-4))
+	if title != "" {
+		c.overlayTextStyled(rect.X+1, rect.Y, DisplayWidth(title), title, paneChromeTitleStyle(panel, style), owner, LayerPanel)
+	}
+	actions := paneChromeActionText(rect.W)
+	actionWidth := DisplayWidth(actions)
+	if actionWidth > 0 && rect.W >= actionWidth+3 {
+		c.overlayTextStyled(rect.X+rect.W-actionWidth-1, rect.Y, actionWidth, actions, paneChromeActionStyle(panel, style), owner, LayerPanel)
+	}
 }
 
 func panelTitle(panel PanelVM) string {
@@ -1510,7 +1623,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		state = paneChromeFloatingCollapseGlyph() + " collapsed"
 	}
 	renderChromeCardTitle(c, rect, title, state, paneChromeCloseActionText(), style, owner, LayerFloating)
-	if rect.W >= 2 && rect.H >= 2 {
+	if rect.W >= 2 && rect.H >= 2 && floating.ID != "float-visual" {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "◢", style, owner, LayerFloating)
 	}
 	var contentLines []Line
@@ -1566,13 +1679,17 @@ func renderChromeCardTitle(c *canvas, rect Rect, title string, state string, act
 		return
 	}
 	titleX := rect.X + 2
-	actionWidth := DisplayWidth(action)
-	actionX := rect.X + rect.W - actionWidth - 2
-	if action != "" && rect.W >= actionWidth+8 {
-		c.overlayTextStyled(actionX, rect.Y, actionWidth, action, style, owner, layer)
+	actionText := ""
+	if action != "" {
+		actionText = " " + action + " "
+	}
+	actionWidth := DisplayWidth(actionText)
+	actionX := rect.X + rect.W - actionWidth - 1
+	if actionText != "" && rect.W >= actionWidth+8 {
+		c.overlayTextStyled(actionX, rect.Y, actionWidth, actionText, style, owner, layer)
 	}
 	titleLimit := rect.X + rect.W - 3
-	if action != "" && actionX > titleX {
+	if actionText != "" && actionX > titleX {
 		titleLimit = actionX - 1
 	}
 	stateText := ""

@@ -1405,7 +1405,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"┌ main", "visual review", "quick actio", "[Ctrl+P] PANE"} {
+	for _, want := range []string{"┌ main", "visual review", "quick actio", "[Ctrl+P] pane"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}

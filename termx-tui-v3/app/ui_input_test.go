@@ -748,7 +748,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, keyboardFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, keyboardFrame, "shell", render.StyleMuted)
-	if !frameContains(keyboardFrame, "● pane") {
+	if !frameContains(keyboardFrame, "PANE") || !frameContains(keyboardFrame, "[v] split") {
 		t.Fatalf("footer should reflect keyboard split active pane, got %#v", keyboardFrame.Lines)
 	}
 
@@ -764,7 +764,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, focusFrame, "shell", render.StyleAccent)
 	assertPaneVisualState(t, focusFrame, "pane", render.StyleMuted)
-	if frameContains(focusFrame, "pane.focus-next") || !frameContains(focusFrame, "● shell") {
+	if frameContains(focusFrame, "pane.focus-next") || !frameContains(focusFrame, "PANE") {
 		t.Fatalf("keyboard focus should update footer without low-value toast, got %#v", focusFrame.Lines)
 	}
 
@@ -781,7 +781,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, mouseFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, mouseFrame, "shell", render.StyleMuted)
-	if frameContains(mouseFrame, "pane.focus") || !frameContains(mouseFrame, "● pane") {
+	if frameContains(mouseFrame, "pane.focus") || !frameContains(mouseFrame, "PANE") {
 		t.Fatalf("mouse focus should update footer without low-value toast, got %#v", mouseFrame.Lines)
 	}
 
@@ -804,7 +804,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	if runtime.State().Shell.ZoomedPaneID != "pane-2" {
 		t.Fatalf("zoom should keep active pane zoomed, got %#v", runtime.State().Shell)
 	}
-	if !frameContains(zoomFrame, "PANE") || !frameContains(zoomFrame, "pane.toggle-zoom") || !frameContains(zoomFrame, "● pane") {
+	if !frameContains(zoomFrame, "PANE") || !frameContains(zoomFrame, "pane.toggle-zoom") {
 		t.Fatalf("resize/presentation/zoom should keep visible active feedback, got %#v", zoomFrame.Lines)
 	}
 	assertPaneVisualState(t, zoomFrame, "pane", render.StyleAccent)
@@ -842,7 +842,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
 		t.Fatalf("close should choose stable next active pane, got %#v", runtime.State().Shell)
 	}
-	if !frameContains(closeFrame, "pane.close") || !frameContains(closeFrame, "● shell") {
+	if !frameContains(closeFrame, "pane.close") || !frameContains(closeFrame, "PANE") {
 		t.Fatalf("close should update active pane visuals/footer/toast, got %#v", closeFrame.Lines)
 	}
 	assertPaneVisualState(t, closeFrame, "shell", render.StyleAccent)
@@ -1068,7 +1068,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("resize mode should drive content rect terminal resize")
 	}
 	paneFrame := lastFrame(t, host.Frames())
-	if !frameContains(paneFrame, "PANE") || !frameContains(paneFrame, "● ") {
+	if !frameContains(paneFrame, "PANE") || !frameContains(paneFrame, "[v] split") {
 		t.Fatalf("expected pane mode footer and active feedback, got %#v", paneFrame.Lines)
 	}
 
