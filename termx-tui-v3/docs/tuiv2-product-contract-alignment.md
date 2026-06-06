@@ -29,7 +29,8 @@
 ## 2. 产品原则
 
 - `terminal` 是 daemon 管理的全局运行实体，`pane` 是工作位或观察位；关闭 pane 默认不 kill terminal。
-- workspace / tab / pane / floating pane 是工作台结构，不应只存在单个 TUI 客户端内存中；多客户端场景必须消费 daemon-owned snapshot/event。
+- workspace / tab / pane / floating pane 是 TUI 定义的工作台结构，不应只存在单个 TUI 客户端内存中；多客户端场景可以寄存在 daemon 通用 storage，并由 TUI 自己解释 schema、snapshot 和 mutation。
+- daemon 不知道也不裁决 workbench truth；daemon 只提供 terminal pool、terminal lifecycle、authoritative history 和 app-scoped opaque storage。
 - UI 上画出的按钮必须有稳定 hit region、semantic action、reducer/effect 路径和用户反馈；未接线动作不得提前画成可点击按钮。
 - 快捷键、鼠标和测试入口必须进入同一 semantic action，不允许 header、pane、overlay 各自写一套业务逻辑。
 - chrome 采用固定槽位。长文本只进 workspace/tab/pane title 或主内容区；角落和右侧状态区只放短 token。
@@ -40,8 +41,8 @@
 
 | 对象 | tuiv2 产品语义 | tui-v3 对齐要求 |
 | --- | --- | --- |
-| Workspace | 工作现场，包含 tab、pane、floating pane；可创建、切换、重命名、删除 | 必须迁到 daemon workbench truth，TUI 只消费 snapshot/event 并提交 mutation |
-| Tab | pane 的组织层；可创建、切换、跳转、重命名、关闭/kill | header tab strip、键盘 mode、鼠标 close/create 都必须走同一 workbench command/apply |
+| Workspace | 工作现场，包含 tab、pane、floating pane；可创建、切换、重命名、删除 | 必须由 TUI schema 映射到 daemon storage，TUI 消费 storage version/event 并本地解释 snapshot/mutation |
+| Tab | pane 的组织层；可创建、切换、跳转、重命名、关闭/kill | header tab strip、键盘 mode、鼠标 close/create 都必须走同一 TUI workbench command，再写入 storage |
 | Pane | terminal 的工作位；可空、连接、共享、exited；支持 split/focus/close/zoom/resize | pane command 是唯一结构操作入口，关闭 pane 和 kill terminal 必须区分 |
 | Floating Pane | 覆盖在 tiled grid 上的完整 pane；有 z-order、focus、move、resize、collapse | 不参与 tiled split layout；点击 tiled pane 可让 floating 失焦但保持打开 |
 | Terminal | daemon 运行实体；可 attach here/tab/floating、edit、kill/remove | 创建、attach、resize、input、kill 均走 core-v2 protocol/effect result |
@@ -62,7 +63,7 @@
 | Global | `Ctrl-G` | `?` Help；`t` Terminal Pool；`q` Quit；Esc back | Help/Pool 已有但 v3 当前也有 header/footer/toast 调试类入口，后续 footer 需按产品重新整理 |
 | Picker | `Ctrl-F` | filter；Up/Down；Enter attach；Tab split+attach；Ctrl-E edit；Ctrl-K kill；Ctrl-X remove；Esc close | attach/new 已有；split+attach/edit/kill/remove 不完整 |
 | Terminal Pool | global `t` | filter；Up/Down；Enter attach here；Ctrl-T attach tab；Ctrl-O attach floating；Ctrl-E edit；Ctrl-K kill；Ctrl-X delete | page 已有；attach tab/floating/edit/delete 仍缺完整服务闭环 |
-| Workbench Tree | workspace `f/s` | tree select；Enter open/focus；Ctrl-N new；Ctrl-R rename；Ctrl-X remove；Ctrl-D detach；Ctrl-Z zoom | tree 一期已有；多对象 CRUD/动作和 daemon truth 仍需补齐 |
+| Workbench Tree | workspace `f/s` | tree select；Enter open/focus；Ctrl-N new；Ctrl-R rename；Ctrl-X remove；Ctrl-D detach；Ctrl-Z zoom | tree 一期已有；多对象 CRUD/动作和 storage 多客户端同步仍需补齐 |
 
 ## 5. Workbench Chrome
 
@@ -70,12 +71,12 @@
 
 | 可见区域 | 动作 | 鼠标效果 | 对齐状态 |
 | --- | --- | --- | --- |
-| workspace label | open Workbench Tree / workspace picker | 点击打开结构导航 | v3 有入口，后续应绑定 daemon snapshot |
-| tab switch token | jump/switch tab | 点击切换对应 tab | v3 应走 workbench apply，不再只改本地 reducer |
-| tab close token `×` | close tab | 点击关闭目标 tab；不能静默失败 | v3 已修复本地点击，后续接 daemon |
-| tab create token `＋` | create tab | 点击创建并激活新 tab；tuiv2 语义上后续应引导 attach 初始 terminal | v3 已修复本地点击，后续接 daemon 和初始 pane/terminal 流程 |
+| workspace label | open Workbench Tree / workspace picker | 点击打开结构导航 | v3 有入口，后续应绑定 TUI storage snapshot |
+| tab switch token | jump/switch tab | 点击切换对应 tab | v3 应走 TUI workbench command 并写入 storage，不再只改本地 reducer |
+| tab close token `×` | close tab | 点击关闭目标 tab；不能静默失败 | v3 已修复本地点击，后续接 TUI storage 写入 |
+| tab create token `＋` | create tab | 点击创建并激活新 tab；tuiv2 语义上后续应引导 attach 初始 terminal | v3 已修复本地点击，后续接 TUI storage 和初始 pane/terminal 流程 |
 | tab rename/kill actions | rename / kill tab terminals then close | 可见时必须真实接线 | v3 不应提前画未接线 token |
-| workspace prev/next/create/rename/delete | workspace CRUD/navigation | 可见 token 必须走同一 semantic action | v3 待 daemon workbench 对齐 |
+| workspace prev/next/create/rename/delete | workspace CRUD/navigation | 可见 token 必须走同一 semantic action | v3 待 TUI storage schema 对齐 |
 
 Header 规则：
 
@@ -169,7 +170,7 @@ v3 必须保持这个方向。
 P0 必须先做：
 
 - 不再画未接线按钮；所有可见按钮都能点击、能反馈、能走同一 semantic action。
-- daemon workbench snapshot/event 接入 v3 workspace/tab/pane truth，header/tab/pane/tree 的结构动作统一走 `workbench.apply`。
+- TUI workbench snapshot/event 从 daemon storage 读取并解释，header/tab/pane/tree 的结构动作统一走 TUI workbench command，再通过 storage CAS 写回。
 - tab close/create、workspace create/delete、pane split/close/focus 等动作在键盘、鼠标、测试入口下语义一致。
 
 P1 接着做：
@@ -180,7 +181,7 @@ P1 接着做：
 P2 再做：
 
 - pane owner/follower/share/lifecycle token 的 Nerd Font 字形体系、fallback、槽位宽度和 hit region。
-- Terminal Pool / Workbench Tree 的详情、preview、footer action 和 daemon event 多客户端刷新。
+- Terminal Pool / Workbench Tree 的详情、preview、footer action 和 storage event 多客户端刷新。
 
 P3 最后做：
 
@@ -191,7 +192,7 @@ P3 最后做：
 ## 10. 当前明确差距
 
 - v3 有 action catalog，但还没有覆盖 tuiv2 的全部产品动作。
-- v3 header tab close/create 本地已可用，但仍未以 daemon workbench truth 为最终来源。
+- v3 header tab close/create 本地已可用，但仍未以 TUI storage snapshot 为共享来源。
 - v3 pane chrome 当前只能显示 split-down、split-right、close；owner、share、lifecycle、zoom、detach、reconnect 等未完成前不应显示。
 - v3 Terminal Picker/Pool/Workbench Tree 已有一期页面，但 footer actions 和 daemon 多客户端同步仍未完整。
 - v3 Help/footer 若展示未接线动作，会制造产品误导；后续必须由真实 action availability 驱动。

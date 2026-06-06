@@ -49,24 +49,24 @@ core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨架构。双轨只区分�
 
 ### 4.0 Daemon Storage
 
-`Daemon Storage` 是 core-v2 daemon 内部的通用协作状态承载区，和 terminal history truth 分离。它用于保存非历史类客户端协作状态，例如后续 workspace/tab/pane 结构、UI 锁、协作 metadata 或其他 app-scoped 状态。
+`Daemon Storage` 是 core-v2 daemon 内部的通用协作状态承载区，和 terminal history truth 分离。它只保存客户端写入的 app-scoped opaque data；daemon 不理解、解释或裁决这些数据是不是 workspace、tab、pane、layout、UI 锁、协作 metadata 或其他组织模型。
 
 - storage 不是 `HistoryTrack`，不能保存或反推出 committed history truth。
 - storage entry 以 `app_id + scope + owner_id + key` 定址，value 是协议层 opaque bytes。
 - storage entry 必须带 version，写入和删除支持 check-version CAS，避免多客户端覆盖。
 - storage mutation 必须通过 daemon 事件流广播 `storage.changed`，客户端以事件再拉取或重建本地投影。
-- workspace/tab/pane 后续必须在该 daemon-owned storage/domain store 上建模，TUI 本地 reducer 只保留当前交互投影，不再作为多客户端 truth。
+- daemon 的核心职责是 terminal pool、terminal lifecycle、authoritative history 和附带的通用数据存储；TUI 的 workspace/tab/pane 只是某个客户端对 storage value 的一种组织方式，第三方客户端可以使用完全不同的组织模型。
+- TUI-v3 可以把 workspace/tab/pane 数据寄存在 storage 中，并把 storage version/event 当作多客户端同步边界；但 schema、mutation 语义、active/focus 投影和 UI 组织规则属于 TUI/client，不属于 daemon 领域模型。
 
-### 4.0.1 Daemon Workbench Store
+### 4.0.1 Client Workbench Projection Over Storage
 
-`Daemon Workbench Store` 是 core-v2 daemon 内部的 workspace/tab/pane 协作结构 truth，承载多客户端共享的 workbench snapshot。它和 terminal history truth 分离，也不能反推出 committed history。
+`Client Workbench Projection` 是 TUI-v3 在 daemon storage 之上定义的客户端数据投影，不是 core-v2 daemon 的内建领域 truth。
 
-- workbench snapshot 至少包含 version、active workspace、workspace、tab、pane、split tree 和 pane 与 terminal 的绑定关系。
-- workbench mutation 只能通过 daemon-owned store 应用，TUI reducer 只能保存本地交互投影和当前焦点，不再作为多客户端 truth。
-- mutation 必须支持 check-version CAS；版本不匹配时返回冲突，避免第三方客户端覆盖较新的布局状态。
-- 协议层正式暴露 `workbench.get` 和 `workbench.apply`，返回 authoritative snapshot 或 mutation result。
-- mutation 成功后必须通过既有 socket event stream 广播 `workbench.changed`，事件携带 workspace id、version、action 和 resource id，客户端收到事件后按需重新拉取 snapshot。
-- 本阶段 workbench store 只覆盖 workspace/tab/pane 与 split tree；floating/overlay 的 daemon 化必须单独设计，不得半接入 UI 状态。
+- TUI-v3 可以把 workspace/tab/pane/split tree/pane-terminal binding 编码为 storage value，并用 check-version CAS 防止多客户端覆盖。
+- mutation 应由 TUI/client 在本地按自己的 schema 计算，再通过 `storage.put/delete` 写入；daemon 只做版本检查、持久化和 `storage.changed` 广播。
+- 客户端收到 `storage.changed` 后按 app/scope/key 过滤并重新拉取或重建本地投影。
+- 不应继续把 `workbench.get`、`workbench.apply`、`workbench.changed` 扩展为长期 daemon 领域 API；若当前实现中存在 workbench 专用协议，它只应视为待收敛到 storage opaque model 的迁移债。
+- floating/overlay 是否进入共享 storage 由 TUI/client schema 决定；daemon 不需要知道这些概念。
 
 ### 4.1 HistoryTrack
 
