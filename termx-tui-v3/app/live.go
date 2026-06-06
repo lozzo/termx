@@ -45,10 +45,21 @@ func NewInteractiveRuntime(
 	live LiveDeps,
 	copyMode CopyModeDeps,
 ) *AppRuntime {
+	return NewInteractiveRuntimeWithWorkbench(initial, host, runner, live, copyMode, WorkbenchDeps{})
+}
+
+func NewInteractiveRuntimeWithWorkbench(
+	initial state.Root,
+	host TerminalHost,
+	runner EffectRunner,
+	live LiveDeps,
+	copyMode CopyModeDeps,
+	workbench WorkbenchDeps,
+) *AppRuntime {
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), func(root state.Root) render.Frame {
+	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, runner)
 }

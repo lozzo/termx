@@ -508,7 +508,12 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (state.Root, []Effect) {
 	nextShell, result := root.Shell.ApplyWorkbenchCommand(command)
 	root.Shell = addWorkbenchCommandToast(nextShell, result)
-	return root.Advance(), nil
+	if result.Status != state.WorkbenchCommandOK {
+		return root.Advance(), nil
+	}
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+		return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
+	}}}
 }
 
 func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand) state.FloatingCommand {

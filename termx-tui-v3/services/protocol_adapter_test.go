@@ -39,6 +39,9 @@ type fakeProtocolTerminalClient struct {
 	attachResult   *protocol.AttachResult
 	listResult     *protocol.ListResult
 	createResult   *protocol.CreateResult
+	storageGets    []protocol.StorageGetParams
+	storagePuts    []protocol.StoragePutParams
+	storageEntry   *protocol.StorageEntry
 }
 
 func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
@@ -115,6 +118,26 @@ func (client *fakeProtocolTerminalClient) Snapshot(_ context.Context, terminalID
 	return &protocol.Snapshot{TerminalID: terminalID}, nil
 }
 
+func (client *fakeProtocolTerminalClient) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	client.storageGets = append(client.storageGets, params)
+	if client.storageEntry != nil {
+		return client.storageEntry, nil
+	}
+	return &protocol.StorageEntry{}, nil
+}
+
+func (client *fakeProtocolTerminalClient) StoragePut(_ context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	client.storagePuts = append(client.storagePuts, params)
+	return &protocol.StorageEntry{
+		AppID:   params.AppID,
+		Scope:   params.Scope,
+		OwnerID: params.OwnerID,
+		Key:     params.Key,
+		Value:   append([]byte(nil), params.Value...),
+		Version: params.ExpectedVersion + 1,
+	}, nil
+}
+
 func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{
@@ -170,6 +193,65 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	params := client.requests[1]
 	if params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected older params %#v", params)
+	}
+}
+
+func TestProtocolWorkbenchStorageAdapterUsesOpaqueStorageMethods(t *testing.T) {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-logs"})
+	snapshot := state.SnapshotWorkbenchForStorage(shell)
+	payload, err := state.EncodeWorkbenchStorageSnapshotValue(snapshot)
+	if err != nil {
+		t.Fatalf("encode fixture: %v", err)
+	}
+	client := &fakeProtocolTerminalClient{storageEntry: &protocol.StorageEntry{
+		AppID:   state.WorkbenchStorageAppID,
+		Scope:   protocol.StorageScopePublic,
+		OwnerID: state.DefaultWorkspaceID,
+		Key:     state.WorkbenchStorageKeyRoot,
+		Value:   payload,
+		Version: 9,
+	}}
+	adapter := ProtocolWorkbenchStorageAdapter{Client: client}
+	ref := state.DefaultWorkbenchStorageRef("")
+
+	loaded, err := adapter.LoadWorkbench(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("load workbench: %v", err)
+	}
+	if !loaded.Found || loaded.Version != 9 || loaded.Snapshot.ActivePaneID != "pane-logs" {
+		t.Fatalf("unexpected loaded snapshot %#v", loaded)
+	}
+	if len(client.storageGets) != 1 || client.storageGets[0].AppID != state.WorkbenchStorageAppID || client.storageGets[0].Key != state.WorkbenchStorageKeyRoot {
+		t.Fatalf("adapter must use storage.get with TUI-owned key, got %#v", client.storageGets)
+	}
+
+	saved, err := adapter.SaveWorkbench(context.Background(), WorkbenchStorageSaveRequest{
+		Ref:             ref,
+		Snapshot:        snapshot,
+		CheckVersion:    true,
+		ExpectedVersion: 9,
+	})
+	if err != nil {
+		t.Fatalf("save workbench: %v", err)
+	}
+	if saved.Version != 10 || saved.Ref.Version != 10 {
+		t.Fatalf("unexpected save result %#v", saved)
+	}
+	if len(client.storagePuts) != 1 {
+		t.Fatalf("expected one storage.put, got %#v", client.storagePuts)
+	}
+	put := client.storagePuts[0]
+	if put.AppID != state.WorkbenchStorageAppID || put.Scope != protocol.StorageScopePublic || put.OwnerID != state.DefaultWorkspaceID || put.Key != state.WorkbenchStorageKeyRoot || !put.CheckVersion || put.ExpectedVersion != 9 {
+		t.Fatalf("unexpected storage.put params %#v", put)
+	}
+	decoded, err := state.DecodeWorkbenchStorageSnapshot(put.Value)
+	if err != nil {
+		t.Fatalf("decode storage.put payload: %v", err)
+	}
+	if decoded.Schema != state.WorkbenchStorageSchema || decoded.ActivePaneID != "pane-logs" {
+		t.Fatalf("unexpected storage payload %#v", decoded)
 	}
 }
 

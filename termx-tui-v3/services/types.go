@@ -209,6 +209,29 @@ type ClipboardWriteRequest struct {
 	Text string
 }
 
+type WorkbenchStorageService interface {
+	LoadWorkbench(context.Context, state.WorkbenchStorageRef) (WorkbenchStorageLoadResult, error)
+	SaveWorkbench(context.Context, WorkbenchStorageSaveRequest) (WorkbenchStorageSaveResult, error)
+}
+
+type WorkbenchStorageLoadResult struct {
+	Snapshot state.WorkbenchStorageSnapshot
+	Version  uint64
+	Found    bool
+}
+
+type WorkbenchStorageSaveRequest struct {
+	Ref             state.WorkbenchStorageRef
+	Snapshot        state.WorkbenchStorageSnapshot
+	CheckVersion    bool
+	ExpectedVersion uint64
+}
+
+type WorkbenchStorageSaveResult struct {
+	Ref     state.WorkbenchStorageRef
+	Version uint64
+}
+
 var (
 	ErrMissingHistoryResponse = errors.New("missing history response")
 	ErrUnexpectedHistoryCall  = errors.New("unexpected history call")
@@ -272,6 +295,39 @@ type FakeTerminalService struct {
 	Resizes           []TerminalResizeRequest
 	Surfaces          []TerminalSurfaceRequest
 	LiveEventRequests []TerminalLiveEventRequest
+}
+
+type FakeWorkbenchStorageService struct {
+	LoadResult WorkbenchStorageLoadResult
+	LoadErr    error
+	SaveResult WorkbenchStorageSaveResult
+	SaveErr    error
+	Loads      []state.WorkbenchStorageRef
+	Saves      []WorkbenchStorageSaveRequest
+}
+
+func (service *FakeWorkbenchStorageService) LoadWorkbench(_ context.Context, ref state.WorkbenchStorageRef) (WorkbenchStorageLoadResult, error) {
+	service.Loads = append(service.Loads, ref)
+	if service.LoadErr != nil {
+		return WorkbenchStorageLoadResult{}, service.LoadErr
+	}
+	return service.LoadResult, nil
+}
+
+func (service *FakeWorkbenchStorageService) SaveWorkbench(_ context.Context, req WorkbenchStorageSaveRequest) (WorkbenchStorageSaveResult, error) {
+	req.Snapshot = cloneWorkbenchStorageSnapshot(req.Snapshot)
+	service.Saves = append(service.Saves, req)
+	if service.SaveErr != nil {
+		return WorkbenchStorageSaveResult{}, service.SaveErr
+	}
+	result := service.SaveResult
+	if result.Ref.AppID == "" {
+		result.Ref = req.Ref
+	}
+	if result.Version == 0 {
+		result.Version = req.ExpectedVersion + 1
+	}
+	return result, nil
 }
 
 func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {

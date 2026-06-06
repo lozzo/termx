@@ -120,11 +120,13 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 	}
 	terminal := services.ProtocolTerminalServiceAdapter{Client: client}
 	core := services.ProtocolCoreClientAdapter{Client: client}
-	return app.NewInteractiveRuntime(
+	storage := services.ProtocolWorkbenchStorageAdapter{Client: client}
+	return app.NewInteractiveRuntimeWithWorkbench(
 		initial,
 		host,
 		app.NewAsyncEffectRunner(),
 		app.LiveDeps{Terminal: terminal},
 		app.CopyModeDeps{Core: core, Clipboard: &services.FakeClipboardService{}, Rows: rows},
+		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID)},
 	)
 }

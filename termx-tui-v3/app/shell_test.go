@@ -131,11 +131,14 @@ func TestShellReducerWorkbenchCommandAndPromptRename(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 
 	root, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"}})
-	if len(effects) != 0 {
-		t.Fatalf("workbench command should not emit effects, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("workbench command should emit persist request effect, got %#v", effects)
 	}
 	if len(root.Shell.Workspace.Tabs) != 2 || root.Shell.Workspace.Tabs[1].Title != "logs" {
 		t.Fatalf("expected created tab, got %#v", root.Shell.Workspace.Tabs)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandTabCreate) {
+		t.Fatalf("expected workbench persist request, got %#v", msg)
 	}
 
 	root.Shell = root.Shell.OpenPrompt(state.PromptState{Purpose: "tab.rename", Value: "构建"})
@@ -144,9 +147,12 @@ func TestShellReducerWorkbenchCommandAndPromptRename(t *testing.T) {
 		t.Fatalf("expected prompt rename effect, got %#v", effects)
 	}
 	msg := effects[0].(FuncEffect).Run(context.Background())
-	root, _ = reducer(root, msg)
+	root, effects = reducer(root, msg)
 	if root.Shell.Workspace.Tabs[1].Title != "构建" {
 		t.Fatalf("expected prompt to rename active tab, got %#v", root.Shell.Workspace.Tabs)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("prompt-driven rename should emit persist request effect, got %#v", effects)
 	}
 
 	root, _ = reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"}})

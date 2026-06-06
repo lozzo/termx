@@ -12,6 +12,11 @@ type ProtocolHistoryClient interface {
 	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
 }
 
+type ProtocolStorageClient interface {
+	StorageGet(context.Context, protocol.StorageGetParams) (*protocol.StorageEntry, error)
+	StoragePut(context.Context, protocol.StoragePutParams) (*protocol.StorageEntry, error)
+}
+
 // ProtocolCoreClientAdapter 是真实 protocol history.window 的 service adapter。
 type ProtocolCoreClientAdapter struct {
 	Client ProtocolHistoryClient
@@ -121,4 +126,52 @@ func intAt(values []int, index int) int {
 		return 0
 	}
 	return values[index]
+}
+
+type ProtocolWorkbenchStorageAdapter struct {
+	Client ProtocolStorageClient
+}
+
+func (adapter ProtocolWorkbenchStorageAdapter) LoadWorkbench(ctx context.Context, ref state.WorkbenchStorageRef) (WorkbenchStorageLoadResult, error) {
+	entry, err := adapter.Client.StorageGet(ctx, protocol.StorageGetParams{
+		AppID:   ref.AppID,
+		Scope:   protocol.StorageScope(ref.Scope),
+		OwnerID: ref.OwnerID,
+		Key:     ref.Key,
+	})
+	if err != nil {
+		return WorkbenchStorageLoadResult{}, err
+	}
+	snapshot, err := state.DecodeWorkbenchStorageSnapshot(entry.Value)
+	if err != nil {
+		return WorkbenchStorageLoadResult{}, err
+	}
+	return WorkbenchStorageLoadResult{
+		Snapshot: snapshot,
+		Version:  entry.Version,
+		Found:    true,
+	}, nil
+}
+
+func (adapter ProtocolWorkbenchStorageAdapter) SaveWorkbench(ctx context.Context, req WorkbenchStorageSaveRequest) (WorkbenchStorageSaveResult, error) {
+	value, err := state.EncodeWorkbenchStorageSnapshotValue(req.Snapshot)
+	if err != nil {
+		return WorkbenchStorageSaveResult{}, err
+	}
+	entry, err := adapter.Client.StoragePut(ctx, protocol.StoragePutParams{
+		AppID:           req.Ref.AppID,
+		Scope:           protocol.StorageScope(req.Ref.Scope),
+		OwnerID:         req.Ref.OwnerID,
+		Key:             req.Ref.Key,
+		Value:           value,
+		CheckVersion:    req.CheckVersion,
+		ExpectedVersion: req.ExpectedVersion,
+	})
+	if err != nil {
+		return WorkbenchStorageSaveResult{}, err
+	}
+	return WorkbenchStorageSaveResult{
+		Ref:     req.Ref.WithVersion(entry.Version),
+		Version: entry.Version,
+	}, nil
 }
