@@ -391,15 +391,81 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 		t.Fatalf("close initial drain: %v", err)
 	}
 
-	action := frameHitRegionByAction(t, lastRuntimeFrame(t, closeHost), render.HitRegionPaneAction, "pane.close", "pane-2")
-	if err := closeHost.SendInput(mouseEventAt(action.Rect)); err != nil {
-		t.Fatalf("send action click: %v", err)
+	frame := lastRuntimeFrame(t, closeHost)
+	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, "pane.close", "pane-2")
+	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "["+render.DefaultPaneChromeGlyphs().Close+"]")
+	if !pointInRenderRect(closeMouse, action.Rect) {
+		t.Fatalf("visible close token must be inside pane.close hit region, mouse=%#v region=%#v line=%q", closeMouse, action, frame.Lines[action.Rect.Y])
+	}
+	if err := closeHost.SendInput(closeMouse); err != nil {
+		t.Fatalf("send visible close click: %v", err)
 	}
 	if err := closeRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("close drain: %v", err)
 	}
 	if closeRuntime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
 		t.Fatalf("action click should close pane-2, got %#v", closeRuntime.State().Shell)
+	}
+}
+
+func TestAppRuntimePaneCloseHitRegionMatchesWideGlyph(t *testing.T) {
+	render.SetPaneChromeGlyphs(render.PaneChromeGlyphs{Close: "❌"})
+	defer render.ResetPaneChromeGlyphs()
+
+	host := NewFakeTerminalHost(8)
+	root := state.Root{
+		Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical),
+	}
+	runtime := newShellHitRuntime(root, host)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionPaneClose.String(), "pane-2")
+	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "[❌]")
+	if !pointInRenderRect(closeMouse, action.Rect) {
+		t.Fatalf("wide close glyph must be inside pane.close hit region, mouse=%#v region=%#v line=%q", closeMouse, action, frame.Lines[action.Rect.Y])
+	}
+	if err := host.SendInput(closeMouse); err != nil {
+		t.Fatalf("send wide close click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if runtime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("wide glyph close click should close pane-2, got %#v", runtime.State().Shell)
+	}
+}
+
+func TestAppRuntimeLastPaneCloseClickShowsFeedback(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runtime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, host)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionPaneClose.String(), state.DefaultPaneID)
+	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "["+render.DefaultPaneChromeGlyphs().Close+"]")
+	if err := host.SendInput(closeMouse); err != nil {
+		t.Fatalf("send last pane close click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if !shell.HasPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}) {
+		t.Fatalf("last pane close must not remove final pane, got %#v", shell)
+	}
+	if len(shell.Toasts) == 0 || shell.Toasts[len(shell.Toasts)-1].Body != "cannot close last pane" {
+		t.Fatalf("last pane close click should show feedback, got %#v", shell.Toasts)
 	}
 }
 
@@ -1481,6 +1547,53 @@ func newShellHitRuntimeWithTerminal(root state.Root, host *FakeTerminalHost, ter
 
 func mouseEventAt(rect render.Rect) input.InputEvent {
 	return input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: rect.Y + 1, Col: rect.X + 1}
+}
+
+func mouseEventAtRenderedTokenInRect(t *testing.T, frame render.Frame, rect render.Rect, token string) input.InputEvent {
+	t.Helper()
+	row := rect.Y
+	if row < 0 || row >= len(frame.Lines) {
+		t.Fatalf("row %d out of frame %#v", row, frame.Lines)
+	}
+	col := renderedTokenCellIndexInRange(frame.Lines[row], token, rect.X, rect.X+rect.W)
+	if col < 0 {
+		t.Fatalf("missing token %q inside rect=%#v row=%q", token, rect, frame.Lines[row])
+	}
+	return input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: row + 1, Col: col + 1}
+}
+
+func renderedTokenCellIndexInRange(line string, token string, left int, right int) int {
+	width := render.DisplayWidth(token)
+	if width <= 0 {
+		return -1
+	}
+	maxCol := minIntForTest(right-width, render.DisplayWidth(line)-width)
+	for col := maxIntForTest(0, left); col <= maxCol; col++ {
+		if render.SliceCells(line, col, col+width) == token {
+			return col
+		}
+	}
+	return -1
+}
+
+func minIntForTest(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maxIntForTest(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func pointInRenderRect(event input.InputEvent, rect render.Rect) bool {
+	col := event.Col - 1
+	row := event.Row - 1
+	return col >= rect.X && col < rect.X+rect.W && row >= rect.Y && row < rect.Y+rect.H
 }
 
 func lastRuntimeFrame(t *testing.T, host *FakeTerminalHost) render.Frame {
