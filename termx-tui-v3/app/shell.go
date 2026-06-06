@@ -484,7 +484,7 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	targetPane, hasTargetPane := root.Shell.Pane(command.Target)
 	nextShell, result := root.Shell.ApplyPaneCommand(command)
 	if result.Status == state.PaneCommandOK {
-		root.Shell = nextShell
+		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
 		effects := paneCommandEffects(command, result, targetPane, hasTargetPane)
 		return root.Advance(), effects
@@ -537,10 +537,20 @@ func addFloatingCommandToast(shell state.ShellStore, command state.FloatingComma
 
 func shouldSuppressFloatingCommandSuccessToast(command state.FloatingCommand) bool {
 	switch command.Action {
-	case state.FloatingCommandFocusRaise, state.FloatingCommandMove, state.FloatingCommandResize:
+	case state.FloatingCommandFocusRaise, state.FloatingCommandDeactivate, state.FloatingCommandMove, state.FloatingCommandResize:
 		return true
 	default:
 		return false
+	}
+}
+
+func deactivateFloatingAfterPaneCommand(shell state.ShellStore, command state.PaneCommand) state.ShellStore {
+	switch command.Action {
+	case state.PaneCommandFocus, state.PaneCommandSplit, state.PaneCommandClose, state.PaneCommandZoom, state.PaneCommandUnzoom, state.PaneCommandToggleZoom:
+		next, _ := shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandDeactivate, Source: command.Source})
+		return next
+	default:
+		return shell
 	}
 }
 

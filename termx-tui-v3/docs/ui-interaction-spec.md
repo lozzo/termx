@@ -94,6 +94,7 @@
 - floating pane 必须有明确 z-order。
 - 鼠标点击 floating pane 时应聚焦并提升到最前。
 - active floating pane 获得视觉焦点时，后方 tiled pane 不得继续显示 active 高亮边框；tiled pane 只保留业务 active target，视觉上必须降级为 inactive / muted。
+- floating pane 打开后，鼠标点击未被遮挡的 tiled pane content、chrome 或 action 必须能把视觉焦点切回 tiled pane；floating pane 保持打开但清空 active 状态，边框和标题样式降级为 inactive / muted。
 - floating pane 的边界和 tiled pane 的边界必须一眼可区分。
 
 ### 3.5 Terminal

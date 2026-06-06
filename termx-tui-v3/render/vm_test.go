@@ -253,6 +253,22 @@ func TestRenderVMBuilderDimsTiledPaneWhenFloatingOwnsFocus(t *testing.T) {
 		t.Fatalf("expected active floating VM, got %#v", vm.Shell.Layout.Floating)
 	}
 
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandDeactivate})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("deactivate floating: %#v", result)
+	}
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if len(vm.Shell.Layout.Panels) != 1 || !vm.Shell.Layout.Panels[0].Active {
+		t.Fatalf("tiled pane should regain active visual while inactive floating remains open, got %#v", vm.Shell.Layout.Panels)
+	}
+	if len(vm.Shell.Layout.Floating) != 1 || vm.Shell.Layout.Floating[0].Active {
+		t.Fatalf("floating should remain visible but inactive, got %#v", vm.Shell.Layout.Floating)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: "float-1"})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("raise floating: %#v", result)
+	}
 	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: "float-1"})
 	if result.Status != state.FloatingCommandOK {
 		t.Fatalf("close floating: %#v", result)

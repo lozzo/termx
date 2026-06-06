@@ -403,6 +403,58 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeTiledPaneClickDeactivatesFloatingFocus(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+			FocusPane(state.PaneCommandTarget{PaneID: "pane-main"}),
+	}
+	var result state.FloatingCommandResult
+	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "floating", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 30, Y: 4, W: 24, H: 8},
+		BoundsW:  90,
+		BoundsH:  28,
+	})
+	if result.Status != state.FloatingCommandOK || root.Shell.ActiveFloatingID == "" {
+		t.Fatalf("expected active floating setup, result=%#v shell=%#v", result, root.Shell)
+	}
+
+	runtime := newShellHitRuntime(root, host)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	vmWithFloating := render.NewRenderVMBuilder().Build(runtime.State())
+	if len(vmWithFloating.Shell.Layout.Panels) < 2 || vmWithFloating.Shell.Layout.Panels[1].Active || len(vmWithFloating.Shell.Layout.Floating) != 1 || !vmWithFloating.Shell.Layout.Floating[0].Active {
+		t.Fatalf("active floating should dim tiled panes before click, panels=%#v floating=%#v", vmWithFloating.Shell.Layout.Panels, vmWithFloating.Shell.Layout.Floating)
+	}
+
+	content := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionPaneContent, "pane-2")
+	if err := host.SendInput(mouseEventAt(content.Rect)); err != nil {
+		t.Fatalf("send tiled pane click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tiled pane click: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" || len(shell.Floatings) != 1 || shell.Floatings[0].Active {
+		t.Fatalf("tiled pane click should deactivate floating without closing it, shell=%#v", shell)
+	}
+	if shell.ActivePaneID != "pane-2" {
+		t.Fatalf("tiled pane click should focus pane-2, shell=%#v", shell)
+	}
+	vmAfterClick := render.NewRenderVMBuilder().Build(runtime.State())
+	if len(vmAfterClick.Shell.Layout.Panels) < 2 || !vmAfterClick.Shell.Layout.Panels[1].Active || len(vmAfterClick.Shell.Layout.Floating) != 1 || vmAfterClick.Shell.Layout.Floating[0].Active {
+		t.Fatalf("tiled pane should regain active style and floating should render inactive, panels=%#v floating=%#v", vmAfterClick.Shell.Layout.Panels, vmAfterClick.Shell.Layout.Floating)
+	}
+}
+
 func TestAppRuntimeDispatchesMouseSplitActions(t *testing.T) {
 	downHost := NewFakeTerminalHost(8)
 	downRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, downHost)

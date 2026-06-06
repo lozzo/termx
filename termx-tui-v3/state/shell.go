@@ -243,6 +243,7 @@ type FloatingCommandAction string
 const (
 	FloatingCommandCreate         FloatingCommandAction = "floating.create"
 	FloatingCommandFocusRaise     FloatingCommandAction = "floating.focus-raise"
+	FloatingCommandDeactivate     FloatingCommandAction = "floating.deactivate"
 	FloatingCommandClose          FloatingCommandAction = "floating.close"
 	FloatingCommandCenter         FloatingCommandAction = "floating.center"
 	FloatingCommandToggleCollapse FloatingCommandAction = "floating.toggle-collapse"
@@ -401,7 +402,7 @@ func (store ShellStore) ensureFloatingDefaults() ShellStore {
 			activeFound = true
 		}
 	}
-	if !activeFound {
+	if store.ActiveFloatingID != "" && !activeFound {
 		store.ActiveFloatingID = topFloatingID(store.Floatings)
 	}
 	for index := range store.Floatings {
@@ -471,6 +472,8 @@ func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStor
 		return store.createFloating(command)
 	case FloatingCommandFocusRaise:
 		return store.focusRaiseFloating(command.TargetID, command.Action)
+	case FloatingCommandDeactivate:
+		return store.deactivateFloating(command.Action)
 	case FloatingCommandClose:
 		return store.closeFloating(command.TargetID)
 	case FloatingCommandCenter:
@@ -756,6 +759,15 @@ func (store ShellStore) focusRaiseFloating(id string, action FloatingCommandActi
 	store.ActiveFloatingID = id
 	store = store.ensureFloatingDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action, ID: id}
+}
+
+func (store ShellStore) deactivateFloating(action FloatingCommandAction) (ShellStore, FloatingCommandResult) {
+	if store.ActiveFloatingID == "" {
+		return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action}
+	}
+	store.ActiveFloatingID = ""
+	store = store.ensureFloatingDefaults()
+	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action}
 }
 
 func (store ShellStore) closeFloating(id string) (ShellStore, FloatingCommandResult) {

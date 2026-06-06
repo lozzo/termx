@@ -550,6 +550,14 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	if result.Status != FloatingCommandOK || !shell.Floatings[0].Collapsed {
 		t.Fatalf("expected collapsed floating, result=%#v floating=%#v", result, shell.Floatings[0])
 	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandFocusRaise, TargetID: "float-1"})
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID != "float-1" || !shell.Floatings[0].Active {
+		t.Fatalf("expected raised floating, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandDeactivate})
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID != "" || shell.Floatings[0].Active {
+		t.Fatalf("deactivate should keep floating but clear active state, result=%#v shell=%#v", result, shell)
+	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandClose, TargetID: "float-1"})
 	if result.Status != FloatingCommandOK || len(shell.Floatings) != 0 || shell.ActiveFloatingID != "" {
 		t.Fatalf("expected closed floating, result=%#v shell=%#v", result, shell)
