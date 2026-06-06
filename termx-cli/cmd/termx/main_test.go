@@ -1752,10 +1752,10 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.RemoveAll(result.ArtifactDir)
 	})
-	if result.Session == "" || result.ArtifactDir == "" || result.CurrentPlainPath == "" || result.CurrentANSIPath == "" || result.TargetPath == "" || result.DiffPath == "" || result.StylePath == "" || result.StyleDiffPath == "" || result.SummaryPath == "" {
+	if result.Session == "" || result.ArtifactDir == "" || result.CurrentPlainPath == "" || result.CurrentANSIPath == "" || result.TargetPath == "" || result.DiffPath == "" || result.StylePath == "" || result.StyleDiffPath == "" || result.CurrentStyleMapPath == "" || result.TargetStyleMapPath == "" || result.StyleMapDiffPath == "" || result.SummaryPath == "" {
 		t.Fatalf("tmux visual compare should return artifact paths, got %#v", result)
 	}
-	for _, path := range []string{result.CurrentPlainPath, result.CurrentANSIPath, result.TargetPath, result.DiffPath, result.StylePath, result.StyleDiffPath, result.SummaryPath} {
+	for _, path := range []string{result.CurrentPlainPath, result.CurrentANSIPath, result.TargetPath, result.DiffPath, result.StylePath, result.StyleDiffPath, result.CurrentStyleMapPath, result.TargetStyleMapPath, result.StyleMapDiffPath, result.SummaryPath} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read artifact %s: %v", path, err)
@@ -1784,6 +1784,18 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read style diff: %v", err)
 	}
+	currentStyleMap, err := os.ReadFile(result.CurrentStyleMapPath)
+	if err != nil {
+		t.Fatalf("read current style map: %v", err)
+	}
+	targetStyleMap, err := os.ReadFile(result.TargetStyleMapPath)
+	if err != nil {
+		t.Fatalf("read target style map: %v", err)
+	}
+	styleMapDiff, err := os.ReadFile(result.StyleMapDiffPath)
+	if err != nil {
+		t.Fatalf("read style map diff: %v", err)
+	}
 	if !strings.Contains(string(current), "quick actio") || !strings.Contains(string(target), "ws:main tabs:2 panes:2") || !strings.Contains(string(diff), "tmux visual diff") {
 		t.Fatalf("visual compare artifacts missing expected markers current=%q target=%q diff=%q", current, target, diff)
 	}
@@ -1794,6 +1806,14 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	}
 	if result.StyleMismatches != 0 || !strings.Contains(string(styleDiff), "no style mismatches") {
 		t.Fatalf("visual compare style contract should match, style_mismatches=%d diff=\n%s", result.StyleMismatches, styleDiff)
+	}
+	if result.StyleMapMismatches != 0 || !strings.Contains(string(styleMapDiff), "no style map mismatches") {
+		t.Fatalf("visual compare style map should match, stylemap_mismatches=%d diff=\n%s", result.StyleMapMismatches, styleMapDiff)
+	}
+	for _, marker := range []string{"legend: S=status A=accent M=muted W=warning G=success P=plain .=transparent ?=unknown", "01 SA"} {
+		if !strings.Contains(string(currentStyleMap), marker) || !strings.Contains(string(targetStyleMap), marker) {
+			t.Fatalf("style maps missing marker %q current=\n%s\ntarget=\n%s", marker, currentStyleMap, targetStyleMap)
+		}
 	}
 	for _, marker := range []string{"pane-action-accent", "inactive-logs-muted", "underlying-frame-status", "footer-key-accent"} {
 		if !strings.Contains(string(style), marker+" row=") {
@@ -1829,12 +1849,16 @@ func TestV3TmuxVisualCompareCommandReportsArtifacts(t *testing.T) {
 		!strings.Contains(text, "session=termx-v3-visual-") ||
 		!strings.Contains(text, "mismatches=") ||
 		!strings.Contains(text, "style_mismatches=") ||
+		!strings.Contains(text, "stylemap_mismatches=") ||
 		!strings.Contains(text, "current_plain=") ||
 		!strings.Contains(text, "current_ansi=") ||
 		!strings.Contains(text, "target=") ||
 		!strings.Contains(text, "diff=") ||
 		!strings.Contains(text, "style=") ||
-		!strings.Contains(text, "style_diff=") {
+		!strings.Contains(text, "style_diff=") ||
+		!strings.Contains(text, "current_stylemap=") ||
+		!strings.Contains(text, "target_stylemap=") ||
+		!strings.Contains(text, "stylemap_diff=") {
 		t.Fatalf("unexpected tmux visual compare output:\n%s", text)
 	}
 }

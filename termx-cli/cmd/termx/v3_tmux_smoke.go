@@ -65,17 +65,21 @@ type v3TmuxANSISmokeResult struct {
 }
 
 type v3TmuxVisualCompareResult struct {
-	Session          string
-	ArtifactDir      string
-	CurrentANSIPath  string
-	CurrentPlainPath string
-	TargetPath       string
-	DiffPath         string
-	StylePath        string
-	StyleDiffPath    string
-	SummaryPath      string
-	Mismatches       int
-	StyleMismatches  int
+	Session             string
+	ArtifactDir         string
+	CurrentANSIPath     string
+	CurrentPlainPath    string
+	TargetPath          string
+	DiffPath            string
+	StylePath           string
+	StyleDiffPath       string
+	CurrentStyleMapPath string
+	TargetStyleMapPath  string
+	StyleMapDiffPath    string
+	SummaryPath         string
+	Mismatches          int
+	StyleMismatches     int
+	StyleMapMismatches  int
 }
 
 type v3TmuxStabilitySmokeResult struct {
@@ -676,22 +680,34 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	diffPath := filepath.Join(artifactDir, "diff.txt")
 	stylePath := filepath.Join(artifactDir, "style.txt")
 	styleDiffPath := filepath.Join(artifactDir, "style.diff.txt")
+	currentStyleMapPath := filepath.Join(artifactDir, "current.stylemap.txt")
+	targetStyleMapPath := filepath.Join(artifactDir, "target.stylemap.txt")
+	styleMapDiffPath := filepath.Join(artifactDir, "stylemap.diff.txt")
 	summaryPath := filepath.Join(artifactDir, "summary.txt")
 	targetPlain := v3VisualTargetPlain()
 	diffText, mismatches := diffVisualPlain(targetPlain, currentPlain, 120, 40)
 	styleText, styleDiffText, styleMismatches := visualANSIStyleReport(currentANSI)
+	currentStyleMap := visualANSIStyleMap(currentANSI, 120, 40)
+	targetStyleMap := visualTargetStyleMap(targetPlain, 120, 40)
+	styleMapDiffText, styleMapMismatches := diffVisualStyleMap(targetStyleMap, currentStyleMap)
+	currentStyleMapText := formatVisualStyleMap("current tmux ANSI style map", currentStyleMap)
+	targetStyleMapText := formatVisualStyleMap("target semantic style map", targetStyleMap)
 	summary := strings.Join([]string{
 		"termx v3 tmux visual compare",
 		"source: termx-tui-v3/docs/unicode-ui-wireframes.md + tuiv2 chrome slot contract",
 		fmt.Sprintf("viewport: %dx%d", 120, 40),
 		fmt.Sprintf("mismatches: %d", mismatches),
 		fmt.Sprintf("style_mismatches: %d", styleMismatches),
+		fmt.Sprintf("stylemap_mismatches: %d", styleMapMismatches),
 		"current_plain: " + currentPlainPath,
 		"current_ansi: " + currentANSIPath,
 		"target: " + targetPath,
 		"diff: " + diffPath,
 		"style: " + stylePath,
 		"style_diff: " + styleDiffPath,
+		"current_stylemap: " + currentStyleMapPath,
+		"target_stylemap: " + targetStyleMapPath,
+		"stylemap_diff: " + styleMapDiffPath,
 		"",
 	}, "\n")
 	for _, file := range []struct {
@@ -704,6 +720,9 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 		{diffPath, diffText},
 		{stylePath, styleText},
 		{styleDiffPath, styleDiffText},
+		{currentStyleMapPath, currentStyleMapText},
+		{targetStyleMapPath, targetStyleMapText},
+		{styleMapDiffPath, styleMapDiffText},
 		{summaryPath, summary},
 	} {
 		if err := os.WriteFile(file.path, []byte(file.body), 0o600); err != nil {
@@ -712,17 +731,21 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	}
 	removeArtifacts = false
 	return v3TmuxVisualCompareResult{
-		Session:          session,
-		ArtifactDir:      artifactDir,
-		CurrentANSIPath:  currentANSIPath,
-		CurrentPlainPath: currentPlainPath,
-		TargetPath:       targetPath,
-		DiffPath:         diffPath,
-		StylePath:        stylePath,
-		StyleDiffPath:    styleDiffPath,
-		SummaryPath:      summaryPath,
-		Mismatches:       mismatches,
-		StyleMismatches:  styleMismatches,
+		Session:             session,
+		ArtifactDir:         artifactDir,
+		CurrentANSIPath:     currentANSIPath,
+		CurrentPlainPath:    currentPlainPath,
+		TargetPath:          targetPath,
+		DiffPath:            diffPath,
+		StylePath:           stylePath,
+		StyleDiffPath:       styleDiffPath,
+		CurrentStyleMapPath: currentStyleMapPath,
+		TargetStyleMapPath:  targetStyleMapPath,
+		StyleMapDiffPath:    styleMapDiffPath,
+		SummaryPath:         summaryPath,
+		Mismatches:          mismatches,
+		StyleMismatches:     styleMismatches,
+		StyleMapMismatches:  styleMapMismatches,
 	}, nil
 }
 
@@ -837,6 +860,22 @@ type visualANSICell struct {
 	SGR  []string
 }
 
+type visualStyleClass struct {
+	Code string
+	Name string
+}
+
+var (
+	visualStylePlain       = visualStyleClass{Code: "P", Name: "plain"}
+	visualStyleStatus      = visualStyleClass{Code: "S", Name: "status"}
+	visualStyleAccent      = visualStyleClass{Code: "A", Name: "accent"}
+	visualStyleMuted       = visualStyleClass{Code: "M", Name: "muted"}
+	visualStyleWarn        = visualStyleClass{Code: "W", Name: "warning"}
+	visualStyleSuccess     = visualStyleClass{Code: "G", Name: "success"}
+	visualStyleTransparent = visualStyleClass{Code: ".", Name: "transparent"}
+	visualStyleUnknown     = visualStyleClass{Code: "?", Name: "unknown"}
+)
+
 func visualANSIStyleReport(ansiText string) (string, string, int) {
 	lines := strings.Split(strings.TrimRight(ansiText, "\n"), "\n")
 	grid := visualANSICellGrid(lines)
@@ -882,6 +921,273 @@ func visualANSIStyleReport(ansiText string) (string, string, int) {
 		diff.WriteString("no style mismatches\n")
 	}
 	return report.String(), diff.String(), mismatches
+}
+
+func visualANSIStyleMap(ansiText string, width int, height int) [][]visualStyleClass {
+	lines := strings.Split(strings.TrimRight(ansiText, "\n"), "\n")
+	grid := visualANSICellGrid(lines)
+	styleMap := make([][]visualStyleClass, height)
+	for row := 0; row < height; row++ {
+		styleMap[row] = make([]visualStyleClass, width)
+		for col := 0; col < width; col++ {
+			cell := visualCellAt(grid, row+1, col+1)
+			styleMap[row][col] = visualClassFromANSICell(cell)
+		}
+	}
+	return styleMap
+}
+
+func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualStyleClass {
+	lines := normalizeVisualLines(targetPlain, width, height)
+	styleMap := make([][]visualStyleClass, height)
+	for row := 0; row < height; row++ {
+		styleMap[row] = make([]visualStyleClass, width)
+		for col := 0; col < width; col++ {
+			styleMap[row][col] = visualStyleTransparent
+		}
+	}
+	for row := 0; row < height; row++ {
+		for col, glyph := range visualLineGlyphs(lines[row], width) {
+			if glyph != 0 && glyph != ' ' {
+				styleMap[row][col] = visualStylePlain
+			}
+		}
+	}
+
+	fill := func(row, start, end int, class visualStyleClass) {
+		if row < 1 || row > height {
+			return
+		}
+		if start < 1 {
+			start = 1
+		}
+		if end > width {
+			end = width
+		}
+		for col := start; col <= end; col++ {
+			styleMap[row-1][col-1] = class
+		}
+	}
+	fillGlyphs := func(row int, glyphs string, class visualStyleClass) {
+		if row < 1 || row > height {
+			return
+		}
+		for col, glyph := range visualLineGlyphs(lines[row-1], width) {
+			if strings.ContainsRune(glyphs, glyph) {
+				styleMap[row-1][col] = class
+			}
+		}
+	}
+	fillRangesForSubstrings := func(row int, class visualStyleClass, markers ...string) {
+		for _, marker := range markers {
+			for _, span := range visualLineSubstringSpans(lines[row-1], marker) {
+				fill(row, span[0]+1, span[1], class)
+			}
+		}
+	}
+
+	// 固定视觉基线的目标样式来自线稿语义区域，而不是当前 v3 ANSI 输出。
+	fill(1, 1, 111, visualStyleStatus)
+	fillRangesForSubstrings(1, visualStyleAccent, " main ")
+	fillRangesForSubstrings(1, visualStyleWarn, "× ")
+	fillRangesForSubstrings(1, visualStyleSuccess, " ＋ ")
+	fillRangesForSubstrings(1, visualStyleMuted, "─┬─", " 2:logs ", " termx ")
+	fill(2, 1, 115, visualStyleStatus)
+
+	fill(3, 1, 1, visualStyleStatus)
+	fill(3, 2, 113, visualStyleMuted)
+	fillRangesForSubstrings(3, visualStyleAccent, " ↕  ↔  × ")
+	for row := 4; row <= 37; row++ {
+		fill(row, 1, 1, visualStyleStatus)
+		fill(row, 84, 84, visualStyleMuted)
+		fill(row, 113, 113, visualStyleStatus)
+	}
+	fill(4, 83, 114, visualStyleMuted)
+	for row := 5; row <= 6; row++ {
+		fill(row, 84, 115, visualStyleMuted)
+	}
+	for row := 8; row <= 15; row++ {
+		fill(row, 86, 114, visualStyleAccent)
+	}
+	for _, row := range []int{9, 11, 12, 13} {
+		for col, glyph := range visualLineGlyphs(lines[row-1], width) {
+			if col+1 >= 87 && col+1 <= 113 {
+				if glyph != 0 && glyph != ' ' {
+					styleMap[row-1][col] = visualStylePlain
+					continue
+				}
+				styleMap[row-1][col] = visualStyleTransparent
+			}
+		}
+	}
+	fill(10, 114, 116, visualStyleStatus)
+	fill(14, 114, 116, visualStyleStatus)
+	fill(15, 114, 116, visualStyleStatus)
+	for _, row := range []int{8, 9, 11, 12, 13} {
+		fill(row, 116, 116, visualStyleStatus)
+	}
+
+	fill(38, 1, 113, visualStyleStatus)
+	fill(38, 2, 112, visualStyleMuted)
+	fill(39, 1, width, visualStyleStatus)
+	fill(40, 1, 115, visualStyleStatus)
+	fillRangesForSubstrings(40, visualStyleAccent, "[Ctrl+P]", "[Ctrl+G]")
+	fillRangesForSubstrings(40, visualStyleWarn, "[Ctrl+R]", "[Ctrl+F]")
+	fill(40, 2, 2, visualStyleMuted)
+	fill(40, 16, 17, visualStyleMuted)
+	fill(40, 33, 34, visualStyleMuted)
+	fill(40, 50, 51, visualStyleMuted)
+	fill(40, 91, 114, visualStyleMuted)
+	fillGlyphs(40, "└┘", visualStyleStatus)
+	return styleMap
+}
+
+func visualClassFromANSICell(cell visualANSICell) visualStyleClass {
+	if len(cell.SGR) == 0 {
+		if strings.TrimSpace(cell.Text) != "" {
+			return visualStylePlain
+		}
+		return visualStyleTransparent
+	}
+	return visualClassFromSGR(cell.SGR)
+}
+
+func visualClassFromSGR(sgr []string) visualStyleClass {
+	switch {
+	case visualSGRContains(sgr, "38;2;169;112;255"):
+		return visualStyleAccent
+	case visualSGRContains(sgr, "38;2;240;196;92"):
+		return visualStyleWarn
+	case visualSGRContains(sgr, "38;2;138;223;122"):
+		return visualStyleSuccess
+	case visualSGRContains(sgr, "38;2;119;113;127"):
+		return visualStyleMuted
+	case visualSGRContains(sgr, "38;2;231;226;239") || visualSGRContains(sgr, "48;2;8;8;13"):
+		return visualStyleStatus
+	case len(sgr) == 0:
+		return visualStyleTransparent
+	default:
+		return visualStyleUnknown
+	}
+}
+
+func formatVisualStyleMap(title string, styleMap [][]visualStyleClass) string {
+	var builder strings.Builder
+	builder.WriteString(title)
+	builder.WriteString("\nlegend: S=status A=accent M=muted W=warning G=success P=plain .=transparent ?=unknown\n\n")
+	for row, line := range styleMap {
+		fmt.Fprintf(&builder, "%02d ", row+1)
+		for _, class := range line {
+			builder.WriteString(class.Code)
+		}
+		builder.WriteString("\n")
+	}
+	return builder.String()
+}
+
+func diffVisualStyleMap(target [][]visualStyleClass, current [][]visualStyleClass) (string, int) {
+	var builder strings.Builder
+	builder.WriteString("tmux visual style map diff\n")
+	builder.WriteString("source target: fixed 120x40 semantic style regions\n\n")
+	mismatches := 0
+	height := len(target)
+	for row := 0; row < height; row++ {
+		targetLine := target[row]
+		currentLine := []visualStyleClass{}
+		if row < len(current) {
+			currentLine = current[row]
+		}
+		if visualStyleLineCodes(targetLine) == visualStyleLineCodes(currentLine) {
+			continue
+		}
+		mismatches++
+		fmt.Fprintf(&builder, "@@ row %02d @@\n", row+1)
+		fmt.Fprintf(&builder, "- %s\n", visualStyleLineCodes(targetLine))
+		fmt.Fprintf(&builder, "+ %s\n", visualStyleLineCodes(currentLine))
+		fmt.Fprintf(&builder, "  %s\n", visualStyleMismatchColumns(targetLine, currentLine))
+	}
+	if mismatches == 0 {
+		builder.WriteString("no style map mismatches\n")
+	}
+	return builder.String(), mismatches
+}
+
+func visualStyleLineCodes(line []visualStyleClass) string {
+	var builder strings.Builder
+	for _, class := range line {
+		if class.Code == "" {
+			builder.WriteString(visualStyleUnknown.Code)
+			continue
+		}
+		builder.WriteString(class.Code)
+	}
+	return builder.String()
+}
+
+func visualStyleMismatchColumns(target []visualStyleClass, current []visualStyleClass) string {
+	limit := len(target)
+	if len(current) > limit {
+		limit = len(current)
+	}
+	cols := []string{}
+	for i := 0; i < limit; i++ {
+		var targetCode, currentCode string
+		if i < len(target) {
+			targetCode = target[i].Code
+		}
+		if i < len(current) {
+			currentCode = current[i].Code
+		}
+		if targetCode != currentCode {
+			cols = append(cols, fmt.Sprintf("%d:%s/%s", i+1, targetCode, currentCode))
+		}
+	}
+	if len(cols) > 16 {
+		cols = append(cols[:16], fmt.Sprintf("...(+%d)", len(cols)-16))
+	}
+	return "cols " + strings.Join(cols, " ")
+}
+
+func visualLineGlyphs(line string, width int) []rune {
+	glyphs := make([]rune, width)
+	col := 0
+	for i := 0; i < len(line) && col < width; {
+		r, size := nextRune(line, i)
+		text := string(r)
+		cellWidth := render.DisplayWidth(text)
+		if cellWidth <= 0 {
+			i += size
+			continue
+		}
+		glyphs[col] = r
+		for extra := 1; extra < cellWidth && col+extra < width; extra++ {
+			glyphs[col+extra] = 0
+		}
+		col += cellWidth
+		i += size
+	}
+	return glyphs
+}
+
+func visualLineSubstringSpans(line string, marker string) [][2]int {
+	if marker == "" {
+		return nil
+	}
+	spans := [][2]int{}
+	offset := 0
+	for {
+		index := strings.Index(line[offset:], marker)
+		if index < 0 {
+			break
+		}
+		startByte := offset + index
+		endByte := startByte + len(marker)
+		startCol := render.DisplayWidth(line[:startByte])
+		endCol := startCol + render.DisplayWidth(marker)
+		spans = append(spans, [2]int{startCol, endCol})
+		offset = endByte
+	}
+	return spans
 }
 
 func visualStyleExpectations() []visualStyleExpectation {

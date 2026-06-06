@@ -358,10 +358,11 @@ func v3TmuxVisualCompareCommand() *cobra.Command {
 			}
 			fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"termx v3 tmux visual compare ok: session=%s mismatches=%d style_mismatches=%d artifact_dir=%s current_plain=%s current_ansi=%s target=%s diff=%s style=%s style_diff=%s\n",
+				"termx v3 tmux visual compare ok: session=%s mismatches=%d style_mismatches=%d stylemap_mismatches=%d artifact_dir=%s current_plain=%s current_ansi=%s target=%s diff=%s style=%s style_diff=%s current_stylemap=%s target_stylemap=%s stylemap_diff=%s\n",
 				result.Session,
 				result.Mismatches,
 				result.StyleMismatches,
+				result.StyleMapMismatches,
 				result.ArtifactDir,
 				result.CurrentPlainPath,
 				result.CurrentANSIPath,
@@ -369,6 +370,9 @@ func v3TmuxVisualCompareCommand() *cobra.Command {
 				result.DiffPath,
 				result.StylePath,
 				result.StyleDiffPath,
+				result.CurrentStyleMapPath,
+				result.TargetStyleMapPath,
+				result.StyleMapDiffPath,
 			)
 			return nil
 		},
