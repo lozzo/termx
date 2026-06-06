@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/lozzow/termx/internal/protocol"
@@ -169,12 +170,19 @@ func (adapter ProtocolWorkbenchStorageAdapter) SaveWorkbench(ctx context.Context
 		ExpectedVersion: req.ExpectedVersion,
 	})
 	if err != nil {
+		if isStorageVersionConflict(err) {
+			return WorkbenchStorageSaveResult{}, fmt.Errorf("%w: %v", ErrWorkbenchStorageConflict, err)
+		}
 		return WorkbenchStorageSaveResult{}, err
 	}
 	return WorkbenchStorageSaveResult{
 		Ref:     req.Ref.WithVersion(entry.Version),
 		Version: entry.Version,
 	}, nil
+}
+
+func isStorageVersionConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "storage version conflict")
 }
 
 func (adapter ProtocolWorkbenchStorageAdapter) WatchWorkbench(ctx context.Context, ref state.WorkbenchStorageRef) (<-chan WorkbenchStorageEvent, error) {

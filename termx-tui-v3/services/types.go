@@ -240,9 +240,10 @@ type WorkbenchStorageEvent struct {
 }
 
 var (
-	ErrMissingHistoryResponse = errors.New("missing history response")
-	ErrUnexpectedHistoryCall  = errors.New("unexpected history call")
-	ErrMissingTerminalClient  = errors.New("missing terminal client")
+	ErrMissingHistoryResponse   = errors.New("missing history response")
+	ErrUnexpectedHistoryCall    = errors.New("unexpected history call")
+	ErrMissingTerminalClient    = errors.New("missing terminal client")
+	ErrWorkbenchStorageConflict = errors.New("workbench storage version conflict")
 )
 
 type FakeCoreClient struct {
@@ -305,15 +306,16 @@ type FakeTerminalService struct {
 }
 
 type FakeWorkbenchStorageService struct {
-	LoadResult WorkbenchStorageLoadResult
-	LoadErr    error
-	SaveResult WorkbenchStorageSaveResult
-	SaveErr    error
-	WatchCh    chan WorkbenchStorageEvent
-	WatchErr   error
-	Loads      []state.WorkbenchStorageRef
-	Saves      []WorkbenchStorageSaveRequest
-	Watches    []state.WorkbenchStorageRef
+	LoadResult     WorkbenchStorageLoadResult
+	LoadErr        error
+	SaveResult     WorkbenchStorageSaveResult
+	SaveErr        error
+	CurrentVersion uint64
+	WatchCh        chan WorkbenchStorageEvent
+	WatchErr       error
+	Loads          []state.WorkbenchStorageRef
+	Saves          []WorkbenchStorageSaveRequest
+	Watches        []state.WorkbenchStorageRef
 }
 
 func (service *FakeWorkbenchStorageService) LoadWorkbench(_ context.Context, ref state.WorkbenchStorageRef) (WorkbenchStorageLoadResult, error) {
@@ -330,6 +332,9 @@ func (service *FakeWorkbenchStorageService) SaveWorkbench(_ context.Context, req
 	if service.SaveErr != nil {
 		return WorkbenchStorageSaveResult{}, service.SaveErr
 	}
+	if req.CheckVersion && service.CurrentVersion != req.ExpectedVersion {
+		return WorkbenchStorageSaveResult{}, ErrWorkbenchStorageConflict
+	}
 	result := service.SaveResult
 	if result.Ref.AppID == "" {
 		result.Ref = req.Ref
@@ -337,6 +342,7 @@ func (service *FakeWorkbenchStorageService) SaveWorkbench(_ context.Context, req
 	if result.Version == 0 {
 		result.Version = req.ExpectedVersion + 1
 	}
+	service.CurrentVersion = result.Version
 	return result, nil
 }
 

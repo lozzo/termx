@@ -62,6 +62,9 @@ func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 	if save.Ref.AppID != state.WorkbenchStorageAppID || save.Ref.Key != state.WorkbenchStorageKeyRoot || save.Snapshot.Schema != state.WorkbenchStorageSchema {
 		t.Fatalf("unexpected save request %#v", save)
 	}
+	if !save.CheckVersion || save.ExpectedVersion != 0 {
+		t.Fatalf("initial persist must use storage CAS at version 0, got %#v", save)
+	}
 	if len(save.Snapshot.Workspace.Tabs) != 2 || save.Snapshot.Workspace.Tabs[1].Title != "logs" {
 		t.Fatalf("storage snapshot must contain updated tab tree, got %#v", save.Snapshot.Workspace.Tabs)
 	}
@@ -70,6 +73,34 @@ func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 	}
 	if root.WorkbenchSync.LastSavedVersion != 1 {
 		t.Fatalf("persist result should track local saved version, got %#v", root.WorkbenchSync)
+	}
+}
+
+func TestWorkbenchCommandPersistsAgainstLoadedStorageVersion(t *testing.T) {
+	storage := &services.FakeWorkbenchStorageService{CurrentVersion: 7}
+	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
+	root := state.Root{
+		Shell:         state.DefaultShell(),
+		WorkbenchSync: (state.WorkbenchSyncStore{}).MarkApplied(7),
+	}
+
+	root, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"}})
+	if len(effects) != 1 {
+		t.Fatalf("expected workbench command persist request, got %#v", effects)
+	}
+	persistMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, persistMsg)
+	if len(effects) != 1 {
+		t.Fatalf("expected storage save effect, got %#v", effects)
+	}
+	resultMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, resultMsg)
+
+	if len(storage.Saves) != 1 || !storage.Saves[0].CheckVersion || storage.Saves[0].ExpectedVersion != 7 {
+		t.Fatalf("persist must use loaded base version, saves=%#v", storage.Saves)
+	}
+	if root.WorkbenchSync.LastSavedVersion != 8 || root.WorkbenchSync.SaveVersion() != 8 {
+		t.Fatalf("successful save should advance base version, got %#v", root.WorkbenchSync)
 	}
 }
 
@@ -105,6 +136,49 @@ func TestWorkbenchStorageChangedReloadsExternalSnapshot(t *testing.T) {
 
 	if root.Shell.ActivePaneID != "pane-external" || root.WorkbenchSync.LastAppliedVersion != 8 {
 		t.Fatalf("external snapshot should refresh shell, root=%#v", root)
+	}
+}
+
+func TestWorkbenchStorageConflictReloadsLatestSnapshot(t *testing.T) {
+	remoteShell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-remote", Title: "remote", Kind: state.PaneTerminalLive, TerminalID: "term-remote"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-remote"})
+	storage := &services.FakeWorkbenchStorageService{
+		CurrentVersion: 9,
+		LoadResult: services.WorkbenchStorageLoadResult{
+			Snapshot: state.SnapshotWorkbenchForStorage(remoteShell),
+			Version:  9,
+			Found:    true,
+		},
+	}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
+	root := state.Root{
+		Shell:         state.DefaultShell(),
+		WorkbenchSync: (state.WorkbenchSyncStore{}).MarkApplied(8),
+	}
+
+	root, effects := reducer(root, WorkbenchStoragePersistRequestMsg{Reason: "tab.create"})
+	if len(effects) != 1 {
+		t.Fatalf("persist request should emit save effect, got %#v", effects)
+	}
+	persistResult := effects[0].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, persistResult)
+	if len(effects) != 1 || !root.WorkbenchSync.Conflict || root.WorkbenchSync.ConflictVersion != 8 {
+		t.Fatalf("conflict should mark state and request reload, root=%#v effects=%#v", root, effects)
+	}
+	if len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Body != "conflict: reloading" {
+		t.Fatalf("conflict should show reload feedback, toasts=%#v", root.Shell.Toasts)
+	}
+	loadRequest := effects[0].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, loadRequest)
+	if len(effects) != 1 {
+		t.Fatalf("reload request should emit load effect, got %#v", effects)
+	}
+	loadResult := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, loadResult)
+
+	if root.Shell.ActivePaneID != "pane-remote" || root.WorkbenchSync.Conflict || root.WorkbenchSync.SaveVersion() != 9 {
+		t.Fatalf("conflict reload should apply latest remote snapshot, root=%#v", root)
 	}
 }
 

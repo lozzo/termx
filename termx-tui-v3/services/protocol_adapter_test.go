@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lozzow/termx/internal/protocol"
@@ -42,6 +43,7 @@ type fakeProtocolTerminalClient struct {
 	storageGets    []protocol.StorageGetParams
 	storagePuts    []protocol.StoragePutParams
 	storageEntry   *protocol.StorageEntry
+	storagePutErr  error
 }
 
 func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
@@ -128,6 +130,9 @@ func (client *fakeProtocolTerminalClient) StorageGet(_ context.Context, params p
 
 func (client *fakeProtocolTerminalClient) StoragePut(_ context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
 	client.storagePuts = append(client.storagePuts, params)
+	if client.storagePutErr != nil {
+		return nil, client.storagePutErr
+	}
 	return &protocol.StorageEntry{
 		AppID:   params.AppID,
 		Scope:   params.Scope,
@@ -278,6 +283,24 @@ func TestProtocolWorkbenchStorageAdapterUsesOpaqueStorageMethods(t *testing.T) {
 	changed := <-watch
 	if changed.Ref.Key != state.WorkbenchStorageKeyRoot || changed.Version != 11 || changed.Op != "put" {
 		t.Fatalf("unexpected storage changed event %#v", changed)
+	}
+}
+
+func TestProtocolWorkbenchStorageAdapterWrapsStorageConflict(t *testing.T) {
+	client := &fakeProtocolTerminalClient{storagePutErr: errors.New("protocol error 400: storage version conflict")}
+	adapter := ProtocolWorkbenchStorageAdapter{Client: client}
+
+	_, err := adapter.SaveWorkbench(context.Background(), WorkbenchStorageSaveRequest{
+		Ref:             state.DefaultWorkbenchStorageRef(""),
+		Snapshot:        state.SnapshotWorkbenchForStorage(state.DefaultShell()),
+		CheckVersion:    true,
+		ExpectedVersion: 4,
+	})
+	if !errors.Is(err, ErrWorkbenchStorageConflict) {
+		t.Fatalf("expected typed storage conflict, got %v", err)
+	}
+	if len(client.storagePuts) != 1 || !client.storagePuts[0].CheckVersion || client.storagePuts[0].ExpectedVersion != 4 {
+		t.Fatalf("conflict path should still send CAS params, puts=%#v", client.storagePuts)
 	}
 }
 

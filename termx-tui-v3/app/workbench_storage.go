@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -148,10 +149,13 @@ func reduceWorkbenchStoragePersistRequest(root state.Root, _ WorkbenchStoragePer
 	}
 	ref := workbenchStorageRef(root, deps)
 	snapshot := state.SnapshotWorkbenchForStorage(root.Shell)
+	expectedVersion := root.WorkbenchSync.SaveVersion()
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		result, err := deps.Storage.SaveWorkbench(ctx, services.WorkbenchStorageSaveRequest{
-			Ref:      ref,
-			Snapshot: snapshot,
+			Ref:             ref.WithVersion(expectedVersion),
+			Snapshot:        snapshot,
+			CheckVersion:    true,
+			ExpectedVersion: expectedVersion,
 		})
 		return WorkbenchStoragePersistResultMsg{Result: result, Err: err}
 	}}}
@@ -159,6 +163,13 @@ func reduceWorkbenchStoragePersistRequest(root state.Root, _ WorkbenchStoragePer
 
 func reduceWorkbenchStoragePersistResult(root state.Root, msg WorkbenchStoragePersistResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if errors.Is(msg.Err, services.ErrWorkbenchStorageConflict) {
+			root.WorkbenchSync = root.WorkbenchSync.MarkConflict(root.WorkbenchSync.SaveVersion())
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: "conflict: reloading"})
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return WorkbenchStorageLoadRequestMsg{}
+			}}}
+		}
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: errorString(msg.Err)})
 		return root.Advance(), nil
 	}

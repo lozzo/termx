@@ -15,8 +15,15 @@ func TestWorkbenchSyncStoreTracksSavedEventAndAppliedVersions(t *testing.T) {
 	if store.Ref.Version != 3 || store.LastSavedVersion != 3 || store.LastEventVersion != 4 || store.LastAppliedVersion != 4 {
 		t.Fatalf("unexpected sync store %#v", store)
 	}
+	if store.SaveVersion() != 4 || store.Conflict {
+		t.Fatalf("applied version should become save base and clear conflict, got %#v", store)
+	}
 	if !store.ShouldIgnoreEvent(3) || store.ShouldIgnoreEvent(4) {
 		t.Fatalf("unexpected self-event filtering %#v", store)
+	}
+	store = store.MarkConflict(store.SaveVersion())
+	if !store.Conflict || store.ConflictVersion != 4 {
+		t.Fatalf("conflict marker should keep base version, got %#v", store)
 	}
 }
 
