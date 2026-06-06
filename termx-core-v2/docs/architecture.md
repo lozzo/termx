@@ -47,6 +47,16 @@ logical line 是解决这些约束的最小稳定单位：写入和落盘按 log
 
 core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨架构。双轨只区分历史真相与实时 surface，不在 HistoryTrack 内部拆成两套 logical line 模型。
 
+### 4.0 Daemon Storage
+
+`Daemon Storage` 是 core-v2 daemon 内部的通用协作状态承载区，和 terminal history truth 分离。它用于保存非历史类客户端协作状态，例如后续 workspace/tab/pane 结构、UI 锁、协作 metadata 或其他 app-scoped 状态。
+
+- storage 不是 `HistoryTrack`，不能保存或反推出 committed history truth。
+- storage entry 以 `app_id + scope + owner_id + key` 定址，value 是协议层 opaque bytes。
+- storage entry 必须带 version，写入和删除支持 check-version CAS，避免多客户端覆盖。
+- storage mutation 必须通过 daemon 事件流广播 `storage.changed`，客户端以事件再拉取或重建本地投影。
+- workspace/tab/pane 后续必须在该 daemon-owned storage/domain store 上建模，TUI 本地 reducer 只保留当前交互投影，不再作为多客户端 truth。
+
 ### 4.1 HistoryTrack
 
 `HistoryTrack` 是 authoritative history truth，内部由四类对象组成：

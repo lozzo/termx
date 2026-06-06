@@ -2,6 +2,7 @@ package termxcorev2
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,12 +18,14 @@ const (
 	EventTerminalMetadataChanged EventType = "terminal.metadata_changed"
 	EventTerminalRemoved         EventType = "terminal.removed"
 	EventTerminalChanged         EventType = "terminal.changed"
+	EventStorageChanged          EventType = "storage.changed"
 )
 
 type Event struct {
 	Type       EventType
 	TerminalID string
 	Terminal   *TerminalInfo
+	Storage    *StorageChanged
 	SocketPath string
 	OldSize    Size
 	NewSize    Size
@@ -30,8 +33,12 @@ type Event struct {
 }
 
 type EventFilter struct {
-	TerminalID string
-	Types      []EventType
+	TerminalID       string
+	Types            []EventType
+	StorageAppID     string
+	StorageScope     StorageScope
+	StorageOwnerID   string
+	StorageKeyPrefix string
 }
 
 type eventBroker struct {
@@ -124,6 +131,9 @@ func eventMatchesFilter(event Event, filter EventFilter) bool {
 	if filter.TerminalID != "" && filter.TerminalID != event.TerminalID {
 		return false
 	}
+	if event.Type == EventStorageChanged && !storageEventMatchesFilter(event.Storage, filter) {
+		return false
+	}
 	if len(filter.Types) == 0 {
 		return true
 	}
@@ -135,10 +145,33 @@ func eventMatchesFilter(event Event, filter EventFilter) bool {
 	return false
 }
 
+func storageEventMatchesFilter(storage *StorageChanged, filter EventFilter) bool {
+	if storage == nil {
+		return filter.StorageAppID == "" && filter.StorageScope == "" && filter.StorageOwnerID == "" && filter.StorageKeyPrefix == ""
+	}
+	if filter.StorageAppID != "" && filter.StorageAppID != storage.AppID {
+		return false
+	}
+	if filter.StorageScope != "" && filter.StorageScope != storage.Scope {
+		return false
+	}
+	if filter.StorageOwnerID != "" && filter.StorageOwnerID != storage.OwnerID {
+		return false
+	}
+	if filter.StorageKeyPrefix != "" && !strings.HasPrefix(storage.Key, filter.StorageKeyPrefix) {
+		return false
+	}
+	return true
+}
+
 func cloneEvent(event Event) Event {
 	if event.Terminal != nil {
 		terminal := event.Terminal.Clone()
 		event.Terminal = &terminal
+	}
+	if event.Storage != nil {
+		storage := *event.Storage
+		event.Storage = &storage
 	}
 	return event
 }

@@ -81,6 +81,87 @@ func TestServerRegistryValidatesRecords(t *testing.T) {
 	}
 }
 
+func TestServerStorageVersioningListAndEvents(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := server.Events(ctx, EventFilter{
+		Types:            []EventType{EventStorageChanged},
+		StorageAppID:     "termx-tui-v3",
+		StorageScope:     StorageScopePublic,
+		StorageOwnerID:   "workspace-main",
+		StorageKeyPrefix: "workbench/",
+	})
+
+	entry, err := server.StoragePut(context.Background(), StoragePutRequest{
+		AppID:   "termx-tui-v3",
+		Scope:   StorageScopePublic,
+		OwnerID: "workspace-main",
+		Key:     "workbench/root",
+		Value:   []byte(`{"workspace":"main"}`),
+	})
+	if err != nil {
+		t.Fatalf("storage put: %v", err)
+	}
+	if entry.Version != 1 || string(entry.Value) != `{"workspace":"main"}` {
+		t.Fatalf("unexpected first entry %#v", entry)
+	}
+	event := assertEventValue(t, events, EventStorageChanged, "")
+	if event.Storage == nil || event.Storage.AppID != "termx-tui-v3" || event.Storage.Key != "workbench/root" || event.Storage.Op != StorageOpPut || event.Storage.Version != 1 {
+		t.Fatalf("unexpected storage event %#v", event)
+	}
+
+	if _, err := server.StoragePut(context.Background(), StoragePutRequest{
+		AppID:           "termx-tui-v3",
+		Scope:           StorageScopePublic,
+		OwnerID:         "workspace-main",
+		Key:             "workbench/root",
+		Value:           []byte("stale"),
+		CheckVersion:    true,
+		ExpectedVersion: 99,
+	}); !errors.Is(err, ErrStorageVersionConflict) {
+		t.Fatalf("expected version conflict, got %v", err)
+	}
+	entry, err = server.StoragePut(context.Background(), StoragePutRequest{
+		AppID:           "termx-tui-v3",
+		Scope:           StorageScopePublic,
+		OwnerID:         "workspace-main",
+		Key:             "workbench/root",
+		Value:           []byte(`{"workspace":"renamed"}`),
+		CheckVersion:    true,
+		ExpectedVersion: 1,
+	})
+	if err != nil {
+		t.Fatalf("versioned storage put: %v", err)
+	}
+	if entry.Version != 2 {
+		t.Fatalf("expected version 2, got %#v", entry)
+	}
+
+	_, err = server.StoragePut(context.Background(), StoragePutRequest{AppID: "termx-tui-v3", Scope: StorageScopePublic, OwnerID: "workspace-main", Key: "other/root", Value: []byte("ignored")})
+	if err != nil {
+		t.Fatalf("put other key: %v", err)
+	}
+	list := server.StorageList(context.Background(), "termx-tui-v3", StorageScopePublic, "workspace-main", "workbench/")
+	if len(list) != 1 || list[0].Key != "workbench/root" || list[0].Version != 2 {
+		t.Fatalf("unexpected storage list %#v", list)
+	}
+	deleted, err := server.StorageDelete(context.Background(), StorageDeleteRequest{
+		AppID:           "termx-tui-v3",
+		Scope:           StorageScopePublic,
+		OwnerID:         "workspace-main",
+		Key:             "workbench/root",
+		CheckVersion:    true,
+		ExpectedVersion: 2,
+	})
+	if err != nil {
+		t.Fatalf("storage delete: %v", err)
+	}
+	if !deleted.Deleted || deleted.Version != 3 {
+		t.Fatalf("unexpected delete result %#v", deleted)
+	}
+}
+
 func TestServerListenAndShutdownUseListenerFactory(t *testing.T) {
 	listener := newFakeListener("/tmp/core-v2.sock")
 	factoryCalled := make(chan string, 1)

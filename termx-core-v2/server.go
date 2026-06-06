@@ -31,6 +31,7 @@ type serverConfig struct {
 type Server struct {
 	cfg         serverConfig
 	registry    *terminalRegistry
+	storage     *storageStore
 	terminals   map[string]*Terminal
 	events      *eventBroker
 	closed      atomic.Bool
@@ -68,6 +69,7 @@ func NewServer(opts ...ServerOption) *Server {
 	return &Server{
 		cfg:        cfg,
 		registry:   newTerminalRegistry(),
+		storage:    newStorageStore(),
 		terminals:  make(map[string]*Terminal),
 		events:     newEventBroker(cfg.eventBuffer),
 		transports: make(map[transport.Transport]struct{}),
@@ -153,6 +155,50 @@ func (server *Server) GetTerminal(id string) (TerminalInfo, error) {
 
 func (server *Server) ListTerminals() []TerminalInfo {
 	return server.registry.list()
+}
+
+func (server *Server) StorageGet(ctx context.Context, appID string, scope StorageScope, ownerID string, key string) (StorageEntry, error) {
+	_ = ctx
+	return server.storage.get(appID, scope, ownerID, key)
+}
+
+func (server *Server) StoragePut(ctx context.Context, request StoragePutRequest) (StorageEntry, error) {
+	_ = ctx
+	entry, err := server.storage.put(request)
+	if err != nil {
+		return StorageEntry{}, err
+	}
+	server.publishStorageEvent(StorageChanged{
+		AppID:   entry.AppID,
+		Scope:   entry.Scope,
+		OwnerID: entry.OwnerID,
+		Key:     entry.Key,
+		Version: entry.Version,
+		Op:      StorageOpPut,
+	})
+	return entry, nil
+}
+
+func (server *Server) StorageDelete(ctx context.Context, request StorageDeleteRequest) (StorageDeleteResult, error) {
+	_ = ctx
+	result, err := server.storage.delete(request)
+	if err != nil {
+		return StorageDeleteResult{}, err
+	}
+	server.publishStorageEvent(StorageChanged{
+		AppID:   result.AppID,
+		Scope:   result.Scope,
+		OwnerID: result.OwnerID,
+		Key:     result.Key,
+		Version: result.Version,
+		Op:      StorageOpDelete,
+	})
+	return result, nil
+}
+
+func (server *Server) StorageList(ctx context.Context, appID string, scope StorageScope, ownerID string, prefix string) []StorageEntry {
+	_ = ctx
+	return server.storage.list(appID, scope, ownerID, prefix)
 }
 
 func (server *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) (TerminalInfo, error) {
@@ -419,6 +465,10 @@ func (server *Server) publishTerminalEvent(typ EventType, info TerminalInfo) {
 		TerminalID: info.ID,
 		Terminal:   &terminal,
 	})
+}
+
+func (server *Server) publishStorageEvent(change StorageChanged) {
+	server.events.publish(Event{Type: EventStorageChanged, Storage: &change})
 }
 
 func unixListenerFactory(socketPath string) (transport.Listener, error) {

@@ -53,15 +53,18 @@ type TerminalRecord struct {
 }
 
 var (
-	ErrServerClosed       = errors.New("core-v2 server closed")
-	ErrInvalidTerminalID  = errors.New("invalid terminal id")
-	ErrInvalidCommand     = errors.New("invalid command")
-	ErrDuplicateTerminal  = errors.New("duplicate terminal")
-	ErrTerminalNotFound   = errors.New("terminal not found")
-	ErrTerminalExited     = errors.New("terminal exited")
-	ErrStaleHistoryWindow = errors.New("stale history window")
-	ErrInvalidServerSize  = errors.New("invalid server size")
-	ErrNilListenerFactory = errors.New("nil listener factory")
+	ErrServerClosed           = errors.New("core-v2 server closed")
+	ErrInvalidTerminalID      = errors.New("invalid terminal id")
+	ErrInvalidCommand         = errors.New("invalid command")
+	ErrDuplicateTerminal      = errors.New("duplicate terminal")
+	ErrTerminalNotFound       = errors.New("terminal not found")
+	ErrTerminalExited         = errors.New("terminal exited")
+	ErrStaleHistoryWindow     = errors.New("stale history window")
+	ErrInvalidServerSize      = errors.New("invalid server size")
+	ErrNilListenerFactory     = errors.New("nil listener factory")
+	ErrInvalidStorageKey      = errors.New("invalid storage key")
+	ErrStorageEntryNotFound   = errors.New("storage entry not found")
+	ErrStorageVersionConflict = errors.New("storage version conflict")
 )
 
 func cloneStringMap(values map[string]string) map[string]string {

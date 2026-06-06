@@ -262,6 +262,57 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		in := params.(protocol.EventsParams)
 		session.startEvents(ctx, in)
 		return encodeMethodResult(req.Method, nil)
+	case "storage.get":
+		in := params.(protocol.StorageGetParams)
+		entry, err := session.server.StorageGet(ctx, in.AppID, storageScopeFromProtocol(in.Scope), in.OwnerID, in.Key)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, protocolStorageEntryFromCore(entry))
+	case "storage.put":
+		in := params.(protocol.StoragePutParams)
+		entry, err := session.server.StoragePut(ctx, StoragePutRequest{
+			AppID:           in.AppID,
+			Scope:           storageScopeFromProtocol(in.Scope),
+			OwnerID:         in.OwnerID,
+			Key:             in.Key,
+			Value:           append([]byte(nil), in.Value...),
+			CheckVersion:    in.CheckVersion,
+			ExpectedVersion: in.ExpectedVersion,
+		})
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, protocolStorageEntryFromCore(entry))
+	case "storage.delete":
+		in := params.(protocol.StorageDeleteParams)
+		result, err := session.server.StorageDelete(ctx, StorageDeleteRequest{
+			AppID:           in.AppID,
+			Scope:           storageScopeFromProtocol(in.Scope),
+			OwnerID:         in.OwnerID,
+			Key:             in.Key,
+			CheckVersion:    in.CheckVersion,
+			ExpectedVersion: in.ExpectedVersion,
+		})
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, protocol.StorageDeleteResult{
+			AppID:   result.AppID,
+			Scope:   protocolStorageScopeFromCore(result.Scope),
+			OwnerID: result.OwnerID,
+			Key:     result.Key,
+			Deleted: result.Deleted,
+			Version: result.Version,
+		})
+	case "storage.list":
+		in := params.(protocol.StorageListParams)
+		entries := session.server.StorageList(ctx, in.AppID, storageScopeFromProtocol(in.Scope), in.OwnerID, in.Prefix)
+		out := protocol.StorageListResult{Entries: make([]protocol.StorageEntry, 0, len(entries))}
+		for _, entry := range entries {
+			out.Entries = append(out.Entries, protocolStorageEntryFromCore(entry))
+		}
+		return encodeMethodResult(req.Method, out)
 	case "history.window":
 		in := params.(protocol.HistoryWindowParams)
 		window, err := session.historyWindow(in)
@@ -665,6 +716,18 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 	case EventTerminalRemoved:
 		out.Type = protocol.EventTerminalRemoved
 		out.Removed = &protocol.TerminalRemovedData{Reason: "removed"}
+	case EventStorageChanged:
+		out.Type = protocol.EventStorageChanged
+		if event.Storage != nil {
+			out.Storage = &protocol.StorageChangedData{
+				AppID:   event.Storage.AppID,
+				Scope:   protocolStorageScopeFromCore(event.Storage.Scope),
+				OwnerID: event.Storage.OwnerID,
+				Key:     event.Storage.Key,
+				Version: event.Storage.Version,
+				Op:      event.Storage.Op,
+			}
+		}
 	default:
 		out.Type = protocol.EventTerminalStateChanged
 	}
@@ -687,9 +750,45 @@ func eventFilterFromProtocol(params protocol.EventsParams) EventFilter {
 			} else {
 				out.Types = append(out.Types, EventTerminalResized)
 			}
+		case protocol.EventStorageChanged:
+			out.Types = append(out.Types, EventStorageChanged)
 		}
 	}
+	out.StorageAppID = params.StorageAppID
+	out.StorageScope = storageScopeFromProtocol(params.StorageScope)
+	out.StorageOwnerID = params.StorageOwnerID
+	out.StorageKeyPrefix = params.StorageKeyPrefix
 	return out
+}
+
+func protocolStorageEntryFromCore(entry StorageEntry) protocol.StorageEntry {
+	return protocol.StorageEntry{
+		AppID:     entry.AppID,
+		Scope:     protocolStorageScopeFromCore(entry.Scope),
+		OwnerID:   entry.OwnerID,
+		Key:       entry.Key,
+		Value:     append([]byte(nil), entry.Value...),
+		Version:   entry.Version,
+		UpdatedAt: entry.UpdatedAt,
+	}
+}
+
+func protocolStorageScopeFromCore(scope StorageScope) protocol.StorageScope {
+	switch scope {
+	case StorageScopePrivate:
+		return protocol.StorageScopePrivate
+	default:
+		return protocol.StorageScopePublic
+	}
+}
+
+func storageScopeFromProtocol(scope protocol.StorageScope) StorageScope {
+	switch scope {
+	case protocol.StorageScopePrivate:
+		return StorageScopePrivate
+	default:
+		return StorageScopePublic
+	}
 }
 
 func protocolSizeFromCore(size Size) protocol.Size {
@@ -741,8 +840,10 @@ func errorCode(err error) int {
 	switch {
 	case errors.Is(err, ErrTerminalNotFound):
 		return protocolErrorNotFound
-	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrStaleHistoryWindow):
+	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrStaleHistoryWindow), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict):
 		return protocolErrorBadRequest
+	case errors.Is(err, ErrStorageEntryNotFound):
+		return protocolErrorNotFound
 	default:
 		return protocolErrorInternal
 	}

@@ -202,6 +202,88 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceStorageMethodsAndEvents(t *testing.T) {
+	_, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	events, err := client.Events(context.Background(), protocol.EventsParams{
+		Types:            []protocol.EventType{protocol.EventStorageChanged},
+		StorageAppID:     "termx-tui-v3",
+		StorageScope:     protocol.StorageScopePublic,
+		StorageOwnerID:   "workspace-main",
+		StorageKeyPrefix: "workbench/",
+	})
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	entry, err := client.StoragePut(context.Background(), protocol.StoragePutParams{
+		AppID:   "termx-tui-v3",
+		Scope:   protocol.StorageScopePublic,
+		OwnerID: "workspace-main",
+		Key:     "workbench/root",
+		Value:   []byte("v1"),
+	})
+	if err != nil {
+		t.Fatalf("storage put: %v", err)
+	}
+	if entry.Version != 1 || string(entry.Value) != "v1" {
+		t.Fatalf("unexpected put entry %#v", entry)
+	}
+	event := requireProtocolEvent(t, events)
+	if event.Type != protocol.EventStorageChanged || event.Storage == nil || event.Storage.Key != "workbench/root" || event.Storage.Version != 1 || event.Storage.Op != "put" {
+		t.Fatalf("unexpected storage event %#v", event)
+	}
+	got, err := client.StorageGet(context.Background(), protocol.StorageGetParams{
+		AppID:   "termx-tui-v3",
+		Scope:   protocol.StorageScopePublic,
+		OwnerID: "workspace-main",
+		Key:     "workbench/root",
+	})
+	if err != nil {
+		t.Fatalf("storage get: %v", err)
+	}
+	if got.Version != 1 || string(got.Value) != "v1" {
+		t.Fatalf("unexpected get entry %#v", got)
+	}
+	if _, err := client.StoragePut(context.Background(), protocol.StoragePutParams{
+		AppID:           "termx-tui-v3",
+		Scope:           protocol.StorageScopePublic,
+		OwnerID:         "workspace-main",
+		Key:             "workbench/root",
+		Value:           []byte("stale"),
+		CheckVersion:    true,
+		ExpectedVersion: 99,
+	}); err == nil || !strings.Contains(err.Error(), ErrStorageVersionConflict.Error()) {
+		t.Fatalf("expected storage conflict, got %v", err)
+	}
+	list, err := client.StorageList(context.Background(), protocol.StorageListParams{
+		AppID:   "termx-tui-v3",
+		Scope:   protocol.StorageScopePublic,
+		OwnerID: "workspace-main",
+		Prefix:  "workbench/",
+	})
+	if err != nil {
+		t.Fatalf("storage list: %v", err)
+	}
+	if len(list.Entries) != 1 || list.Entries[0].Key != "workbench/root" {
+		t.Fatalf("unexpected list %#v", list)
+	}
+	deleted, err := client.StorageDelete(context.Background(), protocol.StorageDeleteParams{
+		AppID:           "termx-tui-v3",
+		Scope:           protocol.StorageScopePublic,
+		OwnerID:         "workspace-main",
+		Key:             "workbench/root",
+		CheckVersion:    true,
+		ExpectedVersion: 1,
+	})
+	if err != nil {
+		t.Fatalf("storage delete: %v", err)
+	}
+	if !deleted.Deleted || deleted.Version != 2 {
+		t.Fatalf("unexpected delete result %#v", deleted)
+	}
+}
+
 func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
