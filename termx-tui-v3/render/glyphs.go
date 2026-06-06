@@ -1,9 +1,7 @@
 package render
 
 // PaneChromeGlyphs 集中管理 pane/floating chrome 的动作和状态字形。
-//
-// 默认值使用 Nerd Font codepoint；终端没有对应字体时，调用方可以在启动时
-// 替换成 emoji 或纯 Unicode 符号，但 render 主线仍按 cell width 做裁切和命中区计算。
+// 默认值只使用基础 Unicode；Nerd Font 状态体系必须等语义和 fallback 拍板后再启用。
 type PaneChromeGlyphs struct {
 	Zoom             string
 	SplitVertical    string
@@ -18,16 +16,16 @@ type PaneChromeGlyphs struct {
 }
 
 var defaultPaneChromeGlyphs = PaneChromeGlyphs{
-	Zoom:             "\ueb01", // nf-cod-screen_full
-	SplitVertical:    "\ueb56", // nf-cod-split_vertical
-	SplitHorizontal:  "\ueb57", // nf-cod-split_horizontal
-	Close:            "\uea76", // nf-cod-close
-	CenterFloating:   "\uebb4", // nf-cod-target
-	CollapseFloating: "\ueab6", // nf-cod-chevron_up
-	Running:          "\uea71", // nf-cod-debug_start
-	Waiting:          "\ueb32", // nf-cod-circle_large_outline
-	Exited:           "\uea87", // nf-cod-error
-	Killed:           "\uea87", // nf-cod-error
+	Zoom:             "□",
+	SplitVertical:    "↔",
+	SplitHorizontal:  "↕",
+	Close:            "×",
+	CenterFloating:   "◎",
+	CollapseFloating: "⌃",
+	Running:          "●",
+	Waiting:          "○",
+	Exited:           "×",
+	Killed:           "×",
 }
 
 var paneChromeGlyphs = defaultPaneChromeGlyphs

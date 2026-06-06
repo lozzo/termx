@@ -393,7 +393,7 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 
 	frame := lastRuntimeFrame(t, closeHost)
 	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, "pane.close", "pane-2")
-	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "["+render.DefaultPaneChromeGlyphs().Close+"]")
+	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, render.DefaultPaneChromeGlyphs().Close)
 	if !pointInRenderRect(closeMouse, action.Rect) {
 		t.Fatalf("visible close token must be inside pane.close hit region, mouse=%#v region=%#v line=%q", closeMouse, action, frame.Lines[action.Rect.Y])
 	}
@@ -426,7 +426,7 @@ func TestAppRuntimePaneCloseHitRegionMatchesWideGlyph(t *testing.T) {
 
 	frame := lastRuntimeFrame(t, host)
 	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionPaneClose.String(), "pane-2")
-	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "[❌]")
+	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "❌")
 	if !pointInRenderRect(closeMouse, action.Rect) {
 		t.Fatalf("wide close glyph must be inside pane.close hit region, mouse=%#v region=%#v line=%q", closeMouse, action, frame.Lines[action.Rect.Y])
 	}
@@ -453,7 +453,7 @@ func TestAppRuntimeLastPaneCloseClickShowsFeedback(t *testing.T) {
 
 	frame := lastRuntimeFrame(t, host)
 	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionPaneClose.String(), state.DefaultPaneID)
-	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "["+render.DefaultPaneChromeGlyphs().Close+"]")
+	closeMouse := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, render.DefaultPaneChromeGlyphs().Close)
 	if err := host.SendInput(closeMouse); err != nil {
 		t.Fatalf("send last pane close click: %v", err)
 	}

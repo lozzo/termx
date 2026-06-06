@@ -252,7 +252,7 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if plan.HitRegions[1].Kind != HitRegionPaneAction || plan.HitRegions[1].ActionID != "pane.split-right" || plan.HitRegions[2].Kind != HitRegionPaneAction || plan.HitRegions[2].ActionID != "pane.close" {
 		t.Fatalf("pane action regions should expose visible split/close tokens, got %#v", plan.HitRegions[:3])
 	}
-	actionWidth := plan.HitRegions[0].Rect.W + plan.HitRegions[1].Rect.W + plan.HitRegions[2].Rect.W + 2
+	actionWidth := plan.HitRegions[0].Rect.W + plan.HitRegions[1].Rect.W + plan.HitRegions[2].Rect.W + 4
 	if got, want := actionWidth, DisplayWidth(paneChromeActionText(40)); got != want {
 		t.Fatalf("pane action regions should cover visible action cluster got=%d want=%d regions=%#v", got, want, plan.HitRegions[:3])
 	}

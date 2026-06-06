@@ -1264,7 +1264,7 @@ func paneChromeActionText(width int) string {
 	for _, item := range items {
 		parts = append(parts, item.Text)
 	}
-	return strings.Join(parts, "─")
+	return strings.Join(parts, "  ")
 }
 
 func paneChromeActionItems(width int) []paneChromeActionItem {
@@ -1293,7 +1293,7 @@ func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
 	width := 0
 	for i, item := range items {
 		if i > 0 {
-			width++
+			width += 2
 		}
 		width += DisplayWidth(item.Text)
 	}
@@ -1548,15 +1548,15 @@ func centerToastText(text string, width int) string {
 }
 
 func paneChromeCloseActionText() string {
-	return paneChromeBracketToken(paneChromeCloseGlyph())
+	return paneChromeCloseGlyph()
 }
 
 func paneChromeSplitHorizontalActionText() string {
-	return paneChromeBracketToken(paneChromeSplitHorizontalGlyph())
+	return paneChromeSplitHorizontalGlyph()
 }
 
 func paneChromeSplitVerticalActionText() string {
-	return paneChromeBracketToken(paneChromeSplitVerticalGlyph())
+	return paneChromeSplitVerticalGlyph()
 }
 
 func toastBodyLine(toast ToastVM) string {

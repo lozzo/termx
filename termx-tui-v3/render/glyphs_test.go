@@ -2,13 +2,13 @@ package render
 
 import "testing"
 
-func TestPaneChromeGlyphsDefaultToNerdFontAndRemainCellSafe(t *testing.T) {
+func TestPaneChromeGlyphsDefaultToWireframeUnicodeAndRemainCellSafe(t *testing.T) {
 	ResetPaneChromeGlyphs()
 	defer ResetPaneChromeGlyphs()
 
 	glyphs := DefaultPaneChromeGlyphs()
-	if glyphs.Close != "\uea76" || glyphs.Zoom != "\ueb01" || glyphs.SplitVertical != "\ueb56" || glyphs.SplitHorizontal != "\ueb57" {
-		t.Fatalf("unexpected default Nerd Font glyphs: %#v", glyphs)
+	if glyphs.Close != "×" || glyphs.Zoom != "□" || glyphs.SplitVertical != "↔" || glyphs.SplitHorizontal != "↕" {
+		t.Fatalf("unexpected default Unicode glyphs: %#v", glyphs)
 	}
 	for name, glyph := range map[string]string{
 		"close": glyphs.Close,
@@ -28,11 +28,11 @@ func TestPaneChromeActionTextShowsWiredSplitAndCloseActions(t *testing.T) {
 
 	glyphs := DefaultPaneChromeGlyphs()
 	got := paneChromeActionText(40)
-	want := "[" + glyphs.SplitHorizontal + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.Close + "]"
+	want := glyphs.SplitHorizontal + "  " + glyphs.SplitVertical + "  " + glyphs.Close
 	if got != want {
 		t.Fatalf("wired action text got=%q want=%q", got, want)
 	}
-	if got := paneChromeActionText(8); got != "["+glyphs.Close+"]" {
+	if got := paneChromeActionText(8); got != glyphs.Close {
 		t.Fatalf("narrow pane should degrade to close-only action, got=%q", got)
 	}
 	if got := paneChromeActionText(7); got != "" {

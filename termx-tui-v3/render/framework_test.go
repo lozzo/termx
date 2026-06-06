@@ -120,7 +120,7 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 	if !strings.Contains(lines[0], " shell 🚀 ") {
 		t.Fatalf("split-line title slot should keep the remaining top border, got %#v", lines[0])
 	}
-	if !strings.Contains(lines[0], "─"+paneChromeCloseActionText()) {
+	if !strings.Contains(lines[0], paneChromeSplitHorizontalActionText()+"  "+paneChromeSplitVerticalActionText()+"  "+paneChromeCloseActionText()) {
 		t.Fatalf("split-line title/action slots should keep the remaining top border, got %#v", lines[0])
 	}
 	if strings.Contains(lines[0], paneChromeRunningGlyph()) || strings.Contains(lines[0], "⇄2") || strings.Contains(lines[0], "◆ owner") || strings.Contains(lines[0], "1/31") {
@@ -179,8 +179,8 @@ func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 		if strings.Contains(line, "⇄2") || strings.Contains(line, "◆ owner") || strings.Contains(line, "1/31") {
 			t.Fatalf("presentation=%s should not render premature pane meta slots, got row=%q", presentation, line)
 		}
-		if !strings.Contains(SliceCells(line, actionCol-2, actionCol), "─") {
-			t.Fatalf("presentation=%s should keep line segment after title slot, got row=%q", presentation, line)
+		if !strings.Contains(line, paneChromeSplitHorizontalActionText()+"  "+paneChromeSplitVerticalActionText()+"  "+paneChromeCloseActionText()) {
+			t.Fatalf("presentation=%s should render wireframe action cluster, got row=%q", presentation, line)
 		}
 		assertAllRowsWidth(t, result.Lines(), 44)
 	}

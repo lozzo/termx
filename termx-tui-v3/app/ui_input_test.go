@@ -423,7 +423,7 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 		t.Fatalf("tree query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Workbench Tree") || !frameContains(frame, "▌      pane  日志🚀") || !frameContains(frame, "[open]  Open / Focus") {
+	if !frameContains(frame, "Workbench Tree") || !frameContains(frame, "TUI storage projection") || !frameContains(frame, "▌      pane  日志🚀") || !frameContains(frame, "[open]  Open") {
 		t.Fatalf("expected workbench tree frame, got %#v", frame.Lines)
 	}
 	if frame.Cursor.Shape != render.CursorShapeBar {
@@ -512,7 +512,7 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 		t.Fatalf("expected prompt input captured, shell=%#v", runtime.State().Shell)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Command Prompt") || !frameContains(frame, "INPUT 重命名") || frame.Cursor.Shape != render.CursorShapeBar {
+	if !frameContains(frame, "Command Prompt") || !frameContains(frame, "NAME 重命名") || frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("expected prompt frame and cursor, got %#v", frame)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -1326,7 +1326,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		}
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "floating") || !frameContains(frame, render.DefaultPaneChromeGlyphs().Running+" float") || !frameContains(frame, "empty pane") {
+	if !frameContains(frame, "floating") || !frameContains(frame, "No terminal attached floating") || !frameContains(frame, "Attach existing") {
 		t.Fatalf("expected rendered floating pane, got %#v", frame.Lines)
 	}
 

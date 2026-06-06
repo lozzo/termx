@@ -228,7 +228,7 @@ func TestRenderVMBuilderAnchorsEmptyPaneCursorForIME(t *testing.T) {
 	if content.Kind != ContentEmptyPane || !content.Cursor.Visible {
 		t.Fatalf("empty pane should expose a cursor anchor for IME, got %#v", content)
 	}
-	if content.Cursor.Col != DisplayWidth("empty pane ")+DisplayWidth("浮窗") {
+	if content.Cursor.Col != DisplayWidth("No terminal attached ")+DisplayWidth("浮窗") {
 		t.Fatalf("empty pane cursor should follow title text, got %#v", content.Cursor)
 	}
 }
@@ -570,7 +570,7 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		Shell:   emptyShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace empty"}},
 	})
-	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "empty pane slot") {
+	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No terminal attached slot") || !strings.Contains(content.Lines[2].PlainString(), "Attach existing") {
 		t.Fatalf("expected active empty pane placeholder, got %#v", content)
 	} else if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") || !contentHasAction(content, "empty.close") {
 		t.Fatalf("expected empty pane CTA action regions, got %#v", content.HitRegions)
@@ -582,7 +582,7 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		Shell:   exitedShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace exited"}},
 	})
-	if content := activeContent(exitedVM.Shell); content.Kind != ContentExitedPane || content.Status != "exited: restart/reconnect/close" || !strings.Contains(content.Lines[0].PlainString(), "exited pane old shell") || !strings.Contains(content.Lines[1].PlainString(), "term-old") {
+	if content := activeContent(exitedVM.Shell); content.Kind != ContentExitedPane || content.Status != "exited: Restart / Reconnect / Close" || !strings.Contains(content.Lines[0].PlainString(), "Terminal exited old shell") || !strings.Contains(content.Lines[1].PlainString(), "term-old") {
 		t.Fatalf("expected active exited pane placeholder, got %#v", content)
 	} else if !contentHasAction(content, "exited.restart") || !contentHasAction(content, "exited.reconnect") || !contentHasAction(content, "exited.close") {
 		t.Fatalf("expected exited pane CTA action regions, got %#v", content.HitRegions)
@@ -726,7 +726,7 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
 		!strings.Contains(content.Lines[4].PlainString(), "120x36") ||
 		!strings.Contains(content.Lines[6].PlainString(), "role=shell") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[kill]  Kill Terminal") {
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[kill]  Kill") {
 		t.Fatalf("expected pool list/detail/preview/actions, got %#v", content.Lines)
 	}
 	if strings.Contains(content.Lines[2].PlainString(), "worker") {
@@ -773,8 +773,9 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	if !strings.Contains(content.Lines[0].PlainString(), "Workbench Tree") ||
 		!strings.Contains(content.Lines[1].PlainString(), "⌕ search 日志") ||
 		!strings.Contains(content.Lines[2].PlainString(), "▌      pane  日志🚀") ||
+		!strings.Contains(content.Lines[0].PlainString(), "TUI storage projection") ||
 		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[open]  Open / Focus") {
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[open]  Open") {
 		t.Fatalf("expected tree header/search/row/detail/action, got %#v", content.Lines)
 	}
 	if !contentHasAction(content, "workbench.select") || !contentHasAction(content, "workbench.open") {
@@ -801,13 +802,12 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
 	if content.Kind != ContentPrompt ||
 		!strings.Contains(content.Lines[0].PlainString(), "Rename Pane") ||
-		!strings.Contains(content.Lines[1].PlainString(), "输入新名称") ||
-		!strings.Contains(content.Lines[2].PlainString(), "INPUT 日志🚀") ||
+		!strings.Contains(content.Lines[1].PlainString(), "NAME 日志🚀") ||
 		!contentHasAction(content, "prompt.submit") ||
 		!contentHasAction(content, "prompt.cancel") {
 		t.Fatalf("expected prompt content, got %#v", content)
 	}
-	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("INPUT 日志🚀") {
+	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != DisplayWidth("Name 日志🚀") {
 		t.Fatalf("expected prompt cursor after input, got %#v", content.Cursor)
 	}
 

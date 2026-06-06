@@ -91,14 +91,15 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["terminal-pool-page"].Lines, "▌ 日志🚀") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "DETAIL 日志🚀") ||
 		!frameContains(cases["terminal-pool-page"].Lines, "[attach]  Attach Here") ||
-		!frameContains(cases["terminal-pool-page"].Lines, "[kill]  Kill Terminal") {
+		!frameContains(cases["terminal-pool-page"].Lines, "[kill]  Kill") {
 		t.Fatalf("terminal pool smoke missing page visual contract: %#v", cases["terminal-pool-page"].Lines)
 	}
 	if !frameContains(cases["workbench-tree-page"].Lines, "Workbench Tree") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "TUI storage projection") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "⌕ search 日志") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "▌      pane  日志🚀") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "DETAIL 日志🚀") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "[open]  Open / Focus") {
+		!frameContains(cases["workbench-tree-page"].Lines, "[open]  Open") {
 		t.Fatalf("workbench tree smoke missing page visual contract: %#v", cases["workbench-tree-page"].Lines)
 	}
 	if !frameContains(cases["copy-empty"].Lines, "copy history empty") {
@@ -215,8 +216,8 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	}
 	requiredOverlays := map[string][]string{
 		"terminal-picker":     {"┌─ terminal picker", "● open", "esc", "Search terminal name", "Select terminal source state target", "[attach]  Attach Selected", "[new]  New Shell"},
-		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill Terminal"},
-		"workbench-tree-page": {"┌─ workbench tree", "● open", "esc", "Workbench Tree", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open / Focus"},
+		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill"},
+		"workbench-tree-page": {"┌─ workbench tree", "● open", "esc", "Workbench Tree", "TUI storage projection", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open"},
 		"prompt-overlay":      {"┌─ prompt", "● open", "esc", "Command Prompt", "重命名"},
 		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Pool"},
 	}

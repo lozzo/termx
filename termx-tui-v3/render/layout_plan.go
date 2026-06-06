@@ -283,7 +283,7 @@ func appendPaneActionRegions(out []HitRegion, rect Rect, paneID string, viewport
 	x := actionRect.X
 	for i, item := range items {
 		if i > 0 {
-			x++
+			x += 2
 		}
 		width := DisplayWidth(item.Text)
 		if width <= 0 {

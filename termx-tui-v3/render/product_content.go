@@ -13,18 +13,18 @@ const contentActionWidth = 12
 func buildEmptyPaneContent(pane state.PaneState) ContentVM {
 	title := activePaneTitle(pane)
 	lines := []Line{
-		{Cells: []Cell{styledCell("empty pane ", StyleMuted), styledCell(title, StyleAccent)}},
-		NewLine("no terminal is attached to this pane"),
-		contentActionLine("attach", "attach terminal"),
-		contentActionLine("create", "new terminal"),
-		contentActionLine("manager", "open terminal manager"),
-		contentActionLine("close", "close pane"),
+		{Cells: []Cell{styledCell("No terminal attached ", StyleMuted), styledCell(title, StyleAccent)}},
+		NewLine(""),
+		contentActionLine("attach", "Attach existing"),
+		contentActionLine("create", "New terminal"),
+		contentActionLine("manager", "Terminal Pool"),
+		contentActionLine("close", "Close"),
 	}
 	return ContentVM{
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
-		Status:     "empty: attach/create/manager/close",
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("empty pane ") + DisplayWidth(title), Shape: CursorShapeBar},
+		Status:     "empty: Attach existing / New terminal / Terminal Pool / Close",
+		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("No terminal attached ") + DisplayWidth(title), Shape: CursorShapeBar},
 		Empty:      true,
 		HitRegions: contentActionRegions("empty", []string{"attach", "create", "manager", "close"}, pane.ID),
 	}
@@ -38,17 +38,17 @@ func buildExitedPaneContent(pane state.PaneState) ContentVM {
 		terminalID = "detached"
 	}
 	lines := []Line{
-		{Cells: []Cell{styledCell("exited pane ", StyleWarning), styledCell(title, StyleAccent)}},
+		{Cells: []Cell{styledCell("Terminal exited ", StyleWarning), styledCell(title, StyleAccent)}},
 		NewLine("last state: " + terminalID),
-		contentActionLine("restart", "restart terminal"),
-		contentActionLine("reconnect", "reattach terminal"),
-		contentActionLine("close", "close pane"),
+		contentActionLine("restart", "Restart"),
+		contentActionLine("reconnect", "Reconnect"),
+		contentActionLine("close", "Close"),
 	}
 	return ContentVM{
 		Kind:       ContentExitedPane,
 		Lines:      lines,
-		Status:     "exited: restart/reconnect/close",
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("exited pane ") + DisplayWidth(title), Shape: CursorShapeBar},
+		Status:     "exited: Restart / Reconnect / Close",
+		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("Terminal exited ") + DisplayWidth(title), Shape: CursorShapeBar},
 		HitRegions: contentActionRegions("exited", []string{"restart", "reconnect", "close"}, pane.ID),
 	}
 }
@@ -96,7 +96,7 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	rows := state.TerminalPoolPageItems(root)
 	lines := []Line{
 		pageTitleLine("Terminal Pool", "global terminal manager"),
-		searchRowLine(query, "terminal id / title / cwd / tag"),
+		searchRowLine(query, "shell"),
 	}
 	if statusLine, ok := terminalPoolPageStateLine(root.TerminalPool, len(rows)); ok {
 		lines = append(lines, statusLine)
@@ -109,8 +109,8 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 	actionOffset := len(lines)
 	lines = append(lines,
 		contentActionLine("attach", "Attach Here"),
-		contentActionLine("edit", "Edit Metadata"),
-		contentActionLine("kill", "Kill Terminal"),
+		contentActionLine("edit", "Edit"),
+		contentActionLine("kill", "Kill"),
 	)
 	regions := terminalPoolPageHitRegions(rows, rowOffset)
 	regions = append(regions,
@@ -136,8 +136,8 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.WorkbenchTreeItems(root)
 	lines := []Line{
-		pageTitleLine("Workbench Tree", "structure navigator"),
-		searchRowLine(query, "workspace / tab / pane"),
+		pageTitleLine("Workbench Tree", "TUI storage projection"),
+		searchRowLine(query, "main"),
 	}
 	rowOffset := len(lines)
 	for _, row := range rows {
@@ -145,7 +145,9 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	}
 	lines = append(lines, workbenchTreeDetailLines(rows)...)
 	actionOffset := len(lines)
-	lines = append(lines, contentActionLine("open", "Open / Focus"))
+	lines = append(lines,
+		contentActionLine("open", "Open"),
+	)
 	regions := workbenchTreeHitRegions(rows, rowOffset)
 	regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchOpen.String()})
 	return ContentVM{
@@ -176,9 +178,8 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 		displayValue = "[" + placeholder + "]"
 	}
 	lines := []Line{
-		pageTitleLine(title, "esc to cancel"),
-		detailHeaderLine("context", prompt.Context),
-		formFieldLine("input", displayValue, value != ""),
+		pageTitleLine(title, ""),
+		formFieldLine("Name", displayValue, value != ""),
 	}
 	if prompt.Destructive {
 		lines = append(lines, Line{Cells: []Cell{styledCell(" ! confirm ", StyleWarning), NewCell("type " + prompt.ConfirmText + " before submit")}})
@@ -195,7 +196,7 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 		Kind:   ContentPrompt,
 		Lines:  lines,
 		Status: "prompt: submit/cancel",
-		Cursor: Cursor{Visible: true, Row: 2, Col: DisplayWidth("INPUT ") + DisplayWidth(value), Shape: CursorShapeBar},
+		Cursor: Cursor{Visible: true, Row: 1, Col: DisplayWidth("Name ") + DisplayWidth(value), Shape: CursorShapeBar},
 		HitRegions: []HitRegion{
 			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: ActionPromptSubmit.String()},
 			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPromptCancel.String()},
