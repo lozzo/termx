@@ -1388,6 +1388,60 @@ func TestV3TerminalServiceCreateDefaultsCommandAgainstCoreV2(t *testing.T) {
 	}
 }
 
+func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
+	oldRunSmoke := runTUIv3SmokeDetailed
+	t.Cleanup(func() {
+		runTUIv3SmokeDetailed = oldRunSmoke
+	})
+	runTUIv3SmokeDetailed = tuiv3.SmokeRunDetailed
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "visual-snapshot"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	text := out.String()
+	for _, want := range []string{"┌ main", "visual review baseline", "quick actio", "[Ctrl+P] PANE"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestV3VisualSnapshotCommandCanWriteANSIScreen(t *testing.T) {
+	oldRunSmoke := runTUIv3SmokeDetailed
+	t.Cleanup(func() {
+		runTUIv3SmokeDetailed = oldRunSmoke
+	})
+	runTUIv3SmokeDetailed = func(ctx context.Context) (tuiv3.SmokeResult, error) {
+		return tuiv3.SmokeResult{Cases: []tuiv3.SmokeCase{{
+			Name: "visual-audit-current",
+			Frame: render.Frame{
+				Lines:     []string{"plain"},
+				ANSILines: []string{"\x1b[31mstyled\x1b[0m"},
+			},
+		}}}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "visual-snapshot", "--ansi"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "\x1b[?2026h") || !strings.Contains(text, "\x1b[31mstyled\x1b[0m") || !strings.Contains(text, "\x1b[?2026l") {
+		t.Fatalf("ANSI visual snapshot should use FrameSink repaint output, got %q", text)
+	}
+}
+
 func TestV3E2ESmokeCommandRunsLocalCoreAndTUIPath(t *testing.T) {
 	var out bytes.Buffer
 	cmd := newRootCmd()
@@ -1681,6 +1735,86 @@ func TestV3TmuxANSISmokeCommandReportsArtifacts(t *testing.T) {
 		!strings.Contains(text, "plain=") ||
 		!strings.Contains(text, "timeline=") {
 		t.Fatalf("unexpected tmux ansi smoke output:\n%s", text)
+	}
+}
+
+func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	result, err := runV3TmuxVisualCompare(ctx, termxBin)
+	if err != nil {
+		t.Fatalf("tmux visual compare: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(result.ArtifactDir)
+	})
+	if result.Session == "" || result.ArtifactDir == "" || result.CurrentPlainPath == "" || result.CurrentANSIPath == "" || result.TargetPath == "" || result.DiffPath == "" || result.SummaryPath == "" {
+		t.Fatalf("tmux visual compare should return artifact paths, got %#v", result)
+	}
+	for _, path := range []string{result.CurrentPlainPath, result.CurrentANSIPath, result.TargetPath, result.DiffPath, result.SummaryPath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read artifact %s: %v", path, err)
+		}
+		if len(data) == 0 {
+			t.Fatalf("artifact %s should not be empty", path)
+		}
+	}
+	current, err := os.ReadFile(result.CurrentPlainPath)
+	if err != nil {
+		t.Fatalf("read current plain: %v", err)
+	}
+	target, err := os.ReadFile(result.TargetPath)
+	if err != nil {
+		t.Fatalf("read target plain: %v", err)
+	}
+	diff, err := os.ReadFile(result.DiffPath)
+	if err != nil {
+		t.Fatalf("read diff: %v", err)
+	}
+	if !strings.Contains(string(current), "visual review baseline") || !strings.Contains(string(target), "ws:main tabs:2 panes:2") || !strings.Contains(string(diff), "tmux visual diff") {
+		t.Fatalf("visual compare artifacts missing expected markers current=%q target=%q diff=%q", current, target, diff)
+	}
+	if result.Mismatches <= 0 || !strings.Contains(string(diff), "@@ row") {
+		t.Fatalf("visual compare should expose current target mismatch, mismatches=%d diff=\n%s", result.Mismatches, diff)
+	}
+	if err := runTmuxCommand(context.Background(), "has-session", "-t", result.Session); err == nil {
+		t.Fatalf("tmux session %s should be cleaned up", result.Session)
+	}
+}
+
+func TestV3TmuxVisualCompareCommandReportsArtifacts(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "tmux-visual-compare", "--termx-bin", termxBin})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 tmux-visual-compare returned error: %v", err)
+	}
+	text := out.String()
+	if artifactDir := v3TmuxSmokeOutputValue(text, "artifact_dir"); artifactDir != "" {
+		t.Cleanup(func() {
+			_ = os.RemoveAll(artifactDir)
+		})
+	}
+	if !strings.Contains(text, "termx v3 tmux visual compare ok") ||
+		!strings.Contains(text, "session=termx-v3-visual-") ||
+		!strings.Contains(text, "mismatches=") ||
+		!strings.Contains(text, "current_plain=") ||
+		!strings.Contains(text, "current_ansi=") ||
+		!strings.Contains(text, "target=") ||
+		!strings.Contains(text, "diff=") {
+		t.Fatalf("unexpected tmux visual compare output:\n%s", text)
 	}
 }
 

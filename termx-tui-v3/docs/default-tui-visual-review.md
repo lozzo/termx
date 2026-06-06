@@ -18,6 +18,8 @@
 
 切片 91 已完成整体 UI 构图三轮重绘；切片 92-96 已按用户最新复核继续收敛功能和可见性：未接线按钮不再绘制，toast 改为深色直角实体矩形、左右紫色竖线和居中文案并支持自动消失，pane split divider 支持鼠标连续拖动 resize，横纵分屏按钮恢复为真实可点击入口，floating 支持标题栏拖动移动和右下 resize handle 连续拖动。切片 98-100 继续收敛本轮真实使用反馈：toast 去重并降低拖动/聚焦类低价值反馈，横向 split divider 上的下方 pane 分屏图标不再被 resize 命中抢占，真实 FrameSink 默认隐藏并锚定 host cursor 以避免中文输入法预编辑跑到窗口底部。切片 103 进一步收敛中文输入法复现：FrameSink 使用同步输出包裹整帧、写帧前先隐藏 cursor、写帧后重新锚定隐藏 cursor；empty/exited pane 和 active floating 即使没有真实 terminal cursor，也会在内容区提供 IME anchor。切片 104 已把 floating visual focus 与 tiled pane business active 分离：active floating 存在时后方 tiled pane chrome 使用 inactive/muted 视觉，关闭 floating 后恢复 pane active 高亮，同时 terminal resize 仍按业务 active pane content rect 计算。切片 105-106 已把 pane 鼠标 resize 收敛为精确 divider 和视觉相邻叶 pane 对：嵌套分屏不误改外层 split，四列中拖第 2 列左右边线不会带动第 4 列。这些结论说明当前轮用户指出的可操作问题已完成回归，不等于用户已经确认截图级视觉通过。
 
+切片 138 已把视觉复核入口升级为 tmux 抓屏对比：`termx v3 visual-snapshot --ansi` 会用真实 FrameSink ANSI repaint 写出固定 `visual-audit-current` 帧，`termx v3 tmux-visual-compare` 会在固定 `120x40` tmux viewport 中保存 `current.txt`、`current.ansi`、`target.txt` 和 `diff.txt`。首轮对比仍显示当前 v3 与目标线稿存在 40 行差异；本切片只完成可重复证据入口和 header/footer 单行框线返工，不代表截图级视觉通过。
+
 ## 2. 当前已经成立的工程事实
 
 - 默认入口仍走 `termx-core-v2` 与 `termx-tui-v3`。
@@ -30,6 +32,7 @@
 - toast 当前使用用户截图方向的直角深色实体消息样式，copy 成功显示 `Copied to clipboard`，普通 toast 会自动消失；同内容 toast 会去重并刷新生命周期，鼠标拖动 resize/move 和 focus 成功不再制造低价值弹窗。
 - host cursor 在真实 FrameSink 中默认隐藏；FrameSink 写帧时使用同步输出并先隐藏 cursor，写帧结束后把隐藏 cursor 停在全局 cursor rect。pane、overlay、Prompt、live surface、empty pane 和 active floating 都必须有稳定 cursor anchor，避免中文输入法预编辑跟随最后一行输出位置顶起窗口。
 - terminal 内容、copy-history 和 overlay content 都被限制在自己的 content rect 内，不应冲破 UI chrome。
+- `termx v3 tmux-visual-compare` 已成为固定视觉证据入口，会保留当前 tmux 抓屏、目标基线和逐行 diff；只要 diff 仍存在，就不能宣称一比一视觉完成。
 
 这些事实只说明“产品壳可运行”和“默认入口真实 PTY 路径可绘制”，不说明“视觉已经像目标截图”。切片 90 已经确认用户复核不通过，因此自动证据、真实 PTY 证据、Unicode 线框、ANSI 颜色和 chrome token 都只能作为回归基线，不能作为完成证据。
 
@@ -153,6 +156,7 @@
 - 切片 104：active floating 获焦时，后方 tiled pane 不再保留 active 高亮边框，而是使用 inactive/muted 视觉；关闭 floating 后 tiled pane active 高亮恢复，terminal resize 仍使用业务 active pane。
 - 切片 105：pane split divider hit region 携带精确 split path；鼠标拖动嵌套 divider 时只改该 split 节点，外层 pane/subtree 保持锚定。
 - 切片 106：四列及更多同轴 pane 的鼠标 divider resize 携带视觉相邻叶 pane group；拖第 2 列左边线只调整第 1/2 列，拖第 2 列右边线只调整第 2/3 列，第 4 列保持不变。
+- 切片 138：新增 tmux 视觉对比 harness，并把 header/footer 从裸状态栏改为目标线稿方向的 `┌…┐` / `└…┘` 单行框线；当前 diff 仍暴露独立 shell 外框层、body 分隔线、tab strip 槽位、footer summary 和 floating/toast/pane 比例差距，后续必须继续返工。
 
 ## 5. 手工复核入口
 
@@ -167,6 +171,7 @@
 - copy：`Ctrl-v` 检查 copy-history search、selection、scrollbar/status 和 no terminal input leak。
 - toast/header/footer：`Ctrl-g h/f/T/t` 检查隐藏、恢复、关闭和清空消息；触发 copy 成功或 split/close 等离散操作后确认 toast 样式为直角深色矩形、左右紫色竖线、居中文案，并会自动消失；拖动 resize/move 或 focus 不应连续弹出 toast。
 - 中文输入法：在真实 TUI 中切到中文输入法后输入拼音字母，预编辑文本不应出现在整个窗口底部并顶起界面；有 Prompt、Terminal Picker、live cursor、empty pane 或 active floating 时，预编辑位置应跟随对应输入区域或 content cursor anchor。特别复核 `Ctrl-o` 后按 `n` 创建 floating，再切中文输入法输入 `o`，候选区应在 floating 内容区附近，而不是窗口最下方。
+- tmux 视觉对比：运行 `make test-cli-v3-tmux-visual-compare` 或 `go run ./termx-cli/cmd/termx v3 tmux-visual-compare`，打开输出中的 `current.txt`、`current.ansi`、`target.txt` 和 `diff.txt` 逐行复核；该命令的 mismatch 数是返工输入，不是通过证明。
 
 ## 6. 自动准入
 
@@ -185,3 +190,9 @@
 - `git diff --check`
 
 自动准入只能证明切片 92-96 的功能和回归合同成立，不能替代用户对目标截图级视觉的人工拍板。
+
+切片 138 自动准入新增：
+
+- `make test-cli-v3-tmux-visual-compare`
+
+`tmux-visual-compare` 当前允许输出 mismatch；后续视觉切片必须用该 artifact 驱动 renderer 返工并减少差异。

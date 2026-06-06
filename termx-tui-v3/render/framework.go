@@ -525,7 +525,7 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 	if header.Notice != "" {
 		right = append(right, barText(" ! "+header.Notice+" ", StyleStatusWarning, 0))
 	}
-	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:header", LayerChrome)
+	c.writeLine(rect.X, rect.Y, rect.W, composeFramedBarLine(left, right, rect.W, "┌", "┐", "─"), "shell:header", LayerChrome)
 }
 
 func headerLeftSegments(header HeaderVM) []barSegment {
@@ -571,7 +571,7 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 		left = append(left, barText(" [Ctrl+G] GLOBAL ", StyleStatusAccent, 1))
 	}
 	right := footerMetadataSegments(footer, hintIsCritical)
-	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
+	c.writeLine(rect.X, rect.Y, rect.W, composeFramedBarLine(left, right, rect.W, "└", "┘", "─"), "shell:footer", LayerChrome)
 }
 
 func footerMetadataSegments(footer FooterVM, hintIsCritical bool) []barSegment {
@@ -913,6 +913,45 @@ func composeBarLine(left []barSegment, right []barSegment, width int) Line {
 	cells = append(cells, cellsFromBarSegments(left)...)
 	if spacer > 0 {
 		cells = append(cells, Cell{Text: strings.Repeat(" ", spacer), Width: spacer, Style: StyleStatus, Safe: true})
+	}
+	cells = append(cells, cellsFromBarSegments(right)...)
+	return Line{Cells: cells}
+}
+
+func composeFramedBarLine(left []barSegment, right []barSegment, width int, leftGlyph string, rightGlyph string, spacerGlyph string) Line {
+	if width <= 0 {
+		return Line{}
+	}
+	if width == 1 {
+		return NewLine(TruncateCells(leftGlyph, 1))
+	}
+	inner := composeBarLineWithSpacer(left, right, width-2, spacerGlyph)
+	cells := make([]Cell, 0, len(inner.Cells)+2)
+	cells = append(cells, Cell{Text: leftGlyph, Width: DisplayWidth(leftGlyph), Style: StyleStatus, Safe: true})
+	cells = append(cells, inner.Cells...)
+	cells = append(cells, Cell{Text: rightGlyph, Width: DisplayWidth(rightGlyph), Style: StyleStatus, Safe: true})
+	return Line{Cells: cells}
+}
+
+func composeBarLineWithSpacer(left []barSegment, right []barSegment, width int, spacerGlyph string) Line {
+	if spacerGlyph == "" {
+		spacerGlyph = " "
+	}
+	if width <= 0 {
+		return Line{}
+	}
+	left = trimBarSegments(left, width)
+	right = trimBarSegments(right, width-barSegmentsWidth(left))
+	total := barSegmentsWidth(left) + barSegmentsWidth(right)
+	if total > width {
+		right = trimBarSegments(right, width-barSegmentsWidth(left))
+		total = barSegmentsWidth(left) + barSegmentsWidth(right)
+	}
+	spacer := width - total
+	cells := make([]Cell, 0, len(left)+len(right)+1)
+	cells = append(cells, cellsFromBarSegments(left)...)
+	if spacer > 0 {
+		cells = append(cells, Cell{Text: strings.Repeat(spacerGlyph, spacer), Width: spacer, Style: StyleStatus, Safe: true})
 	}
 	cells = append(cells, cellsFromBarSegments(right)...)
 	return Line{Cells: cells}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -10,6 +11,8 @@ import (
 	corev2 "github.com/lozzow/termx/termx-core-v2"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	tuiapp "github.com/lozzow/termx/termx-tui-v3/app"
+	"github.com/lozzow/termx/termx-tui-v3/render"
+	"github.com/lozzow/termx/termx-tui-v3/terminalhost"
 	"github.com/spf13/cobra"
 )
 
@@ -38,11 +41,13 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	cmd.AddCommand(v3DaemonCommand(socket, logFile))
 	cmd.AddCommand(v3PingCommand(socket, logFile))
 	cmd.AddCommand(v3SmokeCommand())
+	cmd.AddCommand(v3VisualSnapshotCommand())
 	cmd.AddCommand(v3E2ESmokeCommand())
 	cmd.AddCommand(v3TmuxSmokeCommand())
 	cmd.AddCommand(v3TmuxTerminalSmokeCommand())
 	cmd.AddCommand(v3TmuxResizeSmokeCommand())
 	cmd.AddCommand(v3TmuxANSISmokeCommand())
+	cmd.AddCommand(v3TmuxVisualCompareCommand())
 	cmd.AddCommand(v3TmuxStabilitySmokeCommand())
 	cmd.AddCommand(v3NewCommand(socket, logFile))
 	cmd.AddCommand(v3LsCommand(socket, logFile))
@@ -128,6 +133,46 @@ func v3SmokeCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func v3VisualSnapshotCommand() *cobra.Command {
+	var ansi bool
+	cmd := &cobra.Command{
+		Use:   "visual-snapshot",
+		Short: "Render the fixed tui-v3 visual review frame",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			frame, err := v3VisualReviewFrame(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if ansi {
+				return writeVisualSnapshotANSI(cmd.OutOrStdout(), frame)
+			}
+			for _, line := range frame.Lines {
+				fmt.Fprintln(cmd.OutOrStdout(), line)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&ansi, "ansi", false, "write the frame as an ANSI terminal screen repaint")
+	return cmd
+}
+
+func v3VisualReviewFrame(ctx context.Context) (render.Frame, error) {
+	result, err := runTUIv3SmokeDetailed(ctx)
+	if err != nil {
+		return render.Frame{}, err
+	}
+	for _, item := range result.Cases {
+		if item.Name == "visual-audit-current" {
+			return item.Frame, nil
+		}
+	}
+	return render.Frame{}, fmt.Errorf("visual-audit-current smoke case not found")
+}
+
+func writeVisualSnapshotANSI(writer io.Writer, frame render.Frame) error {
+	return terminalhost.NewFrameSink(writer).WriteFrame(frame)
 }
 
 func v3E2ESmokeCommand() *cobra.Command {
@@ -286,6 +331,41 @@ func v3TmuxANSISmokeCommand() *cobra.Command {
 				result.DaemonLog,
 				result.SocketPath,
 				result.TimelinePath,
+			)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&termxBin, "termx-bin", "", "termx binary path to run inside tmux")
+	return cmd
+}
+
+func v3TmuxVisualCompareCommand() *cobra.Command {
+	var termxBin string
+	cmd := &cobra.Command{
+		Use:   "tmux-visual-compare",
+		Short: "Capture the fixed visual review frame in tmux and compare it with the target baseline",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if termxBin == "" {
+				exe, err := osExecutable()
+				if err != nil {
+					return err
+				}
+				termxBin = exe
+			}
+			result, err := runV3TmuxVisualCompare(cmd.Context(), termxBin)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"termx v3 tmux visual compare ok: session=%s mismatches=%d artifact_dir=%s current_plain=%s current_ansi=%s target=%s diff=%s\n",
+				result.Session,
+				result.Mismatches,
+				result.ArtifactDir,
+				result.CurrentPlainPath,
+				result.CurrentANSIPath,
+				result.TargetPath,
+				result.DiffPath,
 			)
 			return nil
 		},

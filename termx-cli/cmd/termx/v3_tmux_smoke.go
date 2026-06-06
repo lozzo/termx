@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lozzow/termx/termx-tui-v3/render"
 )
 
 type v3TmuxSmokeResult struct {
@@ -59,6 +61,17 @@ type v3TmuxANSISmokeResult struct {
 	TimelinePath string
 	Captured     string
 	ANSICaptured string
+}
+
+type v3TmuxVisualCompareResult struct {
+	Session          string
+	ArtifactDir      string
+	CurrentANSIPath  string
+	CurrentPlainPath string
+	TargetPath       string
+	DiffPath         string
+	SummaryPath      string
+	Mismatches       int
 }
 
 type v3TmuxStabilitySmokeResult struct {
@@ -599,6 +612,200 @@ func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeRe
 		Captured:     plain,
 		ANSICaptured: ansi,
 	}, nil
+}
+
+func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualCompareResult, error) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return v3TmuxVisualCompareResult{}, fmt.Errorf("tmux visual compare requires tmux in PATH: %w", err)
+	}
+	if termxBin == "" {
+		return v3TmuxVisualCompareResult{}, fmt.Errorf("tmux visual compare requires a termx binary path")
+	}
+	artifactDir, err := os.MkdirTemp("", "termx-v3-tmux-visual-*")
+	if err != nil {
+		return v3TmuxVisualCompareResult{}, err
+	}
+	removeArtifacts := true
+	defer func() {
+		if removeArtifacts {
+			_ = os.RemoveAll(artifactDir)
+		}
+	}()
+
+	session := fmt.Sprintf("termx-v3-visual-%d", time.Now().UnixNano())
+	target := session + ":0.0"
+	scriptPath := filepath.Join(artifactDir, "tmux-visual-compare.sh")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"set -eu",
+		"export TERM=xterm-256color",
+		"termx_bin=" + shellQuote(termxBin),
+		// 用 ANSI repaint 输出单帧，tmux 抓到的是屏幕状态，不是逐行日志。
+		"$termx_bin v3 visual-snapshot --ansi",
+		"sleep 30",
+		"",
+	}, "\n")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
+		return v3TmuxVisualCompareResult{}, err
+	}
+	cleanupTmux := func() {
+		_ = runTmuxCommand(context.Background(), "kill-session", "-t", session)
+	}
+	defer cleanupTmux()
+	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "120", "-y", "40", "-s", session, "/bin/sh", scriptPath); err != nil {
+		return v3TmuxVisualCompareResult{}, err
+	}
+	if err := waitForTmuxCapture(ctx, target, "visual review baseline", 5*time.Second); err != nil {
+		return v3TmuxVisualCompareResult{}, err
+	}
+	currentANSI, err := captureTmuxPane(ctx, target, true)
+	if err != nil {
+		return v3TmuxVisualCompareResult{}, err
+	}
+	currentPlain, err := captureTmuxPane(ctx, target, false)
+	if err != nil {
+		return v3TmuxVisualCompareResult{}, err
+	}
+	currentANSIPath := filepath.Join(artifactDir, "current.ansi")
+	currentPlainPath := filepath.Join(artifactDir, "current.txt")
+	targetPath := filepath.Join(artifactDir, "target.txt")
+	diffPath := filepath.Join(artifactDir, "diff.txt")
+	summaryPath := filepath.Join(artifactDir, "summary.txt")
+	targetPlain := v3VisualTargetPlain()
+	diffText, mismatches := diffVisualPlain(targetPlain, currentPlain, 120, 40)
+	summary := strings.Join([]string{
+		"termx v3 tmux visual compare",
+		"source: termx-tui-v3/docs/unicode-ui-wireframes.md + tuiv2 chrome slot contract",
+		fmt.Sprintf("viewport: %dx%d", 120, 40),
+		fmt.Sprintf("mismatches: %d", mismatches),
+		"current_plain: " + currentPlainPath,
+		"current_ansi: " + currentANSIPath,
+		"target: " + targetPath,
+		"diff: " + diffPath,
+		"",
+	}, "\n")
+	for _, file := range []struct {
+		path string
+		body string
+	}{
+		{currentANSIPath, currentANSI},
+		{currentPlainPath, currentPlain},
+		{targetPath, targetPlain},
+		{diffPath, diffText},
+		{summaryPath, summary},
+	} {
+		if err := os.WriteFile(file.path, []byte(file.body), 0o600); err != nil {
+			return v3TmuxVisualCompareResult{}, err
+		}
+	}
+	removeArtifacts = false
+	return v3TmuxVisualCompareResult{
+		Session:          session,
+		ArtifactDir:      artifactDir,
+		CurrentANSIPath:  currentANSIPath,
+		CurrentPlainPath: currentPlainPath,
+		TargetPath:       targetPath,
+		DiffPath:         diffPath,
+		SummaryPath:      summaryPath,
+		Mismatches:       mismatches,
+	}, nil
+}
+
+func v3VisualTargetPlain() string {
+	lines := []string{
+		"┌ main ─┬─ 1:main × ─┬─ 2:logs × ─┬─ ＋ ─────────────────────────────────────────────────────────────── termx ┐",
+		"├───────┴─────────────┴────────────┴──────────────────────────────────────────────────────────────────────────────┤",
+		"│ shell ──────────────────────────────────────────────────────────────── ↕  ↔  × │ logs ───────────────────── × │",
+		"│ termx git:termx-core-v2-tui-v3-migration  go v1.26.0                            │ visual review baseline       │",
+		"│ > make test                                                                      │ target visual mismatch       │",
+		"│ ok   termx-tui-v3/render                                                         │ emoji 🚀 and 中文            │",
+		"│ >                                                                                │                            │",
+		"│                                                                                  │ ┌ quick actions ───────── × ┐ │",
+		"│                                                                                  │ │ No terminal attached      │ │",
+		"│                                                                                  │ │                          │ │",
+		"│                                                                                  │ │ Attach existing           │ │",
+		"│                                                                                  │ │ New terminal              │ │",
+		"│                                                                                  │ │ Terminal Pool             │ │",
+		"│                                                                                  │ │ Close                    │ │",
+		"│                                                                                  │ └──────────────────────────┘ │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"│                                                                                  │                            │",
+		"└──────────────────────────────────────────────────────────────────────────────────┴────────────────────────────┘",
+		"┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐",
+		"└ [Ctrl+P] pane  [Ctrl+R] resize  [Ctrl+F] picker  [Ctrl+G] global                         ws:main tabs:2 panes:2 ┘",
+	}
+	return normalizeVisualText(strings.Join(lines, "\n"), 120, 40)
+}
+
+func diffVisualPlain(target string, current string, width int, height int) (string, int) {
+	targetLines := normalizeVisualLines(target, width, height)
+	currentLines := normalizeVisualLines(current, width, height)
+	var builder strings.Builder
+	builder.WriteString("tmux visual diff: target vs current\n")
+	builder.WriteString("source target: Unicode wireframe + tuiv2 slot contract\n\n")
+	mismatches := 0
+	for i := 0; i < height; i++ {
+		if targetLines[i] == currentLines[i] {
+			continue
+		}
+		mismatches++
+		fmt.Fprintf(&builder, "@@ row %02d @@\n", i+1)
+		fmt.Fprintf(&builder, "- %s\n", targetLines[i])
+		fmt.Fprintf(&builder, "+ %s\n", currentLines[i])
+	}
+	if mismatches == 0 {
+		builder.WriteString("no row mismatches\n")
+	}
+	return builder.String(), mismatches
+}
+
+func normalizeVisualText(text string, width int, height int) string {
+	return strings.Join(normalizeVisualLines(text, width, height), "\n") + "\n"
+}
+
+func normalizeVisualLines(text string, width int, height int) []string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		if i < len(lines) {
+			out[i] = fitVisualLine(lines[i], width)
+			continue
+		}
+		out[i] = strings.Repeat(" ", width)
+	}
+	return out
+}
+
+func fitVisualLine(line string, width int) string {
+	line = strings.TrimRight(line, "\r")
+	displayWidth := render.DisplayWidth(line)
+	if displayWidth > width {
+		return render.TruncateCells(line, width)
+	}
+	if displayWidth < width {
+		return line + strings.Repeat(" ", width-displayWidth)
+	}
+	return line
 }
 
 func runV3TmuxStabilitySmoke(ctx context.Context, termxBin string, rounds int) (v3TmuxStabilitySmokeResult, error) {

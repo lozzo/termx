@@ -256,6 +256,9 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	}})
 	frame := result.Frame()
 
+	if !strings.HasPrefix(frame.Lines[0], "┌") || !strings.HasSuffix(frame.Lines[0], "┐") {
+		t.Fatalf("top bar should be framed like the target wireframe, got %#v", frame.Lines[0])
+	}
 	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], "│ 1:1 ×") || !strings.Contains(frame.Lines[0], "│ ＋ ") || !strings.Contains(frame.Lines[0], "│ pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
 		t.Fatalf("top bar should contain tuiv2-like workspace/tab/create/notice slots, got %#v", frame.Lines[0])
 	}
@@ -263,6 +266,9 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 		t.Fatalf("top bar should not keep old bracket/indicator tokens, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
+	if !strings.HasPrefix(footer, "└") || !strings.HasSuffix(footer, "┘") {
+		t.Fatalf("bottom bar should be framed like the target wireframe, got %#v", footer)
+	}
 	if !strings.Contains(footer, "[Ctrl+P] PANE") || !strings.Contains(footer, "[Ctrl+R] RESIZE") || !strings.Contains(footer, "● shell term:term-1") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "tabs:1") || !strings.Contains(footer, "panes:1") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "term-1") {
 		t.Fatalf("bottom bar should contain high-density mode/action/summary tokens, got %#v", footer)
 	}

@@ -233,7 +233,7 @@ func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewpor
 	if rect.W <= 0 || rect.H <= 0 || !header.Visible {
 		return out
 	}
-	x := rect.X
+	x := rect.X + 1
 	for _, segment := range headerLeftSegments(header) {
 		width := DisplayWidth(segment.text)
 		if width <= 0 {
