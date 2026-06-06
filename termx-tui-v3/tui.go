@@ -304,7 +304,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		TargetID: "float-visual",
 		Title:    "quick actions",
 		Pane:     state.PaneState{ID: "float-visual-pane", Title: "actions", Kind: state.PaneEmpty},
-		Rect:     state.FloatingRect{X: 85, Y: 7, W: 28, H: 8},
+		Rect:     state.FloatingRect{X: 85, Y: 7, W: 29, H: 8},
 		BoundsW:  120,
 		BoundsH:  40,
 		Source:   state.PaneCommandSourceTest,
@@ -318,6 +318,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		vm := builder.Build(root)
 		vm.Shell.Layout.Body = render.Rect{X: 1, Y: 2, W: 112, H: 36}
 		vm.Shell.Layout.ShellFrame = render.Rect{X: 0, W: 113}
+		vm.Shell.Layout.FooterFrame = render.Rect{X: 0, W: 115}
 		return renderer.Render(vm)
 	}, host, nil)
 	if err := runtime.Post(app.NoopMsg{}); err != nil {

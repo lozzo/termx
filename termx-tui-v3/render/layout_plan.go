@@ -5,6 +5,7 @@ type LayoutPlan struct {
 	Header             Rect
 	Footer             Rect
 	ShellFrame          Rect
+	FooterFrame         Rect
 	Body               Rect
 	Panels             []PanelLayoutPlan
 	Floatings          []FloatingLayoutPlan
@@ -58,6 +59,7 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	body = layoutBodyOverride(body, shell.Layout.Body, viewport)
 	plan.Body = body
 	plan.ShellFrame = shellFrameRect(body, shell.Layout.ShellFrame, viewport)
+	plan.FooterFrame = footerFrameRect(plan.ShellFrame, shell.Layout.FooterFrame, viewport)
 	plan.Panels = measurePanels(shell.Layout, body, plan.ShellFrame)
 	plan.Floatings = measureFloatings(shell.Layout.Floating, viewport)
 	plan.Overlay = measureOverlay(shell.Overlay, viewport)
@@ -66,6 +68,22 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	plan.Cursor, plan.CursorRect = measureCursor(shell, plan)
 	plan.HitRegions = measureHitRegions(shell, plan)
 	return plan
+}
+
+func footerFrameRect(shellFrame Rect, override Rect, viewport Rect) Rect {
+	if override.W <= 0 {
+		return shellFrame
+	}
+	x := override.X
+	if x < 0 {
+		x = 0
+	}
+	x = clampInt(x, 0, maxInt(0, viewport.W-1))
+	width := minInt(override.W, maxInt(0, viewport.W-x))
+	if width <= 0 {
+		return shellFrame
+	}
+	return Rect{X: x, W: width}
 }
 
 func layoutBodyOverride(body Rect, override Rect, viewport Rect) Rect {

@@ -475,7 +475,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		renderHeader(c, shell.Header, plan.Header, plan.ShellFrame)
 	}
 	if plan.Footer.W > 0 && plan.Footer.H > 0 {
-		renderFooter(c, shell.Footer, plan.Footer, plan.ShellFrame)
+		renderFooter(c, shell.Footer, plan.Footer, plan.FooterFrame)
 	}
 
 	layers := make([]Layer, 0)
@@ -1385,7 +1385,12 @@ func renderShellFramedPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style
 	actions := paneChromeActionTextForPanel(panel, rect.W)
 	actionWidth := DisplayWidth(actions)
 	if actionWidth > 0 && rect.W >= actionWidth+4 {
-		c.overlayTextStyled(rect.X+rect.W-actionWidth-2, rect.Y, actionWidth, actions, paneChromeActionStyle(panel, style), owner, LayerPanel)
+		text := actions
+		if panel.Active {
+			text = " " + actions + " "
+		}
+		textWidth := DisplayWidth(text)
+		c.overlayTextStyled(rect.X+rect.W-textWidth-2, rect.Y, textWidth, text, paneChromeActionStyle(panel, style), owner, LayerPanel)
 	}
 }
 
@@ -1663,7 +1668,9 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		style = StyleAccent
 	}
 	owner := "floating:" + floating.ID
-	c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
+	if floating.ID != "float-visual" {
+		c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
+	}
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
 	title := floating.Title
 	if title == "" {
@@ -1677,6 +1684,11 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		state = paneChromeFloatingCollapseGlyph() + " collapsed"
 	}
 	renderChromeCardTitle(c, rect, title, state, paneChromeCloseActionText(), style, owner, LayerFloating)
+	if floating.ID == "float-visual" {
+		for y := rect.Y; y < rect.Y+rect.H; y++ {
+			c.writeTextStyled(rect.X+rect.W+1, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
+		}
+	}
 	if rect.W >= 2 && rect.H >= 2 && floating.ID != "float-visual" {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "◢", style, owner, LayerFloating)
 	}

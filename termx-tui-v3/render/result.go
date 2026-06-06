@@ -451,6 +451,7 @@ type LayoutVM struct {
 	Viewport   Rect
 	Body       Rect
 	ShellFrame Rect
+	FooterFrame Rect
 	Panels     []PanelVM
 	Floating   []FloatingVM
 	Split      SplitVM
