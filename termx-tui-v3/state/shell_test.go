@@ -107,6 +107,57 @@ func TestShellWorkbenchWorkspaceCommandsSwitchAndRename(t *testing.T) {
 	if result.Status != WorkbenchCommandOK || shell.Workspace.Name != "云端🚀" {
 		t.Fatalf("expected next workspace to restore renamed workspace, result=%#v shell=%#v", result, shell)
 	}
+
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceSwitch, TargetID: DefaultWorkspaceID})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ID != DefaultWorkspaceID {
+		t.Fatalf("expected explicit workspace switch, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceDelete, TargetID: "workspace-2"})
+	if result.Status != WorkbenchCommandNeedsConfirmation || len(shell.Workspaces) != 2 {
+		t.Fatalf("workspace delete must require confirmation, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceDelete, TargetID: "workspace-2", Confirm: PaneConfirmAccepted})
+	if result.Status != WorkbenchCommandOK || len(shell.Workspaces) != 1 || shell.Workspaces[0].ID != DefaultWorkspaceID {
+		t.Fatalf("expected confirmed workspace delete, result=%#v shell=%#v", result, shell)
+	}
+}
+
+func TestShellWorkbenchTabKillAndPaneCRUDDistinguishTerminalLifecycle(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-logs", Title: "logs", Kind: PaneTerminalLive, TerminalID: "term-logs"}, SplitDirectionVertical).
+		FocusPane(PaneCommandTarget{PaneID: "pane-logs"})
+
+	var result WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandPaneDetach, Target: PaneCommandTarget{PaneID: "pane-logs"}})
+	pane, _ := shell.Pane(PaneCommandTarget{PaneID: "pane-logs"})
+	if result.Status != WorkbenchCommandOK || pane.Kind != PaneEmpty || pane.TerminalID != "" {
+		t.Fatalf("pane detach should keep pane and drop terminal binding only, result=%#v pane=%#v", result, pane)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandPaneRename, Target: PaneCommandTarget{PaneID: "pane-logs"}, Name: "日志"})
+	pane, _ = shell.Pane(PaneCommandTarget{PaneID: "pane-logs"})
+	if result.Status != WorkbenchCommandOK || pane.Title != "日志" {
+		t.Fatalf("pane rename should update workbench schema, result=%#v pane=%#v", result, pane)
+	}
+
+	shell = shell.BindPaneTerminal(PaneCommandTarget{PaneID: "pane-logs"}, "term-logs")
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandPaneKill, Target: PaneCommandTarget{PaneID: "pane-logs"}})
+	if result.Status != WorkbenchCommandNeedsConfirmation || shell.ActivePaneID != "pane-logs" {
+		t.Fatalf("pane kill must require confirmation without mutation, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandPaneKill, Target: PaneCommandTarget{PaneID: "pane-logs"}, Confirm: PaneConfirmAccepted})
+	if result.Status != WorkbenchCommandOK || result.ID != "pane-logs" || len(result.Killed) != 1 || result.Killed[0] != "term-logs" || shell.HasPane(PaneCommandTarget{PaneID: "pane-logs"}) {
+		t.Fatalf("pane kill should close pane and report terminal kill boundary, result=%#v shell=%#v", result, shell)
+	}
+
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabCreate, TargetID: "tab-logs", Name: "logs"})
+	if result.Status != WorkbenchCommandOK {
+		t.Fatalf("expected tab create, result=%#v", result)
+	}
+	shell = shell.BindPaneTerminal(PaneCommandTarget{TabID: "tab-logs", PaneID: "tab-logs-pane"}, "term-tab")
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabKill, TargetID: "tab-logs", Confirm: PaneConfirmAccepted})
+	if result.Status != WorkbenchCommandOK || result.ID != "tab-logs" || len(result.Killed) != 1 || result.Killed[0] != "term-tab" || shell.Workspace.ActiveTabID == "tab-logs" {
+		t.Fatalf("tab kill should close tab and report terminal ids, result=%#v shell=%#v", result, shell)
+	}
 }
 
 func TestShellToastLifecycle(t *testing.T) {

@@ -76,6 +76,44 @@ func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 	}
 }
 
+func TestWorkbenchPaneCRUDPersistsClosedPaneSnapshotWithCAS(t *testing.T) {
+	storage := &services.FakeWorkbenchStorageService{CurrentVersion: 3}
+	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical),
+		WorkbenchSync: (state.WorkbenchSyncStore{}).MarkApplied(3),
+	}
+
+	root, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
+		Action: state.WorkbenchCommandPaneClose,
+		Target: state.PaneCommandTarget{PaneID: "pane-logs"},
+		Source: state.PaneCommandSourceTest,
+	}})
+	if len(effects) != 1 {
+		t.Fatalf("pane close workbench command should request persist, got %#v", effects)
+	}
+	persistMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, persistMsg)
+	if len(effects) != 1 {
+		t.Fatalf("persist request should emit storage save, got %#v", effects)
+	}
+	resultMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, resultMsg)
+
+	if len(storage.Saves) != 1 || !storage.Saves[0].CheckVersion || storage.Saves[0].ExpectedVersion != 3 {
+		t.Fatalf("pane CRUD persist must use storage CAS, saves=%#v", storage.Saves)
+	}
+	for _, pane := range storage.Saves[0].Snapshot.Workspace.Tabs[0].Panes {
+		if pane.ID == "pane-logs" {
+			t.Fatalf("closed pane must not be present in persisted snapshot, snapshot=%#v", storage.Saves[0].Snapshot)
+		}
+	}
+	if root.WorkbenchSync.SaveVersion() != 4 {
+		t.Fatalf("successful pane CRUD persist should advance version, sync=%#v", root.WorkbenchSync)
+	}
+}
+
 func TestWorkbenchCommandPersistsAgainstLoadedStorageVersion(t *testing.T) {
 	storage := &services.FakeWorkbenchStorageService{CurrentVersion: 7}
 	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))

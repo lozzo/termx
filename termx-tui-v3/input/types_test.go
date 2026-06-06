@@ -151,10 +151,14 @@ func TestBindingCatalogIsUniqueAndContainsTUIV2AlignedAliases(t *testing.T) {
 	}{
 		{name: "pane percent split", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, kind: IntentPaneCommand, command: "pane split-right"},
 		{name: "pane quote split", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, kind: IntentPaneCommand, command: "pane split-down"},
-		{name: "pane w close", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w"}, kind: IntentPaneCommand, command: "pane close"},
+		{name: "pane w close", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w"}, kind: IntentWorkbenchCommand, command: "pane close"},
+		{name: "pane d detach", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d"}, kind: IntentWorkbenchCommand, command: "pane detach"},
+		{name: "pane X kill", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "pane kill confirm=accepted"},
 		{name: "resize equals balance", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "="}, kind: IntentPaneCommand, command: "pane balance"},
 		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "tab create"},
+		{name: "tab X kill", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "tab kill confirm=accepted"},
 		{name: "workspace p previous", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, kind: IntentWorkbenchCommand, command: "workspace previous"},
+		{name: "workspace x delete", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "x"}, kind: IntentWorkbenchCommand, command: "workspace delete confirm=accepted"},
 		{name: "workspace f tree", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, kind: IntentShellAction, action: ShellActionOpenTree},
 	}
 	for _, tc := range cases {

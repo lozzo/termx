@@ -775,10 +775,13 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[2].PlainString(), "▌      pane  日志🚀") ||
 		!strings.Contains(content.Lines[0].PlainString(), "TUI storage projection") ||
 		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[open]  Open") {
+		!strings.Contains(content.Lines[len(content.Lines)-4].PlainString(), "[open]  Open") ||
+		!strings.Contains(content.Lines[len(content.Lines)-3].PlainString(), "[rename]  Rename") ||
+		!strings.Contains(content.Lines[len(content.Lines)-2].PlainString(), "[new]  New") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[delete]  Delete") {
 		t.Fatalf("expected tree header/search/row/detail/action, got %#v", content.Lines)
 	}
-	if !contentHasAction(content, "workbench.select") || !contentHasAction(content, "workbench.open") {
+	if !contentHasAction(content, "workbench.select") || !contentHasAction(content, "workbench.open") || !contentHasAction(content, "workbench.rename") || !contentHasAction(content, "workbench.new") || !contentHasAction(content, "workbench.delete") {
 		t.Fatalf("expected workbench hit regions, got %#v", content.HitRegions)
 	}
 	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {

@@ -147,9 +147,17 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	actionOffset := len(lines)
 	lines = append(lines,
 		contentActionLine("open", "Open"),
+		contentActionLine("rename", "Rename"),
+		contentActionLine("new", "New"),
+		contentActionLine("delete", "Delete"),
 	)
 	regions := workbenchTreeHitRegions(rows, rowOffset)
-	regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchOpen.String()})
+	regions = append(regions,
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchOpen.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchRename.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchNew.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 3, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchDelete.String()},
+	)
 	return ContentVM{
 		Kind:       ContentWorkbenchTree,
 		Lines:      lines,

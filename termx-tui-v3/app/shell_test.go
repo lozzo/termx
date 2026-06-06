@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -89,7 +90,7 @@ func TestShellReducerHandlesPaneSplitSemanticAction(t *testing.T) {
 	reducer := NewShellReducer()
 	root := state.Root{Shell: state.DefaultShell()}
 
-	root, _ = reducer(root, ShellSplitActivePaneMsg{
+	root, effects := reducer(root, ShellSplitActivePaneMsg{
 		Pane:      state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive},
 		Direction: state.SplitDirectionVertical,
 	})
@@ -100,6 +101,12 @@ func TestShellReducerHandlesPaneSplitSemanticAction(t *testing.T) {
 	}
 	if tab.RootSplit.Direction != state.SplitDirectionVertical {
 		t.Fatalf("expected vertical split, got %#v", tab.RootSplit)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("split test entry should request workbench persist, got %#v", effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneSplit) {
+		t.Fatalf("expected split persist request, got %#v", msg)
 	}
 }
 
@@ -215,9 +222,94 @@ func TestShellReducerKeepsCloseAndKillBehindConfirmPolicy(t *testing.T) {
 	if len(effects) != 2 {
 		t.Fatalf("expected feedback and terminal kill effect boundary, got %#v", effects)
 	}
-	kill, ok := effects[1].(PaneTerminalKillEffect)
-	if !ok || kill.TerminalID != "term-2" || kill.PaneID != "pane-2" {
-		t.Fatalf("expected terminal kill effect boundary, got %#v", effects[1])
+	killMsg := effects[1].(FuncEffect).Run(context.Background())
+	kill, ok := killMsg.(TerminalPoolKillRequestMsg)
+	if !ok || kill.TerminalID != "term-2" {
+		t.Fatalf("expected terminal kill message boundary, got %#v", killMsg)
+	}
+}
+
+func TestShellReducerWorkbenchPaneCommandsPersistAndKillThroughMessagePath(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})}
+
+	next, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
+		Action: state.WorkbenchCommandPaneClose,
+		Target: state.PaneCommandTarget{PaneID: "pane-2"},
+		Source: state.PaneCommandSourceKeyboard,
+	}})
+	if next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(effects) != 1 {
+		t.Fatalf("pane close workbench command should mutate and persist only, root=%#v effects=%#v", next, effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneClose) {
+		t.Fatalf("expected pane close persist request, got %#v", msg)
+	}
+
+	root.Shell = root.Shell.
+		SplitActivePane(state.PaneState{ID: "pane-2", TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})
+	next, effects = reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
+		Action:  state.WorkbenchCommandPaneKill,
+		Target:  state.PaneCommandTarget{PaneID: "pane-2"},
+		Confirm: state.PaneConfirmAccepted,
+		Source:  state.PaneCommandSourceKeyboard,
+	}})
+	if next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) || len(effects) != 2 {
+		t.Fatalf("pane kill workbench command should persist and request terminal kill, root=%#v effects=%#v", next, effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneKill) {
+		t.Fatalf("expected pane kill persist request, got %#v", msg)
+	}
+	if msg := effects[1].(FuncEffect).Run(context.Background()); msg.(TerminalPoolKillRequestMsg).TerminalID != "term-2" {
+		t.Fatalf("expected pane kill terminal request, got %#v", msg)
+	}
+}
+
+func TestShellReducerWorkbenchTreeCRUDContentActionsUseWorkbenchCommands(t *testing.T) {
+	reducer := NewShellReducer()
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs"}, state.SplitDirectionVertical).
+		OpenWorkbenchTree()
+	root := state.Root{Shell: shell}
+
+	root = selectWorkbenchTreeKind(t, root, state.WorkbenchTreeKindPane, "pane-logs")
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchRename.String()})
+	if !next.Shell.Overlay.Open || next.Shell.Overlay.Prompt.Purpose != "pane.rename" || next.Shell.Overlay.Prompt.TargetID != "pane-logs" {
+		t.Fatalf("tree rename pane should open targeted prompt, root=%#v effects=%#v", next, effects)
+	}
+	next.Shell = next.Shell.SetPromptValue("日志")
+	next, effects = reducer(next, ShellPromptSubmitMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("prompt pane rename should emit workbench command, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	next, effects = reducer(next, msg)
+	if pane, _ := next.Shell.Pane(state.PaneCommandTarget{PaneID: "pane-logs"}); pane.Title != "日志" || len(effects) != 1 {
+		t.Fatalf("pane rename should persist renamed schema, pane=%#v effects=%#v", pane, effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneRename) {
+		t.Fatalf("expected tree pane rename persist, got %#v", msg)
+	}
+
+	next.Shell = next.Shell.OpenWorkbenchTree()
+	root = selectWorkbenchTreeKind(t, next, state.WorkbenchTreeKindPane, "pane-logs")
+	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchDelete.String()})
+	if next.Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-logs"}) || len(effects) != 1 {
+		t.Fatalf("tree delete pane should close through workbench command and persist, root=%#v effects=%#v", next, effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandPaneClose) {
+		t.Fatalf("expected tree pane delete persist, got %#v", msg)
+	}
+
+	root = state.Root{Shell: state.DefaultShell().OpenWorkbenchTree()}
+	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchNew.String()})
+	if len(next.Shell.Workspace.Tabs) != 2 || len(effects) != 1 {
+		t.Fatalf("tree new on workspace should create tab through workbench command, root=%#v effects=%#v", next, effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandTabCreate) {
+		t.Fatalf("expected tree new persist, got %#v", msg)
 	}
 }
 
@@ -314,4 +406,21 @@ func TestShellReducerIgnoresUnknownMessages(t *testing.T) {
 	if root.Generation != 0 || len(effects) != 0 {
 		t.Fatalf("unknown shell message should be ignored root=%#v effects=%#v", root, effects)
 	}
+}
+
+func selectWorkbenchTreeKind(t *testing.T, root state.Root, kind string, id string) state.Root {
+	t.Helper()
+	items := state.WorkbenchTreeItems(root)
+	for index, item := range items {
+		if item.Kind != kind {
+			continue
+		}
+		if id != "" && item.PaneID != id && item.TabID != id && item.WorkspaceID != id {
+			continue
+		}
+		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(index, len(items))
+		return root
+	}
+	t.Fatalf("missing workbench tree item kind=%s id=%s items=%#v", kind, id, items)
+	return root
 }

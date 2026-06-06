@@ -467,8 +467,22 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			Source:   state.PaneCommandSourceMouse,
 		}}
 	}
+	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionPaneClose.String() {
+		return ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
+			Action: state.WorkbenchCommandPaneClose,
+			Target: state.PaneCommandTarget{PaneID: region.PaneID},
+			Source: state.PaneCommandSourceMouse,
+		}}
+	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
 		runtime.fillMousePaneCommandDefaults(&command)
+		if command.Action == state.PaneCommandSplit {
+			return ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
+				Action: state.WorkbenchCommandPaneSplit,
+				Pane:   command,
+				Source: state.PaneCommandSourceMouse,
+			}}
+		}
 		return ShellPaneCommandMsg{Command: command}
 	}
 	switch region.Kind {

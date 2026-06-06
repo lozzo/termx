@@ -145,14 +145,6 @@ type PaneCommandFeedbackEffect struct {
 
 func (PaneCommandFeedbackEffect) isEffect() {}
 
-type PaneTerminalKillEffect struct {
-	TerminalID string
-	PaneID     string
-	Command    state.PaneCommand
-}
-
-func (PaneTerminalKillEffect) isEffect() {}
-
 func NewShellReducer() Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
@@ -221,11 +213,15 @@ func NewShellReducer() Reducer {
 		case HostThemeMsg:
 			root.HostTheme = root.HostTheme.ApplyUpdate(msg.Update)
 		case ShellSplitActivePaneMsg:
-			return reducePaneCommand(root, state.PaneCommand{
-				Action:         state.PaneCommandSplit,
-				SplitDirection: msg.Direction,
-				NewPane:        msg.Pane,
-				Source:         state.PaneCommandSourceTest,
+			return reduceWorkbenchCommand(root, state.WorkbenchCommand{
+				Action: state.WorkbenchCommandPaneSplit,
+				Pane: state.PaneCommand{
+					Action:         state.PaneCommandSplit,
+					SplitDirection: msg.Direction,
+					NewPane:        msg.Pane,
+					Source:         state.PaneCommandSourceTest,
+				},
+				Source: state.PaneCommandSourceTest,
 			})
 		case ShellPaneCommandMsg:
 			return reducePaneCommand(root, msg.Command)
@@ -248,8 +244,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse})
 	case render.ActionEmptyClose.String(), render.ActionExitedClose.String():
-		return reducePaneCommand(root, state.PaneCommand{
-			Action: state.PaneCommandClose,
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
+			Action: state.WorkbenchCommandPaneClose,
 			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
 			Source: state.PaneCommandSourceMouse,
 		})
@@ -314,6 +310,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			items = state.WorkbenchTreeItems(root)
 		}
 		return reduceWorkbenchTreeOpen(root, items)
+	case render.ActionWorkbenchRename.String():
+		return reduceWorkbenchTreeRename(root, state.WorkbenchTreeItems(root))
+	case render.ActionWorkbenchNew.String():
+		return reduceWorkbenchTreeNew(root, state.WorkbenchTreeItems(root))
+	case render.ActionWorkbenchDelete.String():
+		return reduceWorkbenchTreeDelete(root, state.WorkbenchTreeItems(root))
 	case render.ActionPromptSubmit.String():
 		return reducePromptSubmit(root)
 	case render.ActionPromptCancel.String():
@@ -384,9 +386,11 @@ func promptWorkbenchCommand(prompt state.PromptState) (state.WorkbenchCommand, b
 	}
 	switch prompt.Purpose {
 	case "tab.rename":
-		return state.WorkbenchCommand{Action: state.WorkbenchCommandTabRename, Name: name, Source: state.PaneCommandSourcePalette}, true
+		return state.WorkbenchCommand{Action: state.WorkbenchCommandTabRename, TargetID: prompt.TargetID, Name: name, Source: state.PaneCommandSourcePalette}, true
 	case "workspace.rename":
-		return state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceRename, Name: name, Source: state.PaneCommandSourcePalette}, true
+		return state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceRename, TargetID: prompt.TargetID, Name: name, Source: state.PaneCommandSourcePalette}, true
+	case "pane.rename":
+		return state.WorkbenchCommand{Action: state.WorkbenchCommandPaneRename, Target: state.PaneCommandTarget{WorkspaceID: prompt.TargetWorkspaceID, TabID: prompt.TargetTabID, PaneID: prompt.TargetID}, Name: name, Source: state.PaneCommandSourcePalette}, true
 	default:
 		return state.WorkbenchCommand{}, false
 	}
@@ -446,13 +450,86 @@ func reduceWorkbenchTreeOpen(root state.Root, items []state.WorkbenchTreeItem) (
 		}
 	case state.WorkbenchTreeKindWorkspace:
 		root.Shell = root.Shell.CloseOverlay()
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.open", Body: selected.WorkspaceName})
+		if selected.WorkspaceID == "" || selected.WorkspaceID == root.Shell.EnsureDefaults().Workspace.ID {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.open", Body: selected.WorkspaceName})
+			return root.Advance(), nil
+		}
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
+			Action:   state.WorkbenchCommandWorkspaceSwitch,
+			TargetID: selected.WorkspaceID,
+			Source:   state.PaneCommandSourceMouse,
+		})
 	case state.WorkbenchTreeKindFloating:
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating", Body: "not implemented"})
 	default:
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.open", Body: "unknown node"})
 	}
 	return root.Advance(), nil
+}
+
+func reduceWorkbenchTreeRename(root state.Root, items []state.WorkbenchTreeItem) (state.Root, []Effect) {
+	selected, ok := workbenchTreeSelectedItem(items)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.rename", Body: "no node"})
+		return root.Advance(), nil
+	}
+	switch selected.Kind {
+	case state.WorkbenchTreeKindWorkspace:
+		root.Shell = root.Shell.OpenPrompt(state.PromptState{Title: "Rename Workspace", Purpose: "workspace.rename", TargetWorkspaceID: selected.WorkspaceID, TargetID: selected.WorkspaceID, Value: selected.WorkspaceName, Placeholder: "workspace name"})
+	case state.WorkbenchTreeKindTab:
+		root.Shell = root.Shell.OpenPrompt(state.PromptState{Title: "Rename Tab", Purpose: "tab.rename", TargetWorkspaceID: selected.WorkspaceID, TargetTabID: selected.TabID, TargetID: selected.TabID, Value: selected.TabTitle, Placeholder: "tab name"})
+	case state.WorkbenchTreeKindPane:
+		root.Shell = root.Shell.OpenPrompt(state.PromptState{Title: "Rename Pane", Purpose: "pane.rename", TargetWorkspaceID: selected.WorkspaceID, TargetTabID: selected.TabID, TargetID: selected.PaneID, Value: selected.PaneTitle, Placeholder: "pane name"})
+	default:
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.rename", Body: "unsupported node"})
+	}
+	return root.Advance(), nil
+}
+
+func reduceWorkbenchTreeNew(root state.Root, items []state.WorkbenchTreeItem) (state.Root, []Effect) {
+	selected, ok := workbenchTreeSelectedItem(items)
+	if !ok {
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: nextWorkspaceName(root.Shell), Source: state.PaneCommandSourceMouse})
+	}
+	switch selected.Kind {
+	case state.WorkbenchTreeKindWorkspace:
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell), Source: state.PaneCommandSourceMouse})
+	case state.WorkbenchTreeKindTab, state.WorkbenchTreeKindPane:
+		target := state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID}
+		if target.PaneID == "" {
+			target.PaneID = firstPaneIDForTab(root.Shell, selected.TabID)
+		}
+		command := state.PaneCommand{
+			Action:         state.PaneCommandSplit,
+			Target:         target,
+			SplitDirection: state.SplitDirectionVertical,
+			NewPane:        state.PaneState{ID: nextKeyboardPaneID(root.Shell), Title: "pane", Kind: state.PaneEmpty},
+			Source:         state.PaneCommandSourceMouse,
+		}
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneSplit, Pane: command, Source: state.PaneCommandSourceMouse})
+	default:
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.new", Body: "unsupported node"})
+		return root.Advance(), nil
+	}
+}
+
+func reduceWorkbenchTreeDelete(root state.Root, items []state.WorkbenchTreeItem) (state.Root, []Effect) {
+	selected, ok := workbenchTreeSelectedItem(items)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.delete", Body: "no node"})
+		return root.Advance(), nil
+	}
+	switch selected.Kind {
+	case state.WorkbenchTreeKindWorkspace:
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceDelete, TargetID: selected.WorkspaceID, Confirm: state.PaneConfirmAccepted, Source: state.PaneCommandSourceMouse})
+	case state.WorkbenchTreeKindTab:
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: selected.TabID, Source: state.PaneCommandSourceMouse})
+	case state.WorkbenchTreeKindPane:
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID}, Source: state.PaneCommandSourceMouse})
+	default:
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.delete", Body: "unsupported node"})
+		return root.Advance(), nil
+	}
 }
 
 func workbenchTreeSelectedItem(items []state.WorkbenchTreeItem) (state.WorkbenchTreeItem, bool) {
@@ -511,9 +588,16 @@ func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (st
 	if result.Status != state.WorkbenchCommandOK {
 		return root.Advance(), nil
 	}
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+	effects := []Effect{FuncEffect{Run: func(context.Context) Msg {
 		return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
 	}}}
+	for _, terminalID := range result.Killed {
+		id := terminalID
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolKillRequestMsg{TerminalID: id}
+		}})
+	}
+	return root.Advance(), effects
 }
 
 func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand) state.FloatingCommand {
@@ -577,7 +661,10 @@ func paneCommandEffects(command state.PaneCommand, result state.PaneCommandResul
 		return effects
 	}
 	if hasTargetPane && targetPane.TerminalID != "" {
-		effects = append(effects, PaneTerminalKillEffect{TerminalID: targetPane.TerminalID, PaneID: targetPane.ID, Command: command})
+		id := targetPane.TerminalID
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolKillRequestMsg{TerminalID: id}
+		}})
 	}
 	return effects
 }

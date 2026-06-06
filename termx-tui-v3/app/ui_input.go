@@ -277,6 +277,18 @@ func reducePaneCommandIntent(root state.Root, intent input.Intent) (state.Root, 
 	if command.Action == state.PaneCommandSplit && command.NewPane.ID == "" {
 		command.NewPane = state.PaneState{ID: nextKeyboardPaneID(root.Shell), Title: "pane", Kind: state.PaneEmpty}
 	}
+	if command.Action == state.PaneCommandSplit {
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
+					Action: state.WorkbenchCommandPaneSplit,
+					Pane:   command,
+					Source: state.PaneCommandSourceKeyboard,
+				}}
+			}},
+		}
+	}
 	return root, []Effect{
 		handledEffect{},
 		FuncEffect{Run: func(context.Context) Msg {
@@ -368,6 +380,10 @@ func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.Wor
 	case "tab close":
 		command.Action = state.WorkbenchCommandTabClose
 		return command, state.PromptState{}, true
+	case "tab kill confirm=accepted":
+		command.Action = state.WorkbenchCommandTabKill
+		command.Confirm = state.PaneConfirmAccepted
+		return command, state.PromptState{}, true
 	case "workspace create":
 		command.Action = state.WorkbenchCommandWorkspaceCreate
 		command.Name = nextWorkspaceName(shell)
@@ -386,6 +402,23 @@ func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.Wor
 			Value:       shell.Workspace.Name,
 			Placeholder: "workspace name",
 		}, true
+	case "workspace delete confirm=accepted":
+		command.Action = state.WorkbenchCommandWorkspaceDelete
+		command.Confirm = state.PaneConfirmAccepted
+		return command, state.PromptState{}, true
+	case "pane close":
+		command.Action = state.WorkbenchCommandPaneClose
+		command.Target = state.PaneCommandTarget{PaneID: shell.ActivePaneID}
+		return command, state.PromptState{}, true
+	case "pane detach":
+		command.Action = state.WorkbenchCommandPaneDetach
+		command.Target = state.PaneCommandTarget{PaneID: shell.ActivePaneID}
+		return command, state.PromptState{}, true
+	case "pane kill confirm=accepted":
+		command.Action = state.WorkbenchCommandPaneKill
+		command.Target = state.PaneCommandTarget{PaneID: shell.ActivePaneID}
+		command.Confirm = state.PaneConfirmAccepted
+		return command, state.PromptState{}, true
 	default:
 		return state.WorkbenchCommand{}, state.PromptState{}, false
 	}

@@ -44,8 +44,8 @@ func TestParsePaneMiniCommandCoversStructuralActions(t *testing.T) {
 
 func TestPaneCommandAdaptersFromHitRegionAndIntent(t *testing.T) {
 	command, ok := PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: "pane.close"})
-	if !ok || command.Action != state.PaneCommandClose || command.Target.PaneID != "pane-1" || command.Source != state.PaneCommandSourceMouse {
-		t.Fatalf("unexpected action hit command command=%#v ok=%v", command, ok)
+	if ok {
+		t.Fatalf("pane.close must route through workbench command, got command=%#v", command)
 	}
 
 	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: "pane.split-down"})

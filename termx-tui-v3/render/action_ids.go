@@ -43,6 +43,9 @@ const (
 
 	ActionWorkbenchSelect ActionID = "workbench.select"
 	ActionWorkbenchOpen   ActionID = "workbench.open"
+	ActionWorkbenchRename ActionID = "workbench.rename"
+	ActionWorkbenchNew    ActionID = "workbench.new"
+	ActionWorkbenchDelete ActionID = "workbench.delete"
 
 	ActionPromptSubmit ActionID = "prompt.submit"
 	ActionPromptCancel ActionID = "prompt.cancel"
@@ -89,6 +92,9 @@ func ActionIDCatalog() []ActionID {
 		ActionPoolKill,
 		ActionWorkbenchSelect,
 		ActionWorkbenchOpen,
+		ActionWorkbenchRename,
+		ActionWorkbenchNew,
+		ActionWorkbenchDelete,
 		ActionPromptSubmit,
 		ActionPromptCancel,
 		ActionHelpClose,
