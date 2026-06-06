@@ -15,6 +15,7 @@ type ProtocolHistoryClient interface {
 type ProtocolStorageClient interface {
 	StorageGet(context.Context, protocol.StorageGetParams) (*protocol.StorageEntry, error)
 	StoragePut(context.Context, protocol.StoragePutParams) (*protocol.StorageEntry, error)
+	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 }
 
 // ProtocolCoreClientAdapter 是真实 protocol history.window 的 service adapter。
@@ -174,4 +175,51 @@ func (adapter ProtocolWorkbenchStorageAdapter) SaveWorkbench(ctx context.Context
 		Ref:     req.Ref.WithVersion(entry.Version),
 		Version: entry.Version,
 	}, nil
+}
+
+func (adapter ProtocolWorkbenchStorageAdapter) WatchWorkbench(ctx context.Context, ref state.WorkbenchStorageRef) (<-chan WorkbenchStorageEvent, error) {
+	events, err := adapter.Client.Events(ctx, protocol.EventsParams{
+		Types:            []protocol.EventType{protocol.EventStorageChanged},
+		StorageAppID:     ref.AppID,
+		StorageScope:     protocol.StorageScope(ref.Scope),
+		StorageOwnerID:   ref.OwnerID,
+		StorageKeyPrefix: ref.KeyPrefix(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan WorkbenchStorageEvent, 16)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				if event.Storage == nil {
+					continue
+				}
+				changed := WorkbenchStorageEvent{
+					Ref: state.WorkbenchStorageRef{
+						AppID:   event.Storage.AppID,
+						Scope:   string(event.Storage.Scope),
+						OwnerID: event.Storage.OwnerID,
+						Key:     event.Storage.Key,
+						Version: event.Storage.Version,
+					},
+					Version: event.Storage.Version,
+					Op:      event.Storage.Op,
+				}
+				select {
+				case out <- changed:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
 }

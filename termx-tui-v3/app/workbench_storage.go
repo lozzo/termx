@@ -16,6 +16,17 @@ type WorkbenchStorageLoadRequestMsg struct{}
 
 func (WorkbenchStorageLoadRequestMsg) isMsg() {}
 
+type WorkbenchStorageWatchRequestMsg struct{}
+
+func (WorkbenchStorageWatchRequestMsg) isMsg() {}
+
+type WorkbenchStorageChangedMsg struct {
+	Event services.WorkbenchStorageEvent
+	Err   error
+}
+
+func (WorkbenchStorageChangedMsg) isMsg() {}
+
 type WorkbenchStorageLoadResultMsg struct {
 	Result services.WorkbenchStorageLoadResult
 	Err    error
@@ -39,6 +50,10 @@ func (WorkbenchStoragePersistResultMsg) isMsg() {}
 func NewWorkbenchStorageReducer(deps WorkbenchDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
+		case WorkbenchStorageWatchRequestMsg:
+			return reduceWorkbenchStorageWatchRequest(root, deps)
+		case WorkbenchStorageChangedMsg:
+			return reduceWorkbenchStorageChanged(root, msg)
 		case WorkbenchStorageLoadRequestMsg:
 			return reduceWorkbenchStorageLoadRequest(root, deps)
 		case WorkbenchStorageLoadResultMsg:
@@ -51,6 +66,47 @@ func NewWorkbenchStorageReducer(deps WorkbenchDeps) Reducer {
 			return root, nil
 		}
 	}
+}
+
+func reduceWorkbenchStorageWatchRequest(root state.Root, deps WorkbenchDeps) (state.Root, []Effect) {
+	if deps.Storage == nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: "storage service missing"})
+		return root.Advance(), nil
+	}
+	ref := workbenchStorageRef(root, deps)
+	return root, []Effect{StreamEffect{Token: CancelToken("workbench.storage.watch"), Run: func(ctx context.Context, post func(Msg)) {
+		events, err := deps.Storage.WatchWorkbench(ctx, ref)
+		if err != nil {
+			post(WorkbenchStorageChangedMsg{Err: err})
+			return
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				post(WorkbenchStorageChangedMsg{Event: event})
+			}
+		}
+	}}}
+}
+
+func reduceWorkbenchStorageChanged(root state.Root, msg WorkbenchStorageChangedMsg) (state.Root, []Effect) {
+	if msg.Err != nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: errorString(msg.Err)})
+		return root.Advance(), nil
+	}
+	if root.WorkbenchSync.ShouldIgnoreEvent(msg.Event.Version) {
+		root.WorkbenchSync = root.WorkbenchSync.MarkEvent(msg.Event.Version)
+		return root.Advance(), nil
+	}
+	root.WorkbenchSync = root.WorkbenchSync.MarkEvent(msg.Event.Version)
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+		return WorkbenchStorageLoadRequestMsg{}
+	}}}
 }
 
 func reduceWorkbenchStorageLoadRequest(root state.Root, deps WorkbenchDeps) (state.Root, []Effect) {
@@ -80,6 +136,7 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 		return root.Advance(), nil
 	}
 	root.Shell = shell
+	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: "loaded"})
 	return root.Advance(), nil
 }
@@ -109,6 +166,7 @@ func reduceWorkbenchStoragePersistResult(root state.Root, msg WorkbenchStoragePe
 	if body == "" {
 		body = state.WorkbenchStorageKeyRoot
 	}
+	root.WorkbenchSync = root.WorkbenchSync.MarkSaved(msg.Result.Ref, msg.Result.Version)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: body})
 	return root.Advance(), nil
 }

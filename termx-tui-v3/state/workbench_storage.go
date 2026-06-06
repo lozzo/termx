@@ -56,6 +56,20 @@ func (ref WorkbenchStorageRef) WithVersion(version uint64) WorkbenchStorageRef {
 	return ref
 }
 
+func (ref WorkbenchStorageRef) KeyPrefix() string {
+	key := strings.TrimSpace(ref.Key)
+	if key == "" {
+		return "workbench/"
+	}
+	if strings.HasSuffix(key, "/") {
+		return key
+	}
+	if slash := strings.LastIndex(key, "/"); slash >= 0 {
+		return key[:slash+1]
+	}
+	return key
+}
+
 func SnapshotWorkbenchForStorage(shell ShellStore) WorkbenchStorageSnapshot {
 	shell = shell.EnsureDefaults()
 	return WorkbenchStorageSnapshot{

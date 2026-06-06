@@ -71,6 +71,11 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 		return v3E2ESmokeResult{}, err
 	}
 	defer client.Close()
+	storageClient, err := dialV3Client(socketPath)
+	if err != nil {
+		return v3E2ESmokeResult{}, err
+	}
+	defer storageClient.Close()
 
 	created, err := client.Create(ctx, protocol.CreateParams{
 		ID:      newV3TerminalID(),
@@ -84,7 +89,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 
 	host := app.NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
-	runtime := newV3InteractiveRuntime(created.TerminalID, 80, 24, client, host)
+	runtime := newV3InteractiveRuntime(created.TerminalID, 80, 24, client, storageClient, host)
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   created.TerminalID,
 		Cols:         80,

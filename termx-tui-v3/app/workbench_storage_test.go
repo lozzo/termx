@@ -68,6 +68,61 @@ func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 	if len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Title != "workbench.storage" {
 		t.Fatalf("persist result should show feedback, got %#v", root.Shell.Toasts)
 	}
+	if root.WorkbenchSync.LastSavedVersion != 1 {
+		t.Fatalf("persist result should track local saved version, got %#v", root.WorkbenchSync)
+	}
+}
+
+func TestWorkbenchStorageChangedReloadsExternalSnapshot(t *testing.T) {
+	externalShell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-external", Title: "external", Kind: state.PaneTerminalLive, TerminalID: "term-external"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-external"})
+	storage := &services.FakeWorkbenchStorageService{
+		LoadResult: services.WorkbenchStorageLoadResult{
+			Snapshot: state.SnapshotWorkbenchForStorage(externalShell),
+			Version:  8,
+			Found:    true,
+		},
+	}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, WorkbenchStorageChangedMsg{Event: services.WorkbenchStorageEvent{
+		Ref:     state.DefaultWorkbenchStorageRef("").WithVersion(8),
+		Version: 8,
+		Op:      "put",
+	}})
+	if len(effects) != 1 || root.WorkbenchSync.LastEventVersion != 8 {
+		t.Fatalf("storage change should request reload, root=%#v effects=%#v", root, effects)
+	}
+	loadRequest := effects[0].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, loadRequest)
+	if len(effects) != 1 {
+		t.Fatalf("load request should emit storage load effect, got %#v", effects)
+	}
+	loadResult := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, loadResult)
+
+	if root.Shell.ActivePaneID != "pane-external" || root.WorkbenchSync.LastAppliedVersion != 8 {
+		t.Fatalf("external snapshot should refresh shell, root=%#v", root)
+	}
+}
+
+func TestWorkbenchStorageChangedIgnoresSelfPersistVersion(t *testing.T) {
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &services.FakeWorkbenchStorageService{}})
+	root := state.Root{
+		Shell:         state.DefaultShell(),
+		WorkbenchSync: (state.WorkbenchSyncStore{}).MarkSaved(state.DefaultWorkbenchStorageRef("").WithVersion(5), 5),
+	}
+
+	root, effects := reducer(root, WorkbenchStorageChangedMsg{Event: services.WorkbenchStorageEvent{
+		Ref:     state.DefaultWorkbenchStorageRef("").WithVersion(5),
+		Version: 5,
+		Op:      "put",
+	}})
+	if len(effects) != 0 || root.WorkbenchSync.LastEventVersion != 5 || root.WorkbenchSync.LastAppliedVersion != 0 {
+		t.Fatalf("self storage event should not reload, root=%#v effects=%#v", root, effects)
+	}
 }
 
 func TestWorkbenchStorageReducerReportsMissingServiceAndSaveErrors(t *testing.T) {
@@ -90,7 +145,9 @@ func TestWorkbenchStorageReducerReportsMissingServiceAndSaveErrors(t *testing.T)
 
 func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 	host := NewFakeTerminalHost(8)
-	storage := &services.FakeWorkbenchStorageService{}
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
 	runtime := NewInteractiveRuntimeWithWorkbench(
 		state.Root{},
 		host,
@@ -109,5 +166,8 @@ func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 
 	if len(storage.Saves) != 1 || len(storage.Saves[0].Snapshot.Workspace.Tabs) != 2 {
 		t.Fatalf("interactive runtime should persist workbench command, saves=%#v", storage.Saves)
+	}
+	if len(storage.Watches) != 1 || storage.Watches[0].Key != state.WorkbenchStorageKeyRoot {
+		t.Fatalf("interactive runtime should subscribe to storage.changed, watches=%#v", storage.Watches)
 	}
 }

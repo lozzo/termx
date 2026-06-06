@@ -71,6 +71,11 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		return err
 	}
 	defer client.Close()
+	storageClient, err := v3DialClient(cfg.SocketPath)
+	if err != nil {
+		return fmt.Errorf("dial core-v2 storage events client: %w", err)
+	}
+	defer storageClient.Close()
 
 	host := newV3TerminalHost()
 	if err := host.Enter(ctx); err != nil {
@@ -82,7 +87,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	if err != nil || cols <= 0 || rows <= 0 {
 		cols, rows = 80, 24
 	}
-	runtime := newV3InteractiveRuntime(cfg.TerminalID, cols, rows, client, host)
+	runtime := newV3InteractiveRuntime(cfg.TerminalID, cols, rows, client, storageClient, host)
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   cfg.TerminalID,
 		Cols:         cols,
@@ -105,7 +110,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}
 }
 
-func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, host app.TerminalHost) *app.AppRuntime {
+func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, storageClient *protocol.Client, host app.TerminalHost) *app.AppRuntime {
 	initial := state.Root{
 		Session: state.TerminalSessionStore{
 			TerminalID: terminalID,
@@ -120,7 +125,12 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 	}
 	terminal := services.ProtocolTerminalServiceAdapter{Client: client}
 	core := services.ProtocolCoreClientAdapter{Client: client}
-	storage := services.ProtocolWorkbenchStorageAdapter{Client: client}
+	var storage services.WorkbenchStorageService
+	if storageClient != nil {
+		// core-v2 当前每个 protocol session 只有一个 events stream；
+		// workbench storage.changed 必须独立于 terminal live events，避免互相取消。
+		storage = services.ProtocolWorkbenchStorageAdapter{Client: storageClient}
+	}
 	return app.NewInteractiveRuntimeWithWorkbench(
 		initial,
 		host,

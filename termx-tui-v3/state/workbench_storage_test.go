@@ -75,6 +75,9 @@ func TestDefaultWorkbenchStorageRefUsesOpaqueStorageKey(t *testing.T) {
 	if ref.AppID != WorkbenchStorageAppID || ref.Scope != WorkbenchStorageScopePublic || ref.OwnerID != DefaultWorkspaceID || ref.Key != WorkbenchStorageKeyRoot {
 		t.Fatalf("unexpected default storage ref %#v", ref)
 	}
+	if ref.KeyPrefix() != "workbench/" {
+		t.Fatalf("unexpected key prefix %q", ref.KeyPrefix())
+	}
 	if versioned := ref.WithVersion(12); versioned.Version != 12 || ref.Version != 0 {
 		t.Fatalf("WithVersion should return versioned copy, ref=%#v versioned=%#v", ref, versioned)
 	}

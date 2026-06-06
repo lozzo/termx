@@ -212,6 +212,7 @@ type ClipboardWriteRequest struct {
 type WorkbenchStorageService interface {
 	LoadWorkbench(context.Context, state.WorkbenchStorageRef) (WorkbenchStorageLoadResult, error)
 	SaveWorkbench(context.Context, WorkbenchStorageSaveRequest) (WorkbenchStorageSaveResult, error)
+	WatchWorkbench(context.Context, state.WorkbenchStorageRef) (<-chan WorkbenchStorageEvent, error)
 }
 
 type WorkbenchStorageLoadResult struct {
@@ -230,6 +231,12 @@ type WorkbenchStorageSaveRequest struct {
 type WorkbenchStorageSaveResult struct {
 	Ref     state.WorkbenchStorageRef
 	Version uint64
+}
+
+type WorkbenchStorageEvent struct {
+	Ref     state.WorkbenchStorageRef
+	Version uint64
+	Op      string
 }
 
 var (
@@ -302,8 +309,11 @@ type FakeWorkbenchStorageService struct {
 	LoadErr    error
 	SaveResult WorkbenchStorageSaveResult
 	SaveErr    error
+	WatchCh    chan WorkbenchStorageEvent
+	WatchErr   error
 	Loads      []state.WorkbenchStorageRef
 	Saves      []WorkbenchStorageSaveRequest
+	Watches    []state.WorkbenchStorageRef
 }
 
 func (service *FakeWorkbenchStorageService) LoadWorkbench(_ context.Context, ref state.WorkbenchStorageRef) (WorkbenchStorageLoadResult, error) {
@@ -328,6 +338,17 @@ func (service *FakeWorkbenchStorageService) SaveWorkbench(_ context.Context, req
 		result.Version = req.ExpectedVersion + 1
 	}
 	return result, nil
+}
+
+func (service *FakeWorkbenchStorageService) WatchWorkbench(_ context.Context, ref state.WorkbenchStorageRef) (<-chan WorkbenchStorageEvent, error) {
+	service.Watches = append(service.Watches, ref)
+	if service.WatchErr != nil {
+		return nil, service.WatchErr
+	}
+	if service.WatchCh == nil {
+		service.WatchCh = make(chan WorkbenchStorageEvent, 16)
+	}
+	return service.WatchCh, nil
 }
 
 func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {

@@ -253,6 +253,32 @@ func TestProtocolWorkbenchStorageAdapterUsesOpaqueStorageMethods(t *testing.T) {
 	if decoded.Schema != state.WorkbenchStorageSchema || decoded.ActivePaneID != "pane-logs" {
 		t.Fatalf("unexpected storage payload %#v", decoded)
 	}
+
+	eventCh := make(chan protocol.Event, 1)
+	client.eventCh = eventCh
+	watch, err := adapter.WatchWorkbench(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("watch workbench: %v", err)
+	}
+	if len(client.eventParams) != 1 {
+		t.Fatalf("expected one events subscription, got %#v", client.eventParams)
+	}
+	filter := client.eventParams[0]
+	if len(filter.Types) != 1 || filter.Types[0] != protocol.EventStorageChanged || filter.StorageAppID != state.WorkbenchStorageAppID || filter.StorageScope != protocol.StorageScopePublic || filter.StorageOwnerID != state.DefaultWorkspaceID || filter.StorageKeyPrefix != "workbench/" {
+		t.Fatalf("watch must subscribe to storage.changed with workbench prefix, got %#v", filter)
+	}
+	eventCh <- protocol.Event{Type: protocol.EventStorageChanged, Storage: &protocol.StorageChangedData{
+		AppID:   state.WorkbenchStorageAppID,
+		Scope:   protocol.StorageScopePublic,
+		OwnerID: state.DefaultWorkspaceID,
+		Key:     state.WorkbenchStorageKeyRoot,
+		Version: 11,
+		Op:      "put",
+	}}
+	changed := <-watch
+	if changed.Ref.Key != state.WorkbenchStorageKeyRoot || changed.Version != 11 || changed.Op != "put" {
+		t.Fatalf("unexpected storage changed event %#v", changed)
+	}
 }
 
 func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
