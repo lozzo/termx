@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lozzow/termx/termx-tui-v3/render"
 )
@@ -70,8 +71,11 @@ type v3TmuxVisualCompareResult struct {
 	CurrentPlainPath string
 	TargetPath       string
 	DiffPath         string
+	StylePath        string
+	StyleDiffPath    string
 	SummaryPath      string
 	Mismatches       int
+	StyleMismatches  int
 }
 
 type v3TmuxStabilitySmokeResult struct {
@@ -670,18 +674,24 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	currentPlainPath := filepath.Join(artifactDir, "current.txt")
 	targetPath := filepath.Join(artifactDir, "target.txt")
 	diffPath := filepath.Join(artifactDir, "diff.txt")
+	stylePath := filepath.Join(artifactDir, "style.txt")
+	styleDiffPath := filepath.Join(artifactDir, "style.diff.txt")
 	summaryPath := filepath.Join(artifactDir, "summary.txt")
 	targetPlain := v3VisualTargetPlain()
 	diffText, mismatches := diffVisualPlain(targetPlain, currentPlain, 120, 40)
+	styleText, styleDiffText, styleMismatches := visualANSIStyleReport(currentANSI)
 	summary := strings.Join([]string{
 		"termx v3 tmux visual compare",
 		"source: termx-tui-v3/docs/unicode-ui-wireframes.md + tuiv2 chrome slot contract",
 		fmt.Sprintf("viewport: %dx%d", 120, 40),
 		fmt.Sprintf("mismatches: %d", mismatches),
+		fmt.Sprintf("style_mismatches: %d", styleMismatches),
 		"current_plain: " + currentPlainPath,
 		"current_ansi: " + currentANSIPath,
 		"target: " + targetPath,
 		"diff: " + diffPath,
+		"style: " + stylePath,
+		"style_diff: " + styleDiffPath,
 		"",
 	}, "\n")
 	for _, file := range []struct {
@@ -692,6 +702,8 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 		{currentPlainPath, currentPlain},
 		{targetPath, targetPlain},
 		{diffPath, diffText},
+		{stylePath, styleText},
+		{styleDiffPath, styleDiffText},
 		{summaryPath, summary},
 	} {
 		if err := os.WriteFile(file.path, []byte(file.body), 0o600); err != nil {
@@ -706,8 +718,11 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 		CurrentPlainPath: currentPlainPath,
 		TargetPath:       targetPath,
 		DiffPath:         diffPath,
+		StylePath:        stylePath,
+		StyleDiffPath:    styleDiffPath,
 		SummaryPath:      summaryPath,
 		Mismatches:       mismatches,
+		StyleMismatches:  styleMismatches,
 	}, nil
 }
 
@@ -806,6 +821,226 @@ func fitVisualLine(line string, width int) string {
 		return line + strings.Repeat(" ", width-displayWidth)
 	}
 	return line
+}
+
+type visualStyleExpectation struct {
+	Name      string
+	Row       int
+	Col       int
+	Glyph     string
+	MustHave  []string
+	MustAvoid []string
+}
+
+type visualANSICell struct {
+	Text string
+	SGR  []string
+}
+
+func visualANSIStyleReport(ansiText string) (string, string, int) {
+	lines := strings.Split(strings.TrimRight(ansiText, "\n"), "\n")
+	grid := visualANSICellGrid(lines)
+	expectations := visualStyleExpectations()
+	var report strings.Builder
+	var diff strings.Builder
+	report.WriteString("tmux visual ANSI style contract\n")
+	report.WriteString("source target: semantic SGR probes for visual-audit-current\n\n")
+	diff.WriteString("tmux visual ANSI style diff\n")
+	diff.WriteString("source target: semantic SGR probes for visual-audit-current\n\n")
+	mismatches := 0
+	for _, expectation := range expectations {
+		cell := visualCellAt(grid, expectation.Row, expectation.Col)
+		ok := true
+		reasons := []string{}
+		if expectation.Glyph != "" && cell.Text != expectation.Glyph {
+			ok = false
+			reasons = append(reasons, fmt.Sprintf("glyph got %q want %q", cell.Text, expectation.Glyph))
+		}
+		for _, required := range expectation.MustHave {
+			if !visualSGRContains(cell.SGR, required) {
+				ok = false
+				reasons = append(reasons, "missing "+required)
+			}
+		}
+		for _, forbidden := range expectation.MustAvoid {
+			if visualSGRContains(cell.SGR, forbidden) {
+				ok = false
+				reasons = append(reasons, "unexpected "+forbidden)
+			}
+		}
+		status := "ok"
+		if !ok {
+			status = "mismatch"
+			mismatches++
+			fmt.Fprintf(&diff, "@@ %s row=%d col=%d @@\n", expectation.Name, expectation.Row, expectation.Col)
+			fmt.Fprintf(&diff, "glyph=%q sgr=%s\n", cell.Text, strings.Join(cell.SGR, " "))
+			fmt.Fprintf(&diff, "reason=%s\n", strings.Join(reasons, "; "))
+		}
+		fmt.Fprintf(&report, "%s row=%d col=%d glyph=%q status=%s sgr=%s\n", expectation.Name, expectation.Row, expectation.Col, cell.Text, status, strings.Join(cell.SGR, " "))
+	}
+	if mismatches == 0 {
+		diff.WriteString("no style mismatches\n")
+	}
+	return report.String(), diff.String(), mismatches
+}
+
+func visualStyleExpectations() []visualStyleExpectation {
+	return []visualStyleExpectation{
+		{Name: "header-status-bg", Row: 1, Col: 1, Glyph: "┌", MustHave: []string{"38;2;231;226;239", "48;2;8;8;13"}},
+		{Name: "active-tab-accent", Row: 1, Col: 3, Glyph: "m", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "header-muted-joint", Row: 1, Col: 9, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127", "48;2;8;8;13"}},
+		{Name: "pane-action-accent", Row: 3, Col: 74, Glyph: "↕", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "inactive-logs-muted", Row: 3, Col: 82, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "right-content-muted", Row: 4, Col: 83, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},
+		{Name: "floating-border-accent", Row: 8, Col: 86, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "floating-inner-accent", Row: 10, Col: 86, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "underlying-frame-status", Row: 10, Col: 115, Glyph: "│", MustHave: []string{"38;2;231;226;239", "48;2;8;8;13"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "footer-status-bg", Row: 40, Col: 1, Glyph: "└", MustHave: []string{"38;2;231;226;239", "48;2;8;8;13"}},
+		{Name: "footer-key-accent", Row: 40, Col: 3, Glyph: "[", MustHave: []string{"1", "38;2;169;112;255", "48;2;8;8;13"}},
+	}
+}
+
+func visualANSICellGrid(lines []string) [][]visualANSICell {
+	grid := make([][]visualANSICell, len(lines))
+	for row, line := range lines {
+		grid[row] = visualANSILineCells(line)
+	}
+	return grid
+}
+
+func visualANSILineCells(line string) []visualANSICell {
+	out := []visualANSICell{}
+	activeSGR := []string{}
+	for i := 0; i < len(line); {
+		if line[i] == '\x1b' {
+			params, end, ok := parseSGRSequence(line, i)
+			if ok {
+				activeSGR = updateActiveSGR(activeSGR, params)
+				i = end
+				continue
+			}
+		}
+		r, size := nextRune(line, i)
+		text := string(r)
+		width := render.DisplayWidth(text)
+		if width <= 0 {
+			width = 1
+		}
+		out = append(out, visualANSICell{Text: text, SGR: append([]string(nil), activeSGR...)})
+		for col := 1; col < width; col++ {
+			out = append(out, visualANSICell{Text: "", SGR: append([]string(nil), activeSGR...)})
+		}
+		i += size
+	}
+	return out
+}
+
+func parseSGRSequence(value string, start int) ([]string, int, bool) {
+	if start+2 >= len(value) || value[start] != '\x1b' || value[start+1] != '[' {
+		return nil, start, false
+	}
+	end := start + 2
+	for end < len(value) && value[end] != 'm' {
+		end++
+	}
+	if end >= len(value) {
+		return nil, start, false
+	}
+	raw := value[start+2 : end]
+	if raw == "" {
+		raw = "0"
+	}
+	return strings.Split(raw, ";"), end + 1, true
+}
+
+func updateActiveSGR(active []string, params []string) []string {
+	next := append([]string(nil), active...)
+	for i := 0; i < len(params); i++ {
+		param := params[i]
+		switch param {
+		case "", "0":
+			next = nil
+		case "1", "2":
+			next = visualReplaceSGRPrefix(next, param, 1)
+		case "22":
+			next = visualRemoveSGR(next, "1", "2")
+		case "38", "48":
+			if i+4 < len(params) && params[i+1] == "2" {
+				sequence := strings.Join(params[i:i+5], ";")
+				next = visualReplaceSGRPrefix(next, param+";2", 5)
+				next = append(next, sequence)
+				i += 4
+			} else {
+				next = append(next, param)
+			}
+		case "39":
+			next = visualRemoveSGRPrefix(next, "38;")
+		case "49":
+			next = visualRemoveSGRPrefix(next, "48;")
+		default:
+			next = append(next, param)
+		}
+	}
+	return next
+}
+
+func visualReplaceSGRPrefix(values []string, prefix string, width int) []string {
+	_ = width
+	values = visualRemoveSGRPrefix(values, prefix)
+	return append(values, prefix)
+}
+
+func visualRemoveSGR(values []string, targets ...string) []string {
+	out := values[:0]
+	for _, value := range values {
+		remove := false
+		for _, target := range targets {
+			if value == target {
+				remove = true
+				break
+			}
+		}
+		if !remove {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func visualRemoveSGRPrefix(values []string, prefix string) []string {
+	out := values[:0]
+	for _, value := range values {
+		if !strings.HasPrefix(value, prefix) {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func nextRune(value string, start int) (rune, int) {
+	r, size := utf8.DecodeRuneInString(value[start:])
+	if r == utf8.RuneError && size == 0 {
+		return rune(value[start]), 1
+	}
+	return r, size
+}
+
+func visualCellAt(grid [][]visualANSICell, row int, col int) visualANSICell {
+	row--
+	col--
+	if row < 0 || row >= len(grid) || col < 0 || col >= len(grid[row]) {
+		return visualANSICell{}
+	}
+	return grid[row][col]
+}
+
+func visualSGRContains(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected || strings.Contains(value, expected) {
+			return true
+		}
+	}
+	return false
 }
 
 func runV3TmuxStabilitySmoke(ctx context.Context, termxBin string, rounds int) (v3TmuxStabilitySmokeResult, error) {

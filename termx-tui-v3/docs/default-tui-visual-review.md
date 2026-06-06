@@ -30,6 +30,8 @@
 
 切片 143 已把固定 tmux 目标线稿收敛到 mismatch=0：header 顶线和分隔线使用独立 frame override，固定 visual-audit 场景的 pane 顶边 action cluster、右 pane padding、floating 空白/Close/底边列与 `target.txt` 完全一致；`termx v3 tmux-visual-compare` 的测试口径同步为当前抓屏必须等于 target。最新 artifact 为 `/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-2769538914/`，`diff.txt` 输出 `no row mismatches`。该结果只说明自动线稿 contract 已对齐，最终仍需要用户人工复核真实截图观感。
 
+切片 144 已把 tmux 视觉证据从 plain 线稿推进到 ANSI/style contract：`tmux-visual-compare` 现在额外保存 `style.txt` 与 `style.diff.txt`，summary/命令输出包含 `style_mismatches`；style contract 覆盖 header/status 背景、active tab accent、pane action accent、inactive logs muted、右 pane content muted、floating accent、floating 遮挡下的底层 frame status、footer 背景和 footer key accent。该切片同时修复了 visual-audit correction 中 floating 空白/Close/底边三行把底层右边框误染成 accent 的问题。最新 artifact 为 `/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-1950938977/`，plain mismatch=0、style_mismatches=0，`style.diff.txt` 输出 `no style mismatches`。
+
 ## 2. 当前已经成立的工程事实
 
 - 默认入口仍走 `termx-core-v2` 与 `termx-tui-v3`。
@@ -42,8 +44,8 @@
 - toast 当前使用用户截图方向的直角深色实体消息样式，copy 成功显示 `Copied to clipboard`，普通 toast 会自动消失；同内容 toast 会去重并刷新生命周期，鼠标拖动 resize/move 和 focus 成功不再制造低价值弹窗。
 - host cursor 在真实 FrameSink 中默认隐藏；FrameSink 写帧时使用同步输出并先隐藏 cursor，写帧结束后把隐藏 cursor 停在全局 cursor rect。pane、overlay、Prompt、live surface、empty pane 和 active floating 都必须有稳定 cursor anchor，避免中文输入法预编辑跟随最后一行输出位置顶起窗口。
 - terminal 内容、copy-history 和 overlay content 都被限制在自己的 content rect 内，不应冲破 UI chrome。
-- `termx v3 tmux-visual-compare` 已成为固定视觉证据入口，会保留当前 tmux 抓屏、目标基线和逐行 diff；只要 diff 仍存在，就不能宣称一比一视觉完成。
-- 切片 143 后最新 tmux artifact 示例：`/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-2769538914/`，其中 `diff.txt` 显示 `no row mismatches`。
+- `termx v3 tmux-visual-compare` 已成为固定视觉证据入口，会保留当前 tmux 抓屏、目标基线、逐行 diff 和 ANSI/style contract；只要 plain diff 或 style diff 仍存在，就不能宣称一比一视觉完成。
+- 切片 144 后最新 tmux artifact 示例：`/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-1950938977/`，其中 `diff.txt` 显示 `no row mismatches`，`style.diff.txt` 显示 `no style mismatches`。
 
 这些事实只说明“产品壳可运行”和“默认入口真实 PTY 路径可绘制”，不说明“视觉已经像目标截图”。切片 90 已经确认用户复核不通过，因此自动证据、真实 PTY 证据、Unicode 线框、ANSI 颜色和 chrome token 都只能作为回归基线，不能作为完成证据。
 
@@ -253,3 +255,12 @@
 - `git diff --check`
 
 切片 143 的 `tmux-visual-compare` 结果已收敛到 mismatch=0，最新 artifact 为 `/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-2769538914/`；该自动结果仍需用户人工复核真实截图观感后才能宣称一比一视觉完成。
+
+切片 144 自动准入：
+
+- `cd termx-tui-v3 && go test ./... -count=1`
+- `cd termx-cli && go test ./... -count=1`
+- `make test-cli-v3-tmux-visual-compare`
+- `git diff --check`
+
+切片 144 的 `tmux-visual-compare` 结果已收敛到 plain mismatch=0 且 style_mismatches=0，最新 artifact 为 `/var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-v3-tmux-visual-1950938977/`；该自动结果仍需用户人工复核真实截图观感后才能宣称最终一比一视觉完成。

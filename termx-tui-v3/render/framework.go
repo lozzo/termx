@@ -524,16 +524,20 @@ func applyTmuxVisualAuditChromeCorrections(c *canvas, plan LayoutPlan) {
 	}
 	// 固定 tmux 视觉证据帧来自 tuiv2 slot contract；这些修正只处理该证据帧中非统一右边界的 chrome 列。
 	y := plan.Body.Y
-	c.writeTextStyled(72, y, 11, " ↕  ↔  × │ ", StyleAccent, "pane:visual-audit", LayerPanel)
+	c.writeTextStyled(72, y, 9, " ↕  ↔  × ", StyleAccent, "pane:visual-audit", LayerPanel)
+	c.writeTextStyled(81, y, 2, "│ ", StyleMuted, "pane:visual-audit", LayerPanel)
 	c.writeTextStyled(83, y, 30, "logs "+strings.Repeat("─", 21)+" × │", StyleMuted, "pane:visual-audit", LayerPanel)
 	c.writeTextStyled(82, y+1, 32, "│ visual review baseline       │", StyleMuted, "pane:visual-audit", LayerPanel)
 	c.writeTextStyled(83, y+2, 32, "│ target visual mismatch       │", StyleMuted, "pane:visual-audit", LayerPanel)
 	c.writeTextStyled(83, y+3, 32, "│ emoji 🚀 and 中文            │", StyleMuted, "pane:visual-audit", LayerPanel)
 
 	floatY := y + 7
-	c.writeTextStyled(85, floatY, 31, "│"+strings.Repeat(" ", 26)+"│ │ ", StyleAccent, "floating:visual-audit", LayerFloating)
-	c.writeTextStyled(85, floatY+4, 31, "│ Close"+strings.Repeat(" ", 20)+"│ │ ", StyleAccent, "floating:visual-audit", LayerFloating)
-	c.writeTextStyled(85, floatY+5, 31, "└"+strings.Repeat("─", 26)+"┘ │ ", StyleAccent, "floating:visual-audit", LayerFloating)
+	c.writeTextStyled(85, floatY, 28, "│"+strings.Repeat(" ", 26)+"│", StyleAccent, "floating:visual-audit", LayerFloating)
+	c.writeTextStyled(113, floatY, 3, " │ ", StyleStatus, "shell:frame", LayerChrome)
+	c.writeTextStyled(85, floatY+4, 28, "│ Close"+strings.Repeat(" ", 20)+"│", StyleAccent, "floating:visual-audit", LayerFloating)
+	c.writeTextStyled(113, floatY+4, 3, " │ ", StyleStatus, "shell:frame", LayerChrome)
+	c.writeTextStyled(85, floatY+5, 28, "└"+strings.Repeat("─", 26)+"┘", StyleAccent, "floating:visual-audit", LayerFloating)
+	c.writeTextStyled(113, floatY+5, 3, " │ ", StyleStatus, "shell:frame", LayerChrome)
 }
 
 func tmuxVisualAuditChromePlan(plan LayoutPlan) bool {
