@@ -101,6 +101,7 @@
 - 切片 88 已把 pane top chrome 元信息改为更高密度的 `· ↔2`、`· ◆ owner`、`· 1/31`，并让 active accent 改为紫色系；floating active state 改为 `● float`。
 - 切片 90 已确认该 pane chrome 仍未达到目标截图级别；切片 91 必须按整体构图重新处理。
 - 切片 95 已恢复真实可用的 split-down、split-right 和 close action token；zoom 等未恢复接线的按钮继续隐藏，避免出现看起来可点但不工作的假按钮。
+- 切片 124 已按用户反馈回收 tiled pane 顶边未设计 token：当前默认 pane chrome 不再提前展示状态 Nerd Font、`⇄2`、`◆ owner`、`1/31` 或 action cluster；只保留标题、边框、active/inactive style 和内容裁切。Nerd Font 字符体系需要后续独立设计后再重新接入。
 
 目标要求：
 

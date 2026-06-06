@@ -1222,31 +1222,8 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 		return nil
 	}
 
-	// 参考 tuiv2：顶边先画完整线，再只用固定槽位覆盖 title/state/share/role/action。
-	actions := paneChromeActionText(rect.W)
-	actionWidth := DisplayWidth(actions)
 	rightLimit := innerRight
-	slots := make([]paneChromeTopSlot, 0, 5)
-	if actionWidth > 0 {
-		actionX := innerRight - actionWidth
-		if actionX >= innerLeft {
-			slots = append(slots, paneChromeTopSlot{x: actionX, text: actions, style: paneChromeActionStyle(panel, borderStyle)})
-			rightLimit = actionX - 1
-		}
-	}
-
-	rightSlots := paneChromeRightSlots(panel, borderStyle, rect.W)
-	rightSlots = fitPaneChromeRightSlots(rightSlots, maxInt(0, rightLimit-innerLeft-1))
-	for i := len(rightSlots) - 1; i >= 0; i-- {
-		slot := rightSlots[i]
-		width := DisplayWidth(slot.text)
-		x := rightLimit - width
-		if width <= 0 || x < innerLeft {
-			continue
-		}
-		slots = append(slots, paneChromeTopSlot{x: x, text: slot.text, style: slot.style})
-		rightLimit = x - 1
-	}
+	slots := make([]paneChromeTopSlot, 0, 1)
 
 	titleWidth := maxInt(0, rightLimit-innerLeft)
 	if titleWidth > 0 {
@@ -1271,23 +1248,8 @@ func paneChromeActionText(width int) string {
 }
 
 func paneChromeActionItems(width int) []paneChromeActionItem {
-	if width < 8 {
-		return nil
-	}
-	items := []paneChromeActionItem{{
-		Text:     paneChromeCloseActionText(),
-		ActionID: ActionPaneClose.String(),
-	}}
-	full := []paneChromeActionItem{
-		{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String()},
-		{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String()},
-		{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
-	}
-	fullWidth := paneChromeActionItemsWidth(full)
-	if fullWidth <= maxInt(0, width-4) {
-		return full
-	}
-	return items
+	// tiled pane 的 Nerd Font/action 槽位尚未完成产品设计，默认不提前渲染。
+	return nil
 }
 
 func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
@@ -1333,23 +1295,6 @@ func paneChromeBracketToken(glyph string) string {
 	return "[" + glyph + "]"
 }
 
-func paneChromeRightSlots(panel PanelVM, borderStyle StyleToken, width int) []paneChromeTopSlot {
-	state := " " + paneChromeStateMarker(panel)
-	slots := []paneChromeTopSlot{
-		{text: state, style: paneChromeStateStyle(panel, borderStyle), priority: 2},
-	}
-	if width >= 36 {
-		slots = append(slots, paneChromeTopSlot{text: " ⇄2 ", style: paneChromeMetaStyle(panel), priority: 3})
-	}
-	if width >= 46 {
-		slots = append(slots, paneChromeTopSlot{text: " ◆ owner ", style: paneChromeOwnerStyle(panel, borderStyle), priority: 1})
-	}
-	if width >= 74 {
-		slots = append(slots, paneChromeTopSlot{text: " 1/31 ", style: paneChromeMetaStyle(panel), priority: 4})
-	}
-	return slots
-}
-
 func paneChromeTitleText(panel PanelVM, width int) string {
 	if width <= 0 {
 		return ""
@@ -1364,98 +1309,11 @@ func paneChromeTitleText(panel PanelVM, width int) string {
 	return " " + TruncateCells(title, width-2) + " "
 }
 
-func fitPaneChromeRightSlots(slots []paneChromeTopSlot, width int) []paneChromeTopSlot {
-	if width <= 0 || len(slots) == 0 {
-		return nil
-	}
-	out := append([]paneChromeTopSlot(nil), slots...)
-	for paneChromeSlotsWidth(out) > width && len(out) > 0 {
-		remove := paneChromeRightSlotRemovalIndex(out)
-		out = append(out[:remove], out[remove+1:]...)
-	}
-	if paneChromeSlotsWidth(out) > width {
-		return nil
-	}
-	return out
-}
-
-func paneChromeRightSlotRemovalIndex(slots []paneChromeTopSlot) int {
-	index := len(slots) - 1
-	for i, slot := range slots {
-		if slot.priority > slots[index].priority {
-			index = i
-		}
-	}
-	return index
-}
-
-func paneChromeSlotsWidth(slots []paneChromeTopSlot) int {
-	width := 0
-	for i, slot := range slots {
-		width += DisplayWidth(slot.text)
-		if i > 0 {
-			width++
-		}
-	}
-	return width
-}
-
 func paneChromeTitleStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
 	if panel.Active {
 		return StyleAccent
 	}
 	return borderStyle
-}
-
-func paneChromeActionStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
-	if panel.Active {
-		return StyleAccent
-	}
-	return borderStyle
-}
-
-func paneChromeOwnerStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
-	if panel.Active {
-		return StyleMuted
-	}
-	return borderStyle
-}
-
-func paneChromeMetaStyle(panel PanelVM) StyleToken {
-	if panel.Active {
-		return StyleMuted
-	}
-	return StyleMuted
-}
-
-func paneChromeStateStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
-	switch {
-	case panel.Content.Error != "":
-		return StyleDanger
-	case panel.Content.Pending:
-		return StyleWarning
-	case panel.Content.Empty:
-		return StyleMuted
-	case panel.Active:
-		return StyleAccent
-	default:
-		return borderStyle
-	}
-}
-
-func paneChromeStateMarker(panel PanelVM) string {
-	switch {
-	case panel.Content.Error != "":
-		return paneChromeExitedGlyph()
-	case panel.Content.Pending:
-		return "…"
-	case panel.Content.Empty:
-		return paneChromeWaitingGlyph()
-	case panel.Active:
-		return paneChromeRunningGlyph()
-	default:
-		return paneChromeWaitingGlyph()
-	}
 }
 
 func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {

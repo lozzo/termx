@@ -224,20 +224,15 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	}
 
 	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
-	if len(plan.HitRegions) < 5 {
-		t.Fatalf("expected pane command and content hit regions, got %#v", plan.HitRegions)
+	if len(plan.HitRegions) < 3 {
+		t.Fatalf("expected pane chrome and content hit regions, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[0].Kind != HitRegionPaneAction || plan.HitRegions[0].PaneID != "pane-1" || plan.HitRegions[0].ActionID != "pane.split-down" {
-		t.Fatalf("pane action region should be first, got %#v", plan.HitRegions)
+	for _, region := range plan.HitRegions {
+		if region.Kind == HitRegionPaneAction {
+			t.Fatalf("invisible pane action tokens must not expose hit regions, got %#v", plan.HitRegions)
+		}
 	}
-	if plan.HitRegions[1].Kind != HitRegionPaneAction || plan.HitRegions[1].ActionID != "pane.split-right" || plan.HitRegions[2].Kind != HitRegionPaneAction || plan.HitRegions[2].ActionID != "pane.close" {
-		t.Fatalf("pane action regions should expose visible split/close tokens, got %#v", plan.HitRegions[:3])
-	}
-	actionWidth := plan.HitRegions[0].Rect.W + plan.HitRegions[1].Rect.W + plan.HitRegions[2].Rect.W + 2
-	if got, want := actionWidth, DisplayWidth(paneChromeActionText(40)); got != want {
-		t.Fatalf("pane action regions should cover visible action cluster got=%d want=%d regions=%#v", got, want, plan.HitRegions[:3])
-	}
-	if plan.HitRegions[3].Kind != HitRegionPaneChrome || plan.HitRegions[3].ActionID != "pane.focus" {
+	if plan.HitRegions[0].Kind != HitRegionPaneChrome || plan.HitRegions[0].ActionID != "pane.focus" {
 		t.Fatalf("pane chrome region should precede content, got %#v", plan.HitRegions)
 	}
 	historyIndex := hitRegionIndex(plan.HitRegions, HitRegionHistoryRow)
@@ -246,7 +241,7 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if resizeIndex >= 0 {
 		t.Fatalf("single pane outer border is fixed and must not expose resize handle, got %#v", plan.HitRegions)
 	}
-	if historyIndex <= 3 {
+	if historyIndex <= 0 {
 		t.Fatalf("content hit region should remain after chrome regions, got %#v", plan.HitRegions)
 	}
 	if paneContentIndex <= historyIndex {
@@ -407,7 +402,7 @@ func TestMeasureLayoutStackedRightColumnResizeGroupMarksSharedBoundary(t *testin
 	}
 }
 
-func TestMeasureLayoutKeepsSplitActionsAboveDividerResize(t *testing.T) {
+func TestMeasureLayoutKeepsDividerResizeAbovePaneChromeWithoutInvisibleActions(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{
 			Panels: []PanelVM{
@@ -422,16 +417,19 @@ func TestMeasureLayoutKeepsSplitActionsAboveDividerResize(t *testing.T) {
 	}
 
 	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
-	bottomSplit := hitRegionIndexByPaneAndAction(plan.HitRegions, HitRegionPaneAction, "bottom", "pane.split-down")
 	divider := hitRegionIndexByActionAndDirection(plan.HitRegions, "pane.resize", "down")
-	if bottomSplit < 0 || divider < 0 {
-		t.Fatalf("expected bottom split action and divider resize regions, got %#v", plan.HitRegions)
+	if divider < 0 {
+		t.Fatalf("expected divider resize region, got %#v", plan.HitRegions)
 	}
-	if bottomSplit > divider {
-		t.Fatalf("visible bottom pane action must win over shared divider resize, action=%d divider=%d regions=%#v", bottomSplit, divider, plan.HitRegions)
+	if index := hitRegionIndex(plan.HitRegions, HitRegionPaneAction); index >= 0 {
+		t.Fatalf("invisible pane action tokens must not expose hit regions, got %#v", plan.HitRegions)
 	}
-	if !rectsOverlap(plan.HitRegions[bottomSplit].Rect, plan.HitRegions[divider].Rect) {
-		t.Fatalf("test precondition should cover action on divider row, action=%#v divider=%#v", plan.HitRegions[bottomSplit], plan.HitRegions[divider])
+	bottomChrome := hitRegionIndexByPaneAndAction(plan.HitRegions, HitRegionPaneChrome, "bottom", "pane.focus")
+	if bottomChrome < 0 {
+		t.Fatalf("expected bottom pane chrome focus region, got %#v", plan.HitRegions)
+	}
+	if divider > bottomChrome {
+		t.Fatalf("divider resize should stay above pane chrome focus, divider=%d chrome=%d regions=%#v", divider, bottomChrome, plan.HitRegions)
 	}
 }
 
