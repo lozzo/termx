@@ -22,14 +22,21 @@ func TestPaneChromeGlyphsDefaultToNerdFontAndRemainCellSafe(t *testing.T) {
 	}
 }
 
-func TestPaneChromeActionTextHiddenUntilNerdFontDesignLands(t *testing.T) {
+func TestPaneChromeActionTextShowsWiredSplitAndCloseActions(t *testing.T) {
 	ResetPaneChromeGlyphs()
 	defer ResetPaneChromeGlyphs()
 
-	for _, width := range []int{7, 8, 40, 120} {
-		if got := paneChromeActionText(width); got != "" {
-			t.Fatalf("tiled pane action text should stay hidden before Nerd Font design lands, width=%d got=%q", width, got)
-		}
+	glyphs := DefaultPaneChromeGlyphs()
+	got := paneChromeActionText(40)
+	want := "[" + glyphs.SplitHorizontal + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.Close + "]"
+	if got != want {
+		t.Fatalf("wired action text got=%q want=%q", got, want)
+	}
+	if got := paneChromeActionText(8); got != "["+glyphs.Close+"]" {
+		t.Fatalf("narrow pane should degrade to close-only action, got=%q", got)
+	}
+	if got := paneChromeActionText(7); got != "" {
+		t.Fatalf("too-narrow pane should hide action text, got=%q", got)
 	}
 }
 

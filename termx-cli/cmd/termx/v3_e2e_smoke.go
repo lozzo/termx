@@ -303,11 +303,23 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		}
 	}
 	glyphs := render.DefaultPaneChromeGlyphs()
-	for _, marker := range []string{" " + glyphs.Running, "◆ owner", "⇄2", "[" + glyphs.Close + "]"} {
+	for _, marker := range []string{" " + glyphs.Running, "◆ owner", "⇄2", "1/31"} {
 		for _, line := range frame.Lines {
 			if strings.Contains(line, marker) {
 				return fmt.Errorf("v3 e2e smoke: premature pane chrome marker %q present in frame %#v", marker, frame.Lines)
 			}
+		}
+	}
+	for _, marker := range []string{"[" + glyphs.SplitHorizontal + "]", "[" + glyphs.SplitVertical + "]", "[" + glyphs.Close + "]"} {
+		found := false
+		for _, line := range frame.Lines {
+			if strings.Contains(line, marker) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("v3 e2e smoke: pane action marker %q missing from frame %#v", marker, frame.Lines)
 		}
 	}
 	for _, line := range frame.ANSILines {

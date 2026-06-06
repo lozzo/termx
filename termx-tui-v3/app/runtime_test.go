@@ -379,37 +379,76 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 		t.Fatalf("content click should focus pane-2, got %#v", focusRuntime.State().Shell)
 	}
 
-	chromeHost := NewFakeTerminalHost(8)
-	chromeRoot := state.Root{
+	closeHost := NewFakeTerminalHost(8)
+	closeRoot := state.Root{
 		Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical),
 	}
-	chromeRuntime := newShellHitRuntime(chromeRoot, chromeHost)
-	if err := chromeRuntime.Post(NoopMsg{}); err != nil {
-		t.Fatalf("post chrome initial render: %v", err)
+	closeRuntime := newShellHitRuntime(closeRoot, closeHost)
+	if err := closeRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post close initial render: %v", err)
 	}
-	if err := chromeRuntime.Drain(context.Background()); err != nil {
-		t.Fatalf("chrome initial drain: %v", err)
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("close initial drain: %v", err)
 	}
 
-	frame := lastRuntimeFrame(t, chromeHost)
-	for _, region := range frame.HitRegions {
-		if region.Kind == render.HitRegionPaneAction {
-			t.Fatalf("invisible pane action tokens must not expose mouse hit regions, got %#v", frame.HitRegions)
-		}
+	action := frameHitRegionByAction(t, lastRuntimeFrame(t, closeHost), render.HitRegionPaneAction, "pane.close", "pane-2")
+	if err := closeHost.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send action click: %v", err)
 	}
-	chrome := frameHitRegion(t, frame, render.HitRegionPaneChrome, "pane-2")
-	if err := chromeHost.SendInput(mouseEventAt(chrome.Rect)); err != nil {
-		t.Fatalf("send chrome click: %v", err)
+	if err := closeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("close drain: %v", err)
 	}
-	if err := chromeRuntime.Drain(context.Background()); err != nil {
-		t.Fatalf("chrome click drain: %v", err)
-	}
-	if chromeRuntime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" {
-		t.Fatalf("chrome click should focus pane-2 without hidden action, got %#v", chromeRuntime.State().Shell)
+	if closeRuntime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("action click should close pane-2, got %#v", closeRuntime.State().Shell)
 	}
 }
 
-func TestAppRuntimeHorizontalDividerResizeWinsWithoutInvisibleSplitAction(t *testing.T) {
+func TestAppRuntimeDispatchesMouseSplitActions(t *testing.T) {
+	downHost := NewFakeTerminalHost(8)
+	downRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, downHost)
+	if err := downRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post split-down initial render: %v", err)
+	}
+	if err := downRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-down initial render: %v", err)
+	}
+	downAction := frameHitRegionByAction(t, lastRuntimeFrame(t, downHost), render.HitRegionPaneAction, "pane.split-down", state.DefaultPaneID)
+	if err := downHost.SendInput(mouseEventAt(downAction.Rect)); err != nil {
+		t.Fatalf("send split-down click: %v", err)
+	}
+	if err := downRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-down click: %v", err)
+	}
+	downSplit := downRuntime.State().Shell.Workspace.Tabs[0].RootSplit
+	if len(downRuntime.State().Shell.Workspace.Tabs[0].Panes) != 2 || downSplit.Direction != state.SplitDirectionHorizontal {
+		t.Fatalf("split-down action should create horizontal split, shell=%#v", downRuntime.State().Shell)
+	}
+
+	rightHost := NewFakeTerminalHost(8)
+	rightRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, rightHost)
+	if err := rightRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post split-right initial render: %v", err)
+	}
+	if err := rightRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-right initial render: %v", err)
+	}
+	rightAction := frameHitRegionByAction(t, lastRuntimeFrame(t, rightHost), render.HitRegionPaneAction, "pane.split-right", state.DefaultPaneID)
+	if err := rightHost.SendInput(mouseEventAt(rightAction.Rect)); err != nil {
+		t.Fatalf("send split-right click: %v", err)
+	}
+	if err := rightRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split-right click: %v", err)
+	}
+	rightSplit := rightRuntime.State().Shell.Workspace.Tabs[0].RootSplit
+	if len(rightRuntime.State().Shell.Workspace.Tabs[0].Panes) != 2 || rightSplit.Direction != state.SplitDirectionVertical {
+		t.Fatalf("split-right action should create vertical split, shell=%#v", rightRuntime.State().Shell)
+	}
+	if rightRuntime.State().Shell.ActivePaneID == state.DefaultPaneID || downRuntime.State().Shell.ActivePaneID == state.DefaultPaneID {
+		t.Fatalf("mouse split actions should activate new panes, down=%#v right=%#v", downRuntime.State().Shell.ActivePaneID, rightRuntime.State().Shell.ActivePaneID)
+	}
+}
+
+func TestAppRuntimeSplitActionOnHorizontalDividerPaneWinsOverResize(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{
 		Shell: state.DefaultShell().
@@ -424,21 +463,25 @@ func TestAppRuntimeHorizontalDividerResizeWinsWithoutInvisibleSplitAction(t *tes
 		t.Fatalf("drain initial render: %v", err)
 	}
 
-	frame := lastRuntimeFrame(t, host)
-	for _, region := range frame.HitRegions {
-		if region.Kind == render.HitRegionPaneAction {
-			t.Fatalf("invisible pane action tokens must not expose hit regions, got %#v", frame.HitRegions)
-		}
-	}
-	divider := frameHitRegionByAction(t, frame, render.HitRegionPaneResize, "pane.resize", "pane-main")
-	if err := host.SendInput(mouseEventAt(divider.Rect)); err != nil {
-		t.Fatalf("send divider mouse down: %v", err)
+	action := frameHitRegionByAction(t, lastRuntimeFrame(t, host), render.HitRegionPaneAction, "pane.split-down", "pane-bottom")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send bottom split action: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain divider mouse down: %v", err)
+		t.Fatalf("drain bottom split action: %v", err)
 	}
-	if !runtime.mouseDrag.Active || runtime.mouseDrag.Kind != mouseDragPaneResize || runtime.mouseDrag.PaneID != "pane-main" || runtime.mouseDrag.Direction != state.PaneResizeDown {
-		t.Fatalf("divider click should start resize drag without hidden split action, drag=%#v", runtime.mouseDrag)
+
+	shell := runtime.State().Shell.EnsureDefaults()
+	if len(shell.Workspace.Tabs[0].Panes) != 3 || !shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
+		t.Fatalf("bottom pane split icon should create a new pane instead of starting divider resize, shell=%#v", shell)
+	}
+	if shell.ActivePaneID != "pane-2" || runtime.mouseDrag.Active {
+		t.Fatalf("split action should activate new pane and not leave resize drag state, active=%q drag=%#v", shell.ActivePaneID, runtime.mouseDrag)
+	}
+	for _, toast := range shell.Toasts {
+		if toast.Body == "missing new pane id" || toast.Body == "target pane not found" {
+			t.Fatalf("split action should not produce invalid toast, got %#v", shell.Toasts)
+		}
 	}
 }
 

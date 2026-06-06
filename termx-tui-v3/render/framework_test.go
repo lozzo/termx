@@ -23,11 +23,11 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(vm)
 	assertFrameSize(t, result, 40, 12)
-	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), "你好 output") {
+	if !linesContain(result.Lines(), "main") || !linesContain(result.Lines(), "shell 🚀") || !linesContain(result.Lines(), paneChromeCloseActionText()) || !linesContain(result.Lines(), "你好 output") {
 		t.Fatalf("expected shell, panel title and content, got %#v", result.Lines())
 	}
-	if linesContain(result.Lines(), paneChromeRunningGlyph()) || linesContain(result.Lines(), "⇄2") || linesContain(result.Lines(), paneChromeCloseActionText()) {
-		t.Fatalf("pane chrome should not render premature status/meta/action tokens, got %#v", result.Lines())
+	if linesContain(result.Lines(), paneChromeRunningGlyph()) || linesContain(result.Lines(), "⇄2") || linesContain(result.Lines(), "◆ owner") || linesContain(result.Lines(), "1/31") {
+		t.Fatalf("pane chrome should not render premature status/meta tokens, got %#v", result.Lines())
 	}
 	if !linesContain(result.Lines(), "┌") || !linesContain(result.Lines(), "┐") || !linesContain(result.Lines(), "└") || !linesContain(result.Lines(), "┘") {
 		t.Fatalf("expected square Unicode pane chrome, got %#v", result.Lines())
@@ -89,10 +89,10 @@ func TestFrameworkRendersSplitLineHorizontalAndVertical(t *testing.T) {
 	}
 	assertColumnGlyphs(t, vertical.Lines(), 20, 0, 12, "│┬┴┼")
 	assertColumnGlyphs(t, vertical.Lines(), 39, 0, 12, "│┐┘┤")
-	if !linesContain(horizontal.Lines(), "logs") || !linesContain(horizontal.Lines(), "├") {
+	if !linesContain(horizontal.Lines(), "logs") || !linesContain(horizontal.Lines(), paneChromeCloseActionText()) || !linesContain(horizontal.Lines(), "├") {
 		t.Fatalf("expected horizontal split chrome/separator, got %#v", horizontal.Lines())
 	}
-	if linesContain(horizontal.Lines(), paneChromeRunningGlyph()) || linesContain(horizontal.Lines(), "⇄2") {
+	if linesContain(horizontal.Lines(), paneChromeRunningGlyph()) || linesContain(horizontal.Lines(), "⇄2") || linesContain(horizontal.Lines(), "◆ owner") || linesContain(horizontal.Lines(), "1/31") {
 		t.Fatalf("split pane chrome should not render premature status/meta tokens, got %#v", horizontal.Lines())
 	}
 	assertAllRowsWidth(t, horizontal.Lines(), 40)
@@ -120,8 +120,11 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 	if !strings.Contains(lines[0], " shell 🚀 ") {
 		t.Fatalf("split-line title slot should keep the remaining top border, got %#v", lines[0])
 	}
-	if strings.Contains(lines[0], paneChromeRunningGlyph()) || strings.Contains(lines[0], "⇄2") || strings.Contains(lines[0], paneChromeCloseActionText()) {
-		t.Fatalf("split-line top chrome should not render premature status/meta/action tokens, got %#v", lines[0])
+	if !strings.Contains(lines[0], "─"+paneChromeCloseActionText()) {
+		t.Fatalf("split-line title/action slots should keep the remaining top border, got %#v", lines[0])
+	}
+	if strings.Contains(lines[0], paneChromeRunningGlyph()) || strings.Contains(lines[0], "⇄2") || strings.Contains(lines[0], "◆ owner") || strings.Contains(lines[0], "1/31") {
+		t.Fatalf("split-line top chrome should not render premature status/meta tokens, got %#v", lines[0])
 	}
 	if !linesContain(lines, "你好 output") {
 		t.Fatalf("expected split-line content, got %#v", lines)
@@ -169,10 +172,14 @@ func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 		if !strings.Contains(line, " shell ") {
 			t.Fatalf("presentation=%s should render title slot, got row=%q", presentation, line)
 		}
-		if strings.Contains(line, paneChromeCloseActionText()) || strings.Contains(line, "⇄2") || strings.Contains(line, "◆ owner") {
-			t.Fatalf("presentation=%s should not render premature pane meta/action slots, got row=%q", presentation, line)
+		actionCol := cellIndex(line, paneChromeCloseActionText())
+		if actionCol < 0 {
+			t.Fatalf("presentation=%s missing visible close action in %#v", presentation, result.Lines())
 		}
-		if !strings.Contains(SliceCells(line, DisplayWidth("┌─ shell "), DisplayWidth(line)-1), "─") {
+		if strings.Contains(line, "⇄2") || strings.Contains(line, "◆ owner") || strings.Contains(line, "1/31") {
+			t.Fatalf("presentation=%s should not render premature pane meta slots, got row=%q", presentation, line)
+		}
+		if !strings.Contains(SliceCells(line, actionCol-2, actionCol), "─") {
 			t.Fatalf("presentation=%s should keep line segment after title slot, got row=%q", presentation, line)
 		}
 		assertAllRowsWidth(t, result.Lines(), 44)
@@ -256,16 +263,16 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 		t.Fatalf("top bar should not keep old bracket/indicator tokens, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "[Ctrl] • [R] RESIZE") || !strings.Contains(footer, "● shell term:term-1") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "tabs:1") || !strings.Contains(footer, "panes:1") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "term-1") {
+	if !strings.Contains(footer, "[Ctrl+P] PANE") || !strings.Contains(footer, "[Ctrl+R] RESIZE") || !strings.Contains(footer, "● shell term:term-1") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "tabs:1") || !strings.Contains(footer, "panes:1") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "term-1") {
 		t.Fatalf("bottom bar should contain high-density mode/action/summary tokens, got %#v", footer)
 	}
-	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl] ·") || strings.Contains(footer, "»") {
+	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl]") || strings.Contains(footer, "»") {
 		t.Fatalf("bottom bar should use status-bar metadata slots, got %#v", footer)
 	}
 	if !styledLinesContainText(frame.StyledLines[:1], " main ", StyleStatusAccent) ||
 		!styledLinesContainText(frame.StyledLines[:1], " ＋ ", StyleSuccess) ||
 		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
-		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[Ctrl] • [P]", StyleStatusAccent) ||
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[Ctrl+P]", StyleStatusAccent) ||
 		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "● shell term:term-1", StyleStatusAccent) {
 		t.Fatalf("top/bottom bar cells should use status token styles, got %#v", frame.StyledLines)
 	}
@@ -366,8 +373,8 @@ func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
 	if SliceCells(lines[0], 20, 21) != "┬" || SliceCells(lines[6], 0, 1) != "├" || SliceCells(lines[6], 20, 21) != "┤" || SliceCells(lines[11], 20, 21) != "┴" {
 		t.Fatalf("expected composed split divider joints, got %#v", lines)
 	}
-	if linesContain(lines, paneChromeSplitHorizontalActionText()) || linesContain(lines, paneChromeSplitVerticalActionText()) || linesContain(lines, paneChromeCloseActionText()) {
-		t.Fatalf("split chrome should not render premature pane action tokens, got %#v", lines)
+	if !linesContain(lines, paneChromeSplitHorizontalActionText()) || !linesContain(lines, paneChromeSplitVerticalActionText()) || !linesContain(lines, paneChromeCloseActionText()) {
+		t.Fatalf("expected real split and close action tokens in split chrome, got %#v", lines)
 	}
 	assertAllRowsWidth(t, lines, 40)
 }
@@ -516,8 +523,11 @@ func TestFrameworkToastDoesNotOverwritePaneTopChrome(t *testing.T) {
 	if !strings.Contains(lines[0], "┌─ shell") {
 		t.Fatalf("toast must not overwrite pane top chrome, got %#v", lines)
 	}
-	if strings.Contains(lines[0], paneChromeRunningGlyph()) || strings.Contains(lines[0], "⇄2") || strings.Contains(lines[0], paneChromeCloseActionText()) {
-		t.Fatalf("pane top chrome should not render premature status/meta/action tokens, got %#v", lines)
+	if !strings.Contains(lines[0], paneChromeCloseActionText()) {
+		t.Fatalf("pane top chrome should keep visible action tokens, got %#v", lines)
+	}
+	if strings.Contains(lines[0], paneChromeRunningGlyph()) || strings.Contains(lines[0], "⇄2") || strings.Contains(lines[0], "◆ owner") || strings.Contains(lines[0], "1/31") {
+		t.Fatalf("pane top chrome should not render premature status/meta tokens, got %#v", lines)
 	}
 	if strings.Contains(lines[0], "pane.split") {
 		t.Fatalf("toast should start below pane top chrome, got %#v", lines)

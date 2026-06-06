@@ -43,13 +43,13 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if frameContains(cases["workbench-live"].Lines, "◆ owner") ||
 		frameContains(cases["workbench-live"].Lines, "⇄2") ||
-		frameContains(cases["workbench-live"].Lines, paneChromeCloseActionMarker()) {
+		frameContains(cases["workbench-live"].Lines, "1/31") {
 		t.Fatalf("workbench live smoke should not render premature pane chrome tokens: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[1;38;2;169;112;255m") {
 		t.Fatalf("workbench live smoke missing active pane accent ANSI: %#v", cases["workbench-live"].ANSILines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, " main ") || !frameContains(cases["workbench-live"].Lines, "│ 1:main ×") || !frameContains(cases["workbench-live"].Lines, "│ ＋ ") || !frameContains(cases["workbench-live"].Lines, "[Ctrl] • [G] GLOBAL") || !frameContains(cases["workbench-live"].Lines, "ws:main") {
+	if !frameContains(cases["workbench-live"].Lines, " main ") || !frameContains(cases["workbench-live"].Lines, "│ 1:main ×") || !frameContains(cases["workbench-live"].Lines, "│ ＋ ") || !frameContains(cases["workbench-live"].Lines, "[Ctrl+G] GLOBAL") || !frameContains(cases["workbench-live"].Lines, "ws:main") {
 		t.Fatalf("workbench live smoke missing styled shell bar tokens: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].ANSILines, "\x1b[48;2;8;8;13m") {
@@ -72,7 +72,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if frameContains(cases["split-hidden-toast"].Lines, " "+render.DefaultPaneChromeGlyphs().Running) ||
 		frameContains(cases["split-hidden-toast"].Lines, "⇄2") ||
-		frameContains(cases["split-hidden-toast"].Lines, paneChromeCloseActionMarker()) {
+		frameContains(cases["split-hidden-toast"].Lines, "◆ owner") ||
+		frameContains(cases["split-hidden-toast"].Lines, "1/31") {
 		t.Fatalf("split hidden toast should not render premature pane chrome tokens: %#v", cases["split-hidden-toast"].Lines)
 	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
@@ -141,8 +142,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["visual-audit-current"].Lines, "quick actio") {
 		t.Fatalf("visual review smoke missing fixed visual markers: %#v", cases["visual-audit-current"].Lines)
 	}
-	if frameContains(cases["visual-audit-current"].Lines, paneChromeCloseActionMarker()) ||
-		frameContains(cases["visual-audit-current"].Lines, "⇄2") ||
+	if frameContains(cases["visual-audit-current"].Lines, "⇄2") ||
 		frameContains(cases["visual-audit-current"].Lines, "◆ owner") {
 		t.Fatalf("visual review smoke should not render premature pane chrome tokens: %#v", cases["visual-audit-current"].Lines)
 	}
@@ -183,7 +183,7 @@ func assertSmokeWidth(t *testing.T, name string, frame render.Frame) {
 func assertNoASCIIChrome(t *testing.T, name string, frame render.Frame) {
 	t.Helper()
 	for row, line := range frame.Lines {
-		if strings.ContainsAny(line, "+|") || strings.Contains(line, "---") || strings.Contains(line, "-[") {
+		if strings.Contains(line, "|") || strings.Contains(line, "---") {
 			t.Fatalf("smoke case %s row %d contains ASCII chrome: %q", name, row, line)
 		}
 	}
@@ -240,7 +240,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 			t.Fatalf("split hidden toast missing styled split marker %q: %#v", marker, split.Lines)
 		}
 	}
-	for _, stale := range []string{"⇄2", paneChromeCloseActionMarker(), " " + render.DefaultPaneChromeGlyphs().Running} {
+	for _, stale := range []string{"⇄2", "◆ owner", "1/31", " " + render.DefaultPaneChromeGlyphs().Running} {
 		if frameContains(split.Lines, stale) {
 			t.Fatalf("split hidden toast rendered premature pane chrome marker %q: %#v", stale, split.Lines)
 		}

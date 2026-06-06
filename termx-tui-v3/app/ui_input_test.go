@@ -828,20 +828,16 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 		t.Fatalf("drain clear toasts before close: %v", err)
 	}
 	clearFrame := lastFrame(t, host.Frames())
-	for _, region := range clearFrame.HitRegions {
-		if region.Kind == render.HitRegionPaneAction {
-			t.Fatalf("invisible pane action tokens must not expose hit regions, got %#v", clearFrame.HitRegions)
-		}
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
-		t.Fatalf("send close key: %v", err)
+	action := frameHitRegionByAction(t, clearFrame, render.HitRegionPaneAction, "pane.close", "pane-2")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send close click: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain close key: %v", err)
+		t.Fatalf("drain close click: %v", err)
 	}
 	closeFrame := lastFrame(t, host.Frames())
 	if runtime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
-		t.Fatalf("pane mode close should remove active pane, got %#v", runtime.State().Shell)
+		t.Fatalf("mouse close should remove active pane, got %#v", runtime.State().Shell)
 	}
 	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
 		t.Fatalf("close should choose stable next active pane, got %#v", runtime.State().Shell)

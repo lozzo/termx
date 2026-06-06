@@ -563,7 +563,7 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 		left = appendFooterActionSegments(left, footer.Actions, rect.W)
 	}
 	if len(left) == 0 {
-		left = append(left, barText(" [Ctrl] ", StyleStatusAccent, 1))
+		left = append(left, barText(" [Ctrl+G] GLOBAL ", StyleStatusAccent, 1))
 	}
 	right := footerMetadataSegments(footer, hintIsCritical)
 	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
@@ -757,7 +757,7 @@ func footerActionDisplayWidth(action string) int {
 func formatFooterKeyToken(key string) string {
 	key = strings.TrimSpace(key)
 	if strings.HasPrefix(key, "^") && len(key) > 1 {
-		return "[Ctrl] • [" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"
+		return "[Ctrl+" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"
 	}
 	return "[" + key + "]"
 }
@@ -1223,7 +1223,16 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 	}
 
 	rightLimit := innerRight
-	slots := make([]paneChromeTopSlot, 0, 1)
+	actions := paneChromeActionText(rect.W)
+	actionWidth := DisplayWidth(actions)
+	slots := make([]paneChromeTopSlot, 0, 2)
+	if actionWidth > 0 {
+		actionX := innerRight - actionWidth
+		if actionX >= innerLeft {
+			slots = append(slots, paneChromeTopSlot{x: actionX, text: actions, style: paneChromeActionStyle(panel, borderStyle)})
+			rightLimit = actionX - 1
+		}
+	}
 
 	titleWidth := maxInt(0, rightLimit-innerLeft)
 	if titleWidth > 0 {
@@ -1248,8 +1257,22 @@ func paneChromeActionText(width int) string {
 }
 
 func paneChromeActionItems(width int) []paneChromeActionItem {
-	// tiled pane 的 Nerd Font/action 槽位尚未完成产品设计，默认不提前渲染。
-	return nil
+	if width < 8 {
+		return nil
+	}
+	items := []paneChromeActionItem{{
+		Text:     paneChromeCloseActionText(),
+		ActionID: ActionPaneClose.String(),
+	}}
+	full := []paneChromeActionItem{
+		{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String()},
+		{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String()},
+		{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
+	}
+	if paneChromeActionItemsWidth(full) <= maxInt(0, width-4) {
+		return full
+	}
+	return items
 }
 
 func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
@@ -1310,6 +1333,13 @@ func paneChromeTitleText(panel PanelVM, width int) string {
 }
 
 func paneChromeTitleStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
+	if panel.Active {
+		return StyleAccent
+	}
+	return borderStyle
+}
+
+func paneChromeActionStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
 	if panel.Active {
 		return StyleAccent
 	}
