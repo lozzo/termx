@@ -535,8 +535,10 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect) {
 		barText(" "+workspace+" ", StyleStatusAccent, 1),
 	}
 	left = append(left, headerTabSegments(tab)...)
-	left = append(left, barText(" [＋] ", StyleStatusAccent, 3))
-	left = append(left, barText(" [ ] ", StyleStatusMuted, 4))
+	left = append(left, barSep(), barText(" ＋ ", StyleSuccess, 3))
+	if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
+		left = append(left, barSep(), barText(" "+active+" ", StyleStatusMuted, 4))
+	}
 	right := []barSegment{}
 	if header.Notice != "" {
 		right = append(right, barText(" ! "+header.Notice+" ", StyleStatusWarning, 0))
@@ -553,13 +555,29 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 		mode = "live"
 	}
 	hintIsCritical := strings.HasPrefix(footer.Hint, "error:") || strings.HasPrefix(footer.Hint, "exited:")
-	left := []barSegment{barText(" "+strings.ToUpper(mode)+" ", StyleStatusAccent, 1)}
+	left := []barSegment{}
+	if mode != "live" && mode != "normal" {
+		left = append(left, barText(" "+strings.ToUpper(mode)+" ", StyleStatusAccent, 1), barSep())
+	}
 	if len(footer.Actions) > 0 {
 		left = appendFooterActionSegments(left, footer.Actions, rect.W)
 	}
-	left = appendBarSegment(left, compactActiveTarget(footer.ActiveTarget), StyleStatusAccent, 2)
+	if len(left) == 0 {
+		left = append(left, barText(" [Ctrl] ", StyleStatusAccent, 1))
+	}
+	right := footerMetadataSegments(footer, hintIsCritical)
+	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
+}
+
+func footerMetadataSegments(footer FooterVM, hintIsCritical bool) []barSegment {
+	right := []barSegment{}
+	if target := compactActiveTarget(footer.ActiveTarget); target != "" {
+		right = append(right, barText(" "+target+" ", StyleStatusAccent, 2))
+	}
 	if footer.GlobalSummary != "" {
-		left = appendBarSegment(left, compactGlobalSummary(footer.GlobalSummary), StyleStatusMuted, 3)
+		for _, token := range metadataTokens(compactGlobalSummary(footer.GlobalSummary)) {
+			right = append(right, barText(" "+token+" ", StyleStatusMuted, 3))
+		}
 	}
 	if footer.Hint != "" {
 		style := StyleStatusMuted
@@ -568,10 +586,9 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect) {
 			style = StyleStatusWarning
 			priority = 0
 		}
-		left = appendBarSegment(left, "» "+footer.Hint, style, priority)
+		right = append(right, barText(" "+footer.Hint+" ", style, priority))
 	}
-	right := []barSegment{barText(" "+footerReadyToken(footer)+" ", StyleStatusMuted, 3)}
-	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
+	return right
 }
 
 func headerTabSegments(tab string) []barSegment {
@@ -591,16 +608,15 @@ func headerTabSegments(tab string) []barSegment {
 		}
 		if active {
 			segments = append(segments,
-				barText(" ▎", StyleStatusAccent, 1),
-				barText(" "+intLabel(index+1)+" ", StyleStatusAccent, 1),
-				barText(label+" ", StyleStatus, 1),
+				barSep(),
+				barText(" "+intLabel(index+1)+":"+label+" ", StyleStatus, 1),
 				barText("× ", StyleStatusWarning, 2),
 			)
 			continue
 		}
 		segments = append(segments,
-			barText(" "+intLabel(index+1)+" ", StyleStatusMuted, 2),
-			barText(label+" ", StyleStatusMuted, 2),
+			barSep(),
+			barText(" "+intLabel(index+1)+":"+label+" ", StyleStatusMuted, 2),
 		)
 	}
 	return segments
@@ -671,7 +687,7 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 			continue
 		}
 		textToken := strings.ToUpper(label)
-		tokenWidth := DisplayWidth(" · ") + DisplayWidth(formatFooterKeyToken(key))
+		tokenWidth := DisplayWidth(" • ") + DisplayWidth(formatFooterKeyToken(key))
 		if textToken != "" {
 			tokenWidth += 1 + DisplayWidth(textToken)
 		}
@@ -681,7 +697,9 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 		if used == 0 && tokenWidth > limit {
 			break
 		}
-		segments = append(segments, barText(" · ", StyleStatusMuted, 1))
+		if len(segments) > 0 {
+			segments = append(segments, barText(" • ", StyleStatusMuted, 1))
+		}
 		segments = append(segments, barText(formatFooterKeyToken(key), footerActionKeyStyle(key, textToken), 1))
 		if textToken != "" {
 			segments = append(segments, barText(" "+textToken, StyleStatus, 1))
@@ -729,7 +747,7 @@ func footerActionDisplayWidth(action string) int {
 	if key == "" {
 		return 0
 	}
-	width := DisplayWidth(" · ") + DisplayWidth(formatFooterKeyToken(key))
+	width := DisplayWidth(" • ") + DisplayWidth(formatFooterKeyToken(key))
 	if label != "" {
 		width += 1 + DisplayWidth(strings.ToUpper(label))
 	}
@@ -739,7 +757,7 @@ func footerActionDisplayWidth(action string) int {
 func formatFooterKeyToken(key string) string {
 	key = strings.TrimSpace(key)
 	if strings.HasPrefix(key, "^") && len(key) > 1 {
-		return "[Ctrl] · [" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"
+		return "[Ctrl] • [" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"
 	}
 	return "[" + key + "]"
 }
@@ -805,21 +823,12 @@ func compactActiveTarget(value string) string {
 	return "● " + value
 }
 
-func compactHeaderSummary(value string) string {
+func compactHeaderMeta(label string, value string) string {
 	value = strings.TrimSpace(value)
-	value = strings.TrimPrefix(value, "term:")
-	value = strings.TrimPrefix(value, "float:")
-	return value
-}
-
-func footerReadyToken(footer FooterVM) string {
-	if strings.HasPrefix(footer.Hint, "error:") {
-		return "ERR"
+	if value == "" {
+		return ""
 	}
-	if strings.HasPrefix(footer.Hint, "exited:") {
-		return "EXIT"
-	}
-	return "termx"
+	return label + ":" + value
 }
 
 func compactGlobalSummary(value string) string {
@@ -827,11 +836,11 @@ func compactGlobalSummary(value string) string {
 	if value == "" {
 		return ""
 	}
-	value = strings.ReplaceAll(value, "ws:", "ws ")
-	value = strings.ReplaceAll(value, "tabs:", "tabs ")
-	value = strings.ReplaceAll(value, "panes:", "panes ")
-	value = strings.ReplaceAll(value, "float:", "float ")
 	return value
+}
+
+func metadataTokens(value string) []string {
+	return strings.Fields(strings.TrimSpace(value))
 }
 
 func footerTailAction(actions []string) string {

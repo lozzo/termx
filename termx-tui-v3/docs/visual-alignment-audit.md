@@ -81,6 +81,7 @@
 - 切片 80 已修复 mode、快捷键、active target、右侧 summary 缺少稳定槽位的问题。
 - 切片 84 已把 bottom bar 推进到 `MODE • [KEY] ACTION` 快捷键 taxonomy，并在窄屏退化时保留尾部关键动作。
 - 切片 88 已把 bottom bar 继续收敛到 `[Ctrl] · [P] PANE` 类快捷键 taxonomy，并把 ready token 简化为 `termx`。
+- 切片 123 已再次参考 `tuiv2` tab/status bar 槽位收口：header 使用 `workspace │ 1:tab × │ ＋ │ pane:id`，footer 左侧只承载 mode/action hints，右侧承载 `● active`、`ws:*`、`tabs:*`、`panes:*`、`float:*` 与 live hint metadata，旧 `[＋]`、`▎`、`LIVE` 和 `[Ctrl] ·` 不再作为当前合同。
 - 切片 90 已确认该 bottom bar 仍未达到目标截图级别；切片 91 必须按整体构图重新处理。
 
 目标要求：
