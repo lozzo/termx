@@ -297,13 +297,14 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		SetPanelPresentation(state.PanelPresentationSplitLine).
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical)
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-shell"
-	shell.Workspace.Tabs[0].RootSplit.Ratio = 0.70
+	shell = shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	shell.Workspace.Tabs[0].RootSplit.Ratio = 0.741
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
 		TargetID: "float-visual",
 		Title:    "quick actions",
 		Pane:     state.PaneState{ID: "float-visual-pane", Title: "actions", Kind: state.PaneEmpty},
-		Rect:     state.FloatingRect{X: 84, Y: 7, W: 29, H: 8},
+		Rect:     state.FloatingRect{X: 85, Y: 7, W: 28, H: 8},
 		BoundsW:  120,
 		BoundsH:  40,
 		Source:   state.PaneCommandSourceTest,
@@ -314,7 +315,10 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		Surface:  visualAuditSurfaceStore(),
 	}
 	runtime := app.NewAppRuntime(root, nil, func(root state.Root) render.Frame {
-		return renderer.Render(builder.Build(root))
+		vm := builder.Build(root)
+		vm.Shell.Layout.Body = render.Rect{X: 1, Y: 2, W: 112, H: 36}
+		vm.Shell.Layout.ShellFrame = render.Rect{X: 0, W: 113}
+		return renderer.Render(vm)
 	}, host, nil)
 	if err := runtime.Post(app.NoopMsg{}); err != nil {
 		return render.Frame{}, err

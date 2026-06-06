@@ -4,6 +4,7 @@ type LayoutPlan struct {
 	Viewport           Rect
 	Header             Rect
 	Footer             Rect
+	ShellFrame          Rect
 	Body               Rect
 	Panels             []PanelLayoutPlan
 	Floatings          []FloatingLayoutPlan
@@ -19,6 +20,7 @@ type PanelLayoutPlan struct {
 	Panel       PanelVM
 	Rect        Rect
 	Body        Rect
+	ShellFrame  Rect
 	ContentRect Rect
 }
 
@@ -53,8 +55,10 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 		body.H -= footerH
 		plan.Footer = Rect{X: 0, Y: body.Y + body.H, W: viewport.W, H: footerH}
 	}
+	body = layoutBodyOverride(body, shell.Layout.Body, viewport)
 	plan.Body = body
-	plan.Panels = measurePanels(shell.Layout, body)
+	plan.ShellFrame = shellFrameRect(body, shell.Layout.ShellFrame, viewport)
+	plan.Panels = measurePanels(shell.Layout, body, plan.ShellFrame)
 	plan.Floatings = measureFloatings(shell.Layout.Floating, viewport)
 	plan.Overlay = measureOverlay(shell.Overlay, viewport)
 	plan.OverlayContentRect = measureOverlayContentRect(plan.Overlay)
@@ -62,6 +66,50 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	plan.Cursor, plan.CursorRect = measureCursor(shell, plan)
 	plan.HitRegions = measureHitRegions(shell, plan)
 	return plan
+}
+
+func layoutBodyOverride(body Rect, override Rect, viewport Rect) Rect {
+	if override.W <= 0 && override.H <= 0 && override.X == 0 && override.Y == 0 {
+		return body
+	}
+	if override.X > 0 {
+		body.X = clampInt(override.X, 0, maxInt(0, viewport.W-1))
+	}
+	if override.Y > 0 {
+		body.Y = clampInt(override.Y, 0, maxInt(0, viewport.H-1))
+	}
+	if override.W > 0 {
+		body.W = minInt(override.W, maxInt(0, viewport.W-body.X))
+	}
+	if override.H > 0 {
+		body.H = minInt(override.H, maxInt(0, viewport.H-body.Y))
+	}
+	return body
+}
+
+func shellFrameRect(body Rect, override Rect, viewport Rect) Rect {
+	if body.W <= 0 || body.H <= 0 {
+		return Rect{}
+	}
+	left := body.X - 1
+	if left < 0 {
+		left = 0
+	}
+	right := body.X + body.W
+	if right >= viewport.W {
+		right = viewport.W - 1
+	}
+	if override.W > 0 {
+		if override.X >= 0 {
+			left = clampInt(override.X, 0, maxInt(0, viewport.W-1))
+		}
+		right = minInt(left+override.W-1, maxInt(0, viewport.W-1))
+	}
+	width := right - left + 1
+	if width <= 0 {
+		return Rect{}
+	}
+	return Rect{X: left, Y: body.Y, W: width, H: body.H}
 }
 
 func shellFrameVisible(shell ShellVM) bool {
@@ -82,7 +130,7 @@ func normalizeViewportDimension(value int, fallback int) int {
 	return maxInt(value, 1)
 }
 
-func measurePanels(layout LayoutVM, body Rect) []PanelLayoutPlan {
+func measurePanels(layout LayoutVM, body Rect, shellFrame Rect) []PanelLayoutPlan {
 	if body.W <= 0 || body.H <= 0 || len(layout.Panels) == 0 {
 		return nil
 	}
@@ -94,7 +142,7 @@ func measurePanels(layout LayoutVM, body Rect) []PanelLayoutPlan {
 			rect = body
 		}
 		contentRect := measurePanelContentRect(panel, rect, body)
-		out[i] = PanelLayoutPlan{Panel: panel, Rect: rect, Body: body, ContentRect: contentRect}
+		out[i] = PanelLayoutPlan{Panel: panel, Rect: rect, Body: body, ShellFrame: shellFrame, ContentRect: contentRect}
 	}
 	return out
 }
@@ -237,7 +285,7 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
 	}
 	for _, panel := range plan.Panels {
-		regions = appendPaneActionRegions(regions, panel.Rect, panel.Panel.ID, plan.Viewport)
+		regions = appendPaneActionRegions(regions, panel.Panel, panel.Rect, panel.Panel.ID, plan.Viewport)
 	}
 	regions = appendSplitResizeHitRegions(regions, shell.Layout.Split, plan.Body, plan.Viewport, rootSplitPath)
 	for _, panel := range plan.Panels {
@@ -290,15 +338,15 @@ func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, include
 	}
 	paneID := panel.Panel.ID
 	if includeActions {
-		out = appendPaneActionRegions(out, panel.Rect, paneID, viewport)
+		out = appendPaneActionRegions(out, panel.Panel, panel.Rect, paneID, viewport)
 	}
 	out = appendRegion(out, HitRegion{Kind: HitRegionPaneChrome, Rect: paneChromeRect(panel.Rect), PaneID: paneID, ActionID: ActionPaneFocus.String()}, viewport)
 	return out
 }
 
-func appendPaneActionRegions(out []HitRegion, rect Rect, paneID string, viewport Rect) []HitRegion {
-	actionRect := paneActionRect(rect)
-	items := paneChromeActionItems(rect.W)
+func appendPaneActionRegions(out []HitRegion, panel PanelVM, rect Rect, paneID string, viewport Rect) []HitRegion {
+	actionRect := paneActionRect(panel, rect)
+	items := paneChromeActionItemsForPanel(panel, rect.W)
 	x := actionRect.X
 	for i, item := range items {
 		if i > 0 {
@@ -484,8 +532,8 @@ func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewpor
 	return out
 }
 
-func paneActionRect(rect Rect) Rect {
-	return chromeActionRect(rect, DisplayWidth(paneChromeActionText(rect.W)))
+func paneActionRect(panel PanelVM, rect Rect) Rect {
+	return chromeActionRect(rect, DisplayWidth(paneChromeActionTextForPanel(panel, rect.W)))
 }
 
 func floatingActionRect(rect Rect) Rect {
@@ -502,7 +550,7 @@ func chromeActionRect(rect Rect, width int) Rect {
 		return Rect{X: rect.X, Y: rect.Y, W: 0, H: 1}
 	}
 	width = minInt(width, inner)
-	return Rect{X: maxInt(rect.X, rect.X+rect.W-1-width), Y: rect.Y, W: width, H: 1}
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-2-width), Y: rect.Y, W: width, H: 1}
 }
 
 func paneResizeRect(rect Rect) Rect {
