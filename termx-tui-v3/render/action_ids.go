@@ -23,6 +23,7 @@ const (
 	ActionResizeUp        ActionID = "resize.up"
 	ActionResizeDown      ActionID = "resize.down"
 	ActionResizeBalance   ActionID = "resize.balance"
+	ActionCopyOlder       ActionID = "copy.older"
 
 	ActionTabCreate   ActionID = "tab.create"
 	ActionTabClose    ActionID = "tab.close"
@@ -108,6 +109,7 @@ func ActionIDCatalog() []ActionID {
 		ActionResizeUp,
 		ActionResizeDown,
 		ActionResizeBalance,
+		ActionCopyOlder,
 		ActionTabCreate,
 		ActionTabClose,
 		ActionTabRename,

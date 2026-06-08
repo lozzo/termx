@@ -219,7 +219,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	case "copy":
 		return footerActionSpecs(
-			footerActionSpec("pgup", "older", "", StyleStatusAccent),
+			footerActionSpec("pgup", "older", ActionCopyOlder.String(), StyleStatusAccent),
 			footerActionSpec("wheel", "", "", StyleStatusAccent),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)

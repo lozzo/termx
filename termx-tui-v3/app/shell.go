@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -320,6 +321,11 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reducePaneCommand(root, command)
 	case render.ActionResizeBalance.String():
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
+	case render.ActionCopyOlder.String():
+		// copy footer 只生成等价 PageUp 输入，authoritative history 请求仍由 copy reducer 统一处理。
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
+		}}}
 	case render.ActionEmptyClose.String(), render.ActionExitedClose.String():
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,

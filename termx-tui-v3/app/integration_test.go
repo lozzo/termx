@@ -119,6 +119,84 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	}
 }
 
+func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			76,
+			7,
+			[]state.HistoryRow{{Text: "new", LineID: 20}},
+		)}},
+		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowPrepend,
+			"term-1",
+			"tok-1",
+			76,
+			7,
+			[]state.HistoryRow{{Text: "old", LineID: 10}},
+		)}},
+	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 20}
+	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 20}
+	host := NewFakeTerminalHost(8)
+	terminal := &services.FakeTerminalService{}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Session: state.TerminalSessionStore{
+				TerminalID: "term-1",
+				Attached:   true,
+				Cols:       80,
+				Rows:       24,
+			},
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-1",
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"live"},
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core, Rows: 20},
+	)
+	host.SetSize(80, 24)
+
+	if err := runtime.Post(ShellContentActionMsg{ActionID: render.ActionCopyOlder.String()}); err != nil {
+		t.Fatalf("post copy footer latest action: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy footer latest action: %v", err)
+	}
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].TerminalID != "term-1" || core.LatestRequests[0].Cols != 76 {
+		t.Fatalf("copy footer action should enter latest through copy reducer, got %#v", core.LatestRequests)
+	}
+
+	action := frameActionHitRegion(t, lastFrame(t, host.Frames()), render.ActionCopyOlder.String(), "")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send copy footer older click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain copy footer older click: %v", err)
+	}
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("expected copy footer older request, got %#v", core.OlderRequests)
+	}
+	olderReq := core.OlderRequests[0]
+	if olderReq.Token != "tok-1" || olderReq.Generation != 7 || olderReq.Boundary.LastLineID != 20 {
+		t.Fatalf("unexpected copy footer older request %#v", olderReq)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"old", "new"}) {
+		t.Fatalf("copy footer older should prepend authoritative rows, got %v", got)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("copy footer older action must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestCopyModeLatestUsesCopyContentRectCols(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(

@@ -28,6 +28,7 @@ func TestActionIDCatalogIsUniqueAndCoversRenderedActions(t *testing.T) {
 		ActionResizeUp,
 		ActionResizeDown,
 		ActionResizeBalance,
+		ActionCopyOlder,
 		ActionTabCreate,
 		ActionTabClose,
 		ActionTabRename,
