@@ -116,6 +116,56 @@ func TestRenderVMBuilderBuildsGlobalFooterActionIDs(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
+	builder := NewRenderVMBuilder()
+	tests := []struct {
+		name string
+		root state.Root
+		want []FooterActionVM
+	}{
+		{
+			name: "live",
+			root: state.Root{Shell: state.DefaultShell()},
+			want: []FooterActionVM{
+				{Key: "^P", Label: "pane", ActionID: ActionFooterPaneMode.String()},
+				{Key: "^R", Label: "resize", ActionID: ActionFooterResizeMode.String()},
+				{Key: "^F", Label: "picker", ActionID: ActionFooterPicker.String()},
+				{Key: "^G", Label: "global", ActionID: ActionFooterGlobalMode.String()},
+			},
+		},
+		{
+			name: "terminal pool overlay",
+			root: state.Root{Shell: state.DefaultShell().OpenTerminalPool()},
+			want: []FooterActionVM{
+				{Key: "attach", ActionID: ActionPoolAttach.String()},
+				{Key: "edit", ActionID: ActionPoolEdit.String()},
+				{Key: "kill", ActionID: ActionPoolKill.String()},
+			},
+		},
+		{
+			name: "prompt overlay",
+			root: state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{})},
+			want: []FooterActionVM{
+				{Key: "enter", Label: "submit", ActionID: ActionPromptSubmit.String()},
+				{Key: "esc", Label: "cancel", ActionID: ActionPromptCancel.String()},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			footer := builder.Build(tc.root).Shell.Footer
+			if len(footer.Actions) != 0 {
+				t.Fatalf("default footer VM should not require legacy action strings, got %#v", footer.Actions)
+			}
+			for _, want := range tc.want {
+				if !containsFooterAction(footer.ActionTokens, want.Key, want.Label, want.ActionID) {
+					t.Fatalf("missing structured footer action %#v in %#v", want, footer.ActionTokens)
+				}
+			}
+		})
+	}
+}
+
 func TestRenderVMBuilderBuildsPaneStateSlotsFromContent(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -376,8 +426,13 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 		t.Fatalf("unexpected product header %#v", header)
 	}
 	footer := vm.Shell.Footer
-	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" || !containsString(footer.Actions, "v split") || !strings.Contains(footer.GlobalSummary, "panes:2") || !strings.Contains(footer.GlobalSummary, "float:1") {
+	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" ||
+		!containsFooterAction(footer.ActionTokens, "v", "split", "") ||
+		!strings.Contains(footer.GlobalSummary, "panes:2") || !strings.Contains(footer.GlobalSummary, "float:1") {
 		t.Fatalf("unexpected product footer %#v", footer)
+	}
+	if len(footer.Actions) != 0 {
+		t.Fatalf("default builder should use structured footer tokens, got legacy actions %#v", footer.Actions)
 	}
 	if len(vm.Shell.Layout.Floating) != 1 || vm.Shell.Layout.Floating[0].Title != "浮窗" || !vm.Shell.Layout.Floating[0].Active {
 		t.Fatalf("expected floating VM projection, got %#v", vm.Shell.Layout.Floating)
@@ -454,7 +509,9 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	if vm.Shell.Header.Workspace != "remote" || vm.Shell.Header.Tab != "[main]" {
 		t.Fatalf("expected active workspace header, got %#v", vm.Shell.Header)
 	}
-	if vm.Shell.Footer.Mode != "workspace" || !containsString(vm.Shell.Footer.Actions, "t tree") || !strings.Contains(vm.Shell.Footer.GlobalSummary, "tabs:1") {
+	if vm.Shell.Footer.Mode != "workspace" ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "t", "tree", ActionFooterOpenTree.String()) ||
+		!strings.Contains(vm.Shell.Footer.GlobalSummary, "tabs:1") {
 		t.Fatalf("expected workspace footer summary, got %#v", vm.Shell.Footer)
 	}
 
@@ -1057,9 +1114,9 @@ func frameContains(frame Frame, value string) bool {
 	return false
 }
 
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
+func containsFooterAction(actions []FooterActionVM, key string, label string, actionID string) bool {
+	for _, action := range actions {
+		if action.Key == key && action.Label == label && action.ActionID == actionID {
 			return true
 		}
 	}

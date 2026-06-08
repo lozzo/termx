@@ -109,8 +109,7 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 		Visible:       shell.FooterVisible,
 		Mode:          mode,
 		Hint:          hint,
-		Actions:       footerActions(mode),
-		ActionTokens:  footerActionVMs(mode),
+		ActionTokens:  footerActionCatalog(mode),
 		ActiveTarget:  activeTargetSummary(shell, root),
 		GlobalSummary: globalSummary(shell),
 	}
@@ -168,87 +167,142 @@ func footerMode(root state.Root, shell state.ShellStore) string {
 	return "live"
 }
 
-func footerActions(mode string) []string {
-	switch mode {
-	case "pane":
-		return []string{"v split", "x close", "n focus", "z zoom", "esc"}
-	case "resize":
-		return []string{"←/h", "→/l", "↑/k", "↓/j", "b balance", "esc"}
-	case "global":
-		return []string{"h header", "f footer", "p pool", "w tree", "T toast", "t clear", "esc"}
-	case "copy":
-		return []string{"pgup older", "wheel", "esc"}
-	case string(state.OverlayTerminalPicker):
-		return []string{"select", "attach", "esc"}
-	case string(state.OverlayTerminalPool):
-		return []string{"search", "attach", "edit", "kill", "esc"}
-	case string(state.OverlayWorkbenchTree):
-		return []string{"search", "open", "focus", "esc"}
-	case string(state.OverlayPrompt):
-		return []string{"type", "enter submit", "esc cancel"}
-	case string(state.OverlayHelp):
-		return []string{"read", "enter close", "esc"}
-	case "floating":
-		return []string{"n new", "arrows move", "HJKL size", "x close", "esc"}
-	case "tab":
-		return []string{"n new", "h/l switch", "r rename", "x close", "esc"}
-	case "workspace":
-		return []string{"n new", "h/l switch", "r rename", "t tree", "esc"}
-	default:
-		return []string{"^P pane", "^R size", "^F pick", "^G"}
-	}
-}
-
-func footerActionVMs(mode string) []FooterActionVM {
-	actions := compactFooterActions(footerActions(mode))
-	out := make([]FooterActionVM, 0, len(actions))
-	for _, action := range actions {
-		key, label := splitActionLabel(action)
-		if key == "" {
+func footerActionLabels(mode string) []string {
+	tokens := footerActionCatalog(mode)
+	labels := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if strings.TrimSpace(token.Key) == "" {
 			continue
 		}
-		out = append(out, FooterActionVM{
-			Key:      key,
-			Label:    label,
-			ActionID: footerActionIDForToken(mode, key, label),
-			Style:    footerActionKeyStyle(key, label),
-		})
+		label := strings.TrimSpace(token.Key)
+		if token.Label != "" {
+			label += " " + strings.TrimSpace(token.Label)
+		}
+		labels = append(labels, label)
 	}
-	return out
+	return labels
 }
 
-func footerActionIDForToken(mode string, key string, label string) string {
-	key = strings.TrimSpace(strings.ToLower(key))
-	label = strings.TrimSpace(strings.ToLower(label))
+// footerActions 只服务手写 FooterVM 的兼容 fallback；默认 builder 直接输出 FooterActionVM。
+func footerActions(mode string) []string {
+	return footerActionLabels(mode)
+}
+
+func footerActionCatalog(mode string) []FooterActionVM {
 	switch mode {
-	case "live", "normal", "":
-		switch {
-		case key == "^p" || label == "pane":
-			return ActionFooterPaneMode.String()
-		case key == "^r" || label == "size":
-			return ActionFooterResizeMode.String()
-		case key == "^f" || label == "pick":
-			return ActionFooterPicker.String()
-		case key == "^g" || label == "global":
-			return ActionFooterGlobalMode.String()
-		}
+	case "pane":
+		return footerActionSpecs(
+			footerActionSpec("v", "split", "", StyleStatusAccent),
+			footerActionSpec("x", "close", "", StyleStatusWarning),
+			footerActionSpec("n", "focus", "", StyleStatusAccent),
+			footerActionSpec("z", "zoom", "", StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case "resize":
+		return footerActionSpecs(
+			footerActionSpec("←/h", "", "", StyleStatusWarning),
+			footerActionSpec("→/l", "", "", StyleStatusWarning),
+			footerActionSpec("↑/k", "", "", StyleStatusWarning),
+			footerActionSpec("↓/j", "", "", StyleStatusWarning),
+			footerActionSpec("b", "balance", "", StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
 	case "global":
-		switch {
-		case key == "h" || label == "header":
-			return ActionFooterToggleHeader.String()
-		case key == "f" || label == "footer":
-			return ActionFooterToggleFooter.String()
-		case key == "p" || label == "pool":
-			return ActionFooterOpenPool.String()
-		case key == "w" || label == "tree":
-			return ActionFooterOpenTree.String()
-		case key == "t" && label == "clear":
-			return ActionFooterClearToasts.String()
-		case key == "t" || label == "toast":
-			return ActionFooterCloseToast.String()
-		}
+		return footerActionSpecs(
+			footerActionSpec("h", "header", ActionFooterToggleHeader.String(), StyleStatusAccent),
+			footerActionSpec("f", "footer", ActionFooterToggleFooter.String(), StyleStatusAccent),
+			footerActionSpec("p", "pool", ActionFooterOpenPool.String(), StyleStatusAccent),
+			footerActionSpec("w", "tree", ActionFooterOpenTree.String(), StyleStatusAccent),
+			footerActionSpec("T", "toast", ActionFooterCloseToast.String(), StyleStatusWarning),
+			footerActionSpec("t", "clear", ActionFooterClearToasts.String(), StyleStatusWarning),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case "copy":
+		return footerActionSpecs(
+			footerActionSpec("pgup", "older", "", StyleStatusAccent),
+			footerActionSpec("wheel", "", "", StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case string(state.OverlayTerminalPicker):
+		return footerActionSpecs(
+			footerActionSpec("select", "", "", StyleStatusAccent),
+			footerActionSpec("attach", "", ActionPickerAttach.String(), StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case string(state.OverlayTerminalPool):
+		return footerActionSpecs(
+			footerActionSpec("search", "", "", StyleStatusAccent),
+			footerActionSpec("attach", "", ActionPoolAttach.String(), StyleStatusAccent),
+			footerActionSpec("edit", "", ActionPoolEdit.String(), StyleStatusAccent),
+			footerActionSpec("kill", "", ActionPoolKill.String(), StyleStatusWarning),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case string(state.OverlayWorkbenchTree):
+		return footerActionSpecs(
+			footerActionSpec("search", "", "", StyleStatusAccent),
+			footerActionSpec("open", "", ActionWorkbenchOpen.String(), StyleStatusAccent),
+			footerActionSpec("focus", "", ActionWorkbenchSelect.String(), StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case string(state.OverlayPrompt):
+		return footerActionSpecs(
+			footerActionSpec("type", "", "", StyleStatusAccent),
+			footerActionSpec("enter", "submit", ActionPromptSubmit.String(), StyleStatusAccent),
+			footerActionSpec("esc", "cancel", ActionPromptCancel.String(), StyleStatusWarning),
+		)
+	case string(state.OverlayHelp):
+		return footerActionSpecs(
+			footerActionSpec("read", "", "", StyleStatusAccent),
+			footerActionSpec("enter", "close", ActionHelpClose.String(), StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case "floating":
+		return footerActionSpecs(
+			footerActionSpec("n", "new", "", StyleStatusAccent),
+			footerActionSpec("arrows", "move", "", StyleStatusAccent),
+			footerActionSpec("HJKL", "size", "", StyleStatusWarning),
+			footerActionSpec("x", "close", ActionFloatingClose.String(), StyleStatusWarning),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case "tab":
+		return footerActionSpecs(
+			footerActionSpec("n", "new", ActionTabCreate.String(), StyleStatusAccent),
+			footerActionSpec("h/l", "switch", "", StyleStatusAccent),
+			footerActionSpec("r", "rename", "", StyleStatusAccent),
+			footerActionSpec("x", "close", ActionTabClose.String(), StyleStatusWarning),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	case "workspace":
+		return footerActionSpecs(
+			footerActionSpec("n", "new", "", StyleStatusAccent),
+			footerActionSpec("h/l", "switch", "", StyleStatusAccent),
+			footerActionSpec("r", "rename", "", StyleStatusAccent),
+			footerActionSpec("t", "tree", ActionFooterOpenTree.String(), StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
+	default:
+		return footerActionSpecs(
+			footerActionSpec("^P", "pane", ActionFooterPaneMode.String(), StyleStatusAccent),
+			footerActionSpec("^R", "resize", ActionFooterResizeMode.String(), StyleStatusWarning),
+			footerActionSpec("^F", "picker", ActionFooterPicker.String(), StyleStatusAccent),
+			footerActionSpec("^G", "global", ActionFooterGlobalMode.String(), StyleStatusAccent),
+		)
 	}
-	return ""
+}
+
+func footerActionSpec(key string, label string, actionID string, style StyleToken) FooterActionVM {
+	return FooterActionVM{Key: key, Label: label, ActionID: actionID, Style: style}
+}
+
+func footerActionSpecs(actions ...FooterActionVM) []FooterActionVM {
+	out := make([]FooterActionVM, 0, len(actions))
+	for _, action := range actions {
+		if strings.TrimSpace(action.Key) == "" {
+			continue
+		}
+		out = append(out, action)
+	}
+	return out
 }
 
 func activeTargetSummary(shell state.ShellStore, root state.Root) string {
