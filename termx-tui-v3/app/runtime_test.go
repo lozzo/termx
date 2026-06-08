@@ -603,6 +603,40 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeFooterActionDoesNotLeakTerminalInput(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	action := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterPaneMode.String(), "")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send footer pane click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer pane click: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().InteractionMode; got != state.InteractionModePane {
+		t.Fatalf("footer pane click should enter pane mode, got %q", got)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("footer action click must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestAppRuntimeTiledPaneClickDeactivatesFloatingFocus(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{
