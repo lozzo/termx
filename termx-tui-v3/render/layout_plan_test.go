@@ -219,6 +219,56 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutAddsVisibleFooterActionHitRegions(t *testing.T) {
+	shell := ShellVM{
+		Footer: FooterVM{
+			Visible: true,
+			Mode:    "live",
+			ActionTokens: []FooterActionVM{
+				{Key: "^P", Label: "pane", ActionID: "footer.pane"},
+				{Key: "x", Label: "close"},
+				{Key: "^F", Label: "picker", ActionID: "footer.picker"},
+			},
+		},
+		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
+	}
+	plan := MeasureLayout(shell, Rect{W: 80, H: 20})
+	paneRegion := hitRegionByAction(t, plan.HitRegions, "footer.pane")
+	pickerRegion := hitRegionByAction(t, plan.HitRegions, "footer.picker")
+	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl+P] pane") {
+		t.Fatalf("unexpected footer pane action region %#v footer=%#v", paneRegion, plan.Footer)
+	}
+	if pickerRegion.Kind != HitRegionContentAction || pickerRegion.Rect.Y != paneRegion.Rect.Y || pickerRegion.Rect.X <= paneRegion.Rect.X {
+		t.Fatalf("unexpected footer picker action region %#v pane=%#v", pickerRegion, paneRegion)
+	}
+	if _, ok := findHitRegionByAction(plan.HitRegions, "close"); ok {
+		t.Fatalf("footer token without action id must not produce hit region: %#v", plan.HitRegions)
+	}
+}
+
+func TestMeasureLayoutFooterActionHitRegionsFollowNarrowSelection(t *testing.T) {
+	shell := ShellVM{
+		Footer: FooterVM{
+			Visible: true,
+			Mode:    "live",
+			ActionTokens: []FooterActionVM{
+				{Key: "^P", Label: "pane", ActionID: "footer.pane"},
+				{Key: "^R", Label: "resize", ActionID: "footer.resize"},
+				{Key: "^F", Label: "picker", ActionID: "footer.picker"},
+				{Key: "^G", Label: "global", ActionID: "footer.global"},
+			},
+		},
+		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
+	}
+	plan := MeasureLayout(shell, Rect{W: 30, H: 12})
+	if _, ok := findHitRegionByAction(plan.HitRegions, "footer.picker"); ok {
+		t.Fatalf("narrow footer should not expose hidden picker hit region: %#v", plan.HitRegions)
+	}
+	if global, ok := findHitRegionByAction(plan.HitRegions, "footer.global"); !ok || global.Kind != HitRegionContentAction {
+		t.Fatalf("narrow footer should keep visible tail action region, got %#v", plan.HitRegions)
+	}
+}
+
 func TestMeasureLayoutAnchorsCursorWhenContentHasNoVisibleCursor(t *testing.T) {
 	shell := ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},
@@ -748,6 +798,15 @@ func hitRegionByAction(t *testing.T, regions []HitRegion, actionID string) HitRe
 	}
 	t.Fatalf("missing action %s in %#v", actionID, regions)
 	return HitRegion{}
+}
+
+func findHitRegionByAction(regions []HitRegion, actionID string) (HitRegion, bool) {
+	for _, region := range regions {
+		if region.ActionID == actionID {
+			return region, true
+		}
+	}
+	return HitRegion{}, false
 }
 
 func hitRegionIndexByPaneAndAction(regions []HitRegion, kind HitRegionKind, paneID string, actionID string) int {

@@ -303,6 +303,7 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 		return regions
 	}
 	regions = appendHeaderHitRegions(regions, shell.Header, plan.Header, plan.Viewport)
+	regions = appendFooterHitRegions(regions, shell.Footer, plan.Footer, plan.FooterFrame, plan.Viewport)
 	for i := len(plan.Floatings) - 1; i >= 0; i-- {
 		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
 	}
@@ -336,6 +337,51 @@ func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewpor
 			break
 		}
 	}
+	return out
+}
+
+func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame Rect, viewport Rect) []HitRegion {
+	if rect.W <= 0 || rect.H <= 0 || !footer.Visible {
+		return out
+	}
+	lineRect := shellBandLineRect(rect, frame)
+	y := rect.Y
+	if rect.H > 1 {
+		y = rect.Y + rect.H - 1
+	}
+	x := lineRect.X + 1
+	currentAction := ""
+	currentRect := Rect{}
+	flush := func() {
+		if currentAction != "" && currentRect.W > 0 {
+			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: currentRect, ActionID: currentAction}, viewport)
+		}
+		currentAction = ""
+		currentRect = Rect{}
+	}
+	for _, segment := range footerLeftSegments(footer, rect.W) {
+		width := DisplayWidth(segment.text)
+		if width <= 0 {
+			continue
+		}
+		if segment.actionID == "" {
+			flush()
+			x += width
+			continue
+		}
+		if currentAction == segment.actionID && currentRect.X+currentRect.W == x {
+			currentRect.W += width
+		} else {
+			flush()
+			currentAction = segment.actionID
+			currentRect = Rect{X: x, Y: y, W: width, H: 1}
+		}
+		x += width
+		if x >= lineRect.X+lineRect.W {
+			break
+		}
+	}
+	flush()
 	return out
 }
 

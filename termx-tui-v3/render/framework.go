@@ -615,28 +615,36 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect, frame Rect) {
 		return
 	}
 	lineRect := shellBandLineRect(rect, frame)
-	mode := footer.Mode
-	if mode == "" {
-		mode = "live"
-	}
-	hintIsCritical := strings.HasPrefix(footer.Hint, "error:") || strings.HasPrefix(footer.Hint, "exited:")
-	left := []barSegment{}
-	if mode != "live" && mode != "normal" {
-		left = append(left, barText(" "+strings.ToUpper(mode)+" ", StyleStatusAccent, 1), barSep())
-	}
-	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {
-		left = appendFooterActionSegments(left, footerActionTokensForFooter(footer), rect.W)
-	}
-	if len(left) == 0 {
-		left = append(left, barText(" [Ctrl+G] GLOBAL ", StyleStatusAccent, 1))
-	}
-	right := footerMetadataSegments(footer, hintIsCritical)
+	left := footerLeftSegments(footer, rect.W)
+	right := footerMetadataSegments(footer, footerHintIsCritical(footer))
 	if rect.H > 1 {
 		c.writeLine(rect.X, rect.Y, rect.W, shellDividerLine(rect.W, "┌", "┐"), "shell:footer", LayerChrome)
 		c.writeLine(lineRect.X, rect.Y+rect.H-1, lineRect.W, composeFramedBarLine(left, right, lineRect.W, "└", "┘", " "), "shell:footer", LayerChrome)
 		return
 	}
 	c.writeLine(lineRect.X, rect.Y, lineRect.W, composeFramedBarLine(left, right, lineRect.W, "└", "┘", " "), "shell:footer", LayerChrome)
+}
+
+func footerLeftSegments(footer FooterVM, width int) []barSegment {
+	mode := footer.Mode
+	if mode == "" {
+		mode = "live"
+	}
+	left := []barSegment{}
+	if mode != "live" && mode != "normal" {
+		left = append(left, barText(" "+strings.ToUpper(mode)+" ", StyleStatusAccent, 1), barSep())
+	}
+	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {
+		left = appendFooterActionSegments(left, footerActionTokensForFooter(footer), width)
+	}
+	if len(left) == 0 {
+		left = append(left, barText(" [Ctrl+G] GLOBAL ", StyleStatusAccent, 1))
+	}
+	return left
+}
+
+func footerHintIsCritical(footer FooterVM) bool {
+	return strings.HasPrefix(footer.Hint, "error:") || strings.HasPrefix(footer.Hint, "exited:")
 }
 
 func shellBandLineRect(rect Rect, frame Rect) Rect {
@@ -843,9 +851,9 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		if style == "" {
 			style = footerActionKeyStyle(key, textToken)
 		}
-		segments = append(segments, barText(formatFooterKeyToken(key), style, 1))
+		segments = append(segments, barText(formatFooterKeyToken(key), style, 1).withAction(action.ActionID))
 		if textToken != "" {
-			segments = append(segments, barText(" "+textToken, StyleStatus, 1))
+			segments = append(segments, barText(" "+textToken, StyleStatus, 1).withAction(action.ActionID))
 		}
 		used += tokenWidth
 	}
