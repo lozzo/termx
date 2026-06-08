@@ -18,6 +18,11 @@ const (
 	ActionPaneFooterClose ActionID = "pane.footer-close"
 	ActionPaneFooterFocus ActionID = "pane.footer-focus"
 	ActionPaneFooterZoom  ActionID = "pane.footer-zoom"
+	ActionResizeLeft      ActionID = "resize.left"
+	ActionResizeRight     ActionID = "resize.right"
+	ActionResizeUp        ActionID = "resize.up"
+	ActionResizeDown      ActionID = "resize.down"
+	ActionResizeBalance   ActionID = "resize.balance"
 
 	ActionTabCreate   ActionID = "tab.create"
 	ActionTabClose    ActionID = "tab.close"
@@ -97,6 +102,11 @@ func ActionIDCatalog() []ActionID {
 		ActionPaneFooterClose,
 		ActionPaneFooterFocus,
 		ActionPaneFooterZoom,
+		ActionResizeLeft,
+		ActionResizeRight,
+		ActionResizeUp,
+		ActionResizeDown,
+		ActionResizeBalance,
 		ActionTabCreate,
 		ActionTabClose,
 		ActionTabRename,

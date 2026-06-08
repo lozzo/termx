@@ -510,6 +510,16 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z", "zoom", ActionPaneFooterZoom.String()) {
 		t.Fatalf("expected pane footer structural actions, got %#v", vm.Shell.Footer)
 	}
+	shell = shell.SetInteractionMode(state.InteractionModeResize)
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Footer.Mode != "resize" ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "←/h", "", ActionResizeLeft.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "→/l", "", ActionResizeRight.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "↑/k", "", ActionResizeUp.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "↓/j", "", ActionResizeDown.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "b", "balance", ActionResizeBalance.String()) {
+		t.Fatalf("expected resize footer structural actions, got %#v", vm.Shell.Footer)
+	}
 
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})

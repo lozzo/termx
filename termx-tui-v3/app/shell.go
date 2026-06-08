@@ -312,6 +312,14 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionPaneFooterZoom.String():
 		shell := root.Shell.EnsureDefaults()
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandToggleZoom, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
+	case render.ActionResizeLeft.String(), render.ActionResizeRight.String(), render.ActionResizeUp.String(), render.ActionResizeDown.String():
+		command, ok := resizeFooterPaneCommand(msg.ActionID)
+		if !ok {
+			break
+		}
+		return reducePaneCommand(root, command)
+	case render.ActionResizeBalance.String():
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
 	case render.ActionEmptyClose.String(), render.ActionExitedClose.String():
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,
@@ -417,6 +425,28 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
 	return root.Advance(), nil
+}
+
+func resizeFooterPaneCommand(actionID string) (state.PaneCommand, bool) {
+	// footer resize token 与键盘 resize mode 使用同一方向和步长语义。
+	command := state.PaneCommand{
+		Action: state.PaneCommandResize,
+		Delta:  2,
+		Source: state.PaneCommandSourceMouse,
+	}
+	switch actionID {
+	case render.ActionResizeLeft.String():
+		command.ResizeDirection = state.PaneResizeLeft
+	case render.ActionResizeRight.String():
+		command.ResizeDirection = state.PaneResizeRight
+	case render.ActionResizeUp.String():
+		command.ResizeDirection = state.PaneResizeUp
+	case render.ActionResizeDown.String():
+		command.ResizeDirection = state.PaneResizeDown
+	default:
+		return state.PaneCommand{}, false
+	}
+	return command, true
 }
 
 func reducePromptSubmit(root state.Root) (state.Root, []Effect) {

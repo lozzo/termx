@@ -200,11 +200,11 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	case "resize":
 		return footerActionSpecs(
-			footerActionSpec("←/h", "", "", StyleStatusWarning),
-			footerActionSpec("→/l", "", "", StyleStatusWarning),
-			footerActionSpec("↑/k", "", "", StyleStatusWarning),
-			footerActionSpec("↓/j", "", "", StyleStatusWarning),
-			footerActionSpec("b", "balance", "", StyleStatusAccent),
+			footerActionSpec("←/h", "", ActionResizeLeft.String(), StyleStatusWarning),
+			footerActionSpec("→/l", "", ActionResizeRight.String(), StyleStatusWarning),
+			footerActionSpec("↑/k", "", ActionResizeUp.String(), StyleStatusWarning),
+			footerActionSpec("↓/j", "", ActionResizeDown.String(), StyleStatusWarning),
+			footerActionSpec("b", "balance", ActionResizeBalance.String(), StyleStatusAccent),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "global":

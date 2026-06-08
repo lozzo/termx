@@ -743,6 +743,99 @@ func TestInteractiveRuntimePaneModeFooterCloseLastPaneShowsFeedback(t *testing.T
 	}
 }
 
+func TestInteractiveRuntimeResizeModeFooterActions(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
+		SetInteractionMode(state.InteractionModeResize)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   shell,
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+
+	rightAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionResizeRight.String(), "")
+	if err := host.SendInput(mouseEventAt(rightAction.Rect)); err != nil {
+		t.Fatalf("send resize right footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain resize right footer click: %v", err)
+	}
+	split := runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0].RootSplit
+	if split.BiasCells != 2 {
+		t.Fatalf("resize right footer action should update split bias by keyboard step, got %#v", split)
+	}
+
+	balanceAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionResizeBalance.String(), "")
+	if err := host.SendInput(mouseEventAt(balanceAction.Rect)); err != nil {
+		t.Fatalf("send resize balance footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain resize balance footer click: %v", err)
+	}
+	split = runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0].RootSplit
+	if split.BiasCells != 0 {
+		t.Fatalf("resize balance footer action should clear split bias, got %#v", split)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("resize mode footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeResizeModeFooterActionSinglePaneStaysStable(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModeResize),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	leftAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionResizeLeft.String(), "")
+	if err := host.SendInput(mouseEventAt(leftAction.Rect)); err != nil {
+		t.Fatalf("send single pane resize footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain single pane resize footer click: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.ActivePaneID != state.DefaultPaneID || len(shell.Workspace.Tabs[0].Panes) != 1 || shell.Workspace.Tabs[0].RootSplit.PaneID != state.DefaultPaneID {
+		t.Fatalf("single pane resize footer action should keep pane tree stable, got %#v", shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("single pane resize footer action must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestInteractiveRuntimeSingleTabSwitchFooterActionsStayStable(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(110, 24)
