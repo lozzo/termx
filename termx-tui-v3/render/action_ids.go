@@ -18,6 +18,17 @@ const (
 	ActionTabCreate ActionID = "tab.create"
 	ActionTabClose  ActionID = "tab.close"
 
+	ActionFooterPaneMode     ActionID = "footer.mode-pane"
+	ActionFooterResizeMode   ActionID = "footer.mode-resize"
+	ActionFooterGlobalMode   ActionID = "footer.mode-global"
+	ActionFooterPicker       ActionID = "footer.open-picker"
+	ActionFooterToggleHeader ActionID = "footer.toggle-header"
+	ActionFooterToggleFooter ActionID = "footer.toggle-footer"
+	ActionFooterOpenPool     ActionID = "footer.open-pool"
+	ActionFooterOpenTree     ActionID = "footer.open-tree"
+	ActionFooterCloseToast   ActionID = "footer.close-toast"
+	ActionFooterClearToasts  ActionID = "footer.clear-toasts"
+
 	ActionFloatingRaise      ActionID = "floating.raise"
 	ActionFloatingClose      ActionID = "floating.close"
 	ActionFloatingResize     ActionID = "floating.resize"
@@ -72,6 +83,16 @@ func ActionIDCatalog() []ActionID {
 		ActionPaneClose,
 		ActionTabCreate,
 		ActionTabClose,
+		ActionFooterPaneMode,
+		ActionFooterResizeMode,
+		ActionFooterGlobalMode,
+		ActionFooterPicker,
+		ActionFooterToggleHeader,
+		ActionFooterToggleFooter,
+		ActionFooterOpenPool,
+		ActionFooterOpenTree,
+		ActionFooterCloseToast,
+		ActionFooterClearToasts,
 		ActionFloatingRaise,
 		ActionFloatingClose,
 		ActionFloatingResize,

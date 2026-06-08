@@ -208,12 +208,47 @@ func footerActionVMs(mode string) []FooterActionVM {
 			continue
 		}
 		out = append(out, FooterActionVM{
-			Key:   key,
-			Label: label,
-			Style: footerActionKeyStyle(key, label),
+			Key:      key,
+			Label:    label,
+			ActionID: footerActionIDForToken(mode, key, label),
+			Style:    footerActionKeyStyle(key, label),
 		})
 	}
 	return out
+}
+
+func footerActionIDForToken(mode string, key string, label string) string {
+	key = strings.TrimSpace(strings.ToLower(key))
+	label = strings.TrimSpace(strings.ToLower(label))
+	switch mode {
+	case "live", "normal", "":
+		switch {
+		case key == "^p" || label == "pane":
+			return ActionFooterPaneMode.String()
+		case key == "^r" || label == "size":
+			return ActionFooterResizeMode.String()
+		case key == "^f" || label == "pick":
+			return ActionFooterPicker.String()
+		case key == "^g" || label == "global":
+			return ActionFooterGlobalMode.String()
+		}
+	case "global":
+		switch {
+		case key == "h" || label == "header":
+			return ActionFooterToggleHeader.String()
+		case key == "f" || label == "footer":
+			return ActionFooterToggleFooter.String()
+		case key == "p" || label == "pool":
+			return ActionFooterOpenPool.String()
+		case key == "w" || label == "tree":
+			return ActionFooterOpenTree.String()
+		case key == "t" && label == "clear":
+			return ActionFooterClearToasts.String()
+		case key == "t" || label == "toast":
+			return ActionFooterCloseToast.String()
+		}
+	}
+	return ""
 }
 
 func activeTargetSummary(shell state.ShellStore, root state.Root) string {

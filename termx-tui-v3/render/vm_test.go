@@ -81,6 +81,9 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	if lastAction.Key != "^G" || lastAction.Label != "global" {
 		t.Fatalf("footer structured tokens should keep compacted labels, got %#v", vm.Shell.Footer.ActionTokens)
 	}
+	if vm.Shell.Footer.ActionTokens[0].ActionID != ActionFooterPaneMode.String() || lastAction.ActionID != ActionFooterGlobalMode.String() {
+		t.Fatalf("footer structured tokens should expose semantic action ids, got %#v", vm.Shell.Footer.ActionTokens)
+	}
 	if len(vm.Shell.Layout.Panels) != 1 || len(vm.Shell.Layout.Panels[0].Chrome.Actions) != 3 {
 		t.Fatalf("pane should expose structured chrome actions, got %#v", vm.Shell.Layout.Panels)
 	}
@@ -92,6 +95,24 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	}
 	if vm.Shell.Layout.Panels[0].Chrome.Actions[0].ActionID != ActionPaneSplitDown.String() || vm.Shell.Layout.Panels[0].Chrome.Actions[2].ActionID != ActionPaneClose.String() {
 		t.Fatalf("pane chrome actions should keep semantic action ids, got %#v", vm.Shell.Layout.Panels[0].Chrome.Actions)
+	}
+}
+
+func TestRenderVMBuilderBuildsGlobalFooterActionIDs(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
+	actions := NewRenderVMBuilder().Build(root).Shell.Footer.ActionTokens
+	want := map[string]string{
+		"h": ActionFooterToggleHeader.String(),
+		"f": ActionFooterToggleFooter.String(),
+		"p": ActionFooterOpenPool.String(),
+		"w": ActionFooterOpenTree.String(),
+		"T": ActionFooterCloseToast.String(),
+		"t": ActionFooterClearToasts.String(),
+	}
+	for _, action := range actions {
+		if id, ok := want[action.Key]; ok && action.ActionID != id {
+			t.Fatalf("global footer action %s should use %s, got %#v", action.Key, id, actions)
+		}
 	}
 }
 

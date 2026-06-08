@@ -534,6 +534,75 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
+	paneHost := NewFakeTerminalHost(8)
+	paneRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, paneHost)
+	if err := paneRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post pane footer render: %v", err)
+	}
+	if err := paneRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane footer render: %v", err)
+	}
+	paneAction := frameActionHitRegion(t, lastRuntimeFrame(t, paneHost), render.ActionFooterPaneMode.String(), "")
+	if err := paneHost.SendInput(mouseEventAt(paneAction.Rect)); err != nil {
+		t.Fatalf("send footer pane click: %v", err)
+	}
+	if err := paneRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer pane click: %v", err)
+	}
+	if got := paneRuntime.State().Shell.EnsureDefaults().InteractionMode; got != state.InteractionModePane {
+		t.Fatalf("footer pane click should enter pane mode, got %q", got)
+	}
+
+	globalModeHost := NewFakeTerminalHost(8)
+	globalModeRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, globalModeHost)
+	if err := globalModeRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post global footer render: %v", err)
+	}
+	if err := globalModeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain global footer render: %v", err)
+	}
+	globalModeAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalModeHost), render.ActionFooterGlobalMode.String(), "")
+	if err := globalModeHost.SendInput(mouseEventAt(globalModeAction.Rect)); err != nil {
+		t.Fatalf("send footer global click: %v", err)
+	}
+	if err := globalModeRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer global click: %v", err)
+	}
+	if got := globalModeRuntime.State().Shell.EnsureDefaults().InteractionMode; got != state.InteractionModeGlobal {
+		t.Fatalf("footer global click should enter global mode, got %q", got)
+	}
+
+	globalHost := NewFakeTerminalHost(8)
+	globalRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).AddToast(state.ToastSpec{ID: "toast-1", Title: "notice"})}, globalHost)
+	if err := globalRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post global footer render: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain global footer render: %v", err)
+	}
+	headerAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterToggleHeader.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(headerAction.Rect)); err != nil {
+		t.Fatalf("send footer header click: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer header click: %v", err)
+	}
+	if globalRuntime.State().Shell.EnsureDefaults().HeaderVisible {
+		t.Fatalf("footer header click should hide header, got %#v", globalRuntime.State().Shell.EnsureDefaults())
+	}
+	clearAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterClearToasts.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(clearAction.Rect)); err != nil {
+		t.Fatalf("send footer clear click: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer clear click: %v", err)
+	}
+	if len(globalRuntime.State().Shell.EnsureDefaults().Toasts) != 0 {
+		t.Fatalf("footer clear click should clear toasts, got %#v", globalRuntime.State().Shell.EnsureDefaults().Toasts)
+	}
+}
+
 func TestAppRuntimeTiledPaneClickDeactivatesFloatingFocus(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{

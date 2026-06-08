@@ -243,6 +243,36 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionTabCreate.String():
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse})
+	case render.ActionFooterPaneMode.String():
+		root.Shell = root.Shell.SetInteractionMode(state.InteractionModePane)
+		return root.Advance(), nil
+	case render.ActionFooterResizeMode.String():
+		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeResize)
+		return root.Advance(), nil
+	case render.ActionFooterGlobalMode.String():
+		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeGlobal)
+		return root.Advance(), nil
+	case render.ActionFooterPicker.String():
+		root.Shell = root.Shell.OpenTerminalPicker()
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	case render.ActionFooterToggleHeader.String():
+		root.Shell = root.Shell.ToggleHeaderVisible()
+		return root.Advance(), nil
+	case render.ActionFooterToggleFooter.String():
+		root.Shell = root.Shell.ToggleFooterVisible()
+		return root.Advance(), nil
+	case render.ActionFooterOpenPool.String():
+		root.Shell = root.Shell.OpenTerminalPool()
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	case render.ActionFooterOpenTree.String():
+		root.Shell = root.Shell.OpenWorkbenchTree()
+		return root.Advance(), nil
+	case render.ActionFooterCloseToast.String():
+		root.Shell = root.Shell.CloseCurrentToast()
+		return root.Advance(), nil
+	case render.ActionFooterClearToasts.String():
+		root.Shell = root.Shell.ClearToasts()
+		return root.Advance(), nil
 	case render.ActionEmptyClose.String(), render.ActionExitedClose.String():
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,
