@@ -41,6 +41,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-live"].Lines, "┌─ shell") {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
 	}
+	if !frameContains(cases["workbench-live"].Lines, "active") {
+		t.Fatalf("workbench live smoke missing pane state slot: %#v", cases["workbench-live"].Lines)
+	}
 	if frameContains(cases["workbench-live"].Lines, "◆ owner") ||
 		frameContains(cases["workbench-live"].Lines, "⇄2") ||
 		frameContains(cases["workbench-live"].Lines, "1/31") {

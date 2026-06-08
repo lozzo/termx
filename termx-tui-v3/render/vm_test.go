@@ -60,6 +60,11 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 			ActivePaneID: "pane-build",
 		},
 		Session: state.TerminalSessionStore{TerminalID: "term-2", Attached: true},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-2",
+			Ready:      true,
+			Lines:      []string{"build live"},
+		},
 	}
 
 	vm := NewRenderVMBuilder().Build(root)
@@ -79,9 +84,104 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	if vm.Shell.Layout.Panels[0].Chrome.Title.Text != "build" || vm.Shell.Layout.Panels[0].Chrome.Title.Style != StyleAccent {
 		t.Fatalf("pane should expose structured title slot, got %#v", vm.Shell.Layout.Panels[0].Chrome.Title)
 	}
+	if vm.Shell.Layout.Panels[0].Chrome.State.Text != "active" || vm.Shell.Layout.Panels[0].Chrome.State.Style != StyleSuccess {
+		t.Fatalf("pane should expose structured active state slot, got %#v", vm.Shell.Layout.Panels[0].Chrome.State)
+	}
 	if vm.Shell.Layout.Panels[0].Chrome.Actions[0].ActionID != ActionPaneSplitDown.String() || vm.Shell.Layout.Panels[0].Chrome.Actions[2].ActionID != ActionPaneClose.String() {
 		t.Fatalf("pane chrome actions should keep semantic action ids, got %#v", vm.Shell.Layout.Panels[0].Chrome.Actions)
 	}
+}
+
+func TestRenderVMBuilderBuildsPaneStateSlotsFromContent(t *testing.T) {
+	tests := []struct {
+		name    string
+		root    state.Root
+		paneID  string
+		want    string
+		wantSty StyleToken
+	}{
+		{
+			name: "active live",
+			root: state.Root{
+				Shell:   state.DefaultShell(),
+				Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live"}},
+			},
+			paneID:  state.DefaultPaneID,
+			want:    "active",
+			wantSty: StyleSuccess,
+		},
+		{
+			name: "pending live",
+			root: state.Root{
+				Shell: state.DefaultShell(),
+			},
+			paneID:  state.DefaultPaneID,
+			want:    "pending",
+			wantSty: StyleWarning,
+		},
+		{
+			name: "error live",
+			root: state.Root{
+				Shell:   state.DefaultShell(),
+				Session: state.TerminalSessionStore{LastError: "boom"},
+			},
+			paneID:  state.DefaultPaneID,
+			want:    "error",
+			wantSty: StyleDanger,
+		},
+		{
+			name: "empty live",
+			root: state.Root{
+				Shell:   state.DefaultShell(),
+				Surface: state.TerminalSurfaceStore{TerminalID: "term-empty", Ready: true},
+			},
+			paneID:  state.DefaultPaneID,
+			want:    "empty",
+			wantSty: StyleMuted,
+		},
+		{
+			name: "inactive ready pane",
+			root: func() state.Root {
+				shell := state.DefaultShell().
+					SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
+					FocusPane(state.PaneCommandTarget{PaneID: "pane-logs"})
+				shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+				surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-main", Lines: []string{"main live"}})
+				return state.Root{Shell: shell, Surface: surface}
+			}(),
+			paneID:  state.DefaultPaneID,
+			want:    "idle",
+			wantSty: StyleMuted,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vm := NewRenderVMBuilder().Build(tt.root)
+			panel := panelByID(vm.Shell.Layout.Panels, tt.paneID)
+			if panel == nil {
+				t.Fatalf("missing panel %s in %#v", tt.paneID, vm.Shell.Layout.Panels)
+			}
+			if panel.Chrome.State.Text != tt.want || panel.Chrome.State.Style != tt.wantSty {
+				t.Fatalf("unexpected pane state slot: got %#v want text=%q style=%s", panel.Chrome.State, tt.want, tt.wantSty)
+			}
+		})
+	}
+}
+
+func TestPaneChromeStateSlotUsesIdleForInactiveReadyContent(t *testing.T) {
+	slot := paneChromeStateSlot(false, ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("ready")}})
+	if slot.Text != "idle" || slot.Style != StyleMuted {
+		t.Fatalf("inactive ready content should use idle state slot, got %#v", slot)
+	}
+}
+
+func panelByID(panels []PanelVM, id string) *PanelVM {
+	for index := range panels {
+		if panels[index].ID == id {
+			return &panels[index]
+		}
+	}
+	return nil
 }
 
 func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {

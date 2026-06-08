@@ -346,8 +346,8 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.R
 			Title:        "shell",
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
 			Active:       !floatingOwnsFocus,
-			Chrome:       buildPanelChromeVM(state.PaneState{ID: state.DefaultPaneID, Title: "shell"}, !floatingOwnsFocus),
 			Content:      activeContent,
+			Chrome:       buildPanelChromeVM(state.PaneState{ID: state.DefaultPaneID, Title: "shell"}, !floatingOwnsFocus, activeContent),
 		}}
 	}
 	panels := make([]PanelVM, len(tab.Panes))
@@ -362,8 +362,8 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.R
 			Title:        activePaneTitle(pane),
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
 			Active:       active && !floatingOwnsFocus,
-			Chrome:       buildPanelChromeVM(pane, active && !floatingOwnsFocus),
 			Content:      content,
+			Chrome:       buildPanelChromeVM(pane, active && !floatingOwnsFocus, content),
 		}
 	}
 	return panels
@@ -378,8 +378,8 @@ func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root s
 				Title:        activePaneTitle(pane),
 				Presentation: renderPanelPresentation(shell.PanelPresentation),
 				Active:       true,
-				Chrome:       buildPanelChromeVM(pane, true),
 				Content:      activeContent,
+				Chrome:       buildPanelChromeVM(pane, true, activeContent),
 			}}
 		}
 	}
@@ -412,7 +412,7 @@ func floatingChromeVM(floating state.FloatingPaneState) FloatingChromeVM {
 	return FloatingChromeVM{FillOverlay: true, ShowResizeHandle: true}
 }
 
-func buildPanelChromeVM(pane state.PaneState, active bool) PanelChromeVM {
+func buildPanelChromeVM(pane state.PaneState, active bool, content ContentVM) PanelChromeVM {
 	style := StyleMuted
 	if active {
 		style = StyleAccent
@@ -420,7 +420,23 @@ func buildPanelChromeVM(pane state.PaneState, active bool) PanelChromeVM {
 	actions := defaultPaneChromeActionVMs(style)
 	return PanelChromeVM{
 		Title:   ChromeSlotVM{Text: activePaneTitle(pane), Style: style},
+		State:   paneChromeStateSlot(active, content),
 		Actions: actions,
+	}
+}
+
+func paneChromeStateSlot(active bool, content ContentVM) ChromeSlotVM {
+	switch {
+	case content.Error != "":
+		return ChromeSlotVM{Text: "error", Style: StyleDanger}
+	case content.Pending:
+		return ChromeSlotVM{Text: "pending", Style: StyleWarning}
+	case content.Empty:
+		return ChromeSlotVM{Text: "empty", Style: StyleMuted}
+	case active:
+		return ChromeSlotVM{Text: "active", Style: StyleSuccess}
+	default:
+		return ChromeSlotVM{Text: "idle", Style: StyleMuted}
 	}
 }
 

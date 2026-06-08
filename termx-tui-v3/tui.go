@@ -324,6 +324,8 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		vm.Shell.Layout.FooterFrame = render.Rect{X: 0, W: 115}
 		vm.Shell.Layout.ChromePatches = visualAuditChromePatches()
 		for index := range vm.Shell.Layout.Panels {
+			// 固定线稿证据帧只验证目标构图，不把默认状态槽位写入对比基线。
+			vm.Shell.Layout.Panels[index].Chrome.State = render.ChromeSlotVM{}
 			if vm.Shell.Layout.Panels[index].ID == "pane-logs" {
 				vm.Shell.Layout.Panels[index].Chrome.Actions = []render.ChromeActionVM{
 					{Text: "×", ActionID: render.ActionPaneClose.String(), Style: render.StyleMuted},
