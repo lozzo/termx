@@ -547,7 +547,7 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 		t.Fatalf("expected help overlay, shell=%#v", runtime.State().Shell)
 	}
 	frame = lastFrame(t, host.Frames())
-	if !frameContains(frame, "Help") || !frameContains(frame, "Most used") || !frameContains(frame, "Floating") {
+	if !frameContains(frame, "Help") || !frameContains(frame, "available actions") || !frameContains(frame, "Terminal Pool") || !frameContains(frame, "Workbench Tree") {
 		t.Fatalf("expected help content, got %#v", frame.Lines)
 	}
 	closeRegion := frameActionHitRegion(t, frame, "help.close", "")

@@ -983,9 +983,16 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 	if content.Kind != ContentHelp ||
 		!strings.Contains(content.Lines[0].PlainString(), "Help") ||
 		!strings.Contains(content.Lines[1].PlainString(), "Most used") ||
-		!strings.Contains(content.Lines[5].PlainString(), "Floating") ||
+		!strings.Contains(content.Lines[4].PlainString(), "Footer") ||
+		!strings.Contains(content.Lines[6].PlainString(), "Terminal Pool") ||
 		!contentHasAction(content, "help.close") {
 		t.Fatalf("expected help content, got %#v", content)
+	}
+	helpPlain := plainLines(content.Lines)
+	for _, forbidden := range []string{"edit metadata", "center", "collapse", "workspace delete"} {
+		if strings.Contains(helpPlain, forbidden) {
+			t.Fatalf("help must only show wired actions, found %q in %q", forbidden, helpPlain)
+		}
 	}
 	if content.Cursor.Visible {
 		t.Fatalf("help overlay should not show input cursor, got %#v", content.Cursor)
@@ -1164,4 +1171,12 @@ func TestRenderVMBuilderCarriesHostAwareTheme(t *testing.T) {
 	if !strings.Contains(strings.Join(frame.ANSILines, "\n"), "38;2;187;102;255") {
 		t.Fatalf("styled frame should use host-aware accent, got %#v", frame.ANSILines)
 	}
+}
+
+func plainLines(lines []Line) string {
+	values := make([]string, len(lines))
+	for i, line := range lines {
+		values[i] = line.PlainString()
+	}
+	return strings.Join(values, "\n")
 }

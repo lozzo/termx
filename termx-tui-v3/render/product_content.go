@@ -214,22 +214,17 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 
 func buildHelpContent(shell state.ShellStore) ContentVM {
 	shell = shell.EnsureDefaults()
-	lines := []Line{
-		pageTitleLine("Help", "concepts and actions"),
-		helpTopicLine("Most used", "Ctrl-p pane  Ctrl-r resize  Ctrl-g global  Ctrl-o floating"),
-		helpTopicLine("Pane", "split / close / focus / zoom / balance / card-split"),
-		helpTopicLine("Tab", "create / switch / rename / close"),
-		helpTopicLine("Workspace", "switch / create / rename / tree navigation"),
-		helpTopicLine("Floating", "new / move / resize / center / collapse / close"),
-		helpTopicLine("Terminal Pool", "search / attach / edit metadata / kill feedback"),
-		helpTopicLine("Display/Copy", "authoritative HistoryWindow only; no live fallback"),
-		helpTopicLine("Prompt", "local reducer-owned input / submit / cancel / confirm"),
-		contentActionLine("close", "Close Help"),
+	lines := []Line{pageTitleLine("Help", "available actions")}
+	for _, group := range helpActionGroups() {
+		if line, ok := helpActionGroupLine(group); ok {
+			lines = append(lines, line)
+		}
 	}
+	lines = append(lines, contentActionLine("close", "Close Help"))
 	return ContentVM{
 		Kind:   ContentHelp,
 		Lines:  lines,
-		Status: "help: concepts/actions",
+		Status: "help: available actions",
 		Cursor: Cursor{Visible: false},
 		HitRegions: []HitRegion{{
 			Kind:     HitRegionContentAction,
@@ -237,6 +232,85 @@ func buildHelpContent(shell state.ShellStore) ContentVM {
 			ActionID: ActionHelpClose.String(),
 		}},
 	}
+}
+
+// Help 只展示当前已接线的 action 或明确存在的键盘入口，避免继续把产品愿景文案画成可用功能。
+type helpActionGroup struct {
+	Label   string
+	Items   []helpActionItem
+	Details []string
+}
+
+type helpActionItem struct {
+	Label  string
+	Action ActionID
+}
+
+func helpActionGroups() []helpActionGroup {
+	return []helpActionGroup{
+		{Label: "Most used", Details: []string{"Ctrl-p pane", "Ctrl-r resize", "Ctrl-f picker", "Ctrl-g global"}},
+		{Label: "Pane", Items: []helpActionItem{
+			{Label: "split down", Action: ActionPaneSplitDown},
+			{Label: "split right", Action: ActionPaneSplitRight},
+			{Label: "close", Action: ActionPaneClose},
+		}, Details: []string{"focus/zoom/balance via pane mode keys"}},
+		{Label: "Tab", Items: []helpActionItem{
+			{Label: "create", Action: ActionTabCreate},
+			{Label: "close", Action: ActionTabClose},
+		}, Details: []string{"switch/rename via tab mode keys"}},
+		{Label: "Footer", Items: []helpActionItem{
+			{Label: "pane", Action: ActionFooterPaneMode},
+			{Label: "resize", Action: ActionFooterResizeMode},
+			{Label: "picker", Action: ActionFooterPicker},
+			{Label: "global", Action: ActionFooterGlobalMode},
+			{Label: "pool", Action: ActionFooterOpenPool},
+			{Label: "tree", Action: ActionFooterOpenTree},
+		}},
+		{Label: "Floating", Items: []helpActionItem{
+			{Label: "raise", Action: ActionFloatingRaise},
+			{Label: "resize", Action: ActionFloatingResize},
+			{Label: "move drag", Action: ActionFloatingMoveDrag},
+			{Label: "close", Action: ActionFloatingClose},
+		}},
+		{Label: "Terminal Pool", Items: []helpActionItem{
+			{Label: "select", Action: ActionPoolSelect},
+			{Label: "attach", Action: ActionPoolAttach},
+			{Label: "kill", Action: ActionPoolKill},
+		}, Details: []string{"search"}},
+		{Label: "Workbench Tree", Items: []helpActionItem{
+			{Label: "open", Action: ActionWorkbenchOpen},
+			{Label: "rename", Action: ActionWorkbenchRename},
+			{Label: "new", Action: ActionWorkbenchNew},
+		}},
+		{Label: "Prompt", Items: []helpActionItem{
+			{Label: "submit", Action: ActionPromptSubmit},
+			{Label: "cancel", Action: ActionPromptCancel},
+		}, Details: []string{"confirm"}},
+		{Label: "Copy", Details: []string{"authoritative HistoryWindow only"}},
+	}
+}
+
+func helpActionGroupLine(group helpActionGroup) (Line, bool) {
+	labels := make([]string, 0, len(group.Items)+len(group.Details))
+	for _, item := range group.Items {
+		if helpActionAvailable(item.Action) {
+			labels = append(labels, item.Label)
+		}
+	}
+	labels = append(labels, group.Details...)
+	if len(labels) == 0 {
+		return Line{}, false
+	}
+	return helpTopicLine(group.Label, strings.Join(labels, " / ")), true
+}
+
+func helpActionAvailable(action ActionID) bool {
+	for _, registered := range ActionIDCatalog() {
+		if registered == action {
+			return true
+		}
+	}
+	return false
 }
 
 func terminalPickerLine(row state.TerminalPickerItem) Line {
