@@ -41,10 +41,6 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 
 	body := viewport
 	plan := LayoutPlan{Viewport: viewport}
-	if shellFrameVisible(shell) && body.W > 2 {
-		body.X = 1
-		body.W = maxInt(0, body.W-2)
-	}
 	if shell.Header.Visible && body.H > 0 {
 		headerH := shellBandHeight(viewport.H)
 		headerH = minInt(headerH, body.H)
@@ -134,14 +130,8 @@ func shellFrameRect(body Rect, override Rect, viewport Rect) Rect {
 	return Rect{X: left, Y: body.Y, W: width, H: body.H}
 }
 
-func shellFrameVisible(shell ShellVM) bool {
-	return shell.Header.Visible && shell.Footer.Visible
-}
-
-func shellBandHeight(viewportHeight int) int {
-	if viewportHeight >= 8 {
-		return 2
-	}
+func shellBandHeight(_ int) int {
+	// header/footer 是产品栏，不再作为整屏线框的一部分占用第二行。
 	return 1
 }
 
@@ -323,7 +313,7 @@ func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewpor
 	if rect.W <= 0 || rect.H <= 0 || !header.Visible {
 		return out
 	}
-	x := rect.X + 1
+	x := rect.X
 	for _, segment := range headerLeftSegments(header) {
 		width := DisplayWidth(segment.text)
 		if width <= 0 {
@@ -344,12 +334,9 @@ func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame R
 	if rect.W <= 0 || rect.H <= 0 || !footer.Visible {
 		return out
 	}
-	lineRect := shellBandLineRect(rect, frame)
+	_ = frame
 	y := rect.Y
-	if rect.H > 1 {
-		y = rect.Y + rect.H - 1
-	}
-	x := lineRect.X + 1
+	x := rect.X
 	currentAction := ""
 	currentRect := Rect{}
 	flush := func() {
@@ -377,7 +364,7 @@ func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame R
 			currentRect = Rect{X: x, Y: y, W: width, H: 1}
 		}
 		x += width
-		if x >= lineRect.X+lineRect.W {
+		if x >= rect.X+rect.W {
 			break
 		}
 	}

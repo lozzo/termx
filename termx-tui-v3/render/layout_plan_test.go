@@ -26,19 +26,19 @@ func TestMeasureLayoutPlansBodyPanelOverlayAndToastRects(t *testing.T) {
 	if plan.Viewport != (Rect{W: 50, H: 14}) {
 		t.Fatalf("unexpected viewport plan %#v", plan.Viewport)
 	}
-	if plan.Header != (Rect{X: 0, Y: 0, W: 50, H: 2}) {
+	if plan.Header != (Rect{X: 0, Y: 0, W: 50, H: 1}) {
 		t.Fatalf("unexpected header rect %#v", plan.Header)
 	}
-	if plan.Footer != (Rect{X: 0, Y: 12, W: 50, H: 2}) {
+	if plan.Footer != (Rect{X: 0, Y: 13, W: 50, H: 1}) {
 		t.Fatalf("unexpected footer rect %#v", plan.Footer)
 	}
-	if plan.Body != (Rect{X: 1, Y: 2, W: 48, H: 10}) {
+	if plan.Body != (Rect{X: 0, Y: 1, W: 50, H: 12}) {
 		t.Fatalf("unexpected body rect %#v", plan.Body)
 	}
 	if len(plan.Panels) != 1 || plan.Panels[0].Rect != plan.Body {
 		t.Fatalf("expected panel to occupy body, got %#v", plan.Panels)
 	}
-	if want := (Rect{X: 2, Y: 3, W: 46, H: 8}); plan.Panels[0].ContentRect != want {
+	if want := (Rect{X: 1, Y: 2, W: 48, H: 10}); plan.Panels[0].ContentRect != want {
 		t.Fatalf("unexpected card content rect got=%#v want=%#v", plan.Panels[0].ContentRect, want)
 	}
 	if plan.Overlay.W == 0 || plan.Overlay.H == 0 {
@@ -67,10 +67,10 @@ func TestMeasureLayoutUsesKnownNarrowViewportExactly(t *testing.T) {
 	if plan.Viewport != (Rect{W: 12, H: 6}) {
 		t.Fatalf("known viewport must not be expanded, got %#v", plan.Viewport)
 	}
-	if plan.Body != (Rect{X: 1, Y: 1, W: 10, H: 4}) {
+	if plan.Body != (Rect{X: 0, Y: 1, W: 12, H: 4}) {
 		t.Fatalf("unexpected narrow body rect %#v", plan.Body)
 	}
-	if got, want := plan.Panels[0].ContentRect, (Rect{X: 2, Y: 2, W: 8, H: 2}); got != want {
+	if got, want := plan.Panels[0].ContentRect, (Rect{X: 1, Y: 2, W: 10, H: 2}); got != want {
 		t.Fatalf("unexpected narrow content rect got=%#v want=%#v", got, want)
 	}
 }
@@ -235,7 +235,7 @@ func TestMeasureLayoutAddsVisibleFooterActionHitRegions(t *testing.T) {
 	plan := MeasureLayout(shell, Rect{W: 80, H: 20})
 	paneRegion := hitRegionByAction(t, plan.HitRegions, "footer.pane")
 	pickerRegion := hitRegionByAction(t, plan.HitRegions, "footer.picker")
-	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl+P] pane") {
+	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl] • [P] pane") {
 		t.Fatalf("unexpected footer pane action region %#v footer=%#v", paneRegion, plan.Footer)
 	}
 	if pickerRegion.Kind != HitRegionContentAction || pickerRegion.Rect.Y != paneRegion.Rect.Y || pickerRegion.Rect.X <= paneRegion.Rect.X {

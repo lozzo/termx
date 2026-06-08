@@ -113,7 +113,7 @@ func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
 		t.Fatalf("expected attach correction resize, got %#v", terminal.Resizes)
 	}
 	got := terminal.Resizes[0]
-	if got.Cols != 76 || got.Rows != 18 || got.ResizePolicy != "owner" || got.SurfaceID != "surface-1" || got.ViewID != "view-1" {
+	if got.Cols != 78 || got.Rows != 20 || got.ResizePolicy != "owner" || got.SurfaceID != "surface-1" || got.ViewID != "view-1" {
 		t.Fatalf("layout resize must preserve attach owner metadata, got %#v", got)
 	}
 }
@@ -421,7 +421,7 @@ func TestLiveAttachUsesCardContentRectForInitialTerminalSize(t *testing.T) {
 	if len(terminal.Attaches) != 1 {
 		t.Fatalf("expected one attach, got %#v", terminal.Attaches)
 	}
-	if got := terminal.Attaches[0]; got.Cols != 76 || got.Rows != 18 {
+	if got := terminal.Attaches[0]; got.Cols != 78 || got.Rows != 20 {
 		t.Fatalf("attach must use card content rect, got %#v", got)
 	}
 }
@@ -444,13 +444,13 @@ func TestAttachResultWithExistingSizeIsCorrectedToContentRect(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := terminal.Attaches[0]; got.Cols != 76 || got.Rows != 18 {
+	if got := terminal.Attaches[0]; got.Cols != 78 || got.Rows != 20 {
 		t.Fatalf("attach request must use content rect, got %#v", got)
 	}
 	if len(terminal.Resizes) != 1 {
 		t.Fatalf("expected attach result correction resize, got %#v", terminal.Resizes)
 	}
-	if got := terminal.Resizes[0]; got.Cols != 76 || got.Rows != 18 {
+	if got := terminal.Resizes[0]; got.Cols != 78 || got.Rows != 20 {
 		t.Fatalf("resize correction must use content rect, got %#v", got)
 	}
 }
@@ -485,7 +485,7 @@ func TestHostResizeUsesActiveContentRectAndDeduplicates(t *testing.T) {
 	if len(terminal.Resizes) != 1 {
 		t.Fatalf("expected one deduplicated content resize, got %#v", terminal.Resizes)
 	}
-	if got := terminal.Resizes[0]; got.Cols != 96 || got.Rows != 34 {
+	if got := terminal.Resizes[0]; got.Cols != 98 || got.Rows != 36 {
 		t.Fatalf("host resize must use card content rect, got %#v", got)
 	}
 }
@@ -532,7 +532,7 @@ func TestHostResizeUsesBusinessActivePaneWhenFloatingOwnsVisualFocus(t *testing.
 	if len(terminal.Resizes) == 0 {
 		t.Fatalf("floating visual focus must not block business active pane resize")
 	}
-	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 96 || got.Rows != 34 {
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 98 || got.Rows != 36 {
 		t.Fatalf("resize should still use tiled business active pane content rect, got %#v all=%#v", got, terminal.Resizes)
 	}
 }
@@ -594,7 +594,7 @@ func TestSplitPresentationUsesSplitContentRectForResize(t *testing.T) {
 	}
 
 	if len(terminal.Resizes) != 0 {
-		t.Fatalf("single split-line pane now shares the same outer-frame content rect as card, got %#v", terminal.Resizes)
+		t.Fatalf("single split-line pane now shares the same card content rect as card, got %#v", terminal.Resizes)
 	}
 }
 
@@ -628,8 +628,8 @@ func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
 		t.Fatalf("drain split: %v", err)
 	}
 
-	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 37 || got.Rows != 18 {
-		t.Fatalf("active pane right of divider must reserve shared outer frame and split divider, got %#v", got)
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 38 || got.Rows != 20 {
+		t.Fatalf("active pane right of divider must reserve split divider without shell frame inset, got %#v", got)
 	}
 }
 
@@ -671,7 +671,7 @@ func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 		t.Fatalf("drain size command: %v", err)
 	}
 
-	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 22 || got.Rows != 18 {
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 22 || got.Rows != 20 {
 		t.Fatalf("fixed right pane size must drive active content resize, got %#v all=%#v", got, terminal.Resizes)
 	}
 }
@@ -714,10 +714,10 @@ func TestBatchedPaneCommandsResizeTerminalToLatestContentRect(t *testing.T) {
 	if len(terminal.Resizes) < 2 {
 		t.Fatalf("expected split and zoom resize requests, got %#v", terminal.Resizes)
 	}
-	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 96 || got.Rows != 34 {
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 98 || got.Rows != 36 {
 		t.Fatalf("latest zoomed pane content rect must win, got %#v all=%#v", got, terminal.Resizes)
 	}
-	if runtime.State().Session.Cols != 96 || runtime.State().Session.Rows != 34 {
+	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 36 {
 		t.Fatalf("stale split resize result must not override latest session size, state=%#v", runtime.State().Session)
 	}
 }

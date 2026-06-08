@@ -547,30 +547,17 @@ func chromePatchOrigin(patch ChromePatchVM, plan LayoutPlan) (int, int) {
 }
 
 func renderShellFrame(c *canvas, plan LayoutPlan) {
-	if plan.Header.H == 0 || plan.Footer.H == 0 {
-		return
-	}
-	if plan.Viewport.W < 2 || plan.Viewport.H < 2 {
-		return
-	}
-	frame := plan.ShellFrame
-	if frame.W <= 0 {
-		frame = Rect{X: 0, Y: plan.Body.Y, W: plan.Viewport.W, H: plan.Body.H}
-	}
-	leftX := frame.X
-	rightX := frame.X + frame.W - 1
-	// shell 外框只包住 body，header/footer 自己绘制上下边，避免 body 直接顶到顶栏。
-	for y := plan.Body.Y; y < plan.Body.Y+plan.Body.H; y++ {
-		c.writeTextStyled(leftX, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
-		c.writeTextStyled(rightX, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
-	}
+	// shell 默认不绘制整屏外框；边界由 pane、floating 和 overlay 各自表达。
+	_ = c
+	_ = plan
 }
 
 func renderHeader(c *canvas, header HeaderVM, rect Rect, topFrame Rect, dividerFrame Rect) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	lineRect := shellBandLineRect(rect, topFrame)
+	_ = topFrame
+	_ = dividerFrame
 	left := headerLeftSegments(header)
 	right := []barSegment{}
 	if header.Notice != "" {
@@ -578,11 +565,7 @@ func renderHeader(c *canvas, header HeaderVM, rect Rect, topFrame Rect, dividerF
 	} else {
 		right = append(right, barText(" termx ", StyleStatusMuted, 4))
 	}
-	c.writeLine(lineRect.X, rect.Y, lineRect.W, composeFramedBarLine(left, right, lineRect.W, "┌", "┐", "─"), "shell:header", LayerChrome)
-	if rect.H > 1 {
-		dividerRect := shellBandLineRect(rect, dividerFrame)
-		c.writeLine(dividerRect.X, rect.Y+rect.H-1, dividerRect.W, shellHeaderDividerLine(dividerRect.W, left, right), "shell:header", LayerChrome)
-	}
+	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:header", LayerChrome)
 }
 
 func headerLeftSegments(header HeaderVM) []barSegment {
@@ -604,7 +587,7 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 	left = append(left, headerSep(), barText(" ＋ ", StyleSuccess, 3).withAction(ActionTabCreate.String()))
 	if header.Notice != "" {
 		if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
-			left = append(left, barSep(), barText(" "+active+" ", StyleStatusMuted, 4))
+			left = append(left, headerSep(), barText(" "+active+" ", StyleStatusMuted, 4))
 		}
 	}
 	return left
@@ -614,15 +597,10 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect, frame Rect) {
 	if rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	lineRect := shellBandLineRect(rect, frame)
+	_ = frame
 	left := footerLeftSegments(footer, rect.W)
 	right := footerMetadataSegments(footer, footerHintIsCritical(footer))
-	if rect.H > 1 {
-		c.writeLine(rect.X, rect.Y, rect.W, shellDividerLine(rect.W, "┌", "┐"), "shell:footer", LayerChrome)
-		c.writeLine(lineRect.X, rect.Y+rect.H-1, lineRect.W, composeFramedBarLine(left, right, lineRect.W, "└", "┘", " "), "shell:footer", LayerChrome)
-		return
-	}
-	c.writeLine(lineRect.X, rect.Y, lineRect.W, composeFramedBarLine(left, right, lineRect.W, "└", "┘", " "), "shell:footer", LayerChrome)
+	c.writeLine(rect.X, rect.Y, rect.W, composeBarLine(left, right, rect.W), "shell:footer", LayerChrome)
 }
 
 func footerLeftSegments(footer FooterVM, width int) []barSegment {
@@ -638,7 +616,7 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 		left = appendFooterActionSegments(left, footerActionTokensForFooter(footer), width)
 	}
 	if len(left) == 0 {
-		left = append(left, barText(" [Ctrl+G] GLOBAL ", StyleStatusAccent, 1))
+		left = append(left, barText(" [Ctrl] • [G] GLOBAL ", StyleStatusAccent, 1))
 	}
 	return left
 }
@@ -816,8 +794,10 @@ func footerActionsLabel(actions []string, width int) string {
 
 func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM, width int) []barSegment {
 	limit := 58
-	if width < 100 {
+	if width < 60 {
 		limit = 34
+	} else if width < 100 {
+		limit = 44
 	}
 	if width >= 140 {
 		limit = 78
@@ -851,11 +831,22 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		if style == "" {
 			style = footerActionKeyStyle(key, textToken)
 		}
-		segments = append(segments, barText(formatFooterKeyToken(key), style, 1).withAction(action.ActionID))
+		// footer 延续 tuiv2 状态栏语义：组合键拆成相邻 key token，但共享同一个 action 命中区。
+		segments = appendFooterKeySegments(segments, key, style, action.ActionID)
 		if textToken != "" {
 			segments = append(segments, barText(" "+textToken, StyleStatus, 1).withAction(action.ActionID))
 		}
 		used += tokenWidth
+	}
+	return segments
+}
+
+func appendFooterKeySegments(segments []barSegment, key string, style StyleToken, actionID string) []barSegment {
+	for index, token := range formatFooterKeySegments(key) {
+		if index > 0 {
+			segments = append(segments, barText(" • ", StyleStatusMuted, 1).withAction(actionID))
+		}
+		segments = append(segments, barText(token, style, 1).withAction(actionID))
 	}
 	return segments
 }
@@ -963,11 +954,15 @@ func footerActionDisplayWidth(action string) int {
 }
 
 func formatFooterKeyToken(key string) string {
+	return strings.Join(formatFooterKeySegments(key), " • ")
+}
+
+func formatFooterKeySegments(key string) []string {
 	key = strings.TrimSpace(key)
 	if strings.HasPrefix(key, "^") && len(key) > 1 {
-		return "[Ctrl+" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"
+		return []string{"[Ctrl]", "[" + strings.ToUpper(strings.TrimPrefix(key, "^")) + "]"}
 	}
-	return "[" + key + "]"
+	return []string{"[" + key + "]"}
 }
 
 func compactFooterActions(actions []string) []string {
@@ -1101,9 +1096,7 @@ func barSep() barSegment {
 }
 
 func headerSep() barSegment {
-	segment := barText("─┬─", StyleStatusMuted, 1)
-	segment.joint = true
-	return segment
+	return barText(" ", StyleStatus, 1)
 }
 
 func appendBarSegment(segments []barSegment, text string, style StyleToken, priority int) []barSegment {
@@ -1421,128 +1414,8 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 	if body.W <= 0 || body.H <= 0 {
 		body = rect
 	}
-	if splitPanelUsesShellFrame(layout) {
-		renderShellFramedSplitPanel(c, layout, style, owner)
-		return
-	}
 	c.drawStyledSplitPaneChrome(rect, body, style, owner, LayerPanel)
 	renderPaneChromeSlots(c, rect, layout.Panel, style, owner)
-}
-
-// shell 外框存在时，split-line pane 复用 body 外框，避免在外框内再套一层 pane 外框。
-func splitPanelUsesShellFrame(layout PanelLayoutPlan) bool {
-	return layout.Panel.Presentation == PanelPresentationSplitLine && layout.Body.X > 0 && layout.Body.W > 0 && layout.Body.H > 0
-}
-
-func renderShellFramedSplitPanel(c *canvas, layout PanelLayoutPlan, style StyleToken, owner string) {
-	rect := layout.Rect
-	body := layout.Body
-	if rect.Y == body.Y {
-		renderShellFramedSplitTop(c, layout, style, owner)
-	}
-	if rect.Y+rect.H >= body.Y+body.H {
-		renderShellFramedSplitBottom(c, layout, style, owner)
-	}
-	if rect.X > body.X {
-		bottomY := body.Y + body.H - 1
-		c.drawStyledPaneVBorder(rect.X, body.Y, bottomY-1, style, owner, LayerPanel)
-		c.writeStyledBoxCell(rect.X, body.Y, "│", style, owner, LayerPanel)
-		c.mergeStyledBoxCell(rect.X, bottomY, boxConnLeft|boxConnRight|boxConnUp, style, owner, LayerPanel)
-	}
-}
-
-func renderShellFramedSplitTop(c *canvas, layout PanelLayoutPlan, style StyleToken, owner string) {
-	rect := layout.Rect
-	body := layout.Body
-	frame := shellFrameForPanel(layout)
-	y := body.Y
-	slotX := rect.X
-	slotW := rect.W + 1
-	startX := rect.X - 1
-	endX := rect.X + rect.W - 1
-	rightBorderX := -1
-	if rect.X == body.X {
-		startX = 0
-		slotX = 0
-		slotW = rect.W + 1
-		c.writeTextStyled(0, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
-	}
-	if rect.X+rect.W >= body.X+body.W {
-		rightBorderX = frame.X + frame.W - 1
-		endX = rightBorderX - 1
-		slotW = rightBorderX - slotX
-	} else {
-		endX--
-	}
-	startX = maxInt(startX, 1)
-	endX = minInt(endX, c.width-2)
-	for x := startX; x <= endX; x++ {
-		c.writeStyledBoxCell(x, y, "─", style, owner, LayerPanel)
-	}
-	renderShellFramedPaneChromeSlots(c, Rect{X: slotX, Y: y, W: slotW, H: rect.H}, layout.Panel, style, owner)
-	if rightBorderX >= 0 && rightBorderX < c.width {
-		c.writeTextStyled(rightBorderX, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
-	}
-}
-
-func renderShellFramedSplitBottom(c *canvas, layout PanelLayoutPlan, style StyleToken, owner string) {
-	rect := layout.Rect
-	body := layout.Body
-	frame := shellFrameForPanel(layout)
-	y := body.Y + body.H - 1
-	startX := rect.X - 1
-	endX := rect.X + rect.W - 1
-	rightCornerX := -1
-	if rect.X == body.X {
-		startX = 0
-		c.writeStyledBoxCell(0, y, "└", StyleStatus, "shell:frame", LayerChrome)
-	}
-	if rect.X+rect.W >= body.X+body.W {
-		rightCornerX = frame.X + frame.W - 1
-		endX = rightCornerX - 1
-	}
-	startX = maxInt(startX, 1)
-	endX = minInt(endX, c.width-2)
-	for x := startX; x <= endX; x++ {
-		c.writeStyledBoxCell(x, y, "─", style, owner, LayerPanel)
-	}
-	if rightCornerX >= 0 && rightCornerX < c.width {
-		c.writeStyledBoxCell(rightCornerX, y, "┘", StyleStatus, "shell:frame", LayerChrome)
-	}
-}
-
-func shellFrameForPanel(layout PanelLayoutPlan) Rect {
-	frame := layout.ShellFrame
-	if frame.W <= 0 {
-		body := layout.Body
-		frame = Rect{X: maxInt(0, body.X-1), Y: body.Y, W: body.W + 2, H: body.H}
-	}
-	return frame
-}
-
-func renderShellFramedPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string) {
-	if rect.W < 4 || rect.H <= 0 {
-		return
-	}
-	title := paneChromeTitleText(panel, maxInt(0, rect.W-4))
-	if title != "" {
-		c.overlayTextStyled(rect.X+1, rect.Y, DisplayWidth(title), title, paneChromeTitleStyle(panel, style), owner, LayerPanel)
-	}
-	actionItems := visiblePaneChromeActionItems(panel, rect.W)
-	actions := paneChromeActionTextFromItems(actionItems)
-	actionWidth := DisplayWidth(actions)
-	if actionWidth > 0 && rect.W >= actionWidth+4 {
-		text := actions
-		if panel.Active {
-			text = " " + actions + " "
-		}
-		textWidth := DisplayWidth(text)
-		x := rect.X + rect.W - textWidth - 2
-		if panel.Active {
-			x -= 2
-		}
-		c.overlayTextStyled(x, rect.Y, textWidth, text, paneChromeActionClusterStyle(actionItems, paneChromeActionStyle(panel, style)), owner, LayerPanel)
-	}
 }
 
 func panelTitle(panel PanelVM) string {
@@ -1950,11 +1823,6 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		state = paneChromeFloatingCollapseGlyph() + " collapsed"
 	}
 	renderChromeCardTitle(c, rect, title, state, paneChromeCloseActionText(), style, owner, LayerFloating)
-	if floating.Chrome.ExtendShellRight {
-		for y := rect.Y; y < rect.Y+rect.H; y++ {
-			c.writeTextStyled(rect.X+rect.W+1, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
-		}
-	}
 	if rect.W >= 2 && rect.H >= 2 && floating.Chrome.ShowResizeHandle {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "◢", style, owner, LayerFloating)
 	}

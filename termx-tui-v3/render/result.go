@@ -511,7 +511,6 @@ type FloatingVM struct {
 type FloatingChromeVM struct {
 	FillOverlay      bool
 	ShowResizeHandle bool
-	ExtendShellRight bool
 }
 
 type ChromePatchVM struct {

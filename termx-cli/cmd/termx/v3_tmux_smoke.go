@@ -694,7 +694,7 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	targetStyleMapText := formatVisualStyleMap("target semantic style map", targetStyleMap)
 	summary := strings.Join([]string{
 		"termx v3 tmux visual compare",
-		"source: termx-tui-v3/docs/unicode-ui-wireframes.md + tuiv2 chrome slot contract",
+		"source: tuiv2 single-line bar + object chrome contract",
 		fmt.Sprintf("viewport: %dx%d", 120, 40),
 		fmt.Sprintf("mismatches: %d", mismatches),
 		fmt.Sprintf("style_mismatches: %d", styleMismatches),
@@ -751,46 +751,46 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 
 func v3VisualTargetPlain() string {
 	lines := []string{
-		"┌ main ─┬─ 1:main × ─┬─ 2:logs × ─┬─ ＋ ─────────────────────────────────────────────────────────────── termx ┐",
-		"├───────┴─────────────┴────────────┴──────────────────────────────────────────────────────────────────────────────┤",
-		"│ shell ──────────────────────────────────────────────────────────────── ↕  ↔  × │ logs ───────────────────── × │",
-		"│ termx git:termx-core-v2-tui-v3-migration  go v1.26.0                            │ visual review baseline       │",
-		"│ > make test                                                                      │ target visual mismatch       │",
-		"│ ok   termx-tui-v3/render                                                         │ emoji 🚀 and 中文            │",
-		"│ >                                                                                │                            │",
-		"│                                                                                  │ ┌ quick actions ───────── × ┐ │",
-		"│                                                                                  │ │ No terminal attached      │ │",
-		"│                                                                                  │ │                          │ │",
-		"│                                                                                  │ │ Attach existing           │ │",
-		"│                                                                                  │ │ New terminal              │ │",
-		"│                                                                                  │ │ Terminal Pool             │ │",
-		"│                                                                                  │ │ Close                    │ │",
-		"│                                                                                  │ └──────────────────────────┘ │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"│                                                                                  │                            │",
-		"└──────────────────────────────────────────────────────────────────────────────────┴────────────────────────────┘",
-		"┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐",
-		"└ [Ctrl+P] pane  [Ctrl+R] resize  [Ctrl+F] picker  [Ctrl+G] global                         ws:main tabs:2 panes:2 ┘",
+		" main   1:main ×   2:logs ×   ＋                                                                                  termx ",
+		"┌─ shell ──────────────────────────────────────────────────────────────────────↕  ↔  ×──┬─ logs ─────────────────────×─┐",
+		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                                   │ visual review baseline       │",
+		"│> make test                                                                            │ target visual mismatch       │",
+		"│ok   termx-tui-v3/render                                                               │ emoji 🚀 and 中文            │",
+		"│>                                                                                      │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                    ┌ quick actions ───────── × ┐     │",
+		"│                                                                                    │ No terminal attached      │     │",
+		"│                                                                                    │                           │     │",
+		"│                                                                                    │ Attach existing           │     │",
+		"│                                                                                    │ New terminal              │     │",
+		"│                                                                                    │ Terminal Pool             │     │",
+		"│                                                                                    │ Close                     │     │",
+		"│                                                                                    └──────────────────────────◢┘     │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"│                                                                                       │                              │",
+		"└───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────┘",
+		" [Ctrl] • [P] pane  [Ctrl] • [R] resize  [Ctrl] • [G] global                                     ws:main tabs:2 panes:2 ",
 	}
 	return normalizeVisualText(strings.Join(lines, "\n"), 120, 40)
 }
@@ -800,7 +800,7 @@ func diffVisualPlain(target string, current string, width int, height int) (stri
 	currentLines := normalizeVisualLines(current, width, height)
 	var builder strings.Builder
 	builder.WriteString("tmux visual diff: target vs current\n")
-	builder.WriteString("source target: Unicode wireframe + tuiv2 slot contract\n\n")
+	builder.WriteString("source target: tuiv2 single-line bar + object chrome contract\n\n")
 	mismatches := 0
 	for i := 0; i < height; i++ {
 		if targetLines[i] == currentLines[i] {
@@ -968,16 +968,6 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 			styleMap[row-1][col-1] = class
 		}
 	}
-	fillGlyphs := func(row int, glyphs string, class visualStyleClass) {
-		if row < 1 || row > height {
-			return
-		}
-		for col, glyph := range visualLineGlyphs(lines[row-1], width) {
-			if strings.ContainsRune(glyphs, glyph) {
-				styleMap[row-1][col] = class
-			}
-		}
-	}
 	fillRangesForSubstrings := func(row int, class visualStyleClass, markers ...string) {
 		for _, marker := range markers {
 			for _, span := range visualLineSubstringSpans(lines[row-1], marker) {
@@ -985,60 +975,62 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 			}
 		}
 	}
+	fillSubstringOccurrence := func(row int, marker string, occurrence int, class visualStyleClass) {
+		spans := visualLineSubstringSpans(lines[row-1], marker)
+		if occurrence < 0 || occurrence >= len(spans) {
+			return
+		}
+		span := spans[occurrence]
+		fill(row, span[0]+1, span[1], class)
+	}
 
-	// 固定视觉基线的目标样式来自线稿语义区域，而不是当前 v3 ANSI 输出。
-	fill(1, 1, 111, visualStyleStatus)
+	// 固定视觉基线的目标样式来自 tuiv2-style 单行 tab/status bar 与对象 chrome 语义区域。
+	fill(1, 1, width-1, visualStyleStatus)
 	fillRangesForSubstrings(1, visualStyleAccent, " main ")
 	fillRangesForSubstrings(1, visualStyleWarn, "× ")
 	fillRangesForSubstrings(1, visualStyleSuccess, " ＋ ")
-	fillRangesForSubstrings(1, visualStyleMuted, "─┬─", " 2:logs ", " termx ")
-	fill(2, 1, 115, visualStyleStatus)
+	fillRangesForSubstrings(1, visualStyleMuted, " 2:logs ", " termx")
 
-	fill(3, 1, 1, visualStyleStatus)
-	fill(3, 2, 113, visualStyleMuted)
-	fillRangesForSubstrings(3, visualStyleAccent, " ↕  ↔  × ")
-	for row := 4; row <= 37; row++ {
-		fill(row, 1, 1, visualStyleStatus)
-		fill(row, 84, 84, visualStyleMuted)
-		fill(row, 113, 113, visualStyleStatus)
-	}
-	fill(4, 83, 114, visualStyleMuted)
-	for row := 5; row <= 6; row++ {
-		fill(row, 84, 115, visualStyleMuted)
+	fill(2, 1, 88, visualStyleAccent)
+	fill(2, 89, width, visualStyleMuted)
+	fillRangesForSubstrings(2, visualStyleAccent, "↕  ↔  ×")
+	for row := 3; row <= 38; row++ {
+		fill(row, 1, 1, visualStyleAccent)
+		fill(row, 89, 89, visualStyleMuted)
+		fill(row, 120, 120, visualStyleMuted)
 	}
 	for row := 8; row <= 15; row++ {
-		fill(row, 86, 114, visualStyleAccent)
-	}
-	for _, row := range []int{9, 11, 12, 13} {
 		for col, glyph := range visualLineGlyphs(lines[row-1], width) {
-			if col+1 >= 87 && col+1 <= 113 {
-				if glyph != 0 && glyph != ' ' {
-					styleMap[row-1][col] = visualStylePlain
-					continue
-				}
-				styleMap[row-1][col] = visualStyleTransparent
+			displayCol := col + 1
+			if displayCol < 86 || displayCol > 114 {
+				continue
 			}
+			// floating 覆盖底层 pane：边框和标题为 active accent，内部恢复为内容自己的 plain/transparent。
+			if row == 8 || row == 15 || displayCol == 86 || displayCol == 114 {
+				styleMap[row-1][col] = visualStyleAccent
+				continue
+			}
+			if glyph != 0 && glyph != ' ' {
+				styleMap[row-1][col] = visualStylePlain
+				continue
+			}
+			styleMap[row-1][col] = visualStyleTransparent
 		}
 	}
-	fill(10, 114, 116, visualStyleStatus)
-	fill(14, 114, 116, visualStyleStatus)
-	fill(15, 114, 116, visualStyleStatus)
-	for _, row := range []int{8, 9, 11, 12, 13} {
-		fill(row, 116, 116, visualStyleStatus)
-	}
 
-	fill(38, 1, 113, visualStyleStatus)
-	fill(38, 2, 112, visualStyleMuted)
-	fill(39, 1, width, visualStyleStatus)
-	fill(40, 1, 115, visualStyleStatus)
-	fillRangesForSubstrings(40, visualStyleAccent, "[Ctrl+P]", "[Ctrl+G]")
-	fillRangesForSubstrings(40, visualStyleWarn, "[Ctrl+R]", "[Ctrl+F]")
-	fill(40, 2, 2, visualStyleMuted)
-	fill(40, 16, 17, visualStyleMuted)
-	fill(40, 33, 34, visualStyleMuted)
-	fill(40, 50, 51, visualStyleMuted)
-	fill(40, 91, 114, visualStyleMuted)
-	fillGlyphs(40, "└┘", visualStyleStatus)
+	fill(39, 1, 88, visualStyleAccent)
+	fill(39, 89, width, visualStyleMuted)
+	fill(40, 1, width-1, visualStyleStatus)
+	fillSubstringOccurrence(40, "[Ctrl]", 0, visualStyleAccent)
+	fillSubstringOccurrence(40, "[P]", 0, visualStyleAccent)
+	fillSubstringOccurrence(40, "[Ctrl]", 1, visualStyleWarn)
+	fillSubstringOccurrence(40, "[R]", 0, visualStyleWarn)
+	fillSubstringOccurrence(40, "[Ctrl]", 2, visualStyleAccent)
+	fillSubstringOccurrence(40, "[G]", 0, visualStyleAccent)
+	fillRangesForSubstrings(40, visualStyleMuted, " • ", "ws:main tabs:2 panes:2")
+	fill(40, 19, 20, visualStyleMuted)
+	fill(40, 40, 41, visualStyleMuted)
+	fill(40, 97, 97, visualStyleMuted)
 	return styleMap
 }
 
@@ -1192,17 +1184,17 @@ func visualLineSubstringSpans(line string, marker string) [][2]int {
 
 func visualStyleExpectations() []visualStyleExpectation {
 	return []visualStyleExpectation{
-		{Name: "header-status-bg", Row: 1, Col: 1, Glyph: "┌", MustHave: []string{"38;2;231;226;239", "48;2;8;8;13"}},
-		{Name: "active-tab-accent", Row: 1, Col: 3, Glyph: "m", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "header-muted-joint", Row: 1, Col: 9, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127", "48;2;8;8;13"}},
-		{Name: "pane-action-accent", Row: 3, Col: 74, Glyph: "↕", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "inactive-logs-muted", Row: 3, Col: 82, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
-		{Name: "right-content-muted", Row: 4, Col: 83, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},
+		{Name: "header-status-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"48;2;8;8;13"}},
+		{Name: "active-tab-accent", Row: 1, Col: 2, Glyph: "m", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "inactive-tab-muted", Row: 1, Col: 20, Glyph: "2", MustHave: []string{"2", "38;2;119;113;127", "48;2;8;8;13"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "pane-action-accent", Row: 2, Col: 80, Glyph: "↕", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "inactive-logs-muted", Row: 2, Col: 89, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "right-content-muted", Row: 3, Col: 89, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},
 		{Name: "floating-border-accent", Row: 8, Col: 86, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "floating-inner-accent", Row: 10, Col: 86, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "underlying-frame-status", Row: 10, Col: 115, Glyph: "│", MustHave: []string{"38;2;231;226;239", "48;2;8;8;13"}, MustAvoid: []string{"38;2;169;112;255"}},
-		{Name: "footer-status-bg", Row: 40, Col: 1, Glyph: "└", MustHave: []string{"38;2;231;226;239", "48;2;8;8;13"}},
-		{Name: "footer-key-accent", Row: 40, Col: 3, Glyph: "[", MustHave: []string{"1", "38;2;169;112;255", "48;2;8;8;13"}},
+		{Name: "right-pane-border-muted", Row: 10, Col: 120, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "footer-status-bg", Row: 40, Col: 1, Glyph: " ", MustHave: []string{"48;2;8;8;13"}},
+		{Name: "footer-key-accent", Row: 40, Col: 2, Glyph: "[", MustHave: []string{"1", "38;2;169;112;255", "48;2;8;8;13"}},
 	}
 }
 

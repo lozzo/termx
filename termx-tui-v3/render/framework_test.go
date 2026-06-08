@@ -257,29 +257,29 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !strings.HasPrefix(frame.Lines[0], "┌") || !strings.HasSuffix(frame.Lines[0], "┐") {
-		t.Fatalf("top bar should be framed like the target wireframe, got %#v", frame.Lines[0])
+	if strings.HasPrefix(frame.Lines[0], "┌") || strings.HasSuffix(frame.Lines[0], "┐") || strings.Contains(frame.Lines[0], "─┬─") {
+		t.Fatalf("top bar should be a product bar, not an outer wireframe, got %#v", frame.Lines[0])
 	}
-	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], "─┬─ 1:1 ×") || !strings.Contains(frame.Lines[0], "─┬─ ＋ ") || !strings.Contains(frame.Lines[0], "│ pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
+	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], "  1:1 ×") || !strings.Contains(frame.Lines[0], "  ＋ ") || !strings.Contains(frame.Lines[0], "  pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
 		t.Fatalf("top bar should contain tuiv2-like workspace/tab/create/notice slots, got %#v", frame.Lines[0])
 	}
 	if strings.Contains(frame.Lines[0], "[＋]") || strings.Contains(frame.Lines[0], "[ ]") || strings.Contains(frame.Lines[0], "▎") {
 		t.Fatalf("top bar should not keep old bracket/indicator tokens, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.HasPrefix(footer, "└") || !strings.HasSuffix(footer, "┘") {
-		t.Fatalf("bottom bar should be framed like the target wireframe, got %#v", footer)
+	if strings.HasPrefix(footer, "└") || strings.HasSuffix(footer, "┘") {
+		t.Fatalf("bottom bar should be a product bar, not an outer wireframe, got %#v", footer)
 	}
-	if !strings.Contains(footer, "[Ctrl+P] pane") || !strings.Contains(footer, "[Ctrl+R] resize") || !strings.Contains(footer, "ws:main tabs:1 panes:1") {
+	if !strings.Contains(footer, "[Ctrl] • [P] pane") || !strings.Contains(footer, "[Ctrl] • [R] resize") || !strings.Contains(footer, "ws:main tabs:1 panes:1") {
 		t.Fatalf("bottom bar should contain target wireframe action/summary tokens, got %#v", footer)
 	}
-	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl]") || strings.Contains(footer, "»") || strings.Contains(footer, "float:0") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
+	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl+P]") || strings.Contains(footer, "»") || strings.Contains(footer, "float:0") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
 		t.Fatalf("bottom bar should use status-bar metadata slots, got %#v", footer)
 	}
 	if !styledLinesContainText(frame.StyledLines[:1], " main ", StyleStatusAccent) ||
 		!styledLinesContainText(frame.StyledLines[:1], " ＋ ", StyleSuccess) ||
 		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
-		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[Ctrl+P]", StyleStatusAccent) {
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[Ctrl]", StyleStatusAccent) {
 		t.Fatalf("top/bottom bar cells should use status token styles, got %#v", frame.StyledLines)
 	}
 	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;169;112;255m\x1b[48;2;8;8;13m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[1;38;2;169;112;255m\x1b[48;2;8;8;13m") {
@@ -358,7 +358,7 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 		t.Fatalf("header should render structured tab slots, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[Ctrl+P] pane") || !strings.Contains(footer, "[x] close") || !strings.Contains(footer, "ws:main tabs:2 panes:1") {
+	if !strings.Contains(footer, "[Ctrl] • [P] pane") || !strings.Contains(footer, "[x] close") || !strings.Contains(footer, "ws:main tabs:2 panes:1") {
 		t.Fatalf("footer should render structured action tokens, got %#v", footer)
 	}
 	if !styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[x]", StyleStatusWarning) {
