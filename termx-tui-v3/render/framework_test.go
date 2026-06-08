@@ -472,7 +472,7 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 		{name: "resize", mode: "resize", want: "[←/h]"},
 		{name: "global", mode: "global", want: "[h] HEADER"},
 		{name: "tab", mode: "tab", want: "[n] NEW"},
-		{name: "workspace", mode: "workspace", want: "[t] TREE"},
+		{name: "workspace", mode: "workspace", want: "[x] DELETE"},
 		{name: "copy", mode: "copy", want: "[pgup] OLDER"},
 		{name: "overlay", mode: "terminal-picker", want: "[attach]"},
 	}

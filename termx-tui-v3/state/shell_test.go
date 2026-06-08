@@ -133,6 +133,19 @@ func TestShellWorkbenchWorkspaceCommandsSwitchAndRename(t *testing.T) {
 	if result.Status != WorkbenchCommandOK || len(shell.Workspaces) != 1 || shell.Workspaces[0].ID != DefaultWorkspaceID {
 		t.Fatalf("expected confirmed workspace delete, result=%#v shell=%#v", result, shell)
 	}
+
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceCreate, Name: "ephemeral"})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ID == DefaultWorkspaceID {
+		t.Fatalf("expected new active workspace for active-delete regression, result=%#v shell=%#v", result, shell)
+	}
+	activeID := shell.Workspace.ID
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceDelete, TargetID: activeID, Confirm: PaneConfirmAccepted})
+	if result.Status != WorkbenchCommandOK || result.ID != activeID {
+		t.Fatalf("expected active workspace delete ok, result=%#v shell=%#v", result, shell)
+	}
+	if shell.Workspace.ID == activeID || workspaceIndexByID(shell.Workspaces, activeID) >= 0 || len(shell.Workspaces) != 1 {
+		t.Fatalf("active workspace delete must not reinsert deleted workspace, active=%q shell=%#v", activeID, shell)
+	}
 }
 
 func TestShellWorkbenchTabKillAndPaneCRUDDistinguishTerminalLifecycle(t *testing.T) {

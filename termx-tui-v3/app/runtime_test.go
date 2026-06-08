@@ -637,6 +637,90 @@ func TestInteractiveRuntimeFooterActionDoesNotLeakTerminalInput(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeWorkspaceDeleteFooterAction(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	shell, result := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create workspace: %#v", result)
+	}
+	remoteWorkspaceID := result.ID
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceSwitch, TargetID: remoteWorkspaceID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("switch workspace: %#v", result)
+	}
+	shell = shell.SetInteractionMode(state.InteractionModeWorkspace)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   shell,
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	activeBefore := runtime.State().Shell.EnsureDefaults().Workspace.ID
+	if activeBefore != remoteWorkspaceID {
+		t.Fatalf("workspace delete harness must start from remote workspace, active=%q remote=%q shell=%#v", activeBefore, remoteWorkspaceID, runtime.State().Shell)
+	}
+	action := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterDeleteWorkspace.String(), "")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send workspace delete footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workspace delete footer click: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.Workspace.ID == activeBefore || len(shell.Workspaces) != 1 || workspaceIDExistsForTest(shell.Workspaces, activeBefore) {
+		t.Fatalf("workspace delete footer action should delete active workspace, got %#v", shell)
+	}
+	if !toastExistsForTest(shell.Toasts, string(state.WorkbenchCommandWorkspaceDelete), activeBefore) {
+		t.Fatalf("workspace delete footer action should show success feedback for deleted workspace %q, got %#v", activeBefore, shell.Toasts)
+	}
+	action = frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterDeleteWorkspace.String(), "")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send last workspace delete footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain last workspace delete footer click: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if len(shell.Workspaces) != 1 || !toastExistsForTest(shell.Toasts, string(state.WorkbenchCommandWorkspaceDelete), "cannot delete last workspace") {
+		t.Fatalf("last workspace delete should be rejected with feedback, got %#v", shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("workspace footer delete must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func workspaceIDExistsForTest(workspaces []state.WorkspaceState, id string) bool {
+	for _, workspace := range workspaces {
+		if workspace.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func toastExistsForTest(toasts []state.ToastState, title string, body string) bool {
+	for _, toast := range toasts {
+		if toast.Title == title && toast.Body == body {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAppRuntimeTiledPaneClickDeactivatesFloatingFocus(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{

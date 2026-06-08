@@ -511,6 +511,7 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	}
 	if vm.Shell.Footer.Mode != "workspace" ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "t", "tree", ActionFooterOpenTree.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "delete", ActionFooterDeleteWorkspace.String()) ||
 		!strings.Contains(vm.Shell.Footer.GlobalSummary, "tabs:1") {
 		t.Fatalf("expected workspace footer summary, got %#v", vm.Shell.Footer)
 	}

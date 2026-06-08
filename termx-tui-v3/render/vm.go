@@ -279,6 +279,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionSpec("h/l", "switch", "", StyleStatusAccent),
 			footerActionSpec("r", "rename", "", StyleStatusAccent),
 			footerActionSpec("t", "tree", ActionFooterOpenTree.String(), StyleStatusAccent),
+			footerActionSpec("x", "delete", ActionFooterDeleteWorkspace.String(), StyleStatusWarning),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	default:

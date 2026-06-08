@@ -769,7 +769,14 @@ func (store ShellStore) deleteWorkspace(command WorkbenchCommand) (ShellStore, W
 		if index >= len(nextWorkspaces) {
 			index = len(nextWorkspaces) - 1
 		}
-		return store.switchWorkspace(nextWorkspaces[index].ID, command.Action)
+		// 删除当前 workspace 时不能走 switchWorkspace：它会先把旧 active workspace upsert 回列表。
+		next := cloneWorkspace(nextWorkspaces[index]).ensureDefaults()
+		store.Workspace = next
+		store.ActivePaneID = next.activeTab().ActivePaneID
+		store.ZoomedPaneID = ""
+		store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+		store.Workspaces = upsertWorkspace(nextWorkspaces, store.Workspace)
+		return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: deletedID}
 	}
 	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
 	return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: deletedID}

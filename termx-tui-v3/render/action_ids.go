@@ -18,16 +18,17 @@ const (
 	ActionTabCreate ActionID = "tab.create"
 	ActionTabClose  ActionID = "tab.close"
 
-	ActionFooterPaneMode     ActionID = "footer.mode-pane"
-	ActionFooterResizeMode   ActionID = "footer.mode-resize"
-	ActionFooterGlobalMode   ActionID = "footer.mode-global"
-	ActionFooterPicker       ActionID = "footer.open-picker"
-	ActionFooterToggleHeader ActionID = "footer.toggle-header"
-	ActionFooterToggleFooter ActionID = "footer.toggle-footer"
-	ActionFooterOpenPool     ActionID = "footer.open-pool"
-	ActionFooterOpenTree     ActionID = "footer.open-tree"
-	ActionFooterCloseToast   ActionID = "footer.close-toast"
-	ActionFooterClearToasts  ActionID = "footer.clear-toasts"
+	ActionFooterPaneMode        ActionID = "footer.mode-pane"
+	ActionFooterResizeMode      ActionID = "footer.mode-resize"
+	ActionFooterGlobalMode      ActionID = "footer.mode-global"
+	ActionFooterPicker          ActionID = "footer.open-picker"
+	ActionFooterToggleHeader    ActionID = "footer.toggle-header"
+	ActionFooterToggleFooter    ActionID = "footer.toggle-footer"
+	ActionFooterOpenPool        ActionID = "footer.open-pool"
+	ActionFooterOpenTree        ActionID = "footer.open-tree"
+	ActionFooterCloseToast      ActionID = "footer.close-toast"
+	ActionFooterClearToasts     ActionID = "footer.clear-toasts"
+	ActionFooterDeleteWorkspace ActionID = "footer.delete-workspace"
 
 	ActionFloatingRaise      ActionID = "floating.raise"
 	ActionFloatingClose      ActionID = "floating.close"
@@ -93,6 +94,7 @@ func ActionIDCatalog() []ActionID {
 		ActionFooterOpenTree,
 		ActionFooterCloseToast,
 		ActionFooterClearToasts,
+		ActionFooterDeleteWorkspace,
 		ActionFloatingRaise,
 		ActionFloatingClose,
 		ActionFloatingResize,

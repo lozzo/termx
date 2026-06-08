@@ -31,6 +31,7 @@ func TestActionIDCatalogIsUniqueAndCoversRenderedActions(t *testing.T) {
 		ActionFooterOpenTree,
 		ActionFooterCloseToast,
 		ActionFooterClearToasts,
+		ActionFooterDeleteWorkspace,
 		ActionFloatingRaise,
 		ActionFloatingClose,
 		ActionFloatingMoveDrag,
