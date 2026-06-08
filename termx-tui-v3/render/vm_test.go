@@ -76,6 +76,9 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	if len(vm.Shell.Layout.Panels) != 1 || len(vm.Shell.Layout.Panels[0].Chrome.Actions) != 3 {
 		t.Fatalf("pane should expose structured chrome actions, got %#v", vm.Shell.Layout.Panels)
 	}
+	if vm.Shell.Layout.Panels[0].Chrome.Title.Text != "build" || vm.Shell.Layout.Panels[0].Chrome.Title.Style != StyleAccent {
+		t.Fatalf("pane should expose structured title slot, got %#v", vm.Shell.Layout.Panels[0].Chrome.Title)
+	}
 	if vm.Shell.Layout.Panels[0].Chrome.Actions[0].ActionID != ActionPaneSplitDown.String() || vm.Shell.Layout.Panels[0].Chrome.Actions[2].ActionID != ActionPaneClose.String() {
 		t.Fatalf("pane chrome actions should keep semantic action ids, got %#v", vm.Shell.Layout.Panels[0].Chrome.Actions)
 	}

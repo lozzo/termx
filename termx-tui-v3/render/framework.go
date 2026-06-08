@@ -1668,14 +1668,62 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 		}
 	}
 
-	titleWidth := maxInt(0, rightLimit-innerLeft)
-	if titleWidth > 0 {
-		title := paneChromeTitleText(panel, titleWidth)
-		if strings.TrimSpace(title) != "" {
-			slots = append(slots, paneChromeTopSlot{x: innerLeft, text: title, style: paneChromeTitleStyle(panel, borderStyle)})
+	leftWidth := maxInt(0, rightLimit-innerLeft)
+	if leftWidth > 0 {
+		x := innerLeft
+		for _, slot := range paneChromeLabelSlots(panel, borderStyle, leftWidth) {
+			slot.x = x
+			slots = append(slots, slot)
+			x += DisplayWidth(slot.text)
 		}
 	}
 	return slots
+}
+
+func paneChromeLabelSlots(panel PanelVM, borderStyle StyleToken, width int) []paneChromeTopSlot {
+	if width <= 0 {
+		return nil
+	}
+	optionals := paneChromeOptionalLabelSlots(panel, borderStyle)
+	for len(optionals) > 0 && paneChromeSlotsWidth(optionals)+paneChromeMinimumTitleWidth(panel) > width {
+		optionals = optionals[:len(optionals)-1]
+	}
+	optionalWidth := paneChromeSlotsWidth(optionals)
+	titleWidth := maxInt(0, width-optionalWidth)
+	title := paneChromeTitleText(panel, titleWidth)
+	slots := make([]paneChromeTopSlot, 0, 1+len(optionals))
+	if strings.TrimSpace(title) != "" {
+		slots = append(slots, paneChromeTopSlot{text: title, style: paneChromeTitleStyle(panel, borderStyle), priority: 0})
+	}
+	return append(slots, optionals...)
+}
+
+func paneChromeOptionalLabelSlots(panel PanelVM, borderStyle StyleToken) []paneChromeTopSlot {
+	out := make([]paneChromeTopSlot, 0, 1+len(panel.Chrome.Meta))
+	if state := paneChromeSlotText(panel.Chrome.State); state != "" {
+		out = append(out, paneChromeTopSlot{text: " " + state + " ", style: paneChromeSlotStyle(panel.Chrome.State, borderStyle), priority: 2})
+	}
+	for _, meta := range panel.Chrome.Meta {
+		if text := paneChromeSlotText(meta); text != "" {
+			out = append(out, paneChromeTopSlot{text: " " + text + " ", style: paneChromeSlotStyle(meta, borderStyle), priority: 3})
+		}
+	}
+	return out
+}
+
+func paneChromeSlotsWidth(slots []paneChromeTopSlot) int {
+	width := 0
+	for _, slot := range slots {
+		width += DisplayWidth(slot.text)
+	}
+	return width
+}
+
+func paneChromeMinimumTitleWidth(panel PanelVM) int {
+	if strings.TrimSpace(paneChromeTitleSource(panel)) == "" {
+		return 0
+	}
+	return 3
 }
 
 func paneChromeActionText(width int) string {
@@ -1803,7 +1851,7 @@ func paneChromeTitleText(panel PanelVM, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	title := strings.TrimSpace(panelTitle(panel))
+	title := strings.TrimSpace(paneChromeTitleSource(panel))
 	if title == "" {
 		return ""
 	}
@@ -1814,10 +1862,31 @@ func paneChromeTitleText(panel PanelVM, width int) string {
 }
 
 func paneChromeTitleStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
+	if panel.Chrome.Title.Style != "" {
+		return panel.Chrome.Title.Style
+	}
 	if panel.Active {
 		return StyleAccent
 	}
 	return borderStyle
+}
+
+func paneChromeTitleSource(panel PanelVM) string {
+	if text := strings.TrimSpace(panel.Chrome.Title.Text); text != "" {
+		return text
+	}
+	return panelTitle(panel)
+}
+
+func paneChromeSlotText(slot ChromeSlotVM) string {
+	return strings.TrimSpace(slot.Text)
+}
+
+func paneChromeSlotStyle(slot ChromeSlotVM, fallback StyleToken) StyleToken {
+	if slot.Style != "" {
+		return slot.Style
+	}
+	return fallback
 }
 
 func paneChromeActionStyle(panel PanelVM, borderStyle StyleToken) StyleToken {

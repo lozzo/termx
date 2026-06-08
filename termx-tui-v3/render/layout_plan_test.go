@@ -282,7 +282,7 @@ func TestMeasureLayoutPaneActionRegionsFollowStructuredVisibleSlots(t *testing.T
 			{Text: "A", ActionID: "pane.alpha"},
 			{Text: "B", ActionID: "pane.beta"},
 			{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
-		}},
+		}, State: ChromeSlotVM{Text: "● active"}, Meta: []ChromeSlotVM{{Text: "80x24"}}},
 	}
 	wide := MeasureLayout(ShellVM{Layout: LayoutVM{Panels: []PanelVM{panel}}}, Rect{W: 20, H: 8})
 	if wide.HitRegions[0].Kind != HitRegionPaneAction || wide.HitRegions[0].ActionID != "pane.alpha" ||

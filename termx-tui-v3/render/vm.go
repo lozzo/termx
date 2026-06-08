@@ -418,7 +418,10 @@ func buildPanelChromeVM(pane state.PaneState, active bool) PanelChromeVM {
 		style = StyleAccent
 	}
 	actions := defaultPaneChromeActionVMs(style)
-	return PanelChromeVM{Actions: actions}
+	return PanelChromeVM{
+		Title:   ChromeSlotVM{Text: activePaneTitle(pane), Style: style},
+		Actions: actions,
+	}
 }
 
 func defaultPaneChromeActionVMs(style StyleToken) []ChromeActionVM {

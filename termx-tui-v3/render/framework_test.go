@@ -367,6 +367,65 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 96)
 }
 
+func TestFrameworkRendersStructuredPaneChromeSlots(t *testing.T) {
+	panel := PanelVM{
+		ID:           "pane-1",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		Chrome: PanelChromeVM{
+			Title: ChromeSlotVM{Text: "build", Style: StyleAccent},
+			State: ChromeSlotVM{Text: "● active", Style: StyleSuccess},
+			Meta:  []ChromeSlotVM{{Text: "80x24", Style: StyleMuted}},
+			Actions: []ChromeActionVM{
+				{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String(), Style: StyleAccent},
+				{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String(), Style: StyleAccent},
+				{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String(), Style: StyleAccent},
+			},
+		},
+		Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+	}
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 72, H: 10}, Panels: []PanelVM{panel}},
+	}})
+	frame := result.Frame()
+	if !strings.Contains(frame.Lines[0], "build") || !strings.Contains(frame.Lines[0], "● active") || !strings.Contains(frame.Lines[0], "80x24") {
+		t.Fatalf("pane chrome should render structured title/state/meta slots, got %#v", frame.Lines[0])
+	}
+	if !styledLinesContainText(frame.StyledLines[:1], "● active", StyleSuccess) || !styledLinesContainText(frame.StyledLines[:1], "80x24", StyleMuted) {
+		t.Fatalf("pane chrome structured slots should keep styles, got %#v", frame.StyledLines)
+	}
+	assertAllRowsWidth(t, frame.Lines, 72)
+}
+
+func TestFrameworkDropsPaneChromeMetaBeforeActionsOnNarrowPane(t *testing.T) {
+	panel := PanelVM{
+		ID:           "pane-1",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		Chrome: PanelChromeVM{
+			Title: ChromeSlotVM{Text: "long-title", Style: StyleAccent},
+			State: ChromeSlotVM{Text: "● active", Style: StyleSuccess},
+			Meta:  []ChromeSlotVM{{Text: "owner"}, {Text: "80x24"}},
+			Actions: []ChromeActionVM{
+				{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String(), Style: StyleAccent},
+				{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String(), Style: StyleAccent},
+				{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String(), Style: StyleAccent},
+			},
+		},
+	}
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 20, H: 8}, Panels: []PanelVM{panel}},
+	}})
+	frame := result.Frame()
+	if strings.Contains(frame.Lines[0], "owner") || strings.Contains(frame.Lines[0], "80x24") || strings.Contains(frame.Lines[0], "● active") {
+		t.Fatalf("narrow pane should drop meta/state slots before action/title, got %#v", frame.Lines[0])
+	}
+	if !strings.Contains(frame.Lines[0], paneChromeCloseActionText()) {
+		t.Fatalf("narrow pane should retain visible close action, got %#v", frame.Lines[0])
+	}
+	assertAllRowsWidth(t, frame.Lines, 20)
+}
+
 func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{

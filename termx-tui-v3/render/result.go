@@ -449,7 +449,15 @@ type PanelVM struct {
 }
 
 type PanelChromeVM struct {
+	Title   ChromeSlotVM
+	State   ChromeSlotVM
+	Meta    []ChromeSlotVM
 	Actions []ChromeActionVM
+}
+
+type ChromeSlotVM struct {
+	Text  string
+	Style StyleToken
 }
 
 type ChromeActionVM struct {
