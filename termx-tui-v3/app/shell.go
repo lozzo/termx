@@ -243,6 +243,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionTabCreate.String():
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse})
+	case render.ActionTabRename.String():
+		root.Shell = root.Shell.OpenPrompt(tabRenamePrompt(root.Shell.EnsureDefaults()))
+		return root.Advance(), nil
 	case render.ActionFooterPaneMode.String():
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModePane)
 		return root.Advance(), nil

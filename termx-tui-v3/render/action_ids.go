@@ -17,6 +17,7 @@ const (
 
 	ActionTabCreate ActionID = "tab.create"
 	ActionTabClose  ActionID = "tab.close"
+	ActionTabRename ActionID = "tab.rename"
 
 	ActionFooterPaneMode          ActionID = "footer.mode-pane"
 	ActionFooterResizeMode        ActionID = "footer.mode-resize"
@@ -88,6 +89,7 @@ func ActionIDCatalog() []ActionID {
 		ActionPaneClose,
 		ActionTabCreate,
 		ActionTabClose,
+		ActionTabRename,
 		ActionFooterPaneMode,
 		ActionFooterResizeMode,
 		ActionFooterGlobalMode,

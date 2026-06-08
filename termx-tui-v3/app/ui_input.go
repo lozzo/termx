@@ -377,13 +377,7 @@ func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.Wor
 		command.Action = state.WorkbenchCommandTabPrevious
 		return command, state.PromptState{}, true
 	case "tab rename":
-		return command, state.PromptState{
-			Title:       "Rename Tab",
-			Context:     "Rename current tab. Submit applies through workbench command.",
-			Purpose:     "tab.rename",
-			Value:       activeTabTitle(shell),
-			Placeholder: "tab name",
-		}, true
+		return command, tabRenamePrompt(shell), true
 	case "tab close":
 		command.Action = state.WorkbenchCommandTabClose
 		return command, state.PromptState{}, true
@@ -544,6 +538,16 @@ func activeTabTitle(shell state.ShellStore) string {
 		}
 	}
 	return "main"
+}
+
+func tabRenamePrompt(shell state.ShellStore) state.PromptState {
+	return state.PromptState{
+		Title:       "Rename Tab",
+		Context:     "Rename current tab. Submit applies through workbench command.",
+		Purpose:     "tab.rename",
+		Value:       activeTabTitle(shell),
+		Placeholder: "tab name",
+	}
 }
 
 func nextTabName(shell state.ShellStore) string {

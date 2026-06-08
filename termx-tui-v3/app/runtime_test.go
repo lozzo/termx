@@ -534,6 +534,48 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTabRenameFooterAction(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	shell, result := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create tab: %#v", result)
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   shell.SetInteractionMode(state.InteractionModeTab),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	action := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionTabRename.String(), "")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send tab rename footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tab rename footer click: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if !shell.Overlay.Open || shell.Overlay.Prompt.Purpose != "tab.rename" || shell.Overlay.Prompt.Value != "logs" {
+		t.Fatalf("tab rename footer action should open active tab rename prompt, got %#v", shell.Overlay)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("tab rename footer action must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 	paneHost := NewFakeTerminalHost(8)
 	paneRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, paneHost)

@@ -269,7 +269,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionSpec("n", "new", ActionTabCreate.String(), StyleStatusAccent),
 			footerActionSpec("1-9", "jump", "", StyleStatusAccent),
 			footerActionSpec("h/l", "switch", "", StyleStatusAccent),
-			footerActionSpec("r", "rename", "", StyleStatusAccent),
+			footerActionSpec("r", "rename", ActionTabRename.String(), StyleStatusAccent),
 			footerActionSpec("x", "close", ActionTabClose.String(), StyleStatusWarning),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)

@@ -525,6 +525,12 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	if vm.Shell.Header.Workspace != "main" || vm.Shell.Header.Tab != "main [logs]" {
 		t.Fatalf("expected original workspace tab strip, got %#v", vm.Shell.Header)
 	}
+	shell = shell.SetInteractionMode(state.InteractionModeTab)
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Footer.Mode != "tab" ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionTabRename.String()) {
+		t.Fatalf("expected tab footer rename action, got %#v", vm.Shell.Footer)
+	}
 }
 
 func TestRenderVMBuilderDerivesFooterModePrecedence(t *testing.T) {
