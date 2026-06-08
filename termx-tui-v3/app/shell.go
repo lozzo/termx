@@ -293,6 +293,25 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterDeleteWorkspace.String():
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceDelete, TargetID: shell.Workspace.ID, Confirm: state.PaneConfirmAccepted, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterSplit.String():
+		shell := root.Shell.EnsureDefaults()
+		// footer 点击只生成语义命令，实际 pane 结构仍由 workbench/reducer 统一修改。
+		command := state.PaneCommand{
+			Action:         state.PaneCommandSplit,
+			Target:         state.PaneCommandTarget{PaneID: shell.ActivePaneID},
+			SplitDirection: state.SplitDirectionVertical,
+			NewPane:        state.PaneState{ID: nextKeyboardPaneID(shell), Title: "pane", Kind: state.PaneEmpty},
+			Source:         state.PaneCommandSourceMouse,
+		}
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneSplit, Pane: command, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterClose.String():
+		shell := root.Shell.EnsureDefaults()
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterFocus.String():
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandFocusNext, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterZoom.String():
+		shell := root.Shell.EnsureDefaults()
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandToggleZoom, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
 	case render.ActionEmptyClose.String(), render.ActionExitedClose.String():
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,

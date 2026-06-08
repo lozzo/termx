@@ -192,10 +192,10 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	switch mode {
 	case "pane":
 		return footerActionSpecs(
-			footerActionSpec("v", "split", "", StyleStatusAccent),
-			footerActionSpec("x", "close", "", StyleStatusWarning),
-			footerActionSpec("n", "focus", "", StyleStatusAccent),
-			footerActionSpec("z", "zoom", "", StyleStatusAccent),
+			footerActionSpec("v", "split", ActionPaneFooterSplit.String(), StyleStatusAccent),
+			footerActionSpec("x", "close", ActionPaneFooterClose.String(), StyleStatusWarning),
+			footerActionSpec("n", "focus", ActionPaneFooterFocus.String(), StyleStatusAccent),
+			footerActionSpec("z", "zoom", ActionPaneFooterZoom.String(), StyleStatusAccent),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "resize":

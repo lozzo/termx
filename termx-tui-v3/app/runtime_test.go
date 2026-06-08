@@ -629,6 +629,120 @@ func TestInteractiveRuntimeTabSwitchFooterActions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimePaneModeFooterActions(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModePane),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+
+	splitAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterSplit.String(), "")
+	if err := host.SendInput(mouseEventAt(splitAction.Rect)); err != nil {
+		t.Fatalf("send pane split footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane split footer click: %v", err)
+	}
+	tab := runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0]
+	if len(tab.Panes) != 2 || tab.RootSplit.Direction != state.SplitDirectionVertical || runtime.State().Shell.EnsureDefaults().ActivePaneID == state.DefaultPaneID {
+		t.Fatalf("pane split footer action should create and activate vertical split, shell=%#v", runtime.State().Shell.EnsureDefaults())
+	}
+
+	focusAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterFocus.String(), "")
+	if err := host.SendInput(mouseEventAt(focusAction.Rect)); err != nil {
+		t.Fatalf("send pane focus footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane focus footer click: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().ActivePaneID; got != state.DefaultPaneID {
+		t.Fatalf("pane focus footer action should focus next pane, got %q", got)
+	}
+
+	zoomAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterZoom.String(), "")
+	if err := host.SendInput(mouseEventAt(zoomAction.Rect)); err != nil {
+		t.Fatalf("send pane zoom footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane zoom footer click: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().ZoomedPaneID; got != state.DefaultPaneID {
+		t.Fatalf("pane zoom footer action should toggle zoom on active pane, got %q", got)
+	}
+
+	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterClose.String(), "")
+	if err := host.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
+		t.Fatalf("send pane close footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane close footer click: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.HasPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}) || len(shell.Workspace.Tabs[0].Panes) != 1 {
+		t.Fatalf("pane close footer action should close active pane through workbench command, shell=%#v", shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("pane mode footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimePaneModeFooterCloseLastPaneShowsFeedback(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModePane),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterClose.String(), "")
+	if err := host.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
+		t.Fatalf("send last pane footer close click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain last pane footer close click: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if !shell.HasPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}) {
+		t.Fatalf("last pane footer close must not remove final pane, got %#v", shell)
+	}
+	if len(shell.Toasts) == 0 || shell.Toasts[len(shell.Toasts)-1].Body != "cannot close last pane" {
+		t.Fatalf("last pane footer close should show feedback, got %#v", shell.Toasts)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("last pane footer close must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestInteractiveRuntimeSingleTabSwitchFooterActionsStayStable(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(110, 24)

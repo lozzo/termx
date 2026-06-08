@@ -427,7 +427,7 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	}
 	footer := vm.Shell.Footer
 	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" ||
-		!containsFooterAction(footer.ActionTokens, "v", "split", "") ||
+		!containsFooterAction(footer.ActionTokens, "v", "split", ActionPaneFooterSplit.String()) ||
 		!strings.Contains(footer.GlobalSummary, "panes:2") || !strings.Contains(footer.GlobalSummary, "float:1") {
 		t.Fatalf("unexpected product footer %#v", footer)
 	}
@@ -501,11 +501,21 @@ func TestRenderVMBuilderDimsTiledPaneWhenFloatingOwnsFocus(t *testing.T) {
 
 func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	shell := state.DefaultShell()
+	shell = shell.SetInteractionMode(state.InteractionModePane)
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Footer.Mode != "pane" ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "v", "split", ActionPaneFooterSplit.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "close", ActionPaneFooterClose.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "focus", ActionPaneFooterFocus.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z", "zoom", ActionPaneFooterZoom.String()) {
+		t.Fatalf("expected pane footer structural actions, got %#v", vm.Shell.Footer)
+	}
+
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
 	shell = shell.SetInteractionMode(state.InteractionModeWorkspace)
 
-	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Header.Workspace != "remote" || vm.Shell.Header.Tab != "[main]" {
 		t.Fatalf("expected active workspace header, got %#v", vm.Shell.Header)
 	}

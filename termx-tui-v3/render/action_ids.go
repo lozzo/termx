@@ -9,11 +9,15 @@ func (id ActionID) String() string {
 }
 
 const (
-	ActionPaneFocus      ActionID = "pane.focus"
-	ActionPaneResize     ActionID = "pane.resize"
-	ActionPaneSplitDown  ActionID = "pane.split-down"
-	ActionPaneSplitRight ActionID = "pane.split-right"
-	ActionPaneClose      ActionID = "pane.close"
+	ActionPaneFocus       ActionID = "pane.focus"
+	ActionPaneResize      ActionID = "pane.resize"
+	ActionPaneSplitDown   ActionID = "pane.split-down"
+	ActionPaneSplitRight  ActionID = "pane.split-right"
+	ActionPaneClose       ActionID = "pane.close"
+	ActionPaneFooterSplit ActionID = "pane.footer-split"
+	ActionPaneFooterClose ActionID = "pane.footer-close"
+	ActionPaneFooterFocus ActionID = "pane.footer-focus"
+	ActionPaneFooterZoom  ActionID = "pane.footer-zoom"
 
 	ActionTabCreate   ActionID = "tab.create"
 	ActionTabClose    ActionID = "tab.close"
@@ -89,6 +93,10 @@ func ActionIDCatalog() []ActionID {
 		ActionPaneSplitDown,
 		ActionPaneSplitRight,
 		ActionPaneClose,
+		ActionPaneFooterSplit,
+		ActionPaneFooterClose,
+		ActionPaneFooterFocus,
+		ActionPaneFooterZoom,
 		ActionTabCreate,
 		ActionTabClose,
 		ActionTabRename,
