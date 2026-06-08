@@ -18,19 +18,21 @@ const (
 	ActionTabCreate ActionID = "tab.create"
 	ActionTabClose  ActionID = "tab.close"
 
-	ActionFooterPaneMode        ActionID = "footer.mode-pane"
-	ActionFooterResizeMode      ActionID = "footer.mode-resize"
-	ActionFooterGlobalMode      ActionID = "footer.mode-global"
-	ActionFooterPicker          ActionID = "footer.open-picker"
-	ActionFooterToggleHeader    ActionID = "footer.toggle-header"
-	ActionFooterToggleFooter    ActionID = "footer.toggle-footer"
-	ActionFooterOpenPool        ActionID = "footer.open-pool"
-	ActionFooterOpenTree        ActionID = "footer.open-tree"
-	ActionFooterCloseToast      ActionID = "footer.close-toast"
-	ActionFooterClearToasts     ActionID = "footer.clear-toasts"
-	ActionFooterNewWorkspace    ActionID = "footer.new-workspace"
-	ActionFooterRenameWorkspace ActionID = "footer.rename-workspace"
-	ActionFooterDeleteWorkspace ActionID = "footer.delete-workspace"
+	ActionFooterPaneMode          ActionID = "footer.mode-pane"
+	ActionFooterResizeMode        ActionID = "footer.mode-resize"
+	ActionFooterGlobalMode        ActionID = "footer.mode-global"
+	ActionFooterPicker            ActionID = "footer.open-picker"
+	ActionFooterToggleHeader      ActionID = "footer.toggle-header"
+	ActionFooterToggleFooter      ActionID = "footer.toggle-footer"
+	ActionFooterOpenPool          ActionID = "footer.open-pool"
+	ActionFooterOpenTree          ActionID = "footer.open-tree"
+	ActionFooterCloseToast        ActionID = "footer.close-toast"
+	ActionFooterClearToasts       ActionID = "footer.clear-toasts"
+	ActionFooterNewWorkspace      ActionID = "footer.new-workspace"
+	ActionFooterRenameWorkspace   ActionID = "footer.rename-workspace"
+	ActionFooterPreviousWorkspace ActionID = "footer.previous-workspace"
+	ActionFooterNextWorkspace     ActionID = "footer.next-workspace"
+	ActionFooterDeleteWorkspace   ActionID = "footer.delete-workspace"
 
 	ActionFloatingRaise      ActionID = "floating.raise"
 	ActionFloatingClose      ActionID = "floating.close"
@@ -98,6 +100,8 @@ func ActionIDCatalog() []ActionID {
 		ActionFooterClearToasts,
 		ActionFooterNewWorkspace,
 		ActionFooterRenameWorkspace,
+		ActionFooterPreviousWorkspace,
+		ActionFooterNextWorkspace,
 		ActionFooterDeleteWorkspace,
 		ActionFloatingRaise,
 		ActionFloatingClose,

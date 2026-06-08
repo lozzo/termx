@@ -276,7 +276,8 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	case "workspace":
 		return footerActionSpecs(
 			footerActionSpec("n", "new", ActionFooterNewWorkspace.String(), StyleStatusAccent),
-			footerActionSpec("h/l", "switch", "", StyleStatusAccent),
+			footerActionSpec("h", "prev", ActionFooterPreviousWorkspace.String(), StyleStatusAccent),
+			footerActionSpec("l", "next", ActionFooterNextWorkspace.String(), StyleStatusAccent),
 			footerActionSpec("r", "rename", ActionFooterRenameWorkspace.String(), StyleStatusAccent),
 			footerActionSpec("t", "tree", ActionFooterOpenTree.String(), StyleStatusAccent),
 			footerActionSpec("x", "delete", ActionFooterDeleteWorkspace.String(), StyleStatusWarning),

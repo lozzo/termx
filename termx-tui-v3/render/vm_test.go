@@ -511,6 +511,8 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	}
 	if vm.Shell.Footer.Mode != "workspace" ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "new", ActionFooterNewWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "h", "prev", ActionFooterPreviousWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "l", "next", ActionFooterNextWorkspace.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionFooterRenameWorkspace.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "t", "tree", ActionFooterOpenTree.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "delete", ActionFooterDeleteWorkspace.String()) ||

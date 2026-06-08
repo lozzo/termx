@@ -757,6 +757,104 @@ func TestInteractiveRuntimeWorkspaceNewRenameFooterActions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeWorkspaceSwitchFooterActions(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	shell, result := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create workspace: %#v", result)
+	}
+	remoteWorkspaceID := result.ID
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceSwitch, TargetID: state.DefaultWorkspaceID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("switch workspace: %#v", result)
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   shell.SetInteractionMode(state.InteractionModeWorkspace),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+
+	nextAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterNextWorkspace.String(), "")
+	if err := host.SendInput(mouseEventAt(nextAction.Rect)); err != nil {
+		t.Fatalf("send workspace next footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workspace next footer click: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().Workspace.ID; got != remoteWorkspaceID {
+		t.Fatalf("workspace next footer action should activate remote workspace, got %q", got)
+	}
+
+	prevAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterPreviousWorkspace.String(), "")
+	if err := host.SendInput(mouseEventAt(prevAction.Rect)); err != nil {
+		t.Fatalf("send workspace previous footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workspace previous footer click: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().Workspace.ID; got != state.DefaultWorkspaceID {
+		t.Fatalf("workspace previous footer action should return to default workspace, got %q", got)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("workspace switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeSingleWorkspaceSwitchFooterActionsStayStable(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModeWorkspace),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	for _, actionID := range []string{render.ActionFooterNextWorkspace.String(), render.ActionFooterPreviousWorkspace.String()} {
+		action := frameActionHitRegion(t, lastRuntimeFrame(t, host), actionID, "")
+		if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+			t.Fatalf("send single workspace switch footer click %s: %v", actionID, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain single workspace switch footer click %s: %v", actionID, err)
+		}
+		shell := runtime.State().Shell.EnsureDefaults()
+		if shell.Workspace.ID != state.DefaultWorkspaceID || len(shell.Workspaces) != 1 {
+			t.Fatalf("single workspace switch footer action %s should keep state stable, got %#v", actionID, shell)
+		}
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("single workspace switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func workspaceIDExistsForTest(workspaces []state.WorkspaceState, id string) bool {
 	for _, workspace := range workspaces {
 		if workspace.ID == id {
