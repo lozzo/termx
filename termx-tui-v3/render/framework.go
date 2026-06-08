@@ -495,7 +495,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 			layers = append(layers, layer)
 		}
 	}
-	applyTmuxVisualAuditChromeCorrections(c, plan)
+	applyChromePatches(c, shell.Layout.ChromePatches, plan)
 
 	toastLayers := renderToasts(c, shell.Toasts, plan.Toasts)
 	for _, layer := range toastLayers {
@@ -518,48 +518,32 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	}
 }
 
-func applyTmuxVisualAuditChromeCorrections(c *canvas, plan LayoutPlan) {
-	if !tmuxVisualAuditChromePlan(plan) {
-		return
+func applyChromePatches(c *canvas, patches []ChromePatchVM, plan LayoutPlan) {
+	for _, patch := range patches {
+		x, y := chromePatchOrigin(patch, plan)
+		width := patch.W
+		if width <= 0 {
+			width = DisplayWidth(patch.Text)
+		}
+		layer := patch.Layer
+		if layer == "" {
+			layer = LayerChrome
+		}
+		owner := patch.Owner
+		if owner == "" {
+			owner = "chrome:patch"
+		}
+		c.writeTextStyled(x, y, width, patch.Text, patch.Style, owner, layer)
 	}
-	// 固定 tmux 视觉证据帧来自 tuiv2 slot contract；这些修正只处理该证据帧中非统一右边界的 chrome 列。
-	y := plan.Body.Y
-	c.writeTextStyled(72, y, 9, " ↕  ↔  × ", StyleAccent, "pane:visual-audit", LayerPanel)
-	c.writeTextStyled(81, y, 2, "│ ", StyleMuted, "pane:visual-audit", LayerPanel)
-	c.writeTextStyled(83, y, 30, "logs "+strings.Repeat("─", 21)+" × │", StyleMuted, "pane:visual-audit", LayerPanel)
-	c.writeTextStyled(82, y+1, 32, "│ visual review baseline       │", StyleMuted, "pane:visual-audit", LayerPanel)
-	c.writeTextStyled(83, y+2, 32, "│ target visual mismatch       │", StyleMuted, "pane:visual-audit", LayerPanel)
-	c.writeTextStyled(83, y+3, 32, "│ emoji 🚀 and 中文            │", StyleMuted, "pane:visual-audit", LayerPanel)
-
-	floatY := y + 7
-	c.writeTextStyled(85, floatY, 28, "│"+strings.Repeat(" ", 26)+"│", StyleAccent, "floating:visual-audit", LayerFloating)
-	c.writeTextStyled(113, floatY, 3, " │ ", StyleStatus, "shell:frame", LayerChrome)
-	c.writeTextStyled(85, floatY+4, 28, "│ Close"+strings.Repeat(" ", 20)+"│", StyleAccent, "floating:visual-audit", LayerFloating)
-	c.writeTextStyled(113, floatY+4, 3, " │ ", StyleStatus, "shell:frame", LayerChrome)
-	c.writeTextStyled(85, floatY+5, 28, "└"+strings.Repeat("─", 26)+"┘", StyleAccent, "floating:visual-audit", LayerFloating)
-	c.writeTextStyled(113, floatY+5, 3, " │ ", StyleStatus, "shell:frame", LayerChrome)
 }
 
-func tmuxVisualAuditChromePlan(plan LayoutPlan) bool {
-	if plan.Body != (Rect{X: 1, Y: 2, W: 112, H: 36}) {
-		return false
+func chromePatchOrigin(patch ChromePatchVM, plan LayoutPlan) (int, int) {
+	switch patch.Anchor {
+	case ChromePatchAnchorBody:
+		return plan.Body.X + patch.X, plan.Body.Y + patch.Y
+	default:
+		return patch.X, patch.Y
 	}
-	hasLogs := false
-	for _, panel := range plan.Panels {
-		if panel.Panel.ID == "pane-logs" {
-			hasLogs = true
-			break
-		}
-	}
-	if !hasLogs {
-		return false
-	}
-	for _, floating := range plan.Floatings {
-		if floating.Floating.ID == "float-visual" {
-			return true
-		}
-	}
-	return false
 }
 
 func renderShellFrame(c *canvas, plan LayoutPlan) {
@@ -1863,7 +1847,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		style = StyleAccent
 	}
 	owner := "floating:" + floating.ID
-	if floating.ID != "float-visual" {
+	if floating.Chrome.FillOverlay {
 		c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
 	}
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
@@ -1879,12 +1863,12 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		state = paneChromeFloatingCollapseGlyph() + " collapsed"
 	}
 	renderChromeCardTitle(c, rect, title, state, paneChromeCloseActionText(), style, owner, LayerFloating)
-	if floating.ID == "float-visual" {
+	if floating.Chrome.ExtendShellRight {
 		for y := rect.Y; y < rect.Y+rect.H; y++ {
 			c.writeTextStyled(rect.X+rect.W+1, y, 1, "│", StyleStatus, "shell:frame", LayerChrome)
 		}
 	}
-	if rect.W >= 2 && rect.H >= 2 && floating.ID != "float-visual" {
+	if rect.W >= 2 && rect.H >= 2 && floating.Chrome.ShowResizeHandle {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "◢", style, owner, LayerFloating)
 	}
 	var contentLines []Line

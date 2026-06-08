@@ -81,37 +81,6 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderKeepsVisualAuditPaneChromeAsStructuredSlot(t *testing.T) {
-	root := state.Root{
-		Shell: state.ShellStore{
-			HeaderVisible: true,
-			FooterVisible: true,
-			Workspace: state.WorkspaceState{
-				Name:        "main",
-				ActiveTabID: "tab-1",
-				Tabs: []state.TabState{{
-					ID: "tab-1",
-					Panes: []state.PaneState{{
-						ID:    "pane-logs",
-						Title: "logs",
-						Kind:  state.PaneTerminalLive,
-					}},
-				}},
-			},
-			ActivePaneID: "pane-logs",
-		},
-	}
-
-	vm := NewRenderVMBuilder().Build(root)
-	if len(vm.Shell.Layout.Panels) != 1 {
-		t.Fatalf("expected visual audit panel, got %#v", vm.Shell.Layout.Panels)
-	}
-	actions := vm.Shell.Layout.Panels[0].Chrome.Actions
-	if len(actions) != 1 || actions[0].Text != paneChromeCloseActionText() || actions[0].ActionID != ActionPaneClose.String() {
-		t.Fatalf("visual audit pane should express close-only chrome as VM slot, got %#v", actions)
-	}
-}
-
 func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -285,6 +286,44 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 		t.Fatalf("top/bottom bars should output status background SGR, got %#v", frame.ANSILines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 120)
+}
+
+func TestFrameworkAppliesChromePatchesFromVM(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 32, H: 8},
+			ChromePatches: []ChromePatchVM{
+				{Anchor: ChromePatchAnchorBody, X: 2, Y: 1, Text: "patched", Style: StyleAccent, Owner: "test:patch", Layer: LayerChrome},
+			},
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Title:        "shell",
+				Presentation: PanelPresentationCard,
+			}},
+		},
+	}})
+	frame := result.Frame()
+	if !strings.Contains(frame.Lines[1], "patched") {
+		t.Fatalf("chrome patch should write relative to body, got %#v", frame.Lines)
+	}
+	if !styledLinesContainText(frame.StyledLines, "patched", StyleAccent) {
+		t.Fatalf("chrome patch should keep VM style, got %#v", frame.StyledLines)
+	}
+}
+
+func TestRenderFrameworkAndBuilderDoNotEmbedVisualAuditIDs(t *testing.T) {
+	for _, file := range []string{"framework.go", "vm.go"} {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read render source %s: %v", file, err)
+		}
+		text := string(source)
+		for _, forbidden := range []string{"visual-audit", "pane-logs", "float-visual"} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s should consume explicit VM chrome data instead of visual-audit id %q", file, forbidden)
+			}
+		}
+	}
 }
 
 func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {

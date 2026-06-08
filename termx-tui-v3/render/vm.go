@@ -394,9 +394,6 @@ func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
 	out := make([]FloatingVM, 0, len(shell.Floatings))
 	for _, floating := range shell.Floatings {
 		content := placeholderContentForPane(floating.Pane)
-		if visualAuditFloatingPane(floating.Pane) {
-			content = visualAuditFloatingContent()
-		}
 		out = append(out, FloatingVM{
 			ID:        floating.ID,
 			Title:     floating.Title,
@@ -404,10 +401,15 @@ func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
 			Z:         floating.Z,
 			Active:    floating.Active,
 			Collapsed: floating.Collapsed,
+			Chrome:    floatingChromeVM(floating),
 			Content:   content,
 		})
 	}
 	return out
+}
+
+func floatingChromeVM(floating state.FloatingPaneState) FloatingChromeVM {
+	return FloatingChromeVM{FillOverlay: true, ShowResizeHandle: true}
 }
 
 func buildPanelChromeVM(pane state.PaneState, active bool) PanelChromeVM {
@@ -416,10 +418,6 @@ func buildPanelChromeVM(pane state.PaneState, active bool) PanelChromeVM {
 		style = StyleAccent
 	}
 	actions := defaultPaneChromeActionVMs(style)
-	// 固定视觉审核 pane 只展示可见 close 槽位，但仍走同一 action slot/hit-region contract。
-	if pane.ID == "pane-logs" {
-		actions = []ChromeActionVM{{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String(), Style: style}}
-	}
 	return PanelChromeVM{Actions: actions}
 }
 
@@ -428,26 +426,6 @@ func defaultPaneChromeActionVMs(style StyleToken) []ChromeActionVM {
 		{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String(), Style: style},
 		{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String(), Style: style},
 		{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String(), Style: style},
-	}
-}
-
-func visualAuditFloatingPane(pane state.PaneState) bool {
-	return pane.ID == "float-visual-pane" && pane.Kind == state.PaneEmpty
-}
-
-// 固定视觉审核帧需要贴合线稿文案；真实 empty pane 仍使用通用 action chip 内容。
-func visualAuditFloatingContent() ContentVM {
-	return ContentVM{
-		Kind: ContentEmptyPane,
-		Lines: []Line{
-			NewLine(" No terminal attached"),
-			NewLine(""),
-			NewLine(" Attach existing"),
-			NewLine(" New terminal"),
-			NewLine(" Terminal Pool"),
-			NewLine(" Close"),
-		},
-		Empty: true,
 	}
 }
 

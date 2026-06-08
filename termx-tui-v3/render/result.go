@@ -468,6 +468,7 @@ type LayoutVM struct {
 	Panels             []PanelVM
 	Floating           []FloatingVM
 	Split              SplitVM
+	ChromePatches      []ChromePatchVM
 }
 
 type SplitDirection string
@@ -495,8 +496,33 @@ type FloatingVM struct {
 	Z         int
 	Active    bool
 	Collapsed bool
+	Chrome    FloatingChromeVM
 	Content   ContentVM
 }
+
+type FloatingChromeVM struct {
+	FillOverlay      bool
+	ShowResizeHandle bool
+	ExtendShellRight bool
+}
+
+type ChromePatchVM struct {
+	Anchor ChromePatchAnchor
+	X      int
+	Y      int
+	W      int
+	Text   string
+	Style  StyleToken
+	Layer  LayerKind
+	Owner  string
+}
+
+type ChromePatchAnchor string
+
+const (
+	ChromePatchAnchorViewport ChromePatchAnchor = "viewport"
+	ChromePatchAnchorBody     ChromePatchAnchor = "body"
+)
 
 type HeaderTabVM struct {
 	ID            string

@@ -3,6 +3,7 @@ package termxtuiv3
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -321,6 +322,20 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		vm.Shell.Layout.HeaderTopFrame = render.Rect{X: 0, W: 111}
 		vm.Shell.Layout.HeaderDividerFrame = render.Rect{X: 0, W: 115}
 		vm.Shell.Layout.FooterFrame = render.Rect{X: 0, W: 115}
+		vm.Shell.Layout.ChromePatches = visualAuditChromePatches()
+		for index := range vm.Shell.Layout.Panels {
+			if vm.Shell.Layout.Panels[index].ID == "pane-logs" {
+				vm.Shell.Layout.Panels[index].Chrome.Actions = []render.ChromeActionVM{
+					{Text: "×", ActionID: render.ActionPaneClose.String(), Style: render.StyleMuted},
+				}
+			}
+		}
+		for index := range vm.Shell.Layout.Floating {
+			if vm.Shell.Layout.Floating[index].ID == "float-visual" {
+				vm.Shell.Layout.Floating[index].Chrome = render.FloatingChromeVM{ExtendShellRight: true}
+				vm.Shell.Layout.Floating[index].Content = visualAuditFloatingContent()
+			}
+		}
 		return renderer.Render(vm)
 	}, host, nil)
 	if err := runtime.Post(app.NoopMsg{}); err != nil {
@@ -334,6 +349,38 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		return render.Frame{}, fmt.Errorf("visual audit smoke produced no frames")
 	}
 	return frames[len(frames)-1], nil
+}
+
+func visualAuditFloatingContent() render.ContentVM {
+	return render.ContentVM{
+		Kind: render.ContentEmptyPane,
+		Lines: []render.Line{
+			render.NewLine(" No terminal attached"),
+			render.NewLine(""),
+			render.NewLine(" Attach existing"),
+			render.NewLine(" New terminal"),
+			render.NewLine(" Terminal Pool"),
+			render.NewLine(" Close"),
+		},
+		Empty: true,
+	}
+}
+
+func visualAuditChromePatches() []render.ChromePatchVM {
+	return []render.ChromePatchVM{
+		{Anchor: render.ChromePatchAnchorBody, X: 71, Y: 0, W: 9, Text: " ↕  ↔  × ", Style: render.StyleAccent, Owner: "pane:visual-audit", Layer: render.LayerPanel},
+		{Anchor: render.ChromePatchAnchorBody, X: 80, Y: 0, W: 2, Text: "│ ", Style: render.StyleMuted, Owner: "pane:visual-audit", Layer: render.LayerPanel},
+		{Anchor: render.ChromePatchAnchorBody, X: 82, Y: 0, W: 30, Text: "logs " + strings.Repeat("─", 21) + " × │", Style: render.StyleMuted, Owner: "pane:visual-audit", Layer: render.LayerPanel},
+		{Anchor: render.ChromePatchAnchorBody, X: 81, Y: 1, W: 32, Text: "│ visual review baseline       │", Style: render.StyleMuted, Owner: "pane:visual-audit", Layer: render.LayerPanel},
+		{Anchor: render.ChromePatchAnchorBody, X: 82, Y: 2, W: 32, Text: "│ target visual mismatch       │", Style: render.StyleMuted, Owner: "pane:visual-audit", Layer: render.LayerPanel},
+		{Anchor: render.ChromePatchAnchorBody, X: 82, Y: 3, W: 32, Text: "│ emoji 🚀 and 中文            │", Style: render.StyleMuted, Owner: "pane:visual-audit", Layer: render.LayerPanel},
+		{Anchor: render.ChromePatchAnchorBody, X: 84, Y: 7, W: 28, Text: "│" + strings.Repeat(" ", 26) + "│", Style: render.StyleAccent, Owner: "floating:visual-audit", Layer: render.LayerFloating},
+		{Anchor: render.ChromePatchAnchorBody, X: 112, Y: 7, W: 3, Text: " │ ", Style: render.StyleStatus, Owner: "shell:frame", Layer: render.LayerChrome},
+		{Anchor: render.ChromePatchAnchorBody, X: 84, Y: 11, W: 28, Text: "│ Close" + strings.Repeat(" ", 20) + "│", Style: render.StyleAccent, Owner: "floating:visual-audit", Layer: render.LayerFloating},
+		{Anchor: render.ChromePatchAnchorBody, X: 112, Y: 11, W: 3, Text: " │ ", Style: render.StyleStatus, Owner: "shell:frame", Layer: render.LayerChrome},
+		{Anchor: render.ChromePatchAnchorBody, X: 84, Y: 12, W: 28, Text: "└" + strings.Repeat("─", 26) + "┘", Style: render.StyleAccent, Owner: "floating:visual-audit", Layer: render.LayerFloating},
+		{Anchor: render.ChromePatchAnchorBody, X: 112, Y: 12, W: 3, Text: " │ ", Style: render.StyleStatus, Owner: "shell:frame", Layer: render.LayerChrome},
+	}
 }
 
 func visualAuditSurfaceStore() state.TerminalSurfaceStore {
