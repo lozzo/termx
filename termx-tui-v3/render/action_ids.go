@@ -47,6 +47,7 @@ const (
 	ActionFooterDeleteWorkspace   ActionID = "footer.delete-workspace"
 
 	ActionFloatingRaise      ActionID = "floating.raise"
+	ActionFloatingNew        ActionID = "floating.new"
 	ActionFloatingClose      ActionID = "floating.close"
 	ActionFloatingResize     ActionID = "floating.resize"
 	ActionFloatingMoveDrag   ActionID = "floating.move-drag"
@@ -128,6 +129,7 @@ func ActionIDCatalog() []ActionID {
 		ActionFooterNextWorkspace,
 		ActionFooterDeleteWorkspace,
 		ActionFloatingRaise,
+		ActionFloatingNew,
 		ActionFloatingClose,
 		ActionFloatingResize,
 		ActionFloatingMoveDrag,

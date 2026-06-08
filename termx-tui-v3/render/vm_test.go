@@ -520,6 +520,13 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "b", "balance", ActionResizeBalance.String()) {
 		t.Fatalf("expected resize footer structural actions, got %#v", vm.Shell.Footer)
 	}
+	shell = shell.SetInteractionMode(state.InteractionModeFloating)
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Footer.Mode != "floating" ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "new", ActionFloatingNew.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "close", ActionFloatingClose.String()) {
+		t.Fatalf("expected floating footer structural actions, got %#v", vm.Shell.Footer)
+	}
 
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})

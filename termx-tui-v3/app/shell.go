@@ -402,9 +402,18 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionHelpClose.String():
 		root.Shell = root.Shell.CloseOverlay()
 		return root.Advance(), nil
+	case render.ActionFloatingNew.String():
+		return reduceFloatingCommand(root, state.FloatingCommand{
+			Action:   state.FloatingCommandCreate,
+			TargetID: nextFloatingID(root.Shell),
+			Pane:     state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty},
+			Title:    "floating",
+			Source:   state.PaneCommandSourceMouse,
+		})
 	case render.ActionFloatingRaise.String():
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingClose.String():
+		// footer close 没有 pane id 时，FloatingCommand 会按 active floating 作为目标。
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingResize.String():
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})

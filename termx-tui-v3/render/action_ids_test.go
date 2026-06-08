@@ -49,6 +49,7 @@ func TestActionIDCatalogIsUniqueAndCoversRenderedActions(t *testing.T) {
 		ActionFooterNextWorkspace,
 		ActionFooterDeleteWorkspace,
 		ActionFloatingRaise,
+		ActionFloatingNew,
 		ActionFloatingClose,
 		ActionFloatingMoveDrag,
 		ActionFloatingResizeDrag,

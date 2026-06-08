@@ -836,6 +836,95 @@ func TestInteractiveRuntimeResizeModeFooterActionSinglePaneStaysStable(t *testin
 	}
 }
 
+func TestInteractiveRuntimeFloatingFooterActions(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModeFloating),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+
+	newAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFloatingNew.String(), "")
+	if err := host.SendInput(mouseEventAt(newAction.Rect)); err != nil {
+		t.Fatalf("send floating new footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating new footer click: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if len(shell.Floatings) != 1 || shell.ActiveFloatingID == "" || !shell.Floatings[0].Active {
+		t.Fatalf("floating new footer action should create active floating, shell=%#v", shell)
+	}
+
+	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFloatingClose.String(), "")
+	if err := host.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
+		t.Fatalf("send active floating close footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain active floating close footer click: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if len(shell.Floatings) != 0 || shell.ActiveFloatingID != "" {
+		t.Fatalf("floating close footer action should close active floating, shell=%#v", shell)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("floating footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeFloatingFooterCloseWithoutActiveShowsFeedback(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModeFloating),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFloatingClose.String(), "")
+	if err := host.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
+		t.Fatalf("send inactive floating close footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain inactive floating close footer click: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if len(shell.Toasts) == 0 || shell.Toasts[len(shell.Toasts)-1].Body != "floating not found" {
+		t.Fatalf("floating close without active target should show feedback, got %#v", shell.Toasts)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("inactive floating close footer action must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestInteractiveRuntimeSingleTabSwitchFooterActionsStayStable(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(110, 24)
