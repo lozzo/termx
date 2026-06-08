@@ -71,6 +71,9 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	if len(vm.Shell.Header.Tabs) != 2 || vm.Shell.Header.Tabs[0].Title != "shell" || vm.Shell.Header.Tabs[1].Title != "build" || !vm.Shell.Header.Tabs[1].Active {
 		t.Fatalf("header should expose structured tab slots, got %#v", vm.Shell.Header.Tabs)
 	}
+	if vm.Shell.Header.Tabs[0].CloseTargetID != "tab-shell" || vm.Shell.Header.Tabs[1].CloseTargetID != "tab-build" {
+		t.Fatalf("header tab close slots should carry target tab ids, got %#v", vm.Shell.Header.Tabs)
+	}
 	if len(vm.Shell.Footer.ActionTokens) == 0 || vm.Shell.Footer.ActionTokens[0].Key != "^P" || vm.Shell.Footer.ActionTokens[0].Label != "pane" {
 		t.Fatalf("footer should expose structured action tokens, got %#v", vm.Shell.Footer.ActionTokens)
 	}

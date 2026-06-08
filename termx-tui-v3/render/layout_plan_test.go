@@ -191,7 +191,15 @@ func TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect(t *testing.T) {
 
 func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	shell := ShellVM{
-		Header: HeaderVM{Visible: true, Workspace: "main", Tab: "[main] logs", ActivePane: "pane-main"},
+		Header: HeaderVM{
+			Visible:   true,
+			Workspace: "main",
+			Tabs: []HeaderTabVM{
+				{ID: "tab-main", Title: "main", Index: 1, Active: true, CloseActionID: ActionTabClose.String(), CloseTargetID: "tab-main"},
+				{ID: "tab-logs", Title: "logs", Index: 2, CloseActionID: ActionTabClose.String(), CloseTargetID: "tab-logs"},
+			},
+			ActivePane: "pane-main",
+		},
 		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
 	}
 	plan := MeasureLayout(shell, Rect{W: 80, H: 20})
@@ -199,6 +207,9 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	createRegion := hitRegionByAction(t, plan.HitRegions, ActionTabCreate.String())
 	if closeRegion.Kind != HitRegionContentAction || closeRegion.Rect.Y != plan.Header.Y || closeRegion.Rect.W != DisplayWidth("× ") {
 		t.Fatalf("unexpected tab close region %#v", closeRegion)
+	}
+	if closeRegion.PaneID != "tab-main" {
+		t.Fatalf("tab close hit region should carry target tab id, got %#v", closeRegion)
 	}
 	if createRegion.Kind != HitRegionContentAction || createRegion.Rect.Y != plan.Header.Y || createRegion.Rect.W != DisplayWidth(" ＋ ") {
 		t.Fatalf("unexpected tab create region %#v", createRegion)

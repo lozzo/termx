@@ -711,10 +711,14 @@ func headerTabSegmentsForHeader(header HeaderVM, fallback string) []barSegment {
 		if closeAction == "" {
 			closeAction = ActionTabClose.String()
 		}
+		closeTarget := tab.CloseTargetID
+		if closeTarget == "" {
+			closeTarget = tab.ID
+		}
 		segments = append(segments,
 			headerSep(),
 			barText(" "+intLabel(tabIndex)+":"+label+" ", style, priority),
-			barText("× ", StyleStatusWarning, 2).withAction(closeAction),
+			barText("× ", StyleStatusWarning, 2).withAction(closeAction).withTarget(closeTarget),
 		)
 	}
 	return segments
@@ -1066,6 +1070,7 @@ type barSegment struct {
 	style    StyleToken
 	priority int
 	actionID string
+	targetID string
 	joint    bool
 }
 
@@ -1075,6 +1080,11 @@ func barText(text string, style StyleToken, priority int) barSegment {
 
 func (segment barSegment) withAction(actionID string) barSegment {
 	segment.actionID = actionID
+	return segment
+}
+
+func (segment barSegment) withTarget(targetID string) barSegment {
+	segment.targetID = targetID
 	return segment
 }
 

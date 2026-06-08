@@ -271,6 +271,7 @@ func buildHeaderTabVMs(shell state.ShellStore) []HeaderTabVM {
 			Index:         1,
 			Active:        true,
 			CloseActionID: ActionTabClose.String(),
+			CloseTargetID: "main",
 		}}
 	}
 	out := make([]HeaderTabVM, 0, len(tabs))
@@ -288,6 +289,7 @@ func buildHeaderTabVMs(shell state.ShellStore) []HeaderTabVM {
 			Index:         index + 1,
 			Active:        tab.ID == shell.Workspace.ActiveTabID || (shell.Workspace.ActiveTabID == "" && index == 0),
 			CloseActionID: ActionTabClose.String(),
+			CloseTargetID: tab.ID,
 		})
 	}
 	return out

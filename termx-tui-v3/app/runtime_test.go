@@ -482,7 +482,7 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	if err := closeRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("close initial drain: %v", err)
 	}
-	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, closeHost), render.ActionTabClose.String(), "")
+	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, closeHost), render.ActionTabClose.String(), "tab-2")
 	if err := closeHost.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
 		t.Fatalf("send tab close click: %v", err)
 	}
@@ -491,6 +491,27 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	}
 	if tabs := closeRuntime.State().Shell.EnsureDefaults().Workspace.Tabs; len(tabs) != 1 || tabs[0].Title != "main" {
 		t.Fatalf("tab close click should remove active tab and keep main, got %#v", tabs)
+	}
+
+	targetHost := NewFakeTerminalHost(8)
+	targetShell, _ := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	targetRoot := state.Root{Shell: targetShell}
+	targetRuntime := newShellHitRuntime(targetRoot, targetHost)
+	if err := targetRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post target close initial render: %v", err)
+	}
+	if err := targetRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("target close initial drain: %v", err)
+	}
+	mainCloseAction := frameActionHitRegion(t, lastRuntimeFrame(t, targetHost), render.ActionTabClose.String(), state.DefaultTabID)
+	if err := targetHost.SendInput(mouseEventAt(mainCloseAction.Rect)); err != nil {
+		t.Fatalf("send inactive tab close click: %v", err)
+	}
+	if err := targetRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("target close drain: %v", err)
+	}
+	if tabs := targetRuntime.State().Shell.EnsureDefaults().Workspace.Tabs; len(tabs) != 1 || tabs[0].Title != "logs" || targetRuntime.State().Shell.EnsureDefaults().Workspace.ActiveTabID != tabs[0].ID {
+		t.Fatalf("inactive tab close click should close the clicked tab and keep active logs tab, got %#v shell=%#v", tabs, targetRuntime.State().Shell.EnsureDefaults())
 	}
 
 	createHost := NewFakeTerminalHost(8)

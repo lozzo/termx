@@ -538,6 +538,7 @@ type HeaderTabVM struct {
 	Index         int
 	Active        bool
 	CloseActionID string
+	CloseTargetID string
 }
 
 type HeaderVM struct {

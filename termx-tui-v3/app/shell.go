@@ -239,7 +239,7 @@ func NewShellReducer() Reducer {
 func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {
 	switch msg.ActionID {
 	case render.ActionTabClose.String():
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, Source: state.PaneCommandSourceMouse})
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionTabCreate.String():
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse})

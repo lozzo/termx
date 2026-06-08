@@ -329,7 +329,7 @@ func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewpor
 			continue
 		}
 		if segment.actionID != "" {
-			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: Rect{X: x, Y: rect.Y, W: width, H: rect.H}, ActionID: segment.actionID}, viewport)
+			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: Rect{X: x, Y: rect.Y, W: width, H: rect.H}, ActionID: segment.actionID, PaneID: segment.targetID}, viewport)
 		}
 		x += width
 		if x >= rect.X+rect.W {
