@@ -15,9 +15,11 @@ const (
 	ActionPaneSplitRight ActionID = "pane.split-right"
 	ActionPaneClose      ActionID = "pane.close"
 
-	ActionTabCreate ActionID = "tab.create"
-	ActionTabClose  ActionID = "tab.close"
-	ActionTabRename ActionID = "tab.rename"
+	ActionTabCreate   ActionID = "tab.create"
+	ActionTabClose    ActionID = "tab.close"
+	ActionTabRename   ActionID = "tab.rename"
+	ActionTabPrevious ActionID = "tab.previous"
+	ActionTabNext     ActionID = "tab.next"
 
 	ActionFooterPaneMode          ActionID = "footer.mode-pane"
 	ActionFooterResizeMode        ActionID = "footer.mode-resize"
@@ -90,6 +92,8 @@ func ActionIDCatalog() []ActionID {
 		ActionTabCreate,
 		ActionTabClose,
 		ActionTabRename,
+		ActionTabPrevious,
+		ActionTabNext,
 		ActionFooterPaneMode,
 		ActionFooterResizeMode,
 		ActionFooterGlobalMode,

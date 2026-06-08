@@ -528,6 +528,8 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	shell = shell.SetInteractionMode(state.InteractionModeTab)
 	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Footer.Mode != "tab" ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "h", "prev", ActionTabPrevious.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "l", "next", ActionTabNext.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionTabRename.String()) {
 		t.Fatalf("expected tab footer rename action, got %#v", vm.Shell.Footer)
 	}

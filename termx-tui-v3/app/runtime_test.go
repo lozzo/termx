@@ -536,7 +536,7 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 
 func TestInteractiveRuntimeTabRenameFooterAction(t *testing.T) {
 	host := NewFakeTerminalHost(16)
-	host.SetSize(110, 24)
+	host.SetSize(140, 24)
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
 	}
@@ -573,6 +573,99 @@ func TestInteractiveRuntimeTabRenameFooterAction(t *testing.T) {
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("tab rename footer action must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeTabSwitchFooterActions(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	shell, result := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create tab: %#v", result)
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   shell.SetInteractionMode(state.InteractionModeTab),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+
+	prevAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionTabPrevious.String(), "")
+	if err := host.SendInput(mouseEventAt(prevAction.Rect)); err != nil {
+		t.Fatalf("send tab previous footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tab previous footer click: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().Workspace.ActiveTabID; got != state.DefaultTabID {
+		t.Fatalf("tab previous footer action should activate default tab, got %q", got)
+	}
+
+	nextAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionTabNext.String(), "")
+	if err := host.SendInput(mouseEventAt(nextAction.Rect)); err != nil {
+		t.Fatalf("send tab next footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tab next footer click: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().Workspace.ActiveTabID; got == state.DefaultTabID {
+		t.Fatalf("tab next footer action should return to logs tab, got %q", got)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("tab switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeSingleTabSwitchFooterActionsStayStable(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModeTab),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+	for _, actionID := range []string{render.ActionTabNext.String(), render.ActionTabPrevious.String()} {
+		action := frameActionHitRegion(t, lastRuntimeFrame(t, host), actionID, "")
+		if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+			t.Fatalf("send single tab switch footer click %s: %v", actionID, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain single tab switch footer click %s: %v", actionID, err)
+		}
+		shell := runtime.State().Shell.EnsureDefaults()
+		if shell.Workspace.ActiveTabID != state.DefaultTabID || len(shell.Workspace.Tabs) != 1 {
+			t.Fatalf("single tab switch footer action %s should keep state stable, got %#v", actionID, shell)
+		}
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("single tab switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 

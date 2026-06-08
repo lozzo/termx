@@ -22,6 +22,8 @@ func TestActionIDCatalogIsUniqueAndCoversRenderedActions(t *testing.T) {
 		ActionTabCreate,
 		ActionTabClose,
 		ActionTabRename,
+		ActionTabPrevious,
+		ActionTabNext,
 		ActionFooterPaneMode,
 		ActionFooterResizeMode,
 		ActionFooterGlobalMode,
