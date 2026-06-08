@@ -703,6 +703,60 @@ func TestInteractiveRuntimeWorkspaceDeleteFooterAction(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeWorkspaceNewRenameFooterActions(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 24)
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 100, Rows: 24},
+	}
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell:   state.DefaultShell().SetInteractionMode(state.InteractionModeWorkspace),
+			Session: state.TerminalSessionStore{}.Attach("term-1", 5, 100, 24),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain render: %v", err)
+	}
+
+	newAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterNewWorkspace.String(), "")
+	if err := host.SendInput(mouseEventAt(newAction.Rect)); err != nil {
+		t.Fatalf("send workspace new footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workspace new footer click: %v", err)
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if len(shell.Workspaces) != 2 || shell.Workspace.ID == state.DefaultWorkspaceID || shell.Workspace.Name != "workspace 2" {
+		t.Fatalf("workspace new footer action should create and activate next workspace, got %#v", shell)
+	}
+	if !toastExistsForTest(shell.Toasts, string(state.WorkbenchCommandWorkspaceCreate), shell.Workspace.ID) {
+		t.Fatalf("workspace new footer action should show create feedback, got %#v", shell.Toasts)
+	}
+
+	renameAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterRenameWorkspace.String(), "")
+	if err := host.SendInput(mouseEventAt(renameAction.Rect)); err != nil {
+		t.Fatalf("send workspace rename footer click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workspace rename footer click: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if !shell.Overlay.Open || shell.Overlay.Prompt.Purpose != "workspace.rename" || shell.Overlay.Prompt.Value != "workspace 2" {
+		t.Fatalf("workspace rename footer action should open active workspace rename prompt, got %#v", shell.Overlay)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("workspace new/rename footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func workspaceIDExistsForTest(workspaces []state.WorkspaceState, id string) bool {
 	for _, workspace := range workspaces {
 		if workspace.ID == id {

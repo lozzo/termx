@@ -28,6 +28,8 @@ const (
 	ActionFooterOpenTree        ActionID = "footer.open-tree"
 	ActionFooterCloseToast      ActionID = "footer.close-toast"
 	ActionFooterClearToasts     ActionID = "footer.clear-toasts"
+	ActionFooterNewWorkspace    ActionID = "footer.new-workspace"
+	ActionFooterRenameWorkspace ActionID = "footer.rename-workspace"
 	ActionFooterDeleteWorkspace ActionID = "footer.delete-workspace"
 
 	ActionFloatingRaise      ActionID = "floating.raise"
@@ -94,6 +96,8 @@ func ActionIDCatalog() []ActionID {
 		ActionFooterOpenTree,
 		ActionFooterCloseToast,
 		ActionFooterClearToasts,
+		ActionFooterNewWorkspace,
+		ActionFooterRenameWorkspace,
 		ActionFooterDeleteWorkspace,
 		ActionFloatingRaise,
 		ActionFloatingClose,

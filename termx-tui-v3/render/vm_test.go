@@ -510,6 +510,8 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		t.Fatalf("expected active workspace header, got %#v", vm.Shell.Header)
 	}
 	if vm.Shell.Footer.Mode != "workspace" ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "new", ActionFooterNewWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionFooterRenameWorkspace.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "t", "tree", ActionFooterOpenTree.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "delete", ActionFooterDeleteWorkspace.String()) ||
 		!strings.Contains(vm.Shell.Footer.GlobalSummary, "tabs:1") {

@@ -402,13 +402,7 @@ func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.Wor
 		command.Action = state.WorkbenchCommandWorkspacePrevious
 		return command, state.PromptState{}, true
 	case "workspace rename":
-		return command, state.PromptState{
-			Title:       "Rename Workspace",
-			Context:     "Rename current workspace. Submit applies through workbench command.",
-			Purpose:     "workspace.rename",
-			Value:       shell.Workspace.Name,
-			Placeholder: "workspace name",
-		}, true
+		return command, workspaceRenamePrompt(shell), true
 	case "workspace delete confirm=accepted":
 		command.Action = state.WorkbenchCommandWorkspaceDelete
 		command.Confirm = state.PaneConfirmAccepted
@@ -560,6 +554,17 @@ func nextTabName(shell state.ShellStore) string {
 func nextWorkspaceName(shell state.ShellStore) string {
 	shell = shell.EnsureDefaults()
 	return fmt.Sprintf("workspace %d", len(shell.Workspaces)+1)
+}
+
+func workspaceRenamePrompt(shell state.ShellStore) state.PromptState {
+	shell = shell.EnsureDefaults()
+	return state.PromptState{
+		Title:       "Rename Workspace",
+		Context:     "Rename current workspace. Submit applies through workbench command.",
+		Purpose:     "workspace.rename",
+		Value:       shell.Workspace.Name,
+		Placeholder: "workspace name",
+	}
 }
 
 func nextKeyboardPaneID(shell state.ShellStore) string {

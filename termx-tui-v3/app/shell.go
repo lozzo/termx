@@ -273,6 +273,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterClearToasts.String():
 		root.Shell = root.Shell.ClearToasts()
 		return root.Advance(), nil
+	case render.ActionFooterNewWorkspace.String():
+		shell := root.Shell.EnsureDefaults()
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: nextWorkspaceName(shell), Source: state.PaneCommandSourceMouse})
+	case render.ActionFooterRenameWorkspace.String():
+		root.Shell = root.Shell.OpenPrompt(workspaceRenamePrompt(root.Shell.EnsureDefaults()))
+		return root.Advance(), nil
 	case render.ActionFooterDeleteWorkspace.String():
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceDelete, TargetID: shell.Workspace.ID, Confirm: state.PaneConfirmAccepted, Source: state.PaneCommandSourceMouse})
