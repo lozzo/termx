@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -88,6 +89,7 @@ func buildHeaderVM(shell state.ShellStore, root state.Root) HeaderVM {
 		Visible:         shell.HeaderVisible,
 		Workspace:       shell.Workspace.Name,
 		Tab:             tabStripSummary(shell),
+		Tabs:            buildHeaderTabVMs(shell),
 		ActivePane:      shell.ActivePaneID,
 		TerminalSummary: terminalSummary(root),
 		FloatingSummary: floatingSummary(shell),
@@ -108,6 +110,7 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 		Mode:          mode,
 		Hint:          hint,
 		Actions:       footerActions(mode),
+		ActionTokens:  footerActionVMs(mode),
 		ActiveTarget:  activeTargetSummary(shell, root),
 		GlobalSummary: globalSummary(shell),
 	}
@@ -196,6 +199,23 @@ func footerActions(mode string) []string {
 	}
 }
 
+func footerActionVMs(mode string) []FooterActionVM {
+	actions := compactFooterActions(footerActions(mode))
+	out := make([]FooterActionVM, 0, len(actions))
+	for _, action := range actions {
+		key, label := splitActionLabel(action)
+		if key == "" {
+			continue
+		}
+		out = append(out, FooterActionVM{
+			Key:   key,
+			Label: label,
+			Style: footerActionKeyStyle(key, label),
+		})
+	}
+	return out
+}
+
 func activeTargetSummary(shell state.ShellStore, root state.Root) string {
 	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
 	paneTitle := shell.ActivePaneID
@@ -237,6 +257,38 @@ func tabStripSummary(shell state.ShellStore) string {
 		} else {
 			out += title
 		}
+	}
+	return out
+}
+
+func buildHeaderTabVMs(shell state.ShellStore) []HeaderTabVM {
+	shell = shell.EnsureDefaults()
+	tabs := shell.Workspace.Tabs
+	if len(tabs) == 0 {
+		return []HeaderTabVM{{
+			ID:            "main",
+			Title:         "main",
+			Index:         1,
+			Active:        true,
+			CloseActionID: ActionTabClose.String(),
+		}}
+	}
+	out := make([]HeaderTabVM, 0, len(tabs))
+	for index, tab := range tabs {
+		title := tab.Title
+		if title == "" {
+			title = tab.ID
+		}
+		if title == "" {
+			title = fmt.Sprintf("tab-%d", index+1)
+		}
+		out = append(out, HeaderTabVM{
+			ID:            tab.ID,
+			Title:         title,
+			Index:         index + 1,
+			Active:        tab.ID == shell.Workspace.ActiveTabID || (shell.Workspace.ActiveTabID == "" && index == 0),
+			CloseActionID: ActionTabClose.String(),
+		})
 	}
 	return out
 }
@@ -294,6 +346,7 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.R
 			Title:        "shell",
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
 			Active:       !floatingOwnsFocus,
+			Chrome:       buildPanelChromeVM(state.PaneState{ID: state.DefaultPaneID, Title: "shell"}, !floatingOwnsFocus),
 			Content:      activeContent,
 		}}
 	}
@@ -309,6 +362,7 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.R
 			Title:        activePaneTitle(pane),
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
 			Active:       active && !floatingOwnsFocus,
+			Chrome:       buildPanelChromeVM(pane, active && !floatingOwnsFocus),
 			Content:      content,
 		}
 	}
@@ -324,6 +378,7 @@ func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root s
 				Title:        activePaneTitle(pane),
 				Presentation: renderPanelPresentation(shell.PanelPresentation),
 				Active:       true,
+				Chrome:       buildPanelChromeVM(pane, true),
 				Content:      activeContent,
 			}}
 		}
@@ -355,6 +410,27 @@ func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
 	return out
 }
 
+func buildPanelChromeVM(pane state.PaneState, active bool) PanelChromeVM {
+	style := StyleMuted
+	if active {
+		style = StyleAccent
+	}
+	actions := defaultPaneChromeActionVMs(style)
+	// 固定视觉审核 pane 只展示可见 close 槽位，但仍走同一 action slot/hit-region contract。
+	if pane.ID == "pane-logs" {
+		actions = []ChromeActionVM{{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String(), Style: style}}
+	}
+	return PanelChromeVM{Actions: actions}
+}
+
+func defaultPaneChromeActionVMs(style StyleToken) []ChromeActionVM {
+	return []ChromeActionVM{
+		{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String(), Style: style},
+		{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String(), Style: style},
+		{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String(), Style: style},
+	}
+}
+
 func visualAuditFloatingPane(pane state.PaneState) bool {
 	return pane.ID == "float-visual-pane" && pane.Kind == state.PaneEmpty
 }
@@ -373,6 +449,17 @@ func visualAuditFloatingContent() ContentVM {
 		},
 		Empty: true,
 	}
+}
+
+func splitActionLabel(action string) (string, string) {
+	parts := strings.Fields(strings.TrimSpace(action))
+	if len(parts) == 0 {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	return parts[0], strings.Join(parts[1:], " ")
 }
 
 func buildActiveContentVM(root state.Root) ContentVM {

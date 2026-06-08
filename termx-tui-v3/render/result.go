@@ -444,7 +444,18 @@ type PanelVM struct {
 	Rect         Rect
 	Presentation PanelPresentation
 	Active       bool
+	Chrome       PanelChromeVM
 	Content      ContentVM
+}
+
+type PanelChromeVM struct {
+	Actions []ChromeActionVM
+}
+
+type ChromeActionVM struct {
+	Text     string
+	ActionID string
+	Style    StyleToken
 }
 
 type LayoutVM struct {
@@ -487,10 +498,19 @@ type FloatingVM struct {
 	Content   ContentVM
 }
 
+type HeaderTabVM struct {
+	ID            string
+	Title         string
+	Index         int
+	Active        bool
+	CloseActionID string
+}
+
 type HeaderVM struct {
 	Visible         bool
 	Workspace       string
 	Tab             string
+	Tabs            []HeaderTabVM
 	ActivePane      string
 	TerminalSummary string
 	FloatingSummary string
@@ -498,11 +518,19 @@ type HeaderVM struct {
 	Title           string
 }
 
+type FooterActionVM struct {
+	Key      string
+	Label    string
+	ActionID string
+	Style    StyleToken
+}
+
 type FooterVM struct {
 	Visible       bool
 	Mode          string
 	Hint          string
 	Actions       []string
+	ActionTokens  []FooterActionVM
 	ActiveTarget  string
 	GlobalSummary string
 }

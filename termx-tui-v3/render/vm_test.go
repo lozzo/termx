@@ -43,6 +43,75 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
+	root := state.Root{
+		Shell: state.ShellStore{
+			HeaderVisible: true,
+			FooterVisible: true,
+			Workspace: state.WorkspaceState{
+				ID:          "ws-main",
+				Name:        "main",
+				ActiveTabID: "tab-build",
+				Tabs: []state.TabState{
+					{ID: "tab-shell", Title: "shell", Panes: []state.PaneState{{ID: "pane-shell", Title: "shell", Kind: state.PaneTerminalLive, TerminalID: "term-1"}}},
+					{ID: "tab-build", Title: "build", Panes: []state.PaneState{{ID: "pane-build", Title: "build", Kind: state.PaneTerminalLive, TerminalID: "term-2"}}},
+				},
+			},
+			ActivePaneID: "pane-build",
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-2", Attached: true},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	if len(vm.Shell.Header.Tabs) != 2 || vm.Shell.Header.Tabs[0].Title != "shell" || vm.Shell.Header.Tabs[1].Title != "build" || !vm.Shell.Header.Tabs[1].Active {
+		t.Fatalf("header should expose structured tab slots, got %#v", vm.Shell.Header.Tabs)
+	}
+	if len(vm.Shell.Footer.ActionTokens) == 0 || vm.Shell.Footer.ActionTokens[0].Key != "^P" || vm.Shell.Footer.ActionTokens[0].Label != "pane" {
+		t.Fatalf("footer should expose structured action tokens, got %#v", vm.Shell.Footer.ActionTokens)
+	}
+	lastAction := vm.Shell.Footer.ActionTokens[len(vm.Shell.Footer.ActionTokens)-1]
+	if lastAction.Key != "^G" || lastAction.Label != "global" {
+		t.Fatalf("footer structured tokens should keep compacted labels, got %#v", vm.Shell.Footer.ActionTokens)
+	}
+	if len(vm.Shell.Layout.Panels) != 1 || len(vm.Shell.Layout.Panels[0].Chrome.Actions) != 3 {
+		t.Fatalf("pane should expose structured chrome actions, got %#v", vm.Shell.Layout.Panels)
+	}
+	if vm.Shell.Layout.Panels[0].Chrome.Actions[0].ActionID != ActionPaneSplitDown.String() || vm.Shell.Layout.Panels[0].Chrome.Actions[2].ActionID != ActionPaneClose.String() {
+		t.Fatalf("pane chrome actions should keep semantic action ids, got %#v", vm.Shell.Layout.Panels[0].Chrome.Actions)
+	}
+}
+
+func TestRenderVMBuilderKeepsVisualAuditPaneChromeAsStructuredSlot(t *testing.T) {
+	root := state.Root{
+		Shell: state.ShellStore{
+			HeaderVisible: true,
+			FooterVisible: true,
+			Workspace: state.WorkspaceState{
+				Name:        "main",
+				ActiveTabID: "tab-1",
+				Tabs: []state.TabState{{
+					ID: "tab-1",
+					Panes: []state.PaneState{{
+						ID:    "pane-logs",
+						Title: "logs",
+						Kind:  state.PaneTerminalLive,
+					}},
+				}},
+			},
+			ActivePaneID: "pane-logs",
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	if len(vm.Shell.Layout.Panels) != 1 {
+		t.Fatalf("expected visual audit panel, got %#v", vm.Shell.Layout.Panels)
+	}
+	actions := vm.Shell.Layout.Panels[0].Chrome.Actions
+	if len(actions) != 1 || actions[0].Text != paneChromeCloseActionText() || actions[0].ActionID != ActionPaneClose.String() {
+		t.Fatalf("visual audit pane should express close-only chrome as VM slot, got %#v", actions)
+	}
+}
+
 func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{

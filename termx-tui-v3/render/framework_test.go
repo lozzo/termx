@@ -287,6 +287,47 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 120)
 }
 
+func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{
+			Visible:   true,
+			Workspace: "main",
+			Tabs: []HeaderTabVM{
+				{ID: "tab-shell", Title: "shell", Index: 1, CloseActionID: ActionTabClose.String()},
+				{ID: "tab-build", Title: "build", Index: 2, Active: true, CloseActionID: ActionTabClose.String()},
+			},
+		},
+		Footer: FooterVM{
+			Visible: true,
+			Mode:    "live",
+			ActionTokens: []FooterActionVM{
+				{Key: "^P", Label: "pane", Style: StyleStatusAccent},
+				{Key: "x", Label: "close", Style: StyleStatusWarning},
+			},
+			GlobalSummary: "ws:main tabs:2 panes:1 float:0",
+		},
+		Layout: LayoutVM{Viewport: Rect{W: 96, H: 10}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+		}}},
+	}})
+	frame := result.Frame()
+
+	if !strings.Contains(frame.Lines[0], " 1:shell ×") || !strings.Contains(frame.Lines[0], " 2:build ×") {
+		t.Fatalf("header should render structured tab slots, got %#v", frame.Lines[0])
+	}
+	footer := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footer, "[Ctrl+P] pane") || !strings.Contains(footer, "[x] close") || !strings.Contains(footer, "ws:main tabs:2 panes:1") {
+		t.Fatalf("footer should render structured action tokens, got %#v", footer)
+	}
+	if !styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[x]", StyleStatusWarning) {
+		t.Fatalf("footer should keep action token style from VM, got %#v", frame.StyledLines)
+	}
+	assertAllRowsWidth(t, frame.Lines, 96)
+}
+
 func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{

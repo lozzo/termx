@@ -368,7 +368,7 @@ func appendPanelChromeHitRegions(out []HitRegion, panel PanelLayoutPlan, include
 
 func appendPaneActionRegions(out []HitRegion, panel PanelVM, rect Rect, paneID string, viewport Rect) []HitRegion {
 	actionRect := paneActionRect(panel, rect)
-	items := paneChromeActionItemsForPanel(panel, rect.W)
+	items := visiblePaneChromeActionItems(panel, rect.W)
 	x := actionRect.X
 	for i, item := range items {
 		if i > 0 {
@@ -555,7 +555,7 @@ func appendPanelContentHitRegion(out []HitRegion, panel PanelLayoutPlan, viewpor
 }
 
 func paneActionRect(panel PanelVM, rect Rect) Rect {
-	return chromeActionRect(rect, DisplayWidth(paneChromeActionTextForPanel(panel, rect.W)))
+	return chromeActionRect(rect, paneChromeActionItemsWidth(visiblePaneChromeActionItems(panel, rect.W)))
 }
 
 func floatingActionRect(rect Rect) Rect {

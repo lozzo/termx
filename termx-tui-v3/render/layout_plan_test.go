@@ -273,6 +273,35 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutPaneActionRegionsFollowStructuredVisibleSlots(t *testing.T) {
+	panel := PanelVM{
+		ID:           "pane-1",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		Chrome: PanelChromeVM{Actions: []ChromeActionVM{
+			{Text: "A", ActionID: "pane.alpha"},
+			{Text: "B", ActionID: "pane.beta"},
+			{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String()},
+		}},
+	}
+	wide := MeasureLayout(ShellVM{Layout: LayoutVM{Panels: []PanelVM{panel}}}, Rect{W: 20, H: 8})
+	if wide.HitRegions[0].Kind != HitRegionPaneAction || wide.HitRegions[0].ActionID != "pane.alpha" ||
+		wide.HitRegions[1].ActionID != "pane.beta" || wide.HitRegions[2].ActionID != ActionPaneClose.String() {
+		t.Fatalf("wide pane should expose structured visible action regions, got %#v", wide.HitRegions[:3])
+	}
+	if got, want := wide.HitRegions[0].Rect.W+wide.HitRegions[1].Rect.W+wide.HitRegions[2].Rect.W+4, paneChromeActionItemsWidth(visiblePaneChromeActionItems(panel, 20)); got != want {
+		t.Fatalf("wide pane action regions should match visible slots got=%d want=%d regions=%#v", got, want, wide.HitRegions[:3])
+	}
+
+	narrow := MeasureLayout(ShellVM{Layout: LayoutVM{Panels: []PanelVM{panel}}}, Rect{W: 8, H: 8})
+	if narrow.HitRegions[0].Kind != HitRegionPaneAction || narrow.HitRegions[0].ActionID != ActionPaneClose.String() {
+		t.Fatalf("narrow pane should degrade to close action region, got %#v", narrow.HitRegions)
+	}
+	if len(narrow.HitRegions) > 1 && narrow.HitRegions[1].Kind == HitRegionPaneAction {
+		t.Fatalf("narrow pane should not expose hidden custom actions, got %#v", narrow.HitRegions)
+	}
+}
+
 func TestMeasureLayoutAddsSplitDividerResizeHitRegions(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{

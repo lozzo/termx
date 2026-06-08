@@ -616,7 +616,7 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 	left := []barSegment{
 		barText(" "+workspace+" ", StyleStatusAccent, 1),
 	}
-	left = append(left, headerTabSegments(tab)...)
+	left = append(left, headerTabSegmentsForHeader(header, tab)...)
 	left = append(left, headerSep(), barText(" ＋ ", StyleSuccess, 3).withAction(ActionTabCreate.String()))
 	if header.Notice != "" {
 		if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
@@ -640,8 +640,8 @@ func renderFooter(c *canvas, footer FooterVM, rect Rect, frame Rect) {
 	if mode != "live" && mode != "normal" {
 		left = append(left, barText(" "+strings.ToUpper(mode)+" ", StyleStatusAccent, 1), barSep())
 	}
-	if len(footer.Actions) > 0 {
-		left = appendFooterActionSegments(left, footer.Actions, rect.W)
+	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {
+		left = appendFooterActionSegments(left, footerActionTokensForFooter(footer), rect.W)
 	}
 	if len(left) == 0 {
 		left = append(left, barText(" [Ctrl+G] GLOBAL ", StyleStatusAccent, 1))
@@ -698,6 +698,42 @@ func compactFooterSummary(value string) string {
 		out = append(out, token)
 	}
 	return strings.Join(out, " ")
+}
+
+func headerTabSegmentsForHeader(header HeaderVM, fallback string) []barSegment {
+	if len(header.Tabs) == 0 {
+		return headerTabSegments(fallback)
+	}
+	segments := make([]barSegment, 0, len(header.Tabs)*3)
+	for index, tab := range header.Tabs {
+		tabIndex := tab.Index
+		if tabIndex <= 0 {
+			tabIndex = index + 1
+		}
+		label := strings.TrimSpace(tab.Title)
+		if label == "" {
+			label = tab.ID
+		}
+		if label == "" {
+			label = "tab"
+		}
+		style := StyleStatusMuted
+		priority := 2
+		if tab.Active {
+			style = StyleStatus
+			priority = 1
+		}
+		closeAction := tab.CloseActionID
+		if closeAction == "" {
+			closeAction = ActionTabClose.String()
+		}
+		segments = append(segments,
+			headerSep(),
+			barText(" "+intLabel(tabIndex)+":"+label+" ", style, priority),
+			barText("× ", StyleStatusWarning, 2).withAction(closeAction),
+		)
+	}
+	return segments
 }
 
 func headerTabSegments(tab string) []barSegment {
@@ -782,7 +818,7 @@ func footerActionsLabel(actions []string, width int) string {
 	return "keys:" + strings.Join(kept, " ")
 }
 
-func appendFooterActionSegments(segments []barSegment, actions []string, width int) []barSegment {
+func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM, width int) []barSegment {
 	limit := 58
 	if width < 100 {
 		limit = 34
@@ -793,8 +829,9 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 		limit = 76
 	}
 	used := 0
-	for _, action := range selectFooterActions(compactFooterActions(actions), limit) {
-		key, label := splitFooterAction(action)
+	for _, action := range selectFooterActionTokens(actions, limit) {
+		key := strings.TrimSpace(action.Key)
+		label := strings.TrimSpace(action.Label)
 		if key == "" {
 			continue
 		}
@@ -814,7 +851,11 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 		} else {
 			segments = append(segments, barText("  ", StyleStatusMuted, 1))
 		}
-		segments = append(segments, barText(formatFooterKeyToken(key), footerActionKeyStyle(key, textToken), 1))
+		style := action.Style
+		if style == "" {
+			style = footerActionKeyStyle(key, textToken)
+		}
+		segments = append(segments, barText(formatFooterKeyToken(key), style, 1))
 		if textToken != "" {
 			segments = append(segments, barText(" "+textToken, StyleStatus, 1))
 		}
@@ -823,12 +864,28 @@ func appendFooterActionSegments(segments []barSegment, actions []string, width i
 	return segments
 }
 
-func selectFooterActions(actions []string, limit int) []string {
-	selected := make([]string, 0, len(actions))
+func footerActionTokensForFooter(footer FooterVM) []FooterActionVM {
+	if len(footer.ActionTokens) > 0 {
+		return footer.ActionTokens
+	}
+	actions := compactFooterActions(footer.Actions)
+	out := make([]FooterActionVM, 0, len(actions))
+	for _, action := range actions {
+		key, label := splitFooterAction(action)
+		if key == "" {
+			continue
+		}
+		out = append(out, FooterActionVM{Key: key, Label: label, Style: footerActionKeyStyle(key, label)})
+	}
+	return out
+}
+
+func selectFooterActionTokens(actions []FooterActionVM, limit int) []FooterActionVM {
+	selected := make([]FooterActionVM, 0, len(actions))
 	used := 0
 	truncated := false
 	for _, action := range actions {
-		tokenWidth := footerActionDisplayWidth(action)
+		tokenWidth := footerActionTokenDisplayWidth(action)
 		if tokenWidth <= 0 {
 			continue
 		}
@@ -846,20 +903,55 @@ func selectFooterActions(actions []string, limit int) []string {
 	if !truncated || len(selected) == len(actions) {
 		return selected
 	}
-	tail := footerTailAction(actions)
-	if tail == "" || containsStringValue(selected, tail) {
+	tail := footerTailActionToken(actions)
+	if tail.Key == "" || containsFooterActionToken(selected, tail) {
 		return selected
 	}
-	tailWidth := footerActionDisplayWidth(tail)
+	tailWidth := footerActionTokenDisplayWidth(tail)
 	for len(selected) > 0 && used+tailWidth > limit {
 		dropped := selected[len(selected)-1]
 		selected = selected[:len(selected)-1]
-		used -= footerActionDisplayWidth(dropped)
+		used -= footerActionTokenDisplayWidth(dropped)
 	}
 	if tailWidth <= limit && used+tailWidth <= limit {
 		selected = append(selected, tail)
 	}
 	return selected
+}
+
+func footerActionTokenDisplayWidth(action FooterActionVM) int {
+	key := strings.TrimSpace(action.Key)
+	if key == "" {
+		return 0
+	}
+	label := strings.TrimSpace(action.Label)
+	width := DisplayWidth("  ") + DisplayWidth(formatFooterKeyToken(key))
+	if label != "" {
+		width += 1 + DisplayWidth(label)
+	}
+	return width
+}
+
+func footerTailActionToken(actions []FooterActionVM) FooterActionVM {
+	for i := len(actions) - 1; i >= 0; i-- {
+		action := actions[i]
+		if strings.TrimSpace(action.Key) != "" && !strings.HasPrefix(strings.TrimSpace(action.Key), "esc") {
+			return action
+		}
+	}
+	if len(actions) == 0 {
+		return FooterActionVM{}
+	}
+	return actions[len(actions)-1]
+}
+
+func containsFooterActionToken(values []FooterActionVM, target FooterActionVM) bool {
+	for _, value := range values {
+		if value.Key == target.Key && value.Label == target.Label && value.ActionID == target.ActionID {
+			return true
+		}
+	}
+	return false
 }
 
 func footerActionDisplayWidth(action string) int {
@@ -1434,7 +1526,8 @@ func renderShellFramedPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style
 	if title != "" {
 		c.overlayTextStyled(rect.X+1, rect.Y, DisplayWidth(title), title, paneChromeTitleStyle(panel, style), owner, LayerPanel)
 	}
-	actions := paneChromeActionTextForPanel(panel, rect.W)
+	actionItems := visiblePaneChromeActionItems(panel, rect.W)
+	actions := paneChromeActionTextFromItems(actionItems)
 	actionWidth := DisplayWidth(actions)
 	if actionWidth > 0 && rect.W >= actionWidth+4 {
 		text := actions
@@ -1446,7 +1539,7 @@ func renderShellFramedPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style
 		if panel.Active {
 			x -= 2
 		}
-		c.overlayTextStyled(x, rect.Y, textWidth, text, paneChromeActionStyle(panel, style), owner, LayerPanel)
+		c.overlayTextStyled(x, rect.Y, textWidth, text, paneChromeActionClusterStyle(actionItems, paneChromeActionStyle(panel, style)), owner, LayerPanel)
 	}
 }
 
@@ -1579,13 +1672,14 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 	}
 
 	rightLimit := innerRight
-	actions := paneChromeActionTextForPanel(panel, rect.W)
+	actionItems := visiblePaneChromeActionItems(panel, rect.W)
+	actions := paneChromeActionTextFromItems(actionItems)
 	actionWidth := DisplayWidth(actions)
 	slots := make([]paneChromeTopSlot, 0, 2)
 	if actionWidth > 0 {
 		actionX := innerRight - actionWidth - 1
 		if actionX >= innerLeft {
-			slots = append(slots, paneChromeTopSlot{x: actionX, text: actions, style: paneChromeActionStyle(panel, borderStyle)})
+			slots = append(slots, paneChromeTopSlot{x: actionX, text: actions, style: paneChromeActionClusterStyle(actionItems, paneChromeActionStyle(panel, borderStyle))})
 			rightLimit = actionX - 1
 		}
 	}
@@ -1602,6 +1696,10 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 
 func paneChromeActionText(width int) string {
 	items := paneChromeActionItems(width)
+	return paneChromeActionTextFromItems(items)
+}
+
+func paneChromeActionTextFromItems(items []paneChromeActionItem) string {
 	if len(items) == 0 {
 		return ""
 	}
@@ -1610,13 +1708,6 @@ func paneChromeActionText(width int) string {
 		parts = append(parts, item.Text)
 	}
 	return strings.Join(parts, "  ")
-}
-
-func paneChromeActionTextForPanel(panel PanelVM, width int) string {
-	if panel.ID == "pane-logs" {
-		return paneChromeCloseActionText()
-	}
-	return paneChromeActionText(width)
 }
 
 func paneChromeActionItems(width int) []paneChromeActionItem {
@@ -1638,8 +1729,46 @@ func paneChromeActionItems(width int) []paneChromeActionItem {
 	return items
 }
 
-func paneChromeActionItemsForPanel(panel PanelVM, width int) []paneChromeActionItem {
-	return paneChromeActionItems(width)
+func visiblePaneChromeActionItems(panel PanelVM, width int) []paneChromeActionItem {
+	actions := paneChromeActionItemsFromVM(panel.Chrome.Actions)
+	if len(actions) == 0 {
+		actions = paneChromeActionItems(width)
+	}
+	return fitPaneChromeActionItems(actions, width)
+}
+
+func paneChromeActionItemsFromVM(actions []ChromeActionVM) []paneChromeActionItem {
+	out := make([]paneChromeActionItem, 0, len(actions))
+	for _, action := range actions {
+		text := strings.TrimSpace(action.Text)
+		if text == "" || action.ActionID == "" {
+			continue
+		}
+		out = append(out, paneChromeActionItem{
+			Text:     text,
+			ActionID: action.ActionID,
+			Style:    action.Style,
+		})
+	}
+	return out
+}
+
+func fitPaneChromeActionItems(actions []paneChromeActionItem, width int) []paneChromeActionItem {
+	if width < 8 || len(actions) == 0 {
+		return nil
+	}
+	if paneChromeActionItemsWidth(actions) <= maxInt(0, width-6) {
+		return actions
+	}
+	for i := len(actions) - 1; i >= 0; i-- {
+		if actions[i].ActionID == ActionPaneClose.String() {
+			if DisplayWidth(actions[i].Text) <= maxInt(0, width-6) {
+				return []paneChromeActionItem{actions[i]}
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
 func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
@@ -1659,6 +1788,7 @@ func paneChromeActionItemsWidth(items []paneChromeActionItem) int {
 type paneChromeActionItem struct {
 	Text     string
 	ActionID string
+	Style    StyleToken
 }
 
 func paneChromeActionClusterText() string {
@@ -1711,6 +1841,15 @@ func paneChromeActionStyle(panel PanelVM, borderStyle StyleToken) StyleToken {
 		return StyleAccent
 	}
 	return borderStyle
+}
+
+func paneChromeActionClusterStyle(items []paneChromeActionItem, fallback StyleToken) StyleToken {
+	for _, item := range items {
+		if item.Style != "" {
+			return item.Style
+		}
+	}
+	return fallback
 }
 
 func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
