@@ -66,6 +66,7 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 	if len(shell.Workspace.Tabs) != 2 || shell.Workspace.ActiveTabID != result.ID || shell.ActivePaneID != result.ID+"-pane" {
 		t.Fatalf("expected new tab active, result=%#v shell=%#v", result, shell)
 	}
+	buildTabID := result.ID
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabRename, Name: "构建🚀"})
 	if result.Status != WorkbenchCommandOK || shell.activeTab().Title != "构建🚀" {
 		t.Fatalf("expected tab rename, result=%#v tab=%#v", result, shell.activeTab())
@@ -74,8 +75,20 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != DefaultTabID || shell.ActivePaneID != DefaultPaneID {
 		t.Fatalf("expected previous tab active, result=%#v shell=%#v", result, shell)
 	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: buildTabID})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != buildTabID || shell.ActivePaneID != buildTabID+"-pane" {
+		t.Fatalf("expected switch tab active, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: "missing-tab"})
+	if result.Status != WorkbenchCommandInvalid || shell.Workspace.ActiveTabID != buildTabID {
+		t.Fatalf("missing tab switch must be rejected without changing active tab, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: DefaultTabID})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != DefaultTabID {
+		t.Fatalf("expected switch back to main tab, result=%#v shell=%#v", result, shell)
+	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabClose})
-	if result.Status != WorkbenchCommandOK || len(shell.Workspace.Tabs) != 1 || shell.Workspace.ActiveTabID != "tab-2" {
+	if result.Status != WorkbenchCommandOK || len(shell.Workspace.Tabs) != 1 || shell.Workspace.ActiveTabID != buildTabID {
 		t.Fatalf("expected close current tab and keep remaining active, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabClose})

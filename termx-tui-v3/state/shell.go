@@ -71,6 +71,7 @@ type WorkbenchCommandAction string
 
 const (
 	WorkbenchCommandTabCreate         WorkbenchCommandAction = "tab.create"
+	WorkbenchCommandTabSwitch         WorkbenchCommandAction = "tab.switch"
 	WorkbenchCommandTabNext           WorkbenchCommandAction = "tab.next"
 	WorkbenchCommandTabPrevious       WorkbenchCommandAction = "tab.previous"
 	WorkbenchCommandTabRename         WorkbenchCommandAction = "tab.rename"
@@ -511,6 +512,8 @@ func (store ShellStore) ApplyWorkbenchCommand(command WorkbenchCommand) (ShellSt
 	switch command.Action {
 	case WorkbenchCommandTabCreate:
 		return store.createTab(command)
+	case WorkbenchCommandTabSwitch:
+		return store.switchTab(command)
 	case WorkbenchCommandTabNext:
 		return store.switchRelativeTab(1, command.Action)
 	case WorkbenchCommandTabPrevious:
@@ -586,6 +589,18 @@ func (store ShellStore) switchRelativeTab(offset int, action WorkbenchCommandAct
 	}
 	store = store.focusTabByIndex(next)
 	return store, WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: action, ID: store.Workspace.ActiveTabID}
+}
+
+func (store ShellStore) switchTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	if len(store.Workspace.Tabs) == 0 {
+		return store, workbenchCommandInvalid(command.Action, "no tab")
+	}
+	index := store.tabIndexByID(command.TargetID)
+	if index < 0 {
+		return store, workbenchCommandInvalid(command.Action, "tab not found")
+	}
+	store = store.focusTabByIndex(index)
+	return store, WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: store.Workspace.ActiveTabID}
 }
 
 func (store ShellStore) renameTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {

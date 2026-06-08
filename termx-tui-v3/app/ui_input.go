@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -358,6 +360,11 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.WorkbenchCommand, state.PromptState, bool) {
 	shell := root.Shell.EnsureDefaults()
 	command := state.WorkbenchCommand{Source: state.PaneCommandSourceKeyboard}
+	if strings.HasPrefix(intent.Command, "tab jump ") {
+		command.Action = state.WorkbenchCommandTabSwitch
+		command.TargetID = tabJumpTargetID(shell, intent.Command)
+		return command, state.PromptState{}, true
+	}
 	switch intent.Command {
 	case "tab create":
 		command.Action = state.WorkbenchCommandTabCreate
@@ -422,6 +429,19 @@ func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.Wor
 	default:
 		return state.WorkbenchCommand{}, state.PromptState{}, false
 	}
+}
+
+func tabJumpTargetID(shell state.ShellStore, command string) string {
+	indexText := strings.TrimSpace(strings.TrimPrefix(command, "tab jump "))
+	index, err := strconv.Atoi(indexText)
+	if err != nil || index < 1 {
+		return "__invalid_tab_jump__"
+	}
+	tabs := shell.EnsureDefaults().Workspace.Tabs
+	if index > len(tabs) {
+		return "__invalid_tab_jump__"
+	}
+	return tabs[index-1].ID
 }
 
 func floatingCommandFromIntent(root state.Root, intent input.Intent) (state.FloatingCommand, bool) {

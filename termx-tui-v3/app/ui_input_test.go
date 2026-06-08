@@ -1503,6 +1503,52 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(24)
+	host.SetSize(90, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "3"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "9"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send tab jump input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain tab jump input %#v: %v", event, err)
+		}
+	}
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.Workspace.ActiveTabID != "tab-3" {
+		t.Fatalf("tab jump should keep valid tab active after out-of-range jump, got %#v", shell.Workspace)
+	}
+	if len(shell.Toasts) == 0 || shell.Toasts[len(shell.Toasts)-1].Body != "tab not found" {
+		t.Fatalf("out-of-range tab jump should show workbench invalid feedback, got %#v", shell.Toasts)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("tab jump shortcuts must not leak terminal input, got %#v", terminal.Inputs)
+	}
+}
+
 func findWorkspaceForTest(workspaces []state.WorkspaceState, id string) (state.WorkspaceState, bool) {
 	for _, workspace := range workspaces {
 		if workspace.ID == id {

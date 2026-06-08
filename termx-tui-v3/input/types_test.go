@@ -106,6 +106,10 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	if tabRename.Kind != IntentWorkbenchCommand || tabRename.Command != "tab rename" {
 		t.Fatalf("expected tab rename command, got %#v", tabRename)
 	}
+	tabJump := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, false, InteractionModeTab)
+	if tabJump.Kind != IntentWorkbenchCommand || tabJump.Command != "tab jump 3" {
+		t.Fatalf("expected tab jump command, got %#v", tabJump)
+	}
 	workspaceNext := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "l"}, false, InteractionModeWorkspace)
 	if workspaceNext.Kind != IntentWorkbenchCommand || workspaceNext.Command != "workspace next" {
 		t.Fatalf("expected workspace next command, got %#v", workspaceNext)

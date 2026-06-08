@@ -267,6 +267,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	case "tab":
 		return footerActionSpecs(
 			footerActionSpec("n", "new", ActionTabCreate.String(), StyleStatusAccent),
+			footerActionSpec("1-9", "jump", "", StyleStatusAccent),
 			footerActionSpec("h/l", "switch", "", StyleStatusAccent),
 			footerActionSpec("r", "rename", "", StyleStatusAccent),
 			footerActionSpec("x", "close", ActionTabClose.String(), StyleStatusWarning),
