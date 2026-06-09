@@ -876,14 +876,14 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 		t.Fatalf("expected terminal picker content, got %#v", vm.Shell.Overlay)
 	}
 	plain := plainLines(content.Lines)
-	for _, want := range []string{"search: term", "▸ ○ shell", "term-main", "  ○ 日志🚀", "+ new terminal", "selected shell"} {
+	for _, want := range []string{"search: term", "▸ + new terminal", "  shell", "  日志🚀"} {
 		if !strings.Contains(plain, want) {
-			t.Fatalf("expected lightweight picker marker %q, got %#v", want, content.Lines)
+			t.Fatalf("expected compact picker marker %q, got %#v", want, content.Lines)
 		}
 	}
-	for _, forbidden := range []string{"Select terminal source state target", "DETAIL", "TARGET", "TERMINAL", "[attach]", "[new]", "PREVIEW pane:"} {
+	for _, forbidden := range []string{"Select terminal source state target", "DETAIL", "TARGET", "TERMINAL", "[attach]", "[new]", "PREVIEW pane:", "term-main", "pane:", "selected ", " live "} {
 		if strings.Contains(plain, forbidden) {
-			t.Fatalf("picker must not render management table/action content %q, got %#v", forbidden, content.Lines)
+			t.Fatalf("picker must not render management table/detail content %q, got %#v", forbidden, content.Lines)
 		}
 	}
 	if content.Status != "terminal picker: 2 items query:term" {
@@ -907,14 +907,14 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 
 	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
 	if !strings.Contains(content.Lines[0].PlainString(), "search: 日志") ||
-		!strings.Contains(content.Lines[1].PlainString(), "▸ ○ 日志🚀") ||
-		!strings.Contains(content.Lines[2].PlainString(), "+ new terminal") ||
+		!strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal") ||
+		!strings.Contains(content.Lines[2].PlainString(), "日志🚀") ||
 		strings.Contains(plainLines(content.Lines), "shell") ||
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[1], "日志🚀", StyleAccent) {
-		t.Fatalf("expected selected picker row to use accent style, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[1], "new terminal", StyleAccent) {
+		t.Fatalf("expected default create row to use accent style, got %#v", content.Lines[1])
 	}
 	if content.Cursor.Col != DisplayWidth("search: 日志") {
 		t.Fatalf("expected cursor after query text, got %#v", content.Cursor)
@@ -939,18 +939,18 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[1].PlainString(), "shell") ||
-		!strings.Contains(content.Lines[2].PlainString(), "远程🚀") ||
-		!strings.Contains(content.Lines[2].PlainString(), "pool") ||
-		!strings.Contains(content.Lines[3].PlainString(), "+ new terminal") ||
+	if !strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal") ||
+		!strings.Contains(content.Lines[2].PlainString(), "shell") ||
+		!strings.Contains(content.Lines[3].PlainString(), "远程🚀") ||
+		strings.Contains(content.Lines[3].PlainString(), "pool") ||
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected pane and pool rows, got %#v", content.Lines)
 	}
 	if len(content.HitRegions) != 3 ||
-		content.HitRegions[1].Row != 1 ||
-		content.HitRegions[1].PaneID != "" ||
-		content.HitRegions[1].ActionID != ActionPickerAttach.String() ||
-		content.HitRegions[2].ActionID != ActionPickerNew.String() {
+		content.HitRegions[0].ActionID != ActionPickerNew.String() ||
+		content.HitRegions[1].PaneID == "" ||
+		content.HitRegions[2].PaneID != "" ||
+		content.HitRegions[2].ActionID != ActionPickerAttach.String() {
 		t.Fatalf("expected pane, pool and create row action regions, got %#v", content.HitRegions)
 	}
 

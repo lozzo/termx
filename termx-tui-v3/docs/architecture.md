@@ -519,8 +519,8 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - UI input reducer 在 Terminal Picker overlay 打开时优先消费字符、Backspace、上下方向键和 Enter；这些输入不得进入 terminal input path。
 - Enter 和 picker row click 必须复用同一 selected item 语义：pane row focus/close overlay，pool row 走 service attach，create row 走 service create；不得按键盘和鼠标分叉实现第二套路由。
 - `picker.new` 只能通过 terminal service create effect/result 接线，result 到达后显示反馈 toast；不得直接修改 service state 或在 result 前伪造 terminal lifecycle。
-- Terminal Picker 只投影轻量 selected hint，不显示 Terminal Pool 式 detail/preview 管理块；renderer 不读取 service、core client 或 Terminal Pool。
-- overlay cursor、row action 和 selected hint 继续由 render framework 按 content rect 裁切合成，不得覆盖 pane chrome、toast 或 shell chrome。
+- Terminal Picker 只投影 compact search/list rows，`+ new terminal` 是第一行和默认选中项；不显示 Terminal Pool 式 detail/preview、state、terminal id、target 或 selected hint。
+- overlay cursor 和 row action 继续由 render framework 按 compact content rect 裁切合成，不得覆盖 pane chrome、toast 或 shell chrome。
 
 当前 Terminal Pool 数据源与 Picker 服务接线一期的架构边界：
 

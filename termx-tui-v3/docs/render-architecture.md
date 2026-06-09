@@ -292,7 +292,7 @@ styled chrome renderer 是当前新阶段正式方向。
 - tiled pane 默认使用 `tuiv2` 式 square 细线 panel chrome：连续边框、顶边 title/state/action 槽位、active accent、inactive muted；不能使用 ASCII 线框，也不能只输出无样式 Unicode glyph。
 - 单 pane 的视觉重心是 styled chrome 和 content rect 裁切，terminal 内容只是 content renderer 的输入，不能覆盖 pane border、header/footer、toast 或 overlay。
 - toast/message 使用实体卡片和 severity/accent token，适合右上角短反馈；它不改变 layout，不承担页面级状态展示。
-- modal/overlay 使用实体前景卡片，允许标题、搜索、selected row、detail 和 action。默认不要求背景灰度遮罩，因为 dim 背景对中文、emoji、CJK、combining mark 或 ambiguous width 文本存在丢字风险；实现应优先保证文本可见和 cell width 正确。
+- modal/overlay 默认使用简单前景弹出框，优先保留标题、搜索或必要列表项；Terminal Picker 这类快速入口必须保持 compact，不使用 page-sized 大卡片、重背景填充、detail/preview 或 action table。复杂管理内容应放入独立 page overlay。默认不要求背景灰度遮罩，因为 dim 背景对中文、emoji、CJK、combining mark 或 ambiguous width 文本存在丢字风险；实现应优先保证文本可见和 cell width 正确。
 - 后续 Prompt、Help、Workbench Tree 和 floating 都必须沿用 render framework 的 styled layer、layout plan、hit region 和 cursor ownership，不得各自写临时 frame。
 
 不得迁入：
@@ -1016,7 +1016,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - `TerminalSessionStore` 已记录 terminal resize 目标尺寸和序号，连续 split/resize/zoom 等 pane command 下旧 resize result 不会覆盖最新 content rect。
 - app/runtime 已缓存最新 render hit regions，把真实鼠标坐标派发到 pane content、pane chrome、pane action、pane 边框/分隔线 resize drag、toast 和 overlay content action；UI chrome 命中优先于 terminal forwarding。
 - active pane border/title/footer/toast 会跟随键盘和鼠标 focus、split、close、resize、zoom、card/split 切换更新。
-- Terminal Picker query、过滤、selected row、上下键移动、Enter attach/focus/create、row click attach/focus/create、轻量 selected hint 和 no terminal input leak 已落地；Terminal Pool 式 detail/preview 管理块不得回流到 picker。
+- Terminal Picker query、过滤、selected row、上下键移动、Enter attach/focus/create、row click attach/focus/create、compact overlay 和 no terminal input leak 已落地；`+ new terminal` 是第一行默认选中项，Terminal Pool 式 detail/preview 管理块不得回流到 picker。
 - Terminal Pool 数据源与 Picker 服务接线一期已落地：`TerminalPoolStore` 保存 list loading/empty/error/items/stale guard，Terminal Picker 打开可触发 terminal list request，picker rows 合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 通过 service/effect/result message 回到 reducer。
 - Terminal Pool 管理页一期已落地：独立 terminal-pool content/page 已接入，支持全局入口和 empty manager action 打开、list loading、搜索、selected row、键盘选择、Enter attach、鼠标 row/action 命中、detail、metadata、preview 摘要、Attach/Edit/Kill action、可见 action 不被裁切、service/effect/result 反馈和 no terminal input leak。
 - Workbench Tree overlay 一期已落地：页面级结构导航 overlay、workspace/tab/pane/floating row、搜索、selected row、detail/preview、Open/Focus action、键盘/鼠标选择和 no terminal input leak 已接入。
@@ -1041,7 +1041,7 @@ render framework 是 `termx-tui-v3` 内部架构，不是独立产品。
 - copy-history content renderer 深化已完成当前阶段：只在 authoritative window 绑定一致时渲染，历史 row 投影为带 logical-line、continuation、clipped marker 的 styled `Line`，selection 和 active match 用 styled cells 表达，copy cursor 按 marker offset 投影为 content-local cursor，顶部 search row、底部 scrollbar/status、PageDown/滚轮滚动、match navigation、content-local mouse selection 和 row/line/part/cols/span/search/older 位置摘要已接入；logical-line 拼接提示和最终视觉 polish 仍可后续继续增强。
 - 切片 86 后，copy-history 的 search row 和 scrollbar/status 已从工程占位推进到产品化视觉语言；仍不得把它作为 committed history truth 或从 live surface 反推历史。
 - empty/exited/Terminal Picker content renderer 一期已进入当前阶段：empty pane 与 exited pane 已由单行 placeholder 升级为 CTA 内容，Terminal Picker overlay 已输出 search row、当前 workspace terminal list、selected row、new terminal row、overlay cursor 和 content action hit region。
-- Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/create、picker row click、`+ new terminal` create row、轻量 selected hint 和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达。
+- Terminal Picker 真实交互深化已进入当前阶段：query、过滤、selected row、上下键移动、Enter focus/create、picker row click、第一行默认选中的 `+ new terminal` create row、compact search/list 内容和 no terminal input leak 已通过 reducer-owned state 与 content renderer 路径表达。
 - Terminal Pool 数据源与 Picker 服务接线一期已进入当前阶段：Terminal Picker 打开可请求 terminal list，`TerminalPoolStore` 保存 loading/empty/error/items/stale guard，picker rows 会合并当前 workspace panes 与 pool items 并去重，pool row attach、create、restart、reconnect 均通过 terminal service effect/result message 回到 reducer。
 - Terminal Pool 管理页一期已进入当前阶段：页面作为独立 terminal-pool content/page 实现，常规 viewport 下可见 list、selected detail、preview 摘要和 Attach/Edit/Kill action，窄高时按明确优先级压缩内容；跨 workspace/remote 管理、metadata Prompt、kill confirm、attach as tab/floating 和完整 terminal emulator preview 仍属后续深化。
 - Prompt/Help 已有一期产品内容；命令面板、Help 搜索/分页、多字段表单、input click 光标定位和真实业务命令执行仍待后续深化。

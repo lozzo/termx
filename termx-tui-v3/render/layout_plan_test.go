@@ -619,6 +619,9 @@ func TestMeasureLayoutTerminalPickerOwnsCursorAndActionHits(t *testing.T) {
 	}
 
 	plan := MeasureLayout(shell, Rect{W: 50, H: 14})
+	if plan.Overlay.W > 48 || plan.Overlay.H > 8 {
+		t.Fatalf("terminal picker should use compact overlay, overlay=%#v", plan.Overlay)
+	}
 	if !plan.Cursor.Visible || plan.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("terminal picker should own cursor, got %#v", plan.Cursor)
 	}

@@ -10,7 +10,11 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 	shell := root.Shell.EnsureDefaults()
 	tab := shell.activeTab()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
-	items := make([]TerminalPickerItem, 0, len(tab.Panes)+len(root.TerminalPool.Items)+1)
+	items := []TerminalPickerItem{{
+		Title:     "new terminal",
+		Kind:      PaneTerminalLive,
+		CreateNew: true,
+	}}
 	seenTerminal := map[string]struct{}{}
 	for _, pane := range tab.Panes {
 		terminalID := pickerTerminalID(root, pane)
@@ -52,7 +56,7 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 		}
 		items = append(items, item)
 	}
-	if len(items) == 0 && query == "" {
+	if len(items) == 1 && query == "" {
 		items = append(items, TerminalPickerItem{
 			PaneID:     shell.ActivePaneID,
 			Title:      "current pane",
@@ -61,11 +65,6 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			Active:     true,
 		})
 	}
-	items = append(items, TerminalPickerItem{
-		Title:     "new terminal",
-		Kind:      PaneTerminalLive,
-		CreateNew: true,
-	})
 	if len(items) > 0 {
 		selected := shell.Overlay.SelectedIndex
 		if selected < 0 {

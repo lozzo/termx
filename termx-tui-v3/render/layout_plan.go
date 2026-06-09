@@ -63,7 +63,7 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	plan.Panels = measurePanels(shell.Layout, body, plan.ShellFrame)
 	plan.Floatings = measureFloatings(shell.Layout.Floating, viewport)
 	plan.Overlay = measureOverlay(shell.Overlay, viewport)
-	plan.OverlayContentRect = measureOverlayContentRect(plan.Overlay)
+	plan.OverlayContentRect = measureOverlayContentRect(shell.Overlay, plan.Overlay)
 	plan.Toasts = measureToasts(shell.Toasts, viewport)
 	plan.Cursor, plan.CursorRect = measureCursor(shell, plan)
 	plan.HitRegions = measureHitRegions(shell, plan)
@@ -205,7 +205,10 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" {
 		return Rect{}
 	}
-	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentHelp {
+	if overlay.Content.Kind == ContentTerminalPicker {
+		return measureCompactOverlay(overlay.Content, viewport)
+	}
+	if overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentHelp {
 		return measurePageOverlay(viewport)
 	}
 	width := minInt(maxInt(54, viewport.W*3/5), viewport.W-8)
@@ -219,6 +222,29 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 		Y: maxInt(0, (viewport.H-height)/2),
 		W: minInt(width, viewport.W),
 		H: minInt(height, viewport.H),
+	}
+}
+
+func measureCompactOverlay(content ContentVM, viewport Rect) Rect {
+	lineWidth := DisplayWidth("terminal picker")
+	for _, line := range content.Lines {
+		lineWidth = maxInt(lineWidth, line.Width())
+	}
+	width := minInt(maxInt(lineWidth+8, 28), 48)
+	height := minInt(maxInt(len(content.Lines)+2, 4), 8)
+	if width > viewport.W-4 {
+		width = maxInt(8, viewport.W-2)
+	}
+	if height > viewport.H-4 {
+		height = maxInt(3, viewport.H-2)
+	}
+	width = minInt(width, viewport.W)
+	height = minInt(height, viewport.H)
+	return Rect{
+		X: maxInt(0, (viewport.W-width)/2),
+		Y: maxInt(0, (viewport.H-height)/2),
+		W: width,
+		H: height,
 	}
 }
 
@@ -241,9 +267,12 @@ func measurePageOverlay(viewport Rect) Rect {
 	}
 }
 
-func measureOverlayContentRect(rect Rect) Rect {
+func measureOverlayContentRect(overlay OverlayVM, rect Rect) Rect {
 	if rect.W <= 0 || rect.H <= 0 {
 		return Rect{}
+	}
+	if overlay.Content.Kind == ContentTerminalPicker {
+		return Rect{X: rect.X + 2, Y: rect.Y + 1, W: maxInt(0, rect.W-4), H: maxInt(0, rect.H-2)}
 	}
 	if rect.W >= 48 && rect.H >= 10 {
 		return Rect{X: rect.X + 4, Y: rect.Y + 3, W: maxInt(0, rect.W-8), H: maxInt(0, rect.H-5)}

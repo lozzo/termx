@@ -7,9 +7,15 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 		return Layer{}
 	}
 	primitive := OverlayChromePrimitive(overlay, rect, contentRect)
-	c.fillStyledRect(rect, primitive.Style, primitive.Owner, primitive.Layer)
+	if overlay.Content.Kind != ContentTerminalPicker {
+		c.fillStyledRect(rect, primitive.Style, primitive.Owner, primitive.Layer)
+	}
 	c.drawStyledBox(rect, squareBoxStyle, primitive.Style, primitive.Owner, primitive.Layer)
-	renderChromeCardTitle(c, rect, primitive.Title.Text, primitive.State.Text, "esc", StyleAccent, primitive.Owner, primitive.Layer)
+	state := primitive.State.Text
+	if overlay.Content.Kind == ContentTerminalPicker {
+		state = ""
+	}
+	renderChromeCardTitle(c, rect, primitive.Title.Text, state, "esc", StyleAccent, primitive.Owner, primitive.Layer)
 	contentLines := renderContent(c, overlay.Content, contentRect)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
 }

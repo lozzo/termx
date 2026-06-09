@@ -69,8 +69,8 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	last := lastFrame(t, host.Frames())
 	if !frameContains(last, "terminal picker") ||
 		!frameContains(last, "search:") ||
-		!frameContains(last, "▸ ○ shell") ||
-		!frameContains(last, "+ new terminal") ||
+		!frameContains(last, "▸ + new terminal") ||
+		!frameContains(last, "shell") ||
 		frameContains(last, "Select terminal source state target") ||
 		frameContains(last, "DETAIL") {
 		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
@@ -115,7 +115,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 		t.Fatalf("expected picker query retained in reducer state, got %#v", runtime.State().Shell.Overlay)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if !frameContains(queryFrame, "search: 日志") || !frameContains(queryFrame, "▸ ○ 日志🚀") || frameContains(queryFrame, "DETAIL 日志🚀") {
+	if !frameContains(queryFrame, "search: 日志") || !frameContains(queryFrame, "▸ + new terminal") || !frameContains(queryFrame, "日志🚀") || frameContains(queryFrame, "DETAIL 日志🚀") {
 		t.Fatalf("expected filtered picker frame, got %#v", queryFrame.Lines)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -128,7 +128,10 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 		t.Fatalf("send backspace: %v", err)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down: %v", err)
+		t.Fatalf("send down to first terminal row: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down to second terminal row: %v", err)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
@@ -169,12 +172,6 @@ func TestInteractiveRuntimeTerminalPickerEnterCreatesFromCreateRow(t *testing.T)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
 		t.Fatalf("send ctrl-f: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down to second terminal row: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down to create row: %v", err)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
@@ -222,11 +219,14 @@ func TestInteractiveRuntimeTerminalPickerUsesTerminalPoolService(t *testing.T) {
 		t.Fatalf("expected picker open to load terminal pool, lists=%#v pool=%#v", terminal.Lists, runtime.State().TerminalPool)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "远程🚀") || !frameContains(frame, "pool") {
+	if !frameContains(frame, "远程🚀") {
 		t.Fatalf("expected pool row in picker frame, got %#v", frame.Lines)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down: %v", err)
+		t.Fatalf("send down to workspace row: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down to pool row: %v", err)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
