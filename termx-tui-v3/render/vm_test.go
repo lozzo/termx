@@ -1104,6 +1104,28 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 		t.Fatalf("expected prompt cursor after input, got %#v", content.Cursor)
 	}
 
+	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Create Terminal",
+		Context:     "name is required; command, workdir, tags are optional",
+		ActiveField: 1,
+		Fields: []state.PromptFieldState{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{Key: "workdir", Label: "workdir", Value: "/tmp"},
+			{Key: "tags", Label: "tags", Placeholder: "role=dev env=test"},
+		},
+	})}).Shell.Overlay.Content
+	if !strings.Contains(content.Lines[0].PlainString(), "Create Terminal") ||
+		!strings.Contains(content.Lines[1].PlainString(), "name*: shell") ||
+		!strings.Contains(content.Lines[2].PlainString(), "command: /bin/sh") ||
+		!strings.Contains(content.Lines[4].PlainString(), "tags: [role=dev env=test]") ||
+		!contentHasAction(content, "prompt.submit") {
+		t.Fatalf("expected create terminal form content, got %#v", content.Lines)
+	}
+	if content.Cursor.Row != 2 || content.Cursor.Col != DisplayWidth("command: /bin/sh") {
+		t.Fatalf("expected form cursor on active command field, got %#v", content.Cursor)
+	}
+
 	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenHelp("most-used")}).Shell.Overlay.Content
 	if content.Kind != ContentHelp ||
 		!strings.Contains(content.Lines[0].PlainString(), "Help") ||

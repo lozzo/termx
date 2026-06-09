@@ -154,6 +154,14 @@ func (store ShellStore) OpenPrompt(prompt PromptState) ShellStore {
 	if prompt.Destructive && prompt.ConfirmText == "" {
 		prompt.ConfirmText = "confirm"
 	}
+	if len(prompt.Fields) > 0 {
+		if prompt.ActiveField < 0 {
+			prompt.ActiveField = 0
+		}
+		if prompt.ActiveField >= len(prompt.Fields) {
+			prompt.ActiveField = len(prompt.Fields) - 1
+		}
+	}
 	store.Overlay = OverlayState{
 		Kind:   OverlayPrompt,
 		Open:   true,
@@ -177,7 +185,27 @@ func (store ShellStore) SetPromptValue(value string) ShellStore {
 	if store.Overlay.Kind != OverlayPrompt || !store.Overlay.Open {
 		return store
 	}
+	if active := store.Overlay.Prompt.ActivePromptField(); active != nil {
+		active.Value = value
+		return store
+	}
 	store.Overlay.Prompt.Value = value
+	return store
+}
+
+func (store ShellStore) MovePromptField(delta int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayPrompt || !store.Overlay.Open || len(store.Overlay.Prompt.Fields) == 0 || delta == 0 {
+		return store
+	}
+	next := store.Overlay.Prompt.ActiveField + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= len(store.Overlay.Prompt.Fields) {
+		next = len(store.Overlay.Prompt.Fields) - 1
+	}
+	store.Overlay.Prompt.ActiveField = next
 	return store
 }
 
@@ -188,6 +216,9 @@ func (store ShellStore) SubmitPrompt() ShellStore {
 	}
 	prompt := store.Overlay.Prompt
 	value := strings.TrimSpace(prompt.Value)
+	if field := prompt.ActivePromptField(); field != nil {
+		value = strings.TrimSpace(field.Value)
+	}
 	if prompt.Destructive && value != prompt.ConfirmText {
 		prompt.LastResult = "confirm required: " + prompt.ConfirmText
 		store.Overlay.Prompt = prompt
@@ -206,6 +237,28 @@ func (store ShellStore) CancelPrompt() ShellStore {
 	}
 	store.Overlay.Prompt.Canceled = true
 	return store
+}
+
+func (prompt *PromptState) ActivePromptField() *PromptFieldState {
+	if prompt == nil || len(prompt.Fields) == 0 {
+		return nil
+	}
+	if prompt.ActiveField < 0 {
+		prompt.ActiveField = 0
+	}
+	if prompt.ActiveField >= len(prompt.Fields) {
+		prompt.ActiveField = len(prompt.Fields) - 1
+	}
+	return &prompt.Fields[prompt.ActiveField]
+}
+
+func (prompt PromptState) FieldValue(key string) string {
+	for _, field := range prompt.Fields {
+		if field.Key == key {
+			return strings.TrimSpace(field.Value)
+		}
+	}
+	return ""
 }
 
 func (store ShellStore) SetTerminalPickerQuery(query string) ShellStore {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -34,7 +35,12 @@ type TerminalPoolAttachResultMsg struct {
 
 func (TerminalPoolAttachResultMsg) isMsg() {}
 
-type TerminalPoolCreateRequestMsg struct{}
+type TerminalPoolCreateRequestMsg struct {
+	Title   string
+	Command []string
+	CWD     string
+	Tags    map[string]string
+}
 
 func (TerminalPoolCreateRequestMsg) isMsg() {}
 
@@ -112,7 +118,7 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 		case TerminalPoolAttachResultMsg:
 			return reduceTerminalPoolAttachResult(root, msg, deps)
 		case TerminalPoolCreateRequestMsg:
-			return reduceTerminalPoolCreateRequest(root, deps)
+			return reduceTerminalPoolCreateRequest(root, msg, deps)
 		case TerminalPoolCreateResultMsg:
 			return reduceTerminalPoolCreateResult(root, msg)
 		case TerminalPoolRestartRequestMsg:
@@ -211,19 +217,31 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	return root.Advance(), liveEffects(result.TerminalID, result.Cols, result.Rows, deps)
 }
 
-func reduceTerminalPoolCreateRequest(root state.Root, deps LiveDeps) (state.Root, []Effect) {
+func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequestMsg, deps LiveDeps) (state.Root, []Effect) {
 	if deps.Terminal == nil {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: "terminal service missing"})
 		return root.Advance(), nil
 	}
 	cols, rows := terminalPoolAttachSize(root)
 	terminalID := nextTerminalPoolID(root)
+	title := strings.TrimSpace(msg.Title)
+	if title == "" {
+		title = terminalID
+	}
+	command := append([]string(nil), msg.Command...)
+	if len(command) == 0 {
+		command = services.DefaultTerminalCommand()
+	}
+	cwd := strings.TrimSpace(msg.CWD)
+	tags := cloneStringMap(msg.Tags)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Create(ctx, services.TerminalCreateRequest{
 				TerminalID: terminalID,
-				Title:      terminalID,
-				Command:    services.DefaultTerminalCommand(),
+				Title:      title,
+				Command:    command,
+				CWD:        cwd,
+				Tags:       tags,
 				Cols:       cols,
 				Rows:       rows,
 			})

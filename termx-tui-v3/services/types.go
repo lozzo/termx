@@ -85,6 +85,8 @@ type TerminalCreateRequest struct {
 	TerminalID string
 	Title      string
 	Command    []string
+	CWD        string
+	Tags       map[string]string
 	Cols       int
 	Rows       int
 }
@@ -393,6 +395,8 @@ func (service *FakeTerminalService) List(_ context.Context, req TerminalListRequ
 }
 
 func (service *FakeTerminalService) Create(_ context.Context, req TerminalCreateRequest) (TerminalCreateResult, error) {
+	req.Tags = cloneStringMap(req.Tags)
+	req.Command = append([]string(nil), req.Command...)
 	service.Creates = append(service.Creates, req)
 	if service.CreateErr != nil {
 		return TerminalCreateResult{}, service.CreateErr

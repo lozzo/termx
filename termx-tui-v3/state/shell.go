@@ -206,6 +206,20 @@ type PromptState struct {
 	Submitted         bool
 	Canceled          bool
 	LastResult        string
+	Fields            []PromptFieldState
+	ActiveField       int
+	Command           []string
+	Workdir           string
+	Tags              map[string]string
+	DefaultName       string
+}
+
+type PromptFieldState struct {
+	Key         string
+	Label       string
+	Value       string
+	Placeholder string
+	Required    bool
 }
 
 type TerminalPickerItem struct {

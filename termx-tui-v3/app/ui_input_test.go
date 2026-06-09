@@ -167,7 +167,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimeTerminalPickerEnterCreatesFromCreateRow(t *testing.T) {
+func TestInteractiveRuntimeTerminalPickerEnterOpensCreateTerminalForm(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
 		CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"},
@@ -199,15 +199,117 @@ func TestInteractiveRuntimeTerminalPickerEnterCreatesFromCreateRow(t *testing.T)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain enter: %v", err)
 	}
-	if len(terminal.Creates) != 1 {
-		t.Fatalf("create row enter should call terminal create, got %#v", terminal.Creates)
+	if len(terminal.Creates) != 0 {
+		t.Fatalf("create row enter should open form before create, got %#v", terminal.Creates)
 	}
-	toasts := runtime.State().Shell.Toasts
-	if len(toasts) == 0 || toasts[len(toasts)-1].Title != "picker.new" || toasts[len(toasts)-1].Body != "term-created" {
-		t.Fatalf("create row enter should show create feedback, got %#v", toasts)
+	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || prompt.Purpose != "terminal.create" || len(prompt.Fields) != 4 || prompt.Fields[0].Key != "name" {
+		t.Fatalf("create row enter should open create terminal form, overlay=%#v", runtime.State().Shell.Overlay)
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("picker create navigation must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeCreateTerminalFormSubmitsTerminalCreate(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"},
+	}
+	host := NewFakeTerminalHost(64)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	sendChars := func(value string) {
+		t.Helper()
+		for _, r := range value {
+			if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: string(r)}); err != nil {
+				t.Fatalf("send char %q: %v", r, err)
+			}
+		}
+	}
+	sendChars("my-term")
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}); err != nil {
+		t.Fatalf("send tab: %v", err)
+	}
+	sendChars("bash -lc 'echo hi'")
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}); err != nil {
+		t.Fatalf("send tab: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down to tags: %v", err)
+	}
+	sendChars("role=test env=dev")
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain create form: %v", err)
+	}
+	if len(terminal.Creates) != 1 {
+		t.Fatalf("create form should call terminal create once, got %#v", terminal.Creates)
+	}
+	create := terminal.Creates[0]
+	if create.Title != "my-term" || len(create.Command) != 3 || create.Command[2] != "echo hi" || create.Tags["role"] != "test" || create.Tags["env"] != "dev" {
+		t.Fatalf("unexpected create request %#v", create)
+	}
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("successful create should close overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+}
+
+func TestInteractiveRuntimeCreateTerminalFormRequiresName(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain create form: %v", err)
+	}
+	if len(terminal.Creates) != 0 {
+		t.Fatalf("missing name must not create terminal, got %#v", terminal.Creates)
+	}
+	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
+	if !runtime.State().Shell.Overlay.Open || prompt.LastResult != "name is required" {
+		t.Fatalf("missing name should keep form open with validation text, overlay=%#v", runtime.State().Shell.Overlay)
+	}
+}
+
+func TestUIInputReducerCreateTerminalFormEditsAndCancels(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyBackspace}})
+	prompt := root.Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.FieldValue("name") != "a" || prompt.ActiveField != 0 {
+		t.Fatalf("name field should edit and delete in-place, prompt=%#v", prompt)
+	}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyShiftTab}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	if prompt.ActiveField != 0 || !strings.HasSuffix(prompt.FieldValue("command"), "z") {
+		t.Fatalf("tab should move between form fields without losing values, prompt=%#v", prompt)
+	}
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
+	if root.Shell.EnsureDefaults().Overlay.Open || len(effects) != 1 {
+		t.Fatalf("esc should close create form and consume input, root=%#v effects=%#v", root, effects)
 	}
 }
 

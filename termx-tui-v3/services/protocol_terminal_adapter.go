@@ -101,6 +101,8 @@ func (adapter ProtocolTerminalServiceAdapter) Create(ctx context.Context, req Te
 		ID:      req.TerminalID,
 		Name:    req.Title,
 		Command: command,
+		Tags:    cloneStringMap(req.Tags),
+		Dir:     req.CWD,
 		Size:    protocol.Size{Cols: uint16(req.Cols), Rows: uint16(req.Rows)},
 	})
 	if err != nil {

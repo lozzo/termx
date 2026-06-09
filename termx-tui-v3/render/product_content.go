@@ -163,6 +163,9 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 	if title == "" {
 		title = "Command Prompt"
 	}
+	if len(prompt.Fields) > 0 {
+		return buildPromptFormContent(prompt, title)
+	}
 	placeholder := prompt.Placeholder
 	if placeholder == "" {
 		placeholder = "command"
@@ -197,6 +200,82 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPromptCancel.String()},
 		},
 	}
+}
+
+func buildPromptFormContent(prompt state.PromptState, title string) ContentVM {
+	lines := []Line{pageTitleLine(title, prompt.Context)}
+	activeField := prompt.ActiveField
+	if activeField < 0 {
+		activeField = 0
+	}
+	if activeField >= len(prompt.Fields) {
+		activeField = len(prompt.Fields) - 1
+	}
+	cursorRow := 1 + activeField
+	cursorCol := 0
+	for index, field := range prompt.Fields {
+		active := index == activeField
+		lines = append(lines, promptFormFieldLine(field, active))
+		if active {
+			cursorCol = promptFormFieldValueCol(field) + DisplayWidth(field.Value)
+		}
+	}
+	if prompt.LastResult != "" && !prompt.Submitted {
+		lines = append(lines, detailHeaderLine("status", prompt.LastResult))
+	}
+	actionOffset := len(lines)
+	lines = append(lines,
+		contentActionLine("submit", "Submit"),
+		contentActionLine("cancel", "Cancel"),
+	)
+	return ContentVM{
+		Kind:   ContentPrompt,
+		Lines:  lines,
+		Status: "prompt: submit/cancel",
+		Cursor: Cursor{Visible: true, Row: cursorRow, Col: cursorCol, Shape: CursorShapeBar},
+		HitRegions: []HitRegion{
+			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: ActionPromptSubmit.String()},
+			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPromptCancel.String()},
+		},
+	}
+}
+
+func promptFormFieldLine(field state.PromptFieldState, active bool) Line {
+	label := field.Label
+	if label == "" {
+		label = field.Key
+	}
+	if field.Required {
+		label += "*"
+	}
+	value := field.Value
+	valueSet := value != ""
+	if value == "" && field.Placeholder != "" {
+		value = "[" + field.Placeholder + "]"
+	}
+	labelStyle := StyleMuted
+	if active {
+		labelStyle = StyleAccent
+	}
+	valueStyle := StyleForeground
+	if !valueSet {
+		valueStyle = StyleMuted
+	}
+	return Line{Cells: []Cell{
+		styledCell(label+": ", labelStyle),
+		styledCell(value, valueStyle),
+	}}
+}
+
+func promptFormFieldValueCol(field state.PromptFieldState) int {
+	label := field.Label
+	if label == "" {
+		label = field.Key
+	}
+	if field.Required {
+		label += "*"
+	}
+	return DisplayWidth(label + ": ")
 }
 
 func buildHelpContent(shell state.ShellStore) ContentVM {

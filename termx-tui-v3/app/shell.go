@@ -2,9 +2,15 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
+	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -365,7 +371,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			ok = true
 		}
 		if ok && selected.CreateNew {
-			return root, []Effect{terminalPoolCreateRequestEffect()}
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+			}}}
 		}
 		if ok && selected.PaneID != "" {
 			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
@@ -379,7 +387,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			}}}
 		}
 	case render.ActionPickerNew:
-		return root, []Effect{terminalPoolCreateRequestEffect()}
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+		}}}
 	case render.ActionPoolSelect:
 		items := state.TerminalPoolPageItems(root)
 		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
@@ -459,7 +469,11 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionEmptyManager:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	case render.ActionEmptyAttach, render.ActionEmptyCreate:
+	case render.ActionEmptyCreate:
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return ShellOpenPromptMsg{Prompt: createTerminalPrompt(msg.PaneID)}
+		}}}
+	case render.ActionEmptyAttach:
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: msg.ActionID, Body: "not implemented"})
 		return root.Advance(), nil
 	}
@@ -499,11 +513,25 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 	after := shell.Overlay.Prompt
 	root.Shell = shell
 	if after.Submitted {
-		root.Shell = root.Shell.CloseOverlay()
 		body := after.LastResult
 		if body == "" {
 			body = "(empty)"
 		}
+		if after.Purpose == "terminal.create" {
+			request, err := terminalCreateRequestFromPrompt(after)
+			if err != nil {
+				shell = root.Shell.EnsureDefaults()
+				prompt := shell.Overlay.Prompt
+				prompt.Submitted = false
+				prompt.LastResult = err.Error()
+				shell.Overlay.Prompt = prompt
+				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.create", Body: err.Error()})
+				return root.Advance(), nil
+			}
+			root.Shell = root.Shell.CloseOverlay()
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
+		}
+		root.Shell = root.Shell.CloseOverlay()
 		if command, ok := promptWorkbenchCommand(after); ok {
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return ShellWorkbenchCommandMsg{Command: command}
@@ -533,6 +561,125 @@ func promptWorkbenchCommand(prompt state.PromptState) (state.WorkbenchCommand, b
 	default:
 		return state.WorkbenchCommand{}, false
 	}
+}
+
+func createTerminalPrompt(targetPaneID string) state.PromptState {
+	shellCommand := strings.TrimSpace(os.Getenv("SHELL"))
+	if shellCommand == "" {
+		shellCommand = "/bin/sh"
+	}
+	workdir, err := os.Getwd()
+	if err != nil {
+		workdir = ""
+	}
+	return state.PromptState{
+		Title:       "Create Terminal",
+		Context:     "name is required; command, workdir, tags are optional",
+		Purpose:     "terminal.create",
+		TargetID:    targetPaneID,
+		Command:     []string{shellCommand},
+		Workdir:     workdir,
+		DefaultName: filepath.Base(shellCommand),
+		Fields: []state.PromptFieldState{
+			{Key: "name", Label: "name", Required: true, Placeholder: filepath.Base(shellCommand)},
+			{Key: "command", Label: "command", Placeholder: shellCommand},
+			{Key: "workdir", Label: "workdir", Value: workdir},
+			{Key: "tags", Label: "tags", Placeholder: "role=dev env=test"},
+		},
+	}
+}
+
+func terminalCreateRequestFromPrompt(prompt state.PromptState) (TerminalPoolCreateRequestMsg, error) {
+	name := strings.TrimSpace(prompt.FieldValue("name"))
+	if name == "" {
+		return TerminalPoolCreateRequestMsg{}, fmt.Errorf("name is required")
+	}
+	command, err := parsePromptCommand(prompt.FieldValue("command"))
+	if err != nil {
+		return TerminalPoolCreateRequestMsg{}, err
+	}
+	if len(command) == 0 {
+		command = append([]string(nil), prompt.Command...)
+	}
+	if len(command) == 0 {
+		command = services.DefaultTerminalCommand()
+	}
+	tags, err := parsePromptTags(prompt.FieldValue("tags"))
+	if err != nil {
+		return TerminalPoolCreateRequestMsg{}, err
+	}
+	workdir := strings.TrimSpace(prompt.FieldValue("workdir"))
+	if workdir == "" {
+		workdir = strings.TrimSpace(prompt.Workdir)
+	}
+	return TerminalPoolCreateRequestMsg{Title: name, Command: command, CWD: workdir, Tags: tags}, nil
+}
+
+func parsePromptCommand(value string) ([]string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	// 这里只实现 tuiv2 表单需要的轻量 shell-like 拆分，避免为 prompt 引入完整 shell 解析器。
+	var (
+		args       []string
+		current    []rune
+		inSingle   bool
+		inDouble   bool
+		escaped    bool
+		quotedPart bool
+	)
+	flush := func(force bool) {
+		if len(current) == 0 && !quotedPart && !force {
+			return
+		}
+		args = append(args, string(current))
+		current = current[:0]
+		quotedPart = false
+	}
+	for _, r := range value {
+		switch {
+		case escaped:
+			current = append(current, r)
+			escaped = false
+		case r == '\\' && !inSingle:
+			escaped = true
+		case r == '\'' && !inDouble:
+			inSingle = !inSingle
+			quotedPart = true
+		case r == '"' && !inSingle:
+			inDouble = !inDouble
+			quotedPart = true
+		case !inSingle && !inDouble && unicode.IsSpace(r):
+			flush(false)
+		default:
+			current = append(current, r)
+		}
+	}
+	if escaped || inSingle || inDouble {
+		return nil, fmt.Errorf("invalid command syntax")
+	}
+	flush(false)
+	return args, nil
+}
+
+func parsePromptTags(value string) (map[string]string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	parts := strings.Fields(value)
+	tags := make(map[string]string, len(parts))
+	for _, part := range parts {
+		key, tagValue, ok := strings.Cut(part, "=")
+		key = strings.TrimSpace(key)
+		tagValue = strings.TrimSpace(tagValue)
+		if !ok || key == "" {
+			return nil, fmt.Errorf("invalid tag syntax")
+		}
+		tags[key] = tagValue
+	}
+	return tags, nil
 }
 
 func terminalPickerItemAt(items []state.TerminalPickerItem, row int) (state.TerminalPickerItem, bool) {

@@ -122,7 +122,12 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 		}
 	}
 	if selected.CreateNew {
-		return root, []Effect{handledEffect{}, terminalPoolCreateRequestEffect()}
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+			}},
+		}
 	}
 	if selected.PaneID == "" {
 		if selected.TerminalID == "" {
@@ -140,10 +145,6 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: selected.PaneID})
 	return root.Advance(), []Effect{handledEffect{}}
-}
-
-func terminalPoolCreateRequestEffect() Effect {
-	return FuncEffect{Run: func(context.Context) Msg { return TerminalPoolCreateRequestMsg{} }}
 }
 
 func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
@@ -239,21 +240,38 @@ func reducePromptInput(root state.Root, event input.InputEvent) (state.Root, []E
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg { return ShellPromptSubmitMsg{} }},
 		}
+	case input.KeyDown, input.KeyTab:
+		root.Shell = root.Shell.MovePromptField(1)
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyUp, input.KeyShiftTab:
+		root.Shell = root.Shell.MovePromptField(-1)
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyBackspace, input.KeyDelete:
+		value := promptEditableValue(root.Shell.EnsureDefaults().Overlay.Prompt)
+		root.Shell = root.Shell.SetPromptValue(trimLastRune(value))
+		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyChar:
 		if isBackspaceEvent(event) {
-			value := root.Shell.EnsureDefaults().Overlay.Prompt.Value
+			value := promptEditableValue(root.Shell.EnsureDefaults().Overlay.Prompt)
 			root.Shell = root.Shell.SetPromptValue(trimLastRune(value))
 			return root.Advance(), []Effect{handledEffect{}}
 		}
 		if event.Ctrl || event.Char == "" {
 			return root, []Effect{handledEffect{}}
 		}
-		value := root.Shell.EnsureDefaults().Overlay.Prompt.Value + event.Char
+		value := promptEditableValue(root.Shell.EnsureDefaults().Overlay.Prompt) + event.Char
 		root.Shell = root.Shell.SetPromptValue(value)
 		return root.Advance(), []Effect{handledEffect{}}
 	default:
 		return root, []Effect{handledEffect{}}
 	}
+}
+
+func promptEditableValue(prompt state.PromptState) string {
+	if active := prompt.ActivePromptField(); active != nil {
+		return active.Value
+	}
+	return prompt.Value
 }
 
 func reduceHelpInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {

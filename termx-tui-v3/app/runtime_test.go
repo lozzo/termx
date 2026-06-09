@@ -2181,12 +2181,11 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	if err := newRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain picker new: %v", err)
 	}
-	if len(newTerminal.Creates) != 1 {
-		t.Fatalf("picker new should call terminal create, got %#v", newTerminal.Creates)
+	if len(newTerminal.Creates) != 0 {
+		t.Fatalf("picker new should open form before create, got %#v", newTerminal.Creates)
 	}
-	toasts := newRuntime.State().Shell.Toasts
-	if len(toasts) == 0 || toasts[len(toasts)-1].Title != "picker.new" || toasts[len(toasts)-1].Body != "term-created" {
-		t.Fatalf("picker new should show feedback toast, got %#v", toasts)
+	if overlay := newRuntime.State().Shell.EnsureDefaults().Overlay; overlay.Kind != state.OverlayPrompt || overlay.Prompt.Purpose != "terminal.create" {
+		t.Fatalf("picker new should open create terminal form, got %#v", overlay)
 	}
 
 	emptyHost := NewFakeTerminalHost(8)

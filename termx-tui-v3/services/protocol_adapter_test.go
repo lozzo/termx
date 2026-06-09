@@ -460,11 +460,11 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 		t.Fatalf("unexpected list mapping calls=%d result=%#v", client.listCalls, list)
 	}
 
-	created, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-new", Title: "new", Command: []string{"sh"}, Cols: 100, Rows: 30})
+	created, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-new", Title: "new", Command: []string{"sh"}, CWD: "/tmp/app", Tags: map[string]string{"role": "dev"}, Cols: 100, Rows: 30})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if created.TerminalID != "term-new" || len(client.createParams) != 1 || client.createParams[0].Size.Cols != 100 || client.createParams[0].Name != "new" {
+	if created.TerminalID != "term-new" || len(client.createParams) != 1 || client.createParams[0].Size.Cols != 100 || client.createParams[0].Name != "new" || client.createParams[0].Dir != "/tmp/app" || client.createParams[0].Tags["role"] != "dev" {
 		t.Fatalf("unexpected create mapping created=%#v params=%#v", created, client.createParams)
 	}
 	if _, err := adapter.Create(context.Background(), TerminalCreateRequest{TerminalID: "term-default", Title: "default", Cols: 80, Rows: 24}); err != nil {
