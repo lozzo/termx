@@ -68,9 +68,11 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	}
 	last := lastFrame(t, host.Frames())
 	if !frameContains(last, "terminal picker") ||
-		!frameContains(last, "Search terminal name") ||
-		!frameContains(last, "Select terminal source state target") ||
-		frameContains(last, "filter terminals") {
+		!frameContains(last, "search:") ||
+		!frameContains(last, "▸ ○ shell") ||
+		!frameContains(last, "+ new terminal") ||
+		frameContains(last, "Select terminal source state target") ||
+		frameContains(last, "DETAIL") {
 		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
 	}
 }
@@ -113,7 +115,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 		t.Fatalf("expected picker query retained in reducer state, got %#v", runtime.State().Shell.Overlay)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if !frameContains(queryFrame, "Search 日志") || !frameContains(queryFrame, "▌ 日志🚀") || !frameContains(queryFrame, "DETAIL 日志🚀") {
+	if !frameContains(queryFrame, "search: 日志") || !frameContains(queryFrame, "▸ ○ 日志🚀") || frameContains(queryFrame, "DETAIL 日志🚀") {
 		t.Fatalf("expected filtered picker frame, got %#v", queryFrame.Lines)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -139,6 +141,56 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("picker navigation must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeTerminalPickerEnterCreatesFromCreateRow(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
+		CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"},
+	}
+	initialShell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: initialShell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-f: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down to second terminal row: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down to create row: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain enter: %v", err)
+	}
+	if len(terminal.Creates) != 1 {
+		t.Fatalf("create row enter should call terminal create, got %#v", terminal.Creates)
+	}
+	toasts := runtime.State().Shell.Toasts
+	if len(toasts) == 0 || toasts[len(toasts)-1].Title != "picker.new" || toasts[len(toasts)-1].Body != "term-created" {
+		t.Fatalf("create row enter should show create feedback, got %#v", toasts)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("picker create navigation must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 

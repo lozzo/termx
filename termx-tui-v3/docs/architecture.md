@@ -517,10 +517,10 @@ terminal-live content renderer 只能在上述交互闭环完成后深化。term
 - `OverlayState.Query` 与 `OverlayState.SelectedIndex` 是 reducer-owned picker 交互状态；query 更新、过滤后重置 selection、上下移动 selection 都必须由 `ShellStore` 方法完成。
 - `state.TerminalPickerItems(root)` 是 app 与 render 共享的当前 picker item 推导入口；它只从 reducer-owned root、当前 workspace panes、当前 active session/surface/history terminal id 和 reducer-owned `TerminalPoolStore` 推导列表，不直接读取服务端 Terminal Pool。
 - UI input reducer 在 Terminal Picker overlay 打开时优先消费字符、Backspace、上下方向键和 Enter；这些输入不得进入 terminal input path。
-- Enter 和 picker row click 最小可落地语义都是 focus 目标 pane、关闭 overlay、添加 toast 反馈；不得把该路径伪装成跨 workspace attach 或服务端 Terminal Pool attach。
+- Enter 和 picker row click 必须复用同一 selected item 语义：pane row focus/close overlay，pool row 走 service attach，create row 走 service create；不得按键盘和鼠标分叉实现第二套路由。
 - `picker.new` 只能通过 terminal service create effect/result 接线，result 到达后显示反馈 toast；不得直接修改 service state 或在 result 前伪造 terminal lifecycle。
-- preview/detail 行只投影 selected item 的 pane id、terminal id 和 kind；renderer 不读取 service、core client 或 Terminal Pool。
-- overlay cursor、row action 和 preview 内容继续由 render framework 按 content rect 裁切合成，不得覆盖 pane chrome、toast 或 shell chrome。
+- Terminal Picker 只投影轻量 selected hint，不显示 Terminal Pool 式 detail/preview 管理块；renderer 不读取 service、core client 或 Terminal Pool。
+- overlay cursor、row action 和 selected hint 继续由 render framework 按 content rect 裁切合成，不得覆盖 pane chrome、toast 或 shell chrome。
 
 当前 Terminal Pool 数据源与 Picker 服务接线一期的架构边界：
 

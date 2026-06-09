@@ -57,10 +57,7 @@ func buildExitedPaneContent(pane state.PaneState) ContentVM {
 func buildTerminalPickerContent(root state.Root, shell state.ShellStore) ContentVM {
 	shell = shell.EnsureDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
-	lines := []Line{
-		terminalPickerSearchLine(query),
-		terminalPickerHeaderLine(),
-	}
+	lines := []Line{terminalPickerSearchLine(query)}
 	if poolLine, ok := terminalPoolStateLine(root.TerminalPool); ok {
 		lines = append(lines, poolLine)
 	}
@@ -69,21 +66,12 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	for _, row := range rows {
 		lines = append(lines, terminalPickerLine(row))
 	}
-	lines = append(lines, terminalPickerDetailLines(rows)...)
-	actionOffset := len(lines)
-	lines = append(lines,
-		contentActionLine("attach", "Attach Selected"),
-		contentActionLine("new", "New Shell"),
-	)
+	lines = append(lines, terminalPickerHintLines(rows)...)
 	regions := terminalPickerHitRegions(rows, rowOffset)
-	regions = append(regions,
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionPickerAttach.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPickerNew.String()},
-	)
 	return ContentVM{
 		Kind:       ContentTerminalPicker,
 		Lines:      lines,
-		Status:     terminalPickerStatus(len(rows), query),
+		Status:     terminalPickerStatus(terminalPickerSelectableCount(rows), query),
 		Cursor:     Cursor{Visible: true, Row: 0, Col: terminalPickerSearchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: regions,
 	}
@@ -315,17 +303,29 @@ func terminalPickerLine(row state.TerminalPickerItem) Line {
 	marker := "  "
 	style := StyleMuted
 	if row.Selected {
-		marker = "▌ "
+		marker = "▸ "
 		style = StyleAccent
+	}
+	if row.CreateNew {
+		return Line{Cells: []Cell{
+			styledCell(marker, style),
+			styledCell("+", StyleInfo),
+			NewCell(" "),
+			styledCell(row.Title, style),
+			NewCell("  "),
+			styledCell("active pane", StyleMuted),
+		}}
 	}
 	return Line{Cells: []Cell{
 		styledCell(marker, style),
+		styledCell("○", terminalPickerStateStyle(row)),
+		NewCell(" "),
 		styledCell(row.Title, style),
-		NewCell(" "),
-		tokenCell(terminalPickerSourceLabel(row), StyleInfo),
-		NewCell(" "),
+		NewCell("  "),
 		tokenCell(terminalPickerStateLabel(row), terminalPickerStateStyle(row)),
-		NewCell(" "),
+		NewCell("  "),
+		styledCell(terminalPickerTerminalLabel(row), StyleMuted),
+		NewCell("  "),
 		styledCell(terminalPickerTargetLabel(row), StyleMuted),
 	}}
 }
@@ -333,32 +333,20 @@ func terminalPickerLine(row state.TerminalPickerItem) Line {
 func terminalPickerSearchLine(query string) Line {
 	if query == "" {
 		return Line{Cells: []Cell{
-			styledCell("Search ", StyleMuted),
-			styledCell("terminal name, id, pane, state", StyleMuted),
+			styledCell("search:", StyleMuted),
 		}}
 	}
 	return Line{Cells: []Cell{
-		styledCell("Search ", StyleMuted),
+		styledCell("search: ", StyleMuted),
 		styledCell(query, StyleAccent),
 	}}
 }
 
-func terminalPickerHeaderLine() Line {
-	return Line{Cells: []Cell{
-		styledCell("Select", StyleMuted),
-		NewCell(" "),
-		styledCell("terminal", StyleMuted),
-		NewCell(" "),
-		styledCell("source", StyleMuted),
-		NewCell(" "),
-		styledCell("state", StyleMuted),
-		NewCell(" "),
-		styledCell("target", StyleMuted),
-	}}
-}
-
 func terminalPickerSearchCursorCol(query string) int {
-	return DisplayWidth("Search ") + DisplayWidth(query)
+	if query == "" {
+		return DisplayWidth("search:")
+	}
+	return DisplayWidth("search: ") + DisplayWidth(query)
 }
 
 func terminalPoolPageRowLine(row state.TerminalPoolPageItem) Line {
@@ -495,12 +483,16 @@ func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int) []Hi
 func terminalPickerHitRegions(rows []state.TerminalPickerItem, rowOffset int) []HitRegion {
 	regions := make([]HitRegion, 0, len(rows)+1)
 	for index, row := range rows {
+		actionID := ActionPickerAttach.String()
+		if row.CreateNew {
+			actionID = ActionPickerNew.String()
+		}
 		regions = append(regions, HitRegion{
 			Kind:     HitRegionContentAction,
 			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
 			PaneID:   row.PaneID,
 			Row:      index,
-			ActionID: ActionPickerAttach.String(),
+			ActionID: actionID,
 		})
 	}
 	return regions
@@ -605,23 +597,30 @@ func terminalPoolPageStateLine(pool state.TerminalPoolStore, rowCount int) (Line
 	return Line{}, false
 }
 
-func terminalPickerDetailLines(rows []state.TerminalPickerItem) []Line {
+func terminalPickerHintLines(rows []state.TerminalPickerItem) []Line {
 	if len(rows) == 0 {
 		return []Line{
-			detailHeaderLine("detail", "no terminal selected"),
-			detailHeaderLine("target", "create a new shell or clear the search"),
+			{Cells: []Cell{styledCell("selected ", StyleMuted), NewCell("new terminal")}},
 		}
 	}
 	selected := selectedTerminalPickerItem(rows)
+	if selected.CreateNew {
+		return []Line{
+			{Cells: []Cell{
+				styledCell("selected ", StyleMuted),
+				styledCell("new terminal", StyleAccent),
+				NewCell("  "),
+				styledCell("active pane", StyleMuted),
+			}},
+		}
+	}
 	return []Line{
-		detailHeaderLine("detail", selected.Title),
-		detailTokenLine([]string{
-			"source " + terminalPickerSourceLabel(selected),
-			"state " + terminalPickerStateLabel(selected),
-			terminalPickerActiveLabel(selected),
-		}),
-		detailHeaderLine("target", terminalPickerTargetLabel(selected)),
-		detailHeaderLine("terminal", terminalPickerTerminalLabel(selected)),
+		{Cells: []Cell{
+			styledCell("selected ", StyleMuted),
+			styledCell(selected.Title, StyleAccent),
+			NewCell("  "),
+			styledCell(terminalPickerTargetLabel(selected), StyleMuted),
+		}},
 	}
 }
 
@@ -636,20 +635,19 @@ func selectedTerminalPickerItem(rows []state.TerminalPickerItem) state.TerminalP
 }
 
 func terminalPickerTerminalLabel(row state.TerminalPickerItem) string {
+	if row.CreateNew {
+		return "new"
+	}
 	if row.TerminalID == "" {
 		return "none"
 	}
 	return row.TerminalID
 }
 
-func terminalPickerSourceLabel(row state.TerminalPickerItem) string {
-	if row.FromPool {
-		return "pool"
-	}
-	return "pane"
-}
-
 func terminalPickerStateLabel(row state.TerminalPickerItem) string {
+	if row.CreateNew {
+		return "new"
+	}
 	if row.PoolState != "" {
 		return row.PoolState
 	}
@@ -664,6 +662,9 @@ func terminalPickerStateLabel(row state.TerminalPickerItem) string {
 }
 
 func terminalPickerStateStyle(row state.TerminalPickerItem) StyleToken {
+	if row.CreateNew {
+		return StyleInfo
+	}
 	stateText := terminalPickerStateLabel(row)
 	if stateText == "running" || stateText == "live" {
 		return StyleSuccess
@@ -675,6 +676,9 @@ func terminalPickerStateStyle(row state.TerminalPickerItem) StyleToken {
 }
 
 func terminalPickerTargetLabel(row state.TerminalPickerItem) string {
+	if row.CreateNew {
+		return "active pane"
+	}
 	if row.FromPool {
 		return "attach to active pane"
 	}
@@ -682,13 +686,6 @@ func terminalPickerTargetLabel(row state.TerminalPickerItem) string {
 		return "active pane"
 	}
 	return "pane:" + row.PaneID
-}
-
-func terminalPickerActiveLabel(row state.TerminalPickerItem) string {
-	if row.Active {
-		return "active yes"
-	}
-	return "active no"
 }
 
 func terminalPoolPageStatus(pool state.TerminalPoolStore, count int, query string) string {
@@ -746,12 +743,18 @@ func terminalPoolStateLine(pool state.TerminalPoolStore) (Line, bool) {
 		return Line{Cells: []Cell{styledCell("pool ", StyleMuted), NewCell("loading terminals")}}, true
 	case state.TerminalPoolError:
 		return Line{Cells: []Cell{styledCell("pool error ", StyleWarning), NewCell(pool.LastError)}}, true
-	case state.TerminalPoolReady:
-		if len(pool.Items) == 0 {
-			return Line{Cells: []Cell{styledCell("pool ", StyleMuted), NewCell("empty")}}, true
-		}
 	}
 	return Line{}, false
+}
+
+func terminalPickerSelectableCount(rows []state.TerminalPickerItem) int {
+	count := 0
+	for _, row := range rows {
+		if !row.CreateNew {
+			count++
+		}
+	}
+	return count
 }
 
 func terminalPickerStatus(count int, query string) string {

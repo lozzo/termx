@@ -364,6 +364,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			selected = state.TerminalPickerItem{PaneID: msg.PaneID}
 			ok = true
 		}
+		if ok && selected.CreateNew {
+			return root, []Effect{terminalPoolCreateRequestEffect()}
+		}
 		if ok && selected.PaneID != "" {
 			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
 			root.Shell = root.Shell.CloseOverlay()
@@ -376,7 +379,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			}}}
 		}
 	case render.ActionPickerNew:
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolCreateRequestMsg{} }}}
+		return root, []Effect{terminalPoolCreateRequestEffect()}
 	case render.ActionPoolSelect:
 		items := state.TerminalPoolPageItems(root)
 		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))

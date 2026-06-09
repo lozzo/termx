@@ -211,8 +211,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	case string(state.OverlayTerminalPicker):
 		return footerActionSpecs(
-			footerActionSpec("select", "", "", StyleStatusAccent),
-			footerActionFor(ActionPickerAttach),
+			footerActionSpec("enter", "select", "", StyleStatusAccent),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayTerminalPool):

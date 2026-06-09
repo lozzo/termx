@@ -80,13 +80,15 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("split hidden toast should not render premature pane chrome tokens: %#v", cases["split-hidden-toast"].Lines)
 	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
-	if !frameContains(cases["terminal-picker"].Lines, "Search terminal name") ||
-		!frameContains(cases["terminal-picker"].Lines, "Select terminal source state target") ||
+	if !frameContains(cases["terminal-picker"].Lines, "search:") ||
+		!frameContains(cases["terminal-picker"].Lines, "▸ ○ shell") ||
 		!frameContains(cases["terminal-picker"].Lines, "termx-picker") ||
-		!frameContains(cases["terminal-picker"].Lines, "[attach]  Attach Selected") ||
-		!frameContains(cases["terminal-picker"].Lines, "[new]  New Shell") ||
+		!frameContains(cases["terminal-picker"].Lines, "+ new terminal") ||
 		frameContains(cases["terminal-picker"].Lines, "filter terminals") ||
-		frameContains(cases["terminal-picker"].Lines, "PREVIEW pane:") {
+		frameContains(cases["terminal-picker"].Lines, "Select terminal source state target") ||
+		frameContains(cases["terminal-picker"].Lines, "DETAIL") ||
+		frameContains(cases["terminal-picker"].Lines, "[attach]") ||
+		frameContains(cases["terminal-picker"].Lines, "[new]") {
 		t.Fatalf("terminal picker smoke missing product content: %#v", cases["terminal-picker"].Lines)
 	}
 	if !frameContains(cases["terminal-pool-page"].Lines, "Terminal Pool") ||
@@ -218,7 +220,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	requiredOverlays := map[string][]string{
-		"terminal-picker":     {"┌─ terminal picker", "● open", "esc", "Search terminal name", "Select terminal source state target", "[attach]  Attach Selected", "[new]  New Shell"},
+		"terminal-picker":     {"┌─ terminal picker", "● open", "esc", "search:", "▸ ○ shell", "+ new terminal"},
 		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill"},
 		"workbench-tree-page": {"┌─ workbench tree", "● open", "esc", "Workbench Tree", "TUI storage projection", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open"},
 		"prompt-overlay":      {"┌─ prompt", "● open", "esc", "Command Prompt", "重命名"},
@@ -233,7 +235,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	picker := cases["terminal-picker"]
-	for _, stale := range []string{"filter terminals", "PREVIEW pane:"} {
+	for _, stale := range []string{"filter terminals", "PREVIEW pane:", "Select terminal source state target", "DETAIL", "[attach]", "[new]"} {
 		if frameContains(picker.Lines, stale) {
 			t.Fatalf("terminal picker regressed to engineering label %q: %#v", stale, picker.Lines)
 		}

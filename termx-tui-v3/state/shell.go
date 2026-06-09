@@ -217,6 +217,7 @@ type TerminalPickerItem struct {
 	Selected   bool
 	FromPool   bool
 	PoolState  string
+	CreateNew  bool
 }
 
 type TerminalPoolPageItem struct {

@@ -118,6 +118,9 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 			break
 		}
 	}
+	if selected.CreateNew {
+		return root, []Effect{handledEffect{}, terminalPoolCreateRequestEffect()}
+	}
 	if selected.PaneID == "" {
 		if selected.TerminalID == "" {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no terminal"})
@@ -134,6 +137,10 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: selected.PaneID})
 	return root.Advance(), []Effect{handledEffect{}}
+}
+
+func terminalPoolCreateRequestEffect() Effect {
+	return FuncEffect{Run: func(context.Context) Msg { return TerminalPoolCreateRequestMsg{} }}
 }
 
 func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {

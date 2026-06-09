@@ -294,18 +294,18 @@ func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
 	root := Root{Shell: shell, Session: TerminalSessionStore{TerminalID: "term-main"}}
 
 	items := TerminalPickerItems(root)
-	if len(items) != 2 || !items[0].Selected || items[0].PaneID != DefaultPaneID {
-		t.Fatalf("expected two picker items with first selected, got %#v", items)
+	if len(items) != 3 || !items[0].Selected || items[0].PaneID != DefaultPaneID || !items[2].CreateNew {
+		t.Fatalf("expected two picker items plus create row with first selected, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("日志")
 	items = TerminalPickerItems(root)
-	if len(items) != 1 || items[0].PaneID != "pane-2" || !items[0].Selected {
-		t.Fatalf("query should filter and reset selected item, got %#v", items)
+	if len(items) != 2 || items[0].PaneID != "pane-2" || !items[0].Selected || !items[1].CreateNew {
+		t.Fatalf("query should filter terminal rows, keep create row, and reset selected item, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("")
 	root.Shell = root.Shell.MoveTerminalPickerSelection(1, len(TerminalPickerItems(root)))
 	items = TerminalPickerItems(root)
-	if len(items) != 2 || !items[1].Selected {
+	if len(items) != 3 || !items[1].Selected {
 		t.Fatalf("selection should move to second item, got %#v", items)
 	}
 }
@@ -325,13 +325,13 @@ func TestTerminalPickerItemsMergeTerminalPoolAndWorkspacePanes(t *testing.T) {
 	}
 
 	items := TerminalPickerItems(root)
-	if len(items) != 2 || items[0].PaneID != DefaultPaneID || items[1].TerminalID != "term-pool" || !items[1].FromPool {
-		t.Fatalf("expected pane item plus deduped pool item, got %#v", items)
+	if len(items) != 3 || items[0].PaneID != DefaultPaneID || items[1].TerminalID != "term-pool" || !items[1].FromPool || !items[2].CreateNew {
+		t.Fatalf("expected pane item plus deduped pool item and create row, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("远程")
 	items = TerminalPickerItems(root)
-	if len(items) != 1 || items[0].TerminalID != "term-pool" || !items[0].Selected {
-		t.Fatalf("expected query to match pool item and reset selection, got %#v", items)
+	if len(items) != 2 || items[0].TerminalID != "term-pool" || !items[0].Selected || !items[1].CreateNew {
+		t.Fatalf("expected query to match pool item, keep create row, and reset selection, got %#v", items)
 	}
 }
 

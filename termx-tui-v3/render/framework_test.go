@@ -603,7 +603,7 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 		{name: "tab", mode: "tab", want: "[n] NEW"},
 		{name: "workspace", mode: "workspace", want: "[x] DELETE"},
 		{name: "copy", mode: "copy", want: "[pgup] OLDER"},
-		{name: "overlay", mode: "terminal-picker", want: "[attach]"},
+		{name: "overlay", mode: "terminal-picker", want: "[enter] SELECT"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -875,17 +875,16 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 	if vm.Shell.Overlay.Kind != OverlayTerminalPicker || content.Kind != ContentTerminalPicker {
 		t.Fatalf("expected terminal picker content, got %#v", vm.Shell.Overlay)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "Search term") ||
-		!strings.Contains(content.Lines[1].PlainString(), "Select terminal source state target") ||
-		!strings.Contains(content.Lines[2].PlainString(), "▌ shell") ||
-		!strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
-		!strings.Contains(content.Lines[4].PlainString(), "DETAIL shell") ||
-		!strings.Contains(content.Lines[len(content.Lines)-2].PlainString(), "[attach]  Attach Selected") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[new]  New Shell") {
-		t.Fatalf("expected picker search/list/detail/action rows, got %#v", content.Lines)
+	plain := plainLines(content.Lines)
+	for _, want := range []string{"search: term", "▸ ○ shell", "term-main", "  ○ 日志🚀", "+ new terminal", "selected shell"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected lightweight picker marker %q, got %#v", want, content.Lines)
+		}
 	}
-	if strings.Contains(content.Lines[0].PlainString(), "filter terminals") || strings.Contains(content.Lines[4].PlainString(), "PREVIEW pane:") {
-		t.Fatalf("picker must not regress to old engineering labels, got %#v", content.Lines)
+	for _, forbidden := range []string{"Select terminal source state target", "DETAIL", "TARGET", "TERMINAL", "[attach]", "[new]", "PREVIEW pane:"} {
+		if strings.Contains(plain, forbidden) {
+			t.Fatalf("picker must not render management table/action content %q, got %#v", forbidden, content.Lines)
+		}
 	}
 	if content.Status != "terminal picker: 2 items query:term" {
 		t.Fatalf("expected picker item count status, got %q", content.Status)
@@ -894,7 +893,7 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 		t.Fatalf("expected picker search cursor, got %#v", content.Cursor)
 	}
 	if !contentHasAction(content, "picker.attach") || !contentHasAction(content, "picker.new") {
-		t.Fatalf("expected picker action hit regions, got %#v", content.HitRegions)
+		t.Fatalf("expected picker row/new hit regions, got %#v", content.HitRegions)
 	}
 }
 
@@ -907,16 +906,17 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 		SetTerminalPickerQuery("日志")
 
 	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[0].PlainString(), "Search 日志") ||
-		!strings.Contains(content.Lines[2].PlainString(), "▌ 日志🚀") ||
-		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
-		strings.Contains(content.Lines[2].PlainString(), "shell") {
+	if !strings.Contains(content.Lines[0].PlainString(), "search: 日志") ||
+		!strings.Contains(content.Lines[1].PlainString(), "▸ ○ 日志🚀") ||
+		!strings.Contains(content.Lines[2].PlainString(), "+ new terminal") ||
+		strings.Contains(plainLines(content.Lines), "shell") ||
+		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[2], "日志🚀", StyleAccent) {
-		t.Fatalf("expected selected picker row to use accent style, got %#v", content.Lines[2])
+	if !lineHasStyledCell(content.Lines[1], "日志🚀", StyleAccent) {
+		t.Fatalf("expected selected picker row to use accent style, got %#v", content.Lines[1])
 	}
-	if content.Cursor.Col != DisplayWidth("Search 日志") {
+	if content.Cursor.Col != DisplayWidth("search: 日志") {
 		t.Fatalf("expected cursor after query text, got %#v", content.Cursor)
 	}
 	if content.Status != "terminal picker: 1 items query:日志" {
@@ -939,29 +939,34 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[2].PlainString(), "shell") ||
-		!strings.Contains(content.Lines[3].PlainString(), "远程🚀") ||
-		!strings.Contains(content.Lines[3].PlainString(), "pool") ||
-		!strings.Contains(content.Lines[4].PlainString(), "DETAIL shell") {
+	if !strings.Contains(content.Lines[1].PlainString(), "shell") ||
+		!strings.Contains(content.Lines[2].PlainString(), "远程🚀") ||
+		!strings.Contains(content.Lines[2].PlainString(), "pool") ||
+		!strings.Contains(content.Lines[3].PlainString(), "+ new terminal") ||
+		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected pane and pool rows, got %#v", content.Lines)
 	}
-	if len(content.HitRegions) < 4 || content.HitRegions[1].Row != 1 || content.HitRegions[1].PaneID != "" {
-		t.Fatalf("expected pool row action region without pane id, got %#v", content.HitRegions)
+	if len(content.HitRegions) != 3 ||
+		content.HitRegions[1].Row != 1 ||
+		content.HitRegions[1].PaneID != "" ||
+		content.HitRegions[1].ActionID != ActionPickerAttach.String() ||
+		content.HitRegions[2].ActionID != ActionPickerNew.String() {
+		t.Fatalf("expected pane, pool and create row action regions, got %#v", content.HitRegions)
 	}
 
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolLoading}
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[2].PlainString(), "pool loading terminals") {
+	if !strings.Contains(plainLines(content.Lines), "loading terminals") {
 		t.Fatalf("expected loading row, got %#v", content.Lines)
 	}
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolReady}
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[2].PlainString(), "pool empty") {
+	if !strings.Contains(plainLines(content.Lines), "+ new terminal") {
 		t.Fatalf("expected empty row, got %#v", content.Lines)
 	}
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolError, LastError: "boom"}
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[2].PlainString(), "pool error boom") {
+	if !strings.Contains(plainLines(content.Lines), "pool error boom") {
 		t.Fatalf("expected error row, got %#v", content.Lines)
 	}
 }

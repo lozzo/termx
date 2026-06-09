@@ -1267,7 +1267,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 单个 pane 的产品风格参考 `tuiv2` 截图中的紫色 accent 细边框、顶部 owner/action token 和内容区裁切；切片 88 后默认 theme 已改为紫色 accent + 深色 chrome，但仍必须通过真实截图级复核确认是否达标。
 - 右上角消息参考现代 CLI/TUI 的 toast：实体卡片、短文本、severity 或 accent 侧边，不改变 pane layout；复制成功等短反馈可以使用这种形态。
 - modal/overlay 参考现代 command palette 的实体卡片：前景是 solid dark card 或等价主题卡片，可以有标题、搜索行、selected row 和 action row。
-- Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的内容层不能退回工程表格：搜索行统一使用短 search affordance，selected row 必须有强视觉 marker，detail / preview / context / input 使用稳定 label，action row 使用短 token + 动作文案。
+- Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的内容层不能退回工程表格：搜索行统一使用短 search affordance，selected row 必须有强视觉 marker。Terminal Picker 保持轻量 search/list/create/selected hint；Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 才按各自页面语义显示 detail / preview / context / input 或 action row。
 - copy-history 的内容层必须有清晰的 search row、match state、scrollbar/status row 和历史行层级；这些视觉元素只能来自 authoritative `HistoryWindow` 投影，不能为了显示效果从 live surface fallback。
 - overlay 不要求灰度遮罩背景；中文、emoji、CJK、combining mark 或 ambiguous width 字符若无法安全套用 dim 样式，必须优先保证文本可见和宽度正确，不得为了背景灰度让非英文文本消失。
 - floating pane、Prompt、Help 和 Workbench Tree 后续都必须使用 styled chrome；它们可以有不同尺寸和内容密度，但不得绕过 render framework 直接写临时线框。
@@ -1375,7 +1375,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 
 - terminal-live 内容已经具备完整 styled cell、cursor、selection 或 search。
 - copy-history 内容已经具备最终 visual polish、完整 logical-line 拼接提示或跨 logical-line selection affordance。
-- Terminal Picker 已经接入完整 Terminal Pool、preview、跨 workspace 过滤或真实 create/attach 服务。
+- Terminal Picker 已经接入完整跨 workspace 过滤或 Terminal Pool 管理页能力。
 - Terminal Pool、Workbench Tree、floating pane、Prompt、Help 已经完整产品化。
 
 基本手工测试入口：
@@ -1477,10 +1477,10 @@ empty/exited/Terminal Picker 内容 renderer 一期的目标是把旧 placeholde
 - empty pane 只消费当前 `PaneState`，显示 pane title、empty 状态和 attach/create/manager/close CTA。
 - exited pane 只消费当前 `PaneState`，显示 pane title、last state 或 terminal id，以及 restart/reconnect/close CTA。
 - Terminal Picker 只消费 reducer-owned `ShellStore`、当前 workspace panes、active session/surface/history terminal id 和 overlay query；不得伪造 Terminal Pool store。
-- Terminal Picker overlay 必须显示 search row、当前 workspace terminal list、selected row、new terminal row 和 content action hit region。
+- Terminal Picker overlay 必须显示 search row、当前 workspace terminal list、`+ new terminal` row 和轻量 selected hint；不得显示 Terminal Pool 式 detail/preview 管理块。
 - Terminal Picker 搜索框 cursor 归属于 overlay content；overlay 打开时 cursor 不得继续落到 pane 内容。
 - content action hit region 必须先于 broad pane content 或 overlay background 命中，点击 CTA 或 picker row 不得漏发到底层 terminal。
-- picker row 点击可以执行当前已可证明的 pane focus / overlay close；未实现的 attach/create/restart/manager 只能显示 toast 反馈，不得伪装已接服务。
+- picker row 点击可以执行当前已可证明的 pane focus / pool attach / create request；Terminal Pool 完整管理动作不得塞进 picker。
 - 所有文本必须按 terminal cell width 裁切，emoji、CJK 和 combining mark 不得破坏 pane border、overlay border 或整行宽度。
 
 一期不要求：
@@ -1499,14 +1499,14 @@ Terminal Picker 真实交互深化的目标是把一期静态列表推进为可�
 
 - `Ctrl-f` 打开 Terminal Picker 后，普通字符输入进入 picker query，不得继续发送到 terminal input。
 - Backspace 修改 picker query，`Esc` 关闭 overlay，关闭时不得产生 terminal input。
-- Terminal Picker 行来源仍只允许是 reducer-owned 当前 workspace panes 与现有 session/surface/history terminal id；不得伪造完整 Terminal Pool。
+- Terminal Picker 行来源仍只允许是 reducer-owned 当前 workspace panes、现有 session/surface/history terminal id 与 reducer-owned Terminal Pool store；不得由 renderer 直接读服务。
 - query 必须能过滤 title、pane id、terminal id 和 pane kind；过滤后 selected row 回到第一项。
 - 上下方向键移动 selected row，并且在列表内循环；selected row 必须有明确高亮。
 - `Enter` 确认 selected row 后，当前可证明的行为是 focus 对应 pane、关闭 overlay 并显示 toast 反馈。
 - 点击 picker row 与 `Enter` 使用同一 attach/focus/close overlay 语义；不得写第二套路由。
-- picker 必须显示最小 preview/detail 行，内容来自 selected item 的 pane id、terminal id 和 kind；不得读取服务端 Terminal Pool。
-- `new terminal` action 当前只允许显示反馈 toast，不能伪装已经创建 terminal；真实 create 只能在后续服务接线切片完成。
-- overlay cursor、列表行、preview 行和 action hit region 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 styled cell 不得破坏 overlay border 或整行宽度。
+- picker 只显示一行 selected hint，内容来自 selected item 的 attach/create 目标；不得显示 `DETAIL/TARGET/TERMINAL` 大块或内容区 `[attach]/[new]` 按钮。
+- `+ new terminal` row 必须通过 terminal service create effect/result 接线；result 到达前不得伪造 terminal 生命周期。
+- overlay cursor、列表行、selected hint 和 row hit region 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 styled cell 不得破坏 overlay border 或整行宽度。
 
 本阶段不要求：
 
