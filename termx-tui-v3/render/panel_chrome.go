@@ -100,9 +100,9 @@ func renderCardPanel(c *canvas, layout PanelLayoutPlan) {
 		return
 	}
 	style := paneChromeStyle(layout.Panel)
-	owner := "pane:" + layout.Panel.ID
-	c.drawStyledPaneFrame(rect, style, owner, LayerPanel)
-	renderPaneChromeSlots(c, rect, layout.Panel, style, owner)
+	primitive := PaneChromePrimitive(layout.Panel, rect, style)
+	c.drawStyledPaneFrame(rect, style, primitive.Owner, primitive.Layer)
+	renderPaneChromePrimitive(c, primitive, layout.Panel)
 }
 
 func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
@@ -111,13 +111,13 @@ func renderSplitPanel(c *canvas, layout PanelLayoutPlan) {
 		return
 	}
 	style := paneChromeStyle(layout.Panel)
-	owner := "pane:" + layout.Panel.ID
 	body := layout.Body
 	if body.W <= 0 || body.H <= 0 {
 		body = rect
 	}
-	c.drawStyledSplitPaneChrome(rect, body, style, owner, LayerPanel)
-	renderPaneChromeSlots(c, rect, layout.Panel, style, owner)
+	primitive := PaneChromePrimitive(layout.Panel, rect, style)
+	c.drawStyledSplitPaneChrome(rect, body, style, primitive.Owner, primitive.Layer)
+	renderPaneChromePrimitive(c, primitive, layout.Panel)
 }
 
 func panelTitle(panel PanelVM) string {
@@ -225,12 +225,12 @@ func (c *canvas) drawStyledSplitHBorder(startX int, endX int, y int, body Rect, 
 	}
 }
 
-func renderPaneChromeSlots(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string) {
-	if rect.W < 4 || rect.H <= 0 {
+func renderPaneChromePrimitive(c *canvas, primitive ChromePrimitive, panel PanelVM) {
+	if primitive.Rect.W < 4 || primitive.Rect.H <= 0 {
 		return
 	}
-	for _, slot := range paneChromeTopSlots(rect, panel, style) {
-		c.overlayTextStyled(slot.x, rect.Y, DisplayWidth(slot.text), slot.text, slot.style, owner, LayerPanel)
+	for _, slot := range paneChromeTopSlots(primitive.Rect, panel, primitive.Style) {
+		c.overlayTextStyled(slot.x, primitive.Rect.Y, DisplayWidth(slot.text), slot.text, slot.style, primitive.Owner, primitive.Layer)
 	}
 }
 
@@ -519,12 +519,13 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	if floating.Active {
 		style = StyleAccent
 	}
-	owner := "floating:" + floating.ID
+	primitive := FloatingChromePrimitive(floating, rect, style)
+	owner := primitive.Owner
 	if floating.Chrome.FillOverlay {
 		c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
 	}
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
-	renderFloatingChromeActions(c, rect, style, owner)
+	renderFloatingChromeActions(c, primitive)
 	if rect.W >= 2 && rect.H >= 2 && floating.Chrome.ShowResizeHandle {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "v", style, owner, LayerFloating)
 	}
@@ -535,18 +536,31 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentLines}
 }
 
-func renderFloatingChromeActions(c *canvas, rect Rect, style StyleToken, owner string) {
-	items := floatingChromeActionItems(rect.W)
-	text := paneChromeActionTextFromItems(items)
+func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive) {
+	text := chromeSlotClusterText(primitive.ActionSlots)
 	width := DisplayWidth(text)
 	if width <= 0 {
 		return
 	}
-	actionX := rect.X + rect.W - width - 2
-	if actionX < rect.X+2 {
+	if len(primitive.ActionSlots) == 0 {
 		return
 	}
-	c.overlayTextStyled(actionX, rect.Y, width, text, style, owner, LayerFloating)
+	actionX := primitive.ActionSlots[0].Rect.X
+	if actionX < primitive.Rect.X+2 {
+		return
+	}
+	c.overlayTextStyled(actionX, primitive.Rect.Y, width, text, primitive.Style, primitive.Owner, primitive.Layer)
+}
+
+func chromeSlotClusterText(slots []ChromeSlot) string {
+	if len(slots) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(slots))
+	for _, slot := range slots {
+		parts = append(parts, slot.Text)
+	}
+	return strings.Join(parts, "─")
 }
 
 // floating 没有分屏动作；右上角只复用 pane chrome 的括号化可用动作。

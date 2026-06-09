@@ -6,11 +6,10 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" || rect.W <= 0 || rect.H <= 0 {
 		return Layer{}
 	}
-	owner := "overlay:" + string(overlay.Kind)
-	c.fillStyledRect(rect, StyleOverlay, owner, LayerOverlay)
-	c.drawStyledBox(rect, squareBoxStyle, StyleOverlay, owner, LayerOverlay)
-	title := overlayTitle(overlay.Kind)
-	renderChromeCardTitle(c, rect, title, overlayChromeState(overlay), "esc", StyleAccent, owner, LayerOverlay)
+	primitive := OverlayChromePrimitive(overlay, rect, contentRect)
+	c.fillStyledRect(rect, primitive.Style, primitive.Owner, primitive.Layer)
+	c.drawStyledBox(rect, squareBoxStyle, primitive.Style, primitive.Owner, primitive.Layer)
+	renderChromeCardTitle(c, rect, primitive.Title.Text, primitive.State.Text, "esc", StyleAccent, primitive.Owner, primitive.Layer)
 	contentLines := renderContent(c, overlay.Content, contentRect)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
 }
@@ -88,16 +87,17 @@ func renderToasts(c *canvas, toasts []ToastVM, rects []Rect) []Layer {
 			break
 		}
 		toast := toasts[toastIndex]
-		owner := "toast:" + toast.ID
-		c.fillStyledRect(rect, StyleToast, owner, LayerToast)
+		primitive := ToastChromePrimitive(toast, rect)
+		owner := primitive.Owner
+		c.fillStyledRect(rect, primitive.Style, owner, primitive.Layer)
 		if rect.W >= 2 {
 			for y := rect.Y; y < rect.Y+rect.H; y++ {
 				c.writeTextStyled(rect.X, y, 1, "│", StyleToastAccent, owner, LayerToast)
 				c.writeTextStyled(rect.X+rect.W-1, y, 1, "│", StyleToastAccent, owner, LayerToast)
 			}
 		}
-		if rect.H > 0 && rect.W > 4 {
-			textRect := Rect{X: rect.X + 2, Y: rect.Y + rect.H/2, W: maxInt(0, rect.W-4), H: 1}
+		if primitive.ContentRect.W > 0 && primitive.ContentRect.H > 0 {
+			textRect := primitive.ContentRect
 			c.writeTextStyled(textRect.X, textRect.Y, textRect.W, centerToastText(toastMessageLine(toast), textRect.W), StyleToast, owner, LayerToast)
 		}
 		layers = append(layers, Layer{Kind: LayerToast, Rect: rect})
