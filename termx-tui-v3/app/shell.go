@@ -580,7 +580,7 @@ func createTerminalPrompt(targetPaneID string) state.PromptState {
 		Workdir:     workdir,
 		DefaultName: filepath.Base(shellCommand),
 		Fields: []state.PromptFieldState{
-			{Key: "name", Label: "name", Required: true, Placeholder: filepath.Base(shellCommand)},
+			{Key: "name", Label: "name", Required: true},
 			{Key: "command", Label: "command", Placeholder: shellCommand},
 			{Key: "workdir", Label: "workdir", Value: workdir},
 		},

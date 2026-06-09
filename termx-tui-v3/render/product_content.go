@@ -205,7 +205,8 @@ func buildPromptFormContent(prompt state.PromptState, title string) ContentVM {
 		active := index == activeField
 		lines = append(lines, promptFormFieldLine(field, active))
 		if active {
-			cursorCol = promptFormFieldValueCol(field) + DisplayWidth(field.Value)
+			cursorCol = promptFormFieldValueCol(field) + promptFieldCursorDisplayWidth(field)
+			lines = append(lines, promptSuggestionLines(field, prompt.SuggestionFocused, prompt.SuggestionSelected)...)
 		}
 	}
 	return ContentVM{
@@ -252,6 +253,57 @@ func promptFormFieldValueCol(field state.PromptFieldState) int {
 		label += "*"
 	}
 	return DisplayWidth(label + ": ")
+}
+
+func promptFieldCursorDisplayWidth(field state.PromptFieldState) int {
+	runes := []rune(field.Value)
+	cursor := field.Cursor
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	return DisplayWidth(string(runes[:cursor]))
+}
+
+func promptSuggestionLines(field state.PromptFieldState, focused bool, selected int) []Line {
+	if len(field.SuggestionItems) == 0 && strings.TrimSpace(field.SuggestionTitle) == "" && strings.TrimSpace(field.SuggestionEmpty) == "" {
+		return nil
+	}
+	lines := []Line{}
+	if strings.TrimSpace(field.SuggestionTitle) != "" {
+		lines = append(lines, Line{Cells: []Cell{
+			styledCell("  "+field.SuggestionTitle, StyleStrongForeground),
+		}})
+	}
+	if len(field.SuggestionItems) == 0 {
+		if strings.TrimSpace(field.SuggestionEmpty) != "" {
+			lines = append(lines, Line{Cells: []Cell{
+				styledCell("  "+field.SuggestionEmpty, StyleStrongForeground),
+			}})
+		}
+		return lines
+	}
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= len(field.SuggestionItems) {
+		selected = len(field.SuggestionItems) - 1
+	}
+	for index, item := range field.SuggestionItems {
+		marker := "  "
+		style := StyleForeground
+		if focused && index == selected {
+			marker = "▸ "
+			style = StyleAccent
+		}
+		lines = append(lines, Line{Cells: []Cell{
+			styledCell("  "+marker, StyleStrongForeground),
+			styledCell(item, style),
+		}})
+	}
+	return lines
 }
 
 func buildHelpContent(shell state.ShellStore) ContentVM {

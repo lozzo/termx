@@ -29,6 +29,9 @@ func NewUIInputReducer() Reducer {
 		}
 		shell := root.Shell.EnsureDefaults()
 		if inputMsg.Event.Kind == input.EventKindKey && inputMsg.Event.Key == input.KeyEsc && shell.Overlay.Open {
+			if shell.Overlay.Kind == state.OverlayPrompt && shell.Overlay.Prompt.SuggestionFocused {
+				return reducePromptInput(root, inputMsg.Event)
+			}
 			root.Shell = shell.CloseOverlay()
 			return root.Advance(), []Effect{handledEffect{}}
 		}
@@ -234,37 +237,93 @@ func reducePromptInput(root state.Root, event input.InputEvent) (state.Root, []E
 	if event.Kind != input.EventKindKey {
 		return root, nil
 	}
+	shell := root.Shell.EnsureDefaults()
+	if shell.Overlay.Prompt.SuggestionFocused {
+		return reducePromptSuggestionInput(root, event)
+	}
 	switch event.Key {
 	case input.KeyEnter:
 		return root, []Effect{
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg { return ShellPromptSubmitMsg{} }},
 		}
-	case input.KeyDown, input.KeyTab:
+	case input.KeyTab:
+		root.Shell = refreshPromptCompletions(root.Shell)
+		if len(root.Shell.EnsureDefaults().Overlay.Prompt.ActiveSuggestionItems()) > 0 {
+			root.Shell = root.Shell.SetPromptSuggestionFocused(true)
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		root.Shell = refreshPromptCompletions(root.Shell.MovePromptField(1))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
 		root.Shell = root.Shell.MovePromptField(1)
+		root.Shell = refreshPromptCompletions(root.Shell)
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyUp, input.KeyShiftTab:
 		root.Shell = root.Shell.MovePromptField(-1)
+		root.Shell = refreshPromptCompletions(root.Shell)
 		return root.Advance(), []Effect{handledEffect{}}
-	case input.KeyBackspace, input.KeyDelete:
-		value := promptEditableValue(root.Shell.EnsureDefaults().Overlay.Prompt)
-		root.Shell = root.Shell.SetPromptValue(trimLastRune(value))
+	case input.KeyBackspace:
+		root.Shell = refreshPromptCompletions(root.Shell.DeletePromptBackward())
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDelete:
+		root.Shell = refreshPromptCompletions(root.Shell.DeletePromptForward())
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyLeft:
+		root.Shell = refreshPromptCompletions(root.Shell.MovePromptCursor(-1))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyRight:
+		root.Shell = refreshPromptCompletions(root.Shell.MovePromptCursor(1))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyHome:
+		root.Shell = refreshPromptCompletions(root.Shell.SetPromptCursor(0))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnd:
+		root.Shell = refreshPromptCompletions(root.Shell.SetPromptCursor(len([]rune(promptEditableValue(root.Shell.EnsureDefaults().Overlay.Prompt)))))
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyChar:
 		if isBackspaceEvent(event) {
-			value := promptEditableValue(root.Shell.EnsureDefaults().Overlay.Prompt)
-			root.Shell = root.Shell.SetPromptValue(trimLastRune(value))
+			root.Shell = refreshPromptCompletions(root.Shell.DeletePromptBackward())
 			return root.Advance(), []Effect{handledEffect{}}
 		}
 		if event.Ctrl || event.Char == "" {
 			return root, []Effect{handledEffect{}}
 		}
-		value := promptEditableValue(root.Shell.EnsureDefaults().Overlay.Prompt) + event.Char
-		root.Shell = root.Shell.SetPromptValue(value)
+		root.Shell = refreshPromptCompletions(root.Shell.InsertPromptText(event.Char))
 		return root.Advance(), []Effect{handledEffect{}}
 	default:
 		return root, []Effect{handledEffect{}}
 	}
+}
+
+func reducePromptSuggestionInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = root.Shell.MovePromptSuggestionSelection(-1)
+	case input.KeyDown:
+		root.Shell = root.Shell.MovePromptSuggestionSelection(1)
+	case input.KeyEnter:
+		root.Shell = refreshPromptCompletions(root.Shell.AcceptPromptSuggestion())
+	case input.KeyTab:
+		root.Shell = refreshPromptCompletions(root.Shell.AcceptPromptSuggestion().MovePromptField(1))
+	case input.KeyShiftTab, input.KeyEsc:
+		root.Shell = refreshPromptCompletions(root.Shell.SetPromptSuggestionFocused(false))
+	case input.KeyBackspace:
+		root.Shell = refreshPromptCompletions(root.Shell.SetPromptSuggestionFocused(false).DeletePromptBackward())
+	case input.KeyDelete:
+		root.Shell = refreshPromptCompletions(root.Shell.SetPromptSuggestionFocused(false).DeletePromptForward())
+	case input.KeyChar:
+		if isBackspaceEvent(event) {
+			root.Shell = refreshPromptCompletions(root.Shell.SetPromptSuggestionFocused(false).DeletePromptBackward())
+			break
+		}
+		if !event.Ctrl && event.Char != "" {
+			root.Shell = refreshPromptCompletions(root.Shell.SetPromptSuggestionFocused(false).InsertPromptText(event.Char))
+		}
+	default:
+		root.Shell = root.Shell.SetPromptSuggestionFocused(false)
+	}
+	return root.Advance(), []Effect{handledEffect{}}
 }
 
 func promptEditableValue(prompt state.PromptState) string {

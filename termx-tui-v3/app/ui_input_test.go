@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -288,21 +290,120 @@ func TestUIInputReducerCreateTerminalFormEditsAndCancels(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))}
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyLeft}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyBackspace}})
 	prompt := root.Shell.EnsureDefaults().Overlay.Prompt
-	if prompt.FieldValue("name") != "a" || prompt.ActiveField != 0 {
-		t.Fatalf("name field should edit and delete in-place, prompt=%#v", prompt)
+	if prompt.FieldRawValue("name") != "ab" || prompt.ActiveField != 0 || prompt.Fields[0].Cursor != 1 {
+		t.Fatalf("name field should edit at cursor and delete in-place, prompt=%#v", prompt)
 	}
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyHome}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyShiftTab}})
 	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
-	if prompt.ActiveField != 0 || !strings.HasSuffix(prompt.FieldValue("command"), "z") {
-		t.Fatalf("tab should move between form fields without losing values, prompt=%#v", prompt)
+	if prompt.ActiveField != 0 || prompt.FieldRawValue("command") != "zsh" || prompt.Fields[1].Cursor != 1 {
+		t.Fatalf("tab should move between editable form fields without losing cursor values, prompt=%#v", prompt)
 	}
 	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
 	if root.Shell.EnsureDefaults().Overlay.Open || len(effects) != 1 {
 		t.Fatalf("esc should close create form and consume input, root=%#v effects=%#v", root, effects)
+	}
+}
+
+func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"demo", "dev"} {
+		if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
+		}
+	}
+	prefix := filepath.Join(dir, "de")
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Create Terminal",
+		Purpose:     "terminal.create",
+		ActiveField: 2,
+		Fields: []state.PromptFieldState{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
+		},
+	})}
+
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	prompt := root.Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || len(prompt.ActiveSuggestionItems()) != 2 || prompt.ActiveField != 2 {
+		t.Fatalf("tab on workdir should enter suggestion focus, prompt=%#v", prompt)
+	}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	want := filepath.Join(dir, "dev") + string(os.PathSeparator)
+	if prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != want || prompt.Fields[2].Cursor != len([]rune(want)) {
+		t.Fatalf("enter should accept selected workdir suggestion, want=%q prompt=%#v", want, prompt)
+	}
+
+	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Create Terminal",
+		Purpose:     "terminal.create",
+		ActiveField: 2,
+		Fields: []state.PromptFieldState{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
+		},
+	})}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	if !root.Shell.EnsureDefaults().Overlay.Open || prompt.SuggestionFocused || len(effects) != 1 {
+		t.Fatalf("esc in suggestion focus should only exit suggestions, overlay=%#v effects=%#v", root.Shell.Overlay, effects)
+	}
+}
+
+func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
+	dir := t.TempDir()
+	workdir := filepath.Join(dir, "work")
+	if err := os.Mkdir(workdir, 0o755); err != nil {
+		t.Fatalf("mkdir workdir: %v", err)
+	}
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "d"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "e"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v"},
+		{Kind: input.EventKindKey, Key: input.KeyTab},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
+		{Kind: input.EventKindKey, Key: input.KeyTab},
+		{Kind: input.EventKindKey, Key: input.KeyHome},
+		{Kind: input.EventKindKey, Key: input.KeyEnd},
+	} {
+		root, _ = reducer(root, InputMsg{Event: event})
+	}
+	root.Shell = root.Shell.SetPromptValue(workdir)
+
+	next, effects := reducePromptSubmit(root)
+	if next.Shell.Overlay.Open || len(effects) != 1 {
+		t.Fatalf("submit should close prompt and emit create effect, root=%#v effects=%#v", next, effects)
+	}
+	effect, ok := effects[0].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("expected create FuncEffect, got %#v", effects)
+	}
+	msg := effect.Run(context.Background())
+	request, ok := msg.(TerminalPoolCreateRequestMsg)
+	if !ok {
+		t.Fatalf("expected terminal create request, got %#v", msg)
+	}
+	if request.Title != "dev" || strings.Join(request.Command, " ") != "bash" || request.CWD != workdir {
+		t.Fatalf("edited prompt fields should drive create request, got %#v", request)
 	}
 }
 

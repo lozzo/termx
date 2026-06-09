@@ -12,6 +12,7 @@ func TestShellSourceFilesStaySplitByResponsibility(t *testing.T) {
 		"shell_workbench.go":  660,
 		"shell_pane_tree.go":  860,
 		"shell_overlay.go":    420,
+		"shell_prompt.go":     360,
 		"shell_floating.go":   340,
 		"shell_projection.go": 340,
 		"shell_workspace.go":  140,

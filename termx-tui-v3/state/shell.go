@@ -193,33 +193,39 @@ type OverlayState struct {
 }
 
 type PromptState struct {
-	Title             string
-	Context           string
-	TargetID          string
-	TargetTabID       string
-	TargetWorkspaceID string
-	Purpose           string
-	Value             string
-	Placeholder       string
-	Destructive       bool
-	ConfirmText       string
-	Submitted         bool
-	Canceled          bool
-	LastResult        string
-	Fields            []PromptFieldState
-	ActiveField       int
-	Command           []string
-	Workdir           string
-	Tags              map[string]string
-	DefaultName       string
+	Title              string
+	Context            string
+	TargetID           string
+	TargetTabID        string
+	TargetWorkspaceID  string
+	Purpose            string
+	Value              string
+	Placeholder        string
+	Destructive        bool
+	ConfirmText        string
+	Submitted          bool
+	Canceled           bool
+	LastResult         string
+	Fields             []PromptFieldState
+	ActiveField        int
+	SuggestionFocused  bool
+	SuggestionSelected int
+	Command            []string
+	Workdir            string
+	Tags               map[string]string
+	DefaultName        string
 }
 
 type PromptFieldState struct {
-	Key         string
-	Label       string
-	Value       string
-	Placeholder string
-	Required    bool
+	Key             string
+	Label           string
+	Value           string
+	Cursor          int
+	Placeholder     string
+	Required        bool
+	SuggestionTitle string
+	SuggestionItems []string
+	SuggestionEmpty string
 }
 
 type TerminalPickerItem struct {
