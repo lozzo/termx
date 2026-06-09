@@ -411,19 +411,19 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 	}
 }
 
-func buildLayoutVM(shell state.ShellStore, activeContent ContentVM, root state.Root) LayoutVM {
+func (projector ShellProjector) buildLayoutVM(shell state.ShellStore, activeContent ContentVM, root state.Root) LayoutVM {
 	if shell.ZoomedPaneID != "" {
 		return LayoutVM{
 			Viewport: viewportRect(root.Viewport),
-			Panels:   buildZoomedPanelVMs(shell, activeContent, root),
-			Floating: buildFloatingVMs(shell),
+			Panels:   projector.buildZoomedPanelVMs(shell, activeContent, root),
+			Floating: projector.buildFloatingVMs(shell, root),
 			Split:    SplitVM{PaneID: shell.ZoomedPaneID},
 		}
 	}
 	return LayoutVM{
 		Viewport: viewportRect(root.Viewport),
-		Panels:   buildPanelVMs(shell, activeContent, root),
-		Floating: buildFloatingVMs(shell),
+		Panels:   projector.buildPanelVMs(shell, activeContent, root),
+		Floating: projector.buildFloatingVMs(shell, root),
 		Split:    buildSplitVM(activeTab(shell).RootSplit),
 	}
 }
@@ -435,7 +435,7 @@ func viewportRect(viewport state.ViewportStore) Rect {
 	return Rect{W: viewport.Cols, H: viewport.Rows}
 }
 
-func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
+func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
 	shell = shell.EnsureDefaults()
 	tab := activeTab(shell)
 	floatingOwnsFocus := shell.ActiveFloatingID != ""
@@ -452,7 +452,7 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.R
 	panels := make([]PanelVM, len(tab.Panes))
 	for i, pane := range tab.Panes {
 		active := pane.ID == shell.ActivePaneID
-		content := contentForPane(root, pane, activeContent, active)
+		content := projector.contentForPane(root, pane, activeContent, active)
 		if active {
 			content = activeContent
 		}
@@ -468,7 +468,7 @@ func buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.R
 	return panels
 }
 
-func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
+func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
 	shell = shell.EnsureDefaults()
 	for _, pane := range activeTab(shell).Panes {
 		if pane.ID == shell.ZoomedPaneID {
@@ -482,17 +482,17 @@ func buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root s
 			}}
 		}
 	}
-	return buildPanelVMs(shell, activeContent, root)
+	return projector.buildPanelVMs(shell, activeContent, root)
 }
 
-func buildFloatingVMs(shell state.ShellStore) []FloatingVM {
+func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root state.Root) []FloatingVM {
 	shell = shell.EnsureDefaults()
 	if len(shell.Floatings) == 0 {
 		return nil
 	}
 	out := make([]FloatingVM, 0, len(shell.Floatings))
 	for _, floating := range shell.Floatings {
-		content := placeholderContentForPane(floating.Pane)
+		content := projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: floating.Pane, Kind: contentKindForPane(floating.Pane)})
 		out = append(out, FloatingVM{
 			ID:        floating.ID,
 			Title:     floating.Title,
@@ -567,30 +567,41 @@ func splitActionLabel(action string) (string, string) {
 	return parts[0], strings.Join(parts[1:], " ")
 }
 
-func buildActiveContentVM(root state.Root) ContentVM {
+func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM {
 	if root.CopyMode.Active {
-		return buildCopyHistoryContentVM(root.History, root.CopyMode)
+		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Kind: ContentCopyHistory})
 	}
 	shell := root.Shell.EnsureDefaults()
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
-		switch pane.Kind {
-		case state.PaneEmpty, state.PaneExited:
-			return placeholderContentForPane(pane)
-		case state.PaneTerminalLive:
-			return buildLiveContentVM(surfaceForPane(root, pane), root.Session)
-		}
+		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: root.Session, Active: true})
 	}
-	return buildLiveContentVM(root.Surface, root.Session)
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalLive, Surface: root.Surface, Session: root.Session, Active: true})
 }
 
-func contentForPane(root state.Root, pane state.PaneState, activeContent ContentVM, active bool) ContentVM {
+func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneState, activeContent ContentVM, active bool) ContentVM {
 	if active {
 		return activeContent
 	}
+	session := state.TerminalSessionStore{}
 	if pane.Kind == state.PaneTerminalLive && pane.TerminalID != "" {
-		return buildLiveContentVM(surfaceForPane(root, pane), state.TerminalSessionStore{TerminalID: pane.TerminalID})
+		session = state.TerminalSessionStore{TerminalID: pane.TerminalID}
 	}
-	return placeholderContentForPane(pane)
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: session, Active: false})
+}
+
+func contentKindForPane(pane state.PaneState) ContentKind {
+	switch pane.Kind {
+	case state.PaneEmpty:
+		return ContentEmptyPane
+	case state.PaneExited:
+		return ContentExitedPane
+	case state.PaneCopyHistory:
+		return ContentCopyHistory
+	case state.PaneTerminalLive:
+		return ContentTerminalLive
+	default:
+		return ContentPlaceholder
+	}
 }
 
 func surfaceForPane(root state.Root, pane state.PaneState) state.TerminalSurfaceStore {
@@ -824,7 +835,7 @@ func liveCursorShape(shape string) CursorShape {
 	}
 }
 
-func buildOverlayVM(root state.Root, shell state.ShellStore) OverlayVM {
+func (projector ShellProjector) buildOverlayVM(root state.Root, shell state.ShellStore) OverlayVM {
 	if !shell.Overlay.Open {
 		return OverlayVM{}
 	}
@@ -833,24 +844,24 @@ func buildOverlayVM(root state.Root, shell state.ShellStore) OverlayVM {
 		return OverlayVM{
 			Kind:    OverlayTerminalPicker,
 			Opaque:  false,
-			Content: buildTerminalPickerContent(root, shell),
+			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalPicker}),
 		}
 	case state.OverlayTerminalPool:
 		return OverlayVM{
 			Kind:    OverlayTerminalPool,
 			Opaque:  true,
-			Content: buildTerminalPoolContent(root, shell),
+			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalPool}),
 		}
 	case state.OverlayWorkbenchTree:
 		return OverlayVM{
 			Kind:    OverlayWorkbenchTree,
 			Opaque:  true,
-			Content: buildWorkbenchTreeContent(root, shell),
+			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentWorkbenchTree}),
 		}
 	case state.OverlayPrompt:
-		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: buildPromptContent(shell)}
+		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentPrompt})}
 	case state.OverlayHelp:
-		return OverlayVM{Kind: OverlayHelp, Opaque: true, Content: buildHelpContent(shell)}
+		return OverlayVM{Kind: OverlayHelp, Opaque: true, Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentHelp})}
 	default:
 		return OverlayVM{}
 	}

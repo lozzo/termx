@@ -27,6 +27,7 @@ func TestProjectionFilesDoNotDependOnRendererRuntime(t *testing.T) {
 	projectionFiles := []string{
 		"projection.go",
 		"vm.go",
+		"content_projector_registry.go",
 		"product_content.go",
 		"copy_history.go",
 		"style.go",

@@ -7,20 +7,25 @@ func (RenderVMBuilder) Build(root state.Root) RenderVM {
 	return RenderVM{Shell: shell, Theme: ThemeFromHostTheme(root.HostTheme)}
 }
 
-type ShellProjector struct{}
-
-func NewShellProjector() ShellProjector {
-	return ShellProjector{}
+type ShellProjector struct {
+	Content ContentProjectorRegistry
 }
 
-func (ShellProjector) Project(root state.Root) ShellVM {
+func NewShellProjector() ShellProjector {
+	return ShellProjector{Content: DefaultContentProjectorRegistry()}
+}
+
+func (projector ShellProjector) Project(root state.Root) ShellVM {
+	if projector.Content.projectors == nil {
+		projector.Content = DefaultContentProjectorRegistry()
+	}
 	shellState := root.Shell.EnsureDefaults()
-	activeContent := buildActiveContentVM(root)
+	activeContent := projector.buildActiveContentVM(root)
 	return ShellVM{
 		Header:  buildHeaderVM(shellState, root),
 		Footer:  buildFooterVM(root, activeContent),
-		Layout:  buildLayoutVM(shellState, activeContent, root),
-		Overlay: buildOverlayVM(root, shellState),
+		Layout:  projector.buildLayoutVM(shellState, activeContent, root),
+		Overlay: projector.buildOverlayVM(root, shellState),
 		Toasts:  buildToastVMs(shellState),
 		Cursor:  activeContent.Cursor,
 	}
