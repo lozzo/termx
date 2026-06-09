@@ -218,6 +218,16 @@
 - close pane 与 close and kill terminal 必须区分：关闭 pane 只移除当前工作位；kill terminal 是破坏性 terminal lifecycle 操作，必须能走确认或明确 danger 语义。
 - 后续 CLI mini command 只能作为 command adapter，不能绕过 TUI reducer、layout measurement、terminal resize、copy rebind 或 toast feedback。
 
+### 4.10 SK 小阶段与反补丁式实现约束
+
+- 后续 `/goal` 自动推进时，任何较大目标必须先拆成可独立验证的小阶段；每个小阶段完成后必须单独提交一个 `SK:` 前缀的中文提交，作为可回退、可审计的中间过程。
+- `SK:` 提交必须对应一个真实小阶段：有清晰范围、状态更新、必要 harness 和准入命令结果；不得把多个小阶段堆成一个大提交，也不得把半成品标成 `SK:`。
+- 如果一个小阶段做到一半发现边界不对，必须先收敛为架构/设计修正阶段，更新 `workflow.md` 和对应 architecture 文档，再继续实现；不得为了赶进度绕过现有架构。
+- 禁止补丁式代码：不得新增临时旁路、重复 truth、第二套状态、字符串 action 分叉、renderer 读 service/runtime、service 直改 reducer-owned state、fake-only 成功路径、仅为当前 case 服务的硬编码 adapter，或长期保留新旧双路径。
+- 如果新增功能要求改变现有架构，默认选择重构或重写对应边界，把 domain model、protocol contract、projector、renderer、state/effect/service 边界做干净，再接真实路径和测试。
+- 允许大改，但必须小步提交：可以在一个 `/goal` 中连续完成多个 `SK:` 小阶段；每个阶段都必须保持仓库可编译、测试准入清楚、行为边界可解释。
+- 旧实现只能只读参考。迁移旧经验时必须迁入 v2/v3 的新边界和命名，不能复制旧 runtime/model 大 bag，也不能为了兼容旧内部实现保留桥接层，除非本文件先明确批准。
+
 ## 5. 任务队列
 
 状态只能使用：`待开始`、`进行中`、`完成`、`阻塞`。同一时间只能有一个切片处于 `进行中`。
@@ -422,8 +432,9 @@
 | 189. workdir 候选 tree 化与 picker 风格 | 完成 | `workflow.md`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/` | 已将 workdir 候选 popup 从左侧线框样式调整为接近 Terminal Picker 的轻量列表样式：去掉 `┌/│/└` 左侧线，候选行使用 `▸` marker、缩进和目录 basename 表达 tree 层级；候选 popup 整体使用更明显的独立背景色，选中行使用更深一档背景，表达高层级浮层；在 suggestion focus 内 `Right` 进入当前选中目录并继续展示下一层候选，`Left` 回到父目录并刷新候选，Enter 仍只接受当前候选路径且不提交 form。路径 tree 操作拆入 `state/shell_prompt_path.go`，避免扩大 `shell_prompt.go` 职责。准入运行 `go test ./termx-tui-v3/app ./termx-tui-v3/state ./termx-tui-v3/render -run 'TestUIInputReducerCreateTerminalWorkdirSuggestions|TestRenderVMBuilderProjectsPromptAndHelpOverlay|TestFrameworkRendersOverlayPopupAbovePromptModal|TestMeasureLayoutPromptSuggestionPopupEscapesModalContentRect|TestThemeTokenPaletteDrivesANSILines|TestShellSourceFilesStaySplitByResponsibility' -count=1`、`go test ./termx-tui-v3/... -count=1`、`go test ./termx-cli/cmd/termx -run 'TestV3VisualSnapshot|TestV3SmokeCommandIncludesVisualReviewCases|TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts' -count=1`、`make test-cli-v3-tmux-visual-compare`、`git diff --check`、`sh scripts/check_file_modes.sh`。 |
 | 190. panel content 深化计划文档与行动前 tag | 完成 | `workflow.md`、`termx-tui-v3/docs/` | 已按用户要求在进入夜间长跑实现前，只落档 `termx-tui-v3/docs/panel-content-deepening-plan.md`，用具体输入/输出例子说明 ContentViewport 合同、Terminal Live 内容深化、Live resize 验收、Copy/History 内容深化、History resize rebind、Panel content 总验收、空白占位、`>`/`v` 遮挡符号、测试证据和禁止事项；文档明确用户审核通过前不进入实现切片。准入运行 `git diff --check`。 |
 | 191. panel content 小圆点占位语义修正 | 完成 | `workflow.md`、`termx-tui-v3/docs/`；只读参考 `tuiv2/render/` | 已按用户反馈和 `tuiv2` 只读参考修正计划文档：小圆点只表示 terminal extent 外区域，不表示普通短行 padding；默认 terminal extent 锚在 content rect 左上，pane content `10x10` 而 terminal 实际 `5x5` 时右侧和底部显示小圆点；普通 terminal blank cell 仍是空白；`>` / `v` 作为 overflow hint 与 chrome marker，和小圆点语义分离；补充居中/偏移 extent 场景，避免后续实现把所有空白都点满。准入运行 `git diff --check`。 |
+| 192. SK 小阶段与反补丁式执行规则落档 | 完成 | `workflow.md` | 已按用户要求把后续 `/goal` 自动推进纪律写入 workflow：每个较大目标必须拆成可独立验证的小阶段，每个小阶段完成后提交 `SK:` 前缀中文提交，方便保留中间过程；禁止补丁式代码、临时旁路、重复 truth、第二套状态、fake-only 证据和旧目录桥接；如果功能要求架构变化，必须先重构或重写对应边界并更新设计基准，再接实现。准入运行 `git diff --check`。 |
 
-当前下一步：等待用户审核修正后的 panel content 深化计划文档；行动前回归 tag `pre-panel-content-20260610` 已在切片 190 后创建，本次文档语义修正不移动既有 tag。
+当前下一步：等待用户设置 `/goal` 目标。后续自动推进必须按修正后的 panel content 深化计划和本文件 `SK:` 小阶段规则执行；行动前回归 tag `pre-panel-content-20260610` 已在切片 190 后创建，后续 `SK:` 提交作为更细粒度回退点。
 
 ## 6. 必做 harness
 
@@ -551,11 +562,14 @@
 - 如果发现设计文档需要变化，必须与实现同切片更新，或先提交设计更新。
 - 如果遇到阻塞，必须把对应切片状态改为 `阻塞` 并说明阻塞条件；不要继续扩散到其他目录。
 - 自动执行不能因为局部测试暂时通过就跳过后续切片；当前 UI 框架完善阶段必须从切片 61 开始按顺序推进，不得跳过 header/footer、鼠标 hit region 或 active pane 反馈直接做 Terminal Pool、Workbench Tree、floating 或大内容 renderer。
+- `/goal` 自动推进期间，较大目标必须拆成多个小阶段；每完成一个小阶段就运行该阶段准入并提交一个 `SK:` 前缀中文提交，再进入下一小阶段。
+- 如果实现过程中发现现有架构无法干净承载目标，不得临时补丁绕过；必须暂停当前实现小阶段，先把 architecture/workflow 和边界重构小阶段做成新的 `SK:` 提交。
 
 ## 9. 提交规则
 
 - 当前工作区未提交改动必须先整理并提交，再继续后续开发。
 - 每个有效变动必须形成中文提交。
+- 后续 `/goal` 自动推进的小阶段提交必须使用 `SK:` 前缀，例如 `SK: 完成 live latest-wins 合流`；文档-only、小重构和 harness 阶段也必须按同样规则形成可回退提交。
 - 不允许长期堆积未提交改动。
 - 不得 amend commit，除非用户明确要求。
 - 不得 revert 用户或其他代理的未提交改动；若冲突，先停下说明。
