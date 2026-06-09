@@ -913,8 +913,11 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[1], "new terminal", StyleAccent) {
-		t.Fatalf("expected default create row to use accent style, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[1], "new terminal", StyleForeground) {
+		t.Fatalf("expected default create row text to use foreground style, got %#v", content.Lines[1])
+	}
+	if !lineHasStyledCell(content.Lines[1], "Create a new terminal", StyleForeground) || !lineHasStyledCell(content.Lines[2], "日志🚀", StyleForeground) || !lineHasStyledCell(content.Lines[2], "live", StyleForeground) {
+		t.Fatalf("expected picker row text to use foreground style, got %#v", content.Lines)
 	}
 	if content.Cursor.Col != DisplayWidth("search: 日志") {
 		t.Fatalf("expected cursor after query text, got %#v", content.Cursor)

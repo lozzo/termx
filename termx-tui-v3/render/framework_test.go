@@ -768,14 +768,19 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if !linesContain(result.Lines(), "picker pending") {
 		t.Fatalf("expected terminal picker overlay, got %#v", result.Lines())
 	}
+	for _, line := range result.Lines() {
+		if strings.Contains(line, "terminal picker") && strings.Contains(line, "esc") {
+			t.Fatalf("terminal picker border title should not render esc hint, got %#v", result.Lines())
+		}
+	}
 	if linesContain(result.Lines(), "warn 🚀") {
 		t.Fatalf("overlay should stay in foreground above toast, got %#v", result.Lines())
 	}
 	if firstLayer(t, result, LayerOverlay).Rect.W == 0 || firstLayer(t, result, LayerToast).Rect.W == 0 {
 		t.Fatalf("expected overlay and toast layers, got %#v", result.Layers)
 	}
-	if !linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") {
-		t.Fatalf("expected styled overlay ANSI, got %#v", result.ANSILines())
+	if linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") {
+		t.Fatalf("terminal picker overlay should not use overlay background ANSI, got %#v", result.ANSILines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 50)
 }

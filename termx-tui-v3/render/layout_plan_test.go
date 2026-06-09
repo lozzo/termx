@@ -618,9 +618,12 @@ func TestMeasureLayoutTerminalPickerOwnsCursorAndActionHits(t *testing.T) {
 		},
 	}
 
-	plan := MeasureLayout(shell, Rect{W: 50, H: 14})
-	if plan.Overlay.W > 72 || plan.Overlay.H > 10 {
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if plan.Overlay.W > 80 || plan.Overlay.H > 12 {
 		t.Fatalf("terminal picker should use compact overlay, overlay=%#v", plan.Overlay)
+	}
+	if plan.OverlayContentRect.X-plan.Overlay.X < 4 || plan.OverlayContentRect.Y-plan.Overlay.Y < 2 {
+		t.Fatalf("terminal picker should keep adaptive modal padding, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
 	if !plan.Cursor.Visible || plan.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("terminal picker should own cursor, got %#v", plan.Cursor)
@@ -630,6 +633,26 @@ func TestMeasureLayoutTerminalPickerOwnsCursorAndActionHits(t *testing.T) {
 	}
 	if len(plan.HitRegions) < 2 || plan.HitRegions[0].Kind != HitRegionContentAction || plan.HitRegions[0].ActionID != "picker.attach" || plan.HitRegions[1].Kind != HitRegionOverlay {
 		t.Fatalf("picker content action should precede overlay background, got %#v", plan.HitRegions)
+	}
+}
+
+func TestMeasureLayoutTerminalPickerShrinksPaddingOnTinyViewport(t *testing.T) {
+	shell := ShellVM{
+		Overlay: OverlayVM{
+			Kind: OverlayTerminalPicker,
+			Content: ContentVM{
+				Kind:  ContentTerminalPicker,
+				Lines: []Line{NewLine("search:"), NewLine("▸ + new terminal")},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 24, H: 6})
+	if plan.Overlay.W > 24 || plan.Overlay.H > 6 {
+		t.Fatalf("tiny picker overlay should stay inside viewport, overlay=%#v", plan.Overlay)
+	}
+	if plan.OverlayContentRect.X-plan.Overlay.X > 1 || plan.OverlayContentRect.Y-plan.Overlay.Y > 1 {
+		t.Fatalf("tiny picker overlay should shrink padding, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
 }
 

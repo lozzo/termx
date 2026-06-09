@@ -82,10 +82,12 @@ func TestThemeTokenPaletteDrivesANSILines(t *testing.T) {
 		Content: []Line{{Cells: []Cell{
 			{Text: "accent", Width: 6, Style: StyleAccent, Safe: true},
 			{Text: " warn", Width: 5, Style: StyleWarning, Safe: true},
+			{Text: " fg", Width: 3, Style: StyleForeground, Safe: true},
 		}}},
 		Theme: Theme{
-			Accent:  "#010203",
-			Warning: "#a0b0c0",
+			ChromeFG: "#ddeeff",
+			Accent:   "#010203",
+			Warning:  "#a0b0c0",
 		},
 	}
 
@@ -95,6 +97,9 @@ func TestThemeTokenPaletteDrivesANSILines(t *testing.T) {
 	}
 	if !strings.Contains(frame.ANSILines[0], "\x1b[38;2;160;176;192m") {
 		t.Fatalf("warning token should use semantic theme color, got %#v", frame.ANSILines)
+	}
+	if !strings.Contains(frame.ANSILines[0], "\x1b[38;2;221;238;255m fg") || strings.Contains(frame.ANSILines[0], "48;2;221;238;255") {
+		t.Fatalf("foreground token should use chrome foreground without background, got %#v", frame.ANSILines)
 	}
 	if frame.Theme.HostFG == "" || frame.Theme.StatusBG == "" {
 		t.Fatalf("frame theme should be filled with fallback values, got %#v", frame.Theme)

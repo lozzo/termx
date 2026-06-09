@@ -57,6 +57,7 @@ type StyleToken string
 
 const (
 	StyleAccent              StyleToken = "accent"
+	StyleForeground          StyleToken = "foreground"
 	StyleMuted               StyleToken = "muted"
 	StyleStatus              StyleToken = "status"
 	StyleStatusAccent        StyleToken = "status-accent"
@@ -242,6 +243,8 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	switch token {
 	case StyleAccent:
 		return sgrForeground(theme.Accent, true)
+	case StyleForeground:
+		return sgrForeground(theme.ChromeFG, false)
 	case StyleMuted:
 		return sgrForeground(theme.Muted, false) + "\x1b[2m"
 	case StyleStatus:

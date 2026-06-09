@@ -300,19 +300,20 @@ func helpActionLabel(action ActionID) (string, bool) {
 
 func terminalPickerLine(row state.TerminalPickerItem) Line {
 	marker := "  "
-	style := StyleMuted
+	textStyle := StyleForeground
+	markerStyle := StyleForeground
 	if row.Selected {
 		marker = "▸ "
-		style = StyleAccent
+		markerStyle = StyleAccent
 	}
 	if row.CreateNew {
 		return Line{Cells: []Cell{
-			styledCell(marker, style),
+			styledCell(marker, markerStyle),
 			styledCell("+", StyleInfo),
 			NewCell(" "),
-			styledCell(row.Title, style),
+			styledCell(row.Title, textStyle),
 			NewCell("  "),
-			styledCell("Create a new terminal", StyleMuted),
+			styledCell("Create a new terminal", textStyle),
 		}}
 	}
 	observed := "○"
@@ -325,20 +326,20 @@ func terminalPickerLine(row state.TerminalPickerItem) Line {
 	stateText := terminalPickerStateLabel(row)
 	locationText := terminalPickerLocationLabel(row)
 	cells := []Cell{
-		styledCell(marker, style),
+		styledCell(marker, markerStyle),
 		styledCell(observed, observedStyle),
 		NewCell(" "),
 	}
 	if idText != "" && idText != "none" {
-		cells = append(cells, styledCell(idText, StyleMuted), NewCell(" "))
+		cells = append(cells, styledCell(idText, textStyle), NewCell(" "))
 	}
 	cells = append(cells,
-		styledCell(row.Title, style),
+		styledCell(row.Title, textStyle),
 		NewCell("  "),
-		styledCell(stateText, terminalPoolStateStyle(stateText)),
+		styledCell(stateText, textStyle),
 	)
 	if locationText != "" {
-		cells = append(cells, NewCell(" "), styledCell(locationText, StyleMuted))
+		cells = append(cells, NewCell(" "), styledCell(locationText, textStyle))
 	}
 	return Line{Cells: cells}
 }
