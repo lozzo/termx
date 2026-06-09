@@ -392,7 +392,93 @@ func (runtime *AppRuntime) enqueue(msg Msg) {
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	if runtime.coalesceQueuedLiveUpdate(msg) {
+		return
+	}
 	runtime.queue = append(runtime.queue, msg)
+}
+
+func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
+	incoming, ok := queuedOrdinaryLiveUpdate(msg)
+	if !ok {
+		return false
+	}
+	for i := len(runtime.queue) - 1; i >= 0; i-- {
+		queued := runtime.queue[i]
+		// 普通 live 帧只能在同一语义基线内合并，不能跨过 resize/exit/attach 等边界。
+		if liveQueueBoundary(queued) {
+			return false
+		}
+		existing, ok := queuedOrdinaryLiveUpdate(queued)
+		if !ok || existing.terminalID != incoming.terminalID {
+			continue
+		}
+		if liveRevisionNewer(existing.revision, incoming.revision) {
+			return true
+		}
+		runtime.queue = append(runtime.queue[:i], runtime.queue[i+1:]...)
+		runtime.queue = append(runtime.queue, msg)
+		return true
+	}
+	return false
+}
+
+type queuedLiveUpdate struct {
+	terminalID string
+	revision   uint64
+}
+
+func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
+	switch msg := msg.(type) {
+	case LiveSurfaceMsg:
+		if msg.Err != nil || !ordinaryLiveSnapshot(msg.Snapshot) {
+			return queuedLiveUpdate{}, false
+		}
+		if msg.Snapshot.TerminalID == "" {
+			return queuedLiveUpdate{}, false
+		}
+		return queuedLiveUpdate{terminalID: msg.Snapshot.TerminalID, revision: msg.Snapshot.Revision}, true
+	case LiveEventMsg:
+		if msg.Event.Err != nil || msg.Event.Exited || !msg.Event.Ready || !ordinaryLiveSnapshot(msg.Event.Snapshot) {
+			return queuedLiveUpdate{}, false
+		}
+		terminalID := msg.Event.Snapshot.TerminalID
+		if terminalID == "" {
+			terminalID = msg.Event.TerminalID
+		}
+		if terminalID == "" {
+			return queuedLiveUpdate{}, false
+		}
+		return queuedLiveUpdate{terminalID: terminalID, revision: msg.Event.Snapshot.Revision}, true
+	default:
+		return queuedLiveUpdate{}, false
+	}
+}
+
+func liveQueueBoundary(msg Msg) bool {
+	switch msg := msg.(type) {
+	case LiveAttachMsg, LiveAttachResultMsg, LiveExitMsg, LiveResizeMsg, LiveResizeResultMsg, HostResizeMsg, QuitMsg:
+		return true
+	case LiveSurfaceMsg:
+		_, ok := queuedOrdinaryLiveUpdate(msg)
+		return !ok
+	case LiveEventMsg:
+		_, ok := queuedOrdinaryLiveUpdate(msg)
+		return !ok
+	default:
+		return false
+	}
+}
+
+func ordinaryLiveSnapshot(snapshot state.LiveSurfaceSnapshot) bool {
+	if snapshot.Err != "" || snapshot.ExitCode != 0 || snapshot.ExitReason != "" {
+		return false
+	}
+	return snapshot.State == "" || snapshot.State == state.TerminalLiveAttached
+}
+
+func liveRevisionNewer(existing uint64, incoming uint64) bool {
+	return existing != 0 && incoming != 0 && existing > incoming
 }
 
 func (runtime *AppRuntime) prepend(msg Msg) {

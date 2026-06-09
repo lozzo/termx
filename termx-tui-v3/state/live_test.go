@@ -7,6 +7,7 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	screen := [][]LiveCell{{{Text: "one", Width: 3, FG: "ansi:2"}}}
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",
+		Revision:   7,
 		Cols:       80,
 		Rows:       24,
 		Lines:      lines,
@@ -20,6 +21,9 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	if store.TerminalID != "term-1" || store.Cols != 80 || store.Rows != 24 || store.Title != "shell" || !store.Ready {
 		t.Fatalf("unexpected surface store %#v", store)
 	}
+	if store.Revision != 7 || store.Surfaces["term-1"].Revision != 7 {
+		t.Fatalf("expected snapshot revision to be projected and cached, got %#v", store)
+	}
 	if !store.Cursor.Visible || store.Cursor.Row != 1 || store.Cursor.Col != 2 || store.Cursor.Shape != "bar" {
 		t.Fatalf("expected detached cursor metadata, got %#v", store.Cursor)
 	}
@@ -28,6 +32,134 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	}
 	if store.Screen[0][0].Text != "one" || store.Screen[0][0].FG != "ansi:2" {
 		t.Fatalf("expected detached live screen cells, got %#v", store.Screen)
+	}
+	cached := store.Surfaces["term-1"]
+	if cached.Screen[0][0].Text != "one" || cached.Screen[0][0].FG != "ansi:2" {
+		t.Fatalf("expected detached cached live screen cells, got %#v", cached.Screen)
+	}
+}
+
+func TestTerminalSurfaceRejectsStaleLiveRevision(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"new"},
+	})
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"old"},
+	})
+
+	if store.Revision != 2 || store.Lines[0] != "new" {
+		t.Fatalf("stale revision must not replace current projection, got %#v", store)
+	}
+	if cached := store.Surfaces["term-1"]; cached.Revision != 2 || cached.Lines[0] != "new" {
+		t.Fatalf("stale revision must not replace cached surface, got %#v", cached)
+	}
+}
+
+func TestTerminalSurfaceResizeBoundaryRejectsLateOldSizeFrame(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"before resize"},
+	})
+	store = store.Resize(100, 40)
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"late old size"},
+	})
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"late unknown revision"},
+	})
+
+	if store.Cols != 100 || store.Rows != 40 || store.Lines[0] != "before resize" {
+		t.Fatalf("late old-size frames must not roll back resized projection, got %#v", store)
+	}
+	if !store.ResizeBoundary.Active {
+		t.Fatalf("resize boundary should remain until matching-size surface arrives, got %#v", store.ResizeBoundary)
+	}
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       98,
+		Rows:       38,
+		Lines:      []string{"accepted non-old size"},
+	})
+	if store.Cols != 98 || store.Rows != 38 || store.Lines[0] != "accepted non-old size" {
+		t.Fatalf("resize boundary should not reject non-old-size live frames, got %#v", store)
+	}
+	store = store.Resize(100, 40)
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   4,
+		Cols:       100,
+		Rows:       40,
+		Lines:      []string{"after resize"},
+	})
+	if store.ResizeBoundary.Active || store.Cols != 100 || store.Rows != 40 || store.Lines[0] != "after resize" {
+		t.Fatalf("matching-size frame should clear resize boundary, got %#v", store)
+	}
+}
+
+func TestTerminalSurfaceExitBoundaryRejectsLateOrdinaryFrame(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"last screen"},
+	})
+	store = store.MarkExited("term-1", 0, "done")
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"late ordinary"},
+	})
+
+	if store.State != TerminalLiveExited || store.ExitReason != "done" {
+		t.Fatalf("late ordinary frame must not clear exit state, got %#v", store)
+	}
+	if store.Lines[0] != "last screen" {
+		t.Fatalf("exit boundary should preserve last accepted screen, got %#v", store.Lines)
+	}
+}
+
+func TestTerminalSurfaceAttachAllowsFreshFrameAfterExitBoundary(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"last screen"},
+	})
+	store = store.MarkExited("term-1", 0, "done")
+	store = store.Attach("term-1", 80, 24)
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"reattached"},
+	})
+
+	if store.State != TerminalLiveAttached || store.ExitReason != "" || store.Lines[0] != "reattached" {
+		t.Fatalf("explicit attach boundary should accept a fresh ordinary frame, got %#v", store)
 	}
 }
 

@@ -294,6 +294,37 @@ func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 	}
 }
 
+func TestLiveEventUsesEventTerminalIDWhenSnapshotTerminalIDMissing(t *testing.T) {
+	root := state.Root{
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-main",
+			Revision:   2,
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"main"},
+		}),
+	}
+	reducer := NewLiveReducer(LiveDeps{})
+	next, _ := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{
+		TerminalID: "term-logs",
+		Ready:      true,
+		Snapshot: state.LiveSurfaceSnapshot{
+			Revision: 1,
+			Cols:     40,
+			Rows:     12,
+			Lines:    []string{"logs"},
+		},
+	}})
+
+	if got := next.Surface.SurfaceForTerminal("term-main").Lines[0]; got != "main" {
+		t.Fatalf("event for another terminal must not overwrite current projection, got %q", got)
+	}
+	logs := next.Surface.SurfaceForTerminal("term-logs")
+	if logs.TerminalID != "term-logs" || logs.Lines[0] != "logs" || logs.Revision != 1 {
+		t.Fatalf("expected event terminal id to be applied to snapshot, got %#v", logs)
+	}
+}
+
 func TestLiveSurfaceStoreKeepsPaneTerminalBindingsIsolated(t *testing.T) {
 	shell := state.DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"

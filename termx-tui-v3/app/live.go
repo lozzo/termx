@@ -305,6 +305,9 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 		}
 	}
 	if event.Ready {
+		if event.Snapshot.TerminalID == "" {
+			event.Snapshot.TerminalID = event.TerminalID
+		}
 		root.Surface = root.Surface.ApplySnapshot(event.Snapshot)
 	}
 	return root.Advance(), nil

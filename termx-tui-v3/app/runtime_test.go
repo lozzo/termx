@@ -119,6 +119,218 @@ func TestAppRuntimeProcessesMessagesInOrderAndRenders(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeCoalescesQueuedLiveSurfaceUpdatesByTerminalID(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	var revisions []uint64
+	var lines []string
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			surface, ok := msg.(LiveSurfaceMsg)
+			if !ok {
+				t.Fatalf("expected LiveSurfaceMsg, got %T", msg)
+			}
+			revisions = append(revisions, surface.Snapshot.Revision)
+			if len(surface.Snapshot.Lines) > 0 {
+				lines = append(lines, surface.Snapshot.Lines[0])
+			}
+			return root.Advance(), nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{fmt.Sprintf("frame-%d", root.Generation)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	for _, snapshot := range []state.LiveSurfaceSnapshot{
+		{TerminalID: "term-1", Revision: 1, Lines: []string{"one"}},
+		{TerminalID: "term-1", Revision: 2, Lines: []string{"two"}},
+		{TerminalID: "term-1", Revision: 3, Lines: []string{"three"}},
+	} {
+		if err := runtime.Post(LiveSurfaceMsg{Snapshot: snapshot}); err != nil {
+			t.Fatalf("post revision %d: %v", snapshot.Revision, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if !reflect.DeepEqual(revisions, []uint64{3}) {
+		t.Fatalf("expected only latest queued revision, got %v", revisions)
+	}
+	if !reflect.DeepEqual(lines, []string{"three"}) {
+		t.Fatalf("expected latest queued surface payload, got %v", lines)
+	}
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-1"}) {
+		t.Fatalf("coalesced live updates should render once, got %v", got)
+	}
+}
+
+func TestAppRuntimeCoalescedLiveSurfaceKeepsLatestQueuePosition(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	var seen []string
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			switch msg := msg.(type) {
+			case LiveSurfaceMsg:
+				seen = append(seen, fmt.Sprintf("surface:%d", msg.Snapshot.Revision))
+			case testMsg:
+				seen = append(seen, msg.Name)
+			default:
+				t.Fatalf("unexpected message %T", msg)
+			}
+			return root.Advance(), nil
+		},
+		nil,
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	for _, msg := range []Msg{
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 1, Lines: []string{"one"}}},
+		testMsg{Name: "ordinary"},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Lines: []string{"two"}}},
+	} {
+		if err := runtime.Post(msg); err != nil {
+			t.Fatalf("post %T: %v", msg, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if want := []string{"ordinary", "surface:2"}; !reflect.DeepEqual(seen, want) {
+		t.Fatalf("coalesced latest live frame must keep its latest queue position, got %v want %v", seen, want)
+	}
+}
+
+func TestAppRuntimeDropsOlderQueuedLiveSurfaceRevision(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	var revisions []uint64
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			surface, ok := msg.(LiveSurfaceMsg)
+			if !ok {
+				t.Fatalf("expected LiveSurfaceMsg, got %T", msg)
+			}
+			revisions = append(revisions, surface.Snapshot.Revision)
+			return root.Advance(), nil
+		},
+		nil,
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 3, Lines: []string{"new"}}}); err != nil {
+		t.Fatalf("post revision 3: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Lines: []string{"old"}}}); err != nil {
+		t.Fatalf("post revision 2: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if !reflect.DeepEqual(revisions, []uint64{3}) {
+		t.Fatalf("older revision must not replace queued latest revision, got %v", revisions)
+	}
+}
+
+func TestAppRuntimeCoalescesQueuedLiveEventsByTerminalID(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	var revisions []uint64
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			event, ok := msg.(LiveEventMsg)
+			if !ok {
+				t.Fatalf("expected LiveEventMsg, got %T", msg)
+			}
+			revisions = append(revisions, event.Event.Snapshot.Revision)
+			return root.Advance(), nil
+		},
+		nil,
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	for _, revision := range []uint64{1, 2, 3} {
+		if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{
+			TerminalID: "term-1",
+			Ready:      true,
+			Snapshot:   state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: revision, Lines: []string{fmt.Sprintf("r%d", revision)}},
+		}}); err != nil {
+			t.Fatalf("post revision %d: %v", revision, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if !reflect.DeepEqual(revisions, []uint64{3}) {
+		t.Fatalf("expected only latest queued live event revision, got %v", revisions)
+	}
+}
+
+func TestAppRuntimeKeepsLiveSemanticBoundariesBetweenQueuedUpdates(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	var seen []string
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			switch msg := msg.(type) {
+			case LiveSurfaceMsg:
+				seen = append(seen, fmt.Sprintf("surface:%d", msg.Snapshot.Revision))
+			case LiveResizeMsg:
+				seen = append(seen, fmt.Sprintf("resize:%dx%d", msg.Cols, msg.Rows))
+			case HostResizeMsg:
+				seen = append(seen, fmt.Sprintf("host-resize:%dx%d", msg.Cols, msg.Rows))
+			case LiveResizeResultMsg:
+				seen = append(seen, fmt.Sprintf("resize-result:%dx%d", msg.Cols, msg.Rows))
+			case LiveExitMsg:
+				seen = append(seen, "exit")
+			case LiveAttachMsg:
+				seen = append(seen, "attach")
+			default:
+				t.Fatalf("unexpected message %T", msg)
+			}
+			return root.Advance(), nil
+		},
+		nil,
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	for _, msg := range []Msg{
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 1, Lines: []string{"before-resize"}}},
+		LiveResizeMsg{Cols: 100, Rows: 40},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Lines: []string{"after-resize"}}},
+		HostResizeMsg{Cols: 120, Rows: 48},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 3, Lines: []string{"after-host-resize"}}},
+		LiveResizeResultMsg{Cols: 118, Rows: 44},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 4, Lines: []string{"after-resize-result"}}},
+		LiveExitMsg{TerminalID: "term-1", ExitCode: 0, Reason: "done"},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 5, Lines: []string{"after-exit"}}},
+		LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}},
+		LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 6, Lines: []string{"after-attach"}}},
+	} {
+		if err := runtime.Post(msg); err != nil {
+			t.Fatalf("post %T: %v", msg, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	want := []string{"surface:1", "resize:100x40", "surface:2", "host-resize:120x48", "surface:3", "resize-result:118x44", "surface:4", "exit", "surface:5", "attach", "surface:6"}
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("live coalescing crossed semantic boundary: got %v want %v", seen, want)
+	}
+}
+
 func TestAppRuntimeRoutesEffectResultsThroughMessagePath(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	var seen []string

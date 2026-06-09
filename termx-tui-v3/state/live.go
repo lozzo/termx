@@ -11,20 +11,31 @@ const (
 
 // TerminalSurfaceStore 保存当前实时 terminal surface 投影，不是历史 truth。
 type TerminalSurfaceStore struct {
-	TerminalID string
-	Cols       int
-	Rows       int
-	Lines      []string
-	Screen     [][]LiveCell
-	Title      string
-	Cursor     LiveCursor
-	Modes      LiveTerminalModes
-	Ready      bool
-	State      TerminalLiveState
-	ExitCode   int
-	ExitReason string
-	Err        string
-	Surfaces   map[string]LiveSurfaceSnapshot
+	TerminalID     string
+	Revision       uint64
+	Cols           int
+	Rows           int
+	Lines          []string
+	Screen         [][]LiveCell
+	Title          string
+	Cursor         LiveCursor
+	Modes          LiveTerminalModes
+	Ready          bool
+	State          TerminalLiveState
+	ExitCode       int
+	ExitReason     string
+	Err            string
+	ResizeBoundary LiveResizeBoundary
+	Surfaces       map[string]LiveSurfaceSnapshot
+}
+
+// LiveResizeBoundary 是一次 content rect resize 后等待匹配 surface 的基线。
+type LiveResizeBoundary struct {
+	Active       bool
+	PreviousCols int
+	PreviousRows int
+	Cols         int
+	Rows         int
 }
 
 // LiveCursor 是 live surface 的 content-local 光标状态。
@@ -89,6 +100,7 @@ type TerminalSessionStore struct {
 // LiveSurfaceSnapshot 是 terminal service/event 回投给 reducer 的实时投影。
 type LiveSurfaceSnapshot struct {
 	TerminalID string
+	Revision   uint64
 	Cols       int
 	Rows       int
 	Lines      []string
@@ -109,15 +121,30 @@ func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) Te
 	if snapshot.TerminalID == "" {
 		return store
 	}
-	snapshot.Lines = cloneStrings(snapshot.Lines)
-	snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
 	if snapshot.State == "" {
 		snapshot.State = TerminalLiveAttached
 	}
+	if store.resizeBoundaryRejects(snapshot) {
+		return store
+	}
+	if current, ok := store.snapshotForTerminal(snapshot.TerminalID); ok {
+		if shouldRejectLiveSnapshot(current, snapshot) {
+			return store
+		}
+		if snapshot.Revision == 0 {
+			snapshot.Revision = current.Revision
+		}
+	}
+	snapshot.Lines = cloneStrings(snapshot.Lines)
+	snapshot.Screen = cloneLiveCellRows(snapshot.Screen)
 	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 	store.Surfaces[snapshot.TerminalID] = snapshot
 	if store.TerminalID == "" || store.TerminalID == snapshot.TerminalID {
-		return store.projectSnapshot(snapshot, true)
+		store = store.projectSnapshot(snapshot, true)
+		if store.ResizeBoundary.Active && snapshot.Cols == store.ResizeBoundary.Cols && snapshot.Rows == store.ResizeBoundary.Rows {
+			store.ResizeBoundary = LiveResizeBoundary{}
+		}
+		return store
 	}
 	return store
 }
@@ -131,25 +158,32 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 		store.Ready = false
 	}
 	store.TerminalID = terminalID
+	store.Revision = 0
 	store.Cols = cols
 	store.Rows = rows
 	store.State = TerminalLiveAttached
 	store.ExitCode = 0
 	store.ExitReason = ""
 	store.Err = ""
+	store.ResizeBoundary = LiveResizeBoundary{}
 	if terminalID != "" {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot := store.Surfaces[terminalID]
+		snapshot, ok := store.snapshotForTerminal(terminalID)
+		if !ok {
+			snapshot = LiveSurfaceSnapshot{}
+		}
 		snapshot.TerminalID = terminalID
+		snapshot.Revision = 0
 		if snapshot.Cols == 0 {
 			snapshot.Cols = cols
 		}
 		if snapshot.Rows == 0 {
 			snapshot.Rows = rows
 		}
-		if snapshot.State == "" {
-			snapshot.State = TerminalLiveAttached
-		}
+		snapshot.State = TerminalLiveAttached
+		snapshot.ExitCode = 0
+		snapshot.ExitReason = ""
+		snapshot.Err = ""
 		store.Surfaces[terminalID] = snapshot
 	}
 	return store
@@ -158,7 +192,10 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSurfaceStore {
 	if terminalID != "" {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot := store.Surfaces[terminalID]
+		snapshot, ok := store.snapshotForTerminal(terminalID)
+		if !ok {
+			snapshot = LiveSurfaceSnapshot{}
+		}
 		snapshot.TerminalID = terminalID
 		snapshot.State = TerminalLiveExited
 		snapshot.ExitCode = exitCode
@@ -176,6 +213,7 @@ func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, re
 		store.ExitCode = exitCode
 		store.ExitReason = reason
 		store.Err = ""
+		store.ResizeBoundary = LiveResizeBoundary{}
 		store.Cursor = LiveCursor{}
 		store.Modes = LiveTerminalModes{}
 	}
@@ -185,9 +223,13 @@ func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, re
 func (store TerminalSurfaceStore) SetError(err string) TerminalSurfaceStore {
 	store.Err = err
 	store.State = TerminalLiveError
+	store.ResizeBoundary = LiveResizeBoundary{}
 	if store.TerminalID != "" {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot := store.Surfaces[store.TerminalID]
+		snapshot, ok := store.snapshotForTerminal(store.TerminalID)
+		if !ok {
+			snapshot = LiveSurfaceSnapshot{}
+		}
 		snapshot.TerminalID = store.TerminalID
 		snapshot.Err = err
 		snapshot.State = TerminalLiveError
@@ -197,11 +239,19 @@ func (store TerminalSurfaceStore) SetError(err string) TerminalSurfaceStore {
 }
 
 func (store TerminalSurfaceStore) Resize(cols int, rows int) TerminalSurfaceStore {
+	previousCols := store.Cols
+	previousRows := store.Rows
 	store.Cols = cols
 	store.Rows = rows
+	if previousCols != cols || previousRows != rows {
+		store.ResizeBoundary = LiveResizeBoundary{Active: true, PreviousCols: previousCols, PreviousRows: previousRows, Cols: cols, Rows: rows}
+	}
 	if store.TerminalID != "" {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
-		snapshot := store.Surfaces[store.TerminalID]
+		snapshot, ok := store.snapshotForTerminal(store.TerminalID)
+		if !ok {
+			snapshot = LiveSurfaceSnapshot{}
+		}
 		snapshot.TerminalID = store.TerminalID
 		snapshot.Cols = cols
 		snapshot.Rows = rows
@@ -226,6 +276,7 @@ func (store TerminalSurfaceStore) SurfaceForTerminal(terminalID string) Terminal
 
 func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, ready bool) TerminalSurfaceStore {
 	store.TerminalID = snapshot.TerminalID
+	store.Revision = snapshot.Revision
 	store.Cols = snapshot.Cols
 	store.Rows = snapshot.Rows
 	store.Lines = cloneStrings(snapshot.Lines)
@@ -242,6 +293,62 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 	store.ExitReason = snapshot.ExitReason
 	store.Err = snapshot.Err
 	return store
+}
+
+func (store TerminalSurfaceStore) resizeBoundaryRejects(snapshot LiveSurfaceSnapshot) bool {
+	if !store.ResizeBoundary.Active || store.TerminalID == "" || snapshot.TerminalID != store.TerminalID || !liveSnapshotIsOrdinary(snapshot) {
+		return false
+	}
+	// resize 后只拒绝明确来自旧尺寸基线的普通帧，避免晚到旧帧回滚投影。
+	return snapshot.Cols == store.ResizeBoundary.PreviousCols && snapshot.Rows == store.ResizeBoundary.PreviousRows
+}
+
+func (store TerminalSurfaceStore) snapshotForTerminal(terminalID string) (LiveSurfaceSnapshot, bool) {
+	if terminalID == "" {
+		return LiveSurfaceSnapshot{}, false
+	}
+	if snapshot, ok := store.Surfaces[terminalID]; ok {
+		return snapshot, true
+	}
+	if store.TerminalID != terminalID {
+		return LiveSurfaceSnapshot{}, false
+	}
+	return LiveSurfaceSnapshot{
+		TerminalID: terminalID,
+		Revision:   store.Revision,
+		Cols:       store.Cols,
+		Rows:       store.Rows,
+		Lines:      cloneStrings(store.Lines),
+		Screen:     cloneLiveCellRows(store.Screen),
+		Title:      store.Title,
+		Cursor:     store.Cursor,
+		Modes:      store.Modes,
+		State:      store.State,
+		ExitCode:   store.ExitCode,
+		ExitReason: store.ExitReason,
+		Err:        store.Err,
+	}, true
+}
+
+func shouldRejectLiveSnapshot(current LiveSurfaceSnapshot, incoming LiveSurfaceSnapshot) bool {
+	if incoming.Revision != 0 && current.Revision != 0 && incoming.Revision < current.Revision {
+		return true
+	}
+	if liveSnapshotIsBoundary(current) && liveSnapshotIsOrdinary(incoming) {
+		return true
+	}
+	return false
+}
+
+func liveSnapshotIsBoundary(snapshot LiveSurfaceSnapshot) bool {
+	return snapshot.State == TerminalLiveExited || snapshot.State == TerminalLiveError || snapshot.Err != ""
+}
+
+func liveSnapshotIsOrdinary(snapshot LiveSurfaceSnapshot) bool {
+	if snapshot.Err != "" || snapshot.ExitCode != 0 || snapshot.ExitReason != "" {
+		return false
+	}
+	return snapshot.State == "" || snapshot.State == TerminalLiveAttached
 }
 
 func cloneLiveCellRows(rows [][]LiveCell) [][]LiveCell {
@@ -368,6 +475,7 @@ func cloneLiveSurfaceSnapshots(values map[string]LiveSurfaceSnapshot) map[string
 	cloned := make(map[string]LiveSurfaceSnapshot, len(values)+1)
 	for key, value := range values {
 		value.Lines = cloneStrings(value.Lines)
+		value.Screen = cloneLiveCellRows(value.Screen)
 		cloned[key] = value
 	}
 	return cloned
