@@ -109,6 +109,14 @@ func TestContentRendererBoundaryConsumesOnlyContentVMAndRect(t *testing.T) {
 	if _, ok := request.FieldByName("Rect"); !ok {
 		t.Fatalf("content renderer request must carry Rect")
 	}
+	content := reflect.TypeOf(ContentVM{})
+	if _, ok := content.FieldByName("Extent"); !ok {
+		t.Fatalf("ContentVM must carry terminal extent for viewport projection")
+	}
+	result := reflect.TypeOf(ContentRenderResult{})
+	if _, ok := result.FieldByName("Overflow"); !ok {
+		t.Fatalf("content render result must carry overflow hints for pane chrome")
+	}
 	for i := 0; i < request.NumField(); i++ {
 		if request.Field(i).Type == reflect.TypeOf(state.Root{}) {
 			t.Fatalf("content renderer request must not carry state.Root")

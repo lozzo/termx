@@ -28,8 +28,9 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		default:
 			renderCardPanel(c, layout)
 		}
-		contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect)
-		layers = append(layers, Layer{Kind: LayerPanel, Rect: layout.Rect, Lines: contentResult})
+		contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect, "panel:"+layout.Panel.ID+":content", LayerPanel)
+		renderPanelContentOverflowMarkers(c, layout, contentResult.Overflow)
+		layers = append(layers, Layer{Kind: LayerPanel, Rect: layout.Rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
 	}
 	for _, floating := range plan.Floatings {
 		layer := renderFloating(c, floating)

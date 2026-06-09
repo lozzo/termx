@@ -21,8 +21,8 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 		state = ""
 	}
 	renderChromeCardTitle(c, rect, primitive.Title.Text, state, titleAction, titleStyle, primitive.Owner, primitive.Layer)
-	contentLines := renderContent(c, overlay.Content, contentRect)
-	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
+	contentResult := renderContent(c, overlay.Content, contentRect, primitive.Owner+":content", primitive.Layer)
+	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}
 }
 
 func overlayInnerRect(rect Rect) Rect {

@@ -187,9 +187,10 @@ const (
 )
 
 type Layer struct {
-	Kind  LayerKind
-	Rect  Rect
-	Lines []Line
+	Kind            LayerKind
+	Rect            Rect
+	Lines           []Line
+	ContentOverflow ContentOverflow
 }
 
 type RenderResult struct {
@@ -545,12 +546,30 @@ const (
 type ContentVM struct {
 	Kind       ContentKind
 	Lines      []Line
+	Extent     ContentExtent
 	Status     string
 	Pending    bool
 	Empty      bool
 	Error      string
 	Cursor     Cursor
 	HitRegions []HitRegion
+}
+
+// ContentExtent 表达 terminal 内容在 content rect 内实际占用的 cell 区域。
+// Known=false 时，renderer 以当前 content rect 作为 extent，避免把普通旧内容误判为 extent 外占位。
+type ContentExtent struct {
+	Known bool
+	X     int
+	Y     int
+	Cols  int
+	Rows  int
+}
+
+type ContentOverflow struct {
+	Left   bool
+	Right  bool
+	Top    bool
+	Bottom bool
 }
 
 type ContentRenderRequest struct {
@@ -563,6 +582,7 @@ type ContentRenderResult struct {
 	Cursor     Cursor
 	HitRegions []HitRegion
 	Metadata   RenderMetadata
+	Overflow   ContentOverflow
 }
 
 type ContentRenderer interface {

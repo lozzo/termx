@@ -529,11 +529,12 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	if rect.W >= 2 && rect.H >= 2 && floating.Chrome.ShowResizeHandle {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "v", style, owner, LayerFloating)
 	}
-	var contentLines []Line
+	var contentResult ContentRenderResult
 	if !floating.Collapsed {
-		contentLines = renderContent(c, floating.Content, layout.ContentRect)
+		contentResult = renderContent(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating)
+		renderFloatingContentOverflowMarkers(c, layout, contentResult.Overflow)
 	}
-	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentLines}
+	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}
 }
 
 func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive) {
@@ -579,22 +580,44 @@ func floatingChromeActionItems(width int) []paneChromeActionItem {
 	return nil
 }
 
-func renderContent(c *canvas, content ContentVM, rect Rect) []Line {
+func renderContent(c *canvas, content ContentVM, rect Rect, owner string, layer LayerKind) ContentRenderResult {
 	if rect.W <= 0 || rect.H <= 0 {
-		return nil
+		return ContentRenderResult{}
 	}
-	lines := content.Lines
-	if len(lines) == 0 {
-		lines = []Line{NewLine(content.Status)}
+	result := RenderContentViewport(ContentRenderRequest{Rect: rect, Content: content})
+	for i, line := range result.Lines {
+		c.writeLine(rect.X, rect.Y+i, rect.W, line, owner, layer)
 	}
-	rendered := make([]Line, 0, rect.H)
-	for i := 0; i < rect.H; i++ {
-		line := Line{}
-		if i < len(lines) {
-			line = lines[i]
-		}
-		c.writeLine(rect.X, rect.Y+i, rect.W, line, string(content.Kind), LayerPanel)
-		rendered = append(rendered, Line{Cells: cellsFromSegments(cellSegmentsFromLine(line, rect.W, string(content.Kind), LayerPanel))})
+	return result
+}
+
+func renderPanelContentOverflowMarkers(c *canvas, layout PanelLayoutPlan, overflow ContentOverflow) {
+	style := paneChromeStyle(layout.Panel)
+	owner := "panel:" + layout.Panel.ID + ":overflow"
+	renderContentOverflowMarkers(c, layout.Rect, layout.ContentRect, overflow, style, owner, LayerChrome)
+}
+
+func renderFloatingContentOverflowMarkers(c *canvas, layout FloatingLayoutPlan, overflow ContentOverflow) {
+	style := StyleMuted
+	if layout.Floating.Active {
+		style = StyleAccent
 	}
-	return rendered
+	owner := "floating:" + layout.Floating.ID + ":overflow"
+	renderContentOverflowMarkers(c, layout.Rect, layout.ContentRect, overflow, style, owner, LayerFloating)
+}
+
+func renderContentOverflowMarkers(c *canvas, chromeRect Rect, contentRect Rect, overflow ContentOverflow, style StyleToken, owner string, layer LayerKind) {
+	if chromeRect.W <= 0 || chromeRect.H <= 0 || contentRect.W <= 0 || contentRect.H <= 0 {
+		return
+	}
+	if overflow.Right {
+		x := chromeRect.X + chromeRect.W - 1
+		y := clampInt(contentRect.Y+contentRect.H/2, chromeRect.Y, chromeRect.Y+chromeRect.H-1)
+		c.overlayTextStyled(x, y, 1, ">", style, owner, layer)
+	}
+	if overflow.Bottom {
+		x := clampInt(contentRect.X+contentRect.W/2, chromeRect.X, chromeRect.X+chromeRect.W-1)
+		y := chromeRect.Y + chromeRect.H - 1
+		c.overlayTextStyled(x, y, 1, "v", style, owner, layer)
+	}
 }
