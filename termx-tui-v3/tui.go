@@ -289,29 +289,38 @@ func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, 
 
 func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, renderer render.Renderer) (render.Frame, error) {
 	host := app.NewFakeTerminalHost(4)
-	host.SetSize(120, 40)
+	host.SetSize(140, 40)
 	shell := state.DefaultShell()
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
-	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabPrevious})
+	activeShellPaneID := shell.ActivePaneID
 	shell = shell.
 		SetPanelPresentation(state.PanelPresentationSplitLine).
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical)
-	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-shell"
-	shell = shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
-	shell.Workspace.Tabs[0].RootSplit.Ratio = 0.741
+	shell = shell.FocusPane(state.PaneCommandTarget{PaneID: activeShellPaneID})
+	for tabIndex := range shell.Workspace.Tabs {
+		if shell.Workspace.Tabs[tabIndex].ID != shell.Workspace.ActiveTabID {
+			continue
+		}
+		shell.Workspace.Tabs[tabIndex].RootSplit.Ratio = 0.741
+		for paneIndex := range shell.Workspace.Tabs[tabIndex].Panes {
+			if shell.Workspace.Tabs[tabIndex].Panes[paneIndex].ID == activeShellPaneID {
+				shell.Workspace.Tabs[tabIndex].Panes[paneIndex].TerminalID = "term-shell"
+			}
+		}
+	}
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
 		Action:   state.FloatingCommandCreate,
 		TargetID: "float-visual",
 		Title:    "quick actions",
 		Pane:     state.PaneState{ID: "float-visual-pane", Title: "actions", Kind: state.PaneEmpty},
-		Rect:     state.FloatingRect{X: 85, Y: 7, W: 29, H: 8},
-		BoundsW:  120,
+		Rect:     state.FloatingRect{X: 105, Y: 7, W: 29, H: 8},
+		BoundsW:  140,
 		BoundsH:  40,
 		Source:   state.PaneCommandSourceTest,
 	})
 	root := state.Root{
 		Shell:    shell,
-		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+		Viewport: state.ViewportStore{Valid: true, Cols: 140, Rows: 40},
 		Surface:  visualAuditSurfaceStore(),
 	}
 	runtime := app.NewAppRuntime(root, nil, func(root state.Root) render.Frame {
@@ -322,7 +331,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 			// 固定视觉审计要同时展示 active pane、inactive pane 与 active floating 的 chrome 样式。
 			panel.Chrome.State = render.ChromeSlotVM{}
 			switch panel.ID {
-			case state.DefaultPaneID:
+			case activeShellPaneID:
 				panel.Active = true
 				panel.Chrome.Title.Style = render.StyleAccent
 				for actionIndex := range panel.Chrome.Actions {
