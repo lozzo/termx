@@ -320,6 +320,10 @@ func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
 			t.Fatalf("mkdir %s: %v", name, err)
 		}
 	}
+	nested := filepath.Join(dir, "dev", "src")
+	if err := os.Mkdir(nested, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
 	prefix := filepath.Join(dir, "d")
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
@@ -362,6 +366,30 @@ func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
 	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
 	if !prompt.SuggestionFocused || prompt.SuggestionSelected != 2 {
 		t.Fatalf("shift-tab in suggestion focus should wrap to previous candidate, prompt=%#v", prompt)
+	}
+
+	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Create Terminal",
+		Purpose:     "terminal.create",
+		ActiveField: 2,
+		Fields: []state.PromptFieldState{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
+		},
+	})}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != want || len(prompt.ActiveSuggestionItems()) != 1 || !strings.HasSuffix(prompt.ActiveSuggestionItems()[0], "src"+string(os.PathSeparator)) {
+		t.Fatalf("right should enter selected directory and keep suggestion focus, want=%q prompt=%#v", want, prompt)
+	}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyLeft}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != dir+string(os.PathSeparator) || len(prompt.ActiveSuggestionItems()) != 3 {
+		t.Fatalf("left should move to parent directory and refresh suggestions, prompt=%#v", prompt)
 	}
 
 	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{

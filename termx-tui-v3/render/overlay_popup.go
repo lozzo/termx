@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -38,13 +39,13 @@ func promptSuggestionLines(field state.PromptFieldState, focused bool, selected 
 	lines := []Line{}
 	if strings.TrimSpace(field.SuggestionTitle) != "" {
 		lines = append(lines, Line{Cells: []Cell{
-			styledCell("┌ "+field.SuggestionTitle, StylePromptSuggestion),
+			styledCell("  "+field.SuggestionTitle, StylePromptSuggestion),
 		}})
 	}
 	if len(field.SuggestionItems) == 0 {
 		if strings.TrimSpace(field.SuggestionEmpty) != "" {
 			lines = append(lines, Line{Cells: []Cell{
-				styledCell("│ "+field.SuggestionEmpty, StylePromptSuggestion),
+				styledCell("  "+field.SuggestionEmpty, StylePromptSuggestion),
 			}})
 		}
 		return lines
@@ -63,24 +64,37 @@ func promptSuggestionLines(field state.PromptFieldState, focused bool, selected 
 	for index := offset; index < end; index++ {
 		item := field.SuggestionItems[index]
 		marker := "  "
-		lineStyle := StylePromptSuggestion
+		markerStyle := StylePromptSuggestion
 		itemStyle := StylePromptSuggestion
 		if focused && index == selected {
 			marker = "▸ "
-			lineStyle = StylePromptSuggestionHit
+			markerStyle = StylePromptSuggestionHit
 			itemStyle = StylePromptSuggestionHit
 		}
 		lines = append(lines, Line{Cells: []Cell{
-			styledCell("│ "+marker, lineStyle),
-			styledCell(item, itemStyle),
+			styledCell(marker, markerStyle),
+			styledCell("  ", itemStyle),
+			styledCell(promptSuggestionItemName(item), itemStyle),
 		}})
 	}
 	if offset > 0 || end < len(field.SuggestionItems) {
 		lines = append(lines, Line{Cells: []Cell{
-			styledCell(fmt.Sprintf("└ %d-%d/%d", offset+1, end, len(field.SuggestionItems)), StylePromptSuggestion),
+			styledCell(fmt.Sprintf("  %d-%d/%d", offset+1, end, len(field.SuggestionItems)), StylePromptSuggestion),
 		}})
 	}
 	return lines
+}
+
+func promptSuggestionItemName(item string) string {
+	trimmed := strings.TrimRight(item, "/\\")
+	if trimmed == "" {
+		return item
+	}
+	name := filepath.Base(trimmed)
+	if name == "." || name == string(filepath.Separator) {
+		return item
+	}
+	return name + "/"
 }
 
 // 候选框只渲染可见窗口，避免弹出层随目录数量无限增高。

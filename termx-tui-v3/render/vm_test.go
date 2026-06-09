@@ -1164,10 +1164,11 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 	}
 	if popup.Kind != OverlayPopupPromptSuggestion ||
 		!strings.Contains(plainLines(popup.Lines), "path: /tmp") ||
-		!strings.Contains(plainLines(popup.Lines), "▸ /tmp/dev/") ||
+		!strings.Contains(plainLines(popup.Lines), "▸   dev/") ||
 		!strings.Contains(plainLines(popup.Lines), "2-7/8") ||
 		strings.Contains(plainLines(popup.Lines), "/tmp/d0/") ||
-		!lineHasStyledCell(popup.Lines[6], "/tmp/dev/", StylePromptSuggestionHit) {
+		strings.Contains(plainLines(popup.Lines), "│") ||
+		!lineHasStyledCell(popup.Lines[6], "dev/", StylePromptSuggestionHit) {
 		t.Fatalf("expected workdir suggestion popup rows, got %#v", popup)
 	}
 	if content.Cursor.Row != 3 || content.Cursor.Col != DisplayWidth("workdir: /tmp/de") {

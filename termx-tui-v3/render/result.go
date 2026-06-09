@@ -345,11 +345,11 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 }
 
 func promptSuggestionBG(theme Theme) string {
-	return mixHostColor(theme.HostBG, theme.Accent, 0.10)
+	return mixHostColor(theme.HostBG, theme.Accent, 0.16)
 }
 
 func promptSuggestionHitBG(theme Theme) string {
-	return mixHostColor(theme.HostBG, theme.Accent, 0.28)
+	return mixHostColor(theme.HostBG, theme.Accent, 0.34)
 }
 
 func headerWorkspaceBG(theme Theme) string {

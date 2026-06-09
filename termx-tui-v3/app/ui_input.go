@@ -304,6 +304,16 @@ func reducePromptSuggestionInput(root state.Root, event input.InputEvent) (state
 		root.Shell = root.Shell.MovePromptSuggestionSelection(1)
 	case input.KeyEnter:
 		root.Shell = refreshPromptCompletions(root.Shell.AcceptPromptSuggestion())
+	case input.KeyRight:
+		root.Shell = refreshPromptCompletions(root.Shell.EnterPromptSuggestion())
+		if len(root.Shell.EnsureDefaults().Overlay.Prompt.ActiveSuggestionItems()) > 0 {
+			root.Shell = root.Shell.SetPromptSuggestionFocused(true)
+		}
+	case input.KeyLeft:
+		root.Shell = refreshPromptCompletions(root.Shell.LeavePromptSuggestionPath())
+		if len(root.Shell.EnsureDefaults().Overlay.Prompt.ActiveSuggestionItems()) > 0 {
+			root.Shell = root.Shell.SetPromptSuggestionFocused(true)
+		}
 	case input.KeyTab:
 		root.Shell = root.Shell.MovePromptSuggestionSelection(1)
 	case input.KeyShiftTab:

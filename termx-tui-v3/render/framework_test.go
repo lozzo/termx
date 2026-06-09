@@ -902,8 +902,8 @@ func TestFrameworkRendersOverlayPopupAbovePromptModal(t *testing.T) {
 				AnchorRow: 4,
 				AnchorCol: 9,
 				Lines: []Line{
-					{Cells: []Cell{styledCell("┌ path: /tmp", StylePromptSuggestion)}},
-					{Cells: []Cell{styledCell("│ ▸ ", StylePromptSuggestionHit), styledCell("/tmp/dev/", StylePromptSuggestionHit)}},
+					{Cells: []Cell{styledCell("  path: /tmp", StylePromptSuggestion)}},
+					{Cells: []Cell{styledCell("▸ ", StylePromptSuggestionHit), styledCell("  ", StylePromptSuggestionHit), styledCell("dev/", StylePromptSuggestionHit)}},
 				},
 			},
 		},
@@ -912,7 +912,7 @@ func TestFrameworkRendersOverlayPopupAbovePromptModal(t *testing.T) {
 	if len(result.Layers) < 2 || result.Layers[len(result.Layers)-2].Kind != LayerOverlay || result.Layers[len(result.Layers)-1].Kind != LayerPopup {
 		t.Fatalf("popup should be rendered after prompt overlay, layers=%#v", result.Layers)
 	}
-	if !strings.Contains(plainLines(result.Content), "/tmp/dev/") {
+	if !strings.Contains(plainLines(result.Content), "dev/") {
 		t.Fatalf("expected popup row to be visible above modal clipping, got %#v", result.Lines())
 	}
 }
