@@ -779,14 +779,14 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if firstLayer(t, result, LayerOverlay).Rect.W == 0 || firstLayer(t, result, LayerToast).Rect.W == 0 {
 		t.Fatalf("expected overlay and toast layers, got %#v", result.Layers)
 	}
-	if !linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") {
-		t.Fatalf("terminal picker inner area should use overlay background ANSI, got %#v", result.ANSILines())
+	if linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") {
+		t.Fatalf("terminal picker inner area should not use gray overlay background ANSI, got %#v", result.ANSILines())
 	}
 	if !styledLinesContain(result.StyledLines(), "┌", StyleForeground) || !styledLinesContain(result.StyledLines(), "┐", StyleForeground) {
 		t.Fatalf("terminal picker border should keep foreground-only style, got %#v", result.StyledLines())
 	}
-	if !styledLinesContainStyle(result.StyledLines(), StyleOverlay) {
-		t.Fatalf("terminal picker inner area should keep overlay style, got %#v", result.StyledLines())
+	if !styledLinesContainStyle(result.StyledLines(), StylePicker) || styledLinesContainStyle(result.StyledLines(), StyleOverlay) {
+		t.Fatalf("terminal picker inner area should use picker style without overlay gray, got %#v", result.StyledLines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 50)
 }

@@ -333,6 +333,14 @@ func TestTerminalPickerItemsMergeTerminalPoolAndWorkspacePanes(t *testing.T) {
 	if len(items) != 2 || !items[0].CreateNew || !items[0].Selected || items[1].TerminalID != "term-pool" {
 		t.Fatalf("expected query to keep create row first and match pool item, got %#v", items)
 	}
+	root.Shell = root.Shell.SetTerminalPickerQuery("trpl")
+	items = TerminalPickerItems(root)
+	if len(items) != 2 || !items[0].CreateNew || !items[0].Selected || items[1].TerminalID != "term-pool" {
+		t.Fatalf("expected fuzzy query to match term-pool, got %#v", items)
+	}
+	if got := TerminalPickerQueryMatchIndexes("term-pool", "trpl"); len(got) != 4 || got[0] != 0 || got[1] != 2 || got[2] != 5 || got[3] != 8 {
+		t.Fatalf("unexpected fuzzy match indexes for term-pool/trpl: %#v", got)
+	}
 }
 
 func TestTerminalPoolStoreAppliesListWithStaleGuardAndError(t *testing.T) {

@@ -401,6 +401,7 @@ func cellSegmentsFromLine(line Line, width int, owner string, layer LayerKind) [
 	}
 	segments := make([]canvasSegment, 0, width)
 	remaining := width
+	fillStyle := lineFillStyle(line)
 	for _, cell := range line.Cells {
 		if remaining <= 0 {
 			break
@@ -426,6 +427,7 @@ func cellSegmentsFromLine(line Line, width int, owner string, layer LayerKind) [
 		segments = append(segments, canvasSegment{
 			text:  " ",
 			width: 1,
+			style: fillStyle,
 			owner: owner,
 			layer: layer,
 			safe:  true,
@@ -433,6 +435,16 @@ func cellSegmentsFromLine(line Line, width int, owner string, layer LayerKind) [
 		remaining--
 	}
 	return segments
+}
+
+func lineFillStyle(line Line) StyleToken {
+	for _, cell := range line.Cells {
+		switch cell.Style {
+		case StylePicker, StylePickerMuted, StylePickerAccent, StylePickerInfo, StylePickerSuccess, StylePickerMatch:
+			return StylePicker
+		}
+	}
+	return ""
 }
 
 func cellsFromSegments(segments []canvasSegment) []Cell {

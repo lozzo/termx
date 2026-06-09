@@ -913,11 +913,11 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[1], "new terminal", StyleForeground) {
-		t.Fatalf("expected default create row text to use foreground style, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[1], "new terminal", StylePicker) {
+		t.Fatalf("expected default create row text to use picker style, got %#v", content.Lines[1])
 	}
-	if !lineHasStyledCell(content.Lines[1], "Create a new terminal", StyleForeground) || !lineHasStyledCell(content.Lines[2], "日志🚀", StyleForeground) || !lineHasStyledCell(content.Lines[2], "live", StyleForeground) {
-		t.Fatalf("expected picker row text to use foreground style, got %#v", content.Lines)
+	if !lineHasStyledCell(content.Lines[1], "Create a new terminal", StylePicker) || !lineHasStyledCell(content.Lines[2], "日", StylePickerMatch) || !lineHasStyledCell(content.Lines[2], "志", StylePickerMatch) || !lineHasStyledCell(content.Lines[2], "live", StylePicker) {
+		t.Fatalf("expected picker row text to use picker style and match highlight, got %#v", content.Lines)
 	}
 	if content.Cursor.Col != DisplayWidth("search: 日志") {
 		t.Fatalf("expected cursor after query text, got %#v", content.Cursor)
@@ -954,6 +954,16 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 		content.HitRegions[2].PaneID != "" ||
 		content.HitRegions[2].ActionID != ActionPickerAttach.String() {
 		t.Fatalf("expected pane, pool and create row action regions, got %#v", content.HitRegions)
+	}
+
+	root.Shell = root.Shell.SetTerminalPickerQuery("trpl")
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !strings.Contains(plainLines(content.Lines), "term-pool") ||
+		!lineHasStyledCell(content.Lines[2], "t", StylePickerMatch) ||
+		!lineHasStyledCell(content.Lines[2], "r", StylePickerMatch) ||
+		!lineHasStyledCell(content.Lines[2], "p", StylePickerMatch) ||
+		!lineHasStyledCell(content.Lines[2], "l", StylePickerMatch) {
+		t.Fatalf("expected fuzzy terminal id match highlight, got %#v", content.Lines)
 	}
 
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolLoading}

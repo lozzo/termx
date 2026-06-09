@@ -89,6 +89,12 @@ const (
 	StyleWarning             StyleToken = "warning"
 	StyleDanger              StyleToken = "danger"
 	StyleOverlay             StyleToken = "overlay"
+	StylePicker              StyleToken = "picker"
+	StylePickerMuted         StyleToken = "picker-muted"
+	StylePickerAccent        StyleToken = "picker-accent"
+	StylePickerInfo          StyleToken = "picker-info"
+	StylePickerSuccess       StyleToken = "picker-success"
+	StylePickerMatch         StyleToken = "picker-match"
 	StyleToast               StyleToken = "toast"
 	StyleToastAccent         StyleToken = "toast-accent"
 )
@@ -307,6 +313,18 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(theme.Danger, false)
 	case StyleOverlay:
 		return sgrForegroundBackground(theme.ChromeFG, theme.OverlayBG, false)
+	case StylePicker:
+		return sgrForegroundBackground(theme.ChromeFG, pickerBG(theme), false)
+	case StylePickerMuted:
+		return sgrForegroundBackground(theme.Muted, pickerBG(theme), false) + "\x1b[2m"
+	case StylePickerAccent:
+		return sgrForegroundBackground(theme.Accent, pickerBG(theme), true)
+	case StylePickerInfo:
+		return sgrForegroundBackground(theme.Info, pickerBG(theme), true)
+	case StylePickerSuccess:
+		return sgrForegroundBackground(theme.Success, pickerBG(theme), true)
+	case StylePickerMatch:
+		return sgrForegroundBackground(theme.Warning, pickerBG(theme), true)
 	case StyleToast:
 		return sgrForegroundBackground(theme.ChromeFG, theme.ToastBG, false)
 	case StyleToastAccent:
@@ -314,6 +332,10 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	default:
 		return "\x1b[1m"
 	}
+}
+
+func pickerBG(theme Theme) string {
+	return mixHostColor(theme.HostBG, theme.Accent, 0.10)
 }
 
 func headerWorkspaceBG(theme Theme) string {

@@ -212,12 +212,44 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if query == "" {
 		return true
 	}
-	return strings.Contains(strings.ToLower(item.Title), query) ||
-		strings.Contains(strings.ToLower(item.PaneID), query) ||
-		strings.Contains(strings.ToLower(item.TerminalID), query) ||
-		strings.Contains(strings.ToLower(item.Location), query) ||
-		strings.Contains(strings.ToLower(string(item.Kind)), query) ||
-		strings.Contains(strings.ToLower(item.PoolState), query)
+	return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
+		TerminalPickerQueryMatchIndexes(item.PaneID, query) != nil ||
+		TerminalPickerQueryMatchIndexes(item.TerminalID, query) != nil ||
+		TerminalPickerQueryMatchIndexes(item.Location, query) != nil ||
+		TerminalPickerQueryMatchIndexes(string(item.Kind), query) != nil ||
+		TerminalPickerQueryMatchIndexes(item.PoolState, query) != nil
+}
+
+func TerminalPickerQueryMatchIndexes(value string, query string) []int {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []int{}
+	}
+	valueRunes := []rune(value)
+	queryRunes := []rune(query)
+	matches := make([]int, 0, len(queryRunes))
+	valueAt := 0
+	for _, queryRune := range queryRunes {
+		queryLower := []rune(strings.ToLower(string(queryRune)))
+		if len(queryLower) == 0 {
+			continue
+		}
+		found := false
+		for valueAt < len(valueRunes) {
+			valueLower := []rune(strings.ToLower(string(valueRunes[valueAt])))
+			if len(valueLower) > 0 && valueLower[0] == queryLower[0] {
+				matches = append(matches, valueAt)
+				valueAt++
+				found = true
+				break
+			}
+			valueAt++
+		}
+		if !found {
+			return nil
+		}
+	}
+	return matches
 }
 
 func matchesTerminalPoolPageQuery(item TerminalPoolPageItem, query string) bool {

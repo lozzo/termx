@@ -10,7 +10,7 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	if overlay.Content.Kind != ContentTerminalPicker {
 		c.fillStyledRect(rect, primitive.Style, primitive.Owner, primitive.Layer)
 	} else {
-		c.fillStyledRect(overlayInnerRect(rect), primitive.Style, primitive.Owner, primitive.Layer)
+		c.fillStyledRect(overlayInnerRect(rect), StylePicker, primitive.Owner, primitive.Layer)
 	}
 	chromeStyle := primitive.Style
 	titleStyle := StyleAccent

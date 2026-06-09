@@ -64,7 +64,7 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 	rowOffset := len(lines)
 	rows := state.TerminalPickerItems(root)
 	for _, row := range rows {
-		lines = append(lines, terminalPickerLine(row))
+		lines = append(lines, terminalPickerLine(row, query))
 	}
 	regions := terminalPickerHitRegions(rows, rowOffset)
 	return ContentVM{
@@ -298,29 +298,30 @@ func helpActionLabel(action ActionID) (string, bool) {
 	return spec.HelpLabel, true
 }
 
-func terminalPickerLine(row state.TerminalPickerItem) Line {
+func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 	marker := "  "
-	textStyle := StyleForeground
-	markerStyle := StyleForeground
+	textStyle := StylePicker
+	markerStyle := StylePicker
 	if row.Selected {
 		marker = "▸ "
-		markerStyle = StyleAccent
+		markerStyle = StylePickerAccent
 	}
 	if row.CreateNew {
-		return Line{Cells: []Cell{
+		cells := []Cell{
 			styledCell(marker, markerStyle),
-			styledCell("+", StyleInfo),
-			NewCell(" "),
-			styledCell(row.Title, textStyle),
-			NewCell("  "),
-			styledCell("Create a new terminal", textStyle),
-		}}
+			styledCell("+", StylePickerInfo),
+			pickerSpace(" "),
+		}
+		cells = append(cells, highlightPickerText(row.Title, query, textStyle)...)
+		cells = append(cells, pickerSpace("  "))
+		cells = append(cells, highlightPickerText("Create a new terminal", query, textStyle)...)
+		return Line{Cells: cells}
 	}
 	observed := "○"
-	observedStyle := StyleMuted
+	observedStyle := StylePickerMuted
 	if row.Active {
 		observed = "●"
-		observedStyle = StyleSuccess
+		observedStyle = StylePickerSuccess
 	}
 	idText := strings.TrimSpace(row.TerminalID)
 	stateText := terminalPickerStateLabel(row)
@@ -328,18 +329,20 @@ func terminalPickerLine(row state.TerminalPickerItem) Line {
 	cells := []Cell{
 		styledCell(marker, markerStyle),
 		styledCell(observed, observedStyle),
-		NewCell(" "),
+		pickerSpace(" "),
 	}
 	if idText != "" && idText != "none" {
-		cells = append(cells, styledCell(idText, textStyle), NewCell(" "))
+		cells = append(cells, highlightPickerText(idText, query, textStyle)...)
+		cells = append(cells, pickerSpace(" "))
 	}
 	cells = append(cells,
-		styledCell(row.Title, textStyle),
-		NewCell("  "),
-		styledCell(stateText, textStyle),
-	)
+		highlightPickerText(row.Title, query, textStyle)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells,
+		highlightPickerText(stateText, query, textStyle)...)
 	if locationText != "" {
-		cells = append(cells, NewCell(" "), styledCell(locationText, textStyle))
+		cells = append(cells, pickerSpace(" "))
+		cells = append(cells, highlightPickerText(locationText, query, textStyle)...)
 	}
 	return Line{Cells: cells}
 }
@@ -371,13 +374,41 @@ func terminalPickerLocationLabel(row state.TerminalPickerItem) string {
 func terminalPickerSearchLine(query string) Line {
 	if query == "" {
 		return Line{Cells: []Cell{
-			styledCell("search:", StyleMuted),
+			styledCell("search:", StylePickerMuted),
 		}}
 	}
 	return Line{Cells: []Cell{
-		styledCell("search: ", StyleMuted),
-		styledCell(query, StyleAccent),
+		styledCell("search: ", StylePickerMuted),
+		styledCell(query, StylePickerAccent),
 	}}
+}
+
+func highlightPickerText(value string, query string, baseStyle StyleToken) []Cell {
+	if value == "" {
+		return nil
+	}
+	matchIndexes := state.TerminalPickerQueryMatchIndexes(value, query)
+	if matchIndexes == nil || len(matchIndexes) == 0 {
+		return []Cell{styledCell(value, baseStyle)}
+	}
+	matchSet := make(map[int]struct{}, len(matchIndexes))
+	for _, index := range matchIndexes {
+		matchSet[index] = struct{}{}
+	}
+	runes := []rune(value)
+	cells := make([]Cell, 0, len(runes))
+	for index, r := range runes {
+		style := baseStyle
+		if _, ok := matchSet[index]; ok {
+			style = StylePickerMatch
+		}
+		cells = append(cells, styledCell(string(r), style))
+	}
+	return cells
+}
+
+func pickerSpace(value string) Cell {
+	return styledCell(value, StylePicker)
 }
 
 func terminalPickerSearchCursorCol(query string) int {
