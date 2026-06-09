@@ -319,6 +319,64 @@ func TestFrameworkRendersFullFooterSummaryWhenWidthAllows(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 140)
 }
 
+func TestFrameworkRendersFullFooterSummaryAtVisualCompareWidth(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{Visible: true, Workspace: "main"},
+		Footer: FooterVM{
+			Visible:       true,
+			Mode:          "live",
+			ActionTokens:  footerActionCatalog("live"),
+			GlobalSummary: "ws:main float:1 terminals:1",
+		},
+		Layout: LayoutVM{Viewport: Rect{W: 120, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+		}}},
+	}})
+	frame := result.Frame()
+	footer := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footer, "[Ctrl]") || !strings.Contains(footer, "[P] PANE") || !strings.Contains(footer, "[G]") {
+		t.Fatalf("120-col footer should keep shortcut strip endpoints, got %#v", footer)
+	}
+	if !strings.Contains(footer, "ws:main float:1 terminals:1") {
+		t.Fatalf("120-col footer should keep full right summary, got %#v", footer)
+	}
+	if strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;8;8;13m") {
+		t.Fatalf("120-col footer should still have no status background, got %#v", frame.ANSILines[len(frame.ANSILines)-1])
+	}
+	assertAllRowsWidth(t, frame.Lines, 120)
+}
+
+func TestFrameworkCriticalFooterHintDoesNotRestoreStatusBackground(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{Visible: true, Workspace: "main"},
+		Footer: FooterVM{
+			Visible:       true,
+			Mode:          "live",
+			Hint:          "error: boom",
+			ActiveTarget:  "pane:shell",
+			ActionTokens:  footerActionCatalog("live"),
+			GlobalSummary: "ws:main float:1 terminals:1",
+		},
+		Layout: LayoutVM{Viewport: Rect{W: 140, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+		}}},
+	}})
+	frame := result.Frame()
+	footerANSI := frame.ANSILines[len(frame.ANSILines)-1]
+	if !strings.Contains(frame.Lines[len(frame.Lines)-1], "error: boom") {
+		t.Fatalf("critical footer should render hint text, got %#v", frame.Lines[len(frame.Lines)-1])
+	}
+	if strings.Contains(footerANSI, "\x1b[48;2;8;8;13m") {
+		t.Fatalf("critical footer hint should not restore status background, got %#v", footerANSI)
+	}
+}
+
 func TestFrameworkAppliesChromePatchesFromVM(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{

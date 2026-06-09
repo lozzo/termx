@@ -617,13 +617,54 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 		left = append(left, barText(" "+strings.ToUpper(mode)+" ", StyleFooterAccent, 1))
 	}
 	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {
-		left = appendFooterActionSegments(left, footerActionTokensForFooter(footer), available)
+		actions := footerActionTokensForFooter(footer)
+		actions = footerActionTokensVisibleForWidth(actions, mode, width)
+		left = appendFooterActionSegments(left, actions, available)
 	}
 	if len(left) == 0 {
 		left = appendFooterKeySegments(left, "^G", StyleFooterKeyGlobal, ActionFooterGlobalMode.String())
 		left = append(left, barText(" GLOBAL", StyleFooterMuted, 1).withAction(ActionFooterGlobalMode.String()))
 	}
 	return left
+}
+
+func footerActionTokensVisibleForWidth(actions []FooterActionVM, mode string, width int) []FooterActionVM {
+	if width >= 100 || (mode != "live" && mode != "normal") || !footerActionsMatchKeys(actions, []string{"^P", "^R", "^T", "^W", "^O", "^V", "^F", "^G"}) {
+		return actions
+	}
+	keys := []string{"^P", "^R", "^T", "^G"}
+	if width < 72 {
+		keys = []string{"^P", "^R", "^G"}
+	}
+	if width < 56 {
+		keys = []string{"^P", "^G"}
+	}
+	return footerActionsByKeys(actions, keys)
+}
+
+func footerActionsMatchKeys(actions []FooterActionVM, keys []string) bool {
+	if len(actions) != len(keys) {
+		return false
+	}
+	for index, key := range keys {
+		if strings.TrimSpace(actions[index].Key) != key {
+			return false
+		}
+	}
+	return true
+}
+
+func footerActionsByKeys(actions []FooterActionVM, keys []string) []FooterActionVM {
+	out := make([]FooterActionVM, 0, len(keys))
+	for _, key := range keys {
+		for _, action := range actions {
+			if strings.TrimSpace(action.Key) == key {
+				out = append(out, action)
+				break
+			}
+		}
+	}
+	return out
 }
 
 func footerActionAvailableWidth(footer FooterVM, width int) int {
@@ -649,7 +690,7 @@ func footerSummaryReservedWidth(footer FooterVM, width int) int {
 		return 0
 	}
 	if width >= 120 {
-		return footerSummaryTokenWidth(segments, "float:")
+		return barSegmentsWidth(segments)
 	}
 	return footerSummaryTokenWidth(segments, "ws:") + footerSummaryTokenWidth(segments, "float:") + 1
 }
@@ -693,7 +734,7 @@ func footerMetadataSegments(footer FooterVM, hintIsCritical bool) []barSegment {
 	}
 	right = append(right, footerSummarySegments(compactFooterSummary(footer.GlobalSummary))...)
 	if hintIsCritical && footer.Hint != "" {
-		right = append(right, barText(" "+footer.Hint+" ", StyleStatusWarning, 0))
+		right = append(right, barText(" "+footer.Hint+" ", StyleWarning, 0))
 	}
 	return right
 }
@@ -857,8 +898,14 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		limit = width
 	}
 	separator := footerActionSep(width)
+	selected := selectFooterActionTokens(actions, limit, DisplayWidth(separator.text))
+	var compactLabelMask []bool
+	if footerShouldCompactActionLabelsForSummary(width, actions, limit, DisplayWidth(separator.text)) {
+		selected = actions
+		compactLabelMask = footerCompactActionLabelMask(actions, limit, DisplayWidth(separator.text))
+	}
 	ctrlPrefixShown := false
-	for _, action := range selectFooterActionTokens(actions, limit, DisplayWidth(separator.text)) {
+	for actionIndex, action := range selected {
 		key := strings.TrimSpace(action.Key)
 		label := strings.TrimSpace(action.Label)
 		if key == "" {
@@ -884,7 +931,11 @@ func appendFooterActionSegments(segments []barSegment, actions []FooterActionVM,
 		} else {
 			segments = appendFooterKeySegments(segments, key, style, action.ActionID)
 		}
-		if textToken != "" {
+		showLabel := textToken != ""
+		if compactLabelMask != nil {
+			showLabel = actionIndex < len(compactLabelMask) && compactLabelMask[actionIndex]
+		}
+		if showLabel {
 			segments = append(segments, barText(" "+strings.ToUpper(textToken), StyleFooterMuted, 1).withAction(action.ActionID))
 		}
 	}
@@ -1041,6 +1092,84 @@ func footerActionTokenDisplayWidthForSelection(action FooterActionVM, ctrlPrefix
 		width += 1 + DisplayWidth(label)
 	}
 	return width
+}
+
+func footerActionKeyOnlyWidth(actions []FooterActionVM, separatorWidth int) int {
+	width := 0
+	ctrlPrefixShown := false
+	for _, action := range actions {
+		tokenWidth := footerActionKeyOnlyDisplayWidthForSelection(action, ctrlPrefixShown)
+		if tokenWidth <= 0 {
+			continue
+		}
+		if width > 0 {
+			width += separatorWidth
+		}
+		width += tokenWidth
+		if _, ok := footerCtrlLetter(action.Key); ok {
+			ctrlPrefixShown = true
+		}
+	}
+	return width
+}
+
+func footerActionFullWidth(actions []FooterActionVM, separatorWidth int) int {
+	width := 0
+	ctrlPrefixShown := false
+	for _, action := range actions {
+		tokenWidth := footerActionTokenDisplayWidthForSelection(action, ctrlPrefixShown)
+		if tokenWidth <= 0 {
+			continue
+		}
+		if width > 0 {
+			width += separatorWidth
+		}
+		width += tokenWidth
+		if _, ok := footerCtrlLetter(action.Key); ok {
+			ctrlPrefixShown = true
+		}
+	}
+	return width
+}
+
+func footerShouldCompactActionLabelsForSummary(width int, actions []FooterActionVM, limit int, separatorWidth int) bool {
+	if width < 120 {
+		return false
+	}
+	keyOnlyWidth := footerActionKeyOnlyWidth(actions, separatorWidth)
+	if keyOnlyWidth <= 0 || keyOnlyWidth > limit {
+		return false
+	}
+	return footerActionFullWidth(actions, separatorWidth) > limit
+}
+
+func footerActionKeyOnlyDisplayWidthForSelection(action FooterActionVM, ctrlPrefixShown bool) int {
+	key := strings.TrimSpace(action.Key)
+	if key == "" {
+		return 0
+	}
+	return DisplayWidth(formatFooterKeyTokenForSelection(key, ctrlPrefixShown))
+}
+
+func footerCompactActionLabelMask(actions []FooterActionVM, limit int, separatorWidth int) []bool {
+	mask := make([]bool, len(actions))
+	remaining := limit - footerActionKeyOnlyWidth(actions, separatorWidth)
+	if remaining <= 0 {
+		return mask
+	}
+	for index, action := range actions {
+		label := strings.TrimSpace(action.Label)
+		if label == "" {
+			continue
+		}
+		width := 1 + DisplayWidth(label)
+		if width > remaining {
+			continue
+		}
+		mask[index] = true
+		remaining -= width
+	}
+	return mask
 }
 
 func formatFooterKeyTokenForSelection(key string, ctrlPrefixShown bool) string {
@@ -1201,7 +1330,38 @@ func compactGlobalSummary(value string) string {
 }
 
 func metadataTokens(value string) []string {
-	return strings.Fields(strings.TrimSpace(value))
+	fields := strings.Fields(strings.TrimSpace(value))
+	if len(fields) == 0 {
+		return nil
+	}
+	tokens := make([]string, 0, len(fields))
+	current := ""
+	for _, field := range fields {
+		if metadataTokenStartsField(field) {
+			if current != "" {
+				tokens = append(tokens, current)
+			}
+			current = field
+			continue
+		}
+		if current == "" {
+			current = field
+			continue
+		}
+		current += " " + field
+	}
+	if current != "" {
+		tokens = append(tokens, current)
+	}
+	return tokens
+}
+
+func metadataTokenStartsField(field string) bool {
+	return strings.HasPrefix(field, "ws:") ||
+		strings.HasPrefix(field, "float:") ||
+		strings.HasPrefix(field, "terminals:") ||
+		strings.HasPrefix(field, "tabs:") ||
+		strings.HasPrefix(field, "panes:")
 }
 
 func footerTailAction(actions []string) string {

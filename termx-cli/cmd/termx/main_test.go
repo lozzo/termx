@@ -1405,7 +1405,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"  main", "visual review", "quick actio", "[Ctrl] • [P] PANE"} {
+	for _, want := range []string{"  main", "1 main  ▎ 2 logs  ", "visual review", "quick actio", "└──────────────────────────v┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}
@@ -1802,8 +1802,8 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 		!strings.Contains(string(diff), "tmux visual diff") {
 		t.Fatalf("visual compare artifacts missing expected markers current=%q target=%q diff=%q", current, target, diff)
 	}
-	currentNormalized := normalizeVisualText(string(current), 120, 40)
-	targetNormalized := normalizeVisualText(string(target), 120, 40)
+	currentNormalized := normalizeVisualText(string(current), 140, 40)
+	targetNormalized := normalizeVisualText(string(target), 140, 40)
 	if result.Mismatches != 0 || !strings.Contains(string(diff), "no row mismatches") || currentNormalized != targetNormalized {
 		t.Fatalf("visual compare should match target exactly, mismatches=%d diff=\n%s", result.Mismatches, diff)
 	}

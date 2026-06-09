@@ -660,7 +660,7 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 		_ = runTmuxCommand(context.Background(), "kill-session", "-t", session)
 	}
 	defer cleanupTmux()
-	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "120", "-y", "40", "-s", session, "/bin/sh", scriptPath); err != nil {
+	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "140", "-y", "40", "-s", session, "/bin/sh", scriptPath); err != nil {
 		return v3TmuxVisualCompareResult{}, err
 	}
 	if err := waitForTmuxCapture(ctx, target, "quick actio", 5*time.Second); err != nil {
@@ -685,17 +685,17 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	styleMapDiffPath := filepath.Join(artifactDir, "stylemap.diff.txt")
 	summaryPath := filepath.Join(artifactDir, "summary.txt")
 	targetPlain := v3VisualTargetPlain()
-	diffText, mismatches := diffVisualPlain(targetPlain, currentPlain, 120, 40)
+	diffText, mismatches := diffVisualPlain(targetPlain, currentPlain, 140, 40)
 	styleText, styleDiffText, styleMismatches := visualANSIStyleReport(currentANSI)
-	currentStyleMap := visualANSIStyleMap(currentANSI, 120, 40)
-	targetStyleMap := visualTargetStyleMap(targetPlain, 120, 40)
+	currentStyleMap := visualANSIStyleMap(currentANSI, 140, 40)
+	targetStyleMap := visualTargetStyleMap(targetPlain, 140, 40)
 	styleMapDiffText, styleMapMismatches := diffVisualStyleMap(targetStyleMap, currentStyleMap)
 	currentStyleMapText := formatVisualStyleMap("current tmux ANSI style map", currentStyleMap)
 	targetStyleMapText := formatVisualStyleMap("target semantic style map", targetStyleMap)
 	summary := strings.Join([]string{
 		"termx v3 tmux visual compare",
 		"source: tuiv2 single-line bar + object chrome contract",
-		fmt.Sprintf("viewport: %dx%d", 120, 40),
+		fmt.Sprintf("viewport: %dx%d", 140, 40),
 		fmt.Sprintf("mismatches: %d", mismatches),
 		fmt.Sprintf("style_mismatches: %d", styleMismatches),
 		fmt.Sprintf("stylemap_mismatches: %d", styleMapMismatches),
@@ -751,48 +751,48 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 
 func v3VisualTargetPlain() string {
 	lines := []string{
-		"  main ▎ 1 main  2 logs                                                                                             ",
-		"┌─ shell ──────────────────────────────────────────────────────────────[]─[]─[]─[]──┬─ logs ───────────────────[]─┐",
-		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                                   │ visual review baseline       │",
-		"│> make test                                                                            │ target visual mismatch       │",
-		"│ok   termx-tui-v3/render                                                               │ emoji 🚀 and 中文            │",
-		"│>                                                                                      │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                    ┌ quick actions ─────────  ┐     │",
-		"│                                                                                    │ No terminal attached      │     │",
-		"│                                                                                    │                           │     │",
-		"│                                                                                    │ Attach existing           │     │",
-		"│                                                                                    │ New terminal              │     │",
-		"│                                                                                    │ Terminal Pool             │     │",
-		"│                                                                                    │ Close                     │     │",
-		"│                                                                                    └──────────────────────────v┘     │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"│                                                                                       │                              │",
-		"└───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────┘",
-		"[Ctrl] • [P] PANE • [R] RESIZE • [T] TAB • [W] WORKSPACE • [O] FLOAT • [V] COPY • [F] PICKER • [G] GLOBAL        float:1",
+		"  main 1 main  ▎ 2 logs  ",
+		"┌─ shell ─────────────────────────────────────────────────────────────────────────────[]─[]─[]─[]──┬─ logs ────────────────────────[]─┐",
+		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                                                  │ visual review baseline            │",
+		"│> make test                                                                                           │ target visual mismatch            │",
+		"│ok   termx-tui-v3/render                                                                              │ emoji 🚀 and 中文                 │",
+		"│>                                                                                                     │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │ ┌ quick actions ─────────  ┐     │",
+		"│                                                                                                      │ │ No terminal attached      │     │",
+		"│                                                                                                      │ │                           │     │",
+		"│                                                                                                      │ │ Attach existing           │     │",
+		"│                                                                                                      │ │ New terminal              │     │",
+		"│                                                                                                      │ │ Terminal Pool             │     │",
+		"│                                                                                                      │ │ Close                     │     │",
+		"│                                                                                                      │ └──────────────────────────v┘     │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"│                                                                                                      │                                   │",
+		"└──────────────────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────┘",
+		"[Ctrl] • [P] PANE • [R] RESIZE • [T] TAB • [W] WORKSPACE • [O] FLOAT • [V] COPY • [F] PICKER • [G] GLOBAL       ws:main float:1 terminals:1",
 	}
-	return normalizeVisualText(strings.Join(lines, "\n"), 120, 40)
+	return normalizeVisualText(strings.Join(lines, "\n"), 140, 40)
 }
 
 func diffVisualPlain(target string, current string, width int, height int) (string, int) {
@@ -996,24 +996,24 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 	// 固定视觉基线的目标样式来自 tuiv2-style 单行 tab/status bar 与对象 chrome 语义区域。
 	fill(1, 1, visibleLineWidth(1), visualStyleStatus)
 	fillRangesForSubstrings(1, visualStyleWarn, "")
-	fillRangesForSubstrings(1, visualStyleMuted, " 2 logs ")
+	fillRangesForSubstrings(1, visualStyleMuted, " 1 main ")
 
-	fill(2, 1, 88, visualStyleAccent)
-	fill(2, 89, width, visualStyleMuted)
+	fill(2, 1, 103, visualStyleAccent)
+	fill(2, 104, width, visualStyleMuted)
 	fillRangesForSubstrings(2, visualStyleAccent, "[]─[]─[]─[]")
 	for row := 3; row <= 38; row++ {
 		fill(row, 1, 1, visualStyleAccent)
-		fill(row, 89, 89, visualStyleMuted)
-		fill(row, 120, 120, visualStyleMuted)
+		fill(row, 104, 104, visualStyleMuted)
+		fill(row, 140, 140, visualStyleMuted)
 	}
 	for row := 8; row <= 15; row++ {
 		for col, glyph := range visualLineGlyphs(lines[row-1], width) {
 			displayCol := col + 1
-			if displayCol < 86 || displayCol > 114 {
+			if displayCol < 106 || displayCol > 134 {
 				continue
 			}
 			// floating 覆盖底层 pane：边框和标题为 active accent，内部恢复为内容自己的 plain/transparent。
-			if row == 8 || row == 15 || displayCol == 86 || displayCol == 114 {
+			if row == 8 || row == 15 || displayCol == 106 || displayCol == 134 {
 				styleMap[row-1][col] = visualStyleAccent
 				continue
 			}
@@ -1025,8 +1025,8 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 		}
 	}
 
-	fill(39, 1, 88, visualStyleAccent)
-	fill(39, 89, width, visualStyleMuted)
+	fill(39, 1, 103, visualStyleAccent)
+	fill(39, 104, width, visualStyleMuted)
 	fillBracketToken(40, "[Ctrl]", 0, visualStyleAccent)
 	fillBracketToken(40, "[P]", 0, visualStyleAccent)
 	fillBracketToken(40, "[R]", 0, visualStyleWarn)
@@ -1037,7 +1037,7 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 	fillBracketToken(40, "[F]", 0, visualStyleUnknown)
 	fillBracketToken(40, "[G]", 0, visualStyleUnknown)
 	fillRangesForSubstrings(40, visualStyleAccent, " float:1")
-	fillRangesForSubstrings(40, visualStyleMuted, " PANE", " RESIZE", " TAB", " WORKSPACE", " FLOAT", " COPY", " PICKER", " GLOBAL", " • ")
+	fillRangesForSubstrings(40, visualStyleMuted, " PANE", " RESIZE", " TAB", " WORKSPACE", " FLOAT", " COPY", " PICKER", " GLOBAL", " • ", " ws:main", " terminals:1")
 	return styleMap
 }
 
@@ -1096,7 +1096,7 @@ func formatVisualStyleMap(title string, styleMap [][]visualStyleClass) string {
 func diffVisualStyleMap(target [][]visualStyleClass, current [][]visualStyleClass) (string, int) {
 	var builder strings.Builder
 	builder.WriteString("tmux visual style map diff\n")
-	builder.WriteString("source target: fixed 120x40 semantic style regions\n\n")
+	builder.WriteString("source target: fixed 140x40 semantic style regions\n\n")
 	mismatches := 0
 	height := len(target)
 	for row := 0; row < height; row++ {
@@ -1201,16 +1201,16 @@ func visualLineSubstringSpans(line string, marker string) [][2]int {
 func visualStyleExpectations() []visualStyleExpectation {
 	return []visualStyleExpectation{
 		{Name: "header-status-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"48;2;8;8;13"}},
-		{Name: "active-tab-marker", Row: 1, Col: 9, Glyph: "▎", MustHave: []string{"1", "38;2;8;8;13", "48;2;231;226;239"}},
-		{Name: "inactive-tab-muted", Row: 1, Col: 20, Glyph: "2", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"48;2;8;8;13"}},
-		{Name: "pane-action-accent", Row: 2, Col: 73, Glyph: "", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "inactive-logs-muted", Row: 2, Col: 89, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
-		{Name: "right-content-muted", Row: 3, Col: 89, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},
-		{Name: "floating-border-accent", Row: 8, Col: 86, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "floating-inner-accent", Row: 10, Col: 86, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "right-pane-border-muted", Row: 10, Col: 120, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "active-tab-marker", Row: 1, Col: 18, Glyph: "▎", MustHave: []string{"1", "38;2;8;8;13", "48;2;231;226;239"}},
+		{Name: "inactive-tab-muted", Row: 1, Col: 9, Glyph: "1", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"48;2;8;8;13"}},
+		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "inactive-logs-muted", Row: 2, Col: 104, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
+		{Name: "right-content-muted", Row: 3, Col: 104, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},
+		{Name: "floating-border-accent", Row: 8, Col: 106, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "floating-inner-accent", Row: 10, Col: 106, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "right-pane-border-muted", Row: 10, Col: 140, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
 		{Name: "footer-no-bg", Row: 40, Col: 1, Glyph: "[", MustHave: []string{"38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
-		{Name: "footer-float-accent", Row: 40, Col: 114, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
+		{Name: "footer-float-accent", Row: 40, Col: 121, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
 	}
 }
 
