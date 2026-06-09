@@ -339,16 +339,8 @@ func paneChromeActionItems(width int) []paneChromeActionItem {
 	if width < 8 {
 		return nil
 	}
-	items := []paneChromeActionItem{{
-		Text:     paneChromeBracketToken(paneChromeCloseActionText()),
-		ActionID: ActionPaneClose.String(),
-	}}
-	full := []paneChromeActionItem{
-		{Text: paneChromeBracketToken(paneChromeZoomGlyph()), ActionID: ActionPaneZoom.String()},
-		{Text: paneChromeBracketToken(paneChromeSplitVerticalActionText()), ActionID: ActionPaneSplitRight.String()},
-		{Text: paneChromeBracketToken(paneChromeSplitHorizontalActionText()), ActionID: ActionPaneSplitDown.String()},
-		{Text: paneChromeBracketToken(paneChromeCloseActionText()), ActionID: ActionPaneClose.String()},
-	}
+	items := paneChromeActionItemsFromSpecs(ActionPaneClose)
+	full := paneChromeActionItemsFromSpecs(ActionPaneZoom, ActionPaneSplitRight, ActionPaneSplitDown, ActionPaneClose)
 	if paneChromeActionItemsWidth(full) <= maxInt(0, width-6) {
 		return full
 	}
@@ -418,6 +410,21 @@ type paneChromeActionItem struct {
 	Text     string
 	ActionID string
 	Style    StyleToken
+}
+
+func paneChromeActionItemsFromSpecs(ids ...ActionID) []paneChromeActionItem {
+	out := make([]paneChromeActionItem, 0, len(ids))
+	for _, id := range ids {
+		spec, ok := ActionSpecByID(id)
+		if !ok || spec.ChromeGlyph == "" {
+			continue
+		}
+		out = append(out, paneChromeActionItem{
+			Text:     paneChromeBracketToken(spec.ChromeGlyph),
+			ActionID: spec.ID.String(),
+		})
+	}
+	return out
 }
 
 func paneChromeActionClusterText() string {
@@ -547,14 +554,11 @@ func floatingChromeActionItems(width int) []paneChromeActionItem {
 	if width < 8 {
 		return nil
 	}
-	items := []paneChromeActionItem{
-		{Text: paneChromeBracketToken(paneChromeZoomGlyph()), ActionID: ActionFloatingRaise.String()},
-		{Text: paneChromeBracketToken(paneChromeCloseGlyph()), ActionID: ActionFloatingClose.String()},
-	}
+	items := paneChromeActionItemsFromSpecs(ActionFloatingRaise, ActionFloatingClose)
 	if paneChromeActionItemsWidth(items) <= maxInt(0, width-6) {
 		return items
 	}
-	closeOnly := []paneChromeActionItem{{Text: paneChromeBracketToken(paneChromeCloseGlyph()), ActionID: ActionFloatingClose.String()}}
+	closeOnly := paneChromeActionItemsFromSpecs(ActionFloatingClose)
 	if paneChromeActionItemsWidth(closeOnly) <= maxInt(0, width-5) {
 		return closeOnly
 	}

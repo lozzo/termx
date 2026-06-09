@@ -238,76 +238,85 @@ func NewShellReducer() Reducer {
 }
 
 func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {
-	switch msg.ActionID {
-	case render.ActionTabClose.String():
+	spec, ok := render.ActionSpecByIDString(msg.ActionID)
+	if !ok || spec.Dispatch == render.ActionDispatchNone {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
+		return root.Advance(), nil
+	}
+	if spec.Dispatch != render.ActionDispatchApp {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unsupported " + msg.ActionID})
+		return root.Advance(), nil
+	}
+	switch spec.ID {
+	case render.ActionTabClose:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
-	case render.ActionTabCreate.String():
+	case render.ActionTabCreate:
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse})
-	case render.ActionTabRename.String():
+	case render.ActionTabRename:
 		root.Shell = root.Shell.OpenPrompt(tabRenamePrompt(root.Shell.EnsureDefaults()))
 		return root.Advance(), nil
-	case render.ActionTabPrevious.String():
+	case render.ActionTabPrevious:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabPrevious, Source: state.PaneCommandSourceMouse})
-	case render.ActionTabNext.String():
+	case render.ActionTabNext:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabNext, Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterPaneMode.String():
+	case render.ActionFooterPaneMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModePane)
 		return root.Advance(), nil
-	case render.ActionFooterResizeMode.String():
+	case render.ActionFooterResizeMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeResize)
 		return root.Advance(), nil
-	case render.ActionFooterTabMode.String():
+	case render.ActionFooterTabMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeTab)
 		return root.Advance(), nil
-	case render.ActionFooterWorkspaceMode.String():
+	case render.ActionFooterWorkspaceMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeWorkspace)
 		return root.Advance(), nil
-	case render.ActionFooterFloatingMode.String():
+	case render.ActionFooterFloatingMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeFloating)
 		return root.Advance(), nil
-	case render.ActionFooterCopyMode.String():
+	case render.ActionFooterCopyMode:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v", Ctrl: true}}
 		}}}
-	case render.ActionFooterGlobalMode.String():
+	case render.ActionFooterGlobalMode:
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeGlobal)
 		return root.Advance(), nil
-	case render.ActionFooterPicker.String():
+	case render.ActionFooterPicker:
 		root.Shell = root.Shell.OpenTerminalPicker()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	case render.ActionFooterToggleHeader.String():
+	case render.ActionFooterToggleHeader:
 		root.Shell = root.Shell.ToggleHeaderVisible()
 		return root.Advance(), nil
-	case render.ActionFooterToggleFooter.String():
+	case render.ActionFooterToggleFooter:
 		root.Shell = root.Shell.ToggleFooterVisible()
 		return root.Advance(), nil
-	case render.ActionFooterOpenPool.String():
+	case render.ActionFooterOpenPool:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	case render.ActionFooterOpenTree.String():
+	case render.ActionFooterOpenTree:
 		root.Shell = root.Shell.OpenWorkbenchTree()
 		return root.Advance(), nil
-	case render.ActionFooterCloseToast.String():
+	case render.ActionFooterCloseToast:
 		root.Shell = root.Shell.CloseCurrentToast()
 		return root.Advance(), nil
-	case render.ActionFooterClearToasts.String():
+	case render.ActionFooterClearToasts:
 		root.Shell = root.Shell.ClearToasts()
 		return root.Advance(), nil
-	case render.ActionFooterNewWorkspace.String():
+	case render.ActionFooterNewWorkspace:
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: nextWorkspaceName(shell), Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterRenameWorkspace.String():
+	case render.ActionFooterRenameWorkspace:
 		root.Shell = root.Shell.OpenPrompt(workspaceRenamePrompt(root.Shell.EnsureDefaults()))
 		return root.Advance(), nil
-	case render.ActionFooterPreviousWorkspace.String():
+	case render.ActionFooterPreviousWorkspace:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspacePrevious, Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterNextWorkspace.String():
+	case render.ActionFooterNextWorkspace:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceNext, Source: state.PaneCommandSourceMouse})
-	case render.ActionFooterDeleteWorkspace.String():
+	case render.ActionFooterDeleteWorkspace:
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceDelete, TargetID: shell.Workspace.ID, Confirm: state.PaneConfirmAccepted, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterSplit.String():
+	case render.ActionPaneFooterSplit:
 		shell := root.Shell.EnsureDefaults()
 		// footer 点击只生成语义命令，实际 pane 结构仍由 workbench/reducer 统一修改。
 		command := state.PaneCommand{
@@ -318,34 +327,34 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			Source:         state.PaneCommandSourceMouse,
 		}
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneSplit, Pane: command, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterClose.String():
+	case render.ActionPaneFooterClose:
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterFocus.String():
+	case render.ActionPaneFooterFocus:
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandFocusNext, Source: state.PaneCommandSourceMouse})
-	case render.ActionPaneFooterZoom.String():
+	case render.ActionPaneFooterZoom:
 		shell := root.Shell.EnsureDefaults()
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandToggleZoom, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
-	case render.ActionResizeLeft.String(), render.ActionResizeRight.String(), render.ActionResizeUp.String(), render.ActionResizeDown.String():
-		command, ok := resizeFooterPaneCommand(msg.ActionID)
+	case render.ActionResizeLeft, render.ActionResizeRight, render.ActionResizeUp, render.ActionResizeDown:
+		command, ok := resizeFooterPaneCommand(spec.ID)
 		if !ok {
 			break
 		}
 		return reducePaneCommand(root, command)
-	case render.ActionResizeBalance.String():
+	case render.ActionResizeBalance:
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
-	case render.ActionCopyOlder.String():
+	case render.ActionCopyOlder:
 		// copy footer 只生成等价 PageUp 输入，authoritative history 请求仍由 copy reducer 统一处理。
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
 		}}}
-	case render.ActionEmptyClose.String(), render.ActionExitedClose.String():
+	case render.ActionEmptyClose, render.ActionExitedClose:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,
 			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
 			Source: state.PaneCommandSourceMouse,
 		})
-	case render.ActionPickerAttach.String():
+	case render.ActionPickerAttach:
 		items := state.TerminalPickerItems(root)
 		if msg.Row >= 0 {
 			root.Shell = root.Shell.SetTerminalPickerSelectedIndex(msg.Row, len(items))
@@ -366,25 +375,25 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
 			}}}
 		}
-	case render.ActionPickerNew.String():
+	case render.ActionPickerNew:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolCreateRequestMsg{} }}}
-	case render.ActionPoolSelect.String():
+	case render.ActionPoolSelect:
 		items := state.TerminalPoolPageItems(root)
 		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
 		return root.Advance(), nil
-	case render.ActionPoolAttach.String():
+	case render.ActionPoolAttach:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
 			}}}
 		}
-	case render.ActionPoolKill.String():
+	case render.ActionPoolKill:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolKillRequestMsg{TerminalID: selected.TerminalID}
 			}}}
 		}
-	case render.ActionPoolEdit.String():
+	case render.ActionPoolEdit:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			tags := cloneStringMap(selected.Tags)
 			if tags == nil {
@@ -395,33 +404,33 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: tags}
 			}}}
 		}
-	case render.ActionWorkbenchSelect.String():
+	case render.ActionWorkbenchSelect:
 		items := state.WorkbenchTreeItems(root)
 		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
 		return root.Advance(), nil
-	case render.ActionWorkbenchOpen.String():
+	case render.ActionWorkbenchOpen:
 		items := state.WorkbenchTreeItems(root)
 		if msg.Row >= 0 {
 			root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
 			items = state.WorkbenchTreeItems(root)
 		}
 		return reduceWorkbenchTreeOpen(root, items)
-	case render.ActionWorkbenchRename.String():
+	case render.ActionWorkbenchRename:
 		return reduceWorkbenchTreeRename(root, state.WorkbenchTreeItems(root))
-	case render.ActionWorkbenchNew.String():
+	case render.ActionWorkbenchNew:
 		return reduceWorkbenchTreeNew(root, state.WorkbenchTreeItems(root))
-	case render.ActionWorkbenchDelete.String():
+	case render.ActionWorkbenchDelete:
 		return reduceWorkbenchTreeDelete(root, state.WorkbenchTreeItems(root))
-	case render.ActionPromptSubmit.String():
+	case render.ActionPromptSubmit:
 		return reducePromptSubmit(root)
-	case render.ActionPromptCancel.String():
+	case render.ActionPromptCancel:
 		root.Shell = root.Shell.CloseOverlay()
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		return root.Advance(), nil
-	case render.ActionHelpClose.String():
+	case render.ActionHelpClose:
 		root.Shell = root.Shell.CloseOverlay()
 		return root.Advance(), nil
-	case render.ActionFloatingNew.String():
+	case render.ActionFloatingNew:
 		return reduceFloatingCommand(root, state.FloatingCommand{
 			Action:   state.FloatingCommandCreate,
 			TargetID: nextFloatingID(root.Shell),
@@ -429,25 +438,25 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			Title:    "floating",
 			Source:   state.PaneCommandSourceMouse,
 		})
-	case render.ActionFloatingRaise.String():
+	case render.ActionFloatingRaise:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingClose.String():
+	case render.ActionFloatingClose:
 		// footer close 没有 pane id 时，FloatingCommand 会按 active floating 作为目标。
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
-	case render.ActionFloatingResize.String():
+	case render.ActionFloatingResize:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
-	case render.ActionExitedRestart.String():
+	case render.ActionExitedRestart:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
 		}}}
-	case render.ActionExitedReconnect.String():
+	case render.ActionExitedReconnect:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
 		}}}
-	case render.ActionEmptyManager.String():
+	case render.ActionEmptyManager:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-	case render.ActionEmptyAttach.String(), render.ActionEmptyCreate.String():
+	case render.ActionEmptyAttach, render.ActionEmptyCreate:
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: msg.ActionID, Body: "not implemented"})
 		return root.Advance(), nil
 	}
@@ -455,7 +464,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	return root.Advance(), nil
 }
 
-func resizeFooterPaneCommand(actionID string) (state.PaneCommand, bool) {
+func resizeFooterPaneCommand(actionID render.ActionID) (state.PaneCommand, bool) {
 	// footer resize token 与键盘 resize mode 使用同一方向和步长语义。
 	command := state.PaneCommand{
 		Action: state.PaneCommandResize,
@@ -463,13 +472,13 @@ func resizeFooterPaneCommand(actionID string) (state.PaneCommand, bool) {
 		Source: state.PaneCommandSourceMouse,
 	}
 	switch actionID {
-	case render.ActionResizeLeft.String():
+	case render.ActionResizeLeft:
 		command.ResizeDirection = state.PaneResizeLeft
-	case render.ActionResizeRight.String():
+	case render.ActionResizeRight:
 		command.ResizeDirection = state.PaneResizeRight
-	case render.ActionResizeUp.String():
+	case render.ActionResizeUp:
 		command.ResizeDirection = state.PaneResizeUp
-	case render.ActionResizeDown.String():
+	case render.ActionResizeDown:
 		command.ResizeDirection = state.PaneResizeDown
 	default:
 		return state.PaneCommand{}, false

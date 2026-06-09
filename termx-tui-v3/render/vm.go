@@ -196,110 +196,129 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	switch mode {
 	case "pane":
 		return footerActionSpecs(
-			footerActionSpec("v", "split", ActionPaneFooterSplit.String(), StyleStatusAccent),
-			footerActionSpec("x", "close", ActionPaneFooterClose.String(), StyleStatusWarning),
-			footerActionSpec("n", "focus", ActionPaneFooterFocus.String(), StyleStatusAccent),
-			footerActionSpec("z", "zoom", ActionPaneFooterZoom.String(), StyleStatusAccent),
+			footerActionFor(ActionPaneFooterSplit),
+			footerActionFor(ActionPaneFooterClose),
+			footerActionFor(ActionPaneFooterFocus),
+			footerActionFor(ActionPaneFooterZoom),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "resize":
 		return footerActionSpecs(
-			footerActionSpec("←/h", "", ActionResizeLeft.String(), StyleStatusWarning),
-			footerActionSpec("→/l", "", ActionResizeRight.String(), StyleStatusWarning),
-			footerActionSpec("↑/k", "", ActionResizeUp.String(), StyleStatusWarning),
-			footerActionSpec("↓/j", "", ActionResizeDown.String(), StyleStatusWarning),
-			footerActionSpec("b", "balance", ActionResizeBalance.String(), StyleStatusAccent),
+			footerActionFor(ActionResizeLeft),
+			footerActionFor(ActionResizeRight),
+			footerActionFor(ActionResizeUp),
+			footerActionFor(ActionResizeDown),
+			footerActionFor(ActionResizeBalance),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "global":
 		return footerActionSpecs(
-			footerActionSpec("h", "header", ActionFooterToggleHeader.String(), StyleStatusAccent),
-			footerActionSpec("f", "footer", ActionFooterToggleFooter.String(), StyleStatusAccent),
-			footerActionSpec("p", "pool", ActionFooterOpenPool.String(), StyleStatusAccent),
-			footerActionSpec("w", "tree", ActionFooterOpenTree.String(), StyleStatusAccent),
-			footerActionSpec("T", "toast", ActionFooterCloseToast.String(), StyleStatusWarning),
-			footerActionSpec("t", "clear", ActionFooterClearToasts.String(), StyleStatusWarning),
+			footerActionFor(ActionFooterToggleHeader),
+			footerActionFor(ActionFooterToggleFooter),
+			footerActionFor(ActionFooterOpenPool),
+			footerActionFor(ActionFooterOpenTree),
+			footerActionFor(ActionFooterCloseToast),
+			footerActionFor(ActionFooterClearToasts),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "copy":
 		return footerActionSpecs(
-			footerActionSpec("pgup", "older", ActionCopyOlder.String(), StyleStatusAccent),
+			footerActionFor(ActionCopyOlder),
 			footerActionSpec("wheel", "", "", StyleStatusAccent),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayTerminalPicker):
 		return footerActionSpecs(
 			footerActionSpec("select", "", "", StyleStatusAccent),
-			footerActionSpec("attach", "", ActionPickerAttach.String(), StyleStatusAccent),
+			footerActionFor(ActionPickerAttach),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayTerminalPool):
 		return footerActionSpecs(
 			footerActionSpec("search", "", "", StyleStatusAccent),
-			footerActionSpec("attach", "", ActionPoolAttach.String(), StyleStatusAccent),
-			footerActionSpec("edit", "", ActionPoolEdit.String(), StyleStatusAccent),
-			footerActionSpec("kill", "", ActionPoolKill.String(), StyleStatusWarning),
+			footerActionFor(ActionPoolAttach),
+			footerActionFor(ActionPoolEdit),
+			footerActionFor(ActionPoolKill),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayWorkbenchTree):
 		return footerActionSpecs(
 			footerActionSpec("search", "", "", StyleStatusAccent),
-			footerActionSpec("open", "", ActionWorkbenchOpen.String(), StyleStatusAccent),
-			footerActionSpec("focus", "", ActionWorkbenchSelect.String(), StyleStatusAccent),
+			footerActionFor(ActionWorkbenchOpen),
+			footerActionFor(ActionWorkbenchSelect),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayPrompt):
 		return footerActionSpecs(
 			footerActionSpec("type", "", "", StyleStatusAccent),
-			footerActionSpec("enter", "submit", ActionPromptSubmit.String(), StyleStatusAccent),
-			footerActionSpec("esc", "cancel", ActionPromptCancel.String(), StyleStatusWarning),
+			footerActionFor(ActionPromptSubmit),
+			footerActionFor(ActionPromptCancel),
 		)
 	case string(state.OverlayHelp):
 		return footerActionSpecs(
 			footerActionSpec("read", "", "", StyleStatusAccent),
-			footerActionSpec("enter", "close", ActionHelpClose.String(), StyleStatusAccent),
+			footerActionFor(ActionHelpClose),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "floating":
 		return footerActionSpecs(
-			footerActionSpec("n", "new", ActionFloatingNew.String(), StyleStatusAccent),
+			footerActionFor(ActionFloatingNew),
 			footerActionSpec("arrows", "move", "", StyleStatusAccent),
 			footerActionSpec("HJKL", "size", "", StyleStatusWarning),
-			footerActionSpec("x", "close", ActionFloatingClose.String(), StyleStatusWarning),
+			footerActionFor(ActionFloatingClose),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "tab":
 		return footerActionSpecs(
-			footerActionSpec("n", "new", ActionTabCreate.String(), StyleStatusAccent),
+			footerActionFor(ActionTabCreate),
 			footerActionSpec("1-9", "jump", "", StyleStatusAccent),
-			footerActionSpec("h", "prev", ActionTabPrevious.String(), StyleStatusAccent),
-			footerActionSpec("l", "next", ActionTabNext.String(), StyleStatusAccent),
-			footerActionSpec("r", "rename", ActionTabRename.String(), StyleStatusAccent),
-			footerActionSpec("x", "close", ActionTabClose.String(), StyleStatusWarning),
+			footerActionFor(ActionTabPrevious),
+			footerActionFor(ActionTabNext),
+			footerActionFor(ActionTabRename),
+			footerActionFor(ActionTabClose),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "workspace":
 		return footerActionSpecs(
-			footerActionSpec("n", "new", ActionFooterNewWorkspace.String(), StyleStatusAccent),
-			footerActionSpec("h", "prev", ActionFooterPreviousWorkspace.String(), StyleStatusAccent),
-			footerActionSpec("l", "next", ActionFooterNextWorkspace.String(), StyleStatusAccent),
-			footerActionSpec("r", "rename", ActionFooterRenameWorkspace.String(), StyleStatusAccent),
-			footerActionSpec("t", "tree", ActionFooterOpenTree.String(), StyleStatusAccent),
-			footerActionSpec("x", "delete", ActionFooterDeleteWorkspace.String(), StyleStatusWarning),
+			footerActionFor(ActionFooterNewWorkspace),
+			footerActionFor(ActionFooterPreviousWorkspace),
+			footerActionFor(ActionFooterNextWorkspace),
+			footerActionFor(ActionFooterRenameWorkspace),
+			footerActionWithKey(ActionFooterOpenTree, "t", "tree"),
+			footerActionFor(ActionFooterDeleteWorkspace),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	default:
 		return footerActionSpecs(
-			footerActionSpec("^P", "pane", ActionFooterPaneMode.String(), StyleFooterKeyPane),
-			footerActionSpec("^R", "resize", ActionFooterResizeMode.String(), StyleFooterKeyResize),
-			footerActionSpec("^T", "tab", ActionFooterTabMode.String(), StyleFooterKeyTab),
-			footerActionSpec("^W", "workspace", ActionFooterWorkspaceMode.String(), StyleFooterKeyWorkspace),
-			footerActionSpec("^O", "float", ActionFooterFloatingMode.String(), StyleFooterKeyFloat),
-			footerActionSpec("^V", "copy", ActionFooterCopyMode.String(), StyleFooterKeyCopy),
-			footerActionSpec("^F", "picker", ActionFooterPicker.String(), StyleFooterKeyPicker),
-			footerActionSpec("^G", "global", ActionFooterGlobalMode.String(), StyleFooterKeyGlobal),
+			footerActionFor(ActionFooterPaneMode),
+			footerActionFor(ActionFooterResizeMode),
+			footerActionFor(ActionFooterTabMode),
+			footerActionFor(ActionFooterWorkspaceMode),
+			footerActionFor(ActionFooterFloatingMode),
+			footerActionFor(ActionFooterCopyMode),
+			footerActionFor(ActionFooterPicker),
+			footerActionFor(ActionFooterGlobalMode),
 		)
 	}
+}
+
+func footerActionFor(id ActionID) FooterActionVM {
+	spec, ok := ActionSpecByID(id)
+	if !ok {
+		return FooterActionVM{ActionID: id.String()}
+	}
+	return footerActionFromSpec(spec)
+}
+
+func footerActionWithKey(id ActionID, key string, label string) FooterActionVM {
+	action := footerActionFor(id)
+	action.Key = key
+	action.Label = label
+	return action
+}
+
+func footerActionFromSpec(spec ActionSpec) FooterActionVM {
+	return FooterActionVM{Key: spec.FooterKey, Label: spec.FooterLabel, ActionID: spec.ID.String(), Style: spec.FooterStyle}
 }
 
 func footerActionSpec(key string, label string, actionID string, style StyleToken) FooterActionVM {
@@ -540,11 +559,19 @@ func paneChromeStateSlot(active bool, content ContentVM) ChromeSlotVM {
 
 func defaultPaneChromeActionVMs(style StyleToken) []ChromeActionVM {
 	return []ChromeActionVM{
-		{Text: paneChromeBracketToken(paneChromeZoomGlyph()), ActionID: ActionPaneZoom.String(), Style: style},
-		{Text: paneChromeBracketToken(paneChromeSplitVerticalActionText()), ActionID: ActionPaneSplitRight.String(), Style: style},
-		{Text: paneChromeBracketToken(paneChromeSplitHorizontalActionText()), ActionID: ActionPaneSplitDown.String(), Style: style},
-		{Text: paneChromeBracketToken(paneChromeCloseActionText()), ActionID: ActionPaneClose.String(), Style: style},
+		paneChromeActionVM(ActionPaneZoom, style),
+		paneChromeActionVM(ActionPaneSplitRight, style),
+		paneChromeActionVM(ActionPaneSplitDown, style),
+		paneChromeActionVM(ActionPaneClose, style),
 	}
+}
+
+func paneChromeActionVM(id ActionID, style StyleToken) ChromeActionVM {
+	spec, ok := ActionSpecByID(id)
+	if !ok {
+		return ChromeActionVM{ActionID: id.String(), Style: style}
+	}
+	return ChromeActionVM{Text: paneChromeBracketToken(spec.ChromeGlyph), ActionID: spec.ID.String(), Style: style}
 }
 
 func splitActionLabel(action string) (string, string) {

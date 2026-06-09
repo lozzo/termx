@@ -76,14 +76,18 @@ func PaneCommandFromHitRegion(region render.HitRegion) (state.PaneCommand, bool)
 	}
 	switch region.Kind {
 	case render.HitRegionPaneAction:
-		switch region.ActionID {
-		case render.ActionPaneSplitDown.String():
+		spec, ok := render.ActionSpecByIDString(region.ActionID)
+		if !ok || spec.Dispatch != render.ActionDispatchPaneCommand {
+			return state.PaneCommand{}, false
+		}
+		switch spec.ID {
+		case render.ActionPaneSplitDown:
 			command.Action = state.PaneCommandSplit
 			command.SplitDirection = state.SplitDirectionHorizontal
-		case render.ActionPaneSplitRight.String():
+		case render.ActionPaneSplitRight:
 			command.Action = state.PaneCommandSplit
 			command.SplitDirection = state.SplitDirectionVertical
-		case render.ActionPaneZoom.String():
+		case render.ActionPaneZoom:
 			command.Action = state.PaneCommandToggleZoom
 		default:
 			return state.PaneCommand{}, false

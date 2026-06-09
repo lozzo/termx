@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
@@ -318,6 +319,13 @@ func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.R
 }
 
 func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {
+	actionID, ok := actionIDForShellAction(intent.Action, intent.Reason)
+	if !ok {
+		return root, []Effect{handledEffect{}}
+	}
+	if _, ok := render.ActionSpecByID(actionID); !ok {
+		return root, []Effect{handledEffect{}}
+	}
 	var msg Msg
 	switch intent.Action {
 	case input.ShellActionToggleHeader:

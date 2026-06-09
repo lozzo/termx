@@ -26,7 +26,7 @@ func buildEmptyPaneContent(pane state.PaneState) ContentVM {
 		Status:     "empty: Attach existing / New terminal / Terminal Pool / Close",
 		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("No terminal attached ") + DisplayWidth(title), Shape: CursorShapeBar},
 		Empty:      true,
-		HitRegions: contentActionRegions("empty", []string{"attach", "create", "manager", "close"}, pane.ID),
+		HitRegions: contentActionRegions([]ActionID{ActionEmptyAttach, ActionEmptyCreate, ActionEmptyManager, ActionEmptyClose}, pane.ID, 2),
 	}
 }
 
@@ -49,7 +49,7 @@ func buildExitedPaneContent(pane state.PaneState) ContentVM {
 		Lines:      lines,
 		Status:     "exited: Restart / Reconnect / Close",
 		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("Terminal exited ") + DisplayWidth(title), Shape: CursorShapeBar},
-		HitRegions: contentActionRegions("exited", []string{"restart", "reconnect", "close"}, pane.ID),
+		HitRegions: contentActionRegions([]ActionID{ActionExitedRestart, ActionExitedReconnect, ActionExitedClose}, pane.ID, 2),
 	}
 }
 
@@ -242,7 +242,6 @@ type helpActionGroup struct {
 }
 
 type helpActionItem struct {
-	Label  string
 	Action ActionID
 }
 
@@ -250,41 +249,41 @@ func helpActionGroups() []helpActionGroup {
 	return []helpActionGroup{
 		{Label: "Most used", Details: []string{"Ctrl-p pane", "Ctrl-r resize", "Ctrl-f picker", "Ctrl-g global"}},
 		{Label: "Pane", Items: []helpActionItem{
-			{Label: "split down", Action: ActionPaneSplitDown},
-			{Label: "split right", Action: ActionPaneSplitRight},
-			{Label: "close", Action: ActionPaneClose},
+			{Action: ActionPaneSplitDown},
+			{Action: ActionPaneSplitRight},
+			{Action: ActionPaneClose},
 		}, Details: []string{"focus/zoom/balance via pane mode keys"}},
 		{Label: "Tab", Items: []helpActionItem{
-			{Label: "create", Action: ActionTabCreate},
-			{Label: "close", Action: ActionTabClose},
+			{Action: ActionTabCreate},
+			{Action: ActionTabClose},
 		}, Details: []string{"switch/rename via tab mode keys"}},
 		{Label: "Footer", Items: []helpActionItem{
-			{Label: "pane", Action: ActionFooterPaneMode},
-			{Label: "resize", Action: ActionFooterResizeMode},
-			{Label: "picker", Action: ActionFooterPicker},
-			{Label: "global", Action: ActionFooterGlobalMode},
-			{Label: "pool", Action: ActionFooterOpenPool},
-			{Label: "tree", Action: ActionFooterOpenTree},
+			{Action: ActionFooterPaneMode},
+			{Action: ActionFooterResizeMode},
+			{Action: ActionFooterPicker},
+			{Action: ActionFooterGlobalMode},
+			{Action: ActionFooterOpenPool},
+			{Action: ActionFooterOpenTree},
 		}},
 		{Label: "Floating", Items: []helpActionItem{
-			{Label: "raise", Action: ActionFloatingRaise},
-			{Label: "resize", Action: ActionFloatingResize},
-			{Label: "move drag", Action: ActionFloatingMoveDrag},
-			{Label: "close", Action: ActionFloatingClose},
+			{Action: ActionFloatingRaise},
+			{Action: ActionFloatingResize},
+			{Action: ActionFloatingMoveDrag},
+			{Action: ActionFloatingClose},
 		}},
 		{Label: "Terminal Pool", Items: []helpActionItem{
-			{Label: "select", Action: ActionPoolSelect},
-			{Label: "attach", Action: ActionPoolAttach},
-			{Label: "kill", Action: ActionPoolKill},
+			{Action: ActionPoolSelect},
+			{Action: ActionPoolAttach},
+			{Action: ActionPoolKill},
 		}, Details: []string{"search"}},
 		{Label: "Workbench Tree", Items: []helpActionItem{
-			{Label: "open", Action: ActionWorkbenchOpen},
-			{Label: "rename", Action: ActionWorkbenchRename},
-			{Label: "new", Action: ActionWorkbenchNew},
+			{Action: ActionWorkbenchOpen},
+			{Action: ActionWorkbenchRename},
+			{Action: ActionWorkbenchNew},
 		}},
 		{Label: "Prompt", Items: []helpActionItem{
-			{Label: "submit", Action: ActionPromptSubmit},
-			{Label: "cancel", Action: ActionPromptCancel},
+			{Action: ActionPromptSubmit},
+			{Action: ActionPromptCancel},
 		}, Details: []string{"confirm"}},
 		{Label: "Copy", Details: []string{"authoritative HistoryWindow only"}},
 	}
@@ -293,8 +292,8 @@ func helpActionGroups() []helpActionGroup {
 func helpActionGroupLine(group helpActionGroup) (Line, bool) {
 	labels := make([]string, 0, len(group.Items)+len(group.Details))
 	for _, item := range group.Items {
-		if helpActionAvailable(item.Action) {
-			labels = append(labels, item.Label)
+		if label, ok := helpActionLabel(item.Action); ok {
+			labels = append(labels, label)
 		}
 	}
 	labels = append(labels, group.Details...)
@@ -304,13 +303,12 @@ func helpActionGroupLine(group helpActionGroup) (Line, bool) {
 	return helpTopicLine(group.Label, strings.Join(labels, " / ")), true
 }
 
-func helpActionAvailable(action ActionID) bool {
-	for _, registered := range ActionIDCatalog() {
-		if registered == action {
-			return true
-		}
+func helpActionLabel(action ActionID) (string, bool) {
+	spec, ok := ActionSpecByID(action)
+	if !ok || spec.HelpLabel == "" {
+		return "", false
 	}
-	return false
+	return spec.HelpLabel, true
 }
 
 func terminalPickerLine(row state.TerminalPickerItem) Line {
@@ -859,14 +857,14 @@ func terminalPoolStateStyle(stateText string) StyleToken {
 	}
 }
 
-func contentActionRegions(prefix string, actions []string, paneID string) []HitRegion {
+func contentActionRegions(actions []ActionID, paneID string, rowOffset int) []HitRegion {
 	regions := make([]HitRegion, len(actions))
 	for index, action := range actions {
 		regions[index] = HitRegion{
 			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: index + 2, W: contentActionWidth, H: 1},
+			Rect:     Rect{Y: index + rowOffset, W: contentActionWidth, H: 1},
 			PaneID:   paneID,
-			ActionID: prefix + "." + action,
+			ActionID: action.String(),
 		}
 	}
 	return regions
