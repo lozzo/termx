@@ -210,6 +210,7 @@ type PromptState struct {
 	ActiveField        int
 	SuggestionFocused  bool
 	SuggestionSelected int
+	SuggestionOffset   int
 	Command            []string
 	Workdir            string
 	Tags               map[string]string

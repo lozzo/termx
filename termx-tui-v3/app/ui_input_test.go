@@ -315,12 +315,12 @@ func TestUIInputReducerCreateTerminalFormEditsAndCancels(t *testing.T) {
 
 func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"demo", "dev"} {
+	for _, name := range []string{"demo", "dev", "delta"} {
 		if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", name, err)
 		}
 	}
-	prefix := filepath.Join(dir, "de")
+	prefix := filepath.Join(dir, "d")
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
 		Title:       "Create Terminal",
@@ -335,15 +335,33 @@ func TestUIInputReducerCreateTerminalWorkdirSuggestions(t *testing.T) {
 
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
 	prompt := root.Shell.EnsureDefaults().Overlay.Prompt
-	if !prompt.SuggestionFocused || len(prompt.ActiveSuggestionItems()) != 2 || prompt.ActiveField != 2 {
+	if !prompt.SuggestionFocused || len(prompt.ActiveSuggestionItems()) != 3 || prompt.ActiveField != 2 {
 		t.Fatalf("tab on workdir should enter suggestion focus, prompt=%#v", prompt)
 	}
-	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
 	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
 	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
 	want := filepath.Join(dir, "dev") + string(os.PathSeparator)
-	if prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != want || prompt.Fields[2].Cursor != len([]rune(want)) {
-		t.Fatalf("enter should accept selected workdir suggestion, want=%q prompt=%#v", want, prompt)
+	if prompt.Submitted || prompt.SuggestionFocused || prompt.FieldRawValue("workdir") != want || prompt.Fields[2].Cursor != len([]rune(want)) {
+		t.Fatalf("enter should accept selected workdir suggestion without submitting, want=%q prompt=%#v", want, prompt)
+	}
+
+	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+		Title:       "Create Terminal",
+		Purpose:     "terminal.create",
+		ActiveField: 2,
+		Fields: []state.PromptFieldState{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{Key: "workdir", Label: "workdir", Value: prefix, Cursor: len([]rune(prefix))},
+		},
+	})}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyShiftTab}})
+	prompt = root.Shell.EnsureDefaults().Overlay.Prompt
+	if !prompt.SuggestionFocused || prompt.SuggestionSelected != 2 {
+		t.Fatalf("shift-tab in suggestion focus should wrap to previous candidate, prompt=%#v", prompt)
 	}
 
 	root = state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
@@ -404,6 +422,29 @@ func TestCreateTerminalPromptSubmitUsesEditedFields(t *testing.T) {
 	}
 	if request.Title != "dev" || strings.Join(request.Command, " ") != "bash" || request.CWD != workdir {
 		t.Fatalf("edited prompt fields should drive create request, got %#v", request)
+	}
+
+	root = state.Root{Shell: state.DefaultShell().OpenPrompt(createTerminalPrompt(state.DefaultPaneID))}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"},
+		{Kind: input.EventKindKey, Key: input.KeyTab},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "o"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "d"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "e"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"},
+	} {
+		root, _ = reducer(root, InputMsg{Event: event})
+	}
+	next, effects = reducePromptSubmit(root)
+	if next.Shell.Overlay.Open || len(effects) != 1 {
+		t.Fatalf("submit custom command should close prompt and emit effect, root=%#v effects=%#v", next, effects)
+	}
+	effect = effects[0].(FuncEffect)
+	request = effect.Run(context.Background()).(TerminalPoolCreateRequestMsg)
+	if request.Title != "cx" || strings.Join(request.Command, " ") != "codex" {
+		t.Fatalf("custom command should override default shell fallback, got %#v", request)
 	}
 }
 

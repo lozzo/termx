@@ -96,6 +96,8 @@ const (
 	StylePickerInfo          StyleToken = "picker-info"
 	StylePickerSuccess       StyleToken = "picker-success"
 	StylePickerMatch         StyleToken = "picker-match"
+	StylePromptSuggestion    StyleToken = "prompt-suggestion"
+	StylePromptSuggestionHit StyleToken = "prompt-suggestion-hit"
 	StyleToast               StyleToken = "toast"
 	StyleToastAccent         StyleToken = "toast-accent"
 )
@@ -328,6 +330,10 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(theme.Success, true)
 	case StylePickerMatch:
 		return sgrForeground(theme.Warning, true)
+	case StylePromptSuggestion:
+		return sgrForegroundBackground(theme.ChromeFG, promptSuggestionBG(theme), false)
+	case StylePromptSuggestionHit:
+		return sgrForegroundBackground(theme.ChromeFG, promptSuggestionHitBG(theme), true)
 	case StyleToast:
 		return sgrForegroundBackground(theme.ChromeFG, theme.ToastBG, false)
 	case StyleToastAccent:
@@ -335,6 +341,14 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	default:
 		return "\x1b[1m"
 	}
+}
+
+func promptSuggestionBG(theme Theme) string {
+	return mixHostColor(theme.HostBG, theme.Accent, 0.10)
+}
+
+func promptSuggestionHitBG(theme Theme) string {
+	return mixHostColor(theme.HostBG, theme.Accent, 0.28)
 }
 
 func headerWorkspaceBG(theme Theme) string {

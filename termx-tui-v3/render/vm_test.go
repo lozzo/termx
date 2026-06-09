@@ -1132,7 +1132,8 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 		Title:              "Create Terminal",
 		ActiveField:        2,
 		SuggestionFocused:  true,
-		SuggestionSelected: 1,
+		SuggestionSelected: 6,
+		SuggestionOffset:   1,
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Value: "shell", Required: true},
 			{Key: "command", Label: "command", Value: "/bin/sh"},
@@ -1142,13 +1143,24 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 				Value:           "/tmp/de",
 				Cursor:          len([]rune("/tmp/de")),
 				SuggestionTitle: "path: /tmp",
-				SuggestionItems: []string{"/tmp/demo/", "/tmp/dev/"},
+				SuggestionItems: []string{
+					"/tmp/d0/",
+					"/tmp/d1/",
+					"/tmp/d2/",
+					"/tmp/d3/",
+					"/tmp/d4/",
+					"/tmp/d5/",
+					"/tmp/dev/",
+					"/tmp/d7/",
+				},
 			},
 		},
 	})}).Shell.Overlay.Content
 	if !strings.Contains(plainLines(content.Lines), "path: /tmp") ||
 		!strings.Contains(plainLines(content.Lines), "▸ /tmp/dev/") ||
-		!lineHasStyledCell(content.Lines[6], "/tmp/dev/", StyleAccent) {
+		!strings.Contains(plainLines(content.Lines), "2-7/8") ||
+		strings.Contains(plainLines(content.Lines), "/tmp/d0/") ||
+		!lineHasStyledCell(content.Lines[10], "/tmp/dev/", StylePromptSuggestionHit) {
 		t.Fatalf("expected workdir suggestion rows, got %#v", content.Lines)
 	}
 	if content.Cursor.Row != 3 || content.Cursor.Col != DisplayWidth("workdir: /tmp/de") {

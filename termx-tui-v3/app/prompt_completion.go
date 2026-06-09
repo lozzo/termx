@@ -9,8 +9,6 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
-const promptSuggestionLimit = 6
-
 func refreshPromptCompletions(shell state.ShellStore) state.ShellStore {
 	shell = shell.EnsureDefaults()
 	prompt := shell.Overlay.Prompt
@@ -63,9 +61,6 @@ func workdirSuggestionPopup(value string, cursor int) (string, []string, string)
 		items = append(items, label)
 	}
 	sort.Strings(items)
-	if len(items) > promptSuggestionLimit {
-		items = items[:promptSuggestionLimit]
-	}
 	if len(items) == 0 {
 		return title, nil, "(no matching directories)"
 	}

@@ -2,6 +2,8 @@ package state
 
 import "strings"
 
+const promptSuggestionVisibleRows = 6
+
 func (store ShellStore) SetPromptValue(value string) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayPrompt || !store.Overlay.Open {
@@ -118,6 +120,7 @@ func (store ShellStore) MovePromptField(delta int) ShellStore {
 	store.Overlay.Prompt.ActiveField = next
 	store.Overlay.Prompt.SuggestionFocused = false
 	store.Overlay.Prompt.SuggestionSelected = 0
+	store.Overlay.Prompt.SuggestionOffset = 0
 	return store
 }
 
@@ -133,6 +136,7 @@ func (store ShellStore) ClearPromptSuggestions() ShellStore {
 	}
 	store.Overlay.Prompt.SuggestionFocused = false
 	store.Overlay.Prompt.SuggestionSelected = 0
+	store.Overlay.Prompt.SuggestionOffset = 0
 	return store
 }
 
@@ -150,6 +154,7 @@ func (store ShellStore) SetActivePromptSuggestions(title string, items []string,
 	if active == nil {
 		store.Overlay.Prompt.SuggestionFocused = false
 		store.Overlay.Prompt.SuggestionSelected = 0
+		store.Overlay.Prompt.SuggestionOffset = 0
 		return store
 	}
 	active.SuggestionTitle = title
@@ -158,9 +163,11 @@ func (store ShellStore) SetActivePromptSuggestions(title string, items []string,
 	if len(items) == 0 {
 		store.Overlay.Prompt.SuggestionFocused = false
 		store.Overlay.Prompt.SuggestionSelected = 0
+		store.Overlay.Prompt.SuggestionOffset = 0
 		return store
 	}
 	store.Overlay.Prompt.SuggestionSelected = clampPromptInt(store.Overlay.Prompt.SuggestionSelected, 0, len(items)-1)
+	store.Overlay.Prompt.SuggestionOffset = clampPromptInt(store.Overlay.Prompt.SuggestionOffset, 0, len(items)-1)
 	return store
 }
 
@@ -175,6 +182,7 @@ func (store ShellStore) SetPromptSuggestionFocused(focused bool) ShellStore {
 	store.Overlay.Prompt.SuggestionFocused = focused
 	if !focused {
 		store.Overlay.Prompt.SuggestionSelected = 0
+		store.Overlay.Prompt.SuggestionOffset = 0
 	}
 	return store
 }
@@ -188,7 +196,13 @@ func (store ShellStore) MovePromptSuggestionSelection(delta int) ShellStore {
 	if len(items) == 0 {
 		return store
 	}
-	store.Overlay.Prompt.SuggestionSelected = clampPromptInt(store.Overlay.Prompt.SuggestionSelected+delta, 0, len(items)-1)
+	next := store.Overlay.Prompt.SuggestionSelected + delta
+	for next < 0 {
+		next += len(items)
+	}
+	next %= len(items)
+	store.Overlay.Prompt.SuggestionSelected = next
+	store.Overlay.Prompt.SuggestionOffset = promptSuggestionOffsetForSelection(store.Overlay.Prompt.SuggestionOffset, next, len(items))
 	return store
 }
 
@@ -208,6 +222,7 @@ func (store ShellStore) AcceptPromptSuggestion() ShellStore {
 	}
 	store.Overlay.Prompt.SuggestionFocused = false
 	store.Overlay.Prompt.SuggestionSelected = 0
+	store.Overlay.Prompt.SuggestionOffset = 0
 	return store
 }
 
@@ -295,4 +310,20 @@ func clampPromptInt(value int, min int, max int) int {
 		return max
 	}
 	return value
+}
+
+// 保持 workdir 候选选中项始终落在可见窗口内。
+func promptSuggestionOffsetForSelection(offset int, selected int, count int) int {
+	if count <= promptSuggestionVisibleRows {
+		return 0
+	}
+	maxOffset := count - promptSuggestionVisibleRows
+	offset = clampPromptInt(offset, 0, maxOffset)
+	if selected < offset {
+		return selected
+	}
+	if selected >= offset+promptSuggestionVisibleRows {
+		return selected - promptSuggestionVisibleRows + 1
+	}
+	return offset
 }

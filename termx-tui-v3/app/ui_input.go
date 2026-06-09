@@ -305,8 +305,10 @@ func reducePromptSuggestionInput(root state.Root, event input.InputEvent) (state
 	case input.KeyEnter:
 		root.Shell = refreshPromptCompletions(root.Shell.AcceptPromptSuggestion())
 	case input.KeyTab:
-		root.Shell = refreshPromptCompletions(root.Shell.AcceptPromptSuggestion().MovePromptField(1))
-	case input.KeyShiftTab, input.KeyEsc:
+		root.Shell = root.Shell.MovePromptSuggestionSelection(1)
+	case input.KeyShiftTab:
+		root.Shell = root.Shell.MovePromptSuggestionSelection(-1)
+	case input.KeyEsc:
 		root.Shell = refreshPromptCompletions(root.Shell.SetPromptSuggestionFocused(false))
 	case input.KeyBackspace:
 		root.Shell = refreshPromptCompletions(root.Shell.SetPromptSuggestionFocused(false).DeletePromptBackward())
