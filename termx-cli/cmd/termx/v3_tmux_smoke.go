@@ -996,7 +996,8 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 	// 固定视觉基线的目标样式来自 tuiv2-style 单行 tab/status bar 与对象 chrome 语义区域。
 	fill(1, 1, visibleLineWidth(1), visualStyleStatus)
 	fillRangesForSubstrings(1, visualStyleWarn, "")
-	fillRangesForSubstrings(1, visualStyleMuted, " 1 main ")
+	fillRangesForSubstrings(1, visualStyleMuted, " 1 main ")
+	fillRangesForSubstrings(1, visualStyleAccent, "▎")
 
 	fill(2, 1, 103, visualStyleAccent)
 	fill(2, 104, width, visualStyleMuted)
@@ -1059,13 +1060,15 @@ func visualClassFromSGR(sgr []string) visualStyleClass {
 		return visualStyleWarn
 	case visualSGRContains(sgr, "38;2;138;223;122"):
 		return visualStyleSuccess
-	case visualSGRContains(sgr, "38;2;119;113;127"):
+	case visualSGRContains(sgr, "38;2;119;113;127") || visualSGRContains(sgr, "38;2;130;113;155") ||
+		visualSGRContains(sgr, "38;2;171;111;119"):
 		return visualStyleMuted
 	case visualSGRContains(sgr, "38;2;255;107;107") || visualSGRContains(sgr, "38;2;194;110;116"):
 		return visualStyleWarn
 	case visualSGRContains(sgr, "38;2;231;226;239") || visualSGRContains(sgr, "38;2;222;219;230") ||
 		visualSGRContains(sgr, "38;2;8;8;13") || visualSGRContains(sgr, "48;2;8;8;13") ||
-		visualSGRContains(sgr, "48;2;231;226;239"):
+		visualSGRContains(sgr, "48;2;231;226;239") || visualSGRContains(sgr, "48;2;42;34;59") ||
+		visualSGRContains(sgr, "48;2;60;46;85"):
 		return visualStyleStatus
 	case visualSGRContains(sgr, "38;2;122;184;255"):
 		return visualStyleStatus
@@ -1200,9 +1203,9 @@ func visualLineSubstringSpans(line string, marker string) [][2]int {
 
 func visualStyleExpectations() []visualStyleExpectation {
 	return []visualStyleExpectation{
-		{Name: "header-status-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"48;2;8;8;13"}},
-		{Name: "active-tab-marker", Row: 1, Col: 18, Glyph: "▎", MustHave: []string{"1", "38;2;8;8;13", "48;2;231;226;239"}},
-		{Name: "inactive-tab-muted", Row: 1, Col: 9, Glyph: "1", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"48;2;8;8;13"}},
+		{Name: "header-workspace-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"1", "38;2;212;192;244", "48;2;60;46;85"}},
+		{Name: "active-tab-marker", Row: 1, Col: 18, Glyph: "▎", MustHave: []string{"1", "38;2;169;112;255", "48;2;42;34;59"}},
+		{Name: "inactive-tab-muted", Row: 1, Col: 9, Glyph: "1", MustHave: []string{"38;2;130;113;155", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
 		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "inactive-logs-muted", Row: 2, Col: 104, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
 		{Name: "right-content-muted", Row: 3, Col: 104, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},

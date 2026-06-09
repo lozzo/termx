@@ -292,6 +292,40 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 120)
 }
 
+func TestFrameworkHeaderTabStylesMatchTuiv2Levels(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{
+			Visible:   true,
+			Workspace: "main",
+			Tabs: []HeaderTabVM{
+				{Index: 1, Title: "one", Active: false, CloseActionID: ActionTabClose.String(), CloseTargetID: "tab-one"},
+				{Index: 2, Title: "two", Active: true, CloseActionID: ActionTabClose.String(), CloseTargetID: "tab-two"},
+			},
+		},
+		Layout: LayoutVM{Viewport: Rect{W: 80, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+		}}},
+	}})
+	headerANSI := result.Frame().ANSILines[0]
+	for _, want := range []string{
+		"38;2;212;192;244", "48;2;60;46;85",
+		"38;2;130;113;155", "48;2;8;8;13",
+		"38;2;119;113;127", "38;2;171;111;119",
+		"38;2;169;112;255", "48;2;42;34;59",
+		"38;2;255;107;107", "48;2;43;54;71",
+	} {
+		if !strings.Contains(headerANSI, want) {
+			t.Fatalf("header ANSI missing tuiv2-style SGR %s: %#v", want, headerANSI)
+		}
+	}
+	if strings.Contains(headerANSI, "\x1b[2;38;2;119;113;127") {
+		t.Fatalf("inactive tab should use muted foreground without dim SGR, got %#v", headerANSI)
+	}
+}
+
 func TestFrameworkRendersFullFooterSummaryWhenWidthAllows(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Workspace: "main"},

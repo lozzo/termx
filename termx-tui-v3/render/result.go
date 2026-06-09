@@ -253,25 +253,25 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	case StyleStatusWarning:
 		return sgrForegroundBackground(theme.Warning, theme.StatusBG, false)
 	case StyleHeaderWorkspace:
-		return sgrForegroundBackground(theme.StatusFG, theme.StatusBG, true)
+		return sgrForegroundBackground(headerWorkspaceFG(theme), headerWorkspaceBG(theme), true)
 	case StyleHeaderSpacer:
 		return sgrForegroundBackground(theme.StatusFG, theme.StatusBG, false)
 	case StyleHeaderInactiveIndex:
-		return sgrForeground(theme.Muted, false) + "\x1b[2m"
+		return sgrForegroundBackground(headerInactiveIndexFG(theme), theme.StatusBG, false)
 	case StyleHeaderInactiveTitle:
-		return sgrForeground(theme.InactivePane, false)
+		return sgrForegroundBackground(theme.InactivePane, theme.StatusBG, false)
 	case StyleHeaderInactiveClose:
-		return sgrForeground(mixHostColor(theme.Danger, theme.Muted, 0.45), false)
+		return sgrForegroundBackground(headerInactiveCloseFG(theme), theme.StatusBG, false)
 	case StyleHeaderActiveMarker:
-		return sgrForegroundBackground(theme.StatusBG, theme.StatusFG, true)
+		return sgrForegroundBackground(theme.Accent, headerActiveBG(theme), true)
 	case StyleHeaderActiveIndex:
-		return sgrForeground(theme.StatusFG, true)
+		return sgrForegroundBackground(theme.StatusFG, headerActiveBG(theme), true)
 	case StyleHeaderActiveTitle:
-		return sgrForeground(theme.ChromeFG, true)
+		return sgrForegroundBackground(headerActiveFG(theme), headerActiveBG(theme), true)
 	case StyleHeaderActiveClose:
-		return sgrForeground(theme.Danger, false)
+		return sgrForegroundBackground(theme.Danger, headerActiveBG(theme), false)
 	case StyleHeaderCreate:
-		return sgrForegroundBackground(theme.Info, mixHostColor(theme.Muted, theme.StatusBG, 0.35), true)
+		return sgrForegroundBackground(headerCreateFG(theme), headerCreateBG(theme), true)
 	case StyleFooterChrome:
 		return sgrForeground(theme.Accent, false)
 	case StyleFooterMuted:
@@ -311,6 +311,42 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	default:
 		return "\x1b[1m"
 	}
+}
+
+func headerWorkspaceBG(theme Theme) string {
+	return mixHostColor(headerChromeAltBG(theme), theme.Accent, 0.24)
+}
+
+func headerWorkspaceFG(theme Theme) string {
+	return mixHostColor(theme.StatusFG, theme.Accent, 0.30)
+}
+
+func headerActiveBG(theme Theme) string {
+	return mixHostColor(mixHostColor(theme.StatusBG, theme.StatusFG, 0.06), theme.Accent, 0.14)
+}
+
+func headerActiveFG(theme Theme) string {
+	return theme.StatusFG
+}
+
+func headerInactiveIndexFG(theme Theme) string {
+	return mixHostColor(theme.InactivePane, theme.Accent, 0.22)
+}
+
+func headerInactiveCloseFG(theme Theme) string {
+	return mixHostColor(theme.Danger, theme.InactivePane, 0.62)
+}
+
+func headerCreateBG(theme Theme) string {
+	return mixHostColor(headerChromeAltBG(theme), theme.Info, 0.18)
+}
+
+func headerCreateFG(theme Theme) string {
+	return theme.StatusFG
+}
+
+func headerChromeAltBG(theme Theme) string {
+	return mixHostColor(theme.StatusBG, theme.StatusFG, 0.08)
 }
 
 func ansiForCellStyle(style ANSICellStyle) string {
