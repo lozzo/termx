@@ -693,6 +693,9 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 		Status: liveStatus(surface, session),
 		Cursor: liveContentCursor(surface, session, lines),
 	}
+	if len(lines) > 0 {
+		content.Extent = liveContentExtent(surface, session)
+	}
 	if session.LastError != "" {
 		content.Error = session.LastError
 	} else if surface.Err != "" {
@@ -712,6 +715,14 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 		content.Cursor = Cursor{}
 	}
 	return content
+}
+
+func liveContentExtent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) ContentExtent {
+	cols, rows := liveStatusSize(surface, session)
+	if cols <= 0 || rows <= 0 {
+		return ContentExtent{}
+	}
+	return ContentExtent{Known: true, Cols: cols, Rows: rows}
 }
 
 func liveStatus(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {

@@ -786,6 +786,9 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 	if !content.Cursor.Visible || content.Cursor.Row != 0 || content.Cursor.Col != 10 || content.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("expected live cursor projection, got %#v", content.Cursor)
 	}
+	if content.Extent != (ContentExtent{Known: true, Cols: 20, Rows: 5}) {
+		t.Fatalf("live content must expose terminal surface extent, got %#v", content.Extent)
+	}
 
 	legacy := NewRenderVMBuilder().Build(state.Root{Surface: state.TerminalSurfaceStore{
 		TerminalID: "term-live",
@@ -804,6 +807,76 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 	empty := NewRenderVMBuilder().Build(state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true}})
 	if content := activeContent(empty.Shell); !content.Empty || content.Pending || content.Lines[0].PlainString() != "live surface empty" {
 		t.Fatalf("expected empty live surface content, got %#v", content)
+	}
+}
+
+func TestRenderVMBuilderDoesNotApplyLiveExtentToStatusFallbacks(t *testing.T) {
+	cases := []struct {
+		name    string
+		root    state.Root
+		want    string
+		pending bool
+		empty   bool
+	}{
+		{
+			name: "pending",
+			root: state.Root{
+				Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Cols: 6, Rows: 2},
+				Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 6, Rows: 2},
+			},
+			want:    "live surface pending",
+			pending: true,
+		},
+		{
+			name: "empty",
+			root: state.Root{
+				Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Cols: 6, Rows: 2, Ready: true},
+				Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 6, Rows: 2},
+			},
+			want:  "live surface empty",
+			empty: true,
+		},
+		{
+			name: "exited",
+			root: state.Root{
+				Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Cols: 6, Rows: 2, State: state.TerminalLiveExited, ExitCode: 0},
+				Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 6, Rows: 2, State: state.TerminalLiveExited, ExitCode: 0},
+			},
+			want:  "terminal exited: term-live code:0",
+			empty: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			content := activeContent(NewRenderVMBuilder().Build(tc.root).Shell)
+			if content.Pending != tc.pending || content.Empty != tc.empty || content.Lines[0].PlainString() != tc.want {
+				t.Fatalf("unexpected fallback content %#v", content)
+			}
+			if content.Extent.Known {
+				t.Fatalf("status fallback must not enable live extent dots, got %#v", content.Extent)
+			}
+		})
+	}
+}
+
+func TestRenderVMBuilderUsesSessionSizeAsLiveExtentWhenSurfaceSizeMissing(t *testing.T) {
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Ready:      true,
+			Lines:      []string{"prompt"},
+		},
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-live",
+			Attached:   true,
+			Cols:       14,
+			Rows:       3,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Extent != (ContentExtent{Known: true, Cols: 14, Rows: 3}) {
+		t.Fatalf("live content should fall back to session size for extent, got %#v", content.Extent)
 	}
 }
 

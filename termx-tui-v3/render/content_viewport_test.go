@@ -3,6 +3,8 @@ package render
 import (
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 func TestContentViewportKeepsTerminalBlankCellsAsSpaces(t *testing.T) {
@@ -211,6 +213,73 @@ func TestFrameworkRendersContentBottomOverflowOnPaneChrome(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
 		t.Fatalf("bottom overflow marker must not be written into content layer, got %#v", layer.Lines)
+	}
+}
+
+func TestFrameworkRendersTerminalLiveExtentFromBuilder(t *testing.T) {
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 18, Rows: 8},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Cols:       6,
+			Rows:       2,
+			Ready:      true,
+			Screen: [][]state.LiveCell{
+				{{Text: "abc", Width: 3}},
+				{{Text: "你好", Width: 4, FG: "ansi:2"}},
+			},
+			Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 4, Shape: "bar"},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 6, Rows: 2},
+	}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	layer := firstLayer(t, result, LayerPanel)
+	if got, wantPrefix := plainContentViewportLines(layer.Lines), []string{
+		"abc   ··········",
+		"你好  ··········",
+		"················",
+	}; !strings.HasPrefix(strings.Join(got, "\n"), strings.Join(wantPrefix, "\n")) {
+		t.Fatalf("live content should use surface extent for dots\n got=%#v\nwant prefix=%#v", got, wantPrefix)
+	}
+	if result.Cursor.Row != 1 || result.Cursor.Col != 4 || result.Cursor.Shape != CursorShapeBar ||
+		result.CursorRect != (Rect{X: 5, Y: 3, W: 1, H: 1}) {
+		t.Fatalf("live cursor should stay content-local then translate through layout, got cursor=%#v rect=%#v", result.Cursor, result.CursorRect)
+	}
+	if !styledLinesContainANSI(result.StyledLines(), "你", ANSICellStyle{FG: "ansi:2"}) ||
+		!styledLinesContainANSI(result.StyledLines(), "好", ANSICellStyle{FG: "ansi:2"}) {
+		t.Fatalf("live ANSI cells should survive ContentViewport/render framework, got %#v", result.StyledLines())
+	}
+}
+
+func TestFrameworkRendersTerminalLiveOverflowFromBuilder(t *testing.T) {
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 18, Rows: 8},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Cols:       20,
+			Rows:       8,
+			Ready:      true,
+			Lines:      []string{"lozzow@RedmiBook"},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 20, Rows: 8},
+	}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	layer := firstLayer(t, result, LayerPanel)
+	if !layer.ContentOverflow.Right || !layer.ContentOverflow.Bottom {
+		t.Fatalf("live extent should drive right/bottom overflow, got %#v", layer.ContentOverflow)
+	}
+	lines := result.Lines()
+	if got := SliceCells(lines[4], 17, 18); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on chrome, got %q frame=%#v", got, lines)
+	}
+	if got := SliceCells(lines[6], 9, 10); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on chrome, got %q frame=%#v", got, lines)
+	}
+	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||
+		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
+		t.Fatalf("overflow markers must stay out of live content layer, got %#v", layer.Lines)
 	}
 }
 

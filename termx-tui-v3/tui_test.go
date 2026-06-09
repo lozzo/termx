@@ -205,7 +205,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 	for row := 1; row < len(frame.Lines)-1; row++ {
 		left := render.SliceCells(frame.Lines[row], 0, 1)
 		right := render.SliceCells(frame.Lines[row], width-1, width)
-		if !isVerticalPaneBorderGlyph(left) || !isVerticalPaneBorderGlyph(right) {
+		if !isPaneBorderGlyph(left) || !isRightPaneBorderOrOverflowGlyph(right) {
 			t.Fatalf("smoke case %s pane border discontinuity row=%d left=%q right=%q frame=%#v", name, row, left, right, frame.Lines)
 		}
 	}
@@ -268,13 +268,17 @@ func paneChromeCloseActionMarker() string {
 	return "[" + render.DefaultPaneChromeGlyphs().Close + "]"
 }
 
-func isVerticalPaneBorderGlyph(value string) bool {
+func isPaneBorderGlyph(value string) bool {
 	switch value {
 	case "│", "┌", "┐", "└", "┘", "├", "┤", "┼":
 		return true
 	default:
 		return false
 	}
+}
+
+func isRightPaneBorderOrOverflowGlyph(value string) bool {
+	return isPaneBorderGlyph(value) || value == ">"
 }
 
 func frameContains(lines []string, value string) bool {
