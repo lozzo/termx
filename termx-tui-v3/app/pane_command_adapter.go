@@ -83,6 +83,8 @@ func PaneCommandFromHitRegion(region render.HitRegion) (state.PaneCommand, bool)
 		case render.ActionPaneSplitRight.String():
 			command.Action = state.PaneCommandSplit
 			command.SplitDirection = state.SplitDirectionVertical
+		case render.ActionPaneZoom.String():
+			command.Action = state.PaneCommandToggleZoom
 		default:
 			return state.PaneCommand{}, false
 		}

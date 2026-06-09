@@ -316,6 +316,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	}
 	runtime := app.NewAppRuntime(root, nil, func(root state.Root) render.Frame {
 		vm := builder.Build(root)
+		vm.Shell.Footer.GlobalSummary = "ws:main float:1 terminals:1"
 		for index := range vm.Shell.Layout.Panels {
 			panel := &vm.Shell.Layout.Panels[index]
 			// 固定视觉审计要同时展示 active pane、inactive pane 与 active floating 的 chrome 样式。
@@ -331,7 +332,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 				panel.Active = false
 				panel.Chrome.Title.Style = render.StyleMuted
 				panel.Chrome.Actions = []render.ChromeActionVM{
-					{Text: "×", ActionID: render.ActionPaneClose.String(), Style: render.StyleMuted},
+					{Text: "", ActionID: render.ActionPaneClose.String(), Style: render.StyleMuted},
 				}
 			}
 		}

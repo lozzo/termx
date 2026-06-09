@@ -121,7 +121,7 @@ func TestFrameworkRendersSplitLineTopBoundaryWithChromeOverlay(t *testing.T) {
 	if !strings.Contains(lines[0], " shell 🚀 ") {
 		t.Fatalf("split-line title slot should keep the remaining top border, got %#v", lines[0])
 	}
-	if !strings.Contains(lines[0], paneChromeSplitHorizontalActionText()+"  "+paneChromeSplitVerticalActionText()+"  "+paneChromeCloseActionText()) {
+	if !strings.Contains(lines[0], paneChromeActionText(42)) {
 		t.Fatalf("split-line title/action slots should keep the remaining top border, got %#v", lines[0])
 	}
 	if strings.Contains(lines[0], paneChromeRunningGlyph()) || strings.Contains(lines[0], "⇄2") || strings.Contains(lines[0], "◆ owner") || strings.Contains(lines[0], "1/31") {
@@ -180,7 +180,7 @@ func TestFrameworkPreservesPaneChromeLineBetweenTitleAndAction(t *testing.T) {
 		if strings.Contains(line, "⇄2") || strings.Contains(line, "◆ owner") || strings.Contains(line, "1/31") {
 			t.Fatalf("presentation=%s should not render premature pane meta slots, got row=%q", presentation, line)
 		}
-		if !strings.Contains(line, paneChromeSplitHorizontalActionText()+"  "+paneChromeSplitVerticalActionText()+"  "+paneChromeCloseActionText()) {
+		if !strings.Contains(line, paneChromeActionText(44)) {
 			t.Fatalf("presentation=%s should render wireframe action cluster, got row=%q", presentation, line)
 		}
 		assertAllRowsWidth(t, result.Lines(), 44)
@@ -246,7 +246,7 @@ func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
 func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Workspace: "main", Tab: "1", ActivePane: "pane-1", TerminalSummary: "term:1", FloatingSummary: "float:0", Notice: "ok"},
-		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", Actions: []string{"^P pane", "^R resize"}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main tabs:1 panes:1 float:0"},
+		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", Actions: []string{"^P pane", "^R resize"}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main float:0 terminals:1"},
 		Layout: LayoutVM{Viewport: Rect{W: 120, H: 10}, Panels: []PanelVM{{
 			ID:           "pane-1",
 			Title:        "shell",
@@ -260,32 +260,63 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if strings.HasPrefix(frame.Lines[0], "┌") || strings.HasSuffix(frame.Lines[0], "┐") || strings.Contains(frame.Lines[0], "─┬─") {
 		t.Fatalf("top bar should be a product bar, not an outer wireframe, got %#v", frame.Lines[0])
 	}
-	if !strings.Contains(frame.Lines[0], " main ") || !strings.Contains(frame.Lines[0], "  1:1 ×") || !strings.Contains(frame.Lines[0], "  ＋ ") || !strings.Contains(frame.Lines[0], "  pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
+	if !strings.Contains(frame.Lines[0], "  main") || !strings.Contains(frame.Lines[0], "▎ 1 1 ") || !strings.Contains(frame.Lines[0], " ") || !strings.Contains(frame.Lines[0], "pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
 		t.Fatalf("top bar should contain tuiv2-like workspace/tab/create/notice slots, got %#v", frame.Lines[0])
 	}
-	if strings.Contains(frame.Lines[0], "[＋]") || strings.Contains(frame.Lines[0], "[ ]") || strings.Contains(frame.Lines[0], "▎") {
+	if strings.Contains(frame.Lines[0], "[＋]") || strings.Contains(frame.Lines[0], "[ ]") || strings.Contains(frame.Lines[0], "1:1") || strings.Contains(frame.Lines[0], "×") {
 		t.Fatalf("top bar should not keep old bracket/indicator tokens, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
 	if strings.HasPrefix(footer, "└") || strings.HasSuffix(footer, "┘") {
 		t.Fatalf("bottom bar should be a product bar, not an outer wireframe, got %#v", footer)
 	}
-	if !strings.Contains(footer, "[Ctrl] • [P] pane") || !strings.Contains(footer, "[Ctrl] • [R] resize") || !strings.Contains(footer, "ws:main tabs:1 panes:1") {
+	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "PANE • [R] RESIZE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") || !strings.Contains(footer, "terminals:1") {
 		t.Fatalf("bottom bar should contain target wireframe action/summary tokens, got %#v", footer)
 	}
-	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl+P]") || strings.Contains(footer, "»") || strings.Contains(footer, "float:0") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
+	if strings.Contains(footer, "LIVE") || strings.Contains(footer, "[Ctrl+P]") || strings.Contains(footer, "»") || strings.Contains(footer, "term-1") || strings.Contains(footer, "● shell") {
 		t.Fatalf("bottom bar should use status-bar metadata slots, got %#v", footer)
 	}
-	if !styledLinesContainText(frame.StyledLines[:1], " main ", StyleStatusAccent) ||
-		!styledLinesContainText(frame.StyledLines[:1], " ＋ ", StyleSuccess) ||
+	if !styledLinesContainText(frame.StyledLines[:1], "  main", StyleHeaderWorkspace) ||
+		!styledLinesContainText(frame.StyledLines[:1], " ", StyleHeaderCreate) ||
 		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
-		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[Ctrl]", StyleStatusAccent) {
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "Ctrl", StyleFooterAccent) ||
+		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "PANE", StyleFooterMuted) {
 		t.Fatalf("top/bottom bar cells should use status token styles, got %#v", frame.StyledLines)
 	}
-	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;169;112;255m\x1b[48;2;8;8;13m") || !strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[1;38;2;169;112;255m\x1b[48;2;8;8;13m") {
-		t.Fatalf("top/bottom bars should output status background SGR, got %#v", frame.ANSILines)
+	if !strings.Contains(frame.ANSILines[0], "\x1b[48;2;8;8;13m") {
+		t.Fatalf("top bar should output status background SGR, got %#v", frame.ANSILines[0])
+	}
+	if strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;8;8;13m") {
+		t.Fatalf("footer should not keep an overall status background SGR, got %#v", frame.ANSILines[len(frame.ANSILines)-1])
 	}
 	assertAllRowsWidth(t, frame.Lines, 120)
+}
+
+func TestFrameworkRendersFullFooterSummaryWhenWidthAllows(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Header: HeaderVM{Visible: true, Workspace: "main"},
+		Footer: FooterVM{
+			Visible:       true,
+			Mode:          "live",
+			ActionTokens:  footerActionCatalog("live"),
+			GlobalSummary: "ws:main float:1 terminals:1",
+		},
+		Layout: LayoutVM{Viewport: Rect{W: 140, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "shell",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+		}}},
+	}})
+	frame := result.Frame()
+	footer := frame.Lines[len(frame.Lines)-1]
+	if !strings.Contains(footer, "[G] GLOBAL") || !strings.Contains(footer, "ws:main float:1 terminals:1") {
+		t.Fatalf("wide footer should keep full action strip and summary, got %#v", footer)
+	}
+	if strings.Contains(frame.ANSILines[len(frame.ANSILines)-1], "\x1b[48;2;8;8;13m") {
+		t.Fatalf("wide footer should still have no status background, got %#v", frame.ANSILines[len(frame.ANSILines)-1])
+	}
+	assertAllRowsWidth(t, frame.Lines, 140)
 }
 
 func TestFrameworkAppliesChromePatchesFromVM(t *testing.T) {
@@ -354,14 +385,14 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !strings.Contains(frame.Lines[0], " 1:shell ×") || !strings.Contains(frame.Lines[0], " 2:build ×") {
+	if !strings.Contains(frame.Lines[0], "1 shell ") || !strings.Contains(frame.Lines[0], "▎ 2 build ") {
 		t.Fatalf("header should render structured tab slots, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[Ctrl] • [P] pane") || !strings.Contains(footer, "[x] close") || !strings.Contains(footer, "ws:main tabs:2 panes:1") {
+	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "[x] CLOSE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") {
 		t.Fatalf("footer should render structured action tokens, got %#v", footer)
 	}
-	if !styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "[x]", StyleStatusWarning) {
+	if !styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "x", StyleFooterKeyPicker) {
 		t.Fatalf("footer should keep action token style from VM, got %#v", frame.StyledLines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 96)
@@ -490,7 +521,7 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 				}}},
 			}})
 			footer := frame.Lines[len(frame.Lines)-1]
-			if !strings.Contains(footer, strings.ToUpper(tc.mode)) || !strings.Contains(footer, strings.ToLower(tc.want)) || strings.Contains(footer, "● shell") {
+			if !strings.Contains(footer, strings.ToUpper(tc.mode)) || !strings.Contains(footer, tc.want) || strings.Contains(footer, "● shell") {
 				t.Fatalf("footer missing mode-specific product hints for %s: %#v", tc.mode, footer)
 			}
 			assertAllRowsWidth(t, frame.Lines, 96)
@@ -517,8 +548,8 @@ func TestFrameworkComposesUnicodeSplitConnections(t *testing.T) {
 	if SliceCells(lines[0], 20, 21) != "┬" || SliceCells(lines[6], 0, 1) != "├" || SliceCells(lines[6], 20, 21) != "┤" || SliceCells(lines[11], 20, 21) != "┴" {
 		t.Fatalf("expected composed split divider joints, got %#v", lines)
 	}
-	if !linesContain(lines, paneChromeSplitHorizontalActionText()) || !linesContain(lines, paneChromeSplitVerticalActionText()) || !linesContain(lines, paneChromeCloseActionText()) {
-		t.Fatalf("expected real split and close action tokens in split chrome, got %#v", lines)
+	if !linesContain(lines, paneChromeBracketToken(paneChromeCloseActionText())) {
+		t.Fatalf("expected at least close action tokens in narrow split chrome, got %#v", lines)
 	}
 	assertAllRowsWidth(t, lines, 40)
 }

@@ -58,6 +58,11 @@ func TestPaneCommandAdaptersFromHitRegionAndIntent(t *testing.T) {
 		t.Fatalf("unexpected split-right hit command command=%#v ok=%v", command, ok)
 	}
 
+	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneAction, PaneID: "pane-1", ActionID: render.ActionPaneZoom.String()})
+	if !ok || command.Action != state.PaneCommandToggleZoom || command.Target.PaneID != "pane-1" {
+		t.Fatalf("unexpected zoom hit command command=%#v ok=%v", command, ok)
+	}
+
 	command, ok = PaneCommandFromHitRegion(render.HitRegion{Kind: render.HitRegionPaneResize, PaneID: "pane-1", SplitPath: "root/1"})
 	if !ok || command.Action != state.PaneCommandResize || command.ResizeDirection != state.PaneResizeRight || command.Delta != 1 || command.ResizeSplitPath != "root/1" {
 		t.Fatalf("unexpected resize hit command command=%#v ok=%v", command, ok)

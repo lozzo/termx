@@ -13,6 +13,7 @@ const (
 	ActionPaneResize      ActionID = "pane.resize"
 	ActionPaneSplitDown   ActionID = "pane.split-down"
 	ActionPaneSplitRight  ActionID = "pane.split-right"
+	ActionPaneZoom        ActionID = "pane.zoom"
 	ActionPaneClose       ActionID = "pane.close"
 	ActionPaneFooterSplit ActionID = "pane.footer-split"
 	ActionPaneFooterClose ActionID = "pane.footer-close"
@@ -33,6 +34,10 @@ const (
 
 	ActionFooterPaneMode          ActionID = "footer.mode-pane"
 	ActionFooterResizeMode        ActionID = "footer.mode-resize"
+	ActionFooterTabMode           ActionID = "footer.mode-tab"
+	ActionFooterWorkspaceMode     ActionID = "footer.mode-workspace"
+	ActionFooterFloatingMode      ActionID = "footer.mode-floating"
+	ActionFooterCopyMode          ActionID = "footer.mode-copy"
 	ActionFooterGlobalMode        ActionID = "footer.mode-global"
 	ActionFooterPicker            ActionID = "footer.open-picker"
 	ActionFooterToggleHeader      ActionID = "footer.toggle-header"
@@ -99,6 +104,7 @@ func ActionIDCatalog() []ActionID {
 		ActionPaneResize,
 		ActionPaneSplitDown,
 		ActionPaneSplitRight,
+		ActionPaneZoom,
 		ActionPaneClose,
 		ActionPaneFooterSplit,
 		ActionPaneFooterClose,
@@ -117,6 +123,10 @@ func ActionIDCatalog() []ActionID {
 		ActionTabNext,
 		ActionFooterPaneMode,
 		ActionFooterResizeMode,
+		ActionFooterTabMode,
+		ActionFooterWorkspaceMode,
+		ActionFooterFloatingMode,
+		ActionFooterCopyMode,
 		ActionFooterGlobalMode,
 		ActionFooterPicker,
 		ActionFooterToggleHeader,

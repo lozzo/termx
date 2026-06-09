@@ -751,21 +751,21 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 
 func v3VisualTargetPlain() string {
 	lines := []string{
-		" main   1:main ×   2:logs ×   ＋                                                                                  termx ",
-		"┌─ shell ──────────────────────────────────────────────────────────────────────↕  ↔  ×──┬─ logs ─────────────────────×─┐",
+		"  main ▎ 1 main  2 logs                                                                                             ",
+		"┌─ shell ──────────────────────────────────────────────────────────────[]─[]─[]─[]──┬─ logs ───────────────────[]─┐",
 		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                                   │ visual review baseline       │",
 		"│> make test                                                                            │ target visual mismatch       │",
 		"│ok   termx-tui-v3/render                                                               │ emoji 🚀 and 中文            │",
 		"│>                                                                                      │                              │",
 		"│                                                                                       │                              │",
-		"│                                                                                    ┌ quick actions ───────── × ┐     │",
+		"│                                                                                    ┌ quick actions ─────────  ┐     │",
 		"│                                                                                    │ No terminal attached      │     │",
 		"│                                                                                    │                           │     │",
 		"│                                                                                    │ Attach existing           │     │",
 		"│                                                                                    │ New terminal              │     │",
 		"│                                                                                    │ Terminal Pool             │     │",
 		"│                                                                                    │ Close                     │     │",
-		"│                                                                                    └──────────────────────────◢┘     │",
+		"│                                                                                    └──────────────────────────v┘     │",
 		"│                                                                                       │                              │",
 		"│                                                                                       │                              │",
 		"│                                                                                       │                              │",
@@ -790,7 +790,7 @@ func v3VisualTargetPlain() string {
 		"│                                                                                       │                              │",
 		"│                                                                                       │                              │",
 		"└───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────┘",
-		" [Ctrl] • [P] pane  [Ctrl] • [R] resize  [Ctrl] • [G] global                                     ws:main tabs:2 panes:2 ",
+		"[Ctrl] • [P] PANE • [R] RESIZE • [T] TAB • [W] WORKSPACE • [O] FLOAT • [V] COPY • [F] PICKER • [G] GLOBAL        float:1",
 	}
 	return normalizeVisualText(strings.Join(lines, "\n"), 120, 40)
 }
@@ -975,25 +975,32 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 			}
 		}
 	}
-	fillSubstringOccurrence := func(row int, marker string, occurrence int, class visualStyleClass) {
+	fillBracketToken := func(row int, marker string, occurrence int, innerClass visualStyleClass) {
 		spans := visualLineSubstringSpans(lines[row-1], marker)
 		if occurrence < 0 || occurrence >= len(spans) {
 			return
 		}
 		span := spans[occurrence]
-		fill(row, span[0]+1, span[1], class)
+		fill(row, span[0]+1, span[1], visualStyleAccent)
+		if span[1]-span[0] > 2 {
+			fill(row, span[0]+2, span[1]-1, innerClass)
+		}
+	}
+	visibleLineWidth := func(row int) int {
+		if row < 1 || row > len(lines) {
+			return 0
+		}
+		return render.DisplayWidth(strings.TrimRight(lines[row-1], " "))
 	}
 
 	// 固定视觉基线的目标样式来自 tuiv2-style 单行 tab/status bar 与对象 chrome 语义区域。
-	fill(1, 1, width-1, visualStyleStatus)
-	fillRangesForSubstrings(1, visualStyleAccent, " main ")
-	fillRangesForSubstrings(1, visualStyleWarn, "× ")
-	fillRangesForSubstrings(1, visualStyleSuccess, " ＋ ")
-	fillRangesForSubstrings(1, visualStyleMuted, " 2:logs ", " termx")
+	fill(1, 1, visibleLineWidth(1), visualStyleStatus)
+	fillRangesForSubstrings(1, visualStyleWarn, "")
+	fillRangesForSubstrings(1, visualStyleMuted, " 2 logs ")
 
 	fill(2, 1, 88, visualStyleAccent)
 	fill(2, 89, width, visualStyleMuted)
-	fillRangesForSubstrings(2, visualStyleAccent, "↕  ↔  ×")
+	fillRangesForSubstrings(2, visualStyleAccent, "[]─[]─[]─[]")
 	for row := 3; row <= 38; row++ {
 		fill(row, 1, 1, visualStyleAccent)
 		fill(row, 89, 89, visualStyleMuted)
@@ -1020,17 +1027,17 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 
 	fill(39, 1, 88, visualStyleAccent)
 	fill(39, 89, width, visualStyleMuted)
-	fill(40, 1, width-1, visualStyleStatus)
-	fillSubstringOccurrence(40, "[Ctrl]", 0, visualStyleAccent)
-	fillSubstringOccurrence(40, "[P]", 0, visualStyleAccent)
-	fillSubstringOccurrence(40, "[Ctrl]", 1, visualStyleWarn)
-	fillSubstringOccurrence(40, "[R]", 0, visualStyleWarn)
-	fillSubstringOccurrence(40, "[Ctrl]", 2, visualStyleAccent)
-	fillSubstringOccurrence(40, "[G]", 0, visualStyleAccent)
-	fillRangesForSubstrings(40, visualStyleMuted, " • ", "ws:main tabs:2 panes:2")
-	fill(40, 19, 20, visualStyleMuted)
-	fill(40, 40, 41, visualStyleMuted)
-	fill(40, 97, 97, visualStyleMuted)
+	fillBracketToken(40, "[Ctrl]", 0, visualStyleAccent)
+	fillBracketToken(40, "[P]", 0, visualStyleAccent)
+	fillBracketToken(40, "[R]", 0, visualStyleWarn)
+	fillBracketToken(40, "[T]", 0, visualStyleStatus)
+	fillBracketToken(40, "[W]", 0, visualStyleSuccess)
+	fillBracketToken(40, "[O]", 0, visualStyleUnknown)
+	fillBracketToken(40, "[V]", 0, visualStyleUnknown)
+	fillBracketToken(40, "[F]", 0, visualStyleUnknown)
+	fillBracketToken(40, "[G]", 0, visualStyleUnknown)
+	fillRangesForSubstrings(40, visualStyleAccent, " float:1")
+	fillRangesForSubstrings(40, visualStyleMuted, " PANE", " RESIZE", " TAB", " WORKSPACE", " FLOAT", " COPY", " PICKER", " GLOBAL", " • ")
 	return styleMap
 }
 
@@ -1054,8 +1061,17 @@ func visualClassFromSGR(sgr []string) visualStyleClass {
 		return visualStyleSuccess
 	case visualSGRContains(sgr, "38;2;119;113;127"):
 		return visualStyleMuted
-	case visualSGRContains(sgr, "38;2;231;226;239") || visualSGRContains(sgr, "48;2;8;8;13"):
+	case visualSGRContains(sgr, "38;2;255;107;107") || visualSGRContains(sgr, "38;2;194;110;116"):
+		return visualStyleWarn
+	case visualSGRContains(sgr, "38;2;231;226;239") || visualSGRContains(sgr, "38;2;222;219;230") ||
+		visualSGRContains(sgr, "38;2;8;8;13") || visualSGRContains(sgr, "48;2;8;8;13") ||
+		visualSGRContains(sgr, "48;2;231;226;239"):
 		return visualStyleStatus
+	case visualSGRContains(sgr, "38;2;122;184;255"):
+		return visualStyleStatus
+	case visualSGRContains(sgr, "38;2;250;138;102") || visualSGRContains(sgr, "38;2;194;141;198") ||
+		visualSGRContains(sgr, "38;2;148;144;255") || visualSGRContains(sgr, "38;2;132;209;169"):
+		return visualStyleUnknown
 	case len(sgr) == 0:
 		return visualStyleTransparent
 	default:
@@ -1185,16 +1201,16 @@ func visualLineSubstringSpans(line string, marker string) [][2]int {
 func visualStyleExpectations() []visualStyleExpectation {
 	return []visualStyleExpectation{
 		{Name: "header-status-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"48;2;8;8;13"}},
-		{Name: "active-tab-accent", Row: 1, Col: 2, Glyph: "m", MustHave: []string{"1", "38;2;169;112;255"}},
-		{Name: "inactive-tab-muted", Row: 1, Col: 20, Glyph: "2", MustHave: []string{"2", "38;2;119;113;127", "48;2;8;8;13"}, MustAvoid: []string{"38;2;169;112;255"}},
-		{Name: "pane-action-accent", Row: 2, Col: 80, Glyph: "↕", MustHave: []string{"1", "38;2;169;112;255"}},
+		{Name: "active-tab-marker", Row: 1, Col: 9, Glyph: "▎", MustHave: []string{"1", "38;2;8;8;13", "48;2;231;226;239"}},
+		{Name: "inactive-tab-muted", Row: 1, Col: 20, Glyph: "2", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"48;2;8;8;13"}},
+		{Name: "pane-action-accent", Row: 2, Col: 73, Glyph: "", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "inactive-logs-muted", Row: 2, Col: 89, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
 		{Name: "right-content-muted", Row: 3, Col: 89, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},
 		{Name: "floating-border-accent", Row: 8, Col: 86, Glyph: "┌", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "floating-inner-accent", Row: 10, Col: 86, Glyph: "│", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "right-pane-border-muted", Row: 10, Col: 120, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
-		{Name: "footer-status-bg", Row: 40, Col: 1, Glyph: " ", MustHave: []string{"48;2;8;8;13"}},
-		{Name: "footer-key-accent", Row: 40, Col: 2, Glyph: "[", MustHave: []string{"1", "38;2;169;112;255", "48;2;8;8;13"}},
+		{Name: "footer-no-bg", Row: 40, Col: 1, Glyph: "[", MustHave: []string{"38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
+		{Name: "footer-float-accent", Row: 40, Col: 114, Glyph: "f", MustHave: []string{"1", "38;2;169;112;255"}, MustAvoid: []string{"48;2;8;8;13"}},
 	}
 }
 

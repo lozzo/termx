@@ -1405,7 +1405,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{" main ", "visual review", "quick actio", "[Ctrl] • [P] pane"} {
+	for _, want := range []string{"  main", "visual review", "quick actio", "[Ctrl] • [P] PANE"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}
@@ -1796,7 +1796,10 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read style map diff: %v", err)
 	}
-	if !strings.Contains(string(current), "quick actio") || !strings.Contains(string(target), "ws:main tabs:2 panes:2") || !strings.Contains(string(diff), "tmux visual diff") {
+	if !strings.Contains(string(current), "quick actio") ||
+		!strings.Contains(string(target), "[V] COPY • [F] PICKER • [G] GLOBAL") ||
+		!strings.Contains(string(target), "float:1") ||
+		!strings.Contains(string(diff), "tmux visual diff") {
 		t.Fatalf("visual compare artifacts missing expected markers current=%q target=%q diff=%q", current, target, diff)
 	}
 	currentNormalized := normalizeVisualText(string(current), 120, 40)
@@ -1810,12 +1813,12 @@ func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	if result.StyleMapMismatches != 0 || !strings.Contains(string(styleMapDiff), "no style map mismatches") {
 		t.Fatalf("visual compare style map should match, stylemap_mismatches=%d diff=\n%s", result.StyleMapMismatches, styleMapDiff)
 	}
-	for _, marker := range []string{"legend: S=status A=accent M=muted W=warning G=success P=plain .=transparent ?=unknown", "01 AAAAAA"} {
+	for _, marker := range []string{"legend: S=status A=accent M=muted W=warning G=success P=plain .=transparent ?=unknown", "01 SSSSSS"} {
 		if !strings.Contains(string(currentStyleMap), marker) || !strings.Contains(string(targetStyleMap), marker) {
 			t.Fatalf("style maps missing marker %q current=\n%s\ntarget=\n%s", marker, currentStyleMap, targetStyleMap)
 		}
 	}
-	for _, marker := range []string{"pane-action-accent", "inactive-logs-muted", "right-pane-border-muted", "footer-key-accent"} {
+	for _, marker := range []string{"pane-action-accent", "inactive-logs-muted", "right-pane-border-muted", "footer-no-bg", "footer-float-accent"} {
 		if !strings.Contains(string(style), marker+" row=") {
 			t.Fatalf("style report missing marker %q: %s", marker, style)
 		}

@@ -84,7 +84,7 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	if vm.Shell.Footer.ActionTokens[0].ActionID != ActionFooterPaneMode.String() || lastAction.ActionID != ActionFooterGlobalMode.String() {
 		t.Fatalf("footer structured tokens should expose semantic action ids, got %#v", vm.Shell.Footer.ActionTokens)
 	}
-	if len(vm.Shell.Layout.Panels) != 1 || len(vm.Shell.Layout.Panels[0].Chrome.Actions) != 3 {
+	if len(vm.Shell.Layout.Panels) != 1 || len(vm.Shell.Layout.Panels[0].Chrome.Actions) != 4 {
 		t.Fatalf("pane should expose structured chrome actions, got %#v", vm.Shell.Layout.Panels)
 	}
 	if vm.Shell.Layout.Panels[0].Chrome.Title.Text != "build" || vm.Shell.Layout.Panels[0].Chrome.Title.Style != StyleAccent {
@@ -93,7 +93,8 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	if vm.Shell.Layout.Panels[0].Chrome.State.Text != "active" || vm.Shell.Layout.Panels[0].Chrome.State.Style != StyleSuccess {
 		t.Fatalf("pane should expose structured active state slot, got %#v", vm.Shell.Layout.Panels[0].Chrome.State)
 	}
-	if vm.Shell.Layout.Panels[0].Chrome.Actions[0].ActionID != ActionPaneSplitDown.String() || vm.Shell.Layout.Panels[0].Chrome.Actions[2].ActionID != ActionPaneClose.String() {
+	if vm.Shell.Layout.Panels[0].Chrome.Actions[0].ActionID != ActionPaneZoom.String() || vm.Shell.Layout.Panels[0].Chrome.Actions[1].ActionID != ActionPaneSplitRight.String() ||
+		vm.Shell.Layout.Panels[0].Chrome.Actions[2].ActionID != ActionPaneSplitDown.String() || vm.Shell.Layout.Panels[0].Chrome.Actions[3].ActionID != ActionPaneClose.String() {
 		t.Fatalf("pane chrome actions should keep semantic action ids, got %#v", vm.Shell.Layout.Panels[0].Chrome.Actions)
 	}
 }
@@ -129,6 +130,10 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 			want: []FooterActionVM{
 				{Key: "^P", Label: "pane", ActionID: ActionFooterPaneMode.String()},
 				{Key: "^R", Label: "resize", ActionID: ActionFooterResizeMode.String()},
+				{Key: "^T", Label: "tab", ActionID: ActionFooterTabMode.String()},
+				{Key: "^W", Label: "workspace", ActionID: ActionFooterWorkspaceMode.String()},
+				{Key: "^O", Label: "float", ActionID: ActionFooterFloatingMode.String()},
+				{Key: "^V", Label: "copy", ActionID: ActionFooterCopyMode.String()},
 				{Key: "^F", Label: "picker", ActionID: ActionFooterPicker.String()},
 				{Key: "^G", Label: "global", ActionID: ActionFooterGlobalMode.String()},
 			},
@@ -428,7 +433,7 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	footer := vm.Shell.Footer
 	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" ||
 		!containsFooterAction(footer.ActionTokens, "v", "split", ActionPaneFooterSplit.String()) ||
-		!strings.Contains(footer.GlobalSummary, "panes:2") || !strings.Contains(footer.GlobalSummary, "float:1") {
+		!strings.Contains(footer.GlobalSummary, "ws:main") || !strings.Contains(footer.GlobalSummary, "float:1") || !strings.Contains(footer.GlobalSummary, "terminals:1") {
 		t.Fatalf("unexpected product footer %#v", footer)
 	}
 	if len(footer.Actions) != 0 {
@@ -543,7 +548,7 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionFooterRenameWorkspace.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "t", "tree", ActionFooterOpenTree.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "delete", ActionFooterDeleteWorkspace.String()) ||
-		!strings.Contains(vm.Shell.Footer.GlobalSummary, "tabs:1") {
+		!strings.Contains(vm.Shell.Footer.GlobalSummary, "ws:remote") {
 		t.Fatalf("expected workspace footer summary, got %#v", vm.Shell.Footer)
 	}
 

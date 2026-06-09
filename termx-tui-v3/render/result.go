@@ -56,19 +56,40 @@ func (style ANSICellStyle) IsZero() bool {
 type StyleToken string
 
 const (
-	StyleAccent        StyleToken = "accent"
-	StyleMuted         StyleToken = "muted"
-	StyleStatus        StyleToken = "status"
-	StyleStatusAccent  StyleToken = "status-accent"
-	StyleStatusMuted   StyleToken = "status-muted"
-	StyleStatusWarning StyleToken = "status-warning"
-	StyleInfo          StyleToken = "info"
-	StyleSuccess       StyleToken = "success"
-	StyleWarning       StyleToken = "warning"
-	StyleDanger        StyleToken = "danger"
-	StyleOverlay       StyleToken = "overlay"
-	StyleToast         StyleToken = "toast"
-	StyleToastAccent   StyleToken = "toast-accent"
+	StyleAccent              StyleToken = "accent"
+	StyleMuted               StyleToken = "muted"
+	StyleStatus              StyleToken = "status"
+	StyleStatusAccent        StyleToken = "status-accent"
+	StyleStatusMuted         StyleToken = "status-muted"
+	StyleStatusWarning       StyleToken = "status-warning"
+	StyleHeaderWorkspace     StyleToken = "header-workspace"
+	StyleHeaderSpacer        StyleToken = "header-spacer"
+	StyleHeaderInactiveIndex StyleToken = "header-inactive-index"
+	StyleHeaderInactiveTitle StyleToken = "header-inactive-title"
+	StyleHeaderInactiveClose StyleToken = "header-inactive-close"
+	StyleHeaderActiveMarker  StyleToken = "header-active-marker"
+	StyleHeaderActiveIndex   StyleToken = "header-active-index"
+	StyleHeaderActiveTitle   StyleToken = "header-active-title"
+	StyleHeaderActiveClose   StyleToken = "header-active-close"
+	StyleHeaderCreate        StyleToken = "header-create"
+	StyleFooterChrome        StyleToken = "footer-chrome"
+	StyleFooterMuted         StyleToken = "footer-muted"
+	StyleFooterAccent        StyleToken = "footer-accent"
+	StyleFooterKeyPane       StyleToken = "footer-key-pane"
+	StyleFooterKeyResize     StyleToken = "footer-key-resize"
+	StyleFooterKeyTab        StyleToken = "footer-key-tab"
+	StyleFooterKeyWorkspace  StyleToken = "footer-key-workspace"
+	StyleFooterKeyFloat      StyleToken = "footer-key-float"
+	StyleFooterKeyCopy       StyleToken = "footer-key-copy"
+	StyleFooterKeyPicker     StyleToken = "footer-key-picker"
+	StyleFooterKeyGlobal     StyleToken = "footer-key-global"
+	StyleInfo                StyleToken = "info"
+	StyleSuccess             StyleToken = "success"
+	StyleWarning             StyleToken = "warning"
+	StyleDanger              StyleToken = "danger"
+	StyleOverlay             StyleToken = "overlay"
+	StyleToast               StyleToken = "toast"
+	StyleToastAccent         StyleToken = "toast-accent"
 )
 
 type Line struct {
@@ -231,6 +252,48 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForegroundBackground(theme.Muted, theme.StatusBG, false) + "\x1b[2m"
 	case StyleStatusWarning:
 		return sgrForegroundBackground(theme.Warning, theme.StatusBG, false)
+	case StyleHeaderWorkspace:
+		return sgrForegroundBackground(theme.StatusFG, theme.StatusBG, true)
+	case StyleHeaderSpacer:
+		return sgrForegroundBackground(theme.StatusFG, theme.StatusBG, false)
+	case StyleHeaderInactiveIndex:
+		return sgrForeground(theme.Muted, false) + "\x1b[2m"
+	case StyleHeaderInactiveTitle:
+		return sgrForeground(theme.InactivePane, false)
+	case StyleHeaderInactiveClose:
+		return sgrForeground(mixHostColor(theme.Danger, theme.Muted, 0.45), false)
+	case StyleHeaderActiveMarker:
+		return sgrForegroundBackground(theme.StatusBG, theme.StatusFG, true)
+	case StyleHeaderActiveIndex:
+		return sgrForeground(theme.StatusFG, true)
+	case StyleHeaderActiveTitle:
+		return sgrForeground(theme.ChromeFG, true)
+	case StyleHeaderActiveClose:
+		return sgrForeground(theme.Danger, false)
+	case StyleHeaderCreate:
+		return sgrForegroundBackground(theme.Info, mixHostColor(theme.Muted, theme.StatusBG, 0.35), true)
+	case StyleFooterChrome:
+		return sgrForeground(theme.Accent, false)
+	case StyleFooterMuted:
+		return sgrForeground(theme.Muted, false)
+	case StyleFooterAccent:
+		return sgrForeground(theme.Accent, true)
+	case StyleFooterKeyPane:
+		return sgrForeground(theme.Accent, true)
+	case StyleFooterKeyResize:
+		return sgrForeground(theme.Warning, true)
+	case StyleFooterKeyTab:
+		return sgrForeground(theme.Info, true)
+	case StyleFooterKeyWorkspace:
+		return sgrForeground(theme.Success, true)
+	case StyleFooterKeyFloat:
+		return sgrForeground(mixHostColor(theme.Accent, theme.Info, 0.45), true)
+	case StyleFooterKeyCopy:
+		return sgrForeground(mixHostColor(theme.Success, theme.Info, 0.35), true)
+	case StyleFooterKeyPicker:
+		return sgrForeground(mixHostColor(theme.Danger, theme.Warning, 0.35), true)
+	case StyleFooterKeyGlobal:
+		return sgrForeground(mixHostColor(theme.Accent, theme.Warning, 0.35), true)
 	case StyleInfo:
 		return sgrForeground(theme.Info, false)
 	case StyleSuccess:

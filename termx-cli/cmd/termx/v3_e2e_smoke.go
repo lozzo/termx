@@ -294,7 +294,7 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		return fmt.Errorf("v3 e2e smoke: no frames rendered")
 	}
 	frame := frames[len(frames)-1]
-	required := []string{" main ", "  1:main ×", "  ＋ ", "┌─ shell", "ws:main"}
+	required := []string{"  main", "▎ 1 main ", " ", "┌─ shell", "ws:main"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {
@@ -315,7 +315,7 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 			}
 		}
 	}
-	actionCluster := glyphs.SplitHorizontal + "  " + glyphs.SplitVertical + "  " + glyphs.Close
+	actionCluster := "[" + glyphs.Zoom + "]─[" + glyphs.SplitVertical + "]─[" + glyphs.SplitHorizontal + "]─[" + glyphs.Close + "]"
 	for _, marker := range []string{actionCluster} {
 		found := false
 		for _, line := range frame.Lines {

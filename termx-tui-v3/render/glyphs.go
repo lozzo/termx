@@ -1,7 +1,7 @@
 package render
 
 // PaneChromeGlyphs 集中管理 pane/floating chrome 的动作和状态字形。
-// 默认值只使用基础 Unicode；Nerd Font 状态体系必须等语义和 fallback 拍板后再启用。
+// 默认 chrome 对齐 tuiv2 的 Nerd Font 字形；测试仍可通过 SetPaneChromeGlyphs 覆盖。
 type PaneChromeGlyphs struct {
 	Zoom             string
 	SplitVertical    string
@@ -16,10 +16,10 @@ type PaneChromeGlyphs struct {
 }
 
 var defaultPaneChromeGlyphs = PaneChromeGlyphs{
-	Zoom:             "□",
-	SplitVertical:    "↔",
-	SplitHorizontal:  "↕",
-	Close:            "×",
+	Zoom:             "",
+	SplitVertical:    "",
+	SplitHorizontal:  "",
+	Close:            "",
 	CenterFloating:   "◎",
 	CollapseFloating: "⌃",
 	Running:          "●",

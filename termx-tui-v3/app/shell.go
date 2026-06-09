@@ -257,6 +257,19 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterResizeMode.String():
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeResize)
 		return root.Advance(), nil
+	case render.ActionFooterTabMode.String():
+		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeTab)
+		return root.Advance(), nil
+	case render.ActionFooterWorkspaceMode.String():
+		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeWorkspace)
+		return root.Advance(), nil
+	case render.ActionFooterFloatingMode.String():
+		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeFloating)
+		return root.Advance(), nil
+	case render.ActionFooterCopyMode.String():
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v", Ctrl: true}}
+		}}}
 	case render.ActionFooterGlobalMode.String():
 		root.Shell = root.Shell.SetInteractionMode(state.InteractionModeGlobal)
 		return root.Advance(), nil

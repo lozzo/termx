@@ -405,7 +405,7 @@ func appendPaneActionRegions(out []HitRegion, panel PanelVM, rect Rect, paneID s
 	x := actionRect.X
 	for i, item := range items {
 		if i > 0 {
-			x += 2
+			x += 1
 		}
 		width := DisplayWidth(item.Text)
 		if width <= 0 {
@@ -613,7 +613,7 @@ func paneResizeRect(rect Rect) Rect {
 }
 
 func floatingResizeRect(rect Rect) Rect {
-	return Rect{X: maxInt(rect.X, rect.X+rect.W-2), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: minInt(2, rect.W), H: 1}
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-2), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: minInt(1, rect.W), H: 1}
 }
 
 func paneChromeRect(rect Rect) Rect {

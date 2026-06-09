@@ -111,11 +111,19 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 		Hint:          hint,
 		ActionTokens:  footerActionCatalog(mode),
 		ActiveTarget:  activeTargetSummary(shell, root),
-		GlobalSummary: globalSummary(shell),
+		GlobalSummary: globalSummary(root, shell),
 	}
 }
 
 func terminalSummary(root state.Root) string {
+	count := terminalCount(root)
+	if count == 0 {
+		return "term:0"
+	}
+	return fmt.Sprintf("term:%d", count)
+}
+
+func terminalCount(root state.Root) int {
 	ids := map[string]struct{}{}
 	for terminalID := range root.Surface.Surfaces {
 		if terminalID != "" {
@@ -142,11 +150,7 @@ func terminalSummary(root state.Root) string {
 	if root.CopyMode.TerminalID != "" {
 		ids[root.CopyMode.TerminalID] = struct{}{}
 	}
-	count := len(ids)
-	if count == 0 {
-		return "term:0"
-	}
-	return fmt.Sprintf("term:%d", count)
+	return len(ids)
 }
 
 func floatingSummary(shell state.ShellStore) string {
@@ -286,10 +290,14 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	default:
 		return footerActionSpecs(
-			footerActionSpec("^P", "pane", ActionFooterPaneMode.String(), StyleStatusAccent),
-			footerActionSpec("^R", "resize", ActionFooterResizeMode.String(), StyleStatusWarning),
-			footerActionSpec("^F", "picker", ActionFooterPicker.String(), StyleStatusAccent),
-			footerActionSpec("^G", "global", ActionFooterGlobalMode.String(), StyleStatusAccent),
+			footerActionSpec("^P", "pane", ActionFooterPaneMode.String(), StyleFooterKeyPane),
+			footerActionSpec("^R", "resize", ActionFooterResizeMode.String(), StyleFooterKeyResize),
+			footerActionSpec("^T", "tab", ActionFooterTabMode.String(), StyleFooterKeyTab),
+			footerActionSpec("^W", "workspace", ActionFooterWorkspaceMode.String(), StyleFooterKeyWorkspace),
+			footerActionSpec("^O", "float", ActionFooterFloatingMode.String(), StyleFooterKeyFloat),
+			footerActionSpec("^V", "copy", ActionFooterCopyMode.String(), StyleFooterKeyCopy),
+			footerActionSpec("^F", "picker", ActionFooterPicker.String(), StyleFooterKeyPicker),
+			footerActionSpec("^G", "global", ActionFooterGlobalMode.String(), StyleFooterKeyGlobal),
 		)
 	}
 }
@@ -322,13 +330,8 @@ func activeTargetSummary(shell state.ShellStore, root state.Root) string {
 	return "pane:" + paneTitle + " " + terminalState
 }
 
-func globalSummary(shell state.ShellStore) string {
-	tab := activeTab(shell)
-	paneCount := len(tab.Panes)
-	if paneCount == 0 {
-		paneCount = 1
-	}
-	return fmt.Sprintf("ws:%s tabs:%d panes:%d %s", shell.Workspace.Name, len(shell.Workspace.Tabs), paneCount, floatingSummary(shell))
+func globalSummary(root state.Root, shell state.ShellStore) string {
+	return fmt.Sprintf("ws:%s %s terminals:%d", shell.Workspace.Name, floatingSummary(shell), terminalCount(root))
 }
 
 func tabStripSummary(shell state.ShellStore) string {
@@ -537,9 +540,10 @@ func paneChromeStateSlot(active bool, content ContentVM) ChromeSlotVM {
 
 func defaultPaneChromeActionVMs(style StyleToken) []ChromeActionVM {
 	return []ChromeActionVM{
-		{Text: paneChromeSplitHorizontalActionText(), ActionID: ActionPaneSplitDown.String(), Style: style},
-		{Text: paneChromeSplitVerticalActionText(), ActionID: ActionPaneSplitRight.String(), Style: style},
-		{Text: paneChromeCloseActionText(), ActionID: ActionPaneClose.String(), Style: style},
+		{Text: paneChromeBracketToken(paneChromeZoomGlyph()), ActionID: ActionPaneZoom.String(), Style: style},
+		{Text: paneChromeBracketToken(paneChromeSplitVerticalActionText()), ActionID: ActionPaneSplitRight.String(), Style: style},
+		{Text: paneChromeBracketToken(paneChromeSplitHorizontalActionText()), ActionID: ActionPaneSplitDown.String(), Style: style},
+		{Text: paneChromeBracketToken(paneChromeCloseActionText()), ActionID: ActionPaneClose.String(), Style: style},
 	}
 }
 

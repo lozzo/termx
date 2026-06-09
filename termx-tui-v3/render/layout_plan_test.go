@@ -205,13 +205,13 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	plan := MeasureLayout(shell, Rect{W: 80, H: 20})
 	closeRegion := hitRegionByAction(t, plan.HitRegions, ActionTabClose.String())
 	createRegion := hitRegionByAction(t, plan.HitRegions, ActionTabCreate.String())
-	if closeRegion.Kind != HitRegionContentAction || closeRegion.Rect.Y != plan.Header.Y || closeRegion.Rect.W != DisplayWidth("× ") {
+	if closeRegion.Kind != HitRegionContentAction || closeRegion.Rect.Y != plan.Header.Y || closeRegion.Rect.W != DisplayWidth("") {
 		t.Fatalf("unexpected tab close region %#v", closeRegion)
 	}
 	if closeRegion.PaneID != "tab-main" {
 		t.Fatalf("tab close hit region should carry target tab id, got %#v", closeRegion)
 	}
-	if createRegion.Kind != HitRegionContentAction || createRegion.Rect.Y != plan.Header.Y || createRegion.Rect.W != DisplayWidth(" ＋ ") {
+	if createRegion.Kind != HitRegionContentAction || createRegion.Rect.Y != plan.Header.Y || createRegion.Rect.W != DisplayWidth(" ") {
 		t.Fatalf("unexpected tab create region %#v", createRegion)
 	}
 	if closeRegion.Rect.X >= createRegion.Rect.X {
@@ -235,7 +235,7 @@ func TestMeasureLayoutAddsVisibleFooterActionHitRegions(t *testing.T) {
 	plan := MeasureLayout(shell, Rect{W: 80, H: 20})
 	paneRegion := hitRegionByAction(t, plan.HitRegions, "footer.pane")
 	pickerRegion := hitRegionByAction(t, plan.HitRegions, "footer.picker")
-	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl] • [P] pane") {
+	if paneRegion.Kind != HitRegionContentAction || paneRegion.Rect.Y != plan.Footer.Y+plan.Footer.H-1 || paneRegion.Rect.W != DisplayWidth("[Ctrl] • [P] PANE") {
 		t.Fatalf("unexpected footer pane action region %#v footer=%#v", paneRegion, plan.Footer)
 	}
 	if pickerRegion.Kind != HitRegionContentAction || pickerRegion.Rect.Y != paneRegion.Rect.Y || pickerRegion.Rect.X <= paneRegion.Rect.X {
@@ -307,17 +307,19 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if len(plan.HitRegions) < 5 {
 		t.Fatalf("expected pane command and content hit regions, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[0].Kind != HitRegionPaneAction || plan.HitRegions[0].PaneID != "pane-1" || plan.HitRegions[0].ActionID != "pane.split-down" {
+	if plan.HitRegions[0].Kind != HitRegionPaneAction || plan.HitRegions[0].PaneID != "pane-1" || plan.HitRegions[0].ActionID != ActionPaneZoom.String() {
 		t.Fatalf("pane action region should be first, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[1].Kind != HitRegionPaneAction || plan.HitRegions[1].ActionID != "pane.split-right" || plan.HitRegions[2].Kind != HitRegionPaneAction || plan.HitRegions[2].ActionID != "pane.close" {
-		t.Fatalf("pane action regions should expose visible split/close tokens, got %#v", plan.HitRegions[:3])
+	if plan.HitRegions[1].Kind != HitRegionPaneAction || plan.HitRegions[1].ActionID != "pane.split-right" ||
+		plan.HitRegions[2].Kind != HitRegionPaneAction || plan.HitRegions[2].ActionID != "pane.split-down" ||
+		plan.HitRegions[3].Kind != HitRegionPaneAction || plan.HitRegions[3].ActionID != "pane.close" {
+		t.Fatalf("pane action regions should expose visible zoom/split/close tokens, got %#v", plan.HitRegions[:4])
 	}
-	actionWidth := plan.HitRegions[0].Rect.W + plan.HitRegions[1].Rect.W + plan.HitRegions[2].Rect.W + 4
+	actionWidth := plan.HitRegions[0].Rect.W + plan.HitRegions[1].Rect.W + plan.HitRegions[2].Rect.W + plan.HitRegions[3].Rect.W + 3
 	if got, want := actionWidth, DisplayWidth(paneChromeActionText(40)); got != want {
-		t.Fatalf("pane action regions should cover visible action cluster got=%d want=%d regions=%#v", got, want, plan.HitRegions[:3])
+		t.Fatalf("pane action regions should cover visible action cluster got=%d want=%d regions=%#v", got, want, plan.HitRegions[:4])
 	}
-	if plan.HitRegions[3].Kind != HitRegionPaneChrome || plan.HitRegions[3].ActionID != "pane.focus" {
+	if plan.HitRegions[4].Kind != HitRegionPaneChrome || plan.HitRegions[4].ActionID != "pane.focus" {
 		t.Fatalf("pane chrome region should precede content, got %#v", plan.HitRegions)
 	}
 	historyIndex := hitRegionIndex(plan.HitRegions, HitRegionHistoryRow)
@@ -326,7 +328,7 @@ func TestMeasureLayoutAddsPaneCommandHitRegionsBeforeContent(t *testing.T) {
 	if resizeIndex >= 0 {
 		t.Fatalf("single pane outer border is fixed and must not expose resize handle, got %#v", plan.HitRegions)
 	}
-	if historyIndex <= 3 {
+	if historyIndex <= 4 {
 		t.Fatalf("content hit region should remain after chrome regions, got %#v", plan.HitRegions)
 	}
 	if paneContentIndex <= historyIndex {
@@ -350,7 +352,7 @@ func TestMeasureLayoutPaneActionRegionsFollowStructuredVisibleSlots(t *testing.T
 		wide.HitRegions[1].ActionID != "pane.beta" || wide.HitRegions[2].ActionID != ActionPaneClose.String() {
 		t.Fatalf("wide pane should expose structured visible action regions, got %#v", wide.HitRegions[:3])
 	}
-	if got, want := wide.HitRegions[0].Rect.W+wide.HitRegions[1].Rect.W+wide.HitRegions[2].Rect.W+4, paneChromeActionItemsWidth(visiblePaneChromeActionItems(panel, 20)); got != want {
+	if got, want := wide.HitRegions[0].Rect.W+wide.HitRegions[1].Rect.W+wide.HitRegions[2].Rect.W+2, paneChromeActionItemsWidth(visiblePaneChromeActionItems(panel, 20)); got != want {
 		t.Fatalf("wide pane action regions should match visible slots got=%d want=%d regions=%#v", got, want, wide.HitRegions[:3])
 	}
 
