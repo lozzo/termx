@@ -876,12 +876,12 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 		t.Fatalf("expected terminal picker content, got %#v", vm.Shell.Overlay)
 	}
 	plain := plainLines(content.Lines)
-	for _, want := range []string{"search: term", "▸ + new terminal", "  shell", "  日志🚀"} {
+	for _, want := range []string{"search: term", "▸ + new terminal  Create a new terminal", "● term-main shell  live @pane-main", "○ term-2 日志🚀  live @pane-2"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected compact picker marker %q, got %#v", want, content.Lines)
 		}
 	}
-	for _, forbidden := range []string{"Select terminal source state target", "DETAIL", "TARGET", "TERMINAL", "[attach]", "[new]", "PREVIEW pane:", "term-main", "pane:", "selected ", " live "} {
+	for _, forbidden := range []string{"Select terminal source state target", "DETAIL", "TARGET", "TERMINAL", "[attach]", "[new]", "PREVIEW pane:", "pane:", "selected "} {
 		if strings.Contains(plain, forbidden) {
 			t.Fatalf("picker must not render management table/detail content %q, got %#v", forbidden, content.Lines)
 		}
@@ -907,8 +907,8 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 
 	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
 	if !strings.Contains(content.Lines[0].PlainString(), "search: 日志") ||
-		!strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal") ||
-		!strings.Contains(content.Lines[2].PlainString(), "日志🚀") ||
+		!strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal  Create a new terminal") ||
+		!strings.Contains(content.Lines[2].PlainString(), "○ term-2 日志🚀  live @pane-2") ||
 		strings.Contains(plainLines(content.Lines), "shell") ||
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
@@ -939,10 +939,9 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal") ||
-		!strings.Contains(content.Lines[2].PlainString(), "shell") ||
-		!strings.Contains(content.Lines[3].PlainString(), "远程🚀") ||
-		strings.Contains(content.Lines[3].PlainString(), "pool") ||
+	if !strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal  Create a new terminal") ||
+		!strings.Contains(content.Lines[2].PlainString(), "● shell  live @pane-main") ||
+		!strings.Contains(content.Lines[3].PlainString(), "○ term-pool 远程🚀  running @pool") ||
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected pane and pool rows, got %#v", content.Lines)
 	}

@@ -1267,7 +1267,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 - 单个 pane 的产品风格参考 `tuiv2` 截图中的紫色 accent 细边框、顶部 owner/action token 和内容区裁切；切片 88 后默认 theme 已改为紫色 accent + 深色 chrome，但仍必须通过真实截图级复核确认是否达标。
 - 右上角消息参考现代 CLI/TUI 的 toast：实体卡片、短文本、severity 或 accent 侧边，不改变 pane layout；复制成功等短反馈可以使用这种形态。
 - modal/overlay 参考现代 command palette 的简单弹出框：前景可以有标题、搜索行和必要列表项，但快速入口默认不做 page-sized 大卡片或重背景填充。
-- Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的内容层不能退回工程表格：搜索行统一使用短 search affordance，selected row 必须有强视觉 marker。Terminal Picker 保持 compact search/list/create，不显示 selected hint、terminal id、state、target 或内容区 action row；Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 才按各自页面语义显示 detail / preview / context / input 或 action row。
+- Terminal Picker、Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 的内容层不能退回工程表格：搜索行统一使用短 search affordance，selected row 必须有强视觉 marker。Terminal Picker 保持 compact search/list/create，create row 显示短说明，terminal row 可显示短 terminal id、title、state 和 `@location/source`；不显示 selected hint、target、detail/preview 或内容区 action row。Terminal Pool、Workbench Tree、Prompt、Help 和 copy-history 才按各自页面语义显示 detail / preview / context / input 或 action row。
 - copy-history 的内容层必须有清晰的 search row、match state、scrollbar/status row 和历史行层级；这些视觉元素只能来自 authoritative `HistoryWindow` 投影，不能为了显示效果从 live surface fallback。
 - overlay 不要求灰度遮罩背景；中文、emoji、CJK、combining mark 或 ambiguous width 字符若无法安全套用 dim 样式，必须优先保证文本可见和宽度正确，不得为了背景灰度让非英文文本消失。
 - floating pane、Prompt、Help 和 Workbench Tree 后续都必须使用 styled chrome；它们可以有不同尺寸和内容密度，但不得绕过 render framework 直接写临时线框。
@@ -1504,7 +1504,7 @@ Terminal Picker 真实交互深化的目标是把一期静态列表推进为可�
 - 上下方向键移动 selected row，并且在列表内循环；selected row 必须有明确高亮。
 - `Enter` 确认 selected row 后，当前可证明的行为是 focus 对应 pane、关闭 overlay 并显示 toast 反馈。
 - 点击 picker row 与 `Enter` 使用同一 attach/focus/close overlay 语义；不得写第二套路由。
-- picker 只显示 compact search/list rows；不得显示 `DETAIL/TARGET/TERMINAL` 大块、terminal id/state/target、selected hint 或内容区 `[attach]/[new]` 按钮。
+- picker 只显示 compact search/list rows；行内可显示短 terminal id、title、state 和 `@location/source`，但不得显示 `DETAIL/TARGET/TERMINAL` 大块、target、selected hint 或内容区 `[attach]/[new]` 按钮。
 - `+ new terminal` row 必须通过 terminal service create effect/result 接线；result 到达前不得伪造 terminal 生命周期。
 - overlay cursor、列表行和 row hit region 必须按 terminal cell width 裁切，emoji、CJK、combining mark 和 styled cell 不得破坏 overlay border 或整行宽度。
 

@@ -26,6 +26,7 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			Title:      paneTitle(pane),
 			Kind:       pane.Kind,
 			TerminalID: terminalID,
+			Location:   pane.ID,
 			Active:     pane.Active,
 		}
 		if !matchesTerminalPickerQuery(item, query) {
@@ -47,6 +48,7 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			Title:      terminalPoolTitle(poolItem),
 			Kind:       PaneTerminalLive,
 			TerminalID: poolItem.TerminalID,
+			Location:   terminalPoolPickerLocation(),
 			Active:     poolItem.Attached,
 			FromPool:   true,
 			PoolState:  poolItem.State,
@@ -62,6 +64,7 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			Title:      "current pane",
 			Kind:       PaneEmpty,
 			TerminalID: "none",
+			Location:   shell.ActivePaneID,
 			Active:     true,
 		})
 	}
@@ -201,6 +204,10 @@ func pickerTerminalID(root Root, pane PaneState) string {
 	return ""
 }
 
+func terminalPoolPickerLocation() string {
+	return "pool"
+}
+
 func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if query == "" {
 		return true
@@ -208,6 +215,7 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	return strings.Contains(strings.ToLower(item.Title), query) ||
 		strings.Contains(strings.ToLower(item.PaneID), query) ||
 		strings.Contains(strings.ToLower(item.TerminalID), query) ||
+		strings.Contains(strings.ToLower(item.Location), query) ||
 		strings.Contains(strings.ToLower(string(item.Kind)), query) ||
 		strings.Contains(strings.ToLower(item.PoolState), query)
 }

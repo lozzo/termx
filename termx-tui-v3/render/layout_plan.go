@@ -230,8 +230,8 @@ func measureCompactOverlay(content ContentVM, viewport Rect) Rect {
 	for _, line := range content.Lines {
 		lineWidth = maxInt(lineWidth, line.Width())
 	}
-	width := minInt(maxInt(lineWidth+8, 28), 48)
-	height := minInt(maxInt(len(content.Lines)+2, 4), 8)
+	width := minInt(maxInt(lineWidth+10, 56), 72)
+	height := minInt(maxInt(len(content.Lines)+2, 4), 10)
 	if width > viewport.W-4 {
 		width = maxInt(8, viewport.W-2)
 	}

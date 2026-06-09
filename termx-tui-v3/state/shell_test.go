@@ -325,7 +325,7 @@ func TestTerminalPickerItemsMergeTerminalPoolAndWorkspacePanes(t *testing.T) {
 	}
 
 	items := TerminalPickerItems(root)
-	if len(items) != 3 || !items[0].CreateNew || items[1].PaneID != DefaultPaneID || items[2].TerminalID != "term-pool" || !items[2].FromPool {
+	if len(items) != 3 || !items[0].CreateNew || items[1].PaneID != DefaultPaneID || items[1].Location != DefaultPaneID || items[2].TerminalID != "term-pool" || items[2].Location != "pool" || !items[2].FromPool {
 		t.Fatalf("expected create row plus pane item and deduped pool item, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("远程")

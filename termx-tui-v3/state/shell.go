@@ -213,6 +213,7 @@ type TerminalPickerItem struct {
 	Title      string
 	Kind       PaneKind
 	TerminalID string
+	Location   string
 	Active     bool
 	Selected   bool
 	FromPool   bool

@@ -311,12 +311,60 @@ func terminalPickerLine(row state.TerminalPickerItem) Line {
 			styledCell("+", StyleInfo),
 			NewCell(" "),
 			styledCell(row.Title, style),
+			NewCell("  "),
+			styledCell("Create a new terminal", StyleMuted),
 		}}
 	}
-	return Line{Cells: []Cell{
+	observed := "○"
+	observedStyle := StyleMuted
+	if row.Active {
+		observed = "●"
+		observedStyle = StyleSuccess
+	}
+	idText := strings.TrimSpace(row.TerminalID)
+	stateText := terminalPickerStateLabel(row)
+	locationText := terminalPickerLocationLabel(row)
+	cells := []Cell{
 		styledCell(marker, style),
+		styledCell(observed, observedStyle),
+		NewCell(" "),
+	}
+	if idText != "" && idText != "none" {
+		cells = append(cells, styledCell(idText, StyleMuted), NewCell(" "))
+	}
+	cells = append(cells,
 		styledCell(row.Title, style),
-	}}
+		NewCell("  "),
+		styledCell(stateText, terminalPoolStateStyle(stateText)),
+	)
+	if locationText != "" {
+		cells = append(cells, NewCell(" "), styledCell(locationText, StyleMuted))
+	}
+	return Line{Cells: cells}
+}
+
+func terminalPickerStateLabel(row state.TerminalPickerItem) string {
+	if strings.TrimSpace(row.PoolState) != "" {
+		return row.PoolState
+	}
+	switch row.Kind {
+	case state.PaneTerminalLive:
+		return "live"
+	case state.PaneExited:
+		return "exited"
+	case state.PaneEmpty:
+		return "empty"
+	default:
+		return string(row.Kind)
+	}
+}
+
+func terminalPickerLocationLabel(row state.TerminalPickerItem) string {
+	location := strings.TrimSpace(row.Location)
+	if location == "" {
+		return ""
+	}
+	return "@" + location
 }
 
 func terminalPickerSearchLine(query string) Line {
