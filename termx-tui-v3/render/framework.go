@@ -2171,18 +2171,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
 	}
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
-	title := floating.Title
-	if title == "" {
-		title = floating.ID
-	}
-	state := "float"
-	if floating.Active {
-		state = paneChromeRunningGlyph() + " float"
-	}
-	if floating.Collapsed {
-		state = paneChromeFloatingCollapseGlyph() + " collapsed"
-	}
-	renderChromeCardTitle(c, rect, title, state, paneChromeCloseActionText(), style, owner, LayerFloating)
+	renderFloatingChromeActions(c, rect, style, owner)
 	if rect.W >= 2 && rect.H >= 2 && floating.Chrome.ShowResizeHandle {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "v", style, owner, LayerFloating)
 	}
@@ -2191,6 +2180,39 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		contentLines = renderContent(c, floating.Content, layout.ContentRect)
 	}
 	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentLines}
+}
+
+func renderFloatingChromeActions(c *canvas, rect Rect, style StyleToken, owner string) {
+	items := floatingChromeActionItems(rect.W)
+	text := paneChromeActionTextFromItems(items)
+	width := DisplayWidth(text)
+	if width <= 0 {
+		return
+	}
+	actionX := rect.X + rect.W - width - 2
+	if actionX < rect.X+2 {
+		return
+	}
+	c.overlayTextStyled(actionX, rect.Y, width, text, style, owner, LayerFloating)
+}
+
+// floating 没有分屏动作；右上角只复用 pane chrome 的括号化可用动作。
+func floatingChromeActionItems(width int) []paneChromeActionItem {
+	if width < 8 {
+		return nil
+	}
+	items := []paneChromeActionItem{
+		{Text: paneChromeBracketToken(paneChromeZoomGlyph()), ActionID: ActionFloatingRaise.String()},
+		{Text: paneChromeBracketToken(paneChromeCloseGlyph()), ActionID: ActionFloatingClose.String()},
+	}
+	if paneChromeActionItemsWidth(items) <= maxInt(0, width-6) {
+		return items
+	}
+	closeOnly := []paneChromeActionItem{{Text: paneChromeBracketToken(paneChromeCloseGlyph()), ActionID: ActionFloatingClose.String()}}
+	if paneChromeActionItemsWidth(closeOnly) <= maxInt(0, width-5) {
+		return closeOnly
+	}
+	return nil
 }
 
 func renderContent(c *canvas, content ContentVM, rect Rect) []Line {

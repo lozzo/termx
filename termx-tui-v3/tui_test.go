@@ -138,12 +138,12 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		t.Fatalf("pane command smoke missing styled active pane ANSI: %#v", cases["pane-command-flow"].ANSILines)
 	}
 	assertNoASCIIChrome(t, "pane-command-flow", cases["pane-command-flow"])
-	if len(cases["visual-audit-current"].Lines) != 40 || render.DisplayWidth(cases["visual-audit-current"].Lines[0]) != 120 {
-		t.Fatalf("visual audit smoke must use fixed 120x40 viewport, got lines=%d width=%d", len(cases["visual-audit-current"].Lines), render.DisplayWidth(cases["visual-audit-current"].Lines[0]))
+	if len(cases["visual-audit-current"].Lines) != 40 || render.DisplayWidth(cases["visual-audit-current"].Lines[0]) != 140 {
+		t.Fatalf("visual audit smoke must use fixed 140x40 viewport, got lines=%d width=%d", len(cases["visual-audit-current"].Lines), render.DisplayWidth(cases["visual-audit-current"].Lines[0]))
 	}
 	if !frameContains(cases["visual-audit-current"].Lines, "visual review") ||
 		!frameContains(cases["visual-audit-current"].Lines, "visual review") ||
-		!frameContains(cases["visual-audit-current"].Lines, "quick actio") {
+		!frameContains(cases["visual-audit-current"].Lines, "[]─[]") {
 		t.Fatalf("visual review smoke missing fixed visual markers: %#v", cases["visual-audit-current"].Lines)
 	}
 	if frameContains(cases["visual-audit-current"].Lines, "⇄2") ||
@@ -211,7 +211,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame) {
 	t.Helper()
 	review := cases["visual-audit-current"]
-	requiredReview := []string{"  main", "1 main ", "2 logs ", " ", "┴", "visual review", "┌ quick actio", "[Ctrl] • [P] PANE", "float:"}
+	requiredReview := []string{"  main", "1 main  ▎ 2 logs  ", "┴", "visual review", "┌───────────────────[]─[]─┐", "No terminal attached", "└──────────────────────────v┘", "[Ctrl] • [P] PANE", "[W] WORKSPACE", "[V] COPY", "[G] GLOBAL", "ws:main float:1 terminals:1"}
 	for _, marker := range requiredReview {
 		if !frameContains(review.Lines, marker) {
 			t.Fatalf("visual review smoke missing chrome marker %q: %#v", marker, review.Lines)

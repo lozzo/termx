@@ -1082,7 +1082,10 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendChar("t")
 	sendKey(input.KeyEsc)
 	floatingFrame := lastFrame(t, host.Frames())
-	if len(runtime.State().Shell.Floatings) != 1 || !frameContains(floatingFrame, "floating") || !frameContains(floatingFrame, render.DefaultPaneChromeGlyphs().Running+" float") {
+	if len(runtime.State().Shell.Floatings) != 1 ||
+		!frameContains(floatingFrame, "No terminal attached floating") ||
+		!frameContains(floatingFrame, "["+render.DefaultPaneChromeGlyphs().Zoom+"]─["+render.DefaultPaneChromeGlyphs().Close+"]") ||
+		frameContains(floatingFrame, render.DefaultPaneChromeGlyphs().Running+" float") {
 		t.Fatalf("expected floating pane product shell content, shell=%#v frame=%#v", runtime.State().Shell, floatingFrame.Lines)
 	}
 	floatingClose := frameActionHitRegion(t, floatingFrame, "floating.close", "floating-1")

@@ -572,11 +572,17 @@ func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	}})
 	frame := result.Frame()
 
-	if !linesContain(frame.Lines, "浮窗🚀") || !linesContain(frame.Lines, paneChromeRunningGlyph()+" float") || !linesContain(frame.Lines, "floating body 世界") {
-		t.Fatalf("expected floating title/content, got %#v", frame.Lines)
+	if !linesContain(frame.Lines, paneChromeBracketToken(paneChromeZoomGlyph())+"─"+paneChromeBracketToken(paneChromeCloseGlyph())) || !linesContain(frame.Lines, "floating body 世界") {
+		t.Fatalf("expected floating bracket actions/content, got %#v", frame.Lines)
+	}
+	if linesContain(frame.Lines, paneChromeRunningGlyph()+" float") || linesContain(frame.Lines, "──── ·") {
+		t.Fatalf("floating chrome should not render old title/status strip, got %#v", frame.Lines)
 	}
 	if !styledLinesContain(frame.StyledLines, "┌", StyleAccent) || !styledLinesContain(frame.StyledLines, "┘", StyleAccent) {
 		t.Fatalf("active floating border should use accent style, got %#v", frame.StyledLines)
+	}
+	if !styledLinesContainText(frame.StyledLines, paneChromeBracketToken(paneChromeZoomGlyph()), StyleAccent) || !styledLinesContainText(frame.StyledLines, paneChromeBracketToken(paneChromeCloseGlyph()), StyleAccent) {
+		t.Fatalf("floating actions should keep active accent style, got %#v", frame.StyledLines)
 	}
 	layer := firstLayer(t, result, LayerFloating)
 	if layer.Rect != (Rect{X: 8, Y: 4, W: 36, H: 8}) {

@@ -40,6 +40,24 @@ func TestPaneChromeActionTextShowsWiredSplitAndCloseActions(t *testing.T) {
 	}
 }
 
+func TestFloatingChromeActionTextKeepsBracketedPaneChromeWithoutSplit(t *testing.T) {
+	ResetPaneChromeGlyphs()
+	defer ResetPaneChromeGlyphs()
+
+	glyphs := DefaultPaneChromeGlyphs()
+	got := paneChromeActionTextFromItems(floatingChromeActionItems(30))
+	want := "[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
+	if got != want {
+		t.Fatalf("floating actions got=%q want=%q", got, want)
+	}
+	if got := paneChromeActionTextFromItems(floatingChromeActionItems(8)); got != "["+glyphs.Close+"]" {
+		t.Fatalf("narrow floating should degrade to close-only action, got=%q", got)
+	}
+	if got := paneChromeActionTextFromItems(floatingChromeActionItems(7)); got != "" {
+		t.Fatalf("too-narrow floating should hide action text, got=%q", got)
+	}
+}
+
 func TestSetPaneChromeGlyphsAllowsUTF8Overrides(t *testing.T) {
 	ResetPaneChromeGlyphs()
 	defer ResetPaneChromeGlyphs()

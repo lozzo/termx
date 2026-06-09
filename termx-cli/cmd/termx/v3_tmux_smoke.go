@@ -663,7 +663,7 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "140", "-y", "40", "-s", session, "/bin/sh", scriptPath); err != nil {
 		return v3TmuxVisualCompareResult{}, err
 	}
-	if err := waitForTmuxCapture(ctx, target, "quick actio", 5*time.Second); err != nil {
+	if err := waitForTmuxCapture(ctx, target, "[]─[]", 5*time.Second); err != nil {
 		return v3TmuxVisualCompareResult{}, err
 	}
 	currentANSI, err := captureTmuxPane(ctx, target, true)
@@ -758,7 +758,7 @@ func v3VisualTargetPlain() string {
 		"│ok   termx-tui-v3/render                                                                              │ emoji 🚀 and 中文                 │",
 		"│>                                                                                                     │                                   │",
 		"│                                                                                                      │                                   │",
-		"│                                                                                                      │ ┌ quick actions ─────────  ┐     │",
+		"│                                                                                                      │ ┌───────────────────[]─[]─┐     │",
 		"│                                                                                                      │ │ No terminal attached      │     │",
 		"│                                                                                                      │ │                           │     │",
 		"│                                                                                                      │ │ Attach existing           │     │",

@@ -774,6 +774,11 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	if raise < 0 || close < 0 || move < 0 || resize < 0 || pane < 0 || raise > pane || close > pane || move > pane || resize > pane {
 		t.Fatalf("floating hit regions should precede tiled pane regions, got %#v", plan.HitRegions)
 	}
+	if plan.HitRegions[raise].Rect.W != DisplayWidth(paneChromeBracketToken(paneChromeZoomGlyph())) ||
+		plan.HitRegions[close].Rect.W != DisplayWidth(paneChromeBracketToken(paneChromeCloseGlyph())) ||
+		plan.HitRegions[raise].Rect.X >= plan.HitRegions[close].Rect.X {
+		t.Fatalf("floating action hit regions should match visible bracket slots, got raise=%#v close=%#v", plan.HitRegions[raise], plan.HitRegions[close])
+	}
 	if plan.HitRegions[move].Rect != paneChromeRect(plan.Floatings[0].Rect) {
 		t.Fatalf("floating title drag should cover chrome title row, got %#v", plan.HitRegions[move])
 	}

@@ -377,12 +377,30 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 		return out
 	}
 	id := floating.Floating.ID
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingActionRect(floating.Rect), PaneID: id, ActionID: ActionFloatingClose.String()}, viewport)
+	out = appendFloatingActionRegions(out, floating.Rect, id, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingResizeDrag.String()}, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingMoveDrag.String()}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
 		out = appendTranslatedRegions(out, floating.Floating.Content.HitRegions, floating.ContentRect, viewport)
 		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: id, ActionID: ActionFloatingRaise.String()}, viewport)
+	}
+	return out
+}
+
+func appendFloatingActionRegions(out []HitRegion, rect Rect, paneID string, viewport Rect) []HitRegion {
+	actionRect := floatingActionRect(rect)
+	items := floatingChromeActionItems(rect.W)
+	x := actionRect.X
+	for i, item := range items {
+		if i > 0 {
+			x += 1
+		}
+		width := DisplayWidth(item.Text)
+		if width <= 0 {
+			continue
+		}
+		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: Rect{X: x, Y: actionRect.Y, W: width, H: actionRect.H}, PaneID: paneID, ActionID: item.ActionID}, viewport)
+		x += width
 	}
 	return out
 }
@@ -592,11 +610,11 @@ func paneActionRect(panel PanelVM, rect Rect) Rect {
 }
 
 func floatingActionRect(rect Rect) Rect {
-	if rect.W <= 0 {
+	width := paneChromeActionItemsWidth(floatingChromeActionItems(rect.W))
+	if rect.W <= 0 || width <= 0 {
 		return Rect{X: rect.X, Y: rect.Y, W: 0, H: 1}
 	}
-	width := minInt(DisplayWidth(paneChromeCloseActionText()), maxInt(0, rect.W-2))
-	return Rect{X: maxInt(rect.X, rect.X+rect.W-width-2), Y: rect.Y, W: width, H: 1}
+	return chromeActionRect(rect, width)
 }
 
 func chromeActionRect(rect Rect, width int) Rect {
