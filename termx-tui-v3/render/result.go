@@ -58,6 +58,7 @@ type StyleToken string
 const (
 	StyleAccent              StyleToken = "accent"
 	StyleForeground          StyleToken = "foreground"
+	StyleStrongForeground    StyleToken = "strong-foreground"
 	StyleMuted               StyleToken = "muted"
 	StyleStatus              StyleToken = "status"
 	StyleStatusAccent        StyleToken = "status-accent"
@@ -251,6 +252,8 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(theme.Accent, true)
 	case StyleForeground:
 		return sgrForeground(theme.ChromeFG, false)
+	case StyleStrongForeground:
+		return sgrForeground(theme.ChromeFG, true)
 	case StyleMuted:
 		return sgrForeground(theme.Muted, false) + "\x1b[2m"
 	case StyleStatus:
@@ -314,17 +317,17 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	case StyleOverlay:
 		return sgrForegroundBackground(theme.ChromeFG, theme.OverlayBG, false)
 	case StylePicker:
-		return sgrForegroundBackground(theme.ChromeFG, pickerBG(theme), false)
+		return sgrForeground(theme.ChromeFG, false)
 	case StylePickerMuted:
-		return sgrForegroundBackground(theme.Muted, pickerBG(theme), false) + "\x1b[2m"
+		return sgrForeground(theme.Muted, false) + "\x1b[2m"
 	case StylePickerAccent:
-		return sgrForegroundBackground(theme.Accent, pickerBG(theme), true)
+		return sgrForeground(theme.Accent, true)
 	case StylePickerInfo:
-		return sgrForegroundBackground(theme.Info, pickerBG(theme), true)
+		return sgrForeground(theme.Info, true)
 	case StylePickerSuccess:
-		return sgrForegroundBackground(theme.Success, pickerBG(theme), true)
+		return sgrForeground(theme.Success, true)
 	case StylePickerMatch:
-		return sgrForegroundBackground(theme.Warning, pickerBG(theme), true)
+		return sgrForeground(theme.Warning, true)
 	case StyleToast:
 		return sgrForegroundBackground(theme.ChromeFG, theme.ToastBG, false)
 	case StyleToastAccent:
@@ -332,10 +335,6 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 	default:
 		return "\x1b[1m"
 	}
-}
-
-func pickerBG(theme Theme) string {
-	return mixHostColor(theme.HostBG, theme.Accent, 0.10)
 }
 
 func headerWorkspaceBG(theme Theme) string {

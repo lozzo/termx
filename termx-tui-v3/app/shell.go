@@ -574,7 +574,6 @@ func createTerminalPrompt(targetPaneID string) state.PromptState {
 	}
 	return state.PromptState{
 		Title:       "Create Terminal",
-		Context:     "name is required; command, workdir, tags are optional",
 		Purpose:     "terminal.create",
 		TargetID:    targetPaneID,
 		Command:     []string{shellCommand},
@@ -584,7 +583,6 @@ func createTerminalPrompt(targetPaneID string) state.PromptState {
 			{Key: "name", Label: "name", Required: true, Placeholder: filepath.Base(shellCommand)},
 			{Key: "command", Label: "command", Placeholder: shellCommand},
 			{Key: "workdir", Label: "workdir", Value: workdir},
-			{Key: "tags", Label: "tags", Placeholder: "role=dev env=test"},
 		},
 	}
 }
@@ -604,15 +602,11 @@ func terminalCreateRequestFromPrompt(prompt state.PromptState) (TerminalPoolCrea
 	if len(command) == 0 {
 		command = services.DefaultTerminalCommand()
 	}
-	tags, err := parsePromptTags(prompt.FieldValue("tags"))
-	if err != nil {
-		return TerminalPoolCreateRequestMsg{}, err
-	}
 	workdir := strings.TrimSpace(prompt.FieldValue("workdir"))
 	if workdir == "" {
 		workdir = strings.TrimSpace(prompt.Workdir)
 	}
-	return TerminalPoolCreateRequestMsg{Title: name, Command: command, CWD: workdir, Tags: tags}, nil
+	return TerminalPoolCreateRequestMsg{Title: name, Command: command, CWD: workdir}, nil
 }
 
 func parsePromptCommand(value string) ([]string, error) {
@@ -661,25 +655,6 @@ func parsePromptCommand(value string) ([]string, error) {
 	}
 	flush(false)
 	return args, nil
-}
-
-func parsePromptTags(value string) (map[string]string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil, nil
-	}
-	parts := strings.Fields(value)
-	tags := make(map[string]string, len(parts))
-	for _, part := range parts {
-		key, tagValue, ok := strings.Cut(part, "=")
-		key = strings.TrimSpace(key)
-		tagValue = strings.TrimSpace(tagValue)
-		if !ok || key == "" {
-			return nil, fmt.Errorf("invalid tag syntax")
-		}
-		tags[key] = tagValue
-	}
-	return tags, nil
 }
 
 func terminalPickerItemAt(items []state.TerminalPickerItem, row int) (state.TerminalPickerItem, bool) {

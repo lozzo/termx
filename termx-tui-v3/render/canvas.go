@@ -438,12 +438,6 @@ func cellSegmentsFromLine(line Line, width int, owner string, layer LayerKind) [
 }
 
 func lineFillStyle(line Line) StyleToken {
-	for _, cell := range line.Cells {
-		switch cell.Style {
-		case StylePicker, StylePickerMuted, StylePickerAccent, StylePickerInfo, StylePickerSuccess, StylePickerMatch:
-			return StylePicker
-		}
-	}
 	return ""
 }
 

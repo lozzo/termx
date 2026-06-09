@@ -182,28 +182,16 @@ func buildPromptContent(shell state.ShellStore) ContentVM {
 	if prompt.Destructive {
 		lines = append(lines, Line{Cells: []Cell{styledCell(" ! confirm ", StyleWarning), NewCell("type " + prompt.ConfirmText + " before submit")}})
 	}
-	if prompt.LastResult != "" && !prompt.Submitted {
-		lines = append(lines, detailHeaderLine("status", prompt.LastResult))
-	}
-	actionOffset := len(lines)
-	lines = append(lines,
-		contentActionLine("submit", "Submit"),
-		contentActionLine("cancel", "Cancel"),
-	)
 	return ContentVM{
 		Kind:   ContentPrompt,
 		Lines:  lines,
-		Status: "prompt: submit/cancel",
+		Status: "prompt",
 		Cursor: Cursor{Visible: true, Row: 1, Col: DisplayWidth("Name ") + DisplayWidth(value), Shape: CursorShapeBar},
-		HitRegions: []HitRegion{
-			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: ActionPromptSubmit.String()},
-			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPromptCancel.String()},
-		},
 	}
 }
 
 func buildPromptFormContent(prompt state.PromptState, title string) ContentVM {
-	lines := []Line{pageTitleLine(title, prompt.Context)}
+	lines := []Line{pageTitleLine(title, "")}
 	activeField := prompt.ActiveField
 	if activeField < 0 {
 		activeField = 0
@@ -220,23 +208,11 @@ func buildPromptFormContent(prompt state.PromptState, title string) ContentVM {
 			cursorCol = promptFormFieldValueCol(field) + DisplayWidth(field.Value)
 		}
 	}
-	if prompt.LastResult != "" && !prompt.Submitted {
-		lines = append(lines, detailHeaderLine("status", prompt.LastResult))
-	}
-	actionOffset := len(lines)
-	lines = append(lines,
-		contentActionLine("submit", "Submit"),
-		contentActionLine("cancel", "Cancel"),
-	)
 	return ContentVM{
 		Kind:   ContentPrompt,
 		Lines:  lines,
-		Status: "prompt: submit/cancel",
+		Status: "prompt",
 		Cursor: Cursor{Visible: true, Row: cursorRow, Col: cursorCol, Shape: CursorShapeBar},
-		HitRegions: []HitRegion{
-			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, ActionID: ActionPromptSubmit.String()},
-			{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, ActionID: ActionPromptCancel.String()},
-		},
 	}
 }
 
@@ -253,13 +229,13 @@ func promptFormFieldLine(field state.PromptFieldState, active bool) Line {
 	if value == "" && field.Placeholder != "" {
 		value = "[" + field.Placeholder + "]"
 	}
-	labelStyle := StyleMuted
+	labelStyle := StyleStrongForeground
 	if active {
 		labelStyle = StyleAccent
 	}
 	valueStyle := StyleForeground
 	if !valueSet {
-		valueStyle = StyleMuted
+		valueStyle = StyleStrongForeground
 	}
 	return Line{Cells: []Cell{
 		styledCell(label+": ", labelStyle),

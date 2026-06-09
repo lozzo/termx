@@ -7,16 +7,11 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 		return Layer{}
 	}
 	primitive := OverlayChromePrimitive(overlay, rect, contentRect)
-	if overlay.Content.Kind != ContentTerminalPicker {
-		c.fillStyledRect(rect, primitive.Style, primitive.Owner, primitive.Layer)
-	} else {
-		c.fillStyledRect(overlayInnerRect(rect), StylePicker, primitive.Owner, primitive.Layer)
-	}
-	chromeStyle := primitive.Style
+	c.fillStyledRect(rect, StyleForeground, primitive.Owner, primitive.Layer)
+	chromeStyle := StyleForeground
 	titleStyle := StyleAccent
 	titleAction := "esc"
 	if overlay.Content.Kind == ContentTerminalPicker {
-		chromeStyle = StyleForeground
 		titleStyle = StyleForeground
 		titleAction = ""
 	}

@@ -203,7 +203,7 @@ func TestInteractiveRuntimeTerminalPickerEnterOpensCreateTerminalForm(t *testing
 		t.Fatalf("create row enter should open form before create, got %#v", terminal.Creates)
 	}
 	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
-	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || prompt.Purpose != "terminal.create" || len(prompt.Fields) != 4 || prompt.Fields[0].Key != "name" {
+	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || prompt.Purpose != "terminal.create" || len(prompt.Fields) != 3 || prompt.Fields[0].Key != "name" {
 		t.Fatalf("create row enter should open create terminal form, overlay=%#v", runtime.State().Shell.Overlay)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -237,13 +237,6 @@ func TestInteractiveRuntimeCreateTerminalFormSubmitsTerminalCreate(t *testing.T)
 		t.Fatalf("send tab: %v", err)
 	}
 	sendChars("bash -lc 'echo hi'")
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}); err != nil {
-		t.Fatalf("send tab: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down to tags: %v", err)
-	}
-	sendChars("role=test env=dev")
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
 	}
@@ -254,7 +247,7 @@ func TestInteractiveRuntimeCreateTerminalFormSubmitsTerminalCreate(t *testing.T)
 		t.Fatalf("create form should call terminal create once, got %#v", terminal.Creates)
 	}
 	create := terminal.Creates[0]
-	if create.Title != "my-term" || len(create.Command) != 3 || create.Command[2] != "echo hi" || create.Tags["role"] != "test" || create.Tags["env"] != "dev" {
+	if create.Title != "my-term" || len(create.Command) != 3 || create.Command[2] != "echo hi" || len(create.Tags) != 0 {
 		t.Fatalf("unexpected create request %#v", create)
 	}
 	if runtime.State().Shell.Overlay.Open {

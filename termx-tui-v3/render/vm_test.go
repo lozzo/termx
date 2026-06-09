@@ -1096,8 +1096,8 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 	if content.Kind != ContentPrompt ||
 		!strings.Contains(content.Lines[0].PlainString(), "Rename Pane") ||
 		!strings.Contains(content.Lines[1].PlainString(), "NAME 日志🚀") ||
-		!contentHasAction(content, "prompt.submit") ||
-		!contentHasAction(content, "prompt.cancel") {
+		contentHasAction(content, "prompt.submit") ||
+		contentHasAction(content, "prompt.cancel") {
 		t.Fatalf("expected prompt content, got %#v", content)
 	}
 	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != DisplayWidth("Name 日志🚀") {
@@ -1106,21 +1106,23 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 
 	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
 		Title:       "Create Terminal",
-		Context:     "name is required; command, workdir, tags are optional",
 		ActiveField: 1,
 		Fields: []state.PromptFieldState{
 			{Key: "name", Label: "name", Value: "shell", Required: true},
 			{Key: "command", Label: "command", Value: "/bin/sh"},
 			{Key: "workdir", Label: "workdir", Value: "/tmp"},
-			{Key: "tags", Label: "tags", Placeholder: "role=dev env=test"},
 		},
 	})}).Shell.Overlay.Content
 	if !strings.Contains(content.Lines[0].PlainString(), "Create Terminal") ||
 		!strings.Contains(content.Lines[1].PlainString(), "name*: shell") ||
 		!strings.Contains(content.Lines[2].PlainString(), "command: /bin/sh") ||
-		!strings.Contains(content.Lines[4].PlainString(), "tags: [role=dev env=test]") ||
-		!contentHasAction(content, "prompt.submit") {
+		strings.Contains(plainLines(content.Lines), "name is required") ||
+		contentHasAction(content, "prompt.submit") ||
+		contentHasAction(content, "prompt.cancel") {
 		t.Fatalf("expected create terminal form content, got %#v", content.Lines)
+	}
+	if !lineHasStyledCell(content.Lines[1], "name*: ", StyleStrongForeground) {
+		t.Fatalf("expected prompt labels to use strong foreground, got %#v", content.Lines[1])
 	}
 	if content.Cursor.Row != 2 || content.Cursor.Col != DisplayWidth("command: /bin/sh") {
 		t.Fatalf("expected form cursor on active command field, got %#v", content.Cursor)

@@ -785,8 +785,8 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if !styledLinesContain(result.StyledLines(), "┌", StyleForeground) || !styledLinesContain(result.StyledLines(), "┐", StyleForeground) {
 		t.Fatalf("terminal picker border should keep foreground-only style, got %#v", result.StyledLines())
 	}
-	if !styledLinesContainStyle(result.StyledLines(), StylePicker) || styledLinesContainStyle(result.StyledLines(), StyleOverlay) {
-		t.Fatalf("terminal picker inner area should use picker style without overlay gray, got %#v", result.StyledLines())
+	if styledLinesContainStyle(result.StyledLines(), StyleOverlay) {
+		t.Fatalf("modal should not use gray overlay background, got %#v", result.StyledLines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 50)
 }

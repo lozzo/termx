@@ -83,6 +83,7 @@ func TestThemeTokenPaletteDrivesANSILines(t *testing.T) {
 			{Text: "accent", Width: 6, Style: StyleAccent, Safe: true},
 			{Text: " warn", Width: 5, Style: StyleWarning, Safe: true},
 			{Text: " fg", Width: 3, Style: StyleForeground, Safe: true},
+			{Text: " strong", Width: 7, Style: StyleStrongForeground, Safe: true},
 			{Text: " match", Width: 6, Style: StylePickerMatch, Safe: true},
 		}}},
 		Theme: Theme{
@@ -103,8 +104,11 @@ func TestThemeTokenPaletteDrivesANSILines(t *testing.T) {
 	if !strings.Contains(frame.ANSILines[0], "\x1b[38;2;221;238;255m fg") || strings.Contains(frame.ANSILines[0], "48;2;221;238;255") {
 		t.Fatalf("foreground token should use chrome foreground without background, got %#v", frame.ANSILines)
 	}
-	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;160;176;192m\x1b[48;2;0;0;0m match") {
-		t.Fatalf("picker match should use warning foreground on picker background, got %#v", frame.ANSILines)
+	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;221;238;255m strong") {
+		t.Fatalf("strong foreground token should use bold chrome foreground without background, got %#v", frame.ANSILines)
+	}
+	if !strings.Contains(frame.ANSILines[0], "\x1b[1;38;2;160;176;192m match") || strings.Contains(frame.ANSILines[0], "\x1b[48;2;") {
+		t.Fatalf("picker match should use warning foreground without modal background, got %#v", frame.ANSILines)
 	}
 	if frame.Theme.HostFG == "" || frame.Theme.StatusBG == "" {
 		t.Fatalf("frame theme should be filled with fallback values, got %#v", frame.Theme)

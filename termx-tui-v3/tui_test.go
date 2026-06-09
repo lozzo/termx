@@ -117,7 +117,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["prompt-overlay"].Lines, "Command Prompt") ||
 		!frameContains(cases["prompt-overlay"].Lines, "重命名") ||
-		!frameContains(cases["prompt-overlay"].Lines, "[submit]  Submit") {
+		frameContains(cases["prompt-overlay"].Lines, "[submit]  Submit") ||
+		frameContains(cases["prompt-overlay"].Lines, "[cancel]  Cancel") {
 		t.Fatalf("prompt overlay smoke missing prompt content: %#v", cases["prompt-overlay"].Lines)
 	}
 	if !frameContains(cases["help-overlay"].Lines, "Help") ||
