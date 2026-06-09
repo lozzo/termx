@@ -18,6 +18,8 @@
 - resize 后按新 content rect 正确展示的 live 内容和 history 内容。
 - 空白区域有轻量占位，不再看起来像透明或渲染缺失。
 - 内容被裁切时有明确符号提示，例如右侧裁切用 `>`，下方裁切用 `v`。
+- live 更新可以合并和丢中间帧，只保证 TUI 最终展示 core-v2 的最新 terminal 投影。
+- history 内容要尽可能还原真实终端历史，不得长期停留在纯文本行；颜色、样式、宽度、链接等格式需要进入 core-v2、protocol 和 TUI 渲染链路。
 
 ## 2. 基本原则
 
@@ -141,6 +143,75 @@ copy mode 缺 history.window
   -> response token/cols 匹配后再渲染
 ```
 
+### 2.5 live 是 latest-wins 投影，不要求逐帧显示
+
+live 内容本质上是 core-v2 当前 terminal surface 的投影。TUI 不需要展示每一个中间状态，只需要在可绘制时展示最新状态。
+
+只读参考：
+
+- 旧 `termx-core/attachment_stream.go` 已有 ready/ack、`forceLatestScreen`、替换 queued screen update 和按需拉最新 screen 的思路。
+- 旧 `tuiv2/app/cursor_writer.go` 已有 pending frame 覆盖、batch flush 和必要 reset/resize frame 立即刷新的思路。
+
+v3 后续实现要迁移这个产品语义，而不是复制旧 runtime：
+
+- terminal live update 可以按 terminal id 合并，队列积压时保留最新 surface revision，丢弃旧的 live snapshot。
+- render/frame sink 忙时不反压 core-v2 输出到不可控积压，只记录 dirty/latest，再在下一次可绘制机会渲染最新投影。
+- resize、terminal switch、reset baseline、exit/error、attach/detach 这类语义边界不能被普通 live 帧覆盖掉；它们要么立即刷新，要么强制让下一帧以新 baseline 渲染。
+- stale live revision 不能覆盖较新的 live surface。
+- 最终帧必须对应当前 terminal id、当前 content rect 和最新已接受 revision。
+
+例子：后端快速输出 1000 次。
+
+```text
+core-v2 live revisions:
+  r1, r2, r3, ..., r1000
+
+TUI 正在忙:
+  可以丢弃 r1-r999 的中间绘制请求
+
+下一次 render:
+  使用 r1000 的 terminal surface
+  frame 里能看到最新屏幕状态
+```
+
+### 2.6 history 必须保留终端格式
+
+history 是长期数据，不是 live screen 的临时截图；越接近真实终端历史，copy/search/preview 才越可信。
+
+当前明确缺口：
+
+- `termx-core-v2/history.Cell` 目前只有 `Text`。
+- `termx-core-v2/history.VisualRow` 目前只有 `Text`。
+- `termx-core-v2/protocol_service.go` 当前把 history row 输出为 `protocol.CompactRow{Text: row.Text}`。
+
+这说明现在的 history path 只能还原纯文本，不能还原真实格式。
+
+后续目标：
+
+- core-v2 logical line payload 要能表达结构化 cell 或 run：content、display width、foreground/background、bold/italic/underline/blink/reverse/strikethrough、link url/params。
+- `HistoryWindow.Rows` 不能只携带 `Text`；需要携带可投影后的 styled cells/runs，同时保留 plain text 作为搜索、复制、测试快照的派生视图。
+- protocol 已有 `CompactRow` / `CompactRowRun` / `CompactRowCell` 能表达 style、width 和 link；core-v2 history window 应优先输出这些结构，而不是降级成 `Text`。
+- TUI copy/history renderer 要从 `CompactRow.DecodeCells()` 或等价结构生成 styled content cell；palette index、truecolor 和 SGR attrs 不能被误映射成 TermX theme token。
+- plain text 可以继续存在，但只能作为 copy/search 辅助，不是渲染 truth。
+
+例子：
+
+```text
+真实历史 logical line:
+  cells:
+    "ERR" fg=ansi:1 bold=true
+    " "   default
+    "build failed" fg=#ffcc00 underline=true
+
+HistoryWindow:
+  row keeps cells/runs + style metadata
+  plain text derivative: "ERR build failed"
+
+TUI render:
+  "ERR" 仍是红色/粗体
+  "build failed" 仍是黄色/下划线
+```
+
 ## 3. 建议切片顺序
 
 ### 3.1 切片 A：ContentViewport 合同
@@ -214,6 +285,9 @@ render content:
 - 如果 live surface / terminal extent 比 content rect 宽，返回 right overflow hint，右侧 chrome 显示 `>`。
 - 如果 live surface / terminal extent 比 content rect 高，返回 bottom overflow hint，底部 chrome 显示 `v`。
 - 如果 live surface / terminal extent 比 content rect 小，extent 外区域显示小圆点。
+- live update 按 terminal id 和 surface revision 合并，render 忙时可以丢弃中间 live 帧。
+- 最终渲染以最新 accepted live surface 为准，旧 revision 不得覆盖新 revision。
+- resize/reset/exit/attach 等语义边界不被普通 live coalescing 吞掉。
 
 例子 1：右侧裁切
 
@@ -286,10 +360,29 @@ overflow hints:
   right=true
 ```
 
+例子 5：live update 合并
+
+```text
+terminal id: term-main
+incoming live revisions:
+  41: "build 1%"
+  42: "build 2%"
+  ...
+  99: "build done"
+
+TUI frame sink 忙:
+  pending live projection 被替换为 revision 99
+
+render:
+  只需要显示 "build done"
+```
+
 验收：
 
 - `go test ./termx-tui-v3/render` 覆盖裁切、占位、ANSI、宽字符。
-- `go test ./termx-tui-v3/...` 覆盖 live projection 和 cursor。
+- `go test ./termx-tui-v3/...` 覆盖 live projection、cursor、surface revision stale guard 和 live coalescing。
+- burst live update harness 证明大量连续更新后队列有界、最终帧展示最新 revision。
+- resize/reset/exit/attach 语义边界不会被 live coalescing 丢掉。
 - tmux ANSI smoke 仍通过。
 
 ### 3.3 切片 C：Live resize 行为验收
@@ -330,26 +423,62 @@ active content rect: 78x20
 - tmux resize smoke 证明 PTY 内 `stty size` 等于 content rect。
 - frame 每一行宽度仍等于 viewport width。
 
-### 3.4 切片 D：Copy/History 内容深化
+### 3.4 切片 D：History styled payload 合同
 
-live 稳定后再做 history。
+live 稳定后，先补 history 格式合同，再做 copy/history UI。
 
 要做的事：
 
-- 继续只渲染 `HistoryStore.Rows`。
+- 将 core-v2 logical line payload 从纯 `Text` cell 扩展为能表达 terminal cell/run 的结构。
+- 让 projection 在 wrap/reflow 后保留 style、width、link 和 logical line metadata。
+- 让 `HistoryWindow.Rows` 携带 styled cells/runs，并保留 plain text derivative。
+- 让 protocol adapter 使用 `CompactRowFromCells` 或等价结构输出 history rows，不再只写 `CompactRow{Text: row.Text}`。
+- 保持 token、generation、cursor、logical line boundary 和 stale guard 语义不变。
+
+例子：
+
+```text
+core-v2 logical line:
+  cells:
+    {text:"OK", fg:"ansi:2", bold:true}
+    {text:" ", width:1}
+    {text:"deploy", fg:"#80ffea", link:"file://deploy.log"}
+
+protocol history row:
+  CompactRow.Runs or CompactRow.Cells contains style/link metadata
+
+TUI ContentVM:
+  Line.Cells includes ANSIStyle/link metadata
+```
+
+验收：
+
+- core-v2 history window 测试覆盖 styled logical line reflow 后 style 不丢。
+- protocol binary encode/decode 覆盖 history `CompactRow` style、width、link round trip。
+- tui-v3 copy/history projector 覆盖 styled history row 渲染，不把 `ansi:N` 重映射为 theme token。
+- plain text copy/search 仍可从 styled row 派生。
+
+### 3.5 切片 E：Copy/History 内容深化
+
+styled history payload 合同稳定后，再做 history UI。
+
+要做的事：
+
+- 继续只渲染 `HistoryStore.Rows`，但 row 内容必须是 authoritative styled cells/runs 的投影结果。
 - 使用 logical line marker 表达同一 logical line 的不同 visual row。
 - selection/search/cursor 都按 authoritative row 工作。
 - 历史行超宽时返回 right overflow hint，chrome 右边界显示 `>`。
 - history window 未覆盖上下边界时显示 `v` 或状态 token。
 - history 普通短行不画小圆点；只有存在 terminal-like extent 外区域时才复用 live 的小圆点策略。
+- 渲染时保留 history row 的 ANSI palette index、truecolor、bold/italic/underline/reverse/blink/strikethrough 和 link metadata。
 
 例子：
 
 ```text
 HistoryWindow rows:
   line 100 row 0: "git status"
-  line 101 row 0: "modified: a"
-  line 101 row 1: "modified: b"
+  line 101 row 0: "modified: a" fg=ansi:3
+  line 101 row 1: "modified: b" fg=ansi:3 underline=true
 
 render:
   "● git status"
@@ -377,10 +506,11 @@ render:
 
 - 缺 authoritative window 时显示 pending，不从 live fallback。
 - token/cols/terminal mismatch 时不渲染旧 history。
+- styled row、ANSI palette、truecolor、宽字符 width 和 link metadata 不丢。
 - selection/search 不被占位符和遮挡符号破坏。
 - mouse hit region 仍指向 authoritative row。
 
-### 3.5 切片 E：History resize rebind
+### 3.6 切片 F：History resize rebind
 
 history renderer 做好后，再处理 resize rebind。
 
@@ -413,7 +543,7 @@ UI:
 - stale response 不会覆盖新 window。
 - cursor/selection 的策略明确：要么重置，要么按 logical boundary 重新定位；不能半隐式保留。
 
-### 3.6 切片 F：Panel content 总验收
+### 3.7 切片 G：Panel content 总验收
 
 最后做一次总验收。
 
@@ -423,10 +553,11 @@ UI:
 - 双 pane live + inactive placeholder。
 - split resize 后 live 裁切。
 - copy mode pending。
-- copy mode loaded rows。
+- copy mode loaded styled rows。
 - floating pane content。
 - exited pane。
 - error pane。
+- live burst update latest-wins。
 
 例子：
 
@@ -437,7 +568,7 @@ UI:
 
 右 pane copy:
   "⌕ search rows:40"
-  "● git log"
+  "● git log" keeps original history style cells
 
 floating:
   "terminal exited code:0"
@@ -460,6 +591,8 @@ floating:
 - 不重做 pane chrome、header/footer 或 Terminal Picker。
 - 不把 renderer 改成直接读 runtime、service 或 protocol client。
 - 不在缺 authoritative history window 时伪造历史内容。
+- 不把 history 格式保真做成 TUI 侧猜测；格式必须从 core-v2 authoritative history payload 传下来。
+- 不为了性能丢掉 resize/reset/exit/attach 这类语义边界；只允许丢普通 live 中间帧。
 
 ## 5. 推荐夜间执行顺序
 
@@ -469,13 +602,14 @@ floating:
 2. Terminal Live 内容深化。
 3. Live resize 行为验收。
 
-这三步完成后，live panel 先具备稳定内容面板能力。
+这三步完成后，live panel 先具备稳定内容面板能力，并且具备 latest-wins 的性能语义。
 
 第二轮再做：
 
-1. Copy/History 内容深化。
-2. History resize rebind。
-3. Panel content 总验收。
+1. History styled payload 合同。
+2. Copy/History 内容深化。
+3. History resize rebind。
+4. Panel content 总验收。
 
 ## 6. 回滚点
 
