@@ -47,6 +47,10 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	if overlayLayer.Rect.W > 0 && overlayLayer.Rect.H > 0 {
 		layers = append(layers, overlayLayer)
 	}
+	popupLayer := renderOverlayPopup(c, plan.OverlayPopup)
+	if popupLayer.Rect.W > 0 && popupLayer.Rect.H > 0 {
+		layers = append(layers, popupLayer)
+	}
 
 	lines := c.lines()
 	return RenderResult{

@@ -13,6 +13,7 @@ type LayoutPlan struct {
 	Floatings          []FloatingLayoutPlan
 	Overlay            Rect
 	OverlayContentRect Rect
+	OverlayPopup       OverlayPopupLayoutPlan
 	Toasts             []Rect
 	HitRegions         []HitRegion
 	Cursor             Cursor
@@ -64,6 +65,7 @@ func MeasureLayout(shell ShellVM, viewport Rect) LayoutPlan {
 	plan.Floatings = measureFloatings(shell.Layout.Floating, viewport)
 	plan.Overlay = measureOverlay(shell.Overlay, viewport)
 	plan.OverlayContentRect = measureOverlayContentRect(shell.Overlay, plan.Overlay)
+	plan.OverlayPopup = measureOverlayPopup(shell.Overlay.Popup, plan.OverlayContentRect, viewport)
 	plan.Toasts = measureToasts(shell.Toasts, viewport)
 	plan.Cursor, plan.CursorRect = measureCursor(shell, plan)
 	plan.HitRegions = measureHitRegions(shell, plan)

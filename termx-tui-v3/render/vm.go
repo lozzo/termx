@@ -858,7 +858,12 @@ func (projector ShellProjector) buildOverlayVM(root state.Root, shell state.Shel
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentWorkbenchTree}),
 		}
 	case state.OverlayPrompt:
-		return OverlayVM{Kind: OverlayPrompt, Opaque: true, Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentPrompt})}
+		return OverlayVM{
+			Kind:    OverlayPrompt,
+			Opaque:  true,
+			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentPrompt}),
+			Popup:   buildPromptSuggestionPopupVM(shell.Overlay.Prompt),
+		}
 	case state.OverlayHelp:
 		return OverlayVM{Kind: OverlayHelp, Opaque: true, Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentHelp})}
 	default:

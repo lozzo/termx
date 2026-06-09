@@ -882,6 +882,41 @@ func TestFrameworkOpaqueOverlayOwnsCursor(t *testing.T) {
 	}
 }
 
+func TestFrameworkRendersOverlayPopupAbovePromptModal(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 34, H: 10}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("body")}},
+		}}},
+		Overlay: OverlayVM{
+			Kind:   OverlayPrompt,
+			Opaque: true,
+			Content: ContentVM{
+				Kind:  ContentPrompt,
+				Lines: []Line{NewLine("◆ Create Terminal"), NewLine("name*: shell"), NewLine("command: codex"), NewLine("workdir: /tmp/de")},
+			},
+			Popup: OverlayPopupVM{
+				Kind:      OverlayPopupPromptSuggestion,
+				AnchorRow: 4,
+				AnchorCol: 9,
+				Lines: []Line{
+					{Cells: []Cell{styledCell("┌ path: /tmp", StylePromptSuggestion)}},
+					{Cells: []Cell{styledCell("│ ▸ ", StylePromptSuggestionHit), styledCell("/tmp/dev/", StylePromptSuggestionHit)}},
+				},
+			},
+		},
+	}})
+
+	if len(result.Layers) < 2 || result.Layers[len(result.Layers)-2].Kind != LayerOverlay || result.Layers[len(result.Layers)-1].Kind != LayerPopup {
+		t.Fatalf("popup should be rendered after prompt overlay, layers=%#v", result.Layers)
+	}
+	if !strings.Contains(plainLines(result.Content), "/tmp/dev/") {
+		t.Fatalf("expected popup row to be visible above modal clipping, got %#v", result.Lines())
+	}
+}
+
 func assertFrameSize(t *testing.T, result RenderResult, width int, height int) {
 	t.Helper()
 	if result.Metadata.Width != width || result.Metadata.Height != height || len(result.Content) != height {

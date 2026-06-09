@@ -1128,7 +1128,7 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 		t.Fatalf("expected form cursor on active command field, got %#v", content.Cursor)
 	}
 
-	content = NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
+	promptVM := NewRenderVMBuilder().Build(state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{
 		Title:              "Create Terminal",
 		ActiveField:        2,
 		SuggestionFocused:  true,
@@ -1155,13 +1155,20 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 				},
 			},
 		},
-	})}).Shell.Overlay.Content
-	if !strings.Contains(plainLines(content.Lines), "path: /tmp") ||
-		!strings.Contains(plainLines(content.Lines), "▸ /tmp/dev/") ||
-		!strings.Contains(plainLines(content.Lines), "2-7/8") ||
-		strings.Contains(plainLines(content.Lines), "/tmp/d0/") ||
-		!lineHasStyledCell(content.Lines[10], "/tmp/dev/", StylePromptSuggestionHit) {
-		t.Fatalf("expected workdir suggestion rows, got %#v", content.Lines)
+	})})
+	content = promptVM.Shell.Overlay.Content
+	popup := promptVM.Shell.Overlay.Popup
+	if strings.Contains(plainLines(content.Lines), "path: /tmp") ||
+		strings.Contains(plainLines(content.Lines), "/tmp/dev/") {
+		t.Fatalf("prompt content should not own suggestion popup rows, got %#v", content.Lines)
+	}
+	if popup.Kind != OverlayPopupPromptSuggestion ||
+		!strings.Contains(plainLines(popup.Lines), "path: /tmp") ||
+		!strings.Contains(plainLines(popup.Lines), "▸ /tmp/dev/") ||
+		!strings.Contains(plainLines(popup.Lines), "2-7/8") ||
+		strings.Contains(plainLines(popup.Lines), "/tmp/d0/") ||
+		!lineHasStyledCell(popup.Lines[6], "/tmp/dev/", StylePromptSuggestionHit) {
+		t.Fatalf("expected workdir suggestion popup rows, got %#v", popup)
 	}
 	if content.Cursor.Row != 3 || content.Cursor.Col != DisplayWidth("workdir: /tmp/de") {
 		t.Fatalf("expected cursor on workdir field before suggestion rows, got %#v", content.Cursor)

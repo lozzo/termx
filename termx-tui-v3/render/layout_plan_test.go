@@ -656,6 +656,45 @@ func TestMeasureLayoutTerminalPickerShrinksPaddingOnTinyViewport(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutPromptSuggestionPopupEscapesModalContentRect(t *testing.T) {
+	shell := ShellVM{
+		Overlay: OverlayVM{
+			Kind:   OverlayPrompt,
+			Opaque: true,
+			Content: ContentVM{
+				Kind:  ContentPrompt,
+				Lines: []Line{NewLine("◆ Create Terminal"), NewLine("name*: shell"), NewLine("command: codex"), NewLine("workdir: /tmp/de")},
+			},
+			Popup: OverlayPopupVM{
+				Kind:      OverlayPopupPromptSuggestion,
+				AnchorRow: 4,
+				AnchorCol: 9,
+				Lines: []Line{
+					NewLine("┌ path: /tmp"),
+					NewLine("│ /tmp/demo/"),
+					NewLine("│ /tmp/dev/"),
+					NewLine("│ /tmp/delta/"),
+				},
+			},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
+	if plan.OverlayPopup.Rect.W <= 0 || plan.OverlayPopup.Rect.H != 4 {
+		t.Fatalf("expected measured prompt suggestion popup, plan=%#v", plan)
+	}
+	if plan.OverlayPopup.Rect.Y < 0 || plan.OverlayPopup.Rect.Y+plan.OverlayPopup.Rect.H > plan.Viewport.H {
+		t.Fatalf("popup should stay visible in viewport independent of modal content rect, content=%#v popup=%#v viewport=%#v", plan.OverlayContentRect, plan.OverlayPopup.Rect, plan.Viewport)
+	}
+	if plan.OverlayPopup.Rect.Y >= plan.OverlayContentRect.Y &&
+		plan.OverlayPopup.Rect.Y+plan.OverlayPopup.Rect.H <= plan.OverlayContentRect.Y+plan.OverlayContentRect.H {
+		t.Fatalf("popup should not be clipped to modal content rect, content=%#v popup=%#v", plan.OverlayContentRect, plan.OverlayPopup.Rect)
+	}
+	if plan.OverlayPopup.Rect.X != plan.OverlayContentRect.X+9 {
+		t.Fatalf("popup should anchor to prompt field value column, content=%#v popup=%#v", plan.OverlayContentRect, plan.OverlayPopup.Rect)
+	}
+}
+
 func TestMeasureLayoutTerminalPoolUsesPageSizedOverlay(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{Panels: []PanelVM{{

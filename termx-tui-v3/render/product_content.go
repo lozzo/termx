@@ -8,7 +8,6 @@ import (
 )
 
 const contentActionWidth = 12
-const promptSuggestionVisibleRows = 6
 
 // empty pane 内容只描述当前 pane 可执行的产品动作，不创建 terminal。
 func buildEmptyPaneContent(pane state.PaneState) ContentVM {
@@ -207,7 +206,6 @@ func buildPromptFormContent(prompt state.PromptState, title string) ContentVM {
 		lines = append(lines, promptFormFieldLine(field, active))
 		if active {
 			cursorCol = promptFormFieldValueCol(field) + promptFieldCursorDisplayWidth(field)
-			lines = append(lines, promptSuggestionLines(field, prompt.SuggestionFocused, prompt.SuggestionSelected, prompt.SuggestionOffset)...)
 		}
 	}
 	return ContentVM{
@@ -266,79 +264,6 @@ func promptFieldCursorDisplayWidth(field state.PromptFieldState) int {
 		cursor = len(runes)
 	}
 	return DisplayWidth(string(runes[:cursor]))
-}
-
-func promptSuggestionLines(field state.PromptFieldState, focused bool, selected int, offset int) []Line {
-	if len(field.SuggestionItems) == 0 && strings.TrimSpace(field.SuggestionTitle) == "" && strings.TrimSpace(field.SuggestionEmpty) == "" {
-		return nil
-	}
-	lines := []Line{}
-	if strings.TrimSpace(field.SuggestionTitle) != "" {
-		lines = append(lines, Line{Cells: []Cell{
-			styledCell("  ┌ "+field.SuggestionTitle, StylePromptSuggestion),
-		}})
-	}
-	if len(field.SuggestionItems) == 0 {
-		if strings.TrimSpace(field.SuggestionEmpty) != "" {
-			lines = append(lines, Line{Cells: []Cell{
-				styledCell("  │ "+field.SuggestionEmpty, StylePromptSuggestion),
-			}})
-		}
-		return lines
-	}
-	if selected < 0 {
-		selected = 0
-	}
-	if selected >= len(field.SuggestionItems) {
-		selected = len(field.SuggestionItems) - 1
-	}
-	offset = promptSuggestionVisibleOffset(offset, selected, len(field.SuggestionItems))
-	end := offset + promptSuggestionVisibleRows
-	if end > len(field.SuggestionItems) {
-		end = len(field.SuggestionItems)
-	}
-	for index := offset; index < end; index++ {
-		item := field.SuggestionItems[index]
-		marker := "  "
-		lineStyle := StylePromptSuggestion
-		itemStyle := StylePromptSuggestion
-		if focused && index == selected {
-			marker = "▸ "
-			lineStyle = StylePromptSuggestionHit
-			itemStyle = StylePromptSuggestionHit
-		}
-		lines = append(lines, Line{Cells: []Cell{
-			styledCell("  │ "+marker, lineStyle),
-			styledCell(item, itemStyle),
-		}})
-	}
-	if offset > 0 || end < len(field.SuggestionItems) {
-		lines = append(lines, Line{Cells: []Cell{
-			styledCell(fmt.Sprintf("  └ %d-%d/%d", offset+1, end, len(field.SuggestionItems)), StylePromptSuggestion),
-		}})
-	}
-	return lines
-}
-
-// 候选框只渲染可见窗口，避免弹出层随目录数量无限增高。
-func promptSuggestionVisibleOffset(offset int, selected int, count int) int {
-	if count <= promptSuggestionVisibleRows {
-		return 0
-	}
-	maxOffset := count - promptSuggestionVisibleRows
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-	if selected < offset {
-		return selected
-	}
-	if selected >= offset+promptSuggestionVisibleRows {
-		return selected - promptSuggestionVisibleRows + 1
-	}
-	return offset
 }
 
 func buildHelpContent(shell state.ShellStore) ContentVM {

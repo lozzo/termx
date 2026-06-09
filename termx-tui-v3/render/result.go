@@ -182,6 +182,7 @@ const (
 	LayerFloating LayerKind = "floating"
 	LayerChrome   LayerKind = "chrome"
 	LayerOverlay  LayerKind = "overlay"
+	LayerPopup    LayerKind = "popup"
 	LayerToast    LayerKind = "toast"
 )
 
@@ -738,6 +739,7 @@ type OverlayVM struct {
 	Kind    OverlayKind
 	Opaque  bool
 	Content ContentVM
+	Popup   OverlayPopupVM
 }
 
 type ShellVM struct {
@@ -747,6 +749,20 @@ type ShellVM struct {
 	Overlay OverlayVM
 	Toasts  []ToastVM
 	Cursor  Cursor
+}
+
+type OverlayPopupKind string
+
+const (
+	OverlayPopupNone             OverlayPopupKind = ""
+	OverlayPopupPromptSuggestion OverlayPopupKind = "prompt-suggestion"
+)
+
+type OverlayPopupVM struct {
+	Kind      OverlayPopupKind
+	AnchorRow int
+	AnchorCol int
+	Lines     []Line
 }
 
 func maxInt(left int, right int) int {
