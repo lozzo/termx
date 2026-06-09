@@ -91,6 +91,9 @@ func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.R
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyEnter:
 		return reduceTerminalPickerConfirm(root, items)
+	case input.KeyBackspace, input.KeyDelete:
+		root.Shell = root.Shell.SetTerminalPickerQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyChar:
 		if isBackspaceEvent(event) {
 			root.Shell = root.Shell.SetTerminalPickerQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))

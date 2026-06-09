@@ -35,6 +35,25 @@ func TestUIInputReducerOpensTerminalPickerFromCtrlF(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerTerminalPickerDeleteKeysTrimQuery(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker().SetTerminalPickerQuery("日志")}
+
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyBackspace}})
+	if got := root.Shell.EnsureDefaults().Overlay.Query; got != "日" {
+		t.Fatalf("backspace should trim picker query, got %q", got)
+	}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDelete}})
+	if got := root.Shell.EnsureDefaults().Overlay.Query; got != "" {
+		t.Fatalf("delete should trim picker query, got %q", got)
+	}
+	root = state.Root{Shell: root.Shell.SetTerminalPickerQuery("x")}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}})
+	if got := root.Shell.EnsureDefaults().Overlay.Query; got != "" {
+		t.Fatalf("DEL char should trim picker query, got %q", got)
+	}
+}
+
 func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

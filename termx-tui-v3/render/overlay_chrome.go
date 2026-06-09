@@ -9,6 +9,8 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	primitive := OverlayChromePrimitive(overlay, rect, contentRect)
 	if overlay.Content.Kind != ContentTerminalPicker {
 		c.fillStyledRect(rect, primitive.Style, primitive.Owner, primitive.Layer)
+	} else {
+		c.fillStyledRect(overlayInnerRect(rect), primitive.Style, primitive.Owner, primitive.Layer)
 	}
 	chromeStyle := primitive.Style
 	titleStyle := StyleAccent
@@ -26,6 +28,10 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	renderChromeCardTitle(c, rect, primitive.Title.Text, state, titleAction, titleStyle, primitive.Owner, primitive.Layer)
 	contentLines := renderContent(c, overlay.Content, contentRect)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentLines}
+}
+
+func overlayInnerRect(rect Rect) Rect {
+	return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
 }
 
 func overlayTitle(kind OverlayKind) string {
