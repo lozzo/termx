@@ -390,6 +390,187 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 	}
 }
 
+func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing.T) {
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Viewport: state.ViewportStore{
+			Valid: true,
+			Cols:  100,
+			Rows:  40,
+		},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-old",
+			Cols:       78,
+			Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
+			Lines:      []state.HistoryLineSpan{{LineID: 20, StartRow: 0, EndRow: 0}},
+			Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 20},
+			Generation: 7,
+			Boundary:   state.HistoryBoundary{FirstLineID: 20, LastLineID: 20},
+			HasMore:    true,
+		},
+		CopyMode: state.CopyModeStore{
+			Active:      true,
+			TerminalID:  "term-1",
+			BoundToken:  "tok-old",
+			BoundCols:   78,
+			ViewRows:    20,
+			ViewportTop: 4,
+			Cursor:      state.CopyPosition{Row: 0, Col: 3},
+		},
+	}
+	mark := state.CopyPosition{Row: 0, Col: 1}
+	root.CopyMode.Mark = &mark
+	root.CopyMode.Selection = &state.CopySelection{Anchor: mark, Focus: root.CopyMode.Cursor}
+
+	next, effects := reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
+	if len(effects) != 1 {
+		t.Fatalf("expected one latest rebind effect, got %#v", effects)
+	}
+	if next.History.Token != "" || next.History.Cols != 0 || len(next.History.Rows) != 0 || len(next.History.Lines) != 0 {
+		t.Fatalf("resize rebind must immediately invalidate old authoritative window, got %#v", next.History)
+	}
+	if next.History.Pending == nil || next.History.Pending.Kind != state.HistoryRequestLatest || next.History.Pending.Cols != 98 {
+		t.Fatalf("resize rebind should wait for latest at new cols, got %#v", next.History.Pending)
+	}
+	if next.CopyMode.BoundToken != "" || next.CopyMode.BoundCols != 98 || next.CopyMode.ViewRows != 36 || next.CopyMode.ViewportTop != 0 {
+		t.Fatalf("copy mode should enter explicit pending binding at new rect, got %#v", next.CopyMode)
+	}
+	if next.CopyMode.Cursor != (state.CopyPosition{}) || next.CopyMode.Mark != nil || next.CopyMode.Selection != nil {
+		t.Fatalf("resize rebind must reset cursor and selection, got %#v", next.CopyMode)
+	}
+}
+
+func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *testing.T) {
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Lines:      []string{"live-fallback"},
+		},
+		Viewport: state.ViewportStore{
+			Valid: true,
+			Cols:  100,
+			Rows:  40,
+		},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-old",
+			Cols:       78,
+			Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-old",
+			BoundCols:  78,
+			ViewRows:   20,
+		},
+	}
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	root, _ = reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
+	frame := render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+
+	if !frameContains(frame, "copy history pending: authoritative history window pending") {
+		t.Fatalf("resize rebind should render pending history state, got %#v", frame.Lines)
+	}
+	if frameContains(frame, "old-window") || frameContains(frame, "live-fallback") {
+		t.Fatalf("resize rebind pending frame must not show old history or live fallback, got %#v", frame.Lines)
+	}
+}
+
+func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testing.T) {
+	runner := &recordingEffectRunner{}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime.state.Surface.Lines = []string{"live-fallback"}
+	runtime.state.History = state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-old",
+		Cols:       78,
+		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  78,
+		ViewRows:   20,
+	}
+
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain resize: %v", err)
+	}
+
+	if len(runner.Effects) != 1 {
+		t.Fatalf("resize rebind should schedule latest request without executing it, got %#v", runner.Effects)
+	}
+	pendingFrame := lastFrame(t, host.Frames())
+	if !frameContains(pendingFrame, "copy history pending: authoritative history window pending") {
+		t.Fatalf("runtime should render pending frame before latest response, got %#v", pendingFrame.Lines)
+	}
+	if frameContains(pendingFrame, "old-window") || frameContains(pendingFrame, "live-fallback") {
+		t.Fatalf("pending runtime frame must not show old history or live fallback, got %#v", pendingFrame.Lines)
+	}
+	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Cols != 98 {
+		t.Fatalf("runtime should keep pending latest request at resized cols, got %#v", runtime.State().History.Pending)
+	}
+}
+
+func TestCopyModeResizeRowsOnlyKeepsWindowAndDoesNotRequestLatest(t *testing.T) {
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Viewport: state.ViewportStore{
+			Valid: true,
+			Cols:  80,
+			Rows:  18,
+		},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       78,
+			Rows: []state.HistoryRow{
+				{Text: "one", LineID: 1},
+				{Text: "two", LineID: 2},
+				{Text: "three", LineID: 3},
+				{Text: "four", LineID: 4},
+			},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:      true,
+			TerminalID:  "term-1",
+			BoundToken:  "tok-1",
+			BoundCols:   78,
+			ViewRows:    20,
+			ViewportTop: 3,
+			Cursor:      state.CopyPosition{Row: 2, Col: 1},
+		},
+	}
+
+	next, effects := reducer(root, HostResizeMsg{Cols: 80, Rows: 18})
+	if len(effects) != 0 {
+		t.Fatalf("rows-only resize must not request latest, got %#v", effects)
+	}
+	if next.History.Token != "tok-1" || next.History.Cols != 78 || len(next.History.Rows) != 4 {
+		t.Fatalf("rows-only resize should preserve authoritative window, got %#v", next.History)
+	}
+	if next.CopyMode.BoundToken != "tok-1" || next.CopyMode.BoundCols != 78 || next.CopyMode.ViewRows != 14 {
+		t.Fatalf("rows-only resize should only update view rows, got %#v", next.CopyMode)
+	}
+	if next.CopyMode.Cursor != (state.CopyPosition{Row: 2, Col: 1}) {
+		t.Fatalf("rows-only resize should preserve cursor, got %#v", next.CopyMode.Cursor)
+	}
+	if next.CopyMode.ViewportTop != 0 {
+		t.Fatalf("rows-only resize should clamp viewport to the loaded top when all rows fit, got %#v", next.CopyMode)
+	}
+}
+
 func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{
@@ -984,6 +1165,10 @@ func TestCopyModeRejectsStaleHistoryResult(t *testing.T) {
 }
 
 func newCopyModeRuntime(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService) *AppRuntime {
+	return newCopyModeRuntimeWithRunner(host, core, clipboard, NewSyncEffectRunner())
+}
+
+func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService, runner EffectRunner) *AppRuntime {
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	if cols, rows, _ := host.Size(); cols <= 0 || rows <= 0 {
@@ -1012,9 +1197,19 @@ func newCopyModeRuntime(host *FakeTerminalHost, core services.CoreClient, clipbo
 			return renderer.Render(builder.Build(root))
 		},
 		host,
-		NewSyncEffectRunner(),
+		runner,
 	)
 }
+
+type recordingEffectRunner struct {
+	Effects []Effect
+}
+
+func (runner *recordingEffectRunner) Run(_ context.Context, effect Effect, _ func(Msg)) {
+	runner.Effects = append(runner.Effects, effect)
+}
+
+func (runner *recordingEffectRunner) Cancel(CancelToken) {}
 
 func historyWindowForApp(
 	op state.HistoryWindowOp,
