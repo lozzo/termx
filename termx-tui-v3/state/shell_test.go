@@ -294,8 +294,8 @@ func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
 	root := Root{Shell: shell, Session: TerminalSessionStore{TerminalID: "term-main"}}
 
 	items := TerminalPickerItems(root)
-	if len(items) != 2 || !items[0].Selected || items[0].TerminalID != "term-main" || items[0].PaneID != "" || !items[1].CreateNew {
-		t.Fatalf("expected terminal row plus create row, got %#v", items)
+	if len(items) != 2 || !items[0].Selected || !items[0].CreateNew || items[1].TerminalID != "term-main" || items[1].PaneID != "" {
+		t.Fatalf("expected create row plus terminal row, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("日志")
 	items = TerminalPickerItems(root)
@@ -305,8 +305,8 @@ func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
 	root.Shell = root.Shell.SetTerminalPickerQuery("")
 	root.Shell = root.Shell.MoveTerminalPickerSelection(1, len(TerminalPickerItems(root)))
 	items = TerminalPickerItems(root)
-	if len(items) != 2 || !items[1].Selected || !items[1].CreateNew {
-		t.Fatalf("selection should move to create row, got %#v", items)
+	if len(items) != 2 || !items[1].Selected || items[1].TerminalID != "term-main" {
+		t.Fatalf("selection should move to terminal row, got %#v", items)
 	}
 }
 
@@ -325,8 +325,8 @@ func TestTerminalPickerItemsShowOnlyTerminalPoolInfo(t *testing.T) {
 	}
 
 	items := TerminalPickerItems(root)
-	if len(items) != 3 || items[0].PaneID != "" || items[0].Location != "" || items[0].CreateNew || !items[0].FromPool || items[1].TerminalID != "term-pool" || items[1].Cols != 100 || items[1].Rows != 30 || !items[2].CreateNew {
-		t.Fatalf("expected terminal-only pool rows plus create row, got %#v", items)
+	if len(items) != 3 || !items[0].CreateNew || items[1].PaneID != "" || items[1].Location != "" || items[1].CreateNew || !items[1].FromPool || items[2].TerminalID != "term-pool" || items[2].Cols != 100 || items[2].Rows != 30 {
+		t.Fatalf("expected create row plus terminal-only pool rows, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("远程")
 	items = TerminalPickerItems(root)

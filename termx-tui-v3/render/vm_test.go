@@ -1312,7 +1312,7 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 		t.Fatalf("expected terminal picker content, got %#v", vm.Shell.Overlay)
 	}
 	plain := plainLines(content.Lines)
-	for _, want := range []string{"search: term", "▸ ● shell", "running", "80x24", "● 日志🚀", "100x30", "+ new terminal", "Create terminal"} {
+	for _, want := range []string{"search: term", "▸ + new terminal", "● shell", "running", "80x24", "● 日志🚀", "100x30", "Create terminal"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected compact picker marker %q, got %#v", want, content.Lines)
 		}
@@ -1379,15 +1379,15 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[1].PlainString(), "▸ ● 远程🚀") ||
-		!strings.Contains(content.Lines[1].PlainString(), "running") ||
-		!strings.Contains(content.Lines[1].PlainString(), "120x40") ||
-		!strings.Contains(content.Lines[2].PlainString(), "+ new terminal") ||
+	if !strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal") ||
+		!strings.Contains(content.Lines[2].PlainString(), "● 远程🚀") ||
+		!strings.Contains(content.Lines[2].PlainString(), "running") ||
+		!strings.Contains(content.Lines[2].PlainString(), "120x40") ||
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected terminal-only pool row, got %#v", content.Lines)
 	}
-	if len(content.HitRegions) != 2 || content.HitRegions[0].PaneID != "" || content.HitRegions[0].ActionID != ActionPickerAttach.String() || content.HitRegions[1].ActionID != ActionPickerNew.String() {
-		t.Fatalf("expected terminal attach and create action regions, got %#v", content.HitRegions)
+	if len(content.HitRegions) != 2 || content.HitRegions[0].ActionID != ActionPickerNew.String() || content.HitRegions[1].PaneID != "" || content.HitRegions[1].ActionID != ActionPickerAttach.String() {
+		t.Fatalf("expected create and terminal attach action regions, got %#v", content.HitRegions)
 	}
 
 	root.Shell = root.Shell.SetTerminalPickerQuery("trpl")

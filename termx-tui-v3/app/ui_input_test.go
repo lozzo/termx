@@ -91,7 +91,8 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	last := lastFrame(t, host.Frames())
 	if !frameContains(last, "terminal picker") ||
 		!frameContains(last, "search:") ||
-		!frameContains(last, "▸ ● term-1") ||
+		!frameContains(last, "▸ + new terminal") ||
+		!frameContains(last, "● term-1") ||
 		!frameContains(last, "attached") ||
 		!frameContains(last, "80x24") ||
 		!frameContains(last, "+ new terminal") ||
@@ -155,6 +156,9 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
 		t.Fatalf("send backspace: %v", err)
 	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down: %v", err)
+	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
 	}
@@ -169,7 +173,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimeTerminalPickerEnterAttachesCurrentTerminal(t *testing.T) {
+func TestInteractiveRuntimeTerminalPickerEnterDefaultsToCreateTerminal(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
 		CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"},
@@ -201,11 +205,11 @@ func TestInteractiveRuntimeTerminalPickerEnterAttachesCurrentTerminal(t *testing
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain enter: %v", err)
 	}
-	if len(terminal.Creates) != 0 || len(terminal.Attaches) != 2 {
-		t.Fatalf("picker enter should attach existing terminal without create form, creates=%#v attaches=%#v", terminal.Creates, terminal.Attaches)
+	if len(terminal.Creates) != 0 || len(terminal.Attaches) != 1 {
+		t.Fatalf("picker default enter should only open create form, creates=%#v attaches=%#v", terminal.Creates, terminal.Attaches)
 	}
-	if runtime.State().Shell.Overlay.Open || runtime.State().Session.TerminalID != "term-main" {
-		t.Fatalf("picker enter should close overlay after attach, state=%#v overlay=%#v", runtime.State().Session, runtime.State().Shell.Overlay)
+	if !runtime.State().Shell.Overlay.Open || runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || runtime.State().Shell.Overlay.Prompt.Purpose != "terminal.create" {
+		t.Fatalf("picker default enter should open create terminal prompt, overlay=%#v", runtime.State().Shell.Overlay)
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("picker create navigation must not leak to terminal input, got %#v", terminal.Inputs)
@@ -505,6 +509,9 @@ func TestInteractiveRuntimeTerminalPickerUsesTerminalPoolService(t *testing.T) {
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "远程🚀") || !frameContains(frame, "running") || frameContains(frame, "@pool") || frameContains(frame, "term-pool") {
 		t.Fatalf("expected pool row in picker frame, got %#v", frame.Lines)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down: %v", err)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
