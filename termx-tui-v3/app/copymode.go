@@ -210,6 +210,7 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 		}
 		if root.CopyMode.Selection != nil {
 			next, effects := reduceCopyModeCopySelection(root, deps)
+			next.CopyMode = state.CopyModeStore{}
 			return next, effects, true
 		}
 	case input.KeyChar:
@@ -250,6 +251,12 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: len(root.History.Rows) - 1, Col: root.CopyMode.Cursor.Col})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			return root.Advance(), nil, true
+		case "u":
+			root.CopyMode = root.CopyMode.Scroll(-(copyModePageRows(root.CopyMode) / 2), len(root.History.Rows))
+			return root.Advance(), nil, true
+		case "d":
+			root.CopyMode = root.CopyMode.Scroll(copyModePageRows(root.CopyMode)/2, len(root.History.Rows))
 			return root.Advance(), nil, true
 		case " ":
 			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)

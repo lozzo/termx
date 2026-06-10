@@ -955,15 +955,28 @@ func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 	clipboard := &services.FakeClipboardService{}
 	host := NewFakeTerminalHost(16)
 	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, clipboard)
-	runtime.state.History = historyStoreForCopySelection()
+	runtime.state.History = state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       78,
+		Rows: []state.HistoryRow{
+			{Text: "alpha", LineID: 10},
+			{Text: "beta", LineID: 11},
+			{Text: "gamma", LineID: 12},
+		},
+	}
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		TerminalID: "term-1",
 		BoundToken: "tok-1",
 		BoundCols:  78,
-		ViewRows:   4,
+		ViewRows:   3,
 	}
 	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "G"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "u"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "d"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "g"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "G"},
 		{Kind: input.EventKindKey, Key: input.KeyHome},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: " "},
@@ -978,11 +991,46 @@ func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 			t.Fatalf("drain copy key %#v: %v", event, err)
 		}
 	}
-	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "beta" {
+	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "gamma" {
 		t.Fatalf("expected y to copy selected authoritative row, got %#v", clipboard.Writes)
 	}
-	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 1, Col: 4}) {
-		t.Fatalf("expected copy cursor at end of beta, got %#v", runtime.State().CopyMode.Cursor)
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 2, Col: 5}) {
+		t.Fatalf("expected copy cursor at end of gamma, got %#v", runtime.State().CopyMode.Cursor)
+	}
+	if runtime.State().CopyMode.Query != "" {
+		t.Fatalf("u/d should scroll copy viewport instead of editing search query, got %#v", runtime.State().CopyMode)
+	}
+}
+
+func TestCopyModeEnterCopiesAndExits(t *testing.T) {
+	clipboard := &services.FakeClipboardService{}
+	host := NewFakeTerminalHost(16)
+	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, clipboard)
+	runtime.state.History = historyStoreForCopySelection()
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   4,
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: " "},
+		{Kind: input.EventKindKey, Key: input.KeyEnd},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send copy key %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain copy key %#v: %v", event, err)
+		}
+	}
+	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "alpha" {
+		t.Fatalf("expected enter to copy selected authoritative row, got %#v", clipboard.Writes)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("enter copy should exit copy mode, got %#v", runtime.State().CopyMode)
 	}
 }
 

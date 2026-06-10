@@ -178,8 +178,8 @@
 | resize | `m` / `|` / `_ CENTER`、`r RESET` | 未实现 | 缺 content offset/align reset state |
 | floating | `o OVERVIEW`、`1-9 SUMMON` | 未实现 | render 仍是 floating overview placeholder，缺 overlay reducer/input |
 | floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 未实现 | 缺 floating group collapse、fit 与 auto-fit state |
-| display | `p/P PASTE`、`H HISTORY` | 未实现 | 缺 clipboard paste/history overlay 与 input reducer |
-| display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 待复核 | copy reducer 已有基础移动/复制路径，尚未逐项按表核验 |
+| display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 已核验 | 已走 authoritative `HistoryWindow` 上的 copy reducer；`Enter` 复制 selection 后退出 copy mode；见 `termx-tui-v3/app/integration_test.go` |
+| display | `p/P PASTE`、`H HISTORY` | 未实现 | 缺 clipboard paste/history overlay 与 input reducer，已排入 215E |
 | picker | `Tab SPLIT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | action/reducer 有 attach/edit/kill 基础；键盘分发和 delete inventory entry 未完整接线 |
 | terminal manager | `Ctrl-T TAB`、`Ctrl-O FLOAT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | pool 页有 attach/edit/kill action；新 tab/floating attach 与 delete entry 未接线 |
 | workspace picker | `Ctrl-N NEW`、`Ctrl-R RENAME`、`Ctrl-X REMOVE`、`Ctrl-D DETACH`、`Ctrl-Z ZOOM` | 部分实现 | Workbench Tree 有 open/rename/new/delete action；detach/zoom 与键盘分发未完整接线 |
@@ -207,5 +207,5 @@
 
 - `termx-tui-v3/input/types_test.go`：覆盖 routing、catalog 唯一性、UI mode 吞键、pane split 键盘入口。
 - `termx-tui-v3/render/vm_test.go`、`termx-tui-v3/render/framework_test.go`：覆盖 footer token 展示。
-- `termx-tui-v3/app/ui_input_test.go`、`termx-tui-v3/app/runtime_test.go`：覆盖 app reducer、footer click、pane chrome click 和 no terminal input leak。
+- `termx-tui-v3/app/ui_input_test.go`、`termx-tui-v3/app/runtime_test.go`、`termx-tui-v3/app/integration_test.go`：覆盖 app reducer、footer click、pane chrome click、copy/display canonical keys 和 no terminal input leak。
 - `termx-tui-v3/app/pane_command_adapter_test.go`：覆盖 pane split chrome hit region 到 semantic command 的映射。
