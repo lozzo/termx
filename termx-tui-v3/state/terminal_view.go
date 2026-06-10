@@ -4,6 +4,15 @@ const (
 	TerminalResizeRoleOwner    = "owner"
 	TerminalResizeRoleFollower = "follower"
 	TerminalResizeRoleObserver = "observer"
+
+	TerminalViewAlignStart  = "start"
+	TerminalViewAlignCenter = "center"
+	TerminalViewAlignEnd    = "end"
+	TerminalViewAlignBase   = "base"
+
+	TerminalViewLayoutAuto   = "auto"
+	TerminalViewLayoutFit    = "fit"
+	TerminalViewLayoutCenter = "center"
 )
 
 // TerminalViewStore 是 pane/floating 到 core-v2 attachment 的 reducer-owned 连接视图状态。
@@ -15,19 +24,40 @@ type TerminalViewStore struct {
 }
 
 type TerminalViewBinding struct {
-	ViewID      string `json:"viewId"`
-	SurfaceID   string `json:"surfaceId,omitempty"`
-	TerminalID  string `json:"terminalId"`
-	Channel     uint16 `json:"channel,omitempty"`
-	ResizeRole  string `json:"resizeRole,omitempty"`
-	DesiredCols int    `json:"desiredCols,omitempty"`
-	DesiredRows int    `json:"desiredRows,omitempty"`
-	RequestSeq  uint64 `json:"requestSeq,omitempty"`
-	LastError   string `json:"lastError,omitempty"`
-	PaneID      string `json:"paneId,omitempty"`
-	FloatingID  string `json:"floatingId,omitempty"`
-	Attached    bool   `json:"attached"`
-	CanResize   bool   `json:"canResize,omitempty"`
+	ViewID      string             `json:"viewId"`
+	SurfaceID   string             `json:"surfaceId,omitempty"`
+	TerminalID  string             `json:"terminalId"`
+	Channel     uint16             `json:"channel,omitempty"`
+	Layout      TerminalViewLayout `json:"layout,omitempty"`
+	ResizeRole  string             `json:"resizeRole,omitempty"`
+	DesiredCols int                `json:"desiredCols,omitempty"`
+	DesiredRows int                `json:"desiredRows,omitempty"`
+	RequestSeq  uint64             `json:"requestSeq,omitempty"`
+	LastError   string             `json:"lastError,omitempty"`
+	PaneID      string             `json:"paneId,omitempty"`
+	FloatingID  string             `json:"floatingId,omitempty"`
+	Attached    bool               `json:"attached"`
+	CanResize   bool               `json:"canResize,omitempty"`
+}
+
+// TerminalViewLayout 是 pane/floating 的 view-local 内容布局状态。
+// 它不改变共享 terminal process、history truth 或 PTY size ownership。
+type TerminalViewLayout struct {
+	SizeLocked bool   `json:"sizeLocked,omitempty"`
+	Mode       string `json:"mode,omitempty"`
+	PanX       int    `json:"panX,omitempty"`
+	PanY       int    `json:"panY,omitempty"`
+	AlignX     string `json:"alignX,omitempty"`
+	AlignY     string `json:"alignY,omitempty"`
+}
+
+type TerminalViewLayoutCommand struct {
+	Action string
+	Mode   string
+	AlignX string
+	AlignY string
+	DeltaX int
+	DeltaY int
 }
 
 type TerminalViewResizeDecision struct {
@@ -96,6 +126,7 @@ func (store TerminalViewStore) BindFloating(binding TerminalViewBinding) Termina
 
 func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewStore {
 	binding.ResizeRole = normalizeTerminalResizeRole(binding.ResizeRole)
+	binding.Layout = binding.Layout.Normalize()
 	if binding.ResizeRole == TerminalResizeRoleOwner {
 		binding.CanResize = true
 	}
@@ -111,6 +142,26 @@ func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewSto
 		store.FloatingViews[binding.FloatingID] = binding.ViewID
 	}
 	return store
+}
+
+func (store TerminalViewStore) ApplyPaneLayoutCommand(paneID string, command TerminalViewLayoutCommand) (TerminalViewStore, TerminalViewBinding, bool) {
+	return store.ApplyViewLayoutCommand(store.PaneViews[paneID], command)
+}
+
+func (store TerminalViewStore) ApplyFloatingLayoutCommand(floatingID string, command TerminalViewLayoutCommand) (TerminalViewStore, TerminalViewBinding, bool) {
+	return store.ApplyViewLayoutCommand(store.FloatingViews[floatingID], command)
+}
+
+func (store TerminalViewStore) ApplyViewLayoutCommand(viewID string, command TerminalViewLayoutCommand) (TerminalViewStore, TerminalViewBinding, bool) {
+	binding, ok := store.Views[viewID]
+	if !ok || binding.TerminalID == "" {
+		return store, TerminalViewBinding{}, false
+	}
+	next := binding
+	next.Layout = next.Layout.Apply(command)
+	store.Views = cloneTerminalViewBindings(store.Views)
+	store.Views[viewID] = next
+	return store, next, true
 }
 
 func (store TerminalViewStore) DetachPane(paneID string) TerminalViewStore {
@@ -279,6 +330,68 @@ func (store TerminalViewStore) ApplyResizeResult(viewID string, seq uint64, cols
 
 func (binding TerminalViewBinding) IsStaleResizeResult(seq uint64) bool {
 	return seq != 0 && seq < binding.RequestSeq
+}
+
+func (layout TerminalViewLayout) Normalize() TerminalViewLayout {
+	if layout.Mode == "" {
+		layout.Mode = TerminalViewLayoutAuto
+	}
+	if layout.AlignX == "" {
+		layout.AlignX = TerminalViewAlignStart
+	}
+	if layout.AlignY == "" {
+		layout.AlignY = TerminalViewAlignStart
+	}
+	return layout
+}
+
+func (layout TerminalViewLayout) Apply(command TerminalViewLayoutCommand) TerminalViewLayout {
+	layout = layout.Normalize()
+	switch command.Action {
+	case "toggle-lock":
+		layout.SizeLocked = !layout.SizeLocked
+	case "toggle-layout":
+		layout.Mode = nextTerminalViewLayoutMode(layout.Mode)
+	case "pan":
+		layout.PanX += command.DeltaX
+		layout.PanY += command.DeltaY
+	case "align":
+		if command.AlignX != "" {
+			layout.AlignX = normalizeTerminalViewAlign(command.AlignX)
+		}
+		if command.AlignY != "" {
+			layout.AlignY = normalizeTerminalViewAlign(command.AlignY)
+		}
+	case "center":
+		layout.Mode = TerminalViewLayoutCenter
+		layout.PanX = 0
+		layout.PanY = 0
+		layout.AlignX = TerminalViewAlignCenter
+		layout.AlignY = TerminalViewAlignCenter
+	case "reset":
+		layout = TerminalViewLayout{}.Normalize()
+	}
+	return layout.Normalize()
+}
+
+func nextTerminalViewLayoutMode(mode string) string {
+	switch mode {
+	case TerminalViewLayoutAuto:
+		return TerminalViewLayoutFit
+	case TerminalViewLayoutFit:
+		return TerminalViewLayoutCenter
+	default:
+		return TerminalViewLayoutAuto
+	}
+}
+
+func normalizeTerminalViewAlign(align string) string {
+	switch align {
+	case TerminalViewAlignCenter, TerminalViewAlignEnd, TerminalViewAlignBase:
+		return align
+	default:
+		return TerminalViewAlignStart
+	}
 }
 
 func normalizeTerminalResizeRole(role string) string {

@@ -2083,6 +2083,44 @@ func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
 	}
 }
 
+func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T) {
+	root := state.Root{}
+	root.Shell = state.DefaultShell().SetInteractionMode(state.InteractionModeResize)
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	inputReducer := NewUIInputReducer()
+	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
+	if len(effects) != 1 {
+		t.Fatalf("layout key should be handled, got %#v", effects)
+	}
+	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !binding.Layout.SizeLocked {
+		t.Fatalf("resize s should toggle view-local layout lock, got %#v", binding.Layout)
+	}
+	sibling, _ := next.TerminalViews.PaneBinding("pane-2")
+	if sibling.Layout.SizeLocked {
+		t.Fatalf("sibling view on same terminal must not inherit layout lock, got %#v", sibling.Layout)
+	}
+
+	next, _ = inputReducer(next, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight, Shift: true}})
+	binding, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if binding.Layout.PanX != 2 {
+		t.Fatalf("shift-right should pan active terminal view, got %#v", binding.Layout)
+	}
+
+	shellReducer := NewShellReducer()
+	next, _ = shellReducer(next, ShellContentActionMsg{ActionID: render.ActionResizeLayoutCenter.String()})
+	binding, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if binding.Layout.Mode != state.TerminalViewLayoutCenter || binding.Layout.AlignX != state.TerminalViewAlignCenter || binding.Layout.AlignY != state.TerminalViewAlignCenter {
+		t.Fatalf("footer center should use same layout command path, got %#v", binding.Layout)
+	}
+	vm := render.NewRenderVMBuilder().Build(next)
+	if len(vm.Shell.Layout.Panels) == 0 || vm.Shell.Layout.Panels[0].Chrome.Terminal.LayoutMode != state.TerminalViewLayoutCenter {
+		t.Fatalf("render should project terminal view layout, got %#v", vm.Shell.Layout.Panels)
+	}
+}
+
 func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 80, Rows: 24},

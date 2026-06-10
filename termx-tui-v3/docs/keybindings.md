@@ -158,6 +158,8 @@
 | resize | `←/h`、`→/l`、`↑/k`、`↓/j` | 方向键、`h` / `j` / `k` / `l` | 按方向 resize，步长 2 |
 | resize | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
 | resize | `= BALANCE` | `=` | balance pane layout |
+| resize | `s LOCK`、`space LAYOUT` | `s`、`Space` | 切换 active terminal view 的 size lock 与 layout mode |
+| resize | `S+arrows PAN`、`0/$/^/B ALIGN`、`m/\|/_ CENTER`、`r RESET` | `Shift+WASD`、Shift 方向键、`0`、`$`、`^`、`B`、`m`、`|`、`_`、`r` | 修改 active terminal view 的 view-local content layout |
 | global | `? HELP` | `?` | 打开 help overlay |
 | global | `t TERMINALS` | `t` | 打开 Terminal Pool |
 | global | `q QUIT` | `q` | quit TUI |
@@ -170,12 +172,8 @@
 
 | Mode | 快捷键 | 状态 | 缺口 |
 | --- | --- | --- | --- |
-| pane | `s LOCK` | 未实现 | 当前没有 size lock state/reducer/action catalog |
-| resize | `s LOCK` | 未实现 | 同 pane size lock，缺状态模型 |
-| resize | `Space LAYOUT` | 未实现 | 当前 pane presentation 仅在 pane mode 以 `c` / `p` 触发 |
-| resize | `Shift+WASD PAN`、`Shift+Arrow PAN` | 未实现 | 缺 view-local content offset/pan state |
-| resize | `0` / `$` / `^` / `B ALIGN` | 未实现 | 缺 content alignment state |
-| resize | `m` / `|` / `_ CENTER`、`r RESET` | 未实现 | 缺 content offset/align reset state |
+| pane | `s LOCK` | 未实现 | tuiv2 catalog 有 pane mode 展示；当前真实入口收敛到 resize mode 的 view-local terminal layout command，未在 pane footer 常驻展示 |
+| resize | `s LOCK`、`Space LAYOUT`、`Shift+WASD/Shift+Arrow PAN`、`0/$/^/B ALIGN`、`m/|/_ CENTER`、`r RESET` | 已实现 | 状态挂在 `TerminalViewBinding.Layout`，键盘与 footer action 走统一 semantic command，render projector 展示 layout metadata |
 | floating | `o OVERVIEW`、`1-9 SUMMON` | 未实现 | render 仍是 floating overview placeholder，缺 overlay reducer/input |
 | floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 未实现 | 缺 floating group collapse、fit 与 auto-fit state |
 | display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 已核验 | 已走 authoritative `HistoryWindow` 上的 copy reducer；`Enter` 复制 selection 后退出 copy mode；见 `termx-tui-v3/app/integration_test.go` |

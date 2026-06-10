@@ -196,6 +196,12 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionResizeUp),
 			footerActionFor(ActionResizeDown),
 			footerActionFor(ActionResizeBalance),
+			footerActionFor(ActionResizeLayoutLock),
+			footerActionFor(ActionResizeLayoutToggle),
+			footerActionFor(ActionResizeLayoutPan),
+			footerActionFor(ActionResizeLayoutAlign),
+			footerActionFor(ActionResizeLayoutCenter),
+			footerActionFor(ActionResizeLayoutReset),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "global":
@@ -573,8 +579,14 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 	if title == "" {
 		title = binding.TerminalID
 	}
+	layout := binding.Layout.Normalize()
 	return TerminalChromeVM{
-		Locked:       binding.CanResize && role == state.TerminalResizeRoleOwner,
+		Locked:       layout.SizeLocked,
+		LayoutMode:   layout.Mode,
+		PanX:         layout.PanX,
+		PanY:         layout.PanY,
+		AlignX:       layout.AlignX,
+		AlignY:       layout.AlignY,
 		Title:        ChromeSlotVM{Text: title, Style: style},
 		State:        terminalChromeStateSlot(root, binding.TerminalID, active, content),
 		AttachCount:  len(root.TerminalViews.BindingsForTerminal(binding.TerminalID)),
@@ -619,7 +631,14 @@ func terminalResizeOwnerMeta(paneID string, views state.TerminalViewStore) []Chr
 	if !ok || binding.TerminalID == "" {
 		return nil
 	}
+	layout := binding.Layout.Normalize()
 	text := "size:" + binding.ResizeRole
+	if layout.SizeLocked {
+		text += " lock"
+	}
+	if layout.Mode != state.TerminalViewLayoutAuto || layout.PanX != 0 || layout.PanY != 0 || layout.AlignX != state.TerminalViewAlignStart || layout.AlignY != state.TerminalViewAlignStart {
+		text += " layout:" + layout.Mode
+	}
 	style := StyleMuted
 	if binding.ResizeRole == state.TerminalResizeRoleOwner && binding.CanResize {
 		style = StyleSuccess

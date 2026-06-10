@@ -119,7 +119,7 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	if len(owner.Chrome.Meta) != 1 || owner.Chrome.Meta[0].Text != "size:owner" || owner.Chrome.Meta[0].Style != StyleSuccess {
 		t.Fatalf("owner pane should show size owner metadata, got %#v", owner.Chrome.Meta)
 	}
-	if owner.Chrome.Terminal.Title.Text != "shell" || owner.Chrome.Terminal.State.Text != paneChromeRunningGlyph() || owner.Chrome.Terminal.AttachCount != 2 || owner.Chrome.Terminal.Owner.Text != "◆ owner" || !owner.Chrome.Terminal.Locked {
+	if owner.Chrome.Terminal.Title.Text != "shell" || owner.Chrome.Terminal.State.Text != paneChromeRunningGlyph() || owner.Chrome.Terminal.AttachCount != 2 || owner.Chrome.Terminal.Owner.Text != "◆ owner" || !owner.Chrome.Terminal.CanResize || owner.Chrome.Terminal.Locked {
 		t.Fatalf("owner pane should expose tuiv2 terminal chrome facts, got %#v", owner.Chrome.Terminal)
 	}
 	if len(follower.Chrome.Meta) != 1 || follower.Chrome.Meta[0].Text != "size:follower" {
@@ -890,7 +890,13 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "→/l", "", ActionResizeRight.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "↑/k", "", ActionResizeUp.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "↓/j", "", ActionResizeDown.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "=", "BALANCE", ActionResizeBalance.String()) {
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "=", "BALANCE", ActionResizeBalance.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "s", "LOCK", ActionResizeLayoutLock.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "space", "LAYOUT", ActionResizeLayoutToggle.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "S+arrows", "PAN", ActionResizeLayoutPan.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "0/$/^/B", "ALIGN", ActionResizeLayoutAlign.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "m/|/_", "CENTER", ActionResizeLayoutCenter.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "RESET", ActionResizeLayoutReset.String()) {
 		t.Fatalf("expected resize footer structural actions, got %#v", vm.Shell.Footer)
 	}
 	shell = shell.SetInteractionMode(state.InteractionModeFloating)

@@ -29,6 +29,12 @@ const (
 	ActionResizeUp                ActionID = "resize.up"
 	ActionResizeDown              ActionID = "resize.down"
 	ActionResizeBalance           ActionID = "resize.balance"
+	ActionResizeLayoutLock        ActionID = "resize.layout-lock"
+	ActionResizeLayoutToggle      ActionID = "resize.layout-toggle"
+	ActionResizeLayoutPan         ActionID = "resize.layout-pan"
+	ActionResizeLayoutAlign       ActionID = "resize.layout-align"
+	ActionResizeLayoutCenter      ActionID = "resize.layout-center"
+	ActionResizeLayoutReset       ActionID = "resize.layout-reset"
 	ActionCopyOlder               ActionID = "copy.older"
 	ActionTerminalTakeResizeOwner ActionID = "terminal.resize-owner.take"
 
@@ -210,6 +216,12 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionResizeUp, ActionDispatchApp, ActionSurfaceFooter).withFooter("↑/k", "", StyleStatusWarning).withHelp("resize up"),
 		actionSpec(ActionResizeDown, ActionDispatchApp, ActionSurfaceFooter).withFooter("↓/j", "", StyleStatusWarning).withHelp("resize down"),
 		actionSpec(ActionResizeBalance, ActionDispatchApp, ActionSurfaceFooter).withFooter("=", "BALANCE", StyleStatusAccent).withHelp("balance"),
+		actionSpec(ActionResizeLayoutLock, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("s", "LOCK", StyleStatusAccent).withHelp("lock terminal view size"),
+		actionSpec(ActionResizeLayoutToggle, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("space", "LAYOUT", StyleStatusAccent).withHelp("toggle terminal view layout"),
+		actionSpec(ActionResizeLayoutPan, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("S+arrows", "PAN", StyleStatusWarning).withHelp("pan terminal view content"),
+		actionSpec(ActionResizeLayoutAlign, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("0/$/^/B", "ALIGN", StyleStatusAccent).withHelp("align terminal view content"),
+		actionSpec(ActionResizeLayoutCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("m/|/_", "CENTER", StyleStatusAccent).withHelp("center terminal view content"),
+		actionSpec(ActionResizeLayoutReset, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("r", "RESET", StyleStatusWarning).withHelp("reset terminal view layout"),
 		actionSpec(ActionCopyOlder, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("PgUp", "SCROLL", StyleStatusAccent).withHelp("older history"),
 		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph("◇ follow").withHelp("take resize owner"),
 		actionSpec(ActionTabCreate, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("c", "NEW", StyleStatusAccent).withHelp("create"),

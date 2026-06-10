@@ -99,3 +99,43 @@ func TestTerminalViewStoreResizeRequestRequiresOwnerAndGuardsStaleResults(t *tes
 		t.Fatalf("stale result must not overwrite desired size, got %#v", current)
 	}
 }
+
+func TestTerminalViewLayoutStateIsViewLocal(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, changed, ok := store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "pan", DeltaX: 4, DeltaY: -2})
+	if !ok {
+		t.Fatal("expected pane layout command to apply")
+	}
+	if changed.Layout.PanX != 4 || changed.Layout.PanY != -2 {
+		t.Fatalf("expected pane-1 pan to change, got %#v", changed.Layout)
+	}
+	sibling, _ := next.PaneBinding("pane-2")
+	if sibling.Layout.Normalize().PanX != 0 || sibling.Layout.Normalize().PanY != 0 {
+		t.Fatalf("sibling binding for same terminal must keep independent layout, got %#v", sibling.Layout)
+	}
+}
+
+func TestTerminalViewLayoutCommandsNormalizeAndReset(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
+
+	store, binding, ok := store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "toggle-lock"})
+	if !ok || !binding.Layout.SizeLocked || binding.Layout.Mode != TerminalViewLayoutAuto {
+		t.Fatalf("lock should toggle on default normalized layout, binding=%#v ok=%v", binding, ok)
+	}
+	store, binding, _ = store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "toggle-layout"})
+	if binding.Layout.Mode != TerminalViewLayoutFit {
+		t.Fatalf("layout toggle should move auto to fit, got %#v", binding.Layout)
+	}
+	store, binding, _ = store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "center"})
+	if binding.Layout.Mode != TerminalViewLayoutCenter || binding.Layout.AlignX != TerminalViewAlignCenter || binding.Layout.AlignY != TerminalViewAlignCenter {
+		t.Fatalf("center should set centered layout, got %#v", binding.Layout)
+	}
+	_, binding, _ = store.ApplyPaneLayoutCommand("pane-1", TerminalViewLayoutCommand{Action: "reset"})
+	if binding.Layout.SizeLocked || binding.Layout.Mode != TerminalViewLayoutAuto || binding.Layout.AlignX != TerminalViewAlignStart || binding.Layout.AlignY != TerminalViewAlignStart {
+		t.Fatalf("reset should restore normalized default layout, got %#v", binding.Layout)
+	}
+}

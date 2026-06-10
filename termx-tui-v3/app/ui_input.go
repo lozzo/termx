@@ -463,6 +463,9 @@ func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.R
 
 func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, []Effect, bool) {
 	shell := root.Shell.EnsureDefaults()
+	if layoutCommand, ok := terminalViewLayoutCommandFromString(command); ok {
+		return applyActiveTerminalViewLayoutCommand(root, layoutCommand), []Effect{handledEffect{}}, true
+	}
 	switch command {
 	case "pane take-owner":
 		root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner(shell.ActivePaneID)
@@ -491,6 +494,67 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 	default:
 		return root, nil, false
 	}
+}
+
+func applyActiveTerminalViewLayoutCommand(root state.Root, command state.TerminalViewLayoutCommand) state.Root {
+	shell := root.Shell.EnsureDefaults()
+	var binding state.TerminalViewBinding
+	var ok bool
+	if shell.ActiveFloatingID != "" {
+		root.TerminalViews, binding, ok = root.TerminalViews.ApplyFloatingLayoutCommand(shell.ActiveFloatingID, command)
+	} else {
+		root.TerminalViews, binding, ok = root.TerminalViews.ApplyPaneLayoutCommand(shell.ActivePaneID, command)
+	}
+	if !ok {
+		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.layout", Body: "no active view"})
+		return root.Advance()
+	}
+	root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.layout", Body: terminalViewLayoutToast(binding.Layout)})
+	return root.Advance()
+}
+
+func terminalViewLayoutCommandFromString(command string) (state.TerminalViewLayoutCommand, bool) {
+	switch command {
+	case "terminal layout lock":
+		return state.TerminalViewLayoutCommand{Action: "toggle-lock"}, true
+	case "terminal layout toggle":
+		return state.TerminalViewLayoutCommand{Action: "toggle-layout"}, true
+	case "terminal layout pan-left":
+		return state.TerminalViewLayoutCommand{Action: "pan", DeltaX: -2}, true
+	case "terminal layout pan-right":
+		return state.TerminalViewLayoutCommand{Action: "pan", DeltaX: 2}, true
+	case "terminal layout pan-up":
+		return state.TerminalViewLayoutCommand{Action: "pan", DeltaY: -1}, true
+	case "terminal layout pan-down":
+		return state.TerminalViewLayoutCommand{Action: "pan", DeltaY: 1}, true
+	case "terminal layout align-left":
+		return state.TerminalViewLayoutCommand{Action: "align", AlignX: state.TerminalViewAlignStart}, true
+	case "terminal layout align-right":
+		return state.TerminalViewLayoutCommand{Action: "align", AlignX: state.TerminalViewAlignEnd}, true
+	case "terminal layout align-top":
+		return state.TerminalViewLayoutCommand{Action: "align", AlignY: state.TerminalViewAlignStart}, true
+	case "terminal layout align-bottom":
+		return state.TerminalViewLayoutCommand{Action: "align", AlignY: state.TerminalViewAlignEnd}, true
+	case "terminal layout center":
+		return state.TerminalViewLayoutCommand{Action: "center"}, true
+	case "terminal layout center-x":
+		return state.TerminalViewLayoutCommand{Action: "align", AlignX: state.TerminalViewAlignCenter}, true
+	case "terminal layout center-y":
+		return state.TerminalViewLayoutCommand{Action: "align", AlignY: state.TerminalViewAlignCenter}, true
+	case "terminal layout reset":
+		return state.TerminalViewLayoutCommand{Action: "reset"}, true
+	default:
+		return state.TerminalViewLayoutCommand{}, false
+	}
+}
+
+func terminalViewLayoutToast(layout state.TerminalViewLayout) string {
+	layout = layout.Normalize()
+	lock := "unlocked"
+	if layout.SizeLocked {
+		lock = "locked"
+	}
+	return fmt.Sprintf("%s %s pan:%d,%d align:%s/%s", lock, layout.Mode, layout.PanX, layout.PanY, layout.AlignX, layout.AlignY)
 }
 
 func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {

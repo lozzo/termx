@@ -647,6 +647,11 @@ type PanelChromeVM struct {
 
 type TerminalChromeVM struct {
 	Locked       bool
+	LayoutMode   string
+	PanX         int
+	PanY         int
+	AlignX       string
+	AlignY       string
 	Title        ChromeSlotVM
 	State        ChromeSlotVM
 	AttachCount  int
