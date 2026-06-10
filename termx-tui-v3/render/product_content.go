@@ -9,11 +9,23 @@ import (
 
 const contentActionWidth = 12
 
-const emptyPaneSelectedActionIndex = 0
+const emptyPaneActionCount = 4
+
+func EmptyPaneActionCount() int {
+	return emptyPaneActionCount
+}
+
+func EmptyPaneActionID(index int) ActionID {
+	actions := emptyPaneActions()
+	if index < 0 || index >= len(actions) {
+		return ""
+	}
+	return actions[index].ID
+}
 
 // empty pane 内容只描述当前 pane 可执行的产品动作，不创建 terminal。
 func buildEmptyPaneContent(pane state.PaneState) ContentVM {
-	lines, regions, cursor := emptyPaneContentLayout(pane.ID)
+	lines, regions, cursor := emptyPaneContentLayout(pane.ID, 0)
 	return ContentVM{
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
@@ -24,17 +36,27 @@ func buildEmptyPaneContent(pane state.PaneState) ContentVM {
 	}
 }
 
-func emptyPaneContentLayout(paneID string) ([]Line, []HitRegion, Cursor) {
-	actions := []emptyPaneActionSpec{
-		{ID: ActionEmptyAttach, Label: "Attach existing terminal", Style: StyleAccent},
-		{ID: ActionEmptyCreate, Label: "Create new terminal", Style: StyleSuccess},
-		{ID: ActionEmptyManager, Label: "Open terminal manager", Style: StyleForeground},
-		{ID: ActionEmptyClose, Label: "Close pane", Style: StyleDangerStrong},
+func buildEmptyPaneContentWithSelection(pane state.PaneState, selectedIndex int) ContentVM {
+	lines, regions, cursor := emptyPaneContentLayout(pane.ID, selectedIndex)
+	return ContentVM{
+		Kind:       ContentEmptyPane,
+		Lines:      lines,
+		Status:     "unconnected: Attach / Create / Manager / Close",
+		Cursor:     cursor,
+		Empty:      true,
+		HitRegions: regions,
+	}
+}
+
+func emptyPaneContentLayout(paneID string, selectedIndex int) ([]Line, []HitRegion, Cursor) {
+	actions := emptyPaneActions()
+	if selectedIndex < 0 || selectedIndex >= len(actions) {
+		selectedIndex = 0
 	}
 	lines := []Line{centeredStyledLine("unconnected", StyleForeground)}
 	regions := make([]HitRegion, 0, len(actions))
 	for index, action := range actions {
-		selected := index == emptyPaneSelectedActionIndex
+		selected := index == selectedIndex
 		text := emptyPaneActionLabel(action.Label, selected)
 		style := action.Style
 		if selected && style == StyleForeground {
@@ -51,6 +73,15 @@ type emptyPaneActionSpec struct {
 	ID    ActionID
 	Label string
 	Style StyleToken
+}
+
+func emptyPaneActions() []emptyPaneActionSpec {
+	return []emptyPaneActionSpec{
+		{ID: ActionEmptyAttach, Label: "Attach existing terminal", Style: StyleAccent},
+		{ID: ActionEmptyCreate, Label: "Create new terminal", Style: StyleSuccess},
+		{ID: ActionEmptyManager, Label: "Open terminal manager", Style: StyleForeground},
+		{ID: ActionEmptyClose, Label: "Close pane", Style: StyleDangerStrong},
+	}
 }
 
 func emptyPaneActionLabel(label string, selected bool) string {

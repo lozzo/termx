@@ -37,6 +37,34 @@ func TestUIInputReducerOpensTerminalPickerFromCtrlF(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerEmptyPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
+	reducer := NewUIInputReducer()
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "slot", Kind: state.PaneEmpty, Active: true}
+	root := state.Root{Shell: shell}
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}})
+	if root.Shell.EmptyPaneCTA.SelectedIndex != 1 {
+		t.Fatalf("down should select create CTA, got %#v effects=%#v", root.Shell.EmptyPaneCTA, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}})
+	if root.Shell.EmptyPaneCTA.SelectedIndex != 2 {
+		t.Fatalf("second down should select manager CTA, got %#v effects=%#v", root.Shell.EmptyPaneCTA, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if root.Shell.EmptyPaneCTA.SelectedIndex != 2 || len(effects) != 2 {
+		t.Fatalf("enter should keep selection and emit handled action effects, root=%#v effects=%#v", root.Shell.EmptyPaneCTA, effects)
+	}
+	effect, ok := effects[1].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("enter should emit content action effect, got %#v", effects)
+	}
+	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != render.ActionEmptyManager.String() || msg.PaneID != state.DefaultPaneID {
+		t.Fatalf("enter should execute selected manager CTA, got %#v", msg)
+	}
+}
+
 func TestUIInputReducerTerminalPickerDeleteKeysTrimQuery(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker().SetTerminalPickerQuery("日志")}

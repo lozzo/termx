@@ -147,7 +147,7 @@ func TestContentViewportPreservesANSICellStyleAndWideTruncation(t *testing.T) {
 }
 
 func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
-	lines, regions, cursor := emptyPaneContentLayout("pane-1")
+	lines, regions, cursor := emptyPaneContentLayout("pane-1", 0)
 	result := RenderContentViewport(ContentRenderRequest{
 		Rect:    Rect{W: 40, H: 8},
 		Content: ContentVM{Kind: ContentEmptyPane, Lines: lines, HitRegions: regions, Cursor: cursor},

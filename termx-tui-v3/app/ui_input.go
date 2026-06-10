@@ -50,6 +50,9 @@ func NewUIInputReducer() Reducer {
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayHelp {
 			return reduceHelpInput(root, inputMsg.Event)
 		}
+		if handled, next, effects := reduceEmptyPaneCTAInput(root, inputMsg.Event); handled {
+			return next, effects
+		}
 		intent := input.RouteWithMode(inputMsg.Event, root.CopyMode.Active, inputMode(root.Shell.EnsureDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
@@ -77,6 +80,41 @@ func NewUIInputReducer() Reducer {
 			}
 			return root, nil
 		}
+	}
+}
+
+func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return false, root, nil
+	}
+	shell := root.Shell.EnsureDefaults()
+	if shell.InteractionMode != state.InteractionModeNormal || shell.ActiveFloatingID != "" {
+		return false, root, nil
+	}
+	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+	if !ok || pane.Kind != state.PaneEmpty {
+		return false, root, nil
+	}
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = shell.MoveEmptyPaneCTASelection(-1, render.EmptyPaneActionCount())
+		return true, root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = shell.MoveEmptyPaneCTASelection(1, render.EmptyPaneActionCount())
+		return true, root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		actionID := render.EmptyPaneActionID(shell.EmptyPaneCTA.SelectedIndex)
+		if actionID == "" {
+			return true, root, []Effect{handledEffect{}}
+		}
+		return true, root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID}
+			}},
+		}
+	default:
+		return false, root, nil
 	}
 }
 

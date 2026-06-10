@@ -668,6 +668,9 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 	}
 	shell := root.Shell.EnsureDefaults()
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
+		if pane.Kind == state.PaneEmpty {
+			return buildEmptyPaneContentWithSelection(pane, shell.EmptyPaneCTA.SelectedIndex)
+		}
 		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: sessionForPane(root, pane), Active: true})
 	}
 	if len(shell.Workspace.Tabs) == 0 {

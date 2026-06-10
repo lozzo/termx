@@ -1337,6 +1337,11 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 	} else if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") || !contentHasAction(content, "empty.close") {
 		t.Fatalf("expected empty pane CTA action regions, got %#v", content.HitRegions)
 	}
+	emptyShell.EmptyPaneCTA.SelectedIndex = 2
+	emptyVM = NewRenderVMBuilder().Build(state.Root{Shell: emptyShell})
+	if content := activeContent(emptyVM.Shell); !strings.Contains(content.Lines[3].PlainString(), "► Open terminal manager ◄") || !strings.Contains(content.Lines[1].PlainString(), "[ Attach existing terminal ]") {
+		t.Fatalf("expected reducer-owned empty pane CTA selection, got %#v", content.Lines)
+	}
 
 	exitedShell := state.DefaultShell()
 	exitedShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "old shell", Kind: state.PaneExited, TerminalID: "term-old", Active: true}

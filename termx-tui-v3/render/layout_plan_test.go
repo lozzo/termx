@@ -930,7 +930,7 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 }
 
 func TestMeasureLayoutCentersEmptyPaneActionHitRegions(t *testing.T) {
-	lines, regions, cursor := emptyPaneContentLayout("pane-1")
+	lines, regions, cursor := emptyPaneContentLayout("pane-1", 0)
 	shell := ShellVM{Layout: LayoutVM{Panels: []PanelVM{{
 		ID:           "pane-1",
 		Presentation: PanelPresentationCard,

@@ -124,6 +124,7 @@ type ShellStore struct {
 	HeaderVisible     bool
 	FooterVisible     bool
 	Overlay           OverlayState
+	EmptyPaneCTA      EmptyPaneCTAState
 	Toasts            []ToastState
 	nextToastSeq      uint64
 	nextFloatingSeq   uint64
@@ -168,6 +169,10 @@ type FloatingRect struct {
 	Y int
 	W int
 	H int
+}
+
+type EmptyPaneCTAState struct {
+	SelectedIndex int
 }
 
 type SplitNode struct {
@@ -478,6 +483,33 @@ func (store ShellStore) SetFooterVisible(visible bool) ShellStore {
 func (store ShellStore) ToggleFooterVisible() ShellStore {
 	store = store.EnsureDefaults()
 	store.FooterVisible = !store.FooterVisible
+	return store
+}
+
+func (store ShellStore) MoveEmptyPaneCTASelection(delta int, count int) ShellStore {
+	store = store.EnsureDefaults()
+	if count <= 0 {
+		store.EmptyPaneCTA.SelectedIndex = 0
+		return store
+	}
+	selected := store.EmptyPaneCTA.SelectedIndex + delta
+	for selected < 0 {
+		selected += count
+	}
+	store.EmptyPaneCTA.SelectedIndex = selected % count
+	return store
+}
+
+func (store ShellStore) SetEmptyPaneCTASelection(index int, count int) ShellStore {
+	store = store.EnsureDefaults()
+	if count <= 0 || index < 0 {
+		store.EmptyPaneCTA.SelectedIndex = 0
+		return store
+	}
+	if index >= count {
+		index = count - 1
+	}
+	store.EmptyPaneCTA.SelectedIndex = index
 	return store
 }
 
