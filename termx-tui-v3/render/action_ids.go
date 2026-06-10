@@ -198,7 +198,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionResizeDown, ActionDispatchApp, ActionSurfaceFooter).withFooter("↓/j", "", StyleStatusWarning).withHelp("resize down"),
 		actionSpec(ActionResizeBalance, ActionDispatchApp, ActionSurfaceFooter).withFooter("b", "balance", StyleStatusAccent).withHelp("balance"),
 		actionSpec(ActionCopyOlder, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("pgup", "older", StyleStatusAccent).withHelp("older history"),
-		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph("own").withHelp("take resize owner"),
+		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph("◇ follow").withHelp("take resize owner"),
 		actionSpec(ActionTabCreate, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("n", "new", StyleStatusAccent).withHelp("create"),
 		actionSpec(ActionTabSwitch, ActionDispatchApp, ActionSurfaceLayout, ActionSurfaceHelp).withHelp("switch"),
 		actionSpec(ActionTabClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("x", "close", StyleStatusWarning).withHelp("close").withDanger(),

@@ -119,14 +119,20 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	if len(owner.Chrome.Meta) != 1 || owner.Chrome.Meta[0].Text != "size:owner" || owner.Chrome.Meta[0].Style != StyleSuccess {
 		t.Fatalf("owner pane should show size owner metadata, got %#v", owner.Chrome.Meta)
 	}
+	if owner.Chrome.Terminal.Title.Text != "shell" || owner.Chrome.Terminal.State.Text != paneChromeRunningGlyph() || owner.Chrome.Terminal.AttachCount != 2 || owner.Chrome.Terminal.Owner.Text != "◆ owner" || !owner.Chrome.Terminal.Locked {
+		t.Fatalf("owner pane should expose tuiv2 terminal chrome facts, got %#v", owner.Chrome.Terminal)
+	}
 	if len(follower.Chrome.Meta) != 1 || follower.Chrome.Meta[0].Text != "size:follower" {
 		t.Fatalf("follower pane should show follower metadata, got %#v", follower.Chrome.Meta)
+	}
+	if follower.Chrome.Terminal.AttachCount != 2 || follower.Chrome.Terminal.Owner.Text != "◇ follow" || follower.Chrome.Terminal.Locked {
+		t.Fatalf("follower pane should expose tuiv2 follower chrome facts, got %#v", follower.Chrome.Terminal)
 	}
 	if len(owner.Chrome.Actions) != 4 || owner.Chrome.Actions[0].ActionID == ActionTerminalTakeResizeOwner.String() {
 		t.Fatalf("owner pane should not offer take-owner action, got %#v", owner.Chrome.Actions)
 	}
-	if len(follower.Chrome.Actions) == 0 || follower.Chrome.Actions[0].ActionID != ActionTerminalTakeResizeOwner.String() {
-		t.Fatalf("follower pane should offer take-owner action first, got %#v", follower.Chrome.Actions)
+	if len(follower.Chrome.Actions) != 4 || follower.Chrome.Actions[0].ActionID == ActionTerminalTakeResizeOwner.String() {
+		t.Fatalf("follower pane should keep structural actions separate from owner token, got %#v", follower.Chrome.Actions)
 	}
 }
 

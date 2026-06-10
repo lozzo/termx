@@ -635,10 +635,24 @@ type PanelVM struct {
 }
 
 type PanelChromeVM struct {
-	Title   ChromeSlotVM
-	State   ChromeSlotVM
-	Meta    []ChromeSlotVM
-	Actions []ChromeActionVM
+	Title    ChromeSlotVM
+	State    ChromeSlotVM
+	Meta     []ChromeSlotVM
+	Terminal TerminalChromeVM
+	Actions  []ChromeActionVM
+}
+
+type TerminalChromeVM struct {
+	Locked       bool
+	Title        ChromeSlotVM
+	State        ChromeSlotVM
+	AttachCount  int
+	Owner        ChromeSlotVM
+	TakeOwner    bool
+	ResizeRole   string
+	CanResize    bool
+	TerminalID   string
+	TerminalView string
 }
 
 type ChromeSlotVM struct {

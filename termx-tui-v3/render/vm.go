@@ -448,7 +448,7 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
 			Active:       active && !floatingOwnsFocus,
 			Content:      content,
-			Chrome:       buildPanelChromeVM(pane, active && !floatingOwnsFocus, content, root.TerminalViews),
+			Chrome:       buildPanelChromeVM(root, pane, active && !floatingOwnsFocus, content),
 		}
 	}
 	return panels
@@ -464,7 +464,7 @@ func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, acti
 				Presentation: renderPanelPresentation(shell.PanelPresentation),
 				Active:       true,
 				Content:      activeContent,
-				Chrome:       buildPanelChromeVM(pane, true, activeContent, root.TerminalViews),
+				Chrome:       buildPanelChromeVM(root, pane, true, activeContent),
 			}}
 		}
 	}
@@ -505,22 +505,72 @@ func floatingChromeVM(floating state.FloatingPaneState) FloatingChromeVM {
 	return FloatingChromeVM{FillOverlay: true, ShowResizeHandle: true}
 }
 
-func buildPanelChromeVM(pane state.PaneState, active bool, content ContentVM, views state.TerminalViewStore) PanelChromeVM {
+func buildPanelChromeVM(root state.Root, pane state.PaneState, active bool, content ContentVM) PanelChromeVM {
 	style := StyleMuted
 	if active {
 		style = StyleAccent
 	}
 	actions := defaultPaneChromeActionVMs(style)
-	meta := terminalResizeOwnerMeta(pane.ID, views)
-	if binding, ok := views.PaneBinding(pane.ID); ok && binding.ResizeRole != state.TerminalResizeRoleOwner {
-		actions = append([]ChromeActionVM{paneChromeActionVM(ActionTerminalTakeResizeOwner, style)}, actions...)
-	}
+	terminal := terminalChromeVM(root, pane, active, content, style)
+	meta := terminalResizeOwnerMeta(pane.ID, root.TerminalViews)
 	return PanelChromeVM{
-		Title:   ChromeSlotVM{Text: activePaneTitle(pane), Style: style},
-		State:   paneChromeStateSlot(active, content),
-		Meta:    meta,
-		Actions: actions,
+		Title:    ChromeSlotVM{Text: activePaneTitle(pane), Style: style},
+		State:    paneChromeStateSlot(active, content),
+		Meta:     meta,
+		Terminal: terminal,
+		Actions:  actions,
 	}
+}
+
+func terminalChromeVM(root state.Root, pane state.PaneState, active bool, content ContentVM, style StyleToken) TerminalChromeVM {
+	binding, ok := root.TerminalViews.PaneBinding(pane.ID)
+	if !ok || binding.TerminalID == "" {
+		return TerminalChromeVM{}
+	}
+	role := binding.ResizeRole
+	if role == "" {
+		role = state.TerminalResizeRoleFollower
+	}
+	ownerText := "◇ follow"
+	ownerStyle := StyleMuted
+	if role == state.TerminalResizeRoleOwner {
+		ownerText = "◆ owner"
+		ownerStyle = StyleSuccess
+	}
+	title := strings.TrimSpace(pane.Title)
+	if title == "" {
+		title = binding.TerminalID
+	}
+	return TerminalChromeVM{
+		Locked:       binding.CanResize && role == state.TerminalResizeRoleOwner,
+		Title:        ChromeSlotVM{Text: title, Style: style},
+		State:        terminalChromeStateSlot(root, binding.TerminalID, active, content),
+		AttachCount:  len(root.TerminalViews.BindingsForTerminal(binding.TerminalID)),
+		Owner:        ChromeSlotVM{Text: ownerText, Style: ownerStyle},
+		TakeOwner:    role != state.TerminalResizeRoleOwner,
+		ResizeRole:   role,
+		CanResize:    binding.CanResize,
+		TerminalID:   binding.TerminalID,
+		TerminalView: binding.ViewID,
+	}
+}
+
+func terminalChromeStateSlot(root state.Root, terminalID string, active bool, content ContentVM) ChromeSlotVM {
+	style := StyleMuted
+	if active {
+		style = StyleSuccess
+	}
+	if content.Pending {
+		style = StyleWarning
+	}
+	if content.Error != "" || content.Empty {
+		style = StyleDanger
+	}
+	surface := root.Surface.SurfaceForTerminal(terminalID)
+	if surface.State == state.TerminalLiveExited || surface.State == state.TerminalLiveError {
+		style = StyleDanger
+	}
+	return ChromeSlotVM{Text: paneChromeRunningGlyph(), Style: style}
 }
 
 func terminalResizeOwnerMeta(paneID string, views state.TerminalViewStore) []ChromeSlotVM {

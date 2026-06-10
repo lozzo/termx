@@ -7,6 +7,7 @@ type PaneChromeGlyphs struct {
 	SplitVertical    string
 	SplitHorizontal  string
 	Close            string
+	SizeLock         string
 	CenterFloating   string
 	CollapseFloating string
 	Running          string
@@ -20,9 +21,10 @@ var defaultPaneChromeGlyphs = PaneChromeGlyphs{
 	SplitVertical:    "",
 	SplitHorizontal:  "",
 	Close:            "",
+	SizeLock:         "󰍀",
 	CenterFloating:   "◎",
 	CollapseFloating: "⌃",
-	Running:          "●",
+	Running:          "",
 	Waiting:          "○",
 	Exited:           "×",
 	Killed:           "×",
@@ -47,6 +49,9 @@ func SetPaneChromeGlyphs(glyphs PaneChromeGlyphs) {
 	}
 	if glyphs.Close != "" {
 		next.Close = glyphs.Close
+	}
+	if glyphs.SizeLock != "" {
+		next.SizeLock = glyphs.SizeLock
 	}
 	if glyphs.CenterFloating != "" {
 		next.CenterFloating = glyphs.CenterFloating
@@ -75,6 +80,10 @@ func ResetPaneChromeGlyphs() {
 
 func paneChromeCloseGlyph() string {
 	return paneChromeGlyphs.Close
+}
+
+func paneChromeSizeLockGlyph() string {
+	return paneChromeGlyphs.SizeLock
 }
 
 func paneChromeZoomGlyph() string {

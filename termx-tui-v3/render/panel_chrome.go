@@ -1,6 +1,8 @@
 package render
 
-import "strings"
+import (
+	"strings"
+)
 
 func splitPanelRects(layout LayoutVM, body Rect) map[string]Rect {
 	rects := make(map[string]Rect)
@@ -239,6 +241,7 @@ type paneChromeTopSlot struct {
 	text     string
 	style    StyleToken
 	priority int
+	actionID string
 }
 
 func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []paneChromeTopSlot {
@@ -276,6 +279,9 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 func paneChromeLabelSlots(panel PanelVM, borderStyle StyleToken, width int) []paneChromeTopSlot {
 	if width <= 0 {
 		return nil
+	}
+	if panel.Chrome.Terminal.TerminalID != "" {
+		return paneChromeTerminalLabelSlots(panel, borderStyle, width)
 	}
 	optionals := paneChromeOptionalLabelSlots(panel, borderStyle)
 	for len(optionals) > 0 && paneChromeSlotsWidth(optionals)+paneChromeMinimumTitleWidth(panel) > width {
@@ -538,7 +544,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 }
 
 func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive) {
-	text := chromeSlotClusterText(primitive.ActionSlots)
+	text := chromeBracketActionClusterText(primitive.ActionSlots)
 	width := DisplayWidth(text)
 	if width <= 0 {
 		return
@@ -562,6 +568,16 @@ func chromeSlotClusterText(slots []ChromeSlot) string {
 		parts = append(parts, slot.Text)
 	}
 	return strings.Join(parts, "─")
+}
+
+func chromeBracketActionClusterText(slots []ChromeSlot) string {
+	filtered := make([]ChromeSlot, 0, len(slots))
+	for _, slot := range slots {
+		if strings.HasPrefix(strings.TrimSpace(slot.Text), "[") {
+			filtered = append(filtered, slot)
+		}
+	}
+	return chromeSlotClusterText(filtered)
 }
 
 // floating 没有分屏动作；右上角只复用 pane chrome 的括号化可用动作。

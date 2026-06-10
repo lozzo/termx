@@ -1,6 +1,9 @@
 package render
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestChromePrimitivePaneActionSlotsMatchHitRegions(t *testing.T) {
 	panel := PanelVM{
@@ -26,6 +29,42 @@ func TestChromePrimitivePaneActionSlotsMatchHitRegions(t *testing.T) {
 		if slot.ActionID != region.ActionID || slot.Rect != region.Rect || slot.Text == "" {
 			t.Fatalf("slot %d must drive hit region slot=%#v region=%#v", index, slot, region)
 		}
+	}
+}
+
+func TestChromePrimitivePaneOwnerTokenDrivesTakeOwnerHitRegion(t *testing.T) {
+	panel := PanelVM{
+		ID:     "pane-2",
+		Title:  "123",
+		Active: true,
+		Chrome: PanelChromeVM{
+			Terminal: TerminalChromeVM{
+				Title:       ChromeSlotVM{Text: "123", Style: StyleAccent},
+				State:       ChromeSlotVM{Text: paneChromeRunningGlyph(), Style: StyleSuccess},
+				AttachCount: 2,
+				Owner:       ChromeSlotVM{Text: "◇ follow", Style: StyleMuted},
+				TakeOwner:   true,
+				TerminalID:  "term-1",
+			},
+			Actions: []ChromeActionVM{paneChromeActionVM(ActionPaneClose, StyleAccent)},
+		},
+	}
+	rect := Rect{W: 72, H: 8}
+	primitive := PaneChromePrimitive(panel, rect, StyleAccent)
+	regions := appendPaneActionRegions(nil, panel, rect, panel.ID, rect)
+
+	found := false
+	for index, slot := range primitive.ActionSlots {
+		if slot.ActionID != ActionTerminalTakeResizeOwner.String() {
+			continue
+		}
+		found = true
+		if !strings.Contains(slot.Text, "◇ follow") || regions[index].ActionID != slot.ActionID || regions[index].Rect != slot.Rect {
+			t.Fatalf("owner token should be visible hit slot, slot=%#v regions=%#v", slot, regions)
+		}
+	}
+	if !found {
+		t.Fatalf("expected owner token action slot, got %#v", primitive.ActionSlots)
 	}
 }
 

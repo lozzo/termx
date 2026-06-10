@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
@@ -34,6 +36,24 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 		t.Fatalf("expected square Unicode pane chrome, got %#v", result.Lines())
 	}
 	assertAllRowsWidth(t, result.Lines(), 40)
+}
+
+func TestFrameworkRendersTuiv2TerminalOwnerHeader(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell.Workspace.Tabs[0].Panes[0].Title = "123"
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Ready: true, State: state.TerminalLiveAttached, Lines: []string{"ready"}}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	lines := result.Lines()
+	want := paneChromeBracketToken(paneChromeSizeLockGlyph()) + " 123"
+	if !linesContain(lines, want) || !linesContain(lines, paneChromeRunningGlyph()) || !linesContain(lines, "⇄2") || !linesContain(lines, "◆ owner") {
+		t.Fatalf("expected tuiv2 owner terminal header tokens, want %q got %#v", want, lines)
+	}
+	if linesContain(lines, "size:owner") || linesContain(lines, "active") {
+		t.Fatalf("terminal header should use tuiv2 grammar instead of generic meta/state, got %#v", lines)
+	}
 }
 
 func TestFrameworkRendersContinuousCardPaneVerticalBorders(t *testing.T) {

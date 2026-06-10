@@ -38,15 +38,20 @@ func PaneChromePrimitive(panel PanelVM, rect Rect, style StyleToken) ChromePrimi
 	}
 	for _, slot := range paneChromeTopSlots(rect, panel, style) {
 		chromeSlot := ChromeSlot{
-			Rect:  Rect{X: slot.x, Y: rect.Y, W: DisplayWidth(slot.text), H: 1},
-			Text:  slot.text,
-			Style: slot.style,
+			Rect:     Rect{X: slot.x, Y: rect.Y, W: DisplayWidth(slot.text), H: 1},
+			Text:     slot.text,
+			Style:    slot.style,
+			ActionID: slot.actionID,
 		}
-		primitive.Title = chromeSlot
+		if chromeSlot.ActionID != "" {
+			primitive.ActionSlots = append(primitive.ActionSlots, chromeSlot)
+		} else {
+			primitive.Title = chromeSlot
+		}
 	}
 	actionRect := paneActionRect(panel, rect)
 	items := visiblePaneChromeActionItems(panel, rect.W)
-	primitive.ActionSlots = chromeActionSlotsFromItems(items, actionRect, 1)
+	primitive.ActionSlots = append(primitive.ActionSlots, chromeActionSlotsFromItems(items, actionRect, 1)...)
 	return primitive
 }
 
