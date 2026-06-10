@@ -66,12 +66,7 @@ func renderEmptyPaneContentViewport(request ContentRenderRequest) ContentRenderR
 			translatedRegions = append(translatedRegions, region)
 		}
 	}
-	cursor := content.Cursor
-	if cursor.Visible {
-		cursor.Row += startY
-		cursor.Col = minInt(centeredLineTextX(lines[0], rect.W)+cursor.Col, maxInt(0, rect.W-1))
-	}
-	return ContentRenderResult{Lines: rendered, Cursor: cursor, HitRegions: translatedRegions, Metadata: RenderMetadata{Width: rect.W, Height: rect.H}}
+	return ContentRenderResult{Lines: rendered, Cursor: Cursor{}, HitRegions: translatedRegions, Metadata: RenderMetadata{Width: rect.W, Height: rect.H}}
 }
 
 func centerContentLine(line Line, width int) Line {

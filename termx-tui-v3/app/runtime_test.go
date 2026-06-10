@@ -1259,6 +1259,7 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 
 	globalHost := NewFakeTerminalHost(8)
 	globalRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).AddToast(state.ToastSpec{ID: "toast-1", Title: "notice"})}, globalHost)
+	globalHost.SetSize(120, 20)
 	if err := globalRuntime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("post global footer render: %v", err)
 	}
@@ -1284,6 +1285,16 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 	}
 	if len(globalRuntime.State().Shell.EnsureDefaults().Toasts) != 0 {
 		t.Fatalf("footer clear click should clear toasts, got %#v", globalRuntime.State().Shell.EnsureDefaults().Toasts)
+	}
+	quitAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterQuit.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(quitAction.Rect)); err != nil {
+		t.Fatalf("send footer quit click: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer quit click: %v", err)
+	}
+	if !globalRuntime.Quit() {
+		t.Fatal("footer quit click should stop runtime")
 	}
 }
 

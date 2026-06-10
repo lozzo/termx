@@ -173,6 +173,23 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerGlobalQuitShortcutEmitsQuitMsg(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
+
+	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "q"}})
+	if len(effects) != 2 {
+		t.Fatalf("global q should be handled and emit quit effect, got %#v", effects)
+	}
+	if _, ok := effects[0].(handledEffect); !ok {
+		t.Fatalf("global q should mark input handled, got %#v", effects[0])
+	}
+	msg := effects[1].(FuncEffect).Run(context.Background())
+	if _, ok := msg.(QuitMsg); !ok {
+		t.Fatalf("global q should emit QuitMsg, got %#v", msg)
+	}
+}
+
 func TestInteractiveRuntimeTerminalPickerEnterDefaultsToCreateTerminal(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
@@ -1458,7 +1475,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendKey(input.KeyEsc)
 	floatingFrame := lastFrame(t, host.Frames())
 	if len(runtime.State().Shell.Floatings) != 1 ||
-		!frameContains(floatingFrame, "No terminal attached") ||
+		!frameContains(floatingFrame, "unconnected") ||
 		!frameContains(floatingFrame, "Attach existing terminal") ||
 		!frameContains(floatingFrame, "["+render.DefaultPaneChromeGlyphs().Zoom+"]─["+render.DefaultPaneChromeGlyphs().Close+"]") ||
 		frameContains(floatingFrame, render.DefaultPaneChromeGlyphs().Running+" float") {
@@ -1705,7 +1722,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		}
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "No terminal attached") || !frameContains(frame, "Attach existing terminal") {
+	if !frameContains(frame, "unconnected") || !frameContains(frame, "Attach existing terminal") {
 		t.Fatalf("expected rendered floating pane, got %#v", frame.Lines)
 	}
 

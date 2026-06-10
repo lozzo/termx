@@ -153,7 +153,7 @@ func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 		Content: ContentVM{Kind: ContentEmptyPane, Lines: lines, HitRegions: regions, Cursor: cursor},
 	})
 
-	if got, want := SliceCells(result.Lines[1].PlainString(), 10, 30), "No terminal attached"; got != want {
+	if got, want := SliceCells(result.Lines[1].PlainString(), 14, 25), "unconnected"; got != want {
 		t.Fatalf("empty pane headline should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
 	}
 	if got, want := SliceCells(result.Lines[2].PlainString(), 6, 34), "► Attach existing terminal ◄"; got != want {
@@ -172,8 +172,8 @@ func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 	if attach.Rect != (Rect{X: 6, Y: 2, W: 28, H: 1}) {
 		t.Fatalf("selected empty action hit region should follow centered text, got %#v", attach)
 	}
-	if !result.Cursor.Visible || result.Cursor.Row != 1 || result.Cursor.Col != 30 {
-		t.Fatalf("empty pane cursor should anchor at centered headline end, got %#v", result.Cursor)
+	if result.Cursor.Visible || result.Cursor.Anchor {
+		t.Fatalf("empty pane must not expose cursor or IME anchor, got %#v", result.Cursor)
 	}
 }
 

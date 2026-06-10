@@ -810,17 +810,14 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderAnchorsEmptyPaneCursorForIME(t *testing.T) {
+func TestRenderVMBuilderHidesEmptyPaneCursor(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "浮窗", Kind: state.PaneEmpty, Active: true}
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
-	if content.Kind != ContentEmptyPane || !content.Cursor.Visible {
-		t.Fatalf("empty pane should expose a cursor anchor for IME, got %#v", content)
-	}
-	if content.Cursor.Col != DisplayWidth("No terminal attached") {
-		t.Fatalf("empty pane cursor should follow headline text, got %#v", content.Cursor)
+	if content.Kind != ContentEmptyPane || content.Cursor.Visible || content.Cursor.Anchor {
+		t.Fatalf("empty pane should not expose cursor or IME anchor, got %#v", content)
 	}
 }
 
@@ -877,6 +874,7 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	if vm.Shell.Footer.Mode != "pane" ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "v", "split", ActionPaneFooterSplit.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "close", ActionPaneFooterClose.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "d", "detach", ActionPaneFooterDetach.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "focus", ActionPaneFooterFocus.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z", "zoom", ActionPaneFooterZoom.String()) {
 		t.Fatalf("expected pane footer structural actions, got %#v", vm.Shell.Footer)
@@ -930,6 +928,11 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "l", "next", ActionTabNext.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionTabRename.String()) {
 		t.Fatalf("expected tab footer rename action, got %#v", vm.Shell.Footer)
+	}
+	shell = shell.SetInteractionMode(state.InteractionModeGlobal)
+	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Footer.Mode != "global" || !containsFooterAction(vm.Shell.Footer.ActionTokens, "q", "quit", ActionFooterQuit.String()) {
+		t.Fatalf("expected global footer quit action, got %#v", vm.Shell.Footer)
 	}
 }
 
@@ -1329,7 +1332,7 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		Shell:   emptyShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace empty"}},
 	})
-	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || content.Lines[0].PlainString() != "No terminal attached" || !strings.Contains(content.Lines[1].PlainString(), "► Attach existing terminal ◄") {
+	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || content.Lines[0].PlainString() != "unconnected" || content.Status != "unconnected: Attach / Create / Manager / Close" || !strings.Contains(content.Lines[1].PlainString(), "► Attach existing terminal ◄") || content.Cursor.Visible || content.Cursor.Anchor {
 		t.Fatalf("expected active empty pane placeholder, got %#v", content)
 	} else if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") || !contentHasAction(content, "empty.close") {
 		t.Fatalf("expected empty pane CTA action regions, got %#v", content.HitRegions)

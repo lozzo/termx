@@ -23,6 +23,8 @@ func actionIDForShellAction(action input.ShellAction, reason string) (render.Act
 		return render.ActionPromptOpen, true
 	case input.ShellActionOpenHelp:
 		return render.ActionHelpOpen, true
+	case input.ShellActionQuit:
+		return render.ActionFooterQuit, true
 	case input.ShellActionFloatingNew:
 		return render.ActionFloatingNew, true
 	case input.ShellActionFloatingCtrl:

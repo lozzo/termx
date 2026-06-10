@@ -180,6 +180,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		return footerActionSpecs(
 			footerActionFor(ActionPaneFooterSplit),
 			footerActionFor(ActionPaneFooterClose),
+			footerActionFor(ActionPaneFooterDetach),
 			footerActionFor(ActionPaneFooterFocus),
 			footerActionFor(ActionPaneFooterZoom),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
@@ -201,6 +202,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionFooterOpenTree),
 			footerActionFor(ActionFooterCloseToast),
 			footerActionFor(ActionFooterClearToasts),
+			footerActionFor(ActionFooterQuit),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "copy":

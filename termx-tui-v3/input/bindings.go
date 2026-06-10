@@ -81,6 +81,7 @@ var bindingCatalog = []Binding{
 	{ID: "global-tree", Mode: InteractionModeGlobal, Key: KeyChar, Char: "w", Intent: IntentShellAction, Action: ShellActionOpenTree},
 	{ID: "global-prompt", Mode: InteractionModeGlobal, Key: KeyChar, Char: ":", Intent: IntentShellAction, Action: ShellActionOpenPrompt},
 	{ID: "global-help", Mode: InteractionModeGlobal, Key: KeyChar, Char: "?", Intent: IntentShellAction, Action: ShellActionOpenHelp},
+	{ID: "global-quit", Mode: InteractionModeGlobal, Key: KeyChar, Char: "q", Intent: IntentShellAction, Action: ShellActionQuit},
 
 	{ID: "floating-new", Mode: InteractionModeFloating, Key: KeyChar, Char: "n", Intent: IntentShellAction, Action: ShellActionFloatingNew},
 	{ID: "floating-close", Mode: InteractionModeFloating, Key: KeyChar, Char: "x", Intent: IntentShellAction, Action: ShellActionFloatingCtrl, Reason: "close"},

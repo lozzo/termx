@@ -81,3 +81,29 @@ func TestActionCatalogCopyAndModeAdapterEffectsRemainMessages(t *testing.T) {
 		t.Fatalf("copy footer action should emit ctrl-v input msg, got %#v", msg)
 	}
 }
+
+func TestActionCatalogPaneDetachAndQuitAdapterEffectsRemainMessages(t *testing.T) {
+	reducer := NewShellReducer()
+	root := actionCatalogDispatchRoot()
+
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPaneFooterDetach.String()})
+	if len(effects) != 1 {
+		t.Fatalf("pane detach footer action should persist through workbench command, root=%#v effects=%#v", next, effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	persist, ok := msg.(WorkbenchStoragePersistRequestMsg)
+	if !ok || persist.Reason != string(state.WorkbenchCommandPaneDetach) {
+		t.Fatalf("pane detach footer action should emit detach persist request, got %#v", msg)
+	}
+	if next.Shell.EnsureDefaults().Workspace.Tabs[0].Panes[0].Kind != state.PaneEmpty {
+		t.Fatalf("pane detach footer action should leave active pane unconnected, got %#v", next.Shell.Workspace.Tabs[0].Panes[0])
+	}
+
+	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionFooterQuit.String()})
+	if next.Generation != root.Generation || len(effects) != 1 {
+		t.Fatalf("quit footer action should stay as runtime message effect, root=%#v effects=%#v", next, effects)
+	}
+	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(QuitMsg); !ok {
+		t.Fatalf("quit footer action should emit QuitMsg, got %#v", effects[0])
+	}
+}

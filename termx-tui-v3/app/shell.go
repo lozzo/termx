@@ -311,6 +311,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterClearToasts:
 		root.Shell = root.Shell.ClearToasts()
 		return root.Advance(), nil
+	case render.ActionFooterQuit:
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return QuitMsg{} }}}
 	case render.ActionFooterNewWorkspace:
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: nextWorkspaceName(shell), Source: state.PaneCommandSourceMouse})
@@ -338,6 +340,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionPaneFooterClose:
 		shell := root.Shell.EnsureDefaults()
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterDetach:
+		shell := root.Shell.EnsureDefaults()
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneDetach, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
 	case render.ActionPaneFooterFocus:
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandFocusNext, Source: state.PaneCommandSourceMouse})
 	case render.ActionPaneFooterZoom:

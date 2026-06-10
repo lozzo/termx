@@ -17,6 +17,7 @@ const (
 	ActionPaneClose               ActionID = "pane.close"
 	ActionPaneFooterSplit         ActionID = "pane.footer-split"
 	ActionPaneFooterClose         ActionID = "pane.footer-close"
+	ActionPaneFooterDetach        ActionID = "pane.footer-detach"
 	ActionPaneFooterFocus         ActionID = "pane.footer-focus"
 	ActionPaneFooterZoom          ActionID = "pane.footer-zoom"
 	ActionResizeLeft              ActionID = "resize.left"
@@ -48,6 +49,7 @@ const (
 	ActionFooterOpenTree          ActionID = "footer.open-tree"
 	ActionFooterCloseToast        ActionID = "footer.close-toast"
 	ActionFooterClearToasts       ActionID = "footer.clear-toasts"
+	ActionFooterQuit              ActionID = "footer.quit"
 	ActionFooterNewWorkspace      ActionID = "footer.new-workspace"
 	ActionFooterRenameWorkspace   ActionID = "footer.rename-workspace"
 	ActionFooterPreviousWorkspace ActionID = "footer.previous-workspace"
@@ -190,6 +192,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionPaneClose, ActionDispatchPaneCommand, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph(paneChromeCloseActionText()).withHelp("close").withDanger(),
 		actionSpec(ActionPaneFooterSplit, ActionDispatchApp, ActionSurfaceFooter).withFooter("v", "split", StyleStatusAccent).withHelp("split"),
 		actionSpec(ActionPaneFooterClose, ActionDispatchApp, ActionSurfaceFooter).withFooter("x", "close", StyleStatusWarning).withHelp("close").withDanger(),
+		actionSpec(ActionPaneFooterDetach, ActionDispatchApp, ActionSurfaceFooter).withFooter("d", "detach", StyleStatusWarning).withHelp("detach"),
 		actionSpec(ActionPaneFooterFocus, ActionDispatchApp, ActionSurfaceFooter).withFooter("n", "focus", StyleStatusAccent).withHelp("focus"),
 		actionSpec(ActionPaneFooterZoom, ActionDispatchApp, ActionSurfaceFooter).withFooter("z", "zoom", StyleStatusAccent).withHelp("zoom"),
 		actionSpec(ActionResizeLeft, ActionDispatchApp, ActionSurfaceFooter).withFooter("←/h", "", StyleStatusWarning).withHelp("resize left"),
@@ -219,6 +222,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFooterOpenTree, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("w", "tree", StyleStatusAccent).withHelp("tree"),
 		actionSpec(ActionFooterCloseToast, ActionDispatchApp, ActionSurfaceFooter).withFooter("T", "toast", StyleStatusWarning).withHelp("close toast"),
 		actionSpec(ActionFooterClearToasts, ActionDispatchApp, ActionSurfaceFooter).withFooter("t", "clear", StyleStatusWarning).withHelp("clear toasts"),
+		actionSpec(ActionFooterQuit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("q", "quit", StyleStatusWarning).withHelp("quit tui"),
 		actionSpec(ActionFooterNewWorkspace, ActionDispatchApp, ActionSurfaceFooter).withFooter("n", "new", StyleStatusAccent).withHelp("new workspace"),
 		actionSpec(ActionFooterRenameWorkspace, ActionDispatchApp, ActionSurfaceFooter).withFooter("r", "rename", StyleStatusAccent).withHelp("rename workspace"),
 		actionSpec(ActionFooterPreviousWorkspace, ActionDispatchApp, ActionSurfaceFooter).withFooter("h", "prev", StyleStatusAccent).withHelp("previous workspace"),

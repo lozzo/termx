@@ -90,7 +90,7 @@ func TestFrameworkRendersUnconnectedPaneWithoutChromeActionCluster(t *testing.T)
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	lines := result.Lines()
-	if !linesContain(lines, "unconnected") || !linesContain(lines, "No terminal attached") || !linesContain(lines, "► Attach existing terminal ◄") || !linesContain(lines, "[ Create new terminal ]") || !linesContain(lines, "[ Open terminal manager ]") || !linesContain(lines, "[ Close pane ]") {
+	if !linesContain(lines, "unconnected") || !linesContain(lines, "► Attach existing terminal ◄") || !linesContain(lines, "[ Create new terminal ]") || !linesContain(lines, "[ Open terminal manager ]") || !linesContain(lines, "[ Close pane ]") {
 		t.Fatalf("expected unconnected pane title and content CTAs, got %#v", lines)
 	}
 	if !styledLinesContainText(result.StyledLines(), "► Attach existing terminal ◄", StyleAccent) || !styledLinesContainText(result.StyledLines(), "[ Create new terminal ]", StyleSuccess) || !styledLinesContainText(result.StyledLines(), "[ Close pane ]", StyleDangerStrong) {

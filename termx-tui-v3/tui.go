@@ -379,7 +379,7 @@ func visualAuditFloatingContent() render.ContentVM {
 	return render.ContentVM{
 		Kind: render.ContentEmptyPane,
 		Lines: []render.Line{
-			render.NewLine(" No terminal attached"),
+			render.NewLine(" unconnected"),
 			render.NewLine(""),
 			render.NewLine(" Attach existing"),
 			render.NewLine(" New terminal"),

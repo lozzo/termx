@@ -130,6 +130,7 @@ const (
 	ShellActionOpenTree     ShellAction = "shell.open-workbench-tree"
 	ShellActionOpenPrompt   ShellAction = "shell.open-prompt"
 	ShellActionOpenHelp     ShellAction = "shell.open-help"
+	ShellActionQuit         ShellAction = "shell.quit"
 )
 
 // Intent 是 input router 输出的 semantic intent，不直接修改 state。

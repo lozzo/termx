@@ -17,7 +17,7 @@ func buildEmptyPaneContent(pane state.PaneState) ContentVM {
 	return ContentVM{
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
-		Status:     "empty: Attach existing terminal / Create new terminal / Open terminal manager / Close pane",
+		Status:     "unconnected: Attach / Create / Manager / Close",
 		Cursor:     cursor,
 		Empty:      true,
 		HitRegions: regions,
@@ -31,7 +31,7 @@ func emptyPaneContentLayout(paneID string) ([]Line, []HitRegion, Cursor) {
 		{ID: ActionEmptyManager, Label: "Open terminal manager", Style: StyleForeground},
 		{ID: ActionEmptyClose, Label: "Close pane", Style: StyleDangerStrong},
 	}
-	lines := []Line{centeredStyledLine("No terminal attached", StyleForeground)}
+	lines := []Line{centeredStyledLine("unconnected", StyleForeground)}
 	regions := make([]HitRegion, 0, len(actions))
 	for index, action := range actions {
 		selected := index == emptyPaneSelectedActionIndex
@@ -44,7 +44,7 @@ func emptyPaneContentLayout(paneID string) ([]Line, []HitRegion, Cursor) {
 		lines = append(lines, line)
 		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: index + 1, W: DisplayWidth(text), H: 1}, PaneID: paneID, ActionID: action.ID.String()})
 	}
-	return lines, regions, Cursor{Visible: true, Anchor: true, Row: 0, Col: DisplayWidth("No terminal attached"), Shape: CursorShapeBar}
+	return lines, regions, Cursor{}
 }
 
 type emptyPaneActionSpec struct {

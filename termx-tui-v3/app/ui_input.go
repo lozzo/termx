@@ -456,6 +456,8 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		}}
 	case input.ShellActionOpenHelp:
 		msg = ShellOpenHelpMsg{Section: "most-used"}
+	case input.ShellActionQuit:
+		msg = QuitMsg{}
 	default:
 		return root, []Effect{handledEffect{}}
 	}

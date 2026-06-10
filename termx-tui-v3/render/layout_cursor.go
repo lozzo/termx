@@ -16,6 +16,9 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 		if !panel.Panel.Active {
 			continue
 		}
+		if panel.Panel.Content.Kind == ContentEmptyPane {
+			return Cursor{}, Rect{}
+		}
 		cursor := panel.Panel.Content.Cursor
 		if !cursor.Visible {
 			cursor = shell.Cursor
