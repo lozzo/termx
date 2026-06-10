@@ -9,6 +9,130 @@
 - pane split right/down 不提供键盘入口；它只通过 pane chrome action、鼠标 hit region、测试/smoke harness 或后续 command palette / CLI mini command 调用同一 semantic command。
 - UI mode 下未绑定按键必须被吞掉，不得漏发给 terminal；normal mode 未绑定 raw key 继续透传 terminal。
 
+## tuiv2 迁移基准
+
+后续把 v3 快捷键迁移到 tuiv2 风格时，以 `tuiv2/input/catalog.go` 的 `defaultBindingCatalog` 为主依据。`StatusText` 是底部 status bar 展示基准，`FooterText` 是 overlay footer button 的补充基准；`tuiv2/render/overlay_footer_actions.go`、`tuiv2/render/terminal_pool_layout.go` 和 `tuiv2/render/workspace_tree_overlay.go` 只用于确认 overlay 按钮文案和鼠标 action，不反过来替代 catalog。
+
+| tuiv2 Mode | Status / Footer 展示 | 实际键/组合 | 迁移语义 |
+| --- | --- | --- | --- |
+| normal | `P PANE` | `Ctrl-P` | 进入 pane mode |
+| normal | `R RESIZE` | `Ctrl-R` | 进入 resize mode |
+| normal | `T TAB` | `Ctrl-T` | 进入 tab mode |
+| normal | `W WORKSPACE` | `Ctrl-W` | 进入 workspace mode |
+| normal | `O FLOAT` | `Ctrl-O` | 进入 floating mode |
+| normal | `V COPY` | `Ctrl-V` | 进入 display / copy mode |
+| normal | `F PICKER` | `Ctrl-F` | 打开 terminal picker |
+| normal | `G GLOBAL` | `Ctrl-G` | 进入 global mode |
+| pane | `h/j/k/l FOCUS` | `h` / `j` / `k` / `l`、方向键 | 聚焦相邻 pane |
+| pane | `% VSPLIT` | `%`、`Ctrl-D` | 垂直分屏 |
+| pane | `" HSPLIT` | `"`、`Ctrl-E` | 水平分屏 |
+| pane | `d DETACH` | `d` | detach 当前 pane 的 terminal |
+| pane | `r RECONNECT` | `r` | 通过 terminal picker 重连 pane |
+| pane | `R RESTART` | `R` | 重启 exited terminal |
+| pane | `a OWNER` | `a` | 当前 pane 获取 terminal ownership |
+| pane | `s LOCK` | `s` | 切换 terminal size lock |
+| pane | `X CLOSE+KILL` | `X` | 关闭 pane 并 kill terminal |
+| pane | `z ZOOM` | `z` | zoom / unzoom pane |
+| pane | `w CLOSE` | `w` | close pane |
+| pane | `Esc BACK` / `close` | `Esc` | 退出 pane mode |
+| resize | `h/j/k/l RESIZE` | `h` / `j` / `k` / `l`、方向键 | 小步调整 pane 尺寸 |
+| resize | `H/J/K/L RESIZEx2` | `H` / `J` / `K` / `L` | 大步调整 pane 尺寸 |
+| resize | `a OWNER` | `a` | 当前 pane 获取 terminal ownership |
+| resize | `s LOCK` | `s` | 切换 terminal size lock |
+| resize | `= BALANCE` | `=` | 平衡 pane 尺寸 |
+| resize | `Space LAYOUT` | `Space` | 切换 layout |
+| resize | `Shift+WASD PAN` | `W` / `A` / `S` / `D`、Shift 方向键 | 平移 pane 内 terminal 内容 |
+| resize | `0/$ ^/B ALIGN` | `0` / `$` / `^` / `B` | 内容对齐到 pane 边缘 |
+| resize | `m CENTER` | `m`、竖线键、`_` | 居中 terminal 内容 |
+| resize | `r RESET` | `r` | 重置内容偏移 |
+| resize | `Esc BACK` / `close` | `Esc` | 退出 resize mode |
+| tab | `C NEW` | `c` | 新建 tab |
+| tab | `R RENAME` | `r` | 重命名当前 tab |
+| tab | `N/P NEXT/PREV` | `n` / `p` | 切换下一个 / 上一个 tab |
+| tab | `1-9 JUMP` | `1`-`9` | 跳转到 tab 编号 |
+| tab | `X KILL` | `x` | kill 当前 tab terminals 并关闭 tab |
+| tab | `Esc BACK` / `close` | `Esc` | 退出 tab mode |
+| workspace | `F PICK` | `f`、`s` | 打开 workspace picker |
+| workspace | `C NEW` | `c` | 新建 workspace |
+| workspace | `R RENAME` | `r` | 重命名当前 workspace |
+| workspace | `X DELETE` | `x` | 删除当前 workspace |
+| workspace | `N/P NEXT/PREV` | `n` / `p` | 切换下一个 / 上一个 workspace |
+| workspace | `Esc BACK` / `close` | `Esc` | 退出 workspace mode |
+| floating | `N NEW FLOAT` | `n` | 新建 floating pane |
+| floating | `h/j/k/l MOVE` | `h` / `j` / `k` / `l` | 移动 floating pane |
+| floating | `H/J/K/L RESIZE` | `H` / `J` / `K` / `L` | 调整 floating pane 尺寸 |
+| floating | `c CENTER` | `c` | 居中 floating pane |
+| floating | `m COLLAPSE` | `m` | 折叠 floating pane |
+| floating | `o OVERVIEW` | `o` | 打开 floating overview |
+| floating | `1-9 SUMMON` | `1`-`9` | 按 slot 召回 floating pane |
+| floating | `a OWNER` | `a` | 当前 floating pane 获取 terminal ownership |
+| floating | `v ALL` | `v` | 折叠或恢复全部 floating panes |
+| floating | `= FIT` | `=` | 按内容 fit floating pane |
+| floating | `s AUTO-FIT` | `s` | 切换 floating auto-fit |
+| floating | `x CLOSE` | `x` | 关闭 active floating pane |
+| floating | `f PICK` | `f` | 为 active floating pane 打开 terminal picker |
+| floating | `Esc BACK` / `close` | `Esc` | 退出 floating mode |
+| floating overview | `UP/DOWN MOVE` | `Up` / `Down`、`k` / `j` | 移动 floating selection |
+| floating overview | `Enter OPEN` / `open` | `Enter` | 恢复并聚焦选中 floating pane |
+| floating overview | `s SHOW ALL` / `show-all` | `s` | 展开全部 floating panes |
+| floating overview | `c COLLAPSE ALL` / `collapse-all` | `c` | 折叠全部 floating panes |
+| floating overview | `x CLOSE` / `close-pane` | `x` | 关闭选中 floating pane |
+| floating overview | `1-9 SUMMON` | `1`-`9` | 按 slot 打开 floating pane |
+| floating overview | `Esc BACK` / `close` | `Esc` | 关闭 floating overview |
+| display | `MOVE CURSOR` | 方向键、`h` / `j` / `k` / `l` | 移动 copy cursor |
+| display | `PG SCROLL` | `PgUp` / `PgDn` | page up / page down |
+| display | `u/d HALF` | `u` / `d` | half-page up / down |
+| display | `HOME/END LINE` | `Home` / `End` | 行首 / 行尾 |
+| display | `g/G EDGE` | `g` / `G` | 顶部 / 底部 |
+| display | `Space MARK/COPY` | `Space` | mark 或 copy selection |
+| display | `y COPY` | `y`、`Enter` | copy selection；Enter copy 后退出 |
+| display | `p/P PASTE` | `p` / `P` | paste last copy 或 system clipboard |
+| display | `H HISTORY` | `H` | 打开 clipboard history |
+| display | `Esc BACK` / `close` | `Esc` | 退出 display / copy mode |
+| global | `? HELP` | `?` | 打开 help overlay |
+| global | `t TERMINALS` | `t` | 打开 terminal pool |
+| global | `q QUIT` | `q` | 退出 termx |
+| global | `Esc BACK` / `close` | `Esc` | 退出 global mode |
+| picker | `UP/DOWN MOVE` | `Up` / `Down` | 移动 terminal picker 选择项 |
+| picker | `TYPE FILTER` | 输入文本 | 过滤 terminal picker |
+| picker | `Enter HERE` / `attach` | `Enter` | attach selected terminal 到当前 pane |
+| picker | `Tab SPLIT` / `split+attach` | `Tab` | 分屏并 attach selected terminal |
+| picker | `Ctrl-E EDIT` / `edit` | `Ctrl-E` | 编辑 terminal metadata |
+| picker | `Ctrl-K KILL` / `kill` | `Ctrl-K` | kill selected terminal |
+| picker | `Ctrl-X DELETE` / `delete` | `Ctrl-X` | 删除 terminal inventory entry |
+| picker | `Esc BACK` / `close` | `Esc` | 关闭 picker |
+| terminal manager | `UP/DOWN MOVE` | `Up` / `Down` | 移动 terminal pool 选择项 |
+| terminal manager | `TYPE FILTER` | 输入文本 | 过滤 terminal pool |
+| terminal manager | `Enter HERE` / `here` | `Enter` | attach selected terminal 到当前 pane |
+| terminal manager | `Ctrl-T TAB` / `tab` | `Ctrl-T` | attach selected terminal 到新 tab |
+| terminal manager | `Ctrl-O FLOAT` / `float` | `Ctrl-O` | attach selected terminal 到 floating pane |
+| terminal manager | `Ctrl-E EDIT` / `edit` | `Ctrl-E` | 编辑 terminal metadata |
+| terminal manager | `Ctrl-K KILL` / `kill` | `Ctrl-K` | kill selected terminal |
+| terminal manager | `Ctrl-X DELETE` / `delete` | `Ctrl-X` | 删除 terminal inventory entry |
+| terminal manager | `Esc BACK` / `close` | `Esc` | 关闭 terminal manager |
+| workspace picker | `UP/DOWN MOVE` | `Up` / `Down` | 移动 workspace tree 选择项 |
+| workspace picker | `TYPE FILTER` | 输入文本 | 过滤 workspace tree |
+| workspace picker | `Enter OPEN` / `Open` | `Enter` | 打开选中 workspace / tab / pane |
+| workspace picker | `Ctrl-N NEW` / `New Workspace` | `Ctrl-N` | 创建 workspace |
+| workspace picker | `Ctrl-R RENAME` / `Rename` / `Rename Tab` | `Ctrl-R` | 重命名 workspace 或 tab |
+| workspace picker | `Ctrl-X REMOVE` / `Delete` / `Close Tab` / `Close` | `Ctrl-X` | 删除 workspace / tab / pane 项 |
+| workspace picker | `Ctrl-D DETACH` / `Detach` | `Ctrl-D` | detach 选中 pane |
+| workspace picker | `Ctrl-Z ZOOM` / `Zoom` | `Ctrl-Z` | zoom 选中 pane |
+| workspace picker | `Esc BACK` / `close` | `Esc` | 关闭 workspace picker |
+| prompt | `TYPE INPUT` | 输入文本 | 编辑 prompt 输入 |
+| prompt | `Backspace DELETE` | `Backspace` | 删除 prompt 输入 |
+| prompt | `Enter CONTINUE` / `submit` | `Enter` | 提交 prompt |
+| prompt | `Esc BACK` / `cancel` | `Esc` | 取消 prompt |
+| help | `Esc BACK` / `close` | `Esc` | 关闭 help |
+| clipboard history | `UP/DOWN MOVE` | `Up` / `Down` | 移动 clipboard history 选择项 |
+| clipboard history | `TYPE FILTER` | 输入文本 | 过滤 clipboard history |
+| clipboard history | `Enter PASTE/NEW` | `Enter` | paste 或新建 clipboard entry |
+| clipboard history | `Ctrl-E EDIT` | `Ctrl-E` | 编辑 clipboard entry |
+| clipboard history | `Ctrl-X DELETE` | `Ctrl-X` | 删除 clipboard entry |
+| clipboard history | `Esc BACK` | `Esc` | 关闭 clipboard history |
+
+迁移注意：`tuiv2/app/status_hints.go` 会按当前 workbench/runtime 状态隐藏部分 status hint，例如没有 active pane 时不展示 pane 操作、没有 follower role 时不展示 `a OWNER`、没有多 workspace/tab 时不展示 next/prev。v3 迁移时应保留这种“catalog 为真、status 按上下文过滤”的模型。
+
 ## Footer 已展示并可触发
 
 | Mode | Footer 展示 | 实际可触发键 | 语义动作 |
