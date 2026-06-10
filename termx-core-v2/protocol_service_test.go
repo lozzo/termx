@@ -337,6 +337,86 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceMultipleAttachmentsResizeOwnership(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	owner, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"})
+	if err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	follower, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-follower", ViewID: "view-follower"})
+	if err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+	if owner.Channel == follower.Channel || owner.ResizeControl == nil || follower.ResizeControl == nil {
+		t.Fatalf("expected distinct attachment controls owner=%#v follower=%#v", owner, follower)
+	}
+	if !owner.ResizeControl.CanResize || owner.ResizeControl.Reason != protocol.ResizeControlReasonOwner {
+		t.Fatalf("owner should be resize owner, got %#v", owner.ResizeControl)
+	}
+	if follower.ResizeControl.CanResize || follower.ResizeControl.Reason != protocol.ResizeControlReasonFollower || follower.ResizeControl.OwnerViewID != "view-owner" {
+		t.Fatalf("follower should not own resize, got %#v", follower.ResizeControl)
+	}
+
+	result, err := client.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: follower.Channel, Cols: 40, Rows: 10, ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-follower", ViewID: "view-follower"})
+	if err != nil {
+		t.Fatalf("follower ensure_resize: %v", err)
+	}
+	if result.Resized || result.ResizeControl == nil || result.ResizeControl.CanResize || result.ResizeControl.Reason != protocol.ResizeControlReasonFollower {
+		t.Fatalf("follower ensure_resize should not resize, got %#v", result)
+	}
+	if _, err := client.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: owner.Channel, Cols: 30, Rows: 8, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"}); err != nil {
+		t.Fatalf("owner ensure_resize: %v", err)
+	}
+	process := waitForProcessTraffic(t, server, "term-1", 0, 1)
+	_, resizes, _, _ := process.snapshot()
+	if len(resizes) != 1 || resizes[0] != (Size{Cols: 30, Rows: 8}) {
+		t.Fatalf("expected only owner resize to reach process, got %#v", resizes)
+	}
+	var info protocol.TerminalInfo
+	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if info.ResizeOwnership == nil || info.ResizeOwnership.OwnerViewID != "view-owner" || info.ResizeOwnerAttachmentCount != 2 {
+		t.Fatalf("expected ownership summary in terminal info, got %#v", info)
+	}
+}
+
+func TestProtocolServiceDetachByChannelKeepsSiblingAttachment(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	first, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-1", ViewID: "view-1"})
+	if err != nil {
+		t.Fatalf("attach first: %v", err)
+	}
+	second, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-2", ViewID: "view-2"})
+	if err != nil {
+		t.Fatalf("attach second: %v", err)
+	}
+	if err := client.Call(context.Background(), "detach", protocol.DetachParams{TerminalID: "term-1", Channel: first.Channel}, nil); err != nil {
+		t.Fatalf("detach first: %v", err)
+	}
+	if err := client.Input(context.Background(), first.Channel, []byte("old\n")); err != nil {
+		t.Fatalf("detached first input frame send: %v", err)
+	}
+	if err := client.Input(context.Background(), second.Channel, []byte("new\n")); err != nil {
+		t.Fatalf("second input: %v", err)
+	}
+	process := waitForProcessTraffic(t, server, "term-1", 1, 0)
+	inputs, _, _, _ := process.snapshot()
+	if len(inputs) != 1 || string(inputs[0]) != "new\n" {
+		t.Fatalf("expected only sibling attachment input, got %#v", inputs)
+	}
+}
+
 func TestProtocolServiceStorageMethodsAndEvents(t *testing.T) {
 	_, client, closeClient := newProtocolClient(t)
 	defer closeClient()

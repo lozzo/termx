@@ -208,7 +208,12 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		if !ok {
 			return nil, methodParamsTypeError(method, "protocol.DetachParams", params)
 		}
-		return proto.Marshal(&wirepb.GetParams{TerminalId: value.TerminalID})
+		return proto.Marshal(&wirepb.EnsureResizeParams{
+			TerminalId: value.TerminalID,
+			Channel:    uint32(value.Channel),
+			SurfaceId:  value.SurfaceID,
+			ViewId:     value.ViewID,
+		})
 	case "events":
 		value, ok := params.(EventsParams)
 		if !ok {
@@ -460,11 +465,11 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			ViewID:       msg.GetViewId(),
 		}, nil
 	case "detach":
-		var msg wirepb.GetParams
+		var msg wirepb.EnsureResizeParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
 		}
-		return DetachParams{TerminalID: msg.GetTerminalId()}, nil
+		return DetachParams{TerminalID: msg.GetTerminalId(), Channel: uint16(msg.GetChannel()), SurfaceID: msg.GetSurfaceId(), ViewID: msg.GetViewId()}, nil
 	case "events":
 		var msg wirepb.EventsParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {

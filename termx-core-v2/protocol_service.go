@@ -29,15 +29,29 @@ type protocolSession struct {
 	sendMu       sync.Mutex
 	nextCh       atomic.Uint32
 	mu           sync.RWMutex
-	attached     map[uint16]string
+	attachments  map[uint16]protocolAttachment
+	resizeOwners map[string]uint16
+	ownerEpoch   uint64
 	cancelEvents context.CancelFunc
+}
+
+// protocolAttachment 是 daemon-side channel/view registry；它不保存 TUI workspace/pane truth。
+type protocolAttachment struct {
+	TerminalID   string
+	Channel      uint16
+	Mode         string
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
+	Epoch        uint64
 }
 
 func newProtocolSession(server *Server, conn transport.Transport) *protocolSession {
 	session := &protocolSession{
-		server:   server,
-		conn:     conn,
-		attached: make(map[uint16]string),
+		server:       server,
+		conn:         conn,
+		attachments:  make(map[uint16]protocolAttachment),
+		resizeOwners: make(map[string]uint16),
 	}
 	session.nextCh.Store(6)
 	return session
@@ -138,7 +152,7 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		items := session.server.ListTerminals()
 		out := protocol.ListResult{Terminals: make([]protocol.TerminalInfo, 0, len(items))}
 		for _, item := range items {
-			out.Terminals = append(out.Terminals, protocolInfoFromCoreV2(item))
+			out.Terminals = append(out.Terminals, session.protocolInfoFromCoreV2(item))
 		}
 		return encodeMethodResult(req.Method, out)
 	case "get":
@@ -147,7 +161,7 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if err != nil {
 			return nil, false, errorCode(err), err
 		}
-		return encodeMethodResult(req.Method, protocolInfoFromCoreV2(info))
+		return encodeMethodResult(req.Method, session.protocolInfoFromCoreV2(info))
 	case "set_tags":
 		in := params.(protocol.SetTagsParams)
 		info, err := session.server.GetTerminal(in.TerminalID)
@@ -196,56 +210,48 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, nil)
 	case "attach":
 		in := params.(protocol.AttachParams)
-		channel, err := session.attach(in.TerminalID)
-		if err != nil {
-			return nil, false, errorCode(err), err
-		}
-		info, err := session.server.GetTerminal(in.TerminalID)
+		attachment, control, err := session.attach(in)
 		if err != nil {
 			return nil, false, errorCode(err), err
 		}
 		return encodeMethodResult(req.Method, protocol.AttachResult{
-			Mode:    normalizeAttachMode(in.Mode),
-			Channel: channel,
-			ResizeControl: &protocol.ResizeControl{
-				CanResize: true,
-				Reason:    protocol.ResizeControlReasonOwner,
-				SurfaceID: in.SurfaceID,
-				ResizeOwnership: &protocol.ResizeOwnership{
-					OwnerAttachmentID: fmt.Sprintf("core-v2:%d", channel),
-					OwnerSurfaceID:    in.SurfaceID,
-					OwnerViewID:       in.ViewID,
-					Size:              protocolSizeFromCore(info.Size),
-					SizeLocked:        false,
-					Epoch:             uint64(channel),
-				},
-			},
+			Mode:          attachment.Mode,
+			Channel:       attachment.Channel,
+			ResizeControl: control,
 		})
 	case "detach":
 		in := params.(protocol.DetachParams)
-		session.detachTerminal(in.TerminalID)
+		session.detach(in)
 		return encodeMethodResult(req.Method, nil)
 	case "ensure_resize":
 		in := params.(protocol.EnsureResizeParams)
-		attachedTerminalID, err := session.terminalIDForChannel(in.Channel)
+		attachment, err := session.attachmentForChannel(in.Channel)
 		if err != nil {
 			return nil, false, errorCode(err), err
 		}
-		if attachedTerminalID != in.TerminalID {
-			return nil, false, protocolErrorBadRequest, fmt.Errorf("resize channel %d is attached to %s, not %s", in.Channel, attachedTerminalID, in.TerminalID)
+		if attachment.TerminalID != in.TerminalID {
+			return nil, false, protocolErrorBadRequest, fmt.Errorf("resize channel %d is attached to %s, not %s", in.Channel, attachment.TerminalID, in.TerminalID)
+		}
+		control, canResize, err := session.resizeControlForRequest(attachment, in.ResizePolicy, in.SurfaceID, in.ViewID)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		if !canResize {
+			return encodeMethodResult(req.Method, protocol.EnsureResizeResult{
+				Size:          control.ResizeOwnership.Size,
+				Resized:       false,
+				ResizeControl: control,
+			})
 		}
 		err = session.server.ResizeTerminal(ctx, in.TerminalID, in.Cols, in.Rows)
 		if err != nil {
 			return nil, false, errorCode(err), err
 		}
+		control = session.resizeControlForOwner(attachment, protocol.Size{Cols: in.Cols, Rows: in.Rows})
 		return encodeMethodResult(req.Method, protocol.EnsureResizeResult{
 			Size:    protocol.Size{Cols: in.Cols, Rows: in.Rows},
 			Resized: true,
-			ResizeControl: &protocol.ResizeControl{
-				CanResize: true,
-				Reason:    protocol.ResizeControlReasonOwner,
-				SurfaceID: in.SurfaceID,
-			},
+			ResizeControl: control,
 		})
 	case "snapshot":
 		in := params.(protocol.SnapshotParams)
@@ -453,19 +459,30 @@ func encodeMethodResult(method string, result any) ([]byte, bool, int, error) {
 }
 
 func (session *protocolSession) handleStreamFrame(ctx context.Context, channel uint16, typ uint8, payload []byte) error {
-	terminalID, err := session.terminalIDForChannel(channel)
+	attachment, err := session.attachmentForChannel(channel)
 	if err != nil {
 		return err
 	}
 	switch typ {
 	case wire.TypeInput:
-		return session.server.WriteInput(ctx, terminalID, payload)
+		return session.server.WriteInput(ctx, attachment.TerminalID, payload)
 	case wire.TypeResize:
 		cols, rows, err := wire.DecodeResizePayload(payload)
 		if err != nil {
 			return err
 		}
-		return session.server.ResizeTerminal(ctx, terminalID, cols, rows)
+		control, canResize, err := session.resizeControlForRequest(attachment, attachment.ResizePolicy, attachment.SurfaceID, attachment.ViewID)
+		if err != nil {
+			return err
+		}
+		if !canResize {
+			return fmt.Errorf("resize denied for channel %d: %s", channel, control.Reason)
+		}
+		if err := session.server.ResizeTerminal(ctx, attachment.TerminalID, cols, rows); err != nil {
+			return err
+		}
+		session.resizeControlForOwner(attachment, protocol.Size{Cols: cols, Rows: rows})
+		return nil
 	case wire.TypeStreamReady, wire.TypeBootstrapDone:
 		return nil
 	default:
@@ -570,35 +587,192 @@ func (session *protocolSession) stopEvents() {
 	}
 }
 
-func (session *protocolSession) attach(terminalID string) (uint16, error) {
-	if _, err := session.server.GetTerminal(terminalID); err != nil {
-		return 0, err
+func (session *protocolSession) attach(params protocol.AttachParams) (protocolAttachment, *protocol.ResizeControl, error) {
+	info, err := session.server.GetTerminal(params.TerminalID)
+	if err != nil {
+		return protocolAttachment{}, nil, err
 	}
 	channel := uint16(session.nextCh.Add(1))
-	session.mu.Lock()
-	session.attached[channel] = terminalID
-	session.mu.Unlock()
-	return channel, nil
-}
-
-func (session *protocolSession) detachTerminal(terminalID string) {
+	attachment := protocolAttachment{
+		TerminalID:   params.TerminalID,
+		Channel:      channel,
+		Mode:         normalizeAttachMode(params.Mode),
+		ResizePolicy: normalizeResizePolicy(params.ResizePolicy),
+		SurfaceID:    params.SurfaceID,
+		ViewID:       params.ViewID,
+	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	for channel, attachedTerminalID := range session.attached {
-		if attachedTerminalID == terminalID {
-			delete(session.attached, channel)
+	if attachment.ResizePolicy == protocol.ResizePolicyOwner || session.resizeOwners[attachment.TerminalID] == 0 {
+		session.ownerEpoch++
+		attachment.ResizePolicy = protocol.ResizePolicyOwner
+		attachment.Epoch = session.ownerEpoch
+		session.resizeOwners[attachment.TerminalID] = channel
+	}
+	session.attachments[channel] = attachment
+	control := session.resizeControlForAttachmentLocked(attachment, protocolSizeFromCore(info.Size))
+	return attachment, control, nil
+}
+
+func (session *protocolSession) detach(params protocol.DetachParams) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	for channel, attachment := range session.attachments {
+		if !detachMatches(params, channel, attachment) {
+			continue
+		}
+		delete(session.attachments, channel)
+		if session.resizeOwners[attachment.TerminalID] == channel {
+			delete(session.resizeOwners, attachment.TerminalID)
+			session.promoteResizeOwnerLocked(attachment.TerminalID)
 		}
 	}
 }
 
-func (session *protocolSession) terminalIDForChannel(channel uint16) (string, error) {
+func detachMatches(params protocol.DetachParams, channel uint16, attachment protocolAttachment) bool {
+	if params.Channel != 0 {
+		return params.Channel == channel
+	}
+	if params.TerminalID != "" && params.TerminalID != attachment.TerminalID {
+		return false
+	}
+	if params.SurfaceID != "" && params.SurfaceID != attachment.SurfaceID {
+		return false
+	}
+	if params.ViewID != "" && params.ViewID != attachment.ViewID {
+		return false
+	}
+	return params.TerminalID != "" || params.SurfaceID != "" || params.ViewID != ""
+}
+
+func (session *protocolSession) promoteResizeOwnerLocked(terminalID string) {
+	for channel, attachment := range session.attachments {
+		if attachment.TerminalID != terminalID || attachment.ResizePolicy == protocol.ResizePolicyObserver {
+			continue
+		}
+		session.ownerEpoch++
+		attachment.ResizePolicy = protocol.ResizePolicyOwner
+		attachment.Epoch = session.ownerEpoch
+		session.attachments[channel] = attachment
+		session.resizeOwners[terminalID] = channel
+		return
+	}
+}
+
+func (session *protocolSession) attachmentForChannel(channel uint16) (protocolAttachment, error) {
 	session.mu.RLock()
 	defer session.mu.RUnlock()
-	terminalID, ok := session.attached[channel]
+	attachment, ok := session.attachments[channel]
 	if !ok {
-		return "", ErrTerminalNotFound
+		return protocolAttachment{}, ErrTerminalNotFound
 	}
-	return terminalID, nil
+	return attachment, nil
+}
+
+func (session *protocolSession) resizeControlForRequest(attachment protocolAttachment, policy string, surfaceID string, viewID string) (*protocol.ResizeControl, bool, error) {
+	info, err := session.server.GetTerminal(attachment.TerminalID)
+	if err != nil {
+		return nil, false, err
+	}
+	if policy != "" {
+		attachment.ResizePolicy = normalizeResizePolicy(policy)
+	}
+	if surfaceID != "" {
+		attachment.SurfaceID = surfaceID
+	}
+	if viewID != "" {
+		attachment.ViewID = viewID
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if current, ok := session.attachments[attachment.Channel]; ok {
+		current.ResizePolicy = attachment.ResizePolicy
+		current.SurfaceID = attachment.SurfaceID
+		current.ViewID = attachment.ViewID
+		attachment = current
+		session.attachments[attachment.Channel] = current
+	}
+	if attachment.ResizePolicy == protocol.ResizePolicyOwner && session.resizeOwners[attachment.TerminalID] != attachment.Channel {
+		session.ownerEpoch++
+		attachment.Epoch = session.ownerEpoch
+		session.attachments[attachment.Channel] = attachment
+		session.resizeOwners[attachment.TerminalID] = attachment.Channel
+	}
+	control := session.resizeControlForAttachmentLocked(attachment, protocolSizeFromCore(info.Size))
+	return control, control.CanResize, nil
+}
+
+func (session *protocolSession) resizeControlForOwner(attachment protocolAttachment, size protocol.Size) *protocol.ResizeControl {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.ownerEpoch++
+	attachment.ResizePolicy = protocol.ResizePolicyOwner
+	attachment.Epoch = session.ownerEpoch
+	session.attachments[attachment.Channel] = attachment
+	session.resizeOwners[attachment.TerminalID] = attachment.Channel
+	return session.resizeControlForAttachmentLocked(attachment, size)
+}
+
+func (session *protocolSession) resizeControlForAttachmentLocked(attachment protocolAttachment, size protocol.Size) *protocol.ResizeControl {
+	ownerChannel := session.resizeOwners[attachment.TerminalID]
+	owner, hasOwner := session.attachments[ownerChannel]
+	if !hasOwner || owner.TerminalID != attachment.TerminalID {
+		owner = attachment
+		ownerChannel = attachment.Channel
+	}
+	ownership := &protocol.ResizeOwnership{
+		OwnerAttachmentID: strconv.FormatUint(uint64(ownerChannel), 10),
+		OwnerSurfaceID:    owner.SurfaceID,
+		OwnerViewID:       owner.ViewID,
+		Size:              size,
+		Epoch:             owner.Epoch,
+	}
+	control := &protocol.ResizeControl{
+		CanResize:       ownerChannel == attachment.Channel && attachment.ResizePolicy == protocol.ResizePolicyOwner,
+		Reason:          protocol.ResizeControlReasonFollower,
+		SurfaceID:       attachment.SurfaceID,
+		OwnerSurfaceID:  owner.SurfaceID,
+		OwnerViewID:     owner.ViewID,
+		ResizeOwnership: ownership,
+	}
+	if attachment.ResizePolicy == protocol.ResizePolicyObserver {
+		control.Reason = protocol.ResizeControlReasonObserver
+	} else if control.CanResize {
+		control.Reason = protocol.ResizeControlReasonOwner
+	}
+	return control
+}
+
+func (session *protocolSession) protocolInfoFromCoreV2(info TerminalInfo) protocol.TerminalInfo {
+	out := protocolInfoFromCoreV2(info)
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+	ownerChannel := session.resizeOwners[info.ID]
+	owner, hasOwner := session.attachments[ownerChannel]
+	for _, attachment := range session.attachments {
+		if attachment.TerminalID == info.ID {
+			out.ResizeOwnerAttachmentCount++
+		}
+	}
+	if hasOwner && owner.TerminalID == info.ID {
+		out.ResizeOwnership = &protocol.ResizeOwnership{
+			OwnerAttachmentID: strconv.FormatUint(uint64(ownerChannel), 10),
+			OwnerSurfaceID:    owner.SurfaceID,
+			OwnerViewID:       owner.ViewID,
+			Size:              protocolSizeFromCore(info.Size),
+			Epoch:             owner.Epoch,
+		}
+	}
+	return out
+}
+
+func normalizeResizePolicy(policy string) string {
+	switch policy {
+	case protocol.ResizePolicyFollower, protocol.ResizePolicyObserver:
+		return policy
+	default:
+		return protocol.ResizePolicyOwner
+	}
 }
 
 func (session *protocolSession) sendError(id uint64, code int, message string) error {

@@ -626,3 +626,27 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected decoded history window params: %#v", params)
 	}
 }
+
+func TestDetachParamsControlPayloadRoundTripKeepsAttachmentIdentity(t *testing.T) {
+	params := DetachParams{
+		TerminalID: "term-1",
+		Channel:    7,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-1",
+	}
+	encoded, err := EncodeMethodParams("detach", params)
+	if err != nil {
+		t.Fatalf("encode detach params failed: %v", err)
+	}
+	decoded, err := DecodeMethodParams("detach", encoded)
+	if err != nil {
+		t.Fatalf("decode detach params failed: %v", err)
+	}
+	got, ok := decoded.(DetachParams)
+	if !ok {
+		t.Fatalf("expected DetachParams, got %T", decoded)
+	}
+	if got != params {
+		t.Fatalf("unexpected decoded detach params: %#v", got)
+	}
+}

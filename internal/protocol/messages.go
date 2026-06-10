@@ -149,6 +149,7 @@ type ResizeOwnership struct {
 const (
 	ResizePolicyOwner    = "owner"
 	ResizePolicyFollower = "follower"
+	ResizePolicyObserver = "observer"
 )
 
 const (
@@ -304,6 +305,9 @@ type Event struct {
 
 type DetachParams struct {
 	TerminalID string
+	Channel    uint16
+	SurfaceID  string
+	ViewID     string
 }
 
 type EventsParams struct {
