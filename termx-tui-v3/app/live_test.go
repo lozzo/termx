@@ -696,7 +696,7 @@ func TestActiveFloatingResizeCommandResizesAttachedTerminalContentRect(t *testin
 	if err := runtime.Post(TerminalPoolAttachResultMsg{
 		TerminalID:       "term-float",
 		TargetFloatingID: "floating-1",
-		Result:           services.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6},
+		Result:           services.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true},
 	}); err != nil {
 		t.Fatalf("post floating attach result: %v", err)
 	}

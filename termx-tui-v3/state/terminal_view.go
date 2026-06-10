@@ -81,7 +81,7 @@ func NewPaneTerminalView(paneID string, terminalID string, channel uint16, cols 
 		surfaceID = "termx-tui-v3"
 	}
 	resizeRole = normalizeTerminalResizeRole(resizeRole)
-	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, PaneID: paneID, Attached: terminalID != "", CanResize: canResize || resizeRole == TerminalResizeRoleOwner}
+	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, PaneID: paneID, Attached: terminalID != "", CanResize: canResize}
 }
 
 func NewFloatingTerminalView(floatingID string, paneID string, terminalID string, channel uint16, cols int, rows int, resizeRole string, surfaceID string, viewID string, canResize bool) TerminalViewBinding {
@@ -92,7 +92,7 @@ func NewFloatingTerminalView(floatingID string, paneID string, terminalID string
 		surfaceID = "termx-tui-v3"
 	}
 	resizeRole = normalizeTerminalResizeRole(resizeRole)
-	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, FloatingID: floatingID, PaneID: paneID, Attached: terminalID != "", CanResize: canResize || resizeRole == TerminalResizeRoleOwner}
+	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, FloatingID: floatingID, PaneID: paneID, Attached: terminalID != "", CanResize: canResize}
 }
 
 func TerminalPaneViewID(paneID string) string {
@@ -132,13 +132,13 @@ func (store TerminalViewStore) BindFloating(binding TerminalViewBinding) Termina
 func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewStore {
 	binding.ResizeRole = normalizeTerminalResizeRole(binding.ResizeRole)
 	binding.Layout = binding.Layout.Normalize()
-	if binding.ResizeRole == TerminalResizeRoleOwner {
-		binding.CanResize = true
-	}
 	binding.Attached = true
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
 	store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
+	if binding.ResizeRole == TerminalResizeRoleOwner {
+		store.demoteResizeOwnersLocked(binding.TerminalID, binding.ViewID)
+	}
 	store.Views[binding.ViewID] = binding
 	if binding.PaneID != "" {
 		store.PaneViews[binding.PaneID] = binding.ViewID
@@ -147,6 +147,20 @@ func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewSto
 		store.FloatingViews[binding.FloatingID] = binding.ViewID
 	}
 	return store
+}
+
+func (store TerminalViewStore) demoteResizeOwnersLocked(terminalID string, exceptViewID string) {
+	if terminalID == "" {
+		return
+	}
+	for candidateID, candidate := range store.Views {
+		if candidateID == exceptViewID || candidate.TerminalID != terminalID || candidate.ResizeRole != TerminalResizeRoleOwner {
+			continue
+		}
+		candidate.ResizeRole = TerminalResizeRoleFollower
+		candidate.CanResize = false
+		store.Views[candidateID] = candidate
+	}
 }
 
 func (store TerminalViewStore) ApplyPaneLayoutCommand(paneID string, command TerminalViewLayoutCommand) (TerminalViewStore, TerminalViewBinding, bool) {
@@ -366,6 +380,9 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 		binding.ViewID = projection.ViewID
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
+	if binding.ResizeRole == TerminalResizeRoleOwner {
+		store.demoteResizeOwnersLocked(binding.TerminalID, viewID)
+	}
 	store.Views[viewID] = binding
 	return store, true
 }

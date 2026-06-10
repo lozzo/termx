@@ -25,6 +25,7 @@ func (TerminalPoolListResultMsg) isMsg() {}
 type TerminalPoolAttachRequestMsg struct {
 	TerminalID       string
 	TargetFloatingID string
+	ResizePolicy     string
 }
 
 func (TerminalPoolAttachRequestMsg) isMsg() {}
@@ -214,6 +215,10 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 	if targetFloatingID != "" {
 		viewID = state.TerminalFloatingViewID(targetFloatingID)
 	}
+	resizePolicy := msg.ResizePolicy
+	if resizePolicy == "" {
+		resizePolicy = state.TerminalResizeRoleFollower
+	}
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
@@ -221,7 +226,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				Cols:         cols,
 				Rows:         rows,
 				Mode:         "collaborator",
-				ResizePolicy: "owner",
+				ResizePolicy: resizePolicy,
 				SurfaceID:    "termx-tui-v3",
 				ViewID:       viewID,
 			})
@@ -312,7 +317,7 @@ func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResul
 	effects := []Effect{
 		FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: msg.Result.TerminalID, TargetFloatingID: msg.TargetFloatingID}
+			return TerminalPoolAttachRequestMsg{TerminalID: msg.Result.TerminalID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: state.TerminalResizeRoleOwner}
 		}},
 	}
 	return root.Advance(), effects
@@ -353,7 +358,7 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 		viewID = state.TerminalFloatingViewID(targetFloatingID)
 	}
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: "owner", SurfaceID: "termx-tui-v3", ViewID: viewID})
+		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "termx-tui-v3", ViewID: viewID})
 		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, Result: result, Err: err}
 	}}}
 }

@@ -61,6 +61,55 @@ func TestTerminalViewStoreTransfersResizeOwnerWithinTerminal(t *testing.T) {
 	}
 }
 
+func TestTerminalViewStoreDemotesPreviousOwnerOnBind(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, TerminalResizeRoleOwner, "surface", "view-2", true))
+	store = store.BindPane(NewPaneTerminalView("pane-3", "term-1", 9, 30, 10, TerminalResizeRoleFollower, "surface", "view-3", false))
+
+	first, _ := store.PaneBinding("pane-1")
+	second, _ := store.PaneBinding("pane-2")
+	third, _ := store.PaneBinding("pane-3")
+	if first.ResizeRole != TerminalResizeRoleFollower || first.CanResize {
+		t.Fatalf("previous owner should be demoted by new owner bind, got %#v", first)
+	}
+	if second.ResizeRole != TerminalResizeRoleOwner || !second.CanResize {
+		t.Fatalf("new owner should stay owner, got %#v", second)
+	}
+	if third.ResizeRole != TerminalResizeRoleFollower || third.CanResize {
+		t.Fatalf("follower bind should not become owner, got %#v", third)
+	}
+}
+
+func TestTerminalViewStoreDoesNotPromoteOwnerRoleToResizePermission(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", false))
+
+	binding, _ := store.PaneBinding("pane-1")
+	if binding.ResizeRole != TerminalResizeRoleOwner || binding.CanResize {
+		t.Fatalf("locked owner should remain owner without resize permission, got %#v", binding)
+	}
+}
+
+func TestTerminalViewStoreResizeControlDemotesPreviousOwner(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	store, applied := store.ApplyResizeControl("view-2", TerminalResizeControlProjection{ResizeRole: TerminalResizeRoleOwner, CanResize: true})
+	if !applied {
+		t.Fatal("expected resize control projection to apply")
+	}
+	first, _ := store.PaneBinding("pane-1")
+	second, _ := store.PaneBinding("pane-2")
+	if first.ResizeRole != TerminalResizeRoleFollower || first.CanResize {
+		t.Fatalf("previous owner should be demoted by control projection, got %#v", first)
+	}
+	if second.ResizeRole != TerminalResizeRoleOwner || !second.CanResize {
+		t.Fatalf("projected owner should become owner, got %#v", second)
+	}
+}
+
 func TestTerminalViewStoreResizeRequestRequiresOwnerAndGuardsStaleResults(t *testing.T) {
 	store := TerminalViewStore{}
 	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
