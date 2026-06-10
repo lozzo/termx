@@ -29,6 +29,10 @@ func actionIDForShellAction(action input.ShellAction, reason string) (render.Act
 		return render.ActionFooterQuit, true
 	case input.ShellActionFloatingNew:
 		return render.ActionFloatingNew, true
+	case input.ShellActionFloatingOverview:
+		return render.ActionFloatingOverview, true
+	case input.ShellActionFloatingSummon:
+		return render.ActionFloatingSummon, true
 	case input.ShellActionFloatingCtrl:
 		switch reason {
 		case "close":

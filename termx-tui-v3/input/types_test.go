@@ -177,6 +177,8 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 		{name: "resize reset", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, kind: IntentWorkbenchCommand, command: "terminal layout reset"},
 		{name: "resize equals balance", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "="}, kind: IntentPaneCommand, command: "pane balance"},
 		{name: "floating f pick", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, kind: IntentShellAction, action: ShellActionOpenPicker},
+		{name: "floating o overview", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "o"}, kind: IntentShellAction, action: ShellActionFloatingOverview},
+		{name: "floating 3 summon", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, kind: IntentShellAction, action: ShellActionFloatingSummon},
 		{name: "floating a owner", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "a"}, kind: IntentWorkbenchCommand, command: "floating take-owner"},
 		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "tab create"},
 		{name: "tab X kill", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "tab kill confirm=accepted"},

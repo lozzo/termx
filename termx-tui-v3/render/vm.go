@@ -241,6 +241,13 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionWorkbenchSelect),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
+	case string(state.OverlayFloatingOverview):
+		return footerActionSpecs(
+			footerActionSpec("↑/↓", "select", "", StyleStatusAccent),
+			footerActionFor(ActionFloatingSummon),
+			footerActionSpec("enter", "OPEN", ActionFloatingSummon.String(), StyleStatusAccent),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
 	case string(state.OverlayPrompt):
 		return footerActionSpecs(
 			footerActionSpec("type", "", "", StyleStatusAccent),
@@ -255,6 +262,8 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	case "floating":
 		return footerActionSpecs(
 			footerActionFor(ActionFloatingNew),
+			footerActionFor(ActionFloatingOverview),
+			footerActionFor(ActionFloatingSummon),
 			footerActionFor(ActionFloatingPick),
 			footerActionFor(ActionFloatingTakeOwner),
 			footerActionFor(ActionFloatingCenter),
@@ -1030,6 +1039,12 @@ func (projector ShellProjector) buildOverlayVM(root state.Root, shell state.Shel
 			Kind:    OverlayWorkbenchTree,
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentWorkbenchTree}),
+		}
+	case state.OverlayFloatingOverview:
+		return OverlayVM{
+			Kind:    OverlayFloatingOverview,
+			Opaque:  true,
+			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentFloatingOverview}),
 		}
 	case state.OverlayPrompt:
 		return OverlayVM{

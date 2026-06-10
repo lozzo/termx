@@ -20,6 +20,8 @@ func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStor
 		return store.centerFloating(command)
 	case FloatingCommandToggleCollapse:
 		return store.toggleCollapseFloating(command.TargetID)
+	case FloatingCommandSummon:
+		return store.summonFloating(command)
 	case FloatingCommandMove:
 		return store.moveFloating(command)
 	case FloatingCommandResize:
@@ -27,6 +29,10 @@ func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStor
 	default:
 		return store, floatingCommandInvalid(command.Action, "unknown action")
 	}
+}
+
+func (store ShellStore) SummonFloatingByIndex(index int) (ShellStore, FloatingCommandResult) {
+	return store.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandSummon, Index: index})
 }
 
 func (store ShellStore) BindFloatingTerminal(id string, terminalID string) ShellStore {
@@ -156,6 +162,18 @@ func (store ShellStore) toggleCollapseFloating(id string) (ShellStore, FloatingC
 	}
 	store.Floatings[index].Collapsed = !store.Floatings[index].Collapsed
 	return store.focusRaiseFloating(store.Floatings[index].ID, FloatingCommandToggleCollapse)
+}
+
+func (store ShellStore) summonFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
+	index := command.Index
+	if command.TargetID != "" {
+		index = store.floatingIndex(command.TargetID)
+	}
+	if index < 0 || index >= len(store.Floatings) {
+		return store, floatingCommandInvalid(command.Action, "floating not found")
+	}
+	store.Floatings[index].Collapsed = false
+	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
 }
 
 func (store ShellStore) moveFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {

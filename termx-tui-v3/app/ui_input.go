@@ -44,6 +44,9 @@ func NewUIInputReducer() Reducer {
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayWorkbenchTree {
 			return reduceWorkbenchTreeInput(root, inputMsg.Event)
 		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayFloatingOverview {
+			return reduceFloatingOverviewInput(root, inputMsg.Event)
+		}
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayPrompt {
 			return reducePromptInput(root, inputMsg.Event)
 		}
@@ -281,6 +284,43 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 	default:
 		return root, []Effect{handledEffect{}}
 	}
+}
+
+func reduceFloatingOverviewInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return root, nil
+	}
+	items := state.FloatingOverviewItems(root)
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = root.Shell.MoveFloatingOverviewSelection(-1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = root.Shell.MoveFloatingOverviewSelection(1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		return reduceFloatingOverviewOpen(root, items)
+	case input.KeyChar:
+		if index, ok := floatingSummonIndex(event.Char); ok {
+			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+				return ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandSummon, Index: index, Source: state.PaneCommandSourceKeyboard}}
+			}}}
+		}
+		return root, []Effect{handledEffect{}}
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceFloatingOverviewOpen(root state.Root, items []state.FloatingOverviewItem) (state.Root, []Effect) {
+	selected, ok := selectedFloatingOverviewItem(items)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating.open", Body: "no floating"})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
+	return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+		return ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandSummon, TargetID: selected.FloatingID, Source: state.PaneCommandSourceKeyboard}}
+	}}}
 }
 
 func reduceOverlayKeyboardAction(root state.Root, actionID render.ActionID) (state.Root, []Effect) {
@@ -661,6 +701,14 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 			return root, []Effect{handledEffect{}}
 		}
 		msg = ShellFloatingCommandMsg{Command: command}
+	case input.ShellActionFloatingOverview:
+		msg = ShellOpenFloatingOverviewMsg{}
+	case input.ShellActionFloatingSummon:
+		index, ok := floatingSummonIndex(intent.Reason)
+		if !ok {
+			return root, []Effect{handledEffect{}}
+		}
+		msg = ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandSummon, Index: index, Source: state.PaneCommandSourceKeyboard}}
 	case input.ShellActionOpenPool:
 		msg = ShellOpenTerminalPoolMsg{}
 	case input.ShellActionOpenTree:
@@ -686,6 +734,27 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 			return msg
 		}},
 	}
+}
+
+func floatingSummonIndex(value string) (int, bool) {
+	if len(value) != 1 || value[0] < '1' || value[0] > '9' {
+		return 0, false
+	}
+	return int(value[0] - '1'), true
+}
+
+func selectedFloatingOverviewItem(items []state.FloatingOverviewItem) (state.FloatingOverviewItem, bool) {
+	if len(items) == 0 {
+		return state.FloatingOverviewItem{}, false
+	}
+	selected := items[0]
+	for _, item := range items {
+		if item.Selected {
+			selected = item
+			break
+		}
+	}
+	return selected, selected.FloatingID != ""
 }
 
 func workbenchCommandFromIntent(root state.Root, intent input.Intent) (state.WorkbenchCommand, state.PromptState, bool) {

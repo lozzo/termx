@@ -800,12 +800,13 @@ type ToastVM struct {
 type OverlayKind string
 
 const (
-	OverlayNone           OverlayKind = ""
-	OverlayTerminalPicker OverlayKind = "terminal-picker"
-	OverlayTerminalPool   OverlayKind = "terminal-pool"
-	OverlayWorkbenchTree  OverlayKind = "workbench-tree"
-	OverlayPrompt         OverlayKind = "prompt"
-	OverlayHelp           OverlayKind = "help"
+	OverlayNone             OverlayKind = ""
+	OverlayTerminalPicker   OverlayKind = "terminal-picker"
+	OverlayTerminalPool     OverlayKind = "terminal-pool"
+	OverlayWorkbenchTree    OverlayKind = "workbench-tree"
+	OverlayFloatingOverview OverlayKind = "floating-overview"
+	OverlayPrompt           OverlayKind = "prompt"
+	OverlayHelp             OverlayKind = "help"
 )
 
 type OverlayVM struct {

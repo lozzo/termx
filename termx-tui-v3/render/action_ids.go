@@ -68,6 +68,8 @@ const (
 
 	ActionFloatingRaise      ActionID = "floating.raise"
 	ActionFloatingNew        ActionID = "floating.new"
+	ActionFloatingOverview   ActionID = "floating.overview"
+	ActionFloatingSummon     ActionID = "floating.summon"
 	ActionFloatingClose      ActionID = "floating.close"
 	ActionFloatingPick       ActionID = "floating.pick"
 	ActionFloatingTakeOwner  ActionID = "floating.take-owner"
@@ -261,6 +263,8 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFooterDeleteWorkspace, ActionDispatchApp, ActionSurfaceFooter).withFooter("x", "DELETE", StyleStatusWarning).withHelp("delete workspace").withDanger(),
 		actionSpec(ActionFloatingRaise, ActionDispatchApp, ActionSurfaceFloatingChrome, ActionSurfaceContent, ActionSurfaceHelp).withChromeGlyph(paneChromeZoomGlyph()).withHelp("raise"),
 		actionSpec(ActionFloatingNew, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceInput).withFooter("n", "NEW FLOAT", StyleStatusAccent).withHelp("new floating"),
+		actionSpec(ActionFloatingOverview, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceInput, ActionSurfaceHelp).withFooter("o", "OVERVIEW", StyleStatusAccent).withHelp("floating overview"),
+		actionSpec(ActionFloatingSummon, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceInput, ActionSurfaceHelp).withFooter("1-9", "SUMMON", StyleStatusAccent).withHelp("summon floating"),
 		actionSpec(ActionFloatingClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceHelp).withFooter("x", "CLOSE", StyleStatusWarning).withChromeGlyph(paneChromeCloseGlyph()).withHelp("close").withDanger(),
 		actionSpec(ActionFloatingPick, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("f", "PICK", StyleStatusAccent).withHelp("pick terminal"),
 		actionSpec(ActionFloatingTakeOwner, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("a", "OWNER", StyleStatusAccent).withHelp("take resize owner"),

@@ -1043,6 +1043,24 @@ func TestRenderVMBuilderBuildsShellPanelToastAndOverlayVM(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: "floating-1", Title: "logs", Pane: state.PaneState{ID: "floating-pane-1", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, Rect: state.FloatingRect{X: 4, Y: 3, W: 32, H: 9}})
+	shell = shell.OpenFloatingOverview()
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if vm.Shell.Overlay.Kind != OverlayFloatingOverview || vm.Shell.Overlay.Content.Kind != ContentFloatingOverview {
+		t.Fatalf("expected floating overview overlay VM, got %#v", vm.Shell.Overlay)
+	}
+	content := vm.Shell.Overlay.Content
+	if content.Status != "floating overview: 1 items" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[1].PlainString(), "logs") {
+		t.Fatalf("expected floating overview content with action regions, got %#v", content)
+	}
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "1-9", "SUMMON", ActionFloatingSummon.String()) {
+		t.Fatalf("floating overview footer should expose summon action, got %#v", vm.Shell.Footer)
+	}
+}
+
 func TestRenderVMBuilderProjectsZoomedPaneOnly(t *testing.T) {
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionHorizontal).

@@ -76,6 +76,10 @@ type ShellOpenWorkbenchTreeMsg struct{}
 
 func (ShellOpenWorkbenchTreeMsg) isMsg() {}
 
+type ShellOpenFloatingOverviewMsg struct{}
+
+func (ShellOpenFloatingOverviewMsg) isMsg() {}
+
 type ShellOpenPromptMsg struct {
 	Prompt state.PromptState
 }
@@ -202,6 +206,8 @@ func NewShellReducer() Reducer {
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 		case ShellOpenWorkbenchTreeMsg:
 			root.Shell = root.Shell.OpenWorkbenchTree()
+		case ShellOpenFloatingOverviewMsg:
+			root.Shell = root.Shell.OpenFloatingOverview()
 		case ShellOpenPromptMsg:
 			root.Shell = root.Shell.OpenPrompt(msg.Prompt)
 		case ShellOpenHelpMsg:
@@ -542,6 +548,21 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		})
 	case render.ActionFloatingRaise:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingOverview:
+		root.Shell = root.Shell.OpenFloatingOverview()
+		return root.Advance(), nil
+	case render.ActionFloatingSummon:
+		items := state.FloatingOverviewItems(root)
+		if msg.Row >= 0 {
+			root.Shell = root.Shell.SetFloatingOverviewSelectedIndex(msg.Row, len(items))
+			items = state.FloatingOverviewItems(root)
+		}
+		selected, ok := selectedFloatingOverviewItem(items)
+		if !ok {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating.summon", Body: "no floating"})
+			return root.Advance(), nil
+		}
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandSummon, TargetID: selected.FloatingID, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingClose:
 		// footer close 没有 pane id 时，FloatingCommand 会按 active floating 作为目标。
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})

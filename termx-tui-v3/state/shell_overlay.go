@@ -149,6 +149,17 @@ func (store ShellStore) OpenWorkbenchTree() ShellStore {
 	return store
 }
 
+func (store ShellStore) OpenFloatingOverview() ShellStore {
+	store = store.EnsureDefaults()
+	store.Overlay = OverlayState{
+		Kind:          OverlayFloatingOverview,
+		Open:          true,
+		TargetID:      store.ActiveFloatingID,
+		SelectedIndex: 0,
+	}
+	return store
+}
+
 func (store ShellStore) OpenPrompt(prompt PromptState) ShellStore {
 	store = store.EnsureDefaults()
 	if prompt.Title == "" {
@@ -264,6 +275,20 @@ func (store ShellStore) MoveWorkbenchTreeSelection(delta int, itemCount int) She
 	return store
 }
 
+func (store ShellStore) MoveFloatingOverviewSelection(delta int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayFloatingOverview || !store.Overlay.Open || itemCount <= 0 || delta == 0 {
+		return store
+	}
+	next := store.Overlay.SelectedIndex + delta
+	next %= itemCount
+	if next < 0 {
+		next += itemCount
+	}
+	store.Overlay.SelectedIndex = next
+	return store
+}
+
 func (store ShellStore) SetTerminalPickerSelectedIndex(index int, itemCount int) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayTerminalPicker || !store.Overlay.Open || itemCount <= 0 {
@@ -297,6 +322,21 @@ func (store ShellStore) SetTerminalPoolSelectedIndex(index int, itemCount int) S
 func (store ShellStore) SetWorkbenchTreeSelectedIndex(index int, itemCount int) ShellStore {
 	store = store.EnsureDefaults()
 	if store.Overlay.Kind != OverlayWorkbenchTree || !store.Overlay.Open || itemCount <= 0 {
+		return store
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= itemCount {
+		index = itemCount - 1
+	}
+	store.Overlay.SelectedIndex = index
+	return store
+}
+
+func (store ShellStore) SetFloatingOverviewSelectedIndex(index int, itemCount int) ShellStore {
+	store = store.EnsureDefaults()
+	if store.Overlay.Kind != OverlayFloatingOverview || !store.Overlay.Open || itemCount <= 0 {
 		return store
 	}
 	if index < 0 {

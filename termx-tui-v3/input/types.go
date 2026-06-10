@@ -118,20 +118,22 @@ const (
 type ShellAction string
 
 const (
-	ShellActionToggleHeader ShellAction = "shell.toggle-header"
-	ShellActionToggleFooter ShellAction = "shell.toggle-footer"
-	ShellActionClearToasts  ShellAction = "shell.clear-toasts"
-	ShellActionCloseToast   ShellAction = "shell.close-toast"
-	ShellActionFloatingCtrl ShellAction = "shell.floating-control"
-	ShellActionFloatingNew  ShellAction = "shell.floating-new"
-	ShellActionFloatingMove ShellAction = "shell.floating-move"
-	ShellActionFloatingSize ShellAction = "shell.floating-size"
-	ShellActionOpenPool     ShellAction = "shell.open-terminal-pool"
-	ShellActionOpenTree     ShellAction = "shell.open-workbench-tree"
-	ShellActionOpenPicker   ShellAction = "shell.open-terminal-picker"
-	ShellActionOpenPrompt   ShellAction = "shell.open-prompt"
-	ShellActionOpenHelp     ShellAction = "shell.open-help"
-	ShellActionQuit         ShellAction = "shell.quit"
+	ShellActionToggleHeader     ShellAction = "shell.toggle-header"
+	ShellActionToggleFooter     ShellAction = "shell.toggle-footer"
+	ShellActionClearToasts      ShellAction = "shell.clear-toasts"
+	ShellActionCloseToast       ShellAction = "shell.close-toast"
+	ShellActionFloatingCtrl     ShellAction = "shell.floating-control"
+	ShellActionFloatingNew      ShellAction = "shell.floating-new"
+	ShellActionFloatingOverview ShellAction = "shell.floating-overview"
+	ShellActionFloatingSummon   ShellAction = "shell.floating-summon"
+	ShellActionFloatingMove     ShellAction = "shell.floating-move"
+	ShellActionFloatingSize     ShellAction = "shell.floating-size"
+	ShellActionOpenPool         ShellAction = "shell.open-terminal-pool"
+	ShellActionOpenTree         ShellAction = "shell.open-workbench-tree"
+	ShellActionOpenPicker       ShellAction = "shell.open-terminal-picker"
+	ShellActionOpenPrompt       ShellAction = "shell.open-prompt"
+	ShellActionOpenHelp         ShellAction = "shell.open-help"
+	ShellActionQuit             ShellAction = "shell.quit"
 )
 
 // Intent 是 input router 输出的 semantic intent，不直接修改 state。

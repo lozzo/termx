@@ -273,6 +273,32 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	}
 }
 
+// Floating Overview 只投影 reducer-owned floating 列表；打开/召回通过 ActionID 回到 app reducer。
+func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) ContentVM {
+	shell = shell.EnsureDefaults()
+	rows := state.FloatingOverviewItems(root)
+	lines := []Line{pageTitleLine("Floating Overview", "summon and raise")}
+	rowOffset := len(lines)
+	for index, row := range rows {
+		lines = append(lines, floatingOverviewRowLine(index, row))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, Line{Cells: []Cell{styledCell("No floating panes", StyleMuted)}})
+	}
+	actionOffset := len(lines)
+	lines = append(lines, contentActionLine("summon", "Open Selected"))
+	regions := floatingOverviewHitRegions(rows, rowOffset)
+	regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingSummon.String()})
+	return ContentVM{
+		Kind:       ContentFloatingOverview,
+		Lines:      lines,
+		Status:     floatingOverviewStatus(len(rows)),
+		Cursor:     Cursor{Visible: false},
+		HitRegions: regions,
+		Empty:      len(rows) == 0,
+	}
+}
+
 // Prompt 是 reducer-owned 表单 overlay；提交只回投 shell message，不直接执行业务 IO。
 func buildPromptContent(shell state.ShellStore) ContentVM {
 	shell = shell.EnsureDefaults()
@@ -656,6 +682,41 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 	}}
 }
 
+func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
+	marker := "  "
+	style := StyleMuted
+	if row.Selected {
+		marker = "▌ "
+		style = StyleAccent
+	}
+	active := "parked"
+	if row.Active {
+		active = "active"
+	}
+	collapsed := "open"
+	if row.Collapsed {
+		collapsed = "collapsed"
+	}
+	terminalID := row.TerminalID
+	if terminalID == "" {
+		terminalID = "unbound"
+	}
+	return Line{Cells: []Cell{
+		styledCell(marker, style),
+		tokenCell(fmt.Sprintf("%d", index+1), StyleStatusAccent),
+		NewCell(" "),
+		styledCell(row.Title, style),
+		NewCell(" "),
+		tokenCell(active, style),
+		NewCell(" "),
+		tokenCell(collapsed, StyleMuted),
+		NewCell(" "),
+		styledCell(terminalID, StyleMuted),
+		NewCell(" "),
+		styledCell(floatingOverviewRectLabel(row.Rect), StyleMuted),
+	}}
+}
+
 func terminalPoolDetailLines(rows []state.TerminalPoolPageItem) []Line {
 	if len(rows) == 0 {
 		return []Line{
@@ -731,6 +792,20 @@ func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int) []Hi
 			Row:      index,
 			PaneID:   row.PaneID,
 			ActionID: ActionWorkbenchSelect.String(),
+		})
+	}
+	return regions
+}
+
+func floatingOverviewHitRegions(rows []state.FloatingOverviewItem, rowOffset int) []HitRegion {
+	regions := make([]HitRegion, 0, len(rows)+1)
+	for index, row := range rows {
+		regions = append(regions, HitRegion{
+			Kind:     HitRegionContentAction,
+			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
+			Row:      index,
+			PaneID:   row.FloatingID,
+			ActionID: ActionFloatingSummon.String(),
 		})
 	}
 	return regions
@@ -884,6 +959,14 @@ func workbenchTreeStatus(count int, query string) string {
 		return fmt.Sprintf("workbench tree: %d items", count)
 	}
 	return fmt.Sprintf("workbench tree: %d items query:%s", count, query)
+}
+
+func floatingOverviewStatus(count int) string {
+	return fmt.Sprintf("floating overview: %d items", count)
+}
+
+func floatingOverviewRectLabel(rect state.FloatingRect) string {
+	return fmt.Sprintf("%dx%d@%d,%d", rect.W, rect.H, rect.X, rect.Y)
 }
 
 func terminalPoolSizeLabel(cols int, rows int) string {

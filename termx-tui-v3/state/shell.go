@@ -32,12 +32,13 @@ const (
 type OverlayKind string
 
 const (
-	OverlayNone           OverlayKind = ""
-	OverlayTerminalPicker OverlayKind = "terminal-picker"
-	OverlayTerminalPool   OverlayKind = "terminal-pool"
-	OverlayWorkbenchTree  OverlayKind = "workbench-tree"
-	OverlayPrompt         OverlayKind = "prompt"
-	OverlayHelp           OverlayKind = "help"
+	OverlayNone             OverlayKind = ""
+	OverlayTerminalPicker   OverlayKind = "terminal-picker"
+	OverlayTerminalPool     OverlayKind = "terminal-pool"
+	OverlayWorkbenchTree    OverlayKind = "workbench-tree"
+	OverlayFloatingOverview OverlayKind = "floating-overview"
+	OverlayPrompt           OverlayKind = "prompt"
+	OverlayHelp             OverlayKind = "help"
 )
 
 type ToastSeverity string
@@ -277,6 +278,19 @@ type WorkbenchTreeItem struct {
 	Summary       string
 }
 
+type FloatingOverviewItem struct {
+	FloatingID string
+	Title      string
+	PaneID     string
+	PaneKind   PaneKind
+	TerminalID string
+	Rect       FloatingRect
+	Z          int
+	Active     bool
+	Collapsed  bool
+	Selected   bool
+}
+
 type FloatingCommandAction string
 
 const (
@@ -286,6 +300,7 @@ const (
 	FloatingCommandClose          FloatingCommandAction = "floating.close"
 	FloatingCommandCenter         FloatingCommandAction = "floating.center"
 	FloatingCommandToggleCollapse FloatingCommandAction = "floating.toggle-collapse"
+	FloatingCommandSummon         FloatingCommandAction = "floating.summon"
 	FloatingCommandMove           FloatingCommandAction = "floating.move"
 	FloatingCommandResize         FloatingCommandAction = "floating.resize"
 )
@@ -300,6 +315,7 @@ type FloatingCommand struct {
 	DeltaY   int
 	DeltaW   int
 	DeltaH   int
+	Index    int
 	BoundsW  int
 	BoundsH  int
 	Source   PaneCommandSource
