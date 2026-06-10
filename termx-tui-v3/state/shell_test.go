@@ -649,6 +649,49 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	}
 }
 
+func TestShellBindFloatingTerminal(t *testing.T) {
+	shell := DefaultShell().BindPaneTerminal(PaneCommandTarget{PaneID: DefaultPaneID}, "term-main")
+	var result FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     PaneState{ID: "float-pane", Title: "float", Kind: PaneEmpty},
+	})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+
+	shell = shell.BindFloatingTerminal("float-1", "term-float")
+	if shell.ActiveFloatingID != "float-1" || len(shell.Floatings) != 1 || !shell.Floatings[0].Active {
+		t.Fatalf("floating bind should focus target floating, got %#v", shell.Floatings)
+	}
+	if pane := shell.Floatings[0].Pane; pane.Kind != PaneTerminalLive || pane.TerminalID != "term-float" {
+		t.Fatalf("floating pane should bind terminal-live target, got %#v", pane)
+	}
+	tiled, ok := shell.Pane(PaneCommandTarget{PaneID: DefaultPaneID})
+	if !ok || tiled.TerminalID != "term-main" {
+		t.Fatalf("floating bind must not rewrite tiled pane terminal, got %#v ok=%v", tiled, ok)
+	}
+}
+
+func TestShellTerminalOverlaysTargetActiveFloating(t *testing.T) {
+	shell := DefaultShell()
+	var result FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandCreate, TargetID: "float-1", Pane: PaneState{ID: "float-pane", Kind: PaneEmpty}})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+
+	picker := shell.OpenTerminalPicker()
+	if picker.Overlay.TargetID != "float-1" {
+		t.Fatalf("terminal picker should target active floating, got %#v", picker.Overlay)
+	}
+	pool := shell.OpenTerminalPool()
+	if pool.Overlay.TargetID != "float-1" {
+		t.Fatalf("terminal pool should target active floating, got %#v", pool.Overlay)
+	}
+}
+
 func TestShellPromptOverlaySubmitCancelAndConfirm(t *testing.T) {
 	shell := DefaultShell().OpenPrompt(PromptState{Title: "Danger", Destructive: true, ConfirmText: "DELETE"})
 	if !shell.Overlay.Open || shell.Overlay.Kind != OverlayPrompt || !shell.Overlay.Prompt.Destructive {

@@ -29,6 +29,29 @@ func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStor
 	}
 }
 
+func (store ShellStore) BindFloatingTerminal(id string, terminalID string) ShellStore {
+	store = store.EnsureDefaults()
+	if terminalID == "" {
+		return store
+	}
+	index := store.floatingIndexOrActive(id)
+	if index < 0 {
+		return store
+	}
+	if store.Floatings[index].Pane.ID == "" {
+		store.Floatings[index].Pane = PaneState{ID: store.Floatings[index].ID + "-pane", Title: store.Floatings[index].Title, Kind: PaneTerminalLive}
+	}
+	store.Floatings[index].Pane.TerminalID = terminalID
+	store.Floatings[index].Pane.Kind = PaneTerminalLive
+	if store.Floatings[index].Pane.Title == "" {
+		store.Floatings[index].Pane.Title = terminalID
+	}
+	store.Floatings[index].Active = true
+	store.ActiveFloatingID = store.Floatings[index].ID
+	store.Floatings[index].Z = store.nextFloatingZ() + 1
+	return store.ensureFloatingDefaults()
+}
+
 func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
 	pane := command.Pane
 	if pane.ID == "" {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -22,15 +23,17 @@ type TerminalPoolListResultMsg struct {
 func (TerminalPoolListResultMsg) isMsg() {}
 
 type TerminalPoolAttachRequestMsg struct {
-	TerminalID string
+	TerminalID       string
+	TargetFloatingID string
 }
 
 func (TerminalPoolAttachRequestMsg) isMsg() {}
 
 type TerminalPoolAttachResultMsg struct {
-	TerminalID string
-	Result     services.TerminalAttachResult
-	Err        error
+	TerminalID       string
+	TargetFloatingID string
+	Result           services.TerminalAttachResult
+	Err              error
 }
 
 func (TerminalPoolAttachResultMsg) isMsg() {}
@@ -182,6 +185,10 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 		return root.Advance(), nil
 	}
 	cols, rows := terminalPoolAttachSize(root)
+	targetFloatingID := msg.TargetFloatingID
+	if targetFloatingID == "" {
+		targetFloatingID = root.Shell.EnsureDefaults().ActiveFloatingID
+	}
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
@@ -193,7 +200,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				SurfaceID:    "termx-tui-v3",
 				ViewID:       "terminal-pool",
 			})
-			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, Result: result, Err: err}
+			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, Result: result, Err: err}
 		},
 	}}
 }
@@ -211,7 +218,11 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	}
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, result.TerminalID)
+	if msg.TargetFloatingID != "" {
+		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
+	} else {
+		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, result.TerminalID)
+	}
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
 	return root.Advance(), liveEffects(result.TerminalID, result.Cols, result.Rows, deps)
@@ -365,6 +376,10 @@ func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.Ter
 }
 
 func terminalPoolAttachSize(root state.Root) (int, int) {
+	// active floating 尚未绑定 terminal 时也要用自己的内容区尺寸发起 attach。
+	if rect, ok := activeFloatingContentRect(root, render.Rect{}, false); ok {
+		return rect.W, rect.H
+	}
 	cols, rows := liveAttachContentSize(root, LiveConfig{Cols: root.Session.Cols, Rows: root.Session.Rows})
 	if cols <= 0 {
 		cols = 80

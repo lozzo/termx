@@ -457,7 +457,7 @@ func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 
 func liveQueueBoundary(msg Msg) bool {
 	switch msg := msg.(type) {
-	case LiveAttachMsg, LiveAttachResultMsg, LiveExitMsg, LiveResizeMsg, LiveResizeResultMsg, HostResizeMsg, QuitMsg:
+	case LiveAttachMsg, LiveAttachResultMsg, TerminalPoolAttachResultMsg, LiveExitMsg, LiveResizeMsg, LiveResizeResultMsg, HostResizeMsg, QuitMsg:
 		return true
 	case LiveSurfaceMsg:
 		_, ok := queuedOrdinaryLiveUpdate(msg)

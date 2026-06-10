@@ -2417,8 +2417,8 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	if err := emptyRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain empty attach: %v", err)
 	}
-	if len(emptyRuntime.State().Shell.Toasts) == 0 || emptyRuntime.State().Shell.Toasts[len(emptyRuntime.State().Shell.Toasts)-1].Title != "empty.attach" {
-		t.Fatalf("empty attach should show feedback toast, got %#v", emptyRuntime.State().Shell.Toasts)
+	if overlay := emptyRuntime.State().Shell.EnsureDefaults().Overlay; !overlay.Open || overlay.Kind != state.OverlayTerminalPicker || overlay.TargetID != state.DefaultPaneID {
+		t.Fatalf("empty attach should open terminal picker for pane, got %#v", overlay)
 	}
 
 	closeHost := NewFakeTerminalHost(8)

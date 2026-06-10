@@ -110,10 +110,14 @@ func defaultToastDismissAfterTicks(spec ToastSpec) uint64 {
 
 func (store ShellStore) OpenTerminalPicker() ShellStore {
 	store = store.EnsureDefaults()
+	targetID := store.ActivePaneID
+	if store.ActiveFloatingID != "" {
+		targetID = store.ActiveFloatingID
+	}
 	store.Overlay = OverlayState{
 		Kind:          OverlayTerminalPicker,
 		Open:          true,
-		TargetID:      store.ActivePaneID,
+		TargetID:      targetID,
 		SelectedIndex: 0,
 	}
 	return store
@@ -121,10 +125,14 @@ func (store ShellStore) OpenTerminalPicker() ShellStore {
 
 func (store ShellStore) OpenTerminalPool() ShellStore {
 	store = store.EnsureDefaults()
+	targetID := store.ActivePaneID
+	if store.ActiveFloatingID != "" {
+		targetID = store.ActiveFloatingID
+	}
 	store.Overlay = OverlayState{
 		Kind:          OverlayTerminalPool,
 		Open:          true,
-		TargetID:      store.ActivePaneID,
+		TargetID:      targetID,
 		SelectedIndex: 0,
 	}
 	return store

@@ -375,6 +375,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
 			}}}
 		}
+		if ok && root.Shell.EnsureDefaults().ActiveFloatingID != "" && selected.TerminalID != "" {
+			targetFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: targetFloatingID}
+			}}}
+		}
 		if ok && selected.PaneID != "" {
 			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
 			root.Shell = root.Shell.CloseOverlay()
@@ -474,8 +480,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return ShellOpenPromptMsg{Prompt: createTerminalPrompt(msg.PaneID)}
 		}}}
 	case render.ActionEmptyAttach:
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: msg.ActionID, Body: "not implemented"})
-		return root.Advance(), nil
+		root.Shell = root.Shell.OpenTerminalPicker()
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
 	return root.Advance(), nil

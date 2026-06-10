@@ -144,6 +144,15 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 			}},
 		}
 	}
+	if root.Shell.EnsureDefaults().ActiveFloatingID != "" && selected.TerminalID != "" {
+		targetFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: targetFloatingID}
+			}},
+		}
+	}
 	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: selected.PaneID})

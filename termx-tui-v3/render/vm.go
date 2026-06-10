@@ -491,7 +491,15 @@ func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root st
 	}
 	out := make([]FloatingVM, 0, len(shell.Floatings))
 	for _, floating := range shell.Floatings {
-		content := projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: floating.Pane, Kind: contentKindForPane(floating.Pane)})
+		content := projector.Content.Project(ContentProjectorContext{
+			Root:    root,
+			Shell:   shell,
+			Pane:    floating.Pane,
+			Kind:    contentKindForPane(floating.Pane),
+			Active:  floating.Active,
+			Surface: surfaceForPane(root, floating.Pane),
+			Session: sessionForPane(root, floating.Pane),
+		})
 		out = append(out, FloatingVM{
 			ID:        floating.ID,
 			Title:     floating.Title,
@@ -572,7 +580,7 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 	}
 	shell := root.Shell.EnsureDefaults()
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
-		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: root.Session, Active: true})
+		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: sessionForPane(root, pane), Active: true})
 	}
 	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalLive, Surface: root.Surface, Session: root.Session, Active: true})
 }
@@ -583,7 +591,7 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 	}
 	session := state.TerminalSessionStore{}
 	if pane.Kind == state.PaneTerminalLive && pane.TerminalID != "" {
-		session = state.TerminalSessionStore{TerminalID: pane.TerminalID}
+		session = sessionForPane(root, pane)
 	}
 	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: session, Active: false})
 }
@@ -615,6 +623,26 @@ func surfaceForPane(root state.Root, pane state.PaneState) state.TerminalSurface
 		return root.Surface
 	}
 	return root.Surface.SurfaceForTerminal(terminalID)
+}
+
+func sessionForPane(root state.Root, pane state.PaneState) state.TerminalSessionStore {
+	terminalID := pane.TerminalID
+	if terminalID == "" && pane.Kind == state.PaneTerminalLive && pane.ID == root.Shell.EnsureDefaults().ActivePaneID {
+		terminalID = root.Session.TerminalID
+	}
+	if terminalID == "" || terminalID == root.Session.TerminalID {
+		return root.Session
+	}
+	session := state.TerminalSessionStore{TerminalID: terminalID}
+	if channel, ok := root.Session.InputChannelFor(terminalID); ok {
+		session.Channel = channel
+		session.Attached = true
+	}
+	surface := root.Surface.SurfaceForTerminal(terminalID)
+	session.Cols = surface.Cols
+	session.Rows = surface.Rows
+	session.State = surface.State
+	return session
 }
 
 func canRenderCopyHistory(history state.HistoryStore, copyMode state.CopyModeStore) bool {

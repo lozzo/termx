@@ -343,6 +343,183 @@ func TestLiveInputDoesNotFallbackToSessionForEmptyActivePane(t *testing.T) {
 	}
 }
 
+func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{Channel: 9},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{
+			TerminalID: "term-float",
+			Title:      "floating shell",
+			State:      "running",
+		}}},
+	}
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main")
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float slot", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 10, Y: 5, W: 30, H: 8},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(90, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: shell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 90, Rows: 24}}); err != nil {
+		t.Fatalf("post main attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain main attach: %v", err)
+	}
+	terminal.Resizes = nil
+
+	emptyAttach := frameActionHitRegion(t, lastFrame(t, host.Frames()), "empty.attach", "floating-pane-1")
+	if err := host.SendInput(mouseEventAt(emptyAttach.Rect)); err != nil {
+		t.Fatalf("send floating empty attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating empty attach: %v", err)
+	}
+	if len(terminal.Lists) != 1 || runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPicker || runtime.State().Shell.Overlay.TargetID != "floating-1" {
+		t.Fatalf("empty attach should open picker for floating, lists=%#v overlay=%#v", terminal.Lists, runtime.State().Shell.Overlay)
+	}
+	if !frameContains(lastFrame(t, host.Frames()), "term-float") {
+		t.Fatalf("picker should render pool terminal row, got %#v", lastFrame(t, host.Frames()).Lines)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "o"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "t"},
+		{Kind: input.EventKindKey, Key: input.KeyDown},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send picker input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain picker input %#v: %v", event, err)
+		}
+	}
+
+	if len(terminal.Attaches) < 2 {
+		t.Fatalf("expected main attach and floating attach, got %#v", terminal.Attaches)
+	}
+	floatAttach := terminal.Attaches[len(terminal.Attaches)-1]
+	if floatAttach.TerminalID != "term-float" || floatAttach.Cols != 28 || floatAttach.Rows != 6 {
+		t.Fatalf("floating attach should use floating content rect, got %#v", floatAttach)
+	}
+	floating := runtime.State().Shell.EnsureDefaults().Floatings[0]
+	if !floating.Active || floating.Pane.Kind != state.PaneTerminalLive || floating.Pane.TerminalID != "term-float" || runtime.State().Shell.Overlay.Open {
+		t.Fatalf("floating should bind selected terminal and close picker, floating=%#v overlay=%#v", floating, runtime.State().Shell.Overlay)
+	}
+	if len(terminal.Resizes) != 0 {
+		t.Fatalf("attach result already matches floating content rect, resize should dedupe, got %#v", terminal.Resizes)
+	}
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-float",
+		Revision:   1,
+		Cols:       28,
+		Rows:       6,
+		Lines:      []string{"floating ready"},
+	}}); err != nil {
+		t.Fatalf("post floating surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating surface: %v", err)
+	}
+	if !frameContains(lastFrame(t, host.Frames()), "floating ready") {
+		t.Fatalf("floating should render terminal live content, got %#v", lastFrame(t, host.Frames()).Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}); err != nil {
+		t.Fatalf("send floating key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating key: %v", err)
+	}
+	if got := terminal.Inputs[len(terminal.Inputs)-1]; got.TerminalID != "term-float" || got.Channel != 9 || string(got.Bytes) != "f" {
+		t.Fatalf("floating input should route to attached terminal, got %#v all=%#v", got, terminal.Inputs)
+	}
+
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: "floating-1", Source: state.PaneCommandSourceTest}}); err != nil {
+		t.Fatalf("post floating close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating close: %v", err)
+	}
+	if len(runtime.State().Shell.Floatings) != 0 || len(terminal.Kills) != 0 {
+		t.Fatalf("closing floating should remove window without killing terminal, floatings=%#v kills=%#v", runtime.State().Shell.Floatings, terminal.Kills)
+	}
+}
+
+func TestActiveFloatingResizeCommandResizesAttachedTerminalContentRect(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6}}
+	shell := state.DefaultShell()
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 8, Y: 4, W: 30, H: 8},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(90, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: shell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(TerminalPoolAttachResultMsg{
+		TerminalID:       "term-float",
+		TargetFloatingID: "floating-1",
+		Result:           services.TerminalAttachResult{TerminalID: "term-float", Channel: 5, Cols: 28, Rows: 6},
+	}); err != nil {
+		t.Fatalf("post floating attach result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating attach result: %v", err)
+	}
+	terminal.Resizes = nil
+
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{
+		Action:   state.FloatingCommandResize,
+		TargetID: "floating-1",
+		DeltaW:   4,
+		DeltaH:   2,
+		Source:   state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post floating resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating resize: %v", err)
+	}
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("active floating resize should emit one terminal resize, got %#v", terminal.Resizes)
+	}
+	if got := terminal.Resizes[0]; got.TerminalID != "term-float" || got.Channel != 5 || got.Cols != 32 || got.Rows != 8 {
+		t.Fatalf("floating resize should use updated content rect, got %#v", got)
+	}
+}
+
 func TestLiveAppAttachSwitchClearsStaleSurfaceRows(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-new", Channel: 5, Cols: 78, Rows: 20},

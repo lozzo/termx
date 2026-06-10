@@ -11,7 +11,7 @@ import (
 // 这里不直接调用 terminal service，而是通过 LiveResizeMsg 回到 live reducer，保持 service IO 不越过 message path。
 func NewTerminalLayoutResizeReducer() Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
-		if !terminalLayoutMayNeedResize(msg) || !root.Session.Attached {
+		if !terminalLayoutMayNeedResize(root, msg) || !root.Session.Attached {
 			return root, nil
 		}
 		rect, ok := activeTerminalContentRect(root, render.Rect{})
@@ -31,10 +31,11 @@ func NewTerminalLayoutResizeReducer() Reducer {
 	}
 }
 
-func terminalLayoutMayNeedResize(msg Msg) bool {
-	switch msg.(type) {
+func terminalLayoutMayNeedResize(root state.Root, msg Msg) bool {
+	switch msg := msg.(type) {
 	case HostResizeMsg,
 		LiveAttachResultMsg,
+		TerminalPoolAttachResultMsg,
 		ShellSetPanelPresentationMsg,
 		ShellTogglePanelPresentationMsg,
 		ShellSetHeaderVisibleMsg,
@@ -44,9 +45,37 @@ func terminalLayoutMayNeedResize(msg Msg) bool {
 		ShellSplitActivePaneMsg,
 		ShellPaneCommandMsg:
 		return true
+	case ShellFloatingCommandMsg:
+		return floatingCommandMayResizeTerminal(root, msg.Command)
 	default:
 		return false
 	}
+}
+
+func floatingCommandMayResizeTerminal(root state.Root, command state.FloatingCommand) bool {
+	switch command.Action {
+	case state.FloatingCommandCreate,
+		state.FloatingCommandCenter,
+		state.FloatingCommandToggleCollapse,
+		state.FloatingCommandMove,
+		state.FloatingCommandResize:
+		return activeFloatingHasTerminal(root)
+	default:
+		return false
+	}
+}
+
+func activeFloatingHasTerminal(root state.Root) bool {
+	shell := root.Shell.EnsureDefaults()
+	if shell.ActiveFloatingID == "" {
+		return false
+	}
+	for _, floating := range shell.Floatings {
+		if floating.ID == shell.ActiveFloatingID && floating.Pane.TerminalID != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func liveAttachContentSize(root state.Root, cfg LiveConfig) (int, int) {
@@ -66,10 +95,51 @@ func activeTerminalContentRect(root state.Root, fallbackViewport render.Rect) (r
 	}
 	vm := render.NewRenderVMBuilder().Build(root)
 	plan := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
+	if rect, ok := activeFloatingContentRectFromPlan(root, plan, true); ok {
+		return rect, true
+	}
 	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	for _, panel := range plan.Panels {
 		if panel.Panel.ID == activePaneID && panel.ContentRect.W > 0 && panel.ContentRect.H > 0 {
 			return panel.ContentRect, true
+		}
+	}
+	return render.Rect{}, false
+}
+
+func activeFloatingContentRect(root state.Root, fallbackViewport render.Rect, requireTerminal bool) (render.Rect, bool) {
+	if !root.Viewport.Valid {
+		if fallbackViewport.W <= 0 || fallbackViewport.H <= 0 {
+			return render.Rect{}, false
+		}
+		root.Viewport = state.ViewportStore{Valid: true, Cols: fallbackViewport.W, Rows: fallbackViewport.H}
+	}
+	vm := render.NewRenderVMBuilder().Build(root)
+	plan := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
+	return activeFloatingContentRectFromPlan(root, plan, requireTerminal)
+}
+
+func activeFloatingContentRectFromPlan(root state.Root, plan render.LayoutPlan, requireTerminal bool) (render.Rect, bool) {
+	shell := root.Shell.EnsureDefaults()
+	activeFloatingID := shell.ActiveFloatingID
+	if activeFloatingID == "" {
+		return render.Rect{}, false
+	}
+	if requireTerminal {
+		hasTerminal := false
+		for _, floating := range shell.Floatings {
+			if floating.ID == activeFloatingID && floating.Pane.TerminalID != "" {
+				hasTerminal = true
+				break
+			}
+		}
+		if !hasTerminal {
+			return render.Rect{}, false
+		}
+	}
+	for _, layout := range plan.Floatings {
+		if layout.Floating.ID == activeFloatingID && layout.ContentRect.W > 0 && layout.ContentRect.H > 0 {
+			return layout.ContentRect, true
 		}
 	}
 	return render.Rect{}, false
