@@ -38,6 +38,30 @@ func TestWorkbenchStorageReducerLoadsSnapshotFromOpaqueStorage(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageReducerLoadsAndPersistsTerminalViews(t *testing.T) {
+	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	views := state.TerminalViewStore{}
+	views = views.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	views = views.BindPane(state.NewPaneTerminalView("pane-logs", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-logs"), false))
+	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 4, Found: true}}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, WorkbenchStorageLoadRequestMsg{})
+	loadMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, loadMsg)
+	if bindings := root.TerminalViews.BindingsForTerminal("term-1"); len(bindings) != 2 {
+		t.Fatalf("expected loaded terminal view bindings, got %#v", bindings)
+	}
+
+	root, effects = reducer(root, WorkbenchStoragePersistRequestMsg{Reason: "test"})
+	persistMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, persistMsg)
+	if len(storage.Saves) != 1 || len(storage.Saves[0].Snapshot.TerminalViews) != 2 || storage.Saves[0].Snapshot.SchemaVersion != state.WorkbenchStorageSchemaV2 {
+		t.Fatalf("expected persisted v2 terminal view snapshot, saves=%#v", storage.Saves)
+	}
+}
+
 func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 	storage := &services.FakeWorkbenchStorageService{}
 	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))

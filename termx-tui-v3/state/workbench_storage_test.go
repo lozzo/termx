@@ -63,6 +63,40 @@ func TestWorkbenchStorageSnapshotRoundTripsShellStructure(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageSnapshotV2RoundTripsTerminalViews(t *testing.T) {
+	shell := DefaultShell().SplitActivePane(PaneState{ID: "pane-logs", Title: "logs", Kind: PaneTerminalLive, TerminalID: "term-1"}, SplitDirectionVertical)
+	views := TerminalViewStore{}
+	views = views.BindPane(NewPaneTerminalView(DefaultPaneID, "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", TerminalPaneViewID(DefaultPaneID), true))
+	views = views.BindPane(NewPaneTerminalView("pane-logs", "term-1", 8, 40, 12, TerminalResizeRoleFollower, "surface", TerminalPaneViewID("pane-logs"), false))
+	snapshot := SnapshotRootWorkbenchForStorage(Root{Shell: shell, TerminalViews: views})
+
+	if snapshot.SchemaVersion != WorkbenchStorageSchemaV2 || len(snapshot.TerminalViews) != 2 {
+		t.Fatalf("expected v2 snapshot with terminal views, got %#v", snapshot)
+	}
+	data, err := EncodeWorkbenchStorageSnapshotValue(snapshot)
+	if err != nil {
+		t.Fatalf("encode v2 snapshot: %v", err)
+	}
+	decoded, err := DecodeWorkbenchStorageSnapshot(data)
+	if err != nil {
+		t.Fatalf("decode v2 snapshot: %v", err)
+	}
+	restored, err := decoded.ToTerminalViewStore()
+	if err != nil {
+		t.Fatalf("restore terminal views: %v", err)
+	}
+	if bindings := restored.BindingsForTerminal("term-1"); len(bindings) != 2 {
+		t.Fatalf("expected restored shared terminal bindings, got %#v", bindings)
+	}
+}
+
+func TestWorkbenchStorageSnapshotRejectsLegacyV1(t *testing.T) {
+	_, err := DecodeWorkbenchStorageSnapshot([]byte(`{"schema":"termx.tui.v3.workbench","schemaVersion":1,"workspace":{"ID":"workspace-main"},"workspaces":[{"ID":"workspace-main"}],"panelPresentation":"card"}`))
+	if !errors.Is(err, ErrInvalidWorkbenchSnapshot) {
+		t.Fatalf("expected legacy v1 rejection, got %v", err)
+	}
+}
+
 func TestWorkbenchStorageSnapshotRejectsWrongSchema(t *testing.T) {
 	_, err := DecodeWorkbenchStorageSnapshot([]byte(`{"schema":"daemon.workbench","schemaVersion":1}`))
 	if !errors.Is(err, ErrInvalidWorkbenchSnapshot) {

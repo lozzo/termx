@@ -136,7 +136,13 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: errorString(err)})
 		return root.Advance(), nil
 	}
+	terminalViews, err := msg.Result.Snapshot.ToTerminalViewStore()
+	if err != nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: errorString(err)})
+		return root.Advance(), nil
+	}
 	root.Shell = shell
+	root.TerminalViews = terminalViews
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: "loaded"})
 	return root.Advance(), nil
@@ -148,7 +154,7 @@ func reduceWorkbenchStoragePersistRequest(root state.Root, _ WorkbenchStoragePer
 		return root.Advance(), nil
 	}
 	ref := workbenchStorageRef(root, deps)
-	snapshot := state.SnapshotWorkbenchForStorage(root.Shell)
+	snapshot := state.SnapshotRootWorkbenchForStorage(root)
 	expectedVersion := root.WorkbenchSync.SaveVersion()
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		result, err := deps.Storage.SaveWorkbench(ctx, services.WorkbenchStorageSaveRequest{

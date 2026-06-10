@@ -15,19 +15,19 @@ type TerminalViewStore struct {
 }
 
 type TerminalViewBinding struct {
-	ViewID      string
-	SurfaceID   string
-	TerminalID  string
-	Channel     uint16
-	ResizeRole  string
-	DesiredCols int
-	DesiredRows int
-	RequestSeq  uint64
-	LastError   string
-	PaneID      string
-	FloatingID  string
-	Attached    bool
-	CanResize   bool
+	ViewID      string `json:"viewId"`
+	SurfaceID   string `json:"surfaceId,omitempty"`
+	TerminalID  string `json:"terminalId"`
+	Channel     uint16 `json:"channel,omitempty"`
+	ResizeRole  string `json:"resizeRole,omitempty"`
+	DesiredCols int    `json:"desiredCols,omitempty"`
+	DesiredRows int    `json:"desiredRows,omitempty"`
+	RequestSeq  uint64 `json:"requestSeq,omitempty"`
+	LastError   string `json:"lastError,omitempty"`
+	PaneID      string `json:"paneId,omitempty"`
+	FloatingID  string `json:"floatingId,omitempty"`
+	Attached    bool   `json:"attached"`
+	CanResize   bool   `json:"canResize,omitempty"`
 }
 
 func NewPaneTerminalView(paneID string, terminalID string, channel uint16, cols int, rows int, resizeRole string, surfaceID string, viewID string, canResize bool) TerminalViewBinding {
@@ -173,6 +173,14 @@ func (store TerminalViewStore) BindingsForTerminal(terminalID string) []Terminal
 		if binding.TerminalID == terminalID {
 			bindings = append(bindings, binding)
 		}
+	}
+	return bindings
+}
+
+func (store TerminalViewStore) Bindings() []TerminalViewBinding {
+	bindings := make([]TerminalViewBinding, 0, len(store.Views))
+	for _, binding := range store.Views {
+		bindings = append(bindings, binding)
 	}
 	return bindings
 }

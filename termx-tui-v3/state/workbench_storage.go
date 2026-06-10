@@ -12,6 +12,7 @@ const (
 	WorkbenchStorageKeyRoot     = "workbench/root"
 	WorkbenchStorageSchema      = "termx.tui.v3.workbench"
 	WorkbenchStorageSchemaV1    = 1
+	WorkbenchStorageSchemaV2    = 2
 )
 
 var ErrInvalidWorkbenchSnapshot = errors.New("invalid workbench snapshot")
@@ -25,17 +26,18 @@ type WorkbenchStorageRef struct {
 }
 
 type WorkbenchStorageSnapshot struct {
-	Schema            string              `json:"schema"`
-	SchemaVersion     int                 `json:"schemaVersion"`
-	Workspace         WorkspaceState      `json:"workspace"`
-	Workspaces        []WorkspaceState    `json:"workspaces"`
-	Floatings         []FloatingPaneState `json:"floatings,omitempty"`
-	ActiveFloatingID  string              `json:"activeFloatingId,omitempty"`
-	PanelPresentation PanelPresentation   `json:"panelPresentation"`
-	ActivePaneID      string              `json:"activePaneId"`
-	ZoomedPaneID      string              `json:"zoomedPaneId,omitempty"`
-	HeaderVisible     bool                `json:"headerVisible"`
-	FooterVisible     bool                `json:"footerVisible"`
+	Schema            string                `json:"schema"`
+	SchemaVersion     int                   `json:"schemaVersion"`
+	Workspace         WorkspaceState        `json:"workspace"`
+	Workspaces        []WorkspaceState      `json:"workspaces"`
+	Floatings         []FloatingPaneState   `json:"floatings,omitempty"`
+	ActiveFloatingID  string                `json:"activeFloatingId,omitempty"`
+	PanelPresentation PanelPresentation     `json:"panelPresentation"`
+	ActivePaneID      string                `json:"activePaneId"`
+	ZoomedPaneID      string                `json:"zoomedPaneId,omitempty"`
+	HeaderVisible     bool                  `json:"headerVisible"`
+	FooterVisible     bool                  `json:"footerVisible"`
+	TerminalViews     []TerminalViewBinding `json:"terminalViews,omitempty"`
 }
 
 func DefaultWorkbenchStorageRef(workspaceID string) WorkbenchStorageRef {
@@ -71,10 +73,14 @@ func (ref WorkbenchStorageRef) KeyPrefix() string {
 }
 
 func SnapshotWorkbenchForStorage(shell ShellStore) WorkbenchStorageSnapshot {
-	shell = shell.EnsureDefaults()
+	return SnapshotRootWorkbenchForStorage(Root{Shell: shell})
+}
+
+func SnapshotRootWorkbenchForStorage(root Root) WorkbenchStorageSnapshot {
+	shell := root.Shell.EnsureDefaults()
 	return WorkbenchStorageSnapshot{
 		Schema:            WorkbenchStorageSchema,
-		SchemaVersion:     WorkbenchStorageSchemaV1,
+		SchemaVersion:     WorkbenchStorageSchemaV2,
 		Workspace:         cloneWorkspace(shell.Workspace),
 		Workspaces:        cloneWorkspaces(shell.Workspaces),
 		Floatings:         cloneFloatings(shell.Floatings),
@@ -84,6 +90,7 @@ func SnapshotWorkbenchForStorage(shell ShellStore) WorkbenchStorageSnapshot {
 		ZoomedPaneID:      shell.ZoomedPaneID,
 		HeaderVisible:     shell.HeaderVisible,
 		FooterVisible:     shell.FooterVisible,
+		TerminalViews:     root.TerminalViews.Bindings(),
 	}
 }
 
@@ -106,8 +113,23 @@ func (snapshot WorkbenchStorageSnapshot) ToShellStore() (ShellStore, error) {
 	return shell.EnsureDefaults(), nil
 }
 
+func (snapshot WorkbenchStorageSnapshot) ToTerminalViewStore() (TerminalViewStore, error) {
+	if err := snapshot.Validate(); err != nil {
+		return TerminalViewStore{}, err
+	}
+	store := TerminalViewStore{}
+	for _, binding := range snapshot.TerminalViews {
+		if binding.FloatingID != "" {
+			store = store.BindFloating(binding)
+			continue
+		}
+		store = store.BindPane(binding)
+	}
+	return store, nil
+}
+
 func (snapshot WorkbenchStorageSnapshot) Validate() error {
-	if snapshot.Schema != WorkbenchStorageSchema || snapshot.SchemaVersion != WorkbenchStorageSchemaV1 {
+	if snapshot.Schema != WorkbenchStorageSchema || snapshot.SchemaVersion != WorkbenchStorageSchemaV2 {
 		return ErrInvalidWorkbenchSnapshot
 	}
 	if snapshot.Workspace.ID == "" {
@@ -119,7 +141,24 @@ func (snapshot WorkbenchStorageSnapshot) Validate() error {
 	if snapshot.PanelPresentation != PanelPresentationCard && snapshot.PanelPresentation != PanelPresentationSplitLine {
 		return ErrInvalidWorkbenchSnapshot
 	}
+	if !snapshot.validTerminalViews() {
+		return ErrInvalidWorkbenchSnapshot
+	}
 	return nil
+}
+
+func (snapshot WorkbenchStorageSnapshot) validTerminalViews() bool {
+	seen := map[string]struct{}{}
+	for _, binding := range snapshot.TerminalViews {
+		if binding.ViewID == "" || binding.TerminalID == "" || binding.PaneID == "" && binding.FloatingID == "" {
+			return false
+		}
+		if _, ok := seen[binding.ViewID]; ok {
+			return false
+		}
+		seen[binding.ViewID] = struct{}{}
+	}
+	return true
 }
 
 func EncodeWorkbenchStorageSnapshot(shell ShellStore) ([]byte, error) {
