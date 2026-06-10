@@ -24,20 +24,25 @@ type TerminalViewStore struct {
 }
 
 type TerminalViewBinding struct {
-	ViewID      string             `json:"viewId"`
-	SurfaceID   string             `json:"surfaceId,omitempty"`
-	TerminalID  string             `json:"terminalId"`
-	Channel     uint16             `json:"channel,omitempty"`
-	Layout      TerminalViewLayout `json:"layout,omitempty"`
-	ResizeRole  string             `json:"resizeRole,omitempty"`
-	DesiredCols int                `json:"desiredCols,omitempty"`
-	DesiredRows int                `json:"desiredRows,omitempty"`
-	RequestSeq  uint64             `json:"requestSeq,omitempty"`
-	LastError   string             `json:"lastError,omitempty"`
-	PaneID      string             `json:"paneId,omitempty"`
-	FloatingID  string             `json:"floatingId,omitempty"`
-	Attached    bool               `json:"attached"`
-	CanResize   bool               `json:"canResize,omitempty"`
+	ViewID         string             `json:"viewId"`
+	SurfaceID      string             `json:"surfaceId,omitempty"`
+	TerminalID     string             `json:"terminalId"`
+	Channel        uint16             `json:"channel,omitempty"`
+	Layout         TerminalViewLayout `json:"layout,omitempty"`
+	ResizeRole     string             `json:"resizeRole,omitempty"`
+	DesiredCols    int                `json:"desiredCols,omitempty"`
+	DesiredRows    int                `json:"desiredRows,omitempty"`
+	RequestSeq     uint64             `json:"requestSeq,omitempty"`
+	LastError      string             `json:"lastError,omitempty"`
+	PaneID         string             `json:"paneId,omitempty"`
+	FloatingID     string             `json:"floatingId,omitempty"`
+	Attached       bool               `json:"attached"`
+	CanResize      bool               `json:"canResize,omitempty"`
+	SizeLocked     bool               `json:"sizeLocked,omitempty"`
+	ControlReason  string             `json:"controlReason,omitempty"`
+	OwnerSurfaceID string             `json:"ownerSurfaceId,omitempty"`
+	OwnerViewID    string             `json:"ownerViewId,omitempty"`
+	ResizeEpoch    uint64             `json:"resizeEpoch,omitempty"`
 }
 
 // TerminalViewLayout 是 pane/floating 的 view-local 内容布局状态。
@@ -323,6 +328,43 @@ func (store TerminalViewStore) ApplyResizeResult(viewID string, seq uint64, cols
 	binding.DesiredCols = cols
 	binding.DesiredRows = rows
 	binding.LastError = lastError
+	store.Views = cloneTerminalViewBindings(store.Views)
+	store.Views[viewID] = binding
+	return store, true
+}
+
+type TerminalResizeControlProjection struct {
+	CanResize      bool
+	SizeLocked     bool
+	ControlReason  string
+	OwnerSurfaceID string
+	OwnerViewID    string
+	ResizeEpoch    uint64
+	ResizeRole     string
+	SurfaceID      string
+	ViewID         string
+}
+
+func (store TerminalViewStore) ApplyResizeControl(viewID string, projection TerminalResizeControlProjection) (TerminalViewStore, bool) {
+	binding, ok := store.Views[viewID]
+	if !ok {
+		return store, false
+	}
+	binding.CanResize = projection.CanResize
+	binding.SizeLocked = projection.SizeLocked
+	binding.ControlReason = projection.ControlReason
+	binding.OwnerSurfaceID = projection.OwnerSurfaceID
+	binding.OwnerViewID = projection.OwnerViewID
+	binding.ResizeEpoch = projection.ResizeEpoch
+	if projection.ResizeRole != "" {
+		binding.ResizeRole = normalizeTerminalResizeRole(projection.ResizeRole)
+	}
+	if projection.SurfaceID != "" {
+		binding.SurfaceID = projection.SurfaceID
+	}
+	if projection.ViewID != "" {
+		binding.ViewID = projection.ViewID
+	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.Views[viewID] = binding
 	return store, true

@@ -280,6 +280,50 @@ func TestLiveResizeResultUsesViewScopedStaleGuard(t *testing.T) {
 	}
 }
 
+func TestLiveResizeResultProjectsTerminalSizeLockWithoutResizingSurface(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 100, DesiredRows: 30},
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 100, 30, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+
+	next, effects := reducer(root, LiveResizeResultMsg{
+		ViewID: "view-1",
+		Seq:    1,
+		Cols:   100,
+		Rows:   30,
+		Result: services.TerminalResizeResult{
+			TerminalID:     "term-1",
+			Cols:           80,
+			Rows:           24,
+			Resized:        false,
+			CanResize:      false,
+			SizeLocked:     true,
+			ControlReason:  "size_locked",
+			OwnerSurfaceID: "surface",
+			OwnerViewID:    "view-1",
+			ResizeEpoch:    3,
+			ResizePolicy:   state.TerminalResizeRoleOwner,
+			SurfaceID:      "surface",
+			ViewID:         "view-1",
+		},
+	})
+	if len(effects) != 0 {
+		t.Fatalf("locked resize result should not emit effects, got %#v", effects)
+	}
+	if next.Session.Cols != 80 || next.Surface.Cols != 80 {
+		t.Fatalf("locked resize result must not resize session/surface, got session=%#v surface=%#v", next.Session, next.Surface)
+	}
+	binding, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || !binding.SizeLocked || binding.CanResize || binding.ControlReason != "size_locked" || binding.ResizeEpoch != 3 {
+		t.Fatalf("expected terminal size lock projection on binding, got %#v", binding)
+	}
+	if binding.Layout.SizeLocked {
+		t.Fatalf("terminal size lock must not mutate view-local layout lock, got %#v", binding.Layout)
+	}
+}
+
 func TestLiveAppInputDisplaysOnlyAfterSurfaceEventAndExitState(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20},

@@ -59,7 +59,7 @@ type TerminalService interface {
 	Remove(context.Context, TerminalRemoveRequest) error
 	EditMetadata(context.Context, TerminalEditMetadataRequest) error
 	SendInput(context.Context, TerminalInputRequest) error
-	Resize(context.Context, TerminalResizeRequest) error
+	Resize(context.Context, TerminalResizeRequest) (TerminalResizeResult, error)
 }
 
 type TerminalSurfaceService interface {
@@ -121,14 +121,19 @@ type TerminalAttachRequest struct {
 }
 
 type TerminalAttachResult struct {
-	TerminalID   string
-	Channel      uint16
-	Cols         int
-	Rows         int
-	CanResize    bool
-	ResizePolicy string
-	SurfaceID    string
-	ViewID       string
+	TerminalID     string
+	Channel        uint16
+	Cols           int
+	Rows           int
+	CanResize      bool
+	SizeLocked     bool
+	ControlReason  string
+	OwnerSurfaceID string
+	OwnerViewID    string
+	ResizeEpoch    uint64
+	ResizePolicy   string
+	SurfaceID      string
+	ViewID         string
 }
 
 type TerminalRestartRequest struct {
@@ -174,6 +179,22 @@ type TerminalResizeRequest struct {
 	ResizePolicy string
 	SurfaceID    string
 	ViewID       string
+}
+
+type TerminalResizeResult struct {
+	TerminalID     string
+	Cols           int
+	Rows           int
+	Resized        bool
+	CanResize      bool
+	SizeLocked     bool
+	ControlReason  string
+	OwnerSurfaceID string
+	OwnerViewID    string
+	ResizeEpoch    uint64
+	ResizePolicy   string
+	SurfaceID      string
+	ViewID         string
 }
 
 type TerminalSurfaceResult struct {
@@ -301,6 +322,7 @@ type FakeTerminalService struct {
 	EditErr           error
 	InputErr          error
 	ResizeErr         error
+	ResizeResult      TerminalResizeResult
 	SurfaceErr        error
 	LiveEventsCh      chan TerminalLiveEvent
 	LiveEventsErr     error
@@ -394,6 +416,9 @@ func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttach
 	if result.ViewID == "" {
 		result.ViewID = req.ViewID
 	}
+	if !result.SizeLocked && result.ControlReason == "" && result.ResizePolicy == state.TerminalResizeRoleOwner {
+		result.CanResize = true
+	}
 	return result, nil
 }
 
@@ -467,9 +492,35 @@ func (service *FakeTerminalService) SendInput(_ context.Context, req TerminalInp
 	return service.InputErr
 }
 
-func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResizeRequest) error {
+func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResizeRequest) (TerminalResizeResult, error) {
 	service.Resizes = append(service.Resizes, req)
-	return service.ResizeErr
+	if service.ResizeErr != nil {
+		return TerminalResizeResult{}, service.ResizeErr
+	}
+	result := service.ResizeResult
+	if result.TerminalID == "" {
+		result.TerminalID = req.TerminalID
+	}
+	if result.Cols == 0 {
+		result.Cols = req.Cols
+	}
+	if result.Rows == 0 {
+		result.Rows = req.Rows
+	}
+	if result.ResizePolicy == "" {
+		result.ResizePolicy = req.ResizePolicy
+	}
+	if result.SurfaceID == "" {
+		result.SurfaceID = req.SurfaceID
+	}
+	if result.ViewID == "" {
+		result.ViewID = req.ViewID
+	}
+	if !result.SizeLocked && result.ControlReason == "" {
+		result.Resized = true
+		result.CanResize = true
+	}
+	return result, nil
 }
 
 func (service *FakeTerminalService) LiveSurface(_ context.Context, req TerminalSurfaceRequest) (TerminalSurfaceResult, error) {

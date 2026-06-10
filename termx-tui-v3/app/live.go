@@ -116,6 +116,7 @@ type LiveResizeMsg struct {
 func (LiveResizeMsg) isMsg() {}
 
 type LiveResizeResultMsg struct {
+	Result services.TerminalResizeResult
 	Cols   int
 	Rows   int
 	Seq    uint64
@@ -187,21 +188,34 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				return root.Advance(), nil
 			}
+			cols, rows := msg.Cols, msg.Rows
+			if msg.Result.Cols > 0 {
+				cols = msg.Result.Cols
+			}
+			if msg.Result.Rows > 0 {
+				rows = msg.Result.Rows
+			}
 			if viewScoped {
-				root.Session = root.Session.Resize(msg.Cols, msg.Rows)
-				root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, msg.Cols, msg.Rows, "")
+				if hasResizeControlResult(msg.Result) {
+					root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(msg.ViewID, resizeControlProjectionFromResult(msg.Result))
+				}
+				root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, cols, rows, "")
+				if msg.Result.Resized || !hasResizeControlResult(msg.Result) {
+					root.Session = root.Session.Resize(cols, rows)
+					root.Surface = root.Surface.Resize(cols, rows)
+				}
 			} else {
-				nextSession, applied := root.Session.ApplyResizeResult(msg.Seq, msg.Cols, msg.Rows)
+				nextSession, applied := root.Session.ApplyResizeResult(msg.Seq, cols, rows)
 				if !applied {
 					return root, nil
 				}
 				root.Session = nextSession
+				root.Surface = root.Surface.Resize(cols, rows)
 			}
-			root.Surface = root.Surface.Resize(msg.Cols, msg.Rows)
-			if root.CopyMode.Active && root.CopyMode.BoundCols != msg.Cols {
-				root.CopyMode = root.CopyMode.Resize(msg.Cols, msg.Rows)
+			if root.CopyMode.Active && root.CopyMode.BoundCols != cols {
+				root.CopyMode = root.CopyMode.Resize(cols, rows)
 			} else if root.CopyMode.Active {
-				root.CopyMode = root.CopyMode.SetViewRows(msg.Rows)
+				root.CopyMode = root.CopyMode.SetViewRows(rows)
 				root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 			}
 			return root.Advance(), nil
@@ -255,6 +269,21 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, msg.Result.TerminalID)
 	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID, msg.Result.CanResize))
+	viewID := msg.Result.ViewID
+	if viewID == "" {
+		viewID = state.TerminalPaneViewID(activePaneID)
+	}
+	root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
+		CanResize:      msg.Result.CanResize,
+		SizeLocked:     msg.Result.SizeLocked,
+		ControlReason:  msg.Result.ControlReason,
+		OwnerSurfaceID: msg.Result.OwnerSurfaceID,
+		OwnerViewID:    msg.Result.OwnerViewID,
+		ResizeEpoch:    msg.Result.ResizeEpoch,
+		ResizeRole:     msg.Result.ResizePolicy,
+		SurfaceID:      msg.Result.SurfaceID,
+		ViewID:         msg.Result.ViewID,
+	})
 	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
 }
 
@@ -467,7 +496,7 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 	}
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
-			err := deps.Terminal.Resize(ctx, services.TerminalResizeRequest{
+			result, err := deps.Terminal.Resize(ctx, services.TerminalResizeRequest{
 				TerminalID:   session.TerminalID,
 				Channel:      session.Channel,
 				Cols:         msg.Cols,
@@ -476,9 +505,27 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 				SurfaceID:    session.SurfaceID,
 				ViewID:       session.ViewID,
 			})
-			return LiveResizeResultMsg{Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, ViewID: msg.ViewID, Err: err}
+			return LiveResizeResultMsg{Result: result, Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, ViewID: msg.ViewID, Err: err}
 		},
 	}}
+}
+
+func hasResizeControlResult(result services.TerminalResizeResult) bool {
+	return result.TerminalID != "" || result.ControlReason != "" || result.SizeLocked || result.ResizeEpoch != 0 || result.OwnerSurfaceID != "" || result.OwnerViewID != "" || result.ResizePolicy != "" || result.SurfaceID != "" || result.ViewID != "" || result.CanResize || result.Resized
+}
+
+func resizeControlProjectionFromResult(result services.TerminalResizeResult) state.TerminalResizeControlProjection {
+	return state.TerminalResizeControlProjection{
+		CanResize:      result.CanResize,
+		SizeLocked:     result.SizeLocked,
+		ControlReason:  result.ControlReason,
+		OwnerSurfaceID: result.OwnerSurfaceID,
+		OwnerViewID:    result.OwnerViewID,
+		ResizeEpoch:    result.ResizeEpoch,
+		ResizeRole:     result.ResizePolicy,
+		SurfaceID:      result.SurfaceID,
+		ViewID:         result.ViewID,
+	}
 }
 
 func setLiveError(root state.Root, message string) state.Root {

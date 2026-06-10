@@ -115,7 +115,23 @@ func (client *fakeProtocolTerminalClient) Resize(_ context.Context, channel uint
 
 func (client *fakeProtocolTerminalClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
 	client.ensureParams = append(client.ensureParams, params)
-	return &protocol.EnsureResizeResult{Size: protocol.Size{Cols: params.Cols, Rows: params.Rows}, Resized: true}, nil
+	return &protocol.EnsureResizeResult{
+		Size:    protocol.Size{Cols: params.Cols, Rows: params.Rows},
+		Resized: true,
+		ResizeControl: &protocol.ResizeControl{
+			CanResize:      true,
+			Reason:         protocol.ResizeControlReasonOwner,
+			SurfaceID:      params.SurfaceID,
+			OwnerSurfaceID: params.SurfaceID,
+			OwnerViewID:    params.ViewID,
+			ResizeOwnership: &protocol.ResizeOwnership{
+				OwnerSurfaceID: params.SurfaceID,
+				OwnerViewID:    params.ViewID,
+				Size:           protocol.Size{Cols: params.Cols, Rows: params.Rows},
+				Epoch:          2,
+			},
+		},
+	}, nil
 }
 
 func (client *fakeProtocolTerminalClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
@@ -425,15 +441,19 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	if len(client.inputData) != 1 || string(client.inputData[0]) != "x" || client.inputChannel[0] != 11 {
 		t.Fatalf("unexpected input call channels=%#v data=%#v", client.inputChannel, client.inputData)
 	}
-	if err := adapter.Resize(context.Background(), TerminalResizeRequest{
+	resized, err := adapter.Resize(context.Background(), TerminalResizeRequest{
 		TerminalID: "term-1",
 		Channel:    11,
 		Cols:       120,
 		Rows:       50,
 		SurfaceID:  "surface-1",
 		ViewID:     "view-1",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("resize: %v", err)
+	}
+	if !resized.Resized || !resized.CanResize || resized.ResizeEpoch != 2 || resized.OwnerViewID != "view-1" {
+		t.Fatalf("unexpected resize result %#v", resized)
 	}
 	if len(client.ensureParams) != 1 || client.ensureParams[0].Cols != 120 || client.ensureParams[0].Rows != 50 {
 		t.Fatalf("unexpected ensure resize params %#v", client.ensureParams)

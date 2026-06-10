@@ -58,11 +58,7 @@ func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req Te
 		ViewID:       req.ViewID,
 	}
 	if result.ResizeControl != nil {
-		out.CanResize = result.ResizeControl.CanResize
-		if result.ResizeControl.ResizeOwnership != nil && result.ResizeControl.ResizeOwnership.Size != (protocol.Size{}) {
-			out.Cols = int(result.ResizeControl.ResizeOwnership.Size.Cols)
-			out.Rows = int(result.ResizeControl.ResizeOwnership.Size.Rows)
-		}
+		applyProtocolResizeControlToAttach(&out, result.ResizeControl)
 	}
 	return out, nil
 }
@@ -162,12 +158,12 @@ func (adapter ProtocolTerminalServiceAdapter) SendInput(ctx context.Context, req
 	return adapter.Client.Input(ctx, req.Channel, req.Bytes)
 }
 
-func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req TerminalResizeRequest) error {
+func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req TerminalResizeRequest) (TerminalResizeResult, error) {
 	if adapter.Client == nil {
-		return ErrMissingTerminalClient
+		return TerminalResizeResult{}, ErrMissingTerminalClient
 	}
 	if req.Channel == 0 {
-		return fmt.Errorf("terminal resize requires attached channel")
+		return TerminalResizeResult{}, fmt.Errorf("terminal resize requires attached channel")
 	}
 	cols := uint16(req.Cols)
 	rows := uint16(req.Rows)
@@ -176,7 +172,7 @@ func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req Te
 		if resizePolicy == "" {
 			resizePolicy = protocol.ResizePolicyOwner
 		}
-		_, err := adapter.Client.EnsureResize(ctx, protocol.EnsureResizeParams{
+		result, err := adapter.Client.EnsureResize(ctx, protocol.EnsureResizeParams{
 			TerminalID:   req.TerminalID,
 			Channel:      req.Channel,
 			Cols:         cols,
@@ -185,9 +181,60 @@ func (adapter ProtocolTerminalServiceAdapter) Resize(ctx context.Context, req Te
 			SurfaceID:    req.SurfaceID,
 			ViewID:       req.ViewID,
 		})
-		return err
+		if err != nil {
+			return TerminalResizeResult{}, err
+		}
+		return terminalResizeResultFromProtocol(req, result), nil
 	}
-	return adapter.Client.Resize(ctx, req.Channel, cols, rows)
+	if err := adapter.Client.Resize(ctx, req.Channel, cols, rows); err != nil {
+		return TerminalResizeResult{}, err
+	}
+	return TerminalResizeResult{TerminalID: req.TerminalID, Cols: req.Cols, Rows: req.Rows, Resized: true, CanResize: true, ResizePolicy: req.ResizePolicy, SurfaceID: req.SurfaceID, ViewID: req.ViewID}, nil
+}
+
+func applyProtocolResizeControlToAttach(out *TerminalAttachResult, control *protocol.ResizeControl) {
+	if out == nil || control == nil {
+		return
+	}
+	out.CanResize = control.CanResize
+	out.SizeLocked = control.SizeLocked
+	out.ControlReason = control.Reason
+	out.OwnerSurfaceID = control.OwnerSurfaceID
+	out.OwnerViewID = control.OwnerViewID
+	if control.ResizeOwnership != nil {
+		out.SizeLocked = control.ResizeOwnership.SizeLocked
+		out.ResizeEpoch = control.ResizeOwnership.Epoch
+		if control.ResizeOwnership.Size != (protocol.Size{}) {
+			out.Cols = int(control.ResizeOwnership.Size.Cols)
+			out.Rows = int(control.ResizeOwnership.Size.Rows)
+		}
+	}
+}
+
+func terminalResizeResultFromProtocol(req TerminalResizeRequest, result *protocol.EnsureResizeResult) TerminalResizeResult {
+	out := TerminalResizeResult{TerminalID: req.TerminalID, Cols: req.Cols, Rows: req.Rows, ResizePolicy: req.ResizePolicy, SurfaceID: req.SurfaceID, ViewID: req.ViewID}
+	if result == nil {
+		return out
+	}
+	out.Resized = result.Resized
+	out.Cols = int(result.Size.Cols)
+	out.Rows = int(result.Size.Rows)
+	if result.ResizeControl != nil {
+		out.CanResize = result.ResizeControl.CanResize
+		out.SizeLocked = result.ResizeControl.SizeLocked
+		out.ControlReason = result.ResizeControl.Reason
+		out.OwnerSurfaceID = result.ResizeControl.OwnerSurfaceID
+		out.OwnerViewID = result.ResizeControl.OwnerViewID
+		if result.ResizeControl.ResizeOwnership != nil {
+			out.SizeLocked = result.ResizeControl.ResizeOwnership.SizeLocked
+			out.ResizeEpoch = result.ResizeControl.ResizeOwnership.Epoch
+			if result.ResizeControl.ResizeOwnership.Size != (protocol.Size{}) {
+				out.Cols = int(result.ResizeControl.ResizeOwnership.Size.Cols)
+				out.Rows = int(result.ResizeControl.ResizeOwnership.Size.Rows)
+			}
+		}
+	}
+	return out
 }
 
 func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, req TerminalSurfaceRequest) (TerminalSurfaceResult, error) {

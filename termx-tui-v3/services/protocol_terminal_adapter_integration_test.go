@@ -43,7 +43,7 @@ func TestProtocolTerminalServiceAdapterWithRealProtocolClient(t *testing.T) {
 	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: attached.Channel, Bytes: []byte("x")}); err != nil {
 		t.Fatalf("input: %v", err)
 	}
-	if err := adapter.Resize(context.Background(), TerminalResizeRequest{
+	if _, err := adapter.Resize(context.Background(), TerminalResizeRequest{
 		TerminalID: "term-1",
 		Channel:    attached.Channel,
 		Cols:       100,

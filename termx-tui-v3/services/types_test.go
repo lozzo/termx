@@ -80,7 +80,7 @@ func TestFakeTerminalSessionClipboardServices(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("send input: %v", err)
 	}
-	if err := terminal.Resize(context.Background(), TerminalResizeRequest{TerminalID: "term-1", Channel: 3, Cols: 100, Rows: 40}); err != nil {
+	if _, err := terminal.Resize(context.Background(), TerminalResizeRequest{TerminalID: "term-1", Channel: 3, Cols: 100, Rows: 40}); err != nil {
 		t.Fatalf("resize: %v", err)
 	}
 	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "x" {

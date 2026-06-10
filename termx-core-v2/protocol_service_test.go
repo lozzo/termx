@@ -386,6 +386,66 @@ func TestProtocolServiceMultipleAttachmentsResizeOwnership(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceTerminalSizeLockRequiresManualUnlockBeforeResize(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	owner, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"})
+	if err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	follower, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-follower", ViewID: "view-follower"})
+	if err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+
+	locked, err := client.LockResize(context.Background(), protocol.ResizeControlParams{TerminalID: "term-1", Channel: owner.Channel, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"})
+	if err != nil {
+		t.Fatalf("lock resize: %v", err)
+	}
+	if locked.ResizeControl == nil || !locked.ResizeControl.SizeLocked || locked.ResizeControl.CanResize || locked.ResizeControl.Reason != protocol.ResizeControlReasonSizeLocked {
+		t.Fatalf("expected locked owner control, got %#v", locked)
+	}
+	followerUnlock, err := client.UnlockResize(context.Background(), protocol.ResizeControlParams{TerminalID: "term-1", Channel: follower.Channel, ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-follower", ViewID: "view-follower"})
+	if err != nil {
+		t.Fatalf("follower unlock: %v", err)
+	}
+	if followerUnlock.ResizeControl == nil || !followerUnlock.ResizeControl.SizeLocked {
+		t.Fatalf("follower must not unlock terminal size, got %#v", followerUnlock)
+	}
+
+	blocked, err := client.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: owner.Channel, Cols: 50, Rows: 12, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"})
+	if err != nil {
+		t.Fatalf("locked ensure resize: %v", err)
+	}
+	if blocked.Resized || blocked.ResizeControl == nil || blocked.ResizeControl.Reason != protocol.ResizeControlReasonSizeLocked || blocked.Size != (protocol.Size{Cols: 10, Rows: 3}) {
+		t.Fatalf("locked ensure_resize should not change PTY size, got %#v", blocked)
+	}
+	process := waitForProcessTraffic(t, server, "term-1", 0, 0)
+	_, resizes, _, _ := process.snapshot()
+	if len(resizes) != 0 {
+		t.Fatalf("locked resize reached process %#v", resizes)
+	}
+
+	unlocked, err := client.UnlockResize(context.Background(), protocol.ResizeControlParams{TerminalID: "term-1", Channel: owner.Channel, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"})
+	if err != nil {
+		t.Fatalf("unlock resize: %v", err)
+	}
+	if unlocked.ResizeControl == nil || unlocked.ResizeControl.SizeLocked || !unlocked.ResizeControl.CanResize {
+		t.Fatalf("expected unlocked owner control, got %#v", unlocked)
+	}
+	resized, err := client.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: owner.Channel, Cols: 50, Rows: 12, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"})
+	if err != nil {
+		t.Fatalf("unlocked ensure resize: %v", err)
+	}
+	if !resized.Resized || resized.Size != (protocol.Size{Cols: 50, Rows: 12}) {
+		t.Fatalf("manual resize after unlock should resize, got %#v", resized)
+	}
+}
+
 func TestProtocolServiceDetachByChannelKeepsSiblingAttachment(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

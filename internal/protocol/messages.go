@@ -111,6 +111,19 @@ type EnsureResizeResult struct {
 	Resized       bool
 }
 
+type ResizeControlParams struct {
+	TerminalID   string
+	Channel      uint16
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
+}
+
+type ResizeControlResult struct {
+	ResizeControl *ResizeControl
+	Size          Size
+}
+
 type SetTagsParams struct {
 	TerminalID string
 	Tags       map[string]string

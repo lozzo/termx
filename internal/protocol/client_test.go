@@ -45,6 +45,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"Input",
 		"Kill",
 		"List",
+		"LockResize",
 		"Remove",
 		"Resize",
 		"ResizeRequest",
@@ -58,6 +59,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"StoragePut",
 		"Stream",
 		"StreamReady",
+		"UnlockResize",
 		"WorkbenchApply",
 		"WorkbenchGet",
 	}

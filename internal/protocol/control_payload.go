@@ -135,11 +135,32 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.ResizeParams", params)
 		}
 		return proto.Marshal(&wirepb.ResizeParams{TerminalId: value.TerminalID, Cols: uint32(value.Cols), Rows: uint32(value.Rows)})
-	case "ensure_resize":
+	case "ensure_resize", "resize.lock", "resize.unlock":
 		value, ok := params.(EnsureResizeParams)
 		if !ok {
 			if ptr, ptrOK := params.(*EnsureResizeParams); ptrOK && ptr != nil {
 				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			if control, controlOK := params.(ResizeControlParams); controlOK {
+				value = EnsureResizeParams{
+					TerminalID:   control.TerminalID,
+					Channel:      control.Channel,
+					ResizePolicy: control.ResizePolicy,
+					SurfaceID:    control.SurfaceID,
+					ViewID:       control.ViewID,
+				}
+				ok = true
+			} else if ptr, ptrOK := params.(*ResizeControlParams); ptrOK && ptr != nil {
+				value = EnsureResizeParams{
+					TerminalID:   ptr.TerminalID,
+					Channel:      ptr.Channel,
+					ResizePolicy: ptr.ResizePolicy,
+					SurfaceID:    ptr.SurfaceID,
+					ViewID:       ptr.ViewID,
+				}
 				ok = true
 			}
 		}
@@ -426,10 +447,19 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return ResizeParams{TerminalID: msg.GetTerminalId(), Cols: uint16(msg.GetCols()), Rows: uint16(msg.GetRows())}, nil
-	case "ensure_resize":
+	case "ensure_resize", "resize.lock", "resize.unlock":
 		var msg wirepb.EnsureResizeParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
+		}
+		if method == "resize.lock" || method == "resize.unlock" {
+			return ResizeControlParams{
+				TerminalID:   msg.GetTerminalId(),
+				Channel:      uint16(msg.GetChannel()),
+				ResizePolicy: msg.GetResizePolicy(),
+				SurfaceID:    msg.GetSurfaceId(),
+				ViewID:       msg.GetViewId(),
+			}, nil
 		}
 		return EnsureResizeParams{
 			TerminalID:   msg.GetTerminalId(),
@@ -600,11 +630,20 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 			return nil, methodResultTypeError(method, "protocol.TerminalInfo", result)
 		}
 		return proto.Marshal(terminalInfoToWirePB(value))
-	case "ensure_resize":
+	case "ensure_resize", "resize.lock", "resize.unlock":
 		value, ok := result.(EnsureResizeResult)
 		if !ok {
 			if ptr, ptrOK := result.(*EnsureResizeResult); ptrOK && ptr != nil {
 				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			if control, controlOK := result.(ResizeControlResult); controlOK {
+				value = EnsureResizeResult{ResizeControl: control.ResizeControl, Size: control.Size}
+				ok = true
+			} else if ptr, ptrOK := result.(*ResizeControlResult); ptrOK && ptr != nil {
+				value = EnsureResizeResult{ResizeControl: ptr.ResizeControl, Size: ptr.Size}
 				ok = true
 			}
 		}
@@ -745,10 +784,18 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 		}
 		*ptr = terminalInfoFromWirePB(&msg)
 		return nil
-	case "ensure_resize":
+	case "ensure_resize", "resize.lock", "resize.unlock":
 		var msg wirepb.EnsureResizeResult
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return err
+		}
+		if method == "resize.lock" || method == "resize.unlock" {
+			ptr, ok := out.(*ResizeControlResult)
+			if !ok || ptr == nil {
+				return methodOutTypeError(method, "*protocol.ResizeControlResult", out)
+			}
+			*ptr = ResizeControlResult{ResizeControl: resizeControlFromWirePB(msg.GetResizeControl()), Size: sizeFromWirePB(msg.GetSize())}
+			return nil
 		}
 		ptr, ok := out.(*EnsureResizeResult)
 		if !ok || ptr == nil {

@@ -349,6 +349,22 @@ func (c *Client) EnsureResize(ctx context.Context, params EnsureResizeParams) (*
 	return &out, nil
 }
 
+func (c *Client) LockResize(ctx context.Context, params ResizeControlParams) (*ResizeControlResult, error) {
+	var out ResizeControlResult
+	if err := c.doRequest(ctx, "resize.lock", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) UnlockResize(ctx context.Context, params ResizeControlParams) (*ResizeControlResult, error) {
+	var out ResizeControlResult
+	if err := c.doRequest(ctx, "resize.unlock", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*Snapshot, error) {
 	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
 		TerminalID:       terminalID,
