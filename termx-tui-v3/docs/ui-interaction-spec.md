@@ -764,6 +764,32 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 
 - 更完整的 command palette、可配置 keymap 和跨 workspace terminal attach 尚未产品化。
 
+### 13.2.1 当前快捷键实现核查表
+
+本表以 `termx-tui-v3/input/bindings.go` 的 `BindingCatalog` 为唯一快捷键目录来源；“已接线”表示快捷键已通过 `Intent` 接入 app reducer、shell message、pane command adapter 或 workbench command adapter；“测试证据”只记录当前已存在的 harness 入口，后续新增快捷键或改键位时必须同步更新本表。
+
+| 分组 | 快捷键 | 语义动作 | 实现状态 | 测试证据 |
+| --- | --- | --- | --- | --- |
+| Root | `Ctrl-p` / `Ctrl-r` / `Ctrl-g` / `Ctrl-o` / `Ctrl-t` / `Ctrl-w` | 进入 pane / resize / global / floating / tab / workspace mode | 已登记，已通过 `IntentSetInteractionMode` 接入 `ShellSetInteractionModeMsg` 路径 | `input/types_test.go`、`app/ui_input_test.go` |
+| Root | `Ctrl-f` | 打开 Terminal Picker overlay 并请求 terminal pool list | 已登记，已通过 `IntentOpenTerminalPicker` 接入 reducer 和 list request effect | `app/ui_input_test.go` |
+| Root | `Ctrl-v`、`PageUp`、鼠标 wheel up | 进入 Display / Copy 或请求 older history | 已登记，已接入 authoritative copy/history reducer 路径 | `input/types_test.go`、`app/ui_input_test.go`、`app/integration_test.go` |
+| Root | `Esc` | 退出 mode、关闭 overlay；normal 无 copy mode 时透传 terminal ESC | 已登记在 route 逻辑，已接入 interaction exit / overlay close / terminal input 分支 | `input/types_test.go`、`app/ui_input_test.go`、`app/integration_test.go` |
+| Pane mode | `v` / `%`、`s` / `"` | split right / split down | 已登记，已通过 `PaneCommandFromIntent` 和 workbench pane split command 接线 | `input/types_test.go`、`app/pane_command_adapter_test.go`、`app/ui_input_test.go` |
+| Pane mode | `x` / `w`、`d`、`X` | close pane、detach pane、close and kill terminal | 已登记，已通过 workbench command adapter 接线；`X` 使用 accepted confirm 语义 | `input/types_test.go`、`app/action_catalog_test.go`、`app/shell_test.go`、`app/runtime_test.go` |
+| Pane mode | `z`、`b`、`c`、`p` | zoom、balance、card presentation、split-line presentation | 已登记，已通过 pane mini command adapter 接线 | `app/pane_command_adapter_test.go`、`app/ui_input_test.go`、`app/live_test.go` |
+| Pane mode | `n` / `N`、`h` / `j` / `k` / `l`、方向键 | focus next / previous | 已登记，方向 focus 当前映射为 next / previous，不表达几何方向 truth | `app/ui_input_test.go`、`app/runtime_test.go` |
+| Resize mode | 方向键、`h` / `j` / `k` / `l`、`H` / `J` / `K` / `L` | 按方向 resize，普通步长 2，大写步长 6 | 已登记，已通过 pane resize command 接线 | `app/ui_input_test.go`、`app/runtime_test.go`、`app/integration_test.go` |
+| Resize mode | `b` / `=` | balance / equalize | 已登记，已通过 pane balance command 接线 | `input/types_test.go`、`app/ui_input_test.go` |
+| Global mode | `h`、`f`、`t`、`T` | toggle header、toggle footer、clear toasts、close current toast | 已登记，已通过 shell action adapter 接线到 shell reducer | `app/action_catalog_test.go`、`app/ui_input_test.go`、`app/runtime_test.go` |
+| Global mode | `p` / `m`、`w`、`:`、`?`、`q` | Terminal Pool、Workbench Tree、Prompt、Help、Quit | 已登记，已通过 shell action adapter 接线 | `app/action_catalog_test.go`、`app/ui_input_test.go`、`app/runtime_test.go` |
+| Floating mode | `n`、`x`、`z` / `m`、`c` | create、close、collapse / restore、center | 已登记，已通过 floating command adapter 接线 | `app/ui_input_test.go`、`app/runtime_test.go` |
+| Floating mode | `h` / `j` / `k` / `l`、方向键、`H` / `J` / `K` / `L` | move 和 resize active floating pane | 已登记，已通过 floating move / size command 接线 | `app/ui_input_test.go`、`app/runtime_test.go` |
+| Tab mode | `n` / `c`、`l` / `]`、`h` / `[` / `p`、`1`-`9`、`r`、`x`、`X` | create、next、previous、jump、rename、close、kill | 已登记，已通过 workbench command adapter 接线；rename 进入 Prompt | `app/ui_input_test.go`、`app/runtime_test.go` |
+| Workspace mode | `n` / `c`、`l` / `]`、`h` / `[` / `p`、`r`、`x`、`t` / `f` / `s` | create、next、previous、rename、delete、Workbench Tree | 已登记，已通过 workbench command 和 shell action adapter 接线；rename 进入 Prompt | `input/types_test.go`、`app/ui_input_test.go`、`app/runtime_test.go` |
+| 通用防漏发 | UI mode 下未绑定按键、overlay 字符输入、footer action | 不应进入 terminal input | 已通过 route 和 runtime harness 覆盖；normal 未绑定 raw key 继续透传 terminal | `input/types_test.go`、`app/ui_input_test.go`、`app/integration_test.go`、`app/runtime_test.go` |
+
+当前核查结论：已登记的第一版快捷键均有 app 层接线；已知部分实现项是 pane `h` / `j` / `k` / `l` 和方向键 focus 仍映射为 previous / next，不具备真正几何方向选择语义；更完整 command palette、可配置 keymap、跨 workspace attach 和 terminal attach 细分动作仍未产品化。
+
 ### 13.3 Mode 职责
 
 pane mode：
