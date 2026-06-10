@@ -124,27 +124,11 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 			break
 		}
 	}
-	if selected.CreateNew {
-		return root, []Effect{
-			handledEffect{},
-			FuncEffect{Run: func(context.Context) Msg {
-				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
-			}},
-		}
+	if selected.TerminalID == "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no terminal"})
+		return root.Advance(), []Effect{handledEffect{}}
 	}
-	if selected.PaneID == "" {
-		if selected.TerminalID == "" {
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no terminal"})
-			return root.Advance(), []Effect{handledEffect{}}
-		}
-		return root, []Effect{
-			handledEffect{},
-			FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
-			}},
-		}
-	}
-	if root.Shell.EnsureDefaults().ActiveFloatingID != "" && selected.TerminalID != "" {
+	if root.Shell.EnsureDefaults().ActiveFloatingID != "" {
 		targetFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
 		return root, []Effect{
 			handledEffect{},
@@ -153,10 +137,12 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 			}},
 		}
 	}
-	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
-	root.Shell = root.Shell.CloseOverlay()
-	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: selected.PaneID})
-	return root.Advance(), []Effect{handledEffect{}}
+	return root, []Effect{
+		handledEffect{},
+		FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+		}},
+	}
 }
 
 func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {

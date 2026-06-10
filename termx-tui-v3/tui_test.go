@@ -81,9 +81,10 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	assertNoASCIIChrome(t, "split-hidden-toast", cases["split-hidden-toast"])
 	if !frameContains(cases["terminal-picker"].Lines, "search:") ||
-		!frameContains(cases["terminal-picker"].Lines, "▸ + new terminal  Create a new terminal") ||
 		!frameContains(cases["terminal-picker"].Lines, "termx-picker shell") ||
-		!frameContains(cases["terminal-picker"].Lines, "live @pane-main") ||
+		!frameContains(cases["terminal-picker"].Lines, "running") ||
+		!frameContains(cases["terminal-picker"].Lines, "80x24") ||
+		frameContains(cases["terminal-picker"].Lines, "+ new terminal") ||
 		frameContains(cases["terminal-picker"].Lines, "filter terminals") ||
 		frameContains(cases["terminal-picker"].Lines, "Select terminal source state target") ||
 		frameContains(cases["terminal-picker"].Lines, "DETAIL") ||
@@ -221,7 +222,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	requiredOverlays := map[string][]string{
-		"terminal-picker":     {"┌─ terminal picker", "search:", "▸ + new terminal  Create a new terminal", "termx-picker shell", "live @pane-main"},
+		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
 		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill"},
 		"workbench-tree-page": {"┌─ workbench tree", "● open", "esc", "Workbench Tree", "TUI storage projection", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open"},
 		"prompt-overlay":      {"┌─ prompt", "● open", "esc", "Command Prompt", "重命名"},
@@ -236,7 +237,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	picker := cases["terminal-picker"]
-	for _, stale := range []string{"filter terminals", "PREVIEW pane:", "Select terminal source state target", "DETAIL", "[attach]", "[new]", "pane:", "selected ", "● open"} {
+	for _, stale := range []string{"+ new terminal", "filter terminals", "PREVIEW pane:", "Select terminal source state target", "DETAIL", "[attach]", "[new]", "pane:", "selected ", "● open"} {
 		if frameContains(picker.Lines, stale) {
 			t.Fatalf("terminal picker regressed to engineering label %q: %#v", stale, picker.Lines)
 		}

@@ -1305,13 +1305,14 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 		OpenTerminalPicker()
 	shell.Overlay.Query = "term"
 
-	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	root := state.Root{Shell: shell, TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady, Items: []state.TerminalPoolItem{{TerminalID: "term-main", Title: "shell", State: "running", Cols: 80, Rows: 24}, {TerminalID: "term-2", Title: "日志🚀", State: "running", Cols: 100, Rows: 30}}}}
+	vm := NewRenderVMBuilder().Build(root)
 	content := vm.Shell.Overlay.Content
 	if vm.Shell.Overlay.Kind != OverlayTerminalPicker || content.Kind != ContentTerminalPicker {
 		t.Fatalf("expected terminal picker content, got %#v", vm.Shell.Overlay)
 	}
 	plain := plainLines(content.Lines)
-	for _, want := range []string{"search: term", "▸ + new terminal  Create a new terminal", "● term-main shell  live @pane-main", "○ term-2 日志🚀  live @pane-2"} {
+	for _, want := range []string{"search: term", "▸ ● shell", "running", "80x24", "● 日志🚀", "100x30"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected compact picker marker %q, got %#v", want, content.Lines)
 		}
@@ -1327,8 +1328,8 @@ func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 	if !content.Cursor.Visible || content.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("expected picker search cursor, got %#v", content.Cursor)
 	}
-	if !contentHasAction(content, "picker.attach") || !contentHasAction(content, "picker.new") {
-		t.Fatalf("expected picker row/new hit regions, got %#v", content.HitRegions)
+	if !contentHasAction(content, "picker.attach") || contentHasAction(content, "picker.new") {
+		t.Fatalf("expected terminal attach hit regions only, got %#v", content.HitRegions)
 	}
 }
 
@@ -1340,18 +1341,17 @@ func TestRenderVMBuilderFiltersTerminalPickerAndHighlightsSelectedRow(t *testing
 		OpenTerminalPicker().
 		SetTerminalPickerQuery("日志")
 
-	content := NewRenderVMBuilder().Build(state.Root{Shell: shell}).Shell.Overlay.Content
+	root := state.Root{Shell: shell, TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady, Items: []state.TerminalPoolItem{{TerminalID: "term-main", Title: "shell", State: "running", Cols: 80, Rows: 24}, {TerminalID: "term-2", Title: "日志🚀", State: "running", Cols: 100, Rows: 30}}}}
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if !strings.Contains(content.Lines[0].PlainString(), "search: 日志") ||
-		!strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal  Create a new terminal") ||
-		!strings.Contains(content.Lines[2].PlainString(), "○ term-2 日志🚀  live @pane-2") ||
+		!strings.Contains(content.Lines[1].PlainString(), "▸ ● 日志🚀") ||
+		!strings.Contains(content.Lines[1].PlainString(), "running") ||
+		!strings.Contains(content.Lines[1].PlainString(), "100x30") ||
 		strings.Contains(plainLines(content.Lines), "shell") ||
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
 		t.Fatalf("expected filtered selected picker row, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[1], "new terminal", StylePicker) {
-		t.Fatalf("expected default create row text to use picker style, got %#v", content.Lines[1])
-	}
-	if !lineHasStyledCell(content.Lines[1], "Create a new terminal", StylePicker) || !lineHasStyledCell(content.Lines[2], "日", StylePickerMatch) || !lineHasStyledCell(content.Lines[2], "志", StylePickerMatch) || !lineHasStyledCell(content.Lines[2], "live", StylePicker) {
+	if !lineHasStyledCell(content.Lines[1], "日", StylePickerMatch) || !lineHasStyledCell(content.Lines[1], "志", StylePickerMatch) || !lineHasStyledCell(content.Lines[1], " running ", StyleSuccess) {
 		t.Fatalf("expected picker row text to use picker style and match highlight, got %#v", content.Lines)
 	}
 	if content.Cursor.Col != DisplayWidth("search: 日志") {
@@ -1372,33 +1372,29 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 				TerminalID: "term-pool",
 				Title:      "远程🚀",
 				State:      "running",
+				Cols:       120,
+				Rows:       40,
 			}},
 		},
 	}
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[1].PlainString(), "▸ + new terminal  Create a new terminal") ||
-		!strings.Contains(content.Lines[2].PlainString(), "● shell  live @pane-main") ||
-		!strings.Contains(content.Lines[3].PlainString(), "○ term-pool 远程🚀  running @pool") ||
+	if !strings.Contains(content.Lines[1].PlainString(), "▸ ● 远程🚀") ||
+		!strings.Contains(content.Lines[1].PlainString(), "running") ||
+		!strings.Contains(content.Lines[1].PlainString(), "120x40") ||
 		strings.Contains(plainLines(content.Lines), "DETAIL") {
-		t.Fatalf("expected pane and pool rows, got %#v", content.Lines)
+		t.Fatalf("expected terminal-only pool row, got %#v", content.Lines)
 	}
-	if len(content.HitRegions) != 3 ||
-		content.HitRegions[0].ActionID != ActionPickerNew.String() ||
-		content.HitRegions[1].PaneID == "" ||
-		content.HitRegions[2].PaneID != "" ||
-		content.HitRegions[2].ActionID != ActionPickerAttach.String() {
-		t.Fatalf("expected pane, pool and create row action regions, got %#v", content.HitRegions)
+	if len(content.HitRegions) != 1 || content.HitRegions[0].PaneID != "" || content.HitRegions[0].ActionID != ActionPickerAttach.String() {
+		t.Fatalf("expected terminal attach row action region, got %#v", content.HitRegions)
 	}
 
 	root.Shell = root.Shell.SetTerminalPickerQuery("trpl")
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(plainLines(content.Lines), "term-pool") ||
-		!lineHasStyledCell(content.Lines[2], "t", StylePickerMatch) ||
-		!lineHasStyledCell(content.Lines[2], "r", StylePickerMatch) ||
-		!lineHasStyledCell(content.Lines[2], "p", StylePickerMatch) ||
-		!lineHasStyledCell(content.Lines[2], "l", StylePickerMatch) {
-		t.Fatalf("expected fuzzy terminal id match highlight, got %#v", content.Lines)
+	if len(content.HitRegions) != 1 || content.HitRegions[0].ActionID != ActionPickerAttach.String() ||
+		strings.Contains(plainLines(content.Lines), "term-pool") ||
+		strings.Contains(plainLines(content.Lines), "DETAIL") {
+		t.Fatalf("expected fuzzy terminal id match without id column highlight, got %#v", content.Lines)
 	}
 
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolLoading}
@@ -1408,7 +1404,7 @@ func TestRenderVMBuilderProjectsTerminalPickerPoolStateAndRows(t *testing.T) {
 	}
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolReady}
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(plainLines(content.Lines), "+ new terminal") {
+	if terminalPickerSelectableCount(state.TerminalPickerItems(root)) != 0 || strings.Contains(plainLines(content.Lines), "new terminal") {
 		t.Fatalf("expected empty row, got %#v", content.Lines)
 	}
 	root.TerminalPool = state.TerminalPoolStore{Status: state.TerminalPoolError, LastError: "boom"}

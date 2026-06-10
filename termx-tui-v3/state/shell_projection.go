@@ -2,71 +2,57 @@ package state
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 // TerminalPickerItems 从 reducer-owned root 推导 picker 列表；服务端 Terminal Pool 必须先回投到 TerminalPoolStore。
 func TerminalPickerItems(root Root) []TerminalPickerItem {
 	shell := root.Shell.EnsureDefaults()
-	tab := shell.activeTab()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
-	items := []TerminalPickerItem{{
-		Title:     "new terminal",
-		Kind:      PaneTerminalLive,
-		CreateNew: true,
-	}}
+	items := []TerminalPickerItem{}
 	seenTerminal := map[string]struct{}{}
-	for _, pane := range tab.Panes {
-		terminalID := pickerTerminalID(root, pane)
-		if pane.Kind == PaneEmpty && terminalID == "" {
-			continue
-		}
-		item := TerminalPickerItem{
-			PaneID:     pane.ID,
-			Title:      paneTitle(pane),
-			Kind:       pane.Kind,
-			TerminalID: terminalID,
-			Location:   pane.ID,
-			Active:     pane.Active,
-		}
-		if !matchesTerminalPickerQuery(item, query) {
-			continue
-		}
-		items = append(items, item)
-		if terminalID != "" && terminalID != "none" {
-			seenTerminal[terminalID] = struct{}{}
-		}
-	}
 	for _, poolItem := range root.TerminalPool.Items {
 		if poolItem.TerminalID == "" {
-			continue
-		}
-		if _, seen := seenTerminal[poolItem.TerminalID]; seen {
 			continue
 		}
 		item := TerminalPickerItem{
 			Title:      terminalPoolTitle(poolItem),
 			Kind:       PaneTerminalLive,
 			TerminalID: poolItem.TerminalID,
-			Location:   terminalPoolPickerLocation(),
 			Active:     poolItem.Attached,
 			FromPool:   true,
 			PoolState:  poolItem.State,
+			Cols:       poolItem.Cols,
+			Rows:       poolItem.Rows,
 		}
 		if !matchesTerminalPickerQuery(item, query) {
 			continue
 		}
 		items = append(items, item)
+		seenTerminal[poolItem.TerminalID] = struct{}{}
 	}
-	if len(items) == 1 && query == "" {
-		items = append(items, TerminalPickerItem{
-			PaneID:     shell.ActivePaneID,
-			Title:      "current pane",
-			Kind:       PaneEmpty,
-			TerminalID: "none",
-			Location:   shell.ActivePaneID,
-			Active:     true,
-		})
+	for _, binding := range root.TerminalViews.Bindings() {
+		if binding.TerminalID == "" {
+			continue
+		}
+		if _, seen := seenTerminal[binding.TerminalID]; seen {
+			continue
+		}
+		item := terminalPickerItemFromBinding(root, binding)
+		if !matchesTerminalPickerQuery(item, query) {
+			continue
+		}
+		items = append(items, item)
+		seenTerminal[binding.TerminalID] = struct{}{}
+	}
+	if root.Session.TerminalID != "" {
+		if _, seen := seenTerminal[root.Session.TerminalID]; !seen {
+			item := terminalPickerItemFromSession(root)
+			if matchesTerminalPickerQuery(item, query) {
+				items = append(items, item)
+			}
+		}
 	}
 	if len(items) > 0 {
 		selected := shell.Overlay.SelectedIndex
@@ -79,6 +65,32 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 		items[selected].Selected = true
 	}
 	return items
+}
+
+func terminalPickerItemFromBinding(root Root, binding TerminalViewBinding) TerminalPickerItem {
+	surface := root.Surface.SurfaceForTerminal(binding.TerminalID)
+	stateText := string(surface.State)
+	if stateText == "" || stateText == string(TerminalLivePending) {
+		stateText = string(root.Session.State)
+	}
+	cols := binding.DesiredCols
+	rows := binding.DesiredRows
+	if cols <= 0 {
+		cols = surface.Cols
+	}
+	if rows <= 0 {
+		rows = surface.Rows
+	}
+	return TerminalPickerItem{Title: binding.TerminalID, Kind: PaneTerminalLive, TerminalID: binding.TerminalID, Active: binding.Attached, PoolState: stateText, Cols: cols, Rows: rows}
+}
+
+func terminalPickerItemFromSession(root Root) TerminalPickerItem {
+	surface := root.Surface.SurfaceForTerminal(root.Session.TerminalID)
+	stateText := string(surface.State)
+	if stateText == "" || stateText == string(TerminalLivePending) {
+		stateText = string(root.Session.State)
+	}
+	return TerminalPickerItem{Title: root.Session.TerminalID, Kind: PaneTerminalLive, TerminalID: root.Session.TerminalID, Active: root.Session.Attached, PoolState: stateText, Cols: root.Session.Cols, Rows: root.Session.Rows}
 }
 
 func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
@@ -213,11 +225,16 @@ func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 		return true
 	}
 	return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
-		TerminalPickerQueryMatchIndexes(item.PaneID, query) != nil ||
 		TerminalPickerQueryMatchIndexes(item.TerminalID, query) != nil ||
-		TerminalPickerQueryMatchIndexes(item.Location, query) != nil ||
-		TerminalPickerQueryMatchIndexes(string(item.Kind), query) != nil ||
-		TerminalPickerQueryMatchIndexes(item.PoolState, query) != nil
+		TerminalPickerQueryMatchIndexes(item.PoolState, query) != nil ||
+		TerminalPickerQueryMatchIndexes(terminalPickerSizeText(item), query) != nil
+}
+
+func terminalPickerSizeText(item TerminalPickerItem) string {
+	if item.Cols <= 0 || item.Rows <= 0 {
+		return ""
+	}
+	return strconv.Itoa(item.Cols) + "x" + strconv.Itoa(item.Rows)
 }
 
 func TerminalPickerQueryMatchIndexes(value string, query string) []int {

@@ -239,6 +239,8 @@ type TerminalPickerItem struct {
 	Selected   bool
 	FromPool   bool
 	PoolState  string
+	Cols       int
+	Rows       int
 	CreateNew  bool
 }
 

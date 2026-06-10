@@ -123,6 +123,16 @@ func smokeSplitHiddenToastRoot() state.Root {
 func smokeTerminalPickerRoot() state.Root {
 	return state.Root{
 		Shell: state.DefaultShell().OpenTerminalPicker(),
+		TerminalPool: state.TerminalPoolStore{
+			Status: state.TerminalPoolReady,
+			Items: []state.TerminalPoolItem{{
+				TerminalID: "termx-picker",
+				Title:      "termx-picker shell",
+				State:      "running",
+				Cols:       80,
+				Rows:       24,
+			}},
+		},
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "termx-picker",
 			Cols:       80,

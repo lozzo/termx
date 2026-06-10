@@ -74,6 +74,7 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain attach: %v", err)
 	}
+	terminal.AttachResult = services.TerminalAttachResult{Channel: 9, Cols: 80, Rows: 24}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
 		t.Fatalf("send ctrl-f: %v", err)
 	}
@@ -90,9 +91,11 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	last := lastFrame(t, host.Frames())
 	if !frameContains(last, "terminal picker") ||
 		!frameContains(last, "search:") ||
-		!frameContains(last, "▸ + new terminal  Create a new terminal") ||
-		!frameContains(last, "shell") ||
-		!frameContains(last, "live @pane-main") ||
+		!frameContains(last, "▸ ● term-1") ||
+		!frameContains(last, "attached") ||
+		!frameContains(last, "80x24") ||
+		frameContains(last, "Create a new terminal") ||
+		frameContains(last, "@pane-main") ||
 		frameContains(last, "Select terminal source state target") ||
 		frameContains(last, "DETAIL") {
 		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
@@ -102,6 +105,7 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
+		ListResult:   services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-2", Title: "日志🚀", State: "running", Cols: 100, Rows: 30}}},
 	}
 	initialShell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志🚀", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
@@ -121,6 +125,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain attach: %v", err)
 	}
+	terminal.AttachResult = services.TerminalAttachResult{Channel: 9, Cols: 80, Rows: 24}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
 		t.Fatalf("send ctrl-f: %v", err)
 	}
@@ -137,7 +142,7 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 		t.Fatalf("expected picker query retained in reducer state, got %#v", runtime.State().Shell.Overlay)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if !frameContains(queryFrame, "search: 日志") || !frameContains(queryFrame, "▸ + new terminal  Create a new terminal") || !frameContains(queryFrame, "term-2") || !frameContains(queryFrame, "日志🚀") || !frameContains(queryFrame, "live @pane-2") || frameContains(queryFrame, "DETAIL 日志🚀") {
+	if !frameContains(queryFrame, "search: 日志") || !frameContains(queryFrame, "▸ ● 日志🚀") || !frameContains(queryFrame, "running") || !frameContains(queryFrame, "100x30") || frameContains(queryFrame, "@pane-2") || frameContains(queryFrame, "DETAIL 日志🚀") {
 		t.Fatalf("expected filtered picker frame, got %#v", queryFrame.Lines)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -149,27 +154,21 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}); err != nil {
 		t.Fatalf("send backspace: %v", err)
 	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down to first terminal row: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down to second terminal row: %v", err)
-	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain enter: %v", err)
 	}
-	if runtime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" || runtime.State().Shell.Overlay.Open {
-		t.Fatalf("enter should attach/focus selected picker row and close overlay, got %#v", runtime.State().Shell)
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID || runtime.State().Shell.Overlay.Open || runtime.State().Session.TerminalID != "term-2" {
+		t.Fatalf("enter should attach selected terminal into current pane and close overlay, state=%#v shell=%#v", runtime.State().Session, runtime.State().Shell)
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("picker navigation must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 
-func TestInteractiveRuntimeTerminalPickerEnterOpensCreateTerminalForm(t *testing.T) {
+func TestInteractiveRuntimeTerminalPickerEnterAttachesCurrentTerminal(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
 		CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"},
@@ -201,12 +200,11 @@ func TestInteractiveRuntimeTerminalPickerEnterOpensCreateTerminalForm(t *testing
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain enter: %v", err)
 	}
-	if len(terminal.Creates) != 0 {
-		t.Fatalf("create row enter should open form before create, got %#v", terminal.Creates)
+	if len(terminal.Creates) != 0 || len(terminal.Attaches) != 2 {
+		t.Fatalf("picker enter should attach existing terminal without create form, creates=%#v attaches=%#v", terminal.Creates, terminal.Attaches)
 	}
-	prompt := runtime.State().Shell.EnsureDefaults().Overlay.Prompt
-	if runtime.State().Shell.Overlay.Kind != state.OverlayPrompt || prompt.Purpose != "terminal.create" || len(prompt.Fields) != 3 || prompt.Fields[0].Key != "name" {
-		t.Fatalf("create row enter should open create terminal form, overlay=%#v", runtime.State().Shell.Overlay)
+	if runtime.State().Shell.Overlay.Open || runtime.State().Session.TerminalID != "term-main" {
+		t.Fatalf("picker enter should close overlay after attach, state=%#v overlay=%#v", runtime.State().Session, runtime.State().Shell.Overlay)
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("picker create navigation must not leak to terminal input, got %#v", terminal.Inputs)
@@ -504,14 +502,8 @@ func TestInteractiveRuntimeTerminalPickerUsesTerminalPoolService(t *testing.T) {
 		t.Fatalf("expected picker open to load terminal pool, lists=%#v pool=%#v", terminal.Lists, runtime.State().TerminalPool)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "term-pool") || !frameContains(frame, "远程🚀") || !frameContains(frame, "running @pool") {
+	if !frameContains(frame, "远程🚀") || !frameContains(frame, "running") || frameContains(frame, "@pool") || frameContains(frame, "term-pool") {
 		t.Fatalf("expected pool row in picker frame, got %#v", frame.Lines)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down to workspace row: %v", err)
-	}
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
-		t.Fatalf("send down to pool row: %v", err)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
 		t.Fatalf("send enter: %v", err)

@@ -384,32 +384,19 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 		cells = append(cells, highlightPickerText("Create a new terminal", query, textStyle)...)
 		return Line{Cells: cells}
 	}
-	observed := "○"
-	observedStyle := StylePickerMuted
-	if row.Active {
-		observed = "●"
-		observedStyle = StylePickerSuccess
-	}
-	idText := strings.TrimSpace(row.TerminalID)
 	stateText := terminalPickerStateLabel(row)
-	locationText := terminalPickerLocationLabel(row)
+	sizeText := terminalPickerSizeLabel(row)
 	cells := []Cell{
 		styledCell(marker, markerStyle),
-		styledCell(observed, observedStyle),
+		styledCell("●", terminalPoolStateStyle(stateText)),
 		pickerSpace(" "),
 	}
-	if idText != "" && idText != "none" {
-		cells = append(cells, highlightPickerText(idText, query, textStyle)...)
-		cells = append(cells, pickerSpace(" "))
-	}
-	cells = append(cells,
-		highlightPickerText(row.Title, query, textStyle)...)
+	cells = append(cells, highlightPickerText(row.Title, query, textStyle)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells,
-		highlightPickerText(stateText, query, textStyle)...)
-	if locationText != "" {
+	cells = append(cells, tokenCell(stateText, terminalPoolStateStyle(stateText)))
+	if sizeText != "" {
 		cells = append(cells, pickerSpace(" "))
-		cells = append(cells, highlightPickerText(locationText, query, textStyle)...)
+		cells = append(cells, highlightPickerText(sizeText, query, textStyle)...)
 	}
 	return Line{Cells: cells}
 }
@@ -430,12 +417,11 @@ func terminalPickerStateLabel(row state.TerminalPickerItem) string {
 	}
 }
 
-func terminalPickerLocationLabel(row state.TerminalPickerItem) string {
-	location := strings.TrimSpace(row.Location)
-	if location == "" {
+func terminalPickerSizeLabel(row state.TerminalPickerItem) string {
+	if row.Cols <= 0 || row.Rows <= 0 {
 		return ""
 	}
-	return "@" + location
+	return fmt.Sprintf("%dx%d", row.Cols, row.Rows)
 }
 
 func terminalPickerSearchLine(query string) Line {

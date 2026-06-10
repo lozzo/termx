@@ -370,22 +370,11 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			selected = state.TerminalPickerItem{PaneID: msg.PaneID}
 			ok = true
 		}
-		if ok && selected.CreateNew {
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
-			}}}
-		}
 		if ok && root.Shell.EnsureDefaults().ActiveFloatingID != "" && selected.TerminalID != "" {
 			targetFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: targetFloatingID}
 			}}}
-		}
-		if ok && selected.PaneID != "" {
-			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: selected.PaneID})
-			root.Shell = root.Shell.CloseOverlay()
-			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: selected.PaneID})
-			return root.Advance(), nil
 		}
 		if ok && selected.TerminalID != "" {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {

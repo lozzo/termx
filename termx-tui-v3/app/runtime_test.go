@@ -2358,46 +2358,25 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 			SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
 			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
 			OpenTerminalPicker(),
+		TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady, Items: []state.TerminalPoolItem{{TerminalID: "term-2", Title: "logs", State: "running", Cols: 80, Rows: 20}}},
 	}
-	pickerRuntime := newShellHitRuntime(pickerRoot, pickerHost)
+	pickerTerminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-2", Channel: 7, Cols: 80, Rows: 20}}
+	pickerRuntime := newShellHitRuntimeWithTerminal(pickerRoot, pickerHost, pickerTerminal)
 	if err := pickerRuntime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("post picker render: %v", err)
 	}
 	if err := pickerRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain picker render: %v", err)
 	}
-	pickerAction := frameActionHitRegion(t, lastRuntimeFrame(t, pickerHost), "picker.attach", "pane-2")
+	pickerAction := frameActionHitRegion(t, lastRuntimeFrame(t, pickerHost), "picker.attach", "")
 	if err := pickerHost.SendInput(mouseEventAt(pickerAction.Rect)); err != nil {
 		t.Fatalf("send picker attach click: %v", err)
 	}
 	if err := pickerRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain picker attach: %v", err)
 	}
-	if pickerRuntime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" || pickerRuntime.State().Shell.Overlay.Open {
-		t.Fatalf("picker attach should focus pane-2 and close overlay, got %#v", pickerRuntime.State().Shell)
-	}
-
-	newHost := NewFakeTerminalHost(8)
-	newTerminal := &services.FakeTerminalService{CreateResult: services.TerminalCreateResult{TerminalID: "term-created", State: "running"}}
-	newRuntime := newShellHitRuntimeWithTerminal(pickerRoot, newHost, newTerminal)
-	if err := newRuntime.Post(NoopMsg{}); err != nil {
-		t.Fatalf("post picker new render: %v", err)
-	}
-	if err := newRuntime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain picker new render: %v", err)
-	}
-	newAction := frameActionHitRegion(t, lastRuntimeFrame(t, newHost), "picker.new", "")
-	if err := newHost.SendInput(mouseEventAt(newAction.Rect)); err != nil {
-		t.Fatalf("send picker new click: %v", err)
-	}
-	if err := newRuntime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain picker new: %v", err)
-	}
-	if len(newTerminal.Creates) != 0 {
-		t.Fatalf("picker new should open form before create, got %#v", newTerminal.Creates)
-	}
-	if overlay := newRuntime.State().Shell.EnsureDefaults().Overlay; overlay.Kind != state.OverlayPrompt || overlay.Prompt.Purpose != "terminal.create" {
-		t.Fatalf("picker new should open create terminal form, got %#v", overlay)
+	if pickerRuntime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID || pickerRuntime.State().Shell.Overlay.Open || len(pickerTerminal.Attaches) != 1 || pickerTerminal.Attaches[0].TerminalID != "term-2" {
+		t.Fatalf("picker attach should attach terminal into current pane, shell=%#v attaches=%#v", pickerRuntime.State().Shell, pickerTerminal.Attaches)
 	}
 
 	emptyHost := NewFakeTerminalHost(8)

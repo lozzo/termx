@@ -464,7 +464,7 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 	if len(terminal.Lists) != 1 || runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPicker || runtime.State().Shell.Overlay.TargetID != "floating-1" {
 		t.Fatalf("empty attach should open picker for floating, lists=%#v overlay=%#v", terminal.Lists, runtime.State().Shell.Overlay)
 	}
-	if !frameContains(lastFrame(t, host.Frames()), "term-float") {
+	if !frameContains(lastFrame(t, host.Frames()), "floating shell") || frameContains(lastFrame(t, host.Frames()), "@pool") {
 		t.Fatalf("picker should render pool terminal row, got %#v", lastFrame(t, host.Frames()).Lines)
 	}
 
@@ -474,7 +474,6 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "o"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "t"},
-		{Kind: input.EventKindKey, Key: input.KeyDown},
 		{Kind: input.EventKindKey, Key: input.KeyEnter},
 	} {
 		if err := host.SendInput(event); err != nil {

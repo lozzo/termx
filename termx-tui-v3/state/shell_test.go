@@ -294,23 +294,23 @@ func TestTerminalPickerStateFiltersAndMovesSelection(t *testing.T) {
 	root := Root{Shell: shell, Session: TerminalSessionStore{TerminalID: "term-main"}}
 
 	items := TerminalPickerItems(root)
-	if len(items) != 3 || !items[0].Selected || !items[0].CreateNew || items[1].PaneID != DefaultPaneID {
-		t.Fatalf("expected create row first and selected before terminal rows, got %#v", items)
+	if len(items) != 1 || !items[0].Selected || items[0].TerminalID != "term-main" || items[0].PaneID != "" {
+		t.Fatalf("expected terminal-only session row, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("日志")
 	items = TerminalPickerItems(root)
-	if len(items) != 2 || !items[0].CreateNew || !items[0].Selected || items[1].PaneID != "pane-2" {
-		t.Fatalf("query should keep create row first and filter terminal rows, got %#v", items)
+	if len(items) != 0 {
+		t.Fatalf("query should filter terminal-only rows, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("")
 	root.Shell = root.Shell.MoveTerminalPickerSelection(1, len(TerminalPickerItems(root)))
 	items = TerminalPickerItems(root)
-	if len(items) != 3 || !items[1].Selected || items[1].PaneID != DefaultPaneID {
-		t.Fatalf("selection should move from create row to first terminal row, got %#v", items)
+	if len(items) != 1 || !items[0].Selected || items[0].TerminalID != "term-main" {
+		t.Fatalf("single terminal row should stay selected, got %#v", items)
 	}
 }
 
-func TestTerminalPickerItemsMergeTerminalPoolAndWorkspacePanes(t *testing.T) {
+func TestTerminalPickerItemsShowOnlyTerminalPoolInfo(t *testing.T) {
 	shell := DefaultShell().OpenTerminalPicker()
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
 	root := Root{
@@ -318,24 +318,24 @@ func TestTerminalPickerItemsMergeTerminalPoolAndWorkspacePanes(t *testing.T) {
 		TerminalPool: TerminalPoolStore{
 			Status: TerminalPoolReady,
 			Items: []TerminalPoolItem{
-				{TerminalID: "term-main", Title: "duplicate"},
-				{TerminalID: "term-pool", Title: "远程🚀", State: "running"},
+				{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24},
+				{TerminalID: "term-pool", Title: "远程🚀", State: "running", Cols: 100, Rows: 30},
 			},
 		},
 	}
 
 	items := TerminalPickerItems(root)
-	if len(items) != 3 || !items[0].CreateNew || items[1].PaneID != DefaultPaneID || items[1].Location != DefaultPaneID || items[2].TerminalID != "term-pool" || items[2].Location != "pool" || !items[2].FromPool {
-		t.Fatalf("expected create row plus pane item and deduped pool item, got %#v", items)
+	if len(items) != 2 || items[0].PaneID != "" || items[0].Location != "" || items[0].CreateNew || !items[0].FromPool || items[1].TerminalID != "term-pool" || items[1].Cols != 100 || items[1].Rows != 30 {
+		t.Fatalf("expected terminal-only pool rows, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("远程")
 	items = TerminalPickerItems(root)
-	if len(items) != 2 || !items[0].CreateNew || !items[0].Selected || items[1].TerminalID != "term-pool" {
-		t.Fatalf("expected query to keep create row first and match pool item, got %#v", items)
+	if len(items) != 1 || !items[0].Selected || items[0].TerminalID != "term-pool" {
+		t.Fatalf("expected query to match pool terminal item, got %#v", items)
 	}
 	root.Shell = root.Shell.SetTerminalPickerQuery("trpl")
 	items = TerminalPickerItems(root)
-	if len(items) != 2 || !items[0].CreateNew || !items[0].Selected || items[1].TerminalID != "term-pool" {
+	if len(items) != 1 || !items[0].Selected || items[0].TerminalID != "term-pool" {
 		t.Fatalf("expected fuzzy query to match term-pool, got %#v", items)
 	}
 	if got := TerminalPickerQueryMatchIndexes("term-pool", "trpl"); len(got) != 4 || got[0] != 0 || got[1] != 2 || got[2] != 5 || got[3] != 8 {
