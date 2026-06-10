@@ -379,26 +379,42 @@ func terminalPickerLine(row state.TerminalPickerItem, query string) Line {
 			styledCell("+", StylePickerInfo),
 			pickerSpace(" "),
 		}
-		cells = append(cells, highlightPickerText(row.Title, query, textStyle)...)
+		cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, 24)...)
 		cells = append(cells, pickerSpace("  "))
-		cells = append(cells, highlightPickerText("Create a new terminal", query, textStyle)...)
+		cells = append(cells, terminalPickerColumnCells("new", query, StylePickerInfo, 10)...)
+		cells = append(cells, pickerSpace("  "))
+		cells = append(cells, terminalPickerColumnCells("-", query, StylePickerMuted, 8)...)
+		cells = append(cells, pickerSpace("  "))
+		cells = append(cells, highlightPickerText("Create terminal", query, textStyle)...)
 		return Line{Cells: cells}
 	}
 	stateText := terminalPickerStateLabel(row)
 	sizeText := terminalPickerSizeLabel(row)
+	if sizeText == "" {
+		sizeText = "-"
+	}
 	cells := []Cell{
 		styledCell(marker, markerStyle),
 		styledCell("●", terminalPoolStateStyle(stateText)),
 		pickerSpace(" "),
 	}
-	cells = append(cells, highlightPickerText(row.Title, query, textStyle)...)
+	cells = append(cells, terminalPickerColumnCells(row.Title, query, textStyle, 24)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells, tokenCell(stateText, terminalPoolStateStyle(stateText)))
-	if sizeText != "" {
-		cells = append(cells, pickerSpace(" "))
-		cells = append(cells, highlightPickerText(sizeText, query, textStyle)...)
-	}
+	cells = append(cells, terminalPickerColumnCells(stateText, query, terminalPoolStateStyle(stateText), 10)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, terminalPickerColumnCells(sizeText, query, textStyle, 8)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, styledCell("Attach here", StylePickerMuted))
 	return Line{Cells: cells}
+}
+
+func terminalPickerColumnCells(value string, query string, baseStyle StyleToken, width int) []Cell {
+	cells := highlightPickerText(value, query, baseStyle)
+	pad := width - DisplayWidth(value)
+	if pad > 0 {
+		cells = append(cells, pickerSpace(strings.Repeat(" ", pad)))
+	}
+	return cells
 }
 
 func terminalPickerStateLabel(row state.TerminalPickerItem) string {

@@ -54,6 +54,10 @@ func TerminalPickerItems(root Root) []TerminalPickerItem {
 			}
 		}
 	}
+	createItem := TerminalPickerItem{Title: "new terminal", Kind: PaneTerminalLive, CreateNew: true}
+	if matchesTerminalPickerQuery(createItem, query) {
+		items = append(items, createItem)
+	}
 	if len(items) > 0 {
 		selected := shell.Overlay.SelectedIndex
 		if selected < 0 {
@@ -223,6 +227,11 @@ func terminalPoolPickerLocation() string {
 func matchesTerminalPickerQuery(item TerminalPickerItem, query string) bool {
 	if query == "" {
 		return true
+	}
+	if item.CreateNew {
+		return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
+			TerminalPickerQueryMatchIndexes("create terminal", query) != nil ||
+			TerminalPickerQueryMatchIndexes("new terminal", query) != nil
 	}
 	return TerminalPickerQueryMatchIndexes(item.Title, query) != nil ||
 		TerminalPickerQueryMatchIndexes(item.TerminalID, query) != nil ||

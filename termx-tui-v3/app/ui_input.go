@@ -124,6 +124,14 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 			break
 		}
 	}
+	if selected.CreateNew {
+		return root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+			}},
+		}
+	}
 	if selected.TerminalID == "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no terminal"})
 		return root.Advance(), []Effect{handledEffect{}}

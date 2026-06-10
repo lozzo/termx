@@ -1095,6 +1095,43 @@ func TestLiveResizeFallbacksDoNotUseResizeBoundaryDots(t *testing.T) {
 	}
 }
 
+func TestLiveSurfaceProtocolTerminalExitedIsNotErrorUI(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5},
+		SurfaceErr:   errors.New("protocol error 400: terminal exited"),
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 40)
+	runtime := NewLiveRuntime(
+		state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Lines: []string{"last output"}}},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 40}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	root := runtime.State()
+	if root.Session.LastError != "" || root.Surface.Err != "" {
+		t.Fatalf("terminal exited should not be stored as live error, session=%q surface=%q", root.Session.LastError, root.Surface.Err)
+	}
+	if root.Session.State != state.TerminalLiveExited || root.Surface.State != state.TerminalLiveExited {
+		t.Fatalf("expected exited state, session=%s surface=%s", root.Session.State, root.Surface.State)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "last output") ||
+		!frameContains(frame, "► R restart current terminal ◄") ||
+		!frameContains(frame, "[ Ctrl-F choose another terminal ]") ||
+		frameContains(frame, "protocol error 400") {
+		t.Fatalf("expected exited content with restart hints and no protocol error, got %#v", frame.Lines)
+	}
+}
+
 func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)

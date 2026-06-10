@@ -84,7 +84,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["terminal-picker"].Lines, "termx-picker shell") ||
 		!frameContains(cases["terminal-picker"].Lines, "running") ||
 		!frameContains(cases["terminal-picker"].Lines, "80x24") ||
-		frameContains(cases["terminal-picker"].Lines, "+ new terminal") ||
+		!frameContains(cases["terminal-picker"].Lines, "+ new terminal") ||
+		!frameContains(cases["terminal-picker"].Lines, "Create terminal") ||
+		!frameContains(cases["terminal-picker"].Lines, "Attach here") ||
 		frameContains(cases["terminal-picker"].Lines, "filter terminals") ||
 		frameContains(cases["terminal-picker"].Lines, "Select terminal source state target") ||
 		frameContains(cases["terminal-picker"].Lines, "DETAIL") ||
@@ -237,7 +239,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	picker := cases["terminal-picker"]
-	for _, stale := range []string{"+ new terminal", "filter terminals", "PREVIEW pane:", "Select terminal source state target", "DETAIL", "[attach]", "[new]", "pane:", "selected ", "● open"} {
+	for _, stale := range []string{"filter terminals", "PREVIEW pane:", "Select terminal source state target", "DETAIL", "[attach]", "[new]", "pane:", "selected ", "● open"} {
 		if frameContains(picker.Lines, stale) {
 			t.Fatalf("terminal picker regressed to engineering label %q: %#v", stale, picker.Lines)
 		}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -75,8 +76,9 @@ type LiveAttachMsg struct {
 func (LiveAttachMsg) isMsg() {}
 
 type LiveAttachResultMsg struct {
-	Result services.TerminalAttachResult
-	Err    error
+	TerminalID string
+	Result     services.TerminalAttachResult
+	Err        error
 }
 
 func (LiveAttachResultMsg) isMsg() {}
@@ -136,6 +138,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return reduceLiveAttachResult(root, msg, deps)
 		case LiveSurfaceMsg:
 			if msg.Err != nil {
+				if next, ok := markTerminalExitedFromError(root, msg.Snapshot.TerminalID, msg.Err); ok {
+					return next.Advance(), nil
+				}
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				return root.Advance(), nil
 			}
@@ -151,6 +156,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return reduceLiveInput(root, msg, deps)
 		case LiveInputResultMsg:
 			if msg.Err != nil {
+				if next, ok := markTerminalExitedFromError(root, msg.TerminalID, msg.Err); ok {
+					return next.Advance(), nil
+				}
 				root = setLiveInputError(root, msg.TerminalID, msg.Err.Error())
 				return root.Advance(), nil
 			}
@@ -162,6 +170,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				return root, nil
 			}
 			if msg.Err != nil {
+				if next, ok := markTerminalExitedFromError(root, root.Session.TerminalID, msg.Err); ok {
+					return next.Advance(), nil
+				}
 				root.Session = root.Session.SetError(msg.Err.Error())
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				return root.Advance(), nil
@@ -211,13 +222,16 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 				SurfaceID:    cfg.SurfaceID,
 				ViewID:       cfg.ViewID,
 			})
-			return LiveAttachResultMsg{Result: result, Err: err}
+			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, Result: result, Err: err}
 		},
 	}}
 }
 
 func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if next, ok := markTerminalExitedFromError(root, msg.TerminalID, msg.Err); ok {
+			return next.Advance(), nil
+		}
 		return setLiveError(root, msg.Err.Error()), nil
 	}
 	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID)
@@ -247,7 +261,7 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []E
 				Rows:       rows,
 			})
 			if err != nil {
-				return LiveSurfaceMsg{Err: err}
+				return LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: terminalID}, Err: err}
 			}
 			if !result.Ready {
 				return nil
@@ -306,6 +320,9 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 		event.TerminalID = root.Surface.TerminalID
 	}
 	if event.Err != nil {
+		if next, ok := markTerminalExitedFromError(root, event.TerminalID, event.Err); ok {
+			return next.Advance(), nil
+		}
 		if event.TerminalID == "" || event.TerminalID == root.Surface.TerminalID {
 			root.Surface = root.Surface.SetError(event.Err.Error())
 			root.Session = root.Session.SetError(event.Err.Error())
@@ -447,6 +464,21 @@ func setLiveError(root state.Root, message string) state.Root {
 	root.Session = root.Session.SetError(message)
 	root.Surface = root.Surface.SetError(message)
 	return root.Advance()
+}
+
+func markTerminalExitedFromError(root state.Root, terminalID string, err error) (state.Root, bool) {
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "terminal exited") {
+		return root, false
+	}
+	if terminalID == "" {
+		terminalID = root.Session.TerminalID
+	}
+	if terminalID == "" {
+		terminalID = root.Surface.TerminalID
+	}
+	root.Session = root.Session.MarkExited(terminalID, 0, "")
+	root.Surface = root.Surface.MarkExited(terminalID, 0, "")
+	return root, true
 }
 
 func setLiveInputError(root state.Root, terminalID string, message string) state.Root {

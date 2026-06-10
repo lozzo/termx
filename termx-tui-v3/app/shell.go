@@ -376,6 +376,11 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: targetFloatingID}
 			}}}
 		}
+		if ok && selected.CreateNew {
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+			}}}
+		}
 		if ok && selected.TerminalID != "" {
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}

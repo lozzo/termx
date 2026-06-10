@@ -741,6 +741,9 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 			content.Pending = true
 		}
 		content.Cursor = Cursor{}
+	} else if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
+		content.Lines = append(content.Lines, NewLine(""), liveExitedLine(surface, session), liveExitedRestartLine(), liveExitedPickerLine())
+		content.Cursor = Cursor{}
 	}
 	return content
 }
@@ -797,6 +800,14 @@ func liveExitedLine(surface state.TerminalSurfaceStore, session state.TerminalSe
 		text += " " + reason
 	}
 	return Line{Cells: []Cell{styledCell(text, StyleWarning)}}
+}
+
+func liveExitedRestartLine() Line {
+	return Line{Cells: []Cell{styledCell("► R restart current terminal ◄", StyleWarning)}}
+}
+
+func liveExitedPickerLine() Line {
+	return Line{Cells: []Cell{styledCell("[ Ctrl-F choose another terminal ]", StyleMuted)}}
 }
 
 func liveTerminalID(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {

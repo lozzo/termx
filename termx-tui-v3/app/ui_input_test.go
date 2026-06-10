@@ -94,7 +94,8 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		!frameContains(last, "▸ ● term-1") ||
 		!frameContains(last, "attached") ||
 		!frameContains(last, "80x24") ||
-		frameContains(last, "Create a new terminal") ||
+		!frameContains(last, "+ new terminal") ||
+		!frameContains(last, "Create terminal") ||
 		frameContains(last, "@pane-main") ||
 		frameContains(last, "Select terminal source state target") ||
 		frameContains(last, "DETAIL") {
