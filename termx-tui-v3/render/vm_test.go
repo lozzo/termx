@@ -136,6 +136,21 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderKeepsChromeActionsForEmptyPane(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneEmpty
+	root.Shell.Workspace.Tabs[0].Panes[0].TerminalID = ""
+	root.Shell.Workspace.Tabs[0].Panes[0].Title = "unconnected"
+
+	panel := NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
+	if panel.Content.Kind != ContentEmptyPane || !panel.Content.Empty {
+		t.Fatalf("expected empty pane content, got %#v", panel.Content)
+	}
+	if len(panel.Chrome.Actions) != 4 || panel.Chrome.Actions[0].ActionID != ActionPaneZoom.String() || panel.Chrome.Actions[3].ActionID != ActionPaneClose.String() {
+		t.Fatalf("empty pane should keep still-available pane chrome actions, got %#v", panel.Chrome.Actions)
+	}
+}
+
 func TestRenderVMBuilderBuildsGlobalFooterActionIDs(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
 	actions := NewRenderVMBuilder().Build(root).Shell.Footer.ActionTokens
@@ -1314,7 +1329,7 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		Shell:   emptyShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace empty"}},
 	})
-	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No terminal attached slot") || !strings.Contains(content.Lines[2].PlainString(), "Attach existing") {
+	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No terminal attached slot") || !strings.Contains(content.Lines[2].PlainString(), "Attach existing terminal") {
 		t.Fatalf("expected active empty pane placeholder, got %#v", content)
 	} else if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") || !contentHasAction(content, "empty.close") {
 		t.Fatalf("expected empty pane CTA action regions, got %#v", content.HitRegions)

@@ -15,15 +15,15 @@ func buildEmptyPaneContent(pane state.PaneState) ContentVM {
 	lines := []Line{
 		{Cells: []Cell{styledCell("No terminal attached ", StyleMuted), styledCell(title, StyleAccent)}},
 		NewLine(""),
-		contentActionLine("attach", "Attach existing"),
-		contentActionLine("create", "New terminal"),
-		contentActionLine("manager", "Terminal Pool"),
-		contentActionLine("close", "Close"),
+		contentActionLine("attach", "Attach existing terminal"),
+		contentActionLine("create", "Create new terminal"),
+		contentActionLine("manager", "Open terminal manager"),
+		contentActionLine("close", "Close pane"),
 	}
 	return ContentVM{
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
-		Status:     "empty: Attach existing / New terminal / Terminal Pool / Close",
+		Status:     "empty: Attach existing terminal / Create new terminal / Open terminal manager / Close pane",
 		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("No terminal attached ") + DisplayWidth(title), Shape: CursorShapeBar},
 		Empty:      true,
 		HitRegions: contentActionRegions([]ActionID{ActionEmptyAttach, ActionEmptyCreate, ActionEmptyManager, ActionEmptyClose}, pane.ID, 2),

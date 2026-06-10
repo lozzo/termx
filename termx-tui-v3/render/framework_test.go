@@ -82,6 +82,25 @@ func TestFrameworkRendersTuiv2FloatingTerminalHeader(t *testing.T) {
 	}
 }
 
+func TestFrameworkRendersUnconnectedPaneWithoutChromeActionCluster(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneEmpty
+	root.Shell.Workspace.Tabs[0].Panes[0].TerminalID = ""
+	root.Shell.Workspace.Tabs[0].Panes[0].Title = "unconnected"
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	lines := result.Lines()
+	if !linesContain(lines, "unconnected") || !linesContain(lines, "No terminal attached") || !linesContain(lines, "Attach existing terminal") || !linesContain(lines, "Create new terminal") || !linesContain(lines, "Open terminal manager") || !linesContain(lines, "Close pane") {
+		t.Fatalf("expected unconnected pane title and content CTAs, got %#v", lines)
+	}
+	if !linesContain(lines, paneChromeBracketToken(paneChromeZoomGlyph())) || !linesContain(lines, paneChromeBracketToken(paneChromeSplitVerticalGlyph())) || !linesContain(lines, paneChromeBracketToken(paneChromeSplitHorizontalGlyph())) || !linesContain(lines, paneChromeBracketToken(paneChromeCloseGlyph())) {
+		t.Fatalf("unconnected pane should keep still-available pane chrome actions, got %#v", lines)
+	}
+	if linesContain(lines, paneChromeBracketToken("")) || linesContain(lines, paneChromeBracketToken("")) {
+		t.Fatalf("unconnected pane must not render floating-only chrome action cluster, got %#v", lines)
+	}
+}
+
 func TestFrameworkRendersContinuousCardPaneVerticalBorders(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 24, H: 8}, Panels: []PanelVM{{

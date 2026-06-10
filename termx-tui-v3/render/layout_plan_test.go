@@ -856,6 +856,28 @@ func TestMeasureLayoutHelpUsesPageSizedOverlay(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutKeepsPaneChromeActionsForEmptyPane(t *testing.T) {
+	panel := PanelVM{
+		ID:           "pane-empty",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		Title:        "unconnected",
+		Content: ContentVM{
+			Kind:       ContentEmptyPane,
+			Empty:      true,
+			HitRegions: []HitRegion{{Kind: HitRegionContentAction, Rect: Rect{X: 1, Y: 2, W: 12, H: 1}, PaneID: "pane-empty", ActionID: ActionEmptyAttach.String()}},
+		},
+		Chrome: PanelChromeVM{Title: ChromeSlotVM{Text: "unconnected"}, Actions: defaultPaneChromeActionVMs(StyleAccent)},
+	}
+	plan := MeasureLayout(ShellVM{Layout: LayoutVM{Panels: []PanelVM{panel}}}, Rect{W: 40, H: 10})
+	if hitRegionIndexByAction(plan.HitRegions, ActionPaneZoom.String()) < 0 || hitRegionIndexByAction(plan.HitRegions, ActionPaneSplitRight.String()) < 0 || hitRegionIndexByAction(plan.HitRegions, ActionPaneClose.String()) < 0 {
+		t.Fatalf("empty pane should keep still-available pane chrome actions, got %#v", plan.HitRegions)
+	}
+	if hitRegionIndexByAction(plan.HitRegions, ActionEmptyAttach.String()) < 0 {
+		t.Fatalf("empty pane content CTA should remain clickable, got %#v", plan.HitRegions)
+	}
+}
+
 func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{
