@@ -307,3 +307,45 @@ func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 		t.Fatalf("interactive runtime should subscribe to storage.changed, watches=%#v", storage.Watches)
 	}
 }
+
+func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-restored", Title: "restored", Kind: state.PaneTerminalLive, TerminalID: "term-restored"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-restored"})
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView("pane-restored", "term-restored", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-restored", state.TerminalPaneViewID("pane-restored"), true))
+	storage := &services.FakeWorkbenchStorageService{
+		LoadResult: services.WorkbenchStorageLoadResult{
+			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+			Version:  7,
+			Found:    true,
+		},
+		WatchCh: watchCh,
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{Storage: storage},
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	root := runtime.State()
+	if len(storage.Loads) != 1 || len(storage.Watches) != 1 {
+		t.Fatalf("interactive runtime should load once and watch once, loads=%#v watches=%#v", storage.Loads, storage.Watches)
+	}
+	if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 7 {
+		t.Fatalf("expected restored workbench snapshot, root=%#v", root)
+	}
+	if binding, ok := root.TerminalViews.PaneBinding("pane-restored"); !ok || binding.TerminalID != "term-restored" || binding.ViewID == "" {
+		t.Fatalf("expected restored terminal view binding, binding=%#v ok=%v", binding, ok)
+	}
+}

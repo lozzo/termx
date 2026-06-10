@@ -1110,6 +1110,43 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	}
 }
 
+func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
+	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	shell := tuistate.DefaultShell().
+		SplitActivePane(tuistate.PaneState{ID: "pane-restored", Title: "restored", Kind: tuistate.PaneTerminalLive, TerminalID: "term-restored"}, tuistate.SplitDirectionVertical).
+		FocusPane(tuistate.PaneCommandTarget{PaneID: "pane-restored"})
+	views := tuistate.TerminalViewStore{}.
+		BindPane(tuistate.NewPaneTerminalView("pane-restored", "term-restored", 3, 80, 24, tuistate.TerminalResizeRoleOwner, "surface-restored", tuistate.TerminalPaneViewID("pane-restored"), true))
+	value, err := tuistate.EncodeWorkbenchStorageSnapshotValue(tuistate.SnapshotRootWorkbenchForStorage(tuistate.Root{Shell: shell, TerminalViews: views}))
+	if err != nil {
+		t.Fatalf("encode workbench snapshot: %v", err)
+	}
+	ref := tuistate.DefaultWorkbenchStorageRef(tuistate.DefaultWorkspaceID)
+	if _, err := client.StoragePut(context.Background(), protocol.StoragePutParams{
+		AppID:   ref.AppID,
+		Scope:   protocol.StorageScope(ref.Scope),
+		OwnerID: ref.OwnerID,
+		Key:     ref.Key,
+		Value:   value,
+	}); err != nil {
+		t.Fatalf("put workbench snapshot: %v", err)
+	}
+	host := app.NewFakeTerminalHost(8)
+	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, client, host)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain restore: %v", err)
+	}
+	root := runtime.State()
+	if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 1 {
+		t.Fatalf("runtime did not restore workbench from core-v2 storage %#v", root)
+	}
+	if binding, ok := root.TerminalViews.PaneBinding("pane-restored"); !ok || binding.TerminalID != "term-restored" {
+		t.Fatalf("runtime did not restore terminal view binding binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 	processes := newCoreV2ResizeRecordingProcessFactory()
 	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
