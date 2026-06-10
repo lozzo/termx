@@ -52,6 +52,18 @@ func TestMeasureLayoutPlansBodyPanelOverlayAndToastRects(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutAlignsPromptWithTerminalPickerOverlay(t *testing.T) {
+	promptShell := ShellVM{Overlay: OverlayVM{Kind: OverlayPrompt, Content: ContentVM{Kind: ContentPrompt, Lines: []Line{NewLine("Create Terminal"), NewLine("name*: shell")}}}}
+	pickerShell := ShellVM{Overlay: OverlayVM{Kind: OverlayTerminalPicker, Content: ContentVM{Kind: ContentTerminalPicker, Lines: []Line{NewLine("terminal picker"), NewLine("search:")}}}}
+	viewport := Rect{W: 80, H: 24}
+
+	prompt := MeasureLayout(promptShell, viewport)
+	picker := MeasureLayout(pickerShell, viewport)
+	if prompt.Overlay.X != picker.Overlay.X || prompt.Overlay.W != picker.Overlay.W || prompt.Overlay.H > picker.Overlay.H {
+		t.Fatalf("prompt should use compact modal geometry aligned with picker, prompt=%#v picker=%#v", prompt.Overlay, picker.Overlay)
+	}
+}
+
 func TestMeasureLayoutUsesKnownNarrowViewportExactly(t *testing.T) {
 	shell := ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},

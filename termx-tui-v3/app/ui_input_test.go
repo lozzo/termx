@@ -251,9 +251,19 @@ func TestInteractiveRuntimeCreateTerminalFormSubmitsTerminalCreate(t *testing.T)
 	if len(terminal.Creates) != 1 {
 		t.Fatalf("create form should call terminal create once, got %#v", terminal.Creates)
 	}
+	if len(terminal.Attaches) != 1 {
+		t.Fatalf("successful create should attach new terminal once, got %#v", terminal.Attaches)
+	}
 	create := terminal.Creates[0]
 	if create.Title != "my-term" || len(create.Command) != 3 || create.Command[2] != "echo hi" || len(create.Tags) != 0 {
 		t.Fatalf("unexpected create request %#v", create)
+	}
+	attach := terminal.Attaches[0]
+	if attach.TerminalID != "term-created" || attach.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || attach.ResizePolicy != "owner" {
+		t.Fatalf("create should attach created terminal to current pane, got %#v", attach)
+	}
+	if runtime.State().Session.TerminalID != "term-created" || runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0].Panes[0].TerminalID != "term-created" {
+		t.Fatalf("create should switch current pane to created terminal, state=%#v shell=%#v", runtime.State().Session, runtime.State().Shell)
 	}
 	if runtime.State().Shell.Overlay.Open {
 		t.Fatalf("successful create should close overlay, got %#v", runtime.State().Shell.Overlay)
@@ -566,8 +576,16 @@ func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
 		t.Fatalf("terminal pool create must send a default shell command, creates=%#v", terminal.Creates)
 	}
 	root, effects = reducer(root, TerminalPoolCreateResultMsg{Result: services.TerminalCreateResult{TerminalID: "term-created", State: "running"}})
-	if root.TerminalPool.LastCreatedID != "term-created" || len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Body != "term-created" || len(effects) != 1 {
-		t.Fatalf("expected create feedback and refresh effect, got root=%#v effects=%#v", root, effects)
+	if root.TerminalPool.LastCreatedID != "term-created" || len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Body != "term-created" || len(effects) != 2 {
+		t.Fatalf("expected create feedback plus refresh and attach effects, got root=%#v effects=%#v", root, effects)
+	}
+	attachEffect, ok := effects[1].(FuncEffect)
+	if !ok {
+		t.Fatalf("expected create attach FuncEffect, got %#v", effects[1])
+	}
+	attachMsg, ok := attachEffect.Run(context.Background()).(TerminalPoolAttachRequestMsg)
+	if !ok || attachMsg.TerminalID != "term-created" {
+		t.Fatalf("expected create to request attach for created terminal, got %#v", attachMsg)
 	}
 }
 

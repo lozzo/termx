@@ -152,7 +152,6 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 			root: state.Root{Shell: state.DefaultShell().OpenPrompt(state.PromptState{})},
 			want: []FooterActionVM{
 				{Key: "enter", Label: "submit", ActionID: ActionPromptSubmit.String()},
-				{Key: "esc", Label: "cancel", ActionID: ActionPromptCancel.String()},
 			},
 		},
 	}

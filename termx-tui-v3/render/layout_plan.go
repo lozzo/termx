@@ -207,7 +207,7 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" {
 		return Rect{}
 	}
-	if overlay.Content.Kind == ContentTerminalPicker {
+	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt {
 		return measureCompactOverlay(overlay.Content, viewport)
 	}
 	if overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentHelp {

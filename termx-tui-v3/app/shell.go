@@ -528,6 +528,7 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.create", Body: err.Error()})
 				return root.Advance(), nil
 			}
+			request.TargetFloatingID = root.Shell.EnsureDefaults().ActiveFloatingID
 			root.Shell = root.Shell.CloseOverlay()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
 		}

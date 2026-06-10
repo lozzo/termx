@@ -11,13 +11,13 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	chromeStyle := StyleForeground
 	titleStyle := StyleAccent
 	titleAction := "esc"
-	if overlay.Content.Kind == ContentTerminalPicker {
+	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt {
 		titleStyle = StyleForeground
 		titleAction = ""
 	}
 	c.drawStyledBox(rect, squareBoxStyle, chromeStyle, primitive.Owner, primitive.Layer)
 	state := primitive.State.Text
-	if overlay.Content.Kind == ContentTerminalPicker {
+	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt {
 		state = ""
 	}
 	renderChromeCardTitle(c, rect, primitive.Title.Text, state, titleAction, titleStyle, primitive.Owner, primitive.Layer)

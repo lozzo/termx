@@ -227,7 +227,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
 		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill"},
 		"workbench-tree-page": {"┌─ workbench tree", "● open", "esc", "Workbench Tree", "TUI storage projection", "⌕ search 日志", "DETAIL 日志🚀", "[open]  Open"},
-		"prompt-overlay":      {"┌─ prompt", "● open", "esc", "Command Prompt", "重命名"},
+		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
 		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Pool"},
 	}
 	for name, markers := range requiredOverlays {
@@ -242,6 +242,12 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	for _, stale := range []string{"filter terminals", "PREVIEW pane:", "Select terminal source state target", "DETAIL", "[attach]", "[new]", "pane:", "selected ", "● open"} {
 		if frameContains(picker.Lines, stale) {
 			t.Fatalf("terminal picker regressed to engineering label %q: %#v", stale, picker.Lines)
+		}
+	}
+	prompt := cases["prompt-overlay"]
+	for _, stale := range []string{"● open", "esc"} {
+		if frameContains(prompt.Lines, stale) {
+			t.Fatalf("prompt overlay regressed to engineering label %q: %#v", stale, prompt.Lines)
 		}
 	}
 	split := cases["split-hidden-toast"]

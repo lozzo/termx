@@ -233,7 +233,6 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		return footerActionSpecs(
 			footerActionSpec("type", "", "", StyleStatusAccent),
 			footerActionFor(ActionPromptSubmit),
-			footerActionFor(ActionPromptCancel),
 		)
 	case string(state.OverlayHelp):
 		return footerActionSpecs(

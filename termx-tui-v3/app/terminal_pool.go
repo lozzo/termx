@@ -39,17 +39,19 @@ type TerminalPoolAttachResultMsg struct {
 func (TerminalPoolAttachResultMsg) isMsg() {}
 
 type TerminalPoolCreateRequestMsg struct {
-	Title   string
-	Command []string
-	CWD     string
-	Tags    map[string]string
+	Title            string
+	Command          []string
+	CWD              string
+	Tags             map[string]string
+	TargetFloatingID string
 }
 
 func (TerminalPoolCreateRequestMsg) isMsg() {}
 
 type TerminalPoolCreateResultMsg struct {
-	Result services.TerminalCreateResult
-	Err    error
+	TargetFloatingID string
+	Result           services.TerminalCreateResult
+	Err              error
 }
 
 func (TerminalPoolCreateResultMsg) isMsg() {}
@@ -272,7 +274,7 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 				Cols:       cols,
 				Rows:       rows,
 			})
-			return TerminalPoolCreateResultMsg{Result: result, Err: err}
+			return TerminalPoolCreateResultMsg{TargetFloatingID: msg.TargetFloatingID, Result: result, Err: err}
 		},
 	}}
 }
@@ -284,10 +286,18 @@ func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResul
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: errText})
 		return root.Advance(), nil
 	}
+	if msg.Result.TerminalID == "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: "missing terminal"})
+		return root.Advance(), nil
+	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.new", Body: msg.Result.TerminalID})
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
-		return TerminalPoolListRequestMsg{}
-	}}}
+	effects := []Effect{
+		FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }},
+		FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolAttachRequestMsg{TerminalID: msg.Result.TerminalID, TargetFloatingID: msg.TargetFloatingID}
+		}},
+	}
+	return root.Advance(), effects
 }
 
 func reduceTerminalPoolRestartRequest(root state.Root, msg TerminalPoolRestartRequestMsg, deps LiveDeps) (state.Root, []Effect) {
