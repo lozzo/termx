@@ -30,11 +30,13 @@ type RenderMetadata struct {
 }
 
 type Cell struct {
-	Text      string
-	Width     int
-	Style     StyleToken
-	ANSIStyle ANSICellStyle
-	Safe      bool
+	Text       string
+	Width      int
+	Style      StyleToken
+	ANSIStyle  ANSICellStyle
+	LinkURL    string
+	LinkParams string
+	Safe       bool
 }
 
 // ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 TermX chrome theme token。
@@ -146,13 +148,20 @@ func (line Line) ANSIString(theme Theme) string {
 		} else if cell.Style != "" {
 			styleSeq = ansiForStyleToken(cell.Style, theme)
 		}
-		if styleSeq == "" {
-			out.WriteString(text)
-			continue
+		linkOpen, linkClose := ansiLinkOpenClose(cell.LinkURL, cell.LinkParams)
+		if linkOpen != "" {
+			out.WriteString(linkOpen)
 		}
-		out.WriteString(styleSeq)
+		if styleSeq != "" {
+			out.WriteString(styleSeq)
+		}
 		out.WriteString(text)
-		out.WriteString(ANSIReset)
+		if styleSeq != "" {
+			out.WriteString(ANSIReset)
+		}
+		if linkClose != "" {
+			out.WriteString(linkClose)
+		}
 	}
 	return out.String()
 }
@@ -415,6 +424,24 @@ func ansiForCellStyle(style ANSICellStyle) string {
 		return ""
 	}
 	return "\x1b[" + strings.Join(params, ";") + "m"
+}
+
+func ansiLinkOpenClose(linkURL string, linkParams string) (string, string) {
+	linkURL = sanitizeOSC8Field(linkURL)
+	if linkURL == "" {
+		return "", ""
+	}
+	linkParams = sanitizeOSC8Field(linkParams)
+	return "\x1b]8;" + linkParams + ";" + linkURL + "\x1b\\", "\x1b]8;;\x1b\\"
+}
+
+func sanitizeOSC8Field(value string) string {
+	value = strings.ReplaceAll(value, "\x1b", "")
+	value = strings.ReplaceAll(value, "\x07", "")
+	value = strings.ReplaceAll(value, "\x9c", "")
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	return value
 }
 
 func appendANSIColorParams(params []string, value string, foreground bool) []string {

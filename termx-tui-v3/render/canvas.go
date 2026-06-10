@@ -16,6 +16,8 @@ type canvasCell struct {
 	width        int
 	style        StyleToken
 	ansiStyle    ANSICellStyle
+	linkURL      string
+	linkParams   string
 	owner        string
 	layer        LayerKind
 	continuation bool
@@ -273,11 +275,13 @@ func (c *canvas) lines() []Line {
 				width = 1
 			}
 			cells = append(cells, Cell{
-				Text:      cell.text,
-				Width:     width,
-				Style:     cell.style,
-				ANSIStyle: cell.ansiStyle,
-				Safe:      cell.safe,
+				Text:       cell.text,
+				Width:      width,
+				Style:      cell.style,
+				ANSIStyle:  cell.ansiStyle,
+				LinkURL:    cell.linkURL,
+				LinkParams: cell.linkParams,
+				Safe:       cell.safe,
 			})
 		}
 		lines[i] = Line{Cells: cells}
@@ -323,19 +327,23 @@ func (c *canvas) writeSegment(x int, y int, segment canvasSegment) {
 	}
 	c.clearCellRange(y, x, segment.width)
 	c.rows[y][x] = canvasCell{
-		text:      segment.text,
-		width:     segment.width,
-		style:     segment.style,
-		ansiStyle: segment.ansiStyle,
-		owner:     segment.owner,
-		layer:     segment.layer,
-		safe:      segment.safe,
+		text:       segment.text,
+		width:      segment.width,
+		style:      segment.style,
+		ansiStyle:  segment.ansiStyle,
+		linkURL:    segment.linkURL,
+		linkParams: segment.linkParams,
+		owner:      segment.owner,
+		layer:      segment.layer,
+		safe:       segment.safe,
 	}
 	for col := x + 1; col < x+segment.width; col++ {
 		c.rows[y][col] = canvasCell{
 			width:        0,
 			style:        segment.style,
 			ansiStyle:    segment.ansiStyle,
+			linkURL:      segment.linkURL,
+			linkParams:   segment.linkParams,
 			owner:        segment.owner,
 			layer:        segment.layer,
 			continuation: true,
@@ -360,13 +368,15 @@ func (c *canvas) cellText(x int, y int) string {
 }
 
 type canvasSegment struct {
-	text      string
-	width     int
-	style     StyleToken
-	ansiStyle ANSICellStyle
-	owner     string
-	layer     LayerKind
-	safe      bool
+	text       string
+	width      int
+	style      StyleToken
+	ansiStyle  ANSICellStyle
+	linkURL    string
+	linkParams string
+	owner      string
+	layer      LayerKind
+	safe       bool
 }
 
 func cellSegments(text string, style StyleToken, owner string, layer LayerKind) []canvasSegment {
@@ -418,6 +428,8 @@ func cellSegmentsFromLine(line Line, width int, owner string, layer LayerKind) [
 				break
 			}
 			segment.ansiStyle = cell.ANSIStyle
+			segment.linkURL = cell.LinkURL
+			segment.linkParams = cell.LinkParams
 			segment.safe = cell.Safe
 			segments = append(segments, segment)
 			remaining -= segment.width
@@ -448,11 +460,13 @@ func cellsFromSegments(segments []canvasSegment) []Cell {
 	cells := make([]Cell, len(segments))
 	for i, segment := range segments {
 		cells[i] = Cell{
-			Text:      segment.text,
-			Width:     segment.width,
-			Style:     segment.style,
-			ANSIStyle: segment.ansiStyle,
-			Safe:      segment.safe,
+			Text:       segment.text,
+			Width:      segment.width,
+			Style:      segment.style,
+			ANSIStyle:  segment.ansiStyle,
+			LinkURL:    segment.linkURL,
+			LinkParams: segment.linkParams,
+			Safe:       segment.safe,
 		}
 	}
 	return cells

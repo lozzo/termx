@@ -1043,10 +1043,12 @@ func terminalLiveLineFromCells(row []state.LiveCell) Line {
 			continue
 		}
 		cells = append(cells, Cell{
-			Text:      text,
-			Width:     width,
-			ANSIStyle: terminalLiveANSIStyle(liveCell),
-			Safe:      true,
+			Text:       text,
+			Width:      width,
+			ANSIStyle:  terminalLiveANSIStyle(liveCell),
+			LinkURL:    liveCell.LinkURL,
+			LinkParams: liveCell.LinkParams,
+			Safe:       true,
 		})
 	}
 	return Line{Cells: cells}

@@ -148,6 +148,22 @@ func TestANSICellStyleUsesHostPaletteCodes(t *testing.T) {
 	}
 }
 
+func TestANSILinesPreserveCellHyperlinks(t *testing.T) {
+	result := RenderResult{
+		Content: []Line{{Cells: []Cell{
+			{Text: "log", Width: 3, ANSIStyle: ANSICellStyle{FG: "ansi:4", Underline: true}, LinkURL: "file://build.log", LinkParams: "id=build", Safe: true},
+		}}},
+	}
+
+	frame := FrameFromRenderResult(result)
+	if len(frame.StyledLines) != 1 || frame.StyledLines[0].Cells[0].LinkURL != "file://build.log" || frame.StyledLines[0].Cells[0].LinkParams != "id=build" {
+		t.Fatalf("styled frame should retain hyperlink metadata, got %#v", frame.StyledLines)
+	}
+	if len(frame.ANSILines) != 1 || !strings.Contains(frame.ANSILines[0], "\x1b]8;id=build;file://build.log\x1b\\") || !strings.Contains(frame.ANSILines[0], "\x1b]8;;\x1b\\") {
+		t.Fatalf("ANSI frame should emit OSC 8 hyperlink metadata, got %#v", frame.ANSILines)
+	}
+}
+
 func TestThemeFallbackAndPaneTokensAreDistinct(t *testing.T) {
 	theme := Theme{ActivePaneBorder: "#010203"}.WithFallback()
 	if theme.ActivePaneBorder != "#010203" {

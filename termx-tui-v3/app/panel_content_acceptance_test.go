@@ -148,6 +148,9 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 		if !panelLineHasANSIText(content.Lines, " deploy", render.ANSICellStyle{FG: "#ffcc00", Underline: true}) {
 			t.Fatalf("styled history row should preserve truecolor/underline metadata, got %#v", content.Lines)
 		}
+		if !panelLineHasLinkText(content.Lines, " deploy", "file://deploy.log", "") {
+			t.Fatalf("styled history row should preserve link metadata, got %#v", content.Lines)
+		}
 		frame := render.NewRenderer(render.DefaultTheme()).Render(vm)
 		assertPanelFrameContains(t, frame, "● git log")
 		assertPanelFrameContains(t, frame, "╎ ERR deploy")
@@ -292,6 +295,17 @@ func panelLineHasANSIText(lines []render.Line, text string, style render.ANSICel
 	for _, line := range lines {
 		for _, cell := range line.Cells {
 			if cell.Text == text && cell.ANSIStyle == style {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func panelLineHasLinkText(lines []render.Line, text string, linkURL string, linkParams string) bool {
+	for _, line := range lines {
+		for _, cell := range line.Cells {
+			if cell.Text == text && cell.LinkURL == linkURL && cell.LinkParams == linkParams {
 				return true
 			}
 		}

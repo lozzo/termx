@@ -523,6 +523,9 @@ func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
 		!lineHasANSICell(content.Lines[1], "好", ANSICellStyle{FG: "#ffcc00", Underline: true}) {
 		t.Fatalf("copy history render should preserve history ANSI cells, got %#v", content.Lines[1])
 	}
+	if !lineHasLinkCell(content.Lines[1], "好", "file://build.log", "line=7") {
+		t.Fatalf("copy history render should preserve history link metadata, got %#v", content.Lines[1])
+	}
 
 	root.CopyMode.Selection = &state.CopySelection{
 		Anchor: state.CopyPosition{Row: 0, Col: 0},
@@ -531,6 +534,9 @@ func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
 	if !lineHasStyledCell(content.Lines[1], "ERR", StyleAccent) {
 		t.Fatalf("selection should override history ANSI style for selected cells, got %#v", content.Lines[1])
+	}
+	if !lineHasLinkCell(content.Lines[1], "好", "file://build.log", "line=7") {
+		t.Fatalf("selection should not drop unselected history link metadata, got %#v", content.Lines[1])
 	}
 }
 
@@ -545,8 +551,8 @@ func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testin
 				LineID: 10,
 				Cells: []state.HistoryCell{
 					{Text: "a", Width: 1, Style: state.HistoryCellStyle{FG: "ansi:2"}},
-					{Text: "好", Width: 2, Style: state.HistoryCellStyle{FG: "ansi:3"}},
-					{Text: "bc", Width: 2, Style: state.HistoryCellStyle{FG: "ansi:4"}},
+					{Text: "好", Width: 2, Style: state.HistoryCellStyle{FG: "ansi:3"}, LinkURL: "file://wide.txt", LinkParams: "row=1"},
+					{Text: "bc", Width: 2, Style: state.HistoryCellStyle{FG: "ansi:4"}, LinkURL: "file://split.txt", LinkParams: "row=1"},
 				},
 			}},
 		},
@@ -573,6 +579,9 @@ func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testin
 	if !lineHasStyledCell(content.Lines[1], "好", StyleAccent) || !lineHasStyledCell(content.Lines[1], "b", StyleAccent) {
 		t.Fatalf("selection should split styled cells by display columns, got %#v", content.Lines[1])
 	}
+	if !lineHasLinkCell(content.Lines[1], "好", "file://wide.txt", "row=1") || !lineHasLinkCell(content.Lines[1], "b", "file://split.txt", "row=1") {
+		t.Fatalf("selection split should preserve link metadata on highlighted cells, got %#v", content.Lines[1])
+	}
 	if lineHasStyledCell(content.Lines[1], "a", StyleAccent) || lineHasStyledCell(content.Lines[1], "c", StyleAccent) {
 		t.Fatalf("selection should not leak outside display-column range, got %#v", content.Lines[1])
 	}
@@ -581,6 +590,9 @@ func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testin
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
 	if !lineHasStyledCell(content.Lines[1], "好", StyleWarning) || !lineHasStyledCell(content.Lines[1], "b", StyleWarning) {
 		t.Fatalf("search should split styled cells by display columns, got %#v", content.Lines[1])
+	}
+	if !lineHasLinkCell(content.Lines[1], "好", "file://wide.txt", "row=1") || !lineHasLinkCell(content.Lines[1], "b", "file://split.txt", "row=1") {
+		t.Fatalf("search split should preserve link metadata on highlighted cells, got %#v", content.Lines[1])
 	}
 	if !lineHasANSICell(content.Lines[1], "a", ANSICellStyle{FG: "ansi:2"}) ||
 		!lineHasANSICell(content.Lines[1], "c", ANSICellStyle{FG: "ansi:4"}) {
@@ -1697,6 +1709,15 @@ func lineHasStyledCell(line Line, text string, style StyleToken) bool {
 func lineHasANSICell(line Line, text string, style ANSICellStyle) bool {
 	for _, cell := range line.Cells {
 		if cell.Text == text && cell.ANSIStyle == style && cell.Style == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func lineHasLinkCell(line Line, text string, linkURL string, linkParams string) bool {
+	for _, cell := range line.Cells {
+		if cell.Text == text && cell.LinkURL == linkURL && cell.LinkParams == linkParams {
 			return true
 		}
 	}

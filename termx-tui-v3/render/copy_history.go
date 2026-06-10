@@ -133,7 +133,7 @@ func copyHistoryNextStyleBreak(row int, cursor int, lineWidth int, selection cop
 	return nextBreak, style
 }
 
-func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, row int, from int, selection copySelectionRange, search copySearchRange) []Cell {
+func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, linkURL string, linkParams string, row int, from int, selection copySelectionRange, search copySearchRange) []Cell {
 	if text == "" {
 		return nil
 	}
@@ -158,9 +158,9 @@ func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, row 
 			renderWidth = len([]rune(part))
 		}
 		if style != "" {
-			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, Style: style, Safe: true})
+			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, Style: style, LinkURL: linkURL, LinkParams: linkParams, Safe: true})
 		} else {
-			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, ANSIStyle: base, Safe: true})
+			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, ANSIStyle: base, LinkURL: linkURL, LinkParams: linkParams, Safe: true})
 		}
 		globalCursor = nextBreak
 	}
@@ -238,13 +238,15 @@ func renderCellsFromHistory(cell state.HistoryCell, row int, from int, selection
 		width = len([]rune(text))
 	}
 	if selection.active || search.active {
-		return copyHistoryStyledTextCells(text, width, ansiStyleFromHistory(cell.Style), row, from, selection, search)
+		return copyHistoryStyledTextCells(text, width, ansiStyleFromHistory(cell.Style), cell.LinkURL, cell.LinkParams, row, from, selection, search)
 	}
 	return []Cell{{
-		Text:      text,
-		Width:     width,
-		ANSIStyle: ansiStyleFromHistory(cell.Style),
-		Safe:      true,
+		Text:       text,
+		Width:      width,
+		ANSIStyle:  ansiStyleFromHistory(cell.Style),
+		LinkURL:    cell.LinkURL,
+		LinkParams: cell.LinkParams,
+		Safe:       true,
 	}}
 }
 
