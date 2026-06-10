@@ -191,6 +191,15 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 	}
 	cfg := msg.Config
 	cfg.Cols, cfg.Rows = liveAttachContentSize(root, cfg)
+	if cfg.SurfaceID == "" {
+		cfg.SurfaceID = "termx-tui-v3"
+	}
+	if cfg.ViewID == "" {
+		cfg.ViewID = state.TerminalPaneViewID(root.Shell.EnsureDefaults().ActivePaneID)
+	}
+	if cfg.ResizePolicy == "" {
+		cfg.ResizePolicy = state.TerminalResizeRoleOwner
+	}
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
@@ -213,7 +222,9 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID)
 	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, msg.Result.TerminalID)
+	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID, msg.Result.CanResize))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, msg.Result.TerminalID)
 	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
 }
 
@@ -359,7 +370,9 @@ func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 			continue
 		}
 		target := liveInputTargetInfo{PaneID: floating.Pane.ID, TerminalID: floating.Pane.TerminalID, Floating: true}
-		if channel, ok := root.Session.InputChannelFor(floating.Pane.TerminalID); ok {
+		if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && binding.TerminalID == floating.Pane.TerminalID {
+			target.Channel = binding.Channel
+		} else if channel, ok := root.Session.InputChannelFor(floating.Pane.TerminalID); ok {
 			target.Channel = channel
 		}
 		return target, true
@@ -376,7 +389,9 @@ func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 		return liveInputTargetInfo{}, false
 	}
 	target := liveInputTargetInfo{PaneID: pane.ID, TerminalID: terminalID}
-	if channel, ok := root.Session.InputChannelFor(terminalID); ok {
+	if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && binding.TerminalID == terminalID {
+		target.Channel = binding.Channel
+	} else if channel, ok := root.Session.InputChannelFor(terminalID); ok {
 		target.Channel = channel
 	}
 	return target, true

@@ -189,6 +189,10 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 	if targetFloatingID == "" {
 		targetFloatingID = root.Shell.EnsureDefaults().ActiveFloatingID
 	}
+	viewID := state.TerminalPaneViewID(root.Shell.EnsureDefaults().ActivePaneID)
+	if targetFloatingID != "" {
+		viewID = state.TerminalFloatingViewID(targetFloatingID)
+	}
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
@@ -198,7 +202,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				Mode:         "collaborator",
 				ResizePolicy: "owner",
 				SurfaceID:    "termx-tui-v3",
-				ViewID:       "terminal-pool",
+				ViewID:       viewID,
 			})
 			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, Result: result, Err: err}
 		},
@@ -219,9 +223,19 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
 	if msg.TargetFloatingID != "" {
+		paneID := ""
+		for _, floating := range root.Shell.Floatings {
+			if floating.ID == msg.TargetFloatingID {
+				paneID = floating.Pane.ID
+				break
+			}
+		}
+		root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
 	} else {
-		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, result.TerminalID)
+		activePaneID := root.Shell.EnsureDefaults().ActivePaneID
+		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
 	}
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
@@ -328,6 +342,7 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: errText})
 		return root.Advance(), nil
 	}
+	root.TerminalViews = root.TerminalViews.RemoveTerminal(msg.TerminalID)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
 	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 }

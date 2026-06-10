@@ -73,6 +73,43 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 	}
 }
 
+func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty}, state.SplitDirectionVertical)}
+
+	var effects []Effect
+	root, effects = reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "surface", ViewID: state.TerminalPaneViewID("pane-2")}})
+	if len(effects) != 0 {
+		t.Fatalf("expected no effects without live deps, got %#v", effects)
+	}
+	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root, _ = reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID), CanResize: true}})
+
+	bindings := root.TerminalViews.BindingsForTerminal("term-1")
+	if len(bindings) != 2 {
+		t.Fatalf("expected two bindings for shared terminal, got %#v", bindings)
+	}
+	if target, ok := liveInputTarget(root); !ok || target.Channel != 7 || target.TerminalID != "term-1" {
+		t.Fatalf("active pane should use its own attachment channel, target=%#v ok=%v", target, ok)
+	}
+	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})
+	if target, ok := liveInputTarget(root); !ok || target.Channel != 8 || target.TerminalID != "term-1" {
+		t.Fatalf("sibling pane should use its own attachment channel, target=%#v ok=%v", target, ok)
+	}
+
+	root, _ = reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandClose, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, Source: state.PaneCommandSourceTest})
+	if _, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); ok {
+		t.Fatal("close pane should detach only that view")
+	}
+	if _, ok := root.TerminalViews.PaneBinding("pane-2"); !ok {
+		t.Fatal("close pane should not detach sibling view for same terminal")
+	}
+	root, _ = reduceTerminalPoolKillResult(root, TerminalPoolKillResultMsg{TerminalID: "term-1"})
+	if bindings := root.TerminalViews.BindingsForTerminal("term-1"); len(bindings) != 0 {
+		t.Fatalf("kill terminal should clear all view bindings, got %#v", bindings)
+	}
+}
+
 func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{

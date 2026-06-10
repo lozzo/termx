@@ -7,6 +7,7 @@ type Root struct {
 	CopyMode      CopyModeStore
 	Surface       TerminalSurfaceStore
 	Session       TerminalSessionStore
+	TerminalViews TerminalViewStore
 	TerminalPool  TerminalPoolStore
 	Viewport      ViewportStore
 	Shell         ShellStore

@@ -834,6 +834,7 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	nextShell, result := root.Shell.ApplyPaneCommand(command)
 	if result.Status == state.PaneCommandOK {
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
+		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
 		effects := paneCommandEffects(command, result, targetPane, hasTargetPane)
 		return root.Advance(), effects
@@ -846,15 +847,20 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 	command = withFloatingCommandDefaults(root, command)
 	nextShell, result := root.Shell.ApplyFloatingCommand(command)
 	root.Shell = addFloatingCommandToast(nextShell, command, result)
+	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
+		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
+	}
 	return root.Advance(), nil
 }
 
 func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (state.Root, []Effect) {
+	previousShell := root.Shell
 	nextShell, result := root.Shell.ApplyWorkbenchCommand(command)
 	root.Shell = addWorkbenchCommandToast(nextShell, result)
 	if result.Status != state.WorkbenchCommandOK {
 		return root.Advance(), nil
 	}
+	root = updateTerminalViewsAfterWorkbenchCommand(root, previousShell, command, result)
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg {
 		return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
 	}}}
@@ -865,6 +871,49 @@ func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (st
 		}})
 	}
 	return root.Advance(), effects
+}
+
+func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneCommand, targetPane state.PaneState, hasTargetPane bool) state.Root {
+	switch command.Action {
+	case state.PaneCommandClose:
+		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
+	case state.PaneCommandCloseAndKill:
+		if hasTargetPane && targetPane.TerminalID != "" {
+			root.TerminalViews = root.TerminalViews.RemoveTerminal(targetPane.TerminalID)
+		} else {
+			root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
+		}
+	}
+	return root
+}
+
+func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell state.ShellStore, command state.WorkbenchCommand, result state.WorkbenchCommandResult) state.Root {
+	switch result.Action {
+	case state.WorkbenchCommandPaneClose:
+		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
+	case state.WorkbenchCommandPaneKill, state.WorkbenchCommandTabKill:
+		for _, terminalID := range result.Killed {
+			root.TerminalViews = root.TerminalViews.RemoveTerminal(terminalID)
+		}
+	case state.WorkbenchCommandTabClose:
+		for _, pane := range panesForWorkbenchTarget(previousShell, command.TargetID) {
+			root.TerminalViews = root.TerminalViews.DetachPane(pane.ID)
+		}
+	}
+	return root
+}
+
+func panesForWorkbenchTarget(shell state.ShellStore, tabID string) []state.PaneState {
+	shell = shell.EnsureDefaults()
+	if tabID == "" {
+		tabID = shell.Workspace.ActiveTabID
+	}
+	for _, tab := range shell.Workspace.Tabs {
+		if tab.ID == tabID {
+			return tab.Panes
+		}
+	}
+	return nil
 }
 
 func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand) state.FloatingCommand {
