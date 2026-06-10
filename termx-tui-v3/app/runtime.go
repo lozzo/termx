@@ -636,8 +636,8 @@ func (runtime *AppRuntime) paneMouseTrackingEnabled(paneID string) bool {
 		return false
 	}
 	terminalID := pane.TerminalID
-	if terminalID == "" && pane.Active {
-		terminalID = runtime.state.Session.TerminalID
+	if binding, ok := runtime.state.TerminalViews.PaneBinding(paneID); ok && binding.TerminalID != "" {
+		terminalID = binding.TerminalID
 	}
 	surface := runtime.state.Surface.SurfaceForTerminal(terminalID)
 	return surface.Modes.MousePassthroughEnabled()

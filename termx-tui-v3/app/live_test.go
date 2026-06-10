@@ -110,6 +110,41 @@ func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 	}
 }
 
+func TestLiveStreamTokenIsTerminalScoped(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveEventsCh: make(chan services.TerminalLiveEvent)}
+	first := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
+	second := liveStreamEffect("term-2", 80, 24, LiveDeps{Terminal: terminal})
+	if len(first) != 2 || len(second) != 2 {
+		t.Fatalf("expected cancel+stream effects, first=%#v second=%#v", first, second)
+	}
+	firstCancel := first[0].(CancelEffect)
+	firstStream := first[1].(StreamEffect)
+	secondCancel := second[0].(CancelEffect)
+	secondStream := second[1].(StreamEffect)
+	if firstCancel.Token != firstStream.Token || secondCancel.Token != secondStream.Token || firstStream.Token == secondStream.Token {
+		t.Fatalf("live stream tokens must be scoped per terminal, first=%q/%q second=%q/%q", firstCancel.Token, firstStream.Token, secondCancel.Token, secondStream.Token)
+	}
+}
+
+func TestTerminalPoolReconnectUsesActiveViewIdentity(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 11, Cols: 80, Rows: 24, CanResize: true}}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)}
+
+	root, effects := reducer(root, TerminalPoolReconnectRequestMsg{TerminalID: "term-1"})
+	if len(effects) != 1 {
+		t.Fatalf("expected reconnect effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	if len(terminal.Reconnects) != 1 || terminal.Reconnects[0].ViewID != state.TerminalPaneViewID("pane-logs") || terminal.Reconnects[0].SurfaceID != "termx-tui-v3" {
+		t.Fatalf("reconnect should use active pane view identity, requests=%#v", terminal.Reconnects)
+	}
+	root, _ = reducer(root, msg)
+	if binding, ok := root.TerminalViews.PaneBinding("pane-logs"); !ok || binding.Channel != 11 || binding.TerminalID != "term-1" {
+		t.Fatalf("reconnect result should bind active pane view, binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{

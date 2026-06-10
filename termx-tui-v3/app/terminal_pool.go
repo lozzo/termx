@@ -68,15 +68,17 @@ type TerminalPoolRestartResultMsg struct {
 func (TerminalPoolRestartResultMsg) isMsg() {}
 
 type TerminalPoolReconnectRequestMsg struct {
-	TerminalID string
+	TerminalID       string
+	TargetFloatingID string
 }
 
 func (TerminalPoolReconnectRequestMsg) isMsg() {}
 
 type TerminalPoolReconnectResultMsg struct {
-	TerminalID string
-	Result     services.TerminalAttachResult
-	Err        error
+	TerminalID       string
+	TargetFloatingID string
+	Result           services.TerminalAttachResult
+	Err              error
 }
 
 func (TerminalPoolReconnectResultMsg) isMsg() {}
@@ -314,14 +316,22 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 		return root.Advance(), nil
 	}
 	cols, rows := terminalPoolAttachSize(root)
+	targetFloatingID := msg.TargetFloatingID
+	if targetFloatingID == "" {
+		targetFloatingID = root.Shell.EnsureDefaults().ActiveFloatingID
+	}
+	viewID := state.TerminalPaneViewID(root.Shell.EnsureDefaults().ActivePaneID)
+	if targetFloatingID != "" {
+		viewID = state.TerminalFloatingViewID(targetFloatingID)
+	}
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: "owner", SurfaceID: "termx-tui-v3", ViewID: "terminal-pool"})
-		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, Result: result, Err: err}
+		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: "owner", SurfaceID: "termx-tui-v3", ViewID: viewID})
+		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, Result: result, Err: err}
 	}}}
 }
 
 func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
-	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, Result: msg.Result, Err: msg.Err}, deps)
+	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: msg.TargetFloatingID, Result: msg.Result, Err: msg.Err}, deps)
 }
 
 func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestMsg, deps LiveDeps) (state.Root, []Effect) {

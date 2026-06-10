@@ -23,7 +23,7 @@ type LiveDeps struct {
 	Terminal services.TerminalService
 }
 
-const liveStreamToken = CancelToken("terminal.live.stream")
+const liveStreamTokenPrefix = "terminal.live.stream:"
 
 // NewLiveRuntime 组合 live app 主路径：TerminalHost 输入 -> reducer/effect ->
 // terminal service -> render VM -> FrameSink。
@@ -262,10 +262,11 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 	if !ok || terminalID == "" {
 		return nil
 	}
+	token := liveStreamTokenForTerminal(terminalID)
 	return []Effect{
-		CancelEffect{Token: liveStreamToken},
+		CancelEffect{Token: token},
 		StreamEffect{
-			Token: liveStreamToken,
+			Token: token,
 			Run: func(ctx context.Context, post func(Msg)) {
 				events, err := source.LiveEvents(ctx, services.TerminalLiveEventRequest{
 					TerminalID: terminalID,
@@ -293,6 +294,10 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 			},
 		},
 	}
+}
+
+func liveStreamTokenForTerminal(terminalID string) CancelToken {
+	return CancelToken(liveStreamTokenPrefix + terminalID)
 }
 
 func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
@@ -382,9 +387,6 @@ func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 		return liveInputTargetInfo{}, false
 	}
 	terminalID := pane.TerminalID
-	if terminalID == "" && pane.Kind == state.PaneTerminalLive && root.Session.TerminalID != "" && pane.Active {
-		terminalID = root.Session.TerminalID
-	}
 	if terminalID == "" {
 		return liveInputTargetInfo{}, false
 	}
