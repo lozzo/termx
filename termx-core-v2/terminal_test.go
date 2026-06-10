@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 )
 
@@ -105,6 +106,159 @@ func TestTerminalIngestOutputNormalizesPTYCRLF(t *testing.T) {
 	}
 	if len(window.Rows) != 2 || window.Rows[0].Text != "alpha" || window.Rows[1].Text != "beta" {
 		t.Fatalf("expected CRLF-normalized history rows, got %#v", window.Rows)
+	}
+}
+
+func TestTerminalIngestOutputPreservesANSIStylesInHistoryCells(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := "\x1b[1;31mERR\x1b[0m \x1b[4;38;2;255;204;0m好\x1b[0m \x1b[48;5;12mBG\x1b[49m\nplain"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "ERR 好 BG" || window.Rows[1].Text != "plain" {
+		t.Fatalf("unexpected styled history rows %#v", window.Rows)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) != 5 {
+		t.Fatalf("expected styled runs to survive ingest, got %#v", cells)
+	}
+	if cells[0].Text != "ERR" || cells[0].Width != 3 || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
+		t.Fatalf("expected red bold ERR cell, got %#v", cells[0])
+	}
+	if cells[2].Text != "好" || cells[2].Width != 2 || cells[2].Style.FG != "#ffcc00" || !cells[2].Style.Underline {
+		t.Fatalf("expected truecolor underlined wide cell, got %#v", cells[2])
+	}
+	if cells[4].Text != "BG" || cells[4].Style.BG != "idx:12" || cells[4].Style.FG != "" {
+		t.Fatalf("expected indexed background cell with reset foreground, got %#v", cells[4])
+	}
+	if window.Rows[1].Cells[0].Text != "plain" || window.Rows[1].Cells[0].Style != (history.CellStyle{}) {
+		t.Fatalf("expected SGR reset to keep following line plain, got %#v", window.Rows[1].Cells)
+	}
+}
+
+func TestTerminalIngestOutputCarriesANSIStateAcrossChunks(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for _, chunk := range []string{"\x1b[", "31mred ", "tail\x1b[0m\n"} {
+		if err := server.IngestOutput(context.Background(), "term-1", chunk); err != nil {
+			t.Fatalf("ingest output chunk %q: %v", chunk, err)
+		}
+	}
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "red tail" {
+		t.Fatalf("unexpected history rows %#v", window.Rows)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) != 2 {
+		t.Fatalf("expected same SGR style to carry across output chunks, got %#v", cells)
+	}
+	if cells[0].Text != "red " || cells[0].Style.FG != "ansi:1" || cells[1].Text != "tail" || cells[1].Style.FG != "ansi:1" {
+		t.Fatalf("expected red style across chunks, got %#v", cells)
+	}
+}
+
+func TestTerminalIngestOutputPreservesOSC8LinksAndSkipsControls(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 40, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := "\x1b]2;ignored title\a\x1b]8;id=termx;https://example.test\a"
+	output += "linked\x1b]8;;\aplain\x1b[?25l\n"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 40, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "linkedplain" {
+		t.Fatalf("control sequences must not leak into history text, got %#v", window.Rows)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) != 2 {
+		t.Fatalf("expected link and plain cells, got %#v", cells)
+	}
+	if cells[0].Text != "linked" || cells[0].LinkURL != "https://example.test" || cells[0].LinkParams != "id=termx" {
+		t.Fatalf("expected OSC 8 link metadata on first cell, got %#v", cells[0])
+	}
+	if cells[1].Text != "plain" || cells[1].LinkURL != "" || cells[1].LinkParams != "" {
+		t.Fatalf("expected OSC 8 reset before plain text, got %#v", cells[1])
+	}
+}
+
+func TestTerminalIngestOutputSkipsStringControlsAcrossChunks(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 40, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for _, chunk := range []string{"before", "\x1bPignored ", "payload\x1b\\after\n"} {
+		if err := server.IngestOutput(context.Background(), "term-1", chunk); err != nil {
+			t.Fatalf("ingest output chunk %q: %v", chunk, err)
+		}
+	}
+	window, err := server.LatestWindow("term-1", 40, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "beforeafter" {
+		t.Fatalf("DCS payload must not leak into history text, got %#v", window.Rows)
+	}
+}
+
+func TestTerminalIngestOutputSGRTrailingDefaultResetsStyle(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 40, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[31;mplain\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 40, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 1 || len(window.Rows[0].Cells) != 1 || window.Rows[0].Cells[0].Style != (history.CellStyle{}) {
+		t.Fatalf("trailing empty SGR parameter should reset style, got %#v", window.Rows)
+	}
+}
+
+func TestTerminalRestartResetsHistoryIngestParserState(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[31mred \x1b]8;id=old;https://old.test\alinked \x1b["); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "plain\n"); err != nil {
+		t.Fatalf("ingest output after restart: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 40, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "plain" || len(window.Rows[0].Cells) != 1 {
+		t.Fatalf("unexpected history after restart %#v", window.Rows)
+	}
+	cell := window.Rows[0].Cells[0]
+	if cell.Style != (history.CellStyle{}) || cell.LinkURL != "" || cell.LinkParams != "" {
+		t.Fatalf("restart should reset style/link/pending parser state, got %#v", cell)
 	}
 }
 
@@ -334,10 +488,9 @@ func newRecordingProcessFactory() *recordingProcessFactory {
 func (factory *recordingProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (TerminalProcess, error) {
 	process := &recordingProcess{
 		id:       spec.TerminalID,
-		outputCh: make(chan []byte),
+		outputCh: make(chan []byte, 16),
 		waitCh:   make(chan ProcessExit, 1),
 	}
-	close(process.outputCh)
 	factory.mu.Lock()
 	factory.processes[spec.TerminalID] = append(factory.processes[spec.TerminalID], process)
 	factory.mu.Unlock()
@@ -355,16 +508,17 @@ func (factory *recordingProcessFactory) process(id string) *recordingProcess {
 }
 
 type recordingProcess struct {
-	mu        sync.Mutex
-	id        string
-	inputs    [][]byte
-	resizes   []Size
-	resizeErr error
-	outputCh  chan []byte
-	waitCh    chan ProcessExit
-	exitOnce  sync.Once
-	killed    bool
-	closed    bool
+	mu         sync.Mutex
+	id         string
+	inputs     [][]byte
+	resizes    []Size
+	resizeErr  error
+	outputCh   chan []byte
+	waitCh     chan ProcessExit
+	exitOnce   sync.Once
+	outputOnce sync.Once
+	killed     bool
+	closed     bool
 }
 
 func (process *recordingProcess) Input(data []byte) error {
@@ -400,6 +554,10 @@ func (process *recordingProcess) Output() <-chan []byte {
 	return process.outputCh
 }
 
+func (process *recordingProcess) emitOutput(output string) {
+	process.outputCh <- []byte(output)
+}
+
 func (process *recordingProcess) Kill() error {
 	process.mu.Lock()
 	process.killed = true
@@ -416,6 +574,7 @@ func (process *recordingProcess) Close() error {
 	process.mu.Lock()
 	process.closed = true
 	process.mu.Unlock()
+	process.closeOutput()
 	process.exit(-1)
 	return nil
 }
@@ -433,8 +592,15 @@ func (process *recordingProcess) snapshot() ([][]byte, []Size, bool, bool) {
 
 func (process *recordingProcess) exit(code int) {
 	process.exitOnce.Do(func() {
+		process.closeOutput()
 		process.waitCh <- ProcessExit{Code: code}
 		close(process.waitCh)
+	})
+}
+
+func (process *recordingProcess) closeOutput() {
+	process.outputOnce.Do(func() {
+		close(process.outputCh)
 	})
 }
 

@@ -212,6 +212,74 @@ func TestProtocolHistoryWindowPreservesTrailingBlankCells(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceHistoryWindowPreservesIngestedANSIStyles(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 20, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	output := "\x1b[1;31mERR\x1b[0m \x1b[4;38;2;255;204;0m好\x1b[0m "
+	output += "\x1b]8;id=termx;https://example.test\aLINK\x1b]8;;\a\n"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       20,
+		Limit:      4,
+	})
+	if err != nil {
+		t.Fatalf("history.window: %v", err)
+	}
+	if len(latest.Rows) != 1 || rowText(latest.Rows[0]) != "ERR 好 LINK" {
+		t.Fatalf("unexpected latest rows %#v", latest.Rows)
+	}
+	cells := latest.Rows[0].DecodeCells()
+	if len(cells) != 5 {
+		t.Fatalf("expected compact row cells from ingested ANSI output, got %#v", cells)
+	}
+	if cells[0].Content != "ERR" || cells[0].Width != 3 || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
+		t.Fatalf("expected red bold ERR cell through protocol path, got %#v", cells[0])
+	}
+	if cells[2].Content != "好" || cells[2].Width != 2 || cells[2].Style.FG != "#ffcc00" || !cells[2].Style.Underline {
+		t.Fatalf("expected truecolor underlined wide cell through protocol path, got %#v", cells[2])
+	}
+	if cells[4].Content != "LINK" || cells[4].LinkURL != "https://example.test" || cells[4].LinkParams != "id=termx" {
+		t.Fatalf("expected OSC 8 link metadata through protocol path, got %#v", cells[4])
+	}
+	if latest.Rows[0].Text != "" {
+		t.Fatalf("styled ingest must not downgrade protocol row to plain Text, got %#v", latest.Rows[0])
+	}
+}
+
+func TestProtocolServiceHistoryWindowPreservesProcessOutputANSIStyles(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 20, Rows: 4}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	process := serverProcess(t, server, "term-1")
+	process.emitOutput("\x1b[")
+	process.emitOutput("1;31mERR\x1b[0m ")
+	process.emitOutput("\x1b]8;id=termx;https://example.test\aLINK\x1b]8;;\a\n")
+
+	latest := waitForProtocolHistoryRow(t, client, "term-1", "ERR LINK")
+	cells := latest.Rows[0].DecodeCells()
+	if len(cells) != 3 {
+		t.Fatalf("expected styled cells from process output reader, got %#v", cells)
+	}
+	if cells[0].Content != "ERR" || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
+		t.Fatalf("expected process output SGR through protocol path, got %#v", cells[0])
+	}
+	if cells[2].Content != "LINK" || cells[2].LinkURL != "https://example.test" || cells[2].LinkParams != "id=termx" {
+		t.Fatalf("expected process output OSC 8 link through protocol path, got %#v", cells[2])
+	}
+}
+
 func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
@@ -437,9 +505,13 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 }
 
 func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {
+	return newProtocolClientWithProcessFactory(t, newRecordingProcessFactory())
+}
+
+func newProtocolClientWithProcessFactory(t *testing.T, factory ProcessFactory) (*Server, *protocol.Client, func()) {
 	t.Helper()
 	clientTransport, serverTransport := memory.NewPair()
-	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	server := NewServer(WithProcessFactory(factory))
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- newProtocolSession(server, serverTransport).run(context.Background())
@@ -460,6 +532,33 @@ func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {
 		}
 	}
 	return server, client, closeClient
+}
+
+func waitForProtocolHistoryRow(t *testing.T, client *protocol.Client, terminalID string, want string) *protocol.HistoryWindow {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		window, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID: terminalID,
+			Cols:       20,
+			Limit:      4,
+		})
+		if err == nil {
+			for _, row := range window.Rows {
+				if rowText(row) == want {
+					return window
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	window, _ := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: terminalID,
+		Cols:       20,
+		Limit:      4,
+	})
+	t.Fatalf("timed out waiting for protocol history row %q, got %#v", want, window)
+	return nil
 }
 
 func serverProcess(t *testing.T, server *Server, terminalID string) *recordingProcess {

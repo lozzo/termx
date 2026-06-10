@@ -15,6 +15,7 @@ type Terminal struct {
 	process TerminalProcess
 	history *history.HistoryTrack
 	live    *live.SurfaceTrack
+	ingest  historyANSIParser
 	events  *eventBroker
 	update  func(TerminalInfo)
 }
@@ -63,25 +64,21 @@ func (terminal *Terminal) Input(data []byte) error {
 
 func (terminal *Terminal) IngestOutput(output string) error {
 	rawOutput := output
-	historyOutput := normalizeTerminalOutput(output)
 	terminal.mu.Lock()
 	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
 		terminal.mu.Unlock()
 		return ErrTerminalExited
 	}
+	historySegments := terminal.ingest.Parse(output)
 	terminal.live.Write(rawOutput)
-	for _, part := range strings.SplitAfter(historyOutput, "\n") {
-		if part == "" {
-			continue
-		}
-		if strings.HasSuffix(part, "\n") {
-			text := strings.TrimSuffix(part, "\n")
-			if text != "" {
-				if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{Text: text}}}); err != nil {
-					terminal.mu.Unlock()
-					return err
-				}
+	for _, segment := range historySegments {
+		if len(segment.Cells) > 0 {
+			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: segment.Cells}); err != nil {
+				terminal.mu.Unlock()
+				return err
 			}
+		}
+		if segment.Seal {
 			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
 				terminal.mu.Unlock()
 				return err
@@ -90,11 +87,6 @@ func (terminal *Terminal) IngestOutput(output string) error {
 				terminal.mu.Unlock()
 				return err
 			}
-			continue
-		}
-		if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{Text: part}}}); err != nil {
-			terminal.mu.Unlock()
-			return err
 		}
 	}
 	info := terminal.info.Clone()
@@ -177,6 +169,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	info = terminal.info.Clone()
 	terminal.history = history.NewHistoryTrack()
 	terminal.live = live.NewSurfaceTrack(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
+	terminal.ingest = historyANSIParser{}
 	terminal.mu.Unlock()
 	_ = old.Close()
 	terminal.syncInfo(info)
