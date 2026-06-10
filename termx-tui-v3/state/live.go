@@ -78,14 +78,16 @@ type LiveCell struct {
 
 // TerminalSessionStore 保存当前 attach/live path 的 reducer-owned 会话状态。
 type TerminalSessionStore struct {
-	TerminalID   string
-	Channel      uint16
-	Attached     bool
-	Cols         int
-	Rows         int
-	ResizePolicy string
-	SurfaceID    string
-	ViewID       string
+	TerminalID string
+	Channel    uint16
+	// InputChannels 只保存已 attach terminal 的输入 channel，用于 pane focus 后把输入发回对应 terminal。
+	InputChannels map[string]uint16
+	Attached      bool
+	Cols          int
+	Rows          int
+	ResizePolicy  string
+	SurfaceID     string
+	ViewID        string
 	// Desired* 只记录已发出的 terminal resize 目标，用于连续 pane command 去重和 stale response guard。
 	DesiredCols        int
 	DesiredRows        int
@@ -373,6 +375,10 @@ func (store TerminalSessionStore) Attach(terminalID string, channel uint16, cols
 func (store TerminalSessionStore) AttachWithResizeOwner(terminalID string, channel uint16, cols int, rows int, resizePolicy string, surfaceID string, viewID string) TerminalSessionStore {
 	store.TerminalID = terminalID
 	store.Channel = channel
+	store.InputChannels = cloneInputChannels(store.InputChannels)
+	if terminalID != "" && channel != 0 {
+		store.InputChannels[terminalID] = channel
+	}
 	store.Attached = true
 	store.Cols = cols
 	store.Rows = rows
@@ -388,6 +394,17 @@ func (store TerminalSessionStore) AttachWithResizeOwner(terminalID string, chann
 	store.ExitCode = 0
 	store.ExitReason = ""
 	return store
+}
+
+func (store TerminalSessionStore) InputChannelFor(terminalID string) (uint16, bool) {
+	if terminalID == "" {
+		return 0, false
+	}
+	if terminalID == store.TerminalID && store.Channel != 0 {
+		return store.Channel, true
+	}
+	channel, ok := store.InputChannels[terminalID]
+	return channel, ok && channel != 0
 }
 
 func (store TerminalSessionStore) Resize(cols int, rows int) TerminalSessionStore {
@@ -476,6 +493,14 @@ func cloneLiveSurfaceSnapshots(values map[string]LiveSurfaceSnapshot) map[string
 	for key, value := range values {
 		value.Lines = cloneStrings(value.Lines)
 		value.Screen = cloneLiveCellRows(value.Screen)
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneInputChannels(values map[string]uint16) map[string]uint16 {
+	cloned := make(map[string]uint16, len(values)+1)
+	for key, value := range values {
 		cloned[key] = value
 	}
 	return cloned

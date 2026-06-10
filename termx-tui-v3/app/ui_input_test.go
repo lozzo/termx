@@ -1271,6 +1271,16 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 		t.Fatalf("hidden header/footer must reclaim shell bar rows, got %#v", hiddenFrame.Lines)
 	}
 
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action: state.PaneCommandFocus,
+		Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		Source: state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("focus bound pane before missed mouse: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain bound pane focus: %v", err)
+	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseLeft, Row: 999, Col: 999}); err != nil {
 		t.Fatalf("send missed mouse: %v", err)
 	}
@@ -1282,6 +1292,16 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	}
 	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "q" {
 		t.Fatalf("missed mouse must not steal following terminal input, got %#v", terminal.Inputs)
+	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action: state.PaneCommandFocus,
+		Target: state.PaneCommandTarget{PaneID: "pane-2"},
+		Source: state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("restore split pane focus before copy entry: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split pane focus: %v", err)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {

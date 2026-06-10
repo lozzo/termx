@@ -120,8 +120,9 @@ type LiveResizeResultMsg struct {
 func (LiveResizeResultMsg) isMsg() {}
 
 type LiveInputResultMsg struct {
-	Event input.InputEvent
-	Err   error
+	TerminalID string
+	Event      input.InputEvent
+	Err        error
 }
 
 func (LiveInputResultMsg) isMsg() {}
@@ -150,8 +151,7 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return reduceLiveInput(root, msg, deps)
 		case LiveInputResultMsg:
 			if msg.Err != nil {
-				root.Session = root.Session.SetError(msg.Err.Error())
-				root.Surface = root.Surface.SetError(msg.Err.Error())
+				root = setLiveInputError(root, msg.TerminalID, msg.Err.Error())
 				return root.Advance(), nil
 			}
 			return root, nil
@@ -317,41 +317,82 @@ func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, 
 	if deps.Terminal == nil {
 		return setLiveError(root, "terminal service missing"), nil
 	}
-	if !root.Session.Attached {
-		return setLiveError(root, "terminal is not attached"), nil
-	}
 	if root.CopyMode.Active {
 		return root, []Effect{handledEffect{}}
 	}
+	target, ok := liveInputTarget(root)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.input", Body: "no terminal bound"})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
 	intent := input.RouteWithOptions(msg.Event, input.RouteOptions{
 		CopyModeActive:           root.CopyMode.Active,
-		TerminalMousePassthrough: liveMousePassthroughEnabled(root, msg.Event),
+		TerminalMousePassthrough: liveMousePassthroughEnabled(root, msg.Event, target),
 	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
 		return root, nil
 	}
-	session := root.Session
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
-				TerminalID: session.TerminalID,
-				Channel:    session.Channel,
+				TerminalID: target.TerminalID,
+				Channel:    target.Channel,
 				Event:      msg.Event,
 				Bytes:      intent.Bytes,
 			})
-			return LiveInputResultMsg{Event: msg.Event, Err: err}
+			return LiveInputResultMsg{TerminalID: target.TerminalID, Event: msg.Event, Err: err}
 		},
 	}}
 }
 
-func liveMousePassthroughEnabled(root state.Root, event input.InputEvent) bool {
+type liveInputTargetInfo struct {
+	PaneID     string
+	TerminalID string
+	Channel    uint16
+	Floating   bool
+}
+
+func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
+	shell := root.Shell.EnsureDefaults()
+	for _, floating := range shell.Floatings {
+		if floating.ID != shell.ActiveFloatingID || floating.Pane.TerminalID == "" {
+			continue
+		}
+		target := liveInputTargetInfo{PaneID: floating.Pane.ID, TerminalID: floating.Pane.TerminalID, Floating: true}
+		if channel, ok := root.Session.InputChannelFor(floating.Pane.TerminalID); ok {
+			target.Channel = channel
+		}
+		return target, true
+	}
+	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+	if !ok {
+		return liveInputTargetInfo{}, false
+	}
+	terminalID := pane.TerminalID
+	if terminalID == "" && pane.Kind == state.PaneTerminalLive && root.Session.TerminalID != "" && pane.Active {
+		terminalID = root.Session.TerminalID
+	}
+	if terminalID == "" {
+		return liveInputTargetInfo{}, false
+	}
+	target := liveInputTargetInfo{PaneID: pane.ID, TerminalID: terminalID}
+	if channel, ok := root.Session.InputChannelFor(terminalID); ok {
+		target.Channel = channel
+	}
+	return target, true
+}
+
+func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target liveInputTargetInfo) bool {
 	if event.Kind != input.EventKindMouse || event.RawSeq == "" {
 		return false
 	}
 	if root.Shell.EnsureDefaults().Overlay.Open || root.CopyMode.Active {
 		return false
 	}
-	return root.Surface.Modes.MousePassthroughEnabled()
+	if target.TerminalID == "" {
+		return false
+	}
+	return root.Surface.SurfaceForTerminal(target.TerminalID).Modes.MousePassthroughEnabled()
 }
 
 func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -389,4 +430,21 @@ func setLiveError(root state.Root, message string) state.Root {
 	root.Session = root.Session.SetError(message)
 	root.Surface = root.Surface.SetError(message)
 	return root.Advance()
+}
+
+func setLiveInputError(root state.Root, terminalID string, message string) state.Root {
+	if message == "" {
+		message = "unknown terminal input error"
+	}
+	if terminalID == "" || terminalID == root.Session.TerminalID {
+		root.Session = root.Session.SetError(message)
+		root.Surface = root.Surface.SetError(message)
+		return root
+	}
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{
+		TerminalID: terminalID,
+		State:      state.TerminalLiveError,
+		Err:        message,
+	})
+	return root
 }
