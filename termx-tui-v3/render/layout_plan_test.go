@@ -189,6 +189,39 @@ func TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutClipsContentHitRegionsToContentRect(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{
+				Kind:       ContentCopyHistory,
+				HitRegions: []HitRegion{{Kind: HitRegionHistoryRow, Rect: Rect{X: 2, Y: 0, W: 40, H: 1}, LineID: 42}},
+			},
+		}}},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 12, H: 6})
+	var contentRegion HitRegion
+	for _, region := range plan.HitRegions {
+		if region.Kind == HitRegionHistoryRow {
+			contentRegion = region
+			break
+		}
+	}
+	if contentRegion.Kind != HitRegionHistoryRow {
+		t.Fatalf("expected content hit region, got %#v", plan.HitRegions)
+	}
+	contentRect := plan.Panels[0].ContentRect
+	if contentRegion.Rect.X < contentRect.X || contentRegion.Rect.X+contentRegion.Rect.W > contentRect.X+contentRect.W {
+		t.Fatalf("content hit region must stay inside content rect region=%#v content=%#v", contentRegion, contentRect)
+	}
+	if got, want := contentRegion.Rect.W, contentRect.W-2; got != want {
+		t.Fatalf("wide content hit region should be clipped by content rect got=%d want=%d region=%#v content=%#v", got, want, contentRegion, contentRect)
+	}
+}
+
 func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	shell := ShellVM{
 		Header: HeaderVM{

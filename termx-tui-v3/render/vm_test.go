@@ -35,7 +35,7 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	if len(content.Lines) < 4 || content.Lines[1].PlainString() != "● old" || content.Lines[2].PlainString() != "● new" {
 		t.Fatalf("unexpected copy-history content lines %#v", content.Lines)
 	}
-	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[0].Rect.Y != 1 || content.HitRegions[1].Rect.Y != 2 {
+	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[0].Rect != (Rect{X: 2, Y: 1, W: 3, H: 1}) || content.HitRegions[1].Rect != (Rect{X: 2, Y: 2, W: 3, H: 1}) {
 		t.Fatalf("unexpected hit regions %#v", content.HitRegions)
 	}
 	if !vm.Shell.Cursor.Visible || vm.Shell.Cursor.Row != 2 || vm.Shell.Cursor.Col != 4 {
@@ -312,8 +312,110 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	if !strings.Contains(content.Status, "row 2/3 line:10 part:2 cols:12") || !strings.Contains(content.Status, "span:1-2") {
 		t.Fatalf("expected position status, got %q", content.Status)
 	}
-	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 || content.HitRegions[1].Rect.Y != 2 || content.HitRegions[1].Rect.W <= 12 {
-		t.Fatalf("expected history hit regions with marker width, got %#v", content.HitRegions)
+	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 ||
+		content.HitRegions[1].Rect != (Rect{X: 2, Y: 2, W: 6, H: 1}) {
+		t.Fatalf("expected history hit regions to cover only row text display cells, got %#v", content.HitRegions)
+	}
+}
+
+func TestRenderVMBuilderCopyHistoryHitRegionsUseAuthoritativeDisplayCells(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows: []state.HistoryRow{{
+				Text:   "a好bc",
+				LineID: 10,
+				Cells: []state.HistoryCell{
+					{Text: "a", Width: 1},
+					{Text: "好", Width: 2},
+					{Text: "bc", Width: 2},
+				},
+			}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  12,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if len(content.HitRegions) != 1 {
+		t.Fatalf("expected one history hit region, got %#v", content.HitRegions)
+	}
+	if got, want := content.HitRegions[0].Rect, (Rect{X: copyHistoryMarkerCell(root.History.Rows[0]).Width, Y: 1, W: 5, H: 1}); got != want {
+		t.Fatalf("history hit region should start after marker and use row display width got=%#v want=%#v", got, want)
+	}
+}
+
+func TestRenderVMBuilderCopyHistoryEmptyRowKeepsOneCellHitRegion(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows:       []state.HistoryRow{{Text: "", LineID: 10}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  12,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if len(content.HitRegions) != 1 {
+		t.Fatalf("expected one history hit region, got %#v", content.HitRegions)
+	}
+	if got, want := content.HitRegions[0].Rect, (Rect{X: 2, Y: 1, W: 1, H: 1}); got != want {
+		t.Fatalf("empty authoritative row should keep a one-cell selectable region got=%#v want=%#v", got, want)
+	}
+}
+
+func TestFrameworkRendersCopyHistoryOverflowMarkersOnPaneChrome(t *testing.T) {
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 18, Rows: 8},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       78,
+			Rows: []state.HistoryRow{
+				{Text: "0123456789abcdef", LineID: 10},
+				{Text: "row-2", LineID: 11},
+				{Text: "row-3", LineID: 12},
+				{Text: "row-4", LineID: 13},
+				{Text: "row-5", LineID: 14},
+				{Text: "row-6", LineID: 15},
+				{Text: "row-7", LineID: 16},
+			},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  78,
+		},
+	}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	layer := firstLayer(t, result, LayerPanel)
+	if !layer.ContentOverflow.Right || !layer.ContentOverflow.Bottom {
+		t.Fatalf("copy history overflow should be exposed through panel layer, got %#v", layer.ContentOverflow)
+	}
+	lines := result.Lines()
+	if got := SliceCells(lines[4], 17, 18); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane chrome, got %q frame=%#v", got, lines)
+	}
+	if got := SliceCells(lines[6], 9, 10); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane chrome, got %q frame=%#v", got, lines)
+	}
+	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||
+		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
+		t.Fatalf("overflow markers must stay out of copy history content layer, got %#v", layer.Lines)
 	}
 }
 

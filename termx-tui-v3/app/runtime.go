@@ -579,20 +579,25 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	case render.HitRegionOverlay:
 		return ShellCloseOverlayMsg{}
 	case render.HitRegionHistoryRow:
-		col := inputMsg.Event.Col - region.Rect.X - 1
-		if inputMsg.Event.Col <= 0 {
-			col = 0
-		}
-		col -= 2
-		if col < 0 {
-			col = 0
-		}
+		col := historyHitRegionDisplayColumn(inputMsg.Event, region)
 		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: region.Row, Col: col}}
 	case render.HitRegionContentAction:
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
 		return msg
 	}
+}
+
+func historyHitRegionDisplayColumn(event input.InputEvent, region render.HitRegion) int {
+	col := event.Col - 1
+	if event.Col <= 0 {
+		col = event.Col
+	}
+	col -= region.Rect.X
+	if col < 0 {
+		return 0
+	}
+	return col
 }
 
 func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent) bool {

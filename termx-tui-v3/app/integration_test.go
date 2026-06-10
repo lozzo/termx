@@ -755,6 +755,66 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	}
 }
 
+func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{{
+				Text:   "a好bc",
+				LineID: 10,
+				Cells: []state.HistoryCell{
+					{Text: "a", Width: 1},
+					{Text: "好", Width: 2},
+					{Text: "bc", Width: 2},
+				},
+			}},
+		)}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 8)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	frame := lastFrame(t, host.Frames())
+	var target render.HitRegion
+	for _, region := range frame.HitRegions {
+		if region.Kind == render.HitRegionHistoryRow && region.Row == 0 {
+			target = region
+			break
+		}
+	}
+	if target.Kind == "" || target.Rect.W != 5 {
+		t.Fatalf("expected text-only history row region with display width, got %#v", frame.HitRegions)
+	}
+
+	if err := host.SendInput(input.InputEvent{
+		Kind:  input.EventKindMouse,
+		Mouse: input.MouseLeft,
+		Row:   target.Rect.Y + 1,
+		Col:   target.Rect.X + 1 + 2,
+	}); err != nil {
+		t.Fatalf("send row click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain row click: %v", err)
+	}
+	if got := runtime.State().CopyMode.Cursor; got != (state.CopyPosition{Row: 0, Col: 2}) {
+		t.Fatalf("mouse selection should use display columns, got %#v", got)
+	}
+	if runtime.State().CopyMode.Mark == nil || *runtime.State().CopyMode.Mark != (state.CopyPosition{Row: 0, Col: 2}) {
+		t.Fatalf("mouse selection should set mark at display column, got %#v", runtime.State().CopyMode.Mark)
+	}
+}
+
 func TestSelectedTextSupportsReversedMultiRowSelection(t *testing.T) {
 	history := historyStoreForCopySelection()
 	copyMode := state.CopyModeStore{

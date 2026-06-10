@@ -350,6 +350,7 @@ func appendTranslatedRegions(out []HitRegion, regions []HitRegion, origin Rect, 
 	for _, region := range regions {
 		region.Rect.X += origin.X
 		region.Rect.Y += origin.Y
+		region.Rect = intersectRect(region.Rect, origin)
 		out = appendRegion(out, region, viewport)
 	}
 	return out

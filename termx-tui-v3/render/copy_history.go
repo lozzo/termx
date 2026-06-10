@@ -333,9 +333,14 @@ func copyHistoryHitRegions(history state.HistoryStore, copyMode state.CopyModeSt
 	regions := make([]HitRegion, len(rows))
 	for i, rowIndex := range rows {
 		row := history.Rows[rowIndex]
+		markerWidth := copyHistoryMarkerCell(row).Width
+		rowWidth := state.HistoryRowDisplayWidth(row)
+		if rowWidth == 0 {
+			rowWidth = 1
+		}
 		regions[i] = HitRegion{
 			Kind:   HitRegionHistoryRow,
-			Rect:   Rect{Y: i + 1, W: history.Cols + copyHistoryMarkerCell(row).Width + 2, H: 1},
+			Rect:   Rect{X: markerWidth, Y: i + 1, W: rowWidth, H: 1},
 			LineID: row.LineID,
 			Row:    rowIndex,
 		}
