@@ -162,6 +162,7 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 		{name: "pane r reconnect", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, kind: IntentWorkbenchCommand, command: "pane reconnect"},
 		{name: "pane R restart", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "R"}, kind: IntentWorkbenchCommand, command: "pane restart"},
 		{name: "pane a owner", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "a"}, kind: IntentWorkbenchCommand, command: "pane take-owner"},
+		{name: "pane s layout lock", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "s"}, kind: IntentWorkbenchCommand, command: "terminal layout lock"},
 		{name: "pane percent split right", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, kind: IntentPaneCommand, command: "pane split-right"},
 		{name: "pane quote split down", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, kind: IntentPaneCommand, command: "pane split-down"},
 		{name: "pane ctrl-d split right", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x04", Ctrl: true}, kind: IntentPaneCommand, command: "pane split-right"},
@@ -208,7 +209,7 @@ func TestPaneModeUsesTuiv2KeyboardSplitAliases(t *testing.T) {
 			t.Fatalf("%s: unexpected split intent %#v", tc.name, intent)
 		}
 	}
-	for _, char := range []string{"v", "s"} {
+	for _, char := range []string{"v"} {
 		intent := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: char}, false, InteractionModePane)
 		if intent.Kind != IntentNone {
 			t.Fatalf("legacy split key %q should stay unbound, got %#v", char, intent)

@@ -40,6 +40,7 @@ var bindingCatalog = []Binding{
 	{ID: "pane-reconnect-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "r", Intent: IntentWorkbenchCommand, Command: "pane reconnect"},
 	{ID: "pane-restart-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "R", Intent: IntentWorkbenchCommand, Command: "pane restart"},
 	{ID: "pane-owner-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "a", Intent: IntentWorkbenchCommand, Command: "pane take-owner"},
+	{ID: "pane-lock-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "s", Intent: IntentWorkbenchCommand, Command: "terminal layout lock"},
 	{ID: "pane-split-right-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "%", Intent: IntentPaneCommand, Command: "pane split-right"},
 	{ID: "pane-split-right-ctrl-d", Mode: InteractionModePane, Key: KeyChar, Char: "\x04", Ctrl: true, Intent: IntentPaneCommand, Command: "pane split-right"},
 	{ID: "pane-split-right-ctrl-d-named", Mode: InteractionModePane, Key: KeyChar, Char: "d", Ctrl: true, Intent: IntentPaneCommand, Command: "pane split-right"},

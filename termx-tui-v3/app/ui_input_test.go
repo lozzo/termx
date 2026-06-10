@@ -2121,6 +2121,25 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	}
 }
 
+func TestPaneModeLockUsesViewLocalTerminalLayoutPath(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+
+	next, effects := NewUIInputReducer()(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
+	if len(effects) != 1 {
+		t.Fatalf("pane s should be handled by terminal layout command, got %#v", effects)
+	}
+	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !binding.Layout.SizeLocked {
+		t.Fatalf("pane s should toggle view-local layout lock, got %#v", binding.Layout)
+	}
+
+	next, effects = NewUIInputReducer()(state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
+	if len(effects) != 1 || len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Title != "terminal.layout" {
+		t.Fatalf("pane s without active terminal view should use reducer-owned toast, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	}
+}
+
 func TestOverlayKeyboardCommandsRouteThroughContentActions(t *testing.T) {
 	inputReducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker()}

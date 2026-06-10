@@ -152,6 +152,7 @@
 | pane | `r RECONNECT` | `r` | 打开 Terminal Picker 重连当前 pane |
 | pane | `R RESTART` | `R` | restart 当前 pane 的 terminal |
 | pane | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
+| pane | `s LOCK` | `s` | 复用 view-local terminal layout command，切换 active terminal view size lock |
 | pane | `z ZOOM` | `z` | toggle zoom |
 | pane | `b BALANCE`、`c CARD`、`p LINE` | `b`、`c`、`p` | balance、card presentation、split-line presentation |
 | pane | `w CLOSE` | `w` | close pane |
@@ -172,7 +173,7 @@
 
 | Mode | 快捷键 | 状态 | 缺口 |
 | --- | --- | --- | --- |
-| pane | `s LOCK` | 待实现 | tuiv2 catalog 有 pane mode 展示；当前真实入口收敛到 resize mode 的 view-local terminal layout command，pane mode 对齐排入 215C2 |
+| pane | `s LOCK` | 已实现 | 与 resize mode `s LOCK` 复用同一 view-local terminal layout command；无 active terminal view 时显示 reducer-owned toast |
 | resize | `s LOCK`、`Space LAYOUT`、`Shift+WASD/Shift+Arrow PAN`、`0/$/^/B ALIGN`、`m/|/_ CENTER`、`r RESET` | 已实现 | 状态挂在 `TerminalViewBinding.Layout`，键盘与 footer action 走统一 semantic command，render projector 展示 layout metadata |
 | floating | `o OVERVIEW`、`1-9 SUMMON` | 待实现 | render 仍是 floating overview placeholder，缺 overlay reducer/input，排入 215D |
 | floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 待实现 | 缺 floating group collapse、fit 与 auto-fit state，排入 215D1 |
