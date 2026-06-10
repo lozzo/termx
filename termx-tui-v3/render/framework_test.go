@@ -314,7 +314,7 @@ func TestFrameworkStylesActiveAndInactivePaneChromeDifferently(t *testing.T) {
 func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Header: HeaderVM{Visible: true, Workspace: "main", Tab: "1", ActivePane: "pane-1", TerminalSummary: "term:1", FloatingSummary: "float:0", Notice: "ok"},
-		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", Actions: []string{"^P pane", "^R resize"}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main float:0 terminals:1"},
+		Footer: FooterVM{Visible: true, Mode: "live", Hint: "term-1", Actions: []string{"^P PANE", "^R RESIZE"}, ActiveTarget: "pane:shell term:term-1", GlobalSummary: "ws:main float:0 terminals:1"},
 		Layout: LayoutVM{Viewport: Rect{W: 120, H: 10}, Panels: []PanelVM{{
 			ID:           "pane-1",
 			Title:        "shell",
@@ -531,8 +531,8 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 			Visible: true,
 			Mode:    "live",
 			ActionTokens: []FooterActionVM{
-				{Key: "^P", Label: "pane", Style: StyleStatusAccent},
-				{Key: "x", Label: "close", Style: StyleStatusWarning},
+				{Key: "^P", Label: "PANE", Style: StyleStatusAccent},
+				{Key: "w", Label: "CLOSE", Style: StyleStatusWarning},
 			},
 			GlobalSummary: "ws:main tabs:2 panes:1 float:0",
 		},
@@ -549,10 +549,10 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 		t.Fatalf("header should render structured tab slots, got %#v", frame.Lines[0])
 	}
 	footer := frame.Lines[len(frame.Lines)-1]
-	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "[x] CLOSE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") {
+	if !strings.Contains(footer, "[Ctrl] • [P] PANE") || !strings.Contains(footer, "[w] CLOSE") || !strings.Contains(footer, "ws:main") || !strings.Contains(footer, "float:0") {
 		t.Fatalf("footer should render structured action tokens, got %#v", footer)
 	}
-	if !styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "x", StyleFooterKeyPicker) {
+	if !styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "w", StyleFooterKeyPicker) {
 		t.Fatalf("footer should keep action token style from VM, got %#v", frame.StyledLines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 96)
@@ -665,12 +665,12 @@ func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 		mode string
 		want string
 	}{
-		{name: "pane", mode: "pane", want: "[x] CLOSE"},
+		{name: "pane", mode: "pane", want: "[%] VSPLIT"},
 		{name: "resize", mode: "resize", want: "[←/h]"},
 		{name: "global", mode: "global", want: "[h] HEADER"},
-		{name: "tab", mode: "tab", want: "[n] NEW"},
+		{name: "tab", mode: "tab", want: "[c] NEW"},
 		{name: "workspace", mode: "workspace", want: "[x] DELETE"},
-		{name: "copy", mode: "copy", want: "[pgup] OLDER"},
+		{name: "copy", mode: "copy", want: "[PgUp] SCROLL"},
 		{name: "overlay", mode: "terminal-picker", want: "[enter] SELECT"},
 	}
 	for _, tc := range cases {

@@ -122,6 +122,10 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	if globalFooter.Kind != IntentShellAction || globalFooter.Action != ShellActionToggleFooter {
 		t.Fatalf("expected global footer action, got %#v", globalFooter)
 	}
+	globalPool := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "t"}, false, InteractionModeGlobal)
+	if globalPool.Kind != IntentShellAction || globalPool.Action != ShellActionOpenPool {
+		t.Fatalf("expected global terminal pool action, got %#v", globalPool)
+	}
 	globalPrompt := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: ":"}, false, InteractionModeGlobal)
 	if globalPrompt.Kind != IntentShellAction || globalPrompt.Action != ShellActionOpenPrompt {
 		t.Fatalf("expected global prompt action, got %#v", globalPrompt)
@@ -155,6 +159,10 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 	}{
 		{name: "pane w close", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w"}, kind: IntentWorkbenchCommand, command: "pane close"},
 		{name: "pane d detach", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d"}, kind: IntentWorkbenchCommand, command: "pane detach"},
+		{name: "pane percent split right", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, kind: IntentPaneCommand, command: "pane split-right"},
+		{name: "pane quote split down", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, kind: IntentPaneCommand, command: "pane split-down"},
+		{name: "pane ctrl-d split right", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x04", Ctrl: true}, kind: IntentPaneCommand, command: "pane split-right"},
+		{name: "pane ctrl-e split down", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x05", Ctrl: true}, kind: IntentPaneCommand, command: "pane split-down"},
 		{name: "pane X kill", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "pane kill confirm=accepted"},
 		{name: "resize equals balance", mode: InteractionModeResize, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "="}, kind: IntentPaneCommand, command: "pane balance"},
 		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "tab create"},
@@ -171,11 +179,27 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 	}
 }
 
-func TestPaneModeDoesNotExposeKeyboardSplitAliases(t *testing.T) {
-	for _, char := range []string{"v", "s", "%", "\""} {
+func TestPaneModeUsesTuiv2KeyboardSplitAliases(t *testing.T) {
+	cases := []struct {
+		name  string
+		event InputEvent
+		want  string
+	}{
+		{name: "percent", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, want: "pane split-right"},
+		{name: "ctrl-d", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d", Ctrl: true}, want: "pane split-right"},
+		{name: "quote", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, want: "pane split-down"},
+		{name: "ctrl-e", event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "e", Ctrl: true}, want: "pane split-down"},
+	}
+	for _, tc := range cases {
+		intent := RouteWithMode(tc.event, false, InteractionModePane)
+		if intent.Kind != IntentPaneCommand || intent.Command != tc.want {
+			t.Fatalf("%s: unexpected split intent %#v", tc.name, intent)
+		}
+	}
+	for _, char := range []string{"v", "s"} {
 		intent := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: char}, false, InteractionModePane)
 		if intent.Kind != IntentNone {
-			t.Fatalf("pane split key %q should stay unbound; split is exposed through pane chrome commands, got %#v", char, intent)
+			t.Fatalf("legacy split key %q should stay unbound, got %#v", char, intent)
 		}
 	}
 }

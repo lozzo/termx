@@ -178,10 +178,12 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	switch mode {
 	case "pane":
 		return footerActionSpecs(
-			footerActionFor(ActionPaneFooterClose),
-			footerActionFor(ActionPaneFooterDetach),
 			footerActionFor(ActionPaneFooterFocus),
+			footerActionFor(ActionPaneFooterSplitRight),
+			footerActionFor(ActionPaneFooterSplitDown),
+			footerActionFor(ActionPaneFooterDetach),
 			footerActionFor(ActionPaneFooterZoom),
+			footerActionFor(ActionPaneFooterClose),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case "resize":
@@ -265,7 +267,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionFooterPreviousWorkspace),
 			footerActionFor(ActionFooterNextWorkspace),
 			footerActionFor(ActionFooterRenameWorkspace),
-			footerActionWithKey(ActionFooterOpenTree, "t", "tree"),
+			footerActionWithKey(ActionFooterOpenTree, "f", "PICK"),
 			footerActionFor(ActionFooterDeleteWorkspace),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)

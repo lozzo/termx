@@ -1166,8 +1166,8 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	}
 	assertPaneVisualState(t, keyboardFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, keyboardFrame, "shell", render.StyleMuted)
-	if !frameContains(keyboardFrame, "PANE") || frameContains(keyboardFrame, "[v] SPLIT") {
-		t.Fatalf("footer should reflect pane mode without keyboard split, got %#v", keyboardFrame.Lines)
+	if !frameContains(keyboardFrame, "PANE") || !frameContains(keyboardFrame, "VSPLIT") || !frameContains(keyboardFrame, "HSPLIT") {
+		t.Fatalf("footer should reflect tuiv2 pane split hints, got %#v", keyboardFrame.Lines)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"}); err != nil {
@@ -1304,7 +1304,7 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "T"},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "t"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
 		{Kind: input.EventKindKey, Key: input.KeyEsc},
 	} {
 		if err := host.SendInput(event); err != nil {
@@ -1540,7 +1540,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("resize mode should drive content rect terminal resize")
 	}
 	paneFrame := lastFrame(t, host.Frames())
-	if !frameContains(paneFrame, "PANE") || frameContains(paneFrame, "[v] SPLIT") {
+	if !frameContains(paneFrame, "PANE") || !frameContains(paneFrame, "VSPLIT") || !frameContains(paneFrame, "HSPLIT") {
 		t.Fatalf("expected pane mode footer and active feedback, got %#v", paneFrame.Lines)
 	}
 
@@ -1551,7 +1551,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendChar("L")
 	sendChar("J")
 	sendCtrl("\x07")
-	sendChar("t")
+	sendChar("c")
 	sendKey(input.KeyEsc)
 	floatingFrame := lastFrame(t, host.Frames())
 	if len(runtime.State().Shell.Floatings) != 1 ||
@@ -1635,7 +1635,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendChar("h")
 	sendChar("f")
 	sendChar("T")
-	sendChar("t")
+	sendChar("c")
 	sendKey(input.KeyEsc)
 	shell = runtime.State().Shell.EnsureDefaults()
 	if shell.HeaderVisible || shell.FooterVisible || len(shell.Toasts) != 0 || shell.InteractionMode != state.InteractionModeNormal {
@@ -1791,7 +1791,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	}
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "t"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
 		{Kind: input.EventKindKey, Key: input.KeyEsc},
 	} {
 		if err := host.SendInput(event); err != nil {

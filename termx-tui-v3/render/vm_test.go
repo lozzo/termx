@@ -74,11 +74,11 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	if vm.Shell.Header.Tabs[0].CloseTargetID != "tab-shell" || vm.Shell.Header.Tabs[1].CloseTargetID != "tab-build" {
 		t.Fatalf("header tab close slots should carry target tab ids, got %#v", vm.Shell.Header.Tabs)
 	}
-	if len(vm.Shell.Footer.ActionTokens) == 0 || vm.Shell.Footer.ActionTokens[0].Key != "^P" || vm.Shell.Footer.ActionTokens[0].Label != "pane" {
+	if len(vm.Shell.Footer.ActionTokens) == 0 || vm.Shell.Footer.ActionTokens[0].Key != "^P" || vm.Shell.Footer.ActionTokens[0].Label != "PANE" {
 		t.Fatalf("footer should expose structured action tokens, got %#v", vm.Shell.Footer.ActionTokens)
 	}
 	lastAction := vm.Shell.Footer.ActionTokens[len(vm.Shell.Footer.ActionTokens)-1]
-	if lastAction.Key != "^G" || lastAction.Label != "global" {
+	if lastAction.Key != "^G" || lastAction.Label != "GLOBAL" {
 		t.Fatalf("footer structured tokens should keep compacted labels, got %#v", vm.Shell.Footer.ActionTokens)
 	}
 	if vm.Shell.Footer.ActionTokens[0].ActionID != ActionFooterPaneMode.String() || lastAction.ActionID != ActionFooterGlobalMode.String() {
@@ -157,10 +157,10 @@ func TestRenderVMBuilderBuildsGlobalFooterActionIDs(t *testing.T) {
 	want := map[string]string{
 		"h": ActionFooterToggleHeader.String(),
 		"f": ActionFooterToggleFooter.String(),
-		"p": ActionFooterOpenPool.String(),
+		"t": ActionFooterOpenPool.String(),
 		"w": ActionFooterOpenTree.String(),
 		"T": ActionFooterCloseToast.String(),
-		"t": ActionFooterClearToasts.String(),
+		"c": ActionFooterClearToasts.String(),
 	}
 	for _, action := range actions {
 		if id, ok := want[action.Key]; ok && action.ActionID != id {
@@ -180,14 +180,14 @@ func TestRenderVMBuilderUsesStructuredFooterActionCatalog(t *testing.T) {
 			name: "live",
 			root: state.Root{Shell: state.DefaultShell()},
 			want: []FooterActionVM{
-				{Key: "^P", Label: "pane", ActionID: ActionFooterPaneMode.String()},
-				{Key: "^R", Label: "resize", ActionID: ActionFooterResizeMode.String()},
-				{Key: "^T", Label: "tab", ActionID: ActionFooterTabMode.String()},
-				{Key: "^W", Label: "workspace", ActionID: ActionFooterWorkspaceMode.String()},
-				{Key: "^O", Label: "float", ActionID: ActionFooterFloatingMode.String()},
-				{Key: "^V", Label: "copy", ActionID: ActionFooterCopyMode.String()},
-				{Key: "^F", Label: "picker", ActionID: ActionFooterPicker.String()},
-				{Key: "^G", Label: "global", ActionID: ActionFooterGlobalMode.String()},
+				{Key: "^P", Label: "PANE", ActionID: ActionFooterPaneMode.String()},
+				{Key: "^R", Label: "RESIZE", ActionID: ActionFooterResizeMode.String()},
+				{Key: "^T", Label: "TAB", ActionID: ActionFooterTabMode.String()},
+				{Key: "^W", Label: "WORKSPACE", ActionID: ActionFooterWorkspaceMode.String()},
+				{Key: "^O", Label: "FLOAT", ActionID: ActionFooterFloatingMode.String()},
+				{Key: "^V", Label: "COPY", ActionID: ActionFooterCopyMode.String()},
+				{Key: "^F", Label: "PICKER", ActionID: ActionFooterPicker.String()},
+				{Key: "^G", Label: "GLOBAL", ActionID: ActionFooterGlobalMode.String()},
 			},
 		},
 		{
@@ -872,10 +872,12 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	shell = shell.SetInteractionMode(state.InteractionModePane)
 	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Footer.Mode != "pane" ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "close", ActionPaneFooterClose.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "d", "detach", ActionPaneFooterDetach.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "focus", ActionPaneFooterFocus.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z", "zoom", ActionPaneFooterZoom.String()) {
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "w", "CLOSE", ActionPaneFooterClose.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "d", "DETACH", ActionPaneFooterDetach.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "h/j/k/l", "FOCUS", ActionPaneFooterFocus.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "%", "VSPLIT", ActionPaneFooterSplitRight.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "\"", "HSPLIT", ActionPaneFooterSplitDown.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z", "ZOOM", ActionPaneFooterZoom.String()) {
 		t.Fatalf("expected pane footer structural actions, got %#v", vm.Shell.Footer)
 	}
 	shell = shell.SetInteractionMode(state.InteractionModeResize)
@@ -885,14 +887,14 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "→/l", "", ActionResizeRight.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "↑/k", "", ActionResizeUp.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "↓/j", "", ActionResizeDown.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "b", "balance", ActionResizeBalance.String()) {
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "=", "BALANCE", ActionResizeBalance.String()) {
 		t.Fatalf("expected resize footer structural actions, got %#v", vm.Shell.Footer)
 	}
 	shell = shell.SetInteractionMode(state.InteractionModeFloating)
 	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Footer.Mode != "floating" ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "new", ActionFloatingNew.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "close", ActionFloatingClose.String()) {
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "NEW FLOAT", ActionFloatingNew.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "CLOSE", ActionFloatingClose.String()) {
 		t.Fatalf("expected floating footer structural actions, got %#v", vm.Shell.Footer)
 	}
 
@@ -905,12 +907,12 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		t.Fatalf("expected active workspace header, got %#v", vm.Shell.Header)
 	}
 	if vm.Shell.Footer.Mode != "workspace" ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "new", ActionFooterNewWorkspace.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "h", "prev", ActionFooterPreviousWorkspace.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "l", "next", ActionFooterNextWorkspace.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionFooterRenameWorkspace.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "t", "tree", ActionFooterOpenTree.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "delete", ActionFooterDeleteWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "NEW", ActionFooterNewWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "p", "PREV", ActionFooterPreviousWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "NEXT", ActionFooterNextWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "RENAME", ActionFooterRenameWorkspace.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "f", "PICK", ActionFooterOpenTree.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "DELETE", ActionFooterDeleteWorkspace.String()) ||
 		!strings.Contains(vm.Shell.Footer.GlobalSummary, "ws:remote") {
 		t.Fatalf("expected workspace footer summary, got %#v", vm.Shell.Footer)
 	}
@@ -923,14 +925,14 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	shell = shell.SetInteractionMode(state.InteractionModeTab)
 	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Footer.Mode != "tab" ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "h", "prev", ActionTabPrevious.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "l", "next", ActionTabNext.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "rename", ActionTabRename.String()) {
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "p", "PREV", ActionTabPrevious.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "NEXT", ActionTabNext.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "r", "RENAME", ActionTabRename.String()) {
 		t.Fatalf("expected tab footer rename action, got %#v", vm.Shell.Footer)
 	}
 	shell = shell.SetInteractionMode(state.InteractionModeGlobal)
 	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
-	if vm.Shell.Footer.Mode != "global" || !containsFooterAction(vm.Shell.Footer.ActionTokens, "q", "quit", ActionFooterQuit.String()) {
+	if vm.Shell.Footer.Mode != "global" || !containsFooterAction(vm.Shell.Footer.ActionTokens, "q", "QUIT", ActionFooterQuit.String()) {
 		t.Fatalf("expected global footer quit action, got %#v", vm.Shell.Footer)
 	}
 }
@@ -945,7 +947,7 @@ func TestRenderVMBuilderDerivesFooterModePrecedence(t *testing.T) {
 	copyFooter := builder.Build(state.Root{
 		CopyMode: state.CopyModeStore{Active: true, TerminalID: "term-copy", BoundCols: 80},
 	}).Shell.Footer
-	if !containsFooterAction(copyFooter.ActionTokens, "pgup", "older", ActionCopyOlder.String()) {
+	if !containsFooterAction(copyFooter.ActionTokens, "PgUp", "SCROLL", ActionCopyOlder.String()) {
 		t.Fatalf("expected copy footer older action id, got %#v", copyFooter.ActionTokens)
 	}
 	if got := builder.Build(state.Root{

@@ -118,7 +118,7 @@ func TestActionSpecCatalogClassifiesVisibleClickableAndDispatchActions(t *testin
 	}
 
 	footer := assertSpec(ActionFooterPaneMode, ActionSurfaceFooter, ActionDispatchApp)
-	if footer.FooterKey != "^P" || footer.FooterLabel != "pane" || footer.FooterStyle != StyleFooterKeyPane {
+	if footer.FooterKey != "^P" || footer.FooterLabel != "PANE" || footer.FooterStyle != StyleFooterKeyPane {
 		t.Fatalf("footer action should carry default token metadata, got %#v", footer)
 	}
 
@@ -133,7 +133,7 @@ func TestActionSpecCatalogClassifiesVisibleClickableAndDispatchActions(t *testin
 	}
 
 	copyOlder := assertSpec(ActionCopyOlder, ActionSurfaceFooter, ActionDispatchApp)
-	if copyOlder.FooterKey != "pgup" || copyOlder.HelpLabel == "" {
+	if copyOlder.FooterKey != "PgUp" || copyOlder.HelpLabel == "" {
 		t.Fatalf("copy older action should carry footer and help metadata, got %#v", copyOlder)
 	}
 

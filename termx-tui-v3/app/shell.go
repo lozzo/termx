@@ -334,6 +334,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneDetach, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
 	case render.ActionPaneFooterFocus:
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandFocusNext, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterSplitRight:
+		shell := root.Shell.EnsureDefaults()
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterSplitDown:
+		shell := root.Shell.EnsureDefaults()
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionHorizontal, Source: state.PaneCommandSourceMouse})
 	case render.ActionPaneFooterZoom:
 		shell := root.Shell.EnsureDefaults()
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandToggleZoom, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
