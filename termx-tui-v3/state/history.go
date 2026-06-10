@@ -3,6 +3,9 @@ package state
 import (
 	"errors"
 	"strings"
+
+	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 )
 
 // RequestID 是 TUI 本地请求 id，只用于关联 async response。
@@ -153,11 +156,13 @@ type CopyModeStore struct {
 
 type CopyPosition struct {
 	Row int
+	// Col 是 authoritative visual row 内的 display cell column，不是 rune index。
 	Col int
 }
 
 type CopyMatch struct {
-	Row      int
+	Row int
+	// StartCol/EndCol 使用 display cell column，和 CopyPosition.Col 保持一致。
 	StartCol int
 	EndCol   int
 }
@@ -379,16 +384,140 @@ func FindCopyMatches(history HistoryStore, query string) []CopyMatch {
 		return nil
 	}
 	matches := make([]CopyMatch, 0)
-	queryRunes := []rune(query)
+	queryClusters := textGraphemeClusters(query)
 	for rowIndex, row := range history.Rows {
-		textRunes := []rune(row.Text)
-		for start := 0; start+len(queryRunes) <= len(textRunes); start++ {
-			if string(textRunes[start:start+len(queryRunes)]) == query {
-				matches = append(matches, CopyMatch{Row: rowIndex, StartCol: start, EndCol: start + len(queryRunes)})
+		textClusters := textGraphemeClusters(row.Text)
+		displayColumns := HistoryRowGraphemeDisplayColumns(row)
+		for start := 0; start+len(queryClusters) <= len(textClusters); start++ {
+			if strings.Join(textClusters[start:start+len(queryClusters)], "") == query {
+				matches = append(matches, CopyMatch{
+					Row:      rowIndex,
+					StartCol: displayColumns[start],
+					EndCol:   displayColumns[start+len(queryClusters)],
+				})
 			}
 		}
 	}
 	return matches
+}
+
+func HistoryRowGraphemeDisplayColumns(row HistoryRow) []int {
+	if len(row.Cells) == 0 {
+		return textClusterDisplayColumns(textGraphemeClusters(row.Text))
+	}
+	columns := []int{0}
+	cursor := 0
+	for _, cell := range row.Cells {
+		clusters := textGraphemeClusters(cell.Text)
+		if len(clusters) == 0 {
+			cursor += HistoryCellDisplayWidth(cell)
+			continue
+		}
+		natural := textClusterDisplayColumns(clusters)
+		cellWidth := HistoryCellDisplayWidth(cell)
+		naturalWidth := natural[len(natural)-1]
+		for index := 1; index < len(natural); index++ {
+			columns = append(columns, cursor+scaleDisplayColumn(natural[index], naturalWidth, cellWidth))
+		}
+		cursor += cellWidth
+	}
+	return columns
+}
+
+func HistoryRowDisplayWidth(row HistoryRow) int {
+	if len(row.Cells) == 0 {
+		return textDisplayWidth(row.Text)
+	}
+	width := 0
+	for _, cell := range row.Cells {
+		width += HistoryCellDisplayWidth(cell)
+	}
+	return width
+}
+
+func HistoryCellDisplayWidth(cell HistoryCell) int {
+	if cell.Width > 0 {
+		return cell.Width
+	}
+	return textDisplayWidth(cell.Text)
+}
+
+func HistoryRowSliceDisplay(row HistoryRow, from int, to int) string {
+	width := HistoryRowDisplayWidth(row)
+	from = clampCopyInt(from, 0, width)
+	to = clampCopyInt(to, from, width)
+	if to <= from {
+		return ""
+	}
+	if len(row.Cells) == 0 {
+		return textSliceDisplay(row.Text, from, to)
+	}
+	var builder strings.Builder
+	cursor := 0
+	for _, cell := range row.Cells {
+		cellWidth := HistoryCellDisplayWidth(cell)
+		next := cursor + cellWidth
+		if rangesOverlap(cursor, next, from, to) {
+			builder.WriteString(textSliceDisplay(cell.Text, from-cursor, to-cursor))
+		}
+		cursor = next
+	}
+	return builder.String()
+}
+
+func textClusterDisplayColumns(clusters []string) []int {
+	columns := make([]int, len(clusters)+1)
+	for index, cluster := range clusters {
+		columns[index+1] = columns[index] + textDisplayWidth(cluster)
+	}
+	return columns
+}
+
+func scaleDisplayColumn(column int, naturalWidth int, authoritativeWidth int) int {
+	if naturalWidth <= 0 || naturalWidth == authoritativeWidth {
+		return column
+	}
+	return (column*authoritativeWidth + naturalWidth - 1) / naturalWidth
+}
+
+func textGraphemeClusters(text string) []string {
+	if text == "" {
+		return nil
+	}
+	clusters := make([]string, 0, len([]rune(text)))
+	graphemes := uniseg.NewGraphemes(text)
+	for graphemes.Next() {
+		clusters = append(clusters, graphemes.Str())
+	}
+	return clusters
+}
+
+func textDisplayWidth(text string) int {
+	return xansi.StringWidth(strings.ReplaceAll(text, "\n", " "))
+}
+
+func textSliceDisplay(text string, from int, to int) string {
+	if to <= from {
+		return ""
+	}
+	var builder strings.Builder
+	cursor := 0
+	for _, cluster := range textGraphemeClusters(text) {
+		width := textDisplayWidth(cluster)
+		next := cursor + width
+		if width == 0 {
+			next = cursor
+		}
+		if rangesOverlap(cursor, maxCopyInt(next, cursor+1), from, to) {
+			builder.WriteString(cluster)
+		}
+		cursor += width
+	}
+	return builder.String()
+}
+
+func rangesOverlap(leftFrom int, leftTo int, rightFrom int, rightTo int) bool {
+	return leftFrom < rightTo && rightFrom < leftTo
 }
 
 func (store CopyModeStore) MoveMatch(delta int) CopyModeStore {

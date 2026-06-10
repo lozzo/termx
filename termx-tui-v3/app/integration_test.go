@@ -769,19 +769,33 @@ func TestSelectedTextSupportsReversedMultiRowSelection(t *testing.T) {
 	}
 }
 
-func TestSelectedTextUsesRuneColumns(t *testing.T) {
+func TestSelectedTextUsesDisplayColumns(t *testing.T) {
 	history := state.HistoryStore{
 		Rows: []state.HistoryRow{{Text: "你好abc", LineID: 1}},
 	}
 	copyMode := state.CopyModeStore{
 		Active: true,
 		Selection: &state.CopySelection{
-			Anchor: state.CopyPosition{Row: 0, Col: 1},
-			Focus:  state.CopyPosition{Row: 0, Col: 4},
+			Anchor: state.CopyPosition{Row: 0, Col: 2},
+			Focus:  state.CopyPosition{Row: 0, Col: 5},
 		},
 	}
-	if got := SelectedText(history, copyMode); got != "好ab" {
+	if got := SelectedText(history, copyMode); got != "好a" {
 		t.Fatalf("unexpected selected text %q", got)
+	}
+}
+
+func TestCopyModeLineEndAndClampUseDisplayColumns(t *testing.T) {
+	history := state.HistoryStore{
+		Rows: []state.HistoryRow{{Text: "a好", LineID: 1}},
+	}
+	if got := copyModeLineEndPosition(history, 0); got != (state.CopyPosition{Row: 0, Col: 3}) {
+		t.Fatalf("line end should use display width, got %#v", got)
+	}
+	copyMode := state.CopyModeStore{Cursor: state.CopyPosition{Row: 0, Col: 99}}
+	copyMode = clampCopyCursor(copyMode, history)
+	if copyMode.Cursor != (state.CopyPosition{Row: 0, Col: 3}) {
+		t.Fatalf("clamp should use display width, got %#v", copyMode.Cursor)
 	}
 }
 

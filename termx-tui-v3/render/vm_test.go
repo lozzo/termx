@@ -360,6 +360,92 @@ func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows: []state.HistoryRow{{
+				Text:   "a好bc",
+				LineID: 10,
+				Cells: []state.HistoryCell{
+					{Text: "a", Width: 1, Style: state.HistoryCellStyle{FG: "ansi:2"}},
+					{Text: "好", Width: 2, Style: state.HistoryCellStyle{FG: "ansi:3"}},
+					{Text: "bc", Width: 2, Style: state.HistoryCellStyle{FG: "ansi:4"}},
+				},
+			}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:      true,
+			TerminalID:  "term-1",
+			BoundToken:  "tok-1",
+			BoundCols:   12,
+			Cursor:      state.CopyPosition{Row: 0, Col: 4},
+			Query:       "好b",
+			Matches:     []state.CopyMatch{{Row: 0, StartCol: 1, EndCol: 4}},
+			ActiveMatch: 0,
+			Selection: &state.CopySelection{
+				Anchor: state.CopyPosition{Row: 0, Col: 1},
+				Focus:  state.CopyPosition{Row: 0, Col: 4},
+			},
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if !content.Cursor.Visible || content.Cursor.Col != copyHistoryMarkerCell(root.History.Rows[0]).Width+4 {
+		t.Fatalf("cursor should use display columns, got %#v", content.Cursor)
+	}
+	if !lineHasStyledCell(content.Lines[1], "好", StyleAccent) || !lineHasStyledCell(content.Lines[1], "b", StyleAccent) {
+		t.Fatalf("selection should split styled cells by display columns, got %#v", content.Lines[1])
+	}
+	if lineHasStyledCell(content.Lines[1], "a", StyleAccent) || lineHasStyledCell(content.Lines[1], "c", StyleAccent) {
+		t.Fatalf("selection should not leak outside display-column range, got %#v", content.Lines[1])
+	}
+
+	root.CopyMode.Selection = nil
+	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if !lineHasStyledCell(content.Lines[1], "好", StyleWarning) || !lineHasStyledCell(content.Lines[1], "b", StyleWarning) {
+		t.Fatalf("search should split styled cells by display columns, got %#v", content.Lines[1])
+	}
+	if !lineHasANSICell(content.Lines[1], "a", ANSICellStyle{FG: "ansi:2"}) ||
+		!lineHasANSICell(content.Lines[1], "c", ANSICellStyle{FG: "ansi:4"}) {
+		t.Fatalf("unmatched history cells should preserve ANSI style, got %#v", content.Lines[1])
+	}
+}
+
+func TestRenderVMBuilderCopyHistorySearchUsesGraphemeDisplayColumns(t *testing.T) {
+	family := "👨‍👩‍👧‍👦"
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows: []state.HistoryRow{{
+				Text:   family + "x",
+				LineID: 10,
+			}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:      true,
+			TerminalID:  "term-1",
+			BoundToken:  "tok-1",
+			BoundCols:   12,
+			Query:       family,
+			Matches:     []state.CopyMatch{{Row: 0, StartCol: 0, EndCol: 2}},
+			ActiveMatch: 0,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if !lineHasStyledCell(content.Lines[1], family, StyleWarning) {
+		t.Fatalf("search should highlight emoji grapheme as one display range, got %#v", content.Lines[1])
+	}
+	if lineHasStyledCell(content.Lines[1], "x", StyleWarning) {
+		t.Fatalf("search highlight should not leak into trailing x, got %#v", content.Lines[1])
+	}
+}
+
 func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{

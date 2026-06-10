@@ -78,37 +78,19 @@ func copyHistoryTextCells(text string, row int, selection copySelectionRange, se
 	if !selection.active && !search.active {
 		return []Cell{NewCell(text)}
 	}
-	runes := []rune(text)
+	width := DisplayWidth(text)
 	segments := make([]Cell, 0, 5)
 	cursor := 0
-	for cursor < len(runes) {
-		nextBreak := len(runes)
-		style := StyleToken("")
-		if selection.active && row >= selection.start.Row && row <= selection.end.Row {
-			from, to := selectionColumnsForRow(selection, row, len(runes))
-			if cursor < from {
-				nextBreak = minInt(nextBreak, from)
-			} else if cursor < to {
-				nextBreak = minInt(nextBreak, to)
-				style = StyleAccent
-			}
-		}
-		if search.active {
-			from := clampCopyColumn(search.match.StartCol, 0, len(runes))
-			to := clampCopyColumn(search.match.EndCol, from, len(runes))
-			if cursor < from {
-				nextBreak = minInt(nextBreak, from)
-			} else if cursor < to {
-				nextBreak = minInt(nextBreak, to)
-				if style == "" {
-					style = StyleWarning
-				}
-			}
-		}
+	for cursor < width {
+		nextBreak, style := copyHistoryNextStyleBreak(row, cursor, width, selection, search)
 		if nextBreak <= cursor {
 			nextBreak = cursor + 1
 		}
-		textPart := string(runes[cursor:nextBreak])
+		textPart := SliceCells(text, cursor, nextBreak)
+		if textPart == "" {
+			cursor = nextBreak
+			continue
+		}
 		if style != "" {
 			segments = append(segments, styledCell(textPart, style))
 		} else {
@@ -122,6 +104,111 @@ func copyHistoryTextCells(text string, row int, selection copySelectionRange, se
 	return segments
 }
 
+func copyHistoryNextStyleBreak(row int, cursor int, lineWidth int, selection copySelectionRange, search copySearchRange) (int, StyleToken) {
+	nextBreak := lineWidth
+	style := StyleToken("")
+	if selection.active && row >= selection.start.Row && row <= selection.end.Row {
+		from, to := selectionColumnsForRow(selection, row, lineWidth)
+		if cursor < from {
+			nextBreak = minInt(nextBreak, from)
+		} else if cursor < to {
+			nextBreak = minInt(nextBreak, to)
+			style = StyleAccent
+		}
+	}
+	if search.active {
+		from := clampCopyColumn(search.match.StartCol, 0, lineWidth)
+		to := clampCopyColumn(search.match.EndCol, from, lineWidth)
+		if cursor < from {
+			nextBreak = minInt(nextBreak, from)
+		} else if cursor < to {
+			nextBreak = minInt(nextBreak, to)
+			if style == "" {
+				style = StyleWarning
+			}
+		}
+	}
+	return nextBreak, style
+}
+
+func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, row int, from int, selection copySelectionRange, search copySearchRange) []Cell {
+	if text == "" {
+		return nil
+	}
+	if width <= 0 {
+		width = DisplayWidth(text)
+	}
+	segments := make([]Cell, 0, 3)
+	globalCursor := from
+	globalEnd := from + width
+	for globalCursor < globalEnd {
+		nextBreak, style := copyHistoryNextCellStyleBreak(row, globalCursor, globalEnd, maxInt(globalEnd, selectionLineWidth(selection, row)), selection, search)
+		if nextBreak <= globalCursor {
+			nextBreak = globalCursor + 1
+		}
+		part := SliceCells(text, globalCursor-from, nextBreak-from)
+		if part == "" {
+			globalCursor = nextBreak
+			continue
+		}
+		renderWidth := DisplayWidth(part)
+		if renderWidth <= 0 {
+			renderWidth = len([]rune(part))
+		}
+		if style != "" {
+			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, Style: style, Safe: true})
+		} else {
+			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, ANSIStyle: base, Safe: true})
+		}
+		globalCursor = nextBreak
+	}
+	return segments
+}
+
+func copyHistoryNextCellStyleBreak(row int, cursor int, cellEnd int, lineWidth int, selection copySelectionRange, search copySearchRange) (int, StyleToken) {
+	nextBreak := cellEnd
+	style := StyleToken("")
+	if selection.active && row >= selection.start.Row && row <= selection.end.Row {
+		from, to := selectionColumnsForRow(selection, row, lineWidth)
+		if cursor < from {
+			nextBreak = minInt(nextBreak, from)
+		} else if cursor < to {
+			nextBreak = minInt(nextBreak, to)
+			style = StyleAccent
+		}
+	}
+	if search.active {
+		from := search.match.StartCol
+		to := search.match.EndCol
+		if cursor < from {
+			nextBreak = minInt(nextBreak, from)
+		} else if cursor < to {
+			nextBreak = minInt(nextBreak, to)
+			if style == "" {
+				style = StyleWarning
+			}
+		}
+	}
+	if nextBreak > cellEnd {
+		nextBreak = cellEnd
+	}
+	return nextBreak, style
+}
+
+func selectionLineWidth(selection copySelectionRange, row int) int {
+	if !selection.active || row < selection.start.Row || row > selection.end.Row {
+		return 0
+	}
+	width := 0
+	if row == selection.start.Row {
+		width = maxInt(width, selection.start.Col)
+	}
+	if row == selection.end.Row {
+		width = maxInt(width, selection.end.Col)
+	}
+	return width
+}
+
 func copyHistoryRowCells(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange) []Cell {
 	if len(row.Cells) == 0 {
 		return copyHistoryTextCells(row.Text, rowIndex, selection, search)
@@ -129,11 +216,9 @@ func copyHistoryRowCells(row state.HistoryRow, rowIndex int, selection copySelec
 	out := make([]Cell, 0, len(row.Cells))
 	cursor := 0
 	for _, historyCell := range row.Cells {
-		cellText := historyCell.Text
-		cellRunes := len([]rune(cellText))
-		style := copyHistoryOverrideStyle(rowIndex, cursor, cursor+cellRunes, selection, search)
-		out = append(out, renderCellFromHistory(historyCell, style))
-		cursor += cellRunes
+		cellWidth := state.HistoryCellDisplayWidth(historyCell)
+		out = append(out, renderCellsFromHistory(historyCell, rowIndex, cursor, selection, search)...)
+		cursor += cellWidth
 	}
 	if len(out) == 0 {
 		return []Cell{NewCell(row.Text)}
@@ -141,29 +226,7 @@ func copyHistoryRowCells(row state.HistoryRow, rowIndex int, selection copySelec
 	return out
 }
 
-func copyHistoryOverrideStyle(row int, from int, to int, selection copySelectionRange, search copySearchRange) StyleToken {
-	style := StyleToken("")
-	if selection.active && row >= selection.start.Row && row <= selection.end.Row {
-		selectionFrom, selectionTo := selectionColumnsForRow(selection, row, to)
-		if rangesOverlap(from, to, selectionFrom, selectionTo) {
-			style = StyleAccent
-		}
-	}
-	if search.active {
-		searchFrom := clampCopyColumn(search.match.StartCol, 0, to)
-		searchTo := clampCopyColumn(search.match.EndCol, searchFrom, to)
-		if rangesOverlap(from, to, searchFrom, searchTo) && style == "" {
-			style = StyleWarning
-		}
-	}
-	return style
-}
-
-func rangesOverlap(leftFrom int, leftTo int, rightFrom int, rightTo int) bool {
-	return leftFrom < rightTo && rightFrom < leftTo
-}
-
-func renderCellFromHistory(cell state.HistoryCell, override StyleToken) Cell {
+func renderCellsFromHistory(cell state.HistoryCell, row int, from int, selection copySelectionRange, search copySearchRange) []Cell {
 	text := SafeLine(cell.Text)
 	width := cell.Width
 	if width <= 0 {
@@ -172,15 +235,15 @@ func renderCellFromHistory(cell state.HistoryCell, override StyleToken) Cell {
 	if width <= 0 {
 		width = len([]rune(text))
 	}
-	if override != "" {
-		return Cell{Text: text, Width: width, Style: override, Safe: true}
+	if selection.active || search.active {
+		return copyHistoryStyledTextCells(text, width, ansiStyleFromHistory(cell.Style), row, from, selection, search)
 	}
-	return Cell{
+	return []Cell{{
 		Text:      text,
 		Width:     width,
 		ANSIStyle: ansiStyleFromHistory(cell.Style),
 		Safe:      true,
-	}
+	}}
 }
 
 func ansiStyleFromHistory(style state.HistoryCellStyle) ANSICellStyle {
@@ -233,13 +296,11 @@ func copyHistoryCursor(history state.HistoryStore, copyMode state.CopyModeStore)
 	if visibleRow < 1 {
 		visibleRow = 1
 	}
-	text := history.Rows[row].Text
-	runes := []rune(text)
-	colRunes := clampCopyColumn(copyMode.Cursor.Col, 0, len(runes))
+	col := clampCopyColumn(copyMode.Cursor.Col, 0, state.HistoryRowDisplayWidth(history.Rows[row]))
 	return Cursor{
 		Visible: true,
 		Row:     visibleRow,
-		Col:     copyHistoryMarkerCell(history.Rows[row]).Width + DisplayWidth(string(runes[:colRunes])),
+		Col:     copyHistoryMarkerCell(history.Rows[row]).Width + col,
 		Shape:   CursorShapeBlock,
 	}
 }

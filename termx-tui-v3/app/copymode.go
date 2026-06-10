@@ -278,7 +278,7 @@ func copyModeLineEndPosition(history state.HistoryStore, row int) state.CopyPosi
 		return state.CopyPosition{}
 	}
 	row = clampColumn(row, 0, len(history.Rows)-1)
-	return state.CopyPosition{Row: row, Col: len([]rune(history.Rows[row].Text))}
+	return state.CopyPosition{Row: row, Col: state.HistoryRowDisplayWidth(history.Rows[row])}
 }
 
 func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
@@ -432,19 +432,18 @@ func SelectedText(history state.HistoryStore, copyMode state.CopyModeStore) stri
 	}
 	lines := make([]string, 0, end.Row-start.Row+1)
 	for row := start.Row; row <= end.Row; row++ {
-		runes := []rune(history.Rows[row].Text)
 		from := 0
-		to := len(runes)
+		to := state.HistoryRowDisplayWidth(history.Rows[row])
 		if row == start.Row {
-			from = clampColumn(start.Col, 0, len(runes))
+			from = clampColumn(start.Col, 0, to)
 		}
 		if row == end.Row {
-			to = clampColumn(end.Col, 0, len(runes))
+			to = clampColumn(end.Col, 0, to)
 		}
 		if from > to {
 			from, to = to, from
 		}
-		lines = append(lines, string(runes[from:to]))
+		lines = append(lines, state.HistoryRowSliceDisplay(history.Rows[row], from, to))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -480,7 +479,7 @@ func clampCopyCursor(copyMode state.CopyModeStore, history state.HistoryStore) s
 		return copyMode
 	}
 	row := clampColumn(copyMode.Cursor.Row, 0, len(history.Rows)-1)
-	col := clampColumn(copyMode.Cursor.Col, 0, len([]rune(history.Rows[row].Text)))
+	col := clampColumn(copyMode.Cursor.Col, 0, state.HistoryRowDisplayWidth(history.Rows[row]))
 	copyMode.Cursor = state.CopyPosition{Row: row, Col: col}
 	return copyMode
 }

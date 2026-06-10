@@ -287,6 +287,99 @@ func TestCopyModeSearchMatchesAndScrollClamp(t *testing.T) {
 	}
 }
 
+func TestCopyModeSearchMatchesUseDisplayColumns(t *testing.T) {
+	history := HistoryStore{Rows: []HistoryRow{
+		{Text: "a好bc", LineID: 1},
+		{Text: "x好b", LineID: 2, Cells: []HistoryCell{
+			{Text: "x", Width: 1},
+			{Text: "好", Width: 2},
+			{Text: "b", Width: 1},
+		}},
+	}}
+	matches := FindCopyMatches(history, "好b")
+	if len(matches) != 2 {
+		t.Fatalf("expected two display-column matches, got %#v", matches)
+	}
+	if matches[0] != (CopyMatch{Row: 0, StartCol: 1, EndCol: 4}) || matches[1] != (CopyMatch{Row: 1, StartCol: 1, EndCol: 4}) {
+		t.Fatalf("matches should use display columns, got %#v", matches)
+	}
+	copyMode := (CopyModeStore{}).SetQuery("好b", matches)
+	if copyMode.Cursor != (CopyPosition{Row: 0, Col: 1}) {
+		t.Fatalf("cursor should use match display column, got %#v", copyMode.Cursor)
+	}
+}
+
+func TestCopyModeSearchMatchesUseGraphemeDisplayColumns(t *testing.T) {
+	family := "👨‍👩‍👧‍👦"
+	history := HistoryStore{Rows: []HistoryRow{
+		{Text: family + "x", LineID: 1},
+		{Text: "e\u0301x", LineID: 2},
+	}}
+	familyMatches := FindCopyMatches(history, family)
+	if len(familyMatches) != 1 || familyMatches[0] != (CopyMatch{Row: 0, StartCol: 0, EndCol: 2}) {
+		t.Fatalf("emoji family match should use grapheme display columns, got %#v", familyMatches)
+	}
+	xMatches := FindCopyMatches(history, "x")
+	if len(xMatches) != 2 || xMatches[0] != (CopyMatch{Row: 0, StartCol: 2, EndCol: 3}) || xMatches[1] != (CopyMatch{Row: 1, StartCol: 1, EndCol: 2}) {
+		t.Fatalf("following x matches should not be swallowed by previous grapheme, got %#v", xMatches)
+	}
+	combiningMatches := FindCopyMatches(history, "e\u0301")
+	if len(combiningMatches) != 1 || combiningMatches[0] != (CopyMatch{Row: 1, StartCol: 0, EndCol: 1}) {
+		t.Fatalf("combining mark match should use one display column, got %#v", combiningMatches)
+	}
+}
+
+func TestCopyModeSearchMatchesUseAuthoritativeCellWidth(t *testing.T) {
+	history := HistoryStore{Rows: []HistoryRow{{
+		Text:   "abx",
+		LineID: 1,
+		Cells: []HistoryCell{
+			{Text: "ab", Width: 4},
+			{Text: "x", Width: 1},
+		},
+	}}}
+	matches := FindCopyMatches(history, "x")
+	if len(matches) != 1 || matches[0] != (CopyMatch{Row: 0, StartCol: 4, EndCol: 5}) {
+		t.Fatalf("match should use authoritative history cell width, got %#v", matches)
+	}
+}
+
+func TestHistoryRowGraphemeDisplayColumnsUsesAuthoritativeCellWidth(t *testing.T) {
+	row := HistoryRow{Text: "abx", Cells: []HistoryCell{
+		{Text: "ab", Width: 4},
+		{Text: "x", Width: 1},
+	}}
+	if got := HistoryRowGraphemeDisplayColumns(row); !reflect.DeepEqual(got, []int{0, 2, 4, 5}) {
+		t.Fatalf("unexpected authoritative grapheme columns %#v", got)
+	}
+}
+
+func TestHistoryRowSliceDisplayUsesDisplayColumns(t *testing.T) {
+	row := HistoryRow{Text: "a好bc", Cells: []HistoryCell{
+		{Text: "a", Width: 1},
+		{Text: "好", Width: 2},
+		{Text: "bc", Width: 2},
+	}}
+	if got := HistoryRowDisplayWidth(row); got != 5 {
+		t.Fatalf("unexpected display width %d", got)
+	}
+	if got := HistoryRowSliceDisplay(row, 1, 4); got != "好b" {
+		t.Fatalf("display slice should include full wide cell and following ASCII, got %q", got)
+	}
+}
+
+func TestHistoryRowSliceDisplayUsesAuthoritativeCellWidth(t *testing.T) {
+	row := HistoryRow{Text: "ab", Cells: []HistoryCell{
+		{Text: "ab", Width: 4},
+	}}
+	if got := HistoryRowDisplayWidth(row); got != 4 {
+		t.Fatalf("display width should use authoritative cell width, got %d", got)
+	}
+	if got := HistoryRowSliceDisplay(row, 0, 4); got != "ab" {
+		t.Fatalf("full-width slice should preserve cell text, got %q", got)
+	}
+}
+
 func historyWindow(
 	op HistoryWindowOp,
 	terminalID string,
