@@ -859,6 +859,53 @@ func TestRenderVMBuilderDoesNotApplyLiveExtentToStatusFallbacks(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderDoesNotApplyResizeBoundaryExtentToStatusFallbacks(t *testing.T) {
+	cases := []struct {
+		name string
+		root state.Root
+		want string
+	}{
+		{
+			name: "pending after resize",
+			root: state.Root{
+				Surface: state.TerminalSurfaceStore{
+					TerminalID:     "term-live",
+					Cols:           98,
+					Rows:           36,
+					ResizeBoundary: state.LiveResizeBoundary{Active: true, PreviousCols: 78, PreviousRows: 20, Cols: 98, Rows: 36},
+				},
+				Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 98, Rows: 36},
+			},
+			want: "live surface pending",
+		},
+		{
+			name: "exited after resize",
+			root: state.Root{
+				Surface: state.TerminalSurfaceStore{
+					TerminalID: "term-live",
+					Cols:       98,
+					Rows:       36,
+					State:      state.TerminalLiveExited,
+					ExitCode:   0,
+				},
+				Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 98, Rows: 36, State: state.TerminalLiveExited},
+			},
+			want: "terminal exited: term-live code:0",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			content := activeContent(NewRenderVMBuilder().Build(tc.root).Shell)
+			if content.Extent.Known {
+				t.Fatalf("resize fallback must not enable live extent dots, got %#v", content.Extent)
+			}
+			if got := content.Lines[0].PlainString(); got != tc.want {
+				t.Fatalf("unexpected fallback content got=%q want=%q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRenderVMBuilderUsesSessionSizeAsLiveExtentWhenSurfaceSizeMissing(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{

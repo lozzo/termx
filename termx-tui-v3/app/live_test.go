@@ -521,6 +521,240 @@ func TestHostResizeUsesActiveContentRectAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestLiveResizeKeepsLatestContentRectAndIgnoresOldSizeSurface(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		Cols:       78,
+		Rows:       20,
+		Lines:      []string{"before resize"},
+	}}); err != nil {
+		t.Fatalf("post initial surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial surface: %v", err)
+	}
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send host resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain host resize: %v", err)
+	}
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 98 || got.Rows != 36 {
+		t.Fatalf("host resize must use latest content rect, got %#v", got)
+	}
+	if runtime.State().Surface.Cols != 98 || runtime.State().Surface.Rows != 36 {
+		t.Fatalf("surface resize boundary should project latest content rect, got %#v", runtime.State().Surface)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       78,
+		Rows:       20,
+		Lines:      []string{"late old size"},
+	}}); err != nil {
+		t.Fatalf("post old-size surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain old-size surface: %v", err)
+	}
+	oldSizeFrame := lastFrame(t, host.Frames())
+	if frameContains(oldSizeFrame, "late old size") || runtime.State().Surface.Cols != 98 || runtime.State().Surface.Rows != 36 {
+		t.Fatalf("late old-size surface must not roll back resized frame/state, frame=%#v state=%#v", oldSizeFrame.Lines, runtime.State().Surface)
+	}
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       98,
+		Rows:       36,
+		Lines:      []string{"after resize"},
+		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 5, Shape: "bar"},
+		Modes:      state.LiveTerminalModes{MouseTracking: true, MouseSGR: true},
+	}}); err != nil {
+		t.Fatalf("post resized surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain resized surface: %v", err)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "after resize") || frameContains(frame, "late old size") {
+		t.Fatalf("expected resized live surface only, got %#v", frame.Lines)
+	}
+	if runtime.State().Surface.Cols != 98 || runtime.State().Surface.Rows != 36 || runtime.State().Surface.ResizeBoundary.Active {
+		t.Fatalf("matching resized surface should clear resize boundary, got %#v", runtime.State().Surface)
+	}
+	if !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("resized live surface should preserve cursor, got %#v", frame.Cursor)
+	}
+	vm := render.NewRenderVMBuilder().Build(runtime.State())
+	panel, ok := activePanelVMForAppTest(vm.Shell)
+	if !ok {
+		t.Fatalf("expected active panel VM, got %#v", vm.Shell.Layout.Panels)
+	}
+	if panel.Content.Extent != (render.ContentExtent{Known: true, Cols: 98, Rows: 36}) {
+		t.Fatalf("active content should expose resized live extent, got %#v", panel.Content.Extent)
+	}
+	layout := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
+	contentRect, ok := activeContentRectForAppTest(layout)
+	if !ok || contentRect.W != 98 || contentRect.H != 36 {
+		t.Fatalf("layout should allocate resized active content rect, rect=%#v ok=%v layout=%#v", contentRect, ok, layout)
+	}
+	wantCursorRect := render.Rect{X: contentRect.X + 5, Y: contentRect.Y + 1, W: 1, H: 1}
+	if frame.CursorRect != wantCursorRect || layout.CursorRect != wantCursorRect {
+		t.Fatalf("cursor should stay content-local after resize, frame=%#v layout=%#v want=%#v", frame.CursorRect, layout.CursorRect, wantCursorRect)
+	}
+	if !runtime.State().Surface.Modes.MousePassthroughEnabled() {
+		t.Fatalf("resized live surface should preserve mouse modes, got %#v", runtime.State().Surface.Modes)
+	}
+	for i, line := range frame.Lines {
+		if width := render.DisplayWidth(line); width != 100 {
+			t.Fatalf("resized frame row %d width=%d want=100 line=%q", i, width, line)
+		}
+	}
+}
+
+func TestLiveResizeFallbacksDoNotUseResizeBoundaryDots(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send host resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain host resize: %v", err)
+	}
+
+	pendingFrame := lastFrame(t, host.Frames())
+	if !frameContains(pendingFrame, "live surface pending") {
+		t.Fatalf("expected pending fallback after resize without surface, got %#v", pendingFrame.Lines)
+	}
+	pendingLayer, ok := firstPanelLayerForAppTest(render.NewRenderer(render.DefaultTheme()).RenderResult(render.NewRenderVMBuilder().Build(runtime.State())))
+	if !ok {
+		t.Fatalf("expected pending panel layer")
+	}
+	if panelLayerContainsPlainForAppTest(pendingLayer, "·") {
+		t.Fatalf("pending fallback should not be filled by resize-boundary dots, got %#v", pendingLayer.Lines)
+	}
+
+	if err := runtime.Post(LiveExitMsg{TerminalID: "term-1", ExitCode: 0}); err != nil {
+		t.Fatalf("post exit: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exit: %v", err)
+	}
+	exitFrame := lastFrame(t, host.Frames())
+	if !frameContains(exitFrame, "terminal exited: term-1 code:0") {
+		t.Fatalf("expected exited fallback after resize, got %#v", exitFrame.Lines)
+	}
+	exitLayer, ok := firstPanelLayerForAppTest(render.NewRenderer(render.DefaultTheme()).RenderResult(render.NewRenderVMBuilder().Build(runtime.State())))
+	if !ok {
+		t.Fatalf("expected exited panel layer")
+	}
+	if panelLayerContainsPlainForAppTest(exitLayer, "·") {
+		t.Fatalf("exited fallback should not be filled by resize-boundary dots, got %#v", exitLayer.Lines)
+	}
+}
+
+func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 40)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 40}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendResize(80, 24); err != nil {
+		t.Fatalf("send shrink resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain shrink resize: %v", err)
+	}
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 78 || got.Rows != 20 {
+		t.Fatalf("shrunk viewport should resize terminal to content rect, got %#v", got)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       120,
+		Rows:       30,
+		Lines:      []string{"terminal output should clip along right edge after resize"},
+	}}); err != nil {
+		t.Fatalf("post oversized surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain oversized surface: %v", err)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "terminal output should clip") {
+		t.Fatalf("expected oversized live surface content, got %#v", frame.Lines)
+	}
+	result := render.NewRenderer(render.DefaultTheme()).RenderResult(render.NewRenderVMBuilder().Build(runtime.State()))
+	panelLayer, ok := firstPanelLayerForAppTest(result)
+	if !ok || !panelLayer.ContentOverflow.Right || !panelLayer.ContentOverflow.Bottom {
+		t.Fatalf("live resize overflow should be exposed through panel layer, layer=%#v ok=%v", panelLayer, ok)
+	}
+	rightMarkerRow := panelLayer.Rect.Y + panelLayer.Rect.H/2
+	rightMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 1
+	if got := render.SliceCells(frame.Lines[rightMarkerRow], rightMarkerCol, rightMarkerCol+1); got != ">" {
+		t.Fatalf("right overflow marker should be on pane chrome, got %q frame=%#v", got, frame.Lines)
+	}
+	bottomMarkerRow := panelLayer.Rect.Y + panelLayer.Rect.H - 1
+	bottomMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W/2
+	if got := render.SliceCells(frame.Lines[bottomMarkerRow], bottomMarkerCol, bottomMarkerCol+1); got != "v" {
+		t.Fatalf("bottom overflow marker should be on pane chrome, got %q frame=%#v", got, frame.Lines)
+	}
+	for _, line := range panelLayer.Lines {
+		if strings.Contains(line.PlainString(), ">") || strings.Contains(line.PlainString(), "v") {
+			t.Fatalf("overflow markers must stay out of panel content layer, got %#v", panelLayer.Lines)
+		}
+	}
+	for i, line := range frame.Lines {
+		if width := render.DisplayWidth(line); width != 80 {
+			t.Fatalf("shrunk frame row %d width=%d want=80 line=%q", i, width, line)
+		}
+	}
+}
+
 func TestHostResizeUsesBusinessActivePaneWhenFloatingOwnsVisualFocus(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)
@@ -851,6 +1085,42 @@ func frameContains(frame render.Frame, value string) bool {
 func ansiFrameContains(frame render.Frame, value string) bool {
 	for _, line := range frame.ANSILines {
 		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func activePanelVMForAppTest(shell render.ShellVM) (render.PanelVM, bool) {
+	for _, panel := range shell.Layout.Panels {
+		if panel.Active {
+			return panel, true
+		}
+	}
+	return render.PanelVM{}, false
+}
+
+func activeContentRectForAppTest(layout render.LayoutPlan) (render.Rect, bool) {
+	for _, panel := range layout.Panels {
+		if panel.Panel.Active {
+			return panel.ContentRect, true
+		}
+	}
+	return render.Rect{}, false
+}
+
+func firstPanelLayerForAppTest(result render.RenderResult) (render.Layer, bool) {
+	for _, layer := range result.Layers {
+		if layer.Kind == render.LayerPanel {
+			return layer, true
+		}
+	}
+	return render.Layer{}, false
+}
+
+func panelLayerContainsPlainForAppTest(layer render.Layer, value string) bool {
+	for _, line := range layer.Lines {
+		if strings.Contains(line.PlainString(), value) {
 			return true
 		}
 	}
