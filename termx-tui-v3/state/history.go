@@ -44,6 +44,8 @@ type HistoryBoundary struct {
 type HistoryPendingRequest struct {
 	ID              RequestID
 	Kind            HistoryRequestKind
+	PaneID          string
+	ViewID          string
 	TerminalID      string
 	Cols            int
 	Token           string
@@ -95,6 +97,8 @@ type HistoryLineSpan struct {
 
 // HistoryWindow 是 state 层使用的 core-v2 authoritative window DTO。
 type HistoryWindow struct {
+	ViewID       string
+	PaneID       string
 	TerminalID   string
 	Token        string
 	Op           HistoryWindowOp
@@ -112,6 +116,8 @@ type HistoryWindow struct {
 
 // HistoryStore 只保存 authoritative window、请求状态和 exhausted marker。
 type HistoryStore struct {
+	ViewID     string
+	PaneID     string
 	TerminalID string
 	Token      string
 	Cols       int
@@ -149,6 +155,7 @@ const (
 type CopyModeStore struct {
 	Active      bool
 	PaneID      string
+	ViewID      string
 	TerminalID  string
 	ViewportTop int
 	ViewRows    int
@@ -242,6 +249,8 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 
 func (store HistoryStore) InvalidateWindow() HistoryStore {
 	store.Token = ""
+	store.ViewID = ""
+	store.PaneID = ""
 	store.Cols = 0
 	store.Rows = nil
 	store.Lines = nil
@@ -275,6 +284,12 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 	if pending.TerminalID != "" && pending.TerminalID != window.TerminalID {
 		return ErrHistoryWindowMismatch
 	}
+	if pending.ViewID != "" && pending.ViewID != window.ViewID {
+		return ErrStaleHistoryResponse
+	}
+	if pending.PaneID != "" && window.PaneID != "" && pending.PaneID != window.PaneID {
+		return ErrStaleHistoryResponse
+	}
 	if pending.Cols != 0 && pending.Cols != window.Cols {
 		return ErrHistoryWindowMismatch
 	}
@@ -303,6 +318,8 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 }
 
 func (store HistoryStore) replace(window HistoryWindow) HistoryStore {
+	store.ViewID = window.ViewID
+	store.PaneID = window.PaneID
 	store.TerminalID = window.TerminalID
 	store.Token = window.Token
 	store.Cols = window.Cols
@@ -328,8 +345,10 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	return store
 }
 
-func (store CopyModeStore) BindLatest(terminalID string, requestID RequestID, cols int, rows int) CopyModeStore {
+func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID string, requestID RequestID, cols int, rows int) CopyModeStore {
 	store.Active = true
+	store.PaneID = paneID
+	store.ViewID = viewID
 	store.TerminalID = terminalID
 	store.RequestID = requestID
 	store.BoundCols = cols
@@ -339,6 +358,8 @@ func (store CopyModeStore) BindLatest(terminalID string, requestID RequestID, co
 }
 
 func (store CopyModeStore) AcceptLatest(window HistoryWindow) CopyModeStore {
+	store.PaneID = window.PaneID
+	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
 	store.BoundToken = window.Token
 	store.BoundCols = window.Cols

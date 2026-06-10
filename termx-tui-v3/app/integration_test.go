@@ -176,12 +176,18 @@ func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) 
 	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Shell:   state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
 		Viewport: state.ViewportStore{
 			Valid: true,
 			Cols:  80,
 			Rows:  24,
 		},
 		History: state.HistoryStore{
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
 			TerminalID: "term-1",
 			Token:      "tok-1",
 			Cols:       78,
@@ -245,6 +251,7 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	runtime := NewInteractiveRuntime(
 		state.Root{
+			Shell: state.DefaultShell(),
 			Session: state.TerminalSessionStore{
 				TerminalID: "term-1",
 				Attached:   true,
@@ -257,6 +264,9 @@ func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 				Rows:       24,
 				Lines:      []string{"live"},
 			},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+				state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+			)),
 		},
 		host,
 		NewSyncEffectRunner(),
@@ -394,6 +404,10 @@ func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing
 	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Shell:   state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
 		Viewport: state.ViewportStore{
 			Valid: true,
 			Cols:  100,
@@ -412,6 +426,8 @@ func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing
 		},
 		CopyMode: state.CopyModeStore{
 			Active:      true,
+			PaneID:      state.DefaultPaneID,
+			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
 			TerminalID:  "term-1",
 			BoundToken:  "tok-old",
 			BoundCols:   78,
@@ -445,6 +461,10 @@ func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing
 func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *testing.T) {
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Shell:   state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
 			Lines:      []string{"live-fallback"},
@@ -455,6 +475,8 @@ func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *tes
 			Rows:  40,
 		},
 		History: state.HistoryStore{
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
 			TerminalID: "term-1",
 			Token:      "tok-old",
 			Cols:       78,
@@ -462,6 +484,8 @@ func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *tes
 		},
 		CopyMode: state.CopyModeStore{
 			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
 			TerminalID: "term-1",
 			BoundToken: "tok-old",
 			BoundCols:  78,
@@ -487,6 +511,8 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
 	runtime.state.Surface.Lines = []string{"live-fallback"}
 	runtime.state.History = state.HistoryStore{
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
 		TerminalID: "term-1",
 		Token:      "tok-old",
 		Cols:       78,
@@ -494,6 +520,8 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 	}
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
 		TerminalID: "term-1",
 		BoundToken: "tok-old",
 		BoundCols:  78,
@@ -526,6 +554,10 @@ func TestCopyModeResizeRowsOnlyKeepsWindowAndDoesNotRequestLatest(t *testing.T) 
 	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
 		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Shell:   state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
 		Viewport: state.ViewportStore{
 			Valid: true,
 			Cols:  80,
@@ -676,8 +708,10 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := newCopyModeRuntime(host, core, nil)
-	runtime.state.CopyMode = state.CopyModeStore{Active: true, TerminalID: "term-1", BoundToken: "tok-1", BoundCols: 78}
+	runtime.state.CopyMode = state.CopyModeStore{Active: true, PaneID: state.DefaultPaneID, ViewID: state.TerminalPaneViewID(state.DefaultPaneID), TerminalID: "term-1", BoundToken: "tok-1", BoundCols: 78}
 	runtime.state.History = state.HistoryStore{
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
 		TerminalID: "term-1",
 		Token:      "tok-1",
 		Cols:       78,
@@ -711,7 +745,7 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 		t.Fatalf("expected stale cols error, got %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
-	if frameContains(last, "old-window") || frameContains(last, "stale") {
+	if frameContains(last, "old-window") || frameContains(last, "│stale") {
 		t.Fatalf("stale resize response must not render old rows, got %#v", last.Lines)
 	}
 }
@@ -1176,6 +1210,7 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 	}
 	return NewAppRuntime(
 		state.Root{
+			Shell: state.DefaultShell(),
 			Session: state.TerminalSessionStore{
 				TerminalID: "term-1",
 				Attached:   true,
@@ -1188,6 +1223,9 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 				Rows:       24,
 				Lines:      []string{"live"},
 			},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+				state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+			)),
 		},
 		ComposeReducers(
 			NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),

@@ -839,6 +839,7 @@ func terminalIDForContentAction(root state.Root, paneID string) string {
 func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {
 	command = command.WithDefaults(root.Shell)
 	targetPane, hasTargetPane := root.Shell.Pane(command.Target)
+	command = inheritSplitTerminalPane(root, command, targetPane, hasTargetPane)
 	nextShell, result := root.Shell.ApplyPaneCommand(command)
 	if result.Status == state.PaneCommandOK {
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
@@ -849,6 +850,31 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	}
 	root.Shell = addPaneCommandToast(root.Shell, command, result)
 	return root.Advance(), []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
+}
+
+func inheritSplitTerminalPane(root state.Root, command state.PaneCommand, targetPane state.PaneState, hasTargetPane bool) state.PaneCommand {
+	if command.Action != state.PaneCommandSplit || command.NewPane.TerminalID != "" {
+		return command
+	}
+	if command.NewPane.Kind == state.PaneEmpty {
+		return command
+	}
+	terminalID := ""
+	if hasTargetPane {
+		terminalID = targetPane.TerminalID
+		if binding, ok := root.TerminalViews.PaneBinding(targetPane.ID); ok && binding.TerminalID != "" {
+			terminalID = binding.TerminalID
+		}
+	}
+	if terminalID == "" {
+		return command
+	}
+	command.NewPane.TerminalID = terminalID
+	command.NewPane.Kind = state.PaneTerminalLive
+	if command.NewPane.Title == "" || command.NewPane.Title == command.NewPane.ID || command.NewPane.Title == "pane" {
+		command.NewPane.Title = terminalID
+	}
+	return command
 }
 
 func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (state.Root, []Effect) {
@@ -883,6 +909,30 @@ func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (st
 
 func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneCommand, targetPane state.PaneState, hasTargetPane bool) state.Root {
 	switch command.Action {
+	case state.PaneCommandSplit:
+		terminalID := command.NewPane.TerminalID
+		var targetBinding state.TerminalViewBinding
+		hasTargetBinding := false
+		if hasTargetPane {
+			targetBinding, hasTargetBinding = root.TerminalViews.PaneBinding(targetPane.ID)
+			if terminalID == "" && hasTargetBinding {
+				terminalID = targetBinding.TerminalID
+			}
+		}
+		if terminalID == "" && hasTargetPane {
+			terminalID = targetPane.TerminalID
+		}
+		if terminalID == "" {
+			return root
+		}
+		binding := state.NewPaneTerminalView(command.NewPane.ID, terminalID, 0, 0, 0, state.TerminalResizeRoleOwner, "", state.TerminalPaneViewID(command.NewPane.ID), true)
+		if hasTargetBinding && targetBinding.TerminalID == terminalID {
+			binding.Channel = targetBinding.Channel
+			binding.SurfaceID = targetBinding.SurfaceID
+			binding.DesiredCols = targetBinding.DesiredCols
+			binding.DesiredRows = targetBinding.DesiredRows
+		}
+		root.TerminalViews = root.TerminalViews.BindPane(binding).TransferPaneResizeOwner(command.NewPane.ID)
 	case state.PaneCommandClose:
 		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
 	case state.PaneCommandCloseAndKill:
@@ -897,6 +947,8 @@ func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneComm
 
 func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell state.ShellStore, command state.WorkbenchCommand, result state.WorkbenchCommandResult) state.Root {
 	switch result.Action {
+	case state.WorkbenchCommandPaneSplit:
+		root = bindWorkbenchSplitTerminalView(root, previousShell, command, result)
 	case state.WorkbenchCommandPaneClose:
 		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 	case state.WorkbenchCommandPaneKill, state.WorkbenchCommandTabKill:
@@ -908,6 +960,46 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 			root.TerminalViews = root.TerminalViews.DetachPane(pane.ID)
 		}
 	}
+	return root
+}
+
+func bindWorkbenchSplitTerminalView(root state.Root, previousShell state.ShellStore, command state.WorkbenchCommand, result state.WorkbenchCommandResult) state.Root {
+	if result.ID == "" {
+		return root
+	}
+	if command.Pane.NewPane.TerminalID == "" && command.Pane.NewPane.Kind == state.PaneEmpty {
+		return root
+	}
+	target := command.Pane.Target
+	if target.PaneID == "" {
+		previous := previousShell.EnsureDefaults()
+		target = state.PaneCommandTarget{WorkspaceID: previous.Workspace.ID, TabID: previous.Workspace.ActiveTabID, PaneID: previous.ActivePaneID}
+	}
+	targetPane, hasTargetPane := previousShell.Pane(target)
+	terminalID := command.Pane.NewPane.TerminalID
+	var targetBinding state.TerminalViewBinding
+	hasTargetBinding := false
+	if hasTargetPane {
+		targetBinding, hasTargetBinding = root.TerminalViews.PaneBinding(targetPane.ID)
+		if terminalID == "" && hasTargetBinding {
+			terminalID = targetBinding.TerminalID
+		}
+		if terminalID == "" {
+			terminalID = targetPane.TerminalID
+		}
+	}
+	if terminalID == "" {
+		return root
+	}
+	binding := state.NewPaneTerminalView(result.ID, terminalID, 0, 0, 0, state.TerminalResizeRoleOwner, "", state.TerminalPaneViewID(result.ID), true)
+	if hasTargetBinding && targetBinding.TerminalID == terminalID {
+		binding.Channel = targetBinding.Channel
+		binding.SurfaceID = targetBinding.SurfaceID
+		binding.DesiredCols = targetBinding.DesiredCols
+		binding.DesiredRows = targetBinding.DesiredRows
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(binding).TransferPaneResizeOwner(result.ID)
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: result.ID}, terminalID)
 	return root
 }
 

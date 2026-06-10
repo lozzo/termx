@@ -19,6 +19,8 @@ func (id RequestID) Valid() bool {
 
 type HistoryLatestRequest struct {
 	RequestID  RequestID
+	PaneID     string
+	ViewID     string
 	TerminalID string
 	Cols       int
 	Rows       int
@@ -26,6 +28,8 @@ type HistoryLatestRequest struct {
 
 type HistoryOlderRequest struct {
 	RequestID  RequestID
+	PaneID     string
+	ViewID     string
 	TerminalID string
 	Cols       int
 	Rows       int

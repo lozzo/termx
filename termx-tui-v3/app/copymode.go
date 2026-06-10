@@ -285,38 +285,41 @@ func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 	if deps.Core == nil {
 		return setCopyModeError(root, "core client missing"), nil
 	}
-	terminalID := root.Session.TerminalID
-	if terminalID == "" {
-		terminalID = root.Surface.TerminalID
-	}
+	binding, hasBinding := activeTerminalViewBinding(root)
 	rect, ok := copyModeContentRect(root)
-	if terminalID == "" || !ok || rect.W <= 0 {
+	if !hasBinding || binding.TerminalID == "" || !ok || rect.W <= 0 {
 		return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
 	}
-	return beginCopyModeLatestForCols(root, deps, terminalID, rect.W, rect.H)
+	return beginCopyModeLatestForView(root, deps, binding, rect.W, rect.H)
 }
 
-func beginCopyModeLatestForCols(root state.Root, deps CopyModeDeps, terminalID string, cols int, rowsHint int) (state.Root, []Effect) {
+func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding state.TerminalViewBinding, cols int, rowsHint int) (state.Root, []Effect) {
 	requestID := nextHistoryRequestID(root)
 	nextHistory, err := root.History.BeginLatest(state.HistoryPendingRequest{
 		ID:         requestID,
-		TerminalID: terminalID,
+		PaneID:     binding.PaneID,
+		ViewID:     binding.ViewID,
+		TerminalID: binding.TerminalID,
 		Cols:       cols,
 	})
 	if err != nil {
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	root.CopyMode = root.CopyMode.BindLatest(terminalID, requestID, cols, rowsHint)
+	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint)
 	rows := requestRows(deps, rowsHint)
 	return root.Advance(), []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Core.HistoryLatest(ctx, services.HistoryLatestRequest{
 				RequestID:  services.RequestID(requestID),
-				TerminalID: terminalID,
+				PaneID:     binding.PaneID,
+				ViewID:     binding.ViewID,
+				TerminalID: binding.TerminalID,
 				Cols:       cols,
 				Rows:       rows,
 			})
+			result.Window.PaneID = binding.PaneID
+			result.Window.ViewID = binding.ViewID
 			return CopyModeHistoryResultMsg{Result: result, Err: err}
 		},
 	}}
@@ -333,6 +336,8 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 	requestID := nextHistoryRequestID(root)
 	req := state.HistoryPendingRequest{
 		ID:         requestID,
+		PaneID:     root.History.PaneID,
+		ViewID:     root.History.ViewID,
 		TerminalID: root.History.TerminalID,
 		Cols:       root.History.Cols,
 		Token:      root.History.Token,
@@ -350,6 +355,8 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Core.HistoryOlder(ctx, services.HistoryOlderRequest{
 				RequestID:  services.RequestID(requestID),
+				PaneID:     req.PaneID,
+				ViewID:     req.ViewID,
 				TerminalID: req.TerminalID,
 				Cols:       req.Cols,
 				Rows:       rows,
@@ -358,6 +365,8 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 				Cursor:     req.Cursor,
 				Boundary:   req.Boundary,
 			})
+			result.Window.PaneID = req.PaneID
+			result.Window.ViewID = req.ViewID
 			return CopyModeHistoryResultMsg{Result: result, Err: err}
 		},
 	}}

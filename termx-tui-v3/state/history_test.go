@@ -235,9 +235,29 @@ func TestHistoryStoreRejectsStaleResponses(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreRejectsDifferentViewResponse(t *testing.T) {
+	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
+		ID:         5,
+		PaneID:     "pane-1",
+		ViewID:     "pane:pane-1",
+		TerminalID: "term-1",
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+
+	window := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "other-view", LineID: 20}})
+	window.PaneID = "pane-2"
+	window.ViewID = "pane:pane-2"
+	if _, _, err := store.ApplyWindow(5, window); !errors.Is(err, ErrStaleHistoryResponse) {
+		t.Fatalf("expected different view response to be stale, got %v", err)
+	}
+}
+
 func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
-	copyMode := CopyModeStore{}.BindLatest("term-1", 1, 80, 20)
-	if !copyMode.Active || !copyMode.Empty || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {
+	copyMode := CopyModeStore{}.BindLatest("pane-1", "pane:pane-1", "term-1", 1, 80, 20)
+	if !copyMode.Active || !copyMode.Empty || copyMode.PaneID != "pane-1" || copyMode.ViewID != "pane:pane-1" || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {
 		t.Fatalf("unexpected bound copy mode %#v", copyMode)
 	}
 

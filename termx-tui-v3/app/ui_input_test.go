@@ -1311,6 +1311,12 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if shell.PanelPresentation != state.PanelPresentationSplitLine {
 		t.Fatalf("pane mode presentation switch should use split-line, got %#v", shell.PanelPresentation)
 	}
+	runtime.state.Shell = runtime.state.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: "pane-2"}, "term-1")
+	if binding, ok := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID); ok {
+		runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(state.NewPaneTerminalView(
+			"pane-2", binding.TerminalID, binding.Channel, binding.DesiredCols, binding.DesiredRows, state.TerminalResizeRoleOwner, binding.SurfaceID, state.TerminalPaneViewID("pane-2"), true,
+		)).TransferPaneResizeOwner("pane-2")
+	}
 	tab := shell.Workspace.Tabs[0]
 	if len(tab.Panes) != 2 || tab.RootSplit.BiasCells == 0 {
 		t.Fatalf("split and resize should update pane tree geometry, got %#v", tab)
@@ -1366,6 +1372,11 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain split pane focus: %v", err)
 	}
+	runtime.state.CopyMode = state.CopyModeStore{}
+	runtime.state.History = state.HistoryStore{}
+	runtime.state.Shell.InteractionMode = state.InteractionModeNormal
+	runtime.state.Shell = runtime.state.Shell.CloseOverlay()
+	runtime.state.Shell.ActiveFloatingID = ""
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send copy entry: %v", err)

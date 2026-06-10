@@ -35,8 +35,10 @@ func TestCopyModeUsesProtocolHistoryWindowClient(t *testing.T) {
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(
 		state.Root{
-			Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
-			Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24, Lines: []string{"live"}},
+			Shell:         state.DefaultShell(),
+			Session:       state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+			Surface:       state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24, Lines: []string{"live"}},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		},
 		ComposeReducers(
 			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),

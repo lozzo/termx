@@ -266,11 +266,11 @@
 | 历史已完成：0-212F | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、`termx-proto/`、`termx-vterm/`、`termx-shared/`、`scripts/`、`Makefile`、`go.work`、相关文档 | 默认入口已切到 core-v2/tui-v3；logical-line history、HistoryWindow、protocol、runtime、styled render framework、UI 产品壳、真实 PTY/live/copy、tmux harness、storage sync、Terminal Picker/Create Terminal、panel content 深化与 TerminalView/Attachment 设计到 212F 的已完成细节不再在本队列展开，必要时从 git 历史与对应架构/产品文档追溯 |
 | 213. SK view-aware resize 与 ownership transfer | 完成 | `workflow.md`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/` | resize owner truth 已收口到 `TerminalViewStore` view binding；owner lookup/transfer、view-local desired size、request seq 与 stale guard 均按 view 记录；follower/observer 不覆盖共享 PTY size；pane chrome 展示 owner/follower 并提供 owner transfer action；准入已通过 |
 | 213A-213F. SK terminal header 与 empty pane 收口 | 完成 | `workflow.md`、`termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/` | pane/floating terminal header 已按 tuiv2 风格使用结构化 `TerminalChromeVM`；unconnected pane chrome 与 empty state 已对齐；empty pane 不显示输入光标，CTA 居中并支持鼠标命中、上下键选择和 Enter 执行；global quit/pane detach 反馈已接入；准入已通过 |
-| 214. SK copy/history view binding 收口 | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/` | copy mode 绑定 active pane/floating view、terminal id、content cols、view rows、request id 和 bound token；同 terminal 不同 view 的 copy cols/rebind 不互相覆盖；history truth 仍来自 core-v2 terminal authoritative `HistoryWindow`；pending/older/stale guard 保持 no live fallback |
+| 214. SK copy/history view binding 收口 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/` | copy mode 已绑定 active pane/view、terminal id、content cols、view rows、request id 和 bound token；同 terminal 不同 view 的 copy cols/rebind 不互相覆盖；history truth 仍来自 core-v2 terminal authoritative `HistoryWindow`；pending/older/stale guard 保持 no live fallback；准入已通过 |
 | 215. SK render/interaction shared terminal UI | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/docs/` | pane/floating chrome、Terminal Picker/Pool、Workbench Tree 和 footer/help 展示 shared terminal/view role 信息；可见动作区分 focus existing pane、attach here、duplicate into split/tab/floating、detach view、kill terminal；所有动作继续走统一 semantic command/action catalog，不画未接线按钮 |
 | 216. SK multi-view integration and tmux harness | 待开始 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 建立真实/黑盒证据：同一 terminal 连接到同 tab 多 pane 或 floating，输入只进 active view channel，owner resize 触达 PTY，follower 不覆盖 size，kill terminal 更新所有 view，copy/history authoritative window 可在不同 view cols 下独立 rebind；运行相关模块测试、tmux/e2e smoke 和 `git diff --check` |
 
-当前下一步：先完成切片 214 的 copy/history view binding 收口，再进入切片 215 的 shared terminal UI。历史 VT 语义路由方案暂不进入当前自动执行队列，等 TerminalView/Attachment 主线完成后再单独讨论和重新落档。继续保持 copy/history 只消费 authoritative `HistoryWindow`，不得从 live surface、snapshot 或 local VTerm scrollback 推断历史，也不得把 styled payload parser 扩张成补丁式完整 VT emulator。
+当前下一步：进入切片 215 的 shared terminal UI。历史 VT 语义路由方案暂不进入当前自动执行队列，等 TerminalView/Attachment 主线完成后再单独讨论和重新落档。继续保持 copy/history 只消费 authoritative `HistoryWindow`，不得从 live surface、snapshot 或 local VTerm scrollback 推断历史，也不得把 styled payload parser 扩张成补丁式完整 VT emulator。
 
 ## 6. 必做 harness
 
@@ -415,6 +415,6 @@
 
 - 当前分支主线已切换到 `termx-core-v2/` 与 `termx-tui-v3/`，默认 root、daemon、attach、new/ls/kill/rm 已走 core-v2/tui-v3；旧本地路径只允许 `termx legacy ...`，remote 仍按 legacy/fallback 隔离。
 - 已完成历史能力、协议服务、真实 PTY/live surface、styled render framework、pane/floating/overlay/product shell、Terminal Pool/Picker、Workbench storage sync、tmux 黑盒 harness、panel content 深化和 TerminalView/Attachment 基线切片；详细完成记录不再保留在本文件长表中。
-- 当前 TerminalView/Attachment 主线已完成到 213F：view-aware resize ownership、pane/floating terminal header、unconnected/empty pane 视觉与键盘 CTA 均已收口。
-- 最早未完成切片是 214：copy/history view binding 收口。后续 215、216 分别处理 shared terminal UI 和 multi-view integration/tmux 证据。
+- 当前 TerminalView/Attachment 主线已完成到 214：view-aware resize ownership、pane/floating terminal header、unconnected/empty pane 视觉与键盘 CTA、copy/history view binding 均已收口。
+- 当前没有进行中切片。后续 215、216 分别处理 shared terminal UI 和 multi-view integration/tmux 证据。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；仅在需要重新生成 proto 时构成阻塞，当前文档压缩不受影响。
