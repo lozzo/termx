@@ -191,6 +191,110 @@ func TestHistoryWindowReprojectsDifferentCols(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowProjectsStyledCellsAsRenderTruth(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
+		{Text: "ERR", Width: 3, Style: CellStyle{FG: "ansi:1", Bold: true}},
+		{Text: " ", Width: 1},
+		{Text: "好", Width: 2, Style: CellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+		{Text: "ok", Width: 2, Style: CellStyle{FG: "idx:42"}},
+	}})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventForceCommitFrontier})
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 6, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"ERR 好", "ok"}) {
+		t.Fatalf("plain text should be derived from styled cells, got %v", got)
+	}
+	first := window.Rows[0].Cells
+	if len(first) != 3 {
+		t.Fatalf("expected first visual row to keep styled cells, got %#v", first)
+	}
+	if first[0].Text != "ERR" || first[0].Width != 3 || first[0].Style.FG != "ansi:1" || !first[0].Style.Bold {
+		t.Fatalf("lost first cell style %#v", first[0])
+	}
+	if first[2].Text != "好" || first[2].Width != 2 || first[2].Style.FG != "#ffcc00" || !first[2].Style.Underline || first[2].LinkURL == "" || first[2].LinkParams == "" {
+		t.Fatalf("lost wide styled linked cell %#v", first[2])
+	}
+	if second := window.Rows[1].Cells; len(second) != 1 || second[0].Text != "ok" || second[0].Style.FG != "idx:42" {
+		t.Fatalf("unexpected wrapped styled row %#v", second)
+	}
+}
+
+func TestHistoryWindowSplitsWideStyledTextCellsDuringReflow(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
+		{Text: "abcdef", Width: 6, Style: CellStyle{FG: "ansi:4", Underline: true}, LinkURL: "file://long.txt"},
+	}})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventForceCommitFrontier})
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 3, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"abc", "def"}) {
+		t.Fatalf("styled text cell should reflow by display cells, got %v", got)
+	}
+	for _, row := range window.Rows {
+		if len(row.Cells) != 3 {
+			t.Fatalf("reflow should split multi-cell text into display cells, got %#v", row.Cells)
+		}
+		for _, cell := range row.Cells {
+			if cell.Width != 1 || cell.Style.FG != "ansi:4" || !cell.Style.Underline || cell.LinkURL != "file://long.txt" {
+				t.Fatalf("split cell lost style/link/width metadata %#v", cell)
+			}
+		}
+	}
+}
+
+func TestHistoryWindowSplitsMixedWidthStyledTextCells(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
+		{Text: "a好", Width: 3, Style: CellStyle{FG: "ansi:5", Bold: true}},
+	}})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventForceCommitFrontier})
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 2, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"a", "好"}) {
+		t.Fatalf("mixed-width styled text should reflow by display cells, got %v", got)
+	}
+	if first := window.Rows[0].Cells; len(first) != 1 || first[0].Text != "a" || first[0].Width != 1 || first[0].Style.FG != "ansi:5" || !first[0].Style.Bold {
+		t.Fatalf("unexpected first split row %#v", first)
+	}
+	if second := window.Rows[1].Cells; len(second) != 1 || second[0].Text != "好" || second[0].Width != 2 || second[0].Style.FG != "ansi:5" || !second[0].Style.Bold {
+		t.Fatalf("unexpected second split row %#v", second)
+	}
+}
+
+func TestHistoryWindowSplitsStyledRunsAtRemainingColumnBoundary(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
+		{Text: "x", Width: 1},
+		{Text: "ab", Width: 2, Style: CellStyle{FG: "ansi:6", Italic: true}, LinkURL: "file://run.txt"},
+	}})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventForceCommitFrontier})
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 2, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"xa", "b"}) {
+		t.Fatalf("styled run should split at remaining column boundary, got %v", got)
+	}
+	if first := window.Rows[0].Cells; len(first) != 2 || first[1].Text != "a" || first[1].Style.FG != "ansi:6" || !first[1].Style.Italic || first[1].LinkURL != "file://run.txt" {
+		t.Fatalf("unexpected first row cells %#v", first)
+	}
+	if second := window.Rows[1].Cells; len(second) != 1 || second[0].Text != "b" || second[0].Style.FG != "ansi:6" || !second[0].Style.Italic || second[0].LinkURL != "file://run.txt" {
+		t.Fatalf("unexpected second row cells %#v", second)
+	}
+}
+
 func TestLatestWindowIncludesEligibleMutableFrontier(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "committed")

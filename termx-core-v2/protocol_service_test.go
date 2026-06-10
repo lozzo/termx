@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
@@ -142,6 +143,72 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
 		t.Fatalf("expected cols stale history window error, got %v", err)
+	}
+}
+
+func TestProtocolHistoryWindowPreservesStyledCells(t *testing.T) {
+	track := history.NewHistoryTrack()
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{
+		{Text: "ERR", Width: 3, Style: history.CellStyle{FG: "ansi:1", Bold: true}},
+		{Text: " ", Width: 1},
+		{Text: "好", Width: 2, Style: history.CellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+	}}); err != nil {
+		t.Fatalf("write styled cells: %v", err)
+	}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		t.Fatalf("commit styled cells: %v", err)
+	}
+	window, err := track.LatestWindow(history.HistoryWindowRequest{Cols: 10, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+
+	out := protocolHistoryWindowFromCore("term-1", Size{Cols: 10, Rows: 4}, window)
+	cells := out.Rows[0].DecodeCells()
+	if got := rowText(out.Rows[0]); got != "ERR 好" {
+		t.Fatalf("plain text should be decoded from compact cells, got %q row=%#v", got, out.Rows[0])
+	}
+	if len(cells) != 3 {
+		t.Fatalf("expected compact row to decode styled cells, got %#v", cells)
+	}
+	if cells[0].Content != "ERR" || cells[0].Width != 3 || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
+		t.Fatalf("lost first styled cell through protocol conversion %#v", cells[0])
+	}
+	if cells[2].Content != "好" || cells[2].Width != 2 || cells[2].Style.FG != "#ffcc00" || !cells[2].Style.Underline || cells[2].LinkURL == "" || cells[2].LinkParams == "" {
+		t.Fatalf("lost wide linked cell through protocol conversion %#v", cells[2])
+	}
+	if out.Rows[0].Text != "" {
+		t.Fatalf("styled history rows should not be downgraded to Text-only CompactRow, got %#v", out.Rows[0])
+	}
+}
+
+func TestProtocolHistoryWindowPreservesTrailingBlankCells(t *testing.T) {
+	track := history.NewHistoryTrack()
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{
+		{Text: "cmd", Width: 3},
+		{Text: " ", Width: 1},
+		{Text: " ", Width: 1},
+	}}); err != nil {
+		t.Fatalf("write cells: %v", err)
+	}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		t.Fatalf("commit cells: %v", err)
+	}
+	window, err := track.LatestWindow(history.HistoryWindowRequest{Cols: 10, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if window.Rows[0].Text != "cmd  " {
+		t.Fatalf("core visual row should keep trailing blanks, got %q", window.Rows[0].Text)
+	}
+
+	out := protocolHistoryWindowFromCore("term-1", Size{Cols: 10, Rows: 4}, window)
+	if got := rowText(out.Rows[0]); got != "cmd  " {
+		t.Fatalf("protocol history row should preserve trailing blanks, got %q row=%#v", got, out.Rows[0])
+	}
+	cells := out.Rows[0].DecodeCells()
+	if len(cells) != 3 || cells[1].Content != " " || cells[2].Content != " " {
+		t.Fatalf("expected trailing blank cells to survive protocol conversion, got %#v", cells)
 	}
 }
 

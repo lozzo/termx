@@ -69,8 +69,10 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) state.HistoryWind
 	}
 	rows := make([]state.HistoryRow, len(window.Rows))
 	for i, row := range window.Rows {
+		cells := historyCellsFromProtocol(row.DecodeCells())
 		rows[i] = state.HistoryRow{
-			Text:      protocolRowText(row),
+			Text:      historyCellsPlainText(cells),
+			Cells:     cells,
 			LineID:    uint64At(window.RowLineIDs, i),
 			RowInLine: intAt(window.RowInLine, i),
 		}
@@ -108,10 +110,40 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) state.HistoryWind
 	}
 }
 
-func protocolRowText(row protocol.CompactRow) string {
+func historyCellsFromProtocol(cells []protocol.Cell) []state.HistoryCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]state.HistoryCell, len(cells))
+	for i, cell := range cells {
+		out[i] = state.HistoryCell{
+			Text:       cell.Content,
+			Width:      cell.Width,
+			Style:      historyCellStyleFromProtocol(cell.Style),
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
+		}
+	}
+	return out
+}
+
+func historyCellStyleFromProtocol(style protocol.CellStyle) state.HistoryCellStyle {
+	return state.HistoryCellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
+}
+
+func historyCellsPlainText(cells []state.HistoryCell) string {
 	var builder strings.Builder
-	for _, cell := range row.DecodeCells() {
-		builder.WriteString(cell.Content)
+	for _, cell := range cells {
+		builder.WriteString(cell.Text)
 	}
 	return builder.String()
 }

@@ -44,6 +44,36 @@ func TestHistoryStoreAcceptsLatestReplace(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreDetachesStyledRowCells(t *testing.T) {
+	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
+		ID:         1,
+		TerminalID: "term-1",
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+	window := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, []HistoryRow{{
+		Text:   "ERR 好",
+		LineID: 10,
+		Cells: []HistoryCell{
+			{Text: "ERR", Width: 3, Style: HistoryCellStyle{FG: "ansi:1", Bold: true}},
+			{Text: " ", Width: 1},
+			{Text: "好", Width: 2, Style: HistoryCellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+		},
+	}})
+
+	store, _, err = store.ApplyWindow(1, window)
+	if err != nil {
+		t.Fatalf("apply latest: %v", err)
+	}
+	store.Rows[0].Cells[0].Text = "mutated"
+	store.Rows[0].Cells[2].Style.FG = "ansi:2"
+	if window.Rows[0].Cells[0].Text != "ERR" || window.Rows[0].Cells[2].Style.FG != "#ffcc00" {
+		t.Fatalf("history rows should detach styled cells, window=%#v store=%#v", window.Rows[0].Cells, store.Rows[0].Cells)
+	}
+}
+
 func TestHistoryStorePrependsOlderAndRebasesExistingSpans(t *testing.T) {
 	store := HistoryStore{
 		TerminalID: "term-1",

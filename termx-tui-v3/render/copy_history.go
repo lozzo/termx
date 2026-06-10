@@ -34,7 +34,7 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 
 func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange) Line {
 	cells := []Cell{copyHistoryMarkerCell(row)}
-	cells = append(cells, copyHistoryTextCells(row.Text, rowIndex, selection, search)...)
+	cells = append(cells, copyHistoryRowCells(row, rowIndex, selection, search)...)
 	if row.ClippedEnd {
 		cells = append(cells, styledCell(" ⇣", StyleMuted))
 	}
@@ -120,6 +120,80 @@ func copyHistoryTextCells(text string, row int, selection copySelectionRange, se
 		return []Cell{NewCell(text)}
 	}
 	return segments
+}
+
+func copyHistoryRowCells(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange) []Cell {
+	if len(row.Cells) == 0 {
+		return copyHistoryTextCells(row.Text, rowIndex, selection, search)
+	}
+	out := make([]Cell, 0, len(row.Cells))
+	cursor := 0
+	for _, historyCell := range row.Cells {
+		cellText := historyCell.Text
+		cellRunes := len([]rune(cellText))
+		style := copyHistoryOverrideStyle(rowIndex, cursor, cursor+cellRunes, selection, search)
+		out = append(out, renderCellFromHistory(historyCell, style))
+		cursor += cellRunes
+	}
+	if len(out) == 0 {
+		return []Cell{NewCell(row.Text)}
+	}
+	return out
+}
+
+func copyHistoryOverrideStyle(row int, from int, to int, selection copySelectionRange, search copySearchRange) StyleToken {
+	style := StyleToken("")
+	if selection.active && row >= selection.start.Row && row <= selection.end.Row {
+		selectionFrom, selectionTo := selectionColumnsForRow(selection, row, to)
+		if rangesOverlap(from, to, selectionFrom, selectionTo) {
+			style = StyleAccent
+		}
+	}
+	if search.active {
+		searchFrom := clampCopyColumn(search.match.StartCol, 0, to)
+		searchTo := clampCopyColumn(search.match.EndCol, searchFrom, to)
+		if rangesOverlap(from, to, searchFrom, searchTo) && style == "" {
+			style = StyleWarning
+		}
+	}
+	return style
+}
+
+func rangesOverlap(leftFrom int, leftTo int, rightFrom int, rightTo int) bool {
+	return leftFrom < rightTo && rightFrom < leftTo
+}
+
+func renderCellFromHistory(cell state.HistoryCell, override StyleToken) Cell {
+	text := SafeLine(cell.Text)
+	width := cell.Width
+	if width <= 0 {
+		width = DisplayWidth(text)
+	}
+	if width <= 0 {
+		width = len([]rune(text))
+	}
+	if override != "" {
+		return Cell{Text: text, Width: width, Style: override, Safe: true}
+	}
+	return Cell{
+		Text:      text,
+		Width:     width,
+		ANSIStyle: ansiStyleFromHistory(cell.Style),
+		Safe:      true,
+	}
+}
+
+func ansiStyleFromHistory(style state.HistoryCellStyle) ANSICellStyle {
+	return ANSICellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
 }
 
 func selectionColumnsForRow(selection copySelectionRange, row int, lineLen int) (int, int) {

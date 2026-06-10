@@ -53,10 +53,32 @@ type HistoryPendingRequest struct {
 // HistoryRow 是 authoritative HistoryWindow 的 visual row 投影。
 type HistoryRow struct {
 	Text         string
+	Cells        []HistoryCell
 	LineID       uint64
 	RowInLine    int
 	ClippedStart bool
 	ClippedEnd   bool
+}
+
+// HistoryCell 是 core-v2 authoritative HistoryWindow 的 styled cell 投影。
+// Text 仍保留在 HistoryRow 上作为搜索/复制派生视图，渲染优先消费 Cells。
+type HistoryCell struct {
+	Text       string
+	Width      int
+	Style      HistoryCellStyle
+	LinkURL    string
+	LinkParams string
+}
+
+type HistoryCellStyle struct {
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
 }
 
 // HistoryLineSpan 是 authoritative window 中 logical line 到 visual rows 的映射。
@@ -395,6 +417,18 @@ func cloneHistoryRows(rows []HistoryRow) []HistoryRow {
 	}
 	cloned := make([]HistoryRow, len(rows))
 	copy(cloned, rows)
+	for i := range cloned {
+		cloned[i].Cells = cloneHistoryCells(rows[i].Cells)
+	}
+	return cloned
+}
+
+func cloneHistoryCells(cells []HistoryCell) []HistoryCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	cloned := make([]HistoryCell, len(cells))
+	copy(cloned, cells)
 	return cloned
 }
 

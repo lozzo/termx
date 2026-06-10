@@ -317,6 +317,49 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows: []state.HistoryRow{{
+				Text:   "ERR 好",
+				LineID: 10,
+				Cells: []state.HistoryCell{
+					{Text: "ERR", Width: 3, Style: state.HistoryCellStyle{FG: "ansi:1", Bold: true}},
+					{Text: " ", Width: 1},
+					{Text: "好", Width: 2, Style: state.HistoryCellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+				},
+			}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  12,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[1].PlainString(); !strings.Contains(got, "● ERR 好") {
+		t.Fatalf("expected copy history plain text from styled cells, got %#v", content.Lines)
+	}
+	if !lineHasANSICell(content.Lines[1], "ERR", ANSICellStyle{FG: "ansi:1", Bold: true}) ||
+		!lineHasANSICell(content.Lines[1], "好", ANSICellStyle{FG: "#ffcc00", Underline: true}) {
+		t.Fatalf("copy history render should preserve history ANSI cells, got %#v", content.Lines[1])
+	}
+
+	root.CopyMode.Selection = &state.CopySelection{
+		Anchor: state.CopyPosition{Row: 0, Col: 0},
+		Focus:  state.CopyPosition{Row: 0, Col: 3},
+	}
+	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if !lineHasStyledCell(content.Lines[1], "ERR", StyleAccent) {
+		t.Fatalf("selection should override history ANSI style for selected cells, got %#v", content.Lines[1])
+	}
+}
+
 func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{

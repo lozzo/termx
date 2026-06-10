@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 )
 
 // HistoryWindowOp 表达 TUI 应如何合并 authoritative window。
@@ -52,6 +55,7 @@ type HistoryWindow struct {
 // VisualRow 是某个 logical line 在指定 cols 下的派生行，不是历史 truth。
 type VisualRow struct {
 	Text           string
+	Cells          []Cell
 	LineID         LogicalLineID
 	RowInLine      int
 	Committed      bool
@@ -279,28 +283,157 @@ func buildWindowRows(rows []projectedRow) ([]LogicalLineSpan, []VisualRow, Logic
 }
 
 func projectLine(line LogicalLine, cols int) []VisualRow {
-	text := lineTextFromCells(line.Cells)
-	runes := []rune(text)
-	if len(runes) == 0 {
+	cells := normalizeProjectionCells(line.Cells, cols)
+	if len(cells) == 0 {
 		return []VisualRow{{
 			LineID:         line.ID,
 			LineGeneration: line.Generation,
 		}}
 	}
-	rows := make([]VisualRow, 0, (len(runes)+cols-1)/cols)
-	for start := 0; start < len(runes); start += cols {
-		end := start + cols
-		if end > len(runes) {
-			end = len(runes)
-		}
-		rows = append(rows, VisualRow{
-			Text:           string(runes[start:end]),
-			LineID:         line.ID,
-			RowInLine:      len(rows),
-			LineGeneration: line.Generation,
-		})
+	rows := make([]VisualRow, 0)
+	var rowCells []Cell
+	rowWidth := 0
+	for _, cell := range cells {
+		rows, rowCells, rowWidth = appendCellToVisualRows(line, cell, cols, rows, rowCells, rowWidth)
+	}
+	if len(rowCells) > 0 {
+		rows = append(rows, visualRowFromCells(line, len(rows), rowCells))
 	}
 	return rows
+}
+
+func appendCellToVisualRows(
+	line LogicalLine,
+	cell Cell,
+	cols int,
+	rows []VisualRow,
+	rowCells []Cell,
+	rowWidth int,
+) ([]VisualRow, []Cell, int) {
+	flush := func() {
+		if len(rowCells) == 0 {
+			return
+		}
+		rows = append(rows, visualRowFromCells(line, len(rows), rowCells))
+		rowCells = nil
+		rowWidth = 0
+	}
+	width := cellWidth(cell)
+	if width <= 0 {
+		return rows, rowCells, rowWidth
+	}
+	if rowWidth+width <= cols {
+		rowCells = append(rowCells, cell)
+		rowWidth += width
+		if rowWidth >= cols {
+			flush()
+		}
+		return rows, rowCells, rowWidth
+	}
+	for _, part := range splitMeasuredCell(cell) {
+		partWidth := cellWidth(part)
+		if partWidth <= 0 {
+			continue
+		}
+		if rowWidth > 0 && rowWidth+partWidth > cols {
+			flush()
+		}
+		if partWidth > cols {
+			part.Width = cols
+			partWidth = cols
+		}
+		rowCells = append(rowCells, part)
+		rowWidth += partWidth
+		if rowWidth >= cols {
+			flush()
+		}
+	}
+	return rows, rowCells, rowWidth
+}
+
+func visualRowFromCells(line LogicalLine, rowIndex int, cells []Cell) VisualRow {
+	return VisualRow{
+		Text:           lineTextFromCells(cells),
+		Cells:          cloneCells(cells),
+		LineID:         line.ID,
+		RowInLine:      rowIndex,
+		LineGeneration: line.Generation,
+	}
+}
+
+func normalizeProjectionCells(cells []Cell, _ int) []Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]Cell, 0, len(cells))
+	for _, cell := range cells {
+		if cell.Text == "" && cell.Width <= 0 {
+			continue
+		}
+		if cell.Width <= 0 {
+			out = append(out, expandUnmeasuredCell(cell)...)
+			continue
+		}
+		out = append(out, cell)
+	}
+	return out
+}
+
+func splitMeasuredCell(cell Cell) []Cell {
+	clusters := textClusters(cell.Text)
+	if len(clusters) == 0 {
+		return nil
+	}
+	out := make([]Cell, 0, len(clusters))
+	for _, cluster := range clusters {
+		next := cell
+		next.Text = cluster
+		next.Width = textDisplayWidth(cluster)
+		out = append(out, next)
+	}
+	return out
+}
+
+func expandUnmeasuredCell(cell Cell) []Cell {
+	clusters := textClusters(cell.Text)
+	if len(clusters) == 0 {
+		return nil
+	}
+	out := make([]Cell, 0, len(clusters))
+	for _, cluster := range clusters {
+		next := cell
+		next.Text = cluster
+		next.Width = textDisplayWidth(cluster)
+		out = append(out, next)
+	}
+	return out
+}
+
+func cellWidth(cell Cell) int {
+	if cell.Width > 0 {
+		return cell.Width
+	}
+	return len([]rune(cell.Text))
+}
+
+func textClusters(text string) []string {
+	if text == "" {
+		return nil
+	}
+	graphemes := uniseg.NewGraphemes(text)
+	var clusters []string
+	for graphemes.Next() {
+		clusters = append(clusters, graphemes.Str())
+	}
+	return clusters
+}
+
+func textDisplayWidth(text string) int {
+	width := xansi.StringWidth(text)
+	if width <= 0 && text != "" {
+		width = 1
+	}
+	return width
 }
 
 func lineTextFromCells(cells []Cell) string {

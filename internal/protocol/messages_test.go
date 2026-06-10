@@ -496,11 +496,16 @@ func writeText(row []Cell, col int, text string) {
 
 func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	window := &HistoryWindow{
-		TerminalID:    "term-hist",
-		Token:         "g7:0-2:c80",
-		Op:            HistoryWindowReplace,
-		Size:          Size{Cols: 80, Rows: 24},
-		Rows:          []CompactRow{CompactRowFromCells([]Cell{{Content: "a", Width: 1}, {Content: "b", Width: 1}})},
+		TerminalID: "term-hist",
+		Token:      "g7:0-2:c80",
+		Op:         HistoryWindowReplace,
+		Size:       Size{Cols: 80, Rows: 24},
+		Rows: []CompactRow{CompactRowFromCellsPreserveTrailingBlankCells([]Cell{
+			{Content: "ERR", Width: 3, Style: CellStyle{FG: "ansi:1", Bold: true}},
+			{Content: " ", Width: 1},
+			{Content: "好", Width: 2, Style: CellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+			{Content: " ", Width: 1},
+		}, true)},
 		RowKinds:      []string{"output"},
 		RowWrapped:    []bool{false},
 		RowOwnership:  []string{RowOwnershipPersisted},
@@ -562,8 +567,21 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	if len(decoded.RowOwnership) != 1 || decoded.RowOwnership[0] != RowOwnershipPersisted {
 		t.Fatalf("unexpected decoded history ownership: %#v", decoded.RowOwnership)
 	}
-	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ab" {
+	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ERR 好 " {
 		t.Fatalf("unexpected decoded history row: %q", got)
+	}
+	cells := decoded.Rows[0].DecodeCells()
+	if len(cells) != 4 {
+		t.Fatalf("expected styled history cells after payload round trip, got %#v", cells)
+	}
+	if cells[0].Content != "ERR" || cells[0].Width != 3 || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
+		t.Fatalf("lost first styled cell after payload round trip %#v", cells[0])
+	}
+	if cells[2].Content != "好" || cells[2].Width != 2 || cells[2].Style.FG != "#ffcc00" || !cells[2].Style.Underline || cells[2].LinkURL == "" || cells[2].LinkParams == "" {
+		t.Fatalf("lost wide linked cell after payload round trip %#v", cells[2])
+	}
+	if cells[3].Content != " " {
+		t.Fatalf("lost trailing blank cell after payload round trip %#v", cells[3])
 	}
 }
 

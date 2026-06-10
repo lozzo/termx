@@ -201,6 +201,69 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	}
 }
 
+func TestProtocolCoreClientAdapterMapsStyledHistoryCells(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Rows: []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{
+				{Content: "ERR", Width: 3, Style: protocol.CellStyle{FG: "ansi:1", Bold: true}},
+				{Content: " ", Width: 1},
+				{Content: "好", Width: 2, Style: protocol.CellStyle{FG: "#ffcc00", Underline: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+			})},
+			RowLineIDs: []uint64{42},
+			RowInLine:  []int{0},
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 80, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+
+	row := result.Window.Rows[0]
+	if row.Text != "ERR 好" || len(row.Cells) != 3 {
+		t.Fatalf("adapter should keep styled cells and derived text, got %#v", row)
+	}
+	if row.Cells[0].Text != "ERR" || row.Cells[0].Width != 3 || row.Cells[0].Style.FG != "ansi:1" || !row.Cells[0].Style.Bold {
+		t.Fatalf("lost first styled cell %#v", row.Cells[0])
+	}
+	if row.Cells[2].Text != "好" || row.Cells[2].Width != 2 || row.Cells[2].Style.FG != "#ffcc00" || !row.Cells[2].Style.Underline || row.Cells[2].LinkURL == "" || row.Cells[2].LinkParams == "" {
+		t.Fatalf("lost wide linked cell %#v", row.Cells[2])
+	}
+}
+
+func TestProtocolCoreClientAdapterPreservesTrailingBlankHistoryCells(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Rows: []protocol.CompactRow{protocol.CompactRowFromCellsPreserveTrailingBlankCells([]protocol.Cell{
+				{Content: "cmd", Width: 3},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+			}, true)},
+			RowLineIDs: []uint64{42},
+			RowInLine:  []int{0},
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 80, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	row := result.Window.Rows[0]
+	if row.Text != "cmd  " || len(row.Cells) != 3 || row.Cells[1].Text != " " || row.Cells[2].Text != " " {
+		t.Fatalf("adapter should preserve trailing blank history cells, got %#v", row)
+	}
+}
+
 func TestProtocolWorkbenchStorageAdapterUsesOpaqueStorageMethods(t *testing.T) {
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).

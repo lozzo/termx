@@ -631,7 +631,7 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 	rowLineIDs := make([]uint64, len(window.Rows))
 	rowInLine := make([]int, len(window.Rows))
 	for i, row := range window.Rows {
-		rows[i] = protocol.CompactRow{Text: row.Text}
+		rows[i] = protocol.CompactRowFromCellsPreserveTrailingBlankCells(protocolCellsFromHistory(row.Cells), true)
 		rowLineIDs[i] = uint64(row.LineID)
 		rowInLine[i] = row.RowInLine
 		if row.Committed {
@@ -672,6 +672,36 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 		RowLineIDs:   rowLineIDs,
 		RowInLine:    rowInLine,
 		Timestamp:    time.Now().UTC(),
+	}
+}
+
+func protocolCellsFromHistory(cells []history.Cell) []protocol.Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]protocol.Cell, len(cells))
+	for i, cell := range cells {
+		out[i] = protocol.Cell{
+			Content:    cell.Text,
+			Width:      cell.Width,
+			Style:      protocolCellStyleFromHistory(cell.Style),
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
+		}
+	}
+	return out
+}
+
+func protocolCellStyleFromHistory(style history.CellStyle) protocol.CellStyle {
+	return protocol.CellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
 	}
 }
 

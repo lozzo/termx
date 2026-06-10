@@ -29,11 +29,25 @@ const (
 	ResidencyEvicted Residency = "evicted"
 )
 
-// Cell is the smallest payload placeholder for the first domain slice.
-// Later projection and ANSI handling can replace this with richer cell runs
-// without changing line identity or index semantics.
+// Cell 是 logical line 的历史 payload 单元。Text 是内容，Width/Style/Link 是
+// 终端格式语义；plain text 只能由这些 cells 派生，不能反过来成为渲染 truth。
 type Cell struct {
-	Text string
+	Text       string
+	Width      int
+	Style      CellStyle
+	LinkURL    string
+	LinkParams string
+}
+
+type CellStyle struct {
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
 }
 
 // LogicalLine is the single payload model for committed history and mutable
