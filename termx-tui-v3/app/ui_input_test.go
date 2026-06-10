@@ -1661,7 +1661,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	frameAfterFloating := lastFrame(t, host.Frames())
 	if frameAfterFloating.CursorRect.X < floatingRect.X+1 || frameAfterFloating.CursorRect.X >= floatingRect.X+floatingRect.W-1 ||
 		frameAfterFloating.CursorRect.Y < floatingRect.Y+1 || frameAfterFloating.CursorRect.Y >= floatingRect.Y+floatingRect.H-1 {
-		t.Fatalf("floating input should anchor hidden host cursor inside floating content for IME, floating=%#v cursor=%#v frame=%#v", floatingRect, frameAfterFloating.CursorRect, frameAfterFloating.Cursor)
+		t.Fatalf("floating input should anchor cursor inside floating content for IME, floating=%#v cursor=%#v frame=%#v", floatingRect, frameAfterFloating.CursorRect, frameAfterFloating.Cursor)
 	}
 	vmAfterFloating := render.NewRenderVMBuilder().Build(runtime.State())
 	if len(vmAfterFloating.Shell.Layout.Panels) == 0 || vmAfterFloating.Shell.Layout.Panels[0].Active {

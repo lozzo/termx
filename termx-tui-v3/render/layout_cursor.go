@@ -30,7 +30,7 @@ func overlayOwnsCursor(overlay OverlayVM) bool {
 }
 
 func cursorWithRect(cursor Cursor, origin Rect) (Cursor, Rect) {
-	if !cursor.Visible || origin.W <= 0 || origin.H <= 0 {
+	if (!cursor.Visible && !cursor.Anchor) || origin.W <= 0 || origin.H <= 0 {
 		return Cursor{}, Rect{}
 	}
 	rect := Rect{X: origin.X + cursor.Col, Y: origin.Y + cursor.Row, W: 1, H: 1}
@@ -47,7 +47,7 @@ func cursorWithRectOrAnchor(cursor Cursor, origin Rect) (Cursor, Rect) {
 	if origin.W <= 0 || origin.H <= 0 {
 		return Cursor{}, Rect{}
 	}
-	// 中文输入法候选区跟随宿主真实光标；内容暂无 cursor 时也要把隐藏光标锚到输入目标内。
-	anchor := Cursor{Visible: true, Row: 0, Col: 0, Shape: CursorShapeBar}
+	// 中文输入法候选区跟随宿主真实光标；内容暂无 cursor 时只锚定位置，不显示系统光标。
+	anchor := Cursor{Anchor: true, Row: 0, Col: 0, Shape: CursorShapeBar}
 	return anchor, Rect{X: origin.X, Y: origin.Y, W: 1, H: 1}
 }

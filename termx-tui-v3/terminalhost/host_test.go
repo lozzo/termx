@@ -414,7 +414,7 @@ func TestFrameSinkWritesFrameToOutput(t *testing.T) {
 	}
 }
 
-func TestFrameSinkParksHiddenCursorAtFrameCursorRect(t *testing.T) {
+func TestFrameSinkShowsVisibleCursorAtFrameCursorRect(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)
 	frame := render.Frame{
@@ -426,11 +426,31 @@ func TestFrameSinkParksHiddenCursorAtFrameCursorRect(t *testing.T) {
 		t.Fatalf("write frame: %v", err)
 	}
 	got := output.String()
-	if !strings.Contains(got, render.ANSIReset+hideCursor+cursorPosition(3, 5)+synchronizedOutputEnd) {
-		t.Fatalf("FrameSink should park hidden host cursor at global cursor rect for IME anchor, got %q", got)
+	if !strings.Contains(got, render.ANSIReset+cursorShapeBar+cursorPosition(3, 5)+showCursor+synchronizedOutputEnd) {
+		t.Fatalf("FrameSink should show host cursor at global cursor rect, got %q", got)
+	}
+	if !strings.HasPrefix(got, synchronizedOutputBegin+hideCursor) {
+		t.Fatalf("FrameSink should hide cursor during repaint before showing final cursor, got %q", got)
+	}
+}
+
+func TestFrameSinkParksHiddenCursorForAnchorOnlyFrame(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Lines:      []string{"one", "two"},
+		Cursor:     render.Cursor{Anchor: true, Shape: render.CursorShapeBar},
+		CursorRect: render.Rect{X: 4, Y: 2, W: 1, H: 1},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+	got := output.String()
+	if !strings.Contains(got, render.ANSIReset+hideCursor+cursorShapeBar+cursorPosition(3, 5)+synchronizedOutputEnd) {
+		t.Fatalf("FrameSink should park hidden host cursor at global anchor rect, got %q", got)
 	}
 	if strings.Contains(got, showCursor) {
-		t.Fatalf("FrameSink must keep host cursor hidden during TUI frames, got %q", got)
+		t.Fatalf("anchor-only cursor must remain hidden, got %q", got)
 	}
 }
 
@@ -469,7 +489,7 @@ func TestFrameSinkPrefersANSIStyledFrame(t *testing.T) {
 		t.Fatalf("FrameSink must not use plain snapshot when ANSI lines are present, got %q", got)
 	}
 	if !strings.Contains(got, render.ANSIReset+hideCursor) {
-		t.Fatalf("FrameSink must reset style before hiding cursor at frame end, got %q", got)
+		t.Fatalf("FrameSink must reset style before final cursor sequence, got %q", got)
 	}
 }
 

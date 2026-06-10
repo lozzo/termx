@@ -316,7 +316,7 @@ func TestMeasureLayoutAnchorsCursorWhenContentHasNoVisibleCursor(t *testing.T) {
 
 	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
 	want := plan.Panels[0].ContentRect
-	if !plan.Cursor.Visible || plan.Cursor.Shape != CursorShapeBar {
+	if plan.Cursor.Visible || !plan.Cursor.Anchor || plan.Cursor.Shape != CursorShapeBar {
 		t.Fatalf("missing IME cursor anchor, cursor=%#v rect=%#v", plan.Cursor, plan.CursorRect)
 	}
 	if plan.CursorRect != (Rect{X: want.X, Y: want.Y, W: 1, H: 1}) {

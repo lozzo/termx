@@ -19,6 +19,7 @@ const (
 
 type Cursor struct {
 	Visible bool
+	Anchor  bool
 	Row     int
 	Col     int
 	Shape   CursorShape

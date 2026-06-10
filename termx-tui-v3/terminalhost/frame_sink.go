@@ -13,6 +13,8 @@ const (
 	cursorHome              = "\x1b[H"
 	clearScreen             = "\x1b[2J"
 	clearLine               = "\x1b[2K"
+	cursorShapeBlock        = "\x1b[2 q"
+	cursorShapeBar          = "\x1b[6 q"
 	synchronizedOutputBegin = "\x1b[?2026h"
 	synchronizedOutputEnd   = "\x1b[?2026l"
 )
@@ -55,12 +57,25 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 }
 
 func frameCursorSequence(frame render.Frame) string {
-	if !frame.Cursor.Visible || frame.CursorRect.W <= 0 || frame.CursorRect.H <= 0 {
+	if (!frame.Cursor.Visible && !frame.Cursor.Anchor) || frame.CursorRect.W <= 0 || frame.CursorRect.H <= 0 {
 		return hideCursor
 	}
-	// 参考 tuiv2：宿主光标保持隐藏，但停在 pane/overlay 内的输入点，
-	// 让中文输入法预编辑文本跟随真实输入位置，而不是落到最后一行输出位置。
-	return hideCursor + cursorPosition(frame.CursorRect.Y+1, frame.CursorRect.X+1)
+	// 中文说明：参考 tuiv2 的最终光标复投经验。v3 已经有全局 CursorRect，
+	// 因此只在真实 virtual cursor 可见时显示宿主光标；anchor-only 仍隐藏但停靠。
+	sequence := cursorShapeSequence(frame.Cursor.Shape) + cursorPosition(frame.CursorRect.Y+1, frame.CursorRect.X+1)
+	if frame.Cursor.Visible {
+		return sequence + showCursor
+	}
+	return hideCursor + sequence
+}
+
+func cursorShapeSequence(shape render.CursorShape) string {
+	switch shape {
+	case render.CursorShapeBar:
+		return cursorShapeBar
+	default:
+		return cursorShapeBlock
+	}
 }
 
 func cursorPosition(row int, col int) string {
