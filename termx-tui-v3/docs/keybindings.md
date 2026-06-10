@@ -172,17 +172,17 @@
 
 | Mode | 快捷键 | 状态 | 缺口 |
 | --- | --- | --- | --- |
-| pane | `s LOCK` | 未实现 | tuiv2 catalog 有 pane mode 展示；当前真实入口收敛到 resize mode 的 view-local terminal layout command，未在 pane footer 常驻展示 |
+| pane | `s LOCK` | 待实现 | tuiv2 catalog 有 pane mode 展示；当前真实入口收敛到 resize mode 的 view-local terminal layout command，pane mode 对齐排入 215C2 |
 | resize | `s LOCK`、`Space LAYOUT`、`Shift+WASD/Shift+Arrow PAN`、`0/$/^/B ALIGN`、`m/|/_ CENTER`、`r RESET` | 已实现 | 状态挂在 `TerminalViewBinding.Layout`，键盘与 footer action 走统一 semantic command，render projector 展示 layout metadata |
-| floating | `o OVERVIEW`、`1-9 SUMMON` | 未实现 | render 仍是 floating overview placeholder，缺 overlay reducer/input |
-| floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 未实现 | 缺 floating group collapse、fit 与 auto-fit state |
+| floating | `o OVERVIEW`、`1-9 SUMMON` | 待实现 | render 仍是 floating overview placeholder，缺 overlay reducer/input，排入 215D |
+| floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 待实现 | 缺 floating group collapse、fit 与 auto-fit state，排入 215D1 |
 | display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 已核验 | 已走 authoritative `HistoryWindow` 上的 copy reducer；`Enter` 复制 selection 后退出 copy mode；见 `termx-tui-v3/app/integration_test.go` |
-| display | `p/P PASTE`、`H HISTORY` | 后置 | clipboard paste/history overlay 依赖 history MVP，当前不在连续推进队列；恢复前需先重启 history MVP 切片 |
+| display | `p/P PASTE`、`H HISTORY` | 阻塞 | clipboard paste/history overlay 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
 | picker | `Tab SPLIT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | 键盘分发复用 selected item、`ActionSpec` 和 `ShellContentActionMsg`；`Ctrl-X` 保留 delete 语义，tui-v3 service/reducer 接线排入 215C1 |
 | terminal manager | `Ctrl-T TAB`、`Ctrl-O FLOAT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | attach tab/floating、edit、kill 均走 overlay action/reducer/effect；`Ctrl-X` 保留 delete 语义，tui-v3 service/reducer 接线排入 215C1 |
 | workspace picker | `Ctrl-N NEW`、`Ctrl-R RENAME`、`Ctrl-X REMOVE`、`Ctrl-D DETACH`、`Ctrl-Z ZOOM` | 已实现 | Workbench Tree 键盘动作统一复用 content action reducer；detach 同步清理 pane terminal view binding |
-| floating overview | 全部 | 未实现 | 当前只渲染 placeholder |
-| clipboard history | 全部 | 后置 | 依赖 history MVP，当前不在连续推进队列 |
+| floating overview | 全部 | 待实现 | 当前只渲染 placeholder，overview/summon 排入 215D，group commands 排入 215D1 |
+| clipboard history | 全部 | 阻塞 | 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
 
 ## 未展示但可触发
 
