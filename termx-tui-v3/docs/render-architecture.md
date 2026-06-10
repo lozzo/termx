@@ -159,6 +159,7 @@ styled chrome renderer 阶段开始后，`RenderResult` 不能在主路径中过
 - 从产品状态选择当前 surface。
 - 计算 workspace / tab / pane / floating 的 view-model。
 - 给 panel 分配内容类型。
+- 把 pane/floating 的 `TerminalView/Attachment` binding 投影成 content VM 所需的 terminal id、view id、resize role、surface projection 和 view-local session 状态。
 - 准备 header/footer/toast/overlay VM。
 - 把业务状态转换成短 token、label、action descriptor。
 - 判断 copy mode 是否绑定 authoritative history window。
@@ -190,6 +191,7 @@ styled chrome renderer 阶段开始后，`RenderResult` 不能在主路径中过
 copy-history VM 的生成条件必须写实：
 
 - `CopyModeStore` 的 terminal id 必须与 `HistoryStore` 当前 window 的 terminal id 一致。
+- `CopyModeStore` 的 active view id / pane id 必须仍指向当前有效 view binding。
 - `CopyModeStore` 的 bound core window token 必须与 `HistoryStore` 当前 window token 一致。
 - `CopyModeStore` 的 bound cols 必须与 `HistoryStore` 当前 window cols 一致。
 - 任一条件不满足时，只能生成 pending、empty 或 error content VM。
@@ -248,8 +250,17 @@ content renderer 不知道：
 - 其他 panel 的位置。
 - frame sink。
 - core client。
+- terminal service 或 attachment registry。
 
 content renderer 可以产出 styled content，但只能在 framework 分配的 content rect 内生效。content renderer 不允许直接覆盖 pane border、shell chrome、overlay 或 toast chrome。
+
+Terminal live content 的 VM 输入必须来自 `TerminalViewStore + TerminalSurfaceStore` 的投影：
+
+- terminal id 表示共享 terminal truth。
+- view id / attachment id 表示当前 panel 的连接视图。
+- surface projection 可以按 terminal id 复用 latest live surface。
+- view-local session 表示 channel、resize role、desired size、error 和 pending state。
+- renderer 不得从全局 latest session 推断当前 pane 的 terminal，也不得在 pane 缺 view binding 时 fallback 到其它 view。
 
 ## 5.5 Styled Chrome Renderer
 

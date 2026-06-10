@@ -1,4 +1,4 @@
-# 工作流：termx-tui-v3 styled chrome renderer 视觉对齐
+# 工作流：termx TerminalView/Attachment 多 panel 连接主线
 
 本文件是当前分支唯一有效的活动驱动文件。后续所有分析、实现、测试、提交都必须先读取本文件，并以本文件为准。
 
@@ -8,7 +8,7 @@
 
 ## 1. 当前唯一目标
 
-在默认入口已经切到 `termx-core-v2/` 与 `termx-tui-v3/`，且外部 viewport / resize / Unicode 线框收口已完成的基础上，把 `termx-tui-v3` 推进到 styled chrome renderer 阶段，使默认 TUI 的 shell chrome、pane chrome、边框、状态栏、toast 和 overlay 达到 `tuiv2` 截图所示的视觉等级。
+在默认入口已经切到 `termx-core-v2/` 与 `termx-tui-v3/`，styled chrome、panel content、真实 PTY、workbench storage 和基础可用性切片已经完成的基础上，把“同一个 terminal 可以被同一屏幕、同一 tab 内多个不同 panel 连接”的 `TerminalView/Attachment` 语义补成当前主线，修正此前 `pane -> terminalID -> 全局 Session` 的一对一假设。
 
 当前事实：
 
@@ -17,6 +17,9 @@
 - `termx-tui-v3/render` 已建立 render framework / content renderer 分层，`RenderVMBuilder` 输出 `ShellVM`，`Renderer.RenderResult` 通过 workbench shell、panel、overlay 和 toast 合成 `RenderResult`；旧 `RenderVM{Lines, Status}` 兼容输入字段已删除，`Frame.Lines` 只作为 `RenderResult` 的 plain 输出适配保留。
 - `termx-tui-v3/state` 已拥有 reducer-owned shell、workspace/tab/pane 最小树、panel presentation、header/footer visibility、toast/message 和 Terminal Picker overlay 状态模型。
 - 外部 terminal emulator resize 已作为 runtime message 流进入 reducer-owned state；`RenderVMBuilder` 已把外部 viewport 作为 shell layout 尺寸 truth；renderer 已按已知 viewport 填满输出；active terminal resize 已从 panel content rect 计算；默认 UI chrome 已收敛到 Unicode box drawing。
+- `termx-tui-v3/docs/ui-interaction-spec.md` 已明确 `terminal` 是全局运行实体、`pane` 是观察位/工作位，且一个 terminal 可以被多个 pane 复用；但当前实现仍大量依赖 `PaneState.TerminalID`、全局 `TerminalSessionStore`、全局 live stream token 和 active content rect resize，尚未形成 first-class `TerminalView/Attachment` 模型。
+- `core-v2` protocol 已有 `SurfaceID`、`ViewID`、`ResizeOwnership` 和 channel 字段雏形，但当前 protocol session 主要保存 `channel -> terminalID`，没有 attachment registry、resize owner/follower 裁决、view identity 生命周期和多 view harness。
+- `tui-v3` 当前 `TerminalSessionStore.InputChannels` 只是急修阶段的输入 channel 路由元数据，不是完整的 pane/floating view session truth；后续必须收敛为 reducer-owned view/attachment store。
 - 当前 `Frame` 由 `RenderResult` 适配生成 plain、styled 和 ANSI 三种输出视图；真实 `FrameSink` 优先写 ANSI styled frame，plain `Frame.Lines` 只用于测试快照、smoke 输出和宽度断言。
 - 当前默认 UI 只达到基础 styled chrome renderer 和产品壳可操作基线，尚未达到用户截图要求的 `tuiv2` 视觉等级；后续不能把“有 Unicode 线框、有颜色、有交互”误判为视觉对齐完成。
 - 切片 80-82 完成后的真实视觉复核未通过：用户明确指出当前 TUI 样子仍与目标截图不一致，因此切片 83 只能作为复核失败和返工拆分归档，不能作为视觉完成验收。
@@ -29,6 +32,11 @@
 - 真实 `FrameSink` 必须能写出 ANSI styled frame，不能丢失边框色、active/inactive 状态、header/footer 背景、toast/overlay 样式和必要 reset。
 - 默认 TUI 进入后不再只显示裸文本 `live surface pending` 或 `live: termx-main`，而是显示 workbench shell、header/footer、panel chrome 和 panel content。
 - 默认 workbench chrome 必须达到 `tuiv2` 截图级别：整屏布局、稳定 top/bottom bar、pane 细线边框、active pane accent、inactive pane muted、pane 标题/状态/action 槽位、内容区明确裁切。
+- pane/floating 不再以裸 `TerminalID` 作为唯一连接身份；最终必须通过 `TerminalView/Attachment` 绑定 terminal、protocol channel、view id、surface id、resize role 和 view-local request/error/desired size。
+- 同一个 terminal 可以同时被多个 tiled pane、floating pane 或后续 tab/workspace view 连接；terminal process、lifecycle、input sink 和 authoritative history truth 仍只有一份。
+- close pane / detach pane 只移除当前工作位和 view binding，不 kill terminal；kill terminal 是 destructive terminal lifecycle 操作，会影响所有绑定该 terminal 的 view。
+- resize 必须有 ownership 语义：同一 terminal 同时只能有一个有效 resize owner 修改 PTY size，follower/observer view 不得因为自己的 content rect 变化覆盖 terminal process size；focus 或显式操作如需转移 owner，必须走协议和 reducer/effect/message 路径。
+- copy/history 仍按 terminal authoritative `HistoryWindow` 工作，但交互态、content cols、pending request 和 rebind 必须绑定到发起 copy 的 pane/view，不能被同 terminal 的其它 view 覆盖。
 - 视觉完成不能只看 smoke 文本是否有线框；必须以真实 TTY ANSI frame、截图/录制、固定 viewport smoke snapshot 和人工对照 `tuiv2` 目标风格共同验收。
 - 当前切片 75-78 只完成产品壳、基础 styled renderer、terminal/copy 前推和 render 输入清理，不等于上述视觉完成定义已经满足。
 - 本轮 UI 产品壳完成后，除 terminal-live/copy-history 的深层内容渲染仍可继续深化外，header/footer、pane、floating、Terminal Pool、Workbench Tree、Prompt/Help、Tab/Workspace、toast、overlay、快捷键和鼠标入口必须形成可基本操作的产品闭环。
@@ -227,6 +235,21 @@
 - 如果新增功能要求改变现有架构，默认选择重构或重写对应边界，把 domain model、protocol contract、projector、renderer、state/effect/service 边界做干净，再接真实路径和测试。
 - 允许大改，但必须小步提交：可以在一个 `/goal` 中连续完成多个 `SK:` 小阶段；每个阶段都必须保持仓库可编译、测试准入清楚、行为边界可解释。
 - 旧实现只能只读参考。迁移旧经验时必须迁入 v2/v3 的新边界和命名，不能复制旧 runtime/model 大 bag，也不能为了兼容旧内部实现保留桥接层，除非本文件先明确批准。
+
+### 4.11 TerminalView / Attachment 语义约束
+
+- `Terminal` 是 core-v2 管理的全局运行实体，拥有 process、PTY size、terminal lifecycle、live surface truth 和 authoritative logical-line history truth。
+- `TerminalView` 或 `Attachment` 是某个 TUI panel/floating/tab 对 terminal 的连接视图，拥有 pane/floating identity、protocol channel、view id、surface id、resize role、desired content size、request seq、error state 和 event stream subscription。
+- pane/floating/workbench 结构状态不得继续把裸 `TerminalID` 当作完整连接 truth；可以保留 `TerminalID` 作为 terminal identity，但必须通过 view binding 表达具体连接。
+- 同一 terminal 可以同时绑定多个 view；多个 view 共享 terminal process、input sink、history truth 和 terminal lifecycle，不共享 view-local focus、copy mode、content rect、resize request seq 或 UI error state。
+- terminal input 必须路由到当前 active view 的 attachment channel；不得 fallback 到全局 latest session terminal。
+- terminal mouse passthrough 必须按当前命中 content 所属 view 的 live modes 判断；UI chrome、overlay、toast、footer/header hit region 继续优先，不得漏发到底层 terminal。
+- resize 必须按 attachment role 处理：owner view 可以发起 PTY resize，follower/observer view 只能显示当前 terminal projection 或请求显式 ownership transfer；不得让 inactive 或非 owner view 的 content rect 变化覆盖 terminal process size。
+- attach/reconnect/duplicate view 必须创建或复用 view binding；close/detach pane 只移除 view binding，不 kill terminal；kill terminal 必须广播并让所有绑定 view 显示 exited/removed/error。
+- copy mode 绑定 active view 的 pane/floating 与 terminal id、content cols、view rows 和 request id；history window 仍只按 terminal truth 返回，不因多个 view 存在而复制 history truth。
+- live surface cache 可以按 terminal id 保存 authoritative latest projection，但 resize boundary、desired size、stream token、input channel、view error 和 stale guard 必须按 view/attachment 或明确的 terminal generation 建模，不能依赖单全局 `TerminalSessionStore`。
+- workbench storage schema 必须表达 pane/floating 的 view binding；schema 变化必须版本化并有 decode/encode harness，不得悄悄复用旧 v1 字段造成语义混淆。
+- core-v2 daemon 仍不理解 workspace/tab/pane truth；它只管理 terminal pool、attachment/channel registry、resize ownership、event stream 和 opaque storage。
 
 ## 5. 任务队列
 
@@ -448,8 +471,17 @@
 | 205. SK Active terminal input routing 急修 | 完成 | `workflow.md`、`termx-tui-v3/app/`、`termx-tui-v3/state/` | 已完成 active terminal input routing 急修：`reduceLiveInput` 不再以 `root.Session.TerminalID` 作为无条件输入目标，而是先解析 active floating terminal，再解析当前 active tiled pane terminal；空 pane 或无 terminal 绑定时显示 `terminal.input` / `no terminal bound`，并吞掉输入，避免写回旧 session terminal。`TerminalSessionStore` 新增已 attach terminal 到 input channel 的轻量映射，只作为 protocol channel 路由元数据，不是历史 truth；键盘输入和 terminal mouse passthrough 均使用当前目标 terminal 的 surface/mode 判断。新增 harness 覆盖三 pane 点击后键盘输入进入对应 `TerminalID`/channel、active floating terminal 优先于 tiled pane、empty active pane 不 fallback 到旧 session terminal；同步更新综合 UI flow，先聚焦有绑定 terminal 的 pane 再验证 missed mouse 不偷键盘输入，避免测试继续依赖旧 fallback。残余边界：floating 内容区 mouse passthrough 仍受现有 floating hit region 表达限制，留给切片 206/207 后续处理。准入运行 `go test ./termx-tui-v3/app -count=1`、`go test ./termx-tui-v3/state ./termx-tui-v3/services ./termx-tui-v3/render -count=1`、`go test ./termx-tui-v3/... -count=1`、`go test ./termx-core-v2/... -count=1`、`go test ./internal/protocol -count=1`、`git diff --check`。 |
 | 206. SK Floating attach terminal 急修 | 完成 | `workflow.md`、`termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/services/` 按需 | 已完成 floating attach terminal 急修：`ShellStore.BindFloatingTerminal` 将 selected existing terminal 绑定到 floating pane 的 `Pane.TerminalID`，并激活对应 floating；Terminal Picker / Terminal Pool attach 请求携带或默认解析 active floating target，floating 空态 `Attach existing` 现在打开 picker 而不是展示未实现 toast。RenderVM 为 floating terminal-live 使用对应 terminal surface/session，floating content 复用 terminal-live content renderer；TerminalPool attach 初始尺寸使用 active floating content rect，TerminalPool attach result 和已绑定 floating resize/move/collapse 触发 active floating content rect resize 去重，空 floating 拖拽不 fallback resize 后方 terminal。新增 harness 覆盖 floating 空态从 picker attach pool existing terminal、渲染真实 live content、输入进入 floating terminal、active floating resize 发送 content rect resize、关闭 floating 不 kill terminal，并补充 overlay target state 测试。准入运行 `go test ./termx-tui-v3/app -count=1`、`go test ./termx-tui-v3/state ./termx-tui-v3/services ./termx-tui-v3/render -count=1`、`go test ./termx-tui-v3/... -count=1`、`go test ./termx-core-v2/... -count=1`、`go test ./internal/protocol -count=1`、`git diff --check`。 |
 | 207. SK Host cursor projection 急修 | 完成 | `workflow.md`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`termx-tui-v3/app/`；只读参考 `tuiv2/` cursor writer | 已完成 host cursor projection 急修：render `Cursor` 增加 `Anchor` 语义，真实 content-local virtual cursor 继续由 layout 映射为全局 `CursorRect` 且 `Visible=true`；无真实 virtual cursor 时只产生 hidden anchor，不再伪装成 visible cursor。`FrameSink` 写 frame 时绘制期间仍隐藏宿主光标，帧末参考 tuiv2 cursor writer 的最终复投经验：visible cursor 设置 block/bar shape、定位到全局 `CursorRect` 并显示系统光标；anchor-only 则隐藏但停靠到对应 rect；无 cursor/anchor 时保持隐藏。新增 harness 覆盖 live、copy、prompt、floating、non-input overlay 优先级和 resize 后 cursor rect 不越界；更新 FrameSink harness 覆盖 visible cursor、anchor-only cursor 与默认隐藏。准入运行 `go test ./termx-tui-v3/terminalhost -run 'TestFrameSink|TestHostEnterAndClose' -count=1`、`go test ./termx-tui-v3/render -run 'TestMeasureLayoutAnchorsCursorWhenContentHasNoVisibleCursor|TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect|TestMeasureLayoutOpaqueOverlayOwnsHitRegionsAndCursorRect|TestFrameworkTranslatesContentHitRegionsAndCursor|TestFrameworkOpaqueOverlayOwnsCursor' -count=1`、`go test ./termx-tui-v3/app -run 'TestHostCursorProjection' -count=1`、`go test ./termx-tui-v3/... -count=1`、`go test ./termx-core-v2/... -count=1`、`go test ./internal/protocol -count=1`、`git diff --check`。 |
+| 208. SK TerminalView / Attachment 设计落档 | 完成 | `workflow.md`、`termx-core-v2/docs/`、`termx-tui-v3/docs/` | 已把 `Terminal` 与 `TerminalView/Attachment` 分层语义写入 workflow、core-v2 架构、tui-v3 架构、UI 交互规格和 render 架构：terminal 是共享 process/lifecycle/history truth，view/attachment 是 pane/floating/tab 对 terminal 的连接，拥有 channel、surface/view id、resize role、desired size、request seq 和 view-local error；明确同 terminal 多 pane/floating view、owner/follower resize、close/detach/kill、copy/history view binding、storage schema v2 和 no fallback 到全局 latest session 约束；文档-only 准入运行 `git diff --check` |
+| 209. SK core-v2 attachment registry 与 resize ownership | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` 按需 | protocol attach/ensure_resize 建立 attachment registry，保存 channel、terminal id、surface id、view id、resize policy、owner epoch；同 terminal 多 attachment 可并存；owner 可以 resize，follower/observer 不覆盖 PTY size；detach 按 attachment 或 channel 移除，不误删同 terminal 其它 attachment；harness 覆盖多 attach/channel、ownership transfer 或拒绝、events 和 existing protocol adapter |
+| 210. SK tui-v3 pane binding 与 attachment store | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/services/`、`termx-tui-v3/app/`、`termx-tui-v3/render/` | 将 pane/floating 的 terminal 连接从裸 `TerminalID` 升级为 view binding；新增 reducer-owned attachment/session store，按 view 保存 channel、surface id、view id、resize role、desired size、request seq、error；保留 terminal id 作为共享 process identity；harness 覆盖同 terminal 两 pane、close/detach 不 kill、kill 影响所有绑定 view、workbench invariants |
+| 211. SK workbench storage schema v2 for view binding | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/services/`、`termx-tui-v3/app/` | workbench opaque storage schema 版本化表达 pane/floating view binding；encode/decode/validate 覆盖 v2 schema、CAS save/reload、multi workspace/tab/floating；旧 v1 若无明确迁移需求不得加复杂兼容桥，必要时只做显式 reject 或最小迁移并记录原因 |
+| 212. SK attach/reconnect/duplicate view runtime 路由 | 待开始 | `termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-tui-v3/state/`、`termx-tui-v3/render/` | LiveAttach、Terminal Picker、Terminal Pool、floating attach 和 reconnect 创建或复用 attachment view；input 使用 active view channel；live stream token 按 view/terminal 边界管理；mouse passthrough 按命中 view surface modes；不得 fallback 到全局 latest session terminal |
+| 213. SK view-aware resize 与 ownership transfer | 待开始 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/services/`、`termx-core-v2/` 按需 | active owner view 的 content rect 才能驱动 PTY resize；follower/observer view content rect 变化只影响 UI projection，不覆盖 terminal process size；focus 或显式 action 转移 resize owner 时走 effect/result message 和 protocol ownership；harness 覆盖同 terminal 双 pane 不互相改 size、owner transfer、stale resize guard 和 copy rebind |
+| 214. SK copy/history view binding 收口 | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/` | copy mode 绑定 active pane/floating view、terminal id、content cols、view rows、request id 和 bound token；同 terminal 不同 view 的 copy cols/rebind 不互相覆盖；history truth 仍来自 core-v2 terminal authoritative `HistoryWindow`；pending/older/stale guard 保持 no live fallback |
+| 215. SK render/interaction shared terminal UI | 待开始 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/docs/` | pane/floating chrome、Terminal Picker/Pool、Workbench Tree 和 footer/help 展示 shared terminal/view role 信息；可见动作区分 focus existing pane、attach here、duplicate into split/tab/floating、detach view、kill terminal；所有动作继续走统一 semantic command/action catalog，不画未接线按钮 |
+| 216. SK multi-view integration and tmux harness | 待开始 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 建立真实/黑盒证据：同一 terminal 连接到同 tab 多 pane 或 floating，输入只进 active view channel，owner resize 触达 PTY，follower 不覆盖 size，kill terminal 更新所有 view，copy/history authoritative window 可在不同 view cols 下独立 rebind；运行相关模块测试、tmux/e2e smoke 和 `git diff --check` |
 
-当前下一步：先按用户最新急需处理 tui-v3 可用性问题，完成切片 205-207：active terminal input routing、floating attach terminal、host cursor projection。历史 VT 语义路由方案暂不进入当前自动执行队列，等急修完成后再单独讨论和重新落档。继续保持 copy/history 只消费 authoritative `HistoryWindow`，不得从 live surface、snapshot 或 local VTerm scrollback 推断历史，也不得把 styled payload parser 扩张成补丁式完整 VT emulator。
+当前下一步：进入切片 209，先在 core-v2 / protocol 建立 daemon-side attachment registry 与 resize ownership harness，再推进 tui-v3 view binding。历史 VT 语义路由方案暂不进入当前自动执行队列，等 TerminalView/Attachment 主线完成后再单独讨论和重新落档。继续保持 copy/history 只消费 authoritative `HistoryWindow`，不得从 live surface、snapshot 或 local VTerm scrollback 推断历史，也不得把 styled payload parser 扩张成补丁式完整 VT emulator。
 
 ## 6. 必做 harness
 

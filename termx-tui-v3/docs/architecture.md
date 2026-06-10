@@ -96,6 +96,7 @@ app/
 state/
   root              StateRoot 与 reducer 协调
   workspace         tabs、panes、layout、active pane
+  terminalview      pane/floating 到 core-v2 attachment 的连接视图状态
   terminalsurface   当前实时 terminal surface，非历史 truth
   historyview       core authoritative HistoryWindow state
   copymode          copy mode cursor、viewport、selection
@@ -104,7 +105,7 @@ state/
 
 services/
   coreclient        protocol/core-v2 adapter
-  terminal          外部终端进程/core service：attach、terminal input、resize、restart、ownership、surface/title event stream
+  terminal          外部终端进程/core service：attach view、terminal input、resize、restart、ownership、surface/title event stream
   history           latest/older request IO，返回 response message，不做 stale 接纳
   session           load/save/restore
   clipboard         yank、clipboard history
@@ -259,6 +260,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 
 - `WorkspaceStore`
 - `PaneStore`
+- `TerminalViewStore`
 - `TerminalSurfaceStore`
 - `HistoryStore`
 - `CopyModeStore`
@@ -269,7 +271,34 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 
 `StateRoot` 不保存 protocol client、goroutine handle、terminal process handle 或 renderer cache。
 
-`StateRoot` 只保存 terminal id、pane binding、surface snapshot、运行状态标记和请求状态。terminal process handle、event stream subscription、protocol client、resize/input IO 都属于 terminal service 或 core client adapter。
+`StateRoot` 只保存 terminal id、pane/floating view binding、attachment channel metadata、surface snapshot、运行状态标记和请求状态。terminal process handle、event stream subscription、protocol client、resize/input IO 都属于 terminal service 或 core client adapter。
+
+### 8.1.1 TerminalViewStore
+
+`TerminalViewStore` 是 reducer-owned 的客户端连接视图状态，用来表达“某个 panel 连接到某个 terminal 的哪个 attachment”。
+
+至少包含：
+
+- view id / attachment id。
+- terminal id。
+- bound pane id 或 floating id。
+- protocol channel。
+- surface id。
+- resize role：owner、follower 或 observer。
+- desired cols/rows、last confirmed cols/rows、resize request seq 和 confirmed seq。
+- view-local error、attached/exited/unavailable 状态。
+- stream token 或 stream generation 的 reducer-owned identity，不保存 goroutine handle。
+
+规则：
+
+- pane/floating 不再把裸 `TerminalID` 当作完整连接 truth；pane/floating 可以保存 terminal identity 作为展示和 storage 便捷字段，但真实 IO 必须通过 view binding 定位 attachment。
+- 同一 terminal 可以有多个 view；多个 view 共享 terminal process、history truth 和 terminal lifecycle，但不共享 focus、copy mode、content rect、desired size、resize seq 或 view-local error。
+- terminal input 只发送到当前 active view 的 attachment channel；active pane 缺 view binding 时必须显示 no terminal bound，不得 fallback 到最近 attach 的全局 session。
+- terminal mouse passthrough 必须按命中的 view 所对应 live modes 判定；chrome、overlay、toast、footer/header 的 hit region 继续优先。
+- owner view 的 content rect 变化才可以产生 terminal resize effect；follower/observer view 只能显示当前 terminal projection，除非用户显式触发 ownership transfer。
+- close pane / detach pane 只删除 view binding；close and kill / kill terminal 才请求 terminal lifecycle 破坏性操作。
+- kill/restart/remove terminal 后，所有绑定该 terminal 的 view 都必须通过 reducer message 进入 exited/unavailable/error 投影。
+- service 不得直接修改 view store；attach、resize、ownership、stream、error 都必须通过 message/effect/result 回到 reducer。
 
 ### 8.2 TerminalSurfaceStore
 
@@ -279,6 +308,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - 可以服务普通 terminal renderer。
 - 不得成为 copy mode/history path 的 committed history source。
 - 不得向 `HistoryStore` 提供 rows 让其反推出 logical line。
+- 可以按 terminal id 缓存 latest live surface，但 view-local resize boundary、desired size、stream subscription 和 input channel 不属于 `TerminalSurfaceStore` 的 truth。
 
 ### 8.3 HistoryStore
 
@@ -316,6 +346,7 @@ history service 只能发起请求并把 response 映射成 message，不能在 
 `CopyModeStore` 只保存 copy mode 的交互态。
 
 - active pane id
+- active view id 或 attachment id
 - terminal id
 - cursor
 - mark
@@ -327,6 +358,13 @@ history service 只能发起请求并把 response 映射成 message，不能在 
 - pending/empty display state
 
 Copy mode 不读取 local VTerm scrollback，不用 wrapped rows 拼 logical line，不维护本地 committed depth。
+
+copy mode 绑定的是发起 copy 的 pane/floating view 与 terminal history truth：
+
+- `TerminalID` 决定 authoritative `HistoryWindow` 来源。
+- view id / pane id 决定 content rect cols、view rows、focus、selection 和 UI overlay 位置。
+- 同一 terminal 的两个 view 可以用不同 cols 分别 rebind latest window；一个 view 的 resize/rebind 不得覆盖另一个 view 的 copy 交互态。
+- view 被 detach/close 时，绑定该 view 的 copy mode 必须退出或转为 pending/error；不得 silently fallback 到同 terminal 的其它 view。
 
 ## 9. 消息和副作用架构
 

@@ -79,10 +79,19 @@
 产品要求：
 
 - pane 不等于 terminal。
-- pane 可以为空、连接 terminal、共享 terminal、显示 exited terminal 的最后状态。
+- pane 可以为空、通过 `TerminalView/Attachment` 连接 terminal、共享 terminal、显示 exited terminal 的最后状态。
 - pane 支持水平和垂直分割。
-- pane 支持 focus、close、zoom、attach existing terminal、create new terminal。
+- pane 支持 focus、close、detach view、zoom、attach existing terminal、duplicate terminal view、create new terminal。
 - pane 必须有可识别边界、标题、局部状态和必要动作。
+
+交互语义：
+
+- focus pane 只改变 UI active view，不等于创建新 terminal。
+- close pane 只移除该工作位；如果 pane 绑定了 terminal view，只 detach 当前 view，不 kill terminal。
+- detach view 明确断开当前 pane 与 terminal 的连接，pane 变为空态。
+- close and kill / kill terminal 是破坏性动作，会终止 terminal 并影响所有连接同 terminal 的 pane/floating view。
+- duplicate terminal view 会在当前 tab 的新 split、新 tab 或 floating 中连接同一个 terminal，不创建新 process。
+- 同一个 terminal 的多个 view 必须有可识别的 shared 状态；但 shared 状态不能替代 terminal lifecycle 状态。
 
 ### 3.4 Floating Pane
 
@@ -107,9 +116,17 @@
 - 可以 attach 为 split。
 - 可以 attach 到新 tab。
 - 可以 attach 为 floating pane。
+- 可以 duplicate 为当前 terminal 的另一个 view。
 - 可以编辑 metadata。
 - 可以 kill。
 - running、exited、unavailable 等生命周期状态必须可见。
+
+`terminal` 与 `TerminalView/Attachment` 的区别：
+
+- terminal 是全局运行实体，拥有 process、PTY size、history truth 和 lifecycle。
+- view 是某个 pane/floating/tab 对 terminal 的连接，拥有 focus、content rect、copy mode 绑定、input channel、resize role 和 view-local error。
+- 同一 terminal 多 view 共享输入目标和历史 truth；用户当前 active view 决定键盘输入送到哪个 attachment channel。
+- resize owner view 可以改变 terminal PTY size；follower/observer view 不能因为自身布局变化覆盖 terminal size。
 
 ### 3.6 Terminal Pool
 
@@ -121,7 +138,8 @@
 - 搜索 terminal。
 - 预览 terminal 当前状态。
 - 对 terminal 执行 attach、attach as tab、attach as floating、edit metadata、kill。
-- 展示 terminal 是否 visible、parked、exited、bound。
+- 对 terminal 执行 duplicate into split/tab/floating、detach selected view、edit metadata、kill。
+- 展示 terminal 是否 visible、parked、exited、bound/shared，以及当前 view role 是 owner、follower 还是 observer。
 
 ### 3.7 Overlay Modal
 
@@ -154,7 +172,7 @@
 - workspace / tab / pane 主工作流。
 - tiled pane grid。
 - floating pane overlay。
-- terminal attach / split / create。
+- terminal attach / duplicate view / split / detach / create。
 - live terminal display。
 - copy mode 入口。
 - empty pane 状态。

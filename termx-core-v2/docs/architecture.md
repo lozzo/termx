@@ -68,6 +68,26 @@ core-v2 采用 `HistoryTrack + LiveSurfaceTrack` 双轨架构。双轨只区分�
 - 不应继续把 `workbench.get`、`workbench.apply`、`workbench.changed` 扩展为长期 daemon 领域 API；若当前实现中存在 workbench 专用协议，它只应视为待收敛到 storage opaque model 的迁移债。
 - floating/overlay 是否进入共享 storage 由 TUI/client schema 决定；daemon 不需要知道这些概念。
 
+### 4.0.2 Terminal Attachment / View Registry
+
+`Terminal Attachment` 是客户端连接某个 terminal 的 protocol 视图，不是新的 terminal，也不是 TUI 的 pane/workspace truth。
+
+- `Terminal` 仍是 core-v2 daemon 管理的全局运行实体，拥有 process、PTY size、live surface、terminal lifecycle 和 authoritative history truth。
+- `Attachment` 绑定 `terminal_id + channel + surface_id + view_id + resize_policy + resize ownership epoch`，用于路由 input、resize、event stream 和 detach。
+- 同一个 terminal 可以同时存在多个 attachment；多个 attachment 共享同一 process、input sink、live surface truth 和 history truth。
+- attachment registry 不能保存 workspace、tab、pane、floating 或布局 schema；这些只属于 TUI/client 或 storage opaque value。
+- `channel -> terminal_id` 只是最低限度路由信息，不能替代 attachment registry；后续 input/resize/error 必须能定位到具体 attachment。
+- detach 应移除具体 attachment 或 channel，不得因为一个 view 关闭而删除同 terminal 的其它 attachment。
+- terminal kill/remove/restart 是 terminal lifecycle 操作，必须影响所有 attachment，并通过 daemon event stream 通知客户端重新投影。
+- attach、detach、reattach、resize ownership 变化都不得创建 committed history；它们只能改变 attachment/session 边界、live projection 或 stale signal。
+
+Resize ownership 是 attachment 的属性，不是 terminal history truth。
+
+- 同一 terminal 在同一时刻最多有一个有效 resize owner attachment。
+- owner attachment 可以通过 `ensure_resize` 改变 PTY size；follower/observer attachment 不能因为自身 view content rect 变化覆盖 PTY size。
+- owner 转移必须显式发生，更新 ownership epoch，并让旧 owner 的 late resize response 失效。
+- resize policy 不改变 logical-line history truth；resize 后 history window 仍通过 token/generation/cols 失效和重投影。
+
 ### 4.1 HistoryTrack
 
 `HistoryTrack` 是 authoritative history truth，内部由四类对象组成：
@@ -115,6 +135,14 @@ protocol adapter 负责把 core-v2 domain model 映射到外部协议。
 - older response 的 op 必须由 core-v2 决定，client 不得自行把 response 解释成 prepend。
 - history response 必须携带 stable logical line id、line span clipping、token、generation、first/last logical line boundary、has-more 与 cursor。
 - stale guard 只能使用 token、generation、cursor、logical boundary，不能使用 snapshot totals、row count 或 LoadedRows。
+
+attachment 相关 protocol 适配必须满足：
+
+- `attach` 返回的 channel 必须对应一个 daemon-side attachment，不只是临时输入通道。
+- `AttachParams.SurfaceID` 和 `AttachParams.ViewID` 表达客户端 view identity；core-v2 可以记录和回显，但不解释它们是不是 pane、floating 或 tab。
+- `ensure_resize` 必须校验 channel、terminal id 和 attachment identity，按 resize policy/ownership 决定允许、拒绝或转移 owner。
+- `ResizeControl` / `ResizeOwnership` 是 protocol 层对 attachment ownership 的投影，不得被 TUI 当成 committed history 或 workspace truth。
+- event stream 可以按 terminal 过滤，也可以携带 attachment 相关 metadata，但不得把 TUI pane/floating schema 推进 daemon 领域模型。
 
 ## 5. HistoryTrack 数据模型
 
