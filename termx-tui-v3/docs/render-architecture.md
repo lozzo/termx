@@ -891,7 +891,7 @@ cache 原则：
 
 必须覆盖：
 
-- pane mode：split right/down、close、focus next/previous、zoom/unzoom、balance、card/split presentation。
+- pane mode：close、focus next/previous、zoom/unzoom、balance、card/split presentation；split right/down 只通过 pane chrome、鼠标或语义命令入口触发。
 - resize mode：方向 resize、balance、退出。
 - global mode：header/footer hide、toast close current、toast clear all。
 - 鼠标：pane content/chrome focus、pane action、resize handle 或 split divider、toast/overlay 优先级、未命中 fallback。

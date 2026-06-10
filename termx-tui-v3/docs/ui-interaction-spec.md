@@ -750,7 +750,7 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 
 当前已落地的第一版入口：
 
-- `Ctrl-p`：pane mode，承载 split right / split down / close / focus next / focus previous / zoom / balance / card / split。
+- `Ctrl-p`：pane mode，承载 close / focus next / focus previous / zoom / balance / card / split presentation；split right / split down 只通过 pane chrome、鼠标 hit region 或 semantic command 入口触发。
 - `Ctrl-r`：resize mode，承载方向 resize 和 balance。
 - `Ctrl-g`：global mode，承载 header/footer hide、toast 清理，并作为 Terminal Pool / Help 等全局入口的承载 mode。
 - `Ctrl-o`：floating mode，承载 create、move、resize、center、collapse / restore 和 close。
@@ -764,31 +764,11 @@ pane、tab、workspace、floating 等结构操作必须先定义为稳定动作�
 
 - 更完整的 command palette、可配置 keymap 和跨 workspace terminal attach 尚未产品化。
 
-### 13.2.1 当前快捷键实现核查表
+### 13.2.1 当前快捷键实现核查
 
-本表以 `termx-tui-v3/input/bindings.go` 的 `BindingCatalog` 为唯一快捷键目录来源；“已接线”表示快捷键已通过 `Intent` 接入 app reducer、shell message、pane command adapter 或 workbench command adapter；“测试证据”只记录当前已存在的 harness 入口，后续新增快捷键或改键位时必须同步更新本表。
+当前快捷键实现核查表维护在 `termx-tui-v3/docs/keybindings.md`。该文件以 `termx-tui-v3/input/bindings.go` 的 `BindingCatalog` 和 `termx-tui-v3/render/action_ids.go` 的 footer action spec 为来源，记录“实际可触发快捷键”“footer 已展示快捷键”和“特意不做键盘入口的 semantic command”。
 
-| 分组 | 快捷键 | 语义动作 | 实现状态 | 测试证据 |
-| --- | --- | --- | --- | --- |
-| Root | `Ctrl-p` / `Ctrl-r` / `Ctrl-g` / `Ctrl-o` / `Ctrl-t` / `Ctrl-w` | 进入 pane / resize / global / floating / tab / workspace mode | 已登记，已通过 `IntentSetInteractionMode` 接入 `ShellSetInteractionModeMsg` 路径 | `input/types_test.go`、`app/ui_input_test.go` |
-| Root | `Ctrl-f` | 打开 Terminal Picker overlay 并请求 terminal pool list | 已登记，已通过 `IntentOpenTerminalPicker` 接入 reducer 和 list request effect | `app/ui_input_test.go` |
-| Root | `Ctrl-v`、`PageUp`、鼠标 wheel up | 进入 Display / Copy 或请求 older history | 已登记，已接入 authoritative copy/history reducer 路径 | `input/types_test.go`、`app/ui_input_test.go`、`app/integration_test.go` |
-| Root | `Esc` | 退出 mode、关闭 overlay；normal 无 copy mode 时透传 terminal ESC | 已登记在 route 逻辑，已接入 interaction exit / overlay close / terminal input 分支 | `input/types_test.go`、`app/ui_input_test.go`、`app/integration_test.go` |
-| Pane mode | `v` / `%`、`s` / `"` | split right / split down | 已登记，已通过 `PaneCommandFromIntent` 和 workbench pane split command 接线 | `input/types_test.go`、`app/pane_command_adapter_test.go`、`app/ui_input_test.go` |
-| Pane mode | `x` / `w`、`d`、`X` | close pane、detach pane、close and kill terminal | 已登记，已通过 workbench command adapter 接线；`X` 使用 accepted confirm 语义 | `input/types_test.go`、`app/action_catalog_test.go`、`app/shell_test.go`、`app/runtime_test.go` |
-| Pane mode | `z`、`b`、`c`、`p` | zoom、balance、card presentation、split-line presentation | 已登记，已通过 pane mini command adapter 接线 | `app/pane_command_adapter_test.go`、`app/ui_input_test.go`、`app/live_test.go` |
-| Pane mode | `n` / `N`、`h` / `j` / `k` / `l`、方向键 | focus next / previous | 已登记，方向 focus 当前映射为 next / previous，不表达几何方向 truth | `app/ui_input_test.go`、`app/runtime_test.go` |
-| Resize mode | 方向键、`h` / `j` / `k` / `l`、`H` / `J` / `K` / `L` | 按方向 resize，普通步长 2，大写步长 6 | 已登记，已通过 pane resize command 接线 | `app/ui_input_test.go`、`app/runtime_test.go`、`app/integration_test.go` |
-| Resize mode | `b` / `=` | balance / equalize | 已登记，已通过 pane balance command 接线 | `input/types_test.go`、`app/ui_input_test.go` |
-| Global mode | `h`、`f`、`t`、`T` | toggle header、toggle footer、clear toasts、close current toast | 已登记，已通过 shell action adapter 接线到 shell reducer | `app/action_catalog_test.go`、`app/ui_input_test.go`、`app/runtime_test.go` |
-| Global mode | `p` / `m`、`w`、`:`、`?`、`q` | Terminal Pool、Workbench Tree、Prompt、Help、Quit | 已登记，已通过 shell action adapter 接线 | `app/action_catalog_test.go`、`app/ui_input_test.go`、`app/runtime_test.go` |
-| Floating mode | `n`、`x`、`z` / `m`、`c` | create、close、collapse / restore、center | 已登记，已通过 floating command adapter 接线 | `app/ui_input_test.go`、`app/runtime_test.go` |
-| Floating mode | `h` / `j` / `k` / `l`、方向键、`H` / `J` / `K` / `L` | move 和 resize active floating pane | 已登记，已通过 floating move / size command 接线 | `app/ui_input_test.go`、`app/runtime_test.go` |
-| Tab mode | `n` / `c`、`l` / `]`、`h` / `[` / `p`、`1`-`9`、`r`、`x`、`X` | create、next、previous、jump、rename、close、kill | 已登记，已通过 workbench command adapter 接线；rename 进入 Prompt | `app/ui_input_test.go`、`app/runtime_test.go` |
-| Workspace mode | `n` / `c`、`l` / `]`、`h` / `[` / `p`、`r`、`x`、`t` / `f` / `s` | create、next、previous、rename、delete、Workbench Tree | 已登记，已通过 workbench command 和 shell action adapter 接线；rename 进入 Prompt | `input/types_test.go`、`app/ui_input_test.go`、`app/runtime_test.go` |
-| 通用防漏发 | UI mode 下未绑定按键、overlay 字符输入、footer action | 不应进入 terminal input | 已通过 route 和 runtime harness 覆盖；normal 未绑定 raw key 继续透传 terminal | `input/types_test.go`、`app/ui_input_test.go`、`app/integration_test.go`、`app/runtime_test.go` |
-
-当前核查结论：已登记的第一版快捷键均有 app 层接线；已知部分实现项是 pane `h` / `j` / `k` / `l` 和方向键 focus 仍映射为 previous / next，不具备真正几何方向选择语义；更完整 command palette、可配置 keymap、跨 workspace attach 和 terminal attach 细分动作仍未产品化。
+本 spec 不重复维护完整快捷键表；新增、删除或改名快捷键时必须同步更新 `termx-tui-v3/docs/keybindings.md`，并补充对应 input/render/app harness。
 
 ### 13.3 Mode 职责
 
@@ -853,7 +833,7 @@ pane 结构命令是 Workbench 的核心操作面，不应只存在于快捷键 
 
 这些命令必须能被多个入口触发：
 
-- pane mode。
+- pane mode；不包含 split right/down 键盘入口。
 - resize mode。
 - 鼠标点击 pane chrome、resize handle 或 split divider。
 - 测试和 smoke harness。
@@ -1434,7 +1414,7 @@ floating pane 始终保持独立带边框，不随 tiled pane 的 card / split l
 推荐真实 TUI 验收步骤：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
-- 分屏：按 `Ctrl-p` 进入 pane mode，再按 `v` 创建右侧 pane，或按 `s` 创建下方 pane；也可以点击 pane 顶部的 split right / split down action token。新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。横向分屏后，下方 pane 顶边 action token 必须仍可点击分屏，不能被 divider resize 命中抢占。
+- 分屏：点击 pane 顶部的 split right / split down action token，或通过测试、smoke harness、后续 CLI mini command / command palette 发起同一 semantic command。新 pane 应立即成为 active pane，边框变为 accent，footer active target 同步更新。横向分屏后，下方 pane 顶边 action token 必须仍可点击分屏，不能被 divider resize 命中抢占。`Ctrl-p v`、`Ctrl-p s`、`Ctrl-p %`、`Ctrl-p "` 不作为分屏键盘入口。
 - 焦点：在 pane mode 中按 `n` / `N` 切换焦点，或鼠标点击另一个 pane 的内容区 / chrome；active pane 边框、标题和 footer 必须同步变化；普通 focus 成功不应额外弹出 toast。
 - 关闭：先聚焦目标 pane，在 pane mode 中按 `x` 关闭 pane，或点击 pane 顶部 action slot；关闭后 active pane 必须稳定落到仍存在的 pane，不得留下已删除 pane 的高亮或 footer target。
 - resize：按 `Ctrl-r` 进入 resize mode，使用方向键或 `h` / `j` / `k` / `l` 调整 active pane；也可以用鼠标按住 split divider 并拖动。拖动某条 divider 时只能调整视觉相邻 pane 对：例如四列布局中拖第 2 列左边线向左，只允许第 1 列变小、第 2 列变大，第 3/4 列不变；拖第 2 列右边线向右，只允许第 2 列变大、第 3 列变小，第 4 列不变；pane 尺寸、content rect terminal resize 和 active 高亮必须同步变化，拖动事件不得漏发给 terminal，也不得连续刷出 toast。
@@ -1778,7 +1758,7 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 本验收线已经完成，当前可用能力包括：
 
 - header/footer：显示 workspace、tab、mode、active pane、terminal/floating 摘要和 mode-specific hints；可隐藏并真实回收 body 空间。
-- pane：支持 split right/down、close、focus、zoom/unzoom、resize、balance、card/split presentation，键盘、鼠标和测试入口都走统一 semantic command。
+- pane：支持 split right/down、close、focus、zoom/unzoom、resize、balance、card/split presentation；split right/down 只通过 pane chrome、鼠标或 semantic command 入口触发，其余 pane mode 键盘入口走统一 semantic command。
 - floating：支持创建、移动、resize、居中、collapse/restore、close、鼠标 raise、标题栏拖动移动、resize handle 拖动 resize 和 close，并始终使用独立 styled bordered chrome。
 - Terminal Pool：支持全局页面打开、搜索、列表、selected row、detail/preview、Attach/Edit/Kill action、service/effect/result 反馈和 no terminal input leak。
 - Workbench Tree：支持 workspace/tab/pane/floating 结构导航、搜索、selected row、Open/Focus action、键盘/鼠标操作和 no terminal input leak。
@@ -1813,7 +1793,7 @@ TUI 产品壳总验收的目标是确认当前 goal 完成后，除 terminal-liv
 当前 goal 完成后的基本手工测试入口：
 
 - 启动：`go run ./termx-cli/cmd/termx`。
-- 分屏与 pane：按 `Ctrl-p`，再用 `v` / `s` 分屏，`n` / `N` 切焦点，`z` zoom，`x` 关闭，`c` / `p` 切 card/split。
+- 分屏与 pane：分屏通过 pane 顶部 split right / split down action token 或 semantic command 入口触发；按 `Ctrl-p` 后用 `n` / `N` 切焦点，`z` zoom，`x` 关闭，`c` / `p` 切 card/split。
 - resize：按 `Ctrl-r`，再用方向键或 `h/j/k/l` 调整 active pane；边框、footer、terminal content rect resize 必须同步。
 - floating：按 `Ctrl-o`，再用 `n` 创建，方向键移动，`H/J/K/L` resize，`c` 居中，`z` collapse/restore，`x` 关闭；也可用鼠标拖动 floating title/resize handle，或点击 close。
 - Terminal Pool：按 `Ctrl-g p` 打开，输入搜索词，使用上下键和 `Enter` attach；点击 row、Attach/Edit/Kill 必须有可见反馈，输入不得漏给 terminal。

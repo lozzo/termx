@@ -31,7 +31,6 @@ func TestActionSpecCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		ActionPaneSplitRight,
 		ActionPaneZoom,
 		ActionPaneClose,
-		ActionPaneFooterSplit,
 		ActionPaneFooterClose,
 		ActionPaneFooterFocus,
 		ActionPaneFooterZoom,

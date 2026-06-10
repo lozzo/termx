@@ -94,9 +94,9 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	if ctrlW.Kind != IntentSetInteractionMode || ctrlW.Mode != InteractionModeWorkspace {
 		t.Fatalf("expected workspace mode intent, got %#v", ctrlW)
 	}
-	paneSplit := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "v"}, false, InteractionModePane)
-	if paneSplit.Kind != IntentPaneCommand || paneSplit.Command != "pane split-right" {
-		t.Fatalf("expected split-right pane command, got %#v", paneSplit)
+	paneFocus := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModePane)
+	if paneFocus.Kind != IntentPaneCommand || paneFocus.Command != "pane focus-next" {
+		t.Fatalf("expected focus-next pane command, got %#v", paneFocus)
 	}
 	tabNew := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModeTab)
 	if tabNew.Kind != IntentWorkbenchCommand || tabNew.Command != "tab create" {
@@ -136,7 +136,7 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	}
 }
 
-func TestBindingCatalogIsUniqueAndContainsTUIV2AlignedAliases(t *testing.T) {
+func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 	seen := map[string]string{}
 	for _, binding := range BindingCatalog() {
 		key := string(binding.Mode) + "|" + string(binding.Key) + "|" + binding.Char + "|" + boolKey(binding.Ctrl) + boolKey(binding.Alt) + boolKey(binding.Shift)
@@ -153,8 +153,6 @@ func TestBindingCatalogIsUniqueAndContainsTUIV2AlignedAliases(t *testing.T) {
 		command string
 		action  ShellAction
 	}{
-		{name: "pane percent split", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "%"}, kind: IntentPaneCommand, command: "pane split-right"},
-		{name: "pane quote split", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\""}, kind: IntentPaneCommand, command: "pane split-down"},
 		{name: "pane w close", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "w"}, kind: IntentWorkbenchCommand, command: "pane close"},
 		{name: "pane d detach", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "d"}, kind: IntentWorkbenchCommand, command: "pane detach"},
 		{name: "pane X kill", mode: InteractionModePane, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "pane kill confirm=accepted"},
@@ -169,6 +167,15 @@ func TestBindingCatalogIsUniqueAndContainsTUIV2AlignedAliases(t *testing.T) {
 		intent := RouteWithMode(tc.event, false, tc.mode)
 		if intent.Kind != tc.kind || intent.Command != tc.command || intent.Action != tc.action {
 			t.Fatalf("%s: unexpected intent %#v", tc.name, intent)
+		}
+	}
+}
+
+func TestPaneModeDoesNotExposeKeyboardSplitAliases(t *testing.T) {
+	for _, char := range []string{"v", "s", "%", "\""} {
+		intent := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: char}, false, InteractionModePane)
+		if intent.Kind != IntentNone {
+			t.Fatalf("pane split key %q should stay unbound; split is exposed through pane chrome commands, got %#v", char, intent)
 		}
 	}
 }

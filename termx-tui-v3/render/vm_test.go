@@ -798,7 +798,7 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	}
 	footer := vm.Shell.Footer
 	if !footer.Visible || footer.Mode != "pane" || footer.ActiveTarget != "pane:日志 🚀 attached" ||
-		!containsFooterAction(footer.ActionTokens, "v", "split", ActionPaneFooterSplit.String()) ||
+		containsFooterAction(footer.ActionTokens, "v", "split", "") ||
 		!strings.Contains(footer.GlobalSummary, "ws:main") || !strings.Contains(footer.GlobalSummary, "float:1") || !strings.Contains(footer.GlobalSummary, "terminals:1") {
 		t.Fatalf("unexpected product footer %#v", footer)
 	}
@@ -872,7 +872,6 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	shell = shell.SetInteractionMode(state.InteractionModePane)
 	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Footer.Mode != "pane" ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "v", "split", ActionPaneFooterSplit.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "close", ActionPaneFooterClose.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "d", "detach", ActionPaneFooterDetach.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "focus", ActionPaneFooterFocus.String()) ||

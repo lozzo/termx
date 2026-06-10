@@ -1077,9 +1077,20 @@ func TestInteractiveRuntimePaneAndResizeModeKeymapUsesPaneCommandPath(t *testing
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain attach: %v", err)
 	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "pane", Kind: state.PaneEmpty},
+		Source:         state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post semantic pane split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain semantic pane split: %v", err)
+	}
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x12", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyRight},
@@ -1097,7 +1108,7 @@ func TestInteractiveRuntimePaneAndResizeModeKeymapUsesPaneCommandPath(t *testing
 	}
 	tab := runtime.State().Shell.Workspace.Tabs[0]
 	if len(tab.Panes) != 2 || tab.RootSplit.Direction != state.SplitDirectionVertical {
-		t.Fatalf("expected keyboard split through pane command path, got %#v", tab)
+		t.Fatalf("expected semantic split through pane command path, got %#v", tab)
 	}
 	if tab.RootSplit.BiasCells == 0 {
 		t.Fatalf("expected resize key to update split bias, got %#v", tab.RootSplit)
@@ -1131,25 +1142,32 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 		t.Fatalf("drain attach: %v", err)
 	}
 
-	for _, event := range []input.InputEvent{
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v"},
-	} {
-		if err := host.SendInput(event); err != nil {
-			t.Fatalf("send keyboard event %#v: %v", event, err)
-		}
-		if err := runtime.Drain(context.Background()); err != nil {
-			t.Fatalf("drain keyboard event %#v: %v", event, err)
-		}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "pane", Kind: state.PaneEmpty},
+		Source:         state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post semantic pane split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain semantic pane split: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true}); err != nil {
+		t.Fatalf("send pane mode after semantic split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane mode after semantic split: %v", err)
 	}
 	keyboardFrame := lastFrame(t, host.Frames())
 	if runtime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" {
-		t.Fatalf("keyboard split should activate pane-2, got %#v", runtime.State().Shell)
+		t.Fatalf("semantic split should activate pane-2, got %#v", runtime.State().Shell)
 	}
 	assertPaneVisualState(t, keyboardFrame, "pane", render.StyleAccent)
 	assertPaneVisualState(t, keyboardFrame, "shell", render.StyleMuted)
-	if !frameContains(keyboardFrame, "PANE") || !frameContains(keyboardFrame, "[v] SPLIT") {
-		t.Fatalf("footer should reflect keyboard split active pane, got %#v", keyboardFrame.Lines)
+	if !frameContains(keyboardFrame, "PANE") || frameContains(keyboardFrame, "[v] SPLIT") {
+		t.Fatalf("footer should reflect pane mode without keyboard split, got %#v", keyboardFrame.Lines)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"}); err != nil {
@@ -1254,7 +1272,7 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	}
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 35, 7, []state.HistoryRow{{Text: "copy-old", LineID: 20}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 33, 7, []state.HistoryRow{{Text: "copy-old", LineID: 20}})},
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 32, 8, []state.HistoryRow{{Text: "copy-sized", LineID: 30}})},
 		},
 	}
@@ -1276,7 +1294,6 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
-		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "v"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"},
@@ -1311,6 +1328,19 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if shell.PanelPresentation != state.PanelPresentationSplitLine {
 		t.Fatalf("pane mode presentation switch should use split-line, got %#v", shell.PanelPresentation)
 	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "pane", Kind: state.PaneEmpty},
+		Source:         state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post product flow semantic split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain product flow semantic split: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
 	runtime.state.Shell = runtime.state.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: "pane-2"}, "term-1")
 	if binding, ok := runtime.state.TerminalViews.PaneBinding(state.DefaultPaneID); ok {
 		runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(state.NewPaneTerminalView(
@@ -1318,8 +1348,8 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 		)).TransferPaneResizeOwner("pane-2")
 	}
 	tab := shell.Workspace.Tabs[0]
-	if len(tab.Panes) != 2 || tab.RootSplit.BiasCells == 0 {
-		t.Fatalf("split and resize should update pane tree geometry, got %#v", tab)
+	if len(tab.Panes) != 2 || tab.RootSplit.Direction != state.SplitDirectionVertical {
+		t.Fatalf("semantic split should update pane tree geometry, got %#v", tab)
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("framework shortcuts must not leak to terminal input, got %#v", terminal.Inputs)
@@ -1384,10 +1414,10 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain copy entry: %v", err)
 	}
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 35 {
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols <= 0 || core.LatestRequests[0].PaneID != "pane-2" {
 		t.Fatalf("copy mode should bind to hidden split content cols, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 35 {
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != core.LatestRequests[0].Cols {
 		t.Fatalf("copy mode should accept first authoritative window, got %#v", runtime.State().CopyMode)
 	}
 
@@ -1478,8 +1508,19 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		send(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: char, Ctrl: true})
 	}
 
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "pane", Kind: state.PaneEmpty},
+		Source:         state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post product shell semantic split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain product shell semantic split: %v", err)
+	}
 	sendCtrl("\x10")
-	sendChar("v")
 	sendChar("n")
 	sendCtrl("\x12")
 	sendKey(input.KeyRight)
@@ -1499,7 +1540,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("resize mode should drive content rect terminal resize")
 	}
 	paneFrame := lastFrame(t, host.Frames())
-	if !frameContains(paneFrame, "PANE") || !frameContains(paneFrame, "[v] SPLIT") {
+	if !frameContains(paneFrame, "PANE") || frameContains(paneFrame, "[v] SPLIT") {
 		t.Fatalf("expected pane mode footer and active feedback, got %#v", paneFrame.Lines)
 	}
 

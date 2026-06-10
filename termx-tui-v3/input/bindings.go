@@ -34,10 +34,6 @@ var bindingCatalog = []Binding{
 	{ID: "root-copy", Mode: InteractionModeNormal, Key: KeyChar, Char: "\x16", Ctrl: true, Intent: IntentEnterCopyMode},
 	{ID: "root-copy-named", Mode: InteractionModeNormal, Key: KeyChar, Char: "v", Ctrl: true, Intent: IntentEnterCopyMode},
 
-	{ID: "pane-split-right", Mode: InteractionModePane, Key: KeyChar, Char: "v", Intent: IntentPaneCommand, Command: "pane split-right"},
-	{ID: "pane-split-right-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "%", Intent: IntentPaneCommand, Command: "pane split-right"},
-	{ID: "pane-split-down", Mode: InteractionModePane, Key: KeyChar, Char: "s", Intent: IntentPaneCommand, Command: "pane split-down"},
-	{ID: "pane-split-down-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "\"", Intent: IntentPaneCommand, Command: "pane split-down"},
 	{ID: "pane-close", Mode: InteractionModePane, Key: KeyChar, Char: "x", Intent: IntentWorkbenchCommand, Command: "pane close"},
 	{ID: "pane-close-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "w", Intent: IntentWorkbenchCommand, Command: "pane close"},
 	{ID: "pane-detach-tuiv2", Mode: InteractionModePane, Key: KeyChar, Char: "d", Intent: IntentWorkbenchCommand, Command: "pane detach"},

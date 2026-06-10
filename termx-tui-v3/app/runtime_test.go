@@ -905,16 +905,16 @@ func TestInteractiveRuntimePaneModeFooterActions(t *testing.T) {
 		t.Fatalf("drain render: %v", err)
 	}
 
-	splitAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterSplit.String(), "")
+	splitAction := frameHitRegionByAction(t, lastRuntimeFrame(t, host), render.HitRegionPaneAction, render.ActionPaneSplitRight.String(), state.DefaultPaneID)
 	if err := host.SendInput(mouseEventAt(splitAction.Rect)); err != nil {
-		t.Fatalf("send pane split footer click: %v", err)
+		t.Fatalf("send pane split chrome click: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain pane split footer click: %v", err)
+		t.Fatalf("drain pane split chrome click: %v", err)
 	}
 	tab := runtime.State().Shell.EnsureDefaults().Workspace.Tabs[0]
 	if len(tab.Panes) != 2 || tab.RootSplit.Direction != state.SplitDirectionVertical || runtime.State().Shell.EnsureDefaults().ActivePaneID == state.DefaultPaneID {
-		t.Fatalf("pane split footer action should create and activate vertical split, shell=%#v", runtime.State().Shell.EnsureDefaults())
+		t.Fatalf("pane split chrome action should create and activate vertical split, shell=%#v", runtime.State().Shell.EnsureDefaults())
 	}
 
 	focusAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterFocus.String(), "")

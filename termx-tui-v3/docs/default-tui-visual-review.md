@@ -180,7 +180,7 @@
 
 - 启动：`go run ./termx-cli/cmd/termx`。
 - viewport：至少检查 `80x24`、`100x32`、`120x40`。
-- pane：`Ctrl-p` 后检查 `v/s/n/N/z/x/c/p` 的 split、focus、zoom、close、card/split 视觉反馈；同时点击 pane 顶部 split-down、split-right 和 close token，确认只有真实可用按钮可见且可点击。横向分屏后必须特别点击下方 pane 顶边的 split-down / split-right token，确认它们不会被 divider resize 抢占。
+- pane：`Ctrl-p` 后检查 `n/N/z/x/c/p` 的 focus、zoom、close、card/split 视觉反馈；分屏只点击 pane 顶部 split-down、split-right token，确认只有真实可用按钮可见且可点击。横向分屏后必须特别点击下方 pane 顶边的 split-down / split-right token，确认它们不会被 divider resize 命中抢占。
 - resize：`Ctrl-r` 后检查方向键和 `h/j/k/l` 调整大小时边框、footer、content rect 是否同步；同时按住 pane split divider 拖动，确认尺寸连续变化、四列场景只调整 divider 两侧视觉相邻 pane，第 4 列等非相邻 pane 不被带动，且不把事件发给 terminal，也不会连续产生 toast。
 - floating：`Ctrl-o` 后检查 create、move、resize、center、collapse、close 和 active chrome；active floating 获焦时，后方 tiled pane 边框应降级为灰色 inactive 视觉，关闭 floating 后 tiled pane active 高亮恢复；同时按住 floating 标题栏拖动移动、按住右下 resize handle 拖动 resize。
 - overlay：`Ctrl-g p`、`Ctrl-g w`、`Ctrl-g :`、`Ctrl-g ?` 检查 Terminal Pool、Workbench Tree、Prompt、Help。

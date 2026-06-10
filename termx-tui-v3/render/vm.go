@@ -178,7 +178,6 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	switch mode {
 	case "pane":
 		return footerActionSpecs(
-			footerActionFor(ActionPaneFooterSplit),
 			footerActionFor(ActionPaneFooterClose),
 			footerActionFor(ActionPaneFooterDetach),
 			footerActionFor(ActionPaneFooterFocus),

@@ -15,7 +15,6 @@ const (
 	ActionPaneSplitRight          ActionID = "pane.split-right"
 	ActionPaneZoom                ActionID = "pane.zoom"
 	ActionPaneClose               ActionID = "pane.close"
-	ActionPaneFooterSplit         ActionID = "pane.footer-split"
 	ActionPaneFooterClose         ActionID = "pane.footer-close"
 	ActionPaneFooterDetach        ActionID = "pane.footer-detach"
 	ActionPaneFooterFocus         ActionID = "pane.footer-focus"
@@ -190,7 +189,6 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionPaneSplitRight, ActionDispatchPaneCommand, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph(paneChromeSplitVerticalActionText()).withHelp("split right"),
 		actionSpec(ActionPaneZoom, ActionDispatchPaneCommand, ActionSurfacePaneChrome, ActionSurfaceFloatingChrome, ActionSurfaceHelp).withChromeGlyph(paneChromeZoomGlyph()).withHelp("zoom"),
 		actionSpec(ActionPaneClose, ActionDispatchPaneCommand, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph(paneChromeCloseActionText()).withHelp("close").withDanger(),
-		actionSpec(ActionPaneFooterSplit, ActionDispatchApp, ActionSurfaceFooter).withFooter("v", "split", StyleStatusAccent).withHelp("split"),
 		actionSpec(ActionPaneFooterClose, ActionDispatchApp, ActionSurfaceFooter).withFooter("x", "close", StyleStatusWarning).withHelp("close").withDanger(),
 		actionSpec(ActionPaneFooterDetach, ActionDispatchApp, ActionSurfaceFooter).withFooter("d", "detach", StyleStatusWarning).withHelp("detach"),
 		actionSpec(ActionPaneFooterFocus, ActionDispatchApp, ActionSurfaceFooter).withFooter("n", "focus", StyleStatusAccent).withHelp("focus"),
