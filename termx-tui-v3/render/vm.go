@@ -246,6 +246,8 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	case "floating":
 		return footerActionSpecs(
 			footerActionFor(ActionFloatingNew),
+			footerActionFor(ActionFloatingPick),
+			footerActionFor(ActionFloatingTakeOwner),
 			footerActionSpec("arrows", "move", "", StyleStatusAccent),
 			footerActionSpec("HJKL", "size", "", StyleStatusWarning),
 			footerActionFor(ActionFloatingClose),

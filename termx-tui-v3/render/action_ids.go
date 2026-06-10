@@ -60,6 +60,8 @@ const (
 	ActionFloatingRaise      ActionID = "floating.raise"
 	ActionFloatingNew        ActionID = "floating.new"
 	ActionFloatingClose      ActionID = "floating.close"
+	ActionFloatingPick       ActionID = "floating.pick"
+	ActionFloatingTakeOwner  ActionID = "floating.take-owner"
 	ActionFloatingResize     ActionID = "floating.resize"
 	ActionFloatingCenter     ActionID = "floating.center"
 	ActionFloatingCollapse   ActionID = "floating.collapse"
@@ -233,6 +235,8 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFloatingRaise, ActionDispatchApp, ActionSurfaceFloatingChrome, ActionSurfaceContent, ActionSurfaceHelp).withChromeGlyph(paneChromeZoomGlyph()).withHelp("raise"),
 		actionSpec(ActionFloatingNew, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceInput).withFooter("n", "NEW FLOAT", StyleStatusAccent).withHelp("new floating"),
 		actionSpec(ActionFloatingClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceHelp).withFooter("x", "CLOSE", StyleStatusWarning).withChromeGlyph(paneChromeCloseGlyph()).withHelp("close").withDanger(),
+		actionSpec(ActionFloatingPick, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("f", "PICK", StyleStatusAccent).withHelp("pick terminal"),
+		actionSpec(ActionFloatingTakeOwner, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("a", "OWNER", StyleStatusAccent).withHelp("take resize owner"),
 		actionSpec(ActionFloatingResize, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withHelp("resize"),
 		actionSpec(ActionFloatingCenter, ActionDispatchApp, ActionSurfaceFloatingChrome, ActionSurfaceInput).withChromeGlyph("").withHelp("center"),
 		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFloatingChrome, ActionSurfaceInput).withChromeGlyph("").withHelp("collapse"),

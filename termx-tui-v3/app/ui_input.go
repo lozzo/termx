@@ -441,6 +441,9 @@ func reducePaneCommandIntent(root state.Root, intent input.Intent) (state.Root, 
 }
 
 func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.Root, []Effect) {
+	if next, effects, ok := reduceViewWorkbenchShortcut(root, intent.Command); ok {
+		return next, effects
+	}
 	command, prompt, ok := workbenchCommandFromIntent(root, intent)
 	if !ok {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench command", Body: "invalid shortcut"})
@@ -455,6 +458,38 @@ func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.R
 	return root, []Effect{
 		handledEffect{},
 		FuncEffect{Run: func(context.Context) Msg { return ShellWorkbenchCommandMsg{Command: command} }},
+	}
+}
+
+func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, []Effect, bool) {
+	shell := root.Shell.EnsureDefaults()
+	switch command {
+	case "pane take-owner":
+		root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner(shell.ActivePaneID)
+		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.owner", Body: shell.ActivePaneID})
+		return root.Advance(), []Effect{handledEffect{}}, true
+	case "floating take-owner":
+		if shell.ActiveFloatingID == "" {
+			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
+			return root.Advance(), []Effect{handledEffect{}}, true
+		}
+		if binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID); ok {
+			root.TerminalViews = root.TerminalViews.TransferResizeOwner(binding.ViewID)
+		}
+		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.owner", Body: shell.ActiveFloatingID})
+		return root.Advance(), []Effect{handledEffect{}}, true
+	case "pane reconnect":
+		root.Shell = shell.OpenTerminalPicker()
+		return root.Advance(), []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}, true
+	case "pane restart":
+		terminalID := terminalIDForContentAction(root, shell.ActivePaneID)
+		if terminalID == "" {
+			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.restart", Body: "no active terminal"})
+			return root.Advance(), []Effect{handledEffect{}}, true
+		}
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolRestartRequestMsg{TerminalID: terminalID} }}}, true
+	default:
+		return root, nil, false
 	}
 }
 
@@ -486,6 +521,8 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		msg = ShellOpenTerminalPoolMsg{}
 	case input.ShellActionOpenTree:
 		msg = ShellOpenWorkbenchTreeMsg{}
+	case input.ShellActionOpenPicker:
+		msg = ShellOpenTerminalPickerMsg{}
 	case input.ShellActionOpenPrompt:
 		msg = ShellOpenPromptMsg{Prompt: state.PromptState{
 			Title:       "Command Prompt",

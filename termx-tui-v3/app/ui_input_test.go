@@ -37,6 +37,83 @@ func TestUIInputReducerOpensTerminalPickerFromCtrlF(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
+	reducer := NewUIInputReducer()
+	shell := state.DefaultShell()
+	shell.ActivePaneID = state.DefaultPaneID
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 3, 80, 24, state.TerminalResizeRoleFollower, "surface-1", "", false))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 4, 80, 24, state.TerminalResizeRoleOwner, "surface-1", "", true))
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModePane || len(effects) != 1 {
+		t.Fatalf("ctrl-p should enter pane mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
+	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.PaneID != state.DefaultPaneID {
+		t.Fatalf("pane owner shortcut should transfer ownership to active pane, owner=%#v ok=%v", owner, ok)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("pane owner shortcut should only emit handled effect, got %#v", effects)
+	}
+
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"}})
+	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker || len(effects) != 2 {
+		t.Fatalf("pane reconnect should open picker and refresh pool, overlay=%#v effects=%#v", root.Shell.Overlay, effects)
+	}
+	if effect, ok := effects[1].(FuncEffect); !ok || effect.Run == nil {
+		t.Fatalf("pane reconnect should emit pool list effect, got %#v", effects)
+	}
+
+	root.Shell = root.Shell.CloseOverlay().SetInteractionMode(state.InteractionModePane)
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"}})
+	if len(effects) != 2 {
+		t.Fatalf("pane restart should emit handled and restart effects, got %#v", effects)
+	}
+	effect, ok := effects[1].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("pane restart should emit restart effect, got %#v", effects)
+	}
+	msg, ok := effect.Run(context.Background()).(TerminalPoolRestartRequestMsg)
+	if !ok || msg.TerminalID != "term-1" {
+		t.Fatalf("pane restart should target active pane terminal, got %#v", msg)
+	}
+}
+
+func TestUIInputReducerFloatingModeTuiv2PickerAndOwner(t *testing.T) {
+	reducer := NewUIInputReducer()
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: "float-1", Title: "float", Pane: state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-1"}})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 3, 80, 24, state.TerminalResizeRoleOwner, "surface-1", "", true))
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("float-1", "", "term-1", 5, 80, 24, state.TerminalResizeRoleFollower, "surface-1", "", false))
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0f", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModeFloating || len(effects) != 1 {
+		t.Fatalf("ctrl-o should enter floating mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}})
+	if len(effects) != 2 {
+		t.Fatalf("floating picker shortcut should emit handled and picker effects, got %#v", effects)
+	}
+	effect, ok := effects[1].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("floating picker shortcut should emit picker effect, got %#v", effects)
+	}
+	if msg, ok := effect.Run(context.Background()).(ShellOpenTerminalPickerMsg); !ok {
+		t.Fatalf("floating picker shortcut should request picker open, got %#v", msg)
+	}
+
+	root.Shell = root.Shell.CloseOverlay().SetInteractionMode(state.InteractionModeFloating)
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
+	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.FloatingID != "float-1" {
+		t.Fatalf("floating owner shortcut should transfer ownership to active floating, owner=%#v ok=%v", owner, ok)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("floating owner shortcut should only emit handled effect, got %#v", effects)
+	}
+}
+
 func TestUIInputReducerEmptyPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
 	reducer := NewUIInputReducer()
 	shell := state.DefaultShell()

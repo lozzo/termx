@@ -19,6 +19,8 @@ func actionIDForShellAction(action input.ShellAction, reason string) (render.Act
 		return render.ActionFooterOpenPool, true
 	case input.ShellActionOpenTree:
 		return render.ActionFooterOpenTree, true
+	case input.ShellActionOpenPicker:
+		return render.ActionFooterPicker, true
 	case input.ShellActionOpenPrompt:
 		return render.ActionPromptOpen, true
 	case input.ShellActionOpenHelp:

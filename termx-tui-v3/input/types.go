@@ -128,6 +128,7 @@ const (
 	ShellActionFloatingSize ShellAction = "shell.floating-size"
 	ShellActionOpenPool     ShellAction = "shell.open-terminal-pool"
 	ShellActionOpenTree     ShellAction = "shell.open-workbench-tree"
+	ShellActionOpenPicker   ShellAction = "shell.open-terminal-picker"
 	ShellActionOpenPrompt   ShellAction = "shell.open-prompt"
 	ShellActionOpenHelp     ShellAction = "shell.open-help"
 	ShellActionQuit         ShellAction = "shell.quit"

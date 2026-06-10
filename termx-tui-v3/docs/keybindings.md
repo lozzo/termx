@@ -149,17 +149,41 @@
 | pane | `% VSPLIT` | `%`、`Ctrl-d` | vertical split |
 | pane | `" HSPLIT` | `"`、`Ctrl-e` | horizontal split |
 | pane | `d DETACH` | `d` | detach pane |
+| pane | `r RECONNECT` | `r` | 打开 Terminal Picker 重连当前 pane |
+| pane | `R RESTART` | `R` | restart 当前 pane 的 terminal |
+| pane | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
 | pane | `z ZOOM` | `z` | toggle zoom |
 | pane | `w CLOSE` | `w` | close pane |
 | resize | `←/h`、`→/l`、`↑/k`、`↓/j` | 方向键、`h` / `j` / `k` / `l` | 按方向 resize，步长 2 |
-| resize | `b balance` | `b` | balance pane layout |
+| resize | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
+| resize | `= BALANCE` | `=` | balance pane layout |
 | global | `? HELP` | `?` | 打开 help overlay |
 | global | `t TERMINALS` | `t` | 打开 Terminal Pool |
 | global | `q QUIT` | `q` | quit TUI |
 | global | `h HEADER`、`f FOOTER`、`w TREE`、`T TOAST`、`c CLEAR` | `h`、`f`、`w`、`T`、`c` | v3 shell chrome/toast 补充动作 |
-| floating | `n new`、`x close` | `n`、`x` | create / close floating pane |
-| tab | `n new`、`h prev`、`l next`、`r rename`、`x close`、`1-9 jump` | `n`、`h`、`l`、`r`、`x`、`1`-`9` | tab create / previous / next / rename / close / jump |
-| workspace | `n new`、`h prev`、`l next`、`r rename`、`t tree`、`x delete` | `n`、`h`、`l`、`r`、`t`、`x` | workspace create / previous / next / rename / tree / delete |
+| floating | `n NEW FLOAT`、`x CLOSE`、`f PICK`、`a OWNER` | `n`、`x`、`f`、`a` | create / close floating pane、打开 picker、获取 ownership |
+| tab | `c NEW`、`p PREV`、`n NEXT`、`r RENAME`、`x KILL`、`1-9 JUMP` | `c`、`p`、`n`、`r`、`x`、`1`-`9` | tab create / previous / next / rename / close / jump |
+| workspace | `c NEW`、`p PREV`、`n NEXT`、`r RENAME`、`f PICK`、`x DELETE` | `c`、`p`、`n`、`r`、`f`、`x` | workspace create / previous / next / rename / tree / delete |
+
+## 部分实现或未实现
+
+| Mode | 快捷键 | 状态 | 缺口 |
+| --- | --- | --- | --- |
+| pane | `s LOCK` | 未实现 | 当前没有 size lock state/reducer/action catalog |
+| resize | `s LOCK` | 未实现 | 同 pane size lock，缺状态模型 |
+| resize | `Space LAYOUT` | 未实现 | 当前 pane presentation 仅在 pane mode 以 `c` / `p` 触发 |
+| resize | `Shift+WASD PAN`、`Shift+Arrow PAN` | 未实现 | 缺 view-local content offset/pan state |
+| resize | `0` / `$` / `^` / `B ALIGN` | 未实现 | 缺 content alignment state |
+| resize | `m` / `|` / `_ CENTER`、`r RESET` | 未实现 | 缺 content offset/align reset state |
+| floating | `o OVERVIEW`、`1-9 SUMMON` | 未实现 | render 仍是 floating overview placeholder，缺 overlay reducer/input |
+| floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 未实现 | 缺 floating group collapse、fit 与 auto-fit state |
+| display | `p/P PASTE`、`H HISTORY` | 未实现 | 缺 clipboard paste/history overlay 与 input reducer |
+| display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 待复核 | copy reducer 已有基础移动/复制路径，尚未逐项按表核验 |
+| picker | `Tab SPLIT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | action/reducer 有 attach/edit/kill 基础；键盘分发和 delete inventory entry 未完整接线 |
+| terminal manager | `Ctrl-T TAB`、`Ctrl-O FLOAT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | pool 页有 attach/edit/kill action；新 tab/floating attach 与 delete entry 未接线 |
+| workspace picker | `Ctrl-N NEW`、`Ctrl-R RENAME`、`Ctrl-X REMOVE`、`Ctrl-D DETACH`、`Ctrl-Z ZOOM` | 部分实现 | Workbench Tree 有 open/rename/new/delete action；detach/zoom 与键盘分发未完整接线 |
+| floating overview | 全部 | 未实现 | 当前只渲染 placeholder |
+| clipboard history | 全部 | 未实现 | 尚无 clipboard history overlay/state/reducer |
 
 ## 未展示但可触发
 
@@ -171,10 +195,10 @@
 | pane | `b`、`c`、`p` | balance、card presentation、split-line presentation | 低频 pane 操作，footer 只展示常用操作 |
 | pane | `N`、`n` | focus previous / next | v3 早期别名，当前几何方向尚未表达为独立 truth |
 | resize | `H` / `J` / `K` / `L` | 按方向 resize，步长 6 | 大步长操作，footer 展示普通步长入口 |
-| resize | `=` | balance pane layout | equalize 别名 |
+| resize | `b` | balance pane layout | v3 早期别名，footer 展示 tuiv2 `=` |
 | global | `p`、`m` | 打开 Terminal Pool | legacy alias，未放 footer |
 | global | `:` | 打开 Prompt | overlay 入口，未放 footer |
-| floating | `z` / `m`、`c` | collapse / center | floating chrome/input 操作，footer 只展示 new/close 和移动提示 |
+| floating | `z` / `m`、`c` | collapse / center | floating chrome/input 操作，footer 只展示 new/close/pick/owner 和移动提示 |
 | floating | `h` / `j` / `k` / `l`、方向键、`H` / `J` / `K` / `L` | move / resize floating pane | footer 以 `arrows move`、`HJKL size` 汇总展示 |
 | tab | `c`、`]`、`[`、`p`、`X` | create、next、previous、previous、kill | legacy 或 danger alias，未放 footer |
 | workspace | `c`、`]`、`[`、`p`、`f`、`s` | create、next、previous、previous、tree、tree | legacy alias，未放 footer |

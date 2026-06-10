@@ -464,6 +464,20 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFloatingClose:
 		// footer close 没有 pane id 时，FloatingCommand 会按 active floating 作为目标。
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingPick:
+		root.Shell = root.Shell.OpenTerminalPicker()
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	case render.ActionFloatingTakeOwner:
+		shell := root.Shell.EnsureDefaults()
+		if shell.ActiveFloatingID == "" {
+			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
+			return root.Advance(), nil
+		}
+		if binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID); ok {
+			root.TerminalViews = root.TerminalViews.TransferResizeOwner(binding.ViewID)
+		}
+		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.owner", Body: shell.ActiveFloatingID})
+		return root.Advance(), nil
 	case render.ActionFloatingResize:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
 	case render.ActionExitedRestart:
@@ -825,6 +839,9 @@ func firstPaneIDForTab(shell state.ShellStore, tabID string) string {
 }
 
 func terminalIDForContentAction(root state.Root, paneID string) string {
+	if binding, ok := root.TerminalViews.PaneBinding(paneID); ok && binding.TerminalID != "" {
+		return binding.TerminalID
+	}
 	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: paneID}); ok {
 		return pane.TerminalID
 	}
