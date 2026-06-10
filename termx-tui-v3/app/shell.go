@@ -416,6 +416,38 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
 		}}}
+	case render.ActionPickerSplit:
+		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
+		if !ok || selected.TerminalID == "" {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.split", Body: "no terminal"})
+			return root.Advance(), nil
+		}
+		shell := root.Shell.EnsureDefaults()
+		next, effects := reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical, NewPane: state.PaneState{ID: nextKeyboardPaneID(shell), Title: "pane", Kind: state.PaneEmpty}, Source: state.PaneCommandSourceKeyboard})
+		return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+		}})
+	case render.ActionPickerEdit:
+		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
+		if !ok || selected.TerminalID == "" {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.edit", Body: "no terminal"})
+			return root.Advance(), nil
+		}
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: map[string]string{"edited-by": "termx-tui-v3"}}
+		}}}
+	case render.ActionPickerKill:
+		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
+		if !ok || selected.TerminalID == "" {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.kill", Body: "no terminal"})
+			return root.Advance(), nil
+		}
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolKillRequestMsg{TerminalID: selected.TerminalID}
+		}}}
+	case render.ActionPickerDelete:
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.delete", Body: "terminal inventory delete is not available"})
+		return root.Advance(), nil
 	case render.ActionPoolSelect:
 		items := state.TerminalPoolPageItems(root)
 		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
@@ -425,6 +457,21 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
 			}}}
+		}
+	case render.ActionPoolAttachTab:
+		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourceKeyboard})
+			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+			}})
+		}
+	case render.ActionPoolAttachFloat:
+		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			floatingID := nextFloatingID(root.Shell)
+			next, effects := reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: floatingID, Pane: state.PaneState{ID: nextFloatingPaneID(root.Shell), Title: "floating", Kind: state.PaneEmpty}, Title: "floating", Source: state.PaneCommandSourceKeyboard})
+			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: floatingID}
+			}})
 		}
 	case render.ActionPoolKill:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
@@ -443,6 +490,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 				return TerminalPoolEditRequestMsg{TerminalID: selected.TerminalID, Title: selected.Title, Tags: tags}
 			}}}
 		}
+	case render.ActionPoolDelete:
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: "terminal inventory delete is not available"})
+		return root.Advance(), nil
 	case render.ActionWorkbenchSelect:
 		items := state.WorkbenchTreeItems(root)
 		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))
@@ -460,6 +510,10 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceWorkbenchTreeNew(root, state.WorkbenchTreeItems(root))
 	case render.ActionWorkbenchDelete:
 		return reduceWorkbenchTreeDelete(root, state.WorkbenchTreeItems(root))
+	case render.ActionWorkbenchDetach:
+		return reduceWorkbenchTreeDetach(root, state.WorkbenchTreeItems(root))
+	case render.ActionWorkbenchZoom:
+		return reduceWorkbenchTreeZoom(root, state.WorkbenchTreeItems(root))
 	case render.ActionPromptSubmit:
 		return reducePromptSubmit(root)
 	case render.ActionPromptCancel:
@@ -838,6 +892,32 @@ func reduceWorkbenchTreeDelete(root state.Root, items []state.WorkbenchTreeItem)
 	}
 }
 
+func reduceWorkbenchTreeDetach(root state.Root, items []state.WorkbenchTreeItem) (state.Root, []Effect) {
+	selected, ok := workbenchTreeSelectedItem(items)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.detach", Body: "no node"})
+		return root.Advance(), nil
+	}
+	if selected.Kind != state.WorkbenchTreeKindPane {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.detach", Body: "select a pane"})
+		return root.Advance(), nil
+	}
+	return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneDetach, Target: state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID}, Source: state.PaneCommandSourceKeyboard})
+}
+
+func reduceWorkbenchTreeZoom(root state.Root, items []state.WorkbenchTreeItem) (state.Root, []Effect) {
+	selected, ok := workbenchTreeSelectedItem(items)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.zoom", Body: "no node"})
+		return root.Advance(), nil
+	}
+	if selected.Kind != state.WorkbenchTreeKindPane {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.zoom", Body: "select a pane"})
+		return root.Advance(), nil
+	}
+	return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandToggleZoom, Target: state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID}, Source: state.PaneCommandSourceKeyboard})
+}
+
 func workbenchTreeSelectedItem(items []state.WorkbenchTreeItem) (state.WorkbenchTreeItem, bool) {
 	if len(items) == 0 {
 		return state.WorkbenchTreeItem{}, false
@@ -983,6 +1063,8 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 	switch result.Action {
 	case state.WorkbenchCommandPaneSplit:
 		root = bindWorkbenchSplitTerminalView(root, previousShell, command, result)
+	case state.WorkbenchCommandPaneDetach:
+		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 	case state.WorkbenchCommandPaneClose:
 		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 	case state.WorkbenchCommandPaneKill, state.WorkbenchCommandTabKill:

@@ -2121,6 +2121,107 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	}
 }
 
+func TestOverlayKeyboardCommandsRouteThroughContentActions(t *testing.T) {
+	inputReducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker()}
+
+	_, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyTab}})
+	assertContentActionEffect(t, effects, render.ActionPickerSplit)
+
+	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
+	assertContentActionEffect(t, effects, render.ActionPickerEdit)
+
+	root.Shell = state.DefaultShell().OpenTerminalPool()
+	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0f", Ctrl: true}})
+	assertContentActionEffect(t, effects, render.ActionPoolAttachFloat)
+
+	root.Shell = state.DefaultShell().OpenWorkbenchTree()
+	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x04", Ctrl: true}})
+	assertContentActionEffect(t, effects, render.ActionWorkbenchDetach)
+}
+
+func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-logs", Channel: 12, Cols: 100, Rows: 30},
+	}
+	reducer := ComposeReducers(NewShellReducer(), NewTerminalPoolReducer(LiveDeps{Terminal: terminal}))
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool(), Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30}}
+	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs", State: "running", Cols: 100, Rows: 30}}, "")
+
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolAttachFloat.String(), Row: -1})
+	if len(next.Shell.Floatings) != 1 || next.Shell.ActiveFloatingID != "floating-1" {
+		t.Fatalf("pool ctrl-o should create floating before attach, shell=%#v", next.Shell)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("pool ctrl-o should emit attach effect, got %#v", effects)
+	}
+	requestMsg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolAttachRequestMsg)
+	if !ok || requestMsg.TerminalID != "term-logs" || requestMsg.TargetFloatingID != "floating-1" {
+		t.Fatalf("pool ctrl-o should request selected terminal attach, msg=%#v", requestMsg)
+	}
+	_, effects = reducer(next, requestMsg)
+	if len(effects) != 1 {
+		t.Fatalf("pool attach request should emit service effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolAttachResultMsg)
+	if !ok || msg.TerminalID != "term-logs" || msg.TargetFloatingID != "floating-1" || len(terminal.Attaches) != 1 {
+		t.Fatalf("pool ctrl-o should attach selected terminal to floating, msg=%#v attaches=%#v", msg, terminal.Attaches)
+	}
+
+	root = state.Root{Shell: state.DefaultShell()}
+	root.Shell, _ = root.Shell.ApplyPaneCommand(state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, SplitDirection: state.SplitDirectionVertical, NewPane: state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}})
+	root.Shell = root.Shell.OpenWorkbenchTree()
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-logs", 12, 100, 30, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+	items := state.WorkbenchTreeItems(root)
+	selectedPane := false
+	for index, item := range items {
+		if item.Kind == state.WorkbenchTreeKindPane && item.PaneID == "pane-2" {
+			root.Shell = root.Shell.OpenWorkbenchTree().SetWorkbenchTreeSelectedIndex(index, len(items))
+			selectedPane = true
+			break
+		}
+	}
+	if !selectedPane {
+		t.Fatalf("expected workbench tree to contain pane-2, items=%#v", items)
+	}
+	next, _ = NewShellReducer()(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchDetach.String(), Row: -1})
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: "pane-2"}); !ok || pane.Kind != state.PaneEmpty || pane.TerminalID != "" {
+		t.Fatalf("workbench ctrl-d should detach selected pane, pane=%#v ok=%v", pane, ok)
+	}
+	if _, ok := next.TerminalViews.PaneBinding("pane-2"); ok {
+		t.Fatal("workbench ctrl-d should detach selected pane terminal view binding")
+	}
+}
+
+func TestOverlayDeleteContentActionsAreDistinctUnsupportedSemantics(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool()}
+	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs"}}, "")
+
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolDelete.String(), Row: -1})
+	if len(effects) != 0 || len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Title != "pool.delete" {
+		t.Fatalf("pool ctrl-x should use distinct unsupported delete feedback, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	}
+}
+
+func assertContentActionEffect(t *testing.T, effects []Effect, actionID render.ActionID) {
+	t.Helper()
+	if len(effects) != 2 {
+		t.Fatalf("expected handled and content action effects, got %#v", effects)
+	}
+	if _, ok := effects[0].(handledEffect); !ok {
+		t.Fatalf("expected handled effect, got %#v", effects[0])
+	}
+	effect, ok := effects[1].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("expected content action func effect, got %#v", effects[1])
+	}
+	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != actionID.String() || msg.Row != -1 {
+		t.Fatalf("expected content action %s row -1, got %#v", actionID, msg)
+	}
+}
+
 func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 80, Rows: 24},

@@ -96,17 +96,26 @@ const (
 
 	ActionPickerAttach ActionID = "picker.attach"
 	ActionPickerNew    ActionID = "picker.new"
+	ActionPickerSplit  ActionID = "picker.split"
+	ActionPickerEdit   ActionID = "picker.edit"
+	ActionPickerKill   ActionID = "picker.kill"
+	ActionPickerDelete ActionID = "picker.delete"
 
-	ActionPoolSelect ActionID = "pool.select"
-	ActionPoolAttach ActionID = "pool.attach"
-	ActionPoolEdit   ActionID = "pool.edit"
-	ActionPoolKill   ActionID = "pool.kill"
+	ActionPoolSelect      ActionID = "pool.select"
+	ActionPoolAttach      ActionID = "pool.attach"
+	ActionPoolAttachTab   ActionID = "pool.attach-tab"
+	ActionPoolAttachFloat ActionID = "pool.attach-float"
+	ActionPoolEdit        ActionID = "pool.edit"
+	ActionPoolKill        ActionID = "pool.kill"
+	ActionPoolDelete      ActionID = "pool.delete"
 
 	ActionWorkbenchSelect ActionID = "workbench.select"
 	ActionWorkbenchOpen   ActionID = "workbench.open"
 	ActionWorkbenchRename ActionID = "workbench.rename"
 	ActionWorkbenchNew    ActionID = "workbench.new"
 	ActionWorkbenchDelete ActionID = "workbench.delete"
+	ActionWorkbenchDetach ActionID = "workbench.detach"
+	ActionWorkbenchZoom   ActionID = "workbench.zoom"
 
 	ActionPromptSubmit ActionID = "prompt.submit"
 	ActionPromptCancel ActionID = "prompt.cancel"
@@ -277,15 +286,24 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionExitedClose, ActionDispatchApp, ActionSurfaceContent).withHelp("close").withDanger(),
 		actionSpec(ActionPickerAttach, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent).withFooter("attach", "", StyleStatusAccent).withHelp("attach"),
 		actionSpec(ActionPickerNew, ActionDispatchApp, ActionSurfaceContent).withHelp("new"),
+		actionSpec(ActionPickerSplit, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("attach in split"),
+		actionSpec(ActionPickerEdit, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("edit terminal metadata"),
+		actionSpec(ActionPickerKill, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("kill terminal").withDanger(),
+		actionSpec(ActionPickerDelete, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("delete terminal inventory entry").withDanger(),
 		actionSpec(ActionPoolSelect, ActionDispatchApp, ActionSurfaceContent, ActionSurfaceHelp).withHelp("select"),
 		actionSpec(ActionPoolAttach, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("attach", "", StyleStatusAccent).withHelp("attach"),
+		actionSpec(ActionPoolAttachTab, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("attach as tab"),
+		actionSpec(ActionPoolAttachFloat, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("attach as floating"),
 		actionSpec(ActionPoolEdit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent).withFooter("edit", "", StyleStatusAccent).withHelp("edit"),
 		actionSpec(ActionPoolKill, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("kill", "", StyleStatusWarning).withHelp("kill").withDanger(),
+		actionSpec(ActionPoolDelete, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("delete terminal inventory entry").withDanger(),
 		actionSpec(ActionWorkbenchSelect, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent).withFooter("focus", "", StyleStatusAccent).withHelp("focus"),
 		actionSpec(ActionWorkbenchOpen, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("open", "", StyleStatusAccent).withHelp("open"),
 		actionSpec(ActionWorkbenchRename, ActionDispatchApp, ActionSurfaceContent, ActionSurfaceHelp).withHelp("rename"),
 		actionSpec(ActionWorkbenchNew, ActionDispatchApp, ActionSurfaceContent, ActionSurfaceHelp).withHelp("new"),
 		actionSpec(ActionWorkbenchDelete, ActionDispatchApp, ActionSurfaceContent).withHelp("delete").withDanger(),
+		actionSpec(ActionWorkbenchDetach, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("detach pane"),
+		actionSpec(ActionWorkbenchZoom, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("zoom pane"),
 		actionSpec(ActionPromptSubmit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("enter", "submit", StyleStatusAccent).withHelp("submit"),
 		actionSpec(ActionPromptCancel, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("esc", "cancel", StyleStatusWarning).withHelp("cancel"),
 		actionSpec(ActionPromptOpen, ActionDispatchApp, ActionSurfaceInput).withHelp("open prompt"),

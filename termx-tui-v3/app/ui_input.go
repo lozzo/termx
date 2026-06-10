@@ -123,6 +123,9 @@ func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.R
 		return root, nil
 	}
 	items := state.TerminalPickerItems(root)
+	if actionID, ok := terminalPickerKeyboardAction(event); ok {
+		return reduceOverlayKeyboardAction(root, actionID)
+	}
 	switch event.Key {
 	case input.KeyUp:
 		root.Shell = root.Shell.MoveTerminalPickerSelection(-1, len(items))
@@ -196,6 +199,9 @@ func reduceTerminalPoolPageInput(root state.Root, event input.InputEvent) (state
 		return root, nil
 	}
 	items := state.TerminalPoolPageItems(root)
+	if actionID, ok := terminalPoolKeyboardAction(event); ok {
+		return reduceOverlayKeyboardAction(root, actionID)
+	}
 	switch event.Key {
 	case input.KeyUp:
 		root.Shell = root.Shell.MoveTerminalPoolSelection(-1, len(items))
@@ -249,6 +255,9 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 		return root, nil
 	}
 	items := state.WorkbenchTreeItems(root)
+	if actionID, ok := workbenchTreeKeyboardAction(event); ok {
+		return reduceOverlayKeyboardAction(root, actionID)
+	}
 	switch event.Key {
 	case input.KeyUp:
 		root.Shell = root.Shell.MoveWorkbenchTreeSelection(-1, len(items))
@@ -271,6 +280,77 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 		return root.Advance(), []Effect{handledEffect{}}
 	default:
 		return root, []Effect{handledEffect{}}
+	}
+}
+
+func reduceOverlayKeyboardAction(root state.Root, actionID render.ActionID) (state.Root, []Effect) {
+	if _, ok := render.ActionSpecByID(actionID); !ok {
+		return root, []Effect{handledEffect{}}
+	}
+	return root, []Effect{
+		handledEffect{},
+		FuncEffect{Run: func(context.Context) Msg {
+			return ShellContentActionMsg{ActionID: actionID.String(), Row: -1}
+		}},
+	}
+}
+
+func terminalPickerKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
+	if event.Key == input.KeyTab && !event.Ctrl && !event.Alt && !event.Shift {
+		return render.ActionPickerSplit, true
+	}
+	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
+		return "", false
+	}
+	switch event.Char {
+	case "\x05", "e":
+		return render.ActionPickerEdit, true
+	case "\x0b", "k":
+		return render.ActionPickerKill, true
+	case "\x18", "x":
+		return render.ActionPickerDelete, true
+	default:
+		return "", false
+	}
+}
+
+func terminalPoolKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
+	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
+		return "", false
+	}
+	switch event.Char {
+	case "\x14", "t":
+		return render.ActionPoolAttachTab, true
+	case "\x0f", "o":
+		return render.ActionPoolAttachFloat, true
+	case "\x05", "e":
+		return render.ActionPoolEdit, true
+	case "\x0b", "k":
+		return render.ActionPoolKill, true
+	case "\x18", "x":
+		return render.ActionPoolDelete, true
+	default:
+		return "", false
+	}
+}
+
+func workbenchTreeKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
+	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
+		return "", false
+	}
+	switch event.Char {
+	case "\x0e", "n":
+		return render.ActionWorkbenchNew, true
+	case "\x12", "r":
+		return render.ActionWorkbenchRename, true
+	case "\x18", "x":
+		return render.ActionWorkbenchDelete, true
+	case "\x04", "d":
+		return render.ActionWorkbenchDetach, true
+	case "\x1a", "z":
+		return render.ActionWorkbenchZoom, true
+	default:
+		return "", false
 	}
 }
 
