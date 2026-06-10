@@ -296,6 +296,10 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - terminal input 只发送到当前 active view 的 attachment channel；active pane 缺 view binding 时必须显示 no terminal bound，不得 fallback 到最近 attach 的全局 session。
 - terminal mouse passthrough 必须按命中的 view 所对应 live modes 判定；chrome、overlay、toast、footer/header 的 hit region 继续优先。
 - owner view 的 content rect 变化才可以产生 terminal resize effect；follower/observer view 只能显示当前 terminal projection，除非用户显式触发 ownership transfer。
+- size 权限必须区分三层状态：core-v2 authoritative resize owner、core-v2 terminal size lock、TUI view-local layout lock。前两者来自 protocol control 投影，第三者只影响当前 pane/floating 内容排布，不能冒充 terminal 级协作锁。
+- 当用户显式获取 resize owner 且 terminal 未被 core-v2 size lock 锁住时，TUI 可以根据当前 content rect 主动发起一次 `ensure_resize`；如果 control 投影显示 `size_locked`，TUI 只能更新 owner/chrome/toast 为 pending/manual 状态，不得自动 unlock 或自动 resize。
+- terminal size lock 的 lock/unlock 必须通过 terminal service effect 发送到 core-v2，并经 result/event message 回到 reducer；解锁后不隐式 resize，用户必须再次执行 resize 或触发明确的 owner-resize command。
+- 同一 terminal 的 owner、lock、size、epoch 广播到达后，`TerminalViewStore` 只更新相关 view binding 的 `ResizeRole`、`CanResize`、desired/confirmed size、epoch/error 投影；不会写 workspace storage，也不会修改其他 view 的 copy mode、focus 或 layout pan/align。
 - close pane / detach pane 只删除 view binding；close and kill / kill terminal 才请求 terminal lifecycle 破坏性操作。
 - kill/restart/remove terminal 后，所有绑定该 terminal 的 view 都必须通过 reducer message 进入 exited/unavailable/error 投影。
 - service 不得直接修改 view store；attach、resize、ownership、stream、error 都必须通过 message/effect/result 回到 reducer。
