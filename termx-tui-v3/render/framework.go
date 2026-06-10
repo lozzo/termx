@@ -9,6 +9,8 @@ const (
 
 func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	shell := vm.Shell
+	// 暂时屏蔽右上角 toast 卡片，只保留 reducer 内的反馈状态供快捷键清理和后续恢复。
+	shell.Toasts = nil
 	plan := MeasureLayout(shell, shell.Layout.Viewport)
 	c := newCanvas(plan.Viewport.W, plan.Viewport.H)
 

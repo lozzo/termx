@@ -2226,26 +2226,6 @@ func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
 		t.Fatalf("initial drain: %v", err)
 	}
 
-	toastRegion := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionToast, "")
-	if err := host.SendInput(mouseEventAt(toastRegion.Rect)); err != nil {
-		t.Fatalf("send toast hit: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("toast drain: %v", err)
-	}
-	if len(runtime.State().Shell.Toasts) != 1 {
-		t.Fatalf("toast body hit should not close toast, got %#v", runtime.State().Shell.Toasts)
-	}
-	if !runtime.State().Shell.Overlay.Open {
-		t.Fatalf("toast hit should take priority over overlay, got %#v", runtime.State().Shell.Overlay)
-	}
-	if inputSeen != 0 {
-		t.Fatalf("toast hit should be consumed, inputSeen=%d", inputSeen)
-	}
-
-	runtime.state.Shell = runtime.State().Shell.ClearToasts()
-	runtime.renderFrame()
-
 	overlay := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionOverlay, "")
 	if err := host.SendInput(mouseEventAt(overlay.Rect)); err != nil {
 		t.Fatalf("send overlay click: %v", err)
@@ -2373,8 +2353,8 @@ func TestAppRuntimeAutoDismissesToastsOnRuntimeTick(t *testing.T) {
 		t.Fatalf("initial drain: %v", err)
 	}
 	initialFrameCount := len(host.Frames())
-	if !frameContains(lastRuntimeFrame(t, host), "pending notice") {
-		t.Fatalf("expected pending toast in initial frame, got %#v", lastRuntimeFrame(t, host).Lines)
+	if len(runtime.State().Shell.Toasts) != 2 || frameContains(lastRuntimeFrame(t, host), "pending notice") {
+		t.Fatalf("toast should remain in state but stay hidden initially, state=%#v frame=%#v", runtime.State().Shell.Toasts, lastRuntimeFrame(t, host).Lines)
 	}
 
 	now = now.Add(3 * time.Second)
@@ -2387,8 +2367,8 @@ func TestAppRuntimeAutoDismissesToastsOnRuntimeTick(t *testing.T) {
 	if len(runtime.State().Shell.Toasts) != 1 || runtime.State().Shell.Toasts[0].ID != "pending" {
 		t.Fatalf("short toast should auto-dismiss while pending remains, got %#v", runtime.State().Shell.Toasts)
 	}
-	if frameContains(lastRuntimeFrame(t, host), "short notice") || !frameContains(lastRuntimeFrame(t, host), "pending notice") {
-		t.Fatalf("expected only pending toast after first timer, got %#v", lastRuntimeFrame(t, host).Lines)
+	if frameContains(lastRuntimeFrame(t, host), "short notice") || frameContains(lastRuntimeFrame(t, host), "pending notice") {
+		t.Fatalf("toast text should stay hidden after first timer, got %#v", lastRuntimeFrame(t, host).Lines)
 	}
 
 	now = now.Add(5 * time.Second)

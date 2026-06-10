@@ -1299,7 +1299,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	if runtime.State().Shell.ZoomedPaneID != "pane-2" {
 		t.Fatalf("zoom should keep active pane zoomed, got %#v", runtime.State().Shell)
 	}
-	if !frameContains(zoomFrame, "PANE") || !frameContains(zoomFrame, "pane.toggle-zoom") {
+	if !frameContains(zoomFrame, "PANE") || len(runtime.State().Shell.Toasts) == 0 {
 		t.Fatalf("resize/presentation/zoom should keep visible active feedback, got %#v", zoomFrame.Lines)
 	}
 	assertPaneVisualState(t, zoomFrame, "pane", render.StyleAccent)
@@ -1337,7 +1337,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
 		t.Fatalf("close should choose stable next active pane, got %#v", runtime.State().Shell)
 	}
-	if !frameContains(closeFrame, "pane.close") || !frameContains(closeFrame, "PANE") {
+	if !frameContains(closeFrame, "PANE") || len(runtime.State().Shell.Toasts) == 0 {
 		t.Fatalf("close should update active pane visuals/footer/toast, got %#v", closeFrame.Lines)
 	}
 	assertPaneVisualState(t, closeFrame, "shell", render.StyleAccent)

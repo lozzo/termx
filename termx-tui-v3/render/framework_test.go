@@ -844,8 +844,8 @@ func TestFrameworkRendersToastAndTerminalPickerOverlay(t *testing.T) {
 	if linesContain(result.Lines(), "warn 🚀") {
 		t.Fatalf("overlay should stay in foreground above toast, got %#v", result.Lines())
 	}
-	if firstLayer(t, result, LayerOverlay).Rect.W == 0 || firstLayer(t, result, LayerToast).Rect.W == 0 {
-		t.Fatalf("expected overlay and toast layers, got %#v", result.Layers)
+	if firstLayer(t, result, LayerOverlay).Rect.W == 0 || layerExists(result, LayerToast) {
+		t.Fatalf("expected overlay layer and hidden toast layer, got %#v", result.Layers)
 	}
 	if linesContain(result.ANSILines(), "\x1b[48;2;20;18;27m") {
 		t.Fatalf("terminal picker inner area should not use gray overlay background ANSI, got %#v", result.ANSILines())
@@ -884,8 +884,8 @@ func TestFrameworkToastDoesNotOverwritePaneTopChrome(t *testing.T) {
 	if strings.Contains(lines[0], "pane.split") {
 		t.Fatalf("toast should start below pane top chrome, got %#v", lines)
 	}
-	if !linesContain(lines, "pane.split") || linesContain(lines, "created") {
-		t.Fatalf("expected centered no-action toast below chrome, got %#v", lines)
+	if linesContain(lines, "pane.split") || linesContain(lines, "created") {
+		t.Fatalf("toast should be hidden while preserving panel chrome, got %#v", lines)
 	}
 	assertAllRowsWidth(t, lines, 64)
 }
@@ -1098,4 +1098,13 @@ func firstLayer(t *testing.T, result RenderResult, kind LayerKind) Layer {
 	}
 	t.Fatalf("missing layer %s in %#v", kind, result.Layers)
 	return Layer{}
+}
+
+func layerExists(result RenderResult, kind LayerKind) bool {
+	for _, layer := range result.Layers {
+		if layer.Kind == kind {
+			return true
+		}
+	}
+	return false
 }

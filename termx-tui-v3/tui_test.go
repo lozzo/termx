@@ -63,7 +63,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if frameContains(cases["split-hidden-toast"].Lines, " ws:") ||
 		frameContains(cases["split-hidden-toast"].Lines, " mode:") ||
 		!frameContains(cases["split-hidden-toast"].Lines, "│") ||
-		!frameContains(cases["split-hidden-toast"].Lines, "warn 🚀 ...") ||
+		frameContains(cases["split-hidden-toast"].Lines, "warn 🚀 ...") ||
 		frameContains(cases["split-hidden-toast"].Lines, "warning · pending") ||
 		frameContains(cases["split-hidden-toast"].Lines, "世界") {
 		t.Fatalf("split hidden toast smoke invalid: %#v", cases["split-hidden-toast"].Lines)
@@ -136,9 +136,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["tab-workspace"].Lines, "workspace live") {
 		t.Fatalf("tab/workspace smoke missing product entry content: %#v", cases["tab-workspace"].Lines)
 	}
-	if !frameContains(cases["pane-command-flow"].Lines, "pane.close") ||
+	if frameContains(cases["pane-command-flow"].Lines, "pane.close") ||
 		!frameContains(cases["pane-command-flow"].Lines, "pane command live") {
-		t.Fatalf("pane command smoke missing close feedback or live content: %#v", cases["pane-command-flow"].Lines)
+		t.Fatalf("pane command smoke should hide toast feedback and keep live content: %#v", cases["pane-command-flow"].Lines)
 	}
 	if !frameContains(cases["pane-command-flow"].ANSILines, "\x1b[1;38;2;169;112;255m") {
 		t.Fatalf("pane command smoke missing styled active pane ANSI: %#v", cases["pane-command-flow"].ANSILines)
@@ -251,7 +251,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 		}
 	}
 	split := cases["split-hidden-toast"]
-	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴", "warn 🚀"} {
+	for _, marker := range []string{"┌─ shell", "┬─ logs", "┴"} {
 		if !frameContains(split.Lines, marker) {
 			t.Fatalf("split hidden toast missing styled split marker %q: %#v", marker, split.Lines)
 		}
