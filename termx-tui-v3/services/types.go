@@ -56,6 +56,7 @@ type TerminalService interface {
 	Restart(context.Context, TerminalRestartRequest) error
 	Reconnect(context.Context, TerminalReconnectRequest) (TerminalAttachResult, error)
 	Kill(context.Context, TerminalKillRequest) error
+	Remove(context.Context, TerminalRemoveRequest) error
 	EditMetadata(context.Context, TerminalEditMetadataRequest) error
 	SendInput(context.Context, TerminalInputRequest) error
 	Resize(context.Context, TerminalResizeRequest) error
@@ -145,6 +146,10 @@ type TerminalReconnectRequest struct {
 }
 
 type TerminalKillRequest struct {
+	TerminalID string
+}
+
+type TerminalRemoveRequest struct {
 	TerminalID string
 }
 
@@ -292,6 +297,7 @@ type FakeTerminalService struct {
 	RestartErr        error
 	ReconnectErr      error
 	KillErr           error
+	RemoveErr         error
 	EditErr           error
 	InputErr          error
 	ResizeErr         error
@@ -304,6 +310,7 @@ type FakeTerminalService struct {
 	Restarts          []TerminalRestartRequest
 	Reconnects        []TerminalReconnectRequest
 	Kills             []TerminalKillRequest
+	Removes           []TerminalRemoveRequest
 	Edits             []TerminalEditMetadataRequest
 	Inputs            []TerminalInputRequest
 	Resizes           []TerminalResizeRequest
@@ -439,6 +446,11 @@ func (service *FakeTerminalService) Reconnect(ctx context.Context, req TerminalR
 func (service *FakeTerminalService) Kill(_ context.Context, req TerminalKillRequest) error {
 	service.Kills = append(service.Kills, req)
 	return service.KillErr
+}
+
+func (service *FakeTerminalService) Remove(_ context.Context, req TerminalRemoveRequest) error {
+	service.Removes = append(service.Removes, req)
+	return service.RemoveErr
 }
 
 func (service *FakeTerminalService) EditMetadata(_ context.Context, req TerminalEditMetadataRequest) error {

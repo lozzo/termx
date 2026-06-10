@@ -98,6 +98,19 @@ type TerminalPoolKillResultMsg struct {
 
 func (TerminalPoolKillResultMsg) isMsg() {}
 
+type TerminalPoolRemoveRequestMsg struct {
+	TerminalID string
+}
+
+func (TerminalPoolRemoveRequestMsg) isMsg() {}
+
+type TerminalPoolRemoveResultMsg struct {
+	TerminalID string
+	Err        error
+}
+
+func (TerminalPoolRemoveResultMsg) isMsg() {}
+
 type TerminalPoolEditRequestMsg struct {
 	TerminalID string
 	Title      string
@@ -140,6 +153,10 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 			return reduceTerminalPoolKillRequest(root, msg, deps)
 		case TerminalPoolKillResultMsg:
 			return reduceTerminalPoolKillResult(root, msg)
+		case TerminalPoolRemoveRequestMsg:
+			return reduceTerminalPoolRemoveRequest(root, msg, deps)
+		case TerminalPoolRemoveResultMsg:
+			return reduceTerminalPoolRemoveResult(root, msg)
 		case TerminalPoolEditRequestMsg:
 			return reduceTerminalPoolEditRequest(root, msg, deps)
 		case TerminalPoolEditResultMsg:
@@ -363,8 +380,31 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: errText})
 		return root.Advance(), nil
 	}
-	root.TerminalViews = root.TerminalViews.RemoveTerminal(msg.TerminalID)
+	root = removeTerminalFromRoot(root, msg.TerminalID)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+}
+
+func reduceTerminalPoolRemoveRequest(root state.Root, msg TerminalPoolRemoveRequestMsg, deps LiveDeps) (state.Root, []Effect) {
+	if msg.TerminalID == "" || deps.Terminal == nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: "terminal unavailable"})
+		return root.Advance(), nil
+	}
+	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+		err := deps.Terminal.Remove(ctx, services.TerminalRemoveRequest{TerminalID: msg.TerminalID})
+		return TerminalPoolRemoveResultMsg{TerminalID: msg.TerminalID, Err: err}
+	}}}
+}
+
+func reduceTerminalPoolRemoveResult(root state.Root, msg TerminalPoolRemoveResultMsg) (state.Root, []Effect) {
+	errText := errorString(msg.Err)
+	root.TerminalPool = root.TerminalPool.ApplyRemoved(msg.TerminalID, errText)
+	if errText != "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: errText})
+		return root.Advance(), nil
+	}
+	root = removeTerminalFromRoot(root, msg.TerminalID)
+	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: msg.TerminalID})
 	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 }
 
@@ -409,6 +449,14 @@ func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.Ter
 		}
 	}
 	return out
+}
+
+func removeTerminalFromRoot(root state.Root, terminalID string) state.Root {
+	root.TerminalViews = root.TerminalViews.RemoveTerminal(terminalID)
+	root.Shell = root.Shell.RemoveTerminalBindings(terminalID)
+	root.Session = root.Session.RemoveTerminal(terminalID)
+	root.Surface = root.Surface.RemoveTerminal(terminalID)
+	return root
 }
 
 func terminalPoolAttachSize(root state.Root) (int, int) {

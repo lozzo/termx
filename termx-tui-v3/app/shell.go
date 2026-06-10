@@ -446,8 +446,14 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return TerminalPoolKillRequestMsg{TerminalID: selected.TerminalID}
 		}}}
 	case render.ActionPickerDelete:
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.delete", Body: "terminal inventory delete is not available"})
-		return root.Advance(), nil
+		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
+		if !ok || selected.TerminalID == "" {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.delete", Body: "no terminal"})
+			return root.Advance(), nil
+		}
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return TerminalPoolRemoveRequestMsg{TerminalID: selected.TerminalID}
+		}}}
 	case render.ActionPoolSelect:
 		items := state.TerminalPoolPageItems(root)
 		root.Shell = root.Shell.SetTerminalPoolSelectedIndex(msg.Row, len(items))
@@ -491,8 +497,11 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			}}}
 		}
 	case render.ActionPoolDelete:
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: "terminal inventory delete is not available"})
-		return root.Advance(), nil
+		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return TerminalPoolRemoveRequestMsg{TerminalID: selected.TerminalID}
+			}}}
+		}
 	case render.ActionWorkbenchSelect:
 		items := state.WorkbenchTreeItems(root)
 		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(msg.Row, len(items))

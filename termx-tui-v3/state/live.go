@@ -276,6 +276,63 @@ func (store TerminalSurfaceStore) SurfaceForTerminal(terminalID string) Terminal
 	return (TerminalSurfaceStore{}).projectSnapshot(snapshot, snapshot.State != TerminalLivePending)
 }
 
+func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurfaceStore {
+	if terminalID == "" {
+		return store
+	}
+	if len(store.Surfaces) > 0 {
+		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
+		delete(store.Surfaces, terminalID)
+	}
+	if store.TerminalID != terminalID {
+		return store
+	}
+	store.TerminalID = ""
+	store.Revision = 0
+	store.Cols = 0
+	store.Rows = 0
+	store.Lines = nil
+	store.Screen = nil
+	store.Title = ""
+	store.Cursor = LiveCursor{}
+	store.Modes = LiveTerminalModes{}
+	store.Ready = false
+	store.State = ""
+	store.ExitCode = 0
+	store.ExitReason = ""
+	store.Err = ""
+	store.ResizeBoundary = LiveResizeBoundary{}
+	return store
+}
+
+func (store TerminalSessionStore) RemoveTerminal(terminalID string) TerminalSessionStore {
+	if terminalID == "" {
+		return store
+	}
+	if len(store.InputChannels) > 0 {
+		store.InputChannels = cloneInputChannels(store.InputChannels)
+		delete(store.InputChannels, terminalID)
+	}
+	if store.TerminalID != terminalID {
+		return store
+	}
+	store.TerminalID = ""
+	store.Channel = 0
+	store.Attached = false
+	store.ResizePolicy = ""
+	store.SurfaceID = ""
+	store.ViewID = ""
+	store.DesiredCols = 0
+	store.DesiredRows = 0
+	store.ResizeRequestSeq = 0
+	store.ResizeConfirmedSeq = 0
+	store.LastError = ""
+	store.State = ""
+	store.ExitCode = 0
+	store.ExitReason = ""
+	return store
+}
+
 func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, ready bool) TerminalSurfaceStore {
 	store.TerminalID = snapshot.TerminalID
 	store.Revision = snapshot.Revision

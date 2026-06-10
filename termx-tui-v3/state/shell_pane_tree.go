@@ -113,6 +113,42 @@ func (store ShellStore) BindPaneTerminal(target PaneCommandTarget, terminalID st
 	return store
 }
 
+func (store ShellStore) RemoveTerminalBindings(terminalID string) ShellStore {
+	if terminalID == "" {
+		return store.EnsureDefaults()
+	}
+	store = store.EnsureDefaults()
+	store.Workspace = store.Workspace.removeTerminalBindings(terminalID)
+	for index := range store.Workspaces {
+		store.Workspaces[index] = store.Workspaces[index].removeTerminalBindings(terminalID)
+		if store.Workspaces[index].ID == store.Workspace.ID {
+			store.Workspaces[index] = store.Workspace
+		}
+	}
+	for index := range store.Floatings {
+		if store.Floatings[index].Pane.TerminalID != terminalID {
+			continue
+		}
+		store.Floatings[index].Pane.TerminalID = ""
+		store.Floatings[index].Pane.Kind = PaneEmpty
+	}
+	return store.EnsureDefaults()
+}
+
+func (workspace WorkspaceState) removeTerminalBindings(terminalID string) WorkspaceState {
+	workspace = cloneWorkspace(workspace)
+	for tabIndex := range workspace.Tabs {
+		for paneIndex := range workspace.Tabs[tabIndex].Panes {
+			if workspace.Tabs[tabIndex].Panes[paneIndex].TerminalID != terminalID {
+				continue
+			}
+			workspace.Tabs[tabIndex].Panes[paneIndex].TerminalID = ""
+			workspace.Tabs[tabIndex].Panes[paneIndex].Kind = PaneEmpty
+		}
+	}
+	return workspace
+}
+
 func (store ShellStore) FocusRelativePane(offset int) ShellStore {
 	store = store.EnsureDefaults()
 	if offset == 0 {

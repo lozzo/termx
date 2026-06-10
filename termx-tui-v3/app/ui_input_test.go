@@ -2193,14 +2193,18 @@ func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	}
 }
 
-func TestOverlayDeleteContentActionsAreDistinctUnsupportedSemantics(t *testing.T) {
+func TestOverlayDeleteContentActionsDispatchTerminalRemove(t *testing.T) {
 	reducer := NewShellReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPool()}
 	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs"}}, "")
 
 	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolDelete.String(), Row: -1})
-	if len(effects) != 0 || len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Title != "pool.delete" {
-		t.Fatalf("pool ctrl-x should use distinct unsupported delete feedback, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	if len(effects) != 1 || len(next.Shell.Toasts) != 0 {
+		t.Fatalf("pool ctrl-x should dispatch terminal remove without local toast, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRemoveRequestMsg)
+	if !ok || msg.TerminalID != "term-logs" {
+		t.Fatalf("pool ctrl-x should request terminal inventory remove, got %#v", msg)
 	}
 }
 

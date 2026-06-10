@@ -108,6 +108,46 @@ func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 	if bindings := root.TerminalViews.BindingsForTerminal("term-1"); len(bindings) != 0 {
 		t.Fatalf("kill terminal should clear all view bindings, got %#v", bindings)
 	}
+	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: "pane-2"}); !ok || pane.TerminalID != "" || pane.Kind != state.PaneEmpty {
+		t.Fatalf("kill terminal should clear pane terminal binding, pane=%#v ok=%v", pane, ok)
+	}
+	if root.Session.TerminalID == "term-1" || root.Surface.TerminalID == "term-1" {
+		t.Fatalf("kill terminal should clear active session and surface, session=%#v surface=%#v", root.Session, root.Surface)
+	}
+}
+
+func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Shell:        state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+		Session:      state.TerminalSessionStore{TerminalID: "term-1", Channel: 7, Attached: true, InputChannels: map[string]uint16{"term-1": 7}},
+		Surface:      state.TerminalSurfaceStore{TerminalID: "term-1", Ready: true, Lines: []string{"live"}, Surfaces: map[string]state.LiveSurfaceSnapshot{"term-1": {TerminalID: "term-1"}}},
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "one"}, {TerminalID: "term-2", Title: "two"}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	next, effects := reducer(root, TerminalPoolRemoveRequestMsg{TerminalID: "term-1"})
+	if len(effects) != 1 {
+		t.Fatalf("expected remove effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	if len(terminal.Removes) != 1 || terminal.Removes[0].TerminalID != "term-1" {
+		t.Fatalf("remove request should call terminal service remove, got %#v", terminal.Removes)
+	}
+	next, _ = reducer(next, msg)
+	if next.TerminalPool.LastRemovedID != "term-1" || len(next.TerminalPool.Items) != 1 || next.TerminalPool.Items[0].TerminalID != "term-2" {
+		t.Fatalf("remove result should update pool inventory, pool=%#v", next.TerminalPool)
+	}
+	if _, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID); ok {
+		t.Fatal("remove result should clear terminal view binding")
+	}
+	if pane, ok := next.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.TerminalID != "" || pane.Kind != state.PaneEmpty {
+		t.Fatalf("remove result should clear shell pane binding, pane=%#v ok=%v", pane, ok)
+	}
+	if next.Session.TerminalID != "" || next.Surface.TerminalID != "" {
+		t.Fatalf("remove result should clear active session and surface, session=%#v surface=%#v", next.Session, next.Surface)
+	}
 }
 
 func TestLiveStreamTokenIsTerminalScoped(t *testing.T) {

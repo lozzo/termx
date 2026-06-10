@@ -18,6 +18,7 @@ type TerminalPoolStore struct {
 	LastCreatedID  string
 	LastAttachedID string
 	LastKilledID   string
+	LastRemovedID  string
 	LastEditedID   string
 }
 
@@ -89,6 +90,18 @@ func (store TerminalPoolStore) ApplyKilled(terminalID string, err string) Termin
 	return store
 }
 
+func (store TerminalPoolStore) ApplyRemoved(terminalID string, err string) TerminalPoolStore {
+	if err != "" {
+		store.LastError = err
+		store.Status = TerminalPoolError
+		return store
+	}
+	store.LastRemovedID = terminalID
+	store.LastError = ""
+	store.Items = removeTerminalPoolItem(store.Items, terminalID)
+	return store
+}
+
 func (store TerminalPoolStore) ApplyEdited(terminalID string, err string) TerminalPoolStore {
 	if err != "" {
 		store.LastError = err
@@ -122,6 +135,20 @@ func markTerminalPoolAttached(items []TerminalPoolItem, terminalID string) []Ter
 		cloned[index].Attached = cloned[index].TerminalID == terminalID
 	}
 	return cloned
+}
+
+func removeTerminalPoolItem(items []TerminalPoolItem, terminalID string) []TerminalPoolItem {
+	if terminalID == "" {
+		return cloneTerminalPoolItems(items)
+	}
+	out := make([]TerminalPoolItem, 0, len(items))
+	for _, item := range items {
+		if item.TerminalID == terminalID {
+			continue
+		}
+		out = append(out, item)
+	}
+	return cloneTerminalPoolItems(out)
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

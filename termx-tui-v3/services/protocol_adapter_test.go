@@ -25,6 +25,7 @@ type fakeProtocolTerminalClient struct {
 	createParams   []protocol.CreateParams
 	restartIDs     []string
 	killIDs        []string
+	removeIDs      []string
 	metadataIDs    []string
 	metadataNames  []string
 	metadataTags   []map[string]string
@@ -85,6 +86,11 @@ func (client *fakeProtocolTerminalClient) Restart(_ context.Context, terminalID 
 
 func (client *fakeProtocolTerminalClient) Kill(_ context.Context, terminalID string) error {
 	client.killIDs = append(client.killIDs, terminalID)
+	return nil
+}
+
+func (client *fakeProtocolTerminalClient) Remove(_ context.Context, terminalID string) error {
+	client.removeIDs = append(client.removeIDs, terminalID)
 	return nil
 }
 
@@ -261,6 +267,18 @@ func TestProtocolCoreClientAdapterPreservesTrailingBlankHistoryCells(t *testing.
 	row := result.Window.Rows[0]
 	if row.Text != "cmd  " || len(row.Cells) != 3 || row.Cells[1].Text != " " || row.Cells[2].Text != " " {
 		t.Fatalf("adapter should preserve trailing blank history cells, got %#v", row)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterMapsRemove(t *testing.T) {
+	client := &fakeProtocolTerminalClient{}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	if err := adapter.Remove(context.Background(), TerminalRemoveRequest{TerminalID: "term-1"}); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(client.removeIDs) != 1 || client.removeIDs[0] != "term-1" {
+		t.Fatalf("remove should call protocol remove, got %#v", client.removeIDs)
 	}
 }
 

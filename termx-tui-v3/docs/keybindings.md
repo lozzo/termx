@@ -178,8 +178,8 @@
 | floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 待实现 | 缺 floating group collapse、fit 与 auto-fit state，排入 215D1 |
 | display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 已核验 | 已走 authoritative `HistoryWindow` 上的 copy reducer；`Enter` 复制 selection 后退出 copy mode；见 `termx-tui-v3/app/integration_test.go` |
 | display | `p/P PASTE`、`H HISTORY` | 阻塞 | clipboard paste/history overlay 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
-| picker | `Tab SPLIT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | 键盘分发复用 selected item、`ActionSpec` 和 `ShellContentActionMsg`；`Ctrl-X` 保留 delete 语义，tui-v3 service/reducer 接线排入 215C1 |
-| terminal manager | `Ctrl-T TAB`、`Ctrl-O FLOAT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 部分实现 | attach tab/floating、edit、kill 均走 overlay action/reducer/effect；`Ctrl-X` 保留 delete 语义，tui-v3 service/reducer 接线排入 215C1 |
+| picker | `Tab SPLIT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 已实现 | 键盘分发复用 selected item、`ActionSpec` 和 `ShellContentActionMsg`；`Ctrl-X` 走 terminal inventory remove service/effect/result path，不伪装成 kill |
+| terminal manager | `Ctrl-T TAB`、`Ctrl-O FLOAT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 已实现 | attach tab/floating、edit、kill、delete 均走 overlay action/reducer/effect；delete 成功后清理 TerminalView、pane/floating binding、session/live surface |
 | workspace picker | `Ctrl-N NEW`、`Ctrl-R RENAME`、`Ctrl-X REMOVE`、`Ctrl-D DETACH`、`Ctrl-Z ZOOM` | 已实现 | Workbench Tree 键盘动作统一复用 content action reducer；detach 同步清理 pane terminal view binding |
 | floating overview | 全部 | 待实现 | 当前只渲染 placeholder，overview/summon 排入 215D，group commands 排入 215D1 |
 | clipboard history | 全部 | 阻塞 | 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
