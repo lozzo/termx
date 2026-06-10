@@ -173,7 +173,8 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 			Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
 			Surface:  state.TerminalSurfaceStore{TerminalID: "term-main", Lines: []string{"tiled live"}},
 		})
-		assertPanelFrameContains(t, frame, "No terminal attached floating")
+		assertPanelFrameContains(t, frame, "No terminal attached")
+		assertPanelFrameContains(t, frame, "Attach existing terminal")
 		assertPanelFrameContains(t, frame, "["+render.DefaultPaneChromeGlyphs().Zoom+"]─["+render.DefaultPaneChromeGlyphs().Close+"]")
 	})
 

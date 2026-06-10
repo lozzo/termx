@@ -92,6 +92,7 @@ const (
 	StyleSuccess             StyleToken = "success"
 	StyleWarning             StyleToken = "warning"
 	StyleDanger              StyleToken = "danger"
+	StyleDangerStrong        StyleToken = "danger-strong"
 	StyleOverlay             StyleToken = "overlay"
 	StylePicker              StyleToken = "picker"
 	StylePickerMuted         StyleToken = "picker-muted"
@@ -328,6 +329,8 @@ func ansiForStyleToken(token StyleToken, theme Theme) string {
 		return sgrForeground(theme.Warning, false)
 	case StyleDanger:
 		return sgrForeground(theme.Danger, false)
+	case StyleDangerStrong:
+		return sgrForeground(theme.Danger, true)
 	case StyleOverlay:
 		return sgrForegroundBackground(theme.ChromeFG, theme.OverlayBG, false)
 	case StylePicker:

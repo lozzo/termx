@@ -929,6 +929,32 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutCentersEmptyPaneActionHitRegions(t *testing.T) {
+	lines, regions, cursor := emptyPaneContentLayout("pane-1")
+	shell := ShellVM{Layout: LayoutVM{Panels: []PanelVM{{
+		ID:           "pane-1",
+		Presentation: PanelPresentationCard,
+		Active:       true,
+		Content:      ContentVM{Kind: ContentEmptyPane, Lines: lines, HitRegions: regions, Cursor: cursor},
+	}}}}
+
+	plan := MeasureLayout(shell, Rect{W: 40, H: 10})
+	if len(plan.Panels) != 1 {
+		t.Fatalf("expected one panel, got %#v", plan.Panels)
+	}
+	contentRect := plan.Panels[0].ContentRect
+	attach := hitRegionByAction(t, plan.HitRegions, ActionEmptyAttach.String())
+	create := hitRegionByAction(t, plan.HitRegions, ActionEmptyCreate.String())
+	attachWidth := DisplayWidth("► Attach existing terminal ◄")
+	createWidth := DisplayWidth("[ Create new terminal ]")
+	if attach.Rect != (Rect{X: contentRect.X + (contentRect.W-attachWidth)/2, Y: contentRect.Y + 2, W: attachWidth, H: 1}) {
+		t.Fatalf("attach hit region should match centered selected row content=%#v got=%#v", contentRect, attach)
+	}
+	if create.Rect != (Rect{X: contentRect.X + (contentRect.W-createWidth)/2, Y: contentRect.Y + 3, W: createWidth, H: 1}) {
+		t.Fatalf("create hit region should match centered bracket row content=%#v got=%#v", contentRect, create)
+	}
+}
+
 func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
 	for i, region := range regions {
 		if region.ActionID == actionID {

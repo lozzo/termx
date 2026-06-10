@@ -9,25 +9,60 @@ import (
 
 const contentActionWidth = 12
 
+const emptyPaneSelectedActionIndex = 0
+
 // empty pane 内容只描述当前 pane 可执行的产品动作，不创建 terminal。
 func buildEmptyPaneContent(pane state.PaneState) ContentVM {
-	title := activePaneTitle(pane)
-	lines := []Line{
-		{Cells: []Cell{styledCell("No terminal attached ", StyleMuted), styledCell(title, StyleAccent)}},
-		NewLine(""),
-		contentActionLine("attach", "Attach existing terminal"),
-		contentActionLine("create", "Create new terminal"),
-		contentActionLine("manager", "Open terminal manager"),
-		contentActionLine("close", "Close pane"),
-	}
+	lines, regions, cursor := emptyPaneContentLayout(pane.ID)
 	return ContentVM{
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
 		Status:     "empty: Attach existing terminal / Create new terminal / Open terminal manager / Close pane",
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("No terminal attached ") + DisplayWidth(title), Shape: CursorShapeBar},
+		Cursor:     cursor,
 		Empty:      true,
-		HitRegions: contentActionRegions([]ActionID{ActionEmptyAttach, ActionEmptyCreate, ActionEmptyManager, ActionEmptyClose}, pane.ID, 2),
+		HitRegions: regions,
 	}
+}
+
+func emptyPaneContentLayout(paneID string) ([]Line, []HitRegion, Cursor) {
+	actions := []emptyPaneActionSpec{
+		{ID: ActionEmptyAttach, Label: "Attach existing terminal", Style: StyleAccent},
+		{ID: ActionEmptyCreate, Label: "Create new terminal", Style: StyleSuccess},
+		{ID: ActionEmptyManager, Label: "Open terminal manager", Style: StyleForeground},
+		{ID: ActionEmptyClose, Label: "Close pane", Style: StyleDangerStrong},
+	}
+	lines := []Line{centeredStyledLine("No terminal attached", StyleForeground)}
+	regions := make([]HitRegion, 0, len(actions))
+	for index, action := range actions {
+		selected := index == emptyPaneSelectedActionIndex
+		text := emptyPaneActionLabel(action.Label, selected)
+		style := action.Style
+		if selected && style == StyleForeground {
+			style = StyleStrongForeground
+		}
+		line := centeredStyledLine(text, style)
+		lines = append(lines, line)
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: index + 1, W: DisplayWidth(text), H: 1}, PaneID: paneID, ActionID: action.ID.String()})
+	}
+	return lines, regions, Cursor{Visible: true, Anchor: true, Row: 0, Col: DisplayWidth("No terminal attached"), Shape: CursorShapeBar}
+}
+
+type emptyPaneActionSpec struct {
+	ID    ActionID
+	Label string
+	Style StyleToken
+}
+
+func emptyPaneActionLabel(label string, selected bool) string {
+	label = strings.TrimSpace(label)
+	if selected {
+		return "► " + label + " ◄"
+	}
+	return "[ " + label + " ]"
+}
+
+func centeredStyledLine(text string, style StyleToken) Line {
+	return Line{Cells: []Cell{styledCell(text, style)}}
 }
 
 // empty tab 是 workspace/tab truth，不伪造 pane；用户动作再创建或连接真实 pane。

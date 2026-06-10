@@ -1,5 +1,7 @@
 package render
 
+import "strings"
+
 const contentViewportDot = "·"
 
 // RenderContentViewport 是所有 pane/floating 内容投影的基础合同：
@@ -10,6 +12,9 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		return ContentRenderResult{}
 	}
 	content := request.Content
+	if content.Kind == ContentEmptyPane {
+		return renderEmptyPaneContentViewport(request)
+	}
 	lines := content.Lines
 	if len(lines) == 0 {
 		lines = []Line{NewLine(content.Status)}
@@ -27,6 +32,71 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
 		Overflow:   overflow,
 	}
+}
+
+func renderEmptyPaneContentViewport(request ContentRenderRequest) ContentRenderResult {
+	rect := request.Rect
+	content := request.Content
+	lines := content.Lines
+	if len(lines) == 0 {
+		lines = []Line{NewLine(content.Status)}
+	}
+	rendered := make([]Line, rect.H)
+	for row := 0; row < rect.H; row++ {
+		rendered[row] = NewLine(strings.Repeat(" ", rect.W))
+	}
+	startY := 0
+	if rect.H >= len(lines)+2 {
+		startY = 1
+	}
+	translatedRegions := make([]HitRegion, 0, len(content.HitRegions))
+	for index, line := range lines {
+		y := startY + index
+		if y < 0 || y >= rect.H {
+			continue
+		}
+		centered := centerContentLine(line, rect.W)
+		rendered[y] = centered
+		if index > 0 && index-1 < len(content.HitRegions) {
+			region := content.HitRegions[index-1]
+			region.Rect.X = centeredLineTextX(line, rect.W)
+			region.Rect.Y = y
+			region.Rect.W = minInt(line.Width(), rect.W)
+			region.Rect.H = 1
+			translatedRegions = append(translatedRegions, region)
+		}
+	}
+	cursor := content.Cursor
+	if cursor.Visible {
+		cursor.Row += startY
+		cursor.Col = minInt(centeredLineTextX(lines[0], rect.W)+cursor.Col, maxInt(0, rect.W-1))
+	}
+	return ContentRenderResult{Lines: rendered, Cursor: cursor, HitRegions: translatedRegions, Metadata: RenderMetadata{Width: rect.W, Height: rect.H}}
+}
+
+func centerContentLine(line Line, width int) Line {
+	if width <= 0 {
+		return Line{}
+	}
+	lineWidth := minInt(line.Width(), width)
+	left := maxInt(0, (width-lineWidth)/2)
+	right := maxInt(0, width-left-lineWidth)
+	cells := make([]Cell, 0, len(line.Cells)+2)
+	if left > 0 {
+		cells = append(cells, NewCell(strings.Repeat(" ", left)))
+	}
+	cells = append(cells, contentViewportLineWindow(line, 0, lineWidth).Cells...)
+	if right > 0 {
+		cells = append(cells, NewCell(strings.Repeat(" ", right)))
+	}
+	return Line{Cells: cells}
+}
+
+func centeredLineTextX(line Line, width int) int {
+	if width <= 0 {
+		return 0
+	}
+	return maxInt(0, (width-minInt(line.Width(), width))/2)
 }
 
 func normalizeContentExtent(extent ContentExtent, rect Rect) ContentExtent {

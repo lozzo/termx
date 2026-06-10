@@ -146,6 +146,37 @@ func TestContentViewportPreservesANSICellStyleAndWideTruncation(t *testing.T) {
 	}
 }
 
+func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
+	lines, regions, cursor := emptyPaneContentLayout("pane-1")
+	result := RenderContentViewport(ContentRenderRequest{
+		Rect:    Rect{W: 40, H: 8},
+		Content: ContentVM{Kind: ContentEmptyPane, Lines: lines, HitRegions: regions, Cursor: cursor},
+	})
+
+	if got, want := SliceCells(result.Lines[1].PlainString(), 10, 30), "No terminal attached"; got != want {
+		t.Fatalf("empty pane headline should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
+	}
+	if got, want := SliceCells(result.Lines[2].PlainString(), 6, 34), "► Attach existing terminal ◄"; got != want {
+		t.Fatalf("selected empty action should use tuiv2 arrows got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
+	}
+	if got, want := SliceCells(result.Lines[3].PlainString(), 8, 31), "[ Create new terminal ]"; got != want {
+		t.Fatalf("unselected empty action should use brackets got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
+	}
+	if !styledLinesContainText(result.Lines, "► Attach existing terminal ◄", StyleAccent) ||
+		!styledLinesContainText(result.Lines, "[ Create new terminal ]", StyleSuccess) ||
+		!styledLinesContainText(result.Lines, "[ Open terminal manager ]", StyleForeground) ||
+		!styledLinesContainText(result.Lines, "[ Close pane ]", StyleDangerStrong) {
+		t.Fatalf("empty actions should keep action-specific styles, got %#v", result.Lines)
+	}
+	attach := hitRegionByAction(t, result.HitRegions, ActionEmptyAttach.String())
+	if attach.Rect != (Rect{X: 6, Y: 2, W: 28, H: 1}) {
+		t.Fatalf("selected empty action hit region should follow centered text, got %#v", attach)
+	}
+	if !result.Cursor.Visible || result.Cursor.Row != 1 || result.Cursor.Col != 30 {
+		t.Fatalf("empty pane cursor should anchor at centered headline end, got %#v", result.Cursor)
+	}
+}
+
 func TestFrameworkRendersContentViewportDotsAndStoresOverflow(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 16, H: 8}, Panels: []PanelVM{{

@@ -819,8 +819,8 @@ func TestRenderVMBuilderAnchorsEmptyPaneCursorForIME(t *testing.T) {
 	if content.Kind != ContentEmptyPane || !content.Cursor.Visible {
 		t.Fatalf("empty pane should expose a cursor anchor for IME, got %#v", content)
 	}
-	if content.Cursor.Col != DisplayWidth("No terminal attached ")+DisplayWidth("浮窗") {
-		t.Fatalf("empty pane cursor should follow title text, got %#v", content.Cursor)
+	if content.Cursor.Col != DisplayWidth("No terminal attached") {
+		t.Fatalf("empty pane cursor should follow headline text, got %#v", content.Cursor)
 	}
 }
 
@@ -1329,7 +1329,7 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		Shell:   emptyShell,
 		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live must not replace empty"}},
 	})
-	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No terminal attached slot") || !strings.Contains(content.Lines[2].PlainString(), "Attach existing terminal") {
+	if content := activeContent(emptyVM.Shell); content.Kind != ContentEmptyPane || !content.Empty || content.Lines[0].PlainString() != "No terminal attached" || !strings.Contains(content.Lines[1].PlainString(), "► Attach existing terminal ◄") {
 		t.Fatalf("expected active empty pane placeholder, got %#v", content)
 	} else if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") || !contentHasAction(content, "empty.close") {
 		t.Fatalf("expected empty pane CTA action regions, got %#v", content.HitRegions)

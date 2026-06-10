@@ -28,10 +28,33 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	regions = appendSplitResizeHitRegions(regions, shell.Layout.Split, plan.Body, plan.Viewport, rootSplitPath)
 	for _, panel := range plan.Panels {
 		regions = appendPanelChromeHitRegions(regions, panel, false, plan.Viewport)
-		regions = appendTranslatedRegions(regions, panel.Panel.Content.HitRegions, panel.ContentRect, plan.Viewport)
+		regions = appendTranslatedContentRegions(regions, panel.Panel.Content, panel.ContentRect, plan.Viewport)
 		regions = appendPanelContentHitRegion(regions, panel, plan.Viewport)
 	}
 	return regions
+}
+
+func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin Rect, viewport Rect) []HitRegion {
+	if content.Kind != ContentEmptyPane || len(content.Lines) == 0 {
+		return appendTranslatedRegions(out, content.HitRegions, origin, viewport)
+	}
+	startY := 0
+	if origin.H >= len(content.Lines)+2 {
+		startY = 1
+	}
+	regions := make([]HitRegion, 0, len(content.HitRegions))
+	for _, region := range content.HitRegions {
+		if region.Rect.Y < 0 || region.Rect.Y >= len(content.Lines) {
+			continue
+		}
+		line := content.Lines[region.Rect.Y]
+		region.Rect.X = centeredLineTextX(line, origin.W)
+		region.Rect.Y += startY
+		region.Rect.W = minInt(line.Width(), origin.W)
+		region.Rect.H = 1
+		regions = append(regions, region)
+	}
+	return appendTranslatedRegions(out, regions, origin, viewport)
 }
 
 func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewport Rect) []HitRegion {
