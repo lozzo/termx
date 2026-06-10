@@ -62,6 +62,40 @@ func TestContentProjectorRegistryKeepsInactiveCopyPanePlaceholder(t *testing.T) 
 	}
 }
 
+func TestContentProjectorRegistryUsesPlaceholderForInactivePendingLivePane(t *testing.T) {
+	registry := DefaultContentProjectorRegistry()
+	content := registry.Project(ContentProjectorContext{
+		Kind:   ContentTerminalLive,
+		Pane:   state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"},
+		Active: false,
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-logs",
+			State:      state.TerminalLivePending,
+		},
+	})
+	if content.Kind != ContentPlaceholder || !content.Pending || content.Lines[0].PlainString() != "logs inactive" {
+		t.Fatalf("expected inactive pending live pane placeholder, got %#v", content)
+	}
+}
+
+func TestContentProjectorRegistryKeepsInactiveReadyLivePaneContent(t *testing.T) {
+	registry := DefaultContentProjectorRegistry()
+	content := registry.Project(ContentProjectorContext{
+		Kind:   ContentTerminalLive,
+		Pane:   state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"},
+		Active: false,
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-logs",
+			Ready:      true,
+			State:      state.TerminalLiveAttached,
+			Lines:      []string{"logs ready"},
+		},
+	})
+	if content.Kind != ContentTerminalLive || content.Pending || content.Lines[0].PlainString() != "logs ready" {
+		t.Fatalf("expected inactive ready live pane content, got %#v", content)
+	}
+}
+
 func TestContentProjectorRegistryProjectsOverlayContent(t *testing.T) {
 	registry := DefaultContentProjectorRegistry()
 	shell := state.DefaultShell().OpenHelp("most-used")

@@ -77,7 +77,20 @@ func projectTerminalLiveContent(ctx ContentProjectorContext) ContentVM {
 	if session.TerminalID == "" {
 		session = ctx.Root.Session
 	}
+	if !ctx.Active && liveSurfaceIsPending(surface, session) {
+		return placeholderContentForPane(ctx.Pane)
+	}
 	return buildLiveContentVM(surface, session)
+}
+
+func liveSurfaceIsPending(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) bool {
+	return !surface.Ready &&
+		surface.Err == "" &&
+		session.LastError == "" &&
+		surface.State != state.TerminalLiveExited &&
+		session.State != state.TerminalLiveExited &&
+		len(surface.Lines) == 0 &&
+		len(surface.Screen) == 0
 }
 
 func projectCopyHistoryContent(ctx ContentProjectorContext) ContentVM {
