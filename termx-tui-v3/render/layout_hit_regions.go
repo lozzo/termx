@@ -16,6 +16,9 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	}
 	regions = appendHeaderHitRegions(regions, shell.Header, plan.Header, plan.Viewport)
 	regions = appendFooterHitRegions(regions, shell.Footer, plan.Footer, plan.FooterFrame, plan.Viewport)
+	if len(plan.Panels) == 0 && plan.Body.W > 0 && plan.Body.H > 0 {
+		regions = appendTranslatedRegions(regions, shell.Layout.BodyContent.HitRegions, plan.Body, plan.Viewport)
+	}
 	for i := len(plan.Floatings) - 1; i >= 0; i-- {
 		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
 	}

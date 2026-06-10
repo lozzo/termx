@@ -1296,6 +1296,25 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsEmptyTabContentWithoutSyntheticPanel(t *testing.T) {
+	shell, result := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create tab: %#v", result)
+	}
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	content := vm.Shell.Layout.BodyContent
+	if len(vm.Shell.Layout.Panels) != 0 {
+		t.Fatalf("empty tab must not create synthetic panel VMs, got %#v", vm.Shell.Layout.Panels)
+	}
+	if content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No panel in tab logs") || !strings.Contains(content.Lines[2].PlainString(), "Choose terminal") {
+		t.Fatalf("expected empty tab content, got %#v", content)
+	}
+	if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") {
+		t.Fatalf("expected empty tab CTA action regions, got %#v", content.HitRegions)
+	}
+}
+
 func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 	shell := state.DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"

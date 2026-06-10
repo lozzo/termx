@@ -42,6 +42,7 @@ func TestActionSpecCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		ActionResizeBalance,
 		ActionCopyOlder,
 		ActionTabCreate,
+		ActionTabSwitch,
 		ActionTabClose,
 		ActionTabRename,
 		ActionTabPrevious,

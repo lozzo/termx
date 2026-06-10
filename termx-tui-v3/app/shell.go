@@ -254,6 +254,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), nil
 	}
 	switch spec.ID {
+	case render.ActionTabSwitch:
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionTabClose:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionTabCreate:

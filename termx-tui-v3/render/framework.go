@@ -21,6 +21,10 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 	}
 
 	layers := make([]Layer, 0)
+	if len(plan.Panels) == 0 && plan.Body.W > 0 && plan.Body.H > 0 {
+		contentResult := renderContent(c, shell.Layout.BodyContent, plan.Body, "shell:body:content", LayerPanel)
+		layers = append(layers, Layer{Kind: LayerPanel, Rect: plan.Body, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
+	}
 	for _, layout := range plan.Panels {
 		switch layout.Panel.Presentation {
 		case PanelPresentationSplitLine:

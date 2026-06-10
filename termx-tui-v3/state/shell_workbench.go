@@ -64,13 +64,9 @@ func (store ShellStore) createTab(command WorkbenchCommand) (ShellStore, Workben
 	if name == "" {
 		name = id
 	}
-	paneID := id + "-pane"
 	tab := TabState{
-		ID:           id,
-		Title:        name,
-		ActivePaneID: paneID,
-		Panes:        []PaneState{{ID: paneID, Title: "shell", Kind: PaneTerminalLive, Active: true}},
-		RootSplit:    SplitNode{PaneID: paneID},
+		ID:    id,
+		Title: name,
 	}
 	store.Workspace.Tabs = append(cloneTabs(store.Workspace.Tabs), tab)
 	return store.focusTabByIndex(len(store.Workspace.Tabs) - 1), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: id}

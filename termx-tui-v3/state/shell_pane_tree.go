@@ -33,6 +33,15 @@ func (store ShellStore) SplitActivePane(newPane PaneState, direction SplitDirect
 	if previousActive == "" {
 		previousActive = store.ActivePaneID
 	}
+	if len(tab.Panes) == 0 {
+		tab.Panes = []PaneState{newPane}
+		tab.RootSplit = SplitNode{PaneID: newPane.ID}
+		tab.ActivePaneID = newPane.ID
+		store.ActivePaneID = newPane.ID
+		store.ZoomedPaneID = ""
+		store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+		return store
+	}
 	tab.Panes = append(clonePanes(tab.Panes), newPane)
 	tab.RootSplit = insertSplitNode(tab.RootSplit, previousActive, newPane.ID, direction)
 	tab.ActivePaneID = newPane.ID
@@ -68,12 +77,25 @@ func (store ShellStore) BindPaneTerminal(target PaneCommandTarget, terminalID st
 		return store
 	}
 	tabIndex := store.tabIndexForTarget(target)
+	if tabIndex < 0 && target.PaneID == "" {
+		tabIndex = store.activeTabIndex()
+	}
 	if tabIndex < 0 {
 		return store
 	}
 	paneID := target.PaneID
 	if paneID == "" {
 		paneID = store.ActivePaneID
+	}
+	if paneID == "" && len(store.Workspace.Tabs[tabIndex].Panes) == 0 {
+		paneID = store.Workspace.Tabs[tabIndex].ID + "-pane"
+		store.Workspace.Tabs[tabIndex].Panes = []PaneState{{ID: paneID, Title: terminalID, Kind: PaneTerminalLive, TerminalID: terminalID}}
+		store.Workspace.Tabs[tabIndex].ActivePaneID = paneID
+		store.Workspace.Tabs[tabIndex].RootSplit = SplitNode{PaneID: paneID}
+		store.ActivePaneID = paneID
+		store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
+		store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+		return store
 	}
 	for index := range store.Workspace.Tabs[tabIndex].Panes {
 		if store.Workspace.Tabs[tabIndex].Panes[index].ID != paneID {

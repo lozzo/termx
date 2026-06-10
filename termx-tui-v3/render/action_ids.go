@@ -27,6 +27,7 @@ const (
 	ActionCopyOlder       ActionID = "copy.older"
 
 	ActionTabCreate   ActionID = "tab.create"
+	ActionTabSwitch   ActionID = "tab.switch"
 	ActionTabClose    ActionID = "tab.close"
 	ActionTabRename   ActionID = "tab.rename"
 	ActionTabPrevious ActionID = "tab.previous"
@@ -197,6 +198,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionResizeBalance, ActionDispatchApp, ActionSurfaceFooter).withFooter("b", "balance", StyleStatusAccent).withHelp("balance"),
 		actionSpec(ActionCopyOlder, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("pgup", "older", StyleStatusAccent).withHelp("older history"),
 		actionSpec(ActionTabCreate, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("n", "new", StyleStatusAccent).withHelp("create"),
+		actionSpec(ActionTabSwitch, ActionDispatchApp, ActionSurfaceLayout, ActionSurfaceHelp).withHelp("switch"),
 		actionSpec(ActionTabClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("x", "close", StyleStatusWarning).withHelp("close").withDanger(),
 		actionSpec(ActionTabRename, ActionDispatchApp, ActionSurfaceFooter).withFooter("r", "rename", StyleStatusAccent).withHelp("rename"),
 		actionSpec(ActionTabPrevious, ActionDispatchApp, ActionSurfaceFooter).withFooter("h", "prev", StyleStatusAccent).withHelp("previous"),

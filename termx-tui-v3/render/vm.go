@@ -414,6 +414,7 @@ func (projector ShellProjector) buildLayoutVM(shell state.ShellStore, activeCont
 		return LayoutVM{
 			Viewport: viewportRect(root.Viewport),
 			Panels:   projector.buildZoomedPanelVMs(shell, activeContent, root),
+			BodyContent: activeContent,
 			Floating: projector.buildFloatingVMs(shell, root),
 			Split:    SplitVM{PaneID: shell.ZoomedPaneID},
 		}
@@ -421,6 +422,7 @@ func (projector ShellProjector) buildLayoutVM(shell state.ShellStore, activeCont
 	return LayoutVM{
 		Viewport: viewportRect(root.Viewport),
 		Panels:   projector.buildPanelVMs(shell, activeContent, root),
+		BodyContent: activeContent,
 		Floating: projector.buildFloatingVMs(shell, root),
 		Split:    buildSplitVM(activeTab(shell).RootSplit),
 	}
@@ -438,14 +440,7 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 	tab := activeTab(shell)
 	floatingOwnsFocus := shell.ActiveFloatingID != ""
 	if len(tab.Panes) == 0 {
-		return []PanelVM{{
-			ID:           state.DefaultPaneID,
-			Title:        "shell",
-			Presentation: renderPanelPresentation(shell.PanelPresentation),
-			Active:       !floatingOwnsFocus,
-			Content:      activeContent,
-			Chrome:       buildPanelChromeVM(state.PaneState{ID: state.DefaultPaneID, Title: "shell"}, !floatingOwnsFocus, activeContent),
-		}}
+		return nil
 	}
 	panels := make([]PanelVM, len(tab.Panes))
 	for i, pane := range tab.Panes {
@@ -580,6 +575,9 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 	shell := root.Shell.EnsureDefaults()
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
 		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: sessionForPane(root, pane), Active: true})
+	}
+	if tab := activeTab(shell); len(tab.Panes) == 0 {
+		return buildEmptyTabContent(tab)
 	}
 	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalLive, Surface: root.Surface, Session: root.Session, Active: true})
 }

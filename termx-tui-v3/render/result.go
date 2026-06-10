@@ -660,6 +660,7 @@ type LayoutVM struct {
 	HeaderDividerFrame Rect
 	FooterFrame        Rect
 	Panels             []PanelVM
+	BodyContent        ContentVM
 	Floating           []FloatingVM
 	Split              SplitVM
 	ChromePatches      []ChromePatchVM

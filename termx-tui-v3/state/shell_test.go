@@ -63,8 +63,11 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 	if result.Status != WorkbenchCommandOK || result.ID == "" {
 		t.Fatalf("expected tab create ok, result=%#v shell=%#v", result, shell)
 	}
-	if len(shell.Workspace.Tabs) != 2 || shell.Workspace.ActiveTabID != result.ID || shell.ActivePaneID != result.ID+"-pane" {
-		t.Fatalf("expected new tab active, result=%#v shell=%#v", result, shell)
+	if len(shell.Workspace.Tabs) != 2 || shell.Workspace.ActiveTabID != result.ID || shell.ActivePaneID != "" {
+		t.Fatalf("expected new empty tab active, result=%#v shell=%#v", result, shell)
+	}
+	if active := shell.activeTab(); len(active.Panes) != 0 || active.RootSplit.PaneID != "" || active.RootSplit.Direction != "" || len(active.RootSplit.Children) != 0 {
+		t.Fatalf("new tab must not synthesize a pane, got %#v", active)
 	}
 	buildTabID := result.ID
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabRename, Name: "构建🚀"})
@@ -76,7 +79,7 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 		t.Fatalf("expected previous tab active, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: buildTabID})
-	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != buildTabID || shell.ActivePaneID != buildTabID+"-pane" {
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != buildTabID || shell.ActivePaneID != "" {
 		t.Fatalf("expected switch tab active, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: "missing-tab"})
@@ -179,7 +182,7 @@ func TestShellWorkbenchTabKillAndPaneCRUDDistinguishTerminalLifecycle(t *testing
 	if result.Status != WorkbenchCommandOK {
 		t.Fatalf("expected tab create, result=%#v", result)
 	}
-	shell = shell.BindPaneTerminal(PaneCommandTarget{TabID: "tab-logs", PaneID: "tab-logs-pane"}, "term-tab")
+	shell = shell.BindPaneTerminal(PaneCommandTarget{TabID: "tab-logs"}, "term-tab")
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabKill, TargetID: "tab-logs", Confirm: PaneConfirmAccepted})
 	if result.Status != WorkbenchCommandOK || result.ID != "tab-logs" || len(result.Killed) != 1 || result.Killed[0] != "term-tab" || shell.Workspace.ActiveTabID == "tab-logs" {
 		t.Fatalf("tab kill should close tab and report terminal ids, result=%#v shell=%#v", result, shell)

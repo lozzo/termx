@@ -726,6 +726,27 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 		t.Fatalf("inactive tab close click should close the clicked tab and keep active logs tab, got %#v shell=%#v", tabs, targetRuntime.State().Shell.EnsureDefaults())
 	}
 
+	switchHost := NewFakeTerminalHost(8)
+	switchShell, _ := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	switchShell, _ = switchShell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: state.DefaultTabID})
+	switchRuntime := newShellHitRuntime(state.Root{Shell: switchShell}, switchHost)
+	if err := switchRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post switch initial render: %v", err)
+	}
+	if err := switchRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("switch initial drain: %v", err)
+	}
+	switchAction := frameActionHitRegion(t, lastRuntimeFrame(t, switchHost), render.ActionTabSwitch.String(), "tab-2")
+	if err := switchHost.SendInput(mouseEventAt(switchAction.Rect)); err != nil {
+		t.Fatalf("send tab switch click: %v", err)
+	}
+	if err := switchRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("switch drain: %v", err)
+	}
+	if got := switchRuntime.State().Shell.EnsureDefaults().Workspace.ActiveTabID; got != "tab-2" {
+		t.Fatalf("tab label click should switch active tab, got %q", got)
+	}
+
 	createHost := NewFakeTerminalHost(8)
 	createRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, createHost)
 	if err := createRuntime.Post(NoopMsg{}); err != nil {

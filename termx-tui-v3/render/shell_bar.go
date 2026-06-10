@@ -248,7 +248,7 @@ func headerTabSegmentsForHeader(header HeaderVM, fallback string) []barSegment {
 		if closeTarget == "" {
 			closeTarget = tab.ID
 		}
-		segments = append(segments, headerTabSegmentParts(tabIndex, label, tab.Active, closeAction, closeTarget)...)
+		segments = append(segments, headerTabSegmentParts(tabIndex, label, tab.Active, tab.ID, closeAction, closeTarget)...)
 	}
 	return segments
 }
@@ -269,27 +269,28 @@ func headerTabSegments(tab string) []barSegment {
 			label = field
 		}
 		if active {
-			segments = append(segments, headerTabSegmentParts(index+1, label, true, ActionTabClose.String(), "")...)
+			segments = append(segments, headerTabSegmentParts(index+1, label, true, "", ActionTabClose.String(), "")...)
 			continue
 		}
-		segments = append(segments, headerTabSegmentParts(index+1, label, false, ActionTabClose.String(), "")...)
+		segments = append(segments, headerTabSegmentParts(index+1, label, false, "", ActionTabClose.String(), "")...)
 	}
 	return segments
 }
 
-func headerTabSegmentParts(index int, label string, active bool, closeAction string, closeTarget string) []barSegment {
+func headerTabSegmentParts(index int, label string, active bool, tabID string, closeAction string, closeTarget string) []barSegment {
+	tabAction := ActionTabSwitch.String()
 	if active {
 		return []barSegment{
 			barText(" ", StyleHeaderSpacer, 1),
-			barText("▎", StyleHeaderActiveMarker, 1),
-			barText(" "+intLabel(index), StyleHeaderActiveIndex, 1),
-			barText(" "+label+" ", StyleHeaderActiveTitle, 1),
+			barText("▎", StyleHeaderActiveMarker, 1).withAction(tabAction).withTarget(tabID),
+			barText(" "+intLabel(index), StyleHeaderActiveIndex, 1).withAction(tabAction).withTarget(tabID),
+			barText(" "+label+" ", StyleHeaderActiveTitle, 1).withAction(tabAction).withTarget(tabID),
 			barText("", StyleHeaderActiveClose, 2).withAction(closeAction).withTarget(closeTarget),
 		}
 	}
 	return []barSegment{
-		barText(" "+intLabel(index), StyleHeaderInactiveIndex, 2),
-		barText(" "+label+" ", StyleHeaderInactiveTitle, 2),
+		barText(" "+intLabel(index), StyleHeaderInactiveIndex, 2).withAction(tabAction).withTarget(tabID),
+		barText(" "+label+" ", StyleHeaderInactiveTitle, 2).withAction(tabAction).withTarget(tabID),
 		barText("", StyleHeaderInactiveClose, 2).withAction(closeAction).withTarget(closeTarget),
 	}
 }
