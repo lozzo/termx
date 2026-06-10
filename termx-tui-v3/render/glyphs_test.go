@@ -44,13 +44,12 @@ func TestFloatingChromeActionTextKeepsBracketedPaneChromeWithoutSplit(t *testing
 	ResetPaneChromeGlyphs()
 	defer ResetPaneChromeGlyphs()
 
-	glyphs := DefaultPaneChromeGlyphs()
 	got := paneChromeActionTextFromItems(floatingChromeActionItems(30))
-	want := "[" + glyphs.Zoom + "]─[" + glyphs.Close + "]"
+	want := "[]─[]─[" + paneChromeZoomGlyph() + "]─[" + paneChromeCloseGlyph() + "]"
 	if got != want {
 		t.Fatalf("floating actions got=%q want=%q", got, want)
 	}
-	if got := paneChromeActionTextFromItems(floatingChromeActionItems(8)); got != "["+glyphs.Close+"]" {
+	if got := paneChromeActionTextFromItems(floatingChromeActionItems(8)); got != "["+paneChromeCloseGlyph()+"]" {
 		t.Fatalf("narrow floating should degrade to close-only action, got=%q", got)
 	}
 	if got := paneChromeActionTextFromItems(floatingChromeActionItems(7)); got != "" {

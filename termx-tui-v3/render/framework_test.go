@@ -56,6 +56,32 @@ func TestFrameworkRendersTuiv2TerminalOwnerHeader(t *testing.T) {
 	}
 }
 
+func TestFrameworkRendersTuiv2FloatingTerminalHeader(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	var floatingResult state.FloatingCommandResult
+	root.Shell, floatingResult = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     state.PaneState{ID: "float-pane-1", Title: "123", Kind: state.PaneTerminalLive, TerminalID: "term-1"},
+		Rect:     state.FloatingRect{X: 2, Y: 2, W: 92, H: 8},
+	})
+	if floatingResult.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", floatingResult)
+	}
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("float-1", "float-pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-float", false))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 8, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-pane", true))
+	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Ready: true, State: state.TerminalLiveAttached, Lines: []string{"ready"}}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	lines := result.Lines()
+	if !linesContain(lines, paneChromeBracketToken(paneChromeSizeLockGlyph())+" 123") || !linesContain(lines, paneChromeRunningGlyph()) || !linesContain(lines, "⇄2") || !linesContain(lines, "◇ follow") {
+		t.Fatalf("expected tuiv2 floating terminal header tokens, got %#v", lines)
+	}
+	if !linesContain(lines, paneChromeBracketToken("")+"─"+paneChromeBracketToken("")+"─"+paneChromeBracketToken(paneChromeZoomGlyph())+"─"+paneChromeBracketToken(paneChromeCloseGlyph())) {
+		t.Fatalf("expected floating-specific action glyphs, got %#v", lines)
+	}
+}
+
 func TestFrameworkRendersContinuousCardPaneVerticalBorders(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 24, H: 8}, Panels: []PanelVM{{

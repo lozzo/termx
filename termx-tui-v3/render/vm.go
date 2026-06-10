@@ -494,15 +494,24 @@ func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root st
 			Z:         floating.Z,
 			Active:    floating.Active,
 			Collapsed: floating.Collapsed,
-			Chrome:    floatingChromeVM(floating),
+			Chrome:    floatingChromeVM(root, floating, content),
 			Content:   content,
 		})
 	}
 	return out
 }
 
-func floatingChromeVM(floating state.FloatingPaneState) FloatingChromeVM {
-	return FloatingChromeVM{FillOverlay: true, ShowResizeHandle: true}
+func floatingChromeVM(root state.Root, floating state.FloatingPaneState, content ContentVM) FloatingChromeVM {
+	style := StyleMuted
+	if floating.Active {
+		style = StyleAccent
+	}
+	return FloatingChromeVM{
+		FillOverlay:      true,
+		ShowResizeHandle: true,
+		Terminal:         terminalChromeVMForFloating(root, floating, content, style),
+		Actions:          defaultFloatingChromeActionVMs(style),
+	}
 }
 
 func buildPanelChromeVM(root state.Root, pane state.PaneState, active bool, content ContentVM) PanelChromeVM {
@@ -524,6 +533,19 @@ func buildPanelChromeVM(root state.Root, pane state.PaneState, active bool, cont
 
 func terminalChromeVM(root state.Root, pane state.PaneState, active bool, content ContentVM, style StyleToken) TerminalChromeVM {
 	binding, ok := root.TerminalViews.PaneBinding(pane.ID)
+	return terminalChromeVMFromBinding(root, pane, binding, ok, active, content, style)
+}
+
+func terminalChromeVMForFloating(root state.Root, floating state.FloatingPaneState, content ContentVM, style StyleToken) TerminalChromeVM {
+	binding, ok := root.TerminalViews.FloatingBinding(floating.ID)
+	pane := floating.Pane
+	if strings.TrimSpace(pane.Title) == "" {
+		pane.Title = floating.Title
+	}
+	return terminalChromeVMFromBinding(root, pane, binding, ok, floating.Active, content, style)
+}
+
+func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding state.TerminalViewBinding, ok bool, active bool, content ContentVM, style StyleToken) TerminalChromeVM {
 	if !ok || binding.TerminalID == "" {
 		return TerminalChromeVM{}
 	}
@@ -552,6 +574,15 @@ func terminalChromeVM(root state.Root, pane state.PaneState, active bool, conten
 		CanResize:    binding.CanResize,
 		TerminalID:   binding.TerminalID,
 		TerminalView: binding.ViewID,
+	}
+}
+
+func defaultFloatingChromeActionVMs(style StyleToken) []ChromeActionVM {
+	return []ChromeActionVM{
+		paneChromeActionVM(ActionFloatingCenter, style),
+		paneChromeActionVM(ActionFloatingCollapse, style),
+		paneChromeActionVM(ActionPaneZoom, style),
+		paneChromeActionVM(ActionFloatingClose, style),
 	}
 }
 

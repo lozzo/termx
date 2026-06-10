@@ -18,6 +18,7 @@ type ChromePrimitive struct {
 	Layer       LayerKind
 	Title       ChromeSlot
 	State       ChromeSlot
+	LabelSlots  []ChromeSlot
 	ActionSlots []ChromeSlot
 }
 
@@ -64,9 +65,39 @@ func FloatingChromePrimitive(floating FloatingVM, rect Rect, style StyleToken) C
 		Owner:       "floating:" + floating.ID,
 		Layer:       LayerFloating,
 	}
-	actionRect := floatingActionRect(rect)
-	primitive.ActionSlots = chromeActionSlotsFromItems(floatingChromeActionItems(rect.W), actionRect, 1)
+	innerLeft := rect.X + 2
+	innerRight := rect.X + rect.W - 1
+	if innerRight <= innerLeft {
+		return primitive
+	}
+	rightLimit := innerRight
+	actions := floatingChromeActionItemsFromVM(floating.Chrome.Actions, rect.W)
+	actionRect := floatingActionRectForItems(rect, actions)
+	primitive.ActionSlots = chromeActionSlotsFromItems(actions, actionRect, 1)
+	if len(primitive.ActionSlots) > 0 {
+		rightLimit = primitive.ActionSlots[0].Rect.X - 1
+	}
+	leftWidth := maxInt(0, rightLimit-innerLeft)
+	if leftWidth > 0 && floating.Chrome.Terminal.TerminalID != "" {
+		x := innerLeft
+		for _, slot := range paneChromeTerminalLabelSlots(PanelVM{ID: floating.ID, Title: floating.Title, Active: floating.Active, Chrome: PanelChromeVM{Terminal: floating.Chrome.Terminal}}, style, leftWidth) {
+			chromeSlot := ChromeSlot{Rect: Rect{X: x, Y: rect.Y, W: DisplayWidth(slot.text), H: 1}, Text: slot.text, Style: slot.style, ActionID: slot.actionID}
+			primitive.LabelSlots = append(primitive.LabelSlots, chromeSlot)
+			if chromeSlot.ActionID != "" {
+				primitive.ActionSlots = append(primitive.ActionSlots, chromeSlot)
+			}
+			x += DisplayWidth(slot.text)
+		}
+	}
 	return primitive
+}
+
+func floatingChromeActionItemsFromVM(actions []ChromeActionVM, width int) []paneChromeActionItem {
+	items := paneChromeActionItemsFromVM(actions)
+	if len(items) == 0 {
+		items = floatingChromeActionItems(width)
+	}
+	return fitPaneChromeActionItems(items, width)
 }
 
 func OverlayChromePrimitive(overlay OverlayVM, rect Rect, contentRect Rect) ChromePrimitive {

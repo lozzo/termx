@@ -147,8 +147,6 @@ func TestActionSpecCatalogKeepsInputOnlyActionsSeparate(t *testing.T) {
 	for _, id := range []ActionID{
 		ActionPromptOpen,
 		ActionHelpOpen,
-		ActionFloatingCenter,
-		ActionFloatingCollapse,
 		ActionFloatingMoveLeft,
 		ActionFloatingMoveRight,
 		ActionFloatingMoveUp,

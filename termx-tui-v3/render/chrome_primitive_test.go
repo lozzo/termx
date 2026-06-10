@@ -71,7 +71,7 @@ func TestChromePrimitivePaneOwnerTokenDrivesTakeOwnerHitRegion(t *testing.T) {
 func TestChromePrimitiveFloatingActionSlotsMatchHitRegions(t *testing.T) {
 	rect := Rect{X: 10, Y: 4, W: 30, H: 8}
 	primitive := FloatingChromePrimitive(FloatingVM{ID: "float-1", Rect: rect, Active: true}, rect, StyleAccent)
-	regions := appendFloatingActionRegions(nil, rect, "float-1", Rect{W: 80, H: 24})
+	regions := appendFloatingActionRegions(nil, FloatingVM{ID: "float-1", Rect: rect, Active: true}, rect, "float-1", Rect{W: 80, H: 24})
 
 	if len(primitive.ActionSlots) != len(regions) {
 		t.Fatalf("primitive floating slots must match hit regions slots=%#v regions=%#v", primitive.ActionSlots, regions)
@@ -82,6 +82,50 @@ func TestChromePrimitiveFloatingActionSlotsMatchHitRegions(t *testing.T) {
 			t.Fatalf("floating slot %d must drive hit region slot=%#v region=%#v", index, slot, region)
 		}
 	}
+}
+
+func TestChromePrimitiveFloatingTerminalOwnerTokenDrivesTakeOwnerHitRegion(t *testing.T) {
+	rect := Rect{X: 2, Y: 1, W: 84, H: 8}
+	floating := FloatingVM{ID: "float-1", Title: "123", Rect: rect, Active: true, Chrome: FloatingChromeVM{
+		Terminal: TerminalChromeVM{
+			Title:       ChromeSlotVM{Text: "123", Style: StyleAccent},
+			State:       ChromeSlotVM{Text: paneChromeRunningGlyph(), Style: StyleSuccess},
+			AttachCount: 2,
+			Owner:       ChromeSlotVM{Text: "◇ follow", Style: StyleMuted},
+			TakeOwner:   true,
+			TerminalID:  "term-1",
+		},
+		Actions: []ChromeActionVM{
+			paneChromeActionVM(ActionFloatingCenter, StyleAccent),
+			paneChromeActionVM(ActionFloatingCollapse, StyleAccent),
+			paneChromeActionVM(ActionPaneZoom, StyleAccent),
+			paneChromeActionVM(ActionFloatingClose, StyleAccent),
+		},
+	}}
+	primitive := FloatingChromePrimitive(floating, rect, StyleAccent)
+	regions := appendFloatingActionRegions(nil, floating, rect, "float-1", Rect{W: 100, H: 24})
+
+	found := false
+	for _, slot := range primitive.ActionSlots {
+		if slot.ActionID == ActionTerminalTakeResizeOwner.String() && strings.Contains(slot.Text, "◇ follow") {
+			found = true
+			if !hitRegionsContainActionRect(regions, slot.ActionID, slot.Rect) {
+				t.Fatalf("floating owner token should drive matching hit region, slot=%#v regions=%#v", slot, regions)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected floating owner token action slot, got %#v", primitive.ActionSlots)
+	}
+}
+
+func hitRegionsContainActionRect(regions []HitRegion, actionID string, rect Rect) bool {
+	for _, region := range regions {
+		if region.ActionID == actionID && region.Rect == rect {
+			return true
+		}
+	}
+	return false
 }
 
 func TestChromePrimitiveToastSpecPreservesCurrentGeometry(t *testing.T) {

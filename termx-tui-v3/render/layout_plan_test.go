@@ -880,18 +880,24 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	if len(plan.Floatings) != 1 || plan.Floatings[0].ContentRect != (Rect{X: 11, Y: 5, W: 28, H: 6}) {
 		t.Fatalf("expected measured floating content rect, got %#v", plan.Floatings)
 	}
-	raise := hitRegionIndexByAction(plan.HitRegions, "floating.raise")
+	center := hitRegionIndexByAction(plan.HitRegions, "floating.center")
+	collapse := hitRegionIndexByAction(plan.HitRegions, "floating.collapse")
+	zoom := hitRegionIndexByAction(plan.HitRegions, "pane.zoom")
 	close := hitRegionIndexByAction(plan.HitRegions, "floating.close")
 	move := hitRegionIndexByAction(plan.HitRegions, "floating.move-drag")
 	resize := hitRegionIndexByAction(plan.HitRegions, "floating.resize-drag")
 	pane := hitRegionIndex(plan.HitRegions, HitRegionPaneContent)
-	if raise < 0 || close < 0 || move < 0 || resize < 0 || pane < 0 || raise > pane || close > pane || move > pane || resize > pane {
+	if center < 0 || collapse < 0 || zoom < 0 || close < 0 || move < 0 || resize < 0 || pane < 0 || center > pane || collapse > pane || zoom > pane || close > pane || move > pane || resize > pane {
 		t.Fatalf("floating hit regions should precede tiled pane regions, got %#v", plan.HitRegions)
 	}
-	if plan.HitRegions[raise].Rect.W != DisplayWidth(paneChromeBracketToken(paneChromeZoomGlyph())) ||
+	if plan.HitRegions[center].Rect.W != DisplayWidth(paneChromeBracketToken("")) ||
+		plan.HitRegions[collapse].Rect.W != DisplayWidth(paneChromeBracketToken("")) ||
+		plan.HitRegions[zoom].Rect.W != DisplayWidth(paneChromeBracketToken(paneChromeZoomGlyph())) ||
 		plan.HitRegions[close].Rect.W != DisplayWidth(paneChromeBracketToken(paneChromeCloseGlyph())) ||
-		plan.HitRegions[raise].Rect.X >= plan.HitRegions[close].Rect.X {
-		t.Fatalf("floating action hit regions should match visible bracket slots, got raise=%#v close=%#v", plan.HitRegions[raise], plan.HitRegions[close])
+		plan.HitRegions[center].Rect.X >= plan.HitRegions[collapse].Rect.X ||
+		plan.HitRegions[collapse].Rect.X >= plan.HitRegions[zoom].Rect.X ||
+		plan.HitRegions[zoom].Rect.X >= plan.HitRegions[close].Rect.X {
+		t.Fatalf("floating action hit regions should match visible bracket slots, got center=%#v collapse=%#v zoom=%#v close=%#v", plan.HitRegions[center], plan.HitRegions[collapse], plan.HitRegions[zoom], plan.HitRegions[close])
 	}
 	if plan.HitRegions[move].Rect != paneChromeRect(plan.Floatings[0].Rect) {
 		t.Fatalf("floating title drag should cover chrome title row, got %#v", plan.HitRegions[move])

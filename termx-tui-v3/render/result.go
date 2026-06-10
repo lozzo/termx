@@ -712,6 +712,8 @@ type FloatingVM struct {
 type FloatingChromeVM struct {
 	FillOverlay      bool
 	ShowResizeHandle bool
+	Terminal         TerminalChromeVM
+	Actions          []ChromeActionVM
 }
 
 type ChromePatchVM struct {

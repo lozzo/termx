@@ -531,6 +531,7 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
 	}
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
+	renderFloatingTerminalChrome(c, primitive)
 	renderFloatingChromeActions(c, primitive)
 	if rect.W >= 2 && rect.H >= 2 && floating.Chrome.ShowResizeHandle {
 		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "v", style, owner, LayerFloating)
@@ -541,6 +542,15 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 		renderFloatingContentOverflowMarkers(c, layout, contentResult.Overflow)
 	}
 	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}
+}
+
+func renderFloatingTerminalChrome(c *canvas, primitive ChromePrimitive) {
+	for _, slot := range primitive.LabelSlots {
+		if slot.Rect.W <= 0 || strings.TrimSpace(slot.Text) == "" {
+			continue
+		}
+		c.overlayTextStyled(slot.Rect.X, primitive.Rect.Y, slot.Rect.W, slot.Text, slot.Style, primitive.Owner, primitive.Layer)
+	}
 }
 
 func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive) {
@@ -585,7 +595,7 @@ func floatingChromeActionItems(width int) []paneChromeActionItem {
 	if width < 8 {
 		return nil
 	}
-	items := paneChromeActionItemsFromSpecs(ActionFloatingRaise, ActionFloatingClose)
+	items := paneChromeActionItemsFromSpecs(ActionFloatingCenter, ActionFloatingCollapse, ActionPaneZoom, ActionFloatingClose)
 	if paneChromeActionItemsWidth(items) <= maxInt(0, width-6) {
 		return items
 	}

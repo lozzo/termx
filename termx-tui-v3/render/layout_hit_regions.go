@@ -102,7 +102,7 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 		return out
 	}
 	id := floating.Floating.ID
-	out = appendFloatingActionRegions(out, floating.Rect, id, viewport)
+	out = appendFloatingActionRegions(out, floating.Floating, floating.Rect, id, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingResizeDrag.String()}, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingMoveDrag.String()}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
@@ -112,8 +112,14 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 	return out
 }
 
-func appendFloatingActionRegions(out []HitRegion, rect Rect, paneID string, viewport Rect) []HitRegion {
-	primitive := FloatingChromePrimitive(FloatingVM{ID: paneID, Rect: rect}, rect, StyleAccent)
+func appendFloatingActionRegions(out []HitRegion, floating FloatingVM, rect Rect, paneID string, viewport Rect) []HitRegion {
+	if floating.ID == "" {
+		floating.ID = paneID
+	}
+	if floating.Rect.W == 0 && floating.Rect.H == 0 {
+		floating.Rect = rect
+	}
+	primitive := FloatingChromePrimitive(floating, rect, StyleAccent)
 	for _, slot := range primitive.ActionSlots {
 		if slot.Rect.W <= 0 || slot.ActionID == "" {
 			continue
@@ -321,7 +327,11 @@ func paneActionRect(panel PanelVM, rect Rect) Rect {
 }
 
 func floatingActionRect(rect Rect) Rect {
-	width := paneChromeActionItemsWidth(floatingChromeActionItems(rect.W))
+	return floatingActionRectForItems(rect, floatingChromeActionItems(rect.W))
+}
+
+func floatingActionRectForItems(rect Rect, items []paneChromeActionItem) Rect {
+	width := paneChromeActionItemsWidth(items)
 	if rect.W <= 0 || width <= 0 {
 		return Rect{X: rect.X, Y: rect.Y, W: 0, H: 1}
 	}
