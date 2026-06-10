@@ -355,6 +355,7 @@ func (store ShellStore) EnsureDefaults() ShellStore {
 	store.Workspaces = cloneWorkspaces(store.Workspaces)
 	store.Floatings = cloneFloatings(store.Floatings)
 	store.Toasts = cloneToasts(store.Toasts)
+	seedDefaultWorkbench := !store.initialized && len(store.Workspace.Tabs) == 0
 	if !store.initialized {
 		store.HeaderVisible = true
 		store.FooterVisible = true
@@ -366,26 +367,19 @@ func (store ShellStore) EnsureDefaults() ShellStore {
 	if store.Workspace.Name == "" {
 		store.Workspace.Name = "main"
 	}
-	if len(store.Workspace.Tabs) == 0 {
+	if seedDefaultWorkbench {
 		store.Workspace.ActiveTabID = DefaultTabID
-		store.Workspace.Tabs = []TabState{{
-			ID:           DefaultTabID,
-			Title:        "main",
-			ActivePaneID: DefaultPaneID,
-			Panes: []PaneState{{
-				ID:     DefaultPaneID,
-				Title:  "shell",
-				Kind:   PaneTerminalLive,
-				Active: true,
-			}},
-			RootSplit: SplitNode{PaneID: DefaultPaneID},
-		}}
+		store.Workspace.Tabs = []TabState{defaultTabState()}
 	}
 	store.Workspace = store.Workspace.ensureDefaults()
 	store.Workspaces = upsertWorkspace(ensureWorkspaceList(store.Workspaces, store.Workspace), store.Workspace)
 	store.Workspace = store.Workspace.ensureTabDefaults()
 	store.Workspace = store.Workspace.ensureActiveTab()
-	if store.ActivePaneID == "" {
+	if len(store.Workspace.Tabs) == 0 {
+		store.Workspace.ActiveTabID = ""
+		store.ActivePaneID = ""
+		store.ZoomedPaneID = ""
+	} else if store.ActivePaneID == "" {
 		store.ActivePaneID = store.activeTab().ActivePaneID
 	}
 	if store.PanelPresentation == "" {

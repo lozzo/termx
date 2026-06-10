@@ -56,6 +56,32 @@ func buildEmptyTabContent(tab state.TabState) ContentVM {
 	}
 }
 
+// empty workspace 表示用户已关闭全部 tab；CTA 只创建真实 tab 或进入 terminal flow。
+func buildEmptyWorkspaceContent(workspace state.WorkspaceState) ContentVM {
+	title := strings.TrimSpace(workspace.Name)
+	if title == "" {
+		title = workspace.ID
+	}
+	if title == "" {
+		title = "workspace"
+	}
+	lines := []Line{
+		{Cells: []Cell{styledCell("No tabs in workspace ", StyleMuted), styledCell(title, StyleAccent)}},
+		NewLine(""),
+		contentActionLine("tab", "Create tab"),
+		contentActionLine("create", "New terminal"),
+		contentActionLine("manager", "Terminal Pool"),
+	}
+	return ContentVM{
+		Kind:       ContentEmptyPane,
+		Lines:      lines,
+		Status:     "empty workspace: Create tab / New terminal / Terminal Pool",
+		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("No tabs in workspace ") + DisplayWidth(title), Shape: CursorShapeBar},
+		Empty:      true,
+		HitRegions: contentActionRegions([]ActionID{ActionTabCreate, ActionEmptyCreate, ActionEmptyManager}, "", 2),
+	}
+}
+
 // exited pane 内容保留 last state 与 recovery CTA；真实 restart 仍由后续 service 切片接入。
 func buildExitedPaneContent(pane state.PaneState) ContentVM {
 	title := activePaneTitle(pane)

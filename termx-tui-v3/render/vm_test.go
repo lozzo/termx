@@ -1315,6 +1315,28 @@ func TestRenderVMBuilderProjectsEmptyTabContentWithoutSyntheticPanel(t *testing.
 	}
 }
 
+func TestRenderVMBuilderProjectsEmptyWorkspaceWithoutSyntheticTab(t *testing.T) {
+	shell, result := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("close last tab: %#v", result)
+	}
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	content := vm.Shell.Layout.BodyContent
+	if len(vm.Shell.Header.Tabs) != 0 || vm.Shell.Header.Tab != "" {
+		t.Fatalf("empty workspace must not synthesize header tabs, got %#v", vm.Shell.Header)
+	}
+	if len(vm.Shell.Layout.Panels) != 0 {
+		t.Fatalf("empty workspace must not create synthetic panel VMs, got %#v", vm.Shell.Layout.Panels)
+	}
+	if content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No tabs in workspace main") || !strings.Contains(content.Lines[2].PlainString(), "Create tab") {
+		t.Fatalf("expected empty workspace content, got %#v", content)
+	}
+	if !contentHasAction(content, "tab.create") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") {
+		t.Fatalf("expected empty workspace CTA action regions, got %#v", content.HitRegions)
+	}
+}
+
 func TestRenderVMBuilderProjectsTerminalPickerContentRenderer(t *testing.T) {
 	shell := state.DefaultShell()
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"

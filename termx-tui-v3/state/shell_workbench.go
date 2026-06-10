@@ -72,6 +72,19 @@ func (store ShellStore) createTab(command WorkbenchCommand) (ShellStore, Workben
 	return store.focusTabByIndex(len(store.Workspace.Tabs) - 1), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: id}
 }
 
+func (store ShellStore) EnsureActiveTabForAttach() ShellStore {
+	store = store.EnsureDefaults()
+	if len(store.Workspace.Tabs) > 0 {
+		return store
+	}
+	store.Workspace.Tabs = []TabState{{ID: DefaultTabID, Title: "main"}}
+	store.Workspace.ActiveTabID = DefaultTabID
+	store.ActivePaneID = ""
+	store.ZoomedPaneID = ""
+	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+	return store.EnsureDefaults()
+}
+
 func (store ShellStore) switchRelativeTab(offset int, action WorkbenchCommandAction) (ShellStore, WorkbenchCommandResult) {
 	if len(store.Workspace.Tabs) == 0 {
 		return store, workbenchCommandInvalid(action, "no tab")
@@ -118,9 +131,6 @@ func (store ShellStore) renameTab(command WorkbenchCommand) (ShellStore, Workben
 }
 
 func (store ShellStore) closeTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
-	if len(store.Workspace.Tabs) <= 1 {
-		return store, workbenchCommandInvalid(command.Action, "cannot close last tab")
-	}
 	index := store.activeTabIndex()
 	if command.TargetID != "" {
 		index = store.tabIndexByID(command.TargetID)
@@ -136,6 +146,13 @@ func (store ShellStore) closeTab(command WorkbenchCommand) (ShellStore, Workbenc
 		}
 	}
 	store.Workspace.Tabs = nextTabs
+	if len(nextTabs) == 0 {
+		store.Workspace.ActiveTabID = ""
+		store.ActivePaneID = ""
+		store.ZoomedPaneID = ""
+		store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
+		return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: closedID}
+	}
 	if index >= len(nextTabs) {
 		index = len(nextTabs) - 1
 	}
@@ -371,6 +388,10 @@ func (store ShellStore) killPane(command WorkbenchCommand) (ShellStore, Workbenc
 
 func (store ShellStore) focusTabByIndex(index int) ShellStore {
 	if index < 0 || index >= len(store.Workspace.Tabs) {
+		store.Workspace.ActiveTabID = ""
+		store.ActivePaneID = ""
+		store.ZoomedPaneID = ""
+		store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
 		return store.EnsureDefaults()
 	}
 	tab := store.Workspace.Tabs[index]

@@ -95,8 +95,30 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 		t.Fatalf("expected close current tab and keep remaining active, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabClose})
-	if result.Status != WorkbenchCommandInvalid || len(shell.Workspace.Tabs) != 1 {
-		t.Fatalf("last tab close must be rejected, result=%#v shell=%#v", result, shell)
+	if result.Status != WorkbenchCommandOK || len(shell.Workspace.Tabs) != 0 || shell.Workspace.ActiveTabID != "" || shell.ActivePaneID != "" {
+		t.Fatalf("last tab close must leave an empty workspace, result=%#v shell=%#v", result, shell)
+	}
+	shell = shell.EnsureDefaults()
+	if len(shell.Workspace.Tabs) != 0 || shell.Workspace.ActiveTabID != "" || shell.ActivePaneID != "" {
+		t.Fatalf("empty workspace must survive defaults, got %#v", shell)
+	}
+}
+
+func TestShellEmptyWorkspaceCreatesTabForTerminalAttach(t *testing.T) {
+	shell := DefaultShell()
+	var result WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabClose})
+	if result.Status != WorkbenchCommandOK || len(shell.Workspace.Tabs) != 0 {
+		t.Fatalf("expected empty workspace, result=%#v shell=%#v", result, shell)
+	}
+
+	shell = shell.EnsureActiveTabForAttach().BindPaneTerminal(PaneCommandTarget{}, "term-main")
+	if len(shell.Workspace.Tabs) != 1 || shell.Workspace.ActiveTabID == "" || shell.ActivePaneID == "" {
+		t.Fatalf("attach must create a real tab and pane, got %#v", shell)
+	}
+	pane, ok := shell.Pane(PaneCommandTarget{PaneID: shell.ActivePaneID})
+	if !ok || pane.TerminalID != "term-main" || pane.Kind != PaneTerminalLive {
+		t.Fatalf("expected terminal-bound first pane, pane=%#v ok=%v shell=%#v", pane, ok, shell)
 	}
 }
 

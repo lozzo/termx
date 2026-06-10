@@ -336,7 +336,7 @@ func globalSummary(root state.Root, shell state.ShellStore) string {
 func tabStripSummary(shell state.ShellStore) string {
 	shell = shell.EnsureDefaults()
 	if len(shell.Workspace.Tabs) == 0 {
-		return "main"
+		return ""
 	}
 	out := ""
 	for index, tab := range shell.Workspace.Tabs {
@@ -360,14 +360,7 @@ func buildHeaderTabVMs(shell state.ShellStore) []HeaderTabVM {
 	shell = shell.EnsureDefaults()
 	tabs := shell.Workspace.Tabs
 	if len(tabs) == 0 {
-		return []HeaderTabVM{{
-			ID:            "main",
-			Title:         "main",
-			Index:         1,
-			Active:        true,
-			CloseActionID: ActionTabClose.String(),
-			CloseTargetID: "main",
-		}}
+		return nil
 	}
 	out := make([]HeaderTabVM, 0, len(tabs))
 	for index, tab := range tabs {
@@ -575,6 +568,9 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 	shell := root.Shell.EnsureDefaults()
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
 		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: sessionForPane(root, pane), Active: true})
+	}
+	if len(shell.Workspace.Tabs) == 0 {
+		return buildEmptyWorkspaceContent(shell.Workspace)
 	}
 	if tab := activeTab(shell); len(tab.Panes) == 0 {
 		return buildEmptyTabContent(tab)

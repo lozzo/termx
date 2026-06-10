@@ -57,23 +57,23 @@ func (workspace WorkspaceState) ensureDefaults() WorkspaceState {
 			workspace.Name = "main"
 		}
 	}
-	if len(workspace.Tabs) == 0 {
-		workspace.ActiveTabID = DefaultTabID
-		workspace.Tabs = []TabState{{
-			ID:           DefaultTabID,
-			Title:        "main",
-			ActivePaneID: DefaultPaneID,
-			Panes: []PaneState{{
-				ID:     DefaultPaneID,
-				Title:  "shell",
-				Kind:   PaneTerminalLive,
-				Active: true,
-			}},
-			RootSplit: SplitNode{PaneID: DefaultPaneID},
-		}}
-	}
 	workspace = workspace.ensureTabDefaults()
 	return workspace.ensureActiveTab()
+}
+
+func defaultTabState() TabState {
+	return TabState{
+		ID:           DefaultTabID,
+		Title:        "main",
+		ActivePaneID: DefaultPaneID,
+		Panes: []PaneState{{
+			ID:     DefaultPaneID,
+			Title:  "shell",
+			Kind:   PaneTerminalLive,
+			Active: true,
+		}},
+		RootSplit: SplitNode{PaneID: DefaultPaneID},
+	}
 }
 
 func (workspace WorkspaceState) activeTab() TabState {

@@ -236,9 +236,10 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID)
 	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
+	root.Shell = root.Shell.EnsureActiveTabForAttach()
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, msg.Result.TerminalID)
 	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID, msg.Result.CanResize))
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, msg.Result.TerminalID)
 	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
 }
 

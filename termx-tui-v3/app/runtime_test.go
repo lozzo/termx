@@ -765,6 +765,26 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	if tabs := createRuntime.State().Shell.EnsureDefaults().Workspace.Tabs; len(tabs) != 2 || createRuntime.State().Shell.EnsureDefaults().Workspace.ActiveTabID == state.DefaultTabID {
 		t.Fatalf("tab create click should add and activate a tab, got %#v", createRuntime.State().Shell)
 	}
+
+	lastHost := NewFakeTerminalHost(8)
+	lastRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, lastHost)
+	if err := lastRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post last close initial render: %v", err)
+	}
+	if err := lastRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("last close initial drain: %v", err)
+	}
+	lastCloseAction := frameActionHitRegion(t, lastRuntimeFrame(t, lastHost), render.ActionTabClose.String(), state.DefaultTabID)
+	if err := lastHost.SendInput(mouseEventAt(lastCloseAction.Rect)); err != nil {
+		t.Fatalf("send last tab close click: %v", err)
+	}
+	if err := lastRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("last close drain: %v", err)
+	}
+	lastShell := lastRuntime.State().Shell.EnsureDefaults()
+	if len(lastShell.Workspace.Tabs) != 0 || lastShell.Workspace.ActiveTabID != "" || lastShell.ActivePaneID != "" {
+		t.Fatalf("last tab close click should leave an empty workspace, got %#v", lastShell)
+	}
 }
 
 func TestInteractiveRuntimeTabRenameFooterAction(t *testing.T) {
