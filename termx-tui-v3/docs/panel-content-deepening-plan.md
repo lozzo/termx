@@ -5,7 +5,7 @@
 
 本文档描述 panel content 深化已执行的目标、切片顺序和验收口径。
 
-实现对应 `workflow.md` 切片 193-204；后续 VT EventRouter 是独立阶段，不属于本文档的 panel content 完成口径。
+实现对应 `workflow.md` 切片 193-204；后续历史 VT 语义路由方案需要另行讨论，不属于本文档的 panel content 完成口径。
 
 ## 1. 目标
 
