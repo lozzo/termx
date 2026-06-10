@@ -135,6 +135,16 @@ type ExhaustedMarker struct {
 	Boundary  HistoryBoundary
 }
 
+// OlderRequestState 汇总 authoritative window 与 pending/exhausted guard 下的 older 请求状态。
+type OlderRequestState string
+
+const (
+	OlderRequestReady     OlderRequestState = "ready"
+	OlderRequestPending   OlderRequestState = "pending"
+	OlderRequestExhausted OlderRequestState = "exhausted"
+	OlderRequestMissing   OlderRequestState = "missing"
+)
+
 // CopyModeStore 只保存 copy mode 交互态。
 type CopyModeStore struct {
 	Active      bool
@@ -242,6 +252,23 @@ func (store HistoryStore) InvalidateWindow() HistoryStore {
 	store.Exhausted = ExhaustedMarker{}
 	store.Pending = nil
 	return store
+}
+
+func (store HistoryStore) OlderRequestState() OlderRequestState {
+	if store.Pending != nil {
+		return OlderRequestPending
+	}
+	if store.Exhausted.Valid &&
+		store.Exhausted.Token == store.Token &&
+		store.Exhausted.Cols == store.Cols &&
+		store.Exhausted.Cursor == store.Cursor &&
+		store.Exhausted.Boundary == store.Boundary {
+		return OlderRequestExhausted
+	}
+	if store.Token == "" || !store.Cursor.Valid {
+		return OlderRequestMissing
+	}
+	return OlderRequestReady
 }
 
 func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryWindow) error {

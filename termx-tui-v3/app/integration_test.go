@@ -119,6 +119,106 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	}
 }
 
+func TestCopyModeOlderBoundaryTokensAndExhaustedGuard(t *testing.T) {
+	latest := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "new", LineID: 20}},
+	)
+	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 20}
+	latest.HasMore = true
+	exhausted := historyWindowForApp(state.HistoryWindowPrepend, "term-1", "tok-1", 78, 7, nil)
+	exhausted.Cursor = latest.Cursor
+	exhausted.HasMore = false
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: latest}},
+		OlderResponses:  []services.HistoryResult{{Window: exhausted}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 8)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send latest page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if frame := lastFrame(t, host.Frames()); !frameContains(frame, "↑ more") {
+		t.Fatalf("latest window with cursor should show older-more token, got %#v", frame.Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send exhausted older page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exhausted older: %v", err)
+	}
+	if frame := lastFrame(t, host.Frames()); !frameContains(frame, "↑ top") {
+		t.Fatalf("exhausted older window should show top token, got %#v", frame.Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send redundant older page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain redundant older: %v", err)
+	}
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("exhausted boundary must not request older again, got %#v", core.OlderRequests)
+	}
+}
+
+func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) {
+	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Viewport: state.ViewportStore{
+			Valid: true,
+			Cols:  80,
+			Rows:  24,
+		},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       78,
+			Generation: 7,
+			Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 20},
+			Boundary:   state.HistoryBoundary{FirstLineID: 20, LastLineID: 20},
+			Rows:       []state.HistoryRow{{Text: "new", LineID: 20}},
+			Pending: &state.HistoryPendingRequest{
+				ID:         9,
+				Kind:       state.HistoryRequestLatest,
+				TerminalID: "term-1",
+				Cols:       78,
+			},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  78,
+		},
+	}
+
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}})
+	if len(effects) != 1 {
+		t.Fatalf("pending guard should only return handled effect, got %#v", effects)
+	}
+	if _, ok := effects[0].(handledEffect); !ok {
+		t.Fatalf("pending guard should keep input handled, got %#v", effects[0])
+	}
+	if next.Session.LastError != "" || next.Surface.Err != "" {
+		t.Fatalf("pending guard should stay silent, session=%q surface=%q", next.Session.LastError, next.Surface.Err)
+	}
+	if next.History.Pending == nil || next.History.Pending.Kind != state.HistoryRequestLatest {
+		t.Fatalf("pending latest request should remain unchanged, got %#v", next.History.Pending)
+	}
+}
+
 func TestCopyModeFooterOlderActionUsesAuthoritativeHistoryPath(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(

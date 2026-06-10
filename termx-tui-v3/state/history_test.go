@@ -125,7 +125,13 @@ func TestHistoryStorePrependsOlderAndRebasesExistingSpans(t *testing.T) {
 func TestHistoryStoreRecordsOlderExhaustedMarker(t *testing.T) {
 	cursor := HistoryCursor{Valid: true, BeforeLineID: 10}
 	boundary := HistoryBoundary{FirstLineID: 10, LastLineID: 20}
-	store, err := (HistoryStore{}).BeginOlder(HistoryPendingRequest{
+	store := HistoryStore{
+		Token:    "tok-1",
+		Cols:     100,
+		Cursor:   cursor,
+		Boundary: boundary,
+	}
+	store, err := store.BeginOlder(HistoryPendingRequest{
 		ID:         3,
 		TerminalID: "term-1",
 		Cols:       100,
@@ -151,6 +157,51 @@ func TestHistoryStoreRecordsOlderExhaustedMarker(t *testing.T) {
 	}
 	if !store.Exhausted.Valid || store.Exhausted.RequestID != 3 || store.Exhausted.Cursor != cursor || store.Exhausted.Cols != 100 {
 		t.Fatalf("unexpected exhausted marker %#v", store.Exhausted)
+	}
+	if got := store.OlderRequestState(); got != OlderRequestExhausted {
+		t.Fatalf("expected exhausted older state, got %s", got)
+	}
+
+	store.Token = "tok-next"
+	if got := store.OlderRequestState(); got != OlderRequestReady {
+		t.Fatalf("exhausted marker mismatch should fall back to current cursor readiness, got %s", got)
+	}
+}
+
+func TestHistoryStoreOlderRequestStateUsesAuthoritativeBoundary(t *testing.T) {
+	cursor := HistoryCursor{Valid: true, BeforeLineID: 20}
+	boundary := HistoryBoundary{FirstLineID: 20, LastLineID: 30}
+	store := HistoryStore{
+		Token:      "tok-1",
+		Cols:       80,
+		Cursor:     cursor,
+		Boundary:   boundary,
+		HasMore:    true,
+		Generation: 7,
+	}
+	if got := store.OlderRequestState(); got != OlderRequestReady {
+		t.Fatalf("has-more window should be ready for older request, got %s", got)
+	}
+
+	store.Pending = &HistoryPendingRequest{ID: 2, Kind: HistoryRequestOlder, Token: "tok-1", Cursor: cursor, Boundary: boundary}
+	if got := store.OlderRequestState(); got != OlderRequestPending {
+		t.Fatalf("pending older request should win, got %s", got)
+	}
+
+	store.Pending = &HistoryPendingRequest{ID: 3, Kind: HistoryRequestLatest, Token: "tok-1"}
+	if got := store.OlderRequestState(); got != OlderRequestPending {
+		t.Fatalf("any pending history request should block older request, got %s", got)
+	}
+
+	store.Pending = nil
+	store.HasMore = false
+	if got := store.OlderRequestState(); got != OlderRequestReady {
+		t.Fatalf("valid cursor should remain enough to request older even when HasMore is false, got %s", got)
+	}
+
+	store.Cursor = HistoryCursor{}
+	if got := store.OlderRequestState(); got != OlderRequestMissing {
+		t.Fatalf("missing authoritative cursor should not request older, got %s", got)
 	}
 }
 

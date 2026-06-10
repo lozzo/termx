@@ -326,17 +326,8 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 	if deps.Core == nil {
 		return setCopyModeError(root, "core client missing"), nil
 	}
-	if root.History.Pending != nil {
-		return root, nil
-	}
-	if root.History.Exhausted.Valid &&
-		root.History.Exhausted.Token == root.History.Token &&
-		root.History.Exhausted.Cols == root.History.Cols &&
-		root.History.Exhausted.Cursor == root.History.Cursor &&
-		root.History.Exhausted.Boundary == root.History.Boundary {
-		return root, nil
-	}
-	if root.History.Token == "" || !root.History.Cursor.Valid {
+	switch root.History.OlderRequestState() {
+	case state.OlderRequestPending, state.OlderRequestExhausted, state.OlderRequestMissing:
 		return root, nil
 	}
 	requestID := nextHistoryRequestID(root)

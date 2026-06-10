@@ -24,7 +24,7 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 	selection := normalizedCopySelection(copyMode)
 	rows := copyVisibleRows(history, copyMode)
 	lines := make([]Line, 0, len(rows)+2)
-	lines = append(lines, copyHistorySearchLine(copyMode, len(history.Rows)))
+	lines = append(lines, copyHistorySearchLine(history, copyMode, len(history.Rows)))
 	for _, visible := range rows {
 		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible)))
 	}
@@ -41,7 +41,7 @@ func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelection
 	return Line{Cells: cells}
 }
 
-func copyHistorySearchLine(copyMode state.CopyModeStore, totalRows int) Line {
+func copyHistorySearchLine(history state.HistoryStore, copyMode state.CopyModeStore, totalRows int) Line {
 	query := copyMode.Query
 	if query == "" {
 		return Line{Cells: []Cell{
@@ -49,6 +49,7 @@ func copyHistorySearchLine(copyMode state.CopyModeStore, totalRows int) Line {
 			styledCell("[/ query]", StyleMuted),
 			NewCell(" "),
 			styledCell(fmt.Sprintf(" rows:%d ", totalRows), StyleMuted),
+			copyHistoryOlderToken(history),
 		}}
 	}
 	return Line{Cells: []Cell{
@@ -56,6 +57,7 @@ func copyHistorySearchLine(copyMode state.CopyModeStore, totalRows int) Line {
 		styledCell(query, StyleAccent),
 		NewCell(" "),
 		styledCell(fmt.Sprintf(" match:%d/%d ", activeCopyMatchOrdinal(copyMode), len(copyMode.Matches)), StyleMuted),
+		copyHistoryOlderToken(history),
 	}}
 }
 
@@ -325,6 +327,7 @@ func copyHistoryStatus(history state.HistoryStore, copyMode state.CopyModeStore)
 	if history.HasMore {
 		status += " older:more"
 	}
+	status += " " + copyHistoryBoundarySummary(history, copyMode)
 	return status
 }
 
@@ -407,7 +410,55 @@ func copyHistoryScrollbarLine(history state.HistoryStore, copyMode state.CopyMod
 		styledCell(thumb, StyleAccent),
 		NewCell(" "),
 		styledCell(fmt.Sprintf("%d-%d/%d", top+1, minInt(total, top+visible), total), StyleMuted),
+		NewCell(" "),
+		copyHistoryBottomToken(history, copyMode, visible),
+		NewCell(" "),
+		styledCell(copyHistoryBoundarySummary(history, copyMode), StyleMuted),
 	}}
+}
+
+func copyHistoryOlderToken(history state.HistoryStore) Cell {
+	switch history.OlderRequestState() {
+	case state.OlderRequestPending:
+		return styledCell("↑ loading", StyleWarning)
+	case state.OlderRequestExhausted:
+		return styledCell("↑ top", StyleMuted)
+	case state.OlderRequestReady:
+		if !history.HasMore {
+			return styledCell("↑ older", StyleAccent)
+		}
+		return styledCell("↑ more", StyleAccent)
+	default:
+		return styledCell("↑ top", StyleMuted)
+	}
+}
+
+func copyHistoryBottomToken(history state.HistoryStore, copyMode state.CopyModeStore, visible int) Cell {
+	total := len(history.Rows)
+	top := copyHistoryViewportTop(history, copyMode)
+	if total == 0 || top+visible >= total {
+		return styledCell("↓ latest", StyleMuted)
+	}
+	return styledCell("↓ loaded", StyleAccent)
+}
+
+func copyHistoryBoundarySummary(history state.HistoryStore, copyMode state.CopyModeStore) string {
+	first := history.Boundary.FirstLineID
+	last := history.Boundary.LastLineID
+	if first == 0 && len(history.Rows) > 0 {
+		first = history.Rows[0].LineID
+	}
+	if last == 0 && len(history.Rows) > 0 {
+		last = history.Rows[len(history.Rows)-1].LineID
+	}
+	if first == 0 && last == 0 {
+		return "lines:-"
+	}
+	top := copyHistoryViewportTop(history, copyMode)
+	visible := copyHistoryVisibleHeight(copyMode)
+	from := top + 1
+	to := minInt(len(history.Rows), top+visible)
+	return fmt.Sprintf("lines:%d-%d view:%d-%d", first, last, from, to)
 }
 
 func copyLineSpanForRow(history state.HistoryStore, row int) state.HistoryLineSpan {

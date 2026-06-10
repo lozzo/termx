@@ -376,6 +376,78 @@ func TestRenderVMBuilderCopyHistoryEmptyRowKeepsOneCellHitRegion(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderCopyHistoryShowsAuthoritativeBoundaryTokens(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows: []state.HistoryRow{
+				{Text: "one", LineID: 100},
+				{Text: "two", LineID: 101},
+				{Text: "three", LineID: 102},
+				{Text: "four", LineID: 103},
+			},
+			Cursor:   state.HistoryCursor{Valid: true, BeforeLineID: 100},
+			Boundary: state.HistoryBoundary{FirstLineID: 100, LastLineID: 103},
+			HasMore:  true,
+		},
+		CopyMode: state.CopyModeStore{
+			Active:      true,
+			TerminalID:  "term-1",
+			BoundToken:  "tok-1",
+			BoundCols:   12,
+			ViewRows:    4,
+			ViewportTop: 1,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ more") {
+		t.Fatalf("search row should expose older-more token from authoritative cursor, got %q", got)
+	}
+	scroll := content.Lines[len(content.Lines)-1].PlainString()
+	if !strings.Contains(scroll, "↓ loaded") || !strings.Contains(scroll, "lines:100-103 view:2-3") {
+		t.Fatalf("scrollbar should expose bottom loaded and logical boundary summary, got %q", scroll)
+	}
+	if !strings.Contains(content.Status, "lines:100-103 view:2-3") {
+		t.Fatalf("status should include boundary summary, got %q", content.Status)
+	}
+
+	root.CopyMode.ViewportTop = 2
+	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
+	scroll = content.Lines[len(content.Lines)-1].PlainString()
+	if !strings.Contains(scroll, "↓ latest") || !strings.Contains(scroll, "view:3-4") {
+		t.Fatalf("bottom token should switch to latest at loaded tail, got %q", scroll)
+	}
+
+	root.History.Pending = &state.HistoryPendingRequest{ID: 7, Kind: state.HistoryRequestOlder, Token: "tok-1"}
+	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ loading") {
+		t.Fatalf("search row should expose pending older request, got %q", got)
+	}
+
+	root.History.Pending = nil
+	root.History.HasMore = false
+	root.History.Exhausted = state.ExhaustedMarker{}
+	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ older") || strings.Contains(got, "↑ more") {
+		t.Fatalf("cursor-ready window without HasMore should use neutral older token, got %q", got)
+	}
+
+	root.History.Exhausted = state.ExhaustedMarker{
+		Valid:    true,
+		Token:    "tok-1",
+		Cols:     12,
+		Cursor:   root.History.Cursor,
+		Boundary: root.History.Boundary,
+	}
+	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ top") {
+		t.Fatalf("search row should expose exhausted top token, got %q", got)
+	}
+}
+
 func TestFrameworkRendersCopyHistoryOverflowMarkersOnPaneChrome(t *testing.T) {
 	root := state.Root{
 		Viewport: state.ViewportStore{Valid: true, Cols: 18, Rows: 8},
