@@ -877,7 +877,10 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "h/j/k/l", "FOCUS", ActionPaneFooterFocus.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "%", "VSPLIT", ActionPaneFooterSplitRight.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "\"", "HSPLIT", ActionPaneFooterSplitDown.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z", "ZOOM", ActionPaneFooterZoom.String()) {
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "z", "ZOOM", ActionPaneFooterZoom.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "b", "BALANCE", ActionPaneFooterBalance.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "CARD", ActionPaneFooterCard.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "p", "LINE", ActionPaneFooterSplitLine.String()) {
 		t.Fatalf("expected pane footer structural actions, got %#v", vm.Shell.Footer)
 	}
 	shell = shell.SetInteractionMode(state.InteractionModeResize)
@@ -894,6 +897,10 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 	vm = NewRenderVMBuilder().Build(state.Root{Shell: shell})
 	if vm.Shell.Footer.Mode != "floating" ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "NEW FLOAT", ActionFloatingNew.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "f", "PICK", ActionFloatingPick.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "a", "OWNER", ActionFloatingTakeOwner.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "CENTER", ActionFloatingCenter.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "m", "COLLAPSE", ActionFloatingCollapse.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "CLOSE", ActionFloatingClose.String()) {
 		t.Fatalf("expected floating footer structural actions, got %#v", vm.Shell.Footer)
 	}

@@ -2050,6 +2050,14 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	if got := root.Shell.Floatings[0].Rect; got.W != 32 || got.H != 9 {
 		t.Fatalf("floating resize action should update rect, got %#v", got)
 	}
+	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCenter.String(), PaneID: "floating-1"})
+	if got := root.Shell.Floatings[0].Rect; got.X != 24 || got.Y != 7 {
+		t.Fatalf("floating center action should center rect, got %#v", got)
+	}
+	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCollapse.String(), PaneID: "floating-1"})
+	if !root.Shell.Floatings[0].Collapsed {
+		t.Fatalf("floating collapse action should toggle collapsed state, got %#v", root.Shell.Floatings[0])
+	}
 	root, _ = reducer(root, ShellContentActionMsg{ActionID: "floating.close", PaneID: "floating-1"})
 	if len(root.Shell.Floatings) != 0 {
 		t.Fatalf("floating close action should remove floating, got %#v", root.Shell.Floatings)

@@ -416,5 +416,5 @@
 - 当前分支主线已切换到 `termx-core-v2/` 与 `termx-tui-v3/`，默认 root、daemon、attach、new/ls/kill/rm 已走 core-v2/tui-v3；旧本地路径只允许 `termx legacy ...`，remote 仍按 legacy/fallback 隔离。
 - 已完成历史能力、协议服务、真实 PTY/live surface、styled render framework、pane/floating/overlay/product shell、Terminal Pool/Picker、Workbench storage sync、tmux 黑盒 harness、panel content 深化和 TerminalView/Attachment 基线切片；详细完成记录不再保留在本文件长表中。
 - 当前 TerminalView/Attachment 主线已完成到 214：view-aware resize ownership、pane/floating terminal header、unconnected/empty pane 视觉与键盘 CTA、copy/history view binding 均已收口。
-- 当前正在进行切片 215：已按 `termx-tui-v3/docs/keybindings.md` 的 `tuiv2` 迁移基准补齐 pane reconnect/restart/owner、resize owner、floating picker/owner 的真实快捷键、footer/help 可见声明和 reducer harness；下一步继续 shared terminal/view role 信息展示。
+- 当前正在进行切片 215：已按 `termx-tui-v3/docs/keybindings.md` 的 `tuiv2` 迁移基准补齐 pane reconnect/restart/owner、resize owner、floating picker/owner、pane balance/card/split-line 与 floating center/collapse 的真实快捷键、footer/help 可见声明和 reducer harness；下一步继续 shared terminal/view role 信息展示。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；仅在需要重新生成 proto 时构成阻塞，当前文档压缩不受影响。

@@ -183,6 +183,9 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionPaneFooterSplitDown),
 			footerActionFor(ActionPaneFooterDetach),
 			footerActionFor(ActionPaneFooterZoom),
+			footerActionFor(ActionPaneFooterBalance),
+			footerActionFor(ActionPaneFooterCard),
+			footerActionFor(ActionPaneFooterSplitLine),
 			footerActionFor(ActionPaneFooterClose),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
@@ -248,6 +251,8 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionFloatingNew),
 			footerActionFor(ActionFloatingPick),
 			footerActionFor(ActionFloatingTakeOwner),
+			footerActionFor(ActionFloatingCenter),
+			footerActionFor(ActionFloatingCollapse),
 			footerActionSpec("arrows", "move", "", StyleStatusAccent),
 			footerActionSpec("HJKL", "size", "", StyleStatusWarning),
 			footerActionFor(ActionFloatingClose),

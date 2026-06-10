@@ -343,6 +343,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionPaneFooterZoom:
 		shell := root.Shell.EnsureDefaults()
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandToggleZoom, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterBalance:
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterCard:
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSetPresentation, Presentation: state.PanelPresentationCard, Source: state.PaneCommandSourceMouse})
+	case render.ActionPaneFooterSplitLine:
+		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSetPresentation, Presentation: state.PanelPresentationSplitLine, Source: state.PaneCommandSourceMouse})
 	case render.ActionResizeLeft, render.ActionResizeRight, render.ActionResizeUp, render.ActionResizeDown:
 		command, ok := resizeFooterPaneCommand(spec.ID)
 		if !ok {
@@ -480,6 +486,10 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), nil
 	case render.ActionFloatingResize:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingCenter:
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCenter, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingCollapse:
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleCollapse, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionExitedRestart:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}

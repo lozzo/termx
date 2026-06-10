@@ -153,6 +153,7 @@
 | pane | `R RESTART` | `R` | restart 当前 pane 的 terminal |
 | pane | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
 | pane | `z ZOOM` | `z` | toggle zoom |
+| pane | `b BALANCE`、`c CARD`、`p LINE` | `b`、`c`、`p` | balance、card presentation、split-line presentation |
 | pane | `w CLOSE` | `w` | close pane |
 | resize | `←/h`、`→/l`、`↑/k`、`↓/j` | 方向键、`h` / `j` / `k` / `l` | 按方向 resize，步长 2 |
 | resize | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
@@ -161,7 +162,7 @@
 | global | `t TERMINALS` | `t` | 打开 Terminal Pool |
 | global | `q QUIT` | `q` | quit TUI |
 | global | `h HEADER`、`f FOOTER`、`w TREE`、`T TOAST`、`c CLEAR` | `h`、`f`、`w`、`T`、`c` | v3 shell chrome/toast 补充动作 |
-| floating | `n NEW FLOAT`、`x CLOSE`、`f PICK`、`a OWNER` | `n`、`x`、`f`、`a` | create / close floating pane、打开 picker、获取 ownership |
+| floating | `n NEW FLOAT`、`x CLOSE`、`f PICK`、`a OWNER`、`c CENTER`、`m COLLAPSE` | `n`、`x`、`f`、`a`、`c`、`m` | create / close floating pane、打开 picker、获取 ownership、居中、折叠 |
 | tab | `c NEW`、`p PREV`、`n NEXT`、`r RENAME`、`x KILL`、`1-9 JUMP` | `c`、`p`、`n`、`r`、`x`、`1`-`9` | tab create / previous / next / rename / close / jump |
 | workspace | `c NEW`、`p PREV`、`n NEXT`、`r RENAME`、`f PICK`、`x DELETE` | `c`、`p`、`n`、`r`、`f`、`x` | workspace create / previous / next / rename / tree / delete |
 
@@ -192,13 +193,12 @@
 | normal | named ctrl aliases：`Ctrl-p` 可表现为 `Ctrl+p` 字符名等 | 进入对应 mode、picker 或 copy | 终端输入归一化兼容，覆盖 `root-*-named` 绑定 |
 | pane | `x` | close pane | v3 早期别名，当前测试覆盖 |
 | pane | `X` | close pane and kill terminal，confirm accepted | danger 操作，不放 footer 常驻展示 |
-| pane | `b`、`c`、`p` | balance、card presentation、split-line presentation | 低频 pane 操作，footer 只展示常用操作 |
 | pane | `N`、`n` | focus previous / next | v3 早期别名，当前几何方向尚未表达为独立 truth |
 | resize | `H` / `J` / `K` / `L` | 按方向 resize，步长 6 | 大步长操作，footer 展示普通步长入口 |
 | resize | `b` | balance pane layout | v3 早期别名，footer 展示 tuiv2 `=` |
 | global | `p`、`m` | 打开 Terminal Pool | legacy alias，未放 footer |
 | global | `:` | 打开 Prompt | overlay 入口，未放 footer |
-| floating | `z` / `m`、`c` | collapse / center | floating chrome/input 操作，footer 只展示 new/close/pick/owner 和移动提示 |
+| floating | `z` | collapse | `m COLLAPSE` 已展示为 tuiv2 主键，`z` 保留为 v3 早期别名 |
 | floating | `h` / `j` / `k` / `l`、方向键、`H` / `J` / `K` / `L` | move / resize floating pane | footer 以 `arrows move`、`HJKL size` 汇总展示 |
 | tab | `c`、`]`、`[`、`p`、`X` | create、next、previous、previous、kill | legacy 或 danger alias，未放 footer |
 | workspace | `c`、`]`、`[`、`p`、`f`、`s` | create、next、previous、previous、tree、tree | legacy alias，未放 footer |

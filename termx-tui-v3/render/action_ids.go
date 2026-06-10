@@ -21,6 +21,9 @@ const (
 	ActionPaneFooterSplitRight    ActionID = "pane.footer-split-right"
 	ActionPaneFooterSplitDown     ActionID = "pane.footer-split-down"
 	ActionPaneFooterZoom          ActionID = "pane.footer-zoom"
+	ActionPaneFooterBalance       ActionID = "pane.footer-balance"
+	ActionPaneFooterCard          ActionID = "pane.footer-card"
+	ActionPaneFooterSplitLine     ActionID = "pane.footer-split-line"
 	ActionResizeLeft              ActionID = "resize.left"
 	ActionResizeRight             ActionID = "resize.right"
 	ActionResizeUp                ActionID = "resize.up"
@@ -199,6 +202,9 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionPaneFooterSplitRight, ActionDispatchApp, ActionSurfaceFooter).withFooter("%", "VSPLIT", StyleStatusAccent).withHelp("vertical split"),
 		actionSpec(ActionPaneFooterSplitDown, ActionDispatchApp, ActionSurfaceFooter).withFooter("\"", "HSPLIT", StyleStatusAccent).withHelp("horizontal split"),
 		actionSpec(ActionPaneFooterZoom, ActionDispatchApp, ActionSurfaceFooter).withFooter("z", "ZOOM", StyleStatusAccent).withHelp("zoom"),
+		actionSpec(ActionPaneFooterBalance, ActionDispatchApp, ActionSurfaceFooter).withFooter("b", "BALANCE", StyleStatusAccent).withHelp("balance"),
+		actionSpec(ActionPaneFooterCard, ActionDispatchApp, ActionSurfaceFooter).withFooter("c", "CARD", StyleStatusAccent).withHelp("card presentation"),
+		actionSpec(ActionPaneFooterSplitLine, ActionDispatchApp, ActionSurfaceFooter).withFooter("p", "LINE", StyleStatusAccent).withHelp("split line presentation"),
 		actionSpec(ActionResizeLeft, ActionDispatchApp, ActionSurfaceFooter).withFooter("←/h", "", StyleStatusWarning).withHelp("resize left"),
 		actionSpec(ActionResizeRight, ActionDispatchApp, ActionSurfaceFooter).withFooter("→/l", "", StyleStatusWarning).withHelp("resize right"),
 		actionSpec(ActionResizeUp, ActionDispatchApp, ActionSurfaceFooter).withFooter("↑/k", "", StyleStatusWarning).withHelp("resize up"),
@@ -238,8 +244,8 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFloatingPick, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("f", "PICK", StyleStatusAccent).withHelp("pick terminal"),
 		actionSpec(ActionFloatingTakeOwner, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("a", "OWNER", StyleStatusAccent).withHelp("take resize owner"),
 		actionSpec(ActionFloatingResize, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withHelp("resize"),
-		actionSpec(ActionFloatingCenter, ActionDispatchApp, ActionSurfaceFloatingChrome, ActionSurfaceInput).withChromeGlyph("").withHelp("center"),
-		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFloatingChrome, ActionSurfaceInput).withChromeGlyph("").withHelp("collapse"),
+		actionSpec(ActionFloatingCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("c", "CENTER", StyleStatusAccent).withChromeGlyph("").withHelp("center"),
+		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("m", "COLLAPSE", StyleStatusAccent).withChromeGlyph("").withHelp("collapse"),
 		actionSpec(ActionFloatingMoveLeft, ActionDispatchApp, ActionSurfaceInput).withHelp("move left"),
 		actionSpec(ActionFloatingMoveRight, ActionDispatchApp, ActionSurfaceInput).withHelp("move right"),
 		actionSpec(ActionFloatingMoveUp, ActionDispatchApp, ActionSurfaceInput).withHelp("move up"),

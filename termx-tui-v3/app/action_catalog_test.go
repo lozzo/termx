@@ -107,3 +107,17 @@ func TestActionCatalogPaneDetachAndQuitAdapterEffectsRemainMessages(t *testing.T
 		t.Fatalf("quit footer action should emit QuitMsg, got %#v", effects[0])
 	}
 }
+
+func TestActionCatalogPanePresentationFooterActionsUsePaneCommands(t *testing.T) {
+	reducer := NewShellReducer()
+	root := actionCatalogDispatchRoot()
+
+	next, _ := reducer(root, ShellContentActionMsg{ActionID: render.ActionPaneFooterSplitLine.String()})
+	if next.Shell.EnsureDefaults().PanelPresentation != state.PanelPresentationSplitLine {
+		t.Fatalf("split-line footer action should update panel presentation, got %q", next.Shell.PanelPresentation)
+	}
+	next, _ = reducer(next, ShellContentActionMsg{ActionID: render.ActionPaneFooterCard.String()})
+	if next.Shell.EnsureDefaults().PanelPresentation != state.PanelPresentationCard {
+		t.Fatalf("card footer action should update panel presentation, got %q", next.Shell.PanelPresentation)
+	}
+}
