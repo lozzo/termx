@@ -560,6 +560,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			Source: state.PaneCommandSourceMouse,
 		}}
 	}
+	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionTerminalTakeResizeOwner.String() {
+		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
+	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
 		runtime.fillMousePaneCommandDefaults(&command)
 		if command.Action == state.PaneCommandSplit {

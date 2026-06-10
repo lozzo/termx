@@ -99,6 +99,37 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
+	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{Shell: shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	vm := NewRenderVMBuilder().Build(root)
+	var owner PanelVM
+	var follower PanelVM
+	for _, panel := range vm.Shell.Layout.Panels {
+		switch panel.ID {
+		case state.DefaultPaneID:
+			owner = panel
+		case "pane-2":
+			follower = panel
+		}
+	}
+	if len(owner.Chrome.Meta) != 1 || owner.Chrome.Meta[0].Text != "size:owner" || owner.Chrome.Meta[0].Style != StyleSuccess {
+		t.Fatalf("owner pane should show size owner metadata, got %#v", owner.Chrome.Meta)
+	}
+	if len(follower.Chrome.Meta) != 1 || follower.Chrome.Meta[0].Text != "size:follower" {
+		t.Fatalf("follower pane should show follower metadata, got %#v", follower.Chrome.Meta)
+	}
+	if len(owner.Chrome.Actions) != 4 || owner.Chrome.Actions[0].ActionID == ActionTerminalTakeResizeOwner.String() {
+		t.Fatalf("owner pane should not offer take-owner action, got %#v", owner.Chrome.Actions)
+	}
+	if len(follower.Chrome.Actions) == 0 || follower.Chrome.Actions[0].ActionID != ActionTerminalTakeResizeOwner.String() {
+		t.Fatalf("follower pane should offer take-owner action first, got %#v", follower.Chrome.Actions)
+	}
+}
+
 func TestRenderVMBuilderBuildsGlobalFooterActionIDs(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
 	actions := NewRenderVMBuilder().Build(root).Shell.Footer.ActionTokens

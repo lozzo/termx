@@ -1881,6 +1881,25 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	}
 }
 
+func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
+	root := state.Root{}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, effects := NewShellReducer()(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "pane-2"})
+	if len(effects) != 0 {
+		t.Fatalf("owner transfer should not emit IO effects, got %#v", effects)
+	}
+	first, _ := next.TerminalViews.PaneBinding("pane-1")
+	second, _ := next.TerminalViews.PaneBinding("pane-2")
+	if first.ResizeRole != state.TerminalResizeRoleFollower || first.CanResize {
+		t.Fatalf("previous owner should become follower, got %#v", first)
+	}
+	if second.ResizeRole != state.TerminalResizeRoleOwner || !second.CanResize {
+		t.Fatalf("clicked pane should become resize owner, got %#v", second)
+	}
+}
+
 func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5, Cols: 80, Rows: 24},

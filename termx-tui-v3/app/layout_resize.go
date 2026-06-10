@@ -15,8 +15,25 @@ func NewTerminalLayoutResizeReducer() Reducer {
 			return root, nil
 		}
 		rect, ok := activeTerminalContentRect(root, render.Rect{})
+		if !ok {
+			return root, nil
+		}
+		binding, hasBinding := activeTerminalViewBinding(root)
+		if hasBinding {
+			nextViews, decision := root.TerminalViews.RequestViewResize(binding.ViewID, rect.W, rect.H)
+			if !decision.Allowed || !decision.Changed {
+				return root, nil
+			}
+			root.TerminalViews = nextViews
+			root.Session = root.Session.RequestResize(rect.W, rect.H)
+			return root, []Effect{FuncEffect{
+				Run: func(context.Context) Msg {
+					return LiveResizeMsg{Cols: rect.W, Rows: rect.H, Seq: decision.Seq, ViewID: binding.ViewID}
+				},
+			}}
+		}
 		desiredCols, desiredRows := root.Session.DesiredSize()
-		if !ok || rect.W == desiredCols && rect.H == desiredRows {
+		if rect.W == desiredCols && rect.H == desiredRows {
 			return root, nil
 		}
 		cols := rect.W
@@ -29,6 +46,16 @@ func NewTerminalLayoutResizeReducer() Reducer {
 			},
 		}}
 	}
+}
+
+func activeTerminalViewBinding(root state.Root) (state.TerminalViewBinding, bool) {
+	shell := root.Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		if binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID); ok {
+			return binding, true
+		}
+	}
+	return root.TerminalViews.PaneBinding(shell.ActivePaneID)
 }
 
 func terminalLayoutMayNeedResize(root state.Root, msg Msg) bool {

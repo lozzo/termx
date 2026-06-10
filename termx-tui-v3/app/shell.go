@@ -356,6 +356,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
 			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
 		}}}
+	case render.ActionTerminalTakeResizeOwner:
+		if msg.PaneID == "" {
+			return root, nil
+		}
+		root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner(msg.PaneID)
+		return root.Advance(), nil
 	case render.ActionEmptyClose, render.ActionExitedClose:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,

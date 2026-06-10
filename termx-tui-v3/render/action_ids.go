@@ -9,22 +9,23 @@ func (id ActionID) String() string {
 }
 
 const (
-	ActionPaneFocus       ActionID = "pane.focus"
-	ActionPaneResize      ActionID = "pane.resize"
-	ActionPaneSplitDown   ActionID = "pane.split-down"
-	ActionPaneSplitRight  ActionID = "pane.split-right"
-	ActionPaneZoom        ActionID = "pane.zoom"
-	ActionPaneClose       ActionID = "pane.close"
-	ActionPaneFooterSplit ActionID = "pane.footer-split"
-	ActionPaneFooterClose ActionID = "pane.footer-close"
-	ActionPaneFooterFocus ActionID = "pane.footer-focus"
-	ActionPaneFooterZoom  ActionID = "pane.footer-zoom"
-	ActionResizeLeft      ActionID = "resize.left"
-	ActionResizeRight     ActionID = "resize.right"
-	ActionResizeUp        ActionID = "resize.up"
-	ActionResizeDown      ActionID = "resize.down"
-	ActionResizeBalance   ActionID = "resize.balance"
-	ActionCopyOlder       ActionID = "copy.older"
+	ActionPaneFocus               ActionID = "pane.focus"
+	ActionPaneResize              ActionID = "pane.resize"
+	ActionPaneSplitDown           ActionID = "pane.split-down"
+	ActionPaneSplitRight          ActionID = "pane.split-right"
+	ActionPaneZoom                ActionID = "pane.zoom"
+	ActionPaneClose               ActionID = "pane.close"
+	ActionPaneFooterSplit         ActionID = "pane.footer-split"
+	ActionPaneFooterClose         ActionID = "pane.footer-close"
+	ActionPaneFooterFocus         ActionID = "pane.footer-focus"
+	ActionPaneFooterZoom          ActionID = "pane.footer-zoom"
+	ActionResizeLeft              ActionID = "resize.left"
+	ActionResizeRight             ActionID = "resize.right"
+	ActionResizeUp                ActionID = "resize.up"
+	ActionResizeDown              ActionID = "resize.down"
+	ActionResizeBalance           ActionID = "resize.balance"
+	ActionCopyOlder               ActionID = "copy.older"
+	ActionTerminalTakeResizeOwner ActionID = "terminal.resize-owner.take"
 
 	ActionTabCreate   ActionID = "tab.create"
 	ActionTabSwitch   ActionID = "tab.switch"
@@ -197,6 +198,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionResizeDown, ActionDispatchApp, ActionSurfaceFooter).withFooter("↓/j", "", StyleStatusWarning).withHelp("resize down"),
 		actionSpec(ActionResizeBalance, ActionDispatchApp, ActionSurfaceFooter).withFooter("b", "balance", StyleStatusAccent).withHelp("balance"),
 		actionSpec(ActionCopyOlder, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("pgup", "older", StyleStatusAccent).withHelp("older history"),
+		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph("own").withHelp("take resize owner"),
 		actionSpec(ActionTabCreate, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("n", "new", StyleStatusAccent).withHelp("create"),
 		actionSpec(ActionTabSwitch, ActionDispatchApp, ActionSurfaceLayout, ActionSurfaceHelp).withHelp("switch"),
 		actionSpec(ActionTabClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("x", "close", StyleStatusWarning).withHelp("close").withDanger(),

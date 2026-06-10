@@ -190,6 +190,56 @@ func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
 	}
 }
 
+func TestTerminalLayoutResizeOnlyActiveOwnerViewChangesPTYSize(t *testing.T) {
+	reducer := NewTerminalLayoutResizeReducer()
+	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:    shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, effects := reducer(root, HostResizeMsg{Cols: 120, Rows: 40})
+	if len(effects) != 0 {
+		t.Fatalf("active follower view must not resize shared PTY, got effects %#v", effects)
+	}
+	if got, _ := next.TerminalViews.PaneBinding("pane-2"); got.DesiredCols != 40 || got.DesiredRows != 12 || got.RequestSeq != 0 {
+		t.Fatalf("follower layout resize must not mutate desired size, got %#v", got)
+	}
+
+	root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner("pane-2")
+	next, effects = reducer(root, HostResizeMsg{Cols: 120, Rows: 40})
+	if len(effects) != 1 {
+		t.Fatalf("active owner should schedule one resize effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background()).(LiveResizeMsg)
+	if msg.ViewID != "view-2" || msg.Seq != 1 || msg.Cols <= 0 || msg.Rows <= 0 {
+		t.Fatalf("resize effect should carry active owner view identity, got %#v", msg)
+	}
+	if got, _ := next.TerminalViews.PaneBinding("pane-2"); got.RequestSeq != 1 || got.DesiredCols != msg.Cols || got.DesiredRows != msg.Rows {
+		t.Fatalf("owner view desired size should track request, got %#v msg=%#v", got, msg)
+	}
+}
+
+func TestLiveResizeResultUsesViewScopedStaleGuard(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24, ResizeRequestSeq: 9},
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 100, 30, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+
+	next, effects := reducer(root, LiveResizeResultMsg{ViewID: "view-1", Seq: 1, Cols: 100, Rows: 30})
+	if len(effects) != 0 {
+		t.Fatalf("resize result should not emit effects, got %#v", effects)
+	}
+	if next.Session.Cols != 100 || next.Surface.Cols != 100 {
+		t.Fatalf("view-scoped result should not be rejected by global seq, got session=%#v surface=%#v", next.Session, next.Surface)
+	}
+}
+
 func TestLiveAppInputDisplaysOnlyAfterSurfaceEventAndExitState(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 78, Rows: 20},

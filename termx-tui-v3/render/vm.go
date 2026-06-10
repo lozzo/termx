@@ -405,19 +405,19 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 func (projector ShellProjector) buildLayoutVM(shell state.ShellStore, activeContent ContentVM, root state.Root) LayoutVM {
 	if shell.ZoomedPaneID != "" {
 		return LayoutVM{
-			Viewport: viewportRect(root.Viewport),
-			Panels:   projector.buildZoomedPanelVMs(shell, activeContent, root),
+			Viewport:    viewportRect(root.Viewport),
+			Panels:      projector.buildZoomedPanelVMs(shell, activeContent, root),
 			BodyContent: activeContent,
-			Floating: projector.buildFloatingVMs(shell, root),
-			Split:    SplitVM{PaneID: shell.ZoomedPaneID},
+			Floating:    projector.buildFloatingVMs(shell, root),
+			Split:       SplitVM{PaneID: shell.ZoomedPaneID},
 		}
 	}
 	return LayoutVM{
-		Viewport: viewportRect(root.Viewport),
-		Panels:   projector.buildPanelVMs(shell, activeContent, root),
+		Viewport:    viewportRect(root.Viewport),
+		Panels:      projector.buildPanelVMs(shell, activeContent, root),
 		BodyContent: activeContent,
-		Floating: projector.buildFloatingVMs(shell, root),
-		Split:    buildSplitVM(activeTab(shell).RootSplit),
+		Floating:    projector.buildFloatingVMs(shell, root),
+		Split:       buildSplitVM(activeTab(shell).RootSplit),
 	}
 }
 
@@ -448,7 +448,7 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
 			Active:       active && !floatingOwnsFocus,
 			Content:      content,
-			Chrome:       buildPanelChromeVM(pane, active && !floatingOwnsFocus, content),
+			Chrome:       buildPanelChromeVM(pane, active && !floatingOwnsFocus, content, root.TerminalViews),
 		}
 	}
 	return panels
@@ -464,7 +464,7 @@ func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, acti
 				Presentation: renderPanelPresentation(shell.PanelPresentation),
 				Active:       true,
 				Content:      activeContent,
-				Chrome:       buildPanelChromeVM(pane, true, activeContent),
+				Chrome:       buildPanelChromeVM(pane, true, activeContent, root.TerminalViews),
 			}}
 		}
 	}
@@ -505,17 +505,35 @@ func floatingChromeVM(floating state.FloatingPaneState) FloatingChromeVM {
 	return FloatingChromeVM{FillOverlay: true, ShowResizeHandle: true}
 }
 
-func buildPanelChromeVM(pane state.PaneState, active bool, content ContentVM) PanelChromeVM {
+func buildPanelChromeVM(pane state.PaneState, active bool, content ContentVM, views state.TerminalViewStore) PanelChromeVM {
 	style := StyleMuted
 	if active {
 		style = StyleAccent
 	}
 	actions := defaultPaneChromeActionVMs(style)
+	meta := terminalResizeOwnerMeta(pane.ID, views)
+	if binding, ok := views.PaneBinding(pane.ID); ok && binding.ResizeRole != state.TerminalResizeRoleOwner {
+		actions = append([]ChromeActionVM{paneChromeActionVM(ActionTerminalTakeResizeOwner, style)}, actions...)
+	}
 	return PanelChromeVM{
 		Title:   ChromeSlotVM{Text: activePaneTitle(pane), Style: style},
 		State:   paneChromeStateSlot(active, content),
+		Meta:    meta,
 		Actions: actions,
 	}
+}
+
+func terminalResizeOwnerMeta(paneID string, views state.TerminalViewStore) []ChromeSlotVM {
+	binding, ok := views.PaneBinding(paneID)
+	if !ok || binding.TerminalID == "" {
+		return nil
+	}
+	text := "size:" + binding.ResizeRole
+	style := StyleMuted
+	if binding.ResizeRole == state.TerminalResizeRoleOwner && binding.CanResize {
+		style = StyleSuccess
+	}
+	return []ChromeSlotVM{{Text: text, Style: style}}
 }
 
 func paneChromeStateSlot(active bool, content ContentVM) ChromeSlotVM {
