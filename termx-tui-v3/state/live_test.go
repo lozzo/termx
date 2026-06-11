@@ -63,6 +63,29 @@ func TestTerminalSurfaceRejectsStaleLiveRevision(t *testing.T) {
 	}
 }
 
+func TestTerminalSurfaceRejectsEmptyBootstrapOverContent(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"prompt"},
+		Cursor:     LiveCursor{Visible: true, Row: 0, Col: 6, Shape: "bar"},
+	})
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       24,
+	})
+
+	if store.Revision != 3 || len(store.Lines) != 1 || store.Lines[0] != "prompt" || !store.Cursor.Visible {
+		t.Fatalf("empty bootstrap snapshot must not replace current content, got %#v", store)
+	}
+	if cached := store.Surfaces["term-1"]; cached.Revision != 3 || len(cached.Lines) != 1 || cached.Lines[0] != "prompt" || !cached.Cursor.Visible {
+		t.Fatalf("empty bootstrap snapshot must not replace cached content, got %#v", cached)
+	}
+}
+
 func TestTerminalSurfaceResizeBoundaryRejectsLateOldSizeFrame(t *testing.T) {
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",

@@ -289,6 +289,8 @@
 
 最新 follow-up：已修正 TUI 启动进入 alt-screen 后首帧可能被启动 attach/storage/live 事件链延后的黑屏窗口；`AppRuntime` 在有效 host viewport 建立后立即写出首个安全 frame，后续事件仍保持按真实 `WriteFrame` 边界合帧，避免启动时看似按键无效。
 
+最新 follow-up：已修正 attach 后空白但有效的 live surface snapshot 被 TUI 当作未 ready 丢弃，导致 UI 长时间停在 `live surface pending` 的问题；成功返回的 live surface 请求即使内容为空也会投递 snapshot，并补齐 terminal id 与尺寸后由 reducer 标记 ready。
+
 ## 6. 必做 harness
 
 ### 6.1 core-v2 harness

@@ -335,8 +335,14 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []E
 			if err != nil {
 				return LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: terminalID}, Err: err}
 			}
-			if !result.Ready {
-				return nil
+			if result.Snapshot.TerminalID == "" {
+				result.Snapshot.TerminalID = terminalID
+			}
+			if result.Snapshot.Cols == 0 {
+				result.Snapshot.Cols = cols
+			}
+			if result.Snapshot.Rows == 0 {
+				result.Snapshot.Rows = rows
 			}
 			return LiveSurfaceMsg{Snapshot: result.Snapshot}
 		},

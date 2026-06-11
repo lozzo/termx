@@ -822,8 +822,8 @@ func TestLiveAppAttachSwitchClearsStaleSurfaceRows(t *testing.T) {
 	if frameContains(frame, "old terminal output") {
 		t.Fatalf("new attach must not render stale live rows, got %#v", frame.Lines)
 	}
-	if !frameContains(frame, "live surface pending") || runtime.State().Surface.Ready {
-		t.Fatalf("expected pending surface after terminal switch, frame=%#v state=%#v", frame.Lines, runtime.State().Surface)
+	if frameContains(frame, "old terminal output") || !frameContains(frame, "live surface empty") || !runtime.State().Surface.Ready {
+		t.Fatalf("expected empty ready surface after terminal switch, frame=%#v state=%#v", frame.Lines, runtime.State().Surface)
 	}
 }
 
@@ -863,6 +863,42 @@ func TestLiveAppAttachHydratesReadySurfaceFromService(t *testing.T) {
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "alpha") || !frameContains(frame, "beta 你好🚀") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("expected hydrated live surface in frame, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
+func TestLiveAppAttachClearsPendingForEmptySurfaceSnapshot(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-blank", Channel: 8, Cols: 78, Rows: 20},
+		SurfaceResult: services.TerminalSurfaceResult{
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-blank",
+				Cols:       78,
+				Rows:       20,
+			},
+		},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-blank", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+
+	if !runtime.State().Surface.Ready {
+		t.Fatalf("empty snapshot should still mark live surface ready: %#v", runtime.State().Surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "live surface pending") {
+		t.Fatalf("empty ready snapshot must clear pending fallback, frame=%#v", frame.Lines)
 	}
 }
 
@@ -1265,16 +1301,16 @@ func TestLiveResizeFallbacksDoNotUseResizeBoundaryDots(t *testing.T) {
 		t.Fatalf("drain host resize: %v", err)
 	}
 
-	pendingFrame := lastFrame(t, host.Frames())
-	if !frameContains(pendingFrame, "live surface pending") {
-		t.Fatalf("expected pending fallback after resize without surface, got %#v", pendingFrame.Lines)
+	emptyFrame := lastFrame(t, host.Frames())
+	if !frameContains(emptyFrame, "live surface empty") {
+		t.Fatalf("expected empty fallback after resize without surface, got %#v", emptyFrame.Lines)
 	}
-	pendingLayer, ok := firstPanelLayerForAppTest(render.NewRenderer(render.DefaultTheme()).RenderResult(render.NewRenderVMBuilder().Build(runtime.State())))
+	emptyLayer, ok := firstPanelLayerForAppTest(render.NewRenderer(render.DefaultTheme()).RenderResult(render.NewRenderVMBuilder().Build(runtime.State())))
 	if !ok {
-		t.Fatalf("expected pending panel layer")
+		t.Fatalf("expected empty panel layer")
 	}
-	if panelLayerContainsPlainForAppTest(pendingLayer, "·") {
-		t.Fatalf("pending fallback should not be filled by resize-boundary dots, got %#v", pendingLayer.Lines)
+	if panelLayerContainsPlainForAppTest(emptyLayer, "·") {
+		t.Fatalf("empty fallback should not be filled by resize-boundary dots, got %#v", emptyLayer.Lines)
 	}
 
 	if err := runtime.Post(LiveExitMsg{TerminalID: "term-1", ExitCode: 0}); err != nil {

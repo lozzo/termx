@@ -917,11 +917,12 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 		} else if surface.Ready {
 			content.Lines = []Line{NewLine("live surface empty")}
 			content.Empty = true
+			content.Cursor = liveEmptySurfaceCursor(surface, session)
 		} else {
 			content.Lines = []Line{NewLine("live surface pending")}
 			content.Pending = true
+			content.Cursor = Cursor{}
 		}
-		content.Cursor = Cursor{}
 	} else if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
 		content.Lines = append(content.Lines, NewLine(""), liveExitedLine(surface, session), liveExitedRestartLine(), liveExitedPickerLine())
 		content.Cursor = Cursor{}
@@ -1054,6 +1055,16 @@ func liveContentCursor(surface state.TerminalSurfaceStore, session state.Termina
 		col = 0
 	}
 	return Cursor{Visible: true, Row: row, Col: col, Shape: CursorShapeBlock}
+}
+
+func liveEmptySurfaceCursor(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) Cursor {
+	if session.LastError != "" || surface.Err != "" || !session.Attached {
+		return Cursor{}
+	}
+	if surface.Cursor.Visible {
+		return Cursor{Visible: true, Row: maxInt(0, surface.Cursor.Row), Col: maxInt(0, surface.Cursor.Col), Shape: liveCursorShape(surface.Cursor.Shape)}
+	}
+	return Cursor{Visible: true, Row: 0, Col: 0, Shape: CursorShapeBlock}
 }
 
 func liveCursorShape(shape string) CursorShape {

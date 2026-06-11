@@ -396,10 +396,17 @@ func shouldRejectLiveSnapshot(current LiveSurfaceSnapshot, incoming LiveSurfaceS
 	if incoming.Revision != 0 && current.Revision != 0 && incoming.Revision < current.Revision {
 		return true
 	}
+	if incoming.Revision == 0 && liveSnapshotHasContent(current) && !liveSnapshotHasContent(incoming) {
+		return true
+	}
 	if liveSnapshotIsBoundary(current) && liveSnapshotIsOrdinary(incoming) {
 		return true
 	}
 	return false
+}
+
+func liveSnapshotHasContent(snapshot LiveSurfaceSnapshot) bool {
+	return len(snapshot.Lines) > 0 || len(snapshot.Screen) > 0 || snapshot.Title != "" || snapshot.Cursor.Visible
 }
 
 func liveSnapshotIsBoundary(snapshot LiveSurfaceSnapshot) bool {
