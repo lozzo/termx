@@ -146,9 +146,48 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: "loaded"})
 	if len(root.TerminalViews.Views) > 0 {
-		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		effects = append(effects, workbenchRestoredTerminalAttachEffects(root.TerminalViews.Bindings())...)
+		return root.Advance(), effects
 	}
 	return root.Advance(), nil
+}
+
+func workbenchRestoredTerminalAttachEffects(bindings []state.TerminalViewBinding) []Effect {
+	if len(bindings) == 0 {
+		return nil
+	}
+	effects := make([]Effect, 0, len(bindings))
+	for _, binding := range bindings {
+		binding := binding
+		if binding.TerminalID == "" || binding.ViewID == "" {
+			continue
+		}
+		cols, rows := binding.DesiredCols, binding.DesiredRows
+		if cols <= 0 {
+			cols = 80
+		}
+		if rows <= 0 {
+			rows = 24
+		}
+		// 启动恢复只重建 view 到 core 的连接；owner truth 必须等 core-v2 返回。
+		resizePolicy := state.TerminalResizeRoleFollower
+		if binding.ResizeRole == state.TerminalResizeRoleObserver {
+			resizePolicy = state.TerminalResizeRoleObserver
+		}
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return LiveAttachMsg{Config: LiveConfig{
+				TerminalID:    binding.TerminalID,
+				Cols:          cols,
+				Rows:          rows,
+				Mode:          "collaborator",
+				ResizePolicy:  resizePolicy,
+				SurfaceID:     binding.SurfaceID,
+				ViewID:        binding.ViewID,
+			}}
+		}})
+	}
+	return effects
 }
 
 func reduceWorkbenchStoragePersistRequest(root state.Root, _ WorkbenchStoragePersistRequestMsg, deps WorkbenchDeps) (state.Root, []Effect) {

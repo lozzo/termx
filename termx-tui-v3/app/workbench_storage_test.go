@@ -350,6 +350,77 @@ func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(120, 40)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-restored", Title: "restored", Kind: state.PaneTerminalLive, TerminalID: "term-restored"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-restored"})
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView("pane-restored", "term-restored", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-restored", state.TerminalPaneViewID("pane-restored"), true))
+	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleFollower, CanResize: false, OwnerViewID: "other-view"},
+		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-restored", Cols: 100, Rows: 30, Lines: []string{"changed by another tui"}, State: state.TerminalLiveAttached}},
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(terminal.Attaches) != 1 {
+		t.Fatalf("restored terminal view should reattach through core, attaches=%#v", terminal.Attaches)
+	}
+	attach := terminal.Attaches[0]
+	if attach.TerminalID != "term-restored" || attach.ViewID != state.TerminalPaneViewID("pane-restored") || attach.ResizePolicy != state.TerminalResizeRoleFollower {
+		t.Fatalf("restore attach must use restored view as follower, attach=%#v", attach)
+	}
+	root := runtime.State()
+	binding, ok := root.TerminalViews.PaneBinding("pane-restored")
+	if !ok || binding.Channel != 42 || binding.ResizeRole != state.TerminalResizeRoleFollower || binding.OwnerViewID != "other-view" || !binding.Attached {
+		t.Fatalf("restored binding should reflect core attach result, binding=%#v ok=%v", binding, ok)
+	}
+	if channel, ok := root.Session.InputChannelFor("term-restored"); !ok || channel != 42 {
+		t.Fatalf("restored attach should refresh input channel, channel=%d ok=%v", channel, ok)
+	}
+	if len(terminal.Surfaces) != 1 || root.Surface.TerminalID != "term-restored" || root.Surface.Lines[0] != "changed by another tui" {
+		t.Fatalf("restore should load authoritative live surface, surfaces=%#v surface=%#v", terminal.Surfaces, root.Surface)
+	}
+}
+
+func TestInteractiveRuntimeWorkbenchRestoreShowsExitedTerminalFromCore(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-exited"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-exited", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &services.FakeTerminalService{
+		AttachResult:  services.TerminalAttachResult{Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleFollower},
+		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-exited", Cols: 80, Rows: 24, State: state.TerminalLiveExited, ExitCode: 130, ExitReason: "process exited"}},
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	root := runtime.State()
+	if root.Surface.TerminalID != "term-exited" || root.Surface.State != state.TerminalLiveExited || root.Surface.ExitCode != 130 {
+		t.Fatalf("restored exited terminal should remain visible, surface=%#v", root.Surface)
+	}
+	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.TerminalID != "term-exited" {
+		t.Fatalf("exited terminal pane must stay bound, pane=%#v ok=%v", pane, ok)
+	}
+}
+
 func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)

@@ -275,7 +275,9 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			activePaneID = existing.PaneID
 		}
 		if existing.FloatingID != "" {
-			root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize))
+			binding := state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize)
+			binding.Layout = existing.Layout
+			root.TerminalViews = root.TerminalViews.BindFloating(binding)
 			root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
 				CanResize:      msg.Result.CanResize,
 				SizeLocked:     msg.Result.SizeLocked,
@@ -292,7 +294,11 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, msg.Result.TerminalID)
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize))
+	binding := state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize)
+	if existing, ok := root.TerminalViews.Views[viewID]; ok {
+		binding.Layout = existing.Layout
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
 	root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
 		CanResize:      msg.Result.CanResize,
 		SizeLocked:     msg.Result.SizeLocked,
@@ -302,7 +308,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		ResizeEpoch:    msg.Result.ResizeEpoch,
 		ResizeRole:     msg.Result.ResizePolicy,
 		SurfaceID:      msg.Result.SurfaceID,
-		ViewID:         msg.Result.ViewID,
+		ViewID:         viewID,
 	})
 	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
 }
