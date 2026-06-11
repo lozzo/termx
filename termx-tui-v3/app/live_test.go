@@ -1546,6 +1546,91 @@ func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
 	}
 }
 
+func TestNestedEmptySplitResizesOwnerTerminalViewContentRect(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(140, 36)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 140, Rows: 36}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
+		t.Fatalf("post split presentation: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	terminal.Resizes = nil
+
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-right", Title: "pane", Kind: state.PaneEmpty},
+	}}); err != nil {
+		t.Fatalf("post right split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain right split: %v", err)
+	}
+	rightSplitResize := terminal.Resizes[len(terminal.Resizes)-1]
+
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: "pane-right"},
+		SplitDirection: state.SplitDirectionHorizontal,
+		NewPane:        state.PaneState{ID: "pane-right-bottom", Title: "pane", Kind: state.PaneEmpty},
+	}}); err != nil {
+		t.Fatalf("post lower right split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain lower right split: %v", err)
+	}
+
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("splitting empty right pane must not resize unchanged left owner again, before=%#v all=%#v", rightSplitResize, terminal.Resizes)
+	}
+	if got := terminal.Resizes[0]; got.TerminalID != "term-1" || got.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || got.Cols <= 0 || got.Rows <= 0 {
+		t.Fatalf("right split should resize original owner terminal view, got %#v", got)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       terminal.Resizes[0].Cols,
+		Rows:       terminal.Resizes[0].Rows,
+		Lines:      []string{"owner terminal content"},
+	}}); err != nil {
+		t.Fatalf("post owner-sized surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain owner-sized surface: %v", err)
+	}
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.DesiredCols != terminal.Resizes[0].Cols || binding.DesiredRows != terminal.Resizes[0].Rows {
+		t.Fatalf("owner view desired size should track left content rect, binding=%#v resize=%#v", binding, terminal.Resizes[0])
+	}
+	if _, ok := runtime.State().TerminalViews.PaneBinding("pane-right"); ok {
+		t.Fatalf("empty right pane must not create terminal binding")
+	}
+	vm := render.NewRenderVMBuilder().Build(runtime.State())
+	plan := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
+	result := render.NewRenderer(render.DefaultTheme()).RenderResult(vm)
+	ownerLayer, ok := panelLayerByPaneIDForAppTest(result, plan, state.DefaultPaneID)
+	if !ok {
+		t.Fatalf("expected owner pane layer")
+	}
+	if ownerLayer.ContentOverflow != (render.ContentOverflow{}) {
+		t.Fatalf("owner pane should not overflow after 211 empty split, got %#v", ownerLayer.ContentOverflow)
+	}
+	if panelLayerContainsPlainForAppTest(ownerLayer, "·") {
+		t.Fatalf("owner pane should not show resize-boundary dots after 211 empty split, got %#v", ownerLayer.Lines)
+	}
+}
+
 func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
 	host := NewFakeTerminalHost(16)
@@ -1761,6 +1846,20 @@ func firstPanelLayerForAppTest(result render.RenderResult) (render.Layer, bool) 
 	for _, layer := range result.Layers {
 		if layer.Kind == render.LayerPanel {
 			return layer, true
+		}
+	}
+	return render.Layer{}, false
+}
+
+func panelLayerByPaneIDForAppTest(result render.RenderResult, plan render.LayoutPlan, paneID string) (render.Layer, bool) {
+	for _, panel := range plan.Panels {
+		if panel.Panel.ID != paneID {
+			continue
+		}
+		for _, layer := range result.Layers {
+			if layer.Kind == render.LayerPanel && layer.Rect == panel.Rect {
+				return layer, true
+			}
 		}
 	}
 	return render.Layer{}, false

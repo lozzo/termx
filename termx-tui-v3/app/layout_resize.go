@@ -14,12 +14,11 @@ func NewTerminalLayoutResizeReducer() Reducer {
 		if !terminalLayoutMayNeedResize(root, msg) || !root.Session.Attached {
 			return root, nil
 		}
-		rect, ok := activeTerminalContentRect(root, render.Rect{})
+		binding, rect, ok := resizeOwnerTerminalContentRect(root, render.Rect{})
 		if !ok {
 			return root, nil
 		}
-		binding, hasBinding := activeTerminalViewBinding(root)
-		if hasBinding {
+		if binding.ViewID != "" {
 			nextViews, decision := root.TerminalViews.RequestViewResize(binding.ViewID, rect.W, rect.H)
 			if !decision.Allowed || !decision.Changed {
 				return root, nil
@@ -28,7 +27,7 @@ func NewTerminalLayoutResizeReducer() Reducer {
 			root.Session = root.Session.RequestResize(rect.W, rect.H)
 			return root, []Effect{FuncEffect{
 				Run: func(context.Context) Msg {
-					return LiveResizeMsg{Cols: rect.W, Rows: rect.H, Seq: decision.Seq, ViewID: binding.ViewID}
+					return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: rect.W, Rows: rect.H, Seq: decision.Seq, ViewID: binding.ViewID}
 				},
 			}}
 		}
@@ -46,6 +45,55 @@ func NewTerminalLayoutResizeReducer() Reducer {
 			},
 		}}
 	}
+}
+
+func resizeOwnerTerminalContentRect(root state.Root, fallbackViewport render.Rect) (state.TerminalViewBinding, render.Rect, bool) {
+	if activeBinding, hasActiveBinding := activeTerminalViewBinding(root); hasActiveBinding {
+		if activeBinding.ResizeRole != state.TerminalResizeRoleOwner || !activeBinding.CanResize {
+			return state.TerminalViewBinding{}, render.Rect{}, false
+		}
+		if rect, ok := terminalViewContentRect(root, fallbackViewport, activeBinding); ok {
+			return activeBinding, rect, true
+		}
+		return state.TerminalViewBinding{}, render.Rect{}, false
+	}
+	if binding, ok := resizeOwnerBindingForSessionTerminal(root); ok {
+		if rect, ok := terminalViewContentRect(root, fallbackViewport, binding); ok {
+			return binding, rect, true
+		}
+	}
+	rect, ok := activeTerminalContentRect(root, fallbackViewport)
+	return state.TerminalViewBinding{}, rect, ok
+}
+
+func resizeOwnerBindingForSessionTerminal(root state.Root) (state.TerminalViewBinding, bool) {
+	terminalID := root.Session.TerminalID
+	if terminalID == "" {
+		return state.TerminalViewBinding{}, false
+	}
+	return root.TerminalViews.OwnerBinding(terminalID)
+}
+
+func terminalViewContentRect(root state.Root, fallbackViewport render.Rect, binding state.TerminalViewBinding) (render.Rect, bool) {
+	plan, ok := terminalLayoutPlan(root, fallbackViewport)
+	if !ok {
+		return render.Rect{}, false
+	}
+	if binding.FloatingID != "" {
+		for _, layout := range plan.Floatings {
+			if layout.Floating.ID == binding.FloatingID && layout.ContentRect.W > 0 && layout.ContentRect.H > 0 {
+				return layout.ContentRect, true
+			}
+		}
+	}
+	if binding.PaneID != "" {
+		for _, panel := range plan.Panels {
+			if panel.Panel.ID == binding.PaneID && panel.ContentRect.W > 0 && panel.ContentRect.H > 0 {
+				return panel.ContentRect, true
+			}
+		}
+	}
+	return render.Rect{}, false
 }
 
 func activeTerminalViewBinding(root state.Root) (state.TerminalViewBinding, bool) {
@@ -115,14 +163,10 @@ func liveAttachContentSize(root state.Root, cfg LiveConfig) (int, int) {
 }
 
 func activeTerminalContentRect(root state.Root, fallbackViewport render.Rect) (render.Rect, bool) {
-	if !root.Viewport.Valid {
-		if fallbackViewport.W <= 0 || fallbackViewport.H <= 0 {
-			return render.Rect{}, false
-		}
-		root.Viewport = state.ViewportStore{Valid: true, Cols: fallbackViewport.W, Rows: fallbackViewport.H}
+	plan, ok := terminalLayoutPlan(root, fallbackViewport)
+	if !ok {
+		return render.Rect{}, false
 	}
-	vm := render.NewRenderVMBuilder().Build(root)
-	plan := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
 	if rect, ok := activeFloatingContentRectFromPlan(root, plan, true); ok {
 		return rect, true
 	}
@@ -136,15 +180,23 @@ func activeTerminalContentRect(root state.Root, fallbackViewport render.Rect) (r
 }
 
 func activeFloatingContentRect(root state.Root, fallbackViewport render.Rect, requireTerminal bool) (render.Rect, bool) {
+	plan, ok := terminalLayoutPlan(root, fallbackViewport)
+	if !ok {
+		return render.Rect{}, false
+	}
+	return activeFloatingContentRectFromPlan(root, plan, requireTerminal)
+}
+
+func terminalLayoutPlan(root state.Root, fallbackViewport render.Rect) (render.LayoutPlan, bool) {
 	if !root.Viewport.Valid {
 		if fallbackViewport.W <= 0 || fallbackViewport.H <= 0 {
-			return render.Rect{}, false
+			return render.LayoutPlan{}, false
 		}
 		root.Viewport = state.ViewportStore{Valid: true, Cols: fallbackViewport.W, Rows: fallbackViewport.H}
 	}
 	vm := render.NewRenderVMBuilder().Build(root)
 	plan := render.MeasureLayout(vm.Shell, vm.Shell.Layout.Viewport)
-	return activeFloatingContentRectFromPlan(root, plan, requireTerminal)
+	return plan, true
 }
 
 func activeFloatingContentRectFromPlan(root state.Root, plan render.LayoutPlan, requireTerminal bool) (render.Rect, bool) {

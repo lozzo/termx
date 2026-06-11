@@ -107,10 +107,11 @@ type LiveExitMsg struct {
 func (LiveExitMsg) isMsg() {}
 
 type LiveResizeMsg struct {
-	Cols   int
-	Rows   int
-	Seq    uint64
-	ViewID string
+	TerminalID string
+	Cols       int
+	Rows       int
+	Seq        uint64
+	ViewID     string
 }
 
 func (LiveResizeMsg) isMsg() {}

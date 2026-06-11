@@ -1124,6 +1124,9 @@ func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (st
 func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneCommand, targetPane state.PaneState, hasTargetPane bool) state.Root {
 	switch command.Action {
 	case state.PaneCommandSplit:
+		if command.NewPane.TerminalID == "" && command.NewPane.Kind == state.PaneEmpty {
+			return root
+		}
 		terminalID := command.NewPane.TerminalID
 		var targetBinding state.TerminalViewBinding
 		hasTargetBinding := false
