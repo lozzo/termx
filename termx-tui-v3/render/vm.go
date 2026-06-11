@@ -584,10 +584,7 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		ownerText = "◆ owner"
 		ownerStyle = StyleSuccess
 	}
-	title := strings.TrimSpace(pane.Title)
-	if title == "" {
-		title = binding.TerminalID
-	}
+	title := terminalChromeTitle(root, pane, binding.TerminalID)
 	layout := binding.Layout.Normalize()
 	return TerminalChromeVM{
 		Locked:       layout.SizeLocked,
@@ -615,6 +612,22 @@ func defaultFloatingChromeActionVMs(style StyleToken) []ChromeActionVM {
 		paneChromeActionVM(ActionPaneZoom, style),
 		paneChromeActionVM(ActionFloatingClose, style),
 	}
+}
+
+func terminalChromeTitle(root state.Root, pane state.PaneState, terminalID string) string {
+	for _, item := range root.TerminalPool.Items {
+		if item.TerminalID != terminalID {
+			continue
+		}
+		if title := strings.TrimSpace(item.Title); title != "" {
+			return title
+		}
+		break
+	}
+	if title := strings.TrimSpace(pane.Title); title != "" {
+		return title
+	}
+	return terminalID
 }
 
 func terminalChromeStateSlot(root state.Root, terminalID string, active bool, content ContentVM) ChromeSlotVM {

@@ -136,6 +136,26 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderUsesTerminalPoolTitleForSharedTerminalChrome(t *testing.T) {
+	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-main"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:        shell,
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running"}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 7, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-1", false))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-main", 8, 40, 12, state.TerminalResizeRoleOwner, "surface", "view-2", true))
+
+	vm := NewRenderVMBuilder().Build(root)
+	for _, panel := range vm.Shell.Layout.Panels {
+		if panel.Chrome.Terminal.TerminalID != "term-main" {
+			continue
+		}
+		if panel.Chrome.Terminal.Title.Text != "main" {
+			t.Fatalf("shared terminal chrome should use terminal title, panel=%s terminal=%#v", panel.ID, panel.Chrome.Terminal)
+		}
+	}
+}
+
 func TestRenderVMBuilderKeepsChromeActionsForEmptyPane(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneEmpty
