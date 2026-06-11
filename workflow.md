@@ -291,6 +291,8 @@
 
 最新 follow-up：已修正 attach 后空白但有效的 live surface snapshot 被 TUI 当作未 ready 丢弃，导致 UI 长时间停在 `live surface pending` 的问题；成功返回的 live surface 请求即使内容为空也会投递 snapshot，并补齐 terminal id 与尺寸后由 reducer 标记 ready。
 
+最新 follow-up：已修正上一轮空 snapshot readiness 修复带来的连接 pane 回归；重新 attach 已有 terminal 时不再把缓存 live surface revision 清零，避免后续空 bootstrap snapshot 把已有 panel 内容覆盖成 `live surface empty`，但 exit/error 边界后的显式 attach 仍会重新建立语义基线并接受新帧。已同步扩展普通 emoji 与小白点/边框相邻时的 ANSI 列重锚定，避免宿主 emoji 宽度差异继续推歪 extent dots。
+
 ## 6. 必做 harness
 
 ### 6.1 core-v2 harness

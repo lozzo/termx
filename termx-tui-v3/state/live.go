@@ -174,8 +174,11 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 		if !ok {
 			snapshot = LiveSurfaceSnapshot{}
 		}
+		wasBoundary := liveSnapshotIsBoundary(snapshot)
 		snapshot.TerminalID = terminalID
-		snapshot.Revision = 0
+		if wasBoundary {
+			snapshot.Revision = 0
+		}
 		if snapshot.Cols == 0 {
 			snapshot.Cols = cols
 		}

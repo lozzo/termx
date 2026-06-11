@@ -86,6 +86,27 @@ func TestTerminalSurfaceRejectsEmptyBootstrapOverContent(t *testing.T) {
 	}
 }
 
+func TestTerminalSurfaceAttachKeepsCachedRevision(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   5,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"connected panel"},
+	})
+	store = store.Attach("term-2", 80, 24)
+	store = store.Attach("term-1", 80, 24)
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       24,
+	})
+
+	if store.Revision != 5 || len(store.Lines) != 1 || store.Lines[0] != "connected panel" {
+		t.Fatalf("reattach must keep cached content when empty bootstrap arrives, got %#v", store)
+	}
+}
+
 func TestTerminalSurfaceResizeBoundaryRejectsLateOldSizeFrame(t *testing.T) {
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",

@@ -3,6 +3,7 @@ package render
 import (
 	"strconv"
 	"strings"
+	"unicode"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/clipperhouse/displaywidth"
@@ -217,7 +218,22 @@ func ambiguousEmojiVariationSelectorCell(text string, width int) bool {
 }
 
 func hostWidthAmbiguousCluster(text string, width int) bool {
-	return eastAsianAmbiguousWidthCluster(text) || printableZeroWidthCluster(text) || privateUseCluster(text)
+	return eastAsianAmbiguousWidthCluster(text) || printableZeroWidthCluster(text) || privateUseCluster(text) || emojiCluster(text, width)
+}
+
+func emojiCluster(text string, width int) bool {
+	if text == "" || width < 2 || strings.ContainsRune(text, '\x1b') {
+		return false
+	}
+	for _, r := range text {
+		if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+			return false
+		}
+		if (r >= 0x1F000 && r <= 0x1FAFF) || (r >= 0x2600 && r <= 0x27BF) {
+			return true
+		}
+	}
+	return false
 }
 
 func eastAsianAmbiguousWidthCluster(text string) bool {

@@ -101,6 +101,18 @@ func TestANSIStringReanchorsAfterAmbiguousEmojiInsideCellBeforeDots(t *testing.T
 	}
 }
 
+func TestANSIStringReanchorsAfterEmojiBeforeDots(t *testing.T) {
+	line := Line{Cells: []Cell{
+		NewCell("x🚀··"),
+		NewCell("│"),
+	}}
+
+	got := line.ANSIString(DefaultTheme())
+	if !strings.Contains(got, "x🚀\x1b[4G··│") {
+		t.Fatalf("emoji inside a cell should re-anchor before dots, got %q", got)
+	}
+}
+
 func TestANSIStringReanchorsAfterNonBMPPrivateUseIconBeforeDots(t *testing.T) {
 	line := Line{Cells: []Cell{
 		NewCell("x󱃾··"),
