@@ -133,6 +133,12 @@ func floatingCommandMayResizeTerminal(root state.Root, command state.FloatingCom
 	case state.FloatingCommandCreate,
 		state.FloatingCommandCenter,
 		state.FloatingCommandToggleCollapse,
+		state.FloatingCommandToggleAll,
+		state.FloatingCommandShowAll,
+		state.FloatingCommandCollapseAll,
+		state.FloatingCommandFit,
+		state.FloatingCommandToggleAutoFit,
+		state.FloatingCommandRefreshAutoFit,
 		state.FloatingCommandMove,
 		state.FloatingCommandResize:
 		return activeFloatingHasTerminal(root)

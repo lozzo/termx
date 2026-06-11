@@ -164,6 +164,8 @@ type FloatingPaneState struct {
 	Z         int
 	Active    bool
 	Collapsed bool
+	FitMode   FloatingFitMode
+	AutoFit   FloatingAutoFitState
 }
 
 type FloatingRect struct {
@@ -171,6 +173,18 @@ type FloatingRect struct {
 	Y int
 	W int
 	H int
+}
+
+type FloatingFitMode string
+
+const (
+	FloatingFitManual FloatingFitMode = "manual"
+	FloatingFitAuto   FloatingFitMode = "auto"
+)
+
+type FloatingAutoFitState struct {
+	Cols int
+	Rows int
 }
 
 type EmptyPaneCTAState struct {
@@ -277,63 +291,6 @@ type WorkbenchTreeItem struct {
 	Active        bool
 	Selected      bool
 	Summary       string
-}
-
-type FloatingOverviewItem struct {
-	FloatingID string
-	Title      string
-	PaneID     string
-	PaneKind   PaneKind
-	TerminalID string
-	Rect       FloatingRect
-	Z          int
-	Active     bool
-	Collapsed  bool
-	Selected   bool
-}
-
-type FloatingCommandAction string
-
-const (
-	FloatingCommandCreate         FloatingCommandAction = "floating.create"
-	FloatingCommandFocusRaise     FloatingCommandAction = "floating.focus-raise"
-	FloatingCommandDeactivate     FloatingCommandAction = "floating.deactivate"
-	FloatingCommandClose          FloatingCommandAction = "floating.close"
-	FloatingCommandCenter         FloatingCommandAction = "floating.center"
-	FloatingCommandToggleCollapse FloatingCommandAction = "floating.toggle-collapse"
-	FloatingCommandSummon         FloatingCommandAction = "floating.summon"
-	FloatingCommandMove           FloatingCommandAction = "floating.move"
-	FloatingCommandResize         FloatingCommandAction = "floating.resize"
-)
-
-type FloatingCommand struct {
-	Action   FloatingCommandAction
-	TargetID string
-	Pane     PaneState
-	Title    string
-	Rect     FloatingRect
-	DeltaX   int
-	DeltaY   int
-	DeltaW   int
-	DeltaH   int
-	Index    int
-	BoundsW  int
-	BoundsH  int
-	Source   PaneCommandSource
-}
-
-type FloatingCommandStatus string
-
-const (
-	FloatingCommandOK      FloatingCommandStatus = "ok"
-	FloatingCommandInvalid FloatingCommandStatus = "invalid"
-)
-
-type FloatingCommandResult struct {
-	Status FloatingCommandStatus
-	Action FloatingCommandAction
-	Reason string
-	ID     string
 }
 
 const (
@@ -447,6 +404,15 @@ func (store ShellStore) ensureFloatingDefaults() ShellStore {
 		}
 		if floating.Z <= 0 {
 			floating.Z = index + 1
+		}
+		if floating.FitMode != FloatingFitAuto {
+			floating.FitMode = FloatingFitManual
+			if floating.AutoFit.Cols < 0 {
+				floating.AutoFit.Cols = 0
+			}
+			if floating.AutoFit.Rows < 0 {
+				floating.AutoFit.Rows = 0
+			}
 		}
 		if floating.ID == store.ActiveFloatingID {
 			activeFound = true

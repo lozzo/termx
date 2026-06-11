@@ -128,6 +128,7 @@ const (
 	ShellActionFloatingSummon   ShellAction = "shell.floating-summon"
 	ShellActionFloatingMove     ShellAction = "shell.floating-move"
 	ShellActionFloatingSize     ShellAction = "shell.floating-size"
+	ShellActionFloatingGroup    ShellAction = "shell.floating-group"
 	ShellActionOpenPool         ShellAction = "shell.open-terminal-pool"
 	ShellActionOpenTree         ShellAction = "shell.open-workbench-tree"
 	ShellActionOpenPicker       ShellAction = "shell.open-terminal-picker"

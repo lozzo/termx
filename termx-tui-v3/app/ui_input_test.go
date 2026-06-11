@@ -2066,9 +2066,53 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 	if !root.Shell.Floatings[0].Collapsed {
 		t.Fatalf("floating collapse action should toggle collapsed state, got %#v", root.Shell.Floatings[0])
 	}
+	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingShowAll.String()})
+	if root.Shell.Floatings[0].Collapsed {
+		t.Fatalf("floating show-all action should expand collapsed panes, got %#v", root.Shell.Floatings[0])
+	}
+	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCollapseAll.String()})
+	if !root.Shell.Floatings[0].Collapsed {
+		t.Fatalf("floating collapse-all action should collapse all panes, got %#v", root.Shell.Floatings[0])
+	}
 	root, _ = reducer(root, ShellContentActionMsg{ActionID: "floating.close", PaneID: "floating-1"})
 	if len(root.Shell.Floatings) != 0 {
 		t.Fatalf("floating close action should remove floating, got %#v", root.Shell.Floatings)
+	}
+}
+
+func TestFloatingGroupKeyboardIntentsMapToCommands(t *testing.T) {
+	root := state.Root{
+		Shell:    state.DefaultShell().SetInteractionMode(state.InteractionModeFloating),
+		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
+	}
+	reducer := NewUIInputReducer()
+	for _, tc := range []struct {
+		char   string
+		action state.FloatingCommandAction
+	}{
+		{char: "v", action: state.FloatingCommandToggleAll},
+		{char: "=", action: state.FloatingCommandFit},
+		{char: "s", action: state.FloatingCommandToggleAutoFit},
+	} {
+		next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: tc.char}})
+		if next.Generation != root.Generation {
+			t.Fatalf("keyboard intent %q should defer to effect message, got root=%#v", tc.char, next)
+		}
+		found := false
+		for _, effect := range effects {
+			fn, ok := effect.(FuncEffect)
+			if !ok {
+				continue
+			}
+			msg, ok := fn.Run(context.Background()).(ShellFloatingCommandMsg)
+			if ok && msg.Command.Action == tc.action {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("keyboard intent %q should emit floating command %q, effects=%#v", tc.char, tc.action, effects)
+		}
 	}
 }
 
@@ -2186,11 +2230,21 @@ func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	if len(next.Shell.Floatings) != 1 || next.Shell.ActiveFloatingID != "floating-1" {
 		t.Fatalf("pool ctrl-o should create floating before attach, shell=%#v", next.Shell)
 	}
-	if len(effects) != 1 {
-		t.Fatalf("pool ctrl-o should emit attach effect, got %#v", effects)
+	var requestMsg TerminalPoolAttachRequestMsg
+	foundAttach := false
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok {
+			continue
+		}
+		msg, ok := fn.Run(context.Background()).(TerminalPoolAttachRequestMsg)
+		if ok {
+			requestMsg = msg
+			foundAttach = true
+			break
+		}
 	}
-	requestMsg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolAttachRequestMsg)
-	if !ok || requestMsg.TerminalID != "term-logs" || requestMsg.TargetFloatingID != "floating-1" {
+	if !foundAttach || requestMsg.TerminalID != "term-logs" || requestMsg.TargetFloatingID != "floating-1" {
 		t.Fatalf("pool ctrl-o should request selected terminal attach, msg=%#v", requestMsg)
 	}
 	_, effects = reducer(next, requestMsg)

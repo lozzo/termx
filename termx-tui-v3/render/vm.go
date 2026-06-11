@@ -245,6 +245,9 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		return footerActionSpecs(
 			footerActionSpec("↑/↓", "select", "", StyleStatusAccent),
 			footerActionFor(ActionFloatingSummon),
+			footerActionFor(ActionFloatingShowAll),
+			footerActionFor(ActionFloatingCollapseAll),
+			footerActionFor(ActionFloatingClose),
 			footerActionSpec("enter", "OPEN", ActionFloatingSummon.String(), StyleStatusAccent),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
@@ -266,6 +269,9 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionFloatingSummon),
 			footerActionFor(ActionFloatingPick),
 			footerActionFor(ActionFloatingTakeOwner),
+			footerActionFor(ActionFloatingToggleAll),
+			footerActionFor(ActionFloatingFit),
+			footerActionFor(ActionFloatingAutoFit),
 			footerActionFor(ActionFloatingCenter),
 			footerActionFor(ActionFloatingCollapse),
 			footerActionSpec("arrows", "move", "", StyleStatusAccent),

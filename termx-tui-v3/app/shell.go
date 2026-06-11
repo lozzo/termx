@@ -607,6 +607,16 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFloatingClose:
 		// footer close 没有 pane id 时，FloatingCommand 会按 active floating 作为目标。
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingToggleAll:
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAll, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingShowAll:
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandShowAll, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingCollapseAll:
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCollapseAll, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingFit:
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFit, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+	case render.ActionFloatingAutoFit:
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingPick:
 		root.Shell = root.Shell.OpenTerminalPicker()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
@@ -1098,10 +1108,16 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 	command = withFloatingCommandDefaults(root, command)
 	nextShell, result := root.Shell.ApplyFloatingCommand(command)
 	root.Shell = addFloatingCommandToast(nextShell, command, result)
+	effects := []Effect{}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
 		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
 	}
-	return root.Advance(), nil
+	if result.Status == state.FloatingCommandOK && shouldPersistFloatingCommand(command) {
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+			return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
+		}})
+	}
+	return root.Advance(), effects
 }
 
 func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (state.Root, []Effect) {
@@ -1254,6 +1270,9 @@ func withFloatingCommandDefaults(root state.Root, command state.FloatingCommand)
 	if command.Action == state.FloatingCommandCreate && command.Pane.ID == "" {
 		command.Pane = state.PaneState{ID: "floating-pane", Title: "floating", Kind: state.PaneEmpty}
 	}
+	if command.Action == state.FloatingCommandFit || command.Action == state.FloatingCommandToggleAutoFit || command.Action == state.FloatingCommandRefreshAutoFit {
+		command.FitCols, command.FitRows = floatingCommandFitSize(root, command)
+	}
 	return command
 }
 
@@ -1269,11 +1288,62 @@ func addFloatingCommandToast(shell state.ShellStore, command state.FloatingComma
 
 func shouldSuppressFloatingCommandSuccessToast(command state.FloatingCommand) bool {
 	switch command.Action {
-	case state.FloatingCommandFocusRaise, state.FloatingCommandDeactivate, state.FloatingCommandMove, state.FloatingCommandResize:
+	case state.FloatingCommandFocusRaise, state.FloatingCommandDeactivate, state.FloatingCommandMove, state.FloatingCommandResize, state.FloatingCommandRefreshAutoFit:
 		return true
 	default:
 		return false
 	}
+}
+
+func shouldPersistFloatingCommand(command state.FloatingCommand) bool {
+	switch command.Action {
+	case state.FloatingCommandCreate,
+		state.FloatingCommandClose,
+		state.FloatingCommandCenter,
+		state.FloatingCommandToggleCollapse,
+		state.FloatingCommandSummon,
+		state.FloatingCommandMove,
+		state.FloatingCommandResize,
+		state.FloatingCommandToggleAll,
+		state.FloatingCommandShowAll,
+		state.FloatingCommandCollapseAll,
+		state.FloatingCommandFit,
+		state.FloatingCommandToggleAutoFit:
+		return true
+	default:
+		return false
+	}
+}
+
+func floatingCommandFitSize(root state.Root, command state.FloatingCommand) (int, int) {
+	binding, ok := floatingCommandBinding(root, command)
+	if !ok || binding.TerminalID == "" {
+		return 0, 0
+	}
+	surface := root.Surface.SurfaceForTerminal(binding.TerminalID)
+	if surface.Cols > 0 && surface.Rows > 0 {
+		return surface.Cols, surface.Rows
+	}
+	if binding.DesiredCols > 0 && binding.DesiredRows > 0 {
+		return binding.DesiredCols, binding.DesiredRows
+	}
+	if root.Session.TerminalID == binding.TerminalID {
+		return root.Session.DesiredSize()
+	}
+	return 0, 0
+}
+
+func floatingCommandBinding(root state.Root, command state.FloatingCommand) (state.TerminalViewBinding, bool) {
+	if command.TargetID != "" {
+		if binding, ok := root.TerminalViews.FloatingBinding(command.TargetID); ok {
+			return binding, true
+		}
+	}
+	activeFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
+	if activeFloatingID == "" {
+		return state.TerminalViewBinding{}, false
+	}
+	return root.TerminalViews.FloatingBinding(activeFloatingID)
 }
 
 func deactivateFloatingAfterPaneCommand(shell state.ShellStore, command state.PaneCommand) state.ShellStore {

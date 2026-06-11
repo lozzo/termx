@@ -1127,6 +1127,7 @@ func TestRenderVMBuilderBuildsShellPanelToastAndOverlayVM(t *testing.T) {
 func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
 	shell := state.DefaultShell()
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: "floating-1", Title: "logs", Pane: state.PaneState{ID: "floating-pane-1", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, Rect: state.FloatingRect{X: 4, Y: 3, W: 32, H: 9}})
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: "floating-1", FitCols: 48, FitRows: 14, BoundsW: 100, BoundsH: 30})
 	shell = shell.OpenFloatingOverview()
 
 	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
@@ -1134,11 +1135,31 @@ func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
 		t.Fatalf("expected floating overview overlay VM, got %#v", vm.Shell.Overlay)
 	}
 	content := vm.Shell.Overlay.Content
-	if content.Status != "floating overview: 1 items" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[1].PlainString(), "logs") {
+	if content.Status != "floating overview: 1 items" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[1].PlainString(), "logs") || !strings.Contains(content.Lines[1].PlainString(), "auto-fit") {
 		t.Fatalf("expected floating overview content with action regions, got %#v", content)
 	}
 	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "1-9", "SUMMON", ActionFloatingSummon.String()) {
 		t.Fatalf("floating overview footer should expose summon action, got %#v", vm.Shell.Footer)
+	}
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "s", "SHOW ALL", ActionFloatingShowAll.String()) {
+		t.Fatalf("floating overview footer should expose show-all action, got %#v", vm.Shell.Footer)
+	}
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "COLLAPSE ALL", ActionFloatingCollapseAll.String()) {
+		t.Fatalf("floating overview footer should expose collapse-all action, got %#v", vm.Shell.Footer)
+	}
+}
+
+func TestRenderVMBuilderProjectsFloatingFooterGroupActions(t *testing.T) {
+	shell := state.DefaultShell().SetInteractionMode(state.InteractionModeFloating)
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "v", "ALL", ActionFloatingToggleAll.String()) {
+		t.Fatalf("floating footer should expose toggle-all action, got %#v", vm.Shell.Footer)
+	}
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "=", "FIT", ActionFloatingFit.String()) {
+		t.Fatalf("floating footer should expose fit action, got %#v", vm.Shell.Footer)
+	}
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "s", "AUTO-FIT", ActionFloatingAutoFit.String()) {
+		t.Fatalf("floating footer should expose auto-fit action, got %#v", vm.Shell.Footer)
 	}
 }
 

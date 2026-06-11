@@ -26,6 +26,8 @@ func (store ShellStore) ApplyFloatingCommand(command FloatingCommand) (ShellStor
 		return store.moveFloating(command)
 	case FloatingCommandResize:
 		return store.resizeFloating(command)
+	case FloatingCommandToggleAll, FloatingCommandShowAll, FloatingCommandCollapseAll, FloatingCommandFit, FloatingCommandToggleAutoFit, FloatingCommandRefreshAutoFit:
+		return store.applyFloatingGroupCommand(command)
 	default:
 		return store, floatingCommandInvalid(command.Action, "unknown action")
 	}
@@ -99,6 +101,7 @@ func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, Flo
 		Rect:   rect,
 		Z:      store.nextFloatingZ() + 1,
 		Active: true,
+		FitMode: FloatingFitManual,
 	}
 	store.Floatings = append(cloneFloatings(store.Floatings), floating)
 	store.ActiveFloatingID = id
@@ -185,6 +188,8 @@ func (store ShellStore) moveFloating(command FloatingCommand) (ShellStore, Float
 	rect.X += command.DeltaX
 	rect.Y += command.DeltaY
 	store.Floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
+	store.Floatings[index].FitMode = FloatingFitManual
+	store.Floatings[index].AutoFit = FloatingAutoFitState{}
 	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
 }
 
@@ -197,6 +202,8 @@ func (store ShellStore) resizeFloating(command FloatingCommand) (ShellStore, Flo
 	rect.W += command.DeltaW
 	rect.H += command.DeltaH
 	store.Floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
+	store.Floatings[index].FitMode = FloatingFitManual
+	store.Floatings[index].AutoFit = FloatingAutoFitState{}
 	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
 }
 

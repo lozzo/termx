@@ -76,6 +76,11 @@ const (
 	ActionFloatingResize     ActionID = "floating.resize"
 	ActionFloatingCenter     ActionID = "floating.center"
 	ActionFloatingCollapse   ActionID = "floating.collapse"
+	ActionFloatingToggleAll  ActionID = "floating.toggle-all"
+	ActionFloatingShowAll    ActionID = "floating.show-all"
+	ActionFloatingCollapseAll ActionID = "floating.collapse-all"
+	ActionFloatingFit        ActionID = "floating.fit"
+	ActionFloatingAutoFit    ActionID = "floating.auto-fit"
 	ActionFloatingMoveLeft   ActionID = "floating.move-left"
 	ActionFloatingMoveRight  ActionID = "floating.move-right"
 	ActionFloatingMoveUp     ActionID = "floating.move-up"
@@ -271,6 +276,11 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFloatingResize, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withHelp("resize"),
 		actionSpec(ActionFloatingCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("c", "CENTER", StyleStatusAccent).withChromeGlyph("").withHelp("center"),
 		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("m", "COLLAPSE", StyleStatusAccent).withChromeGlyph("").withHelp("collapse"),
+		actionSpec(ActionFloatingToggleAll, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("v", "ALL", StyleStatusAccent).withHelp("toggle all floating panes"),
+		actionSpec(ActionFloatingFit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("=", "FIT", StyleStatusAccent).withHelp("fit floating to live content"),
+		actionSpec(ActionFloatingAutoFit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("s", "AUTO-FIT", StyleStatusAccent).withHelp("toggle floating auto-fit"),
+		actionSpec(ActionFloatingShowAll, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("s", "SHOW ALL", StyleStatusAccent).withHelp("show all floating panes"),
+		actionSpec(ActionFloatingCollapseAll, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("c", "COLLAPSE ALL", StyleStatusWarning).withHelp("collapse all floating panes"),
 		actionSpec(ActionFloatingMoveLeft, ActionDispatchApp, ActionSurfaceInput).withHelp("move left"),
 		actionSpec(ActionFloatingMoveRight, ActionDispatchApp, ActionSurfaceInput).withHelp("move right"),
 		actionSpec(ActionFloatingMoveUp, ActionDispatchApp, ActionSurfaceInput).withHelp("move up"),

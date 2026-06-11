@@ -674,6 +674,84 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	}
 }
 
+func TestShellFloatingGroupCommandsManageCollapseAndFitMode(t *testing.T) {
+	shell := DefaultShell()
+	var result FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     PaneState{ID: "float-pane-1", Title: "one", Kind: PaneEmpty},
+		Rect:     FloatingRect{X: 1, Y: 1, W: 20, H: 8},
+		BoundsW:  100,
+		BoundsH:  40,
+	})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("create first floating: %#v", result)
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-2",
+		Pane:     PaneState{ID: "float-pane-2", Title: "two", Kind: PaneEmpty},
+		Rect:     FloatingRect{X: 10, Y: 5, W: 22, H: 9},
+		BoundsW:  100,
+		BoundsH:  40,
+	})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("create second floating: %#v", result)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandCollapseAll})
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID != "" || !shell.Floatings[0].Collapsed || !shell.Floatings[1].Collapsed {
+		t.Fatalf("collapse all should collapse every floating, result=%#v shell=%#v", result, shell)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandShowAll})
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID == "" || shell.Floatings[0].Collapsed || shell.Floatings[1].Collapsed {
+		t.Fatalf("show all should restore every floating, result=%#v shell=%#v", result, shell)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleAll})
+	if result.Status != FloatingCommandOK || !shell.Floatings[0].Collapsed || !shell.Floatings[1].Collapsed {
+		t.Fatalf("toggle all should collapse open floatings, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleAll})
+	if result.Status != FloatingCommandOK || shell.Floatings[0].Collapsed || shell.Floatings[1].Collapsed {
+		t.Fatalf("toggle all should restore collapsed floatings, result=%#v shell=%#v", result, shell)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandFit, TargetID: "float-1", FitCols: 50, FitRows: 16, BoundsW: 100, BoundsH: 40})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("fit floating: %#v", result)
+	}
+	if got := shell.Floatings[0]; got.Rect.W != 52 || got.Rect.H != 18 || got.FitMode != FloatingFitManual || got.AutoFit != (FloatingAutoFitState{}) {
+		t.Fatalf("fit should resize to content extent plus chrome, got %#v", got)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleAutoFit, TargetID: "float-1", FitCols: 60, FitRows: 20, BoundsW: 100, BoundsH: 40})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("enable auto-fit: %#v", result)
+	}
+	if got := shell.Floatings[0]; got.FitMode != FloatingFitAuto || got.AutoFit.Cols != 60 || got.AutoFit.Rows != 20 || got.Rect.W != 62 || got.Rect.H != 22 {
+		t.Fatalf("auto-fit should save latest fit size and update rect, got %#v", got)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandRefreshAutoFit, TargetID: "float-1", FitCols: 70, FitRows: 18, BoundsW: 100, BoundsH: 40})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("refresh auto-fit: %#v", result)
+	}
+	if got := shell.Floatings[0]; got.AutoFit.Cols != 70 || got.AutoFit.Rows != 18 || got.Rect.W != 72 || got.Rect.H != 20 {
+		t.Fatalf("refresh auto-fit should update metadata and rect, got %#v", got)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandResize, TargetID: "float-1", DeltaW: -2, DeltaH: -2, BoundsW: 100, BoundsH: 40})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("manual resize after auto-fit: %#v", result)
+	}
+	if got := shell.Floatings[0]; got.FitMode != FloatingFitManual || got.AutoFit != (FloatingAutoFitState{}) {
+		t.Fatalf("manual resize should clear auto-fit state, got %#v", got)
+	}
+}
+
 func TestShellBindFloatingTerminal(t *testing.T) {
 	shell := DefaultShell().BindPaneTerminal(PaneCommandTarget{PaneID: DefaultPaneID}, "term-main")
 	var result FloatingCommandResult

@@ -151,7 +151,7 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				return root.Advance(), nil
 			}
 			root.Surface = root.Surface.ApplySnapshot(msg.Snapshot)
-			return root.Advance(), nil
+			return maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
 		case LiveEventMsg:
 			return reduceLiveEvent(root, msg)
 		case LiveExitMsg:
@@ -219,7 +219,7 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				root.CopyMode = root.CopyMode.SetViewRows(rows)
 				root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 			}
-			return root.Advance(), nil
+			return maybeRefreshFloatingAutoFit(root, liveResizeTerminalID(root, msg))
 		default:
 			return root, nil
 		}
@@ -392,6 +392,37 @@ func liveStreamTokenForTerminal(terminalID string) CancelToken {
 	return CancelToken(liveStreamTokenPrefix + terminalID)
 }
 
+func maybeRefreshFloatingAutoFit(root state.Root, terminalID string) (state.Root, []Effect) {
+	if terminalID == "" {
+		return root.Advance(), nil
+	}
+	shell := root.Shell.EnsureDefaults()
+	for _, floating := range shell.Floatings {
+		if floating.Pane.TerminalID != terminalID || floating.FitMode != state.FloatingFitAuto {
+			continue
+		}
+		next, effects := reduceFloatingCommand(root, state.FloatingCommand{
+			Action:   state.FloatingCommandRefreshAutoFit,
+			TargetID: floating.ID,
+			Source:   state.PaneCommandSourceTest,
+		})
+		if len(effects) == 0 {
+			return next, nil
+		}
+		return next, effects
+	}
+	return root.Advance(), nil
+}
+
+func liveResizeTerminalID(root state.Root, msg LiveResizeResultMsg) string {
+	if msg.ViewID != "" {
+		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
+			return binding.TerminalID
+		}
+	}
+	return root.Session.TerminalID
+}
+
 func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 	event := msg.Event
 	if event.TerminalID == "" {
@@ -420,6 +451,7 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 			event.Snapshot.TerminalID = event.TerminalID
 		}
 		root.Surface = root.Surface.ApplySnapshot(event.Snapshot)
+		return maybeRefreshFloatingAutoFit(root, event.Snapshot.TerminalID)
 	}
 	return root.Advance(), nil
 }

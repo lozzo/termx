@@ -306,6 +306,20 @@ func reduceFloatingOverviewInput(root state.Root, event input.InputEvent) (state
 				return ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandSummon, Index: index, Source: state.PaneCommandSourceKeyboard}}
 			}}}
 		}
+		switch event.Char {
+		case "s":
+			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+				return ShellContentActionMsg{ActionID: render.ActionFloatingShowAll.String(), Row: -1}
+			}}}
+		case "c":
+			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+				return ShellContentActionMsg{ActionID: render.ActionFloatingCollapseAll.String(), Row: -1}
+			}}}
+		case "x":
+			return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg {
+				return ShellContentActionMsg{ActionID: render.ActionFloatingClose.String(), Row: -1}
+			}}}
+		}
 		return root, []Effect{handledEffect{}}
 	default:
 		return root, []Effect{handledEffect{}}
@@ -691,7 +705,7 @@ func reduceShellActionIntent(root state.Root, intent input.Intent) (state.Root, 
 		msg = ShellClearToastsMsg{}
 	case input.ShellActionCloseToast:
 		msg = ShellCloseCurrentToastMsg{}
-	case input.ShellActionFloatingNew, input.ShellActionFloatingCtrl, input.ShellActionFloatingMove, input.ShellActionFloatingSize:
+	case input.ShellActionFloatingNew, input.ShellActionFloatingCtrl, input.ShellActionFloatingGroup, input.ShellActionFloatingMove, input.ShellActionFloatingSize:
 		command, ok := floatingCommandFromIntent(root, intent)
 		if !ok {
 			return root, []Effect{handledEffect{}}
@@ -879,6 +893,18 @@ func floatingCommandFromIntent(root state.Root, intent input.Intent) (state.Floa
 			command.DeltaH = -1
 		case "tall":
 			command.DeltaH = 1
+		default:
+			return state.FloatingCommand{}, false
+		}
+		return command, true
+	case input.ShellActionFloatingGroup:
+		switch intent.Reason {
+		case "toggle-all":
+			command.Action = state.FloatingCommandToggleAll
+		case "fit":
+			command.Action = state.FloatingCommandFit
+		case "toggle-auto-fit":
+			command.Action = state.FloatingCommandToggleAutoFit
 		default:
 			return state.FloatingCommand{}, false
 		}

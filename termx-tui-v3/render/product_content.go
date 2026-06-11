@@ -286,9 +286,19 @@ func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) Conte
 		lines = append(lines, Line{Cells: []Cell{styledCell("No floating panes", StyleMuted)}})
 	}
 	actionOffset := len(lines)
-	lines = append(lines, contentActionLine("summon", "Open Selected"))
+	lines = append(lines,
+		contentActionLine("summon", "Open Selected"),
+		contentActionLine("show-all", "Show All"),
+		contentActionLine("collapse-all", "Collapse All"),
+		contentActionLine("close", "Close Selected"),
+	)
 	regions := floatingOverviewHitRegions(rows, rowOffset)
-	regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingSummon.String()})
+	regions = append(regions,
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingSummon.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingShowAll.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingCollapseAll.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 3, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingClose.String()},
+	)
 	return ContentVM{
 		Kind:       ContentFloatingOverview,
 		Lines:      lines,
@@ -697,6 +707,10 @@ func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
 	if row.Collapsed {
 		collapsed = "collapsed"
 	}
+	fitMode := "manual"
+	if row.FitMode == state.FloatingFitAuto {
+		fitMode = "auto-fit"
+	}
 	terminalID := row.TerminalID
 	if terminalID == "" {
 		terminalID = "unbound"
@@ -710,6 +724,8 @@ func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
 		tokenCell(active, style),
 		NewCell(" "),
 		tokenCell(collapsed, StyleMuted),
+		NewCell(" "),
+		tokenCell(fitMode, StyleMuted),
 		NewCell(" "),
 		styledCell(terminalID, StyleMuted),
 		NewCell(" "),

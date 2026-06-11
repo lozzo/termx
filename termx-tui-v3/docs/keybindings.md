@@ -176,13 +176,13 @@
 | pane | `s LOCK` | 已实现 | 与 resize mode `s LOCK` 复用同一 view-local terminal layout command；无 active terminal view 时显示 reducer-owned toast |
 | resize | `s LOCK`、`Space LAYOUT`、`Shift+WASD/Shift+Arrow PAN`、`0/$/^/B ALIGN`、`m/|/_ CENTER`、`r RESET` | 已实现 | 状态挂在 `TerminalViewBinding.Layout`，键盘与 footer action 走统一 semantic command，render projector 展示 layout metadata |
 | floating | `o OVERVIEW`、`1-9 SUMMON` | 已实现 | overview 是 reducer-owned overlay state；floating mode 与 overview content action 统一走 `FloatingCommandSummon` |
-| floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 待实现 | 缺 floating group collapse、fit 与 auto-fit state，排入 215D1 |
+| floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 已实现 | 统一走 `FloatingCommandToggleAll`、`FloatingCommandFit`、`FloatingCommandToggleAutoFit`；fit 基于当前 terminal live/session 尺寸，auto-fit 会在后续 live 尺寸变化时自动刷新 floating rect |
 | display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 已核验 | 已走 authoritative `HistoryWindow` 上的 copy reducer；`Enter` 复制 selection 后退出 copy mode；见 `termx-tui-v3/app/integration_test.go` |
 | display | `p/P PASTE`、`H HISTORY` | 阻塞 | clipboard paste/history overlay 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
 | picker | `Tab SPLIT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 已实现 | 键盘分发复用 selected item、`ActionSpec` 和 `ShellContentActionMsg`；`Ctrl-X` 走 terminal inventory remove service/effect/result path，不伪装成 kill |
 | terminal manager | `Ctrl-T TAB`、`Ctrl-O FLOAT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 已实现 | attach tab/floating、edit、kill、delete 均走 overlay action/reducer/effect；delete 成功后清理 TerminalView、pane/floating binding、session/live surface |
 | workspace picker | `Ctrl-N NEW`、`Ctrl-R RENAME`、`Ctrl-X REMOVE`、`Ctrl-D DETACH`、`Ctrl-Z ZOOM` | 已实现 | Workbench Tree 键盘动作统一复用 content action reducer；detach 同步清理 pane terminal view binding |
-| floating overview | `Up/Down`、`Enter OPEN`、`1-9 SUMMON`、`Esc BACK` | 已实现 | selection/open/summon 走 reducer-owned floating overview state；`s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE` 仍排入 215D1 |
+| floating overview | `Up/Down`、`Enter OPEN`、`1-9 SUMMON`、`s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE`、`Esc BACK` | 已实现 | selection/open/summon/show-all/collapse-all/close 都走 reducer-owned floating overview state 与统一 `FloatingCommand` |
 | clipboard history | 全部 | 阻塞 | 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
 
 ## 未展示但可触发

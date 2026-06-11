@@ -14,6 +14,7 @@ func FloatingOverviewItems(root Root) []FloatingOverviewItem {
 			Z:          floating.Z,
 			Active:     floating.ID == shell.ActiveFloatingID,
 			Collapsed:  floating.Collapsed,
+			FitMode:    floating.FitMode,
 		}
 		if item.Title == "" {
 			item.Title = floating.ID

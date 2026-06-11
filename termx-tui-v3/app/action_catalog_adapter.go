@@ -44,6 +44,17 @@ func actionIDForShellAction(action input.ShellAction, reason string) (render.Act
 		default:
 			return "", false
 		}
+	case input.ShellActionFloatingGroup:
+		switch reason {
+		case "toggle-all":
+			return render.ActionFloatingToggleAll, true
+		case "fit":
+			return render.ActionFloatingFit, true
+		case "toggle-auto-fit":
+			return render.ActionFloatingAutoFit, true
+		default:
+			return "", false
+		}
 	case input.ShellActionFloatingMove:
 		switch reason {
 		case "left":

@@ -203,14 +203,14 @@
 | 切片 | 状态 | 范围 | 白话说明 |
 | --- | --- | --- | --- |
 | 背景里程碑：0-215H3 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、`termx-proto/`、相关文档 | 默认入口、runtime、styled render framework、TerminalView/Attachment 基线、resize ownership、history MVP H1-H3 都已经收口；更细的历史细节需要时去看 git 提交和架构文档 |
-| 215D1. SK floating group commands | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 补齐 floating group 操作：floating `v ALL`、`= FIT`、`s AUTO-FIT`，以及 overview `s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE`；这些动作必须进入 reducer-owned floating state，不能只做 render 标记 |
+| 215D1. SK floating group commands | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 已补齐 floating `v ALL`、`= FIT`、`s AUTO-FIT` 与 overview `s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE`；全部进入 reducer-owned floating state 与统一 `FloatingCommand`，`FIT/AUTO-FIT` 基于 terminal live/session 尺寸工作，auto-fit 在后续 live 尺寸变化时会刷新 floating rect；相关 reducer/render/storage harness 已通过 |
 | 215F. SK shortcut integration and tmux harness | 待开始 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 补黑盒证据：同 terminal 多 pane/floating、pane lock、terminal remove、floating overview/summon/group command 都要走真实 reducer/effect/message；输入只进 active view；owner resize 到 PTY；follower 不改 size |
 | 215E. SK clipboard paste 与 history overlay | 阻塞 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 暂不执行。原因：这条线依赖 live/history 边界、authoritative history contract、binding 和 harness 已经打稳；现在先不重启 overlay/paste 主线 |
 
 当前下一步：
 
-- 先做 `215D1 floating group commands`
-- 然后做 `215F shortcut integration and tmux harness`
+- `215D1 floating group commands` 已完成
+- 下一步做 `215F shortcut integration and tmux harness`
 - `215E clipboard paste 与 history overlay` 继续保持阻塞，除非先改本文件
 
 ## 6. 必做证据
@@ -289,6 +289,6 @@
 - 默认本地入口已经切到 `termx-core-v2/` 和 `termx-tui-v3/`；旧本地路径只允许走 `termx legacy ...`，remote 仍按 legacy/fallback 隔离。
 - `AppRuntime` 已是事件驱动批处理循环；真实 CLI attach 不再有外层 `16ms` 轮询；resize latest-wins 和 owner 转移链路已经收口。
 - `215H1`、`215H2`、`215H3` 已完成，live/history 边界、core-v2 authoritative history stale guard、tui-v3 active-view history binding 都已经落地。
-- 当前主线重新回到非 history 快捷键：先 `215D1`，再 `215F`。
+- 当前主线重新回到非 history 快捷键：`215D1` 已完成，下一步是 `215F`。
 - `215E clipboard paste 与 history overlay` 继续阻塞，除非后续先改本文件明确重启。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。

@@ -308,6 +308,98 @@ func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeWithWorkbenchPersistsFloatingCommand(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "floating", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 2, Y: 2, W: 30, H: 8},
+		BoundsW:  80,
+		BoundsH:  24,
+	})
+
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{Storage: storage},
+	)
+
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandCollapseAll, Source: state.PaneCommandSourceTest}}); err != nil {
+		t.Fatalf("post floating command: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(storage.Saves) != 1 {
+		t.Fatalf("floating command should persist workbench snapshot, saves=%#v", storage.Saves)
+	}
+	if len(storage.Saves[0].Snapshot.Floatings) != 1 || !storage.Saves[0].Snapshot.Floatings[0].Collapsed {
+		t.Fatalf("persisted floating snapshot should include collapsed state, snapshot=%#v", storage.Saves[0].Snapshot.Floatings)
+	}
+}
+
+func TestInteractiveRuntimeFloatingAutoFitRefreshDoesNotPersist(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
+	root := state.Root{
+		Shell:    state.DefaultShell(),
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Surface:  state.TerminalSurfaceStore{Surfaces: map[string]state.LiveSurfaceSnapshot{"term-1": {TerminalID: "term-1", Cols: 40, Rows: 12, State: state.TerminalLiveAttached}}},
+	}
+	root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "floating", Kind: state.PaneTerminalLive, TerminalID: "term-1"},
+		Rect:     state.FloatingRect{X: 2, Y: 2, W: 20, H: 8},
+		BoundsW:  100,
+		BoundsH:  30,
+	})
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-1", 7, 40, 12, state.TerminalResizeRoleOwner, "surface", state.TerminalFloatingViewID("floating-1"), true))
+
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{Storage: storage},
+	)
+
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: "floating-1", Source: state.PaneCommandSourceTest}}); err != nil {
+		t.Fatalf("enable auto-fit: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain enable auto-fit: %v", err)
+	}
+	storage.Saves = nil
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Cols: 60, Rows: 20, State: state.TerminalLiveAttached}}); err != nil {
+		t.Fatalf("post live surface update: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain live surface update: %v", err)
+	}
+
+	floating := runtime.State().Shell.EnsureDefaults().Floatings[0]
+	if floating.AutoFit.Cols != 60 || floating.AutoFit.Rows != 20 || floating.Rect.W != 62 || floating.Rect.H != 22 {
+		t.Fatalf("auto-fit refresh should update floating geometry from live size, got %#v", floating)
+	}
+	if len(storage.Saves) != 0 {
+		t.Fatalf("auto-fit refresh should not persist workbench snapshot, saves=%#v", storage.Saves)
+	}
+}
+
 func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	watchCh := make(chan services.WorkbenchStorageEvent)
