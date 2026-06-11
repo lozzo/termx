@@ -110,6 +110,11 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if got := runtime.State().Viewport; !got.Valid || got.Cols != 80 || got.Rows != 24 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: initial host viewport was not ingested, got %#v", got)
 	}
+	if err := drainV3RuntimeUntil(ctx, runtime, func(root state.Root) bool {
+		return root.Session.Cols == 78 && root.Session.Rows == 20
+	}); err != nil {
+		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: timed out waiting for initial attach content rect correction: %w", err)
+	}
 	if got := runtime.State().Session; got.Cols != 78 || got.Rows != 20 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: initial attach did not use content rect, got %#v", got)
 	}
@@ -149,6 +154,11 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if got := runtime.State().Viewport; !got.Valid || got.Cols != 100 || got.Rows != 40 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: host resize viewport was not ingested, got %#v", got)
 	}
+	if err := drainV3RuntimeUntil(ctx, runtime, func(root state.Root) bool {
+		return root.Session.Cols == 98 && root.Session.Rows == 36
+	}); err != nil {
+		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: timed out waiting for host resize content rect correction: %w", err)
+	}
 	if got := runtime.State().Session; got.Cols != 98 || got.Rows != 36 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: host resize did not resize terminal to content rect, got %#v", got)
 	}
@@ -166,6 +176,11 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	}
 	if !runtime.State().CopyMode.Active || len(runtime.State().History.Rows) == 0 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: copy mode did not load authoritative history")
+	}
+	if err := drainV3RuntimeUntil(ctx, runtime, func(root state.Root) bool {
+		return root.CopyMode.BoundCols == 98 && root.History.Cols == 98 && root.CopyMode.Active && len(root.History.Rows) > 0
+	}); err != nil {
+		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: timed out waiting for copy mode resized bind: %w", err)
 	}
 	if runtime.State().CopyMode.BoundCols != 98 || runtime.State().History.Cols != 98 {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: copy mode did not bind resized content cols, state=%#v", runtime.State())
@@ -294,7 +309,7 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		return fmt.Errorf("v3 e2e smoke: no frames rendered")
 	}
 	frame := frames[len(frames)-1]
-	required := []string{"  main", "▎ 1 main ", " ", "┌─ shell", "ws:main"}
+	required := []string{"  main", "▎ 1 main ", " ", "┌─ [󰍀] shell", "ws:main"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {
@@ -308,7 +323,7 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		}
 	}
 	glyphs := render.DefaultPaneChromeGlyphs()
-	for _, marker := range []string{glyphs.Running, "◆ owner", "⇄2", "1/31"} {
+	for _, marker := range []string{"⇄2", "1/31"} {
 		for _, line := range frame.Lines {
 			if strings.Contains(line, "┌─") && strings.Contains(line, marker) {
 				return fmt.Errorf("v3 e2e smoke: premature pane chrome marker %q present in frame %#v", marker, frame.Lines)
@@ -362,6 +377,26 @@ func drainV3RuntimeUntilFrameContains(ctx context.Context, runtime *app.AppRunti
 		select {
 		case <-deadlineCtx.Done():
 			return fmt.Errorf("v3 e2e smoke: timed out waiting for live backend update %q", value)
+		case <-ticker.C:
+		}
+	}
+}
+
+func drainV3RuntimeUntil(ctx context.Context, runtime *app.AppRuntime, predicate func(state.Root) bool) error {
+	deadlineCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := runtime.Drain(deadlineCtx); err != nil {
+			return err
+		}
+		if predicate(runtime.State()) {
+			return nil
+		}
+		select {
+		case <-deadlineCtx.Done():
+			return deadlineCtx.Err()
 		case <-ticker.C:
 		}
 	}

@@ -188,10 +188,15 @@ func (store TerminalViewStore) DetachPane(paneID string) TerminalViewStore {
 	if viewID == "" {
 		return store
 	}
+	binding, ok := store.Views[viewID]
+	if !ok {
+		return store
+	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
 	delete(store.Views, viewID)
 	delete(store.PaneViews, paneID)
+	store.promoteReplacementOwnerLocked(binding.TerminalID)
 	return store
 }
 
@@ -200,10 +205,15 @@ func (store TerminalViewStore) DetachFloating(floatingID string) TerminalViewSto
 	if viewID == "" {
 		return store
 	}
+	binding, ok := store.Views[viewID]
+	if !ok {
+		return store
+	}
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
 	delete(store.Views, viewID)
 	delete(store.FloatingViews, floatingID)
+	store.promoteReplacementOwnerLocked(binding.TerminalID)
 	return store
 }
 
@@ -275,6 +285,29 @@ func (store TerminalViewStore) OwnerBinding(terminalID string) (TerminalViewBind
 		}
 	}
 	return TerminalViewBinding{}, false
+}
+
+func (store TerminalViewStore) promoteReplacementOwnerLocked(terminalID string) {
+	if terminalID == "" {
+		return
+	}
+	if _, ok := store.OwnerBinding(terminalID); ok {
+		return
+	}
+	for viewID, binding := range store.Views {
+		if binding.TerminalID != terminalID {
+			continue
+		}
+		binding.ResizeRole = TerminalResizeRoleOwner
+		binding.CanResize = true
+		// owner 删除后的接任 view 不能沿用旧的 desired size；
+		// 否则 close/unzoom 这类布局回弹会被误判成“尺寸未变”，漏发真实 PTY resize。
+		binding.DesiredCols = 0
+		binding.DesiredRows = 0
+		store.Views[viewID] = binding
+		store.demoteResizeOwnersLocked(terminalID, viewID)
+		return
+	}
 }
 
 func (store TerminalViewStore) TransferResizeOwner(viewID string) TerminalViewStore {

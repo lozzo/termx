@@ -32,7 +32,7 @@ visual compare smoke 会生成：
 
 - `current.ansi`：当前 v3 固定视觉帧在 tmux 中的 ANSI capture。
 - `current.txt`：当前 v3 固定视觉帧在 tmux 中的 plain capture。
-- `target.txt`：来自 `unicode-ui-wireframes.md` 和 `tuiv2` chrome slot contract 的目标基线。
+- `target.txt`：来自 `ui-interaction-spec.md` 第 16 节线稿与 `tuiv2` chrome slot contract 的目标基线。
 - `diff.txt`：按固定 viewport 逐行对比的 target/current 差异。
 - `style.txt`：按固定语义探针记录关键 cell 的 SGR 状态。
 - `style.diff.txt`：关键 style 探针差异。

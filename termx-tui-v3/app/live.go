@@ -528,6 +528,8 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 		}
 	}
 	return root, []Effect{FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Resize(ctx, services.TerminalResizeRequest{
 				TerminalID:   session.TerminalID,

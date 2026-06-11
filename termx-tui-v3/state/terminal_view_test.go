@@ -30,8 +30,12 @@ func TestTerminalViewStoreDetachAndKillHaveDifferentScope(t *testing.T) {
 	if _, ok := store.PaneBinding("pane-1"); ok {
 		t.Fatal("detached pane should lose its view binding")
 	}
-	if _, ok := store.PaneBinding("pane-2"); !ok {
+	second, ok := store.PaneBinding("pane-2")
+	if !ok {
 		t.Fatal("sibling pane binding should survive detach")
+	}
+	if second.ResizeRole != TerminalResizeRoleOwner || !second.CanResize {
+		t.Fatalf("sibling pane should inherit resize owner after owner detach, got %#v", second)
 	}
 
 	store = store.RemoveTerminal("term-1")

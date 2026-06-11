@@ -302,6 +302,7 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 	host.SetSize(140, 40)
 	shell := state.DefaultShell()
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: state.DefaultTabID})
 	activeShellPaneID := shell.ActivePaneID
 	shell = shell.
 		SetPanelPresentation(state.PanelPresentationSplitLine).

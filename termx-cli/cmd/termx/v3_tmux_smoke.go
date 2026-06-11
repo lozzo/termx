@@ -1009,20 +1009,20 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 
 func v3VisualTargetPlain() string {
 	lines := []string{
-		"  main 1 main  ▎ 2 logs  ",
+		"  main ▎ 1 main  2 logs  ",
 		"┌─ shell ─────────────────────────────────────────────────────────────────────────────[]─[]─[]─[]──┬─ logs ────────────────────────[]─┐",
 		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                              ····················│ visual review baseline       ·····│",
 		"│> make test                                                                       ····················│ target visual mismatch       ·····│",
 		"│ok   termx-tui-v3/render                                                          ····················│ emoji 🚀 and 中文            ·····│",
 		"│>                                                                                 ····················│                              ·····│",
 		"│                                                                                  ····················│                              ·····│",
-		"│                                                                                  ····················│ ┌───────────────────[]─[]─┐·····│",
-		"│                                                                                  ····················│ │ No terminal attached      │·····│",
+		"│                                                                                  ····················│ ┌───────────[]─[]─[]─[]─┐·····│",
+		"│                                                                                  ····················│ │        unconnected        │·····│",
 		"│                                                                                  ····················│ │                           │·····│",
-		"│                                                                                  ····················│ │ Attach existing           │·····│",
-		"│                                                                                  ····················│ │ New terminal              │·····│",
-		"│                                                                                  ····················│ │ Terminal Pool             │·····│",
-		"│                                                                                  ····················│ │ Close                     │·····│",
+		"│                                                                                  ····················│ │      Attach existing      │·····│",
+		"│                                                                                  ····················│ │        New terminal       │·····│",
+		"│                                                                                  ····················│ │       Terminal Pool       │·····│",
+		"│                                                                                  ····················│ │           Close           │·····│",
 		"│                                                                                  ····················│ └──────────────────────────v┘·····│",
 		"│                                                                                  ····················│                              ·····│",
 		"│                                                                                  ····················│                              ·····│",
@@ -1206,9 +1206,9 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 	}
 	for row := 0; row < height; row++ {
 		for col, glyph := range visualLineGlyphs(lines[row], width) {
-			// 小圆点是 terminal extent 外占位符，视觉上归入 muted content hint。
+			// 当前视觉审计基线里，小圆点跟随内容层样式，不再单独强制投影成 muted hint。
 			if glyph == '·' {
-				styleMap[row][col] = visualStyleMuted
+				styleMap[row][col] = visualStylePlain
 				continue
 			}
 			if glyph != 0 && glyph != ' ' {
@@ -1259,7 +1259,7 @@ func visualTargetStyleMap(targetPlain string, width int, height int) [][]visualS
 	// 固定视觉基线的目标样式来自 tuiv2-style 单行 tab/status bar 与对象 chrome 语义区域。
 	fill(1, 1, visibleLineWidth(1), visualStyleStatus)
 	fillRangesForSubstrings(1, visualStyleWarn, "")
-	fillRangesForSubstrings(1, visualStyleMuted, " 1 main ")
+	fillRangesForSubstrings(1, visualStyleMuted, " 2 logs ")
 	fillRangesForSubstrings(1, visualStyleAccent, "▎")
 
 	fill(2, 1, 103, visualStyleAccent)
@@ -1467,8 +1467,8 @@ func visualLineSubstringSpans(line string, marker string) [][2]int {
 func visualStyleExpectations() []visualStyleExpectation {
 	return []visualStyleExpectation{
 		{Name: "header-workspace-bg", Row: 1, Col: 1, Glyph: " ", MustHave: []string{"1", "38;2;212;192;244", "48;2;60;46;85"}},
-		{Name: "active-tab-marker", Row: 1, Col: 18, Glyph: "▎", MustHave: []string{"1", "38;2;169;112;255", "48;2;42;34;59"}},
-		{Name: "inactive-tab-muted", Row: 1, Col: 9, Glyph: "1", MustHave: []string{"38;2;130;113;155", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
+		{Name: "active-tab-marker", Row: 1, Col: 9, Glyph: "▎", MustHave: []string{"1", "38;2;169;112;255", "48;2;42;34;59"}},
+		{Name: "inactive-tab-muted", Row: 1, Col: 20, Glyph: "2", MustHave: []string{"38;2;130;113;155", "48;2;8;8;13"}, MustAvoid: []string{"2;38;2;119;113;127"}},
 		{Name: "pane-action-accent", Row: 2, Col: 88, Glyph: "", MustHave: []string{"1", "38;2;169;112;255"}},
 		{Name: "inactive-logs-muted", Row: 2, Col: 104, Glyph: "┬", MustHave: []string{"2", "38;2;119;113;127"}, MustAvoid: []string{"38;2;169;112;255"}},
 		{Name: "right-content-muted", Row: 3, Col: 104, Glyph: "│", MustHave: []string{"2", "38;2;119;113;127"}},

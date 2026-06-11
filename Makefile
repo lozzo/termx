@@ -205,7 +205,7 @@ test-cli-default-smoke:
 		echo "default core-v2 daemon did not create socket" >&2; \
 		exit 1; \
 	fi; \
-	id="$$("$$tmp/termx" --socket "$$socket" --log-file "$$log" new --name default-smoke -- smoke-shell)"; \
+	id="$$("$$tmp/termx" --socket "$$socket" --log-file "$$log" new --name default-smoke -- sleep 30)"; \
 	test -n "$$id"; \
 	"$$tmp/termx" --socket "$$socket" --log-file "$$log" ls | grep "$$id" >/dev/null; \
 	"$$tmp/termx" --socket "$$socket" --log-file "$$log" kill "$$id"; \

@@ -162,6 +162,7 @@ type Host struct {
 
 	inputBuffer int
 	events      chan input.InputEvent
+	ready       chan struct{}
 	sink        *FrameSink
 	themeProbe  bool
 
@@ -191,6 +192,7 @@ func New(options ...Option) *Host {
 		option(host)
 	}
 	host.events = make(chan input.InputEvent, host.inputBuffer)
+	host.ready = make(chan struct{}, 1)
 	host.sink = NewFrameSink(host.output)
 	return host
 }
@@ -315,6 +317,11 @@ func (host *Host) InputEvents() <-chan input.InputEvent {
 	return host.events
 }
 
+// EventsReady 只负责唤醒 runtime，不直接消费输入事件。
+func (host *Host) EventsReady() <-chan struct{} {
+	return host.ready
+}
+
 // FrameSink 返回真实 TTY frame sink。
 func (host *Host) FrameSink() render.FrameSink {
 	return host.sink
@@ -333,6 +340,7 @@ func (host *Host) readInput(ctx context.Context, reader io.Reader) {
 			for _, event := range parser.Feed(buffer[:n]) {
 				select {
 				case host.events <- event:
+					host.signalReady()
 				case <-ctx.Done():
 					return
 				}
@@ -363,6 +371,7 @@ func (host *Host) readResizeSignals(ctx context.Context, done <-chan struct{}, s
 			event := input.InputEvent{Kind: input.EventKindResize, Cols: cols, Rows: rows}
 			select {
 			case host.events <- event:
+				host.signalReady()
 			case <-ctx.Done():
 				return
 			case <-done:
@@ -396,5 +405,12 @@ func defaultResizeSignalFactory() (<-chan os.Signal, func()) {
 	signal.Notify(signals, syscall.SIGWINCH)
 	return signals, func() {
 		signal.Stop(signals)
+	}
+}
+
+func (host *Host) signalReady() {
+	select {
+	case host.ready <- struct{}{}:
+	default:
 	}
 }

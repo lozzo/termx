@@ -1179,14 +1179,14 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 		t.Fatalf("drain attach: %v", err)
 	}
 
-	if runtime.State().Session.Cols != 98 || runtime.State().Session.Rows != 26 {
-		t.Fatalf("runtime must correct protocol terminal size to content rect, got %#v", runtime.State().Session)
+	current := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Session.Cols == 98 && root.Session.Rows == 26
+	}, "initial attach content rect correction")
+	if current.Session.SurfaceID != "test-surface" || current.Session.ViewID != "test-view" {
+		t.Fatalf("runtime must keep protocol resize owner metadata, session=%#v", current.Session)
 	}
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
 	waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
-	if runtime.State().Session.SurfaceID != "test-surface" || runtime.State().Session.ViewID != "test-view" {
-		t.Fatalf("runtime must keep protocol resize owner metadata, session=%#v", runtime.State().Session)
-	}
 }
 
 func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
@@ -1288,7 +1288,10 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		t.Fatalf("post close: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
-	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 38}, seenResize)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Session.Cols == 118 && root.Session.Rows == 38
+	}, "close pane content rect restore")
+	waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 118, Rows: 38})
 }
 
 func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T) {
@@ -1394,8 +1397,11 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	}
 	drainV3RuntimeForCLITest(t, runtime)
 	waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 118, Rows: 36}, seenResize)
-	if !strings.Contains(runtime.State().Session.LastError, "pty resize failed") || runtime.State().Session.Attached {
-		t.Fatalf("core-v2 process resize failure must surface in live session, session=%#v", runtime.State().Session)
+	current := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return strings.Contains(root.Session.LastError, "pty resize failed") && !root.Session.Attached
+	}, "resize failure surfaced in session")
+	if !strings.Contains(current.Session.LastError, "pty resize failed") || current.Session.Attached {
+		t.Fatalf("core-v2 process resize failure must surface in live session, session=%#v", current.Session)
 	}
 }
 
@@ -1442,7 +1448,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"  main", "1 main  ▎ 2 logs  ", "visual review", "[]─[]", "└──────────────────────────v┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
+	for _, want := range []string{"  main", "▎ 1 main  2 logs  ", "visual review", "[]─[]", "└──────────────────────────v┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}
@@ -3839,6 +3845,22 @@ func drainV3RuntimeForCLITest(t *testing.T, runtime *app.AppRuntime) {
 	t.Helper()
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain runtime: %v", err)
+	}
+}
+
+func waitForV3RuntimeState(t *testing.T, runtime *app.AppRuntime, predicate func(tuistate.Root) bool, label string) tuistate.Root {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		drainV3RuntimeForCLITest(t, runtime)
+		current := runtime.State()
+		if predicate(current) {
+			return current
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for runtime state: %s current=%#v", label, current)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

@@ -63,6 +63,9 @@ func (NoopEffect) isEffect() {}
 type FuncEffect struct {
 	Token CancelToken
 	Async bool
+	// ForceSyncInTests 只给 deterministic harness 使用：真实 runtime 仍按 Async 异步执行，
+	// 但 SyncEffectRunner 需要同步跑完该 effect，避免测试必须引入额外 goroutine 等待。
+	ForceSyncInTests bool
 	Run   func(context.Context) Msg
 }
 
@@ -139,6 +142,7 @@ func ComposeReducers(reducers ...Reducer) Reducer {
 type TerminalHost interface {
 	Size() (cols int, rows int, err error)
 	InputEvents() <-chan input.InputEvent
+	EventsReady() <-chan struct{}
 	FrameSink() render.FrameSink
 }
 
@@ -156,6 +160,7 @@ var (
 // AppRuntime 是 TUI-v3 自有单线程消息循环。
 type AppRuntime struct {
 	mu                  sync.Mutex
+	wake                chan struct{}
 	state               state.Root
 	reduce              Reducer
 	render              RenderFunc
@@ -230,6 +235,7 @@ func NewAppRuntime(
 	}
 	return &AppRuntime{
 		state:             initial,
+		wake:              make(chan struct{}, 1),
 		reduce:            reducer,
 		render:            renderer,
 		host:              host,
@@ -257,11 +263,38 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	defer func() {
 		runtime.running = false
 	}()
-	runtime.ingestHostInitialSize()
-	runtime.ingestHostInput()
-	runtime.enqueueDueToastTick()
+	return runtime.drainBatch(ctx)
+}
+
+// Run 进入真正的事件驱动主循环：处理一批消息后等待下一次唤醒，
+// 不依赖外层固定 sleep 轮询。
+func (runtime *AppRuntime) Run(ctx context.Context) error {
+	runtime.running = true
+	defer func() {
+		runtime.running = false
+	}()
+	for {
+		if err := runtime.drainBatch(ctx); err != nil {
+			return err
+		}
+		if runtime.quit {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !runtime.waitForWake(ctx) {
+			return ctx.Err()
+		}
+	}
+}
+
+func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 	needsRender := false
 	for {
+		runtime.ingestHostInitialSize()
+		runtime.ingestHostInput()
+		runtime.enqueueDueToastTick()
 		runtime.enqueueDueToastTick()
 		msg, ok := runtime.dequeue()
 		if !ok {
@@ -295,6 +328,10 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
 		needsRender = true
+		if _, ok := msg.(HostResizeMsg); ok {
+			runtime.renderFrame()
+			needsRender = false
+		}
 		if runtime.shouldWriteFirstFrame() {
 			runtime.renderFrame()
 			needsRender = false
@@ -432,10 +469,64 @@ func (runtime *AppRuntime) enqueue(msg Msg) {
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	if runtime.coalesceQueuedHostResize(msg) {
+		runtime.signalWakeLocked()
+		return
+	}
 	if runtime.coalesceQueuedLiveUpdate(msg) {
+		runtime.signalWakeLocked()
 		return
 	}
 	runtime.queue = append(runtime.queue, msg)
+	runtime.signalWakeLocked()
+}
+
+func (runtime *AppRuntime) coalesceQueuedHostResize(msg Msg) bool {
+	incoming, ok := msg.(HostResizeMsg)
+	if !ok {
+		return false
+	}
+	first := -1
+	filtered := runtime.queue[:0]
+	for _, queued := range runtime.queue {
+		if _, ok := queued.(HostResizeMsg); ok {
+			if first < 0 {
+				first = len(filtered)
+			}
+			continue
+		}
+		filtered = append(filtered, queued)
+	}
+	runtime.queue = filtered
+	if first < 0 {
+		return false
+	}
+	runtime.insertAtLocked(first, incoming)
+	return true
+}
+
+func (runtime *AppRuntime) dropQueuedHostResizeLocked() {
+	filtered := runtime.queue[:0]
+	for _, queued := range runtime.queue {
+		if _, ok := queued.(HostResizeMsg); ok {
+			continue
+		}
+		filtered = append(filtered, queued)
+	}
+	runtime.queue = filtered
+}
+
+func (runtime *AppRuntime) insertAtLocked(index int, msg Msg) {
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(runtime.queue) {
+		runtime.queue = append(runtime.queue, msg)
+		return
+	}
+	runtime.queue = append(runtime.queue, nil)
+	copy(runtime.queue[index+1:], runtime.queue[index:])
+	runtime.queue[index] = msg
 }
 
 func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
@@ -527,7 +618,11 @@ func (runtime *AppRuntime) prepend(msg Msg) {
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	if _, ok := msg.(HostResizeMsg); ok {
+		runtime.dropQueuedHostResizeLocked()
+	}
 	runtime.queue = append([]Msg{msg}, runtime.queue...)
+	runtime.signalWakeLocked()
 }
 
 func (runtime *AppRuntime) dequeue() (Msg, bool) {
@@ -547,6 +642,73 @@ func (runtime *AppRuntime) currentTime() time.Time {
 		return runtime.now()
 	}
 	return time.Now()
+}
+
+func (runtime *AppRuntime) waitForWake(ctx context.Context) bool {
+	runtime.enqueueDueToastTick()
+	if runtime.ingestHostCurrentSize() {
+		return true
+	}
+	runtime.mu.Lock()
+	hasQueued := len(runtime.queue) > 0
+	wake := runtime.wake
+	runtime.mu.Unlock()
+	if hasQueued {
+		return true
+	}
+	var hostReady <-chan struct{}
+	if runtime.host != nil {
+		hostReady = runtime.host.EventsReady()
+	}
+	var toastC <-chan time.Time
+	if delay := runtime.nextToastWakeDelay(); delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		toastC = timer.C
+	} else if delay == 0 {
+		runtime.enqueueDueToastTick()
+		return true
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-wake:
+		return true
+	case <-hostReady:
+		return true
+	case <-toastC:
+		runtime.enqueueDueToastTick()
+		return true
+	}
+}
+
+func (runtime *AppRuntime) signalWakeLocked() {
+	if runtime.wake == nil {
+		return
+	}
+	select {
+	case runtime.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (runtime *AppRuntime) nextToastWakeDelay() time.Duration {
+	if len(runtime.state.Shell.Toasts) == 0 {
+		return -1
+	}
+	interval := runtime.toastTickInterval
+	if interval <= 0 {
+		interval = defaultToastTickInterval
+	}
+	now := runtime.currentTime()
+	if runtime.lastToastTick.IsZero() {
+		return 0
+	}
+	elapsed := now.Sub(runtime.lastToastTick)
+	if elapsed >= interval {
+		return 0
+	}
+	return interval - elapsed
 }
 
 func (runtime *AppRuntime) renderFrame() {
@@ -973,7 +1135,7 @@ func (runner *SyncEffectRunner) Run(ctx context.Context, effect Effect, post fun
 		if effect.Run == nil {
 			return
 		}
-		if effect.Async {
+		if effect.Async && !effect.ForceSyncInTests {
 			return
 		}
 		if _, canceled := runner.canceled[effect.Token]; canceled && effect.Token != "" {
@@ -1100,6 +1262,7 @@ func (runner *AsyncEffectRunner) Cancel(token CancelToken) {
 // FakeTerminalHost 是 runtime harness 使用的 TerminalHost fake。
 type FakeTerminalHost struct {
 	events chan input.InputEvent
+	ready  chan struct{}
 	sink   *FakeFrameSink
 	cols   int
 	rows   int
@@ -1111,6 +1274,7 @@ func NewFakeTerminalHost(buffer int) *FakeTerminalHost {
 	}
 	return &FakeTerminalHost{
 		events: make(chan input.InputEvent, buffer),
+		ready:  make(chan struct{}, 1),
 		sink:   &FakeFrameSink{},
 	}
 }
@@ -1118,6 +1282,7 @@ func NewFakeTerminalHost(buffer int) *FakeTerminalHost {
 func (host *FakeTerminalHost) SendInput(event input.InputEvent) error {
 	select {
 	case host.events <- event:
+		host.signalReady()
 		return nil
 	default:
 		return ErrInputQueueFull
@@ -1137,6 +1302,7 @@ func (host *FakeTerminalHost) SendResize(cols int, rows int) error {
 	host.SetSize(cols, rows)
 	select {
 	case host.events <- input.InputEvent{Kind: input.EventKindResize, Cols: cols, Rows: rows}:
+		host.signalReady()
 		return nil
 	default:
 		return ErrInputQueueFull
@@ -1147,12 +1313,23 @@ func (host *FakeTerminalHost) InputEvents() <-chan input.InputEvent {
 	return host.events
 }
 
+func (host *FakeTerminalHost) EventsReady() <-chan struct{} {
+	return host.ready
+}
+
 func (host *FakeTerminalHost) FrameSink() render.FrameSink {
 	return host.sink
 }
 
 func (host *FakeTerminalHost) Frames() []render.Frame {
 	return host.sink.Frames()
+}
+
+func (host *FakeTerminalHost) signalReady() {
+	select {
+	case host.ready <- struct{}{}:
+	default:
+	}
 }
 
 // FakeFrameSink 记录 renderer 输出，供 harness 断言。

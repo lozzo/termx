@@ -646,11 +646,56 @@ func TestAppRuntimeIngestsHostResizeEventsAndDeduplicates(t *testing.T) {
 	if got := runtime.State().Viewport; !got.Valid || got.Cols != 100 || got.Rows != 32 {
 		t.Fatalf("expected latest viewport, got %#v", got)
 	}
-	if len(seen) != 2 {
-		t.Fatalf("expected duplicate resize to be filtered before reducer, got %d messages", len(seen))
+	if len(seen) != 1 {
+		t.Fatalf("expected queued host resizes to collapse to latest viewport before reducer, got %d messages", len(seen))
 	}
 	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"100x32"}) {
 		t.Fatalf("expected resize drain to render latest viewport once, got %v", got)
+	}
+}
+
+func TestAppRuntimeRunWakesOnPostedMessageWithoutPollingSleep(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	frameWritten := make(chan struct{}, 1)
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			return root.Advance(), nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{fmt.Sprintf("frame-%d", root.Generation)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	host.sink.onWrite = func() {
+		select {
+		case frameWritten <- struct{}{}:
+		default:
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- runtime.Run(ctx)
+	}()
+
+	if err := runtime.Post(testMsg{Name: "wake"}); err != nil {
+		t.Fatalf("post wake: %v", err)
+	}
+	select {
+	case <-frameWritten:
+	case <-time.After(time.Second):
+		t.Fatal("runtime.Run should wake and render without outer polling sleep")
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation after stopping run loop, got %v", err)
+	}
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-1"}) {
+		t.Fatalf("unexpected rendered frames %v", got)
 	}
 }
 

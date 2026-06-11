@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/app"
@@ -100,13 +99,10 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		return err
 	}
 	for {
-		if err := runtime.Drain(ctx); err != nil {
+		if err := runtime.Run(ctx); err != nil {
 			return err
 		}
-		if ctx.Err() != nil || runtime.Quit() {
-			return ctx.Err()
-		}
-		time.Sleep(16 * time.Millisecond)
+		return ctx.Err()
 	}
 }
 

@@ -1756,6 +1756,55 @@ func TestBatchedPaneCommandsResizeTerminalToLatestContentRect(t *testing.T) {
 	}
 }
 
+func TestClosePaneTransfersResizeOwnerAndRestoresFullContentRect(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 40)
+	runtime := NewLiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 120, Rows: 40}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive},
+	}}); err != nil {
+		t.Fatalf("post split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split: %v", err)
+	}
+	terminal.Resizes = nil
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action: state.PaneCommandClose,
+		Target: state.PaneCommandTarget{PaneID: "pane-2"},
+	}}); err != nil {
+		t.Fatalf("post close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain close: %v", err)
+	}
+
+	if len(terminal.Resizes) == 0 {
+		t.Fatalf("close pane should trigger owner resize to restored content rect")
+	}
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 118 || got.Rows != 36 {
+		t.Fatalf("close pane should restore full content rect, got %#v all=%#v", got, terminal.Resizes)
+	}
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.ResizeRole != state.TerminalResizeRoleOwner || !binding.CanResize {
+		t.Fatalf("remaining pane should own resize after sibling close, binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestLiveAppShowsTerminalServiceError(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachErr: errors.New("attach failed"),
