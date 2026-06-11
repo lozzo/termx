@@ -297,6 +297,8 @@
 
 最新 follow-up：本轮继续把 FE0F 修复收口在最终 TTY serializer 边界；`Cell.TerminalContent` 只标记来自 core-v2 protocol/live/history 的真实 terminal cell，普通 UI/chrome 文本不触发 FE0F `ECH`。styled ANSI 输出对 terminal-content FE0F grapheme 在写出后立即 `ECH(1)` 清掉模型 continuation 物理格，并按模型列 `CHA` 重锚定同 cell 后续文本、后续小白点或边框；不恢复全局 emoji/PUA 猜测，也不改变 core-v2/vterm 的 footprint truth。
 
+最新 follow-up：已按用户给出的 tmux 黑盒步骤补齐 owner/follower emoji+dots smoke：左 pane 重新锁为 owner、右 pane reconnect 为同 terminal follower、把左 owner 缩窄到 `56x28` 后让右 follower 稳定展示 extent dots，再注入连续 `♻️` 验证小白点列对齐。根因确认不是最终 serializer 单独漂移，而是 protocol live surface 中把 FE0F wide-cell continuation placeholder 额外映射成一格可见空白，导致 dots 在 follower 中被提前推左；现已在 protocol adapter 丢弃零宽空 continuation，只保留真实 footprint 起点，tmux 实际坏帧中 dots 起点已从错误的 `46` 列回到与 `size-after:56x28` 一致的 `56` 列，并补齐对应 services 回归与 `termx v3 tmux-emoji-dots-smoke` 命令。
+
 ## 6. 必做 harness
 
 ### 6.1 core-v2 harness

@@ -504,6 +504,50 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	}
 }
 
+func TestProtocolTerminalServiceAdapterSkipsZeroWidthContinuationPlaceholders(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 8, Rows: 1},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				{
+					{Content: "♻️", Width: 2},
+					{Content: "", Width: 0},
+					{Content: "♻️", Width: 2},
+					{Content: "", Width: 0},
+					{Content: "♻️", Width: 2},
+					{Content: "", Width: 0},
+					{Content: "·", Width: 1},
+					{Content: "·", Width: 1},
+				},
+			}},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{
+		TerminalID: "term-1",
+		Cols:       8,
+		Rows:       1,
+	})
+	if err != nil {
+		t.Fatalf("live surface: %v", err)
+	}
+
+	row := result.Snapshot.Screen[0]
+	if len(row) != 5 {
+		t.Fatalf("zero-width continuation placeholders should be dropped from live cells, got %#v", row)
+	}
+	for index, cell := range row[:3] {
+		if cell.Text != "♻️" || cell.Width != 2 {
+			t.Fatalf("emoji cell %d should keep protocol footprint, got %#v row=%#v", index, cell, row)
+		}
+	}
+	if row[3].Text != "·" || row[3].Width != 1 || row[4].Text != "·" || row[4].Width != 1 {
+		t.Fatalf("dots should stay immediately after the FE0F footprint, got %#v", row)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testing.T) {
 	eventCh := make(chan protocol.Event, 1)
 	client := &fakeProtocolTerminalClient{

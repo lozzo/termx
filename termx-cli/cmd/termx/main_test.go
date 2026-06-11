@@ -1775,6 +1775,75 @@ func TestV3TmuxANSISmokeCommandReportsArtifacts(t *testing.T) {
 	}
 }
 
+func TestV3TmuxEmojiDotsSmokeReproducesOwnerFollowerGeometry(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := runV3TmuxEmojiDotsSmoke(ctx, termxBin)
+	if err != nil {
+		t.Fatalf("tmux emoji dots smoke: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(result.ArtifactDir)
+	})
+	if result.TerminalID == "" || result.BeforeSize == "" || result.AfterSize == "" || !result.DotsVisible {
+		t.Fatalf("tmux emoji dots smoke should return terminal ids, PTY sizes and visible dots, got %#v", result)
+	}
+	if result.BeforeSize == result.AfterSize {
+		t.Fatalf("owner/follower resize should change PTY size, before=%s after=%s", result.BeforeSize, result.AfterSize)
+	}
+	for _, marker := range []string{"◆ owner", "◇ follow", "termx-pty-size:size-before:", "termx-pty-size:size-after:", "termx-pty-echo:", "····"} {
+		if !strings.Contains(result.Captured, marker) {
+			t.Fatalf("tmux emoji dots capture missing marker %q:\n%s", marker, result.Captured)
+		}
+	}
+	for _, path := range []string{result.ANSIPath, result.PlainPath, result.DaemonLog, result.TimelinePath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read artifact %s: %v", path, err)
+		}
+		if len(data) == 0 {
+			t.Fatalf("artifact %s should not be empty", path)
+		}
+	}
+	if err := runTmuxCommand(context.Background(), "has-session", "-t", result.Session); err == nil {
+		t.Fatalf("tmux session %s should be cleaned up", result.Session)
+	}
+}
+
+func TestV3TmuxEmojiDotsSmokeCommandReportsArtifacts(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skipf("tmux is not installed: %v", err)
+	}
+	termxBin := buildTermxBinaryForTest(t)
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "tmux-emoji-dots-smoke", "--termx-bin", termxBin})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 tmux-emoji-dots-smoke returned error: %v", err)
+	}
+	text := out.String()
+	if artifactDir := v3TmuxSmokeOutputValue(text, "artifact_dir"); artifactDir != "" {
+		t.Cleanup(func() {
+			_ = os.RemoveAll(artifactDir)
+		})
+	}
+	if !strings.Contains(text, "termx v3 tmux emoji dots smoke ok") ||
+		!strings.Contains(text, "terminal=term-") ||
+		!strings.Contains(text, "session=termx-v3-emoji-dots-") ||
+		!strings.Contains(text, "dots=true") ||
+		!strings.Contains(text, "artifact_dir=") ||
+		!strings.Contains(text, "timeline=") {
+		t.Fatalf("unexpected tmux emoji dots smoke output:\n%s", text)
+	}
+}
+
 func TestV3TmuxVisualCompareCapturesTargetAndDiffArtifacts(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skipf("tmux is not installed: %v", err)

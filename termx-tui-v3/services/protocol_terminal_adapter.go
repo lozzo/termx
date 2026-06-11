@@ -388,13 +388,22 @@ func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
 	if len(cells) == 0 {
 		return nil
 	}
-	out := make([]state.LiveCell, len(cells))
-	for i, cell := range cells {
+	out := make([]state.LiveCell, 0, len(cells))
+	for _, cell := range cells {
 		width := cell.Width
-		if width <= 0 {
+		if width < 0 {
+			width = 0
+		}
+		if width == 0 && cell.Content == "" {
+			// 中文说明：protocol/vterm 会把 wide cell continuation 暴露成零宽空占位。
+			// live surface 只需要保留真实 terminal footprint 起点；continuation 交给渲染侧按前一格 width 物化。
+			// 否则会把同一个 FE0F footprint 额外展开成一格可见空白，导致 follower dots 被提前推左。
+			continue
+		}
+		if width == 0 {
 			width = 1
 		}
-		out[i] = state.LiveCell{
+		out = append(out, state.LiveCell{
 			Text:          cell.Content,
 			Width:         width,
 			FG:            cell.Style.FG,
@@ -407,7 +416,10 @@ func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
 			Strikethrough: cell.Style.Strikethrough,
 			LinkURL:       cell.LinkURL,
 			LinkParams:    cell.LinkParams,
-		}
+		})
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

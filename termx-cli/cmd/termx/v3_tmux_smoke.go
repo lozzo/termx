@@ -64,6 +64,21 @@ type v3TmuxANSISmokeResult struct {
 	ANSICaptured string
 }
 
+type v3TmuxEmojiDotsSmokeResult struct {
+	Session      string
+	TerminalID   string
+	ArtifactDir  string
+	ANSIPath     string
+	PlainPath    string
+	DaemonLog    string
+	SocketPath   string
+	TimelinePath string
+	Captured     string
+	BeforeSize   string
+	AfterSize    string
+	DotsVisible  bool
+}
+
 type v3TmuxVisualCompareResult struct {
 	Session             string
 	ArtifactDir         string
@@ -619,6 +634,249 @@ func runV3TmuxANSISmoke(ctx context.Context, termxBin string) (v3TmuxANSISmokeRe
 		TimelinePath: timelinePath,
 		Captured:     plain,
 		ANSICaptured: ansi,
+	}, nil
+}
+
+func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiDotsSmokeResult, error) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("tmux emoji dots smoke requires tmux in PATH: %w", err)
+	}
+	if termxBin == "" {
+		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("tmux emoji dots smoke requires a termx binary path")
+	}
+	artifactDir, err := os.MkdirTemp("", "termx-v3-tmux-emoji-dots-*")
+	if err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	removeArtifacts := true
+	defer func() {
+		if removeArtifacts {
+			_ = os.RemoveAll(artifactDir)
+		}
+	}()
+
+	socketPath := filepath.Join(artifactDir, "termx-core-v2.sock")
+	daemonLog := filepath.Join(artifactDir, "daemon.log")
+	timelinePath := filepath.Join(artifactDir, "timeline.txt")
+	session := fmt.Sprintf("termx-v3-emoji-dots-%d", time.Now().UnixNano())
+	target := session + ":0.0"
+	appendTimeline := func(format string, args ...any) {
+		line := fmt.Sprintf(format, args...) + "\n"
+		_ = appendFile(timelinePath, line)
+	}
+
+	daemonCtx, stopDaemonCtx := context.WithCancel(ctx)
+	defer stopDaemonCtx()
+	daemonCmd := exec.CommandContext(daemonCtx, termxBin, "--socket", socketPath, "--log-file", daemonLog, "daemon")
+	daemonCmd.Stdout = io.Discard
+	daemonCmd.Stderr = io.Discard
+	if err := daemonCmd.Start(); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("start core-v2 daemon: %w", err)
+	}
+	defer func() {
+		stopDaemonCtx()
+		if daemonCmd.Process != nil {
+			_ = daemonCmd.Process.Kill()
+		}
+		_ = daemonCmd.Wait()
+	}()
+	appendTimeline("daemon start socket=%s log=%s", socketPath, daemonLog)
+	if err := waitForSocket(socketPath, 5*time.Second, func() error {
+		client, dialErr := dialV3Client(socketPath)
+		if dialErr != nil {
+			return dialErr
+		}
+		return client.Close()
+	}); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("daemon ready")
+
+	terminalIDPath := filepath.Join(artifactDir, "terminal.id")
+	scriptPath := filepath.Join(artifactDir, "tmux-emoji-dots-smoke.sh")
+	terminalScript := "printf 'termx-pty-ready\\n'\n" +
+		"while IFS= read -r line; do\n" +
+		"  case \"$line\" in\n" +
+		"    size-*) set -- $(stty size); printf 'termx-pty-size:%s:%sx%s\\n' \"$line\" \"$2\" \"$1\" ;;\n" +
+		"    *) printf 'termx-pty-echo:%s\\n' \"$line\" ;;\n" +
+		"  esac\n" +
+		"done\n"
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"set -eu",
+		"export TERM=xterm-256color",
+		"export TERMX=0",
+		"termx_bin=" + shellQuote(termxBin),
+		"socket=" + shellQuote(socketPath),
+		"log_file=" + shellQuote(daemonLog),
+		"terminal_id_path=" + shellQuote(terminalIDPath),
+		"printf 'termx tmux emoji dots harness ready\\n'",
+		"id=\"$($termx_bin --socket \"$socket\" --log-file \"$log_file\" v3 new --name tmux-emoji-dots -- /bin/sh -c " + shellQuote(terminalScript) + ")\"",
+		"printf '%s\\n' \"$id\" > \"$terminal_id_path\"",
+		"printf 'termx emoji terminal id:%s\\n' \"$id\"",
+		"exec $termx_bin --socket \"$socket\" --log-file \"$log_file\" v3 attach \"$id\"",
+		"",
+	}, "\n")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("tmux script=%s", scriptPath)
+
+	cleanupTmux := func() {
+		_ = runTmuxCommand(context.Background(), "kill-session", "-t", session)
+	}
+	defer cleanupTmux()
+	if err := runTmuxCommand(ctx, "new-session", "-d", "-x", "180", "-y", "32", "-s", session, "/bin/sh", scriptPath); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("tmux session=%s initial=180x32", session)
+	terminalIDBytes, err := waitForFileContent(ctx, terminalIDPath, 5*time.Second)
+	if err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("read terminal id artifact: %w", err)
+	}
+	terminalID := strings.TrimSpace(string(terminalIDBytes))
+	appendTimeline("terminal created id=%s", terminalID)
+	if err := waitForTmuxCapture(ctx, target, "termx-pty-ready", 5*time.Second); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+
+	// 中文说明：这里固定复现用户报告的真实链路：
+	// 先 split 成左右 pane，再把右 pane attach 到同一个 terminal，
+	// 回到左 pane 明确持有 owner，然后把左 owner 缩窄，让右 follower 展示 extent dots。
+	for _, action := range []struct {
+		keys  []string
+		label string
+		wait  time.Duration
+	}{
+		{keys: []string{"C-p"}, label: "enter pane mode", wait: 150 * time.Millisecond},
+		{keys: []string{"%"}, label: "split right", wait: 800 * time.Millisecond},
+		{keys: []string{"C-f"}, label: "open picker", wait: 300 * time.Millisecond},
+		{keys: []string{"Down"}, label: "picker select existing terminal", wait: 150 * time.Millisecond},
+		{keys: []string{"Enter"}, label: "attach follower", wait: 900 * time.Millisecond},
+		{keys: []string{"C-p"}, label: "enter pane mode again", wait: 150 * time.Millisecond},
+		{keys: []string{"h"}, label: "focus left owner pane", wait: 150 * time.Millisecond},
+		{keys: []string{"a"}, label: "reassert left owner", wait: 800 * time.Millisecond},
+		{keys: []string{"Escape"}, label: "leave pane mode", wait: 500 * time.Millisecond},
+	} {
+		if err := runTmuxCommand(ctx, append([]string{"send-keys", "-t", target}, action.keys...)...); err != nil {
+			return v3TmuxEmojiDotsSmokeResult{}, err
+		}
+		appendTimeline("send-keys %s keys=%q", action.label, action.keys)
+		time.Sleep(action.wait)
+	}
+	if err := waitForTmuxCapture(ctx, target, "◆ owner", 5*time.Second); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	if err := waitForTmuxCapture(ctx, target, "◇ follow", 5*time.Second); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("owner and follower chrome visible")
+
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "-l", "size-before"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "Enter"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	beforeMarker := "termx-pty-size:size-before:"
+	if err := waitForTmuxCapture(ctx, target, beforeMarker, 5*time.Second); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	beforeCapture, _ := captureTmuxPane(ctx, target, false)
+	beforeSize := lastMarkerSuffix(beforeCapture, beforeMarker)
+	appendTimeline("before size=%s", beforeSize)
+
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "C-r"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("enter resize mode")
+	time.Sleep(150 * time.Millisecond)
+	for step := 0; step < 16; step++ {
+		if err := runTmuxCommand(ctx, "send-keys", "-t", target, "h"); err != nil {
+			return v3TmuxEmojiDotsSmokeResult{}, err
+		}
+		appendTimeline("resize left owner narrower step=%d", step+1)
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "Escape"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("leave resize mode")
+	time.Sleep(800 * time.Millisecond)
+
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "-l", "size-after"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "Enter"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	afterMarker := "termx-pty-size:size-after:"
+	if err := waitForTmuxCapture(ctx, target, afterMarker, 5*time.Second); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	afterCapture, _ := captureTmuxPane(ctx, target, false)
+	afterSize := lastMarkerSuffix(afterCapture, afterMarker)
+	appendTimeline("after size=%s", afterSize)
+
+	// 中文说明：连续 FE0F emoji 是这次回归的核心触发器；数量要足够长，
+	// 才能稳定覆盖左/右 pane 同 terminal、宽 follower 已经展示 dots 的真实场景。
+	emojiBurst := strings.TrimSpace(strings.Repeat("♻️ ", 24))
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "-l", emojiBurst); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("send emoji burst len=%d", utf8.RuneCountInString(emojiBurst))
+	time.Sleep(200 * time.Millisecond)
+	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "Enter"); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("submit emoji burst")
+	if err := waitForTmuxCapture(ctx, target, "termx-pty-echo:", 5*time.Second); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+
+	ansi, err := captureTmuxPane(ctx, target, true)
+	if err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	plain, err := captureTmuxPane(ctx, target, false)
+	if err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	ansiPath := filepath.Join(artifactDir, "capture.ansi")
+	plainPath := filepath.Join(artifactDir, "capture.txt")
+	if err := os.WriteFile(ansiPath, []byte(ansi), 0o600); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	if err := os.WriteFile(plainPath, []byte(plain), 0o600); err != nil {
+		return v3TmuxEmojiDotsSmokeResult{}, err
+	}
+	appendTimeline("captured ansi=%s plain=%s", ansiPath, plainPath)
+
+	dotsVisible := strings.Contains(plain, "····")
+	if !dotsVisible {
+		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("emoji dots smoke expected follower dots in capture, got %q", plain)
+	}
+	if !strings.Contains(plain, "termx-pty-echo:") || !strings.Contains(plain, "◇ follow") || !strings.Contains(plain, "◆ owner") {
+		return v3TmuxEmojiDotsSmokeResult{}, fmt.Errorf("emoji dots smoke missing owner/follower/echo markers in capture")
+	}
+
+	_ = runTermxCommand(context.Background(), termxBin, "--socket", socketPath, "--log-file", daemonLog, "v3", "kill", terminalID)
+	_ = runTermxCommand(context.Background(), termxBin, "--socket", socketPath, "--log-file", daemonLog, "v3", "rm", terminalID)
+	appendTimeline("terminal cleanup id=%s", terminalID)
+	removeArtifacts = false
+	return v3TmuxEmojiDotsSmokeResult{
+		Session:      session,
+		TerminalID:   terminalID,
+		ArtifactDir:  artifactDir,
+		ANSIPath:     ansiPath,
+		PlainPath:    plainPath,
+		DaemonLog:    daemonLog,
+		SocketPath:   socketPath,
+		TimelinePath: timelinePath,
+		Captured:     plain,
+		BeforeSize:   beforeSize,
+		AfterSize:    afterSize,
+		DotsVisible:  dotsVisible,
 	}, nil
 }
 
