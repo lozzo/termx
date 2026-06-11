@@ -578,6 +578,7 @@ type ContentVM struct {
 	Kind       ContentKind
 	Lines      []Line
 	Extent     ContentExtent
+	Layout     ContentLayoutVM
 	Status     string
 	Pending    bool
 	Empty      bool
@@ -594,6 +595,16 @@ type ContentExtent struct {
 	Y     int
 	Cols  int
 	Rows  int
+}
+
+// ContentLayoutVM 是 view-local terminal 内容布局投影，只影响当前 pane/floating 的裁切与对齐。
+type ContentLayoutVM struct {
+	Known  bool
+	Mode   string
+	PanX   int
+	PanY   int
+	AlignX string
+	AlignY string
 }
 
 type ContentOverflow struct {

@@ -87,6 +87,64 @@ func TestContentViewportSupportsOffsetTerminalExtent(t *testing.T) {
 	}
 }
 
+func TestContentViewportAppliesTerminalViewPan(t *testing.T) {
+	result := RenderContentViewport(ContentRenderRequest{
+		Rect: Rect{W: 4, H: 2},
+		Content: ContentVM{
+			Kind:   ContentTerminalLive,
+			Lines:  []Line{NewLine("abcdef"), NewLine("ghijkl")},
+			Extent: ContentExtent{Known: true, Cols: 6, Rows: 2},
+			Layout: ContentLayoutVM{Known: true, PanX: 2, PanY: 1},
+		},
+	})
+
+	if got, want := plainContentViewportLines(result.Lines), []string{
+		"ijkl",
+		"····",
+	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("pan should move the source window inside the terminal extent\n got=%#v\nwant=%#v", got, want)
+	}
+	if result.Overflow != (ContentOverflow{Left: true, Top: true}) {
+		t.Fatalf("panned extent should expose viewport overflow, got %#v", result.Overflow)
+	}
+}
+
+func TestContentViewportAppliesTerminalViewCenterAndFit(t *testing.T) {
+	centered := RenderContentViewport(ContentRenderRequest{
+		Rect: Rect{W: 6, H: 3},
+		Content: ContentVM{
+			Kind:   ContentTerminalLive,
+			Lines:  []Line{NewLine("ab"), NewLine("cd")},
+			Extent: ContentExtent{Known: true, Cols: 2, Rows: 2},
+			Layout: ContentLayoutVM{Known: true, Mode: "center"},
+		},
+	})
+	if got, want := plainContentViewportLines(centered.Lines), []string{
+		"······",
+		"··ab··",
+		"··cd··",
+	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("center layout should center terminal extent in content rect\n got=%#v\nwant=%#v", got, want)
+	}
+
+	fit := RenderContentViewport(ContentRenderRequest{
+		Rect: Rect{W: 6, H: 3},
+		Content: ContentVM{
+			Kind:   ContentTerminalLive,
+			Lines:  []Line{NewLine("ab"), NewLine("cd")},
+			Extent: ContentExtent{Known: true, Cols: 2, Rows: 2},
+			Layout: ContentLayoutVM{Known: true, Mode: "fit"},
+		},
+	})
+	if got, want := plainContentViewportLines(fit.Lines), []string{
+		"ab    ",
+		"cd    ",
+		"      ",
+	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("fit layout should use pane content rect as terminal extent\n got=%#v\nwant=%#v", got, want)
+	}
+}
+
 func TestContentViewportReturnsOverflowHintsWithoutWritingMarkers(t *testing.T) {
 	result := RenderContentViewport(ContentRenderRequest{
 		Rect: Rect{W: 10, H: 5},

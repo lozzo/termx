@@ -2131,6 +2131,9 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	if len(vm.Shell.Layout.Panels) == 0 || vm.Shell.Layout.Panels[0].Chrome.Terminal.LayoutMode != state.TerminalViewLayoutCenter {
 		t.Fatalf("render should project terminal view layout, got %#v", vm.Shell.Layout.Panels)
 	}
+	if vm.Shell.Layout.Panels[0].Content.Layout.Mode != state.TerminalViewLayoutCenter || vm.Shell.Layout.Panels[0].Content.Layout.AlignX != state.TerminalViewAlignCenter {
+		t.Fatalf("render content should consume terminal view layout, got %#v", vm.Shell.Layout.Panels[0].Content.Layout)
+	}
 }
 
 func TestPaneModeLockUsesViewLocalTerminalLayoutPath(t *testing.T) {

@@ -18,6 +18,7 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		lines = []Line{NewLine(content.Status)}
 	}
 	extent := normalizeContentExtent(content.Extent, rect)
+	extent = applyContentLayoutToExtent(content.Layout, extent, rect)
 	rendered := make([]Line, 0, rect.H)
 	overflow := contentViewportOverflow(lines, extent, rect)
 	markOutsideExtent := contentViewportMarksOutsideExtent(content)
@@ -31,6 +32,48 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
 		Overflow:   overflow,
 	}
+}
+
+func applyContentLayoutToExtent(layout ContentLayoutVM, extent ContentExtent, rect Rect) ContentExtent {
+	if !extent.Known || !layout.Known {
+		return extent
+	}
+	if layout.Mode == "fit" {
+		extent.X = 0
+		extent.Y = 0
+		extent.Cols = maxInt(0, rect.W)
+		extent.Rows = maxInt(0, rect.H)
+	} else {
+		alignX := layout.AlignX
+		alignY := layout.AlignY
+		if layout.Mode == "center" {
+			alignX = "center"
+			alignY = "center"
+		}
+		extent.X = alignedContentOrigin(alignX, rect.W, extent.Cols)
+		extent.Y = alignedContentOrigin(alignY, rect.H, extent.Rows)
+	}
+	extent.X -= layout.PanX
+	extent.Y -= layout.PanY
+	return extent
+}
+
+func alignedContentOrigin(align string, viewport int, size int) int {
+	switch align {
+	case "center", "base":
+		return centeredContentOrigin(viewport - size)
+	case "end":
+		return viewport - size
+	default:
+		return 0
+	}
+}
+
+func centeredContentOrigin(delta int) int {
+	if delta >= 0 {
+		return (delta + 1) / 2
+	}
+	return -((-delta + 1) / 2)
 }
 
 func contentViewportMarksOutsideExtent(content ContentVM) bool {

@@ -467,6 +467,7 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 		if active {
 			content = activeContent
 		}
+		content = contentWithPaneLayout(root, pane, content)
 		panels[i] = PanelVM{
 			ID:           pane.ID,
 			Title:        activePaneTitle(pane),
@@ -483,13 +484,14 @@ func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, acti
 	shell = shell.EnsureDefaults()
 	for _, pane := range activeTab(shell).Panes {
 		if pane.ID == shell.ZoomedPaneID {
+			content := contentWithPaneLayout(root, pane, activeContent)
 			return []PanelVM{{
 				ID:           pane.ID,
 				Title:        activePaneTitle(pane),
 				Presentation: renderPanelPresentation(shell.PanelPresentation),
 				Active:       true,
-				Content:      activeContent,
-				Chrome:       buildPanelChromeVM(root, pane, true, activeContent),
+				Content:      content,
+				Chrome:       buildPanelChromeVM(root, pane, true, content),
 			}}
 		}
 	}
@@ -512,6 +514,7 @@ func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root st
 			Surface: surfaceForPane(root, floating.Pane),
 			Session: sessionForPane(root, floating.Pane),
 		})
+		content = contentWithFloatingLayout(root, floating, content)
 		out = append(out, FloatingVM{
 			ID:        floating.ID,
 			Title:     floating.Title,
@@ -524,6 +527,35 @@ func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root st
 		})
 	}
 	return out
+}
+
+func contentWithPaneLayout(root state.Root, pane state.PaneState, content ContentVM) ContentVM {
+	if content.Kind != ContentTerminalLive {
+		return content
+	}
+	binding, ok := root.TerminalViews.PaneBinding(pane.ID)
+	if !ok {
+		return content
+	}
+	content.Layout = contentLayoutVMFromState(binding.Layout)
+	return content
+}
+
+func contentWithFloatingLayout(root state.Root, floating state.FloatingPaneState, content ContentVM) ContentVM {
+	if content.Kind != ContentTerminalLive {
+		return content
+	}
+	binding, ok := root.TerminalViews.FloatingBinding(floating.ID)
+	if !ok {
+		return content
+	}
+	content.Layout = contentLayoutVMFromState(binding.Layout)
+	return content
+}
+
+func contentLayoutVMFromState(layout state.TerminalViewLayout) ContentLayoutVM {
+	layout = layout.Normalize()
+	return ContentLayoutVM{Known: true, Mode: layout.Mode, PanX: layout.PanX, PanY: layout.PanY, AlignX: layout.AlignX, AlignY: layout.AlignY}
 }
 
 func floatingChromeVM(root state.Root, floating state.FloatingPaneState, content ContentVM) FloatingChromeVM {
