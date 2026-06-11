@@ -446,8 +446,11 @@ type GridViewportParams struct {
 	Cols             int
 }
 
-// HistoryWindowParams 是 authoritative history path 的请求参数。旧
-// BeforeOffset 保留为兼容字段；v3 应优先使用 token/generation/logical cursor
+// HistoryWindowParams 是 authoritative history path 的请求参数。
+// 它只表达 terminal-scoped history projection，不携带 pane/view/attachment
+// identity；客户端若要把 response 重新绑定回本地 pane/view，只能依赖本地
+// pending request 和 token/generation/logical cursor/logical boundary 命中后回填。
+// 旧 BeforeOffset 保留为兼容字段；v3 应优先使用 token/generation/logical cursor
 // 与 logical line boundary 做 stale guard。
 type HistoryWindowParams struct {
 	TerminalID          string
@@ -2023,6 +2026,11 @@ type HistoryLineSpan struct {
 	ClippedAfter   bool
 }
 
+// HistoryWindow 是 terminal-scoped authoritative history payload。
+// 它只表达 logical line 在当前 cols 下的 history projection truth，不回显
+// pane/view/workspace truth，也不携带 resize ownership 或 live attachment control。
+// stale guard 只能依赖 token/generation/cursor/logical boundary；LoadedRows、
+// TotalRows、BeforeOffset 等字段只能作为展示或兼容信息，不能替代这些 guard。
 type HistoryWindow struct {
 	TerminalID    string
 	Token         string

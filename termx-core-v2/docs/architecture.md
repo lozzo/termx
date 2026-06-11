@@ -145,6 +145,8 @@ protocol adapter 负责把 core-v2 domain model 映射到外部协议。
 - older response 的 op 必须由 core-v2 决定，client 不得自行把 response 解释成 prepend。
 - history response 必须携带 stable logical line id、line span clipping、token、generation、first/last logical line boundary、has-more 与 cursor。
 - stale guard 只能使用 token、generation、cursor、logical boundary，不能使用 snapshot totals、row count 或 LoadedRows。
+- `history.window` 是 terminal-scoped contract：请求和响应都只表达 terminal 的 authoritative history projection，不回显 TUI pane/floating/workspace truth，也不承担 attachment ownership 语义。
+- `history.window` 不需要携带 `SurfaceID`、`ViewID` 或 pane id；如果客户端要把 response 重新绑定到本地 view，只能依赖本地 pending request 与 token/generation/cursor/boundary 命中后回填，不能把 daemon 端 protocol payload 扩张成 workspace schema。
 
 attachment 相关 protocol 适配必须满足：
 

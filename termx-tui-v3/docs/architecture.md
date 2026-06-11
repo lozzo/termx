@@ -614,6 +614,8 @@ history response 的接纳规则：
 - op 由 core-v2 决定。
 - stale guard 只能使用 core window token、generation、cursor、logical boundary。
 - 空 older exhausted 必须绑定 local request id、core window token、请求 cursor 和 cols。
+- `history.window` response 是 terminal-scoped authoritative payload，不回显 pane/view/workspace truth；TUI 只能用本地 pending request 把 response 重新绑定回发起 copy 的 pane/view。
+- `HistoryStore` 可以保存本地回填后的 pane/view 绑定用于 reducer/render，但这些字段不是 protocol truth；不能要求 core-v2 在 history payload 中理解 pane、floating、tab 或 attachment lifecycle。
 
 resize 接纳规则：
 
