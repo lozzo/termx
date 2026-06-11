@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -118,11 +119,27 @@ type ShellContentActionMsg struct {
 
 func (ShellContentActionMsg) isMsg() {}
 
+type ShellArmOwnerConfirmMsg struct {
+	ViewID string
+}
+
+func (ShellArmOwnerConfirmMsg) isMsg() {}
+
+type ShellClearOwnerConfirmMsg struct {
+	Seq uint64
+}
+
+func (ShellClearOwnerConfirmMsg) isMsg() {}
+
 type HostThemeMsg struct {
 	Update state.HostThemeUpdate
 }
 
 func (HostThemeMsg) isMsg() {}
+
+const ownerConfirmDelay = 500 * time.Millisecond
+
+const ownerConfirmClearToken CancelToken = "terminal.owner.confirm.clear"
 
 type ShellSplitActivePaneMsg struct {
 	Pane      state.PaneState
@@ -223,6 +240,12 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		case ShellContentActionMsg:
 			return reduceShellContentAction(root, msg)
+		case ShellArmOwnerConfirmMsg:
+			root.Shell = root.Shell.ArmOwnerConfirm(msg.ViewID)
+			seq := root.Shell.OwnerConfirm.Seq
+			return root.Advance(), []Effect{ownerConfirmClearEffect(seq)}
+		case ShellClearOwnerConfirmMsg:
+			root.Shell = root.Shell.ClearOwnerConfirm(msg.Seq)
 		case HostThemeMsg:
 			root.HostTheme = root.HostTheme.ApplyUpdate(msg.Update)
 		case ShellSplitActivePaneMsg:
@@ -246,6 +269,24 @@ func NewShellReducer() Reducer {
 			return root, nil
 		}
 		return root.Advance(), nil
+	}
+}
+
+func ownerConfirmClearEffect(seq uint64) Effect {
+	return FuncEffect{
+		Token: ownerConfirmClearToken,
+		Async: true,
+		Run: func(ctx context.Context) Msg {
+			// owner? 是临时确认提示，超时后必须退回 authoritative follower 展示。
+			timer := time.NewTimer(ownerConfirmDelay)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-timer.C:
+				return ShellClearOwnerConfirmMsg{Seq: seq}
+			}
+		},
 	}
 }
 
@@ -381,6 +422,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
 		}}}
 	case render.ActionTerminalTakeResizeOwner:
+		root.Shell = root.Shell.ClearOwnerConfirm(0)
 		return requestPaneResizeOwner(root, msg.PaneID)
 	case render.ActionEmptyClose, render.ActionExitedClose:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{

@@ -705,6 +705,31 @@ func TestAppRuntimeTakeResizeOwnerRequiresDoubleClick(t *testing.T) {
 	if binding, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); binding.ResizeRole != state.TerminalResizeRoleFollower || binding.CanResize {
 		t.Fatalf("single click must not take resize owner, got %#v", binding)
 	}
+	if got := runtime.State().Shell.EnsureDefaults().OwnerConfirm.ViewID; got != "view-1" {
+		t.Fatalf("single click should arm owner confirmation, got %q", got)
+	}
+	if frame := lastRuntimeFrame(t, host); !frameContains(frame, "◆ owner?") {
+		t.Fatalf("single click should render owner confirmation, got %#v", frame.Lines)
+	}
+	seq := runtime.State().Shell.EnsureDefaults().OwnerConfirm.Seq
+	if err := runtime.Post(ShellClearOwnerConfirmMsg{Seq: seq}); err != nil {
+		t.Fatalf("post owner confirm clear: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("clear drain: %v", err)
+	}
+	if got := runtime.State().Shell.EnsureDefaults().OwnerConfirm.ViewID; got != "" {
+		t.Fatalf("owner confirmation should clear after timeout, got %q", got)
+	}
+	if frame := lastRuntimeFrame(t, host); !frameContains(frame, "◇ follow") {
+		t.Fatalf("cleared owner confirmation should render follow, got %#v", frame.Lines)
+	}
+	if err := host.SendInput(click); err != nil {
+		t.Fatalf("send rearmed owner click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("rearm drain: %v", err)
+	}
 	if err := host.SendInput(click); err != nil {
 		t.Fatalf("send second owner click: %v", err)
 	}

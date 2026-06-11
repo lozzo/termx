@@ -571,7 +571,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	}
 	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionTerminalTakeResizeOwner.String() {
 		if !runtime.consumeTakeResizeOwnerDoubleClick(region, inputMsg.Event) {
-			return NoopMsg{}
+			return ShellArmOwnerConfirmMsg{ViewID: terminalViewIDForOwnerRegion(runtime.state, region)}
 		}
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	}
@@ -601,6 +601,16 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	default:
 		return msg
 	}
+}
+
+func terminalViewIDForOwnerRegion(root state.Root, region render.HitRegion) string {
+	if binding, ok := root.TerminalViews.PaneBinding(region.PaneID); ok {
+		return binding.ViewID
+	}
+	if binding, ok := root.TerminalViews.FloatingBinding(region.PaneID); ok {
+		return binding.ViewID
+	}
+	return ""
 }
 
 func (runtime *AppRuntime) consumeTakeResizeOwnerDoubleClick(region render.HitRegion, event input.InputEvent) bool {
@@ -911,6 +921,9 @@ func (runner *SyncEffectRunner) Run(ctx context.Context, effect Effect, post fun
 	switch effect := effect.(type) {
 	case FuncEffect:
 		if effect.Run == nil {
+			return
+		}
+		if effect.Async {
 			return
 		}
 		if _, canceled := runner.canceled[effect.Token]; canceled && effect.Token != "" {

@@ -580,7 +580,10 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 	}
 	ownerText := "◇ follow"
 	ownerStyle := StyleMuted
-	if binding.HasAuthoritativeResizeOwner() {
+	if root.Shell.EnsureDefaults().OwnerConfirm.ViewID == binding.ViewID {
+		ownerText = "◆ owner?"
+		ownerStyle = StyleWarning
+	} else if binding.HasAuthoritativeResizeOwner() {
 		ownerText = "◆ owner"
 		ownerStyle = StyleSuccess
 	}

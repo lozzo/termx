@@ -128,6 +128,16 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	if follower.Chrome.Terminal.AttachCount != 2 || follower.Chrome.Terminal.Owner.Text != "◇ follow" || follower.Chrome.Terminal.Locked {
 		t.Fatalf("follower pane should expose tuiv2 follower chrome facts, got %#v", follower.Chrome.Terminal)
 	}
+	root.Shell = root.Shell.ArmOwnerConfirm("view-2")
+	vm = NewRenderVMBuilder().Build(root)
+	for _, panel := range vm.Shell.Layout.Panels {
+		if panel.ID == "pane-2" {
+			follower = panel
+		}
+	}
+	if follower.Chrome.Terminal.Owner.Text != "◆ owner?" || follower.Chrome.Terminal.Owner.Style != StyleWarning || !follower.Chrome.Terminal.TakeOwner {
+		t.Fatalf("pending follower pane should expose owner confirmation without authoritative owner, got %#v", follower.Chrome.Terminal)
+	}
 	if len(owner.Chrome.Actions) != 4 || owner.Chrome.Actions[0].ActionID == ActionTerminalTakeResizeOwner.String() {
 		t.Fatalf("owner pane should not offer take-owner action, got %#v", owner.Chrome.Actions)
 	}

@@ -122,6 +122,7 @@ type ShellStore struct {
 	ActivePaneID      string
 	ZoomedPaneID      string
 	InteractionMode   InteractionMode
+	OwnerConfirm      OwnerConfirmState
 	HeaderVisible     bool
 	FooterVisible     bool
 	Overlay           OverlayState
