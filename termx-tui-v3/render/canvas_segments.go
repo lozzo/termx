@@ -3,15 +3,16 @@ package render
 import xansi "github.com/charmbracelet/x/ansi"
 
 type canvasSegment struct {
-	text       string
-	width      int
-	style      StyleToken
-	ansiStyle  ANSICellStyle
-	linkURL    string
-	linkParams string
-	owner      string
-	layer      LayerKind
-	safe       bool
+	text            string
+	width           int
+	hostCursorWidth int
+	style           StyleToken
+	ansiStyle       ANSICellStyle
+	linkURL         string
+	linkParams      string
+	owner           string
+	layer           LayerKind
+	safe            bool
 }
 
 func cellSegments(text string, style StyleToken, owner string, layer LayerKind) []canvasSegment {
@@ -47,13 +48,14 @@ func cellsFromSegments(segments []canvasSegment) []Cell {
 	cells := make([]Cell, len(segments))
 	for i, segment := range segments {
 		cells[i] = Cell{
-			Text:       segment.text,
-			Width:      segment.width,
-			Style:      segment.style,
-			ANSIStyle:  segment.ansiStyle,
-			LinkURL:    segment.linkURL,
-			LinkParams: segment.linkParams,
-			Safe:       segment.safe,
+			Text:            segment.text,
+			Width:           segment.width,
+			HostCursorWidth: segment.hostCursorWidth,
+			Style:           segment.style,
+			ANSIStyle:       segment.ansiStyle,
+			LinkURL:         segment.linkURL,
+			LinkParams:      segment.linkParams,
+			Safe:            segment.safe,
 		}
 	}
 	return cells

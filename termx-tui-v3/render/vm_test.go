@@ -99,6 +99,29 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	}
 }
 
+func TestTerminalLiveCellsPreserveFE0FFootprintBeforeDots(t *testing.T) {
+	line := terminalLiveLineFromCells([]state.LiveCell{
+		{Text: "♻️", Width: 2},
+		{Text: " ", Width: 1},
+		{Text: "♻️", Width: 2},
+		{Text: " ", Width: 1},
+		{Text: "♻️", Width: 2},
+		{Text: "·", Width: 1},
+		{Text: "·", Width: 1},
+	})
+
+	if got := line.Width(); got != 10 {
+		t.Fatalf("live line must keep protocol footprint width, got %d cells=%#v", got, line.Cells)
+	}
+	if line.Cells[0].HostCursorWidth != 1 || line.Cells[2].HostCursorWidth != 1 || line.Cells[4].HostCursorWidth != 1 {
+		t.Fatalf("FE0F cells should record host cursor width 1, got %#v", line.Cells)
+	}
+	ansi := line.ANSIString(DefaultTheme())
+	if !strings.Contains(ansi, "♻️\x1b[1X\x1b[3G ") || !strings.Contains(ansi, "♻️\x1b[1X\x1b[6G ") || !strings.Contains(ansi, "♻️\x1b[1X\x1b[9G·") {
+		t.Fatalf("FE0F live cells should re-anchor dots at model column 9, got %q", ansi)
+	}
+}
+
 func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	root := state.Root{Shell: shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})}
