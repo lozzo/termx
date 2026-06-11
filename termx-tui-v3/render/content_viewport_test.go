@@ -349,26 +349,7 @@ func TestFrameworkRendersTerminalLiveExtentFromBuilder(t *testing.T) {
 	}
 }
 
-func TestContentViewportReanchorsNonBMPPrivateUseIconBeforeExtentDots(t *testing.T) {
-	result := RenderContentViewport(ContentRenderRequest{
-		Rect: Rect{W: 6, H: 1},
-		Content: ContentVM{
-			Kind:   ContentTerminalLive,
-			Lines:  []Line{NewLine("x󱃾")},
-			Extent: ContentExtent{Known: true, Cols: 2, Rows: 1},
-		},
-	})
-
-	if got := result.Lines[0].PlainString(); got != "x󱃾····" {
-		t.Fatalf("live viewport should keep extent dots after non-BMP icon, got %q", got)
-	}
-	ansi := result.Lines[0].ANSIString(DefaultTheme())
-	if !strings.Contains(ansi, "x󱃾\x1b[3G····") {
-		t.Fatalf("live viewport should re-anchor before extent dots, got %q", ansi)
-	}
-}
-
-func TestContentViewportReanchorsEmojiBeforeExtentDots(t *testing.T) {
+func TestContentViewportKeepsEmojiBeforeExtentDots(t *testing.T) {
 	result := RenderContentViewport(ContentRenderRequest{
 		Rect: Rect{W: 6, H: 1},
 		Content: ContentVM{
@@ -382,8 +363,8 @@ func TestContentViewportReanchorsEmojiBeforeExtentDots(t *testing.T) {
 		t.Fatalf("live viewport should keep extent dots after emoji, got %q", got)
 	}
 	ansi := result.Lines[0].ANSIString(DefaultTheme())
-	if !strings.Contains(ansi, "x🚀\x1b[4G···") {
-		t.Fatalf("live viewport should re-anchor before emoji extent dots, got %q", ansi)
+	if !strings.Contains(ansi, "x🚀\x1b[4G·") {
+		t.Fatalf("live viewport should place dots at the model cell boundary, got %q", ansi)
 	}
 }
 

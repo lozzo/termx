@@ -1,7 +1,6 @@
 package render
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -74,65 +73,5 @@ func TestSetPaneChromeGlyphsAllowsUTF8Overrides(t *testing.T) {
 	}
 	if DisplayWidth(paneChromeCloseGlyph()) != 2 {
 		t.Fatalf("emoji override width should be measured with display cells, got %d", DisplayWidth(paneChromeCloseGlyph()))
-	}
-}
-
-func TestANSIStringReanchorsAfterAmbiguousEmojiBeforeBorder(t *testing.T) {
-	line := Line{Cells: []Cell{
-		NewCell("♻️"),
-		NewCell("│"),
-	}}
-
-	got := line.ANSIString(DefaultTheme())
-	if !strings.Contains(got, "♻️\x1b[3G│") {
-		t.Fatalf("ambiguous emoji should re-anchor before following border, got %q", got)
-	}
-}
-
-func TestANSIStringReanchorsAfterAmbiguousEmojiInsideCellBeforeDots(t *testing.T) {
-	line := Line{Cells: []Cell{
-		NewCell("x♻️··"),
-		NewCell("│"),
-	}}
-
-	got := line.ANSIString(DefaultTheme())
-	if !strings.Contains(got, "x♻️\x1b[4G··│") {
-		t.Fatalf("ambiguous emoji inside a cell should re-anchor before dots, got %q", got)
-	}
-}
-
-func TestANSIStringReanchorsAfterEmojiBeforeDots(t *testing.T) {
-	line := Line{Cells: []Cell{
-		NewCell("x🚀··"),
-		NewCell("│"),
-	}}
-
-	got := line.ANSIString(DefaultTheme())
-	if !strings.Contains(got, "x🚀\x1b[4G··│") {
-		t.Fatalf("emoji inside a cell should re-anchor before dots, got %q", got)
-	}
-}
-
-func TestANSIStringReanchorsAfterNonBMPPrivateUseIconBeforeDots(t *testing.T) {
-	line := Line{Cells: []Cell{
-		NewCell("x󱃾··"),
-		NewCell("│"),
-	}}
-
-	got := line.ANSIString(DefaultTheme())
-	if !strings.Contains(got, "x󱃾\x1b[3G··│") {
-		t.Fatalf("non-BMP private-use icon should re-anchor before dots, got %q", got)
-	}
-}
-
-func TestANSIStringDoesNotReanchorStableBMPPrivateUseChromeIcon(t *testing.T) {
-	line := Line{Cells: []Cell{
-		NewCell(""),
-		NewCell("│"),
-	}}
-
-	got := line.ANSIString(DefaultTheme())
-	if strings.Contains(got, "\x1b[2G") {
-		t.Fatalf("stable BMP private-use chrome icon should not be re-anchored, got %q", got)
 	}
 }

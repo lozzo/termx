@@ -766,7 +766,7 @@ func TestCanvasMatrixTracksOwnerLayerContinuationAndSafeFlag(t *testing.T) {
 	}
 }
 
-func TestCanvasMatrixMaterializesEmojiCompensationBeforeDots(t *testing.T) {
+func TestCanvasMatrixMaterializesWideEmojiContinuationBeforeDots(t *testing.T) {
 	c := newCanvas(6, 1)
 	c.writeLine(0, 0, 6, Line{Cells: []Cell{
 		NewCell("x"),
@@ -774,20 +774,20 @@ func TestCanvasMatrixMaterializesEmojiCompensationBeforeDots(t *testing.T) {
 		NewCell("···"),
 	}}, "pane-1", LayerPanel)
 
-	if cell := c.rows[0][2]; !cell.compensate || cell.continuation || cell.owner != "pane-1" || cell.layer != LayerPanel {
-		t.Fatalf("expected emoji compensation footprint before dots, got %#v", cell)
+	if cell := c.rows[0][2]; !cell.continuation || cell.owner != "pane-1" || cell.layer != LayerPanel {
+		t.Fatalf("expected emoji continuation footprint before dots, got %#v", cell)
 	}
 	line := c.lines()[0]
 	if got := line.PlainString(); got != "x🚀···" || line.Width() != 6 {
-		t.Fatalf("compensation must not change plain row width, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
+		t.Fatalf("continuation must not change plain row width, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
 	}
 	ansi := line.ANSIString(DefaultTheme())
-	if !strings.Contains(ansi, "x🚀\x1b[3G\x1b[1X\x1b[4G···") {
-		t.Fatalf("compensation should re-anchor before following dots, got %q", ansi)
+	if !strings.Contains(ansi, "x\x1b[2G🚀\x1b[4G·") {
+		t.Fatalf("dots after emoji should land at model column 4, got %q", ansi)
 	}
 }
 
-func TestCanvasMatrixMaterializesEmojiCompensationBeforeBorder(t *testing.T) {
+func TestCanvasMatrixKeepsWideEmojiBeforeBorder(t *testing.T) {
 	c := newCanvas(4, 1)
 	c.writeLine(0, 0, 4, Line{Cells: []Cell{
 		NewCell("🚀"),
@@ -797,15 +797,15 @@ func TestCanvasMatrixMaterializesEmojiCompensationBeforeBorder(t *testing.T) {
 
 	line := c.lines()[0]
 	if got := line.PlainString(); got != "🚀│ " || line.Width() != 4 {
-		t.Fatalf("compensation must keep border at model column 3, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
+		t.Fatalf("wide emoji footprint must keep border at model column 3, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
 	}
 	ansi := line.ANSIString(DefaultTheme())
-	if !strings.Contains(ansi, "🚀\x1b[2G\x1b[1X\x1b[3G│") {
-		t.Fatalf("compensation should re-anchor before following border, got %q", ansi)
+	if !strings.Contains(ansi, "🚀\x1b[3G│") {
+		t.Fatalf("border after emoji should land at model column 3, got %q", ansi)
 	}
 }
 
-func TestCanvasMatrixMaterializesRepeatedEmojiCompensationBeforeDots(t *testing.T) {
+func TestCanvasMatrixKeepsRepeatedEmojiBeforeDots(t *testing.T) {
 	c := newCanvas(14, 1)
 	c.writeLine(0, 0, 14, Line{Cells: []Cell{
 		NewCell("♻️ ♻️ ♻️"),
@@ -814,13 +814,10 @@ func TestCanvasMatrixMaterializesRepeatedEmojiCompensationBeforeDots(t *testing.
 
 	line := c.lines()[0]
 	if got := line.PlainString(); !strings.HasPrefix(got, "♻️ ♻️ ♻️··") || line.Width() != 14 {
-		t.Fatalf("repeated emoji compensation must keep model width, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
+		t.Fatalf("repeated emoji footprint must keep model width, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
 	}
 	ansi := line.ANSIString(DefaultTheme())
-	if got := strings.Count(ansi, "\x1b[1X"); got != 3 {
-		t.Fatalf("each repeated emoji compensation column should be explicitly erased, got %d in %q", got, ansi)
-	}
-	if !strings.Contains(ansi, "\x1b[9G··") {
+	if !strings.Contains(ansi, "\x1b[9G·") {
 		t.Fatalf("dots after repeated emoji sequence should land on model column 9, got %q", ansi)
 	}
 }

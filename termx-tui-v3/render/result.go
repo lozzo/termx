@@ -3,15 +3,8 @@ package render
 import (
 	"strconv"
 	"strings"
-	"unicode"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/clipperhouse/displaywidth"
-)
-
-var (
-	eastAsianWidthNarrow = displaywidth.Options{EastAsianWidth: false}
-	eastAsianWidthWide   = displaywidth.Options{EastAsianWidth: true}
 )
 
 // ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。
@@ -45,7 +38,6 @@ type Cell struct {
 	LinkURL    string
 	LinkParams string
 	Safe       bool
-	compensate bool
 }
 
 // ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 TermX chrome theme token。
@@ -136,9 +128,6 @@ func (line Line) String() string {
 	}
 	var out strings.Builder
 	for _, cell := range line.Cells {
-		if cell.compensate {
-			continue
-		}
 		out.WriteString(cell.Text)
 	}
 	return out.String()
@@ -154,20 +143,8 @@ func (line Line) ANSIString(theme Theme) string {
 	}
 	var out strings.Builder
 	modelCol := 1
-	needsReanchor := false
-	cellCount := len(line.Cells)
-	cellIndex := 0
-	for _, cell := range line.Cells {
-		cellIndex++
+	for index, cell := range line.Cells {
 		text := SafeLine(cell.Text)
-		cellWidth := maxInt(0, cell.Width)
-		if cell.compensate {
-			out.WriteString(ansiColumn(maxInt(1, modelCol-1)))
-			out.WriteString(ansiEraseChars(1))
-			modelCol += cellWidth
-			needsReanchor = true
-			continue
-		}
 		styleSeq := ""
 		if !cell.ANSIStyle.IsZero() {
 			styleSeq = ansiForCellStyle(cell.ANSIStyle)
@@ -181,121 +158,20 @@ func (line Line) ANSIString(theme Theme) string {
 		if styleSeq != "" {
 			out.WriteString(styleSeq)
 		}
-		if needsReanchor {
-			out.WriteString(ansiColumn(modelCol))
-			needsReanchor = false
-		}
-		writeANSITextWithWidthSafety(&out, text, modelCol, cellIndex < cellCount && line.Cells[cellIndex].compensate)
+		out.WriteString(text)
 		if styleSeq != "" {
 			out.WriteString(ANSIReset)
 		}
 		if linkClose != "" {
 			out.WriteString(linkClose)
 		}
-		modelCol += cellWidth
-	}
-	return out.String()
-}
-
-func writeANSITextWithWidthSafety(out *strings.Builder, text string, startCol int, suppressTrailingReanchor bool) {
-	modelCol := startCol
-	for len(text) > 0 {
-		cluster, clusterWidth := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
-		if cluster == "" {
-			break
-		}
-		text = text[len(cluster):]
-		out.WriteString(cluster)
-		if clusterWidth < 0 {
-			clusterWidth = 0
-		}
-		modelCol += clusterWidth
-		if hostWidthAmbiguousCell(cluster, clusterWidth) && !(suppressTrailingReanchor && text == "") {
-			// 中文说明：FE0F emoji 常被宿主按 1 列前进；逐 cluster 重锚定，保护同一 cell 后续内容和边框。
+		modelCol += maxInt(0, cell.Width)
+		if index < len(line.Cells)-1 {
+			// 中文说明：真实 TTY 对 emoji/FE0F 的列宽可能与模型不同；每个 cell 边界按模型列复位。
 			out.WriteString(ansiColumn(modelCol))
 		}
 	}
-}
-
-func hostWidthAmbiguousCell(text string, width int) bool {
-	if text == "" || width <= 0 || strings.ContainsRune(text, '\x1b') {
-		return false
-	}
-	return ambiguousEmojiVariationSelectorCell(text, width) ||
-		(hostWidthAmbiguousCluster(text, width) && !stableNarrowTerminalSymbol(text))
-}
-
-func ambiguousEmojiVariationSelectorCell(text string, width int) bool {
-	if width != 2 || !strings.ContainsRune(text, '\uFE0F') {
-		return false
-	}
-	if strings.ContainsRune(text, '\u200D') || strings.ContainsRune(text, '\u20E3') {
-		return false
-	}
-	stripped := strings.ReplaceAll(text, "\uFE0F", "")
-	return stripped != "" && xansi.StringWidth(stripped) > 0 && xansi.StringWidth(stripped) <= width
-}
-
-func hostWidthAmbiguousCluster(text string, width int) bool {
-	return eastAsianAmbiguousWidthCluster(text) || printableZeroWidthCluster(text) || privateUseCluster(text) || emojiCluster(text, width)
-}
-
-func emojiCluster(text string, width int) bool {
-	if text == "" || width < 2 || strings.ContainsRune(text, '\x1b') {
-		return false
-	}
-	for _, r := range text {
-		if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
-			return false
-		}
-		if (r >= 0x1F000 && r <= 0x1FAFF) || (r >= 0x2600 && r <= 0x27BF) {
-			return true
-		}
-	}
-	return false
-}
-
-func eastAsianAmbiguousWidthCluster(text string) bool {
-	if text == "" || strings.ContainsRune(text, '\x1b') {
-		return false
-	}
-	narrow := eastAsianWidthNarrow.String(text)
-	wide := eastAsianWidthWide.String(text)
-	return narrow > 0 && wide > 0 && narrow != wide
-}
-
-func printableZeroWidthCluster(text string) bool {
-	if text == "" || strings.ContainsRune(text, '\x1b') {
-		return false
-	}
-	return xansi.StringWidth(text) == 0
-}
-
-func privateUseCluster(text string) bool {
-	if text == "" || strings.ContainsRune(text, '\x1b') {
-		return false
-	}
-	runes := []rune(text)
-	if len(runes) != 1 {
-		return false
-	}
-	r := runes[0]
-	return (r >= 0xE000 && r <= 0xF8FF) ||
-		(r >= 0xF0000 && r <= 0xFFFFD) ||
-		(r >= 0x100000 && r <= 0x10FFFD)
-}
-
-func stableNarrowTerminalSymbol(text string) bool {
-	switch text {
-	case "─", "│", "┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼", "●", "◆", "·":
-		return true
-	}
-	runes := []rune(text)
-	if len(runes) != 1 {
-		return false
-	}
-	r := runes[0]
-	return r >= 0xE000 && r <= 0xF8FF
+	return out.String()
 }
 
 func ansiColumn(col int) string {
@@ -303,13 +179,6 @@ func ansiColumn(col int) string {
 		col = 1
 	}
 	return "\x1b[" + strconv.Itoa(col) + "G"
-}
-
-func ansiEraseChars(count int) string {
-	if count < 1 {
-		count = 1
-	}
-	return "\x1b[" + strconv.Itoa(count) + "X"
 }
 
 func (line Line) Clone() Line {
