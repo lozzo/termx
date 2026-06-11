@@ -174,47 +174,60 @@ func contentViewportLineWindow(line Line, start int, width int) Line {
 	end := start + width
 	sourceCol := 0
 	outWidth := 0
-	out := make([]canvasSegment, 0, width)
-	for _, segment := range cellSegmentsFromLine(line, end, "content:viewport", LayerPanel) {
+	cells := make([]Cell, 0, minInt(width, len(line.Cells)+1))
+	for _, cell := range line.Cells {
 		if outWidth >= width {
 			break
 		}
-		segmentStart := sourceCol
-		segmentEnd := sourceCol + segment.width
-		sourceCol = segmentEnd
-		if segmentEnd <= start {
+		cellWidth := maxInt(0, cell.Width)
+		if cellWidth == 0 {
 			continue
 		}
-		if segmentStart >= end {
+		cellStart := sourceCol
+		cellEnd := sourceCol + cellWidth
+		sourceCol = cellEnd
+		if cellEnd <= start {
+			continue
+		}
+		if cellStart >= end {
 			break
 		}
-		visibleStart := maxInt(segmentStart, start)
-		visibleEnd := minInt(segmentEnd, end)
+		visibleStart := maxInt(cellStart, start)
+		visibleEnd := minInt(cellEnd, end)
 		visibleWidth := maxInt(0, visibleEnd-visibleStart)
 		if visibleWidth == 0 {
 			continue
 		}
-		if segmentStart >= start && segmentEnd <= end && segment.width <= width-outWidth {
-			out = append(out, segment)
-			outWidth += segment.width
+		if cellStart >= start && cellEnd <= end && cellWidth <= width-outWidth {
+			cells = append(cells, cell)
+			outWidth += cellWidth
 			continue
 		}
-		for i := 0; i < visibleWidth && outWidth < width; i++ {
-			out = append(out, contentViewportBlankSegment())
+		if cell.Text != "" {
+			text := SliceCells(cell.Text, visibleStart-cellStart, visibleEnd-cellStart)
+			if text != "" {
+				visibleCell := cell
+				visibleCell.Text = text
+				visibleCell.Width = DisplayWidth(text)
+				if visibleCell.Width > 0 && visibleCell.Width <= width-outWidth {
+					cells = append(cells, visibleCell)
+					outWidth += visibleCell.Width
+					continue
+				}
+			}
+		}
+		for outWidth < minInt(width, outWidth+visibleWidth) {
+			cells = append(cells, Cell{Text: " ", Width: 1, Safe: true})
 			outWidth++
 		}
 	}
 	for outWidth < width {
-		out = append(out, contentViewportBlankSegment())
+		cells = append(cells, Cell{Text: " ", Width: 1, Safe: true})
 		outWidth++
 	}
-	return Line{Cells: cellsFromSegments(out)}
+	return Line{Cells: cells}
 }
 
 func contentViewportDotCell() Cell {
 	return Cell{Text: contentViewportDot, Width: 1, Style: StyleMuted, Safe: true}
-}
-
-func contentViewportBlankSegment() canvasSegment {
-	return canvasSegment{text: " ", width: 1, safe: true}
 }

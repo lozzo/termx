@@ -250,6 +250,8 @@ func (runtime *AppRuntime) Post(msg Msg) error {
 	return nil
 }
 
+const maxMessagesPerRenderBatch = 32
+
 func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	runtime.running = true
 	defer func() {
@@ -259,6 +261,7 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	runtime.ingestHostInput()
 	runtime.enqueueDueToastTick()
 	needsRender := false
+	processedSinceRender := 0
 	for {
 		runtime.enqueueDueToastTick()
 		msg, ok := runtime.dequeue()
@@ -285,11 +288,17 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
 		needsRender = true
+		processedSinceRender++
 		for _, effect := range effects {
 			runtime.scheduleEffect(ctx, effect)
 		}
 		runtime.ingestHostInput()
 		runtime.enqueueDueToastTick()
+		if needsRender && processedSinceRender >= maxMessagesPerRenderBatch {
+			runtime.renderFrame()
+			needsRender = false
+			processedSinceRender = 0
+		}
 		if runtime.quit {
 			return nil
 		}

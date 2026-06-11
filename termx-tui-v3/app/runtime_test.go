@@ -119,6 +119,37 @@ func TestAppRuntimeProcessesMessagesInOrderAndRenders(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeRendersLargeMessageBurstInBatches(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			return root.Advance(), nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{string(rune('0' + root.Generation))}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	for i := 0; i < maxMessagesPerRenderBatch+1; i++ {
+		if err := runtime.Post(testMsg{Name: "burst"}); err != nil {
+			t.Fatalf("post burst: %v", err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := len(host.Frames()); got != 2 {
+		t.Fatalf("large burst should render once per batch plus final frame, got %d", got)
+	}
+	if runtime.State().Generation != uint64(maxMessagesPerRenderBatch+1) {
+		t.Fatalf("expected all burst messages processed, got generation %d", runtime.State().Generation)
+	}
+}
+
 func TestAppRuntimeCoalescesQueuedLiveSurfaceUpdatesByTerminalID(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64
