@@ -97,8 +97,8 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 		frame := lastFrame(t, host.Frames())
 		assertPanelFrameContains(t, frame, "right pane live content")
 		result := render.NewRenderer(render.DefaultTheme()).RenderResult(render.NewRenderVMBuilder().Build(runtime.State()))
-		if panelContentAcceptanceHasOverflow(result, render.LayerPanel) {
-			t.Fatalf("split resized live content should clip without chrome overflow, layers=%#v", result.Layers)
+		if !panelContentAcceptanceHasOverflow(result, render.LayerPanel) {
+			t.Fatalf("split resized live content should expose chrome overflow, layers=%#v", result.Layers)
 		}
 	})
 

@@ -3,7 +3,7 @@ package render
 import "strings"
 
 // RenderContentViewport 是所有 pane/floating 内容投影的基础合同：
-// terminal extent 内外都保持空白安全；遮挡只通过 overflow hint 交给 chrome。
+// terminal live 的真实 extent 外区域保留可见边界提示；遮挡只通过 overflow hint 交给 chrome。
 func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	rect := request.Rect
 	if rect.W <= 0 || rect.H <= 0 {
@@ -20,11 +20,9 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	extent := normalizeContentExtent(content.Extent, rect)
 	rendered := make([]Line, 0, rect.H)
 	overflow := contentViewportOverflow(lines, extent, rect)
-	if content.Kind == ContentTerminalLive {
-		overflow = ContentOverflow{}
-	}
+	markOutsideExtent := contentViewportMarksOutsideExtent(content)
 	for row := 0; row < rect.H; row++ {
-		rendered = append(rendered, renderContentViewportRow(lines, extent, rect.W, row))
+		rendered = append(rendered, renderContentViewportRow(lines, extent, rect.W, row, markOutsideExtent))
 	}
 	return ContentRenderResult{
 		Lines:      rendered,
@@ -33,6 +31,11 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
 		Overflow:   overflow,
 	}
+}
+
+func contentViewportMarksOutsideExtent(content ContentVM) bool {
+	// 只有真实 live surface 才展示 pane/terminal 尺寸差异；pending、空态和错误 fallback 保持降噪。
+	return content.Kind == ContentTerminalLive && content.Extent.Known && !content.Pending && !content.Empty && content.Error == ""
 }
 
 func renderEmptyPaneContentViewport(request ContentRenderRequest) ContentRenderResult {
@@ -127,14 +130,14 @@ func contentViewportOverflow(lines []Line, extent ContentExtent, rect Rect) Cont
 	return overflow
 }
 
-func renderContentViewportRow(lines []Line, extent ContentExtent, width int, row int) Line {
+func renderContentViewportRow(lines []Line, extent ContentExtent, width int, row int, markOutsideExtent bool) Line {
 	cells := make([]Cell, 0, width)
 	if width <= 0 {
 		return Line{}
 	}
 	for col := 0; col < width; {
 		if !contentViewportInsideExtent(extent, col, row) {
-			cells = append(cells, contentViewportBlankCell())
+			cells = append(cells, contentViewportOutsideExtentCell(markOutsideExtent))
 			col++
 			continue
 		}
@@ -231,4 +234,11 @@ func contentViewportLineWindow(line Line, start int, width int) Line {
 
 func contentViewportBlankCell() Cell {
 	return Cell{Text: " ", Width: 1, Safe: true}
+}
+
+func contentViewportOutsideExtentCell(markOutsideExtent bool) Cell {
+	if markOutsideExtent {
+		return Cell{Text: "·", Width: 1, Safe: true}
+	}
+	return contentViewportBlankCell()
 }
