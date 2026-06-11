@@ -258,10 +258,14 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	runtime.ingestHostInitialSize()
 	runtime.ingestHostInput()
 	runtime.enqueueDueToastTick()
+	needsRender := false
 	for {
 		runtime.enqueueDueToastTick()
 		msg, ok := runtime.dequeue()
 		if !ok {
+			if needsRender {
+				runtime.renderFrame()
+			}
 			return nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -280,7 +284,7 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 		}
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
-		runtime.renderFrame()
+		needsRender = true
 		for _, effect := range effects {
 			runtime.scheduleEffect(ctx, effect)
 		}

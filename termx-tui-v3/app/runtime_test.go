@@ -114,7 +114,7 @@ func TestAppRuntimeProcessesMessagesInOrderAndRenders(t *testing.T) {
 	if runtime.State().Generation != 2 {
 		t.Fatalf("expected generation 2, got %d", runtime.State().Generation)
 	}
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"1", "2"}) {
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"2"}) {
 		t.Fatalf("unexpected rendered frames %v", got)
 	}
 }
@@ -550,8 +550,8 @@ func TestAppRuntimeIngestsHostResizeEventsAndDeduplicates(t *testing.T) {
 	if len(seen) != 2 {
 		t.Fatalf("expected duplicate resize to be filtered before reducer, got %d messages", len(seen))
 	}
-	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"90x30", "100x32"}) {
-		t.Fatalf("expected resize frames without duplicate, got %v", got)
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"100x32"}) {
+		t.Fatalf("expected resize drain to render latest viewport once, got %v", got)
 	}
 }
 

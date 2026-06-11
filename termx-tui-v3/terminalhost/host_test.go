@@ -394,7 +394,7 @@ func TestInputParserKeepsPartialEscapeUntilComplete(t *testing.T) {
 func TestFrameSinkWritesFrameToOutput(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)
-	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "two"}}); err != nil {
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "two"}, Metadata: render.RenderMetadata{Width: 3, Height: 2}}); err != nil {
 		t.Fatalf("write frame: %v", err)
 	}
 	got := output.String()
@@ -411,6 +411,80 @@ func TestFrameSinkWritesFrameToOutput(t *testing.T) {
 	}
 	if strings.Contains(got, "\n") {
 		t.Fatalf("FrameSink must not use linefeed row progression, got %q", got)
+	}
+}
+
+func TestFrameSinkSkipsUnchangedRows(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{Lines: []string{"one", "two"}, Metadata: render.RenderMetadata{Width: 3, Height: 2}}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write second frame: %v", err)
+	}
+	got := output.String()
+	if got != "" {
+		t.Fatalf("unchanged frame should not write to host output, got %q", got)
+	}
+}
+
+func TestFrameSinkWritesOnlyChangedRows(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "two"}, Metadata: render.RenderMetadata{Width: 5, Height: 2}}); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "three"}, Metadata: render.RenderMetadata{Width: 5, Height: 2}}); err != nil {
+		t.Fatalf("write second frame: %v", err)
+	}
+	got := output.String()
+	if strings.Contains(got, clearScreen) {
+		t.Fatalf("same-size changed frame should not clear the screen, got %q", got)
+	}
+	if strings.Contains(got, cursorPosition(1, 1)+clearLine+"one") || !strings.Contains(got, cursorPosition(2, 1)+clearLine+"three") {
+		t.Fatalf("expected only second row repaint, got %q", got)
+	}
+}
+
+func TestFrameSinkWritesCursorOnlyChange(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{Lines: []string{"one"}, Metadata: render.RenderMetadata{Width: 3, Height: 1}}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	frame.Cursor = render.Cursor{Visible: true, Shape: render.CursorShapeBar}
+	frame.CursorRect = render.Rect{X: 1, Y: 0, W: 1, H: 1}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write cursor frame: %v", err)
+	}
+	got := output.String()
+	if strings.Contains(got, clearScreen) || strings.Contains(got, "one") {
+		t.Fatalf("cursor-only change should not repaint rows, got %q", got)
+	}
+	if !strings.Contains(got, cursorShapeBar+cursorPosition(1, 2)+showCursor) {
+		t.Fatalf("cursor-only change should write cursor sequence, got %q", got)
+	}
+}
+
+func TestFrameSinkClearsOnFrameSizeChange(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "two"}, Metadata: render.RenderMetadata{Width: 3, Height: 2}}); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "two", "three"}, Metadata: render.RenderMetadata{Width: 5, Height: 3}}); err != nil {
+		t.Fatalf("write resized frame: %v", err)
+	}
+	got := output.String()
+	if !strings.Contains(got, cursorHome+clearScreen) || !strings.Contains(got, cursorPosition(3, 1)+clearLine+"three") {
+		t.Fatalf("resized frame should repaint fully, got %q", got)
 	}
 }
 

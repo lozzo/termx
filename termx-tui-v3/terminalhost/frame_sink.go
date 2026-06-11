@@ -21,8 +21,13 @@ const (
 
 // FrameSink 把 Renderer 生成的 frame 直接写到宿主输出。
 type FrameSink struct {
-	mu     sync.Mutex
-	writer io.Writer
+	mu           sync.Mutex
+	writer       io.Writer
+	lastLines    []string
+	lastWidth    int
+	lastHeight   int
+	lastCursor   string
+	hasLastFrame bool
 }
 
 func NewFrameSink(writer io.Writer) *FrameSink {
@@ -32,16 +37,41 @@ func NewFrameSink(writer io.Writer) *FrameSink {
 func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	var builder strings.Builder
-	builder.WriteString(synchronizedOutputBegin)
-	builder.WriteString(hideCursor)
-	builder.WriteString(cursorHome)
-	builder.WriteString(clearScreen)
 	lines := frame.ANSILines
 	if len(lines) == 0 {
 		lines = frame.Lines
 	}
+	width := frame.Metadata.Width
+	height := frame.Metadata.Height
+	if height == 0 {
+		height = len(lines)
+	}
+	fullRepaint := !sink.hasLastFrame || width != sink.lastWidth || height != sink.lastHeight || len(lines) != len(sink.lastLines)
+	cursorSequence := frameCursorSequence(frame)
+	dirtyRows := fullRepaint
+	if !dirtyRows {
+		for i, line := range lines {
+			if sink.lastLines[i] != line {
+				dirtyRows = true
+				break
+			}
+		}
+	}
+	if !dirtyRows && sink.lastCursor == cursorSequence {
+		return nil
+	}
+
+	var builder strings.Builder
+	builder.WriteString(synchronizedOutputBegin)
+	builder.WriteString(hideCursor)
+	if fullRepaint {
+		builder.WriteString(cursorHome)
+		builder.WriteString(clearScreen)
+	}
 	for i, line := range lines {
+		if !fullRepaint && i < len(sink.lastLines) && sink.lastLines[i] == line {
+			continue
+		}
 		// 满宽 frame 写到最后一列后继续输出换行，会在部分终端触发额外自动换行；
 		// 每行绝对定位可以保持 pane 竖向边框连续。
 		builder.WriteString(cursorPosition(i+1, 1))
@@ -50,10 +80,18 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 		builder.WriteString(render.ANSIReset)
 	}
 	builder.WriteString(render.ANSIReset)
-	builder.WriteString(frameCursorSequence(frame))
+	builder.WriteString(cursorSequence)
 	builder.WriteString(synchronizedOutputEnd)
 	_, err := io.WriteString(sink.writer, builder.String())
-	return err
+	if err != nil {
+		return err
+	}
+	sink.lastLines = append(sink.lastLines[:0], lines...)
+	sink.lastWidth = width
+	sink.lastHeight = height
+	sink.lastCursor = cursorSequence
+	sink.hasLastFrame = true
+	return nil
 }
 
 func frameCursorSequence(frame render.Frame) string {
