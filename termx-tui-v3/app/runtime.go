@@ -529,7 +529,11 @@ func (runtime *AppRuntime) renderFrame() {
 
 func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	inputMsg, ok := msg.(InputMsg)
-	if !ok || inputMsg.Event.Kind != input.EventKindMouse {
+	if !ok {
+		return msg
+	}
+	runtime.clearStaleMouseDrag(inputMsg.Event)
+	if inputMsg.Event.Kind != input.EventKindMouse {
 		return msg
 	}
 	if dragMsg, handled := runtime.dispatchMouseDrag(inputMsg.Event); handled {
@@ -600,6 +604,16 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
 		return msg
+	}
+}
+
+func (runtime *AppRuntime) clearStaleMouseDrag(event input.InputEvent) {
+	if !runtime.mouseDrag.Active {
+		return
+	}
+	if event.Kind != input.EventKindMouse || event.Mouse == input.MouseLeft {
+		// macOS 终端的 Option 原生选择可能吞掉 release，新输入必须能恢复 UI 鼠标状态。
+		runtime.mouseDrag = mouseDragState{}
 	}
 }
 

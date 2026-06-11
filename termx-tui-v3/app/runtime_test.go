@@ -1916,6 +1916,55 @@ func TestAppRuntimeDragsHorizontalPaneDividerResize(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeClearsStaleMouseDragWhenReleaseIsMissing(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newShellHitRuntime(
+		state.Root{Shell: state.DefaultShell().
+			SetPanelPresentation(state.PanelPresentationSplitLine).
+			SplitActivePane(state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical)},
+		host,
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	resizeRegion := framePaneResizeRegion(t, lastRuntimeFrame(t, host), state.DefaultPaneID, state.PaneResizeRight)
+	start := mouseEventAt(resizeRegion.Rect)
+	start.Mouse = input.MouseLeft
+	if err := host.SendInput(start); err != nil {
+		t.Fatalf("send drag start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain drag start: %v", err)
+	}
+	if !runtime.mouseDrag.Active {
+		t.Fatalf("drag start should arm mouse drag state")
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
+		t.Fatalf("send key after missing release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain key after missing release: %v", err)
+	}
+	if runtime.mouseDrag.Active {
+		t.Fatalf("non-mouse input should clear stale drag state, got %#v", runtime.mouseDrag)
+	}
+
+	if err := host.SendInput(start); err != nil {
+		t.Fatalf("send second drag start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain second drag start: %v", err)
+	}
+	if !runtime.mouseDrag.Active {
+		t.Fatalf("new mouse down should still start a fresh drag")
+	}
+}
+
 func TestAppRuntimeDragsNestedPaneResizeOnlyChangesExactDivider(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 9, Cols: 80, Rows: 24},
