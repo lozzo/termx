@@ -751,6 +751,113 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 	}
 }
 
+func TestCopyModeRejectsSiblingViewHistoryResponseForSameTerminal(t *testing.T) {
+	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "active-window", LineID: 20}},
+	)}}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if runtime.State().History.Token != "tok-1" || runtime.State().CopyMode.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("expected active copy binding, got %#v", runtime.State())
+	}
+
+	sibling := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-sibling", 78, 8, []state.HistoryRow{{Text: "sibling-window", LineID: 30}})
+	sibling.PaneID = "pane-2"
+	sibling.ViewID = "pane:pane-2"
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: core.LatestRequests[0].RequestID, Window: sibling}}); err != nil {
+		t.Fatalf("post sibling response: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain sibling response: %v", err)
+	}
+
+	if runtime.State().History.Token != "tok-1" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "active-window" {
+		t.Fatalf("sibling view response must not replace active authoritative window, got %#v", runtime.State().History)
+	}
+	if runtime.State().CopyMode.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || runtime.State().CopyMode.BoundToken != "tok-1" {
+		t.Fatalf("sibling view response must not disturb active copy binding, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "sibling-window") || !frameContains(last, "active-window") {
+		t.Fatalf("sibling view response must not render into active copy frame, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T) {
+	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-2",
+		98,
+		8,
+		[]state.HistoryRow{{Text: "rebound-window", LineID: 30}},
+	)}}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  78,
+		ViewRows:   20,
+	}
+	runtime.state.History = state.HistoryStore{
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Token:      "tok-old",
+		Cols:       78,
+		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
+	}
+
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain resize rebind: %v", err)
+	}
+	if runtime.State().History.Token != "tok-2" || runtime.State().CopyMode.BoundToken != "tok-2" {
+		t.Fatalf("expected rebound active copy binding, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
+	}
+
+	stale := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-stale", 98, 9, []state.HistoryRow{{Text: "previous-view", LineID: 40}})
+	stale.PaneID = "pane-old"
+	stale.ViewID = "pane:pane-old"
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: core.LatestRequests[0].RequestID, Window: stale}}); err != nil {
+		t.Fatalf("post stale view response: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stale view response: %v", err)
+	}
+
+	if runtime.State().History.Token != "tok-2" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "rebound-window" {
+		t.Fatalf("stale previous-view response must not replace rebound window, got %#v", runtime.State().History)
+	}
+	if runtime.State().CopyMode.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || runtime.State().CopyMode.BoundToken != "tok-2" {
+		t.Fatalf("stale previous-view response must not disturb rebound copy binding, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "previous-view") || !frameContains(last, "rebound-window") {
+		t.Fatalf("stale previous-view response must not render into rebound frame, got %#v", last.Lines)
+	}
+}
+
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
