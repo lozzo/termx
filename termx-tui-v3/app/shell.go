@@ -381,11 +381,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}}
 		}}}
 	case render.ActionTerminalTakeResizeOwner:
-		if msg.PaneID == "" {
-			return root, nil
-		}
-		root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner(msg.PaneID)
-		return root.Advance(), nil
+		return requestPaneResizeOwner(root, msg.PaneID)
 	case render.ActionEmptyClose, render.ActionExitedClose:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,
@@ -575,11 +571,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
 			return root.Advance(), nil
 		}
-		if binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID); ok {
-			root.TerminalViews = root.TerminalViews.TransferResizeOwner(binding.ViewID)
-		}
-		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.owner", Body: shell.ActiveFloatingID})
-		return root.Advance(), nil
+		return requestFloatingResizeOwner(root, shell.ActiveFloatingID)
 	case render.ActionFloatingResize:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingCenter:
@@ -607,6 +599,42 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
 	return root.Advance(), nil
+}
+
+func requestPaneResizeOwner(root state.Root, paneID string) (state.Root, []Effect) {
+	if paneID == "" {
+		return root, nil
+	}
+	binding, ok := root.TerminalViews.PaneBinding(paneID)
+	if !ok || binding.TerminalID == "" {
+		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no terminal view"})
+		return root.Advance(), nil
+	}
+	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+		return liveAttachMsgForResizeOwner(binding)
+	}}}
+}
+
+func requestFloatingResizeOwner(root state.Root, floatingID string) (state.Root, []Effect) {
+	binding, ok := root.TerminalViews.FloatingBinding(floatingID)
+	if !ok || binding.TerminalID == "" {
+		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no terminal view"})
+		return root.Advance(), nil
+	}
+	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+		return liveAttachMsgForResizeOwner(binding)
+	}}}
+}
+
+func liveAttachMsgForResizeOwner(binding state.TerminalViewBinding) LiveAttachMsg {
+	return LiveAttachMsg{Config: LiveConfig{
+		TerminalID:   binding.TerminalID,
+		Cols:         binding.DesiredCols,
+		Rows:         binding.DesiredRows,
+		ResizePolicy: state.TerminalResizeRoleOwner,
+		SurfaceID:    binding.SurfaceID,
+		ViewID:       binding.ViewID,
+	}}
 }
 
 func resizeFooterPaneCommand(actionID render.ActionID) (state.PaneCommand, bool) {

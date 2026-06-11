@@ -289,6 +289,33 @@ func TestTerminalLayoutResizeOwnerPaneResizeChangesPTYSize(t *testing.T) {
 	}
 }
 
+func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
+	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:    shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: "view-2", CanResize: true, OwnerSurfaceID: "surface", OwnerViewID: "view-2", ResizeEpoch: 2}})
+	owner, _ := next.TerminalViews.PaneBinding("pane-2")
+	if !owner.HasAuthoritativeResizeOwner() {
+		t.Fatalf("attach result should project clicked view as authoritative owner, got %#v", owner)
+	}
+	previous, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if previous.ResizeRole != state.TerminalResizeRoleFollower || previous.CanResize {
+		t.Fatalf("previous owner should be demoted by authoritative result, got %#v", previous)
+	}
+	msg, ok := liveResizeMsgFromEffects(effects)
+	if !ok || msg.ViewID != "view-2" || msg.Seq != 1 || msg.Cols <= 40 || msg.Rows <= 12 {
+		t.Fatalf("owner attach result should immediately resize to active content rect, got msg=%#v effects=%#v", msg, effects)
+	}
+}
+
 func liveResizeMsgFromEffects(effects []Effect) (LiveResizeMsg, bool) {
 	for _, effect := range effects {
 		funcEffect, ok := effect.(FuncEffect)

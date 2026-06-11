@@ -50,11 +50,15 @@ func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
 		t.Fatalf("ctrl-p should enter pane mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
 	}
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
-	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.PaneID != state.DefaultPaneID {
-		t.Fatalf("pane owner shortcut should transfer ownership to active pane, owner=%#v ok=%v", owner, ok)
+	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.PaneID != "pane-2" {
+		t.Fatalf("pane owner shortcut must keep current owner until service result, owner=%#v ok=%v", owner, ok)
 	}
-	if len(effects) != 1 {
-		t.Fatalf("pane owner shortcut should only emit handled effect, got %#v", effects)
+	if len(effects) != 2 {
+		t.Fatalf("pane owner shortcut should emit handled and attach effect, got %#v", effects)
+	}
+	ownerMsg, ok := effects[1].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+	if !ok || ownerMsg.Config.TerminalID != "term-1" || ownerMsg.Config.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || ownerMsg.Config.ResizePolicy != state.TerminalResizeRoleOwner {
+		t.Fatalf("pane owner shortcut should request authoritative owner attach, got %#v", ownerMsg)
 	}
 
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"}})
@@ -74,9 +78,9 @@ func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
 	if !ok || effect.Run == nil {
 		t.Fatalf("pane restart should emit restart effect, got %#v", effects)
 	}
-	msg, ok := effect.Run(context.Background()).(TerminalPoolRestartRequestMsg)
-	if !ok || msg.TerminalID != "term-1" {
-		t.Fatalf("pane restart should target active pane terminal, got %#v", msg)
+	restartMsg, ok := effect.Run(context.Background()).(TerminalPoolRestartRequestMsg)
+	if !ok || restartMsg.TerminalID != "term-1" {
+		t.Fatalf("pane restart should target active pane terminal, got %#v", restartMsg)
 	}
 }
 
@@ -106,11 +110,15 @@ func TestUIInputReducerFloatingModeTuiv2PickerAndOwner(t *testing.T) {
 
 	root.Shell = root.Shell.CloseOverlay().SetInteractionMode(state.InteractionModeFloating)
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
-	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.FloatingID != "float-1" {
-		t.Fatalf("floating owner shortcut should transfer ownership to active floating, owner=%#v ok=%v", owner, ok)
+	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.PaneID != state.DefaultPaneID {
+		t.Fatalf("floating owner shortcut must keep current owner until service result, owner=%#v ok=%v", owner, ok)
 	}
-	if len(effects) != 1 {
-		t.Fatalf("floating owner shortcut should only emit handled effect, got %#v", effects)
+	if len(effects) != 2 {
+		t.Fatalf("floating owner shortcut should emit handled and attach effect, got %#v", effects)
+	}
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+	if !ok || msg.Config.TerminalID != "term-1" || msg.Config.ViewID != state.TerminalFloatingViewID("float-1") || msg.Config.ResizePolicy != state.TerminalResizeRoleOwner {
+		t.Fatalf("floating owner shortcut should request authoritative owner attach, got %#v", msg)
 	}
 }
 
@@ -2070,16 +2078,20 @@ func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
 	next, effects := NewShellReducer()(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "pane-2"})
-	if len(effects) != 0 {
-		t.Fatalf("owner transfer should not emit IO effects, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("owner transfer should request authoritative attach, got %#v", effects)
 	}
 	first, _ := next.TerminalViews.PaneBinding("pane-1")
 	second, _ := next.TerminalViews.PaneBinding("pane-2")
-	if first.ResizeRole != state.TerminalResizeRoleFollower || first.CanResize {
-		t.Fatalf("previous owner should become follower, got %#v", first)
+	if first.ResizeRole != state.TerminalResizeRoleOwner || !first.CanResize {
+		t.Fatalf("previous owner must stay stable until service result, got %#v", first)
 	}
-	if second.ResizeRole != state.TerminalResizeRoleOwner || !second.CanResize {
-		t.Fatalf("clicked pane should become resize owner, got %#v", second)
+	if second.ResizeRole != state.TerminalResizeRoleFollower || second.CanResize {
+		t.Fatalf("clicked pane must stay follower until service result, got %#v", second)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+	if !ok || msg.Config.TerminalID != "term-1" || msg.Config.ViewID != "view-2" || msg.Config.ResizePolicy != state.TerminalResizeRoleOwner {
+		t.Fatalf("owner request should target clicked view, got %#v", msg)
 	}
 }
 

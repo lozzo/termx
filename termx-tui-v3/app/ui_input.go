@@ -588,19 +588,15 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 	}
 	switch command {
 	case "pane take-owner":
-		root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner(shell.ActivePaneID)
-		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.owner", Body: shell.ActivePaneID})
-		return root.Advance(), []Effect{handledEffect{}}, true
+		next, effects := requestPaneResizeOwner(root, shell.ActivePaneID)
+		return next, append([]Effect{handledEffect{}}, effects...), true
 	case "floating take-owner":
 		if shell.ActiveFloatingID == "" {
 			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
 			return root.Advance(), []Effect{handledEffect{}}, true
 		}
-		if binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID); ok {
-			root.TerminalViews = root.TerminalViews.TransferResizeOwner(binding.ViewID)
-		}
-		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.owner", Body: shell.ActiveFloatingID})
-		return root.Advance(), []Effect{handledEffect{}}, true
+		next, effects := requestFloatingResizeOwner(root, shell.ActiveFloatingID)
+		return next, append([]Effect{handledEffect{}}, effects...), true
 	case "pane reconnect":
 		root.Shell = shell.OpenTerminalPicker()
 		return root.Advance(), []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}, true

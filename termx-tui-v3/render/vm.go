@@ -580,7 +580,7 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 	}
 	ownerText := "◇ follow"
 	ownerStyle := StyleMuted
-	if role == state.TerminalResizeRoleOwner {
+	if binding.HasAuthoritativeResizeOwner() {
 		ownerText = "◆ owner"
 		ownerStyle = StyleSuccess
 	}
@@ -597,7 +597,7 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		State:        terminalChromeStateSlot(root, binding.TerminalID, active, content),
 		AttachCount:  len(root.TerminalViews.BindingsForTerminal(binding.TerminalID)),
 		Owner:        ChromeSlotVM{Text: ownerText, Style: ownerStyle},
-		TakeOwner:    role != state.TerminalResizeRoleOwner,
+		TakeOwner:    !binding.HasAuthoritativeResizeOwner(),
 		ResizeRole:   role,
 		CanResize:    binding.CanResize,
 		TerminalID:   binding.TerminalID,

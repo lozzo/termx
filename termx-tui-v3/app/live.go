@@ -265,14 +265,34 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID)
 	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
-	root.Shell = root.Shell.EnsureActiveTabForAttach()
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, msg.Result.TerminalID)
-	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID, msg.Result.CanResize))
 	viewID := msg.Result.ViewID
+	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	if viewID == "" {
 		viewID = state.TerminalPaneViewID(activePaneID)
 	}
+	if existing, ok := root.TerminalViews.Views[viewID]; ok {
+		if existing.PaneID != "" {
+			activePaneID = existing.PaneID
+		}
+		if existing.FloatingID != "" {
+			root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize))
+			root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
+				CanResize:      msg.Result.CanResize,
+				SizeLocked:     msg.Result.SizeLocked,
+				ControlReason:  msg.Result.ControlReason,
+				OwnerSurfaceID: msg.Result.OwnerSurfaceID,
+				OwnerViewID:    msg.Result.OwnerViewID,
+				ResizeEpoch:    msg.Result.ResizeEpoch,
+				ResizeRole:     msg.Result.ResizePolicy,
+				SurfaceID:      msg.Result.SurfaceID,
+				ViewID:         viewID,
+			})
+			return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
+		}
+	}
+	root.Shell = root.Shell.EnsureActiveTabForAttach()
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, msg.Result.TerminalID)
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize))
 	root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
 		CanResize:      msg.Result.CanResize,
 		SizeLocked:     msg.Result.SizeLocked,

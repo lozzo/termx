@@ -388,6 +388,10 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 }
 
 func (binding TerminalViewBinding) hasAuthoritativeResizeOwner() bool {
+	return binding.HasAuthoritativeResizeOwner()
+}
+
+func (binding TerminalViewBinding) HasAuthoritativeResizeOwner() bool {
 	if binding.ResizeRole != TerminalResizeRoleOwner || !binding.CanResize {
 		return false
 	}

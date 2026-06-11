@@ -62,6 +62,7 @@ func terminalLayoutMayNeedResize(root state.Root, msg Msg) bool {
 	switch msg := msg.(type) {
 	case HostResizeMsg,
 		LiveAttachResultMsg,
+		LiveResizeResultMsg,
 		TerminalPoolAttachResultMsg,
 		ShellSetPanelPresentationMsg,
 		ShellTogglePanelPresentationMsg,

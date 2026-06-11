@@ -711,8 +711,8 @@ func TestAppRuntimeTakeResizeOwnerRequiresDoubleClick(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("second drain: %v", err)
 	}
-	if binding, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); binding.ResizeRole != state.TerminalResizeRoleOwner || !binding.CanResize {
-		t.Fatalf("double click should take resize owner, got %#v", binding)
+	if binding, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); binding.ResizeRole != state.TerminalResizeRoleFollower || binding.CanResize {
+		t.Fatalf("double click should not change owner before service result, got %#v", binding)
 	}
 }
 
