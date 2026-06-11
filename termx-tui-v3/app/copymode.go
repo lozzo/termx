@@ -311,6 +311,10 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		Cols:       cols,
 	})
 	if err != nil {
+		// 连续 latest/rebind 期间如果上一个请求还在飞，只保留 pending，不把内部背压抬成用户可见错误。
+		if errors.Is(err, state.ErrHistoryRequestPending) {
+			return root, nil
+		}
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
@@ -355,6 +359,10 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 	}
 	nextHistory, err := root.History.BeginOlder(req)
 	if err != nil {
+		// older 重复触发时直接忽略，保持当前 pending/history 视图，不弹假错误。
+		if errors.Is(err, state.ErrHistoryRequestPending) {
+			return root, nil
+		}
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory

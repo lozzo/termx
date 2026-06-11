@@ -77,6 +77,41 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 	}
 }
 
+func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send first page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain first latest: %v", err)
+	}
+	if runtime.State().History.Pending == nil {
+		t.Fatalf("first latest should leave pending request in state, got %#v", runtime.State().History)
+	}
+	if len(runner.Effects) != 1 {
+		t.Fatalf("first latest should schedule exactly one effect, got %#v", runner.Effects)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send second page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain duplicate latest: %v", err)
+	}
+	if len(runner.Effects) != 1 {
+		t.Fatalf("duplicate latest while pending must not schedule another effect, got %#v", runner.Effects)
+	}
+	if runtime.State().Session.LastError != "" || runtime.State().Surface.Err != "" {
+		t.Fatalf("duplicate latest while pending must not surface error, got %#v", runtime.State())
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "authoritative history window pending") {
+		t.Fatalf("pending copy mode should stay pending without fake error, got %#v", last.Lines)
+	}
+}
+
 func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
@@ -116,6 +151,57 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	}
 	if len(core.LatestRequests) != 1 || len(core.OlderRequests) != 1 {
 		t.Fatalf("unexpected history requests latest=%#v older=%#v", core.LatestRequests, core.OlderRequests)
+	}
+}
+
+func TestCopyModeDuplicateOlderWhilePendingDoesNotSurfaceError(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime.state.History = state.HistoryStore{
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       78,
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 20},
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 20, LastLineID: 20},
+		Rows:       []state.HistoryRow{{Text: "new", LineID: 20}},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   20,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send first older page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain first older: %v", err)
+	}
+	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestOlder {
+		t.Fatalf("first older should leave older request pending, got %#v", runtime.State().History)
+	}
+	if len(runner.Effects) != 1 {
+		t.Fatalf("first older should schedule exactly one effect, got %#v", runner.Effects)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send second older page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain duplicate older: %v", err)
+	}
+	if len(runner.Effects) != 1 {
+		t.Fatalf("duplicate older while pending must not schedule another effect, got %#v", runner.Effects)
+	}
+	if runtime.State().Session.LastError != "" || runtime.State().Surface.Err != "" {
+		t.Fatalf("duplicate older while pending must not surface error, got %#v", runtime.State())
 	}
 }
 

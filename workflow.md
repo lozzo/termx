@@ -46,7 +46,8 @@
 
 - floating group commands 还没做完。
 - 非 history 快捷键的真实集成证据和 tmux 黑盒证据还没补齐。
-- clipboard paste 与 history overlay 仍然阻塞，暂时不重启。
+- clipboard paste 和完整 clipboard history overlay 还没重启。
+- 但 authoritative history 浏览与复制主链已经具备基础，可以先单独收口。
 
 ### 1.4 做完后应该是什么样
 
@@ -205,13 +206,16 @@
 | 背景里程碑：0-215H3 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、`termx-proto/`、相关文档 | 默认入口、runtime、styled render framework、TerminalView/Attachment 基线、resize ownership、history MVP H1-H3 都已经收口；更细的历史细节需要时去看 git 提交和架构文档 |
 | 215D1. SK floating group commands | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 已补齐 floating `v ALL`、`= FIT`、`s AUTO-FIT` 与 overview `s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE`；全部进入 reducer-owned floating state 与统一 `FloatingCommand`，`FIT/AUTO-FIT` 基于 terminal live/session 尺寸工作，auto-fit 在后续 live 尺寸变化时会刷新 floating rect；相关 reducer/render/storage harness 已通过 |
 | 215F. SK shortcut integration and tmux harness | 完成 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 已补 runtime 黑盒证据：floating overview/summon/show-all/collapse-all/close、terminal pool delete、同 terminal owner/follower resize 与 pane close 恢复都走真实 reducer/effect/message；并补 tmux owner/follower emoji-dots smoke 与 CLI close-pane resize 稳定性回归 |
-| 215E. SK clipboard paste 与 history overlay | 阻塞 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 暂不执行。原因：这条线依赖 live/history 边界、authoritative history contract、binding 和 harness 已经打稳；现在先不重启 overlay/paste 主线 |
+| 215E1. SK history copy 主链收口 | 进行中 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 先只做明早能直接用的主链：进入 copy/history、向 core-v2 请求 authoritative `HistoryWindow`、浏览/翻页、选择并复制到系统剪贴板，同时把内部 pending/stale 背压从用户错误里藏起来。例子：连续按 `PageUp` 或 resize rebind 时，就算上一个请求还在飞，也只能继续显示 pending/history 内容，不能冒 `history request pending` 假错误 |
+| 215E2. SK clipboard paste 主链 | 待开始 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-cli/`、相关文档 | 把显示态 `p/P PASTE` 接上真实主链：从宿主 paste/clipboard 输入拿文本，按 active terminal view 路由到 terminal input，处理 bracketed paste 和错误反馈。例子：焦点在 pane A 时 paste，只能发到 pane A 对应 terminal，不能误发到别的 pane |
+| 215E3. SK clipboard history overlay | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 再补完整的 clipboard history overlay，包括列表、过滤、选择、粘贴/新建/删除等产品壳。这个切片不负责 authoritative terminal history，本质上是独立的 clipboard UI |
 
 当前下一步：
 
 - `215D1 floating group commands` 已完成
 - `215F shortcut integration and tmux harness` 已完成
-- `215E clipboard paste 与 history overlay` 继续保持阻塞，除非先改本文件
+- `215E1 history copy 主链收口` 现在是当前切片，先把看历史和复制收口；当前第一步先消掉 `history request pending` 这类误导性错误泄漏
+- `215E2 clipboard paste 主链`、`215E3 clipboard history overlay` 继续后排
 
 ## 6. 必做证据
 
@@ -289,6 +293,7 @@
 - 默认本地入口已经切到 `termx-core-v2/` 和 `termx-tui-v3/`；旧本地路径只允许走 `termx legacy ...`，remote 仍按 legacy/fallback 隔离。
 - `AppRuntime` 已是事件驱动批处理循环；真实 CLI attach 不再有外层 `16ms` 轮询；resize latest-wins 和 owner 转移链路已经收口。
 - `215H1`、`215H2`、`215H3` 已完成，live/history 边界、core-v2 authoritative history stale guard、tui-v3 active-view history binding 都已经落地。
-- 当前主线重新回到非 history 快捷键：`215D1` 已完成，下一步是 `215F`。
-- `215E clipboard paste 与 history overlay` 继续阻塞，除非后续先改本文件明确重启。
+- 非 history 快捷键主线 `215D1`、`215F` 已完成。
+- `215E1 history copy 主链收口` 已重启；当前目标是先交付 authoritative history 浏览和复制主链。
+- `215E2 clipboard paste 主链` 和 `215E3 clipboard history overlay` 还没开始，等 `215E1` 收口后继续。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。
