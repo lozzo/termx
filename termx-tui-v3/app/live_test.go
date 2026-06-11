@@ -263,6 +263,46 @@ func TestTerminalLayoutResizeOnlyActiveOwnerViewChangesPTYSize(t *testing.T) {
 	}
 }
 
+func TestTerminalLayoutResizeOwnerPaneResizeChangesPTYSize(t *testing.T) {
+	reducer := ComposeReducers(NewShellReducer(), NewTerminalLayoutResizeReducer())
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:    shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, effects := reducer(root, ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandResize, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, ResizeDirection: state.PaneResizeRight, Delta: 6, Source: state.PaneCommandSourceTest}})
+	msg, ok := liveResizeMsgFromEffects(effects)
+	if !ok {
+		t.Fatalf("owner pane resize should schedule one PTY resize effect, got %#v", effects)
+	}
+	if msg.ViewID != "view-1" || msg.Seq != 1 || msg.Cols == 80 || msg.Rows == 24 {
+		t.Fatalf("resize effect should carry changed owner view size, got %#v", msg)
+	}
+	owner, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if owner.RequestSeq != 1 || owner.DesiredCols != msg.Cols || owner.DesiredRows != msg.Rows {
+		t.Fatalf("owner desired size should track pane resize request, got %#v msg=%#v", owner, msg)
+	}
+}
+
+func liveResizeMsgFromEffects(effects []Effect) (LiveResizeMsg, bool) {
+	for _, effect := range effects {
+		funcEffect, ok := effect.(FuncEffect)
+		if !ok || funcEffect.Run == nil {
+			continue
+		}
+		msg, ok := funcEffect.Run(context.Background()).(LiveResizeMsg)
+		if ok {
+			return msg, true
+		}
+	}
+	return LiveResizeMsg{}, false
+}
+
 func TestLiveResizeResultUsesViewScopedStaleGuard(t *testing.T) {
 	reducer := NewLiveReducer(LiveDeps{})
 	root := state.Root{

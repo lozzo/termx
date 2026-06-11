@@ -380,11 +380,21 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 		binding.ViewID = projection.ViewID
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
-	if binding.ResizeRole == TerminalResizeRoleOwner {
+	if binding.hasAuthoritativeResizeOwner() {
 		store.demoteResizeOwnersLocked(binding.TerminalID, viewID)
 	}
 	store.Views[viewID] = binding
 	return store, true
+}
+
+func (binding TerminalViewBinding) hasAuthoritativeResizeOwner() bool {
+	if binding.ResizeRole != TerminalResizeRoleOwner || !binding.CanResize {
+		return false
+	}
+	if binding.OwnerViewID != "" {
+		return binding.OwnerViewID == binding.ViewID
+	}
+	return true
 }
 
 func (binding TerminalViewBinding) IsStaleResizeResult(seq uint64) bool {

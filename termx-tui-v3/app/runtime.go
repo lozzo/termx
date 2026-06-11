@@ -164,6 +164,7 @@ type AppRuntime struct {
 	queue               []Msg
 	lastHitRegions      []render.HitRegion
 	mouseDrag           mouseDragState
+	lastMouseAction     mouseActionClickState
 	hostSizeInitialized bool
 	now                 func() time.Time
 	toastTickInterval   time.Duration
@@ -189,6 +190,14 @@ type mouseDragState struct {
 	LastDelta          int
 	LastCol            int
 	LastRow            int
+}
+
+type mouseActionClickState struct {
+	Kind     render.HitRegionKind
+	ActionID string
+	PaneID   string
+	Row      int
+	Col      int
 }
 
 type mouseDragKind string
@@ -561,6 +570,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}}
 	}
 	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionTerminalTakeResizeOwner.String() {
+		if !runtime.consumeTakeResizeOwnerDoubleClick(region, inputMsg.Event) {
+			return NoopMsg{}
+		}
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
@@ -589,6 +601,16 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	default:
 		return msg
 	}
+}
+
+func (runtime *AppRuntime) consumeTakeResizeOwnerDoubleClick(region render.HitRegion, event input.InputEvent) bool {
+	current := mouseActionClickState{Kind: region.Kind, ActionID: region.ActionID, PaneID: region.PaneID, Row: event.Row, Col: event.Col}
+	if runtime.lastMouseAction == current {
+		runtime.lastMouseAction = mouseActionClickState{}
+		return true
+	}
+	runtime.lastMouseAction = current
+	return false
 }
 
 func historyHitRegionDisplayColumn(event input.InputEvent, region render.HitRegion) int {

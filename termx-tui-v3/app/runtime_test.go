@@ -681,6 +681,41 @@ func TestAppRuntimeLastPaneCloseClickShowsFeedback(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeTakeResizeOwnerRequiresDoubleClick(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	root := state.Root{Shell: state.DefaultShell().SetPanelPresentation(state.PanelPresentationCard)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 78, 18, state.TerminalResizeRoleFollower, "surface", "view-1", false))
+	runtime := newShellHitRuntime(root, host)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionTerminalTakeResizeOwner.String(), state.DefaultPaneID)
+	click := mouseEventAtRenderedTokenInRect(t, frame, action.Rect, "◇ follow")
+	if err := host.SendInput(click); err != nil {
+		t.Fatalf("send first owner click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("first drain: %v", err)
+	}
+	if binding, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); binding.ResizeRole != state.TerminalResizeRoleFollower || binding.CanResize {
+		t.Fatalf("single click must not take resize owner, got %#v", binding)
+	}
+	if err := host.SendInput(click); err != nil {
+		t.Fatalf("send second owner click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("second drain: %v", err)
+	}
+	if binding, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); binding.ResizeRole != state.TerminalResizeRoleOwner || !binding.CanResize {
+		t.Fatalf("double click should take resize owner, got %#v", binding)
+	}
+}
+
 func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	closeHost := NewFakeTerminalHost(8)
 	closeShell, _ := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
