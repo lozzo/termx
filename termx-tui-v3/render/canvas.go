@@ -34,9 +34,6 @@ func newCanvas(width int, height int) *canvas {
 	rows := make([][]canvasCell, height)
 	for i := range rows {
 		rows[i] = make([]canvasCell, width)
-		for col := range rows[i] {
-			rows[i][col] = blankCanvasCell()
-		}
 	}
 	return &canvas{width: width, height: height, rows: rows}
 }
@@ -89,19 +86,53 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 	c.clearCellRange(y, x, width)
 	cursor := x
 	remaining := width
-	for _, segment := range cellSegmentsFromLine(line, width, owner, layer) {
+	fillStyle := lineFillStyle(line)
+	for _, cell := range line.Cells {
 		if remaining <= 0 {
 			break
 		}
-		if segment.width <= 0 {
+		text := xansi.Strip(SafeLine(cell.Text))
+		if text == "" {
 			continue
 		}
-		if segment.width > remaining {
-			break
+		for len(text) > 0 && remaining > 0 {
+			cluster, clusterWidth := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+			if cluster == "" {
+				break
+			}
+			text = text[len(cluster):]
+			if clusterWidth <= 0 {
+				continue
+			}
+			if clusterWidth > remaining {
+				break
+			}
+			c.writeSegmentNoClear(cursor, y, canvasSegment{
+				text:       cluster,
+				width:      clusterWidth,
+				style:      cell.Style,
+				ansiStyle:  cell.ANSIStyle,
+				linkURL:    cell.LinkURL,
+				linkParams: cell.LinkParams,
+				owner:      owner,
+				layer:      layer,
+				safe:       cell.Safe,
+			})
+			cursor += clusterWidth
+			remaining -= clusterWidth
 		}
-		c.writeSegment(cursor, y, segment)
-		cursor += segment.width
-		remaining -= segment.width
+	}
+	for remaining > 0 {
+		c.writeSegmentNoClear(cursor, y, canvasSegment{
+			text:  " ",
+			width: 1,
+			style: fillStyle,
+			owner: owner,
+			layer: layer,
+			safe:  true,
+		})
+		cursor++
+		remaining--
 	}
 }
 
@@ -270,6 +301,10 @@ func (c *canvas) lines() []Line {
 			if cell.continuation {
 				continue
 			}
+			if cell.text == "" && cell.width == 0 {
+				cells = append(cells, Cell{Text: " ", Width: 1, Safe: true})
+				continue
+			}
 			width := cell.width
 			if width <= 0 {
 				width = 1
@@ -326,6 +361,16 @@ func (c *canvas) writeSegment(x int, y int, segment canvasSegment) {
 		return
 	}
 	c.clearCellRange(y, x, segment.width)
+	c.writeSegmentNoClear(x, y, segment)
+}
+
+func (c *canvas) writeSegmentNoClear(x int, y int, segment canvasSegment) {
+	if y < 0 || y >= c.height || x < 0 || x >= c.width || segment.width <= 0 {
+		return
+	}
+	if x+segment.width > c.width {
+		return
+	}
 	c.rows[y][x] = canvasCell{
 		text:       segment.text,
 		width:      segment.width,
@@ -367,111 +412,10 @@ func (c *canvas) cellText(x int, y int) string {
 	return c.rows[y][x].text
 }
 
-type canvasSegment struct {
-	text       string
-	width      int
-	style      StyleToken
-	ansiStyle  ANSICellStyle
-	linkURL    string
-	linkParams string
-	owner      string
-	layer      LayerKind
-	safe       bool
-}
-
-func cellSegments(text string, style StyleToken, owner string, layer LayerKind) []canvasSegment {
-	text = xansi.Strip(SafeLine(text))
-	segments := make([]canvasSegment, 0, DisplayWidth(text))
-	for len(text) > 0 {
-		cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
-		if cluster == "" {
-			break
-		}
-		if width < 0 {
-			width = 0
-		}
-		if width > 0 {
-			segments = append(segments, canvasSegment{
-				text:  cluster,
-				width: width,
-				style: style,
-				owner: owner,
-				layer: layer,
-				safe:  true,
-			})
-		}
-		text = text[len(cluster):]
-	}
-	return segments
-}
-
-func cellSegmentsFromLine(line Line, width int, owner string, layer LayerKind) []canvasSegment {
-	if width <= 0 {
-		return nil
-	}
-	segments := make([]canvasSegment, 0, width)
-	remaining := width
-	fillStyle := lineFillStyle(line)
-	for _, cell := range line.Cells {
-		if remaining <= 0 {
-			break
-		}
-		text := cell.Text
-		if text == "" {
-			continue
-		}
-		if DisplayWidth(text) > remaining {
-			text = TruncateCells(text, remaining)
-		}
-		for _, segment := range cellSegments(text, cell.Style, owner, layer) {
-			if segment.width > remaining {
-				break
-			}
-			segment.ansiStyle = cell.ANSIStyle
-			segment.linkURL = cell.LinkURL
-			segment.linkParams = cell.LinkParams
-			segment.safe = cell.Safe
-			segments = append(segments, segment)
-			remaining -= segment.width
-		}
-	}
-	for remaining > 0 {
-		segments = append(segments, canvasSegment{
-			text:  " ",
-			width: 1,
-			style: fillStyle,
-			owner: owner,
-			layer: layer,
-			safe:  true,
-		})
-		remaining--
-	}
-	return segments
-}
-
 func lineFillStyle(line Line) StyleToken {
 	return ""
 }
 
-func cellsFromSegments(segments []canvasSegment) []Cell {
-	if len(segments) == 0 {
-		return nil
-	}
-	cells := make([]Cell, len(segments))
-	for i, segment := range segments {
-		cells[i] = Cell{
-			Text:       segment.text,
-			Width:      segment.width,
-			Style:      segment.style,
-			ANSIStyle:  segment.ansiStyle,
-			LinkURL:    segment.linkURL,
-			LinkParams: segment.linkParams,
-			Safe:       segment.safe,
-		}
-	}
-	return cells
-}
-
 func blankCanvasCell() canvasCell {
-	return canvasCell{text: " ", width: 1, safe: true}
+	return canvasCell{}
 }

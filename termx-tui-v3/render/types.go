@@ -46,7 +46,7 @@ func (frame Frame) Clone() Frame {
 func FrameFromRenderResult(result RenderResult) Frame {
 	return Frame{
 		Lines:       result.Lines(),
-		StyledLines: result.StyledLines(),
+		StyledLines: result.Content,
 		ANSILines:   result.ANSILines(),
 		Cursor:      result.Cursor,
 		CursorRect:  result.CursorRect,
