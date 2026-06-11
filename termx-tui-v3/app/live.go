@@ -172,14 +172,23 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveResizeMsg:
 			return reduceLiveResize(root, msg, deps)
 		case LiveResizeResultMsg:
+			if shouldRecoverOwnerDesiredAfterResizeResult(root, msg) {
+				return recoverLatestResizeAfterStaleResult(root, msg)
+			}
 			viewScoped := msg.ViewID != ""
 			if msg.ViewID != "" {
-				if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok && binding.IsStaleResizeResult(msg.Seq) {
-					return root, nil
+				binding, ok := root.TerminalViews.Views[msg.ViewID]
+				if !ok {
+					// view 已经被关闭或解绑后，迟到的 resize 结果不能再回写共享 session/surface；
+					// 否则 close pane 后旧 view 的结果会把当前 owner 的尺寸状态顶回去。
+					return recoverLatestResizeAfterStaleResult(root, msg)
+				}
+				if binding.IsStaleResizeResult(msg.Seq) {
+					return recoverLatestResizeAfterStaleResult(root, msg)
 				}
 			}
 			if !viewScoped && root.Session.IsStaleResizeResult(msg.Seq) {
-				return root, nil
+				return recoverLatestResizeAfterStaleResult(root, msg)
 			}
 			if msg.Err != nil {
 				if next, ok := markTerminalExitedFromError(root, root.Session.TerminalID, msg.Err); ok {
@@ -552,12 +561,16 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 	}
 	session := root.Session
 	if msg.ViewID != "" {
-		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
-			session.TerminalID = binding.TerminalID
-			session.Channel = binding.Channel
-			session.SurfaceID = binding.SurfaceID
-			session.ViewID = binding.ViewID
+		binding, ok := root.TerminalViews.Views[msg.ViewID]
+		if !ok {
+			// view 已经被关闭后，排队里的旧 resize 请求不能借当前 session 的 channel 再发一遍；
+			// 否则 close pane 后会把新 owner 已恢复的 PTY size 又改回旧尺寸。
+			return root, nil
 		}
+		session.TerminalID = binding.TerminalID
+		session.Channel = binding.Channel
+		session.SurfaceID = binding.SurfaceID
+		session.ViewID = binding.ViewID
 	}
 	return root, []Effect{FuncEffect{
 		Async:            true,
@@ -593,6 +606,85 @@ func resizeControlProjectionFromResult(result services.TerminalResizeResult) sta
 		SurfaceID:      result.SurfaceID,
 		ViewID:         result.ViewID,
 	}
+}
+
+func shouldRecoverOwnerDesiredAfterResizeResult(root state.Root, msg LiveResizeResultMsg) bool {
+	if !msg.Result.Resized {
+		return false
+	}
+	terminalID := staleResizeResultTerminalID(root, msg)
+	if terminalID == "" {
+		return false
+	}
+	desiredCols, desiredRows, _, ok := desiredResizeForTerminal(root, terminalID)
+	if !ok {
+		return false
+	}
+	cols, rows := resolvedResizeResultSize(msg)
+	return cols != desiredCols || rows != desiredRows
+}
+
+func recoverLatestResizeAfterStaleResult(root state.Root, msg LiveResizeResultMsg) (state.Root, []Effect) {
+	terminalID := staleResizeResultTerminalID(root, msg)
+	if terminalID == "" {
+		return root, nil
+	}
+	desiredCols, desiredRows, viewID, ok := desiredResizeForTerminal(root, terminalID)
+	if !ok {
+		return root, nil
+	}
+	actualCols, actualRows := resolvedResizeResultSize(msg)
+	if desiredCols == actualCols && desiredRows == actualRows {
+		return root, nil
+	}
+	// 旧 resize 请求可能已经真正把 PTY 改回过期尺寸；
+	// stale guard 丢掉结果后，还要立即重申当前 owner 的最新期望尺寸，避免卡在旧 geometry。
+	root.Session = root.Session.RequestResize(desiredCols, desiredRows)
+	seq := root.Session.ResizeRequestSeq
+	return root, []Effect{FuncEffect{
+		Run: func(context.Context) Msg {
+			return LiveResizeMsg{TerminalID: terminalID, Cols: desiredCols, Rows: desiredRows, Seq: seq, ViewID: viewID}
+		},
+	}}
+}
+
+func staleResizeResultTerminalID(root state.Root, msg LiveResizeResultMsg) string {
+	if msg.Result.TerminalID != "" {
+		return msg.Result.TerminalID
+	}
+	if msg.ViewID != "" {
+		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
+			return binding.TerminalID
+		}
+	}
+	return root.Session.TerminalID
+}
+
+func desiredResizeForTerminal(root state.Root, terminalID string) (int, int, string, bool) {
+	if binding, ok := root.TerminalViews.OwnerBinding(terminalID); ok {
+		if binding.DesiredCols > 0 && binding.DesiredRows > 0 {
+			return binding.DesiredCols, binding.DesiredRows, binding.ViewID, true
+		}
+	}
+	if root.Session.TerminalID != terminalID {
+		return 0, 0, "", false
+	}
+	cols, rows := root.Session.DesiredSize()
+	if cols <= 0 || rows <= 0 {
+		return 0, 0, "", false
+	}
+	return cols, rows, root.Session.ViewID, true
+}
+
+func resolvedResizeResultSize(msg LiveResizeResultMsg) (int, int) {
+	cols, rows := msg.Cols, msg.Rows
+	if msg.Result.Cols > 0 {
+		cols = msg.Result.Cols
+	}
+	if msg.Result.Rows > 0 {
+		rows = msg.Result.Rows
+	}
+	return cols, rows
 }
 
 func setLiveError(root state.Root, message string) state.Root {

@@ -204,13 +204,13 @@
 | --- | --- | --- | --- |
 | 背景里程碑：0-215H3 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、`termx-proto/`、相关文档 | 默认入口、runtime、styled render framework、TerminalView/Attachment 基线、resize ownership、history MVP H1-H3 都已经收口；更细的历史细节需要时去看 git 提交和架构文档 |
 | 215D1. SK floating group commands | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 已补齐 floating `v ALL`、`= FIT`、`s AUTO-FIT` 与 overview `s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE`；全部进入 reducer-owned floating state 与统一 `FloatingCommand`，`FIT/AUTO-FIT` 基于 terminal live/session 尺寸工作，auto-fit 在后续 live 尺寸变化时会刷新 floating rect；相关 reducer/render/storage harness 已通过 |
-| 215F. SK shortcut integration and tmux harness | 待开始 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 补黑盒证据：同 terminal 多 pane/floating、pane lock、terminal remove、floating overview/summon/group command 都要走真实 reducer/effect/message；输入只进 active view；owner resize 到 PTY；follower 不改 size |
+| 215F. SK shortcut integration and tmux harness | 完成 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 已补 runtime 黑盒证据：floating overview/summon/show-all/collapse-all/close、terminal pool delete、同 terminal owner/follower resize 与 pane close 恢复都走真实 reducer/effect/message；并补 tmux owner/follower emoji-dots smoke 与 CLI close-pane resize 稳定性回归 |
 | 215E. SK clipboard paste 与 history overlay | 阻塞 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 暂不执行。原因：这条线依赖 live/history 边界、authoritative history contract、binding 和 harness 已经打稳；现在先不重启 overlay/paste 主线 |
 
 当前下一步：
 
 - `215D1 floating group commands` 已完成
-- 下一步做 `215F shortcut integration and tmux harness`
+- `215F shortcut integration and tmux harness` 已完成
 - `215E clipboard paste 与 history overlay` 继续保持阻塞，除非先改本文件
 
 ## 6. 必做证据

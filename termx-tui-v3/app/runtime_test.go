@@ -1412,6 +1412,133 @@ func TestInteractiveRuntimeFloatingFooterCloseWithoutActiveShowsFeedback(t *test
 	}
 }
 
+func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.T) {
+	host := NewFakeTerminalHost(24)
+	host.SetSize(120, 28)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeFloating),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	for _, command := range []state.FloatingCommand{
+		{
+			Action:   state.FloatingCommandCreate,
+			TargetID: "floating-1",
+			Title:    "logs",
+			Pane:     state.PaneState{ID: "floating-pane-1", Title: "logs", Kind: state.PaneEmpty},
+			Rect:     state.FloatingRect{X: 6, Y: 3, W: 28, H: 9},
+			Source:   state.PaneCommandSourceTest,
+		},
+		{
+			Action:   state.FloatingCommandCreate,
+			TargetID: "floating-2",
+			Title:    "shell",
+			Pane:     state.PaneState{ID: "floating-pane-2", Title: "shell", Kind: state.PaneEmpty},
+			Rect:     state.FloatingRect{X: 18, Y: 6, W: 30, H: 10},
+			Source:   state.PaneCommandSourceTest,
+		},
+	} {
+		if err := runtime.Post(ShellFloatingCommandMsg{Command: command}); err != nil {
+			t.Fatalf("post floating setup %#v: %v", command, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating setup: %v", err)
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "o"},
+		{Kind: input.EventKindKey, Key: input.KeyDown},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send floating overview input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain floating overview input %#v: %v", event, err)
+		}
+	}
+
+	shell := runtime.State().Shell.EnsureDefaults()
+	if shell.Overlay.Kind != state.OverlayFloatingOverview || !shell.Overlay.Open {
+		t.Fatalf("floating overview should stay open during overview actions, shell=%#v", shell)
+	}
+	if shell.Overlay.SelectedIndex != 1 {
+		t.Fatalf("floating overview should move selection to second floating, overlay=%#v", shell.Overlay)
+	}
+	if len(shell.Floatings) != 2 || shell.Floatings[0].Collapsed || shell.Floatings[1].Collapsed {
+		t.Fatalf("collapse-all then show-all should end with both floatings expanded, floatings=%#v", shell.Floatings)
+	}
+	if shell.ActiveFloatingID != "floating-2" || !shell.Floatings[1].Active {
+		t.Fatalf("enter open should raise selected floating, shell=%#v", shell)
+	}
+	frame := lastRuntimeFrame(t, host)
+	if !frameContains(frame, "Floating Overview") || !frameContains(frame, "logs") || !frameContains(frame, "shell") {
+		t.Fatalf("expected floating overview frame, got %#v", frame.Lines)
+	}
+
+	showAllAction := frameActionHitRegion(t, frame, render.ActionFloatingShowAll.String(), "")
+	if err := host.SendInput(mouseEventAt(showAllAction.Rect)); err != nil {
+		t.Fatalf("send floating show-all click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating show-all click: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"}); err != nil {
+		t.Fatalf("send floating collapse-all hotkey: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating collapse-all hotkey: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if !shell.Floatings[0].Collapsed || !shell.Floatings[1].Collapsed {
+		t.Fatalf("collapse-all hotkey should collapse every floating, floatings=%#v", shell.Floatings)
+	}
+
+	rowAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFloatingSummon.String(), "floating-1")
+	if err := host.SendInput(mouseEventAt(rowAction.Rect)); err != nil {
+		t.Fatalf("send floating row summon click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating row summon click: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "floating-1" || shell.Floatings[0].Collapsed {
+		t.Fatalf("row summon should activate and expand selected floating, shell=%#v", shell)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "2"}); err != nil {
+		t.Fatalf("send floating summon hotkey: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating summon hotkey: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "floating-2" || shell.Floatings[1].Collapsed {
+		t.Fatalf("number summon should activate indexed floating, shell=%#v", shell)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x"}); err != nil {
+		t.Fatalf("send floating close hotkey: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating close hotkey: %v", err)
+	}
+	shell = runtime.State().Shell.EnsureDefaults()
+	if len(shell.Floatings) != 1 || shell.Floatings[0].ID != "floating-1" {
+		t.Fatalf("overview close should remove selected floating, shell=%#v", shell)
+	}
+	if !shell.Overlay.Open || shell.Overlay.Kind != state.OverlayFloatingOverview {
+		t.Fatalf("overview close should keep overview overlay active for remaining floatings, overlay=%#v", shell.Overlay)
+	}
+}
+
 func TestInteractiveRuntimeSingleTabSwitchFooterActionsStayStable(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(110, 24)
@@ -1629,6 +1756,102 @@ func TestInteractiveRuntimeWorkspaceDeleteFooterAction(t *testing.T) {
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("workspace footer delete must not leak to terminal input, got %#v", terminal.Inputs)
+	}
+}
+
+func TestInteractiveRuntimeTerminalPoolDeleteRemovesBindingsAndReloadsInventory(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-logs", Channel: 7, Cols: 80, Rows: 24},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{
+			{TerminalID: "term-logs", Title: "logs", State: "running"},
+			{TerminalID: "term-shell", Title: "shell", State: "running"},
+		}},
+	}
+	host := NewFakeTerminalHost(48)
+	host.SetSize(100, 28)
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-logs"),
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-logs",
+			Channel:    7,
+			Attached:   true,
+			Cols:       80,
+			Rows:       24,
+		},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-logs",
+			Ready:      true,
+			Lines:      []string{"live logs"},
+			Surfaces: map[string]state.LiveSurfaceSnapshot{
+				"term-logs": {TerminalID: "term-logs", Lines: []string{"live logs"}},
+			},
+		},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(
+		state.DefaultPaneID, "term-logs", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+	))
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "t"},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send pool open input %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain pool open input %#v: %v", event, err)
+		}
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	if !frameContains(frame, "Terminal Pool") || !frameContains(frame, "logs") {
+		t.Fatalf("expected terminal pool frame, got %#v", frame.Lines)
+	}
+	selectRegion := frameActionHitRegion(t, frame, render.ActionPoolSelect.String(), "")
+	if err := host.SendInput(mouseEventAt(selectRegion.Rect)); err != nil {
+		t.Fatalf("send pool select click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool select click: %v", err)
+	}
+	if runtime.State().Shell.Overlay.SelectedIndex != 0 {
+		t.Fatalf("pool row click should select first row, overlay=%#v", runtime.State().Shell.Overlay)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x18", Ctrl: true}); err != nil {
+		t.Fatalf("send pool delete shortcut: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool delete shortcut: %v", err)
+	}
+
+	if len(terminal.Removes) != 1 || terminal.Removes[0].TerminalID != "term-logs" {
+		t.Fatalf("pool delete should call terminal remove service, removes=%#v", terminal.Removes)
+	}
+	if len(terminal.Lists) < 2 {
+		t.Fatalf("pool delete should trigger inventory reload, lists=%#v", terminal.Lists)
+	}
+	stateAfter := runtime.State()
+	if stateAfter.TerminalPool.LastRemovedID != "term-logs" {
+		t.Fatalf("pool delete should record removed terminal, pool=%#v", stateAfter.TerminalPool)
+	}
+	if _, ok := stateAfter.TerminalViews.PaneBinding(state.DefaultPaneID); ok {
+		t.Fatal("pool delete should clear pane terminal view binding")
+	}
+	if pane, ok := stateAfter.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.Kind != state.PaneEmpty || pane.TerminalID != "" {
+		t.Fatalf("pool delete should clear shell pane binding, pane=%#v ok=%v", pane, ok)
+	}
+	if stateAfter.Session.TerminalID != "" || stateAfter.Surface.TerminalID != "" {
+		t.Fatalf("pool delete should clear active session/surface, session=%#v surface=%#v", stateAfter.Session, stateAfter.Surface)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("pool delete path must not leak terminal input, got %#v", terminal.Inputs)
 	}
 }
 
