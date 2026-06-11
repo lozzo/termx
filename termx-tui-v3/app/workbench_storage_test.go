@@ -349,3 +349,45 @@ func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
 		t.Fatalf("expected restored terminal view binding, binding=%#v ok=%v", binding, ok)
 	}
 }
+
+func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Title = "shell"
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-main", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	storage := &services.FakeWorkbenchStorageService{
+		LoadResult: services.WorkbenchStorageLoadResult{
+			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+			Version:  7,
+			Found:    true,
+		},
+		WatchCh: watchCh,
+	}
+	terminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running"}}}}
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{Storage: storage},
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(terminal.Lists) != 1 {
+		t.Fatalf("startup should load terminal pool once, lists=%#v", terminal.Lists)
+	}
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "[󰍀] shell") || !frameContains(frame, "[󰍀] main") {
+		t.Fatalf("restored terminal chrome should use terminal title after startup list, frame=%#v", frame.Lines)
+	}
+}

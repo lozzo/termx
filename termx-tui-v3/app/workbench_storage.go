@@ -145,6 +145,9 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	root.TerminalViews = terminalViews
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: "loaded"})
+	if len(root.TerminalViews.Views) > 0 {
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	}
 	return root.Advance(), nil
 }
 
