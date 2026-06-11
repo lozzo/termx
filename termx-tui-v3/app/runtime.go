@@ -263,14 +263,18 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 		runtime.enqueueDueToastTick()
 		msg, ok := runtime.dequeue()
 		if !ok {
-			if needsRender {
-				runtime.renderFrame()
-				needsRender = false
-				runtime.ingestHostInput()
-				runtime.enqueueDueToastTick()
-				continue
+			runtime.ingestHostCurrentSize()
+			msg, ok = runtime.dequeue()
+			if !ok {
+				if needsRender {
+					runtime.renderFrame()
+					needsRender = false
+					runtime.ingestHostInput()
+					runtime.enqueueDueToastTick()
+					continue
+				}
+				return nil
 			}
-			return nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -342,8 +346,18 @@ func (runtime *AppRuntime) ingestHostInitialSize() {
 		return
 	}
 	runtime.hostSizeInitialized = true
+	runtime.ingestHostCurrentSize()
+}
+
+func (runtime *AppRuntime) ingestHostCurrentSize() {
+	if runtime.host == nil {
+		return
+	}
 	cols, rows, err := runtime.host.Size()
 	if err != nil || cols <= 0 || rows <= 0 {
+		return
+	}
+	if runtime.state.Viewport.Valid && runtime.state.Viewport.Cols == cols && runtime.state.Viewport.Rows == rows {
 		return
 	}
 	msg := HostResizeMsg{Cols: cols, Rows: rows}

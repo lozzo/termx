@@ -291,6 +291,9 @@ func ownerConfirmClearEffect(seq uint64) Effect {
 }
 
 func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {
+	if msg.PaneID != "" {
+		root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: msg.PaneID})
+	}
 	spec, ok := render.ActionSpecByIDString(msg.ActionID)
 	if !ok || spec.Dispatch == render.ActionDispatchNone {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})

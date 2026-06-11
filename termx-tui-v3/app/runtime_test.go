@@ -618,6 +618,36 @@ func TestAppRuntimeIngestsHostResizeEventsAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestAppRuntimePollsHostSizeWithoutResizeEvent(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	host.SetSize(80, 20)
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			return root, nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{viewportLabel(root)}}
+		},
+		host,
+		nil,
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+	host.SetSize(120, 40)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("resize drain: %v", err)
+	}
+
+	if got := runtime.State().Viewport; !got.Valid || got.Cols != 120 || got.Rows != 40 {
+		t.Fatalf("expected polled host size to update viewport, got %#v", got)
+	}
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"80x20", "120x40"}) {
+		t.Fatalf("expected host size poll to render updated viewport, got %v", got)
+	}
+}
+
 func TestFakeTerminalHostReportsFullInputQueue(t *testing.T) {
 	host := NewFakeTerminalHost(1)
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey}); err != nil {
@@ -2623,6 +2653,36 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	}
 	if closeRuntime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
 		t.Fatalf("empty close action should close pane-2, got %#v", closeRuntime.State().Shell)
+	}
+}
+
+func TestAppRuntimeContentActionFocusesTargetPane(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "empty", Kind: state.PaneEmpty}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	runtime := newShellHitRuntime(state.Root{Shell: shell}, host)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	attach := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionEmptyAttach.String(), "pane-2")
+	if err := host.SendInput(mouseEventAt(attach.Rect)); err != nil {
+		t.Fatalf("send empty attach click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.ActivePaneID != "pane-2" {
+		t.Fatalf("content action should focus clicked empty pane, got %q", shell.ActivePaneID)
+	}
+	if !shell.Overlay.Open || shell.Overlay.TargetID != "pane-2" {
+		t.Fatalf("empty attach should target clicked pane, got %#v", shell.Overlay)
 	}
 }
 
