@@ -45,6 +45,7 @@ type Cell struct {
 	LinkURL    string
 	LinkParams string
 	Safe       bool
+	compensate bool
 }
 
 // ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 TermX chrome theme token。
@@ -135,6 +136,9 @@ func (line Line) String() string {
 	}
 	var out strings.Builder
 	for _, cell := range line.Cells {
+		if cell.compensate {
+			continue
+		}
 		out.WriteString(cell.Text)
 	}
 	return out.String()
@@ -150,9 +154,18 @@ func (line Line) ANSIString(theme Theme) string {
 	}
 	var out strings.Builder
 	modelCol := 1
+	needsReanchor := false
+	cellCount := len(line.Cells)
+	cellIndex := 0
 	for _, cell := range line.Cells {
+		cellIndex++
 		text := SafeLine(cell.Text)
 		cellWidth := maxInt(0, cell.Width)
+		if cell.compensate {
+			modelCol += cellWidth
+			needsReanchor = true
+			continue
+		}
 		styleSeq := ""
 		if !cell.ANSIStyle.IsZero() {
 			styleSeq = ansiForCellStyle(cell.ANSIStyle)
@@ -166,7 +179,11 @@ func (line Line) ANSIString(theme Theme) string {
 		if styleSeq != "" {
 			out.WriteString(styleSeq)
 		}
-		writeANSITextWithWidthSafety(&out, text, modelCol)
+		if needsReanchor {
+			out.WriteString(ansiColumn(modelCol))
+			needsReanchor = false
+		}
+		writeANSITextWithWidthSafety(&out, text, modelCol, cellIndex < cellCount && line.Cells[cellIndex].compensate)
 		if styleSeq != "" {
 			out.WriteString(ANSIReset)
 		}
@@ -178,7 +195,7 @@ func (line Line) ANSIString(theme Theme) string {
 	return out.String()
 }
 
-func writeANSITextWithWidthSafety(out *strings.Builder, text string, startCol int) {
+func writeANSITextWithWidthSafety(out *strings.Builder, text string, startCol int, suppressTrailingReanchor bool) {
 	modelCol := startCol
 	for len(text) > 0 {
 		cluster, clusterWidth := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
@@ -191,7 +208,7 @@ func writeANSITextWithWidthSafety(out *strings.Builder, text string, startCol in
 			clusterWidth = 0
 		}
 		modelCol += clusterWidth
-		if hostWidthAmbiguousCell(cluster, clusterWidth) {
+		if hostWidthAmbiguousCell(cluster, clusterWidth) && !(suppressTrailingReanchor && text == "") {
 			// 中文说明：FE0F emoji 常被宿主按 1 列前进；逐 cluster 重锚定，保护同一 cell 后续内容和边框。
 			out.WriteString(ansiColumn(modelCol))
 		}

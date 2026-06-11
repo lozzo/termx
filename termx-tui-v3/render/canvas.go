@@ -21,6 +21,7 @@ type canvasCell struct {
 	owner        string
 	layer        LayerKind
 	continuation bool
+	compensate   bool
 	safe         bool
 }
 
@@ -301,6 +302,10 @@ func (c *canvas) lines() []Line {
 			if cell.continuation {
 				continue
 			}
+			if cell.compensate {
+				cells = append(cells, Cell{Style: cell.style, ANSIStyle: cell.ansiStyle, LinkURL: cell.linkURL, LinkParams: cell.linkParams, Safe: true, compensate: true})
+				continue
+			}
 			if cell.text == "" && cell.width == 0 {
 				cells = append(cells, Cell{Text: " ", Width: 1, Safe: true})
 				continue
@@ -383,6 +388,7 @@ func (c *canvas) writeSegmentNoClear(x int, y int, segment canvasSegment) {
 		safe:       segment.safe,
 	}
 	for col := x + 1; col < x+segment.width; col++ {
+		compensate := col == x+1 && terminalCellNeedsCompensation(segment.text, segment.width)
 		c.rows[y][col] = canvasCell{
 			width:        0,
 			style:        segment.style,
@@ -391,10 +397,15 @@ func (c *canvas) writeSegmentNoClear(x int, y int, segment canvasSegment) {
 			linkParams:   segment.linkParams,
 			owner:        segment.owner,
 			layer:        segment.layer,
-			continuation: true,
+			continuation: !compensate,
+			compensate:   compensate,
 			safe:         segment.safe,
 		}
 	}
+}
+
+func terminalCellNeedsCompensation(text string, width int) bool {
+	return hostWidthAmbiguousCell(text, width)
 }
 
 func (c *canvas) cellText(x int, y int) string {
