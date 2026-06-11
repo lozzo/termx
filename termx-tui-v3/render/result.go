@@ -162,6 +162,8 @@ func (line Line) ANSIString(theme Theme) string {
 		text := SafeLine(cell.Text)
 		cellWidth := maxInt(0, cell.Width)
 		if cell.compensate {
+			out.WriteString(ansiColumn(maxInt(1, modelCol-1)))
+			out.WriteString(ansiEraseChars(1))
 			modelCol += cellWidth
 			needsReanchor = true
 			continue
@@ -301,6 +303,13 @@ func ansiColumn(col int) string {
 		col = 1
 	}
 	return "\x1b[" + strconv.Itoa(col) + "G"
+}
+
+func ansiEraseChars(count int) string {
+	if count < 1 {
+		count = 1
+	}
+	return "\x1b[" + strconv.Itoa(count) + "X"
 }
 
 func (line Line) Clone() Line {

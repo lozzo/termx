@@ -293,6 +293,8 @@
 
 最新 follow-up：已修正上一轮空 snapshot readiness 修复带来的连接 pane 回归；重新 attach 已有 terminal 时不再把缓存 live surface revision 清零，避免后续空 bootstrap snapshot 把已有 panel 内容覆盖成 `live surface empty`，但 exit/error 边界后的显式 attach 仍会重新建立语义基线并接受新帧。已同步学习 `tuiv2` 的 width safety 经验，在 v3 canvas 内为宿主宽度歧义 emoji 物化零宽补偿列，plain/styled 宽度不双算，ANSI 输出在补偿列后按模型列重锚定，避免 emoji 后接小白点、extent dots 或边框时被宿主 cursor advance 推歪。
 
+最新 follow-up：继续对照 `tuiv2/render/compositor.go` 的 raw ambiguous continuation 处理，确认 v3 上一轮只在补偿列后做 `CHA` 不够；真实写帧必须先定位到补偿列并 `ECH(1)` 清掉该物理格，再定位到下一模型列写后续 dots/边框。v3 styled ANSI serializer 已补齐该顺序，并增加连续 `♻️ ` 序列后接小白点的回归，防止多枚 FE0F emoji 累积后仍出现空洞或边框漂移。
+
 ## 6. 必做 harness
 
 ### 6.1 core-v2 harness
