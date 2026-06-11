@@ -171,6 +171,8 @@ type AppRuntime struct {
 	lastToastTick       time.Time
 	running             bool
 	quit                bool
+	firstFrameWritten   bool
+	startupFrameReady   bool
 }
 
 type mouseDragState struct {
@@ -293,6 +295,10 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
 		needsRender = true
+		if runtime.shouldWriteFirstFrame() {
+			runtime.renderFrame()
+			needsRender = false
+		}
 		for _, effect := range effects {
 			runtime.scheduleEffect(ctx, effect)
 		}
@@ -346,22 +352,25 @@ func (runtime *AppRuntime) ingestHostInitialSize() {
 		return
 	}
 	runtime.hostSizeInitialized = true
-	runtime.ingestHostCurrentSize()
+	if runtime.ingestHostCurrentSize() {
+		runtime.startupFrameReady = true
+	}
 }
 
-func (runtime *AppRuntime) ingestHostCurrentSize() {
+func (runtime *AppRuntime) ingestHostCurrentSize() bool {
 	if runtime.host == nil {
-		return
+		return false
 	}
 	cols, rows, err := runtime.host.Size()
 	if err != nil || cols <= 0 || rows <= 0 {
-		return
+		return false
 	}
 	if runtime.state.Viewport.Valid && runtime.state.Viewport.Cols == cols && runtime.state.Viewport.Rows == rows {
-		return
+		return false
 	}
 	msg := HostResizeMsg{Cols: cols, Rows: rows}
 	runtime.prepend(msg)
+	return true
 }
 
 func (runtime *AppRuntime) ingestHostInput() {
@@ -547,6 +556,11 @@ func (runtime *AppRuntime) renderFrame() {
 	frame := runtime.render(runtime.state)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
 	_ = runtime.host.FrameSink().WriteFrame(frame)
+	runtime.firstFrameWritten = true
+}
+
+func (runtime *AppRuntime) shouldWriteFirstFrame() bool {
+	return runtime.startupFrameReady && !runtime.firstFrameWritten && runtime.state.Viewport.Valid
 }
 
 func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {

@@ -287,6 +287,8 @@
 
 最新 follow-up：已参考 `tuiv2` width safety 将非 BMP PUA/Nerd Font 图标纳入 styled ANSI serializer 的模型列重锚定，覆盖 `󱃾` 后接 extent dots、同 cell 后续内容和边框的宿主宽度漂移；BMP PUA chrome 图标与 `·` 仍按稳定窄符号处理，避免过度插入 `CHA`。
 
+最新 follow-up：已修正 TUI 启动进入 alt-screen 后首帧可能被启动 attach/storage/live 事件链延后的黑屏窗口；`AppRuntime` 在有效 host viewport 建立后立即写出首个安全 frame，后续事件仍保持按真实 `WriteFrame` 边界合帧，避免启动时看似按键无效。
+
 ## 6. 必做 harness
 
 ### 6.1 core-v2 harness

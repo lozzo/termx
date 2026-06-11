@@ -182,6 +182,42 @@ func TestAppRuntimeContinuesDrainForMessagesArrivingDuringFrameWrite(t *testing.
 	}
 }
 
+func TestAppRuntimeWritesFirstFrameBeforeStartupBurstFinishes(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	host.SetSize(100, 30)
+	var runtime *AppRuntime
+	remaining := 8
+	runtime = NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			root = root.Advance()
+			if remaining > 0 {
+				remaining--
+				return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return testMsg{Name: "startup"} }}}
+			}
+			return root, nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{fmt.Sprintf("frame-%d", root.Generation)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	host.sink.onWrite = func() {
+		if len(host.sink.frames) == 0 && remaining != 7 {
+			t.Fatalf("startup must write first frame before draining startup burst, remaining=%d", remaining)
+		}
+	}
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := frameLines(host.Frames()); len(got) != 2 || got[0] != "frame-2" || got[1] != "frame-10" {
+		t.Fatalf("expected immediate first frame and final coalesced frame, got %v", got)
+	}
+}
+
 func TestAppRuntimeCoalescesQueuedLiveSurfaceUpdatesByTerminalID(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64
