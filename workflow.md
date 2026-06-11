@@ -285,6 +285,8 @@
 
 当前下一步：已按用户要求插入并完成不改 UI 设计架构的渲染效率快速优化切片 215P，且已修正“队列清空才渲染”在持续事件流下可能造成的可见帧饥饿，改为以真实 `WriteFrame` 完成作为帧边界；两次真实写帧之间的 reducer message 合并到下一帧，不按固定消息数强制产出可见中间帧；terminal live pending/exited fallback 在 resize/layout 短暂不一致时继续空白降噪，但真实 live surface 与 pane content rect 尺寸不匹配时恢复 extent boundary dots 和 chrome overflow `>`/`v` 提示；renderer profile 已继续压低 `Line.Clone`、`cellSegmentsFromLine` 和 canvas 初始化热点，当前 `BenchmarkRendererLargeTerminalOutput` 约 `2.10ms/op`、`4.85MB/op`、`12637 allocs/op`；follow-up 已修正启动/恢复期间过期 history response 显示 `stale history response` 且污染 live error、attach 已有 cached live surface 时仍短暂显示裸 `live surface pending` 的问题，以及 FE0F 宽度歧义 emoji 后续边框、extent dots 和同 cell 后续内容可能被宿主 cursor advance 推歪的问题；随后继续执行切片 215D1 floating group commands，再执行 215F shortcut integration/tmux harness。215E clipboard paste/history overlay 因依赖 history 技术暂时阻塞，history MVP 今天不重启、不排进当前自动执行队列。继续保持 copy/history 不从 live surface、snapshot 或 local VTerm scrollback 推断历史，也不得把 styled payload parser 扩张成补丁式完整 VT emulator。
 
+最新 follow-up：已参考 `tuiv2` width safety 将非 BMP PUA/Nerd Font 图标纳入 styled ANSI serializer 的模型列重锚定，覆盖 `󱃾` 后接 extent dots、同 cell 后续内容和边框的宿主宽度漂移；BMP PUA chrome 图标与 `·` 仍按稳定窄符号处理，避免过度插入 `CHA`。
+
 ## 6. 必做 harness
 
 ### 6.1 core-v2 harness

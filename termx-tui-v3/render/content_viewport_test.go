@@ -349,6 +349,25 @@ func TestFrameworkRendersTerminalLiveExtentFromBuilder(t *testing.T) {
 	}
 }
 
+func TestContentViewportReanchorsNonBMPPrivateUseIconBeforeExtentDots(t *testing.T) {
+	result := RenderContentViewport(ContentRenderRequest{
+		Rect: Rect{W: 6, H: 1},
+		Content: ContentVM{
+			Kind:   ContentTerminalLive,
+			Lines:  []Line{NewLine("x󱃾")},
+			Extent: ContentExtent{Known: true, Cols: 2, Rows: 1},
+		},
+	})
+
+	if got := result.Lines[0].PlainString(); got != "x󱃾····" {
+		t.Fatalf("live viewport should keep extent dots after non-BMP icon, got %q", got)
+	}
+	ansi := result.Lines[0].ANSIString(DefaultTheme())
+	if !strings.Contains(ansi, "x󱃾\x1b[3G····") {
+		t.Fatalf("live viewport should re-anchor before extent dots, got %q", ansi)
+	}
+}
+
 func TestFrameworkRendersTerminalLiveOverflowFromBuilder(t *testing.T) {
 	root := state.Root{
 		Viewport: state.ViewportStore{Valid: true, Cols: 18, Rows: 8},

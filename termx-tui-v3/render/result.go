@@ -5,6 +5,12 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/clipperhouse/displaywidth"
+)
+
+var (
+	eastAsianWidthNarrow = displaywidth.Options{EastAsianWidth: false}
+	eastAsianWidthWide   = displaywidth.Options{EastAsianWidth: true}
 )
 
 // ANSIReset 是 FrameSink 写完 styled frame 后必须输出的 SGR reset。
@@ -195,7 +201,8 @@ func hostWidthAmbiguousCell(text string, width int) bool {
 	if text == "" || width <= 0 || strings.ContainsRune(text, '\x1b') {
 		return false
 	}
-	return ambiguousEmojiVariationSelectorCell(text, width)
+	return ambiguousEmojiVariationSelectorCell(text, width) ||
+		(hostWidthAmbiguousCluster(text, width) && !stableNarrowTerminalSymbol(text))
 }
 
 func ambiguousEmojiVariationSelectorCell(text string, width int) bool {
@@ -207,6 +214,53 @@ func ambiguousEmojiVariationSelectorCell(text string, width int) bool {
 	}
 	stripped := strings.ReplaceAll(text, "\uFE0F", "")
 	return stripped != "" && xansi.StringWidth(stripped) > 0 && xansi.StringWidth(stripped) <= width
+}
+
+func hostWidthAmbiguousCluster(text string, width int) bool {
+	return eastAsianAmbiguousWidthCluster(text) || printableZeroWidthCluster(text) || privateUseCluster(text)
+}
+
+func eastAsianAmbiguousWidthCluster(text string) bool {
+	if text == "" || strings.ContainsRune(text, '\x1b') {
+		return false
+	}
+	narrow := eastAsianWidthNarrow.String(text)
+	wide := eastAsianWidthWide.String(text)
+	return narrow > 0 && wide > 0 && narrow != wide
+}
+
+func printableZeroWidthCluster(text string) bool {
+	if text == "" || strings.ContainsRune(text, '\x1b') {
+		return false
+	}
+	return xansi.StringWidth(text) == 0
+}
+
+func privateUseCluster(text string) bool {
+	if text == "" || strings.ContainsRune(text, '\x1b') {
+		return false
+	}
+	runes := []rune(text)
+	if len(runes) != 1 {
+		return false
+	}
+	r := runes[0]
+	return (r >= 0xE000 && r <= 0xF8FF) ||
+		(r >= 0xF0000 && r <= 0xFFFFD) ||
+		(r >= 0x100000 && r <= 0x10FFFD)
+}
+
+func stableNarrowTerminalSymbol(text string) bool {
+	switch text {
+	case "─", "│", "┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼", "●", "◆", "·":
+		return true
+	}
+	runes := []rune(text)
+	if len(runes) != 1 {
+		return false
+	}
+	r := runes[0]
+	return r >= 0xE000 && r <= 0xF8FF
 }
 
 func ansiColumn(col int) string {

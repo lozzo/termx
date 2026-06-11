@@ -100,3 +100,27 @@ func TestANSIStringReanchorsAfterAmbiguousEmojiInsideCellBeforeDots(t *testing.T
 		t.Fatalf("ambiguous emoji inside a cell should re-anchor before dots, got %q", got)
 	}
 }
+
+func TestANSIStringReanchorsAfterNonBMPPrivateUseIconBeforeDots(t *testing.T) {
+	line := Line{Cells: []Cell{
+		NewCell("x󱃾··"),
+		NewCell("│"),
+	}}
+
+	got := line.ANSIString(DefaultTheme())
+	if !strings.Contains(got, "x󱃾\x1b[3G··│") {
+		t.Fatalf("non-BMP private-use icon should re-anchor before dots, got %q", got)
+	}
+}
+
+func TestANSIStringDoesNotReanchorStableBMPPrivateUseChromeIcon(t *testing.T) {
+	line := Line{Cells: []Cell{
+		NewCell(""),
+		NewCell("│"),
+	}}
+
+	got := line.ANSIString(DefaultTheme())
+	if strings.Contains(got, "\x1b[2G") {
+		t.Fatalf("stable BMP private-use chrome icon should not be re-anchored, got %q", got)
+	}
+}
