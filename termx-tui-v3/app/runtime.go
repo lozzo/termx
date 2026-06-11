@@ -250,8 +250,6 @@ func (runtime *AppRuntime) Post(msg Msg) error {
 	return nil
 }
 
-const maxMessagesPerRenderBatch = 32
-
 func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	runtime.running = true
 	defer func() {
@@ -261,13 +259,16 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	runtime.ingestHostInput()
 	runtime.enqueueDueToastTick()
 	needsRender := false
-	processedSinceRender := 0
 	for {
 		runtime.enqueueDueToastTick()
 		msg, ok := runtime.dequeue()
 		if !ok {
 			if needsRender {
 				runtime.renderFrame()
+				needsRender = false
+				runtime.ingestHostInput()
+				runtime.enqueueDueToastTick()
+				continue
 			}
 			return nil
 		}
@@ -288,17 +289,11 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
 		needsRender = true
-		processedSinceRender++
 		for _, effect := range effects {
 			runtime.scheduleEffect(ctx, effect)
 		}
 		runtime.ingestHostInput()
 		runtime.enqueueDueToastTick()
-		if needsRender && processedSinceRender >= maxMessagesPerRenderBatch {
-			runtime.renderFrame()
-			needsRender = false
-			processedSinceRender = 0
-		}
 		if runtime.quit {
 			return nil
 		}
@@ -1134,10 +1129,14 @@ func (host *FakeTerminalHost) Frames() []render.Frame {
 
 // FakeFrameSink 记录 renderer 输出，供 harness 断言。
 type FakeFrameSink struct {
-	frames []render.Frame
+	frames  []render.Frame
+	onWrite func()
 }
 
 func (sink *FakeFrameSink) WriteFrame(frame render.Frame) error {
+	if sink.onWrite != nil {
+		sink.onWrite()
+	}
 	sink.frames = append(sink.frames, frame.Clone())
 	return nil
 }

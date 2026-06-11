@@ -2,10 +2,8 @@ package render
 
 import "strings"
 
-const contentViewportDot = "·"
-
 // RenderContentViewport 是所有 pane/floating 内容投影的基础合同：
-// terminal extent 内保持真实空白，extent 外才画弱占位点；遮挡只通过 overflow hint 交给 chrome。
+// terminal extent 内外都保持空白安全；遮挡只通过 overflow hint 交给 chrome。
 func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	rect := request.Rect
 	if rect.W <= 0 || rect.H <= 0 {
@@ -22,6 +20,9 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	extent := normalizeContentExtent(content.Extent, rect)
 	rendered := make([]Line, 0, rect.H)
 	overflow := contentViewportOverflow(lines, extent, rect)
+	if content.Kind == ContentTerminalLive {
+		overflow = ContentOverflow{}
+	}
 	for row := 0; row < rect.H; row++ {
 		rendered = append(rendered, renderContentViewportRow(lines, extent, rect.W, row))
 	}
@@ -133,7 +134,7 @@ func renderContentViewportRow(lines []Line, extent ContentExtent, width int, row
 	}
 	for col := 0; col < width; {
 		if !contentViewportInsideExtent(extent, col, row) {
-			cells = append(cells, contentViewportDotCell())
+			cells = append(cells, contentViewportBlankCell())
 			col++
 			continue
 		}
@@ -150,7 +151,7 @@ func renderContentViewportRow(lines []Line, extent ContentExtent, width int, row
 		cells = append(cells, visible.Cells...)
 		col += visible.Width()
 		if visible.Width() == 0 {
-			cells = append(cells, Cell{Text: " ", Width: 1, Safe: true})
+			cells = append(cells, contentViewportBlankCell())
 			col++
 		}
 	}
@@ -217,17 +218,17 @@ func contentViewportLineWindow(line Line, start int, width int) Line {
 			}
 		}
 		for outWidth < minInt(width, outWidth+visibleWidth) {
-			cells = append(cells, Cell{Text: " ", Width: 1, Safe: true})
+			cells = append(cells, contentViewportBlankCell())
 			outWidth++
 		}
 	}
 	for outWidth < width {
-		cells = append(cells, Cell{Text: " ", Width: 1, Safe: true})
+		cells = append(cells, contentViewportBlankCell())
 		outWidth++
 	}
 	return Line{Cells: cells}
 }
 
-func contentViewportDotCell() Cell {
-	return Cell{Text: contentViewportDot, Width: 1, Style: StyleMuted, Safe: true}
+func contentViewportBlankCell() Cell {
+	return Cell{Text: " ", Width: 1, Safe: true}
 }

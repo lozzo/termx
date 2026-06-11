@@ -119,7 +119,7 @@ func TestAppRuntimeProcessesMessagesInOrderAndRenders(t *testing.T) {
 	}
 }
 
-func TestAppRuntimeRendersLargeMessageBurstInBatches(t *testing.T) {
+func TestAppRuntimeCoalescesMessageBurstIntoOneFrame(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	runtime := NewAppRuntime(
 		state.Root{},
@@ -133,7 +133,8 @@ func TestAppRuntimeRendersLargeMessageBurstInBatches(t *testing.T) {
 		NewSyncEffectRunner(),
 	)
 
-	for i := 0; i < maxMessagesPerRenderBatch+1; i++ {
+	const burstMessages = 128
+	for i := 0; i < burstMessages; i++ {
 		if err := runtime.Post(testMsg{Name: "burst"}); err != nil {
 			t.Fatalf("post burst: %v", err)
 		}
@@ -142,11 +143,42 @@ func TestAppRuntimeRendersLargeMessageBurstInBatches(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if got := len(host.Frames()); got != 2 {
-		t.Fatalf("large burst should render once per batch plus final frame, got %d", got)
+	if got := len(host.Frames()); got != 1 {
+		t.Fatalf("burst should render only the final coalesced frame, got %d", got)
 	}
-	if runtime.State().Generation != uint64(maxMessagesPerRenderBatch+1) {
+	if runtime.State().Generation != burstMessages {
 		t.Fatalf("expected all burst messages processed, got generation %d", runtime.State().Generation)
+	}
+}
+
+func TestAppRuntimeContinuesDrainForMessagesArrivingDuringFrameWrite(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			return root.Advance(), nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{fmt.Sprintf("frame-%d", root.Generation)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	host.sink.onWrite = func() {
+		if len(host.sink.frames) == 0 {
+			_ = runtime.Post(testMsg{Name: "during-write"})
+		}
+	}
+
+	if err := runtime.Post(testMsg{Name: "first"}); err != nil {
+		t.Fatalf("post first: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-1", "frame-2"}) {
+		t.Fatalf("drain should render next frame after write-time message arrival, got %v", got)
 	}
 }
 

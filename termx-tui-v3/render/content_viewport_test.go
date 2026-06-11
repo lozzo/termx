@@ -29,13 +29,13 @@ func TestContentViewportKeepsTerminalBlankCellsAsSpaces(t *testing.T) {
 	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("ordinary terminal blanks must stay spaces\n got=%#v\nwant=%#v", got, want)
 	}
-	if !result.Overflow.Right || result.Overflow.Bottom {
-		t.Fatalf("expected only right overflow from over-wide input line, got %#v", result.Overflow)
+	if result.Overflow != (ContentOverflow{}) {
+		t.Fatalf("terminal live viewport should clip without chrome overflow, got %#v", result.Overflow)
 	}
 	assertContentViewportLineWidths(t, result.Lines, 20)
 }
 
-func TestContentViewportMarksOnlyAreaOutsideTerminalExtentWithDots(t *testing.T) {
+func TestContentViewportKeepsAreaOutsideTerminalExtentBlank(t *testing.T) {
 	result := RenderContentViewport(ContentRenderRequest{
 		Rect: Rect{W: 10, H: 6},
 		Content: ContentVM{
@@ -50,14 +50,14 @@ func TestContentViewportMarksOnlyAreaOutsideTerminalExtentWithDots(t *testing.T)
 	})
 
 	if got, want := plainContentViewportLines(result.Lines), []string{
-		"abcde·····",
-		"fghij·····",
-		"klmno·····",
-		"··········",
-		"··········",
-		"··········",
+		"abcde     ",
+		"fghij     ",
+		"klmno     ",
+		"          ",
+		"          ",
+		"          ",
 	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("extent outside cells should be weak dots\n got=%#v\nwant=%#v", got, want)
+		t.Fatalf("extent outside cells should stay blank\n got=%#v\nwant=%#v", got, want)
 	}
 	if result.Overflow != (ContentOverflow{}) {
 		t.Fatalf("small extent should not report overflow, got %#v", result.Overflow)
@@ -76,11 +76,11 @@ func TestContentViewportSupportsOffsetTerminalExtent(t *testing.T) {
 	})
 
 	if got, want := plainContentViewportLines(result.Lines), []string{
-		"····",
-		"·hi·",
-		"····",
+		"    ",
+		" hi ",
+		"    ",
 	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("offset extent should move the dot region with terminal area\n got=%#v\nwant=%#v", got, want)
+		t.Fatalf("offset extent should keep terminal area aligned with blank padding\n got=%#v\nwant=%#v", got, want)
 	}
 	if result.Overflow != (ContentOverflow{}) {
 		t.Fatalf("offset extent inside rect should not overflow, got %#v", result.Overflow)
@@ -104,8 +104,8 @@ func TestContentViewportReturnsOverflowHintsWithoutWritingMarkers(t *testing.T) 
 		},
 	})
 
-	if !result.Overflow.Right || !result.Overflow.Bottom {
-		t.Fatalf("expected right and bottom overflow hints, got %#v", result.Overflow)
+	if result.Overflow != (ContentOverflow{}) {
+		t.Fatalf("terminal live viewport should hide transient overflow hints, got %#v", result.Overflow)
 	}
 	if rendered := strings.Join(plainContentViewportLines(result.Lines), "\n"); strings.Contains(rendered, ">") || strings.Contains(rendered, "v") {
 		t.Fatalf("overflow markers belong to chrome, not content cells: %q", rendered)
@@ -177,7 +177,7 @@ func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 	}
 }
 
-func TestFrameworkRendersContentViewportDotsAndStoresOverflow(t *testing.T) {
+func TestFrameworkRendersLiveExtentAsBlankWithoutOverflowMarker(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 16, H: 8}, Panels: []PanelVM{{
 			ID:           "pane-1",
@@ -194,21 +194,21 @@ func TestFrameworkRendersContentViewportDotsAndStoresOverflow(t *testing.T) {
 
 	layer := firstLayer(t, result, LayerPanel)
 	if got, want := plainContentViewportLines(layer.Lines), []string{
-		"abc···········",
-		"··············",
-		"··············",
-		"··············",
-		"··············",
-		"··············",
+		"abc           ",
+		"              ",
+		"              ",
+		"              ",
+		"              ",
+		"              ",
 	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("panel layer should keep content viewport projection\n got=%#v\nwant=%#v", got, want)
 	}
-	if !layer.ContentOverflow.Right {
-		t.Fatalf("panel layer should expose content overflow for chrome, got %#v", layer.ContentOverflow)
+	if layer.ContentOverflow != (ContentOverflow{}) {
+		t.Fatalf("terminal live resize extent mismatch should not expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[4], 15, 16); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on pane chrome, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[4], 15, 16); got == ">" {
+		t.Fatalf("right overflow marker should not be drawn for terminal live resize mismatch, frame=%#v", lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") {
 		t.Fatalf("right overflow marker must not be written into content layer, got %#v", layer.Lines)
@@ -235,12 +235,12 @@ func TestFrameworkRendersContentBottomOverflowOnPaneChrome(t *testing.T) {
 	}})
 
 	layer := firstLayer(t, result, LayerPanel)
-	if !layer.ContentOverflow.Bottom {
-		t.Fatalf("panel layer should expose bottom overflow, got %#v", layer.ContentOverflow)
+	if layer.ContentOverflow != (ContentOverflow{}) {
+		t.Fatalf("terminal live bottom overflow should stay hidden during resize mismatch, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[7], 8, 9); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn on pane chrome, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[7], 8, 9); got == "v" {
+		t.Fatalf("bottom overflow marker should not be drawn for terminal live resize mismatch, frame=%#v", lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
 		t.Fatalf("bottom overflow marker must not be written into content layer, got %#v", layer.Lines)
@@ -267,11 +267,11 @@ func TestFrameworkRendersTerminalLiveExtentFromBuilder(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	layer := firstLayer(t, result, LayerPanel)
 	if got, wantPrefix := plainContentViewportLines(layer.Lines), []string{
-		"abc   ··········",
-		"你好  ··········",
-		"················",
+		"abc             ",
+		"你好            ",
+		"                ",
 	}; !strings.HasPrefix(strings.Join(got, "\n"), strings.Join(wantPrefix, "\n")) {
-		t.Fatalf("live content should use surface extent for dots\n got=%#v\nwant prefix=%#v", got, wantPrefix)
+		t.Fatalf("live content should keep extent padding blank\n got=%#v\nwant prefix=%#v", got, wantPrefix)
 	}
 	if result.Cursor.Row != 1 || result.Cursor.Col != 4 || result.Cursor.Shape != CursorShapeBar ||
 		result.CursorRect != (Rect{X: 5, Y: 3, W: 1, H: 1}) {
@@ -298,15 +298,15 @@ func TestFrameworkRendersTerminalLiveOverflowFromBuilder(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	layer := firstLayer(t, result, LayerPanel)
-	if !layer.ContentOverflow.Right || !layer.ContentOverflow.Bottom {
-		t.Fatalf("live extent should drive right/bottom overflow, got %#v", layer.ContentOverflow)
+	if layer.ContentOverflow != (ContentOverflow{}) {
+		t.Fatalf("terminal live extent mismatch should not expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[4], 17, 18); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on chrome, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[4], 17, 18); got == ">" {
+		t.Fatalf("right overflow marker should not be drawn for terminal live resize mismatch, frame=%#v", lines)
 	}
-	if got := SliceCells(lines[6], 9, 10); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn on chrome, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[6], 9, 10); got == "v" {
+		t.Fatalf("bottom overflow marker should not be drawn for terminal live resize mismatch, frame=%#v", lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||
 		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {

@@ -155,6 +155,31 @@ func TestActionSpecCatalogClassifiesVisibleClickableAndDispatchActions(t *testin
 	assertSpec(ActionPromptSubmit, ActionSurfaceContent, ActionDispatchApp)
 }
 
+func TestActionSpecByIDKeepsDynamicChromeGlyphsCurrent(t *testing.T) {
+	t.Cleanup(ResetPaneChromeGlyphs)
+	SetPaneChromeGlyphs(PaneChromeGlyphs{Close: "❌", Zoom: "🔎", SplitVertical: "↕", SplitHorizontal: "↔"})
+
+	for _, tt := range []struct {
+		id   ActionID
+		want string
+	}{
+		{id: ActionPaneClose, want: paneChromeCloseActionText()},
+		{id: ActionFloatingClose, want: paneChromeCloseGlyph()},
+		{id: ActionPaneZoom, want: paneChromeZoomGlyph()},
+		{id: ActionFloatingRaise, want: paneChromeZoomGlyph()},
+		{id: ActionPaneSplitRight, want: paneChromeSplitVerticalActionText()},
+		{id: ActionPaneSplitDown, want: paneChromeSplitHorizontalActionText()},
+	} {
+		spec, ok := ActionSpecByID(tt.id)
+		if !ok {
+			t.Fatalf("missing action spec %q", tt.id)
+		}
+		if spec.ChromeGlyph != tt.want {
+			t.Fatalf("action %q chrome glyph got=%q want=%q", tt.id, spec.ChromeGlyph, tt.want)
+		}
+	}
+}
+
 func TestActionSpecCatalogKeepsInputOnlyActionsSeparate(t *testing.T) {
 	for _, id := range []ActionID{
 		ActionPromptOpen,

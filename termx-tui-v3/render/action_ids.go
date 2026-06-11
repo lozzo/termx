@@ -317,12 +317,38 @@ func ActionSpecCatalog() []ActionSpec {
 }
 
 func ActionSpecByID(id ActionID) (ActionSpec, bool) {
-	for _, spec := range ActionSpecCatalog() {
-		if spec.ID == id {
-			return spec, true
-		}
+	spec, ok := actionSpecByIDCatalog[id]
+	if !ok {
+		return ActionSpec{}, false
 	}
-	return ActionSpec{}, false
+	return actionSpecWithCurrentGlyph(spec), true
+}
+
+var actionSpecByIDCatalog = buildActionSpecByIDCatalog()
+
+func buildActionSpecByIDCatalog() map[ActionID]ActionSpec {
+	specs := ActionSpecCatalog()
+	out := make(map[ActionID]ActionSpec, len(specs))
+	for _, spec := range specs {
+		out[spec.ID] = spec
+	}
+	return out
+}
+
+func actionSpecWithCurrentGlyph(spec ActionSpec) ActionSpec {
+	switch spec.ID {
+	case ActionPaneSplitDown:
+		spec.ChromeGlyph = paneChromeSplitHorizontalActionText()
+	case ActionPaneSplitRight:
+		spec.ChromeGlyph = paneChromeSplitVerticalActionText()
+	case ActionPaneZoom, ActionFloatingRaise:
+		spec.ChromeGlyph = paneChromeZoomGlyph()
+	case ActionPaneClose:
+		spec.ChromeGlyph = paneChromeCloseActionText()
+	case ActionFloatingClose:
+		spec.ChromeGlyph = paneChromeCloseGlyph()
+	}
+	return spec
 }
 
 func ActionSpecByIDString(id string) (ActionSpec, bool) {
