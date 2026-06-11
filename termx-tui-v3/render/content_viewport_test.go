@@ -95,6 +95,7 @@ func TestContentViewportAppliesTerminalViewPan(t *testing.T) {
 			Lines:  []Line{NewLine("abcdef"), NewLine("ghijkl")},
 			Extent: ContentExtent{Known: true, Cols: 6, Rows: 2},
 			Layout: ContentLayoutVM{Known: true, PanX: 2, PanY: 1},
+			Cursor: Cursor{Visible: true, Row: 1, Col: 3, Shape: CursorShapeBar},
 		},
 	})
 
@@ -107,6 +108,9 @@ func TestContentViewportAppliesTerminalViewPan(t *testing.T) {
 	if result.Overflow != (ContentOverflow{Left: true, Top: true}) {
 		t.Fatalf("panned extent should expose viewport overflow, got %#v", result.Overflow)
 	}
+	if result.Cursor != (Cursor{Visible: true, Row: 0, Col: 1, Shape: CursorShapeBar}) {
+		t.Fatalf("panned content cursor should move with viewport, got %#v", result.Cursor)
+	}
 }
 
 func TestContentViewportAppliesTerminalViewCenterAndFit(t *testing.T) {
@@ -117,6 +121,7 @@ func TestContentViewportAppliesTerminalViewCenterAndFit(t *testing.T) {
 			Lines:  []Line{NewLine("ab"), NewLine("cd")},
 			Extent: ContentExtent{Known: true, Cols: 2, Rows: 2},
 			Layout: ContentLayoutVM{Known: true, Mode: "center"},
+			Cursor: Cursor{Visible: true, Row: 1, Col: 1, Shape: CursorShapeBar},
 		},
 	})
 	if got, want := plainContentViewportLines(centered.Lines), []string{
@@ -125,6 +130,9 @@ func TestContentViewportAppliesTerminalViewCenterAndFit(t *testing.T) {
 		"··cd··",
 	}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("center layout should center terminal extent in content rect\n got=%#v\nwant=%#v", got, want)
+	}
+	if centered.Cursor != (Cursor{Visible: true, Row: 2, Col: 3, Shape: CursorShapeBar}) {
+		t.Fatalf("centered content cursor should move with viewport, got %#v", centered.Cursor)
 	}
 
 	fit := RenderContentViewport(ContentRenderRequest{

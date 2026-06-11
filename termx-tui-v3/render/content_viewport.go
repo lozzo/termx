@@ -27,11 +27,23 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	}
 	return ContentRenderResult{
 		Lines:      rendered,
-		Cursor:     content.Cursor,
+		Cursor:     contentViewportCursor(content.Cursor, extent, rect),
 		HitRegions: content.HitRegions,
 		Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
 		Overflow:   overflow,
 	}
+}
+
+func contentViewportCursor(cursor Cursor, extent ContentExtent, rect Rect) Cursor {
+	if !cursor.Visible && !cursor.Anchor {
+		return cursor
+	}
+	cursor.Row += extent.Y
+	cursor.Col += extent.X
+	if cursor.Row < 0 || cursor.Row >= rect.H || cursor.Col < 0 || cursor.Col >= rect.W {
+		cursor.Visible = false
+	}
+	return cursor
 }
 
 func applyContentLayoutToExtent(layout ContentLayoutVM, extent ContentExtent, rect Rect) ContentExtent {
