@@ -187,6 +187,9 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 		snapshot.ExitReason = ""
 		snapshot.Err = ""
 		store.Surfaces[terminalID] = snapshot
+		if len(snapshot.Lines) > 0 || len(snapshot.Screen) > 0 || snapshot.Title != "" || snapshot.Cursor.Visible {
+			store = store.projectSnapshot(snapshot, true)
+		}
 	}
 	return store
 }

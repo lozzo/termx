@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -386,6 +387,9 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	pending := root.History.Pending
 	nextHistory, inserted, err := root.History.ApplyWindow(state.RequestID(msg.Result.RequestID), msg.Result.Window)
 	if err != nil {
+		if errors.Is(err, state.ErrStaleHistoryResponse) {
+			return root, nil
+		}
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory

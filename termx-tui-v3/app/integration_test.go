@@ -704,7 +704,7 @@ func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeRe
 }
 
 func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
-	core := &services.FakeCoreClient{}
+	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 98, 8, []state.HistoryRow{{Text: "rebound", LineID: 30}})}}}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
 	runtime := newCopyModeRuntime(host, core, nil)
@@ -724,25 +724,26 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain resize: %v", err)
 	}
-	pending := runtime.State().History.Pending
-	if pending == nil || pending.Cols != 98 {
-		t.Fatalf("expected pending rebind request at new cols, got %#v", runtime.State().History)
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 98 {
+		t.Fatalf("expected rebind request at new cols, got %#v", core.LatestRequests)
 	}
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{
-		RequestID: services.RequestID(pending.ID),
-		Window:    historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-old", 78, 7, []state.HistoryRow{{Text: "stale", LineID: 1}}),
-	}}); err != nil {
+	if runtime.State().History.Token != "tok-2" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "rebound" {
+		t.Fatalf("expected rebound window before stale response, got %#v", runtime.State().History)
+	}
+	staleWindow := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-old", 98, 7, []state.HistoryRow{{Text: "stale", LineID: 1}})
+	staleWindow.ViewID = "stale-view"
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: core.LatestRequests[0].RequestID, Window: staleWindow}}); err != nil {
 		t.Fatalf("post stale response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain stale response: %v", err)
 	}
 
-	if runtime.State().History.Token != "" || len(runtime.State().History.Rows) != 0 {
+	if runtime.State().History.Token != "tok-2" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "rebound" {
 		t.Fatalf("old cols response must not restore stale window, got %#v", runtime.State().History)
 	}
-	if runtime.State().Session.LastError == "" {
-		t.Fatalf("expected stale cols error, got %#v", runtime.State())
+	if runtime.State().Session.LastError != "" || runtime.State().Surface.Err != "" {
+		t.Fatalf("stale cols response must not pollute live errors, got %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "old-window") || frameContains(last, "│stale") {
@@ -1241,8 +1242,8 @@ func TestCopyModeRejectsStaleHistoryResult(t *testing.T) {
 	if runtime.State().History.Token != "" {
 		t.Fatalf("stale response should not mutate history %#v", runtime.State().History)
 	}
-	if runtime.State().Session.LastError == "" {
-		t.Fatalf("expected stale error in state %#v", runtime.State())
+	if runtime.State().Session.LastError != "" || runtime.State().Surface.Err != "" {
+		t.Fatalf("stale response should be ignored without live error %#v", runtime.State())
 	}
 }
 

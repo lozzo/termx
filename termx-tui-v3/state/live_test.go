@@ -163,6 +163,29 @@ func TestTerminalSurfaceAttachAllowsFreshFrameAfterExitBoundary(t *testing.T) {
 	}
 }
 
+func TestTerminalSurfaceAttachProjectsCachedSnapshot(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"cached live"},
+	})
+	store = store.Attach("term-2", 100, 40)
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   4,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"cached update"},
+	})
+	store = store.Attach("term-1", 80, 24)
+
+	if !store.Ready || store.TerminalID != "term-1" || store.Lines[0] != "cached update" {
+		t.Fatalf("attach should immediately project cached live surface, got %#v", store)
+	}
+}
+
 func TestTerminalSurfaceTracksMouseModesForPassthrough(t *testing.T) {
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",
