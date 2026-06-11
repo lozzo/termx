@@ -164,6 +164,35 @@ func TestANSILinesPreserveCellHyperlinks(t *testing.T) {
 	}
 }
 
+func TestANSILinesEraseFE0FContinuationOnlyForTerminalCells(t *testing.T) {
+	uiLine := Line{Cells: []Cell{
+		{Text: "♻️", Width: 2, Safe: true},
+		{Text: "·", Width: 1, Safe: true},
+	}}
+	if got := uiLine.ANSIString(DefaultTheme()); strings.Contains(got, "\x1b[1X") {
+		t.Fatalf("non-terminal FE0F text should not use TTY continuation erase, got %q", got)
+	}
+
+	terminalLine := Line{Cells: []Cell{
+		{Text: "♻️", Width: 2, TerminalContent: true, Safe: true},
+		{Text: "·", Width: 1, Safe: true},
+	}}
+	if got := terminalLine.ANSIString(DefaultTheme()); !strings.Contains(got, "♻️\x1b[1X\x1b[3G·") {
+		t.Fatalf("terminal FE0F cell should erase continuation before model-column anchor, got %q", got)
+	}
+}
+
+func TestANSILinesReanchorsAfterFE0FInsideTerminalCell(t *testing.T) {
+	line := Line{Cells: []Cell{
+		{Text: "a♻️b", Width: 4, TerminalContent: true, Safe: true},
+		{Text: "│", Width: 1, Safe: true},
+	}}
+	got := line.ANSIString(DefaultTheme())
+	if !strings.Contains(got, "a♻️\x1b[1X\x1b[4Gb") || !strings.Contains(got, "b\x1b[5G│") {
+		t.Fatalf("terminal FE0F inside a cell should clear continuation and re-anchor following text/border, got %q", got)
+	}
+}
+
 func TestThemeFallbackAndPaneTokensAreDistinct(t *testing.T) {
 	theme := Theme{ActivePaneBorder: "#010203"}.WithFallback()
 	if theme.ActivePaneBorder != "#010203" {

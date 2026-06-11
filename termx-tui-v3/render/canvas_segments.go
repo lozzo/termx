@@ -11,6 +11,7 @@ type canvasSegment struct {
 	linkParams string
 	owner      string
 	layer      LayerKind
+	terminal   bool
 	safe       bool
 }
 
@@ -47,13 +48,14 @@ func cellsFromSegments(segments []canvasSegment) []Cell {
 	cells := make([]Cell, len(segments))
 	for i, segment := range segments {
 		cells[i] = Cell{
-			Text:       segment.text,
-			Width:      segment.width,
-			Style:      segment.style,
-			ANSIStyle:  segment.ansiStyle,
-			LinkURL:    segment.linkURL,
-			LinkParams: segment.linkParams,
-			Safe:       segment.safe,
+			Text:            segment.text,
+			Width:           segment.width,
+			Style:           segment.style,
+			ANSIStyle:       segment.ansiStyle,
+			LinkURL:         segment.linkURL,
+			LinkParams:      segment.linkParams,
+			TerminalContent: segment.terminal,
+			Safe:            segment.safe,
 		}
 	}
 	return cells

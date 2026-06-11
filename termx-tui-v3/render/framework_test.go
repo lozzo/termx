@@ -822,6 +822,26 @@ func TestCanvasMatrixKeepsRepeatedEmojiBeforeDots(t *testing.T) {
 	}
 }
 
+func TestCanvasMatrixClearsFE0FContinuationBeforeBorder(t *testing.T) {
+	c := newCanvas(8, 1)
+	c.writeLine(0, 0, 8, Line{Cells: []Cell{
+		{Text: "♻️", Width: 2, TerminalContent: true, Safe: true},
+		{Text: "♻️", Width: 2, TerminalContent: true, Safe: true},
+		{Text: "♻️", Width: 2, TerminalContent: true, Safe: true},
+		NewCell("│"),
+		NewCell(" "),
+	}}, "pane-1", LayerPanel)
+
+	line := c.lines()[0]
+	if got := line.PlainString(); got != "♻️♻️♻️│ " || line.Width() != 8 {
+		t.Fatalf("FE0F footprint must keep border at model column 7, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
+	}
+	ansi := line.ANSIString(DefaultTheme())
+	if !strings.Contains(ansi, "♻️\x1b[1X\x1b[7G│") {
+		t.Fatalf("border after repeated FE0F emoji should clear continuation and land on model column 7, got %q", ansi)
+	}
+}
+
 func TestCanvasMatrixClearsWideCellFootprintBeforeOverwrite(t *testing.T) {
 	c := newCanvas(6, 1)
 	c.writeText(0, 0, 6, "你你你")

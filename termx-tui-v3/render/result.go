@@ -37,7 +37,9 @@ type Cell struct {
 	ANSIStyle  ANSICellStyle
 	LinkURL    string
 	LinkParams string
-	Safe       bool
+	// TerminalContent 标记来自 core-v2 protocol/live/history 的真实 terminal cell。
+	TerminalContent bool
+	Safe            bool
 }
 
 // ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 TermX chrome theme token。
@@ -144,7 +146,6 @@ func (line Line) ANSIString(theme Theme) string {
 	var out strings.Builder
 	modelCol := 1
 	for index, cell := range line.Cells {
-		text := SafeLine(cell.Text)
 		styleSeq := ""
 		if !cell.ANSIStyle.IsZero() {
 			styleSeq = ansiForCellStyle(cell.ANSIStyle)
@@ -158,20 +159,68 @@ func (line Line) ANSIString(theme Theme) string {
 		if styleSeq != "" {
 			out.WriteString(styleSeq)
 		}
-		out.WriteString(text)
+		writeANSIText(&out, cell, modelCol)
+		modelCol += maxInt(0, cell.Width)
 		if styleSeq != "" {
 			out.WriteString(ANSIReset)
 		}
 		if linkClose != "" {
 			out.WriteString(linkClose)
 		}
-		modelCol += maxInt(0, cell.Width)
 		if index < len(line.Cells)-1 {
 			// 中文说明：真实 TTY 对 emoji/FE0F 的列宽可能与模型不同；每个 cell 边界按模型列复位。
 			out.WriteString(ansiColumn(modelCol))
 		}
 	}
 	return out.String()
+}
+
+func writeANSIText(out *strings.Builder, cell Cell, startModelCol int) {
+	text := SafeLine(cell.Text)
+	if !cell.TerminalContent || cell.Width <= 1 || !strings.Contains(text, "\ufe0f") {
+		out.WriteString(text)
+		return
+	}
+	modelCol := startModelCol
+	for len(text) > 0 {
+		cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+		if cluster == "" {
+			break
+		}
+		text = text[len(cluster):]
+		out.WriteString(cluster)
+		modelWidth := width
+		if modelWidth < 0 {
+			modelWidth = 0
+		}
+		eraseContinuation := terminalFE0FContinuationErase(cluster)
+		if eraseContinuation && modelWidth < 2 {
+			modelWidth = 2
+		}
+		if modelWidth == 0 {
+			continue
+		}
+		modelCol += modelWidth
+		if eraseContinuation {
+			// 中文说明：只在 terminal/protocol cell 的 FE0F footprint 边界做 TTY 写出保护；
+			// 先清模型 continuation 物理格，再锚回下一模型列，避免后续内容或边框漂移。
+			out.WriteString(ansiEraseChars(1))
+			if text != "" {
+				out.WriteString(ansiColumn(modelCol))
+			}
+		}
+	}
+}
+
+func terminalFE0FContinuationErase(text string) bool {
+	return strings.Contains(text, "\ufe0f") && !strings.Contains(text, "\u200d") && !strings.Contains(text, "\u20e3")
+}
+
+func ansiEraseChars(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	return "\x1b[" + strconv.Itoa(count) + "X"
 }
 
 func ansiColumn(col int) string {

@@ -112,9 +112,10 @@ func (parser *liveANSIParser) flush() {
 		return
 	}
 	parser.cells = append(parser.cells, Cell{
-		Text:  text,
-		Width: width,
-		Style: parser.style,
-		Safe:  true,
+		Text:            text,
+		Width:           width,
+		Style:           parser.style,
+		TerminalContent: true,
+		Safe:            true,
 	})
 }

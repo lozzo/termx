@@ -418,9 +418,9 @@ func TestFrameSinkWritesFE0FLineWithModelColumnAnchors(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)
 	line := render.Line{Cells: []render.Cell{
-		{Text: "♻️", Width: 2, Safe: true},
-		{Text: "♻️", Width: 2, Safe: true},
-		{Text: "♻️", Width: 2, Safe: true},
+		{Text: "♻️", Width: 2, TerminalContent: true, Safe: true},
+		{Text: "♻️", Width: 2, TerminalContent: true, Safe: true},
+		{Text: "♻️", Width: 2, TerminalContent: true, Safe: true},
 		{Text: "·", Width: 1, Safe: true},
 		{Text: "·", Width: 1, Safe: true},
 	}}
@@ -433,9 +433,13 @@ func TestFrameSinkWritesFE0FLineWithModelColumnAnchors(t *testing.T) {
 	}
 
 	got := output.String()
-	for _, part := range []string{"♻️\x1b[3G♻️", "♻️\x1b[5G♻️", "♻️\x1b[7G·"} {
+	for _, part := range []string{
+		"♻️\x1b[1X\x1b[3G♻️",
+		"♻️\x1b[1X\x1b[5G♻️",
+		"♻️\x1b[1X\x1b[7G·",
+	} {
 		if !strings.Contains(got, part) {
-			t.Fatalf("FE0F frame should preserve model column anchors %q in %q", part, got)
+			t.Fatalf("FE0F frame should erase continuation cells and preserve model column anchors %q in %q", part, got)
 		}
 	}
 }

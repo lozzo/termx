@@ -21,6 +21,7 @@ type canvasCell struct {
 	owner        string
 	layer        LayerKind
 	continuation bool
+	terminal     bool
 	safe         bool
 }
 
@@ -110,6 +111,7 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 				linkParams: cell.LinkParams,
 				owner:      owner,
 				layer:      layer,
+				terminal:   cell.TerminalContent,
 				safe:       cell.Safe,
 			})
 			cursor += cellWidth
@@ -137,6 +139,7 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 				linkParams: cell.LinkParams,
 				owner:      owner,
 				layer:      layer,
+				terminal:   cell.TerminalContent,
 				safe:       cell.Safe,
 			})
 			cursor += clusterWidth
@@ -331,13 +334,14 @@ func (c *canvas) lines() []Line {
 				width = 1
 			}
 			cells = append(cells, Cell{
-				Text:       cell.text,
-				Width:      width,
-				Style:      cell.style,
-				ANSIStyle:  cell.ansiStyle,
-				LinkURL:    cell.linkURL,
-				LinkParams: cell.linkParams,
-				Safe:       cell.safe,
+				Text:            cell.text,
+				Width:           width,
+				Style:           cell.style,
+				ANSIStyle:       cell.ansiStyle,
+				LinkURL:         cell.linkURL,
+				LinkParams:      cell.linkParams,
+				TerminalContent: cell.terminal,
+				Safe:            cell.safe,
 			})
 		}
 		lines[i] = Line{Cells: cells}
@@ -401,6 +405,7 @@ func (c *canvas) writeSegmentNoClear(x int, y int, segment canvasSegment) {
 		linkParams: segment.linkParams,
 		owner:      segment.owner,
 		layer:      segment.layer,
+		terminal:   segment.terminal,
 		safe:       segment.safe,
 	}
 	for col := x + 1; col < x+segment.width; col++ {
@@ -413,6 +418,7 @@ func (c *canvas) writeSegmentNoClear(x int, y int, segment canvasSegment) {
 			owner:        segment.owner,
 			layer:        segment.layer,
 			continuation: true,
+			terminal:     segment.terminal,
 			safe:         segment.safe,
 		}
 	}

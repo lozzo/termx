@@ -115,8 +115,10 @@ func TestTerminalLiveCellsPreserveFE0FFootprintBeforeDots(t *testing.T) {
 		t.Fatalf("live line must keep protocol footprint width, got %d cells=%#v", got, line.Cells)
 	}
 	ansi := line.ANSIString(DefaultTheme())
-	if !strings.Contains(ansi, "♻️\x1b[3G♻️") || !strings.Contains(ansi, "♻️\x1b[5G♻️") || !strings.Contains(ansi, "♻️\x1b[7G·") {
-		t.Fatalf("FE0F live cells should re-anchor dots at model column 7, got %q", ansi)
+	if !strings.Contains(ansi, "♻️\x1b[1X\x1b[3G♻️") ||
+		!strings.Contains(ansi, "♻️\x1b[1X\x1b[5G♻️") ||
+		!strings.Contains(ansi, "♻️\x1b[1X\x1b[7G·") {
+		t.Fatalf("FE0F live cells should erase continuation columns and re-anchor dots at model column 7, got %q", ansi)
 	}
 }
 
