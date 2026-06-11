@@ -1,6 +1,9 @@
 package render
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPaneChromeGlyphsDefaultToWireframeUnicodeAndRemainCellSafe(t *testing.T) {
 	ResetPaneChromeGlyphs()
@@ -71,5 +74,17 @@ func TestSetPaneChromeGlyphsAllowsUTF8Overrides(t *testing.T) {
 	}
 	if DisplayWidth(paneChromeCloseGlyph()) != 2 {
 		t.Fatalf("emoji override width should be measured with display cells, got %d", DisplayWidth(paneChromeCloseGlyph()))
+	}
+}
+
+func TestANSIStringReanchorsAfterAmbiguousEmojiBeforeBorder(t *testing.T) {
+	line := Line{Cells: []Cell{
+		NewCell("♻️"),
+		NewCell("│"),
+	}}
+
+	got := line.ANSIString(DefaultTheme())
+	if !strings.Contains(got, "♻️\x1b[3G│") {
+		t.Fatalf("ambiguous emoji should re-anchor before following border, got %q", got)
 	}
 }

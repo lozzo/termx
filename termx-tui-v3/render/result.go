@@ -142,8 +142,10 @@ func (line Line) ANSIString(theme Theme) string {
 		return ""
 	}
 	var out strings.Builder
+	modelCol := 1
 	for _, cell := range line.Cells {
 		text := SafeLine(cell.Text)
+		cellWidth := maxInt(0, cell.Width)
 		styleSeq := ""
 		if !cell.ANSIStyle.IsZero() {
 			styleSeq = ansiForCellStyle(cell.ANSIStyle)
@@ -164,8 +166,38 @@ func (line Line) ANSIString(theme Theme) string {
 		if linkClose != "" {
 			out.WriteString(linkClose)
 		}
+		modelCol += cellWidth
+		if hostWidthAmbiguousCell(text, cellWidth) {
+			// 中文说明：FE0F emoji 等 cluster 在不同宿主里光标前进列数不稳定；按模型列重锚定，避免后续边框被推歪。
+			out.WriteString(ansiColumn(modelCol))
+		}
 	}
 	return out.String()
+}
+
+func hostWidthAmbiguousCell(text string, width int) bool {
+	if text == "" || width <= 0 || strings.ContainsRune(text, '\x1b') {
+		return false
+	}
+	return ambiguousEmojiVariationSelectorCell(text, width)
+}
+
+func ambiguousEmojiVariationSelectorCell(text string, width int) bool {
+	if width != 2 || !strings.ContainsRune(text, '\uFE0F') {
+		return false
+	}
+	if strings.ContainsRune(text, '\u200D') || strings.ContainsRune(text, '\u20E3') {
+		return false
+	}
+	stripped := strings.ReplaceAll(text, "\uFE0F", "")
+	return stripped != "" && xansi.StringWidth(stripped) > 0 && xansi.StringWidth(stripped) <= width
+}
+
+func ansiColumn(col int) string {
+	if col < 1 {
+		col = 1
+	}
+	return "\x1b[" + strconv.Itoa(col) + "G"
 }
 
 func (line Line) Clone() Line {
