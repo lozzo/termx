@@ -12,17 +12,16 @@ type canvas struct {
 }
 
 type canvasCell struct {
-	text            string
-	width           int
-	hostCursorWidth int
-	style           StyleToken
-	ansiStyle       ANSICellStyle
-	linkURL         string
-	linkParams      string
-	owner           string
-	layer           LayerKind
-	continuation    bool
-	safe            bool
+	text         string
+	width        int
+	style        StyleToken
+	ansiStyle    ANSICellStyle
+	linkURL      string
+	linkParams   string
+	owner        string
+	layer        LayerKind
+	continuation bool
+	safe         bool
 }
 
 func newCanvas(width int, height int) *canvas {
@@ -96,6 +95,27 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 		if text == "" {
 			continue
 		}
+		cellWidth := maxInt(0, cell.Width)
+		if cellWidth > 0 && cellWidth != DisplayWidth(text) {
+			if cellWidth > remaining {
+				break
+			}
+			// 中文说明：protocol/live cell 的 Width 是真实 terminal footprint；宽度与本地测量不一致时不能再拆分重算。
+			c.writeSegmentNoClear(cursor, y, canvasSegment{
+				text:       text,
+				width:      cellWidth,
+				style:      cell.Style,
+				ansiStyle:  cell.ANSIStyle,
+				linkURL:    cell.LinkURL,
+				linkParams: cell.LinkParams,
+				owner:      owner,
+				layer:      layer,
+				safe:       cell.Safe,
+			})
+			cursor += cellWidth
+			remaining -= cellWidth
+			continue
+		}
 		for len(text) > 0 && remaining > 0 {
 			cluster, clusterWidth := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
 			if cluster == "" {
@@ -109,16 +129,15 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 				break
 			}
 			c.writeSegmentNoClear(cursor, y, canvasSegment{
-				text:            cluster,
-				width:           clusterWidth,
-				hostCursorWidth: cell.HostCursorWidth,
-				style:           cell.Style,
-				ansiStyle:       cell.ANSIStyle,
-				linkURL:         cell.LinkURL,
-				linkParams:      cell.LinkParams,
-				owner:           owner,
-				layer:           layer,
-				safe:            cell.Safe,
+				text:       cluster,
+				width:      clusterWidth,
+				style:      cell.Style,
+				ansiStyle:  cell.ANSIStyle,
+				linkURL:    cell.LinkURL,
+				linkParams: cell.LinkParams,
+				owner:      owner,
+				layer:      layer,
+				safe:       cell.Safe,
 			})
 			cursor += clusterWidth
 			remaining -= clusterWidth
@@ -312,14 +331,13 @@ func (c *canvas) lines() []Line {
 				width = 1
 			}
 			cells = append(cells, Cell{
-				Text:            cell.text,
-				Width:           width,
-				HostCursorWidth: cell.hostCursorWidth,
-				Style:           cell.style,
-				ANSIStyle:       cell.ansiStyle,
-				LinkURL:         cell.linkURL,
-				LinkParams:      cell.linkParams,
-				Safe:            cell.safe,
+				Text:       cell.text,
+				Width:      width,
+				Style:      cell.style,
+				ANSIStyle:  cell.ansiStyle,
+				LinkURL:    cell.linkURL,
+				LinkParams: cell.linkParams,
+				Safe:       cell.safe,
 			})
 		}
 		lines[i] = Line{Cells: cells}
@@ -375,16 +393,15 @@ func (c *canvas) writeSegmentNoClear(x int, y int, segment canvasSegment) {
 		return
 	}
 	c.rows[y][x] = canvasCell{
-		text:            segment.text,
-		width:           segment.width,
-		hostCursorWidth: segment.hostCursorWidth,
-		style:           segment.style,
-		ansiStyle:       segment.ansiStyle,
-		linkURL:         segment.linkURL,
-		linkParams:      segment.linkParams,
-		owner:           segment.owner,
-		layer:           segment.layer,
-		safe:            segment.safe,
+		text:       segment.text,
+		width:      segment.width,
+		style:      segment.style,
+		ansiStyle:  segment.ansiStyle,
+		linkURL:    segment.linkURL,
+		linkParams: segment.linkParams,
+		owner:      segment.owner,
+		layer:      segment.layer,
+		safe:       segment.safe,
 	}
 	for col := x + 1; col < x+segment.width; col++ {
 		c.rows[y][col] = canvasCell{

@@ -1280,24 +1280,15 @@ func terminalLiveLineFromCells(row []state.LiveCell) Line {
 			continue
 		}
 		cells = append(cells, Cell{
-			Text:            text,
-			Width:           width,
-			HostCursorWidth: terminalLiveHostCursorWidth(text, width),
-			ANSIStyle:       terminalLiveANSIStyle(liveCell),
-			LinkURL:         liveCell.LinkURL,
-			LinkParams:      liveCell.LinkParams,
-			Safe:            true,
+			Text:       text,
+			Width:      width,
+			ANSIStyle:  terminalLiveANSIStyle(liveCell),
+			LinkURL:    liveCell.LinkURL,
+			LinkParams: liveCell.LinkParams,
+			Safe:       true,
 		})
 	}
 	return Line{Cells: cells}
-}
-
-func terminalLiveHostCursorWidth(text string, width int) int {
-	if width > 1 && strings.Contains(text, "\ufe0f") {
-		// 中文说明：FE0F emoji cell 可能由 vterm 按 2 列建模，但宿主实际只推进 1 列；保留模型 footprint，只修正 ANSI 写入锚点。
-		return 1
-	}
-	return 0
 }
 
 func terminalLiveANSIStyle(cell state.LiveCell) ANSICellStyle {

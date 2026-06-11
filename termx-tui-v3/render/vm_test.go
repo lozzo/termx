@@ -102,23 +102,49 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 func TestTerminalLiveCellsPreserveFE0FFootprintBeforeDots(t *testing.T) {
 	line := terminalLiveLineFromCells([]state.LiveCell{
 		{Text: "♻️", Width: 2},
-		{Text: " ", Width: 1},
+		{Text: "", Width: 0},
 		{Text: "♻️", Width: 2},
-		{Text: " ", Width: 1},
+		{Text: "", Width: 0},
 		{Text: "♻️", Width: 2},
+		{Text: "", Width: 0},
 		{Text: "·", Width: 1},
 		{Text: "·", Width: 1},
 	})
 
-	if got := line.Width(); got != 10 {
+	if got := line.Width(); got != 8 {
 		t.Fatalf("live line must keep protocol footprint width, got %d cells=%#v", got, line.Cells)
 	}
-	if line.Cells[0].HostCursorWidth != 1 || line.Cells[2].HostCursorWidth != 1 || line.Cells[4].HostCursorWidth != 1 {
-		t.Fatalf("FE0F cells should record host cursor width 1, got %#v", line.Cells)
-	}
 	ansi := line.ANSIString(DefaultTheme())
-	if !strings.Contains(ansi, "♻️\x1b[1X\x1b[3G ") || !strings.Contains(ansi, "♻️\x1b[1X\x1b[6G ") || !strings.Contains(ansi, "♻️\x1b[1X\x1b[9G·") {
-		t.Fatalf("FE0F live cells should re-anchor dots at model column 9, got %q", ansi)
+	if !strings.Contains(ansi, "♻️\x1b[3G♻️") || !strings.Contains(ansi, "♻️\x1b[5G♻️") || !strings.Contains(ansi, "♻️\x1b[7G·") {
+		t.Fatalf("FE0F live cells should re-anchor dots at model column 7, got %q", ansi)
+	}
+}
+
+func TestTerminalLiveCellsUseProtocolWidthWhenLocalMeasureDiffers(t *testing.T) {
+	line := terminalLiveLineFromCells([]state.LiveCell{
+		{Text: "♻️", Width: 2},
+		{Text: "", Width: 0},
+		{Text: "♻️", Width: 2},
+		{Text: "", Width: 0},
+		{Text: "♻️", Width: 2},
+		{Text: "", Width: 0},
+		{Text: "·", Width: 1},
+		{Text: "·", Width: 1},
+	})
+	c := newCanvas(8, 1)
+	c.writeLine(0, 0, 8, line, "pane-1", LayerPanel)
+
+	if got := c.lines()[0].Width(); got != 8 {
+		t.Fatalf("canvas must keep protocol cell widths, got %d cells=%#v", got, c.lines()[0].Cells)
+	}
+	if got := c.rows[0][0]; got.text != "♻️" || got.width != 2 || got.continuation {
+		t.Fatalf("first FE0F cell should occupy two protocol columns, got %#v", got)
+	}
+	if got := c.rows[0][1]; got.text != "" || !got.continuation {
+		t.Fatalf("second FE0F column should remain a continuation cell, got %#v row=%#v", got, c.rows[0])
+	}
+	if got := c.rows[0][6]; got.text != "·" || got.width != 1 || got.continuation {
+		t.Fatalf("dots should start immediately after protocol-width FE0F cells, got %#v row=%#v", got, c.rows[0])
 	}
 }
 

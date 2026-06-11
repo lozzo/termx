@@ -31,14 +31,13 @@ type RenderMetadata struct {
 }
 
 type Cell struct {
-	Text            string
-	Width           int
-	HostCursorWidth int
-	Style           StyleToken
-	ANSIStyle       ANSICellStyle
-	LinkURL         string
-	LinkParams      string
-	Safe            bool
+	Text       string
+	Width      int
+	Style      StyleToken
+	ANSIStyle  ANSICellStyle
+	LinkURL    string
+	LinkParams string
+	Safe       bool
 }
 
 // ANSICellStyle 保留真实 terminal 内容的 SGR 语义；不要映射到 TermX chrome theme token。
@@ -166,11 +165,6 @@ func (line Line) ANSIString(theme Theme) string {
 		if linkClose != "" {
 			out.WriteString(linkClose)
 		}
-		hostCursorWidth := cell.HostCursorWidth
-		if hostCursorWidth > 0 && hostCursorWidth < cell.Width {
-			// 中文说明：宿主少推进的宽度对应模型 continuation，需要清空，避免旧帧的小白点残留。
-			out.WriteString(ansiEraseChars(cell.Width - hostCursorWidth))
-		}
 		modelCol += maxInt(0, cell.Width)
 		if index < len(line.Cells)-1 {
 			// 中文说明：真实 TTY 对 emoji/FE0F 的列宽可能与模型不同；每个 cell 边界按模型列复位。
@@ -178,13 +172,6 @@ func (line Line) ANSIString(theme Theme) string {
 		}
 	}
 	return out.String()
-}
-
-func ansiEraseChars(count int) string {
-	if count <= 0 {
-		return ""
-	}
-	return "\x1b[" + strconv.Itoa(count) + "X"
 }
 
 func ansiColumn(col int) string {

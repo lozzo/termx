@@ -117,6 +117,41 @@ func TestVTermNormalizesPlainUTF8CombiningText(t *testing.T) {
 	}
 }
 
+func TestVTermEmojiVariationSelectorFootprint(t *testing.T) {
+	vt := New(12, 2, 0, nil)
+	if _, err := vt.Write([]byte("♻️♻️♻️··")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	row := vt.ScreenContent().Cells[0]
+	got := make([]struct {
+		Content string
+		Width   int
+	}, 8)
+	for i := range got {
+		got[i].Content = row[i].Content
+		got[i].Width = row[i].Width
+	}
+	want := []struct {
+		Content string
+		Width   int
+	}{
+		{Content: "♻️", Width: 2},
+		{Content: "", Width: 0},
+		{Content: "♻️", Width: 2},
+		{Content: "", Width: 0},
+		{Content: "♻️", Width: 2},
+		{Content: "", Width: 0},
+		{Content: "·", Width: 1},
+		{Content: "·", Width: 1},
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("cell %d footprint mismatch: got %#v want %#v full=%#v", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestVTermWriteRecoversFromEmulatorPanic(t *testing.T) {
 	vt := New(20, 5, 10, nil)
 
