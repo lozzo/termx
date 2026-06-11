@@ -159,7 +159,7 @@ func (line Line) ANSIString(theme Theme) string {
 		if styleSeq != "" {
 			out.WriteString(styleSeq)
 		}
-		out.WriteString(text)
+		writeANSITextWithWidthSafety(&out, text, modelCol)
 		if styleSeq != "" {
 			out.WriteString(ANSIReset)
 		}
@@ -167,12 +167,28 @@ func (line Line) ANSIString(theme Theme) string {
 			out.WriteString(linkClose)
 		}
 		modelCol += cellWidth
-		if hostWidthAmbiguousCell(text, cellWidth) {
-			// 中文说明：FE0F emoji 等 cluster 在不同宿主里光标前进列数不稳定；按模型列重锚定，避免后续边框被推歪。
+	}
+	return out.String()
+}
+
+func writeANSITextWithWidthSafety(out *strings.Builder, text string, startCol int) {
+	modelCol := startCol
+	for len(text) > 0 {
+		cluster, clusterWidth := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+		if cluster == "" {
+			break
+		}
+		text = text[len(cluster):]
+		out.WriteString(cluster)
+		if clusterWidth < 0 {
+			clusterWidth = 0
+		}
+		modelCol += clusterWidth
+		if hostWidthAmbiguousCell(cluster, clusterWidth) {
+			// 中文说明：FE0F emoji 常被宿主按 1 列前进；逐 cluster 重锚定，保护同一 cell 后续内容和边框。
 			out.WriteString(ansiColumn(modelCol))
 		}
 	}
-	return out.String()
 }
 
 func hostWidthAmbiguousCell(text string, width int) bool {
