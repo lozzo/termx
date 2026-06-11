@@ -144,6 +144,36 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
 		t.Fatalf("expected cols stale history window error, got %v", err)
 	}
+	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		CursorValid:         true,
+		BeforeLineID:        latest.CursorLineID + 99,
+		BeforeRowInLine:     latest.CursorRow,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
+		t.Fatalf("expected cursor stale history window error, got %v", err)
+	}
+	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		CursorValid:         true,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID + 99,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
+		t.Fatalf("expected first-boundary stale history window error, got %v", err)
+	}
 }
 
 func TestProtocolHistoryWindowPreservesStyledCells(t *testing.T) {

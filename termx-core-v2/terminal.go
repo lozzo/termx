@@ -208,6 +208,12 @@ func (terminal *Terminal) OlderWindow(cols, rows int, cursor history.HistoryCurs
 	return terminal.history.OlderWindow(history.HistoryWindowRequest{Cols: cols, Rows: rows, Cursor: cursor})
 }
 
+func (terminal *Terminal) CommittedCursorValid(cols int, cursor history.HistoryCursor) bool {
+	terminal.mu.Lock()
+	defer terminal.mu.Unlock()
+	return terminal.history.CommittedCursorValid(cols, cursor)
+}
+
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
 	if terminal.events == nil {
 		return

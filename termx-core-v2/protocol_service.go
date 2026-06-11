@@ -551,7 +551,11 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 }
 
 func (session *protocolSession) validateOlderWindowRequest(params protocol.HistoryWindowParams, cols int) error {
-	latest, err := session.server.LatestWindow(params.TerminalID, cols, 1)
+	terminal, err := session.server.Terminal(params.TerminalID)
+	if err != nil {
+		return err
+	}
+	latest, err := terminal.LatestWindow(cols, 1)
 	if err != nil {
 		return err
 	}
@@ -559,6 +563,18 @@ func (session *protocolSession) validateOlderWindowRequest(params protocol.Histo
 		return ErrStaleHistoryWindow
 	}
 	if params.Generation != 0 && params.Generation != uint64(latest.Generation) {
+		return ErrStaleHistoryWindow
+	}
+	if params.CursorValid {
+		if !terminal.CommittedCursorValid(cols, history.HistoryCursor{
+			Valid:           params.CursorValid,
+			BeforeLineID:    history.LogicalLineID(params.BeforeLineID),
+			BeforeRowInLine: params.BeforeRowInLine,
+		}) {
+			return ErrStaleHistoryWindow
+		}
+	}
+	if params.BoundaryFirstLineID != 0 && params.BoundaryFirstLineID != uint64(latest.FirstLineID) {
 		return ErrStaleHistoryWindow
 	}
 	if params.BoundaryLastLineID != 0 && params.BoundaryLastLineID != uint64(latest.LastLineID) {

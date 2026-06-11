@@ -371,6 +371,26 @@ func TestHistoryWindowTokenChangesAfterResizeGenerationInvalidation(t *testing.T
 	}
 }
 
+func TestCommittedCursorValidIgnoresViewportRowCount(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "abcdef")
+	commitLine(t, track, "ghij")
+
+	latest, err := track.LatestWindow(HistoryWindowRequest{Cols: 3, Rows: 2})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if !latest.Cursor.Valid {
+		t.Fatalf("expected authoritative older cursor, got %#v", latest.Cursor)
+	}
+	if !track.CommittedCursorValid(3, latest.Cursor) {
+		t.Fatalf("cursor should remain valid for same cols regardless of viewport rows, got %#v", latest.Cursor)
+	}
+	if !track.CommittedCursorValid(4, latest.Cursor) {
+		t.Fatalf("logical boundary cursor should remain a valid committed boundary under reprojection, got %#v", latest.Cursor)
+	}
+}
+
 func TestHistoryWindowRejectsInvalidSize(t *testing.T) {
 	track := NewHistoryTrack()
 	if _, err := track.LatestWindow(HistoryWindowRequest{Cols: 0, Rows: 1}); !errors.Is(err, ErrInvalidWindowSize) {

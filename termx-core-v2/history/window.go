@@ -133,6 +133,20 @@ func (track *HistoryTrack) OlderWindow(req HistoryWindowRequest) (HistoryWindow,
 	}, nil
 }
 
+// CommittedCursorValid 返回 cursor 是否仍然命中当前 cols 下的 committed
+// history projection boundary。它只校验 authoritative committed 投影，不依赖
+// 当前 viewport rows，因此不会把纯高度变化误判成 stale。
+func (track *HistoryTrack) CommittedCursorValid(cols int, cursor HistoryCursor) bool {
+	if cols <= 0 || !cursor.Valid {
+		return false
+	}
+	rows := track.projectCommittedRows(cols)
+	if len(rows) == 0 {
+		return false
+	}
+	return cursorBoundaryIndex(rows, cursor) >= 0
+}
+
 func (track *HistoryTrack) emptyWindow(op HistoryWindowOp, cols int) HistoryWindow {
 	return HistoryWindow{
 		Token:      makeWindowToken(track.generation, cols, 0, 0, HistoryCursor{}),
