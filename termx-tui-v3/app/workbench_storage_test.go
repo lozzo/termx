@@ -672,3 +672,154 @@ func TestInteractiveRuntimeWorkbenchReloadDoesNotKeepOldFrozenHistory(t *testing
 		t.Fatalf("workbench load must not keep rendering old frozen history, got %#v", last.Lines)
 	}
 }
+
+func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryWindow(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
+		ID:         7,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-old",
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest pending: %v", err)
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		state.Root{
+			Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-old"),
+			TerminalViews: state.TerminalViewStore{}.
+				BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true)),
+			History: pendingHistory,
+			CopyMode: state.CopyModeStore{}.BindLatest(
+				state.DefaultPaneID,
+				state.TerminalPaneViewID(state.DefaultPaneID),
+				"term-old",
+				7,
+				80,
+				20,
+			),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{},
+	)
+
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+		Version:  9,
+		Found:    true,
+	}}); err != nil {
+		t.Fatalf("post workbench load result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workbench load result: %v", err)
+	}
+
+	delayed := state.HistoryWindow{
+		TerminalID: "term-old",
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		Token:      "tok-delayed",
+		Cols:       80,
+		Op:         state.HistoryWindowReplace,
+		Rows:       []state.HistoryRow{{Text: "delayed-old-history", LineID: 8}},
+	}
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 7, Window: delayed}}); err != nil {
+		t.Fatalf("post delayed old history window: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain delayed old history window: %v", err)
+	}
+
+	if runtime.State().History.Token != "" || len(runtime.State().History.Rows) != 0 {
+		t.Fatalf("workbench reload must ignore delayed old history window, got %#v", runtime.State().History)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("workbench reload must keep copy mode inactive after delayed old history window, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "delayed-old-history") {
+		t.Fatalf("workbench reload must not render delayed old history window, got %#v", last.Lines)
+	}
+}
+
+func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryError(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
+		ID:         7,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-old",
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest pending: %v", err)
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		state.Root{
+			Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-old"),
+			TerminalViews: state.TerminalViewStore{}.
+				BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true)),
+			History: pendingHistory,
+			CopyMode: state.CopyModeStore{}.BindLatest(
+				state.DefaultPaneID,
+				state.TerminalPaneViewID(state.DefaultPaneID),
+				"term-old",
+				7,
+				80,
+				20,
+			),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{},
+	)
+
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+		Version:  9,
+		Found:    true,
+	}}); err != nil {
+		t.Fatalf("post workbench load result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workbench load result: %v", err)
+	}
+	beforeSurfaceErr := runtime.State().Surface.Err
+	beforeSessionErr := runtime.State().Session.LastError
+
+	if err := runtime.Post(CopyModeHistoryResultMsg{
+		Result: services.HistoryResult{RequestID: 7},
+		Err:    errors.New("delayed old history failed"),
+	}); err != nil {
+		t.Fatalf("post delayed old history error: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain delayed old history error: %v", err)
+	}
+
+	if runtime.State().Surface.Err != beforeSurfaceErr || runtime.State().Session.LastError != beforeSessionErr {
+		t.Fatalf("workbench reload must ignore delayed old history error without replacing current ui error state, state=%#v", runtime.State())
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "delayed old history failed") {
+		t.Fatalf("workbench reload must not render delayed old history error, got %#v", last.Lines)
+	}
+}
