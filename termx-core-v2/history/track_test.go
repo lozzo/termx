@@ -49,6 +49,48 @@ func TestHistoryTrackWritesSealsAndCommitsLogicalLines(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackCommitFrontierRequiresLeavingPrimaryScreenOwnership(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(2)
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("one")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventCommitFrontier},
+	)
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("sealed visible line must stay out of committed history, got %v", got)
+	}
+	if got := track.CommittableIDs(); len(got) != 0 {
+		t.Fatalf("visible sealed line must not be committable yet, got %v", got)
+	}
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("two")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventCommitFrontier},
+	)
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("screen still owns both sealed lines, got committed %v", got)
+	}
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("three")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+	)
+	if got := track.CommittableIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("oldest sealed line should become committable after scrolling out, got %v", got)
+	}
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventCommitFrontier})
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("only scrolled-out sealed line should commit, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2, 3}) {
+		t.Fatalf("newer visible sealed lines should remain frontier-owned, got %v", got)
+	}
+}
+
 func TestHistoryTrackWritesNewLogicalLineAfterSeal(t *testing.T) {
 	track := NewHistoryTrack()
 
@@ -197,6 +239,7 @@ func TestHistoryTrackResizeSemantics(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "one")
 	commitLine(t, track, "two")
+	track.SetPrimaryScreenRows(2)
 
 	before := track.Generation()
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventResize, ResizeDirection: ResizeGrow, Count: 1})
@@ -217,6 +260,18 @@ func TestHistoryTrackResizeSemantics(t *testing.T) {
 	}
 	if got := track.HiddenFrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
 		t.Fatalf("shrink resize should hide frontier tail, got %v", got)
+	}
+
+	before = track.Generation()
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventResize, ResizeDirection: ResizeGrow, Count: 1})
+	if track.Generation() == before {
+		t.Fatal("grow resize should invalidate generation when revealing hidden frontier")
+	}
+	if got := track.HiddenFrontierIDs(); len(got) != 0 {
+		t.Fatalf("grow resize should reveal hidden frontier before reclaiming committed suffix, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
+		t.Fatalf("grow resize should keep revealed frontier mutable, got %v", got)
 	}
 
 	before = track.Generation()

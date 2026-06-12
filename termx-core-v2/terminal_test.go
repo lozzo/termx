@@ -109,6 +109,40 @@ func TestTerminalIngestOutputNormalizesPTYCRLF(t *testing.T) {
 	}
 }
 
+func TestTerminalIngestOutputNewlineOnlySealsUntilLineLeavesPrimaryScreen(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 40, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	terminal, err := server.Terminal("term-1")
+	if err != nil {
+		t.Fatalf("lookup terminal: %v", err)
+	}
+	terminal.mu.Lock()
+	committed := terminal.history.CommittedIDs()
+	frontier := terminal.history.FrontierIDs()
+	committable := terminal.history.CommittableIDs()
+	terminal.mu.Unlock()
+
+	if got := committed; len(got) != 1 || got[0] != 1 {
+		t.Fatalf("only oldest sealed line should be committed after scroll-out, got %v", got)
+	}
+	if got := frontier; len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("newer sealed lines should remain in frontier ownership, got %v", got)
+	}
+	if len(committable) != 0 {
+		t.Fatalf("after commit, visible sealed lines must not remain committable, got %v", committable)
+	}
+}
+
 func TestTerminalIngestOutputPreservesANSIStylesInHistoryCells(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {
@@ -307,6 +341,13 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\n"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
+	beforeGrow, err := server.LatestWindow("term-1", 10, 10)
+	if err != nil {
+		t.Fatalf("latest before grow: %v", err)
+	}
+	if beforeGrow.TotalLines != 0 || len(beforeGrow.Rows) != 2 || beforeGrow.Rows[0].Text != "one" || beforeGrow.Rows[1].Text != "two" {
+		t.Fatalf("sealed visible lines should remain in live tail before grow, got %#v", beforeGrow)
+	}
 	if err := server.ResizeTerminal(context.Background(), "term-1", 10, 3); err != nil {
 		t.Fatalf("grow resize: %v", err)
 	}
@@ -314,8 +355,8 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after grow: %v", err)
 	}
-	if grown.TotalLines != 1 || len(grown.Rows) != 2 || grown.Rows[0].Text != "one" || grown.Rows[1].Text != "two" {
-		t.Fatalf("expected grow resize to reclaim committed suffix into visible frontier, got %#v", grown)
+	if grown.TotalLines != 0 || len(grown.Rows) != 2 || grown.Rows[0].Text != "one" || grown.Rows[1].Text != "two" {
+		t.Fatalf("grow resize should reveal hidden/visible frontier without manufacturing committed rows, got %#v", grown)
 	}
 	if err := server.ResizeTerminal(context.Background(), "term-1", 10, 2); err != nil {
 		t.Fatalf("shrink resize: %v", err)
@@ -324,8 +365,8 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after shrink: %v", err)
 	}
-	if shrunk.TotalLines != 1 || len(shrunk.Rows) != 1 || shrunk.Rows[0].Text != "one" {
-		t.Fatalf("expected shrink resize to hide reclaimed frontier tail, got %#v", shrunk)
+	if shrunk.TotalLines != 0 || len(shrunk.Rows) != 1 || shrunk.Rows[0].Text != "two" {
+		t.Fatalf("shrink resize should hide the oldest visible frontier row, got %#v", shrunk)
 	}
 }
 

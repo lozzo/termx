@@ -72,7 +72,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\nfive"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
 
@@ -84,17 +84,20 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest history.window: %v", err)
 	}
-	if latest.Op != protocol.HistoryWindowReplace || latest.Size.Cols != 10 || latest.LogicalTotal != 2 || len(latest.Rows) != 2 {
+	if latest.Op != protocol.HistoryWindowReplace || latest.Size.Cols != 10 || latest.LogicalTotal != 1 || len(latest.Rows) != 2 {
 		t.Fatalf("unexpected latest window %#v", latest)
 	}
-	if rowText(latest.Rows[0]) != "two" || rowText(latest.Rows[1]) != "three" {
+	if rowText(latest.Rows[0]) != "four" || rowText(latest.Rows[1]) != "five" {
 		t.Fatalf("unexpected latest rows %#v", latest.Rows)
 	}
 	if latest.RowLineIDs[0] == 0 || latest.RowInLine[0] != 0 || latest.Generation == 0 || latest.Token == "" {
 		t.Fatalf("expected line mapping, generation and token, got %#v", latest)
 	}
-	if latest.RowOwnership[0] != protocol.RowOwnershipPersisted || latest.RowOwnership[1] != protocol.RowOwnershipLiveTailLive {
+	if latest.RowOwnership[0] != protocol.RowOwnershipLiveTailLive || latest.RowOwnership[1] != protocol.RowOwnershipLiveTailLive {
 		t.Fatalf("unexpected row ownership %#v", latest.RowOwnership)
+	}
+	if !latest.HasMore || !latest.CursorValid {
+		t.Fatalf("latest tail should still expose older committed rows from the same frozen snapshot, got %#v", latest)
 	}
 
 	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -112,6 +115,9 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	}
 	if older.Op != protocol.HistoryWindowPrepend || older.Token != latest.Token || len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
 		t.Fatalf("unexpected older window %#v", older)
+	}
+	if len(older.RowOwnership) != 1 || older.RowOwnership[0] != protocol.RowOwnershipPersisted {
+		t.Fatalf("older committed row should stay persisted, got %#v", older.RowOwnership)
 	}
 
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{

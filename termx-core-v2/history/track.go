@@ -10,6 +10,7 @@ type HistoryTrack struct {
 	activeLine LogicalLineID
 	altScreen  bool
 	generation Generation
+	screenRows int
 }
 
 func NewHistoryTrack() *HistoryTrack {
@@ -35,6 +36,15 @@ func NewHistoryTrackWith(
 		committed: committed,
 		frontier:  frontier,
 	}
+}
+
+// SetPrimaryScreenRows 只更新当前 primary screen 的可见行数，用于决定
+// sealed line 何时真正脱离 screen ownership 变成 committable。
+func (track *HistoryTrack) SetPrimaryScreenRows(rows int) {
+	if rows < 0 {
+		rows = 0
+	}
+	track.screenRows = rows
 }
 
 func (track *HistoryTrack) Apply(event HistoryEvent) error {
@@ -88,6 +98,20 @@ func (track *HistoryTrack) FrontierIDs() []LogicalLineID {
 
 func (track *HistoryTrack) HiddenFrontierIDs() []LogicalLineID {
 	return track.frontier.HiddenIDs()
+}
+
+func (track *HistoryTrack) CommittableIDs() []LogicalLineID {
+	ids := track.frontier.IDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	committable := make([]LogicalLineID, 0, len(ids))
+	for _, id := range ids {
+		if track.lineCommittable(id) {
+			committable = append(committable, id)
+		}
+	}
+	return committable
 }
 
 func (track *HistoryTrack) Generation() Generation {
@@ -235,6 +259,10 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 		if !force && line.Seal != SealStateSealed {
 			continue
 		}
+		// 普通 commit 只允许提交已经 sealed 且不再被 primary screen 持有的 line。
+		if !force && !track.lineCommittable(id) {
+			continue
+		}
 		if line.Dirty {
 			line.Dirty = false
 			if _, err := track.store.ReplaceLine(line); err != nil {
@@ -375,11 +403,11 @@ func (track *HistoryTrack) resize(event HistoryEvent) error {
 	before := track.generation
 	switch event.ResizeDirection {
 	case ResizeGrow:
-		if err := track.reclaimCommittedSuffix(event); err != nil {
+		if err := track.growResize(event.Count); err != nil {
 			return err
 		}
 	case ResizeShrink:
-		if err := track.hideFrontier(event); err != nil {
+		if err := track.shrinkResize(event.Count); err != nil {
 			return err
 		}
 	case ResizeSame, "":
@@ -396,4 +424,78 @@ func (track *HistoryTrack) resize(event HistoryEvent) error {
 
 func (track *HistoryTrack) bumpGeneration() {
 	track.generation++
+}
+
+func (track *HistoryTrack) lineCommittable(id LogicalLineID) bool {
+	if !track.frontier.Contains(id) || track.frontier.IsHidden(id) {
+		return false
+	}
+	line, ok := track.store.Line(id)
+	if !ok || line.Seal != SealStateSealed {
+		return false
+	}
+	return !containsLineID(track.primaryVisibleFrontierIDs(), id)
+}
+
+func (track *HistoryTrack) primaryVisibleFrontierIDs() []LogicalLineID {
+	visible := track.visibleFrontierIDs()
+	if track.screenRows <= 0 {
+		return nil
+	}
+	if len(visible) <= track.screenRows {
+		return visible
+	}
+	return cloneLineIDs(visible[len(visible)-track.screenRows:])
+}
+
+func (track *HistoryTrack) visibleFrontierIDs() []LogicalLineID {
+	ids := track.frontier.IDs()
+	visible := make([]LogicalLineID, 0, len(ids))
+	for _, id := range ids {
+		if track.frontier.IsHidden(id) {
+			continue
+		}
+		visible = append(visible, id)
+	}
+	return visible
+}
+
+// growResize 先把 shrink 时藏起来的 frontier 恢复成 visible ownership，
+// 只有恢复不够时才按完整 logical line reclaim committed suffix。
+func (track *HistoryTrack) growResize(count int) error {
+	remaining := count
+	hidden := track.frontier.HiddenIDs()
+	for i := len(hidden) - 1; i >= 0 && remaining > 0; i-- {
+		if track.frontier.Reveal(hidden[i]) {
+			remaining--
+		}
+	}
+	if remaining > 0 {
+		if err := track.reclaimCommittedSuffix(HistoryEvent{
+			Kind:    EventReclaimCommittedSuffix,
+			Count:   remaining,
+			LineIDs: nil,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// shrinkResize 只把最老的 visible frontier 转成 hidden ownership，不得借机提交。
+func (track *HistoryTrack) shrinkResize(count int) error {
+	if count <= 0 {
+		return nil
+	}
+	visible := track.visibleFrontierIDs()
+	if len(visible) == 0 {
+		return nil
+	}
+	if count > len(visible) {
+		count = len(visible)
+	}
+	return track.hideFrontier(HistoryEvent{
+		Kind:    EventHideFrontier,
+		LineIDs: cloneLineIDs(visible[:count]),
+	})
 }

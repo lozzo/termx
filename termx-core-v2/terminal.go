@@ -30,6 +30,7 @@ func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker
 		events:  events,
 		update:  update,
 	}
+	terminal.history.SetPrimaryScreenRows(int(info.Size.Rows))
 	terminal.watchProcess(process)
 	return terminal
 }
@@ -125,6 +126,7 @@ func (terminal *Terminal) Resize(size Size) error {
 	oldSize := terminal.info.Size
 	terminal.info.Size = size
 	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	terminal.history.SetPrimaryScreenRows(int(size.Rows))
 	err := terminal.history.Apply(resizeHistoryEvent(oldSize, size))
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
@@ -168,6 +170,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.info.ExitCode = nil
 	info = terminal.info.Clone()
 	terminal.history = history.NewHistoryTrack()
+	terminal.history.SetPrimaryScreenRows(int(info.Size.Rows))
 	terminal.live = live.NewSurfaceTrack(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
 	terminal.ingest = historyANSIParser{}
 	terminal.mu.Unlock()

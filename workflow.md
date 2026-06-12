@@ -310,6 +310,6 @@
 - `AppRuntime` 已是事件驱动批处理循环；真实 CLI attach 不再有外层 `16ms` 轮询；resize latest-wins 和 owner 转移链路已经收口。
 - `215H1`、`215H2`、`215H3` 已完成，live/history 边界、core-v2 authoritative history stale guard、tui-v3 active-view history binding 都已经落地。
 - 非 history 快捷键主线 `215D1`、`215F` 已完成。
-- `215E1 history copy 主链收口` 已推进到实现阶段；当前已经落下 protocol session 冻结 snapshot、TUI 本地 reflow 和 resize 后不再回 core 重投影的主链，下一步继续补更细的 commit/ownership 语义与 snapshot 隔离证明。
+- `215E1 history copy 主链收口` 已推进到实现阶段；当前已经落下 protocol session 冻结 snapshot、TUI 本地 reflow 和 resize 后不再回 core 重投影的主链，并补上第一版 primary screen ownership 判定：`newline` 现在只 seal，不再自动 committed；core-v2 会按 terminal 当前 rows 判断哪些 sealed line 已经滚出 primary screen、何时才变成 committable/committed；resize grow/shrink 先处理 visible/hidden frontier，再决定是否 reclaim committed suffix。下一步继续补更细的 `\r` / 覆写 / erase 语义与 snapshot 隔离证明。
 - `215E2 clipboard paste 主链` 和 `215E3 clipboard history overlay` 还没开始，等 `215E1` 收口后继续。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。
