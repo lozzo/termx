@@ -125,6 +125,76 @@ func TestHistoryStorePrependsOlderAndRebasesExistingSpans(t *testing.T) {
 	}
 }
 
+func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T) {
+	store := HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       3,
+		SourceLines: []HistoryLogicalLine{{
+			Text:          "ghi",
+			Cells:         []HistoryCell{{Text: "ghi", Width: 3}},
+			LineID:        10,
+			ClippedBefore: true,
+		}},
+		Rows: []HistoryRow{
+			{Text: "ghi", LineID: 10, RowInLine: 0, ClippedStart: true},
+		},
+		Lines:      []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0, ClippedBefore: true}},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+	}
+	cursor := HistoryCursor{Valid: true, BeforeLineID: 10, BeforeRowInLine: 0}
+	store, err := store.BeginOlder(HistoryPendingRequest{
+		ID:         2,
+		TerminalID: "term-1",
+		Cols:       3,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     cursor,
+		Boundary:   store.Boundary,
+	})
+	if err != nil {
+		t.Fatalf("begin older: %v", err)
+	}
+
+	window := HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Op:         HistoryWindowPrepend,
+		Cols:       3,
+		SourceLines: []HistoryLogicalLine{{
+			Text:         "def",
+			Cells:        []HistoryCell{{Text: "def", Width: 3}},
+			LineID:       10,
+			ClippedAfter: true,
+		}},
+		Rows: []HistoryRow{
+			{Text: "def", LineID: 10, RowInLine: 0, ClippedEnd: true},
+		},
+		Lines:      []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0, ClippedAfter: true}},
+		Cursor:     HistoryCursor{},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+		HasMore:    false,
+	}
+	store, inserted, err := store.ApplyWindow(2, window)
+	if err != nil {
+		t.Fatalf("apply older: %v", err)
+	}
+	if inserted != 1 {
+		t.Fatalf("expected inserted row count to stay authoritative, got %d", inserted)
+	}
+	if len(store.SourceLines) != 1 || store.SourceLines[0].Text != "defghi" || !store.SourceLines[0].ClippedBefore || !store.SourceLines[0].ClippedAfter {
+		t.Fatalf("boundary-overlap prepend should merge clipped source into one logical line, got %#v", store.SourceLines)
+	}
+	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"def", "ghi"}) {
+		t.Fatalf("reflowed rows should stay stable after merged source, got %v", got)
+	}
+	if got := spanRows(store.Lines); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 1}}) {
+		t.Fatalf("merged logical line should produce one span, got %v", got)
+	}
+}
+
 func TestHistoryStoreRecordsOlderExhaustedMarker(t *testing.T) {
 	cursor := HistoryCursor{Valid: true, BeforeLineID: 10}
 	boundary := HistoryBoundary{FirstLineID: 10, LastLineID: 20}

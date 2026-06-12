@@ -353,7 +353,7 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	if len(existing) == 0 && len(store.Rows) > 0 {
 		existing = historyRowsToLogicalLines(store.Rows)
 	}
-	store.SourceLines = append(historyWindowSourceLines(window), existing...)
+	store.SourceLines = mergePrependedHistoryLogicalLines(historyWindowSourceLines(window), existing)
 	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
 	store.Token = window.Token
 	store.Cursor = window.Cursor
@@ -362,6 +362,30 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	store.HasMore = window.HasMore
 	store.Exhausted = ExhaustedMarker{}
 	return store
+}
+
+func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []HistoryLogicalLine) []HistoryLogicalLine {
+	if len(older) == 0 {
+		return cloneHistoryLogicalLines(existing)
+	}
+	if len(existing) == 0 {
+		return cloneHistoryLogicalLines(older)
+	}
+	merged := cloneHistoryLogicalLines(older)
+	rest := cloneHistoryLogicalLines(existing)
+	lastOlder := &merged[len(merged)-1]
+	firstExisting := rest[0]
+	if lastOlder.LineID != 0 &&
+		lastOlder.LineID == firstExisting.LineID &&
+		lastOlder.ClippedAfter &&
+		firstExisting.ClippedBefore {
+		lastOlder.Text += firstExisting.Text
+		lastOlder.Cells = append(lastOlder.Cells, cloneHistoryCells(firstExisting.Cells)...)
+		lastOlder.ClippedBefore = lastOlder.ClippedBefore || firstExisting.ClippedBefore
+		lastOlder.ClippedAfter = lastOlder.ClippedAfter || firstExisting.ClippedAfter
+		rest = rest[1:]
+	}
+	return append(merged, rest...)
 }
 
 func historyWindowSourceLines(window HistoryWindow) []HistoryLogicalLine {
