@@ -334,6 +334,10 @@ func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 	if viewID == "" {
 		return false
 	}
+	if root.Session.TerminalID == "" && len(root.TerminalViews.Views) == 0 {
+		// 初次 attach 时还没有任何 reducer-owned view binding，显式 ViewID 不能被误判成 stale。
+		return true
+	}
 	if _, ok := root.TerminalViews.Views[viewID]; ok {
 		return true
 	}

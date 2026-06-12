@@ -1517,11 +1517,14 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain pane size rebind: %v", err)
 	}
-	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 32 {
-		t.Fatalf("pane size should rebind copy mode through content rect cols, got %#v", core.LatestRequests)
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 33 {
+		t.Fatalf("pane size local reflow must not request a second latest window, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().History.Token != "tok-2" {
-		t.Fatalf("copy rebind should replace authoritative window, got copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().History.Token != "tok-1" {
+		t.Fatalf("pane size local reflow should keep current frozen token, got copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
+	}
+	if runtime.State().CopyMode.BoundCols != 32 || runtime.State().History.Cols != 32 {
+		t.Fatalf("pane size local reflow should update local history cols binding, got copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
 	}
 	if err := runtime.Post(ShellClearToastsMsg{}); err != nil {
 		t.Fatalf("post clear toasts after copy rebind: %v", err)
@@ -1530,8 +1533,8 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 		t.Fatalf("drain clear toasts after copy rebind: %v", err)
 	}
 	copyFrame := lastFrame(t, host.Frames())
-	if !frameContains(copyFrame, "copy-sized") || frameContains(copyFrame, "copy-old") {
-		t.Fatalf("copy rebind should render only the latest authoritative window, got %#v", copyFrame.Lines)
+	if !frameContains(copyFrame, "copy-old") || frameContains(copyFrame, "copy-sized") {
+		t.Fatalf("pane size local reflow should keep rendering current frozen history, got %#v", copyFrame.Lines)
 	}
 }
 
