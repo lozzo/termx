@@ -461,7 +461,7 @@ func TestCopyModeSearchMatchesAndScrollClamp(t *testing.T) {
 		{Text: "delta", LineID: 3},
 	}}
 	matches := FindCopyMatches(history, "beta")
-	if len(matches) != 2 || matches[0] != (CopyMatch{Row: 0, StartCol: 6, EndCol: 10}) || matches[1].Row != 1 {
+	if len(matches) != 2 || matches[0] != (CopyMatch{StartRow: 0, StartCol: 6, EndRow: 0, EndCol: 10}) || matches[1].StartRow != 1 {
 		t.Fatalf("unexpected matches %#v", matches)
 	}
 	copyMode := (CopyModeStore{ViewRows: 3}).SetQuery("beta", matches)
@@ -491,7 +491,7 @@ func TestCopyModeSearchMatchesUseDisplayColumns(t *testing.T) {
 	if len(matches) != 2 {
 		t.Fatalf("expected two display-column matches, got %#v", matches)
 	}
-	if matches[0] != (CopyMatch{Row: 0, StartCol: 1, EndCol: 4}) || matches[1] != (CopyMatch{Row: 1, StartCol: 1, EndCol: 4}) {
+	if matches[0] != (CopyMatch{StartRow: 0, StartCol: 1, EndRow: 0, EndCol: 4}) || matches[1] != (CopyMatch{StartRow: 1, StartCol: 1, EndRow: 1, EndCol: 4}) {
 		t.Fatalf("matches should use display columns, got %#v", matches)
 	}
 	copyMode := (CopyModeStore{}).SetQuery("好b", matches)
@@ -507,15 +507,15 @@ func TestCopyModeSearchMatchesUseGraphemeDisplayColumns(t *testing.T) {
 		{Text: "e\u0301x", LineID: 2},
 	}}
 	familyMatches := FindCopyMatches(history, family)
-	if len(familyMatches) != 1 || familyMatches[0] != (CopyMatch{Row: 0, StartCol: 0, EndCol: 2}) {
+	if len(familyMatches) != 1 || familyMatches[0] != (CopyMatch{StartRow: 0, StartCol: 0, EndRow: 0, EndCol: 2}) {
 		t.Fatalf("emoji family match should use grapheme display columns, got %#v", familyMatches)
 	}
 	xMatches := FindCopyMatches(history, "x")
-	if len(xMatches) != 2 || xMatches[0] != (CopyMatch{Row: 0, StartCol: 2, EndCol: 3}) || xMatches[1] != (CopyMatch{Row: 1, StartCol: 1, EndCol: 2}) {
+	if len(xMatches) != 2 || xMatches[0] != (CopyMatch{StartRow: 0, StartCol: 2, EndRow: 0, EndCol: 3}) || xMatches[1] != (CopyMatch{StartRow: 1, StartCol: 1, EndRow: 1, EndCol: 2}) {
 		t.Fatalf("following x matches should not be swallowed by previous grapheme, got %#v", xMatches)
 	}
 	combiningMatches := FindCopyMatches(history, "e\u0301")
-	if len(combiningMatches) != 1 || combiningMatches[0] != (CopyMatch{Row: 1, StartCol: 0, EndCol: 1}) {
+	if len(combiningMatches) != 1 || combiningMatches[0] != (CopyMatch{StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 1}) {
 		t.Fatalf("combining mark match should use one display column, got %#v", combiningMatches)
 	}
 }
@@ -530,8 +530,29 @@ func TestCopyModeSearchMatchesUseAuthoritativeCellWidth(t *testing.T) {
 		},
 	}}}
 	matches := FindCopyMatches(history, "x")
-	if len(matches) != 1 || matches[0] != (CopyMatch{Row: 0, StartCol: 4, EndCol: 5}) {
+	if len(matches) != 1 || matches[0] != (CopyMatch{StartRow: 0, StartCol: 4, EndRow: 0, EndCol: 5}) {
 		t.Fatalf("match should use authoritative history cell width, got %#v", matches)
+	}
+}
+
+func TestCopyModeSearchMatchesAcrossReflowRowsOfSameLogicalLine(t *testing.T) {
+	history := HistoryStore{
+		Rows: []HistoryRow{
+			{Text: "alphabe", LineID: 10, RowInLine: 0},
+			{Text: "tagamma", LineID: 10, RowInLine: 1},
+		},
+		Lines: []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
+	}
+	matches := FindCopyMatches(history, "beta")
+	if len(matches) != 1 {
+		t.Fatalf("expected cross-row logical-line match, got %#v", matches)
+	}
+	if matches[0] != (CopyMatch{StartRow: 0, StartCol: 5, EndRow: 1, EndCol: 2}) {
+		t.Fatalf("cross-row match should preserve row/col boundaries, got %#v", matches[0])
+	}
+	copyMode := (CopyModeStore{}).SetQuery("beta", matches)
+	if copyMode.Cursor != (CopyPosition{Row: 0, Col: 5}) {
+		t.Fatalf("cursor should jump to cross-row match start, got %#v", copyMode.Cursor)
 	}
 }
 

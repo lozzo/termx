@@ -119,8 +119,10 @@ func copyHistoryNextStyleBreak(row int, cursor int, lineWidth int, selection cop
 		}
 	}
 	if search.active {
-		from := clampCopyColumn(search.match.StartCol, 0, lineWidth)
-		to := clampCopyColumn(search.match.EndCol, from, lineWidth)
+		from, to, ok := searchColumnsForRow(search.match, row, lineWidth)
+		if !ok {
+			return nextBreak, style
+		}
 		if cursor < from {
 			nextBreak = minInt(nextBreak, from)
 		} else if cursor < to {
@@ -180,8 +182,13 @@ func copyHistoryNextCellStyleBreak(row int, cursor int, cellEnd int, lineWidth i
 		}
 	}
 	if search.active {
-		from := search.match.StartCol
-		to := search.match.EndCol
+		from, to, ok := searchColumnsForRow(search.match, row, lineWidth)
+		if !ok {
+			if nextBreak > cellEnd {
+				nextBreak = cellEnd
+			}
+			return nextBreak, style
+		}
 		if cursor < from {
 			nextBreak = minInt(nextBreak, from)
 		} else if cursor < to {
@@ -387,10 +394,28 @@ func activeSearchRange(copyMode state.CopyModeStore, row int) copySearchRange {
 	}
 	index := clampCopyColumn(copyMode.ActiveMatch, 0, len(copyMode.Matches)-1)
 	match := copyMode.Matches[index]
-	if match.Row != row {
+	if row < match.StartRow || row > match.EndRow {
 		return copySearchRange{}
 	}
 	return copySearchRange{active: true, match: match}
+}
+
+func searchColumnsForRow(match state.CopyMatch, row int, lineLen int) (int, int, bool) {
+	if row < match.StartRow || row > match.EndRow {
+		return 0, 0, false
+	}
+	from := 0
+	to := lineLen
+	if row == match.StartRow {
+		from = clampCopyColumn(match.StartCol, 0, lineLen)
+	}
+	if row == match.EndRow {
+		to = clampCopyColumn(match.EndCol, from, lineLen)
+	}
+	if from > to {
+		from, to = to, from
+	}
+	return from, to, true
 }
 
 func copyHistoryScrollbarLine(history state.HistoryStore, copyMode state.CopyModeStore, visible int) Line {

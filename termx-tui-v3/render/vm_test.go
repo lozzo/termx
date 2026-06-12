@@ -695,7 +695,7 @@ func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testin
 			BoundCols:   12,
 			Cursor:      state.CopyPosition{Row: 0, Col: 4},
 			Query:       "好b",
-			Matches:     []state.CopyMatch{{Row: 0, StartCol: 1, EndCol: 4}},
+			Matches:     []state.CopyMatch{{StartRow: 0, StartCol: 1, EndRow: 0, EndCol: 4}},
 			ActiveMatch: 0,
 			Selection: &state.CopySelection{
 				Anchor: state.CopyPosition{Row: 0, Col: 1},
@@ -750,7 +750,7 @@ func TestRenderVMBuilderCopyHistorySearchUsesGraphemeDisplayColumns(t *testing.T
 			BoundToken:  "tok-1",
 			BoundCols:   12,
 			Query:       family,
-			Matches:     []state.CopyMatch{{Row: 0, StartCol: 0, EndCol: 2}},
+			Matches:     []state.CopyMatch{{StartRow: 0, StartCol: 0, EndRow: 0, EndCol: 2}},
 			ActiveMatch: 0,
 		},
 	}
@@ -761,6 +761,41 @@ func TestRenderVMBuilderCopyHistorySearchUsesGraphemeDisplayColumns(t *testing.T
 	}
 	if lineHasStyledCell(content.Lines[1], "x", StyleWarning) {
 		t.Fatalf("search highlight should not leak into trailing x, got %#v", content.Lines[1])
+	}
+}
+
+func TestRenderVMBuilderCopyHistorySearchHighlightsAcrossReflowRows(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       8,
+			Rows: []state.HistoryRow{
+				{Text: "alphabe", LineID: 10, RowInLine: 0},
+				{Text: "tagamma", LineID: 10, RowInLine: 1},
+			},
+			Lines: []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:      true,
+			TerminalID:  "term-1",
+			BoundToken:  "tok-1",
+			BoundCols:   8,
+			Query:       "beta",
+			Matches:     []state.CopyMatch{{StartRow: 0, StartCol: 5, EndRow: 1, EndCol: 2}},
+			ActiveMatch: 0,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if !lineHasStyledCell(content.Lines[1], "be", StyleWarning) {
+		t.Fatalf("first reflow row should highlight cross-row search suffix, got %#v", content.Lines[1])
+	}
+	if !lineHasStyledCell(content.Lines[2], "ta", StyleWarning) {
+		t.Fatalf("second reflow row should highlight cross-row search prefix, got %#v", content.Lines[2])
+	}
+	if lineHasStyledCell(content.Lines[2], "gamma", StyleWarning) {
+		t.Fatalf("cross-row search highlight must not leak past match end, got %#v", content.Lines[2])
 	}
 }
 

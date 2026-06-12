@@ -192,9 +192,11 @@ type CopyPosition struct {
 }
 
 type CopyMatch struct {
-	Row int
-	// StartCol/EndCol 使用 display cell column，和 CopyPosition.Col 保持一致。
+	// Start/End 使用 authoritative row + display cell column，允许同一 logical line
+	// 的匹配跨越本地 reflow 产生的多个 visual row。
+	StartRow int
 	StartCol int
+	EndRow   int
 	EndCol   int
 }
 
@@ -507,7 +509,7 @@ func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeS
 	store.Matches = cloneCopyMatches(matches)
 	store.ActiveMatch = 0
 	if len(store.Matches) > 0 {
-		store.Cursor = CopyPosition{Row: store.Matches[0].Row, Col: store.Matches[0].StartCol}
+		store.Cursor = CopyPosition{Row: store.Matches[0].StartRow, Col: store.Matches[0].StartCol}
 	}
 	return store
 }
@@ -519,20 +521,73 @@ func FindCopyMatches(history HistoryStore, query string) []CopyMatch {
 	}
 	matches := make([]CopyMatch, 0)
 	queryClusters := textGraphemeClusters(query)
-	for rowIndex, row := range history.Rows {
-		textClusters := textGraphemeClusters(row.Text)
-		displayColumns := HistoryRowGraphemeDisplayColumns(row)
-		for start := 0; start+len(queryClusters) <= len(textClusters); start++ {
-			if strings.Join(textClusters[start:start+len(queryClusters)], "") == query {
-				matches = append(matches, CopyMatch{
-					Row:      rowIndex,
-					StartCol: displayColumns[start],
-					EndCol:   displayColumns[start+len(queryClusters)],
-				})
+	for _, span := range historyLineSpansForSearch(history) {
+		clusters, boundaries := historySpanGraphemeBoundaries(history, span)
+		for start := 0; start+len(queryClusters) <= len(clusters); start++ {
+			if strings.Join(clusters[start:start+len(queryClusters)], "") != query {
+				continue
 			}
+			startPos := boundaries[start]
+			endPos := boundaries[start+len(queryClusters)]
+			matches = append(matches, CopyMatch{
+				StartRow: startPos.Row,
+				StartCol: startPos.Col,
+				EndRow:   endPos.Row,
+				EndCol:   endPos.Col,
+			})
 		}
 	}
 	return matches
+}
+
+func historyLineSpansForSearch(history HistoryStore) []HistoryLineSpan {
+	if len(history.Lines) > 0 {
+		return cloneHistoryLineSpans(history.Lines)
+	}
+	if len(history.Rows) == 0 {
+		return nil
+	}
+	spans := make([]HistoryLineSpan, 0, len(history.Rows))
+	start := 0
+	current := history.Rows[0].LineID
+	for row := 1; row < len(history.Rows); row++ {
+		if history.Rows[row].LineID == current {
+			continue
+		}
+		spans = append(spans, HistoryLineSpan{LineID: current, StartRow: start, EndRow: row - 1})
+		start = row
+		current = history.Rows[row].LineID
+	}
+	spans = append(spans, HistoryLineSpan{LineID: current, StartRow: start, EndRow: len(history.Rows) - 1})
+	return spans
+}
+
+func historySpanGraphemeBoundaries(history HistoryStore, span HistoryLineSpan) ([]string, []CopyPosition) {
+	if len(history.Rows) == 0 || span.StartRow < 0 || span.StartRow >= len(history.Rows) {
+		return nil, nil
+	}
+	endRow := span.EndRow
+	if endRow < span.StartRow {
+		endRow = span.StartRow
+	}
+	if endRow >= len(history.Rows) {
+		endRow = len(history.Rows) - 1
+	}
+	clusters := make([]string, 0)
+	boundaries := make([]CopyPosition, 0)
+	for rowIndex := span.StartRow; rowIndex <= endRow; rowIndex++ {
+		row := history.Rows[rowIndex]
+		rowClusters := textGraphemeClusters(row.Text)
+		rowColumns := HistoryRowGraphemeDisplayColumns(row)
+		for i, cluster := range rowClusters {
+			boundaries = append(boundaries, CopyPosition{Row: rowIndex, Col: rowColumns[i]})
+			clusters = append(clusters, cluster)
+		}
+		if rowIndex == endRow {
+			boundaries = append(boundaries, CopyPosition{Row: rowIndex, Col: rowColumns[len(rowColumns)-1]})
+		}
+	}
+	return clusters, boundaries
 }
 
 func HistoryRowGraphemeDisplayColumns(row HistoryRow) []int {
@@ -664,7 +719,7 @@ func (store CopyModeStore) MoveMatch(delta int) CopyModeStore {
 	}
 	store.ActiveMatch %= len(store.Matches)
 	match := store.Matches[store.ActiveMatch]
-	store.Cursor = CopyPosition{Row: match.Row, Col: match.StartCol}
+	store.Cursor = CopyPosition{Row: match.StartRow, Col: match.StartCol}
 	return store
 }
 

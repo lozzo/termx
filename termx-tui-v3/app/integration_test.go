@@ -1414,6 +1414,53 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	}
 }
 
+func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: state.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         state.HistoryWindowReplace,
+			Cols:       8,
+			SourceLines: []state.HistoryLogicalLine{{
+				Text:   "alphabetagamma",
+				Cells:  []state.HistoryCell{{Text: "alphabetagamma", Width: 14}},
+				LineID: 10,
+			}},
+			Rows: []state.HistoryRow{
+				{Text: "alphabe", LineID: 10, RowInLine: 0},
+				{Text: "tagamma", LineID: 10, RowInLine: 1},
+			},
+			Lines:      []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
+			Generation: 7,
+			Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+		}}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(10, 12)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	for _, ch := range []string{"b", "e", "t", "a"} {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: ch}); err != nil {
+			t.Fatalf("send query %q: %v", ch, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain query: %v", err)
+	}
+	if runtime.State().CopyMode.Query != "beta" || len(runtime.State().CopyMode.Matches) != 1 {
+		t.Fatalf("expected one cross-row search match, got %#v", runtime.State().CopyMode)
+	}
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 0, Col: 5}) {
+		t.Fatalf("expected cursor on cross-row match start, got %#v", runtime.State().CopyMode.Cursor)
+	}
+}
+
 func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
