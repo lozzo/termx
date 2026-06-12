@@ -514,6 +514,44 @@ func (store CopyModeStore) Resize(cols int, rows int) CopyModeStore {
 	return store
 }
 
+// RebindToReflowedHistory 在 frozen source 按新 cols 本地重排后，把 copy mode
+// 的交互态重新映射回同一段 logical-line 内容，而不是继续沿用旧 visual row/col。
+func (store CopyModeStore) RebindToReflowedHistory(before HistoryStore, after HistoryStore) CopyModeStore {
+	store.BoundCols = after.Cols
+	if len(after.Rows) == 0 {
+		store.ViewportTop = 0
+		store.Cursor = CopyPosition{}
+		store.Mark = nil
+		store.Selection = nil
+		store.Matches = nil
+		store.ActiveMatch = 0
+		store.Empty = true
+		return store
+	}
+	store.Empty = false
+	store.ViewportTop = reflowViewportTop(before, after, store.ViewportTop)
+	store.Cursor = reflowCopyPosition(before, after, store.Cursor)
+	if store.Mark != nil {
+		mark := reflowCopyPosition(before, after, *store.Mark)
+		store.Mark = &mark
+	}
+	if store.Selection != nil {
+		store.Selection = &CopySelection{
+			Anchor: reflowCopyPosition(before, after, store.Selection.Anchor),
+			Focus:  reflowCopyPosition(before, after, store.Selection.Focus),
+		}
+	}
+	if store.Query != "" {
+		matches := FindCopyMatches(after, store.Query)
+		store.Matches = cloneCopyMatches(matches)
+		store.ActiveMatch = reflowActiveMatchIndex(after, store.Cursor, matches)
+	} else {
+		store.Matches = nil
+		store.ActiveMatch = 0
+	}
+	return store
+}
+
 func (store CopyModeStore) SetViewRows(rows int) CopyModeStore {
 	store.ViewRows = rows
 	return store
@@ -947,6 +985,109 @@ func cloneCopyMatches(matches []CopyMatch) []CopyMatch {
 	cloned := make([]CopyMatch, len(matches))
 	copy(cloned, matches)
 	return cloned
+}
+
+type historyLogicalOffset struct {
+	lineID   uint64
+	rowInLine int
+	col      int
+}
+
+func reflowViewportTop(before HistoryStore, after HistoryStore, top int) int {
+	if len(before.Rows) == 0 || len(after.Rows) == 0 {
+		return 0
+	}
+	offset := historyLogicalOffsetForPosition(before, CopyPosition{Row: top, Col: 0})
+	position := positionForHistoryLogicalOffset(after, offset)
+	return clampCopyInt(position.Row, 0, maxCopyInt(0, len(after.Rows)-1))
+}
+
+func reflowCopyPosition(before HistoryStore, after HistoryStore, pos CopyPosition) CopyPosition {
+	if len(after.Rows) == 0 {
+		return CopyPosition{}
+	}
+	offset := historyLogicalOffsetForPosition(before, pos)
+	return positionForHistoryLogicalOffset(after, offset)
+}
+
+func historyLogicalOffsetForPosition(history HistoryStore, pos CopyPosition) historyLogicalOffset {
+	if len(history.Rows) == 0 {
+		return historyLogicalOffset{}
+	}
+	row := clampCopyInt(pos.Row, 0, len(history.Rows)-1)
+	current := history.Rows[row]
+	col := clampCopyInt(pos.Col, 0, HistoryRowDisplayWidth(current))
+	offset := col
+	for cursor := row - 1; cursor >= 0; cursor-- {
+		previous := history.Rows[cursor]
+		if previous.LineID != current.LineID {
+			break
+		}
+		offset += HistoryRowDisplayWidth(previous)
+	}
+	return historyLogicalOffset{
+		lineID:    current.LineID,
+		rowInLine: current.RowInLine,
+		col:       offset,
+	}
+}
+
+func positionForHistoryLogicalOffset(history HistoryStore, offset historyLogicalOffset) CopyPosition {
+	if len(history.Rows) == 0 {
+		return CopyPosition{}
+	}
+	if offset.lineID == 0 {
+		return CopyPosition{}
+	}
+	remaining := maxCopyInt(0, offset.col)
+	fallback := -1
+	for rowIndex, row := range history.Rows {
+		if row.LineID != offset.lineID {
+			continue
+		}
+		if fallback < 0 {
+			fallback = rowIndex
+		}
+		width := HistoryRowDisplayWidth(row)
+		if remaining <= width {
+			return CopyPosition{Row: rowIndex, Col: remaining}
+		}
+		remaining -= width
+	}
+	if fallback >= 0 {
+		return CopyPosition{Row: fallback, Col: clampCopyInt(offset.col, 0, HistoryRowDisplayWidth(history.Rows[fallback]))}
+	}
+	last := len(history.Rows) - 1
+	return CopyPosition{Row: last, Col: HistoryRowDisplayWidth(history.Rows[last])}
+}
+
+func reflowActiveMatchIndex(history HistoryStore, cursor CopyPosition, matches []CopyMatch) int {
+	if len(matches) == 0 {
+		return 0
+	}
+	best := 0
+	for index, match := range matches {
+		if match.StartRow == cursor.Row && match.StartCol == cursor.Col {
+			return index
+		}
+		if copyMatchContainsPosition(match, cursor) {
+			best = index
+		}
+	}
+	return best
+}
+
+func copyMatchContainsPosition(match CopyMatch, pos CopyPosition) bool {
+	if pos.Row < match.StartRow || pos.Row > match.EndRow {
+		return false
+	}
+	if pos.Row == match.StartRow && pos.Col < match.StartCol {
+		return false
+	}
+	if pos.Row == match.EndRow && pos.Col > match.EndCol {
+		return false
+	}
+	return true
 }
 
 func rebaseExistingLineSpans(spans []HistoryLineSpan, delta int) []HistoryLineSpan {

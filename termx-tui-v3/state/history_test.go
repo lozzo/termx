@@ -482,6 +482,57 @@ func TestCopyModeAcceptOlderShiftsCursorMarkAndSelectionWithPrependedRows(t *tes
 	}
 }
 
+func TestCopyModeRebindToReflowedHistoryKeepsCursorAndSelectionOnOriginalContent(t *testing.T) {
+	before := HistoryStore{
+		Cols: 3,
+		SourceLines: []HistoryLogicalLine{{
+			Text:   "abcdef",
+			LineID: 10,
+		}},
+	}
+	before.Rows, before.Lines = ReflowHistoryLogicalLines(before.SourceLines, before.Cols)
+	after := HistoryStore{
+		Cols:        6,
+		SourceLines: cloneHistoryLogicalLines(before.SourceLines),
+	}
+	after.Rows, after.Lines = ReflowHistoryLogicalLines(after.SourceLines, after.Cols)
+	mark := CopyPosition{Row: 0, Col: 1}
+	copyMode := CopyModeStore{
+		Active:      true,
+		ViewportTop: 1,
+		Cursor:      CopyPosition{Row: 1, Col: 2},
+		Mark:        &mark,
+		Selection:   &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 1, Col: 2}},
+		Query:       "ef",
+		Matches:     []CopyMatch{{StartRow: 1, StartCol: 1, EndRow: 1, EndCol: 3}},
+		ActiveMatch: 0,
+	}
+
+	copyMode = copyMode.RebindToReflowedHistory(before, after)
+
+	if copyMode.ViewportTop != 0 {
+		t.Fatalf("expected viewport top to rebind to containing row, got %#v", copyMode)
+	}
+	if copyMode.Cursor != (CopyPosition{Row: 0, Col: 5}) {
+		t.Fatalf("expected cursor to keep pointing at original content after local reflow, got %#v", copyMode.Cursor)
+	}
+	if copyMode.Mark == nil || *copyMode.Mark != (CopyPosition{Row: 0, Col: 1}) {
+		t.Fatalf("expected mark to keep pointing at original content after local reflow, got %#v", copyMode.Mark)
+	}
+	if copyMode.Selection == nil {
+		t.Fatal("expected selection to be preserved after local reflow")
+	}
+	if copyMode.Selection.Anchor != (CopyPosition{Row: 0, Col: 1}) || copyMode.Selection.Focus != (CopyPosition{Row: 0, Col: 5}) {
+		t.Fatalf("expected selection to rebind to original content after local reflow, got %#v", copyMode.Selection)
+	}
+	if len(copyMode.Matches) != 1 || copyMode.Matches[0] != (CopyMatch{StartRow: 0, StartCol: 4, EndRow: 0, EndCol: 6}) {
+		t.Fatalf("expected query matches to reflow with local rows, got %#v", copyMode.Matches)
+	}
+	if copyMode.ActiveMatch != 0 {
+		t.Fatalf("expected active match index to stay on rebound match, got %#v", copyMode)
+	}
+}
+
 func TestHistoryStoreReflowsFrozenLogicalLinesAtNewCols(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		Text:   "abcdef",

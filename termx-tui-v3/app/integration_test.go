@@ -4246,6 +4246,65 @@ func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
 	}
 }
 
+func TestCopyModeLocalReflowResizeKeepsSelectionOnOriginalContent(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: state.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         state.HistoryWindowReplace,
+			Cols:       3,
+			SourceLines: []state.HistoryLogicalLine{{
+				Text:   "abcdef",
+				Cells:  []state.HistoryCell{{Text: "abcdef", Width: 6}},
+				LineID: 10,
+			}},
+			Rows: []state.HistoryRow{
+				{Text: "abc", LineID: 10, RowInLine: 0},
+				{Text: "def", LineID: 10, RowInLine: 1},
+			},
+			Lines:      []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
+			Generation: 7,
+			Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+		}}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(5, 12)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	runtime.state.CopyMode = runtime.state.CopyMode.SetMark(state.CopyPosition{Row: 0, Col: 1})
+	runtime.state.CopyMode = runtime.state.CopyMode.MoveCursor(state.CopyPosition{Row: 1, Col: 2})
+
+	if got := SelectedText(runtime.State().History, runtime.State().CopyMode); got != "bcde" {
+		t.Fatalf("expected initial selected text before local reflow, got %q", got)
+	}
+
+	if err := host.SendResize(8, 12); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain local reflow resize: %v", err)
+	}
+
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"abcdef"}) {
+		t.Fatalf("expected local reflow to widen into one row, got %v", got)
+	}
+	if runtime.State().CopyMode.Selection == nil {
+		t.Fatalf("expected selection after local reflow, got %#v", runtime.State().CopyMode)
+	}
+	if got := SelectedText(runtime.State().History, runtime.State().CopyMode); got != "bcde" {
+		t.Fatalf("expected selected text to stay on original content after local reflow, got %q", got)
+	}
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 0, Col: 5}) {
+		t.Fatalf("expected cursor to rebind to widened row, got %#v", runtime.State().CopyMode.Cursor)
+	}
+}
+
 func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(

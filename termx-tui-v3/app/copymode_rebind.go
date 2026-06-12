@@ -42,12 +42,11 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			return root.Advance(), nil
 		}
 		root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
+		beforeHistory := root.History
 		root.History.Cols = rect.W
 		root.History.Rows, root.History.Lines = state.ReflowHistoryLogicalLines(root.History.SourceLines, rect.W)
+		root.CopyMode = root.CopyMode.RebindToReflowedHistory(beforeHistory, root.History)
 		root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
-		if root.CopyMode.Query != "" {
-			root.CopyMode = root.CopyMode.SetQuery(root.CopyMode.Query, state.FindCopyMatches(root.History, root.CopyMode.Query))
-		}
 		return root.Advance(), nil
 	}
 }
