@@ -4593,6 +4593,10 @@ func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.
 	if runtime.State().CopyMode.Mark == nil || *runtime.State().CopyMode.Mark != (state.CopyPosition{Row: 0, Col: 3}) {
 		t.Fatalf("overlap prepend must rebind mark to original suffix, got %#v", runtime.State().CopyMode.Mark)
 	}
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "⇡") || frameContains(frame, "⇣") {
+		t.Fatalf("overlap prepend should not keep clipped markers after line is complete, got %#v", frame.Lines)
+	}
 }
 
 func TestSelectedTextSupportsReversedMultiRowSelection(t *testing.T) {

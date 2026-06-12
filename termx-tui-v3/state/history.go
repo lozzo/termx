@@ -393,8 +393,10 @@ func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []Hi
 		firstExisting.ClippedBefore {
 		lastOlder.Text += firstExisting.Text
 		lastOlder.Cells = append(lastOlder.Cells, cloneHistoryCells(firstExisting.Cells)...)
-		lastOlder.ClippedBefore = lastOlder.ClippedBefore || firstExisting.ClippedBefore
-		lastOlder.ClippedAfter = lastOlder.ClippedAfter || firstExisting.ClippedAfter
+		// 中文说明：boundary overlap 代表 older partial 的尾部和 existing partial 的头部
+		// 正好拼上了同一 logical line 的中缝；合并后只保留真正外侧还没补齐的 clipped 边。
+		lastOlder.ClippedBefore = lastOlder.ClippedBefore
+		lastOlder.ClippedAfter = firstExisting.ClippedAfter
 		rest = rest[1:]
 	}
 	return append(merged, rest...)

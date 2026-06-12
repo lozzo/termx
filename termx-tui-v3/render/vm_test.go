@@ -450,6 +450,33 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderDoesNotKeepClippedMarkerAfterBoundaryOverlapMerge(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       12,
+			Rows: []state.HistoryRow{
+				{Text: "defghi", LineID: 10, RowInLine: 0},
+			},
+			Lines: []state.HistoryLineSpan{
+				{LineID: 10, StartRow: 0, EndRow: 0},
+			},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  12,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[1].PlainString(); strings.Contains(got, "⇡") || strings.Contains(got, "⇣") {
+		t.Fatalf("boundary-overlap merged logical line should not keep clipped markers, got %#v", content.Lines)
+	}
+}
+
 func TestRenderVMBuilderCopyHistoryHitRegionsUseAuthoritativeDisplayCells(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{

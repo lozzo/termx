@@ -230,7 +230,7 @@ func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T
 	if inserted != len(store.Rows)-beforeRows {
 		t.Fatalf("expected inserted row count to reflect real local reflow delta, got inserted=%d before=%d after=%d", inserted, beforeRows, len(store.Rows))
 	}
-	if len(store.SourceLines) != 1 || store.SourceLines[0].Text != "defghi" || !store.SourceLines[0].ClippedBefore || !store.SourceLines[0].ClippedAfter {
+	if len(store.SourceLines) != 1 || store.SourceLines[0].Text != "defghi" || store.SourceLines[0].ClippedBefore || store.SourceLines[0].ClippedAfter {
 		t.Fatalf("boundary-overlap prepend should merge clipped source into one logical line, got %#v", store.SourceLines)
 	}
 	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"defghi"}) {
