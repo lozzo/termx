@@ -784,6 +784,64 @@ func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory
 	}
 }
 
+func TestProtocolServiceFrozenSnapshotIgnoresLaterProcessExitForceCommit(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 20, Rows: 1}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	process := serverProcess(t, server, "term-1")
+	process.emitOutput("one\ntwo\nopen-tail")
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       20,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen snapshot before exit: %v", err)
+	}
+	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "two" || rowText(latest.Rows[1]) != "open-tail" || !latest.CursorValid {
+		t.Fatalf("expected frozen snapshot over mutable tail before exit, got %#v", latest)
+	}
+
+	process.exit(7)
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            20,
+		Limit:           1,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from frozen snapshot after exit force commit: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from pre-exit frozen snapshot, got %#v", older)
+	}
+
+	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       20,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest after exit via new snapshot: %v", err)
+	}
+	if len(reloaded.Rows) != 3 || rowText(reloaded.Rows[0]) != "one" || rowText(reloaded.Rows[1]) != "two" || rowText(reloaded.Rows[2]) != "open-tail" || reloaded.LogicalTotal != 3 {
+		t.Fatalf("new latest after exit should see force-committed primary history, got %#v", reloaded)
+	}
+	if len(reloaded.RowOwnership) != 3 || reloaded.RowOwnership[0] != protocol.RowOwnershipPersisted || reloaded.RowOwnership[1] != protocol.RowOwnershipPersisted || reloaded.RowOwnership[2] != protocol.RowOwnershipPersisted {
+		t.Fatalf("force-committed exit tail should now be persisted in new snapshot, got %#v", reloaded.RowOwnership)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseDisplayFromCursorMutation(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
