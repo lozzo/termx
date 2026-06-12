@@ -57,6 +57,8 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 		return track.carriageReturn()
 	case EventEraseInLine:
 		return track.eraseInLine(event.EraseMode)
+	case EventEraseInDisplay:
+		return track.eraseInDisplay(event.EraseMode)
 	case EventSealLogicalLine:
 		return track.sealActiveLine()
 	case EventMutateFrontier:
@@ -230,6 +232,24 @@ func (track *HistoryTrack) eraseInLine(mode int) error {
 	track.overwrite = false
 	track.bumpGeneration()
 	return nil
+}
+
+func (track *HistoryTrack) eraseInDisplay(mode int) error {
+	if track.altScreen {
+		return nil
+	}
+	switch mode {
+	case 2:
+		return track.resetFrontier()
+	case 3:
+		return track.truncateCommittedHistory(HistoryEvent{
+			Kind:    EventTruncateCommittedHistory,
+			LineIDs: track.committed.IDs(),
+		})
+	default:
+		// ED 0/1 还没有显式 history 语义，不在这一步误造 history。
+		return nil
+	}
 }
 
 func (track *HistoryTrack) sealActiveLine() error {

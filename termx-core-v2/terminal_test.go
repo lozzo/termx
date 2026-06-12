@@ -193,6 +193,63 @@ func TestTerminalIngestOutputEraseInLineMutatesMutableTailWithoutCommitting(t *t
 	}
 }
 
+func TestTerminalIngestOutputClearScreenResetsMutableFrontierOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	before, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest before clear: %v", err)
+	}
+	if before.TotalLines == 0 {
+		t.Fatalf("expected committed history before clear, got %#v", before)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[2J"); err != nil {
+		t.Fatalf("ingest clear screen: %v", err)
+	}
+	after, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest after clear: %v", err)
+	}
+	if len(after.Rows) != 1 || after.Rows[0].Text != "one" || after.TotalLines != before.TotalLines {
+		t.Fatalf("ED 2 should clear mutable frontier but preserve committed history, got %#v", after)
+	}
+}
+
+func TestTerminalIngestOutputClearScrollbackTruncatesCommittedHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[3J"); err != nil {
+		t.Fatalf("ingest clear scrollback: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest after clear scrollback: %v", err)
+	}
+	if len(window.Rows) != 3 || window.Rows[0].Text != "two" || window.Rows[1].Text != "three" || window.Rows[2].Text != "four" || window.TotalLines != 0 {
+		t.Fatalf("ED 3 should clear committed history but keep mutable tail, got %#v", window)
+	}
+}
+
 func TestTerminalIngestOutputPreservesANSIStylesInHistoryCells(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {

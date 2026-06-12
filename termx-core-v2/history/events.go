@@ -9,6 +9,7 @@ const (
 	EventWritePrimaryCells        EventKind = "write-primary-cells"
 	EventCarriageReturn           EventKind = "carriage-return"
 	EventEraseInLine              EventKind = "erase-in-line"
+	EventEraseInDisplay           EventKind = "erase-in-display"
 	EventSealLogicalLine          EventKind = "seal-logical-line"
 	EventMutateFrontier           EventKind = "mutate-frontier"
 	EventResetFrontier            EventKind = "reset-frontier"

@@ -13,6 +13,7 @@ type historyOutputSegment struct {
 	Seal           bool
 	CarriageReturn bool
 	EraseInLine    bool
+	EraseInDisplay bool
 	EraseMode      int
 }
 
@@ -110,6 +111,16 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		return 0
 	}
 	final := input[end]
+	if final == 'J' {
+		parser.flush()
+		mode := 0
+		params := parseSGRParams(input[2:end])
+		if len(params) > 0 {
+			mode = params[0]
+		}
+		parser.segments = append(parser.segments, historyOutputSegment{EraseInDisplay: true, EraseMode: mode})
+		return end + 1
+	}
 	if final == 'K' {
 		parser.flush()
 		mode := 0
@@ -327,6 +338,7 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 		out[i].Seal = segment.Seal
 		out[i].CarriageReturn = segment.CarriageReturn
 		out[i].EraseInLine = segment.EraseInLine
+		out[i].EraseInDisplay = segment.EraseInDisplay
 		out[i].EraseMode = segment.EraseMode
 		if len(segment.Cells) > 0 {
 			out[i].Cells = make([]history.Cell, len(segment.Cells))

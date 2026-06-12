@@ -198,6 +198,20 @@ func TestHistoryTrackResetFrontierDoesNotCreateCommittedHistory(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackEraseDisplayResetFrontierDoesNotCreateCommittedHistory(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "kept")
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("draft")})
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 2})
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("ED 2 should preserve committed history only, got %v", got)
+	}
+	if got := track.FrontierIDs(); len(got) != 0 {
+		t.Fatalf("ED 2 should clear mutable frontier, got %v", got)
+	}
+}
+
 func TestHistoryTrackTruncateDeletesCommittedOnlyButKeepsMutablePayload(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "first")
@@ -222,6 +236,24 @@ func TestHistoryTrackTruncateDeletesCommittedOnlyButKeepsMutablePayload(t *testi
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventForceCommitFrontier})
 	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
 		t.Fatalf("expected frontier to recommit to new boundary, got %v", got)
+	}
+}
+
+func TestHistoryTrackEraseDisplayClearScrollbackTruncatesCommittedHistory(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "first")
+	commitLine(t, track, "second")
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("draft")})
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 3})
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("ED 3 should clear committed history, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{3}) {
+		t.Fatalf("ED 3 must not delete current mutable frontier, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 3)); got != "draft" {
+		t.Fatalf("ED 3 must preserve mutable payload, got %q", got)
 	}
 }
 

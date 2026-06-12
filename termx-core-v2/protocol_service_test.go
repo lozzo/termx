@@ -189,7 +189,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\nfive"); err != nil {
 		t.Fatalf("ingest initial output: %v", err)
 	}
 
@@ -201,7 +201,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 	if err != nil {
 		t.Fatalf("latest frozen snapshot: %v", err)
 	}
-	if rowText(latest.Rows[0]) != "four" || !latest.CursorValid {
+	if rowText(latest.Rows[0]) != "five" || !latest.CursorValid {
 		t.Fatalf("expected frozen snapshot cursor over mutable tail, got %#v", latest)
 	}
 
@@ -213,7 +213,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 	if err != nil {
 		t.Fatalf("latest after CR mutation: %v", err)
 	}
-	if len(current.Rows) == 0 || current.Rows[len(current.Rows)-1].Text != "THur" {
+	if len(current.Rows) == 0 || current.Rows[len(current.Rows)-1].Text != "THve" {
 		t.Fatalf("live history tail should reflect post-snapshot CR mutation, got %#v", current)
 	}
 
@@ -230,8 +230,24 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after CR mutation: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "two" || !older.HasMore || !older.CursorValid {
 		t.Fatalf("older page should still come from frozen snapshot, got %#v", older)
+	}
+	oldest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     older.CursorValid,
+		BeforeLineID:    older.CursorLineID,
+		BeforeRowInLine: older.CursorRow,
+		Token:           older.Token,
+		Generation:      older.Generation,
+	})
+	if err != nil {
+		t.Fatalf("oldest page from frozen snapshot after CR mutation: %v", err)
+	}
+	if len(oldest.Rows) != 1 || rowText(oldest.Rows[0]) != "one" {
+		t.Fatalf("oldest page should still come from frozen snapshot, got %#v", oldest)
 	}
 
 	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -242,7 +258,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 	if err != nil {
 		t.Fatalf("latest after CR mutation via new snapshot: %v", err)
 	}
-	if len(reloaded.Rows) != 1 || rowText(reloaded.Rows[0]) != "THur" {
+	if len(reloaded.Rows) != 1 || rowText(reloaded.Rows[0]) != "THve" {
 		t.Fatalf("new snapshot should see mutated live tail, got %#v", reloaded)
 	}
 }
@@ -297,6 +313,63 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseInLineMutation(t *testing
 	}
 	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
 		t.Fatalf("older page should still come from frozen snapshot, got %#v", older)
+	}
+}
+
+func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest initial output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen snapshot: %v", err)
+	}
+	if rowText(latest.Rows[0]) != "four" || !latest.CursorValid {
+		t.Fatalf("expected frozen snapshot cursor over mutable tail, got %#v", latest)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[3J"); err != nil {
+		t.Fatalf("ingest clear scrollback: %v", err)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from frozen snapshot after clear scrollback: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from frozen snapshot after clear scrollback, got %#v", older)
+	}
+
+	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest after clear scrollback via new snapshot: %v", err)
+	}
+	if len(reloaded.Rows) != 3 || rowText(reloaded.Rows[0]) != "two" || rowText(reloaded.Rows[1]) != "three" || rowText(reloaded.Rows[2]) != "four" || reloaded.LogicalTotal != 0 {
+		t.Fatalf("new snapshot should see empty committed history after clear scrollback, got %#v", reloaded)
 	}
 }
 

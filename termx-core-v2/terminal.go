@@ -91,6 +91,12 @@ func (terminal *Terminal) IngestOutput(output string) error {
 				return err
 			}
 		}
+		if segment.EraseInDisplay {
+			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventEraseInDisplay, EraseMode: segment.EraseMode}); err != nil {
+				terminal.mu.Unlock()
+				return err
+			}
+		}
 		if segment.Seal {
 			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
 				terminal.mu.Unlock()
