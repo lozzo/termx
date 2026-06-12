@@ -285,6 +285,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			activePaneID = existing.PaneID
 		}
 		if existing.FloatingID != "" {
+			root = invalidateCopyModeForTerminalRebind(root, existing.PaneID, viewID, msg.Result.TerminalID)
 			binding := state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize)
 			binding.Layout = existing.Layout
 			root.TerminalViews = root.TerminalViews.BindFloating(binding)
@@ -304,6 +305,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, msg.Result.TerminalID)
+	root = invalidateCopyModeForTerminalRebind(root, activePaneID, viewID, msg.Result.TerminalID)
 	binding := state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		binding.Layout = existing.Layout
@@ -321,6 +323,34 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		ViewID:         viewID,
 	})
 	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
+}
+
+func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
+	if !root.CopyMode.Active || terminalID == "" || root.CopyMode.TerminalID == terminalID {
+		return root
+	}
+	sameView := viewID != "" && root.CopyMode.ViewID == viewID
+	samePane := paneID != "" && root.CopyMode.PaneID == paneID
+	if !sameView && !samePane {
+		return root
+	}
+	// 当前 pane/view 已经重绑到新的 terminal，旧 frozen history 不能继续留在屏幕上。
+	root.History = root.History.InvalidateWindow()
+	root.History.TerminalID = terminalID
+	root.CopyMode.PaneID = paneID
+	root.CopyMode.ViewID = viewID
+	root.CopyMode.TerminalID = terminalID
+	root.CopyMode.BoundToken = ""
+	root.CopyMode.BoundCols = 0
+	root.CopyMode.ViewportTop = 0
+	root.CopyMode.Cursor = state.CopyPosition{}
+	root.CopyMode.Mark = nil
+	root.CopyMode.Selection = nil
+	root.CopyMode.Query = ""
+	root.CopyMode.Matches = nil
+	root.CopyMode.ActiveMatch = 0
+	root.CopyMode.Empty = true
+	return root
 }
 
 func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect {
