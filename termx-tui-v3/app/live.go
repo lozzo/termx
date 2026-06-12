@@ -273,13 +273,17 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		}
 		return setLiveError(root, msg.Err.Error()), nil
 	}
-	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, msg.Result.ViewID)
-	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
 	viewID := msg.Result.ViewID
 	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	if viewID == "" {
 		viewID = state.TerminalPaneViewID(activePaneID)
+	} else if _, ok := root.TerminalViews.Views[viewID]; !ok {
+		// 外部 reload/restore 替换 pane/view 结构后，旧 view 的迟到 attach result
+		// 不能回退绑定到当前 active pane；它已经不属于当前 workbench truth。
+		return root, nil
 	}
+	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID)
+	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		if existing.PaneID != "" {
 			activePaneID = existing.PaneID

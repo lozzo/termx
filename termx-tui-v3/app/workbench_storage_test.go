@@ -823,3 +823,63 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldHistoryError(t *testi
 		t.Fatalf("workbench reload must not render delayed old history error, got %#v", last.Lines)
 	}
 }
+
+func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldAttachResult(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		state.Root{
+			Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-old"),
+			TerminalViews: state.TerminalViewStore{}.
+				BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true)),
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{},
+	)
+
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+		Version:  9,
+		Found:    true,
+	}}); err != nil {
+		t.Fatalf("post workbench load result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workbench load result: %v", err)
+	}
+
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{
+		TerminalID:   "term-old",
+		Channel:      99,
+		Cols:         100,
+		Rows:         30,
+		ResizePolicy: state.TerminalResizeRoleOwner,
+		SurfaceID:    "surface-old",
+		ViewID:       "pane:stale-old",
+		CanResize:    true,
+	}}); err != nil {
+		t.Fatalf("post delayed old attach result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain delayed old attach result: %v", err)
+	}
+
+	binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.TerminalID != "term-new" || binding.Channel != 11 || binding.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("workbench reload must ignore delayed old attach result without rebinding active pane, binding=%#v ok=%v", binding, ok)
+	}
+	if runtime.State().Shell.Workspace.Tabs[0].Panes[0].TerminalID != "term-new" {
+		t.Fatalf("workbench reload must keep reloaded pane terminal, shell=%#v", runtime.State().Shell)
+	}
+	if channel, ok := runtime.State().Session.InputChannelFor("term-new"); ok && channel == 99 {
+		t.Fatalf("workbench reload must not move delayed old attach channel onto reloaded session, session=%#v", runtime.State().Session)
+	}
+}
