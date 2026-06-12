@@ -2108,6 +2108,56 @@ func TestCopyModeIgnoresLaterDestructiveLatestAndKeepsFrozenRows(t *testing.T) {
 	}
 }
 
+func TestCopyModeIgnoresLaterRestartLatestAndKeepsFrozenRows(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  78,
+		ViewRows:   20,
+	}
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-old",
+		Cols:        78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}}),
+		Rows:        []state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}},
+	}
+
+	restarted := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-after-restart", 78, 10, nil)
+	restarted.Boundary = state.HistoryBoundary{}
+	restarted.TotalLines = 0
+	restarted.HasMore = false
+	restarted.Cursor = state.HistoryCursor{}
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 1001, Window: restarted}}); err != nil {
+		t.Fatalf("post restart latest response: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain restart latest response: %v", err)
+	}
+
+	if runtime.State().History.Token != "tok-old" || len(runtime.State().History.Rows) != 2 || runtime.State().History.Rows[0].Text != "old-one" || runtime.State().History.Rows[1].Text != "old-two" {
+		t.Fatalf("later restart latest must not replace frozen copy window, got %#v", runtime.State().History)
+	}
+	if runtime.State().CopyMode.BoundToken != "tok-old" || runtime.State().CopyMode.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("later restart latest must not disturb frozen copy binding, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "old-one") || !frameContains(last, "old-two") {
+		t.Fatalf("later restart latest must keep frozen copy frame content, got %#v", last.Lines)
+	}
+	if frameContains(last, "history copy empty") {
+		t.Fatalf("later restart latest must not replace frozen copy frame with empty restart view, got %#v", last.Lines)
+	}
+}
+
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
