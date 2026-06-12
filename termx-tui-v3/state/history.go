@@ -816,7 +816,9 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	cells := cloneHistoryCells(line.Cells)
 	if len(cells) == 0 && line.Text != "" {
-		cells = []HistoryCell{{Text: line.Text}}
+		cells = splitHistoryLogicalLineText(line.Text)
+	} else if len(cells) > 0 {
+		cells = normalizeHistoryLogicalLineCells(cells)
 	}
 	if len(cells) == 0 {
 		return []HistoryRow{{LineID: line.LineID}}
@@ -853,6 +855,63 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		flush()
 	}
 	return rows
+}
+
+func splitHistoryLogicalLineText(text string) []HistoryCell {
+	clusters := textGraphemeClusters(text)
+	if len(clusters) == 0 {
+		return nil
+	}
+	out := make([]HistoryCell, 0, len(clusters))
+	for _, cluster := range clusters {
+		width := textDisplayWidth(cluster)
+		if width <= 0 {
+			continue
+		}
+		out = append(out, HistoryCell{Text: cluster, Width: width})
+	}
+	return out
+}
+
+func normalizeHistoryLogicalLineCells(cells []HistoryCell) []HistoryCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]HistoryCell, 0, len(cells))
+	for _, cell := range cells {
+		parts := splitHistoryCell(cell)
+		if len(parts) == 0 {
+			continue
+		}
+		out = append(out, parts...)
+	}
+	return out
+}
+
+func splitHistoryCell(cell HistoryCell) []HistoryCell {
+	width := HistoryCellDisplayWidth(cell)
+	if width <= 0 {
+		return nil
+	}
+	clusters := textGraphemeClusters(cell.Text)
+	if len(clusters) == 0 {
+		return nil
+	}
+	naturalWidth := textClusterDisplayColumns(clusters)[len(clusters)]
+	if len(clusters) == 1 && naturalWidth == width {
+		return []HistoryCell{cell}
+	}
+	out := make([]HistoryCell, 0, len(clusters))
+	for _, cluster := range clusters {
+		next := cell
+		next.Text = cluster
+		next.Width = textDisplayWidth(cluster)
+		if next.Width <= 0 {
+			continue
+		}
+		out = append(out, next)
+	}
+	return out
 }
 
 func historyCellsPlainTextForState(cells []HistoryCell) string {

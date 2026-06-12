@@ -468,6 +468,20 @@ func TestHistoryStoreReflowsFrozenLogicalLinesAtNewCols(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreReflowsFrozenLogicalLineTextWithoutCellsAtNewCols(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		Text:   "abcdef",
+		LineID: 10,
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 3)
+	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"abc", "def"}) {
+		t.Fatalf("text-only frozen source should still reflow by display cols, got %v", got)
+	}
+	if got := spanRows(spans); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 1}}) {
+		t.Fatalf("expected text-only frozen source span, got %v", got)
+	}
+}
+
 func TestHistoryInvalidateWindowClearsAuthoritativeRowsAndPending(t *testing.T) {
 	store := HistoryStore{
 		TerminalID: "term-1",
