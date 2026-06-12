@@ -784,6 +784,79 @@ func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory
 	}
 }
 
+func TestProtocolServiceFrozenSnapshotIgnoresLaterResizeReprojection(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 10, Rows: 3},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	attach, err := client.Attach(context.Background(), "term-1", "")
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\nfive"); err != nil {
+		t.Fatalf("ingest initial output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen snapshot before resize: %v", err)
+	}
+	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "four" || rowText(latest.Rows[1]) != "five" || !latest.CursorValid {
+		t.Fatalf("expected frozen latest over pre-resize live tail, got %#v", latest)
+	}
+
+	if err := client.Resize(context.Background(), attach.Channel, 10, 4); err != nil {
+		t.Fatalf("resize terminal: %v", err)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("older from frozen snapshot after resize: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from pre-resize frozen snapshot, got %#v", older)
+	}
+
+	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      4,
+	})
+	if err != nil {
+		t.Fatalf("latest after resize via new snapshot: %v", err)
+	}
+	if reloaded.Token == latest.Token {
+		t.Fatalf("resize should pin a new frozen token for subsequent latest, got old=%q new=%q", latest.Token, reloaded.Token)
+	}
+	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "three" || rowText(reloaded.Rows[1]) != "four" || rowText(reloaded.Rows[2]) != "five" || rowText(reloaded.Rows[3]) != "one" {
+		t.Fatalf("new latest after resize should see resized frontier projection, got %#v", reloaded)
+	}
+	if len(reloaded.RowOwnership) != 4 || reloaded.RowOwnership[0] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[1] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[2] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[3] != protocol.RowOwnershipLiveTailLive {
+		t.Fatalf("grow resize should expose a larger live tail in the new snapshot, got %#v", reloaded.RowOwnership)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotIgnoresLaterProcessExitForceCommit(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
