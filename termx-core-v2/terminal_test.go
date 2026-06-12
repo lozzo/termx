@@ -193,6 +193,56 @@ func TestTerminalIngestOutputEraseInLineMutatesMutableTailWithoutCommitting(t *t
 	}
 }
 
+func TestTerminalIngestOutputEraseInLineModeOneClearsMutablePrefixWithoutCommitting(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "hello\rhe\x1b[1K"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "   lo" {
+		t.Fatalf("history latest should reflect EL 1 mutation in mutable tail, got %#v", window)
+	}
+	if window.TotalLines != 0 {
+		t.Fatalf("erase-in-line mode 1 must not create committed history, got total lines %d", window.TotalLines)
+	}
+}
+
+func TestTerminalIngestOutputEraseInLineModeTwoClearsWholeMutableLineWithoutCommitting(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "hello\rhe\x1b[2K"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "     " {
+		t.Fatalf("history latest should reflect EL 2 mutation in mutable tail, got %#v", window)
+	}
+	if window.TotalLines != 0 {
+		t.Fatalf("erase-in-line mode 2 must not create committed history, got total lines %d", window.TotalLines)
+	}
+}
+
 func TestTerminalIngestOutputClearScreenResetsMutableFrontierOnly(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

@@ -150,6 +150,42 @@ func TestHistoryTrackEraseInLineMutatesCurrentMutableLine(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackEraseInLineModeOneClearsMutablePrefix(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("hello")},
+		HistoryEvent{Kind: EventCarriageReturn},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("he")},
+		HistoryEvent{Kind: EventEraseInLine, EraseMode: 1},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "   lo" {
+		t.Fatalf("EL 1 should clear active prefix through cursor, got %q", got)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("erase-in-line mode 1 must stay in mutable frontier, got committed %v", got)
+	}
+}
+
+func TestHistoryTrackEraseInLineModeTwoClearsWholeMutableLine(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("hello")},
+		HistoryEvent{Kind: EventCarriageReturn},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("he")},
+		HistoryEvent{Kind: EventEraseInLine, EraseMode: 2},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "     " {
+		t.Fatalf("EL 2 should clear entire mutable line, got %q", got)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("erase-in-line mode 2 must stay in mutable frontier, got committed %v", got)
+	}
+}
+
 func TestHistoryTrackMutatesReclaimedCommittedSuffixAndRecommitsReplacement(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "old")
