@@ -135,7 +135,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
 		t.Fatalf("expected stale history window error, got %v", err)
 	}
-	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+	olderAtReflowCols, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:          "term-1",
 		Cols:                11,
 		Limit:               1,
@@ -147,8 +147,11 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 		BoundaryFirstLineID: latest.FirstLineID,
 		BoundaryLastLineID:  latest.LastLineID,
 	})
-	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
-		t.Fatalf("expected cols stale history window error, got %v", err)
+	if err != nil {
+		t.Fatalf("expected frozen older to accept local reflow cols when cursor/boundary still valid, got %v", err)
+	}
+	if olderAtReflowCols.Op != protocol.HistoryWindowPrepend || len(olderAtReflowCols.Rows) != 1 || rowText(olderAtReflowCols.Rows[0]) != "one" {
+		t.Fatalf("unexpected older window at reflow cols %#v", olderAtReflowCols)
 	}
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:          "term-1",
@@ -179,6 +182,113 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
 		t.Fatalf("expected first-boundary stale history window error, got %v", err)
+	}
+}
+
+func TestProtocolServiceOlderAcceptsBoundaryFromMultiRowLatestSnapshot(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\nfive"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "four" || rowText(latest.Rows[1]) != "five" || !latest.CursorValid {
+		t.Fatalf("expected two-row frozen latest snapshot, got %#v", latest)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("older history.window from multi-row latest boundary: %v", err)
+	}
+	if older.Op != protocol.HistoryWindowPrepend || len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("unexpected older window from multi-row latest boundary %#v", older)
+	}
+}
+
+func TestProtocolServiceOlderAcceptsExpandedBoundaryAfterPrepend(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 1}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\nfive"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if len(latest.Rows) != 1 || rowText(latest.Rows[0]) != "five" || !latest.CursorValid {
+		t.Fatalf("expected one-row frozen latest snapshot, got %#v", latest)
+	}
+	firstOlder, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("first older history.window: %v", err)
+	}
+	if firstOlder.Op != protocol.HistoryWindowPrepend || len(firstOlder.Rows) != 1 || rowText(firstOlder.Rows[0]) != "three" || !firstOlder.CursorValid {
+		t.Fatalf("expected first prepend page over frozen snapshot, got %#v", firstOlder)
+	}
+
+	secondOlder, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		CursorValid:         firstOlder.CursorValid,
+		BeforeLineID:        firstOlder.CursorLineID,
+		BeforeRowInLine:     firstOlder.CursorRow,
+		Token:               firstOlder.Token,
+		Generation:          firstOlder.Generation,
+		// TUI prepend 后会把 first boundary 替换成 older response 的 first，
+		// 但继续保留原先 latest 的 tail boundary；这里按真实 merge 后的
+		// frozen store 边界发起下一次 older。
+		BoundaryFirstLineID: firstOlder.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("second older history.window from expanded boundary: %v", err)
+	}
+	if secondOlder.Op != protocol.HistoryWindowPrepend || len(secondOlder.Rows) != 1 || rowText(secondOlder.Rows[0]) != "two" {
+		t.Fatalf("unexpected second older window from expanded boundary %#v", secondOlder)
 	}
 }
 

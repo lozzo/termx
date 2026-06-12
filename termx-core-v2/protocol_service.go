@@ -574,11 +574,11 @@ func (session *protocolSession) validateOlderWindowRequest(params protocol.Histo
 			return ErrStaleHistoryWindow
 		}
 	}
-	latest := frozenSnapshotLatestWindow(snapshot, cols, 1)
-	if params.BoundaryFirstLineID != 0 && params.BoundaryFirstLineID != uint64(latest.FirstLineID) {
-		return ErrStaleHistoryWindow
-	}
-	if params.BoundaryLastLineID != 0 && params.BoundaryLastLineID != uint64(latest.LastLineID) {
+	// older 请求带回的是客户端当前 frozen latest/prepend 视图的 logical
+	// boundary，而不是“只看最后一行”重算出来的尾部 line id。这里要接受
+	// snapshot 当前投影尾部任意合法 suffix window 的 boundary，避免多行 latest
+	// 或 prepend 过的 frozen 视图被误判成 stale。
+	if !frozenSnapshotBoundaryValid(snapshot, cols, params.BoundaryFirstLineID, params.BoundaryLastLineID) {
 		return ErrStaleHistoryWindow
 	}
 	return nil
@@ -1169,6 +1169,42 @@ func frozenSnapshotCursorValid(snapshot history.FrozenSnapshot, cols int, cursor
 		return false
 	}
 	return historyCursorBoundaryIndex(rows, cursor) >= 0
+}
+
+func frozenSnapshotBoundaryValid(snapshot history.FrozenSnapshot, cols int, firstLineID uint64, lastLineID uint64) bool {
+	if firstLineID == 0 && lastLineID == 0 {
+		return true
+	}
+	if cols <= 0 {
+		return false
+	}
+	projected := projectFrozenSnapshotLatestRows(snapshot, cols)
+	if len(projected) == 0 {
+		return firstLineID == 0 && lastLineID == 0
+	}
+	if firstLineID == 0 {
+		firstLineID = uint64(projected[0].row.LineID)
+	}
+	if lastLineID == 0 {
+		lastLineID = uint64(projected[len(projected)-1].row.LineID)
+	}
+	startLineSeen := false
+	for index, row := range projected {
+		if uint64(row.row.LineID) != firstLineID {
+			continue
+		}
+		startLineSeen = true
+		// boundary 必须对应 latest 投影的某个 suffix window；一旦命中起始 line，
+		// 只接受直到尾部最后一条 logical line 都一致的情况。
+		if uint64(projected[len(projected)-1].row.LineID) != lastLineID {
+			return false
+		}
+		if index > 0 && projected[index-1].row.LineID == row.row.LineID {
+			continue
+		}
+		return true
+	}
+	return !startLineSeen && false
 }
 
 func frozenSnapshotWindow(snapshot history.FrozenSnapshot, cols int, rows int, cursor history.HistoryCursor, op history.HistoryWindowOp) history.HistoryWindow {
