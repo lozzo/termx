@@ -239,6 +239,10 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 		return nil
 	}
 	switch mode {
+	case 0:
+		return track.eraseDisplayFromCursor()
+	case 1:
+		return track.eraseDisplayToCursor()
 	case 2:
 		return track.resetFrontier()
 	case 3:
@@ -247,9 +251,69 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 			LineIDs: track.committed.IDs(),
 		})
 	default:
-		// ED 0/1 还没有显式 history 语义，不在这一步误造 history。
 		return nil
 	}
+}
+
+// eraseDisplayFromCursor 只作用于当前 primary mutable frontier：它会擦掉
+// active open line 从 cursor 到尾部的内容，并清掉 cursor 之下仍可变的行；
+// 它不能借机创建或截断 committed history。
+func (track *HistoryTrack) eraseDisplayFromCursor() error {
+	visible := track.visibleFrontierIDs()
+	if len(visible) == 0 {
+		return nil
+	}
+	cursorIndex, hasActiveLine := track.activeVisibleFrontierIndex(visible)
+	if !hasActiveLine {
+		// 当前 cursor 已经在空白新行上时，ED 0 对历史侧没有额外效果。
+		return nil
+	}
+	changed, err := track.eraseActiveLineWithoutBump(0)
+	if err != nil {
+		return err
+	}
+	deleted, err := track.deleteFrontierLinesWithoutBump(visible[cursorIndex+1:])
+	if err != nil {
+		return err
+	}
+	if changed || deleted {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+// eraseDisplayToCursor 同样只作用于 mutable frontier：它会擦掉 active line
+// 从开头到 cursor 的内容，并删除 cursor 之上仍可变但尚未 committed 的行。
+func (track *HistoryTrack) eraseDisplayToCursor() error {
+	visible := track.visibleFrontierIDs()
+	if len(visible) == 0 {
+		return nil
+	}
+	cursorIndex, hasActiveLine := track.activeVisibleFrontierIndex(visible)
+	if !hasActiveLine {
+		// 当前 cursor 位于换行后的空白行时，ED 1 等价于清空上方全部 visible
+		// mutable frontier。
+		deleted, err := track.deleteFrontierLinesWithoutBump(visible)
+		if err != nil {
+			return err
+		}
+		if deleted {
+			track.bumpGeneration()
+		}
+		return nil
+	}
+	changed, err := track.eraseActiveLineWithoutBump(1)
+	if err != nil {
+		return err
+	}
+	deleted, err := track.deleteFrontierLinesWithoutBump(visible[:cursorIndex])
+	if err != nil {
+		return err
+	}
+	if changed || deleted {
+		track.bumpGeneration()
+	}
+	return nil
 }
 
 func (track *HistoryTrack) sealActiveLine() error {
@@ -331,6 +395,61 @@ func (track *HistoryTrack) resetFrontier() error {
 	track.overwrite = false
 	track.bumpGeneration()
 	return nil
+}
+
+func (track *HistoryTrack) activeVisibleFrontierIndex(visible []LogicalLineID) (int, bool) {
+	if track.activeLine == 0 || !track.frontier.Contains(track.activeLine) || track.frontier.IsHidden(track.activeLine) {
+		return -1, false
+	}
+	for idx, id := range visible {
+		if id == track.activeLine {
+			return idx, true
+		}
+	}
+	return -1, false
+}
+
+func (track *HistoryTrack) eraseActiveLineWithoutBump(mode int) (bool, error) {
+	if track.activeLine == 0 || !track.frontier.Contains(track.activeLine) {
+		return false, nil
+	}
+	line, ok := track.store.Line(track.activeLine)
+	if !ok || line.Seal != SealStateOpen {
+		return false, nil
+	}
+	next := line.Clone()
+	next.Cells = eraseLineCellsAtColumn(next.Cells, track.activeCol, mode)
+	next.Dirty = true
+	replaced, err := track.store.ReplaceLine(next)
+	if err != nil {
+		return false, err
+	}
+	track.activeLine = replaced.ID
+	track.activeCol = minInt(track.activeCol, logicalLineWidth(replaced.Cells))
+	track.overwrite = false
+	return true, nil
+}
+
+func (track *HistoryTrack) deleteFrontierLinesWithoutBump(ids []LogicalLineID) (bool, error) {
+	if len(ids) == 0 {
+		return false, nil
+	}
+	changed := false
+	for _, id := range ids {
+		if !track.frontier.Remove(id) {
+			continue
+		}
+		if !track.committed.Contains(id) {
+			track.store.DeleteLine(id)
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+		}
+		changed = true
+	}
+	return changed, nil
 }
 
 func (track *HistoryTrack) commitFrontier(force bool) error {

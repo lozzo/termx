@@ -225,6 +225,56 @@ func TestTerminalIngestOutputClearScreenResetsMutableFrontierOnly(t *testing.T) 
 	}
 }
 
+func TestTerminalIngestOutputEraseDisplayFromCursorClearsMutableTailOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\rfo\x1b[0J"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest after ED 0: %v", err)
+	}
+	if len(window.Rows) != 4 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || strings.TrimRight(window.Rows[3].Text, " ") != "fo" {
+		t.Fatalf("ED 0 should keep committed rows and clear only mutable tail below cursor, got %#v", window)
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("ED 0 must not create or truncate committed history, got total lines %d", window.TotalLines)
+	}
+}
+
+func TestTerminalIngestOutputEraseDisplayToCursorClearsMutablePrefixOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\rfo\x1b[1J"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest after ED 1: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "one" || window.Rows[1].Text != "   r" {
+		t.Fatalf("ED 1 should clear mutable rows above cursor and active prefix only, got %#v", window)
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("ED 1 must not create or truncate committed history, got total lines %d", window.TotalLines)
+	}
+}
+
 func TestTerminalIngestOutputClearScrollbackTruncatesCommittedHistory(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

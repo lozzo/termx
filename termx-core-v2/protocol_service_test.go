@@ -373,6 +373,112 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	}
 }
 
+func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseDisplayFromCursorMutation(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest initial output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen snapshot: %v", err)
+	}
+	if rowText(latest.Rows[0]) != "four" || !latest.CursorValid {
+		t.Fatalf("expected frozen snapshot cursor over mutable tail, got %#v", latest)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-1", "\rfo\x1b[0J"); err != nil {
+		t.Fatalf("ingest later ED 0 mutation: %v", err)
+	}
+
+	current, err := server.LatestWindow("term-1", 10, 10)
+	if err != nil {
+		t.Fatalf("latest after ED 0 mutation: %v", err)
+	}
+	if len(current.Rows) == 0 || strings.TrimRight(current.Rows[len(current.Rows)-1].Text, " ") != "fo" {
+		t.Fatalf("live history tail should reflect post-snapshot ED 0 mutation, got %#v", current)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from frozen snapshot after ED 0 mutation: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from frozen snapshot after ED 0 mutation, got %#v", older)
+	}
+}
+
+func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseDisplayToCursorMutation(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest initial output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen snapshot: %v", err)
+	}
+	if rowText(latest.Rows[0]) != "four" || !latest.CursorValid {
+		t.Fatalf("expected frozen snapshot cursor over mutable tail, got %#v", latest)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-1", "\rfo\x1b[1J"); err != nil {
+		t.Fatalf("ingest later ED 1 mutation: %v", err)
+	}
+
+	current, err := server.LatestWindow("term-1", 10, 10)
+	if err != nil {
+		t.Fatalf("latest after ED 1 mutation: %v", err)
+	}
+	if len(current.Rows) == 0 || current.Rows[len(current.Rows)-1].Text != "   r" {
+		t.Fatalf("live history tail should reflect post-snapshot ED 1 mutation, got %#v", current)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from frozen snapshot after ED 1 mutation: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from frozen snapshot after ED 1 mutation, got %#v", older)
+	}
+}
+
 func TestProtocolHistoryWindowPreservesStyledCells(t *testing.T) {
 	track := history.NewHistoryTrack()
 	if err := track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{

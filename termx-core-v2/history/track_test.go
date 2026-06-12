@@ -212,6 +212,60 @@ func TestHistoryTrackEraseDisplayResetFrontierDoesNotCreateCommittedHistory(t *t
 	}
 }
 
+func TestHistoryTrackEraseDisplayFromCursorClearsMutableTailOnly(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "kept")
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("top")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bottom")},
+		HistoryEvent{Kind: EventCarriageReturn},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bo")},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("ED 0 must not change committed history, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2, 3}) {
+		t.Fatalf("ED 0 should keep current mutable line and drop only lower mutable lines, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 2)); got != "top" {
+		t.Fatalf("sealed mutable line above cursor should survive ED 0, got %q", got)
+	}
+	if got := strings.TrimRight(lineText(requireLine(t, track, 3)), " "); got != "bo" {
+		t.Fatalf("ED 0 should clear active mutable tail from cursor down, got %q", got)
+	}
+}
+
+func TestHistoryTrackEraseDisplayToCursorClearsMutablePrefixOnly(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "kept")
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("top")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bottom")},
+		HistoryEvent{Kind: EventCarriageReturn},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bo")},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 1},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("ED 1 must not change committed history, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{3}) {
+		t.Fatalf("ED 1 should drop mutable lines above cursor and keep active line, got %v", got)
+	}
+	if _, ok := track.Line(2); ok {
+		t.Fatal("ED 1 should delete mutable line above cursor from store")
+	}
+	if got := lineText(requireLine(t, track, 3)); got != "   tom" {
+		t.Fatalf("ED 1 should clear active line prefix through cursor, got %q", got)
+	}
+}
+
 func TestHistoryTrackTruncateDeletesCommittedOnlyButKeepsMutablePayload(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "first")
