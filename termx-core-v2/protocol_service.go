@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
+	"github.com/rivo/uniseg"
 )
 
 const (
@@ -1371,16 +1372,11 @@ func normalizeProjectionCellsSnapshot(cells []history.Cell) []history.Cell {
 		if cell.Text == "" && cell.Width <= 0 {
 			continue
 		}
-		width := cell.Width
-		if width <= 0 {
-			width = historyCellTextWidth(cell.Text)
-		}
-		if width <= 0 {
+		if cell.Width <= 0 {
+			out = append(out, expandHistoryCellSnapshot(cell)...)
 			continue
 		}
-		next := cell
-		next.Width = width
-		out = append(out, next)
+		out = append(out, cell)
 	}
 	return out
 }
@@ -1401,13 +1397,37 @@ func wrapCellsSnapshot(cells []history.Cell, cols int) [][]history.Cell {
 		width = 0
 	}
 	for _, cell := range cells {
-		if width > 0 && width+cell.Width > cols {
-			flush()
+		cellWidth := cell.Width
+		if cellWidth <= 0 {
+			cellWidth = historyCellTextWidth(cell.Text)
 		}
-		current = append(current, cell)
-		width += cell.Width
-		if width >= cols {
-			flush()
+		if cellWidth <= 0 {
+			continue
+		}
+		if width+cellWidth <= cols {
+			current = append(current, cell)
+			width += cellWidth
+			if width >= cols {
+				flush()
+			}
+			continue
+		}
+		for _, part := range splitMeasuredHistoryCellSnapshot(cell) {
+			partWidth := part.Width
+			if partWidth <= 0 {
+				partWidth = historyCellTextWidth(part.Text)
+			}
+			if partWidth <= 0 {
+				continue
+			}
+			if width > 0 && width+partWidth > cols {
+				flush()
+			}
+			current = append(current, part)
+			width += partWidth
+			if width >= cols {
+				flush()
+			}
 		}
 	}
 	flush()
@@ -1436,13 +1456,56 @@ func lineTextFromSnapshotCells(cells []history.Cell) string {
 
 func historyCellTextWidth(text string) int {
 	width := 0
-	for _, r := range text {
-		if r == '\n' {
-			continue
-		}
-		width++
+	for _, cluster := range historyTextClustersSnapshot(text) {
+		width += uniseg.StringWidth(cluster)
 	}
 	return width
+}
+
+func splitMeasuredHistoryCellSnapshot(cell history.Cell) []history.Cell {
+	clusters := historyTextClustersSnapshot(cell.Text)
+	if len(clusters) == 0 {
+		return nil
+	}
+	out := make([]history.Cell, 0, len(clusters))
+	for _, cluster := range clusters {
+		next := cell
+		next.Text = cluster
+		next.Width = uniseg.StringWidth(cluster)
+		out = append(out, next)
+	}
+	return out
+}
+
+func expandHistoryCellSnapshot(cell history.Cell) []history.Cell {
+	clusters := historyTextClustersSnapshot(cell.Text)
+	if len(clusters) == 0 {
+		return nil
+	}
+	out := make([]history.Cell, 0, len(clusters))
+	for _, cluster := range clusters {
+		next := cell
+		next.Text = cluster
+		next.Width = uniseg.StringWidth(cluster)
+		out = append(out, next)
+	}
+	return out
+}
+
+func historyTextClustersSnapshot(text string) []string {
+	if text == "" {
+		return nil
+	}
+	graphemes := uniseg.NewGraphemes(text)
+	clusters := make([]string, 0)
+	for graphemes.Next() {
+		cluster := graphemes.Str()
+		if cluster == "\n" {
+			continue
+		}
+		clusters = append(clusters, cluster)
+	}
+	return clusters
 }
 
 func latestCursorSnapshot(rows []snapshotProjectedRow, selectionStart int) history.HistoryCursor {

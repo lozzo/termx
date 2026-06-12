@@ -1082,6 +1082,49 @@ func TestProtocolServiceHistoryWindowPreservesProcessOutputANSIStyles(t *testing
 	}
 }
 
+func TestProtocolServiceFrozenSnapshotReflowsCombiningAndWideStyledCells(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 20, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	output := "\x1b[35;1me\u0301好\x1b[0m\n"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       2,
+		Limit:      4,
+	})
+	if err != nil {
+		t.Fatalf("history.window: %v", err)
+	}
+	if got := len(latest.Rows); got != 2 {
+		t.Fatalf("expected frozen snapshot projection to wrap into 2 rows, got %d rows %#v", got, latest.Rows)
+	}
+	if got := rowText(latest.Rows[0]); got != "e\u0301" {
+		t.Fatalf("expected first row to keep combining grapheme intact, got %q", got)
+	}
+	if got := rowText(latest.Rows[1]); got != "好" {
+		t.Fatalf("expected second row to keep wide grapheme intact, got %q", got)
+	}
+	firstCells := latest.Rows[0].DecodeCells()
+	if len(firstCells) != 1 || firstCells[0].Content != "e\u0301" || firstCells[0].Width != 0 || firstCells[0].Style.FG != "ansi:5" || !firstCells[0].Style.Bold {
+		t.Fatalf("expected combining grapheme to stay one styled display cell, got %#v", firstCells)
+	}
+	secondCells := latest.Rows[1].DecodeCells()
+	if len(secondCells) != 1 || secondCells[0].Content != "好" || secondCells[0].Width != 2 || secondCells[0].Style.FG != "ansi:5" || !secondCells[0].Style.Bold {
+		t.Fatalf("expected wide grapheme to stay one styled display cell, got %#v", secondCells)
+	}
+}
+
 func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
