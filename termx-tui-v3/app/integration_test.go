@@ -4306,6 +4306,87 @@ func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
 	}
 }
 
+func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{
+			Window: historyWindowForApp(
+				state.HistoryWindowReplace,
+				"term-1",
+				"tok-latest",
+				78,
+				7,
+				[]state.HistoryRow{
+					{Text: "line-1", LineID: 10},
+					{Text: "line-2", LineID: 11},
+					{Text: "line-3", LineID: 12},
+					{Text: "line-4", LineID: 13},
+				},
+			),
+		}},
+		OlderResponses: []services.HistoryResult{{
+			Window: historyWindowForApp(
+				state.HistoryWindowPrepend,
+				"term-1",
+				"tok-latest",
+				78,
+				7,
+				[]state.HistoryRow{
+					{Text: "older-1", LineID: 8},
+					{Text: "older-2", LineID: 9},
+				},
+			),
+		}},
+	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 11}
+	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 9}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 8, LastLineID: 13}
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+
+	if err := runtime.Post(CopyModeSetMarkMsg{Position: state.CopyPosition{Row: 1, Col: 1}}); err != nil {
+		t.Fatalf("set mark: %v", err)
+	}
+	if err := runtime.Post(CopyModeMoveCursorMsg{Position: state.CopyPosition{Row: 3, Col: 2}}); err != nil {
+		t.Fatalf("move cursor: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain selection setup: %v", err)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("request older: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain older: %v", err)
+	}
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("expected one older request, got %#v", core.OlderRequests)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"older-1", "older-2", "line-1", "line-2", "line-3", "line-4"}) {
+		t.Fatalf("expected older rows to prepend before original content, got %v", got)
+	}
+
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 5, Col: 2}) {
+		t.Fatalf("older prepend must keep cursor on original content, got %#v", runtime.State().CopyMode.Cursor)
+	}
+	if runtime.State().CopyMode.Mark == nil || *runtime.State().CopyMode.Mark != (state.CopyPosition{Row: 3, Col: 1}) {
+		t.Fatalf("older prepend must shift mark to original content row, got %#v", runtime.State().CopyMode.Mark)
+	}
+	if runtime.State().CopyMode.Selection == nil {
+		t.Fatal("older prepend must preserve selection")
+	}
+	if runtime.State().CopyMode.Selection.Anchor != (state.CopyPosition{Row: 3, Col: 1}) || runtime.State().CopyMode.Selection.Focus != (state.CopyPosition{Row: 5, Col: 2}) {
+		t.Fatalf("older prepend must shift selection rows with inserted history, got %#v", runtime.State().CopyMode.Selection)
+	}
+}
+
 func TestSelectedTextSupportsReversedMultiRowSelection(t *testing.T) {
 	history := historyStoreForCopySelection()
 	copyMode := state.CopyModeStore{

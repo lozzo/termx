@@ -450,6 +450,38 @@ func TestCopyModeResizeInvalidatesBindingAndSelection(t *testing.T) {
 	}
 }
 
+func TestCopyModeAcceptOlderShiftsCursorMarkAndSelectionWithPrependedRows(t *testing.T) {
+	mark := CopyPosition{Row: 1, Col: 2}
+	copyMode := CopyModeStore{
+		Active:      true,
+		Cursor:      CopyPosition{Row: 3, Col: 4},
+		Mark:        &mark,
+		Selection:   &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 3, Col: 4}},
+		ViewportTop: 2,
+	}
+
+	copyMode = copyMode.AcceptOlder(5, HistoryWindow{Token: "tok-older", Cols: 80}, 90)
+
+	if copyMode.ViewportTop != 7 {
+		t.Fatalf("expected viewport top to shift with prepended rows, got %d", copyMode.ViewportTop)
+	}
+	if copyMode.Cursor != (CopyPosition{Row: 8, Col: 4}) {
+		t.Fatalf("expected cursor to keep pointing at original content after prepend, got %#v", copyMode.Cursor)
+	}
+	if copyMode.Mark == nil || *copyMode.Mark != (CopyPosition{Row: 6, Col: 2}) {
+		t.Fatalf("expected mark to keep pointing at original content after prepend, got %#v", copyMode.Mark)
+	}
+	if copyMode.Selection == nil {
+		t.Fatal("expected selection to be preserved")
+	}
+	if copyMode.Selection.Anchor != (CopyPosition{Row: 6, Col: 2}) || copyMode.Selection.Focus != (CopyPosition{Row: 8, Col: 4}) {
+		t.Fatalf("expected selection rows to shift with prepend, got %#v", copyMode.Selection)
+	}
+	if copyMode.BoundToken != "tok-older" || copyMode.BoundCols != 90 {
+		t.Fatalf("expected authoritative binding to update with older accept, got %#v", copyMode)
+	}
+}
+
 func TestHistoryStoreReflowsFrozenLogicalLinesAtNewCols(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		Text:   "abcdef",

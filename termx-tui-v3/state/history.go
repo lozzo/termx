@@ -480,6 +480,24 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int) CopyMode
 func (store CopyModeStore) AcceptOlder(insertedRows int, window HistoryWindow, cols int) CopyModeStore {
 	if insertedRows > 0 {
 		store.ViewportTop += insertedRows
+		store.Cursor.Row += insertedRows
+		if store.Mark != nil {
+			mark := *store.Mark
+			mark.Row += insertedRows
+			store.Mark = &mark
+		}
+		if store.Selection != nil {
+			store.Selection = &CopySelection{
+				Anchor: CopyPosition{
+					Row: store.Selection.Anchor.Row + insertedRows,
+					Col: store.Selection.Anchor.Col,
+				},
+				Focus: CopyPosition{
+					Row: store.Selection.Focus.Row + insertedRows,
+					Col: store.Selection.Focus.Col,
+				},
+			}
+		}
 	}
 	store.BoundToken = window.Token
 	if cols <= 0 {
