@@ -460,7 +460,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	nextHistory, inserted, err := root.History.ApplyWindow(state.RequestID(msg.Result.RequestID), msg.Result.Window)
 	if err != nil {
 		if errors.Is(err, state.ErrStaleHistoryResponse) {
-			return root, nil
+			return rejectMatchingHistoryResponse(root, msg, err), nil
 		}
 		return setCopyModeError(root, err.Error()), nil
 	}
@@ -475,6 +475,36 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	}
 	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 	return root.Advance(), nil
+}
+
+func rejectMatchingHistoryResponse(root state.Root, msg CopyModeHistoryResultMsg, err error) state.Root {
+	if root.History.Pending == nil || state.RequestID(msg.Result.RequestID) != root.History.Pending.ID || !copyModeOwnsPendingHistory(root) {
+		return root
+	}
+	// 中文说明：同一个 request 已经返回但被 stale guard 拒绝时，不能继续保留 pending；
+	// 否则 copy history footer 会永久显示 `↑ loading`，并阻止下一次 older 请求重试。
+	root.History.Pending = nil
+	return setCopyModeError(root, err.Error())
+}
+
+func copyModeOwnsPendingHistory(root state.Root) bool {
+	pending := root.History.Pending
+	if pending == nil || !root.CopyMode.Active {
+		return false
+	}
+	if pending.TerminalID != "" && root.CopyMode.TerminalID != pending.TerminalID {
+		return false
+	}
+	if pending.PaneID != "" && root.CopyMode.PaneID != pending.PaneID {
+		return false
+	}
+	if pending.ViewID != "" && root.CopyMode.ViewID != pending.ViewID {
+		return false
+	}
+	if pending.Kind == state.HistoryRequestOlder && pending.Token != "" && root.CopyMode.BoundToken != pending.Token {
+		return false
+	}
+	return true
 }
 
 func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {

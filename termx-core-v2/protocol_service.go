@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1175,7 +1176,7 @@ func frozenSnapshotCursorValid(snapshot history.FrozenSnapshot, cols int, cursor
 	if cols <= 0 || !cursor.Valid {
 		return false
 	}
-	_, _, ok := snapshotCursorStartPosition(snapshotCommittedLines(snapshot), cols, cursor)
+	_, _, ok := snapshotCursorStartPosition(snapshot, cols, cursor)
 	return ok
 }
 
@@ -1199,15 +1200,8 @@ func frozenSnapshotBoundaryValid(snapshot history.FrozenSnapshot, cols int, firs
 	if lastLineID != uint64(lines[len(lines)-1].Line.ID) {
 		return false
 	}
-	startLineSeen := false
-	for _, line := range lines {
-		if uint64(line.Line.ID) != firstLineID {
-			continue
-		}
-		startLineSeen = true
-		return true
-	}
-	return !startLineSeen && false
+	_, ok := snapshotLineIndex(lines, history.LogicalLineID(firstLineID))
+	return ok
 }
 
 func frozenSnapshotWindow(snapshot history.FrozenSnapshot, cols int, rows int, cursor history.HistoryCursor, op history.HistoryWindowOp) history.HistoryWindow {
@@ -1325,13 +1319,13 @@ func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols i
 }
 
 func projectFrozenSnapshotOlderRowsBeforeCursor(snapshot history.FrozenSnapshot, cols int, maxRows int, cursor history.HistoryCursor) ([]snapshotProjectedRow, history.HistoryCursor, bool, bool) {
-	lines := snapshotCommittedLines(snapshot)
-	startLineIndex, startRowIndex, ok := snapshotCursorStartPosition(lines, cols, cursor)
+	startLineIndex, startRowIndex, ok := snapshotCursorStartPosition(snapshot, cols, cursor)
 	if !ok {
 		return nil, history.HistoryCursor{}, false, false
 	}
 	rows := make([]snapshotProjectedRow, 0, maxRows)
 	hasMore := false
+	lines := snapshot.Lines
 	for lineIndex := startLineIndex; lineIndex >= 0; lineIndex-- {
 		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[lineIndex]}, cols)
 		rowIndex := len(lineRows) - 1
@@ -1369,31 +1363,32 @@ func latestCursorSnapshotTail(rows []snapshotProjectedRow, hasMore bool) history
 	return history.HistoryCursor{Valid: true}
 }
 
-func snapshotCursorStartPosition(lines []history.SnapshotLine, cols int, cursor history.HistoryCursor) (int, int, bool) {
+func snapshotCursorStartPosition(snapshot history.FrozenSnapshot, cols int, cursor history.HistoryCursor) (int, int, bool) {
 	if !cursor.Valid {
 		return -1, -1, false
 	}
+	lines := snapshot.Lines
+	committedEnd := snapshotCommittedEnd(snapshot)
 	if cursor.BeforeLineID == 0 {
-		if len(lines) == 0 {
+		if committedEnd == 0 {
 			return -1, -1, false
 		}
-		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[len(lines)-1]}, cols)
-		if len(lineRows) == 0 {
-			return len(lines) - 2, -1, true
-		}
-		return len(lines) - 1, len(lineRows) - 1, true
-	}
-	for lineIndex := len(lines) - 1; lineIndex >= 0; lineIndex-- {
-		if lines[lineIndex].Line.ID != cursor.BeforeLineID {
-			continue
-		}
+		lineIndex := committedEnd - 1
 		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[lineIndex]}, cols)
-		for rowIndex, row := range lineRows {
-			if row.row.RowInLine == cursor.BeforeRowInLine {
-				return lineIndex, rowIndex - 1, true
-			}
+		if len(lineRows) == 0 {
+			return lineIndex - 1, -1, true
 		}
+		return lineIndex, len(lineRows) - 1, true
+	}
+	lineIndex, ok := snapshotLineIndex(lines[:committedEnd], cursor.BeforeLineID)
+	if !ok {
 		return -1, -1, false
+	}
+	lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[lineIndex]}, cols)
+	for rowIndex, row := range lineRows {
+		if row.row.RowInLine == cursor.BeforeRowInLine {
+			return lineIndex, rowIndex - 1, true
+		}
 	}
 	return -1, -1, false
 }
@@ -1410,6 +1405,38 @@ func snapshotCommittedLines(snapshot history.FrozenSnapshot) []history.SnapshotL
 		}
 	}
 	return lines
+}
+
+func snapshotCommittedEnd(snapshot history.FrozenSnapshot) int {
+	if snapshot.CommittedLines > 0 && snapshot.CommittedLines <= len(snapshot.Lines) {
+		return snapshot.CommittedLines
+	}
+	for index, line := range snapshot.Lines {
+		if !line.Committed {
+			return index
+		}
+	}
+	return len(snapshot.Lines)
+}
+
+func snapshotLineIndex(lines []history.SnapshotLine, id history.LogicalLineID) (int, bool) {
+	if id == 0 || len(lines) == 0 {
+		return -1, false
+	}
+	// 中文说明：FrozenSnapshot 的 line 序列来自 committed index + frontier，
+	// line id 单调递增；older 每页只需要二分定位 cursor/boundary，不应全量扫描。
+	index := sort.Search(len(lines), func(i int) bool {
+		return lines[i].Line.ID >= id
+	})
+	if index < len(lines) && lines[index].Line.ID == id {
+		return index, true
+	}
+	for index, line := range lines {
+		if line.Line.ID == id {
+			return index, true
+		}
+	}
+	return -1, false
 }
 
 func reverseSnapshotProjectedRows(rows []snapshotProjectedRow) {
@@ -1683,6 +1710,9 @@ func tailStartSnapshot(totalRows int, maxRows int) int {
 }
 
 func countCommittedSnapshotLines(snapshot history.FrozenSnapshot) int {
+	if snapshot.CommittedLines > 0 && snapshot.CommittedLines <= len(snapshot.Lines) {
+		return snapshot.CommittedLines
+	}
 	count := 0
 	for _, line := range snapshot.Lines {
 		if line.Committed {

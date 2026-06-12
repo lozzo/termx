@@ -4045,6 +4045,77 @@ func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testi
 	}
 }
 
+func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+
+	store := state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        78,
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: 20, LastLineID: 30},
+		SourceLines: []state.HistoryLogicalLine{{Text: "new", LineID: 30}},
+		Rows:        []state.HistoryRow{{Text: "new", LineID: 30}},
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: 30},
+	}
+	pending, err := store.BeginOlder(state.HistoryPendingRequest{
+		ID:         4,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Cols:       78,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 30},
+		Boundary:   state.HistoryBoundary{FirstLineID: 20, LastLineID: 30},
+	})
+	if err != nil {
+		t.Fatalf("begin older seed: %v", err)
+	}
+	runtime.state.History = pending
+	runtime.state.CopyMode = state.CopyModeStore{}.BindLatest(
+		state.DefaultPaneID,
+		state.TerminalPaneViewID(state.DefaultPaneID),
+		"term-1",
+		4,
+		78,
+		20,
+	)
+	runtime.state.CopyMode.BoundToken = "tok-1"
+
+	stale := historyWindowForApp(
+		state.HistoryWindowPrepend,
+		"term-1",
+		"tok-stale",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "old", LineID: 10}},
+	)
+	stale.PaneID = state.DefaultPaneID
+	stale.ViewID = state.TerminalPaneViewID(state.DefaultPaneID)
+	if err := runtime.Post(CopyModeHistoryResultMsg{
+		Result: services.HistoryResult{RequestID: 4, Window: stale},
+	}); err != nil {
+		t.Fatalf("post matching stale older window: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain matching stale older window: %v", err)
+	}
+	if runtime.State().History.Pending != nil {
+		t.Fatalf("matching stale response must clear pending older request, got %#v", runtime.State().History.Pending)
+	}
+	if runtime.State().History.OlderRequestState() == state.OlderRequestPending {
+		t.Fatalf("older request state must not stay loading after matching stale response")
+	}
+	if runtime.State().Surface.Err == "" || runtime.State().Session.LastError == "" {
+		t.Fatalf("matching stale response should surface retryable error, state=%#v", runtime.State())
+	}
+}
+
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

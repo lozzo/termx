@@ -3,6 +3,7 @@ package termxcorev2
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -270,14 +271,14 @@ func TestProtocolServiceOlderAcceptsExpandedBoundaryAfterPrepend(t *testing.T) {
 	}
 
 	secondOlder, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
-		TerminalID:          "term-1",
-		Cols:                10,
-		Limit:               1,
-		CursorValid:         firstOlder.CursorValid,
-		BeforeLineID:        firstOlder.CursorLineID,
-		BeforeRowInLine:     firstOlder.CursorRow,
-		Token:               firstOlder.Token,
-		Generation:          firstOlder.Generation,
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     firstOlder.CursorValid,
+		BeforeLineID:    firstOlder.CursorLineID,
+		BeforeRowInLine: firstOlder.CursorRow,
+		Token:           firstOlder.Token,
+		Generation:      firstOlder.Generation,
 		// TUI prepend 后会把 first boundary 替换成 older response 的 first，
 		// 但继续保留原先 latest 的 tail boundary；这里按真实 merge 后的
 		// frozen store 边界发起下一次 older。
@@ -289,6 +290,42 @@ func TestProtocolServiceOlderAcceptsExpandedBoundaryAfterPrepend(t *testing.T) {
 	}
 	if secondOlder.Op != protocol.HistoryWindowPrepend || len(secondOlder.Rows) != 1 || rowText(secondOlder.Rows[0]) != "two" {
 		t.Fatalf("unexpected second older window from expanded boundary %#v", secondOlder)
+	}
+}
+
+func TestFrozenSnapshotOlderWindowUsesLargeSnapshotCursor(t *testing.T) {
+	snapshot := frozenSnapshotForBenchmark(100000)
+	latest := frozenSnapshotLatestWindow(snapshot, 80, 24)
+	if !latest.Cursor.Valid {
+		t.Fatalf("expected latest cursor from large snapshot, got %#v", latest)
+	}
+
+	older := frozenSnapshotOlderWindow(snapshot, 80, 24, latest.Cursor)
+	if len(older.Rows) != 24 {
+		t.Fatalf("expected one older page, got %d rows", len(older.Rows))
+	}
+	if older.FirstLineID == 0 || older.LastLineID == 0 || !older.Cursor.Valid {
+		t.Fatalf("older window should keep logical boundary and cursor, got %#v", older)
+	}
+	if got := older.Rows[len(older.Rows)-1].LineID; got >= latest.FirstLineID {
+		t.Fatalf("older page must be before latest boundary, got last=%d latestFirst=%d", got, latest.FirstLineID)
+	}
+}
+
+func BenchmarkFrozenSnapshotOlderWindowLargeHistory(b *testing.B) {
+	snapshot := frozenSnapshotForBenchmark(100000)
+	latest := frozenSnapshotLatestWindow(snapshot, 80, 24)
+	cursor := latest.Cursor
+	if !cursor.Valid {
+		b.Fatal("missing benchmark cursor")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		window := frozenSnapshotOlderWindow(snapshot, 80, 24, cursor)
+		if len(window.Rows) != 24 {
+			b.Fatalf("expected 24 rows, got %d", len(window.Rows))
+		}
 	}
 }
 
@@ -820,14 +857,14 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterResizeReprojection(t *testing.
 	}
 
 	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
-		TerminalID:      "term-1",
-		Cols:            10,
-		Limit:           1,
-		CursorValid:     latest.CursorValid,
-		BeforeLineID:    latest.CursorLineID,
-		BeforeRowInLine: latest.CursorRow,
-		Token:           latest.Token,
-		Generation:      latest.Generation,
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
 		BoundaryFirstLineID: latest.FirstLineID,
 		BoundaryLastLineID:  latest.LastLineID,
 	})
@@ -1682,6 +1719,29 @@ func requireProtocolEvent(t *testing.T, events <-chan protocol.Event) protocol.E
 		t.Fatal("timed out waiting for protocol event")
 	}
 	return protocol.Event{}
+}
+
+func frozenSnapshotForBenchmark(lines int) history.FrozenSnapshot {
+	snapshot := history.FrozenSnapshot{
+		Token:          "bench-snapshot",
+		Generation:     1,
+		Lines:          make([]history.SnapshotLine, 0, lines),
+		CommittedLines: lines,
+	}
+	for i := 1; i <= lines; i++ {
+		text := "line-" + strconv.Itoa(i)
+		snapshot.Lines = append(snapshot.Lines, history.SnapshotLine{
+			Line: history.LogicalLine{
+				ID:         history.LogicalLineID(i),
+				Generation: 1,
+				Seal:       history.SealStateSealed,
+				Cells:      []history.Cell{{Text: text, Width: len(text)}},
+				Residency:  history.ResidencyMemory,
+			},
+			Committed: true,
+		})
+	}
+	return snapshot
 }
 
 func rowText(row protocol.CompactRow) string {
