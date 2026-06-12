@@ -13,6 +13,7 @@ import (
 type CopyModeDeps struct {
 	Core      services.CoreClient
 	Clipboard services.ClipboardService
+	Terminal  services.TerminalService
 	Rows      int
 }
 
@@ -45,6 +46,13 @@ type CopyModeCopyResultMsg struct {
 }
 
 func (CopyModeCopyResultMsg) isMsg() {}
+
+type CopyModePasteResultMsg struct {
+	Text string
+	Err  error
+}
+
+func (CopyModePasteResultMsg) isMsg() {}
 
 type CopyModeSetQueryMsg struct {
 	Query string
@@ -97,6 +105,13 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 				return root.Advance(), nil
 			}
 			return root, nil
+		case CopyModePasteResultMsg:
+			if msg.Err != nil {
+				root.Surface = root.Surface.SetError(msg.Err.Error())
+				root.Session = root.Session.SetError(msg.Err.Error())
+				return root.Advance(), nil
+			}
+			return root, nil
 		case CopyModeSetQueryMsg:
 			root.CopyMode = root.CopyMode.SetQuery(msg.Query, state.FindCopyMatches(root.History, msg.Query))
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
@@ -136,6 +151,12 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		}
 		root.CopyMode = state.CopyModeStore{}
 		return root.Advance(), []Effect{handledEffect{}}
+	case input.IntentPasteLastCopy:
+		next, effects := reduceCopyModePaste(root, deps, false)
+		return next, append([]Effect{handledEffect{}}, effects...)
+	case input.IntentPasteClipboard:
+		next, effects := reduceCopyModePaste(root, deps, true)
+		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentMouseSelect:
 		if !root.CopyMode.Active {
 			return root, nil
@@ -277,6 +298,12 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 				return next, effects, true
 			}
 			return root, nil, true
+		case "p":
+			next, effects := reduceCopyModePaste(root, deps, false)
+			return next, effects, true
+		case "P":
+			next, effects := reduceCopyModePaste(root, deps, true)
+			return next, effects, true
 		}
 		if event.Char == "/" && root.CopyMode.Query == "" {
 			root.CopyMode = root.CopyMode.SetQuery("", nil)
@@ -444,6 +471,51 @@ func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root
 	}}
 }
 
+func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard bool) (state.Root, []Effect) {
+	if deps.Clipboard == nil {
+		return setCopyModeError(root, "clipboard service missing"), nil
+	}
+	if deps.Terminal == nil {
+		return setCopyModeError(root, "terminal service missing"), nil
+	}
+	target, ok := liveInputTarget(root)
+	if !ok || target.TerminalID == "" || target.Channel == 0 {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.input", Body: "no terminal bound"})
+		return root.Advance(), nil
+	}
+	root.CopyMode = state.CopyModeStore{}
+	if root.History.Pending != nil {
+		root.History.Pending = nil
+	}
+	root = root.Advance()
+	return root, []Effect{FuncEffect{
+		Run: func(ctx context.Context) Msg {
+			text := deps.Clipboard.LastCopy()
+			if readSystemClipboard {
+				result, err := deps.Clipboard.Read(ctx)
+				if err != nil {
+					return CopyModePasteResultMsg{Err: err}
+				}
+				text = result.Text
+			}
+			if text == "" {
+				if readSystemClipboard {
+					return CopyModePasteResultMsg{Err: errors.New("system clipboard is empty")}
+				}
+				return CopyModePasteResultMsg{Err: errors.New("copy buffer is empty")}
+			}
+			// 中文说明：paste 属于发往 active terminal 的语义化输入；
+			// 如果 live surface 开着 bracketed paste，就在 reducer-owned live modes 基础上包裹 200~/201~。
+			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+				TerminalID: target.TerminalID,
+				Channel:    target.Channel,
+				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminal(target.TerminalID).Modes),
+			})
+			return CopyModePasteResultMsg{Text: text, Err: err}
+		},
+	}}
+}
+
 func SelectedText(history state.HistoryStore, copyMode state.CopyModeStore) string {
 	if copyMode.Selection == nil || !copyMode.Active {
 		return ""
@@ -514,6 +586,16 @@ func clampColumn(value int, min int, max int) int {
 		return max
 	}
 	return value
+}
+
+func encodeTerminalPaste(text string, modes state.LiveTerminalModes) []byte {
+	if text == "" {
+		return nil
+	}
+	if !modes.BracketedPaste {
+		return []byte(text)
+	}
+	return []byte("\x1b[200~" + text + "\x1b[201~")
 }
 
 func nextHistoryRequestID(root state.Root) state.RequestID {

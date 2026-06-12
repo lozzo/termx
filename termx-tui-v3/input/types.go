@@ -94,6 +94,8 @@ const (
 	IntentEnterCopyMode      IntentKind = "enter-copy-mode"
 	IntentRequestOlder       IntentKind = "request-older"
 	IntentExitCopyMode       IntentKind = "exit-copy-mode"
+	IntentPasteLastCopy      IntentKind = "paste-last-copy"
+	IntentPasteClipboard     IntentKind = "paste-clipboard"
 	IntentTerminalInput      IntentKind = "terminal-input"
 	IntentMouseSelect        IntentKind = "mouse-select"
 	IntentSetInteractionMode IntentKind = "set-interaction-mode"

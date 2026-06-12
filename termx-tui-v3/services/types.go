@@ -1,9 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -234,11 +238,80 @@ type SessionSnapshot struct {
 }
 
 type ClipboardService interface {
+	Read(context.Context) (ClipboardReadResult, error)
 	Write(context.Context, ClipboardWriteRequest) error
+	LastCopy() string
+}
+
+type ClipboardReadResult struct {
+	Text string
 }
 
 type ClipboardWriteRequest struct {
 	Text string
+}
+
+type SystemClipboardService struct {
+	lastCopied string
+}
+
+const clipboardCommandTimeout = 1500 * time.Millisecond
+
+func (service *SystemClipboardService) Read(ctx context.Context) (ClipboardReadResult, error) {
+	readCtx, cancel := context.WithTimeout(ctx, clipboardCommandTimeout)
+	defer cancel()
+	for _, spec := range clipboardReadCommands() {
+		cmd := exec.CommandContext(readCtx, spec.name, spec.args...)
+		out, err := cmd.Output()
+		if err == nil {
+			return ClipboardReadResult{Text: string(out)}, nil
+		}
+	}
+	return ClipboardReadResult{}, fmt.Errorf("no system clipboard command available")
+}
+
+func (service *SystemClipboardService) Write(ctx context.Context, req ClipboardWriteRequest) error {
+	service.lastCopied = req.Text
+	if req.Text == "" {
+		return nil
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, clipboardCommandTimeout)
+	defer cancel()
+	for _, spec := range clipboardWriteCommands() {
+		cmd := exec.CommandContext(writeCtx, spec.name, spec.args...)
+		cmd.Stdin = bytes.NewBufferString(req.Text)
+		if err := cmd.Run(); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("no system clipboard command available")
+}
+
+func (service *SystemClipboardService) LastCopy() string {
+	return service.lastCopied
+}
+
+type clipboardCommandSpec struct {
+	name string
+	args []string
+}
+
+func clipboardWriteCommands() []clipboardCommandSpec {
+	return []clipboardCommandSpec{
+		{name: "wl-copy"},
+		{name: "xclip", args: []string{"-selection", "clipboard", "-in"}},
+		{name: "xsel", args: []string{"--clipboard", "--input"}},
+		{name: "pbcopy"},
+	}
+}
+
+func clipboardReadCommands() []clipboardCommandSpec {
+	return []clipboardCommandSpec{
+		{name: "wl-paste"},
+		{name: "xclip", args: []string{"-selection", "clipboard", "-out"}},
+		{name: "xsel", args: []string{"--clipboard", "--output"}},
+		{name: "pbpaste"},
+	}
 }
 
 type WorkbenchStorageService interface {
@@ -603,10 +676,25 @@ func (service *FakeSessionService) Save(_ context.Context, snapshot SessionSnaps
 }
 
 type FakeClipboardService struct {
-	Writes []ClipboardWriteRequest
+	ReadResult ClipboardReadResult
+	ReadErr    error
+	LastCopied string
+	Writes     []ClipboardWriteRequest
+}
+
+func (service *FakeClipboardService) Read(_ context.Context) (ClipboardReadResult, error) {
+	if service.ReadErr != nil {
+		return ClipboardReadResult{}, service.ReadErr
+	}
+	return service.ReadResult, nil
 }
 
 func (service *FakeClipboardService) Write(_ context.Context, req ClipboardWriteRequest) error {
 	service.Writes = append(service.Writes, req)
+	service.LastCopied = req.Text
 	return nil
+}
+
+func (service *FakeClipboardService) LastCopy() string {
+	return service.LastCopied
 }

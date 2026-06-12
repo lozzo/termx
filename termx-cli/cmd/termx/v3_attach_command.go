@@ -132,7 +132,7 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 		host,
 		app.NewAsyncEffectRunner(),
 		app.LiveDeps{Terminal: terminal},
-		app.CopyModeDeps{Core: core, Clipboard: &services.FakeClipboardService{}, Rows: rows},
+		app.CopyModeDeps{Core: core, Clipboard: &services.SystemClipboardService{}, Terminal: terminal, Rows: rows},
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID)},
 	)
 }

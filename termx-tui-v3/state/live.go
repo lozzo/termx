@@ -54,6 +54,7 @@ type LiveTerminalModes struct {
 	MouseButton   bool
 	MouseAny      bool
 	MouseSGR      bool
+	BracketedPaste bool
 }
 
 func (modes LiveTerminalModes) MousePassthroughEnabled() bool {

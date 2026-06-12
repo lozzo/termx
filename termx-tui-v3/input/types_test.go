@@ -81,6 +81,17 @@ func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 	}
 }
 
+func TestRouteCopyModePasteShortcuts(t *testing.T) {
+	lastCopy := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, true)
+	if lastCopy.Kind != IntentPasteLastCopy {
+		t.Fatalf("expected paste last copy intent, got %#v", lastCopy)
+	}
+	systemClipboard := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "P"}, true)
+	if systemClipboard.Kind != IntentPasteClipboard {
+		t.Fatalf("expected paste clipboard intent, got %#v", systemClipboard)
+	}
+}
+
 func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	ctrlP := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "\x10", Ctrl: true}, false)
 	if ctrlP.Kind != IntentSetInteractionMode || ctrlP.Mode != InteractionModePane {

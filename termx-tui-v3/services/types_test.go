@@ -112,4 +112,15 @@ func TestFakeTerminalSessionClipboardServices(t *testing.T) {
 	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "copy" {
 		t.Fatalf("unexpected clipboard writes %#v", clipboard.Writes)
 	}
+	if last := clipboard.LastCopy(); last != "copy" {
+		t.Fatalf("unexpected last copy %q", last)
+	}
+	clipboard.ReadResult = ClipboardReadResult{Text: "clip"}
+	read, err := clipboard.Read(context.Background())
+	if err != nil {
+		t.Fatalf("read clipboard: %v", err)
+	}
+	if read.Text != "clip" {
+		t.Fatalf("unexpected clipboard read %#v", read)
+	}
 }

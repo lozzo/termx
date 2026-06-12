@@ -210,6 +210,14 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 		}
 		return Intent{Kind: IntentEnterCopyMode, Event: event}
 	}
+	if options.CopyModeActive && event.Key == KeyChar && !event.Ctrl && !event.Alt && !event.Shift {
+		switch event.Char {
+		case "p":
+			return Intent{Kind: IntentPasteLastCopy, Event: event}
+		case "P":
+			return Intent{Kind: IntentPasteClipboard, Event: event}
+		}
+	}
 	if data := terminalBytes(event); len(data) > 0 {
 		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: data}
 	}

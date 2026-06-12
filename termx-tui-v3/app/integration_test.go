@@ -244,7 +244,7 @@ func TestInteractiveRuntimeAttachCopyModeMainlineAcceptance(t *testing.T) {
 func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send first page up: %v", err)
@@ -321,7 +321,7 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 func TestCopyModeDuplicateOlderWhilePendingDoesNotSurfaceError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 	runtime.state.History = state.HistoryStore{
 		PaneID:     state.DefaultPaneID,
 		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
@@ -3180,7 +3180,7 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 	runner := &recordingEffectRunner{}
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 	runtime.state.Surface.Lines = []string{"live-fallback"}
 	runtime.state.History = state.HistoryStore{
 		PaneID:      state.DefaultPaneID,
@@ -3707,7 +3707,7 @@ func TestCopyModeRuntimeRestartResultKeepsFrozenRows(t *testing.T) {
 func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
 		ID:         1,
 		PaneID:     state.DefaultPaneID,
@@ -3793,7 +3793,7 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send page up: %v", err)
@@ -3850,7 +3850,7 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T
 func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send page up: %v", err)
@@ -3894,7 +3894,7 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingError(t *testing.T)
 func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 
 	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
 		ID:         2,
@@ -3939,7 +3939,7 @@ func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testin
 func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
 
 	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
 		ID:         2,
@@ -4275,6 +4275,69 @@ func TestCopyModeEnterCopiesAndExits(t *testing.T) {
 	}
 	if runtime.State().CopyMode.Active {
 		t.Fatalf("enter copy should exit copy mode, got %#v", runtime.State().CopyMode)
+	}
+}
+
+func TestCopyModePasteLastCopyExitsAndTargetsActiveTerminal(t *testing.T) {
+	clipboard := &services.FakeClipboardService{LastCopied: "hello\nworld"}
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   4,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"}); err != nil {
+		t.Fatalf("send p: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain p: %v", err)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("paste last copy should exit copy mode, got %#v", runtime.State().CopyMode)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "hello\nworld" {
+		t.Fatalf("paste last copy should target active terminal, got %#v", terminal.Inputs)
+	}
+}
+
+func TestCopyModePasteClipboardUsesSystemClipboardAndBracketedPaste(t *testing.T) {
+	clipboard := &services.FakeClipboardService{ReadResult: services.ClipboardReadResult{Text: "clip-text"}}
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime.state.Surface = runtime.state.Surface.Attach("term-1", 80, 24)
+	runtime.state.Surface.Modes = state.LiveTerminalModes{BracketedPaste: true}
+	runtime.state.Surface.Surfaces = map[string]state.LiveSurfaceSnapshot{
+		"term-1": {TerminalID: "term-1", Modes: state.LiveTerminalModes{BracketedPaste: true}, State: state.TerminalLiveAttached},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   4,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "P"}); err != nil {
+		t.Fatalf("send P: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain P: %v", err)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("paste clipboard should exit copy mode, got %#v", runtime.State().CopyMode)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "\x1b[200~clip-text\x1b[201~" {
+		t.Fatalf("paste clipboard should send bracketed paste bytes, got %#v", terminal.Inputs)
 	}
 }
 
@@ -4879,10 +4942,10 @@ func TestCopyModeRejectsStaleHistoryResult(t *testing.T) {
 }
 
 func newCopyModeRuntime(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService) *AppRuntime {
-	return newCopyModeRuntimeWithRunner(host, core, clipboard, NewSyncEffectRunner())
+	return newCopyModeRuntimeWithRunner(host, core, clipboard, &services.FakeTerminalService{}, NewSyncEffectRunner())
 }
 
-func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService, runner EffectRunner) *AppRuntime {
+func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService, terminal services.TerminalService, runner EffectRunner) *AppRuntime {
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	if cols, rows, _ := host.Size(); cols <= 0 || rows <= 0 {
@@ -4890,9 +4953,13 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 	}
 	return NewAppRuntime(
 		state.Root{
-			Shell: state.DefaultShell(),
+			Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
 			Session: state.TerminalSessionStore{
 				TerminalID: "term-1",
+				Channel:    4,
+				InputChannels: map[string]uint16{
+					"term-1": 4,
+				},
 				Attached:   true,
 				Cols:       80,
 				Rows:       24,
@@ -4908,8 +4975,8 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 			)),
 		},
 		ComposeReducers(
-			NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),
-			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Rows: 20}),
+			NewCopyModeReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20}),
 		),
 		func(root state.Root) render.Frame {
 			return renderer.Render(builder.Build(root))

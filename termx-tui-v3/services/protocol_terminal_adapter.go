@@ -381,6 +381,7 @@ func liveSurfaceModesFromProtocol(modes protocol.TerminalModes) state.LiveTermin
 		MouseButton:   modes.MouseButtonEvent,
 		MouseAny:      modes.MouseAnyEvent,
 		MouseSGR:      modes.MouseSGR,
+		BracketedPaste: modes.BracketedPaste,
 	}
 }
 
