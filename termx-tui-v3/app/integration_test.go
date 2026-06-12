@@ -596,13 +596,13 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
 	runtime.state.Surface.Lines = []string{"live-fallback"}
 	runtime.state.History = state.HistoryStore{
-		PaneID:     state.DefaultPaneID,
-		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
-		TerminalID: "term-1",
-		Token:      "tok-old",
-		Cols:       78,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-old",
+		Cols:        78,
 		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-window", LineID: 20}}),
-		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
+		Rows:        []state.HistoryRow{{Text: "old-window", LineID: 20}},
 	}
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
@@ -793,13 +793,13 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 	runtime := newCopyModeRuntime(host, core, nil)
 	runtime.state.CopyMode = state.CopyModeStore{Active: true, PaneID: state.DefaultPaneID, ViewID: state.TerminalPaneViewID(state.DefaultPaneID), TerminalID: "term-1", BoundToken: "tok-1", BoundCols: 78}
 	runtime.state.History = state.HistoryStore{
-		PaneID:     state.DefaultPaneID,
-		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
-		TerminalID: "term-1",
-		Token:      "tok-1",
-		Cols:       78,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        78,
 		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-window", LineID: 20}}),
-		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
+		Rows:        []state.HistoryRow{{Text: "old-window", LineID: 20}},
 	}
 
 	if err := host.SendResize(100, 40); err != nil {
@@ -902,13 +902,13 @@ func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T)
 		ViewRows:   20,
 	}
 	runtime.state.History = state.HistoryStore{
-		PaneID:     state.DefaultPaneID,
-		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
-		TerminalID: "term-1",
-		Token:      "tok-old",
-		Cols:       78,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-old",
+		Cols:        78,
 		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-window", LineID: 20}}),
-		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
+		Rows:        []state.HistoryRow{{Text: "old-window", LineID: 20}},
 	}
 
 	if err := host.SendResize(100, 40); err != nil {
@@ -940,6 +940,50 @@ func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T)
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "previous-view") || !frameContains(last, "old-window") {
 		t.Fatalf("stale previous-view response must not render into frozen frame, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeIgnoresLaterDestructiveLatestAndKeepsFrozenRows(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  78,
+		ViewRows:   20,
+	}
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-old",
+		Cols:        78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}}),
+		Rows:        []state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}},
+	}
+
+	destructive := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-after-clear", 78, 9, []state.HistoryRow{{Text: "new-live-tail", LineID: 30}})
+	destructive.Boundary = state.HistoryBoundary{FirstLineID: 30, LastLineID: 30}
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 999, Window: destructive}}); err != nil {
+		t.Fatalf("post destructive latest response: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain destructive latest response: %v", err)
+	}
+
+	if runtime.State().History.Token != "tok-old" || len(runtime.State().History.Rows) != 2 || runtime.State().History.Rows[0].Text != "old-one" || runtime.State().History.Rows[1].Text != "old-two" {
+		t.Fatalf("later destructive latest must not replace frozen copy window, got %#v", runtime.State().History)
+	}
+	if runtime.State().CopyMode.BoundToken != "tok-old" || runtime.State().CopyMode.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("later destructive latest must not disturb frozen copy binding, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "old-one") || !frameContains(last, "old-two") || frameContains(last, "new-live-tail") {
+		t.Fatalf("later destructive latest must not render into frozen copy frame, got %#v", last.Lines)
 	}
 }
 
@@ -1505,15 +1549,15 @@ func historyWindowForApp(
 		lastLine = rows[len(rows)-1].LineID
 	}
 	return state.HistoryWindow{
-		TerminalID: terminalID,
-		Token:      token,
-		Op:         op,
-		Cols:       cols,
+		TerminalID:  terminalID,
+		Token:       token,
+		Op:          op,
+		Cols:        cols,
 		SourceLines: historyLogicalLinesForApp(rows),
-		Rows:       rows,
-		Lines:      []state.HistoryLineSpan{{LineID: firstLine, StartRow: 0, EndRow: len(rows) - 1}},
-		Generation: generation,
-		Boundary:   state.HistoryBoundary{FirstLineID: firstLine, LastLineID: lastLine},
+		Rows:        rows,
+		Lines:       []state.HistoryLineSpan{{LineID: firstLine, StartRow: 0, EndRow: len(rows) - 1}},
+		Generation:  generation,
+		Boundary:    state.HistoryBoundary{FirstLineID: firstLine, LastLineID: lastLine},
 	}
 }
 
