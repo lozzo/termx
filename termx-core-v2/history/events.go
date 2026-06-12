@@ -8,6 +8,7 @@ type EventKind string
 const (
 	EventWritePrimaryCells        EventKind = "write-primary-cells"
 	EventCarriageReturn           EventKind = "carriage-return"
+	EventEraseInLine              EventKind = "erase-in-line"
 	EventSealLogicalLine          EventKind = "seal-logical-line"
 	EventMutateFrontier           EventKind = "mutate-frontier"
 	EventResetFrontier            EventKind = "reset-frontier"
@@ -39,6 +40,7 @@ type HistoryEvent struct {
 	LineID          LogicalLineID
 	LineIDs         []LogicalLineID
 	Count           int
+	EraseMode       int
 	EnterAltScreen  bool
 	ResizeDirection ResizeDirection
 }

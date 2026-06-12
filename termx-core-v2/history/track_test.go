@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -128,6 +129,24 @@ func TestHistoryTrackCarriageReturnOverwritesCurrentMutableLine(t *testing.T) {
 	}
 	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
 		t.Fatalf("overwritten line should remain frontier-owned, got %v", got)
+	}
+}
+
+func TestHistoryTrackEraseInLineMutatesCurrentMutableLine(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("hello")},
+		HistoryEvent{Kind: EventCarriageReturn},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("he")},
+		HistoryEvent{Kind: EventEraseInLine, EraseMode: 0},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := strings.TrimRight(lineText(line), " "); got != "he" {
+		t.Fatalf("EL from cursor to end should clear mutable tail, got %q", got)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("erase-in-line must stay in mutable frontier, got committed %v", got)
 	}
 }
 

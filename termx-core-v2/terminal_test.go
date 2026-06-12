@@ -168,6 +168,31 @@ func TestTerminalIngestOutputCarriageReturnOverwritesMutableTailWithoutCommittin
 	}
 }
 
+func TestTerminalIngestOutputEraseInLineMutatesMutableTailWithoutCommitting(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "hello\rhe\x1b[K"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || strings.TrimRight(window.Rows[0].Text, " ") != "he" {
+		t.Fatalf("history latest should reflect EL mutation in mutable tail, got %#v", window)
+	}
+	if window.TotalLines != 0 {
+		t.Fatalf("erase-in-line must not create committed history, got total lines %d", window.TotalLines)
+	}
+}
+
 func TestTerminalIngestOutputPreservesANSIStylesInHistoryCells(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {

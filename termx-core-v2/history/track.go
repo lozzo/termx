@@ -55,6 +55,8 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 		return track.writePrimaryCells(event.Cells)
 	case EventCarriageReturn:
 		return track.carriageReturn()
+	case EventEraseInLine:
+		return track.eraseInLine(event.EraseMode)
 	case EventSealLogicalLine:
 		return track.sealActiveLine()
 	case EventMutateFrontier:
@@ -140,8 +142,10 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 	}
 	if !track.overwrite {
 		line.Cells = append(line.Cells, cloneCells(cells)...)
+		track.activeCol = logicalLineWidth(line.Cells)
 	} else {
 		line.Cells = overwriteLineCellsAtColumn(line.Cells, track.activeCol, cells)
+		track.activeCol += logicalLineWidth(cells)
 	}
 	line.Dirty = true
 	line, err = track.store.ReplaceLine(line)
@@ -149,7 +153,6 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 		return err
 	}
 	track.activeLine = line.ID
-	track.activeCol = logicalLineWidth(line.Cells)
 	track.overwrite = false
 	track.bumpGeneration()
 	return nil
@@ -198,6 +201,33 @@ func (track *HistoryTrack) carriageReturn() error {
 	}
 	track.activeCol = 0
 	track.overwrite = true
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) eraseInLine(mode int) error {
+	if track.altScreen || track.activeLine == 0 {
+		return nil
+	}
+	if !track.frontier.Contains(track.activeLine) {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return nil
+	}
+	line, ok := track.store.Line(track.activeLine)
+	if !ok || line.Seal != SealStateOpen {
+		return nil
+	}
+	line.Cells = eraseLineCellsAtColumn(line.Cells, track.activeCol, mode)
+	line.Dirty = true
+	line, err := track.store.ReplaceLine(line)
+	if err != nil {
+		return err
+	}
+	track.activeLine = line.ID
+	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
+	track.overwrite = false
 	track.bumpGeneration()
 	return nil
 }
@@ -620,4 +650,39 @@ func compactMutationCells(cells []Cell) []Cell {
 		out = append(out, cell)
 	}
 	return out
+}
+
+func eraseLineCellsAtColumn(existing []Cell, column int, mode int) []Cell {
+	base := expandUnmeasuredCellsForMutation(existing)
+	if len(base) == 0 {
+		return nil
+	}
+	if column < 0 {
+		column = 0
+	}
+	if column > len(base) {
+		column = len(base)
+	}
+	switch mode {
+	case 1:
+		for i := 0; i <= column && i < len(base); i++ {
+			base[i] = Cell{Text: " ", Width: 1}
+		}
+	case 2:
+		for i := range base {
+			base[i] = Cell{Text: " ", Width: 1}
+		}
+	default:
+		for i := column; i < len(base); i++ {
+			base[i] = Cell{Text: " ", Width: 1}
+		}
+	}
+	return compactMutationCells(base)
+}
+
+func minInt(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
 }
