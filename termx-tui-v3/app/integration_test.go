@@ -2158,6 +2158,92 @@ func TestCopyModeIgnoresLaterRestartLatestAndKeepsFrozenRows(t *testing.T) {
 	}
 }
 
+func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
+		ID:         1,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Cols:       78,
+	})
+	if err != nil {
+		t.Fatalf("begin latest seed: %v", err)
+	}
+	initialWindow := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-old",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "old-frozen", LineID: 20}},
+	)
+	initialWindow.PaneID = state.DefaultPaneID
+	initialWindow.ViewID = state.TerminalPaneViewID(state.DefaultPaneID)
+	runtime.state.History, _, err = pendingHistory.ApplyWindow(1, initialWindow)
+	if err != nil {
+		t.Fatalf("seed frozen history: %v", err)
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  78,
+		ViewRows:   20,
+	}
+	host.sink.frames = nil
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain esc: %v", err)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("expected copy mode to exit, got %#v", runtime.State().CopyMode)
+	}
+
+	stale := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-stale",
+		78,
+		8,
+		[]state.HistoryRow{{Text: "stale-after-exit", LineID: 30}},
+	)
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 999, Window: stale}}); err != nil {
+		t.Fatalf("post stale after exit: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stale after exit: %v", err)
+	}
+	if runtime.State().History.Token != "tok-old" {
+		t.Fatalf("stale response after exit must not replace cached history without pending request, got %#v", runtime.State().History)
+	}
+
+	runner.Effects = nil
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain page up: %v", err)
+	}
+	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestLatest {
+		t.Fatalf("expected new pending latest request after re-enter, got %#v", runtime.State().History.Pending)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "old-frozen") || frameContains(last, "stale-after-exit") {
+		t.Fatalf("re-enter pending frame must not reuse stale frozen rows, got %#v", last.Lines)
+	}
+	if !frameContains(last, "authoritative history window pending") {
+		t.Fatalf("re-enter pending frame should show pending authoritative history, got %#v", last.Lines)
+	}
+}
+
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
