@@ -314,6 +314,64 @@ func TestCopyModeExhaustedGuardSurvivesLocalReflowResize(t *testing.T) {
 	}
 }
 
+func TestCopyModeOlderResponseKeepsLocalReflowColsBinding(t *testing.T) {
+	latest := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "old-window", LineID: 20}},
+	)
+	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 20}
+	latest.HasMore = true
+	older := historyWindowForApp(
+		state.HistoryWindowPrepend,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "older-window", LineID: 10}},
+	)
+	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
+	older.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 20}
+	older.HasMore = true
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: latest}},
+		OlderResponses:  []services.HistoryResult{{Window: older}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send latest page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send older page up: %v", err)
+	}
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send resize before older response: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain local reflow with older response: %v", err)
+	}
+
+	if runtime.State().History.Cols != 98 || runtime.State().CopyMode.BoundCols != 98 {
+		t.Fatalf("older response after local reflow must keep local cols binding, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "history cols changed") {
+		t.Fatalf("older response after local reflow must keep copy-history render bound, got %#v", last.Lines)
+	}
+	if !frameContains(last, "older-window") || !frameContains(last, "old-window") {
+		t.Fatalf("older response should still render frozen prepended rows after local reflow, got %#v", last.Lines)
+	}
+}
+
 func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) {
 	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{

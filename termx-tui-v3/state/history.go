@@ -477,12 +477,15 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int) CopyMode
 	return store
 }
 
-func (store CopyModeStore) AcceptOlder(insertedRows int, window HistoryWindow) CopyModeStore {
+func (store CopyModeStore) AcceptOlder(insertedRows int, window HistoryWindow, cols int) CopyModeStore {
 	if insertedRows > 0 {
 		store.ViewportTop += insertedRows
 	}
 	store.BoundToken = window.Token
-	store.BoundCols = window.Cols
+	if cols <= 0 {
+		cols = window.Cols
+	}
+	store.BoundCols = cols
 	store.Empty = false
 	return store
 }

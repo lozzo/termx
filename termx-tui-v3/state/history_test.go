@@ -416,9 +416,9 @@ func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 	}
 
 	older := historyWindow(HistoryWindowPrepend, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "old", LineID: 10}, {Text: "older", LineID: 11}})
-	copyMode = copyMode.AcceptOlder(2, older)
-	if copyMode.ViewportTop != 2 {
-		t.Fatalf("expected viewport adjusted by inserted rows, got %d", copyMode.ViewportTop)
+	copyMode = copyMode.AcceptOlder(2, older, 100)
+	if copyMode.ViewportTop != 2 || copyMode.BoundCols != 100 {
+		t.Fatalf("older accept should keep local bound cols while adjusting viewport, got %#v", copyMode)
 	}
 }
 
