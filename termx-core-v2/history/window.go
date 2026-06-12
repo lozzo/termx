@@ -80,11 +80,9 @@ func (track *HistoryTrack) LatestWindow(req HistoryWindowRequest) (HistoryWindow
 	if err := validateWindowRequest(req); err != nil {
 		return HistoryWindow{}, err
 	}
-	rows := track.projectLatestRows(req.Cols)
-	selectionStart := tailStart(len(rows), req.Rows)
-	selected := rows[selectionStart:]
+	selected, hasMore := track.projectLatestTailRows(req.Cols, req.Rows)
 	spans, visualRows, firstLine, lastLine := buildWindowRows(selected)
-	cursor := latestCursor(rows, selectionStart)
+	cursor := latestTailCursor(selected, hasMore)
 	return HistoryWindow{
 		Token:       makeWindowToken(track.generation, req.Cols, firstLine, lastLine, cursor),
 		Op:          HistoryWindowReplace,
@@ -92,12 +90,12 @@ func (track *HistoryTrack) LatestWindow(req HistoryWindowRequest) (HistoryWindow
 		Rows:        visualRows,
 		Spans:       spans,
 		Cursor:      cursor,
-		HasMore:     cursor.Valid,
+		HasMore:     hasMore,
 		Generation:  track.generation,
 		FirstLineID: firstLine,
 		LastLineID:  lastLine,
 		LoadedLines: len(spans),
-		TotalRows:   len(rows),
+		TotalRows:   len(selected),
 		TotalLines:  len(track.committed.IDs()),
 	}, nil
 }
@@ -106,16 +104,11 @@ func (track *HistoryTrack) OlderWindow(req HistoryWindowRequest) (HistoryWindow,
 	if err := validateWindowRequest(req); err != nil {
 		return HistoryWindow{}, err
 	}
-	rows := track.projectCommittedRows(req.Cols)
-	boundary := cursorBoundaryIndex(rows, req.Cursor)
-	if boundary < 0 {
+	selected, cursor, hasMore, ok := track.projectOlderRowsBeforeCursor(req.Cols, req.Rows, req.Cursor)
+	if !ok {
 		return track.emptyWindow(HistoryWindowPrepend, req.Cols), nil
 	}
-	candidates := rows[:boundary]
-	selectionStart := tailStart(len(candidates), req.Rows)
-	selected := candidates[selectionStart:]
 	spans, visualRows, firstLine, lastLine := buildWindowRows(selected)
-	cursor := cursorBeforeSelectedRow(candidates, selectionStart)
 	return HistoryWindow{
 		Token:       makeWindowToken(track.generation, req.Cols, firstLine, lastLine, cursor),
 		Op:          HistoryWindowPrepend,
@@ -123,12 +116,12 @@ func (track *HistoryTrack) OlderWindow(req HistoryWindowRequest) (HistoryWindow,
 		Rows:        visualRows,
 		Spans:       spans,
 		Cursor:      cursor,
-		HasMore:     cursor.Valid,
+		HasMore:     hasMore,
 		Generation:  track.generation,
 		FirstLineID: firstLine,
 		LastLineID:  lastLine,
 		LoadedLines: len(spans),
-		TotalRows:   len(rows),
+		TotalRows:   len(selected),
 		TotalLines:  len(track.committed.IDs()),
 	}, nil
 }
@@ -172,6 +165,144 @@ func (track *HistoryTrack) projectLatestRows(cols int) []projectedRow {
 		}
 	}
 	return track.projectRows(ids, cols)
+}
+
+func (track *HistoryTrack) projectLatestTailRows(cols int, maxRows int) ([]projectedRow, bool) {
+	ids := track.latestLineIDs()
+	rows := make([]projectedRow, 0, maxRows)
+	hasMore := false
+	for i := len(ids) - 1; i >= 0; i-- {
+		lineRows, ok := track.projectLineRows(ids[i], cols)
+		if !ok {
+			continue
+		}
+		for rowIndex := len(lineRows) - 1; rowIndex >= 0; rowIndex-- {
+			if len(rows) >= maxRows {
+				hasMore = true
+				break
+			}
+			rows = append(rows, lineRows[rowIndex])
+		}
+		if hasMore {
+			break
+		}
+	}
+	reverseProjectedRows(rows)
+	return rows, hasMore
+}
+
+func (track *HistoryTrack) projectOlderRowsBeforeCursor(cols int, maxRows int, cursor HistoryCursor) ([]projectedRow, HistoryCursor, bool, bool) {
+	if !cursor.Valid {
+		return nil, HistoryCursor{}, false, false
+	}
+	ids := track.committed.IDs()
+	rows := make([]projectedRow, 0, maxRows)
+	hasMore := false
+	startLineIndex, startRowIndex, ok := track.cursorStartPosition(ids, cols, cursor)
+	if !ok {
+		return nil, HistoryCursor{}, false, false
+	}
+	for lineIndex := startLineIndex; lineIndex >= 0; lineIndex-- {
+		lineRows, ok := track.projectLineRows(ids[lineIndex], cols)
+		if !ok {
+			continue
+		}
+		rowIndex := len(lineRows) - 1
+		if lineIndex == startLineIndex {
+			rowIndex = startRowIndex
+		}
+		for ; rowIndex >= 0; rowIndex-- {
+			if len(rows) >= maxRows {
+				hasMore = true
+				break
+			}
+			rows = append(rows, lineRows[rowIndex])
+		}
+		if hasMore {
+			break
+		}
+	}
+	reverseProjectedRows(rows)
+	nextCursor := HistoryCursor{}
+	if hasMore && len(rows) > 0 {
+		nextCursor = cursorFromRow(rows[0])
+	}
+	return rows, nextCursor, hasMore, true
+}
+
+func latestTailCursor(rows []projectedRow, hasMore bool) HistoryCursor {
+	if !hasMore || len(rows) == 0 {
+		return HistoryCursor{}
+	}
+	for _, row := range rows {
+		if row.committed {
+			return cursorFromRow(row)
+		}
+	}
+	// latest 只返回 mutable tail 时，older 的边界就是 committed history 的尾部。
+	return HistoryCursor{Valid: true}
+}
+
+func (track *HistoryTrack) latestLineIDs() []LogicalLineID {
+	ids := track.committed.IDs()
+	for _, id := range track.frontier.IDs() {
+		if !track.frontier.IsHidden(id) && !containsLineID(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func (track *HistoryTrack) projectLineRows(id LogicalLineID, cols int) ([]projectedRow, bool) {
+	line, ok := track.store.Line(id)
+	if !ok {
+		return nil, false
+	}
+	lineRows := projectLine(line, cols)
+	projected := make([]projectedRow, len(lineRows))
+	for i, row := range lineRows {
+		projected[i] = projectedRow{
+			row:          row,
+			lineRowCount: len(lineRows),
+			committed:    track.committed.Contains(id),
+		}
+	}
+	return projected, true
+}
+
+func (track *HistoryTrack) cursorStartPosition(ids []LogicalLineID, cols int, cursor HistoryCursor) (int, int, bool) {
+	if cursor.BeforeLineID == 0 {
+		if len(ids) == 0 {
+			return -1, -1, false
+		}
+		lineRows, ok := track.projectLineRows(ids[len(ids)-1], cols)
+		if !ok || len(lineRows) == 0 {
+			return len(ids) - 2, -1, true
+		}
+		return len(ids) - 1, len(lineRows) - 1, true
+	}
+	for lineIndex := len(ids) - 1; lineIndex >= 0; lineIndex-- {
+		if ids[lineIndex] != cursor.BeforeLineID {
+			continue
+		}
+		lineRows, ok := track.projectLineRows(ids[lineIndex], cols)
+		if !ok {
+			return -1, -1, false
+		}
+		for rowIndex, row := range lineRows {
+			if row.row.RowInLine == cursor.BeforeRowInLine {
+				return lineIndex, rowIndex - 1, true
+			}
+		}
+		return -1, -1, false
+	}
+	return -1, -1, false
+}
+
+func reverseProjectedRows(rows []projectedRow) {
+	for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
+		rows[left], rows[right] = rows[right], rows[left]
+	}
 }
 
 func (track *HistoryTrack) projectCommittedRows(cols int) []projectedRow {

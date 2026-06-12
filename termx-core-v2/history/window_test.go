@@ -391,6 +391,50 @@ func TestCommittedCursorValidIgnoresViewportRowCount(t *testing.T) {
 	}
 }
 
+func TestLatestWindowProjectsOnlyTailPage(t *testing.T) {
+	track := NewHistoryTrackWith(&countingLineStore{lines: make(map[LogicalLineID]LogicalLine)}, NewCommittedHistoryIndex(), NewMutableFrontier())
+	for i := 0; i < 1000; i++ {
+		commitLine(t, track, "x")
+	}
+	store := track.store.(*countingLineStore)
+	store.loads = 0
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 10, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := len(window.Rows); got != 10 {
+		t.Fatalf("expected one page of rows, got %d", got)
+	}
+	if store.loads > 20 {
+		t.Fatalf("latest must not load all history lines, loaded %d", store.loads)
+	}
+}
+
+func TestOlderWindowProjectsOnlyPreviousPage(t *testing.T) {
+	track := NewHistoryTrackWith(&countingLineStore{lines: make(map[LogicalLineID]LogicalLine)}, NewCommittedHistoryIndex(), NewMutableFrontier())
+	for i := 0; i < 1000; i++ {
+		commitLine(t, track, "x")
+	}
+	latest, err := track.LatestWindow(HistoryWindowRequest{Cols: 10, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	store := track.store.(*countingLineStore)
+	store.loads = 0
+
+	older, err := track.OlderWindow(HistoryWindowRequest{Cols: 10, Rows: 10, Cursor: latest.Cursor})
+	if err != nil {
+		t.Fatalf("older window: %v", err)
+	}
+	if got := len(older.Rows); got != 10 {
+		t.Fatalf("expected one older page of rows, got %d", got)
+	}
+	if store.loads > 20 {
+		t.Fatalf("older must not load all history lines, loaded %d", store.loads)
+	}
+}
+
 func TestHistoryWindowRejectsInvalidSize(t *testing.T) {
 	track := NewHistoryTrack()
 	if _, err := track.LatestWindow(HistoryWindowRequest{Cols: 0, Rows: 1}); !errors.Is(err, ErrInvalidWindowSize) {
@@ -429,4 +473,72 @@ func windowSpans(spans []LogicalLineSpan) []lineSpan {
 		result[i] = lineSpan{id: span.LineID, first: span.FirstRow, last: span.LastRow}
 	}
 	return result
+}
+
+type countingLineStore struct {
+	lines  map[LogicalLineID]LogicalLine
+	nextID LogicalLineID
+	loads  int
+}
+
+func (store *countingLineStore) CreateLine(req CreateLineRequest) (LogicalLine, error) {
+	if store.nextID == 0 {
+		store.nextID = 1
+	}
+	seal, err := normalizeSeal(req.Seal)
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	residency, err := normalizeResidency(req.Residency)
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	line := LogicalLine{
+		ID:        store.nextID,
+		Seal:      seal,
+		Cells:     cloneCells(req.Cells),
+		Dirty:     req.Dirty,
+		Residency: residency,
+	}
+	store.lines[line.ID] = line.Clone()
+	store.nextID++
+	return line.Clone(), nil
+}
+
+func (store *countingLineStore) Line(id LogicalLineID) (LogicalLine, bool) {
+	store.loads++
+	line, ok := store.lines[id]
+	if !ok {
+		return LogicalLine{}, false
+	}
+	return line.Clone(), true
+}
+
+func (store *countingLineStore) ReplaceLine(line LogicalLine) (LogicalLine, error) {
+	if err := validateLine(line); err != nil {
+		return LogicalLine{}, err
+	}
+	if _, ok := store.lines[line.ID]; !ok {
+		return LogicalLine{}, ErrUnknownLine
+	}
+	line.Cells = cloneCells(line.Cells)
+	store.lines[line.ID] = line.Clone()
+	return line.Clone(), nil
+}
+
+func (store *countingLineStore) DeleteLine(id LogicalLineID) bool {
+	if _, ok := store.lines[id]; !ok {
+		return false
+	}
+	delete(store.lines, id)
+	return true
+}
+
+func (store *countingLineStore) LineIDs() []LogicalLineID {
+	ids := make([]LogicalLineID, 0, len(store.lines))
+	for id := range store.lines {
+		ids = append(ids, id)
+	}
+	sortLogicalLineIDs(ids)
+	return ids
 }
