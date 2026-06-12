@@ -884,6 +884,76 @@ func TestRenderVMBuilderShowsCopyHistoryEmptyWithoutLiveFallback(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderShowsPendingWhenCopyPaneBindingMissing(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Lines:      []string{"live-row"},
+		},
+		History: state.HistoryStore{
+			PaneID:      state.DefaultPaneID,
+			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID:  "term-1",
+			Token:       "tok-1",
+			Cols:        80,
+			Rows:        []state.HistoryRow{{Text: "old", LineID: 10}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  80,
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentCopyHistory || !content.Pending {
+		t.Fatalf("missing pane binding should keep copy-history pending, got %#v", content)
+	}
+	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "copy binding missing") {
+		t.Fatalf("missing pane binding must not render stale history rows, got %#v", content.Lines)
+	}
+}
+
+func TestRenderVMBuilderShowsPendingWhenCopyFloatingBindingMissing(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-float",
+			Lines:      []string{"live-row"},
+		},
+		History: state.HistoryStore{
+			PaneID:      "float-pane",
+			ViewID:      state.TerminalFloatingViewID("floating-1"),
+			TerminalID:  "term-float",
+			Token:       "tok-float",
+			Cols:        40,
+			Rows:        []state.HistoryRow{{Text: "float-history", LineID: 20}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     "float-pane",
+			ViewID:     state.TerminalFloatingViewID("floating-1"),
+			TerminalID: "term-float",
+			BoundToken: "tok-float",
+			BoundCols:  40,
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentCopyHistory || !content.Pending {
+		t.Fatalf("missing floating binding should keep copy-history pending, got %#v", content)
+	}
+	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "copy binding missing") {
+		t.Fatalf("missing floating binding must not render stale history rows, got %#v", content.Lines)
+	}
+}
+
 func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 	shell := state.DefaultShell().
 		SetInteractionMode(state.InteractionModePane).

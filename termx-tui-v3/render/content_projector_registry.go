@@ -98,7 +98,7 @@ func projectCopyHistoryContent(ctx ContentProjectorContext) ContentVM {
 	if !ctx.Active && !ctx.Root.CopyMode.Active {
 		return placeholderContentForPane(ctx.Pane)
 	}
-	return buildCopyHistoryContentVM(ctx.Root.History, ctx.Root.CopyMode)
+	return buildCopyHistoryContentVM(ctx.Root, ctx.Root.History, ctx.Root.CopyMode)
 }
 
 func projectEmptyPaneContent(ctx ContentProjectorContext) ContentVM {

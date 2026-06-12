@@ -832,25 +832,28 @@ func sessionForPane(root state.Root, pane state.PaneState) state.TerminalSession
 	return session
 }
 
-func canRenderCopyHistory(history state.HistoryStore, copyMode state.CopyModeStore) bool {
+func canRenderCopyHistory(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) bool {
 	return copyMode.Active &&
 		copyMode.TerminalID != "" &&
 		history.TerminalID != "" &&
 		copyMode.BoundToken != "" &&
 		copyMode.BoundCols != 0 &&
 		history.Cols != 0 &&
+		copyModeBindingStillValid(root, copyMode) &&
 		copyMode.BoundToken == history.Token &&
 		copyMode.BoundCols == history.Cols &&
 		copyMode.TerminalID == history.TerminalID &&
 		len(history.Rows) > 0
 }
 
-func copyHistoryPendingReason(history state.HistoryStore, copyMode state.CopyModeStore) string {
+func copyHistoryPendingReason(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) string {
 	switch {
 	case !copyMode.Active:
 		return ""
 	case copyMode.TerminalID == "":
 		return "copy history pending: terminal binding missing"
+	case !copyModeBindingStillValid(root, copyMode):
+		return "copy history pending: copy binding missing"
 	case copyMode.BoundToken == "":
 		return "copy history pending: authoritative history window pending"
 	case copyMode.BoundCols == 0:
@@ -872,9 +875,9 @@ func copyHistoryPendingReason(history state.HistoryStore, copyMode state.CopyMod
 	}
 }
 
-func buildCopyHistoryContentVM(history state.HistoryStore, copyMode state.CopyModeStore) ContentVM {
-	if !canRenderCopyHistory(history, copyMode) {
-		reason := copyHistoryPendingReason(history, copyMode)
+func buildCopyHistoryContentVM(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) ContentVM {
+	if !canRenderCopyHistory(root, history, copyMode) {
+		reason := copyHistoryPendingReason(root, history, copyMode)
 		content := ContentVM{
 			Kind:    ContentCopyHistory,
 			Lines:   []Line{NewLine(reason)},
@@ -898,6 +901,25 @@ func buildCopyHistoryContentVM(history state.HistoryStore, copyMode state.CopyMo
 		Cursor:     copyHistoryCursor(history, copyMode),
 		HitRegions: copyHistoryHitRegions(history, copyMode),
 	}
+}
+
+func copyModeBindingStillValid(root state.Root, copyMode state.CopyModeStore) bool {
+	if !copyMode.Active {
+		return false
+	}
+	if copyMode.ViewID != "" {
+		if binding, ok := root.TerminalViews.Views[copyMode.ViewID]; ok {
+			return binding.TerminalID == copyMode.TerminalID
+		}
+		return false
+	}
+	if copyMode.PaneID != "" {
+		if _, ok := root.Shell.EnsureDefaults().Pane(state.PaneCommandTarget{PaneID: copyMode.PaneID}); ok {
+			return true
+		}
+		return false
+	}
+	return true
 }
 
 func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) ContentVM {
