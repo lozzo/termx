@@ -432,6 +432,68 @@ func TestCopyModeAttachRebindInvalidatesFrozenHistoryForNewTerminal(t *testing.T
 	}
 }
 
+func TestCopyModeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-1",
+			Attached:   true,
+			Cols:       80,
+			Rows:       24,
+		},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Cols:       80,
+			Rows:       24,
+		},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+		History: state.HistoryStore{
+			PaneID:      state.DefaultPaneID,
+			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID:  "term-1",
+			Token:       "tok-old",
+			Cols:        78,
+			SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+			Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundToken: "tok-old",
+			BoundCols:  78,
+			ViewRows:   20,
+		},
+	}
+
+	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+		TerminalID:   "term-1",
+		Channel:      9,
+		Cols:         78,
+		Rows:         20,
+		ResizePolicy: state.TerminalResizeRoleFollower,
+		SurfaceID:    "surface-new",
+		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+		CanResize:    false,
+	}})
+	if len(effects) == 0 {
+		t.Fatalf("same-terminal reattach should keep live follow-up effects, got %#v", effects)
+	}
+	if next.History.Token != "tok-old" || next.History.TerminalID != "term-1" || len(next.History.Rows) != 1 {
+		t.Fatalf("same-terminal reattach must keep frozen history window, got %#v", next.History)
+	}
+	if !next.CopyMode.Active || next.CopyMode.TerminalID != "term-1" || next.CopyMode.BoundToken != "tok-old" || next.CopyMode.BoundCols != 78 || next.CopyMode.Empty {
+		t.Fatalf("same-terminal reattach must keep frozen copy binding, got %#v", next.CopyMode)
+	}
+	if next.History.Pending != nil {
+		t.Fatalf("same-terminal reattach must not force pending latest, got %#v", next.History.Pending)
+	}
+}
+
 func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistory(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	host := NewFakeTerminalHost(16)
@@ -501,6 +563,91 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistory(t *testing.T) 
 	}
 	if !frameContains(last, "authoritative history window pending") {
 		t.Fatalf("attach rebind should fall back to pending history state for new terminal, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeRuntimeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell(),
+			Session: state.TerminalSessionStore{
+				TerminalID: "term-1",
+				Attached:   true,
+				Cols:       80,
+				Rows:       24,
+			},
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-1",
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"live-new"},
+			},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+				state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true,
+			)),
+			History: state.HistoryStore{
+				PaneID:      state.DefaultPaneID,
+				ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID:  "term-1",
+				Token:       "tok-old",
+				Cols:        78,
+				SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+				Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+			},
+			CopyMode: state.CopyModeStore{
+				Active:     true,
+				PaneID:     state.DefaultPaneID,
+				ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID: "term-1",
+				BoundToken: "tok-old",
+				BoundCols:  78,
+				ViewRows:   20,
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial frozen history: %v", err)
+	}
+	if !frameContains(lastFrame(t, host.Frames()), "old-history") {
+		t.Fatalf("expected initial frame to render old frozen history, frames=%#v", host.Frames())
+	}
+
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{
+		TerminalID:   "term-1",
+		Channel:      9,
+		Cols:         78,
+		Rows:         20,
+		ResizePolicy: state.TerminalResizeRoleFollower,
+		SurfaceID:    "surface-new",
+		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+		CanResize:    false,
+	}}); err != nil {
+		t.Fatalf("post same-terminal reattach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain same-terminal reattach: %v", err)
+	}
+
+	if runtime.State().History.Token != "tok-old" || runtime.State().History.TerminalID != "term-1" || len(runtime.State().History.Rows) != 1 {
+		t.Fatalf("same-terminal reattach must keep frozen history window, got %#v", runtime.State().History)
+	}
+	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.BoundToken != "tok-old" || runtime.State().CopyMode.TerminalID != "term-1" {
+		t.Fatalf("same-terminal reattach must keep frozen copy binding, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "old-history") {
+		t.Fatalf("same-terminal reattach must keep rendering frozen history, got %#v", last.Lines)
+	}
+	if frameContains(last, "authoritative history window pending") {
+		t.Fatalf("same-terminal reattach must not fall back to pending history state, got %#v", last.Lines)
 	}
 }
 
