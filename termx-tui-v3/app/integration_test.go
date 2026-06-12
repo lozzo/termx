@@ -2346,6 +2346,51 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingError(t *testing.T)
 	}
 }
 
+func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+
+	pendingHistory, err := (state.HistoryStore{}).BeginLatest(state.HistoryPendingRequest{
+		ID:         2,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Cols:       78,
+	})
+	if err != nil {
+		t.Fatalf("begin latest seed: %v", err)
+	}
+	runtime.state.History = pendingHistory
+	runtime.state.CopyMode = state.CopyModeStore{}.BindLatest(
+		state.DefaultPaneID,
+		state.TerminalPaneViewID(state.DefaultPaneID),
+		"term-1",
+		2,
+		78,
+		20,
+	)
+
+	if err := runtime.Post(CopyModeHistoryResultMsg{
+		Result: services.HistoryResult{RequestID: 1},
+		Err:    errors.New("superseded history failed"),
+	}); err != nil {
+		t.Fatalf("post superseded history error: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain superseded history error: %v", err)
+	}
+	if runtime.State().History.Pending == nil || runtime.State().History.Pending.ID != 2 {
+		t.Fatalf("superseded history error must not disturb current pending request, got %#v", runtime.State().History.Pending)
+	}
+	if runtime.State().Surface.Err != "" || runtime.State().Session.LastError != "" {
+		t.Fatalf("superseded history error must not surface ui error, state=%#v", runtime.State())
+	}
+	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.RequestID != 2 {
+		t.Fatalf("superseded history error must not disturb active copy binding, got %#v", runtime.State().CopyMode)
+	}
+}
+
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
