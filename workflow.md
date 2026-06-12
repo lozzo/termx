@@ -61,11 +61,11 @@
 - boundary overlap / clipped partial / same-line merge 这些会直接影响 copy 正确性的基础语义已经补到主链。
 - 大部分 stale response guard 已经补上，旧 latest/older 不会轻易覆盖当前 frozen history。
 
-### 1.5 当前还阻塞“可用”的点
+### 1.5 当前已满足的“可用”状态
 
-- 还缺一个统一的高层可用性验收闭环，当前主要是很多 targeted test，退出标准不清楚。
-- 还没有把“真实 attach -> copy mode -> older -> resize -> search -> selection -> copy”收成一组明确通过的 runtime/CLI 黑盒。
-- `215E1` 当前没有清晰的结束标准，导致工作容易继续滑向长尾边界审计。
+- 已有统一的高层 runtime 主验收链，覆盖 `attach -> copy mode -> older -> resize -> search -> selection -> copy`。
+- `215E1` 的退出标准已经收口：主验收链通过，且 core-v2 / protocol / tui-v3 的模块守卫测试通过。
+- 当前 history / copy 主链不再以“继续补长尾黑盒”为默认目标；后续只在真实回归或新范围需要时再打开新切片。
 
 ## 2. 技术设计基准
 
