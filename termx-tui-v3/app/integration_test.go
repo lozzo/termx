@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -2298,6 +2299,50 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "delayed-after-exit") {
 		t.Fatalf("delayed matching latest after exit must not render into frame, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingError(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain page up: %v", err)
+	}
+	pending := runtime.State().History.Pending
+	if pending == nil || pending.Kind != state.HistoryRequestLatest {
+		t.Fatalf("expected latest pending request, got %#v", runtime.State().History.Pending)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain esc: %v", err)
+	}
+	if runtime.State().History.Pending != nil {
+		t.Fatalf("exit while pending must clear pending history request, got %#v", runtime.State().History.Pending)
+	}
+
+	if err := runtime.Post(CopyModeHistoryResultMsg{
+		Result: services.HistoryResult{RequestID: services.RequestID(pending.ID)},
+		Err:    errors.New("late history failed"),
+	}); err != nil {
+		t.Fatalf("post delayed latest error after exit: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain delayed latest error after exit: %v", err)
+	}
+	if runtime.State().Surface.Err != "" || runtime.State().Session.LastError != "" {
+		t.Fatalf("delayed matching latest error after exit must not surface ui error, state=%#v", runtime.State())
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "late history failed") {
+		t.Fatalf("delayed matching latest error after exit must not render error text, got %#v", last.Lines)
 	}
 }
 

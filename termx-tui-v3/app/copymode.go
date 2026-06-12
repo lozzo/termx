@@ -70,6 +70,10 @@ type CopyModeMouseSelectMsg struct {
 
 func (CopyModeMouseSelectMsg) isMsg() {}
 
+func staleCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) bool {
+	return root.History.Pending == nil || state.RequestID(msg.Result.RequestID) != root.History.Pending.ID
+}
+
 func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
@@ -395,6 +399,9 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 
 func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if staleCopyModeHistoryResult(root, msg) {
+			return root, nil
+		}
 		return setCopyModeError(root, msg.Err.Error()), nil
 	}
 	pending := root.History.Pending
