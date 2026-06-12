@@ -3,6 +3,7 @@ package termxcorev2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -309,6 +310,70 @@ func TestFrozenSnapshotOlderWindowUsesLargeSnapshotCursor(t *testing.T) {
 	}
 	if got := older.Rows[len(older.Rows)-1].LineID; got >= latest.FirstLineID {
 		t.Fatalf("older page must be before latest boundary, got last=%d latestFirst=%d", got, latest.FirstLineID)
+	}
+}
+
+func TestProtocolServiceFrozenSnapshotContinuousOlderMovesBackward(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 120, Rows: 24}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var output strings.Builder
+	for line := 1; line <= 1000; line++ {
+		fmt.Fprintf(&output, "%06d stress line\n", line)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", output.String()); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       120,
+		Limit:      48,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if !latest.CursorValid || latest.FirstLineID == 0 {
+		t.Fatalf("expected latest cursor over 1000-line output, got %#v", latest)
+	}
+	previousFirst := latest.FirstLineID
+	cursorLine := latest.CursorLineID
+	cursorRow := latest.CursorRow
+	boundaryFirst := latest.FirstLineID
+	boundaryLast := latest.LastLineID
+
+	for page := 1; page <= 4; page++ {
+		older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID:          "term-1",
+			Cols:                120,
+			Limit:               48,
+			CursorValid:         true,
+			BeforeLineID:        cursorLine,
+			BeforeRowInLine:     cursorRow,
+			Token:               latest.Token,
+			Generation:          latest.Generation,
+			BoundaryFirstLineID: boundaryFirst,
+			BoundaryLastLineID:  boundaryLast,
+		})
+		if err != nil {
+			t.Fatalf("older page %d: %v", page, err)
+		}
+		if len(older.Rows) == 0 || older.FirstLineID == 0 {
+			t.Fatalf("older page %d should return rows, got %#v", page, older)
+		}
+		if older.FirstLineID >= previousFirst {
+			t.Fatalf("older page %d did not move backward: previous first=%d current first=%d window=%#v", page, previousFirst, older.FirstLineID, older)
+		}
+		previousFirst = older.FirstLineID
+		cursorLine = older.CursorLineID
+		cursorRow = older.CursorRow
+		boundaryFirst = older.FirstLineID
+		if older.LastLineID != boundaryLast {
+			t.Fatalf("older page %d should keep latest tail boundary last=%d, got %d", page, boundaryLast, older.LastLineID)
+		}
 	}
 }
 

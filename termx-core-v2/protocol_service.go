@@ -543,6 +543,11 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 		}
 		window = frozenSnapshotOlderWindow(snapshot, cols, limit, protocolCursorToCore(params))
 		window.Token = history.WindowToken(params.Token)
+		if params.BoundaryLastLineID != 0 {
+			// older response 的 payload 只包含本页更老 rows，但它要接回客户端
+			// 已加载 frozen 视图；LastLineID 必须保持当前 tail boundary，不能变成本页尾。
+			window.LastLineID = history.LogicalLineID(params.BoundaryLastLineID)
+		}
 	} else {
 		terminal, err := session.server.Terminal(params.TerminalID)
 		if err != nil {

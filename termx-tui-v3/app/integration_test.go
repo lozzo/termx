@@ -81,6 +81,82 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 	}
 }
 
+func TestCopyModeContinuousOlderPrependsAndKeepsTailBoundary(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{{Text: "line-953", LineID: 953}, {Text: "line-954", LineID: 954}},
+		)}},
+		OlderResponses: []services.HistoryResult{
+			{Window: historyWindowForApp(
+				state.HistoryWindowPrepend,
+				"term-1",
+				"tok-1",
+				78,
+				7,
+				[]state.HistoryRow{{Text: "line-951", LineID: 951}, {Text: "line-952", LineID: 952}},
+			)},
+			{Window: historyWindowForApp(
+				state.HistoryWindowPrepend,
+				"term-1",
+				"tok-1",
+				78,
+				7,
+				[]state.HistoryRow{{Text: "line-949", LineID: 949}, {Text: "line-950", LineID: 950}},
+			)},
+		},
+	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 953}
+	core.LatestResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 953, LastLineID: 954}
+	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 951}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 951, LastLineID: 954}
+	core.OlderResponses[1].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 949}
+	core.OlderResponses[1].Window.Boundary = state.HistoryBoundary{FirstLineID: 949, LastLineID: 954}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(80, 10)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("first older: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain first older: %v", err)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"line-951", "line-952", "line-953", "line-954"}) {
+		t.Fatalf("first older should prepend rows, got %v", got)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("second older: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain second older: %v", err)
+	}
+	if len(core.OlderRequests) != 2 {
+		t.Fatalf("expected two older requests, got %#v", core.OlderRequests)
+	}
+	secondReq := core.OlderRequests[1]
+	if secondReq.Cursor.BeforeLineID != 951 || secondReq.Boundary.FirstLineID != 951 || secondReq.Boundary.LastLineID != 954 {
+		t.Fatalf("second older request should keep latest tail boundary and move cursor, got %#v", secondReq)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"line-949", "line-950", "line-951", "line-952", "line-953", "line-954"}) {
+		t.Fatalf("second older should prepend older rows, got %v", got)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "line-949") || !frameContains(last, "line-950") {
+		t.Fatalf("second older should visibly refresh to older rows, got %#v", last.Lines)
+	}
+}
+
 func TestInteractiveRuntimeAttachCopyModeMainlineAcceptance(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 10, Rows: 12},
