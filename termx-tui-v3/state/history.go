@@ -86,6 +86,14 @@ type HistoryCellStyle struct {
 	Strikethrough bool
 }
 
+// HistoryLogicalLine 是 copy/history 冻结快照里的单条 logical line payload。
+// TUI 只把它当作 authoritative source，再按当前 pane 宽度本地重排成 Rows。
+type HistoryLogicalLine struct {
+	Text   string
+	Cells  []HistoryCell
+	LineID uint64
+}
+
 // HistoryLineSpan 是 authoritative window 中 logical line 到 visual rows 的映射。
 type HistoryLineSpan struct {
 	LineID        uint64
@@ -103,6 +111,7 @@ type HistoryWindow struct {
 	Token        string
 	Op           HistoryWindowOp
 	Cols         int
+	SourceLines  []HistoryLogicalLine
 	Rows         []HistoryRow
 	Lines        []HistoryLineSpan
 	Cursor       HistoryCursor
@@ -121,6 +130,7 @@ type HistoryStore struct {
 	TerminalID string
 	Token      string
 	Cols       int
+	SourceLines []HistoryLogicalLine
 	Rows       []HistoryRow
 	Lines      []HistoryLineSpan
 	Cursor     HistoryCursor
@@ -252,6 +262,7 @@ func (store HistoryStore) InvalidateWindow() HistoryStore {
 	store.ViewID = ""
 	store.PaneID = ""
 	store.Cols = 0
+	store.SourceLines = nil
 	store.Rows = nil
 	store.Lines = nil
 	store.Cursor = HistoryCursor{}
@@ -308,7 +319,7 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 		if pending.Generation != 0 && pending.Generation != window.Generation {
 			return ErrStaleHistoryResponse
 		}
-		if len(window.Rows) != 0 && pending.Boundary.LastLineID != 0 && pending.Boundary.LastLineID != window.Boundary.LastLineID {
+		if len(window.SourceLines) != 0 && pending.Boundary.LastLineID != 0 && pending.Boundary.LastLineID != window.Boundary.LastLineID {
 			return ErrStaleHistoryResponse
 		}
 	default:
@@ -323,8 +334,8 @@ func (store HistoryStore) replace(window HistoryWindow) HistoryStore {
 	store.TerminalID = window.TerminalID
 	store.Token = window.Token
 	store.Cols = window.Cols
-	store.Rows = cloneHistoryRows(window.Rows)
-	store.Lines = cloneHistoryLineSpans(window.Lines)
+	store.SourceLines = historyWindowSourceLines(window)
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, window.Cols)
 	store.Cursor = window.Cursor
 	store.Generation = window.Generation
 	store.Boundary = window.Boundary
@@ -334,14 +345,56 @@ func (store HistoryStore) replace(window HistoryWindow) HistoryStore {
 }
 
 func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
-	store.Rows = append(cloneHistoryRows(window.Rows), store.Rows...)
-	store.Lines = append(cloneHistoryLineSpans(window.Lines), rebaseExistingLineSpans(cloneHistoryLineSpans(store.Lines), len(window.Rows))...)
+	existing := store.SourceLines
+	if len(existing) == 0 && len(store.Rows) > 0 {
+		existing = historyRowsToLogicalLines(store.Rows)
+	}
+	store.SourceLines = append(historyWindowSourceLines(window), existing...)
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
 	store.Token = window.Token
 	store.Cursor = window.Cursor
 	store.Generation = window.Generation
 	store.Boundary.FirstLineID = window.Boundary.FirstLineID
 	store.HasMore = window.HasMore
 	store.Exhausted = ExhaustedMarker{}
+	return store
+}
+
+func historyWindowSourceLines(window HistoryWindow) []HistoryLogicalLine {
+	if len(window.SourceLines) > 0 {
+		return cloneHistoryLogicalLines(window.SourceLines)
+	}
+	if len(window.Rows) == 0 {
+		return nil
+	}
+	return historyRowsToLogicalLines(window.Rows)
+}
+
+func historyRowsToLogicalLines(rows []HistoryRow) []HistoryLogicalLine {
+	if len(rows) == 0 {
+		return nil
+	}
+	lines := make([]HistoryLogicalLine, 0, len(rows))
+	for _, row := range rows {
+		if len(lines) > 0 && lines[len(lines)-1].LineID == row.LineID {
+			lines[len(lines)-1].Text += row.Text
+			lines[len(lines)-1].Cells = append(lines[len(lines)-1].Cells, cloneHistoryCells(row.Cells)...)
+			continue
+		}
+		lines = append(lines, HistoryLogicalLine{
+			Text:   row.Text,
+			Cells:  cloneHistoryCells(row.Cells),
+			LineID: row.LineID,
+		})
+	}
+	return lines
+}
+
+func (store HistoryStore) EnsureSourceLines() HistoryStore {
+	if len(store.SourceLines) > 0 || len(store.Rows) == 0 {
+		return store
+	}
+	store.SourceLines = historyRowsToLogicalLines(store.Rows)
 	return store
 }
 
@@ -367,7 +420,7 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow) CopyModeStore {
 	store.Cursor = CopyPosition{}
 	store.Matches = nil
 	store.ActiveMatch = 0
-	store.Empty = len(window.Rows) == 0
+	store.Empty = len(window.SourceLines) == 0
 	return store
 }
 
@@ -384,15 +437,6 @@ func (store CopyModeStore) AcceptOlder(insertedRows int, window HistoryWindow) C
 func (store CopyModeStore) Resize(cols int, rows int) CopyModeStore {
 	store.BoundCols = cols
 	store.ViewRows = rows
-	store.BoundToken = ""
-	store.ViewportTop = 0
-	store.Cursor = CopyPosition{}
-	store.Mark = nil
-	store.Selection = nil
-	store.Query = ""
-	store.Matches = nil
-	store.ActiveMatch = 0
-	store.Empty = true
 	return store
 }
 
@@ -600,6 +644,18 @@ func cloneHistoryRows(rows []HistoryRow) []HistoryRow {
 	return cloned
 }
 
+func cloneHistoryLogicalLines(lines []HistoryLogicalLine) []HistoryLogicalLine {
+	if len(lines) == 0 {
+		return nil
+	}
+	cloned := make([]HistoryLogicalLine, len(lines))
+	copy(cloned, lines)
+	for i := range cloned {
+		cloned[i].Cells = cloneHistoryCells(lines[i].Cells)
+	}
+	return cloned
+}
+
 func cloneHistoryCells(cells []HistoryCell) []HistoryCell {
 	if len(cells) == 0 {
 		return nil
@@ -616,6 +672,86 @@ func cloneHistoryLineSpans(spans []HistoryLineSpan) []HistoryLineSpan {
 	cloned := make([]HistoryLineSpan, len(spans))
 	copy(cloned, spans)
 	return cloned
+}
+
+// ReflowHistoryLogicalLines 把冻结 logical-line source 重新排成本地可见 rows。
+// 这是 TUI copy/history 的唯一重排路径；它不创造新的历史 truth，只产出 view rows。
+func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryRow, []HistoryLineSpan) {
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	rows := make([]HistoryRow, 0, len(lines))
+	spans := make([]HistoryLineSpan, 0, len(lines))
+	for _, line := range lines {
+		lineRows := reflowHistoryLogicalLine(line, cols)
+		start := len(rows)
+		rows = append(rows, lineRows...)
+		end := len(rows) - 1
+		if end < start {
+			end = start
+		}
+		spans = append(spans, HistoryLineSpan{
+			LineID:        line.LineID,
+			StartRow:      start,
+			EndRow:        end,
+			ClippedBefore: false,
+			ClippedAfter:  false,
+		})
+	}
+	return rows, spans
+}
+
+func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
+	cells := cloneHistoryCells(line.Cells)
+	if len(cells) == 0 && line.Text != "" {
+		cells = []HistoryCell{{Text: line.Text}}
+	}
+	if len(cells) == 0 {
+		return []HistoryRow{{LineID: line.LineID}}
+	}
+	rows := make([]HistoryRow, 0, 1)
+	current := make([]HistoryCell, 0, len(cells))
+	width := 0
+	flush := func() {
+		row := HistoryRow{
+			Text:      historyCellsPlainTextForState(current),
+			Cells:     cloneHistoryCells(current),
+			LineID:    line.LineID,
+			RowInLine: len(rows),
+		}
+		rows = append(rows, row)
+		current = current[:0]
+		width = 0
+	}
+	for _, cell := range cells {
+		cellWidth := HistoryCellDisplayWidth(cell)
+		if cellWidth <= 0 {
+			continue
+		}
+		if width > 0 && width+cellWidth > cols {
+			flush()
+		}
+		current = append(current, cell)
+		width += cellWidth
+		if width >= cols {
+			flush()
+		}
+	}
+	if len(current) > 0 || len(rows) == 0 {
+		flush()
+	}
+	return rows
+}
+
+func historyCellsPlainTextForState(cells []HistoryCell) string {
+	var builder strings.Builder
+	for _, cell := range cells {
+		builder.WriteString(cell.Text)
+	}
+	return builder.String()
 }
 
 func cloneCopyMatches(matches []CopyMatch) []CopyMatch {

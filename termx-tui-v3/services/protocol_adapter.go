@@ -67,31 +67,22 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) state.HistoryWind
 	if window == nil {
 		return state.HistoryWindow{}
 	}
-	rows := make([]state.HistoryRow, len(window.Rows))
+	sourceLines := make([]state.HistoryLogicalLine, len(window.Rows))
 	for i, row := range window.Rows {
 		cells := historyCellsFromProtocol(row.DecodeCells())
-		rows[i] = state.HistoryRow{
+		sourceLines[i] = state.HistoryLogicalLine{
 			Text:      historyCellsPlainText(cells),
 			Cells:     cells,
 			LineID:    uint64At(window.RowLineIDs, i),
-			RowInLine: intAt(window.RowInLine, i),
 		}
 	}
-	lines := make([]state.HistoryLineSpan, len(window.Lines))
-	for i, span := range window.Lines {
-		lines[i] = state.HistoryLineSpan{
-			LineID:        span.LogicalLineID,
-			StartRow:      span.StartRow,
-			EndRow:        span.EndRow,
-			ClippedBefore: span.ClippedBefore,
-			ClippedAfter:  span.ClippedAfter,
-		}
-	}
+	rows, lines := state.ReflowHistoryLogicalLines(sourceLines, int(window.Size.Cols))
 	return state.HistoryWindow{
 		TerminalID: window.TerminalID,
 		Token:      window.Token,
 		Op:         state.HistoryWindowOp(window.Op),
 		Cols:       int(window.Size.Cols),
+		SourceLines: sourceLines,
 		Rows:       rows,
 		Lines:      lines,
 		Cursor: state.HistoryCursor{

@@ -6,7 +6,7 @@ import (
 )
 
 // NewCopyModeResizeRebindReducer 在 copy content rect 宽度变化后失效旧窗口并重新请求 latest。
-// 它只处理 authoritative HistoryWindow 重新绑定，不读取 live surface 或本地 scrollback。
+// 进入 frozen copy mode 后，宽度变化只做本地重排；不再回 core 请求新投影。
 func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		if !copyModeLayoutMayNeedRebind(msg) || !root.CopyMode.Active || deps.Core == nil {
@@ -24,13 +24,31 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 			return root.Advance(), nil
 		}
-		binding, hasBinding := activeTerminalViewBinding(root)
-		if !hasBinding || binding.TerminalID == "" || binding.ViewID != root.CopyMode.ViewID {
-			return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
+		if len(root.History.SourceLines) == 0 {
+			root.History = root.History.EnsureSourceLines()
 		}
-		root.History = root.History.InvalidateWindow()
+		if len(root.History.SourceLines) == 0 {
+			root.History = root.History.InvalidateWindow()
+			root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
+			root.CopyMode.BoundToken = ""
+			root.CopyMode.ViewportTop = 0
+			root.CopyMode.Cursor = state.CopyPosition{}
+			root.CopyMode.Mark = nil
+			root.CopyMode.Selection = nil
+			root.CopyMode.Query = ""
+			root.CopyMode.Matches = nil
+			root.CopyMode.ActiveMatch = 0
+			root.CopyMode.Empty = true
+			return root.Advance(), nil
+		}
 		root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
-		return beginCopyModeLatestForView(root, deps, binding, rect.W, rect.H)
+		root.History.Cols = rect.W
+		root.History.Rows, root.History.Lines = state.ReflowHistoryLogicalLines(root.History.SourceLines, rect.W)
+		root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+		if root.CopyMode.Query != "" {
+			root.CopyMode = root.CopyMode.SetQuery(root.CopyMode.Query, state.FindCopyMatches(root.History, root.CopyMode.Query))
+		}
+		return root.Advance(), nil
 	}
 }
 

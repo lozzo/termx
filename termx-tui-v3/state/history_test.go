@@ -34,6 +34,9 @@ func TestHistoryStoreAcceptsLatestReplace(t *testing.T) {
 	if store.Token != "tok-1" || store.Generation != 7 || store.Cols != 80 {
 		t.Fatalf("unexpected store header %#v", store)
 	}
+	if len(store.SourceLines) != 2 || store.SourceLines[0].Text != "one" || store.SourceLines[1].Text != "two" {
+		t.Fatalf("expected frozen source lines, got %#v", store.SourceLines)
+	}
 	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"one", "two"}) {
 		t.Fatalf("unexpected rows %v", got)
 	}
@@ -278,8 +281,12 @@ func TestCopyModeResizeInvalidatesBindingAndSelection(t *testing.T) {
 	mark := CopyPosition{Row: 1, Col: 2}
 	copyMode := CopyModeStore{
 		Active:      true,
+		PaneID:      "pane-1",
+		ViewID:      "pane:pane-1",
+		TerminalID:  "term-1",
 		BoundToken:  "tok-1",
 		BoundCols:   80,
+		ViewRows:    20,
 		ViewportTop: 4,
 		Cursor:      CopyPosition{Row: 2, Col: 3},
 		Mark:        &mark,
@@ -287,14 +294,32 @@ func TestCopyModeResizeInvalidatesBindingAndSelection(t *testing.T) {
 	}
 
 	copyMode = copyMode.Resize(100, 30)
-	if copyMode.BoundToken != "" || copyMode.BoundCols != 100 || copyMode.ViewRows != 30 || copyMode.ViewportTop != 0 {
+	if copyMode.BoundToken != "tok-1" || copyMode.BoundCols != 100 || copyMode.ViewRows != 30 || copyMode.ViewportTop != 4 {
 		t.Fatalf("unexpected resized copy mode %#v", copyMode)
 	}
-	if !copyMode.Empty {
-		t.Fatalf("resize should enter pending/empty state, got %#v", copyMode)
+	if copyMode.TerminalID != "term-1" || copyMode.ViewID != "pane:pane-1" || copyMode.PaneID != "pane-1" {
+		t.Fatalf("resize should preserve frozen binding identity, got %#v", copyMode)
 	}
-	if copyMode.Mark != nil || copyMode.Selection != nil {
-		t.Fatalf("resize should clear selection, got mark=%#v selection=%#v", copyMode.Mark, copyMode.Selection)
+	if copyMode.Mark == nil || copyMode.Selection == nil {
+		t.Fatalf("state resize should not clear selection by itself, got mark=%#v selection=%#v", copyMode.Mark, copyMode.Selection)
+	}
+}
+
+func TestHistoryStoreReflowsFrozenLogicalLinesAtNewCols(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		Text:   "abcdef",
+		LineID: 10,
+		Cells: []HistoryCell{
+			{Text: "abc", Width: 3},
+			{Text: "def", Width: 3},
+		},
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 3)
+	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"abc", "def"}) {
+		t.Fatalf("expected local reflow rows, got %v", got)
+	}
+	if got := spanRows(spans); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 1}}) {
+		t.Fatalf("expected reflowed span, got %v", got)
 	}
 }
 
@@ -470,6 +495,7 @@ func historyWindow(
 		Token:      token,
 		Op:         op,
 		Cols:       cols,
+		SourceLines: historyLogicalLinesFromRows(rows),
 		Rows:       rows,
 		Generation: generation,
 		Boundary:   HistoryBoundary{FirstLineID: firstLine, LastLineID: lastLine},
@@ -478,6 +504,21 @@ func historyWindow(
 		window.Lines = []HistoryLineSpan{{LineID: firstLine, StartRow: 0, EndRow: len(rows) - 1}}
 	}
 	return window
+}
+
+func historyLogicalLinesFromRows(rows []HistoryRow) []HistoryLogicalLine {
+	if len(rows) == 0 {
+		return nil
+	}
+	lines := make([]HistoryLogicalLine, len(rows))
+	for i, row := range rows {
+		lines[i] = HistoryLogicalLine{
+			Text:   row.Text,
+			Cells:  cloneHistoryCells(row.Cells),
+			LineID: row.LineID,
+		}
+	}
+	return lines
 }
 
 type spanRow struct {

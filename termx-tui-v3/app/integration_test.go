@@ -471,18 +471,18 @@ func TestCopyModeHostResizeRebindsLatestAndDoesNotRenderOldWindow(t *testing.T) 
 		t.Fatalf("drain rebind: %v", err)
 	}
 
-	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 98 {
-		t.Fatalf("expected second latest request at resized content cols, got %#v", core.LatestRequests)
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 78 {
+		t.Fatalf("host resize should not request a second latest snapshot, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().CopyMode.BoundCols != 98 {
-		t.Fatalf("expected rebound copy mode, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 98 {
+		t.Fatalf("expected frozen copy mode to keep token and update cols locally, got %#v", runtime.State().CopyMode)
 	}
-	if runtime.State().CopyMode.Mark != nil || runtime.State().CopyMode.Selection != nil || runtime.State().CopyMode.Cursor != (state.CopyPosition{}) {
-		t.Fatalf("resize rebind must clear selection and cursor, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Mark == nil || runtime.State().CopyMode.Selection == nil || runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 0, Col: 4}) {
+		t.Fatalf("local reflow should preserve selection and cursor on same logical line, got %#v", runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
-	if frameContains(last, "old-window") || !frameContains(last, "new-window") {
-		t.Fatalf("resized copy mode must render new authoritative window only, got %#v", last.Lines)
+	if !frameContains(last, "old-window") || frameContains(last, "new-window") {
+		t.Fatalf("resized copy mode must keep frozen history content, got %#v", last.Lines)
 	}
 }
 
@@ -525,22 +525,23 @@ func TestCopyModeResizeRebindInvalidatesOldWindowBeforeLatestResponse(t *testing
 	mark := state.CopyPosition{Row: 0, Col: 1}
 	root.CopyMode.Mark = &mark
 	root.CopyMode.Selection = &state.CopySelection{Anchor: mark, Focus: root.CopyMode.Cursor}
+	root.History.SourceLines = historyLogicalLinesForApp(root.History.Rows)
 
 	next, effects := reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
-	if len(effects) != 1 {
-		t.Fatalf("expected one latest rebind effect, got %#v", effects)
+	if len(effects) != 0 {
+		t.Fatalf("frozen copy resize should not schedule latest effect, got %#v", effects)
 	}
-	if next.History.Token != "" || next.History.Cols != 0 || len(next.History.Rows) != 0 || len(next.History.Lines) != 0 {
-		t.Fatalf("resize rebind must immediately invalidate old authoritative window, got %#v", next.History)
+	if next.History.Token != "tok-old" || next.History.Cols != 98 || len(next.History.Rows) == 0 {
+		t.Fatalf("resize should keep frozen authoritative source and only reflow rows, got %#v", next.History)
 	}
-	if next.History.Pending == nil || next.History.Pending.Kind != state.HistoryRequestLatest || next.History.Pending.Cols != 98 {
-		t.Fatalf("resize rebind should wait for latest at new cols, got %#v", next.History.Pending)
+	if next.History.Pending != nil {
+		t.Fatalf("resize should not wait for latest at new cols, got %#v", next.History.Pending)
 	}
-	if next.CopyMode.BoundToken != "" || next.CopyMode.BoundCols != 98 || next.CopyMode.ViewRows != 36 || next.CopyMode.ViewportTop != 0 {
-		t.Fatalf("copy mode should enter explicit pending binding at new rect, got %#v", next.CopyMode)
+	if next.CopyMode.BoundToken != "tok-old" || next.CopyMode.BoundCols != 98 || next.CopyMode.ViewRows != 36 {
+		t.Fatalf("copy mode should keep frozen binding and only update rect, got %#v", next.CopyMode)
 	}
-	if next.CopyMode.Cursor != (state.CopyPosition{}) || next.CopyMode.Mark != nil || next.CopyMode.Selection != nil {
-		t.Fatalf("resize rebind must reset cursor and selection, got %#v", next.CopyMode)
+	if next.CopyMode.Cursor != (state.CopyPosition{Row: 0, Col: 3}) || next.CopyMode.Mark == nil || next.CopyMode.Selection == nil {
+		t.Fatalf("local reflow should preserve cursor and selection, got %#v", next.CopyMode)
 	}
 }
 
@@ -579,14 +580,12 @@ func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *tes
 		},
 	}
 	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	root.History.SourceLines = historyLogicalLinesForApp(root.History.Rows)
 	root, _ = reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
 	frame := render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
 
-	if !frameContains(frame, "copy history pending: authoritative history window pending") {
-		t.Fatalf("resize rebind should render pending history state, got %#v", frame.Lines)
-	}
-	if frameContains(frame, "old-window") || frameContains(frame, "live-fallback") {
-		t.Fatalf("resize rebind pending frame must not show old history or live fallback, got %#v", frame.Lines)
+	if !frameContains(frame, "old-window") || frameContains(frame, "live-fallback") {
+		t.Fatalf("resize should keep frozen history and must not fallback to live surface, got %#v", frame.Lines)
 	}
 }
 
@@ -602,6 +601,7 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 		TerminalID: "term-1",
 		Token:      "tok-old",
 		Cols:       78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-window", LineID: 20}}),
 		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
 	}
 	runtime.state.CopyMode = state.CopyModeStore{
@@ -621,18 +621,15 @@ func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testin
 		t.Fatalf("drain resize: %v", err)
 	}
 
-	if len(runner.Effects) != 1 {
-		t.Fatalf("resize rebind should schedule latest request without executing it, got %#v", runner.Effects)
+	if len(runner.Effects) != 0 {
+		t.Fatalf("frozen copy resize should not schedule latest request, got %#v", runner.Effects)
 	}
 	pendingFrame := lastFrame(t, host.Frames())
-	if !frameContains(pendingFrame, "copy history pending: authoritative history window pending") {
-		t.Fatalf("runtime should render pending frame before latest response, got %#v", pendingFrame.Lines)
+	if !frameContains(pendingFrame, "old-window") || frameContains(pendingFrame, "live-fallback") {
+		t.Fatalf("runtime resize must keep frozen history and avoid live fallback, got %#v", pendingFrame.Lines)
 	}
-	if frameContains(pendingFrame, "old-window") || frameContains(pendingFrame, "live-fallback") {
-		t.Fatalf("pending runtime frame must not show old history or live fallback, got %#v", pendingFrame.Lines)
-	}
-	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Cols != 98 {
-		t.Fatalf("runtime should keep pending latest request at resized cols, got %#v", runtime.State().History.Pending)
+	if runtime.State().History.Pending != nil {
+		t.Fatalf("runtime should not keep pending latest request after local reflow, got %#v", runtime.State().History.Pending)
 	}
 }
 
@@ -692,7 +689,7 @@ func TestCopyModeResizeRowsOnlyKeepsWindowAndDoesNotRequestLatest(t *testing.T) 
 func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{
-			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 39, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
+			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 38, 7, []state.HistoryRow{{Text: "old-window", LineID: 20}})},
 			{Window: historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-2", 22, 8, []state.HistoryRow{{Text: "sized-window", LineID: 30}})},
 		},
 	}
@@ -733,14 +730,14 @@ func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
 		t.Fatalf("drain pane size rebind: %v", err)
 	}
 
-	if len(core.LatestRequests) != 2 || core.LatestRequests[1].Cols != 22 {
-		t.Fatalf("pane size command must rebind copy mode at active content cols, got %#v", core.LatestRequests)
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 38 {
+		t.Fatalf("pane size command must not request a second latest snapshot, got %#v", core.LatestRequests)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().CopyMode.BoundCols != 22 {
-		t.Fatalf("expected copy mode rebound to sized window, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().CopyMode.BoundCols != 22 {
+		t.Fatalf("expected copy mode to keep frozen token and update cols locally, got %#v", runtime.State().CopyMode)
 	}
-	if runtime.State().History.Token != "tok-2" || runtime.State().History.Cols != 22 || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "sized-window" {
-		t.Fatalf("pane size rebind must replace authoritative history window, got %#v", runtime.State().History)
+	if runtime.State().History.Token != "tok-1" || runtime.State().History.Cols != 22 || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "old-window" {
+		t.Fatalf("pane size reflow must keep authoritative frozen source, got %#v", runtime.State().History)
 	}
 }
 
@@ -784,8 +781,8 @@ func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeRe
 	if len(terminal.Resizes) != 1 || terminal.Resizes[0].Cols != 98 || terminal.Resizes[0].Rows != 36 {
 		t.Fatalf("expected terminal resize to content rect, got %#v", terminal.Resizes)
 	}
-	if runtime.State().CopyMode.BoundToken != "tok-2" || runtime.State().History.Token != "tok-2" {
-		t.Fatalf("terminal resize result must not clear rebound copy window, got %#v", runtime.State())
+	if runtime.State().CopyMode.BoundToken != "tok-1" || runtime.State().History.Token != "tok-1" || runtime.State().History.Cols != 98 {
+		t.Fatalf("terminal resize result must preserve frozen copy window and local cols, got %#v", runtime.State())
 	}
 }
 
@@ -801,6 +798,7 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 		TerminalID: "term-1",
 		Token:      "tok-1",
 		Cols:       78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-window", LineID: 20}}),
 		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
 	}
 
@@ -810,30 +808,30 @@ func TestCopyModeResizeRejectsOldColsResponseAsStale(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain resize: %v", err)
 	}
-	if len(core.LatestRequests) != 1 || core.LatestRequests[0].Cols != 98 {
-		t.Fatalf("expected rebind request at new cols, got %#v", core.LatestRequests)
+	if len(core.LatestRequests) != 0 {
+		t.Fatalf("resize should not rebind latest snapshot, got %#v", core.LatestRequests)
 	}
-	if runtime.State().History.Token != "tok-2" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "rebound" {
-		t.Fatalf("expected rebound window before stale response, got %#v", runtime.State().History)
+	if runtime.State().History.Token != "tok-1" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "old-window" {
+		t.Fatalf("expected frozen window before stale response, got %#v", runtime.State().History)
 	}
 	staleWindow := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-old", 98, 7, []state.HistoryRow{{Text: "stale", LineID: 1}})
 	staleWindow.ViewID = "stale-view"
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: core.LatestRequests[0].RequestID, Window: staleWindow}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 99, Window: staleWindow}}); err != nil {
 		t.Fatalf("post stale response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain stale response: %v", err)
 	}
 
-	if runtime.State().History.Token != "tok-2" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "rebound" {
-		t.Fatalf("old cols response must not restore stale window, got %#v", runtime.State().History)
+	if runtime.State().History.Token != "tok-1" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "old-window" {
+		t.Fatalf("stale response must not disturb frozen window, got %#v", runtime.State().History)
 	}
 	if runtime.State().Session.LastError != "" || runtime.State().Surface.Err != "" {
 		t.Fatalf("stale cols response must not pollute live errors, got %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
-	if frameContains(last, "old-window") || frameContains(last, "│stale") {
-		t.Fatalf("stale resize response must not render old rows, got %#v", last.Lines)
+	if !frameContains(last, "old-window") || frameContains(last, "│stale") {
+		t.Fatalf("stale resize response must keep frozen rows and reject stale payload, got %#v", last.Lines)
 	}
 }
 
@@ -909,6 +907,7 @@ func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T)
 		TerminalID: "term-1",
 		Token:      "tok-old",
 		Cols:       78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-window", LineID: 20}}),
 		Rows:       []state.HistoryRow{{Text: "old-window", LineID: 20}},
 	}
 
@@ -918,29 +917,29 @@ func TestCopyModeRebindIgnoresStaleResponseFromPreviousViewBinding(t *testing.T)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain resize rebind: %v", err)
 	}
-	if runtime.State().History.Token != "tok-2" || runtime.State().CopyMode.BoundToken != "tok-2" {
-		t.Fatalf("expected rebound active copy binding, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
+	if runtime.State().History.Token != "tok-old" || runtime.State().CopyMode.BoundToken != "tok-old" || runtime.State().History.Cols != 98 {
+		t.Fatalf("expected frozen active copy binding after local reflow, got history=%#v copy=%#v", runtime.State().History, runtime.State().CopyMode)
 	}
 
 	stale := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-stale", 98, 9, []state.HistoryRow{{Text: "previous-view", LineID: 40}})
 	stale.PaneID = "pane-old"
 	stale.ViewID = "pane:pane-old"
-	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: core.LatestRequests[0].RequestID, Window: stale}}); err != nil {
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 99, Window: stale}}); err != nil {
 		t.Fatalf("post stale view response: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain stale view response: %v", err)
 	}
 
-	if runtime.State().History.Token != "tok-2" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "rebound-window" {
-		t.Fatalf("stale previous-view response must not replace rebound window, got %#v", runtime.State().History)
+	if runtime.State().History.Token != "tok-old" || len(runtime.State().History.Rows) != 1 || runtime.State().History.Rows[0].Text != "old-window" {
+		t.Fatalf("stale previous-view response must not replace frozen window, got %#v", runtime.State().History)
 	}
-	if runtime.State().CopyMode.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || runtime.State().CopyMode.BoundToken != "tok-2" {
-		t.Fatalf("stale previous-view response must not disturb rebound copy binding, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || runtime.State().CopyMode.BoundToken != "tok-old" {
+		t.Fatalf("stale previous-view response must not disturb frozen copy binding, got %#v", runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
-	if frameContains(last, "previous-view") || !frameContains(last, "rebound-window") {
-		t.Fatalf("stale previous-view response must not render into rebound frame, got %#v", last.Lines)
+	if frameContains(last, "previous-view") || !frameContains(last, "old-window") {
+		t.Fatalf("stale previous-view response must not render into frozen frame, got %#v", last.Lines)
 	}
 }
 
@@ -1510,6 +1509,7 @@ func historyWindowForApp(
 		Token:      token,
 		Op:         op,
 		Cols:       cols,
+		SourceLines: historyLogicalLinesForApp(rows),
 		Rows:       rows,
 		Lines:      []state.HistoryLineSpan{{LineID: firstLine, StartRow: 0, EndRow: len(rows) - 1}},
 		Generation: generation,
@@ -1517,11 +1517,30 @@ func historyWindowForApp(
 	}
 }
 
+func historyLogicalLinesForApp(rows []state.HistoryRow) []state.HistoryLogicalLine {
+	if len(rows) == 0 {
+		return nil
+	}
+	lines := make([]state.HistoryLogicalLine, len(rows))
+	for i, row := range rows {
+		lines[i] = state.HistoryLogicalLine{
+			Text:   row.Text,
+			Cells:  append([]state.HistoryCell(nil), row.Cells...),
+			LineID: row.LineID,
+		}
+	}
+	return lines
+}
+
 func historyStoreForCopySelection() state.HistoryStore {
 	return state.HistoryStore{
 		TerminalID: "term-1",
 		Token:      "tok-1",
 		Cols:       78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{
+			{Text: "alpha", LineID: 10},
+			{Text: "beta", LineID: 11},
+		}),
 		Rows: []state.HistoryRow{
 			{Text: "alpha", LineID: 10},
 			{Text: "beta", LineID: 11},

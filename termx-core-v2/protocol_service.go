@@ -34,6 +34,13 @@ type protocolSession struct {
 	sizeLocks    map[string]bool
 	ownerEpoch   uint64
 	cancelEvents context.CancelFunc
+	historyMu    sync.Mutex
+	historyPins  map[string]frozenHistorySnapshot
+}
+
+type frozenHistorySnapshot struct {
+	TerminalID string
+	Snapshot   history.FrozenSnapshot
 }
 
 // protocolAttachment 是 daemon-side channel/view registry；它不保存 TUI workspace/pane truth。
@@ -54,6 +61,7 @@ func newProtocolSession(server *Server, conn transport.Transport) *protocolSessi
 		attachments:  make(map[uint16]protocolAttachment),
 		resizeOwners: make(map[string]uint16),
 		sizeLocks:    make(map[string]bool),
+		historyPins:  make(map[string]frozenHistorySnapshot),
 	}
 	session.nextCh.Store(6)
 	return session
@@ -519,28 +527,25 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 		}
 		cols = int(info.Size.Cols)
 	}
-	cursor := history.HistoryCursor{
-		Valid:           params.CursorValid,
-		BeforeLineID:    history.LogicalLineID(params.BeforeLineID),
-		BeforeRowInLine: params.BeforeRowInLine,
-	}
-	var (
-		window history.HistoryWindow
-		err    error
-	)
+	var window history.HistoryWindow
 	if params.CursorValid {
 		if err := session.validateOlderWindowRequest(params, cols); err != nil {
 			return nil, err
 		}
-		window, err = session.server.OlderWindow(params.TerminalID, cols, limit, cursor)
-		if params.Token != "" {
-			window.Token = history.WindowToken(params.Token)
+		snapshot, ok := session.frozenSnapshot(params.TerminalID, params.Token)
+		if !ok {
+			return nil, ErrStaleHistoryWindow
 		}
+		window = frozenSnapshotOlderWindow(snapshot, cols, limit, protocolCursorToCore(params))
+		window.Token = history.WindowToken(params.Token)
 	} else {
-		window, err = session.server.LatestWindow(params.TerminalID, cols, limit)
-	}
-	if err != nil {
-		return nil, err
+		terminal, err := session.server.Terminal(params.TerminalID)
+		if err != nil {
+			return nil, err
+		}
+		snapshot := terminal.FreezeSnapshot()
+		session.storeFrozenSnapshot(params.TerminalID, snapshot)
+		window = frozenSnapshotLatestWindow(snapshot, cols, limit)
 	}
 	info, err := session.server.GetTerminal(params.TerminalID)
 	if err != nil {
@@ -551,29 +556,23 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 }
 
 func (session *protocolSession) validateOlderWindowRequest(params protocol.HistoryWindowParams, cols int) error {
-	terminal, err := session.server.Terminal(params.TerminalID)
-	if err != nil {
-		return err
-	}
-	latest, err := terminal.LatestWindow(cols, 1)
-	if err != nil {
-		return err
-	}
-	if params.Token != "" && !historyTokenMatchesRequest(params.Token, cols, params.Generation) {
+	snapshot, ok := session.frozenSnapshot(params.TerminalID, params.Token)
+	if !ok {
 		return ErrStaleHistoryWindow
 	}
-	if params.Generation != 0 && params.Generation != uint64(latest.Generation) {
+	if params.Token != "" && params.Token != snapshot.Token {
+		return ErrStaleHistoryWindow
+	}
+	if params.Generation != 0 && params.Generation != uint64(snapshot.Generation) {
 		return ErrStaleHistoryWindow
 	}
 	if params.CursorValid {
-		if !terminal.CommittedCursorValid(cols, history.HistoryCursor{
-			Valid:           params.CursorValid,
-			BeforeLineID:    history.LogicalLineID(params.BeforeLineID),
-			BeforeRowInLine: params.BeforeRowInLine,
-		}) {
+		cursor := protocolCursorToCore(params)
+		if !frozenSnapshotCursorValid(snapshot, cols, cursor) {
 			return ErrStaleHistoryWindow
 		}
 	}
+	latest := frozenSnapshotLatestWindow(snapshot, cols, 1)
 	if params.BoundaryFirstLineID != 0 && params.BoundaryFirstLineID != uint64(latest.FirstLineID) {
 		return ErrStaleHistoryWindow
 	}
@@ -1114,30 +1113,365 @@ func normalizeAttachMode(mode string) string {
 	return mode
 }
 
-func historyTokenMatchesRequest(token string, cols int, generation uint64) bool {
-	if token == "" {
-		return true
+func (session *protocolSession) storeFrozenSnapshot(terminalID string, snapshot history.FrozenSnapshot) {
+	session.historyMu.Lock()
+	defer session.historyMu.Unlock()
+	session.historyPins[terminalID] = frozenHistorySnapshot{
+		TerminalID: terminalID,
+		Snapshot:   snapshot,
 	}
-	parts := strings.Split(token, ":")
-	seenGeneration := generation == 0
-	seenCols := false
-	for _, part := range parts {
-		if strings.HasPrefix(part, "g") {
-			value, err := strconv.ParseUint(strings.TrimPrefix(part, "g"), 10, 64)
-			if err != nil {
-				return false
-			}
-			seenGeneration = generation == 0 || value == generation
-		}
-		if tokenPartHasNumericPrefix(part, "c") {
-			value, err := strconv.Atoi(strings.TrimPrefix(part, "c"))
-			if err != nil {
-				return false
-			}
-			seenCols = value == cols
+}
+
+func (session *protocolSession) frozenSnapshot(terminalID string, token string) (history.FrozenSnapshot, bool) {
+	session.historyMu.Lock()
+	defer session.historyMu.Unlock()
+	pin, ok := session.historyPins[terminalID]
+	if !ok {
+		return history.FrozenSnapshot{}, false
+	}
+	if token != "" && pin.Snapshot.Token != token {
+		return history.FrozenSnapshot{}, false
+	}
+	return pin.Snapshot, true
+}
+
+func protocolCursorToCore(params protocol.HistoryWindowParams) history.HistoryCursor {
+	return history.HistoryCursor{
+		Valid:           params.CursorValid,
+		BeforeLineID:    history.LogicalLineID(params.BeforeLineID),
+		BeforeRowInLine: params.BeforeRowInLine,
+	}
+}
+
+func frozenSnapshotLatestWindow(snapshot history.FrozenSnapshot, cols int, rows int) history.HistoryWindow {
+	return frozenSnapshotWindow(snapshot, cols, rows, history.HistoryCursor{}, history.HistoryWindowReplace)
+}
+
+func frozenSnapshotOlderWindow(snapshot history.FrozenSnapshot, cols int, rows int, cursor history.HistoryCursor) history.HistoryWindow {
+	return frozenSnapshotWindow(snapshot, cols, rows, cursor, history.HistoryWindowPrepend)
+}
+
+func frozenSnapshotCursorValid(snapshot history.FrozenSnapshot, cols int, cursor history.HistoryCursor) bool {
+	if cols <= 0 || !cursor.Valid {
+		return false
+	}
+	rows := projectFrozenSnapshotCommittedRows(snapshot, cols)
+	if len(rows) == 0 {
+		return false
+	}
+	return historyCursorBoundaryIndex(rows, cursor) >= 0
+}
+
+func frozenSnapshotWindow(snapshot history.FrozenSnapshot, cols int, rows int, cursor history.HistoryCursor, op history.HistoryWindowOp) history.HistoryWindow {
+	if rows <= 0 {
+		rows = 24
+	}
+	var projected []snapshotProjectedRow
+	if op == history.HistoryWindowReplace {
+		projected = projectFrozenSnapshotLatestRows(snapshot, cols)
+		start := tailStartSnapshot(len(projected), rows)
+		selected := projected[start:]
+		return buildFrozenSnapshotWindow(snapshot, cols, op, projected, selected, latestCursorSnapshot(projected, start))
+	}
+	projected = projectFrozenSnapshotCommittedRows(snapshot, cols)
+	boundary := historyCursorBoundaryIndex(projected, cursor)
+	if boundary < 0 {
+		return history.HistoryWindow{
+			Token:      history.WindowToken(snapshot.Token),
+			Op:         op,
+			Cols:       cols,
+			Generation: snapshot.Generation,
 		}
 	}
-	return seenGeneration && seenCols
+	candidates := projected[:boundary]
+	start := tailStartSnapshot(len(candidates), rows)
+	selected := candidates[start:]
+	return buildFrozenSnapshotWindow(snapshot, cols, op, projected, selected, cursorBeforeSelectedSnapshot(candidates, start))
+}
+
+type snapshotProjectedRow struct {
+	row          history.VisualRow
+	lineRowCount int
+	committed    bool
+}
+
+func buildFrozenSnapshotWindow(
+	snapshot history.FrozenSnapshot,
+	cols int,
+	op history.HistoryWindowOp,
+	allRows []snapshotProjectedRow,
+	selected []snapshotProjectedRow,
+	cursor history.HistoryCursor,
+) history.HistoryWindow {
+	spans, visualRows, firstLine, lastLine := buildSnapshotWindowRows(selected)
+	return history.HistoryWindow{
+		Token:       history.WindowToken(snapshot.Token),
+		Op:          op,
+		Cols:        cols,
+		Rows:        visualRows,
+		Spans:       spans,
+		Cursor:      cursor,
+		HasMore:     cursor.Valid,
+		Generation:  snapshot.Generation,
+		FirstLineID: firstLine,
+		LastLineID:  lastLine,
+		LoadedLines: len(spans),
+		TotalRows:   len(allRows),
+		TotalLines:  countCommittedSnapshotLines(snapshot),
+	}
+}
+
+func buildSnapshotWindowRows(rows []snapshotProjectedRow) ([]history.LogicalLineSpan, []history.VisualRow, history.LogicalLineID, history.LogicalLineID) {
+	if len(rows) == 0 {
+		return nil, nil, 0, 0
+	}
+	visualRows := make([]history.VisualRow, len(rows))
+	spans := make([]history.LogicalLineSpan, 0)
+	firstLine := rows[0].row.LineID
+	lastLine := rows[len(rows)-1].row.LineID
+	for i := 0; i < len(rows); {
+		lineID := rows[i].row.LineID
+		start := i
+		end := i
+		for end+1 < len(rows) && rows[end+1].row.LineID == lineID {
+			end++
+		}
+		clippedBefore := rows[start].row.RowInLine > 0
+		clippedAfter := rows[end].row.RowInLine < rows[end].lineRowCount-1
+		for rowIndex := start; rowIndex <= end; rowIndex++ {
+			row := rows[rowIndex].row
+			row.Committed = rows[rowIndex].committed
+			row.ClippedBefore = clippedBefore
+			row.ClippedAfter = clippedAfter
+			visualRows[rowIndex] = row
+		}
+		spans = append(spans, history.LogicalLineSpan{
+			LineID:         lineID,
+			FirstRow:       start,
+			LastRow:        end,
+			ClippedBefore:  clippedBefore,
+			ClippedAfter:   clippedAfter,
+			LineGeneration: rows[start].row.LineGeneration,
+		})
+		i = end + 1
+	}
+	return spans, visualRows, firstLine, lastLine
+}
+
+func projectFrozenSnapshotLatestRows(snapshot history.FrozenSnapshot, cols int) []snapshotProjectedRow {
+	return projectFrozenSnapshotRows(snapshot.Lines, cols)
+}
+
+func projectFrozenSnapshotCommittedRows(snapshot history.FrozenSnapshot, cols int) []snapshotProjectedRow {
+	lines := make([]history.SnapshotLine, 0, len(snapshot.Lines))
+	for _, line := range snapshot.Lines {
+		if line.Committed {
+			lines = append(lines, line)
+		}
+	}
+	return projectFrozenSnapshotRows(lines, cols)
+}
+
+func projectFrozenSnapshotRows(lines []history.SnapshotLine, cols int) []snapshotProjectedRow {
+	var rows []snapshotProjectedRow
+	for _, snapLine := range lines {
+		lineRows := projectFrozenSnapshotLine(snapLine.Line, cols)
+		for _, row := range lineRows {
+			rows = append(rows, snapshotProjectedRow{
+				row:          row,
+				lineRowCount: len(lineRows),
+				committed:    snapLine.Committed,
+			})
+		}
+	}
+	return rows
+}
+
+func projectFrozenSnapshotLine(line history.LogicalLine, cols int) []history.VisualRow {
+	cells := normalizeProjectionCellsSnapshot(line.Cells)
+	if len(cells) == 0 {
+		return []history.VisualRow{{LineID: line.ID, LineGeneration: line.Generation}}
+	}
+	rows := make([]history.VisualRow, 0)
+	rowIndex := 0
+	for _, chunk := range wrapCellsSnapshot(cells, cols) {
+		rows = append(rows, history.VisualRow{
+			Text:           lineTextFromSnapshotCells(chunk),
+			Cells:          cloneHistoryCellsSnapshot(chunk),
+			LineID:         line.ID,
+			RowInLine:      rowIndex,
+			LineGeneration: line.Generation,
+		})
+		rowIndex++
+	}
+	return rows
+}
+
+func normalizeProjectionCellsSnapshot(cells []history.Cell) []history.Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]history.Cell, 0, len(cells))
+	for _, cell := range cells {
+		if cell.Text == "" && cell.Width <= 0 {
+			continue
+		}
+		width := cell.Width
+		if width <= 0 {
+			width = historyCellTextWidth(cell.Text)
+		}
+		if width <= 0 {
+			continue
+		}
+		next := cell
+		next.Width = width
+		out = append(out, next)
+	}
+	return out
+}
+
+func wrapCellsSnapshot(cells []history.Cell, cols int) [][]history.Cell {
+	if cols <= 0 {
+		return [][]history.Cell{cloneHistoryCellsSnapshot(cells)}
+	}
+	rows := make([][]history.Cell, 0)
+	current := make([]history.Cell, 0)
+	width := 0
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		rows = append(rows, cloneHistoryCellsSnapshot(current))
+		current = current[:0]
+		width = 0
+	}
+	for _, cell := range cells {
+		if width > 0 && width+cell.Width > cols {
+			flush()
+		}
+		current = append(current, cell)
+		width += cell.Width
+		if width >= cols {
+			flush()
+		}
+	}
+	flush()
+	if len(rows) == 0 {
+		rows = append(rows, nil)
+	}
+	return rows
+}
+
+func cloneHistoryCellsSnapshot(cells []history.Cell) []history.Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]history.Cell, len(cells))
+	copy(out, cells)
+	return out
+}
+
+func lineTextFromSnapshotCells(cells []history.Cell) string {
+	var builder strings.Builder
+	for _, cell := range cells {
+		builder.WriteString(cell.Text)
+	}
+	return builder.String()
+}
+
+func historyCellTextWidth(text string) int {
+	width := 0
+	for _, r := range text {
+		if r == '\n' {
+			continue
+		}
+		width++
+	}
+	return width
+}
+
+func latestCursorSnapshot(rows []snapshotProjectedRow, selectionStart int) history.HistoryCursor {
+	if len(rows) == 0 {
+		return history.HistoryCursor{}
+	}
+	for i := selectionStart; i < len(rows); i++ {
+		if !rows[i].committed {
+			continue
+		}
+		if hasCommittedRowBeforeSnapshot(rows, i) {
+			return cursorFromSnapshotRow(rows[i])
+		}
+		return history.HistoryCursor{}
+	}
+	if hasAnyCommittedRowSnapshot(rows) {
+		return history.HistoryCursor{Valid: true}
+	}
+	return history.HistoryCursor{}
+}
+
+func cursorBeforeSelectedSnapshot(rows []snapshotProjectedRow, selectionStart int) history.HistoryCursor {
+	if len(rows) == 0 || selectionStart <= 0 {
+		return history.HistoryCursor{}
+	}
+	return cursorFromSnapshotRow(rows[selectionStart])
+}
+
+func cursorFromSnapshotRow(row snapshotProjectedRow) history.HistoryCursor {
+	return history.HistoryCursor{
+		Valid:           true,
+		BeforeLineID:    row.row.LineID,
+		BeforeRowInLine: row.row.RowInLine,
+	}
+}
+
+func historyCursorBoundaryIndex(rows []snapshotProjectedRow, cursor history.HistoryCursor) int {
+	if !cursor.Valid {
+		return -1
+	}
+	if cursor.BeforeLineID == 0 {
+		return len(rows)
+	}
+	for i, row := range rows {
+		if row.row.LineID == cursor.BeforeLineID && row.row.RowInLine == cursor.BeforeRowInLine {
+			return i
+		}
+	}
+	return -1
+}
+
+func hasCommittedRowBeforeSnapshot(rows []snapshotProjectedRow, index int) bool {
+	for i := 0; i < index; i++ {
+		if rows[i].committed {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyCommittedRowSnapshot(rows []snapshotProjectedRow) bool {
+	for _, row := range rows {
+		if row.committed {
+			return true
+		}
+	}
+	return false
+}
+
+func tailStartSnapshot(totalRows int, maxRows int) int {
+	if totalRows <= maxRows {
+		return 0
+	}
+	return totalRows - maxRows
+}
+
+func countCommittedSnapshotLines(snapshot history.FrozenSnapshot) int {
+	count := 0
+	for _, line := range snapshot.Lines {
+		if line.Committed {
+			count++
+		}
+	}
+	return count
 }
 
 func tokenPartHasNumericPrefix(part string, prefix string) bool {

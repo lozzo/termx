@@ -214,6 +214,12 @@ func (terminal *Terminal) CommittedCursorValid(cols int, cursor history.HistoryC
 	return terminal.history.CommittedCursorValid(cols, cursor)
 }
 
+func (terminal *Terminal) FreezeSnapshot() history.FrozenSnapshot {
+	terminal.mu.Lock()
+	defer terminal.mu.Unlock()
+	return terminal.history.FreezeSnapshot()
+}
+
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
 	if terminal.events == nil {
 		return

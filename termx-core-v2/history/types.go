@@ -61,6 +61,14 @@ type LogicalLine struct {
 	Residency  Residency
 }
 
+// SnapshotLine 是 copy/history 冻结快照里的单条 logical line 载体。
+// 它保留 line payload 和当时是否已进入 committed history 的事实，
+// 供 protocol session 冻结后继续向 TUI 分页发放。
+type SnapshotLine struct {
+	Line      LogicalLine
+	Committed bool
+}
+
 // Clone returns a detached copy so callers cannot mutate store state through
 // shared slices.
 func (line LogicalLine) Clone() LogicalLine {
