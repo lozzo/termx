@@ -256,12 +256,14 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 				break
 			}
 		}
+		root = invalidateCopyModeForTerminalRebind(root, paneID, result.ViewID, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
 	} else {
 		root.Shell = root.Shell.EnsureActiveTabForAttach()
-		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: root.Shell.EnsureDefaults().ActivePaneID}, result.TerminalID)
 		activePaneID := root.Shell.EnsureDefaults().ActivePaneID
+		root = invalidateCopyModeForTerminalRebind(root, activePaneID, result.ViewID, result.TerminalID)
+		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 	}
 	root.Shell = root.Shell.CloseOverlay()

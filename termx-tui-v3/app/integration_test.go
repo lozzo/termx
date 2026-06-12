@@ -953,6 +953,315 @@ func TestCopyModeRuntimeFloatingCloseDoesNotRenderClosedFrozenHistory(t *testing
 	}
 }
 
+func TestCopyModeFloatingDeactivateInvalidatesFrozenHistoryForInactiveFloating(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	var result state.FloatingCommandResult
+	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 4, Y: 2, W: 40, H: 12},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 7, 40, 12, state.TerminalResizeRoleOwner, "surface", state.TerminalFloatingViewID("floating-1"), true))
+	root.History = state.HistoryStore{
+		PaneID:      "float-pane",
+		ViewID:      state.TerminalFloatingViewID("floating-1"),
+		TerminalID:  "term-float",
+		Token:       "tok-float",
+		Cols:        40,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "float-history", LineID: 20}}),
+		Rows:        []state.HistoryRow{{Text: "float-history", LineID: 20}},
+	}
+	root.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     "float-pane",
+		ViewID:     state.TerminalFloatingViewID("floating-1"),
+		TerminalID: "term-float",
+		BoundToken: "tok-float",
+		BoundCols:  40,
+		ViewRows:   10,
+	}
+
+	next, _ := reduceFloatingCommand(root, state.FloatingCommand{
+		Action: state.FloatingCommandDeactivate,
+		Source: state.PaneCommandSourceTest,
+	})
+
+	if next.History.Token != "" || len(next.History.Rows) != 0 {
+		t.Fatalf("floating deactivate must invalidate frozen history for inactive floating, got %#v", next.History)
+	}
+	if next.CopyMode.Active || next.CopyMode.ViewID != "" || next.CopyMode.BoundToken != "" {
+		t.Fatalf("floating deactivate must clear copy mode bound to inactive floating, got %#v", next.CopyMode)
+	}
+}
+
+func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewPaneTerminal(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(
+			state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 4, 78, 20, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true),
+		),
+		History: state.HistoryStore{
+			PaneID:      state.DefaultPaneID,
+			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID:  "term-old",
+			Token:       "tok-old",
+			Cols:        78,
+			SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+			Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-old",
+			BoundToken: "tok-old",
+			BoundCols:  78,
+			ViewRows:   20,
+		},
+	}
+
+	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+		TerminalID: "term-new",
+		Result: services.TerminalAttachResult{
+			TerminalID:   "term-new",
+			Channel:      9,
+			Cols:         78,
+			Rows:         20,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface-new",
+			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+			CanResize:    true,
+		},
+	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+
+	if next.History.TerminalID != "term-new" || next.History.Token != "" || len(next.History.Rows) != 0 {
+		t.Fatalf("terminal pool pane attach rebind must invalidate old frozen history window, got %#v", next.History)
+	}
+	if next.CopyMode.TerminalID != "term-new" || next.CopyMode.BoundToken != "" || next.CopyMode.BoundCols != 0 || !next.CopyMode.Empty {
+		t.Fatalf("terminal pool pane attach rebind must clear old frozen copy binding, got %#v", next.CopyMode)
+	}
+}
+
+func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewFloatingTerminal(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	var result state.FloatingCommandResult
+	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-old"},
+		Rect:     state.FloatingRect{X: 4, Y: 2, W: 40, H: 12},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-old", 7, 40, 12, state.TerminalResizeRoleOwner, "surface-old", state.TerminalFloatingViewID("floating-1"), true))
+	root.History = state.HistoryStore{
+		PaneID:      "float-pane",
+		ViewID:      state.TerminalFloatingViewID("floating-1"),
+		TerminalID:  "term-old",
+		Token:       "tok-old",
+		Cols:        40,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+		Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+	}
+	root.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     "float-pane",
+		ViewID:     state.TerminalFloatingViewID("floating-1"),
+		TerminalID: "term-old",
+		BoundToken: "tok-old",
+		BoundCols:  40,
+		ViewRows:   10,
+	}
+
+	next, _ := reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{
+		TerminalID:       "term-new",
+		TargetFloatingID: "floating-1",
+		Result: services.TerminalAttachResult{
+			TerminalID:   "term-new",
+			Channel:      8,
+			Cols:         40,
+			Rows:         12,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface-new",
+			ViewID:       state.TerminalFloatingViewID("floating-1"),
+			CanResize:    true,
+		},
+	}, LiveDeps{Terminal: &services.FakeTerminalService{}})
+
+	if next.History.TerminalID != "term-new" || next.History.Token != "" || len(next.History.Rows) != 0 {
+		t.Fatalf("terminal pool floating attach rebind must invalidate old frozen history window, got %#v", next.History)
+	}
+	if next.CopyMode.TerminalID != "term-new" || next.CopyMode.BoundToken != "" || next.CopyMode.BoundCols != 0 || !next.CopyMode.Empty {
+		t.Fatalf("terminal pool floating attach rebind must clear old frozen copy binding, got %#v", next.CopyMode)
+	}
+}
+
+func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryForNewPaneTerminal(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell(),
+			Session: state.TerminalSessionStore{
+				TerminalID: "term-old",
+				Attached:   true,
+				Cols:       80,
+				Rows:       24,
+			},
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-old",
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"live-new"},
+			},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+				state.DefaultPaneID, "term-old", 4, 78, 20, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true,
+			)),
+			History: state.HistoryStore{
+				PaneID:      state.DefaultPaneID,
+				ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID:  "term-old",
+				Token:       "tok-old",
+				Cols:        78,
+				SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+				Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+			},
+			CopyMode: state.CopyModeStore{
+				Active:     true,
+				PaneID:     state.DefaultPaneID,
+				ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID: "term-old",
+				BoundToken: "tok-old",
+				BoundCols:  78,
+				ViewRows:   20,
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+	)
+
+	if err := runtime.Post(TerminalPoolAttachResultMsg{
+		TerminalID: "term-new",
+		Result: services.TerminalAttachResult{
+			TerminalID:   "term-new",
+			Channel:      9,
+			Cols:         78,
+			Rows:         20,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface-new",
+			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+			CanResize:    true,
+		},
+	}); err != nil {
+		t.Fatalf("post terminal pool attach rebind: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain terminal pool attach rebind: %v", err)
+	}
+
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "old-history") {
+		t.Fatalf("terminal pool pane attach rebind must not keep rendering old frozen history, got %#v", last.Lines)
+	}
+	if !frameContains(last, "authoritative history window pending") {
+		t.Fatalf("terminal pool pane attach rebind should fall back to pending history state, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryForNewFloatingTerminal(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell(),
+			Session: state.TerminalSessionStore{
+				TerminalID: "term-old",
+				Attached:   true,
+				Cols:       120,
+				Rows:       24,
+			},
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-old",
+				Cols:       120,
+				Rows:       24,
+				Lines:      []string{"live-new"},
+			},
+			History: state.HistoryStore{
+				PaneID:      "float-pane",
+				ViewID:      state.TerminalFloatingViewID("floating-1"),
+				TerminalID:  "term-old",
+				Token:       "tok-old",
+				Cols:        40,
+				SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+				Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+			},
+			CopyMode: state.CopyModeStore{
+				Active:     true,
+				PaneID:     "float-pane",
+				ViewID:     state.TerminalFloatingViewID("floating-1"),
+				TerminalID: "term-old",
+				BoundToken: "tok-old",
+				BoundCols:  40,
+				ViewRows:   10,
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+	)
+	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-old"},
+		Rect:     state.FloatingRect{X: 4, Y: 2, W: 40, H: 12},
+	})
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-old", 7, 40, 12, state.TerminalResizeRoleOwner, "surface-old", state.TerminalFloatingViewID("floating-1"), true))
+
+	if err := runtime.Post(TerminalPoolAttachResultMsg{
+		TerminalID:       "term-new",
+		TargetFloatingID: "floating-1",
+		Result: services.TerminalAttachResult{
+			TerminalID:   "term-new",
+			Channel:      8,
+			Cols:         40,
+			Rows:         12,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface-new",
+			ViewID:       state.TerminalFloatingViewID("floating-1"),
+			CanResize:    true,
+		},
+	}); err != nil {
+		t.Fatalf("post terminal pool floating attach rebind: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain terminal pool floating attach rebind: %v", err)
+	}
+
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "old-history") {
+		t.Fatalf("terminal pool floating attach rebind must not keep rendering old frozen history, got %#v", last.Lines)
+	}
+	if runtime.State().CopyMode.TerminalID != "term-new" || runtime.State().CopyMode.BoundToken != "" || runtime.State().History.TerminalID != "term-new" {
+		t.Fatalf("terminal pool floating attach rebind should leave copy mode in pending state for new terminal, state=%#v", runtime.State())
+	}
+	if !frameContains(last, "window pending") {
+		t.Fatalf("terminal pool floating attach rebind should render pending history state, got %#v", last.Lines)
+	}
+}
+
 func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) {
 	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
