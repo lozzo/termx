@@ -62,10 +62,13 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 		t.Fatalf("unexpected input requests %#v", terminal.Inputs)
 	}
 	if len(terminal.Resizes) != 1 || terminal.Resizes[0].Cols != 100 || terminal.Resizes[0].Rows != 40 || terminal.Resizes[0].Channel != 9 {
-		t.Fatalf("unexpected resize requests %#v", terminal.Resizes)
+		t.Fatalf("manual resize must win over stale attach correction, got %#v", terminal.Resizes)
 	}
 	if runtime.State().Session.Cols != 100 || runtime.State().Surface.Cols != 100 {
 		t.Fatalf("resize was not reflected in state %#v", runtime.State())
+	}
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.DesiredCols != 100 || binding.DesiredRows != 40 {
+		t.Fatalf("manual resize should sync active owner binding desired size, got %#v", binding)
 	}
 	last := lastFrame(t, host.Frames())
 	if len(last.Lines) == 0 || !frameContains(last, "$ echo hi") {

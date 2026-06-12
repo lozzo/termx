@@ -248,5 +248,6 @@
   - logical-line search / selection / copy
   - 关键 stale guard
 - `215E1-A` 已补 runtime 高层验收：真实 attach、进入 copy mode、older prepend、resize 本地重排、search、selection、copy 已经能在同一条黑盒链里通过。
-- 当前下一步切到 `215E1-B`：只修主链还会卡住可用性的真实缺口；不再主动扩张新的生命周期或 stale 长尾审计。
+- `215E1-B` 已收掉一个真实 runtime 缺口：手工 `LiveResizeMsg` 现在会同步当前 owner view 的 desired size，不再被 attach correction 的 stale recovery 拉回旧 content rect。
+- 当前仍保持 `215E1-B`：只修主链还会卡住可用性的真实缺口；不再主动扩张新的生命周期或 stale 长尾审计。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。

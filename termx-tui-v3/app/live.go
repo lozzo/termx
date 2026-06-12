@@ -613,6 +613,9 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 	if !root.Session.Attached {
 		return setLiveError(root, "terminal is not attached"), nil
 	}
+	if msg.ViewID == "" {
+		root, msg = adoptActiveOwnerResizeBinding(root, msg)
+	}
 	if msg.Seq == 0 {
 		root.Session = root.Session.RequestResize(msg.Cols, msg.Rows)
 		msg.Seq = root.Session.ResizeRequestSeq
@@ -646,6 +649,29 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 			return LiveResizeResultMsg{Result: result, Cols: msg.Cols, Rows: msg.Rows, Seq: msg.Seq, ViewID: msg.ViewID, Err: err}
 		},
 	}}
+}
+
+func adoptActiveOwnerResizeBinding(root state.Root, msg LiveResizeMsg) (state.Root, LiveResizeMsg) {
+	viewID := root.Session.ViewID
+	if viewID == "" {
+		return root, msg
+	}
+	binding, ok := root.TerminalViews.Views[viewID]
+	if !ok || binding.TerminalID == "" || binding.TerminalID != root.Session.TerminalID {
+		return root, msg
+	}
+	nextViews, decision := root.TerminalViews.RequestViewResize(viewID, msg.Cols, msg.Rows)
+	if !decision.Allowed {
+		return root, msg
+	}
+	root.TerminalViews = nextViews
+	msg.ViewID = viewID
+	// 裸 LiveResizeMsg 如果其实命中当前 owner view，就必须同步 view-local desired size。
+	// 否则 resize 结果回来后，stale recovery 还会拿旧 binding 尺寸把 PTY 拉回去。
+	if decision.Changed {
+		msg.Seq = decision.Seq
+	}
+	return root, msg
 }
 
 func hasResizeControlResult(result services.TerminalResizeResult) bool {
