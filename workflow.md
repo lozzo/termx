@@ -167,16 +167,16 @@
 | 215D1. SK floating group commands | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 已补齐 floating group commands |
 | 215F. SK shortcut integration and tmux harness | 完成 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 已补 runtime 黑盒证据与 tmux smoke |
 | 215E1-A. SK history copy 可用性主链验收 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、相关文档 | 已补高层 runtime 黑盒，证明 attach -> copy mode -> older -> resize 本地重排 -> search -> selection -> copy 主链成立 |
-| 215E1-B. SK history copy 主链缺口修补 | 进行中 | 同上 | 只修会阻塞主验收链通过的问题；不主动扩张到新的长尾黑盒 |
-| 215E1-C. SK history copy 收口与回归 | 待开始 | 同上 | 用一组高层黑盒和必要模块测试证明主链可用，停止继续补长尾语义 |
+| 215E1-B. SK history copy 主链缺口修补 | 完成 | 同上 | 已收掉 attach / resize / 本地 reflow 这类真实会卡主链可用性的缺口，不再继续扩到长尾黑盒 |
+| 215E1-C. SK history copy 收口与回归 | 完成 | 同上 | 已用高层 runtime 黑盒和 core/protocol/tui-v3 联合模块测试证明主链可用，停止继续补长尾语义 |
 | 215E2. SK clipboard paste 主链 | 待开始 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-cli/`、相关文档 | 把显示态 `p/P PASTE` 接上真实主链 |
 | 215E3. SK clipboard history overlay | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 再补完整的 clipboard history overlay |
 
 当前下一步：
 
-- 只做 `215E1-A`
-- 先把 history / copy 主验收链收成一组高层可用性标准
-- 在 `215E1-A` 未完成前，不继续主动补新的协议细缝、生命周期黑盒或 `215E2/215E3`
+- `215E1` 已经收口
+- 下一步切到 `215E2`
+- 不再继续主动补新的 history 长尾黑盒，除非它直接回归当前主链
 
 ## 6. 必做证据
 
@@ -250,5 +250,6 @@
 - `215E1-A` 已补 runtime 高层验收：真实 attach、进入 copy mode、older prepend、resize 本地重排、search、selection、copy 已经能在同一条黑盒链里通过。
 - `215E1-B` 已收掉一个真实 runtime 缺口：手工 `LiveResizeMsg` 现在会同步当前 owner view 的 desired size，不再被 attach correction 的 stale recovery 拉回旧 content rect。
 - `215E1-B` 本轮还收回了一个 attach guard 回归，并把两条过时断言对齐到当前 frozen snapshot 语义：显式 `ViewID` 的首次 attach 不再被误丢；pane size 后 copy mode 继续本地 reflow 当前 frozen history，不再期待第二个 latest。
-- 当前仍保持 `215E1-B`：只修主链还会卡住可用性的真实缺口；不再主动扩张新的生命周期或 stale 长尾审计。
+- `215E1-C` 已完成：当前已有高层 runtime 主验收链，且 `go test ./termx-core-v2/... ./internal/protocol/... ./termx-tui-v3/... -count=1` 已通过，说明从 core 到 protocol 到 tui-v3 的 history/copy 主链当前处于可用状态。
+- 当前下一步切到 `215E2`：开始收口 clipboard paste 主链。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。
