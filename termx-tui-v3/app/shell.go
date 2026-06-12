@@ -1112,6 +1112,10 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 	effects := []Effect{}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
 		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
+		root = invalidateCopyModeForClosedFloating(root, result.ID)
+	}
+	if result.Status == state.FloatingCommandOK {
+		root = invalidateCopyModeForInactiveView(root)
 	}
 	if result.Status == state.FloatingCommandOK && shouldPersistFloatingCommand(command) {
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
@@ -1229,6 +1233,31 @@ func invalidateCopyModeForInactivePane(root state.Root) state.Root {
 	root.History = root.History.InvalidateWindow()
 	root.CopyMode = state.CopyModeStore{}
 	return root
+}
+
+func invalidateCopyModeForClosedFloating(root state.Root, floatingID string) state.Root {
+	if floatingID == "" || !root.CopyMode.Active || root.CopyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
+		return root
+	}
+	root.History = root.History.InvalidateWindow()
+	root.CopyMode = state.CopyModeStore{}
+	return root
+}
+
+func invalidateCopyModeForInactiveView(root state.Root) state.Root {
+	if !root.CopyMode.Active {
+		return root
+	}
+	shell := root.Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		if root.CopyMode.ViewID == state.TerminalFloatingViewID(shell.ActiveFloatingID) {
+			return root
+		}
+		root.History = root.History.InvalidateWindow()
+		root.CopyMode = state.CopyModeStore{}
+		return root
+	}
+	return invalidateCopyModeForInactivePane(root)
 }
 
 func bindWorkbenchSplitTerminalView(root state.Root, previousShell state.ShellStore, command state.WorkbenchCommand, result state.WorkbenchCommandResult) state.Root {
