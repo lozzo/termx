@@ -703,6 +703,27 @@ func TestCopyModeSearchMatchesAcrossReflowRowsOfSameLogicalLine(t *testing.T) {
 	}
 }
 
+func TestCopyModeRefreshQueryMatchesKeepsCurrentActiveMatch(t *testing.T) {
+	copyMode := CopyModeStore{
+		Query:       "beta",
+		Cursor:      CopyPosition{Row: 1, Col: 0},
+		Matches:     []CopyMatch{{StartRow: 0, StartCol: 6, EndRow: 0, EndCol: 10}, {StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 4}},
+		ActiveMatch: 1,
+	}
+
+	copyMode = copyMode.RefreshQueryMatches([]CopyMatch{
+		{StartRow: 1, StartCol: 0, EndRow: 1, EndCol: 4},
+		{StartRow: 2, StartCol: 5, EndRow: 2, EndCol: 9},
+	})
+
+	if copyMode.ActiveMatch != 0 {
+		t.Fatalf("expected refresh to keep active match on current cursor, got %#v", copyMode)
+	}
+	if copyMode.Cursor != (CopyPosition{Row: 1, Col: 0}) {
+		t.Fatalf("expected refresh to keep cursor on current match, got %#v", copyMode.Cursor)
+	}
+}
+
 func TestHistoryRowGraphemeDisplayColumnsUsesAuthoritativeCellWidth(t *testing.T) {
 	row := HistoryRow{Text: "abx", Cells: []HistoryCell{
 		{Text: "ab", Width: 4},

@@ -582,6 +582,21 @@ func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeS
 	return store
 }
 
+// RefreshQueryMatches 在 history 更新后重算 query 命中，但尽量保留当前正在看的
+// active match / cursor；只有找不到原命中时，才退回到第一个 match。
+func (store CopyModeStore) RefreshQueryMatches(matches []CopyMatch) CopyModeStore {
+	store.Matches = cloneCopyMatches(matches)
+	if len(store.Matches) == 0 {
+		store.ActiveMatch = 0
+		return store
+	}
+	index := reflowActiveMatchIndexFromMatches(store.Cursor, store.Matches)
+	store.ActiveMatch = index
+	match := store.Matches[index]
+	store.Cursor = CopyPosition{Row: match.StartRow, Col: match.StartCol}
+	return store
+}
+
 func FindCopyMatches(history HistoryStore, query string) []CopyMatch {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -1062,6 +1077,10 @@ func positionForHistoryLogicalOffset(history HistoryStore, offset historyLogical
 }
 
 func reflowActiveMatchIndex(history HistoryStore, cursor CopyPosition, matches []CopyMatch) int {
+	return reflowActiveMatchIndexFromMatches(cursor, matches)
+}
+
+func reflowActiveMatchIndexFromMatches(cursor CopyPosition, matches []CopyMatch) int {
 	if len(matches) == 0 {
 		return 0
 	}

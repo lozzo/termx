@@ -4305,6 +4305,78 @@ func TestCopyModeLocalReflowResizeKeepsSelectionOnOriginalContent(t *testing.T) 
 	}
 }
 
+func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
+	latest := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		[]state.HistoryRow{
+			{Text: "beta-one", LineID: 20},
+			{Text: "beta-two", LineID: 21},
+		},
+	)
+	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 20}
+	latest.HasMore = true
+	older := historyWindowForApp(
+		state.HistoryWindowPrepend,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "older-prefix", LineID: 10}},
+	)
+	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
+	older.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 21}
+	older.HasMore = true
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: latest}},
+		OlderResponses:  []services.HistoryResult{{Window: older}},
+	}
+	host := NewFakeTerminalHost(16)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	for _, ch := range []string{"b", "e", "t", "a"} {
+		if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: ch}); err != nil {
+			t.Fatalf("send query %q: %v", ch, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain query: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send next match: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain next match: %v", err)
+	}
+	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 1 {
+		t.Fatalf("expected second match before prepend, got %#v", runtime.State().CopyMode)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send older: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain older: %v", err)
+	}
+
+	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 2 {
+		t.Fatalf("older prepend should keep active search match on original content, got %#v", runtime.State().CopyMode)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "match:2/2") {
+		t.Fatalf("expected search status to stay on second match after prepend, got %#v", frame.Lines)
+	}
+}
+
 func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(

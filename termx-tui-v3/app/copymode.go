@@ -419,7 +419,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, msg.Result.Window, nextHistory.Cols)
 	}
 	if root.CopyMode.Query != "" {
-		root.CopyMode = root.CopyMode.SetQuery(root.CopyMode.Query, state.FindCopyMatches(root.History, root.CopyMode.Query))
+		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
 	}
 	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 	return root.Advance(), nil
