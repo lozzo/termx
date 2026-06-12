@@ -201,6 +201,56 @@ func TestWorkbenchStorageChangedReloadsExternalSnapshot(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageLoadInvalidatesFrozenHistoryAndCopyMode(t *testing.T) {
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &services.FakeWorkbenchStorageService{}})
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-old"),
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true)),
+		History: state.HistoryStore{
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-old",
+			Token:      "tok-old",
+			Cols:       80,
+			Rows:       []state.HistoryRow{{Text: "old-history", LineID: 1}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-old",
+			BoundToken: "tok-old",
+			BoundCols:  80,
+			ViewRows:   20,
+		},
+	}
+
+	root, effects := reducer(root, WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+		Version:  9,
+		Found:    true,
+	}})
+
+	if root.CopyMode.Active || root.CopyMode.TerminalID != "" || root.CopyMode.BoundToken != "" {
+		t.Fatalf("workbench load must clear stale copy mode binding, got %#v", root.CopyMode)
+	}
+	if root.History.TerminalID != "term-old" || root.History.Token != "" || len(root.History.Rows) != 0 || root.History.Pending != nil {
+		t.Fatalf("workbench load must invalidate stale frozen history window, got %#v", root.History)
+	}
+	if root.Shell.Workspace.Tabs[0].Panes[0].TerminalID != "term-new" {
+		t.Fatalf("workbench load should still apply external shell snapshot, got %#v", root.Shell)
+	}
+	if len(effects) != 2 {
+		t.Fatalf("restored terminal view should still request list+attach effects, got %#v", effects)
+	}
+}
+
 func TestWorkbenchStorageConflictReloadsLatestSnapshot(t *testing.T) {
 	remoteShell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-remote", Title: "remote", Kind: state.PaneTerminalLive, TerminalID: "term-remote"}, state.SplitDirectionVertical).
@@ -552,5 +602,73 @@ func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t 
 	frame := lastFrame(t, host.Frames())
 	if frameContains(frame, "[󰍀] shell") || !frameContains(frame, "[󰍀] main") {
 		t.Fatalf("restored terminal chrome should use terminal title after startup list, frame=%#v", frame.Lines)
+	}
+}
+
+func TestInteractiveRuntimeWorkbenchReloadDoesNotKeepOldFrozenHistory(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntimeWithWorkbench(
+		state.Root{
+			Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-old"),
+			TerminalViews: state.TerminalViewStore{}.
+				BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true)),
+			History: state.HistoryStore{
+				PaneID:     state.DefaultPaneID,
+				ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID: "term-old",
+				Token:      "tok-old",
+				Cols:       80,
+				Rows:       []state.HistoryRow{{Text: "old-history", LineID: 1}},
+			},
+			CopyMode: state.CopyModeStore{
+				Active:     true,
+				PaneID:     state.DefaultPaneID,
+				ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID: "term-old",
+				BoundToken: "tok-old",
+				BoundCols:  80,
+				ViewRows:   20,
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{},
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial frozen history: %v", err)
+	}
+	if !frameContains(lastFrame(t, host.Frames()), "old-history") {
+		t.Fatalf("expected initial frame to render old frozen history, frames=%#v", host.Frames())
+	}
+
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-new"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-new", 11, 80, 24, state.TerminalResizeRoleFollower, "surface-new", state.TerminalPaneViewID(state.DefaultPaneID), false))
+	if err := runtime.Post(WorkbenchStorageLoadResultMsg{Result: services.WorkbenchStorageLoadResult{
+		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+		Version:  9,
+		Found:    true,
+	}}); err != nil {
+		t.Fatalf("post workbench load result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain workbench load result: %v", err)
+	}
+
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("workbench load must exit stale copy mode, got %#v", runtime.State().CopyMode)
+	}
+	if runtime.State().History.TerminalID != "term-old" || runtime.State().History.Token != "" {
+		t.Fatalf("workbench load must invalidate stale frozen history window, got %#v", runtime.State().History)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "old-history") {
+		t.Fatalf("workbench load must not keep rendering old frozen history, got %#v", last.Lines)
 	}
 }
