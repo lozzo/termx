@@ -242,8 +242,8 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 		store = store.replace(window)
 		return store, len(window.Rows), nil
 	case HistoryWindowPrepend:
-		inserted := len(window.Rows)
-		if inserted == 0 && !window.HasMore {
+		beforeRows := len(store.Rows)
+		if len(window.Rows) == 0 && !window.HasMore {
 			store.Exhausted = ExhaustedMarker{
 				Valid:     true,
 				RequestID: requestID,
@@ -255,6 +255,10 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 			return store, 0, nil
 		}
 		store = store.prepend(window)
+		inserted := len(store.Rows) - beforeRows
+		if inserted < 0 {
+			inserted = 0
+		}
 		return store, inserted, nil
 	default:
 		return store, 0, ErrHistoryWindowMismatch

@@ -129,7 +129,7 @@ func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T
 	store := HistoryStore{
 		TerminalID: "term-1",
 		Token:      "tok-1",
-		Cols:       3,
+		Cols:       6,
 		SourceLines: []HistoryLogicalLine{{
 			Text:          "ghi",
 			Cells:         []HistoryCell{{Text: "ghi", Width: 3}},
@@ -147,7 +147,7 @@ func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T
 	store, err := store.BeginOlder(HistoryPendingRequest{
 		ID:         2,
 		TerminalID: "term-1",
-		Cols:       3,
+		Cols:       6,
 		Token:      "tok-1",
 		Generation: 7,
 		Cursor:     cursor,
@@ -161,7 +161,7 @@ func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T
 		TerminalID: "term-1",
 		Token:      "tok-1",
 		Op:         HistoryWindowPrepend,
-		Cols:       3,
+		Cols:       6,
 		SourceLines: []HistoryLogicalLine{{
 			Text:         "def",
 			Cells:        []HistoryCell{{Text: "def", Width: 3}},
@@ -177,20 +177,21 @@ func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T
 		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
 		HasMore:    false,
 	}
+	beforeRows := len(store.Rows)
 	store, inserted, err := store.ApplyWindow(2, window)
 	if err != nil {
 		t.Fatalf("apply older: %v", err)
 	}
-	if inserted != 1 {
-		t.Fatalf("expected inserted row count to stay authoritative, got %d", inserted)
+	if inserted != len(store.Rows)-beforeRows {
+		t.Fatalf("expected inserted row count to reflect real local reflow delta, got inserted=%d before=%d after=%d", inserted, beforeRows, len(store.Rows))
 	}
 	if len(store.SourceLines) != 1 || store.SourceLines[0].Text != "defghi" || !store.SourceLines[0].ClippedBefore || !store.SourceLines[0].ClippedAfter {
 		t.Fatalf("boundary-overlap prepend should merge clipped source into one logical line, got %#v", store.SourceLines)
 	}
-	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"def", "ghi"}) {
+	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"defghi"}) {
 		t.Fatalf("reflowed rows should stay stable after merged source, got %v", got)
 	}
-	if got := spanRows(store.Lines); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 1}}) {
+	if got := spanRows(store.Lines); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 0}}) {
 		t.Fatalf("merged logical line should produce one span, got %v", got)
 	}
 }
