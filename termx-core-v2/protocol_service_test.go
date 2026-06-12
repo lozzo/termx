@@ -430,6 +430,60 @@ func TestProtocolServiceKeepsOlderWorkingForPreviousFrozenTokenAfterNewLatest(t 
 	}
 }
 
+func TestProtocolServiceKeepsOlderWorkingAcrossTerminalsWithSameFrozenGeneration(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	for _, terminalID := range []string{"term-a", "term-b"} {
+		if _, err := client.Create(context.Background(), protocol.CreateParams{ID: terminalID, Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+			t.Fatalf("create %s: %v", terminalID, err)
+		}
+		if err := server.IngestOutput(context.Background(), terminalID, "one\ntwo\nthree\nfour"); err != nil {
+			t.Fatalf("ingest initial output for %s: %v", terminalID, err)
+		}
+	}
+
+	first, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-a",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("first terminal latest frozen snapshot: %v", err)
+	}
+	second, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-b",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("second terminal latest frozen snapshot: %v", err)
+	}
+	if first.Generation != second.Generation {
+		t.Fatalf("expected same frozen generation for identical terminal history, got first=%d second=%d", first.Generation, second.Generation)
+	}
+	if first.Token == "" || second.Token == "" || first.Token == second.Token {
+		t.Fatalf("frozen tokens must stay unique across terminals even when generation matches, got first=%q second=%q", first.Token, second.Token)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-a",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     first.CursorValid,
+		BeforeLineID:    first.CursorLineID,
+		BeforeRowInLine: first.CursorRow,
+		Token:           first.Token,
+		Generation:      first.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from first terminal after second terminal latest: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from first terminal frozen token, got %#v", older)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseInLineMutation(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

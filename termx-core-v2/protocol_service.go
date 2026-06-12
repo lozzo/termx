@@ -28,6 +28,7 @@ type protocolSession struct {
 	conn          transport.Transport
 	sendMu        sync.Mutex
 	nextCh        atomic.Uint32
+	nextSnapshot  atomic.Uint64
 	mu            sync.RWMutex
 	attachments   map[uint16]protocolAttachment
 	resizeOwners  map[string]uint16
@@ -546,6 +547,7 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 			return nil, err
 		}
 		snapshot := terminal.FreezeSnapshot()
+		snapshot.Token = session.sessionFrozenSnapshotToken(params.TerminalID, snapshot.Token)
 		session.storeFrozenSnapshot(params.TerminalID, snapshot)
 		window = frozenSnapshotLatestWindow(snapshot, cols, limit)
 	}
@@ -1123,6 +1125,14 @@ func (session *protocolSession) storeFrozenSnapshot(terminalID string, snapshot 
 		Snapshot:   snapshot,
 	}
 	session.historyLatest[terminalID] = snapshot.Token
+}
+
+func (session *protocolSession) sessionFrozenSnapshotToken(terminalID string, base string) string {
+	seq := session.nextSnapshot.Add(1)
+	if base == "" {
+		base = "snap"
+	}
+	return fmt.Sprintf("%s:%s:%d", base, terminalID, seq)
 }
 
 func (session *protocolSession) frozenSnapshot(terminalID string, token string) (history.FrozenSnapshot, bool) {
