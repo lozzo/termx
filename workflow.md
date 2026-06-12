@@ -174,11 +174,12 @@
 | 215E1-R1. SK history copy 主链卡顿回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/render/`、相关文档 | 已把 copy history latest/older 改成异步 effect；慢 history 请求下 `Ctrl-V` 会立刻进入 copy mode pending，`PageUp / wheel` 不再同步卡住 runtime 主循环 |
 | 215E1-R2. SK history window 真分页性能回归 | 完成 | `termx-core-v2/history/`、`termx-core-v2/protocol_service.go`、`termx-core-v2/*test.go`、相关文档 | 已把 `history.window` latest/older 从全量投影后切页改成按页倒序收集；frozen snapshot 入口去掉重复 clone，协议 snapshot 投影也不再全量 reflow 后切页 |
 | 215E1-R3. SK history older loading 性能回归 | 完成 | `termx-core-v2/protocol_service.go`、`termx-core-v2/*test.go`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场的 `↑ loading`：当前 copy 会话自己的 stale older 响应会清 pending，frozen snapshot older 改成二分定位 cursor/boundary，并用 10 万行 benchmark 验证单页 older 是微秒级 |
+| 215E1-R4. SK copy mode 上滑可见更新回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已处理真实现场的“上滑 older 返回了但画面没动”：copy mode 上滑先滚已加载历史，拉到 older 后把视口放到新 prepend 的历史页 |
 
 当前下一步：
 
-- `215E1-R3 history older loading 性能回归` 已完成
-- 当前 priority 回到真实用户现场验证 history/copy 是否还存在新的主链阻塞
+- `215E1-R4 copy mode 上滑可见更新回归` 已完成
+- 当前 priority 回到真实用户现场验证 `time python scripts/generate_terminal_stress.py` 下 copy/history 上滑是否可见更新
 - 不继续主动补新的 history 长尾黑盒，除非它直接回归当前主链
 
 ## 6. 必做证据

@@ -369,6 +369,82 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	}
 }
 
+func TestCopyModeWheelUpScrollsLoadedRowsThenRevealsOlderPage(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{
+				{Text: "new-1", LineID: 21},
+				{Text: "new-2", LineID: 22},
+				{Text: "new-3", LineID: 23},
+				{Text: "new-4", LineID: 24},
+				{Text: "new-5", LineID: 25},
+				{Text: "new-6", LineID: 26},
+			},
+		)}},
+		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowPrepend,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{
+				{Text: "old-1", LineID: 11},
+				{Text: "old-2", LineID: 12},
+				{Text: "old-3", LineID: 13},
+			},
+		)}},
+	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 21}
+	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 11}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 11, LastLineID: 26}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(80, 10)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	runtime.state.CopyMode.ViewportTop = 3
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		t.Fatalf("wheel loaded rows: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain local wheel: %v", err)
+	}
+	if len(core.OlderRequests) != 0 {
+		t.Fatalf("wheel up inside loaded history should not request older yet, got %#v", core.OlderRequests)
+	}
+	if runtime.State().CopyMode.ViewportTop != 0 {
+		t.Fatalf("wheel up should first scroll loaded history to top, got %#v", runtime.State().CopyMode)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		t.Fatalf("wheel older: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain older: %v", err)
+	}
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("wheel at top should request older, got %#v", core.OlderRequests)
+	}
+	if runtime.State().CopyMode.ViewportTop != 0 {
+		t.Fatalf("older prepend smaller than viewport should reveal inserted page at top, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "old-1") || !frameContains(last, "old-3") {
+		t.Fatalf("older response should visibly update viewport to prepended rows, got %#v", last.Lines)
+	}
+}
+
 func TestCopyModeDuplicateOlderWhilePendingDoesNotSurfaceError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}

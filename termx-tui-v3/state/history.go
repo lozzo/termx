@@ -129,20 +129,20 @@ type HistoryWindow struct {
 
 // HistoryStore 只保存 authoritative window、请求状态和 exhausted marker。
 type HistoryStore struct {
-	ViewID     string
-	PaneID     string
-	TerminalID string
-	Token      string
-	Cols       int
+	ViewID      string
+	PaneID      string
+	TerminalID  string
+	Token       string
+	Cols        int
 	SourceLines []HistoryLogicalLine
-	Rows       []HistoryRow
-	Lines      []HistoryLineSpan
-	Cursor     HistoryCursor
-	Generation uint64
-	Boundary   HistoryBoundary
-	HasMore    bool
-	Exhausted  ExhaustedMarker
-	Pending    *HistoryPendingRequest
+	Rows        []HistoryRow
+	Lines       []HistoryLineSpan
+	Cursor      HistoryCursor
+	Generation  uint64
+	Boundary    HistoryBoundary
+	HasMore     bool
+	Exhausted   ExhaustedMarker
+	Pending     *HistoryPendingRequest
 }
 
 // ExhaustedMarker 表示某次 older response 证明对应 cursor 已 exhausted。
@@ -512,6 +512,18 @@ func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, af
 	}
 	store.BoundCols = cols
 	store.Empty = false
+	return store
+}
+
+func (store CopyModeStore) RevealPrependedOlderPage(insertedRows int, totalRows int) CopyModeStore {
+	if insertedRows <= 0 || totalRows <= 0 {
+		return store.Scroll(0, totalRows)
+	}
+	visibleRows := copyVisibleRowsForStore(store)
+	// 中文说明：用户主动上滑触发 older 时，prepend 后要把视口放到新插入的那页；
+	// 否则 RebindToReflowedHistory 会保持旧内容位置，用户看到的画面像是没有更新。
+	top := maxCopyInt(0, insertedRows-visibleRows)
+	store.ViewportTop = clampCopyInt(top, 0, maxCopyInt(0, totalRows-visibleRows))
 	return store
 }
 
@@ -1010,9 +1022,9 @@ func cloneCopyMatches(matches []CopyMatch) []CopyMatch {
 }
 
 type historyLogicalOffset struct {
-	lineID   uint64
+	lineID    uint64
 	rowInLine int
-	col      int
+	col       int
 }
 
 func reflowViewportTop(before HistoryStore, after HistoryStore, top int) int {

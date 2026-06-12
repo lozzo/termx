@@ -417,10 +417,10 @@ func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 
 	older := historyWindow(HistoryWindowPrepend, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "old", LineID: 10}, {Text: "older", LineID: 11}})
 	before := HistoryStore{
-		Cols:       80,
+		Cols:        80,
 		SourceLines: []HistoryLogicalLine{{Text: "new", LineID: 20}},
-		Rows:       []HistoryRow{{Text: "new", LineID: 20, RowInLine: 0}},
-		Lines:      []HistoryLineSpan{{LineID: 20, StartRow: 0, EndRow: 0}},
+		Rows:        []HistoryRow{{Text: "new", LineID: 20, RowInLine: 0}},
+		Lines:       []HistoryLineSpan{{LineID: 20, StartRow: 0, EndRow: 0}},
 	}
 	after := HistoryStore{
 		Cols: 100,
@@ -516,6 +516,20 @@ func TestCopyModeAcceptOlderShiftsCursorMarkAndSelectionWithPrependedRows(t *tes
 	}
 	if copyMode.BoundToken != "tok-older" || copyMode.BoundCols != 90 {
 		t.Fatalf("expected authoritative binding to update with older accept, got %#v", copyMode)
+	}
+}
+
+func TestCopyModeRevealPrependedOlderPageShowsNewRows(t *testing.T) {
+	copyMode := CopyModeStore{Active: true, ViewRows: 5, ViewportTop: 8}
+	copyMode = copyMode.RevealPrependedOlderPage(8, 30)
+
+	if copyMode.ViewportTop != 5 {
+		t.Fatalf("expected viewport to show tail of inserted older page, got %d", copyMode.ViewportTop)
+	}
+
+	copyMode = (CopyModeStore{Active: true, ViewRows: 20}).RevealPrependedOlderPage(8, 30)
+	if copyMode.ViewportTop != 0 {
+		t.Fatalf("small inserted page should stay at top, got %d", copyMode.ViewportTop)
 	}
 }
 
@@ -856,14 +870,14 @@ func historyWindow(
 		lastLine = rows[len(rows)-1].LineID
 	}
 	window := HistoryWindow{
-		TerminalID: terminalID,
-		Token:      token,
-		Op:         op,
-		Cols:       cols,
+		TerminalID:  terminalID,
+		Token:       token,
+		Op:          op,
+		Cols:        cols,
 		SourceLines: historyLogicalLinesFromRows(rows),
-		Rows:       rows,
-		Generation: generation,
-		Boundary:   HistoryBoundary{FirstLineID: firstLine, LastLineID: lastLine},
+		Rows:        rows,
+		Generation:  generation,
+		Boundary:    HistoryBoundary{FirstLineID: firstLine, LastLineID: lastLine},
 	}
 	if len(rows) > 0 {
 		window.Lines = []HistoryLineSpan{{LineID: firstLine, StartRow: 0, EndRow: len(rows) - 1}}

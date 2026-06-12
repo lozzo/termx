@@ -149,7 +149,7 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		next, effects := beginCopyModeLatest(root, deps)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentRequestOlder:
-		next, effects := beginCopyModeOlder(root, deps)
+		next, effects := reduceCopyModeScrollOlder(root, deps)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentExitCopyMode:
 		// 中文说明：退出 copy mode 后，任何仍在飞的 authoritative history 请求都不能再回填
@@ -200,12 +200,23 @@ func reduceCopyModeMouseInput(root state.Root, event input.InputEvent) (state.Ro
 		return root, false
 	}
 	switch event.Mouse {
+	case input.MouseWheelUp:
+		root.CopyMode = root.CopyMode.Scroll(-copyModePageRows(root.CopyMode), len(root.History.Rows))
+		return root.Advance(), true
 	case input.MouseWheelDown:
 		root.CopyMode = root.CopyMode.Scroll(copyModePageRows(root.CopyMode), len(root.History.Rows))
 		return root.Advance(), true
 	default:
 		return root, false
 	}
+}
+
+func reduceCopyModeScrollOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
+	if root.CopyMode.Active && root.CopyMode.ViewportTop > 0 {
+		root.CopyMode = root.CopyMode.Scroll(-copyModePageRows(root.CopyMode), len(root.History.Rows))
+		return root.Advance(), nil
+	}
+	return beginCopyModeOlder(root, deps)
 }
 
 func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyModeDeps) (state.Root, []Effect, bool) {
@@ -469,6 +480,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
 	} else {
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, msg.Result.Window, nextHistory.Cols)
+		root.CopyMode = root.CopyMode.RevealPrependedOlderPage(inserted, len(nextHistory.Rows))
 	}
 	if root.CopyMode.Query != "" {
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
