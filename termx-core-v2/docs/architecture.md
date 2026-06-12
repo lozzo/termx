@@ -29,8 +29,8 @@ logical line 是解决这些约束的最小稳定单位：写入和落盘按 log
 - committed history 与 mutable frontier 是同一批 logical line 的索引、状态和可变边界，不是两套模型。
 - 历史存储必须支持长期保留和按需分页；不能要求 resize 时把全部历史读入内存并全量重排。
 - 实时当前屏幕、snapshot、grid viewport 可以继续作为 live surface 表达，但不能成为 committed history truth。
-- `termx-tui-v3` 只消费 core-v2 返回的 authoritative history window，不本地重建历史。
-- copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative history window 工作。
+- `termx-tui-v3` 只消费 core-v2 返回的 authoritative history 数据；普通模式消费按需投影的 history window，copy mode 消费冻结的 logical-line snapshot。
+- copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 authoritative logical-line snapshot / history window contract 工作。
 
 ## 3. 设计原则
 
@@ -231,7 +231,7 @@ reclaim 的含义是把 committed suffix 从 index 边界撤回到 mutable front
 
 ### 5.6 HistoryWindow
 
-`HistoryWindow` 是 `HistoryTrack` 对 TUI 和协议层输出的 authoritative projection。
+`HistoryWindow` 是 `HistoryTrack` 对 TUI 和协议层输出的 authoritative projection。普通历史浏览可以直接消费按当前 `cols` 投影的 visual rows；copy mode 也可以选择在进入时请求冻结 logical-line snapshot，再由客户端本地重排。
 
 至少包含：
 
@@ -252,11 +252,19 @@ reclaim 的含义是把 committed suffix 从 index 边界撤回到 mutable front
 - first/last logical line boundary
 - timestamp
 
-latest window 可以投影 committed tail 和 eligible mutable frontier。older cursor 只能基于 committed index 推进；mutable frontier 不得让 TUI 自行推断 committed depth。
+如果用于 copy mode frozen snapshot，还必须满足：
+
+- payload 足以让客户端在本地按任意 pane `cols` 重新 wrap，而不丢失 logical line truth。
+- logical line text/cells/runs、stable logical line ids、clipping 边界和 copy 所需 metadata 必须完整可重放。
+- frozen snapshot token 必须稳定绑定这次 copy 会话，后续 older 请求继续基于该 token / boundary 拉更早 logical lines。
+
+latest window 可以投影 committed tail 和 eligible mutable frontier。older cursor 只能基于 committed index 推进；mutable frontier 不得让 TUI 自行推断 committed depth。若客户端请求 frozen snapshot，core-v2 负责冻结本次 copy 会话的 logical-line 边界与 token，但不再为该会话后续每次本地宽度变化重复做 visual reflow。
 
 ## 6. HistoryTrack 输入事件
 
 `HistoryTrack` 的输入只能是历史语义事件。
+
+copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个抽象词，还必须把“什么语义会 seal、什么语义会 committable、什么语义会 committed”写成明确状态机，并由 core 自己维护判定辅助信息。
 
 ### 6.1 事件路由与事务边界
 
@@ -282,6 +290,36 @@ latest window 可以投影 committed tail 和 eligible mutable frontier。older 
 
 `non-history-boundary` 只能表达事务边界和 stale signal，不能替代 `mutate-frontier`、`reset-frontier`、`commit-frontier`、`reclaim-committed-suffix`、`hide-frontier`、`truncate-committed-history`、`force-commit-frontier` 等具体 history mutation 事件。
 
+### 6.2.1 line 状态机与 commit 条件
+
+为了支持 frozen snapshot 和后续本地 reflow，core-v2 必须把 line 状态明确为至少这几类：
+
+- `open`：当前仍在追加写入的 active line。
+- `sealed`：已经遇到明确封口语义，但当前 primary screen 仍可能持有它。
+- `committable`：已 sealed，且当前 primary screen 已不再持有它；此时允许进入 committed history。
+- `committed`：已经进入 `CommittedHistoryIndex`。
+- `reclaimed`：原 committed line 因 resize grow 或其他语义被撤回到 frontier，再次变为可修改。
+
+第一版必须明确这些基础语义：
+
+- `\n`：seal 当前 active line。
+- `\r`：不 seal、不 commit；只改变后续写入位置，后续覆写仍作用于当前可变区域。
+- auto-wrap：只改变 visual projection，不 seal logical line。
+- 覆写、erase、cursor move：如果目标仍在可变区域，只能表达为 `mutate-frontier`。
+- process exit：对当前 primary frontier 执行 `force-commit-frontier`。
+
+也就是说，`newline` 只表达“封口”，不自动等于“沉淀”；真正进入 committed history 还必须满足 line 已不再被当前 primary screen 持有。
+
+### 6.2.2 primary screen ownership ledger
+
+为了知道一条 sealed line 何时真正可 commit，core-v2 需要一份只用于判定的 primary screen ownership ledger：
+
+- 它记录当前 primary screen 上哪些 visible row 仍归属于哪些 logical line。
+- ledger 不是 history truth，也不是 live surface snapshot；它只是 commit 判定辅助结构。
+- 当一条 line 已 sealed 且 ledger 中已经没有任何 row 归它所有时，这条 line 才能从 `sealed` 进入 `committable`，再被 `commit-frontier` 提交。
+- shrink resize 只能把仍可变的 line 从 visible ownership 转为 hidden frontier ownership，不能借机提前 committed。
+- grow resize / reclaim 会让某些原 committed line 再次进入 mutable ownership，此时后续修改必须以新版本表达，不能污染仍被 snapshot 引用的旧版本。
+
 ### 6.3 resize 语义
 
 - resize 本身不是历史创建事件。
@@ -292,6 +330,11 @@ latest window 可以投影 committed tail 和 eligible mutable frontier。older 
 - resize 后 active history window 必须通过 new generation 或 new token 失效。
 - resize 后 TUI 应通过 latest replace 获取新的 authoritative history window。
 - resize 不得从 resized snapshot 或 grid viewport 重建 committed history。
+
+对于 frozen snapshot 模式，还要增加：
+
+- resize 不改变 snapshot token、committed upper bound 或 older boundary。
+- live resize 只影响 live surface 和未来 commit 判定，不得 retroactively 改写已冻结 snapshot。
 
 ### 6.4 clear / erase / full replace 语义
 
@@ -312,6 +355,23 @@ latest window 可以投影 committed tail 和 eligible mutable frontier。older 
 
 - 进入 alt-screen 时 primary `HistoryTrack` 冻结。
 - alt-screen 期间输出只影响 alt `LiveSurfaceTrack`，不进入 primary history。
+
+### 6.6 frozen snapshot / pagination contract
+
+copy mode 进入后，core-v2 需要暴露一个比“当前 cols 下的 visual rows”更稳定的 contract：
+
+- `snapshot_token`
+- `committed_upper_bound`
+- `frozen_frontier_lines`
+- 第一批 logical-line payload
+- `older_boundary`
+
+它的要求是：
+
+- snapshot token 必须固定绑定这次 copy 会话。
+- 后续 live append 不得进入这次 snapshot 的可见范围。
+- 如果 live 需要修改仍被 snapshot 引用的 frontier line，必须做 line-level copy-on-write；旧版本继续服务 snapshot，新版本服务 live。
+- older 请求继续带 `snapshot_token + boundary` 回 core 拉更早 logical lines，而不是按某个 client `cols` 预投影后的 rows 拉取。
 - 退出 alt-screen 时恢复 primary surface，不把 alt 内容混入 primary history。
 - process exit 是 primary history 的 mutability 边界。
 - process exit 时 primary `MutableFrontier` 必须先 `force-commit-frontier`。

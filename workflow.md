@@ -144,13 +144,14 @@
 ### 4.2 tui-v3 只消费 authoritative history
 
 - `termx-tui-v3` 不拥有 committed history truth。
-- `HistoryStore` 只保存 core-v2 返回的 authoritative window、pending 状态和 exhausted 信息。
-- `CopyModeStore` 只保存交互态：active view、terminal id、cursor、selection、bound token、bound cols/rows。
-- copy mode 缺 window 时，只能显示 pending、empty 或 error，不能从 live surface、snapshot 或本地 VTerm scrollback fallback。
+- `HistoryStore` 只保存 core-v2 返回的 authoritative logical-line 历史快照、pending 状态和 exhausted 信息。
+- `CopyModeStore` 只保存交互态：active view、terminal id、cursor、selection、frozen token 和当前本地投影 cols/rows。
+- copy mode 缺冻结快照时，只能显示 pending、empty 或 error，不能从 live surface、snapshot 或本地 VTerm scrollback fallback。
 
 例子：
 
 - copy mode 正在等 `history.window` 响应时，屏幕上 live surface 已经有内容，也不能拿那几行 live 内容凑一个“临时历史”出来。
+- copy mode 一旦进入并拿到冻结快照，后续 pane 变窄时可以在 TUI 本地按新宽度重新排版；但这批可排版的数据仍然必须来自 core-v2 的 authoritative logical-line 快照。
 
 ### 4.3 terminal 和 terminal view 不是一回事
 
@@ -206,7 +207,7 @@
 | 背景里程碑：0-215H3 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、`termx-proto/`、相关文档 | 默认入口、runtime、styled render framework、TerminalView/Attachment 基线、resize ownership、history MVP H1-H3 都已经收口；更细的历史细节需要时去看 git 提交和架构文档 |
 | 215D1. SK floating group commands | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 已补齐 floating `v ALL`、`= FIT`、`s AUTO-FIT` 与 overview `s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE`；全部进入 reducer-owned floating state 与统一 `FloatingCommand`，`FIT/AUTO-FIT` 基于 terminal live/session 尺寸工作，auto-fit 在后续 live 尺寸变化时会刷新 floating rect；相关 reducer/render/storage harness 已通过 |
 | 215F. SK shortcut integration and tmux harness | 完成 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 已补 runtime 黑盒证据：floating overview/summon/show-all/collapse-all/close、terminal pool delete、同 terminal owner/follower resize 与 pane close 恢复都走真实 reducer/effect/message；并补 tmux owner/follower emoji-dots smoke 与 CLI close-pane resize 稳定性回归 |
-| 215E1. SK history copy 主链收口 | 进行中 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 先只做明早能直接用的主链：进入 copy/history、向 core-v2 请求 authoritative `HistoryWindow`、浏览/翻页、选择并复制到系统剪贴板，同时把内部 pending/stale 背压从用户错误里藏起来。例子：连续按 `PageUp` 或 resize rebind 时，就算上一个请求还在飞，也只能继续显示 pending/history 内容，不能冒 `history request pending` 假错误 |
+| 215E1. SK history copy 主链收口 | 进行中 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、相关文档 | 改成完整 copy mode 冻结快照模型：先补清楚 line 何时 seal、何时 committable、何时 committed，再由 core-v2 返回 authoritative logical-line snapshot，TUI 本地负责展示、重排、搜索、选择、复制；older 分页继续回 core 按 snapshot token/boundary 拉更早 logical lines。例子：同一份冻结历史在窄 pane 里可排成 5 行，在宽 pane 里可排成 3 行；变的是客户端投影，不是历史 truth |
 | 215E2. SK clipboard paste 主链 | 待开始 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-cli/`、相关文档 | 把显示态 `p/P PASTE` 接上真实主链：从宿主 paste/clipboard 输入拿文本，按 active terminal view 路由到 terminal input，处理 bracketed paste 和错误反馈。例子：焦点在 pane A 时 paste，只能发到 pane A 对应 terminal，不能误发到别的 pane |
 | 215E3. SK clipboard history overlay | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 再补完整的 clipboard history overlay，包括列表、过滤、选择、粘贴/新建/删除等产品壳。这个切片不负责 authoritative terminal history，本质上是独立的 clipboard UI |
 
@@ -214,7 +215,7 @@
 
 - `215D1 floating group commands` 已完成
 - `215F shortcut integration and tmux harness` 已完成
-- `215E1 history copy 主链收口` 现在是当前切片，先把看历史和复制收口；当前第一步先消掉 `history request pending` 这类误导性错误泄漏
+- `215E1 history copy 主链收口` 现在是当前切片，先把 commit/seal 语义、ownership ledger、snapshot contract、TUI 本地 reflow 与 older 分页全链路写清楚，再开始改实现
 - `215E2 clipboard paste 主链`、`215E3 clipboard history overlay` 继续后排
 
 ## 6. 必做证据
@@ -235,11 +236,26 @@
 
 - latest 用 replace，older 用 prepend。
 - exhausted、token/generation/cursor/boundary stale guard 是对的。
-- 同一份历史在不同 `cols` 下能正确重投影。
+- 同一份冻结 logical-line 历史可以被不同客户端或同一客户端在不同 `cols` 下本地重投影。
 
 例子：
 
-- `80` 列请求拿到的 older response，不能在 `56` 列的 pane 里继续复用。
+- copy mode 在 `80` 列进入后拿到冻结快照，之后 pane 缩到 `56` 列时，TUI 可以用同一份冻结 logical-line 数据本地重排；但如果用户继续请求 older，仍然必须带着冻结 token/boundary 回 core 拉更早的 logical lines。
+
+### 6.3 history copy 全链路
+
+至少要证明：
+
+- `\n`、`\r`、覆写、erase、auto-wrap、scroll、resize、exit 这些终端语义，会把 line 明确推进到 `open / sealed / committable / committed / reclaimed` 等状态，而不是只停留在模糊的 frontier 抽象。
+- core 拥有 primary screen ownership ledger，并且只有在 line 已 sealed 且 screen 不再持有它时，才允许它进入 committed history。
+- 进入 copy mode 后，core 返回 frozen snapshot token、committed upper bound、frozen frontier 和 older boundary；后续新 live 输出不会污染这个 snapshot。
+- TUI 只对 frozen logical-line snapshot 做本地重排和展示，不从 live surface 或旧 rows 反推历史。
+- TUI resize 后只做本地 reflow；older 不足时继续带 snapshot token / boundary 回 core 拉更多 logical lines。
+
+例子：
+
+- `hello\rworld` 不应因为出现了 `\r` 就提前 committed；它仍属于可变区域，直到明确 seal + 脱离 screen ownership 才能沉淀。
+- copy mode 打开后，terminal 又打印了 50 行新输出；live pane 能看到它们，但 frozen snapshot 继续只看到进入 copy mode 那一刻的上界。
 
 ### 6.3 tui-v3
 

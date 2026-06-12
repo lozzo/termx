@@ -10,13 +10,13 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 
 - 沿用 tuiv2 中已经稳定的能力和行为经验。
 - 重建模块边界，让 app shell、state、services、render、history、copy mode 各自有明确职责。
-- 把唯一必须改的历史/copy mode 路径设计成 core-v2 authoritative history window 的消费者。
+- 把唯一必须改的历史/copy mode 路径设计成 core-v2 authoritative logical-line 历史的消费者：普通浏览仍可消费 history window，copy mode 优先消费冻结 logical-line snapshot。
 - 避免继续复制 tuiv2 的单体 app model 和 snapshot/grid viewport history fallback。
 
 ## 2. 设计目标
 
 - `termx-tui-v3` 不拥有 committed history truth。
-- copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 core-v2 `HistoryWindow` 工作。
+- copy mode、鼠标滚轮、page up/down、older prepend、latest replace、stale response guard 都围绕 core-v2 authoritative logical-line contract 工作；进入 copy mode 后优先使用冻结 snapshot，本地按 pane 宽度重排。
 - 普通实时终端显示可以继续消费 live surface snapshot/grid viewport。
 - TUI 内部状态和副作用分离：state reducer 不做 IO，service/effect 不直接绕过 message path 修改 UI state。
 - renderer 只消费 render view-model，不读取 runtime、history source 或 protocol client。
@@ -316,14 +316,14 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 
 ### 8.3 HistoryStore
 
-`HistoryStore` 是 reducer-owned 的纯状态，保存 core-v2 返回的 authoritative history window、请求状态和 exhausted marker。它不保存 copy mode 交互态。
+`HistoryStore` 是 reducer-owned 的纯状态，保存 core-v2 返回的 authoritative history 数据、请求状态和 exhausted marker。它不保存 copy mode 交互态。
 
 至少包含：
 
 - terminal id
 - core window token
 - generation
-- rows
+- rows 或 frozen logical-line payload
 - logical line spans
 - stable logical line ids
 - current older cursor / before cursor
@@ -334,12 +334,12 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - pending request cursor / boundary / cols
 - exhausted older marker
 
-`HistoryStore` 不保存 viewport top、copy cursor、selection anchor/focus 或 auto-scroll 状态；这些都属于 `CopyModeStore`。
+`HistoryStore` 不保存 viewport top、copy cursor、selection anchor/focus 或 auto-scroll 状态；这些都属于 `CopyModeStore`。如果 copy mode 采用 frozen snapshot，`HistoryStore` 保存的是“冻结时拿到的 logical-line truth + older 分页边界”，不是每次 pane 宽度变化后都重新从 core 拿一份新 rows。
 
 必须区分两个 token：
 
 - local request id：TUI 为每次 history 请求生成，只用于把 async response 关联回当前 pending request。
-- core window token：core-v2 返回的 authoritative window token，用于后续 older request 和 stale guard。
+- core window token：core-v2 返回的 authoritative window token 或 frozen snapshot token，用于后续 older request 和 stale guard。
 
 history service 只能发起请求并把 response 映射成 message，不能在 service 层决定 stale 接纳。latest/older response 的接纳必须回到 reducer，由 `HistoryStore` 使用 local request id、core window token、generation、current older cursor、first/last logical boundary、cols 校验。
 
@@ -347,7 +347,7 @@ history service 只能发起请求并把 response 映射成 message，不能在 
 
 ### 8.4 CopyModeStore
 
-`CopyModeStore` 只保存 copy mode 的交互态。
+`CopyModeStore` 只保存 copy mode 的交互态和本地投影状态。
 
 - active pane id
 - active view id 或 attachment id
@@ -357,17 +357,17 @@ history service 只能发起请求并把 response 映射成 message，不能在 
 - viewport top
 - selection anchor/focus
 - auto-scroll state
-- bound core window token
-- bound cols
+- frozen core token
+- 当前本地投影 cols
 - pending/empty display state
 
-Copy mode 不读取 local VTerm scrollback，不用 wrapped rows 拼 logical line，不维护本地 committed depth。
+Copy mode 不读取 local VTerm scrollback，不用 live surface 拼 logical line，不维护本地 committed depth；但在拿到 frozen logical-line snapshot 后，可以在客户端本地按当前 pane 宽度重排 visual rows。
 
 copy mode 绑定的是发起 copy 的 pane/floating view 与 terminal history truth：
 
-- `TerminalID` 决定 authoritative `HistoryWindow` 来源。
+- `TerminalID` 决定 authoritative history / frozen snapshot 来源。
 - view id / pane id 决定 content rect cols、view rows、focus、selection 和 UI overlay 位置。
-- 同一 terminal 的两个 view 可以用不同 cols 分别 rebind latest window；一个 view 的 resize/rebind 不得覆盖另一个 view 的 copy 交互态。
+- 同一 terminal 的两个 view 可以各自拿到自己的 frozen snapshot，并在本地按不同 cols 重排；一个 view 的本地 reflow 不得覆盖另一个 view 的 copy 交互态。
 - view 被 detach/close 时，绑定该 view 的 copy mode 必须退出或转为 pending/error；不得 silently fallback 到同 terminal 的其它 view。
 
 ## 9. 消息和副作用架构
@@ -461,7 +461,7 @@ CopyMode selection model
 copy text assembled by logical line spans
 ```
 
-clipped span 不能被当作完整 logical line。相邻片段只有在 stable logical line id 和 clipping 关系连续时才能拼接。
+clipped span 不能被当作完整 logical line。相邻片段只有在 stable logical line id 和 clipping 关系连续时才能拼接。若 copy mode 使用 frozen snapshot，本地重排也必须继续遵守这条规则，不能把截断片段误拼成新的历史 truth。
 
 ## 11. Render 架构
 
@@ -614,17 +614,46 @@ history response 的接纳规则：
 - op 由 core-v2 决定。
 - stale guard 只能使用 core window token、generation、cursor、logical boundary。
 - 空 older exhausted 必须绑定 local request id、core window token、请求 cursor 和 cols。
-- `history.window` response 是 terminal-scoped authoritative payload，不回显 pane/view/workspace truth；TUI 只能用本地 pending request 把 response 重新绑定回发起 copy 的 pane/view。
+- `history.window` response 是 terminal-scoped authoritative payload，不回显 pane/view/workspace truth；TUI 只能用本地 pending request 把 response 重新绑定回发起 copy 的 pane/view。若 copy mode 改为 frozen snapshot，协议层仍然保持 terminal-scoped，不把 pane/view truth 推进 core。
 - `HistoryStore` 可以保存本地回填后的 pane/view 绑定用于 reducer/render，但这些字段不是 protocol truth；不能要求 core-v2 在 history payload 中理解 pane、floating、tab 或 attachment lifecycle。
+
+frozen snapshot 模式下，TUI 要把 history 流程拆成两层：
+
+- core 负责：snapshot token、committed upper bound、older boundary、logical-line payload、stale guard。
+- TUI 负责：按当前 pane 宽度本地 reflow、viewport、search、selection、copy assemble。
 
 resize 接纳规则：
 
-- TUI 必须记录 history request 使用的 cols。
-- terminal cols 改变后，当前 history window、core window token、copy selection 和 pending older request 都必须失效。
-- resize 后 TUI 不允许本地 reflow 旧 history rows。
-- resize 后 copy mode 如仍保持打开，只能进入 pending/empty 状态并请求 core-v2 latest replace。
-- 旧 cols 的 latest/older response 必须拒绝。
-- page up/down 在等待新 latest replace 时不得从 live surface 或旧 window 推断历史。
+- TUI 必须记录 copy mode 进入时拿到的 frozen token / boundary，以及当前本地投影 cols。
+- terminal cols 改变后，普通 history window 仍然可以失效重绑；但已经冻结的 copy mode snapshot 不必失效。
+- resize 后 TUI 允许对 frozen logical-line snapshot 做本地 reflow。
+- resize 不得改变 frozen snapshot 的 logical-line truth、selection truth 或 older 边界。
+- 继续请求 older 时，必须继续带着 frozen token / boundary 回 core 拉更早 logical lines。
+- page up/down 在等待 older response 时不得从 live surface 推断历史，但可以继续基于当前 frozen snapshot 本地重排已加载部分。
+
+### 12.1 history copy 全流程
+
+冻结快照模式下，TUI 的完整链路应该是：
+
+1. 用户进入 copy mode。
+2. TUI 向 core 请求 frozen snapshot latest。
+3. core 返回 snapshot token、上界、第一批 logical lines 和 older boundary。
+4. `HistoryStore` 保存 frozen logical-line payload；`CopyModeStore` 保存本地 viewport/cursor/selection 与当前投影 cols。
+5. `RenderVMBuilder` 按当前 pane content rect 宽度把 frozen logical lines 本地 reflow 成 visual rows。
+6. 用户 resize pane 时，TUI 只重排本地 rows，不回 core 请求新投影。
+7. 当本地已加载的 logical lines 不够支撑继续上翻时，TUI 再带着 `snapshot_token + boundary` 请求 older。
+8. core 返回更老的 logical lines，TUI prepend 到 frozen payload，再次本地 reflow。
+
+### 12.2 TUI 侧必须补的实现阶段
+
+实现上按这个顺序推进：
+
+1. 先接 core frozen snapshot latest/older contract。
+2. 再把 `HistoryStore` 从“主要保存 rows”改成“保存 logical-line payload + boundary + token”。
+3. 再在 `RenderVMBuilder` 里加入 local reflow projector，把 logical lines 按当前 pane `cols` 投成 visual rows。
+4. 最后再把 search、selection、copy text assemble 全部切到 reflow 后的 row/line span 投影上。
+
+第一版不要求一上来做 chunk-level COW；只要 snapshot 与 live 的隔离已经靠 line-level copy-on-write 成立即可。
 
 ## 13. 包边界硬约束
 
