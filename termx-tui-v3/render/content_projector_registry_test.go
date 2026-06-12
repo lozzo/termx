@@ -17,6 +17,7 @@ func TestContentProjectorRegistryCoversProductContentKinds(t *testing.T) {
 		ContentTerminalPicker,
 		ContentTerminalPool,
 		ContentWorkbenchTree,
+		ContentClipboardHistory,
 		ContentPrompt,
 		ContentHelp,
 		ContentPlaceholder,

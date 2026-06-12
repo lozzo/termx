@@ -169,6 +169,40 @@ func TestUIInputReducerTerminalPickerDeleteKeysTrimQuery(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerOpensClipboardHistoryFromCopyModeH(t *testing.T) {
+	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Clipboard: &services.FakeClipboardService{}, Terminal: &services.FakeTerminalService{}, Rows: 20})
+	root := state.Root{
+		CopyMode: state.CopyModeStore{Active: true},
+		Clipboard: state.ClipboardStore{
+			Entries: []state.ClipboardEntry{{ID: "clip:1", Title: "alpha", Text: "alpha", Preview: "alpha"}},
+		},
+	}
+
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "H"}})
+	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayClipboardHistory {
+		t.Fatalf("expected clipboard history overlay, got %#v", next.Shell.Overlay)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("expected handled effect only, got %#v", effects)
+	}
+}
+
+func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T) {
+	inputReducer := NewUIInputReducer()
+	root := state.Root{
+		Shell: state.DefaultShell().OpenClipboardHistory(),
+		Clipboard: state.ClipboardStore{
+			Entries: []state.ClipboardEntry{{ID: "clip:1", Title: "alpha", Text: "alpha", Preview: "alpha"}},
+		},
+	}
+
+	_, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
+	assertContentActionEffect(t, effects, render.ActionClipboardHistoryEdit)
+
+	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x18", Ctrl: true}})
+	assertContentActionEffect(t, effects, render.ActionClipboardHistoryDelete)
+}
+
 func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

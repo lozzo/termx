@@ -212,6 +212,8 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 	}
 	if options.CopyModeActive && event.Key == KeyChar && !event.Ctrl && !event.Alt && !event.Shift {
 		switch event.Char {
+		case "H":
+			return Intent{Kind: IntentOpenClipboardHistory, Event: event}
 		case "p":
 			return Intent{Kind: IntentPasteLastCopy, Event: event}
 		case "P":

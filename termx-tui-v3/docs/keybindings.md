@@ -178,12 +178,12 @@
 | floating | `o OVERVIEW`、`1-9 SUMMON` | 已实现 | overview 是 reducer-owned overlay state；floating mode 与 overview content action 统一走 `FloatingCommandSummon` |
 | floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 已实现 | 统一走 `FloatingCommandToggleAll`、`FloatingCommandFit`、`FloatingCommandToggleAutoFit`；fit 基于当前 terminal live/session 尺寸，auto-fit 会在后续 live 尺寸变化时自动刷新 floating rect |
 | display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 已核验 | 已走 authoritative `HistoryWindow` 上的 copy reducer；`Enter` 复制 selection 后退出 copy mode；见 `termx-tui-v3/app/integration_test.go` |
-| display | `p/P PASTE`、`H HISTORY` | 阻塞 | clipboard paste/history overlay 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
+| display | `p/P PASTE`、`H HISTORY` | 已实现 | `p` paste 最近一次 copy，`P` 读 system clipboard，`H` 打开 clipboard history overlay；都走 reducer/effect 主链 |
 | picker | `Tab SPLIT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 已实现 | 键盘分发复用 selected item、`ActionSpec` 和 `ShellContentActionMsg`；`Ctrl-X` 走 terminal inventory remove service/effect/result path，不伪装成 kill |
 | terminal manager | `Ctrl-T TAB`、`Ctrl-O FLOAT`、`Ctrl-E EDIT`、`Ctrl-K KILL`、`Ctrl-X DELETE` | 已实现 | attach tab/floating、edit、kill、delete 均走 overlay action/reducer/effect；delete 成功后清理 TerminalView、pane/floating binding、session/live surface |
 | workspace picker | `Ctrl-N NEW`、`Ctrl-R RENAME`、`Ctrl-X REMOVE`、`Ctrl-D DETACH`、`Ctrl-Z ZOOM` | 已实现 | Workbench Tree 键盘动作统一复用 content action reducer；detach 同步清理 pane terminal view binding |
 | floating overview | `Up/Down`、`Enter OPEN`、`1-9 SUMMON`、`s SHOW ALL`、`c COLLAPSE ALL`、`x CLOSE`、`Esc BACK` | 已实现 | selection/open/summon/show-all/collapse-all/close 都走 reducer-owned floating overview state 与统一 `FloatingCommand` |
-| clipboard history | 全部 | 阻塞 | 依赖 history 技术，今天不重启、不排入当前连续推进队列 |
+| clipboard history | 全部 | 已实现 | 支持 filter、paste、edit、delete；overlay 只消费 reducer-owned clipboard history，不直接做系统 clipboard IO |
 
 ## 未展示但可触发
 

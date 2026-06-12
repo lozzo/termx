@@ -54,6 +54,12 @@ type CopyModePasteResultMsg struct {
 
 func (CopyModePasteResultMsg) isMsg() {}
 
+type CopyModePasteTextMsg struct {
+	Text string
+}
+
+func (CopyModePasteTextMsg) isMsg() {}
+
 type CopyModeSetQueryMsg struct {
 	Query string
 }
@@ -112,6 +118,8 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 				return root.Advance(), nil
 			}
 			return root, nil
+		case CopyModePasteTextMsg:
+			return reduceCopyModePasteText(root, deps, msg.Text)
 		case CopyModeSetQueryMsg:
 			root.CopyMode = root.CopyMode.SetQuery(msg.Query, state.FindCopyMatches(root.History, msg.Query))
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
@@ -151,6 +159,15 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		}
 		root.CopyMode = state.CopyModeStore{}
 		return root.Advance(), []Effect{handledEffect{}}
+	case input.IntentOpenClipboardHistory:
+		root.Shell = root.Shell.OpenClipboardHistory()
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.IntentShellAction:
+		if intent.Action == input.ShellActionOpenClipboardHistory {
+			root.Shell = root.Shell.OpenClipboardHistory()
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		return root, nil
 	case input.IntentPasteLastCopy:
 		next, effects := reduceCopyModePaste(root, deps, false)
 		return next, append([]Effect{handledEffect{}}, effects...)
@@ -462,6 +479,7 @@ func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root
 		return setCopyModeError(root, "clipboard service missing"), nil
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Copied to clipboard", DismissAfterTicks: 3})
+	root.Clipboard = root.Clipboard.WithCopiedText(text)
 	root = root.Advance()
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
@@ -506,6 +524,36 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 			}
 			// 中文说明：paste 属于发往 active terminal 的语义化输入；
 			// 如果 live surface 开着 bracketed paste，就在 reducer-owned live modes 基础上包裹 200~/201~。
+			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+				TerminalID: target.TerminalID,
+				Channel:    target.Channel,
+				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminal(target.TerminalID).Modes),
+			})
+			return CopyModePasteResultMsg{Text: text, Err: err}
+		},
+	}}
+}
+
+func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (state.Root, []Effect) {
+	if deps.Terminal == nil {
+		return setCopyModeError(root, "terminal service missing"), nil
+	}
+	target, ok := liveInputTarget(root)
+	if !ok || target.TerminalID == "" || target.Channel == 0 {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.input", Body: "no terminal bound"})
+		return root.Advance(), nil
+	}
+	if strings.TrimSpace(text) == "" {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard history", Body: "no clipboard entry"})
+		return root.Advance(), nil
+	}
+	root.CopyMode = state.CopyModeStore{}
+	if root.History.Pending != nil {
+		root.History.Pending = nil
+	}
+	root = root.Advance()
+	return root, []Effect{FuncEffect{
+		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,

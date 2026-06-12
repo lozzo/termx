@@ -35,6 +35,7 @@ func DefaultContentProjectorRegistry() ContentProjectorRegistry {
 	registry.Register(ContentTerminalPicker, ContentProjectorFunc(projectTerminalPickerContent))
 	registry.Register(ContentTerminalPool, ContentProjectorFunc(projectTerminalPoolContent))
 	registry.Register(ContentWorkbenchTree, ContentProjectorFunc(projectWorkbenchTreeContent))
+	registry.Register(ContentClipboardHistory, ContentProjectorFunc(projectClipboardHistoryContent))
 	registry.Register(ContentFloatingOverview, ContentProjectorFunc(projectFloatingOverviewContent))
 	registry.Register(ContentPrompt, ContentProjectorFunc(projectPromptContent))
 	registry.Register(ContentHelp, ContentProjectorFunc(projectHelpContent))
@@ -119,6 +120,10 @@ func projectTerminalPoolContent(ctx ContentProjectorContext) ContentVM {
 
 func projectWorkbenchTreeContent(ctx ContentProjectorContext) ContentVM {
 	return buildWorkbenchTreeContent(ctx.Root, ctx.Shell)
+}
+
+func projectClipboardHistoryContent(ctx ContentProjectorContext) ContentVM {
+	return buildClipboardHistoryContent(ctx.Root, ctx.Shell)
 }
 
 func projectFloatingOverviewContent(ctx ContentProjectorContext) ContentVM {

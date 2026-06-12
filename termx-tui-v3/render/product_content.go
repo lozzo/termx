@@ -273,6 +273,44 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	}
 }
 
+// Clipboard History overlay 只消费 reducer-owned clipboard 历史快照。
+func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) ContentVM {
+	shell = shell.EnsureDefaults()
+	query := strings.TrimSpace(shell.Overlay.Query)
+	rows := state.ClipboardHistoryItems(root)
+	lines := []Line{
+		pageTitleLine("Clipboard History", "copied entries"),
+		searchRowLine(query, "filter"),
+	}
+	rowOffset := len(lines)
+	for _, row := range rows {
+		lines = append(lines, clipboardHistoryRowLine(row))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, Line{Cells: []Cell{styledCell("No clipboard entries", StyleMuted)}})
+	}
+	actionOffset := len(lines)
+	lines = append(lines,
+		contentActionLine("paste", "Paste"),
+		contentActionLine("edit", "Edit"),
+		contentActionLine("delete", "Delete"),
+	)
+	regions := clipboardHistoryHitRegions(rows, rowOffset)
+	regions = append(regions,
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryPaste.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryEdit.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryDelete.String()},
+	)
+	return ContentVM{
+		Kind:       ContentClipboardHistory,
+		Lines:      lines,
+		Status:     clipboardHistoryStatus(len(rows), query),
+		Cursor:     Cursor{Visible: true, Row: 1, Col: searchCursorCol(query), Shape: CursorShapeBar},
+		HitRegions: regions,
+		Empty:      len(rows) == 0,
+	}
+}
+
 // Floating Overview 只投影 reducer-owned floating 列表；打开/召回通过 ActionID 回到 app reducer。
 func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) ContentVM {
 	shell = shell.EnsureDefaults()
@@ -307,6 +345,44 @@ func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) Conte
 		HitRegions: regions,
 		Empty:      len(rows) == 0,
 	}
+}
+
+func clipboardHistoryRowLine(row state.ClipboardHistoryItem) Line {
+	prefix := "  "
+	titleStyle := StylePicker
+	if row.Selected {
+		prefix = "› "
+		titleStyle = StylePickerAccent
+	}
+	title := strings.TrimSpace(row.Title)
+	preview := strings.TrimSpace(row.Preview)
+	if preview == "" || preview == title {
+		return Line{Cells: []Cell{styledCell(prefix+title, titleStyle)}}
+	}
+	return Line{Cells: []Cell{
+		styledCell(prefix+title, titleStyle),
+		styledCell("  "+preview, StylePickerMuted),
+	}}
+}
+
+func clipboardHistoryHitRegions(rows []state.ClipboardHistoryItem, rowOffset int) []HitRegion {
+	regions := make([]HitRegion, 0, len(rows))
+	for index := range rows {
+		regions = append(regions, HitRegion{
+			Kind:     HitRegionContentAction,
+			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
+			Row:      index,
+			ActionID: ActionClipboardHistorySelect.String(),
+		})
+	}
+	return regions
+}
+
+func clipboardHistoryStatus(count int, query string) string {
+	if count == 0 && strings.TrimSpace(query) != "" {
+		return "clipboard history: 0 filtered"
+	}
+	return fmt.Sprintf("clipboard history: %d", count)
 }
 
 // Prompt 是 reducer-owned 表单 overlay；提交只回投 shell message，不直接执行业务 IO。

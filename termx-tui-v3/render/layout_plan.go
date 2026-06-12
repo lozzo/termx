@@ -210,7 +210,7 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt {
 		return measureCompactOverlay(overlay.Content, viewport)
 	}
-	if overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentHelp {
+	if overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentClipboardHistory || overlay.Content.Kind == ContentHelp {
 		return measurePageOverlay(viewport)
 	}
 	width := minInt(maxInt(54, viewport.W*3/5), viewport.W-8)

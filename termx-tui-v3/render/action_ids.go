@@ -66,31 +66,31 @@ const (
 	ActionFooterNextWorkspace     ActionID = "footer.next-workspace"
 	ActionFooterDeleteWorkspace   ActionID = "footer.delete-workspace"
 
-	ActionFloatingRaise      ActionID = "floating.raise"
-	ActionFloatingNew        ActionID = "floating.new"
-	ActionFloatingOverview   ActionID = "floating.overview"
-	ActionFloatingSummon     ActionID = "floating.summon"
-	ActionFloatingClose      ActionID = "floating.close"
-	ActionFloatingPick       ActionID = "floating.pick"
-	ActionFloatingTakeOwner  ActionID = "floating.take-owner"
-	ActionFloatingResize     ActionID = "floating.resize"
-	ActionFloatingCenter     ActionID = "floating.center"
-	ActionFloatingCollapse   ActionID = "floating.collapse"
-	ActionFloatingToggleAll  ActionID = "floating.toggle-all"
-	ActionFloatingShowAll    ActionID = "floating.show-all"
+	ActionFloatingRaise       ActionID = "floating.raise"
+	ActionFloatingNew         ActionID = "floating.new"
+	ActionFloatingOverview    ActionID = "floating.overview"
+	ActionFloatingSummon      ActionID = "floating.summon"
+	ActionFloatingClose       ActionID = "floating.close"
+	ActionFloatingPick        ActionID = "floating.pick"
+	ActionFloatingTakeOwner   ActionID = "floating.take-owner"
+	ActionFloatingResize      ActionID = "floating.resize"
+	ActionFloatingCenter      ActionID = "floating.center"
+	ActionFloatingCollapse    ActionID = "floating.collapse"
+	ActionFloatingToggleAll   ActionID = "floating.toggle-all"
+	ActionFloatingShowAll     ActionID = "floating.show-all"
 	ActionFloatingCollapseAll ActionID = "floating.collapse-all"
-	ActionFloatingFit        ActionID = "floating.fit"
-	ActionFloatingAutoFit    ActionID = "floating.auto-fit"
-	ActionFloatingMoveLeft   ActionID = "floating.move-left"
-	ActionFloatingMoveRight  ActionID = "floating.move-right"
-	ActionFloatingMoveUp     ActionID = "floating.move-up"
-	ActionFloatingMoveDown   ActionID = "floating.move-down"
-	ActionFloatingNarrow     ActionID = "floating.narrow"
-	ActionFloatingWide       ActionID = "floating.wide"
-	ActionFloatingShort      ActionID = "floating.short"
-	ActionFloatingTall       ActionID = "floating.tall"
-	ActionFloatingMoveDrag   ActionID = "floating.move-drag"
-	ActionFloatingResizeDrag ActionID = "floating.resize-drag"
+	ActionFloatingFit         ActionID = "floating.fit"
+	ActionFloatingAutoFit     ActionID = "floating.auto-fit"
+	ActionFloatingMoveLeft    ActionID = "floating.move-left"
+	ActionFloatingMoveRight   ActionID = "floating.move-right"
+	ActionFloatingMoveUp      ActionID = "floating.move-up"
+	ActionFloatingMoveDown    ActionID = "floating.move-down"
+	ActionFloatingNarrow      ActionID = "floating.narrow"
+	ActionFloatingWide        ActionID = "floating.wide"
+	ActionFloatingShort       ActionID = "floating.short"
+	ActionFloatingTall        ActionID = "floating.tall"
+	ActionFloatingMoveDrag    ActionID = "floating.move-drag"
+	ActionFloatingResizeDrag  ActionID = "floating.resize-drag"
 
 	ActionEmptyAttach  ActionID = "empty.attach"
 	ActionEmptyCreate  ActionID = "empty.create"
@@ -123,6 +123,11 @@ const (
 	ActionWorkbenchDelete ActionID = "workbench.delete"
 	ActionWorkbenchDetach ActionID = "workbench.detach"
 	ActionWorkbenchZoom   ActionID = "workbench.zoom"
+
+	ActionClipboardHistorySelect ActionID = "clipboard-history.select"
+	ActionClipboardHistoryPaste  ActionID = "clipboard-history.paste"
+	ActionClipboardHistoryEdit   ActionID = "clipboard-history.edit"
+	ActionClipboardHistoryDelete ActionID = "clipboard-history.delete"
 
 	ActionPromptSubmit ActionID = "prompt.submit"
 	ActionPromptCancel ActionID = "prompt.cancel"
@@ -318,6 +323,10 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionWorkbenchDelete, ActionDispatchApp, ActionSurfaceContent).withHelp("delete").withDanger(),
 		actionSpec(ActionWorkbenchDetach, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("detach pane"),
 		actionSpec(ActionWorkbenchZoom, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("zoom pane"),
+		actionSpec(ActionClipboardHistorySelect, ActionDispatchApp, ActionSurfaceContent, ActionSurfaceHelp).withHelp("select clipboard entry"),
+		actionSpec(ActionClipboardHistoryPaste, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("enter", "paste", StyleStatusAccent).withHelp("paste clipboard entry"),
+		actionSpec(ActionClipboardHistoryEdit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("edit", "", StyleStatusAccent).withHelp("edit clipboard entry"),
+		actionSpec(ActionClipboardHistoryDelete, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("delete", "", StyleStatusWarning).withHelp("delete clipboard entry").withDanger(),
 		actionSpec(ActionPromptSubmit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("enter", "submit", StyleStatusAccent).withHelp("submit"),
 		actionSpec(ActionPromptCancel, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("esc", "cancel", StyleStatusWarning).withHelp("cancel"),
 		actionSpec(ActionPromptOpen, ActionDispatchApp, ActionSurfaceInput).withHelp("open prompt"),

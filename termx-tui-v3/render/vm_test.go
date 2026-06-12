@@ -919,12 +919,12 @@ func TestRenderVMBuilderShowsPendingWhenCopyPaneBindingMissing(t *testing.T) {
 			Lines:      []string{"live-row"},
 		},
 		History: state.HistoryStore{
-			PaneID:      state.DefaultPaneID,
-			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
-			TerminalID:  "term-1",
-			Token:       "tok-1",
-			Cols:        80,
-			Rows:        []state.HistoryRow{{Text: "old", LineID: 10}},
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       80,
+			Rows:       []state.HistoryRow{{Text: "old", LineID: 10}},
 		},
 		CopyMode: state.CopyModeStore{
 			Active:     true,
@@ -954,12 +954,12 @@ func TestRenderVMBuilderShowsPendingWhenCopyFloatingBindingMissing(t *testing.T)
 			Lines:      []string{"live-row"},
 		},
 		History: state.HistoryStore{
-			PaneID:      "float-pane",
-			ViewID:      state.TerminalFloatingViewID("floating-1"),
-			TerminalID:  "term-float",
-			Token:       "tok-float",
-			Cols:        40,
-			Rows:        []state.HistoryRow{{Text: "float-history", LineID: 20}},
+			PaneID:     "float-pane",
+			ViewID:     state.TerminalFloatingViewID("floating-1"),
+			TerminalID: "term-float",
+			Token:      "tok-float",
+			Cols:       40,
+			Rows:       []state.HistoryRow{{Text: "float-history", LineID: 20}},
 		},
 		CopyMode: state.CopyModeStore{
 			Active:     true,
@@ -1278,6 +1278,31 @@ func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
 	}
 	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "COLLAPSE ALL", ActionFloatingCollapseAll.String()) {
 		t.Fatalf("floating overview footer should expose collapse-all action, got %#v", vm.Shell.Footer)
+	}
+}
+
+func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
+	shell := state.DefaultShell().OpenClipboardHistory()
+	root := state.Root{
+		Shell: shell,
+		Clipboard: state.ClipboardStore{
+			Entries: []state.ClipboardEntry{
+				{ID: "clip:1", Title: "alpha", Text: "alpha", Preview: "alpha"},
+				{ID: "clip:2", Title: "build log", Text: "build\nlog", Preview: "build …"},
+			},
+		},
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	if vm.Shell.Overlay.Kind != OverlayClipboardHistory || vm.Shell.Overlay.Content.Kind != ContentClipboardHistory {
+		t.Fatalf("expected clipboard history overlay VM, got %#v", vm.Shell.Overlay)
+	}
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "enter", "paste", ActionClipboardHistoryPaste.String()) {
+		t.Fatalf("clipboard history footer should expose paste action, got %#v", vm.Shell.Footer)
+	}
+	content := vm.Shell.Overlay.Content
+	if content.Status != "clipboard history: 2" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[2].PlainString(), "alpha") {
+		t.Fatalf("expected clipboard history content, got %#v", content)
 	}
 }
 

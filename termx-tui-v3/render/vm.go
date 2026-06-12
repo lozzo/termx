@@ -241,6 +241,15 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionFor(ActionWorkbenchSelect),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
+	case string(state.OverlayClipboardHistory):
+		return footerActionSpecs(
+			footerActionSpec("search", "", "", StyleStatusAccent),
+			footerActionSpec("↑/↓", "select", "", StyleStatusAccent),
+			footerActionFor(ActionClipboardHistoryPaste),
+			footerActionFor(ActionClipboardHistoryEdit),
+			footerActionFor(ActionClipboardHistoryDelete),
+			footerActionSpec("esc", "", "", StyleStatusMuted),
+		)
 	case string(state.OverlayFloatingOverview):
 		return footerActionSpecs(
 			footerActionSpec("↑/↓", "select", "", StyleStatusAccent),
@@ -1126,6 +1135,12 @@ func (projector ShellProjector) buildOverlayVM(root state.Root, shell state.Shel
 			Kind:    OverlayWorkbenchTree,
 			Opaque:  true,
 			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentWorkbenchTree}),
+		}
+	case state.OverlayClipboardHistory:
+		return OverlayVM{
+			Kind:    OverlayClipboardHistory,
+			Opaque:  true,
+			Content: projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentClipboardHistory}),
 		}
 	case state.OverlayFloatingOverview:
 		return OverlayVM{

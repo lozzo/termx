@@ -44,6 +44,9 @@ func NewUIInputReducer() Reducer {
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayWorkbenchTree {
 			return reduceWorkbenchTreeInput(root, inputMsg.Event)
 		}
+		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayClipboardHistory {
+			return reduceClipboardHistoryInput(root, inputMsg.Event)
+		}
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayFloatingOverview {
 			return reduceFloatingOverviewInput(root, inputMsg.Event)
 		}
@@ -286,6 +289,41 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 	}
 }
 
+func reduceClipboardHistoryInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return root, nil
+	}
+	items := state.ClipboardHistoryItems(root)
+	if actionID, ok := clipboardHistoryKeyboardAction(event); ok {
+		return reduceOverlayKeyboardAction(root, actionID)
+	}
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = root.Shell.MoveClipboardHistorySelection(-1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = root.Shell.MoveClipboardHistorySelection(1, len(items))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		return reduceOverlayKeyboardAction(root, render.ActionClipboardHistoryPaste)
+	case input.KeyBackspace, input.KeyDelete:
+		root.Shell = root.Shell.SetClipboardHistoryQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+		return root.Advance(), []Effect{handledEffect{}}
+	case input.KeyChar:
+		if isBackspaceEvent(event) {
+			root.Shell = root.Shell.SetClipboardHistoryQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+			return root.Advance(), []Effect{handledEffect{}}
+		}
+		if event.Ctrl || event.Char == "" {
+			return root, []Effect{handledEffect{}}
+		}
+		root.Shell = root.Shell.SetClipboardHistoryQuery(root.Shell.EnsureDefaults().Overlay.Query + event.Char)
+		return root.Advance(), []Effect{handledEffect{}}
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+}
+
 func reduceFloatingOverviewInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {
 	if event.Kind != input.EventKindKey {
 		return root, nil
@@ -403,6 +441,20 @@ func workbenchTreeKeyboardAction(event input.InputEvent) (render.ActionID, bool)
 		return render.ActionWorkbenchDetach, true
 	case "\x1a", "z":
 		return render.ActionWorkbenchZoom, true
+	default:
+		return "", false
+	}
+}
+
+func clipboardHistoryKeyboardAction(event input.InputEvent) (render.ActionID, bool) {
+	if event.Key != input.KeyChar || !event.Ctrl || event.Alt || event.Shift {
+		return "", false
+	}
+	switch event.Char {
+	case "\x05", "e":
+		return render.ActionClipboardHistoryEdit, true
+	case "\x18", "x":
+		return render.ActionClipboardHistoryDelete, true
 	default:
 		return "", false
 	}

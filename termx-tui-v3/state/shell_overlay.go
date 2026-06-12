@@ -149,6 +149,21 @@ func (store ShellStore) OpenWorkbenchTree() ShellStore {
 	return store
 }
 
+func (store ShellStore) OpenClipboardHistory() ShellStore {
+	store = store.EnsureDefaults()
+	targetID := store.ActivePaneID
+	if store.ActiveFloatingID != "" {
+		targetID = store.ActiveFloatingID
+	}
+	store.Overlay = OverlayState{
+		Kind:          OverlayClipboardHistory,
+		Open:          true,
+		TargetID:      targetID,
+		SelectedIndex: 0,
+	}
+	return store
+}
+
 func (store ShellStore) OpenFloatingOverview() ShellStore {
 	store = store.EnsureDefaults()
 	store.Overlay = OverlayState{

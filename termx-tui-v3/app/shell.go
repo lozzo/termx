@@ -355,6 +355,16 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFooterOpenTree:
 		root.Shell = root.Shell.OpenWorkbenchTree()
 		return root.Advance(), nil
+	case render.ActionClipboardHistorySelect:
+		items := state.ClipboardHistoryItems(root)
+		root.Shell = root.Shell.SetClipboardHistorySelectedIndex(msg.Row, len(items))
+		return root.Advance(), nil
+	case render.ActionClipboardHistoryPaste:
+		return reduceClipboardHistoryPaste(root)
+	case render.ActionClipboardHistoryEdit:
+		return reduceClipboardHistoryEdit(root)
+	case render.ActionClipboardHistoryDelete:
+		return reduceClipboardHistoryDelete(root)
 	case render.ActionFooterCloseToast:
 		root.Shell = root.Shell.CloseCurrentToast()
 		return root.Advance(), nil
@@ -743,6 +753,11 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 			root.Shell = root.Shell.CloseOverlay()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
 		}
+		if after.Purpose == "clipboard.edit" {
+			root.Clipboard = replaceClipboardEntryText(root.Clipboard, after.TargetID, after.LastResult)
+			root.Shell = root.Shell.CloseOverlay()
+			return root.Advance(), nil
+		}
 		root.Shell = root.Shell.CloseOverlay()
 		if command, ok := promptWorkbenchCommand(after); ok {
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
@@ -773,6 +788,102 @@ func promptWorkbenchCommand(prompt state.PromptState) (state.WorkbenchCommand, b
 	default:
 		return state.WorkbenchCommand{}, false
 	}
+}
+
+func reduceClipboardHistoryPaste(root state.Root) (state.Root, []Effect) {
+	items := state.ClipboardHistoryItems(root)
+	if len(items) == 0 {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard history", Body: "no clipboard entry"})
+		return root.Advance(), nil
+	}
+	selected := items[0]
+	for _, item := range items {
+		if item.Selected {
+			selected = item
+			break
+		}
+	}
+	root.Shell = root.Shell.CloseOverlay()
+	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+		return CopyModePasteTextMsg{Text: selected.Text}
+	}}}
+}
+
+func reduceClipboardHistoryEdit(root state.Root) (state.Root, []Effect) {
+	items := state.ClipboardHistoryItems(root)
+	if len(items) == 0 {
+		return root, nil
+	}
+	selected := items[0]
+	for _, item := range items {
+		if item.Selected {
+			selected = item
+			break
+		}
+	}
+	root.Shell = root.Shell.OpenPrompt(state.PromptState{
+		Title:       "Edit Clipboard Entry",
+		Context:     "Edit selected clipboard entry. Submit updates local clipboard history.",
+		Purpose:     "clipboard.edit",
+		TargetID:    selected.ID,
+		Value:       selected.Text,
+		Placeholder: "clipboard text",
+	})
+	return root.Advance(), nil
+}
+
+func reduceClipboardHistoryDelete(root state.Root) (state.Root, []Effect) {
+	items := state.ClipboardHistoryItems(root)
+	if len(items) == 0 {
+		return root, nil
+	}
+	selected := items[0]
+	for _, item := range items {
+		if item.Selected {
+			selected = item
+			break
+		}
+	}
+	nextEntries := make([]state.ClipboardEntry, 0, len(root.Clipboard.Entries))
+	for _, entry := range root.Clipboard.Entries {
+		if entry.ID == selected.ID && entry.Text == selected.Text {
+			continue
+		}
+		nextEntries = append(nextEntries, entry)
+	}
+	root.Clipboard.Entries = nextEntries
+	root.Shell = root.Shell.SetClipboardHistorySelectedIndex(0, len(state.ClipboardHistoryItems(root)))
+	return root.Advance(), nil
+}
+
+func replaceClipboardEntryText(store state.ClipboardStore, entryID string, text string) state.ClipboardStore {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	trimmed := strings.TrimSpace(text)
+	if entryID == "" || trimmed == "" {
+		return store
+	}
+	next := make([]state.ClipboardEntry, 0, len(store.Entries))
+	replaced := false
+	for _, entry := range store.Entries {
+		if entry.ID == entryID && !replaced {
+			title := trimmed
+			if index := strings.Index(title, "\n"); index >= 0 {
+				title = title[:index]
+			}
+			next = append(next, state.ClipboardEntry{
+				ID:      entryID,
+				Title:   strings.TrimSpace(title),
+				Text:    text,
+				Preview: state.ClipboardStore{}.WithCopiedText(text).Entries[0].Preview,
+			})
+			replaced = true
+			continue
+		}
+		next = append(next, entry)
+	}
+	store.Entries = next
+	return store
 }
 
 func createTerminalPrompt(targetPaneID string) state.PromptState {

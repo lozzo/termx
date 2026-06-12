@@ -4282,7 +4282,7 @@ func TestCopyModePasteLastCopyExitsAndTargetsActiveTerminal(t *testing.T) {
 	clipboard := &services.FakeClipboardService{LastCopied: "hello\nworld"}
 	terminal := &services.FakeTerminalService{}
 	host := NewFakeTerminalHost(8)
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
 	runtime.state.CopyMode = state.CopyModeStore{
 		Active:     true,
 		PaneID:     state.DefaultPaneID,
@@ -4311,7 +4311,7 @@ func TestCopyModePasteClipboardUsesSystemClipboardAndBracketedPaste(t *testing.T
 	clipboard := &services.FakeClipboardService{ReadResult: services.ClipboardReadResult{Text: "clip-text"}}
 	terminal := &services.FakeTerminalService{}
 	host := NewFakeTerminalHost(8)
-	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
 	runtime.state.Surface = runtime.state.Surface.Attach("term-1", 80, 24)
 	runtime.state.Surface.Modes = state.LiveTerminalModes{BracketedPaste: true}
 	runtime.state.Surface.Surfaces = map[string]state.LiveSurfaceSnapshot{
@@ -4338,6 +4338,54 @@ func TestCopyModePasteClipboardUsesSystemClipboardAndBracketedPaste(t *testing.T
 	}
 	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "\x1b[200~clip-text\x1b[201~" {
 		t.Fatalf("paste clipboard should send bracketed paste bytes, got %#v", terminal.Inputs)
+	}
+}
+
+func TestCopyModeClipboardHistoryOverlayFiltersAndPastesSelectedEntry(t *testing.T) {
+	clipboard := &services.FakeClipboardService{}
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   4,
+	}
+	runtime.state.Clipboard = state.ClipboardStore{
+		Entries: []state.ClipboardEntry{
+			{ID: "clip:1", Title: "alpha", Text: "alpha", Preview: "alpha"},
+			{ID: "clip:2", Title: "build log", Text: "build\nlog", Preview: "build …"},
+		},
+	}
+
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "H"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "u"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "i"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "d"},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send clipboard history key %#v: %v", event, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain clipboard history key %#v: %v", event, err)
+		}
+	}
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("clipboard history paste should close overlay, got %#v", runtime.State().Shell.Overlay)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("clipboard history paste should exit copy mode, got %#v", runtime.State().CopyMode)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "build\nlog" {
+		t.Fatalf("clipboard history paste should target selected entry, got %#v", terminal.Inputs)
 	}
 }
 
@@ -4960,9 +5008,9 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 				InputChannels: map[string]uint16{
 					"term-1": 4,
 				},
-				Attached:   true,
-				Cols:       80,
-				Rows:       24,
+				Attached: true,
+				Cols:     80,
+				Rows:     24,
 			},
 			Surface: state.TerminalSurfaceStore{
 				TerminalID: "term-1",
@@ -4983,6 +5031,41 @@ func newCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClie
 		},
 		host,
 		runner,
+	)
+}
+
+func newInteractiveCopyModeRuntimeWithRunner(host *FakeTerminalHost, core services.CoreClient, clipboard services.ClipboardService, terminal services.TerminalService, runner EffectRunner) *AppRuntime {
+	if cols, rows, _ := host.Size(); cols <= 0 || rows <= 0 {
+		host.SetSize(80, 24)
+	}
+	return NewInteractiveRuntimeWithWorkbench(
+		state.Root{
+			Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+			Session: state.TerminalSessionStore{
+				TerminalID: "term-1",
+				Channel:    4,
+				InputChannels: map[string]uint16{
+					"term-1": 4,
+				},
+				Attached: true,
+				Cols:     80,
+				Rows:     24,
+			},
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-1",
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"live"},
+			},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+				state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+			)),
+		},
+		host,
+		runner,
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20},
+		WorkbenchDeps{},
 	)
 }
 

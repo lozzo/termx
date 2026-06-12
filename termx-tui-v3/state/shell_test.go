@@ -423,6 +423,35 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	}
 }
 
+func TestClipboardHistoryItemsFilterAndSelection(t *testing.T) {
+	shell := DefaultShell().OpenClipboardHistory()
+	root := Root{
+		Shell: shell,
+		Clipboard: ClipboardStore{
+			Entries: []ClipboardEntry{
+				{ID: "clip:1", Title: "alpha", Text: "alpha", Preview: "alpha"},
+				{ID: "clip:2", Title: "build log", Text: "build\nlog", Preview: "build …"},
+			},
+		},
+	}
+
+	items := ClipboardHistoryItems(root)
+	if len(items) != 2 || !items[0].Selected || items[0].Title != "alpha" {
+		t.Fatalf("expected first clipboard item selected, got %#v", items)
+	}
+	root.Shell = root.Shell.SetClipboardHistoryQuery("build")
+	items = ClipboardHistoryItems(root)
+	if len(items) != 1 || !items[0].Selected || items[0].Title != "build log" {
+		t.Fatalf("expected filtered clipboard item, got %#v", items)
+	}
+	root.Shell = root.Shell.SetClipboardHistoryQuery("")
+	root.Shell = root.Shell.MoveClipboardHistorySelection(1, len(ClipboardHistoryItems(root)))
+	items = ClipboardHistoryItems(root)
+	if len(items) != 2 || !items[1].Selected || items[1].Title != "build log" {
+		t.Fatalf("expected selection moved to second clipboard item, got %#v", items)
+	}
+}
+
 func TestShellSplitActivePaneCreatesMinimalPaneTree(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{
 		ID:         "pane-2",

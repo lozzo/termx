@@ -5,6 +5,7 @@ type Root struct {
 	Generation    uint64
 	History       HistoryStore
 	CopyMode      CopyModeStore
+	Clipboard     ClipboardStore
 	Surface       TerminalSurfaceStore
 	Session       TerminalSessionStore
 	TerminalViews TerminalViewStore

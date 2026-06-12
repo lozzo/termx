@@ -36,6 +36,7 @@ const (
 	OverlayTerminalPicker   OverlayKind = "terminal-picker"
 	OverlayTerminalPool     OverlayKind = "terminal-pool"
 	OverlayWorkbenchTree    OverlayKind = "workbench-tree"
+	OverlayClipboardHistory OverlayKind = "clipboard-history"
 	OverlayFloatingOverview OverlayKind = "floating-overview"
 	OverlayPrompt           OverlayKind = "prompt"
 	OverlayHelp             OverlayKind = "help"
@@ -291,6 +292,14 @@ type WorkbenchTreeItem struct {
 	Active        bool
 	Selected      bool
 	Summary       string
+}
+
+type ClipboardHistoryItem struct {
+	ID       string
+	Title    string
+	Preview  string
+	Text     string
+	Selected bool
 }
 
 const (
