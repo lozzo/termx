@@ -97,11 +97,19 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 	if window == nil || len(window.Rows) == 0 {
 		return nil
 	}
+	spansByLineID := make(map[uint64]protocol.HistoryLineSpan, len(window.Lines))
+	for _, span := range window.Lines {
+		if span.LogicalLineID == 0 {
+			continue
+		}
+		spansByLineID[span.LogicalLineID] = span
+	}
 	lines := make([]state.HistoryLogicalLine, 0, len(window.Rows))
 	for i, row := range window.Rows {
 		lineID := uint64At(window.RowLineIDs, i)
 		cells := historyCellsFromProtocol(row.DecodeCells())
 		text := historyCellsPlainText(cells)
+		span, hasSpan := spansByLineID[lineID]
 		// protocol 可能按当前 cols 把一条 logical line 切成多行；这里必须先按
 		// stable line id 合回 frozen source，再交给 TUI 本地 reflow。
 		if len(lines) > 0 && lineID != 0 && lines[len(lines)-1].LineID == lineID {
@@ -110,9 +118,11 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 			continue
 		}
 		lines = append(lines, state.HistoryLogicalLine{
-			Text:   text,
-			Cells:  cells,
-			LineID: lineID,
+			Text:          text,
+			Cells:         cells,
+			LineID:        lineID,
+			ClippedBefore: hasSpan && span.ClippedBefore,
+			ClippedAfter:  hasSpan && span.ClippedAfter,
 		})
 	}
 	return lines

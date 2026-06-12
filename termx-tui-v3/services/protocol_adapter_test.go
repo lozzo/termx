@@ -322,6 +322,44 @@ func TestProtocolCoreClientAdapterMergesSameLogicalLineRowsIntoFrozenSource(t *t
 	}
 }
 
+func TestProtocolCoreClientAdapterPreservesClippedLogicalLineSource(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 3, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "abc", Width: 3}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "def", Width: 3}}),
+			},
+			Lines: []protocol.HistoryLineSpan{{
+				LogicalLineID: 42,
+				StartRow:      0,
+				EndRow:        1,
+				ClippedBefore: true,
+				ClippedAfter:  true,
+			}},
+			RowLineIDs:  []uint64{42, 42},
+			RowInLine:   []int{0, 1},
+			LoadedLines: 1,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 3, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(result.Window.SourceLines) != 1 || !result.Window.SourceLines[0].ClippedBefore || !result.Window.SourceLines[0].ClippedAfter {
+		t.Fatalf("adapter should preserve clipped logical-line source flags, got %#v", result.Window.SourceLines)
+	}
+	_, reflowedSpans := state.ReflowHistoryLogicalLines(result.Window.SourceLines, 6)
+	if len(reflowedSpans) != 1 || !reflowedSpans[0].ClippedBefore || !reflowedSpans[0].ClippedAfter {
+		t.Fatalf("local reflow should preserve clipped logical-line span flags, got %#v", reflowedSpans)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterMapsRemove(t *testing.T) {
 	client := &fakeProtocolTerminalClient{}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}

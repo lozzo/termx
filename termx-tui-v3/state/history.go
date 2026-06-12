@@ -92,6 +92,10 @@ type HistoryLogicalLine struct {
 	Text   string
 	Cells  []HistoryCell
 	LineID uint64
+	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
+	// 的局部片段；本地 reflow 时必须继续保留，不能把 partial 片段误当成完整行。
+	ClippedBefore bool
+	ClippedAfter  bool
 }
 
 // HistoryLineSpan 是 authoritative window 中 logical line 到 visual rows 的映射。
@@ -697,8 +701,8 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 			LineID:        line.LineID,
 			StartRow:      start,
 			EndRow:        end,
-			ClippedBefore: false,
-			ClippedAfter:  false,
+			ClippedBefore: line.ClippedBefore,
+			ClippedAfter:  line.ClippedAfter,
 		})
 	}
 	return rows, spans
