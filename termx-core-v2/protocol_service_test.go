@@ -182,6 +182,71 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest initial output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen snapshot: %v", err)
+	}
+	if rowText(latest.Rows[0]) != "four" || !latest.CursorValid {
+		t.Fatalf("expected frozen snapshot cursor over mutable tail, got %#v", latest)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-1", "\rTH"); err != nil {
+		t.Fatalf("ingest later CR mutation: %v", err)
+	}
+
+	current, err := server.LatestWindow("term-1", 10, 10)
+	if err != nil {
+		t.Fatalf("latest after CR mutation: %v", err)
+	}
+	if len(current.Rows) == 0 || current.Rows[len(current.Rows)-1].Text != "THur" {
+		t.Fatalf("live history tail should reflect post-snapshot CR mutation, got %#v", current)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from frozen snapshot after CR mutation: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from frozen snapshot, got %#v", older)
+	}
+
+	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest after CR mutation via new snapshot: %v", err)
+	}
+	if len(reloaded.Rows) != 1 || rowText(reloaded.Rows[0]) != "THur" {
+		t.Fatalf("new snapshot should see mutated live tail, got %#v", reloaded)
+	}
+}
+
 func TestProtocolHistoryWindowPreservesStyledCells(t *testing.T) {
 	track := history.NewHistoryTrack()
 	if err := track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{

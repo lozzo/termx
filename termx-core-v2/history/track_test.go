@@ -111,6 +111,26 @@ func TestHistoryTrackWritesNewLogicalLineAfterSeal(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackCarriageReturnOverwritesCurrentMutableLine(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("one")},
+		HistoryEvent{Kind: EventCarriageReturn},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("T")},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "Tne" {
+		t.Fatalf("carriage return overwrite should mutate current open line, got %q", got)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("carriage return overwrite must stay in mutable frontier, got committed %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("overwritten line should remain frontier-owned, got %v", got)
+	}
+}
+
 func TestHistoryTrackMutatesReclaimedCommittedSuffixAndRecommitsReplacement(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "old")

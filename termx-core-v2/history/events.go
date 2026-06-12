@@ -7,6 +7,7 @@ type EventKind string
 
 const (
 	EventWritePrimaryCells        EventKind = "write-primary-cells"
+	EventCarriageReturn           EventKind = "carriage-return"
 	EventSealLogicalLine          EventKind = "seal-logical-line"
 	EventMutateFrontier           EventKind = "mutate-frontier"
 	EventResetFrontier            EventKind = "reset-frontier"

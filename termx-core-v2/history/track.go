@@ -8,6 +8,8 @@ type HistoryTrack struct {
 	frontier  *MutableFrontier
 
 	activeLine LogicalLineID
+	activeCol  int
+	overwrite  bool
 	altScreen  bool
 	generation Generation
 	screenRows int
@@ -51,6 +53,8 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 	switch event.Kind {
 	case EventWritePrimaryCells:
 		return track.writePrimaryCells(event.Cells)
+	case EventCarriageReturn:
+		return track.carriageReturn()
 	case EventSealLogicalLine:
 		return track.sealActiveLine()
 	case EventMutateFrontier:
@@ -134,13 +138,19 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 	if err != nil {
 		return err
 	}
-	line.Cells = append(line.Cells, cloneCells(cells)...)
+	if !track.overwrite {
+		line.Cells = append(line.Cells, cloneCells(cells)...)
+	} else {
+		line.Cells = overwriteLineCellsAtColumn(line.Cells, track.activeCol, cells)
+	}
 	line.Dirty = true
 	line, err = track.store.ReplaceLine(line)
 	if err != nil {
 		return err
 	}
 	track.activeLine = line.ID
+	track.activeCol = logicalLineWidth(line.Cells)
+	track.overwrite = false
 	track.bumpGeneration()
 	return nil
 }
@@ -163,7 +173,33 @@ func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
 		return LogicalLine{}, err
 	}
 	track.activeLine = line.ID
+	track.activeCol = 0
+	track.overwrite = false
 	return line, nil
+}
+
+func (track *HistoryTrack) carriageReturn() error {
+	if track.altScreen {
+		return nil
+	}
+	if track.activeLine == 0 {
+		return nil
+	}
+	if !track.frontier.Contains(track.activeLine) {
+		track.activeLine = 0
+		track.activeCol = 0
+		return nil
+	}
+	line, ok := track.store.Line(track.activeLine)
+	if !ok || line.Seal != SealStateOpen {
+		track.activeLine = 0
+		track.activeCol = 0
+		return nil
+	}
+	track.activeCol = 0
+	track.overwrite = true
+	track.bumpGeneration()
+	return nil
 }
 
 func (track *HistoryTrack) sealActiveLine() error {
@@ -177,6 +213,8 @@ func (track *HistoryTrack) sealActiveLine() error {
 	}
 	if line.Seal == SealStateSealed {
 		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
 		return nil
 	}
 	line.Seal = SealStateSealed
@@ -184,6 +222,8 @@ func (track *HistoryTrack) sealActiveLine() error {
 		return err
 	}
 	track.activeLine = 0
+	track.activeCol = 0
+	track.overwrite = false
 	track.bumpGeneration()
 	return nil
 }
@@ -213,6 +253,8 @@ func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
 		return err
 	}
 	track.activeLine = line.ID
+	track.activeCol = logicalLineWidth(line.Cells)
+	track.overwrite = false
 	track.bumpGeneration()
 	return nil
 }
@@ -224,6 +266,8 @@ func (track *HistoryTrack) resetFrontier() error {
 	ids := track.frontier.IDs()
 	if len(ids) == 0 {
 		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
 		return nil
 	}
 	for _, id := range ids {
@@ -233,6 +277,8 @@ func (track *HistoryTrack) resetFrontier() error {
 		}
 	}
 	track.activeLine = 0
+	track.activeCol = 0
+	track.overwrite = false
 	track.bumpGeneration()
 	return nil
 }
@@ -281,6 +327,8 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 		}
 		if track.activeLine == id {
 			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
 		}
 	}
 	if changed {
@@ -311,6 +359,9 @@ func (track *HistoryTrack) reclaimCommittedSuffix(event HistoryEvent) error {
 		}
 		track.frontier.Reveal(id)
 		track.activeLine = id
+		line, _ := track.store.Line(id)
+		track.activeCol = logicalLineWidth(line.Cells)
+		track.overwrite = false
 	}
 	track.bumpGeneration()
 	return nil
@@ -498,4 +549,75 @@ func (track *HistoryTrack) shrinkResize(count int) error {
 		Kind:    EventHideFrontier,
 		LineIDs: cloneLineIDs(visible[:count]),
 	})
+}
+
+func overwriteLineCellsAtColumn(existing []Cell, column int, incoming []Cell) []Cell {
+	if len(incoming) == 0 {
+		return cloneCells(existing)
+	}
+	base := expandUnmeasuredCellsForMutation(existing)
+	write := expandUnmeasuredCellsForMutation(incoming)
+	if column < 0 {
+		column = 0
+	}
+	if column > len(base) {
+		padding := make([]Cell, column-len(base))
+		for i := range padding {
+			padding[i] = Cell{Text: " ", Width: 1}
+		}
+		base = append(base, padding...)
+	}
+	end := column + len(write)
+	if end > len(base) {
+		padding := make([]Cell, end-len(base))
+		for i := range padding {
+			padding[i] = Cell{Text: " ", Width: 1}
+		}
+		base = append(base, padding...)
+	}
+	copy(base[column:end], cloneCells(write))
+	return compactMutationCells(base)
+}
+
+func logicalLineWidth(cells []Cell) int {
+	width := 0
+	for _, cell := range expandUnmeasuredCellsForMutation(cells) {
+		width += cellWidth(cell)
+	}
+	return width
+}
+
+func expandUnmeasuredCellsForMutation(cells []Cell) []Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]Cell, 0, len(cells))
+	for _, cell := range cells {
+		width := cellWidth(cell)
+		if width <= 0 || cell.Text == "" {
+			continue
+		}
+		if width == 1 && len(textClusters(cell.Text)) == 1 {
+			next := cell
+			next.Width = 1
+			out = append(out, next)
+			continue
+		}
+		out = append(out, splitMeasuredCell(cell)...)
+	}
+	return out
+}
+
+func compactMutationCells(cells []Cell) []Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]Cell, 0, len(cells))
+	for _, cell := range cells {
+		if cell.Text == "" || cellWidth(cell) <= 0 {
+			continue
+		}
+		out = append(out, cell)
+	}
+	return out
 }

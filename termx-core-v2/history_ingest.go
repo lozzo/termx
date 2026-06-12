@@ -9,8 +9,9 @@ import (
 )
 
 type historyOutputSegment struct {
-	Cells []history.Cell
-	Seal  bool
+	Cells          []history.Cell
+	Seal           bool
+	CarriageReturn bool
 }
 
 func parseHistoryOutput(output string) []historyOutputSegment {
@@ -71,12 +72,16 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 				continue
 			}
 			output = output[consumed:]
+		case output[0] == '\r':
+			parser.flush()
+			parser.segments = append(parser.segments, historyOutputSegment{CarriageReturn: true})
+			output = output[1:]
 		case output[0] == '\n':
 			parser.flush()
 			parser.segments = append(parser.segments, historyOutputSegment{Seal: true})
 			output = output[1:]
 		default:
-			next := strings.IndexAny(output, "\x1b\n")
+			next := strings.IndexAny(output, "\x1b\r\n")
 			if next < 0 {
 				parser.writeText(output)
 				output = ""
@@ -307,6 +312,7 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 	out := make([]historyOutputSegment, len(segments))
 	for i, segment := range segments {
 		out[i].Seal = segment.Seal
+		out[i].CarriageReturn = segment.CarriageReturn
 		if len(segment.Cells) > 0 {
 			out[i].Cells = make([]history.Cell, len(segment.Cells))
 			copy(out[i].Cells, segment.Cells)

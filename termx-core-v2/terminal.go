@@ -79,6 +79,12 @@ func (terminal *Terminal) IngestOutput(output string) error {
 				return err
 			}
 		}
+		if segment.CarriageReturn {
+			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventCarriageReturn}); err != nil {
+				terminal.mu.Unlock()
+				return err
+			}
+		}
 		if segment.Seal {
 			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
 				terminal.mu.Unlock()
@@ -101,7 +107,7 @@ func normalizeTerminalOutput(output string) string {
 		return output
 	}
 	output = strings.ReplaceAll(output, "\r\n", "\n")
-	return strings.ReplaceAll(output, "\r", "")
+	return output
 }
 
 func (terminal *Terminal) Resize(size Size) error {
