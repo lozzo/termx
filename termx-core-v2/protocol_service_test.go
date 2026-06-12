@@ -700,6 +700,30 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	}
 }
 
+func TestProtocolServiceHistoryWindowIgnoresAltScreenOutput(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 20, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\n\x1b[?1049halt-tail\n\x1b[?1049lafter"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       20,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window after alt-screen: %v", err)
+	}
+	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "after" || latest.LogicalTotal != 0 {
+		t.Fatalf("alt-screen output must stay out of primary history window, got %#v", latest)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

@@ -14,6 +14,8 @@ type historyOutputSegment struct {
 	CarriageReturn bool
 	EraseInLine    bool
 	EraseInDisplay bool
+	SwitchAltScreen bool
+	EnterAltScreen  bool
 	EraseMode      int
 }
 
@@ -111,6 +113,16 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		return 0
 	}
 	final := input[end]
+	if (final == 'h' || final == 'l') && strings.HasPrefix(input[2:end], "?") {
+		parser.flush()
+		if enter, ok := parseAltScreenMode(input[2:end], final); ok {
+			parser.segments = append(parser.segments, historyOutputSegment{
+				SwitchAltScreen: true,
+				EnterAltScreen:  enter,
+			})
+		}
+		return end + 1
+	}
 	if final == 'J' {
 		parser.flush()
 		mode := 0
@@ -339,6 +351,8 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 		out[i].CarriageReturn = segment.CarriageReturn
 		out[i].EraseInLine = segment.EraseInLine
 		out[i].EraseInDisplay = segment.EraseInDisplay
+		out[i].SwitchAltScreen = segment.SwitchAltScreen
+		out[i].EnterAltScreen = segment.EnterAltScreen
 		out[i].EraseMode = segment.EraseMode
 		if len(segment.Cells) > 0 {
 			out[i].Cells = make([]history.Cell, len(segment.Cells))
@@ -346,6 +360,17 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 		}
 	}
 	return out
+}
+
+func parseAltScreenMode(text string, final byte) (bool, bool) {
+	modes := parseSGRParams(strings.TrimPrefix(text, "?"))
+	for _, mode := range modes {
+		switch mode {
+		case 47, 1047, 1049:
+			return final == 'h', true
+		}
+	}
+	return false, false
 }
 
 func parseSGRExtendedColor(params []int, start int) (string, int, bool) {
