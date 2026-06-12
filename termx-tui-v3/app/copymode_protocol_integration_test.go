@@ -144,6 +144,66 @@ func TestCopyModeProtocolHistorySearchMatchesAcrossReflowRows(t *testing.T) {
 	}
 }
 
+func TestCopyModeProtocolHistoryReflowsWrappedLogicalLineLocally(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	errCh := make(chan error, 1)
+	go func() {
+		defer func() { _ = serverTransport.Close() }()
+		errCh <- runCopyModeWrappedLogicalLineProtocolServer(serverTransport)
+	}()
+	client := protocol.NewClient(clientTransport)
+	defer func() { _ = client.Close() }()
+	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "tui-v3-copy-wrap"}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+
+	host := NewFakeTerminalHost(16)
+	host.SetSize(10, 12)
+	builder := render.NewRenderVMBuilder()
+	renderer := render.NewRenderer(render.DefaultTheme())
+	runtime := NewAppRuntime(
+		state.Root{
+			Shell:         state.DefaultShell(),
+			Session:       state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 10, Rows: 12},
+			Surface:       state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 10, Rows: 12, Lines: []string{"live"}},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 8, 8, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
+		},
+		ComposeReducers(
+			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+		),
+		func(root state.Root) render.Frame {
+			return renderer.Render(builder.Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send latest page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+
+	if len(runtime.State().History.SourceLines) != 1 || runtime.State().History.SourceLines[0].Text != "abcdef" {
+		t.Fatalf("expected one merged frozen source line, got %#v", runtime.State().History.SourceLines)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); len(got) != 1 || got[0] != "abcdef" {
+		t.Fatalf("expected local reflow to widen wrapped logical line into one row, got %v", got)
+	}
+
+	_ = clientTransport.Close()
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF {
+			t.Fatalf("server returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not stop")
+	}
+}
+
 func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 	if err := expectCopyModeProtocolHello(tr); err != nil {
 		return err
@@ -204,6 +264,42 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 		Generation:   7,
 		FirstLineID:  10,
 		LastLineID:   20,
+	})
+}
+
+func runCopyModeWrappedLogicalLineProtocolServer(tr *memory.Transport) error {
+	if err := expectCopyModeProtocolHello(tr); err != nil {
+		return err
+	}
+	if err := sendCopyModeProtocolHello(tr); err != nil {
+		return err
+	}
+	req, err := expectCopyModeProtocolRequest(tr, "history.window")
+	if err != nil {
+		return err
+	}
+	params, err := copyModeProtocolRequestParams[protocol.HistoryWindowParams](req)
+	if err != nil {
+		return err
+	}
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 8 || params.Limit != 20 {
+		return fmt.Errorf("unexpected latest params %#v", params)
+	}
+	return sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Op:         protocol.HistoryWindowReplace,
+		Size:       protocol.Size{Cols: 3, Rows: 8},
+		Rows: []protocol.CompactRow{
+			protocol.CompactRowFromCells([]protocol.Cell{{Content: "abc", Width: 3}}),
+			protocol.CompactRowFromCells([]protocol.Cell{{Content: "def", Width: 3}}),
+		},
+		Lines:       []protocol.HistoryLineSpan{{LogicalLineID: 10, StartRow: 0, EndRow: 1}},
+		RowLineIDs:  []uint64{10, 10},
+		RowInLine:   []int{0, 1},
+		Generation:  7,
+		FirstLineID: 10,
+		LastLineID:  10,
 	})
 }
 

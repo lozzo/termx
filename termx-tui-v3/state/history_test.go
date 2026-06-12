@@ -77,6 +77,51 @@ func TestHistoryStoreDetachesStyledRowCells(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreLatestReplaceReflowsFrozenSourceAtPendingCols(t *testing.T) {
+	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
+		ID:         1,
+		TerminalID: "term-1",
+		Cols:       6,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+
+	window := HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Op:         HistoryWindowReplace,
+		Cols:       3,
+		SourceLines: []HistoryLogicalLine{{
+			Text:   "abcdef",
+			LineID: 10,
+			Cells: []HistoryCell{
+				{Text: "abc", Width: 3},
+				{Text: "def", Width: 3},
+			},
+		}},
+		Rows: []HistoryRow{
+			{Text: "abc", LineID: 10, RowInLine: 0},
+			{Text: "def", LineID: 10, RowInLine: 1},
+		},
+		Lines: []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 1}},
+	}
+
+	store, inserted, err := store.ApplyWindow(1, window)
+	if err != nil {
+		t.Fatalf("apply latest: %v", err)
+	}
+	if inserted != 2 {
+		t.Fatalf("expected inserted rows to reflect source response rows, got %d", inserted)
+	}
+	if store.Cols != 6 {
+		t.Fatalf("expected history store to keep local pending cols, got %d", store.Cols)
+	}
+	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"abcdef"}) {
+		t.Fatalf("expected frozen source to reflow at local pending cols, got %v", got)
+	}
+}
+
 func TestHistoryStorePrependsOlderAndRebasesExistingSpans(t *testing.T) {
 	store := HistoryStore{
 		TerminalID: "term-1",
@@ -360,7 +405,7 @@ func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 	}
 
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "new", LineID: 20}})
-	copyMode = copyMode.AcceptLatest(latest)
+	copyMode = copyMode.AcceptLatest(latest, latest.Cols)
 	if copyMode.BoundToken != "tok-1" || copyMode.Empty {
 		t.Fatalf("unexpected latest binding %#v", copyMode)
 	}

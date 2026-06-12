@@ -402,7 +402,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	}
 	root.History = nextHistory
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
-		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window)
+		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
 	} else {
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, msg.Result.Window)
 	}

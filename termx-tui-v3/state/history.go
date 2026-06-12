@@ -241,7 +241,7 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 	store.Pending = nil
 	switch window.Op {
 	case HistoryWindowReplace:
-		store = store.replace(window)
+		store = store.replace(window, pending.Cols)
 		return store, len(window.Rows), nil
 	case HistoryWindowPrepend:
 		beforeRows := len(store.Rows)
@@ -311,16 +311,20 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 	if pending.PaneID != "" && window.PaneID != "" && pending.PaneID != window.PaneID {
 		return ErrStaleHistoryResponse
 	}
-	if pending.Cols != 0 && pending.Cols != window.Cols {
-		return ErrHistoryWindowMismatch
-	}
 	switch pending.Kind {
 	case HistoryRequestLatest:
 		if window.Op != HistoryWindowReplace {
 			return ErrHistoryWindowMismatch
 		}
+		// frozen snapshot latest 接纳的是 authoritative logical-line source，
+		// response 的 window.Cols 只是 core 当前投影使用的 source cols；TUI 会
+		// 基于 SourceLines 按本地 pane 宽度重新 reflow，因此 latest 不要求
+		// response cols 与本地请求 cols 完全一致。
 	case HistoryRequestOlder:
 		if window.Op != HistoryWindowPrepend {
+			return ErrHistoryWindowMismatch
+		}
+		if pending.Cols != 0 && pending.Cols != window.Cols {
 			return ErrHistoryWindowMismatch
 		}
 		if pending.Token != "" && pending.Token != window.Token {
@@ -338,14 +342,17 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 	return nil
 }
 
-func (store HistoryStore) replace(window HistoryWindow) HistoryStore {
+func (store HistoryStore) replace(window HistoryWindow, cols int) HistoryStore {
 	store.ViewID = window.ViewID
 	store.PaneID = window.PaneID
 	store.TerminalID = window.TerminalID
 	store.Token = window.Token
-	store.Cols = window.Cols
+	if cols <= 0 {
+		cols = window.Cols
+	}
+	store.Cols = cols
 	store.SourceLines = historyWindowSourceLines(window)
-	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, window.Cols)
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, cols)
 	store.Cursor = window.Cursor
 	store.Generation = window.Generation
 	store.Boundary = window.Boundary
@@ -454,12 +461,15 @@ func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID s
 	return store
 }
 
-func (store CopyModeStore) AcceptLatest(window HistoryWindow) CopyModeStore {
+func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int) CopyModeStore {
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
 	store.BoundToken = window.Token
-	store.BoundCols = window.Cols
+	if cols <= 0 {
+		cols = window.Cols
+	}
+	store.BoundCols = cols
 	store.ViewportTop = 0
 	store.Cursor = CopyPosition{}
 	store.Matches = nil
