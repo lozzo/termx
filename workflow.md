@@ -166,8 +166,8 @@
 | 背景里程碑：0-215H3 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、`termx-proto/`、相关文档 | 默认入口、runtime、styled render framework、TerminalView/Attachment 基线、resize ownership、history MVP H1-H3 都已经收口；更细的历史细节需要时去看 git 提交和架构文档 |
 | 215D1. SK floating group commands | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 已补齐 floating group commands |
 | 215F. SK shortcut integration and tmux harness | 完成 | `termx-cli/`、`termx-tui-v3/`、`termx-core-v2/`、`internal/protocol/`、`Makefile` 按需 | 已补 runtime 黑盒证据与 tmux smoke |
-| 215E1-A. SK history copy 可用性主链验收 | 进行中 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、相关文档 | 只围绕主验收链收口：attach -> copy mode -> older -> resize 本地重排 -> search -> selection -> copy |
-| 215E1-B. SK history copy 主链缺口修补 | 待开始 | 同上 | 只修会阻塞主验收链通过的问题；不主动扩张到新的长尾黑盒 |
+| 215E1-A. SK history copy 可用性主链验收 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、相关文档 | 已补高层 runtime 黑盒，证明 attach -> copy mode -> older -> resize 本地重排 -> search -> selection -> copy 主链成立 |
+| 215E1-B. SK history copy 主链缺口修补 | 进行中 | 同上 | 只修会阻塞主验收链通过的问题；不主动扩张到新的长尾黑盒 |
 | 215E1-C. SK history copy 收口与回归 | 待开始 | 同上 | 用一组高层黑盒和必要模块测试证明主链可用，停止继续补长尾语义 |
 | 215E2. SK clipboard paste 主链 | 待开始 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-cli/`、相关文档 | 把显示态 `p/P PASTE` 接上真实主链 |
 | 215E3. SK clipboard history overlay | 待开始 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 再补完整的 clipboard history overlay |
@@ -247,5 +247,6 @@
   - TUI 本地 reflow
   - logical-line search / selection / copy
   - 关键 stale guard
-- 但 `215E1` 还没有被压成一条明确的“可用性主验收链”。当前阶段要做的是收这个出口，而不是继续追加新的长尾黑盒。
+- `215E1-A` 已补 runtime 高层验收：真实 attach、进入 copy mode、older prepend、resize 本地重排、search、selection、copy 已经能在同一条黑盒链里通过。
+- 当前下一步切到 `215E1-B`：只修主链还会卡住可用性的真实缺口；不再主动扩张新的生命周期或 stale 长尾审计。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。

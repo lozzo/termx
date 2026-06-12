@@ -277,9 +277,10 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	if viewID == "" {
 		viewID = state.TerminalPaneViewID(activePaneID)
-	} else if _, ok := root.TerminalViews.Views[viewID]; !ok {
+	} else if !liveAttachViewStillPresent(root, viewID) {
 		// 外部 reload/restore 替换 pane/view 结构后，旧 view 的迟到 attach result
-		// 不能回退绑定到当前 active pane；它已经不属于当前 workbench truth。
+		// 不能回退绑定到当前 pane/floating；但首次 attach 时 view binding 可能还没建，
+		// 只要 shell 结构里仍存在这个目标 view，就必须允许它继续落到当前 truth。
 		return root, nil
 	}
 	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID)
@@ -327,6 +328,29 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		ViewID:         viewID,
 	})
 	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
+}
+
+func liveAttachViewStillPresent(root state.Root, viewID string) bool {
+	if viewID == "" {
+		return false
+	}
+	if _, ok := root.TerminalViews.Views[viewID]; ok {
+		return true
+	}
+	shell := root.Shell.EnsureDefaults()
+	for _, tab := range shell.Workspace.Tabs {
+		for _, pane := range tab.Panes {
+			if state.TerminalPaneViewID(pane.ID) == viewID {
+				return true
+			}
+		}
+	}
+	for _, floating := range shell.Floatings {
+		if state.TerminalFloatingViewID(floating.ID) == viewID {
+			return true
+		}
+	}
+	return false
 }
 
 func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
