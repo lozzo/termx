@@ -616,6 +616,108 @@ func TestCopyModeRuntimeKillDoesNotRenderDeletedFrozenHistory(t *testing.T) {
 	}
 }
 
+func TestCopyModePaneCloseInvalidatesFrozenHistoryForClosedPane(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().SplitActivePane(
+			state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-2"},
+			state.SplitDirectionVertical,
+		).FocusPane(state.PaneCommandTarget{PaneID: "pane-2"}),
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+			BindPane(state.NewPaneTerminalView("pane-2", "term-2", 5, 38, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID("pane-2"), true)),
+		History: state.HistoryStore{
+			PaneID:      "pane-2",
+			ViewID:      state.TerminalPaneViewID("pane-2"),
+			TerminalID:  "term-2",
+			Token:       "tok-old",
+			Cols:        38,
+			SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+			Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     "pane-2",
+			ViewID:     state.TerminalPaneViewID("pane-2"),
+			TerminalID: "term-2",
+			BoundToken: "tok-old",
+			BoundCols:  38,
+			ViewRows:   20,
+		},
+	}
+
+	next, effects := reducePaneCommand(root, state.PaneCommand{
+		Action: state.PaneCommandClose,
+		Target: state.PaneCommandTarget{PaneID: "pane-2"},
+		Source: state.PaneCommandSourceTest,
+	})
+	if len(effects) == 0 {
+		t.Fatalf("pane close should keep normal pane command effects, got %#v", effects)
+	}
+	if next.History.Token != "" || next.History.TerminalID != "term-2" || len(next.History.Rows) != 0 {
+		t.Fatalf("pane close must invalidate frozen history for closed pane, got %#v", next.History)
+	}
+	if next.CopyMode.Active || next.CopyMode.PaneID != "" || next.CopyMode.BoundToken != "" {
+		t.Fatalf("pane close must clear copy mode bound to closed pane, got %#v", next.CopyMode)
+	}
+}
+
+func TestCopyModeRuntimePaneCloseDoesNotRenderClosedFrozenHistory(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell().SplitActivePane(
+				state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-2"},
+				state.SplitDirectionVertical,
+			).FocusPane(state.PaneCommandTarget{PaneID: "pane-2"}),
+			TerminalViews: state.TerminalViewStore{}.
+				BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+				BindPane(state.NewPaneTerminalView("pane-2", "term-2", 5, 38, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID("pane-2"), true)),
+			History: state.HistoryStore{
+				PaneID:      "pane-2",
+				ViewID:      state.TerminalPaneViewID("pane-2"),
+				TerminalID:  "term-2",
+				Token:       "tok-old",
+				Cols:        38,
+				SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 20}}),
+				Rows:        []state.HistoryRow{{Text: "old-history", LineID: 20}},
+			},
+			CopyMode: state.CopyModeStore{
+				Active:     true,
+				PaneID:     "pane-2",
+				ViewID:     state.TerminalPaneViewID("pane-2"),
+				TerminalID: "term-2",
+				BoundToken: "tok-old",
+				BoundCols:  38,
+				ViewRows:   20,
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+	)
+
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action: state.PaneCommandClose,
+		Target: state.PaneCommandTarget{PaneID: "pane-2"},
+		Source: state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post pane close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane close: %v", err)
+	}
+
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "old-history") {
+		t.Fatalf("pane close must not keep rendering closed pane frozen history, got %#v", last.Lines)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("pane close must exit copy mode bound to closed pane, got %#v", runtime.State().CopyMode)
+	}
+}
+
 func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) {
 	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{

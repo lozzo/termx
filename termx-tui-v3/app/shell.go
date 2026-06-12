@@ -1171,12 +1171,14 @@ func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneComm
 		root.TerminalViews = root.TerminalViews.BindPane(binding).TransferPaneResizeOwner(command.NewPane.ID)
 	case state.PaneCommandClose:
 		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
+		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 	case state.PaneCommandCloseAndKill:
 		if hasTargetPane && targetPane.TerminalID != "" {
 			root.TerminalViews = root.TerminalViews.RemoveTerminal(targetPane.TerminalID)
 		} else {
 			root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
 		}
+		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 	}
 	return root
 }
@@ -1187,8 +1189,10 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 		root = bindWorkbenchSplitTerminalView(root, previousShell, command, result)
 	case state.WorkbenchCommandPaneDetach:
 		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
+		root = invalidateCopyModeForClosedPane(root, result.ID)
 	case state.WorkbenchCommandPaneClose:
 		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
+		root = invalidateCopyModeForClosedPane(root, result.ID)
 	case state.WorkbenchCommandPaneKill, state.WorkbenchCommandTabKill:
 		for _, terminalID := range result.Killed {
 			root.TerminalViews = root.TerminalViews.RemoveTerminal(terminalID)
@@ -1196,8 +1200,18 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 	case state.WorkbenchCommandTabClose:
 		for _, pane := range panesForWorkbenchTarget(previousShell, command.TargetID) {
 			root.TerminalViews = root.TerminalViews.DetachPane(pane.ID)
+			root = invalidateCopyModeForClosedPane(root, pane.ID)
 		}
 	}
+	return root
+}
+
+func invalidateCopyModeForClosedPane(root state.Root, paneID string) state.Root {
+	if paneID == "" || !root.CopyMode.Active || root.CopyMode.PaneID != paneID {
+		return root
+	}
+	root.History = root.History.InvalidateWindow()
+	root.CopyMode = state.CopyModeStore{}
 	return root
 }
 
