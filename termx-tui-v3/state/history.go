@@ -290,7 +290,6 @@ func (store HistoryStore) OlderRequestState() OlderRequestState {
 	}
 	if store.Exhausted.Valid &&
 		store.Exhausted.Token == store.Token &&
-		store.Exhausted.Cols == store.Cols &&
 		store.Exhausted.Cursor == store.Cursor &&
 		store.Exhausted.Boundary == store.Boundary {
 		return OlderRequestExhausted

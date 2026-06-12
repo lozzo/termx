@@ -305,6 +305,11 @@ func TestHistoryStoreRecordsOlderExhaustedMarker(t *testing.T) {
 		t.Fatalf("expected exhausted older state, got %s", got)
 	}
 
+	store.Cols = 80
+	if got := store.OlderRequestState(); got != OlderRequestExhausted {
+		t.Fatalf("local reflow cols must not clear frozen exhausted marker, got %s", got)
+	}
+
 	store.Token = "tok-next"
 	if got := store.OlderRequestState(); got != OlderRequestReady {
 		t.Fatalf("exhausted marker mismatch should fall back to current cursor readiness, got %s", got)

@@ -258,6 +258,62 @@ func TestCopyModeOlderBoundaryTokensAndExhaustedGuard(t *testing.T) {
 	}
 }
 
+func TestCopyModeExhaustedGuardSurvivesLocalReflowResize(t *testing.T) {
+	latest := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		[]state.HistoryRow{{Text: "old-window", LineID: 20}},
+	)
+	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 20}
+	latest.HasMore = true
+	exhausted := historyWindowForApp(state.HistoryWindowPrepend, "term-1", "tok-1", 78, 7, nil)
+	exhausted.Cursor = latest.Cursor
+	exhausted.HasMore = false
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: latest}},
+		OlderResponses:  []services.HistoryResult{{Window: exhausted}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send latest page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send exhausted older page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exhausted older: %v", err)
+	}
+
+	if err := host.SendResize(100, 40); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain local reflow resize: %v", err)
+	}
+	if frame := lastFrame(t, host.Frames()); !frameContains(frame, "↑ top") {
+		t.Fatalf("local reflow must preserve exhausted top token, got %#v", frame.Lines)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send redundant older after local reflow: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain redundant older after local reflow: %v", err)
+	}
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("local reflow must not clear exhausted older guard, got %#v", core.OlderRequests)
+	}
+}
+
 func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) {
 	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
