@@ -4518,6 +4518,83 @@ func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing
 	}
 }
 
+func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(6, 12)
+	latest := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-latest",
+		4,
+		7,
+		[]state.HistoryRow{{Text: "cdef", LineID: 10}},
+	)
+	latest.SourceLines = []state.HistoryLogicalLine{{
+		Text:          "cdef",
+		LineID:        10,
+		ClippedBefore: true,
+	}}
+	latest.Lines = []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0, ClippedBefore: true}}
+	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
+	latest.HasMore = true
+	older := historyWindowForApp(
+		state.HistoryWindowPrepend,
+		"term-1",
+		"tok-latest",
+		4,
+		7,
+		[]state.HistoryRow{{Text: "ab", LineID: 10}},
+	)
+	older.SourceLines = []state.HistoryLogicalLine{{
+		Text:         "ab",
+		LineID:       10,
+		ClippedAfter: true,
+	}}
+	older.Lines = []state.HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0, ClippedAfter: true}}
+	older.Boundary = state.HistoryBoundary{FirstLineID: 10, LastLineID: 10}
+	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 10}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: latest}},
+		OlderResponses:  []services.HistoryResult{{Window: older}},
+	}
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := runtime.Post(CopyModeSetMarkMsg{Position: state.CopyPosition{Row: 0, Col: 1}}); err != nil {
+		t.Fatalf("set mark: %v", err)
+	}
+	if err := runtime.Post(CopyModeMoveCursorMsg{Position: state.CopyPosition{Row: 0, Col: 3}}); err != nil {
+		t.Fatalf("move cursor: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain selection setup: %v", err)
+	}
+	if got := SelectedText(runtime.State().History, runtime.State().CopyMode); got != "de" {
+		t.Fatalf("expected initial selected suffix before overlap prepend, got %q", got)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("request older: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain older: %v", err)
+	}
+	if got := SelectedText(runtime.State().History, runtime.State().CopyMode); got != "de" {
+		t.Fatalf("overlap prepend must keep selection on original suffix, got %q", got)
+	}
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 1, Col: 1}) {
+		t.Fatalf("overlap prepend must rebind cursor to original suffix, got %#v", runtime.State().CopyMode.Cursor)
+	}
+	if runtime.State().CopyMode.Mark == nil || *runtime.State().CopyMode.Mark != (state.CopyPosition{Row: 0, Col: 3}) {
+		t.Fatalf("overlap prepend must rebind mark to original suffix, got %#v", runtime.State().CopyMode.Mark)
+	}
+}
+
 func TestSelectedTextSupportsReversedMultiRowSelection(t *testing.T) {
 	history := historyStoreForCopySelection()
 	copyMode := state.CopyModeStore{

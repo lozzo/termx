@@ -477,8 +477,13 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int) CopyMode
 	return store
 }
 
-func (store CopyModeStore) AcceptOlder(insertedRows int, window HistoryWindow, cols int) CopyModeStore {
-	if insertedRows > 0 {
+func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, after HistoryStore, window HistoryWindow, cols int) CopyModeStore {
+	if len(before.Rows) > 0 && len(after.Rows) > 0 {
+		// 中文说明：older prepend 可能不仅是“顶部多了几行”，也可能在 boundary overlap
+		// 处把同一 logical line 的 partial source 合并成新的本地 rows。这里统一按
+		// before/after frozen history 做内容重绑，避免 cursor/selection 只按行号平移后偏到错误内容。
+		store = store.RebindToReflowedHistory(before, after)
+	} else if insertedRows > 0 {
 		store.ViewportTop += insertedRows
 		store.Cursor.Row += insertedRows
 		if store.Mark != nil {
@@ -1022,6 +1027,7 @@ func reflowCopyPosition(before HistoryStore, after HistoryStore, pos CopyPositio
 		return CopyPosition{}
 	}
 	offset := historyLogicalOffsetForPosition(before, pos)
+	offset.col += historyLogicalPrependedPrefixWidth(before, after, offset.lineID)
 	return positionForHistoryLogicalOffset(after, offset)
 }
 
@@ -1107,6 +1113,59 @@ func copyMatchContainsPosition(match CopyMatch, pos CopyPosition) bool {
 		return false
 	}
 	return true
+}
+
+func historyLogicalPrependedPrefixWidth(before HistoryStore, after HistoryStore, lineID uint64) int {
+	if lineID == 0 {
+		return 0
+	}
+	beforeLine, ok := historyLogicalLineByID(before, lineID)
+	if !ok || !beforeLine.ClippedBefore {
+		return 0
+	}
+	afterLine, ok := historyLogicalLineByID(after, lineID)
+	if !ok {
+		return 0
+	}
+	return historyLogicalLinePrependedPrefixWidth(beforeLine, afterLine)
+}
+
+func historyLogicalLineByID(history HistoryStore, lineID uint64) (HistoryLogicalLine, bool) {
+	lines := history.SourceLines
+	if len(lines) == 0 && len(history.Rows) > 0 {
+		lines = historyRowsToLogicalLines(history.Rows, history.Lines)
+	}
+	for _, line := range lines {
+		if line.LineID == lineID {
+			return line, true
+		}
+	}
+	return HistoryLogicalLine{}, false
+}
+
+func historyLogicalLinePrependedPrefixWidth(before HistoryLogicalLine, after HistoryLogicalLine) int {
+	if before.Text != "" && after.Text != "" && strings.HasSuffix(after.Text, before.Text) {
+		prefix := strings.TrimSuffix(after.Text, before.Text)
+		return textDisplayWidth(prefix)
+	}
+	if len(before.Cells) == 0 || len(after.Cells) == 0 {
+		return 0
+	}
+	beforeIndex := len(before.Cells) - 1
+	afterIndex := len(after.Cells) - 1
+	for beforeIndex >= 0 && afterIndex >= 0 && historyCellsEqual(before.Cells[beforeIndex], after.Cells[afterIndex]) {
+		beforeIndex--
+		afterIndex--
+	}
+	width := 0
+	for index := 0; index <= afterIndex; index++ {
+		width += HistoryCellDisplayWidth(after.Cells[index])
+	}
+	return width
+}
+
+func historyCellsEqual(left HistoryCell, right HistoryCell) bool {
+	return left == right
 }
 
 func rebaseExistingLineSpans(spans []HistoryLineSpan, delta int) []HistoryLineSpan {

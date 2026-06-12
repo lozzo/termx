@@ -405,6 +405,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		return setCopyModeError(root, msg.Err.Error()), nil
 	}
 	pending := root.History.Pending
+	beforeHistory := root.History
 	nextHistory, inserted, err := root.History.ApplyWindow(state.RequestID(msg.Result.RequestID), msg.Result.Window)
 	if err != nil {
 		if errors.Is(err, state.ErrStaleHistoryResponse) {
@@ -416,7 +417,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
 		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
 	} else {
-		root.CopyMode = root.CopyMode.AcceptOlder(inserted, msg.Result.Window, nextHistory.Cols)
+		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, msg.Result.Window, nextHistory.Cols)
 	}
 	if root.CopyMode.Query != "" {
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))

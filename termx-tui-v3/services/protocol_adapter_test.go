@@ -247,14 +247,14 @@ func TestProtocolCoreClientAdapterMapsStyledHistoryCells(t *testing.T) {
 	}
 
 	row := result.Window.Rows[0]
-	if row.Text != "ERR 好" || len(row.Cells) != 3 {
+	if row.Text != "ERR 好" || len(row.Cells) != 5 {
 		t.Fatalf("adapter should keep styled cells and derived text, got %#v", row)
 	}
-	if row.Cells[0].Text != "ERR" || row.Cells[0].Width != 3 || row.Cells[0].Style.FG != "ansi:1" || !row.Cells[0].Style.Bold {
-		t.Fatalf("lost first styled cell %#v", row.Cells[0])
+	if row.Cells[0].Text != "E" || row.Cells[0].Width != 1 || row.Cells[0].Style.FG != "ansi:1" || !row.Cells[0].Style.Bold {
+		t.Fatalf("lost first styled grapheme cell %#v", row.Cells[0])
 	}
-	if row.Cells[2].Text != "好" || row.Cells[2].Width != 2 || row.Cells[2].Style.FG != "#ffcc00" || !row.Cells[2].Style.Underline || row.Cells[2].LinkURL == "" || row.Cells[2].LinkParams == "" {
-		t.Fatalf("lost wide linked cell %#v", row.Cells[2])
+	if row.Cells[4].Text != "好" || row.Cells[4].Width != 2 || row.Cells[4].Style.FG != "#ffcc00" || !row.Cells[4].Style.Underline || row.Cells[4].LinkURL == "" || row.Cells[4].LinkParams == "" {
+		t.Fatalf("lost wide linked cell %#v", row.Cells[4])
 	}
 }
 
@@ -281,7 +281,7 @@ func TestProtocolCoreClientAdapterPreservesTrailingBlankHistoryCells(t *testing.
 		t.Fatalf("latest: %v", err)
 	}
 	row := result.Window.Rows[0]
-	if row.Text != "cmd  " || len(row.Cells) != 3 || row.Cells[1].Text != " " || row.Cells[2].Text != " " {
+	if row.Text != "cmd  " || len(row.Cells) != 5 || row.Cells[3].Text != " " || row.Cells[4].Text != " " {
 		t.Fatalf("adapter should preserve trailing blank history cells, got %#v", row)
 	}
 }

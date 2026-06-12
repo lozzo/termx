@@ -416,7 +416,22 @@ func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 	}
 
 	older := historyWindow(HistoryWindowPrepend, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "old", LineID: 10}, {Text: "older", LineID: 11}})
-	copyMode = copyMode.AcceptOlder(2, older, 100)
+	before := HistoryStore{
+		Cols:       80,
+		SourceLines: []HistoryLogicalLine{{Text: "new", LineID: 20}},
+		Rows:       []HistoryRow{{Text: "new", LineID: 20, RowInLine: 0}},
+		Lines:      []HistoryLineSpan{{LineID: 20, StartRow: 0, EndRow: 0}},
+	}
+	after := HistoryStore{
+		Cols: 100,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "old", LineID: 10},
+			{Text: "older", LineID: 11},
+			{Text: "new", LineID: 20},
+		},
+	}
+	after.Rows, after.Lines = ReflowHistoryLogicalLines(after.SourceLines, after.Cols)
+	copyMode = copyMode.AcceptOlder(2, before, after, older, 100)
 	if copyMode.ViewportTop != 2 || copyMode.BoundCols != 100 {
 		t.Fatalf("older accept should keep local bound cols while adjusting viewport, got %#v", copyMode)
 	}
@@ -460,22 +475,44 @@ func TestCopyModeAcceptOlderShiftsCursorMarkAndSelectionWithPrependedRows(t *tes
 		ViewportTop: 2,
 	}
 
-	copyMode = copyMode.AcceptOlder(5, HistoryWindow{Token: "tok-older", Cols: 80}, 90)
-
-	if copyMode.ViewportTop != 7 {
-		t.Fatalf("expected viewport top to shift with prepended rows, got %d", copyMode.ViewportTop)
+	before := HistoryStore{
+		Cols: 80,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "line-1", LineID: 10},
+			{Text: "line-2", LineID: 11},
+			{Text: "line-3", LineID: 12},
+			{Text: "line-4", LineID: 13},
+		},
 	}
-	if copyMode.Cursor != (CopyPosition{Row: 8, Col: 4}) {
+	before.Rows, before.Lines = ReflowHistoryLogicalLines(before.SourceLines, before.Cols)
+	after := HistoryStore{
+		Cols: 90,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "older-1", LineID: 8},
+			{Text: "older-2", LineID: 9},
+			{Text: "line-1", LineID: 10},
+			{Text: "line-2", LineID: 11},
+			{Text: "line-3", LineID: 12},
+			{Text: "line-4", LineID: 13},
+		},
+	}
+	after.Rows, after.Lines = ReflowHistoryLogicalLines(after.SourceLines, after.Cols)
+	copyMode = copyMode.AcceptOlder(5, before, after, HistoryWindow{Token: "tok-older", Cols: 80}, 90)
+
+	if copyMode.ViewportTop != 4 {
+		t.Fatalf("expected viewport top to keep pointing at original content after prepend, got %d", copyMode.ViewportTop)
+	}
+	if copyMode.Cursor != (CopyPosition{Row: 5, Col: 4}) {
 		t.Fatalf("expected cursor to keep pointing at original content after prepend, got %#v", copyMode.Cursor)
 	}
-	if copyMode.Mark == nil || *copyMode.Mark != (CopyPosition{Row: 6, Col: 2}) {
+	if copyMode.Mark == nil || *copyMode.Mark != (CopyPosition{Row: 3, Col: 2}) {
 		t.Fatalf("expected mark to keep pointing at original content after prepend, got %#v", copyMode.Mark)
 	}
 	if copyMode.Selection == nil {
 		t.Fatal("expected selection to be preserved")
 	}
-	if copyMode.Selection.Anchor != (CopyPosition{Row: 6, Col: 2}) || copyMode.Selection.Focus != (CopyPosition{Row: 8, Col: 4}) {
-		t.Fatalf("expected selection rows to shift with prepend, got %#v", copyMode.Selection)
+	if copyMode.Selection.Anchor != (CopyPosition{Row: 3, Col: 2}) || copyMode.Selection.Focus != (CopyPosition{Row: 5, Col: 4}) {
+		t.Fatalf("expected selection to keep pointing at original content after prepend, got %#v", copyMode.Selection)
 	}
 	if copyMode.BoundToken != "tok-older" || copyMode.BoundCols != 90 {
 		t.Fatalf("expected authoritative binding to update with older accept, got %#v", copyMode)
@@ -530,6 +567,50 @@ func TestCopyModeRebindToReflowedHistoryKeepsCursorAndSelectionOnOriginalContent
 	}
 	if copyMode.ActiveMatch != 0 {
 		t.Fatalf("expected active match index to stay on rebound match, got %#v", copyMode)
+	}
+}
+
+func TestCopyModeRebindAfterOlderBoundaryOverlapKeepsCursorAndSelectionOnOriginalContent(t *testing.T) {
+	before := HistoryStore{
+		Cols: 4,
+		SourceLines: []HistoryLogicalLine{{
+			Text:          "cdef",
+			LineID:        10,
+			ClippedBefore: true,
+		}},
+	}
+	before.Rows, before.Lines = ReflowHistoryLogicalLines(before.SourceLines, before.Cols)
+	after := HistoryStore{
+		Cols: 4,
+		SourceLines: []HistoryLogicalLine{{
+			Text:          "abcdef",
+			LineID:        10,
+			ClippedBefore: true,
+		}},
+	}
+	after.Rows, after.Lines = ReflowHistoryLogicalLines(after.SourceLines, after.Cols)
+	mark := CopyPosition{Row: 0, Col: 1}
+	copyMode := CopyModeStore{
+		Active:      true,
+		ViewportTop: 0,
+		Cursor:      CopyPosition{Row: 0, Col: 3},
+		Mark:        &mark,
+		Selection:   &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 0, Col: 3}},
+	}
+
+	copyMode = copyMode.RebindToReflowedHistory(before, after)
+
+	if copyMode.Cursor != (CopyPosition{Row: 1, Col: 1}) {
+		t.Fatalf("expected cursor to keep pointing at original suffix after boundary overlap, got %#v", copyMode.Cursor)
+	}
+	if copyMode.Mark == nil || *copyMode.Mark != (CopyPosition{Row: 0, Col: 3}) {
+		t.Fatalf("expected mark to keep pointing at original suffix after boundary overlap, got %#v", copyMode.Mark)
+	}
+	if copyMode.Selection == nil {
+		t.Fatal("expected selection after boundary overlap rebind")
+	}
+	if copyMode.Selection.Anchor != (CopyPosition{Row: 0, Col: 3}) || copyMode.Selection.Focus != (CopyPosition{Row: 1, Col: 1}) {
+		t.Fatalf("expected selection to keep original suffix after boundary overlap, got %#v", copyMode.Selection)
 	}
 }
 
