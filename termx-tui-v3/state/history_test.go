@@ -403,6 +403,55 @@ func TestHistoryStoreRejectsDifferentViewResponse(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreAcceptsOldestReplaceForBoundFrozenToken(t *testing.T) {
+	store := HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 90, LastLineID: 100},
+	}
+	store, err := store.BeginOldest(HistoryPendingRequest{
+		ID:         6,
+		TerminalID: "term-1",
+		Cols:       80,
+		Token:      "tok-1",
+		Generation: 7,
+		Boundary:   store.Boundary,
+	})
+	if err != nil {
+		t.Fatalf("begin oldest: %v", err)
+	}
+
+	window := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "oldest", LineID: 1}})
+	store, inserted, err := store.ApplyWindow(6, window)
+	if err != nil {
+		t.Fatalf("apply oldest: %v", err)
+	}
+	if inserted != 1 || store.Pending != nil || store.Rows[0].Text != "oldest" || store.Boundary.FirstLineID != 1 {
+		t.Fatalf("unexpected oldest replace state inserted=%d store=%#v", inserted, store)
+	}
+}
+
+func TestHistoryStoreRejectsOldestFromDifferentFrozenToken(t *testing.T) {
+	store, err := (HistoryStore{}).BeginOldest(HistoryPendingRequest{
+		ID:         7,
+		TerminalID: "term-1",
+		Cols:       80,
+		Token:      "tok-1",
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 90, LastLineID: 100},
+	})
+	if err != nil {
+		t.Fatalf("begin oldest: %v", err)
+	}
+
+	window := historyWindow(HistoryWindowReplace, "term-1", "tok-stale", 80, 7, []HistoryRow{{Text: "oldest", LineID: 1}})
+	if _, _, err := store.ApplyWindow(7, window); !errors.Is(err, ErrStaleHistoryResponse) {
+		t.Fatalf("expected stale oldest token rejection, got %v", err)
+	}
+}
+
 func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 	copyMode := CopyModeStore{}.BindLatest("pane-1", "pane:pane-1", "term-1", 1, 80, 20)
 	if !copyMode.Active || !copyMode.Empty || copyMode.PaneID != "pane-1" || copyMode.ViewID != "pane:pane-1" || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {

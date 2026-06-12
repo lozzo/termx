@@ -476,7 +476,7 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 		"visual review",
 		"[]─[]",
 		"case: copy-history",
-		"SCROLL",
+		"copy row",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("v3 smoke output missing visual review marker %q:\n%s", want, text)

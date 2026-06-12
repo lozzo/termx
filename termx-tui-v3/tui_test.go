@@ -113,9 +113,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	if !frameContains(cases["copy-empty"].Lines, "copy history empty") {
 		t.Fatalf("copy empty smoke missing pending/empty content: %#v", cases["copy-empty"].Lines)
 	}
-	if !frameContains(cases["copy-history"].Lines, "⌕ search [/ query]") ||
-		!frameContains(cases["copy-history"].Lines, "termx-tui-v3") ||
-		!frameContains(cases["copy-history"].Lines, "SCROLL") {
+	if !frameContains(cases["copy-history"].Lines, "termx-tui-v3") ||
+		!frameContains(cases["copy-history"].Lines, "copy row") {
 		t.Fatalf("copy history smoke missing authoritative row: %#v", cases["copy-history"].Lines)
 	}
 	if !frameContains(cases["prompt-overlay"].Lines, "Command Prompt") ||

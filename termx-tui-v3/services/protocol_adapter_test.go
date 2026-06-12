@@ -222,6 +222,27 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	if params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected older params %#v", params)
 	}
+
+	client.window.Op = protocol.HistoryWindowReplace
+	oldest, err := adapter.HistoryOldest(context.Background(), HistoryOldestRequest{
+		RequestID:  3,
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       10,
+		Token:      "tok-1",
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 42, LastLineID: 43},
+	})
+	if err != nil {
+		t.Fatalf("oldest: %v", err)
+	}
+	if oldest.RequestID != 3 || oldest.Window.Op != state.HistoryWindowReplace {
+		t.Fatalf("unexpected oldest result %#v", oldest)
+	}
+	params = client.requests[2]
+	if params.Token != "tok-1" || params.Generation != 7 || params.CursorValid || params.BeforeLineID != 0 || params.BoundaryLastLineID != 43 {
+		t.Fatalf("unexpected oldest params %#v", params)
+	}
 }
 
 func TestProtocolCoreClientAdapterMapsStyledHistoryCells(t *testing.T) {

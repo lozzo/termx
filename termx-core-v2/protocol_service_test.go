@@ -230,6 +230,62 @@ func TestProtocolServiceOlderAcceptsBoundaryFromMultiRowLatestSnapshot(t *testin
 	}
 }
 
+func TestProtocolServiceHistoryWindowTokenWithoutCursorReturnsFrozenOldestPage(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\nfive"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "four" || rowText(latest.Rows[1]) != "five" || latest.Token == "" {
+		t.Fatalf("expected frozen latest tail, got %#v", latest)
+	}
+
+	oldest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               2,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("oldest history.window from frozen token: %v", err)
+	}
+	if oldest.Op != protocol.HistoryWindowReplace || oldest.Token != latest.Token || oldest.CursorValid || !oldest.HasMore {
+		t.Fatalf("oldest jump should replace current loaded page without an older cursor, got %#v", oldest)
+	}
+	if len(oldest.Rows) != 2 || rowText(oldest.Rows[0]) != "one" || rowText(oldest.Rows[1]) != "two" {
+		t.Fatalf("unexpected oldest rows %#v", oldest.Rows)
+	}
+
+	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               2,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID + 99,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
+		t.Fatalf("expected stale boundary error for frozen oldest request, got %v", err)
+	}
+}
+
 func TestProtocolServiceOlderAcceptsExpandedBoundaryAfterPrepend(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
@@ -310,6 +366,14 @@ func TestFrozenSnapshotOlderWindowUsesLargeSnapshotCursor(t *testing.T) {
 	}
 	if got := older.Rows[len(older.Rows)-1].LineID; got >= latest.FirstLineID {
 		t.Fatalf("older page must be before latest boundary, got last=%d latestFirst=%d", got, latest.FirstLineID)
+	}
+
+	oldest := frozenSnapshotOldestWindow(snapshot, 80, 24)
+	if len(oldest.Rows) != 24 || oldest.Op != history.HistoryWindowReplace || oldest.Cursor.Valid {
+		t.Fatalf("expected one replace oldest page without cursor, got %#v", oldest)
+	}
+	if oldest.FirstLineID != 1 || oldest.Rows[0].LineID != 1 || !oldest.HasMore {
+		t.Fatalf("oldest page should start at first logical line and report skipped newer rows, got %#v", oldest)
 	}
 }
 
@@ -446,20 +510,19 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 		t.Fatalf("older page should still come from frozen snapshot, got %#v", older)
 	}
 	oldest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
-		TerminalID:      "term-1",
-		Cols:            10,
-		Limit:           1,
-		CursorValid:     older.CursorValid,
-		BeforeLineID:    older.CursorLineID,
-		BeforeRowInLine: older.CursorRow,
-		Token:           older.Token,
-		Generation:      older.Generation,
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
 	})
 	if err != nil {
-		t.Fatalf("oldest page from frozen snapshot after CR mutation: %v", err)
+		t.Fatalf("direct oldest page from frozen snapshot after CR mutation: %v", err)
 	}
-	if len(oldest.Rows) != 1 || rowText(oldest.Rows[0]) != "one" {
-		t.Fatalf("oldest page should still come from frozen snapshot, got %#v", oldest)
+	if oldest.Op != protocol.HistoryWindowReplace || len(oldest.Rows) != 1 || rowText(oldest.Rows[0]) != "one" {
+		t.Fatalf("direct oldest page should still come from frozen snapshot, got %#v", oldest)
 	}
 
 	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{

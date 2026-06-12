@@ -11,11 +11,12 @@ import (
 // RequestID 是 TUI 本地请求 id，只用于关联 async response。
 type RequestID uint64
 
-// HistoryRequestKind 区分 latest replace 和 older prepend。
+// HistoryRequestKind 区分 latest replace、oldest replace 和 older prepend。
 type HistoryRequestKind string
 
 const (
 	HistoryRequestLatest HistoryRequestKind = "latest"
+	HistoryRequestOldest HistoryRequestKind = "oldest"
 	HistoryRequestOlder  HistoryRequestKind = "older"
 )
 
@@ -230,6 +231,15 @@ func (store HistoryStore) BeginOlder(req HistoryPendingRequest) (HistoryStore, e
 	return store, nil
 }
 
+func (store HistoryStore) BeginOldest(req HistoryPendingRequest) (HistoryStore, error) {
+	if store.Pending != nil {
+		return store, ErrHistoryRequestPending
+	}
+	req.Kind = HistoryRequestOldest
+	store.Pending = &req
+	return store, nil
+}
+
 func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow) (HistoryStore, int, error) {
 	if store.Pending == nil || store.Pending.ID != requestID {
 		return store, 0, ErrStaleHistoryResponse
@@ -319,6 +329,16 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 		// response 的 window.Cols 只是 core 当前投影使用的 source cols；TUI 会
 		// 基于 SourceLines 按本地 pane 宽度重新 reflow，因此 latest 不要求
 		// response cols 与本地请求 cols 完全一致。
+	case HistoryRequestOldest:
+		if window.Op != HistoryWindowReplace {
+			return ErrHistoryWindowMismatch
+		}
+		if pending.Token == "" || pending.Token != window.Token {
+			return ErrStaleHistoryResponse
+		}
+		if pending.Generation != 0 && pending.Generation != window.Generation {
+			return ErrStaleHistoryResponse
+		}
 	case HistoryRequestOlder:
 		if window.Op != HistoryWindowPrepend {
 			return ErrHistoryWindowMismatch

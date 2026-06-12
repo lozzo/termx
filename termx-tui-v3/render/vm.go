@@ -594,6 +594,9 @@ func buildPanelChromeVM(root state.Root, pane state.PaneState, active bool, cont
 	actions := defaultPaneChromeActionVMs(style)
 	terminal := terminalChromeVM(root, pane, active, content, style)
 	meta := terminalResizeOwnerMeta(pane.ID, root.TerminalViews)
+	if active && content.Kind == ContentCopyHistory && content.Status != "" {
+		meta = append([]ChromeSlotVM{{Text: compactCopyHistoryChromeStatus(content.Status), Style: StyleMuted}}, meta...)
+	}
 	return PanelChromeVM{
 		Title:    ChromeSlotVM{Text: activePaneTitle(pane), Style: style},
 		State:    paneChromeStateSlot(active, content),
@@ -601,6 +604,17 @@ func buildPanelChromeVM(root state.Root, pane state.PaneState, active bool, cont
 		Terminal: terminal,
 		Actions:  actions,
 	}
+}
+
+func compactCopyHistoryChromeStatus(status string) string {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return ""
+	}
+	if DisplayWidth(status) <= 42 {
+		return status
+	}
+	return TruncateCells(status, 42)
 }
 
 func terminalChromeVM(root state.Root, pane state.PaneState, active bool, content ContentVM, style StyleToken) TerminalChromeVM {

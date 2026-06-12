@@ -32,13 +32,13 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	if content.Kind != ContentCopyHistory {
 		t.Fatalf("expected copy-history content, got %#v", content)
 	}
-	if len(content.Lines) < 4 || content.Lines[1].PlainString() != "● old" || content.Lines[2].PlainString() != "● new" {
+	if len(content.Lines) != 2 || content.Lines[0].PlainString() != "old" || content.Lines[1].PlainString() != "new" {
 		t.Fatalf("unexpected copy-history content lines %#v", content.Lines)
 	}
-	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[0].Rect != (Rect{X: 2, Y: 1, W: 3, H: 1}) || content.HitRegions[1].Rect != (Rect{X: 2, Y: 2, W: 3, H: 1}) {
+	if len(content.HitRegions) != 2 || content.HitRegions[0].LineID != 10 || content.HitRegions[0].Rect != (Rect{X: 0, Y: 0, W: 3, H: 1}) || content.HitRegions[1].Rect != (Rect{X: 0, Y: 1, W: 3, H: 1}) {
 		t.Fatalf("unexpected hit regions %#v", content.HitRegions)
 	}
-	if !vm.Shell.Cursor.Visible || vm.Shell.Cursor.Row != 2 || vm.Shell.Cursor.Col != 4 {
+	if !vm.Shell.Cursor.Visible || vm.Shell.Cursor.Row != 1 || vm.Shell.Cursor.Col != 2 {
 		t.Fatalf("expected copy cursor VM, got %#v", vm.Shell.Cursor)
 	}
 }
@@ -426,26 +426,23 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
-	if got := content.Lines[0].PlainString(); !strings.Contains(got, "search") {
-		t.Fatalf("expected copy search row, got %#v", content.Lines)
-	}
-	if got := content.Lines[1].PlainString(); !strings.Contains(got, "⇡ alpha") {
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "⇡ alpha") {
 		t.Fatalf("expected clipped-before marker, got %#v", content.Lines)
 	}
-	if got := content.Lines[2].PlainString(); !strings.Contains(got, "╎ beta好 ⇣") {
-		t.Fatalf("expected continuation and clipped-end markers, got %#v", content.Lines)
+	if got := content.Lines[1].PlainString(); got != "beta好 ⇣" {
+		t.Fatalf("expected continuation row without engineering marker and with clipped-end marker, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[1], "pha", StyleAccent) || !lineHasStyledCell(content.Lines[2], "beta", StyleAccent) {
+	if !lineHasStyledCell(content.Lines[0], "pha", StyleAccent) || !lineHasStyledCell(content.Lines[1], "beta", StyleAccent) {
 		t.Fatalf("expected selection rendered as styled cells, got %#v", content.Lines)
 	}
-	if !content.Cursor.Visible || content.Cursor.Row != 2 || content.Cursor.Col != 6 {
-		t.Fatalf("expected cursor offset by copy marker, got %#v", content.Cursor)
+	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != 4 {
+		t.Fatalf("expected cursor in content coordinates without copy marker offset, got %#v", content.Cursor)
 	}
 	if !strings.Contains(content.Status, "row 2/3 line:10 part:2 cols:12") || !strings.Contains(content.Status, "span:1-2") {
 		t.Fatalf("expected position status, got %q", content.Status)
 	}
 	if len(content.HitRegions) != 3 || content.HitRegions[1].LineID != 10 ||
-		content.HitRegions[1].Rect != (Rect{X: 2, Y: 2, W: 6, H: 1}) {
+		content.HitRegions[1].Rect != (Rect{X: 0, Y: 1, W: 6, H: 1}) {
 		t.Fatalf("expected history hit regions to cover only row text display cells, got %#v", content.HitRegions)
 	}
 }
@@ -472,7 +469,7 @@ func TestRenderVMBuilderDoesNotKeepClippedMarkerAfterBoundaryOverlapMerge(t *tes
 	}
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[1].PlainString(); strings.Contains(got, "⇡") || strings.Contains(got, "⇣") {
+	if got := content.Lines[0].PlainString(); strings.Contains(got, "⇡") || strings.Contains(got, "⇣") {
 		t.Fatalf("boundary-overlap merged logical line should not keep clipped markers, got %#v", content.Lines)
 	}
 }
@@ -505,8 +502,8 @@ func TestRenderVMBuilderCopyHistoryHitRegionsUseAuthoritativeDisplayCells(t *tes
 	if len(content.HitRegions) != 1 {
 		t.Fatalf("expected one history hit region, got %#v", content.HitRegions)
 	}
-	if got, want := content.HitRegions[0].Rect, (Rect{X: copyHistoryMarkerCell(root.History.Rows[0]).Width, Y: 1, W: 5, H: 1}); got != want {
-		t.Fatalf("history hit region should start after marker and use row display width got=%#v want=%#v", got, want)
+	if got, want := content.HitRegions[0].Rect, (Rect{X: 0, Y: 0, W: 5, H: 1}); got != want {
+		t.Fatalf("history hit region should use row display width in content coordinates got=%#v want=%#v", got, want)
 	}
 }
 
@@ -530,7 +527,7 @@ func TestRenderVMBuilderCopyHistoryEmptyRowKeepsOneCellHitRegion(t *testing.T) {
 	if len(content.HitRegions) != 1 {
 		t.Fatalf("expected one history hit region, got %#v", content.HitRegions)
 	}
-	if got, want := content.HitRegions[0].Rect, (Rect{X: 2, Y: 1, W: 1, H: 1}); got != want {
+	if got, want := content.HitRegions[0].Rect, (Rect{X: 0, Y: 0, W: 1, H: 1}); got != want {
 		t.Fatalf("empty authoritative row should keep a one-cell selectable region got=%#v want=%#v", got, want)
 	}
 }
@@ -556,42 +553,37 @@ func TestRenderVMBuilderCopyHistoryShowsAuthoritativeBoundaryTokens(t *testing.T
 			TerminalID:  "term-1",
 			BoundToken:  "tok-1",
 			BoundCols:   12,
-			ViewRows:    4,
+			ViewRows:    2,
 			ViewportTop: 1,
 		},
 	}
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ more") {
-		t.Fatalf("search row should expose older-more token from authoritative cursor, got %q", got)
+	if strings.Contains(content.Lines[0].PlainString(), "SCROLL") || strings.Contains(content.Lines[0].PlainString(), "search") {
+		t.Fatalf("copy history content should only contain history rows, got %#v", content.Lines)
 	}
-	scroll := content.Lines[len(content.Lines)-1].PlainString()
-	if !strings.Contains(scroll, "↓ loaded") || !strings.Contains(scroll, "lines:100-103 view:2-3") {
-		t.Fatalf("scrollbar should expose bottom loaded and logical boundary summary, got %q", scroll)
-	}
-	if !strings.Contains(content.Status, "lines:100-103 view:2-3") {
+	if !strings.Contains(content.Status, "older:more") || !strings.Contains(content.Status, "loaded") || !strings.Contains(content.Status, "lines:100-103 view:2-3") {
 		t.Fatalf("status should include boundary summary, got %q", content.Status)
 	}
 
 	root.CopyMode.ViewportTop = 2
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	scroll = content.Lines[len(content.Lines)-1].PlainString()
-	if !strings.Contains(scroll, "↓ latest") || !strings.Contains(scroll, "view:3-4") {
-		t.Fatalf("bottom token should switch to latest at loaded tail, got %q", scroll)
+	if !strings.Contains(content.Status, "latest") || !strings.Contains(content.Status, "view:3-4") {
+		t.Fatalf("bottom token should switch to latest at loaded tail, got %q", content.Status)
 	}
 
 	root.History.Pending = &state.HistoryPendingRequest{ID: 7, Kind: state.HistoryRequestOlder, Token: "tok-1"}
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ loading") {
-		t.Fatalf("search row should expose pending older request, got %q", got)
+	if !strings.Contains(content.Status, "older:loading") {
+		t.Fatalf("status should expose pending older request, got %q", content.Status)
 	}
 
 	root.History.Pending = nil
 	root.History.HasMore = false
 	root.History.Exhausted = state.ExhaustedMarker{}
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ older") || strings.Contains(got, "↑ more") {
-		t.Fatalf("cursor-ready window without HasMore should use neutral older token, got %q", got)
+	if !strings.Contains(content.Status, "older:ready") || strings.Contains(content.Status, "older:more") {
+		t.Fatalf("cursor-ready window without HasMore should use neutral older token, got %q", content.Status)
 	}
 
 	root.History.Exhausted = state.ExhaustedMarker{
@@ -602,8 +594,8 @@ func TestRenderVMBuilderCopyHistoryShowsAuthoritativeBoundaryTokens(t *testing.T
 		Boundary: root.History.Boundary,
 	}
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[0].PlainString(); !strings.Contains(got, "↑ top") {
-		t.Fatalf("search row should expose exhausted top token, got %q", got)
+	if !strings.Contains(content.Status, "older:top") {
+		t.Fatalf("status should expose exhausted top token, got %q", content.Status)
 	}
 }
 
@@ -615,7 +607,7 @@ func TestFrameworkRendersCopyHistoryOverflowMarkersOnPaneChrome(t *testing.T) {
 			Token:      "tok-1",
 			Cols:       78,
 			Rows: []state.HistoryRow{
-				{Text: "0123456789abcdef", LineID: 10},
+				{Text: "0123456789abcdefghijkl", LineID: 10},
 				{Text: "row-2", LineID: 11},
 				{Text: "row-3", LineID: 12},
 				{Text: "row-4", LineID: 13},
@@ -675,15 +667,15 @@ func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
 	}
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[1].PlainString(); !strings.Contains(got, "● ERR 好") {
+	if got := content.Lines[0].PlainString(); !strings.Contains(got, "ERR 好") {
 		t.Fatalf("expected copy history plain text from styled cells, got %#v", content.Lines)
 	}
-	if !lineHasANSICell(content.Lines[1], "ERR", ANSICellStyle{FG: "ansi:1", Bold: true}) ||
-		!lineHasANSICell(content.Lines[1], "好", ANSICellStyle{FG: "#ffcc00", Underline: true}) {
-		t.Fatalf("copy history render should preserve history ANSI cells, got %#v", content.Lines[1])
+	if !lineHasANSICell(content.Lines[0], "ERR", ANSICellStyle{FG: "ansi:1", Bold: true}) ||
+		!lineHasANSICell(content.Lines[0], "好", ANSICellStyle{FG: "#ffcc00", Underline: true}) {
+		t.Fatalf("copy history render should preserve history ANSI cells, got %#v", content.Lines[0])
 	}
-	if !lineHasLinkCell(content.Lines[1], "好", "file://build.log", "line=7") {
-		t.Fatalf("copy history render should preserve history link metadata, got %#v", content.Lines[1])
+	if !lineHasLinkCell(content.Lines[0], "好", "file://build.log", "line=7") {
+		t.Fatalf("copy history render should preserve history link metadata, got %#v", content.Lines[0])
 	}
 
 	root.CopyMode.Selection = &state.CopySelection{
@@ -691,11 +683,11 @@ func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
 		Focus:  state.CopyPosition{Row: 0, Col: 3},
 	}
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if !lineHasStyledCell(content.Lines[1], "ERR", StyleAccent) {
-		t.Fatalf("selection should override history ANSI style for selected cells, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[0], "ERR", StyleAccent) {
+		t.Fatalf("selection should override history ANSI style for selected cells, got %#v", content.Lines[0])
 	}
-	if !lineHasLinkCell(content.Lines[1], "好", "file://build.log", "line=7") {
-		t.Fatalf("selection should not drop unselected history link metadata, got %#v", content.Lines[1])
+	if !lineHasLinkCell(content.Lines[0], "好", "file://build.log", "line=7") {
+		t.Fatalf("selection should not drop unselected history link metadata, got %#v", content.Lines[0])
 	}
 }
 
@@ -732,30 +724,30 @@ func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testin
 	}
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if !content.Cursor.Visible || content.Cursor.Col != copyHistoryMarkerCell(root.History.Rows[0]).Width+4 {
+	if !content.Cursor.Visible || content.Cursor.Col != 4 {
 		t.Fatalf("cursor should use display columns, got %#v", content.Cursor)
 	}
-	if !lineHasStyledCell(content.Lines[1], "好", StyleAccent) || !lineHasStyledCell(content.Lines[1], "b", StyleAccent) {
-		t.Fatalf("selection should split styled cells by display columns, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[0], "好", StyleAccent) || !lineHasStyledCell(content.Lines[0], "b", StyleAccent) {
+		t.Fatalf("selection should split styled cells by display columns, got %#v", content.Lines[0])
 	}
-	if !lineHasLinkCell(content.Lines[1], "好", "file://wide.txt", "row=1") || !lineHasLinkCell(content.Lines[1], "b", "file://split.txt", "row=1") {
-		t.Fatalf("selection split should preserve link metadata on highlighted cells, got %#v", content.Lines[1])
+	if !lineHasLinkCell(content.Lines[0], "好", "file://wide.txt", "row=1") || !lineHasLinkCell(content.Lines[0], "b", "file://split.txt", "row=1") {
+		t.Fatalf("selection split should preserve link metadata on highlighted cells, got %#v", content.Lines[0])
 	}
-	if lineHasStyledCell(content.Lines[1], "a", StyleAccent) || lineHasStyledCell(content.Lines[1], "c", StyleAccent) {
-		t.Fatalf("selection should not leak outside display-column range, got %#v", content.Lines[1])
+	if lineHasStyledCell(content.Lines[0], "a", StyleAccent) || lineHasStyledCell(content.Lines[0], "c", StyleAccent) {
+		t.Fatalf("selection should not leak outside display-column range, got %#v", content.Lines[0])
 	}
 
 	root.CopyMode.Selection = nil
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if !lineHasStyledCell(content.Lines[1], "好", StyleWarning) || !lineHasStyledCell(content.Lines[1], "b", StyleWarning) {
-		t.Fatalf("search should split styled cells by display columns, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[0], "好", StyleWarning) || !lineHasStyledCell(content.Lines[0], "b", StyleWarning) {
+		t.Fatalf("search should split styled cells by display columns, got %#v", content.Lines[0])
 	}
-	if !lineHasLinkCell(content.Lines[1], "好", "file://wide.txt", "row=1") || !lineHasLinkCell(content.Lines[1], "b", "file://split.txt", "row=1") {
-		t.Fatalf("search split should preserve link metadata on highlighted cells, got %#v", content.Lines[1])
+	if !lineHasLinkCell(content.Lines[0], "好", "file://wide.txt", "row=1") || !lineHasLinkCell(content.Lines[0], "b", "file://split.txt", "row=1") {
+		t.Fatalf("search split should preserve link metadata on highlighted cells, got %#v", content.Lines[0])
 	}
-	if !lineHasANSICell(content.Lines[1], "a", ANSICellStyle{FG: "ansi:2"}) ||
-		!lineHasANSICell(content.Lines[1], "c", ANSICellStyle{FG: "ansi:4"}) {
-		t.Fatalf("unmatched history cells should preserve ANSI style, got %#v", content.Lines[1])
+	if !lineHasANSICell(content.Lines[0], "a", ANSICellStyle{FG: "ansi:2"}) ||
+		!lineHasANSICell(content.Lines[0], "c", ANSICellStyle{FG: "ansi:4"}) {
+		t.Fatalf("unmatched history cells should preserve ANSI style, got %#v", content.Lines[0])
 	}
 }
 
@@ -783,11 +775,11 @@ func TestRenderVMBuilderCopyHistorySearchUsesGraphemeDisplayColumns(t *testing.T
 	}
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if !lineHasStyledCell(content.Lines[1], family, StyleWarning) {
-		t.Fatalf("search should highlight emoji grapheme as one display range, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[0], family, StyleWarning) {
+		t.Fatalf("search should highlight emoji grapheme as one display range, got %#v", content.Lines[0])
 	}
-	if lineHasStyledCell(content.Lines[1], "x", StyleWarning) {
-		t.Fatalf("search highlight should not leak into trailing x, got %#v", content.Lines[1])
+	if lineHasStyledCell(content.Lines[0], "x", StyleWarning) {
+		t.Fatalf("search highlight should not leak into trailing x, got %#v", content.Lines[0])
 	}
 }
 
@@ -815,14 +807,14 @@ func TestRenderVMBuilderCopyHistorySearchHighlightsAcrossReflowRows(t *testing.T
 	}
 
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if !lineHasStyledCell(content.Lines[1], "be", StyleWarning) {
-		t.Fatalf("first reflow row should highlight cross-row search suffix, got %#v", content.Lines[1])
+	if !lineHasStyledCell(content.Lines[0], "be", StyleWarning) {
+		t.Fatalf("first reflow row should highlight cross-row search suffix, got %#v", content.Lines[0])
 	}
-	if !lineHasStyledCell(content.Lines[2], "ta", StyleWarning) {
-		t.Fatalf("second reflow row should highlight cross-row search prefix, got %#v", content.Lines[2])
+	if !lineHasStyledCell(content.Lines[1], "ta", StyleWarning) {
+		t.Fatalf("second reflow row should highlight cross-row search prefix, got %#v", content.Lines[1])
 	}
-	if lineHasStyledCell(content.Lines[2], "gamma", StyleWarning) {
-		t.Fatalf("cross-row search highlight must not leak past match end, got %#v", content.Lines[2])
+	if lineHasStyledCell(content.Lines[1], "gamma", StyleWarning) {
+		t.Fatalf("cross-row search highlight must not leak past match end, got %#v", content.Lines[1])
 	}
 }
 

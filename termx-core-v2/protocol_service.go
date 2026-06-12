@@ -548,6 +548,18 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 			// 已加载 frozen 视图；LastLineID 必须保持当前 tail boundary，不能变成本页尾。
 			window.LastLineID = history.LogicalLineID(params.BoundaryLastLineID)
 		}
+	} else if params.Token != "" {
+		if err := session.validateFrozenWindowRequest(params, cols); err != nil {
+			return nil, err
+		}
+		snapshot, ok := session.frozenSnapshot(params.TerminalID, params.Token)
+		if !ok {
+			return nil, ErrStaleHistoryWindow
+		}
+		// 带 token 但不带 cursor 表示在当前 frozen snapshot 内跳到最老页；
+		// 这是跳转语义，返回 replace，避免客户端为了到顶一次性加载中间所有页。
+		window = frozenSnapshotOldestWindow(snapshot, cols, limit)
+		window.Token = history.WindowToken(params.Token)
 	} else {
 		terminal, err := session.server.Terminal(params.TerminalID)
 		if err != nil {
@@ -567,6 +579,20 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 }
 
 func (session *protocolSession) validateOlderWindowRequest(params protocol.HistoryWindowParams, cols int) error {
+	if err := session.validateFrozenWindowRequest(params, cols); err != nil {
+		return err
+	}
+	snapshot, _ := session.frozenSnapshot(params.TerminalID, params.Token)
+	if params.CursorValid {
+		cursor := protocolCursorToCore(params)
+		if !frozenSnapshotCursorValid(snapshot, cols, cursor) {
+			return ErrStaleHistoryWindow
+		}
+	}
+	return nil
+}
+
+func (session *protocolSession) validateFrozenWindowRequest(params protocol.HistoryWindowParams, cols int) error {
 	snapshot, ok := session.frozenSnapshot(params.TerminalID, params.Token)
 	if !ok {
 		return ErrStaleHistoryWindow
@@ -576,12 +602,6 @@ func (session *protocolSession) validateOlderWindowRequest(params protocol.Histo
 	}
 	if params.Generation != 0 && params.Generation != uint64(snapshot.Generation) {
 		return ErrStaleHistoryWindow
-	}
-	if params.CursorValid {
-		cursor := protocolCursorToCore(params)
-		if !frozenSnapshotCursorValid(snapshot, cols, cursor) {
-			return ErrStaleHistoryWindow
-		}
 	}
 	// older 请求带回的是客户端当前 frozen latest/prepend 视图的 logical
 	// boundary，而不是“只看最后一行”重算出来的尾部 line id。这里要接受
@@ -1177,6 +1197,14 @@ func frozenSnapshotOlderWindow(snapshot history.FrozenSnapshot, cols int, rows i
 	return frozenSnapshotWindow(snapshot, cols, rows, cursor, history.HistoryWindowPrepend)
 }
 
+func frozenSnapshotOldestWindow(snapshot history.FrozenSnapshot, cols int, rows int) history.HistoryWindow {
+	if rows <= 0 {
+		rows = 24
+	}
+	selected, hasMore := projectFrozenSnapshotOldestHeadRows(snapshot, cols, rows)
+	return buildFrozenSnapshotWindow(snapshot, cols, history.HistoryWindowReplace, selected, history.HistoryCursor{}, hasMore)
+}
+
 func frozenSnapshotCursorValid(snapshot history.FrozenSnapshot, cols int, cursor history.HistoryCursor) bool {
 	if cols <= 0 || !cursor.Valid {
 		return false
@@ -1320,6 +1348,26 @@ func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols i
 		}
 	}
 	reverseSnapshotProjectedRows(rows)
+	return rows, hasMore
+}
+
+func projectFrozenSnapshotOldestHeadRows(snapshot history.FrozenSnapshot, cols int, maxRows int) ([]snapshotProjectedRow, bool) {
+	lines := snapshotVisibleLines(snapshot)
+	rows := make([]snapshotProjectedRow, 0, maxRows)
+	hasMore := false
+	for _, line := range lines {
+		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
+		for _, row := range lineRows {
+			if len(rows) >= maxRows {
+				hasMore = true
+				break
+			}
+			rows = append(rows, row)
+		}
+		if hasMore {
+			break
+		}
+	}
 	return rows, hasMore
 }
 

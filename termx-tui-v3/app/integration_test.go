@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -76,8 +77,8 @@ func TestCopyModePageUpLatestAndOlderE2E(t *testing.T) {
 	if len(last.Lines) == 0 || !frameContains(last, "old") || !frameContains(last, "new") {
 		t.Fatalf("expected latest rendered copy frame to start with older row, got %#v", last.Lines)
 	}
-	if !frameContains(last, "● old") || !frameContains(last, "● new") {
-		t.Fatalf("expected copy-history logical line markers in frame, got %#v", last.Lines)
+	if frameContains(last, "● old") || frameContains(last, "● new") {
+		t.Fatalf("copy-history content should not inject engineering markers into history text, got %#v", last.Lines)
 	}
 }
 
@@ -154,6 +155,62 @@ func TestCopyModeContinuousOlderPrependsAndKeepsTailBoundary(t *testing.T) {
 	last := lastFrame(t, host.Frames())
 	if !frameContains(last, "line-949") || !frameContains(last, "line-950") {
 		t.Fatalf("second older should visibly refresh to older rows, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeGoAtLoadedTopRequestsOldest(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{{Text: "line-964", LineID: 964}, {Text: "line-965", LineID: 965}},
+		)}},
+		OldestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{{Text: "line-000", LineID: 1}, {Text: "line-001", LineID: 2}},
+		)}},
+	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 964}
+	core.LatestResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 964, LastLineID: 965}
+	core.OldestResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 1, LastLineID: 2}
+	core.OldestResponses[0].Window.HasMore = true
+	host := NewFakeTerminalHost(32)
+	host.SetSize(80, 10)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "g"}); err != nil {
+		t.Fatalf("send g: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain g oldest: %v", err)
+	}
+
+	if len(core.OldestRequests) != 1 {
+		t.Fatalf("g at loaded top should request authoritative oldest, got %#v", core.OldestRequests)
+	}
+	oldestReq := core.OldestRequests[0]
+	if oldestReq.Token != "tok-1" || oldestReq.Generation != 7 || oldestReq.Boundary.LastLineID != 965 {
+		t.Fatalf("unexpected oldest request %#v", oldestReq)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"line-000", "line-001"}) {
+		t.Fatalf("g should replace local window with oldest page, got %v", got)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "line-000") || !frameContains(last, "line-001") {
+		t.Fatalf("g oldest request should visibly refresh to oldest page, got %#v", last.Lines)
 	}
 }
 
@@ -600,8 +657,8 @@ func TestCopyModeOlderBoundaryTokensAndExhaustedGuard(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain latest: %v", err)
 	}
-	if frame := lastFrame(t, host.Frames()); !frameContains(frame, "↑ more") {
-		t.Fatalf("latest window with cursor should show older-more token, got %#v", frame.Lines)
+	if status := activeCopyContentStatus(runtime); !strings.Contains(status, "older:more") {
+		t.Fatalf("latest window with cursor should expose older-more status, got %q", status)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
@@ -610,8 +667,8 @@ func TestCopyModeOlderBoundaryTokensAndExhaustedGuard(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain exhausted older: %v", err)
 	}
-	if frame := lastFrame(t, host.Frames()); !frameContains(frame, "↑ top") {
-		t.Fatalf("exhausted older window should show top token, got %#v", frame.Lines)
+	if status := activeCopyContentStatus(runtime); !strings.Contains(status, "older:top") {
+		t.Fatalf("exhausted older window should expose top status, got %q", status)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
@@ -666,8 +723,8 @@ func TestCopyModeExhaustedGuardSurvivesLocalReflowResize(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain local reflow resize: %v", err)
 	}
-	if frame := lastFrame(t, host.Frames()); !frameContains(frame, "↑ top") {
-		t.Fatalf("local reflow must preserve exhausted top token, got %#v", frame.Lines)
+	if status := activeCopyContentStatus(runtime); !strings.Contains(status, "older:top") {
+		t.Fatalf("local reflow must preserve exhausted top status, got %q", status)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
@@ -4701,8 +4758,13 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 		t.Fatalf("expected search matches and cursor on first beta, got %#v", runtime.State().CopyMode)
 	}
 	queryFrame := lastFrame(t, host.Frames())
-	if !frameContains(queryFrame, "⌕ search beta") || !frameContains(queryFrame, "match:1/2") || !frameContains(queryFrame, "SCROLL") {
-		t.Fatalf("expected search row and scrollbar, got %#v", queryFrame.Lines)
+	if status := activeCopyContentStatus(runtime); !strings.Contains(status, `search:"beta" 1/2`) || !strings.Contains(status, "older:top") {
+		t.Fatalf("expected search status outside history body, got %q", status)
+	}
+	for _, line := range activeCopyContentLines(runtime) {
+		if strings.Contains(line, "⌕ search beta") || strings.Contains(line, "SCROLL") {
+			t.Fatalf("copy history body should not render search/status rows, got %#v", activeCopyContentLines(runtime))
+		}
 	}
 	assertPaneVisualState(t, queryFrame, "beta", render.StyleWarning)
 
@@ -4919,9 +4981,8 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 2 {
 		t.Fatalf("older prepend should keep active search match on original content, got %#v", runtime.State().CopyMode)
 	}
-	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "match:2/2") {
-		t.Fatalf("expected search status to stay on second match after prepend, got %#v", frame.Lines)
+	if status := activeCopyContentStatus(runtime); !strings.Contains(status, `search:"beta" 2/2`) {
+		t.Fatalf("expected search status to stay on second match after prepend, got %q", status)
 	}
 }
 
@@ -5385,6 +5446,10 @@ func (client *blockingHistoryClient) HistoryOlder(context.Context, services.Hist
 	return services.HistoryResult{}, errors.New("unexpected older request")
 }
 
+func (client *blockingHistoryClient) HistoryOldest(context.Context, services.HistoryOldestRequest) (services.HistoryResult, error) {
+	return services.HistoryResult{}, errors.New("unexpected oldest request")
+}
+
 func (client *blockingHistoryClient) latestRequests() []services.HistoryLatestRequest {
 	client.mu.Lock()
 	defer client.mu.Unlock()
@@ -5482,4 +5547,30 @@ func historyRowTexts(rows []state.HistoryRow) []string {
 		texts[i] = row.Text
 	}
 	return texts
+}
+
+func activeCopyContentStatus(runtime *AppRuntime) string {
+	return activeCopyContent(runtime).Status
+}
+
+func activeCopyContentLines(runtime *AppRuntime) []string {
+	content := activeCopyContent(runtime)
+	lines := make([]string, len(content.Lines))
+	for i, line := range content.Lines {
+		lines[i] = line.PlainString()
+	}
+	return lines
+}
+
+func activeCopyContent(runtime *AppRuntime) render.ContentVM {
+	vm := render.NewRenderVMBuilder().Build(runtime.State())
+	for _, panel := range vm.Shell.Layout.Panels {
+		if panel.Active {
+			return panel.Content
+		}
+	}
+	if len(vm.Shell.Layout.Panels) > 0 {
+		return vm.Shell.Layout.Panels[0].Content
+	}
+	return render.ContentVM{}
 }

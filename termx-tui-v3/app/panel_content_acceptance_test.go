@@ -152,8 +152,10 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 			t.Fatalf("styled history row should preserve link metadata, got %#v", content.Lines)
 		}
 		frame := render.NewRenderer(render.DefaultTheme()).Render(vm)
-		assertPanelFrameContains(t, frame, "● git log")
-		assertPanelFrameContains(t, frame, "╎ ERR deploy")
+		assertPanelFrameContains(t, frame, "git log")
+		assertPanelFrameContains(t, frame, "ERR deploy")
+		assertPanelFrameNotContains(t, frame, "● git log")
+		assertPanelFrameNotContains(t, frame, "╎ ERR deploy")
 	})
 
 	t.Run("floating pane content", func(t *testing.T) {

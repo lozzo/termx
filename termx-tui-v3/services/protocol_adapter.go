@@ -55,6 +55,22 @@ func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req H
 	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
 
+func (adapter ProtocolCoreClientAdapter) HistoryOldest(ctx context.Context, req HistoryOldestRequest) (HistoryResult, error) {
+	window, err := adapter.historyWindow(ctx, protocol.HistoryWindowParams{
+		TerminalID:          req.TerminalID,
+		Limit:               req.Rows,
+		Cols:                req.Cols,
+		Token:               req.Token,
+		Generation:          req.Generation,
+		BoundaryFirstLineID: req.Boundary.FirstLineID,
+		BoundaryLastLineID:  req.Boundary.LastLineID,
+	})
+	if err != nil {
+		return HistoryResult{}, err
+	}
+	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
+}
+
 func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (state.HistoryWindow, error) {
 	window, err := adapter.Client.HistoryWindow(ctx, params)
 	if err != nil {

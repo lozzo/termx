@@ -1582,21 +1582,24 @@ run_baseline_scenario() {
   start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "main"
   pane_main="$ATTACH_SESSION_PANE"
   CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
-  page_to_top "$SESSION_MAIN" "$pane_main"
-  capture_session "$SESSION_MAIN" "$pane_main" "copy-top"
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_MAIN" "$pane_main" "copy-top" "000000 [INFO  ] stress   boot" "$G_REPEATS"; then
+    return 1
+  fi
 
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "copy-top.escape" Escape
   tmux resize-window -t "$SESSION_MAIN" -x "$RESIZE_COLS" -y "$RESIZE_ROWS"
   sleep 0.5
-  page_to_top "$SESSION_MAIN" "$pane_main"
-  capture_session "$SESSION_MAIN" "$pane_main" "copy-top-resized"
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_MAIN" "$pane_main" "copy-top-resized" "000000" "$G_REPEATS"; then
+    return 1
+  fi
 
   cleanup_tmux_session "$SESSION_MAIN"
   start_attach_tmux_session "$SESSION_REATTACH" "$TERM_ID" "reattach"
   pane_reattach="$ATTACH_SESSION_PANE"
   CLIENT_REATTACH_PID="$ATTACH_SESSION_CLIENT_PID"
-  page_to_top "$SESSION_REATTACH" "$pane_reattach"
-  capture_session "$SESSION_REATTACH" "$pane_reattach" "reattach-top"
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_REATTACH" "$pane_reattach" "reattach-top" "000000" "$G_REPEATS"; then
+    return 1
+  fi
 
   assert_contains "$ROOT/copy-top.txt" "000000 [INFO  ] stress   boot"
   assert_contains "$ROOT/copy-top-resized.txt" "000000"

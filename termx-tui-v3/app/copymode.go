@@ -305,6 +305,12 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: 0, Col: root.CopyMode.Cursor.Col})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			// `g` 在 copy mode 里表达“去最老处”。这里直接请求 frozen snapshot
+			// 的 oldest page，不能靠重复 older 把中间所有页都拉进 TUI。
+			if root.CopyMode.ViewportTop == 0 && root.History.OlderRequestState() == state.OlderRequestReady {
+				next, effects := beginCopyModeOldest(root, deps)
+				return next, effects, true
+			}
 			return root.Advance(), nil, true
 		case "G":
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: len(root.History.Rows) - 1, Col: root.CopyMode.Cursor.Col})
@@ -459,6 +465,57 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 	}}
 }
 
+func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
+	if deps.Core == nil {
+		return setCopyModeError(root, "core client missing"), nil
+	}
+	switch root.History.OlderRequestState() {
+	case state.OlderRequestPending, state.OlderRequestExhausted, state.OlderRequestMissing:
+		return root, nil
+	}
+	requestID := nextHistoryRequestID(root)
+	req := state.HistoryPendingRequest{
+		ID:         requestID,
+		Kind:       state.HistoryRequestOldest,
+		PaneID:     root.History.PaneID,
+		ViewID:     root.History.ViewID,
+		TerminalID: root.History.TerminalID,
+		Cols:       root.History.Cols,
+		Token:      root.History.Token,
+		Generation: root.History.Generation,
+		Boundary:   root.History.Boundary,
+	}
+	nextHistory, err := root.History.BeginOldest(req)
+	if err != nil {
+		if errors.Is(err, state.ErrHistoryRequestPending) {
+			return root, nil
+		}
+		return setCopyModeError(root, err.Error()), nil
+	}
+	root.History = nextHistory
+	rows := requestRows(deps, copyModeRowsHint(root))
+	return root.Advance(), []Effect{FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
+		Run: func(ctx context.Context) Msg {
+			result, err := deps.Core.HistoryOldest(ctx, services.HistoryOldestRequest{
+				RequestID:  services.RequestID(requestID),
+				PaneID:     req.PaneID,
+				ViewID:     req.ViewID,
+				TerminalID: req.TerminalID,
+				Cols:       req.Cols,
+				Rows:       rows,
+				Token:      req.Token,
+				Generation: req.Generation,
+				Boundary:   req.Boundary,
+			})
+			result.Window.PaneID = req.PaneID
+			result.Window.ViewID = req.ViewID
+			return CopyModeHistoryResultMsg{Result: result, Err: err}
+		},
+	}}
+}
+
 func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
 		if staleCopyModeHistoryResult(root, msg) {
@@ -477,6 +534,8 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	}
 	root.History = nextHistory
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
+		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
+	} else if pending != nil && pending.Kind == state.HistoryRequestOldest {
 		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
 	} else {
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, msg.Result.Window, nextHistory.Cols)
@@ -513,7 +572,7 @@ func copyModeOwnsPendingHistory(root state.Root) bool {
 	if pending.ViewID != "" && root.CopyMode.ViewID != pending.ViewID {
 		return false
 	}
-	if pending.Kind == state.HistoryRequestOlder && pending.Token != "" && root.CopyMode.BoundToken != pending.Token {
+	if (pending.Kind == state.HistoryRequestOlder || pending.Kind == state.HistoryRequestOldest) && pending.Token != "" && root.CopyMode.BoundToken != pending.Token {
 		return false
 	}
 	return true
