@@ -24,18 +24,19 @@ const (
 )
 
 type protocolSession struct {
-	server       *Server
-	conn         transport.Transport
-	sendMu       sync.Mutex
-	nextCh       atomic.Uint32
-	mu           sync.RWMutex
-	attachments  map[uint16]protocolAttachment
-	resizeOwners map[string]uint16
-	sizeLocks    map[string]bool
-	ownerEpoch   uint64
-	cancelEvents context.CancelFunc
-	historyMu    sync.Mutex
-	historyPins  map[string]frozenHistorySnapshot
+	server        *Server
+	conn          transport.Transport
+	sendMu        sync.Mutex
+	nextCh        atomic.Uint32
+	mu            sync.RWMutex
+	attachments   map[uint16]protocolAttachment
+	resizeOwners  map[string]uint16
+	sizeLocks     map[string]bool
+	ownerEpoch    uint64
+	cancelEvents  context.CancelFunc
+	historyMu     sync.Mutex
+	historyPins   map[string]frozenHistorySnapshot
+	historyLatest map[string]string
 }
 
 type frozenHistorySnapshot struct {
@@ -56,12 +57,13 @@ type protocolAttachment struct {
 
 func newProtocolSession(server *Server, conn transport.Transport) *protocolSession {
 	session := &protocolSession{
-		server:       server,
-		conn:         conn,
-		attachments:  make(map[uint16]protocolAttachment),
-		resizeOwners: make(map[string]uint16),
-		sizeLocks:    make(map[string]bool),
-		historyPins:  make(map[string]frozenHistorySnapshot),
+		server:        server,
+		conn:          conn,
+		attachments:   make(map[uint16]protocolAttachment),
+		resizeOwners:  make(map[string]uint16),
+		sizeLocks:     make(map[string]bool),
+		historyPins:   make(map[string]frozenHistorySnapshot),
+		historyLatest: make(map[string]string),
 	}
 	session.nextCh.Store(6)
 	return session
@@ -1116,20 +1118,27 @@ func normalizeAttachMode(mode string) string {
 func (session *protocolSession) storeFrozenSnapshot(terminalID string, snapshot history.FrozenSnapshot) {
 	session.historyMu.Lock()
 	defer session.historyMu.Unlock()
-	session.historyPins[terminalID] = frozenHistorySnapshot{
+	session.historyPins[snapshot.Token] = frozenHistorySnapshot{
 		TerminalID: terminalID,
 		Snapshot:   snapshot,
 	}
+	session.historyLatest[terminalID] = snapshot.Token
 }
 
 func (session *protocolSession) frozenSnapshot(terminalID string, token string) (history.FrozenSnapshot, bool) {
 	session.historyMu.Lock()
 	defer session.historyMu.Unlock()
-	pin, ok := session.historyPins[terminalID]
+	if token == "" {
+		token = session.historyLatest[terminalID]
+	}
+	if token == "" {
+		return history.FrozenSnapshot{}, false
+	}
+	pin, ok := session.historyPins[token]
 	if !ok {
 		return history.FrozenSnapshot{}, false
 	}
-	if token != "" && pin.Snapshot.Token != token {
+	if pin.TerminalID != terminalID {
 		return history.FrozenSnapshot{}, false
 	}
 	return pin.Snapshot, true

@@ -263,6 +263,63 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 	}
 }
 
+func TestProtocolServiceKeepsOlderWorkingForPreviousFrozenTokenAfterNewLatest(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest initial output: %v", err)
+	}
+
+	first, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("first latest frozen snapshot: %v", err)
+	}
+	if first.Token == "" || !first.CursorValid || rowText(first.Rows[0]) != "four" {
+		t.Fatalf("expected first frozen snapshot over mutable tail, got %#v", first)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-1", "\rfo"); err != nil {
+		t.Fatalf("ingest later live mutation: %v", err)
+	}
+
+	second, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("second latest frozen snapshot: %v", err)
+	}
+	if second.Token == "" || second.Token == first.Token || rowText(second.Rows[0]) != "four" {
+		t.Fatalf("expected second latest to pin a newer token and payload, got first=%#v second=%#v", first, second)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     first.CursorValid,
+		BeforeLineID:    first.CursorLineID,
+		BeforeRowInLine: first.CursorRow,
+		Token:           first.Token,
+		Generation:      first.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from previous frozen token after new latest: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from previous frozen token, got %#v", older)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseInLineMutation(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
