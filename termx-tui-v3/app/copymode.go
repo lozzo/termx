@@ -450,6 +450,16 @@ func SelectedText(history state.HistoryStore, copyMode state.CopyModeStore) stri
 		return ""
 	}
 	lines := make([]string, 0, end.Row-start.Row+1)
+	var currentLineID uint64
+	var currentLine strings.Builder
+	flushCurrentLine := func() {
+		if currentLine.Len() == 0 && currentLineID == 0 {
+			return
+		}
+		lines = append(lines, currentLine.String())
+		currentLine.Reset()
+		currentLineID = 0
+	}
 	for row := start.Row; row <= end.Row; row++ {
 		from := 0
 		to := state.HistoryRowDisplayWidth(history.Rows[row])
@@ -462,8 +472,17 @@ func SelectedText(history state.HistoryStore, copyMode state.CopyModeStore) stri
 		if from > to {
 			from, to = to, from
 		}
-		lines = append(lines, state.HistoryRowSliceDisplay(history.Rows[row], from, to))
+		segment := state.HistoryRowSliceDisplay(history.Rows[row], from, to)
+		lineID := history.Rows[row].LineID
+		if currentLineID != 0 && lineID != 0 && currentLineID != lineID {
+			flushCurrentLine()
+		}
+		if currentLineID == 0 {
+			currentLineID = lineID
+		}
+		currentLine.WriteString(segment)
 	}
+	flushCurrentLine()
 	return strings.Join(lines, "\n")
 }
 

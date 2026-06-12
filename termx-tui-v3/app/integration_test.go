@@ -1445,6 +1445,54 @@ func TestSelectedTextUsesDisplayColumns(t *testing.T) {
 	}
 }
 
+func TestSelectedTextJoinsRowsFromSameLogicalLineWithoutNewline(t *testing.T) {
+	history := state.HistoryStore{
+		Rows: []state.HistoryRow{
+			{Text: "alpha", LineID: 10, RowInLine: 0},
+			{Text: "beta", LineID: 10, RowInLine: 1},
+			{Text: "gamma", LineID: 20, RowInLine: 0},
+		},
+		Lines: []state.HistoryLineSpan{
+			{LineID: 10, StartRow: 0, EndRow: 1},
+			{LineID: 20, StartRow: 2, EndRow: 2},
+		},
+	}
+	copyMode := state.CopyModeStore{
+		Active: true,
+		Selection: &state.CopySelection{
+			Anchor: state.CopyPosition{Row: 0, Col: 2},
+			Focus:  state.CopyPosition{Row: 1, Col: 2},
+		},
+	}
+	if got := SelectedText(history, copyMode); got != "phabe" {
+		t.Fatalf("selection across reflow rows of same logical line must not inject newline, got %q", got)
+	}
+}
+
+func TestSelectedTextKeepsNewlineAcrossLogicalLines(t *testing.T) {
+	history := state.HistoryStore{
+		Rows: []state.HistoryRow{
+			{Text: "alpha", LineID: 10, RowInLine: 0},
+			{Text: "beta", LineID: 10, RowInLine: 1},
+			{Text: "gamma", LineID: 20, RowInLine: 0},
+		},
+		Lines: []state.HistoryLineSpan{
+			{LineID: 10, StartRow: 0, EndRow: 1},
+			{LineID: 20, StartRow: 2, EndRow: 2},
+		},
+	}
+	copyMode := state.CopyModeStore{
+		Active: true,
+		Selection: &state.CopySelection{
+			Anchor: state.CopyPosition{Row: 1, Col: 2},
+			Focus:  state.CopyPosition{Row: 2, Col: 2},
+		},
+	}
+	if got := SelectedText(history, copyMode); got != "ta\nga" {
+		t.Fatalf("selection that crosses into next logical line must keep newline, got %q", got)
+	}
+}
+
 func TestCopyModeLineEndAndClampUseDisplayColumns(t *testing.T) {
 	history := state.HistoryStore{
 		Rows: []state.HistoryRow{{Text: "a好", LineID: 1}},
