@@ -176,12 +176,14 @@
 | 215E1-R3. SK history older loading 性能回归 | 完成 | `termx-core-v2/protocol_service.go`、`termx-core-v2/*test.go`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场的 `↑ loading`：当前 copy 会话自己的 stale older 响应会清 pending，frozen snapshot older 改成二分定位 cursor/boundary，并用 10 万行 benchmark 验证单页 older 是微秒级 |
 | 215E1-R4. SK copy mode 上滑可见更新回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已处理真实现场的“上滑 older 返回了但画面没动”：copy mode 上滑先滚已加载历史，拉到 older 后把视口放到新 prepend 的历史页 |
 | 215E1-R5. SK 连续 older 不推进回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`workflow.md` | 已修复真实现场“1000 行输出只能看到 953，再上滑 loading/more 切换但内容不变”：core older response 保持 frozen tail boundary，TUI 能连续接纳并 prepend/显示更老页 |
+| 215E1-R6. SK live 压力输出最新帧合并 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/cmd/termx/`、`workflow.md` | 已处理 `generate_terminal_stress.py --lines 100000` 下的 live pending：core live/history 分轨并按批 ingest，live surface 只维护 latest screen；TUI 合并普通 live changed，真实 TTY 写帧只保留最新待写帧；CLI 首次 attach 不再因为预填 session 被 stale guard 丢掉 |
+| 215E1-R7. SK copy-top 翻到最老页回归 | 待开始 | `termx-core-v2/`、`termx-tui-v3/app/`、`workflow.md` | 100000 行 tmux 已不再卡在 `live surface pending`，但进入 copy mode 后按 `g` 仍只显示中间历史页，例如 004177 起，不到 000000；下一步只查 history/copy 的“跳到最老/连续 older”路径 |
 
 当前下一步：
 
-- `215E1-R5 连续 older 不推进回归` 已完成
-- 当前 priority 回到真实用户现场验证连续上滑是否能越过第一页历史
-- 不继续主动补新的 history 长尾黑盒，除非它直接回归当前主链
+- `215E1-R7 copy-top 翻到最老页回归` 待开始
+- 当前 priority 是修掉真实 tmux baseline 中 `copy-top` 到不了 `000000` 的 history/copy 路径
+- R6 的 live pending 已收口；不要再把 live 输出背压和 copy-top 翻页问题混成一个故障
 
 ## 6. 必做证据
 

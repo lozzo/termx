@@ -251,6 +251,8 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 		cfg.ResizePolicy = state.TerminalResizeRoleOwner
 	}
 	return root, []Effect{FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
 				TerminalID:   cfg.TerminalID,
@@ -334,7 +336,7 @@ func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 	if viewID == "" {
 		return false
 	}
-	if root.Session.TerminalID == "" && len(root.TerminalViews.Views) == 0 {
+	if !root.Session.Attached && len(root.TerminalViews.Views) == 0 {
 		// 初次 attach 时还没有任何 reducer-owned view binding，显式 ViewID 不能被误判成 stale。
 		return true
 	}
@@ -397,6 +399,8 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []E
 		return nil
 	}
 	return []Effect{FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			result, err := source.LiveSurface(ctx, services.TerminalSurfaceRequest{
 				TerminalID: terminalID,

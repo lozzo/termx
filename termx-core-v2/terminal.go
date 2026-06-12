@@ -10,14 +10,15 @@ import (
 )
 
 type Terminal struct {
-	mu      sync.Mutex
-	info    TerminalInfo
-	process TerminalProcess
-	history *history.HistoryTrack
-	live    *live.SurfaceTrack
-	ingest  historyANSIParser
-	events  *eventBroker
-	update  func(TerminalInfo)
+	mu        sync.Mutex
+	info      TerminalInfo
+	process   TerminalProcess
+	liveMu    sync.Mutex
+	live      *live.SurfaceTrack
+	historyMu sync.Mutex
+	history   *terminalHistoryPipeline
+	events    *eventBroker
+	update    func(TerminalInfo)
 }
 
 func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker, update func(TerminalInfo)) *Terminal {
@@ -25,12 +26,11 @@ func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker
 	terminal := &Terminal{
 		info:    info.Clone(),
 		process: process,
-		history: history.NewHistoryTrack(),
 		live:    live.NewSurfaceTrack(size),
+		history: newTerminalHistoryPipeline(int(info.Size.Rows)),
 		events:  events,
 		update:  update,
 	}
-	terminal.history.SetPrimaryScreenRows(int(info.Size.Rows))
 	terminal.watchProcess(process)
 	return terminal
 }
@@ -70,52 +70,17 @@ func (terminal *Terminal) IngestOutput(output string) error {
 		terminal.mu.Unlock()
 		return ErrTerminalExited
 	}
-	historySegments := terminal.ingest.Parse(output)
-	terminal.live.Write(rawOutput)
-	for _, segment := range historySegments {
-		if len(segment.Cells) > 0 {
-			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: segment.Cells}); err != nil {
-				terminal.mu.Unlock()
-				return err
-			}
-		}
-		if segment.CarriageReturn {
-			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventCarriageReturn}); err != nil {
-				terminal.mu.Unlock()
-				return err
-			}
-		}
-		if segment.EraseInLine {
-			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventEraseInLine, EraseMode: segment.EraseMode}); err != nil {
-				terminal.mu.Unlock()
-				return err
-			}
-		}
-		if segment.EraseInDisplay {
-			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventEraseInDisplay, EraseMode: segment.EraseMode}); err != nil {
-				terminal.mu.Unlock()
-				return err
-			}
-		}
-		if segment.SwitchAltScreen {
-			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventSwitchAltScreen, EnterAltScreen: segment.EnterAltScreen}); err != nil {
-				terminal.mu.Unlock()
-				return err
-			}
-		}
-		if segment.Seal {
-			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
-				terminal.mu.Unlock()
-				return err
-			}
-			if err := terminal.history.Apply(history.HistoryEvent{Kind: history.EventCommitFrontier}); err != nil {
-				terminal.mu.Unlock()
-				return err
-			}
-		}
-	}
 	info := terminal.info.Clone()
+	surface := terminal.live
 	terminal.mu.Unlock()
+
+	terminal.liveMu.Lock()
+	surface.Write(rawOutput)
+	terminal.liveMu.Unlock()
+
+	if err := terminal.historyPipeline().Ingest(output); err != nil {
+		return err
+	}
 	terminal.publish(EventTerminalChanged, info)
 	return nil
 }
@@ -149,12 +114,14 @@ func (terminal *Terminal) Resize(size Size) error {
 	}
 	oldSize := terminal.info.Size
 	terminal.info.Size = size
-	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
-	terminal.history.SetPrimaryScreenRows(int(size.Rows))
-	err := terminal.history.Apply(resizeHistoryEvent(oldSize, size))
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
-	if err != nil {
+
+	terminal.liveMu.Lock()
+	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
+	terminal.liveMu.Unlock()
+
+	if err := terminal.historyPipeline().Resize(int(size.Rows), resizeHistoryEvent(oldSize, size)); err != nil {
 		return err
 	}
 	terminal.syncInfo(info)
@@ -193,11 +160,11 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.info.State = TerminalStateRunning
 	terminal.info.ExitCode = nil
 	info = terminal.info.Clone()
-	terminal.history = history.NewHistoryTrack()
-	terminal.history.SetPrimaryScreenRows(int(info.Size.Rows))
-	terminal.live = live.NewSurfaceTrack(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
-	terminal.ingest = historyANSIParser{}
 	terminal.mu.Unlock()
+	terminal.liveMu.Lock()
+	terminal.live = live.NewSurfaceTrack(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
+	terminal.liveMu.Unlock()
+	terminal.resetHistoryPipeline(int(info.Size.Rows))
 	_ = old.Close()
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
@@ -212,39 +179,43 @@ func (terminal *Terminal) Wait() <-chan ProcessExit {
 }
 
 func (terminal *Terminal) LiveRows() []string {
-	terminal.mu.Lock()
-	defer terminal.mu.Unlock()
+	terminal.liveMu.Lock()
+	defer terminal.liveMu.Unlock()
 	return terminal.live.Rows()
 }
 
 func (terminal *Terminal) LiveSnapshot() live.SurfaceSnapshot {
-	terminal.mu.Lock()
-	defer terminal.mu.Unlock()
+	terminal.liveMu.Lock()
+	defer terminal.liveMu.Unlock()
 	return terminal.live.Snapshot()
 }
 
 func (terminal *Terminal) LatestWindow(cols, rows int) (history.HistoryWindow, error) {
-	terminal.mu.Lock()
-	defer terminal.mu.Unlock()
-	return terminal.history.LatestWindow(history.HistoryWindowRequest{Cols: cols, Rows: rows})
+	return terminal.historyPipeline().LatestWindow(cols, rows)
 }
 
 func (terminal *Terminal) OlderWindow(cols, rows int, cursor history.HistoryCursor) (history.HistoryWindow, error) {
-	terminal.mu.Lock()
-	defer terminal.mu.Unlock()
-	return terminal.history.OlderWindow(history.HistoryWindowRequest{Cols: cols, Rows: rows, Cursor: cursor})
+	return terminal.historyPipeline().OlderWindow(cols, rows, cursor)
 }
 
 func (terminal *Terminal) CommittedCursorValid(cols int, cursor history.HistoryCursor) bool {
-	terminal.mu.Lock()
-	defer terminal.mu.Unlock()
-	return terminal.history.CommittedCursorValid(cols, cursor)
+	return terminal.historyPipeline().CommittedCursorValid(cols, cursor)
 }
 
 func (terminal *Terminal) FreezeSnapshot() history.FrozenSnapshot {
-	terminal.mu.Lock()
-	defer terminal.mu.Unlock()
-	return terminal.history.FreezeSnapshot()
+	return terminal.historyPipeline().FreezeSnapshot()
+}
+
+func (terminal *Terminal) historyPipeline() *terminalHistoryPipeline {
+	terminal.historyMu.Lock()
+	defer terminal.historyMu.Unlock()
+	return terminal.history
+}
+
+func (terminal *Terminal) resetHistoryPipeline(rows int) {
+	terminal.historyMu.Lock()
+	terminal.history = newTerminalHistoryPipeline(rows)
+	terminal.historyMu.Unlock()
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
@@ -285,14 +256,29 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		close(done)
 		return done
 	}
+	liveQueue := newTerminalLiveIngestQueue()
+	historyQueue := newTerminalHistoryIngestQueue()
+	go liveQueue.Run(func(output string) error {
+		return terminal.ingestProcessLiveOutput(process, output)
+	})
+	go historyQueue.Run(func(output string) error {
+		return terminal.ingestProcessHistoryOutput(process, output)
+	})
 	go func() {
 		defer close(done)
+		defer func() {
+			liveQueue.Close()
+			liveQueue.Wait()
+			historyQueue.Close()
+			historyQueue.Wait()
+		}()
 		for chunk := range output {
 			if len(chunk) == 0 {
 				continue
 			}
-			// 真实 PTY 输出只能回到 Terminal.IngestOutput，同源更新 live surface 与 logical-line history。
-			_ = terminal.ingestProcessOutput(process, string(chunk))
+			text := string(chunk)
+			liveQueue.Enqueue(text)
+			historyQueue.Enqueue(text)
 		}
 	}()
 	return done
@@ -311,7 +297,7 @@ func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan s
 	}()
 }
 
-func (terminal *Terminal) ingestProcessOutput(process TerminalProcess, output string) error {
+func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, output string) error {
 	terminal.mu.Lock()
 	if terminal.process != process {
 		terminal.mu.Unlock()
@@ -321,8 +307,39 @@ func (terminal *Terminal) ingestProcessOutput(process TerminalProcess, output st
 		terminal.mu.Unlock()
 		return ErrTerminalExited
 	}
+	info := terminal.info.Clone()
+	surface := terminal.live
 	terminal.mu.Unlock()
-	return terminal.IngestOutput(output)
+
+	terminal.liveMu.Lock()
+	surface.Write(output)
+	terminal.liveMu.Unlock()
+
+	terminal.mu.Lock()
+	stillCurrent := terminal.process == process && terminal.info.State != TerminalStateExited && terminal.info.State != TerminalStateRemoved
+	terminal.mu.Unlock()
+	if !stillCurrent {
+		return nil
+	}
+	terminal.publish(EventTerminalChanged, info)
+	return nil
+}
+
+func (terminal *Terminal) ingestProcessHistoryOutput(process TerminalProcess, output string) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
+	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.historyMu.Lock()
+	pipeline := terminal.history
+	terminal.historyMu.Unlock()
+	terminal.mu.Unlock()
+	return pipeline.Ingest(output)
 }
 
 func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) {
@@ -331,12 +348,12 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 		terminal.mu.Unlock()
 		return
 	}
-	_ = terminal.history.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier})
 	terminal.info.State = TerminalStateExited
 	code := exit.Code
 	terminal.info.ExitCode = &code
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
+	_ = terminal.historyPipeline().ForceCommitFrontier()
 	terminal.syncInfo(info)
 	terminal.publish(EventTerminalExited, info)
 }

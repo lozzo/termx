@@ -55,7 +55,9 @@ func (surface *SurfaceTrack) Write(text string) {
 		return
 	}
 	surface.ensureVTerm()
-	_, _, _ = surface.vt.WriteWithDamage([]byte(text))
+	// 中文说明：core-v2 live surface 只暴露当前 screen snapshot，不消费增量 damage。
+	// 所以这里始终走 latest-frame 写入，避免压力输出为每个 PTY 小块构造细粒度 damage。
+	_, _, _ = surface.vt.WriteForLatestFrame([]byte(text))
 }
 
 func (surface *SurfaceTrack) Rows() []string {

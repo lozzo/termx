@@ -163,7 +163,8 @@ type Host struct {
 	inputBuffer int
 	events      chan input.InputEvent
 	ready       chan struct{}
-	sink        *FrameSink
+	sink        render.FrameSink
+	latestSink  *LatestFrameSink
 	themeProbe  bool
 
 	mu      sync.Mutex
@@ -236,6 +237,8 @@ func (host *Host) Enter(ctx context.Context) error {
 		return err
 	}
 	host.cancelReader = cancelReader
+	host.latestSink = NewLatestFrameSink(NewFrameSink(host.output))
+	host.sink = host.latestSink
 	done := host.done
 	host.wg.Add(1)
 	go host.readInput(ctx, cancelReader)
@@ -283,6 +286,11 @@ func (host *Host) restoreLocked() error {
 	if host.resizeSignalStop != nil {
 		host.resizeSignalStop()
 		host.resizeSignalStop = nil
+	}
+	if host.latestSink != nil {
+		host.latestSink.Close()
+		host.latestSink = nil
+		host.sink = NewFrameSink(host.output)
 	}
 	if host.done != nil {
 		close(host.done)

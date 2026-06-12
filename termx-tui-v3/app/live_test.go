@@ -119,6 +119,55 @@ func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 	}
 }
 
+func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T) {
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Cols: 100, Rows: 30},
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 100, Rows: 30},
+	}
+	root, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+		TerminalID:   "term-1",
+		Channel:      7,
+		Cols:         100,
+		Rows:         30,
+		ResizePolicy: state.TerminalResizeRoleOwner,
+		SurfaceID:    "termx-cli-v3",
+		ViewID:       "termx-cli-v3-main",
+		CanResize:    true,
+	}}, LiveDeps{})
+
+	if len(effects) != 0 {
+		t.Fatalf("expected no effects without live deps, got %#v", effects)
+	}
+	if !root.Session.Attached || root.Session.Channel != 7 || root.Session.ViewID != "termx-cli-v3-main" {
+		t.Fatalf("prefilled CLI session should accept first attach result, session=%#v", root.Session)
+	}
+	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.ViewID != "termx-cli-v3-main" {
+		t.Fatalf("expected first attach result to create active pane binding, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestLiveAttachAndInitialSurfaceEffectsAreAsync(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	root := state.Root{Shell: state.DefaultShell()}
+	_, effects := reduceLiveAttach(root, LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}, LiveDeps{Terminal: terminal})
+	if len(effects) != 1 {
+		t.Fatalf("expected one attach effect, got %#v", effects)
+	}
+	attach, ok := effects[0].(FuncEffect)
+	if !ok || !attach.Async || !attach.ForceSyncInTests {
+		t.Fatalf("attach must be async in real runtime and sync-capable in harness, got %#v", effects[0])
+	}
+
+	effects = liveSurfaceEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
+	if len(effects) != 1 {
+		t.Fatalf("expected one live surface effect, got %#v", effects)
+	}
+	surface, ok := effects[0].(FuncEffect)
+	if !ok || !surface.Async || !surface.ForceSyncInTests {
+		t.Fatalf("initial live surface fetch must be async in real runtime and sync-capable in harness, got %#v", effects[0])
+	}
+}
+
 func TestTerminalPoolRemoveDeletesInventoryAndBindings(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})

@@ -66,7 +66,7 @@ type FuncEffect struct {
 	// ForceSyncInTests 只给 deterministic harness 使用：真实 runtime 仍按 Async 异步执行，
 	// 但 SyncEffectRunner 需要同步跑完该 effect，避免测试必须引入额外 goroutine 等待。
 	ForceSyncInTests bool
-	Run   func(context.Context) Msg
+	Run              func(context.Context) Msg
 }
 
 func (FuncEffect) isEffect() {}
@@ -107,8 +107,9 @@ type handledEffect struct{}
 func (handledEffect) isEffect() {}
 
 const (
-	defaultToastTickInterval = time.Second
-	toastTickToken           = CancelToken("toast.tick")
+	defaultToastTickInterval   = time.Second
+	toastTickToken             = CancelToken("toast.tick")
+	defaultMaxMessagesPerBatch = 128
 )
 
 // ComposeReducers 按顺序执行多个 reducer，并合并它们产生的 effects。
@@ -178,6 +179,7 @@ type AppRuntime struct {
 	quit                bool
 	firstFrameWritten   bool
 	startupFrameReady   bool
+	maxMessagesPerBatch int
 }
 
 type mouseDragState struct {
@@ -291,6 +293,7 @@ func (runtime *AppRuntime) Run(ctx context.Context) error {
 
 func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 	needsRender := false
+	processed := 0
 	for {
 		runtime.ingestHostInitialSize()
 		runtime.ingestHostInput()
@@ -327,6 +330,7 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		}
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
+		processed++
 		needsRender = true
 		if _, ok := msg.(HostResizeMsg); ok {
 			runtime.renderFrame()
@@ -344,8 +348,19 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		if runtime.quit {
 			return nil
 		}
+		if needsRender && processed >= runtime.messageBatchLimit() {
+			runtime.renderFrame()
+			return nil
+		}
 	}
 	return nil
+}
+
+func (runtime *AppRuntime) messageBatchLimit() int {
+	if runtime.maxMessagesPerBatch > 0 {
+		return runtime.maxMessagesPerBatch
+	}
+	return defaultMaxMessagesPerBatch
 }
 
 func (runtime *AppRuntime) scheduleEffect(ctx context.Context, effect Effect) {

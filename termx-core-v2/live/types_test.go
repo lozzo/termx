@@ -1,6 +1,10 @@
 package live
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestSurfaceSizeValid(t *testing.T) {
 	if !(SurfaceSize{Cols: 80, Rows: 24}).Valid() {
@@ -33,5 +37,21 @@ func TestSurfaceTrackKeepsScreenSizeCursorAndStyle(t *testing.T) {
 	snapshot = surface.Snapshot()
 	if snapshot.Size != (SurfaceSize{Cols: 5, Rows: 1}) || len(snapshot.Screen.Cells) != 1 {
 		t.Fatalf("unexpected resized snapshot %#v", snapshot)
+	}
+}
+
+func TestSurfaceTrackLargeWriteKeepsLatestScreen(t *testing.T) {
+	surface := NewSurfaceTrack(SurfaceSize{Cols: 80, Rows: 4})
+	var out strings.Builder
+	for i := 0; out.Len() <= 64*1024; i++ {
+		fmt.Fprintf(&out, "%06d stress payload payload payload payload payload\n", i)
+	}
+	out.WriteString("999999 stress latest-tail")
+
+	surface.Write(out.String())
+	rows := surface.Rows()
+
+	if !strings.Contains(strings.Join(rows, "\n"), "999999 stress latest-tail") {
+		t.Fatalf("expected large live write to keep latest tail, got %#v", rows)
 	}
 }

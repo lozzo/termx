@@ -29,6 +29,8 @@ type ProtocolTerminalServiceAdapter struct {
 	Client ProtocolTerminalClient
 }
 
+const maxProtocolLiveRefreshDrain = 64
+
 func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req TerminalAttachRequest) (TerminalAttachResult, error) {
 	if adapter.Client == nil {
 		return TerminalAttachResult{}, ErrMissingTerminalClient
@@ -289,24 +291,68 @@ func (adapter ProtocolTerminalServiceAdapter) LiveEvents(ctx context.Context, re
 	out := make(chan TerminalLiveEvent, 16)
 	go func() {
 		defer close(out)
+		var pending *protocol.Event
+		var drainedClosed bool
 		for {
-			select {
-			case <-ctx.Done():
+			var event protocol.Event
+			if pending != nil {
+				event = *pending
+				pending = nil
+			} else if drainedClosed {
 				return
-			case event, ok := <-events:
-				if !ok {
-					return
-				}
-				liveEvent := adapter.liveEventFromProtocol(ctx, req, event)
+			} else {
+				var ok bool
 				select {
-				case out <- liveEvent:
 				case <-ctx.Done():
 					return
+				case event, ok = <-events:
+					if !ok {
+						return
+					}
 				}
+			}
+			if ordinaryProtocolLiveRefreshEvent(event) {
+				// 中文说明：普通 changed 只是“live surface 已变”的通知，压力输出时可合并；
+				// resize、exit、read error 这类边界事件必须保留原顺序。
+				event, pending, drainedClosed = drainProtocolLiveRefreshEvents(events, event)
+			}
+			liveEvent := adapter.liveEventFromProtocol(ctx, req, event)
+			select {
+			case out <- liveEvent:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
 	return out, nil
+}
+
+func drainProtocolLiveRefreshEvents(events <-chan protocol.Event, current protocol.Event) (protocol.Event, *protocol.Event, bool) {
+	latest := current
+	for drained := 0; drained < maxProtocolLiveRefreshDrain; drained++ {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return latest, nil, true
+			}
+			if ordinaryProtocolLiveRefreshEvent(event) && sameProtocolLiveRefreshTarget(latest, event) {
+				latest = event
+				continue
+			}
+			return latest, &event, false
+		default:
+			return latest, nil, false
+		}
+	}
+	return latest, nil, false
+}
+
+func ordinaryProtocolLiveRefreshEvent(event protocol.Event) bool {
+	return event.Type == protocol.EventTerminalStateChanged && event.StateChanged == nil && event.ReadError == nil
+}
+
+func sameProtocolLiveRefreshTarget(left protocol.Event, right protocol.Event) bool {
+	return left.TerminalID == "" || right.TerminalID == "" || left.TerminalID == right.TerminalID
 }
 
 func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.Context, req TerminalLiveEventRequest, event protocol.Event) TerminalLiveEvent {
@@ -375,12 +421,12 @@ func liveSurfaceScreenFromSnapshot(snapshot *protocol.Snapshot) [][]state.LiveCe
 
 func liveSurfaceModesFromProtocol(modes protocol.TerminalModes) state.LiveTerminalModes {
 	return state.LiveTerminalModes{
-		MouseTracking: modes.MouseTracking,
-		MouseX10:      modes.MouseX10,
-		MouseNormal:   modes.MouseNormal,
-		MouseButton:   modes.MouseButtonEvent,
-		MouseAny:      modes.MouseAnyEvent,
-		MouseSGR:      modes.MouseSGR,
+		MouseTracking:  modes.MouseTracking,
+		MouseX10:       modes.MouseX10,
+		MouseNormal:    modes.MouseNormal,
+		MouseButton:    modes.MouseButtonEvent,
+		MouseAny:       modes.MouseAnyEvent,
+		MouseSGR:       modes.MouseSGR,
 		BracketedPaste: modes.BracketedPaste,
 	}
 }

@@ -1095,16 +1095,13 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain attach: %v", err)
-	}
-	if !runtime.State().Session.Attached ||
-		runtime.State().Session.TerminalID != "term-1" ||
-		runtime.State().Session.Channel == 0 ||
-		runtime.State().Session.Cols != 100 ||
-		runtime.State().Session.Rows != 30 {
-		t.Fatalf("runtime did not attach through protocol client %#v", runtime.State().Session)
-	}
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Session.Attached &&
+			root.Session.TerminalID == "term-1" &&
+			root.Session.Channel != 0 &&
+			root.Session.Cols == 100 &&
+			root.Session.Rows == 30
+	}, "protocol attach result")
 	if len(host.Frames()) == 0 {
 		t.Fatal("expected attach drain to render at least one frame")
 	}
@@ -1135,10 +1132,13 @@ func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 	host := app.NewFakeTerminalHost(8)
 	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, client, host)
 
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain restore: %v", err)
-	}
-	root := runtime.State()
+	root := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 1 {
+			return false
+		}
+		binding, ok := root.TerminalViews.PaneBinding("pane-restored")
+		return ok && binding.TerminalID == "term-restored"
+	}, "workbench storage restore")
 	if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 1 {
 		t.Fatalf("runtime did not restore workbench from core-v2 storage %#v", root)
 	}
@@ -1175,10 +1175,6 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain attach: %v", err)
-	}
-
 	current := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		return root.Session.Cols == 98 && root.Session.Rows == 26
 	}, "initial attach content rect correction")
@@ -1217,7 +1213,9 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
-	drainV3RuntimeForCLITest(t, runtime)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Session.Cols == 98 && root.Session.Rows == 26
+	}, "initial attach content rect correction")
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
 	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
 
@@ -1322,7 +1320,9 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
-	drainV3RuntimeForCLITest(t, runtime)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Session.Cols == 98 && root.Session.Rows == 26
+	}, "initial attach content rect correction")
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
 	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
 
@@ -1387,7 +1387,9 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
-	drainV3RuntimeForCLITest(t, runtime)
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Session.Cols == 98 && root.Session.Rows == 26
+	}, "initial attach content rect correction")
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
 	seenResize := waitForCoreV2ProcessResize(t, process, corev2.Size{Cols: 98, Rows: 26})
 	process.setResizeErr(errors.New("pty resize failed"))

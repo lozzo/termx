@@ -218,6 +218,34 @@ func TestAppRuntimeWritesFirstFrameBeforeStartupBurstFinishes(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeRendersBoundedBatchBeforeQueueBecomesEmpty(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			root = root.Advance()
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return testMsg{Name: "again"} }}}
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{fmt.Sprintf("frame-%d", root.Generation)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	runtime.maxMessagesPerBatch = 3
+	if err := runtime.Post(testMsg{Name: "start"}); err != nil {
+		t.Fatalf("post: %v", err)
+	}
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-3"}) {
+		t.Fatalf("bounded batch should render before queue is empty, got %v", got)
+	}
+}
+
 func TestAppRuntimeCoalescesQueuedLiveSurfaceUpdatesByTerminalID(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var revisions []uint64

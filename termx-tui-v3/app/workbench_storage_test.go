@@ -38,6 +38,30 @@ func TestWorkbenchStorageReducerLoadsSnapshotFromOpaqueStorage(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageLoadAndSaveEffectsAreAsync(t *testing.T) {
+	storage := &services.FakeWorkbenchStorageService{}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
+	root := state.Root{Shell: state.DefaultShell()}
+
+	_, effects := reducer(root, WorkbenchStorageLoadRequestMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("expected load effect, got %#v", effects)
+	}
+	load, ok := effects[0].(FuncEffect)
+	if !ok || !load.Async || !load.ForceSyncInTests {
+		t.Fatalf("workbench load must be async in real runtime and sync-capable in harness, got %#v", effects[0])
+	}
+
+	_, effects = reducer(root, WorkbenchStoragePersistRequestMsg{Reason: "test"})
+	if len(effects) != 1 {
+		t.Fatalf("expected save effect, got %#v", effects)
+	}
+	save, ok := effects[0].(FuncEffect)
+	if !ok || !save.Async || !save.ForceSyncInTests {
+		t.Fatalf("workbench save must be async in real runtime and sync-capable in harness, got %#v", effects[0])
+	}
+}
+
 func TestWorkbenchStorageReducerLoadsAndPersistsTerminalViews(t *testing.T) {
 	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	views := state.TerminalViewStore{}
@@ -504,7 +528,7 @@ func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *te
 		BindPane(state.NewPaneTerminalView("pane-restored", "term-restored", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-restored", state.TerminalPaneViewID("pane-restored"), true))
 	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
 	terminal := &services.FakeTerminalService{
-		AttachResult: services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleFollower, CanResize: false, OwnerViewID: "other-view"},
+		AttachResult:  services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleFollower, CanResize: false, OwnerViewID: "other-view"},
 		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-restored", Cols: 100, Rows: 30, Lines: []string{"changed by another tui"}, State: state.TerminalLiveAttached}},
 	}
 	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})

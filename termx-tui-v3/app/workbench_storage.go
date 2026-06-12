@@ -116,7 +116,7 @@ func reduceWorkbenchStorageLoadRequest(root state.Root, deps WorkbenchDeps) (sta
 		return root.Advance(), nil
 	}
 	ref := workbenchStorageRef(root, deps)
-	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+	return root, []Effect{FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
 		result, err := deps.Storage.LoadWorkbench(ctx, ref)
 		return WorkbenchStorageLoadResultMsg{Result: result, Err: err}
 	}}}
@@ -181,13 +181,13 @@ func workbenchRestoredTerminalAttachEffects(bindings []state.TerminalViewBinding
 		}
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
 			return LiveAttachMsg{Config: LiveConfig{
-				TerminalID:    binding.TerminalID,
-				Cols:          cols,
-				Rows:          rows,
-				Mode:          "collaborator",
-				ResizePolicy:  resizePolicy,
-				SurfaceID:     binding.SurfaceID,
-				ViewID:        binding.ViewID,
+				TerminalID:   binding.TerminalID,
+				Cols:         cols,
+				Rows:         rows,
+				Mode:         "collaborator",
+				ResizePolicy: resizePolicy,
+				SurfaceID:    binding.SurfaceID,
+				ViewID:       binding.ViewID,
 			}}
 		}})
 	}
@@ -202,7 +202,7 @@ func reduceWorkbenchStoragePersistRequest(root state.Root, _ WorkbenchStoragePer
 	ref := workbenchStorageRef(root, deps)
 	snapshot := state.SnapshotRootWorkbenchForStorage(root)
 	expectedVersion := root.WorkbenchSync.SaveVersion()
-	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+	return root, []Effect{FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
 		result, err := deps.Storage.SaveWorkbench(ctx, services.WorkbenchStorageSaveRequest{
 			Ref:             ref.WithVersion(expectedVersion),
 			Snapshot:        snapshot,

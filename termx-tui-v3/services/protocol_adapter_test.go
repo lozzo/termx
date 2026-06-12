@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -662,6 +663,88 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 	}
 	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
 		t.Fatalf("expected live event to refresh snapshot, got %#v", client.snapshotIDs)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *testing.T) {
+	eventCh := make(chan protocol.Event, 8)
+	client := &fakeProtocolTerminalClient{
+		eventCh: eventCh,
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				{{Content: "latest"}},
+			}},
+		},
+	}
+	for i := 0; i < 5; i++ {
+		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+	}
+	close(eventCh)
+
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("live events: %v", err)
+	}
+
+	select {
+	case got, ok := <-events:
+		if !ok {
+			t.Fatal("expected coalesced live event")
+		}
+		if !got.Ready || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "latest" {
+			t.Fatalf("unexpected coalesced live event %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for coalesced live event")
+	}
+	select {
+	case got, ok := <-events:
+		if ok {
+			t.Fatalf("expected ordinary live burst to produce one event, got %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for coalesced stream close")
+	}
+	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
+		t.Fatalf("ordinary live burst should request one snapshot, got %#v", client.snapshotIDs)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterLiveEventCoalescingDoesNotStarveSnapshot(t *testing.T) {
+	eventCh := make(chan protocol.Event, maxProtocolLiveRefreshDrain+16)
+	client := &fakeProtocolTerminalClient{
+		eventCh: eventCh,
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				{{Content: "visible"}},
+			}},
+		},
+	}
+	for i := 0; i < cap(eventCh); i++ {
+		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+	}
+
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, err := adapter.LiveEvents(ctx, TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("live events: %v", err)
+	}
+
+	select {
+	case got := <-events:
+		cancel()
+		if !got.Ready || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "visible" {
+			t.Fatalf("unexpected live event %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ordinary live coalescing starved snapshot refresh")
 	}
 }
 

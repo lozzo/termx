@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
@@ -84,6 +85,84 @@ func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
 	if event.Terminal == nil || event.Terminal.State != TerminalStateRunning {
 		t.Fatalf("expected running terminal info on live changed event, got %#v", event)
 	}
+}
+
+func TestTerminalLiveSnapshotDoesNotWaitForHistoryIngest(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	enteredHistory := make(chan struct{})
+	releaseHistory := make(chan struct{})
+	terminalHistoryPipelineBeforeIngestHook = func() {
+		close(enteredHistory)
+		<-releaseHistory
+	}
+	defer func() {
+		terminalHistoryPipelineBeforeIngestHook = nil
+	}()
+	ingestDone := make(chan error, 1)
+	go func() {
+		ingestDone <- server.IngestOutput(context.Background(), "term-1", "live-first\nhistory-later")
+	}()
+	select {
+	case <-enteredHistory:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for history ingest hook")
+	}
+	rows, err := server.LiveRows("term-1")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	if len(rows) == 0 || rows[0] != "live-first" {
+		t.Fatalf("live snapshot should be available before history ingest resumes, got %#v", rows)
+	}
+	close(releaseHistory)
+	if err := <-ingestDone; err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+}
+
+func TestProcessOutputLiveSurfaceDoesNotWaitForHistoryQueue(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-1")
+	enteredHistory := make(chan struct{})
+	releaseHistory := make(chan struct{})
+	terminalHistoryPipelineBeforeIngestHook = func() {
+		select {
+		case <-enteredHistory:
+		default:
+			close(enteredHistory)
+		}
+		<-releaseHistory
+	}
+	defer func() {
+		terminalHistoryPipelineBeforeIngestHook = nil
+	}()
+
+	process.emitOutput("process-live\nhistory-later")
+	select {
+	case <-enteredHistory:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async history worker")
+	}
+	assertEventually(t, time.Second, func() bool {
+		rows, err := server.LiveRows("term-1")
+		return err == nil && len(rows) > 0 && rows[0] == "process-live"
+	}, "process live output should become visible while history worker is blocked")
+	close(releaseHistory)
 }
 
 func TestTerminalIngestOutputNormalizesPTYCRLF(t *testing.T) {
@@ -980,4 +1059,16 @@ func (process *exitBeforeOutputProcess) exitThenOutput(code int, output string) 
 		process.outputCh <- []byte(output)
 	}
 	close(process.outputCh)
+}
+
+func assertEventually(t *testing.T, timeout time.Duration, check func() bool, message string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if check() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal(message)
 }
