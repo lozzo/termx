@@ -286,6 +286,42 @@ func TestProtocolCoreClientAdapterPreservesTrailingBlankHistoryCells(t *testing.
 	}
 }
 
+func TestProtocolCoreClientAdapterMergesSameLogicalLineRowsIntoFrozenSource(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 3, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "abc", Width: 3}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "def", Width: 3}}),
+			},
+			Lines:       []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 1}},
+			RowLineIDs:  []uint64{42, 42},
+			RowInLine:   []int{0, 1},
+			LoadedLines: 1,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 3, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(result.Window.SourceLines) != 1 || result.Window.SourceLines[0].LineID != 42 || result.Window.SourceLines[0].Text != "abcdef" {
+		t.Fatalf("adapter should merge same-line protocol rows into one frozen source line, got %#v", result.Window.SourceLines)
+	}
+	if got := rowTextsForProtocolAdapter(result.Window.Rows); len(got) != 2 || got[0] != "abc" || got[1] != "def" {
+		t.Fatalf("adapter should preserve visible rows at source cols, got %#v", result.Window.Rows)
+	}
+
+	reflowedRows, _ := state.ReflowHistoryLogicalLines(result.Window.SourceLines, 6)
+	if got := rowTextsForProtocolAdapter(reflowedRows); len(got) != 1 || got[0] != "abcdef" {
+		t.Fatalf("merged frozen source should support wider local reflow, got %#v", reflowedRows)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterMapsRemove(t *testing.T) {
 	client := &fakeProtocolTerminalClient{}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
@@ -296,6 +332,14 @@ func TestProtocolTerminalServiceAdapterMapsRemove(t *testing.T) {
 	if len(client.removeIDs) != 1 || client.removeIDs[0] != "term-1" {
 		t.Fatalf("remove should call protocol remove, got %#v", client.removeIDs)
 	}
+}
+
+func rowTextsForProtocolAdapter(rows []state.HistoryRow) []string {
+	texts := make([]string, len(rows))
+	for i, row := range rows {
+		texts[i] = row.Text
+	}
+	return texts
 }
 
 func TestProtocolWorkbenchStorageAdapterUsesOpaqueStorageMethods(t *testing.T) {

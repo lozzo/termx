@@ -67,24 +67,16 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) state.HistoryWind
 	if window == nil {
 		return state.HistoryWindow{}
 	}
-	sourceLines := make([]state.HistoryLogicalLine, len(window.Rows))
-	for i, row := range window.Rows {
-		cells := historyCellsFromProtocol(row.DecodeCells())
-		sourceLines[i] = state.HistoryLogicalLine{
-			Text:      historyCellsPlainText(cells),
-			Cells:     cells,
-			LineID:    uint64At(window.RowLineIDs, i),
-		}
-	}
+	sourceLines := historySourceLinesFromProtocol(window)
 	rows, lines := state.ReflowHistoryLogicalLines(sourceLines, int(window.Size.Cols))
 	return state.HistoryWindow{
-		TerminalID: window.TerminalID,
-		Token:      window.Token,
-		Op:         state.HistoryWindowOp(window.Op),
-		Cols:       int(window.Size.Cols),
+		TerminalID:  window.TerminalID,
+		Token:       window.Token,
+		Op:          state.HistoryWindowOp(window.Op),
+		Cols:        int(window.Size.Cols),
 		SourceLines: sourceLines,
-		Rows:       rows,
-		Lines:      lines,
+		Rows:        rows,
+		Lines:       lines,
 		Cursor: state.HistoryCursor{
 			Valid:           window.CursorValid,
 			BeforeLineID:    window.CursorLineID,
@@ -99,6 +91,31 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) state.HistoryWind
 		LoadedLines: window.LoadedLines,
 		TotalLines:  window.LogicalTotal,
 	}
+}
+
+func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.HistoryLogicalLine {
+	if window == nil || len(window.Rows) == 0 {
+		return nil
+	}
+	lines := make([]state.HistoryLogicalLine, 0, len(window.Rows))
+	for i, row := range window.Rows {
+		lineID := uint64At(window.RowLineIDs, i)
+		cells := historyCellsFromProtocol(row.DecodeCells())
+		text := historyCellsPlainText(cells)
+		// protocol 可能按当前 cols 把一条 logical line 切成多行；这里必须先按
+		// stable line id 合回 frozen source，再交给 TUI 本地 reflow。
+		if len(lines) > 0 && lineID != 0 && lines[len(lines)-1].LineID == lineID {
+			lines[len(lines)-1].Text += text
+			lines[len(lines)-1].Cells = append(lines[len(lines)-1].Cells, cloneHistoryCells(cells)...)
+			continue
+		}
+		lines = append(lines, state.HistoryLogicalLine{
+			Text:   text,
+			Cells:  cells,
+			LineID: lineID,
+		})
+	}
+	return lines
 }
 
 func historyCellsFromProtocol(cells []protocol.Cell) []state.HistoryCell {
@@ -137,6 +154,15 @@ func historyCellsPlainText(cells []state.HistoryCell) string {
 		builder.WriteString(cell.Text)
 	}
 	return builder.String()
+}
+
+func cloneHistoryCells(cells []state.HistoryCell) []state.HistoryCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]state.HistoryCell, len(cells))
+	copy(out, cells)
+	return out
 }
 
 func uint64At(values []uint64, index int) uint64 {
