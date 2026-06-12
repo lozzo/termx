@@ -463,6 +463,34 @@ func TestHistoryTrackNonHistoryBoundaryDoesNotCreateCommittedHistory(t *testing.
 	}
 }
 
+func TestHistoryTrackLatestWindowWrapDoesNotSealOrCommitLogicalLine(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("abcdef")},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 3, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTextsFromWindow(window.Rows); !reflect.DeepEqual(got, []string{"abc", "def"}) {
+		t.Fatalf("expected visual wrap only, got %v", got)
+	}
+	if got := track.LineIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("auto-wrap must not create a second logical line, got %v", got)
+	}
+	line := requireLine(t, track, 1)
+	if line.Seal != SealStateOpen {
+		t.Fatalf("auto-wrap must not seal logical line, got %#v", line)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("auto-wrap must not create committed history, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("auto-wrap must keep logical line mutable in frontier, got %v", got)
+	}
+}
+
 func TestHistoryTrackRejectsInvalidEventTargets(t *testing.T) {
 	track := NewHistoryTrack()
 	if err := track.Apply(HistoryEvent{Kind: EventMutateFrontier, LineID: 99}); !errors.Is(err, ErrLineNotMutable) {
@@ -521,4 +549,12 @@ func lineText(line LogicalLine) string {
 		text += cell.Text
 	}
 	return text
+}
+
+func rowTextsFromWindow(rows []VisualRow) []string {
+	texts := make([]string, len(rows))
+	for i, row := range rows {
+		texts[i] = row.Text
+	}
+	return texts
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -165,6 +166,58 @@ func TestTerminalIngestOutputCarriageReturnOverwritesMutableTailWithoutCommittin
 	}
 	if window.TotalLines != 0 {
 		t.Fatalf("carriage return overwrite must not create committed history, got total lines %d", window.TotalLines)
+	}
+}
+
+func TestTerminalIngestOutputWrapOnlyAffectsProjectionNotHistoryTruth(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "abcdef"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 3, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "abc" || window.Rows[1].Text != "def" {
+		t.Fatalf("expected wrapped visual rows from one logical line, got %#v", window.Rows)
+	}
+	if window.TotalLines != 0 {
+		t.Fatalf("plain wrap must not create committed history, got total lines %d", window.TotalLines)
+	}
+
+	terminal, err := server.Terminal("term-1")
+	if err != nil {
+		t.Fatalf("lookup terminal: %v", err)
+	}
+	terminal.mu.Lock()
+	lineIDs := terminal.history.LineIDs()
+	committed := terminal.history.CommittedIDs()
+	frontier := terminal.history.FrontierIDs()
+	line, ok := terminal.history.Line(1)
+	terminal.mu.Unlock()
+
+	if !ok {
+		t.Fatal("expected wrapped content to stay in first logical line")
+	}
+	if !reflect.DeepEqual(lineIDs, []history.LogicalLineID{1}) {
+		t.Fatalf("wrap must not create extra logical lines, got %v", lineIDs)
+	}
+	if line.Seal != history.SealStateOpen {
+		t.Fatalf("wrap must not seal logical line, got %#v", line)
+	}
+	if len(committed) != 0 {
+		t.Fatalf("wrap must not create committed history, got %v", committed)
+	}
+	if !reflect.DeepEqual(frontier, []history.LogicalLineID{1}) {
+		t.Fatalf("wrap must keep logical line mutable in frontier, got %v", frontier)
 	}
 }
 

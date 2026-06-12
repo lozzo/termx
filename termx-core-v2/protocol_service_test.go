@@ -867,6 +867,9 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterProcessExitForceCommit(t *test
 	}
 	process := serverProcess(t, server, "term-1")
 	process.emitOutput("one\ntwo\nopen-tail")
+	// 先等输出真正进入 authoritative history，再冻结 snapshot；否则这里会和
+	// ingest goroutine 竞争，测到空窗口而不是想验证的 pre-exit frozen tail。
+	waitForProtocolHistoryRow(t, client, "term-1", "open-tail")
 
 	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID: "term-1",
@@ -881,6 +884,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterProcessExitForceCommit(t *test
 	}
 
 	process.exit(7)
+	waitForTerminalState(t, server, "term-1", TerminalStateExited)
 
 	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:      "term-1",
@@ -1617,6 +1621,23 @@ func waitForProtocolHistoryRow(t *testing.T, client *protocol.Client, terminalID
 	})
 	t.Fatalf("timed out waiting for protocol history row %q, got %#v", want, window)
 	return nil
+}
+
+func waitForTerminalState(t *testing.T, server *Server, terminalID string, want TerminalState) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		info, err := server.GetTerminal(terminalID)
+		if err == nil && info.State == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	info, err := server.GetTerminal(terminalID)
+	if err != nil {
+		t.Fatalf("timed out waiting for terminal %q state %q: %v", terminalID, want, err)
+	}
+	t.Fatalf("timed out waiting for terminal %q state %q, got %#v", terminalID, want, info)
 }
 
 func serverProcess(t *testing.T, server *Server, terminalID string) *recordingProcess {
