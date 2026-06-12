@@ -3461,6 +3461,86 @@ func TestCopyModeIgnoresLaterRestartLatestAndKeepsFrozenRows(t *testing.T) {
 	}
 }
 
+func TestCopyModeRestartResultKeepsFrozenHistory(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		History: state.HistoryStore{
+			PaneID:      state.DefaultPaneID,
+			ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID:  "term-1",
+			Token:       "tok-old",
+			Cols:        78,
+			SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}}),
+			Rows:        []state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundToken: "tok-old",
+			BoundCols:  78,
+			ViewRows:   20,
+		},
+	}
+
+	next, effects := reduceTerminalPoolRestartResult(root, TerminalPoolRestartResultMsg{TerminalID: "term-1"})
+	if len(effects) != 1 {
+		t.Fatalf("restart result should still trigger pool refresh, got %#v", effects)
+	}
+	if next.History.Token != "tok-old" || len(next.History.Rows) != 2 || next.History.Rows[0].Text != "old-one" || next.History.Rows[1].Text != "old-two" {
+		t.Fatalf("restart result must not replace frozen copy window, got %#v", next.History)
+	}
+	if !next.CopyMode.Active || next.CopyMode.BoundToken != "tok-old" || next.CopyMode.TerminalID != "term-1" {
+		t.Fatalf("restart result must not disturb frozen copy binding, got %#v", next.CopyMode)
+	}
+}
+
+func TestCopyModeRuntimeRestartResultKeepsFrozenRows(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := newCopyModeRuntime(host, &services.FakeCoreClient{}, nil)
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  78,
+		ViewRows:   20,
+	}
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-old",
+		Cols:        78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}}),
+		Rows:        []state.HistoryRow{{Text: "old-one", LineID: 10}, {Text: "old-two", LineID: 20}},
+	}
+
+	if err := runtime.Post(TerminalPoolRestartResultMsg{TerminalID: "term-1"}); err != nil {
+		t.Fatalf("post restart result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain restart result: %v", err)
+	}
+
+	if runtime.State().History.Token != "tok-old" || len(runtime.State().History.Rows) != 2 || runtime.State().History.Rows[0].Text != "old-one" || runtime.State().History.Rows[1].Text != "old-two" {
+		t.Fatalf("restart result must not replace frozen copy window, got %#v", runtime.State().History)
+	}
+	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.BoundToken != "tok-old" || runtime.State().CopyMode.TerminalID != "term-1" {
+		t.Fatalf("restart result must not disturb frozen copy binding, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "old-one") || !frameContains(last, "old-two") {
+		t.Fatalf("restart result must keep frozen copy frame content, got %#v", last.Lines)
+	}
+	if frameContains(last, "history copy empty") || frameContains(last, "window pending") {
+		t.Fatalf("restart result must not replace frozen copy frame with cleared history state, got %#v", last.Lines)
+	}
+}
+
 func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
