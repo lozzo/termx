@@ -718,6 +718,135 @@ func TestCopyModeRuntimePaneCloseDoesNotRenderClosedFrozenHistory(t *testing.T) 
 	}
 }
 
+func TestCopyModeTabSwitchInvalidatesFrozenHistoryForPreviousPane(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell, _ = root.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, TargetID: "tab-2", Name: "logs"})
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{TabID: "tab-2"}, "term-2")
+	root.Shell, _ = root.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: state.DefaultTabID})
+	root.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-old",
+		Cols:        80,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 10}}),
+		Rows:        []state.HistoryRow{{Text: "old-history", LineID: 10}},
+	}
+	root.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  80,
+	}
+
+	next, _ := reduceWorkbenchCommand(root, state.WorkbenchCommand{
+		Action:   state.WorkbenchCommandTabSwitch,
+		TargetID: "tab-2",
+		Source:   state.PaneCommandSourceTest,
+	})
+
+	if next.History.Token != "" || len(next.History.Rows) != 0 {
+		t.Fatalf("tab switch must invalidate frozen history from previous pane, got %#v", next.History)
+	}
+	if next.CopyMode.Active || next.CopyMode.PaneID != "" || next.CopyMode.BoundToken != "" {
+		t.Fatalf("tab switch must clear copy mode bound to previous pane, got %#v", next.CopyMode)
+	}
+}
+
+func TestCopyModeRuntimeTabSwitchDoesNotRenderPreviousPaneFrozenHistory(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell(),
+			History: state.HistoryStore{
+				PaneID:      state.DefaultPaneID,
+				ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID:  "term-1",
+				Token:       "tok-old",
+				Cols:        80,
+				SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 10}}),
+				Rows:        []state.HistoryRow{{Text: "old-history", LineID: 10}},
+			},
+			CopyMode: state.CopyModeStore{
+				Active:     true,
+				PaneID:     state.DefaultPaneID,
+				ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID: "term-1",
+				BoundToken: "tok-old",
+				BoundCols:  80,
+				ViewRows:   20,
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+	)
+	runtime.state.Shell, _ = runtime.state.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, TargetID: "tab-2", Name: "logs"})
+	runtime.state.Shell = runtime.state.Shell.BindPaneTerminal(state.PaneCommandTarget{TabID: "tab-2"}, "term-2")
+	runtime.state.Shell, _ = runtime.state.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabSwitch, TargetID: state.DefaultTabID})
+
+	if err := runtime.Post(ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
+		Action:   state.WorkbenchCommandTabSwitch,
+		TargetID: "tab-2",
+		Source:   state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post tab switch: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tab switch: %v", err)
+	}
+
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "old-history") {
+		t.Fatalf("tab switch must not keep rendering previous pane frozen history, got %#v", last.Lines)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("tab switch must exit copy mode bound to previous pane, got %#v", runtime.State().CopyMode)
+	}
+}
+
+func TestCopyModeWorkspaceSwitchInvalidatesFrozenHistoryForPreviousPane(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell, _ = root.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "ws-2"})
+	secondWorkspaceID := root.Shell.Workspace.ID
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{WorkspaceID: secondWorkspaceID}, "term-2")
+	root.Shell, _ = root.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceSwitch, TargetID: state.DefaultWorkspaceID})
+	root.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-old",
+		Cols:        80,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "old-history", LineID: 10}}),
+		Rows:        []state.HistoryRow{{Text: "old-history", LineID: 10}},
+	}
+	root.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-old",
+		BoundCols:  80,
+	}
+
+	next, _ := reduceWorkbenchCommand(root, state.WorkbenchCommand{
+		Action:   state.WorkbenchCommandWorkspaceSwitch,
+		TargetID: secondWorkspaceID,
+		Source:   state.PaneCommandSourceTest,
+	})
+
+	if next.History.Token != "" || len(next.History.Rows) != 0 {
+		t.Fatalf("workspace switch must invalidate frozen history from previous pane, got %#v", next.History)
+	}
+	if next.CopyMode.Active || next.CopyMode.PaneID != "" || next.CopyMode.BoundToken != "" {
+		t.Fatalf("workspace switch must clear copy mode bound to previous pane, got %#v", next.CopyMode)
+	}
+}
+
 func TestCopyModeOlderGuardSilentlyBlocksAnyPendingHistoryRequest(t *testing.T) {
 	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
 	root := state.Root{
