@@ -125,6 +125,11 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		next, effects := beginCopyModeOlder(root, deps)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentExitCopyMode:
+		// 中文说明：退出 copy mode 后，任何仍在飞的 authoritative history 请求都不能再回填
+		// 当前 history store；否则延迟返回的 latest/older 会在 copy mode 已关闭后污染状态。
+		if root.History.Pending != nil {
+			root.History.Pending = nil
+		}
 		root.CopyMode = state.CopyModeStore{}
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.IntentMouseSelect:

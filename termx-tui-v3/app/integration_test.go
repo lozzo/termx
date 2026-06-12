@@ -2244,6 +2244,63 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 	}
 }
 
+func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, runner)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain page up: %v", err)
+	}
+	pending := runtime.State().History.Pending
+	if pending == nil || pending.Kind != state.HistoryRequestLatest {
+		t.Fatalf("expected latest pending request, got %#v", runtime.State().History.Pending)
+	}
+	if !runtime.State().CopyMode.Active {
+		t.Fatalf("expected copy mode active while latest pending, got %#v", runtime.State().CopyMode)
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain esc: %v", err)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("exit while pending must leave copy mode inactive, got %#v", runtime.State().CopyMode)
+	}
+	if runtime.State().History.Pending != nil {
+		t.Fatalf("exit while pending must clear pending history request, got %#v", runtime.State().History.Pending)
+	}
+
+	delayed := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-delayed",
+		78,
+		9,
+		[]state.HistoryRow{{Text: "delayed-after-exit", LineID: 40}},
+	)
+	delayed.PaneID = state.DefaultPaneID
+	delayed.ViewID = state.TerminalPaneViewID(state.DefaultPaneID)
+	if err := runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: services.RequestID(pending.ID), Window: delayed}}); err != nil {
+		t.Fatalf("post delayed latest after exit: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain delayed latest after exit: %v", err)
+	}
+	if runtime.State().History.Token != "" || len(runtime.State().History.Rows) != 0 {
+		t.Fatalf("delayed matching latest after exit must not mutate history store, got %#v", runtime.State().History)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "delayed-after-exit") {
+		t.Fatalf("delayed matching latest after exit must not render into frame, got %#v", last.Lines)
+	}
+}
+
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
