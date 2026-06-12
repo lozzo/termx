@@ -171,13 +171,13 @@
 | 215E1-C. SK history copy 收口与回归 | 完成 | 同上 | 已用高层 runtime 黑盒和 core/protocol/tui-v3 联合模块测试证明主链可用，停止继续补长尾语义 |
 | 215E2. SK clipboard paste 主链 | 完成 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-cli/`、相关文档 | 已把显示态 `p/P PASTE` 接上真实主链：`p` paste 上一次 copy，`P` paste system clipboard，都会退出 copy mode 并发到 active terminal |
 | 215E3. SK clipboard history overlay | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/docs/` | 已补 clipboard history overlay：`H` 打开本地 clipboard history，支持 filter、paste、edit、delete，并复用 copy-mode paste 主链 |
+| 215E1-R1. SK history copy 主链卡顿回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/input/`、`termx-tui-v3/render/`、相关文档 | 已把 copy history latest/older 改成异步 effect；慢 history 请求下 `Ctrl-V` 会立刻进入 copy mode pending，`PageUp / wheel` 不再同步卡住 runtime 主循环 |
 
 当前下一步：
 
-- `215E1` 已经收口
-- `215E2` 已完成
-- `215E3` 已完成
-- 不再继续主动补新的 history 长尾黑盒，除非它直接回归当前主链
+- `215E1-R1 history copy 主链卡顿回归` 已完成
+- 当前优先看真实用户现场是否还存在新的主链阻塞，再决定是否重新开切片
+- 不继续主动补新的 history 长尾黑盒，除非它直接回归当前主链
 
 ## 6. 必做证据
 
@@ -209,6 +209,13 @@
 - workbench reload / delayed attach / lifecycle 组合路径的更多审计
 - boundary overlap / clipped marker / grapheme 投影的再细化证明
 - 更多“第 N 层关键语义”式的追加审计
+
+### 6.4 `215E1-R1` 的唯一回归标准
+
+- `Ctrl-V` 进入 copy mode 时，UI 主循环不得因为 latest history 请求而卡住。
+- 第一个可见反馈必须先进入 `authoritative history window pending`，而不是长时间停在 live 内容或无响应。
+- copy mode 下 `PageUp` / mouse wheel up 请求 older 时，也不得同步阻塞整个 runtime。
+- 本切片只处理“history 请求必须异步”的真实交互回归，不顺手扩新语义。
 
 ## 7. 测试准入
 
@@ -254,4 +261,5 @@
 - `215E1-C` 已完成：当前已有高层 runtime 主验收链，且 `go test ./termx-core-v2/... ./internal/protocol/... ./termx-tui-v3/... -count=1` 已通过，说明从 core 到 protocol 到 tui-v3 的 history/copy 主链当前处于可用状态。
 - `215E2` 已完成：display / copy mode 下的 `p/P` 已接上 paste 主链；`p` 走最近一次 copy buffer，`P` 走 system clipboard read，都会退出 copy mode 并把文本发到 active terminal；如果 live surface 开着 bracketed paste，会按 `\x1b[200~...\x1b[201~` 包装。
 - `215E3` 已完成：copy mode 下的 `H` 会打开 reducer-owned clipboard history overlay，支持 filter、paste、edit、delete；paste 复用 active terminal 输入主链，并在 interactive runtime 下通过键盘和 content action 闭环验收。
+- 已修复一条真实主链回归：copy mode 的 latest / older 现在走异步 effect；真实 protocol 一慢时，`Ctrl-V` 会立刻进入 `authoritative history window pending`，`PageUp`、mouse wheel up 不再同步卡住 runtime 主循环。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。

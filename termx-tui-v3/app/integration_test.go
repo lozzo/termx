@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -238,6 +240,55 @@ func TestInteractiveRuntimeAttachCopyModeMainlineAcceptance(t *testing.T) {
 	}
 	if len(runtime.State().Shell.Toasts) == 0 || runtime.State().Shell.Toasts[len(runtime.State().Shell.Toasts)-1].Title != "Copied to clipboard" {
 		t.Fatalf("copy should add clipboard toast, got %#v", runtime.State().Shell.Toasts)
+	}
+}
+
+func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	core := &blockingHistoryClient{}
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, NewAsyncEffectRunner())
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-v: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain ctrl-v: %v", err)
+	}
+
+	if !runtime.State().CopyMode.Active {
+		t.Fatalf("expected copy mode active immediately, got %#v", runtime.State().CopyMode)
+	}
+	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestLatest {
+		t.Fatalf("expected pending latest request immediately, got %#v", runtime.State().History)
+	}
+	if len(core.latestRequests()) != 1 {
+		t.Fatalf("expected async latest request to start, got %#v", core.latestRequests())
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "authoritative history window pending") {
+		t.Fatalf("expected pending copy-history frame instead of blocked UI, got %#v", frame.Lines)
+	}
+
+	core.finishLatest(services.HistoryResult{
+		Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			1,
+			[]state.HistoryRow{{Text: "loaded", LineID: 10}},
+		),
+	}, nil)
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for len(runtime.State().History.Rows) == 0 && time.Now().Before(deadline) {
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain async latest result: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"loaded"}) {
+		t.Fatalf("expected latest history after async completion, got %v", got)
 	}
 }
 
@@ -5078,6 +5129,56 @@ func (runner *recordingEffectRunner) Run(_ context.Context, effect Effect, _ fun
 }
 
 func (runner *recordingEffectRunner) Cancel(CancelToken) {}
+
+type blockingHistoryClient struct {
+	mu            sync.Mutex
+	latestReqs    []services.HistoryLatestRequest
+	latestResultC chan blockingHistoryResult
+}
+
+type blockingHistoryResult struct {
+	result services.HistoryResult
+	err    error
+}
+
+func (client *blockingHistoryClient) HistoryLatest(ctx context.Context, req services.HistoryLatestRequest) (services.HistoryResult, error) {
+	client.mu.Lock()
+	client.latestReqs = append(client.latestReqs, req)
+	if client.latestResultC == nil {
+		client.latestResultC = make(chan blockingHistoryResult, 1)
+	}
+	resultC := client.latestResultC
+	client.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return services.HistoryResult{}, ctx.Err()
+	case item := <-resultC:
+		item.result.RequestID = req.RequestID
+		return item.result, item.err
+	}
+}
+
+func (client *blockingHistoryClient) HistoryOlder(context.Context, services.HistoryOlderRequest) (services.HistoryResult, error) {
+	return services.HistoryResult{}, errors.New("unexpected older request")
+}
+
+func (client *blockingHistoryClient) latestRequests() []services.HistoryLatestRequest {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	out := make([]services.HistoryLatestRequest, len(client.latestReqs))
+	copy(out, client.latestReqs)
+	return out
+}
+
+func (client *blockingHistoryClient) finishLatest(result services.HistoryResult, err error) {
+	client.mu.Lock()
+	if client.latestResultC == nil {
+		client.latestResultC = make(chan blockingHistoryResult, 1)
+	}
+	resultC := client.latestResultC
+	client.mu.Unlock()
+	resultC <- blockingHistoryResult{result: result, err: err}
+}
 
 type acceptanceProtocolHistoryClient struct {
 	requests []protocol.HistoryWindowParams

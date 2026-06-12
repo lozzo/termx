@@ -374,6 +374,10 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint)
 	rows := requestRows(deps, rowsHint)
 	return root.Advance(), []Effect{FuncEffect{
+		// history.window 真实走 protocol/client 时可能明显慢于一帧；
+		// 这里必须异步请求，不能把 copy mode 入口卡在 runtime 主循环里。
+		Async:            true,
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Core.HistoryLatest(ctx, services.HistoryLatestRequest{
 				RequestID:  services.RequestID(requestID),
@@ -421,6 +425,9 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 	root.History = nextHistory
 	rows := requestRows(deps, copyModeRowsHint(root))
 	return root.Advance(), []Effect{FuncEffect{
+		// older 分页也必须异步，否则连续 PageUp / wheel up 会把整个 UI 主循环卡住。
+		Async:            true,
+		ForceSyncInTests: true,
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Core.HistoryOlder(ctx, services.HistoryOlderRequest{
 				RequestID:  services.RequestID(requestID),
