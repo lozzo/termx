@@ -700,6 +700,66 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	}
 }
 
+func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest initial output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest frozen snapshot: %v", err)
+	}
+	if rowText(latest.Rows[0]) != "four" || !latest.CursorValid {
+		t.Fatalf("expected frozen snapshot cursor over mutable tail, got %#v", latest)
+	}
+
+	if err := client.Restart(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+	})
+	if err != nil {
+		t.Fatalf("older from frozen snapshot after restart: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+		t.Fatalf("older page should still come from pre-restart frozen snapshot, got %#v", older)
+	}
+
+	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest after restart via new snapshot: %v", err)
+	}
+	if reloaded.Token == latest.Token {
+		t.Fatalf("restart should pin a new frozen token for subsequent latest, got old=%q new=%q", latest.Token, reloaded.Token)
+	}
+	if len(reloaded.Rows) != 0 || reloaded.LogicalTotal != 0 || reloaded.CursorValid || reloaded.HasMore {
+		t.Fatalf("new latest after restart should see reset empty history, got %#v", reloaded)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseDisplayFromCursorMutation(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
