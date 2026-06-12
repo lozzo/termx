@@ -336,6 +336,13 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 
 `HistoryStore` 不保存 viewport top、copy cursor、selection anchor/focus 或 auto-scroll 状态；这些都属于 `CopyModeStore`。如果 copy mode 采用 frozen snapshot，`HistoryStore` 保存的是“冻结时拿到的 logical-line truth + older 分页边界”，不是每次 pane 宽度变化后都重新从 core 拿一份新 rows。
 
+白话一点说：
+
+- `HistoryStore` 更像“当前这份 frozen snapshot 已经加载到本地的 logical-line 切片”。
+- 它不应该一次保存整个 terminal 的全部历史。
+- 如果当前只向 core 拉到了 `line 920-1000`，那本地就只缓存这一段 source lines；继续上翻时，再去要 `line 880-919`。
+- TUI 本地可以反复把这段 source lines 排成 `80` 列、`56` 列、`120` 列，但它始终只是同一份 logical-line truth 的不同投影。
+
 必须区分两个 token：
 
 - local request id：TUI 为每次 history 请求生成，只用于把 async response 关联回当前 pending request。
@@ -622,6 +629,12 @@ frozen snapshot 模式下，TUI 要把 history 流程拆成两层：
 - core 负责：snapshot token、committed upper bound、older boundary、logical-line payload、stale guard。
 - TUI 负责：按当前 pane 宽度本地 reflow、viewport、search、selection、copy assemble。
 
+这两层的分工要非常死：
+
+- core 不需要为同一份 frozen snapshot 的每次本地宽度变化重新投影 rows。
+- TUI 也不能拿 live surface 或旧 rows 反推出新的 history truth。
+- TUI 真正能改的只有“现在这份 logical-line payload 在当前 pane 里怎么显示”，不能改 token、boundary 或 logical-line 边界本身。
+
 resize 接纳规则：
 
 - TUI 必须记录 copy mode 进入时拿到的 frozen token / boundary，以及当前本地投影 cols。
@@ -644,14 +657,25 @@ resize 接纳规则：
 7. 当本地已加载的 logical lines 不够支撑继续上翻时，TUI 再带着 `snapshot_token + boundary` 请求 older。
 8. core 返回更老的 logical lines，TUI prepend 到 frozen payload，再次本地 reflow。
 
+把这条链再说白一点：
+
+1. 用户在一个 `80` 列的 pane 进入 copy mode。
+2. core 返回 `snapshot_token=S1` 和 `line 920-1000` 这批 logical-line payload。
+3. `HistoryStore` 保存这批 source lines，`CopyModeStore` 记录当前绑定的 pane/view、cursor、selection 和本地 `80` 列。
+4. renderer 把这批 source lines 本地排成 `80` 列 rows。
+5. pane 后来缩到 `56` 列，TUI 只把同一批 source lines 重新排成 `56` 列 rows；此时不会向 core 再要一份“56 列版本”的 history。
+6. 用户继续上翻，如果 `line 920-1000` 还够，就继续在本地滚；如果不够，再带着 `S1 + boundary(920)` 去请求更老的 logical lines。
+7. core 返回 `line 880-919` 之后，TUI 把它们 prepend 到现有 source lines，再按当前 pane 宽度重排。
+8. 这整个过程中，terminal live 又新增的 `line 1001-1050` 不会混入 `S1`，除非用户退出 copy mode、重新拿一份新的 latest snapshot。
+
 ### 12.2 TUI 侧必须补的实现阶段
 
 实现上按这个顺序推进：
 
 1. 先接 core frozen snapshot latest/older contract。
 2. 再把 `HistoryStore` 从“主要保存 rows”改成“保存 logical-line payload + boundary + token”。
-3. 再在 `RenderVMBuilder` 里加入 local reflow projector，把 logical lines 按当前 pane `cols` 投成 visual rows。
-4. 最后再把 search、selection、copy text assemble 全部切到 reflow 后的 row/line span 投影上。
+3. 再在 `RenderVMBuilder` 和 copy mode 主链里接入 local reflow projector，把 logical lines 按当前 pane `cols` 投成 visual rows；后续 resize 只走本地 reflow。
+4. 最后再补搜索、选择、复制、boundary overlap merge、clipped span 传递这些建立在 frozen logical-line truth 之上的交互细节。
 
 第一版不要求一上来做 chunk-level COW；只要 snapshot 与 live 的隔离已经靠 line-level copy-on-write 成立即可。
 

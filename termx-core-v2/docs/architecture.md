@@ -310,6 +310,12 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 
 也就是说，`newline` 只表达“封口”，不自动等于“沉淀”；真正进入 committed history 还必须满足 line 已不再被当前 primary screen 持有。
 
+白话例子：
+
+- 输出 `hello\nworld` 时，`hello` 遇到 `\n` 只会先变成 `sealed`。如果屏幕高度还足够、`hello` 仍在 primary screen 上可见，它还不能 committed。
+- 只有后续继续输出，把 `hello` 真正滚出当前 primary screen ownership，它才会变成 `committable`，然后才允许进入 committed history。
+- 输出 `progress 10%\rprogress 20%` 时，`\r` 只表示“回到列 0 再写”，这整条 line 仍属于当前可变区，不应因为出现 `\r` 就提前 committed。
+
 ### 6.2.2 primary screen ownership ledger
 
 为了知道一条 sealed line 何时真正可 commit，core-v2 需要一份只用于判定的 primary screen ownership ledger：
@@ -319,6 +325,13 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 - 当一条 line 已 sealed 且 ledger 中已经没有任何 row 归它所有时，这条 line 才能从 `sealed` 进入 `committable`，再被 `commit-frontier` 提交。
 - shrink resize 只能把仍可变的 line 从 visible ownership 转为 hidden frontier ownership，不能借机提前 committed。
 - grow resize / reclaim 会让某些原 committed line 再次进入 mutable ownership，此时后续修改必须以新版本表达，不能污染仍被 snapshot 引用的旧版本。
+
+再举一个具体例子：
+
+- 假设 terminal 当前高度是 `24` 行。
+- 某条 line 已经 `\n` 封口，但它还在这 `24` 行里可见；这时 ledger 仍然持有它，所以它只是 `sealed`。
+- 又输出了几行新内容，把它挤出这 `24` 行之外；ledger 不再持有它，这时它才进入 `committable`，后续 `commit-frontier` 才允许把它算进 authoritative history depth。
+- 如果后来 grow resize 把更老的 committed line reclaim 回来重新参与当前可变区，这只是“重新变成可修改”，不是旧 committed payload 可以被原地污染。
 
 ### 6.3 resize 语义
 
@@ -377,6 +390,24 @@ copy mode 进入后，core-v2 需要暴露一个比“当前 cols 下的 visual 
 - process exit 时 primary `MutableFrontier` 必须先 `force-commit-frontier`。
 - 如果 process exit 时仍在 alt-screen，alt 内容直接丢弃；primary frontier 仍按 process exit 规则 force commit。
 - force commit 与 index/storage 更新必须在同一 history transaction 中产生可验证 generation 变化。
+
+这个 contract 的白话含义是：
+
+- snapshot 不是“整份历史全量拷贝一份”。
+- 已经 committed 的历史可以被多个 snapshot 共享。
+- 进入 copy mode 时，只需要额外冻结两样东西：
+  - 这次 snapshot 的 committed 上界。
+  - 当前仍可变、但这次 copy 也必须看见的 frontier lines。
+- 如果 live 后面只是 append 新 line，这些新 line 天然不属于旧 snapshot。
+- 如果 live 后面要改旧 snapshot 仍在看的 frontier line，才需要按 line 做 copy-on-write。
+
+例子：
+
+1. 用户进入 copy mode 时，committed 历史到 `line 1000`，当前 frontier 里还有 `line 1001-1003`。
+2. core 返回 `snapshot_token=S1`，其中 committed 上界是 `1000`，并把当时的 `1001-1003` 作为 frozen frontier 一起交给客户端。
+3. 之后 live 又输出了 `1004-1050`；这些新 line 不会进入 `S1`。
+4. 如果 live 又把 `line 1003` 改写了，旧版本继续服务 `S1`，新版本服务 live；这就是 line-level copy-on-write。
+5. 客户端如果继续往上翻，只带着 `S1 + older_boundary` 去拉更老的 logical lines，不需要重新请求一份按新 `cols` 投影好的整窗 rows。
 
 ### 6.6 禁止的输入
 
