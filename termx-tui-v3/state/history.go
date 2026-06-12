@@ -355,7 +355,7 @@ func (store HistoryStore) replace(window HistoryWindow) HistoryStore {
 func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	existing := store.SourceLines
 	if len(existing) == 0 && len(store.Rows) > 0 {
-		existing = historyRowsToLogicalLines(store.Rows)
+		existing = historyRowsToLogicalLines(store.Rows, store.Lines)
 	}
 	store.SourceLines = mergePrependedHistoryLogicalLines(historyWindowSourceLines(window), existing)
 	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
@@ -399,12 +399,19 @@ func historyWindowSourceLines(window HistoryWindow) []HistoryLogicalLine {
 	if len(window.Rows) == 0 {
 		return nil
 	}
-	return historyRowsToLogicalLines(window.Rows)
+	return historyRowsToLogicalLines(window.Rows, window.Lines)
 }
 
-func historyRowsToLogicalLines(rows []HistoryRow) []HistoryLogicalLine {
+func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []HistoryLogicalLine {
 	if len(rows) == 0 {
 		return nil
+	}
+	spansByLineID := make(map[uint64]HistoryLineSpan, len(spans))
+	for _, span := range spans {
+		if span.LineID == 0 {
+			continue
+		}
+		spansByLineID[span.LineID] = span
 	}
 	lines := make([]HistoryLogicalLine, 0, len(rows))
 	for _, row := range rows {
@@ -413,10 +420,13 @@ func historyRowsToLogicalLines(rows []HistoryRow) []HistoryLogicalLine {
 			lines[len(lines)-1].Cells = append(lines[len(lines)-1].Cells, cloneHistoryCells(row.Cells)...)
 			continue
 		}
+		span, hasSpan := spansByLineID[row.LineID]
 		lines = append(lines, HistoryLogicalLine{
-			Text:   row.Text,
-			Cells:  cloneHistoryCells(row.Cells),
-			LineID: row.LineID,
+			Text:          row.Text,
+			Cells:         cloneHistoryCells(row.Cells),
+			LineID:        row.LineID,
+			ClippedBefore: hasSpan && span.ClippedBefore,
+			ClippedAfter:  hasSpan && span.ClippedAfter,
 		})
 	}
 	return lines
@@ -426,7 +436,7 @@ func (store HistoryStore) EnsureSourceLines() HistoryStore {
 	if len(store.SourceLines) > 0 || len(store.Rows) == 0 {
 		return store
 	}
-	store.SourceLines = historyRowsToLogicalLines(store.Rows)
+	store.SourceLines = historyRowsToLogicalLines(store.Rows, store.Lines)
 	return store
 }
 

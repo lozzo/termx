@@ -196,6 +196,30 @@ func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T
 	}
 }
 
+func TestHistoryStoreEnsureSourceLinesPreservesClippedFlagsFromSpans(t *testing.T) {
+	store := HistoryStore{
+		Rows: []HistoryRow{
+			{Text: "abc", LineID: 10, RowInLine: 0, ClippedStart: true},
+			{Text: "def", LineID: 10, RowInLine: 1, ClippedEnd: true},
+		},
+		Lines: []HistoryLineSpan{{
+			LineID:        10,
+			StartRow:      0,
+			EndRow:        1,
+			ClippedBefore: true,
+			ClippedAfter:  true,
+		}},
+	}
+
+	store = store.EnsureSourceLines()
+	if len(store.SourceLines) != 1 {
+		t.Fatalf("expected one merged source line, got %#v", store.SourceLines)
+	}
+	if got := store.SourceLines[0]; got.Text != "abcdef" || !got.ClippedBefore || !got.ClippedAfter {
+		t.Fatalf("rows fallback must preserve clipped flags from authoritative spans, got %#v", got)
+	}
+}
+
 func TestHistoryStoreRecordsOlderExhaustedMarker(t *testing.T) {
 	cursor := HistoryCursor{Valid: true, BeforeLineID: 10}
 	boundary := HistoryBoundary{FirstLineID: 10, LastLineID: 20}

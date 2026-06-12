@@ -589,6 +589,65 @@ func TestCopyModeResizeRebindPendingFrameDoesNotShowOldRowsOrLiveFallback(t *tes
 	}
 }
 
+func TestCopyModeResizeRebindRecoversClippedSourceFromRowsFallback(t *testing.T) {
+	reducer := NewCopyModeResizeRebindReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20})
+	root := state.Root{
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+		Shell:   state.DefaultShell(),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+		Viewport: state.ViewportStore{
+			Valid: true,
+			Cols:  100,
+			Rows:  40,
+		},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-old",
+			Cols:       78,
+			Rows: []state.HistoryRow{
+				{Text: "abc", LineID: 20, RowInLine: 0, ClippedStart: true},
+				{Text: "def", LineID: 20, RowInLine: 1, ClippedEnd: true},
+			},
+			Lines: []state.HistoryLineSpan{{
+				LineID:        20,
+				StartRow:      0,
+				EndRow:        1,
+				ClippedBefore: true,
+				ClippedAfter:  true,
+			}},
+			Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 20},
+			Generation: 7,
+			Boundary:   state.HistoryBoundary{FirstLineID: 20, LastLineID: 20},
+			HasMore:    true,
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundToken: "tok-old",
+			BoundCols:  78,
+			ViewRows:   20,
+		},
+	}
+
+	next, effects := reducer(root, HostResizeMsg{Cols: 100, Rows: 40})
+	if len(effects) != 0 {
+		t.Fatalf("frozen copy resize should stay local, got %#v", effects)
+	}
+	if len(next.History.SourceLines) != 1 {
+		t.Fatalf("rows fallback should recover one logical-line source, got %#v", next.History.SourceLines)
+	}
+	if got := next.History.SourceLines[0]; got.Text != "abcdef" || !got.ClippedBefore || !got.ClippedAfter {
+		t.Fatalf("rows fallback must preserve clipped source flags during rebind, got %#v", got)
+	}
+	if len(next.History.Lines) != 1 || !next.History.Lines[0].ClippedBefore || !next.History.Lines[0].ClippedAfter {
+		t.Fatalf("local reflow after rows fallback must keep clipped span semantics, got %#v", next.History.Lines)
+	}
+}
+
 func TestCopyModeResizeRebindRuntimeRendersPendingBeforeLatestResponse(t *testing.T) {
 	runner := &recordingEffectRunner{}
 	host := NewFakeTerminalHost(8)
