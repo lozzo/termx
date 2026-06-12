@@ -999,6 +999,64 @@ func TestCopyModeFloatingDeactivateInvalidatesFrozenHistoryForInactiveFloating(t
 	}
 }
 
+func TestCopyModeRuntimeFloatingDeactivateDoesNotRenderInactiveFrozenHistory(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{
+			Shell: state.DefaultShell(),
+			History: state.HistoryStore{
+				PaneID:      "float-pane",
+				ViewID:      state.TerminalFloatingViewID("floating-1"),
+				TerminalID:  "term-float",
+				Token:       "tok-float",
+				Cols:        40,
+				SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "float-history", LineID: 20}}),
+				Rows:        []state.HistoryRow{{Text: "float-history", LineID: 20}},
+			},
+			CopyMode: state.CopyModeStore{
+				Active:     true,
+				PaneID:     "float-pane",
+				ViewID:     state.TerminalFloatingViewID("floating-1"),
+				TerminalID: "term-float",
+				BoundToken: "tok-float",
+				BoundCols:  40,
+				ViewRows:   10,
+			},
+		},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
+	)
+	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 4, Y: 2, W: 40, H: 12},
+	})
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 7, 40, 12, state.TerminalResizeRoleOwner, "surface", state.TerminalFloatingViewID("floating-1"), true))
+
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{
+		Action: state.FloatingCommandDeactivate,
+		Source: state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post floating deactivate: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating deactivate: %v", err)
+	}
+
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "float-history") {
+		t.Fatalf("floating deactivate must not keep rendering inactive frozen history, got %#v", last.Lines)
+	}
+	if runtime.State().CopyMode.Active {
+		t.Fatalf("floating deactivate must exit copy mode bound to inactive floating, got %#v", runtime.State().CopyMode)
+	}
+}
+
 func TestCopyModeTerminalPoolAttachRebindInvalidatesFrozenHistoryForNewPaneTerminal(t *testing.T) {
 	root := state.Root{
 		Shell: state.DefaultShell(),
