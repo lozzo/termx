@@ -537,7 +537,7 @@ func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID s
 	return store
 }
 
-func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int) CopyModeStore {
+func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
@@ -546,11 +546,40 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int) CopyMode
 		cols = window.Cols
 	}
 	store.BoundCols = cols
+	if totalRows <= 0 {
+		totalRows = len(window.Rows)
+	}
+	if totalRows > 0 {
+		// 中文说明：latest window 内部仍按旧->新排列；进入 copy/history 时默认锚到页尾，
+		// 否则一页内容超过 pane 高度时用户会看不到刚输出的最新日志。
+		store.Cursor = CopyPosition{Row: totalRows - 1}
+		store.ViewportTop = maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
+	} else {
+		store.ViewportTop = 0
+		store.Cursor = CopyPosition{}
+	}
+	store.Matches = nil
+	store.ActiveMatch = 0
+	store.Empty = totalRows == 0
+	return store
+}
+
+func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
+	store.PaneID = window.PaneID
+	store.ViewID = window.ViewID
+	store.TerminalID = window.TerminalID
+	store.BoundToken = window.Token
+	if cols <= 0 {
+		cols = window.Cols
+	}
+	store.BoundCols = cols
+	// 中文说明：oldest 是用户显式跳到最老页，必须从第 0 行开始显示；
+	// 不能复用 latest 的尾部定位，否则 `g` 会跳过真正最老的第一屏。
 	store.ViewportTop = 0
 	store.Cursor = CopyPosition{}
 	store.Matches = nil
 	store.ActiveMatch = 0
-	store.Empty = len(window.SourceLines) == 0
+	store.Empty = totalRows == 0
 	return store
 }
 
@@ -1368,8 +1397,8 @@ func maxCopyInt(left int, right int) int {
 }
 
 func copyVisibleRowsForStore(store CopyModeStore) int {
-	if store.ViewRows > 2 {
-		return maxCopyInt(1, store.ViewRows-2)
+	if store.ViewRows > 0 {
+		return maxCopyInt(1, store.ViewRows)
 	}
 	return 8
 }

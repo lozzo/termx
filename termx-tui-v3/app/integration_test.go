@@ -503,6 +503,42 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	}
 }
 
+func TestCopyModeLatestStartsAtNewestVisibleTail(t *testing.T) {
+	latestRows := make([]state.HistoryRow, 0, 10)
+	for i := 1; i <= 10; i++ {
+		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("latest-%02d", i), LineID: uint64(i)})
+	}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			latestRows,
+		)}},
+	}
+	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 1}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 7)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("enter copy mode: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+
+	if runtime.State().CopyMode.ViewportTop == 0 {
+		t.Fatalf("latest copy mode should start at newest tail, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "latest-10") || frameContains(last, "latest-01") {
+		t.Fatalf("latest copy mode should render newest tail, got %#v", last.Lines)
+	}
+}
+
 func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T) {
 	olderRows := make([]state.HistoryRow, 0, 24)
 	for i := 1; i <= 24; i++ {
@@ -516,12 +552,16 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 			78,
 			7,
 			[]state.HistoryRow{
-				{Text: "new-1", LineID: 101},
-				{Text: "new-2", LineID: 102},
-				{Text: "new-3", LineID: 103},
-				{Text: "new-4", LineID: 104},
-				{Text: "new-5", LineID: 105},
-				{Text: "new-6", LineID: 106},
+				{Text: "new-01", LineID: 101},
+				{Text: "new-02", LineID: 102},
+				{Text: "new-03", LineID: 103},
+				{Text: "new-04", LineID: 104},
+				{Text: "new-05", LineID: 105},
+				{Text: "new-06", LineID: 106},
+				{Text: "new-07", LineID: 107},
+				{Text: "new-08", LineID: 108},
+				{Text: "new-09", LineID: 109},
+				{Text: "new-10", LineID: 110},
 			},
 		)}},
 		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
@@ -535,7 +575,7 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	}
 	core.LatestResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 101}
 	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 1}
-	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 1, LastLineID: 106}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 1, LastLineID: 110}
 	host := NewFakeTerminalHost(32)
 	host.SetSize(80, 10)
 	runtime := newCopyModeRuntime(host, core, nil)
@@ -560,7 +600,7 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	if runtime.State().CopyMode.ViewportTop != len(olderRows)+2 {
 		t.Fatalf("older prefetch should keep the one-line scrolled content anchored, got %#v", runtime.State().CopyMode)
 	}
-	if runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-3" {
+	if runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-03" {
 		t.Fatalf("older prefetch must fill cache without jumping to older page, rows=%v top=%d", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode.ViewportTop)
 	}
 
@@ -573,11 +613,11 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	if len(core.OlderRequests) != 1 {
 		t.Fatalf("wheel over thick prefetched data should not request another older page, got %#v", core.OlderRequests)
 	}
-	if runtime.State().CopyMode.ViewportTop != len(olderRows)+1 || runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-2" {
+	if runtime.State().CopyMode.ViewportTop != len(olderRows)+1 || runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-02" {
 		t.Fatalf("wheel should continue moving one row through local cache, rows=%v copy=%#v", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
-	if frameContains(last, "old-01") && !frameContains(last, "new-2") {
+	if frameContains(last, "old-01") && !frameContains(last, "new-02") {
 		t.Fatalf("older prefetch should not steal viewport to prepended page, got %#v", last.Lines)
 	}
 }
@@ -4831,6 +4871,8 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 				{Text: "beta", LineID: 11},
 				{Text: "gamma beta", LineID: 12},
 				{Text: "delta", LineID: 13},
+				{Text: "epsilon", LineID: 14},
+				{Text: "zeta", LineID: 15},
 			},
 		)}},
 	}
@@ -4875,6 +4917,7 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	if runtime.State().CopyMode.ActiveMatch != 1 || runtime.State().CopyMode.Cursor.Row != 2 {
 		t.Fatalf("expected next search match, got %#v", runtime.State().CopyMode)
 	}
+	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: 5}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}); err != nil {
 		t.Fatalf("send page down: %v", err)
 	}

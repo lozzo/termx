@@ -183,12 +183,13 @@
 | 215E1-R10. SK copy history 滚动 perf 定位 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已做 copy history 连续滚动专项 benchmark/profile：主要瓶颈是 render 每帧大量分配，不是 FrameSink 写出；content viewport 满屏快路径减少临时 cell，真实 TTY 走 ANSI-only frame，测试仍保留完整 frame |
 | 215E1-R11. SK copy history 滚动增量渲染 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已把真实 TTY copy history 已加载区滚动改成增量 patch：一行/多行滚动不再重建整屏 frame，只用 scroll region 补新露出的行；latest-only sink 对 patch 保序，对完整帧仍保留 latest-only |
 | 215E1-R12. SK copy history older 加载路径 perf | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已把 older 接收路径从全量重排/深拷贝改成只重排新 older 页，并让 older 返回后可见内容只移动少量行时继续走增量 patch；8192 loaded older 接收约 `0.89ms / 1.48MB / 831 allocs`，older result runtime patch 约 `1.11ms / 1.51MB / 910 allocs` |
+| 215E1-R13. SK copy history latest 尾部定位回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复进入 copy/history 后看不到最新日志：latest window 内部按旧到新排列，TUI 现在默认把 cursor/viewport 放到 latest 页尾部；oldest 跳转仍从最老页头部显示；scroll clamp 与实际 history 正文可见行数对齐 |
 
 当前下一步：
 
-- `215E1-R12 copy history older 加载路径 perf` 已完成
-- 普通已加载区滚动仍约 `12µs / 1.2KB / 8-9 allocs`；触顶 older 返回已避免整屏 render，主要剩余成本是连续 `Rows/SourceLines/LineSpans` slice 拼接
-- 若后续还要继续压内存，需要另开切片评估 chunk/deque 或 loaded-window 上限；不要在当前 R12 继续扩大
+- `215E1-R13 copy history latest 尾部定位回归` 已完成
+- 已补回归测试：latest 返回多于当前可见高度时，进入 copy mode 会显示最后几行最新日志
+- 若后续继续看 history 手感，优先用真实 tmux harness 验证 latest 尾部、上滑 older、`g` oldest 三条路径
 
 ## 6. 必做证据
 

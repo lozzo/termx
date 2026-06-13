@@ -569,9 +569,9 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	}
 	root.History = nextHistory
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
-		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
+		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
 	} else if pending != nil && pending.Kind == state.HistoryRequestOldest {
-		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
+		root.CopyMode = root.CopyMode.AcceptOldest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
 	} else {
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, msg.Result.Window, nextHistory.Cols)
 		deferredRows := 0

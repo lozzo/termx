@@ -459,7 +459,7 @@ func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 	}
 
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "new", LineID: 20}})
-	copyMode = copyMode.AcceptLatest(latest, latest.Cols)
+	copyMode = copyMode.AcceptLatest(latest, latest.Cols, len(latest.Rows))
 	if copyMode.BoundToken != "tok-1" || copyMode.Empty {
 		t.Fatalf("unexpected latest binding %#v", copyMode)
 	}
@@ -483,6 +483,38 @@ func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 	copyMode = copyMode.AcceptOlder(2, before, after, older, 100)
 	if copyMode.ViewportTop != 2 || copyMode.BoundCols != 100 {
 		t.Fatalf("older accept should keep local bound cols while adjusting viewport, got %#v", copyMode)
+	}
+}
+
+func TestCopyModeAcceptLatestStartsAtNewestTail(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "one", LineID: 1},
+		{Text: "two", LineID: 2},
+		{Text: "three", LineID: 3},
+		{Text: "four", LineID: 4},
+		{Text: "five", LineID: 5},
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	copyMode := CopyModeStore{ViewRows: 3}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	if copyMode.Cursor != (CopyPosition{Row: 4}) || copyMode.ViewportTop != 2 {
+		t.Fatalf("latest should start at newest visible tail, got %#v", copyMode)
+	}
+}
+
+func TestCopyModeAcceptOldestStartsAtOldestHead(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "one", LineID: 1},
+		{Text: "two", LineID: 2},
+		{Text: "three", LineID: 3},
+		{Text: "four", LineID: 4},
+		{Text: "five", LineID: 5},
+	}
+	oldest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	copyMode := CopyModeStore{ViewRows: 3}.AcceptOldest(oldest, oldest.Cols, len(rows))
+
+	if copyMode.Cursor != (CopyPosition{}) || copyMode.ViewportTop != 0 {
+		t.Fatalf("oldest should start at oldest visible head, got %#v", copyMode)
 	}
 }
 
@@ -795,8 +827,8 @@ func TestCopyModeSearchMatchesAndScrollClamp(t *testing.T) {
 		t.Fatalf("expected second active match, got %#v", copyMode)
 	}
 	copyMode = copyMode.Scroll(20, len(history.Rows))
-	if copyMode.ViewportTop != 2 {
-		t.Fatalf("scroll should clamp to max top for one visible row, got %#v", copyMode)
+	if copyMode.ViewportTop != 0 {
+		t.Fatalf("scroll should clamp to max top for fully visible rows, got %#v", copyMode)
 	}
 }
 
