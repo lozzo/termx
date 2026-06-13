@@ -387,8 +387,15 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	if len(existing) == 0 && len(store.Rows) > 0 {
 		existing = historyRowsToLogicalLines(store.Rows, store.Lines)
 	}
-	store.SourceLines = mergePrependedHistoryLogicalLines(historyWindowSourceLines(window), existing)
-	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+	older := historyWindowSourceLines(window)
+	if fast, rows, spans := fastPrependedHistoryRows(older, existing, store.Rows, store.Lines, store.Cols); fast {
+		store.SourceLines = prependHistoryLogicalLines(older, existing)
+		store.Rows = rows
+		store.Lines = spans
+	} else {
+		store.SourceLines = mergePrependedHistoryLogicalLines(older, existing)
+		store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+	}
 	store.Token = window.Token
 	store.Cursor = window.Cursor
 	store.Generation = window.Generation
@@ -396,6 +403,52 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	store.HasMore = window.HasMore
 	store.Exhausted = ExhaustedMarker{}
 	return store
+}
+
+func fastPrependedHistoryRows(older []HistoryLogicalLine, existing []HistoryLogicalLine, existingRows []HistoryRow, existingSpans []HistoryLineSpan, cols int) (bool, []HistoryRow, []HistoryLineSpan) {
+	if historyPrependNeedsBoundaryMerge(older, existing) {
+		return false, nil, nil
+	}
+	olderRows, olderSpans := ReflowHistoryLogicalLines(older, cols)
+	if len(existing) > 0 && len(existingRows) == 0 {
+		return false, nil, nil
+	}
+	// 中文说明：existing tail 来自当前 frozen history，reducer 后续只读它；
+	// prepend older 时只复制 slice header，避免每次加载上一页都深拷贝全部已加载历史。
+	rows := make([]HistoryRow, 0, len(olderRows)+len(existingRows))
+	rows = append(rows, olderRows...)
+	rows = append(rows, existingRows...)
+	spans := make([]HistoryLineSpan, 0, len(olderSpans)+len(existingSpans))
+	spans = append(spans, olderSpans...)
+	if len(existingSpans) == 0 && len(existingRows) > 0 {
+		existingSpans = historyLineSpansForSearch(HistoryStore{Rows: existingRows})
+	}
+	spans = appendRebasedHistoryLineSpans(spans, existingSpans, len(olderRows))
+	return true, rows, spans
+}
+
+func historyPrependNeedsBoundaryMerge(older []HistoryLogicalLine, existing []HistoryLogicalLine) bool {
+	if len(older) == 0 || len(existing) == 0 {
+		return false
+	}
+	lastOlder := older[len(older)-1]
+	firstExisting := existing[0]
+	return lastOlder.LineID != 0 &&
+		lastOlder.LineID == firstExisting.LineID &&
+		lastOlder.ClippedAfter &&
+		firstExisting.ClippedBefore
+}
+
+func prependHistoryLogicalLines(older []HistoryLogicalLine, existing []HistoryLogicalLine) []HistoryLogicalLine {
+	if len(older) == 0 {
+		return existing
+	}
+	if len(existing) == 0 {
+		return older
+	}
+	out := make([]HistoryLogicalLine, 0, len(older)+len(existing))
+	out = append(out, older...)
+	return append(out, existing...)
 }
 
 func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []HistoryLogicalLine) []HistoryLogicalLine {
@@ -502,31 +555,15 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int) CopyMode
 }
 
 func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, after HistoryStore, window HistoryWindow, cols int) CopyModeStore {
-	if len(before.Rows) > 0 && len(after.Rows) > 0 {
+	if store.Query == "" && copyModeCanShiftSimpleOlderPrepend(insertedRows, before, after) {
+		store = store.shiftAfterOlderPrepend(insertedRows)
+	} else if len(before.Rows) > 0 && len(after.Rows) > 0 {
 		// 中文说明：older prepend 可能不仅是“顶部多了几行”，也可能在 boundary overlap
 		// 处把同一 logical line 的 partial source 合并成新的本地 rows。这里统一按
 		// before/after frozen history 做内容重绑，避免 cursor/selection 只按行号平移后偏到错误内容。
 		store = store.RebindToReflowedHistory(before, after)
 	} else if insertedRows > 0 {
-		store.ViewportTop += insertedRows
-		store.Cursor.Row += insertedRows
-		if store.Mark != nil {
-			mark := *store.Mark
-			mark.Row += insertedRows
-			store.Mark = &mark
-		}
-		if store.Selection != nil {
-			store.Selection = &CopySelection{
-				Anchor: CopyPosition{
-					Row: store.Selection.Anchor.Row + insertedRows,
-					Col: store.Selection.Anchor.Col,
-				},
-				Focus: CopyPosition{
-					Row: store.Selection.Focus.Row + insertedRows,
-					Col: store.Selection.Focus.Col,
-				},
-			}
-		}
+		store = store.shiftAfterOlderPrepend(insertedRows)
 	}
 	store.BoundToken = window.Token
 	if cols <= 0 {
@@ -534,6 +571,64 @@ func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, af
 	}
 	store.BoundCols = cols
 	store.Empty = false
+	return store
+}
+
+func copyModeCanShiftSimpleOlderPrepend(insertedRows int, before HistoryStore, after HistoryStore) bool {
+	if insertedRows <= 0 || len(before.Rows) == 0 || len(after.Rows) == 0 {
+		return false
+	}
+	if before.Cols != after.Cols || insertedRows+len(before.Rows) != len(after.Rows) {
+		return false
+	}
+	return historyRowsSameAnchor(before.Rows[0], after.Rows[insertedRows]) &&
+		historyRowsSameAnchor(before.Rows[len(before.Rows)-1], after.Rows[len(after.Rows)-1])
+}
+
+func historyRowsSameAnchor(left HistoryRow, right HistoryRow) bool {
+	return left.LineID == right.LineID &&
+		left.RowInLine == right.RowInLine &&
+		left.Text == right.Text &&
+		left.ClippedStart == right.ClippedStart &&
+		left.ClippedEnd == right.ClippedEnd &&
+		historyCellsSameAnchor(left.Cells, right.Cells)
+}
+
+func historyCellsSameAnchor(left []HistoryCell, right []HistoryCell) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (store CopyModeStore) shiftAfterOlderPrepend(insertedRows int) CopyModeStore {
+	if insertedRows <= 0 {
+		return store
+	}
+	store.ViewportTop += insertedRows
+	store.Cursor.Row += insertedRows
+	if store.Mark != nil {
+		mark := *store.Mark
+		mark.Row += insertedRows
+		store.Mark = &mark
+	}
+	if store.Selection != nil {
+		store.Selection = &CopySelection{
+			Anchor: CopyPosition{
+				Row: store.Selection.Anchor.Row + insertedRows,
+				Col: store.Selection.Anchor.Col,
+			},
+			Focus: CopyPosition{
+				Row: store.Selection.Focus.Row + insertedRows,
+				Col: store.Selection.Focus.Col,
+			},
+		}
+	}
 	return store
 }
 
@@ -1244,6 +1339,15 @@ func rebaseExistingLineSpans(spans []HistoryLineSpan, delta int) []HistoryLineSp
 		spans[i].EndRow += delta
 	}
 	return spans
+}
+
+func appendRebasedHistoryLineSpans(out []HistoryLineSpan, spans []HistoryLineSpan, delta int) []HistoryLineSpan {
+	for _, span := range spans {
+		span.StartRow += delta
+		span.EndRow += delta
+		out = append(out, span)
+	}
+	return out
 }
 
 func clampCopyInt(value int, min int, max int) int {

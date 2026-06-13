@@ -21,6 +21,16 @@ type copyHistoryPatchCache struct {
 	ContentRect render.Rect
 	Metadata    render.RenderMetadata
 	Theme       render.Theme
+	TopAnchor   copyHistoryPatchRowAnchor
+}
+
+type copyHistoryPatchRowAnchor struct {
+	Valid        bool
+	LineID       uint64
+	RowInLine    int
+	Text         string
+	ClippedStart bool
+	ClippedEnd   bool
 }
 
 func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
@@ -31,7 +41,10 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 	if !ok || !copyHistoryPatchStable(runtime.copyHistoryPatch, current) {
 		return false
 	}
-	delta := current.ViewportTop - runtime.copyHistoryPatch.ViewportTop
+	delta, ok := copyHistoryPatchVisualDelta(runtime.copyHistoryPatch, current, runtime.state.History)
+	if !ok {
+		return false
+	}
 	if delta == 0 {
 		return false
 	}
@@ -153,6 +166,7 @@ func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistor
 		ContentRect: rect,
 		Metadata:    render.RenderMetadata{Width: root.Viewport.Cols, Height: root.Viewport.Rows},
 		Theme:       theme,
+		TopAnchor:   copyHistoryPatchRowAnchorAt(root.History, root.CopyMode.ViewportTop),
 	}, true
 }
 
@@ -181,6 +195,7 @@ func buildCopyHistoryPatchCacheFromPrevious(root state.Root, previous copyHistor
 	current.ViewportTop = root.CopyMode.ViewportTop
 	current.ViewRows = root.CopyMode.ViewRows
 	current.Cursor = root.CopyMode.Cursor
+	current.TopAnchor = copyHistoryPatchRowAnchorAt(root.History, root.CopyMode.ViewportTop)
 	current.Valid = true
 	return current, true
 }
@@ -206,16 +221,56 @@ func copyHistoryPatchStable(previous copyHistoryPatchCache, current copyHistoryP
 	return previous.TerminalID == current.TerminalID &&
 		previous.Token == current.Token &&
 		previous.Cols == current.Cols &&
-		previous.RowsLen == current.RowsLen &&
 		previous.HistoryGen == current.HistoryGen &&
-		previous.Boundary == current.Boundary &&
 		previous.HasMore == current.HasMore &&
-		previous.Pending == current.Pending &&
 		previous.ViewRows == current.ViewRows &&
-		previous.Cursor == current.Cursor &&
 		previous.ContentRect == current.ContentRect &&
 		previous.Metadata == current.Metadata &&
 		previous.Theme == current.Theme
+}
+
+func copyHistoryPatchVisualDelta(previous copyHistoryPatchCache, current copyHistoryPatchCache, history state.HistoryStore) (int, bool) {
+	delta := current.ViewportTop - previous.ViewportTop
+	if current.RowsLen == previous.RowsLen && current.Boundary == previous.Boundary && current.Pending == previous.Pending {
+		return delta, true
+	}
+	// 中文说明：older prepend 后 RowsLen/Boundary 会变，但旧内容只是整体下移；
+	// 这里用上一帧 top anchor 在当前 rows 中的位置抵消 inserted rows，避免误判成整屏跳变。
+	if previous.TopAnchor.Valid {
+		if shiftedTop, ok := copyHistoryPatchFindAnchorNear(history, previous.TopAnchor, current.ViewportTop, current.ViewportTop+maxCopyHistoryPatchInt(0, current.RowsLen-previous.RowsLen)); ok {
+			return current.ViewportTop - shiftedTop, true
+		}
+	}
+	return 0, false
+}
+
+func copyHistoryPatchRowAnchorAt(history state.HistoryStore, rowIndex int) copyHistoryPatchRowAnchor {
+	if rowIndex < 0 || rowIndex >= len(history.Rows) {
+		return copyHistoryPatchRowAnchor{}
+	}
+	row := history.Rows[rowIndex]
+	return copyHistoryPatchRowAnchor{
+		Valid:        true,
+		LineID:       row.LineID,
+		RowInLine:    row.RowInLine,
+		Text:         row.Text,
+		ClippedStart: row.ClippedStart,
+		ClippedEnd:   row.ClippedEnd,
+	}
+}
+
+func copyHistoryPatchFindAnchorNear(history state.HistoryStore, anchor copyHistoryPatchRowAnchor, start int, end int) (int, bool) {
+	if !anchor.Valid || len(history.Rows) == 0 {
+		return 0, false
+	}
+	start = clampCopyHistoryPatchInt(start, 0, len(history.Rows)-1)
+	end = clampCopyHistoryPatchInt(end, start, len(history.Rows)-1)
+	for rowIndex := start; rowIndex <= end; rowIndex++ {
+		if copyHistoryPatchRowAnchorAt(history, rowIndex) == anchor {
+			return rowIndex, true
+		}
+	}
+	return 0, false
 }
 
 func copyHistoryPatchCursor(history state.HistoryStore, copyMode state.CopyModeStore) render.Cursor {
@@ -293,4 +348,21 @@ func minCopyHistoryPatchInt(left int, right int) int {
 		return left
 	}
 	return right
+}
+
+func maxCopyHistoryPatchInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func clampCopyHistoryPatchInt(value int, min int, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }

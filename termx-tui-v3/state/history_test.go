@@ -568,6 +568,37 @@ func TestCopyModeAcceptOlderShiftsCursorMarkAndSelectionWithPrependedRows(t *tes
 	}
 }
 
+func TestCopyModeAcceptOlderFastShiftsSimplePrependWithoutRebind(t *testing.T) {
+	copyMode := CopyModeStore{
+		Active:      true,
+		Cursor:      CopyPosition{Row: 1, Col: 2},
+		ViewportTop: 1,
+	}
+	before := HistoryStore{
+		Cols: 6,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "abcdef", LineID: 10},
+			{Text: "ghijkl", LineID: 11},
+		},
+	}
+	before.Rows, before.Lines = ReflowHistoryLogicalLines(before.SourceLines, before.Cols)
+	after := HistoryStore{
+		Cols: 6,
+		SourceLines: []HistoryLogicalLine{
+			{Text: "older", LineID: 9},
+			{Text: "abcdef", LineID: 10},
+			{Text: "ghijkl", LineID: 11},
+		},
+	}
+	after.Rows, after.Lines = ReflowHistoryLogicalLines(after.SourceLines, after.Cols)
+
+	copyMode = copyMode.AcceptOlder(1, before, after, HistoryWindow{Token: "tok-older", Cols: 6}, 6)
+
+	if copyMode.ViewportTop != 2 || copyMode.Cursor != (CopyPosition{Row: 2, Col: 2}) {
+		t.Fatalf("simple prepend should shift row positions without content rebind, got %#v", copyMode)
+	}
+}
+
 func TestCopyModeApplyDeferredOlderScrollConsumesPendingRows(t *testing.T) {
 	copyMode := CopyModeStore{Active: true, ViewRows: 5, ViewportTop: 8}
 	copyMode = copyMode.ApplyDeferredOlderScroll(1, 30)

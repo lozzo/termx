@@ -177,6 +177,62 @@ func BenchmarkCopyHistoryRuntimeLoadedLineScrollIncremental(b *testing.B) {
 	})
 }
 
+func BenchmarkCopyHistoryRuntimeOlderResultIncremental(b *testing.B) {
+	host := newCopyHistoryPerfIncrementalHost(4096)
+	host.SetSize(180, 60)
+	builder := render.NewRenderVMBuilder()
+	renderer := render.NewRenderer(render.DefaultTheme())
+	root := copyHistoryPerfRoot(180, 60, 8192)
+	root.CopyMode.ViewportTop = 0
+	root.CopyMode.Cursor = state.CopyPosition{Row: len(root.History.Rows) / 2, Col: 8}
+	root.History.Pending = &state.HistoryPendingRequest{
+		ID:                      1,
+		Kind:                    state.HistoryRequestOlder,
+		PaneID:                  root.History.PaneID,
+		ViewID:                  root.History.ViewID,
+		TerminalID:              root.History.TerminalID,
+		Cols:                    root.History.Cols,
+		Token:                   root.History.Token,
+		Generation:              root.History.Generation,
+		Cursor:                  root.History.Cursor,
+		Boundary:                root.History.Boundary,
+		ScrollDeltaAfterPrepend: 1,
+	}
+	window := copyHistoryPerfOlderWindow(128, root.History)
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		func(root state.Root) render.Frame {
+			return renderer.RenderANSI(builder.Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	cache, ok := buildCopyHistoryPatchCache(root, render.DefaultTheme())
+	if !ok {
+		b.Fatal("expected copy history patch cache")
+	}
+	cache.Metadata = render.RenderMetadata{Width: 180, Height: 60}
+	msg := CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: 1, Window: window}}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		runtime.state = root
+		runtime.copyHistoryPatch = cache
+		if err := runtime.Post(msg); err != nil {
+			b.Fatalf("post older result: %v", err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			b.Fatalf("drain older result: %v", err)
+		}
+	}
+	b.StopTimer()
+	if host.sink.patchFrames == 0 {
+		b.Fatalf("older result benchmark did not write patch frames")
+	}
+}
+
 func benchmarkCopyHistoryWheelRuntime(b *testing.B, runtime *AppRuntime, host *FakeTerminalHost) {
 	b.Helper()
 	benchmarkCopyHistoryWheelRuntimeWithSender(b, runtime, host.SendInput, nil)
@@ -335,5 +391,33 @@ func copyHistoryPerfRoot(cols int, rows int, historyRows int) state.Root {
 		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, cols-2, rows-4, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
 		History:       history,
 		CopyMode:      copyMode,
+	}
+}
+
+func copyHistoryPerfOlderWindow(olderLines int, base state.HistoryStore) state.HistoryWindow {
+	firstLineID := base.Boundary.FirstLineID - uint64(olderLines)
+	source := make([]state.HistoryLogicalLine, olderLines)
+	for i := range source {
+		lineID := firstLineID + uint64(i)
+		source[i] = state.HistoryLogicalLine{
+			Text:   fmt.Sprintf("copy-history-perf older %05d segment segment segment segment segment", lineID),
+			LineID: lineID,
+		}
+	}
+	rows, spans := state.ReflowHistoryLogicalLines(source, base.Cols)
+	return state.HistoryWindow{
+		PaneID:      base.PaneID,
+		ViewID:      base.ViewID,
+		TerminalID:  base.TerminalID,
+		Token:       base.Token,
+		Op:          state.HistoryWindowPrepend,
+		Cols:        base.Cols,
+		SourceLines: source,
+		Rows:        rows,
+		Lines:       spans,
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: firstLineID},
+		Generation:  base.Generation,
+		Boundary:    state.HistoryBoundary{FirstLineID: firstLineID, LastLineID: base.Boundary.LastLineID},
+		HasMore:     true,
 	}
 }
