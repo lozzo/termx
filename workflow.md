@@ -178,11 +178,12 @@
 | 215E1-R5. SK 连续 older 不推进回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`workflow.md` | 已修复真实现场“1000 行输出只能看到 953，再上滑 loading/more 切换但内容不变”：core older response 保持 frozen tail boundary，TUI 能连续接纳并 prepend/显示更老页 |
 | 215E1-R6. SK live 压力输出最新帧合并 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/cmd/termx/`、`workflow.md` | 已处理 `generate_terminal_stress.py --lines 100000` 下的 live pending：core live/history 分轨并按批 ingest，live surface 只维护 latest screen；TUI 合并普通 live changed，真实 TTY 写帧只保留最新待写帧；CLI 首次 attach 不再因为预填 session 被 stale guard 丢掉 |
 | 215E1-R7. SK copy-top 翻到最老页回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-cli/`、`scripts/`、`workflow.md` | 已处理 copy-top 到不了最老页：copy mode 里按 `g` 会在当前 frozen snapshot 上直接请求 oldest page，不再靠重复 older 分页；100000 行 tmux baseline 的 copy-top / resize / reattach 都能看到 `000000`，copy history 正文也不再混入 search/status/line marker |
+| 215E1-R8. SK copy history 按行滚动预加载 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已把滚轮上滑改成按行移动；接近顶部会按页预取 older，但 older 返回只填本地缓存并保持当前内容锚点；真正到顶部继续上滑时，只按用户多滚的行数露出旧内容；`g` 直达最老页不变 |
 
 当前下一步：
 
-- 当前 history / copy 主链最新回归已收口
-- 下一步如继续推进，先按用户新反馈在任务队列里追加新的最小切片，不要继续扩 R7
+- 当前 history / copy 按行滚动预加载回归已收口
+- 下一步如继续推进，先按用户新反馈在任务队列里追加新的最小切片
 - R6 的 live pending 已收口；不要再把 live 输出背压和 copy-top 翻页问题混成一个故障
 
 ## 6. 必做证据

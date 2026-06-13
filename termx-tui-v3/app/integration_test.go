@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -502,7 +503,7 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	}
 }
 
-func TestCopyModeWheelUpScrollsLoadedRowsThenRevealsOlderPage(t *testing.T) {
+func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
@@ -551,30 +552,97 @@ func TestCopyModeWheelUpScrollsLoadedRowsThenRevealsOlderPage(t *testing.T) {
 		t.Fatalf("wheel loaded rows: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain local wheel: %v", err)
+		t.Fatalf("drain prefetch wheel: %v", err)
 	}
-	if len(core.OlderRequests) != 0 {
-		t.Fatalf("wheel up inside loaded history should not request older yet, got %#v", core.OlderRequests)
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("wheel near loaded top should prefetch older once, got %#v", core.OlderRequests)
 	}
-	if runtime.State().CopyMode.ViewportTop != 0 {
-		t.Fatalf("wheel up should first scroll loaded history to top, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.ViewportTop != 5 {
+		t.Fatalf("older prefetch should keep the one-line scrolled content anchored, got %#v", runtime.State().CopyMode)
+	}
+	if runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-3" {
+		t.Fatalf("older prefetch must fill cache without jumping to older page, rows=%v top=%d", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode.ViewportTop)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
-		t.Fatalf("wheel older: %v", err)
+		t.Fatalf("wheel loaded prefetched rows: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain local wheel after prefetch: %v", err)
+	}
+	if len(core.OlderRequests) != 1 {
+		t.Fatalf("wheel over prefetched data should not request another older page, got %#v", core.OlderRequests)
+	}
+	if runtime.State().CopyMode.ViewportTop != 4 || runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-2" {
+		t.Fatalf("wheel should continue moving one row through local cache, rows=%v copy=%#v", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if frameContains(last, "old-1") && !frameContains(last, "new-2") {
+		t.Fatalf("older prefetch should not steal viewport to prepended page, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeWheelAtTopRevealsOneOlderRow(t *testing.T) {
+	olderRows := make([]state.HistoryRow, 0, 10)
+	for i := 1; i <= 10; i++ {
+		olderRows = append(olderRows, state.HistoryRow{Text: fmt.Sprintf("old-%02d", i), LineID: uint64(10 + i)})
+	}
+	latestRows := make([]state.HistoryRow, 0, 20)
+	for i := 1; i <= 20; i++ {
+		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("new-%02d", i), LineID: uint64(20 + i)})
+	}
+	core := &services.FakeCoreClient{
+		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowPrepend,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			olderRows,
+		)}},
+	}
+	core.OlderResponses[0].Window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 11}
+	core.OlderResponses[0].Window.Boundary = state.HistoryBoundary{FirstLineID: 11, LastLineID: 40}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        78,
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: 21},
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: 21, LastLineID: 40},
+		SourceLines: historyLogicalLinesForApp(latestRows),
+		Rows:        latestRows,
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		BoundToken:  "tok-1",
+		BoundCols:   78,
+		ViewRows:    3,
+		ViewportTop: 0,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		t.Fatalf("wheel older at top: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain older: %v", err)
 	}
 	if len(core.OlderRequests) != 1 {
-		t.Fatalf("wheel at top should request older, got %#v", core.OlderRequests)
+		t.Fatalf("wheel at top should request one older page, got %#v", core.OlderRequests)
 	}
-	if runtime.State().CopyMode.ViewportTop != 0 {
-		t.Fatalf("older prepend smaller than viewport should reveal inserted page at top, got %#v", runtime.State().CopyMode)
+	got := historyRowTexts(runtime.State().History.Rows)
+	if len(got) != 30 || got[0] != "old-01" || got[10] != "new-01" {
+		t.Fatalf("older should fill local cache before latest rows, got %v", got)
 	}
-	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "old-1") || !frameContains(last, "old-3") {
-		t.Fatalf("older response should visibly update viewport to prepended rows, got %#v", last.Lines)
+	if runtime.State().CopyMode.ViewportTop != 9 || runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "old-10" {
+		t.Fatalf("wheel at top should reveal exactly one older row, rows=%v copy=%#v", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode)
 	}
 }
 

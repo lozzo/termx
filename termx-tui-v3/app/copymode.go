@@ -17,6 +17,8 @@ type CopyModeDeps struct {
 	Rows      int
 }
 
+const copyModeOlderPrefetchRows = 3
+
 type CopyModeHistoryResultMsg struct {
 	Result services.HistoryResult
 	Err    error
@@ -149,7 +151,7 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		next, effects := beginCopyModeLatest(root, deps)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentRequestOlder:
-		next, effects := reduceCopyModeScrollOlder(root, deps)
+		next, effects := reduceCopyModeScrollOlder(root, deps, intent.Event)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentExitCopyMode:
 		// 中文说明：退出 copy mode 后，任何仍在飞的 authoritative history 请求都不能再回填
@@ -201,22 +203,48 @@ func reduceCopyModeMouseInput(root state.Root, event input.InputEvent) (state.Ro
 	}
 	switch event.Mouse {
 	case input.MouseWheelUp:
-		root.CopyMode = root.CopyMode.Scroll(-copyModePageRows(root.CopyMode), len(root.History.Rows))
+		root.CopyMode = root.CopyMode.Scroll(-copyModeLineScrollRows(), len(root.History.Rows))
 		return root.Advance(), true
 	case input.MouseWheelDown:
-		root.CopyMode = root.CopyMode.Scroll(copyModePageRows(root.CopyMode), len(root.History.Rows))
+		root.CopyMode = root.CopyMode.Scroll(copyModeLineScrollRows(), len(root.History.Rows))
 		return root.Advance(), true
 	default:
 		return root, false
 	}
 }
 
-func reduceCopyModeScrollOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
-	if root.CopyMode.Active && root.CopyMode.ViewportTop > 0 {
-		root.CopyMode = root.CopyMode.Scroll(-copyModePageRows(root.CopyMode), len(root.History.Rows))
-		return root.Advance(), nil
+func reduceCopyModeScrollOlder(root state.Root, deps CopyModeDeps, event input.InputEvent) (state.Root, []Effect) {
+	rows := copyModeOlderScrollRows(root.CopyMode, event)
+	if rows <= 0 {
+		rows = 1
 	}
-	return beginCopyModeOlder(root, deps)
+	if root.CopyMode.Active {
+		if root.CopyMode.ViewportTop > 0 {
+			previousTop := root.CopyMode.ViewportTop
+			root.CopyMode = root.CopyMode.Scroll(-rows, len(root.History.Rows))
+			unconsumedRows := rows - previousTop
+			if unconsumedRows < 0 {
+				unconsumedRows = 0
+			}
+			next, effects := maybePrefetchCopyModeOlder(root, deps, unconsumedRows)
+			if len(effects) > 0 {
+				return next, effects
+			}
+			if unconsumedRows > 0 && root.History.Pending != nil && root.History.Pending.Kind == state.HistoryRequestOlder {
+				// 本地已加载区域先消费滚动；跨过顶部但 older 仍在飞时，只把没消费的行数挂到 pending。
+				root.History.Pending.ScrollDeltaAfterPrepend += unconsumedRows
+			}
+			if root.CopyMode.ViewportTop != previousTop {
+				return root.Advance(), nil
+			}
+		}
+		if root.History.Pending != nil && root.History.Pending.Kind == state.HistoryRequestOlder {
+			next := root
+			next.History.Pending.ScrollDeltaAfterPrepend += rows
+			return next.Advance(), nil
+		}
+	}
+	return beginCopyModeOlder(root, deps, rows)
 }
 
 func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyModeDeps) (state.Root, []Effect, bool) {
@@ -411,7 +439,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	}}
 }
 
-func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
+func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrepend int) (state.Root, []Effect) {
 	if deps.Core == nil {
 		return setCopyModeError(root, "core client missing"), nil
 	}
@@ -421,15 +449,16 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps) (state.Root, []Effec
 	}
 	requestID := nextHistoryRequestID(root)
 	req := state.HistoryPendingRequest{
-		ID:         requestID,
-		PaneID:     root.History.PaneID,
-		ViewID:     root.History.ViewID,
-		TerminalID: root.History.TerminalID,
-		Cols:       root.History.Cols,
-		Token:      root.History.Token,
-		Generation: root.History.Generation,
-		Cursor:     root.History.Cursor,
-		Boundary:   root.History.Boundary,
+		ID:                      requestID,
+		PaneID:                  root.History.PaneID,
+		ViewID:                  root.History.ViewID,
+		TerminalID:              root.History.TerminalID,
+		Cols:                    root.History.Cols,
+		Token:                   root.History.Token,
+		Generation:              root.History.Generation,
+		Cursor:                  root.History.Cursor,
+		Boundary:                root.History.Boundary,
+		ScrollDeltaAfterPrepend: scrollDeltaAfterPrepend,
 	}
 	nextHistory, err := root.History.BeginOlder(req)
 	if err != nil {
@@ -539,7 +568,11 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols)
 	} else {
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, msg.Result.Window, nextHistory.Cols)
-		root.CopyMode = root.CopyMode.RevealPrependedOlderPage(inserted, len(nextHistory.Rows))
+		deferredRows := 0
+		if pending != nil {
+			deferredRows = pending.ScrollDeltaAfterPrepend
+		}
+		root.CopyMode = root.CopyMode.ApplyDeferredOlderScroll(deferredRows, len(nextHistory.Rows))
 	}
 	if root.CopyMode.Query != "" {
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
@@ -793,6 +826,27 @@ func copyModePageRows(copyMode state.CopyModeStore) int {
 		return copyMode.ViewRows - 2
 	}
 	return 8
+}
+
+func copyModeLineScrollRows() int {
+	return 1
+}
+
+func copyModeOlderScrollRows(copyMode state.CopyModeStore, event input.InputEvent) int {
+	if event.Kind == input.EventKindKey && event.Key == input.KeyPageUp {
+		return copyModePageRows(copyMode)
+	}
+	return copyModeLineScrollRows()
+}
+
+func maybePrefetchCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrepend int) (state.Root, []Effect) {
+	if root.CopyMode.ViewportTop > copyModeOlderPrefetchRows {
+		return root, nil
+	}
+	if root.History.OlderRequestState() != state.OlderRequestReady {
+		return root, nil
+	}
+	return beginCopyModeOlder(root, deps, scrollDeltaAfterPrepend)
 }
 
 func requestRows(deps CopyModeDeps, sessionRows int) int {

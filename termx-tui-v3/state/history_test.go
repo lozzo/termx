@@ -568,17 +568,17 @@ func TestCopyModeAcceptOlderShiftsCursorMarkAndSelectionWithPrependedRows(t *tes
 	}
 }
 
-func TestCopyModeRevealPrependedOlderPageShowsNewRows(t *testing.T) {
+func TestCopyModeApplyDeferredOlderScrollConsumesPendingRows(t *testing.T) {
 	copyMode := CopyModeStore{Active: true, ViewRows: 5, ViewportTop: 8}
-	copyMode = copyMode.RevealPrependedOlderPage(8, 30)
+	copyMode = copyMode.ApplyDeferredOlderScroll(1, 30)
 
-	if copyMode.ViewportTop != 5 {
-		t.Fatalf("expected viewport to show tail of inserted older page, got %d", copyMode.ViewportTop)
+	if copyMode.ViewportTop != 7 {
+		t.Fatalf("expected deferred scroll to consume one row, got %d", copyMode.ViewportTop)
 	}
 
-	copyMode = (CopyModeStore{Active: true, ViewRows: 20}).RevealPrependedOlderPage(8, 30)
+	copyMode = (CopyModeStore{Active: true, ViewRows: 20}).ApplyDeferredOlderScroll(8, 30)
 	if copyMode.ViewportTop != 0 {
-		t.Fatalf("small inserted page should stay at top, got %d", copyMode.ViewportTop)
+		t.Fatalf("deferred scroll should clamp at history top, got %d", copyMode.ViewportTop)
 	}
 }
 

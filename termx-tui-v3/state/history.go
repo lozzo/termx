@@ -54,6 +54,8 @@ type HistoryPendingRequest struct {
 	Cursor          HistoryCursor
 	Boundary        HistoryBoundary
 	BoundCopyModeID uint64
+	// older 返回时先保持原内容锚点，再消费用户在顶部继续向上滚动但尚未满足的行数。
+	ScrollDeltaAfterPrepend int
 }
 
 // HistoryRow 是 authoritative HistoryWindow 的 visual row 投影。
@@ -535,16 +537,13 @@ func (store CopyModeStore) AcceptOlder(insertedRows int, before HistoryStore, af
 	return store
 }
 
-func (store CopyModeStore) RevealPrependedOlderPage(insertedRows int, totalRows int) CopyModeStore {
-	if insertedRows <= 0 || totalRows <= 0 {
+func (store CopyModeStore) ApplyDeferredOlderScroll(rows int, totalRows int) CopyModeStore {
+	if rows <= 0 {
 		return store.Scroll(0, totalRows)
 	}
-	visibleRows := copyVisibleRowsForStore(store)
-	// 中文说明：用户主动上滑触发 older 时，prepend 后要把视口放到新插入的那页；
-	// 否则 RebindToReflowedHistory 会保持旧内容位置，用户看到的画面像是没有更新。
-	top := maxCopyInt(0, insertedRows-visibleRows)
-	store.ViewportTop = clampCopyInt(top, 0, maxCopyInt(0, totalRows-visibleRows))
-	return store
+	// older prepend 已经把原 visible top 重新锚到同一条 logical line；
+	// 这里仅消费用户在等待分页时还想继续向上的行数，保持“请求按页、浏览按行”。
+	return store.Scroll(-rows, totalRows)
 }
 
 func (store CopyModeStore) Resize(cols int, rows int) CopyModeStore {
