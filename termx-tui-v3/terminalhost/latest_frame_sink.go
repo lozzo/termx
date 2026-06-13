@@ -25,6 +25,14 @@ func NewLatestFrameSink(sink render.FrameSink) *LatestFrameSink {
 	return writer
 }
 
+func (sink *LatestFrameSink) NeedsCompleteFrame() bool {
+	preference, ok := sink.sink.(render.FrameSinkPreference)
+	if !ok {
+		return true
+	}
+	return preference.NeedsCompleteFrame()
+}
+
 func (sink *LatestFrameSink) WriteFrame(frame render.Frame) error {
 	cloned := frame.Clone()
 	sink.mu.Lock()

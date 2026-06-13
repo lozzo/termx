@@ -32,9 +32,7 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), func(root state.Root) render.Frame {
-		return renderer.Render(builder.Build(root))
-	}, host, runner)
+	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 }
 
 // NewInteractiveRuntime 组合 live 与 copy mode 主路径。copy mode 会消费
@@ -60,15 +58,32 @@ func NewInteractiveRuntimeWithWorkbench(
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), func(root state.Root) render.Frame {
-		return renderer.Render(builder.Build(root))
-	}, host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
 		runtime.enqueue(WorkbenchStorageLoadRequestMsg{})
 		runtime.enqueue(WorkbenchStorageWatchRequestMsg{})
 	}
 	return runtime
+}
+
+func hostRenderFunc(host TerminalHost, builder render.RenderVMBuilder, renderer render.Renderer) RenderFunc {
+	ansiOnly := false
+	if host != nil {
+		if sink := host.FrameSink(); sink != nil {
+			if preference, ok := sink.(render.FrameSinkPreference); ok {
+				ansiOnly = !preference.NeedsCompleteFrame()
+			}
+		}
+	}
+	return func(root state.Root) render.Frame {
+		vm := builder.Build(root)
+		if ansiOnly {
+			// 中文说明：真实 TTY 只消费 ANSI 行；测试 sink 默认保留 plain/styled frame 方便断言。
+			return renderer.RenderANSI(vm)
+		}
+		return renderer.Render(vm)
+	}
 }
 
 type LiveAttachMsg struct {

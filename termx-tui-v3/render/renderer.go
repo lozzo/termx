@@ -21,3 +21,7 @@ func (renderer Renderer) RenderResult(vm RenderVM) RenderResult {
 func (renderer Renderer) Render(vm RenderVM) Frame {
 	return renderer.RenderResult(vm).Frame()
 }
+
+func (renderer Renderer) RenderANSI(vm RenderVM) Frame {
+	return ANSIFrameFromRenderResult(renderer.RenderResult(vm))
+}

@@ -57,6 +57,18 @@ func FrameFromRenderResult(result RenderResult) Frame {
 	}
 }
 
+func ANSIFrameFromRenderResult(result RenderResult) Frame {
+	return Frame{
+		ANSILines:  result.ANSILines(),
+		Cursor:     result.Cursor,
+		CursorRect: result.CursorRect,
+		Blink:      result.Blink,
+		HitRegions: cloneHitRegions(result.HitRegions),
+		Metadata:   result.Metadata,
+		Theme:      result.Theme.WithFallback(),
+	}
+}
+
 func cloneStrings(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -69,4 +81,10 @@ func cloneStrings(values []string) []string {
 // FrameSink 把渲染帧写入 host、recorder 或 test sink。
 type FrameSink interface {
 	WriteFrame(Frame) error
+}
+
+// FrameSinkPreference 允许真实 host 声明自己只需要 ANSI 输出。
+// 测试 recorder 不实现该接口时保留完整 Frame，方便继续断言 plain/styled 内容。
+type FrameSinkPreference interface {
+	NeedsCompleteFrame() bool
 }

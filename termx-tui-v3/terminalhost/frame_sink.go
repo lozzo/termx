@@ -37,6 +37,10 @@ func NewFrameSink(writer io.Writer) *FrameSink {
 	return &FrameSink{writer: writer}
 }
 
+func (sink *FrameSink) NeedsCompleteFrame() bool {
+	return false
+}
+
 func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()

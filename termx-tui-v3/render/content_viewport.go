@@ -19,9 +19,18 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	}
 	extent := normalizeContentExtent(content.Extent, rect)
 	extent = applyContentLayoutToExtent(content.Layout, extent, rect)
-	rendered := make([]Line, 0, rect.H)
 	overflow := contentViewportOverflow(lines, extent, rect)
 	markOutsideExtent := contentViewportMarksOutsideExtent(content)
+	if contentViewportCanUseDirectRows(extent, rect, markOutsideExtent) {
+		return ContentRenderResult{
+			Lines:      contentViewportDirectRows(lines, rect.W, rect.H),
+			Cursor:     contentViewportCursor(content.Cursor, extent, rect),
+			HitRegions: content.HitRegions,
+			Metadata:   RenderMetadata{Width: rect.W, Height: rect.H},
+			Overflow:   overflow,
+		}
+	}
+	rendered := make([]Line, 0, rect.H)
 	for row := 0; row < rect.H; row++ {
 		rendered = append(rendered, renderContentViewportRow(lines, extent, rect.W, row, markOutsideExtent))
 	}
@@ -91,6 +100,44 @@ func centeredContentOrigin(delta int) int {
 func contentViewportMarksOutsideExtent(content ContentVM) bool {
 	// 只有真实 live surface 才展示 pane/terminal 尺寸差异；pending、空态和错误 fallback 保持降噪。
 	return content.Kind == ContentTerminalLive && content.Extent.Known && !content.Pending && !content.Empty && content.Error == ""
+}
+
+func contentViewportCanUseDirectRows(extent ContentExtent, rect Rect, markOutsideExtent bool) bool {
+	return !markOutsideExtent &&
+		extent.Known &&
+		extent.X == 0 &&
+		extent.Y == 0 &&
+		extent.Cols == rect.W &&
+		extent.Rows == rect.H
+}
+
+func contentViewportDirectRows(lines []Line, width int, height int) []Line {
+	rendered := make([]Line, height)
+	for row := 0; row < height; row++ {
+		if row >= len(lines) {
+			rendered[row] = Line{Cells: []Cell{contentViewportBlankRun(width)}}
+			continue
+		}
+		rendered[row] = contentViewportFitLine(lines[row], width)
+	}
+	return rendered
+}
+
+func contentViewportFitLine(line Line, width int) Line {
+	if width <= 0 {
+		return Line{}
+	}
+	lineWidth := line.Width()
+	if lineWidth == width {
+		return line
+	}
+	if lineWidth > width {
+		return contentViewportLineWindow(line, 0, width)
+	}
+	cells := make([]Cell, 0, len(line.Cells)+1)
+	cells = append(cells, line.Cells...)
+	cells = append(cells, contentViewportBlankRun(width-lineWidth))
+	return Line{Cells: cells}
 }
 
 func renderEmptyPaneContentViewport(request ContentRenderRequest) ContentRenderResult {
@@ -275,16 +322,23 @@ func contentViewportLineWindow(line Line, start int, width int) Line {
 				}
 			}
 		}
-		for outWidth < minInt(width, outWidth+visibleWidth) {
-			cells = append(cells, contentViewportBlankCell())
-			outWidth++
+		blankWidth := minInt(width, outWidth+visibleWidth) - outWidth
+		if blankWidth > 0 {
+			cells = append(cells, contentViewportBlankRun(blankWidth))
+			outWidth += blankWidth
 		}
 	}
-	for outWidth < width {
-		cells = append(cells, contentViewportBlankCell())
-		outWidth++
+	if outWidth < width {
+		cells = append(cells, contentViewportBlankRun(width-outWidth))
 	}
 	return Line{Cells: cells}
+}
+
+func contentViewportBlankRun(width int) Cell {
+	if width <= 0 {
+		return Cell{}
+	}
+	return Cell{Text: strings.Repeat(" ", width), Width: width, Safe: true}
 }
 
 func contentViewportBlankCell() Cell {
