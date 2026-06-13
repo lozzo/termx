@@ -181,12 +181,13 @@
 | 215E1-R8. SK copy history 按行滚动预加载 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已把滚轮上滑改成按行移动；接近顶部会按页预取 older，但 older 返回只填本地缓存并保持当前内容锚点；真正到顶部继续上滑时，只按用户多滚的行数露出旧内容；`g` 直达最老页不变 |
 | 215E1-R9. SK copy history 滚动跟手优化 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已处理滚轮按行但不跟手：history 请求量和 older 预取阈值按当前 panel 尺寸动态计算，不再写死；FrameSink 能识别一行滚动并用终端 scroll region 只补新行，避免每次滚轮整块重写 |
 | 215E1-R10. SK copy history 滚动 perf 定位 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已做 copy history 连续滚动专项 benchmark/profile：主要瓶颈是 render 每帧大量分配，不是 FrameSink 写出；content viewport 满屏快路径减少临时 cell，真实 TTY 走 ANSI-only frame，测试仍保留完整 frame |
+| 215E1-R11. SK copy history 滚动增量渲染 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已把真实 TTY copy history 已加载区滚动改成增量 patch：一行/多行滚动不再重建整屏 frame，只用 scroll region 补新露出的行；latest-only sink 对 patch 保序，对完整帧仍保留 latest-only |
 
 当前下一步：
 
-- `215E1-R10 copy history 滚动 perf 定位` 已完成
-- 最新 benchmark：完整 render 从约 `3.05ms / 9.66MB / 25k allocs` 降到约 `2.17ms / 5.31MB / 19k allocs`；真实 ANSI-only runtime wheel batch 约 `2.27ms / 6.29MB / 22.5k allocs`
-- 仍可继续优化的方向是 canvas 整帧分配和最终 ANSI 序列化；不要把这次 perf 切片扩成惯性滚动或新交互语义
+- `215E1-R11 copy history 滚动增量渲染` 已完成
+- 最新 benchmark：完整 ANSI render 仍约 `2.13ms / 4.39MB / 16.3k allocs`；真实 CopyModeReducer 已加载区滚轮增量路径约 `12.3µs / 1.2KB / 9 allocs`
+- 如果后续仍感觉卡，下一轮只看接近顶部触发 older / pending / prefetch 的加载路径，不再把普通已加载区滚动和 history 请求混在一个 benchmark 里
 
 ## 6. 必做证据
 

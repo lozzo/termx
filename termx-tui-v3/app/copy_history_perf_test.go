@@ -117,25 +117,177 @@ func BenchmarkCopyHistoryRuntimeWheelBatchANSI(b *testing.B) {
 	benchmarkCopyHistoryWheelRuntime(b, runtime, host)
 }
 
+func BenchmarkCopyHistoryRuntimeWheelBatchIncremental(b *testing.B) {
+	host := newCopyHistoryPerfIncrementalHost(4096)
+	host.SetSize(180, 60)
+	root := copyHistoryPerfRoot(180, 60, 5000)
+	builder := render.NewRenderVMBuilder()
+	renderer := render.NewRenderer(render.DefaultTheme())
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		func(root state.Root) render.Frame {
+			return renderer.RenderANSI(builder.Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	benchmarkCopyHistoryWheelRuntimeWithSender(b, runtime, host.SendInput, func() int {
+		return host.sink.patchFrames
+	})
+}
+
+func BenchmarkCopyHistoryRuntimeWheelAlternatingIncremental(b *testing.B) {
+	host := newCopyHistoryPerfIncrementalHost(4096)
+	host.SetSize(180, 60)
+	root := copyHistoryPerfRoot(180, 60, 5000)
+	builder := render.NewRenderVMBuilder()
+	renderer := render.NewRenderer(render.DefaultTheme())
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		func(root state.Root) render.Frame {
+			return renderer.RenderANSI(builder.Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	benchmarkCopyHistoryAlternatingWheelRuntime(b, runtime, host.SendInput, func() int {
+		return host.sink.patchFrames
+	})
+}
+
+func BenchmarkCopyHistoryRuntimeLoadedLineScrollIncremental(b *testing.B) {
+	host := newCopyHistoryPerfIncrementalHost(4096)
+	host.SetSize(180, 60)
+	root := copyHistoryPerfRoot(180, 60, 5000)
+	builder := render.NewRenderVMBuilder()
+	renderer := render.NewRenderer(render.DefaultTheme())
+	runtime := NewAppRuntime(
+		root,
+		copyHistoryPerfLineScrollReducer(),
+		func(root state.Root) render.Frame {
+			return renderer.RenderANSI(builder.Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	benchmarkCopyHistoryAlternatingWheelRuntime(b, runtime, host.SendInput, func() int {
+		return host.sink.patchFrames
+	})
+}
+
 func benchmarkCopyHistoryWheelRuntime(b *testing.B, runtime *AppRuntime, host *FakeTerminalHost) {
 	b.Helper()
+	benchmarkCopyHistoryWheelRuntimeWithSender(b, runtime, host.SendInput, nil)
+}
+
+func benchmarkCopyHistoryWheelRuntimeWithSender(b *testing.B, runtime *AppRuntime, send func(input.InputEvent) error, patchCount func() int) {
+	b.Helper()
 	for i := 0; i < 100; i++ {
-		if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		if err := send(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
 			b.Fatalf("seed input: %v", err)
 		}
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		b.Fatalf("seed drain: %v", err)
 	}
+	beforePatches := 0
+	if patchCount != nil {
+		beforePatches = patchCount()
+	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		if err := send(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
 			b.Fatalf("send input: %v", err)
 		}
 		if err := runtime.Drain(context.Background()); err != nil {
 			b.Fatalf("drain: %v", err)
+		}
+	}
+	b.StopTimer()
+	if patchCount != nil && patchCount() == beforePatches {
+		b.Fatalf("incremental benchmark did not write patch frames")
+	}
+}
+
+func benchmarkCopyHistoryAlternatingWheelRuntime(b *testing.B, runtime *AppRuntime, send func(input.InputEvent) error, patchCount func() int) {
+	b.Helper()
+	runtime.renderFrame()
+	beforePatches := 0
+	if patchCount != nil {
+		beforePatches = patchCount()
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mouse := input.MouseWheelUp
+		if i%2 == 1 {
+			mouse = input.MouseWheelDown
+		}
+		if err := send(input.InputEvent{Kind: input.EventKindMouse, Mouse: mouse}); err != nil {
+			b.Fatalf("send input: %v", err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			b.Fatalf("drain: %v", err)
+		}
+	}
+	b.StopTimer()
+	if patchCount != nil && patchCount() == beforePatches {
+		b.Fatalf("incremental benchmark did not write patch frames")
+	}
+}
+
+type copyHistoryPerfIncrementalHost struct {
+	*FakeTerminalHost
+	sink *copyHistoryPerfIncrementalSink
+}
+
+func newCopyHistoryPerfIncrementalHost(buffer int) *copyHistoryPerfIncrementalHost {
+	fake := NewFakeTerminalHost(buffer)
+	return &copyHistoryPerfIncrementalHost{FakeTerminalHost: fake, sink: &copyHistoryPerfIncrementalSink{}}
+}
+
+func (host *copyHistoryPerfIncrementalHost) FrameSink() render.FrameSink {
+	return host.sink
+}
+
+type copyHistoryPerfIncrementalSink struct {
+	patchFrames int
+	frames      int
+}
+
+func (sink *copyHistoryPerfIncrementalSink) NeedsCompleteFrame() bool {
+	return false
+}
+
+func (sink *copyHistoryPerfIncrementalSink) WriteFrame(frame render.Frame) error {
+	sink.frames++
+	if frame.Patch != nil {
+		sink.patchFrames++
+	}
+	copyHistoryPerfFrame = frame
+	return nil
+}
+
+func copyHistoryPerfLineScrollReducer() Reducer {
+	return func(root state.Root, msg Msg) (state.Root, []Effect) {
+		inputMsg, ok := msg.(InputMsg)
+		if !ok || inputMsg.Event.Kind != input.EventKindMouse {
+			return root, nil
+		}
+		switch inputMsg.Event.Mouse {
+		case input.MouseWheelUp:
+			root.CopyMode = root.CopyMode.Scroll(-1, len(root.History.Rows))
+			return root.Advance(), nil
+		case input.MouseWheelDown:
+			root.CopyMode = root.CopyMode.Scroll(1, len(root.History.Rows))
+			return root.Advance(), nil
+		default:
+			return root, nil
 		}
 	}
 }

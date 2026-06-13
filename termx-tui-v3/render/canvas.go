@@ -333,7 +333,7 @@ func (c *canvas) lines() []Line {
 			if width <= 0 {
 				width = 1
 			}
-			cells = append(cells, Cell{
+			next := Cell{
 				Text:            cell.text,
 				Width:           width,
 				Style:           cell.style,
@@ -342,11 +342,50 @@ func (c *canvas) lines() []Line {
 				LinkParams:      cell.linkParams,
 				TerminalContent: cell.terminal,
 				Safe:            cell.safe,
-			})
+			}
+			cells = appendCanvasOutputCell(cells, next)
 		}
 		lines[i] = Line{Cells: cells}
 	}
 	return lines
+}
+
+func appendCanvasOutputCell(cells []Cell, next Cell) []Cell {
+	if len(cells) == 0 || !canMergeCanvasOutputCell(cells[len(cells)-1], next) {
+		return append(cells, next)
+	}
+	last := &cells[len(cells)-1]
+	last.Text += next.Text
+	last.Width += maxInt(0, next.Width)
+	last.Safe = last.Safe && next.Safe
+	return cells
+}
+
+func canMergeCanvasOutputCell(left Cell, right Cell) bool {
+	return !left.TerminalContent &&
+		!right.TerminalContent &&
+		left.Style == "" &&
+		right.Style == "" &&
+		left.ANSIStyle.IsZero() &&
+		right.ANSIStyle.IsZero() &&
+		left.LinkURL == "" &&
+		right.LinkURL == "" &&
+		left.LinkParams == "" &&
+		right.LinkParams == "" &&
+		isASCIIWidthCell(left) &&
+		isASCIIWidthCell(right)
+}
+
+func isASCIIWidthCell(cell Cell) bool {
+	if cell.Width != len(cell.Text) {
+		return false
+	}
+	for i := 0; i < len(cell.Text); i++ {
+		if cell.Text[i] < 0x20 || cell.Text[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *canvas) clearCellRange(y int, x int, width int) {

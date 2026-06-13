@@ -38,6 +38,70 @@ func TestLatestFrameSinkDropsIntermediateFramesWhileWriterBusy(t *testing.T) {
 	}
 }
 
+func TestLatestFrameSinkKeepsIncrementalPatchesInOrder(t *testing.T) {
+	underlying := newBlockingRecordingFrameSink()
+	sink := NewLatestFrameSink(underlying)
+	defer sink.Close()
+
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"base"}}); err != nil {
+		t.Fatalf("write base frame: %v", err)
+	}
+	select {
+	case <-underlying.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first underlying write")
+	}
+	for i := 0; i < 3; i++ {
+		if err := sink.WriteFrame(render.Frame{Patch: &render.FramePatch{Rect: render.Rect{W: 10, H: 3}, Dir: render.FramePatchScrollUp, LineY: i, LineANSI: string(rune('a' + i))}}); err != nil {
+			t.Fatalf("write patch %d: %v", i, err)
+		}
+	}
+	close(underlying.release)
+
+	if !underlying.waitFrames(4, time.Second) {
+		t.Fatalf("timed out waiting for patch writes, frames=%#v", underlying.framesSnapshot())
+	}
+	got := underlying.framesSnapshot()
+	if len(got) != 4 || got[0].Lines[0] != "base" {
+		t.Fatalf("expected base plus patches, got %#v", got)
+	}
+	for i := 1; i < 4; i++ {
+		if got[i].Patch == nil || got[i].Patch.LineANSI != string(rune('a'+i-1)) {
+			t.Fatalf("patch %d out of order: %#v", i, got[i])
+		}
+	}
+}
+
+func TestLatestFrameSinkCompleteFrameDropsStaleQueuedPatches(t *testing.T) {
+	underlying := newBlockingRecordingFrameSink()
+	sink := NewLatestFrameSink(underlying)
+	defer sink.Close()
+
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"base"}}); err != nil {
+		t.Fatalf("write base frame: %v", err)
+	}
+	select {
+	case <-underlying.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first underlying write")
+	}
+	if err := sink.WriteFrame(render.Frame{Patch: &render.FramePatch{Rect: render.Rect{W: 10, H: 3}, Dir: render.FramePatchScrollUp, LineANSI: "stale"}}); err != nil {
+		t.Fatalf("write stale patch: %v", err)
+	}
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"fresh"}}); err != nil {
+		t.Fatalf("write fresh frame: %v", err)
+	}
+	close(underlying.release)
+
+	if !underlying.waitFrames(2, time.Second) {
+		t.Fatalf("timed out waiting for coalesced complete frame, frames=%#v", underlying.framesSnapshot())
+	}
+	got := underlying.framesSnapshot()
+	if len(got) != 2 || got[1].Patch != nil || got[1].Lines[0] != "fresh" {
+		t.Fatalf("expected stale patch dropped before fresh complete frame, got %#v", got)
+	}
+}
+
 type blockingRecordingFrameSink struct {
 	mu      sync.Mutex
 	started chan struct{}

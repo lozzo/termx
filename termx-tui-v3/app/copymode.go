@@ -866,11 +866,11 @@ func copyModeOlderPrefetchRows(root state.Root, deps CopyModeDeps) int {
 }
 
 func copyModePanelRows(root state.Root, deps CopyModeDeps) int {
-	if rect, ok := copyModeContentRect(root); ok && rect.H > 0 {
-		return rect.H
-	}
 	if root.CopyMode.ViewRows > 0 {
 		return root.CopyMode.ViewRows
+	}
+	if rect, ok := copyModeContentRect(root); ok && rect.H > 0 {
+		return rect.H
 	}
 	if deps.Rows > 0 {
 		return deps.Rows

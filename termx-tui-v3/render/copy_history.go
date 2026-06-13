@@ -38,6 +38,17 @@ func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelection
 	return Line{Cells: cells}
 }
 
+func CopyHistoryContentANSILine(history state.HistoryStore, copyMode state.CopyModeStore, rowIndex int, width int, theme Theme) string {
+	if width <= 0 {
+		return ""
+	}
+	if rowIndex < 0 || rowIndex >= len(history.Rows) {
+		return contentViewportBlankRun(width).Text
+	}
+	line := copyHistoryLine(history.Rows[rowIndex], rowIndex, normalizedCopySelection(copyMode), activeSearchRange(copyMode, rowIndex))
+	return ensureANSIReset(contentViewportFitLine(line, width).ANSIString(theme.WithFallback()))
+}
+
 func copyHistorySearchLine(history state.HistoryStore, copyMode state.CopyModeStore, totalRows int) Line {
 	query := copyMode.Query
 	if query == "" {

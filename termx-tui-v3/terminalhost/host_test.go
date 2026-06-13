@@ -537,6 +537,61 @@ func TestFrameSinkUsesScrollRegionForOneRowShiftDown(t *testing.T) {
 	}
 }
 
+func TestFrameSinkWritesIncrementalScrollPatch(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Patch: &render.FramePatch{
+			Rect:      render.Rect{X: 1, Y: 2, W: 10, H: 4},
+			Dir:       render.FramePatchScrollUp,
+			LineY:     5,
+			LineX:     1,
+			LineWidth: 10,
+			LineANSI:  "new row",
+		},
+		Cursor:     render.Cursor{Visible: true, Shape: render.CursorShapeBlock},
+		CursorRect: render.Rect{X: 3, Y: 4, W: 1, H: 1},
+		Metadata:   render.RenderMetadata{Width: 20, Height: 10},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write patch frame: %v", err)
+	}
+	got := output.String()
+	for _, part := range []string{scrollRegion(3, 6), cursorPosition(6, 1) + scrollUpOne, resetScrollRegion, cursorPosition(6, 2) + eraseChars(10) + "new row"} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing patch part %q in %q", part, got)
+		}
+	}
+	if strings.Contains(got, clearScreen) || strings.Contains(got, clearLine) {
+		t.Fatalf("incremental patch must not clear whole screen or line, got %q", got)
+	}
+}
+
+func TestFrameSinkWritesMultiLineIncrementalScrollPatch(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Patch: &render.FramePatch{
+			Rect:      render.Rect{X: 2, Y: 1, W: 8, H: 6},
+			Dir:       render.FramePatchScrollUp,
+			LineY:     5,
+			LineX:     2,
+			LineWidth: 8,
+			LinesANSI: []string{"new a", "new b"},
+		},
+		Metadata: render.RenderMetadata{Width: 20, Height: 10},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write patch frame: %v", err)
+	}
+	got := output.String()
+	for _, part := range []string{scrollRegion(2, 7), cursorPosition(7, 1) + scrollUpOne + scrollUpOne, cursorPosition(6, 3) + eraseChars(8) + "new a", cursorPosition(7, 3) + eraseChars(8) + "new b"} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing multi-line patch part %q in %q", part, got)
+		}
+	}
+}
+
 func TestFrameSinkWritesCursorOnlyChange(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)

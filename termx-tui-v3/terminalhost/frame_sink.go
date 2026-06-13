@@ -44,6 +44,9 @@ func (sink *FrameSink) NeedsCompleteFrame() bool {
 func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
+	if frame.Patch != nil {
+		return sink.writePatchFrame(frame)
+	}
 	lines := frame.ANSILines
 	if len(lines) == 0 {
 		lines = frame.Lines
@@ -134,6 +137,62 @@ func (sink *FrameSink) writeScrollShift(builder *strings.Builder, lines []string
 	return false
 }
 
+func (sink *FrameSink) writePatchFrame(frame render.Frame) error {
+	patch := *frame.Patch
+	if patch.Rect.H <= 1 || patch.Rect.W <= 0 || patch.LineWidth <= 0 {
+		return nil
+	}
+	lines := patch.LinesANSI
+	if len(lines) == 0 && patch.LineANSI != "" {
+		lines = []string{patch.LineANSI}
+	}
+	if len(lines) == 0 || len(lines) >= patch.Rect.H {
+		return nil
+	}
+	var builder strings.Builder
+	builder.WriteString(synchronizedOutputBegin)
+	builder.WriteString(hideCursor)
+	builder.WriteString(scrollRegion(patch.Rect.Y+1, patch.Rect.Y+patch.Rect.H))
+	scrolls := len(lines)
+	switch patch.Dir {
+	case render.FramePatchScrollUp:
+		builder.WriteString(cursorPosition(patch.Rect.Y+patch.Rect.H, 1))
+		for i := 0; i < scrolls; i++ {
+			builder.WriteString(scrollUpOne)
+		}
+	case render.FramePatchScrollDown:
+		builder.WriteString(cursorPosition(patch.Rect.Y+1, 1))
+		for i := 0; i < scrolls; i++ {
+			builder.WriteString(scrollDownOne)
+		}
+	default:
+		return nil
+	}
+	builder.WriteString(resetScrollRegion)
+	for i, line := range lines {
+		lineY := patch.LineY
+		if patch.Dir == render.FramePatchScrollUp {
+			lineY += i
+		} else {
+			lineY -= len(lines) - 1 - i
+		}
+		builder.WriteString(cursorPosition(lineY+1, patch.LineX+1))
+		builder.WriteString(eraseChars(patch.LineWidth))
+		builder.WriteString(line)
+		builder.WriteString(render.ANSIReset)
+	}
+	builder.WriteString(frameCursorSequence(frame))
+	builder.WriteString(synchronizedOutputEnd)
+	_, err := io.WriteString(sink.writer, builder.String())
+	if err != nil {
+		return err
+	}
+	// 增量 patch 不重建完整 lastLines；下一次完整帧自然会全量校准。
+	sink.hasLastFrame = false
+	sink.lastCursor = frameCursorSequence(frame)
+	return nil
+}
+
 func shiftedUpWindow(previous []string, next []string) (int, int, bool) {
 	start := 0
 	for start < len(previous) && previous[start] == next[start] {
@@ -214,4 +273,11 @@ func scrollRegion(top int, bottom int) string {
 		bottom = top
 	}
 	return fmt.Sprintf("\x1b[%d;%dr", top, bottom)
+}
+
+func eraseChars(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\x1b[%dX", count)
 }

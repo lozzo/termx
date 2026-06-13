@@ -13,6 +13,7 @@ type LatestFrameSink struct {
 	cond    *sync.Cond
 	sink    render.FrameSink
 	pending *render.Frame
+	patches []render.Frame
 	closed  bool
 	wg      sync.WaitGroup
 }
@@ -40,8 +41,14 @@ func (sink *LatestFrameSink) WriteFrame(frame render.Frame) error {
 		sink.mu.Unlock()
 		return nil
 	}
-	// 中文说明：高频 live 输出时只保留最新状态，避免 stdout/tmux 慢写拖住 runtime。
-	sink.pending = &cloned
+	if cloned.Patch != nil {
+		// 中文说明：增量滚动 patch 依赖顺序，不能像完整 live frame 一样丢中间帧。
+		sink.patches = append(sink.patches, cloned)
+	} else {
+		// 中文说明：完整帧是绝对状态；它会覆盖之前还没写出的增量 patch。
+		sink.pending = &cloned
+		sink.patches = nil
+	}
 	sink.cond.Signal()
 	sink.mu.Unlock()
 	return nil
@@ -51,6 +58,7 @@ func (sink *LatestFrameSink) Close() {
 	sink.mu.Lock()
 	sink.closed = true
 	sink.pending = nil
+	sink.patches = nil
 	sink.cond.Broadcast()
 	sink.mu.Unlock()
 	sink.wg.Wait()
@@ -72,13 +80,19 @@ func (sink *LatestFrameSink) loop() {
 func (sink *LatestFrameSink) next() (render.Frame, bool) {
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	for sink.pending == nil && !sink.closed {
+	for sink.pending == nil && len(sink.patches) == 0 && !sink.closed {
 		sink.cond.Wait()
 	}
-	if sink.pending == nil && sink.closed {
+	if sink.pending == nil && len(sink.patches) == 0 && sink.closed {
 		return render.Frame{}, false
 	}
-	frame := *sink.pending
-	sink.pending = nil
+	if sink.pending != nil {
+		frame := *sink.pending
+		sink.pending = nil
+		return frame, true
+	}
+	frame := sink.patches[0]
+	copy(sink.patches, sink.patches[1:])
+	sink.patches = sink.patches[:len(sink.patches)-1]
 	return frame, true
 }

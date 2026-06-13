@@ -8,6 +8,7 @@ type Frame struct {
 	Lines       []string
 	StyledLines []Line
 	ANSILines   []string
+	Patch       *FramePatch
 	Cursor      Cursor
 	CursorRect  Rect
 	Blink       bool
@@ -39,6 +40,13 @@ func (frame Frame) Clone() Frame {
 	}
 	if len(frame.HitRegions) > 0 {
 		cloned.HitRegions = cloneHitRegions(frame.HitRegions)
+	}
+	if frame.Patch != nil {
+		patch := *frame.Patch
+		if len(frame.Patch.LinesANSI) > 0 {
+			patch.LinesANSI = cloneStrings(frame.Patch.LinesANSI)
+		}
+		cloned.Patch = &patch
 	}
 	return cloned
 }
@@ -88,3 +96,21 @@ type FrameSink interface {
 type FrameSinkPreference interface {
 	NeedsCompleteFrame() bool
 }
+
+// FramePatch 是真实 TTY 的增量绘制合同；测试 sink 默认仍消费完整 Frame。
+type FramePatch struct {
+	Rect      Rect
+	Dir       FramePatchScrollDirection
+	LineY     int
+	LineX     int
+	LineWidth int
+	LineANSI  string
+	LinesANSI []string
+}
+
+type FramePatchScrollDirection int
+
+const (
+	FramePatchScrollUp FramePatchScrollDirection = iota + 1
+	FramePatchScrollDown
+)

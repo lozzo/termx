@@ -180,6 +180,7 @@ type AppRuntime struct {
 	firstFrameWritten   bool
 	startupFrameReady   bool
 	maxMessagesPerBatch int
+	copyHistoryPatch    copyHistoryPatchCache
 }
 
 type mouseDragState struct {
@@ -730,10 +731,14 @@ func (runtime *AppRuntime) renderFrame() {
 	if runtime.host == nil {
 		return
 	}
+	if runtime.tryRenderCopyHistoryPatch() {
+		return
+	}
 	frame := runtime.render(runtime.state)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
+	runtime.rememberCopyHistoryPatchFrame(frame)
 }
 
 func (runtime *AppRuntime) shouldWriteFirstFrame() bool {

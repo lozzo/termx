@@ -925,7 +925,7 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	cells := cloneHistoryCells(line.Cells)
 	if len(cells) == 0 && line.Text != "" {
-		cells = splitHistoryLogicalLineText(line.Text)
+		return reflowPlainHistoryLogicalLine(line, cols)
 	} else if len(cells) > 0 {
 		cells = normalizeHistoryLogicalLineCells(cells)
 	}
@@ -961,6 +961,43 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		}
 	}
 	if len(current) > 0 || len(rows) == 0 {
+		flush()
+	}
+	return rows
+}
+
+func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
+	clusters := textGraphemeClusters(line.Text)
+	if len(clusters) == 0 {
+		return []HistoryRow{{LineID: line.LineID}}
+	}
+	rows := make([]HistoryRow, 0, 1)
+	var builder strings.Builder
+	width := 0
+	flush := func() {
+		rows = append(rows, HistoryRow{
+			Text:      builder.String(),
+			LineID:    line.LineID,
+			RowInLine: len(rows),
+		})
+		builder.Reset()
+		width = 0
+	}
+	for _, cluster := range clusters {
+		clusterWidth := textDisplayWidth(cluster)
+		if clusterWidth <= 0 {
+			continue
+		}
+		if width > 0 && width+clusterWidth > cols {
+			flush()
+		}
+		builder.WriteString(cluster)
+		width += clusterWidth
+		if width >= cols {
+			flush()
+		}
+	}
+	if builder.Len() > 0 || len(rows) == 0 {
 		flush()
 	}
 	return rows
