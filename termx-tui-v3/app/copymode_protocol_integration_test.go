@@ -279,7 +279,7 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 78 || params.Limit != 20 {
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 78 || params.Limit != 120 {
 		return fmt.Errorf("unexpected latest params %#v", params)
 	}
 	if err := sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{
@@ -342,7 +342,7 @@ func runCopyModeWideStyledLogicalLineProtocolServer(tr *memory.Transport) error 
 	if err != nil {
 		return err
 	}
-	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 5 || params.Limit != 20 {
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 5 || params.Limit != 64 {
 		return fmt.Errorf("unexpected latest params %#v", params)
 	}
 	if err := sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{
@@ -390,7 +390,7 @@ func runCopyModeWrappedLogicalLineProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 8 || params.Limit != 20 {
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 8 || params.Limit != 64 {
 		return fmt.Errorf("unexpected latest params %#v", params)
 	}
 	return sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{
@@ -426,7 +426,7 @@ func runCopyModeCrossRowSearchProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 8 || params.Limit != 20 {
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 8 || params.Limit != 64 {
 		return fmt.Errorf("unexpected latest params %#v", params)
 	}
 	return sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{

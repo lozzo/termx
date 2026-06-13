@@ -14,10 +14,16 @@ type CopyModeDeps struct {
 	Core      services.CoreClient
 	Clipboard services.ClipboardService
 	Terminal  services.TerminalService
-	Rows      int
+	// Rows 只作为没有 panel content rect 时的 fallback；真实 copy history 请求量必须跟随当前 panel 尺寸。
+	Rows int
 }
 
-const copyModeOlderPrefetchRows = 3
+const (
+	copyModeHistoryRequestScreens  = 6
+	copyModeHistoryPrefetchScreens = 2
+	copyModeHistoryMinRequestRows  = 64
+	copyModeHistoryMaxRequestRows  = 512
+)
 
 type CopyModeHistoryResultMsg struct {
 	Result services.HistoryResult
@@ -417,7 +423,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	}
 	root.History = nextHistory
 	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint)
-	rows := requestRows(deps, rowsHint)
+	rows := requestRows(rowsHint, deps.Rows)
 	return root.Advance(), []Effect{FuncEffect{
 		// history.window 真实走 protocol/client 时可能明显慢于一帧；
 		// 这里必须异步请求，不能把 copy mode 入口卡在 runtime 主循环里。
@@ -469,7 +475,7 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	rows := requestRows(deps, copyModeRowsHint(root))
+	rows := copyModeHistoryRequestRows(root, deps)
 	return root.Advance(), []Effect{FuncEffect{
 		// older 分页也必须异步，否则连续 PageUp / wheel up 会把整个 UI 主循环卡住。
 		Async:            true,
@@ -522,7 +528,7 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	rows := requestRows(deps, copyModeRowsHint(root))
+	rows := copyModeHistoryRequestRows(root, deps)
 	return root.Advance(), []Effect{FuncEffect{
 		Async:            true,
 		ForceSyncInTests: true,
@@ -840,7 +846,7 @@ func copyModeOlderScrollRows(copyMode state.CopyModeStore, event input.InputEven
 }
 
 func maybePrefetchCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrepend int) (state.Root, []Effect) {
-	if root.CopyMode.ViewportTop > copyModeOlderPrefetchRows {
+	if root.CopyMode.ViewportTop > copyModeOlderPrefetchRows(root, deps) {
 		return root, nil
 	}
 	if root.History.OlderRequestState() != state.OlderRequestReady {
@@ -849,14 +855,37 @@ func maybePrefetchCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaA
 	return beginCopyModeOlder(root, deps, scrollDeltaAfterPrepend)
 }
 
-func requestRows(deps CopyModeDeps, sessionRows int) int {
+func copyModeHistoryRequestRows(root state.Root, deps CopyModeDeps) int {
+	panelRows := copyModePanelRows(root, deps)
+	return clampColumn(panelRows*copyModeHistoryRequestScreens, copyModeHistoryMinRequestRows, copyModeHistoryMaxRequestRows)
+}
+
+func copyModeOlderPrefetchRows(root state.Root, deps CopyModeDeps) int {
+	panelRows := copyModePanelRows(root, deps)
+	return clampColumn(panelRows*copyModeHistoryPrefetchScreens, panelRows, copyModeHistoryMaxRequestRows/2)
+}
+
+func copyModePanelRows(root state.Root, deps CopyModeDeps) int {
+	if rect, ok := copyModeContentRect(root); ok && rect.H > 0 {
+		return rect.H
+	}
+	if root.CopyMode.ViewRows > 0 {
+		return root.CopyMode.ViewRows
+	}
 	if deps.Rows > 0 {
 		return deps.Rows
 	}
-	if sessionRows > 0 {
-		return sessionRows
-	}
 	return 24
+}
+
+func requestRows(panelRows int, fallbackRows int) int {
+	if panelRows <= 0 {
+		panelRows = fallbackRows
+	}
+	if panelRows <= 0 {
+		panelRows = 24
+	}
+	return clampColumn(panelRows*copyModeHistoryRequestScreens, copyModeHistoryMinRequestRows, copyModeHistoryMaxRequestRows)
 }
 
 func setCopyModeError(root state.Root, message string) state.Root {

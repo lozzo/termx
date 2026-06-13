@@ -480,6 +480,63 @@ func TestFrameSinkWritesOnlyChangedRows(t *testing.T) {
 	}
 }
 
+func TestFrameSinkUsesScrollRegionForOneRowShiftUp(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	if err := sink.WriteFrame(render.Frame{
+		Lines:    []string{"top", "one", "two", "three", "bottom"},
+		Metadata: render.RenderMetadata{Width: 8, Height: 5},
+	}); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	if err := sink.WriteFrame(render.Frame{
+		Lines:    []string{"top", "two", "three", "four", "bottom"},
+		Metadata: render.RenderMetadata{Width: 8, Height: 5},
+	}); err != nil {
+		t.Fatalf("write shifted frame: %v", err)
+	}
+	got := output.String()
+	if strings.Contains(got, clearScreen) {
+		t.Fatalf("one-row scroll should not clear screen, got %q", got)
+	}
+	for _, part := range []string{scrollRegion(2, 4), cursorPosition(4, 1) + scrollUpOne, resetScrollRegion, cursorPosition(4, 1) + clearLine + "four"} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing scroll-region part %q in %q", part, got)
+		}
+	}
+	if strings.Contains(got, cursorPosition(2, 1)+clearLine+"two") || strings.Contains(got, cursorPosition(3, 1)+clearLine+"three") {
+		t.Fatalf("one-row scroll should not repaint shifted rows, got %q", got)
+	}
+}
+
+func TestFrameSinkUsesScrollRegionForOneRowShiftDown(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	if err := sink.WriteFrame(render.Frame{
+		Lines:    []string{"top", "two", "three", "four", "bottom"},
+		Metadata: render.RenderMetadata{Width: 8, Height: 5},
+	}); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	if err := sink.WriteFrame(render.Frame{
+		Lines:    []string{"top", "one", "two", "three", "bottom"},
+		Metadata: render.RenderMetadata{Width: 8, Height: 5},
+	}); err != nil {
+		t.Fatalf("write shifted frame: %v", err)
+	}
+	got := output.String()
+	for _, part := range []string{scrollRegion(2, 4), cursorPosition(2, 1) + scrollDownOne, resetScrollRegion, cursorPosition(2, 1) + clearLine + "one"} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing scroll-region part %q in %q", part, got)
+		}
+	}
+	if strings.Contains(got, cursorPosition(3, 1)+clearLine+"two") || strings.Contains(got, cursorPosition(4, 1)+clearLine+"three") {
+		t.Fatalf("one-row scroll should not repaint shifted rows, got %q", got)
+	}
+}
+
 func TestFrameSinkWritesCursorOnlyChange(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)
