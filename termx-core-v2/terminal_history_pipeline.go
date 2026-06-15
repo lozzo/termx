@@ -16,9 +16,9 @@ type terminalHistoryPipeline struct {
 	ingest historyANSIParser
 }
 
-func newTerminalHistoryPipeline(rows int) *terminalHistoryPipeline {
+func newTerminalHistoryPipeline(cols int, rows int) *terminalHistoryPipeline {
 	track := history.NewHistoryTrack()
-	track.SetPrimaryScreenRows(rows)
+	track.SetPrimaryScreenSize(cols, rows)
 	return &terminalHistoryPipeline{track: track}
 }
 
@@ -36,10 +36,10 @@ func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
 	return nil
 }
 
-func (pipeline *terminalHistoryPipeline) Resize(rows int, event history.HistoryEvent) error {
+func (pipeline *terminalHistoryPipeline) Resize(cols int, rows int, event history.HistoryEvent) error {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
-	pipeline.track.SetPrimaryScreenRows(rows)
+	pipeline.track.SetPrimaryScreenSize(cols, rows)
 	return pipeline.track.Apply(event)
 }
 
@@ -130,7 +130,7 @@ func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegme
 		}
 	}
 	if segment.EraseInLine {
-		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInLine, EraseMode: segment.EraseMode}); err != nil {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInLine, EraseMode: segment.EraseMode, Style: segment.Style}); err != nil {
 			return err
 		}
 	}

@@ -109,6 +109,51 @@ func TestCopyHistoryRewritePatchOffsetsANSIColumnAnchors(t *testing.T) {
 	}
 }
 
+func TestCopyHistoryRewritePatchPreservesStyledBlankCells(t *testing.T) {
+	host := newCopyHistoryPerfIncrementalHost(16)
+	host.SetSize(80, 24)
+	root := copyHistoryPerfRoot(80, 24, 256)
+	root.CopyMode.ViewportTop = 120
+	root.CopyMode.Cursor = state.CopyPosition{Row: 120}
+	root.History.Rows[119] = state.HistoryRow{
+		Text:   "BG    ",
+		LineID: 119,
+		Cells: []state.HistoryCell{
+			{Text: "BG    ", Width: 6, Style: state.HistoryCellStyle{BG: "ansi:4"}},
+		},
+	}
+	root.History.Rows[120] = state.HistoryRow{Text: "current", LineID: 120}
+	runtime := NewAppRuntime(
+		root,
+		copyHistoryPerfLineScrollReducer(),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	cache, ok := buildCopyHistoryPatchCache(root, render.DefaultTheme())
+	if !ok {
+		t.Fatal("expected copy history patch cache")
+	}
+	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
+	runtime.copyHistoryPatch = cache
+
+	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	runtime.state = root.Advance()
+	if !runtime.tryRenderCopyHistoryPatch() {
+		t.Fatal("expected rewrite patch")
+	}
+	patch := copyHistoryPerfFrame.Patch
+	if patch == nil || !patch.Rewrite || len(patch.LinesANSI) == 0 {
+		t.Fatalf("expected rewrite patch lines, got %#v", patch)
+	}
+	got := patch.LinesANSI[0]
+	if !strings.Contains(got, "\x1b[44mBG    ") {
+		t.Fatalf("rewrite patch should preserve background over styled blanks, got %q", got)
+	}
+}
+
 func TestCopyHistoryCursorOnlyMoveUsesCursorPatch(t *testing.T) {
 	host := newCopyHistoryPerfIncrementalHost(16)
 	host.SetSize(80, 24)

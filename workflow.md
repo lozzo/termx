@@ -199,11 +199,12 @@
 | 215E1-R26. SK copy mode 进入无 pending 闪屏 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已把 Ctrl-V 的“发起 latest 请求”和“真正进入 copy/history”拆开：latest 没回来前只拦截输入、保留当前 live pane 画面，不再把内容区替换成 `copy history pending`；latest 回来后才激活 authoritative copy history，不使用 live/snapshot 当 history fallback |
 | 215E1-R27. SK copy history 背景空白保真回归 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已修复 history/copy 内容裁剪时，authoritative cell 宽度里已有的带背景空白被补成无样式空格；裁剪落在 cell padding 区域时会继承原 terminal cell 的 ANSI 背景 |
 | 215E1-R28. SK copy history 空文本背景 cell 保真回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 copy/history 本地重排和 canvas 写行时把 `Text="" Width>0 Style=BG` 的 terminal cell 当成空内容跳过；空 footprint 现在按带样式空格参与本地 reflow 和最终 ANSI frame |
+| 215E1-R29. SK copy history 行尾背景保真回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/render/`、`workflow.md` | 已修复进入 copy/history 后 terminal BCE erase-to-EOL 产生的带背景空白没有进入 authoritative history：core 现在按当前 terminal cols 和 erase 时背景生成 styled blank；协议、TUI 全帧和增量 patch 都验证已拿到的 styled blank 能画出来 |
 
 当前下一步：
 
-- `215E1-R28 copy history 空文本背景 cell 保真回归` 已完成
-- 准入：`cd termx-tui-v3 && go test ./... -count=1` 已通过
+- `215E1-R29 copy history 行尾背景保真回归` 已完成
+- 准入：`go test ./termx-core-v2 -count=1`、`cd termx-tui-v3 && go test ./... -count=1` 已通过
 
 ## 6. 必做证据
 

@@ -192,6 +192,29 @@ func TestHistoryTrackEraseInLineMutatesCurrentMutableLine(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackEraseInLinePreservesStyledBlankToVisualRowEnd(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenSize(8, 2)
+	style := CellStyle{BG: "ansi:4"}
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "BG", Width: 2, Style: style}}},
+		HistoryEvent{Kind: EventEraseInLine, EraseMode: 0, Style: style},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "BG      " {
+		t.Fatalf("styled EL 0 should preserve blank footprint to visual row end, got %q", got)
+	}
+	if got := logicalLineWidth(line.Cells); got != 8 {
+		t.Fatalf("styled EL 0 should extend to primary cols, got width %d cells=%#v", got, line.Cells)
+	}
+	for i, cell := range line.Cells {
+		if cell.Style.BG != "ansi:4" {
+			t.Fatalf("styled EL 0 should keep bg on cell %d, got %#v", i, cell)
+		}
+	}
+}
+
 func TestHistoryTrackEraseInLineModeOneClearsMutablePrefix(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track,
