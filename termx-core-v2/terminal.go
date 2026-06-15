@@ -17,6 +17,8 @@ type Terminal struct {
 	live      *live.SurfaceTrack
 	historyMu sync.Mutex
 	history   *terminalHistoryPipeline
+	queueMu   sync.Mutex
+	historyQ  *terminalHistoryIngestQueue
 	events    *eventBroker
 	update    func(TerminalInfo)
 }
@@ -206,6 +208,18 @@ func (terminal *Terminal) FreezeSnapshot() history.FrozenSnapshot {
 	return terminal.historyPipeline().FreezeSnapshot()
 }
 
+func (terminal *Terminal) FlushHistory(ctx context.Context) error {
+	terminal.queueMu.Lock()
+	queue := terminal.historyQ
+	terminal.queueMu.Unlock()
+	if queue == nil {
+		return nil
+	}
+	// 中文说明：copy/history 冻结前只等待已经读入队列的历史输出追平；
+	// 不持 terminal 主锁，避免 history worker 处理同批输出时反向等待自己。
+	return queue.Flush(ctx)
+}
+
 func (terminal *Terminal) historyPipeline() *terminalHistoryPipeline {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
@@ -216,6 +230,9 @@ func (terminal *Terminal) resetHistoryPipeline(rows int) {
 	terminal.historyMu.Lock()
 	terminal.history = newTerminalHistoryPipeline(rows)
 	terminal.historyMu.Unlock()
+	terminal.queueMu.Lock()
+	terminal.historyQ = nil
+	terminal.queueMu.Unlock()
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
@@ -258,6 +275,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	}
 	liveQueue := newTerminalLiveIngestQueue()
 	historyQueue := newTerminalHistoryIngestQueue()
+	terminal.setHistoryQueue(process, historyQueue)
 	go liveQueue.Run(func(output string) error {
 		return terminal.ingestProcessLiveOutput(process, output)
 	})
@@ -271,6 +289,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 			liveQueue.Wait()
 			historyQueue.Close()
 			historyQueue.Wait()
+			terminal.clearHistoryQueue(process, historyQueue)
 		}()
 		for chunk := range output {
 			if len(chunk) == 0 {
@@ -282,6 +301,32 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 		}
 	}()
 	return done
+}
+
+func (terminal *Terminal) setHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	terminal.historyQ = queue
+	terminal.queueMu.Unlock()
+}
+
+func (terminal *Terminal) clearHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
+	terminal.mu.Lock()
+	current := terminal.process == process
+	terminal.mu.Unlock()
+	if !current {
+		return
+	}
+	terminal.queueMu.Lock()
+	if terminal.historyQ == queue {
+		terminal.historyQ = nil
+	}
+	terminal.queueMu.Unlock()
 }
 
 func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan struct{}) {

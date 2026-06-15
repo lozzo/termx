@@ -1,6 +1,7 @@
 package termxcorev2
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -67,4 +68,75 @@ func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
 		t.Fatalf("expected closed queue to drain, got batch=%#v ok=%v", third, ok)
 	}
 	close(queue.done)
+}
+
+func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	ingested := make(chan string, 2)
+	go queue.Run(func(text string) error {
+		ingested <- text
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+		return nil
+	})
+
+	if !queue.Enqueue("latest-tail\n") {
+		t.Fatal("expected enqueue")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for worker")
+	}
+	flushed := make(chan error, 1)
+	go func() {
+		flushed <- queue.Flush(context.Background())
+	}()
+	select {
+	case err := <-flushed:
+		t.Fatalf("flush returned before in-flight batch completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if err := <-flushed; err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if got := <-ingested; got != "latest-tail\n" {
+		t.Fatalf("unexpected ingested text %q", got)
+	}
+	queue.Close()
+	queue.Wait()
+}
+
+func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue()
+	ingested := make(chan string, 2)
+	go queue.Run(func(text string) error {
+		ingested <- text
+		return nil
+	})
+
+	if !queue.Enqueue("before\n") {
+		t.Fatal("expected enqueue before flush")
+	}
+	if err := queue.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if !queue.Enqueue("after\n") {
+		t.Fatal("expected enqueue after flush")
+	}
+	if got := <-ingested; got != "before\n" {
+		t.Fatalf("flush batch should only include pre-marker output, got %q", got)
+	}
+	if got := <-ingested; got != "after\n" {
+		t.Fatalf("future output should stay in later batch, got %q", got)
+	}
+	queue.Close()
+	queue.Wait()
 }

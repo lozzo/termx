@@ -9,14 +9,14 @@ import (
 )
 
 type historyOutputSegment struct {
-	Cells          []history.Cell
-	Seal           bool
-	CarriageReturn bool
-	EraseInLine    bool
-	EraseInDisplay bool
+	Cells           []history.Cell
+	Seal            bool
+	CarriageReturn  bool
+	EraseInLine     bool
+	EraseInDisplay  bool
 	SwitchAltScreen bool
 	EnterAltScreen  bool
-	EraseMode      int
+	EraseMode       int
 }
 
 func parseHistoryOutput(output string) []historyOutputSegment {
@@ -29,6 +29,7 @@ type historyANSIParser struct {
 	linkURL  string
 	linkArgs string
 	buffer   strings.Builder
+	col      int
 	pending  string
 	segments []historyOutputSegment
 }
@@ -80,13 +81,18 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 		case output[0] == '\r':
 			parser.flush()
 			parser.segments = append(parser.segments, historyOutputSegment{CarriageReturn: true})
+			parser.col = 0
 			output = output[1:]
 		case output[0] == '\n':
 			parser.flush()
 			parser.segments = append(parser.segments, historyOutputSegment{Seal: true})
+			parser.col = 0
+			output = output[1:]
+		case output[0] == '\t':
+			parser.writeTab()
 			output = output[1:]
 		default:
-			next := strings.IndexAny(output, "\x1b\r\n")
+			next := strings.IndexAny(output, "\x1b\r\n\t")
 			if next < 0 {
 				parser.writeText(output)
 				output = ""
@@ -168,6 +174,18 @@ func (parser *historyANSIParser) writeText(text string) {
 		return
 	}
 	parser.buffer.WriteString(text)
+	parser.col += xansi.StringWidth(text)
+}
+
+func (parser *historyANSIParser) writeTab() {
+	const tabStop = 8
+	spaces := tabStop - parser.col%tabStop
+	if spaces <= 0 {
+		spaces = tabStop
+	}
+	// 中文说明：真实 terminal 的 tab 是“跳到下一个 tab stop”，不是零宽字符；
+	// history 必须落成空格，否则 ls/补全这类列输出进 copy mode 会挤成一坨。
+	parser.writeText(strings.Repeat(" ", spaces))
 }
 
 func (parser *historyANSIParser) flush() {

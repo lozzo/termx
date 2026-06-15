@@ -1324,6 +1324,79 @@ func TestProtocolServiceHistoryWindowPreservesProcessOutputANSIStyles(t *testing
 	}
 }
 
+func TestProtocolServiceHistoryWindowLatestFlushesProcessHistoryQueueBeforeFreeze(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	process := factory.process("term-1")
+	enteredHistory := make(chan struct{})
+	releaseHistory := make(chan struct{})
+	terminalHistoryPipelineBeforeIngestHook = func() {
+		select {
+		case <-enteredHistory:
+		default:
+			close(enteredHistory)
+		}
+		<-releaseHistory
+	}
+	defer func() {
+		terminalHistoryPipelineBeforeIngestHook = nil
+	}()
+
+	process.emitOutput("000001 first\n100000 final\n")
+	select {
+	case <-enteredHistory:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async history worker")
+	}
+	assertEventually(t, time.Second, func() bool {
+		rows, err := server.LiveRows("term-1")
+		return err == nil && strings.Contains(strings.Join(rows, "\n"), "100000 final")
+	}, "live output should reach surface while history worker is blocked")
+
+	latestCh := make(chan *protocol.HistoryWindow, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID: "term-1",
+			Cols:       40,
+			Limit:      4,
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		latestCh <- latest
+	}()
+	select {
+	case err := <-errCh:
+		t.Fatalf("latest returned error before history queue flushed: %v", err)
+	case latest := <-latestCh:
+		t.Fatalf("latest returned before history queue flushed: %#v", latest)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseHistory)
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("latest after flush: %v", err)
+	case latest := <-latestCh:
+		if len(latest.Rows) == 0 || rowText(latest.Rows[len(latest.Rows)-1]) != "100000 final" {
+			t.Fatalf("latest must freeze after async history catches up, got %#v", latest.Rows)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for latest after releasing history worker")
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotReflowsCombiningAndWideStyledCells(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

@@ -189,6 +189,23 @@ func TestTerminalIngestOutputNormalizesPTYCRLF(t *testing.T) {
 	}
 }
 
+func TestTerminalIngestOutputExpandsTabsForHistoryColumns(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "col1\tcol2\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 80, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "col1    col2" {
+		t.Fatalf("history tab should materialize to next tab stop, got %#v", window.Rows)
+	}
+}
+
 func TestTerminalIngestOutputNewlineOnlySealsUntilLineLeavesPrimaryScreen(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

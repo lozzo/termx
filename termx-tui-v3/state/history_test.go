@@ -773,6 +773,22 @@ func TestHistoryStoreReflowPreservesAuthoritativeCellPadding(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreReflowSplitsLongCellsAndKeepsLsSpacing(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		LineID: 10,
+		Cells: []HistoryCell{
+			{Text: "AGENTS.md   go.work.sum   remote-ui", Width: 35},
+		},
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 12)
+	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"AGENTS.md   ", "go.work.sum ", "  remote-ui"}) {
+		t.Fatalf("reflow should split long cells by display cols without losing ls spacing, got %q", got)
+	}
+	if got := spanRows(spans); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 2}}) {
+		t.Fatalf("expected one logical line span across wrapped ls rows, got %v", got)
+	}
+}
+
 func TestHistoryStoreReflowsFrozenLogicalLineTextWithoutCellsAtNewCols(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		Text:   "abcdef",

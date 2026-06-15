@@ -77,20 +77,24 @@ func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, para
 	if err != nil {
 		return state.HistoryWindow{}, err
 	}
-	return historyWindowFromProtocol(window), nil
+	return historyWindowFromProtocol(window, params.Cols), nil
 }
 
-func historyWindowFromProtocol(window *protocol.HistoryWindow) state.HistoryWindow {
+func historyWindowFromProtocol(window *protocol.HistoryWindow, requestedCols int) state.HistoryWindow {
 	if window == nil {
 		return state.HistoryWindow{}
 	}
+	cols := requestedCols
+	if cols <= 0 {
+		cols = int(window.Size.Cols)
+	}
 	sourceLines := historySourceLinesFromProtocol(window)
-	rows, lines := state.ReflowHistoryLogicalLines(sourceLines, int(window.Size.Cols))
+	rows, lines := state.ReflowHistoryLogicalLines(sourceLines, cols)
 	return state.HistoryWindow{
 		TerminalID:  window.TerminalID,
 		Token:       window.Token,
 		Op:          state.HistoryWindowOp(window.Op),
-		Cols:        int(window.Size.Cols),
+		Cols:        cols,
 		SourceLines: sourceLines,
 		Rows:        rows,
 		Lines:       lines,

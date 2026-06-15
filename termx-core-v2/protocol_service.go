@@ -364,7 +364,7 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, result)
 	case "history.window":
 		in := params.(protocol.HistoryWindowParams)
-		window, err := session.historyWindow(in)
+		window, err := session.historyWindow(ctx, in)
 		if err != nil {
 			return nil, true, errorCode(err), err
 		}
@@ -519,7 +519,7 @@ func (session *protocolSession) handleStreamFrame(ctx context.Context, channel u
 	}
 }
 
-func (session *protocolSession) historyWindow(params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
+func (session *protocolSession) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
 	limit := params.Limit
 	if limit <= 0 {
 		limit = 24
@@ -563,6 +563,9 @@ func (session *protocolSession) historyWindow(params protocol.HistoryWindowParam
 	} else {
 		terminal, err := session.server.Terminal(params.TerminalID)
 		if err != nil {
+			return nil, err
+		}
+		if err := terminal.FlushHistory(ctx); err != nil {
 			return nil, err
 		}
 		snapshot := terminal.FreezeSnapshot()

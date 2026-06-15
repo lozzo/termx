@@ -1074,7 +1074,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	if len(cells) == 0 && line.Text != "" {
 		return reflowPlainHistoryLogicalLine(line, cols)
 	} else if len(cells) > 0 {
-		cells = normalizeHistoryLogicalLineCells(cells)
+		cells = normalizeHistoryLogicalLineCells(cells, cols)
 	}
 	if len(cells) == 0 {
 		return []HistoryRow{{LineID: line.LineID}}
@@ -1098,13 +1098,25 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		if cellWidth <= 0 {
 			continue
 		}
-		if width > 0 && width+cellWidth > cols {
-			flush()
+		parts := []HistoryCell{cell}
+		if cellWidth > cols || (width > 0 && width+cellWidth > cols) {
+			// 中文说明：cell 小于 pane 宽但放不进当前行剩余列时，也要按
+			// grapheme/padding 切开填满当前行；否则 ls 多列输出会提前换行。
+			parts = splitHistoryCellForWrap(cell)
 		}
-		current = append(current, cell)
-		width += cellWidth
-		if width >= cols {
-			flush()
+		for _, part := range parts {
+			partWidth := HistoryCellDisplayWidth(part)
+			if partWidth <= 0 {
+				continue
+			}
+			if width > 0 && width+partWidth > cols {
+				flush()
+			}
+			current = append(current, part)
+			width += partWidth
+			if width >= cols {
+				flush()
+			}
 		}
 	}
 	if len(current) > 0 || len(rows) == 0 {
@@ -1166,13 +1178,13 @@ func splitHistoryLogicalLineText(text string) []HistoryCell {
 	return out
 }
 
-func normalizeHistoryLogicalLineCells(cells []HistoryCell) []HistoryCell {
+func normalizeHistoryLogicalLineCells(cells []HistoryCell, cols int) []HistoryCell {
 	if len(cells) == 0 {
 		return nil
 	}
 	out := make([]HistoryCell, 0, len(cells))
 	for _, cell := range cells {
-		parts := splitHistoryCell(cell)
+		parts := splitHistoryCell(cell, cols)
 		if len(parts) == 0 {
 			continue
 		}
@@ -1181,7 +1193,34 @@ func normalizeHistoryLogicalLineCells(cells []HistoryCell) []HistoryCell {
 	return out
 }
 
-func splitHistoryCell(cell HistoryCell) []HistoryCell {
+func splitHistoryCell(cell HistoryCell, cols int) []HistoryCell {
+	width := HistoryCellDisplayWidth(cell)
+	if width <= 0 {
+		return nil
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	clusters := textGraphemeClusters(cell.Text)
+	if len(clusters) == 0 {
+		return nil
+	}
+	naturalWidth := textClusterDisplayColumns(clusters)[len(clusters)]
+	if width <= cols && naturalWidth == width {
+		return []HistoryCell{cell}
+	}
+	if width <= cols && naturalWidth != width {
+		return []HistoryCell{cell}
+	}
+	if len(clusters) == 1 && naturalWidth >= width {
+		next := cell
+		next.Width = width
+		return []HistoryCell{next}
+	}
+	return splitHistoryCellForWrap(cell)
+}
+
+func splitHistoryCellForWrap(cell HistoryCell) []HistoryCell {
 	width := HistoryCellDisplayWidth(cell)
 	if width <= 0 {
 		return nil
