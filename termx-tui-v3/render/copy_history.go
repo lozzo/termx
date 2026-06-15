@@ -18,6 +18,8 @@ type copySearchRange struct {
 	match  state.CopyMatch
 }
 
+var copyHistorySelectionANSIStyle = ANSICellStyle{FG: "ansi:8", BG: "ansi:3"}
+
 func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) []Line {
 	if len(history.Rows) == 0 {
 		return nil
@@ -104,7 +106,7 @@ func copyHistoryTextCells(text string, row int, selection copySelectionRange, se
 			continue
 		}
 		if style != "" {
-			segments = append(segments, styledCell(textPart, style))
+			segments = append(segments, copyHistoryHighlightCell(textPart, style, "", ""))
 		} else {
 			segments = append(segments, NewCell(textPart))
 		}
@@ -170,13 +172,23 @@ func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, link
 			renderWidth = len([]rune(part))
 		}
 		if style != "" {
-			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, Style: style, LinkURL: linkURL, LinkParams: linkParams, TerminalContent: true, Safe: true})
+			segments = append(segments, copyHistoryHighlightCell(part, style, linkURL, linkParams))
 		} else {
 			segments = append(segments, Cell{Text: SafeLine(part), Width: renderWidth, ANSIStyle: base, LinkURL: linkURL, LinkParams: linkParams, TerminalContent: true, Safe: true})
 		}
 		globalCursor = nextBreak
 	}
 	return segments
+}
+
+func copyHistoryHighlightCell(text string, style StyleToken, linkURL string, linkParams string) Cell {
+	cell := Cell{Text: SafeLine(text), Width: DisplayWidth(text), LinkURL: linkURL, LinkParams: linkParams, TerminalContent: true, Safe: true}
+	if style == StyleAccent {
+		cell.ANSIStyle = copyHistorySelectionANSIStyle
+		return cell
+	}
+	cell.Style = style
+	return cell
 }
 
 func copyHistorySlicePaddedCellText(text string, width int, from int, to int) string {

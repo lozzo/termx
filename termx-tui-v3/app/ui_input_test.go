@@ -1810,6 +1810,33 @@ func assertPaneVisualState(t *testing.T, frame render.Frame, text string, style 
 	t.Fatalf("expected styled pane text %q with style %s, got %#v", text, style, frame.StyledLines)
 }
 
+func assertPaneANSIState(t *testing.T, frame render.Frame, text string, style render.ANSICellStyle) {
+	t.Helper()
+	for _, line := range frame.StyledLines {
+		var span strings.Builder
+		flush := func() bool {
+			if strings.Contains(span.String(), text) {
+				return true
+			}
+			span.Reset()
+			return false
+		}
+		for _, cell := range line.Cells {
+			if cell.Style == "" && cell.ANSIStyle == style {
+				span.WriteString(cell.Text)
+				continue
+			}
+			if flush() {
+				return
+			}
+		}
+		if flush() {
+			return
+		}
+	}
+	t.Fatalf("expected ANSI pane text %q with style %#v, got %#v", text, style, frame.StyledLines)
+}
+
 func TestInteractiveRuntimeGlobalModeTogglesChromeAndEscExitsMode(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},

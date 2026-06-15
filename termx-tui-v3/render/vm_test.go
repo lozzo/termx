@@ -471,7 +471,7 @@ func TestRenderVMBuilderProjectsCopyHistoryContentRendererState(t *testing.T) {
 	if got := content.Lines[1].PlainString(); got != "beta好 ⇣" {
 		t.Fatalf("expected continuation row without engineering marker and with clipped-end marker, got %#v", content.Lines)
 	}
-	if !lineHasStyledCell(content.Lines[0], "pha", StyleAccent) || !lineHasStyledCell(content.Lines[1], "beta", StyleAccent) {
+	if !lineHasANSICell(content.Lines[0], "pha", copyHistorySelectionANSIStyle) || !lineHasANSICell(content.Lines[1], "beta", copyHistorySelectionANSIStyle) {
 		t.Fatalf("expected selection rendered as styled cells, got %#v", content.Lines)
 	}
 	if !content.Cursor.Visible || content.Cursor.Row != 1 || content.Cursor.Col != 4 {
@@ -722,7 +722,7 @@ func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
 		Focus:  state.CopyPosition{Row: 0, Col: 3},
 	}
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if !lineHasStyledCell(content.Lines[0], "ERR", StyleAccent) {
+	if !lineHasANSICell(content.Lines[0], "ERR", copyHistorySelectionANSIStyle) {
 		t.Fatalf("selection should override history ANSI style for selected cells, got %#v", content.Lines[0])
 	}
 	if !lineHasLinkCell(content.Lines[0], "好", "file://build.log", "line=7") {
@@ -796,13 +796,13 @@ func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testin
 	if !content.Cursor.Visible || content.Cursor.Col != 4 {
 		t.Fatalf("cursor should use display columns, got %#v", content.Cursor)
 	}
-	if !lineHasStyledCell(content.Lines[0], "好", StyleAccent) || !lineHasStyledCell(content.Lines[0], "b", StyleAccent) {
+	if !lineHasANSICell(content.Lines[0], "好", copyHistorySelectionANSIStyle) || !lineHasANSICell(content.Lines[0], "b", copyHistorySelectionANSIStyle) {
 		t.Fatalf("selection should split styled cells by display columns, got %#v", content.Lines[0])
 	}
 	if !lineHasLinkCell(content.Lines[0], "好", "file://wide.txt", "row=1") || !lineHasLinkCell(content.Lines[0], "b", "file://split.txt", "row=1") {
 		t.Fatalf("selection split should preserve link metadata on highlighted cells, got %#v", content.Lines[0])
 	}
-	if lineHasStyledCell(content.Lines[0], "a", StyleAccent) || lineHasStyledCell(content.Lines[0], "c", StyleAccent) {
+	if lineHasANSICell(content.Lines[0], "a", copyHistorySelectionANSIStyle) || lineHasANSICell(content.Lines[0], "c", copyHistorySelectionANSIStyle) {
 		t.Fatalf("selection should not leak outside display-column range, got %#v", content.Lines[0])
 	}
 
