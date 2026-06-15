@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-live-tail | history-semantics | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-live-tail | history-semantics | bg-forensics | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -53,6 +53,11 @@ Artifacts:
     history-semantics-copy-latest.raw-preserve.txt
     history-semantics-copy-top.txt
     history-semantics-copy-top.raw-preserve.txt
+  bg-forensics:
+    bg-forensics-input.raw
+    bg-forensics-live.raw.txt
+    bg-forensics-copy-tail.raw.txt
+    bg-forensics.report.txt
   floating-owner-resize:
     floating-base.txt
     floating-base.raw.txt
@@ -1672,6 +1677,10 @@ build_generator_command() {
     history-semantics)
       printf 'python3 %q; exec cat' "$REPO_ROOT/scripts/emit_terminal_history_semantics.py"
       ;;
+    bg-forensics)
+      printf 'python3 %q --lines %q --seed %q --width-hint %q | tee %q; exec cat' \
+        "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT" "$ROOT/bg-forensics-input.raw"
+      ;;
     *)
       echo "unknown scenario: $SCENARIO" >&2
       exit 1
@@ -1872,6 +1881,31 @@ run_history_semantics_scenario() {
   log "PASS history-semantics-live -> $ROOT/history-semantics-live.txt"
   log "PASS history-semantics-copy-latest -> $ROOT/history-semantics-copy-latest.txt"
   log "PASS history-semantics-copy-top -> $ROOT/history-semantics-copy-top.txt"
+}
+
+run_bg_forensics_scenario() {
+  local pane_main
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "bg-forensics"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-live" "000"
+  enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-copy" "000"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-bottom" G
+  sleep "$G_DELAY"
+  capture_session "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-tail"
+
+  python3 "$REPO_ROOT/scripts/analyze_history_bg_forensics.py" \
+    --input "$ROOT/bg-forensics-input.raw" \
+    --live "$ROOT/bg-forensics-live.raw.txt" \
+    --copy "$ROOT/bg-forensics-copy-tail.raw.txt" \
+    --report "$ROOT/bg-forensics.report.txt"
+
+  log "PASS bg-forensics-input -> $ROOT/bg-forensics-input.raw"
+  log "PASS bg-forensics-live -> $ROOT/bg-forensics-live.raw.txt"
+  log "PASS bg-forensics-copy-tail -> $ROOT/bg-forensics-copy-tail.raw.txt"
+  log "PASS bg-forensics-report -> $ROOT/bg-forensics.report.txt"
 }
 
 run_floating_owner_resize_scenario() {
@@ -2421,6 +2455,9 @@ main() {
       ;;
     history-semantics)
       run_history_semantics_scenario
+      ;;
+    bg-forensics)
+      run_bg_forensics_scenario
       ;;
     floating-owner-resize)
       run_floating_owner_resize_scenario
