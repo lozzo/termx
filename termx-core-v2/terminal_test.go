@@ -480,6 +480,68 @@ func TestTerminalIngestOutputPlainStyledTextDoesNotPadBackgroundTail(t *testing.
 	}
 }
 
+func TestTerminalIngestOutputControlledHistorySemantics(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 40, Rows: 8},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := "" +
+		"HSEM_BEGIN\n" +
+		"\x1b[48;5;24mHSEM_EL_TO_EOL\x1b[K\x1b[0m\n" +
+		"HSEM_CR_OLD_TRAIL\rHSEM_CR_FINAL\x1b[K\n" +
+		"HSEM_GAP\x1b[3CX\n" +
+		"HSEM_T\tX\n" +
+		"HSEM_SUGGEST\x1b[90m_TMP\x1b[0m\x1b[4D\x1b[K\n"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 40, 16)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	text := historyWindowText(window.Rows)
+	for _, want := range []string{
+		"HSEM_BEGIN",
+		"HSEM_EL_TO_EOL",
+		"HSEM_CR_FINAL",
+		"HSEM_GAP   X",
+		"HSEM_T  X",
+		"HSEM_SUGGEST",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected history text to contain %q, got %q rows=%#v", want, text, window.Rows)
+		}
+	}
+	for _, notWant := range []string{"HSEM_CR_OLD_TRAIL", "HSEM_SUGGEST_TMP"} {
+		if strings.Contains(text, notWant) {
+			t.Fatalf("history text should not contain transient text %q, got %q rows=%#v", notWant, text, window.Rows)
+		}
+	}
+	var eraseRow *history.VisualRow
+	for i := range window.Rows {
+		if strings.HasPrefix(window.Rows[i].Text, "HSEM_EL_TO_EOL") {
+			eraseRow = &window.Rows[i]
+			break
+		}
+	}
+	if eraseRow == nil {
+		t.Fatalf("expected erase-to-EOL row in %#v", window.Rows)
+	}
+	if len(eraseRow.Cells) < 40 {
+		t.Fatalf("erase-to-EOL row should keep styled blank footprint to screen cols, got %#v", eraseRow.Cells)
+	}
+	for i, cell := range eraseRow.Cells {
+		if cell.Style.BG != "idx:24" {
+			t.Fatalf("erase-to-EOL cell %d should keep bg, got %#v", i, cell)
+		}
+	}
+}
+
 func TestTerminalIngestOutputEraseInLineModeOneClearsMutablePrefixWithoutCommitting(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
@@ -1214,6 +1276,14 @@ func (process *exitBeforeOutputProcess) exitThenOutput(code int, output string) 
 		process.outputCh <- []byte(output)
 	}
 	close(process.outputCh)
+}
+
+func historyWindowText(rows []history.VisualRow) string {
+	parts := make([]string, len(rows))
+	for i, row := range rows {
+		parts[i] = row.Text
+	}
+	return strings.Join(parts, "\n")
 }
 
 func assertEventually(t *testing.T, timeout time.Duration, check func() bool, message string) {

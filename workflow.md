@@ -201,11 +201,12 @@
 | 215E1-R28. SK copy history 空文本背景 cell 保真回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 copy/history 本地重排和 canvas 写行时把 `Text="" Width>0 Style=BG` 的 terminal cell 当成空内容跳过；空 footprint 现在按带样式空格参与本地 reflow 和最终 ANSI frame |
 | 215E1-R29. SK copy history 行尾背景误修回滚 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已撤回上一版基于 `CSI K` / BCE 在 core 里按 terminal cols 主动补满行尾背景空白的窄修复；保留 TUI 对已经存在的 styled blank cell 的展示保真，后续重新从 parser/live surface 背景语义定位根因 |
 | 215E1-R30. SK copy history 背景延伸行尾回归 | 完成 | `scripts/`、`termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已补最小 ANSI 输出脚本和 tmux dump harness：普通 SGR 背景不会自然铺满行尾，`CSI K` erase-to-EOL 会把当前背景写到行尾；core history 现在只对 `CSI K` 记录 styled blank footprint，protocol/TUI/copy render 保持这些行尾背景 |
+| 215E1-R31. SK copy history 真实链路语义 harness | 完成 | `scripts/`、`termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已复用完整 tmux history smoke 增加受控 ANSI 语义场景，真实跑 daemon -> terminal -> attach -> live capture -> copy latest -> copy oldest；同时补 parser 语义单测，固定目前支持的行编辑/erase/背景/提交边界，不把 history parser 改成第二个 terminal emulator |
 
 当前下一步：
 
-- `215E1-R30 copy history 背景延伸行尾回归` 已完成
-- 准入：`bash scripts/tmux_bg_eol_harness.sh`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check` 已通过
+- `215E1-R31 copy history 真实链路语义 harness` 已完成
+- 准入：`scripts/tmux_history_smoke.sh --scenario history-semantics --attach-size 120x36 --g-repeats 12 --keep-root`、`go test ./termx-core-v2/... -count=1`、`go test ./termx-tui-v3/... -count=1`、`bash -n scripts/tmux_history_smoke.sh`、`python3 -m py_compile scripts/emit_terminal_history_semantics.py`、`git diff --check` 已通过
 
 ## 6. 必做证据
 

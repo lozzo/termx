@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-live-tail | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-live-tail | history-semantics | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -46,6 +46,13 @@ Artifacts:
     reattach-committed-boundary.raw.txt
     reattach-committed-boundary.gridtrace.summary.txt
     reattach-committed-boundary.gridtrace.log
+  history-semantics:
+    history-semantics-live.txt
+    history-semantics-live.raw-preserve.txt
+    history-semantics-copy-latest.txt
+    history-semantics-copy-latest.raw-preserve.txt
+    history-semantics-copy-top.txt
+    history-semantics-copy-top.raw-preserve.txt
   floating-owner-resize:
     floating-base.txt
     floating-base.raw.txt
@@ -768,7 +775,7 @@ wait_surface() {
       continue
     fi
     placeholder_streak="0"
-    if printf '%s\n' "$pane" | grep -Eq '([0-9]{6}|stress|PERSISTED-[0-9]{5}|LIVE-SCREEN-open-tail)'; then
+    if printf '%s\n' "$pane" | grep -Eq '([0-9]{6}|stress|PERSISTED-[0-9]{5}|LIVE-SCREEN-open-tail|HSEM_READY)'; then
       return 0
     fi
     sleep "$WAIT_DELAY"
@@ -899,6 +906,32 @@ capture_pane_normal_raw() {
   local target="$2"
   local base="${3:-capture}"
   run_tmux_capture "$session" "$target" "$base" "normal-raw" tmux capture-pane -t "$target" -ep
+}
+
+capture_pane_alt_raw_preserve() {
+  local session="$1"
+  local target="$2"
+  local base="${3:-capture}"
+  run_tmux_capture "$session" "$target" "$base" "alt-raw-preserve" tmux capture-pane -a -t "$target" -epN
+}
+
+capture_preserved_raw_artifact() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local raw
+  if [[ -s "$ROOT/$base.raw.txt" ]]; then
+    cp "$ROOT/$base.raw.txt" "$ROOT/$base.raw-preserve.txt"
+    return
+  fi
+  # tmux 3.6 的 `capture-pane -epN` 在 alternate screen 下可能只返回空行；
+  # `-ep` 已经保留 SGR 和行内空格，足够验证背景是否延伸到 marker 后的空白区。
+  raw="$(capture_pane_alt_raw "$session" "$target" "$base.raw-preserve" || true)"
+  if [[ -n "$raw" ]]; then
+    printf '%s\n' "$raw" >"$ROOT/$base.raw-preserve.txt"
+    return
+  fi
+  capture_pane_alt_raw_preserve "$session" "$target" "$base" >"$ROOT/$base.raw-preserve.txt"
 }
 
 extract_first_match() {
@@ -1307,6 +1340,99 @@ assert_not_contains() {
   fi
 }
 
+assert_bg_spaces_after_marker() {
+  local file="$1"
+  local marker="$2"
+  local expected_bg="$3"
+  local min_spaces="${4:-4}"
+  python3 - "$file" "$marker" "$expected_bg" "$min_spaces" <<'PY'
+import sys
+
+path, marker_text, expected_bg, min_spaces_text = sys.argv[1:5]
+marker = marker_text.encode()
+min_spaces = int(min_spaces_text)
+
+
+def parse_sgr_params(raw: bytes) -> list[int]:
+    if not raw:
+        return [0]
+    values = []
+    for part in raw.replace(b":", b";").split(b";"):
+        if not part:
+            values.append(0)
+            continue
+        try:
+            values.append(int(part))
+        except ValueError:
+            continue
+    return values or [0]
+
+
+def apply_sgr(params, bg):
+    i = 0
+    while i < len(params):
+        value = params[i]
+        if value == 0 or value == 49:
+            bg = None
+        elif 40 <= value <= 47:
+            bg = f"ansi:{value - 40}"
+        elif 100 <= value <= 107:
+            bg = f"ansi:{value - 100 + 8}"
+        elif value == 48 and i + 2 < len(params) and params[i + 1] == 5:
+            bg = f"idx:{params[i + 2]}"
+            i += 2
+        elif value == 48 and i + 4 < len(params) and params[i + 1] == 2:
+            bg = f"#{params[i + 2]:02x}{params[i + 3]:02x}{params[i + 4]:02x}"
+            i += 4
+        i += 1
+    return bg
+
+
+def cells_from_raw_line(line):
+    cells = []
+    bg = None
+    i = 0
+    while i < len(line):
+        if line[i] == 0x1B and i + 1 < len(line) and line[i + 1] == ord("["):
+            end = i + 2
+            while end < len(line) and not (0x40 <= line[end] <= 0x7E):
+                end += 1
+            if end >= len(line):
+                break
+            if line[end] == ord("m"):
+                bg = apply_sgr(parse_sgr_params(line[i + 2:end]), bg)
+            i = end + 1
+            continue
+        cells.append((line[i], bg))
+        i += 1
+    return cells
+
+
+for raw_line in open(path, "rb").read().splitlines():
+    cells = cells_from_raw_line(raw_line)
+    plain = bytes(byte for byte, _ in cells)
+    start = plain.find(marker)
+    if start < 0:
+        continue
+    after = cells[start + len(marker):]
+    styled_spaces = 0
+    for byte, bg in after:
+        if byte != 0x20:
+            break
+        if bg != expected_bg:
+            break
+        styled_spaces += 1
+    if styled_spaces >= min_spaces:
+        raise SystemExit(0)
+    raise SystemExit(
+        f"{path}: marker {marker_text!r} has only {styled_spaces} styled spaces with {expected_bg}; "
+        f"plain={plain!r} raw={raw_line!r}"
+    )
+
+raise SystemExit(f"{path}: marker {marker_text!r} not found")
+PY
+}
+
 assert_floating_contains() {
   local file="$1"
   local needle="$2"
@@ -1543,6 +1669,9 @@ build_generator_command() {
         'import sys; persisted=int(sys.argv[1]); cols=int(sys.argv[2]); out=sys.stdout; pad=lambda label, width: label + ("." * max(0, width - len(label))); out.write("".join(f"PERSISTED-{i:05d} committed row\n" for i in range(persisted))); out.write(pad("LIVE-ROW-0", cols) + pad("LIVE-ROW-1", cols) + "LIVE-SCREEN-open-tail"); out.flush()' \
         "$LINES" "$ATTACH_COLS"
       ;;
+    history-semantics)
+      printf 'python3 %q; exec cat' "$REPO_ROOT/scripts/emit_terminal_history_semantics.py"
+      ;;
     *)
       echo "unknown scenario: $SCENARIO" >&2
       exit 1
@@ -1664,6 +1793,85 @@ run_deep_live_tail_scenario() {
   log "PASS latest-tail -> $ROOT/latest-tail.txt"
   log "PASS copy-committed-boundary -> $ROOT/copy-committed-boundary.txt"
   log "PASS reattach-committed-boundary -> $ROOT/reattach-committed-boundary.txt"
+}
+
+enter_copy_mode_until_contains() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local needle="$4"
+  local attempt
+
+  send_tmux_keys "$session" "$target" "$base.copy-mode-enter" C-v
+  sleep "$G_DELAY"
+  for attempt in $(seq 1 "$WAIT_ATTEMPTS"); do
+    capture_session "$session" "$target" "$base" || return 1
+    capture_preserved_raw_artifact "$session" "$target" "$base"
+    if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+      return 0
+    fi
+    sleep "$WAIT_DELAY"
+  done
+  echo "timed out waiting for '$needle' in $ROOT/$base.txt after entering copy mode" >&2
+  return 1
+}
+
+copy_top_until_contains() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local needle="$4"
+  local repeats="$5"
+  local attempt
+
+  for attempt in $(seq 1 "$repeats"); do
+    send_tmux_keys "$session" "$target" "$base.copy-mode-g-$attempt" g
+    sleep "$G_DELAY"
+    capture_session "$session" "$target" "$base" || return 1
+    capture_preserved_raw_artifact "$session" "$target" "$base"
+    if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+      return 0
+    fi
+  done
+  echo "timed out waiting for '$needle' in $ROOT/$base.txt after $repeats top attempts" >&2
+  return 1
+}
+
+assert_history_semantics_text() {
+  local file="$1"
+  local prefix="$2"
+  assert_contains "$file" "${prefix}_EL_TO_EOL"
+  assert_contains "$file" "${prefix}_CR_FINAL"
+  assert_contains "$file" "${prefix}_GAP   X"
+  assert_contains "$file" "${prefix}_T"
+  assert_contains "$file" "${prefix}_SUGGEST"
+  assert_not_contains "$file" "${prefix}_CR_OLD_TRAIL"
+  assert_not_contains "$file" "${prefix}_SUGGEST_TMP"
+}
+
+run_history_semantics_scenario() {
+  local pane_main
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "history-semantics"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "history-semantics-live" "HSEM_READY"
+  capture_preserved_raw_artifact "$SESSION_MAIN" "$pane_main" "history-semantics-live"
+  assert_history_semantics_text "$ROOT/history-semantics-live.txt" "HSEM_LIVE"
+  assert_bg_spaces_after_marker "$ROOT/history-semantics-live.raw-preserve.txt" "HSEM_LIVE_EL_TO_EOL" "idx:25" 4
+
+  enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "history-semantics-copy-latest" "HSEM_READY"
+  assert_history_semantics_text "$ROOT/history-semantics-copy-latest.txt" "HSEM_LIVE"
+  assert_bg_spaces_after_marker "$ROOT/history-semantics-copy-latest.raw-preserve.txt" "HSEM_LIVE_EL_TO_EOL" "idx:25" 4
+
+  copy_top_until_contains "$SESSION_MAIN" "$pane_main" "history-semantics-copy-top" "HSEM_COMMITTED_BEGIN" "$G_REPEATS"
+  assert_history_semantics_text "$ROOT/history-semantics-copy-top.txt" "HSEM_COMMITTED"
+  assert_bg_spaces_after_marker "$ROOT/history-semantics-copy-top.raw-preserve.txt" "HSEM_COMMITTED_EL_TO_EOL" "idx:24" 4
+
+  log "PASS history-semantics-live -> $ROOT/history-semantics-live.txt"
+  log "PASS history-semantics-copy-latest -> $ROOT/history-semantics-copy-latest.txt"
+  log "PASS history-semantics-copy-top -> $ROOT/history-semantics-copy-top.txt"
 }
 
 run_floating_owner_resize_scenario() {
@@ -2210,6 +2418,9 @@ main() {
       ;;
     deep-live-tail)
       run_deep_live_tail_scenario
+      ;;
+    history-semantics)
+      run_history_semantics_scenario
       ;;
     floating-owner-resize)
       run_floating_owner_resize_scenario
