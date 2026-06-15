@@ -447,6 +447,27 @@ send_tmux_keys() {
   return "$status"
 }
 
+send_tmux_literal() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local text="$4"
+  local stderr_file
+  local status
+
+  ensure_tmux_target "$session" "$target" "$base.send-literal-target-missing" || return 1
+  stderr_file="$(mktemp "$ROOT/.tmux-send-literal.stderr.XXXXXX")"
+  if tmux send-keys -t "$target" -l "$text" 2>"$stderr_file"; then
+    rm -f "$stderr_file"
+    return 0
+  fi
+
+  status=$?
+  write_tmux_command_error "send-literal" "$base" "$session" "$target" "$status" "$stderr_file" tmux send-keys -t "$target" -l "$text"
+  rm -f "$stderr_file"
+  return "$status"
+}
+
 send_tmux_mouse_wheel_up() {
   local session="$1"
   local target="$2"
@@ -1678,8 +1699,7 @@ build_generator_command() {
       printf 'python3 %q; exec cat' "$REPO_ROOT/scripts/emit_terminal_history_semantics.py"
       ;;
     bg-forensics)
-      printf 'python3 %q --lines %q --seed %q --width-hint %q | tee %q; exec cat' \
-        "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT" "$ROOT/bg-forensics-input.raw"
+      printf 'exec ${SHELL:-/bin/sh}'
       ;;
     *)
       echo "unknown scenario: $SCENARIO" >&2
@@ -1885,12 +1905,22 @@ run_history_semantics_scenario() {
 
 run_bg_forensics_scenario() {
   local pane_main
+  local command
 
-  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "bg-forensics"
+  pane_main="$(start_tmux_session "$SESSION_MAIN" "$SESSION_COLS" "$SESSION_ROWS" "$(attach_tmux_command "$TERM_ID" "$SESSION_MAIN")")"
+  CLIENT_MAIN_PID="$(start_tmux_client "$SESSION_MAIN" "$pane_main")"
+  prime_tmux_client "$SESSION_MAIN" "$pane_main"
+  sleep "$G_DELAY"
+  ensure_tmux_target "$SESSION_MAIN" "$pane_main" "bg-forensics.attach-target" || return 1
+  ATTACH_SESSION_PANE="$pane_main"
   pane_main="$ATTACH_SESSION_PANE"
-  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
 
-  capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-live" "000"
+  command="$(printf 'python3 %q --lines %q --seed %q --width-hint %q | tee %q' \
+    "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT" "$ROOT/bg-forensics-input.raw")"
+  send_tmux_literal "$SESSION_MAIN" "$pane_main" "bg-forensics-run-command" "$command"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-run-enter" Enter
+
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-live" "$(printf '%06d' "$LINES")"
   enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-copy" "000"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-bottom" G
   sleep "$G_DELAY"

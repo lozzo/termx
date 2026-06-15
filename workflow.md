@@ -203,11 +203,12 @@
 | 215E1-R30. SK copy history 背景延伸行尾回归 | 完成 | `scripts/`、`termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已补最小 ANSI 输出脚本和 tmux dump harness：普通 SGR 背景不会自然铺满行尾，`CSI K` erase-to-EOL 会把当前背景写到行尾；core history 现在只对 `CSI K` 记录 styled blank footprint，protocol/TUI/copy render 保持这些行尾背景 |
 | 215E1-R31. SK copy history 真实链路语义 harness | 完成 | `scripts/`、`termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已复用完整 tmux history smoke 增加受控 ANSI 语义场景，真实跑 daemon -> terminal -> attach -> live capture -> copy latest -> copy oldest；同时补 parser 语义单测，固定目前支持的行编辑/erase/背景/提交边界，不把 history parser 改成第二个 terminal emulator |
 | 215E1-R32. SK copy history 背景现场取证 | 完成 | `scripts/`、`workflow.md` | 已补 `bg-forensics` 取证场景：抓 `generate_terminal_stress.py` 真实 raw 输入、live raw dump、copy/history tail raw dump，并解析背景色区间对比；1000/10000 行固定 seed 取证未复现 live/copy 背景丢失 |
+| 215E1-R33. SK copy history live shell 背景复现 | 完成 | `scripts/`、`workflow.md` | 已把背景取证改成截图一致的真实链路：先 attach 到交互 shell，再在 live pane 里发送 stress 命令，抓 live/copy raw 对比；10000 行固定 seed 下未复现未选中状态的 live/copy 背景 cell 差异 |
 
 当前下一步：
 
-- `215E1-R32 copy history 背景现场取证` 已完成
-- 准入：`scripts/tmux_history_smoke.sh --scenario bg-forensics --lines 10000 --seed 100 --width-hint 120 --attach-size 120x36 --keep-root`、`python3 -m py_compile scripts/analyze_history_bg_forensics.py`、`bash -n scripts/tmux_history_smoke.sh`、`git diff --check` 已通过；本次取证结论是未复现，报告里 `common_bg_mismatch=0`
+- `215E1-R33 copy history live shell 背景复现` 已完成
+- 准入：`scripts/tmux_history_smoke.sh --scenario bg-forensics --lines 10000 --seed 100 --width-hint 120 --attach-size 120x36 --keep-root`、`python3 -m py_compile scripts/analyze_history_bg_forensics.py`、`bash -n scripts/tmux_history_smoke.sh`、`git diff --check` 已通过；本次未复现未选中状态的 live/copy 背景 cell 差异，用户截图新增问题转入 selection overlay 覆盖范围
 
 ## 6. 必做证据
 
