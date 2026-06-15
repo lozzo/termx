@@ -8,6 +8,9 @@ type EventKind string
 const (
 	EventWritePrimaryCells        EventKind = "write-primary-cells"
 	EventCarriageReturn           EventKind = "carriage-return"
+	EventCursorForward            EventKind = "cursor-forward"
+	EventCursorBackward           EventKind = "cursor-backward"
+	EventCursorHorizontalAbsolute EventKind = "cursor-horizontal-absolute"
 	EventEraseInLine              EventKind = "erase-in-line"
 	EventEraseInDisplay           EventKind = "erase-in-display"
 	EventSealLogicalLine          EventKind = "seal-logical-line"

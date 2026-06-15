@@ -132,6 +132,48 @@ func TestHistoryTrackCarriageReturnOverwritesCurrentMutableLine(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackCursorMovementOverwritesCurrentMutableLine(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("abcdef")},
+		HistoryEvent{Kind: EventCursorBackward, Count: 3},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("XY")},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "abcXYf" {
+		t.Fatalf("cursor movement should overwrite from active column, got %q", got)
+	}
+}
+
+func TestHistoryTrackCursorAbsoluteColumnOverwritesCurrentMutableLine(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("abcdef")},
+		HistoryEvent{Kind: EventCursorHorizontalAbsolute, Count: 2},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("Z")},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "aZcdef" {
+		t.Fatalf("absolute column should use 1-based terminal columns, got %q", got)
+	}
+}
+
+func TestHistoryTrackCursorForwardPastLineEndPadsBeforeWrite(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("a")},
+		HistoryEvent{Kind: EventCursorForward, Count: 3},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("X")},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "a   X" {
+		t.Fatalf("cursor forward past line end should preserve blank columns, got %q", got)
+	}
+}
+
 func TestHistoryTrackEraseInLineMutatesCurrentMutableLine(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track,

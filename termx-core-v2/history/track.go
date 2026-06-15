@@ -55,6 +55,12 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 		return track.writePrimaryCells(event.Cells)
 	case EventCarriageReturn:
 		return track.carriageReturn()
+	case EventCursorForward:
+		return track.cursorForward(event.Count)
+	case EventCursorBackward:
+		return track.cursorBackward(event.Count)
+	case EventCursorHorizontalAbsolute:
+		return track.cursorHorizontalAbsolute(event.Count)
 	case EventEraseInLine:
 		return track.eraseInLine(event.EraseMode)
 	case EventEraseInDisplay:
@@ -142,7 +148,8 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 	if err != nil {
 		return err
 	}
-	if !track.overwrite {
+	lineWidth := logicalLineWidth(line.Cells)
+	if !track.overwrite && track.activeCol == lineWidth {
 		line.Cells = append(line.Cells, cloneCells(cells)...)
 		track.activeCol = logicalLineWidth(line.Cells)
 	} else {
@@ -155,7 +162,7 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 		return err
 	}
 	track.activeLine = line.ID
-	track.overwrite = false
+	track.overwrite = track.activeCol < logicalLineWidth(line.Cells)
 	track.bumpGeneration()
 	return nil
 }
@@ -205,6 +212,80 @@ func (track *HistoryTrack) carriageReturn() error {
 	track.overwrite = true
 	track.bumpGeneration()
 	return nil
+}
+
+func (track *HistoryTrack) cursorForward(count int) error {
+	if count <= 0 {
+		count = 1
+	}
+	return track.moveCursorBy(count)
+}
+
+func (track *HistoryTrack) cursorBackward(count int) error {
+	if count <= 0 {
+		count = 1
+	}
+	return track.moveCursorBy(-count)
+}
+
+func (track *HistoryTrack) cursorHorizontalAbsolute(column int) error {
+	if column <= 0 {
+		column = 1
+	}
+	return track.setActiveColumn(column - 1)
+}
+
+func (track *HistoryTrack) moveCursorBy(delta int) error {
+	if track.altScreen || track.activeLine == 0 {
+		return nil
+	}
+	line, ok := track.activeOpenFrontierLine()
+	if !ok {
+		return nil
+	}
+	return track.setActiveColumnWithLine(line, track.activeCol+delta)
+}
+
+func (track *HistoryTrack) setActiveColumn(column int) error {
+	if track.altScreen || track.activeLine == 0 {
+		return nil
+	}
+	line, ok := track.activeOpenFrontierLine()
+	if !ok {
+		return nil
+	}
+	return track.setActiveColumnWithLine(line, column)
+}
+
+func (track *HistoryTrack) setActiveColumnWithLine(line LogicalLine, column int) error {
+	if column < 0 {
+		column = 0
+	}
+	lineWidth := logicalLineWidth(line.Cells)
+	track.activeLine = line.ID
+	track.activeCol = column
+	// 中文说明：终端光标移回已存在内容中间后，后续输出是覆盖写；
+	// 这类 shell 补全/行编辑临时字符不能被当成 append-only history。
+	track.overwrite = track.activeCol < lineWidth
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) activeOpenFrontierLine() (LogicalLine, bool) {
+	if track.activeLine == 0 || !track.frontier.Contains(track.activeLine) {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return LogicalLine{}, false
+	}
+	line, ok := track.store.Line(track.activeLine)
+	if !ok || line.Seal != SealStateOpen {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return LogicalLine{}, false
+	}
+	return line, true
 }
 
 func (track *HistoryTrack) eraseInLine(mode int) error {

@@ -114,6 +114,21 @@ func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegme
 			return err
 		}
 	}
+	if segment.CursorForward {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorForward, Count: segment.Count}); err != nil {
+			return err
+		}
+	}
+	if segment.CursorBackward {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorBackward, Count: segment.Count}); err != nil {
+			return err
+		}
+	}
+	if segment.CursorHorizontalAbsolute {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorHorizontalAbsolute, Count: segment.Count}); err != nil {
+			return err
+		}
+	}
 	if segment.EraseInLine {
 		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInLine, EraseMode: segment.EraseMode}); err != nil {
 			return err

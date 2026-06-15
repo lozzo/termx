@@ -188,11 +188,12 @@
 | 215E1-R15. SK copy history 矩形 patch 列锚点回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复历史滚动时行首前导 `0` 被遮挡、点击 pane 后恢复：矩形 patch 从 pane 内容区写出时，内部 ANSI 绝对列锚点会加上 content X 偏移 |
 | 215E1-R16. SK copy history cell 宽度填充回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/services/`、`workflow.md` | 已修复 `ls` 多列输出在 history 里挤成一坨：history cell 的 authoritative 宽度大于文本宽度时，展示/复制/搜索都会把右侧填充列当作空格；同时保留 protocol trailing blank cells |
 | 215E1-R17. SK copy history latest 追平和空格端到端回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/state/`、`termx-tui-v3/services/`、`termx-tui-v3/render/`、`workflow.md` | 已处理真实现场两个回归：进入 history/copy 前等待已入队的 async history 输出追平 live，避免 10 万行只冻结到 9 万多；`ls`/tabular 输出通过 tab 展开、protocol -> TUI 本地 reflow harness 证明空格不丢 |
+| 215E1-R18. SK copy history 行编辑语义回归 | 完成 | `termx-core-v2/`、`workflow.md` | 已处理 latest tail 上的真实输出语义污染：core parser 现在把 `CSI C/D/G` 和 backspace 路由成 mutable frontier 光标 mutation；shell autosuggestion / 补全灰字被 erase 删除后不会继续作为最终 logical line 存进 history，光标右移超过行尾也会保留空白列 |
 
 当前下一步：
 
-- `215E1-R17 copy history latest 追平和空格端到端回归` 已完成
-- 已补回归测试：真实 PTY async history queue 被卡住时，`history.window latest` 必须等待追平后才能冻结；`ls`/tabular 输出的 tab 和 protocol padding 在 TUI 本地 reflow 后不丢空格
+- `215E1-R18 copy history 行编辑语义回归` 已完成
+- 已补回归测试：光标回退覆盖写、backspace 覆盖写、右移超过行尾补空格、autosuggestion 灰字被 `EL` 删除后不持久化进 history
 
 ## 6. 必做证据
 

@@ -265,6 +265,83 @@ func TestTerminalIngestOutputCarriageReturnOverwritesMutableTailWithoutCommittin
 	}
 }
 
+func TestTerminalIngestOutputCursorBackwardOverwritesMutableTailWithoutCommitting(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "abcdef\x1b[3DXY"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "abcXYf" {
+		t.Fatalf("history latest should reflect CUB overwrite in mutable tail, got %#v", window)
+	}
+	if window.TotalLines != 0 {
+		t.Fatalf("cursor overwrite must not create committed history, got total lines %d", window.TotalLines)
+	}
+}
+
+func TestTerminalIngestOutputBackspaceOverwritesMutableTailWithoutCommitting(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "abc\bX"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "abX" {
+		t.Fatalf("history latest should reflect backspace overwrite in mutable tail, got %#v", window)
+	}
+	if window.TotalLines != 0 {
+		t.Fatalf("backspace overwrite must not create committed history, got total lines %d", window.TotalLines)
+	}
+}
+
+func TestTerminalIngestOutputDeletedAutosuggestionDoesNotPersistInHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	// 中文说明：zsh/fish autosuggestion 会先把灰色建议写到屏幕上，
+	// 再把光标退回并用 EL 清掉；history 只能保存清掉后的最终文本。
+	if err := server.IngestOutput(context.Background(), "term-1", "l\x1b[90ms\x1b[0m\x1b[1D\x1b[K"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || strings.TrimRight(window.Rows[0].Text, " ") != "l" {
+		t.Fatalf("deleted autosuggestion must not persist in history, got %#v", window)
+	}
+	if window.TotalLines != 0 {
+		t.Fatalf("autosuggestion edit must stay mutable, got total lines %d", window.TotalLines)
+	}
+}
+
 func TestTerminalIngestOutputWrapOnlyAffectsProjectionNotHistoryTruth(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

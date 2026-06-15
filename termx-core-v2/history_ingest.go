@@ -9,14 +9,18 @@ import (
 )
 
 type historyOutputSegment struct {
-	Cells           []history.Cell
-	Seal            bool
-	CarriageReturn  bool
-	EraseInLine     bool
-	EraseInDisplay  bool
-	SwitchAltScreen bool
-	EnterAltScreen  bool
-	EraseMode       int
+	Cells                    []history.Cell
+	Seal                     bool
+	CarriageReturn           bool
+	CursorForward            bool
+	CursorBackward           bool
+	CursorHorizontalAbsolute bool
+	EraseInLine              bool
+	EraseInDisplay           bool
+	SwitchAltScreen          bool
+	EnterAltScreen           bool
+	Count                    int
+	EraseMode                int
 }
 
 func parseHistoryOutput(output string) []historyOutputSegment {
@@ -83,6 +87,13 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 			parser.segments = append(parser.segments, historyOutputSegment{CarriageReturn: true})
 			parser.col = 0
 			output = output[1:]
+		case output[0] == '\b':
+			parser.flush()
+			parser.segments = append(parser.segments, historyOutputSegment{CursorBackward: true, Count: 1})
+			if parser.col > 0 {
+				parser.col--
+			}
+			output = output[1:]
 		case output[0] == '\n':
 			parser.flush()
 			parser.segments = append(parser.segments, historyOutputSegment{Seal: true})
@@ -92,7 +103,7 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 			parser.writeTab()
 			output = output[1:]
 		default:
-			next := strings.IndexAny(output, "\x1b\r\n\t")
+			next := strings.IndexAny(output, "\x1b\r\b\n\t")
 			if next < 0 {
 				parser.writeText(output)
 				output = ""
@@ -147,6 +158,32 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 			mode = params[0]
 		}
 		parser.segments = append(parser.segments, historyOutputSegment{EraseInLine: true, EraseMode: mode})
+		return end + 1
+	}
+	switch final {
+	case 'C':
+		parser.flush()
+		count := firstCSIParam(input[2:end], 1)
+		parser.segments = append(parser.segments, historyOutputSegment{CursorForward: true, Count: count})
+		parser.col += count
+		return end + 1
+	case 'D':
+		parser.flush()
+		count := firstCSIParam(input[2:end], 1)
+		parser.segments = append(parser.segments, historyOutputSegment{CursorBackward: true, Count: count})
+		parser.col -= count
+		if parser.col < 0 {
+			parser.col = 0
+		}
+		return end + 1
+	case 'G':
+		parser.flush()
+		column := firstCSIParam(input[2:end], 1)
+		parser.segments = append(parser.segments, historyOutputSegment{CursorHorizontalAbsolute: true, Count: column})
+		parser.col = column - 1
+		if parser.col < 0 {
+			parser.col = 0
+		}
 		return end + 1
 	}
 	if final != 'm' {
@@ -367,10 +404,14 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 	for i, segment := range segments {
 		out[i].Seal = segment.Seal
 		out[i].CarriageReturn = segment.CarriageReturn
+		out[i].CursorForward = segment.CursorForward
+		out[i].CursorBackward = segment.CursorBackward
+		out[i].CursorHorizontalAbsolute = segment.CursorHorizontalAbsolute
 		out[i].EraseInLine = segment.EraseInLine
 		out[i].EraseInDisplay = segment.EraseInDisplay
 		out[i].SwitchAltScreen = segment.SwitchAltScreen
 		out[i].EnterAltScreen = segment.EnterAltScreen
+		out[i].Count = segment.Count
 		out[i].EraseMode = segment.EraseMode
 		if len(segment.Cells) > 0 {
 			out[i].Cells = make([]history.Cell, len(segment.Cells))
@@ -389,6 +430,14 @@ func parseAltScreenMode(text string, final byte) (bool, bool) {
 		}
 	}
 	return false, false
+}
+
+func firstCSIParam(text string, fallback int) int {
+	params := parseSGRParams(text)
+	if len(params) == 0 || params[0] <= 0 {
+		return fallback
+	}
+	return params[0]
 }
 
 func parseSGRExtendedColor(params []int, start int) (string, int, bool) {
