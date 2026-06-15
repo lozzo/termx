@@ -212,6 +212,26 @@ func TestContentViewportPreservesANSICellStyleAndWideTruncation(t *testing.T) {
 	}
 }
 
+func TestContentViewportPreservesANSICellStyleOnPaddedTail(t *testing.T) {
+	style := ANSICellStyle{BG: "ansi:4"}
+	line := Line{Cells: []Cell{{
+		Text:            "BG",
+		Width:           6,
+		ANSIStyle:       style,
+		TerminalContent: true,
+		Safe:            true,
+	}}}
+
+	visible := contentViewportLineWindow(line, 2, 4)
+
+	if got := visible.PlainString(); got != "    " {
+		t.Fatalf("padded terminal tail should render as visible spaces, got %q", got)
+	}
+	if len(visible.Cells) != 1 || visible.Cells[0].ANSIStyle != style || visible.Cells[0].Width != 4 {
+		t.Fatalf("padded terminal tail should keep source ANSI background, got %#v", visible.Cells)
+	}
+}
+
 func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 	lines, regions, cursor := emptyPaneContentLayout("pane-1", 0)
 	result := RenderContentViewport(ContentRenderRequest{

@@ -324,7 +324,7 @@ func contentViewportLineWindow(line Line, start int, width int) Line {
 		}
 		blankWidth := minInt(width, outWidth+visibleWidth) - outWidth
 		if blankWidth > 0 {
-			cells = append(cells, contentViewportBlankRun(blankWidth))
+			cells = append(cells, contentViewportStyledBlankRun(blankWidth, cell))
 			outWidth += blankWidth
 		}
 	}
@@ -339,6 +339,15 @@ func contentViewportBlankRun(width int) Cell {
 		return Cell{}
 	}
 	return Cell{Text: strings.Repeat(" ", width), Width: width, Safe: true}
+}
+
+func contentViewportStyledBlankRun(width int, source Cell) Cell {
+	cell := contentViewportBlankRun(width)
+	// 中文说明：裁剪落在 terminal cell 的声明宽度尾部时，空白列仍属于该 cell 的视觉区域。
+	cell.Style = source.Style
+	cell.ANSIStyle = source.ANSIStyle
+	cell.TerminalContent = source.TerminalContent
+	return cell
 }
 
 func contentViewportBlankCell() Cell {
