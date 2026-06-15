@@ -12,7 +12,6 @@ type HistoryTrack struct {
 	overwrite  bool
 	altScreen  bool
 	generation Generation
-	screenCols int
 	screenRows int
 }
 
@@ -50,17 +49,6 @@ func (track *HistoryTrack) SetPrimaryScreenRows(rows int) {
 	track.screenRows = rows
 }
 
-// SetPrimaryScreenSize 只记录当前 primary screen 尺寸。cols 用于把 BCE
-// erase-to-EOL 这类终端语义转成 logical line 内的带背景空白 footprint；
-// rows 仍用于判断 mutable frontier 何时可以 commit。
-func (track *HistoryTrack) SetPrimaryScreenSize(cols int, rows int) {
-	if cols < 0 {
-		cols = 0
-	}
-	track.screenCols = cols
-	track.SetPrimaryScreenRows(rows)
-}
-
 func (track *HistoryTrack) Apply(event HistoryEvent) error {
 	switch event.Kind {
 	case EventWritePrimaryCells:
@@ -74,7 +62,7 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 	case EventCursorHorizontalAbsolute:
 		return track.cursorHorizontalAbsolute(event.Count)
 	case EventEraseInLine:
-		return track.eraseInLine(event.EraseMode, event.Style)
+		return track.eraseInLine(event.EraseMode)
 	case EventEraseInDisplay:
 		return track.eraseInDisplay(event.EraseMode)
 	case EventSealLogicalLine:
@@ -294,7 +282,7 @@ func (track *HistoryTrack) activeCursorLineValid() bool {
 	return true
 }
 
-func (track *HistoryTrack) eraseInLine(mode int, style CellStyle) error {
+func (track *HistoryTrack) eraseInLine(mode int) error {
 	if track.altScreen || track.activeLine == 0 {
 		return nil
 	}
@@ -308,7 +296,7 @@ func (track *HistoryTrack) eraseInLine(mode int, style CellStyle) error {
 	if !ok || line.Seal != SealStateOpen {
 		return nil
 	}
-	line.Cells = eraseLineCellsAtColumn(line.Cells, track.activeCol, mode, track.screenCols, eraseBlankStyle(style))
+	line.Cells = eraseLineCellsAtColumn(line.Cells, track.activeCol, mode)
 	line.Dirty = true
 	line, err := track.store.ReplaceLine(line)
 	if err != nil {
@@ -505,7 +493,7 @@ func (track *HistoryTrack) eraseActiveLineWithoutBump(mode int) (bool, error) {
 		return false, nil
 	}
 	next := line.Clone()
-	next.Cells = eraseLineCellsAtColumn(next.Cells, track.activeCol, mode, 0, CellStyle{})
+	next.Cells = eraseLineCellsAtColumn(next.Cells, track.activeCol, mode)
 	next.Dirty = true
 	replaced, err := track.store.ReplaceLine(next)
 	if err != nil {
@@ -878,67 +866,32 @@ func compactMutationCells(cells []Cell) []Cell {
 	return out
 }
 
-func eraseLineCellsAtColumn(existing []Cell, column int, mode int, screenCols int, style CellStyle) []Cell {
+func eraseLineCellsAtColumn(existing []Cell, column int, mode int) []Cell {
 	base := expandUnmeasuredCellsForMutation(existing)
+	if len(base) == 0 {
+		return nil
+	}
 	if column < 0 {
 		column = 0
 	}
-	rowStart := 0
-	rowEnd := len(base)
-	if screenCols > 0 {
-		rowStart = (column / screenCols) * screenCols
-		rowEnd = rowStart + screenCols
+	if column > len(base) {
+		column = len(base)
 	}
-	eraseFrom := column
-	eraseTo := rowEnd
 	switch mode {
 	case 1:
-		eraseFrom = rowStart
-		eraseTo = column + 1
+		for i := 0; i <= column && i < len(base); i++ {
+			base[i] = Cell{Text: " ", Width: 1}
+		}
 	case 2:
-		eraseFrom = rowStart
-		eraseTo = rowEnd
+		for i := range base {
+			base[i] = Cell{Text: " ", Width: 1}
+		}
 	default:
-		eraseFrom = column
-		eraseTo = rowEnd
-	}
-	if eraseFrom < 0 {
-		eraseFrom = 0
-	}
-	targetLen := len(base)
-	if styleCreatesVisibleBlank(style) && eraseTo > targetLen {
-		targetLen = eraseTo
-	}
-	base = ensureMutationCellLen(base, targetLen)
-	if eraseTo > len(base) {
-		eraseTo = len(base)
-	}
-	if eraseFrom > eraseTo {
-		eraseFrom = eraseTo
-	}
-	for i := eraseFrom; i < eraseTo; i++ {
-		base[i] = Cell{Text: " ", Width: 1, Style: style}
+		for i := column; i < len(base); i++ {
+			base[i] = Cell{Text: " ", Width: 1}
+		}
 	}
 	return compactMutationCells(base)
-}
-
-func eraseBlankStyle(style CellStyle) CellStyle {
-	return CellStyle{BG: style.BG}
-}
-
-func styleCreatesVisibleBlank(style CellStyle) bool {
-	return style.BG != ""
-}
-
-func ensureMutationCellLen(cells []Cell, target int) []Cell {
-	if target <= len(cells) {
-		return cells
-	}
-	padding := make([]Cell, target-len(cells))
-	for i := range padding {
-		padding[i] = Cell{Text: " ", Width: 1}
-	}
-	return append(cells, padding...)
 }
 
 func minInt(a, b int) int {

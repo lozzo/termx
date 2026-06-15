@@ -12,7 +12,7 @@ func BenchmarkHistoryPipelineIngestPlainLogBatch(b *testing.B) {
 	b.SetBytes(int64(len(output)))
 
 	for i := 0; i < b.N; i++ {
-		pipeline := newTerminalHistoryPipeline(80, 24)
+		pipeline := newTerminalHistoryPipeline(24)
 		if err := pipeline.Ingest(output); err != nil {
 			b.Fatalf("ingest plain output: %v", err)
 		}
@@ -25,7 +25,7 @@ func BenchmarkHistoryPipelineIngestLineEditBatch(b *testing.B) {
 	b.SetBytes(int64(len(output)))
 
 	for i := 0; i < b.N; i++ {
-		pipeline := newTerminalHistoryPipeline(80, 24)
+		pipeline := newTerminalHistoryPipeline(24)
 		if err := pipeline.Ingest(output); err != nil {
 			b.Fatalf("ingest line-edit output: %v", err)
 		}

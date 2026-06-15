@@ -760,44 +760,6 @@ func TestRenderVMBuilderCopyHistoryMaterializesPaddedCells(t *testing.T) {
 	}
 }
 
-func TestRendererCopyHistoryPreservesExplicitStyledSpacesInFinalFrame(t *testing.T) {
-	style := state.HistoryCellStyle{BG: "ansi:4"}
-	root := state.Root{
-		Viewport: state.ViewportStore{Valid: true, Cols: 18, Rows: 7},
-		History: state.HistoryStore{
-			TerminalID: "term-1",
-			Token:      "tok-1",
-			Cols:       8,
-			Rows: []state.HistoryRow{{
-				Text:   "BG    X",
-				LineID: 10,
-				Cells: []state.HistoryCell{
-					{Text: "BG    X", Width: 7, Style: style},
-				},
-			}},
-		},
-		CopyMode: state.CopyModeStore{
-			Active:     true,
-			TerminalID: "term-1",
-			BoundToken: "tok-1",
-			BoundCols:  8,
-		},
-	}
-
-	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
-	layer := firstLayer(t, result, LayerPanel)
-	if got := layer.Lines[0].PlainString(); !strings.Contains(got, "BG    X") {
-		t.Fatalf("copy history content layer should keep explicit styled spaces, got %#v", plainContentViewportLines(layer.Lines))
-	}
-	frameLine := result.Frame().ANSILines[2]
-	if strings.Count(frameLine, "\x1b[44m ") < 4 ||
-		!strings.Contains(frameLine, "\x1b[44mB") ||
-		!strings.Contains(frameLine, "\x1b[44mG") ||
-		!strings.Contains(frameLine, "\x1b[44mX") {
-		t.Fatalf("final ANSI frame should keep background over explicit spaces, got %q", frameLine)
-	}
-}
-
 func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{

@@ -21,7 +21,6 @@ type historyOutputSegment struct {
 	EnterAltScreen           bool
 	Count                    int
 	EraseMode                int
-	Style                    history.CellStyle
 }
 
 func parseHistoryOutput(output string) []historyOutputSegment {
@@ -158,7 +157,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		if len(params) > 0 {
 			mode = params[0]
 		}
-		parser.segments = append(parser.segments, historyOutputSegment{EraseInLine: true, EraseMode: mode, Style: parser.style})
+		parser.segments = append(parser.segments, historyOutputSegment{EraseInLine: true, EraseMode: mode})
 		return end + 1
 	}
 	switch final {
@@ -414,7 +413,6 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 		out[i].EnterAltScreen = segment.EnterAltScreen
 		out[i].Count = segment.Count
 		out[i].EraseMode = segment.EraseMode
-		out[i].Style = segment.Style
 		if len(segment.Cells) > 0 {
 			out[i].Cells = make([]history.Cell, len(segment.Cells))
 			copy(out[i].Cells, segment.Cells)

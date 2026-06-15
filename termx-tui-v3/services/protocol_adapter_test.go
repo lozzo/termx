@@ -384,41 +384,6 @@ func TestProtocolCoreClientAdapterPreservesTrailingBlankHistoryCells(t *testing.
 	}
 }
 
-func TestProtocolCoreClientAdapterPreservesStyledTrailingBlankHistoryCells(t *testing.T) {
-	style := protocol.CellStyle{BG: "ansi:4"}
-	client := &fakeProtocolHistoryClient{
-		window: &protocol.HistoryWindow{
-			TerminalID: "term-1",
-			Token:      "tok-1",
-			Op:         protocol.HistoryWindowReplace,
-			Size:       protocol.Size{Cols: 8, Rows: 24},
-			Rows: []protocol.CompactRow{protocol.CompactRowFromCellsPreserveTrailingBlankCells([]protocol.Cell{
-				{Content: "B", Width: 1, Style: style},
-				{Content: "G", Width: 1, Style: style},
-				{Content: " ", Width: 1, Style: style},
-				{Content: " ", Width: 1, Style: style},
-			}, true)},
-			RowLineIDs: []uint64{42},
-			RowInLine:  []int{0},
-		},
-	}
-	adapter := ProtocolCoreClientAdapter{Client: client}
-
-	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 8, Rows: 20})
-	if err != nil {
-		t.Fatalf("latest: %v", err)
-	}
-	row := result.Window.Rows[0]
-	if row.Text != "BG  " || state.HistoryRowDisplayWidth(row) != 4 || len(row.Cells) != 4 {
-		t.Fatalf("adapter should preserve styled trailing blank row footprint, got %#v", row)
-	}
-	for i, cell := range row.Cells {
-		if cell.Width != 1 || cell.Style.BG != "ansi:4" {
-			t.Fatalf("styled trailing blank cell %d should keep background, got %#v", i, cell)
-		}
-	}
-}
-
 func TestProtocolCoreClientAdapterMaterializesAuthoritativeCellPadding(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{

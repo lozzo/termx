@@ -29,7 +29,7 @@ func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker
 		info:    info.Clone(),
 		process: process,
 		live:    live.NewSurfaceTrack(size),
-		history: newTerminalHistoryPipeline(int(info.Size.Cols), int(info.Size.Rows)),
+		history: newTerminalHistoryPipeline(int(info.Size.Rows)),
 		events:  events,
 		update:  update,
 	}
@@ -123,7 +123,7 @@ func (terminal *Terminal) Resize(size Size) error {
 	terminal.live.Resize(live.SurfaceSize{Cols: int(size.Cols), Rows: int(size.Rows)})
 	terminal.liveMu.Unlock()
 
-	if err := terminal.historyPipeline().Resize(int(size.Cols), int(size.Rows), resizeHistoryEvent(oldSize, size)); err != nil {
+	if err := terminal.historyPipeline().Resize(int(size.Rows), resizeHistoryEvent(oldSize, size)); err != nil {
 		return err
 	}
 	terminal.syncInfo(info)
@@ -166,7 +166,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.liveMu.Lock()
 	terminal.live = live.NewSurfaceTrack(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
 	terminal.liveMu.Unlock()
-	terminal.resetHistoryPipeline(int(info.Size.Cols), int(info.Size.Rows))
+	terminal.resetHistoryPipeline(int(info.Size.Rows))
 	_ = old.Close()
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
@@ -226,9 +226,9 @@ func (terminal *Terminal) historyPipeline() *terminalHistoryPipeline {
 	return terminal.history
 }
 
-func (terminal *Terminal) resetHistoryPipeline(cols int, rows int) {
+func (terminal *Terminal) resetHistoryPipeline(rows int) {
 	terminal.historyMu.Lock()
-	terminal.history = newTerminalHistoryPipeline(cols, rows)
+	terminal.history = newTerminalHistoryPipeline(rows)
 	terminal.historyMu.Unlock()
 	terminal.queueMu.Lock()
 	terminal.historyQ = nil
