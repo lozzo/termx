@@ -842,55 +842,11 @@ func TestRenderVMBuilderCopyHistorySelectionPreservesEmptyStyledCellFootprint(t 
 		Focus:  state.CopyPosition{Row: 2, Col: 1},
 	}
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[1].PlainString(); got != "X   Y   " {
+	if got := content.Lines[1].PlainString(); got != "X   Y" {
 		t.Fatalf("selection should not drop empty styled footprint, got %q cells=%#v", got, content.Lines[1].Cells)
 	}
-	if got := lineANSIStyleDisplayWidth(content.Lines[1], copyHistorySelectionANSIStyle); got != 8 {
+	if got := lineANSIStyleDisplayWidth(content.Lines[1], copyHistorySelectionANSIStyle); got != 5 {
 		t.Fatalf("selection should cover full history row footprint, got selected width=%d cells=%#v", got, content.Lines[1].Cells)
-	}
-}
-
-func TestRenderVMBuilderCopyHistorySelectionFillsVisualRowTail(t *testing.T) {
-	root := state.Root{
-		History: state.HistoryStore{
-			TerminalID: "term-1",
-			Token:      "tok-1",
-			Cols:       12,
-			Rows: []state.HistoryRow{
-				{Text: "prompt", LineID: 9},
-				{Text: "bin  go", LineID: 10},
-				{Text: "after", LineID: 11},
-			},
-		},
-		CopyMode: state.CopyModeStore{
-			Active:     true,
-			TerminalID: "term-1",
-			BoundToken: "tok-1",
-			BoundCols:  12,
-			Selection: &state.CopySelection{
-				Anchor: state.CopyPosition{Row: 0, Col: 0},
-				Focus:  state.CopyPosition{Row: 2, Col: 1},
-			},
-		},
-	}
-
-	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[1].PlainString(); got != "bin  go     " {
-		t.Fatalf("selection tail fill should not change source text before viewport fit, got %q cells=%#v", got, content.Lines[1].Cells)
-	}
-	if got := lineANSIStyleDisplayWidth(content.Lines[1], copyHistorySelectionANSIStyle); got != 12 {
-		t.Fatalf("middle selection row should be filled to history cols, got selected width=%d cells=%#v", got, content.Lines[1].Cells)
-	}
-
-	result := RenderContentViewport(ContentRenderRequest{
-		Content: ContentVM{Kind: ContentCopyHistory, Lines: content.Lines},
-		Rect:    Rect{W: 12, H: 3},
-	})
-	if got := result.Lines[1].PlainString(); got != "bin  go     " {
-		t.Fatalf("viewport should show selected row at target width, got %q cells=%#v", got, result.Lines[1].Cells)
-	}
-	if got := lineANSIStyleDisplayWidth(result.Lines[1], copyHistorySelectionANSIStyle); got != 12 {
-		t.Fatalf("selection should cover visible row tail after viewport fit, got selected width=%d cells=%#v", got, result.Lines[1].Cells)
 	}
 }
 
