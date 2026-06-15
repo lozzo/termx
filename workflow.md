@@ -195,11 +195,12 @@
 | 215E1-R22. SK copy history cursor wheel 与非 active pane 保持回归 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修正 R20/R21 真实语义：滚轮先移动 copy cursor，cursor 留在可见区内时只复投光标、不重画内容；cursor 到可见区边缘后才推动 viewport；copy/history 按绑定 pane 展示，点击其他 panel 不退出，重新点回来能续上 |
 | 215E1-R23. SK copy history selection 颜色回归 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已把 copy/history 被选中文本改成灰色字体、黄色背景；只改显示样式，不改 selection/copy 文本语义，搜索命中仍保留原 warning 高亮 |
 | 215E1-R24. SK clipboard history core storage | 完成 | `termx-tui-v3/`、`termx-cli/`、`workflow.md` | 已把 `H` 打开的 copy list 从本地内存升级为 core-v2 daemon storage 托管：复制后写入 storage，打开弹窗时读取，编辑/删除后回写；UI 仍复用现有 clipboard history overlay |
+| 215E1-R25. SK global frame presenter 防闪烁 | 完成 | `termx-tui-v3/terminalhost/`、`workflow.md` | 已给真实 TTY 输出补一层 V3 全局 frame presenter：同尺寸帧只按变化行绝对定位增量写，不再对每个变化行先清整行；首帧/resize 仍全量校准，降低 Ctrl-V 进入 copy mode 和远程 SSH 下的大面积闪烁 |
 
 当前下一步：
 
-- `215E1-R24 clipboard history core storage` 已完成
-- 准入：`cd termx-tui-v3 && go test ./... -count=1` 已通过；`cd termx-cli && go test ./... -count=1` 已通过
+- `215E1-R25 global frame presenter 防闪烁` 已完成
+- 准入：`cd termx-tui-v3 && go test ./... -count=1` 已通过；`cd termx-tui-v3 && go test ./terminalhost -run '^$' -bench 'BenchmarkFrameSink' -benchmem` 已通过
 
 ## 6. 必做证据
 

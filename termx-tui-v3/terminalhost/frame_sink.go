@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 )
 
@@ -76,15 +77,12 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	builder.WriteString(hideCursor)
 	if !fullRepaint && sink.writeScrollShift(&builder, lines) {
 		// 一行滚动时让终端移动已有行，只补新露出的一行；避免滚轮每次重写整块 copy history。
+	} else if !fullRepaint {
+		sink.writePresentedRows(&builder, lines, width)
 	} else {
-		if fullRepaint {
-			builder.WriteString(cursorHome)
-			builder.WriteString(clearScreen)
-		}
+		builder.WriteString(cursorHome)
+		builder.WriteString(clearScreen)
 		for i, line := range lines {
-			if !fullRepaint && i < len(sink.lastLines) && sink.lastLines[i] == line {
-				continue
-			}
 			// 满宽 frame 写到最后一列后继续输出换行，会在部分终端触发额外自动换行；
 			// 每行绝对定位可以保持 pane 竖向边框连续。
 			builder.WriteString(cursorPosition(i+1, 1))
@@ -135,6 +133,48 @@ func (sink *FrameSink) writeScrollShift(builder *strings.Builder, lines []string
 		return true
 	}
 	return false
+}
+
+func (sink *FrameSink) writePresentedRows(builder *strings.Builder, lines []string, width int) {
+	for row := 0; row < len(lines); row++ {
+		if row < len(sink.lastLines) && sink.lastLines[row] == lines[row] {
+			continue
+		}
+		builder.WriteString(cursorPosition(row+1, 1))
+		// 中文说明：同尺寸帧不清整行，直接覆盖变化行；新内容变短时补空格盖掉旧尾巴，
+		// 避免 clear-line 造成整行闪烁。
+		builder.WriteString(presentedRowLine(lines[row], rowWidth(width, lines[row], sink.lastLines[row])))
+		builder.WriteString(render.ANSIReset)
+	}
+}
+
+func presentedRowLine(line string, width int) string {
+	displayWidth := frameSinkLineWidth(line)
+	if width <= displayWidth {
+		return line
+	}
+	return line + render.ANSIReset + strings.Repeat(" ", width-displayWidth)
+}
+
+func rowWidth(frameWidth int, next string, previous string) int {
+	width := frameWidth
+	if nextWidth := frameSinkLineWidth(next); width < nextWidth {
+		width = nextWidth
+	}
+	if previousWidth := frameSinkLineWidth(previous); width < previousWidth {
+		width = previousWidth
+	}
+	return width
+}
+
+func frameSinkLineWidth(line string) int {
+	for i := 0; i < len(line); i++ {
+		b := line[i]
+		if b == '\x1b' || b < 0x20 || b >= 0x7f {
+			return xansi.StringWidth(line)
+		}
+	}
+	return len(line)
 }
 
 func (sink *FrameSink) writePatchFrame(frame render.Frame) error {

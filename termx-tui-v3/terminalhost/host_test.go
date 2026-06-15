@@ -475,8 +475,8 @@ func TestFrameSinkWritesOnlyChangedRows(t *testing.T) {
 	if strings.Contains(got, clearScreen) {
 		t.Fatalf("same-size changed frame should not clear the screen, got %q", got)
 	}
-	if strings.Contains(got, cursorPosition(1, 1)+clearLine+"one") || !strings.Contains(got, cursorPosition(2, 1)+clearLine+"three") {
-		t.Fatalf("expected only second row repaint, got %q", got)
+	if strings.Contains(got, clearLine) || strings.Contains(got, cursorPosition(1, 1)+"one") || !strings.Contains(got, cursorPosition(2, 1)+"three") {
+		t.Fatalf("expected only second row presenter write without clear-line, got %q", got)
 	}
 }
 
