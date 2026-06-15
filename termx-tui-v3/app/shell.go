@@ -1292,7 +1292,7 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 }
 
 func invalidateCopyModeForClosedPane(root state.Root, paneID string) state.Root {
-	if paneID == "" || !root.CopyMode.Active || root.CopyMode.PaneID != paneID {
+	if paneID == "" || !copyModeInputContext(root.CopyMode) || root.CopyMode.PaneID != paneID {
 		return root
 	}
 	root.History = root.History.InvalidateWindow()
@@ -1301,7 +1301,7 @@ func invalidateCopyModeForClosedPane(root state.Root, paneID string) state.Root 
 }
 
 func invalidateCopyModeForClosedFloating(root state.Root, floatingID string) state.Root {
-	if floatingID == "" || !root.CopyMode.Active || root.CopyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
+	if floatingID == "" || !copyModeInputContext(root.CopyMode) || root.CopyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
 		return root
 	}
 	root.History = root.History.InvalidateWindow()
@@ -1310,7 +1310,7 @@ func invalidateCopyModeForClosedFloating(root state.Root, floatingID string) sta
 }
 
 func invalidateCopyModeForInactiveView(root state.Root) state.Root {
-	if !root.CopyMode.Active {
+	if !copyModeInputContext(root.CopyMode) {
 		return root
 	}
 	shell := root.Shell.EnsureDefaults()

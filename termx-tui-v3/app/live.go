@@ -392,12 +392,18 @@ func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 }
 
 func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
-	if !root.CopyMode.Active || terminalID == "" || root.CopyMode.TerminalID == terminalID {
+	if !copyModeInputContext(root.CopyMode) || terminalID == "" || root.CopyMode.TerminalID == terminalID {
 		return root
 	}
 	sameView := viewID != "" && root.CopyMode.ViewID == viewID
 	samePane := paneID != "" && root.CopyMode.PaneID == paneID
 	if !sameView && !samePane {
+		return root
+	}
+	if root.CopyMode.Entering {
+		root.History = root.History.InvalidateWindow()
+		root.History.TerminalID = terminalID
+		root.CopyMode = state.CopyModeStore{}
 		return root
 	}
 	// 当前 pane/view 已经重绑到新的 terminal，旧 frozen history 不能继续留在屏幕上。
@@ -567,7 +573,7 @@ func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, 
 	if deps.Terminal == nil {
 		return setLiveError(root, "terminal service missing"), nil
 	}
-	if root.CopyMode.Active {
+	if copyModeInputContext(root.CopyMode) {
 		return root, []Effect{handledEffect{}}
 	}
 	target, ok := liveInputTarget(root)
@@ -576,7 +582,7 @@ func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, 
 		return root.Advance(), []Effect{handledEffect{}}
 	}
 	intent := input.RouteWithOptions(msg.Event, input.RouteOptions{
-		CopyModeActive:           root.CopyMode.Active,
+		CopyModeActive:           copyModeInputContext(root.CopyMode),
 		TerminalMousePassthrough: liveMousePassthroughEnabled(root, msg.Event, target),
 	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
@@ -637,7 +643,7 @@ func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target
 	if event.Kind != input.EventKindMouse || event.RawSeq == "" {
 		return false
 	}
-	if root.Shell.EnsureDefaults().Overlay.Open || root.CopyMode.Active {
+	if root.Shell.EnsureDefaults().Overlay.Open || copyModeInputContext(root.CopyMode) {
 		return false
 	}
 	if target.TerminalID == "" {

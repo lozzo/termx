@@ -59,6 +59,9 @@ func NewUIInputReducer() Reducer {
 		if handled, next, effects := reduceEmptyPaneCTAInput(root, inputMsg.Event); handled {
 			return next, effects
 		}
+		if root.CopyMode.Entering {
+			return root, nil
+		}
 		intent := input.RouteWithMode(inputMsg.Event, root.CopyMode.Active, inputMode(root.Shell.EnsureDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:

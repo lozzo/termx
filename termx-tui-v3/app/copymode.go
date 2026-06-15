@@ -100,7 +100,7 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
 		case InputMsg:
-			intent := input.Route(msg.Event, root.CopyMode.Active)
+			intent := input.Route(msg.Event, copyModeInputContext(root.CopyMode))
 			return reduceCopyModeIntent(root, intent, deps)
 		case CopyModeHistoryResultMsg:
 			return reduceCopyModeHistoryResult(root, msg)
@@ -151,7 +151,14 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 	}
 }
 
+func copyModeInputContext(copyMode state.CopyModeStore) bool {
+	return copyMode.Active || copyMode.Entering
+}
+
 func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDeps) (state.Root, []Effect) {
+	if next, effects, handled := reduceCopyModeEnteringIntent(root, intent); handled {
+		return next, effects
+	}
 	switch intent.Kind {
 	case input.IntentEnterCopyMode:
 		next, effects := beginCopyModeLatest(root, deps)
@@ -190,7 +197,7 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentMouseSelect:
 		if !root.CopyMode.Active {
-			return root, nil
+			return root, []Effect{handledEffect{}}
 		}
 		root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
 		return root.Advance(), []Effect{handledEffect{}}
@@ -205,8 +212,27 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 				return next, append([]Effect{handledEffect{}}, keyEffects...)
 			}
 		}
+		if root.CopyMode.Entering {
+			return root, []Effect{handledEffect{}}
+		}
 		return root, nil
 	}
+}
+
+func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.Root, []Effect, bool) {
+	if !root.CopyMode.Entering {
+		return root, nil, false
+	}
+	if intent.Kind == input.IntentExitCopyMode {
+		if root.History.Pending != nil {
+			root.History.Pending = nil
+		}
+		root.CopyMode = state.CopyModeStore{}
+		return root.Advance(), []Effect{handledEffect{}}, true
+	}
+	// 中文说明：latest 还没回来时 copy/history 尚未真正激活；这段时间只拦截输入，
+	// 防止 p/P/H 或普通按键落到 terminal，也不提前打开依赖 frozen history 的功能。
+	return root, []Effect{handledEffect{}}, true
 }
 
 func reduceCopyModeMouseInput(root state.Root, event input.InputEvent) (state.Root, bool) {
@@ -564,6 +590,9 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		if staleCopyModeHistoryResult(root, msg) {
 			return root, nil
 		}
+		if root.CopyMode.Entering {
+			return setCopyModeEnterError(root, msg.Err.Error()), nil
+		}
 		return setCopyModeError(root, msg.Err.Error()), nil
 	}
 	pending := root.History.Pending
@@ -572,6 +601,9 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 	if err != nil {
 		if errors.Is(err, state.ErrStaleHistoryResponse) {
 			return rejectMatchingHistoryResponse(root, msg, err), nil
+		}
+		if root.CopyMode.Entering {
+			return setCopyModeEnterError(root, err.Error()), nil
 		}
 		return setCopyModeError(root, err.Error()), nil
 	}
@@ -602,12 +634,15 @@ func rejectMatchingHistoryResponse(root state.Root, msg CopyModeHistoryResultMsg
 	// 中文说明：同一个 request 已经返回但被 stale guard 拒绝时，不能继续保留 pending；
 	// 否则 copy history footer 会永久显示 `↑ loading`，并阻止下一次 older 请求重试。
 	root.History.Pending = nil
+	if root.CopyMode.Entering {
+		return setCopyModeEnterError(root, err.Error())
+	}
 	return setCopyModeError(root, err.Error())
 }
 
 func copyModeOwnsPendingHistory(root state.Root) bool {
 	pending := root.History.Pending
-	if pending == nil || !root.CopyMode.Active {
+	if pending == nil || !copyModeInputContext(root.CopyMode) {
 		return false
 	}
 	if pending.TerminalID != "" && root.CopyMode.TerminalID != pending.TerminalID {
@@ -892,4 +927,10 @@ func setCopyModeError(root state.Root, message string) state.Root {
 	root.Surface = root.Surface.SetError(message)
 	root.Session = root.Session.SetError(message)
 	return root.Advance()
+}
+
+func setCopyModeEnterError(root state.Root, message string) state.Root {
+	root.History.Pending = nil
+	root.CopyMode = state.CopyModeStore{}
+	return setCopyModeError(root, message)
 }

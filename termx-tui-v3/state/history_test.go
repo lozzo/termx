@@ -454,13 +454,13 @@ func TestHistoryStoreRejectsOldestFromDifferentFrozenToken(t *testing.T) {
 
 func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
 	copyMode := CopyModeStore{}.BindLatest("pane-1", "pane:pane-1", "term-1", 1, 80, 20)
-	if !copyMode.Active || !copyMode.Empty || copyMode.PaneID != "pane-1" || copyMode.ViewID != "pane:pane-1" || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {
+	if copyMode.Active || !copyMode.Entering || !copyMode.Empty || copyMode.PaneID != "pane-1" || copyMode.ViewID != "pane:pane-1" || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {
 		t.Fatalf("unexpected bound copy mode %#v", copyMode)
 	}
 
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, []HistoryRow{{Text: "new", LineID: 20}})
 	copyMode = copyMode.AcceptLatest(latest, latest.Cols, len(latest.Rows))
-	if copyMode.BoundToken != "tok-1" || copyMode.Empty {
+	if !copyMode.Active || copyMode.Entering || copyMode.BoundToken != "tok-1" || copyMode.Empty {
 		t.Fatalf("unexpected latest binding %#v", copyMode)
 	}
 

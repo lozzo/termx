@@ -382,6 +382,19 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 	host.SetSize(80, 24)
 	core := &blockingHistoryClient{}
 	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, NewAsyncEffectRunner())
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		Cols:       78,
+		Rows:       20,
+		Lines:      []string{"live stays visible while copy history loads"},
+		State:      state.TerminalLiveAttached,
+	}}); err != nil {
+		t.Fatalf("post live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain live surface: %v", err)
+	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
 		t.Fatalf("send ctrl-v: %v", err)
@@ -390,8 +403,8 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 		t.Fatalf("drain ctrl-v: %v", err)
 	}
 
-	if !runtime.State().CopyMode.Active {
-		t.Fatalf("expected copy mode active immediately, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Active || !runtime.State().CopyMode.Entering {
+		t.Fatalf("expected copy mode entering without visible activation, got %#v", runtime.State().CopyMode)
 	}
 	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestLatest {
 		t.Fatalf("expected pending latest request immediately, got %#v", runtime.State().History)
@@ -400,8 +413,8 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 		t.Fatalf("expected async latest request to start, got %#v", core.latestRequests())
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "window pending") {
-		t.Fatalf("expected pending copy-history frame instead of blocked UI, got %#v", frame.Lines)
+	if !frameContains(frame, "live stays visible while copy history loads") || frameContains(frame, "window pending") {
+		t.Fatalf("entering copy mode must keep live pane visible and avoid pending flash, got %#v", frame.Lines)
 	}
 
 	core.finishLatest(services.HistoryResult{
@@ -423,6 +436,48 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 	}
 	if got := historyRowTexts(runtime.State().History.Rows); !reflect.DeepEqual(got, []string{"loaded"}) {
 		t.Fatalf("expected latest history after async completion, got %v", got)
+	}
+	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.Entering {
+		t.Fatalf("latest result should activate copy mode, got %#v", runtime.State().CopyMode)
+	}
+	if frame := lastFrame(t, host.Frames()); !frameContains(frame, "loaded") {
+		t.Fatalf("latest result should render authoritative copy history, got %#v", frame.Lines)
+	}
+}
+
+func TestCopyModeEnteringSwallowsInputAndEscCancelsPendingLatest(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	core := &blockingHistoryClient{}
+	terminal := &services.FakeTerminalService{}
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, terminal, NewAsyncEffectRunner())
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-v: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain ctrl-v: %v", err)
+	}
+	if !runtime.State().CopyMode.Entering || runtime.State().History.Pending == nil {
+		t.Fatalf("expected entering pending copy mode, got copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "x", RawSeq: "x"}); err != nil {
+		t.Fatalf("send x: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain x: %v", err)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("entering copy mode must swallow terminal input, got %#v", terminal.Inputs)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain esc: %v", err)
+	}
+	if runtime.State().CopyMode.Active || runtime.State().CopyMode.Entering || runtime.State().History.Pending != nil {
+		t.Fatalf("esc should cancel entering copy mode and pending latest, copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
 	}
 }
 
@@ -456,8 +511,8 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 		t.Fatalf("duplicate latest while pending must not surface error, got %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "window pending") {
-		t.Fatalf("pending copy mode should stay pending without fake error, got %#v", last.Lines)
+	if !frameContains(last, "live") || frameContains(last, "window pending") {
+		t.Fatalf("duplicate pending latest should keep live pane visible without fake error or pending flash, got %#v", last.Lines)
 	}
 }
 
@@ -4266,8 +4321,8 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 	if frameContains(last, "old-frozen") || frameContains(last, "stale-after-exit") {
 		t.Fatalf("re-enter pending frame must not reuse stale frozen rows, got %#v", last.Lines)
 	}
-	if !frameContains(last, "window pending") {
-		t.Fatalf("re-enter pending frame should show pending authoritative history, got %#v", last.Lines)
+	if !frameContains(last, "live") || frameContains(last, "window pending") {
+		t.Fatalf("re-enter pending should keep live pane visible without stale frozen rows or pending flash, got %#v", last.Lines)
 	}
 }
 
@@ -4286,8 +4341,8 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T
 	if pending == nil || pending.Kind != state.HistoryRequestLatest {
 		t.Fatalf("expected latest pending request, got %#v", runtime.State().History.Pending)
 	}
-	if !runtime.State().CopyMode.Active {
-		t.Fatalf("expected copy mode active while latest pending, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Active || !runtime.State().CopyMode.Entering {
+		t.Fatalf("expected copy mode entering while latest pending, got %#v", runtime.State().CopyMode)
 	}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
@@ -4296,8 +4351,8 @@ func TestCopyModeExitWhileLatestPendingIgnoresDelayedMatchingLatest(t *testing.T
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain esc: %v", err)
 	}
-	if runtime.State().CopyMode.Active {
-		t.Fatalf("exit while pending must leave copy mode inactive, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Active || runtime.State().CopyMode.Entering {
+		t.Fatalf("exit while pending must clear copy mode enter state, got %#v", runtime.State().CopyMode)
 	}
 	if runtime.State().History.Pending != nil {
 		t.Fatalf("exit while pending must clear pending history request, got %#v", runtime.State().History.Pending)
@@ -4412,8 +4467,8 @@ func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testin
 	if runtime.State().Surface.Err != "" || runtime.State().Session.LastError != "" {
 		t.Fatalf("superseded history error must not surface ui error, state=%#v", runtime.State())
 	}
-	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.RequestID != 2 {
-		t.Fatalf("superseded history error must not disturb active copy binding, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Active || !runtime.State().CopyMode.Entering || runtime.State().CopyMode.RequestID != 2 {
+		t.Fatalf("superseded history error must not disturb entering copy binding, got %#v", runtime.State().CopyMode)
 	}
 }
 
@@ -4466,8 +4521,8 @@ func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testi
 	if runtime.State().History.Token != "" || len(runtime.State().History.Rows) != 0 {
 		t.Fatalf("superseded history window must not backfill current history store, got %#v", runtime.State().History)
 	}
-	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.RequestID != 2 {
-		t.Fatalf("superseded history window must not disturb active copy binding, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.Active || !runtime.State().CopyMode.Entering || runtime.State().CopyMode.RequestID != 2 {
+		t.Fatalf("superseded history window must not disturb entering copy binding, got %#v", runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "superseded-window") {

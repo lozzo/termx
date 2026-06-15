@@ -171,6 +171,7 @@ const (
 // CopyModeStore 只保存 copy mode 交互态。
 type CopyModeStore struct {
 	Active      bool
+	Entering    bool
 	PaneID      string
 	ViewID      string
 	TerminalID  string
@@ -526,7 +527,10 @@ func (store HistoryStore) EnsureSourceLines() HistoryStore {
 }
 
 func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID string, requestID RequestID, cols int, rows int) CopyModeStore {
-	store.Active = true
+	// 中文说明：进入 copy/history 分两步。latest 请求飞行期间只拦截输入，
+	// 不把 pane 内容切成 pending 占位；authoritative window 回来后才 Active。
+	store.Active = false
+	store.Entering = true
 	store.PaneID = paneID
 	store.ViewID = viewID
 	store.TerminalID = terminalID
@@ -538,6 +542,8 @@ func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID s
 }
 
 func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
+	store.Active = true
+	store.Entering = false
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
@@ -565,6 +571,8 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 }
 
 func (store CopyModeStore) AcceptOldest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
+	store.Active = true
+	store.Entering = false
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
