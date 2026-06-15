@@ -93,10 +93,30 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 			break
 		}
 		text := xansi.Strip(SafeLine(cell.Text))
+		cellWidth := maxInt(0, cell.Width)
 		if text == "" {
+			if cellWidth > 0 {
+				if cellWidth > remaining {
+					break
+				}
+				// 中文说明：真实 terminal cell 可以只有 footprint 没有文本；它的背景仍必须写进 canvas。
+				c.writeSegmentNoClear(cursor, y, canvasSegment{
+					text:       strings.Repeat(" ", cellWidth),
+					width:      cellWidth,
+					style:      cell.Style,
+					ansiStyle:  cell.ANSIStyle,
+					linkURL:    cell.LinkURL,
+					linkParams: cell.LinkParams,
+					owner:      owner,
+					layer:      layer,
+					terminal:   cell.TerminalContent,
+					safe:       cell.Safe,
+				})
+				cursor += cellWidth
+				remaining -= cellWidth
+			}
 			continue
 		}
-		cellWidth := maxInt(0, cell.Width)
 		if cellWidth > 0 && cellWidth != DisplayWidth(text) {
 			if cellWidth > remaining {
 				break

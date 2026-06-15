@@ -1056,6 +1056,37 @@ func TestHistoryRowSliceDisplayMaterializesAuthoritativePadding(t *testing.T) {
 	}
 }
 
+func TestReflowHistoryLogicalLinesPreservesEmptyStyledCells(t *testing.T) {
+	style := HistoryCellStyle{BG: "ansi:4"}
+	rows, _ := ReflowHistoryLogicalLines([]HistoryLogicalLine{{
+		LineID: 42,
+		Cells: []HistoryCell{
+			{Text: "X", Width: 1},
+			{Text: "", Width: 3, Style: style},
+			{Text: "Y", Width: 1},
+		},
+	}}, 10)
+
+	if len(rows) != 1 || rows[0].Text != "X   Y" || HistoryRowDisplayWidth(rows[0]) != 5 {
+		t.Fatalf("empty styled cell should materialize as blank display columns, got %#v", rows)
+	}
+	if len(rows[0].Cells) != 3 || rows[0].Cells[1].Text != "   " || rows[0].Cells[1].Width != 3 || rows[0].Cells[1].Style != style {
+		t.Fatalf("empty styled cell should keep its visual footprint and style, got %#v", rows[0].Cells)
+	}
+
+	rows, _ = ReflowHistoryLogicalLines([]HistoryLogicalLine{{
+		LineID: 43,
+		Cells: []HistoryCell{
+			{Text: "X", Width: 1},
+			{Text: "", Width: 3, Style: style},
+			{Text: "Y", Width: 1},
+		},
+	}}, 2)
+	if got := rowTexts(rows); len(got) != 3 || got[0] != "X " || got[1] != "  " || got[2] != "Y" {
+		t.Fatalf("empty styled footprint should wrap by display columns, got rows=%#v texts=%#v", rows, got)
+	}
+}
+
 func historyWindow(
 	op HistoryWindowOp,
 	terminalID string,

@@ -766,6 +766,24 @@ func TestCanvasMatrixTracksOwnerLayerContinuationAndSafeFlag(t *testing.T) {
 	}
 }
 
+func TestCanvasMatrixPreservesEmptyANSICellFootprint(t *testing.T) {
+	style := ANSICellStyle{BG: "ansi:4"}
+	c := newCanvas(5, 1)
+	c.writeLine(0, 0, 5, Line{Cells: []Cell{
+		{Text: "X", Width: 1, TerminalContent: true, Safe: true},
+		{Text: "", Width: 3, ANSIStyle: style, TerminalContent: true, Safe: true},
+		{Text: "Y", Width: 1, TerminalContent: true, Safe: true},
+	}}, "pane-1", LayerPanel)
+
+	line := c.lines()[0]
+	if got := line.PlainString(); got != "X   Y" || line.Width() != 5 {
+		t.Fatalf("empty ANSI cell footprint should materialize as spaces, got text=%q width=%d cells=%#v", got, line.Width(), line.Cells)
+	}
+	if !styledLinesContainANSI([]Line{line}, "   ", style) {
+		t.Fatalf("empty ANSI cell footprint should keep background style, got %#v", line.Cells)
+	}
+}
+
 func TestCanvasMatrixMaterializesWideEmojiContinuationBeforeDots(t *testing.T) {
 	c := newCanvas(6, 1)
 	c.writeLine(0, 0, 6, Line{Cells: []Cell{

@@ -1237,6 +1237,9 @@ func splitHistoryCell(cell HistoryCell, cols int) []HistoryCell {
 	if cols <= 0 {
 		cols = 80
 	}
+	if cell.Text == "" {
+		return splitEmptyHistoryCellFootprint(cell, cols)
+	}
 	clusters := textGraphemeClusters(cell.Text)
 	if len(clusters) == 0 {
 		return nil
@@ -1260,6 +1263,9 @@ func splitHistoryCellForWrap(cell HistoryCell) []HistoryCell {
 	width := HistoryCellDisplayWidth(cell)
 	if width <= 0 {
 		return nil
+	}
+	if cell.Text == "" {
+		return splitEmptyHistoryCellFootprint(cell, 1)
 	}
 	clusters := textGraphemeClusters(cell.Text)
 	if len(clusters) == 0 {
@@ -1286,6 +1292,32 @@ func splitHistoryCellForWrap(cell HistoryCell) []HistoryCell {
 		padding.LinkURL = ""
 		padding.LinkParams = ""
 		out = append(out, padding)
+	}
+	return out
+}
+
+func splitEmptyHistoryCellFootprint(cell HistoryCell, cols int) []HistoryCell {
+	width := HistoryCellDisplayWidth(cell)
+	if width <= 0 {
+		return nil
+	}
+	if cols <= 0 || cols > width {
+		cols = width
+	}
+	out := make([]HistoryCell, 0, (width+cols-1)/cols)
+	for remaining := width; remaining > 0; {
+		partWidth := remaining
+		if partWidth > cols {
+			partWidth = cols
+		}
+		next := cell
+		// 中文说明：空文本 terminal cell 仍有真实列宽，copy/history 需要把它投影成带样式空格。
+		next.Text = strings.Repeat(" ", partWidth)
+		next.Width = partWidth
+		next.LinkURL = ""
+		next.LinkParams = ""
+		out = append(out, next)
+		remaining -= partWidth
 	}
 	return out
 }
