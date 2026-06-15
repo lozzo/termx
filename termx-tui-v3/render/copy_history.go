@@ -148,11 +148,11 @@ func copyHistoryNextStyleBreak(row int, cursor int, lineWidth int, selection cop
 }
 
 func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, linkURL string, linkParams string, row int, from int, selection copySelectionRange, search copySearchRange) []Cell {
-	if text == "" {
-		return nil
-	}
 	if width <= 0 {
 		width = DisplayWidth(text)
+	}
+	if width <= 0 {
+		return nil
 	}
 	segments := make([]Cell, 0, 3)
 	globalCursor := from

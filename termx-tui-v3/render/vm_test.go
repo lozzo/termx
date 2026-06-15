@@ -800,6 +800,56 @@ func TestRendererCopyHistoryPreservesStyledTrailingBlankCells(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderCopyHistorySelectionPreservesEmptyStyledCellFootprint(t *testing.T) {
+	blankStyle := state.HistoryCellStyle{BG: "idx:24"}
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       8,
+			Rows: []state.HistoryRow{
+				{Text: "before", LineID: 9},
+				{
+					Text:   "X   Y",
+					LineID: 10,
+					Cells: []state.HistoryCell{
+						{Text: "X", Width: 1},
+						{Text: "", Width: 3, Style: blankStyle},
+						{Text: "Y", Width: 1},
+					},
+				},
+				{Text: "after", LineID: 11},
+			},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  8,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[1].PlainString(); got != "X   Y" {
+		t.Fatalf("history render should materialize empty styled footprint, got %q cells=%#v", got, content.Lines[1].Cells)
+	}
+	if got := lineANSIStyleDisplayWidth(content.Lines[1], ANSICellStyle{BG: "idx:24"}); got != 3 {
+		t.Fatalf("empty history footprint should keep original background before selection, got width=%d cells=%#v", got, content.Lines[1].Cells)
+	}
+
+	root.CopyMode.Selection = &state.CopySelection{
+		Anchor: state.CopyPosition{Row: 0, Col: 0},
+		Focus:  state.CopyPosition{Row: 2, Col: 1},
+	}
+	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[1].PlainString(); got != "X   Y" {
+		t.Fatalf("selection should not drop empty styled footprint, got %q cells=%#v", got, content.Lines[1].Cells)
+	}
+	if got := lineANSIStyleDisplayWidth(content.Lines[1], copyHistorySelectionANSIStyle); got != 5 {
+		t.Fatalf("selection should cover full history row footprint, got selected width=%d cells=%#v", got, content.Lines[1].Cells)
+	}
+}
+
 func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{
@@ -2202,6 +2252,16 @@ func lineHasANSICell(line Line, text string, style ANSICellStyle) bool {
 		}
 	}
 	return false
+}
+
+func lineANSIStyleDisplayWidth(line Line, style ANSICellStyle) int {
+	width := 0
+	for _, cell := range line.Cells {
+		if cell.ANSIStyle == style && cell.Style == "" {
+			width += maxInt(0, cell.Width)
+		}
+	}
+	return width
 }
 
 func lineHasLinkCell(line Line, text string, linkURL string, linkParams string) bool {

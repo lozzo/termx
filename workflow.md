@@ -204,11 +204,12 @@
 | 215E1-R31. SK copy history 真实链路语义 harness | 完成 | `scripts/`、`termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已复用完整 tmux history smoke 增加受控 ANSI 语义场景，真实跑 daemon -> terminal -> attach -> live capture -> copy latest -> copy oldest；同时补 parser 语义单测，固定目前支持的行编辑/erase/背景/提交边界，不把 history parser 改成第二个 terminal emulator |
 | 215E1-R32. SK copy history 背景现场取证 | 完成 | `scripts/`、`workflow.md` | 已补 `bg-forensics` 取证场景：抓 `generate_terminal_stress.py` 真实 raw 输入、live raw dump、copy/history tail raw dump，并解析背景色区间对比；1000/10000 行固定 seed 取证未复现 live/copy 背景丢失 |
 | 215E1-R33. SK copy history live shell 背景复现 | 完成 | `scripts/`、`workflow.md` | 已把背景取证改成截图一致的真实链路：先 attach 到交互 shell，再在 live pane 里发送 stress 命令，抓 live/copy raw 对比；10000 行固定 seed 下未复现未选中状态的 live/copy 背景 cell 差异 |
+| 215E1-R34. SK copy history selection 空白覆盖 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已修复截图里的 selection overlay：history 渲染投影不会再丢弃 `Text="" Width>0` 的空白 footprint；多行选区跨过 history row 时，黄色选区会覆盖文本后的空白 cell |
 
 当前下一步：
 
-- `215E1-R33 copy history live shell 背景复现` 已完成
-- 准入：`scripts/tmux_history_smoke.sh --scenario bg-forensics --lines 10000 --seed 100 --width-hint 120 --attach-size 120x36 --keep-root`、`python3 -m py_compile scripts/analyze_history_bg_forensics.py`、`bash -n scripts/tmux_history_smoke.sh`、`git diff --check` 已通过；本次未复现未选中状态的 live/copy 背景 cell 差异，用户截图新增问题转入 selection overlay 覆盖范围
+- `215E1-R34 copy history selection 空白覆盖` 已完成
+- 准入：`go test ./termx-tui-v3/render -count=1 -run 'CopyHistory|StyledTrailing|EmptyStyledCellFootprint'`、`cd termx-tui-v3 && go test ./... -count=1` 已通过；本次只修 history 渲染投影的空 footprint 保真，不改变 history parser 和复制文本语义
 
 ## 6. 必做证据
 
