@@ -57,6 +57,7 @@ Artifacts:
     bg-forensics-input.raw
     bg-forensics-live.raw.txt
     bg-forensics-copy-tail.raw.txt
+    bg-forensics-copy-tail.raw-preserve.txt
     bg-forensics.report.txt
   floating-owner-resize:
     floating-base.txt
@@ -1870,6 +1871,7 @@ assert_history_semantics_text() {
   local file="$1"
   local prefix="$2"
   assert_contains "$file" "${prefix}_EL_TO_EOL"
+  assert_contains "$file" "${prefix}_EXPLICIT_SPACES"
   assert_contains "$file" "${prefix}_CR_FINAL"
   assert_contains "$file" "${prefix}_GAP   X"
   assert_contains "$file" "${prefix}_T"
@@ -1889,14 +1891,17 @@ run_history_semantics_scenario() {
   capture_preserved_raw_artifact "$SESSION_MAIN" "$pane_main" "history-semantics-live"
   assert_history_semantics_text "$ROOT/history-semantics-live.txt" "HSEM_LIVE"
   assert_bg_spaces_after_marker "$ROOT/history-semantics-live.raw-preserve.txt" "HSEM_LIVE_EL_TO_EOL" "idx:25" 4
+  assert_bg_spaces_after_marker "$ROOT/history-semantics-live.raw-preserve.txt" "HSEM_LIVE_EXPLICIT_SPACES" "idx:35" 4
 
   enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "history-semantics-copy-latest" "HSEM_READY"
   assert_history_semantics_text "$ROOT/history-semantics-copy-latest.txt" "HSEM_LIVE"
   assert_bg_spaces_after_marker "$ROOT/history-semantics-copy-latest.raw-preserve.txt" "HSEM_LIVE_EL_TO_EOL" "idx:25" 4
+  assert_bg_spaces_after_marker "$ROOT/history-semantics-copy-latest.raw-preserve.txt" "HSEM_LIVE_EXPLICIT_SPACES" "idx:35" 4
 
   copy_top_until_contains "$SESSION_MAIN" "$pane_main" "history-semantics-copy-top" "HSEM_COMMITTED_BEGIN" "$G_REPEATS"
   assert_history_semantics_text "$ROOT/history-semantics-copy-top.txt" "HSEM_COMMITTED"
   assert_bg_spaces_after_marker "$ROOT/history-semantics-copy-top.raw-preserve.txt" "HSEM_COMMITTED_EL_TO_EOL" "idx:24" 4
+  assert_bg_spaces_after_marker "$ROOT/history-semantics-copy-top.raw-preserve.txt" "HSEM_COMMITTED_EXPLICIT_SPACES" "idx:34" 4
 
   log "PASS history-semantics-live -> $ROOT/history-semantics-live.txt"
   log "PASS history-semantics-copy-latest -> $ROOT/history-semantics-copy-latest.txt"
@@ -1921,20 +1926,21 @@ run_bg_forensics_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-run-enter" Enter
 
   capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-live" "$(printf '%06d' "$LINES")"
-  enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-copy" "000"
+  enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-copy" "[PgUp] SCROLL"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-bottom" G
   sleep "$G_DELAY"
-  capture_session "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-tail"
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-tail" "$(printf '%06d' "$LINES")"
+  capture_preserved_raw_artifact "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-tail"
 
   python3 "$REPO_ROOT/scripts/analyze_history_bg_forensics.py" \
     --input "$ROOT/bg-forensics-input.raw" \
     --live "$ROOT/bg-forensics-live.raw.txt" \
-    --copy "$ROOT/bg-forensics-copy-tail.raw.txt" \
+    --copy "$ROOT/bg-forensics-copy-tail.raw-preserve.txt" \
     --report "$ROOT/bg-forensics.report.txt"
 
   log "PASS bg-forensics-input -> $ROOT/bg-forensics-input.raw"
   log "PASS bg-forensics-live -> $ROOT/bg-forensics-live.raw.txt"
-  log "PASS bg-forensics-copy-tail -> $ROOT/bg-forensics-copy-tail.raw.txt"
+  log "PASS bg-forensics-copy-tail -> $ROOT/bg-forensics-copy-tail.raw-preserve.txt"
   log "PASS bg-forensics-report -> $ROOT/bg-forensics.report.txt"
 }
 

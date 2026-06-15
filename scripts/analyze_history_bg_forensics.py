@@ -36,6 +36,7 @@ class RowInfo:
     label: str
     plain: str
     bg_cells: int
+    bg_blank_cells: int
     tail_bg_spaces: int
     tail_same_as_last_bg_spaces: int
     last_bg: str | None
@@ -170,6 +171,7 @@ def summarize_capture(path: Path) -> dict[str, RowInfo]:
             label=label,
             plain=plain.rstrip(),
             bg_cells=sum(1 for cell in content if cell.style.effective_bg()),
+            bg_blank_cells=sum(1 for cell in content if cell.ch == " " and cell.style.effective_bg()),
             tail_bg_spaces=sum(tail_bg_counts.values()),
             tail_same_as_last_bg_spaces=tail_bg_counts.get(last_bg or "", 0),
             last_bg=last_bg,
@@ -200,6 +202,7 @@ def summarize_input(path: Path) -> dict[str, RowInfo]:
             label=label,
             plain=plain.rstrip(),
             bg_cells=sum(1 for cell in cells if cell.style.effective_bg()),
+            bg_blank_cells=sum(1 for cell in cells if cell.ch == " " and cell.style.effective_bg()),
             tail_bg_spaces=sum(tail_bg_counts.values()),
             tail_same_as_last_bg_spaces=tail_bg_counts.get(last_bg or "", 0),
             last_bg=last_bg,
@@ -233,8 +236,9 @@ def write_report(
         live = live_rows[label]
         copy = copy_rows[label]
         tail_lost = live.tail_bg_spaces >= min_live_bg_spaces and copy.tail_bg_spaces < live.tail_bg_spaces
+        blank_lost = live.bg_blank_cells >= min_live_bg_spaces and copy.bg_blank_cells < live.bg_blank_cells
         row_lost = live.bg_cells >= min_live_bg_spaces and copy.bg_cells + min_live_bg_spaces <= live.bg_cells
-        if tail_lost or row_lost:
+        if tail_lost or blank_lost or row_lost:
             candidates.append((label, live, copy))
 
     reproduced = bool(candidates)
@@ -244,6 +248,7 @@ def write_report(
         1
         for label in common
         if live_rows[label].bg_cells != copy_rows[label].bg_cells
+        or live_rows[label].bg_blank_cells != copy_rows[label].bg_blank_cells
         or live_rows[label].tail_bg_spaces != copy_rows[label].tail_bg_spaces
     )
     lines: list[str] = [
@@ -270,12 +275,14 @@ def write_report(
                 lines.append(
                     "  input: "
                     f"bg_cells={source.bg_cells} tail_bg_spaces={source.tail_bg_spaces} "
+                    f"bg_blank_cells={source.bg_blank_cells} "
                     f"last_bg={source.last_bg} tail_bg={counts_text(source.tail_bg_counts)} "
                     f"text={short_plain(source.plain)!r}"
                 )
             lines.append(
                 "  live:  "
                 f"bg_cells={live.bg_cells} tail_bg_spaces={live.tail_bg_spaces} "
+                f"bg_blank_cells={live.bg_blank_cells} "
                 f"same_as_last={live.tail_same_as_last_bg_spaces} "
                 f"last_bg={live.last_bg} tail_bg={counts_text(live.tail_bg_counts)} "
                 f"text={short_plain(live.plain)!r}"
@@ -283,6 +290,7 @@ def write_report(
             lines.append(
                 "  copy:  "
                 f"bg_cells={copy.bg_cells} tail_bg_spaces={copy.tail_bg_spaces} "
+                f"bg_blank_cells={copy.bg_blank_cells} "
                 f"same_as_last={copy.tail_same_as_last_bg_spaces} "
                 f"last_bg={copy.last_bg} tail_bg={counts_text(copy.tail_bg_counts)} "
                 f"text={short_plain(copy.plain)!r}"
@@ -296,8 +304,10 @@ def write_report(
             lines.append(
                 f"- label={label} "
                 f"input_bg={source.bg_cells if source else 'n/a'} "
+                f"input_bg_blank={source.bg_blank_cells if source else 'n/a'} "
                 f"input_tail_bg={source.tail_bg_spaces if source else 'n/a'} "
                 f"live_bg={live.bg_cells} copy_bg={copy.bg_cells} "
+                f"live_bg_blank={live.bg_blank_cells} copy_bg_blank={copy.bg_blank_cells} "
                 f"live_tail_bg={live.tail_bg_spaces} copy_tail_bg={copy.tail_bg_spaces} "
                 f"live_tail={counts_text(live.tail_bg_counts)} copy_tail={counts_text(copy.tail_bg_counts)}"
             )

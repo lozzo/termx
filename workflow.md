@@ -206,12 +206,12 @@
 | 215E1-R33. SK copy history live shell 背景复现 | 完成 | `scripts/`、`workflow.md` | 已把背景取证改成截图一致的真实链路：先 attach 到交互 shell，再在 live pane 里发送 stress 命令，抓 live/copy raw 对比；10000 行固定 seed 下未复现未选中状态的 live/copy 背景 cell 差异 |
 | 215E1-R34. SK copy history selection 空白覆盖 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已修复截图里的 selection overlay：history 渲染投影不会再丢弃 `Text="" Width>0` 的空白 footprint；多行选区跨过 history row 时，黄色选区会覆盖文本后的空白 cell |
 | 215E1-R35. SK copy history selection 行尾填充 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已撤回上一版 selection 行尾填充症状补丁；这类空白背景必须来自真实 history cell，不应该靠 copy selection overlay 临时补 |
-| 215E1-R36. SK copy history 背景空格真实保真 | 进行中 | `termx-core-v2/`、`termx-tui-v3/`、`scripts/`、`workflow.md` | 修复真实截图里非选中 history/copy 模式背景空格丢失：带背景但没有字符的格子必须作为空格 cell 进入 history 数据和渲染链路，不能靠 selection overlay 临时补 |
+| 215E1-R36. SK copy history 背景空格真实保真 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`scripts/`、`workflow.md` | 已修复 core history projection/mutation 丢真实空白 footprint：`Text="" Width>0` 和 `Width > text width` 的带背景空格会物化成 history 空格 cell，再经 protocol/TUI/copy render 保真；不靠 selection overlay，也不把普通 SGR 背景凭空铺满整行 |
 
 当前下一步：
 
-- `215E1-R36 copy history 背景空格真实保真` 进行中
-- 当前要先定位空背景格是在 core history 生成时丢失，还是 protocol/TUI 投影时丢失；不再把 selection overlay 当根因修复
+- `215E1-R36 copy history 背景空格真实保真` 已完成
+- 准入：core history/protocol/TUI 相关测试通过；`history-semantics` tmux harness 同时断言 live、copy latest、copy top 的 `CSI K` 行尾背景和 explicit styled spaces；`bg-forensics` report 已能列出 `bg_blank_cells` 并在固定 seed 下显示 live/copy 背景空格一致
 
 ## 6. 必做证据
 

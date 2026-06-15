@@ -1287,6 +1287,41 @@ func TestProtocolHistoryWindowPreservesStyledTrailingBlankCells(t *testing.T) {
 	}
 }
 
+func TestProtocolHistoryWindowPreservesStyledPaddedCellFootprintAcrossWrap(t *testing.T) {
+	track := history.NewHistoryTrack()
+	style := history.CellStyle{BG: "idx:24"}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{
+		{Text: "BG", Width: 6, Style: style},
+	}}); err != nil {
+		t.Fatalf("write cells: %v", err)
+	}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		t.Fatalf("commit cells: %v", err)
+	}
+	window, err := track.LatestWindow(history.HistoryWindowRequest{Cols: 4, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+
+	out := protocolHistoryWindowFromCore("term-1", Size{Cols: 4, Rows: 4}, window)
+	if len(out.Rows) != 2 {
+		t.Fatalf("expected padded cell to wrap into two protocol rows, got %#v", out.Rows)
+	}
+	if got := rowText(out.Rows[0]); got != "BG  " {
+		t.Fatalf("first protocol row should keep styled padding, got %q row=%#v", got, out.Rows[0])
+	}
+	if got := rowText(out.Rows[1]); got != "  " {
+		t.Fatalf("second protocol row should keep styled padding, got %q row=%#v", got, out.Rows[1])
+	}
+	for rowIndex, row := range out.Rows {
+		for cellIndex, cell := range row.DecodeCells() {
+			if cell.Width != 1 || cell.Style.BG != "idx:24" {
+				t.Fatalf("row=%d cell=%d should keep bg padded footprint, got %#v", rowIndex, cellIndex, cell)
+			}
+		}
+	}
+}
+
 func TestProtocolServiceHistoryWindowPreservesIngestedANSIStyles(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

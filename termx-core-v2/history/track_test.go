@@ -230,6 +230,30 @@ func TestHistoryTrackPlainSGRDoesNotPadToVisualRowEnd(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackMutationPreservesEmptyStyledFootprint(t *testing.T) {
+	track := NewHistoryTrack()
+	style := CellStyle{BG: "idx:24"}
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
+			{Text: "X", Width: 1},
+			{Text: "", Width: 3, Style: style},
+			{Text: "Y", Width: 1},
+		}},
+		HistoryEvent{Kind: EventCursorBackward, Count: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "Z", Width: 1}}},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "X   Z" {
+		t.Fatalf("mutation should preserve empty styled footprint as spaces, got %q cells=%#v", got, line.Cells)
+	}
+	for i := 1; i <= 3; i++ {
+		if line.Cells[i].Text != " " || line.Cells[i].Width != 1 || line.Cells[i].Style.BG != "idx:24" {
+			t.Fatalf("empty styled footprint cell %d should survive mutation, got %#v cells=%#v", i, line.Cells[i], line.Cells)
+		}
+	}
+}
+
 func TestHistoryTrackEraseInLineModeOneClearsMutablePrefix(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track,

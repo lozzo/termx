@@ -525,15 +525,55 @@ func normalizeProjectionCells(cells []Cell, _ int) []Cell {
 }
 
 func splitMeasuredCell(cell Cell) []Cell {
+	width := cellWidth(cell)
+	if width <= 0 {
+		return nil
+	}
+	if cell.Text == "" {
+		return blankFootprintCells(cell, width)
+	}
 	clusters := textClusters(cell.Text)
 	if len(clusters) == 0 {
 		return nil
 	}
-	out := make([]Cell, 0, len(clusters))
+	naturalWidth := 0
+	for _, cluster := range clusters {
+		naturalWidth += textDisplayWidth(cluster)
+	}
+	capacity := len(clusters)
+	if width > naturalWidth {
+		capacity += width - naturalWidth
+	}
+	out := make([]Cell, 0, capacity)
 	for _, cluster := range clusters {
 		next := cell
 		next.Text = cluster
 		next.Width = textDisplayWidth(cluster)
+		out = append(out, next)
+	}
+	if pad := width - naturalWidth; pad > 0 {
+		padding := cell
+		padding.Text = ""
+		padding.Width = pad
+		padding.LinkURL = ""
+		padding.LinkParams = ""
+		out = append(out, blankFootprintCells(padding, pad)...)
+	}
+	return out
+}
+
+func blankFootprintCells(cell Cell, width int) []Cell {
+	if width <= 0 {
+		return nil
+	}
+	out := make([]Cell, 0, width)
+	for i := 0; i < width; i++ {
+		next := cell
+		// 中文说明：history payload 里只有 footprint 没有文本的格子，投影和 mutation 都必须按真实空格处理。
+		next.Text = " "
+		next.Width = 1
+		next.LinkURL = ""
+		next.LinkParams = ""
 		out = append(out, next)
 	}
 	return out
@@ -585,6 +625,9 @@ func lineTextFromCells(cells []Cell) string {
 	var builder strings.Builder
 	for _, cell := range cells {
 		builder.WriteString(cell.Text)
+		if pad := cellWidth(cell) - textDisplayWidth(cell.Text); pad > 0 {
+			builder.WriteString(strings.Repeat(" ", pad))
+		}
 	}
 	return builder.String()
 }

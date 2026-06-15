@@ -846,7 +846,11 @@ func expandUnmeasuredCellsForMutation(cells []Cell) []Cell {
 	out := make([]Cell, 0, len(cells))
 	for _, cell := range cells {
 		width := cellWidth(cell)
-		if width <= 0 || cell.Text == "" {
+		if width <= 0 {
+			continue
+		}
+		if cell.Text == "" {
+			out = append(out, blankFootprintCells(cell, width)...)
 			continue
 		}
 		if width == 1 && len(textClusters(cell.Text)) == 1 {
@@ -866,7 +870,12 @@ func compactMutationCells(cells []Cell) []Cell {
 	}
 	out := make([]Cell, 0, len(cells))
 	for _, cell := range cells {
-		if cell.Text == "" || cellWidth(cell) <= 0 {
+		width := cellWidth(cell)
+		if width <= 0 {
+			continue
+		}
+		if cell.Text == "" {
+			out = append(out, blankFootprintCells(cell, width)...)
 			continue
 		}
 		out = append(out, cell)

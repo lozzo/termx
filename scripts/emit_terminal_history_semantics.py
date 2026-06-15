@@ -16,6 +16,7 @@ def bg(index: int) -> str:
 def emit_supported_semantics(prefix: str, bg_index: int) -> None:
     sys.stdout.write(f"{prefix}_BEGIN\n")
     sys.stdout.write(f"{bg(bg_index)}{prefix}_EL_TO_EOL\x1b[K{RESET}\n")
+    sys.stdout.write(f"{bg(bg_index + 10)}{prefix}_EXPLICIT_SPACES    {RESET}\n")
     sys.stdout.write(f"{prefix}_CR_OLD_TRAIL\r{prefix}_CR_FINAL\x1b[K\n")
     sys.stdout.write(f"{prefix}_GAP\x1b[3CX\n")
     sys.stdout.write(f"{prefix}_T\tX\n")

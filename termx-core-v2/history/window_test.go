@@ -250,6 +250,33 @@ func TestHistoryWindowSplitsWideStyledTextCellsDuringReflow(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowPreservesStyledPaddedCellFootprintDuringReflow(t *testing.T) {
+	track := NewHistoryTrack()
+	style := CellStyle{BG: "idx:24"}
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
+		{Text: "BG", Width: 6, Style: style},
+	}})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventForceCommitFrontier})
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 4, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"BG  ", "  "}) {
+		t.Fatalf("padded styled cell should keep blank footprint across wrap, got %v rows=%#v", got, window.Rows)
+	}
+	if first := window.Rows[0].Cells; len(first) != 4 {
+		t.Fatalf("first row should materialize text and padding cells, got %#v", first)
+	}
+	for rowIndex, row := range window.Rows {
+		for cellIndex, cell := range row.Cells {
+			if cell.Width != 1 || cell.Style.BG != "idx:24" {
+				t.Fatalf("styled padded cell row=%d cell=%d lost footprint style, got %#v", rowIndex, cellIndex, cell)
+			}
+		}
+	}
+}
+
 func TestHistoryWindowSplitsMixedWidthStyledTextCells(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
