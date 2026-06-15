@@ -587,6 +587,7 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 		t.Fatalf("drain latest: %v", err)
 	}
 	runtime.state.CopyMode.ViewportTop = 3
+	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: 3}
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
 		t.Fatalf("wheel loaded rows: %v", err)
@@ -599,6 +600,9 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	}
 	if runtime.State().CopyMode.ViewportTop != len(olderRows)+2 {
 		t.Fatalf("older prefetch should keep the one-line scrolled content anchored, got %#v", runtime.State().CopyMode)
+	}
+	if runtime.State().CopyMode.Cursor.Row != len(olderRows)+2 {
+		t.Fatalf("older prefetch should keep cursor as scroll truth, got %#v", runtime.State().CopyMode)
 	}
 	if runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-03" {
 		t.Fatalf("older prefetch must fill cache without jumping to older page, rows=%v top=%d", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode.ViewportTop)
@@ -615,6 +619,9 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	}
 	if runtime.State().CopyMode.ViewportTop != len(olderRows)+1 || runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "new-02" {
 		t.Fatalf("wheel should continue moving one row through local cache, rows=%v copy=%#v", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode)
+	}
+	if runtime.State().CopyMode.Cursor.Row != len(olderRows)+1 {
+		t.Fatalf("wheel should move cursor through local cache, got %#v", runtime.State().CopyMode)
 	}
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "old-01") && !frameContains(last, "new-02") {
@@ -683,6 +690,9 @@ func TestCopyModeWheelAtTopRevealsOneOlderRow(t *testing.T) {
 	}
 	if runtime.State().CopyMode.ViewportTop != 9 || runtime.State().History.Rows[runtime.State().CopyMode.ViewportTop].Text != "old-10" {
 		t.Fatalf("wheel at top should reveal exactly one older row, rows=%v copy=%#v", historyRowTexts(runtime.State().History.Rows), runtime.State().CopyMode)
+	}
+	if runtime.State().CopyMode.Cursor.Row != 9 {
+		t.Fatalf("wheel at top should move cursor to revealed older row, got %#v", runtime.State().CopyMode)
 	}
 }
 
@@ -5112,8 +5122,10 @@ func TestCopyModeOlderPrependKeepsCurrentSearchMatch(t *testing.T) {
 		t.Fatalf("expected second match before prepend, got %#v", runtime.State().CopyMode)
 	}
 
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("send older: %v", err)
+	beginPendingOlderForTest(&runtime.state, 2, 0)
+	core.OlderRequests = append(core.OlderRequests, services.HistoryOlderRequest{RequestID: 2})
+	if err := postHistoryResultForTest(runtime, 2, older); err != nil {
+		t.Fatalf("post older: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain older: %v", err)
@@ -5241,8 +5253,10 @@ func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing
 		t.Fatalf("drain selection setup: %v", err)
 	}
 
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("request older: %v", err)
+	beginPendingOlderForTest(&runtime.state, 2, 0)
+	core.OlderRequests = append(core.OlderRequests, services.HistoryOlderRequest{RequestID: 2})
+	if err := postHistoryResultForTest(runtime, 2, core.OlderResponses[0].Window); err != nil {
+		t.Fatalf("post older: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain older: %v", err)
@@ -5328,8 +5342,10 @@ func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.
 		t.Fatalf("expected initial selected suffix before overlap prepend, got %q", got)
 	}
 
-	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
-		t.Fatalf("request older: %v", err)
+	beginPendingOlderForTest(&runtime.state, 2, 0)
+	core.OlderRequests = append(core.OlderRequests, services.HistoryOlderRequest{RequestID: 2})
+	if err := postHistoryResultForTest(runtime, 2, older); err != nil {
+		t.Fatalf("post older: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain older: %v", err)
@@ -5680,6 +5696,28 @@ func historyStoreForCopySelection() state.HistoryStore {
 			{Text: "beta", LineID: 11},
 		},
 	}
+}
+
+func beginPendingOlderForTest(root *state.Root, requestID state.RequestID, scrollDeltaAfterPrepend int) {
+	root.History.Pending = &state.HistoryPendingRequest{
+		ID:                      requestID,
+		Kind:                    state.HistoryRequestOlder,
+		PaneID:                  root.History.PaneID,
+		ViewID:                  root.History.ViewID,
+		TerminalID:              root.History.TerminalID,
+		Cols:                    root.History.Cols,
+		Token:                   root.History.Token,
+		Generation:              root.History.Generation,
+		Cursor:                  root.History.Cursor,
+		Boundary:                root.History.Boundary,
+		ScrollDeltaAfterPrepend: scrollDeltaAfterPrepend,
+	}
+}
+
+func postHistoryResultForTest(runtime *AppRuntime, requestID services.RequestID, window state.HistoryWindow) error {
+	window.PaneID = runtime.state.History.PaneID
+	window.ViewID = runtime.state.History.ViewID
+	return runtime.Post(CopyModeHistoryResultMsg{Result: services.HistoryResult{RequestID: requestID, Window: window}})
 }
 
 func historyRowTexts(rows []state.HistoryRow) []string {

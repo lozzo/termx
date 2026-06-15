@@ -184,7 +184,7 @@ func BenchmarkCopyHistoryRuntimeOlderResultIncremental(b *testing.B) {
 	renderer := render.NewRenderer(render.DefaultTheme())
 	root := copyHistoryPerfRoot(180, 60, 8192)
 	root.CopyMode.ViewportTop = 0
-	root.CopyMode.Cursor = state.CopyPosition{Row: len(root.History.Rows) / 2, Col: 8}
+	root.CopyMode.Cursor = state.CopyPosition{Col: 8}
 	root.History.Pending = &state.HistoryPendingRequest{
 		ID:                      1,
 		Kind:                    state.HistoryRequestOlder,
@@ -337,10 +337,10 @@ func copyHistoryPerfLineScrollReducer() Reducer {
 		}
 		switch inputMsg.Event.Mouse {
 		case input.MouseWheelUp:
-			root.CopyMode = root.CopyMode.Scroll(-1, len(root.History.Rows))
+			root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
 			return root.Advance(), nil
 		case input.MouseWheelDown:
-			root.CopyMode = root.CopyMode.Scroll(1, len(root.History.Rows))
+			root.CopyMode = root.CopyMode.ScrollCursor(1, len(root.History.Rows))
 			return root.Advance(), nil
 		default:
 			return root, nil
@@ -368,13 +368,15 @@ func copyHistoryPerfRoot(cols int, rows int, historyRows int) state.Root {
 		}
 	}
 	history.Rows, history.Lines = state.ReflowHistoryLogicalLines(history.SourceLines, history.Cols)
+	viewportTop := len(history.Rows) / 2
 	copyMode := state.CopyModeStore{
 		Active:      true,
 		PaneID:      state.DefaultPaneID,
 		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
 		TerminalID:  "term-1",
-		ViewportTop: historyRows / 2,
+		ViewportTop: viewportTop,
 		ViewRows:    rows - 4,
+		Cursor:      state.CopyPosition{Row: viewportTop},
 		BoundToken:  "tok-perf",
 		BoundCols:   history.Cols,
 	}

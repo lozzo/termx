@@ -15,6 +15,7 @@ func TestCopyHistoryOlderResultUsesIncrementalPatchWhenVisibleContentOnlyShifts(
 	host.SetSize(80, 24)
 	root := copyHistoryPerfRoot(80, 24, 256)
 	root.CopyMode.ViewportTop = 0
+	root.CopyMode.Cursor = state.CopyPosition{}
 	root.History.Pending = &state.HistoryPendingRequest{
 		ID:                      1,
 		Kind:                    state.HistoryRequestOlder,
@@ -67,6 +68,7 @@ func TestCopyHistoryRewritePatchOffsetsANSIColumnAnchors(t *testing.T) {
 	host.SetSize(80, 24)
 	root := copyHistoryPerfRoot(80, 24, 256)
 	root.CopyMode.ViewportTop = 120
+	root.CopyMode.Cursor = state.CopyPosition{Row: 120}
 	root.History.Rows[119] = state.HistoryRow{
 		Text:   "099975",
 		LineID: 119,
@@ -92,7 +94,7 @@ func TestCopyHistoryRewritePatchOffsetsANSIColumnAnchors(t *testing.T) {
 	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
 	runtime.copyHistoryPatch = cache
 
-	root.CopyMode = root.CopyMode.Scroll(-1, len(root.History.Rows))
+	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
 	runtime.state = root.Advance()
 	if !runtime.tryRenderCopyHistoryPatch() {
 		t.Fatal("expected rewrite patch")

@@ -663,11 +663,11 @@ func (store CopyModeStore) shiftAfterOlderPrepend(insertedRows int) CopyModeStor
 
 func (store CopyModeStore) ApplyDeferredOlderScroll(rows int, totalRows int) CopyModeStore {
 	if rows <= 0 {
-		return store.Scroll(0, totalRows)
+		return store.FollowCursor(totalRows)
 	}
 	// older prepend 已经把原 visible top 重新锚到同一条 logical line；
 	// 这里仅消费用户在等待分页时还想继续向上的行数，保持“请求按页、浏览按行”。
-	return store.Scroll(-rows, totalRows)
+	return store.ScrollCursor(-rows, totalRows)
 }
 
 func (store CopyModeStore) Resize(cols int, rows int) CopyModeStore {
@@ -726,6 +726,38 @@ func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
 		store.Selection = &selection
 	}
 	return store
+}
+
+// ScrollCursor 是 copy/history 的主滚动语义：用户滚动的是 copy cursor。
+// viewport 只负责尽量保住 cursor 的屏幕锚点，避免变回独立的浏览 truth。
+func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore {
+	if totalRows <= 0 {
+		store.ViewportTop = 0
+		store.Cursor = CopyPosition{}
+		return store
+	}
+	height := copyVisibleRowsForStore(store)
+	visibleRow := clampCopyInt(store.Cursor.Row-store.ViewportTop, 0, height-1)
+	nextRow := clampCopyInt(store.Cursor.Row+delta, 0, totalRows-1)
+	store = store.MoveCursor(CopyPosition{Row: nextRow, Col: store.Cursor.Col})
+	maxTop := maxCopyInt(0, totalRows-height)
+	store.ViewportTop = clampCopyInt(nextRow-visibleRow, 0, maxTop)
+	return store.FollowCursor(totalRows)
+}
+
+func (store CopyModeStore) FollowCursor(totalRows int) CopyModeStore {
+	if totalRows <= 0 {
+		store.ViewportTop = 0
+		return store
+	}
+	height := copyVisibleRowsForStore(store)
+	if store.Cursor.Row < store.ViewportTop {
+		store.ViewportTop = store.Cursor.Row
+	}
+	if store.Cursor.Row >= store.ViewportTop+height {
+		store.ViewportTop = store.Cursor.Row - height + 1
+	}
+	return store.Scroll(0, totalRows)
 }
 
 func (store CopyModeStore) SetMark(pos CopyPosition) CopyModeStore {

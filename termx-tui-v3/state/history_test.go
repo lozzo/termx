@@ -632,16 +632,36 @@ func TestCopyModeAcceptOlderFastShiftsSimplePrependWithoutRebind(t *testing.T) {
 }
 
 func TestCopyModeApplyDeferredOlderScrollConsumesPendingRows(t *testing.T) {
-	copyMode := CopyModeStore{Active: true, ViewRows: 5, ViewportTop: 8}
+	copyMode := CopyModeStore{Active: true, ViewRows: 5, ViewportTop: 8, Cursor: CopyPosition{Row: 8, Col: 2}}
 	copyMode = copyMode.ApplyDeferredOlderScroll(1, 30)
 
-	if copyMode.ViewportTop != 7 {
-		t.Fatalf("expected deferred scroll to consume one row, got %d", copyMode.ViewportTop)
+	if copyMode.ViewportTop != 7 || copyMode.Cursor != (CopyPosition{Row: 7, Col: 2}) {
+		t.Fatalf("expected deferred scroll to consume one cursor row, got %#v", copyMode)
 	}
 
 	copyMode = (CopyModeStore{Active: true, ViewRows: 20}).ApplyDeferredOlderScroll(8, 30)
-	if copyMode.ViewportTop != 0 {
-		t.Fatalf("deferred scroll should clamp at history top, got %d", copyMode.ViewportTop)
+	if copyMode.ViewportTop != 0 || copyMode.Cursor != (CopyPosition{}) {
+		t.Fatalf("deferred scroll should clamp cursor at history top, got %#v", copyMode)
+	}
+}
+
+func TestCopyModeScrollCursorKeepsScreenAnchor(t *testing.T) {
+	copyMode := CopyModeStore{
+		Active:      true,
+		ViewRows:    5,
+		ViewportTop: 10,
+		Cursor:      CopyPosition{Row: 14, Col: 3},
+	}
+
+	copyMode = copyMode.ScrollCursor(-1, 30)
+
+	if copyMode.Cursor != (CopyPosition{Row: 13, Col: 3}) || copyMode.ViewportTop != 9 {
+		t.Fatalf("cursor scroll should move cursor and viewport by one anchored row, got %#v", copyMode)
+	}
+
+	copyMode = copyMode.ScrollCursor(10, 30)
+	if copyMode.Cursor.Row != 23 || copyMode.ViewportTop != 19 {
+		t.Fatalf("cursor scroll should keep cursor screen anchor while moving down, got %#v", copyMode)
 	}
 }
 

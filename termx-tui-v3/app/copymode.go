@@ -137,7 +137,7 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
 			return root.Advance(), nil
 		case CopyModeScrollMsg:
-			root.CopyMode = root.CopyMode.Scroll(msg.Delta, len(root.History.Rows))
+			root.CopyMode = root.CopyMode.ScrollCursor(msg.Delta, len(root.History.Rows))
 			return root.Advance(), nil
 		case CopyModeMouseSelectMsg:
 			root.CopyMode = root.CopyMode.MoveCursor(msg.Position)
@@ -209,10 +209,10 @@ func reduceCopyModeMouseInput(root state.Root, event input.InputEvent) (state.Ro
 	}
 	switch event.Mouse {
 	case input.MouseWheelUp:
-		root.CopyMode = root.CopyMode.Scroll(-copyModeLineScrollRows(), len(root.History.Rows))
+		root.CopyMode = root.CopyMode.ScrollCursor(-copyModeLineScrollRows(), len(root.History.Rows))
 		return root.Advance(), true
 	case input.MouseWheelDown:
-		root.CopyMode = root.CopyMode.Scroll(copyModeLineScrollRows(), len(root.History.Rows))
+		root.CopyMode = root.CopyMode.ScrollCursor(copyModeLineScrollRows(), len(root.History.Rows))
 		return root.Advance(), true
 	default:
 		return root, false
@@ -225,10 +225,12 @@ func reduceCopyModeScrollOlder(root state.Root, deps CopyModeDeps, event input.I
 		rows = 1
 	}
 	if root.CopyMode.Active {
-		if root.CopyMode.ViewportTop > 0 {
+		if root.CopyMode.Cursor.Row > 0 {
+			previousCursorRow := root.CopyMode.Cursor.Row
 			previousTop := root.CopyMode.ViewportTop
-			root.CopyMode = root.CopyMode.Scroll(-rows, len(root.History.Rows))
-			unconsumedRows := rows - previousTop
+			root.CopyMode = root.CopyMode.ScrollCursor(-rows, len(root.History.Rows))
+			consumedRows := previousCursorRow - root.CopyMode.Cursor.Row
+			unconsumedRows := rows - consumedRows
 			if unconsumedRows < 0 {
 				unconsumedRows = 0
 			}
@@ -240,7 +242,7 @@ func reduceCopyModeScrollOlder(root state.Root, deps CopyModeDeps, event input.I
 				// 本地已加载区域先消费滚动；跨过顶部但 older 仍在飞时，只把没消费的行数挂到 pending。
 				root.History.Pending.ScrollDeltaAfterPrepend += unconsumedRows
 			}
-			if root.CopyMode.ViewportTop != previousTop {
+			if root.CopyMode.Cursor.Row != previousCursorRow || root.CopyMode.ViewportTop != previousTop {
 				return root.Advance(), nil
 			}
 		}
@@ -259,7 +261,7 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 	}
 	switch event.Key {
 	case input.KeyPageDn:
-		root.CopyMode = root.CopyMode.Scroll(copyModePageRows(root.CopyMode), len(root.History.Rows))
+		root.CopyMode = root.CopyMode.ScrollCursor(copyModePageRows(root.CopyMode), len(root.History.Rows))
 		return root.Advance(), nil, true
 	case input.KeyHome:
 		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: 0})
@@ -352,10 +354,10 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
 			return root.Advance(), nil, true
 		case "u":
-			root.CopyMode = root.CopyMode.Scroll(-(copyModePageRows(root.CopyMode) / 2), len(root.History.Rows))
+			root.CopyMode = root.CopyMode.ScrollCursor(-(copyModePageRows(root.CopyMode) / 2), len(root.History.Rows))
 			return root.Advance(), nil, true
 		case "d":
-			root.CopyMode = root.CopyMode.Scroll(copyModePageRows(root.CopyMode)/2, len(root.History.Rows))
+			root.CopyMode = root.CopyMode.ScrollCursor(copyModePageRows(root.CopyMode)/2, len(root.History.Rows))
 			return root.Advance(), nil, true
 		case " ":
 			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
@@ -813,18 +815,7 @@ func clampCopyCursor(copyMode state.CopyModeStore, history state.HistoryStore) s
 }
 
 func ensureCopyCursorVisible(copyMode state.CopyModeStore, totalRows int) state.CopyModeStore {
-	if totalRows <= 0 {
-		copyMode.ViewportTop = 0
-		return copyMode
-	}
-	height := copyModePageRows(copyMode)
-	if copyMode.Cursor.Row < copyMode.ViewportTop {
-		copyMode.ViewportTop = copyMode.Cursor.Row
-	}
-	if copyMode.Cursor.Row >= copyMode.ViewportTop+height {
-		copyMode.ViewportTop = copyMode.Cursor.Row - height + 1
-	}
-	return copyMode.Scroll(0, totalRows)
+	return copyMode.FollowCursor(totalRows)
 }
 
 func copyModePageRows(copyMode state.CopyModeStore) int {
