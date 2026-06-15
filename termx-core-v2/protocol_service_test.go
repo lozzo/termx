@@ -1256,6 +1256,37 @@ func TestProtocolHistoryWindowPreservesTrailingBlankCells(t *testing.T) {
 	}
 }
 
+func TestProtocolHistoryWindowPreservesStyledTrailingBlankCells(t *testing.T) {
+	track := history.NewHistoryTrack()
+	style := history.CellStyle{BG: "idx:24"}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{
+		{Text: "B", Width: 1, Style: style},
+		{Text: "G", Width: 1, Style: style},
+		{Text: " ", Width: 1, Style: style},
+		{Text: " ", Width: 1, Style: style},
+	}}); err != nil {
+		t.Fatalf("write cells: %v", err)
+	}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		t.Fatalf("commit cells: %v", err)
+	}
+	window, err := track.LatestWindow(history.HistoryWindowRequest{Cols: 10, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+
+	out := protocolHistoryWindowFromCore("term-1", Size{Cols: 10, Rows: 4}, window)
+	cells := out.Rows[0].DecodeCells()
+	if got := rowText(out.Rows[0]); got != "BG  " || len(cells) != 4 {
+		t.Fatalf("protocol history row should preserve styled trailing blanks, got text=%q cells=%#v", got, cells)
+	}
+	for i, cell := range cells {
+		if cell.Width != 1 || cell.Style.BG != "idx:24" {
+			t.Fatalf("styled trailing blank cell %d should survive protocol conversion, got %#v", i, cell)
+		}
+	}
+}
+
 func TestProtocolServiceHistoryWindowPreservesIngestedANSIStyles(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

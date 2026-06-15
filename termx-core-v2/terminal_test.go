@@ -419,6 +419,67 @@ func TestTerminalIngestOutputEraseInLineMutatesMutableTailWithoutCommitting(t *t
 	}
 }
 
+func TestTerminalIngestOutputStyledEraseInLineMatchesLiveBackgroundTail(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 8, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[48;5;24mBG\x1b[K\x1b[0m"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	liveSnapshot, err := server.LiveSnapshot("term-1")
+	if err != nil {
+		t.Fatalf("live snapshot: %v", err)
+	}
+	if got := liveSnapshot.Screen.Cells[0][7].Style.BG; got != "idx:24" {
+		t.Fatalf("live erase-to-EOL should keep bg on row tail, got %#v", liveSnapshot.Screen.Cells[0][7])
+	}
+
+	window, err := server.LatestWindow("term-1", 8, 4)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "BG      " {
+		t.Fatalf("history latest should include styled erase blank footprint, got %#v", window.Rows)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) != 8 {
+		t.Fatalf("history erase footprint should project as 8 cells, got %#v", cells)
+	}
+	for i, cell := range cells {
+		if cell.Width != 1 || cell.Style.BG != "idx:24" {
+			t.Fatalf("expected cell %d to keep bg from erase-to-EOL, got %#v", i, cell)
+		}
+	}
+}
+
+func TestTerminalIngestOutputPlainStyledTextDoesNotPadBackgroundTail(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 8, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[48;5;24mBG\x1b[0m"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 8, 4)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "BG" {
+		t.Fatalf("plain styled text should not synthesize row tail blanks, got %#v", window.Rows)
+	}
+}
+
 func TestTerminalIngestOutputEraseInLineModeOneClearsMutablePrefixWithoutCommitting(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

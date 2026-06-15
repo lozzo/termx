@@ -41,10 +41,12 @@ const (
 type HistoryEvent struct {
 	Kind            EventKind
 	Cells           []Cell
+	Style           CellStyle
 	LineID          LogicalLineID
 	LineIDs         []LogicalLineID
 	Count           int
 	EraseMode       int
+	EraseCols       int
 	EnterAltScreen  bool
 	ResizeDirection ResizeDirection
 }

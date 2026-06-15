@@ -192,6 +192,44 @@ func TestHistoryTrackEraseInLineMutatesCurrentMutableLine(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackEraseInLinePreservesStyledBlankToVisualRowEnd(t *testing.T) {
+	track := NewHistoryTrack()
+	style := CellStyle{BG: "idx:24"}
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "BG", Width: 2, Style: style}}},
+		HistoryEvent{Kind: EventEraseInLine, EraseMode: 0, EraseCols: 8, Style: style},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "BG      " {
+		t.Fatalf("styled EL 0 should preserve blank footprint to visual row end, got %q", got)
+	}
+	if got := logicalLineWidth(line.Cells); got != 8 {
+		t.Fatalf("styled EL 0 should extend to primary cols, got width %d cells=%#v", got, line.Cells)
+	}
+	for i, cell := range line.Cells {
+		if cell.Style.BG != "idx:24" {
+			t.Fatalf("styled EL 0 should keep bg on cell %d, got %#v", i, cell)
+		}
+	}
+}
+
+func TestHistoryTrackPlainSGRDoesNotPadToVisualRowEnd(t *testing.T) {
+	track := NewHistoryTrack()
+	style := CellStyle{BG: "idx:24"}
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "BG", Width: 2, Style: style}}},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "BG" {
+		t.Fatalf("plain styled text should not synthesize trailing blanks, got %q", got)
+	}
+	if got := logicalLineWidth(line.Cells); got != 2 {
+		t.Fatalf("plain styled text should keep only emitted columns, got width %d cells=%#v", got, line.Cells)
+	}
+}
+
 func TestHistoryTrackEraseInLineModeOneClearsMutablePrefix(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track,

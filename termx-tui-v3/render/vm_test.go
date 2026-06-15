@@ -760,6 +760,46 @@ func TestRenderVMBuilderCopyHistoryMaterializesPaddedCells(t *testing.T) {
 	}
 }
 
+func TestRendererCopyHistoryPreservesStyledTrailingBlankCells(t *testing.T) {
+	style := state.HistoryCellStyle{BG: "idx:24"}
+	root := state.Root{
+		Viewport: state.ViewportStore{Valid: true, Cols: 18, Rows: 7},
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       8,
+			Rows: []state.HistoryRow{{
+				Text:   "BG  ",
+				LineID: 10,
+				Cells: []state.HistoryCell{
+					{Text: "B", Width: 1, Style: style},
+					{Text: "G", Width: 1, Style: style},
+					{Text: " ", Width: 1, Style: style},
+					{Text: " ", Width: 1, Style: style},
+				},
+			}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  8,
+		},
+	}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	layer := firstLayer(t, result, LayerPanel)
+	if got := layer.Lines[0].PlainString(); !strings.Contains(got, "BG  ") {
+		t.Fatalf("copy history content layer should keep styled trailing blanks, got %#v", plainContentViewportLines(layer.Lines))
+	}
+	frameLine := result.Frame().ANSILines[2]
+	if strings.Count(frameLine, "\x1b[48;5;24m ") < 2 ||
+		!strings.Contains(frameLine, "\x1b[48;5;24mB") ||
+		!strings.Contains(frameLine, "\x1b[48;5;24mG") {
+		t.Fatalf("final ANSI frame should keep background over trailing spaces, got %q", frameLine)
+	}
+}
+
 func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{
