@@ -142,6 +142,9 @@ func (sink *FrameSink) writePatchFrame(frame render.Frame) error {
 	if patch.Rect.H <= 1 || patch.Rect.W <= 0 || patch.LineWidth <= 0 {
 		return nil
 	}
+	if patch.Rewrite {
+		return sink.writeRewritePatchFrame(frame, patch)
+	}
 	lines := patch.LinesANSI
 	if len(lines) == 0 && patch.LineANSI != "" {
 		lines = []string{patch.LineANSI}
@@ -188,6 +191,42 @@ func (sink *FrameSink) writePatchFrame(frame render.Frame) error {
 		return err
 	}
 	// 增量 patch 不重建完整 lastLines；下一次完整帧自然会全量校准。
+	sink.hasLastFrame = false
+	sink.lastCursor = frameCursorSequence(frame)
+	return nil
+}
+
+func (sink *FrameSink) writeRewritePatchFrame(frame render.Frame, patch render.FramePatch) error {
+	lines := patch.LinesANSI
+	if len(lines) == 0 && patch.LineANSI != "" {
+		lines = []string{patch.LineANSI}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	if len(lines) > patch.Rect.H {
+		lines = lines[:patch.Rect.H]
+	}
+	var builder strings.Builder
+	builder.WriteString(synchronizedOutputBegin)
+	builder.WriteString(hideCursor)
+	for i, line := range lines {
+		lineY := patch.LineY + i
+		if lineY < patch.Rect.Y || lineY >= patch.Rect.Y+patch.Rect.H {
+			continue
+		}
+		builder.WriteString(cursorPosition(lineY+1, patch.LineX+1))
+		builder.WriteString(eraseChars(patch.LineWidth))
+		builder.WriteString(line)
+		builder.WriteString(render.ANSIReset)
+	}
+	builder.WriteString(frameCursorSequence(frame))
+	builder.WriteString(synchronizedOutputEnd)
+	_, err := io.WriteString(sink.writer, builder.String())
+	if err != nil {
+		return err
+	}
+	// 矩形重写只校准了内容区；完整帧缓存失效，避免后续 diff 误判屏幕状态。
 	sink.hasLastFrame = false
 	sink.lastCursor = frameCursorSequence(frame)
 	return nil

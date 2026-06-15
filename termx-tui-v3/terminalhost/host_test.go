@@ -592,6 +592,36 @@ func TestFrameSinkWritesMultiLineIncrementalScrollPatch(t *testing.T) {
 	}
 }
 
+func TestFrameSinkWritesRewritePatchWithoutScrollRegion(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Patch: &render.FramePatch{
+			Rect:      render.Rect{X: 2, Y: 1, W: 8, H: 3},
+			Rewrite:   true,
+			LineY:     1,
+			LineX:     2,
+			LineWidth: 8,
+			LinesANSI: []string{"row a", "row b", "row c"},
+		},
+		Cursor:     render.Cursor{Visible: true, Shape: render.CursorShapeBlock},
+		CursorRect: render.Rect{X: 4, Y: 2, W: 1, H: 1},
+		Metadata:   render.RenderMetadata{Width: 20, Height: 10},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write rewrite patch frame: %v", err)
+	}
+	got := output.String()
+	for _, part := range []string{cursorPosition(2, 3) + eraseChars(8) + "row a", cursorPosition(3, 3) + eraseChars(8) + "row b", cursorPosition(4, 3) + eraseChars(8) + "row c"} {
+		if !strings.Contains(got, part) {
+			t.Fatalf("missing rewrite patch part %q in %q", part, got)
+		}
+	}
+	if strings.Contains(got, scrollRegion(2, 4)) || strings.Contains(got, scrollUpOne) || strings.Contains(got, scrollDownOne) || strings.Contains(got, clearLine) {
+		t.Fatalf("rewrite patch must not scroll or clear pane border columns, got %q", got)
+	}
+}
+
 func TestFrameSinkWritesCursorOnlyChange(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)

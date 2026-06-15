@@ -67,7 +67,13 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 		LineX:     current.ContentRect.X,
 		LineWidth: current.ContentRect.W,
 	}
-	if delta > 0 {
+	if !copyHistoryPatchCanScrollRegion(current) {
+		// 中文说明：终端 scroll region 只能限制上下边界，不能限制左右列。
+		// pane 内容区不是全宽时滚动整行会把边框卷走，所以退化为只重写内容矩形。
+		patch.Rewrite = true
+		patch.LineY = current.ContentRect.Y
+		patch.LinesANSI = copyHistoryPatchANSILines(runtime.state.History, runtime.state.CopyMode, current.ViewportTop, visibleRows, current.ContentRect.W, current.Theme)
+	} else if delta > 0 {
 		patch.Dir = render.FramePatchScrollUp
 		patch.LineY = current.ContentRect.Y + visibleRows - scrollRows
 		copyHistoryPatchSetANSILines(&patch, runtime.state.History, runtime.state.CopyMode, current.ViewportTop+visibleRows-scrollRows, scrollRows, current.ContentRect.W, current.Theme)
@@ -334,6 +340,10 @@ func copyHistoryPatchHitRegions(previous []render.HitRegion, history state.Histo
 		})
 	}
 	return out
+}
+
+func copyHistoryPatchCanScrollRegion(cache copyHistoryPatchCache) bool {
+	return cache.ContentRect.X == 0 && cache.ContentRect.W == cache.Metadata.Width
 }
 
 func copyHistoryPatchPrefixWidth(row state.HistoryRow) int {

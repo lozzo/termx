@@ -53,7 +53,10 @@ func TestCopyHistoryOlderResultUsesIncrementalPatchWhenVisibleContentOnlyShifts(
 	if host.sink.patchFrames != 1 {
 		t.Fatalf("older result should use one incremental patch, frames=%d patches=%d", host.sink.frames, host.sink.patchFrames)
 	}
-	if copyHistoryPerfFrame.Patch == nil || copyHistoryPerfFrame.Patch.Dir != render.FramePatchScrollDown || copyHistoryPerfFrame.Patch.LineANSI == "" {
-		t.Fatalf("expected scroll-down patch with exposed older line, got %#v", copyHistoryPerfFrame.Patch)
+	if copyHistoryPerfFrame.Patch == nil || !copyHistoryPerfFrame.Patch.Rewrite || len(copyHistoryPerfFrame.Patch.LinesANSI) != root.CopyMode.ViewRows {
+		t.Fatalf("expected content-rect rewrite patch for pane history, got %#v", copyHistoryPerfFrame.Patch)
+	}
+	if copyHistoryPerfFrame.Patch.LineX != 1 || copyHistoryPerfFrame.Patch.LineWidth != root.History.Cols {
+		t.Fatalf("rewrite patch must stay inside pane content rect, got %#v", copyHistoryPerfFrame.Patch)
 	}
 }
