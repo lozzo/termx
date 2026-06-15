@@ -140,11 +140,18 @@ func (line Line) PlainString() string {
 }
 
 func (line Line) ANSIString(theme Theme) string {
+	return line.ansiString(theme, 1)
+}
+
+func (line Line) ansiString(theme Theme, baseColumn int) string {
 	if len(line.Cells) == 0 {
 		return ""
 	}
 	var out strings.Builder
-	modelCol := 1
+	if baseColumn < 1 {
+		baseColumn = 1
+	}
+	modelCol := baseColumn
 	for index, cell := range line.Cells {
 		styleSeq := ""
 		if !cell.ANSIStyle.IsZero() {

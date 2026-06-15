@@ -72,7 +72,7 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 		// pane 内容区不是全宽时滚动整行会把边框卷走，所以退化为只重写内容矩形。
 		patch.Rewrite = true
 		patch.LineY = current.ContentRect.Y
-		patch.LinesANSI = copyHistoryPatchANSILines(runtime.state.History, runtime.state.CopyMode, current.ViewportTop, visibleRows, current.ContentRect.W, current.Theme)
+		patch.LinesANSI = copyHistoryPatchANSILinesAt(runtime.state.History, runtime.state.CopyMode, current.ViewportTop, visibleRows, current.ContentRect.W, current.ContentRect.X, current.Theme)
 	} else if delta > 0 {
 		patch.Dir = render.FramePatchScrollUp
 		patch.LineY = current.ContentRect.Y + visibleRows - scrollRows
@@ -98,19 +98,23 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 
 func copyHistoryPatchSetANSILines(patch *render.FramePatch, history state.HistoryStore, copyMode state.CopyModeStore, startRow int, count int, width int, theme render.Theme) {
 	if count == 1 {
-		patch.LineANSI = render.CopyHistoryContentANSILine(history, copyMode, startRow, width, theme)
+		patch.LineANSI = render.CopyHistoryContentANSILineAt(history, copyMode, startRow, width, patch.LineX, theme)
 		return
 	}
-	patch.LinesANSI = copyHistoryPatchANSILines(history, copyMode, startRow, count, width, theme)
+	patch.LinesANSI = copyHistoryPatchANSILinesAt(history, copyMode, startRow, count, width, patch.LineX, theme)
 }
 
 func copyHistoryPatchANSILines(history state.HistoryStore, copyMode state.CopyModeStore, startRow int, count int, width int, theme render.Theme) []string {
+	return copyHistoryPatchANSILinesAt(history, copyMode, startRow, count, width, 0, theme)
+}
+
+func copyHistoryPatchANSILinesAt(history state.HistoryStore, copyMode state.CopyModeStore, startRow int, count int, width int, lineX int, theme render.Theme) []string {
 	if count <= 0 {
 		return nil
 	}
 	lines := make([]string, count)
 	for i := 0; i < count; i++ {
-		lines[i] = render.CopyHistoryContentANSILine(history, copyMode, startRow+i, width, theme)
+		lines[i] = render.CopyHistoryContentANSILineAt(history, copyMode, startRow+i, width, lineX, theme)
 	}
 	return lines
 }

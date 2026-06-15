@@ -185,12 +185,13 @@
 | 215E1-R12. SK copy history older 加载路径 perf | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已把 older 接收路径从全量重排/深拷贝改成只重排新 older 页，并让 older 返回后可见内容只移动少量行时继续走增量 patch；8192 loaded older 接收约 `0.89ms / 1.48MB / 831 allocs`，older result runtime patch 约 `1.11ms / 1.51MB / 910 allocs` |
 | 215E1-R13. SK copy history latest 尾部定位回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复进入 copy/history 后看不到最新日志：latest window 内部按旧到新排列，TUI 现在默认把 cursor/viewport 放到 latest 页尾部；oldest 跳转仍从最老页头部显示；scroll clamp 与实际 history 正文可见行数对齐 |
 | 215E1-R14. SK copy history 增量滚动边框回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已修复 pane 内滚动时宽度差一格、边框消失：copy history 内容不是全屏宽时不再用终端 scroll region 滚整行，改为只重写 pane 内容矩形；全宽内容仍保留 scroll region 快路径 |
+| 215E1-R15. SK copy history 矩形 patch 列锚点回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复历史滚动时行首前导 `0` 被遮挡、点击 pane 后恢复：矩形 patch 从 pane 内容区写出时，内部 ANSI 绝对列锚点会加上 content X 偏移 |
 
 当前下一步：
 
-- `215E1-R14 copy history 增量滚动边框回归` 已完成
-- 已补回归测试：pane 内容区滚动只擦写内容列，不再发会卷走边框的 scroll region
-- 若后续继续优化手感，重点是降低矩形重写 patch 的行渲染分配
+- `215E1-R15 copy history 矩形 patch 列锚点回归` 已完成
+- 已补回归测试：pane 内容区 rewrite patch 中的 ANSI 列锚点不会覆盖行首前导字符
+- 若后续继续观察滚动问题，优先看真实 tmux 下长行、styled cell、wide char 三类行
 
 ## 6. 必做证据
 
