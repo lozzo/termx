@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -178,8 +179,15 @@ func historyCellsPlainText(cells []state.HistoryCell) string {
 	var builder strings.Builder
 	for _, cell := range cells {
 		builder.WriteString(cell.Text)
+		if pad := state.HistoryCellDisplayWidth(cell) - displayWidthForProtocolHistoryText(cell.Text); pad > 0 {
+			builder.WriteString(strings.Repeat(" ", pad))
+		}
 	}
 	return builder.String()
+}
+
+func displayWidthForProtocolHistoryText(text string) int {
+	return xansi.StringWidth(strings.ReplaceAll(text, "\n", " "))
 }
 
 func cloneHistoryCells(cells []state.HistoryCell) []state.HistoryCell {

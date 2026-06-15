@@ -193,6 +193,21 @@ func TestANSILinesReanchorsAfterFE0FInsideTerminalCell(t *testing.T) {
 	}
 }
 
+func TestANSILinesMaterializeAuthoritativeCellPadding(t *testing.T) {
+	line := Line{Cells: []Cell{
+		{Text: "AGENTS.md", Width: 12, ANSIStyle: ANSICellStyle{FG: "ansi:4"}, TerminalContent: true, Safe: true},
+		{Text: "go.work", Width: 9, ANSIStyle: ANSICellStyle{FG: "ansi:2"}, TerminalContent: true, Safe: true},
+		{Text: "README.md", Width: 9, TerminalContent: true, Safe: true},
+	}}
+	if got := line.PlainString(); got != "AGENTS.md   go.work  README.md" {
+		t.Fatalf("plain string should preserve terminal cell padding, got %q", got)
+	}
+	ansi := line.ANSIString(DefaultTheme())
+	if !strings.Contains(ansi, "AGENTS.md   ") || !strings.Contains(ansi, "go.work  ") {
+		t.Fatalf("ANSI string should write padded cell footprints, got %q", ansi)
+	}
+}
+
 func TestThemeFallbackAndPaneTokensAreDistinct(t *testing.T) {
 	theme := Theme{ActivePaneBorder: "#010203"}.WithFallback()
 	if theme.ActivePaneBorder != "#010203" {

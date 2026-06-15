@@ -892,11 +892,34 @@ func HistoryRowSliceDisplay(row HistoryRow, from int, to int) string {
 		cellWidth := HistoryCellDisplayWidth(cell)
 		next := cursor + cellWidth
 		if rangesOverlap(cursor, next, from, to) {
-			builder.WriteString(textSliceDisplay(cell.Text, from-cursor, to-cursor))
+			builder.WriteString(historyCellSliceDisplay(cell, from-cursor, to-cursor))
 		}
 		cursor = next
 	}
 	return builder.String()
+}
+
+func historyCellSliceDisplay(cell HistoryCell, from int, to int) string {
+	width := HistoryCellDisplayWidth(cell)
+	from = clampCopyInt(from, 0, width)
+	to = clampCopyInt(to, from, width)
+	if to <= from {
+		return ""
+	}
+	textWidth := textDisplayWidth(cell.Text)
+	textPart := ""
+	if from < textWidth {
+		textEnd := to
+		if textEnd > textWidth {
+			textEnd = textWidth
+		}
+		textPart = textSliceDisplay(cell.Text, from, textEnd)
+	}
+	pad := to - maxCopyInt(from, textWidth)
+	if pad <= 0 {
+		return textPart
+	}
+	return textPart + strings.Repeat(" ", pad)
 }
 
 func textClusterDisplayColumns(clusters []string) []int {
@@ -1171,7 +1194,7 @@ func splitHistoryCell(cell HistoryCell) []HistoryCell {
 	if len(clusters) == 1 && naturalWidth == width {
 		return []HistoryCell{cell}
 	}
-	out := make([]HistoryCell, 0, len(clusters))
+	out := make([]HistoryCell, 0, len(clusters)+1)
 	for _, cluster := range clusters {
 		next := cell
 		next.Text = cluster
@@ -1181,6 +1204,14 @@ func splitHistoryCell(cell HistoryCell) []HistoryCell {
 		}
 		out = append(out, next)
 	}
+	if pad := width - naturalWidth; pad > 0 {
+		padding := cell
+		padding.Text = strings.Repeat(" ", pad)
+		padding.Width = pad
+		padding.LinkURL = ""
+		padding.LinkParams = ""
+		out = append(out, padding)
+	}
 	return out
 }
 
@@ -1188,6 +1219,9 @@ func historyCellsPlainTextForState(cells []HistoryCell) string {
 	var builder strings.Builder
 	for _, cell := range cells {
 		builder.WriteString(cell.Text)
+		if pad := HistoryCellDisplayWidth(cell) - textDisplayWidth(cell.Text); pad > 0 {
+			builder.WriteString(strings.Repeat(" ", pad))
+		}
 	}
 	return builder.String()
 }

@@ -130,7 +130,7 @@ func (line Line) String() string {
 	}
 	var out strings.Builder
 	for _, cell := range line.Cells {
-		out.WriteString(cell.Text)
+		out.WriteString(cellDisplayText(cell))
 	}
 	return out.String()
 }
@@ -183,7 +183,7 @@ func (line Line) ansiString(theme Theme, baseColumn int) string {
 }
 
 func writeANSIText(out *strings.Builder, cell Cell, startModelCol int) {
-	text := SafeLine(cell.Text)
+	text := cellDisplayText(cell)
 	if !cell.TerminalContent || cell.Width <= 1 || !strings.Contains(text, "\ufe0f") {
 		out.WriteString(text)
 		return
@@ -217,6 +217,19 @@ func writeANSIText(out *strings.Builder, cell Cell, startModelCol int) {
 			}
 		}
 	}
+}
+
+func cellDisplayText(cell Cell) string {
+	text := SafeLine(cell.Text)
+	width := maxInt(0, cell.Width)
+	if width <= 0 {
+		return text
+	}
+	pad := width - DisplayWidth(text)
+	if pad <= 0 {
+		return text
+	}
+	return text + strings.Repeat(" ", pad)
 }
 
 func terminalFE0FContinuationErase(text string) bool {

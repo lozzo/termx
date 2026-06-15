@@ -691,6 +691,36 @@ func TestRenderVMBuilderProjectsCopyHistoryStyledCells(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderCopyHistoryMaterializesPaddedCells(t *testing.T) {
+	root := state.Root{
+		History: state.HistoryStore{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       40,
+			Rows: []state.HistoryRow{{
+				Text:   "AGENTS.md   go.work  README.md",
+				LineID: 10,
+				Cells: []state.HistoryCell{
+					{Text: "AGENTS.md", Width: 12, Style: state.HistoryCellStyle{FG: "ansi:4"}},
+					{Text: "go.work", Width: 9, Style: state.HistoryCellStyle{FG: "ansi:2"}},
+					{Text: "README.md", Width: 9},
+				},
+			}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  40,
+		},
+	}
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if got := content.Lines[0].PlainString(); got != "AGENTS.md   go.work  README.md" {
+		t.Fatalf("copy history should preserve ls-style padded cells, got %q", got)
+	}
+}
+
 func TestRenderVMBuilderCopyHistorySelectionAndSearchUseDisplayColumns(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{

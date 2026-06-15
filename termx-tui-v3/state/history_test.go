@@ -758,6 +758,21 @@ func TestHistoryStoreReflowsFrozenLogicalLinesAtNewCols(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreReflowPreservesAuthoritativeCellPadding(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		LineID: 10,
+		Cells: []HistoryCell{
+			{Text: "AGENTS.md", Width: 12},
+			{Text: "go.work", Width: 9},
+			{Text: "README.md", Width: 9},
+		},
+	}}
+	rows, _ := ReflowHistoryLogicalLines(lines, 40)
+	if got := rows[0].Text; got != "AGENTS.md   go.work  README.md" {
+		t.Fatalf("reflow text should materialize authoritative cell padding, got %q", got)
+	}
+}
+
 func TestHistoryStoreReflowsFrozenLogicalLineTextWithoutCellsAtNewCols(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		Text:   "abcdef",
@@ -962,8 +977,21 @@ func TestHistoryRowSliceDisplayUsesAuthoritativeCellWidth(t *testing.T) {
 	if got := HistoryRowDisplayWidth(row); got != 4 {
 		t.Fatalf("display width should use authoritative cell width, got %d", got)
 	}
-	if got := HistoryRowSliceDisplay(row, 0, 4); got != "ab" {
-		t.Fatalf("full-width slice should preserve cell text, got %q", got)
+	if got := HistoryRowSliceDisplay(row, 0, 4); got != "ab  " {
+		t.Fatalf("full-width slice should preserve authoritative padding, got %q", got)
+	}
+}
+
+func TestHistoryRowSliceDisplayMaterializesAuthoritativePadding(t *testing.T) {
+	row := HistoryRow{Text: "ab  cd", Cells: []HistoryCell{
+		{Text: "ab", Width: 4},
+		{Text: "cd", Width: 2},
+	}}
+	if got := HistoryRowSliceDisplay(row, 0, 6); got != "ab  cd" {
+		t.Fatalf("full-width slice should materialize padded cells, got %q", got)
+	}
+	if got := HistoryRowSliceDisplay(row, 2, 5); got != "  c" {
+		t.Fatalf("padding slice should expose blank display cells, got %q", got)
 	}
 }
 

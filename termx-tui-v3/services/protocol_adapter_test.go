@@ -308,6 +308,38 @@ func TestProtocolCoreClientAdapterPreservesTrailingBlankHistoryCells(t *testing.
 	}
 }
 
+func TestProtocolCoreClientAdapterMaterializesAuthoritativeCellPadding(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 40, Rows: 24},
+			Rows: []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{
+				{Content: "AGENTS.md", Width: 12},
+				{Content: "go.work", Width: 9},
+				{Content: "README.md", Width: 9},
+			})},
+			Lines:       []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
+			RowLineIDs:  []uint64{42},
+			RowInLine:   []int{0},
+			LoadedLines: 1,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 40, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(result.Window.SourceLines) != 1 || result.Window.SourceLines[0].Text != "AGENTS.md   go.work  README.md" {
+		t.Fatalf("adapter should materialize cell padding into frozen source text, got %#v", result.Window.SourceLines)
+	}
+	if got := rowTextsForProtocolAdapter(result.Window.Rows); len(got) != 1 || got[0] != "AGENTS.md   go.work  README.md" {
+		t.Fatalf("local reflow should keep padded history row, got %#v", result.Window.Rows)
+	}
+}
+
 func TestProtocolCoreClientAdapterMergesSameLogicalLineRowsIntoFrozenSource(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{

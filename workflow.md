@@ -186,12 +186,13 @@
 | 215E1-R13. SK copy history latest 尾部定位回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复进入 copy/history 后看不到最新日志：latest window 内部按旧到新排列，TUI 现在默认把 cursor/viewport 放到 latest 页尾部；oldest 跳转仍从最老页头部显示；scroll clamp 与实际 history 正文可见行数对齐 |
 | 215E1-R14. SK copy history 增量滚动边框回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已修复 pane 内滚动时宽度差一格、边框消失：copy history 内容不是全屏宽时不再用终端 scroll region 滚整行，改为只重写 pane 内容矩形；全宽内容仍保留 scroll region 快路径 |
 | 215E1-R15. SK copy history 矩形 patch 列锚点回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复历史滚动时行首前导 `0` 被遮挡、点击 pane 后恢复：矩形 patch 从 pane 内容区写出时，内部 ANSI 绝对列锚点会加上 content X 偏移 |
+| 215E1-R16. SK copy history cell 宽度填充回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/services/`、`workflow.md` | 已修复 `ls` 多列输出在 history 里挤成一坨：history cell 的 authoritative 宽度大于文本宽度时，展示/复制/搜索都会把右侧填充列当作空格；同时保留 protocol trailing blank cells |
 
 当前下一步：
 
-- `215E1-R15 copy history 矩形 patch 列锚点回归` 已完成
-- 已补回归测试：pane 内容区 rewrite patch 中的 ANSI 列锚点不会覆盖行首前导字符
-- 若后续继续观察滚动问题，优先看真实 tmux 下长行、styled cell、wide char 三类行
+- `215E1-R16 copy history cell 宽度填充回归` 已完成
+- 已补回归测试：protocol adapter、本地 reflow、copy history render、ANSI frame、display slice 都保留 authoritative cell padding
+- 如果现场仍看到 `ls` 变 `lls`，下一步单独查 shell prompt 的 CR/erase 输入序列；core-v2 现有 CR/erase 回归测试已通过
 
 ## 6. 必做证据
 

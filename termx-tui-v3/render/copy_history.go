@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -159,7 +160,7 @@ func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, link
 		if nextBreak <= globalCursor {
 			nextBreak = globalCursor + 1
 		}
-		part := SliceCells(text, globalCursor-from, nextBreak-from)
+		part := copyHistorySlicePaddedCellText(text, width, globalCursor-from, nextBreak-from)
 		if part == "" {
 			globalCursor = nextBreak
 			continue
@@ -176,6 +177,23 @@ func copyHistoryStyledTextCells(text string, width int, base ANSICellStyle, link
 		globalCursor = nextBreak
 	}
 	return segments
+}
+
+func copyHistorySlicePaddedCellText(text string, width int, from int, to int) string {
+	from = clampCopyColumn(from, 0, width)
+	to = clampCopyColumn(to, from, width)
+	if to <= from {
+		return ""
+	}
+	textWidth := DisplayWidth(text)
+	part := ""
+	if from < textWidth {
+		part = SliceCells(text, from, minInt(to, textWidth))
+	}
+	if pad := to - maxInt(from, textWidth); pad > 0 {
+		part += strings.Repeat(" ", pad)
+	}
+	return part
 }
 
 func copyHistoryNextCellStyleBreak(row int, cursor int, cellEnd int, lineWidth int, selection copySelectionRange, search copySearchRange) (int, StyleToken) {
