@@ -194,11 +194,12 @@
 | 215E1-R21. SK copy history pane focus 保持回归 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复真实现场：copy/history 模式中鼠标点击其他 panel 只切换 active pane，不退出原 pane 的历史模式；关闭/删除绑定 pane、切 tab/workspace、floating deactivate 仍会清掉不可见 frozen history；已补 runtime 鼠标点击其他 pane 的回归测试 |
 | 215E1-R22. SK copy history cursor wheel 与非 active pane 保持回归 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修正 R20/R21 真实语义：滚轮先移动 copy cursor，cursor 留在可见区内时只复投光标、不重画内容；cursor 到可见区边缘后才推动 viewport；copy/history 按绑定 pane 展示，点击其他 panel 不退出，重新点回来能续上 |
 | 215E1-R23. SK copy history selection 颜色回归 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已把 copy/history 被选中文本改成灰色字体、黄色背景；只改显示样式，不改 selection/copy 文本语义，搜索命中仍保留原 warning 高亮 |
+| 215E1-R24. SK clipboard history core storage | 完成 | `termx-tui-v3/`、`termx-cli/`、`workflow.md` | 已把 `H` 打开的 copy list 从本地内存升级为 core-v2 daemon storage 托管：复制后写入 storage，打开弹窗时读取，编辑/删除后回写；UI 仍复用现有 clipboard history overlay |
 
 当前下一步：
 
-- `215E1-R23 copy history selection 颜色回归` 已完成
-- 准入：`cd termx-tui-v3 && go test ./... -count=1` 已通过
+- `215E1-R24 clipboard history core storage` 已完成
+- 准入：`cd termx-tui-v3 && go test ./... -count=1` 已通过；`cd termx-cli && go test ./... -count=1` 已通过
 
 ## 6. 必做证据
 

@@ -357,11 +357,42 @@ type WorkbenchStorageEvent struct {
 	Op      string
 }
 
+type ClipboardStorageService interface {
+	LoadClipboard(context.Context, state.ClipboardStorageRef) (ClipboardStorageLoadResult, error)
+	SaveClipboard(context.Context, ClipboardStorageSaveRequest) (ClipboardStorageSaveResult, error)
+	WatchClipboard(context.Context, state.ClipboardStorageRef) (<-chan ClipboardStorageEvent, error)
+}
+
+type ClipboardStorageLoadResult struct {
+	Snapshot state.ClipboardStorageSnapshot
+	Version  uint64
+	Found    bool
+}
+
+type ClipboardStorageSaveRequest struct {
+	Ref             state.ClipboardStorageRef
+	Snapshot        state.ClipboardStorageSnapshot
+	CheckVersion    bool
+	ExpectedVersion uint64
+}
+
+type ClipboardStorageSaveResult struct {
+	Ref     state.ClipboardStorageRef
+	Version uint64
+}
+
+type ClipboardStorageEvent struct {
+	Ref     state.ClipboardStorageRef
+	Version uint64
+	Op      string
+}
+
 var (
 	ErrMissingHistoryResponse   = errors.New("missing history response")
 	ErrUnexpectedHistoryCall    = errors.New("unexpected history call")
 	ErrMissingTerminalClient    = errors.New("missing terminal client")
 	ErrWorkbenchStorageConflict = errors.New("workbench storage version conflict")
+	ErrClipboardStorageConflict = errors.New("clipboard storage version conflict")
 )
 
 type FakeCoreClient struct {
@@ -452,6 +483,19 @@ type FakeWorkbenchStorageService struct {
 	Watches        []state.WorkbenchStorageRef
 }
 
+type FakeClipboardStorageService struct {
+	LoadResult     ClipboardStorageLoadResult
+	LoadErr        error
+	SaveResult     ClipboardStorageSaveResult
+	SaveErr        error
+	CurrentVersion uint64
+	WatchCh        chan ClipboardStorageEvent
+	WatchErr       error
+	Loads          []state.ClipboardStorageRef
+	Saves          []ClipboardStorageSaveRequest
+	Watches        []state.ClipboardStorageRef
+}
+
 func (service *FakeWorkbenchStorageService) LoadWorkbench(_ context.Context, ref state.WorkbenchStorageRef) (WorkbenchStorageLoadResult, error) {
 	service.Loads = append(service.Loads, ref)
 	if service.LoadErr != nil {
@@ -487,6 +531,45 @@ func (service *FakeWorkbenchStorageService) WatchWorkbench(_ context.Context, re
 	}
 	if service.WatchCh == nil {
 		service.WatchCh = make(chan WorkbenchStorageEvent, 16)
+	}
+	return service.WatchCh, nil
+}
+
+func (service *FakeClipboardStorageService) LoadClipboard(_ context.Context, ref state.ClipboardStorageRef) (ClipboardStorageLoadResult, error) {
+	service.Loads = append(service.Loads, ref)
+	if service.LoadErr != nil {
+		return ClipboardStorageLoadResult{}, service.LoadErr
+	}
+	return service.LoadResult, nil
+}
+
+func (service *FakeClipboardStorageService) SaveClipboard(_ context.Context, req ClipboardStorageSaveRequest) (ClipboardStorageSaveResult, error) {
+	req.Snapshot = cloneClipboardStorageSnapshot(req.Snapshot)
+	service.Saves = append(service.Saves, req)
+	if service.SaveErr != nil {
+		return ClipboardStorageSaveResult{}, service.SaveErr
+	}
+	if req.CheckVersion && service.CurrentVersion != req.ExpectedVersion {
+		return ClipboardStorageSaveResult{}, ErrClipboardStorageConflict
+	}
+	result := service.SaveResult
+	if result.Ref.AppID == "" {
+		result.Ref = req.Ref
+	}
+	if result.Version == 0 {
+		result.Version = req.ExpectedVersion + 1
+	}
+	service.CurrentVersion = result.Version
+	return result, nil
+}
+
+func (service *FakeClipboardStorageService) WatchClipboard(_ context.Context, ref state.ClipboardStorageRef) (<-chan ClipboardStorageEvent, error) {
+	service.Watches = append(service.Watches, ref)
+	if service.WatchErr != nil {
+		return nil, service.WatchErr
+	}
+	if service.WatchCh == nil {
+		service.WatchCh = make(chan ClipboardStorageEvent, 16)
 	}
 	return service.WatchCh, nil
 }

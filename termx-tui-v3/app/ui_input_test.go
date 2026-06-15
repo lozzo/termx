@@ -182,8 +182,11 @@ func TestUIInputReducerOpensClipboardHistoryFromCopyModeH(t *testing.T) {
 	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayClipboardHistory {
 		t.Fatalf("expected clipboard history overlay, got %#v", next.Shell.Overlay)
 	}
-	if len(effects) != 1 {
-		t.Fatalf("expected handled effect only, got %#v", effects)
+	if len(effects) != 2 {
+		t.Fatalf("expected handled and storage load effects, got %#v", effects)
+	}
+	if _, ok := effects[1].(FuncEffect); !ok {
+		t.Fatalf("expected storage load effect, got %#v", effects)
 	}
 }
 

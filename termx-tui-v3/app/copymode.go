@@ -169,11 +169,17 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.IntentOpenClipboardHistory:
 		root.Shell = root.Shell.OpenClipboardHistory()
-		return root.Advance(), []Effect{handledEffect{}}
+		return root.Advance(), []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg { return ClipboardStorageLoadRequestMsg{Reason: "open"} }},
+		}
 	case input.IntentShellAction:
 		if intent.Action == input.ShellActionOpenClipboardHistory {
 			root.Shell = root.Shell.OpenClipboardHistory()
-			return root.Advance(), []Effect{handledEffect{}}
+			return root.Advance(), []Effect{
+				handledEffect{},
+				FuncEffect{Run: func(context.Context) Msg { return ClipboardStorageLoadRequestMsg{Reason: "open"} }},
+			}
 		}
 		return root, nil
 	case input.IntentPasteLastCopy:
@@ -630,12 +636,15 @@ func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Copied to clipboard", DismissAfterTicks: 3})
 	root.Clipboard = root.Clipboard.WithCopiedText(text)
 	root = root.Advance()
-	return root, []Effect{FuncEffect{
-		Run: func(ctx context.Context) Msg {
-			err := deps.Clipboard.Write(ctx, services.ClipboardWriteRequest{Text: text})
-			return CopyModeCopyResultMsg{Text: text, Err: err}
+	return root, []Effect{
+		FuncEffect{
+			Run: func(ctx context.Context) Msg {
+				err := deps.Clipboard.Write(ctx, services.ClipboardWriteRequest{Text: text})
+				return CopyModeCopyResultMsg{Text: text, Err: err}
+			},
 		},
-	}}
+		FuncEffect{Run: func(context.Context) Msg { return ClipboardStoragePersistRequestMsg{Reason: "copy"} }},
+	}
 }
 
 func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard bool) (state.Root, []Effect) {

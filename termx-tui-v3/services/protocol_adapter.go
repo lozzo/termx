@@ -242,6 +242,37 @@ func (adapter ProtocolWorkbenchStorageAdapter) LoadWorkbench(ctx context.Context
 	}, nil
 }
 
+type ProtocolClipboardStorageAdapter struct {
+	Client ProtocolStorageClient
+}
+
+func (adapter ProtocolClipboardStorageAdapter) LoadClipboard(ctx context.Context, ref state.ClipboardStorageRef) (ClipboardStorageLoadResult, error) {
+	entry, err := adapter.Client.StorageGet(ctx, protocol.StorageGetParams{
+		AppID:   ref.AppID,
+		Scope:   protocol.StorageScope(ref.Scope),
+		OwnerID: ref.OwnerID,
+		Key:     ref.Key,
+	})
+	if err != nil {
+		if isStorageNotFound(err) {
+			return ClipboardStorageLoadResult{Found: false}, nil
+		}
+		return ClipboardStorageLoadResult{}, err
+	}
+	if entry == nil || len(entry.Value) == 0 {
+		return ClipboardStorageLoadResult{Found: false}, nil
+	}
+	snapshot, err := state.DecodeClipboardStorageSnapshot(entry.Value)
+	if err != nil {
+		return ClipboardStorageLoadResult{}, err
+	}
+	return ClipboardStorageLoadResult{
+		Snapshot: snapshot,
+		Version:  entry.Version,
+		Found:    true,
+	}, nil
+}
+
 func (adapter ProtocolWorkbenchStorageAdapter) SaveWorkbench(ctx context.Context, req WorkbenchStorageSaveRequest) (WorkbenchStorageSaveResult, error) {
 	value, err := state.EncodeWorkbenchStorageSnapshotValue(req.Snapshot)
 	if err != nil {
@@ -268,8 +299,38 @@ func (adapter ProtocolWorkbenchStorageAdapter) SaveWorkbench(ctx context.Context
 	}, nil
 }
 
+func (adapter ProtocolClipboardStorageAdapter) SaveClipboard(ctx context.Context, req ClipboardStorageSaveRequest) (ClipboardStorageSaveResult, error) {
+	value, err := state.EncodeClipboardStorageSnapshotValue(req.Snapshot)
+	if err != nil {
+		return ClipboardStorageSaveResult{}, err
+	}
+	entry, err := adapter.Client.StoragePut(ctx, protocol.StoragePutParams{
+		AppID:           req.Ref.AppID,
+		Scope:           protocol.StorageScope(req.Ref.Scope),
+		OwnerID:         req.Ref.OwnerID,
+		Key:             req.Ref.Key,
+		Value:           value,
+		CheckVersion:    req.CheckVersion,
+		ExpectedVersion: req.ExpectedVersion,
+	})
+	if err != nil {
+		if isStorageVersionConflict(err) {
+			return ClipboardStorageSaveResult{}, fmt.Errorf("%w: %v", ErrClipboardStorageConflict, err)
+		}
+		return ClipboardStorageSaveResult{}, err
+	}
+	return ClipboardStorageSaveResult{
+		Ref:     req.Ref.WithVersion(entry.Version),
+		Version: entry.Version,
+	}, nil
+}
+
 func isStorageVersionConflict(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "storage version conflict")
+}
+
+func isStorageNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "storage entry not found")
 }
 
 func (adapter ProtocolWorkbenchStorageAdapter) WatchWorkbench(ctx context.Context, ref state.WorkbenchStorageRef) (<-chan WorkbenchStorageEvent, error) {
@@ -299,6 +360,53 @@ func (adapter ProtocolWorkbenchStorageAdapter) WatchWorkbench(ctx context.Contex
 				}
 				changed := WorkbenchStorageEvent{
 					Ref: state.WorkbenchStorageRef{
+						AppID:   event.Storage.AppID,
+						Scope:   string(event.Storage.Scope),
+						OwnerID: event.Storage.OwnerID,
+						Key:     event.Storage.Key,
+						Version: event.Storage.Version,
+					},
+					Version: event.Storage.Version,
+					Op:      event.Storage.Op,
+				}
+				select {
+				case out <- changed:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (adapter ProtocolClipboardStorageAdapter) WatchClipboard(ctx context.Context, ref state.ClipboardStorageRef) (<-chan ClipboardStorageEvent, error) {
+	events, err := adapter.Client.Events(ctx, protocol.EventsParams{
+		Types:            []protocol.EventType{protocol.EventStorageChanged},
+		StorageAppID:     ref.AppID,
+		StorageScope:     protocol.StorageScope(ref.Scope),
+		StorageOwnerID:   ref.OwnerID,
+		StorageKeyPrefix: ref.KeyPrefix(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan ClipboardStorageEvent, 16)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				if event.Storage == nil {
+					continue
+				}
+				changed := ClipboardStorageEvent{
+					Ref: state.ClipboardStorageRef{
 						AppID:   event.Storage.AppID,
 						Scope:   string(event.Storage.Scope),
 						OwnerID: event.Storage.OwnerID,

@@ -10,6 +10,14 @@ func cloneWorkbenchStorageSnapshot(snapshot state.WorkbenchStorageSnapshot) stat
 	return clone
 }
 
+func cloneClipboardStorageSnapshot(snapshot state.ClipboardStorageSnapshot) state.ClipboardStorageSnapshot {
+	clone := snapshot
+	if len(snapshot.Entries) > 0 {
+		clone.Entries = append([]state.ClipboardEntry(nil), snapshot.Entries...)
+	}
+	return clone
+}
+
 func cloneWorkspaceState(workspace state.WorkspaceState) state.WorkspaceState {
 	workspace.Tabs = cloneTabStates(workspace.Tabs)
 	return workspace

@@ -44,7 +44,7 @@ func NewInteractiveRuntime(
 	live LiveDeps,
 	copyMode CopyModeDeps,
 ) *AppRuntime {
-	return NewInteractiveRuntimeWithWorkbench(initial, host, runner, live, copyMode, WorkbenchDeps{})
+	return NewInteractiveRuntimeWithStorage(initial, host, runner, live, copyMode, WorkbenchDeps{}, ClipboardDeps{})
 }
 
 func NewInteractiveRuntimeWithWorkbench(
@@ -55,14 +55,31 @@ func NewInteractiveRuntimeWithWorkbench(
 	copyMode CopyModeDeps,
 	workbench WorkbenchDeps,
 ) *AppRuntime {
+	return NewInteractiveRuntimeWithStorage(initial, host, runner, live, copyMode, workbench, ClipboardDeps{})
+}
+
+func NewInteractiveRuntimeWithStorage(
+	initial state.Root,
+	host TerminalHost,
+	runner EffectRunner,
+	live LiveDeps,
+	copyMode CopyModeDeps,
+	workbench WorkbenchDeps,
+	clipboard ClipboardDeps,
+) *AppRuntime {
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
 		runtime.enqueue(WorkbenchStorageLoadRequestMsg{})
 		runtime.enqueue(WorkbenchStorageWatchRequestMsg{})
+	}
+	if clipboard.Storage != nil {
+		// copy list 是 TUI schema，core 只保存 opaque value；启动时拉一次并监听变化。
+		runtime.enqueue(ClipboardStorageLoadRequestMsg{Reason: "startup"})
+		runtime.enqueue(ClipboardStorageWatchRequestMsg{})
 	}
 	return runtime
 }

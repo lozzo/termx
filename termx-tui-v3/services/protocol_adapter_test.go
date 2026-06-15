@@ -166,6 +166,82 @@ func (client *fakeProtocolTerminalClient) StoragePut(_ context.Context, params p
 	}, nil
 }
 
+func TestProtocolClipboardStorageAdapterLoadsAndSavesClipboardHistory(t *testing.T) {
+	snapshot := state.SnapshotClipboardForStorage(state.ClipboardStore{}.WithCopiedText("alpha"))
+	value, err := state.EncodeClipboardStorageSnapshotValue(snapshot)
+	if err != nil {
+		t.Fatalf("encode clipboard snapshot: %v", err)
+	}
+	client := &fakeProtocolTerminalClient{
+		storageEntry: &protocol.StorageEntry{
+			AppID:   state.ClipboardStorageAppID,
+			Scope:   protocol.StorageScopePublic,
+			OwnerID: state.DefaultWorkspaceID,
+			Key:     state.ClipboardStorageKeyRoot,
+			Value:   value,
+			Version: 7,
+		},
+	}
+	adapter := ProtocolClipboardStorageAdapter{Client: client}
+	ref := state.DefaultClipboardStorageRef(state.DefaultWorkspaceID)
+
+	result, err := adapter.LoadClipboard(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("load clipboard storage: %v", err)
+	}
+	if !result.Found || result.Version != 7 || len(result.Snapshot.Entries) != 1 || result.Snapshot.Entries[0].Text != "alpha" {
+		t.Fatalf("unexpected clipboard load result %#v", result)
+	}
+	if len(client.storageGets) != 1 || client.storageGets[0].Key != state.ClipboardStorageKeyRoot {
+		t.Fatalf("unexpected storage get %#v", client.storageGets)
+	}
+
+	save, err := adapter.SaveClipboard(context.Background(), ClipboardStorageSaveRequest{
+		Ref:             ref,
+		Snapshot:        state.SnapshotClipboardForStorage(state.ClipboardStore{}.WithCopiedText("beta")),
+		CheckVersion:    true,
+		ExpectedVersion: 7,
+	})
+	if err != nil {
+		t.Fatalf("save clipboard storage: %v", err)
+	}
+	if save.Version != 8 || len(client.storagePuts) != 1 || !client.storagePuts[0].CheckVersion || client.storagePuts[0].ExpectedVersion != 7 {
+		t.Fatalf("unexpected storage put save=%#v puts=%#v", save, client.storagePuts)
+	}
+	decoded, err := state.DecodeClipboardStorageSnapshot(client.storagePuts[0].Value)
+	if err != nil {
+		t.Fatalf("decode saved clipboard value: %v", err)
+	}
+	if len(decoded.Entries) != 1 || decoded.Entries[0].Text != "beta" {
+		t.Fatalf("unexpected saved clipboard value %#v", decoded)
+	}
+}
+
+func TestProtocolClipboardStorageAdapterWatchesClipboardKeyPrefix(t *testing.T) {
+	client := &fakeProtocolTerminalClient{eventCh: make(chan protocol.Event, 1)}
+	adapter := ProtocolClipboardStorageAdapter{Client: client}
+	ref := state.DefaultClipboardStorageRef("workspace-a")
+	events, err := adapter.WatchClipboard(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("watch clipboard storage: %v", err)
+	}
+	if len(client.eventParams) != 1 || client.eventParams[0].StorageKeyPrefix != "clipboard/" {
+		t.Fatalf("unexpected watch params %#v", client.eventParams)
+	}
+	client.eventCh <- protocol.Event{Storage: &protocol.StorageChangedData{
+		AppID:   ref.AppID,
+		Scope:   protocol.StorageScope(ref.Scope),
+		OwnerID: ref.OwnerID,
+		Key:     ref.Key,
+		Version: 9,
+		Op:      "put",
+	}}
+	got := <-events
+	if got.Version != 9 || got.Ref.Key != ref.Key {
+		t.Fatalf("unexpected clipboard storage event %#v", got)
+	}
+}
+
 func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{
