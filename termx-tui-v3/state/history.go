@@ -729,19 +729,15 @@ func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
 }
 
 // ScrollCursor 是 copy/history 的主滚动语义：用户滚动的是 copy cursor。
-// viewport 只负责尽量保住 cursor 的屏幕锚点，避免变回独立的浏览 truth。
+// cursor 还在可见区内时只移动 cursor；到达边缘后，viewport 才跟随移动。
 func (store CopyModeStore) ScrollCursor(delta int, totalRows int) CopyModeStore {
 	if totalRows <= 0 {
 		store.ViewportTop = 0
 		store.Cursor = CopyPosition{}
 		return store
 	}
-	height := copyVisibleRowsForStore(store)
-	visibleRow := clampCopyInt(store.Cursor.Row-store.ViewportTop, 0, height-1)
 	nextRow := clampCopyInt(store.Cursor.Row+delta, 0, totalRows-1)
 	store = store.MoveCursor(CopyPosition{Row: nextRow, Col: store.Cursor.Col})
-	maxTop := maxCopyInt(0, totalRows-height)
-	store.ViewportTop = clampCopyInt(nextRow-visibleRow, 0, maxTop)
 	return store.FollowCursor(totalRows)
 }
 

@@ -644,6 +644,26 @@ func TestFrameSinkWritesCursorOnlyChange(t *testing.T) {
 	}
 }
 
+func TestFrameSinkWritesCursorOnlyPatchWithoutRowDiff(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	frame := render.Frame{
+		Patch:      &render.FramePatch{CursorOnly: true},
+		Cursor:     render.Cursor{Visible: true, Shape: render.CursorShapeBlock},
+		CursorRect: render.Rect{X: 2, Y: 3, W: 1, H: 1},
+	}
+	if err := sink.WriteFrame(frame); err != nil {
+		t.Fatalf("write cursor-only patch: %v", err)
+	}
+	got := output.String()
+	if strings.Contains(got, clearScreen) || strings.Contains(got, clearLine) || strings.Contains(got, scrollUpOne) || strings.Contains(got, scrollDownOne) {
+		t.Fatalf("cursor-only patch must not repaint or scroll, got %q", got)
+	}
+	if !strings.Contains(got, cursorShapeBlock+cursorPosition(4, 3)+showCursor) {
+		t.Fatalf("cursor-only patch should only project cursor, got %q", got)
+	}
+}
+
 func TestFrameSinkClearsOnFrameSizeChange(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)

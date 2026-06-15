@@ -845,6 +845,9 @@ func TestAppRuntimePaneFocusClickKeepsCopyMode(t *testing.T) {
 			BoundCols:  78,
 			ViewRows:   10,
 		},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 7, 78, 10, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
 	}
 	runtime := NewAppRuntime(
 		root,
@@ -878,6 +881,10 @@ func TestAppRuntimePaneFocusClickKeepsCopyMode(t *testing.T) {
 	}
 	if len(runtime.State().History.Rows) != 1 || runtime.State().History.Token != "tok-1" {
 		t.Fatalf("pane focus click must keep frozen history, got %#v", runtime.State().History)
+	}
+	frame := lastRuntimeFrame(t, host)
+	if !frameContains(frame, "frozen history") {
+		t.Fatalf("copy/history panel must keep rendering frozen history after pane focus changes, got %#v", frame.Lines)
 	}
 }
 

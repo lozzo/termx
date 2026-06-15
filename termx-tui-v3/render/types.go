@@ -99,14 +99,16 @@ type FrameSinkPreference interface {
 
 // FramePatch 是真实 TTY 的增量绘制合同；测试 sink 默认仍消费完整 Frame。
 type FramePatch struct {
-	Rect      Rect
-	Rewrite   bool
-	Dir       FramePatchScrollDirection
-	LineY     int
-	LineX     int
-	LineWidth int
-	LineANSI  string
-	LinesANSI []string
+	Rect Rect
+	// CursorOnly 表示本帧只复投宿主光标，不重写 history 内容区。
+	CursorOnly bool
+	Rewrite    bool
+	Dir        FramePatchScrollDirection
+	LineY      int
+	LineX      int
+	LineWidth  int
+	LineANSI   string
+	LinesANSI  []string
 }
 
 type FramePatchScrollDirection int

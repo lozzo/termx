@@ -108,3 +108,39 @@ func TestCopyHistoryRewritePatchOffsetsANSIColumnAnchors(t *testing.T) {
 		t.Fatalf("rewrite patch must offset content-local ANSI anchors, got %q", got)
 	}
 }
+
+func TestCopyHistoryCursorOnlyMoveUsesCursorPatch(t *testing.T) {
+	host := newCopyHistoryPerfIncrementalHost(16)
+	host.SetSize(80, 24)
+	root := copyHistoryPerfRoot(80, 24, 256)
+	root.CopyMode.ViewportTop = 120
+	root.CopyMode.Cursor = state.CopyPosition{Row: 121, Col: 2}
+	runtime := NewAppRuntime(
+		root,
+		copyHistoryPerfLineScrollReducer(),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	cache, ok := buildCopyHistoryPatchCache(root, render.DefaultTheme())
+	if !ok {
+		t.Fatal("expected copy history patch cache")
+	}
+	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
+	runtime.copyHistoryPatch = cache
+
+	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	runtime.state = root.Advance()
+	if !runtime.tryRenderCopyHistoryPatch() {
+		t.Fatal("expected cursor-only patch")
+	}
+	patch := copyHistoryPerfFrame.Patch
+	if patch == nil || !patch.CursorOnly || patch.Rewrite || patch.Dir != 0 || patch.LineANSI != "" || len(patch.LinesANSI) != 0 {
+		t.Fatalf("cursor-only movement should not rewrite history content, got %#v", patch)
+	}
+	if !copyHistoryPerfFrame.Cursor.Visible || copyHistoryPerfFrame.CursorRect.W != 1 || copyHistoryPerfFrame.CursorRect.H != 1 {
+		t.Fatalf("cursor-only patch should carry visible cursor metadata, frame=%#v", copyHistoryPerfFrame)
+	}
+}

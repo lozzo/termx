@@ -46,7 +46,7 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 		return false
 	}
 	if delta == 0 {
-		return false
+		return runtime.tryRenderCopyHistoryCursorPatch(current)
 	}
 	visibleRows := current.ContentRect.H
 	if visibleRows <= 1 || visibleRows > len(runtime.state.History.Rows) {
@@ -90,6 +90,23 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 		Theme:      current.Theme,
 	}
 	runtime.lastHitRegions = copyHistoryPatchHitRegions(runtime.lastHitRegions, runtime.state.History, runtime.state.CopyMode, current.ContentRect)
+	_ = runtime.host.FrameSink().WriteFrame(frame)
+	runtime.firstFrameWritten = true
+	runtime.copyHistoryPatch = current
+	return true
+}
+
+func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(current copyHistoryPatchCache) bool {
+	if current.Cursor == runtime.copyHistoryPatch.Cursor {
+		return false
+	}
+	frame := render.Frame{
+		Patch:      &render.FramePatch{CursorOnly: true},
+		Cursor:     copyHistoryPatchCursor(runtime.state.History, runtime.state.CopyMode),
+		CursorRect: copyHistoryPatchCursorRect(runtime.state.History, runtime.state.CopyMode, current.ContentRect),
+		Metadata:   current.Metadata,
+		Theme:      current.Theme,
+	}
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
 	runtime.copyHistoryPatch = current

@@ -427,7 +427,7 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 	switch {
 	case root.Session.LastError != "" || root.Surface.Err != "":
 		return "error"
-	case root.CopyMode.Active:
+	case copyModeBelongsToPane(root.CopyMode, pane.ID, root.Shell.EnsureDefaults().ActivePaneID):
 		return "copy"
 	case root.Session.State == state.TerminalLiveExited || root.Surface.State == state.TerminalLiveExited:
 		return "exited"
@@ -479,7 +479,7 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 	for i, pane := range tab.Panes {
 		active := pane.ID == shell.ActivePaneID
 		content := projector.contentForPane(root, pane, activeContent, active)
-		if active {
+		if active && !copyModeBelongsToPane(root.CopyMode, pane.ID, shell.ActivePaneID) {
 			content = activeContent
 		}
 		content = contentWithPaneLayout(root, pane, content)
@@ -499,7 +499,7 @@ func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, acti
 	shell = shell.EnsureDefaults()
 	for _, pane := range activeTab(shell).Panes {
 		if pane.ID == shell.ZoomedPaneID {
-			content := contentWithPaneLayout(root, pane, activeContent)
+			content := projector.contentForPane(root, pane, activeContent, pane.ID == shell.ActivePaneID)
 			return []PanelVM{{
 				ID:           pane.ID,
 				Title:        activePaneTitle(pane),
@@ -520,15 +520,7 @@ func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root st
 	}
 	out := make([]FloatingVM, 0, len(shell.Floatings))
 	for _, floating := range shell.Floatings {
-		content := projector.Content.Project(ContentProjectorContext{
-			Root:    root,
-			Shell:   shell,
-			Pane:    floating.Pane,
-			Kind:    contentKindForPane(floating.Pane),
-			Active:  floating.Active,
-			Surface: surfaceForPane(root, floating.Pane),
-			Session: sessionForPane(root, floating.Pane),
-		})
+		content := projector.contentForFloating(root, shell, floating)
 		content = contentWithFloatingLayout(root, floating, content)
 		out = append(out, FloatingVM{
 			ID:        floating.ID,
@@ -776,11 +768,14 @@ func splitActionLabel(action string) (string, string) {
 }
 
 func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM {
-	if root.CopyMode.Active {
-		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Kind: ContentCopyHistory})
-	}
 	shell := root.Shell.EnsureDefaults()
+	if copyModeFloatingActive(root.CopyMode, shell) {
+		return projector.copyHistoryContent(root, shell, state.PaneState{}, true)
+	}
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
+		if copyModeBelongsToPane(root.CopyMode, pane.ID, shell.ActivePaneID) {
+			return projector.copyHistoryContent(root, shell, pane, true)
+		}
 		if pane.Kind == state.PaneEmpty {
 			return buildEmptyPaneContentWithSelection(pane, shell.EmptyPaneCTA.SelectedIndex)
 		}
@@ -796,6 +791,9 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 }
 
 func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneState, activeContent ContentVM, active bool) ContentVM {
+	if copyModeBelongsToPane(root.CopyMode, pane.ID, root.Shell.EnsureDefaults().ActivePaneID) {
+		return projector.copyHistoryContent(root, root.Shell.EnsureDefaults(), pane, active)
+	}
 	if active {
 		return activeContent
 	}
@@ -804,6 +802,49 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 		session = sessionForPane(root, pane)
 	}
 	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: session, Active: false})
+}
+
+func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: ContentCopyHistory, Active: active})
+}
+
+func (projector ShellProjector) contentForFloating(root state.Root, shell state.ShellStore, floating state.FloatingPaneState) ContentVM {
+	if copyModeBelongsToFloating(root.CopyMode, floating.ID) {
+		return projector.copyHistoryContent(root, shell, floating.Pane, floating.Active)
+	}
+	return projector.Content.Project(ContentProjectorContext{
+		Root:    root,
+		Shell:   shell,
+		Pane:    floating.Pane,
+		Kind:    contentKindForPane(floating.Pane),
+		Active:  floating.Active,
+		Surface: surfaceForPane(root, floating.Pane),
+		Session: sessionForPane(root, floating.Pane),
+	})
+}
+
+func copyModeBelongsToPane(copyMode state.CopyModeStore, paneID string, activePaneID string) bool {
+	if !copyMode.Active || paneID == "" {
+		return false
+	}
+	if copyMode.PaneID == "" {
+		return paneID == activePaneID
+	}
+	return copyMode.PaneID == paneID
+}
+
+func copyModeBelongsToFloating(copyMode state.CopyModeStore, floatingID string) bool {
+	return copyMode.Active && floatingID != "" && copyMode.ViewID == state.TerminalFloatingViewID(floatingID)
+}
+
+func copyModeFloatingActive(copyMode state.CopyModeStore, shell state.ShellStore) bool {
+	if !copyMode.Active || copyMode.ViewID == "" || !strings.HasPrefix(copyMode.ViewID, "floating:") {
+		return false
+	}
+	if shell.ActiveFloatingID == "" {
+		return true
+	}
+	return copyMode.ViewID == state.TerminalFloatingViewID(shell.ActiveFloatingID)
 }
 
 func contentKindForPane(pane state.PaneState) ContentKind {
@@ -878,11 +919,11 @@ func copyHistoryPendingReason(root state.Root, history state.HistoryStore, copyM
 	case !copyModeBindingStillValid(root, copyMode):
 		return "copy history pending: copy binding missing"
 	case copyMode.BoundToken == "":
-		return "copy history pending: authoritative history window pending"
+		return "copy history pending: window pending"
 	case copyMode.BoundCols == 0:
 		return "copy history pending: bound cols missing"
 	case history.TerminalID == "":
-		return "copy history pending: authoritative history window pending"
+		return "copy history pending: window pending"
 	case copyMode.TerminalID != history.TerminalID:
 		return "copy history error: terminal mismatch"
 	case copyMode.BoundToken != history.Token:

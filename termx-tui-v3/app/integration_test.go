@@ -400,7 +400,7 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 		t.Fatalf("expected async latest request to start, got %#v", core.latestRequests())
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "authoritative history window pending") {
+	if !frameContains(frame, "window pending") {
 		t.Fatalf("expected pending copy-history frame instead of blocked UI, got %#v", frame.Lines)
 	}
 
@@ -456,7 +456,7 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 		t.Fatalf("duplicate latest while pending must not surface error, got %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "authoritative history window pending") {
+	if !frameContains(last, "window pending") {
 		t.Fatalf("pending copy mode should stay pending without fake error, got %#v", last.Lines)
 	}
 }
@@ -626,6 +626,79 @@ func TestCopyModeWheelUpScrollsByLineAndPrefetchesOlderWithoutJump(t *testing.T)
 	last := lastFrame(t, host.Frames())
 	if frameContains(last, "old-01") && !frameContains(last, "new-02") {
 		t.Fatalf("older prefetch should not steal viewport to prepended page, got %#v", last.Lines)
+	}
+}
+
+func TestCopyModeMouseWheelMovesCursorBeforeViewport(t *testing.T) {
+	latestRows := make([]state.HistoryRow, 0, 40)
+	for i := 1; i <= 40; i++ {
+		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("row-%02d", i), LineID: uint64(i)})
+	}
+	core := &services.FakeCoreClient{}
+	host := NewFakeTerminalHost(8)
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        78,
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: 1},
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: 1, LastLineID: 40},
+		SourceLines: historyLogicalLinesForApp(latestRows),
+		Rows:        latestRows,
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		BoundToken:  "tok-1",
+		BoundCols:   78,
+		ViewRows:    5,
+		ViewportTop: 10,
+		Cursor:      state.CopyPosition{Row: 14, Col: 2},
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		t.Fatalf("wheel inside viewport: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain wheel inside viewport: %v", err)
+	}
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 13, Col: 2}) || runtime.State().CopyMode.ViewportTop != 10 {
+		t.Fatalf("wheel should move cursor before viewport when cursor stays visible, got %#v", runtime.State().CopyMode)
+	}
+
+	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: 10, Col: 2}
+	runtime.state.CopyMode.ViewportTop = 10
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp}); err != nil {
+		t.Fatalf("wheel across top edge: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain wheel across top edge: %v", err)
+	}
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: 9, Col: 2}) || runtime.State().CopyMode.ViewportTop != 9 {
+		t.Fatalf("wheel should move viewport only after cursor crosses top edge, got %#v", runtime.State().CopyMode)
+	}
+
+	visibleRows := runtime.State().CopyMode.ViewRows
+	if visibleRows <= 0 {
+		t.Fatalf("runtime should keep a positive copy view height, got %#v", runtime.State().CopyMode)
+	}
+	bottomTop := 10
+	bottomRow := bottomTop + visibleRows - 1
+	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: bottomRow, Col: 2}
+	runtime.state.CopyMode.ViewportTop = 10
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelDown}); err != nil {
+		t.Fatalf("wheel across bottom edge: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain wheel across bottom edge: %v", err)
+	}
+	if runtime.State().CopyMode.Cursor != (state.CopyPosition{Row: bottomRow + 1, Col: 2}) || runtime.State().CopyMode.ViewportTop != bottomTop+1 {
+		t.Fatalf("wheel should move viewport only after cursor crosses bottom edge, got %#v", runtime.State().CopyMode)
 	}
 }
 
@@ -1271,7 +1344,7 @@ func TestCopyModeRuntimeAttachRebindDoesNotRenderOldFrozenHistory(t *testing.T) 
 	if frameContains(last, "old-history") {
 		t.Fatalf("attach rebind must not keep rendering old frozen history, got %#v", last.Lines)
 	}
-	if !frameContains(last, "authoritative history window pending") {
+	if !frameContains(last, "window pending") {
 		t.Fatalf("attach rebind should fall back to pending history state for new terminal, got %#v", last.Lines)
 	}
 }
@@ -1356,7 +1429,7 @@ func TestCopyModeRuntimeReattachSameTerminalKeepsFrozenHistory(t *testing.T) {
 	if !frameContains(last, "old-history") {
 		t.Fatalf("same-terminal reattach must keep rendering frozen history, got %#v", last.Lines)
 	}
-	if frameContains(last, "authoritative history window pending") {
+	if frameContains(last, "window pending") {
 		t.Fatalf("same-terminal reattach must not fall back to pending history state, got %#v", last.Lines)
 	}
 }
@@ -2368,7 +2441,7 @@ func TestCopyModeRuntimeTerminalPoolAttachRebindDoesNotRenderOldFrozenHistoryFor
 	if frameContains(last, "old-history") {
 		t.Fatalf("terminal pool pane attach rebind must not keep rendering old frozen history, got %#v", last.Lines)
 	}
-	if !frameContains(last, "authoritative history window pending") {
+	if !frameContains(last, "window pending") {
 		t.Fatalf("terminal pool pane attach rebind should fall back to pending history state, got %#v", last.Lines)
 	}
 }
@@ -2457,7 +2530,7 @@ func TestCopyModeRuntimeTerminalPoolReattachSamePaneTerminalKeepsFrozenHistory(t
 	if !frameContains(last, "old-history") {
 		t.Fatalf("same-terminal terminal pool pane attach must keep rendering frozen history, got %#v", last.Lines)
 	}
-	if frameContains(last, "authoritative history window pending") {
+	if frameContains(last, "window pending") {
 		t.Fatalf("same-terminal terminal pool pane attach must not fall back to pending history, got %#v", last.Lines)
 	}
 }
@@ -2808,7 +2881,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectRebindDoesNotRenderOldFrozenHistory
 	if frameContains(last, "old-history") {
 		t.Fatalf("terminal pool pane reconnect rebind must not keep rendering old frozen history, got %#v", last.Lines)
 	}
-	if !frameContains(last, "authoritative history window pending") {
+	if !frameContains(last, "window pending") {
 		t.Fatalf("terminal pool pane reconnect rebind should fall back to pending history state, got %#v", last.Lines)
 	}
 }
@@ -2897,7 +2970,7 @@ func TestCopyModeRuntimeTerminalPoolReconnectSamePaneTerminalKeepsFrozenHistory(
 	if !frameContains(last, "old-history") {
 		t.Fatalf("same-terminal terminal pool pane reconnect must keep rendering frozen history, got %#v", last.Lines)
 	}
-	if frameContains(last, "authoritative history window pending") {
+	if frameContains(last, "window pending") {
 		t.Fatalf("same-terminal terminal pool pane reconnect must not fall back to pending history, got %#v", last.Lines)
 	}
 }
@@ -4193,7 +4266,7 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 	if frameContains(last, "old-frozen") || frameContains(last, "stale-after-exit") {
 		t.Fatalf("re-enter pending frame must not reuse stale frozen rows, got %#v", last.Lines)
 	}
-	if !frameContains(last, "authoritative history window pending") {
+	if !frameContains(last, "window pending") {
 		t.Fatalf("re-enter pending frame should show pending authoritative history, got %#v", last.Lines)
 	}
 }

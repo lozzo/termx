@@ -645,7 +645,7 @@ func TestCopyModeApplyDeferredOlderScrollConsumesPendingRows(t *testing.T) {
 	}
 }
 
-func TestCopyModeScrollCursorKeepsScreenAnchor(t *testing.T) {
+func TestCopyModeScrollCursorMovesCursorBeforeViewport(t *testing.T) {
 	copyMode := CopyModeStore{
 		Active:      true,
 		ViewRows:    5,
@@ -655,13 +655,38 @@ func TestCopyModeScrollCursorKeepsScreenAnchor(t *testing.T) {
 
 	copyMode = copyMode.ScrollCursor(-1, 30)
 
-	if copyMode.Cursor != (CopyPosition{Row: 13, Col: 3}) || copyMode.ViewportTop != 9 {
-		t.Fatalf("cursor scroll should move cursor and viewport by one anchored row, got %#v", copyMode)
+	if copyMode.Cursor != (CopyPosition{Row: 13, Col: 3}) || copyMode.ViewportTop != 10 {
+		t.Fatalf("cursor scroll should move cursor inside viewport before moving viewport, got %#v", copyMode)
 	}
 
-	copyMode = copyMode.ScrollCursor(10, 30)
-	if copyMode.Cursor.Row != 23 || copyMode.ViewportTop != 19 {
-		t.Fatalf("cursor scroll should keep cursor screen anchor while moving down, got %#v", copyMode)
+	copyMode = CopyModeStore{
+		Active:      true,
+		ViewRows:    5,
+		ViewportTop: 10,
+		Cursor:      CopyPosition{Row: 10, Col: 3},
+	}.ScrollCursor(-1, 30)
+	if copyMode.Cursor != (CopyPosition{Row: 9, Col: 3}) || copyMode.ViewportTop != 9 {
+		t.Fatalf("cursor scroll should move viewport only after cursor crosses top edge, got %#v", copyMode)
+	}
+
+	copyMode = CopyModeStore{
+		Active:      true,
+		ViewRows:    5,
+		ViewportTop: 10,
+		Cursor:      CopyPosition{Row: 10, Col: 3},
+	}.ScrollCursor(1, 30)
+	if copyMode.Cursor != (CopyPosition{Row: 11, Col: 3}) || copyMode.ViewportTop != 10 {
+		t.Fatalf("down scroll should move cursor inside viewport before moving viewport, got %#v", copyMode)
+	}
+
+	copyMode = CopyModeStore{
+		Active:      true,
+		ViewRows:    5,
+		ViewportTop: 10,
+		Cursor:      CopyPosition{Row: 14, Col: 3},
+	}.ScrollCursor(1, 30)
+	if copyMode.Cursor != (CopyPosition{Row: 15, Col: 3}) || copyMode.ViewportTop != 11 {
+		t.Fatalf("down scroll should move viewport only after cursor crosses bottom edge, got %#v", copyMode)
 	}
 }
 

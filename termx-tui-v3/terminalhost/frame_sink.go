@@ -139,6 +139,9 @@ func (sink *FrameSink) writeScrollShift(builder *strings.Builder, lines []string
 
 func (sink *FrameSink) writePatchFrame(frame render.Frame) error {
 	patch := *frame.Patch
+	if patch.CursorOnly {
+		return sink.writeCursorOnlyPatchFrame(frame)
+	}
 	if patch.Rect.H <= 1 || patch.Rect.W <= 0 || patch.LineWidth <= 0 {
 		return nil
 	}
@@ -193,6 +196,23 @@ func (sink *FrameSink) writePatchFrame(frame render.Frame) error {
 	// 增量 patch 不重建完整 lastLines；下一次完整帧自然会全量校准。
 	sink.hasLastFrame = false
 	sink.lastCursor = frameCursorSequence(frame)
+	return nil
+}
+
+func (sink *FrameSink) writeCursorOnlyPatchFrame(frame render.Frame) error {
+	cursorSequence := frameCursorSequence(frame)
+	if sink.lastCursor == cursorSequence {
+		return nil
+	}
+	var builder strings.Builder
+	builder.WriteString(synchronizedOutputBegin)
+	builder.WriteString(cursorSequence)
+	builder.WriteString(synchronizedOutputEnd)
+	_, err := io.WriteString(sink.writer, builder.String())
+	if err != nil {
+		return err
+	}
+	sink.lastCursor = cursorSequence
 	return nil
 }
 

@@ -43,6 +43,45 @@ func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderKeepsCopyHistoryOnBoundPaneWhenInactive(t *testing.T) {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})
+	root := state.Root{
+		Shell: shell,
+		History: state.HistoryStore{
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       80,
+			Rows:       []state.HistoryRow{{Text: "frozen history", LineID: 10}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  80,
+		},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 7, 80, 10, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	boundPanel := panelByID(vm.Shell.Layout.Panels, state.DefaultPaneID)
+	activePanel := panelByID(vm.Shell.Layout.Panels, "pane-2")
+
+	if boundPanel == nil || boundPanel.Content.Kind != ContentCopyHistory || boundPanel.Content.Lines[0].PlainString() != "frozen history" {
+		t.Fatalf("copy history must stay on bound pane even when inactive, got %#v", vm.Shell.Layout.Panels)
+	}
+	if activePanel == nil || !activePanel.Active || activePanel.Content.Kind == ContentCopyHistory {
+		t.Fatalf("clicked pane should remain active without stealing copy history, got %#v", vm.Shell.Layout.Panels)
+	}
+}
+
 func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	root := state.Root{
 		Shell: state.ShellStore{
@@ -899,7 +938,7 @@ func TestRenderVMBuilderShowsPendingAfterCopyResizeInvalidation(t *testing.T) {
 	if content.Kind != ContentCopyHistory || !content.Pending {
 		t.Fatalf("expected pending copy-history after resize invalidation, got %#v", content)
 	}
-	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "authoritative history window pending") {
+	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "window pending") {
 		t.Fatalf("copy mode resize pending must not fallback to live rows, got %#v", content.Lines)
 	}
 }
