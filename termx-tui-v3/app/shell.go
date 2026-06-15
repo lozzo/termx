@@ -1182,7 +1182,6 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	if result.Status == state.PaneCommandOK {
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
 		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
-		root = invalidateCopyModeForInactivePane(root)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
 		effects := paneCommandEffects(command, result, targetPane, hasTargetPane)
 		return root.Advance(), effects
@@ -1225,7 +1224,7 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
 		root = invalidateCopyModeForClosedFloating(root, result.ID)
 	}
-	if result.Status == state.FloatingCommandOK {
+	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandDeactivate {
 		root = invalidateCopyModeForInactiveView(root)
 	}
 	if result.Status == state.FloatingCommandOK && shouldPersistFloatingCommand(command) {
@@ -1244,7 +1243,9 @@ func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (st
 		return root.Advance(), nil
 	}
 	root = updateTerminalViewsAfterWorkbenchCommand(root, previousShell, command, result)
-	root = invalidateCopyModeForInactivePane(root)
+	if workbenchCommandChangesActiveView(command.Action) {
+		root = invalidateCopyModeForInactiveView(root)
+	}
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg {
 		return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
 	}}}
@@ -1332,20 +1333,6 @@ func invalidateCopyModeForClosedPane(root state.Root, paneID string) state.Root 
 	return root
 }
 
-func invalidateCopyModeForInactivePane(root state.Root) state.Root {
-	if !root.CopyMode.Active {
-		return root
-	}
-	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
-	if activePaneID == "" || root.CopyMode.PaneID == "" || root.CopyMode.PaneID == activePaneID {
-		return root
-	}
-	// copy mode 绑定发起它的 pane/view；当前激活 pane 已切换后，不能再把旧冻结历史画到新 pane。
-	root.History = root.History.InvalidateWindow()
-	root.CopyMode = state.CopyModeStore{}
-	return root
-}
-
 func invalidateCopyModeForClosedFloating(root state.Root, floatingID string) state.Root {
 	if floatingID == "" || !root.CopyMode.Active || root.CopyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
 		return root
@@ -1368,7 +1355,28 @@ func invalidateCopyModeForInactiveView(root state.Root) state.Root {
 		root.CopyMode = state.CopyModeStore{}
 		return root
 	}
-	return invalidateCopyModeForInactivePane(root)
+	if root.CopyMode.ViewID == state.TerminalPaneViewID(shell.ActivePaneID) {
+		return root
+	}
+	root.History = root.History.InvalidateWindow()
+	root.CopyMode = state.CopyModeStore{}
+	return root
+}
+
+func workbenchCommandChangesActiveView(action state.WorkbenchCommandAction) bool {
+	switch action {
+	case state.WorkbenchCommandTabSwitch,
+		state.WorkbenchCommandTabNext,
+		state.WorkbenchCommandTabPrevious,
+		state.WorkbenchCommandTabClose,
+		state.WorkbenchCommandWorkspaceSwitch,
+		state.WorkbenchCommandWorkspaceNext,
+		state.WorkbenchCommandWorkspacePrevious,
+		state.WorkbenchCommandWorkspaceDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func bindWorkbenchSplitTerminalView(root state.Root, previousShell state.ShellStore, command state.WorkbenchCommand, result state.WorkbenchCommandResult) state.Root {

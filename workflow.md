@@ -191,11 +191,12 @@
 | 215E1-R18. SK copy history 行编辑语义回归 | 完成 | `termx-core-v2/`、`workflow.md` | 已处理 latest tail 上的真实输出语义污染：core parser 现在把 `CSI C/D/G` 和 backspace 路由成 mutable frontier 光标 mutation；shell autosuggestion / 补全灰字被 erase 删除后不会继续作为最终 logical line 存进 history，光标右移超过行尾也会保留空白列 |
 | 215E1-R19. SK copy history 行编辑性能回归审计 | 完成 | `termx-core-v2/`、`workflow.md` | 已检查并优化 R18 行编辑 parser / ingest 热路径：补 plain log batch 与 autosuggestion line-edit batch benchmark；发现普通日志曾从 R17 约 `8.58ms` 退化到 `13.3ms`，已通过去掉 append 后整行重复宽度扫描恢复到约 `8.65ms`；行编辑 batch 从优化前约 `19.7ms` 收回到约 `16.4ms` |
 | 215E1-R20. SK copy history cursor scroll 回归 | 完成 | `termx-tui-v3/`、`workflow.md` | 已把 copy/history 滚轮、PageUp/PageDown、半页滚动改成 cursor-first：输入先移动 copy cursor，viewport 只负责保持 cursor 屏幕锚点；older 仍按页预取和填充，等待 older 时只消费未满足的 cursor 行移动；滚动 benchmark 通过，loaded line scroll 约 `68-69us / 55KB / 339 allocs`，older result patch 约 `1.22ms / 1.57MB / 1241 allocs` |
+| 215E1-R21. SK copy history pane focus 保持回归 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复真实现场：copy/history 模式中鼠标点击其他 panel 只切换 active pane，不退出原 pane 的历史模式；关闭/删除绑定 pane、切 tab/workspace、floating deactivate 仍会清掉不可见 frozen history；已补 runtime 鼠标点击其他 pane 的回归测试 |
 
 当前下一步：
 
-- `215E1-R20 copy history cursor scroll 回归` 已完成
-- copy/history 滚动主状态已切到 cursor，viewport 只保持 cursor 的屏幕锚点；继续只在真实回归出现时新增小切片
+- `215E1-R21 copy history pane focus 保持回归` 已完成
+- 普通 pane focus 已不清 copy/history；跨 tab/workspace 或 floating deactivate 仍清不可见 frozen history
 
 ## 6. 必做证据
 

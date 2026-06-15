@@ -822,6 +822,65 @@ func TestAppRuntimeDispatchesMouseHitRegionsToPaneCommands(t *testing.T) {
 	}
 }
 
+func TestAppRuntimePaneFocusClickKeepsCopyMode(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		History: state.HistoryStore{
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Cols:       78,
+			Rows:       []state.HistoryRow{{Text: "frozen history", LineID: 1}},
+		},
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundToken: "tok-1",
+			BoundCols:  78,
+			ViewRows:   10,
+		},
+	}
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewShellReducer(), NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}})),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	content := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionPaneContent, "pane-2")
+	if err := host.SendInput(mouseEventAt(content.Rect)); err != nil {
+		t.Fatalf("click pane-2: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("focus drain: %v", err)
+	}
+
+	if got := runtime.State().Shell.EnsureDefaults().ActivePaneID; got != "pane-2" {
+		t.Fatalf("content click should focus pane-2, got %q", got)
+	}
+	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.PaneID != state.DefaultPaneID {
+		t.Fatalf("pane focus click must keep original copy mode, got %#v", runtime.State().CopyMode)
+	}
+	if len(runtime.State().History.Rows) != 1 || runtime.State().History.Token != "tok-1" {
+		t.Fatalf("pane focus click must keep frozen history, got %#v", runtime.State().History)
+	}
+}
+
 func TestAppRuntimePaneCloseHitRegionMatchesWideGlyph(t *testing.T) {
 	render.SetPaneChromeGlyphs(render.PaneChromeGlyphs{Close: "❌"})
 	defer render.ResetPaneChromeGlyphs()
