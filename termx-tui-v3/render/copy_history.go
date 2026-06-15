@@ -28,13 +28,14 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 	rows := copyVisibleRows(history, copyMode)
 	lines := make([]Line, 0, len(rows))
 	for _, visible := range rows {
-		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible)))
+		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, history.Cols, selection, activeSearchRange(copyMode, visible)))
 	}
 	return lines
 }
 
-func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange) Line {
+func copyHistoryLine(row state.HistoryRow, rowIndex int, historyCols int, selection copySelectionRange, search copySearchRange) Line {
 	cells := copyHistoryRowCells(row, rowIndex, selection, search)
+	cells = copyHistoryAppendSelectionTail(cells, row, rowIndex, historyCols, selection)
 	if row.ClippedEnd {
 		cells = append(cells, styledCell(" ⇣", StyleMuted))
 	}
@@ -53,7 +54,7 @@ func CopyHistoryContentANSILineAt(history state.HistoryStore, copyMode state.Cop
 		return contentViewportBlankRun(width).Text
 	}
 	baseColumn := lineX + 1
-	line := copyHistoryLine(history.Rows[rowIndex], rowIndex, normalizedCopySelection(copyMode), activeSearchRange(copyMode, rowIndex))
+	line := copyHistoryLine(history.Rows[rowIndex], rowIndex, history.Cols, normalizedCopySelection(copyMode), activeSearchRange(copyMode, rowIndex))
 	return ensureANSIReset(contentViewportFitLine(line, width).ansiString(theme.WithFallback(), baseColumn))
 }
 
@@ -272,6 +273,30 @@ func copyHistoryRowCells(row state.HistoryRow, rowIndex int, selection copySelec
 	}
 	if len(out) == 0 {
 		return []Cell{NewCell(row.Text)}
+	}
+	return out
+}
+
+func copyHistoryAppendSelectionTail(cells []Cell, historyRow state.HistoryRow, row int, historyCols int, selection copySelectionRange) []Cell {
+	if !selection.active || historyCols <= 0 || row < selection.start.Row || row > selection.end.Row {
+		return cells
+	}
+	prefixWidth := copyHistoryPrefixWidth(historyRow)
+	lineWidth := prefixWidth + state.HistoryRowDisplayWidth(historyRow)
+	from, to := selectionColumnsForRow(selection, row, historyCols)
+	from += prefixWidth
+	to += prefixWidth
+	if to <= lineWidth {
+		return cells
+	}
+	out := cells
+	if from > lineWidth {
+		out = append(out, Cell{Text: strings.Repeat(" ", from-lineWidth), Width: from - lineWidth, TerminalContent: true, Safe: true})
+	}
+	selectedFrom := maxInt(lineWidth, from)
+	if selectedFrom < to {
+		// 中文说明：跨行选区中间行需要覆盖到 history visual row 末尾，即使尾部没有真实文本 cell。
+		out = append(out, copyHistoryHighlightCell(strings.Repeat(" ", to-selectedFrom), StyleAccent, "", ""))
 	}
 	return out
 }
