@@ -65,8 +65,8 @@ func TestSurfaceTrackPreservesAltScreenFrameOnExit(t *testing.T) {
 	if snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen {
 		t.Fatalf("expected preserved frame to become primary live screen, got modes=%#v screen=%#v", snapshot.Modes, snapshot.Screen)
 	}
-	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "alt-final") || strings.Contains(got, "primary") {
-		t.Fatalf("expected alt final frame to remain visible without restoring primary, got %q", got)
+	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
+		t.Fatalf("expected alt final frame to append after restored primary, got %q", got)
 	}
 }
 

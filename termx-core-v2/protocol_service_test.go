@@ -916,6 +916,43 @@ func TestProtocolServiceEnterAltScreenCommitsPrimaryPageFirst(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceHistoryWindowFlushesStressTailBeforeAltScreenFreeze(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 120, Rows: 20},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	process := serverProcess(t, server, "term-1")
+	var output strings.Builder
+	for i := 1; i <= 100; i++ {
+		output.WriteString(stressHistoryLine(i))
+		output.WriteByte('\n')
+	}
+	output.WriteString("\x1b[?1049h\x1b[2JALT_SCREEN_MARK\x1b[?1049l")
+	process.emitOutput(output.String())
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       120,
+		Limit:      30,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window after stress alt-screen: %v", err)
+	}
+	if !protocolHistoryWindowContainsText(latest, "000100") {
+		t.Fatalf("history.window latest must preserve primary stress tail before alt-screen, got %#v", latest.Rows)
+	}
+	if protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK") {
+		t.Fatalf("alt-screen payload must stay out of frozen primary history, got %#v", latest.Rows)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
@@ -1946,8 +1983,13 @@ func TestProtocolServiceSnapshotKeepsAltScreenFinalFrameOnExit(t *testing.T) {
 	if snapshot.Screen.IsAlternateScreen || snapshot.Modes.AlternateScreen {
 		t.Fatalf("alt exit should expose final frame as primary live screen, got %#v", snapshot)
 	}
-	if got := cellsText(snapshot.Screen.Cells[0]); !strings.Contains(got, "alt-final") {
-		t.Fatalf("snapshot should preserve alt final frame, got %q", got)
+	gotRows := []string{
+		cellsText(snapshot.Screen.Cells[0]),
+		cellsText(snapshot.Screen.Cells[1]),
+		cellsText(snapshot.Screen.Cells[2]),
+	}
+	if got := strings.Join(gotRows, "\n"); !strings.Contains(got, "primary") || !strings.Contains(got, "alt-final") {
+		t.Fatalf("snapshot should keep primary tail and append alt final frame, got %#v", gotRows)
 	}
 
 	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -2018,6 +2060,18 @@ func waitForProtocolHistoryRow(t *testing.T, client *protocol.Client, terminalID
 	})
 	t.Fatalf("timed out waiting for protocol history row %q, got %#v", want, window)
 	return nil
+}
+
+func protocolHistoryWindowContainsText(window *protocol.HistoryWindow, want string) bool {
+	if window == nil {
+		return false
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(rowText(row), want) {
+			return true
+		}
+	}
+	return false
 }
 
 func waitForTerminalState(t *testing.T, server *Server, terminalID string, want TerminalState) {

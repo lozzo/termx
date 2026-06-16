@@ -69,7 +69,7 @@ func (surface *SurfaceTrack) Write(text string) {
 			text = text[idx:]
 			continue
 		}
-		consumed, action, filtered, complete := consumePrivateModeCSI(text)
+		consumed, action, _, complete := consumePrivateModeCSI(text)
 		if !complete {
 			surface.pending = text
 			return
@@ -80,10 +80,9 @@ func (surface *SurfaceTrack) Write(text string) {
 			continue
 		}
 		if action == privateModeAltExit && surface.vt.IsAltScreen() {
-			surface.preserveAltScreenFrameAsPrimary()
-			if filtered != "" {
-				surface.writeRaw(filtered)
-			}
+			altFrame := surface.altScreenFrameText()
+			surface.writeRaw(text[:consumed])
+			surface.appendAltScreenFrameText(altFrame)
 			text = text[consumed:]
 			continue
 		}
@@ -101,11 +100,37 @@ func (surface *SurfaceTrack) writeRaw(text string) {
 	_, _, _ = surface.vt.WriteForLatestFrame([]byte(text))
 }
 
-func (surface *SurfaceTrack) preserveAltScreenFrameAsPrimary() {
+func (surface *SurfaceTrack) altScreenFrameText() []string {
 	snapshot := surface.Snapshot()
-	snapshot.Modes.AlternateScreen = false
-	snapshot.Screen.IsAlternateScreen = false
-	surface.vt.LoadSnapshot(snapshot.Screen, snapshot.Cursor, snapshot.Modes)
+	rows := make([]string, 0, len(snapshot.Screen.Cells))
+	for _, row := range snapshot.Screen.Cells {
+		text := strings.TrimRight(vtermRowText(row), " ")
+		rows = append(rows, text)
+	}
+	for len(rows) > 0 && rows[0] == "" {
+		rows = rows[1:]
+	}
+	for len(rows) > 0 && rows[len(rows)-1] == "" {
+		rows = rows[:len(rows)-1]
+	}
+	return rows
+}
+
+func (surface *SurfaceTrack) appendAltScreenFrameText(rows []string) {
+	if len(rows) == 0 {
+		return
+	}
+	var builder strings.Builder
+	builder.WriteByte('\n')
+	// 中文说明：alt-screen 退出时只把最后一帧追加到 live surface，
+	// 不回写 history parser；authoritative history 仍只记录 primary 输出。
+	for i, row := range rows {
+		if i > 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(row)
+	}
+	surface.writeRaw(builder.String())
 }
 
 func (surface *SurfaceTrack) Rows() []string {

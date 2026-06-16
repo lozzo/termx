@@ -3,6 +3,7 @@ package termxcorev2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -799,7 +800,7 @@ func TestTerminalIngestOutputAltScreenDoesNotWritePrimaryHistory(t *testing.T) {
 	}
 }
 
-func TestTerminalIngestOutputAltScreenExitKeepsLastLiveFrameOnly(t *testing.T) {
+func TestTerminalIngestOutputAltScreenExitAppendsLastLiveFrame(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -823,8 +824,8 @@ func TestTerminalIngestOutputAltScreenExitKeepsLastLiveFrameOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live rows: %v", err)
 	}
-	if got := strings.Join(liveRows, "\n"); !strings.Contains(got, "alt-final") || strings.Contains(got, "primary") {
-		t.Fatalf("live surface should preserve alt final frame instead of restoring primary, got %q", got)
+	if got := strings.Join(liveRows, "\n"); !strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
+		t.Fatalf("live surface should keep primary tail and append alt final frame, got %q", got)
 	}
 
 	window, err := server.LatestWindow("term-1", 20, 10)
@@ -859,6 +860,50 @@ func TestTerminalIngestOutputEnterAltScreenCommitsPrimaryPageFirst(t *testing.T)
 	if window.TotalLines != 4 {
 		t.Fatalf("enter alt-screen should commit the primary page before switching, got total=%d", window.TotalLines)
 	}
+}
+
+func TestTerminalIngestOutputEnterAltScreenPreservesStressTail(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 120, Rows: 20},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	var output strings.Builder
+	for i := 1; i <= 100; i++ {
+		output.WriteString(stressHistoryLine(i))
+		output.WriteByte('\n')
+	}
+	output.WriteString("\x1b[?1049h\x1b[2JALT_SCREEN_MARK\x1b[?1049l")
+	if err := server.IngestOutput(context.Background(), "term-1", output.String()); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 120, 30)
+	if err != nil {
+		t.Fatalf("latest after stress alt-screen: %v", err)
+	}
+	if !historyWindowContainsText(window, "000100") {
+		t.Fatalf("enter alt-screen must preserve primary stress tail in history, got %#v", window.Rows)
+	}
+	if historyWindowContainsText(window, "ALT_SCREEN_MARK") {
+		t.Fatalf("alt-screen payload must stay out of primary history, got %#v", window.Rows)
+	}
+}
+
+func stressHistoryLine(n int) string {
+	return fmt.Sprintf("%06d [DEBUG ] stream pending id=%06d path=/var/tmp/alpha/beta/gamma wrap============================================== tail-marker", n, n)
+}
+
+func historyWindowContainsText(window history.HistoryWindow, want string) bool {
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestTerminalIngestOutputPreservesANSIStylesInHistoryCells(t *testing.T) {

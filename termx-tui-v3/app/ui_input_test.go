@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1136,6 +1137,64 @@ func TestInteractiveRuntimeCtrlVEntersCopyWithoutTerminalInput(t *testing.T) {
 	if !frameContains(last, "copy history empty") {
 		t.Fatalf("expected copy empty content in frame, got %#v", last.Lines)
 	}
+}
+
+func TestInteractiveRuntimeCtrlVRendersLatestStressTail(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 120, Rows: 30},
+	}
+	rows := make([]state.HistoryRow, 0, 100)
+	for i := 1; i <= 100; i++ {
+		text := stressHistoryLineForTUI(i)
+		rows = append(rows, state.HistoryRow{
+			Text:   text,
+			LineID: uint64(i),
+			Cells:  []state.HistoryCell{{Text: text, Width: len(text)}},
+		})
+	}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-stress",
+			118,
+			1,
+			rows,
+		)}},
+	}
+	host := NewFakeTerminalHost(64)
+	host.SetSize(120, 30)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core, Rows: 20},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 120, Rows: 30}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-v: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain ctrl-v: %v", err)
+	}
+
+	if !runtime.State().CopyMode.Active {
+		t.Fatalf("expected copy mode active, got %#v", runtime.State().CopyMode)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "000100") || frameContains(last, "ALT_SCREEN_MARK") {
+		t.Fatalf("copy latest should render newest primary stress tail only, got %#v", last.Lines)
+	}
+}
+
+func stressHistoryLineForTUI(n int) string {
+	return fmt.Sprintf("%06d [DEBUG ] stream pending path=/var/tmp/alpha/beta/gamma wrap======================== tail-marker", n)
 }
 
 func TestInteractiveRuntimeShellSemanticActionsReachRenderPath(t *testing.T) {
