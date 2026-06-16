@@ -207,6 +207,86 @@ func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T
 	assertContentActionEffect(t, effects, render.ActionClipboardHistoryDelete)
 }
 
+func TestOverlayMouseWheelMovesCurrentSelection(t *testing.T) {
+	inputReducer := NewUIInputReducer()
+	tests := []struct {
+		name     string
+		root     state.Root
+		wantKind state.OverlayKind
+	}{
+		{
+			name: "terminal picker",
+			root: state.Root{
+				Shell:        state.DefaultShell().OpenTerminalPicker(),
+				TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-a", Title: "a"}, {TerminalID: "term-b", Title: "b"}}},
+			},
+			wantKind: state.OverlayTerminalPicker,
+		},
+		{
+			name: "terminal pool",
+			root: state.Root{
+				Shell:        state.DefaultShell().OpenTerminalPool(),
+				TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-a", Title: "a"}, {TerminalID: "term-b", Title: "b"}}},
+			},
+			wantKind: state.OverlayTerminalPool,
+		},
+		{
+			name: "workbench tree",
+			root: state.Root{
+				Shell: state.DefaultShell().
+					SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneEmpty}, state.SplitDirectionVertical).
+					OpenWorkbenchTree(),
+			},
+			wantKind: state.OverlayWorkbenchTree,
+		},
+		{
+			name: "clipboard history",
+			root: state.Root{
+				Shell: state.DefaultShell().OpenClipboardHistory(),
+				Clipboard: state.ClipboardStore{
+					Entries: []state.ClipboardEntry{
+						{ID: "clip:1", Title: "one", Text: "one", Preview: "one"},
+						{ID: "clip:2", Title: "two", Text: "two", Preview: "two"},
+					},
+				},
+			},
+			wantKind: state.OverlayClipboardHistory,
+		},
+		{
+			name: "floating overview",
+			root: state.Root{
+				Shell: shellWithFloatingOverviewForMouseWheelTest(),
+			},
+			wantKind: state.OverlayFloatingOverview,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			next, effects := inputReducer(tc.root, ShellOverlayMouseSelectMsg{Delta: 1})
+			if next.Shell.Overlay.Kind != tc.wantKind || next.Shell.Overlay.SelectedIndex != 1 {
+				t.Fatalf("wheel down should move overlay selection, overlay=%#v", next.Shell.Overlay)
+			}
+			if len(effects) != 1 {
+				t.Fatalf("overlay wheel should be handled locally, effects=%#v", effects)
+			}
+			if _, ok := effects[0].(handledEffect); !ok {
+				t.Fatalf("overlay wheel should emit handled effect, got %#v", effects[0])
+			}
+			next, effects = inputReducer(next, ShellOverlayMouseSelectMsg{Delta: -1})
+			if next.Shell.Overlay.SelectedIndex != 0 {
+				t.Fatalf("wheel up should move overlay selection back, overlay=%#v effects=%#v", next.Shell.Overlay, effects)
+			}
+		})
+	}
+}
+
+func shellWithFloatingOverviewForMouseWheelTest() state.ShellStore {
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: "floating-1", Title: "one", Pane: state.PaneState{ID: "floating-pane-1", Title: "one", Kind: state.PaneEmpty}})
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandCreate, TargetID: "floating-2", Title: "two", Pane: state.PaneState{ID: "floating-pane-2", Title: "two", Kind: state.PaneEmpty}})
+	return shell.OpenFloatingOverview()
+}
+
 func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
@@ -252,6 +332,50 @@ func TestInteractiveRuntimeCtrlFDoesNotSendTerminalInput(t *testing.T) {
 		frameContains(last, "Select terminal source state target") ||
 		frameContains(last, "DETAIL") {
 		t.Fatalf("expected terminal picker product content in frame, got %#v", last.Lines)
+	}
+}
+
+func TestInteractiveRuntimeOverlayMouseWheelMovesSelectionWithoutTerminalLeak(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{
+			{TerminalID: "term-a", Title: "alpha", State: "running"},
+			{TerminalID: "term-b", Title: "beta", State: "running"},
+		}},
+	}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(96, 28)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if err := runtime.Post(ShellOpenTerminalPoolMsg{}); err != nil {
+		t.Fatalf("post terminal pool: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain terminal pool: %v", err)
+	}
+	overlay := frameHitRegion(t, lastFrame(t, host.Frames()), render.HitRegionOverlay, "")
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelDown, Row: overlay.Rect.Y + 1, Col: overlay.Rect.X + 1}); err != nil {
+		t.Fatalf("send overlay wheel: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain overlay wheel: %v", err)
+	}
+	if runtime.State().Shell.Overlay.SelectedIndex != 1 {
+		t.Fatalf("overlay wheel should move selection, overlay=%#v", runtime.State().Shell.Overlay)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("overlay wheel must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 

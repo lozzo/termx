@@ -119,6 +119,12 @@ type ShellContentActionMsg struct {
 
 func (ShellContentActionMsg) isMsg() {}
 
+type ShellOverlayMouseSelectMsg struct {
+	Delta int
+}
+
+func (ShellOverlayMouseSelectMsg) isMsg() {}
+
 type ShellArmOwnerConfirmMsg struct {
 	ViewID string
 }

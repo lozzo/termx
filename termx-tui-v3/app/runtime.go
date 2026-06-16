@@ -768,6 +768,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	}
 	resolution := resolveMouseHitRegions(runtime.lastHitRegions, inputMsg.Event)
 	if inputMsg.Event.Mouse != input.MouseLeft {
+		if msg, ok := runtime.overlayMouseSelectMsg(inputMsg.Event, resolution); ok {
+			return msg
+		}
 		if inputMsg.Event.RawSeq != "" {
 			if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
 				return msg
@@ -853,6 +856,23 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
 		return msg
+	}
+}
+
+func (runtime *AppRuntime) overlayMouseSelectMsg(event input.InputEvent, resolution mouseHitResolution) (Msg, bool) {
+	if !runtime.state.Shell.EnsureDefaults().Overlay.Open || !resolution.HasForeground {
+		return nil, false
+	}
+	if resolution.Foreground.Kind != render.HitRegionOverlay && resolution.Foreground.Kind != render.HitRegionContentAction {
+		return nil, false
+	}
+	switch event.Mouse {
+	case input.MouseWheelUp:
+		return ShellOverlayMouseSelectMsg{Delta: -1}, true
+	case input.MouseWheelDown:
+		return ShellOverlayMouseSelectMsg{Delta: 1}, true
+	default:
+		return nil, false
 	}
 }
 

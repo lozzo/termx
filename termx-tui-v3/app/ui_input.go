@@ -23,6 +23,9 @@ func (ShellExitInteractionModeMsg) isMsg() {}
 
 func NewUIInputReducer() Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
+		if mouseMsg, ok := msg.(ShellOverlayMouseSelectMsg); ok {
+			return reduceOverlayMouseSelect(root, mouseMsg)
+		}
 		inputMsg, ok := msg.(InputMsg)
 		if !ok {
 			return root, nil
@@ -90,6 +93,29 @@ func NewUIInputReducer() Reducer {
 			return root, nil
 		}
 	}
+}
+
+func reduceOverlayMouseSelect(root state.Root, msg ShellOverlayMouseSelectMsg) (state.Root, []Effect) {
+	shell := root.Shell.EnsureDefaults()
+	if !shell.Overlay.Open || msg.Delta == 0 {
+		return root, []Effect{handledEffect{}}
+	}
+	// 中文说明：overlay 滚轮只移动当前弹层选择，不允许事件继续落到底层 terminal。
+	switch shell.Overlay.Kind {
+	case state.OverlayTerminalPicker:
+		root.Shell = shell.MoveTerminalPickerSelection(msg.Delta, len(state.TerminalPickerItems(root)))
+	case state.OverlayTerminalPool:
+		root.Shell = shell.MoveTerminalPoolSelection(msg.Delta, len(state.TerminalPoolPageItems(root)))
+	case state.OverlayWorkbenchTree:
+		root.Shell = shell.MoveWorkbenchTreeSelection(msg.Delta, len(state.WorkbenchTreeItems(root)))
+	case state.OverlayClipboardHistory:
+		root.Shell = shell.MoveClipboardHistorySelection(msg.Delta, len(state.ClipboardHistoryItems(root)))
+	case state.OverlayFloatingOverview:
+		root.Shell = shell.MoveFloatingOverviewSelection(msg.Delta, len(state.FloatingOverviewItems(root)))
+	default:
+		return root, []Effect{handledEffect{}}
+	}
+	return root.Advance(), []Effect{handledEffect{}}
 }
 
 func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, state.Root, []Effect) {
