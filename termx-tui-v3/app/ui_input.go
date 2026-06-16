@@ -679,7 +679,8 @@ func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.R
 func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, []Effect, bool) {
 	shell := root.Shell.EnsureDefaults()
 	if layoutCommand, ok := terminalViewLayoutCommandFromString(command); ok {
-		return applyActiveTerminalViewLayoutCommand(root, layoutCommand), []Effect{handledEffect{}}, true
+		next, effects := applyActiveTerminalViewLayoutCommand(root, layoutCommand)
+		return next, append([]Effect{handledEffect{}}, effects...), true
 	}
 	switch command {
 	case "pane take-owner":
@@ -707,7 +708,7 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 	}
 }
 
-func applyActiveTerminalViewLayoutCommand(root state.Root, command state.TerminalViewLayoutCommand) state.Root {
+func applyActiveTerminalViewLayoutCommand(root state.Root, command state.TerminalViewLayoutCommand) (state.Root, []Effect) {
 	shell := root.Shell.EnsureDefaults()
 	var binding state.TerminalViewBinding
 	var ok bool
@@ -718,10 +719,10 @@ func applyActiveTerminalViewLayoutCommand(root state.Root, command state.Termina
 	}
 	if !ok {
 		root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.layout", Body: "no active view"})
-		return root.Advance()
+		return root.Advance(), nil
 	}
 	root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.layout", Body: terminalViewLayoutToast(binding.Layout)})
-	return root.Advance()
+	return root.Advance(), workbenchPersistEffects("terminal.layout")
 }
 
 func terminalViewLayoutCommandFromString(command string) (state.TerminalViewLayoutCommand, bool) {

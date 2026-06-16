@@ -268,7 +268,9 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	}
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
-	return root.Advance(), liveEffects(result.TerminalID, result.Cols, result.Rows, deps)
+	effects := workbenchPersistEffects("terminal.attach")
+	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+	return root.Advance(), effects
 }
 
 func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -389,7 +391,9 @@ func reduceTerminalPoolKillResult(root state.Root, msg TerminalPoolKillResultMsg
 	}
 	root = removeTerminalFromRoot(root, msg.TerminalID)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.kill", Body: msg.TerminalID})
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	effects := workbenchPersistEffects("terminal.kill")
+	effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }})
+	return root.Advance(), effects
 }
 
 func reduceTerminalPoolRemoveRequest(root state.Root, msg TerminalPoolRemoveRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -412,7 +416,9 @@ func reduceTerminalPoolRemoveResult(root state.Root, msg TerminalPoolRemoveResul
 	}
 	root = removeTerminalFromRoot(root, msg.TerminalID)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.delete", Body: msg.TerminalID})
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	effects := workbenchPersistEffects("terminal.delete")
+	effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }})
+	return root.Advance(), effects
 }
 
 func reduceTerminalPoolEditRequest(root state.Root, msg TerminalPoolEditRequestMsg, deps LiveDeps) (state.Root, []Effect) {

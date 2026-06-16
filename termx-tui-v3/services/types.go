@@ -501,6 +501,9 @@ func (service *FakeWorkbenchStorageService) LoadWorkbench(_ context.Context, ref
 	if service.LoadErr != nil {
 		return WorkbenchStorageLoadResult{}, service.LoadErr
 	}
+	if service.LoadResult.Found && service.CurrentVersion == 0 {
+		service.CurrentVersion = service.LoadResult.Version
+	}
 	return service.LoadResult, nil
 }
 

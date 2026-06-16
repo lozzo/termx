@@ -45,6 +45,7 @@ type fakeProtocolTerminalClient struct {
 	storageGets    []protocol.StorageGetParams
 	storagePuts    []protocol.StoragePutParams
 	storageEntry   *protocol.StorageEntry
+	storageGetErr  error
 	storagePutErr  error
 }
 
@@ -145,6 +146,9 @@ func (client *fakeProtocolTerminalClient) Snapshot(_ context.Context, terminalID
 
 func (client *fakeProtocolTerminalClient) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
 	client.storageGets = append(client.storageGets, params)
+	if client.storageGetErr != nil {
+		return nil, client.storageGetErr
+	}
 	if client.storageEntry != nil {
 		return client.storageEntry, nil
 	}
@@ -670,6 +674,27 @@ func TestProtocolWorkbenchStorageAdapterUsesOpaqueStorageMethods(t *testing.T) {
 	changed := <-watch
 	if changed.Ref.Key != state.WorkbenchStorageKeyRoot || changed.Version != 11 || changed.Op != "put" {
 		t.Fatalf("unexpected storage changed event %#v", changed)
+	}
+}
+
+func TestProtocolWorkbenchStorageAdapterTreatsMissingStorageAsEmpty(t *testing.T) {
+	ref := state.DefaultWorkbenchStorageRef("")
+	for _, client := range []*fakeProtocolTerminalClient{
+		{},
+		{storageGetErr: errors.New("protocol error 404: storage entry not found")},
+	} {
+		adapter := ProtocolWorkbenchStorageAdapter{Client: client}
+
+		loaded, err := adapter.LoadWorkbench(context.Background(), ref)
+		if err != nil {
+			t.Fatalf("load missing workbench storage: %v", err)
+		}
+		if loaded.Found {
+			t.Fatalf("missing workbench storage should load as empty, got %#v", loaded)
+		}
+		if len(client.storageGets) != 1 || client.storageGets[0].AppID != state.WorkbenchStorageAppID || client.storageGets[0].Key != state.WorkbenchStorageKeyRoot {
+			t.Fatalf("adapter must still request workbench storage key, got %#v", client.storageGets)
+		}
 	}
 }
 

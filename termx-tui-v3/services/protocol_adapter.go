@@ -253,7 +253,13 @@ func (adapter ProtocolWorkbenchStorageAdapter) LoadWorkbench(ctx context.Context
 		Key:     ref.Key,
 	})
 	if err != nil {
+		if isStorageNotFound(err) {
+			return WorkbenchStorageLoadResult{Found: false}, nil
+		}
 		return WorkbenchStorageLoadResult{}, err
+	}
+	if entry == nil || len(entry.Value) == 0 {
+		return WorkbenchStorageLoadResult{Found: false}, nil
 	}
 	snapshot, err := state.DecodeWorkbenchStorageSnapshot(entry.Value)
 	if err != nil {

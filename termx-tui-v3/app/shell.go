@@ -424,17 +424,17 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionResizeBalance:
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
 	case render.ActionResizeLayoutLock:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "toggle-lock"}), nil
+		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "toggle-lock"})
 	case render.ActionResizeLayoutToggle:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "toggle-layout"}), nil
+		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "toggle-layout"})
 	case render.ActionResizeLayoutPan:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "pan", DeltaX: 2}), nil
+		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "pan", DeltaX: 2})
 	case render.ActionResizeLayoutAlign:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "align", AlignX: state.TerminalViewAlignCenter, AlignY: state.TerminalViewAlignCenter}), nil
+		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "align", AlignX: state.TerminalViewAlignCenter, AlignY: state.TerminalViewAlignCenter})
 	case render.ActionResizeLayoutCenter:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "center"}), nil
+		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "center"})
 	case render.ActionResizeLayoutReset:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "reset"}), nil
+		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "reset"})
 	case render.ActionCopyOlder:
 		// copy footer 只生成等价 PageUp 输入，authoritative history 请求仍由 copy reducer 统一处理。
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {

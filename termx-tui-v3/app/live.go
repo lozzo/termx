@@ -339,7 +339,9 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 				SurfaceID:      msg.Result.SurfaceID,
 				ViewID:         viewID,
 			})
-			return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
+			effects := workbenchPersistEffects("terminal.attach")
+			effects = append(effects, liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)...)
+			return root.Advance(), effects
 		}
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
@@ -361,7 +363,9 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		SurfaceID:      msg.Result.SurfaceID,
 		ViewID:         viewID,
 	})
-	return root.Advance(), liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)
+	effects := workbenchPersistEffects("terminal.attach")
+	effects = append(effects, liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)...)
+	return root.Advance(), effects
 }
 
 func liveAttachViewStillPresent(root state.Root, viewID string) bool {

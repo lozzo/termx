@@ -48,6 +48,14 @@ type WorkbenchStoragePersistResultMsg struct {
 
 func (WorkbenchStoragePersistResultMsg) isMsg() {}
 
+// workbench storage 是 pane/floating 到 terminal 连接关系的持久来源；
+// attach、kill、layout 这类本地 view 变更都通过完整 snapshot 委托给 core opaque storage。
+func workbenchPersistEffects(reason string) []Effect {
+	return []Effect{FuncEffect{Run: func(context.Context) Msg {
+		return WorkbenchStoragePersistRequestMsg{Reason: reason}
+	}}}
+}
+
 func NewWorkbenchStorageReducer(deps WorkbenchDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {

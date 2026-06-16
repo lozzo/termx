@@ -82,8 +82,11 @@ func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 
 	var effects []Effect
 	root, effects = reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "surface", ViewID: state.TerminalPaneViewID("pane-2")}})
-	if len(effects) != 0 {
-		t.Fatalf("expected no effects without live deps, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("expected workbench persist effect without live deps, got %#v", effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != "terminal.attach" {
+		t.Fatalf("expected terminal attach persist request, got %#v", msg)
 	}
 	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
 	root, _ = reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 7, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID), CanResize: true}})
@@ -135,8 +138,11 @@ func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T)
 		CanResize:    true,
 	}}, LiveDeps{})
 
-	if len(effects) != 0 {
-		t.Fatalf("expected no effects without live deps, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("expected workbench persist effect without live deps, got %#v", effects)
+	}
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != "terminal.attach" {
+		t.Fatalf("expected terminal attach persist request, got %#v", msg)
 	}
 	if !root.Session.Attached || root.Session.Channel != 7 || root.Session.ViewID != "termx-cli-v3-main" {
 		t.Fatalf("prefilled CLI session should accept first attach result, session=%#v", root.Session)

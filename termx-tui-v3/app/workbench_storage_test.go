@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -121,6 +122,87 @@ func TestWorkbenchCommandPersistsSnapshotThroughStorageReducer(t *testing.T) {
 	}
 	if root.WorkbenchSync.LastSavedVersion != 1 {
 		t.Fatalf("persist result should track local saved version, got %#v", root.WorkbenchSync)
+	}
+}
+
+func TestTerminalPoolAttachPersistsTerminalViewBindingThroughStorageReducer(t *testing.T) {
+	storage := &services.FakeWorkbenchStorageService{}
+	reducer := ComposeReducers(NewTerminalPoolReducer(LiveDeps{}), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, TerminalPoolAttachResultMsg{
+		TerminalID: "term-1",
+		Result: services.TerminalAttachResult{
+			TerminalID:   "term-1",
+			Channel:      7,
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface-1",
+			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+			CanResize:    true,
+		},
+	})
+	if len(effects) != 1 {
+		t.Fatalf("terminal attach should emit workbench persist effect, got %#v", effects)
+	}
+	persistMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, persistMsg)
+	if len(effects) != 1 {
+		t.Fatalf("persist request should emit storage save effect, got %#v", effects)
+	}
+	resultMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, resultMsg)
+
+	if len(storage.Saves) != 1 {
+		t.Fatalf("expected one workbench storage save, got %#v", storage.Saves)
+	}
+	save := storage.Saves[0]
+	if len(save.Snapshot.TerminalViews) != 1 {
+		t.Fatalf("snapshot must contain terminal view binding, got %#v", save.Snapshot.TerminalViews)
+	}
+	binding := save.Snapshot.TerminalViews[0]
+	if binding.PaneID != state.DefaultPaneID || binding.TerminalID != "term-1" || binding.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("unexpected persisted binding %#v", binding)
+	}
+	if save.Snapshot.Workspace.Tabs[0].Panes[0].TerminalID != "term-1" {
+		t.Fatalf("workspace pane must persist terminal identity too, got %#v", save.Snapshot.Workspace.Tabs[0].Panes[0])
+	}
+	if !save.CheckVersion || save.ExpectedVersion != 0 {
+		t.Fatalf("initial terminal attach persist must use CAS version 0, got %#v", save)
+	}
+	if root.WorkbenchSync.LastSavedVersion != 1 {
+		t.Fatalf("terminal attach persist should update saved version, got %#v", root.WorkbenchSync)
+	}
+}
+
+func TestTerminalViewLayoutCommandPersistsWorkbenchSnapshot(t *testing.T) {
+	storage := &services.FakeWorkbenchStorageService{}
+	reducer := ComposeReducers(NewUIInputReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
+	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeResize)}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true))
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight, Shift: true}})
+	if len(effects) != 1 {
+		t.Fatalf("layout pan should emit one persist effect after handled marker is stripped, got %#v", effects)
+	}
+	persistMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, persistMsg)
+	if len(effects) != 1 {
+		t.Fatalf("persist request should emit storage save effect, got %#v", effects)
+	}
+	resultMsg := effects[0].(FuncEffect).Run(context.Background())
+	root, _ = reducer(root, resultMsg)
+
+	if len(storage.Saves) != 1 || len(storage.Saves[0].Snapshot.TerminalViews) != 1 {
+		t.Fatalf("expected one saved terminal view layout snapshot, saves=%#v", storage.Saves)
+	}
+	layout := storage.Saves[0].Snapshot.TerminalViews[0].Layout
+	if layout.PanX != 2 {
+		t.Fatalf("persisted terminal view layout should include pan delta, got %#v", layout)
+	}
+	if root.WorkbenchSync.LastSavedVersion != 1 {
+		t.Fatalf("layout persist should update saved version, got %#v", root.WorkbenchSync)
 	}
 }
 
@@ -508,8 +590,11 @@ func TestInteractiveRuntimeWithWorkbenchLoadsSnapshotBeforeWatch(t *testing.T) {
 	if len(storage.Loads) != 1 || len(storage.Watches) != 1 {
 		t.Fatalf("interactive runtime should load once and watch once, loads=%#v watches=%#v", storage.Loads, storage.Watches)
 	}
-	if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 7 {
+	if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.LastAppliedVersion != 7 || root.WorkbenchSync.LastSavedVersion != 8 {
 		t.Fatalf("expected restored workbench snapshot, root=%#v", root)
+	}
+	if len(storage.Saves) != 1 || storage.Saves[0].ExpectedVersion != 7 || storage.Saves[0].Snapshot.TerminalViews[0].TerminalID != "term-restored" {
+		t.Fatalf("restored terminal reattach should persist refreshed snapshot, saves=%#v", storage.Saves)
 	}
 	if binding, ok := root.TerminalViews.PaneBinding("pane-restored"); !ok || binding.TerminalID != "term-restored" || binding.ViewID == "" {
 		t.Fatalf("expected restored terminal view binding, binding=%#v ok=%v", binding, ok)

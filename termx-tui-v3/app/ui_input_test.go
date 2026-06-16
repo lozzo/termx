@@ -2400,7 +2400,7 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 
 	inputReducer := NewUIInputReducer()
 	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if len(effects) != 1 {
+	if len(effects) != 2 {
 		t.Fatalf("layout key should be handled, got %#v", effects)
 	}
 	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
@@ -2438,7 +2438,7 @@ func TestPaneModeLockUsesViewLocalTerminalLayoutPath(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 
 	next, effects := NewUIInputReducer()(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if len(effects) != 1 {
+	if len(effects) != 2 {
 		t.Fatalf("pane s should be handled by terminal layout command, got %#v", effects)
 	}
 	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
