@@ -7,9 +7,10 @@ import (
 
 func paneChromeTerminalLabelSlots(panel PanelVM, borderStyle StyleToken, width int) []paneChromeTopSlot {
 	terminal := panel.Chrome.Terminal
+	// 中文说明：右侧 terminal 状态槽固定宽度，标题只吃剩余宽度，避免长标题挤动 action 命中区。
 	right := paneChromeTerminalRightSlots(terminal, borderStyle)
 	for len(right) > 0 && paneChromeSlotsWidth(right)+paneChromeTerminalMinimumTitleWidth(terminal) > width {
-		right = right[:len(right)-1]
+		right = right[1:]
 	}
 	rightWidth := paneChromeSlotsWidth(right)
 	titleWidth := maxInt(0, width-rightWidth)
@@ -32,8 +33,7 @@ func paneChromeTerminalLeftTitle(terminal TerminalChromeVM, panel PanelVM, width
 	if title == "" {
 		return paneChromeTopSlot{}
 	}
-	lock := paneChromeBracketToken(paneChromeSizeLockGlyph())
-	text := lock + " " + title
+	text := paneChromeTerminalTitlePrefix(terminal) + title
 	if width > 2 {
 		text = TruncateCells(text, width-2)
 		text = " " + text + " "
@@ -44,7 +44,7 @@ func paneChromeTerminalLeftTitle(terminal TerminalChromeVM, panel PanelVM, width
 	if style == "" {
 		style = paneChromeTitleStyle(panel, borderStyle)
 	}
-	return paneChromeTopSlot{text: text, style: style, priority: 0}
+	return paneChromeTopSlot{text: PadRightCells(text, width), style: style, priority: 0}
 }
 
 func paneChromeTerminalRightSlots(terminal TerminalChromeVM, borderStyle StyleToken) []paneChromeTopSlot {
@@ -63,10 +63,47 @@ func paneChromeTerminalRightSlots(terminal TerminalChromeVM, borderStyle StyleTo
 		count = 1
 	}
 	return []paneChromeTopSlot{
-		{text: " " + stateText + " ", style: stateStyle, priority: 2},
-		{text: "⇄" + strconv.Itoa(count) + " ", style: borderStyle, priority: 3},
-		{text: ownerText + " ", style: ownerStyle, priority: 4, actionID: terminalOwnerActionID(terminal)},
+		{text: paneChromeFixedSlot(stateText, 3), style: stateStyle, priority: 2},
+		{text: paneChromeFixedSlot("x"+strconv.Itoa(count), 4), style: borderStyle, priority: 3},
+		{text: paneChromeFixedSlot(ownerText, 8), style: ownerStyle, priority: 4, actionID: terminalOwnerActionID(terminal)},
 	}
+}
+
+func paneChromeTerminalTitlePrefix(terminal TerminalChromeVM) string {
+	parts := make([]string, 0, 2)
+	if terminal.Locked {
+		parts = append(parts, paneChromeSizeLockGlyph())
+	}
+	if terminalChromeLayoutAdjusted(terminal) {
+		parts = append(parts, "◇")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "") + " "
+}
+
+func terminalChromeLayoutAdjusted(terminal TerminalChromeVM) bool {
+	return (terminal.LayoutMode != "" && terminal.LayoutMode != "auto") ||
+		terminal.PanX != 0 ||
+		terminal.PanY != 0 ||
+		(terminal.AlignX != "" && terminal.AlignX != "start") ||
+		(terminal.AlignY != "" && terminal.AlignY != "start")
+}
+
+func paneChromeFixedSlot(text string, width int) string {
+	text = strings.TrimSpace(text)
+	if width <= 0 || text == "" {
+		return ""
+	}
+	text = TruncateCells(text, width)
+	pad := width - DisplayWidth(text)
+	if pad <= 0 {
+		return text
+	}
+	left := pad / 2
+	right := pad - left
+	return strings.Repeat(" ", left) + text + strings.Repeat(" ", right)
 }
 
 func terminalOwnerActionID(terminal TerminalChromeVM) string {

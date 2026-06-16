@@ -624,7 +624,7 @@ func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t 
 		t.Fatalf("startup should load terminal pool once, lists=%#v", terminal.Lists)
 	}
 	frame := lastFrame(t, host.Frames())
-	if frameContains(frame, "[󰍀] shell") || !frameContains(frame, "[󰍀] main") {
+	if frameContains(frame, " shell ") || !frameContains(frame, " main ") {
 		t.Fatalf("restored terminal chrome should use terminal title after startup list, frame=%#v", frame.Lines)
 	}
 }

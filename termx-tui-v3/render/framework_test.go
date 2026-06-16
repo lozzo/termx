@@ -47,12 +47,11 @@ func TestFrameworkRendersTuiv2TerminalOwnerHeader(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	lines := result.Lines()
-	want := paneChromeBracketToken(paneChromeSizeLockGlyph()) + " 123"
-	if !linesContain(lines, want) || !linesContain(lines, paneChromeRunningGlyph()) || !linesContain(lines, "⇄2") || !linesContain(lines, "◆ owner") {
-		t.Fatalf("expected tuiv2 owner terminal header tokens, want %q got %#v", want, lines)
+	if !linesContain(lines, " 123 ") || !linesContain(lines, paneChromeRunningGlyph()) || !linesContain(lines, "x2") || !linesContain(lines, "◆ owner") {
+		t.Fatalf("expected terminal owner header tokens, got %#v", lines)
 	}
-	if linesContain(lines, "size:owner") || linesContain(lines, "active") {
-		t.Fatalf("terminal header should use tuiv2 grammar instead of generic meta/state, got %#v", lines)
+	if linesContain(lines, "size:owner") || linesContain(lines, "layout:") || linesContain(lines, "active") || linesContain(lines, "⇄2") {
+		t.Fatalf("terminal header should use compact fixed slots instead of generic meta/state, got %#v", lines)
 	}
 }
 
@@ -74,8 +73,8 @@ func TestFrameworkRendersTuiv2FloatingTerminalHeader(t *testing.T) {
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	lines := result.Lines()
-	if !linesContain(lines, paneChromeBracketToken(paneChromeSizeLockGlyph())+" 123") || !linesContain(lines, paneChromeRunningGlyph()) || !linesContain(lines, "⇄2") || !linesContain(lines, "◇ follow") {
-		t.Fatalf("expected tuiv2 floating terminal header tokens, got %#v", lines)
+	if !linesContain(lines, " 123 ") || !linesContain(lines, paneChromeRunningGlyph()) || !linesContain(lines, "x2") || !linesContain(lines, "◇ follow") {
+		t.Fatalf("expected floating terminal header tokens, got %#v", lines)
 	}
 	if !linesContain(lines, paneChromeBracketToken("")+"─"+paneChromeBracketToken("")+"─"+paneChromeBracketToken(paneChromeZoomGlyph())+"─"+paneChromeBracketToken(paneChromeCloseGlyph())) {
 		t.Fatalf("expected floating-specific action glyphs, got %#v", lines)

@@ -119,6 +119,89 @@ func TestChromePrimitiveFloatingTerminalOwnerTokenDrivesTakeOwnerHitRegion(t *te
 	}
 }
 
+func TestChromePrimitiveTerminalRightSlotsStayAnchoredAcrossTitleLengths(t *testing.T) {
+	rect := Rect{W: 86, H: 8}
+	short := terminalChromeSlotTestPanel("pane-short", "sh")
+	long := terminalChromeSlotTestPanel("pane-long", strings.Repeat("long-title-", 8))
+	shortSlots := PaneChromePrimitive(short, rect, StyleAccent).ActionSlots
+	longSlots := PaneChromePrimitive(long, rect, StyleAccent).ActionSlots
+
+	for _, actionID := range []string{ActionTerminalTakeResizeOwner.String(), ActionPaneClose.String()} {
+		shortSlot, ok := chromeSlotByAction(shortSlots, actionID)
+		if !ok {
+			t.Fatalf("missing short slot %s in %#v", actionID, shortSlots)
+		}
+		longSlot, ok := chromeSlotByAction(longSlots, actionID)
+		if !ok {
+			t.Fatalf("missing long slot %s in %#v", actionID, longSlots)
+		}
+		if shortSlot.Rect.X != longSlot.Rect.X || shortSlot.Rect.W != longSlot.Rect.W {
+			t.Fatalf("slot %s should stay anchored across title lengths short=%#v long=%#v", actionID, shortSlot, longSlot)
+		}
+	}
+	if chromeSlotsContainText(shortSlots, "size:") || chromeSlotsContainText(longSlots, "layout:") {
+		t.Fatalf("terminal chrome slots should not expose debug meta, short=%#v long=%#v", shortSlots, longSlots)
+	}
+}
+
+func TestChromePrimitiveNarrowTerminalKeepsOwnerBeforeShareAndLifecycle(t *testing.T) {
+	panel := terminalChromeSlotTestPanel("pane-1", "tiny")
+	primitive := PaneChromePrimitive(panel, Rect{W: 34, H: 8}, StyleAccent)
+	owner, ok := chromeSlotByAction(primitive.ActionSlots, ActionTerminalTakeResizeOwner.String())
+	if !ok || !strings.Contains(owner.Text, "follow") {
+		t.Fatalf("narrow terminal should keep owner action before share/lifecycle slots, got %#v", primitive.ActionSlots)
+	}
+	closeSlot, ok := chromeSlotByAction(primitive.ActionSlots, ActionPaneClose.String())
+	if !ok || closeSlot.Rect.W <= 0 {
+		t.Fatalf("narrow terminal should retain close action, got %#v", primitive.ActionSlots)
+	}
+	if chromeSlotsContainText(primitive.ActionSlots, "x2") || chromeSlotsContainText(primitive.ActionSlots, paneChromeRunningGlyph()) {
+		t.Fatalf("narrow terminal should drop share/lifecycle before owner action, got %#v", primitive.ActionSlots)
+	}
+}
+
+func terminalChromeSlotTestPanel(id string, title string) PanelVM {
+	return PanelVM{
+		ID:     id,
+		Title:  title,
+		Active: true,
+		Chrome: PanelChromeVM{
+			Terminal: TerminalChromeVM{
+				Title:       ChromeSlotVM{Text: title, Style: StyleAccent},
+				State:       ChromeSlotVM{Text: paneChromeRunningGlyph(), Style: StyleSuccess},
+				AttachCount: 2,
+				Owner:       ChromeSlotVM{Text: "◇ follow", Style: StyleMuted},
+				TakeOwner:   true,
+				TerminalID:  "term-1",
+			},
+			Actions: []ChromeActionVM{
+				paneChromeActionVM(ActionPaneZoom, StyleAccent),
+				paneChromeActionVM(ActionPaneSplitRight, StyleAccent),
+				paneChromeActionVM(ActionPaneSplitDown, StyleAccent),
+				paneChromeActionVM(ActionPaneClose, StyleAccent),
+			},
+		},
+	}
+}
+
+func chromeSlotByAction(slots []ChromeSlot, actionID string) (ChromeSlot, bool) {
+	for _, slot := range slots {
+		if slot.ActionID == actionID {
+			return slot, true
+		}
+	}
+	return ChromeSlot{}, false
+}
+
+func chromeSlotsContainText(slots []ChromeSlot, text string) bool {
+	for _, slot := range slots {
+		if strings.Contains(slot.Text, text) {
+			return true
+		}
+	}
+	return false
+}
+
 func hitRegionsContainActionRect(regions []HitRegion, actionID string, rect Rect) bool {
 	for _, region := range regions {
 		if region.ActionID == actionID && region.Rect == rect {

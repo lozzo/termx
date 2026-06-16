@@ -649,9 +649,9 @@ func buildPanelChromeVM(root state.Root, pane state.PaneState, active bool, cont
 	}
 	actions := defaultPaneChromeActionVMs(style)
 	terminal := terminalChromeVM(root, pane, active, content, style)
-	meta := terminalResizeOwnerMeta(pane.ID, root.TerminalViews)
+	var meta []ChromeSlotVM
 	if active && content.Kind == ContentCopyHistory && content.Status != "" {
-		meta = append([]ChromeSlotVM{{Text: compactCopyHistoryChromeStatus(content.Status), Style: StyleMuted}}, meta...)
+		meta = append(meta, ChromeSlotVM{Text: compactCopyHistoryChromeStatus(content.Status), Style: StyleMuted})
 	}
 	return PanelChromeVM{
 		Title:    ChromeSlotVM{Text: activePaneTitle(pane), Style: style},
@@ -766,26 +766,6 @@ func terminalChromeStateSlot(root state.Root, terminalID string, active bool, co
 		style = StyleDanger
 	}
 	return ChromeSlotVM{Text: paneChromeRunningGlyph(), Style: style}
-}
-
-func terminalResizeOwnerMeta(paneID string, views state.TerminalViewStore) []ChromeSlotVM {
-	binding, ok := views.PaneBinding(paneID)
-	if !ok || binding.TerminalID == "" {
-		return nil
-	}
-	layout := binding.Layout.Normalize()
-	text := "size:" + binding.ResizeRole
-	if layout.SizeLocked {
-		text += " lock"
-	}
-	if layout.Mode != state.TerminalViewLayoutAuto || layout.PanX != 0 || layout.PanY != 0 || layout.AlignX != state.TerminalViewAlignStart || layout.AlignY != state.TerminalViewAlignStart {
-		text += " layout:" + layout.Mode
-	}
-	style := StyleMuted
-	if binding.ResizeRole == state.TerminalResizeRoleOwner && binding.CanResize {
-		style = StyleSuccess
-	}
-	return []ChromeSlotVM{{Text: text, Style: style}}
 }
 
 func paneChromeStateSlot(active bool, content ContentVM) ChromeSlotVM {
