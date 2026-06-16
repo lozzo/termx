@@ -15,12 +15,17 @@ type historyOutputSegment struct {
 	CursorForward            bool
 	CursorBackward           bool
 	CursorHorizontalAbsolute bool
+	CursorUp                 bool
+	CursorDown               bool
+	CursorPosition           bool
 	EraseInLine              bool
 	EraseInDisplay           bool
 	SetTailFill              bool
 	SwitchAltScreen          bool
 	EnterAltScreen           bool
 	Count                    int
+	Row                      int
+	Column                   int
 	EraseMode                int
 	Style                    history.CellStyle
 }
@@ -211,6 +216,18 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		return end + 1
 	}
 	switch final {
+	case 'A':
+		parser.flush()
+		count := firstCSIParam(input[2:end], 1)
+		parser.segments = append(parser.segments, historyOutputSegment{CursorUp: true, Count: count})
+		parser.movePhysicalRowBy(-count)
+		return end + 1
+	case 'B':
+		parser.flush()
+		count := firstCSIParam(input[2:end], 1)
+		parser.segments = append(parser.segments, historyOutputSegment{CursorDown: true, Count: count})
+		parser.movePhysicalRowBy(count)
+		return end + 1
 	case 'C':
 		parser.flush()
 		count := firstCSIParam(input[2:end], 1)
@@ -237,6 +254,16 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 			parser.col = 0
 		}
 		parser.setPhysicalColumn(column - 1)
+		return end + 1
+	case 'H', 'f':
+		parser.flush()
+		row, column := firstTwoCSIParams(input[2:end], 1, 1)
+		parser.segments = append(parser.segments, historyOutputSegment{CursorPosition: true, Row: row, Column: column})
+		parser.col = column - 1
+		if parser.col < 0 {
+			parser.col = 0
+		}
+		parser.setPhysicalPosition(row-1, column-1)
 		return end + 1
 	}
 	if final != 'm' {
@@ -443,6 +470,38 @@ func (parser *historyANSIParser) setPhysicalColumn(column int) {
 	parser.atPhantom = false
 }
 
+func (parser *historyANSIParser) movePhysicalRowBy(delta int) {
+	if parser.screenRows <= 0 {
+		parser.screenRow = 0
+		parser.atPhantom = false
+		parser.rowFootprintActive = false
+		return
+	}
+	parser.screenRow += delta
+	if parser.screenRow < 0 {
+		parser.screenRow = 0
+	}
+	if parser.screenRow >= parser.screenRows {
+		parser.screenRow = parser.screenRows - 1
+	}
+	parser.atPhantom = false
+	parser.rowFootprintActive = false
+}
+
+func (parser *historyANSIParser) setPhysicalPosition(row int, column int) {
+	if parser.screenRows > 0 {
+		if row < 0 {
+			row = 0
+		}
+		if row >= parser.screenRows {
+			row = parser.screenRows - 1
+		}
+		parser.screenRow = row
+	}
+	parser.setPhysicalColumn(column)
+	parser.rowFootprintActive = false
+}
+
 func historyParserBlankFootprintStyle(style history.CellStyle) history.CellStyle {
 	return history.CellStyle{BG: style.BG}
 }
@@ -616,6 +675,19 @@ func parseSGRParams(text string) []int {
 	return params
 }
 
+func firstTwoCSIParams(text string, defaultFirst int, defaultSecond int) (int, int) {
+	params := parseSGRParams(text)
+	first := defaultFirst
+	second := defaultSecond
+	if len(params) > 0 && params[0] > 0 {
+		first = params[0]
+	}
+	if len(params) > 1 && params[1] > 0 {
+		second = params[1]
+	}
+	return first, second
+}
+
 func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutputSegment {
 	if len(segments) == 0 {
 		return nil
@@ -627,12 +699,17 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 		out[i].CursorForward = segment.CursorForward
 		out[i].CursorBackward = segment.CursorBackward
 		out[i].CursorHorizontalAbsolute = segment.CursorHorizontalAbsolute
+		out[i].CursorUp = segment.CursorUp
+		out[i].CursorDown = segment.CursorDown
+		out[i].CursorPosition = segment.CursorPosition
 		out[i].EraseInLine = segment.EraseInLine
 		out[i].EraseInDisplay = segment.EraseInDisplay
 		out[i].SetTailFill = segment.SetTailFill
 		out[i].SwitchAltScreen = segment.SwitchAltScreen
 		out[i].EnterAltScreen = segment.EnterAltScreen
 		out[i].Count = segment.Count
+		out[i].Row = segment.Row
+		out[i].Column = segment.Column
 		out[i].EraseMode = segment.EraseMode
 		out[i].Style = segment.Style
 		if len(segment.Cells) > 0 {

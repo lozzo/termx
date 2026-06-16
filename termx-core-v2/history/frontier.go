@@ -29,6 +29,35 @@ func (frontier *MutableFrontier) Add(id LogicalLineID) error {
 	return nil
 }
 
+func (frontier *MutableFrontier) PrependMany(ids []LogicalLineID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[LogicalLineID]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			return ErrInvalidLineID
+		}
+		if _, ok := frontier.present[id]; ok {
+			return ErrDuplicateLineID
+		}
+		if _, ok := seen[id]; ok {
+			return ErrDuplicateLineID
+		}
+		seen[id] = struct{}{}
+	}
+	// 中文说明：resize grow 回收的是 committed suffix，必须按原历史顺序插回 frontier。
+	next := make([]LogicalLineID, 0, len(ids)+len(frontier.ids))
+	next = append(next, ids...)
+	next = append(next, frontier.ids...)
+	frontier.ids = next
+	for _, id := range ids {
+		frontier.present[id] = struct{}{}
+	}
+	frontier.bumpGeneration()
+	return nil
+}
+
 func (frontier *MutableFrontier) Remove(id LogicalLineID) bool {
 	if _, ok := frontier.present[id]; !ok {
 		return false

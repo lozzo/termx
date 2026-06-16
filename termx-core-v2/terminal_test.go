@@ -229,11 +229,11 @@ func TestTerminalIngestOutputNewlineOnlySealsUntilLineLeavesPrimaryScreen(t *tes
 	committable := terminal.history.CommittableIDs()
 	terminal.mu.Unlock()
 
-	if got := committed; len(got) != 1 || got[0] != 1 {
-		t.Fatalf("only oldest sealed line should be committed after scroll-out, got %v", got)
+	if got := committed; !reflect.DeepEqual(got, []history.LogicalLineID{1, 2}) {
+		t.Fatalf("bottom newline should scroll out older sealed lines, got %v", got)
 	}
-	if got := frontier; len(got) != 2 || got[0] != 2 || got[1] != 3 {
-		t.Fatalf("newer sealed lines should remain in frontier ownership, got %v", got)
+	if got := frontier; !reflect.DeepEqual(got, []history.LogicalLineID{3}) {
+		t.Fatalf("newest sealed line should remain screen-owned frontier, got %v", got)
 	}
 	if len(committable) != 0 {
 		t.Fatalf("after commit, visible sealed lines must not remain committable, got %v", committable)
@@ -287,6 +287,36 @@ func TestTerminalIngestOutputCursorBackwardOverwritesMutableTailWithoutCommittin
 	}
 	if window.TotalLines != 0 {
 		t.Fatalf("cursor overwrite must not create committed history, got total lines %d", window.TotalLines)
+	}
+}
+
+func TestTerminalIngestOutputCursorUpRewritesScreenOwnedHistoryLine(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := "Working\n\n\x1b[2A\rDone\x1b[K"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 40, 8)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	text := historyWindowText(window.Rows)
+	if strings.Contains(text, "Working") {
+		t.Fatalf("screen row rewrite should remove transient Working, got %q rows=%#v", text, window.Rows)
+	}
+	if count := strings.Count(text, "Done"); count != 1 {
+		t.Fatalf("screen row rewrite should keep one final Done, count=%d text=%q rows=%#v", count, text, window.Rows)
+	}
+	if len(window.Rows) < 2 || window.Rows[1].Text != "" {
+		t.Fatalf("explicit blank row between dynamic lines should be preserved, got %#v", window.Rows)
 	}
 }
 
@@ -664,7 +694,7 @@ func TestTerminalIngestOutputClearScreenResetsMutableFrontierOnly(t *testing.T) 
 	if err != nil {
 		t.Fatalf("latest after clear: %v", err)
 	}
-	if len(after.Rows) != 1 || after.Rows[0].Text != "one" || after.TotalLines != before.TotalLines {
+	if len(after.Rows) != 2 || after.Rows[0].Text != "one" || after.Rows[1].Text != "two" || after.TotalLines != before.TotalLines {
 		t.Fatalf("ED 2 should clear mutable frontier but preserve committed history, got %#v", after)
 	}
 }
@@ -689,7 +719,7 @@ func TestTerminalIngestOutputEraseDisplayFromCursorClearsMutableTailOnly(t *test
 	if len(window.Rows) != 4 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || strings.TrimRight(window.Rows[3].Text, " ") != "fo" {
 		t.Fatalf("ED 0 should keep committed rows and clear only mutable tail below cursor, got %#v", window)
 	}
-	if window.TotalLines != 1 {
+	if window.TotalLines != 2 {
 		t.Fatalf("ED 0 must not create or truncate committed history, got total lines %d", window.TotalLines)
 	}
 }
@@ -711,10 +741,10 @@ func TestTerminalIngestOutputEraseDisplayToCursorClearsMutablePrefixOnly(t *test
 	if err != nil {
 		t.Fatalf("latest after ED 1: %v", err)
 	}
-	if len(window.Rows) != 2 || window.Rows[0].Text != "one" || window.Rows[1].Text != "   r" {
+	if len(window.Rows) != 3 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "   r" {
 		t.Fatalf("ED 1 should clear mutable rows above cursor and active prefix only, got %#v", window)
 	}
-	if window.TotalLines != 1 {
+	if window.TotalLines != 2 {
 		t.Fatalf("ED 1 must not create or truncate committed history, got total lines %d", window.TotalLines)
 	}
 }
@@ -739,7 +769,7 @@ func TestTerminalIngestOutputClearScrollbackTruncatesCommittedHistory(t *testing
 	if err != nil {
 		t.Fatalf("latest after clear scrollback: %v", err)
 	}
-	if len(window.Rows) != 3 || window.Rows[0].Text != "two" || window.Rows[1].Text != "three" || window.Rows[2].Text != "four" || window.TotalLines != 0 {
+	if len(window.Rows) != 2 || window.Rows[0].Text != "three" || window.Rows[1].Text != "four" || window.TotalLines != 0 {
 		t.Fatalf("ED 3 should clear committed history but keep mutable tail, got %#v", window)
 	}
 }
@@ -968,8 +998,8 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest before grow: %v", err)
 	}
-	if beforeGrow.TotalLines != 0 || len(beforeGrow.Rows) != 2 || beforeGrow.Rows[0].Text != "one" || beforeGrow.Rows[1].Text != "two" {
-		t.Fatalf("sealed visible lines should remain in live tail before grow, got %#v", beforeGrow)
+	if beforeGrow.TotalLines != 1 || len(beforeGrow.Rows) != 2 || beforeGrow.Rows[0].Text != "one" || beforeGrow.Rows[1].Text != "two" {
+		t.Fatalf("bottom newline should scroll out oldest line before grow, got %#v", beforeGrow)
 	}
 	if err := server.ResizeTerminal(context.Background(), "term-1", 10, 3); err != nil {
 		t.Fatalf("grow resize: %v", err)

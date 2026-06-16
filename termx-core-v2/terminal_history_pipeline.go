@@ -135,6 +135,21 @@ func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegme
 			return err
 		}
 	}
+	if segment.CursorUp {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: segment.Count}); err != nil {
+			return err
+		}
+	}
+	if segment.CursorDown {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorDown, Count: segment.Count}); err != nil {
+			return err
+		}
+	}
+	if segment.CursorPosition {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorPosition, Row: segment.Row, Column: segment.Column}); err != nil {
+			return err
+		}
+	}
 	if segment.EraseInLine {
 		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInLine, EraseMode: segment.EraseMode, EraseCols: pipeline.cols, Style: segment.Style}); err != nil {
 			return err

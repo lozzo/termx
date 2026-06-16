@@ -86,7 +86,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest history.window: %v", err)
 	}
-	if latest.Op != protocol.HistoryWindowReplace || latest.Size.Cols != 10 || latest.LogicalTotal != 1 || len(latest.Rows) != 2 {
+	if latest.Op != protocol.HistoryWindowReplace || latest.Size.Cols != 10 || latest.LogicalTotal != 2 || len(latest.Rows) != 2 {
 		t.Fatalf("unexpected latest window %#v", latest)
 	}
 	if rowText(latest.Rows[0]) != "four" || rowText(latest.Rows[1]) != "five" {
@@ -99,7 +99,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 		t.Fatalf("unexpected row ownership %#v", latest.RowOwnership)
 	}
 	if !latest.HasMore || !latest.CursorValid {
-		t.Fatalf("latest tail should still expose older committed rows from the same frozen snapshot, got %#v", latest)
+		t.Fatalf("latest tail should still expose older rows from the same frozen snapshot, got %#v", latest)
 	}
 
 	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -115,11 +115,11 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("older history.window: %v", err)
 	}
-	if older.Op != protocol.HistoryWindowPrepend || older.Token != latest.Token || len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if older.Op != protocol.HistoryWindowPrepend || older.Token != latest.Token || len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("unexpected older window %#v", older)
 	}
-	if len(older.RowOwnership) != 1 || older.RowOwnership[0] != protocol.RowOwnershipPersisted {
-		t.Fatalf("older committed row should stay persisted, got %#v", older.RowOwnership)
+	if len(older.RowOwnership) != 1 || older.RowOwnership[0] != protocol.RowOwnershipLiveTailLive {
+		t.Fatalf("older frozen live-tail row should stay live-tail-owned, got %#v", older.RowOwnership)
 	}
 
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -152,7 +152,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected frozen older to accept local reflow cols when cursor/boundary still valid, got %v", err)
 	}
-	if olderAtReflowCols.Op != protocol.HistoryWindowPrepend || len(olderAtReflowCols.Rows) != 1 || rowText(olderAtReflowCols.Rows[0]) != "one" {
+	if olderAtReflowCols.Op != protocol.HistoryWindowPrepend || len(olderAtReflowCols.Rows) != 1 || rowText(olderAtReflowCols.Rows[0]) != "three" {
 		t.Fatalf("unexpected older window at reflow cols %#v", olderAtReflowCols)
 	}
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -225,7 +225,7 @@ func TestProtocolServiceOlderAcceptsBoundaryFromMultiRowLatestSnapshot(t *testin
 	if err != nil {
 		t.Fatalf("older history.window from multi-row latest boundary: %v", err)
 	}
-	if older.Op != protocol.HistoryWindowPrepend || len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if older.Op != protocol.HistoryWindowPrepend || len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("unexpected older window from multi-row latest boundary %#v", older)
 	}
 }
@@ -323,7 +323,7 @@ func TestProtocolServiceOlderAcceptsExpandedBoundaryAfterPrepend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first older history.window: %v", err)
 	}
-	if firstOlder.Op != protocol.HistoryWindowPrepend || len(firstOlder.Rows) != 1 || rowText(firstOlder.Rows[0]) != "three" || !firstOlder.CursorValid {
+	if firstOlder.Op != protocol.HistoryWindowPrepend || len(firstOlder.Rows) != 1 || rowText(firstOlder.Rows[0]) != "four" || !firstOlder.CursorValid {
 		t.Fatalf("expected first prepend page over frozen snapshot, got %#v", firstOlder)
 	}
 
@@ -345,7 +345,7 @@ func TestProtocolServiceOlderAcceptsExpandedBoundaryAfterPrepend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second older history.window from expanded boundary: %v", err)
 	}
-	if secondOlder.Op != protocol.HistoryWindowPrepend || len(secondOlder.Rows) != 1 || rowText(secondOlder.Rows[0]) != "two" {
+	if secondOlder.Op != protocol.HistoryWindowPrepend || len(secondOlder.Rows) != 1 || rowText(secondOlder.Rows[0]) != "three" {
 		t.Fatalf("unexpected second older window from expanded boundary %#v", secondOlder)
 	}
 }
@@ -506,7 +506,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterCarriageReturnMutation(t *test
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after CR mutation: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "two" || !older.HasMore || !older.CursorValid {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "four" || !older.HasMore || !older.CursorValid {
 		t.Fatalf("older page should still come from frozen snapshot, got %#v", older)
 	}
 	oldest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -590,7 +590,7 @@ func TestProtocolServiceKeepsOlderWorkingForPreviousFrozenTokenAfterNewLatest(t 
 	if err != nil {
 		t.Fatalf("older from previous frozen token after new latest: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from previous frozen token, got %#v", older)
 	}
 }
@@ -644,7 +644,7 @@ func TestProtocolServiceKeepsOlderWorkingAcrossTerminalsWithSameFrozenGeneration
 	if err != nil {
 		t.Fatalf("older from first terminal after second terminal latest: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from first terminal frozen token, got %#v", older)
 	}
 }
@@ -697,7 +697,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseInLineMutation(t *testing
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after EL mutation: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from frozen snapshot, got %#v", older)
 	}
 }
@@ -750,7 +750,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseInLineModeOneMutation(t *
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after EL 1 mutation: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from frozen snapshot after EL 1 mutation, got %#v", older)
 	}
 }
@@ -803,7 +803,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseInLineModeTwoMutation(t *
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after EL 2 mutation: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from frozen snapshot after EL 2 mutation, got %#v", older)
 	}
 }
@@ -848,7 +848,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after clear scrollback: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from frozen snapshot after clear scrollback, got %#v", older)
 	}
 
@@ -860,7 +860,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	if err != nil {
 		t.Fatalf("latest after clear scrollback via new snapshot: %v", err)
 	}
-	if len(reloaded.Rows) != 3 || rowText(reloaded.Rows[0]) != "two" || rowText(reloaded.Rows[1]) != "three" || rowText(reloaded.Rows[2]) != "four" || reloaded.LogicalTotal != 0 {
+	if len(reloaded.Rows) != 2 || rowText(reloaded.Rows[0]) != "three" || rowText(reloaded.Rows[1]) != "four" || reloaded.LogicalTotal != 0 {
 		t.Fatalf("new snapshot should see empty committed history after clear scrollback, got %#v", reloaded)
 	}
 }
@@ -929,7 +929,7 @@ func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after restart: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from pre-restart frozen snapshot, got %#v", older)
 	}
 
@@ -999,7 +999,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterResizeReprojection(t *testing.
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after resize: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from pre-resize frozen snapshot, got %#v", older)
 	}
 
@@ -1014,7 +1014,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterResizeReprojection(t *testing.
 	if reloaded.Token == latest.Token {
 		t.Fatalf("resize should pin a new frozen token for subsequent latest, got old=%q new=%q", latest.Token, reloaded.Token)
 	}
-	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "three" || rowText(reloaded.Rows[1]) != "four" || rowText(reloaded.Rows[2]) != "five" || rowText(reloaded.Rows[3]) != "one" {
+	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "two" || rowText(reloaded.Rows[1]) != "three" || rowText(reloaded.Rows[2]) != "four" || rowText(reloaded.Rows[3]) != "five" {
 		t.Fatalf("new latest after resize should see resized frontier projection, got %#v", reloaded)
 	}
 	if len(reloaded.RowOwnership) != 4 || reloaded.RowOwnership[0] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[1] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[2] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[3] != protocol.RowOwnershipLiveTailLive {
@@ -1132,7 +1132,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseDisplayFromCursorMutation
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after ED 0 mutation: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from frozen snapshot after ED 0 mutation, got %#v", older)
 	}
 }
@@ -1185,7 +1185,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterEraseDisplayToCursorMutation(t
 	if err != nil {
 		t.Fatalf("older from frozen snapshot after ED 1 mutation: %v", err)
 	}
-	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "one" {
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("older page should still come from frozen snapshot after ED 1 mutation, got %#v", older)
 	}
 }

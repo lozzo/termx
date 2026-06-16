@@ -211,11 +211,12 @@
 | 215E1-R38. SK copy history shell 执行背景复现 | 完成 | `scripts/`、`termx-tui-v3/render/`、`workflow.md` | 已按真实手工路径改成双客户端 harness：direct PTY 里的 termx 客户端执行 stress，tmux 里的第二个 termx 客户端抓 live/copy raw；修复 history 渲染 wrapped continuation row 尾部背景空白丢失，报告收敛到 `reproduced=no` / `screen_diff_candidates=0` |
 | 215E1-R39. SK copy history core 背景 footprint 回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`scripts/`、`workflow.md` | 已撤掉 R38 的 TUI display-only 补丁；core history parser 现在只在 terminal 滚屏新建物理行继承背景时，把尾部空白作为 authoritative `Text="" Width=N Style=BG` footprint 写进 history；`bg-forensics` raw harness 收敛到 `screen_lost_bg_cells=0` |
 | 215E1-R40. SK copy history 行尾背景语义修正 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`termx-vterm/`、`workflow.md` | 已把滚屏继承背景改成 row tail fill metadata，不再写成 logical line 里的 N 个空格；copy/history 本地重排只在最后一个 visual row 展示行尾背景，真实空格/CSI K 仍保持 cell 宽度语义；live surface resize/reflow 会保留 used 宽度之后的行尾背景 |
+| 215E1-R41. SK history screen ownership 回写语义 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`termx-tui-v3/`、`workflow.md` | 已处理 Codex 这类 primary-screen UI 反复回写已有行的问题：core history 自己维护当前屏幕行到 logical line 的 ownership；光标上移/绝对定位回写时修改原 line，不把 `Working Working Working` 这类中间态追加成新历史；真实空白行作为 logical line 保留；copy frozen older 会先翻冻结屏幕里的上一行，不跳过 frozen live-tail |
 
 当前下一步：
 
-- `215E1-R40 copy history 行尾背景语义修正` 已完成
-- 后续只在真实复现新回归时再开新切片，不继续扩张背景语义细节
+- `215E1-R41 history screen ownership 回写语义` 已完成
+- 后续只在真实复现新回归时再开新切片；本切片没有实现完整 MVCC，也没有把 history parser 改成完整 terminal emulator
 
 ## 6. 必做证据
 

@@ -11,6 +11,9 @@ const (
 	EventCursorForward            EventKind = "cursor-forward"
 	EventCursorBackward           EventKind = "cursor-backward"
 	EventCursorHorizontalAbsolute EventKind = "cursor-horizontal-absolute"
+	EventCursorUp                 EventKind = "cursor-up"
+	EventCursorDown               EventKind = "cursor-down"
+	EventCursorPosition           EventKind = "cursor-position"
 	EventEraseInLine              EventKind = "erase-in-line"
 	EventEraseInDisplay           EventKind = "erase-in-display"
 	EventSetActiveLineTailFill    EventKind = "set-active-line-tail-fill"
@@ -46,6 +49,8 @@ type HistoryEvent struct {
 	LineID          LogicalLineID
 	LineIDs         []LogicalLineID
 	Count           int
+	Row             int
+	Column          int
 	EraseMode       int
 	EraseCols       int
 	EnterAltScreen  bool

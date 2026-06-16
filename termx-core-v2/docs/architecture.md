@@ -258,7 +258,7 @@ reclaim 的含义是把 committed suffix 从 index 边界撤回到 mutable front
 - logical line text/cells/runs、stable logical line ids、clipping 边界和 copy 所需 metadata 必须完整可重放。
 - frozen snapshot token 必须稳定绑定这次 copy 会话，后续 older 请求继续基于该 token / boundary 拉更早 logical lines。
 
-latest window 可以投影 committed tail 和 eligible mutable frontier。older cursor 只能基于 committed index 推进；mutable frontier 不得让 TUI 自行推断 committed depth。若客户端请求 frozen snapshot，core-v2 负责冻结本次 copy 会话的 logical-line 边界与 token，但不再为该会话后续每次本地宽度变化重复做 visual reflow。
+latest window 可以投影 committed tail 和 eligible mutable frontier。普通非冻结 older cursor 只能基于 committed index 推进；mutable frontier 不得让 TUI 自行推断 committed depth。若客户端请求 frozen snapshot，core-v2 负责冻结本次 copy 会话的 logical-line 边界与 token，后续 older cursor 在这份冻结 snapshot 的完整 visible logical lines 里向前移动，不能跳过进入 copy mode 时仍在屏幕上的 frozen frontier lines；同时 core 不再为该会话后续每次本地宽度变化重复做 visual reflow。
 
 ## 6. HistoryTrack 输入事件
 
@@ -384,7 +384,7 @@ copy mode 进入后，core-v2 需要暴露一个比“当前 cols 下的 visual 
 - snapshot token 必须固定绑定这次 copy 会话。
 - 后续 live append 不得进入这次 snapshot 的可见范围。
 - 如果 live 需要修改仍被 snapshot 引用的 frontier line，必须做 line-level copy-on-write；旧版本继续服务 snapshot，新版本服务 live。
-- older 请求继续带 `snapshot_token + boundary` 回 core 拉更早 logical lines，而不是按某个 client `cols` 预投影后的 rows 拉取。
+- older 请求继续带 `snapshot_token + boundary` 回 core 拉这份冻结 snapshot 里更早的 logical lines；如果上一页只显示了最后一条 frozen frontier line，下一页必须先返回它前面的 frozen frontier line，而不是直接跳到 committed 上界。
 - 退出 alt-screen 时恢复 primary surface，不把 alt 内容混入 primary history。
 - process exit 是 primary history 的 mutability 边界。
 - process exit 时 primary `MutableFrontier` 必须先 `force-commit-frontier`。

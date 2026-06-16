@@ -71,24 +71,24 @@ func TestHistoryTrackCommitFrontierRequiresLeavingPrimaryScreenOwnership(t *test
 		HistoryEvent{Kind: EventSealLogicalLine},
 		HistoryEvent{Kind: EventCommitFrontier},
 	)
-	if got := track.CommittedIDs(); len(got) != 0 {
-		t.Fatalf("screen still owns both sealed lines, got committed %v", got)
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("newline at screen bottom should scroll out the oldest line, got committed %v", got)
 	}
 
 	applyHistoryEvents(t, track,
 		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("three")},
 		HistoryEvent{Kind: EventSealLogicalLine},
 	)
-	if got := track.CommittableIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
-		t.Fatalf("oldest sealed line should become committable after scrolling out, got %v", got)
+	if got := track.CommittableIDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
+		t.Fatalf("second sealed line should become committable after next scroll, got %v", got)
 	}
 
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventCommitFrontier})
-	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
-		t.Fatalf("only scrolled-out sealed line should commit, got %v", got)
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
+		t.Fatalf("scrolled-out sealed lines should commit in order, got %v", got)
 	}
-	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2, 3}) {
-		t.Fatalf("newer visible sealed lines should remain frontier-owned, got %v", got)
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{3}) {
+		t.Fatalf("newer visible sealed line should remain frontier-owned, got %v", got)
 	}
 }
 
@@ -109,6 +109,31 @@ func TestHistoryTrackWritesNewLogicalLineAfterSeal(t *testing.T) {
 	}
 	if got := lineText(requireLine(t, track, 2)); got != "b" {
 		t.Fatalf("unexpected second line text %q", got)
+	}
+}
+
+func TestHistoryTrackPreservesExplicitBlankLines(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("top")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bottom")},
+	)
+
+	if got := track.LineIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2, 3}) {
+		t.Fatalf("explicit blank line should have a logical line id, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 2)); got != "" {
+		t.Fatalf("blank line should preserve empty text, got %q", got)
+	}
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTextsFromWindow(window.Rows); !reflect.DeepEqual(got, []string{"top", "", "bottom"}) {
+		t.Fatalf("latest should preserve explicit blank row, got %v", got)
 	}
 }
 
@@ -171,6 +196,38 @@ func TestHistoryTrackCursorForwardPastLineEndPadsBeforeWrite(t *testing.T) {
 	line := requireLine(t, track, 1)
 	if got := lineText(line); got != "a   X" {
 		t.Fatalf("cursor forward past line end should preserve blank columns, got %q", got)
+	}
+}
+
+func TestHistoryTrackCursorUpRewritesScreenOwnedCommittedLine(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(3)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("Working")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventCommitFrontier},
+	)
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("screen-owned sealed line should not commit yet, got %v", got)
+	}
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventCursorUp, Count: 2},
+		HistoryEvent{Kind: EventCursorHorizontalAbsolute, Count: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("Done")},
+		HistoryEvent{Kind: EventEraseInLine, EraseMode: 0},
+	)
+
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("screen row rewrite must not reorder committed history, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 1)); strings.TrimRight(got, " ") != "Done" {
+		t.Fatalf("cursor-up rewrite should replace original screen-owned line, got %q", got)
+	}
+	if got := track.LineIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
+		t.Fatalf("rewrite must not append duplicate Working lines, got %v", got)
 	}
 }
 
@@ -546,6 +603,25 @@ func TestHistoryTrackResizeSemantics(t *testing.T) {
 	}
 	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
 		t.Fatalf("same-size resize must not create history, got %v", got)
+	}
+}
+
+func TestHistoryTrackGrowResizeReclaimsCommittedSuffixInOrder(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "one")
+	commitLine(t, track, "two")
+	commitLine(t, track, "three")
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventResize, ResizeDirection: ResizeGrow, Count: 2})
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("grow resize should keep older committed prefix, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2, 3}) {
+		t.Fatalf("reclaimed suffix must keep logical order, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 2)) + "," + lineText(requireLine(t, track, 3)); got != "two,three" {
+		t.Fatalf("unexpected reclaimed line order %q", got)
 	}
 }
 

@@ -13,6 +13,8 @@ type HistoryTrack struct {
 	altScreen  bool
 	generation Generation
 	screenRows int
+	screenRow  int
+	screen     primaryScreenLineMap
 }
 
 func NewHistoryTrack() *HistoryTrack {
@@ -47,6 +49,14 @@ func (track *HistoryTrack) SetPrimaryScreenRows(rows int) {
 		rows = 0
 	}
 	track.screenRows = rows
+	track.screen.resize(rows)
+	if rows == 0 {
+		track.screenRow = 0
+		return
+	}
+	if track.screenRow >= rows {
+		track.screenRow = rows - 1
+	}
 }
 
 func (track *HistoryTrack) Apply(event HistoryEvent) error {
@@ -61,6 +71,12 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 		return track.cursorBackward(event.Count)
 	case EventCursorHorizontalAbsolute:
 		return track.cursorHorizontalAbsolute(event.Count)
+	case EventCursorUp:
+		return track.cursorUp(event.Count)
+	case EventCursorDown:
+		return track.cursorDown(event.Count)
+	case EventCursorPosition:
+		return track.cursorPosition(event.Row, event.Column)
 	case EventEraseInLine:
 		return track.eraseInLine(event.EraseMode, event.EraseCols, eraseBlankStyle(event.Style))
 	case EventEraseInDisplay:
@@ -175,9 +191,9 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 }
 
 func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
-	if track.activeLine != 0 && track.frontier.Contains(track.activeLine) {
+	if track.activeLine != 0 && (track.frontier.Contains(track.activeLine) || track.committed.Contains(track.activeLine)) {
 		line, ok := track.store.Line(track.activeLine)
-		if ok && line.Seal == SealStateOpen {
+		if ok {
 			return line, nil
 		}
 	}
@@ -194,6 +210,7 @@ func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
 	track.activeLine = line.ID
 	track.activeCol = 0
 	track.overwrite = false
+	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
 	return line, nil
 }
 
@@ -204,13 +221,12 @@ func (track *HistoryTrack) carriageReturn() error {
 	if track.activeLine == 0 {
 		return nil
 	}
-	if !track.frontier.Contains(track.activeLine) {
+	if !track.frontier.Contains(track.activeLine) && !track.committed.Contains(track.activeLine) {
 		track.activeLine = 0
 		track.activeCol = 0
 		return nil
 	}
-	line, ok := track.store.Line(track.activeLine)
-	if !ok || line.Seal != SealStateOpen {
+	if _, ok := track.store.Line(track.activeLine); !ok {
 		track.activeLine = 0
 		track.activeCol = 0
 		return nil
@@ -240,6 +256,76 @@ func (track *HistoryTrack) cursorHorizontalAbsolute(column int) error {
 		column = 1
 	}
 	return track.setActiveColumn(column - 1)
+}
+
+func (track *HistoryTrack) cursorUp(count int) error {
+	if count <= 0 {
+		count = 1
+	}
+	return track.moveCursorRowBy(-count)
+}
+
+func (track *HistoryTrack) cursorDown(count int) error {
+	if count <= 0 {
+		count = 1
+	}
+	return track.moveCursorRowBy(count)
+}
+
+func (track *HistoryTrack) cursorPosition(row int, column int) error {
+	if row <= 0 {
+		row = 1
+	}
+	if column <= 0 {
+		column = 1
+	}
+	track.setCursorScreenRow(row - 1)
+	if err := track.bindActiveLineFromScreenRow(); err != nil {
+		return err
+	}
+	return track.setActiveColumn(column - 1)
+}
+
+func (track *HistoryTrack) moveCursorRowBy(delta int) error {
+	if track.altScreen {
+		return nil
+	}
+	track.setCursorScreenRow(track.screenRow + delta)
+	return track.bindActiveLineFromScreenRow()
+}
+
+func (track *HistoryTrack) setCursorScreenRow(row int) {
+	if track.screenRows <= 0 {
+		track.screenRow = 0
+		return
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= track.screenRows {
+		row = track.screenRows - 1
+	}
+	track.screenRow = row
+}
+
+func (track *HistoryTrack) bindActiveLineFromScreenRow() error {
+	owner, ok := track.screen.owner(track.screenRow)
+	if !ok || owner.LineID == 0 {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return nil
+	}
+	if _, ok := track.store.Line(owner.LineID); !ok {
+		track.screen.clear(track.screenRow)
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return nil
+	}
+	track.activeLine = owner.LineID
+	track.overwrite = true
+	return nil
 }
 
 func (track *HistoryTrack) moveCursorBy(delta int) error {
@@ -278,7 +364,7 @@ func (track *HistoryTrack) setActiveColumn(column int) error {
 }
 
 func (track *HistoryTrack) activeCursorLineValid() bool {
-	if track.activeLine == 0 || !track.frontier.Contains(track.activeLine) {
+	if track.activeLine == 0 || (!track.frontier.Contains(track.activeLine) && !track.committed.Contains(track.activeLine)) {
 		track.activeLine = 0
 		track.activeCol = 0
 		track.overwrite = false
@@ -299,14 +385,14 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 			return err
 		}
 	}
-	if !track.frontier.Contains(track.activeLine) {
+	if !track.frontier.Contains(track.activeLine) && !track.committed.Contains(track.activeLine) {
 		track.activeLine = 0
 		track.activeCol = 0
 		track.overwrite = false
 		return nil
 	}
 	line, ok := track.store.Line(track.activeLine)
-	if !ok || line.Seal != SealStateOpen {
+	if !ok {
 		return nil
 	}
 	line.Cells = eraseLineCellsAtColumn(line.Cells, track.activeCol, mode, screenCols, style)
@@ -425,8 +511,11 @@ func (track *HistoryTrack) eraseDisplayToCursor() error {
 }
 
 func (track *HistoryTrack) sealActiveLine() error {
-	if track.altScreen || track.activeLine == 0 {
+	if track.altScreen {
 		return nil
+	}
+	if track.activeLine == 0 {
+		return track.sealBlankLine()
 	}
 	line, ok := track.store.Line(track.activeLine)
 	if !ok {
@@ -437,6 +526,8 @@ func (track *HistoryTrack) sealActiveLine() error {
 		track.activeLine = 0
 		track.activeCol = 0
 		track.overwrite = false
+		track.advanceScreenCursorLine()
+		track.bumpGeneration()
 		return nil
 	}
 	line.Seal = SealStateSealed
@@ -446,6 +537,25 @@ func (track *HistoryTrack) sealActiveLine() error {
 	track.activeLine = 0
 	track.activeCol = 0
 	track.overwrite = false
+	track.advanceScreenCursorLine()
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) sealBlankLine() error {
+	line, err := track.store.CreateLine(CreateLineRequest{
+		Seal:      SealStateSealed,
+		Dirty:     true,
+		Residency: ResidencyMemory,
+	})
+	if err != nil {
+		return err
+	}
+	if err := track.frontier.Add(line.ID); err != nil {
+		return err
+	}
+	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
+	track.advanceScreenCursorLine()
 	track.bumpGeneration()
 	return nil
 }
@@ -478,6 +588,7 @@ func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
 	track.activeLine = line.ID
 	track.activeCol = logicalLineWidth(line.Cells)
 	track.overwrite = false
+	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
 	track.bumpGeneration()
 	return nil
 }
@@ -491,6 +602,7 @@ func (track *HistoryTrack) resetFrontier() error {
 		track.activeLine = 0
 		track.activeCol = 0
 		track.overwrite = false
+		track.screen.clearAll()
 		return nil
 	}
 	for _, id := range ids {
@@ -502,6 +614,7 @@ func (track *HistoryTrack) resetFrontier() error {
 	track.activeLine = 0
 	track.activeCol = 0
 	track.overwrite = false
+	track.screen.clearAll()
 	track.bumpGeneration()
 	return nil
 }
@@ -557,6 +670,7 @@ func (track *HistoryTrack) deleteFrontierLinesWithoutBump(ids []LogicalLineID) (
 			track.activeCol = 0
 			track.overwrite = false
 		}
+		track.screen.removeLine(id)
 		changed = true
 	}
 	return changed, nil
@@ -629,18 +743,23 @@ func (track *HistoryTrack) reclaimCommittedSuffix(event HistoryEvent) error {
 			return ErrUnknownLine
 		}
 	}
+	insertIDs := make([]LogicalLineID, 0, len(ids))
 	for _, id := range ids {
 		track.committed.Remove(id)
 		if !track.frontier.Contains(id) {
-			if err := track.frontier.Add(id); err != nil {
-				return err
-			}
+			insertIDs = append(insertIDs, id)
 		}
+	}
+	if err := track.frontier.PrependMany(insertIDs); err != nil {
+		return err
+	}
+	for _, id := range ids {
 		track.frontier.Reveal(id)
 		track.activeLine = id
 		line, _ := track.store.Line(id)
 		track.activeCol = logicalLineWidth(line.Cells)
 		track.overwrite = false
+		track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: id})
 	}
 	track.bumpGeneration()
 	return nil
@@ -702,6 +821,7 @@ func (track *HistoryTrack) truncateCommittedHistory(event HistoryEvent) error {
 		if !track.frontier.Contains(id) {
 			track.store.DeleteLine(id)
 		}
+		track.screen.removeLine(id)
 		changed = true
 	}
 	if changed {
@@ -764,18 +884,7 @@ func (track *HistoryTrack) lineCommittable(id LogicalLineID) bool {
 	if !ok || line.Seal != SealStateSealed {
 		return false
 	}
-	return !containsLineID(track.primaryVisibleFrontierIDs(), id)
-}
-
-func (track *HistoryTrack) primaryVisibleFrontierIDs() []LogicalLineID {
-	visible := track.visibleFrontierIDs()
-	if track.screenRows <= 0 {
-		return nil
-	}
-	if len(visible) <= track.screenRows {
-		return visible
-	}
-	return cloneLineIDs(visible[len(visible)-track.screenRows:])
+	return !track.screen.containsLine(id)
 }
 
 func (track *HistoryTrack) visibleFrontierIDs() []LogicalLineID {
@@ -828,6 +937,107 @@ func (track *HistoryTrack) shrinkResize(count int) error {
 		Kind:    EventHideFrontier,
 		LineIDs: cloneLineIDs(visible[:count]),
 	})
+}
+
+func (track *HistoryTrack) advanceScreenCursorLine() {
+	if track.screenRows <= 0 {
+		track.screenRow = 0
+		return
+	}
+	if track.screenRow >= track.screenRows-1 {
+		track.screen.scrollUp()
+		track.screenRow = track.screenRows - 1
+		return
+	}
+	track.screenRow++
+}
+
+type primaryScreenLineOwner struct {
+	LineID LogicalLineID
+}
+
+// primaryScreenLineMap 是 history 侧自己的“当前屏幕行 ownership”。
+// 它只记录 logical line id，不读取 live surface，避免从实时快照反推历史 truth。
+type primaryScreenLineMap struct {
+	rows []primaryScreenLineOwner
+}
+
+func (screen *primaryScreenLineMap) resize(rows int) {
+	if rows <= 0 {
+		screen.rows = nil
+		return
+	}
+	if len(screen.rows) == rows {
+		return
+	}
+	next := make([]primaryScreenLineOwner, rows)
+	if len(screen.rows) > 0 {
+		if len(screen.rows) <= rows {
+			copy(next, screen.rows)
+		} else {
+			copy(next, screen.rows[len(screen.rows)-rows:])
+		}
+	}
+	screen.rows = next
+}
+
+func (screen *primaryScreenLineMap) set(row int, owner primaryScreenLineOwner) {
+	if row < 0 || row >= len(screen.rows) {
+		return
+	}
+	screen.rows[row] = owner
+}
+
+func (screen *primaryScreenLineMap) owner(row int) (primaryScreenLineOwner, bool) {
+	if row < 0 || row >= len(screen.rows) {
+		return primaryScreenLineOwner{}, false
+	}
+	owner := screen.rows[row]
+	return owner, owner.LineID != 0
+}
+
+func (screen *primaryScreenLineMap) clear(row int) {
+	if row < 0 || row >= len(screen.rows) {
+		return
+	}
+	screen.rows[row] = primaryScreenLineOwner{}
+}
+
+func (screen *primaryScreenLineMap) clearAll() {
+	for i := range screen.rows {
+		screen.rows[i] = primaryScreenLineOwner{}
+	}
+}
+
+func (screen *primaryScreenLineMap) scrollUp() {
+	if len(screen.rows) == 0 {
+		return
+	}
+	copy(screen.rows, screen.rows[1:])
+	screen.rows[len(screen.rows)-1] = primaryScreenLineOwner{}
+}
+
+func (screen *primaryScreenLineMap) removeLine(id LogicalLineID) {
+	if id == 0 {
+		return
+	}
+	for i := range screen.rows {
+		if screen.rows[i].LineID == id {
+			screen.rows[i] = primaryScreenLineOwner{}
+		}
+	}
+}
+
+func (screen *primaryScreenLineMap) containsLine(id LogicalLineID) bool {
+	if id == 0 {
+		return false
+	}
+	for _, owner := range screen.rows {
+		if owner.LineID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func overwriteLineCellsAtColumn(existing []Cell, column int, incoming []Cell) []Cell {

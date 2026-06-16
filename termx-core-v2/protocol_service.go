@@ -1428,12 +1428,10 @@ func latestCursorSnapshotTail(rows []snapshotProjectedRow, hasMore bool) history
 	if !hasMore || len(rows) == 0 {
 		return history.HistoryCursor{}
 	}
-	for _, row := range rows {
-		if row.committed {
-			return cursorFromSnapshotRow(row)
-		}
-	}
-	return history.HistoryCursor{Valid: true}
+	// 中文说明：copy mode 用的是冻结快照；冻结后 live-tail 行也已经是只读
+	// source。older 分页必须从当前页第一行继续往上走，不能跳过尚未 committed
+	// 但已经被冻结进 copy/history 的屏幕行。
+	return cursorFromSnapshotRow(rows[0])
 }
 
 func snapshotCursorStartPosition(snapshot history.FrozenSnapshot, cols int, cursor history.HistoryCursor) (int, int, bool) {
@@ -1441,19 +1439,18 @@ func snapshotCursorStartPosition(snapshot history.FrozenSnapshot, cols int, curs
 		return -1, -1, false
 	}
 	lines := snapshot.Lines
-	committedEnd := snapshotCommittedEnd(snapshot)
 	if cursor.BeforeLineID == 0 {
-		if committedEnd == 0 {
+		if len(lines) == 0 {
 			return -1, -1, false
 		}
-		lineIndex := committedEnd - 1
+		lineIndex := len(lines) - 1
 		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[lineIndex]}, cols)
 		if len(lineRows) == 0 {
 			return lineIndex - 1, -1, true
 		}
 		return lineIndex, len(lineRows) - 1, true
 	}
-	lineIndex, ok := snapshotLineIndex(lines[:committedEnd], cursor.BeforeLineID)
+	lineIndex, ok := snapshotLineIndex(lines, cursor.BeforeLineID)
 	if !ok {
 		return -1, -1, false
 	}
