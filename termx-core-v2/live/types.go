@@ -1,10 +1,13 @@
 package live
 
 import (
+	"os"
 	"strings"
 
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
+
+const preserveAltScreenOnExitEnv = "TERMX_PRESERVE_ALT_SCREEN_ON_EXIT"
 
 // SurfaceSize describes the current host projection size.
 type SurfaceSize struct {
@@ -18,9 +21,14 @@ func (s SurfaceSize) Valid() bool {
 }
 
 type SurfaceTrack struct {
-	size    SurfaceSize
-	vt      *vterm.VTerm
-	pending string
+	size                         SurfaceSize
+	vt                           *vterm.VTerm
+	pending                      string
+	preserveAltScreenFrameOnExit bool
+}
+
+type SurfaceTrackOptions struct {
+	PreserveAltScreenFrameOnExit bool
 }
 
 // SurfaceSnapshot 是真实 live terminal 的 size-bound cell matrix，不是 history truth。
@@ -31,11 +39,25 @@ type SurfaceSnapshot struct {
 	Modes  vterm.TerminalModes
 }
 
+func DefaultSurfaceTrackOptions() SurfaceTrackOptions {
+	return SurfaceTrackOptions{
+		PreserveAltScreenFrameOnExit: boolEnvDefault(preserveAltScreenOnExitEnv, true),
+	}
+}
+
 func NewSurfaceTrack(size SurfaceSize) *SurfaceTrack {
+	return NewSurfaceTrackWithOptions(size, DefaultSurfaceTrackOptions())
+}
+
+func NewSurfaceTrackWithOptions(size SurfaceSize, options SurfaceTrackOptions) *SurfaceTrack {
 	if !size.Valid() {
 		size = SurfaceSize{Cols: 80, Rows: 24}
 	}
-	return &SurfaceTrack{size: size, vt: vterm.New(size.Cols, size.Rows, 0, nil)}
+	return &SurfaceTrack{
+		size:                         size,
+		vt:                           vterm.New(size.Cols, size.Rows, 0, nil),
+		preserveAltScreenFrameOnExit: options.PreserveAltScreenFrameOnExit,
+	}
 }
 
 func (surface *SurfaceTrack) Size() SurfaceSize {
@@ -80,9 +102,14 @@ func (surface *SurfaceTrack) Write(text string) {
 			continue
 		}
 		if action == privateModeAltExit && surface.vt.IsAltScreen() {
-			altFrame := surface.altScreenFrameText()
+			var altFrame [][]vterm.Cell
+			if surface.preserveAltScreenFrameOnExit {
+				altFrame = surface.altScreenFrameCells()
+			}
 			surface.writeRaw(text[:consumed])
-			surface.appendAltScreenFrameText(altFrame)
+			if surface.preserveAltScreenFrameOnExit {
+				surface.appendAltScreenFrameCells(altFrame)
+			}
 			text = text[consumed:]
 			continue
 		}
@@ -100,36 +127,32 @@ func (surface *SurfaceTrack) writeRaw(text string) {
 	_, _, _ = surface.vt.WriteForLatestFrame([]byte(text))
 }
 
-func (surface *SurfaceTrack) altScreenFrameText() []string {
+func (surface *SurfaceTrack) altScreenFrameCells() [][]vterm.Cell {
 	snapshot := surface.Snapshot()
-	rows := make([]string, 0, len(snapshot.Screen.Cells))
+	rows := make([][]vterm.Cell, 0, len(snapshot.Screen.Cells))
 	for _, row := range snapshot.Screen.Cells {
-		text := strings.TrimRight(vtermRowText(row), " ")
-		rows = append(rows, text)
+		cloned := make([]vterm.Cell, len(row))
+		copy(cloned, row)
+		rows = append(rows, trimTrailingDefaultBlankCells(cloned))
 	}
-	for len(rows) > 0 && rows[0] == "" {
+	for len(rows) > 0 && !rowHasVisibleFootprint(rows[0]) {
 		rows = rows[1:]
 	}
-	for len(rows) > 0 && rows[len(rows)-1] == "" {
+	for len(rows) > 0 && !rowHasVisibleFootprint(rows[len(rows)-1]) {
 		rows = rows[:len(rows)-1]
 	}
 	return rows
 }
 
-func (surface *SurfaceTrack) appendAltScreenFrameText(rows []string) {
+func (surface *SurfaceTrack) appendAltScreenFrameCells(rows [][]vterm.Cell) {
 	if len(rows) == 0 {
 		return
 	}
 	var builder strings.Builder
-	builder.WriteByte('\n')
+	builder.WriteString("\r\n")
 	// 中文说明：alt-screen 退出时只把最后一帧追加到 live surface，
-	// 不回写 history parser；authoritative history 仍只记录 primary 输出。
-	for i, row := range rows {
-		if i > 0 {
-			builder.WriteByte('\n')
-		}
-		builder.WriteString(row)
-	}
+	// 这里用 cell replay 保留 SGR、带背景空白和列布局，但不回写 history parser。
+	builder.Write(vterm.EncodeHistoryRowsReplay(rows))
 	surface.writeRaw(builder.String())
 }
 
@@ -249,4 +272,46 @@ func trimTrailingEmptyRows(rows []string) []string {
 	out := make([]string, last+1)
 	copy(out, rows[:last+1])
 	return out
+}
+
+func rowHasVisibleFootprint(row []vterm.Cell) bool {
+	for _, cell := range row {
+		if cellHasVisibleFootprint(cell) {
+			return true
+		}
+	}
+	return false
+}
+
+func cellHasVisibleFootprint(cell vterm.Cell) bool {
+	if cell.Content != "" && strings.Trim(cell.Content, " ") != "" {
+		return true
+	}
+	if cell.Style != (vterm.CellStyle{}) || cell.LinkURL != "" || cell.LinkParams != "" {
+		return true
+	}
+	return cell.Width > 1
+}
+
+func trimTrailingDefaultBlankCells(row []vterm.Cell) []vterm.Cell {
+	last := len(row) - 1
+	for last >= 0 && !cellHasVisibleFootprint(row[last]) {
+		last--
+	}
+	return row[:last+1]
+}
+
+func boolEnvDefault(name string, fallback bool) bool {
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		return fallback
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }

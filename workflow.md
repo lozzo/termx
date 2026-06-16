@@ -217,11 +217,12 @@
 | 215E1-R44. SK alt screen 退出保留最后一帧 | 完成 | `termx-core-v2/live/`、`termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理全屏程序退出后看不到最后 UI 的问题：live surface 会保留退出前最后一帧；这个最后一帧只用于实时显示，不写入 primary history |
 | 215E1-R45. SK alt screen 压力历史尾部回归 | 完成 | `termx-core-v2/`、`termx-core-v2/live/`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场“压力日志后进入 alt-screen，看起来只能看到 000058 一类旧尾部”：补 100 行以上长行压力 harness，证明 authoritative history/copy latest 不丢 primary 尾部；同时把 live alt 退出策略改成先恢复 primary 再追加 alt 最后一帧，避免普通 live pane 被 alt 最后一帧直接盖住 |
 | 215E1-R46. SK fullscreen home clear 保留 primary 页 | 完成 | `termx-core-v2/`、`workflow.md` | 已处理真实现场“100 行 stress 后进入 Codex/全屏，退出后 copy/history 只剩到 000058”：全屏入口常见 `CSI H` + `CSI J/0J` 现在按 page-break 处理，先提交 primary frontier，再让新 UI 从新页开始，不再删除屏幕上的 primary logical line |
+| 215E1-R47. SK alt screen 退出最后一帧样式保真开关 | 完成 | `termx-core-v2/live/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理真实现场“htop 退出后最后 UI 还在但颜色布局丢失”：live surface 退出 alt-screen 时按 styled cell replay 保留最后一帧，并提供默认开启、后续可迁移到配置的开关 |
 
 当前下一步：
 
-- `215E1-R46 fullscreen home clear 保留 primary 页` 已完成
-- 已确认 `CSI H` + `CSI J/0J` 全屏入口不会删除 primary stress 尾页；history/copy latest 能看到 `000059..000100`
+- `215E1-R47 alt screen 退出最后一帧样式保真开关` 已完成
+- 已确认 alt-screen 退出保留最后一帧时不丢颜色、带背景空白和布局；`TERMX_PRESERVE_ALT_SCREEN_ON_EXIT=0` 可关闭该 live projection 策略
 
 ## 6. 必做证据
 

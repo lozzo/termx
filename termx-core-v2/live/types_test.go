@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestSurfaceSizeValid(t *testing.T) {
@@ -70,6 +72,59 @@ func TestSurfaceTrackPreservesAltScreenFrameOnExit(t *testing.T) {
 	}
 }
 
+func TestSurfaceTrackPreservesStyledAltScreenFrameOnExit(t *testing.T) {
+	surface := NewSurfaceTrackWithOptions(SurfaceSize{Cols: 24, Rows: 4}, SurfaceTrackOptions{
+		PreserveAltScreenFrameOnExit: true,
+	})
+	surface.Write("primary")
+	surface.Write("\x1b[?1049h\x1b[2J\x1b[31;44mALT\x1b[0m\x1b[2;1H\x1b[42mBAR   \x1b[0m\x1b[?1049l")
+
+	snapshot := surface.Snapshot()
+	if snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen {
+		t.Fatalf("expected preserved styled frame to become primary live screen, got modes=%#v screen=%#v", snapshot.Modes, snapshot.Screen)
+	}
+	altCell, ok := findCell(snapshot.Screen.Cells, "A")
+	if !ok {
+		t.Fatalf("expected preserved alt frame text, got %#v", surface.Rows())
+	}
+	if altCell.Style.FG != "ansi:1" || altCell.Style.BG != "ansi:4" {
+		t.Fatalf("expected styled alt cell to keep red-on-blue, got %#v", altCell)
+	}
+	if !hasStyledBlankInRowContaining(snapshot.Screen.Cells, "BAR", "ansi:2") {
+		t.Fatalf("expected styled trailing blanks to survive alt exit replay, got %#v", snapshot.Screen.Cells)
+	}
+}
+
+func TestSurfaceTrackPreservesAltScreenFrameStyledBlankLayoutRows(t *testing.T) {
+	surface := NewSurfaceTrackWithOptions(SurfaceSize{Cols: 18, Rows: 5}, SurfaceTrackOptions{
+		PreserveAltScreenFrameOnExit: true,
+	})
+	surface.Write("primary")
+	surface.Write("\x1b[?1049h\x1b[2J\x1b[45m      \x1b[0m\x1b[2;1Hcontent\x1b[?1049l")
+
+	snapshot := surface.Snapshot()
+	if !hasStyledBlankInRowBeforeMarker(snapshot.Screen.Cells, "content", "ansi:5") {
+		t.Fatalf("expected styled blank layout row before preserved alt content, got %#v", snapshot.Screen.Cells)
+	}
+	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "primary") {
+		t.Fatalf("expected trimmed default blank rows not to evict primary tail, got %q", got)
+	}
+}
+
+func TestSurfaceTrackAltScreenFramePreserveCanBeDisabledByEnv(t *testing.T) {
+	t.Setenv(preserveAltScreenOnExitEnv, "0")
+	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
+	surface.Write("primary")
+	surface.Write("\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l")
+
+	if got := strings.Join(surface.Rows(), "\n"); strings.Contains(got, "alt-final") {
+		t.Fatalf("expected disabled preserve policy to let alt exit clear final frame, got %q", got)
+	}
+	if surface.Snapshot().Modes.AlternateScreen {
+		t.Fatal("expected disabled preserve policy to still leave alternate screen mode")
+	}
+}
+
 func TestSurfaceTrackPreservesAltScreenFrameWhenExitSequenceIsSplit(t *testing.T) {
 	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
 	surface.Write("\x1b[?1049h\x1b[2Jsplit-final")
@@ -82,4 +137,43 @@ func TestSurfaceTrackPreservesAltScreenFrameWhenExitSequenceIsSplit(t *testing.T
 	if surface.Snapshot().Modes.AlternateScreen {
 		t.Fatal("expected split alt exit to leave alternate screen mode")
 	}
+}
+
+func findCell(rows [][]vterm.Cell, content string) (vterm.Cell, bool) {
+	for _, row := range rows {
+		for _, cell := range row {
+			if cell.Content == content {
+				return cell, true
+			}
+		}
+	}
+	return vterm.Cell{}, false
+}
+
+func hasStyledBlankInRowContaining(rows [][]vterm.Cell, marker string, bg string) bool {
+	for _, row := range rows {
+		if !strings.Contains(vtermRowText(row), marker) {
+			continue
+		}
+		for _, cell := range row {
+			if cell.Content == " " && cell.Style.BG == bg {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasStyledBlankInRowBeforeMarker(rows [][]vterm.Cell, marker string, bg string) bool {
+	for i, row := range rows {
+		if !strings.Contains(vtermRowText(row), marker) || i == 0 {
+			continue
+		}
+		for _, cell := range rows[i-1] {
+			if cell.Content == " " && cell.Style.BG == bg {
+				return true
+			}
+		}
+	}
+	return false
 }
