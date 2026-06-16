@@ -44,6 +44,15 @@ class RowInfo:
     tail_bg_counts: Counter[str]
 
 
+@dataclass
+class ScreenRowInfo:
+    index: int
+    plain: str
+    cells: list[Cell]
+    bg_cells: int
+    bg_blank_cells: int
+
+
 def parse_sgr_params(raw: bytes) -> list[int]:
     if not raw:
         return [0]
@@ -182,6 +191,23 @@ def summarize_capture(path: Path) -> dict[str, RowInfo]:
     return rows
 
 
+def summarize_screen_capture(path: Path) -> list[ScreenRowInfo]:
+    rows: list[ScreenRowInfo] = []
+    for index, raw_line in enumerate(path.read_bytes().splitlines()):
+        content = content_cells(parse_cells(raw_line))
+        plain = "".join(cell.ch for cell in content)
+        rows.append(
+            ScreenRowInfo(
+                index=index,
+                plain=plain.rstrip(),
+                cells=content,
+                bg_cells=sum(1 for cell in content if cell.style.effective_bg()),
+                bg_blank_cells=sum(1 for cell in content if cell.ch == " " and cell.style.effective_bg()),
+            )
+        )
+    return rows
+
+
 def summarize_input(path: Path) -> dict[str, RowInfo]:
     rows: dict[str, RowInfo] = {}
     for raw_line in path.read_bytes().splitlines():
@@ -235,6 +261,25 @@ def lost_bg_positions(live: RowInfo, copy: RowInfo) -> list[int]:
     return positions
 
 
+def lost_screen_bg_positions(live: ScreenRowInfo, copy: ScreenRowInfo) -> list[int]:
+    positions: list[int] = []
+    for index, live_cell in enumerate(live.cells):
+        live_bg = live_cell.style.effective_bg()
+        if not live_bg:
+            continue
+        copy_bg = copy.cells[index].style.effective_bg() if index < len(copy.cells) else None
+        if copy_bg != live_bg:
+            positions.append(index)
+    return positions
+
+
+def screen_row_text_matches(live: ScreenRowInfo, copy: ScreenRowInfo) -> bool:
+    if live.plain == copy.plain:
+        return True
+    # COPY/footer 等 chrome 行会不同；正文取证只比较文本一致的行，避免误报。
+    return live.plain.strip() != "" and live.plain.strip() == copy.plain.strip()
+
+
 def summarize_positions(positions: list[int], limit: int = 16) -> str:
     if not positions:
         return "[]"
@@ -249,11 +294,14 @@ def write_report(
     source_rows: dict[str, RowInfo],
     live_rows: dict[str, RowInfo],
     copy_rows: dict[str, RowInfo],
+    live_screen_rows: list[ScreenRowInfo],
+    copy_screen_rows: list[ScreenRowInfo],
     min_live_bg_spaces: int,
 ) -> bool:
     common = sorted(set(live_rows) & set(copy_rows))
     candidates: list[tuple[str, RowInfo, RowInfo]] = []
     positional_candidates: list[tuple[str, RowInfo, RowInfo, list[int]]] = []
+    screen_candidates: list[tuple[ScreenRowInfo, ScreenRowInfo, list[int]]] = []
     for label in common:
         live = live_rows[label]
         copy = copy_rows[label]
@@ -266,7 +314,14 @@ def write_report(
         if len(positions) >= min_live_bg_spaces:
             positional_candidates.append((label, live, copy, positions))
 
-    reproduced = bool(candidates or positional_candidates)
+    for live_screen, copy_screen in zip(live_screen_rows, copy_screen_rows):
+        if not screen_row_text_matches(live_screen, copy_screen):
+            continue
+        positions = lost_screen_bg_positions(live_screen, copy_screen)
+        if len(positions) >= min_live_bg_spaces:
+            screen_candidates.append((live_screen, copy_screen, positions))
+
+    reproduced = bool(candidates or positional_candidates or screen_candidates)
     common_with_live_bg = sum(1 for label in common if live_rows[label].bg_cells > 0)
     common_with_copy_bg = sum(1 for label in common if copy_rows[label].bg_cells > 0)
     common_bg_mismatch = sum(
@@ -287,12 +342,14 @@ def write_report(
         f"common_bg_mismatch={common_bg_mismatch}",
         f"diff_candidates={len(candidates)}",
         f"positional_diff_candidates={len(positional_candidates)}",
+        f"screen_diff_candidates={len(screen_candidates)}",
+        f"screen_lost_bg_cells={sum(len(positions) for _, _, positions in screen_candidates)}",
         "",
     ]
 
     if not common:
         lines.append("error=no common stress labels between live and copy captures")
-    elif candidates or positional_candidates:
+    elif candidates or positional_candidates or screen_candidates:
         lines.append("examples=live has more styled background cells than copy")
         for label, live, copy in candidates[:8]:
             source = source_rows.get(label)
@@ -340,6 +397,16 @@ def write_report(
             )
             lines.append(f"  live:  text={short_plain(live.plain)!r}")
             lines.append(f"  copy:  text={short_plain(copy.plain)!r}")
+        for live_screen, copy_screen, positions in screen_candidates[:8]:
+            lines.append(f"- screen_row={live_screen.index}")
+            lines.append(
+                "  screen: "
+                f"lost_bg_positions={summarize_positions(positions)} "
+                f"live_bg={live_screen.bg_cells} copy_bg={copy_screen.bg_cells} "
+                f"live_bg_blank={live_screen.bg_blank_cells} copy_bg_blank={copy_screen.bg_blank_cells}"
+            )
+            lines.append(f"  live:  text={short_plain(live_screen.plain)!r}")
+            lines.append(f"  copy:  text={short_plain(copy_screen.plain)!r}")
     else:
         lines.append("examples=none")
         for label in common[-8:]:
@@ -373,7 +440,17 @@ def main() -> int:
     source_rows = summarize_input(args.input)
     live_rows = summarize_capture(args.live)
     copy_rows = summarize_capture(args.copy)
-    write_report(args.report, source_rows, live_rows, copy_rows, args.min_live_bg_spaces)
+    live_screen_rows = summarize_screen_capture(args.live)
+    copy_screen_rows = summarize_screen_capture(args.copy)
+    write_report(
+        args.report,
+        source_rows,
+        live_rows,
+        copy_rows,
+        live_screen_rows,
+        copy_screen_rows,
+        args.min_live_bg_spaces,
+    )
     if not (set(live_rows) & set(copy_rows)):
         return 1
     return 0

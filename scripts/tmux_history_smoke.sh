@@ -64,6 +64,7 @@ Artifacts:
     bg-forensics-copy-tail.raw.txt
     bg-forensics-copy-tail.raw-preserve.txt
     bg-forensics.report.txt
+    bg-forensics-direct.direct-client.out
   floating-owner-resize:
     floating-base.txt
     floating-base.raw.txt
@@ -622,6 +623,112 @@ PY
   printf '%s\n' "$!"
 }
 
+start_direct_attach_client() {
+  local terminal_id="$1"
+  local base="$2"
+  local cols="${3:-$ATTACH_COLS}"
+  local rows="${4:-$ATTACH_ROWS}"
+  local command
+  local input_file="$ROOT/$base.direct-client.input"
+
+  command="$(attach_command "$terminal_id" "$base")"
+  : >"$input_file"
+  # 中文说明：这个 direct PTY 模拟真实终端模拟器里的第一个 termx 客户端；
+  # tmux 里的 attach 是第二个客户端，用来复现双 attachment 下的 live/history 差异。
+  python3 - "$cols" "$rows" "$command" "$input_file" <<'PY' >"$ROOT/$base.direct-client.out" 2>&1 &
+import fcntl
+import os
+import pty
+import select
+import signal
+import struct
+import subprocess
+import sys
+import termios
+
+cols = int(sys.argv[1])
+rows = int(sys.argv[2])
+command = sys.argv[3]
+input_path = sys.argv[4]
+input_offset = 0
+
+child = None
+stopping = False
+
+
+def handle_signal(signum, frame):
+    global stopping
+    stopping = True
+    if child is not None and child.poll() is None:
+        child.terminate()
+
+
+signal.signal(signal.SIGTERM, handle_signal)
+signal.signal(signal.SIGINT, handle_signal)
+
+master, slave = pty.openpty()
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+child = subprocess.Popen(
+    ["sh", "-lc", command],
+    stdin=slave,
+    stdout=slave,
+    stderr=slave,
+    close_fds=True,
+)
+os.close(slave)
+
+while True:
+    ready, _, _ = select.select([master], [], [], 0.05)
+    if master in ready:
+        try:
+            data = os.read(master, 4096)
+        except OSError:
+            data = b""
+        if not data:
+            if child.poll() is not None:
+                break
+        else:
+            os.write(1, data)
+    try:
+        size = os.path.getsize(input_path)
+    except OSError:
+        size = input_offset
+    if size > input_offset:
+        with open(input_path, "rb") as fh:
+            fh.seek(input_offset)
+            pending = fh.read(size - input_offset)
+        input_offset = size
+        if pending:
+            os.write(master, pending)
+    if child.poll() is not None:
+        break
+    if stopping and child.poll() is None:
+        child.terminate()
+
+if child.poll() is None:
+    child.terminate()
+    try:
+        child.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait(timeout=0.5)
+
+os.close(master)
+PY
+  printf '%s\n' "$!"
+}
+
+send_direct_literal() {
+  local base="$1"
+  local text="$2"
+  printf '%s' "$text" >>"$ROOT/$base.direct-client.input"
+}
+
+send_direct_enter() {
+  local base="$1"
+  printf '\r' >>"$ROOT/$base.direct-client.input"
+}
+
 stop_tmux_client() {
   local pid="${1:-}"
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
@@ -692,6 +799,7 @@ cleanup() {
   local owned_session
   stop_tmux_client "$CLIENT_MAIN_PID"
   stop_tmux_client "$CLIENT_REATTACH_PID"
+  stop_tmux_client "$CLIENT_DIRECT_PID"
   while owned_session="$(first_owned_tmux_session)"; do
     cleanup_tmux_session "$owned_session"
   done
@@ -807,7 +915,7 @@ wait_surface() {
       continue
     fi
     placeholder_streak="0"
-    if printf '%s\n' "$pane" | grep -Eq '([0-9]{6}|stress|PERSISTED-[0-9]{5}|LIVE-SCREEN-open-tail|HSEM_READY)'; then
+    if printf '%s\n' "$pane" | grep -Eq '([0-9]{6}|stress|PERSISTED-[0-9]{5}|LIVE-SCREEN-open-tail|HSEM_READY|BG_FOOTPRINT_READY|[$#] $|❯)'; then
       return 0
     fi
     sleep "$WAIT_DELAY"
@@ -2095,6 +2203,9 @@ run_bg_forensics_scenario() {
   local pane_main
   local command
 
+  CLIENT_DIRECT_PID="$(start_direct_attach_client "$TERM_ID" "bg-forensics-direct")"
+  sleep "$G_DELAY"
+
   pane_main="$(start_tmux_session "$SESSION_MAIN" "$SESSION_COLS" "$SESSION_ROWS" "$(attach_tmux_command "$TERM_ID" "$SESSION_MAIN")")"
   CLIENT_MAIN_PID="$(start_tmux_client "$SESSION_MAIN" "$pane_main")"
   prime_tmux_client "$SESSION_MAIN" "$pane_main"
@@ -2105,8 +2216,8 @@ run_bg_forensics_scenario() {
 
   command="$(printf 'python3 %q --lines %q --seed %q --width-hint %q | tee %q' \
     "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT" "$ROOT/bg-forensics-input.raw")"
-  send_tmux_literal "$SESSION_MAIN" "$pane_main" "bg-forensics-run-command" "$command"
-  send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-run-enter" Enter
+  send_direct_literal "bg-forensics-direct" "$command"
+  send_direct_enter "bg-forensics-direct"
 
   capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-live" "$(printf '%06d' "$LINES")"
   capture_preserved_raw_artifact "$SESSION_MAIN" "$pane_main" "bg-forensics-live"
@@ -2121,6 +2232,7 @@ run_bg_forensics_scenario() {
     --live "$ROOT/bg-forensics-live.raw-preserve.txt" \
     --copy "$ROOT/bg-forensics-copy-tail.raw-preserve.txt" \
     --report "$ROOT/bg-forensics.report.txt"
+  assert_contains "$ROOT/bg-forensics.report.txt" "reproduced=no"
 
   log "PASS bg-forensics-input -> $ROOT/bg-forensics-input.raw"
   log "PASS bg-forensics-live -> $ROOT/bg-forensics-live.raw-preserve.txt"
@@ -2563,6 +2675,7 @@ main() {
   SESSION_REATTACH=""
   CLIENT_MAIN_PID=""
   CLIENT_REATTACH_PID=""
+  CLIENT_DIRECT_PID=""
   DAEMON_PID=""
   GRID_DUMP_TOOL_DIR=""
 
