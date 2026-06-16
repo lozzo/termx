@@ -216,11 +216,12 @@
 | 215E1-R43. SK alt screen 进入前保留 primary 页 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理 Codex 进入 alt-screen 后只能看到 000058 的问题：进入 alt-screen 前先把 primary 当前 frontier 页封口提交；进入 alt-screen 后的清屏和绘制不再影响 primary history |
 | 215E1-R44. SK alt screen 退出保留最后一帧 | 完成 | `termx-core-v2/live/`、`termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理全屏程序退出后看不到最后 UI 的问题：live surface 会保留退出前最后一帧；这个最后一帧只用于实时显示，不写入 primary history |
 | 215E1-R45. SK alt screen 压力历史尾部回归 | 完成 | `termx-core-v2/`、`termx-core-v2/live/`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场“压力日志后进入 alt-screen，看起来只能看到 000058 一类旧尾部”：补 100 行以上长行压力 harness，证明 authoritative history/copy latest 不丢 primary 尾部；同时把 live alt 退出策略改成先恢复 primary 再追加 alt 最后一帧，避免普通 live pane 被 alt 最后一帧直接盖住 |
+| 215E1-R46. SK fullscreen home clear 保留 primary 页 | 完成 | `termx-core-v2/`、`workflow.md` | 已处理真实现场“100 行 stress 后进入 Codex/全屏，退出后 copy/history 只剩到 000058”：全屏入口常见 `CSI H` + `CSI J/0J` 现在按 page-break 处理，先提交 primary frontier，再让新 UI 从新页开始，不再删除屏幕上的 primary logical line |
 
 当前下一步：
 
-- `215E1-R45 alt screen 压力历史尾部回归` 已完成
-- 已确认 authoritative history/copy latest 在压力输出后进入 alt-screen 不丢 primary 尾部；普通 live pane 现在会恢复 primary 后追加 alt 最后一帧，避免视觉上像 history 被清掉
+- `215E1-R46 fullscreen home clear 保留 primary 页` 已完成
+- 已确认 `CSI H` + `CSI J/0J` 全屏入口不会删除 primary stress 尾页；history/copy latest 能看到 `000059..000100`
 
 ## 6. 必做证据
 

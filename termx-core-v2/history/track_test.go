@@ -434,6 +434,30 @@ func TestHistoryTrackEraseDisplayClearScreenCommitsCurrentScreenPage(t *testing.
 	}
 }
 
+func TestHistoryTrackEraseDisplayFromHomeCommitsCurrentScreenPage(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(3)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("one")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("two")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("three")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2, 3}) {
+		t.Fatalf("ED 0 from home should page-break current screen, got %v", got)
+	}
+	if got := track.FrontierIDs(); len(got) != 0 {
+		t.Fatalf("ED 0 from home should clear frontier ownership, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 3)); got != "three" {
+		t.Fatalf("ED 0 from home must preserve primary tail payload, got %q", got)
+	}
+}
+
 func TestHistoryTrackEraseDisplayFromCursorClearsMutableTailOnly(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "kept")

@@ -953,6 +953,51 @@ func TestProtocolServiceHistoryWindowFlushesStressTailBeforeAltScreenFreeze(t *t
 	}
 }
 
+func TestProtocolServiceHistoryWindowPreservesStressTailAcrossFullscreenHomeClear(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 120, Rows: 42},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	process := serverProcess(t, server, "term-1")
+	var output strings.Builder
+	for i := 1; i <= 100; i++ {
+		output.WriteString(stressHistoryLine(i))
+		output.WriteByte('\n')
+	}
+	output.WriteString("\x1b[?25l\x1b[H\x1b[JCODEX_FULLSCREEN_MARK")
+	process.emitOutput(output.String())
+
+	var latest *protocol.HistoryWindow
+	assertEventually(t, time.Second, func() bool {
+		var err error
+		latest, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID: "term-1",
+			Cols:       120,
+			Limit:      120,
+		})
+		return err == nil && latest != nil && protocolHistoryWindowContainsText(latest, "CODEX_FULLSCREEN_MARK")
+	}, "fullscreen output should reach history before assertion")
+	for i := 59; i <= 100; i++ {
+		marker := fmt.Sprintf("%06d", i)
+		if !protocolHistoryWindowContainsText(latest, marker) {
+			t.Fatalf("history.window latest must preserve primary screen line %s before fullscreen clear, got %#v", marker, latest.Rows)
+		}
+	}
+	if latest.LogicalTotal < 100 {
+		t.Fatalf("fullscreen clear should commit stress primary page, got total=%d window=%#v", latest.LogicalTotal, latest)
+	}
+	if !protocolHistoryWindowContainsText(latest, "CODEX_FULLSCREEN_MARK") {
+		t.Fatalf("fullscreen payload after page-break should be visible as fresh tail, got %#v", latest.Rows)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

@@ -893,6 +893,43 @@ func TestTerminalIngestOutputEnterAltScreenPreservesStressTail(t *testing.T) {
 	}
 }
 
+func TestTerminalIngestOutputFullscreenHomeClearPreservesStressTail(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 120, Rows: 42},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	var output strings.Builder
+	for i := 1; i <= 100; i++ {
+		output.WriteString(stressHistoryLine(i))
+		output.WriteByte('\n')
+	}
+	output.WriteString("\x1b[?25l\x1b[H\x1b[JCODEX_FULLSCREEN_MARK")
+	if err := server.IngestOutput(context.Background(), "term-1", output.String()); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 120, 120)
+	if err != nil {
+		t.Fatalf("latest after fullscreen home clear: %v", err)
+	}
+	for i := 59; i <= 100; i++ {
+		marker := fmt.Sprintf("%06d", i)
+		if !historyWindowContainsText(window, marker) {
+			t.Fatalf("fullscreen home clear must preserve primary screen line %s, total=%d rows=%#v", marker, window.TotalLines, window.Rows)
+		}
+	}
+	if window.TotalLines < 100 {
+		t.Fatalf("fullscreen home clear must commit all primary stress lines, got total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	if !historyWindowContainsText(window, "CODEX_FULLSCREEN_MARK") {
+		t.Fatalf("fullscreen payload after page-break should start fresh live tail, got %#v", window.Rows)
+	}
+}
+
 func stressHistoryLine(n int) string {
 	return fmt.Sprintf("%06d [DEBUG ] stream pending id=%06d path=/var/tmp/alpha/beta/gamma wrap============================================== tail-marker", n, n)
 }
