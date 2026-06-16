@@ -368,8 +368,9 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 
 ### 6.5 alt-screen 与 process exit 组合语义
 
-- 进入 alt-screen 时 primary `HistoryTrack` 冻结。
-- alt-screen 期间输出只影响 alt `LiveSurfaceTrack`，不进入 primary history。
+- 进入 alt-screen 前，primary `HistoryTrack` 必须先执行 page-break：把 core 已持有的 primary frontier 封口提交，再清空 primary screen ownership。
+- 进入 alt-screen 后，primary `HistoryTrack` 冻结；alt-screen 内部的清屏、光标移动和绘制只影响 alt `LiveSurfaceTrack`，不进入 primary history。
+- 退出 alt-screen 时恢复 primary surface，不把 alt 内容混入 primary history。
 
 ### 6.6 frozen snapshot / pagination contract
 
@@ -387,7 +388,6 @@ copy mode 进入后，core-v2 需要暴露一个比“当前 cols 下的 visual 
 - 后续 live append 不得进入这次 snapshot 的可见范围。
 - 如果 live 需要修改仍被 snapshot 引用的 frontier line，必须做 line-level copy-on-write；旧版本继续服务 snapshot，新版本服务 live。
 - older 请求继续带 `snapshot_token + boundary` 回 core 拉这份冻结 snapshot 里更早的 logical lines；如果上一页只显示了最后一条 frozen frontier line，下一页必须先返回它前面的 frozen frontier line，而不是直接跳到 committed 上界。
-- 退出 alt-screen 时恢复 primary surface，不把 alt 内容混入 primary history。
 - process exit 是 primary history 的 mutability 边界。
 - process exit 时 primary `MutableFrontier` 必须先 `force-commit-frontier`。
 - 如果 process exit 时仍在 alt-screen，alt 内容直接丢弃；primary frontier 仍按 process exit 规则 force commit。

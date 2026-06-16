@@ -884,8 +884,35 @@ func TestProtocolServiceHistoryWindowIgnoresAltScreenOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest history.window after alt-screen: %v", err)
 	}
-	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "after" || latest.LogicalTotal != 0 {
+	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "after" || latest.LogicalTotal != 1 {
 		t.Fatalf("alt-screen output must stay out of primary history window, got %#v", latest)
+	}
+}
+
+func TestProtocolServiceEnterAltScreenCommitsPrimaryPageFirst(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 20, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\x1b[?1049h\x1b[2Jhalt-tail\x1b[?1049lafter"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       20,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window after alt-screen: %v", err)
+	}
+	if len(latest.Rows) != 5 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "two" || rowText(latest.Rows[2]) != "three" || rowText(latest.Rows[3]) != "four" || rowText(latest.Rows[4]) != "after" {
+		t.Fatalf("enter alt-screen should preserve primary tail and drop alt payload, got %#v", latest)
+	}
+	if latest.LogicalTotal != 4 {
+		t.Fatalf("enter alt-screen should commit the primary page before switching, got total=%d", latest.LogicalTotal)
 	}
 }
 

@@ -794,8 +794,33 @@ func TestTerminalIngestOutputAltScreenDoesNotWritePrimaryHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after alt-screen: %v", err)
 	}
-	if len(window.Rows) != 2 || window.Rows[0].Text != "one" || window.Rows[1].Text != "after" || window.TotalLines != 0 {
+	if len(window.Rows) != 2 || window.Rows[0].Text != "one" || window.Rows[1].Text != "after" || window.TotalLines != 1 {
 		t.Fatalf("alt-screen output must stay out of primary history, got %#v", window)
+	}
+}
+
+func TestTerminalIngestOutputEnterAltScreenCommitsPrimaryPageFirst(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\x1b[?1049h\x1b[2Jhalt-tail\x1b[?1049lafter"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest after alt-screen: %v", err)
+	}
+	if len(window.Rows) != 5 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || window.Rows[3].Text != "four" || window.Rows[4].Text != "after" {
+		t.Fatalf("enter alt-screen should preserve primary tail and drop alt payload, got %#v", window)
+	}
+	if window.TotalLines != 4 {
+		t.Fatalf("enter alt-screen should commit the primary page before switching, got total=%d", window.TotalLines)
 	}
 }
 

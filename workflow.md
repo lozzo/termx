@@ -213,11 +213,12 @@
 | 215E1-R40. SK copy history 行尾背景语义修正 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`termx-vterm/`、`workflow.md` | 已把滚屏继承背景改成 row tail fill metadata，不再写成 logical line 里的 N 个空格；copy/history 本地重排只在最后一个 visual row 展示行尾背景，真实空格/CSI K 仍保持 cell 宽度语义；live surface resize/reflow 会保留 used 宽度之后的行尾背景 |
 | 215E1-R41. SK history screen ownership 回写语义 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`termx-tui-v3/`、`workflow.md` | 已处理 Codex 这类 primary-screen UI 反复回写已有行的问题：core history 自己维护当前屏幕行到 logical line 的 ownership；光标上移/绝对定位回写时修改原 line，不把 `Working Working Working` 这类中间态追加成新历史；真实空白行作为 logical line 保留；copy frozen older 会先翻冻结屏幕里的上一行，不跳过 frozen live-tail |
 | 215E1-R42. SK clear screen 保留当前屏幕页 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理 Codex / tmux 对比里的清屏问题：`CSI 2J` 不再直接删除当前 primary screen 上尚未 committed 的 logical lines，而是先把 HistoryTrack 已持有的 frontier 页面封口提交，再清空 screen ownership，让新全屏 UI 从新页面开始 |
+| 215E1-R43. SK alt screen 进入前保留 primary 页 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理 Codex 进入 alt-screen 后只能看到 000058 的问题：进入 alt-screen 前先把 primary 当前 frontier 页封口提交；进入 alt-screen 后的清屏和绘制不再影响 primary history |
 
 当前下一步：
 
-- `215E1-R42 clear screen 保留当前屏幕页` 已完成
-- 后续只在真实复现新回归时再开新切片；本切片没有从 live surface 截屏生成历史，没有处理 alt-screen，也没有扩展完整 terminal emulator
+- `215E1-R43 alt screen 进入前保留 primary 页` 已完成
+- 后续只在真实复现新回归时再开新切片；本切片只处理 alt-screen enter 边界，没有让 alt-screen 内部输出或清屏写入 primary history
 
 ## 6. 必做证据
 

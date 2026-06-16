@@ -564,6 +564,38 @@ func TestHistoryTrackAltScreenDoesNotWritePrimaryHistory(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackEnterAltScreenCommitsPrimaryFrontierFirst(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(2)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("one")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("two")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("three")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("four")},
+	)
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 2},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("alt")},
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: false},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("after")},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2, 3, 4}) {
+		t.Fatalf("enter alt-screen should commit primary page first, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{5}) {
+		t.Fatalf("primary output after alt exit should start a fresh frontier, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 5)); got != "after" {
+		t.Fatalf("alt-screen payload must not enter primary history, got %q", got)
+	}
+}
+
 func TestHistoryTrackProcessExitForceCommitsPrimaryFrontier(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("tail")})

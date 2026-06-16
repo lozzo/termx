@@ -100,8 +100,7 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 	case EventTruncateCommittedHistory:
 		return track.truncateCommittedHistory(event)
 	case EventSwitchAltScreen:
-		track.switchAltScreen(event.EnterAltScreen)
-		return nil
+		return track.switchAltScreen(event.EnterAltScreen)
 	case EventNonHistoryBoundary:
 		track.bumpGeneration()
 		return nil
@@ -886,12 +885,18 @@ func (track *HistoryTrack) truncateIDs(event HistoryEvent) []LogicalLineID {
 	return cloneLineIDs(ids[:event.Count])
 }
 
-func (track *HistoryTrack) switchAltScreen(enter bool) {
+func (track *HistoryTrack) switchAltScreen(enter bool) error {
 	if track.altScreen == enter {
-		return
+		return nil
+	}
+	if enter {
+		if err := track.clearPrimaryScreenPageBreak(); err != nil {
+			return err
+		}
 	}
 	track.altScreen = enter
 	track.bumpGeneration()
+	return nil
 }
 
 func (track *HistoryTrack) resize(event HistoryEvent) error {
