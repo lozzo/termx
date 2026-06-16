@@ -35,6 +35,7 @@ class Cell:
 class RowInfo:
     label: str
     plain: str
+    cells: list[Cell]
     bg_cells: int
     bg_blank_cells: int
     tail_bg_spaces: int
@@ -170,6 +171,7 @@ def summarize_capture(path: Path) -> dict[str, RowInfo]:
         rows[label] = RowInfo(
             label=label,
             plain=plain.rstrip(),
+            cells=content,
             bg_cells=sum(1 for cell in content if cell.style.effective_bg()),
             bg_blank_cells=sum(1 for cell in content if cell.ch == " " and cell.style.effective_bg()),
             tail_bg_spaces=sum(tail_bg_counts.values()),
@@ -201,6 +203,7 @@ def summarize_input(path: Path) -> dict[str, RowInfo]:
         rows[label] = RowInfo(
             label=label,
             plain=plain.rstrip(),
+            cells=cells,
             bg_cells=sum(1 for cell in cells if cell.style.effective_bg()),
             bg_blank_cells=sum(1 for cell in cells if cell.ch == " " and cell.style.effective_bg()),
             tail_bg_spaces=sum(tail_bg_counts.values()),
@@ -223,6 +226,24 @@ def short_plain(value: str, limit: int = 160) -> str:
     return value[: limit - 1] + "…"
 
 
+def lost_bg_positions(live: RowInfo, copy: RowInfo) -> list[int]:
+    positions: list[int] = []
+    for index, live_cell in enumerate(live.cells):
+        copy_bg = copy.cells[index].style.effective_bg() if index < len(copy.cells) else None
+        if live_cell.style.effective_bg() and not copy_bg:
+            positions.append(index)
+    return positions
+
+
+def summarize_positions(positions: list[int], limit: int = 16) -> str:
+    if not positions:
+        return "[]"
+    if len(positions) <= limit:
+        return "[" + ",".join(str(position) for position in positions) + "]"
+    head = ",".join(str(position) for position in positions[:limit])
+    return f"[{head},...+{len(positions) - limit}]"
+
+
 def write_report(
     report: Path,
     source_rows: dict[str, RowInfo],
@@ -232,6 +253,7 @@ def write_report(
 ) -> bool:
     common = sorted(set(live_rows) & set(copy_rows))
     candidates: list[tuple[str, RowInfo, RowInfo]] = []
+    positional_candidates: list[tuple[str, RowInfo, RowInfo, list[int]]] = []
     for label in common:
         live = live_rows[label]
         copy = copy_rows[label]
@@ -240,8 +262,11 @@ def write_report(
         row_lost = live.bg_cells >= min_live_bg_spaces and copy.bg_cells + min_live_bg_spaces <= live.bg_cells
         if tail_lost or blank_lost or row_lost:
             candidates.append((label, live, copy))
+        positions = lost_bg_positions(live, copy)
+        if len(positions) >= min_live_bg_spaces:
+            positional_candidates.append((label, live, copy, positions))
 
-    reproduced = bool(candidates)
+    reproduced = bool(candidates or positional_candidates)
     common_with_live_bg = sum(1 for label in common if live_rows[label].bg_cells > 0)
     common_with_copy_bg = sum(1 for label in common if copy_rows[label].bg_cells > 0)
     common_bg_mismatch = sum(
@@ -261,12 +286,13 @@ def write_report(
         f"common_rows_with_copy_bg={common_with_copy_bg}",
         f"common_bg_mismatch={common_bg_mismatch}",
         f"diff_candidates={len(candidates)}",
+        f"positional_diff_candidates={len(positional_candidates)}",
         "",
     ]
 
     if not common:
         lines.append("error=no common stress labels between live and copy captures")
-    elif candidates:
+    elif candidates or positional_candidates:
         lines.append("examples=live has more styled background cells than copy")
         for label, live, copy in candidates[:8]:
             source = source_rows.get(label)
@@ -295,6 +321,25 @@ def write_report(
                 f"last_bg={copy.last_bg} tail_bg={counts_text(copy.tail_bg_counts)} "
                 f"text={short_plain(copy.plain)!r}"
             )
+        for label, live, copy, positions in positional_candidates[:8]:
+            if any(label == existing_label for existing_label, _, _ in candidates[:8]):
+                continue
+            source = source_rows.get(label)
+            lines.append(f"- label={label}")
+            if source is not None:
+                lines.append(
+                    "  input: "
+                    f"bg_cells={source.bg_cells} bg_blank_cells={source.bg_blank_cells} "
+                    f"text={short_plain(source.plain)!r}"
+                )
+            lines.append(
+                "  positional: "
+                f"lost_bg_positions={summarize_positions(positions)} "
+                f"live_bg={live.bg_cells} copy_bg={copy.bg_cells} "
+                f"live_bg_blank={live.bg_blank_cells} copy_bg_blank={copy.bg_blank_cells}"
+            )
+            lines.append(f"  live:  text={short_plain(live.plain)!r}")
+            lines.append(f"  copy:  text={short_plain(copy.plain)!r}")
     else:
         lines.append("examples=none")
         for label in common[-8:]:

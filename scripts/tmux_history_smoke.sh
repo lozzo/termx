@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-live-tail | history-semantics | bg-forensics | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-live-tail | history-semantics | bg-footprint | bg-forensics | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history | floating-owner-remote-pair-wheel-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -53,9 +53,14 @@ Artifacts:
     history-semantics-copy-latest.raw-preserve.txt
     history-semantics-copy-top.txt
     history-semantics-copy-top.raw-preserve.txt
+  bg-footprint:
+    bg-footprint-live.raw-preserve.txt
+    bg-footprint-copy.raw-preserve.txt
+    bg-footprint.report.txt
   bg-forensics:
     bg-forensics-input.raw
     bg-forensics-live.raw.txt
+    bg-forensics-live.raw-preserve.txt
     bg-forensics-copy-tail.raw.txt
     bg-forensics-copy-tail.raw-preserve.txt
     bg-forensics.report.txt
@@ -935,6 +940,13 @@ capture_pane_normal_raw() {
   run_tmux_capture "$session" "$target" "$base" "normal-raw" tmux capture-pane -t "$target" -ep
 }
 
+capture_pane_normal_raw_preserve() {
+  local session="$1"
+  local target="$2"
+  local base="${3:-capture}"
+  run_tmux_capture "$session" "$target" "$base" "normal-raw-preserve" tmux capture-pane -t "$target" -epN
+}
+
 capture_pane_alt_raw_preserve() {
   local session="$1"
   local target="$2"
@@ -942,23 +954,58 @@ capture_pane_alt_raw_preserve() {
   run_tmux_capture "$session" "$target" "$base" "alt-raw-preserve" tmux capture-pane -a -t "$target" -epN
 }
 
+capture_pane_mode_raw_preserve() {
+  local session="$1"
+  local target="$2"
+  local base="${3:-capture}"
+  run_tmux_capture "$session" "$target" "$base" "mode-raw-preserve" tmux capture-pane -M -t "$target" -epN
+}
+
+raw_capture_has_content() {
+  local raw="$1"
+  printf '%s' "$raw" | LC_ALL=C grep -Eq '[[:alnum:]│┌┐└┘]'
+}
+
+write_preserved_raw_artifact() {
+  local base="$1"
+  local mode="$2"
+  local raw="$3"
+  printf '%s\n' "$raw" >"$ROOT/$base.raw-preserve.txt"
+  printf '%s\n' "$mode" >"$ROOT/$base.raw-preserve.mode.txt"
+}
+
 capture_preserved_raw_artifact() {
   local session="$1"
   local target="$2"
   local base="$3"
   local raw
-  if [[ -s "$ROOT/$base.raw.txt" ]]; then
-    cp "$ROOT/$base.raw.txt" "$ROOT/$base.raw-preserve.txt"
+  local mode
+  # 中文说明：背景空白问题必须看 tmux 当前 pane 的真实 raw screen。
+  # 优先使用 `-epN` 保留 SGR 和行尾空格，并记录实际命中的 capture 策略。
+  mode="normal-epN"
+  raw="$(capture_pane_normal_raw_preserve "$session" "$target" "$base.raw-preserve.normal" || true)"
+  if raw_capture_has_content "$raw"; then
+    write_preserved_raw_artifact "$base" "$mode" "$raw"
     return
   fi
-  # tmux 3.6 的 `capture-pane -epN` 在 alternate screen 下可能只返回空行；
-  # `-ep` 已经保留 SGR 和行内空格，足够验证背景是否延伸到 marker 后的空白区。
-  raw="$(capture_pane_alt_raw "$session" "$target" "$base.raw-preserve" || true)"
-  if [[ -n "$raw" ]]; then
-    printf '%s\n' "$raw" >"$ROOT/$base.raw-preserve.txt"
+
+  mode="alternate-epN"
+  raw="$(capture_pane_alt_raw_preserve "$session" "$target" "$base.raw-preserve.alternate" || true)"
+  if raw_capture_has_content "$raw"; then
+    write_preserved_raw_artifact "$base" "$mode" "$raw"
     return
   fi
-  capture_pane_alt_raw_preserve "$session" "$target" "$base" >"$ROOT/$base.raw-preserve.txt"
+
+  mode="mode-epN"
+  raw="$(capture_pane_mode_raw_preserve "$session" "$target" "$base.raw-preserve.mode" || true)"
+  if raw_capture_has_content "$raw"; then
+    write_preserved_raw_artifact "$base" "$mode" "$raw"
+    return
+  fi
+
+  mode="fallback-alternate-ep"
+  raw="$(capture_pane_alt_raw "$session" "$target" "$base.raw-preserve-fallback" || true)"
+  write_preserved_raw_artifact "$base" "$mode" "$raw"
 }
 
 extract_first_match() {
@@ -1460,6 +1507,93 @@ raise SystemExit(f"{path}: marker {marker_text!r} not found")
 PY
 }
 
+assert_no_bg_spaces_after_marker() {
+  local file="$1"
+  local marker="$2"
+  local unexpected_bg="$3"
+  python3 - "$file" "$marker" "$unexpected_bg" <<'PY'
+import sys
+
+path, marker_text, unexpected_bg = sys.argv[1:4]
+marker = marker_text.encode()
+
+
+def parse_sgr_params(raw: bytes) -> list[int]:
+    if not raw:
+        return [0]
+    values = []
+    for part in raw.replace(b":", b";").split(b";"):
+        if not part:
+            values.append(0)
+            continue
+        try:
+            values.append(int(part))
+        except ValueError:
+            continue
+    return values or [0]
+
+
+def apply_sgr(params, bg):
+    i = 0
+    while i < len(params):
+        value = params[i]
+        if value == 0 or value == 49:
+            bg = None
+        elif 40 <= value <= 47:
+            bg = f"ansi:{value - 40}"
+        elif 100 <= value <= 107:
+            bg = f"ansi:{value - 100 + 8}"
+        elif value == 48 and i + 2 < len(params) and params[i + 1] == 5:
+            bg = f"idx:{params[i + 2]}"
+            i += 2
+        elif value == 48 and i + 4 < len(params) and params[i + 1] == 2:
+            bg = f"#{params[i + 2]:02x}{params[i + 3]:02x}{params[i + 4]:02x}"
+            i += 4
+        i += 1
+    return bg
+
+
+def cells_from_raw_line(line):
+    cells = []
+    bg = None
+    i = 0
+    while i < len(line):
+        if line[i] == 0x1B and i + 1 < len(line) and line[i + 1] == ord("["):
+            end = i + 2
+            while end < len(line) and not (0x40 <= line[end] <= 0x7E):
+                end += 1
+            if end >= len(line):
+                break
+            if line[end] == ord("m"):
+                bg = apply_sgr(parse_sgr_params(line[i + 2:end]), bg)
+            i = end + 1
+            continue
+        cells.append((line[i], bg))
+        i += 1
+    return cells
+
+
+for raw_line in open(path, "rb").read().splitlines():
+    cells = cells_from_raw_line(raw_line)
+    plain = bytes(byte for byte, _ in cells)
+    start = plain.find(marker)
+    if start < 0:
+        continue
+    after = cells[start + len(marker):]
+    for byte, bg in after:
+        if byte != 0x20:
+            break
+        if bg == unexpected_bg:
+            raise SystemExit(
+                f"{path}: marker {marker_text!r} unexpectedly has styled space with {unexpected_bg}; "
+                f"plain={plain!r} raw={raw_line!r}"
+            )
+    raise SystemExit(0)
+
+raise SystemExit(f"{path}: marker {marker_text!r} not found")
+PY
+}
+
 assert_floating_contains() {
   local file="$1"
   local needle="$2"
@@ -1699,6 +1833,9 @@ build_generator_command() {
     history-semantics)
       printf 'python3 %q; exec cat' "$REPO_ROOT/scripts/emit_terminal_history_semantics.py"
       ;;
+    bg-footprint)
+      printf 'python3 %q; exec cat' "$REPO_ROOT/scripts/emit_terminal_bg_footprint.py"
+      ;;
     bg-forensics)
       printf 'exec ${SHELL:-/bin/sh}'
       ;;
@@ -1880,6 +2017,52 @@ assert_history_semantics_text() {
   assert_not_contains "$file" "${prefix}_SUGGEST_TMP"
 }
 
+write_bg_footprint_report() {
+  local report="$1"
+  local live_mode="$2"
+  local copy_mode="$3"
+  {
+    printf 'scenario=bg-footprint\n'
+    printf 'live_capture=%s\n' "$live_mode"
+    printf 'copy_capture=%s\n' "$copy_mode"
+    printf 'tail_no_bg_marker=TAIL_NO_BG_SPACES\n'
+    printf 'tail_with_bg_marker=TAIL_WITH_BG_SPACES\n'
+    printf 'expected_tail_bg=idx:24\n'
+    printf 'expected_styled_spaces=8\n'
+  } >"$report"
+}
+
+run_bg_footprint_scenario() {
+  local pane_main
+  local live_mode
+  local copy_mode
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "bg-footprint"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-footprint-live" "BG_FOOTPRINT_READY"
+  capture_preserved_raw_artifact "$SESSION_MAIN" "$pane_main" "bg-footprint-live"
+  assert_contains "$ROOT/bg-footprint-live.txt" "TAIL_NO_BG_SPACES"
+  assert_contains "$ROOT/bg-footprint-live.txt" "TAIL_WITH_BG_SPACES"
+  assert_no_bg_spaces_after_marker "$ROOT/bg-footprint-live.raw-preserve.txt" "TAIL_NO_BG_SPACES" "idx:24"
+  assert_bg_spaces_after_marker "$ROOT/bg-footprint-live.raw-preserve.txt" "TAIL_WITH_BG_SPACES" "idx:24" 8
+
+  enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "bg-footprint-copy" "BG_FOOTPRINT_READY"
+  assert_contains "$ROOT/bg-footprint-copy.txt" "TAIL_NO_BG_SPACES"
+  assert_contains "$ROOT/bg-footprint-copy.txt" "TAIL_WITH_BG_SPACES"
+  assert_no_bg_spaces_after_marker "$ROOT/bg-footprint-copy.raw-preserve.txt" "TAIL_NO_BG_SPACES" "idx:24"
+  assert_bg_spaces_after_marker "$ROOT/bg-footprint-copy.raw-preserve.txt" "TAIL_WITH_BG_SPACES" "idx:24" 8
+
+  live_mode="$(cat "$ROOT/bg-footprint-live.raw-preserve.mode.txt" 2>/dev/null || true)"
+  copy_mode="$(cat "$ROOT/bg-footprint-copy.raw-preserve.mode.txt" 2>/dev/null || true)"
+  write_bg_footprint_report "$ROOT/bg-footprint.report.txt" "$live_mode" "$copy_mode"
+
+  log "PASS bg-footprint-live -> $ROOT/bg-footprint-live.raw-preserve.txt"
+  log "PASS bg-footprint-copy -> $ROOT/bg-footprint-copy.raw-preserve.txt"
+  log "PASS bg-footprint-report -> $ROOT/bg-footprint.report.txt"
+}
+
 run_history_semantics_scenario() {
   local pane_main
 
@@ -1926,6 +2109,7 @@ run_bg_forensics_scenario() {
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-run-enter" Enter
 
   capture_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-live" "$(printf '%06d' "$LINES")"
+  capture_preserved_raw_artifact "$SESSION_MAIN" "$pane_main" "bg-forensics-live"
   enter_copy_mode_until_contains "$SESSION_MAIN" "$pane_main" "bg-forensics-copy" "[PgUp] SCROLL"
   send_tmux_keys "$SESSION_MAIN" "$pane_main" "bg-forensics-copy-bottom" G
   sleep "$G_DELAY"
@@ -1934,12 +2118,12 @@ run_bg_forensics_scenario() {
 
   python3 "$REPO_ROOT/scripts/analyze_history_bg_forensics.py" \
     --input "$ROOT/bg-forensics-input.raw" \
-    --live "$ROOT/bg-forensics-live.raw.txt" \
+    --live "$ROOT/bg-forensics-live.raw-preserve.txt" \
     --copy "$ROOT/bg-forensics-copy-tail.raw-preserve.txt" \
     --report "$ROOT/bg-forensics.report.txt"
 
   log "PASS bg-forensics-input -> $ROOT/bg-forensics-input.raw"
-  log "PASS bg-forensics-live -> $ROOT/bg-forensics-live.raw.txt"
+  log "PASS bg-forensics-live -> $ROOT/bg-forensics-live.raw-preserve.txt"
   log "PASS bg-forensics-copy-tail -> $ROOT/bg-forensics-copy-tail.raw-preserve.txt"
   log "PASS bg-forensics-report -> $ROOT/bg-forensics.report.txt"
 }
@@ -2491,6 +2675,9 @@ main() {
       ;;
     history-semantics)
       run_history_semantics_scenario
+      ;;
+    bg-footprint)
+      run_bg_footprint_scenario
       ;;
     bg-forensics)
       run_bg_forensics_scenario
