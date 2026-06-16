@@ -588,6 +588,35 @@ func TestHistoryTrackAltScreenDoesNotWritePrimaryHistory(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackAppendAltScreenFrameCommitsExitFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "primary")
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ignored-live-alt")},
+		HistoryEvent{Kind: EventAppendAltScreenFrame, Rows: [][]Cell{
+			cells("alt-one"),
+			cells("alt-two"),
+		}},
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: false},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("after")},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2, 3}) {
+		t.Fatalf("expected primary and alt final frame lines to be committed, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 2)); got != "alt-one" {
+		t.Fatalf("expected first alt frame row in history, got %q", got)
+	}
+	if got := lineText(requireLine(t, track, 3)); got != "alt-two" {
+		t.Fatalf("expected second alt frame row in history, got %q", got)
+	}
+	if got := lineText(requireLine(t, track, 4)); got != "after" {
+		t.Fatalf("expected following primary output after alt frame, got %q", got)
+	}
+}
+
 func TestHistoryTrackEnterAltScreenCommitsPrimaryFrontierFirst(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(2)

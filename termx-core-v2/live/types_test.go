@@ -77,7 +77,7 @@ func TestSurfaceTrackPreservesStyledAltScreenFrameOnExit(t *testing.T) {
 		PreserveAltScreenFrameOnExit: true,
 	})
 	surface.Write("primary")
-	surface.Write("\x1b[?1049h\x1b[2J\x1b[31;44mALT\x1b[0m\x1b[2;1H\x1b[42mBAR   \x1b[0m\x1b[?1049l")
+	result := surface.WriteWithResult("\x1b[?1049h\x1b[2J\x1b[31;44mALT\x1b[0m\x1b[2;1H\x1b[42mBAR   \x1b[0m\x1b[?1049l")
 
 	snapshot := surface.Snapshot()
 	if snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen {
@@ -92,6 +92,13 @@ func TestSurfaceTrackPreservesStyledAltScreenFrameOnExit(t *testing.T) {
 	}
 	if !hasStyledBlankInRowContaining(snapshot.Screen.Cells, "BAR", "ansi:2") {
 		t.Fatalf("expected styled trailing blanks to survive alt exit replay, got %#v", snapshot.Screen.Cells)
+	}
+	if len(result.Segments) != 1 || len(result.Segments[0].AltScreenExitFrame) == 0 {
+		t.Fatalf("expected one captured alt exit frame, got %#v", result)
+	}
+	capturedAltCell, ok := findCell(result.Segments[0].AltScreenExitFrame, "A")
+	if !ok || capturedAltCell.Style.FG != "ansi:1" || capturedAltCell.Style.BG != "ansi:4" {
+		t.Fatalf("expected captured frame to keep styled cells, got cell=%#v ok=%v", capturedAltCell, ok)
 	}
 }
 
@@ -115,13 +122,33 @@ func TestSurfaceTrackAltScreenFramePreserveCanBeDisabledByEnv(t *testing.T) {
 	t.Setenv(preserveAltScreenOnExitEnv, "0")
 	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
 	surface.Write("primary")
-	surface.Write("\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l")
+	result := surface.WriteWithResult("\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l")
 
 	if got := strings.Join(surface.Rows(), "\n"); strings.Contains(got, "alt-final") {
 		t.Fatalf("expected disabled preserve policy to let alt exit clear final frame, got %q", got)
 	}
 	if surface.Snapshot().Modes.AlternateScreen {
 		t.Fatal("expected disabled preserve policy to still leave alternate screen mode")
+	}
+	if len(result.Segments) != 1 || len(result.Segments[0].AltScreenExitFrame) != 0 {
+		t.Fatalf("expected no captured frames after disabled preserve policy, got %#v", result)
+	}
+}
+
+func TestSurfaceTrackWriteResultKeepsRawOrderAroundAltExitFrame(t *testing.T) {
+	surface := NewSurfaceTrackWithOptions(SurfaceSize{Cols: 20, Rows: 3}, SurfaceTrackOptions{
+		PreserveAltScreenFrameOnExit: true,
+	})
+	result := surface.WriteWithResult("before\x1b[?1049h\x1b[2Jalt\x1b[?1049lafter")
+
+	if len(result.Segments) != 2 {
+		t.Fatalf("expected raw-before+frame and raw-after segments, got %#v", result.Segments)
+	}
+	if !strings.Contains(result.Segments[0].Raw, "before") || len(result.Segments[0].AltScreenExitFrame) == 0 {
+		t.Fatalf("expected first segment to carry raw before exit and captured frame, got %#v", result.Segments[0])
+	}
+	if result.Segments[1].Raw != "after" || len(result.Segments[1].AltScreenExitFrame) != 0 {
+		t.Fatalf("expected second segment to carry raw after exit, got %#v", result.Segments[1])
 	}
 }
 

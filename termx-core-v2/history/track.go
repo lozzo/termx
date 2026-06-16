@@ -83,6 +83,8 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 		return track.eraseInDisplay(event.EraseMode)
 	case EventSetActiveLineTailFill:
 		return track.setActiveLineTailFill(eraseBlankStyle(event.Style))
+	case EventAppendAltScreenFrame:
+		return track.appendAltScreenFrame(event.Rows)
 	case EventSealLogicalLine:
 		return track.sealActiveLine()
 	case EventMutateFrontier:
@@ -901,6 +903,33 @@ func (track *HistoryTrack) switchAltScreen(enter bool) error {
 	}
 	track.altScreen = enter
 	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) appendAltScreenFrame(rows [][]Cell) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	wasAlt := track.altScreen
+	track.altScreen = false
+	defer func() {
+		track.altScreen = wasAlt
+	}()
+	// 中文说明：这是 alt-screen 退出边界的显式保留策略，不从普通 live
+	// snapshot 反推历史；每一行作为新的 logical line 追加并立即提交。
+	for _, row := range rows {
+		if len(row) > 0 {
+			if err := track.writePrimaryCells(row); err != nil {
+				return err
+			}
+		}
+		if err := track.sealActiveLine(); err != nil {
+			return err
+		}
+		if err := track.commitFrontier(true); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

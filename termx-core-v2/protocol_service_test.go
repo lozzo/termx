@@ -865,7 +865,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	}
 }
 
-func TestProtocolServiceHistoryWindowIgnoresAltScreenOutput(t *testing.T) {
+func TestProtocolServiceHistoryWindowAppendsAltScreenFinalFrameOnExit(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
@@ -884,8 +884,8 @@ func TestProtocolServiceHistoryWindowIgnoresAltScreenOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest history.window after alt-screen: %v", err)
 	}
-	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "after" || latest.LogicalTotal != 1 {
-		t.Fatalf("alt-screen output must stay out of primary history window, got %#v", latest)
+	if len(latest.Rows) != 3 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "alt-tail" || rowText(latest.Rows[2]) != "after" || latest.LogicalTotal != 2 {
+		t.Fatalf("alt-screen final frame should enter history before following primary output, got %#v", latest)
 	}
 }
 
@@ -908,11 +908,11 @@ func TestProtocolServiceEnterAltScreenCommitsPrimaryPageFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest history.window after alt-screen: %v", err)
 	}
-	if len(latest.Rows) != 5 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "two" || rowText(latest.Rows[2]) != "three" || rowText(latest.Rows[3]) != "four" || rowText(latest.Rows[4]) != "after" {
-		t.Fatalf("enter alt-screen should preserve primary tail and drop alt payload, got %#v", latest)
+	if len(latest.Rows) != 6 || rowText(latest.Rows[0]) != "one" || rowText(latest.Rows[1]) != "two" || rowText(latest.Rows[2]) != "three" || rowText(latest.Rows[3]) != "four" || rowText(latest.Rows[4]) != "halt-tail" || rowText(latest.Rows[5]) != "after" {
+		t.Fatalf("enter alt-screen should preserve primary tail, append alt final frame, then continue primary, got %#v", latest)
 	}
-	if latest.LogicalTotal != 4 {
-		t.Fatalf("enter alt-screen should commit the primary page before switching, got total=%d", latest.LogicalTotal)
+	if latest.LogicalTotal != 5 {
+		t.Fatalf("enter alt-screen should commit primary page and alt final frame, got total=%d", latest.LogicalTotal)
 	}
 }
 
@@ -948,8 +948,8 @@ func TestProtocolServiceHistoryWindowFlushesStressTailBeforeAltScreenFreeze(t *t
 	if !protocolHistoryWindowContainsText(latest, "000100") {
 		t.Fatalf("history.window latest must preserve primary stress tail before alt-screen, got %#v", latest.Rows)
 	}
-	if protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK") {
-		t.Fatalf("alt-screen payload must stay out of frozen primary history, got %#v", latest.Rows)
+	if !protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK") {
+		t.Fatalf("alt-screen final frame should enter frozen primary history, got %#v", latest.Rows)
 	}
 }
 
@@ -2045,8 +2045,8 @@ func TestProtocolServiceSnapshotKeepsAltScreenFinalFrameOnExit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history window: %v", err)
 	}
-	if len(latest.Rows) != 1 || rowText(latest.Rows[0]) != "primary" || latest.LogicalTotal != 1 {
-		t.Fatalf("alt final frame must not enter primary history, got %#v", latest)
+	if len(latest.Rows) != 2 || rowText(latest.Rows[0]) != "primary" || rowText(latest.Rows[1]) != "alt-final" || latest.LogicalTotal != 2 {
+		t.Fatalf("alt final frame should enter primary history, got %#v", latest)
 	}
 }
 

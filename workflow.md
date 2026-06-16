@@ -126,7 +126,7 @@
 - `LogicalLineStore` 是唯一历史 truth。
 - `HistoryWindow` 只是按当前 `cols` 投影出来的窗口，不是新的历史来源。
 - attach、reattach、bootstrap、recovery、full replace、resize 都不能凭空创造 committed history；clear screen 只能把 core 已持有的 primary frontier 封口提交，不能从 live snapshot 反推历史。
-- alt-screen 不写入 primary history；process exit 必须 force commit primary mutable frontier。
+- alt-screen 运行期间不持续写入 primary history；退出 alt-screen 时如果开启保留策略，最后一帧必须作为 authoritative history page 追加；process exit 必须 force commit primary mutable frontier。
 
 ### 4.2 tui-v3 只消费 authoritative history
 
@@ -218,11 +218,12 @@
 | 215E1-R45. SK alt screen 压力历史尾部回归 | 完成 | `termx-core-v2/`、`termx-core-v2/live/`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场“压力日志后进入 alt-screen，看起来只能看到 000058 一类旧尾部”：补 100 行以上长行压力 harness，证明 authoritative history/copy latest 不丢 primary 尾部；同时把 live alt 退出策略改成先恢复 primary 再追加 alt 最后一帧，避免普通 live pane 被 alt 最后一帧直接盖住 |
 | 215E1-R46. SK fullscreen home clear 保留 primary 页 | 完成 | `termx-core-v2/`、`workflow.md` | 已处理真实现场“100 行 stress 后进入 Codex/全屏，退出后 copy/history 只剩到 000058”：全屏入口常见 `CSI H` + `CSI J/0J` 现在按 page-break 处理，先提交 primary frontier，再让新 UI 从新页开始，不再删除屏幕上的 primary logical line |
 | 215E1-R47. SK alt screen 退出最后一帧样式保真开关 | 完成 | `termx-core-v2/live/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理真实现场“htop 退出后最后 UI 还在但颜色布局丢失”：live surface 退出 alt-screen 时按 styled cell replay 保留最后一帧，并提供默认开启、后续可迁移到配置的开关 |
+| 215E1-R48. SK alt screen 退出最后一帧进入 history | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理真实现场“alt-screen 最后一帧只在 live 里保留，history/copy 里看不到”：退出 alt-screen 时按同一保留开关把最后一帧追加成 authoritative history page |
 
 当前下一步：
 
-- `215E1-R47 alt screen 退出最后一帧样式保真开关` 已完成
-- 已确认 alt-screen 退出保留最后一帧时不丢颜色、带背景空白和布局；`TERMX_PRESERVE_ALT_SCREEN_ON_EXIT=0` 可关闭该 live projection 策略
+- `215E1-R48 alt screen 退出最后一帧进入 history` 已完成
+- 已确认 alt-screen 运行期间仍不持续污染 history；退出瞬间保留的最后一帧会按顺序进入 authoritative history/copy 链路，并保留颜色样式
 
 ## 6. 必做证据
 

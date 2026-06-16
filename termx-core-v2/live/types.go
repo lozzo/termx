@@ -31,6 +31,15 @@ type SurfaceTrackOptions struct {
 	PreserveAltScreenFrameOnExit bool
 }
 
+type SurfaceWriteResult struct {
+	Segments []SurfaceWriteSegment
+}
+
+type SurfaceWriteSegment struct {
+	Raw                string
+	AltScreenExitFrame [][]vterm.Cell
+}
+
 // SurfaceSnapshot 是真实 live terminal 的 size-bound cell matrix，不是 history truth。
 type SurfaceSnapshot struct {
 	Size   SurfaceSize
@@ -74,8 +83,14 @@ func (surface *SurfaceTrack) Resize(size SurfaceSize) {
 }
 
 func (surface *SurfaceTrack) Write(text string) {
+	_ = surface.WriteWithResult(text)
+}
+
+func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
+	var result SurfaceWriteResult
+	var raw strings.Builder
 	if text == "" && surface.pending == "" {
-		return
+		return result
 	}
 	surface.ensureVTerm()
 	text = surface.pending + text
@@ -84,20 +99,25 @@ func (surface *SurfaceTrack) Write(text string) {
 		idx := strings.Index(text, "\x1b[?")
 		if idx < 0 {
 			surface.writeRaw(text)
-			return
+			raw.WriteString(text)
+			appendSurfaceWriteRawSegment(&result, &raw)
+			return result
 		}
 		if idx > 0 {
 			surface.writeRaw(text[:idx])
+			raw.WriteString(text[:idx])
 			text = text[idx:]
 			continue
 		}
 		consumed, action, _, complete := consumePrivateModeCSI(text)
 		if !complete {
 			surface.pending = text
-			return
+			appendSurfaceWriteRawSegment(&result, &raw)
+			return result
 		}
 		if consumed <= 0 {
 			surface.writeRaw(text[:1])
+			raw.WriteString(text[:1])
 			text = text[1:]
 			continue
 		}
@@ -107,15 +127,36 @@ func (surface *SurfaceTrack) Write(text string) {
 				altFrame = surface.altScreenFrameCells()
 			}
 			surface.writeRaw(text[:consumed])
+			raw.WriteString(text[:consumed])
 			if surface.preserveAltScreenFrameOnExit {
 				surface.appendAltScreenFrameCells(altFrame)
+				if len(altFrame) > 0 {
+					result.Segments = append(result.Segments, SurfaceWriteSegment{
+						Raw:                raw.String(),
+						AltScreenExitFrame: cloneVTermCellRows(altFrame),
+					})
+					raw.Reset()
+				}
 			}
 			text = text[consumed:]
 			continue
 		}
 		surface.writeRaw(text[:consumed])
+		raw.WriteString(text[:consumed])
 		text = text[consumed:]
 	}
+	if raw.Len() > 0 {
+		appendSurfaceWriteRawSegment(&result, &raw)
+	}
+	return result
+}
+
+func appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Builder) {
+	if result == nil || raw == nil || raw.Len() == 0 {
+		return
+	}
+	result.Segments = append(result.Segments, SurfaceWriteSegment{Raw: raw.String()})
+	raw.Reset()
 }
 
 func (surface *SurfaceTrack) writeRaw(text string) {
@@ -299,6 +340,21 @@ func trimTrailingDefaultBlankCells(row []vterm.Cell) []vterm.Cell {
 		last--
 	}
 	return row[:last+1]
+}
+
+func cloneVTermCellRows(rows [][]vterm.Cell) [][]vterm.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	cloned := make([][]vterm.Cell, len(rows))
+	for i, row := range rows {
+		if len(row) == 0 {
+			continue
+		}
+		cloned[i] = make([]vterm.Cell, len(row))
+		copy(cloned[i], row)
+	}
+	return cloned
 }
 
 func boolEnvDefault(name string, fallback bool) bool {

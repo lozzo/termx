@@ -17,6 +17,7 @@ const (
 	EventEraseInLine              EventKind = "erase-in-line"
 	EventEraseInDisplay           EventKind = "erase-in-display"
 	EventSetActiveLineTailFill    EventKind = "set-active-line-tail-fill"
+	EventAppendAltScreenFrame     EventKind = "append-alt-screen-frame"
 	EventSealLogicalLine          EventKind = "seal-logical-line"
 	EventMutateFrontier           EventKind = "mutate-frontier"
 	EventResetFrontier            EventKind = "reset-frontier"
@@ -45,6 +46,7 @@ const (
 type HistoryEvent struct {
 	Kind            EventKind
 	Cells           []Cell
+	Rows            [][]Cell
 	Style           CellStyle
 	LineID          LogicalLineID
 	LineIDs         []LogicalLineID

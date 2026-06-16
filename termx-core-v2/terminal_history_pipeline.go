@@ -4,6 +4,8 @@ import (
 	"sync"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
+	"github.com/lozzow/termx/termx-core-v2/live"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 var terminalHistoryPipelineBeforeIngestHook func()
@@ -14,6 +16,7 @@ type terminalHistoryPipeline struct {
 	mu     sync.Mutex
 	track  *history.HistoryTrack
 	ingest historyANSIParser
+	altCap *live.SurfaceTrack
 	cols   int
 	rows   int
 }
@@ -21,7 +24,12 @@ type terminalHistoryPipeline struct {
 func newTerminalHistoryPipeline(cols int, rows int) *terminalHistoryPipeline {
 	track := history.NewHistoryTrack()
 	track.SetPrimaryScreenRows(rows)
-	return &terminalHistoryPipeline{track: track, cols: cols, rows: rows}
+	return &terminalHistoryPipeline{
+		track:  track,
+		altCap: live.NewSurfaceTrack(live.SurfaceSize{Cols: cols, Rows: rows}),
+		cols:   cols,
+		rows:   rows,
+	}
 }
 
 func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
@@ -31,9 +39,19 @@ func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
 	pipeline.ingest.SetScreenSize(pipeline.cols, pipeline.rows)
-	for _, segment := range pipeline.ingest.Parse(output) {
-		if err := pipeline.applySegment(segment); err != nil {
-			return err
+	result := pipeline.altCap.WriteWithResult(output)
+	for _, writeSegment := range result.Segments {
+		if writeSegment.Raw != "" {
+			for _, segment := range pipeline.ingest.Parse(writeSegment.Raw) {
+				if err := pipeline.applySegment(segment); err != nil {
+					return err
+				}
+			}
+		}
+		if len(writeSegment.AltScreenExitFrame) > 0 {
+			if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventAppendAltScreenFrame, Rows: historyRowsFromVTermRows(writeSegment.AltScreenExitFrame)}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -45,6 +63,7 @@ func (pipeline *terminalHistoryPipeline) Resize(cols int, rows int, event histor
 	pipeline.cols = cols
 	pipeline.rows = rows
 	pipeline.ingest.SetScreenSize(cols, rows)
+	pipeline.altCap.Resize(live.SurfaceSize{Cols: cols, Rows: rows})
 	pipeline.track.SetPrimaryScreenRows(rows)
 	return pipeline.track.Apply(event)
 }
@@ -179,4 +198,51 @@ func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegme
 		}
 	}
 	return nil
+}
+
+func historyRowsFromVTermRows(rows [][]vterm.Cell) [][]history.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]history.Cell, len(rows))
+	for rowIndex, row := range rows {
+		if len(row) == 0 {
+			continue
+		}
+		out[rowIndex] = make([]history.Cell, 0, len(row))
+		for _, cell := range row {
+			if cell.Content == "" && cell.Width == 0 {
+				continue
+			}
+			text := cell.Content
+			if text == "" {
+				text = " "
+			}
+			width := cell.Width
+			if width <= 0 {
+				width = 1
+			}
+			out[rowIndex] = append(out[rowIndex], history.Cell{
+				Text:       text,
+				Width:      width,
+				Style:      historyStyleFromVTermStyle(cell.Style),
+				LinkURL:    cell.LinkURL,
+				LinkParams: cell.LinkParams,
+			})
+		}
+	}
+	return out
+}
+
+func historyStyleFromVTermStyle(style vterm.CellStyle) history.CellStyle {
+	return history.CellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
 }
