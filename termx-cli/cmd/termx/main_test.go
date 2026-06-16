@@ -1082,7 +1082,7 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 	}
 	_ = server
 	host := app.NewFakeTerminalHost(8)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, host)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1130,7 +1130,7 @@ func TestV3InteractiveRuntimeRestoresWorkbenchFromCoreV2Storage(t *testing.T) {
 		t.Fatalf("put workbench snapshot: %v", err)
 	}
 	host := app.NewFakeTerminalHost(8)
-	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, client, host)
+	runtime := newV3InteractiveRuntime("term-restored", 100, 30, client, client, client, host, nil)
 
 	root := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		if root.Shell.ActivePaneID != "pane-restored" || root.WorkbenchSync.SaveVersion() != 1 {
@@ -1162,7 +1162,7 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 	_ = server
 	host := app.NewFakeTerminalHost(8)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, host)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1200,7 +1200,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, host)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1307,7 +1307,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, host)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",
@@ -1374,7 +1374,7 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 	_ = server
 	host := app.NewFakeTerminalHost(32)
 	host.SetSize(100, 30)
-	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, host)
+	runtime := newV3InteractiveRuntime("term-1", 100, 30, client, nil, nil, host, nil)
 
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   "term-1",

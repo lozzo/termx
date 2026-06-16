@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
@@ -22,6 +23,7 @@ type LiveConfig struct {
 
 type LiveDeps struct {
 	Terminal services.TerminalService
+	Logger   *slog.Logger
 }
 
 const liveStreamTokenPrefix = "terminal.live.stream:"
@@ -450,6 +452,10 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []E
 				Rows:       rows,
 			})
 			if err != nil {
+				logEffectError(deps.Logger, "live.surface", err, "terminal_id", terminalID)
+				if isContextLifecycleError(err) {
+					return nil
+				}
 				return LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: terminalID}, Err: err}
 			}
 			if result.Snapshot.TerminalID == "" {
@@ -483,6 +489,10 @@ func liveStreamEffect(terminalID string, cols int, rows int, deps LiveDeps) []Ef
 					Rows:       rows,
 				})
 				if err != nil {
+					logEffectError(deps.Logger, "live.events", err, "terminal_id", terminalID)
+					if isContextLifecycleError(err) {
+						return
+					}
 					post(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: terminalID, Err: err}})
 					return
 				}
@@ -546,6 +556,9 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 		event.TerminalID = root.Surface.TerminalID
 	}
 	if event.Err != nil {
+		if isContextLifecycleError(event.Err) {
+			return root, nil
+		}
 		if next, ok := markTerminalExitedFromError(root, event.TerminalID, event.Err); ok {
 			return next.Advance(), nil
 		}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/signal"
 	"syscall"
 
@@ -70,11 +71,16 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 		return err
 	}
 	defer client.Close()
-	storageClient, err := v3DialClient(cfg.SocketPath)
+	workbenchStorageClient, err := v3DialClient(cfg.SocketPath)
 	if err != nil {
-		return fmt.Errorf("dial core-v2 storage events client: %w", err)
+		return fmt.Errorf("dial core-v2 workbench storage events client: %w", err)
 	}
-	defer storageClient.Close()
+	defer workbenchStorageClient.Close()
+	clipboardStorageClient, err := v3DialClient(cfg.SocketPath)
+	if err != nil {
+		return fmt.Errorf("dial core-v2 clipboard storage events client: %w", err)
+	}
+	defer clipboardStorageClient.Close()
 
 	host := newV3TerminalHost()
 	if err := host.Enter(ctx); err != nil {
@@ -86,7 +92,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	if err != nil || cols <= 0 || rows <= 0 {
 		cols, rows = 80, 24
 	}
-	runtime := newV3InteractiveRuntime(cfg.TerminalID, cols, rows, client, storageClient, host)
+	runtime := newV3InteractiveRuntime(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger)
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   cfg.TerminalID,
 		Cols:         cols,
@@ -106,7 +112,7 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}
 }
 
-func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, storageClient *protocol.Client, host app.TerminalHost) *app.AppRuntime {
+func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
 	initial := state.Root{
 		Session: state.TerminalSessionStore{
 			TerminalID: terminalID,
@@ -123,19 +129,22 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 	core := services.ProtocolCoreClientAdapter{Client: client}
 	var storage services.WorkbenchStorageService
 	var clipboardStorage services.ClipboardStorageService
-	if storageClient != nil {
+	if workbenchStorageClient != nil {
 		// core-v2 当前每个 protocol session 只有一个 events stream；
 		// workbench storage.changed 必须独立于 terminal live events，避免互相取消。
-		storage = services.ProtocolWorkbenchStorageAdapter{Client: storageClient}
-		clipboardStorage = services.ProtocolClipboardStorageAdapter{Client: storageClient}
+		storage = services.ProtocolWorkbenchStorageAdapter{Client: workbenchStorageClient}
+	}
+	if clipboardStorageClient != nil {
+		// clipboard storage.changed 使用独立 session，避免覆盖 workbench watch。
+		clipboardStorage = services.ProtocolClipboardStorageAdapter{Client: clipboardStorageClient}
 	}
 	return app.NewInteractiveRuntimeWithStorage(
 		initial,
 		host,
 		app.NewAsyncEffectRunner(),
-		app.LiveDeps{Terminal: terminal},
+		app.LiveDeps{Terminal: terminal, Logger: logger},
 		app.CopyModeDeps{Core: core, Clipboard: &services.SystemClipboardService{}, Terminal: terminal, Rows: rows},
-		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID)},
-		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID)},
+		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger},
+		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)
 }

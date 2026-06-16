@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -11,6 +12,7 @@ import (
 type ClipboardDeps struct {
 	Storage services.ClipboardStorageService
 	Ref     state.ClipboardStorageRef
+	Logger  *slog.Logger
 }
 
 type ClipboardStorageLoadRequestMsg struct {
@@ -79,6 +81,10 @@ func reduceClipboardStorageWatchRequest(root state.Root, deps ClipboardDeps) (st
 	return root, []Effect{StreamEffect{Token: CancelToken("clipboard.storage.watch"), Run: func(ctx context.Context, post func(Msg)) {
 		events, err := deps.Storage.WatchClipboard(ctx, ref)
 		if err != nil {
+			logEffectError(deps.Logger, "clipboard.storage.watch", err, "key", ref.Key, "owner_id", ref.OwnerID)
+			if isContextLifecycleError(err) {
+				return
+			}
 			post(ClipboardStorageChangedMsg{Err: err})
 			return
 		}
@@ -98,6 +104,9 @@ func reduceClipboardStorageWatchRequest(root state.Root, deps ClipboardDeps) (st
 
 func reduceClipboardStorageChanged(root state.Root, msg ClipboardStorageChangedMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard.storage", Body: errorString(msg.Err)})
 		return root.Advance(), nil
 	}
@@ -118,12 +127,19 @@ func reduceClipboardStorageLoadRequest(root state.Root, deps ClipboardDeps) (sta
 	ref := clipboardStorageRef(root, deps)
 	return root, []Effect{FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
 		result, err := deps.Storage.LoadClipboard(ctx, ref)
+		logEffectError(deps.Logger, "clipboard.storage.load", err, "key", ref.Key, "owner_id", ref.OwnerID)
+		if isContextLifecycleError(err) {
+			return nil
+		}
 		return ClipboardStorageLoadResultMsg{Result: result, Err: err}
 	}}}
 }
 
 func reduceClipboardStorageLoadResult(root state.Root, msg ClipboardStorageLoadResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard.storage", Body: errorString(msg.Err)})
 		return root.Advance(), nil
 	}
@@ -170,12 +186,19 @@ func reduceClipboardStoragePersistRequest(root state.Root, _ ClipboardStoragePer
 			CheckVersion:    true,
 			ExpectedVersion: expectedVersion,
 		})
+		logEffectError(deps.Logger, "clipboard.storage.save", err, "key", ref.Key, "owner_id", ref.OwnerID, "expected_version", expectedVersion)
+		if isContextLifecycleError(err) {
+			return nil
+		}
 		return ClipboardStoragePersistResultMsg{Result: result, Err: err}
 	}}}
 }
 
 func reduceClipboardStoragePersistResult(root state.Root, msg ClipboardStoragePersistResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
 		if errors.Is(msg.Err, services.ErrClipboardStorageConflict) {
 			root.Clipboard = root.Clipboard.MarkConflict(root.Clipboard.SaveVersion())
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard.storage", Body: "conflict: reloading"})

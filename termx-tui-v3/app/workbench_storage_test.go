@@ -435,6 +435,39 @@ func TestWorkbenchStorageReducerReportsMissingServiceAndSaveErrors(t *testing.T)
 	}
 }
 
+func TestWorkbenchStorageContextCanceledStaysSilent(t *testing.T) {
+	storage := &services.FakeWorkbenchStorageService{
+		LoadErr:  context.Canceled,
+		SaveErr:  context.Canceled,
+		WatchErr: context.Canceled,
+	}
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage})
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, WorkbenchStorageWatchRequestMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("expected watch effect, got %#v", effects)
+	}
+	effects[0].(StreamEffect).Run(context.Background(), func(msg Msg) {
+		root, _ = reducer(root, msg)
+	})
+	if len(root.Shell.Toasts) != 0 {
+		t.Fatalf("context canceled watch should not toast, got %#v", root.Shell.Toasts)
+	}
+
+	root, effects = reducer(root, WorkbenchStorageLoadRequestMsg{})
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg != nil {
+		t.Fatalf("context canceled load should not post result, got %#v", msg)
+	}
+	root, effects = reducer(root, WorkbenchStoragePersistRequestMsg{Reason: "test"})
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg != nil {
+		t.Fatalf("context canceled save should not post result, got %#v", msg)
+	}
+	if len(root.Shell.Toasts) != 0 {
+		t.Fatalf("context canceled storage effects should stay silent, got %#v", root.Shell.Toasts)
+	}
+}
+
 func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	watchCh := make(chan services.WorkbenchStorageEvent)

@@ -224,6 +224,30 @@ func TestLiveStreamTokenIsTerminalScoped(t *testing.T) {
 	}
 }
 
+func TestLiveStreamContextCanceledDoesNotPostPanelError(t *testing.T) {
+	terminal := &services.FakeTerminalService{LiveEventsErr: context.Canceled}
+	effects := liveStreamEffect("term-1", 80, 24, LiveDeps{Terminal: terminal})
+	if len(effects) != 2 {
+		t.Fatalf("expected cancel+stream effects, got %#v", effects)
+	}
+	stream := effects[1].(StreamEffect)
+	var posted []Msg
+	stream.Run(context.Background(), func(msg Msg) {
+		posted = append(posted, msg)
+	})
+	if len(posted) != 0 {
+		t.Fatalf("context canceled live stream should not post UI error, got %#v", posted)
+	}
+
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1"}
+	root.Session = state.TerminalSessionStore{TerminalID: "term-1"}
+	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Err: context.Canceled}})
+	if len(effects) != 0 || next.Surface.Err != "" || next.Session.LastError != "" {
+		t.Fatalf("context canceled live event must stay silent, root=%#v effects=%#v", next, effects)
+	}
+}
+
 func TestTerminalPoolReconnectUsesActiveViewIdentity(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 11, Cols: 80, Rows: 24, CanResize: true}}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})

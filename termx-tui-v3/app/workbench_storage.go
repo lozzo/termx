@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -11,6 +12,7 @@ import (
 type WorkbenchDeps struct {
 	Storage services.WorkbenchStorageService
 	Ref     state.WorkbenchStorageRef
+	Logger  *slog.Logger
 }
 
 type WorkbenchStorageLoadRequestMsg struct{}
@@ -86,6 +88,10 @@ func reduceWorkbenchStorageWatchRequest(root state.Root, deps WorkbenchDeps) (st
 	return root, []Effect{StreamEffect{Token: CancelToken("workbench.storage.watch"), Run: func(ctx context.Context, post func(Msg)) {
 		events, err := deps.Storage.WatchWorkbench(ctx, ref)
 		if err != nil {
+			logEffectError(deps.Logger, "workbench.storage.watch", err, "key", ref.Key, "owner_id", ref.OwnerID)
+			if isContextLifecycleError(err) {
+				return
+			}
 			post(WorkbenchStorageChangedMsg{Err: err})
 			return
 		}
@@ -105,6 +111,9 @@ func reduceWorkbenchStorageWatchRequest(root state.Root, deps WorkbenchDeps) (st
 
 func reduceWorkbenchStorageChanged(root state.Root, msg WorkbenchStorageChangedMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: errorString(msg.Err)})
 		return root.Advance(), nil
 	}
@@ -126,12 +135,19 @@ func reduceWorkbenchStorageLoadRequest(root state.Root, deps WorkbenchDeps) (sta
 	ref := workbenchStorageRef(root, deps)
 	return root, []Effect{FuncEffect{Async: true, ForceSyncInTests: true, Run: func(ctx context.Context) Msg {
 		result, err := deps.Storage.LoadWorkbench(ctx, ref)
+		logEffectError(deps.Logger, "workbench.storage.load", err, "key", ref.Key, "owner_id", ref.OwnerID)
+		if isContextLifecycleError(err) {
+			return nil
+		}
 		return WorkbenchStorageLoadResultMsg{Result: result, Err: err}
 	}}}
 }
 
 func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: errorString(msg.Err)})
 		return root.Advance(), nil
 	}
@@ -217,12 +233,19 @@ func reduceWorkbenchStoragePersistRequest(root state.Root, _ WorkbenchStoragePer
 			CheckVersion:    true,
 			ExpectedVersion: expectedVersion,
 		})
+		logEffectError(deps.Logger, "workbench.storage.save", err, "key", ref.Key, "owner_id", ref.OwnerID, "expected_version", expectedVersion)
+		if isContextLifecycleError(err) {
+			return nil
+		}
 		return WorkbenchStoragePersistResultMsg{Result: result, Err: err}
 	}}}
 }
 
 func reduceWorkbenchStoragePersistResult(root state.Root, msg WorkbenchStoragePersistResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
 		if errors.Is(msg.Err, services.ErrWorkbenchStorageConflict) {
 			root.WorkbenchSync = root.WorkbenchSync.MarkConflict(root.WorkbenchSync.SaveVersion())
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.storage", Body: "conflict: reloading"})

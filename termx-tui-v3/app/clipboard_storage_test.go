@@ -251,3 +251,37 @@ func TestClipboardStorageLoadRebasesPendingDeleteWithoutRevivingRemoteEntry(t *t
 		t.Fatalf("expected rebased delete save against loaded version, saves=%#v", storage.Saves)
 	}
 }
+
+func TestClipboardStorageContextCanceledStaysSilent(t *testing.T) {
+	storage := &services.FakeClipboardStorageService{
+		LoadErr:  context.Canceled,
+		SaveErr:  context.Canceled,
+		WatchErr: context.Canceled,
+	}
+	reducer := NewClipboardStorageReducer(ClipboardDeps{Storage: storage})
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, ClipboardStorageWatchRequestMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("expected watch effect, got %#v", effects)
+	}
+	effects[0].(StreamEffect).Run(context.Background(), func(msg Msg) {
+		root, _ = reducer(root, msg)
+	})
+	if len(root.Shell.Toasts) != 0 {
+		t.Fatalf("context canceled watch should not toast, got %#v", root.Shell.Toasts)
+	}
+
+	root, effects = reducer(root, ClipboardStorageLoadRequestMsg{Reason: "test"})
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg != nil {
+		t.Fatalf("context canceled load should not post result, got %#v", msg)
+	}
+	root.Clipboard = root.Clipboard.WithCopiedText("alpha")
+	root, effects = reducer(root, ClipboardStoragePersistRequestMsg{Reason: "test"})
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg != nil {
+		t.Fatalf("context canceled save should not post result, got %#v", msg)
+	}
+	if len(root.Shell.Toasts) != 0 {
+		t.Fatalf("context canceled clipboard effects should stay silent, got %#v", root.Shell.Toasts)
+	}
+}
