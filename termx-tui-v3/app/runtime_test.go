@@ -1674,7 +1674,16 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 	}
 
 	globalHost := NewFakeTerminalHost(8)
-	globalRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).AddToast(state.ToastSpec{ID: "toast-1", Title: "notice"})}, globalHost)
+	globalTerminal := &services.FakeTerminalService{
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running"}}},
+	}
+	globalRuntime := NewInteractiveRuntime(
+		state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).AddToast(state.ToastSpec{ID: "toast-1", Title: "notice"})},
+		globalHost,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: globalTerminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
 	globalHost.SetSize(120, 20)
 	if err := globalRuntime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("post global footer render: %v", err)
@@ -1682,26 +1691,66 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 	if err := globalRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain global footer render: %v", err)
 	}
-	headerAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterToggleHeader.String(), "")
-	if err := globalHost.SendInput(mouseEventAt(headerAction.Rect)); err != nil {
-		t.Fatalf("send footer header click: %v", err)
+	globalFrame := lastRuntimeFrame(t, globalHost)
+	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterToggleHeader.String())
+	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterToggleFooter.String())
+	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterCloseToast.String())
+	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterClearToasts.String())
+
+	helpAction := frameActionHitRegion(t, globalFrame, render.ActionHelpOpen.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(helpAction.Rect)); err != nil {
+		t.Fatalf("send footer help click: %v", err)
 	}
 	if err := globalRuntime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain footer header click: %v", err)
+		t.Fatalf("drain footer help click: %v", err)
 	}
-	if globalRuntime.State().Shell.EnsureDefaults().HeaderVisible {
-		t.Fatalf("footer header click should hide header, got %#v", globalRuntime.State().Shell.EnsureDefaults())
+	if globalRuntime.State().Shell.EnsureDefaults().Overlay.Kind != state.OverlayHelp {
+		t.Fatalf("footer help click should open help, got %#v", globalRuntime.State().Shell.EnsureDefaults().Overlay)
 	}
-	clearAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterClearToasts.String(), "")
-	if err := globalHost.SendInput(mouseEventAt(clearAction.Rect)); err != nil {
-		t.Fatalf("send footer clear click: %v", err)
+	if err := globalHost.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send help esc: %v", err)
 	}
 	if err := globalRuntime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain footer clear click: %v", err)
+		t.Fatalf("drain help esc: %v", err)
 	}
-	if len(globalRuntime.State().Shell.EnsureDefaults().Toasts) != 0 {
-		t.Fatalf("footer clear click should clear toasts, got %#v", globalRuntime.State().Shell.EnsureDefaults().Toasts)
+	if globalRuntime.State().Shell.EnsureDefaults().Overlay.Open {
+		t.Fatalf("help esc should close overlay, got %#v", globalRuntime.State().Shell.EnsureDefaults().Overlay)
 	}
+
+	poolAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterOpenPool.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(poolAction.Rect)); err != nil {
+		t.Fatalf("send footer pool click: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer pool click: %v", err)
+	}
+	if globalRuntime.State().Shell.EnsureDefaults().Overlay.Kind != state.OverlayTerminalPool {
+		t.Fatalf("footer pool click should open terminal pool, got %#v", globalRuntime.State().Shell.EnsureDefaults().Overlay)
+	}
+	if err := globalHost.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send pool esc: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pool esc: %v", err)
+	}
+
+	treeAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterOpenTree.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(treeAction.Rect)); err != nil {
+		t.Fatalf("send footer tree click: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer tree click: %v", err)
+	}
+	if globalRuntime.State().Shell.EnsureDefaults().Overlay.Kind != state.OverlayWorkbenchTree {
+		t.Fatalf("footer tree click should open workbench tree, got %#v", globalRuntime.State().Shell.EnsureDefaults().Overlay)
+	}
+	if err := globalHost.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send tree esc: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tree esc: %v", err)
+	}
+
 	quitAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterQuit.String(), "")
 	if err := globalHost.SendInput(mouseEventAt(quitAction.Rect)); err != nil {
 		t.Fatalf("send footer quit click: %v", err)

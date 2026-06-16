@@ -331,7 +331,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionPromptCancel, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("esc", "cancel", StyleStatusWarning).withHelp("cancel"),
 		actionSpec(ActionPromptOpen, ActionDispatchApp, ActionSurfaceInput).withHelp("open prompt"),
 		actionSpec(ActionHelpClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp, ActionSurfaceContent).withFooter("enter", "close", StyleStatusAccent).withHelp("close"),
-		actionSpec(ActionHelpOpen, ActionDispatchApp, ActionSurfaceInput).withHelp("open help"),
+		actionSpec(ActionHelpOpen, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceInput).withFooter("?", "HELP", StyleStatusAccent).withHelp("open help"),
 	}
 }
 

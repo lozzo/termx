@@ -498,7 +498,7 @@ func promptFieldCursorDisplayWidth(field state.PromptFieldState) int {
 
 func buildHelpContent(shell state.ShellStore) ContentVM {
 	shell = shell.EnsureDefaults()
-	lines := []Line{pageTitleLine("Help", "available actions")}
+	lines := []Line{pageTitleLine("Help", "core workflows")}
 	for _, group := range helpActionGroups() {
 		if line, ok := helpActionGroupLine(group); ok {
 			lines = append(lines, line)
@@ -508,7 +508,7 @@ func buildHelpContent(shell state.ShellStore) ContentVM {
 	return ContentVM{
 		Kind:   ContentHelp,
 		Lines:  lines,
-		Status: "help: available actions",
+		Status: "help: core workflows",
 		Cursor: Cursor{Visible: false},
 		HitRegions: []HitRegion{{
 			Kind:     HitRegionContentAction,
@@ -531,45 +531,59 @@ type helpActionItem struct {
 
 func helpActionGroups() []helpActionGroup {
 	return []helpActionGroup{
+		// Help 是产品导航页，避免把 header/footer/toast 这类 chrome 调试动作放到主说明里。
 		{Label: "Most used", Details: []string{"Ctrl-p pane", "Ctrl-r resize", "Ctrl-f picker", "Ctrl-g global"}},
 		{Label: "Pane", Items: []helpActionItem{
-			{Action: ActionPaneSplitDown},
-			{Action: ActionPaneSplitRight},
-			{Action: ActionPaneClose},
-		}, Details: []string{"focus/zoom/balance via pane mode keys"}},
-		{Label: "Tab", Items: []helpActionItem{
+			{Action: ActionPaneFooterFocus},
+			{Action: ActionPaneFooterSplitRight},
+			{Action: ActionPaneFooterSplitDown},
+			{Action: ActionPaneFooterDetach},
+			{Action: ActionPaneFooterZoom},
+			{Action: ActionPaneFooterClose},
+		}},
+		{Label: "Tab / Workspace", Items: []helpActionItem{
 			{Action: ActionTabCreate},
+			{Action: ActionTabPrevious},
+			{Action: ActionTabNext},
 			{Action: ActionTabClose},
-		}, Details: []string{"switch/rename via tab mode keys"}},
-		{Label: "Footer", Items: []helpActionItem{
-			{Action: ActionFooterPaneMode},
-			{Action: ActionFooterResizeMode},
-			{Action: ActionFooterPicker},
-			{Action: ActionFooterGlobalMode},
-			{Action: ActionFooterOpenPool},
 			{Action: ActionFooterOpenTree},
+			{Action: ActionFooterNewWorkspace},
+			{Action: ActionFooterRenameWorkspace},
 		}},
 		{Label: "Floating", Items: []helpActionItem{
-			{Action: ActionFloatingRaise},
-			{Action: ActionFloatingResize},
-			{Action: ActionFloatingMoveDrag},
+			{Action: ActionFloatingNew},
+			{Action: ActionFloatingOverview},
+			{Action: ActionFloatingSummon},
+			{Action: ActionFloatingPick},
 			{Action: ActionFloatingClose},
 		}},
 		{Label: "Terminal Pool", Items: []helpActionItem{
-			{Action: ActionPoolSelect},
 			{Action: ActionPoolAttach},
+			{Action: ActionPoolAttachTab},
+			{Action: ActionPoolAttachFloat},
+			{Action: ActionPoolEdit},
 			{Action: ActionPoolKill},
+			{Action: ActionPoolDelete},
 		}, Details: []string{"search"}},
 		{Label: "Workbench Tree", Items: []helpActionItem{
 			{Action: ActionWorkbenchOpen},
 			{Action: ActionWorkbenchRename},
 			{Action: ActionWorkbenchNew},
+			{Action: ActionWorkbenchDetach},
+			{Action: ActionWorkbenchZoom},
 		}},
-		{Label: "Prompt", Items: []helpActionItem{
+		{Label: "Prompt / Help", Items: []helpActionItem{
+			{Action: ActionPromptOpen},
 			{Action: ActionPromptSubmit},
 			{Action: ActionPromptCancel},
+			{Action: ActionHelpOpen},
 		}, Details: []string{"confirm"}},
-		{Label: "Copy", Details: []string{"authoritative HistoryWindow only"}},
+		{Label: "Display / Copy", Items: []helpActionItem{
+			{Action: ActionCopyOlder},
+			{Action: ActionClipboardHistoryPaste},
+			{Action: ActionClipboardHistoryEdit},
+			{Action: ActionClipboardHistoryDelete},
+		}, Details: []string{"authoritative HistoryWindow"}},
 	}
 }
 

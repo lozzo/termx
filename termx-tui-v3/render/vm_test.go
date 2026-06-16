@@ -275,16 +275,24 @@ func TestRenderVMBuilderBuildsGlobalFooterActionIDs(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
 	actions := NewRenderVMBuilder().Build(root).Shell.Footer.ActionTokens
 	want := map[string]string{
-		"h": ActionFooterToggleHeader.String(),
-		"f": ActionFooterToggleFooter.String(),
+		"?": ActionHelpOpen.String(),
 		"t": ActionFooterOpenPool.String(),
 		"w": ActionFooterOpenTree.String(),
-		"T": ActionFooterCloseToast.String(),
-		"c": ActionFooterClearToasts.String(),
+		"q": ActionFooterQuit.String(),
 	}
 	for _, action := range actions {
 		if id, ok := want[action.Key]; ok && action.ActionID != id {
 			t.Fatalf("global footer action %s should use %s, got %#v", action.Key, id, actions)
+		}
+	}
+	for _, forbidden := range []string{
+		ActionFooterToggleHeader.String(),
+		ActionFooterToggleFooter.String(),
+		ActionFooterCloseToast.String(),
+		ActionFooterClearToasts.String(),
+	} {
+		if containsFooterActionID(actions, forbidden) {
+			t.Fatalf("global footer should keep chrome/toast controls out of the primary path, got %#v", actions)
 		}
 	}
 }
@@ -2208,13 +2216,14 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 	if content.Kind != ContentHelp ||
 		!strings.Contains(content.Lines[0].PlainString(), "Help") ||
 		!strings.Contains(content.Lines[1].PlainString(), "Most used") ||
-		!strings.Contains(content.Lines[4].PlainString(), "Footer") ||
-		!strings.Contains(content.Lines[6].PlainString(), "Terminal Pool") ||
+		!strings.Contains(content.Lines[3].PlainString(), "Tab / Workspace") ||
+		!strings.Contains(content.Lines[5].PlainString(), "Terminal Pool") ||
+		!strings.Contains(content.Lines[8].PlainString(), "Display / Copy") ||
 		!contentHasAction(content, "help.close") {
 		t.Fatalf("expected help content, got %#v", content)
 	}
 	helpPlain := plainLines(content.Lines)
-	for _, forbidden := range []string{"edit metadata", "center", "collapse", "workspace delete"} {
+	for _, forbidden := range []string{"toggle header", "toggle footer", "close toast", "clear toasts", "center", "collapse"} {
 		if strings.Contains(helpPlain, forbidden) {
 			t.Fatalf("help must only show wired actions, found %q in %q", forbidden, helpPlain)
 		}

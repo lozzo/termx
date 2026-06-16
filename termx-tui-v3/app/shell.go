@@ -592,6 +592,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		root.Shell = root.Shell.CloseOverlay()
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		return root.Advance(), nil
+	case render.ActionHelpOpen:
+		root.Shell = root.Shell.OpenHelp("most-used")
+		return root.Advance(), nil
 	case render.ActionHelpClose:
 		root.Shell = root.Shell.CloseOverlay()
 		return root.Advance(), nil

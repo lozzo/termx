@@ -163,8 +163,8 @@
 | resize | `S+arrows PAN`、`0/$/^/B ALIGN`、`m/\|/_ CENTER`、`r RESET` | `Shift+WASD`、Shift 方向键、`0`、`$`、`^`、`B`、`m`、`|`、`_`、`r` | 修改 active terminal view 的 view-local content layout |
 | global | `? HELP` | `?` | 打开 help overlay |
 | global | `t TERMINALS` | `t` | 打开 Terminal Pool |
+| global | `w TREE` | `w` | 打开 Workbench Tree |
 | global | `q QUIT` | `q` | quit TUI |
-| global | `h HEADER`、`f FOOTER`、`w TREE`、`T TOAST`、`c CLEAR` | `h`、`f`、`w`、`T`、`c` | v3 shell chrome/toast 补充动作 |
 | floating | `n NEW FLOAT`、`x CLOSE`、`f PICK`、`a OWNER`、`c CENTER`、`m COLLAPSE` | `n`、`x`、`f`、`a`、`c`、`m` | create / close floating pane、打开 picker、获取 ownership、居中、折叠 |
 | tab | `c NEW`、`p PREV`、`n NEXT`、`r RENAME`、`x KILL`、`1-9 JUMP` | `c`、`p`、`n`、`r`、`x`、`1`-`9` | tab create / previous / next / rename / close / jump |
 | workspace | `c NEW`、`p PREV`、`n NEXT`、`r RENAME`、`f PICK`、`x DELETE` | `c`、`p`、`n`、`r`、`f`、`x` | workspace create / previous / next / rename / tree / delete |
@@ -197,6 +197,7 @@
 | resize | `b` | balance pane layout | v3 早期别名，footer 展示 tuiv2 `=` |
 | global | `p`、`m` | 打开 Terminal Pool | legacy alias，未放 footer |
 | global | `:` | 打开 Prompt | overlay 入口，未放 footer |
+| global | `h`、`f`、`T`、`c` | header/footer hide、toast close/clear | 维护动作，已从 global footer 和 Help 主路径降级 |
 | floating | `z` | collapse | `m COLLAPSE` 已展示为 tuiv2 主键，`z` 保留为 v3 早期别名 |
 | floating | `h` / `j` / `k` / `l`、方向键、`H` / `J` / `K` / `L` | move / resize floating pane | footer 以 `arrows move`、`HJKL size` 汇总展示 |
 | tab | `c`、`]`、`[`、`p`、`X` | create、next、previous、previous、kill | legacy 或 danger alias，未放 footer |

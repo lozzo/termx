@@ -154,6 +154,10 @@ func TestActionSpecCatalogClassifiesVisibleClickableAndDispatchActions(t *testin
 		t.Fatalf("copy older action should carry footer and help metadata, got %#v", copyOlder)
 	}
 
+	helpOpen := assertSpec(ActionHelpOpen, ActionSurfaceFooter, ActionDispatchApp)
+	if helpOpen.FooterKey != "?" || helpOpen.FooterLabel != "HELP" {
+		t.Fatalf("help open action should carry global footer metadata, got %#v", helpOpen)
+	}
 	assertSpec(ActionHelpClose, ActionSurfaceHelp, ActionDispatchApp)
 	assertSpec(ActionPoolAttach, ActionSurfaceContent, ActionDispatchApp)
 	assertSpec(ActionClipboardHistoryPaste, ActionSurfaceContent, ActionDispatchApp)
@@ -188,7 +192,6 @@ func TestActionSpecByIDKeepsDynamicChromeGlyphsCurrent(t *testing.T) {
 func TestActionSpecCatalogKeepsInputOnlyActionsSeparate(t *testing.T) {
 	for _, id := range []ActionID{
 		ActionPromptOpen,
-		ActionHelpOpen,
 		ActionFloatingMoveLeft,
 		ActionFloatingMoveRight,
 		ActionFloatingMoveUp,
