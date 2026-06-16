@@ -667,7 +667,7 @@ func TestTerminalIngestOutputEraseInLineModeTwoClearsWholeMutableLineWithoutComm
 	}
 }
 
-func TestTerminalIngestOutputClearScreenResetsMutableFrontierOnly(t *testing.T) {
+func TestTerminalIngestOutputClearScreenCommitsCurrentScreenPage(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -694,8 +694,11 @@ func TestTerminalIngestOutputClearScreenResetsMutableFrontierOnly(t *testing.T) 
 	if err != nil {
 		t.Fatalf("latest after clear: %v", err)
 	}
-	if len(after.Rows) != 2 || after.Rows[0].Text != "one" || after.Rows[1].Text != "two" || after.TotalLines != before.TotalLines {
-		t.Fatalf("ED 2 should clear mutable frontier but preserve committed history, got %#v", after)
+	if len(after.Rows) != 4 || after.Rows[0].Text != "one" || after.Rows[1].Text != "two" || after.Rows[2].Text != "three" || after.Rows[3].Text != "four" {
+		t.Fatalf("ED 2 should keep the clear-screen page in history, got %#v", after)
+	}
+	if after.TotalLines != 4 || after.TotalLines <= before.TotalLines {
+		t.Fatalf("ED 2 should commit current screen page before clearing, before=%d after=%d", before.TotalLines, after.TotalLines)
 	}
 }
 

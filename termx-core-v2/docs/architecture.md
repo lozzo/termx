@@ -279,14 +279,14 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 - `write-primary-cells`：写入 primary 当前 logical line 的 cell runs 或 cells。
 - `seal-logical-line`：硬换行、滚出可变区或明确封口边界导致 logical line sealed。
 - `mutate-frontier`：光标移动、覆写、erase、clear 局部可变内容等对 `MutableFrontier` 内 line 的修改。
-- `reset-frontier`：clear screen 或明确重置场景清空当前 primary `MutableFrontier`，但不创建 committed history。
+- `reset-frontier`：明确重置场景丢弃当前 primary `MutableFrontier`，但不创建 committed history；真实终端 `CSI 2J` 默认不走这个丢弃语义。
 - `commit-frontier`：把 frontier 中符合条件的 logical line 加入 `CommittedHistoryIndex`。
 - `force-commit-frontier`：process exit 时强制封口 primary frontier 并提交。
 - `reclaim-committed-suffix`：grow resize 或其他可变性恢复场景按完整 logical line 把 committed suffix 撤回到 frontier。
 - `hide-frontier`：shrink resize 把当前 screen 中不可见但仍可变的 logical lines 转入 hidden frontier。
 - `truncate-committed-history`：clear scrollback、retention 或显式删除历史时，从 `CommittedHistoryIndex` 删除完整 logical line 范围，并同步删除或标记 store 中相关 line。
 - `switch-alt-screen`：进入/退出 alt-screen 时冻结/恢复 primary history，不把 alt 内容写入 primary history。
-- `non-history-boundary`：attach、reattach、bootstrap、recovery、full replace、clear screen、resize 等非历史创建事件只影响事务边界、token 或 generation，不凭空创建 committed history。
+- `non-history-boundary`：attach、reattach、bootstrap、recovery、full replace、resize 等非历史创建事件只影响事务边界、token 或 generation，不凭空创建 committed history。
 
 `non-history-boundary` 只能表达事务边界和 stale signal，不能替代 `mutate-frontier`、`reset-frontier`、`commit-frontier`、`reclaim-committed-suffix`、`hide-frontier`、`truncate-committed-history`、`force-commit-frontier` 等具体 history mutation 事件。
 
@@ -352,8 +352,10 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 ### 6.4 clear / erase / full replace 语义
 
 - 局部 erase 或光标覆写如果作用于仍可变 logical line，必须进入 `mutate-frontier`。
-- clear screen 可以清理 `LiveSurfaceTrack` 当前屏幕，但不得凭空创建 committed history。
-- clear screen 如果明确影响 primary frontier，必须以 `mutate-frontier` 或 `reset-frontier` 表达，不能从清屏后的 snapshot 反推历史。
+- clear screen 可以清理 `LiveSurfaceTrack` 当前屏幕，但不得从清屏后的 snapshot 凭空创建 committed history。
+- 真实终端 `CSI 2J` 对 `HistoryTrack` 是 page-break：先把 core 已持有的 primary frontier 封口提交，再清空 primary screen ownership，让清屏后的 UI 从新 logical page 开始。
+- 这个 page-break 只能提交 `LogicalLineStore` / `MutableFrontier` 里已经存在的 line；不能读取 `LiveSurfaceTrack`、snapshot、grid viewport 或 visual rows 来补造历史。
+- 如果业务明确要丢弃 mutable frontier，必须使用 `reset-frontier`，不能把它和默认 `CSI 2J` 混成一类。
 - clear scrollback 或程序明确删除历史时，必须使用 `truncate-committed-history`，并 bump generation、失效旧 token/cursor。
 - clear scrollback 可以删除已经写入 StorageBackend 的 line；StorageBackend 必须执行 delete、truncate、tombstone 或后续 compaction。
 - `truncate-committed-history` 只删除 committed index 覆盖的历史。它不得从当前 screen 或 `MutableFrontier` 反推删除内容。
@@ -442,7 +444,7 @@ TUI-v3 stale guard 只能使用 core-v2 返回的 token、generation、cursor �
 - 实时 snapshot/grid viewport 可以保留，但只能属于 `LiveSurfaceTrack`。
 - 两轨不能通过 snapshot、wrapped rows、visual rows 传递历史 truth。
 - resize 不能创造 history，grow resize 必须按完整 logical line reclaim committed suffix。
-- clear screen、full replace、attach、reattach、bootstrap、recovery 不能凭空创建 committed history。
+- clear screen、full replace、attach、reattach、bootstrap、recovery 不能凭空创建 committed history；`CSI 2J` 只允许提交 core 已持有的 primary frontier，不能从 live snapshot 反推历史。
 - clear scrollback、truncate、retention 可以删除已提交和已持久化的 logical line，但必须按完整 logical line 更新 index、store、generation 与 cursor。
 - alt-screen 不写 primary history。
 - process exit 必须 force commit primary mutable frontier。

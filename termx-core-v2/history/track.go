@@ -438,7 +438,7 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 	case 1:
 		return track.eraseDisplayToCursor()
 	case 2:
-		return track.resetFrontier()
+		return track.clearPrimaryScreenPageBreak()
 	case 3:
 		return track.truncateCommittedHistory(HistoryEvent{
 			Kind:    EventTruncateCommittedHistory,
@@ -447,6 +447,51 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 	default:
 		return nil
 	}
+}
+
+// clearPrimaryScreenPageBreak 处理真实终端里的 CSI 2J：它不是从 live
+// surface 截屏造历史，而是把 core 已经持有的 primary mutable frontier
+// 封口进 committed history，再清空 screen ownership，让清屏后的 UI 从新页开始。
+func (track *HistoryTrack) clearPrimaryScreenPageBreak() error {
+	ids := track.frontier.IDs()
+	changed := false
+	for _, id := range ids {
+		line, ok := track.store.Line(id)
+		if !ok {
+			return ErrUnknownLine
+		}
+		if line.Seal != SealStateSealed {
+			line.Seal = SealStateSealed
+			line.Dirty = true
+		}
+		if line.Dirty {
+			line.Dirty = false
+			if _, err := track.store.ReplaceLine(line); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if !track.committed.Contains(id) {
+			if err := track.committed.Append(id); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+	}
+	if track.activeLine != 0 || track.activeCol != 0 || track.overwrite {
+		changed = true
+	}
+	track.activeLine = 0
+	track.activeCol = 0
+	track.overwrite = false
+	track.screen.clearAll()
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
 }
 
 // eraseDisplayFromCursor 只作用于当前 primary mutable frontier：它会擦掉

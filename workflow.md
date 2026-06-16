@@ -125,7 +125,7 @@
 - core-v2 的历史基本单位必须是 logical line，不是 visual row，不是 snapshot scrollback，不是 grid viewport。
 - `LogicalLineStore` 是唯一历史 truth。
 - `HistoryWindow` 只是按当前 `cols` 投影出来的窗口，不是新的历史来源。
-- attach、reattach、bootstrap、recovery、full replace、clear screen、resize 都不能凭空创造 committed history。
+- attach、reattach、bootstrap、recovery、full replace、resize 都不能凭空创造 committed history；clear screen 只能把 core 已持有的 primary frontier 封口提交，不能从 live snapshot 反推历史。
 - alt-screen 不写入 primary history；process exit 必须 force commit primary mutable frontier。
 
 ### 4.2 tui-v3 只消费 authoritative history
@@ -212,11 +212,12 @@
 | 215E1-R39. SK copy history core 背景 footprint 回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`scripts/`、`workflow.md` | 已撤掉 R38 的 TUI display-only 补丁；core history parser 现在只在 terminal 滚屏新建物理行继承背景时，把尾部空白作为 authoritative `Text="" Width=N Style=BG` footprint 写进 history；`bg-forensics` raw harness 收敛到 `screen_lost_bg_cells=0` |
 | 215E1-R40. SK copy history 行尾背景语义修正 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`internal/protocol/`、`termx-vterm/`、`workflow.md` | 已把滚屏继承背景改成 row tail fill metadata，不再写成 logical line 里的 N 个空格；copy/history 本地重排只在最后一个 visual row 展示行尾背景，真实空格/CSI K 仍保持 cell 宽度语义；live surface resize/reflow 会保留 used 宽度之后的行尾背景 |
 | 215E1-R41. SK history screen ownership 回写语义 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`termx-tui-v3/`、`workflow.md` | 已处理 Codex 这类 primary-screen UI 反复回写已有行的问题：core history 自己维护当前屏幕行到 logical line 的 ownership；光标上移/绝对定位回写时修改原 line，不把 `Working Working Working` 这类中间态追加成新历史；真实空白行作为 logical line 保留；copy frozen older 会先翻冻结屏幕里的上一行，不跳过 frozen live-tail |
+| 215E1-R42. SK clear screen 保留当前屏幕页 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理 Codex / tmux 对比里的清屏问题：`CSI 2J` 不再直接删除当前 primary screen 上尚未 committed 的 logical lines，而是先把 HistoryTrack 已持有的 frontier 页面封口提交，再清空 screen ownership，让新全屏 UI 从新页面开始 |
 
 当前下一步：
 
-- `215E1-R41 history screen ownership 回写语义` 已完成
-- 后续只在真实复现新回归时再开新切片；本切片没有实现完整 MVCC，也没有把 history parser 改成完整 terminal emulator
+- `215E1-R42 clear screen 保留当前屏幕页` 已完成
+- 后续只在真实复现新回归时再开新切片；本切片没有从 live surface 截屏生成历史，没有处理 alt-screen，也没有扩展完整 terminal emulator
 
 ## 6. 必做证据
 

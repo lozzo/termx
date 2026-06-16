@@ -395,17 +395,42 @@ func TestHistoryTrackResetFrontierDoesNotCreateCommittedHistory(t *testing.T) {
 	}
 }
 
-func TestHistoryTrackEraseDisplayResetFrontierDoesNotCreateCommittedHistory(t *testing.T) {
+func TestHistoryTrackEraseDisplayClearScreenCommitsCurrentScreenPage(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "kept")
+	track.SetPrimaryScreenRows(2)
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("draft")})
 
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 2})
-	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
-		t.Fatalf("ED 2 should preserve committed history only, got %v", got)
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
+		t.Fatalf("ED 2 should commit current screen page before clearing, got %v", got)
 	}
 	if got := track.FrontierIDs(); len(got) != 0 {
-		t.Fatalf("ED 2 should clear mutable frontier, got %v", got)
+		t.Fatalf("ED 2 should clear frontier ownership after page break, got %v", got)
+	}
+	line := requireLine(t, track, 2)
+	if got := lineText(line); got != "draft" {
+		t.Fatalf("ED 2 should preserve clear-screen tail payload, got %q", got)
+	}
+	if line.Seal != SealStateSealed {
+		t.Fatalf("ED 2 should seal open screen line, got %q", line.Seal)
+	}
+	if line.Dirty {
+		t.Fatal("ED 2 should clean committed screen line")
+	}
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ui")})
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
+		t.Fatalf("new UI after ED 2 must not rewrite committed page, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{3}) {
+		t.Fatalf("new UI after ED 2 should start a fresh frontier line, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 2)); got != "draft" {
+		t.Fatalf("clear-screen page payload should remain stable, got %q", got)
+	}
+	if got := lineText(requireLine(t, track, 3)); got != "ui" {
+		t.Fatalf("new UI should be written to a fresh line, got %q", got)
 	}
 }
 
