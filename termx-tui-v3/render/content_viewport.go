@@ -55,6 +55,12 @@ func contentViewportCursor(cursor Cursor, extent ContentExtent, rect Rect) Curso
 	return cursor
 }
 
+func projectContentCursor(content ContentVM, rect Rect) Cursor {
+	extent := normalizeContentExtent(content.Extent, rect)
+	extent = applyContentLayoutToExtent(content.Layout, extent, rect)
+	return contentViewportCursor(content.Cursor, extent, rect)
+}
+
 func applyContentLayoutToExtent(layout ContentLayoutVM, extent ContentExtent, rect Rect) ContentExtent {
 	if !extent.Known || !layout.Known {
 		return extent

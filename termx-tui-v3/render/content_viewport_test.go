@@ -369,6 +369,53 @@ func TestFrameworkRendersTerminalLiveExtentFromBuilder(t *testing.T) {
 	}
 }
 
+func TestFrameworkProjectsTerminalLiveCursorThroughViewLayout(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 12, H: 6}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "pane",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{
+				Kind:   ContentTerminalLive,
+				Lines:  []Line{NewLine("abcd"), NewLine("efgh")},
+				Extent: ContentExtent{Known: true, Cols: 4, Rows: 2},
+				Layout: ContentLayoutVM{Known: true, Mode: "center"},
+				Cursor: Cursor{Visible: true, Row: 1, Col: 2, Shape: CursorShapeBar},
+			},
+		}}},
+	}})
+
+	if result.Cursor != (Cursor{Visible: true, Row: 2, Col: 5, Shape: CursorShapeBar}) {
+		t.Fatalf("centered live cursor should move with content viewport, got %#v", result.Cursor)
+	}
+	if result.CursorRect != (Rect{X: 6, Y: 3, W: 1, H: 1}) {
+		t.Fatalf("centered live cursor rect should include panel content origin, got %#v", result.CursorRect)
+	}
+}
+
+func TestFrameworkHidesTerminalLiveCursorWhenViewLayoutClipsIt(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 12, H: 6}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "pane",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{
+				Kind:   ContentTerminalLive,
+				Lines:  []Line{NewLine("abcd"), NewLine("efgh")},
+				Extent: ContentExtent{Known: true, Cols: 4, Rows: 2},
+				Layout: ContentLayoutVM{Known: true, PanX: 8},
+				Cursor: Cursor{Visible: true, Row: 0, Col: 1, Shape: CursorShapeBar},
+			},
+		}}},
+	}})
+
+	if result.Cursor.Visible || result.Cursor.Anchor || result.CursorRect.W != 0 {
+		t.Fatalf("clipped live cursor should be hidden instead of anchored at old origin, cursor=%#v rect=%#v", result.Cursor, result.CursorRect)
+	}
+}
+
 func TestContentViewportKeepsEmojiBeforeExtentDots(t *testing.T) {
 	result := RenderContentViewport(ContentRenderRequest{
 		Rect: Rect{W: 6, H: 1},

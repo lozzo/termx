@@ -9,7 +9,10 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 		if !floating.Floating.Active {
 			continue
 		}
-		cursor := floating.Floating.Content.Cursor
+		cursor := projectContentCursor(floating.Floating.Content, floating.ContentRect)
+		if cursorWasClipped(floating.Floating.Content.Cursor, cursor) {
+			return Cursor{}, Rect{}
+		}
 		return cursorWithRectOrAnchor(cursor, floating.ContentRect)
 	}
 	for _, panel := range plan.Panels {
@@ -19,13 +22,22 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 		if panel.Panel.Content.Kind == ContentEmptyPane {
 			return Cursor{}, Rect{}
 		}
-		cursor := panel.Panel.Content.Cursor
+		cursor := projectContentCursor(panel.Panel.Content, panel.ContentRect)
+		if cursorWasClipped(panel.Panel.Content.Cursor, cursor) {
+			return Cursor{}, Rect{}
+		}
 		if !cursor.Visible {
 			cursor = shell.Cursor
 		}
 		return cursorWithRectOrAnchor(cursor, panel.ContentRect)
 	}
 	return cursorWithRectOrAnchor(shell.Cursor, plan.Body)
+}
+
+func cursorWasClipped(source Cursor, projected Cursor) bool {
+	// 中文说明：真实 terminal cursor 被 view layout 裁掉时应隐藏；
+	// 不能走 IME anchor fallback，否则光标会停在内容区旧原点。
+	return source.Visible && !projected.Visible && !projected.Anchor
 }
 
 func overlayOwnsCursor(overlay OverlayVM) bool {
