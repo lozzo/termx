@@ -1692,12 +1692,44 @@ func TestAppRuntimeDispatchesFooterActionHitRegions(t *testing.T) {
 		t.Fatalf("drain global footer render: %v", err)
 	}
 	globalFrame := lastRuntimeFrame(t, globalHost)
-	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterToggleHeader.String())
-	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterToggleFooter.String())
 	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterCloseToast.String())
 	assertFrameMissingActionHitRegion(t, globalFrame, render.ActionFooterClearToasts.String())
 
-	helpAction := frameActionHitRegion(t, globalFrame, render.ActionHelpOpen.String(), "")
+	headerAction := frameActionHitRegion(t, globalFrame, render.ActionFooterToggleHeader.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(headerAction.Rect)); err != nil {
+		t.Fatalf("send footer header click: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer header click: %v", err)
+	}
+	if globalRuntime.State().Shell.EnsureDefaults().HeaderVisible {
+		t.Fatalf("footer header click should hide header, got %#v", globalRuntime.State().Shell.EnsureDefaults())
+	}
+
+	if err := globalRuntime.Post(ShellSetHeaderVisibleMsg{Visible: true}); err != nil {
+		t.Fatalf("restore header: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain restore header: %v", err)
+	}
+	footerAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionFooterToggleFooter.String(), "")
+	if err := globalHost.SendInput(mouseEventAt(footerAction.Rect)); err != nil {
+		t.Fatalf("send footer toggle click: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain footer toggle click: %v", err)
+	}
+	if globalRuntime.State().Shell.EnsureDefaults().FooterVisible {
+		t.Fatalf("footer toggle click should hide footer, got %#v", globalRuntime.State().Shell.EnsureDefaults())
+	}
+	if err := globalRuntime.Post(ShellSetFooterVisibleMsg{Visible: true}); err != nil {
+		t.Fatalf("restore footer: %v", err)
+	}
+	if err := globalRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain restore footer: %v", err)
+	}
+
+	helpAction := frameActionHitRegion(t, lastRuntimeFrame(t, globalHost), render.ActionHelpOpen.String(), "")
 	if err := globalHost.SendInput(mouseEventAt(helpAction.Rect)); err != nil {
 		t.Fatalf("send footer help click: %v", err)
 	}

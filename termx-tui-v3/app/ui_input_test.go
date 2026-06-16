@@ -1194,7 +1194,7 @@ func TestInteractiveRuntimePromptAndHelpOverlayFlow(t *testing.T) {
 		t.Fatalf("expected help overlay, shell=%#v", runtime.State().Shell)
 	}
 	frame = lastFrame(t, host.Frames())
-	if !frameContains(frame, "Help") || !frameContains(frame, "core workflows") || !frameContains(frame, "Terminal Pool") || !frameContains(frame, "Workbench Tree") || frameContains(frame, "toggle header") {
+	if !frameContains(frame, "Help") || !frameContains(frame, "core workflows") || !frameContains(frame, "Shell") || !frameContains(frame, "Terminal Pool") || !frameContains(frame, "Workbench Tree") || frameContains(frame, "clear toasts") {
 		t.Fatalf("expected help content, got %#v", frame.Lines)
 	}
 	closeRegion := frameActionHitRegion(t, frame, "help.close", "")
@@ -1913,8 +1913,8 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	if runtime.State().Shell.Overlay.Kind != state.OverlayHelp || !frameContains(helpFrame, "Most used") {
 		t.Fatalf("expected Help overlay, shell=%#v frame=%#v", runtime.State().Shell, helpFrame.Lines)
 	}
-	if frameContains(helpFrame, "toggle header") || frameContains(helpFrame, "clear toasts") {
-		t.Fatalf("help overlay should not promote chrome/toast controls, got %#v", helpFrame.Lines)
+	if frameContains(helpFrame, "clear toasts") || frameContains(helpFrame, "close toast") {
+		t.Fatalf("help overlay should not promote toast controls, got %#v", helpFrame.Lines)
 	}
 	sendKey(input.KeyEnter)
 

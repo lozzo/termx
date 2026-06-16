@@ -531,8 +531,13 @@ type helpActionItem struct {
 
 func helpActionGroups() []helpActionGroup {
 	return []helpActionGroup{
-		// Help 是产品导航页，避免把 header/footer/toast 这类 chrome 调试动作放到主说明里。
+		// Help 是产品导航页；toast 清理这类维护动作不放到主说明里。
 		{Label: "Most used", Details: []string{"Ctrl-p pane", "Ctrl-r resize", "Ctrl-f picker", "Ctrl-g global"}},
+		{Label: "Shell", Items: []helpActionItem{
+			{Action: ActionFooterToggleHeader},
+			{Action: ActionFooterToggleFooter},
+			{Action: ActionFooterGlobalMode},
+		}},
 		{Label: "Pane", Items: []helpActionItem{
 			{Action: ActionPaneFooterFocus},
 			{Action: ActionPaneFooterSplitRight},

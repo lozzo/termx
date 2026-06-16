@@ -161,6 +161,8 @@
 | resize | `= BALANCE` | `=` | balance pane layout |
 | resize | `s LOCK`、`space LAYOUT` | `s`、`Space` | 切换 active terminal view 的 size lock 与 layout mode |
 | resize | `S+arrows PAN`、`0/$/^/B ALIGN`、`m/\|/_ CENTER`、`r RESET` | `Shift+WASD`、Shift 方向键、`0`、`$`、`^`、`B`、`m`、`|`、`_`、`r` | 修改 active terminal view 的 view-local content layout |
+| global | `h HEADER` | `h` | hide/show header |
+| global | `f FOOTER` | `f` | hide/show footer |
 | global | `? HELP` | `?` | 打开 help overlay |
 | global | `t TERMINALS` | `t` | 打开 Terminal Pool |
 | global | `w TREE` | `w` | 打开 Workbench Tree |
@@ -197,7 +199,7 @@
 | resize | `b` | balance pane layout | v3 早期别名，footer 展示 tuiv2 `=` |
 | global | `p`、`m` | 打开 Terminal Pool | legacy alias，未放 footer |
 | global | `:` | 打开 Prompt | overlay 入口，未放 footer |
-| global | `h`、`f`、`T`、`c` | header/footer hide、toast close/clear | 维护动作，已从 global footer 和 Help 主路径降级 |
+| global | `T`、`c` | toast close/clear | 维护动作，已从 global footer 和 Help 主路径降级 |
 | floating | `z` | collapse | `m COLLAPSE` 已展示为 tuiv2 主键，`z` 保留为 v3 早期别名 |
 | floating | `h` / `j` / `k` / `l`、方向键、`H` / `J` / `K` / `L` | move / resize floating pane | footer 以 `arrows move`、`HJKL size` 汇总展示 |
 | tab | `c`、`]`、`[`、`p`、`X` | create、next、previous、previous、kill | legacy 或 danger alias，未放 footer |

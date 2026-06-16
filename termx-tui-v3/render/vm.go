@@ -270,6 +270,8 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	case "global":
 		return footerActionSpecs(
+			footerActionFor(ActionFooterToggleHeader),
+			footerActionFor(ActionFooterToggleFooter),
 			footerActionFor(ActionHelpOpen),
 			footerActionFor(ActionFooterOpenPool),
 			footerActionFor(ActionFooterOpenTree),
