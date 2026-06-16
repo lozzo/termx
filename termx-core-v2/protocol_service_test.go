@@ -1928,6 +1928,41 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceSnapshotKeepsAltScreenFinalFrameOnExit(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 20, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "primary\n\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	snapshot, err := client.Snapshot(context.Background(), "term-1", 0, 3)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if snapshot.Screen.IsAlternateScreen || snapshot.Modes.AlternateScreen {
+		t.Fatalf("alt exit should expose final frame as primary live screen, got %#v", snapshot)
+	}
+	if got := cellsText(snapshot.Screen.Cells[0]); !strings.Contains(got, "alt-final") {
+		t.Fatalf("snapshot should preserve alt final frame, got %q", got)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       20,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(latest.Rows) != 1 || rowText(latest.Rows[0]) != "primary" || latest.LogicalTotal != 1 {
+		t.Fatalf("alt final frame must not enter primary history, got %#v", latest)
+	}
+}
+
 func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {
 	return newProtocolClientWithProcessFactory(t, newRecordingProcessFactory())
 }

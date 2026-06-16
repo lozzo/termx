@@ -55,3 +55,31 @@ func TestSurfaceTrackLargeWriteKeepsLatestScreen(t *testing.T) {
 		t.Fatalf("expected large live write to keep latest tail, got %#v", rows)
 	}
 }
+
+func TestSurfaceTrackPreservesAltScreenFrameOnExit(t *testing.T) {
+	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
+	surface.Write("primary")
+	surface.Write("\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l")
+
+	snapshot := surface.Snapshot()
+	if snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen {
+		t.Fatalf("expected preserved frame to become primary live screen, got modes=%#v screen=%#v", snapshot.Modes, snapshot.Screen)
+	}
+	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "alt-final") || strings.Contains(got, "primary") {
+		t.Fatalf("expected alt final frame to remain visible without restoring primary, got %q", got)
+	}
+}
+
+func TestSurfaceTrackPreservesAltScreenFrameWhenExitSequenceIsSplit(t *testing.T) {
+	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
+	surface.Write("\x1b[?1049h\x1b[2Jsplit-final")
+	surface.Write("\x1b[?104")
+	surface.Write("9l")
+
+	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "split-final") {
+		t.Fatalf("expected split alt exit sequence to preserve final frame, got %q", got)
+	}
+	if surface.Snapshot().Modes.AlternateScreen {
+		t.Fatal("expected split alt exit to leave alternate screen mode")
+	}
+}

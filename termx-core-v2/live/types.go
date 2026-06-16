@@ -18,8 +18,9 @@ func (s SurfaceSize) Valid() bool {
 }
 
 type SurfaceTrack struct {
-	size SurfaceSize
-	vt   *vterm.VTerm
+	size    SurfaceSize
+	vt      *vterm.VTerm
+	pending string
 }
 
 // SurfaceSnapshot 是真实 live terminal 的 size-bound cell matrix，不是 history truth。
@@ -51,13 +52,60 @@ func (surface *SurfaceTrack) Resize(size SurfaceSize) {
 }
 
 func (surface *SurfaceTrack) Write(text string) {
-	if text == "" {
+	if text == "" && surface.pending == "" {
 		return
 	}
 	surface.ensureVTerm()
+	text = surface.pending + text
+	surface.pending = ""
+	for text != "" {
+		idx := strings.Index(text, "\x1b[?")
+		if idx < 0 {
+			surface.writeRaw(text)
+			return
+		}
+		if idx > 0 {
+			surface.writeRaw(text[:idx])
+			text = text[idx:]
+			continue
+		}
+		consumed, action, filtered, complete := consumePrivateModeCSI(text)
+		if !complete {
+			surface.pending = text
+			return
+		}
+		if consumed <= 0 {
+			surface.writeRaw(text[:1])
+			text = text[1:]
+			continue
+		}
+		if action == privateModeAltExit && surface.vt.IsAltScreen() {
+			surface.preserveAltScreenFrameAsPrimary()
+			if filtered != "" {
+				surface.writeRaw(filtered)
+			}
+			text = text[consumed:]
+			continue
+		}
+		surface.writeRaw(text[:consumed])
+		text = text[consumed:]
+	}
+}
+
+func (surface *SurfaceTrack) writeRaw(text string) {
+	if text == "" {
+		return
+	}
 	// 中文说明：core-v2 live surface 只暴露当前 screen snapshot，不消费增量 damage。
 	// 所以这里始终走 latest-frame 写入，避免压力输出为每个 PTY 小块构造细粒度 damage。
 	_, _, _ = surface.vt.WriteForLatestFrame([]byte(text))
+}
+
+func (surface *SurfaceTrack) preserveAltScreenFrameAsPrimary() {
+	snapshot := surface.Snapshot()
+	snapshot.Modes.AlternateScreen = false
+	snapshot.Screen.IsAlternateScreen = false
+	surface.vt.LoadSnapshot(snapshot.Screen, snapshot.Cursor, snapshot.Modes)
 }
 
 func (surface *SurfaceTrack) Rows() []string {
@@ -90,6 +138,71 @@ func (surface *SurfaceTrack) ensureVTerm() {
 		surface.size = SurfaceSize{Cols: 80, Rows: 24}
 	}
 	surface.vt = vterm.New(surface.size.Cols, surface.size.Rows, 0, nil)
+}
+
+type privateModeAltAction int
+
+const (
+	privateModeNoAlt privateModeAltAction = iota
+	privateModeAltEnter
+	privateModeAltExit
+)
+
+func consumePrivateModeCSI(input string) (int, privateModeAltAction, string, bool) {
+	if !strings.HasPrefix(input, "\x1b[?") {
+		return 0, privateModeNoAlt, "", true
+	}
+	end := -1
+	for i := 3; i < len(input); i++ {
+		b := input[i]
+		if b >= 0x40 && b <= 0x7e {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return 0, privateModeNoAlt, "", false
+	}
+	final := input[end]
+	sequence := input[:end+1]
+	if final != 'h' && final != 'l' {
+		return end + 1, privateModeNoAlt, sequence, true
+	}
+	params := strings.FieldsFunc(input[3:end], func(r rune) bool {
+		return r == ';' || r == ':'
+	})
+	hasAlt := false
+	kept := make([]string, 0, len(params))
+	for _, param := range params {
+		if param == "" {
+			continue
+		}
+		if isAltScreenPrivateMode(param) {
+			hasAlt = true
+			continue
+		}
+		kept = append(kept, param)
+	}
+	if !hasAlt {
+		return end + 1, privateModeNoAlt, sequence, true
+	}
+	if final == 'h' {
+		return end + 1, privateModeAltEnter, sequence, true
+	}
+	filtered := ""
+	if len(kept) > 0 {
+		filtered = "\x1b[?" + strings.Join(kept, ";") + string(final)
+	}
+	return end + 1, privateModeAltExit, filtered, true
+}
+
+func isAltScreenPrivateMode(param string) bool {
+	switch param {
+	case "47", "1047", "1049":
+		return true
+	default:
+		return false
+	}
 }
 
 func vtermRowText(row []vterm.Cell) string {

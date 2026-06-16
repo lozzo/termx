@@ -799,6 +799,43 @@ func TestTerminalIngestOutputAltScreenDoesNotWritePrimaryHistory(t *testing.T) {
 	}
 }
 
+func TestTerminalIngestOutputAltScreenExitKeepsLastLiveFrameOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "primary\n\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	liveSnapshot, err := server.LiveSnapshot("term-1")
+	if err != nil {
+		t.Fatalf("live snapshot: %v", err)
+	}
+	if liveSnapshot.Modes.AlternateScreen || liveSnapshot.Screen.IsAlternateScreen {
+		t.Fatalf("alt exit should keep final frame as primary live screen, got modes=%#v screen=%#v", liveSnapshot.Modes, liveSnapshot.Screen)
+	}
+	liveRows, err := server.LiveRows("term-1")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	if got := strings.Join(liveRows, "\n"); !strings.Contains(got, "alt-final") || strings.Contains(got, "primary") {
+		t.Fatalf("live surface should preserve alt final frame instead of restoring primary, got %q", got)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "primary" || window.TotalLines != 1 {
+		t.Fatalf("alt final frame must not enter primary history, got %#v", window)
+	}
+}
+
 func TestTerminalIngestOutputEnterAltScreenCommitsPrimaryPageFirst(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

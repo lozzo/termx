@@ -214,11 +214,12 @@
 | 215E1-R41. SK history screen ownership 回写语义 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`termx-tui-v3/`、`workflow.md` | 已处理 Codex 这类 primary-screen UI 反复回写已有行的问题：core history 自己维护当前屏幕行到 logical line 的 ownership；光标上移/绝对定位回写时修改原 line，不把 `Working Working Working` 这类中间态追加成新历史；真实空白行作为 logical line 保留；copy frozen older 会先翻冻结屏幕里的上一行，不跳过 frozen live-tail |
 | 215E1-R42. SK clear screen 保留当前屏幕页 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理 Codex / tmux 对比里的清屏问题：`CSI 2J` 不再直接删除当前 primary screen 上尚未 committed 的 logical lines，而是先把 HistoryTrack 已持有的 frontier 页面封口提交，再清空 screen ownership，让新全屏 UI 从新页面开始 |
 | 215E1-R43. SK alt screen 进入前保留 primary 页 | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理 Codex 进入 alt-screen 后只能看到 000058 的问题：进入 alt-screen 前先把 primary 当前 frontier 页封口提交；进入 alt-screen 后的清屏和绘制不再影响 primary history |
+| 215E1-R44. SK alt screen 退出保留最后一帧 | 完成 | `termx-core-v2/live/`、`termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理全屏程序退出后看不到最后 UI 的问题：live surface 拦截 alt-screen exit restore，保留退出前最后一帧；这个最后一帧只用于实时显示，不写入 primary history |
 
 当前下一步：
 
-- `215E1-R43 alt screen 进入前保留 primary 页` 已完成
-- 后续只在真实复现新回归时再开新切片；本切片只处理 alt-screen enter 边界，没有让 alt-screen 内部输出或清屏写入 primary history
+- `215E1-R44 alt screen 退出保留最后一帧` 已完成
+- 后续只在真实复现新回归时再开新切片；本切片只处理 live surface 显示策略，没有让 history/copy authoritative path 从 alt-screen 或 live snapshot 反推历史
 
 ## 6. 必做证据
 
