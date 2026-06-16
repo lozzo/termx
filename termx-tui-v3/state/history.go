@@ -62,6 +62,7 @@ type HistoryPendingRequest struct {
 type HistoryRow struct {
 	Text         string
 	Cells        []HistoryCell
+	TailFill     *HistoryCellStyle
 	LineID       uint64
 	RowInLine    int
 	ClippedStart bool
@@ -92,9 +93,10 @@ type HistoryCellStyle struct {
 // HistoryLogicalLine 是 copy/history 冻结快照里的单条 logical line payload。
 // TUI 只把它当作 authoritative source，再按当前 pane 宽度本地重排成 Rows。
 type HistoryLogicalLine struct {
-	Text   string
-	Cells  []HistoryCell
-	LineID uint64
+	Text     string
+	Cells    []HistoryCell
+	LineID   uint64
+	TailFill *HistoryCellStyle
 	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
 	// 的局部片段；本地 reflow 时必须继续保留，不能把 partial 片段误当成完整行。
 	ClippedBefore bool
@@ -469,6 +471,9 @@ func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []Hi
 		firstExisting.ClippedBefore {
 		lastOlder.Text += firstExisting.Text
 		lastOlder.Cells = append(lastOlder.Cells, cloneHistoryCells(firstExisting.Cells)...)
+		if firstExisting.TailFill != nil {
+			lastOlder.TailFill = cloneHistoryCellStyle(firstExisting.TailFill)
+		}
 		// 中文说明：boundary overlap 代表 older partial 的尾部和 existing partial 的头部
 		// 正好拼上了同一 logical line 的中缝；合并后只保留真正外侧还没补齐的 clipped 边。
 		lastOlder.ClippedBefore = lastOlder.ClippedBefore
@@ -504,6 +509,9 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 		if len(lines) > 0 && lines[len(lines)-1].LineID == row.LineID {
 			lines[len(lines)-1].Text += row.Text
 			lines[len(lines)-1].Cells = append(lines[len(lines)-1].Cells, cloneHistoryCells(row.Cells)...)
+			if row.TailFill != nil {
+				lines[len(lines)-1].TailFill = cloneHistoryCellStyle(row.TailFill)
+			}
 			continue
 		}
 		span, hasSpan := spansByLineID[row.LineID]
@@ -511,6 +519,7 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 			Text:          row.Text,
 			Cells:         cloneHistoryCells(row.Cells),
 			LineID:        row.LineID,
+			TailFill:      cloneHistoryCellStyle(row.TailFill),
 			ClippedBefore: hasSpan && span.ClippedBefore,
 			ClippedAfter:  hasSpan && span.ClippedAfter,
 		})
@@ -628,7 +637,15 @@ func historyRowsSameAnchor(left HistoryRow, right HistoryRow) bool {
 		left.Text == right.Text &&
 		left.ClippedStart == right.ClippedStart &&
 		left.ClippedEnd == right.ClippedEnd &&
+		historyTailFillSameAnchor(left.TailFill, right.TailFill) &&
 		historyCellsSameAnchor(left.Cells, right.Cells)
+}
+
+func historyTailFillSameAnchor(left *HistoryCellStyle, right *HistoryCellStyle) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func historyCellsSameAnchor(left []HistoryCell, right []HistoryCell) bool {
@@ -1041,6 +1058,7 @@ func cloneHistoryRows(rows []HistoryRow) []HistoryRow {
 	copy(cloned, rows)
 	for i := range cloned {
 		cloned[i].Cells = cloneHistoryCells(rows[i].Cells)
+		cloned[i].TailFill = cloneHistoryCellStyle(rows[i].TailFill)
 	}
 	return cloned
 }
@@ -1053,8 +1071,17 @@ func cloneHistoryLogicalLines(lines []HistoryLogicalLine) []HistoryLogicalLine {
 	copy(cloned, lines)
 	for i := range cloned {
 		cloned[i].Cells = cloneHistoryCells(lines[i].Cells)
+		cloned[i].TailFill = cloneHistoryCellStyle(lines[i].TailFill)
 	}
 	return cloned
+}
+
+func cloneHistoryCellStyle(style *HistoryCellStyle) *HistoryCellStyle {
+	if style == nil {
+		return nil
+	}
+	cloned := *style
+	return &cloned
 }
 
 func cloneHistoryCells(cells []HistoryCell) []HistoryCell {
@@ -1158,6 +1185,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	if len(current) > 0 || len(rows) == 0 {
 		flush()
 	}
+	applyTailFillToLastHistoryRow(rows, line.TailFill)
 	return rows
 }
 
@@ -1170,11 +1198,12 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	var builder strings.Builder
 	width := 0
 	flush := func() {
-		rows = append(rows, HistoryRow{
+		row := HistoryRow{
 			Text:      builder.String(),
 			LineID:    line.LineID,
 			RowInLine: len(rows),
-		})
+		}
+		rows = append(rows, row)
 		builder.Reset()
 		width = 0
 	}
@@ -1195,7 +1224,16 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	if builder.Len() > 0 || len(rows) == 0 {
 		flush()
 	}
+	applyTailFillToLastHistoryRow(rows, line.TailFill)
 	return rows
+}
+
+func applyTailFillToLastHistoryRow(rows []HistoryRow, fill *HistoryCellStyle) {
+	if len(rows) == 0 || fill == nil {
+		return
+	}
+	tail := *fill
+	rows[len(rows)-1].TailFill = &tail
 }
 
 func splitHistoryLogicalLineText(text string) []HistoryCell {

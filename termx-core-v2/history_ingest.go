@@ -17,6 +17,7 @@ type historyOutputSegment struct {
 	CursorHorizontalAbsolute bool
 	EraseInLine              bool
 	EraseInDisplay           bool
+	SetTailFill              bool
 	SwitchAltScreen          bool
 	EnterAltScreen           bool
 	Count                    int
@@ -381,20 +382,14 @@ func (parser *historyANSIParser) finishPhysicalRow() {
 		parser.rowFootprintActive = false
 		return
 	}
-	width := parser.screenCols - parser.screenCol
-	if width <= 0 {
+	if parser.screenCols-parser.screenCol <= 0 {
 		parser.rowFootprintActive = false
 		return
 	}
 	parser.flush()
-	// 中文说明：这里记录的是 live terminal 滚屏新建物理行时留下的真实空白
-	// footprint；它必须进入 authoritative history，不能让 TUI 事后猜。
-	parser.segments = append(parser.segments, historyOutputSegment{Cells: []history.Cell{{
-		Text:  "",
-		Width: width,
-		Style: style,
-	}}})
-	parser.col += width
+	// 中文说明：滚屏新建物理行继承背景时，尾部是“背景延伸到 EOL”，
+	// 不是 logical line 里的 N 个空格；否则 resize 本地 reflow 会多出空白行。
+	parser.segments = append(parser.segments, historyOutputSegment{SetTailFill: true, Style: style})
 	parser.rowFootprintActive = false
 }
 
@@ -634,6 +629,7 @@ func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutput
 		out[i].CursorHorizontalAbsolute = segment.CursorHorizontalAbsolute
 		out[i].EraseInLine = segment.EraseInLine
 		out[i].EraseInDisplay = segment.EraseInDisplay
+		out[i].SetTailFill = segment.SetTailFill
 		out[i].SwitchAltScreen = segment.SwitchAltScreen
 		out[i].EnterAltScreen = segment.EnterAltScreen
 		out[i].Count = segment.Count

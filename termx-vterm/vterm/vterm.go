@@ -182,6 +182,7 @@ type rowFingerprint struct {
 
 type resizeReflowLine struct {
 	cells       []Cell
+	tailFill    *CellStyle
 	wrapped     bool
 	sourceRow   int
 	timestamp   time.Time
@@ -431,23 +432,23 @@ type CellRun struct {
 }
 
 type WriteDamage struct {
-	Ops                   []DamageOp
-	ScrollbackAppend      []DamageOp
-	LiveTailAppendRows    int
-	ResizeLiveTailRows    int
-	AlternateAppend       []DamageOp
-	ScrollbackTrim        int
-	ScreenScroll          int
-	RequiresFullReplace   bool
-	FullReplaceReason     string
-	DirectDamageItems     int
-	DirectDamageRows      int
-	DirectDamageCells     int
-	Cursor                CursorState
-	Modes                 TerminalModes
-	SizeCols              int
-	SizeRows              int
-	DiffCPUNanos          int64
+	Ops                 []DamageOp
+	ScrollbackAppend    []DamageOp
+	LiveTailAppendRows  int
+	ResizeLiveTailRows  int
+	AlternateAppend     []DamageOp
+	ScrollbackTrim      int
+	ScreenScroll        int
+	RequiresFullReplace bool
+	FullReplaceReason   string
+	DirectDamageItems   int
+	DirectDamageRows    int
+	DirectDamageCells   int
+	Cursor              CursorState
+	Modes               TerminalModes
+	SizeCols            int
+	SizeRows            int
+	DiffCPUNanos        int64
 }
 
 type TraceHooks struct {
@@ -1544,6 +1545,7 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	beforeScreenTimestamps := v.screenTimestamps
 	beforeScreenRowKinds := v.screenRowKinds
 	beforeScreenRows := v.screenRowsForResizeLocked(len(beforeScreen))
+	beforeScreenTailFills := v.screenTailFillsForResizeLocked(len(beforeScreen))
 	beforeScreenWrapped := v.screenWrappedLocked(len(beforeScreen))
 	beforeCursorRow := v.cursor.Row
 	var beforeResizeRows []resizeReflowLine
@@ -1551,12 +1553,12 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	var resizePlan resizeHistoryPlan
 	beforeCols, beforeRows := v.emu.Width(), v.emu.Height()
 	if !v.emu.IsAltScreen() {
-		beforeResizeRows = resizeReflowRowsForResize(beforeScreenRows, beforeScreenWrapped, beforeScreenTimestamps, beforeScreenRowKinds, cols, rows)
+		beforeResizeRows = resizeReflowRowsForResize(beforeScreenRows, beforeScreenTailFills, beforeScreenWrapped, beforeScreenTimestamps, beforeScreenRowKinds, cols, rows)
 		tailResizeRows = trimTrailingBlankResizeReflowLines(beforeResizeRows)
 	}
-	if shouldTailVisibleRowsForResize(beforeCols, beforeRows, cols, rows, tailResizeRows) {
+	if shouldUseTailFillResizeWriteback(tailResizeRows) || shouldTailVisibleRowsForResize(beforeCols, beforeRows, cols, rows, tailResizeRows) {
 		resizePlan = planTailResizeHistoryAppend(tailResizeRows, rows)
-		v.emu.ResizeAndTailScreen(cols, rows, resizeReflowLinesUVRows(tailResizeRows), resizeReflowLinesWrapped(tailResizeRows), resizeReflowLinesUsed(tailResizeRows))
+		v.emu.ResizeAndTailScreen(cols, rows, resizeReflowLinesUVRows(tailResizeRows, cols), resizeReflowLinesWrapped(tailResizeRows), resizeReflowLinesUsed(tailResizeRows))
 	} else {
 		v.emu.Resize(cols, rows)
 	}
@@ -1569,10 +1571,11 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	v.invalidateRowCachesLocked()
 	damage := v.writeDamageRequiresFullReplaceLocked(plan, "resize")
 	afterScreenRows := v.screenRowsForResizeLocked(len(afterScreen))
+	afterScreenTailFills := v.screenTailFillsForResizeLocked(len(afterScreen))
 	afterScreenWrapped := v.screenWrappedLocked(len(afterScreen))
 	damage.ScrollbackAppend = resizePlan.scrollbackAppend()
 	if shouldFallbackResizeHistoryAppend(beforeCols, beforeRows, cols, rows, beforeResizeRows, resizePlan) {
-		damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, afterScreenRows, v.screenTimestamps, v.screenRowKinds, afterScreenWrapped)
+		damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, afterScreenRows, afterScreenTailFills, v.screenTimestamps, v.screenRowKinds, afterScreenWrapped)
 	}
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	damage.ResizeLiveTailRows = resizeLiveTailRowsFromPlan(resizePlan, beforeCursorRow)
@@ -3142,14 +3145,71 @@ func (v *VTerm) screenRowsForResizeLocked(count int) [][]Cell {
 	return out
 }
 
-func resizeReflowRowsForResize(rows [][]Cell, wrapped []bool, timestamps []time.Time, rowKinds []string, newCols, newRows int) []resizeReflowLine {
+func (v *VTerm) screenTailFillsForResizeLocked(count int) []*CellStyle {
+	if v == nil || v.emu == nil || count <= 0 {
+		return nil
+	}
+	width := v.emu.Width()
+	if width <= 0 {
+		return nil
+	}
+	out := make([]*CellStyle, count)
+	for row := 0; row < count; row++ {
+		used := v.emu.ScreenLineUsed(row)
+		if used < 0 {
+			used = 0
+		}
+		if used >= width {
+			continue
+		}
+		out[row] = v.screenTailFillForResizeLocked(row, used, width)
+	}
+	return out
+}
+
+func (v *VTerm) screenTailFillForResizeLocked(row int, used int, width int) *CellStyle {
+	var fill *CellStyle
+	for col := used; col < width; col++ {
+		cell := v.convertCell(v.emu.CellAt(col, row))
+		style, ok := resizeTailFillStyle(cell)
+		if !ok {
+			return nil
+		}
+		if fill == nil {
+			cloned := style
+			fill = &cloned
+			continue
+		}
+		if *fill != style {
+			return nil
+		}
+	}
+	return fill
+}
+
+func resizeTailFillStyle(cell Cell) (CellStyle, bool) {
+	if cell.Content != "" && cell.Content != " " {
+		return CellStyle{}, false
+	}
+	if cell.Width != 0 && cell.Width != 1 {
+		return CellStyle{}, false
+	}
+	// 中文说明：这里识别的是 terminal 当前背景延伸到行尾，不是 logical text；
+	// 只保留背景，避免把尾部空白上的临时文本样式误当成可重排内容。
+	if cell.Style.BG == "" || cell.LinkURL != "" || cell.LinkParams != "" {
+		return CellStyle{}, false
+	}
+	return CellStyle{BG: cell.Style.BG}, true
+}
+
+func resizeReflowRowsForResize(rows [][]Cell, tailFills []*CellStyle, wrapped []bool, timestamps []time.Time, rowKinds []string, newCols, newRows int) []resizeReflowLine {
 	if len(rows) == 0 || newRows <= 0 {
 		return nil
 	}
 	if newCols < 1 {
 		newCols = 1
 	}
-	allRows := resizeReflowRowsFromScreen(rows, timestamps, rowKinds, wrapped)
+	allRows := resizeReflowRowsFromScreen(rows, tailFills, timestamps, rowKinds, wrapped)
 	if len(allRows) == 0 {
 		return nil
 	}
@@ -3163,6 +3223,15 @@ func shouldTailVisibleRowsForResize(beforeCols, beforeRows, afterCols, afterRows
 		len(reflowed) > afterRows
 }
 
+func shouldUseTailFillResizeWriteback(rows []resizeReflowLine) bool {
+	for _, row := range rows {
+		if row.tailFill != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func trimTrailingBlankResizeReflowLines(rows []resizeReflowLine) []resizeReflowLine {
 	end := len(rows)
 	for end > 0 && resizeReflowLineIsBlank(rows[end-1]) && rows[end-1].timestamp.IsZero() && rows[end-1].rowKind == "" {
@@ -3171,15 +3240,27 @@ func trimTrailingBlankResizeReflowLines(rows []resizeReflowLine) []resizeReflowL
 	return rows[:end]
 }
 
-func resizeReflowLinesUVRows(rows []resizeReflowLine) []uv.Line {
+func resizeReflowLinesUVRows(rows []resizeReflowLine, width int) []uv.Line {
 	if len(rows) == 0 {
 		return nil
 	}
 	out := make([]uv.Line, len(rows))
 	for i, row := range rows {
-		out[i] = uvLine(row.cells)
+		out[i] = uvLineWithTailFill(row.cells, row.tailFill, width)
 	}
 	return out
+}
+
+func uvLineWithTailFill(cells []Cell, tailFill *CellStyle, width int) uv.Line {
+	line := uvLine(cells)
+	if tailFill == nil || width <= len(line) {
+		return line
+	}
+	fill := *uvCell(Cell{Content: " ", Width: 1, Style: *tailFill})
+	for len(line) < width {
+		line = append(line, fill)
+	}
+	return line
 }
 
 func resizeReflowLinesWrapped(rows []resizeReflowLine) []bool {
@@ -3266,11 +3347,11 @@ func shouldFallbackResizeHistoryAppend(beforeCols, beforeRows, afterCols, afterR
 	return false
 }
 
-func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, afterScreenRows [][]Cell, afterScreenTimestamps []time.Time, afterScreenRowKinds []string, afterScreenWrapped []bool) []DamageOp {
+func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, afterScreenRows [][]Cell, afterScreenTailFills []*CellStyle, afterScreenTimestamps []time.Time, afterScreenRowKinds []string, afterScreenWrapped []bool) []DamageOp {
 	if len(beforeRows) == 0 {
 		return nil
 	}
-	visible := resizeReflowRowsFromScreen(afterScreenRows, afterScreenTimestamps, afterScreenRowKinds, afterScreenWrapped)
+	visible := resizeReflowRowsFromScreen(afterScreenRows, afterScreenTailFills, afterScreenTimestamps, afterScreenRowKinds, afterScreenWrapped)
 	for i := range visible {
 		visible[i].fingerprint = resizeReflowLineFingerprint(visible[i])
 	}
@@ -3342,7 +3423,9 @@ func resizeVisibleBlockInBeforeRows(beforeRows, visible []resizeReflowLine) (sta
 }
 
 func resizeReflowLinesEqual(left, right resizeReflowLine) bool {
-	return left.wrapped == right.wrapped && resizeReflowLineCellsEqual(left.cells, right.cells)
+	return left.wrapped == right.wrapped &&
+		cellStylePointerEqual(left.tailFill, right.tailFill) &&
+		resizeReflowLineCellsEqual(left.cells, right.cells)
 }
 
 func resizeReflowLineMetadataScore(left, right []resizeReflowLine) int {
@@ -3389,11 +3472,12 @@ func trimResizeReflowDefaultBlankCells(cells []Cell) []Cell {
 	return cells
 }
 
-func resizeReflowRowsFromScreen(rows [][]Cell, timestamps []time.Time, rowKinds []string, wrapped []bool) []resizeReflowLine {
+func resizeReflowRowsFromScreen(rows [][]Cell, tailFills []*CellStyle, timestamps []time.Time, rowKinds []string, wrapped []bool) []resizeReflowLine {
 	out := make([]resizeReflowLine, 0, len(rows))
 	for row, cells := range rows {
 		line := resizeReflowLine{
 			cells:     cloneCellSlice(cells),
+			tailFill:  cloneCellStylePointer(pointerAt(tailFills, row)),
 			wrapped:   boolAt(wrapped, row),
 			sourceRow: row,
 			timestamp: timeAt(timestamps, row),
@@ -3412,11 +3496,13 @@ func resizeReflowLines(rows []resizeReflowLine, width int) []resizeReflowLine {
 	out := make([]resizeReflowLine, 0, len(rows))
 	for i := 0; i < len(rows); i++ {
 		cells := resizeReflowCellsForLine(rows[i])
+		tailFill := rows[i].tailFill
 		for i < len(rows)-1 && rows[i].wrapped {
 			i++
 			cells = append(cells, resizeReflowCellsForLine(rows[i])...)
+			tailFill = rows[i].tailFill
 		}
-		out = append(out, splitResizeLogicalLine(cells, width)...)
+		out = append(out, splitResizeLogicalLine(cells, width, tailFill)...)
 	}
 	if len(out) == 0 {
 		return []resizeReflowLine{{sourceRow: 0}}
@@ -3437,15 +3523,15 @@ func resizeReflowCellsForLine(row resizeReflowLine) []resizeReflowCell {
 	return out
 }
 
-func splitResizeLogicalLine(cells []resizeReflowCell, width int) []resizeReflowLine {
+func splitResizeLogicalLine(cells []resizeReflowCell, width int, tailFill *CellStyle) []resizeReflowLine {
 	if width < 1 {
 		width = 1
 	}
 	if width == 1 {
-		return splitResizeLogicalLineByColumns(cells, width)
+		return resizeReflowApplyTailFill(splitResizeLogicalLineByColumns(cells, width), tailFill)
 	}
 	if len(cells) == 0 {
-		return []resizeReflowLine{{sourceRow: 0}}
+		return resizeReflowApplyTailFill([]resizeReflowLine{{sourceRow: 0}}, tailFill)
 	}
 	out := make([]resizeReflowLine, 0, (resizeReflowCellsWidth(cells)+width-1)/width)
 	var current []resizeReflowCell
@@ -3502,7 +3588,16 @@ func splitResizeLogicalLine(cells []resizeReflowCell, width int) []resizeReflowL
 	} else {
 		out[len(out)-1].wrapped = false
 	}
-	return out
+	return resizeReflowApplyTailFill(out, tailFill)
+}
+
+func resizeReflowApplyTailFill(rows []resizeReflowLine, tailFill *CellStyle) []resizeReflowLine {
+	if len(rows) == 0 || tailFill == nil {
+		return rows
+	}
+	rows[len(rows)-1].tailFill = cloneCellStylePointer(tailFill)
+	rows[len(rows)-1].fingerprint = resizeReflowLineFingerprint(rows[len(rows)-1])
+	return rows
 }
 
 func splitResizeLogicalLineByColumns(cells []resizeReflowCell, width int) []resizeReflowLine {
@@ -3549,6 +3644,10 @@ func resizeReflowLineFingerprint(line resizeReflowLine) rowFingerprint {
 		if !hashVTermCellFingerprint(&fingerprint.hash, cell) {
 			fingerprint.blank = false
 		}
+	}
+	hashCellStylePointerFingerprint(&fingerprint.hash, line.tailFill)
+	if line.tailFill != nil {
+		fingerprint.blank = false
 	}
 	return fingerprint
 }
@@ -4316,6 +4415,46 @@ func cloneCellSlice(values []Cell) []Cell {
 		return nil
 	}
 	return append([]Cell(nil), values...)
+}
+
+func pointerAt[T any](values []*T, idx int) *T {
+	if idx < 0 || idx >= len(values) {
+		return nil
+	}
+	return values[idx]
+}
+
+func cloneCellStylePointer(style *CellStyle) *CellStyle {
+	if style == nil {
+		return nil
+	}
+	cloned := *style
+	return &cloned
+}
+
+func cellStylePointerEqual(left *CellStyle, right *CellStyle) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func hashCellStylePointerFingerprint(hash *uint64, style *CellStyle) {
+	if style == nil {
+		hashUint64(hash, 0)
+		return
+	}
+	hashUint64(hash, 1)
+	hashString(hash, style.FG)
+	hashString(hash, style.BG)
+	hashBool(hash, style.Bold)
+	hashBool(hash, style.Italic)
+	hashBool(hash, style.Underline)
+	hashBool(hash, style.Blink)
+	hashBool(hash, style.Reverse)
+	hashBool(hash, style.Strikethrough)
+	hashString(hash, style.LinkURL)
+	hashString(hash, style.LinkParams)
 }
 
 func normalizeTimeSlice(values []time.Time, count int) []time.Time {

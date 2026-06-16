@@ -16,6 +16,7 @@ const (
 
 	rowBlobFlagRuns  uint8 = 1 << 0
 	rowBlobFlagCells uint8 = 1 << 1
+	rowBlobFlagTail  uint8 = 1 << 2
 
 	rowBlobRunFlagStyle  uint8 = 1 << 0
 	rowBlobRunFlagLink   uint8 = 1 << 1
@@ -415,7 +416,13 @@ func encodeCompactRowBlobInto(enc *binaryEncoder, row CompactRow) {
 	if len(row.Cells) > 0 {
 		flags |= rowBlobFlagCells
 	}
+	if row.TailFill != nil {
+		flags |= rowBlobFlagTail
+	}
 	enc.appendByte(flags)
+	if flags&rowBlobFlagTail != 0 {
+		enc.appendCompactRowStyle(row.TailFill, rowBlobRunFlagStyle)
+	}
 	switch {
 	case flags&rowBlobFlagRuns != 0:
 		enc.appendUvarint(uint64(len(row.Runs)))
@@ -447,6 +454,12 @@ func decodeCompactRowBlob(blob []byte) (CompactRow, error) {
 		return CompactRow{}, err
 	}
 	var row CompactRow
+	if flags&rowBlobFlagTail != 0 {
+		row.TailFill, err = dec.readCompactRowStyle(rowBlobRunFlagStyle)
+		if err != nil {
+			return CompactRow{}, err
+		}
+	}
 	switch {
 	case flags&rowBlobFlagRuns != 0:
 		count, err := dec.readUvarint()
@@ -508,6 +521,9 @@ func decodeCompactRowBlob(blob []byte) (CompactRow, error) {
 
 func compactRowBlobSize(row CompactRow) int {
 	size := len(rowBlobMagic) + 1
+	if row.TailFill != nil {
+		size += compactRowStyleBlobSize(row.TailFill)
+	}
 	switch {
 	case len(row.Runs) > 0:
 		size += uvarintSize(uint64(len(row.Runs)))

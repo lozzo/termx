@@ -506,12 +506,12 @@ func TestTerminalIngestOutputScrollWrappedRowPreservesBackgroundFootprint(t *tes
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if len(window.Rows) < 3 || window.Rows[len(window.Rows)-2].Text != "abcdefgh" || window.Rows[len(window.Rows)-1].Text != "ij      " {
+	if len(window.Rows) < 3 || window.Rows[len(window.Rows)-2].Text != "abcdefgh" || window.Rows[len(window.Rows)-1].Text != "ij" {
 		t.Fatalf("history window should carry scrolled wrapped row bg footprint, got %#v", window.Rows)
 	}
 	cells := window.Rows[len(window.Rows)-1].Cells
-	if len(cells) != 3 {
-		t.Fatalf("wrapped continuation row should keep compact bg footprint, got %#v", cells)
+	if len(cells) != 2 {
+		t.Fatalf("wrapped continuation row should not materialize tail blanks as cells, got %#v", cells)
 	}
 	if cells[0].Text != "i" || cells[0].Width != 1 || cells[0].Style.BG != "idx:24" {
 		t.Fatalf("first wrapped cell should keep bg, got %#v", cells[0])
@@ -519,8 +519,9 @@ func TestTerminalIngestOutputScrollWrappedRowPreservesBackgroundFootprint(t *tes
 	if cells[1].Text != "j" || cells[1].Width != 1 || cells[1].Style.BG != "idx:24" {
 		t.Fatalf("second wrapped cell should keep bg, got %#v", cells[1])
 	}
-	if cells[2].Text != "" || cells[2].Width != 6 || cells[2].Style.BG != "idx:24" {
-		t.Fatalf("tail footprint should be authoritative blank cell, got %#v row=%#v", cells[2], cells)
+	tail := window.Rows[len(window.Rows)-1].TailFill
+	if tail == nil || tail.Style.BG != "idx:24" {
+		t.Fatalf("tail footprint should be row tail fill metadata, got %#v row=%#v", tail, window.Rows[len(window.Rows)-1])
 	}
 }
 

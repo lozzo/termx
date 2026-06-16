@@ -916,6 +916,10 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 	rowInLine := make([]int, len(window.Rows))
 	for i, row := range window.Rows {
 		rows[i] = protocol.CompactRowFromCellsPreserveTrailingBlankCells(protocolCellsFromHistory(row.Cells), true)
+		if row.TailFill != nil {
+			style := protocolCompactRowStyleFromHistory(row.TailFill.Style)
+			rows[i].TailFill = &style
+		}
 		rowLineIDs[i] = uint64(row.LineID)
 		rowInLine[i] = row.RowInLine
 		if row.Committed {
@@ -956,6 +960,19 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 		RowLineIDs:   rowLineIDs,
 		RowInLine:    rowInLine,
 		Timestamp:    time.Now().UTC(),
+	}
+}
+
+func protocolCompactRowStyleFromHistory(style history.CellStyle) protocol.CompactRowStyle {
+	return protocol.CompactRowStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
 	}
 }
 
@@ -1529,7 +1546,12 @@ func projectFrozenSnapshotRows(lines []history.SnapshotLine, cols int) []snapsho
 func projectFrozenSnapshotLine(line history.LogicalLine, cols int) []history.VisualRow {
 	cells := normalizeProjectionCellsSnapshot(line.Cells)
 	if len(cells) == 0 {
-		return []history.VisualRow{{LineID: line.ID, LineGeneration: line.Generation}}
+		row := history.VisualRow{LineID: line.ID, LineGeneration: line.Generation}
+		if line.TailFill != nil {
+			fill := *line.TailFill
+			row.TailFill = &fill
+		}
+		return []history.VisualRow{row}
 	}
 	rows := make([]history.VisualRow, 0)
 	rowIndex := 0
@@ -1542,6 +1564,10 @@ func projectFrozenSnapshotLine(line history.LogicalLine, cols int) []history.Vis
 			LineGeneration: line.Generation,
 		})
 		rowIndex++
+	}
+	if line.TailFill != nil && len(rows) > 0 {
+		fill := *line.TailFill
+		rows[len(rows)-1].TailFill = &fill
 	}
 	return rows
 }

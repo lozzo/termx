@@ -1087,6 +1087,25 @@ func TestReflowHistoryLogicalLinesPreservesEmptyStyledCells(t *testing.T) {
 	}
 }
 
+func TestReflowHistoryLogicalLinesTailFillDoesNotAddRowsOnResize(t *testing.T) {
+	style := HistoryCellStyle{BG: "idx:24"}
+	rows, _ := ReflowHistoryLogicalLines([]HistoryLogicalLine{{
+		LineID:   42,
+		Cells:    []HistoryCell{{Text: "abcdefghij", Width: 10, Style: style}},
+		TailFill: &style,
+	}}, 8)
+
+	if got := rowTexts(rows); len(got) != 2 || got[0] != "abcdefgh" || got[1] != "ij" {
+		t.Fatalf("tail fill must not materialize logical blank rows, got rows=%#v texts=%#v", rows, got)
+	}
+	if rows[0].TailFill != nil {
+		t.Fatalf("tail fill should not attach to non-final reflow row, got %#v", rows[0])
+	}
+	if rows[1].TailFill == nil || rows[1].TailFill.BG != "idx:24" {
+		t.Fatalf("final row should keep tail fill metadata, got %#v", rows[1])
+	}
+}
+
 func historyWindow(
 	op HistoryWindowOp,
 	terminalID string,

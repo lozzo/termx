@@ -67,12 +67,15 @@ func (se *SafeEmulator) ResizeAndTailScreen(w, h int, rows []uv.Line, wrapped []
 	e := se.Emulator
 	pos := e.CursorPosition()
 	x, y := pos.X, pos.Y
-	if e.IsAltScreen() || len(rows) <= h {
+	if e.IsAltScreen() {
 		e.Resize(w, h)
 		return
 	}
 	scrollback := e.scr.Scrollback()
 	visibleStart := len(rows) - h
+	if visibleStart < 0 {
+		visibleStart = 0
+	}
 	if scrollback != nil {
 		for i := 0; i < visibleStart; i++ {
 			scrollback.PushWrapped(rows[i], i < len(wrapped) && wrapped[i])

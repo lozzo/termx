@@ -13,6 +13,7 @@ const (
 	EventCursorHorizontalAbsolute EventKind = "cursor-horizontal-absolute"
 	EventEraseInLine              EventKind = "erase-in-line"
 	EventEraseInDisplay           EventKind = "erase-in-display"
+	EventSetActiveLineTailFill    EventKind = "set-active-line-tail-fill"
 	EventSealLogicalLine          EventKind = "seal-logical-line"
 	EventMutateFrontier           EventKind = "mutate-frontier"
 	EventResetFrontier            EventKind = "reset-frontier"

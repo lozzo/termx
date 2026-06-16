@@ -136,17 +136,41 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 		if len(lines) > 0 && lineID != 0 && lines[len(lines)-1].LineID == lineID {
 			lines[len(lines)-1].Text += text
 			lines[len(lines)-1].Cells = append(lines[len(lines)-1].Cells, cloneHistoryCells(cells)...)
+			if tail := historyTailFillFromProtocol(row.TailFill); tail != nil {
+				lines[len(lines)-1].TailFill = tail
+			}
 			continue
 		}
 		lines = append(lines, state.HistoryLogicalLine{
 			Text:          text,
 			Cells:         cells,
 			LineID:        lineID,
+			TailFill:      historyTailFillFromProtocol(row.TailFill),
 			ClippedBefore: hasSpan && span.ClippedBefore,
 			ClippedAfter:  hasSpan && span.ClippedAfter,
 		})
 	}
 	return lines
+}
+
+func historyTailFillFromProtocol(style *protocol.CompactRowStyle) *state.HistoryCellStyle {
+	if style == nil {
+		return nil
+	}
+	out := state.HistoryCellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
+	if out == (state.HistoryCellStyle{}) {
+		return nil
+	}
+	return &out
 }
 
 func historyCellsFromProtocol(cells []protocol.Cell) []state.HistoryCell {

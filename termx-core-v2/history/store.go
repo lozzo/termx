@@ -37,6 +37,7 @@ func (store *MemoryLogicalLineStore) CreateLine(req CreateLineRequest) (LogicalL
 		Generation: 1,
 		Seal:       seal,
 		Cells:      cloneCells(req.Cells),
+		TailFill:   cloneRowTailFill(req.TailFill),
 		Dirty:      req.Dirty,
 		Residency:  residency,
 	}
@@ -61,6 +62,7 @@ func (store *MemoryLogicalLineStore) ReplaceLine(line LogicalLine) (LogicalLine,
 	}
 	line.Generation = current.Generation + 1
 	line.Cells = cloneCells(line.Cells)
+	line.TailFill = cloneRowTailFill(line.TailFill)
 	if err := store.backend.SaveLine(line); err != nil {
 		return LogicalLine{}, err
 	}

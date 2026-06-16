@@ -671,6 +671,53 @@ func TestVTermResizePreservesCurrentBackgroundForSubsequentErase(t *testing.T) {
 	}
 }
 
+func TestVTermResizeWithDamagePreservesLiveTailBackground(t *testing.T) {
+	const bg = "#222222"
+	vt := New(12, 4, 0, nil)
+	vt.DisableEmulatorScrollback()
+
+	if _, err := vt.Write([]byte("seed\r\n\x1b[48;2;34;34;34mij\x1b[K\x1b[0m")); err != nil {
+		t.Fatalf("write styled tail row: %v", err)
+	}
+	if got := vt.ScreenRowView(1)[11].Style.BG; got != bg {
+		t.Fatalf("expected live tail bg before resize, got %#v", vt.ScreenRowView(1)[11])
+	}
+
+	vt.ResizeWithDamage(6, 4)
+
+	screen := vt.ScreenContent()
+	if got := strings.TrimRight(rowText(screen.Cells[1], len(screen.Cells[1])), " "); got != "ij" {
+		t.Fatalf("expected resize to keep content row, got %q row=%#v", got, screen.Cells[1])
+	}
+	if got := screen.Cells[1][5].Style.BG; got != bg {
+		t.Fatalf("expected resize to preserve live tail bg %q, got %#v", bg, screen.Cells[1][5])
+	}
+}
+
+func TestVTermResizeWithDamagePreservesTailFillBeyondUsedWidth(t *testing.T) {
+	const bg = "#222222"
+	vt := New(12, 4, 0, nil)
+	vt.DisableEmulatorScrollback()
+	row := make([]Cell, 12)
+	for i := range row {
+		row[i] = Cell{Content: " ", Width: 1, Style: CellStyle{BG: bg}}
+	}
+	row[0] = Cell{Content: "i", Width: 1, Style: CellStyle{BG: bg}}
+	row[1] = Cell{Content: "j", Width: 1, Style: CellStyle{BG: bg}}
+	vt.LoadSnapshot(ScreenData{Cells: [][]Cell{cellsFromString("seed"), row}}, CursorState{Row: 1, Col: 2, Visible: true}, TerminalModes{AutoWrap: true})
+	vt.emu.Emulator.SetScreenLineUsed(1, 2)
+
+	vt.ResizeWithDamage(6, 4)
+
+	screen := vt.ScreenContent()
+	if got := rowText(vt.UsedScreenRow(1), len(vt.UsedScreenRow(1))); got != "ij" {
+		t.Fatalf("expected tail fill not to grow used width after resize, got %q row=%#v", got, vt.UsedScreenRow(1))
+	}
+	if got := screen.Cells[1][5].Style.BG; got != bg {
+		t.Fatalf("expected tail fill beyond used width to survive resize, got %#v", screen.Cells[1][5])
+	}
+}
+
 func TestLoadSnapshotWithTimestampsRestoresRowTimes(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	scrollbackTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}

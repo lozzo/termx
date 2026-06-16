@@ -56,6 +56,7 @@ type HistoryWindow struct {
 type VisualRow struct {
 	Text           string
 	Cells          []Cell
+	TailFill       *RowTailFill
 	LineID         LogicalLineID
 	RowInLine      int
 	Committed      bool
@@ -444,6 +445,9 @@ func projectLine(line LogicalLine, cols int) []VisualRow {
 	if len(rowCells) > 0 {
 		rows = append(rows, visualRowFromCells(line, len(rows), rowCells))
 	}
+	if line.TailFill != nil && len(rows) > 0 {
+		rows[len(rows)-1].TailFill = cloneRowTailFill(line.TailFill)
+	}
 	return rows
 }
 
@@ -497,13 +501,14 @@ func appendCellToVisualRows(
 }
 
 func visualRowFromCells(line LogicalLine, rowIndex int, cells []Cell) VisualRow {
-	return VisualRow{
+	row := VisualRow{
 		Text:           lineTextFromCells(cells),
 		Cells:          cloneCells(cells),
 		LineID:         line.ID,
 		RowInLine:      rowIndex,
 		LineGeneration: line.Generation,
 	}
+	return row
 }
 
 func normalizeProjectionCells(cells []Cell, _ int) []Cell {

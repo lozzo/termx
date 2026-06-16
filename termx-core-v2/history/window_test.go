@@ -277,6 +277,52 @@ func TestHistoryWindowPreservesStyledPaddedCellFootprintDuringReflow(t *testing.
 	}
 }
 
+func TestHistoryWindowTailFillDoesNotAffectLogicalWidthDuringReflow(t *testing.T) {
+	track := NewHistoryTrack()
+	style := CellStyle{BG: "idx:24"}
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{
+		{Text: "abcdefghij", Width: 10, Style: style},
+	}})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventSetActiveLineTailFill, Style: style})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventForceCommitFrontier})
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 8, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"abcdefgh", "ij"}) {
+		t.Fatalf("tail fill must not add logical blank columns, got %v rows=%#v", got, window.Rows)
+	}
+	if window.Rows[0].TailFill != nil {
+		t.Fatalf("tail fill should only attach to final visual row, got %#v", window.Rows[0])
+	}
+	if window.Rows[1].TailFill == nil || window.Rows[1].TailFill.Style.BG != "idx:24" {
+		t.Fatalf("final row should carry tail fill metadata, got %#v", window.Rows[1])
+	}
+}
+
+func TestHistoryWindowTailFillClearsAfterLaterWrite(t *testing.T) {
+	track := NewHistoryTrack()
+	style := CellStyle{BG: "idx:24"}
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "ij", Width: 2, Style: style}}},
+		HistoryEvent{Kind: EventSetActiveLineTailFill, Style: style},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "k", Width: 1, Style: style}}},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 8, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"ijk"}) {
+		t.Fatalf("later write should extend logical content without stale tail fill, got %v", got)
+	}
+	if window.Rows[0].TailFill != nil {
+		t.Fatalf("later write must clear stale tail fill, got %#v", window.Rows[0].TailFill)
+	}
+}
+
 func TestHistoryWindowSplitsMixedWidthStyledTextCells(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{

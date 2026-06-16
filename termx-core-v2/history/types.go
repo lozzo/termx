@@ -50,6 +50,12 @@ type CellStyle struct {
 	Strikethrough bool
 }
 
+// RowTailFill 表达 terminal 物理行从已有内容末尾到 visual row 行尾的背景。
+// 它不属于 logical text，也不增加 logical line 宽度。
+type RowTailFill struct {
+	Style CellStyle
+}
+
 // LogicalLine is the single payload model for committed history and mutable
 // frontier membership.
 type LogicalLine struct {
@@ -57,6 +63,7 @@ type LogicalLine struct {
 	Generation Generation
 	Seal       SealState
 	Cells      []Cell
+	TailFill   *RowTailFill
 	Dirty      bool
 	Residency  Residency
 }
@@ -73,6 +80,7 @@ type SnapshotLine struct {
 // shared slices.
 func (line LogicalLine) Clone() LogicalLine {
 	line.Cells = cloneCells(line.Cells)
+	line.TailFill = cloneRowTailFill(line.TailFill)
 	return line
 }
 
@@ -81,6 +89,7 @@ func (line LogicalLine) Clone() LogicalLine {
 type CreateLineRequest struct {
 	Seal      SealState
 	Cells     []Cell
+	TailFill  *RowTailFill
 	Dirty     bool
 	Residency Residency
 }
@@ -154,7 +163,16 @@ func normalizeLine(line LogicalLine) (LogicalLine, error) {
 	line.Seal = seal
 	line.Residency = residency
 	line.Cells = cloneCells(line.Cells)
+	line.TailFill = cloneRowTailFill(line.TailFill)
 	return line, nil
+}
+
+func cloneRowTailFill(fill *RowTailFill) *RowTailFill {
+	if fill == nil {
+		return nil
+	}
+	cloned := *fill
+	return &cloned
 }
 
 func cloneCells(cells []Cell) []Cell {

@@ -538,6 +538,7 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 		RowInLine:    []int{1},
 		Timestamp:    time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
 	}
+	window.Rows[0].TailFill = &CompactRowStyle{BG: "idx:24"}
 	payload, err := EncodeHistoryWindowPayload(window)
 	if err != nil {
 		t.Fatalf("encode history window payload failed: %v", err)
@@ -569,6 +570,9 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	}
 	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ERR 好 " {
 		t.Fatalf("unexpected decoded history row: %q", got)
+	}
+	if decoded.Rows[0].TailFill == nil || decoded.Rows[0].TailFill.BG != "idx:24" {
+		t.Fatalf("lost tail fill after payload round trip: %#v", decoded.Rows[0])
 	}
 	cells := decoded.Rows[0].DecodeCells()
 	if len(cells) != 4 {

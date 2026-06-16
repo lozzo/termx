@@ -419,6 +419,41 @@ func TestProtocolCoreClientAdapterPreservesStyledTrailingBlankHistoryCells(t *te
 	}
 }
 
+func TestProtocolCoreClientAdapterPreservesHistoryTailFillWithoutCells(t *testing.T) {
+	row := protocol.CompactRowFromCells([]protocol.Cell{
+		{Content: "i", Width: 1, Style: protocol.CellStyle{BG: "idx:24"}},
+		{Content: "j", Width: 1, Style: protocol.CellStyle{BG: "idx:24"}},
+	})
+	row.TailFill = &protocol.CompactRowStyle{BG: "idx:24"}
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 8, Rows: 24},
+			Rows:       []protocol.CompactRow{row},
+			RowLineIDs: []uint64{42},
+			RowInLine:  []int{0},
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 8, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	rowState := result.Window.Rows[0]
+	if rowState.Text != "ij" || state.HistoryRowDisplayWidth(rowState) != 2 || len(rowState.Cells) != 2 {
+		t.Fatalf("tail fill must not materialize as logical cells/text, got %#v", rowState)
+	}
+	if rowState.TailFill == nil || rowState.TailFill.BG != "idx:24" {
+		t.Fatalf("expected row tail fill metadata, got %#v", rowState)
+	}
+	if result.Window.SourceLines[0].TailFill == nil || result.Window.SourceLines[0].TailFill.BG != "idx:24" {
+		t.Fatalf("expected source line tail fill metadata, got %#v", result.Window.SourceLines[0])
+	}
+}
+
 func TestProtocolCoreClientAdapterMaterializesAuthoritativeCellPadding(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{

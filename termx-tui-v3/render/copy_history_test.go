@@ -24,3 +24,23 @@ func TestCopyHistoryContentANSILineAtOffsetsInternalColumnAnchors(t *testing.T) 
 		t.Fatalf("pane-local patch must offset ANSI column anchors, got %q", got)
 	}
 }
+
+func TestCopyHistoryContentANSILineUsesTailFillDisplayOnly(t *testing.T) {
+	tail := state.HistoryCellStyle{BG: "idx:24"}
+	row := state.HistoryRow{
+		Text:     "ij",
+		LineID:   99,
+		TailFill: &tail,
+		Cells: []state.HistoryCell{
+			{Text: "i", Width: 1, Style: tail},
+			{Text: "j", Width: 1, Style: tail},
+		},
+	}
+	if got := state.HistoryRowDisplayWidth(row); got != 2 {
+		t.Fatalf("tail fill must not affect logical row width, got %d", got)
+	}
+	ansi := CopyHistoryContentANSILineAt(state.HistoryStore{Cols: 8, Rows: []state.HistoryRow{row}}, state.CopyModeStore{BoundCols: 8}, 0, 8, 0, DefaultTheme())
+	if !strings.Contains(ansi, "\x1b[48;5;24m      ") {
+		t.Fatalf("tail fill should render display-only background to EOL, got %q", ansi)
+	}
+}

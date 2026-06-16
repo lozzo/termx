@@ -65,6 +65,8 @@ func (track *HistoryTrack) Apply(event HistoryEvent) error {
 		return track.eraseInLine(event.EraseMode, event.EraseCols, eraseBlankStyle(event.Style))
 	case EventEraseInDisplay:
 		return track.eraseInDisplay(event.EraseMode)
+	case EventSetActiveLineTailFill:
+		return track.setActiveLineTailFill(eraseBlankStyle(event.Style))
 	case EventSealLogicalLine:
 		return track.sealActiveLine()
 	case EventMutateFrontier:
@@ -158,6 +160,9 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 		track.activeCol += incomingWidth
 		lineWidth = logicalLineWidth(line.Cells)
 	}
+	// 中文说明：TailFill 只描述“当前内容末尾到行尾”的背景；后续真实写入会改变末尾位置，
+	// 必须丢弃旧 metadata，避免 resize/copy 时把背景延伸到错误位置。
+	line.TailFill = nil
 	line.Dirty = true
 	line, err = track.store.ReplaceLine(line)
 	if err != nil {
@@ -305,6 +310,7 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 		return nil
 	}
 	line.Cells = eraseLineCellsAtColumn(line.Cells, track.activeCol, mode, screenCols, style)
+	line.TailFill = nil
 	line.Dirty = true
 	line, err := track.store.ReplaceLine(line)
 	if err != nil {
@@ -313,6 +319,25 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 	track.activeLine = line.ID
 	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
 	track.overwrite = false
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) setActiveLineTailFill(style CellStyle) error {
+	if track.altScreen || !styleCreatesVisibleBlank(style) {
+		return nil
+	}
+	line, err := track.ensureWritableActiveLine()
+	if err != nil {
+		return err
+	}
+	line.TailFill = &RowTailFill{Style: style}
+	line.Dirty = true
+	line, err = track.store.ReplaceLine(line)
+	if err != nil {
+		return err
+	}
+	track.activeLine = line.ID
 	track.bumpGeneration()
 	return nil
 }
@@ -444,6 +469,7 @@ func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
 		return ErrUnknownLine
 	}
 	line.Cells = cloneCells(event.Cells)
+	line.TailFill = nil
 	line.Dirty = true
 	line, err := track.store.ReplaceLine(line)
 	if err != nil {
@@ -502,6 +528,7 @@ func (track *HistoryTrack) eraseActiveLineWithoutBump(mode int) (bool, error) {
 	}
 	next := line.Clone()
 	next.Cells = eraseLineCellsAtColumn(next.Cells, track.activeCol, mode, 0, CellStyle{})
+	next.TailFill = nil
 	next.Dirty = true
 	replaced, err := track.store.ReplaceLine(next)
 	if err != nil {

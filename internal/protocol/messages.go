@@ -2092,9 +2092,10 @@ type CompactRowRun struct {
 }
 
 type CompactRow struct {
-	Text  string
-	Runs  []CompactRowRun
-	Cells []CompactRowCell
+	Text     string
+	Runs     []CompactRowRun
+	Cells    []CompactRowCell
+	TailFill *CompactRowStyle
 }
 
 func (r CompactRow) DecodeCells() []Cell {
@@ -2235,7 +2236,7 @@ func CloneCompactRows(rows []CompactRow) []CompactRow {
 }
 
 func CloneCompactRow(row CompactRow) CompactRow {
-	cloned := CompactRow{Text: row.Text}
+	cloned := CompactRow{Text: row.Text, TailFill: cloneCompactRowStyle(row.TailFill)}
 	if len(row.Runs) > 0 {
 		cloned.Runs = make([]CompactRowRun, len(row.Runs))
 		for i, run := range row.Runs {
@@ -2252,7 +2253,7 @@ func CloneCompactRow(row CompactRow) CompactRow {
 }
 
 func CompactRowEqual(left, right CompactRow) bool {
-	if left.Text != right.Text || len(left.Runs) != len(right.Runs) || len(left.Cells) != len(right.Cells) {
+	if left.Text != right.Text || len(left.Runs) != len(right.Runs) || len(left.Cells) != len(right.Cells) || !compactRowStyleEqual(left.TailFill, right.TailFill) {
 		return false
 	}
 	for i := range left.Runs {

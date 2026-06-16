@@ -145,6 +145,11 @@ func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegme
 			return err
 		}
 	}
+	if segment.SetTailFill {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSetActiveLineTailFill, Style: segment.Style}); err != nil {
+			return err
+		}
+	}
 	if segment.SwitchAltScreen {
 		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSwitchAltScreen, EnterAltScreen: segment.EnterAltScreen}); err != nil {
 			return err

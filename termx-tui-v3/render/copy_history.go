@@ -26,15 +26,17 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 	}
 	selection := normalizedCopySelection(copyMode)
 	rows := copyVisibleRows(history, copyMode)
+	width := copyHistoryRenderWidth(history, copyMode)
 	lines := make([]Line, 0, len(rows))
 	for _, visible := range rows {
-		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible)))
+		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible), width))
 	}
 	return lines
 }
 
-func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange) Line {
+func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange, width int) Line {
 	cells := copyHistoryRowCells(row, rowIndex, selection, search)
+	cells = copyHistoryApplyTailFill(cells, row, width)
 	if row.ClippedEnd {
 		cells = append(cells, styledCell(" ⇣", StyleMuted))
 	}
@@ -53,7 +55,7 @@ func CopyHistoryContentANSILineAt(history state.HistoryStore, copyMode state.Cop
 		return contentViewportBlankRun(width).Text
 	}
 	baseColumn := lineX + 1
-	line := copyHistoryLine(history.Rows[rowIndex], rowIndex, normalizedCopySelection(copyMode), activeSearchRange(copyMode, rowIndex))
+	line := copyHistoryLine(history.Rows[rowIndex], rowIndex, normalizedCopySelection(copyMode), activeSearchRange(copyMode, rowIndex), width)
 	return ensureANSIReset(contentViewportFitLine(line, width).ansiString(theme.WithFallback(), baseColumn))
 }
 
@@ -273,6 +275,43 @@ func copyHistoryRowCells(row state.HistoryRow, rowIndex int, selection copySelec
 	if len(out) == 0 {
 		return []Cell{NewCell(row.Text)}
 	}
+	return out
+}
+
+func copyHistoryRenderWidth(history state.HistoryStore, copyMode state.CopyModeStore) int {
+	if copyMode.BoundCols > 0 {
+		return copyMode.BoundCols
+	}
+	return history.Cols
+}
+
+func copyHistoryApplyTailFill(cells []Cell, row state.HistoryRow, width int) []Cell {
+	if row.TailFill == nil || width <= 0 {
+		return cells
+	}
+	lineWidth := 0
+	for _, cell := range cells {
+		lineWidth += maxInt(0, cell.Width)
+	}
+	padWidth := width - lineWidth
+	if padWidth <= 0 {
+		return cells
+	}
+	style := ansiStyleFromHistory(*row.TailFill)
+	if style == (ANSICellStyle{}) {
+		return cells
+	}
+	out := make([]Cell, 0, len(cells)+1)
+	out = append(out, cells...)
+	// 中文说明：TailFill 是当前 visual row 的行尾背景，不是 logical text；
+	// 这里只做 display-only 填充，copy/search/reflow 不消费这段空白。
+	out = append(out, Cell{
+		Text:            strings.Repeat(" ", padWidth),
+		Width:           padWidth,
+		ANSIStyle:       style,
+		TerminalContent: true,
+		Safe:            true,
+	})
 	return out
 }
 

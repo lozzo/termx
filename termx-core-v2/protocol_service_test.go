@@ -1287,6 +1287,37 @@ func TestProtocolHistoryWindowPreservesStyledTrailingBlankCells(t *testing.T) {
 	}
 }
 
+func TestProtocolHistoryWindowPreservesTailFillWithoutBlankCells(t *testing.T) {
+	track := history.NewHistoryTrack()
+	style := history.CellStyle{BG: "idx:24"}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{
+		{Text: "abcdefghij", Width: 10, Style: style},
+	}}); err != nil {
+		t.Fatalf("write cells: %v", err)
+	}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventSetActiveLineTailFill, Style: style}); err != nil {
+		t.Fatalf("tail fill: %v", err)
+	}
+	if err := track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		t.Fatalf("commit cells: %v", err)
+	}
+	window, err := track.LatestWindow(history.HistoryWindowRequest{Cols: 8, Rows: 4})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+
+	out := protocolHistoryWindowFromCore("term-1", Size{Cols: 8, Rows: 4}, window)
+	if got := rowText(out.Rows[1]); got != "ij" {
+		t.Fatalf("tail fill must not become protocol row text, got %q row=%#v", got, out.Rows[1])
+	}
+	if out.Rows[0].TailFill != nil {
+		t.Fatalf("tail fill should only attach to final visual row, got %#v", out.Rows[0])
+	}
+	if out.Rows[1].TailFill == nil || out.Rows[1].TailFill.BG != "idx:24" {
+		t.Fatalf("expected protocol tail fill metadata, got %#v", out.Rows[1])
+	}
+}
+
 func TestProtocolHistoryWindowPreservesStyledPaddedCellFootprintAcrossWrap(t *testing.T) {
 	track := history.NewHistoryTrack()
 	style := history.CellStyle{BG: "idx:24"}
