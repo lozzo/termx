@@ -206,6 +206,34 @@ func TestTerminalViewLayoutCommandPersistsWorkbenchSnapshot(t *testing.T) {
 	}
 }
 
+func TestWorkbenchRestoreAttachEffectsPreserveStoredResizeRole(t *testing.T) {
+	bindings := []state.TerminalViewBinding{
+		state.NewPaneTerminalView("pane-follower", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-follower", false),
+		state.NewPaneTerminalView("pane-owner", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-owner", true),
+		state.NewPaneTerminalView("pane-observer", "term-2", 9, 30, 10, state.TerminalResizeRoleObserver, "surface", "view-observer", false),
+	}
+
+	effects := workbenchRestoredTerminalAttachEffects(bindings)
+	if len(effects) != 3 {
+		t.Fatalf("expected one attach effect per binding, got %#v", effects)
+	}
+	got := map[string]string{}
+	for _, effect := range effects {
+		msg, ok := effect.(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+		if !ok {
+			t.Fatalf("expected LiveAttachMsg effect, got %#v", effect)
+		}
+		got[msg.Config.ViewID] = msg.Config.ResizePolicy
+	}
+	if got["view-owner"] != state.TerminalResizeRoleOwner || got["view-follower"] != state.TerminalResizeRoleFollower || got["view-observer"] != state.TerminalResizeRoleObserver {
+		t.Fatalf("restore attach should preserve stored resize roles, got %#v", got)
+	}
+	first, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+	if !ok || first.Config.ViewID != "view-owner" {
+		t.Fatalf("restore must reattach owner before same-terminal followers, got %#v", first)
+	}
+}
+
 func TestWorkbenchPaneCRUDPersistsClosedPaneSnapshotWithCAS(t *testing.T) {
 	storage := &services.FakeWorkbenchStorageService{CurrentVersion: 3}
 	reducer := ComposeReducers(NewShellReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{Storage: storage}))
@@ -646,7 +674,7 @@ func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *te
 		BindPane(state.NewPaneTerminalView("pane-restored", "term-restored", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-restored", state.TerminalPaneViewID("pane-restored"), true))
 	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
 	terminal := &services.FakeTerminalService{
-		AttachResult:  services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleFollower, CanResize: false, OwnerViewID: "other-view"},
+		AttachResult:  services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true, OwnerViewID: state.TerminalPaneViewID("pane-restored")},
 		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-restored", Cols: 100, Rows: 30, Lines: []string{"changed by another tui"}, State: state.TerminalLiveAttached}},
 	}
 	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
@@ -659,12 +687,12 @@ func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *te
 		t.Fatalf("restored terminal view should reattach through core, attaches=%#v", terminal.Attaches)
 	}
 	attach := terminal.Attaches[0]
-	if attach.TerminalID != "term-restored" || attach.ViewID != state.TerminalPaneViewID("pane-restored") || attach.ResizePolicy != state.TerminalResizeRoleFollower {
-		t.Fatalf("restore attach must use restored view as follower, attach=%#v", attach)
+	if attach.TerminalID != "term-restored" || attach.ViewID != state.TerminalPaneViewID("pane-restored") || attach.ResizePolicy != state.TerminalResizeRoleOwner {
+		t.Fatalf("restore attach must preserve stored owner intent, attach=%#v", attach)
 	}
 	root := runtime.State()
 	binding, ok := root.TerminalViews.PaneBinding("pane-restored")
-	if !ok || binding.Channel != 42 || binding.ResizeRole != state.TerminalResizeRoleFollower || binding.OwnerViewID != "other-view" || !binding.Attached {
+	if !ok || binding.Channel != 42 || !binding.HasAuthoritativeResizeOwner() || !binding.Attached {
 		t.Fatalf("restored binding should reflect core attach result, binding=%#v ok=%v", binding, ok)
 	}
 	if channel, ok := root.Session.InputChannelFor("term-restored"); !ok || channel != 42 {

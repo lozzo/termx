@@ -775,6 +775,41 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	}
 }
 
+func TestProtocolTerminalServiceAdapterUsesResizeControlRole(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		attachResult: &protocol.AttachResult{
+			Channel: 12,
+			ResizeControl: &protocol.ResizeControl{
+				CanResize:   false,
+				Reason:      protocol.ResizeControlReasonFollower,
+				OwnerViewID: "owner-view",
+				ResizeOwnership: &protocol.ResizeOwnership{
+					OwnerViewID: "owner-view",
+					Size:        protocol.Size{Cols: 100, Rows: 40},
+					Epoch:       3,
+				},
+			},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	attached, err := adapter.Attach(context.Background(), TerminalAttachRequest{
+		TerminalID:   "term-1",
+		Cols:         80,
+		Rows:         24,
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "surface-1",
+		ViewID:       "view-1",
+	})
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+
+	if attached.ResizePolicy != state.TerminalResizeRoleFollower || attached.CanResize || attached.OwnerViewID != "owner-view" {
+		t.Fatalf("attach role must follow core resize control, got %#v", attached)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
 		snapshotResult: &protocol.Snapshot{

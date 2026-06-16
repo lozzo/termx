@@ -201,6 +201,7 @@ func applyProtocolResizeControlToAttach(out *TerminalAttachResult, control *prot
 	out.CanResize = control.CanResize
 	out.SizeLocked = control.SizeLocked
 	out.ControlReason = control.Reason
+	out.ResizePolicy = resizePolicyFromProtocolControl(control, out.ResizePolicy)
 	out.OwnerSurfaceID = control.OwnerSurfaceID
 	out.OwnerViewID = control.OwnerViewID
 	if control.ResizeOwnership != nil {
@@ -225,6 +226,7 @@ func terminalResizeResultFromProtocol(req TerminalResizeRequest, result *protoco
 		out.CanResize = result.ResizeControl.CanResize
 		out.SizeLocked = result.ResizeControl.SizeLocked
 		out.ControlReason = result.ResizeControl.Reason
+		out.ResizePolicy = resizePolicyFromProtocolControl(result.ResizeControl, out.ResizePolicy)
 		out.OwnerSurfaceID = result.ResizeControl.OwnerSurfaceID
 		out.OwnerViewID = result.ResizeControl.OwnerViewID
 		if result.ResizeControl.ResizeOwnership != nil {
@@ -237,6 +239,27 @@ func terminalResizeResultFromProtocol(req TerminalResizeRequest, result *protoco
 		}
 	}
 	return out
+}
+
+func resizePolicyFromProtocolControl(control *protocol.ResizeControl, fallback string) string {
+	if control == nil {
+		return fallback
+	}
+	// core-v2 的 ResizeControl.Reason 是 attachment 这次 attach/ensure 后的权威角色；
+	// 不能继续沿用请求里的 ResizePolicy，否则 UI 会显示半旧的 owner/follower 状态。
+	switch control.Reason {
+	case protocol.ResizeControlReasonOwner, protocol.ResizeControlReasonSizeLocked:
+		return state.TerminalResizeRoleOwner
+	case protocol.ResizeControlReasonObserver:
+		return state.TerminalResizeRoleObserver
+	case protocol.ResizeControlReasonFollower:
+		return state.TerminalResizeRoleFollower
+	default:
+		if control.CanResize {
+			return state.TerminalResizeRoleOwner
+		}
+		return fallback
+	}
 }
 
 func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, req TerminalSurfaceRequest) (TerminalSurfaceResult, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -185,8 +186,9 @@ func workbenchRestoredTerminalAttachEffects(bindings []state.TerminalViewBinding
 	if len(bindings) == 0 {
 		return nil
 	}
-	effects := make([]Effect, 0, len(bindings))
-	for _, binding := range bindings {
+	ordered := orderedRestoredTerminalBindings(bindings)
+	effects := make([]Effect, 0, len(ordered))
+	for _, binding := range ordered {
 		binding := binding
 		if binding.TerminalID == "" || binding.ViewID == "" {
 			continue
@@ -198,10 +200,11 @@ func workbenchRestoredTerminalAttachEffects(bindings []state.TerminalViewBinding
 		if rows <= 0 {
 			rows = 24
 		}
-		// 启动恢复只重建 view 到 core 的连接；owner truth 必须等 core-v2 返回。
-		resizePolicy := state.TerminalResizeRoleFollower
-		if binding.ResizeRole == state.TerminalResizeRoleObserver {
-			resizePolicy = state.TerminalResizeRoleObserver
+		// storage 里记录的是上次退出时的 view 意图；重进时必须原样向 core 申请，
+		// 最终 owner/follower truth 仍以 core-v2 attach 返回的 ResizeControl 为准。
+		resizePolicy := binding.ResizeRole
+		if resizePolicy == "" {
+			resizePolicy = state.TerminalResizeRoleFollower
 		}
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
 			return LiveAttachMsg{Config: LiveConfig{
@@ -216,6 +219,37 @@ func workbenchRestoredTerminalAttachEffects(bindings []state.TerminalViewBinding
 		}})
 	}
 	return effects
+}
+
+func orderedRestoredTerminalBindings(bindings []state.TerminalViewBinding) []state.TerminalViewBinding {
+	ordered := append([]state.TerminalViewBinding(nil), bindings...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		left := ordered[i]
+		right := ordered[j]
+		if left.TerminalID != right.TerminalID {
+			return left.TerminalID < right.TerminalID
+		}
+		leftPriority := restoredResizeRolePriority(left.ResizeRole)
+		rightPriority := restoredResizeRolePriority(right.ResizeRole)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		return left.ViewID < right.ViewID
+	})
+	return ordered
+}
+
+func restoredResizeRolePriority(role string) int {
+	switch role {
+	case state.TerminalResizeRoleOwner:
+		return 0
+	case state.TerminalResizeRoleFollower, "":
+		return 1
+	case state.TerminalResizeRoleObserver:
+		return 2
+	default:
+		return 1
+	}
 }
 
 func reduceWorkbenchStoragePersistRequest(root state.Root, _ WorkbenchStoragePersistRequestMsg, deps WorkbenchDeps) (state.Root, []Effect) {
