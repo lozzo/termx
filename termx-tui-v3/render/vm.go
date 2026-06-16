@@ -91,7 +91,7 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 		Visible:       shell.FooterVisible,
 		Mode:          mode,
 		Hint:          hint,
-		ActionTokens:  footerActionCatalog(mode),
+		ActionTokens:  footerActionCatalogForRoot(mode, root, shell),
 		ActiveTarget:  activeTargetSummary(shell, root),
 		GlobalSummary: globalSummary(root, shell),
 	}
@@ -172,6 +172,70 @@ func footerActionLabels(mode string) []string {
 // footerActions 只服务手写 FooterVM 的兼容 fallback；默认 builder 直接输出 FooterActionVM。
 func footerActions(mode string) []string {
 	return footerActionLabels(mode)
+}
+
+func footerActionCatalogForRoot(mode string, root state.Root, shell state.ShellStore) []FooterActionVM {
+	tokens := footerActionCatalog(mode)
+	if len(tokens) == 0 {
+		return tokens
+	}
+	out := make([]FooterActionVM, 0, len(tokens))
+	for _, token := range tokens {
+		if footerActionAvailable(token.ActionID, mode, root, shell) {
+			out = append(out, token)
+		}
+	}
+	return out
+}
+
+// 中文说明：这里仅过滤可见 footer token；reducer 仍负责最终语义校验和错误反馈。
+func footerActionAvailable(actionID string, mode string, root state.Root, shell state.ShellStore) bool {
+	if actionID == "" {
+		return true
+	}
+	switch ActionID(actionID) {
+	case ActionPaneFooterClose:
+		return activeTabPaneCount(shell) > 1
+	case ActionPaneFooterDetach:
+		pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+		return ok && pane.TerminalID != ""
+	case ActionPaneFooterFocus:
+		return activeTabPaneCount(shell) > 1
+	case ActionPaneFooterBalance, ActionResizeBalance, ActionResizeLeft, ActionResizeRight, ActionResizeUp, ActionResizeDown:
+		return activeTabPaneCount(shell) > 1
+	case ActionTabPrevious, ActionTabNext, ActionTabClose:
+		return activeWorkspaceTabCount(shell) > 1
+	case ActionFooterPreviousWorkspace, ActionFooterNextWorkspace, ActionFooterDeleteWorkspace:
+		return len(shell.EnsureDefaults().Workspaces) > 1
+	case ActionFooterCloseToast, ActionFooterClearToasts:
+		return len(shell.EnsureDefaults().Toasts) > 0
+	case ActionFloatingSummon, ActionFloatingToggleAll, ActionFloatingShowAll, ActionFloatingCollapseAll:
+		return len(shell.EnsureDefaults().Floatings) > 0
+	case ActionFloatingTakeOwner, ActionFloatingFit, ActionFloatingAutoFit, ActionFloatingCenter, ActionFloatingCollapse, ActionFloatingClose:
+		return shell.EnsureDefaults().ActiveFloatingID != "" || mode == string(state.OverlayFloatingOverview) && len(shell.EnsureDefaults().Floatings) > 0
+	case ActionPoolAttach, ActionPoolEdit, ActionPoolKill:
+		return len(root.TerminalPool.Items) > 0
+	case ActionClipboardHistoryPaste, ActionClipboardHistoryEdit, ActionClipboardHistoryDelete:
+		return len(state.ClipboardHistoryItems(root)) > 0
+	default:
+		return true
+	}
+}
+
+func activeWorkspaceTabCount(shell state.ShellStore) int {
+	shell = shell.EnsureDefaults()
+	return len(shell.Workspace.Tabs)
+}
+
+func activeTabPaneCount(shell state.ShellStore) int {
+	shell = shell.EnsureDefaults()
+	activeTabID := shell.Workspace.ActiveTabID
+	for _, tab := range shell.Workspace.Tabs {
+		if activeTabID == "" || tab.ID == activeTabID {
+			return len(tab.Panes)
+		}
+	}
+	return 0
 }
 
 func footerActionCatalog(mode string) []FooterActionVM {

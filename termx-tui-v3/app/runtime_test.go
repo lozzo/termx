@@ -1283,7 +1283,7 @@ func TestInteractiveRuntimePaneModeFooterActions(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimePaneModeFooterCloseLastPaneShowsFeedback(t *testing.T) {
+func TestInteractiveRuntimePaneModeFooterHidesUnavailableLastPaneClose(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	terminal := &services.FakeTerminalService{
@@ -1305,22 +1305,9 @@ func TestInteractiveRuntimePaneModeFooterCloseLastPaneShowsFeedback(t *testing.T
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain render: %v", err)
 	}
-	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterClose.String(), "")
-	if err := host.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
-		t.Fatalf("send last pane footer close click: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain last pane footer close click: %v", err)
-	}
-	shell := runtime.State().Shell.EnsureDefaults()
-	if !shell.HasPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}) {
-		t.Fatalf("last pane footer close must not remove final pane, got %#v", shell)
-	}
-	if len(shell.Toasts) == 0 || shell.Toasts[len(shell.Toasts)-1].Body != "cannot close last pane" {
-		t.Fatalf("last pane footer close should show feedback, got %#v", shell.Toasts)
-	}
+	assertFrameMissingActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionPaneFooterClose.String())
 	if len(terminal.Inputs) != 0 {
-		t.Fatalf("last pane footer close must not leak to terminal input, got %#v", terminal.Inputs)
+		t.Fatalf("unavailable last pane footer close must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 
@@ -1379,7 +1366,7 @@ func TestInteractiveRuntimeResizeModeFooterActions(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimeResizeModeFooterActionSinglePaneStaysStable(t *testing.T) {
+func TestInteractiveRuntimeResizeModeFooterHidesUnavailableSinglePaneResize(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	terminal := &services.FakeTerminalService{
@@ -1401,19 +1388,13 @@ func TestInteractiveRuntimeResizeModeFooterActionSinglePaneStaysStable(t *testin
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain render: %v", err)
 	}
-	leftAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionResizeLeft.String(), "")
-	if err := host.SendInput(mouseEventAt(leftAction.Rect)); err != nil {
-		t.Fatalf("send single pane resize footer click: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain single pane resize footer click: %v", err)
-	}
-	shell := runtime.State().Shell.EnsureDefaults()
-	if shell.ActivePaneID != state.DefaultPaneID || len(shell.Workspace.Tabs[0].Panes) != 1 || shell.Workspace.Tabs[0].RootSplit.PaneID != state.DefaultPaneID {
-		t.Fatalf("single pane resize footer action should keep pane tree stable, got %#v", shell)
-	}
+	frame := lastRuntimeFrame(t, host)
+	assertFrameMissingActionHitRegion(t, frame, render.ActionResizeLeft.String())
+	assertFrameMissingActionHitRegion(t, frame, render.ActionResizeRight.String())
+	assertFrameMissingActionHitRegion(t, frame, render.ActionResizeUp.String())
+	assertFrameMissingActionHitRegion(t, frame, render.ActionResizeDown.String())
 	if len(terminal.Inputs) != 0 {
-		t.Fatalf("single pane resize footer action must not leak to terminal input, got %#v", terminal.Inputs)
+		t.Fatalf("unavailable single pane resize footer actions must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 
@@ -1468,7 +1449,7 @@ func TestInteractiveRuntimeFloatingFooterActions(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimeFloatingFooterCloseWithoutActiveShowsFeedback(t *testing.T) {
+func TestInteractiveRuntimeFloatingFooterHidesCloseWithoutActive(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(120, 24)
 	terminal := &services.FakeTerminalService{
@@ -1490,19 +1471,9 @@ func TestInteractiveRuntimeFloatingFooterCloseWithoutActiveShowsFeedback(t *test
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain render: %v", err)
 	}
-	closeAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFloatingClose.String(), "")
-	if err := host.SendInput(mouseEventAt(closeAction.Rect)); err != nil {
-		t.Fatalf("send inactive floating close footer click: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain inactive floating close footer click: %v", err)
-	}
-	shell := runtime.State().Shell.EnsureDefaults()
-	if len(shell.Toasts) == 0 || shell.Toasts[len(shell.Toasts)-1].Body != "floating not found" {
-		t.Fatalf("floating close without active target should show feedback, got %#v", shell.Toasts)
-	}
+	assertFrameMissingActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFloatingClose.String())
 	if len(terminal.Inputs) != 0 {
-		t.Fatalf("inactive floating close footer action must not leak to terminal input, got %#v", terminal.Inputs)
+		t.Fatalf("unavailable floating close footer action must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 
@@ -1633,7 +1604,7 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 	}
 }
 
-func TestInteractiveRuntimeSingleTabSwitchFooterActionsStayStable(t *testing.T) {
+func TestInteractiveRuntimeSingleTabSwitchFooterActionsAreHidden(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(110, 24)
 	terminal := &services.FakeTerminalService{
@@ -1655,21 +1626,11 @@ func TestInteractiveRuntimeSingleTabSwitchFooterActionsStayStable(t *testing.T) 
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain render: %v", err)
 	}
-	for _, actionID := range []string{render.ActionTabNext.String(), render.ActionTabPrevious.String()} {
-		action := frameActionHitRegion(t, lastRuntimeFrame(t, host), actionID, "")
-		if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
-			t.Fatalf("send single tab switch footer click %s: %v", actionID, err)
-		}
-		if err := runtime.Drain(context.Background()); err != nil {
-			t.Fatalf("drain single tab switch footer click %s: %v", actionID, err)
-		}
-		shell := runtime.State().Shell.EnsureDefaults()
-		if shell.Workspace.ActiveTabID != state.DefaultTabID || len(shell.Workspace.Tabs) != 1 {
-			t.Fatalf("single tab switch footer action %s should keep state stable, got %#v", actionID, shell)
-		}
-	}
+	frame := lastRuntimeFrame(t, host)
+	assertFrameMissingActionHitRegion(t, frame, render.ActionTabNext.String())
+	assertFrameMissingActionHitRegion(t, frame, render.ActionTabPrevious.String())
 	if len(terminal.Inputs) != 0 {
-		t.Fatalf("single tab switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+		t.Fatalf("unavailable single tab switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 
@@ -1837,16 +1798,10 @@ func TestInteractiveRuntimeWorkspaceDeleteFooterAction(t *testing.T) {
 	if !toastExistsForTest(shell.Toasts, string(state.WorkbenchCommandWorkspaceDelete), activeBefore) {
 		t.Fatalf("workspace delete footer action should show success feedback for deleted workspace %q, got %#v", activeBefore, shell.Toasts)
 	}
-	action = frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterDeleteWorkspace.String(), "")
-	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
-		t.Fatalf("send last workspace delete footer click: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain last workspace delete footer click: %v", err)
-	}
+	assertFrameMissingActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFooterDeleteWorkspace.String())
 	shell = runtime.State().Shell.EnsureDefaults()
-	if len(shell.Workspaces) != 1 || !toastExistsForTest(shell.Toasts, string(state.WorkbenchCommandWorkspaceDelete), "cannot delete last workspace") {
-		t.Fatalf("last workspace delete should be rejected with feedback, got %#v", shell)
+	if len(shell.Workspaces) != 1 {
+		t.Fatalf("last workspace delete footer action should be hidden after delete, got %#v", shell)
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("workspace footer delete must not leak to terminal input, got %#v", terminal.Inputs)
@@ -2061,7 +2016,7 @@ func TestInteractiveRuntimeWorkspaceSwitchFooterActions(t *testing.T) {
 	}
 }
 
-func TestInteractiveRuntimeSingleWorkspaceSwitchFooterActionsStayStable(t *testing.T) {
+func TestInteractiveRuntimeSingleWorkspaceSwitchFooterActionsAreHidden(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(110, 24)
 	terminal := &services.FakeTerminalService{
@@ -2083,21 +2038,11 @@ func TestInteractiveRuntimeSingleWorkspaceSwitchFooterActionsStayStable(t *testi
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain render: %v", err)
 	}
-	for _, actionID := range []string{render.ActionFooterNextWorkspace.String(), render.ActionFooterPreviousWorkspace.String()} {
-		action := frameActionHitRegion(t, lastRuntimeFrame(t, host), actionID, "")
-		if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
-			t.Fatalf("send single workspace switch footer click %s: %v", actionID, err)
-		}
-		if err := runtime.Drain(context.Background()); err != nil {
-			t.Fatalf("drain single workspace switch footer click %s: %v", actionID, err)
-		}
-		shell := runtime.State().Shell.EnsureDefaults()
-		if shell.Workspace.ID != state.DefaultWorkspaceID || len(shell.Workspaces) != 1 {
-			t.Fatalf("single workspace switch footer action %s should keep state stable, got %#v", actionID, shell)
-		}
-	}
+	frame := lastRuntimeFrame(t, host)
+	assertFrameMissingActionHitRegion(t, frame, render.ActionFooterNextWorkspace.String())
+	assertFrameMissingActionHitRegion(t, frame, render.ActionFooterPreviousWorkspace.String())
 	if len(terminal.Inputs) != 0 {
-		t.Fatalf("single workspace switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
+		t.Fatalf("unavailable single workspace switch footer actions must not leak to terminal input, got %#v", terminal.Inputs)
 	}
 }
 
@@ -3324,6 +3269,15 @@ func frameActionHitRegion(t *testing.T, frame render.Frame, actionID string, pan
 	}
 	t.Fatalf("missing content action=%s pane=%s in %#v", actionID, paneID, frame.HitRegions)
 	return render.HitRegion{}
+}
+
+func assertFrameMissingActionHitRegion(t *testing.T, frame render.Frame, actionID string) {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.ActionID == actionID {
+			t.Fatalf("action %s should not have hit region in %#v", actionID, frame.HitRegions)
+		}
+	}
 }
 
 func frameHitRegionByAction(t *testing.T, frame render.Frame, kind render.HitRegionKind, actionID string, paneID string) render.HitRegion {
