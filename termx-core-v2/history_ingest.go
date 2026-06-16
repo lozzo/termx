@@ -30,13 +30,20 @@ func parseHistoryOutput(output string) []historyOutputSegment {
 }
 
 type historyANSIParser struct {
-	style    history.CellStyle
-	linkURL  string
-	linkArgs string
-	buffer   strings.Builder
-	col      int
-	pending  string
-	segments []historyOutputSegment
+	style              history.CellStyle
+	linkURL            string
+	linkArgs           string
+	buffer             strings.Builder
+	col                int
+	pending            string
+	segments           []historyOutputSegment
+	screenCols         int
+	screenRows         int
+	screenRow          int
+	screenCol          int
+	atPhantom          bool
+	rowFootprintStyle  history.CellStyle
+	rowFootprintActive bool
 }
 
 // historyANSIParser 只解析会成为 logical-line payload 的文本样式元数据。
@@ -87,6 +94,8 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 			parser.flush()
 			parser.segments = append(parser.segments, historyOutputSegment{CarriageReturn: true})
 			parser.col = 0
+			parser.screenCol = 0
+			parser.atPhantom = false
 			output = output[1:]
 		case output[0] == '\b':
 			parser.flush()
@@ -94,11 +103,17 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 			if parser.col > 0 {
 				parser.col--
 			}
+			if parser.screenCol > 0 {
+				parser.screenCol--
+			}
+			parser.atPhantom = false
 			output = output[1:]
 		case output[0] == '\n':
 			parser.flush()
+			parser.finishPhysicalRow()
 			parser.segments = append(parser.segments, historyOutputSegment{Seal: true})
 			parser.col = 0
+			parser.advancePhysicalLine(parser.style)
 			output = output[1:]
 		case output[0] == '\t':
 			parser.writeTab()
@@ -116,6 +131,36 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 	}
 	parser.flush()
 	return cloneHistoryOutputSegments(parser.segments)
+}
+
+func (parser *historyANSIParser) SetScreenSize(cols int, rows int) {
+	sizeChanged := parser.screenCols != cols || parser.screenRows != rows
+	parser.screenCols = cols
+	parser.screenRows = rows
+	if parser.screenCols <= 0 || parser.screenRows <= 0 {
+		parser.screenRow = 0
+		parser.screenCol = 0
+		parser.atPhantom = false
+		parser.rowFootprintActive = false
+		return
+	}
+	if !sizeChanged {
+		return
+	}
+	if parser.screenRow >= parser.screenRows {
+		parser.screenRow = parser.screenRows - 1
+	}
+	if parser.screenRow < 0 {
+		parser.screenRow = 0
+	}
+	if parser.screenCol >= parser.screenCols {
+		parser.screenCol = parser.screenCols - 1
+	}
+	if parser.screenCol < 0 {
+		parser.screenCol = 0
+	}
+	parser.atPhantom = false
+	parser.rowFootprintActive = false
 }
 
 func (parser *historyANSIParser) consumeCSI(input string) int {
@@ -159,6 +204,9 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 			mode = params[0]
 		}
 		parser.segments = append(parser.segments, historyOutputSegment{EraseInLine: true, EraseMode: mode, Style: parser.style})
+		if mode == 0 || mode == 2 {
+			parser.rowFootprintActive = false
+		}
 		return end + 1
 	}
 	switch final {
@@ -167,6 +215,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		count := firstCSIParam(input[2:end], 1)
 		parser.segments = append(parser.segments, historyOutputSegment{CursorForward: true, Count: count})
 		parser.col += count
+		parser.movePhysicalColumnBy(count)
 		return end + 1
 	case 'D':
 		parser.flush()
@@ -176,6 +225,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		if parser.col < 0 {
 			parser.col = 0
 		}
+		parser.movePhysicalColumnBy(-count)
 		return end + 1
 	case 'G':
 		parser.flush()
@@ -185,6 +235,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		if parser.col < 0 {
 			parser.col = 0
 		}
+		parser.setPhysicalColumn(column - 1)
 		return end + 1
 	}
 	if final != 'm' {
@@ -208,11 +259,60 @@ func (parser *historyANSIParser) consumeOSC(input string) int {
 }
 
 func (parser *historyANSIParser) writeText(text string) {
+	for text != "" {
+		if asciiLen := historyParserASCIITextRun(text); asciiLen > 0 {
+			parser.writeASCIIText(text[:asciiLen])
+			text = text[asciiLen:]
+			continue
+		}
+		cluster, width := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
+		if cluster == "" {
+			return
+		}
+		text = text[len(cluster):]
+		if width > 0 {
+			parser.beforePhysicalPrint(width)
+		}
+		parser.buffer.WriteString(cluster)
+		if width > 0 {
+			parser.col += width
+			parser.advancePhysicalPrint(width)
+		}
+	}
+}
+
+func (parser *historyANSIParser) writeASCIIText(text string) {
 	if text == "" {
 		return
 	}
-	parser.buffer.WriteString(text)
-	parser.col += xansi.StringWidth(text)
+	if parser.screenCols <= 0 || parser.screenRows <= 0 {
+		parser.buffer.WriteString(text)
+		parser.col += len(text)
+		return
+	}
+	for len(text) > 0 {
+		if parser.atPhantom {
+			parser.finishPhysicalRow()
+			parser.advancePhysicalLine(parser.style)
+		}
+		available := parser.screenCols - parser.screenCol
+		if available <= 0 {
+			parser.atPhantom = true
+			continue
+		}
+		count := len(text)
+		if count > available {
+			count = available
+		}
+		parser.buffer.WriteString(text[:count])
+		parser.col += count
+		parser.screenCol += count
+		text = text[count:]
+		if parser.screenCol >= parser.screenCols {
+			parser.screenCol = parser.screenCols - 1
+			parser.atPhantom = true
+		}
+	}
 }
 
 func (parser *historyANSIParser) writeTab() {
@@ -239,6 +339,130 @@ func (parser *historyANSIParser) flush() {
 		LinkURL:    parser.linkURL,
 		LinkParams: parser.linkArgs,
 	}}})
+}
+
+func (parser *historyANSIParser) beforePhysicalPrint(width int) {
+	if parser.screenCols <= 0 || parser.screenRows <= 0 {
+		return
+	}
+	if parser.atPhantom {
+		parser.finishPhysicalRow()
+		parser.advancePhysicalLine(parser.style)
+		return
+	}
+	if width > 1 && parser.screenCol > 0 && parser.screenCol+width > parser.screenCols {
+		parser.finishPhysicalRow()
+		parser.advancePhysicalLine(parser.style)
+	}
+}
+
+func (parser *historyANSIParser) advancePhysicalPrint(width int) {
+	if parser.screenCols <= 0 || parser.screenRows <= 0 || width <= 0 {
+		return
+	}
+	parser.screenCol += width
+	if parser.screenCol >= parser.screenCols {
+		parser.screenCol = parser.screenCols - 1
+		parser.atPhantom = true
+	}
+}
+
+func (parser *historyANSIParser) finishPhysicalRow() {
+	if parser.atPhantom {
+		parser.rowFootprintActive = false
+		return
+	}
+	if !parser.rowFootprintActive || parser.screenCols <= 0 || parser.screenCol >= parser.screenCols {
+		parser.rowFootprintActive = false
+		return
+	}
+	style := parser.rowFootprintStyle
+	if !historyParserVisibleBlankStyle(style) {
+		parser.rowFootprintActive = false
+		return
+	}
+	width := parser.screenCols - parser.screenCol
+	if width <= 0 {
+		parser.rowFootprintActive = false
+		return
+	}
+	parser.flush()
+	// 中文说明：这里记录的是 live terminal 滚屏新建物理行时留下的真实空白
+	// footprint；它必须进入 authoritative history，不能让 TUI 事后猜。
+	parser.segments = append(parser.segments, historyOutputSegment{Cells: []history.Cell{{
+		Text:  "",
+		Width: width,
+		Style: style,
+	}}})
+	parser.col += width
+	parser.rowFootprintActive = false
+}
+
+func (parser *historyANSIParser) advancePhysicalLine(fillStyle history.CellStyle) {
+	if parser.screenCols <= 0 || parser.screenRows <= 0 {
+		parser.screenCol = 0
+		parser.atPhantom = false
+		parser.rowFootprintActive = false
+		return
+	}
+	if parser.screenRow >= parser.screenRows-1 {
+		parser.screenRow = parser.screenRows - 1
+		parser.rowFootprintStyle = historyParserBlankFootprintStyle(fillStyle)
+		parser.rowFootprintActive = historyParserVisibleBlankStyle(parser.rowFootprintStyle)
+	} else {
+		parser.screenRow++
+		parser.rowFootprintActive = false
+	}
+	parser.screenCol = 0
+	parser.atPhantom = false
+}
+
+func (parser *historyANSIParser) movePhysicalColumnBy(delta int) {
+	if parser.screenCols <= 0 {
+		parser.atPhantom = false
+		return
+	}
+	parser.screenCol += delta
+	if parser.screenCol < 0 {
+		parser.screenCol = 0
+	}
+	if parser.screenCol >= parser.screenCols {
+		parser.screenCol = parser.screenCols - 1
+	}
+	parser.atPhantom = false
+}
+
+func (parser *historyANSIParser) setPhysicalColumn(column int) {
+	if parser.screenCols <= 0 {
+		parser.screenCol = 0
+		parser.atPhantom = false
+		return
+	}
+	if column < 0 {
+		column = 0
+	}
+	if column >= parser.screenCols {
+		column = parser.screenCols - 1
+	}
+	parser.screenCol = column
+	parser.atPhantom = false
+}
+
+func historyParserBlankFootprintStyle(style history.CellStyle) history.CellStyle {
+	return history.CellStyle{BG: style.BG}
+}
+
+func historyParserVisibleBlankStyle(style history.CellStyle) bool {
+	return style.BG != ""
+}
+
+func historyParserASCIITextRun(text string) int {
+	for i := 0; i < len(text); i++ {
+		if text[i] < 0x20 || text[i] >= 0x7f {
+			return i
+		}
+	}
+	return len(text)
 }
 
 func (parser *historyANSIParser) applySGR(paramsText string) {

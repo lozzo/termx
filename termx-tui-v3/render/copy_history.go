@@ -26,17 +26,15 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 	}
 	selection := normalizedCopySelection(copyMode)
 	rows := copyVisibleRows(history, copyMode)
-	width := copyHistoryRenderWidth(history, copyMode)
 	lines := make([]Line, 0, len(rows))
 	for _, visible := range rows {
-		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible), width))
+		lines = append(lines, copyHistoryLine(history.Rows[visible], visible, selection, activeSearchRange(copyMode, visible)))
 	}
 	return lines
 }
 
-func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange, width int) Line {
+func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange) Line {
 	cells := copyHistoryRowCells(row, rowIndex, selection, search)
-	cells = copyHistoryPadWrappedTail(cells, row, rowIndex, selection, search, width)
 	if row.ClippedEnd {
 		cells = append(cells, styledCell(" ⇣", StyleMuted))
 	}
@@ -55,7 +53,7 @@ func CopyHistoryContentANSILineAt(history state.HistoryStore, copyMode state.Cop
 		return contentViewportBlankRun(width).Text
 	}
 	baseColumn := lineX + 1
-	line := copyHistoryLine(history.Rows[rowIndex], rowIndex, normalizedCopySelection(copyMode), activeSearchRange(copyMode, rowIndex), width)
+	line := copyHistoryLine(history.Rows[rowIndex], rowIndex, normalizedCopySelection(copyMode), activeSearchRange(copyMode, rowIndex))
 	return ensureANSIReset(contentViewportFitLine(line, width).ansiString(theme.WithFallback(), baseColumn))
 }
 
@@ -276,63 +274,6 @@ func copyHistoryRowCells(row state.HistoryRow, rowIndex int, selection copySelec
 		return []Cell{NewCell(row.Text)}
 	}
 	return out
-}
-
-func copyHistoryRenderWidth(history state.HistoryStore, copyMode state.CopyModeStore) int {
-	if copyMode.BoundCols > 0 {
-		return copyMode.BoundCols
-	}
-	return history.Cols
-}
-
-func copyHistoryPadWrappedTail(cells []Cell, row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange, width int) []Cell {
-	if width <= 0 || row.RowInLine <= 0 || row.ClippedEnd {
-		return cells
-	}
-	lineWidth := 0
-	for _, cell := range cells {
-		lineWidth += maxInt(0, cell.Width)
-	}
-	padWidth := width - lineWidth
-	if padWidth <= 0 {
-		return cells
-	}
-	style, ok := copyHistoryWrappedTailStyle(row)
-	if !ok {
-		return cells
-	}
-	// 中文说明：真实终端自动换行产生的新物理行会继承当时的背景；
-	// history 本地 reflow 只在显示层补这个 footprint，不写回 logical line。
-	padCells := copyHistoryStyledTextCells("", padWidth, style, "", "", rowIndex, lineWidth, selection, search)
-	if len(padCells) == 0 {
-		return cells
-	}
-	out := make([]Cell, 0, len(cells)+len(padCells))
-	out = append(out, cells...)
-	out = append(out, padCells...)
-	return out
-}
-
-func copyHistoryWrappedTailStyle(row state.HistoryRow) (ANSICellStyle, bool) {
-	for index := len(row.Cells) - 1; index >= 0; index-- {
-		cell := row.Cells[index]
-		if state.HistoryCellDisplayWidth(cell) <= 0 {
-			continue
-		}
-		bg := copyHistoryVisibleBackground(cell.Style)
-		if bg == "" {
-			return ANSICellStyle{}, false
-		}
-		return ANSICellStyle{BG: bg}, true
-	}
-	return ANSICellStyle{}, false
-}
-
-func copyHistoryVisibleBackground(style state.HistoryCellStyle) string {
-	if style.Reverse && style.FG != "" {
-		return style.FG
-	}
-	return style.BG
 }
 
 func renderCellsFromHistory(cell state.HistoryCell, row int, from int, selection copySelectionRange, search copySearchRange) []Cell {

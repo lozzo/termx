@@ -15,12 +15,13 @@ type terminalHistoryPipeline struct {
 	track  *history.HistoryTrack
 	ingest historyANSIParser
 	cols   int
+	rows   int
 }
 
 func newTerminalHistoryPipeline(cols int, rows int) *terminalHistoryPipeline {
 	track := history.NewHistoryTrack()
 	track.SetPrimaryScreenRows(rows)
-	return &terminalHistoryPipeline{track: track, cols: cols}
+	return &terminalHistoryPipeline{track: track, cols: cols, rows: rows}
 }
 
 func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
@@ -29,6 +30,7 @@ func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
 	}
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
+	pipeline.ingest.SetScreenSize(pipeline.cols, pipeline.rows)
 	for _, segment := range pipeline.ingest.Parse(output) {
 		if err := pipeline.applySegment(segment); err != nil {
 			return err
@@ -41,6 +43,8 @@ func (pipeline *terminalHistoryPipeline) Resize(cols int, rows int, event histor
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
 	pipeline.cols = cols
+	pipeline.rows = rows
+	pipeline.ingest.SetScreenSize(cols, rows)
 	pipeline.track.SetPrimaryScreenRows(rows)
 	return pipeline.track.Apply(event)
 }

@@ -480,6 +480,50 @@ func TestTerminalIngestOutputPlainStyledTextDoesNotPadBackgroundTail(t *testing.
 	}
 }
 
+func TestTerminalIngestOutputScrollWrappedRowPreservesBackgroundFootprint(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 8, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := "seed1\nseed2\n\x1b[48;5;24mabcdefghij\x1b[0m\n"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	liveSnapshot, err := server.LiveSnapshot("term-1")
+	if err != nil {
+		t.Fatalf("live snapshot: %v", err)
+	}
+	if got := liveSnapshot.Screen.Cells[1][7].Style.BG; got != "idx:24" {
+		t.Fatalf("live scrolled wrapped row tail should keep bg, got %#v", liveSnapshot.Screen.Cells[1])
+	}
+
+	window, err := server.LatestWindow("term-1", 8, 6)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) < 3 || window.Rows[len(window.Rows)-2].Text != "abcdefgh" || window.Rows[len(window.Rows)-1].Text != "ij      " {
+		t.Fatalf("history window should carry scrolled wrapped row bg footprint, got %#v", window.Rows)
+	}
+	cells := window.Rows[len(window.Rows)-1].Cells
+	if len(cells) != 3 {
+		t.Fatalf("wrapped continuation row should keep compact bg footprint, got %#v", cells)
+	}
+	if cells[0].Text != "i" || cells[0].Width != 1 || cells[0].Style.BG != "idx:24" {
+		t.Fatalf("first wrapped cell should keep bg, got %#v", cells[0])
+	}
+	if cells[1].Text != "j" || cells[1].Width != 1 || cells[1].Style.BG != "idx:24" {
+		t.Fatalf("second wrapped cell should keep bg, got %#v", cells[1])
+	}
+	if cells[2].Text != "" || cells[2].Width != 6 || cells[2].Style.BG != "idx:24" {
+		t.Fatalf("tail footprint should be authoritative blank cell, got %#v row=%#v", cells[2], cells)
+	}
+}
+
 func TestTerminalIngestOutputControlledHistorySemantics(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

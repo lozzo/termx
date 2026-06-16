@@ -209,11 +209,12 @@
 | 215E1-R36. SK copy history 背景空格真实保真 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`scripts/`、`workflow.md` | 已修复 core history projection/mutation 丢真实空白 footprint：`Text="" Width>0` 和 `Width > text width` 的带背景空格会物化成 history 空格 cell，再经 protocol/TUI/copy render 保真；不靠 selection overlay，也不把普通 SGR 背景凭空铺满整行 |
 | 215E1-R37. SK copy history 真实 tmux raw 背景复现 | 完成 | `scripts/`、`workflow.md` | 已修正背景 harness：raw-preserve 重新抓当前 tmux pane 的 `capture-pane -epN` 并记录 capture mode；新增确定性 `bg-footprint` 场景，只输出“无背景尾部”和“真实背景空格尾部”两行，live/copy raw 都证明真实背景空格保真 |
 | 215E1-R38. SK copy history shell 执行背景复现 | 完成 | `scripts/`、`termx-tui-v3/render/`、`workflow.md` | 已按真实手工路径改成双客户端 harness：direct PTY 里的 termx 客户端执行 stress，tmux 里的第二个 termx 客户端抓 live/copy raw；修复 history 渲染 wrapped continuation row 尾部背景空白丢失，报告收敛到 `reproduced=no` / `screen_diff_candidates=0` |
+| 215E1-R39. SK copy history core 背景 footprint 回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`scripts/`、`workflow.md` | 已撤掉 R38 的 TUI display-only 补丁；core history parser 现在只在 terminal 滚屏新建物理行继承背景时，把尾部空白作为 authoritative `Text="" Width=N Style=BG` footprint 写进 history；`bg-forensics` raw harness 收敛到 `screen_lost_bg_cells=0` |
 
 当前下一步：
 
-- `215E1-R38 copy history shell 执行背景复现` 已完成
-- 准入：双客户端 `bg-forensics` harness 通过，render 单测覆盖 display-only 尾部背景补齐；后续不要再把不能复现的两行脚本当成现场结论
+- `215E1-R39 copy history core 背景 footprint 回归` 已完成
+- 当前没有进行中的切片；后续只按真实回归或新需求新开小切片
 
 ## 6. 必做证据
 
