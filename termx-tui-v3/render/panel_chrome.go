@@ -232,16 +232,29 @@ func renderPaneChromePrimitive(c *canvas, primitive ChromePrimitive, panel Panel
 		return
 	}
 	for _, slot := range paneChromeTopSlots(primitive.Rect, panel, primitive.Style) {
-		c.overlayTextStyled(slot.x, primitive.Rect.Y, DisplayWidth(slot.text), slot.text, slot.style, primitive.Owner, primitive.Layer)
+		c.overlayTextStyled(slot.x, primitive.Rect.Y, slot.paintWidth(), slot.text, slot.style, primitive.Owner, primitive.Layer)
 	}
 }
 
 type paneChromeTopSlot struct {
-	x        int
-	text     string
-	style    StyleToken
-	priority int
-	actionID string
+	x    int
+	text string
+	// 中文说明：layoutWidth 只用于保留右侧状态槽锚点；绘制仍按 text 宽度，避免空白覆盖顶边框。
+	layoutWidth int
+	style       StyleToken
+	priority    int
+	actionID    string
+}
+
+func (slot paneChromeTopSlot) paintWidth() int {
+	return DisplayWidth(slot.text)
+}
+
+func (slot paneChromeTopSlot) advanceWidth() int {
+	if slot.layoutWidth > 0 {
+		return slot.layoutWidth
+	}
+	return slot.paintWidth()
 }
 
 func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []paneChromeTopSlot {
@@ -270,7 +283,7 @@ func paneChromeTopSlots(rect Rect, panel PanelVM, borderStyle StyleToken) []pane
 		for _, slot := range paneChromeLabelSlots(panel, borderStyle, leftWidth) {
 			slot.x = x
 			slots = append(slots, slot)
-			x += DisplayWidth(slot.text)
+			x += slot.advanceWidth()
 		}
 	}
 	return slots
@@ -313,7 +326,7 @@ func paneChromeOptionalLabelSlots(panel PanelVM, borderStyle StyleToken) []paneC
 func paneChromeSlotsWidth(slots []paneChromeTopSlot) int {
 	width := 0
 	for _, slot := range slots {
-		width += DisplayWidth(slot.text)
+		width += slot.advanceWidth()
 	}
 	return width
 }

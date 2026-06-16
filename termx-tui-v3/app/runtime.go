@@ -775,6 +775,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
 				return msg
 			}
+			if mouseWheelCanRouteToCopyMode(inputMsg.Event, resolution) {
+				return msg
+			}
 			return NoopMsg{}
 		}
 		if runtime.mouseEventHitsUI(resolution) {
@@ -856,6 +859,23 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
 		return msg
+	}
+}
+
+func mouseWheelCanRouteToCopyMode(event input.InputEvent, resolution mouseHitResolution) bool {
+	if event.Kind != input.EventKindMouse || event.Mouse != input.MouseWheelUp {
+		return false
+	}
+	// 中文说明：带 RawSeq 的普通鼠标事件默认会被 terminal mouse tracking 吞掉；
+	// 滚轮上滑同时也是 copy mode 入口，命中内容区时必须继续交给 input router。
+	if !resolution.HasForeground {
+		return true
+	}
+	switch resolution.Foreground.Kind {
+	case render.HitRegionPaneContent, render.HitRegionHistoryRow:
+		return true
+	default:
+		return false
 	}
 }
 

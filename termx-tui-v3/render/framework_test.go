@@ -55,6 +55,22 @@ func TestFrameworkRendersTuiv2TerminalOwnerHeader(t *testing.T) {
 	}
 }
 
+func TestFrameworkTerminalHeaderKeepsTopBorderBetweenTitleAndStatus(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell.Workspace.Tabs[0].Panes[0].Title = "main"
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Ready: true, State: state.TerminalLiveAttached, Lines: []string{"ready"}}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	top := result.Lines()[1]
+	if !strings.Contains(top, " main ") || !strings.Contains(top, "x1") || !strings.Contains(top, "◆ owner") {
+		t.Fatalf("expected terminal chrome tokens, got %#v", result.Lines())
+	}
+	if !strings.Contains(SliceCells(top, 8, 60), "─") {
+		t.Fatalf("terminal title slot must not blank out top border, got %#v", top)
+	}
+}
+
 func TestFrameworkRendersTuiv2FloatingTerminalHeader(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	var floatingResult state.FloatingCommandResult

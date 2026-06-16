@@ -558,6 +558,52 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 	}
 }
 
+func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{{Text: "new", LineID: 20}},
+		)}},
+	}
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	frame := lastFrame(t, host.Frames())
+	content := frameHitRegion(t, frame, render.HitRegionPaneContent, state.DefaultPaneID)
+	wheel := mouseEventAt(content.Rect)
+	wheel.Mouse = input.MouseWheelUp
+	wheel.RawSeq = "\x1b[<64;10;5M"
+
+	if err := host.SendInput(wheel); err != nil {
+		t.Fatalf("send raw wheel latest: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain raw wheel latest: %v", err)
+	}
+	if len(core.LatestRequests) != 1 || !runtime.State().CopyMode.Active {
+		t.Fatalf("raw wheel up should enter copy mode, latest=%#v copy=%#v", core.LatestRequests, runtime.State().CopyMode)
+	}
+}
+
 func TestCopyModeLatestStartsAtNewestVisibleTail(t *testing.T) {
 	latestRows := make([]state.HistoryRow, 0, 10)
 	for i := 1; i <= 10; i++ {

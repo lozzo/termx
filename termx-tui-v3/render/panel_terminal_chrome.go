@@ -44,7 +44,7 @@ func paneChromeTerminalLeftTitle(terminal TerminalChromeVM, panel PanelVM, width
 	if style == "" {
 		style = paneChromeTitleStyle(panel, borderStyle)
 	}
-	return paneChromeTopSlot{text: PadRightCells(text, width), style: style, priority: 0}
+	return paneChromeTopSlot{text: text, layoutWidth: width, style: style, priority: 0}
 }
 
 func paneChromeTerminalRightSlots(terminal TerminalChromeVM, borderStyle StyleToken) []paneChromeTopSlot {

@@ -39,7 +39,7 @@ func PaneChromePrimitive(panel PanelVM, rect Rect, style StyleToken) ChromePrimi
 	}
 	for _, slot := range paneChromeTopSlots(rect, panel, style) {
 		chromeSlot := ChromeSlot{
-			Rect:     Rect{X: slot.x, Y: rect.Y, W: DisplayWidth(slot.text), H: 1},
+			Rect:     Rect{X: slot.x, Y: rect.Y, W: slot.paintWidth(), H: 1},
 			Text:     slot.text,
 			Style:    slot.style,
 			ActionID: slot.actionID,
@@ -81,12 +81,12 @@ func FloatingChromePrimitive(floating FloatingVM, rect Rect, style StyleToken) C
 	if leftWidth > 0 && floating.Chrome.Terminal.TerminalID != "" {
 		x := innerLeft
 		for _, slot := range paneChromeTerminalLabelSlots(PanelVM{ID: floating.ID, Title: floating.Title, Active: floating.Active, Chrome: PanelChromeVM{Terminal: floating.Chrome.Terminal}}, style, leftWidth) {
-			chromeSlot := ChromeSlot{Rect: Rect{X: x, Y: rect.Y, W: DisplayWidth(slot.text), H: 1}, Text: slot.text, Style: slot.style, ActionID: slot.actionID}
+			chromeSlot := ChromeSlot{Rect: Rect{X: x, Y: rect.Y, W: slot.paintWidth(), H: 1}, Text: slot.text, Style: slot.style, ActionID: slot.actionID}
 			primitive.LabelSlots = append(primitive.LabelSlots, chromeSlot)
 			if chromeSlot.ActionID != "" {
 				primitive.ActionSlots = append(primitive.ActionSlots, chromeSlot)
 			}
-			x += DisplayWidth(slot.text)
+			x += slot.advanceWidth()
 		}
 	}
 	return primitive
