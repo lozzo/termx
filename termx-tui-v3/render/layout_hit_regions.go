@@ -17,7 +17,7 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	regions = appendHeaderHitRegions(regions, shell.Header, plan.Header, plan.Viewport)
 	regions = appendFooterHitRegions(regions, shell.Footer, plan.Footer, plan.FooterFrame, plan.Viewport)
 	if len(plan.Panels) == 0 && plan.Body.W > 0 && plan.Body.H > 0 {
-		regions = appendTranslatedRegions(regions, shell.Layout.BodyContent.HitRegions, plan.Body, plan.Viewport)
+		regions = appendTranslatedRegionsWithOwner(regions, shell.Layout.BodyContent.HitRegions, plan.Body, "", plan.Viewport)
 	}
 	for i := len(plan.Floatings) - 1; i >= 0; i-- {
 		regions = appendFloatingHitRegions(regions, plan.Floatings[i], plan.Viewport)
@@ -28,15 +28,15 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 	regions = appendSplitResizeHitRegions(regions, shell.Layout.Split, plan.Body, plan.Viewport, rootSplitPath)
 	for _, panel := range plan.Panels {
 		regions = appendPanelChromeHitRegions(regions, panel, false, plan.Viewport)
-		regions = appendTranslatedContentRegions(regions, panel.Panel.Content, panel.ContentRect, plan.Viewport)
+		regions = appendTranslatedContentRegions(regions, panel.Panel.Content, panel.ContentRect, panel.Panel.ID, plan.Viewport)
 		regions = appendPanelContentHitRegion(regions, panel, plan.Viewport)
 	}
 	return regions
 }
 
-func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin Rect, viewport Rect) []HitRegion {
+func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin Rect, ownerID string, viewport Rect) []HitRegion {
 	if content.Kind != ContentEmptyPane || len(content.Lines) == 0 {
-		return appendTranslatedRegions(out, content.HitRegions, origin, viewport)
+		return appendTranslatedRegionsWithOwner(out, content.HitRegions, origin, ownerID, viewport)
 	}
 	startY := 0
 	if origin.H >= len(content.Lines)+2 {
@@ -54,7 +54,22 @@ func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin R
 		region.Rect.H = 1
 		regions = append(regions, region)
 	}
-	return appendTranslatedRegions(out, regions, origin, viewport)
+	return appendTranslatedRegionsWithOwner(out, regions, origin, ownerID, viewport)
+}
+
+func appendTranslatedRegionsWithOwner(out []HitRegion, regions []HitRegion, origin Rect, ownerID string, viewport Rect) []HitRegion {
+	if ownerID == "" {
+		return appendTranslatedRegions(out, regions, origin, viewport)
+	}
+	owned := make([]HitRegion, 0, len(regions))
+	for _, region := range regions {
+		if region.PaneID == "" {
+			// 中文说明：内容命中区继承所属 pane/floating，runtime 才能区分 focus 与内容动作。
+			region.PaneID = ownerID
+		}
+		owned = append(owned, region)
+	}
+	return appendTranslatedRegions(out, owned, origin, viewport)
 }
 
 func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewport Rect) []HitRegion {
@@ -129,7 +144,7 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingResizeDrag.String()}, viewport)
 	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingMoveDrag.String()}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
-		out = appendTranslatedRegions(out, floating.Floating.Content.HitRegions, floating.ContentRect, viewport)
+		out = appendTranslatedRegionsWithOwner(out, floating.Floating.Content.HitRegions, floating.ContentRect, id, viewport)
 		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: id, ActionID: ActionFloatingRaise.String()}, viewport)
 	}
 	return out

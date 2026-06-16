@@ -358,6 +358,7 @@ func copyHistoryPatchHitRegions(previous []render.HitRegion, history state.Histo
 			Rect:   render.Rect{X: rect.X + prefix, Y: rect.Y + i, W: regionWidth, H: 1},
 			LineID: row.LineID,
 			Row:    rowIndex,
+			PaneID: copyMode.PaneID,
 		})
 	}
 	return out

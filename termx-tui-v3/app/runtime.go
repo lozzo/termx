@@ -797,7 +797,15 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	}
-	if command, ok := PaneCommandFromHitRegion(region); ok {
+	switch region.Kind {
+	case render.HitRegionToastClose:
+		return ShellCloseCurrentToastMsg{}
+	case render.HitRegionToast:
+		return NoopMsg{}
+	case render.HitRegionOverlay:
+		return ShellCloseOverlayMsg{}
+	}
+	if command, ok := PaneCommandFromHitRegion(region); ok && command.Action != state.PaneCommandFocus {
 		runtime.fillMousePaneCommandDefaults(&command)
 		if command.Action == state.PaneCommandSplit {
 			return ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
@@ -808,16 +816,23 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 		return ShellPaneCommandMsg{Command: command}
 	}
+	// 中文说明：history row 是内容前景命中区；点击非 active pane 的历史文本时必须先切焦点，
+	// 不能直接进入 copy selection，否则文本区域会吞掉 panel focus。
+	if historyRegion, ok := historyRowRegionAt(runtime.lastHitRegions, inputMsg.Event); ok {
+		if focusMsg, shouldFocus := runtime.historyRowFocusMsg(historyRegion, inputMsg.Event); shouldFocus {
+			return focusMsg
+		}
+		if !runtime.copyModeMouseSelectAllowed(historyRegion) {
+			return NoopMsg{}
+		}
+		col := historyHitRegionDisplayColumn(inputMsg.Event, historyRegion)
+		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: historyRegion.Row, Col: col}, PaneID: historyRegion.PaneID}
+	}
+	if command, ok := PaneCommandFromHitRegion(region); ok {
+		runtime.fillMousePaneCommandDefaults(&command)
+		return ShellPaneCommandMsg{Command: command}
+	}
 	switch region.Kind {
-	case render.HitRegionToastClose:
-		return ShellCloseCurrentToastMsg{}
-	case render.HitRegionToast:
-		return NoopMsg{}
-	case render.HitRegionOverlay:
-		return ShellCloseOverlayMsg{}
-	case render.HitRegionHistoryRow:
-		col := historyHitRegionDisplayColumn(inputMsg.Event, region)
-		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: region.Row, Col: col}}
 	case render.HitRegionContentAction:
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
@@ -865,6 +880,71 @@ func historyHitRegionDisplayColumn(event input.InputEvent, region render.HitRegi
 		return 0
 	}
 	return col
+}
+
+func (runtime *AppRuntime) historyRowFocusMsg(region render.HitRegion, event input.InputEvent) (Msg, bool) {
+	if msg, ok := runtime.focusMsgForOwner(region.PaneID); ok {
+		return msg, true
+	}
+	if region.PaneID != "" {
+		return nil, false
+	}
+	owner, ok := enclosingFocusOwnerRegionAt(runtime.lastHitRegions, event)
+	if !ok {
+		return nil, false
+	}
+	return runtime.focusMsgForOwner(owner.PaneID)
+}
+
+func (runtime *AppRuntime) focusMsgForOwner(ownerID string) (Msg, bool) {
+	if ownerID == "" {
+		return nil, false
+	}
+	shell := runtime.state.Shell.EnsureDefaults()
+	if _, ok := shell.PaneByID(ownerID); ok {
+		if shell.ActivePaneID == ownerID && shell.ActiveFloatingID == "" {
+			return nil, false
+		}
+		return ShellPaneCommandMsg{Command: state.PaneCommand{
+			Action: state.PaneCommandFocus,
+			Target: state.PaneCommandTarget{
+				PaneID: ownerID,
+			},
+			Source: state.PaneCommandSourceMouse,
+		}}, true
+	}
+	for _, floating := range shell.Floatings {
+		if floating.ID != ownerID {
+			continue
+		}
+		if shell.ActiveFloatingID == ownerID {
+			return nil, false
+		}
+		return ShellFloatingCommandMsg{Command: state.FloatingCommand{
+			Action:   state.FloatingCommandFocusRaise,
+			TargetID: ownerID,
+			Source:   state.PaneCommandSourceMouse,
+		}}, true
+	}
+	return nil, false
+}
+
+func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) bool {
+	copyMode := runtime.state.CopyMode
+	if !copyMode.Active {
+		return false
+	}
+	if region.PaneID == "" {
+		return true
+	}
+	if copyMode.PaneID == region.PaneID || copyMode.ViewID == state.TerminalFloatingViewID(region.PaneID) {
+		return true
+	}
+	shell := runtime.state.Shell.EnsureDefaults()
+	if shell.ActivePaneID == region.PaneID && shell.ActiveFloatingID == "" && copyMode.PaneID == "" && copyMode.ViewID == "" {
+		return true
+	}
+	return false
 }
 
 func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent) bool {
@@ -1112,6 +1192,50 @@ func hitRegionAt(regions []render.HitRegion, event input.InputEvent) (render.Hit
 		}
 	}
 	return render.HitRegion{}, false
+}
+
+func historyRowRegionAt(regions []render.HitRegion, event input.InputEvent) (render.HitRegion, bool) {
+	col, row := mouseEventPoint(event)
+	for _, region := range regions {
+		if region.Kind == render.HitRegionHistoryRow && pointInRect(col, row, region.Rect) {
+			return region, true
+		}
+	}
+	return render.HitRegion{}, false
+}
+
+func enclosingFocusOwnerRegionAt(regions []render.HitRegion, event input.InputEvent) (render.HitRegion, bool) {
+	col, row := mouseEventPoint(event)
+	for _, region := range regions {
+		if !mouseFocusOwnerRegion(region) || !pointInRect(col, row, region.Rect) {
+			continue
+		}
+		return region, true
+	}
+	return render.HitRegion{}, false
+}
+
+func mouseFocusOwnerRegion(region render.HitRegion) bool {
+	switch region.Kind {
+	case render.HitRegionPaneContent:
+		return region.PaneID != ""
+	case render.HitRegionContentAction:
+		return region.PaneID != "" && region.ActionID == render.ActionFloatingRaise.String()
+	default:
+		return false
+	}
+}
+
+func mouseEventPoint(event input.InputEvent) (int, int) {
+	col := event.Col - 1
+	row := event.Row - 1
+	if event.Col <= 0 {
+		col = event.Col
+	}
+	if event.Row <= 0 {
+		row = event.Row
+	}
+	return col, row
 }
 
 func pointInRect(col int, row int, rect render.Rect) bool {

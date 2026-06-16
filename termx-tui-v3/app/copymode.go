@@ -88,6 +88,7 @@ func (CopyModeScrollMsg) isMsg() {}
 
 type CopyModeMouseSelectMsg struct {
 	Position state.CopyPosition
+	PaneID   string
 }
 
 func (CopyModeMouseSelectMsg) isMsg() {}
@@ -140,6 +141,9 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			root.CopyMode = root.CopyMode.ScrollCursor(msg.Delta, len(root.History.Rows))
 			return root.Advance(), nil
 		case CopyModeMouseSelectMsg:
+			if !copyModeMouseSelectTargetMatches(root, msg.PaneID) {
+				return root, nil
+			}
 			root.CopyMode = root.CopyMode.MoveCursor(msg.Position)
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
@@ -149,6 +153,18 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			return root, nil
 		}
 	}
+}
+
+func copyModeMouseSelectTargetMatches(root state.Root, paneID string) bool {
+	if paneID == "" {
+		return true
+	}
+	copyMode := root.CopyMode
+	if copyMode.PaneID == paneID || copyMode.ViewID == state.TerminalFloatingViewID(paneID) {
+		return true
+	}
+	shell := root.Shell.EnsureDefaults()
+	return copyMode.PaneID == "" && copyMode.ViewID == "" && paneID == shell.ActivePaneID && shell.ActiveFloatingID == ""
 }
 
 func copyModeInputContext(copyMode state.CopyModeStore) bool {

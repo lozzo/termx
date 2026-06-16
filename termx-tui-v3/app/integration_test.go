@@ -5327,6 +5327,78 @@ func TestCopyModeMouseSelectionUsesHistoryDisplayColumns(t *testing.T) {
 	}
 }
 
+func TestCopyModeHistoryTextClickFocusesInactivePaneBeforeSelecting(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			36,
+			7,
+			[]state.HistoryRow{
+				{Text: "inactive history one", LineID: 10},
+				{Text: "inactive history two", LineID: 11},
+			},
+		)}},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(42, 10)
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, NewSyncEffectRunner())
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneEmpty},
+		Source:         state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split: %v", err)
+	}
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != "pane-2" {
+		t.Fatalf("split should activate pane-2, got %#v", runtime.State().Shell)
+	}
+	before := runtime.State().CopyMode.Cursor
+	frame := lastFrame(t, host.Frames())
+	target := copyHistoryRowHitRegionForPane(t, frame, state.DefaultPaneID, 1)
+
+	if err := host.SendInput(mouseEventAt(target.Rect)); err != nil {
+		t.Fatalf("send inactive history click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain inactive history click: %v", err)
+	}
+	if runtime.State().Shell.EnsureDefaults().ActivePaneID != state.DefaultPaneID {
+		t.Fatalf("history text click should focus bound pane first, got %#v", runtime.State().Shell)
+	}
+	if got := runtime.State().CopyMode.Cursor; got != before {
+		t.Fatalf("inactive history click must not select before focus got=%#v want=%#v", got, before)
+	}
+	if runtime.State().CopyMode.Mark != nil {
+		t.Fatalf("inactive history click must not set mark before focus, got %#v", runtime.State().CopyMode.Mark)
+	}
+
+	frame = lastFrame(t, host.Frames())
+	target = copyHistoryRowHitRegionForPane(t, frame, state.DefaultPaneID, 1)
+	if err := host.SendInput(mouseEventAt(target.Rect)); err != nil {
+		t.Fatalf("send active history click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain active history click: %v", err)
+	}
+	if runtime.State().CopyMode.Cursor.Row != 1 || runtime.State().CopyMode.Mark == nil || runtime.State().CopyMode.Mark.Row != 1 {
+		t.Fatalf("focused history click should select row, got %#v", runtime.State().CopyMode)
+	}
+}
+
 func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	core := &services.FakeCoreClient{
@@ -5687,6 +5759,17 @@ func newInteractiveCopyModeRuntimeWithRunner(host *FakeTerminalHost, core servic
 		CopyModeDeps{Core: core, Clipboard: clipboard, Terminal: terminal, Rows: 20},
 		WorkbenchDeps{},
 	)
+}
+
+func copyHistoryRowHitRegionForPane(t *testing.T, frame render.Frame, paneID string, row int) render.HitRegion {
+	t.Helper()
+	for _, region := range frame.HitRegions {
+		if region.Kind == render.HitRegionHistoryRow && region.PaneID == paneID && region.Row == row {
+			return region
+		}
+	}
+	t.Fatalf("missing copy history row hit region pane=%s row=%d in %#v", paneID, row, frame.HitRegions)
+	return render.HitRegion{}
 }
 
 type recordingEffectRunner struct {
