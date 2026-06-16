@@ -2904,7 +2904,27 @@ func TestInteractiveRuntimeTerminalMouseTrackingPassthroughOnlyFromContent(t *te
 		t.Fatalf("tracked content mouse should passthrough raw SGR, got %#v", terminal.Inputs)
 	}
 
-	chrome := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionPaneChrome, state.DefaultPaneID)
+	runtime.lastHitRegions = append([]render.HitRegion{{
+		Kind:     render.HitRegionContentAction,
+		Rect:     content.Rect,
+		PaneID:   state.DefaultPaneID,
+		ActionID: render.ActionEmptyAttach.String(),
+	}}, runtime.lastHitRegions...)
+	actionMouse := mouseEventAt(content.Rect)
+	actionMouse.Mouse = input.MouseRight
+	actionMouse.RawSeq = "\x1b[<2;11;5M"
+	if err := host.SendInput(actionMouse); err != nil {
+		t.Fatalf("send content action mouse: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain content action mouse: %v", err)
+	}
+	if len(terminal.Inputs) != 1 {
+		t.Fatalf("foreground content action must not passthrough to terminal, got %#v", terminal.Inputs)
+	}
+
+	frame = lastRuntimeFrame(t, host)
+	chrome := frameHitRegion(t, frame, render.HitRegionPaneChrome, state.DefaultPaneID)
 	chromeMouse := mouseEventAt(chrome.Rect)
 	chromeMouse.Mouse = input.MouseRight
 	chromeMouse.RawSeq = "\x1b[<2;1;1M"
@@ -2916,6 +2936,42 @@ func TestInteractiveRuntimeTerminalMouseTrackingPassthroughOnlyFromContent(t *te
 	}
 	if len(terminal.Inputs) != 1 {
 		t.Fatalf("chrome mouse must not passthrough to terminal, got %#v", terminal.Inputs)
+	}
+
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"},
+		Source:         state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("post split tracked pane: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-2",
+		Cols:       38,
+		Rows:       22,
+		Lines:      []string{"tracking-2"},
+		Modes:      state.LiveTerminalModes{MouseTracking: true, MouseSGR: true},
+	}}); err != nil {
+		t.Fatalf("post second live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split tracked pane: %v", err)
+	}
+	frame = lastRuntimeFrame(t, host)
+	inactiveContent := frameHitRegion(t, frame, render.HitRegionPaneContent, state.DefaultPaneID)
+	inactiveMouse := mouseEventAt(inactiveContent.Rect)
+	inactiveMouse.Mouse = input.MouseRight
+	inactiveMouse.RawSeq = "\x1b[<2;12;6M"
+	if err := host.SendInput(inactiveMouse); err != nil {
+		t.Fatalf("send inactive pane mouse: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain inactive pane mouse: %v", err)
+	}
+	if len(terminal.Inputs) != 1 {
+		t.Fatalf("inactive pane raw mouse must not leak to active terminal, got %#v", terminal.Inputs)
 	}
 }
 

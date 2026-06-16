@@ -210,6 +210,15 @@ type mouseActionClickState struct {
 	Col      int
 }
 
+type mouseHitResolution struct {
+	Foreground    render.HitRegion
+	HasForeground bool
+	HistoryRow    render.HitRegion
+	HasHistoryRow bool
+	FocusOwner    render.HitRegion
+	HasFocusOwner bool
+}
+
 type mouseDragKind string
 
 const (
@@ -757,19 +766,23 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	if dragMsg, handled := runtime.dispatchMouseDrag(inputMsg.Event); handled {
 		return dragMsg
 	}
+	resolution := resolveMouseHitRegions(runtime.lastHitRegions, inputMsg.Event)
 	if inputMsg.Event.Mouse != input.MouseLeft {
-		if runtime.mouseEventCanPassthrough(inputMsg.Event) {
-			return msg
+		if inputMsg.Event.RawSeq != "" {
+			if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
+				return msg
+			}
+			return NoopMsg{}
 		}
-		if runtime.mouseEventHitsUI(inputMsg.Event) {
+		if runtime.mouseEventHitsUI(resolution) {
 			return NoopMsg{}
 		}
 		return msg
 	}
-	region, ok := hitRegionAt(runtime.lastHitRegions, inputMsg.Event)
-	if !ok {
+	if !resolution.HasForeground {
 		return msg
 	}
+	region := resolution.Foreground
 	if region.Kind == render.HitRegionPaneResize {
 		if drag, ok := paneResizeDragState(region, inputMsg.Event); ok {
 			runtime.mouseDrag = drag
@@ -816,17 +829,20 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 		return ShellPaneCommandMsg{Command: command}
 	}
+	if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
+		return msg
+	}
 	// 中文说明：history row 是内容前景命中区；点击非 active pane 的历史文本时必须先切焦点，
 	// 不能直接进入 copy selection，否则文本区域会吞掉 panel focus。
-	if historyRegion, ok := historyRowRegionAt(runtime.lastHitRegions, inputMsg.Event); ok {
-		if focusMsg, shouldFocus := runtime.historyRowFocusMsg(historyRegion, inputMsg.Event); shouldFocus {
+	if resolution.HasHistoryRow {
+		if focusMsg, shouldFocus := runtime.historyRowFocusMsg(resolution); shouldFocus {
 			return focusMsg
 		}
-		if !runtime.copyModeMouseSelectAllowed(historyRegion) {
+		if !runtime.copyModeMouseSelectAllowed(resolution.HistoryRow) {
 			return NoopMsg{}
 		}
-		col := historyHitRegionDisplayColumn(inputMsg.Event, historyRegion)
-		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: historyRegion.Row, Col: col}, PaneID: historyRegion.PaneID}
+		col := historyHitRegionDisplayColumn(inputMsg.Event, resolution.HistoryRow)
+		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: resolution.HistoryRow.Row, Col: col}, PaneID: resolution.HistoryRow.PaneID}
 	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
 		runtime.fillMousePaneCommandDefaults(&command)
@@ -882,18 +898,21 @@ func historyHitRegionDisplayColumn(event input.InputEvent, region render.HitRegi
 	return col
 }
 
-func (runtime *AppRuntime) historyRowFocusMsg(region render.HitRegion, event input.InputEvent) (Msg, bool) {
+func (runtime *AppRuntime) historyRowFocusMsg(resolution mouseHitResolution) (Msg, bool) {
+	if !resolution.HasHistoryRow {
+		return nil, false
+	}
+	region := resolution.HistoryRow
 	if msg, ok := runtime.focusMsgForOwner(region.PaneID); ok {
 		return msg, true
 	}
 	if region.PaneID != "" {
 		return nil, false
 	}
-	owner, ok := enclosingFocusOwnerRegionAt(runtime.lastHitRegions, event)
-	if !ok {
+	if !resolution.HasFocusOwner {
 		return nil, false
 	}
-	return runtime.focusMsgForOwner(owner.PaneID)
+	return runtime.focusMsgForOwner(resolution.FocusOwner.PaneID)
 }
 
 func (runtime *AppRuntime) focusMsgForOwner(ownerID string) (Msg, bool) {
@@ -947,30 +966,61 @@ func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) b
 	return false
 }
 
-func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent) bool {
-	if event.RawSeq == "" {
+func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent, resolution mouseHitResolution) bool {
+	if event.RawSeq == "" || !resolution.HasFocusOwner || !resolution.HasForeground {
 		return false
 	}
-	region, ok := hitRegionAt(runtime.lastHitRegions, event)
-	if !ok || region.Kind != render.HitRegionPaneContent {
+	shell := runtime.state.Shell.EnsureDefaults()
+	if shell.Overlay.Open || copyModeInputContext(runtime.state.CopyMode) {
 		return false
 	}
-	if region.PaneID != runtime.state.Shell.EnsureDefaults().ActivePaneID {
+	if !mouseForegroundAllowsTerminalPassthrough(resolution.Foreground) {
 		return false
 	}
-	return runtime.paneMouseTrackingEnabled(region.PaneID)
+	return runtime.focusOwnerMouseTrackingEnabled(resolution.FocusOwner)
 }
 
-func (runtime *AppRuntime) mouseEventHitsUI(event input.InputEvent) bool {
-	region, ok := hitRegionAt(runtime.lastHitRegions, event)
-	if !ok {
+func (runtime *AppRuntime) mouseEventHitsUI(resolution mouseHitResolution) bool {
+	if !resolution.HasForeground {
 		return false
 	}
+	region := resolution.Foreground
 	switch region.Kind {
 	case render.HitRegionPaneContent, render.HitRegionHistoryRow:
 		return false
+	case render.HitRegionContentAction:
+		return region.ActionID != render.ActionFloatingRaise.String()
 	default:
 		return true
+	}
+}
+
+func mouseForegroundAllowsTerminalPassthrough(region render.HitRegion) bool {
+	switch region.Kind {
+	case render.HitRegionPaneContent:
+		return true
+	case render.HitRegionContentAction:
+		return region.ActionID == render.ActionFloatingRaise.String()
+	default:
+		return false
+	}
+}
+
+func (runtime *AppRuntime) focusOwnerMouseTrackingEnabled(region render.HitRegion) bool {
+	shell := runtime.state.Shell.EnsureDefaults()
+	switch region.Kind {
+	case render.HitRegionPaneContent:
+		if region.PaneID != shell.ActivePaneID || shell.ActiveFloatingID != "" {
+			return false
+		}
+		return runtime.paneMouseTrackingEnabled(region.PaneID)
+	case render.HitRegionContentAction:
+		if region.ActionID != render.ActionFloatingRaise.String() || region.PaneID != shell.ActiveFloatingID {
+			return false
+		}
+		return runtime.floatingMouseTrackingEnabled(region.PaneID)
+	default:
+		return false
 	}
 }
 
@@ -987,6 +1037,18 @@ func (runtime *AppRuntime) paneMouseTrackingEnabled(paneID string) bool {
 		terminalID = binding.TerminalID
 	}
 	surface := runtime.state.Surface.SurfaceForTerminal(terminalID)
+	return surface.Modes.MousePassthroughEnabled()
+}
+
+func (runtime *AppRuntime) floatingMouseTrackingEnabled(floatingID string) bool {
+	if floatingID == "" {
+		return false
+	}
+	binding, ok := runtime.state.TerminalViews.FloatingBinding(floatingID)
+	if !ok || binding.TerminalID == "" {
+		return false
+	}
+	surface := runtime.state.Surface.SurfaceForTerminal(binding.TerminalID)
 	return surface.Modes.MousePassthroughEnabled()
 }
 
@@ -1177,42 +1239,27 @@ func mouseDragResizeDelta(drag mouseDragState, event input.InputEvent) int {
 	}
 }
 
-func hitRegionAt(regions []render.HitRegion, event input.InputEvent) (render.HitRegion, bool) {
-	col := event.Col - 1
-	row := event.Row - 1
-	if event.Col <= 0 {
-		col = event.Col
-	}
-	if event.Row <= 0 {
-		row = event.Row
-	}
-	for _, region := range regions {
-		if pointInRect(col, row, region.Rect) {
-			return region, true
-		}
-	}
-	return render.HitRegion{}, false
-}
-
-func historyRowRegionAt(regions []render.HitRegion, event input.InputEvent) (render.HitRegion, bool) {
+func resolveMouseHitRegions(regions []render.HitRegion, event input.InputEvent) mouseHitResolution {
 	col, row := mouseEventPoint(event)
+	resolution := mouseHitResolution{}
 	for _, region := range regions {
-		if region.Kind == render.HitRegionHistoryRow && pointInRect(col, row, region.Rect) {
-			return region, true
-		}
-	}
-	return render.HitRegion{}, false
-}
-
-func enclosingFocusOwnerRegionAt(regions []render.HitRegion, event input.InputEvent) (render.HitRegion, bool) {
-	col, row := mouseEventPoint(event)
-	for _, region := range regions {
-		if !mouseFocusOwnerRegion(region) || !pointInRect(col, row, region.Rect) {
+		if !pointInRect(col, row, region.Rect) {
 			continue
 		}
-		return region, true
+		if !resolution.HasForeground {
+			resolution.Foreground = region
+			resolution.HasForeground = true
+		}
+		if !resolution.HasHistoryRow && region.Kind == render.HitRegionHistoryRow {
+			resolution.HistoryRow = region
+			resolution.HasHistoryRow = true
+		}
+		if !resolution.HasFocusOwner && mouseFocusOwnerRegion(region) {
+			resolution.FocusOwner = region
+			resolution.HasFocusOwner = true
+		}
 	}
-	return render.HitRegion{}, false
+	return resolution
 }
 
 func mouseFocusOwnerRegion(region render.HitRegion) bool {
