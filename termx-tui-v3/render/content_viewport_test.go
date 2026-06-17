@@ -263,6 +263,37 @@ func TestContentViewportCentersEmptyPaneActionsAndStyles(t *testing.T) {
 	}
 }
 
+func TestContentViewportCentersExitedPaneActionsAndStyles(t *testing.T) {
+	lines, regions := liveExitedContentLines(
+		state.TerminalSurfaceStore{TerminalID: "term-1", State: state.TerminalLiveExited, ExitCode: 23, Command: []string{"bash", "-lc", "exit 23"}},
+		state.TerminalSessionStore{},
+		0,
+	)
+	result := RenderContentViewport(ContentRenderRequest{
+		Rect:    Rect{W: 80, H: 8},
+		Content: ContentVM{Kind: ContentExitedPane, Lines: lines, HitRegions: regions},
+	})
+
+	if got, want := strings.TrimSpace(result.Lines[1].PlainString()), "terminal exited: term-1 code:23"; got != want {
+		t.Fatalf("exited pane headline should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
+	}
+	if got, want := strings.TrimSpace(result.Lines[3].PlainString()), "► R restart current terminal ◄"; got != want {
+		t.Fatalf("selected exited restart should be centered got=%q want=%q lines=%#v", got, want, plainContentViewportLines(result.Lines))
+	}
+	if !styledLinesContainText(result.Lines, "► R restart current terminal ◄", StyleWarning) ||
+		!styledLinesContainText(result.Lines, "[ Ctrl-F choose another terminal ]", StyleMuted) {
+		t.Fatalf("exited actions should keep action-specific styles, got %#v", result.Lines)
+	}
+	restart := hitRegionByAction(t, result.HitRegions, ActionExitedRestart.String())
+	if restart.Rect != (Rect{X: 27, Y: 2, W: 25, H: 1}) {
+		t.Fatalf("exited restart hit region should follow centered text, got %#v", restart)
+	}
+	picker := hitRegionByAction(t, result.HitRegions, ActionExitedReconnect.String())
+	if picker.Rect != (Rect{X: 25, Y: 3, W: 30, H: 1}) {
+		t.Fatalf("exited picker hit region should follow centered text, got %#v", picker)
+	}
+}
+
 func TestFrameworkRendersLiveExtentBoundaryDotsWithChromeOverflowMarker(t *testing.T) {
 	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
 		Layout: LayoutVM{Viewport: Rect{W: 16, H: 8}, Panels: []PanelVM{{

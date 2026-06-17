@@ -181,6 +181,54 @@ func TestUIInputReducerFloatingEmptyPaneCTAKeyboardTargetsFloatingPanel(t *testi
 	}
 }
 
+func TestUIInputReducerExitedPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell:   state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-exited", State: state.TerminalLiveExited, ExitCode: 23},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}})
+	if root.Shell.ExitedPaneCTA.SelectedIndex != 1 || len(effects) != 1 {
+		t.Fatalf("down should select picker CTA, shell=%#v effects=%#v", root.Shell.ExitedPaneCTA, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if root.Shell.ExitedPaneCTA.SelectedIndex != 1 || len(effects) != 2 {
+		t.Fatalf("enter should keep exited selection and emit action effects, root=%#v effects=%#v", root.Shell.ExitedPaneCTA, effects)
+	}
+	effect, ok := effects[1].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("enter should emit content action effect, got %#v", effects)
+	}
+	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != render.ActionExitedReconnect.String() || msg.PaneID != state.DefaultPaneID {
+		t.Fatalf("enter should execute selected exited picker CTA, got %#v", msg)
+	}
+}
+
+func TestUIInputReducerExitedPaneCTAKeyboardRestartDefault(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell:   state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-exited", State: state.TerminalLiveExited, ExitCode: 23},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+
+	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if len(effects) != 2 {
+		t.Fatalf("enter should emit handled restart action effects, got %#v", effects)
+	}
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
+		t.Fatalf("enter should execute default restart CTA, got %#v", msg)
+	}
+}
+
 func TestUIInputReducerTerminalPickerDeleteKeysTrimQuery(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker().SetTerminalPickerQuery("日志")}

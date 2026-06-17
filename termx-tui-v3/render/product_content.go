@@ -12,12 +12,26 @@ const contentActionWidth = 12
 
 const emptyPaneActionCount = 4
 
+const exitedPaneActionCount = 2
+
 func EmptyPaneActionCount() int {
 	return emptyPaneActionCount
 }
 
+func ExitedPaneActionCount() int {
+	return exitedPaneActionCount
+}
+
 func EmptyPaneActionID(index int) ActionID {
 	actions := emptyPaneActions()
+	if index < 0 || index >= len(actions) {
+		return ""
+	}
+	return actions[index].ID
+}
+
+func ExitedPaneActionID(index int) ActionID {
+	actions := liveExitedActions()
 	if index < 0 || index >= len(actions) {
 		return ""
 	}
@@ -91,6 +105,19 @@ func emptyPaneActionLabel(label string, selected bool) string {
 		return "► " + label + " ◄"
 	}
 	return "[ " + label + " ]"
+}
+
+type liveExitedActionSpec struct {
+	ID    ActionID
+	Label string
+	Style StyleToken
+}
+
+func liveExitedActions() []liveExitedActionSpec {
+	return []liveExitedActionSpec{
+		{ID: ActionExitedRestart, Label: "R restart current terminal", Style: StyleWarning},
+		{ID: ActionExitedReconnect, Label: "Ctrl-F choose another terminal", Style: StyleMuted},
+	}
 }
 
 func centeredStyledLine(text string, style StyleToken) Line {

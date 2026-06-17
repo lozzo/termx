@@ -1086,6 +1086,10 @@ func copyModeBindingStillValid(root state.Root, copyMode state.CopyModeStore) bo
 }
 
 func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) ContentVM {
+	return buildLiveContentVMWithSelection(surface, session, 0)
+}
+
+func buildLiveContentVMWithSelection(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, selectedIndex int) ContentVM {
 	lines := terminalLiveLineVMs(surface)
 	content := ContentVM{
 		Kind:   ContentTerminalLive,
@@ -1103,8 +1107,7 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 	}
 	if len(content.Lines) == 0 {
 		if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
-			content.Lines = liveExitedLines(surface, session)
-			content.Empty = true
+			content = liveExitedContent(surface, session, nil, selectedIndex)
 		} else if surface.Ready {
 			content.Lines = []Line{NewLine("live surface empty")}
 			content.Empty = true
@@ -1115,11 +1118,49 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 			content.Cursor = Cursor{}
 		}
 	} else if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
-		content.Lines = append(content.Lines, NewLine(""))
-		content.Lines = append(content.Lines, liveExitedLines(surface, session)...)
-		content.Cursor = Cursor{}
+		// 退出态必须先展示生命周期信息；真实 live 内容满屏时，追加到末尾会被当前视口裁掉。
+		content = liveExitedContent(surface, session, content.Lines, selectedIndex)
 	}
 	return content
+}
+
+func liveExitedContent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, previous []Line, selectedIndex int) ContentVM {
+	lines, regions := liveExitedContentLines(surface, session, selectedIndex)
+	if len(previous) > 0 {
+		lines = append(lines, NewLine(""))
+		lines = append(lines, previous...)
+	}
+	return ContentVM{
+		Kind:       ContentExitedPane,
+		Lines:      lines,
+		Status:     liveStatus(surface, session),
+		Empty:      len(previous) == 0,
+		Cursor:     Cursor{},
+		HitRegions: regions,
+	}
+}
+
+func liveExitedContentLines(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, selectedIndex int) ([]Line, []HitRegion) {
+	lines := []Line{liveExitedLine(surface, session)}
+	if exitedAt := liveExitedAt(surface, session); !exitedAt.IsZero() {
+		lines = append(lines, NewLine("exited at: "+exitedAt.UTC().Format(time.RFC3339)))
+	}
+	if command := liveExitCommand(surface, session); command != "" {
+		lines = append(lines, NewLine("command: "+command))
+	}
+	actions := liveExitedActions()
+	if selectedIndex < 0 || selectedIndex >= len(actions) {
+		selectedIndex = 0
+	}
+	regions := make([]HitRegion, 0, len(actions))
+	for index, action := range actions {
+		selected := index == selectedIndex
+		text := emptyPaneActionLabel(action.Label, selected)
+		line := centeredStyledLine(text, action.Style)
+		lines = append(lines, line)
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String()})
+	}
+	return lines, regions
 }
 
 func liveContentExtent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) ContentExtent {
@@ -1162,18 +1203,6 @@ func liveStatus(surface state.TerminalSurfaceStore, session state.TerminalSessio
 	return status
 }
 
-func liveExitedLines(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) []Line {
-	lines := []Line{liveExitedLine(surface, session)}
-	if exitedAt := liveExitedAt(surface, session); !exitedAt.IsZero() {
-		lines = append(lines, NewLine("exited at: "+exitedAt.UTC().Format(time.RFC3339)))
-	}
-	if command := liveExitCommand(surface, session); command != "" {
-		lines = append(lines, NewLine("command: "+command))
-	}
-	lines = append(lines, liveExitedRestartLine(), liveExitedPickerLine())
-	return lines
-}
-
 func liveExitedLine(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) Line {
 	text := "terminal exited"
 	if terminalID := liveTerminalID(surface, session); terminalID != "" {
@@ -1186,14 +1215,6 @@ func liveExitedLine(surface state.TerminalSurfaceStore, session state.TerminalSe
 		text += " " + reason
 	}
 	return Line{Cells: []Cell{styledCell(text, StyleWarning)}}
-}
-
-func liveExitedRestartLine() Line {
-	return Line{Cells: []Cell{styledCell("► R restart current terminal ◄", StyleWarning)}}
-}
-
-func liveExitedPickerLine() Line {
-	return Line{Cells: []Cell{styledCell("[ Ctrl-F choose another terminal ]", StyleMuted)}}
 }
 
 func liveTerminalID(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {

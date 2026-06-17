@@ -1903,7 +1903,7 @@ func TestRenderVMBuilderProjectsLiveExitLifecycle(t *testing.T) {
 	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
-	if content.Kind != ContentTerminalLive || !content.Empty || content.Pending || content.Cursor.Visible {
+	if content.Kind != ContentExitedPane || !content.Empty || content.Pending || content.Cursor.Visible {
 		t.Fatalf("expected exited live content lifecycle, got %#v", content)
 	}
 	if content.Lines[0].PlainString() != "terminal exited: term-live code:0 done" || content.Status != "exited: term-live code:0 done" {
@@ -1914,6 +1914,71 @@ func TestRenderVMBuilderProjectsLiveExitLifecycle(t *testing.T) {
 	}
 	if vm.Shell.Footer.ActiveTarget != "pane:shell exited" {
 		t.Fatalf("expected exited footer active target, got %#v", vm.Shell.Footer)
+	}
+}
+
+func TestRenderVMBuilderShowsLiveExitLifecycleBeforeFullOutput(t *testing.T) {
+	exitedAt := time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC)
+	lines := make([]string, 24)
+	for index := range lines {
+		lines[index] = "screen row " + string(rune('A'+index))
+	}
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Ready:      true,
+			Lines:      lines,
+			Cols:       80,
+			Rows:       24,
+			State:      state.TerminalLiveExited,
+			ExitCode:   23,
+			ExitReason: "done",
+			ExitedAt:   exitedAt,
+			Command:    []string{"bash", "-lc", "exit 23"},
+		},
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-live",
+			Attached:   true,
+			Cols:       80,
+			Rows:       24,
+			State:      state.TerminalLiveExited,
+			ExitCode:   23,
+			ExitReason: "done",
+			ExitedAt:   exitedAt,
+			Command:    []string{"bash", "-lc", "exit 23"},
+		},
+	}
+
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Kind != ContentExitedPane {
+		t.Fatalf("live exited content should use exited pane CTA kind, got %#v", content.Kind)
+	}
+	rendered := RenderContentViewport(ContentRenderRequest{
+		Rect:    Rect{W: 80, H: 5},
+		Content: content,
+	})
+	got := plainContentViewportLines(rendered.Lines)
+	want := []string{
+		"terminal exited: term-live code:23 done",
+		"exited at: 2026-06-17T12:30:00Z",
+		"command: bash -lc exit 23",
+		"► R restart current terminal ◄",
+		"[ Ctrl-F choose another terminal ]",
+	}
+	for index, wantLine := range want {
+		if strings.TrimSpace(got[index]) != wantLine {
+			t.Fatalf("exit lifecycle should be visible and centered before full live output row=%d got=%#v want=%#v all=%#v", index, got[index], wantLine, got)
+		}
+	}
+	if !strings.HasPrefix(got[0], "                    ") || !strings.Contains(got[3], "► R restart current terminal ◄") {
+		t.Fatalf("exit lifecycle should be horizontally centered, got %#v", got)
+	}
+	if !contentHasAction(content, ActionExitedRestart.String()) || !contentHasAction(content, ActionExitedReconnect.String()) {
+		t.Fatalf("expected exited live content actions, got %#v", content.HitRegions)
+	}
+	if !strings.Contains(plainLines(content.Lines), "screen row A") || !strings.Contains(plainLines(content.Lines), "screen row X") {
+		t.Fatalf("expected exited content to preserve previous live output, got %#v", content.Lines)
 	}
 }
 

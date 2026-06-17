@@ -1048,6 +1048,54 @@ func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	}
 }
 
+func TestV3RootRuntimeRestartsExitedRootTerminal(t *testing.T) {
+	processes := newCoreV2ResizeRecordingProcessFactory()
+	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      v3RootTerminalID,
+		Name:    "main",
+		Command: testShellSleepCommand(),
+		Size:    protocol.Size{Cols: 100, Rows: 30},
+	}); err != nil {
+		t.Fatalf("create exited root terminal: %v", err)
+	}
+	process := waitForCoreV2ResizeRecordingProcess(t, processes, v3RootTerminalID)
+	process.exit(23)
+	waitForCLITerminalState(t, server, v3RootTerminalID, corev2.TerminalStateExited)
+
+	oldDial := v3DialClient
+	oldRunAttach := runV3Attach
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		runV3Attach = oldRunAttach
+	})
+	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		return client, nil
+	}
+	var gotAttach v3AttachConfig
+	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
+		gotAttach = cfg
+		return nil
+	}
+
+	if err := runV3RootRuntime(context.Background(), v3RootConfig{SocketPath: socketPath, LogFile: logPath}); err != nil {
+		t.Fatalf("runV3RootRuntime returned error: %v", err)
+	}
+	if gotAttach.TerminalID != v3RootTerminalID {
+		t.Fatalf("expected restarted root terminal to attach, got %#v", gotAttach)
+	}
+	info, err := server.GetTerminal(v3RootTerminalID)
+	if err != nil {
+		t.Fatalf("get root terminal: %v", err)
+	}
+	if info.State != corev2.TerminalStateRunning || info.ExitCode != nil || !info.ExitedAt.IsZero() {
+		t.Fatalf("expected root terminal restarted before attach, got %#v", info)
+	}
+}
+
 func TestV3RemoteIsExplicitlyNotMounted(t *testing.T) {
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{"v3", "remote", "status"})
@@ -3768,13 +3816,15 @@ func (factory *coreV2ResizeRecordingProcessFactory) process(id string) *coreV2Re
 }
 
 type coreV2ResizeRecordingProcess struct {
-	mu        sync.Mutex
-	inputs    [][]byte
-	resizes   []corev2.Size
-	resizeErr error
-	outputCh  chan []byte
-	waitCh    chan corev2.ProcessExit
-	closed    bool
+	mu         sync.Mutex
+	inputs     [][]byte
+	resizes    []corev2.Size
+	resizeErr  error
+	outputCh   chan []byte
+	waitCh     chan corev2.ProcessExit
+	exitOnce   sync.Once
+	outputOnce sync.Once
+	closed     bool
 }
 
 func (process *coreV2ResizeRecordingProcess) Input(data []byte) error {
@@ -3808,10 +3858,7 @@ func (process *coreV2ResizeRecordingProcess) Kill() error {
 	process.mu.Lock()
 	process.closed = true
 	process.mu.Unlock()
-	select {
-	case process.waitCh <- corev2.ProcessExit{Code: -1}:
-	default:
-	}
+	process.exit(-1)
 	return nil
 }
 
@@ -3823,7 +3870,25 @@ func (process *coreV2ResizeRecordingProcess) Close() error {
 	process.mu.Lock()
 	process.closed = true
 	process.mu.Unlock()
+	process.exit(-1)
 	return nil
+}
+
+func (process *coreV2ResizeRecordingProcess) exit(code int) {
+	process.mu.Lock()
+	process.closed = true
+	process.mu.Unlock()
+	process.exitOnce.Do(func() {
+		process.closeOutput()
+		process.waitCh <- corev2.ProcessExit{Code: code}
+		close(process.waitCh)
+	})
+}
+
+func (process *coreV2ResizeRecordingProcess) closeOutput() {
+	process.outputOnce.Do(func() {
+		close(process.outputCh)
+	})
 }
 
 func (process *coreV2ResizeRecordingProcess) setResizeErr(err error) {
@@ -3875,6 +3940,24 @@ func waitForCoreV2ResizeRecordingProcess(t *testing.T, factory *coreV2ResizeReco
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for core-v2 recording process %s", terminalID)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func waitForCLITerminalState(t *testing.T, server *corev2.Server, terminalID string, want corev2.TerminalState) corev2.TerminalInfo {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		info, err := server.GetTerminal(terminalID)
+		if err == nil && info.State == want {
+			return info
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				t.Fatalf("timed out waiting for terminal %s state %s: %v", terminalID, want, err)
+			}
+			t.Fatalf("timed out waiting for terminal %s state %s, got %#v", terminalID, want, info)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

@@ -10,8 +10,8 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 		return ContentRenderResult{}
 	}
 	content := request.Content
-	if content.Kind == ContentEmptyPane {
-		return renderEmptyPaneContentViewport(request)
+	if content.Kind == ContentEmptyPane || content.Kind == ContentExitedPane {
+		return renderCenteredActionContentViewport(request)
 	}
 	lines := content.Lines
 	if len(lines) == 0 {
@@ -146,7 +146,7 @@ func contentViewportFitLine(line Line, width int) Line {
 	return Line{Cells: cells}
 }
 
-func renderEmptyPaneContentViewport(request ContentRenderRequest) ContentRenderResult {
+func renderCenteredActionContentViewport(request ContentRenderRequest) ContentRenderResult {
 	rect := request.Rect
 	content := request.Content
 	lines := content.Lines
@@ -179,6 +179,10 @@ func renderEmptyPaneContentViewport(request ContentRenderRequest) ContentRenderR
 		}
 	}
 	return ContentRenderResult{Lines: rendered, Cursor: Cursor{}, HitRegions: translatedRegions, Metadata: RenderMetadata{Width: rect.W, Height: rect.H}}
+}
+
+func centeredActionContentKind(kind ContentKind) bool {
+	return kind == ContentEmptyPane || kind == ContentExitedPane
 }
 
 func centerContentLine(line Line, width int) Line {

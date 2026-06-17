@@ -721,10 +721,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
 		}}}
 	case render.ActionExitedReconnect:
-		target := terminalPoolTargetForContentAction(root, msg)
-		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg), TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
-		}}}
+		root.Shell = root.Shell.OpenTerminalPicker()
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 	case render.ActionEmptyManager:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}

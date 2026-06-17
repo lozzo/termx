@@ -76,7 +76,11 @@ func projectTerminalLiveContent(ctx ContentProjectorContext) ContentVM {
 	if !ctx.Active && liveSurfaceIsPending(surface, session) {
 		return placeholderContentForPane(ctx.Pane)
 	}
-	return buildLiveContentVM(surface, session)
+	selectedIndex := 0
+	if ctx.Active {
+		selectedIndex = ctx.Shell.EnsureDefaults().ExitedPaneCTA.SelectedIndex
+	}
+	return buildLiveContentVMWithSelection(surface, session, selectedIndex)
 }
 
 func liveSurfaceIsPending(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) bool {

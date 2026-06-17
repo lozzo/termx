@@ -3348,6 +3348,54 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	if closeRuntime.State().Shell.HasPane(state.PaneCommandTarget{PaneID: "pane-2"}) {
 		t.Fatalf("empty close action should close pane-2, got %#v", closeRuntime.State().Shell)
 	}
+
+	exitedHost := NewFakeTerminalHost(8)
+	exitedRoot := state.Root{
+		Shell:   state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-exited", State: state.TerminalLiveExited, ExitCode: 23},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+	exitedTerminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-next", Title: "next", State: "running"}}}}
+	exitedRuntime := newShellHitRuntimeWithTerminal(exitedRoot, exitedHost, exitedTerminal)
+	if err := exitedRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post exited render: %v", err)
+	}
+	if err := exitedRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exited render: %v", err)
+	}
+	restartAction := frameActionHitRegion(t, lastRuntimeFrame(t, exitedHost), render.ActionExitedRestart.String(), state.DefaultPaneID)
+	if err := exitedHost.SendInput(mouseEventAt(restartAction.Rect)); err != nil {
+		t.Fatalf("send exited restart click: %v", err)
+	}
+	if err := exitedRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exited restart: %v", err)
+	}
+	if len(exitedTerminal.Restarts) != 1 || exitedTerminal.Restarts[0].TerminalID != "term-exited" {
+		t.Fatalf("exited restart click should restart bound terminal, restarts=%#v", exitedTerminal.Restarts)
+	}
+
+	pickerExitedHost := NewFakeTerminalHost(8)
+	pickerExitedTerminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-next", Title: "next", State: "running"}}}}
+	pickerExitedRuntime := newShellHitRuntimeWithTerminal(exitedRoot, pickerExitedHost, pickerExitedTerminal)
+	if err := pickerExitedRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post exited picker render: %v", err)
+	}
+	if err := pickerExitedRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exited picker render: %v", err)
+	}
+	exitedPickerAction := frameActionHitRegion(t, lastRuntimeFrame(t, pickerExitedHost), render.ActionExitedReconnect.String(), state.DefaultPaneID)
+	if err := pickerExitedHost.SendInput(mouseEventAt(exitedPickerAction.Rect)); err != nil {
+		t.Fatalf("send exited picker click: %v", err)
+	}
+	if err := pickerExitedRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exited picker: %v", err)
+	}
+	exitedOverlay := pickerExitedRuntime.State().Shell.EnsureDefaults().Overlay
+	if !exitedOverlay.Open || exitedOverlay.Kind != state.OverlayTerminalPicker || len(pickerExitedTerminal.Lists) == 0 {
+		t.Fatalf("exited picker click should open terminal picker and list pool, overlay=%#v lists=%#v", exitedOverlay, pickerExitedTerminal.Lists)
+	}
 }
 
 func TestAppRuntimeContentActionFocusesTargetPane(t *testing.T) {

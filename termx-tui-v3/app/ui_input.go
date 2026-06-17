@@ -62,6 +62,9 @@ func NewUIInputReducer() Reducer {
 		if handled, next, effects := reduceEmptyPaneCTAInput(root, inputMsg.Event); handled {
 			return next, effects
 		}
+		if handled, next, effects := reduceExitedPaneCTAInput(root, inputMsg.Event); handled {
+			return next, effects
+		}
 		if root.CopyMode.Entering {
 			return root, nil
 		}
@@ -165,6 +168,77 @@ func activeEmptyPaneCTATarget(shell state.ShellStore) (state.PaneState, bool, bo
 		return state.PaneState{}, false, false
 	}
 	return pane, false, true
+}
+
+func reduceExitedPaneCTAInput(root state.Root, event input.InputEvent) (bool, state.Root, []Effect) {
+	if event.Kind != input.EventKindKey {
+		return false, root, nil
+	}
+	shell := root.Shell.EnsureDefaults()
+	if shell.InteractionMode != state.InteractionModeNormal {
+		return false, root, nil
+	}
+	pane, floating, ok := activeExitedPaneCTATarget(root, shell)
+	if !ok {
+		return false, root, nil
+	}
+	switch event.Key {
+	case input.KeyUp:
+		root.Shell = shell.MoveExitedPaneCTASelection(-1, render.ExitedPaneActionCount())
+		return true, root.Advance(), []Effect{handledEffect{}}
+	case input.KeyDown:
+		root.Shell = shell.MoveExitedPaneCTASelection(1, render.ExitedPaneActionCount())
+		return true, root.Advance(), []Effect{handledEffect{}}
+	case input.KeyEnter:
+		actionID := render.ExitedPaneActionID(shell.ExitedPaneCTA.SelectedIndex)
+		if actionID == "" {
+			return true, root, []Effect{handledEffect{}}
+		}
+		return true, root, []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg {
+				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID, Floating: floating}
+			}},
+		}
+	default:
+		return false, root, nil
+	}
+}
+
+func activeExitedPaneCTATarget(root state.Root, shell state.ShellStore) (state.PaneState, bool, bool) {
+	shell = shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		for _, floating := range shell.Floatings {
+			if floating.ID == shell.ActiveFloatingID && paneHasExitedTerminal(root, floating.Pane.ID, true) {
+				return floating.Pane, true, true
+			}
+		}
+		return state.PaneState{}, false, false
+	}
+	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+	if !ok || !paneHasExitedTerminal(root, pane.ID, false) {
+		return state.PaneState{}, false, false
+	}
+	return pane, false, true
+}
+
+func paneHasExitedTerminal(root state.Root, paneID string, floating bool) bool {
+	terminalID := ""
+	if floating {
+		if floatingID, ok := root.Shell.EnsureDefaults().FloatingIDForPaneID(paneID); ok {
+			if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok {
+				terminalID = binding.TerminalID
+			}
+		}
+	} else if binding, ok := root.TerminalViews.PaneBinding(paneID); ok {
+		terminalID = binding.TerminalID
+	}
+	if terminalID == "" {
+		return false
+	}
+	// 退出 CTA 只认当前进程内 TerminalView binding 对应的 live surface，不从 storage/snapshot 推断。
+	surface := root.Surface.SurfaceForTerminal(terminalID)
+	return surface.State == state.TerminalLiveExited
 }
 
 func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {

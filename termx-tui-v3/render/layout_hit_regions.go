@@ -35,7 +35,7 @@ func measureHitRegions(shell ShellVM, plan LayoutPlan) []HitRegion {
 }
 
 func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin Rect, ownerID string, viewport Rect) []HitRegion {
-	if content.Kind != ContentEmptyPane || len(content.Lines) == 0 {
+	if !centeredActionContentKind(content.Kind) || len(content.Lines) == 0 {
 		return appendTranslatedRegionsWithOwner(out, content.HitRegions, origin, ownerID, viewport)
 	}
 	startY := 0

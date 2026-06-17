@@ -72,6 +72,13 @@ func ensureV3RootTerminal(ctx context.Context, client *protocol.Client) (string,
 	if id := selectV3RootTerminal(list.Terminals); id != "" {
 		return id, nil
 	}
+	// 固定 root terminal 退出后仍会留在 core 里，重进 TUI 必须 restart，不能再次 create 同 ID。
+	if item, ok := findV3RootTerminal(list.Terminals); ok {
+		if err := client.Restart(ctx, item.ID); err != nil {
+			return "", fmt.Errorf("restart core-v2 root terminal: %w", err)
+		}
+		return item.ID, nil
+	}
 	created, err := client.Create(ctx, protocol.CreateParams{
 		ID:      v3RootTerminalID,
 		Name:    "main",
@@ -83,6 +90,11 @@ func ensureV3RootTerminal(ctx context.Context, client *protocol.Client) (string,
 		if listErr == nil {
 			if id := selectV3RootTerminal(refreshed.Terminals); id != "" {
 				return id, nil
+			}
+			if item, ok := findV3RootTerminal(refreshed.Terminals); ok {
+				if restartErr := client.Restart(ctx, item.ID); restartErr == nil {
+					return item.ID, nil
+				}
 			}
 		}
 		return "", fmt.Errorf("create core-v2 root terminal: %w", err)
@@ -97,6 +109,15 @@ func selectV3RootTerminal(items []protocol.TerminalInfo) string {
 		}
 	}
 	return ""
+}
+
+func findV3RootTerminal(items []protocol.TerminalInfo) (protocol.TerminalInfo, bool) {
+	for _, item := range items {
+		if item.ID == v3RootTerminalID {
+			return item, true
+		}
+	}
+	return protocol.TerminalInfo{}, false
 }
 
 func defaultV3RootCommand() []string {

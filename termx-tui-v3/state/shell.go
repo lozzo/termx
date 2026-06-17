@@ -128,6 +128,7 @@ type ShellStore struct {
 	FooterVisible     bool
 	Overlay           OverlayState
 	EmptyPaneCTA      EmptyPaneCTAState
+	ExitedPaneCTA     ExitedPaneCTAState
 	Toasts            []ToastState
 	nextToastSeq      uint64
 	nextFloatingSeq   uint64
