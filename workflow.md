@@ -231,11 +231,12 @@
 | 215E1-R58. SK floating memory diagnostics | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/terminalhost/`、`termx-cli/cmd/termx/`、`workflow.md` | 已补 TUI runtime/latest frame sink 内存诊断、heap profile 文件落盘开关，以及 runtime/sink 队列引用清理回归测试；用于现场复现 floating 打开后的内存增长来源 |
 | 215E1-R59. SK floating memory growth fix | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已基于 R58 现场日志/pprof 修复 floating 打开后的真实内存增长点：workbench storage conflict/load/reattach 风暴不再反复拉同一 terminal live surface |
 | 215E1-R60. SK panel terminal binding truth refactor | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/state/`、相关文档、`workflow.md` | 已重构 panel 到 terminal 的连接 truth：pane/floating 的真实 terminal/channel/resize role 只来自 TerminalViewStore，Shell 裸 terminal id 只保留为展示/storage 兼容字段，不再污染输入、attach target、render 或 restore |
+| 215E1-R61. SK tiled floating input focus regression | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复 tiled pane 与 floating panel 切换焦点后输入目标不跟随的问题：聚焦 tiled pane 会释放 floating active，鼠标点进 pane/floating 内容会退出临时 UI mode，普通输入重新进入对应 TerminalView binding |
 
 当前下一步：
 
-- `215E1-R60 panel terminal binding truth refactor` 已完成
-- 当前已把 pane/floating 与 terminal 的组合建模成独立 view binding；输入、attach/reconnect/create target、live render、mouse passthrough 与 smoke/harness 都不再依赖 Shell 裸 terminal id 或 global Session fallback
+- `215E1-R61 tiled floating input focus regression` 已完成
+- 当前已用 tiled+floating 独立 binding、残留 floating mode 下点击 tiled 后输入 `l` 的回归 harness 固定输入 target 与视觉焦点一致
 
 ## 6. 必做证据
 

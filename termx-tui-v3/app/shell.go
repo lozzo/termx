@@ -1273,6 +1273,7 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	nextShell, result := root.Shell.ApplyPaneCommand(command)
 	if result.Status == state.PaneCommandOK {
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
+		root.Shell = exitInteractionModeAfterMouseFocus(root.Shell, command)
 		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
 		effects := paneCommandEffects(command, result, targetPane, hasTargetPane)
@@ -1310,6 +1311,10 @@ func inheritSplitTerminalPane(root state.Root, command state.PaneCommand, target
 func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (state.Root, []Effect) {
 	command = withFloatingCommandDefaults(root, command)
 	nextShell, result := root.Shell.ApplyFloatingCommand(command)
+	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandFocusRaise && command.Source == state.PaneCommandSourceMouse {
+		// 鼠标点进 floating 内容后进入 terminal 输入上下文；否则残留 UI mode 会继续吞普通字符。
+		nextShell = nextShell.ExitInteractionMode()
+	}
 	root.Shell = addFloatingCommandToast(nextShell, command, result)
 	effects := []Effect{}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
@@ -1624,6 +1629,14 @@ func deactivateFloatingAfterPaneCommand(shell state.ShellStore, command state.Pa
 	default:
 		return shell
 	}
+}
+
+func exitInteractionModeAfterMouseFocus(shell state.ShellStore, command state.PaneCommand) state.ShellStore {
+	if command.Source != state.PaneCommandSourceMouse || command.Action != state.PaneCommandFocus {
+		return shell
+	}
+	// 鼠标点击 pane 内容/边框表示用户回到 terminal 输入上下文；保留 footer/chrome action 的 mode 行为。
+	return shell.ExitInteractionMode()
 }
 
 func addWorkbenchCommandToast(shell state.ShellStore, result state.WorkbenchCommandResult) state.ShellStore {

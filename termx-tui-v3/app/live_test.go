@@ -983,6 +983,138 @@ func TestTerminalPoolPaneReattachDoesNotStealSharedFloatingBinding(t *testing.T)
 	}
 }
 
+func TestTiledAndFloatingFocusRoutesInputToActiveViewBinding(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 36)
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-b")
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-a"},
+		Rect:     state.FloatingRect{X: 8, Y: 4, W: 48, H: 12},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-b", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-a", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	floatingContent := frameActionHitRegion(t, frame, render.ActionFloatingRaise.String(), "floating-pane-1")
+	if err := host.SendInput(mouseEventAt(floatingContent.Rect)); err != nil {
+		t.Fatalf("click floating: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}); err != nil {
+		t.Fatalf("send floating input: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating input: %v", err)
+	}
+
+	frame = lastFrame(t, host.Frames())
+	tiledContent := frameHitRegion(t, frame, render.HitRegionPaneContent, state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(tiledContent.Rect)); err != nil {
+		t.Fatalf("click tiled pane: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"}); err != nil {
+		t.Fatalf("send tiled input: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tiled input: %v", err)
+	}
+
+	if len(terminal.Inputs) != 2 {
+		t.Fatalf("expected floating and tiled input, got %#v", terminal.Inputs)
+	}
+	if got := terminal.Inputs[0]; got.TerminalID != "term-a" || got.Channel != 8 || string(got.Bytes) != "f" {
+		t.Fatalf("floating input should use floating binding, got %#v", got)
+	}
+	if got := terminal.Inputs[1]; got.TerminalID != "term-b" || got.Channel != 9 || string(got.Bytes) != "p" {
+		t.Fatalf("tiled input should use tiled binding after focus switch, got %#v", got)
+	}
+	if shell := runtime.State().Shell.EnsureDefaults(); shell.ActivePaneID != state.DefaultPaneID || shell.ActiveFloatingID != "" {
+		t.Fatalf("tiled click should leave only tiled view active, shell=%#v", shell)
+	}
+}
+
+func TestTiledInputExitsStaleInteractionModeAfterFloatingFocusSwitch(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 36)
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-b").
+		SetInteractionMode(state.InteractionModeFloating)
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-a"},
+		Rect:     state.FloatingRect{X: 8, Y: 4, W: 48, H: 12},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	shell = shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-b", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-a", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	tiledContent := frameHitRegion(t, frame, render.HitRegionPaneContent, state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(tiledContent.Rect)); err != nil {
+		t.Fatalf("click tiled pane: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
+		t.Fatalf("send tiled input: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stale-mode tiled input: %v", err)
+	}
+
+	if len(terminal.Inputs) != 1 {
+		t.Fatalf("expected stale UI mode to fall through to terminal input, got %#v", terminal.Inputs)
+	}
+	if got := terminal.Inputs[0]; got.TerminalID != "term-b" || got.Channel != 9 || string(got.Bytes) != "l" {
+		t.Fatalf("tiled input should use tiled binding after exiting stale mode, got %#v", got)
+	}
+	if mode := runtime.State().Shell.EnsureDefaults().InteractionMode; mode != state.InteractionModeNormal {
+		t.Fatalf("terminal input should exit stale interaction mode, got %q", mode)
+	}
+}
+
 func TestLiveInputDoesNotFallbackToSessionForEmptyActivePane(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20}}
 	host := NewFakeTerminalHost(8)
