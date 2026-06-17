@@ -42,6 +42,29 @@ func TestSurfaceTrackKeepsScreenSizeCursorAndStyle(t *testing.T) {
 	}
 }
 
+func TestSurfaceTrackRestartPreservingScreenMapsCursorToAppendRow(t *testing.T) {
+	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 4})
+	surface.Write("before\n")
+
+	surface.ResetForRestartPreservingScreen()
+	snapshot := surface.Snapshot()
+	if !snapshot.Cursor.Visible || snapshot.Cursor.Row != 1 || snapshot.Cursor.Col != 0 {
+		t.Fatalf("restart should expose cursor at preserved-tail append row, got %#v", snapshot.Cursor)
+	}
+	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "before") {
+		t.Fatalf("restart should preserve visible live tail, got %q", got)
+	}
+
+	surface.Write("$ ")
+	snapshot = surface.Snapshot()
+	if !snapshot.Cursor.Visible || snapshot.Cursor.Row != 1 || snapshot.Cursor.Col != 2 {
+		t.Fatalf("new process output should advance the real surface cursor, got %#v", snapshot.Cursor)
+	}
+	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "before") || !strings.Contains(got, "$") {
+		t.Fatalf("restart should keep old tail and new prompt in live surface, got %q", got)
+	}
+}
+
 func TestSurfaceTrackLargeWriteKeepsLatestScreen(t *testing.T) {
 	surface := NewSurfaceTrack(SurfaceSize{Cols: 80, Rows: 4})
 	var out strings.Builder

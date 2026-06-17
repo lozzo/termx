@@ -243,14 +243,15 @@
 | 215E1-R70. SK restart 保留 terminal 数据 | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复 restart 把同一 terminal 的 live surface 和 authoritative history 清空的问题：restart 只重启 process，保留 terminal identity/history/live tail，同时重置新进程不应继承的 parser、alt-screen、mouse/bracketed-paste 状态 |
 | 215E1-R71. SK 退出 marker 进入 terminal 数据 | 完成 | `termx-core-v2/`、`termx-tui-v3/render/`、`workflow.md` | 已把 process exit marker 作为 core 生成的 terminal 系统输出写入 live surface 和 authoritative history，包含 terminal id、退出码、退出时间和命令；TUI render 只在 marker 已存在时补 restart/picker action，不再重复伪造退出信息 |
 | 215E1-R72. SK restart 后 live cursor 投影修正 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已修复 restart 保留旧 live tail 时 TUI 从最后一行文本尾部合成可见 cursor 的问题：live terminal cursor 只信 core/protocol surface cursor；旧进程 cursor 被清掉后不会显示到 panel 最后一格，新进程首帧 cursor 回来后再展示 |
+| 215E1-R73. SK restart 后 core live cursor 可见 | 完成 | `termx-core-v2/`、`termx-tui-v3/render/`、`workflow.md` | 已修正 restart 保留旧 live tail 后 core seed cursor 被置为 hidden 的问题：core 现在把 cursor 映射到保留 tail 后的 append row 并保持 visible；TUI render 继续只按 core/protocol surface cursor 坐标投影，不从文本尾部合成 |
 
 当前下一步：
 
-- `215E1-R72 restart 后 live cursor 投影修正` 已完成
+- `215E1-R73 restart 后 core live cursor 可见` 已完成
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
 - 当前 restart 语义：terminal lifecycle 和 terminal data 分离；process 退出/重启不会清空 core-v2 authoritative history，也不会清空 live tail。restart 会让所有 view channel 失效并逐 view reattach，但 TUI 等待 reattach 时继续显示旧 live tail。
 - 当前 exit marker 语义：process 退出时 core-v2 先 force commit primary frontier，再把 `terminal exited`、`exited at`、`command` 三类 marker 作为显式系统输出追加到 live surface 和 authoritative history；这不是 storage/snapshot/TUI overlay 推导出来的当前进程内状态。
-- 当前 live cursor 语义：terminal live cursor 只来自 core/protocol surface cursor；restart 后保留的旧 live tail 不能让 render 按文本尾部合成可见 cursor。
+- 当前 live cursor 语义：terminal live cursor 只来自 core/protocol surface cursor；restart 后 core 把保留 tail 之后的 append row 作为 visible cursor seed，TUI 只把该 surface Row/Col 映射到当前 view layout，不按文本尾部合成。
 
 ## 6. 必做证据
 
@@ -348,4 +349,5 @@
 - `215E1-R69` 已完成：picker/attach 选择 pool 中已退出 terminal 时不会再把 exited surface 临时清成 attached；UI 会立即显示目标 terminal 的退出时间、命令和 CTA。
 - `215E1-R71` 已完成：terminal process exit marker 现在进入 core-v2 live surface 和 authoritative history，重启后仍能在 live tail/history 中看到退出发生的时间、退出码和 command；TUI 已补去重，避免 core marker 与 render overlay 重复。
 - `215E1-R72` 已完成：restart 后旧 live tail 没有 surface cursor metadata 时，render 不再把光标放到旧内容最后一列；等新进程 live surface 带回真实 cursor 后再显示。
+- `215E1-R73` 已完成：restart 保留 live tail 时 core 不再把 VTerm cursor seed 成 hidden，而是映射到保留 tail 后的 append row 并保持 visible；TUI render 已补测试，证明 live cursor 使用 core surface Row/Col。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。

@@ -1228,6 +1228,13 @@ func TestTerminalRestartReplacesProcessAndPreservesLiveAndHistory(t *testing.T) 
 	if len(rows) == 0 || rows[0] != "before" {
 		t.Fatalf("restart should preserve live tail, got %#v", rows)
 	}
+	snapshot, err := server.LiveSnapshot("term-1")
+	if err != nil {
+		t.Fatalf("live snapshot after restart: %v", err)
+	}
+	if !snapshot.Cursor.Visible || snapshot.Cursor.Row != 1 || snapshot.Cursor.Col != 0 {
+		t.Fatalf("restart should map live cursor to preserved-tail append row, got %#v", snapshot.Cursor)
+	}
 	window, err := server.LatestWindow("term-1", 20, 10)
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
@@ -1247,6 +1254,13 @@ func TestTerminalRestartReplacesProcessAndPreservesLiveAndHistory(t *testing.T) 
 	}
 	if !reflect.DeepEqual(rows, []string{"before", "after"}) {
 		t.Fatalf("restart should keep old and new live tail rows, got %#v", rows)
+	}
+	snapshot, err = server.LiveSnapshot("term-1")
+	if err != nil {
+		t.Fatalf("live snapshot after restart output: %v", err)
+	}
+	if !snapshot.Cursor.Visible || snapshot.Cursor.Row != 2 || snapshot.Cursor.Col != 5 {
+		t.Fatalf("restart output should advance the real live cursor, got %#v", snapshot.Cursor)
 	}
 	window, err = server.LatestWindow("term-1", 20, 10)
 	if err != nil {

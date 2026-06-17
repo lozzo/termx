@@ -401,7 +401,9 @@ func restartPreservedScreenRows(rows [][]vterm.Cell, maxRows int) ([][]vterm.Cel
 	if maxRows > 0 && len(rows) >= maxRows {
 		rows = rows[len(rows)-maxRows+1:]
 	}
-	return rows, vterm.CursorState{Row: len(rows), Col: 0, Visible: false}
+	// 中文说明：保留旧 tail 后，新进程从下一空行继续写；这里的 cursor 是真实
+	// surface 坐标种子，不能隐藏，否则新 shell 不显式 show cursor 时会一直不可见。
+	return rows, vterm.CursorState{Row: len(rows), Col: 0, Visible: true}
 }
 
 func boolEnvDefault(name string, fallback bool) bool {

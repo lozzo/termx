@@ -1781,6 +1781,31 @@ func TestRenderVMBuilderDoesNotSynthesizeLiveCursorFromPreservedTail(t *testing.
 	}
 }
 
+func TestRenderVMBuilderMapsLiveCursorFromSurfaceCoordinates(t *testing.T) {
+	root := bindTestPaneTerminal(state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Ready:      true,
+			Cols:       20,
+			Rows:       4,
+			Screen: [][]state.LiveCell{
+				{{Text: "old live tail", Width: 13}},
+				{{Text: "$ ", Width: 2}},
+			},
+			Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 20, Rows: 4},
+	}, state.DefaultPaneID, "term-live")
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Kind != ContentTerminalLive || len(content.Lines) != 2 {
+		t.Fatalf("expected live content from surface screen, got %#v", content)
+	}
+	if content.Cursor != (Cursor{Visible: true, Row: 1, Col: 2, Shape: CursorShapeBlock}) {
+		t.Fatalf("live cursor must use core surface coordinates, got %#v", content.Cursor)
+	}
+}
+
 func TestRenderVMBuilderDoesNotApplyLiveExtentToStatusFallbacks(t *testing.T) {
 	cases := []struct {
 		name    string
