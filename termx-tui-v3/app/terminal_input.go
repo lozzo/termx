@@ -107,6 +107,8 @@ func terminalSendInputEffect(target liveInputTargetInfo, event input.InputEvent,
 			})
 			if err != nil {
 				logTerminalInputSend(deps, target, event, len(payload), err)
+			} else {
+				logTerminalInputSendOK(deps, target, event, len(payload))
 			}
 			return LiveInputResultMsg{
 				TerminalID:   target.TerminalID,
@@ -173,6 +175,22 @@ func logTerminalInputSend(deps LiveDeps, target liveInputTargetInfo, event input
 		"channel", target.Channel,
 		"surface_id", target.SurfaceID,
 		"error", err,
+	)
+}
+
+func logTerminalInputSendOK(deps LiveDeps, target liveInputTargetInfo, event input.InputEvent, bytes int) {
+	if deps.Logger == nil || !terminalInputTraceEnabled() {
+		return
+	}
+	deps.Logger.Info("tui-v3 terminal input sent",
+		"event", terminalInputEventSummary(event),
+		"bytes", bytes,
+		"target_view", target.ViewID,
+		"target_pane", target.PaneID,
+		"target_floating", target.FloatingID,
+		"terminal_id", target.TerminalID,
+		"channel", target.Channel,
+		"surface_id", target.SurfaceID,
 	)
 }
 

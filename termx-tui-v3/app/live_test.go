@@ -170,7 +170,7 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 		t.Fatalf("input must route through active view binding, got %#v", terminal.Inputs)
 	}
 	text := logs.String()
-	for _, want := range []string{"tui-v3 input route", "result=terminal", "target_view=" + state.TerminalPaneViewID(state.DefaultPaneID), "terminal_id=term-1", "channel=7"} {
+	for _, want := range []string{"tui-v3 input route", "tui-v3 terminal input sent", "result=terminal", "target_view=" + state.TerminalPaneViewID(state.DefaultPaneID), "terminal_id=term-1", "channel=7"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("input route log missing %q in:\n%s", want, text)
 		}

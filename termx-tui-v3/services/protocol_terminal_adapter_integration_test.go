@@ -101,12 +101,19 @@ func runTerminalAdapterProtocolServer(tr *memory.Transport, seen chan<- protocol
 	}); err != nil {
 		return err
 	}
-	channel, typ, payload, err := recvTerminalAdapterFrame(tr)
+	req, err = expectTerminalAdapterRequest(tr, "input")
 	if err != nil {
 		return err
 	}
-	if channel != 9 || typ != wire.TypeInput || string(payload) != "x" {
-		return fmt.Errorf("unexpected input frame channel=%d type=%d payload=%q", channel, typ, string(payload))
+	inputParams, err := terminalAdapterRequestParams[protocol.InputParams](req)
+	if err != nil {
+		return err
+	}
+	if inputParams.TerminalID != "term-1" || inputParams.Channel != 9 || inputParams.SurfaceID != "surface-1" || inputParams.ViewID != "view-1" || string(inputParams.Data) != "x" {
+		return fmt.Errorf("unexpected input params %#v", inputParams)
+	}
+	if err := sendTerminalAdapterMethodResponse(tr, req, nil); err != nil {
+		return err
 	}
 	req, err = expectTerminalAdapterRequest(tr, "ensure_resize")
 	if err != nil {

@@ -34,6 +34,7 @@ type fakeProtocolTerminalClient struct {
 	tagSets        []map[string]string
 	inputChannel   []uint16
 	inputData      [][]byte
+	inputParams    []protocol.InputParams
 	resizeChannels []uint16
 	resizes        []protocol.Size
 	ensureParams   []protocol.EnsureResizeParams
@@ -114,6 +115,12 @@ func (client *fakeProtocolTerminalClient) SetTags(_ context.Context, terminalID 
 func (client *fakeProtocolTerminalClient) Input(_ context.Context, channel uint16, data []byte) error {
 	client.inputChannel = append(client.inputChannel, channel)
 	client.inputData = append(client.inputData, append([]byte(nil), data...))
+	return nil
+}
+
+func (client *fakeProtocolTerminalClient) InputWithOptions(_ context.Context, params protocol.InputParams) error {
+	params.Data = append([]byte(nil), params.Data...)
+	client.inputParams = append(client.inputParams, params)
 	return nil
 }
 
@@ -761,8 +768,11 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: 11, SurfaceID: "surface-1", ViewID: "view-1", Bytes: []byte("x")}); err != nil {
 		t.Fatalf("input: %v", err)
 	}
-	if len(client.inputData) != 1 || string(client.inputData[0]) != "x" || client.inputChannel[0] != 11 {
-		t.Fatalf("unexpected input call channels=%#v data=%#v", client.inputChannel, client.inputData)
+	if len(client.inputParams) != 1 || client.inputParams[0].TerminalID != "term-1" || client.inputParams[0].Channel != 11 || client.inputParams[0].SurfaceID != "surface-1" || client.inputParams[0].ViewID != "view-1" || string(client.inputParams[0].Data) != "x" {
+		t.Fatalf("unexpected input params %#v", client.inputParams)
+	}
+	if len(client.inputData) != 0 {
+		t.Fatalf("adapter must prefer acked input request over stream input, got %#v", client.inputData)
 	}
 	resized, err := adapter.Resize(context.Background(), TerminalResizeRequest{
 		TerminalID: "term-1",

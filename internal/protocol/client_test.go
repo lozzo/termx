@@ -43,6 +43,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"HistoryReplay",
 		"HistoryWindow",
 		"Input",
+		"InputWithOptions",
 		"Kill",
 		"List",
 		"LockResize",
@@ -211,6 +212,79 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 
 	if err := <-serverDone; err != nil {
 		t.Fatalf("fake server failed: %v", err)
+	}
+}
+
+func TestClientInputWithOptionsUsesAckedRequest(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	defer serverTransport.Close()
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- client.InputWithOptions(ctx, InputParams{
+			TerminalID: "term-1",
+			Channel:    7,
+			SurfaceID:  "surface-1",
+			ViewID:     "view-1",
+			Data:       []byte("ls\n"),
+		})
+	}()
+
+	req, err := expectRequest(serverTransport, "input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	params, err := requestParams[InputParams](req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params.TerminalID != "term-1" || params.Channel != 7 || params.SurfaceID != "surface-1" || params.ViewID != "view-1" || string(params.Data) != "ls\n" {
+		t.Fatalf("unexpected input params %#v", params)
+	}
+	if err := sendMethodResponse(serverTransport, req, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("input request failed: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
+func TestClientInputWithOptionsReturnsServerError(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	defer serverTransport.Close()
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- client.InputWithOptions(ctx, InputParams{TerminalID: "term-1", Channel: 99, Data: []byte("x")})
+	}()
+
+	req, err := expectRequest(serverTransport, "input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sendError(serverTransport, req.ID, 404, "terminal not found"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "terminal not found") {
+			t.Fatalf("expected protocol error, got %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
 	}
 }
 

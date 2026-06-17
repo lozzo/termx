@@ -25,6 +25,10 @@ type ProtocolTerminalClient interface {
 	Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error)
 }
 
+type ProtocolInputRequestClient interface {
+	InputWithOptions(context.Context, protocol.InputParams) error
+}
+
 // ProtocolTerminalServiceAdapter 把 TUI-v3 terminal service 契约映射到 termx protocol。
 type ProtocolTerminalServiceAdapter struct {
 	Client ProtocolTerminalClient
@@ -164,6 +168,15 @@ func (adapter ProtocolTerminalServiceAdapter) SendInput(ctx context.Context, req
 	}
 	if req.Channel == 0 {
 		return fmt.Errorf("terminal input requires attached channel")
+	}
+	if client, ok := adapter.Client.(ProtocolInputRequestClient); ok {
+		return client.InputWithOptions(ctx, protocol.InputParams{
+			TerminalID: req.TerminalID,
+			Channel:    req.Channel,
+			SurfaceID:  req.SurfaceID,
+			ViewID:     req.ViewID,
+			Data:       req.Bytes,
+		})
 	}
 	return adapter.Client.Input(ctx, req.Channel, req.Bytes)
 }

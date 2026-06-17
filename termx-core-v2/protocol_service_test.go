@@ -1674,8 +1674,32 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 		t.Fatalf("unexpected attach result %#v", attach)
 	}
 
-	if err := client.Input(context.Background(), attach.Channel, []byte("echo hi\n")); err != nil {
+	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
+		TerminalID: "term-1",
+		Channel:    attach.Channel,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-1",
+		Data:       []byte("echo hi\n"),
+	}); err != nil {
 		t.Fatalf("input: %v", err)
+	}
+	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
+		TerminalID: "missing",
+		Channel:    attach.Channel,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-1",
+		Data:       []byte("bad\n"),
+	}); err == nil {
+		t.Fatal("expected input to reject mismatched terminal/channel")
+	}
+	if err := client.InputWithOptions(context.Background(), protocol.InputParams{
+		TerminalID: "term-1",
+		Channel:    attach.Channel,
+		SurfaceID:  "surface-2",
+		ViewID:     "view-1",
+		Data:       []byte("bad\n"),
+	}); err == nil {
+		t.Fatal("expected input to reject mismatched surface")
 	}
 	if err := client.Resize(context.Background(), attach.Channel, 20, 5); err != nil {
 		t.Fatalf("resize frame: %v", err)
@@ -1830,10 +1854,13 @@ func TestProtocolServiceDetachByChannelKeepsSiblingAttachment(t *testing.T) {
 	if err := client.Call(context.Background(), "detach", protocol.DetachParams{TerminalID: "term-1", Channel: first.Channel}, nil); err != nil {
 		t.Fatalf("detach first: %v", err)
 	}
+	if err := client.InputWithOptions(context.Background(), protocol.InputParams{TerminalID: "term-1", Channel: first.Channel, SurfaceID: "surface-1", ViewID: "view-1", Data: []byte("old-acked\n")}); err == nil {
+		t.Fatal("acked input must reject detached channel")
+	}
 	if err := client.Input(context.Background(), first.Channel, []byte("old\n")); err != nil {
 		t.Fatalf("detached first input frame send: %v", err)
 	}
-	if err := client.Input(context.Background(), second.Channel, []byte("new\n")); err != nil {
+	if err := client.InputWithOptions(context.Background(), protocol.InputParams{TerminalID: "term-1", Channel: second.Channel, SurfaceID: "surface-2", ViewID: "view-2", Data: []byte("new\n")}); err != nil {
 		t.Fatalf("second input: %v", err)
 	}
 	process := waitForProcessTraffic(t, server, "term-1", 1, 0)

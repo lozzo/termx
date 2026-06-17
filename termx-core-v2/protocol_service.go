@@ -25,6 +25,8 @@ const (
 	protocolErrorInternal   = 500
 )
 
+var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")
+
 type protocolSession struct {
 	server        *Server
 	conn          transport.Transport
@@ -220,6 +222,12 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		in := params.(protocol.ResizeParams)
 		err := session.server.ResizeTerminal(ctx, in.TerminalID, in.Cols, in.Rows)
 		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, nil)
+	case "input":
+		in := params.(protocol.InputParams)
+		if err := session.input(ctx, in); err != nil {
 			return nil, false, errorCode(err), err
 		}
 		return encodeMethodResult(req.Method, nil)
@@ -708,6 +716,23 @@ func detachMatches(params protocol.DetachParams, channel uint16, attachment prot
 		return false
 	}
 	return params.TerminalID != "" || params.SurfaceID != "" || params.ViewID != ""
+}
+
+func (session *protocolSession) input(ctx context.Context, params protocol.InputParams) error {
+	attachment, err := session.attachmentForChannel(params.Channel)
+	if err != nil {
+		return err
+	}
+	if attachment.TerminalID != params.TerminalID {
+		return fmt.Errorf("%w: input channel %d is attached to %s, not %s", errProtocolAttachmentMismatch, params.Channel, attachment.TerminalID, params.TerminalID)
+	}
+	if params.SurfaceID != "" && attachment.SurfaceID != params.SurfaceID {
+		return fmt.Errorf("%w: input channel %d surface mismatch: %s != %s", errProtocolAttachmentMismatch, params.Channel, attachment.SurfaceID, params.SurfaceID)
+	}
+	if params.ViewID != "" && attachment.ViewID != params.ViewID {
+		return fmt.Errorf("%w: input channel %d view mismatch: %s != %s", errProtocolAttachmentMismatch, params.Channel, attachment.ViewID, params.ViewID)
+	}
+	return session.server.WriteInput(ctx, attachment.TerminalID, params.Data)
 }
 
 func (session *protocolSession) promoteResizeOwnerLocked(terminalID string) {
@@ -1809,7 +1834,7 @@ func errorCode(err error) int {
 	switch {
 	case errors.Is(err, ErrTerminalNotFound):
 		return protocolErrorNotFound
-	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrStaleHistoryWindow), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict), errors.Is(err, ErrInvalidWorkbenchMutation), errors.Is(err, ErrDuplicateWorkbenchResource), errors.Is(err, ErrWorkbenchVersionConflict):
+	case errors.Is(err, ErrInvalidTerminalID), errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrInvalidServerSize), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrStaleHistoryWindow), errors.Is(err, ErrInvalidStorageKey), errors.Is(err, ErrStorageVersionConflict), errors.Is(err, ErrInvalidWorkbenchMutation), errors.Is(err, ErrDuplicateWorkbenchResource), errors.Is(err, ErrWorkbenchVersionConflict), errors.Is(err, errProtocolAttachmentMismatch):
 		return protocolErrorBadRequest
 	case errors.Is(err, ErrStorageEntryNotFound), errors.Is(err, ErrWorkbenchNotFound):
 		return protocolErrorNotFound

@@ -135,6 +135,18 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			return nil, methodParamsTypeError(method, "protocol.ResizeParams", params)
 		}
 		return proto.Marshal(&wirepb.ResizeParams{TerminalId: value.TerminalID, Cols: uint32(value.Cols), Rows: uint32(value.Rows)})
+	case "input":
+		value, ok := params.(InputParams)
+		if !ok {
+			if ptr, ptrOK := params.(*InputParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.InputParams", params)
+		}
+		return encodeInputParamsPayload(value), nil
 	case "ensure_resize", "resize.lock", "resize.unlock":
 		value, ok := params.(EnsureResizeParams)
 		if !ok {
@@ -447,6 +459,8 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return ResizeParams{TerminalID: msg.GetTerminalId(), Cols: uint16(msg.GetCols()), Rows: uint16(msg.GetRows())}, nil
+	case "input":
+		return decodeInputParamsPayload(payload)
 	case "ensure_resize", "resize.lock", "resize.unlock":
 		var msg wirepb.EnsureResizeParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {

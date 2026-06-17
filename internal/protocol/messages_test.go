@@ -654,3 +654,28 @@ func TestDetachParamsControlPayloadRoundTripKeepsAttachmentIdentity(t *testing.T
 		t.Fatalf("unexpected decoded detach params: %#v", got)
 	}
 }
+
+func TestInputParamsControlPayloadRoundTripKeepsViewIdentityAndBytes(t *testing.T) {
+	params := InputParams{
+		TerminalID: "term-1",
+		Channel:    7,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-1",
+		Data:       []byte("ls\n\x00raw"),
+	}
+	encoded, err := EncodeMethodParams("input", params)
+	if err != nil {
+		t.Fatalf("encode input params failed: %v", err)
+	}
+	decoded, err := DecodeMethodParams("input", encoded)
+	if err != nil {
+		t.Fatalf("decode input params failed: %v", err)
+	}
+	got, ok := decoded.(InputParams)
+	if !ok {
+		t.Fatalf("expected InputParams, got %T", decoded)
+	}
+	if got.TerminalID != params.TerminalID || got.Channel != params.Channel || got.SurfaceID != params.SurfaceID || got.ViewID != params.ViewID || !bytes.Equal(got.Data, params.Data) {
+		t.Fatalf("unexpected decoded input params: %#v", got)
+	}
+}

@@ -95,6 +95,15 @@ type ResizeParams struct {
 	Rows       uint16
 }
 
+// InputParams 是带 ack 的 terminal 输入请求；TUI-v3 用它校验当前 view attachment。
+type InputParams struct {
+	TerminalID string
+	Channel    uint16
+	SurfaceID  string
+	ViewID     string
+	Data       []byte
+}
+
 type EnsureResizeParams struct {
 	TerminalID   string
 	Channel      uint16

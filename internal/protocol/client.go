@@ -472,6 +472,14 @@ func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
 	return c.send(frame)
 }
 
+func (c *Client) InputWithOptions(ctx context.Context, params InputParams) error {
+	finish := perftrace.Measure("protocol.request.input")
+	defer func() {
+		finish(len(params.Data))
+	}()
+	return c.doRequest(ctx, "input", params, nil)
+}
+
 func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) error {
 	frame, err := wire.EncodeFrame(channel, wire.TypeResize, wire.EncodeResizePayload(cols, rows))
 	if err != nil {
