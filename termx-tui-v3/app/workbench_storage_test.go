@@ -751,6 +751,74 @@ func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *te
 	}
 }
 
+func TestWorkbenchRestoreInputDoesNotUseStoredOldChannelBeforeAttachEffect(t *testing.T) {
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-restored"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-restored", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-old", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	loadResult := services.WorkbenchStorageLoadResult{
+		Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+		Version:  7,
+		Found:    true,
+	}
+	loadResult.Snapshot.TerminalViews[0].Channel = 7
+	loadResult.Snapshot.TerminalViews[0].Attached = true
+	loadResult.Snapshot.TerminalViews[0].CanResize = true
+	loadResult.Snapshot.TerminalViews[0].OwnerViewID = state.TerminalPaneViewID(state.DefaultPaneID)
+	terminal := &refreshingInputTerminalService{
+		nextChannel: 21,
+		FakeTerminalService: services.FakeTerminalService{AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-restored",
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			CanResize:    true,
+		}},
+	}
+	reducer := ComposeReducers(NewUIInputReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{}), NewLiveReducer(LiveDeps{Terminal: terminal}))
+	root := state.Root{Shell: state.DefaultShell(), Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30}}
+
+	root, restoreEffects := reducer(root, WorkbenchStorageLoadResultMsg{Result: loadResult})
+	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 0 || binding.Attached {
+		t.Fatalf("restored binding must not expose stored old channel before attach, binding=%#v ok=%v", binding, ok)
+	}
+	if len(restoreEffects) == 0 {
+		t.Fatal("restore should still schedule background reattach effects")
+	}
+
+	root, inputEffects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}})
+	if len(inputEffects) != 1 {
+		t.Fatalf("input on restored un-attached view should schedule one attach effect, got %#v", inputEffects)
+	}
+	attachMsg, ok := inputEffects[0].(FuncEffect).Run(context.Background()).(LiveInputAttachResultMsg)
+	if !ok {
+		t.Fatalf("expected input attach result, got %#v", inputEffects[0])
+	}
+	root, replayEffects := reducer(root, attachMsg)
+
+	if len(terminal.Attaches) != 1 {
+		t.Fatalf("input on restored view should attach before replay, attaches=%#v", terminal.Attaches)
+	}
+	inputAttach := terminal.Attaches[0]
+	if inputAttach.TerminalID != "term-restored" || inputAttach.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("input attach should target restored pane view, got %#v", inputAttach)
+	}
+	for _, effect := range replayEffects {
+		fn, ok := effect.(FuncEffect)
+		if !ok {
+			continue
+		}
+		_ = fn.Run(context.Background())
+	}
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].Channel == 7 || terminal.Inputs[0].Channel != terminal.nextChannel-1 || string(terminal.Inputs[0].Bytes) != "l" {
+		t.Fatalf("input must replay on fresh attach channel, inputs=%#v attaches=%#v", terminal.Inputs, terminal.Attaches)
+	}
+	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != terminal.Inputs[0].Channel || !binding.Attached {
+		t.Fatalf("fresh input channel should be stored on restored view, binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestInteractiveRuntimeWorkbenchRestoreShowsExitedTerminalFromCore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
@@ -1091,7 +1159,7 @@ func TestInteractiveRuntimeWorkbenchReloadIgnoresDelayedOldAttachResult(t *testi
 	}
 
 	binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
-	if !ok || binding.TerminalID != "term-new" || binding.Channel != 11 || binding.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+	if !ok || binding.TerminalID != "term-new" || binding.Channel != 0 || binding.Attached || binding.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
 		t.Fatalf("workbench reload must ignore delayed old attach result without rebinding active pane, binding=%#v ok=%v", binding, ok)
 	}
 	if runtime.State().Shell.Workspace.Tabs[0].Panes[0].TerminalID != "term-new" {

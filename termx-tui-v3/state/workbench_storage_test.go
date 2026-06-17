@@ -90,6 +90,46 @@ func TestWorkbenchStorageSnapshotV2RoundTripsTerminalViews(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageSnapshotScrubsRuntimeAttachmentIdentity(t *testing.T) {
+	shell := DefaultShell()
+	binding := NewPaneTerminalView(DefaultPaneID, "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-live", TerminalPaneViewID(DefaultPaneID), true)
+	binding.OwnerSurfaceID = "surface-live"
+	binding.OwnerViewID = binding.ViewID
+	binding.ResizeEpoch = 3
+	binding.LastError = "stale"
+	binding.SizeLocked = true
+	views := TerminalViewStore{}.BindPane(binding)
+	snapshot := SnapshotRootWorkbenchForStorage(Root{Shell: shell, TerminalViews: views})
+
+	if len(snapshot.TerminalViews) != 1 {
+		t.Fatalf("expected one stored terminal view, got %#v", snapshot.TerminalViews)
+	}
+	stored := snapshot.TerminalViews[0]
+	if stored.Channel != 0 || stored.Attached || stored.CanResize || stored.SizeLocked || stored.OwnerViewID != "" || stored.ResizeEpoch != 0 || stored.LastError != "" {
+		t.Fatalf("snapshot must not persist protocol session identity, got %#v", stored)
+	}
+
+	stored.Channel = 99
+	stored.Attached = true
+	stored.CanResize = true
+	stored.OwnerViewID = stored.ViewID
+	stored.ResizeEpoch = 9
+	stored.LastError = "old-session"
+	stored.SizeLocked = true
+	snapshot.TerminalViews[0] = stored
+	restored, err := snapshot.ToTerminalViewStore()
+	if err != nil {
+		t.Fatalf("restore terminal views: %v", err)
+	}
+	binding, ok := restored.PaneBinding(DefaultPaneID)
+	if !ok || binding.Channel != 0 || binding.Attached || binding.CanResize || binding.SizeLocked || binding.OwnerViewID != "" || binding.ResizeEpoch != 0 || binding.LastError != "" {
+		t.Fatalf("restore must scrub old protocol session identity, binding=%#v ok=%v", binding, ok)
+	}
+	if binding.TerminalID != "term-1" || binding.ResizeRole != TerminalResizeRoleOwner || binding.DesiredCols != 80 || binding.DesiredRows != 24 {
+		t.Fatalf("restore should keep workbench connection intent, binding=%#v", binding)
+	}
+}
+
 func TestWorkbenchStorageSnapshotRejectsLegacyV1(t *testing.T) {
 	_, err := DecodeWorkbenchStorageSnapshot([]byte(`{"schema":"termx.tui.v3.workbench","schemaVersion":1,"workspace":{"ID":"workspace-main"},"workspaces":[{"ID":"workspace-main"}],"panelPresentation":"card"}`))
 	if !errors.Is(err, ErrInvalidWorkbenchSnapshot) {

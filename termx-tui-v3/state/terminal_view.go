@@ -81,7 +81,7 @@ func NewPaneTerminalView(paneID string, terminalID string, channel uint16, cols 
 		surfaceID = "termx-tui-v3"
 	}
 	resizeRole = normalizeTerminalResizeRole(resizeRole)
-	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, PaneID: paneID, Attached: terminalID != "", CanResize: canResize}
+	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, PaneID: paneID, Attached: terminalID != "" && channel != 0, CanResize: canResize}
 }
 
 func NewFloatingTerminalView(floatingID string, paneID string, terminalID string, channel uint16, cols int, rows int, resizeRole string, surfaceID string, viewID string, canResize bool) TerminalViewBinding {
@@ -92,7 +92,7 @@ func NewFloatingTerminalView(floatingID string, paneID string, terminalID string
 		surfaceID = "termx-tui-v3"
 	}
 	resizeRole = normalizeTerminalResizeRole(resizeRole)
-	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, FloatingID: floatingID, PaneID: paneID, Attached: terminalID != "", CanResize: canResize}
+	return TerminalViewBinding{ViewID: viewID, SurfaceID: surfaceID, TerminalID: terminalID, Channel: channel, ResizeRole: resizeRole, DesiredCols: cols, DesiredRows: rows, FloatingID: floatingID, PaneID: paneID, Attached: terminalID != "" && channel != 0, CanResize: canResize}
 }
 
 func TerminalPaneViewID(paneID string) string {
@@ -132,7 +132,7 @@ func (store TerminalViewStore) BindFloating(binding TerminalViewBinding) Termina
 func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewStore {
 	binding.ResizeRole = normalizeTerminalResizeRole(binding.ResizeRole)
 	binding.Layout = binding.Layout.Normalize()
-	binding.Attached = true
+	binding.Attached = binding.TerminalID != "" && binding.Channel != 0
 	binding = binding.applyTerminalSizeLockProjection(binding.SizeLocked || store.terminalSizeLocked(binding.TerminalID))
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)

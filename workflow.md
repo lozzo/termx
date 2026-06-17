@@ -233,11 +233,12 @@
 | 215E1-R60. SK panel terminal binding truth refactor | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/state/`、相关文档、`workflow.md` | 已重构 panel 到 terminal 的连接 truth：pane/floating 的真实 terminal/channel/resize role 只来自 TerminalViewStore，Shell 裸 terminal id 只保留为展示/storage 兼容字段，不再污染输入、attach target、render 或 restore |
 | 215E1-R61. SK tiled floating input focus regression | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 该切片曾用 focus/mode 补丁处理输入错位；后续现场证明根因是 per-view attachment channel 失效，相关输入修复已在 R62 撤回 |
 | 215E1-R62. SK panel input view channel refresh | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已撤回 R61 的 focus/mode 输入补丁；键盘输入按 active TerminalView binding 路由，channel 缺失或发送失败时只为该 view 重新 attach 并重放输入；split 继承 terminal 时不再复制 sibling channel |
+| 215E1-R63. SK active panel input activation | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复 panel/floating 内容点击后键盘输入仍被 UI mode 吞掉的问题：点击 terminal 内容会激活对应 panel 并退出交互 mode，后续输入只按内存 active TerminalView binding 直达 terminal；restore snapshot 只保留连接意图，不复用旧 channel |
 
 当前下一步：
 
-- `215E1-R62 panel input view channel refresh` 已完成
-- 当前有效输入模型：输入目标由 active view 的 TerminalView binding 决定，channel 是 view attach 身份；缺失或失效时重建当前 view 的 attach，不使用全局 session fallback 或 sibling channel
+- `215E1-R63 active panel input activation` 已完成
+- 当前有效输入模型：同进程键盘输入目标只由内存中的 active pane / active floating 对应 TerminalView binding 决定；点击 terminal 内容会先切到该输入态，再把后续按键发到对应 terminal channel
 
 ## 6. 必做证据
 

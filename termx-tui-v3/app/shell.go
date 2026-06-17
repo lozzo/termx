@@ -120,6 +120,13 @@ type ShellContentActionMsg struct {
 
 func (ShellContentActionMsg) isMsg() {}
 
+type ShellActivateTerminalInputMsg struct {
+	PaneID     string
+	FloatingID string
+}
+
+func (ShellActivateTerminalInputMsg) isMsg() {}
+
 type ShellOverlayMouseSelectMsg struct {
 	Delta int
 }
@@ -247,6 +254,8 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		case ShellContentActionMsg:
 			return reduceShellContentAction(root, msg)
+		case ShellActivateTerminalInputMsg:
+			return reduceShellActivateTerminalInput(root, msg)
 		case ShellArmOwnerConfirmMsg:
 			root.Shell = root.Shell.ArmOwnerConfirm(msg.ViewID)
 			seq := root.Shell.OwnerConfirm.Seq
@@ -295,6 +304,46 @@ func ownerConfirmClearEffect(seq uint64) Effect {
 			}
 		},
 	}
+}
+
+func reduceShellActivateTerminalInput(root state.Root, msg ShellActivateTerminalInputMsg) (state.Root, []Effect) {
+	shell := root.Shell.EnsureDefaults()
+	if msg.FloatingID != "" {
+		command := state.FloatingCommand{
+			Action:   state.FloatingCommandFocusRaise,
+			TargetID: msg.FloatingID,
+			Source:   state.PaneCommandSourceMouse,
+		}
+		nextShell, result := shell.ApplyFloatingCommand(command)
+		root.Shell = addFloatingCommandToast(nextShell, command, result)
+		if result.Status == state.FloatingCommandOK {
+			// 点击 terminal 内容代表回到输入态，后续键盘输入必须直达 active TerminalView。
+			root.Shell = root.Shell.ExitInteractionMode()
+		}
+		return root.Advance(), nil
+	}
+	if msg.PaneID == "" {
+		root.Shell = shell.ExitInteractionMode()
+		return root.Advance(), nil
+	}
+	command := state.PaneCommand{
+		Action: state.PaneCommandFocus,
+		Target: state.PaneCommandTarget{
+			PaneID: msg.PaneID,
+		},
+		Source: state.PaneCommandSourceMouse,
+	}
+	command = command.WithDefaults(shell)
+	targetPane, hasTargetPane := shell.Pane(command.Target)
+	nextShell, result := shell.ApplyPaneCommand(command)
+	if result.Status == state.PaneCommandOK {
+		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command).ExitInteractionMode()
+		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
+		root.Shell = addPaneCommandToast(root.Shell, command, result)
+		return root.Advance(), paneCommandEffects(command, result, targetPane, hasTargetPane)
+	}
+	root.Shell = addPaneCommandToast(shell, command, result)
+	return root.Advance(), []Effect{PaneCommandFeedbackEffect{Result: result, Command: command}}
 }
 
 func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {

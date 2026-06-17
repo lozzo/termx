@@ -271,6 +271,9 @@ func workbenchBindingAlreadyLive(previous state.TerminalViewStore, binding state
 	if !existing.Attached || existing.TerminalID == "" || existing.TerminalID != binding.TerminalID {
 		return false
 	}
+	if existing.Channel == 0 {
+		return false
+	}
 	if existing.ResizeRole != binding.ResizeRole {
 		return false
 	}

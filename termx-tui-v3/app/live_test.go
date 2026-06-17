@@ -1050,6 +1050,53 @@ func TestLiveInputRoutesToFocusedPaneTerminal(t *testing.T) {
 	}
 }
 
+func TestMousePaneContentActivationExitsInteractionModeBeforeLiveInput(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
+		SetInteractionMode(state.InteractionModePane)
+	host := NewFakeTerminalHost(16)
+	host.SetSize(90, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: shell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
+		t.Fatalf("post main attach result: %v", err)
+	}
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
+		t.Fatalf("post term-2 attach result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	pane2Content := frameHitRegion(t, frame, render.HitRegionPaneContent, "pane-2")
+	if err := host.SendInput(mouseEventAt(pane2Content.Rect)); err != nil {
+		t.Fatalf("click pane-2: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
+		t.Fatalf("send pane-2 key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane-2 key: %v", err)
+	}
+
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.ActivePaneID != "pane-2" || shell.ActiveFloatingID != "" || shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("content click should activate pane input mode, shell=%#v", shell)
+	}
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].TerminalID != "term-2" || terminal.Inputs[0].Channel != 2 || string(terminal.Inputs[0].Bytes) != "l" {
+		t.Fatalf("pane input should route to clicked pane terminal after mode exit, inputs=%#v", terminal.Inputs)
+	}
+}
+
 func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20}}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main")
@@ -1095,6 +1142,62 @@ func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 
 	if len(terminal.Inputs) != 1 || terminal.Inputs[0].TerminalID != "term-float" || terminal.Inputs[0].Channel != 9 || string(terminal.Inputs[0].Bytes) != "f" {
 		t.Fatalf("active floating input should route to floating terminal, got %#v", terminal.Inputs)
+	}
+}
+
+func TestMouseFloatingContentActivationExitsInteractionModeBeforeLiveInput(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main")
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 10, Y: 4, W: 30, H: 8},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	shell = shell.SetInteractionMode(state.InteractionModeFloating)
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: shell},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-main", Channel: 1, Cols: 78, Rows: 20, ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
+		t.Fatalf("post main attach result: %v", err)
+	}
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
+		t.Fatalf("post floating attach result: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+
+	frame := lastFrame(t, host.Frames())
+	floatingContent := frameActionHitRegion(t, frame, render.ActionFloatingRaise.String(), "floating-pane-1")
+	if err := host.SendInput(mouseEventAt(floatingContent.Rect)); err != nil {
+		t.Fatalf("click floating: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}); err != nil {
+		t.Fatalf("send floating key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating key: %v", err)
+	}
+
+	shell = runtime.State().Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "floating-1" || shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("content click should activate floating input mode, shell=%#v", shell)
+	}
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].TerminalID != "term-float" || terminal.Inputs[0].Channel != 9 || string(terminal.Inputs[0].Bytes) != "f" {
+		t.Fatalf("floating input should route to clicked floating terminal after mode exit, inputs=%#v", terminal.Inputs)
 	}
 }
 

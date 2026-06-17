@@ -907,6 +907,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 		return ShellPaneCommandMsg{Command: command}
 	}
+	if activationMsg, ok := runtime.terminalInputActivationMsg(region); ok {
+		return activationMsg
+	}
 	if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
 		return msg
 	}
@@ -931,6 +934,34 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
 	default:
 		return msg
+	}
+}
+
+func (runtime *AppRuntime) terminalInputActivationMsg(region render.HitRegion) (Msg, bool) {
+	shell := runtime.state.Shell.EnsureDefaults()
+	switch region.Kind {
+	case render.HitRegionPaneContent:
+		if region.PaneID == "" {
+			return nil, false
+		}
+		if shell.ActivePaneID == region.PaneID && shell.ActiveFloatingID == "" && shell.InteractionMode == state.InteractionModeNormal {
+			return nil, false
+		}
+		return ShellActivateTerminalInputMsg{PaneID: region.PaneID}, true
+	case render.HitRegionContentAction:
+		if region.ActionID != render.ActionFloatingRaise.String() || !region.Floating {
+			return nil, false
+		}
+		floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
+		if !ok {
+			return nil, false
+		}
+		if shell.ActiveFloatingID == floatingID && shell.InteractionMode == state.InteractionModeNormal {
+			return nil, false
+		}
+		return ShellActivateTerminalInputMsg{PaneID: region.PaneID, FloatingID: floatingID}, true
+	default:
+		return nil, false
 	}
 }
 
@@ -1042,14 +1073,10 @@ func (runtime *AppRuntime) focusMsgForOwnerRegion(region render.HitRegion) (Msg,
 			return nil, false
 		}
 		shell := runtime.state.Shell.EnsureDefaults()
-		if shell.ActiveFloatingID == floatingID {
+		if shell.ActiveFloatingID == floatingID && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
-		return ShellFloatingCommandMsg{Command: state.FloatingCommand{
-			Action:   state.FloatingCommandFocusRaise,
-			TargetID: floatingID,
-			Source:   state.PaneCommandSourceMouse,
-		}}, true
+		return ShellActivateTerminalInputMsg{PaneID: region.PaneID, FloatingID: floatingID}, true
 	}
 	return runtime.focusMsgForOwner(region.PaneID)
 }
@@ -1060,29 +1087,19 @@ func (runtime *AppRuntime) focusMsgForOwner(ownerID string) (Msg, bool) {
 	}
 	shell := runtime.state.Shell.EnsureDefaults()
 	if _, ok := shell.PaneByID(ownerID); ok {
-		if shell.ActivePaneID == ownerID && shell.ActiveFloatingID == "" {
+		if shell.ActivePaneID == ownerID && shell.ActiveFloatingID == "" && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
-		return ShellPaneCommandMsg{Command: state.PaneCommand{
-			Action: state.PaneCommandFocus,
-			Target: state.PaneCommandTarget{
-				PaneID: ownerID,
-			},
-			Source: state.PaneCommandSourceMouse,
-		}}, true
+		return ShellActivateTerminalInputMsg{PaneID: ownerID}, true
 	}
 	for _, floating := range shell.Floatings {
 		if floating.ID != ownerID {
 			continue
 		}
-		if shell.ActiveFloatingID == ownerID {
+		if shell.ActiveFloatingID == ownerID && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
-		return ShellFloatingCommandMsg{Command: state.FloatingCommand{
-			Action:   state.FloatingCommandFocusRaise,
-			TargetID: ownerID,
-			Source:   state.PaneCommandSourceMouse,
-		}}, true
+		return ShellActivateTerminalInputMsg{PaneID: floating.Pane.ID, FloatingID: ownerID}, true
 	}
 	return nil, false
 }
@@ -1119,6 +1136,9 @@ func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent, reso
 	}
 	shell := runtime.state.Shell.EnsureDefaults()
 	if shell.Overlay.Open || copyModeInputContext(runtime.state.CopyMode) {
+		return false
+	}
+	if shell.InteractionMode != state.InteractionModeNormal {
 		return false
 	}
 	if !mouseForegroundAllowsTerminalPassthrough(resolution.Foreground) {

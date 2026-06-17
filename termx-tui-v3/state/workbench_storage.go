@@ -90,7 +90,7 @@ func SnapshotRootWorkbenchForStorage(root Root) WorkbenchStorageSnapshot {
 		ZoomedPaneID:      shell.ZoomedPaneID,
 		HeaderVisible:     shell.HeaderVisible,
 		FooterVisible:     shell.FooterVisible,
-		TerminalViews:     root.TerminalViews.Bindings(),
+		TerminalViews:     terminalViewBindingsForWorkbenchStorage(root.TerminalViews.Bindings()),
 	}
 }
 
@@ -119,6 +119,7 @@ func (snapshot WorkbenchStorageSnapshot) ToTerminalViewStore() (TerminalViewStor
 	}
 	store := TerminalViewStore{}
 	for _, binding := range snapshot.TerminalViews {
+		binding = binding.ForWorkbenchRestore()
 		if binding.FloatingID != "" {
 			store = store.BindFloating(binding)
 			continue
@@ -126,6 +127,37 @@ func (snapshot WorkbenchStorageSnapshot) ToTerminalViewStore() (TerminalViewStor
 		store = store.BindPane(binding)
 	}
 	return store, nil
+}
+
+func terminalViewBindingsForWorkbenchStorage(bindings []TerminalViewBinding) []TerminalViewBinding {
+	if len(bindings) == 0 {
+		return nil
+	}
+	out := make([]TerminalViewBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		out = append(out, binding.ForWorkbenchStorage())
+	}
+	return out
+}
+
+// ForWorkbenchStorage 只保留 pane/floating 到 terminal 的连接意图。
+// Channel、CanResize、SizeLocked、OwnerViewID 等字段属于 core 当前 truth，重进 TUI 后必须重新 attach 获取。
+func (binding TerminalViewBinding) ForWorkbenchStorage() TerminalViewBinding {
+	binding.Channel = 0
+	binding.Attached = false
+	binding.CanResize = false
+	binding.SizeLocked = false
+	binding.ControlReason = ""
+	binding.OwnerSurfaceID = ""
+	binding.OwnerViewID = ""
+	binding.ResizeEpoch = 0
+	binding.LastError = ""
+	return binding
+}
+
+// ForWorkbenchRestore 兼容旧 snapshot 中已经写入的 runtime-only 字段。
+func (binding TerminalViewBinding) ForWorkbenchRestore() TerminalViewBinding {
+	return binding.ForWorkbenchStorage()
 }
 
 func (snapshot WorkbenchStorageSnapshot) Validate() error {

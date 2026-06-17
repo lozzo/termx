@@ -308,7 +308,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	}
-	root.Shell = root.Shell.CloseOverlay()
+	root.Shell = root.Shell.CloseOverlay().ExitInteractionMode()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
 	effects := workbenchPersistEffects("terminal.attach")
 	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
