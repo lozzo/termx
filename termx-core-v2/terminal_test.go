@@ -1300,12 +1300,86 @@ func TestTerminalRestartAfterExitPreservesCommittedHistory(t *testing.T) {
 	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
 		t.Fatalf("restart terminal: %v", err)
 	}
-	window, err := server.LatestWindow("term-1", 20, 10)
+	window, err := server.LatestWindow("term-1", 80, 10)
 	if err != nil {
 		t.Fatalf("latest window after restart: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "open-tail" {
+	text := historyWindowText(window.Rows)
+	if !strings.Contains(text, "open-tail") || !strings.Contains(text, "terminal exited: term-1 code:5 exited") {
 		t.Fatalf("restart after exit should keep committed history, got %#v", window)
+	}
+}
+
+func TestTerminalExitMarkerEntersLiveAndHistory(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalExited}})
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "termx-main", Command: []string{"/bin/zsh"}, Size: Size{Cols: 80, Rows: 10}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "termx-main", "before-exit"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	factory.process("termx-main").exit(0)
+	event := assertEventValue(t, events, EventTerminalExited, "termx-main")
+	exitedAt := event.Terminal.ExitedAt.UTC().Format(time.RFC3339)
+
+	rows, err := server.LiveRows("termx-main")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	liveText := strings.Join(rows, "\n")
+	for _, want := range []string{
+		"before-exit",
+		"terminal exited: termx-main code:0 exited",
+		"exited at: " + exitedAt,
+		"command: /bin/zsh",
+	} {
+		if !strings.Contains(liveText, want) {
+			t.Fatalf("exit marker should enter live rows, missing %q in %#v", want, rows)
+		}
+	}
+
+	window, err := server.LatestWindow("termx-main", 80, 20)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	historyText := historyWindowText(window.Rows)
+	for _, want := range []string{
+		"before-exit",
+		"terminal exited: termx-main code:0 exited",
+		"exited at: " + exitedAt,
+		"command: /bin/zsh",
+	} {
+		if !strings.Contains(historyText, want) {
+			t.Fatalf("exit marker should enter history, missing %q in %#v", want, window.Rows)
+		}
+	}
+}
+
+func TestTerminalExitMarkerEntersHistoryFromAltScreen(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalExited}})
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "termx-main", Command: []string{"/bin/zsh"}, Size: Size{Cols: 80, Rows: 10}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "termx-main", "before-alt\n\x1b[?1049h\x1b[2Jalt-only"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	factory.process("termx-main").exit(0)
+	assertEventValue(t, events, EventTerminalExited, "termx-main")
+
+	window, err := server.LatestWindow("termx-main", 80, 20)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	historyText := historyWindowText(window.Rows)
+	if !strings.Contains(historyText, "before-alt") || !strings.Contains(historyText, "terminal exited: termx-main code:0 exited") {
+		t.Fatalf("exit marker should enter history even when process dies in alt-screen, got %#v", window.Rows)
+	}
+	if strings.Contains(historyText, "alt-only") {
+		t.Fatalf("process exit should not synthesize unfinished alt-screen content into history, got %#v", window.Rows)
 	}
 }
 
@@ -1338,11 +1412,12 @@ func TestTerminalExitForceCommitsOpenLineAndRejectsMutation(t *testing.T) {
 	if !info.ExitedAt.Equal(event.Terminal.ExitedAt) {
 		t.Fatalf("registry and event exited_at should match, info=%s event=%s", info.ExitedAt, event.Terminal.ExitedAt)
 	}
-	window, err := server.LatestWindow("term-1", 20, 10)
+	window, err := server.LatestWindow("term-1", 80, 10)
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "open-tail" || window.TotalLines != 1 {
+	text := historyWindowText(window.Rows)
+	if !strings.Contains(text, "open-tail") || !strings.Contains(text, "terminal exited: term-1 code:7 exited") {
 		t.Fatalf("expected process exit to force commit open line, got %#v", window)
 	}
 	if err := server.WriteInput(context.Background(), "term-1", []byte("nope")); !errors.Is(err, ErrTerminalExited) {
@@ -1354,11 +1429,12 @@ func TestTerminalExitForceCommitsOpenLineAndRejectsMutation(t *testing.T) {
 	if err := server.IngestOutput(context.Background(), "term-1", "late-output"); !errors.Is(err, ErrTerminalExited) {
 		t.Fatalf("expected ErrTerminalExited for late output, got %v", err)
 	}
-	window, err = server.LatestWindow("term-1", 20, 10)
+	window, err = server.LatestWindow("term-1", 80, 10)
 	if err != nil {
 		t.Fatalf("latest window after late output: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "open-tail" || window.TotalLines != 1 {
+	text = historyWindowText(window.Rows)
+	if !strings.Contains(text, "open-tail") || !strings.Contains(text, "terminal exited: term-1 code:7 exited") || strings.Contains(text, "late-output") {
 		t.Fatalf("late output after exit must not create history, got %#v", window)
 	}
 }
@@ -1405,11 +1481,12 @@ func TestTerminalProcessDrainsOutputBeforeExit(t *testing.T) {
 	if event.Terminal == nil || event.Terminal.ExitCode == nil || *event.Terminal.ExitCode != 0 {
 		t.Fatalf("unexpected exit event %#v", event)
 	}
-	window, err := server.LatestWindow("term-1", 20, 10)
+	window, err := server.LatestWindow("term-1", 80, 10)
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "tail" || window.TotalLines != 1 {
+	text := historyWindowText(window.Rows)
+	if !strings.Contains(text, "tail") || !strings.Contains(text, "terminal exited: term-1 code:0 exited") {
 		t.Fatalf("expected output produced before channel close to be committed before exit, got %#v", window)
 	}
 }

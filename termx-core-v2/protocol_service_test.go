@@ -1229,11 +1229,26 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterProcessExitForceCommit(t *test
 	if err != nil {
 		t.Fatalf("latest after exit via new snapshot: %v", err)
 	}
-	if len(reloaded.Rows) != 3 || rowText(reloaded.Rows[0]) != "one" || rowText(reloaded.Rows[1]) != "two" || rowText(reloaded.Rows[2]) != "open-tail" || reloaded.LogicalTotal != 3 {
+	reloadedText := historyWindowRowsText(reloaded.Rows)
+	if !strings.Contains(reloadedText, "one") ||
+		!strings.Contains(reloadedText, "two") ||
+		!strings.Contains(reloadedText, "open-tail") ||
+		!strings.Contains(reloadedText, "terminal exited:") ||
+		!strings.Contains(reloadedText, "m-1 code:7 exited") ||
+		!strings.Contains(reloadedText, "command: shell") ||
+		reloaded.LogicalTotal != 6 {
 		t.Fatalf("new latest after exit should see force-committed primary history, got %#v", reloaded)
 	}
-	if len(reloaded.RowOwnership) != 3 || reloaded.RowOwnership[0] != protocol.RowOwnershipPersisted || reloaded.RowOwnership[1] != protocol.RowOwnershipPersisted || reloaded.RowOwnership[2] != protocol.RowOwnershipPersisted {
-		t.Fatalf("force-committed exit tail should now be persisted in new snapshot, got %#v", reloaded.RowOwnership)
+	if len(reloaded.RowOwnership) != len(reloaded.Rows) {
+		t.Fatalf("expected ownership for every reloaded row, got rows=%d ownership=%#v", len(reloaded.Rows), reloaded.RowOwnership)
+	}
+	for index, ownership := range reloaded.RowOwnership {
+		if ownership != protocol.RowOwnershipPersisted {
+			t.Fatalf("force-committed exit tail should now be persisted in new snapshot row=%d ownership=%#v", index, reloaded.RowOwnership)
+		}
+	}
+	if len(older.Rows) == 1 && strings.Contains(historyWindowRowsText(older.Rows), "terminal exited") {
+		t.Fatalf("older page should still come from pre-exit frozen snapshot and exclude exit marker, got %#v", older)
 	}
 }
 
@@ -2330,6 +2345,18 @@ func rowText(row protocol.CompactRow) string {
 		builder.WriteString(cell.Content)
 	}
 	return builder.String()
+}
+
+func historyWindowRowsText(rows []protocol.CompactRow) string {
+	parts := make([]string, len(rows))
+	for index, row := range rows {
+		if row.Text != "" {
+			parts[index] = row.Text
+		} else {
+			parts[index] = rowText(row)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func cellsText(row []protocol.Cell) string {

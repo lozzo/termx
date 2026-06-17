@@ -390,6 +390,7 @@ copy mode 进入后，core-v2 需要暴露一个比“当前 cols 下的 visual 
 - older 请求继续带 `snapshot_token + boundary` 回 core 拉这份冻结 snapshot 里更早的 logical lines；如果上一页只显示了最后一条 frozen frontier line，下一页必须先返回它前面的 frozen frontier line，而不是直接跳到 committed 上界。
 - process exit 是 primary history 的 mutability 边界。
 - process exit 时 primary `MutableFrontier` 必须先 `force-commit-frontier`。
+- process exit 的 lifecycle marker 由 core 作为显式系统输出追加到 live surface 和 `HistoryTrack`，包含 terminal id、退出码、退出时间和命令；它不是从 live snapshot、grid viewport 或 TUI overlay 反推出来的 history。
 - 如果 process exit 时仍在 alt-screen，alt 内容直接丢弃；primary frontier 仍按 process exit 规则 force commit。
 - force commit 与 index/storage 更新必须在同一 history transaction 中产生可验证 generation 变化。
 

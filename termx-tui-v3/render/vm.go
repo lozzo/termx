@@ -1126,10 +1126,15 @@ func buildLiveContentVMWithSelection(surface state.TerminalSurfaceStore, session
 
 func liveExitedContent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, previous []Line, selectedIndex int) ContentVM {
 	exitLines, regions := liveExitedContentLines(surface, session, selectedIndex)
+	if liveLinesContainExitMarker(previous, surface, session) {
+		exitLines, regions = liveExitedActionLines(selectedIndex)
+	}
 	lines := make([]Line, 0, len(previous)+len(exitLines)+1)
 	if len(previous) > 0 {
 		lines = append(lines, previous...)
-		lines = append(lines, NewLine(""))
+		if len(exitLines) > 0 {
+			lines = append(lines, NewLine(""))
+		}
 	}
 	actionOffset := len(lines)
 	lines = append(lines, exitLines...)
@@ -1169,6 +1174,39 @@ func liveExitedContentLines(surface state.TerminalSurfaceStore, session state.Te
 		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String()})
 	}
 	return lines, regions
+}
+
+func liveExitedActionLines(selectedIndex int) ([]Line, []HitRegion) {
+	actions := liveExitedActions()
+	if selectedIndex < 0 || selectedIndex >= len(actions) {
+		selectedIndex = 0
+	}
+	lines := make([]Line, 0, len(actions))
+	regions := make([]HitRegion, 0, len(actions))
+	for index, action := range actions {
+		selected := index == selectedIndex
+		text := emptyPaneActionLabel(action.Label, selected)
+		line := centeredStyledLine(text, action.Style)
+		lines = append(lines, line)
+		regions = append(regions, HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: len(lines) - 1, W: DisplayWidth(text), H: 1}, ActionID: action.ID.String()})
+	}
+	return lines, regions
+}
+
+func liveLinesContainExitMarker(lines []Line, surface state.TerminalSurfaceStore, session state.TerminalSessionStore) bool {
+	if len(lines) == 0 {
+		return false
+	}
+	prefix := "terminal exited"
+	if terminalID := liveTerminalID(surface, session); terminalID != "" {
+		prefix += ": " + terminalID
+	}
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line.PlainString()), prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func liveContentExtent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) ContentExtent {

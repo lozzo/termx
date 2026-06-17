@@ -99,6 +99,35 @@ func (pipeline *terminalHistoryPipeline) ForceCommitFrontier() error {
 	return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier})
 }
 
+func (pipeline *terminalHistoryPipeline) AppendSystemLines(lines []string) error {
+	pipeline.mu.Lock()
+	defer pipeline.mu.Unlock()
+	// 中文说明：terminal lifecycle marker 是 core 生成的系统输出边界，
+	// 不是从 live snapshot 反推历史；每行作为独立 logical line 追加并立即提交。
+	if pipeline.track.InAltScreen() {
+		// 中文说明：进程退出 marker 属于 primary lifecycle 数据；即使进程死在
+		// alt-screen，也不能被普通 primary write 的 alt-screen guard 吞掉。
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSwitchAltScreen, EnterAltScreen: false}); err != nil {
+			return err
+		}
+	}
+	for _, line := range lines {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{
+			Text:  line,
+			Width: historyCellTextWidthForTerminal(line),
+		}}}); err != nil {
+			return err
+		}
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
+			return err
+		}
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (pipeline *terminalHistoryPipeline) LatestWindow(cols int, rows int) (history.HistoryWindow, error) {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()

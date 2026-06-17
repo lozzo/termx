@@ -2,10 +2,12 @@ package termxcorev2
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 )
@@ -411,8 +413,48 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 	_ = terminal.historyPipeline().ForceCommitFrontier()
+	terminal.appendExitMarker(info)
 	terminal.syncInfo(info)
 	terminal.publish(EventTerminalExited, info)
+}
+
+func (terminal *Terminal) appendExitMarker(info TerminalInfo) {
+	lines := terminalExitMarkerLines(info)
+	if len(lines) == 0 {
+		return
+	}
+	text := "\r\n" + strings.Join(lines, "\r\n") + "\r\n"
+	terminal.liveMu.Lock()
+	terminal.live.Write(text)
+	terminal.liveMu.Unlock()
+	_ = terminal.historyPipeline().AppendSystemLines(lines)
+}
+
+func terminalExitMarkerLines(info TerminalInfo) []string {
+	if info.ID == "" {
+		return nil
+	}
+	head := "terminal exited: " + info.ID
+	if info.ExitCode != nil {
+		head += fmt.Sprintf(" code:%d", *info.ExitCode)
+	}
+	head += " exited"
+	lines := []string{head}
+	if !info.ExitedAt.IsZero() {
+		lines = append(lines, "exited at: "+info.ExitedAt.UTC().Format(time.RFC3339))
+	}
+	if len(info.Command) > 0 {
+		lines = append(lines, "command: "+strings.Join(info.Command, " "))
+	}
+	return lines
+}
+
+func historyCellTextWidthForTerminal(text string) int {
+	width := xansi.StringWidth(text)
+	if width < 0 {
+		return 0
+	}
+	return width
 }
 
 func (terminal *Terminal) syncInfo(info TerminalInfo) {

@@ -241,12 +241,14 @@
 | 215E1-R68. SK exited lifecycle after live output | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已把 live exited 信息和 CTA 放到 terminal 内容尾部；内容超过视口时默认显示最后历史行和退出提示，并让鼠标 hit region 跟随尾部对齐后的实际行 |
 | 215E1-R69. SK picker attach exited lifecycle | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复从退出态/picker 连接到另一个已退出 terminal 时被 attach result 临时清成 running：pool 明确为 exited 的 terminal 会保留 lifecycle 元数据并立即显示退出 CTA，不等用户再输入 |
 | 215E1-R70. SK restart 保留 terminal 数据 | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复 restart 把同一 terminal 的 live surface 和 authoritative history 清空的问题：restart 只重启 process，保留 terminal identity/history/live tail，同时重置新进程不应继承的 parser、alt-screen、mouse/bracketed-paste 状态 |
+| 215E1-R71. SK 退出 marker 进入 terminal 数据 | 完成 | `termx-core-v2/`、`termx-tui-v3/render/`、`workflow.md` | 已把 process exit marker 作为 core 生成的 terminal 系统输出写入 live surface 和 authoritative history，包含 terminal id、退出码、退出时间和命令；TUI render 只在 marker 已存在时补 restart/picker action，不再重复伪造退出信息 |
 
 当前下一步：
 
-- `215E1-R70 restart 保留 terminal 数据` 已完成
+- `215E1-R71 退出 marker 进入 terminal 数据` 已完成
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
 - 当前 restart 语义：terminal lifecycle 和 terminal data 分离；process 退出/重启不会清空 core-v2 authoritative history，也不会清空 live tail。restart 会让所有 view channel 失效并逐 view reattach，但 TUI 等待 reattach 时继续显示旧 live tail。
+- 当前 exit marker 语义：process 退出时 core-v2 先 force commit primary frontier，再把 `terminal exited`、`exited at`、`command` 三类 marker 作为显式系统输出追加到 live surface 和 authoritative history；这不是 storage/snapshot/TUI overlay 推导出来的当前进程内状态。
 
 ## 6. 必做证据
 
@@ -342,4 +344,5 @@
 - `215E1-R66` 已完成：terminal 退出后 core/protocol/tui-v3 会保留退出时间、退出码和 command；pane/floating 的退出态渲染显示这些信息；restart 不复用旧 channel，而是保留 TerminalView 绑定意图并逐 view 重新 attach，避免 sibling view 被覆盖或失效。
 - `215E1-R68` 已完成：live exited 信息不再压在历史前面，而是追加到 terminal 内容尾部；视口默认显示尾部，使最后历史行、退出时间、命令和 restart/picker CTA 一起可见。
 - `215E1-R69` 已完成：picker/attach 选择 pool 中已退出 terminal 时不会再把 exited surface 临时清成 attached；UI 会立即显示目标 terminal 的退出时间、命令和 CTA。
+- `215E1-R71` 已完成：terminal process exit marker 现在进入 core-v2 live surface 和 authoritative history，重启后仍能在 live tail/history 中看到退出发生的时间、退出码和 command；TUI 已补去重，避免 core marker 与 render overlay 重复。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。

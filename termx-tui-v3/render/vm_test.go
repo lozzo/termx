@@ -2004,6 +2004,53 @@ func TestRenderVMBuilderAppendsLiveExitLifecycleAfterFullOutput(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderDoesNotDuplicateCoreExitMarker(t *testing.T) {
+	exitedAt := time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC)
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Ready:      true,
+			Lines: []string{
+				"last output",
+				"terminal exited: term-live code:0 exited",
+				"exited at: 2026-06-17T12:30:00Z",
+				"command: /bin/zsh",
+			},
+			Cols:       80,
+			Rows:       10,
+			State:      state.TerminalLiveExited,
+			ExitCode:   0,
+			ExitReason: "exited",
+			ExitedAt:   exitedAt,
+			Command:    []string{"/bin/zsh"},
+		},
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-live",
+			Attached:   true,
+			Cols:       80,
+			Rows:       10,
+			State:      state.TerminalLiveExited,
+			ExitCode:   0,
+			ExitReason: "exited",
+			ExitedAt:   exitedAt,
+			Command:    []string{"/bin/zsh"},
+		},
+	}
+
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	plain := plainLines(content.Lines)
+	if count := strings.Count(plain, "terminal exited: term-live"); count != 1 {
+		t.Fatalf("core exit marker should not be duplicated by render overlay, count=%d content=%#v", count, content.Lines)
+	}
+	if strings.Count(plain, "exited at: 2026-06-17T12:30:00Z") != 1 || strings.Count(plain, "command: /bin/zsh") != 1 {
+		t.Fatalf("core exit marker metadata should stay single-source, got %#v", content.Lines)
+	}
+	if !contentHasAction(content, ActionExitedRestart.String()) || !contentHasAction(content, ActionExitedReconnect.String()) {
+		t.Fatalf("render should still append exited actions after core marker, got %#v", content.HitRegions)
+	}
+}
+
 func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 	emptyShell := state.DefaultShell()
 	emptyShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "slot", Kind: state.PaneEmpty, Active: true}
