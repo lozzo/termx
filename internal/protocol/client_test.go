@@ -336,6 +336,194 @@ func TestClientEvents(t *testing.T) {
 	}
 }
 
+type eventsResult struct {
+	events <-chan Event
+	err    error
+}
+
+func TestClientEventsFanOutPerSubscription(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	helloDone := make(chan error, 1)
+	go func() {
+		helloDone <- client.Hello(ctx, Hello{Version: wire.Version, Client: "test"})
+	}()
+	if channel, typ, _, err := recvFrame(serverTransport); err != nil || channel != 0 || typ != wire.TypeHello {
+		t.Fatalf("expected client hello, channel=%d type=%d err=%v", channel, typ, err)
+	}
+	if err := respondHello(serverTransport); err != nil {
+		t.Fatalf("respond hello: %v", err)
+	}
+	if err := <-helloDone; err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	termOneDone := make(chan eventsResult, 1)
+	go func() {
+		events, err := client.Events(ctx, EventsParams{TerminalID: "term-1", Types: []EventType{EventTerminalStateChanged}})
+		termOneDone <- eventsResult{events: events, err: err}
+	}()
+	req, err := expectRequest(serverTransport, "events")
+	if err != nil {
+		t.Fatalf("expect first events request: %v", err)
+	}
+	params, err := requestParams[EventsParams](req)
+	if err != nil {
+		t.Fatalf("decode first events params: %v", err)
+	}
+	if params.TerminalID != "" || len(params.Types) != 0 {
+		t.Fatalf("client should open one broad daemon events stream, got %#v", params)
+	}
+	if err := sendMethodResponse(serverTransport, req, nil); err != nil {
+		t.Fatalf("respond first events request: %v", err)
+	}
+	termOneResult := <-termOneDone
+	if termOneResult.err != nil {
+		t.Fatalf("events term-1: %v", termOneResult.err)
+	}
+	termOneEvents := termOneResult.events
+
+	termTwoDone := make(chan eventsResult, 1)
+	go func() {
+		events, err := client.Events(ctx, EventsParams{TerminalID: "term-2", Types: []EventType{EventTerminalStateChanged}})
+		termTwoDone <- eventsResult{events: events, err: err}
+	}()
+	termTwoResult := <-termTwoDone
+	if termTwoResult.err != nil {
+		t.Fatalf("events term-2: %v", termTwoResult.err)
+	}
+	termTwoEvents := termTwoResult.events
+
+	sendProtocolEvent := func(event Event) {
+		t.Helper()
+		payload, err := EncodeEventPayload(event)
+		if err != nil {
+			t.Fatalf("encode event: %v", err)
+		}
+		if err := sendFrame(serverTransport, 0, wire.TypeEvent, payload); err != nil {
+			t.Fatalf("send event: %v", err)
+		}
+	}
+	sendProtocolEvent(Event{Type: EventTerminalStateChanged, TerminalID: "term-1"})
+	if got := assertProtocolEvent(t, termOneEvents); got.TerminalID != "term-1" {
+		t.Fatalf("term-1 subscriber got wrong event %#v", got)
+	}
+	assertNoProtocolEvent(t, termTwoEvents)
+
+	sendProtocolEvent(Event{Type: EventTerminalStateChanged, TerminalID: "term-2"})
+	if got := assertProtocolEvent(t, termTwoEvents); got.TerminalID != "term-2" {
+		t.Fatalf("term-2 subscriber got wrong event %#v", got)
+	}
+	assertNoProtocolEvent(t, termOneEvents)
+}
+
+func TestClientEventsFanOutRespectsStorageFilters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	helloDone := make(chan error, 1)
+	go func() {
+		helloDone <- client.Hello(ctx, Hello{Version: wire.Version, Client: "test"})
+	}()
+	if channel, typ, _, err := recvFrame(serverTransport); err != nil || channel != 0 || typ != wire.TypeHello {
+		t.Fatalf("expected client hello, channel=%d type=%d err=%v", channel, typ, err)
+	}
+	if err := respondHello(serverTransport); err != nil {
+		t.Fatalf("respond hello: %v", err)
+	}
+	if err := <-helloDone; err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	storageDone := make(chan eventsResult, 1)
+	go func() {
+		events, err := client.Events(ctx, EventsParams{
+			Types:            []EventType{EventStorageChanged},
+			StorageAppID:     "termx-tui-v3",
+			StorageScope:     StorageScopePublic,
+			StorageOwnerID:   "workspace-main",
+			StorageKeyPrefix: "workbench/",
+		})
+		storageDone <- eventsResult{events: events, err: err}
+	}()
+	req, err := expectRequest(serverTransport, "events")
+	if err != nil {
+		t.Fatalf("expect events request: %v", err)
+	}
+	if err := sendMethodResponse(serverTransport, req, nil); err != nil {
+		t.Fatalf("respond events request: %v", err)
+	}
+	storageResult := <-storageDone
+	if storageResult.err != nil {
+		t.Fatalf("events storage: %v", storageResult.err)
+	}
+
+	sendProtocolEvent := func(event Event) {
+		t.Helper()
+		payload, err := EncodeEventPayload(event)
+		if err != nil {
+			t.Fatalf("encode event: %v", err)
+		}
+		if err := sendFrame(serverTransport, 0, wire.TypeEvent, payload); err != nil {
+			t.Fatalf("send event: %v", err)
+		}
+	}
+	sendProtocolEvent(Event{Type: EventTerminalStateChanged, TerminalID: "term-1"})
+	assertNoProtocolEvent(t, storageResult.events)
+
+	sendProtocolEvent(Event{Type: EventStorageChanged, Storage: &StorageChangedData{
+		AppID:   "termx-tui-v3",
+		Scope:   StorageScopePublic,
+		OwnerID: "workspace-main",
+		Key:     "workbench/root",
+		Version: 3,
+	}})
+	if got := assertProtocolEvent(t, storageResult.events); got.Storage == nil || got.Storage.Key != "workbench/root" {
+		t.Fatalf("storage subscriber got wrong event %#v", got)
+	}
+}
+
+func assertProtocolEvent(t *testing.T, events <-chan Event) Event {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if !ok {
+			t.Fatal("expected event channel to stay open")
+		}
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for protocol event")
+	}
+	return Event{}
+}
+
+func assertNoProtocolEvent(t *testing.T, events <-chan Event) {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if ok {
+			t.Fatalf("unexpected protocol event %#v", event)
+		}
+		t.Fatal("event channel closed unexpectedly")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestClientAttachBuffersFramesThatArriveBeforeStreamRegistration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1115,8 +1303,8 @@ func runFakeEventServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if params.TerminalID != "term-1" || len(params.Types) != 1 || params.Types[0] != EventTerminalRemoved {
-		return fmt.Errorf("unexpected events params: %#v", params)
+	if params.TerminalID != "" || len(params.Types) != 0 {
+		return fmt.Errorf("client should open one broad events stream, got: %#v", params)
 	}
 
 	if err := sendMethodResponse(tr, req, nil); err != nil {

@@ -38,7 +38,8 @@ type protocolSession struct {
 	resizeOwners  map[string]uint16
 	sizeLocks     map[string]bool
 	ownerEpoch    uint64
-	cancelEvents  context.CancelFunc
+	eventCancels  map[uint64]context.CancelFunc
+	nextEventSub  uint64
 	historyMu     sync.Mutex
 	historyPins   map[string]frozenHistorySnapshot
 	historyLatest map[string]string
@@ -67,6 +68,7 @@ func newProtocolSession(server *Server, conn transport.Transport) *protocolSessi
 		attachments:   make(map[uint16]protocolAttachment),
 		resizeOwners:  make(map[string]uint16),
 		sizeLocks:     make(map[string]bool),
+		eventCancels:  make(map[uint64]context.CancelFunc),
 		historyPins:   make(map[string]frozenHistorySnapshot),
 		historyLatest: make(map[string]string),
 	}
@@ -625,13 +627,15 @@ func (session *protocolSession) validateFrozenWindowRequest(params protocol.Hist
 }
 
 func (session *protocolSession) startEvents(ctx context.Context, params protocol.EventsParams) {
-	session.stopEvents()
 	eventCtx, cancel := context.WithCancel(ctx)
 	session.mu.Lock()
-	session.cancelEvents = cancel
+	session.nextEventSub++
+	subID := session.nextEventSub
+	session.eventCancels[subID] = cancel
 	session.mu.Unlock()
 	events := session.server.Events(eventCtx, eventFilterFromProtocol(params))
 	go func() {
+		defer session.clearEventSubscription(subID)
 		for {
 			select {
 			case <-eventCtx.Done():
@@ -652,12 +656,21 @@ func (session *protocolSession) startEvents(ctx context.Context, params protocol
 
 func (session *protocolSession) stopEvents() {
 	session.mu.Lock()
-	cancel := session.cancelEvents
-	session.cancelEvents = nil
+	cancels := make([]context.CancelFunc, 0, len(session.eventCancels))
+	for id, cancel := range session.eventCancels {
+		cancels = append(cancels, cancel)
+		delete(session.eventCancels, id)
+	}
 	session.mu.Unlock()
-	if cancel != nil {
+	for _, cancel := range cancels {
 		cancel()
 	}
+}
+
+func (session *protocolSession) clearEventSubscription(id uint64) {
+	session.mu.Lock()
+	delete(session.eventCancels, id)
+	session.mu.Unlock()
 }
 
 func (session *protocolSession) attach(params protocol.AttachParams) (protocolAttachment, *protocol.ResizeControl, error) {

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,35 +22,43 @@ func (client *fakeProtocolHistoryClient) HistoryWindow(_ context.Context, params
 }
 
 type fakeProtocolTerminalClient struct {
-	attachParams   []protocol.AttachParams
-	listCalls      int
-	createParams   []protocol.CreateParams
-	restartIDs     []string
-	killIDs        []string
-	removeIDs      []string
-	metadataIDs    []string
-	metadataNames  []string
-	metadataTags   []map[string]string
-	tagIDs         []string
-	tagSets        []map[string]string
-	inputChannel   []uint16
-	inputData      [][]byte
-	inputParams    []protocol.InputParams
-	resizeChannels []uint16
-	resizes        []protocol.Size
-	ensureParams   []protocol.EnsureResizeParams
-	eventParams    []protocol.EventsParams
-	eventCh        chan protocol.Event
-	snapshotIDs    []string
-	snapshotResult *protocol.Snapshot
-	attachResult   *protocol.AttachResult
-	listResult     *protocol.ListResult
-	createResult   *protocol.CreateResult
-	storageGets    []protocol.StorageGetParams
-	storagePuts    []protocol.StoragePutParams
-	storageEntry   *protocol.StorageEntry
-	storageGetErr  error
-	storagePutErr  error
+	attachParams       []protocol.AttachParams
+	listCalls          int
+	createParams       []protocol.CreateParams
+	restartIDs         []string
+	killIDs            []string
+	removeIDs          []string
+	metadataIDs        []string
+	metadataNames      []string
+	metadataTags       []map[string]string
+	tagIDs             []string
+	tagSets            []map[string]string
+	inputChannel       []uint16
+	inputData          [][]byte
+	inputParams        []protocol.InputParams
+	resizeChannels     []uint16
+	resizes            []protocol.Size
+	ensureParams       []protocol.EnsureResizeParams
+	eventParams        []protocol.EventsParams
+	eventCh            chan protocol.Event
+	eventSubscribers   []fakeProtocolEventSubscriber
+	eventFanoutStarted bool
+	snapshotIDs        []string
+	snapshotResult     *protocol.Snapshot
+	snapshotResults    map[string]*protocol.Snapshot
+	attachResult       *protocol.AttachResult
+	listResult         *protocol.ListResult
+	createResult       *protocol.CreateResult
+	storageGets        []protocol.StorageGetParams
+	storagePuts        []protocol.StoragePutParams
+	storageEntry       *protocol.StorageEntry
+	storageGetErr      error
+	storagePutErr      error
+}
+
+type fakeProtocolEventSubscriber struct {
+	params protocol.EventsParams
+	ch     chan protocol.Event
 }
 
 func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
@@ -62,10 +71,86 @@ func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, p
 
 func (client *fakeProtocolTerminalClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
 	client.eventParams = append(client.eventParams, params)
+	ch := make(chan protocol.Event, 8)
+	client.eventSubscribers = append(client.eventSubscribers, fakeProtocolEventSubscriber{params: params, ch: ch})
 	if client.eventCh == nil {
-		client.eventCh = make(chan protocol.Event, 1)
+		client.eventCh = make(chan protocol.Event, 8)
 	}
-	return client.eventCh, nil
+	if !client.eventFanoutStarted {
+		client.eventFanoutStarted = true
+		go func() {
+			for event := range client.eventCh {
+				client.publishEvent(event)
+			}
+			for _, sub := range client.eventSubscribers {
+				close(sub.ch)
+			}
+		}()
+	}
+	return ch, nil
+}
+
+func (client *fakeProtocolTerminalClient) publishEvent(event protocol.Event) {
+	for _, sub := range client.eventSubscribers {
+		if !fakeProtocolEventMatches(event, sub.params) {
+			continue
+		}
+		select {
+		case sub.ch <- event:
+		default:
+		}
+	}
+}
+
+func fakeProtocolEventMatches(event protocol.Event, params protocol.EventsParams) bool {
+	if params.TerminalID != "" && params.TerminalID != event.TerminalID {
+		return false
+	}
+	if (event.Storage != nil || fakeHasStorageEventParams(params)) && !fakeProtocolStorageEventMatches(event.Storage, params) {
+		return false
+	}
+	if (event.Workbench != nil || params.WorkbenchID != "") && !fakeProtocolWorkbenchEventMatches(event.Workbench, params) {
+		return false
+	}
+	if len(params.Types) == 0 {
+		return true
+	}
+	for _, typ := range params.Types {
+		if typ == event.Type {
+			return true
+		}
+	}
+	return false
+}
+
+func fakeHasStorageEventParams(params protocol.EventsParams) bool {
+	return params.StorageAppID != "" || params.StorageScope != "" || params.StorageOwnerID != "" || params.StorageKeyPrefix != ""
+}
+
+func fakeProtocolStorageEventMatches(storage *protocol.StorageChangedData, params protocol.EventsParams) bool {
+	if storage == nil {
+		return params.StorageAppID == "" && params.StorageScope == "" && params.StorageOwnerID == "" && params.StorageKeyPrefix == ""
+	}
+	if params.StorageAppID != "" && params.StorageAppID != storage.AppID {
+		return false
+	}
+	if params.StorageScope != "" && params.StorageScope != storage.Scope {
+		return false
+	}
+	if params.StorageOwnerID != "" && params.StorageOwnerID != storage.OwnerID {
+		return false
+	}
+	if params.StorageKeyPrefix != "" && !strings.HasPrefix(storage.Key, params.StorageKeyPrefix) {
+		return false
+	}
+	return true
+}
+
+func fakeProtocolWorkbenchEventMatches(workbench *protocol.WorkbenchChangedData, params protocol.EventsParams) bool {
+	if workbench == nil {
+		return params.WorkbenchID == ""
+	}
+	return params.WorkbenchID == "" || params.WorkbenchID == workbench.WorkspaceID || params.WorkbenchID == workbench.ResourceID
 }
 
 func (client *fakeProtocolTerminalClient) List(context.Context) (*protocol.ListResult, error) {
@@ -153,6 +238,11 @@ func (client *fakeProtocolTerminalClient) EnsureResize(_ context.Context, params
 
 func (client *fakeProtocolTerminalClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
 	client.snapshotIDs = append(client.snapshotIDs, terminalID)
+	if client.snapshotResults != nil {
+		if snapshot := client.snapshotResults[terminalID]; snapshot != nil {
+			return snapshot, nil
+		}
+	}
 	if client.snapshotResult != nil {
 		return client.snapshotResult, nil
 	}
@@ -247,7 +337,7 @@ func TestProtocolClipboardStorageAdapterWatchesClipboardKeyPrefix(t *testing.T) 
 	if len(client.eventParams) != 1 || client.eventParams[0].StorageKeyPrefix != "clipboard/" {
 		t.Fatalf("unexpected watch params %#v", client.eventParams)
 	}
-	client.eventCh <- protocol.Event{Storage: &protocol.StorageChangedData{
+	client.eventCh <- protocol.Event{Type: protocol.EventStorageChanged, Storage: &protocol.StorageChangedData{
 		AppID:   ref.AppID,
 		Scope:   protocol.StorageScope(ref.Scope),
 		OwnerID: ref.OwnerID,
@@ -948,6 +1038,79 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 	}
 	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
 		t.Fatalf("expected live event to refresh snapshot, got %#v", client.snapshotIDs)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(t *testing.T) {
+	eventCh := make(chan protocol.Event, 4)
+	client := &fakeProtocolTerminalClient{
+		eventCh: eventCh,
+		snapshotResults: map[string]*protocol.Snapshot{
+			"term-1": {
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+					{{Content: "one"}},
+				}},
+			},
+			"term-2": {
+				TerminalID: "term-2",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+					{{Content: "two"}},
+				}},
+			},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	termOneEvents, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("term-1 live events: %v", err)
+	}
+	termTwoEvents, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-2", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("term-2 live events: %v", err)
+	}
+
+	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
+	if got := readTerminalLiveEvent(t, termOneEvents); got.TerminalID != "term-1" || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "one" {
+		t.Fatalf("term-1 stream must receive its own event without blocking behind term-2 subscription, got %#v", got)
+	}
+	assertNoTerminalLiveEvent(t, termTwoEvents)
+
+	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-2"}
+	if got := readTerminalLiveEvent(t, termTwoEvents); got.TerminalID != "term-2" || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "two" {
+		t.Fatalf("term-2 stream must receive its own event, got %#v", got)
+	}
+	assertNoTerminalLiveEvent(t, termOneEvents)
+	if len(client.eventParams) != 2 || client.eventParams[0].TerminalID != "term-1" || client.eventParams[1].TerminalID != "term-2" {
+		t.Fatalf("expected independent protocol event subscriptions, got %#v", client.eventParams)
+	}
+}
+
+func readTerminalLiveEvent(t *testing.T, events <-chan TerminalLiveEvent) TerminalLiveEvent {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if !ok {
+			t.Fatal("terminal live event channel closed")
+		}
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for terminal live event")
+	}
+	return TerminalLiveEvent{}
+}
+
+func assertNoTerminalLiveEvent(t *testing.T, events <-chan TerminalLiveEvent) {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if ok {
+			t.Fatalf("unexpected terminal live event %#v", event)
+		}
+		t.Fatal("terminal live event channel closed")
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

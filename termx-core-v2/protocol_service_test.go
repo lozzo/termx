@@ -1727,6 +1727,44 @@ func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceEventsSubscriptionsDoNotCancelEachOther(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create term-1: %v", err)
+	}
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-2", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create term-2: %v", err)
+	}
+	termOneEvents, err := client.Events(context.Background(), protocol.EventsParams{
+		TerminalID: "term-1",
+		Types:      []protocol.EventType{protocol.EventTerminalStateChanged},
+	})
+	if err != nil {
+		t.Fatalf("events term-1: %v", err)
+	}
+	termTwoEvents, err := client.Events(context.Background(), protocol.EventsParams{
+		TerminalID: "term-2",
+		Types:      []protocol.EventType{protocol.EventTerminalStateChanged},
+	})
+	if err != nil {
+		t.Fatalf("events term-2: %v", err)
+	}
+
+	serverProcess(t, server, "term-1").emitOutput("one\n")
+	if event := requireProtocolEvent(t, termOneEvents); event.TerminalID != "term-1" || event.Type != protocol.EventTerminalStateChanged {
+		t.Fatalf("expected term-1 changed event, got %#v", event)
+	}
+	requireNoProtocolEvent(t, termTwoEvents)
+
+	serverProcess(t, server, "term-2").emitOutput("two\n")
+	if event := requireProtocolEvent(t, termTwoEvents); event.TerminalID != "term-2" || event.Type != protocol.EventTerminalStateChanged {
+		t.Fatalf("expected term-2 changed event, got %#v", event)
+	}
+	requireNoProtocolEvent(t, termOneEvents)
+}
+
 func TestProtocolServiceMultipleAttachmentsResizeOwnership(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
@@ -2205,6 +2243,18 @@ func requireProtocolEvent(t *testing.T, events <-chan protocol.Event) protocol.E
 		t.Fatal("timed out waiting for protocol event")
 	}
 	return protocol.Event{}
+}
+
+func requireNoProtocolEvent(t *testing.T, events <-chan protocol.Event) {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if ok {
+			t.Fatalf("unexpected protocol event %#v", event)
+		}
+		t.Fatal("protocol events channel closed")
+	case <-time.After(50 * time.Millisecond):
+	}
 }
 
 func frozenSnapshotForBenchmark(lines int) history.FrozenSnapshot {

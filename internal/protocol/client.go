@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -17,14 +18,18 @@ type Client struct {
 	transport transport.Transport
 	nextID    atomic.Uint64
 
-	mu      sync.Mutex
-	sendMu  sync.Mutex
-	waiters map[uint64]chan result
-	streams map[uint16]*clientStream
-	pending map[uint16][]StreamFrame
-	reused  map[uint16][]StreamFrame
-	dropped map[uint16]struct{}
-	events  chan Event
+	mu               sync.Mutex
+	sendMu           sync.Mutex
+	waiters          map[uint64]chan result
+	streams          map[uint16]*clientStream
+	pending          map[uint16][]StreamFrame
+	reused           map[uint16][]StreamFrame
+	dropped          map[uint16]struct{}
+	eventSubscribers map[uint64]eventSubscription
+	nextEventSubID   uint64
+	eventsStarted    bool
+	eventStartDone   chan struct{}
+	eventStartErr    error
 
 	helloCh chan result
 	done    chan struct{}
@@ -47,6 +52,11 @@ type HistoryReplayPage struct {
 	Rows         int
 	HasMore      bool
 	Replay       string
+}
+
+type eventSubscription struct {
+	params EventsParams
+	ch     chan Event
 }
 
 type clientStream struct {
@@ -225,14 +235,15 @@ func (s *clientStream) flushPendingSyncLostLocked() {
 
 func NewClient(t transport.Transport) *Client {
 	c := &Client{
-		transport: t,
-		waiters:   make(map[uint64]chan result),
-		streams:   make(map[uint16]*clientStream),
-		pending:   make(map[uint16][]StreamFrame),
-		reused:    make(map[uint16][]StreamFrame),
-		dropped:   make(map[uint16]struct{}),
-		helloCh:   make(chan result, 1),
-		done:      make(chan struct{}),
+		transport:        t,
+		waiters:          make(map[uint64]chan result),
+		streams:          make(map[uint16]*clientStream),
+		pending:          make(map[uint16][]StreamFrame),
+		reused:           make(map[uint16][]StreamFrame),
+		dropped:          make(map[uint16]struct{}),
+		eventSubscribers: make(map[uint64]eventSubscription),
+		helloCh:          make(chan result, 1),
+		done:             make(chan struct{}),
 	}
 	go c.readLoop()
 	return c
@@ -447,17 +458,73 @@ func (c *Client) WorkbenchApply(ctx context.Context, params WorkbenchMutateParam
 }
 
 func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
+	ch := make(chan Event, 64)
 	c.mu.Lock()
-	if c.events == nil {
-		c.events = make(chan Event, 64)
-	}
-	events := c.events
+	c.nextEventSubID++
+	id := c.nextEventSubID
+	c.eventSubscribers[id] = eventSubscription{params: params, ch: ch}
 	c.mu.Unlock()
 
-	if err := c.doRequest(ctx, "events", params, nil); err != nil {
+	if err := c.ensureEventsStarted(ctx); err != nil {
+		c.removeEventSubscriber(id)
 		return nil, err
 	}
-	return events, nil
+	if c.doneClosed() {
+		c.removeEventSubscriber(id)
+		return nil, io.EOF
+	}
+	go func() {
+		<-ctx.Done()
+		c.removeEventSubscriber(id)
+	}()
+	return ch, nil
+}
+
+func (c *Client) ensureEventsStarted(ctx context.Context) error {
+	c.mu.Lock()
+	if c.eventsStarted {
+		c.mu.Unlock()
+		return nil
+	}
+	if c.eventStartDone != nil {
+		done := c.eventStartDone
+		c.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+		}
+		c.mu.Lock()
+		started := c.eventsStarted
+		err := c.eventStartErr
+		c.mu.Unlock()
+		if started {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return io.EOF
+	}
+	done := make(chan struct{})
+	c.eventStartDone = done
+	c.eventStartErr = nil
+	c.mu.Unlock()
+
+	// 中文说明：同一个 protocol client 只向 daemon 打开一条宽事件流；
+	// 多个 TUI view/storage watcher 在客户端内 fan-out，避免互相取消或重复刷新。
+	err := c.doRequest(ctx, "events", EventsParams{}, nil)
+	c.mu.Lock()
+	if err == nil {
+		c.eventsStarted = true
+	}
+	c.eventStartErr = err
+	if c.eventStartDone == done {
+		close(done)
+		c.eventStartDone = nil
+	}
+	c.mu.Unlock()
+	return err
 }
 
 func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
@@ -678,15 +745,7 @@ func (c *Client) readLoop() {
 					c.failAll(err)
 					return
 				}
-				c.mu.Lock()
-				ch := c.events
-				c.mu.Unlock()
-				if ch != nil {
-					select {
-					case ch <- evt:
-					default:
-					}
-				}
+				c.publishEvent(evt)
 			case wire.TypeResponse:
 				resp, err := DecodeResponsePayload(payload)
 				if err != nil {
@@ -751,6 +810,96 @@ func (c *Client) readLoop() {
 	}
 }
 
+func (c *Client) publishEvent(event Event) {
+	c.mu.Lock()
+	subscribers := make([]eventSubscription, 0, len(c.eventSubscribers))
+	for _, sub := range c.eventSubscribers {
+		if !eventMatchesParams(event, sub.params) {
+			continue
+		}
+		subscribers = append(subscribers, sub)
+	}
+	c.mu.Unlock()
+	for _, sub := range subscribers {
+		select {
+		case sub.ch <- event:
+		default:
+		}
+	}
+}
+
+func (c *Client) doneClosed() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) removeEventSubscriber(id uint64) {
+	c.mu.Lock()
+	sub, ok := c.eventSubscribers[id]
+	if ok {
+		delete(c.eventSubscribers, id)
+	}
+	c.mu.Unlock()
+	if ok {
+		close(sub.ch)
+	}
+}
+
+func eventMatchesParams(event Event, params EventsParams) bool {
+	if params.TerminalID != "" && params.TerminalID != event.TerminalID {
+		return false
+	}
+	if (event.Storage != nil || hasStorageEventParams(params)) && !storageEventMatchesParams(event.Storage, params) {
+		return false
+	}
+	if (event.Workbench != nil || params.WorkbenchID != "") && !workbenchEventMatchesParams(event.Workbench, params) {
+		return false
+	}
+	if len(params.Types) == 0 {
+		return true
+	}
+	for _, typ := range params.Types {
+		if typ == event.Type {
+			return true
+		}
+	}
+	return false
+}
+
+func hasStorageEventParams(params EventsParams) bool {
+	return params.StorageAppID != "" || params.StorageScope != "" || params.StorageOwnerID != "" || params.StorageKeyPrefix != ""
+}
+
+func storageEventMatchesParams(storage *StorageChangedData, params EventsParams) bool {
+	if storage == nil {
+		return params.StorageAppID == "" && params.StorageScope == "" && params.StorageOwnerID == "" && params.StorageKeyPrefix == ""
+	}
+	if params.StorageAppID != "" && params.StorageAppID != storage.AppID {
+		return false
+	}
+	if params.StorageScope != "" && params.StorageScope != storage.Scope {
+		return false
+	}
+	if params.StorageOwnerID != "" && params.StorageOwnerID != storage.OwnerID {
+		return false
+	}
+	if params.StorageKeyPrefix != "" && !strings.HasPrefix(storage.Key, params.StorageKeyPrefix) {
+		return false
+	}
+	return true
+}
+
+func workbenchEventMatchesParams(workbench *WorkbenchChangedData, params EventsParams) bool {
+	if workbench == nil {
+		return params.WorkbenchID == ""
+	}
+	return params.WorkbenchID == "" || params.WorkbenchID == workbench.WorkspaceID || params.WorkbenchID == workbench.ResourceID
+}
+
 func (c *Client) failAll(err error) {
 	if err == nil {
 		err = io.EOF
@@ -778,8 +927,8 @@ func (c *Client) failAll(err error) {
 	for id := range c.dropped {
 		delete(c.dropped, id)
 	}
-	if c.events != nil {
-		close(c.events)
-		c.events = nil
+	for id, sub := range c.eventSubscribers {
+		close(sub.ch)
+		delete(c.eventSubscribers, id)
 	}
 }
