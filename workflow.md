@@ -224,11 +224,12 @@
 | 215E1-R51. SK terminal size lock chrome action | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已在左上 terminal 名称后展示 size lock 图标；pane/floating 图标点击都会复用 terminal Size lock toggle 主链并锁定正确 terminal |
 | 215E1-R52. SK terminal size lock 权限与 resize guard | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 Size lock 最高优先级语义：只有 owner 可点击切换，follow 只展示；terminal 锁定后 split/layout/owner 变化都不能重新发 PTY resize，除非主动解锁 |
 | 215E1-R53. SK locked terminal attach resize guard | 完成 | `termx-tui-v3/app/`、`workflow.md` | 已覆盖并修复先 split 空 pane、再 attach 到同一 locked terminal 时，新 pane 或 owner attach result 误改 terminal size 的回归 |
+| 215E1-R54. SK terminal size lock unlock sync | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/services/`、相关文档、`workflow.md` | 已修复 owner 解锁后按当前 owner panel 尺寸重新 resize、lock metadata 事件广播投影、锁图标点击解锁的交互闭环 |
 
 当前下一步：
 
-- `215E1-R53 locked terminal attach resize guard` 已完成
-- 空 pane attach/reconnect 到同一 locked terminal 时，attach result 不再冲掉 terminal 级 size lock；已进入 TerminalView 模型的 terminal 也不再退回裸 session resize fallback
+- `215E1-R54 terminal size lock unlock sync` 已完成
+- terminal size lock 释放后会广播投影到同 terminal 的所有 view；owner 解锁后若 panel 和 terminal size 不一致，会立刻发起一次 owner resize；锁住的 owner chrome 图标可继续点击解锁
 
 ## 6. 必做证据
 

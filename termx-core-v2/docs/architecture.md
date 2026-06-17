@@ -93,7 +93,7 @@ Terminal size lock 是 terminal 级协作控制状态，不是 TUI 的 pane layo
 - lock truth 必须跟随 core-v2 terminal/attachment registry，由 core-v2 统一裁决并通过 protocol 投影；客户端只能缓存投影，不能各自保存一份可冲突的 lock truth。
 - `ResizeOwnership.SizeLocked` 与 `ResizeControl.SizeLocked` 表达当前 terminal PTY size 被锁定；锁定时，即使某 attachment 已是 resize owner，`ensure_resize` 也不能自动修改 PTY size，必须返回 `ResizeControlReasonSizeLocked`、当前 owner、当前 size 和最新 epoch。
 - 获得 resize owner 与执行 resize 是两个动作：未锁定时，显式 owner transfer 可以让新 owner 按自己的 content rect 主动发起一次 `ensure_resize`；锁定时，owner transfer 只能更新 owner/epoch 和广播 control state，不得顺手 resize。
-- 解锁必须是显式用户动作，且必须走 core-v2 protocol；解锁本身不自动 resize。用户解锁后若仍希望匹配当前 panel 尺寸，必须再发起一次手动或语义明确的 resize request。
+- 解锁必须是显式用户动作，且必须走 core-v2 protocol；core-v2 解锁本身不自动 resize。用户解锁后若当前 owner view 需要匹配自己的 panel 尺寸，TUI 必须再发起一次语义明确的 owner resize request。
 - lock/unlock、owner transfer、owner detach 后自动 promote、成功 resize 都必须 bump ownership epoch，并向所有订阅同一 terminal 的客户端广播 resize-control/ownership 变化；广播只携带 terminal/attachment/control metadata，不携带 workspace、tab、pane 或 floating schema。
 - follower/observer 在收到广播后只能更新本地 view binding 投影和 chrome 状态；不得因为广播或自身 content rect 变化主动覆盖 PTY size。
 - terminal process size、owner attachment、lock flag 和 epoch 可以随 daemon 生命周期保存在 core-v2 运行态；若未来要求跨 daemon restart 保留 lock，必须通过 core-v2 自有 terminal metadata 或明确的 protocol/storage 设计完成，不能让 TUI opaque workbench storage 成为 terminal lock truth。

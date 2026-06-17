@@ -243,6 +243,8 @@ type TerminalLiveEvent struct {
 	Exited     bool
 	ExitCode   int
 	Reason     string
+	Tags       map[string]string
+	Metadata   bool
 	Err        error
 	Ready      bool
 }

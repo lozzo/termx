@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
@@ -575,6 +576,11 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 			return root.Advance(), nil
 		}
 		root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: event.TerminalID, Err: event.Err.Error(), State: state.TerminalLiveError})
+		return root.Advance(), nil
+	}
+	if event.Metadata {
+		root.TerminalPool = root.TerminalPool.ApplyTagsEdited(event.TerminalID, event.Tags, "")
+		root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock(event.TerminalID, terminalmeta.SizeLocked(event.Tags))
 		return root.Advance(), nil
 	}
 	if event.Exited {

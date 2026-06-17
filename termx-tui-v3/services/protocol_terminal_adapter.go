@@ -395,6 +395,16 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 		out.Err = fmt.Errorf("%s", event.ReadError.Error)
 		return out
 	}
+	if event.Type == protocol.EventTerminalMetadataChanged {
+		out.Metadata = true
+		tags, err := adapter.terminalTags(ctx, out.TerminalID)
+		if err != nil {
+			out.Err = err
+			return out
+		}
+		out.Tags = tags
+		return out
+	}
 	if event.StateChanged != nil && event.StateChanged.NewState == "exited" {
 		out.Exited = true
 		if event.StateChanged.ExitCode != nil {
@@ -410,6 +420,19 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 	out.Snapshot = surface.Snapshot
 	out.Ready = surface.Ready
 	return out
+}
+
+func (adapter ProtocolTerminalServiceAdapter) terminalTags(ctx context.Context, terminalID string) (map[string]string, error) {
+	result, err := adapter.Client.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range result.Terminals {
+		if item.ID == terminalID {
+			return cloneStringMap(item.Tags), nil
+		}
+	}
+	return nil, fmt.Errorf("terminal metadata unavailable: %s", terminalID)
 }
 
 func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {

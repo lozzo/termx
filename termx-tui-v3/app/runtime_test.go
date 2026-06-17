@@ -1054,6 +1054,28 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T)
 	if !frameContains(lastRuntimeFrame(t, host), render.DefaultPaneChromeGlyphs().SizeLock) {
 		t.Fatalf("locked frame should render size lock glyph, got %#v", lastRuntimeFrame(t, host).Lines)
 	}
+
+	frame = lastRuntimeFrame(t, host)
+	action = frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionResizeLayoutLock.String(), state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send size unlock click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("unlock drain: %v", err)
+	}
+	if len(terminal.TagEdits) != 2 || terminal.TagEdits[1].TerminalID != "term-1" {
+		t.Fatalf("chrome locked owner should stay clickable for unlock, edits=%#v", terminal.TagEdits)
+	}
+	if _, ok := terminal.TagEdits[1].Tags["termx.size_lock"]; ok || terminal.TagEdits[1].Tags["role"] != "shell" {
+		t.Fatalf("chrome unlock should remove only size lock tag, edits=%#v", terminal.TagEdits)
+	}
+	binding, ok = runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.SizeLocked || !binding.CanResize || binding.ResizeRole != state.TerminalResizeRoleOwner {
+		t.Fatalf("chrome unlock should restore owner resize rights, binding=%#v ok=%v", binding, ok)
+	}
+	if len(terminal.Resizes) != 1 || terminal.Resizes[0].ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("unlock should resize owner panel when size diverged, resizes=%#v", terminal.Resizes)
+	}
 }
 
 func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t *testing.T) {

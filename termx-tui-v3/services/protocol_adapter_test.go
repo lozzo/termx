@@ -941,6 +941,31 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 	}
 }
 
+func TestProtocolTerminalServiceAdapterMapsMetadataEventsToTags(t *testing.T) {
+	eventCh := make(chan protocol.Event, 1)
+	client := &fakeProtocolTerminalClient{
+		eventCh: eventCh,
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:   "term-1",
+			Tags: map[string]string{"termx.size_lock": "lock", "role": "shell"},
+		}}},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("live events: %v", err)
+	}
+	eventCh <- protocol.Event{Type: protocol.EventTerminalMetadataChanged, TerminalID: "term-1"}
+
+	got := <-events
+	if !got.Metadata || got.TerminalID != "term-1" || got.Tags["termx.size_lock"] != "lock" || got.Ready {
+		t.Fatalf("metadata event should return terminal tags without surface refresh, got %#v", got)
+	}
+	if client.listCalls != 1 || len(client.snapshotIDs) != 0 {
+		t.Fatalf("metadata event should list terminal metadata without snapshot refresh, lists=%d snapshots=%#v", client.listCalls, client.snapshotIDs)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *testing.T) {
 	eventCh := make(chan protocol.Event, 8)
 	client := &fakeProtocolTerminalClient{

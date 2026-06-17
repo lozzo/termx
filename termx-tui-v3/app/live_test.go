@@ -411,6 +411,81 @@ func TestTerminalSizeLockBlocksSplitLayoutResize(t *testing.T) {
 	}
 }
 
+func TestTerminalSizeUnlockResizesOwnerWhenPanelSizeDiverged(t *testing.T) {
+	reducer := ComposeReducers(NewTerminalPoolReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SetPanelPresentation(state.PanelPresentationSplitLine).
+			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
+			TerminalID: "term-1",
+			Title:      "main",
+			Tags:       map[string]string{"termx.size_lock": "lock"},
+		}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock("term-1", true)
+
+	next, effects := reducer(root, TerminalSizeLockToggleResultMsg{TerminalID: "term-1", Tags: map[string]string{}, Locked: false})
+	msg, ok := liveResizeMsgFromEffects(effects)
+	if !ok {
+		t.Fatalf("unlock should trigger owner resize when panel and terminal size diverged, effects=%#v", effects)
+	}
+	if msg.ViewID != "view-1" || msg.Cols == 80 || msg.Rows == 24 {
+		t.Fatalf("unlock resize should use owner view content rect, got %#v", msg)
+	}
+	owner, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if owner.SizeLocked || !owner.CanResize || owner.RequestSeq != msg.Seq || owner.DesiredCols != msg.Cols || owner.DesiredRows != msg.Rows {
+		t.Fatalf("owner should be unlocked and track requested resize, owner=%#v msg=%#v", owner, msg)
+	}
+}
+
+func TestLiveMetadataEventProjectsTerminalSizeLockAndUnlockResize(t *testing.T) {
+	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SetPanelPresentation(state.PanelPresentationSplitLine).
+			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
+			TerminalID: "term-1",
+			Title:      "main",
+		}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	locked, effects := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{"termx.size_lock": "lock"}}})
+	if _, ok := liveResizeMsgFromEffects(effects); ok {
+		t.Fatalf("metadata lock must not resize PTY, effects=%#v", effects)
+	}
+	owner, _ := locked.TerminalViews.PaneBinding(state.DefaultPaneID)
+	follower, _ := locked.TerminalViews.PaneBinding("pane-2")
+	if !owner.SizeLocked || owner.CanResize || !follower.SizeLocked || follower.CanResize {
+		t.Fatalf("metadata lock should broadcast to all terminal views, owner=%#v follower=%#v", owner, follower)
+	}
+	if locked.TerminalPool.Items[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("metadata lock should update terminal pool tags, pool=%#v", locked.TerminalPool)
+	}
+
+	unlocked, effects := reducer(locked, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Metadata: true, Tags: map[string]string{}}})
+	msg, ok := liveResizeMsgFromEffects(effects)
+	if !ok {
+		t.Fatalf("metadata unlock should trigger owner resize when panel and terminal size diverged, effects=%#v", effects)
+	}
+	owner, _ = unlocked.TerminalViews.PaneBinding(state.DefaultPaneID)
+	follower, _ = unlocked.TerminalViews.PaneBinding("pane-2")
+	if owner.SizeLocked || !owner.CanResize || follower.SizeLocked || follower.CanResize {
+		t.Fatalf("metadata unlock should broadcast unlocked projection, owner=%#v follower=%#v", owner, follower)
+	}
+	if msg.ViewID != "view-1" {
+		t.Fatalf("metadata unlock resize should target owner view, got %#v", msg)
+	}
+}
+
 func TestTerminalSizeLockBlocksAttachResultResizeToSplitPane(t *testing.T) {
 	reducer := ComposeReducers(NewShellReducer(), NewTerminalPoolReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	root := state.Root{

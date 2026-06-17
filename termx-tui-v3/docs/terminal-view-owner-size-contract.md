@@ -93,5 +93,6 @@ tuiv2 的 `paneContentOffsetRange(viewportSize, contentSize)` 用 `min(0, viewpo
 | owner 未 size lock，split 改变高度 | owner terminal extent 最终等于新 content rect，不出现稳定大片 `·`。 |
 | follower pane 变大 | PTY size 不变；follower 可以显示点或 overflow，但 chrome 不显示 `◆ owner`。 |
 | terminal size lock 开启 | chrome 显示 terminal locked 状态；owner 可以仍是 owner，但 `CanResize=false`，几何动作不发 resize。 |
+| terminal size lock 释放 | owner chrome 可点击解锁；所有连接同 terminal 的 view 同步移除锁图标；若 owner panel 与 terminal size 不一致，立即发起一次 owner resize。 |
 | view-local center | 内容和 live cursor 同步移动；cursor 被移出 content rect 时隐藏。 |
 | owner view 关闭 | 按确认策略：冻结等待显式接管，或自动提升并强制 resize；不能悄悄展示错误 owner。 |
