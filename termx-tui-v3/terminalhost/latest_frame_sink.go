@@ -1,7 +1,13 @@
 package terminalhost
 
 import (
+	"log/slog"
+	"os"
+	goruntime "runtime"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/render"
 )
@@ -16,6 +22,12 @@ type LatestFrameSink struct {
 	patches []render.Frame
 	closed  bool
 	wg      sync.WaitGroup
+
+	logger        *slog.Logger
+	diagEnabled   bool
+	diagInterval  time.Duration
+	lastDiag      time.Time
+	highWaterMark int
 }
 
 func NewLatestFrameSink(sink render.FrameSink) *LatestFrameSink {
@@ -24,6 +36,14 @@ func NewLatestFrameSink(sink render.FrameSink) *LatestFrameSink {
 	writer.wg.Add(1)
 	go writer.loop()
 	return writer
+}
+
+func (sink *LatestFrameSink) SetLogger(logger *slog.Logger) {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	sink.logger = logger
+	sink.diagEnabled = logger != nil && latestFrameSinkDiagnosticsEnabled()
+	sink.diagInterval = latestFrameSinkDiagnosticsInterval()
 }
 
 func (sink *LatestFrameSink) NeedsCompleteFrame() bool {
@@ -49,6 +69,7 @@ func (sink *LatestFrameSink) WriteFrame(frame render.Frame) error {
 		sink.pending = &cloned
 		sink.patches = nil
 	}
+	sink.observeQueueLocked(cloned.Patch != nil)
 	sink.cond.Signal()
 	sink.mu.Unlock()
 	return nil
@@ -93,6 +114,72 @@ func (sink *LatestFrameSink) next() (render.Frame, bool) {
 	}
 	frame := sink.patches[0]
 	copy(sink.patches, sink.patches[1:])
-	sink.patches = sink.patches[:len(sink.patches)-1]
+	last := len(sink.patches) - 1
+	sink.patches[last] = render.Frame{}
+	sink.patches = sink.patches[:last]
 	return frame, true
+}
+
+func (sink *LatestFrameSink) observeQueueLocked(patch bool) {
+	if !sink.diagEnabled || sink.logger == nil {
+		return
+	}
+	queueLen := len(sink.patches)
+	force := false
+	if queueLen > sink.highWaterMark {
+		sink.highWaterMark = queueLen
+		force = queueLen == 1 || queueLen%128 == 0
+	}
+	now := time.Now()
+	if !force && now.Sub(sink.lastDiag) < sink.diagInterval {
+		return
+	}
+	sink.lastDiag = now
+	var mem goruntime.MemStats
+	goruntime.ReadMemStats(&mem)
+	sink.logger.Debug("tui-v3 latest-frame-sink diagnostic",
+		"patch", patch,
+		"pending_complete", sink.pending != nil,
+		"patch_queue_len", queueLen,
+		"patch_queue_high_water", sink.highWaterMark,
+		"queued_patch_bytes", latestFrameSinkPatchBytes(sink.patches),
+		"heap_alloc", mem.HeapAlloc,
+		"heap_objects", mem.HeapObjects,
+		"goroutines", goruntime.NumGoroutine(),
+	)
+}
+
+func latestFrameSinkDiagnosticsEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_TUI_DIAG"))) {
+	case "1", "true", "on", "yes", "debug":
+		return true
+	default:
+		return false
+	}
+}
+
+func latestFrameSinkDiagnosticsInterval() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("TERMX_TUI_DIAG_INTERVAL_MS"))
+	if raw == "" {
+		return time.Second
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return time.Second
+	}
+	return time.Duration(value) * time.Millisecond
+}
+
+func latestFrameSinkPatchBytes(frames []render.Frame) int {
+	total := 0
+	for _, frame := range frames {
+		if frame.Patch == nil {
+			continue
+		}
+		total += len(frame.Patch.LineANSI)
+		for _, line := range frame.Patch.LinesANSI {
+			total += len(line)
+		}
+	}
+	return total
 }

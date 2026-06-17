@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -148,6 +149,22 @@ func WithThemeProbe(enabled bool) Option {
 	}
 }
 
+// WithLogger 打开 host/frame-sink 诊断日志；实际采样仍由 TERMX_TUI_DIAG 控制。
+func WithLogger(logger *slog.Logger) Option {
+	return func(host *Host) {
+		host.logger = logger
+	}
+}
+
+func (host *Host) SetLogger(logger *slog.Logger) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	host.logger = logger
+	if host.latestSink != nil {
+		host.latestSink.SetLogger(logger)
+	}
+}
+
 // Host 是 TUI-v3 真实 TerminalHost，实现 app.TerminalHost 所需契约。
 type Host struct {
 	input  io.Reader
@@ -166,6 +183,7 @@ type Host struct {
 	sink        render.FrameSink
 	latestSink  *LatestFrameSink
 	themeProbe  bool
+	logger      *slog.Logger
 
 	mu      sync.Mutex
 	state   TerminalState
@@ -238,6 +256,7 @@ func (host *Host) Enter(ctx context.Context) error {
 	}
 	host.cancelReader = cancelReader
 	host.latestSink = NewLatestFrameSink(NewFrameSink(host.output))
+	host.latestSink.SetLogger(host.logger)
 	host.sink = host.latestSink
 	done := host.done
 	host.wg.Add(1)

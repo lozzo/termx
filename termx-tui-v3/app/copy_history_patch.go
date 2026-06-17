@@ -93,6 +93,7 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
 	runtime.copyHistoryPatch = current
+	runtime.observeRuntimePatchFrame(frame)
 	return true
 }
 
@@ -110,6 +111,7 @@ func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(current copyHistoryPa
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
 	runtime.copyHistoryPatch = current
+	runtime.observeRuntimePatchFrame(frame)
 	return true
 }
 

@@ -1,6 +1,7 @@
 package terminalhost
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -99,6 +100,34 @@ func TestLatestFrameSinkCompleteFrameDropsStaleQueuedPatches(t *testing.T) {
 	got := underlying.framesSnapshot()
 	if len(got) != 2 || got[1].Patch != nil || got[1].Lines[0] != "fresh" {
 		t.Fatalf("expected stale patch dropped before fresh complete frame, got %#v", got)
+	}
+}
+
+func TestLatestFrameSinkNextClearsDequeuedPatchReferences(t *testing.T) {
+	sink := &LatestFrameSink{}
+	sink.cond = sync.NewCond(&sink.mu)
+	largeLine := strings.Repeat("x", 1024)
+	sink.patches = []render.Frame{
+		{Patch: &render.FramePatch{LineANSI: largeLine}},
+		{Patch: &render.FramePatch{LineANSI: "tail"}},
+	}
+
+	if frame, ok := sink.next(); !ok || frame.Patch == nil || frame.Patch.LineANSI != largeLine {
+		t.Fatalf("expected first patch frame, got ok=%v frame=%#v", ok, frame)
+	}
+	retained := sink.patches[:cap(sink.patches)]
+	if len(sink.patches) != 1 || retained[1].Patch != nil {
+		t.Fatalf("dequeued patch should not remain in backing array, len=%d retained=%#v", len(sink.patches), retained)
+	}
+
+	if frame, ok := sink.next(); !ok || frame.Patch == nil || frame.Patch.LineANSI != "tail" {
+		t.Fatalf("expected second patch frame, got ok=%v frame=%#v", ok, frame)
+	}
+	retained = sink.patches[:cap(sink.patches)]
+	for i, frame := range retained {
+		if frame.Patch != nil {
+			t.Fatalf("patch backing array kept frame at index %d: %#v", i, frame)
+		}
 	}
 }
 

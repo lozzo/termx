@@ -22,6 +22,10 @@ type v3TerminalHost interface {
 	Size() (int, int, error)
 }
 
+type v3TerminalHostLogger interface {
+	SetLogger(*slog.Logger)
+}
+
 type v3AttachRunner func(context.Context, v3AttachConfig) error
 
 type v3AttachConfig struct {
@@ -83,6 +87,9 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	defer clipboardStorageClient.Close()
 
 	host := newV3TerminalHost()
+	if loggerHost, ok := host.(v3TerminalHostLogger); ok {
+		loggerHost.SetLogger(logger)
+	}
 	if err := host.Enter(ctx); err != nil {
 		return err
 	}

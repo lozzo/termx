@@ -228,11 +228,13 @@
 | 215E1-R55. SK floating window 交互审计 | 完成 | `termx-tui-v3/docs/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已整理 floating window 在 attach/create、hit region、owner/size lock、resize、collapsed input、storage restore、workbench tree 等路径上的问题清单和建议修复顺序 |
 | 215E1-R56. SK floating hit region panel identity | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已将 floating hit region 收口为普通 panel id + floating 标记，runtime/app 在边界上按 panel 身份分发，只在下发 floating command 时解析内部 floating id |
 | 215E1-R57. SK floating empty input and resize hit target | 完成 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 active floating empty panel 键盘上下/回车仍打到 tiled pane 的问题，floating empty 内容会显示 reducer-owned CTA selection，并把 floating resize 命中区扩到右下角 3 格 |
+| 215E1-R58. SK floating memory diagnostics | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/terminalhost/`、`termx-cli/cmd/termx/`、`workflow.md` | 已补 TUI runtime/latest frame sink 内存诊断、heap profile 文件落盘开关，以及 runtime/sink 队列引用清理回归测试；用于现场复现 floating 打开后的内存增长来源 |
+| 215E1-R59. SK floating memory growth fix | 待开始 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 基于 R58 现场日志/pprof 定位并修复 floating 打开后的真实内存增长点，补对应 runtime/render 回归证据 |
 
 当前下一步：
 
-- `215E1-R57 floating empty input and resize hit target` 已完成
-- 下一步按 floating 审计继续收口 attach/create、storage restore、workbench tree 等交互问题
+- `215E1-R58 floating memory diagnostics` 已完成
+- 下一步根据现场日志/pprof 推进 `215E1-R59 floating memory growth fix`
 
 ## 6. 必做证据
 

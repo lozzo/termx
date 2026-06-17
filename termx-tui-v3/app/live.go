@@ -35,7 +35,9 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	return NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime.SetLogger(deps.Logger)
+	return runtime
 }
 
 // NewInteractiveRuntime 组合 live 与 copy mode 主路径。copy mode 会消费
@@ -74,6 +76,7 @@ func NewInteractiveRuntimeWithStorage(
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
 	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime.SetLogger(live.Logger)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
 		runtime.enqueue(WorkbenchStorageLoadRequestMsg{})

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -24,6 +26,12 @@ type testMsg struct {
 
 func (testMsg) isMsg() {}
 
+type retainingMsg struct {
+	Payload []byte
+}
+
+func (retainingMsg) isMsg() {}
+
 func TestRuntimeContractsDoNotUseBubbleTea(t *testing.T) {
 	var msg Msg = NoopMsg{}
 	var effect Effect = NoopEffect{}
@@ -32,6 +40,45 @@ func TestRuntimeContractsDoNotUseBubbleTea(t *testing.T) {
 	}
 	if effect == nil {
 		t.Fatal("expected effect contract")
+	}
+}
+
+func TestAppRuntimeDequeClearsProcessedMessageReferences(t *testing.T) {
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.enqueue(retainingMsg{Payload: make([]byte, 1024)})
+	runtime.enqueue(retainingMsg{Payload: make([]byte, 2048)})
+
+	if _, ok := runtime.dequeue(); !ok {
+		t.Fatal("expected first queued message")
+	}
+	retained := runtime.queue[:cap(runtime.queue)]
+	if len(runtime.queue) != 1 || retained[1] != nil {
+		t.Fatalf("dequeue must clear stale tail reference, len=%d retained=%#v", len(runtime.queue), retained)
+	}
+
+	if _, ok := runtime.dequeue(); !ok {
+		t.Fatal("expected second queued message")
+	}
+	retained = runtime.queue[:cap(runtime.queue)]
+	for i, msg := range retained {
+		if msg != nil {
+			t.Fatalf("queue backing array kept processed message at index %d: %#v", i, msg)
+		}
+	}
+}
+
+func TestAppRuntimeDiagnosticsRespectsEnvironmentToggle(t *testing.T) {
+	t.Setenv(tuiDiagnosticsEnv, "")
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if runtime.diagnostics == nil || runtime.diagnostics.enabled {
+		t.Fatalf("diagnostics should be present but disabled by default, got %#v", runtime.diagnostics)
+	}
+
+	t.Setenv(tuiDiagnosticsEnv, "1")
+	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if runtime.diagnostics == nil || !runtime.diagnostics.enabled {
+		t.Fatalf("diagnostics should be enabled by %s, got %#v", tuiDiagnosticsEnv, runtime.diagnostics)
 	}
 }
 

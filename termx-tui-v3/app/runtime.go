@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -181,6 +182,7 @@ type AppRuntime struct {
 	startupFrameReady   bool
 	maxMessagesPerBatch int
 	copyHistoryPatch    copyHistoryPatchCache
+	diagnostics         *runtimeDiagnostics
 }
 
 type mouseDragState struct {
@@ -256,6 +258,10 @@ func NewAppRuntime(
 		now:               time.Now,
 		toastTickInterval: defaultToastTickInterval,
 	}
+}
+
+func (runtime *AppRuntime) SetLogger(logger *slog.Logger) {
+	runtime.diagnostics = newRuntimeDiagnostics(logger)
 }
 
 func (runtime *AppRuntime) State() state.Root {
@@ -341,6 +347,7 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		}
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
+		runtime.observeRuntimeMessage(msg, effects)
 		processed++
 		needsRender = true
 		if _, ok := msg.(HostResizeMsg); ok {
@@ -659,7 +666,9 @@ func (runtime *AppRuntime) dequeue() (Msg, bool) {
 	}
 	msg := runtime.queue[0]
 	copy(runtime.queue, runtime.queue[1:])
-	runtime.queue = runtime.queue[:len(runtime.queue)-1]
+	last := len(runtime.queue) - 1
+	runtime.queue[last] = nil
+	runtime.queue = runtime.queue[:last]
 	return msg, true
 }
 
@@ -749,6 +758,7 @@ func (runtime *AppRuntime) renderFrame() {
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
 	runtime.rememberCopyHistoryPatchFrame(frame)
+	runtime.observeRuntimeFrame(frame)
 }
 
 func (runtime *AppRuntime) shouldWriteFirstFrame() bool {
