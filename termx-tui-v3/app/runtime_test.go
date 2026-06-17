@@ -67,6 +67,33 @@ func TestAppRuntimeDequeClearsProcessedMessageReferences(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeCoalescesQueuedWorkbenchStorageRequests(t *testing.T) {
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.enqueue(testMsg{Name: "before"})
+	runtime.enqueue(WorkbenchStorageLoadRequestMsg{})
+	runtime.enqueue(WorkbenchStoragePersistRequestMsg{Reason: "move"})
+	runtime.enqueue(WorkbenchStorageLoadRequestMsg{})
+	runtime.enqueue(WorkbenchStoragePersistRequestMsg{Reason: "resize"})
+	runtime.enqueue(testMsg{Name: "after"})
+
+	if len(runtime.queue) != 4 {
+		t.Fatalf("workbench storage requests should coalesce in queue, got %#v", runtime.queue)
+	}
+	if _, ok := runtime.queue[0].(testMsg); !ok {
+		t.Fatalf("ordinary message before coalesced storage requests should keep order, queue=%#v", runtime.queue)
+	}
+	if _, ok := runtime.queue[1].(WorkbenchStorageLoadRequestMsg); !ok {
+		t.Fatalf("load request should stay at first load position, queue=%#v", runtime.queue)
+	}
+	persist, ok := runtime.queue[2].(WorkbenchStoragePersistRequestMsg)
+	if !ok || persist.Reason != "resize" {
+		t.Fatalf("persist request should keep latest reason and one queue slot, queue=%#v", runtime.queue)
+	}
+	if after, ok := runtime.queue[3].(testMsg); !ok || after.Name != "after" {
+		t.Fatalf("ordinary message after coalesced storage requests should keep order, queue=%#v", runtime.queue)
+	}
+}
+
 func TestAppRuntimeDiagnosticsRespectsEnvironmentToggle(t *testing.T) {
 	t.Setenv(tuiDiagnosticsEnv, "")
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)

@@ -49,7 +49,7 @@ func TestWorkbenchStorageLoadAndSaveEffectsAreAsync(t *testing.T) {
 		t.Fatalf("expected load effect, got %#v", effects)
 	}
 	load, ok := effects[0].(FuncEffect)
-	if !ok || !load.Async || !load.ForceSyncInTests {
+	if !ok || !load.Async || !load.ForceSyncInTests || load.Token != workbenchStorageLoadToken {
 		t.Fatalf("workbench load must be async in real runtime and sync-capable in harness, got %#v", effects[0])
 	}
 
@@ -58,7 +58,7 @@ func TestWorkbenchStorageLoadAndSaveEffectsAreAsync(t *testing.T) {
 		t.Fatalf("expected save effect, got %#v", effects)
 	}
 	save, ok := effects[0].(FuncEffect)
-	if !ok || !save.Async || !save.ForceSyncInTests {
+	if !ok || !save.Async || !save.ForceSyncInTests || save.Token != workbenchStorageSaveToken {
 		t.Fatalf("workbench save must be async in real runtime and sync-capable in harness, got %#v", effects[0])
 	}
 }
@@ -213,7 +213,7 @@ func TestWorkbenchRestoreAttachEffectsPreserveStoredResizeRole(t *testing.T) {
 		state.NewPaneTerminalView("pane-observer", "term-2", 9, 30, 10, state.TerminalResizeRoleObserver, "surface", "view-observer", false),
 	}
 
-	effects := workbenchRestoredTerminalAttachEffects(bindings)
+	effects := workbenchRestoredTerminalAttachEffects(state.TerminalViewStore{}, bindings)
 	if len(effects) != 3 {
 		t.Fatalf("expected one attach effect per binding, got %#v", effects)
 	}
@@ -231,6 +231,23 @@ func TestWorkbenchRestoreAttachEffectsPreserveStoredResizeRole(t *testing.T) {
 	first, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
 	if !ok || first.Config.ViewID != "view-owner" {
 		t.Fatalf("restore must reattach owner before same-terminal followers, got %#v", first)
+	}
+}
+
+func TestWorkbenchRestoreSkipsReattachForAlreadyLiveBinding(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	previous := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-live", viewID, true))
+	stored := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 0, 80, 24, state.TerminalResizeRoleOwner, "surface-stored", viewID, false))
+
+	restored := preserveWorkbenchRuntimeTerminalViews(previous, stored)
+	binding, ok := restored.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.Channel != 7 || binding.SurfaceID != "surface-live" || !binding.CanResize {
+		t.Fatalf("restore should preserve current live runtime fields, binding=%#v ok=%v", binding, ok)
+	}
+	if effects := workbenchRestoredTerminalAttachEffects(previous, restored.Bindings()); len(effects) != 0 {
+		t.Fatalf("already live same view/terminal should not reattach, effects=%#v", effects)
 	}
 }
 
@@ -425,6 +442,37 @@ func TestWorkbenchStorageConflictReloadsLatestSnapshot(t *testing.T) {
 
 	if root.Shell.ActivePaneID != "pane-remote" || root.WorkbenchSync.Conflict || root.WorkbenchSync.SaveVersion() != 9 {
 		t.Fatalf("conflict reload should apply latest remote snapshot, root=%#v", root)
+	}
+}
+
+func TestWorkbenchStorageDuplicateConflictDoesNotReloadAgain(t *testing.T) {
+	reducer := NewWorkbenchStorageReducer(WorkbenchDeps{Storage: &services.FakeWorkbenchStorageService{}})
+	root := state.Root{
+		Shell:         state.DefaultShell(),
+		WorkbenchSync: (state.WorkbenchSyncStore{}).MarkApplied(8),
+	}
+
+	conflict := WorkbenchStoragePersistResultMsg{
+		Err:             services.ErrWorkbenchStorageConflict,
+		ExpectedVersion: 8,
+	}
+	root, effects := reducer(root, conflict)
+	if len(effects) != 1 || !root.WorkbenchSync.Conflict || root.WorkbenchSync.ConflictVersion != 8 {
+		t.Fatalf("first conflict should request reload, root=%#v effects=%#v", root, effects)
+	}
+
+	root, effects = reducer(root, conflict)
+	if len(effects) != 0 || len(root.Shell.Toasts) != 1 {
+		t.Fatalf("duplicate conflict for same version should be ignored, root=%#v effects=%#v", root, effects)
+	}
+
+	stale := WorkbenchStoragePersistResultMsg{
+		Err:             services.ErrWorkbenchStorageConflict,
+		ExpectedVersion: 7,
+	}
+	root, effects = reducer(root, stale)
+	if len(effects) != 0 || root.WorkbenchSync.ConflictVersion != 8 {
+		t.Fatalf("stale conflict result should not request reload, root=%#v effects=%#v", root, effects)
 	}
 }
 

@@ -510,6 +510,10 @@ func (runtime *AppRuntime) enqueue(msg Msg) {
 		runtime.signalWakeLocked()
 		return
 	}
+	if runtime.coalesceQueuedWorkbenchStorage(msg) {
+		runtime.signalWakeLocked()
+		return
+	}
 	runtime.queue = append(runtime.queue, msg)
 	runtime.signalWakeLocked()
 }
@@ -585,6 +589,60 @@ func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
 		return true
 	}
 	return false
+}
+
+func (runtime *AppRuntime) coalesceQueuedWorkbenchStorage(msg Msg) bool {
+	switch msg := msg.(type) {
+	case WorkbenchStorageLoadRequestMsg:
+		return runtime.replaceQueuedWorkbenchStorageLoadLocked(msg)
+	case WorkbenchStoragePersistRequestMsg:
+		return runtime.replaceQueuedWorkbenchStoragePersistLocked(msg)
+	default:
+		return false
+	}
+}
+
+func (runtime *AppRuntime) replaceQueuedWorkbenchStorageLoadLocked(msg WorkbenchStorageLoadRequestMsg) bool {
+	first := -1
+	filtered := runtime.queue[:0]
+	for _, queued := range runtime.queue {
+		if _, ok := queued.(WorkbenchStorageLoadRequestMsg); ok {
+			if first < 0 {
+				first = len(filtered)
+			}
+			continue
+		}
+		filtered = append(filtered, queued)
+	}
+	if first < 0 {
+		return false
+	}
+	runtime.queue = append(filtered, nil)
+	copy(runtime.queue[first+1:], runtime.queue[first:])
+	runtime.queue[first] = msg
+	return true
+}
+
+func (runtime *AppRuntime) replaceQueuedWorkbenchStoragePersistLocked(msg WorkbenchStoragePersistRequestMsg) bool {
+	first := -1
+	filtered := runtime.queue[:0]
+	for _, queued := range runtime.queue {
+		if _, ok := queued.(WorkbenchStoragePersistRequestMsg); ok {
+			if first < 0 {
+				first = len(filtered)
+			}
+			continue
+		}
+		filtered = append(filtered, queued)
+	}
+	if first < 0 {
+		return false
+	}
+	// persist request 不携带 snapshot；真正保存时读取当时 root，因此保留最后一个请求即可。
+	runtime.queue = append(filtered, nil)
+	copy(runtime.queue[first+1:], runtime.queue[first:])
+	runtime.queue[first] = msg
+	return true
 }
 
 type queuedLiveUpdate struct {
