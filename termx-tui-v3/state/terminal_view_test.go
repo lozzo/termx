@@ -226,9 +226,24 @@ func TestTerminalViewApplyTerminalSizeLockKeepsOwnerIdentityAndBlocksResize(t *t
 	if follower.HasResizeOwner() || follower.CanResize || !follower.SizeLocked || follower.ControlReason != "size_locked" {
 		t.Fatalf("follower should inherit terminal lock without owner identity, got %#v", follower)
 	}
+	_, decision := store.RequestPaneResize("pane-1", 100, 30)
+	if decision.Allowed || decision.Reason != "size-locked" {
+		t.Fatalf("locked owner must not allow resize requests, got %#v", decision)
+	}
+
+	store = store.BindPane(NewPaneTerminalView("pane-3", "term-1", 9, 80, 24, TerminalResizeRoleOwner, "surface", "view-3", true))
+	store = store.TransferPaneResizeOwner("pane-3")
+	newOwner, _ := store.PaneBinding("pane-3")
+	if newOwner.ResizeRole != TerminalResizeRoleOwner || newOwner.CanResize || !newOwner.SizeLocked || newOwner.ControlReason != "size_locked" {
+		t.Fatalf("owner transfer on locked terminal must preserve lock and block resize, got %#v", newOwner)
+	}
+	oldOwner, _ := store.PaneBinding("pane-1")
+	if oldOwner.SizeLocked != true || oldOwner.CanResize {
+		t.Fatalf("previous view should stay locked after owner transfer, got %#v", oldOwner)
+	}
 
 	store = store.ApplyTerminalSizeLock("term-1", false)
-	owner, _ = store.PaneBinding("pane-1")
+	owner, _ = store.PaneBinding("pane-3")
 	follower, _ = store.PaneBinding("pane-2")
 	if owner.SizeLocked || !owner.CanResize || owner.ControlReason != "" {
 		t.Fatalf("unlock should restore owner resize authority, got %#v", owner)

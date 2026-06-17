@@ -69,7 +69,11 @@ func paneChromeTerminalSizeLockSlot(terminal TerminalChromeVM, borderStyle Style
 	if terminal.Locked {
 		lockGlyph = paneChromeSizeLockGlyph()
 	}
-	return []paneChromeTopSlot{{text: paneChromeBracketToken(lockGlyph), style: borderStyle, priority: 1, actionID: ActionResizeLayoutLock.String()}}
+	actionID := ""
+	if terminal.CanLockSize {
+		actionID = ActionResizeLayoutLock.String()
+	}
+	return []paneChromeTopSlot{{text: paneChromeBracketToken(lockGlyph), style: borderStyle, priority: 1, actionID: actionID}}
 }
 
 func paneChromeTerminalTitlePrefix(terminal TerminalChromeVM) string {

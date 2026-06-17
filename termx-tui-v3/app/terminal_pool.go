@@ -515,17 +515,26 @@ type terminalSizeLockTarget struct {
 
 func activeTerminalSizeLockTarget(root state.Root) (terminalSizeLockTarget, bool) {
 	if binding, ok := activeTerminalViewBinding(root); ok && binding.TerminalID != "" {
-		return terminalSizeLockTarget{TerminalID: binding.TerminalID}, true
+		if binding.HasResizeOwner() {
+			return terminalSizeLockTarget{TerminalID: binding.TerminalID}, true
+		}
+		return terminalSizeLockTarget{}, false
 	}
 	shell := root.Shell.EnsureDefaults()
 	if shell.ActiveFloatingID != "" {
 		for _, floating := range shell.Floatings {
 			if floating.ID == shell.ActiveFloatingID && floating.Pane.TerminalID != "" {
+				if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && !binding.HasResizeOwner() {
+					return terminalSizeLockTarget{}, false
+				}
 				return terminalSizeLockTarget{TerminalID: floating.Pane.TerminalID}, true
 			}
 		}
 	}
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok && pane.TerminalID != "" {
+		if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && !binding.HasResizeOwner() {
+			return terminalSizeLockTarget{}, false
+		}
 		return terminalSizeLockTarget{TerminalID: pane.TerminalID}, true
 	}
 	if root.Session.TerminalID != "" {

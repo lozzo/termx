@@ -948,6 +948,24 @@ func TestTerminalSizeLockToggleRequiresTerminalPoolTagsBeforeWriting(t *testing.
 	}
 }
 
+func TestTerminalSizeLockToggleRequiresOwnerIdentity(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Shell:        state.DefaultShell(),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-1", false))
+
+	next, effects := reducer(root, TerminalSizeLockToggleRequestMsg{})
+	if len(terminal.TagEdits) != 0 || len(effects) != 0 {
+		t.Fatalf("follower must not write size lock tags, edits=%#v effects=%#v", terminal.TagEdits, effects)
+	}
+	if len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Body != "no active terminal" {
+		t.Fatalf("follower size lock should warn, root=%#v", next)
+	}
+}
+
 func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},

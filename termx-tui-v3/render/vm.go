@@ -717,6 +717,7 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		AttachCount:  len(root.TerminalViews.BindingsForTerminal(binding.TerminalID)),
 		Owner:        ChromeSlotVM{Text: ownerText, Style: ownerStyle},
 		TakeOwner:    !binding.HasResizeOwner(),
+		CanLockSize:  binding.HasResizeOwner(),
 		ResizeRole:   role,
 		CanResize:    binding.CanResize,
 		TerminalID:   binding.TerminalID,

@@ -378,6 +378,39 @@ func TestTerminalLayoutResizeOwnerPaneResizeChangesPTYSize(t *testing.T) {
 	}
 }
 
+func TestTerminalSizeLockBlocksSplitLayoutResize(t *testing.T) {
+	reducer := ComposeReducers(NewShellReducer(), NewTerminalLayoutResizeReducer())
+	root := state.Root{
+		Shell:    state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine).FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock("term-1", true)
+
+	next, effects := reducer(root, ShellSplitActivePaneMsg{
+		Pane:      state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive},
+		Direction: state.SplitDirectionHorizontal,
+	})
+	if _, ok := liveResizeMsgFromEffects(effects); ok {
+		t.Fatalf("splitting a locked terminal must not emit PTY resize, effects=%#v", effects)
+	}
+	owner, _ := next.TerminalViews.PaneBinding("pane-2")
+	if owner.ResizeRole != state.TerminalResizeRoleOwner || owner.CanResize || !owner.SizeLocked || owner.ControlReason != "size_locked" {
+		t.Fatalf("new split owner should inherit terminal lock without resize authority, got %#v", owner)
+	}
+	previous, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if previous.CanResize || !previous.SizeLocked {
+		t.Fatalf("previous pane should remain locked after split, got %#v", previous)
+	}
+
+	next.TerminalViews = next.TerminalViews.ApplyTerminalSizeLock("term-1", false)
+	owner, _ = next.TerminalViews.PaneBinding("pane-2")
+	if owner.SizeLocked || !owner.CanResize {
+		t.Fatalf("unlock should restore resize authority to current owner, got %#v", owner)
+	}
+}
+
 func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
 	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)

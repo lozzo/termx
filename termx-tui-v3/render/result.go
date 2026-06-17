@@ -751,6 +751,7 @@ type TerminalChromeVM struct {
 	AttachCount  int
 	Owner        ChromeSlotVM
 	TakeOwner    bool
+	CanLockSize  bool
 	ResizeRole   string
 	CanResize    bool
 	TerminalID   string

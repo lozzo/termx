@@ -71,6 +71,9 @@ func TestChromePrimitivePaneOwnerTokenDrivesTakeOwnerHitRegion(t *testing.T) {
 func TestChromePrimitiveTerminalSizeLockButtonFollowsTitleAndDrivesHitRegion(t *testing.T) {
 	panel := terminalChromeSlotTestPanel("pane-1", "shell")
 	panel.Chrome.Actions = []ChromeActionVM{paneChromeActionVM(ActionPaneClose, StyleAccent)}
+	panel.Chrome.Terminal.Owner = ChromeSlotVM{Text: "◆ owner", Style: StyleSuccess}
+	panel.Chrome.Terminal.TakeOwner = false
+	panel.Chrome.Terminal.CanLockSize = true
 	rect := Rect{W: 72, H: 8}
 	primitive := PaneChromePrimitive(panel, rect, StyleAccent)
 	unlocked, ok := chromeSlotByAction(primitive.ActionSlots, ActionResizeLayoutLock.String())
@@ -90,6 +93,23 @@ func TestChromePrimitiveTerminalSizeLockButtonFollowsTitleAndDrivesHitRegion(t *
 	locked, ok := chromeSlotByAction(lockedPrimitive.ActionSlots, ActionResizeLayoutLock.String())
 	if !ok || locked.Text != paneChromeBracketToken(paneChromeSizeLockGlyph()) || locked.Rect.X != unlocked.Rect.X {
 		t.Fatalf("locked terminal should keep same action slot with locked glyph, unlocked=%#v locked=%#v", unlocked, locked)
+	}
+}
+
+func TestChromePrimitiveFollowerSizeLockGlyphIsDisplayOnly(t *testing.T) {
+	panel := terminalChromeSlotTestPanel("pane-1", "shell")
+	panel.Chrome.Actions = []ChromeActionVM{paneChromeActionVM(ActionPaneClose, StyleAccent)}
+	rect := Rect{W: 72, H: 8}
+	primitive := PaneChromePrimitive(panel, rect, StyleAccent)
+	if _, ok := chromeSlotByAction(primitive.ActionSlots, ActionResizeLayoutLock.String()); ok {
+		t.Fatalf("follower terminal should display lock glyph without action slot, got %#v", primitive.ActionSlots)
+	}
+	regions := appendPaneActionRegions(nil, panel, rect, panel.ID, rect)
+	if hitRegionsContainAction(regions, ActionResizeLayoutLock.String()) {
+		t.Fatalf("follower terminal should not drive size lock hit region, regions=%#v", regions)
+	}
+	if !chromeLabelsContainText(primitive.LabelSlots, paneChromeBracketToken(paneChromeSizeUnlockGlyph())) {
+		t.Fatalf("follower terminal should still display size lock glyph, labels=%#v", primitive.LabelSlots)
 	}
 }
 
@@ -148,9 +168,10 @@ func TestChromePrimitiveFloatingSizeLockStaysInTerminalLabel(t *testing.T) {
 	rect := Rect{X: 2, Y: 1, W: 84, H: 8}
 	floating := FloatingVM{ID: "float-1", Title: "123", Rect: rect, Active: true, Chrome: FloatingChromeVM{
 		Terminal: TerminalChromeVM{
-			Title:      ChromeSlotVM{Text: "123", Style: StyleAccent},
-			TerminalID: "term-1",
-			Locked:     true,
+			Title:       ChromeSlotVM{Text: "123", Style: StyleAccent},
+			TerminalID:  "term-1",
+			Locked:      true,
+			CanLockSize: true,
 		},
 		Actions: []ChromeActionVM{
 			paneChromeActionVM(ActionFloatingCenter, StyleAccent),
@@ -252,9 +273,27 @@ func chromeSlotsContainText(slots []ChromeSlot, text string) bool {
 	return false
 }
 
+func chromeLabelsContainText(slots []ChromeSlot, text string) bool {
+	for _, slot := range slots {
+		if strings.Contains(slot.Text, text) {
+			return true
+		}
+	}
+	return false
+}
+
 func chromeSlotsContainAction(slots []ChromeSlot, actionID string) bool {
 	for _, slot := range slots {
 		if slot.ActionID == actionID {
+			return true
+		}
+	}
+	return false
+}
+
+func hitRegionsContainAction(regions []HitRegion, actionID string) bool {
+	for _, region := range regions {
+		if region.ActionID == actionID {
 			return true
 		}
 	}

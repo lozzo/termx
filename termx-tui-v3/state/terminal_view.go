@@ -133,6 +133,7 @@ func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewSto
 	binding.ResizeRole = normalizeTerminalResizeRole(binding.ResizeRole)
 	binding.Layout = binding.Layout.Normalize()
 	binding.Attached = true
+	binding = binding.applyTerminalSizeLockProjection(binding.SizeLocked || store.terminalSizeLocked(binding.TerminalID))
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
 	store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
@@ -287,19 +288,44 @@ func (store TerminalViewStore) OwnerBinding(terminalID string) (TerminalViewBind
 	return TerminalViewBinding{}, false
 }
 
+func (store TerminalViewStore) ownerIdentityBinding(terminalID string) (TerminalViewBinding, bool) {
+	for _, binding := range store.Views {
+		if binding.TerminalID == terminalID && binding.HasResizeOwner() {
+			return binding, true
+		}
+	}
+	return TerminalViewBinding{}, false
+}
+
+func (store TerminalViewStore) terminalSizeLocked(terminalID string) bool {
+	if terminalID == "" {
+		return false
+	}
+	for _, binding := range store.Views {
+		if binding.TerminalID == terminalID && binding.SizeLocked {
+			return true
+		}
+	}
+	return false
+}
+
 func (store TerminalViewStore) promoteReplacementOwnerLocked(terminalID string) {
 	if terminalID == "" {
 		return
 	}
-	if _, ok := store.OwnerBinding(terminalID); ok {
+	if _, ok := store.ownerIdentityBinding(terminalID); ok {
 		return
 	}
+	locked := store.terminalSizeLocked(terminalID)
 	for viewID, binding := range store.Views {
 		if binding.TerminalID != terminalID {
 			continue
 		}
 		binding.ResizeRole = TerminalResizeRoleOwner
-		binding.CanResize = true
+		binding = binding.applyTerminalSizeLockProjection(locked)
+		if !locked {
+			binding.CanResize = true
+		}
 		// owner 删除后的接任 view 不能沿用旧的 desired size；
 		// 否则 close/unzoom 这类布局回弹会被误判成“尺寸未变”，漏发真实 PTY resize。
 		binding.DesiredCols = 0
@@ -316,16 +342,23 @@ func (store TerminalViewStore) TransferResizeOwner(viewID string) TerminalViewSt
 		return store
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
+	locked := store.terminalSizeLocked(target.TerminalID)
 	for candidateID, binding := range store.Views {
 		if binding.TerminalID != target.TerminalID {
 			continue
 		}
 		if candidateID == viewID {
 			binding.ResizeRole = TerminalResizeRoleOwner
-			binding.CanResize = true
+			binding = binding.applyTerminalSizeLockProjection(locked)
+			if !locked {
+				binding.CanResize = true
+			}
 		} else if binding.ResizeRole == TerminalResizeRoleOwner {
 			binding.ResizeRole = TerminalResizeRoleFollower
 			binding.CanResize = false
+			binding = binding.applyTerminalSizeLockProjection(locked)
+		} else {
+			binding = binding.applyTerminalSizeLockProjection(locked)
 		}
 		store.Views[candidateID] = binding
 	}
@@ -347,6 +380,10 @@ func (store TerminalViewStore) RequestViewResize(viewID string, cols int, rows i
 		return store, TerminalViewResizeDecision{Reason: "missing-view"}
 	}
 	decision := TerminalViewResizeDecision{Binding: binding}
+	if binding.SizeLocked {
+		decision.Reason = "size-locked"
+		return store, decision
+	}
 	if binding.ResizeRole != TerminalResizeRoleOwner || !binding.CanResize {
 		decision.Reason = "not-owner"
 		return store, decision
@@ -412,6 +449,7 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 	if projection.ViewID != "" {
 		binding.ViewID = projection.ViewID
 	}
+	binding = binding.applyTerminalSizeLockProjection(binding.SizeLocked)
 	store.Views = cloneTerminalViewBindings(store.Views)
 	if binding.HasResizeOwner() {
 		store.demoteResizeOwnersLocked(binding.TerminalID, viewID)
@@ -429,23 +467,30 @@ func (store TerminalViewStore) ApplyTerminalSizeLock(terminalID string, locked b
 		if binding.TerminalID != terminalID {
 			continue
 		}
-		binding.SizeLocked = locked
-		if locked {
-			// 中文说明：Size lock 属于 terminal 级 core metadata；owner 身份保留，但不能继续发 PTY resize。
-			if binding.HasResizeOwner() {
-				binding.ResizeRole = TerminalResizeRoleOwner
-			}
-			binding.CanResize = false
-			binding.ControlReason = "size_locked"
-		} else if binding.ControlReason == "size_locked" {
-			binding.ControlReason = ""
-			if binding.HasResizeOwner() {
-				binding.CanResize = true
-			}
-		}
+		binding = binding.applyTerminalSizeLockProjection(locked)
 		store.Views[viewID] = binding
 	}
 	return store
+}
+
+func (binding TerminalViewBinding) applyTerminalSizeLockProjection(locked bool) TerminalViewBinding {
+	binding.SizeLocked = locked
+	if locked {
+		// 中文说明：Size lock 是 terminal 级最高优先级；owner 身份可以存在，但不能恢复 PTY resize 权限。
+		if binding.HasResizeOwner() {
+			binding.ResizeRole = TerminalResizeRoleOwner
+		}
+		binding.CanResize = false
+		binding.ControlReason = "size_locked"
+		return binding
+	}
+	if binding.ControlReason == "size_locked" {
+		binding.ControlReason = ""
+		if binding.HasResizeOwner() {
+			binding.CanResize = true
+		}
+	}
+	return binding
 }
 
 func (binding TerminalViewBinding) hasAuthoritativeResizeOwner() bool {
