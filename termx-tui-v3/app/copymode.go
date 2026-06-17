@@ -741,6 +741,8 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,
+				SurfaceID:  target.SurfaceID,
+				ViewID:     target.ViewID,
 				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminal(target.TerminalID).Modes),
 			})
 			return CopyModePasteResultMsg{Text: text, Err: err}
@@ -771,6 +773,8 @@ func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (s
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
 				TerminalID: target.TerminalID,
 				Channel:    target.Channel,
+				SurfaceID:  target.SurfaceID,
+				ViewID:     target.ViewID,
 				Bytes:      encodeTerminalPaste(text, root.Surface.SurfaceForTerminal(target.TerminalID).Modes),
 			})
 			return CopyModePasteResultMsg{Text: text, Err: err}

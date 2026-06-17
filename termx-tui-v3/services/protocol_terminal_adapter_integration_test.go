@@ -40,7 +40,7 @@ func TestProtocolTerminalServiceAdapterWithRealProtocolClient(t *testing.T) {
 	if attached.Channel != 9 || !attached.CanResize {
 		t.Fatalf("unexpected attach result %#v", attached)
 	}
-	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: attached.Channel, Bytes: []byte("x")}); err != nil {
+	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: attached.Channel, SurfaceID: "surface-1", ViewID: "view-1", Bytes: []byte("x")}); err != nil {
 		t.Fatalf("input: %v", err)
 	}
 	if _, err := adapter.Resize(context.Background(), TerminalResizeRequest{

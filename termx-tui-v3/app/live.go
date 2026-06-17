@@ -35,7 +35,7 @@ func NewLiveRuntime(initial state.Root, host TerminalHost, runner EffectRunner, 
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(deps), NewTerminalInputRouterReducer(deps), NewLiveReducer(deps), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(deps.Logger)
 	return runtime
 }
@@ -75,7 +75,7 @@ func NewInteractiveRuntimeWithStorage(
 	initial.Shell = initial.Shell.EnsureDefaults()
 	builder := render.NewRenderVMBuilder()
 	renderer := render.NewRenderer(render.DefaultTheme())
-	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
+	runtime := NewAppRuntime(initial, ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewTerminalPoolReducer(live), NewWorkbenchStorageReducer(workbench), NewClipboardStorageReducer(clipboard), NewCopyModeReducer(copyMode), NewCopyModeResizeRebindReducer(copyMode), NewTerminalInputRouterReducer(live), NewLiveReducer(live), NewTerminalLayoutResizeReducer()), hostRenderFunc(host, builder, renderer), host, runner)
 	runtime.SetLogger(live.Logger)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
@@ -210,8 +210,6 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			root.Session = root.Session.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
 			root.Surface = root.Surface.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
 			return root.Advance(), nil
-		case InputMsg:
-			return reduceLiveInput(root, msg, deps)
 		case LiveInputResultMsg:
 			if msg.Err != nil {
 				if isContextLifecycleError(msg.Err) {
@@ -681,31 +679,6 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 	return root.Advance(), nil
 }
 
-func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, []Effect) {
-	if deps.Terminal == nil {
-		return setLiveError(root, "terminal service missing"), nil
-	}
-	if copyModeInputContext(root.CopyMode) {
-		return root, []Effect{handledEffect{}}
-	}
-	target, ok := liveInputTarget(root)
-	if !ok {
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.input", Body: "no terminal bound"})
-		return root.Advance(), []Effect{handledEffect{}}
-	}
-	intent := input.RouteWithOptions(msg.Event, input.RouteOptions{
-		CopyModeActive:           copyModeInputContext(root.CopyMode),
-		TerminalMousePassthrough: liveMousePassthroughEnabled(root, msg.Event, target),
-	})
-	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
-		return root, nil
-	}
-	if target.Channel == 0 {
-		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, intent.Bytes, deps)}
-	}
-	return root, []Effect{liveSendInputEffect(target, msg.Event, intent.Bytes, true, deps)}
-}
-
 type liveInputTargetInfo struct {
 	PaneID      string
 	FloatingID  string
@@ -767,29 +740,6 @@ func liveInputTargetFromBinding(binding state.TerminalViewBinding) liveInputTarg
 		info.SurfaceID = "termx-tui-v3"
 	}
 	return info
-}
-
-func liveSendInputEffect(target liveInputTargetInfo, event input.InputEvent, bytes []byte, retryOnError bool, deps LiveDeps) Effect {
-	payload := append([]byte(nil), bytes...)
-	return FuncEffect{
-		Run: func(ctx context.Context) Msg {
-			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
-				TerminalID: target.TerminalID,
-				Channel:    target.Channel,
-				Event:      event,
-				Bytes:      payload,
-			})
-			return LiveInputResultMsg{
-				TerminalID:   target.TerminalID,
-				ViewID:       target.ViewID,
-				Channel:      target.Channel,
-				Event:        event,
-				Bytes:        payload,
-				RetryOnError: retryOnError,
-				Err:          err,
-			}
-		},
-	}
 }
 
 func liveAttachForInputEffect(root state.Root, target liveInputTargetInfo, event input.InputEvent, bytes []byte, deps LiveDeps) Effect {
@@ -884,7 +834,7 @@ func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, 
 	if !ok || target.Channel == 0 {
 		return next, effects
 	}
-	effects = append(effects, liveSendInputEffect(target, msg.Event, msg.Bytes, false, deps))
+	effects = append(effects, terminalSendInputEffect(target, msg.Event, msg.Bytes, false, deps))
 	return next, effects
 }
 

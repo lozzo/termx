@@ -96,16 +96,24 @@ func TestAppRuntimeCoalescesQueuedWorkbenchStorageRequests(t *testing.T) {
 
 func TestAppRuntimeDiagnosticsRespectsEnvironmentToggle(t *testing.T) {
 	t.Setenv(tuiDiagnosticsEnv, "")
+	t.Setenv(tuiInputTraceEnv, "")
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
 	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if runtime.diagnostics == nil || runtime.diagnostics.enabled {
+	if runtime.diagnostics == nil || runtime.diagnostics.enabled || runtime.diagnostics.inputTraceEnabled {
 		t.Fatalf("diagnostics should be present but disabled by default, got %#v", runtime.diagnostics)
 	}
 
 	t.Setenv(tuiDiagnosticsEnv, "1")
 	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if runtime.diagnostics == nil || !runtime.diagnostics.enabled {
+	if runtime.diagnostics == nil || !runtime.diagnostics.enabled || !runtime.diagnostics.inputTraceEnabled {
 		t.Fatalf("diagnostics should be enabled by %s, got %#v", tuiDiagnosticsEnv, runtime.diagnostics)
+	}
+
+	t.Setenv(tuiDiagnosticsEnv, "")
+	t.Setenv(tuiInputTraceEnv, "1")
+	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if runtime.diagnostics == nil || runtime.diagnostics.enabled || !runtime.diagnostics.inputTraceEnabled {
+		t.Fatalf("input trace should be independently enabled by %s, got %#v", tuiInputTraceEnv, runtime.diagnostics)
 	}
 }
 

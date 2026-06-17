@@ -190,6 +190,8 @@ type TerminalEditTagsRequest struct {
 type TerminalInputRequest struct {
 	TerminalID string
 	Channel    uint16
+	SurfaceID  string
+	ViewID     string
 	Event      input.InputEvent
 	Bytes      []byte
 }

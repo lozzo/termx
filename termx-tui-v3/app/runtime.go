@@ -462,7 +462,9 @@ func (runtime *AppRuntime) ingestHostInput() {
 					PaletteColor: event.Theme.PaletteColor,
 				}})
 			default:
-				runtime.enqueue(runtime.dispatchMouseHitRegion(InputMsg{Event: event}))
+				msg := runtime.dispatchMouseHitRegion(InputMsg{Event: event})
+				runtime.logHostInputEvent(event, msg)
+				runtime.enqueue(msg)
 			}
 		default:
 			return

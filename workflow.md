@@ -234,11 +234,12 @@
 | 215E1-R61. SK tiled floating input focus regression | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 该切片曾用 focus/mode 补丁处理输入错位；后续现场证明根因是 per-view attachment channel 失效，相关输入修复已在 R62 撤回 |
 | 215E1-R62. SK panel input view channel refresh | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已撤回 R61 的 focus/mode 输入补丁；键盘输入按 active TerminalView binding 路由，channel 缺失或发送失败时只为该 view 重新 attach 并重放输入；split 继承 terminal 时不再复制 sibling channel |
 | 215E1-R63. SK active panel input activation | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复 panel/floating 内容点击后键盘输入仍被 UI mode 吞掉的问题：点击 terminal 内容会激活对应 panel 并退出交互 mode，后续输入只按内存 active TerminalView binding 直达 terminal；restore snapshot 只保留连接意图，不复用旧 channel |
+| 215E1-R64. SK active view input routing root cause | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/services/`、`termx-tui-v3/state/`、`workflow.md` | 已把普通 terminal 输入从 live reducer 隐式兜底重构为独立 `TerminalInputRouter`：UI/overlay/copy 先消费，未消费的 key 与 mouse passthrough 统一在同一处解析 active TerminalView binding、记录输入路由日志、发送或按当前 view 重新 attach，不依赖 storage/snapshot/global session fallback |
 
 当前下一步：
 
-- `215E1-R63 active panel input activation` 已完成
-- 当前有效输入模型：同进程键盘输入目标只由内存中的 active pane / active floating 对应 TerminalView binding 决定；点击 terminal 内容会先切到该输入态，再把后续按键发到对应 terminal channel
+- `215E1-R64 active view input routing root cause` 已完成
+- 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active pane / active floating 对应 TerminalView binding 路由，不覆盖 sibling binding
 
 ## 6. 必做证据
 

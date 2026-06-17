@@ -758,7 +758,7 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 		t.Fatalf("unexpected attach params %#v", params)
 	}
 
-	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: 11, Bytes: []byte("x")}); err != nil {
+	if err := adapter.SendInput(context.Background(), TerminalInputRequest{TerminalID: "term-1", Channel: 11, SurfaceID: "surface-1", ViewID: "view-1", Bytes: []byte("x")}); err != nil {
 		t.Fatalf("input: %v", err)
 	}
 	if len(client.inputData) != 1 || string(client.inputData[0]) != "x" || client.inputChannel[0] != 11 {

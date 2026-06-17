@@ -87,9 +87,6 @@ func NewUIInputReducer() Reducer {
 		case input.IntentWorkbenchCommand:
 			return reduceWorkbenchCommandIntent(root, intent)
 		default:
-			if root.Shell.EnsureDefaults().InteractionMode != state.InteractionModeNormal {
-				return root, []Effect{handledEffect{}}
-			}
 			return root, nil
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +81,301 @@ func (service *refreshingInputTerminalService) SendInput(_ context.Context, req 
 		return fmt.Errorf("stale channel %d", req.Channel)
 	}
 	return nil
+}
+
+func TestLiveInputRoutesLSSequenceAcrossTwoTiledPaneBindings(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-2", 8, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID("pane-2"), true))
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 30)
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+
+	pane2Content := frameHitRegion(t, lastFrame(t, host.Frames()), render.HitRegionPaneContent, "pane-2")
+	if err := host.SendInput(mouseEventAt(pane2Content.Rect)); err != nil {
+		t.Fatalf("click pane-2: %v", err)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send pane-2 input %#v: %v", event, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane-2 input: %v", err)
+	}
+
+	pane1Content := frameHitRegion(t, lastFrame(t, host.Frames()), render.HitRegionPaneContent, state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(pane1Content.Rect)); err != nil {
+		t.Fatalf("click pane-1: %v", err)
+	}
+	for _, event := range []input.InputEvent{
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"},
+		{Kind: input.EventKindKey, Key: input.KeyEnter},
+	} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send pane-1 input %#v: %v", event, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane-1 input: %v", err)
+	}
+
+	if got := compactInputRequests(terminal.Inputs); len(got) != 2 ||
+		got[0] != "term-2#8:ls\r" ||
+		got[1] != "term-1#7:ls\r" {
+		t.Fatalf("input must follow clicked pane binding, got %#v raw=%#v", got, terminal.Inputs)
+	}
+}
+
+func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
+	t.Setenv(tuiInputTraceEnv, "1")
+	var logs strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	terminal := &services.FakeTerminalService{}
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	reducer := ComposeReducers(NewUIInputReducer(), NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal, Logger: logger}), NewLiveReducer(LiveDeps{Terminal: terminal, Logger: logger}))
+
+	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l", RawSeq: "l"}})
+	if len(effects) != 1 {
+		t.Fatalf("ordinary key should produce terminal input effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInputResultMsg)
+	if !ok || msg.Err != nil {
+		t.Fatalf("expected terminal input result, got %#v ok=%v", msg, ok)
+	}
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || terminal.Inputs[0].Channel != 7 || string(terminal.Inputs[0].Bytes) != "l" {
+		t.Fatalf("input must route through active view binding, got %#v", terminal.Inputs)
+	}
+	text := logs.String()
+	for _, want := range []string{"tui-v3 input route", "result=terminal", "target_view=" + state.TerminalPaneViewID(state.DefaultPaneID), "terminal_id=term-1", "channel=7"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("input route log missing %q in:\n%s", want, text)
+		}
+	}
+}
+
+func TestLiveInputRoutesBetweenTiledAndFloatingSharedTerminalChannels(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared")
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-shared"},
+		Rect:     state.FloatingRect{X: 10, Y: 4, W: 30, H: 8},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	shell = shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-shared", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-shared", 8, 30, 8, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 30)
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+
+	floatingContent := frameActionHitRegion(t, lastFrame(t, host.Frames()), render.ActionFloatingRaise.String(), "floating-pane-1")
+	if err := host.SendInput(mouseEventAt(floatingContent.Rect)); err != nil {
+		t.Fatalf("click floating: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}); err != nil {
+		t.Fatalf("send floating key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating input: %v", err)
+	}
+
+	paneContent := frameHitRegion(t, lastFrame(t, host.Frames()), render.HitRegionPaneContent, state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(paneContent.Rect)); err != nil {
+		t.Fatalf("click pane: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"}); err != nil {
+		t.Fatalf("send pane key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane input: %v", err)
+	}
+
+	if got := compactInputRequests(terminal.Inputs); len(got) != 2 ||
+		got[0] != "term-shared#8:f" ||
+		got[1] != "term-shared#7:p" {
+		t.Fatalf("shared terminal input must use active view channel, got %#v raw=%#v", got, terminal.Inputs)
+	}
+}
+
+func TestLiveInputRoutesBetweenTiledAndFloatingDifferentTerminals(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-pane")
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 10, Y: 4, W: 30, H: 8},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-float", 8, 30, 8, state.TerminalResizeRoleOwner, "surface", state.TerminalFloatingViewID("floating-1"), true))
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 30)
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+
+	floatingContent := frameActionHitRegion(t, lastFrame(t, host.Frames()), render.ActionFloatingRaise.String(), "floating-pane-1")
+	if err := host.SendInput(mouseEventAt(floatingContent.Rect)); err != nil {
+		t.Fatalf("click floating: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}); err != nil {
+		t.Fatalf("send floating key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating input: %v", err)
+	}
+
+	paneContent := frameHitRegion(t, lastFrame(t, host.Frames()), render.HitRegionPaneContent, state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(paneContent.Rect)); err != nil {
+		t.Fatalf("click pane: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"}); err != nil {
+		t.Fatalf("send pane key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane input: %v", err)
+	}
+
+	if got := compactInputRequests(terminal.Inputs); len(got) != 2 ||
+		got[0] != "term-float#8:f" ||
+		got[1] != "term-pane#7:p" {
+		t.Fatalf("different terminal input must follow active view binding, got %#v raw=%#v", got, terminal.Inputs)
+	}
+}
+
+func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-1",
+			Channel:      21,
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: state.TerminalResizeRoleFollower,
+			SurfaceID:    "surface",
+		},
+	}
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+
+	root, effects := reducer(root, TerminalPoolAttachRequestMsg{TerminalID: "term-1", TargetPaneID: state.DefaultPaneID})
+	if len(effects) != 1 {
+		t.Fatalf("expected attach effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolAttachResultMsg)
+	if !ok {
+		t.Fatalf("expected attach result, got %#v", msg)
+	}
+	root, _ = reducer(root, msg)
+
+	pane1, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || pane1.Channel != 21 || pane1.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("current pane should receive fresh channel, binding=%#v ok=%v", pane1, ok)
+	}
+	pane2, ok := root.TerminalViews.PaneBinding("pane-2")
+	if !ok || pane2.Channel != 8 || pane2.ViewID != state.TerminalPaneViewID("pane-2") {
+		t.Fatalf("reattach must not overwrite sibling channel, binding=%#v ok=%v", pane2, ok)
+	}
+}
+
+func TestInteractionModeContentClickThenKeyUsesTerminalInputRoute(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	root := state.Root{
+		Shell: state.DefaultShell().
+			BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+			SetInteractionMode(state.InteractionModeResize),
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 30)
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+	content := frameHitRegion(t, lastFrame(t, host.Frames()), render.HitRegionPaneContent, state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(content.Rect)); err != nil {
+		t.Fatalf("click pane content: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
+		t.Fatalf("send key after content activation: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain input: %v", err)
+	}
+
+	if runtime.State().Shell.EnsureDefaults().InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("content click should exit interaction mode, shell=%#v", runtime.State().Shell)
+	}
+	if got := compactInputRequests(terminal.Inputs); len(got) != 1 || got[0] != "term-1#7:l" {
+		t.Fatalf("key after content click should reach terminal service, got %#v raw=%#v", got, terminal.Inputs)
+	}
 }
 
 func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
@@ -288,6 +584,53 @@ func TestLiveInputRefreshesStaleViewChannelWithoutStealingSibling(t *testing.T) 
 	}
 	if binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2"); !ok || binding.Channel != 22 {
 		t.Fatalf("pane-2 channel should refresh independently, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestLiveInputReattachesOnlyActiveViewWhenProtocolChannelCheckFails(t *testing.T) {
+	terminal := &refreshingInputTerminalService{
+		nextChannel:         21,
+		staleChannels:       map[uint16]bool{7: true},
+		knownActiveChannels: map[uint16]bool{7: true, 8: true},
+	}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(120, 36)
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
+		t.Fatalf("send first pane key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain first pane: %v", err)
+	}
+
+	if len(terminal.Attaches) != 1 || terminal.Attaches[0].ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("failed active view input should reattach only active pane, got %#v", terminal.Attaches)
+	}
+	if got := compactInputRequests(terminal.Inputs); len(got) != 2 ||
+		got[0] != "term-1#7:l" ||
+		got[1] != "term-1#21:l" {
+		t.Fatalf("input should retry on active pane fresh channel, got %#v raw=%#v", got, terminal.Inputs)
+	}
+	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 21 {
+		t.Fatalf("active pane channel should refresh, binding=%#v ok=%v", binding, ok)
+	}
+	if binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2"); !ok || binding.Channel != 8 {
+		t.Fatalf("sibling channel must not be overwritten, binding=%#v ok=%v", binding, ok)
 	}
 }
 
@@ -2567,6 +2910,33 @@ func TestInteractiveRuntimeIncludesShellReducer(t *testing.T) {
 	if !runtime.State().Shell.Overlay.Open || runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPicker {
 		t.Fatalf("expected terminal picker overlay, got %#v", runtime.State().Shell.Overlay)
 	}
+}
+
+func compactInputRequests(inputs []services.TerminalInputRequest) []string {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(inputs))
+	var currentTerminal string
+	var currentChannel uint16
+	var current strings.Builder
+	flush := func() {
+		if currentTerminal == "" {
+			return
+		}
+		out = append(out, fmt.Sprintf("%s#%d:%s", currentTerminal, currentChannel, current.String()))
+		current.Reset()
+	}
+	for _, input := range inputs {
+		if input.TerminalID != currentTerminal || input.Channel != currentChannel {
+			flush()
+			currentTerminal = input.TerminalID
+			currentChannel = input.Channel
+		}
+		current.Write(input.Bytes)
+	}
+	flush()
+	return out
 }
 
 func lastFrame(t *testing.T, frames []render.Frame) render.Frame {

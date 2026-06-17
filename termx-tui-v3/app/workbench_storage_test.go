@@ -776,7 +776,8 @@ func TestWorkbenchRestoreInputDoesNotUseStoredOldChannelBeforeAttachEffect(t *te
 			CanResize:    true,
 		}},
 	}
-	reducer := ComposeReducers(NewUIInputReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{}), NewLiveReducer(LiveDeps{Terminal: terminal}))
+	liveDeps := LiveDeps{Terminal: terminal}
+	reducer := ComposeReducers(NewUIInputReducer(), NewWorkbenchStorageReducer(WorkbenchDeps{}), NewTerminalInputRouterReducer(liveDeps), NewLiveReducer(liveDeps))
 	root := state.Root{Shell: state.DefaultShell(), Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30}}
 
 	root, restoreEffects := reducer(root, WorkbenchStorageLoadResultMsg{Result: loadResult})

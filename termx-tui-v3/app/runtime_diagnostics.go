@@ -17,6 +17,7 @@ import (
 
 const (
 	tuiDiagnosticsEnv        = "TERMX_TUI_DIAG"
+	tuiInputTraceEnv         = "TERMX_TUI_INPUT_TRACE"
 	tuiDiagnosticsInterval   = "TERMX_TUI_DIAG_INTERVAL_MS"
 	tuiHeapProfileDirEnv     = "TERMX_TUI_HEAP_PROFILE_DIR"
 	tuiHeapProfileEveryEnv   = "TERMX_TUI_HEAP_PROFILE_EVERY_MB"
@@ -27,6 +28,7 @@ const (
 type runtimeDiagnostics struct {
 	logger            *slog.Logger
 	enabled           bool
+	inputTraceEnabled bool
 	interval          time.Duration
 	lastLog           time.Time
 	frameSeq          uint64
@@ -46,6 +48,7 @@ func newRuntimeDiagnostics(logger *slog.Logger) *runtimeDiagnostics {
 		enabled:  diagnosticsEnabledFromEnv(tuiDiagnosticsEnv),
 		interval: diagnosticsIntervalFromEnv(tuiDiagnosticsInterval, time.Second),
 	}
+	diag.inputTraceEnabled = diag.enabled || diagnosticsEnabledFromEnv(tuiInputTraceEnv)
 	if dir := strings.TrimSpace(os.Getenv(tuiHeapProfileDirEnv)); dir != "" {
 		diag.enabled = true
 		diag.heapProfileDir = dir
