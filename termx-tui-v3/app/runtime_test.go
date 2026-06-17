@@ -1111,7 +1111,10 @@ func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t
 	}
 
 	frame := lastRuntimeFrame(t, host)
-	action := frameActionHitRegion(t, frame, render.ActionResizeLayoutLock.String(), "floating-1")
+	action := frameActionHitRegion(t, frame, render.ActionResizeLayoutLock.String(), "floating-pane-1")
+	if !action.Floating {
+		t.Fatalf("floating size lock hit region should carry floating flag, got %#v", action)
+	}
 	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
 		t.Fatalf("send floating size lock click: %v", err)
 	}
@@ -2851,7 +2854,10 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	beforeInputCount := len(terminal.Inputs)
 	beforeToastCount := len(runtime.State().Shell.Toasts)
 
-	moveRegion := frameActionHitRegion(t, lastRuntimeFrame(t, host), "floating.move-drag", "floating-1")
+	moveRegion := frameActionHitRegion(t, lastRuntimeFrame(t, host), "floating.move-drag", "floating-pane-1")
+	if !moveRegion.Floating {
+		t.Fatalf("floating move drag hit region should carry floating flag, got %#v", moveRegion)
+	}
 	moveStart := mouseEventAt(moveRegion.Rect)
 	if err := host.SendInput(moveStart); err != nil {
 		t.Fatalf("send floating move start: %v", err)
@@ -2891,7 +2897,10 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 		t.Fatalf("floating move release should clear drag state, got %#v", runtime.mouseDrag)
 	}
 
-	resizeRegion := frameActionHitRegion(t, lastRuntimeFrame(t, host), "floating.resize-drag", "floating-1")
+	resizeRegion := frameActionHitRegion(t, lastRuntimeFrame(t, host), "floating.resize-drag", "floating-pane-1")
+	if !resizeRegion.Floating {
+		t.Fatalf("floating resize drag hit region should carry floating flag, got %#v", resizeRegion)
+	}
 	resizeStart := mouseEventAt(resizeRegion.Rect)
 	if err := host.SendInput(resizeStart); err != nil {
 		t.Fatalf("send floating resize start: %v", err)

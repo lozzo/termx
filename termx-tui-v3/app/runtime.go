@@ -206,6 +206,7 @@ type mouseActionClickState struct {
 	Kind     render.HitRegionKind
 	ActionID string
 	PaneID   string
+	Floating bool
 	Row      int
 	Col      int
 }
@@ -795,7 +796,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			return NoopMsg{}
 		}
 	}
-	if drag, ok := floatingDragState(region, inputMsg.Event); ok {
+	if drag, ok := runtime.floatingDragState(region, inputMsg.Event); ok {
 		runtime.mouseDrag = drag
 		return ShellFloatingCommandMsg{Command: state.FloatingCommand{
 			Action:   state.FloatingCommandFocusRaise,
@@ -814,10 +815,10 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		if !runtime.consumeTakeResizeOwnerDoubleClick(region, inputMsg.Event) {
 			return ShellArmOwnerConfirmMsg{ViewID: terminalViewIDForOwnerRegion(runtime.state, region)}
 		}
-		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
+		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
 	}
 	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionResizeLayoutLock.String() {
-		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
+		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
 	}
 	switch region.Kind {
 	case render.HitRegionToastClose:
@@ -859,25 +860,10 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	}
 	switch region.Kind {
 	case render.HitRegionContentAction:
-		if region.ActionID == render.ActionResizeLayoutLock.String() && shellHasFloating(runtime.state.Shell.EnsureDefaults(), region.PaneID) {
-			return ShellFloatingContentActionMsg{ActionID: region.ActionID, FloatingID: region.PaneID, Row: region.Row}
-		}
-		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
+		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: region.Row}
 	default:
 		return msg
 	}
-}
-
-func shellHasFloating(shell state.ShellStore, floatingID string) bool {
-	if floatingID == "" {
-		return false
-	}
-	for _, floating := range shell.Floatings {
-		if floating.ID == floatingID {
-			return true
-		}
-	}
-	return false
 }
 
 func mouseWheelCanRouteToCopyMode(event input.InputEvent, resolution mouseHitResolution) bool {
@@ -925,6 +911,14 @@ func (runtime *AppRuntime) clearStaleMouseDrag(event input.InputEvent) {
 }
 
 func terminalViewIDForOwnerRegion(root state.Root, region render.HitRegion) string {
+	if region.Floating {
+		if floatingID, ok := root.Shell.EnsureDefaults().FloatingIDForPaneID(region.PaneID); ok {
+			if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok {
+				return binding.ViewID
+			}
+		}
+		return ""
+	}
 	if binding, ok := root.TerminalViews.PaneBinding(region.PaneID); ok {
 		return binding.ViewID
 	}
@@ -935,7 +929,7 @@ func terminalViewIDForOwnerRegion(root state.Root, region render.HitRegion) stri
 }
 
 func (runtime *AppRuntime) consumeTakeResizeOwnerDoubleClick(region render.HitRegion, event input.InputEvent) bool {
-	current := mouseActionClickState{Kind: region.Kind, ActionID: region.ActionID, PaneID: region.PaneID, Row: event.Row, Col: event.Col}
+	current := mouseActionClickState{Kind: region.Kind, ActionID: region.ActionID, PaneID: region.PaneID, Floating: region.Floating, Row: event.Row, Col: event.Col}
 	if runtime.lastMouseAction == current {
 		runtime.lastMouseAction = mouseActionClickState{}
 		return true
@@ -961,7 +955,7 @@ func (runtime *AppRuntime) historyRowFocusMsg(resolution mouseHitResolution) (Ms
 		return nil, false
 	}
 	region := resolution.HistoryRow
-	if msg, ok := runtime.focusMsgForOwner(region.PaneID); ok {
+	if msg, ok := runtime.focusMsgForOwnerRegion(region); ok {
 		return msg, true
 	}
 	if region.PaneID != "" {
@@ -970,7 +964,26 @@ func (runtime *AppRuntime) historyRowFocusMsg(resolution mouseHitResolution) (Ms
 	if !resolution.HasFocusOwner {
 		return nil, false
 	}
-	return runtime.focusMsgForOwner(resolution.FocusOwner.PaneID)
+	return runtime.focusMsgForOwnerRegion(resolution.FocusOwner)
+}
+
+func (runtime *AppRuntime) focusMsgForOwnerRegion(region render.HitRegion) (Msg, bool) {
+	if region.Floating {
+		floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
+		if !ok {
+			return nil, false
+		}
+		shell := runtime.state.Shell.EnsureDefaults()
+		if shell.ActiveFloatingID == floatingID {
+			return nil, false
+		}
+		return ShellFloatingCommandMsg{Command: state.FloatingCommand{
+			Action:   state.FloatingCommandFocusRaise,
+			TargetID: floatingID,
+			Source:   state.PaneCommandSourceMouse,
+		}}, true
+	}
+	return runtime.focusMsgForOwner(region.PaneID)
 }
 
 func (runtime *AppRuntime) focusMsgForOwner(ownerID string) (Msg, bool) {
@@ -1014,7 +1027,15 @@ func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) b
 	if region.PaneID == "" {
 		return true
 	}
-	if copyMode.PaneID == region.PaneID || copyMode.ViewID == state.TerminalFloatingViewID(region.PaneID) {
+	if copyMode.PaneID == region.PaneID {
+		return true
+	}
+	if region.Floating {
+		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok && copyMode.ViewID == state.TerminalFloatingViewID(floatingID) {
+			return true
+		}
+	}
+	if copyMode.ViewID == state.TerminalFloatingViewID(region.PaneID) {
 		return true
 	}
 	shell := runtime.state.Shell.EnsureDefaults()
@@ -1073,10 +1094,14 @@ func (runtime *AppRuntime) focusOwnerMouseTrackingEnabled(region render.HitRegio
 		}
 		return runtime.paneMouseTrackingEnabled(region.PaneID)
 	case render.HitRegionContentAction:
-		if region.ActionID != render.ActionFloatingRaise.String() || region.PaneID != shell.ActiveFloatingID {
+		if region.ActionID != render.ActionFloatingRaise.String() || !region.Floating {
 			return false
 		}
-		return runtime.floatingMouseTrackingEnabled(region.PaneID)
+		floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
+		if !ok || floatingID != shell.ActiveFloatingID {
+			return false
+		}
+		return runtime.floatingMouseTrackingEnabled(floatingID)
 	default:
 		return false
 	}
@@ -1249,8 +1274,8 @@ func mouseDragResizeGroupCells(drag mouseDragState, delta int) []state.PaneResiz
 	return out
 }
 
-func floatingDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
-	if region.Kind != render.HitRegionContentAction || region.PaneID == "" {
+func (runtime *AppRuntime) floatingDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
+	if region.Kind != render.HitRegionContentAction || region.PaneID == "" || !region.Floating {
 		return mouseDragState{}, false
 	}
 	var kind mouseDragKind
@@ -1262,13 +1287,25 @@ func floatingDragState(region render.HitRegion, event input.InputEvent) (mouseDr
 	default:
 		return mouseDragState{}, false
 	}
+	floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
+	if !ok {
+		return mouseDragState{}, false
+	}
 	return mouseDragState{
 		Active:     true,
 		Kind:       kind,
-		FloatingID: region.PaneID,
+		PaneID:     region.PaneID,
+		FloatingID: floatingID,
 		LastCol:    event.Col,
 		LastRow:    event.Row,
 	}, true
+}
+
+func (runtime *AppRuntime) floatingIDForPaneID(paneID string) (string, bool) {
+	if paneID == "" {
+		return "", false
+	}
+	return runtime.state.Shell.EnsureDefaults().FloatingIDForPaneID(paneID)
 }
 
 func paneResizeDirectionFromHitRegion(region render.HitRegion) (state.PaneResizeDirection, bool) {

@@ -95,12 +95,12 @@ func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, Flo
 	}
 	rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
 	floating := FloatingPaneState{
-		ID:     id,
-		Title:  floatingTitle(command.Title, pane),
-		Pane:   pane,
-		Rect:   rect,
-		Z:      store.nextFloatingZ() + 1,
-		Active: true,
+		ID:      id,
+		Title:   floatingTitle(command.Title, pane),
+		Pane:    pane,
+		Rect:    rect,
+		Z:       store.nextFloatingZ() + 1,
+		Active:  true,
 		FitMode: FloatingFitManual,
 	}
 	store.Floatings = append(cloneFloatings(store.Floatings), floating)

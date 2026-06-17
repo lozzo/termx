@@ -803,6 +803,7 @@ type SplitVM struct {
 
 type FloatingVM struct {
 	ID        string
+	PaneID    string
 	Title     string
 	Rect      Rect
 	Z         int

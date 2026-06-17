@@ -126,6 +126,9 @@ func TestChromePrimitiveFloatingActionSlotsMatchHitRegions(t *testing.T) {
 		if slot.ActionID != region.ActionID || slot.Rect != region.Rect || slot.Text == "" {
 			t.Fatalf("floating slot %d must drive hit region slot=%#v region=%#v", index, slot, region)
 		}
+		if region.PaneID != "float-1" || !region.Floating {
+			t.Fatalf("floating slot %d should carry floating panel identity, got %#v", index, region)
+		}
 	}
 }
 

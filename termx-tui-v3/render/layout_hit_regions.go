@@ -58,6 +58,10 @@ func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin R
 }
 
 func appendTranslatedRegionsWithOwner(out []HitRegion, regions []HitRegion, origin Rect, ownerID string, viewport Rect) []HitRegion {
+	return appendTranslatedRegionsWithOwnerKind(out, regions, origin, ownerID, false, viewport)
+}
+
+func appendTranslatedRegionsWithOwnerKind(out []HitRegion, regions []HitRegion, origin Rect, ownerID string, floating bool, viewport Rect) []HitRegion {
 	if ownerID == "" {
 		return appendTranslatedRegions(out, regions, origin, viewport)
 	}
@@ -66,6 +70,9 @@ func appendTranslatedRegionsWithOwner(out []HitRegion, regions []HitRegion, orig
 		if region.PaneID == "" {
 			// 中文说明：内容命中区继承所属 pane/floating，runtime 才能区分 focus 与内容动作。
 			region.PaneID = ownerID
+		}
+		if floating {
+			region.Floating = true
 		}
 		owned = append(owned, region)
 	}
@@ -139,20 +146,23 @@ func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, view
 	if floating.Rect.W <= 0 || floating.Rect.H <= 0 {
 		return out
 	}
-	id := floating.Floating.ID
-	out = appendFloatingActionRegions(out, floating.Floating, floating.Rect, id, viewport)
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingResizeDrag.String()}, viewport)
-	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: id, ActionID: ActionFloatingMoveDrag.String()}, viewport)
+	panelID := floating.Floating.PaneID
+	if panelID == "" {
+		panelID = floating.Floating.ID
+	}
+	out = appendFloatingActionRegions(out, floating.Floating, floating.Rect, panelID, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floatingResizeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingResizeDrag.String()}, viewport)
+	out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: paneChromeRect(floating.Rect), PaneID: panelID, Floating: true, ActionID: ActionFloatingMoveDrag.String()}, viewport)
 	if floating.ContentRect.W > 0 && floating.ContentRect.H > 0 {
-		out = appendTranslatedRegionsWithOwner(out, floating.Floating.Content.HitRegions, floating.ContentRect, id, viewport)
-		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: id, ActionID: ActionFloatingRaise.String()}, viewport)
+		out = appendTranslatedRegionsWithOwnerKind(out, floating.Floating.Content.HitRegions, floating.ContentRect, panelID, true, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: floating.ContentRect, PaneID: panelID, Floating: true, ActionID: ActionFloatingRaise.String()}, viewport)
 	}
 	return out
 }
 
-func appendFloatingActionRegions(out []HitRegion, floating FloatingVM, rect Rect, paneID string, viewport Rect) []HitRegion {
+func appendFloatingActionRegions(out []HitRegion, floating FloatingVM, rect Rect, panelID string, viewport Rect) []HitRegion {
 	if floating.ID == "" {
-		floating.ID = paneID
+		floating.ID = panelID
 	}
 	if floating.Rect.W == 0 && floating.Rect.H == 0 {
 		floating.Rect = rect
@@ -162,7 +172,7 @@ func appendFloatingActionRegions(out []HitRegion, floating FloatingVM, rect Rect
 		if slot.Rect.W <= 0 || slot.ActionID == "" {
 			continue
 		}
-		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: slot.Rect, PaneID: paneID, ActionID: slot.ActionID}, viewport)
+		out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: slot.Rect, PaneID: panelID, Floating: true, ActionID: slot.ActionID}, viewport)
 	}
 	return out
 }

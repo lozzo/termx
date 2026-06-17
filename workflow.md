@@ -226,11 +226,12 @@
 | 215E1-R53. SK locked terminal attach resize guard | 完成 | `termx-tui-v3/app/`、`workflow.md` | 已覆盖并修复先 split 空 pane、再 attach 到同一 locked terminal 时，新 pane 或 owner attach result 误改 terminal size 的回归 |
 | 215E1-R54. SK terminal size lock unlock sync | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/services/`、相关文档、`workflow.md` | 已修复 owner 解锁后按当前 owner panel 尺寸重新 resize、lock metadata 事件广播投影、锁图标点击解锁的交互闭环 |
 | 215E1-R55. SK floating window 交互审计 | 完成 | `termx-tui-v3/docs/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已整理 floating window 在 attach/create、hit region、owner/size lock、resize、collapsed input、storage restore、workbench tree 等路径上的问题清单和建议修复顺序 |
+| 215E1-R56. SK floating hit region panel identity | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已将 floating hit region 收口为普通 panel id + floating 标记，runtime/app 在边界上按 panel 身份分发，只在下发 floating command 时解析内部 floating id |
 
 当前下一步：
 
-- `215E1-R55 floating window 交互审计` 已完成
-- 后续建议先修显式 target/owner kind，再处理 floating owner/resize/auto-fit 和 restore 生命周期问题
+- `215E1-R56 floating hit region panel identity` 已完成
+- 下一步按 floating 审计继续收口 attach/create、storage restore、workbench tree 等交互问题
 
 ## 6. 必做证据
 

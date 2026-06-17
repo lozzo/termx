@@ -46,6 +46,7 @@ type HitRegion struct {
 	LineID             uint64
 	Row                int
 	PaneID             string
+	Floating           bool
 	ActionID           string
 	Direction          string
 	SplitPath          string
@@ -587,6 +588,7 @@ func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root st
 		content = contentWithFloatingLayout(root, floating, content)
 		out = append(out, FloatingVM{
 			ID:        floating.ID,
+			PaneID:    floating.Pane.ID,
 			Title:     floating.Title,
 			Rect:      Rect{X: floating.Rect.X, Y: floating.Rect.Y, W: floating.Rect.W, H: floating.Rect.H},
 			Z:         floating.Z,

@@ -114,18 +114,11 @@ func (ShellPromptCancelMsg) isMsg() {}
 type ShellContentActionMsg struct {
 	ActionID string
 	PaneID   string
+	Floating bool
 	Row      int
 }
 
 func (ShellContentActionMsg) isMsg() {}
-
-type ShellFloatingContentActionMsg struct {
-	ActionID   string
-	FloatingID string
-	Row        int
-}
-
-func (ShellFloatingContentActionMsg) isMsg() {}
 
 type ShellOverlayMouseSelectMsg struct {
 	Delta int
@@ -254,8 +247,6 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		case ShellContentActionMsg:
 			return reduceShellContentAction(root, msg)
-		case ShellFloatingContentActionMsg:
-			return reduceShellFloatingContentAction(root, msg)
 		case ShellArmOwnerConfirmMsg:
 			root.Shell = root.Shell.ArmOwnerConfirm(msg.ViewID)
 			seq := root.Shell.OwnerConfirm.Seq
@@ -307,7 +298,15 @@ func ownerConfirmClearEffect(seq uint64) Effect {
 }
 
 func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state.Root, []Effect) {
-	if msg.PaneID != "" {
+	if msg.Floating {
+		if floatingID, ok := floatingIDForContentAction(root, msg); ok && floatingID != "" {
+			root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+				Action:   state.FloatingCommandFocusRaise,
+				TargetID: floatingID,
+				Source:   state.PaneCommandSourceMouse,
+			})
+		}
+	} else if msg.PaneID != "" {
 		root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: msg.PaneID})
 	}
 	spec, ok := render.ActionSpecByIDString(msg.ActionID)
@@ -452,8 +451,14 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}}}
 	case render.ActionTerminalTakeResizeOwner:
 		root.Shell = root.Shell.ClearOwnerConfirm(0)
+		if msg.Floating {
+			return requestFloatingResizeOwner(root, floatingTargetIDForContentAction(root, msg))
+		}
 		return requestPaneResizeOwner(root, msg.PaneID)
 	case render.ActionEmptyClose, render.ActionExitedClose:
+		if msg.Floating {
+			return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
+		}
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,
 			Target: state.PaneCommandTarget{PaneID: msg.PaneID},
@@ -617,7 +622,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			Source:   state.PaneCommandSourceMouse,
 		})
 	case render.ActionFloatingRaise:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingOverview:
 		root.Shell = root.Shell.OpenFloatingOverview()
 		return root.Advance(), nil
@@ -635,7 +640,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandSummon, TargetID: selected.FloatingID, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingClose:
 		// footer close 没有 pane id 时，FloatingCommand 会按 active floating 作为目标。
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandClose, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingToggleAll:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAll, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingShowAll:
@@ -643,9 +648,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionFloatingCollapseAll:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCollapseAll, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingFit:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFit, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandFit, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingAutoFit:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingPick:
 		root.Shell = root.Shell.OpenTerminalPicker()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
@@ -657,18 +662,18 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}
 		return requestFloatingResizeOwner(root, shell.ActiveFloatingID)
 	case render.ActionFloatingResize:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: msg.PaneID, DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: floatingTargetIDForContentAction(root, msg), DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingCenter:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCenter, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandCenter, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingCollapse:
-		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleCollapse, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
+		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleCollapse, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionExitedRestart:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
+			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
 		}}}
 	case render.ActionExitedReconnect:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForContentAction(root, msg.PaneID)}
+			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
 		}}}
 	case render.ActionEmptyManager:
 		root.Shell = root.Shell.OpenTerminalPool()
@@ -683,17 +688,6 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
 	return root.Advance(), nil
-}
-
-func reduceShellFloatingContentAction(root state.Root, msg ShellFloatingContentActionMsg) (state.Root, []Effect) {
-	if msg.FloatingID != "" {
-		root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
-			Action:   state.FloatingCommandFocusRaise,
-			TargetID: msg.FloatingID,
-			Source:   state.PaneCommandSourceMouse,
-		})
-	}
-	return reduceShellContentAction(root, ShellContentActionMsg{ActionID: msg.ActionID, PaneID: msg.FloatingID, Row: msg.Row})
 }
 
 func requestPaneResizeOwner(root state.Root, paneID string) (state.Root, []Effect) {
@@ -1169,6 +1163,43 @@ func terminalIDForContentAction(root state.Root, paneID string) string {
 		return pane.TerminalID
 	}
 	return ""
+}
+
+func terminalIDForShellContentAction(root state.Root, msg ShellContentActionMsg) string {
+	if msg.Floating {
+		floatingID := floatingTargetIDForContentAction(root, msg)
+		if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok && binding.TerminalID != "" {
+			return binding.TerminalID
+		}
+		if floating, ok := root.Shell.FloatingByPaneID(msg.PaneID); ok {
+			return floating.Pane.TerminalID
+		}
+		return ""
+	}
+	return terminalIDForContentAction(root, msg.PaneID)
+}
+
+func floatingTargetIDForContentAction(root state.Root, msg ShellContentActionMsg) string {
+	id, _ := floatingIDForContentAction(root, msg)
+	return id
+}
+
+func floatingIDForContentAction(root state.Root, msg ShellContentActionMsg) (string, bool) {
+	shell := root.Shell.EnsureDefaults()
+	if msg.PaneID == "" {
+		return shell.ActiveFloatingID, shell.ActiveFloatingID != ""
+	}
+	if msg.Floating {
+		if floatingID, ok := shell.FloatingIDForPaneID(msg.PaneID); ok {
+			return floatingID, true
+		}
+	}
+	for _, floating := range shell.Floatings {
+		if floating.ID == msg.PaneID {
+			return floating.ID, true
+		}
+	}
+	return "", false
 }
 
 func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, []Effect) {

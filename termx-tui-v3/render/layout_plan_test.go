@@ -889,6 +889,7 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 			}},
 			Floating: []FloatingVM{{
 				ID:      "float-1",
+				PaneID:  "float-pane-1",
 				Title:   "float",
 				Rect:    Rect{X: 10, Y: 4, W: 30, H: 8},
 				Z:       2,
@@ -926,6 +927,12 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	}
 	if plan.HitRegions[resize].Rect != floatingResizeRect(plan.Floatings[0].Rect) {
 		t.Fatalf("floating resize drag should cover resize handle, got %#v", plan.HitRegions[resize])
+	}
+	for _, index := range []int{center, collapse, zoom, close, move, resize} {
+		region := plan.HitRegions[index]
+		if region.PaneID != "float-pane-1" || !region.Floating {
+			t.Fatalf("floating hit region should use floating panel id and flag, got %#v", region)
+		}
 	}
 }
 

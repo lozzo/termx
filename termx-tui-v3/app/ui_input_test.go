@@ -1954,7 +1954,10 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		frameContains(floatingFrame, render.DefaultPaneChromeGlyphs().Running+" float") {
 		t.Fatalf("expected floating pane product shell content, shell=%#v frame=%#v", runtime.State().Shell, floatingFrame.Lines)
 	}
-	floatingClose := frameActionHitRegion(t, floatingFrame, "floating.close", "floating-1")
+	floatingClose := frameActionHitRegion(t, floatingFrame, "floating.close", "floating-pane-1")
+	if !floatingClose.Floating {
+		t.Fatalf("floating close hit region should carry floating flag, got %#v", floatingClose)
+	}
 	send(mouseEventAt(floatingClose.Rect))
 	if len(runtime.State().Shell.Floatings) != 0 {
 		t.Fatalf("floating close action should remove floating pane, got %#v", runtime.State().Shell.Floatings)
@@ -2229,14 +2232,17 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		t.Fatalf("expected rendered floating pane, got %#v", frame.Lines)
 	}
 
-	raiseRegion := frameActionHitRegion(t, frame, "floating.raise", "floating-1")
+	raiseRegion := frameActionHitRegion(t, frame, "floating.raise", "floating-pane-1")
+	if !raiseRegion.Floating {
+		t.Fatalf("floating raise hit region should carry floating flag, got %#v", raiseRegion)
+	}
 	if err := host.SendInput(mouseEventAt(raiseRegion.Rect)); err != nil {
 		t.Fatalf("send floating raise click: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating raise: %v", err)
 	}
-	moveRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.move-drag", "floating-1")
+	moveRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.move-drag", "floating-pane-1")
 	beforeMove := runtime.State().Shell.Floatings[0].Rect
 	moveStart := mouseEventAt(moveRegion.Rect)
 	moveDrag := moveStart
@@ -2257,7 +2263,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	if afterMove.X != beforeMove.X+3 || afterMove.Y != beforeMove.Y+2 {
 		t.Fatalf("mouse move should move floating rect, before=%#v after=%#v", beforeMove, afterMove)
 	}
-	resizeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.resize-drag", "floating-1")
+	resizeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.resize-drag", "floating-pane-1")
 	before := runtime.State().Shell.Floatings[0].Rect
 	resizeStart := mouseEventAt(resizeRegion.Rect)
 	resizeDrag := resizeStart
@@ -2284,7 +2290,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain clear toasts before floating close: %v", err)
 	}
-	closeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.close", "floating-1")
+	closeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.close", "floating-pane-1")
 	if err := host.SendInput(mouseEventAt(closeRegion.Rect)); err != nil {
 		t.Fatalf("send floating close click: %v", err)
 	}
