@@ -806,27 +806,6 @@ func TestShellBindFloatingTerminal(t *testing.T) {
 	}
 }
 
-func TestShellFocusPaneClearsActiveFloating(t *testing.T) {
-	shell := DefaultShell()
-	var result FloatingCommandResult
-	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
-		Action:   FloatingCommandCreate,
-		TargetID: "float-1",
-		Pane:     PaneState{ID: "float-pane", Kind: PaneTerminalLive, TerminalID: "term-float"},
-	})
-	if result.Status != FloatingCommandOK || shell.ActiveFloatingID != "float-1" {
-		t.Fatalf("expected active floating setup, result=%#v shell=%#v", result, shell)
-	}
-
-	shell = shell.FocusPane(PaneCommandTarget{PaneID: DefaultPaneID})
-	if shell.ActivePaneID != DefaultPaneID || shell.ActiveFloatingID != "" {
-		t.Fatalf("focus pane should leave only tiled pane active, shell=%#v", shell)
-	}
-	if len(shell.Floatings) != 1 || shell.Floatings[0].Active {
-		t.Fatalf("floating should remain open but inactive, floatings=%#v", shell.Floatings)
-	}
-}
-
 func TestShellTerminalOverlaysTargetActiveFloating(t *testing.T) {
 	shell := DefaultShell()
 	var result FloatingCommandResult

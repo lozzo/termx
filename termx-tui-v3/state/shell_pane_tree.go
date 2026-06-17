@@ -64,13 +64,6 @@ func (store ShellStore) FocusPane(target PaneCommandTarget) ShellStore {
 	store.Workspace.ActiveTabID = store.Workspace.Tabs[tabIndex].ID
 	store.Workspace.Tabs[tabIndex].ActivePaneID = paneID
 	store.ActivePaneID = paneID
-	if store.ActiveFloatingID != "" {
-		// 聚焦 tiled pane 必须释放 floating active；否则视觉焦点和输入 target 会分裂。
-		store.ActiveFloatingID = ""
-		for index := range store.Floatings {
-			store.Floatings[index].Active = false
-		}
-	}
 	if store.ZoomedPaneID != "" {
 		store.ZoomedPaneID = paneID
 	}

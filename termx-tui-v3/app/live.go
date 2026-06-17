@@ -166,12 +166,26 @@ type LiveResizeResultMsg struct {
 func (LiveResizeResultMsg) isMsg() {}
 
 type LiveInputResultMsg struct {
-	TerminalID string
-	Event      input.InputEvent
-	Err        error
+	TerminalID   string
+	ViewID       string
+	Channel      uint16
+	Event        input.InputEvent
+	Bytes        []byte
+	RetryOnError bool
+	Err          error
 }
 
 func (LiveInputResultMsg) isMsg() {}
+
+type LiveInputAttachResultMsg struct {
+	Target liveInputTargetInfo
+	Event  input.InputEvent
+	Bytes  []byte
+	Result services.TerminalAttachResult
+	Err    error
+}
+
+func (LiveInputAttachResultMsg) isMsg() {}
 
 func NewLiveReducer(deps LiveDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
@@ -200,13 +214,25 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return reduceLiveInput(root, msg, deps)
 		case LiveInputResultMsg:
 			if msg.Err != nil {
+				if isContextLifecycleError(msg.Err) {
+					return root, nil
+				}
 				if next, ok := markTerminalExitedFromError(root, msg.TerminalID, msg.Err); ok {
 					return next.Advance(), nil
+				}
+				if msg.RetryOnError && msg.ViewID != "" && len(msg.Bytes) > 0 {
+					if target, ok := liveInputTargetForView(root, msg.ViewID); ok && target.TerminalID == msg.TerminalID {
+						// 中文说明：channel 是 view attach 身份；发送失败时只重建这一个 view，
+						// 不能退回全局 session 或抢用 sibling panel 的 channel。
+						return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, msg.Bytes, deps)}
+					}
 				}
 				root = setLiveInputError(root, msg.TerminalID, msg.Err.Error())
 				return root.Advance(), nil
 			}
 			return root, nil
+		case LiveInputAttachResultMsg:
+			return reduceLiveInputAttachResult(root, msg, deps)
 		case LiveResizeMsg:
 			return reduceLiveResize(root, msg, deps)
 		case LiveResizeResultMsg:
@@ -674,24 +700,23 @@ func reduceLiveInput(root state.Root, msg InputMsg, deps LiveDeps) (state.Root, 
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
 		return root, nil
 	}
-	return root, []Effect{FuncEffect{
-		Run: func(ctx context.Context) Msg {
-			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
-				TerminalID: target.TerminalID,
-				Channel:    target.Channel,
-				Event:      msg.Event,
-				Bytes:      intent.Bytes,
-			})
-			return LiveInputResultMsg{TerminalID: target.TerminalID, Event: msg.Event, Err: err}
-		},
-	}}
+	if target.Channel == 0 {
+		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, intent.Bytes, deps)}
+	}
+	return root, []Effect{liveSendInputEffect(target, msg.Event, intent.Bytes, true, deps)}
 }
 
 type liveInputTargetInfo struct {
-	PaneID     string
-	TerminalID string
-	Channel    uint16
-	Floating   bool
+	PaneID      string
+	FloatingID  string
+	ViewID      string
+	TerminalID  string
+	Channel     uint16
+	ResizeRole  string
+	SurfaceID   string
+	DesiredCols int
+	DesiredRows int
+	Floating    bool
 }
 
 func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
@@ -701,10 +726,7 @@ func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 		if !ok || binding.TerminalID == "" {
 			return liveInputTargetInfo{}, false
 		}
-		if binding.Channel == 0 {
-			return liveInputTargetInfo{}, false
-		}
-		return liveInputTargetInfo{PaneID: binding.PaneID, TerminalID: binding.TerminalID, Channel: binding.Channel, Floating: true}, true
+		return liveInputTargetFromBinding(binding), true
 	}
 	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
 	if !ok {
@@ -714,10 +736,156 @@ func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 	if !ok || binding.TerminalID == "" {
 		return liveInputTargetInfo{}, false
 	}
-	if binding.Channel == 0 {
+	return liveInputTargetFromBinding(binding), true
+}
+
+func liveInputTargetForView(root state.Root, viewID string) (liveInputTargetInfo, bool) {
+	if viewID == "" {
 		return liveInputTargetInfo{}, false
 	}
-	return liveInputTargetInfo{PaneID: pane.ID, TerminalID: binding.TerminalID, Channel: binding.Channel}, true
+	binding, ok := root.TerminalViews.Views[viewID]
+	if !ok || binding.TerminalID == "" {
+		return liveInputTargetInfo{}, false
+	}
+	return liveInputTargetFromBinding(binding), true
+}
+
+func liveInputTargetFromBinding(binding state.TerminalViewBinding) liveInputTargetInfo {
+	info := liveInputTargetInfo{
+		PaneID:      binding.PaneID,
+		FloatingID:  binding.FloatingID,
+		ViewID:      binding.ViewID,
+		TerminalID:  binding.TerminalID,
+		Channel:     binding.Channel,
+		ResizeRole:  binding.ResizeRole,
+		SurfaceID:   binding.SurfaceID,
+		DesiredCols: binding.DesiredCols,
+		DesiredRows: binding.DesiredRows,
+		Floating:    binding.FloatingID != "",
+	}
+	if info.SurfaceID == "" {
+		info.SurfaceID = "termx-tui-v3"
+	}
+	return info
+}
+
+func liveSendInputEffect(target liveInputTargetInfo, event input.InputEvent, bytes []byte, retryOnError bool, deps LiveDeps) Effect {
+	payload := append([]byte(nil), bytes...)
+	return FuncEffect{
+		Run: func(ctx context.Context) Msg {
+			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
+				TerminalID: target.TerminalID,
+				Channel:    target.Channel,
+				Event:      event,
+				Bytes:      payload,
+			})
+			return LiveInputResultMsg{
+				TerminalID:   target.TerminalID,
+				ViewID:       target.ViewID,
+				Channel:      target.Channel,
+				Event:        event,
+				Bytes:        payload,
+				RetryOnError: retryOnError,
+				Err:          err,
+			}
+		},
+	}
+}
+
+func liveAttachForInputEffect(root state.Root, target liveInputTargetInfo, event input.InputEvent, bytes []byte, deps LiveDeps) Effect {
+	payload := append([]byte(nil), bytes...)
+	req := liveInputAttachRequest(root, target)
+	return FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
+		Run: func(ctx context.Context) Msg {
+			result, err := deps.Terminal.Attach(ctx, req)
+			return LiveInputAttachResultMsg{Target: target, Event: event, Bytes: payload, Result: result, Err: err}
+		},
+	}
+}
+
+func liveInputAttachRequest(root state.Root, target liveInputTargetInfo) services.TerminalAttachRequest {
+	cols, rows := liveInputAttachSize(root, target)
+	resizePolicy := target.ResizeRole
+	if resizePolicy == "" {
+		resizePolicy = state.TerminalResizeRoleFollower
+	}
+	surfaceID := target.SurfaceID
+	if surfaceID == "" {
+		surfaceID = "termx-tui-v3"
+	}
+	return services.TerminalAttachRequest{
+		TerminalID:   target.TerminalID,
+		Cols:         cols,
+		Rows:         rows,
+		Mode:         "collaborator",
+		ResizePolicy: resizePolicy,
+		SurfaceID:    surfaceID,
+		ViewID:       target.ViewID,
+	}
+}
+
+func liveInputAttachSize(root state.Root, target liveInputTargetInfo) (int, int) {
+	if rect, ok := terminalPoolTargetContentRect(root, terminalPoolTarget{PaneID: target.PaneID, FloatingID: target.FloatingID, ViewID: target.ViewID}, render.Rect{}); ok {
+		return rect.W, rect.H
+	}
+	if target.DesiredCols > 0 && target.DesiredRows > 0 {
+		return target.DesiredCols, target.DesiredRows
+	}
+	cols, rows := liveAttachContentSize(root, LiveConfig{Cols: root.Session.Cols, Rows: root.Session.Rows})
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	return cols, rows
+}
+
+func reduceLiveInputAttachResult(root state.Root, msg LiveInputAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	if msg.Err != nil {
+		if isContextLifecycleError(msg.Err) {
+			return root, nil
+		}
+		if next, ok := markTerminalExitedFromError(root, msg.Target.TerminalID, msg.Err); ok {
+			return next.Advance(), nil
+		}
+		root = setLiveInputError(root, msg.Target.TerminalID, msg.Err.Error())
+		return root.Advance(), nil
+	}
+	result := msg.Result
+	if result.TerminalID == "" {
+		result.TerminalID = msg.Target.TerminalID
+	}
+	if result.ViewID == "" {
+		result.ViewID = msg.Target.ViewID
+	}
+	if result.SurfaceID == "" {
+		result.SurfaceID = msg.Target.SurfaceID
+	}
+	if result.ResizePolicy == "" {
+		result.ResizePolicy = msg.Target.ResizeRole
+	}
+	if result.ResizePolicy == "" {
+		result.ResizePolicy = state.TerminalResizeRoleFollower
+	}
+	if result.Cols <= 0 || result.Rows <= 0 {
+		cols, rows := liveInputAttachSize(root, msg.Target)
+		if result.Cols <= 0 {
+			result.Cols = cols
+		}
+		if result.Rows <= 0 {
+			result.Rows = rows
+		}
+	}
+	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{TerminalID: msg.Target.TerminalID, Result: result}, deps)
+	target, ok := liveInputTargetForView(next, result.ViewID)
+	if !ok || target.Channel == 0 {
+		return next, effects
+	}
+	effects = append(effects, liveSendInputEffect(target, msg.Event, msg.Bytes, false, deps))
+	return next, effects
 }
 
 func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target liveInputTargetInfo) bool {
