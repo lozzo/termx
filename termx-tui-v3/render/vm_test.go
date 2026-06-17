@@ -1759,6 +1759,28 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 	}
 }
 
+func TestRenderVMBuilderDoesNotSynthesizeLiveCursorFromPreservedTail(t *testing.T) {
+	root := bindTestPaneTerminal(state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-live",
+			Ready:      true,
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"old live tail"},
+			Cursor:     state.LiveCursor{},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 80, Rows: 24},
+	}, state.DefaultPaneID, "term-live")
+
+	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
+	if content.Kind != ContentTerminalLive || len(content.Lines) != 1 || content.Lines[0].PlainString() != "old live tail" {
+		t.Fatalf("expected preserved live tail content, got %#v", content)
+	}
+	if content.Cursor.Visible || content.Cursor.Anchor {
+		t.Fatalf("preserved tail without surface cursor must not synthesize cursor at line end, got %#v", content.Cursor)
+	}
+}
+
 func TestRenderVMBuilderDoesNotApplyLiveExtentToStatusFallbacks(t *testing.T) {
 	cases := []struct {
 		name    string

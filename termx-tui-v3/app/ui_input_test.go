@@ -1165,6 +1165,10 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	if len(root.Surface.Lines) != 1 || root.Surface.Lines[0] != "old live tail" || !root.Surface.Ready {
 		t.Fatalf("restart should preserve live tail while reattaching, got %#v", root.Surface)
 	}
+	frame := render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+	if frame.Cursor.Visible {
+		t.Fatalf("restart preserved tail must not synthesize a cursor at the old line end, cursor=%#v rect=%#v", frame.Cursor, frame.CursorRect)
+	}
 	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 0 || binding.Attached {
 		t.Fatalf("restart should preserve binding intent but clear stale input channel, got %#v ok=%v", binding, ok)
 	}

@@ -1321,25 +1321,9 @@ func liveContentCursor(surface state.TerminalSurfaceStore, session state.Termina
 			Shape:   liveCursorShape(surface.Cursor.Shape),
 		}
 	}
-	if !session.Attached || len(lines) == 0 {
-		return Cursor{}
-	}
-	row := len(lines) - 1
-	if surface.Rows > 0 && row >= surface.Rows {
-		row = surface.Rows - 1
-	}
-	col := lines[len(lines)-1].Width()
-	cols := surface.Cols
-	if cols <= 0 {
-		cols = session.Cols
-	}
-	if cols > 0 && col >= cols {
-		col = cols - 1
-	}
-	if col < 0 {
-		col = 0
-	}
-	return Cursor{Visible: true, Row: row, Col: col, Shape: CursorShapeBlock}
+	// 中文说明：live terminal 的光标位置只能来自 core/protocol 的 surface cursor。
+	// restart 会保留旧 live tail 但清掉旧进程 cursor；不能按文本尾部臆造新光标。
+	return Cursor{}
 }
 
 func liveEmptySurfaceCursor(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) Cursor {
