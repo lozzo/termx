@@ -285,7 +285,12 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	}
 	result = normalizeTerminalAttachResultForLock(root, result)
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
-	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
+	if terminalPoolTerminalExited(root.TerminalPool, result.TerminalID) {
+		root.Surface = projectTerminalPoolExitMetadata(root.Surface, root.TerminalPool.Items)
+		root.Surface = root.Surface.AttachPreservingBoundary(result.TerminalID, result.Cols, result.Rows)
+	} else {
+		root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
+	}
 	if msg.TargetFloatingID != "" {
 		paneID := msg.TargetPaneID
 		for _, floating := range root.Shell.Floatings {
@@ -686,6 +691,18 @@ func projectTerminalPoolExitMetadata(surface state.TerminalSurfaceStore, items [
 		surface = surface.MarkExitedWithMetadata(item.TerminalID, exitCode, "exited", item.ExitedAt, item.Command)
 	}
 	return surface
+}
+
+func terminalPoolTerminalExited(pool state.TerminalPoolStore, terminalID string) bool {
+	if terminalID == "" {
+		return false
+	}
+	for _, item := range pool.Items {
+		if item.TerminalID == terminalID {
+			return item.State == string(state.TerminalLiveExited)
+		}
+	}
+	return false
 }
 
 func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {

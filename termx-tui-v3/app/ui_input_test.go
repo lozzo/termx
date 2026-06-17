@@ -526,6 +526,93 @@ func TestInteractiveRuntimeTerminalPickerKeyboardFlow(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTerminalPickerShowsExitedTerminalImmediatelyAfterAttach(t *testing.T) {
+	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
+	exitCode := 23
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 4, Cols: 80, Rows: 24},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{
+			TerminalID: "term-dead",
+			Title:      "dead shell",
+			State:      string(state.TerminalLiveExited),
+			ExitCode:   &exitCode,
+			ExitedAt:   exitedAt,
+			Command:    []string{"bash", "-lc", "exit 23"},
+			Cols:       80,
+			Rows:       24,
+		}}},
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-dead",
+				Cols:       80,
+				Rows:       24,
+				State:      state.TerminalLiveExited,
+				ExitCode:   23,
+				ExitReason: "exited",
+				ExitedAt:   exitedAt,
+				Command:    []string{"bash", "-lc", "exit 23"},
+			},
+		},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{Shell: state.DefaultShell()},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	terminal.AttachResult = services.TerminalAttachResult{Channel: 9, Cols: 80, Rows: 24}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x06", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-f: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "d"}); err != nil {
+		t.Fatalf("send query d: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "e"}); err != nil {
+		t.Fatalf("send query e: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain picker query: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}); err != nil {
+		t.Fatalf("send down: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("send enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain exited attach: %v", err)
+	}
+
+	if runtime.State().Shell.Overlay.Open {
+		t.Fatalf("picker should close after attach, overlay=%#v", runtime.State().Shell.Overlay)
+	}
+	surface := runtime.State().Surface.SurfaceForTerminal("term-dead")
+	if surface.State != state.TerminalLiveExited || surface.ExitCode != 23 {
+		t.Fatalf("attached exited terminal should be visible immediately, surface=%#v", surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "terminal exited: term-dead code:23 exited") ||
+		!frameContains(frame, "exited at: 2026-06-17T12:45:00Z") ||
+		!frameContains(frame, "command: bash -lc exit 23") ||
+		!frameContains(frame, "R restart current terminal") ||
+		!frameContains(frame, "Ctrl-F choose another terminal") {
+		t.Fatalf("exited terminal selected from picker should render lifecycle CTA without extra input, frame=%#v", frame.Lines)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("picker attach to exited terminal must not require/leak input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestUIInputReducerGlobalQuitShortcutEmitsQuitMsg(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}

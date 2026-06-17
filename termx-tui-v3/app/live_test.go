@@ -339,6 +339,53 @@ func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testin
 	}
 }
 
+func TestTerminalPoolAttachExitedTerminalPreservesLifecycleBeforeInput(t *testing.T) {
+	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
+	exitCode := 23
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-exited",
+			Channel:      21,
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: state.TerminalResizeRoleFollower,
+			SurfaceID:    "surface",
+		},
+	}
+	root := state.Root{
+		Shell: state.DefaultShell().
+			BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-old"),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
+			TerminalID: "term-exited",
+			Title:      "done",
+			State:      string(state.TerminalLiveExited),
+			ExitCode:   &exitCode,
+			ExitedAt:   exitedAt,
+			Command:    []string{"bash", "-lc", "exit 23"},
+		}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-old", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+
+	next, effects := reducer(root, TerminalPoolAttachRequestMsg{TerminalID: "term-exited", TargetPaneID: state.DefaultPaneID})
+	if len(effects) != 1 {
+		t.Fatalf("expected attach effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolAttachResultMsg)
+	if !ok {
+		t.Fatalf("expected attach result, got %#v", msg)
+	}
+	next, _ = reducer(next, msg)
+
+	surface := next.Surface.SurfaceForTerminal("term-exited")
+	if surface.State != state.TerminalLiveExited || surface.ExitCode != 23 || !surface.ExitedAt.Equal(exitedAt) || strings.Join(surface.Command, " ") != "bash -lc exit 23" {
+		t.Fatalf("picker attach to exited terminal should keep lifecycle immediately, surface=%#v", surface)
+	}
+	if next.Session.TerminalID != "term-exited" || !next.Session.Attached || next.Session.Channel != 21 {
+		t.Fatalf("attach should still bind the selected terminal view/session, session=%#v", next.Session)
+	}
+}
+
 func TestInteractionModeContentClickThenKeyUsesTerminalInputRoute(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	root := state.Root{

@@ -210,6 +210,33 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 	return store
 }
 
+func (store TerminalSurfaceStore) AttachPreservingBoundary(terminalID string, cols int, rows int) TerminalSurfaceStore {
+	snapshot, ok := store.snapshotForTerminal(terminalID)
+	if !ok || !liveSnapshotIsBoundary(snapshot) {
+		return store.Attach(terminalID, cols, rows)
+	}
+	// 中文说明：picker attach 到一个已退出 terminal 只是切换 view 绑定，不代表 terminal 生命周期重启。
+	// 这里保留 exited/error 元数据，避免 UI 短暂显示成可输入 live pane，等权威 surface/event 回来再覆盖。
+	if snapshot.Cols == 0 {
+		snapshot.Cols = cols
+	}
+	if snapshot.Rows == 0 {
+		snapshot.Rows = rows
+	}
+	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
+	store.Surfaces[terminalID] = snapshot
+	if store.TerminalID != "" && store.TerminalID != terminalID {
+		store.Lines = nil
+		store.Screen = nil
+		store.Cursor = LiveCursor{}
+		store.Modes = LiveTerminalModes{}
+		store.Ready = false
+	}
+	store = store.projectSnapshot(snapshot, true)
+	store.ResizeBoundary = LiveResizeBoundary{}
+	return store
+}
+
 func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSurfaceStore {
 	return store.MarkExitedWithMetadata(terminalID, exitCode, reason, time.Time{}, nil)
 }
