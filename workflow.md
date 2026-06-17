@@ -248,14 +248,16 @@
 | 215E1-R75. SK core lifecycle 权威边界 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/services/`、`termx-tui-v3/app/`、`termx-tui-v3/docs/`、`workflow.md` | 已把重进 TUI 后是否 restart 的判断收口到 core terminal lifecycle：protocol live surface 会合并 core terminal list 的 running/exited 属性，带权威 lifecycle 的 running snapshot 可以清掉 stale exited surface/session；workbench storage 只保留连接意图，不持久化 `PaneExited`/copy-history 展示态 |
 | 215E1-R76. SK restore 清理旧 exited pane | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`workflow.md` | 已修复 R75 前旧 workbench storage 中残留 `PaneExited` 导致重进 TUI 仍显示 restart 的问题：restore 入口也会把 `PaneExited`/copy-history scrub 成 terminal-live 连接意图，再由 core running/exited lifecycle 决定最终 UI；同时补 lifecycle trace 日志定位 restore/list/surface/restart |
 | 215E1-R77. SK panel lifecycle 边界收口 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/docs/`、`AGENTS.md`、`workflow.md` | 已把 pane kind 收窄为 empty/terminal-live：`exited` 和 `copy-history` 不再是当前 panel 状态，只能作为旧 snapshot 字符串在 restore 边界迁移；render exited 只从 TerminalView 绑定 terminal 的 lifecycle 投影，旧 snapshot 缺 TerminalViews 时会从连接意图补 detached binding；AGENTS 已强调禁止症状补丁 |
+| 215E1-R78. SK live lifecycle 队列边界 | 完成 | `termx-tui-v3/app/`、`workflow.md` | 已修复真正现场断点：`LifecycleKnown=true` 的 running live surface 是 core terminal lifecycle 权威信号，不能被 runtime 的 ordinary live frame coalesce 丢掉；现在 lifecycle-known snapshot 会作为队列边界保留，重进 TUI 后 running lifecycle 能清掉旧 exited cache 和 restart CTA |
 
 当前下一步：
 
-- `215E1-R77 panel lifecycle 边界收口` 已完成
+- `215E1-R78 live lifecycle 队列边界` 已完成
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
 - 当前 restart 语义：terminal lifecycle 和 terminal data 分离；process 退出/重启不会清空 core-v2 authoritative history，也不会清空 live tail。restart 会让所有 view channel 失效并逐 view reattach，但 TUI 等待 reattach 时继续显示旧 live tail。
 - 当前 exit marker 语义：process 退出时 core-v2 先 force commit primary frontier，再把 `terminal exited`、`exited at`、`command` 三类 marker 作为显式系统输出追加到 live surface 和 authoritative history；这不是 storage/snapshot/TUI overlay 推导出来的当前进程内状态。
 - 当前 lifecycle 权威边界：当前 terminal 是否 exited/running 只看 core terminal 属性；pane/floating 只有空槽位或连接到 TerminalView 的状态，workbench storage 只保存布局和连接意图，不参与当前 lifecycle 或输入路由判断。
+- 当前 live 队列边界：`LifecycleKnown=true` 的 live surface/event 是 terminal lifecycle 权威投影，不属于 ordinary live frame；runtime 不允许用后续普通 live 帧合并替换它，否则 running/exited 状态会被旧 cache 污染。
 - 当前旧 storage 兼容：R75 前已经写入 opaque storage 的 `"exited"` / `"copy-history"` pane kind 会在 restore 时迁移成 terminal-live 连接意图；如果旧 snapshot 缺 TerminalViews，会从 pane/floating 的 terminal intent 补 detached view binding。
 - 当前 live cursor 语义：terminal live cursor 只来自 core/protocol surface cursor；restart 后 core 把保留 tail 之后的 append row 作为 visible cursor seed，TUI 只把该 surface Row/Col 映射到当前 view layout，不按文本尾部合成。
 
