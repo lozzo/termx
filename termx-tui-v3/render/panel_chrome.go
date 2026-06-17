@@ -567,19 +567,33 @@ func renderFloatingTerminalChrome(c *canvas, primitive ChromePrimitive) {
 }
 
 func renderFloatingChromeActions(c *canvas, primitive ChromePrimitive) {
-	text := chromeBracketActionClusterText(primitive.ActionSlots)
+	controlSlots := floatingChromeControlSlots(primitive.ActionSlots)
+	text := chromeBracketActionClusterText(controlSlots)
 	width := DisplayWidth(text)
 	if width <= 0 {
 		return
 	}
-	if len(primitive.ActionSlots) == 0 {
+	if len(controlSlots) == 0 {
 		return
 	}
-	actionX := primitive.ActionSlots[0].Rect.X
+	actionX := controlSlots[0].Rect.X
 	if actionX < primitive.Rect.X+2 {
 		return
 	}
 	c.overlayTextStyled(actionX, primitive.Rect.Y, width, text, primitive.Style, primitive.Owner, primitive.Layer)
+}
+
+func floatingChromeControlSlots(slots []ChromeSlot) []ChromeSlot {
+	out := make([]ChromeSlot, 0, len(slots))
+	for _, slot := range slots {
+		switch slot.ActionID {
+		case ActionResizeLayoutLock.String(), ActionTerminalTakeResizeOwner.String():
+			continue
+		default:
+			out = append(out, slot)
+		}
+	}
+	return out
 }
 
 func chromeSlotClusterText(slots []ChromeSlot) string {

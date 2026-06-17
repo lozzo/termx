@@ -13,13 +13,27 @@ func paneChromeTerminalLabelSlots(panel PanelVM, borderStyle StyleToken, width i
 		right = right[1:]
 	}
 	rightWidth := paneChromeSlotsWidth(right)
-	titleWidth := maxInt(0, width-rightWidth)
-	left := paneChromeTerminalLeftTitle(terminal, panel, titleWidth, borderStyle)
-	slots := make([]paneChromeTopSlot, 0, 1+len(right))
-	if strings.TrimSpace(left.text) != "" {
-		slots = append(slots, left)
-	}
+	left := paneChromeTerminalLeftSlots(terminal, panel, maxInt(0, width-rightWidth), borderStyle)
+	slots := make([]paneChromeTopSlot, 0, len(left)+len(right))
+	slots = append(slots, left...)
 	return append(slots, right...)
+}
+
+func paneChromeTerminalLeftSlots(terminal TerminalChromeVM, panel PanelVM, width int, borderStyle StyleToken) []paneChromeTopSlot {
+	if width <= 0 {
+		return nil
+	}
+	suffix := paneChromeTerminalSizeLockSlot(terminal, borderStyle)
+	for len(suffix) > 0 && paneChromeSlotsWidth(suffix)+paneChromeTerminalMinimumTitleWidth(terminal) > width {
+		suffix = suffix[:len(suffix)-1]
+	}
+	titleWidth := maxInt(0, width-paneChromeSlotsWidth(suffix))
+	title := paneChromeTerminalLeftTitle(terminal, panel, titleWidth, borderStyle)
+	slots := make([]paneChromeTopSlot, 0, 1+len(suffix))
+	if strings.TrimSpace(title.text) != "" {
+		slots = append(slots, title)
+	}
+	return append(slots, suffix...)
 }
 
 func paneChromeTerminalLeftTitle(terminal TerminalChromeVM, panel PanelVM, width int, borderStyle StyleToken) paneChromeTopSlot {
@@ -33,9 +47,12 @@ func paneChromeTerminalLeftTitle(terminal TerminalChromeVM, panel PanelVM, width
 	if title == "" {
 		return paneChromeTopSlot{}
 	}
-	text := paneChromeTerminalTitlePrefix(terminal) + title
+	prefix := paneChromeTerminalTitlePrefix(terminal)
+	prefixWidth := DisplayWidth(prefix)
+	text := prefix + title
 	if width > 2 {
-		text = TruncateCells(text, width-2)
+		titleWidth := maxInt(0, width-2-prefixWidth)
+		text = prefix + TruncateCells(title, titleWidth)
 		text = " " + text + " "
 	} else {
 		text = TruncateCells(text, width)
@@ -45,6 +62,21 @@ func paneChromeTerminalLeftTitle(terminal TerminalChromeVM, panel PanelVM, width
 		style = paneChromeTitleStyle(panel, borderStyle)
 	}
 	return paneChromeTopSlot{text: text, layoutWidth: width, style: style, priority: 0}
+}
+
+func paneChromeTerminalSizeLockSlot(terminal TerminalChromeVM, borderStyle StyleToken) []paneChromeTopSlot {
+	lockGlyph := paneChromeSizeUnlockGlyph()
+	if terminal.Locked {
+		lockGlyph = paneChromeSizeLockGlyph()
+	}
+	return []paneChromeTopSlot{{text: paneChromeBracketToken(lockGlyph), style: borderStyle, priority: 1, actionID: ActionResizeLayoutLock.String()}}
+}
+
+func paneChromeTerminalTitlePrefix(terminal TerminalChromeVM) string {
+	if terminalChromeLayoutAdjusted(terminal) {
+		return "◇ "
+	}
+	return ""
 }
 
 func paneChromeTerminalRightSlots(terminal TerminalChromeVM, borderStyle StyleToken) []paneChromeTopSlot {
@@ -67,20 +99,6 @@ func paneChromeTerminalRightSlots(terminal TerminalChromeVM, borderStyle StyleTo
 		{text: paneChromeFixedSlot("x"+strconv.Itoa(count), 4), style: borderStyle, priority: 3},
 		{text: paneChromeFixedSlot(ownerText, 8), style: ownerStyle, priority: 4, actionID: terminalOwnerActionID(terminal)},
 	}
-}
-
-func paneChromeTerminalTitlePrefix(terminal TerminalChromeVM) string {
-	parts := make([]string, 0, 2)
-	if terminal.Locked {
-		parts = append(parts, paneChromeSizeLockGlyph())
-	}
-	if terminalChromeLayoutAdjusted(terminal) {
-		parts = append(parts, "◇")
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, "") + " "
 }
 
 func terminalChromeLayoutAdjusted(terminal TerminalChromeVM) bool {

@@ -46,6 +46,8 @@ func PaneChromePrimitive(panel PanelVM, rect Rect, style StyleToken) ChromePrimi
 		}
 		if chromeSlot.ActionID != "" {
 			primitive.ActionSlots = append(primitive.ActionSlots, chromeSlot)
+		} else if slot.priority > 0 {
+			primitive.LabelSlots = append(primitive.LabelSlots, chromeSlot)
 		} else {
 			primitive.Title = chromeSlot
 		}

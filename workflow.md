@@ -221,11 +221,12 @@
 | 215E1-R48. SK alt screen 退出最后一帧进入 history | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理真实现场“alt-screen 最后一帧只在 live 里保留，history/copy 里看不到”：退出 alt-screen 时按同一保留开关把最后一帧追加成 authoritative history page |
 | 215E1-R49. SK terminal view owner size 语义回归 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复 terminal view owner 已恢复但 resize 请求仍携带 follower policy 的错位；terminal size lock 展示与 view-local layout lock 已拆开，locked owner 仍显示 owner 但不发 resize |
 | 215E1-R50. SK terminal size lock 交互迁移 | 完成 | `termx-tui-v3/`、`workflow.md` | 已把 tuiv2 的 terminal Size lock 搬到 tui-v3：`s LOCK` 通过 terminal service 写 `termx.size_lock` tags，成功后同步投影到同 terminal 的所有 view |
+| 215E1-R51. SK terminal size lock chrome action | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已在左上 terminal 名称后展示 size lock 图标；pane/floating 图标点击都会复用 terminal Size lock toggle 主链并锁定正确 terminal |
 
 当前下一步：
 
-- `215E1-R50 terminal size lock 交互迁移` 已完成
-- pane/resize 模式的 `s LOCK` 现在是 terminal-level metadata lock；切换时保留 terminal 原有 tags，只调用 protocol `set_tags`，不改 terminal title；成功后 owner/follower view 都同步显示 terminal locked 状态
+- `215E1-R51 terminal size lock chrome action` 已完成
+- 左上 terminal 名称后现在固定展示 terminal Size lock 图标；点击 pane 或 floating 的图标都会通过 terminal metadata tags 切换 `termx.size_lock`，不会再误用 view-local layout lock
 
 ## 6. 必做证据
 

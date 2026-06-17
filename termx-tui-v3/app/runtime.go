@@ -816,6 +816,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		}
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	}
+	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionResizeLayoutLock.String() {
+		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
+	}
 	switch region.Kind {
 	case render.HitRegionToastClose:
 		return ShellCloseCurrentToastMsg{}
@@ -856,10 +859,25 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	}
 	switch region.Kind {
 	case render.HitRegionContentAction:
+		if region.ActionID == render.ActionResizeLayoutLock.String() && shellHasFloating(runtime.state.Shell.EnsureDefaults(), region.PaneID) {
+			return ShellFloatingContentActionMsg{ActionID: region.ActionID, FloatingID: region.PaneID, Row: region.Row}
+		}
 		return ShellContentActionMsg{ActionID: region.ActionID, PaneID: region.PaneID, Row: region.Row}
 	default:
 		return msg
 	}
+}
+
+func shellHasFloating(shell state.ShellStore, floatingID string) bool {
+	if floatingID == "" {
+		return false
+	}
+	for _, floating := range shell.Floatings {
+		if floating.ID == floatingID {
+			return true
+		}
+	}
+	return false
 }
 
 func mouseWheelCanRouteToCopyMode(event input.InputEvent, resolution mouseHitResolution) bool {

@@ -1009,6 +1009,107 @@ func TestAppRuntimeTakeResizeOwnerRequiresDoubleClick(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-1",
+			Channel:      7,
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			CanResize:    true,
+			SurfaceID:    "surface",
+			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+		},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(96, 28)
+	root := state.Root{
+		Shell:        state.DefaultShell().SetPanelPresentation(state.PanelPresentationCard),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
+	}
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("attach drain: %v", err)
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	action := frameHitRegionByAction(t, frame, render.HitRegionPaneAction, render.ActionResizeLayoutLock.String(), state.DefaultPaneID)
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send size lock click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("click drain: %v", err)
+	}
+	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-1" || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("chrome size lock click should preserve tags and set lock tag, edits=%#v", terminal.TagEdits)
+	}
+	binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || !binding.SizeLocked || binding.CanResize || binding.ResizeRole != state.TerminalResizeRoleOwner {
+		t.Fatalf("chrome size lock click should project locked owner view, binding=%#v ok=%v", binding, ok)
+	}
+	if !frameContains(lastRuntimeFrame(t, host), render.DefaultPaneChromeGlyphs().SizeLock) {
+		t.Fatalf("locked frame should render size lock glyph, got %#v", lastRuntimeFrame(t, host).Lines)
+	}
+}
+
+func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(110, 32)
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationCard).BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-pane")
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Title:    "float",
+		Rect:     state.FloatingRect{X: 8, Y: 4, W: 62, H: 12},
+		BoundsW:  110,
+		BoundsH:  32,
+	})
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandDeactivate})
+	root := state.Root{
+		Shell: shell,
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{
+			{TerminalID: "term-pane", Title: "pane", Tags: map[string]string{"role": "pane"}},
+			{TerminalID: "term-float", Title: "float", Tags: map[string]string{"role": "float"}},
+		}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 3, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-float", 4, 40, 10, state.TerminalResizeRoleOwner, "surface", state.TerminalFloatingViewID("floating-1"), true))
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("initial drain: %v", err)
+	}
+
+	frame := lastRuntimeFrame(t, host)
+	action := frameActionHitRegion(t, frame, render.ActionResizeLayoutLock.String(), "floating-1")
+	if err := host.SendInput(mouseEventAt(action.Rect)); err != nil {
+		t.Fatalf("send floating size lock click: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("floating click drain: %v", err)
+	}
+	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-float" || terminal.TagEdits[0].Tags["role"] != "float" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("floating chrome size lock should target floating terminal, edits=%#v", terminal.TagEdits)
+	}
+	if runtime.State().Shell.EnsureDefaults().ActiveFloatingID != "floating-1" {
+		t.Fatalf("floating size lock click should focus floating, shell=%#v", runtime.State().Shell)
+	}
+	if floating, ok := runtime.State().TerminalViews.FloatingBinding("floating-1"); !ok || !floating.SizeLocked || floating.CanResize {
+		t.Fatalf("floating binding should project size lock, binding=%#v ok=%v", floating, ok)
+	}
+	if pane, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); pane.SizeLocked {
+		t.Fatalf("pane terminal must not be locked by floating chrome click, pane=%#v", pane)
+	}
+}
+
 func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	closeHost := NewFakeTerminalHost(8)
 	closeShell, _ := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})

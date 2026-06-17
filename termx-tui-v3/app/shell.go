@@ -119,6 +119,14 @@ type ShellContentActionMsg struct {
 
 func (ShellContentActionMsg) isMsg() {}
 
+type ShellFloatingContentActionMsg struct {
+	ActionID   string
+	FloatingID string
+	Row        int
+}
+
+func (ShellFloatingContentActionMsg) isMsg() {}
+
 type ShellOverlayMouseSelectMsg struct {
 	Delta int
 }
@@ -246,6 +254,8 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		case ShellContentActionMsg:
 			return reduceShellContentAction(root, msg)
+		case ShellFloatingContentActionMsg:
+			return reduceShellFloatingContentAction(root, msg)
 		case ShellArmOwnerConfirmMsg:
 			root.Shell = root.Shell.ArmOwnerConfirm(msg.ViewID)
 			seq := root.Shell.OwnerConfirm.Seq
@@ -673,6 +683,17 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "content action", Body: "unknown " + msg.ActionID})
 	return root.Advance(), nil
+}
+
+func reduceShellFloatingContentAction(root state.Root, msg ShellFloatingContentActionMsg) (state.Root, []Effect) {
+	if msg.FloatingID != "" {
+		root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+			Action:   state.FloatingCommandFocusRaise,
+			TargetID: msg.FloatingID,
+			Source:   state.PaneCommandSourceMouse,
+		})
+	}
+	return reduceShellContentAction(root, ShellContentActionMsg{ActionID: msg.ActionID, PaneID: msg.FloatingID, Row: msg.Row})
 }
 
 func requestPaneResizeOwner(root state.Root, paneID string) (state.Root, []Effect) {

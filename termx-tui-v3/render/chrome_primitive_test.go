@@ -68,6 +68,31 @@ func TestChromePrimitivePaneOwnerTokenDrivesTakeOwnerHitRegion(t *testing.T) {
 	}
 }
 
+func TestChromePrimitiveTerminalSizeLockButtonFollowsTitleAndDrivesHitRegion(t *testing.T) {
+	panel := terminalChromeSlotTestPanel("pane-1", "shell")
+	panel.Chrome.Actions = []ChromeActionVM{paneChromeActionVM(ActionPaneClose, StyleAccent)}
+	rect := Rect{W: 72, H: 8}
+	primitive := PaneChromePrimitive(panel, rect, StyleAccent)
+	unlocked, ok := chromeSlotByAction(primitive.ActionSlots, ActionResizeLayoutLock.String())
+	if !ok || unlocked.Text != paneChromeBracketToken(paneChromeSizeUnlockGlyph()) {
+		t.Fatalf("unlocked terminal should expose size lock button after title, got %#v", primitive.ActionSlots)
+	}
+	if primitive.Title.Text == "" || unlocked.Rect.X <= primitive.Title.Rect.X+primitive.Title.Rect.W-1 {
+		t.Fatalf("size lock button should sit after title slot, title=%#v lock=%#v", primitive.Title, unlocked)
+	}
+	regions := appendPaneActionRegions(nil, panel, rect, panel.ID, rect)
+	if !hitRegionsContainActionRect(regions, ActionResizeLayoutLock.String(), unlocked.Rect) {
+		t.Fatalf("size lock slot should drive matching hit region, slot=%#v regions=%#v", unlocked, regions)
+	}
+
+	panel.Chrome.Terminal.Locked = true
+	lockedPrimitive := PaneChromePrimitive(panel, rect, StyleAccent)
+	locked, ok := chromeSlotByAction(lockedPrimitive.ActionSlots, ActionResizeLayoutLock.String())
+	if !ok || locked.Text != paneChromeBracketToken(paneChromeSizeLockGlyph()) || locked.Rect.X != unlocked.Rect.X {
+		t.Fatalf("locked terminal should keep same action slot with locked glyph, unlocked=%#v locked=%#v", unlocked, locked)
+	}
+}
+
 func TestChromePrimitiveFloatingActionSlotsMatchHitRegions(t *testing.T) {
 	rect := Rect{X: 10, Y: 4, W: 30, H: 8}
 	primitive := FloatingChromePrimitive(FloatingVM{ID: "float-1", Rect: rect, Active: true}, rect, StyleAccent)
@@ -116,6 +141,31 @@ func TestChromePrimitiveFloatingTerminalOwnerTokenDrivesTakeOwnerHitRegion(t *te
 	}
 	if !found {
 		t.Fatalf("expected floating owner token action slot, got %#v", primitive.ActionSlots)
+	}
+}
+
+func TestChromePrimitiveFloatingSizeLockStaysInTerminalLabel(t *testing.T) {
+	rect := Rect{X: 2, Y: 1, W: 84, H: 8}
+	floating := FloatingVM{ID: "float-1", Title: "123", Rect: rect, Active: true, Chrome: FloatingChromeVM{
+		Terminal: TerminalChromeVM{
+			Title:      ChromeSlotVM{Text: "123", Style: StyleAccent},
+			TerminalID: "term-1",
+			Locked:     true,
+		},
+		Actions: []ChromeActionVM{
+			paneChromeActionVM(ActionFloatingCenter, StyleAccent),
+			paneChromeActionVM(ActionFloatingCollapse, StyleAccent),
+			paneChromeActionVM(ActionPaneZoom, StyleAccent),
+			paneChromeActionVM(ActionFloatingClose, StyleAccent),
+		},
+	}}
+	primitive := FloatingChromePrimitive(floating, rect, StyleAccent)
+	lock, ok := chromeSlotByAction(primitive.ActionSlots, ActionResizeLayoutLock.String())
+	if !ok || lock.Text != paneChromeBracketToken(paneChromeSizeLockGlyph()) {
+		t.Fatalf("floating terminal label should expose size lock action slot, got %#v", primitive.ActionSlots)
+	}
+	if chromeSlotsContainAction(floatingChromeControlSlots(primitive.ActionSlots), ActionResizeLayoutLock.String()) {
+		t.Fatalf("floating right control cluster must not duplicate terminal size lock slot, got %#v", primitive.ActionSlots)
 	}
 }
 
@@ -196,6 +246,15 @@ func chromeSlotByAction(slots []ChromeSlot, actionID string) (ChromeSlot, bool) 
 func chromeSlotsContainText(slots []ChromeSlot, text string) bool {
 	for _, slot := range slots {
 		if strings.Contains(slot.Text, text) {
+			return true
+		}
+	}
+	return false
+}
+
+func chromeSlotsContainAction(slots []ChromeSlot, actionID string) bool {
+	for _, slot := range slots {
+		if slot.ActionID == actionID {
 			return true
 		}
 	}
