@@ -856,14 +856,14 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecy
 	watchCh := make(chan services.WorkbenchStorageEvent)
 	close(watchCh)
 	shell := state.DefaultShell()
-	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneExited
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneKind("exited")
 	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
 	views := state.TerminalViewStore{}.
 		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	snapshot := state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views})
 	// 模拟 R75 之前已经落盘的旧 storage：snapshot restore 入口必须自己 scrub。
-	snapshot.Workspace.Tabs[0].Panes[0].Kind = state.PaneExited
-	snapshot.Workspaces[0].Tabs[0].Panes[0].Kind = state.PaneExited
+	snapshot.Workspace.Tabs[0].Panes[0].Kind = state.PaneKind("exited")
+	snapshot.Workspaces[0].Tabs[0].Panes[0].Kind = state.PaneKind("exited")
 	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: snapshot, Version: 7, Found: true}, WatchCh: watchCh}
 	terminal := &services.FakeTerminalService{
 		ListResult:    services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},

@@ -31,7 +31,6 @@ func DefaultContentProjectorRegistry() ContentProjectorRegistry {
 	registry.Register(ContentTerminalLive, ContentProjectorFunc(projectTerminalLiveContent))
 	registry.Register(ContentCopyHistory, ContentProjectorFunc(projectCopyHistoryContent))
 	registry.Register(ContentEmptyPane, ContentProjectorFunc(projectEmptyPaneContent))
-	registry.Register(ContentExitedPane, ContentProjectorFunc(projectExitedPaneContent))
 	registry.Register(ContentTerminalPicker, ContentProjectorFunc(projectTerminalPickerContent))
 	registry.Register(ContentTerminalPool, ContentProjectorFunc(projectTerminalPoolContent))
 	registry.Register(ContentWorkbenchTree, ContentProjectorFunc(projectWorkbenchTreeContent))
@@ -102,10 +101,6 @@ func projectCopyHistoryContent(ctx ContentProjectorContext) ContentVM {
 
 func projectEmptyPaneContent(ctx ContentProjectorContext) ContentVM {
 	return buildEmptyPaneContent(ctx.Pane)
-}
-
-func projectExitedPaneContent(ctx ContentProjectorContext) ContentVM {
-	return buildExitedPaneContent(ctx.Root, ctx.Pane)
 }
 
 func projectTerminalPickerContent(ctx ContentProjectorContext) ContentVM {

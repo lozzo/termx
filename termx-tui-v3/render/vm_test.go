@@ -2130,29 +2130,32 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 		t.Fatalf("expected reducer-owned floating empty CTA selection, got %#v", content.Lines)
 	}
 
-	exitedShell := state.DefaultShell()
-	exitedShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "old shell", Kind: state.PaneExited, TerminalID: "term-old", Active: true}
-	exitedVM := NewRenderVMBuilder().Build(state.Root{
-		Shell: exitedShell,
-		Surface: state.TerminalSurfaceStore{
-			TerminalID: "term-live",
-			Ready:      true,
-			Lines:      []string{"live must not replace exited"},
-		},
-		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
-			TerminalID: "term-old",
-			State:      string(state.TerminalLiveExited),
-			Command:    []string{"bash", "-lc", "exit 23"},
-			ExitCode:   intPtr(23),
-			ExitedAt:   time.Date(2026, 6, 17, 12, 31, 0, 0, time.UTC),
-		}}},
-	})
-	if content := activeContent(exitedVM.Shell); content.Kind != ContentExitedPane || content.Status != "exited: Restart / Reconnect / Close" || !strings.Contains(content.Lines[0].PlainString(), "Terminal exited old shell") || !strings.Contains(content.Lines[1].PlainString(), "term-old") {
-		t.Fatalf("expected active exited pane placeholder, got %#v", content)
-	} else if !strings.Contains(plainLines(content.Lines), "exit code: 23") || !strings.Contains(plainLines(content.Lines), "exited at: 2026-06-17T12:31:00Z") || !strings.Contains(plainLines(content.Lines), "command: bash -lc exit 23") {
-		t.Fatalf("expected exited pane metadata, got %#v", content.Lines)
-	} else if !contentHasAction(content, "exited.restart") || !contentHasAction(content, "exited.reconnect") || !contentHasAction(content, "exited.close") {
-		t.Fatalf("expected exited pane CTA action regions, got %#v", content.HitRegions)
+	exitedAt := time.Date(2026, 6, 17, 12, 31, 0, 0, time.UTC)
+	exitedRoot := bindTestPaneTerminal(state.Root{Shell: state.DefaultShell()}, state.DefaultPaneID, "term-old")
+	exitedRoot.Surface = state.TerminalSurfaceStore{
+		TerminalID: "term-old",
+		Ready:      true,
+		State:      state.TerminalLiveExited,
+		ExitCode:   23,
+		ExitReason: "exited",
+		ExitedAt:   exitedAt,
+		Command:    []string{"bash", "-lc", "exit 23"},
+	}
+	exitedRoot.Session = state.TerminalSessionStore{
+		TerminalID: "term-old",
+		State:      state.TerminalLiveExited,
+		ExitCode:   23,
+		ExitReason: "exited",
+		ExitedAt:   exitedAt,
+		Command:    []string{"bash", "-lc", "exit 23"},
+	}
+	exitedVM := NewRenderVMBuilder().Build(exitedRoot)
+	if content := activeContent(exitedVM.Shell); content.Kind != ContentExitedPane || content.Status != "exited: term-old code:23 exited" || !strings.Contains(content.Lines[0].PlainString(), "terminal exited: term-old code:23 exited") {
+		t.Fatalf("expected terminal lifecycle exited content, got %#v", content)
+	} else if !strings.Contains(plainLines(content.Lines), "exited at: 2026-06-17T12:31:00Z") || !strings.Contains(plainLines(content.Lines), "command: bash -lc exit 23") {
+		t.Fatalf("expected exited lifecycle metadata, got %#v", content.Lines)
+	} else if !contentHasAction(content, "exited.restart") || !contentHasAction(content, "exited.reconnect") {
+		t.Fatalf("expected exited lifecycle CTA action regions, got %#v", content.HitRegions)
 	}
 }
 

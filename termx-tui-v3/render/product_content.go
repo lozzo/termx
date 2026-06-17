@@ -3,7 +3,6 @@ package render
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -174,81 +173,6 @@ func buildEmptyWorkspaceContent(workspace state.WorkspaceState) ContentVM {
 		Empty:      true,
 		HitRegions: contentActionRegions([]ActionID{ActionTabCreate, ActionEmptyCreate, ActionEmptyManager}, "", 2),
 	}
-}
-
-func buildExitedPaneContent(root state.Root, pane state.PaneState) ContentVM {
-	title := activePaneTitle(pane)
-	terminalID, surface, poolItem := exitedPaneMetadata(root, pane)
-	if terminalID == "" {
-		terminalID = "detached"
-	}
-	lines := []Line{
-		{Cells: []Cell{styledCell("Terminal exited ", StyleWarning), styledCell(title, StyleAccent)}},
-		NewLine("last state: " + terminalID),
-	}
-	if code, ok := exitedPaneCode(surface, poolItem); ok {
-		lines = append(lines, NewLine(fmt.Sprintf("exit code: %d", code)))
-	}
-	if exitedAt := exitedPaneTime(surface, poolItem); !exitedAt.IsZero() {
-		lines = append(lines, NewLine("exited at: "+exitedAt.UTC().Format(time.RFC3339)))
-	}
-	if command := exitedPaneCommand(surface, poolItem); command != "" {
-		lines = append(lines, NewLine("command: "+command))
-	}
-	actionOffset := len(lines)
-	lines = append(lines,
-		contentActionLine("restart", "Restart"),
-		contentActionLine("reconnect", "Reconnect"),
-		contentActionLine("close", "Close"),
-	)
-	return ContentVM{
-		Kind:       ContentExitedPane,
-		Lines:      lines,
-		Status:     "exited: Restart / Reconnect / Close",
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("Terminal exited ") + DisplayWidth(title), Shape: CursorShapeBar},
-		HitRegions: contentActionRegions([]ActionID{ActionExitedRestart, ActionExitedReconnect, ActionExitedClose}, pane.ID, actionOffset),
-	}
-}
-
-func exitedPaneMetadata(root state.Root, pane state.PaneState) (string, state.TerminalSurfaceStore, state.TerminalPoolItem) {
-	terminalID := pane.TerminalID
-	if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && binding.TerminalID != "" {
-		terminalID = binding.TerminalID
-	}
-	if terminalID == "" {
-		return "", state.TerminalSurfaceStore{}, state.TerminalPoolItem{}
-	}
-	surface := root.Surface.SurfaceForTerminal(terminalID)
-	for _, item := range root.TerminalPool.Items {
-		if item.TerminalID == terminalID {
-			return terminalID, surface, item
-		}
-	}
-	return terminalID, surface, state.TerminalPoolItem{}
-}
-
-func exitedPaneCode(surface state.TerminalSurfaceStore, poolItem state.TerminalPoolItem) (int, bool) {
-	if surface.State == state.TerminalLiveExited {
-		return surface.ExitCode, true
-	}
-	if poolItem.ExitCode != nil {
-		return *poolItem.ExitCode, true
-	}
-	return 0, false
-}
-
-func exitedPaneTime(surface state.TerminalSurfaceStore, poolItem state.TerminalPoolItem) time.Time {
-	if !surface.ExitedAt.IsZero() {
-		return surface.ExitedAt
-	}
-	return poolItem.ExitedAt
-}
-
-func exitedPaneCommand(surface state.TerminalSurfaceStore, poolItem state.TerminalPoolItem) string {
-	if len(surface.Command) > 0 {
-		return strings.Join(surface.Command, " ")
-	}
-	return strings.Join(poolItem.Command, " ")
 }
 
 // Terminal Picker 只消费 reducer-owned root；服务端 terminal list 必须先回投 TerminalPoolStore。
@@ -753,8 +677,6 @@ func terminalPickerStateLabel(row state.TerminalPickerItem) string {
 	switch row.Kind {
 	case state.PaneTerminalLive:
 		return "live"
-	case state.PaneExited:
-		return "exited"
 	case state.PaneEmpty:
 		return "empty"
 	default:

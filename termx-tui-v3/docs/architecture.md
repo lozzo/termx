@@ -92,6 +92,8 @@ TUI-v3 的状态分三类，不能互相替代：
 - core 托管的 TUI shared state：通过 `termx.tui.v3.workbench` opaque storage 保存 workspace/tab/pane/floating 布局、panel presentation、active ids 和 pane/floating 到 terminal 的连接意图。core 只负责存储、版本和广播，不解释这些字段；这里不得保存当前 terminal lifecycle、runtime channel、live cursor、copy selection 或当前进程内输入路由状态。
 - 当前 TUI 内存状态：active pane/floating focus、interaction mode、overlay/toast/CTA、TerminalView runtime binding channel、TerminalPool projection cache、TerminalSurface/Session render cache、copy mode cursor/selection/frozen window、host size/theme 和 pending effect。它们只服务当前 TUI 进程，允许缓存 core 数据，但必须被 core list/event/surface 的权威生命周期覆盖。
 
+pane/floating 的状态边界必须保持很窄：pane 只有“空槽位”或“连接到 TerminalView”两类当前模型。`exited` 不是 pane 状态，`copy-history` 也不是 pane 状态；退出态由该 view 绑定的 terminal lifecycle 投影，copy/history 由 `CopyModeStore`/`HistoryStore` 投影。workbench storage 只能保存布局和连接意图，旧 snapshot 里的 `"exited"` / `"copy-history"` pane kind 只能在 restore 边界迁移成 `terminal-live` 连接意图。
+
 terminal lifecycle 的判断规则必须简单：如果 core terminal 属性是 exited，就展示 exited/restart；如果 core terminal 属性是 running，就清掉 TUI 内存里的 stale exited cache。exit marker 是 core 写入 live surface/history 的 terminal 数据，不能反推当前 lifecycle。
 
 ## 4. 模块图
@@ -296,12 +298,13 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - surface id。
 - resize role：owner、follower 或 observer。
 - desired cols/rows、last confirmed cols/rows、resize request seq 和 confirmed seq。
-- view-local error、attached/exited/unavailable 状态。
+- view-local attached/reattaching/error 状态；terminal exited/running 不属于 view 本身。
 - stream token 或 stream generation 的 reducer-owned identity，不保存 goroutine handle。
 
 规则：
 
 - pane/floating 不再把裸 `TerminalID` 当作完整连接 truth；pane/floating 可以保存 terminal identity 作为展示和 storage 便捷字段，但真实 IO 必须通过 view binding 定位 attachment。
+- pane/floating 不能保存 exited/copy-history 这类 runtime 展示态；renderer 必须从 `TerminalViewStore + TerminalSurfaceStore/Session + CopyModeStore` 投影最终内容。
 - 同一 terminal 可以有多个 view；多个 view 共享 terminal process、history truth 和 terminal lifecycle，但不共享 focus、copy mode、content rect、desired size、resize seq 或 view-local error。
 - terminal input 只发送到当前 active view 的 attachment channel；active pane 缺 view binding 时必须显示 no terminal bound，不得 fallback 到最近 attach 的全局 session。
 - terminal mouse passthrough 必须按命中的 view 所对应 live modes 判定；chrome、overlay、toast、footer/header 的 hit region 继续优先。
@@ -311,7 +314,7 @@ TUI-v3 可以使用纯渲染、纯样式、ANSI 辅助库；不得使用拥有�
 - terminal size lock 的 lock/unlock 必须通过 terminal service effect 发送到 core-v2，并经 result/event message 回到 reducer；解锁后如果当前 owner view 的 content rect 与 terminal size 不一致，TUI 会发起一次明确的 owner-resize command，让 PTY 重新贴合 owner panel。
 - 同一 terminal 的 owner、lock、size、epoch 广播到达后，`TerminalViewStore` 只更新相关 view binding 的 `ResizeRole`、`CanResize`、desired/confirmed size、epoch/error 投影；不会写 workspace storage，也不会修改其他 view 的 copy mode、focus 或 layout pan/align。
 - close pane / detach pane 只删除 view binding；close and kill / kill terminal 才请求 terminal lifecycle 破坏性操作。
-- kill/restart/remove terminal 后，所有绑定该 terminal 的 view 都必须通过 reducer message 进入 exited/unavailable/error 投影。
+- kill/restart/remove terminal 后，所有绑定该 terminal 的 view 都必须通过 reducer message 清理或重建 attachment runtime；是否展示 exited/restart 仍只看 core terminal lifecycle。
 - service 不得直接修改 view store；attach、resize、ownership、stream、error 都必须通过 message/effect/result 回到 reducer。
 
 ### 8.2 TerminalSurfaceStore

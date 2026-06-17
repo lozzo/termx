@@ -13,7 +13,6 @@ func TestContentProjectorRegistryCoversProductContentKinds(t *testing.T) {
 		ContentTerminalLive,
 		ContentCopyHistory,
 		ContentEmptyPane,
-		ContentExitedPane,
 		ContentTerminalPicker,
 		ContentTerminalPool,
 		ContentWorkbenchTree,
@@ -52,14 +51,14 @@ func TestContentProjectorRegistryKeepsCopyHistoryAuthoritativeOnly(t *testing.T)
 	}
 }
 
-func TestContentProjectorRegistryKeepsInactiveCopyPanePlaceholder(t *testing.T) {
+func TestContentProjectorRegistryUsesPlaceholderForInactiveCopyProjectionWithoutCopyMode(t *testing.T) {
 	registry := DefaultContentProjectorRegistry()
 	content := registry.Project(ContentProjectorContext{
 		Kind: ContentCopyHistory,
-		Pane: state.PaneState{ID: "copy-pane", Title: "history", Kind: state.PaneCopyHistory},
+		Pane: state.PaneState{ID: "copy-pane", Title: "history", Kind: state.PaneTerminalLive},
 	})
-	if content.Kind != ContentCopyHistory || !content.Pending || content.Lines[0].PlainString() != "history copy pending" {
-		t.Fatalf("expected inactive copy pane placeholder, got %#v", content)
+	if content.Kind != ContentPlaceholder || !content.Pending || content.Lines[0].PlainString() != "history inactive" {
+		t.Fatalf("expected inactive copy projection placeholder, got %#v", content)
 	}
 }
 

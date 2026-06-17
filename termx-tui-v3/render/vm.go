@@ -920,10 +920,6 @@ func contentKindForPane(pane state.PaneState) ContentKind {
 	switch pane.Kind {
 	case state.PaneEmpty:
 		return ContentEmptyPane
-	case state.PaneExited:
-		return ContentExitedPane
-	case state.PaneCopyHistory:
-		return ContentCopyHistory
 	case state.PaneTerminalLive:
 		return ContentTerminalLive
 	default:
@@ -1471,10 +1467,6 @@ func placeholderContentForPane(pane state.PaneState) ContentVM {
 	switch pane.Kind {
 	case state.PaneEmpty:
 		return buildEmptyPaneContent(pane)
-	case state.PaneExited:
-		return buildExitedPaneContent(state.Root{}, pane)
-	case state.PaneCopyHistory:
-		return ContentVM{Kind: ContentCopyHistory, Lines: []Line{NewLine(title + " copy pending")}, Pending: true}
 	default:
 		return ContentVM{Kind: ContentPlaceholder, Lines: []Line{NewLine(title + " inactive")}, Pending: true}
 	}

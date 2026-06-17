@@ -181,16 +181,15 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 	})
 
 	t.Run("exited pane", func(t *testing.T) {
-		shell := state.DefaultShell()
-		shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneExited
-		shell.Workspace.Tabs[0].Panes[0].Title = "done"
-		shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-done"
-		frame := renderPanelContentAcceptanceFrame(state.Root{
-			Shell:    shell,
+		root := panelAcceptanceBindPaneTerminal(state.Root{
+			Shell:    state.DefaultShell(),
 			Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
-		})
-		assertPanelFrameContains(t, frame, "Terminal exited done")
-		assertPanelFrameContains(t, frame, "last state: term-done")
+			Surface:  state.TerminalSurfaceStore{TerminalID: "term-done", State: state.TerminalLiveExited, ExitCode: 0, ExitReason: "exited"},
+			Session:  state.TerminalSessionStore{TerminalID: "term-done", State: state.TerminalLiveExited, ExitCode: 0, ExitReason: "exited"},
+		}, state.DefaultPaneID, "term-done")
+		frame := renderPanelContentAcceptanceFrame(root)
+		assertPanelFrameContains(t, frame, "terminal exited: term-done code:0 exited")
+		assertPanelFrameContains(t, frame, "restart current terminal")
 	})
 
 	t.Run("error pane", func(t *testing.T) {

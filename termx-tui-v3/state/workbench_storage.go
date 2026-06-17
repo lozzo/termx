@@ -13,6 +13,9 @@ const (
 	WorkbenchStorageSchema      = "termx.tui.v3.workbench"
 	WorkbenchStorageSchemaV1    = 1
 	WorkbenchStorageSchemaV2    = 2
+
+	legacyPaneCopyHistory PaneKind = "copy-history"
+	legacyPaneExited      PaneKind = "exited"
 )
 
 var ErrInvalidWorkbenchSnapshot = errors.New("invalid workbench snapshot")
@@ -128,8 +131,8 @@ func workbenchStorageFloatings(floatings []FloatingPaneState) []FloatingPaneStat
 
 func workbenchStoragePane(pane PaneState) PaneState {
 	switch pane.Kind {
-	case PaneExited, PaneCopyHistory:
-		// 中文说明：exited/copy-history 是当前 TUI 的展示态；storage 只保存连接意图。
+	case legacyPaneExited, legacyPaneCopyHistory:
+		// 中文说明：旧 storage 可能保存过展示态；当前契约只保存连接槽位。
 		if pane.TerminalID != "" {
 			pane.Kind = PaneTerminalLive
 		} else {
@@ -171,7 +174,42 @@ func (snapshot WorkbenchStorageSnapshot) ToTerminalViewStore() (TerminalViewStor
 		}
 		store = store.BindPane(binding)
 	}
+	store = store.withLegacyWorkbenchPaneBindings(snapshot.Workspace, snapshot.Workspaces, snapshot.Floatings)
 	return store, nil
+}
+
+func (store TerminalViewStore) withLegacyWorkbenchPaneBindings(active WorkspaceState, workspaces []WorkspaceState, floatings []FloatingPaneState) TerminalViewStore {
+	store = store.withLegacyWorkspacePaneBindings(active)
+	for _, workspace := range workspaces {
+		store = store.withLegacyWorkspacePaneBindings(workspace)
+	}
+	for _, floating := range floatings {
+		if floating.ID == "" || floating.Pane.TerminalID == "" {
+			continue
+		}
+		if _, ok := store.FloatingBinding(floating.ID); ok {
+			continue
+		}
+		store = store.BindFloating(NewFloatingTerminalView(floating.ID, floating.Pane.ID, floating.Pane.TerminalID, 0, 0, 0, TerminalResizeRoleFollower, "", TerminalFloatingViewID(floating.ID), false))
+	}
+	return store
+}
+
+func (store TerminalViewStore) withLegacyWorkspacePaneBindings(workspace WorkspaceState) TerminalViewStore {
+	for _, tab := range workspace.Tabs {
+		for _, pane := range tab.Panes {
+			if pane.ID == "" || pane.TerminalID == "" {
+				continue
+			}
+			if _, ok := store.PaneBinding(pane.ID); ok {
+				continue
+			}
+			// 中文说明：V2 早期 snapshot 只有 pane.TerminalID；恢复时迁移成 view binding，
+			// 之后输入和 lifecycle 都只通过 TerminalViewStore 连接意图投影。
+			store = store.BindPane(NewPaneTerminalView(pane.ID, pane.TerminalID, 0, 0, 0, TerminalResizeRoleFollower, "", TerminalPaneViewID(pane.ID), false))
+		}
+	}
+	return store
 }
 
 func terminalViewBindingsForWorkbenchStorage(bindings []TerminalViewBinding) []TerminalViewBinding {

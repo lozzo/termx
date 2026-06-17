@@ -54,6 +54,9 @@
 
 ## 硬语义规则
 
+- 禁止症状补丁：遇到状态错乱、输入错路由、生命周期误判或恢复异常时，必须先定位权威状态边界和消息链路，再修改模型或契约；不得用 storage scrub、fallback、定时刷新、重复 attach、局部 if 分支等方式掩盖根因。
+- panel/pane 只表达工作台槽位和连接意图：空或连接到 terminal view。terminal 是否 running/exited、退出码、退出时间、命令、restart 判断都属于 core terminal lifecycle，不得写入 workbench storage 或 pane kind。
+- copy/history 是当前 TUI 的交互态，属于 `CopyModeStore`/`HistoryStore` 投影，不得作为 pane kind 或 workbench storage 状态持久化。
 - 历史 truth 的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback 或 grid viewport。
 - core-v2 的 `LogicalLineStore` 是唯一历史数据模型。
 - `CommittedHistoryIndex`、`MutableFrontier`、`StorageBackend` 不能演变成第二份历史 truth。
