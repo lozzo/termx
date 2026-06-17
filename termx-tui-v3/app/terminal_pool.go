@@ -217,7 +217,7 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 		return root, nil
 	}
 	root.TerminalPool = next
-	root.Surface = projectTerminalPoolExitMetadata(root.Surface, root.TerminalPool.Items)
+	root = projectTerminalPoolLifecycleMetadata(root, root.TerminalPool.Items)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.pool", Body: errText})
 	}
@@ -393,9 +393,11 @@ func reduceTerminalPoolRestartRequest(root state.Root, msg TerminalPoolRestartRe
 
 func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartResultMsg) (state.Root, []Effect) {
 	if msg.Err != nil {
+		root.TerminalPool = root.TerminalPool.ApplyRestarted(msg.TerminalID, msg.Err.Error())
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.restart", Body: msg.Err.Error()})
 		return root.Advance(), nil
 	}
+	root.TerminalPool = root.TerminalPool.ApplyRestarted(msg.TerminalID, "")
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.restart", Body: msg.TerminalID})
 	root.Surface = root.Surface.RestartPreservingContent(msg.TerminalID, root.Surface.Cols, root.Surface.Rows)
 	root.TerminalViews = root.TerminalViews.MarkTerminalReattaching(msg.TerminalID)
@@ -678,19 +680,29 @@ func cloneIntPointer(value *int) *int {
 }
 
 func projectTerminalPoolExitMetadata(surface state.TerminalSurfaceStore, items []state.TerminalPoolItem) state.TerminalSurfaceStore {
+	return projectTerminalPoolLifecycleMetadata(state.Root{Surface: surface}, items).Surface
+}
+
+func projectTerminalPoolLifecycleMetadata(root state.Root, items []state.TerminalPoolItem) state.Root {
 	for _, item := range items {
-		if item.TerminalID == "" || item.State != string(state.TerminalLiveExited) {
+		if item.TerminalID == "" {
 			continue
 		}
-		exitCode := 0
-		if item.ExitCode != nil {
-			exitCode = *item.ExitCode
+		switch item.State {
+		case "running", string(state.TerminalLiveAttached), string(state.TerminalLivePending):
+			root.Surface = root.Surface.MarkAttached(item.TerminalID)
+			root.Session = root.Session.MarkAttached(item.TerminalID)
+		case string(state.TerminalLiveExited):
+			exitCode := 0
+			if item.ExitCode != nil {
+				exitCode = *item.ExitCode
+			}
+			// 中文说明：terminal pool 是 core-v2 lifecycle metadata 的投影；这里只同步 lifecycle，
+			// 不把 pool/list 当作输入路由或历史 truth。
+			root.Surface = root.Surface.MarkExitedWithMetadata(item.TerminalID, exitCode, "exited", item.ExitedAt, item.Command)
 		}
-		// 中文说明：terminal pool 是 core-v2 lifecycle metadata 的投影；这里仅补 live surface 的展示元数据，
-		// 不把 pool/list 当作输入路由或历史 truth。
-		surface = surface.MarkExitedWithMetadata(item.TerminalID, exitCode, "exited", item.ExitedAt, item.Command)
 	}
-	return surface
+	return root
 }
 
 func terminalPoolTerminalExited(pool state.TerminalPoolStore, terminalID string) bool {

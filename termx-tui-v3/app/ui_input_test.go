@@ -1142,6 +1142,8 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Cols: 80, Rows: 24, Lines: []string{"old live tail"}})
 	root.Surface = root.Surface.MarkExitedWithMetadata("term-1", 23, "exited", time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC), []string{"bash", "-lc", "exit 23"})
+	code := 23
+	root.TerminalPool = state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", State: string(state.TerminalLiveExited), ExitCode: &code, ExitedAt: time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC), Command: []string{"bash", "-lc", "exit 23"}}}}
 
 	root, effects := reducer(root, TerminalPoolRestartRequestMsg{TerminalID: "term-1"})
 	if len(effects) != 1 {
@@ -1161,6 +1163,9 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	}
 	if root.Surface.State != state.TerminalLiveAttached || root.Surface.ExitCode != 0 || !root.Surface.ExitedAt.IsZero() || len(root.Surface.Command) != 0 {
 		t.Fatalf("restart should clear exited surface metadata, got %#v", root.Surface)
+	}
+	if root.TerminalPool.Items[0].State != "running" || root.TerminalPool.Items[0].ExitCode != nil || !root.TerminalPool.Items[0].ExitedAt.IsZero() {
+		t.Fatalf("restart ack should clear stale exited pool item before reattach, got %#v", root.TerminalPool.Items[0])
 	}
 	if len(root.Surface.Lines) != 1 || root.Surface.Lines[0] != "old live tail" || !root.Surface.Ready {
 		t.Fatalf("restart should preserve live tail while reattaching, got %#v", root.Surface)
@@ -1197,6 +1202,102 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	root, _ = reducer(root, reconnectMsg)
 	if !root.Session.Attached || root.Session.TerminalID != "term-1" || root.TerminalPool.LastAttachedID != "term-1" {
 		t.Fatalf("expected reconnect result to attach session, got session=%#v pool=%#v", root.Session, root.TerminalPool)
+	}
+}
+
+func TestTerminalPoolRestartResultPreventsStaleExitedPoolFromPoisoningReattach(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+		ListResult:   services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", State: "running", Command: []string{"/bin/zsh"}, Cols: 80, Rows: 24}}},
+	}
+	host := NewFakeTerminalHost(16)
+	runtime := NewInteractiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{})
+	root := runtime.State()
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
+	root.Session = root.Session.AttachWithResizeOwner("term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-1 code:0 exited"}})
+	root.Surface = root.Surface.MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"})
+	code := 0
+	root.TerminalPool = state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", State: string(state.TerminalLiveExited), ExitCode: &code, ExitedAt: time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), Command: []string{"/bin/zsh"}}}}
+	runtime.state = root
+
+	if err := runtime.Post(TerminalPoolRestartResultMsg{TerminalID: "term-1"}); err != nil {
+		t.Fatalf("post restart result: %v", err)
+	}
+	if err := runtime.Post(TerminalPoolAttachResultMsg{
+		TerminalID:   "term-1",
+		TargetPaneID: state.DefaultPaneID,
+		ResizePolicy: state.TerminalResizeRoleOwner,
+		Result:       services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID), CanResize: true},
+	}); err != nil {
+		t.Fatalf("post reattach result: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+	}}); err != nil {
+		t.Fatalf("post live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain restart reattach: %v", err)
+	}
+
+	final := runtime.State()
+	if final.Surface.State != state.TerminalLiveAttached || final.Surface.ExitReason != "" || final.Surface.Cursor != (state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}) {
+		t.Fatalf("restart reattach should accept running live surface and cursor, surface=%#v", final.Surface)
+	}
+	if final.TerminalPool.Items[0].State != "running" || final.TerminalPool.Items[0].ExitCode != nil {
+		t.Fatalf("restart should keep pool item running until refreshed list arrives, pool=%#v", final.TerminalPool)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "% ") || frameContains(frame, "R restart current terminal") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("frame should show restarted live prompt with visible cursor, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
+func TestTerminalPoolRunningListClearsExitedLifecycleBeforeSnapshot(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	runtime := NewInteractiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}}, CopyModeDeps{})
+	root := runtime.State()
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
+	root.Session = root.Session.AttachWithResizeOwner("term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
+	root.Session = root.Session.MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 50, 0, 0, time.UTC), []string{"/bin/zsh"})
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Revision: 2, Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-1 code:0 exited"}})
+	root.Surface = root.Surface.MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 50, 0, 0, time.UTC), []string{"/bin/zsh"})
+	root.TerminalPool = root.TerminalPool.RequestList()
+	seq := root.TerminalPool.RequestSeq
+	runtime.state = root
+
+	if err := runtime.Post(TerminalPoolListResultMsg{Seq: seq, Result: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", State: "running", Command: []string{"/bin/zsh"}, Cols: 80, Rows: 24}}}}); err != nil {
+		t.Fatalf("post running list: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+	}}); err != nil {
+		t.Fatalf("post live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain running list: %v", err)
+	}
+
+	final := runtime.State()
+	if final.Surface.State != state.TerminalLiveAttached || final.Surface.ExitReason != "" || final.Session.State == state.TerminalLiveExited {
+		t.Fatalf("running list should clear exited lifecycle, surface=%#v session=%#v", final.Surface, final.Session)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "% ") || frameContains(frame, "R restart current terminal") || !frame.Cursor.Visible {
+		t.Fatalf("running list should unblock fresh live prompt and cursor, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }
 

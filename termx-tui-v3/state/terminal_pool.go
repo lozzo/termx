@@ -12,16 +12,17 @@ const (
 )
 
 type TerminalPoolStore struct {
-	Status         TerminalPoolStatus
-	Items          []TerminalPoolItem
-	RequestSeq     uint64
-	AppliedSeq     uint64
-	LastError      string
-	LastCreatedID  string
-	LastAttachedID string
-	LastKilledID   string
-	LastRemovedID  string
-	LastEditedID   string
+	Status          TerminalPoolStatus
+	Items           []TerminalPoolItem
+	RequestSeq      uint64
+	AppliedSeq      uint64
+	LastError       string
+	LastCreatedID   string
+	LastAttachedID  string
+	LastKilledID    string
+	LastRemovedID   string
+	LastEditedID    string
+	LastRestartedID string
 }
 
 type TerminalPoolItem struct {
@@ -81,6 +82,18 @@ func (store TerminalPoolStore) ApplyAttached(terminalID string, err string) Term
 	store.LastAttachedID = terminalID
 	store.LastError = ""
 	store.Items = markTerminalPoolAttached(store.Items, terminalID)
+	return store
+}
+
+func (store TerminalPoolStore) ApplyRestarted(terminalID string, err string) TerminalPoolStore {
+	if err != "" {
+		store.LastError = err
+		store.Status = TerminalPoolError
+		return store
+	}
+	store.LastRestartedID = terminalID
+	store.LastError = ""
+	store.Items = markTerminalPoolRunning(store.Items, terminalID)
 	return store
 }
 
@@ -155,6 +168,20 @@ func markTerminalPoolAttached(items []TerminalPoolItem, terminalID string) []Ter
 	cloned := cloneTerminalPoolItems(items)
 	for index := range cloned {
 		cloned[index].Attached = cloned[index].TerminalID == terminalID
+	}
+	return cloned
+}
+
+func markTerminalPoolRunning(items []TerminalPoolItem, terminalID string) []TerminalPoolItem {
+	cloned := cloneTerminalPoolItems(items)
+	for index := range cloned {
+		if cloned[index].TerminalID != terminalID {
+			continue
+		}
+		// 中文说明：restart 已由 core ack，pool 缓存必须先切回 running，避免旧 exited item 污染随后 reattach。
+		cloned[index].State = "running"
+		cloned[index].ExitCode = nil
+		cloned[index].ExitedAt = time.Time{}
 	}
 	return cloned
 }

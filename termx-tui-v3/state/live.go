@@ -272,6 +272,39 @@ func (store TerminalSurfaceStore) RestartPreservingContent(terminalID string, co
 	return store
 }
 
+func (store TerminalSurfaceStore) MarkAttached(terminalID string) TerminalSurfaceStore {
+	if terminalID == "" {
+		return store
+	}
+	snapshot, ok := store.snapshotForTerminal(terminalID)
+	if ok {
+		// 中文说明：terminal pool 的 running 状态是生命周期权威信号；它只清 exited/error 边界，不改 live 内容。
+		snapshot.State = TerminalLiveAttached
+		snapshot.ExitCode = 0
+		snapshot.ExitReason = ""
+		snapshot.ExitedAt = time.Time{}
+		snapshot.Command = nil
+		snapshot.Err = ""
+		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
+		store.Surfaces[terminalID] = snapshot
+	}
+	if store.TerminalID != terminalID {
+		return store
+	}
+	if ok {
+		store = store.projectSnapshot(snapshot, store.Ready || liveSnapshotHasContent(snapshot))
+	} else {
+		store.State = TerminalLiveAttached
+		store.ExitCode = 0
+		store.ExitReason = ""
+		store.ExitedAt = time.Time{}
+		store.Command = nil
+		store.Err = ""
+	}
+	store.ResizeBoundary = LiveResizeBoundary{}
+	return store
+}
+
 func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSurfaceStore {
 	return store.MarkExitedWithMetadata(terminalID, exitCode, reason, time.Time{}, nil)
 }
@@ -444,6 +477,23 @@ func (store TerminalSessionStore) ClearInputChannel(terminalID string) TerminalS
 		store.Command = nil
 		store.LastError = ""
 	}
+	return store
+}
+
+func (store TerminalSessionStore) MarkAttached(terminalID string) TerminalSessionStore {
+	if terminalID == "" || store.TerminalID != terminalID {
+		return store
+	}
+	store.ExitCode = 0
+	store.ExitReason = ""
+	store.ExitedAt = time.Time{}
+	store.Command = nil
+	store.LastError = ""
+	if store.Attached {
+		store.State = TerminalLiveAttached
+		return store
+	}
+	store.State = TerminalLivePending
 	return store
 }
 

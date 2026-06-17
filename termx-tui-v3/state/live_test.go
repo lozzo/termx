@@ -261,6 +261,37 @@ func TestTerminalSurfaceAttachAllowsFreshFrameAfterExitBoundary(t *testing.T) {
 	}
 }
 
+func TestTerminalSurfaceMarkAttachedClearsBoundaryAndAcceptsCursorSnapshot(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"old live tail"},
+	})
+	store = store.MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 40, 0, 0, time.UTC), []string{"/bin/zsh"})
+
+	store = store.MarkAttached("term-1")
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"old live tail", "% "},
+		Cursor:     LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+	})
+
+	if store.State != TerminalLiveAttached || store.ExitReason != "" || !store.ExitedAt.IsZero() || len(store.Command) != 0 {
+		t.Fatalf("running lifecycle should clear exited metadata, got %#v", store)
+	}
+	if len(store.Lines) != 2 || store.Lines[1] != "% " {
+		t.Fatalf("fresh live snapshot should replace old tail projection, got %#v", store.Lines)
+	}
+	if !store.Cursor.Visible || store.Cursor.Row != 1 || store.Cursor.Col != 2 || store.Cursor.Shape != "bar" {
+		t.Fatalf("fresh core cursor should be accepted after lifecycle clear, got %#v", store.Cursor)
+	}
+}
+
 func TestTerminalSurfaceAttachProjectsCachedSnapshot(t *testing.T) {
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",
