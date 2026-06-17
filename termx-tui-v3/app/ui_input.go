@@ -123,11 +123,11 @@ func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, sta
 		return false, root, nil
 	}
 	shell := root.Shell.EnsureDefaults()
-	if shell.InteractionMode != state.InteractionModeNormal || shell.ActiveFloatingID != "" {
+	if shell.InteractionMode != state.InteractionModeNormal {
 		return false, root, nil
 	}
-	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
-	if !ok || pane.Kind != state.PaneEmpty {
+	pane, floating, ok := activeEmptyPaneCTATarget(shell)
+	if !ok {
 		return false, root, nil
 	}
 	switch event.Key {
@@ -145,12 +145,29 @@ func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, sta
 		return true, root, []Effect{
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg {
-				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID}
+				return ShellContentActionMsg{ActionID: actionID.String(), PaneID: pane.ID, Floating: floating}
 			}},
 		}
 	default:
 		return false, root, nil
 	}
+}
+
+func activeEmptyPaneCTATarget(shell state.ShellStore) (state.PaneState, bool, bool) {
+	shell = shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		for _, floating := range shell.Floatings {
+			if floating.ID == shell.ActiveFloatingID && floating.Pane.Kind == state.PaneEmpty {
+				return floating.Pane, true, true
+			}
+		}
+		return state.PaneState{}, false, false
+	}
+	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+	if !ok || pane.Kind != state.PaneEmpty {
+		return state.PaneState{}, false, false
+	}
+	return pane, false, true
 }
 
 func reduceTerminalPickerInput(root state.Root, event input.InputEvent) (state.Root, []Effect) {

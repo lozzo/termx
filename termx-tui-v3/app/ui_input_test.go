@@ -151,6 +151,35 @@ func TestUIInputReducerEmptyPaneCTAKeyboardSelectionAndEnter(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerFloatingEmptyPaneCTAKeyboardTargetsFloatingPanel(t *testing.T) {
+	reducer := NewUIInputReducer()
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "tiled", Kind: state.PaneEmpty, Active: true}
+	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneEmpty},
+	})
+	root := state.Root{Shell: shell}
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDown}})
+	if root.Shell.EmptyPaneCTA.SelectedIndex != 1 || len(effects) != 1 {
+		t.Fatalf("down should select floating create CTA, shell=%#v effects=%#v", root.Shell, effects)
+	}
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if len(effects) != 2 {
+		t.Fatalf("enter should emit handled floating action effects, effects=%#v", effects)
+	}
+	effect, ok := effects[1].(FuncEffect)
+	if !ok || effect.Run == nil {
+		t.Fatalf("enter should emit content action effect, got %#v", effects)
+	}
+	msg, ok := effect.Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != render.ActionEmptyCreate.String() || msg.PaneID != "floating-pane-1" || !msg.Floating {
+		t.Fatalf("enter should execute selected floating CTA, got %#v", msg)
+	}
+}
+
 func TestUIInputReducerTerminalPickerDeleteKeysTrimQuery(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().OpenTerminalPicker().SetTerminalPickerQuery("日志")}

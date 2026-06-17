@@ -1883,6 +1883,20 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 	if content := activeContent(emptyVM.Shell); !strings.Contains(content.Lines[3].PlainString(), "► Open terminal manager ◄") || !strings.Contains(content.Lines[1].PlainString(), "[ Attach existing terminal ]") {
 		t.Fatalf("expected reducer-owned empty pane CTA selection, got %#v", content.Lines)
 	}
+	floatingShell := state.DefaultShell()
+	floatingShell, _ = floatingShell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneEmpty},
+	})
+	floatingShell.EmptyPaneCTA.SelectedIndex = 1
+	floatingVM := NewRenderVMBuilder().Build(state.Root{Shell: floatingShell})
+	if len(floatingVM.Shell.Layout.Floating) != 1 {
+		t.Fatalf("expected active floating VM, got %#v", floatingVM.Shell.Layout.Floating)
+	}
+	if content := floatingVM.Shell.Layout.Floating[0].Content; content.Kind != ContentEmptyPane || !strings.Contains(content.Lines[2].PlainString(), "► Create new terminal ◄") || !strings.Contains(content.Lines[1].PlainString(), "[ Attach existing terminal ]") {
+		t.Fatalf("expected reducer-owned floating empty CTA selection, got %#v", content.Lines)
+	}
 
 	exitedShell := state.DefaultShell()
 	exitedShell.Workspace.Tabs[0].Panes[0] = state.PaneState{ID: state.DefaultPaneID, Title: "old shell", Kind: state.PaneExited, TerminalID: "term-old", Active: true}

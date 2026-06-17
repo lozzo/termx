@@ -858,6 +858,9 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 	if copyModeBelongsToFloating(root.CopyMode, floating.ID) {
 		return projector.copyHistoryContent(root, shell, floating.Pane, floating.Active)
 	}
+	if floating.Active && floating.Pane.Kind == state.PaneEmpty {
+		return buildEmptyPaneContentWithSelection(floating.Pane, shell.EmptyPaneCTA.SelectedIndex)
+	}
 	return projector.Content.Project(ContentProjectorContext{
 		Root:    root,
 		Shell:   shell,

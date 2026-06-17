@@ -928,6 +928,9 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	if plan.HitRegions[resize].Rect != floatingResizeRect(plan.Floatings[0].Rect) {
 		t.Fatalf("floating resize drag should cover resize handle, got %#v", plan.HitRegions[resize])
 	}
+	if plan.HitRegions[resize].Rect.W != 3 {
+		t.Fatalf("floating resize drag should expose a wider bottom-right handle, got %#v", plan.HitRegions[resize])
+	}
 	for _, index := range []int{center, collapse, zoom, close, move, resize} {
 		region := plan.HitRegions[index]
 		if region.PaneID != "float-pane-1" || !region.Floating {

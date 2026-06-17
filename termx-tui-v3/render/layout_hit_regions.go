@@ -400,7 +400,8 @@ func paneResizeRect(rect Rect) Rect {
 }
 
 func floatingResizeRect(rect Rect) Rect {
-	return Rect{X: maxInt(rect.X, rect.X+rect.W-2), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: minInt(1, rect.W), H: 1}
+	width := minInt(3, rect.W)
+	return Rect{X: maxInt(rect.X, rect.X+rect.W-width), Y: maxInt(rect.Y, rect.Y+rect.H-1), W: width, H: 1}
 }
 
 func paneChromeRect(rect Rect) Rect {
