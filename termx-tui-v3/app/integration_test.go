@@ -4229,7 +4229,7 @@ func TestCopyModeRestartResultKeepsFrozenHistory(t *testing.T) {
 		},
 	}
 
-	next, effects := reduceTerminalPoolRestartResult(root, TerminalPoolRestartResultMsg{TerminalID: "term-1"})
+	next, effects := reduceTerminalPoolRestartResult(root, TerminalPoolRestartResultMsg{TerminalID: "term-1"}, LiveDeps{})
 	if len(effects) != 1 {
 		t.Fatalf("restart result should still trigger pool refresh, got %#v", effects)
 	}

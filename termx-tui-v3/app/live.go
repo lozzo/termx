@@ -206,9 +206,17 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			if msg.Snapshot.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && msg.Snapshot.TerminalID == root.Session.TerminalID {
 				root.Session = root.Session.MarkAttached(msg.Snapshot.TerminalID)
 			}
+			logLifecycleTrace(deps.Logger, "live.surface",
+				"terminal_id", msg.Snapshot.TerminalID,
+				"snapshot_state", string(msg.Snapshot.State),
+				"lifecycle_known", msg.Snapshot.LifecycleKnown,
+				"surface_state", string(root.Surface.State),
+				"session_state", string(root.Session.State),
+				"active_terminal", lifecycleActiveTerminalID(root),
+			)
 			return maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
 		case LiveEventMsg:
-			return reduceLiveEvent(root, msg)
+			return reduceLiveEvent(root, msg, deps)
 		case LiveExitMsg:
 			root.Session = root.Session.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
 			root.Surface = root.Surface.MarkExited(msg.TerminalID, msg.ExitCode, msg.Reason)
@@ -641,7 +649,7 @@ func liveResizeTerminalID(root state.Root, msg LiveResizeResultMsg) string {
 	return root.Session.TerminalID
 }
 
-func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
+func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Root, []Effect) {
 	event := msg.Event
 	if event.TerminalID == "" {
 		event.TerminalID = root.Surface.TerminalID
@@ -685,6 +693,14 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 		if event.Snapshot.LifecycleKnown && event.Snapshot.State == state.TerminalLiveAttached && event.Snapshot.TerminalID == root.Session.TerminalID {
 			root.Session = root.Session.MarkAttached(event.Snapshot.TerminalID)
 		}
+		logLifecycleTrace(deps.Logger, "live.event",
+			"terminal_id", event.Snapshot.TerminalID,
+			"snapshot_state", string(event.Snapshot.State),
+			"lifecycle_known", event.Snapshot.LifecycleKnown,
+			"surface_state", string(root.Surface.State),
+			"session_state", string(root.Session.State),
+			"active_terminal", lifecycleActiveTerminalID(root),
+		)
 		return maybeRefreshFloatingAutoFit(root, event.Snapshot.TerminalID)
 	}
 	return root.Advance(), nil

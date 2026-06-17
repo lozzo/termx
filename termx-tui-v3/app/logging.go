@@ -22,3 +22,14 @@ func logEffectError(logger *slog.Logger, component string, err error, attrs ...a
 	}
 	logger.Warn("tui-v3 effect failed", values...)
 }
+
+func logLifecycleTrace(logger *slog.Logger, event string, attrs ...any) {
+	if logger == nil {
+		return
+	}
+	if !terminalInputTraceEnabled() && !diagnosticsEnabledFromEnv(tuiDiagnosticsEnv) {
+		return
+	}
+	values := append([]any{"event", event}, attrs...)
+	logger.Info("tui-v3 lifecycle trace", values...)
+}

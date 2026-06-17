@@ -850,6 +850,45 @@ func TestInteractiveRuntimeWorkbenchRestoreShowsExitedTerminalFromCore(t *testin
 	}
 }
 
+func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecycle(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneExited
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	views := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	snapshot := state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views})
+	// 模拟 R75 之前已经落盘的旧 storage：snapshot restore 入口必须自己 scrub。
+	snapshot.Workspace.Tabs[0].Panes[0].Kind = state.PaneExited
+	snapshot.Workspaces[0].Tabs[0].Panes[0].Kind = state.PaneExited
+	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: snapshot, Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &services.FakeTerminalService{
+		ListResult:    services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
+		AttachResult:  services.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
+		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, LifecycleKnown: true, State: state.TerminalLiveAttached}},
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	root := runtime.State()
+	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.Kind != state.PaneTerminalLive || pane.TerminalID != "term-main" {
+		t.Fatalf("legacy exited pane should restore as live binding intent, pane=%#v ok=%v", pane, ok)
+	}
+	if root.Surface.State != state.TerminalLiveAttached || root.Session.State == state.TerminalLiveExited {
+		t.Fatalf("core running lifecycle should win, session=%#v surface=%#v", root.Session, root.Surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
+		t.Fatalf("running restored terminal should render prompt without restart CTA, frame=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
 func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)

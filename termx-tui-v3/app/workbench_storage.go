@@ -76,7 +76,7 @@ func NewWorkbenchStorageReducer(deps WorkbenchDeps) Reducer {
 		case WorkbenchStorageLoadRequestMsg:
 			return reduceWorkbenchStorageLoadRequest(root, deps)
 		case WorkbenchStorageLoadResultMsg:
-			return reduceWorkbenchStorageLoadResult(root, msg)
+			return reduceWorkbenchStorageLoadResult(root, msg, deps)
 		case WorkbenchStoragePersistRequestMsg:
 			return reduceWorkbenchStoragePersistRequest(root, msg, deps)
 		case WorkbenchStoragePersistResultMsg:
@@ -151,7 +151,7 @@ func reduceWorkbenchStorageLoadRequest(root state.Root, deps WorkbenchDeps) (sta
 	}}}
 }
 
-func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadResultMsg) (state.Root, []Effect) {
+func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadResultMsg, deps WorkbenchDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		if isContextLifecycleError(msg.Err) {
 			return root, nil
@@ -185,6 +185,14 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	root.Shell = shell
 	root.TerminalViews = terminalViews
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
+	logLifecycleTrace(deps.Logger, "workbench.restore",
+		"version", msg.Result.Version,
+		"active_pane", root.Shell.ActivePaneID,
+		"active_floating", root.Shell.ActiveFloatingID,
+		"active_pane_kind", lifecycleActivePaneKind(root),
+		"active_terminal", lifecycleActiveTerminalID(root),
+		"terminal_views", len(root.TerminalViews.Views),
+	)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: "loaded"})
 	if len(root.TerminalViews.Views) > 0 {
 		effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
@@ -219,6 +227,37 @@ func preserveWorkbenchRuntimeTerminalViews(previous state.TerminalViewStore, res
 		restored.Views[viewID] = binding
 	}
 	return restored
+}
+
+func lifecycleActivePaneKind(root state.Root) string {
+	shell := root.Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		for _, floating := range shell.Floatings {
+			if floating.ID == shell.ActiveFloatingID {
+				return string(floating.Pane.Kind)
+			}
+		}
+	}
+	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
+	if !ok {
+		return ""
+	}
+	return string(pane.Kind)
+}
+
+func lifecycleActiveTerminalID(root state.Root) string {
+	if binding, ok := activeTerminalBinding(root); ok {
+		return binding.TerminalID
+	}
+	return root.Surface.TerminalID
+}
+
+func activeTerminalBinding(root state.Root) (state.TerminalViewBinding, bool) {
+	shell := root.Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		return root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+	}
+	return root.TerminalViews.PaneBinding(shell.ActivePaneID)
 }
 
 func workbenchRestoredTerminalAttachEffects(previous state.TerminalViewStore, bindings []state.TerminalViewBinding) []Effect {

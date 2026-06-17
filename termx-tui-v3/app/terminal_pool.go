@@ -155,7 +155,7 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 		case TerminalPoolListRequestMsg:
 			return reduceTerminalPoolListRequest(root, deps)
 		case TerminalPoolListResultMsg:
-			return reduceTerminalPoolListResult(root, msg)
+			return reduceTerminalPoolListResult(root, msg, deps)
 		case TerminalPoolAttachRequestMsg:
 			return reduceTerminalPoolAttachRequest(root, msg, deps)
 		case TerminalPoolAttachResultMsg:
@@ -167,7 +167,7 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 		case TerminalPoolRestartRequestMsg:
 			return reduceTerminalPoolRestartRequest(root, msg, deps)
 		case TerminalPoolRestartResultMsg:
-			return reduceTerminalPoolRestartResult(root, msg)
+			return reduceTerminalPoolRestartResult(root, msg, deps)
 		case TerminalPoolReconnectRequestMsg:
 			return reduceTerminalPoolReconnectRequest(root, msg, deps)
 		case TerminalPoolReconnectResultMsg:
@@ -210,7 +210,7 @@ func reduceTerminalPoolListRequest(root state.Root, deps LiveDeps) (state.Root, 
 	}}
 }
 
-func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg) (state.Root, []Effect) {
+func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
 	next, applied := root.TerminalPool.ApplyList(msg.Seq, terminalPoolItemsFromService(msg.Result.Items), errText)
 	if !applied {
@@ -218,6 +218,16 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 	}
 	root.TerminalPool = next
 	root = projectTerminalPoolLifecycleMetadata(root, root.TerminalPool.Items)
+	logLifecycleTrace(deps.Logger, "terminal.pool.list",
+		"seq", msg.Seq,
+		"err", errText,
+		"items", lifecyclePoolItemsSummary(root.TerminalPool.Items),
+		"active_terminal", lifecycleActiveTerminalID(root),
+		"surface_terminal", root.Surface.TerminalID,
+		"surface_state", string(root.Surface.State),
+		"session_terminal", root.Session.TerminalID,
+		"session_state", string(root.Session.State),
+	)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.pool", Body: errText})
 	}
@@ -391,7 +401,7 @@ func reduceTerminalPoolRestartRequest(root state.Root, msg TerminalPoolRestartRe
 	}}}
 }
 
-func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartResultMsg) (state.Root, []Effect) {
+func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		root.TerminalPool = root.TerminalPool.ApplyRestarted(msg.TerminalID, msg.Err.Error())
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.restart", Body: msg.Err.Error()})
@@ -402,6 +412,12 @@ func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartRes
 	root.Surface = root.Surface.RestartPreservingContent(msg.TerminalID, root.Surface.Cols, root.Surface.Rows)
 	root.TerminalViews = root.TerminalViews.MarkTerminalReattaching(msg.TerminalID)
 	root.Session = root.Session.ClearInputChannel(msg.TerminalID)
+	logLifecycleTrace(deps.Logger, "terminal.restart.result",
+		"terminal_id", msg.TerminalID,
+		"surface_state", string(root.Surface.State),
+		"session_state", string(root.Session.State),
+		"active_terminal", lifecycleActiveTerminalID(root),
+	)
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 	effects = append(effects, restartTerminalViewEffects(root, msg.TerminalID)...)
 	return root.Advance(), effects
@@ -703,6 +719,20 @@ func projectTerminalPoolLifecycleMetadata(root state.Root, items []state.Termina
 		}
 	}
 	return root
+}
+
+func lifecyclePoolItemsSummary(items []state.TerminalPoolItem) string {
+	if len(items) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.TerminalID == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s:%s", item.TerminalID, item.State))
+	}
+	return strings.Join(parts, ",")
 }
 
 func terminalPoolTerminalExited(pool state.TerminalPoolStore, terminalID string) bool {

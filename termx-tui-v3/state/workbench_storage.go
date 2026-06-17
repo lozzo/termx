@@ -144,9 +144,9 @@ func (snapshot WorkbenchStorageSnapshot) ToShellStore() (ShellStore, error) {
 		return ShellStore{}, err
 	}
 	shell := ShellStore{
-		Workspace:         cloneWorkspace(snapshot.Workspace),
-		Workspaces:        cloneWorkspaces(snapshot.Workspaces),
-		Floatings:         cloneFloatings(snapshot.Floatings),
+		Workspace:         workbenchStorageWorkspace(snapshot.Workspace),
+		Workspaces:        workbenchStorageWorkspaces(snapshot.Workspaces),
+		Floatings:         workbenchStorageFloatings(snapshot.Floatings),
 		ActiveFloatingID:  snapshot.ActiveFloatingID,
 		PanelPresentation: snapshot.PanelPresentation,
 		ActivePaneID:      snapshot.ActivePaneID,

@@ -168,6 +168,67 @@ func TestWorkbenchStorageSnapshotScrubsTransientPaneKinds(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
+	snapshot := WorkbenchStorageSnapshot{
+		Schema:        WorkbenchStorageSchema,
+		SchemaVersion: WorkbenchStorageSchemaV2,
+		Workspace: WorkspaceState{
+			ID:          DefaultWorkspaceID,
+			ActiveTabID: DefaultTabID,
+			Tabs: []TabState{{
+				ID:           DefaultTabID,
+				ActivePaneID: DefaultPaneID,
+				RootSplit:    SplitNode{PaneID: DefaultPaneID},
+				Panes: []PaneState{{
+					ID:         DefaultPaneID,
+					Title:      "old shell",
+					Kind:       PaneExited,
+					TerminalID: "term-main",
+					Active:     true,
+				}},
+			}},
+		},
+		Workspaces: []WorkspaceState{{
+			ID:          DefaultWorkspaceID,
+			ActiveTabID: DefaultTabID,
+			Tabs: []TabState{{
+				ID:           DefaultTabID,
+				ActivePaneID: DefaultPaneID,
+				RootSplit:    SplitNode{PaneID: DefaultPaneID},
+				Panes: []PaneState{{
+					ID:         DefaultPaneID,
+					Title:      "old shell",
+					Kind:       PaneExited,
+					TerminalID: "term-main",
+					Active:     true,
+				}},
+			}},
+		}},
+		Floatings: []FloatingPaneState{{
+			ID:    "floating-1",
+			Title: "float",
+			Pane:  PaneState{ID: "floating-1-pane", Title: "float", Kind: PaneCopyHistory, TerminalID: "term-float"},
+			Rect:  FloatingRect{X: 1, Y: 1, W: 40, H: 10},
+		}},
+		PanelPresentation: PanelPresentationCard,
+		ActivePaneID:      DefaultPaneID,
+		HeaderVisible:     true,
+		FooterVisible:     true,
+	}
+
+	restored, err := snapshot.ToShellStore()
+	if err != nil {
+		t.Fatalf("restore shell: %v", err)
+	}
+
+	if pane, ok := restored.Pane(PaneCommandTarget{PaneID: DefaultPaneID}); !ok || pane.Kind != PaneTerminalLive || pane.TerminalID != "term-main" {
+		t.Fatalf("legacy PaneExited must restore as terminal-live intent, pane=%#v ok=%v", pane, ok)
+	}
+	if floating, ok := restored.FloatingByPaneID("floating-1-pane"); !ok || floating.Pane.Kind != PaneTerminalLive || floating.Pane.TerminalID != "term-float" {
+		t.Fatalf("legacy floating transient kind must restore as terminal-live intent, floating=%#v ok=%v", floating, ok)
+	}
+}
+
 func TestWorkbenchStorageSnapshotRejectsLegacyV1(t *testing.T) {
 	_, err := DecodeWorkbenchStorageSnapshot([]byte(`{"schema":"termx.tui.v3.workbench","schemaVersion":1,"workspace":{"ID":"workspace-main"},"workspaces":[{"ID":"workspace-main"}],"panelPresentation":"card"}`))
 	if !errors.Is(err, ErrInvalidWorkbenchSnapshot) {

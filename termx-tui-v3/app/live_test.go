@@ -801,7 +801,7 @@ func TestLiveStreamContextCanceledDoesNotPostPanelError(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1"}
 	root.Session = state.TerminalSessionStore{TerminalID: "term-1"}
-	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Err: context.Canceled}})
+	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Err: context.Canceled}}, LiveDeps{})
 	if len(effects) != 0 || next.Surface.Err != "" || next.Session.LastError != "" {
 		t.Fatalf("context canceled live event must stay silent, root=%#v effects=%#v", next, effects)
 	}
