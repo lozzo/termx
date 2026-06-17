@@ -69,6 +69,11 @@ func resizeOwnerTerminalContentRect(root state.Root, fallbackViewport render.Rec
 			return binding, rect, true
 		}
 	}
+	if root.Session.TerminalID != "" && len(root.TerminalViews.BindingsForTerminal(root.Session.TerminalID)) > 0 {
+		// 中文说明：只要 session terminal 已进入 TerminalView 模型，就不能退回全局 session resize；
+		// active pane 为空或 owner 被 size lock 锁住时，fallback 会绕开 owner/follower/lock guard。
+		return state.TerminalViewBinding{}, render.Rect{}, false
+	}
 	rect, ok := activeTerminalContentRect(root, fallbackViewport)
 	return state.TerminalViewBinding{}, rect, ok
 }

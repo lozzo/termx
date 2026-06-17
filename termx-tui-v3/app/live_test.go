@@ -411,6 +411,125 @@ func TestTerminalSizeLockBlocksSplitLayoutResize(t *testing.T) {
 	}
 }
 
+func TestTerminalSizeLockBlocksAttachResultResizeToSplitPane(t *testing.T) {
+	reducer := ComposeReducers(NewShellReducer(), NewTerminalPoolReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SetPanelPresentation(state.PanelPresentationSplitLine).
+			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 100, Rows: 30, DesiredCols: 100, DesiredRows: 30},
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
+			TerminalID: "term-1",
+			Title:      "main",
+			Tags:       map[string]string{"termx.size_lock": "lock"},
+			Cols:       100,
+			Rows:       30,
+		}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 100, 30, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock("term-1", true)
+
+	root, effects := reducer(root, ShellSplitActivePaneMsg{
+		Pane:      state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty},
+		Direction: state.SplitDirectionHorizontal,
+	})
+	if _, ok := liveResizeMsgFromEffects(effects); ok {
+		t.Fatalf("splitting an empty sibling for locked terminal must not emit PTY resize, effects=%#v", effects)
+	}
+	if root.Shell.EnsureDefaults().ActivePaneID != "pane-2" {
+		t.Fatalf("new split pane should be active before attach, shell=%#v", root.Shell.EnsureDefaults())
+	}
+
+	next, effects := reducer(root, TerminalPoolAttachResultMsg{
+		TerminalID: "term-1",
+		Result: services.TerminalAttachResult{
+			TerminalID:   "term-1",
+			Channel:      8,
+			Cols:         60,
+			Rows:         14,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "surface",
+			ViewID:       state.TerminalPaneViewID("pane-2"),
+			CanResize:    true,
+		},
+	})
+	if _, ok := liveResizeMsgFromEffects(effects); ok {
+		t.Fatalf("attaching split pane to locked terminal must not emit PTY resize, effects=%#v", effects)
+	}
+	binding, ok := next.TerminalViews.PaneBinding("pane-2")
+	if !ok || binding.CanResize || !binding.SizeLocked || binding.ControlReason != "size_locked" {
+		t.Fatalf("attached split pane should inherit terminal lock without resize authority, binding=%#v ok=%v", binding, ok)
+	}
+	previous, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || previous.CanResize || !previous.SizeLocked {
+		t.Fatalf("previous binding should remain locked, binding=%#v ok=%v", previous, ok)
+	}
+}
+
+func TestTerminalPoolAttachRequestToSameLockedTerminalDoesNotResize(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-1",
+			Channel:      8,
+			Cols:         60,
+			Rows:         14,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			CanResize:    true,
+			SurfaceID:    "surface",
+			ViewID:       state.TerminalPaneViewID("pane-2"),
+		},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 40)
+	root := state.Root{
+		Shell: state.DefaultShell().
+			SetPanelPresentation(state.PanelPresentationSplitLine).
+			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 100, Rows: 30, DesiredCols: 100, DesiredRows: 30},
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{
+			TerminalID: "term-1",
+			Title:      "main",
+			Tags:       map[string]string{"termx.size_lock": "lock"},
+			Cols:       100,
+			Rows:       30,
+		}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 100, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock("term-1", true)
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
+
+	if err := runtime.Post(ShellSplitActivePaneMsg{
+		Pane:      state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty},
+		Direction: state.SplitDirectionHorizontal,
+	}); err != nil {
+		t.Fatalf("post split: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split: %v", err)
+	}
+	if err := runtime.Post(TerminalPoolAttachRequestMsg{TerminalID: "term-1"}); err != nil {
+		t.Fatalf("post attach request: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	if len(terminal.Attaches) != 1 {
+		t.Fatalf("expected one attach request, got %#v", terminal.Attaches)
+	}
+	if got := terminal.Attaches[0]; got.ResizePolicy != state.TerminalResizeRoleFollower || got.ViewID != state.TerminalPaneViewID("pane-2") {
+		t.Fatalf("same-terminal pool attach should be a follower request for the new pane, got %#v", got)
+	}
+	if len(terminal.Resizes) != 0 {
+		t.Fatalf("locked terminal attach must not resize PTY, got %#v", terminal.Resizes)
+	}
+	binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2")
+	if !ok || binding.CanResize || !binding.SizeLocked || binding.ControlReason != "size_locked" {
+		t.Fatalf("attached pane should stay size-locked without resize authority, binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
 	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
 	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)

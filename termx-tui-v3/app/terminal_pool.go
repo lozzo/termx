@@ -34,6 +34,7 @@ func (TerminalPoolAttachRequestMsg) isMsg() {}
 type TerminalPoolAttachResultMsg struct {
 	TerminalID       string
 	TargetFloatingID string
+	ResizePolicy     string
 	Result           services.TerminalAttachResult
 	Err              error
 }
@@ -81,6 +82,7 @@ func (TerminalPoolReconnectRequestMsg) isMsg() {}
 type TerminalPoolReconnectResultMsg struct {
 	TerminalID       string
 	TargetFloatingID string
+	ResizePolicy     string
 	Result           services.TerminalAttachResult
 	Err              error
 }
@@ -248,7 +250,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				SurfaceID:    "termx-tui-v3",
 				ViewID:       viewID,
 			})
-			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, Result: result, Err: err}
+			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
 		},
 	}}
 }
@@ -264,6 +266,13 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	if result.TerminalID == "" {
 		result.TerminalID = msg.TerminalID
 	}
+	if shouldPreserveTerminalPoolAttachResizePolicy(root, result.TerminalID, msg.ResizePolicy) {
+		result.ResizePolicy = msg.ResizePolicy
+		if msg.ResizePolicy != state.TerminalResizeRoleOwner {
+			result.CanResize = false
+		}
+	}
+	result = normalizeTerminalAttachResultForLock(root, result)
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
 	if msg.TargetFloatingID != "" {
@@ -276,6 +285,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		}
 		root = invalidateCopyModeForTerminalRebind(root, paneID, result.ViewID, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
 	} else {
 		root.Shell = root.Shell.EnsureActiveTabForAttach()
@@ -283,6 +293,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		root = invalidateCopyModeForTerminalRebind(root, activePaneID, result.ViewID, result.TerminalID)
 		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	}
 	root.Shell = root.Shell.CloseOverlay()
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.attach", Body: result.TerminalID})
@@ -381,12 +392,12 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 	}
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "termx-tui-v3", ViewID: viewID})
-		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, Result: result, Err: err}
+		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err}
 	}}}
 }
 
 func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
-	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: msg.TargetFloatingID, Result: msg.Result, Err: msg.Err}, deps)
+	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
 }
 
 func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -554,6 +565,56 @@ func terminalPoolTags(pool state.TerminalPoolStore, terminalID string) (map[stri
 		}
 	}
 	return nil, false
+}
+
+func normalizeTerminalAttachResultForLock(root state.Root, result services.TerminalAttachResult) services.TerminalAttachResult {
+	if terminalAttachResultSizeLocked(root, result) {
+		// 中文说明：terminal size lock 是 terminal 级最高优先级；attach result 即使返回 owner/canResize，
+		// 也不能冲掉 metadata 或已有 binding 上的锁，否则新 pane attach 会用自己的尺寸改 PTY。
+		result.SizeLocked = true
+		result.CanResize = false
+		result.ControlReason = "size_locked"
+		if result.ResizePolicy == "" {
+			result.ResizePolicy = state.TerminalResizeRoleOwner
+		}
+	}
+	return result
+}
+
+func projectTerminalAttachResultLock(store state.TerminalViewStore, result services.TerminalAttachResult) state.TerminalViewStore {
+	if !result.SizeLocked {
+		return store
+	}
+	return store.ApplyTerminalSizeLock(result.TerminalID, true)
+}
+
+func terminalAttachResultSizeLocked(root state.Root, result services.TerminalAttachResult) bool {
+	terminalID := result.TerminalID
+	if terminalID == "" {
+		return result.SizeLocked
+	}
+	if result.SizeLocked {
+		return true
+	}
+	for _, binding := range root.TerminalViews.BindingsForTerminal(terminalID) {
+		if binding.SizeLocked {
+			return true
+		}
+	}
+	tags, ok := terminalPoolTags(root.TerminalPool, terminalID)
+	return ok && terminalmeta.SizeLocked(tags)
+}
+
+func shouldPreserveTerminalPoolAttachResizePolicy(root state.Root, terminalID string, resizePolicy string) bool {
+	if resizePolicy == "" {
+		return false
+	}
+	if resizePolicy == state.TerminalResizeRoleOwner {
+		return true
+	}
+	// 中文说明：同 terminal 已有本地 binding 时，picker/reconnect attach 是新增 follower view，
+	// 不能因为 core 旧 owner 状态或 auto-owner 结果让新 pane 抢走 resize authority。
+	return len(root.TerminalViews.BindingsForTerminal(terminalID)) > 0
 }
 
 func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.TerminalPoolItem {

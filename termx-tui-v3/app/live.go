@@ -309,7 +309,12 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		}
 		return setLiveError(root, msg.Err.Error()), nil
 	}
-	viewID := msg.Result.ViewID
+	result := msg.Result
+	if result.TerminalID == "" {
+		result.TerminalID = msg.TerminalID
+	}
+	result = normalizeTerminalAttachResultForLock(root, result)
+	viewID := result.ViewID
 	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	if viewID == "" {
 		viewID = state.TerminalPaneViewID(activePaneID)
@@ -319,54 +324,56 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		// 只要 shell 结构里仍存在这个目标 view，就必须允许它继续落到当前 truth。
 		return root, nil
 	}
-	root.Session = root.Session.AttachWithResizeOwner(msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID)
-	root.Surface = root.Surface.Attach(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows)
+	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID)
+	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		if existing.PaneID != "" {
 			activePaneID = existing.PaneID
 		}
 		if existing.FloatingID != "" {
-			root = invalidateCopyModeForTerminalRebind(root, existing.PaneID, viewID, msg.Result.TerminalID)
-			binding := state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize)
+			root = invalidateCopyModeForTerminalRebind(root, existing.PaneID, viewID, result.TerminalID)
+			binding := state.NewFloatingTerminalView(existing.FloatingID, existing.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 			binding.Layout = existing.Layout
 			root.TerminalViews = root.TerminalViews.BindFloating(binding)
 			root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
-				CanResize:      msg.Result.CanResize,
-				SizeLocked:     msg.Result.SizeLocked,
-				ControlReason:  msg.Result.ControlReason,
-				OwnerSurfaceID: msg.Result.OwnerSurfaceID,
-				OwnerViewID:    msg.Result.OwnerViewID,
-				ResizeEpoch:    msg.Result.ResizeEpoch,
-				ResizeRole:     msg.Result.ResizePolicy,
-				SurfaceID:      msg.Result.SurfaceID,
+				CanResize:      result.CanResize,
+				SizeLocked:     result.SizeLocked,
+				ControlReason:  result.ControlReason,
+				OwnerSurfaceID: result.OwnerSurfaceID,
+				OwnerViewID:    result.OwnerViewID,
+				ResizeEpoch:    result.ResizeEpoch,
+				ResizeRole:     result.ResizePolicy,
+				SurfaceID:      result.SurfaceID,
 				ViewID:         viewID,
 			})
+			root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 			effects := workbenchPersistEffects("terminal.attach")
-			effects = append(effects, liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)...)
+			effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
 			return root.Advance(), effects
 		}
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
-	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, msg.Result.TerminalID)
-	root = invalidateCopyModeForTerminalRebind(root, activePaneID, viewID, msg.Result.TerminalID)
-	binding := state.NewPaneTerminalView(activePaneID, msg.Result.TerminalID, msg.Result.Channel, msg.Result.Cols, msg.Result.Rows, msg.Result.ResizePolicy, msg.Result.SurfaceID, viewID, msg.Result.CanResize)
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
+	root = invalidateCopyModeForTerminalRebind(root, activePaneID, viewID, result.TerminalID)
+	binding := state.NewPaneTerminalView(activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		binding.Layout = existing.Layout
 	}
 	root.TerminalViews = root.TerminalViews.BindPane(binding)
 	root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
-		CanResize:      msg.Result.CanResize,
-		SizeLocked:     msg.Result.SizeLocked,
-		ControlReason:  msg.Result.ControlReason,
-		OwnerSurfaceID: msg.Result.OwnerSurfaceID,
-		OwnerViewID:    msg.Result.OwnerViewID,
-		ResizeEpoch:    msg.Result.ResizeEpoch,
-		ResizeRole:     msg.Result.ResizePolicy,
-		SurfaceID:      msg.Result.SurfaceID,
+		CanResize:      result.CanResize,
+		SizeLocked:     result.SizeLocked,
+		ControlReason:  result.ControlReason,
+		OwnerSurfaceID: result.OwnerSurfaceID,
+		OwnerViewID:    result.OwnerViewID,
+		ResizeEpoch:    result.ResizeEpoch,
+		ResizeRole:     result.ResizePolicy,
+		SurfaceID:      result.SurfaceID,
 		ViewID:         viewID,
 	})
+	root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	effects := workbenchPersistEffects("terminal.attach")
-	effects = append(effects, liveEffects(msg.Result.TerminalID, msg.Result.Cols, msg.Result.Rows, deps)...)
+	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
 	return root.Advance(), effects
 }
 
