@@ -203,6 +203,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				return root.Advance(), nil
 			}
 			root.Surface = root.Surface.ApplySnapshot(msg.Snapshot)
+			if msg.Snapshot.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && msg.Snapshot.TerminalID == root.Session.TerminalID {
+				root.Session = root.Session.MarkAttached(msg.Snapshot.TerminalID)
+			}
 			return maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
 		case LiveEventMsg:
 			return reduceLiveEvent(root, msg)
@@ -679,6 +682,9 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 			event.Snapshot.TerminalID = event.TerminalID
 		}
 		root.Surface = root.Surface.ApplySnapshot(event.Snapshot)
+		if event.Snapshot.LifecycleKnown && event.Snapshot.State == state.TerminalLiveAttached && event.Snapshot.TerminalID == root.Session.TerminalID {
+			root.Session = root.Session.MarkAttached(event.Snapshot.TerminalID)
+		}
 		return maybeRefreshFloatingAutoFit(root, event.Snapshot.TerminalID)
 	}
 	return root.Advance(), nil

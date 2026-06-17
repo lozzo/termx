@@ -2444,6 +2444,64 @@ func TestLiveSurfaceProtocolTerminalExitedIsNotErrorUI(t *testing.T) {
 	}
 }
 
+func TestLiveSurfaceAuthoritativeRunningClearsExitedSessionAndSurface(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 40)
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID,
+			"term-1",
+			7,
+			80,
+			24,
+			state.TerminalResizeRoleOwner,
+			"surface-1",
+			state.TerminalPaneViewID(state.DefaultPaneID),
+			true,
+		)),
+		Session: state.TerminalSessionStore{}.
+			Attach("term-1", 7, 80, 24).
+			MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-1",
+			Revision:   9,
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"terminal exited: term-1 code:0 exited"},
+		}).MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+	}
+	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}})
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID:     "term-1",
+		Revision:       3,
+		Cols:           80,
+		Rows:           24,
+		Lines:          []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:         state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+		LifecycleKnown: true,
+		State:          state.TerminalLiveAttached,
+	}}); err != nil {
+		t.Fatalf("post running surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain running surface: %v", err)
+	}
+
+	final := runtime.State()
+	if final.Surface.State != state.TerminalLiveAttached || final.Session.State == state.TerminalLiveExited || final.Session.ExitReason != "" || final.Surface.ExitReason != "" {
+		t.Fatalf("authoritative running surface should clear stale exited session/surface, session=%#v surface=%#v", final.Session, final.Surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if !frameContains(frame, "% ") || frameContains(frame, "restart current terminal") {
+		t.Fatalf("running terminal with old exit marker should render live prompt without restart CTA, got %#v", frame.Lines)
+	}
+	if !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("running surface should project core cursor, got %#v", frame.Cursor)
+	}
+}
+
 func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)

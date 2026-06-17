@@ -84,6 +84,16 @@ TUI-v3 的重构目标不是“功能全部重新发明”，而是：
 - `Renderer` 只画 view-model，不知道 core client、history source 或 terminal service；`FrameSink` 是 render 侧输出接口，由 `TerminalHost` 提供真实 TTY 实现。
 - Bubble Tea 只能作为旧 `tuiv2/` 行为参考，不作为 TUI-v3 主线依赖。
 
+### 3.1 状态权威边界
+
+TUI-v3 的状态分三类，不能互相替代：
+
+- core terminal 实体状态：terminal id/name/title、command/cwd/tags、process lifecycle、exit code/exited at、PTY size、resize ownership、attachment/channel 校验、live surface/cursor/modes 和 authoritative logical-line history。它不属于某一个 TUI client；restart、重进 TUI、多个 TUI 共享时都以 core 当前 terminal 属性为准。
+- core 托管的 TUI shared state：通过 `termx.tui.v3.workbench` opaque storage 保存 workspace/tab/pane/floating 布局、panel presentation、active ids 和 pane/floating 到 terminal 的连接意图。core 只负责存储、版本和广播，不解释这些字段；这里不得保存当前 terminal lifecycle、runtime channel、live cursor、copy selection 或当前进程内输入路由状态。
+- 当前 TUI 内存状态：active pane/floating focus、interaction mode、overlay/toast/CTA、TerminalView runtime binding channel、TerminalPool projection cache、TerminalSurface/Session render cache、copy mode cursor/selection/frozen window、host size/theme 和 pending effect。它们只服务当前 TUI 进程，允许缓存 core 数据，但必须被 core list/event/surface 的权威生命周期覆盖。
+
+terminal lifecycle 的判断规则必须简单：如果 core terminal 属性是 exited，就展示 exited/restart；如果 core terminal 属性是 running，就清掉 TUI 内存里的 stale exited cache。exit marker 是 core 写入 live surface/history 的 terminal 数据，不能反推当前 lifecycle。
+
 ## 4. 模块图
 
 ```text

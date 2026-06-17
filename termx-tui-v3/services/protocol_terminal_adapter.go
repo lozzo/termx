@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -300,22 +301,29 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	}
 	lines := liveSurfaceLinesFromSnapshot(snapshot)
 	screen := liveSurfaceScreenFromSnapshot(snapshot)
-	return TerminalSurfaceResult{
-		Ready: true,
-		Snapshot: state.LiveSurfaceSnapshot{
-			TerminalID: req.TerminalID,
-			Cols:       int(snapshot.Size.Cols),
-			Rows:       int(snapshot.Size.Rows),
-			Lines:      lines,
-			Screen:     screen,
-			Cursor: state.LiveCursor{
-				Visible: snapshot.Cursor.Visible,
-				Row:     snapshot.Cursor.Row,
-				Col:     snapshot.Cursor.Col,
-				Shape:   snapshot.Cursor.Shape,
-			},
-			Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
+	info, err := adapter.terminalInfo(ctx, req.TerminalID)
+	if err != nil {
+		return TerminalSurfaceResult{}, err
+	}
+	liveSnapshot := state.LiveSurfaceSnapshot{
+		TerminalID:     req.TerminalID,
+		Cols:           int(snapshot.Size.Cols),
+		Rows:           int(snapshot.Size.Rows),
+		Lines:          lines,
+		Screen:         screen,
+		LifecycleKnown: true,
+		Cursor: state.LiveCursor{
+			Visible: snapshot.Cursor.Visible,
+			Row:     snapshot.Cursor.Row,
+			Col:     snapshot.Cursor.Col,
+			Shape:   snapshot.Cursor.Shape,
 		},
+		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
+	}
+	liveSnapshot = applyProtocolTerminalLifecycle(liveSnapshot, info)
+	return TerminalSurfaceResult{
+		Ready:    true,
+		Snapshot: liveSnapshot,
 	}, nil
 }
 
@@ -474,6 +482,28 @@ func (adapter ProtocolTerminalServiceAdapter) terminalInfo(ctx context.Context, 
 		}
 	}
 	return protocol.TerminalInfo{}, fmt.Errorf("terminal metadata unavailable: %s", terminalID)
+}
+
+func applyProtocolTerminalLifecycle(snapshot state.LiveSurfaceSnapshot, info protocol.TerminalInfo) state.LiveSurfaceSnapshot {
+	// 中文说明：terminal lifecycle 的权威来源是 core terminal list，不是 live 画面里的文本。
+	snapshot.LifecycleKnown = true
+	snapshot.ExitCode = 0
+	snapshot.ExitReason = ""
+	snapshot.ExitedAt = time.Time{}
+	snapshot.Command = nil
+	snapshot.Err = ""
+	if info.State == string(state.TerminalLiveExited) || info.State == "exited" {
+		snapshot.State = state.TerminalLiveExited
+		if info.ExitCode != nil {
+			snapshot.ExitCode = *info.ExitCode
+		}
+		snapshot.ExitReason = "exited"
+		snapshot.ExitedAt = info.ExitedAt
+		snapshot.Command = append([]string(nil), info.Command...)
+		return snapshot
+	}
+	snapshot.State = state.TerminalLiveAttached
+	return snapshot
 }
 
 func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {

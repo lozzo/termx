@@ -130,6 +130,44 @@ func TestWorkbenchStorageSnapshotScrubsRuntimeAttachmentIdentity(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageSnapshotScrubsTransientPaneKinds(t *testing.T) {
+	shell := DefaultShell().
+		SplitActivePane(PaneState{ID: "pane-history", Title: "history", Kind: PaneCopyHistory, TerminalID: "term-history"}, SplitDirectionVertical)
+	shell.Workspace.Tabs[0].Panes[0] = PaneState{ID: DefaultPaneID, Title: "old shell", Kind: PaneExited, TerminalID: "term-main", Active: true}
+	shell, floatingResult := shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-exited",
+		Pane:     PaneState{ID: "float-exited-pane", Title: "float", Kind: PaneExited, TerminalID: "term-float"},
+		Title:    "float",
+		Rect:     FloatingRect{X: 4, Y: 3, W: 40, H: 10},
+	})
+	if floatingResult.Status != FloatingCommandOK {
+		t.Fatalf("create floating: %#v", floatingResult)
+	}
+
+	snapshot := SnapshotRootWorkbenchForStorage(Root{Shell: shell})
+	restored, err := snapshot.ToShellStore()
+	if err != nil {
+		t.Fatalf("restore shell: %v", err)
+	}
+
+	if got := snapshot.Workspace.Tabs[0].Panes[0]; got.Kind != PaneTerminalLive || got.TerminalID != "term-main" {
+		t.Fatalf("storage should keep terminal intent but not PaneExited, got %#v", got)
+	}
+	if got := snapshot.Workspace.Tabs[0].Panes[1]; got.Kind != PaneTerminalLive || got.TerminalID != "term-history" {
+		t.Fatalf("storage should keep terminal intent but not PaneCopyHistory, got %#v", got)
+	}
+	if len(snapshot.Floatings) != 1 || snapshot.Floatings[0].Pane.Kind != PaneTerminalLive || snapshot.Floatings[0].Pane.TerminalID != "term-float" {
+		t.Fatalf("storage should scrub floating transient pane kind, got %#v", snapshot.Floatings)
+	}
+	if pane, ok := restored.Pane(PaneCommandTarget{PaneID: DefaultPaneID}); !ok || pane.Kind != PaneTerminalLive || pane.TerminalID != "term-main" {
+		t.Fatalf("restored tiled pane should await core lifecycle, pane=%#v ok=%v", pane, ok)
+	}
+	if floating, ok := restored.FloatingByPaneID("float-exited-pane"); !ok || floating.Pane.Kind != PaneTerminalLive || floating.Pane.TerminalID != "term-float" {
+		t.Fatalf("restored floating pane should await core lifecycle, floating=%#v ok=%v", floating, ok)
+	}
+}
+
 func TestWorkbenchStorageSnapshotRejectsLegacyV1(t *testing.T) {
 	_, err := DecodeWorkbenchStorageSnapshot([]byte(`{"schema":"termx.tui.v3.workbench","schemaVersion":1,"workspace":{"ID":"workspace-main"},"workspaces":[{"ID":"workspace-main"}],"panelPresentation":"card"}`))
 	if !errors.Is(err, ErrInvalidWorkbenchSnapshot) {

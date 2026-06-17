@@ -117,12 +117,14 @@ type LiveSurfaceSnapshot struct {
 	Title      string
 	Cursor     LiveCursor
 	Modes      LiveTerminalModes
-	State      TerminalLiveState
-	ExitCode   int
-	ExitReason string
-	ExitedAt   time.Time
-	Command    []string
-	Err        string
+	// 中文说明：true 表示 State 来自 core terminal 生命周期，而不是普通画面快照的默认 attached。
+	LifecycleKnown bool
+	State          TerminalLiveState
+	ExitCode       int
+	ExitReason     string
+	ExitedAt       time.Time
+	Command        []string
+	Err            string
 }
 
 func (store TerminalSurfaceStore) ApplySnapshot(snapshot LiveSurfaceSnapshot) TerminalSurfaceStore {
@@ -197,6 +199,7 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 			snapshot.Rows = rows
 		}
 		snapshot.State = TerminalLiveAttached
+		snapshot.LifecycleKnown = true
 		snapshot.ExitCode = 0
 		snapshot.ExitReason = ""
 		snapshot.ExitedAt = time.Time{}
@@ -254,6 +257,7 @@ func (store TerminalSurfaceStore) RestartPreservingContent(terminalID string, co
 		snapshot.Rows = rows
 	}
 	snapshot.State = TerminalLiveAttached
+	snapshot.LifecycleKnown = true
 	snapshot.ExitCode = 0
 	snapshot.ExitReason = ""
 	snapshot.ExitedAt = time.Time{}
@@ -280,6 +284,7 @@ func (store TerminalSurfaceStore) MarkAttached(terminalID string) TerminalSurfac
 	if ok {
 		// 中文说明：terminal pool 的 running 状态是生命周期权威信号；它只清 exited/error 边界，不改 live 内容。
 		snapshot.State = TerminalLiveAttached
+		snapshot.LifecycleKnown = true
 		snapshot.ExitCode = 0
 		snapshot.ExitReason = ""
 		snapshot.ExitedAt = time.Time{}
@@ -318,6 +323,7 @@ func (store TerminalSurfaceStore) MarkExitedWithMetadata(terminalID string, exit
 		}
 		snapshot.TerminalID = terminalID
 		snapshot.State = TerminalLiveExited
+		snapshot.LifecycleKnown = true
 		snapshot.ExitCode = exitCode
 		snapshot.ExitReason = reason
 		snapshot.ExitedAt = exitedAt
@@ -539,32 +545,33 @@ func (store TerminalSurfaceStore) snapshotForTerminal(terminalID string) (LiveSu
 		return LiveSurfaceSnapshot{}, false
 	}
 	return LiveSurfaceSnapshot{
-		TerminalID: terminalID,
-		Revision:   store.Revision,
-		Cols:       store.Cols,
-		Rows:       store.Rows,
-		Lines:      cloneStrings(store.Lines),
-		Screen:     cloneLiveCellRows(store.Screen),
-		Title:      store.Title,
-		Cursor:     store.Cursor,
-		Modes:      store.Modes,
-		State:      store.State,
-		ExitCode:   store.ExitCode,
-		ExitReason: store.ExitReason,
-		ExitedAt:   store.ExitedAt,
-		Command:    cloneStrings(store.Command),
-		Err:        store.Err,
+		TerminalID:     terminalID,
+		Revision:       store.Revision,
+		Cols:           store.Cols,
+		Rows:           store.Rows,
+		Lines:          cloneStrings(store.Lines),
+		Screen:         cloneLiveCellRows(store.Screen),
+		Title:          store.Title,
+		Cursor:         store.Cursor,
+		Modes:          store.Modes,
+		State:          store.State,
+		LifecycleKnown: false,
+		ExitCode:       store.ExitCode,
+		ExitReason:     store.ExitReason,
+		ExitedAt:       store.ExitedAt,
+		Command:        cloneStrings(store.Command),
+		Err:            store.Err,
 	}, true
 }
 
 func shouldRejectLiveSnapshot(current LiveSurfaceSnapshot, incoming LiveSurfaceSnapshot) bool {
-	if incoming.Revision != 0 && current.Revision != 0 && incoming.Revision < current.Revision {
+	if incoming.Revision != 0 && current.Revision != 0 && incoming.Revision < current.Revision && !incoming.LifecycleKnown {
 		return true
 	}
-	if incoming.Revision == 0 && liveSnapshotHasContent(current) && !liveSnapshotHasContent(incoming) {
+	if incoming.Revision == 0 && liveSnapshotHasContent(current) && !liveSnapshotHasContent(incoming) && !incoming.LifecycleKnown {
 		return true
 	}
-	if liveSnapshotIsBoundary(current) && liveSnapshotIsOrdinary(incoming) {
+	if liveSnapshotIsBoundary(current) && liveSnapshotIsOrdinary(incoming) && !incoming.LifecycleKnown {
 		return true
 	}
 	return false

@@ -920,6 +920,11 @@ func TestProtocolTerminalServiceAdapterUsesResizeControlRole(t *testing.T) {
 
 func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:      "term-1",
+			State:   "running",
+			Command: []string{"/bin/zsh"},
+		}}},
 		snapshotResult: &protocol.Snapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 12, Rows: 2},
@@ -960,10 +965,81 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	if !result.Snapshot.Modes.MousePassthroughEnabled() || !result.Snapshot.Modes.MouseButton || !result.Snapshot.Modes.MouseSGR {
 		t.Fatalf("expected protocol terminal mouse modes to be preserved, got %#v", result.Snapshot.Modes)
 	}
+	if !result.Snapshot.LifecycleKnown || result.Snapshot.State != state.TerminalLiveAttached || result.Snapshot.ExitReason != "" || len(result.Snapshot.Command) != 0 {
+		t.Fatalf("expected running core lifecycle on live surface, got %#v", result.Snapshot)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterMapsExitedLiveSurfaceLifecycle(t *testing.T) {
+	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
+	exitCode := 23
+	client := &fakeProtocolTerminalClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:       "term-1",
+			State:    "exited",
+			Command:  []string{"bash", "-lc", "exit 23"},
+			ExitCode: &exitCode,
+			ExitedAt: exitedAt,
+		}}},
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				{{Content: "terminal exited: term-1 code:23 exited"}},
+			}},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("live surface: %v", err)
+	}
+
+	if !result.Snapshot.LifecycleKnown || result.Snapshot.State != state.TerminalLiveExited || result.Snapshot.ExitCode != 23 || !result.Snapshot.ExitedAt.Equal(exitedAt) || strings.Join(result.Snapshot.Command, " ") != "bash -lc exit 23" {
+		t.Fatalf("expected exited core lifecycle on live surface, got %#v", result.Snapshot)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterRunningLifecycleIgnoresExitMarkerText(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:      "term-1",
+			State:   "running",
+			Command: []string{"/bin/zsh"},
+		}}},
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 80, Rows: 3},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				{{Content: "terminal exited: term-1 code:0 exited"}},
+				{{Content: "command: /bin/zsh"}},
+				{{Content: "% "}},
+			}},
+			Cursor: protocol.CursorState{Visible: true, Row: 2, Col: 2, Shape: "bar"},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 80, Rows: 3})
+	if err != nil {
+		t.Fatalf("live surface: %v", err)
+	}
+
+	if result.Snapshot.State != state.TerminalLiveAttached || result.Snapshot.ExitReason != "" || result.Snapshot.ExitCode != 0 || !result.Snapshot.ExitedAt.IsZero() {
+		t.Fatalf("running core lifecycle must win over marker text, got %#v", result.Snapshot)
+	}
+	if len(result.Snapshot.Lines) != 3 || result.Snapshot.Lines[2] != "%" || !result.Snapshot.Cursor.Visible {
+		t.Fatalf("live surface should still keep marker history and cursor, got %#v", result.Snapshot)
+	}
 }
 
 func TestProtocolTerminalServiceAdapterSkipsZeroWidthContinuationPlaceholders(t *testing.T) {
 	client := &fakeProtocolTerminalClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			State: "running",
+		}}},
 		snapshotResult: &protocol.Snapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 8, Rows: 1},
@@ -1010,6 +1086,10 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 	eventCh := make(chan protocol.Event, 1)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			State: "running",
+		}}},
 		snapshotResult: &protocol.Snapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 80, Rows: 24},
@@ -1045,6 +1125,10 @@ func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(
 	eventCh := make(chan protocol.Event, 4)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{
+			{ID: "term-1", State: "running"},
+			{ID: "term-2", State: "running"},
+		}},
 		snapshotResults: map[string]*protocol.Snapshot{
 			"term-1": {
 				TerminalID: "term-1",
@@ -1178,6 +1262,10 @@ func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *test
 	eventCh := make(chan protocol.Event, 8)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			State: "running",
+		}}},
 		snapshotResult: &protocol.Snapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 80, Rows: 24},
@@ -1225,6 +1313,10 @@ func TestProtocolTerminalServiceAdapterLiveEventCoalescingDoesNotStarveSnapshot(
 	eventCh := make(chan protocol.Event, maxProtocolLiveRefreshDrain+16)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			State: "running",
+		}}},
 		snapshotResult: &protocol.Snapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: 80, Rows: 24},

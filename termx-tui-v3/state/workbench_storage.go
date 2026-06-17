@@ -81,9 +81,9 @@ func SnapshotRootWorkbenchForStorage(root Root) WorkbenchStorageSnapshot {
 	return WorkbenchStorageSnapshot{
 		Schema:            WorkbenchStorageSchema,
 		SchemaVersion:     WorkbenchStorageSchemaV2,
-		Workspace:         cloneWorkspace(shell.Workspace),
-		Workspaces:        cloneWorkspaces(shell.Workspaces),
-		Floatings:         cloneFloatings(shell.Floatings),
+		Workspace:         workbenchStorageWorkspace(shell.Workspace),
+		Workspaces:        workbenchStorageWorkspaces(shell.Workspaces),
+		Floatings:         workbenchStorageFloatings(shell.Floatings),
 		ActiveFloatingID:  shell.ActiveFloatingID,
 		PanelPresentation: shell.PanelPresentation,
 		ActivePaneID:      shell.ActivePaneID,
@@ -92,6 +92,51 @@ func SnapshotRootWorkbenchForStorage(root Root) WorkbenchStorageSnapshot {
 		FooterVisible:     shell.FooterVisible,
 		TerminalViews:     terminalViewBindingsForWorkbenchStorage(root.TerminalViews.Bindings()),
 	}
+}
+
+func workbenchStorageWorkspaces(workspaces []WorkspaceState) []WorkspaceState {
+	if len(workspaces) == 0 {
+		return nil
+	}
+	out := make([]WorkspaceState, len(workspaces))
+	for index, workspace := range workspaces {
+		out[index] = workbenchStorageWorkspace(workspace)
+	}
+	return out
+}
+
+func workbenchStorageWorkspace(workspace WorkspaceState) WorkspaceState {
+	workspace = cloneWorkspace(workspace)
+	for tabIndex := range workspace.Tabs {
+		for paneIndex := range workspace.Tabs[tabIndex].Panes {
+			workspace.Tabs[tabIndex].Panes[paneIndex] = workbenchStoragePane(workspace.Tabs[tabIndex].Panes[paneIndex])
+		}
+	}
+	return workspace
+}
+
+func workbenchStorageFloatings(floatings []FloatingPaneState) []FloatingPaneState {
+	if len(floatings) == 0 {
+		return nil
+	}
+	out := cloneFloatings(floatings)
+	for index := range out {
+		out[index].Pane = workbenchStoragePane(out[index].Pane)
+	}
+	return out
+}
+
+func workbenchStoragePane(pane PaneState) PaneState {
+	switch pane.Kind {
+	case PaneExited, PaneCopyHistory:
+		// 中文说明：exited/copy-history 是当前 TUI 的展示态；storage 只保存连接意图。
+		if pane.TerminalID != "" {
+			pane.Kind = PaneTerminalLive
+		} else {
+			pane.Kind = PaneEmpty
+		}
+	}
+	return pane
 }
 
 func (snapshot WorkbenchStorageSnapshot) ToShellStore() (ShellStore, error) {
