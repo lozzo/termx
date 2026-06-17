@@ -1113,10 +1113,10 @@ func TestTerminalRestartResetsHistoryIngestParserState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history window: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "plain" || len(window.Rows[0].Cells) != 1 {
+	if len(window.Rows) != 2 || window.Rows[0].Text != "red linked " || window.Rows[1].Text != "plain" || len(window.Rows[1].Cells) != 1 {
 		t.Fatalf("unexpected history after restart %#v", window.Rows)
 	}
-	cell := window.Rows[0].Cells[0]
+	cell := window.Rows[1].Cells[0]
 	if cell.Style != (history.CellStyle{}) || cell.LinkURL != "" || cell.LinkParams != "" {
 		t.Fatalf("restart should reset style/link/pending parser state, got %#v", cell)
 	}
@@ -1196,7 +1196,7 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	}
 }
 
-func TestTerminalRestartReplacesProcessAndClearsLiveAndHistory(t *testing.T) {
+func TestTerminalRestartReplacesProcessAndPreservesLiveAndHistory(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server := NewServer(WithProcessFactory(factory))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
@@ -1205,6 +1205,10 @@ func TestTerminalRestartReplacesProcessAndClearsLiveAndHistory(t *testing.T) {
 	first := factory.process("term-1")
 	if err := server.IngestOutput(context.Background(), "term-1", "before\n"); err != nil {
 		t.Fatalf("ingest output: %v", err)
+	}
+	beforeRestart, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest before restart: %v", err)
 	}
 	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
 		t.Fatalf("restart: %v", err)
@@ -1221,15 +1225,87 @@ func TestTerminalRestartReplacesProcessAndClearsLiveAndHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live rows: %v", err)
 	}
-	if len(rows) != 1 || rows[0] != "" {
-		t.Fatalf("expected live rows reset, got %#v", rows)
+	if len(rows) == 0 || rows[0] != "before" {
+		t.Fatalf("restart should preserve live tail, got %#v", rows)
 	}
 	window, err := server.LatestWindow("term-1", 20, 10)
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if len(window.Rows) != 0 {
-		t.Fatalf("expected history reset after restart, got %#v", window)
+	if len(window.Rows) != 1 || window.Rows[0].Text != "before" {
+		t.Fatalf("restart should preserve history before new output, got %#v", window)
+	}
+	if window.Generation <= beforeRestart.Generation {
+		t.Fatalf("restart should force a new history boundary generation, before=%d after=%d", beforeRestart.Generation, window.Generation)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "after\n"); err != nil {
+		t.Fatalf("ingest output after restart: %v", err)
+	}
+	rows, err = server.LiveRows("term-1")
+	if err != nil {
+		t.Fatalf("live rows after restart output: %v", err)
+	}
+	if !reflect.DeepEqual(rows, []string{"before", "after"}) {
+		t.Fatalf("restart should keep old and new live tail rows, got %#v", rows)
+	}
+	window, err = server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window after restart output: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "before" || window.Rows[1].Text != "after" {
+		t.Fatalf("restart should append new output to preserved history, got %#v", window)
+	}
+}
+
+func TestTerminalRestartExitsAltScreenHistoryBoundary(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "primary-tail\x1b[?1049h\x1b[2JALT"); err != nil {
+		t.Fatalf("ingest alt-screen output: %v", err)
+	}
+	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "after-restart\n"); err != nil {
+		t.Fatalf("ingest output after restart: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	text := historyWindowText(window.Rows)
+	if !strings.Contains(text, "primary-tail") || !strings.Contains(text, "after-restart") {
+		t.Fatalf("restart should leave alt-screen and keep new output in history, got %#v", window.Rows)
+	}
+	if strings.Contains(text, "ALT") {
+		t.Fatalf("restart must not synthesize unfinished alt-screen frame into history, got %#v", window.Rows)
+	}
+}
+
+func TestTerminalRestartAfterExitPreservesCommittedHistory(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalExited}})
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "open-tail"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	factory.process("term-1").exit(5)
+	assertEventValue(t, events, EventTerminalExited, "term-1")
+	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window after restart: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "open-tail" {
+		t.Fatalf("restart after exit should keep committed history, got %#v", window)
 	}
 }
 

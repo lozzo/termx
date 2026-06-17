@@ -1,6 +1,9 @@
 package state
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	lines := []string{"one", "two"}
@@ -104,6 +107,57 @@ func TestTerminalSurfaceAttachKeepsCachedRevision(t *testing.T) {
 
 	if store.Revision != 5 || len(store.Lines) != 1 || store.Lines[0] != "connected panel" {
 		t.Fatalf("reattach must keep cached content when empty bootstrap arrives, got %#v", store)
+	}
+}
+
+func TestTerminalSurfaceRestartPreservesCurrentContentAndClearsLifecycle(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   5,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"old live tail"},
+		Cursor:     LiveCursor{Visible: true, Row: 0, Col: 13},
+		Modes:      LiveTerminalModes{MouseTracking: true, BracketedPaste: true},
+	})
+	store = store.MarkExitedWithMetadata("term-1", 23, "exited", time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC), []string{"bash", "-lc", "exit 23"})
+
+	store = store.RestartPreservingContent("term-1", 80, 24)
+
+	if store.State != TerminalLiveAttached || store.ExitCode != 0 || !store.ExitedAt.IsZero() || len(store.Command) != 0 || store.Err != "" {
+		t.Fatalf("restart should clear lifecycle metadata, got %#v", store)
+	}
+	if len(store.Lines) != 1 || store.Lines[0] != "old live tail" || !store.Ready {
+		t.Fatalf("restart should keep live tail ready, got %#v", store)
+	}
+	if store.Cursor != (LiveCursor{}) || store.Modes != (LiveTerminalModes{}) {
+		t.Fatalf("restart must drop old process cursor/modes, got cursor=%#v modes=%#v", store.Cursor, store.Modes)
+	}
+}
+
+func TestTerminalSurfaceRestartNonCurrentOnlyUpdatesCache(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"current"},
+	})
+	store = store.ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-2",
+		Cols:       40,
+		Rows:       12,
+		Lines:      []string{"other old tail"},
+	})
+	store = store.MarkExited("term-2", 9, "exited")
+
+	store = store.RestartPreservingContent("term-2", 40, 12)
+
+	if store.TerminalID != "term-1" || len(store.Lines) != 1 || store.Lines[0] != "current" {
+		t.Fatalf("restart for non-current terminal must not switch projection, got %#v", store)
+	}
+	cached := store.Surfaces["term-2"]
+	if cached.State != TerminalLiveAttached || cached.ExitCode != 0 || len(cached.Lines) != 1 || cached.Lines[0] != "other old tail" {
+		t.Fatalf("restart should update only the target cache, got %#v", cached)
 	}
 }
 

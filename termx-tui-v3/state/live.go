@@ -237,6 +237,41 @@ func (store TerminalSurfaceStore) AttachPreservingBoundary(terminalID string, co
 	return store
 }
 
+func (store TerminalSurfaceStore) RestartPreservingContent(terminalID string, cols int, rows int) TerminalSurfaceStore {
+	if terminalID == "" {
+		return store
+	}
+	snapshot, ok := store.snapshotForTerminal(terminalID)
+	if !ok {
+		return store.Attach(terminalID, cols, rows)
+	}
+	// 中文说明：restart 只重启 terminal process，不能把同 terminal 的 live tail 清空。
+	// lifecycle 元数据清掉后，真实 channel/surface 仍等待 per-view reattach 回投。
+	if snapshot.Cols == 0 {
+		snapshot.Cols = cols
+	}
+	if snapshot.Rows == 0 {
+		snapshot.Rows = rows
+	}
+	snapshot.State = TerminalLiveAttached
+	snapshot.ExitCode = 0
+	snapshot.ExitReason = ""
+	snapshot.ExitedAt = time.Time{}
+	snapshot.Command = nil
+	snapshot.Err = ""
+	snapshot.Cursor = LiveCursor{}
+	snapshot.Modes = LiveTerminalModes{}
+	store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
+	store.Surfaces[terminalID] = snapshot
+	if store.TerminalID != "" && store.TerminalID != terminalID {
+		store.ResizeBoundary = LiveResizeBoundary{}
+		return store
+	}
+	store = store.projectSnapshot(snapshot, liveSnapshotHasContent(snapshot))
+	store.ResizeBoundary = LiveResizeBoundary{}
+	return store
+}
+
 func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSurfaceStore {
 	return store.MarkExitedWithMetadata(terminalID, exitCode, reason, time.Time{}, nil)
 }

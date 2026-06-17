@@ -397,7 +397,7 @@ func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartRes
 		return root.Advance(), nil
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.restart", Body: msg.TerminalID})
-	root.Surface = root.Surface.Attach(msg.TerminalID, root.Surface.Cols, root.Surface.Rows)
+	root.Surface = root.Surface.RestartPreservingContent(msg.TerminalID, root.Surface.Cols, root.Surface.Rows)
 	root.TerminalViews = root.TerminalViews.MarkTerminalReattaching(msg.TerminalID)
 	root.Session = root.Session.ClearInputChannel(msg.TerminalID)
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}

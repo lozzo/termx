@@ -82,6 +82,36 @@ func (surface *SurfaceTrack) Resize(size SurfaceSize) {
 	surface.vt.ResizeWithDamage(size.Cols, size.Rows)
 }
 
+func (surface *SurfaceTrack) ResetForRestartPreservingScreen() {
+	surface.ensureVTerm()
+	snapshot := surface.Snapshot()
+	rows := cloneVTermCellRows(snapshot.Screen.Cells)
+	size := surface.size
+	rows, cursor := restartPreservedScreenRows(rows, size.Rows)
+	// 中文说明：重启的是外部进程，不是 terminal identity。保留可见 tail，
+	// 但用全新 VTerm 丢弃旧程序的 mouse/bracketed paste/alt-screen/pending escape 状态。
+	_ = surface.vt.Close()
+	surface.vt = vterm.New(size.Cols, size.Rows, 0, nil)
+	surface.pending = ""
+	if len(rows) == 0 {
+		return
+	}
+	surface.vt.LoadSizedSnapshotWithExtendedMetadata(
+		size.Cols,
+		size.Rows,
+		nil,
+		nil,
+		nil,
+		nil,
+		vterm.ScreenData{Cells: rows},
+		nil,
+		nil,
+		nil,
+		cursor,
+		vterm.TerminalModes{AutoWrap: true},
+	)
+}
+
 func (surface *SurfaceTrack) Write(text string) {
 	_ = surface.WriteWithResult(text)
 }
@@ -355,6 +385,23 @@ func cloneVTermCellRows(rows [][]vterm.Cell) [][]vterm.Cell {
 		copy(cloned[i], row)
 	}
 	return cloned
+}
+
+func restartPreservedScreenRows(rows [][]vterm.Cell, maxRows int) ([][]vterm.Cell, vterm.CursorState) {
+	last := -1
+	for i, row := range rows {
+		if rowHasVisibleFootprint(row) {
+			last = i
+		}
+	}
+	if last < 0 {
+		return nil, vterm.CursorState{Visible: false}
+	}
+	rows = rows[:last+1]
+	if maxRows > 0 && len(rows) >= maxRows {
+		rows = rows[len(rows)-maxRows+1:]
+	}
+	return rows, vterm.CursorState{Row: len(rows), Col: 0, Visible: false}
 }
 
 func boolEnvDefault(name string, fallback bool) bool {

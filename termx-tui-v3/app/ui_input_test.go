@@ -1140,6 +1140,7 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
 	root.Session = root.Session.AttachWithResizeOwner("term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Surface = root.Surface.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-1", Cols: 80, Rows: 24, Lines: []string{"old live tail"}})
 	root.Surface = root.Surface.MarkExitedWithMetadata("term-1", 23, "exited", time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC), []string{"bash", "-lc", "exit 23"})
 
 	root, effects := reducer(root, TerminalPoolRestartRequestMsg{TerminalID: "term-1"})
@@ -1160,6 +1161,9 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	}
 	if root.Surface.State != state.TerminalLiveAttached || root.Surface.ExitCode != 0 || !root.Surface.ExitedAt.IsZero() || len(root.Surface.Command) != 0 {
 		t.Fatalf("restart should clear exited surface metadata, got %#v", root.Surface)
+	}
+	if len(root.Surface.Lines) != 1 || root.Surface.Lines[0] != "old live tail" || !root.Surface.Ready {
+		t.Fatalf("restart should preserve live tail while reattaching, got %#v", root.Surface)
 	}
 	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 0 || binding.Attached {
 		t.Fatalf("restart should preserve binding intent but clear stale input channel, got %#v ok=%v", binding, ok)

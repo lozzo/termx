@@ -979,14 +979,16 @@ func TestProtocolServiceHistoryWindowFlushesStressTailBeforeAltScreenFreeze(t *t
 	output.WriteString("\x1b[?1049h\x1b[2JALT_SCREEN_MARK\x1b[?1049l")
 	process.emitOutput(output.String())
 
-	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
-		TerminalID: "term-1",
-		Cols:       120,
-		Limit:      30,
-	})
-	if err != nil {
-		t.Fatalf("latest history.window after stress alt-screen: %v", err)
-	}
+	var latest *protocol.HistoryWindow
+	assertEventually(t, time.Second, func() bool {
+		var err error
+		latest, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID: "term-1",
+			Cols:       120,
+			Limit:      30,
+		})
+		return err == nil && latest != nil && protocolHistoryWindowContainsText(latest, "000100") && protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK")
+	}, "history.window should observe stress tail and alt-screen final frame after async output reaches history queue")
 	if !protocolHistoryWindowContainsText(latest, "000100") {
 		t.Fatalf("history.window latest must preserve primary stress tail before alt-screen, got %#v", latest.Rows)
 	}
@@ -1040,7 +1042,7 @@ func TestProtocolServiceHistoryWindowPreservesStressTailAcrossFullscreenHomeClea
 	}
 }
 
-func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory(t *testing.T) {
+func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestPreservesHistory(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
 
@@ -1092,11 +1094,11 @@ func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestResetsHistory
 	if err != nil {
 		t.Fatalf("latest after restart via new snapshot: %v", err)
 	}
-	if reloaded.Token == latest.Token {
-		t.Fatalf("restart should pin a new frozen token for subsequent latest, got old=%q new=%q", latest.Token, reloaded.Token)
+	if !protocolHistoryWindowContainsText(reloaded, "three") || !protocolHistoryWindowContainsText(reloaded, "four") {
+		t.Fatalf("new latest after restart should preserve terminal history, got %#v", reloaded)
 	}
-	if len(reloaded.Rows) != 0 || reloaded.LogicalTotal != 0 || reloaded.CursorValid || reloaded.HasMore {
-		t.Fatalf("new latest after restart should see reset empty history, got %#v", reloaded)
+	if reloaded.LogicalTotal == 0 || reloaded.Token == "" {
+		t.Fatalf("new latest after restart should expose preserved history metadata, got %#v", reloaded)
 	}
 }
 

@@ -153,25 +153,42 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.mu.Lock()
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
+	if err := terminal.FlushHistory(ctx); err != nil {
+		return err
+	}
 	process, err := factory.Spawn(ctx, ProcessSpec{TerminalID: info.ID, Command: info.Command, Size: info.Size})
 	if err != nil {
 		return err
 	}
 	terminal.mu.Lock()
 	old := terminal.process
+	oldInfo := terminal.info.Clone()
 	terminal.process = process
 	terminal.info.State = TerminalStateRunning
 	terminal.info.ExitCode = nil
 	terminal.info.ExitedAt = time.Time{}
 	info = terminal.info.Clone()
 	terminal.mu.Unlock()
+	if err := terminal.historyPipeline().ResetForRestart(); err != nil {
+		_ = process.Close()
+		terminal.mu.Lock()
+		if terminal.process == process {
+			terminal.process = old
+			terminal.info = oldInfo
+		}
+		terminal.mu.Unlock()
+		return err
+	}
+	terminal.queueMu.Lock()
+	terminal.historyQ = nil
+	terminal.queueMu.Unlock()
 	terminal.liveMu.Lock()
-	terminal.live = live.NewSurfaceTrack(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
+	terminal.live.Resize(live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)})
+	terminal.live.ResetForRestartPreservingScreen()
 	terminal.liveMu.Unlock()
-	terminal.resetHistoryPipeline(int(info.Size.Cols), int(info.Size.Rows))
-	_ = old.Close()
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
+	_ = old.Close()
 	terminal.publish(EventTerminalChanged, info)
 	return nil
 }
@@ -226,15 +243,6 @@ func (terminal *Terminal) historyPipeline() *terminalHistoryPipeline {
 	terminal.historyMu.Lock()
 	defer terminal.historyMu.Unlock()
 	return terminal.history
-}
-
-func (terminal *Terminal) resetHistoryPipeline(cols int, rows int) {
-	terminal.historyMu.Lock()
-	terminal.history = newTerminalHistoryPipeline(cols, rows)
-	terminal.historyMu.Unlock()
-	terminal.queueMu.Lock()
-	terminal.historyQ = nil
-	terminal.queueMu.Unlock()
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {

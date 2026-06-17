@@ -68,6 +68,31 @@ func (pipeline *terminalHistoryPipeline) Resize(cols int, rows int, event histor
 	return pipeline.track.Apply(event)
 }
 
+func (pipeline *terminalHistoryPipeline) ResetForRestart() error {
+	pipeline.mu.Lock()
+	defer pipeline.mu.Unlock()
+	// 中文说明：restart 是进程边界，不是 terminal history 边界。保留同一
+	// HistoryTrack，但必须切断旧进程的 primary screen ownership 和 alt-screen 状态。
+	if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		return err
+	}
+	if pipeline.track.InAltScreen() {
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSwitchAltScreen, EnterAltScreen: false}); err != nil {
+			return err
+		}
+	}
+	if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInDisplay, EraseMode: 2}); err != nil {
+		return err
+	}
+	if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventNonHistoryBoundary}); err != nil {
+		return err
+	}
+	pipeline.ingest = historyANSIParser{}
+	pipeline.ingest.SetScreenSize(pipeline.cols, pipeline.rows)
+	pipeline.altCap = live.NewSurfaceTrack(live.SurfaceSize{Cols: pipeline.cols, Rows: pipeline.rows})
+	return nil
+}
+
 func (pipeline *terminalHistoryPipeline) ForceCommitFrontier() error {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()

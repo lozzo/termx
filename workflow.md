@@ -240,11 +240,13 @@
 | 215E1-R67. SK root restart and interactive exit CTA | 完成 | `termx-cli/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复默认 root TUI 退出后重进遇到固定 root terminal duplicate：固定 root 已退出时先 restart 再 attach；live exited 内容升级为居中的正式 exited CTA，键盘上下/Enter 与鼠标点击 restart/picker 都会进入真实 action 链路 |
 | 215E1-R68. SK exited lifecycle after live output | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已把 live exited 信息和 CTA 放到 terminal 内容尾部；内容超过视口时默认显示最后历史行和退出提示，并让鼠标 hit region 跟随尾部对齐后的实际行 |
 | 215E1-R69. SK picker attach exited lifecycle | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复从退出态/picker 连接到另一个已退出 terminal 时被 attach result 临时清成 running：pool 明确为 exited 的 terminal 会保留 lifecycle 元数据并立即显示退出 CTA，不等用户再输入 |
+| 215E1-R70. SK restart 保留 terminal 数据 | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复 restart 把同一 terminal 的 live surface 和 authoritative history 清空的问题：restart 只重启 process，保留 terminal identity/history/live tail，同时重置新进程不应继承的 parser、alt-screen、mouse/bracketed-paste 状态 |
 
 当前下一步：
 
-- `215E1-R69 picker attach exited lifecycle` 已完成
+- `215E1-R70 restart 保留 terminal 数据` 已完成
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
+- 当前 restart 语义：terminal lifecycle 和 terminal data 分离；process 退出/重启不会清空 core-v2 authoritative history，也不会清空 live tail。restart 会让所有 view channel 失效并逐 view reattach，但 TUI 等待 reattach 时继续显示旧 live tail。
 
 ## 6. 必做证据
 
