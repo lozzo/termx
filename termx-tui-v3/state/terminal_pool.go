@@ -113,6 +113,18 @@ func (store TerminalPoolStore) ApplyEdited(terminalID string, err string) Termin
 	return store
 }
 
+func (store TerminalPoolStore) ApplyTagsEdited(terminalID string, tags map[string]string, err string) TerminalPoolStore {
+	if err != "" {
+		store.LastError = err
+		store.Status = TerminalPoolError
+		return store
+	}
+	store.LastEditedID = terminalID
+	store.LastError = ""
+	store.Items = updateTerminalPoolItemTags(store.Items, terminalID, tags)
+	return store
+}
+
 func (store TerminalPoolStore) IsStale(seq uint64) bool {
 	return seq != 0 && seq < store.RequestSeq
 }
@@ -149,6 +161,16 @@ func removeTerminalPoolItem(items []TerminalPoolItem, terminalID string) []Termi
 		out = append(out, item)
 	}
 	return cloneTerminalPoolItems(out)
+}
+
+func updateTerminalPoolItemTags(items []TerminalPoolItem, terminalID string, tags map[string]string) []TerminalPoolItem {
+	cloned := cloneTerminalPoolItems(items)
+	for index := range cloned {
+		if cloned[index].TerminalID == terminalID {
+			cloned[index].Tags = cloneStringMap(tags)
+		}
+	}
+	return cloned
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

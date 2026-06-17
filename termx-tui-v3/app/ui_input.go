@@ -678,6 +678,9 @@ func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.R
 
 func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, []Effect, bool) {
 	shell := root.Shell.EnsureDefaults()
+	if command == "terminal size lock" {
+		return root, []Effect{handledEffect{}, terminalSizeLockToggleEffect()}, true
+	}
 	if layoutCommand, ok := terminalViewLayoutCommandFromString(command); ok {
 		next, effects := applyActiveTerminalViewLayoutCommand(root, layoutCommand)
 		return next, append([]Effect{handledEffect{}}, effects...), true
@@ -706,6 +709,10 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 	default:
 		return root, nil, false
 	}
+}
+
+func terminalSizeLockToggleEffect() Effect {
+	return FuncEffect{Run: func(context.Context) Msg { return TerminalSizeLockToggleRequestMsg{} }}
 }
 
 func applyActiveTerminalViewLayoutCommand(root state.Root, command state.TerminalViewLayoutCommand) (state.Root, []Effect) {

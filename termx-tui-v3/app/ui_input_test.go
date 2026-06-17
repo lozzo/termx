@@ -881,6 +881,73 @@ func TestTerminalPoolReducerHandlesListErrorCreateAndStaleResult(t *testing.T) {
 	}
 }
 
+func TestTerminalSizeLockToggleWritesTerminalTagsAndProjectsViews(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Shell:        state.DefaultShell(),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, effects := reducer(root, TerminalSizeLockToggleRequestMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("size lock should issue one tag edit, got %#v", effects)
+	}
+	result, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleResultMsg)
+	if !ok || result.TerminalID != "term-1" || !result.Locked {
+		t.Fatalf("expected size lock result, got %#v", result)
+	}
+	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].Tags["role"] != "shell" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("size lock must preserve existing tags and set lock tag, edits=%#v", terminal.TagEdits)
+	}
+	next, _ = reducer(next, result)
+	owner, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	follower, _ := next.TerminalViews.PaneBinding("pane-2")
+	if !owner.SizeLocked || owner.CanResize || owner.ControlReason != "size_locked" || owner.ResizeRole != state.TerminalResizeRoleOwner {
+		t.Fatalf("owner view should project locked owner without resize rights, got %#v", owner)
+	}
+	if !follower.SizeLocked || follower.CanResize || follower.ControlReason != "size_locked" {
+		t.Fatalf("follower view should project terminal lock, got %#v", follower)
+	}
+	if next.TerminalPool.Items[0].Tags["termx.size_lock"] != "lock" {
+		t.Fatalf("terminal pool tags should update after lock result, pool=%#v", next.TerminalPool)
+	}
+
+	next, effects = reducer(next, TerminalSizeLockToggleRequestMsg{})
+	result = effects[0].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleResultMsg)
+	if result.Locked {
+		t.Fatalf("unlock should report unlocked result, got %#v", result)
+	}
+	if _, ok := result.Tags["termx.size_lock"]; ok {
+		t.Fatalf("unlock should remove size lock tag, got %#v", result)
+	}
+	next, _ = reducer(next, result)
+	owner, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if owner.SizeLocked || !owner.CanResize || owner.ControlReason != "" {
+		t.Fatalf("unlock should restore owner resize rights, got %#v", owner)
+	}
+}
+
+func TestTerminalSizeLockToggleRequiresTerminalPoolTagsBeforeWriting(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{Shell: state.DefaultShell()}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+
+	next, effects := reducer(root, TerminalSizeLockToggleRequestMsg{})
+	if len(terminal.TagEdits) != 0 || len(effects) != 1 {
+		t.Fatalf("missing pool tags should only request metadata refresh, edits=%#v effects=%#v", terminal.TagEdits, effects)
+	}
+	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg); !ok {
+		t.Fatalf("missing pool tags should refresh terminal pool, got %#v", effects[0])
+	}
+	if len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Body != "terminal metadata pending" {
+		t.Fatalf("missing pool tags should warn instead of overwriting tags, root=%#v", next)
+	}
+}
+
 func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 3, Cols: 80, Rows: 24},
@@ -2392,7 +2459,7 @@ func TestShellReducerHandlesResizeOwnerContentAction(t *testing.T) {
 	}
 }
 
-func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T) {
+func TestResizeModeTerminalSizeLockKeyAndFooterEmitTerminalLockRequest(t *testing.T) {
 	root := state.Root{}
 	root.Shell = state.DefaultShell().SetInteractionMode(state.InteractionModeResize)
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
@@ -2401,18 +2468,40 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	inputReducer := NewUIInputReducer()
 	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
 	if len(effects) != 2 {
-		t.Fatalf("layout key should be handled, got %#v", effects)
+		t.Fatalf("size lock key should emit request effect, got %#v", effects)
+	}
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleRequestMsg)
+	if !ok || msg != (TerminalSizeLockToggleRequestMsg{}) {
+		t.Fatalf("resize s should request terminal size lock toggle, got %#v", msg)
 	}
 	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
-	if !binding.Layout.SizeLocked {
-		t.Fatalf("resize s should toggle view-local layout lock, got %#v", binding.Layout)
-	}
-	sibling, _ := next.TerminalViews.PaneBinding("pane-2")
-	if sibling.Layout.SizeLocked {
-		t.Fatalf("sibling view on same terminal must not inherit layout lock, got %#v", sibling.Layout)
+	if binding.Layout.SizeLocked {
+		t.Fatalf("resize s must not mutate view-local layout lock, got %#v", binding.Layout)
 	}
 
-	next, _ = inputReducer(next, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight, Shift: true}})
+	shellReducer := NewShellReducer()
+	_, effects = shellReducer(next, ShellContentActionMsg{ActionID: render.ActionResizeLayoutLock.String()})
+	if len(effects) != 1 {
+		t.Fatalf("footer lock should emit request effect, got %#v", effects)
+	}
+	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleRequestMsg); !ok {
+		t.Fatalf("footer lock should request terminal size lock toggle, got %#v", effects[0])
+	}
+}
+
+func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T) {
+	root := state.Root{}
+	root.Shell = state.DefaultShell().SetInteractionMode(state.InteractionModeResize)
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	inputReducer := NewUIInputReducer()
+	next, _ := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight, Shift: true}})
+	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	sibling, _ := next.TerminalViews.PaneBinding("pane-2")
+	if sibling.Layout.PanX != 0 || sibling.Layout.PanY != 0 {
+		t.Fatalf("sibling view on same terminal must not inherit layout pan, got %#v", sibling.Layout)
+	}
 	binding, _ = next.TerminalViews.PaneBinding(state.DefaultPaneID)
 	if binding.Layout.PanX != 2 {
 		t.Fatalf("shift-right should pan active terminal view, got %#v", binding.Layout)
@@ -2433,22 +2522,25 @@ func TestResizeModeTerminalLayoutKeysAndActionsShareViewLocalState(t *testing.T)
 	}
 }
 
-func TestPaneModeLockUsesViewLocalTerminalLayoutPath(t *testing.T) {
+func TestPaneModeLockUsesTerminalSizeLockPath(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 
 	next, effects := NewUIInputReducer()(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
 	if len(effects) != 2 {
-		t.Fatalf("pane s should be handled by terminal layout command, got %#v", effects)
+		t.Fatalf("pane s should emit terminal size lock request, got %#v", effects)
+	}
+	if _, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleRequestMsg); !ok {
+		t.Fatalf("pane s should request terminal size lock toggle, got %#v", effects[1])
 	}
 	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
-	if !binding.Layout.SizeLocked {
-		t.Fatalf("pane s should toggle view-local layout lock, got %#v", binding.Layout)
+	if binding.Layout.SizeLocked {
+		t.Fatalf("pane s must not toggle view-local layout lock, got %#v", binding.Layout)
 	}
 
 	next, effects = NewUIInputReducer()(state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if len(effects) != 1 || len(next.Shell.Toasts) == 0 || next.Shell.Toasts[len(next.Shell.Toasts)-1].Title != "terminal.layout" {
-		t.Fatalf("pane s without active terminal view should use reducer-owned toast, effects=%#v toasts=%#v", effects, next.Shell.Toasts)
+	if len(effects) != 2 {
+		t.Fatalf("pane s without active terminal still routes to size lock reducer, got %#v toasts=%#v", effects, next.Shell.Toasts)
 	}
 }
 

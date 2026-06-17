@@ -420,6 +420,34 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 	return store, true
 }
 
+func (store TerminalViewStore) ApplyTerminalSizeLock(terminalID string, locked bool) TerminalViewStore {
+	if terminalID == "" {
+		return store
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	for viewID, binding := range store.Views {
+		if binding.TerminalID != terminalID {
+			continue
+		}
+		binding.SizeLocked = locked
+		if locked {
+			// 中文说明：Size lock 属于 terminal 级 core metadata；owner 身份保留，但不能继续发 PTY resize。
+			if binding.HasResizeOwner() {
+				binding.ResizeRole = TerminalResizeRoleOwner
+			}
+			binding.CanResize = false
+			binding.ControlReason = "size_locked"
+		} else if binding.ControlReason == "size_locked" {
+			binding.ControlReason = ""
+			if binding.HasResizeOwner() {
+				binding.CanResize = true
+			}
+		}
+		store.Views[viewID] = binding
+	}
+	return store
+}
+
 func (binding TerminalViewBinding) hasAuthoritativeResizeOwner() bool {
 	return binding.HasAuthoritativeResizeOwner()
 }

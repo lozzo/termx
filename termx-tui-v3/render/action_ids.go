@@ -237,7 +237,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionResizeUp, ActionDispatchApp, ActionSurfaceFooter).withFooter("↑/k", "", StyleStatusWarning).withHelp("resize up"),
 		actionSpec(ActionResizeDown, ActionDispatchApp, ActionSurfaceFooter).withFooter("↓/j", "", StyleStatusWarning).withHelp("resize down"),
 		actionSpec(ActionResizeBalance, ActionDispatchApp, ActionSurfaceFooter).withFooter("=", "BALANCE", StyleStatusAccent).withHelp("balance"),
-		actionSpec(ActionResizeLayoutLock, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("s", "LOCK", StyleStatusAccent).withHelp("lock terminal view size"),
+		actionSpec(ActionResizeLayoutLock, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("s", "LOCK", StyleStatusAccent).withHelp("toggle terminal size lock"),
 		actionSpec(ActionResizeLayoutToggle, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("space", "LAYOUT", StyleStatusAccent).withHelp("toggle terminal view layout"),
 		actionSpec(ActionResizeLayoutPan, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("S+arrows", "PAN", StyleStatusWarning).withHelp("pan terminal view content"),
 		actionSpec(ActionResizeLayoutAlign, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("0/$/^/B", "ALIGN", StyleStatusAccent).withHelp("align terminal view content"),

@@ -30,6 +30,8 @@ type fakeProtocolTerminalClient struct {
 	metadataIDs    []string
 	metadataNames  []string
 	metadataTags   []map[string]string
+	tagIDs         []string
+	tagSets        []map[string]string
 	inputChannel   []uint16
 	inputData      [][]byte
 	resizeChannels []uint16
@@ -100,6 +102,12 @@ func (client *fakeProtocolTerminalClient) SetMetadata(_ context.Context, termina
 	client.metadataIDs = append(client.metadataIDs, terminalID)
 	client.metadataNames = append(client.metadataNames, name)
 	client.metadataTags = append(client.metadataTags, cloneStringMap(tags))
+	return nil
+}
+
+func (client *fakeProtocolTerminalClient) SetTags(_ context.Context, terminalID string, tags map[string]string) error {
+	client.tagIDs = append(client.tagIDs, terminalID)
+	client.tagSets = append(client.tagSets, cloneStringMap(tags))
 	return nil
 }
 
@@ -1067,5 +1075,11 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	}
 	if len(client.metadataIDs) != 1 || client.metadataIDs[0] != "term-pool" || client.metadataNames[0] != "renamed" || client.metadataTags[0]["role"] != "ops" {
 		t.Fatalf("unexpected metadata calls ids=%#v names=%#v tags=%#v", client.metadataIDs, client.metadataNames, client.metadataTags)
+	}
+	if err := adapter.EditTags(context.Background(), TerminalEditTagsRequest{TerminalID: "term-pool", Tags: map[string]string{"termx.size_lock": "lock"}}); err != nil {
+		t.Fatalf("edit tags: %v", err)
+	}
+	if len(client.tagIDs) != 1 || client.tagIDs[0] != "term-pool" || client.tagSets[0]["termx.size_lock"] != "lock" || len(client.metadataIDs) != 1 {
+		t.Fatalf("unexpected tag calls tags=%#v metadata=%#v", client.tagSets, client.metadataIDs)
 	}
 }

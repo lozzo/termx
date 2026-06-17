@@ -75,6 +75,7 @@ type TerminalService interface {
 	Kill(context.Context, TerminalKillRequest) error
 	Remove(context.Context, TerminalRemoveRequest) error
 	EditMetadata(context.Context, TerminalEditMetadataRequest) error
+	EditTags(context.Context, TerminalEditTagsRequest) error
 	SendInput(context.Context, TerminalInputRequest) error
 	Resize(context.Context, TerminalResizeRequest) (TerminalResizeResult, error)
 }
@@ -178,6 +179,11 @@ type TerminalRemoveRequest struct {
 type TerminalEditMetadataRequest struct {
 	TerminalID string
 	Title      string
+	Tags       map[string]string
+}
+
+type TerminalEditTagsRequest struct {
+	TerminalID string
 	Tags       map[string]string
 }
 
@@ -450,6 +456,7 @@ type FakeTerminalService struct {
 	KillErr           error
 	RemoveErr         error
 	EditErr           error
+	EditTagsErr       error
 	InputErr          error
 	ResizeErr         error
 	ResizeResult      TerminalResizeResult
@@ -464,6 +471,7 @@ type FakeTerminalService struct {
 	Kills             []TerminalKillRequest
 	Removes           []TerminalRemoveRequest
 	Edits             []TerminalEditMetadataRequest
+	TagEdits          []TerminalEditTagsRequest
 	Inputs            []TerminalInputRequest
 	Resizes           []TerminalResizeRequest
 	Surfaces          []TerminalSurfaceRequest
@@ -669,6 +677,17 @@ func (service *FakeTerminalService) EditMetadata(_ context.Context, req Terminal
 		Title:      req.Title,
 		Tags:       cloneStringMap(req.Tags),
 	})
+	return service.EditErr
+}
+
+func (service *FakeTerminalService) EditTags(_ context.Context, req TerminalEditTagsRequest) error {
+	service.TagEdits = append(service.TagEdits, TerminalEditTagsRequest{
+		TerminalID: req.TerminalID,
+		Tags:       cloneStringMap(req.Tags),
+	})
+	if service.EditTagsErr != nil {
+		return service.EditTagsErr
+	}
 	return service.EditErr
 }
 

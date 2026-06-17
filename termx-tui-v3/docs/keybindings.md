@@ -30,7 +30,7 @@
 | pane | `r RECONNECT` | `r` | 通过 terminal picker 重连 pane |
 | pane | `R RESTART` | `R` | 重启 exited terminal |
 | pane | `a OWNER` | `a` | 当前 pane 获取 terminal ownership |
-| pane | `s LAYOUT LOCK` | `s` | 切换当前 view 的本地 layout lock，不等同于 core terminal size lock |
+| pane | `s LOCK` | `s` | 切换 core terminal size lock，写入 terminal metadata tag `termx.size_lock` |
 | pane | `X CLOSE+KILL` | `X` | 关闭 pane 并 kill terminal |
 | pane | `z ZOOM` | `z` | zoom / unzoom pane |
 | pane | `w CLOSE` | `w` | close pane |
@@ -38,7 +38,7 @@
 | resize | `h/j/k/l RESIZE` | `h` / `j` / `k` / `l`、方向键 | 小步调整 pane 尺寸 |
 | resize | `H/J/K/L RESIZEx2` | `H` / `J` / `K` / `L` | 大步调整 pane 尺寸 |
 | resize | `a OWNER` | `a` | 当前 pane 获取 terminal ownership |
-| resize | `s LAYOUT LOCK` | `s` | 切换当前 view 的本地 layout lock，不等同于 core terminal size lock |
+| resize | `s LOCK` | `s` | 切换 core terminal size lock，写入 terminal metadata tag `termx.size_lock` |
 | resize | `= BALANCE` | `=` | 平衡 pane 尺寸 |
 | resize | `Space LAYOUT` | `Space` | 切换 layout |
 | resize | `Shift+WASD PAN` | `W` / `A` / `S` / `D`、Shift 方向键 | 平移 pane 内 terminal 内容 |
@@ -152,14 +152,14 @@
 | pane | `r RECONNECT` | `r` | 打开 Terminal Picker 重连当前 pane |
 | pane | `R RESTART` | `R` | restart 当前 pane 的 terminal |
 | pane | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
-| pane | `s LAYOUT LOCK` | `s` | 复用 view-local terminal layout command，切换 active terminal view layout lock；不等同于 core terminal size lock |
+| pane | `s LOCK` | `s` | 切换 active terminal 的 core size lock；成功后所有连接到该 terminal 的 view 同步显示 locked 状态 |
 | pane | `z ZOOM` | `z` | toggle zoom |
 | pane | `b BALANCE`、`c CARD`、`p LINE` | `b`、`c`、`p` | balance、card presentation、split-line presentation |
 | pane | `w CLOSE` | `w` | close pane |
 | resize | `←/h`、`→/l`、`↑/k`、`↓/j` | 方向键、`h` / `j` / `k` / `l` | 按方向 resize，步长 2 |
 | resize | `a OWNER` | `a` | 当前 pane 获取 terminal resize ownership |
 | resize | `= BALANCE` | `=` | balance pane layout |
-| resize | `s LAYOUT LOCK`、`space LAYOUT` | `s`、`Space` | 切换 active terminal view 的 view-local layout lock 与 layout mode；不等同于 core terminal size lock |
+| resize | `s LOCK`、`space LAYOUT` | `s`、`Space` | `s` 切换 core terminal size lock；`Space` 切换 active terminal view 的 view-local layout mode |
 | resize | `S+arrows PAN`、`0/$/^/B ALIGN`、`m/\|/_ CENTER`、`r RESET` | `Shift+WASD`、Shift 方向键、`0`、`$`、`^`、`B`、`m`、`|`、`_`、`r` | 修改 active terminal view 的 view-local content layout |
 | global | `h HEADER` | `h` | hide/show header |
 | global | `f FOOTER` | `f` | hide/show footer |
@@ -175,8 +175,8 @@
 
 | Mode | 快捷键 | 状态 | 缺口 |
 | --- | --- | --- | --- |
-| pane | `s LAYOUT LOCK` | 已实现 | 与 resize mode `s LAYOUT LOCK` 复用同一 view-local terminal layout command；无 active terminal view 时显示 reducer-owned toast |
-| resize | `s LAYOUT LOCK`、`Space LAYOUT`、`Shift+WASD/Shift+Arrow PAN`、`0/$/^/B ALIGN`、`m/|/_ CENTER`、`r RESET` | 已实现 | 状态挂在 `TerminalViewBinding.Layout`，键盘与 footer action 走统一 semantic command，render projector 展示 layout metadata；core terminal size lock 另由 terminal resize control 投影 |
+| pane | `s LOCK` | 已实现 | 通过 terminal service effect 写 `termx.size_lock` tag；缺少 terminal pool metadata 时先刷新，不盲写覆盖 tags |
+| resize | `s LOCK`、`Space LAYOUT`、`Shift+WASD/Shift+Arrow PAN`、`0/$/^/B ALIGN`、`m/|/_ CENTER`、`r RESET` | 已实现 | `s` 是 terminal 级 size lock；其余 layout/pan/align/center/reset 状态挂在 `TerminalViewBinding.Layout`，只改变当前 view 的内容投影 |
 | floating | `o OVERVIEW`、`1-9 SUMMON` | 已实现 | overview 是 reducer-owned overlay state；floating mode 与 overview content action 统一走 `FloatingCommandSummon` |
 | floating | `v ALL`、`= FIT`、`s AUTO-FIT` | 已实现 | 统一走 `FloatingCommandToggleAll`、`FloatingCommandFit`、`FloatingCommandToggleAutoFit`；fit 基于当前 terminal live/session 尺寸，auto-fit 会在后续 live 尺寸变化时自动刷新 floating rect |
 | display | `Home/End`、`g/G`、`u/d`、`Enter copy 后退出` | 已核验 | 已走 authoritative `HistoryWindow` 上的 copy reducer；`Enter` 复制 selection 后退出 copy mode；见 `termx-tui-v3/app/integration_test.go` |

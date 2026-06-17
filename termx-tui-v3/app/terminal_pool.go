@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -127,6 +128,19 @@ type TerminalPoolEditResultMsg struct {
 
 func (TerminalPoolEditResultMsg) isMsg() {}
 
+type TerminalSizeLockToggleRequestMsg struct{}
+
+func (TerminalSizeLockToggleRequestMsg) isMsg() {}
+
+type TerminalSizeLockToggleResultMsg struct {
+	TerminalID string
+	Tags       map[string]string
+	Locked     bool
+	Err        error
+}
+
+func (TerminalSizeLockToggleResultMsg) isMsg() {}
+
 func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
@@ -162,6 +176,10 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 			return reduceTerminalPoolEditRequest(root, msg, deps)
 		case TerminalPoolEditResultMsg:
 			return reduceTerminalPoolEditResult(root, msg)
+		case TerminalSizeLockToggleRequestMsg:
+			return reduceTerminalSizeLockToggleRequest(root, deps)
+		case TerminalSizeLockToggleResultMsg:
+			return reduceTerminalSizeLockToggleResult(root, msg)
 		default:
 			return root, nil
 		}
@@ -446,6 +464,87 @@ func reduceTerminalPoolEditResult(root state.Root, msg TerminalPoolEditResultMsg
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "pool.edit", Body: msg.TerminalID})
 	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+}
+
+func reduceTerminalSizeLockToggleRequest(root state.Root, deps LiveDeps) (state.Root, []Effect) {
+	if deps.Terminal == nil {
+		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.size", Body: "terminal service missing"})
+		return root.Advance(), nil
+	}
+	target, ok := activeTerminalSizeLockTarget(root)
+	if !ok {
+		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.size", Body: "no active terminal"})
+		return root.Advance(), nil
+	}
+	tags, ok := terminalPoolTags(root.TerminalPool, target.TerminalID)
+	if !ok {
+		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.size", Body: "terminal metadata pending"})
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	}
+	locked := !terminalmeta.SizeLocked(tags)
+	if locked {
+		tags[terminalmeta.SizeLockTag] = terminalmeta.SizeLockLock
+	} else {
+		delete(tags, terminalmeta.SizeLockTag)
+	}
+	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+		err := deps.Terminal.EditTags(ctx, services.TerminalEditTagsRequest{TerminalID: target.TerminalID, Tags: tags})
+		return TerminalSizeLockToggleResultMsg{TerminalID: target.TerminalID, Tags: tags, Locked: locked, Err: err}
+	}}}
+}
+
+func reduceTerminalSizeLockToggleResult(root state.Root, msg TerminalSizeLockToggleResultMsg) (state.Root, []Effect) {
+	errText := errorString(msg.Err)
+	root.TerminalPool = root.TerminalPool.ApplyTagsEdited(msg.TerminalID, msg.Tags, errText)
+	if errText != "" {
+		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.size", Body: errText})
+		return root.Advance(), nil
+	}
+	root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock(msg.TerminalID, msg.Locked)
+	body := "terminal size lock disabled"
+	if msg.Locked {
+		body = "terminal size is locked"
+	}
+	root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.size", Body: body})
+	return root.Advance(), nil
+}
+
+type terminalSizeLockTarget struct {
+	TerminalID string
+}
+
+func activeTerminalSizeLockTarget(root state.Root) (terminalSizeLockTarget, bool) {
+	if binding, ok := activeTerminalViewBinding(root); ok && binding.TerminalID != "" {
+		return terminalSizeLockTarget{TerminalID: binding.TerminalID}, true
+	}
+	shell := root.Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		for _, floating := range shell.Floatings {
+			if floating.ID == shell.ActiveFloatingID && floating.Pane.TerminalID != "" {
+				return terminalSizeLockTarget{TerminalID: floating.Pane.TerminalID}, true
+			}
+		}
+	}
+	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok && pane.TerminalID != "" {
+		return terminalSizeLockTarget{TerminalID: pane.TerminalID}, true
+	}
+	if root.Session.TerminalID != "" {
+		return terminalSizeLockTarget{TerminalID: root.Session.TerminalID}, true
+	}
+	return terminalSizeLockTarget{}, false
+}
+
+func terminalPoolTags(pool state.TerminalPoolStore, terminalID string) (map[string]string, bool) {
+	for _, item := range pool.Items {
+		if item.TerminalID == terminalID {
+			tags := cloneStringMap(item.Tags)
+			if tags == nil {
+				tags = map[string]string{}
+			}
+			return tags, true
+		}
+	}
+	return nil, false
 }
 
 func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.TerminalPoolItem {

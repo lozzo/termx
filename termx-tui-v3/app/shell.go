@@ -424,7 +424,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 	case render.ActionResizeBalance:
 		return reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandBalance, Source: state.PaneCommandSourceMouse})
 	case render.ActionResizeLayoutLock:
-		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "toggle-lock"})
+		return root, []Effect{terminalSizeLockToggleEffect()}
 	case render.ActionResizeLayoutToggle:
 		return applyActiveTerminalViewLayoutCommand(root, state.TerminalViewLayoutCommand{Action: "toggle-layout"})
 	case render.ActionResizeLayoutPan:

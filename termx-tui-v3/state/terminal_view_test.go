@@ -211,3 +211,29 @@ func TestTerminalViewLayoutCommandsNormalizeAndReset(t *testing.T) {
 		t.Fatalf("reset should restore normalized default layout, got %#v", binding.Layout)
 	}
 }
+
+func TestTerminalViewApplyTerminalSizeLockKeepsOwnerIdentityAndBlocksResize(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	store = store.ApplyTerminalSizeLock("term-1", true)
+	owner, _ := store.PaneBinding("pane-1")
+	follower, _ := store.PaneBinding("pane-2")
+	if owner.ResizeRole != TerminalResizeRoleOwner || !owner.HasResizeOwner() || owner.HasAuthoritativeResizeOwner() || !owner.SizeLocked || owner.ControlReason != "size_locked" {
+		t.Fatalf("locked owner should keep owner identity without resize authority, got %#v", owner)
+	}
+	if follower.HasResizeOwner() || follower.CanResize || !follower.SizeLocked || follower.ControlReason != "size_locked" {
+		t.Fatalf("follower should inherit terminal lock without owner identity, got %#v", follower)
+	}
+
+	store = store.ApplyTerminalSizeLock("term-1", false)
+	owner, _ = store.PaneBinding("pane-1")
+	follower, _ = store.PaneBinding("pane-2")
+	if owner.SizeLocked || !owner.CanResize || owner.ControlReason != "" {
+		t.Fatalf("unlock should restore owner resize authority, got %#v", owner)
+	}
+	if follower.SizeLocked || follower.CanResize || follower.ControlReason != "" {
+		t.Fatalf("unlock should clear follower lock projection without granting authority, got %#v", follower)
+	}
+}
