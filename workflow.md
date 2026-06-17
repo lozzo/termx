@@ -238,10 +238,11 @@
 | 215E1-R65. SK acked terminal input protocol | 完成 | `internal/protocol/`、`termx-core-v2/`、`termx-tui-v3/services/`、`workflow.md` | 已把 tui-v3 active view 普通输入从无 ack 的 stream input 切到 request-response `input` 方法：daemon 按 terminal/channel/surface/view 校验后写入 process，失效 channel 不再静默丢弃，而是返回错误触发当前 view reattach/replay |
 | 215E1-R66. SK exited terminal recovery panel | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/`、`termx-tui-v3/`、`workflow.md` | 已给 tui-v3 panel 连接到已退出 terminal 的场景补完整业务：core/protocol 传递退出时间、退出码和命令，pane/floating 显示退出信息；restart 保留当前 view 绑定意图但清旧 channel，并逐 view 重新 attach |
 | 215E1-R67. SK root restart and interactive exit CTA | 完成 | `termx-cli/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复默认 root TUI 退出后重进遇到固定 root terminal duplicate：固定 root 已退出时先 restart 再 attach；live exited 内容升级为居中的正式 exited CTA，键盘上下/Enter 与鼠标点击 restart/picker 都会进入真实 action 链路 |
+| 215E1-R68. SK exited lifecycle after live output | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已把 live exited 信息和 CTA 放到 terminal 内容尾部；内容超过视口时默认显示最后历史行和退出提示，并让鼠标 hit region 跟随尾部对齐后的实际行 |
 
 当前下一步：
 
-- `215E1-R67 root restart and interactive exit CTA` 已完成
+- `215E1-R68 exited lifecycle after live output` 已完成
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
 
 ## 6. 必做证据
@@ -336,4 +337,5 @@
 - 已修复一条真实主链回归：copy mode 的 latest / older 现在走异步 effect；真实 protocol 一慢时，`Ctrl-V` 会立刻进入 `authoritative history window pending`，`PageUp`、mouse wheel up 不再同步卡住 runtime 主循环。
 - 已修复一条真实性能回归：`history.window` 协议虽然有 `Limit`，但 core 内部之前仍会先全量冻结或全量投影历史，再切最后一页；现在 latest / older 会从目标位置按页倒序收集，copy mode frozen snapshot 也不再对整份 snapshot 全量 reflow 后切页。
 - `215E1-R66` 已完成：terminal 退出后 core/protocol/tui-v3 会保留退出时间、退出码和 command；pane/floating 的退出态渲染显示这些信息；restart 不复用旧 channel，而是保留 TerminalView 绑定意图并逐 view 重新 attach，避免 sibling view 被覆盖或失效。
+- `215E1-R68` 已完成：live exited 信息不再压在历史前面，而是追加到 terminal 内容尾部；视口默认显示尾部，使最后历史行、退出时间、命令和 restart/picker CTA 一起可见。
 - 已知环境缺口：本机当前没有 `protoc` 与 `protoc-gen-go`；只有在需要重新生成 proto 时才构成阻塞。

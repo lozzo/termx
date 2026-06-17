@@ -1917,7 +1917,7 @@ func TestRenderVMBuilderProjectsLiveExitLifecycle(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderShowsLiveExitLifecycleBeforeFullOutput(t *testing.T) {
+func TestRenderVMBuilderAppendsLiveExitLifecycleAfterFullOutput(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC)
 	lines := make([]string, 24)
 	for index := range lines {
@@ -1954,12 +1954,24 @@ func TestRenderVMBuilderShowsLiveExitLifecycleBeforeFullOutput(t *testing.T) {
 	if content.Kind != ContentExitedPane {
 		t.Fatalf("live exited content should use exited pane CTA kind, got %#v", content.Kind)
 	}
+	if got := content.Lines[0].PlainString(); got != "screen row A" {
+		t.Fatalf("exited content must keep previous live output at the front, got %q", got)
+	}
+	if got := content.Lines[23].PlainString(); got != "screen row X" {
+		t.Fatalf("exited content must append lifecycle after the last live row, got %q", got)
+	}
+	if got := content.Lines[24].PlainString(); got != "" {
+		t.Fatalf("exited lifecycle should be separated from the last live row, got %q", got)
+	}
 	rendered := RenderContentViewport(ContentRenderRequest{
-		Rect:    Rect{W: 80, H: 5},
+		Rect:    Rect{W: 80, H: 8},
 		Content: content,
 	})
 	got := plainContentViewportLines(rendered.Lines)
 	want := []string{
+		"screen row W",
+		"screen row X",
+		"",
 		"terminal exited: term-live code:23 done",
 		"exited at: 2026-06-17T12:30:00Z",
 		"command: bash -lc exit 23",
@@ -1968,11 +1980,21 @@ func TestRenderVMBuilderShowsLiveExitLifecycleBeforeFullOutput(t *testing.T) {
 	}
 	for index, wantLine := range want {
 		if strings.TrimSpace(got[index]) != wantLine {
-			t.Fatalf("exit lifecycle should be visible and centered before full live output row=%d got=%#v want=%#v all=%#v", index, got[index], wantLine, got)
+			t.Fatalf("exit lifecycle should follow the visible live tail row=%d got=%#v want=%#v all=%#v", index, got[index], wantLine, got)
 		}
 	}
-	if !strings.HasPrefix(got[0], "                    ") || !strings.Contains(got[3], "► R restart current terminal ◄") {
-		t.Fatalf("exit lifecycle should be horizontally centered, got %#v", got)
+	if !strings.HasPrefix(got[3], "                    ") || !strings.Contains(got[6], "► R restart current terminal ◄") {
+		t.Fatalf("exit lifecycle should stay horizontally centered after live tail, got %#v", got)
+	}
+	restart := hitRegionByAction(t, rendered.HitRegions, ActionExitedRestart.String())
+	restartWidth := DisplayWidth("► R restart current terminal ◄")
+	if restart.Rect != (Rect{X: (80 - restartWidth) / 2, Y: 6, W: restartWidth, H: 1}) {
+		t.Fatalf("restart hit region should follow bottom-aligned exited action, got %#v", restart)
+	}
+	picker := hitRegionByAction(t, rendered.HitRegions, ActionExitedReconnect.String())
+	pickerWidth := DisplayWidth("[ Ctrl-F choose another terminal ]")
+	if picker.Rect != (Rect{X: (80 - pickerWidth) / 2, Y: 7, W: pickerWidth, H: 1}) {
+		t.Fatalf("picker hit region should follow bottom-aligned exited action, got %#v", picker)
 	}
 	if !contentHasAction(content, ActionExitedRestart.String()) || !contentHasAction(content, ActionExitedReconnect.String()) {
 		t.Fatalf("expected exited live content actions, got %#v", content.HitRegions)

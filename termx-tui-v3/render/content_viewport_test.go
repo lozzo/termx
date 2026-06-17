@@ -285,12 +285,65 @@ func TestContentViewportCentersExitedPaneActionsAndStyles(t *testing.T) {
 		t.Fatalf("exited actions should keep action-specific styles, got %#v", result.Lines)
 	}
 	restart := hitRegionByAction(t, result.HitRegions, ActionExitedRestart.String())
-	if restart.Rect != (Rect{X: 27, Y: 2, W: 25, H: 1}) {
+	restartWidth := DisplayWidth("► R restart current terminal ◄")
+	if restart.Rect != (Rect{X: (80 - restartWidth) / 2, Y: 3, W: restartWidth, H: 1}) {
 		t.Fatalf("exited restart hit region should follow centered text, got %#v", restart)
 	}
 	picker := hitRegionByAction(t, result.HitRegions, ActionExitedReconnect.String())
-	if picker.Rect != (Rect{X: 25, Y: 3, W: 30, H: 1}) {
+	pickerWidth := DisplayWidth("[ Ctrl-F choose another terminal ]")
+	if picker.Rect != (Rect{X: (80 - pickerWidth) / 2, Y: 4, W: pickerWidth, H: 1}) {
 		t.Fatalf("exited picker hit region should follow centered text, got %#v", picker)
+	}
+}
+
+func TestContentViewportBottomAlignsExitedPaneTailAndActions(t *testing.T) {
+	lines := []Line{
+		NewLine("history A"),
+		NewLine("history B"),
+		NewLine("history C"),
+		NewLine("history D"),
+		NewLine(""),
+		NewLine("terminal exited: term-1 code:23"),
+		NewLine("exited at: 2026-06-17T12:30:00Z"),
+		NewLine("command: bash -lc exit 23"),
+		centeredStyledLine("► R restart current terminal ◄", StyleWarning),
+		centeredStyledLine("[ Ctrl-F choose another terminal ]", StyleMuted),
+	}
+	regions := []HitRegion{
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 8, W: DisplayWidth("► R restart current terminal ◄"), H: 1}, ActionID: ActionExitedRestart.String()},
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: DisplayWidth("[ Ctrl-F choose another terminal ]"), H: 1}, ActionID: ActionExitedReconnect.String()},
+	}
+
+	result := RenderContentViewport(ContentRenderRequest{
+		Rect:    Rect{W: 80, H: 8},
+		Content: ContentVM{Kind: ContentExitedPane, Lines: lines, HitRegions: regions},
+	})
+
+	got := plainContentViewportLines(result.Lines)
+	want := []string{
+		"history C",
+		"history D",
+		"",
+		"terminal exited: term-1 code:23",
+		"exited at: 2026-06-17T12:30:00Z",
+		"command: bash -lc exit 23",
+		"► R restart current terminal ◄",
+		"[ Ctrl-F choose another terminal ]",
+	}
+	for index, wantLine := range want {
+		if strings.TrimSpace(got[index]) != wantLine {
+			t.Fatalf("exited content should render the tail after history row=%d got=%q want=%q all=%#v", index, got[index], wantLine, got)
+		}
+	}
+	restart := hitRegionByAction(t, result.HitRegions, ActionExitedRestart.String())
+	restartWidth := DisplayWidth("► R restart current terminal ◄")
+	if restart.Rect != (Rect{X: (80 - restartWidth) / 2, Y: 6, W: restartWidth, H: 1}) {
+		t.Fatalf("restart hit region should follow tail-aligned action, got %#v", restart)
+	}
+	picker := hitRegionByAction(t, result.HitRegions, ActionExitedReconnect.String())
+	pickerWidth := DisplayWidth("[ Ctrl-F choose another terminal ]")
+	if picker.Rect != (Rect{X: (80 - pickerWidth) / 2, Y: 7, W: pickerWidth, H: 1}) {
+		t.Fatalf("picker hit region should follow tail-aligned action, got %#v", picker)
 	}
 }
 

@@ -38,18 +38,15 @@ func appendTranslatedContentRegions(out []HitRegion, content ContentVM, origin R
 	if !centeredActionContentKind(content.Kind) || len(content.Lines) == 0 {
 		return appendTranslatedRegionsWithOwner(out, content.HitRegions, origin, ownerID, viewport)
 	}
-	startY := 0
-	if origin.H >= len(content.Lines)+2 {
-		startY = 1
-	}
+	firstLine, startY := centeredActionContentWindow(content.Kind, len(content.Lines), origin.H)
 	regions := make([]HitRegion, 0, len(content.HitRegions))
 	for _, region := range content.HitRegions {
-		if region.Rect.Y < 0 || region.Rect.Y >= len(content.Lines) {
+		if region.Rect.Y < firstLine || region.Rect.Y >= len(content.Lines) {
 			continue
 		}
 		line := content.Lines[region.Rect.Y]
 		region.Rect.X = centeredLineTextX(line, origin.W)
-		region.Rect.Y += startY
+		region.Rect.Y = startY + region.Rect.Y - firstLine
 		region.Rect.W = minInt(line.Width(), origin.W)
 		region.Rect.H = 1
 		regions = append(regions, region)

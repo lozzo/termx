@@ -965,6 +965,51 @@ func TestMeasureLayoutCentersEmptyPaneActionHitRegions(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutBottomAlignsExitedPaneActionHitRegions(t *testing.T) {
+	lines := []Line{
+		NewLine("history A"),
+		NewLine("history B"),
+		NewLine("history C"),
+		NewLine("history D"),
+		NewLine(""),
+		NewLine("terminal exited: term-1 code:23"),
+		NewLine("exited at: 2026-06-17T12:30:00Z"),
+		NewLine("command: bash -lc exit 23"),
+		centeredStyledLine("► R restart current terminal ◄", StyleWarning),
+		centeredStyledLine("[ Ctrl-F choose another terminal ]", StyleMuted),
+	}
+	regions := []HitRegion{
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 8, W: DisplayWidth("► R restart current terminal ◄"), H: 1}, ActionID: ActionExitedRestart.String()},
+		{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: DisplayWidth("[ Ctrl-F choose another terminal ]"), H: 1}, ActionID: ActionExitedReconnect.String()},
+	}
+	shell := ShellVM{
+		Header: HeaderVM{Visible: false},
+		Footer: FooterVM{Visible: false},
+		Layout: LayoutVM{Panels: []PanelVM{{
+			ID:           "pane-1",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content:      ContentVM{Kind: ContentExitedPane, Lines: lines, HitRegions: regions},
+		}}},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 82, H: 10})
+	if len(plan.Panels) != 1 {
+		t.Fatalf("expected one panel, got %#v", plan.Panels)
+	}
+	contentRect := plan.Panels[0].ContentRect
+	restart := hitRegionByAction(t, plan.HitRegions, ActionExitedRestart.String())
+	picker := hitRegionByAction(t, plan.HitRegions, ActionExitedReconnect.String())
+	restartWidth := DisplayWidth("► R restart current terminal ◄")
+	pickerWidth := DisplayWidth("[ Ctrl-F choose another terminal ]")
+	if restart.Rect != (Rect{X: contentRect.X + (contentRect.W-restartWidth)/2, Y: contentRect.Y + 6, W: restartWidth, H: 1}) {
+		t.Fatalf("restart hit region should match bottom-aligned visible action content=%#v got=%#v", contentRect, restart)
+	}
+	if picker.Rect != (Rect{X: contentRect.X + (contentRect.W-pickerWidth)/2, Y: contentRect.Y + 7, W: pickerWidth, H: 1}) {
+		t.Fatalf("picker hit region should match bottom-aligned visible action content=%#v got=%#v", contentRect, picker)
+	}
+}
+
 func hitRegionIndexByAction(regions []HitRegion, actionID string) int {
 	for i, region := range regions {
 		if region.ActionID == actionID {

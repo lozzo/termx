@@ -157,32 +157,47 @@ func renderCenteredActionContentViewport(request ContentRenderRequest) ContentRe
 	for row := 0; row < rect.H; row++ {
 		rendered[row] = NewLine(strings.Repeat(" ", rect.W))
 	}
-	startY := 0
-	if rect.H >= len(lines)+2 {
-		startY = 1
-	}
+	firstLine, startY := centeredActionContentWindow(content.Kind, len(lines), rect.H)
 	translatedRegions := make([]HitRegion, 0, len(content.HitRegions))
-	for index, line := range lines {
-		y := startY + index
+	for index := firstLine; index < len(lines); index++ {
+		line := lines[index]
+		y := startY + index - firstLine
 		if y < 0 || y >= rect.H {
 			continue
 		}
 		centered := centerContentLine(line, rect.W)
 		rendered[y] = centered
-		if index > 0 && index-1 < len(content.HitRegions) {
-			region := content.HitRegions[index-1]
-			region.Rect.X = centeredLineTextX(line, rect.W)
-			region.Rect.Y = y
-			region.Rect.W = minInt(line.Width(), rect.W)
-			region.Rect.H = 1
-			translatedRegions = append(translatedRegions, region)
+	}
+	for _, region := range content.HitRegions {
+		if region.Rect.Y < firstLine || region.Rect.Y >= len(lines) {
+			continue
 		}
+		line := lines[region.Rect.Y]
+		region.Rect.X = centeredLineTextX(line, rect.W)
+		region.Rect.Y = startY + region.Rect.Y - firstLine
+		region.Rect.W = minInt(line.Width(), rect.W)
+		region.Rect.H = 1
+		translatedRegions = append(translatedRegions, region)
 	}
 	return ContentRenderResult{Lines: rendered, Cursor: Cursor{}, HitRegions: translatedRegions, Metadata: RenderMetadata{Width: rect.W, Height: rect.H}}
 }
 
 func centeredActionContentKind(kind ContentKind) bool {
 	return kind == ContentEmptyPane || kind == ContentExitedPane
+}
+
+func centeredActionContentWindow(kind ContentKind, lineCount int, height int) (int, int) {
+	if height <= 0 || lineCount <= 0 {
+		return 0, 0
+	}
+	if kind == ContentExitedPane && lineCount > height {
+		// 中文说明：退出信息属于内容尾部；内容超过视口时默认显示最后几行历史和退出提示。
+		return lineCount - height, 0
+	}
+	if height >= lineCount+2 {
+		return 0, 1
+	}
+	return 0, 0
 }
 
 func centerContentLine(line Line, width int) Line {

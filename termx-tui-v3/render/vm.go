@@ -1118,17 +1118,25 @@ func buildLiveContentVMWithSelection(surface state.TerminalSurfaceStore, session
 			content.Cursor = Cursor{}
 		}
 	} else if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
-		// 退出态必须先展示生命周期信息；真实 live 内容满屏时，追加到末尾会被当前视口裁掉。
+		// 退出态是 terminal 内容流的尾部；viewport 负责看尾部，避免覆盖最后一屏历史。
 		content = liveExitedContent(surface, session, content.Lines, selectedIndex)
 	}
 	return content
 }
 
 func liveExitedContent(surface state.TerminalSurfaceStore, session state.TerminalSessionStore, previous []Line, selectedIndex int) ContentVM {
-	lines, regions := liveExitedContentLines(surface, session, selectedIndex)
+	exitLines, regions := liveExitedContentLines(surface, session, selectedIndex)
+	lines := make([]Line, 0, len(previous)+len(exitLines)+1)
 	if len(previous) > 0 {
-		lines = append(lines, NewLine(""))
 		lines = append(lines, previous...)
+		lines = append(lines, NewLine(""))
+	}
+	actionOffset := len(lines)
+	lines = append(lines, exitLines...)
+	if actionOffset > 0 {
+		for index := range regions {
+			regions[index].Rect.Y += actionOffset
+		}
 	}
 	return ContentVM{
 		Kind:       ContentExitedPane,
