@@ -219,11 +219,12 @@
 | 215E1-R46. SK fullscreen home clear 保留 primary 页 | 完成 | `termx-core-v2/`、`workflow.md` | 已处理真实现场“100 行 stress 后进入 Codex/全屏，退出后 copy/history 只剩到 000058”：全屏入口常见 `CSI H` + `CSI J/0J` 现在按 page-break 处理，先提交 primary frontier，再让新 UI 从新页开始，不再删除屏幕上的 primary logical line |
 | 215E1-R47. SK alt screen 退出最后一帧样式保真开关 | 完成 | `termx-core-v2/live/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理真实现场“htop 退出后最后 UI 还在但颜色布局丢失”：live surface 退出 alt-screen 时按 styled cell replay 保留最后一帧，并提供默认开启、后续可迁移到配置的开关 |
 | 215E1-R48. SK alt screen 退出最后一帧进入 history | 完成 | `termx-core-v2/`、`termx-core-v2/docs/architecture.md`、`workflow.md` | 已处理真实现场“alt-screen 最后一帧只在 live 里保留，history/copy 里看不到”：退出 alt-screen 时按同一保留开关把最后一帧追加成 authoritative history page |
+| 215E1-R49. SK terminal view owner size 语义回归 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复 terminal view owner 已恢复但 resize 请求仍携带 follower policy 的错位；terminal size lock 展示与 view-local layout lock 已拆开，locked owner 仍显示 owner 但不发 resize |
 
 当前下一步：
 
-- `215E1-R48 alt screen 退出最后一帧进入 history` 已完成
-- 已确认 alt-screen 运行期间仍不持续污染 history；退出瞬间保留的最后一帧会按顺序进入 authoritative history/copy 链路，并保留颜色样式
+- `215E1-R49 terminal view owner size 语义回归` 已完成
+- owner resize 请求现在使用 view binding 自己的 resize policy / channel / surface / view；active follower 不用自身 rect 改 PTY，但会按同 terminal owner view rect 重申 resize；terminal size lock chrome 只展示 core 返回的 terminal lock，view-local layout lock 不再伪装成 terminal lock
 
 ## 6. 必做证据
 

@@ -68,22 +68,22 @@ tuiv2 的 `paneContentOffsetRange(viewportSize, contentSize)` 用 `min(0, viewpo
 
 | 主题 | 当前 v3 状态 | 与 tuiv2/目标合同的差异 |
 | --- | --- | --- |
-| owner restore | storage restore 已按保存的 `ResizeRole` attach，owner 优先 attach。 | 仍需确认 restore 后 owner content rect 是否必然触发一次 PTY resize，尤其是退出前 pane 尺寸与重进后 viewport 不一致时。 |
-| resize role | `TerminalViewBinding.ResizeRole/CanResize/OwnerViewID` 已接收 core resize control。 | `OwnerBinding` 只认 `owner && CanResize`，但 UI 文案也需要明确区分 `owner but size_locked` 与 `follow`。 |
-| terminal size lock | `TerminalViewBinding.SizeLocked` 保存 core 返回的 terminal lock。 | `TerminalViewLayout.SizeLocked` 也是 `SizeLocked`，但它是 view-local layout lock。两个名字相同，容易把 terminal lock 与本地投影锁混用。 |
-| view-local layout | `TerminalViewLayout.Mode/Pan/Align` 会投影到 renderer。 | 当前 `s LOCK` 文档和测试走 view-local layout lock；这与 tuiv2 `s` 是 terminal metadata size lock 不一致，需要产品确认保留哪个快捷键语义。 |
-| dot rendering | `RenderContentViewport` 已只对 live terminal known extent 画 `·`，cursor 也走同一 extent 变换并越界隐藏。 | 需要补验收：owner 未 size lock 且 resize 稳定后，content extent 应等于 owner content rect，不应因为 layout/metrics 残留出现大片点。 |
+| owner restore | storage restore 已按保存的 `ResizeRole` attach，owner 优先 attach；layout resize 会按可 resize owner view 的 content rect 重申 PTY size。 | 还需真实端到端 smoke 继续覆盖不同 viewport 重进。 |
+| resize role | `TerminalViewBinding.ResizeRole/CanResize/OwnerViewID` 已接收 core resize control；`HasResizeOwner` 表达 owner 身份，`HasAuthoritativeResizeOwner` 表达可 resize owner。 | size locked owner 会继续显示 `◆ owner`，但 `CanResize=false` 不发 resize。 |
+| terminal size lock | `TerminalViewBinding.SizeLocked` 保存 core 返回的 terminal lock，并驱动 chrome lock 图标。 | `TerminalViewLayout.SizeLocked` 仍是 view-local layout lock；文档/UI 已标为 layout lock，不能冒充 terminal lock。 |
+| view-local layout | `TerminalViewLayout.Mode/Pan/Align` 会投影到 renderer。 | 当前 `s LAYOUT LOCK` 仍走 view-local layout lock；若要完全复刻 tuiv2 `s` 的 terminal metadata size lock，需要单独接 terminal metadata edit 主链。 |
+| dot rendering | `RenderContentViewport` 已只对 live terminal known extent 画 `·`，cursor 也走同一 extent 变换并越界隐藏。 | owner 未 size lock 且 resize 稳定后，content extent 应收敛到 owner content rect；显式 center/pan/layout projection 仍可产生 extent hint。 |
 | replacement owner | `promoteReplacementOwnerLocked` 会在 owner view 删除后自动提升另一个绑定为 owner。 | 旧文档曾指出这偏离 shared terminal 产品语义；需确认 owner 关闭后是冻结等待显式接管，还是自动接任。 |
 | follower input | v3 输入按 active terminal binding channel 发送。 | 输入不应隐式 resize 或抢 owner；几何动作需要显式 takeover 合同。 |
 
 ## 建议确认后的修复顺序
 
-1. 先命名拆清：terminal size lock 只来自 core resize control/metadata；view-local layout lock 改名或在 UI 上避免叫 size lock。
-2. owner attach/restore/host resize/split/floating resize 后，都以 owner content rect 发 authoritative resize；结果以 core `CanResize/SizeLocked/OwnerViewID` 为准。
-3. follower/observer 的 pane/floating 几何变化不得发 PTY resize；需要 fullscreen/zoom/fit 时先走显式 owner takeover。
-4. dot hint 只表达 extent 外区域；owner 未锁的稳定态必须让 extent 收敛到 content rect，除非用户显式选择本地 projection 模式。
-5. center/pan/align 必须统一变换 content、cursor、selection/hit region；cursor 超出 content rect 就隐藏。
-6. owner 删除或断开后的 replacement owner 策略单独确认：若采用 tuiv2 产品修正方向，应冻结为 follower/needs explicit owner，而不是自动提升。
+1. 已收敛：terminal size lock 只来自 core resize control/metadata；view-local layout lock 在文档/UI 中标为 layout lock。
+2. 已收敛：owner attach/restore/host resize/split/floating resize 后，以可 resize owner content rect 发 authoritative resize；结果以 core `CanResize/SizeLocked/OwnerViewID` 为准。
+3. 已收敛：active follower 不用自身 content rect 改 PTY size；若同 terminal 的 owner view 可 resize，则按 owner view content rect 重申。
+4. 已收敛：dot hint 只表达 extent 外区域；owner 未锁的稳定态应让 extent 收敛到 content rect，除非用户显式选择本地 projection 模式。
+5. 已有基础：center/pan/align 统一变换 content 和 cursor；cursor 超出 content rect 隐藏。selection/hit region 的最终联动仍按各内容类型验收。
+6. 待确认：owner 删除或断开后的 replacement owner 策略。如果采用 tuiv2 产品修正方向，应冻结为 follower/needs explicit owner，而不是自动提升。
 
 ## 验收用例草案
 

@@ -236,6 +236,42 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderSeparatesTerminalSizeLockFromViewLayoutLock(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true)
+	binding.Layout = binding.Layout.Apply(state.TerminalViewLayoutCommand{Action: "toggle-lock"})
+	binding.Layout = binding.Layout.Apply(state.TerminalViewLayoutCommand{Action: "center"})
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+
+	panel := NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
+	if panel.Chrome.Terminal.Locked {
+		t.Fatalf("view-local layout lock must not present as terminal size lock, got %#v", panel.Chrome.Terminal)
+	}
+	if panel.Chrome.Terminal.LayoutMode != state.TerminalViewLayoutCenter || !terminalChromeLayoutAdjusted(panel.Chrome.Terminal) {
+		t.Fatalf("view-local layout state should still project as layout adjustment, got %#v", panel.Chrome.Terminal)
+	}
+
+	binding.SizeLocked = true
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+	panel = NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
+	if !panel.Chrome.Terminal.Locked {
+		t.Fatalf("core terminal size lock must drive terminal lock chrome, got %#v", panel.Chrome.Terminal)
+	}
+}
+
+func TestRenderVMBuilderKeepsLockedOwnerChromeAsOwner(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", false)
+	binding.SizeLocked = true
+	binding.ControlReason = "size_locked"
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+
+	panel := NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]
+	if panel.Chrome.Terminal.Owner.Text != "◆ owner" || panel.Chrome.Terminal.TakeOwner || panel.Chrome.Terminal.CanResize || !panel.Chrome.Terminal.Locked {
+		t.Fatalf("size-locked owner should stay owner without take-owner action, got %#v", panel.Chrome.Terminal)
+	}
+}
+
 func TestRenderVMBuilderUsesTerminalPoolTitleForSharedTerminalChrome(t *testing.T) {
 	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-main"}, state.SplitDirectionVertical)
 	root := state.Root{

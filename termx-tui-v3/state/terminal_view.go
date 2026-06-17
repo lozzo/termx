@@ -280,7 +280,7 @@ func (store TerminalViewStore) Bindings() []TerminalViewBinding {
 
 func (store TerminalViewStore) OwnerBinding(terminalID string) (TerminalViewBinding, bool) {
 	for _, binding := range store.Views {
-		if binding.TerminalID == terminalID && binding.ResizeRole == TerminalResizeRoleOwner && binding.CanResize {
+		if binding.TerminalID == terminalID && binding.HasAuthoritativeResizeOwner() {
 			return binding, true
 		}
 	}
@@ -413,7 +413,7 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 		binding.ViewID = projection.ViewID
 	}
 	store.Views = cloneTerminalViewBindings(store.Views)
-	if binding.hasAuthoritativeResizeOwner() {
+	if binding.HasResizeOwner() {
 		store.demoteResizeOwnersLocked(binding.TerminalID, viewID)
 	}
 	store.Views[viewID] = binding
@@ -425,7 +425,14 @@ func (binding TerminalViewBinding) hasAuthoritativeResizeOwner() bool {
 }
 
 func (binding TerminalViewBinding) HasAuthoritativeResizeOwner() bool {
-	if binding.ResizeRole != TerminalResizeRoleOwner || !binding.CanResize {
+	if !binding.CanResize {
+		return false
+	}
+	return binding.HasResizeOwner()
+}
+
+func (binding TerminalViewBinding) HasResizeOwner() bool {
+	if binding.ResizeRole != TerminalResizeRoleOwner {
 		return false
 	}
 	if binding.OwnerViewID != "" {

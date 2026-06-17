@@ -695,6 +695,9 @@ func reduceLiveResize(root state.Root, msg LiveResizeMsg, deps LiveDeps) (state.
 		session.Channel = binding.Channel
 		session.SurfaceID = binding.SurfaceID
 		session.ViewID = binding.ViewID
+		// 中文说明：view-scoped resize 的权限身份必须来自目标 binding；
+		// restore 多个 view 后，全局 session 可能已被最后一个 follower attach 覆盖。
+		session.ResizePolicy = binding.ResizeRole
 	}
 	return root, []Effect{FuncEffect{
 		Async:            true,

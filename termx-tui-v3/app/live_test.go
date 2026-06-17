@@ -312,7 +312,7 @@ func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
 	}
 }
 
-func TestTerminalLayoutResizeOnlyActiveOwnerViewChangesPTYSize(t *testing.T) {
+func TestTerminalLayoutResizeUsesSharedOwnerWhenActiveViewIsFollower(t *testing.T) {
 	reducer := NewTerminalLayoutResizeReducer()
 	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	root := state.Root{
@@ -324,11 +324,18 @@ func TestTerminalLayoutResizeOnlyActiveOwnerViewChangesPTYSize(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
 	next, effects := reducer(root, HostResizeMsg{Cols: 120, Rows: 40})
-	if len(effects) != 0 {
-		t.Fatalf("active follower view must not resize shared PTY, got effects %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("visible shared owner should resize PTY even when active view is follower, got %#v", effects)
+	}
+	ownerMsg := effects[0].(FuncEffect).Run(context.Background()).(LiveResizeMsg)
+	if ownerMsg.ViewID != "view-1" || ownerMsg.Seq != 1 || ownerMsg.Cols <= 0 || ownerMsg.Rows <= 0 {
+		t.Fatalf("resize effect should carry shared owner view identity, got %#v", ownerMsg)
 	}
 	if got, _ := next.TerminalViews.PaneBinding("pane-2"); got.DesiredCols != 40 || got.DesiredRows != 12 || got.RequestSeq != 0 {
 		t.Fatalf("follower layout resize must not mutate desired size, got %#v", got)
+	}
+	if got, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID); got.RequestSeq != 1 || got.DesiredCols != ownerMsg.Cols || got.DesiredRows != ownerMsg.Rows {
+		t.Fatalf("owner desired size should track request, got %#v msg=%#v", got, ownerMsg)
 	}
 
 	root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner("pane-2")
@@ -395,6 +402,45 @@ func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
 	msg, ok := liveResizeMsgFromEffects(effects)
 	if !ok || msg.ViewID != "view-2" || msg.Seq != 1 || msg.Cols <= 40 || msg.Rows <= 12 {
 		t.Fatalf("owner attach result should immediately resize to active content rect, got msg=%#v effects=%#v", msg, effects)
+	}
+}
+
+func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{
+		Session: state.TerminalSessionStore{
+			TerminalID:   "term-1",
+			Channel:      8,
+			Attached:     true,
+			ResizePolicy: state.TerminalResizeRoleFollower,
+			SurfaceID:    "surface-follower",
+			ViewID:       "view-follower",
+		},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-owner", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-owner", "view-owner", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-follower", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface-follower", "view-follower", false))
+	var decision state.TerminalViewResizeDecision
+	root.TerminalViews, decision = root.TerminalViews.RequestViewResize("view-owner", 100, 30)
+	if !decision.Allowed || !decision.Changed {
+		t.Fatalf("expected owner view resize decision, got %#v", decision)
+	}
+
+	next, effects := reducer(root, LiveResizeMsg{TerminalID: "term-1", Cols: 100, Rows: 30, Seq: decision.Seq, ViewID: "view-owner"})
+	if len(effects) != 1 {
+		t.Fatalf("view-scoped owner resize should emit terminal resize effect, got %#v", effects)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	next, _ = reducer(next, msg)
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("expected one terminal resize request, got %#v", terminal.Resizes)
+	}
+	got := terminal.Resizes[0]
+	if got.Channel != 7 || got.ResizePolicy != state.TerminalResizeRoleOwner || got.SurfaceID != "surface-owner" || got.ViewID != "view-owner" {
+		t.Fatalf("view-scoped resize must use owner binding identity, got %#v", got)
+	}
+	if binding, ok := next.TerminalViews.PaneBinding("pane-owner"); !ok || binding.DesiredCols != 100 || binding.DesiredRows != 30 {
+		t.Fatalf("owner binding should track requested desired size, binding=%#v ok=%v", binding, ok)
 	}
 }
 

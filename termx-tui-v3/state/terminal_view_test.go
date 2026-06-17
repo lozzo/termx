@@ -90,7 +90,7 @@ func TestTerminalViewStoreDoesNotPromoteOwnerRoleToResizePermission(t *testing.T
 	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", false))
 
 	binding, _ := store.PaneBinding("pane-1")
-	if binding.ResizeRole != TerminalResizeRoleOwner || binding.CanResize {
+	if binding.ResizeRole != TerminalResizeRoleOwner || binding.CanResize || !binding.HasResizeOwner() || binding.HasAuthoritativeResizeOwner() {
 		t.Fatalf("locked owner should remain owner without resize permission, got %#v", binding)
 	}
 }

@@ -49,13 +49,20 @@ func NewTerminalLayoutResizeReducer() Reducer {
 
 func resizeOwnerTerminalContentRect(root state.Root, fallbackViewport render.Rect) (state.TerminalViewBinding, render.Rect, bool) {
 	if activeBinding, hasActiveBinding := activeTerminalViewBinding(root); hasActiveBinding {
-		if activeBinding.ResizeRole != state.TerminalResizeRoleOwner || !activeBinding.CanResize {
+		if activeBinding.HasAuthoritativeResizeOwner() {
+			if rect, ok := terminalViewContentRect(root, fallbackViewport, activeBinding); ok {
+				return activeBinding, rect, true
+			}
 			return state.TerminalViewBinding{}, render.Rect{}, false
 		}
-		if rect, ok := terminalViewContentRect(root, fallbackViewport, activeBinding); ok {
-			return activeBinding, rect, true
+		if activeBinding.TerminalID != "" {
+			if binding, ok := root.TerminalViews.OwnerBinding(activeBinding.TerminalID); ok {
+				if rect, ok := terminalViewContentRect(root, fallbackViewport, binding); ok {
+					return binding, rect, true
+				}
+			}
+			return state.TerminalViewBinding{}, render.Rect{}, false
 		}
-		return state.TerminalViewBinding{}, render.Rect{}, false
 	}
 	if binding, ok := resizeOwnerBindingForSessionTerminal(root); ok {
 		if rect, ok := terminalViewContentRect(root, fallbackViewport, binding); ok {
