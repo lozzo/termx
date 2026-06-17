@@ -695,6 +695,10 @@ func liveQueueBoundary(msg Msg) bool {
 }
 
 func ordinaryLiveSnapshot(snapshot state.LiveSurfaceSnapshot) bool {
+	if snapshot.LifecycleKnown {
+		// 中文说明：core lifecycle 是 terminal running/exited 权威信号，不能被普通 live 帧合并丢掉。
+		return false
+	}
 	if snapshot.Err != "" || snapshot.ExitCode != 0 || snapshot.ExitReason != "" {
 		return false
 	}

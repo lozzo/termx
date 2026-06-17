@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
+	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -886,6 +888,89 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecy
 	frame := lastFrame(t, host.Frames())
 	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
 		t.Fatalf("running restored terminal should render prompt without restart CTA, frame=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
+func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCoreRunningLifecycle(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	snapshot := state.WorkbenchStorageSnapshot{
+		Schema:        state.WorkbenchStorageSchema,
+		SchemaVersion: state.WorkbenchStorageSchemaV2,
+		Workspace: state.WorkspaceState{
+			ID:          state.DefaultWorkspaceID,
+			ActiveTabID: state.DefaultTabID,
+			Tabs: []state.TabState{{
+				ID:           state.DefaultTabID,
+				ActivePaneID: state.DefaultPaneID,
+				RootSplit:    state.SplitNode{PaneID: state.DefaultPaneID},
+				Panes: []state.PaneState{{
+					ID:         state.DefaultPaneID,
+					Title:      "main",
+					Kind:       state.PaneKind("exited"),
+					TerminalID: "term-main",
+					Active:     true,
+				}},
+			}},
+		},
+		Workspaces: []state.WorkspaceState{{
+			ID:          state.DefaultWorkspaceID,
+			ActiveTabID: state.DefaultTabID,
+			Tabs: []state.TabState{{
+				ID:           state.DefaultTabID,
+				ActivePaneID: state.DefaultPaneID,
+				RootSplit:    state.SplitNode{PaneID: state.DefaultPaneID},
+				Panes: []state.PaneState{{
+					ID:         state.DefaultPaneID,
+					Title:      "main",
+					Kind:       state.PaneKind("exited"),
+					TerminalID: "term-main",
+					Active:     true,
+				}},
+			}},
+		}},
+		PanelPresentation: state.PanelPresentationCard,
+		ActivePaneID:      state.DefaultPaneID,
+		HeaderVisible:     true,
+		FooterVisible:     true,
+	}
+	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: snapshot, Version: 7, Found: true}, WatchCh: watchCh}
+	terminal := &services.FakeTerminalService{
+		ListResult:    services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
+		AttachResult:  services.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
+		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, LifecycleKnown: true, State: state.TerminalLiveAttached}},
+	}
+	initial := state.Root{
+		Surface: state.TerminalSurfaceStore{}.ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-main",
+			Revision:   9,
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"terminal exited: term-main code:0 exited"},
+		}).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+		Session: state.TerminalSessionStore{}.Attach("term-main", 7, 80, 24).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(initial, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	root := runtime.State()
+	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}); !ok || pane.Kind != state.PaneTerminalLive || pane.TerminalID != "term-main" {
+		t.Fatalf("legacy pane without terminal views should restore as live intent, pane=%#v ok=%v", pane, ok)
+	}
+	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.TerminalID != "term-main" || !binding.Attached || binding.Channel != 12 {
+		t.Fatalf("legacy pane intent should reattach through core, binding=%#v ok=%v", binding, ok)
+	}
+	if root.Surface.State != state.TerminalLiveAttached || root.Session.State == state.TerminalLiveExited {
+		t.Fatalf("core running lifecycle should clear old exited session/surface, session=%#v surface=%#v", root.Session, root.Surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible || frame.Cursor.Shape != render.CursorShapeBar {
+		t.Fatalf("running restored terminal should render live prompt without restart CTA, frame=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }
 

@@ -2502,6 +2502,72 @@ func TestLiveSurfaceAuthoritativeRunningClearsExitedSessionAndSurface(t *testing
 	}
 }
 
+func TestLiveQueueKeepsAuthoritativeRunningLifecycleWhenOrdinaryFrameFollows(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(100, 40)
+	root := state.Root{
+		Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1"),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID,
+			"term-1",
+			7,
+			80,
+			24,
+			state.TerminalResizeRoleOwner,
+			"surface-1",
+			state.TerminalPaneViewID(state.DefaultPaneID),
+			true,
+		)),
+		Session: state.TerminalSessionStore{}.
+			Attach("term-1", 7, 80, 24).
+			MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-1",
+			Revision:   9,
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"terminal exited: term-1 code:0 exited"},
+		}).MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+	}
+	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}})
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID:     "term-1",
+		Revision:       3,
+		Cols:           80,
+		Rows:           24,
+		Lines:          []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:         state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+		LifecycleKnown: true,
+		State:          state.TerminalLiveAttached,
+	}}); err != nil {
+		t.Fatalf("post authoritative running surface: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   4,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+		State:      state.TerminalLiveAttached,
+	}}); err != nil {
+		t.Fatalf("post ordinary surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain surfaces: %v", err)
+	}
+
+	final := runtime.State()
+	if final.Surface.State != state.TerminalLiveAttached || final.Session.State == state.TerminalLiveExited {
+		t.Fatalf("authoritative running lifecycle must survive live queue coalescing, session=%#v surface=%#v", final.Session, final.Surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
+		t.Fatalf("running lifecycle should remove restart CTA after queued ordinary frame, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
 func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 5}}
 	host := NewFakeTerminalHost(16)
