@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-proto/wirepb"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1140,6 +1141,7 @@ func terminalInfoToWirePB(info TerminalInfo) *wirepb.TerminalInfo {
 		Cwd:                        info.CWD,
 		LiveCwd:                    info.LiveCWD,
 		CreatedAtUnixNano:          timeToUnixNano(info.CreatedAt),
+		ExitedAtUnixNano:           timeToUnixNano(info.ExitedAt),
 		ResizeOwnership:            resizeOwnershipToWirePB(info.ResizeOwnership),
 		ResizeOwnerAttachmentCount: int32(info.ResizeOwnerAttachmentCount),
 	}
@@ -1147,6 +1149,7 @@ func terminalInfoToWirePB(info TerminalInfo) *wirepb.TerminalInfo {
 		value := int32(*info.ExitCode)
 		msg.ExitCode = &value
 	}
+	setInt64UnknownField(msg, terminalInfoExitedAtFieldNumber, timeToUnixNano(info.ExitedAt))
 	return msg
 }
 
@@ -1164,12 +1167,16 @@ func terminalInfoFromWirePB(msg *wirepb.TerminalInfo) TerminalInfo {
 		CWD:                        msg.GetCwd(),
 		LiveCWD:                    msg.GetLiveCwd(),
 		CreatedAt:                  unixNanoToTime(msg.GetCreatedAtUnixNano()),
+		ExitedAt:                   unixNanoToTime(msg.GetExitedAtUnixNano()),
 		ResizeOwnership:            resizeOwnershipFromWirePB(msg.GetResizeOwnership()),
 		ResizeOwnerAttachmentCount: int(msg.GetResizeOwnerAttachmentCount()),
 	}
 	if msg.ExitCode != nil {
 		value := int(msg.GetExitCode())
 		out.ExitCode = &value
+	}
+	if out.ExitedAt.IsZero() {
+		out.ExitedAt = unixNanoToTime(int64UnknownField(msg, terminalInfoExitedAtFieldNumber))
 	}
 	return out
 }
@@ -1680,6 +1687,8 @@ func eventToWirePB(event Event) *wirepb.Event {
 			value := int32(*event.StateChanged.ExitCode)
 			out.StateChanged.ExitCode = &value
 		}
+		out.StateChanged.ExitedAtUnixNano = timeToUnixNano(event.StateChanged.ExitedAt)
+		setInt64UnknownField(out.StateChanged, terminalStateChangedExitedAtFieldNumber, timeToUnixNano(event.StateChanged.ExitedAt))
 	}
 	if event.Resized != nil {
 		out.Resized = &wirepb.TerminalResizedData{OldSize: sizeToWirePB(event.Resized.OldSize), NewSize: sizeToWirePB(event.Resized.NewSize)}
@@ -1732,6 +1741,10 @@ func eventFromWirePB(msg *wirepb.Event) Event {
 			value := int(msg.StateChanged.GetExitCode())
 			out.StateChanged.ExitCode = &value
 		}
+		out.StateChanged.ExitedAt = unixNanoToTime(msg.StateChanged.GetExitedAtUnixNano())
+		if out.StateChanged.ExitedAt.IsZero() {
+			out.StateChanged.ExitedAt = unixNanoToTime(int64UnknownField(msg.StateChanged, terminalStateChangedExitedAtFieldNumber))
+		}
 	}
 	if msg.Resized != nil {
 		out.Resized = &TerminalResizedData{OldSize: sizeFromWirePB(msg.Resized.GetOldSize()), NewSize: sizeFromWirePB(msg.Resized.GetNewSize())}
@@ -1771,4 +1784,47 @@ func timePtrToUnixNano(value *time.Time) int64 {
 		return 0
 	}
 	return timeToUnixNano(*value)
+}
+
+const (
+	terminalInfoExitedAtFieldNumber         protowire.Number = 13
+	terminalStateChangedExitedAtFieldNumber protowire.Number = 4
+)
+
+func setInt64UnknownField(msg proto.Message, field protowire.Number, value int64) {
+	if msg == nil || value == 0 {
+		return
+	}
+	unknown := msg.ProtoReflect().GetUnknown()
+	unknown = protowire.AppendTag(unknown, field, protowire.VarintType)
+	unknown = protowire.AppendVarint(unknown, uint64(value))
+	msg.ProtoReflect().SetUnknown(unknown)
+}
+
+func int64UnknownField(msg proto.Message, field protowire.Number) int64 {
+	if msg == nil {
+		return 0
+	}
+	unknown := msg.ProtoReflect().GetUnknown()
+	for len(unknown) > 0 {
+		num, typ, n := protowire.ConsumeTag(unknown)
+		if n < 0 {
+			return 0
+		}
+		unknown = unknown[n:]
+		valueStart := unknown
+		n = protowire.ConsumeFieldValue(num, typ, unknown)
+		if n < 0 {
+			return 0
+		}
+		if num == field && typ == protowire.VarintType {
+			value, consumed := protowire.ConsumeVarint(valueStart)
+			if consumed >= 0 {
+				return int64(value)
+			}
+			return 0
+		}
+		unknown = unknown[n:]
+	}
+	return 0
 }

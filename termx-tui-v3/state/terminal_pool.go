@@ -1,5 +1,7 @@
 package state
 
+import "time"
+
 type TerminalPoolStatus string
 
 const (
@@ -27,7 +29,10 @@ type TerminalPoolItem struct {
 	Title      string
 	State      string
 	CWD        string
+	Command    []string
 	Tags       map[string]string
+	ExitCode   *int
+	ExitedAt   time.Time
 	Cols       int
 	Rows       int
 	Attached   bool
@@ -136,7 +141,12 @@ func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {
 	cloned := make([]TerminalPoolItem, len(items))
 	for i, item := range items {
 		cloned[i] = item
+		cloned[i].Command = append([]string(nil), item.Command...)
 		cloned[i].Tags = cloneStringMap(item.Tags)
+		if item.ExitCode != nil {
+			code := *item.ExitCode
+			cloned[i].ExitCode = &code
+		}
 	}
 	return cloned
 }

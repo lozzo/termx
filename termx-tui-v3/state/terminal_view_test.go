@@ -44,6 +44,27 @@ func TestTerminalViewStoreDetachAndKillHaveDifferentScope(t *testing.T) {
 	}
 }
 
+func TestTerminalViewStoreMarkTerminalReattachingClearsOnlyRestartedChannels(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, TerminalResizeRoleFollower, "surface", "view-2", false))
+	store = store.BindPane(NewPaneTerminalView("pane-3", "term-2", 9, 100, 30, TerminalResizeRoleOwner, "surface", "view-3", true))
+
+	store = store.MarkTerminalReattaching("term-1")
+	first, _ := store.PaneBinding("pane-1")
+	second, _ := store.PaneBinding("pane-2")
+	third, _ := store.PaneBinding("pane-3")
+	if first.Channel != 0 || first.Attached || first.TerminalID != "term-1" || first.ResizeRole != TerminalResizeRoleOwner {
+		t.Fatalf("restart should keep owner binding intent but clear old channel, got %#v", first)
+	}
+	if second.Channel != 0 || second.Attached || second.TerminalID != "term-1" || second.ResizeRole != TerminalResizeRoleFollower {
+		t.Fatalf("restart should keep follower binding intent but clear old channel, got %#v", second)
+	}
+	if third.Channel != 9 || !third.Attached || third.TerminalID != "term-2" {
+		t.Fatalf("unrelated terminal binding must be preserved, got %#v", third)
+	}
+}
+
 func TestTerminalViewStoreTransfersResizeOwnerWithinTerminal(t *testing.T) {
 	store := TerminalViewStore{}
 	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))

@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -988,6 +989,8 @@ func sessionForBinding(root state.Root, binding state.TerminalViewBinding) state
 		State:        surface.State,
 		ExitCode:     surface.ExitCode,
 		ExitReason:   surface.ExitReason,
+		ExitedAt:     surface.ExitedAt,
+		Command:      append([]string(nil), surface.Command...),
 	}
 	return session
 }
@@ -1100,7 +1103,7 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 	}
 	if len(content.Lines) == 0 {
 		if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
-			content.Lines = []Line{liveExitedLine(surface, session)}
+			content.Lines = liveExitedLines(surface, session)
 			content.Empty = true
 		} else if surface.Ready {
 			content.Lines = []Line{NewLine("live surface empty")}
@@ -1112,7 +1115,8 @@ func buildLiveContentVM(surface state.TerminalSurfaceStore, session state.Termin
 			content.Cursor = Cursor{}
 		}
 	} else if session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited {
-		content.Lines = append(content.Lines, NewLine(""), liveExitedLine(surface, session), liveExitedRestartLine(), liveExitedPickerLine())
+		content.Lines = append(content.Lines, NewLine(""))
+		content.Lines = append(content.Lines, liveExitedLines(surface, session)...)
 		content.Cursor = Cursor{}
 	}
 	return content
@@ -1156,6 +1160,18 @@ func liveStatus(surface state.TerminalSurfaceStore, session state.TerminalSessio
 		status = "error: " + surface.Err
 	}
 	return status
+}
+
+func liveExitedLines(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) []Line {
+	lines := []Line{liveExitedLine(surface, session)}
+	if exitedAt := liveExitedAt(surface, session); !exitedAt.IsZero() {
+		lines = append(lines, NewLine("exited at: "+exitedAt.UTC().Format(time.RFC3339)))
+	}
+	if command := liveExitCommand(surface, session); command != "" {
+		lines = append(lines, NewLine("command: "+command))
+	}
+	lines = append(lines, liveExitedRestartLine(), liveExitedPickerLine())
+	return lines
 }
 
 func liveExitedLine(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) Line {
@@ -1203,6 +1219,20 @@ func liveExitReason(surface state.TerminalSurfaceStore, session state.TerminalSe
 		return session.ExitReason
 	}
 	return surface.ExitReason
+}
+
+func liveExitedAt(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) time.Time {
+	if !session.ExitedAt.IsZero() {
+		return session.ExitedAt
+	}
+	return surface.ExitedAt
+}
+
+func liveExitCommand(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) string {
+	if len(session.Command) > 0 {
+		return strings.Join(session.Command, " ")
+	}
+	return strings.Join(surface.Command, " ")
 }
 
 func liveStatusSize(surface state.TerminalSurfaceStore, session state.TerminalSessionStore) (int, int) {
@@ -1391,7 +1421,7 @@ func placeholderContentForPane(pane state.PaneState) ContentVM {
 	case state.PaneEmpty:
 		return buildEmptyPaneContent(pane)
 	case state.PaneExited:
-		return buildExitedPaneContent(pane)
+		return buildExitedPaneContent(state.Root{}, pane)
 	case state.PaneCopyHistory:
 		return ContentVM{Kind: ContentCopyHistory, Lines: []Line{NewLine(title + " copy pending")}, Pending: true}
 	default:

@@ -408,6 +408,46 @@ func TestNormalizeScreenUpdateAlignsFullReplaceMetadataAndOps(t *testing.T) {
 	}
 }
 
+func TestTerminalExitMetadataCodecRoundTrip(t *testing.T) {
+	exitedAt := time.Unix(1712345678, 987654321).UTC()
+	exitCode := 23
+	result, err := EncodeMethodResult("list", ListResult{Terminals: []TerminalInfo{{
+		ID:        "term-1",
+		Name:      "job",
+		Command:   []string{"bash", "-lc", "make test"},
+		State:     "exited",
+		ExitCode:  &exitCode,
+		ExitedAt:  exitedAt,
+		CreatedAt: exitedAt.Add(-time.Hour),
+	}}})
+	if err != nil {
+		t.Fatalf("encode list result: %v", err)
+	}
+	var decoded ListResult
+	if err := DecodeMethodResult("list", result, &decoded); err != nil {
+		t.Fatalf("decode list result: %v", err)
+	}
+	if len(decoded.Terminals) != 1 || decoded.Terminals[0].ExitCode == nil || *decoded.Terminals[0].ExitCode != exitCode || !decoded.Terminals[0].ExitedAt.Equal(exitedAt) {
+		t.Fatalf("terminal exit metadata did not round trip: %#v", decoded)
+	}
+
+	payload, err := EncodeEventPayload(Event{Type: EventTerminalStateChanged, TerminalID: "term-1", StateChanged: &TerminalStateChangedData{
+		NewState: "exited",
+		ExitCode: &exitCode,
+		ExitedAt: exitedAt,
+	}})
+	if err != nil {
+		t.Fatalf("encode event: %v", err)
+	}
+	event, err := DecodeEventPayload(payload)
+	if err != nil {
+		t.Fatalf("decode event: %v", err)
+	}
+	if event.StateChanged == nil || event.StateChanged.ExitCode == nil || *event.StateChanged.ExitCode != exitCode || !event.StateChanged.ExitedAt.Equal(exitedAt) {
+		t.Fatalf("event exit metadata did not round trip: %#v", event)
+	}
+}
+
 func TestClassifyScreenUpdateDetectsBlankFullReplace(t *testing.T) {
 	classification := ClassifyScreenUpdate(ScreenUpdate{
 		FullReplace: true,

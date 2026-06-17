@@ -664,9 +664,14 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg) (state.Root, []Effect) {
 		return root.Advance(), nil
 	}
 	if event.Exited {
-		root.Surface = root.Surface.MarkExited(event.TerminalID, event.ExitCode, event.Reason)
+		event.Snapshot.State = state.TerminalLiveExited
+		event.Snapshot.ExitCode = event.ExitCode
+		event.Snapshot.ExitReason = event.Reason
+		event.Snapshot.ExitedAt = event.ExitedAt
+		event.Snapshot.Command = append([]string(nil), event.Command...)
+		root.Surface = root.Surface.MarkExitedWithMetadata(event.TerminalID, event.ExitCode, event.Reason, event.ExitedAt, event.Command)
 		if event.TerminalID == root.Session.TerminalID {
-			root.Session = root.Session.MarkExited(event.TerminalID, event.ExitCode, event.Reason)
+			root.Session = root.Session.MarkExitedWithMetadata(event.TerminalID, event.ExitCode, event.Reason, event.ExitedAt, event.Command)
 		}
 	}
 	if event.Ready {

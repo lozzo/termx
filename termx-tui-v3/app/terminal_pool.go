@@ -217,6 +217,7 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 		return root, nil
 	}
 	root.TerminalPool = next
+	root.Surface = projectTerminalPoolExitMetadata(root.Surface, root.TerminalPool.Items)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.pool", Body: errText})
 	}
@@ -391,7 +392,12 @@ func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartRes
 		return root.Advance(), nil
 	}
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.restart", Body: msg.TerminalID})
-	return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	root.Surface = root.Surface.Attach(msg.TerminalID, root.Surface.Cols, root.Surface.Rows)
+	root.TerminalViews = root.TerminalViews.MarkTerminalReattaching(msg.TerminalID)
+	root.Session = root.Session.ClearInputChannel(msg.TerminalID)
+	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+	effects = append(effects, restartTerminalViewEffects(root, msg.TerminalID)...)
+	return root.Advance(), effects
 }
 
 func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconnectRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -647,12 +653,78 @@ func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.Ter
 			Title:      item.Title,
 			State:      item.State,
 			CWD:        item.CWD,
+			Command:    append([]string(nil), item.Command...),
 			Tags:       cloneStringMap(item.Tags),
+			ExitCode:   cloneIntPointer(item.ExitCode),
+			ExitedAt:   item.ExitedAt,
 			Cols:       item.Cols,
 			Rows:       item.Rows,
 		}
 	}
 	return out
+}
+
+func cloneIntPointer(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func projectTerminalPoolExitMetadata(surface state.TerminalSurfaceStore, items []state.TerminalPoolItem) state.TerminalSurfaceStore {
+	for _, item := range items {
+		if item.TerminalID == "" || item.State != string(state.TerminalLiveExited) {
+			continue
+		}
+		exitCode := 0
+		if item.ExitCode != nil {
+			exitCode = *item.ExitCode
+		}
+		// 中文说明：terminal pool 是 core-v2 lifecycle metadata 的投影；这里仅补 live surface 的展示元数据，
+		// 不把 pool/list 当作输入路由或历史 truth。
+		surface = surface.MarkExitedWithMetadata(item.TerminalID, exitCode, "exited", item.ExitedAt, item.Command)
+	}
+	return surface
+}
+
+func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
+	if terminalID == "" {
+		return nil
+	}
+	bindings := root.TerminalViews.BindingsForTerminal(terminalID)
+	if len(bindings) == 0 {
+		return nil
+	}
+	effects := make([]Effect, 0, len(bindings))
+	for _, binding := range bindings {
+		cols, rows := binding.DesiredCols, binding.DesiredRows
+		if cols <= 0 || rows <= 0 {
+			cols, rows = root.Surface.SurfaceForTerminal(terminalID).Cols, root.Surface.SurfaceForTerminal(terminalID).Rows
+		}
+		if cols <= 0 {
+			cols = 80
+		}
+		if rows <= 0 {
+			rows = 24
+		}
+		resizePolicy := binding.ResizeRole
+		if resizePolicy == "" {
+			resizePolicy = state.TerminalResizeRoleFollower
+		}
+		cfg := LiveConfig{
+			TerminalID:   terminalID,
+			Cols:         cols,
+			Rows:         rows,
+			Mode:         "collaborator",
+			ResizePolicy: resizePolicy,
+			SurfaceID:    binding.SurfaceID,
+			ViewID:       binding.ViewID,
+		}
+		cfgCopy := cfg
+		effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return LiveAttachMsg{Config: cfgCopy} }})
+	}
+	return effects
 }
 
 func removeTerminalFromRoot(root state.Root, terminalID string) state.Root {

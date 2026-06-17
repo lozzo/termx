@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
@@ -161,6 +162,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.process = process
 	terminal.info.State = TerminalStateRunning
 	terminal.info.ExitCode = nil
+	terminal.info.ExitedAt = time.Time{}
 	info = terminal.info.Clone()
 	terminal.mu.Unlock()
 	terminal.liveMu.Lock()
@@ -396,6 +398,8 @@ func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) 
 	terminal.info.State = TerminalStateExited
 	code := exit.Code
 	terminal.info.ExitCode = &code
+	// 退出时间以 core-v2 完成输出收口并标记生命周期的 UTC 时刻为准。
+	terminal.info.ExitedAt = time.Now().UTC()
 	info := terminal.info.Clone()
 	terminal.mu.Unlock()
 	_ = terminal.historyPipeline().ForceCommitFrontier()

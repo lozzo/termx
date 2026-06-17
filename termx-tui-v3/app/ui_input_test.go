@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -1001,6 +1002,10 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
 	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
+	root.Session = root.Session.AttachWithResizeOwner("term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 9, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Surface = root.Surface.MarkExitedWithMetadata("term-1", 23, "exited", time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC), []string{"bash", "-lc", "exit 23"})
 
 	root, effects := reducer(root, TerminalPoolRestartRequestMsg{TerminalID: "term-1"})
 	if len(effects) != 1 {
@@ -1015,8 +1020,23 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 		t.Fatalf("expected restart service result, msg=%#v restarts=%#v", restartMsg, terminal.Restarts)
 	}
 	root, effects = reducer(root, restartMsg)
-	if len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Title != "picker.restart" || len(effects) != 1 {
+	if len(root.Shell.Toasts) == 0 || root.Shell.Toasts[len(root.Shell.Toasts)-1].Title != "picker.restart" || len(effects) != 2 {
 		t.Fatalf("expected restart result feedback and refresh effect, terminal=%#v root=%#v effects=%#v", terminal, root, effects)
+	}
+	if root.Surface.State != state.TerminalLiveAttached || root.Surface.ExitCode != 0 || !root.Surface.ExitedAt.IsZero() || len(root.Surface.Command) != 0 {
+		t.Fatalf("restart should clear exited surface metadata, got %#v", root.Surface)
+	}
+	if binding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 0 || binding.Attached {
+		t.Fatalf("restart should preserve binding intent but clear stale input channel, got %#v ok=%v", binding, ok)
+	}
+	if root.Session.Channel != 0 || root.Session.Attached {
+		t.Fatalf("restart should clear session input channel before reattach, got %#v", root.Session)
+	}
+	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg); !ok {
+		t.Fatalf("first restart result effect should refresh pool, got %#v", effects[0])
+	}
+	if attachMsg, ok := effects[1].(FuncEffect).Run(context.Background()).(LiveAttachMsg); !ok || attachMsg.Config.TerminalID != "term-1" || attachMsg.Config.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("restart should reattach current terminal view, got %#v ok=%v", attachMsg, ok)
 	}
 
 	root, effects = reducer(root, TerminalPoolReconnectRequestMsg{TerminalID: "term-1"})
@@ -1034,6 +1054,50 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	root, _ = reducer(root, reconnectMsg)
 	if !root.Session.Attached || root.Session.TerminalID != "term-1" || root.TerminalPool.LastAttachedID != "term-1" {
 		t.Fatalf("expected reconnect result to attach session, got session=%#v pool=%#v", root.Session, root.TerminalPool)
+	}
+}
+
+func TestTerminalPoolRestartReattachesEachViewWithoutReusingExitedChannels(t *testing.T) {
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: &services.FakeTerminalService{}})
+	root := state.Root{Shell: state.DefaultShell()}
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")
+	var result state.FloatingCommandResult
+	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane", Title: "floating", Kind: state.PaneEmpty},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating failed: %#v", result)
+	}
+	root.Shell = root.Shell.BindFloatingTerminal("floating-1", "term-1")
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
+	root.Session = root.Session.AttachWithResizeOwner("term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID))
+	root.Session = root.Session.MarkExitedWithMetadata("term-1", 23, "exited", time.Date(2026, 6, 17, 12, 35, 0, 0, time.UTC), []string{"bash", "-lc", "exit 23"})
+
+	next, effects := reducer(root, TerminalPoolRestartResultMsg{TerminalID: "term-1"})
+	if len(effects) != 3 {
+		t.Fatalf("restart should refresh pool and reattach both views, got %#v", effects)
+	}
+	pane, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	floating, _ := next.TerminalViews.FloatingBinding("floating-1")
+	if pane.Channel != 0 || pane.Attached || floating.Channel != 0 || floating.Attached {
+		t.Fatalf("restart must clear stale channels for all views, pane=%#v floating=%#v", pane, floating)
+	}
+	if next.Session.State != state.TerminalLivePending || next.Session.Channel != 0 || next.Session.Attached || !next.Session.ExitedAt.IsZero() || len(next.Session.Command) != 0 {
+		t.Fatalf("restart should clear session exit metadata while waiting for attach, got %#v", next.Session)
+	}
+	seen := map[string]bool{}
+	for _, effect := range effects[1:] {
+		attachMsg, ok := effect.(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+		if !ok {
+			t.Fatalf("restart view effect should produce LiveAttachMsg, got %#v", effect)
+		}
+		seen[attachMsg.Config.ViewID] = true
+	}
+	if !seen[state.TerminalPaneViewID(state.DefaultPaneID)] || !seen[state.TerminalFloatingViewID("floating-1")] {
+		t.Fatalf("restart should reattach original pane and floating views, seen=%#v", seen)
 	}
 }
 

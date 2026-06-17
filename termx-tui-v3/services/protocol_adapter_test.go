@@ -1139,6 +1139,41 @@ func TestProtocolTerminalServiceAdapterMapsMetadataEventsToTags(t *testing.T) {
 	}
 }
 
+func TestProtocolTerminalServiceAdapterMapsExitedEventMetadata(t *testing.T) {
+	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
+	exitCode := 23
+	eventCh := make(chan protocol.Event, 1)
+	client := &fakeProtocolTerminalClient{
+		eventCh: eventCh,
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:       "term-1",
+			Command:  []string{"bash", "-lc", "make test"},
+			State:    "exited",
+			ExitCode: &exitCode,
+			ExitedAt: exitedAt,
+		}}},
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("live events: %v", err)
+	}
+	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", StateChanged: &protocol.TerminalStateChangedData{
+		NewState: "exited",
+		ExitCode: &exitCode,
+		ExitedAt: exitedAt,
+	}}
+
+	got := <-events
+	if !got.Exited || got.ExitCode != 23 || !got.ExitedAt.Equal(exitedAt) || strings.Join(got.Command, " ") != "bash -lc make test" || got.Snapshot.State != state.TerminalLiveExited {
+		t.Fatalf("expected exited metadata event, got %#v", got)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *testing.T) {
 	eventCh := make(chan protocol.Event, 8)
 	client := &fakeProtocolTerminalClient{
@@ -1222,14 +1257,19 @@ func TestProtocolTerminalServiceAdapterLiveEventCoalescingDoesNotStarveSnapshot(
 }
 
 func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
+	exitedAt := time.Date(2026, 6, 17, 12, 46, 0, 0, time.UTC)
+	exitCode := 23
 	client := &fakeProtocolTerminalClient{
 		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:    "term-pool",
-			Name:  "日志🚀",
-			State: "running",
-			CWD:   "/tmp",
-			Size:  protocol.Size{Cols: 120, Rows: 36},
-			Tags:  map[string]string{"role": "shell"},
+			ID:       "term-pool",
+			Name:     "日志🚀",
+			Command:  []string{"bash", "-lc", "make test"},
+			State:    "exited",
+			CWD:      "/tmp",
+			Size:     protocol.Size{Cols: 120, Rows: 36},
+			Tags:     map[string]string{"role": "shell"},
+			ExitCode: &exitCode,
+			ExitedAt: exitedAt,
 		}}},
 		createResult: &protocol.CreateResult{TerminalID: "term-new", State: "running"},
 	}
@@ -1239,7 +1279,7 @@ func TestProtocolTerminalServiceAdapterMapsTerminalPoolActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if client.listCalls != 1 || len(list.Items) != 1 || list.Items[0].TerminalID != "term-pool" || list.Items[0].Title != "日志🚀" || list.Items[0].Tags["role"] != "shell" || list.Items[0].Cols != 120 || list.Items[0].Rows != 36 {
+	if client.listCalls != 1 || len(list.Items) != 1 || list.Items[0].TerminalID != "term-pool" || list.Items[0].Title != "日志🚀" || list.Items[0].Tags["role"] != "shell" || list.Items[0].Cols != 120 || list.Items[0].Rows != 36 || list.Items[0].ExitCode == nil || *list.Items[0].ExitCode != 23 || !list.Items[0].ExitedAt.Equal(exitedAt) || strings.Join(list.Items[0].Command, " ") != "bash -lc make test" {
 		t.Fatalf("unexpected list mapping calls=%d result=%#v", client.listCalls, list)
 	}
 

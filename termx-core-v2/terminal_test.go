@@ -1249,12 +1249,18 @@ func TestTerminalExitForceCommitsOpenLineAndRejectsMutation(t *testing.T) {
 	if event.Terminal == nil || event.Terminal.ExitCode == nil || *event.Terminal.ExitCode != 7 {
 		t.Fatalf("unexpected exit event %#v", event)
 	}
+	if event.Terminal.ExitedAt.IsZero() {
+		t.Fatalf("expected exit event to carry exited_at, got %#v", event.Terminal)
+	}
 	info, err := server.GetTerminal("term-1")
 	if err != nil {
 		t.Fatalf("get terminal: %v", err)
 	}
 	if info.State != TerminalStateExited || info.ExitCode == nil || *info.ExitCode != 7 {
 		t.Fatalf("unexpected terminal info after exit %#v", info)
+	}
+	if !info.ExitedAt.Equal(event.Terminal.ExitedAt) {
+		t.Fatalf("registry and event exited_at should match, info=%s event=%s", info.ExitedAt, event.Terminal.ExitedAt)
 	}
 	window, err := server.LatestWindow("term-1", 20, 10)
 	if err != nil {
@@ -1278,6 +1284,35 @@ func TestTerminalExitForceCommitsOpenLineAndRejectsMutation(t *testing.T) {
 	}
 	if len(window.Rows) != 1 || window.Rows[0].Text != "open-tail" || window.TotalLines != 1 {
 		t.Fatalf("late output after exit must not create history, got %#v", window)
+	}
+}
+
+func TestTerminalRestartClearsExitMetadata(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalExited}})
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	first := factory.process("term-1")
+	first.exit(23)
+	assertEventValue(t, events, EventTerminalExited, "term-1")
+	info, err := server.GetTerminal("term-1")
+	if err != nil {
+		t.Fatalf("get terminal after exit: %v", err)
+	}
+	if info.ExitCode == nil || *info.ExitCode != 23 || info.ExitedAt.IsZero() {
+		t.Fatalf("expected exit metadata before restart, got %#v", info)
+	}
+	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	info, err = server.GetTerminal("term-1")
+	if err != nil {
+		t.Fatalf("get terminal: %v", err)
+	}
+	if info.State != TerminalStateRunning || info.ExitCode != nil || !info.ExitedAt.IsZero() {
+		t.Fatalf("restart should clear exit metadata, got %#v", info)
 	}
 }
 

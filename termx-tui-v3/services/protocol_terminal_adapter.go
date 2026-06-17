@@ -85,7 +85,10 @@ func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ Termin
 			Title:      terminalPoolTitleFromProtocol(terminal),
 			State:      terminal.State,
 			CWD:        terminal.CWD,
+			Command:    append([]string(nil), terminal.Command...),
 			Tags:       cloneStringMap(terminal.Tags),
+			ExitCode:   cloneIntPointer(terminal.ExitCode),
+			ExitedAt:   terminal.ExitedAt,
 			Cols:       int(terminal.Size.Cols),
 			Rows:       int(terminal.Size.Rows),
 		})
@@ -423,6 +426,16 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 		if event.StateChanged.ExitCode != nil {
 			out.ExitCode = *event.StateChanged.ExitCode
 		}
+		out.ExitedAt = event.StateChanged.ExitedAt
+		if out.ExitedAt.IsZero() {
+			out.ExitedAt = event.Timestamp
+		}
+		info, err := adapter.terminalInfo(ctx, out.TerminalID)
+		if err != nil {
+			out.Err = err
+			return out
+		}
+		out.Command = append([]string(nil), info.Command...)
 		out.Reason = "exited"
 	}
 	surface, err := adapter.LiveSurface(ctx, TerminalSurfaceRequest{TerminalID: out.TerminalID, Cols: req.Cols, Rows: req.Rows})
@@ -431,21 +444,36 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 		return out
 	}
 	out.Snapshot = surface.Snapshot
+	if out.Exited {
+		out.Snapshot.State = state.TerminalLiveExited
+		out.Snapshot.ExitCode = out.ExitCode
+		out.Snapshot.ExitReason = out.Reason
+		out.Snapshot.ExitedAt = out.ExitedAt
+		out.Snapshot.Command = append([]string(nil), out.Command...)
+	}
 	out.Ready = surface.Ready
 	return out
 }
 
 func (adapter ProtocolTerminalServiceAdapter) terminalTags(ctx context.Context, terminalID string) (map[string]string, error) {
-	result, err := adapter.Client.List(ctx)
+	info, err := adapter.terminalInfo(ctx, terminalID)
 	if err != nil {
 		return nil, err
 	}
+	return cloneStringMap(info.Tags), nil
+}
+
+func (adapter ProtocolTerminalServiceAdapter) terminalInfo(ctx context.Context, terminalID string) (protocol.TerminalInfo, error) {
+	result, err := adapter.Client.List(ctx)
+	if err != nil {
+		return protocol.TerminalInfo{}, err
+	}
 	for _, item := range result.Terminals {
 		if item.ID == terminalID {
-			return cloneStringMap(item.Tags), nil
+			return item, nil
 		}
 	}
-	return nil, fmt.Errorf("terminal metadata unavailable: %s", terminalID)
+	return protocol.TerminalInfo{}, fmt.Errorf("terminal metadata unavailable: %s", terminalID)
 }
 
 func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {
@@ -546,4 +574,12 @@ func terminalPoolTitleFromProtocol(terminal protocol.TerminalInfo) string {
 		return terminal.ID
 	}
 	return "terminal"
+}
+
+func cloneIntPointer(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }

@@ -101,7 +101,7 @@ func projectEmptyPaneContent(ctx ContentProjectorContext) ContentVM {
 }
 
 func projectExitedPaneContent(ctx ContentProjectorContext) ContentVM {
-	return buildExitedPaneContent(ctx.Pane)
+	return buildExitedPaneContent(ctx.Root, ctx.Pane)
 }
 
 func projectTerminalPickerContent(ctx ContentProjectorContext) ContentVM {

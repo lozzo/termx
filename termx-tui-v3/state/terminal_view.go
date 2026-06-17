@@ -279,6 +279,25 @@ func (store TerminalViewStore) Bindings() []TerminalViewBinding {
 	return bindings
 }
 
+func (store TerminalViewStore) MarkTerminalReattaching(terminalID string) TerminalViewStore {
+	if terminalID == "" {
+		return store
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	for viewID, binding := range store.Views {
+		if binding.TerminalID != terminalID {
+			continue
+		}
+		// restart 后旧 channel 已经属于退出前的 attachment；保留 view 绑定意图，
+		// 但必须让输入路径重新 attach 当前 view 后再发送。
+		binding.Channel = 0
+		binding.Attached = false
+		binding.LastError = ""
+		store.Views[viewID] = binding
+	}
+	return store
+}
+
 func (store TerminalViewStore) OwnerBinding(terminalID string) (TerminalViewBinding, bool) {
 	for _, binding := range store.Views {
 		if binding.TerminalID == terminalID && binding.HasAuthoritativeResizeOwner() {

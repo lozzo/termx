@@ -63,6 +63,7 @@ type TerminalInfo struct {
 	LiveCWD                    string
 	CreatedAt                  time.Time
 	ExitCode                   *int
+	ExitedAt                   time.Time
 	ResizeOwnership            *ResizeOwnership
 	ResizeOwnerAttachmentCount int
 }
@@ -215,6 +216,7 @@ type TerminalStateChangedData struct {
 	OldState string
 	NewState string
 	ExitCode *int
+	ExitedAt time.Time
 }
 
 type TerminalResizedData struct {

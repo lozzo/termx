@@ -448,6 +448,7 @@ type TerminalInfo struct {
 	ExitCode                   *int32                 `protobuf:"varint,10,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
 	ResizeOwnership            *ResizeOwnership       `protobuf:"bytes,11,opt,name=resize_ownership,json=resizeOwnership,proto3" json:"resize_ownership,omitempty"`
 	ResizeOwnerAttachmentCount int32                  `protobuf:"varint,12,opt,name=resize_owner_attachment_count,json=resizeOwnerAttachmentCount,proto3" json:"resize_owner_attachment_count,omitempty"`
+	ExitedAtUnixNano           int64                  `protobuf:"varint,13,opt,name=exited_at_unix_nano,json=exitedAtUnixNano,proto3" json:"exited_at_unix_nano,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
@@ -562,6 +563,13 @@ func (x *TerminalInfo) GetResizeOwnership() *ResizeOwnership {
 func (x *TerminalInfo) GetResizeOwnerAttachmentCount() int32 {
 	if x != nil {
 		return x.ResizeOwnerAttachmentCount
+	}
+	return 0
+}
+
+func (x *TerminalInfo) GetExitedAtUnixNano() int64 {
+	if x != nil {
+		return x.ExitedAtUnixNano
 	}
 	return 0
 }
@@ -1483,12 +1491,13 @@ func (x *TerminalCreatedData) GetSize() *Size {
 }
 
 type TerminalStateChangedData struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OldState      string                 `protobuf:"bytes,1,opt,name=old_state,json=oldState,proto3" json:"old_state,omitempty"`
-	NewState      string                 `protobuf:"bytes,2,opt,name=new_state,json=newState,proto3" json:"new_state,omitempty"`
-	ExitCode      *int32                 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	OldState         string                 `protobuf:"bytes,1,opt,name=old_state,json=oldState,proto3" json:"old_state,omitempty"`
+	NewState         string                 `protobuf:"bytes,2,opt,name=new_state,json=newState,proto3" json:"new_state,omitempty"`
+	ExitCode         *int32                 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
+	ExitedAtUnixNano int64                  `protobuf:"varint,4,opt,name=exited_at_unix_nano,json=exitedAtUnixNano,proto3" json:"exited_at_unix_nano,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *TerminalStateChangedData) Reset() {
@@ -1538,6 +1547,13 @@ func (x *TerminalStateChangedData) GetNewState() string {
 func (x *TerminalStateChangedData) GetExitCode() int32 {
 	if x != nil && x.ExitCode != nil {
 		return *x.ExitCode
+	}
+	return 0
+}
+
+func (x *TerminalStateChangedData) GetExitedAtUnixNano() int64 {
+	if x != nil {
+		return x.ExitedAtUnixNano
 	}
 	return 0
 }

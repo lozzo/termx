@@ -32,6 +32,7 @@ type TerminalInfo struct {
 	State     TerminalState
 	CreatedAt time.Time
 	ExitCode  *int
+	ExitedAt  time.Time
 }
 
 func (info TerminalInfo) Clone() TerminalInfo {

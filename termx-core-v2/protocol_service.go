@@ -1054,6 +1054,7 @@ func protocolInfoFromCoreV2(info TerminalInfo) protocol.TerminalInfo {
 		State:     string(info.State),
 		CreatedAt: info.CreatedAt,
 		ExitCode:  copyIntPtr(info.ExitCode),
+		ExitedAt:  info.ExitedAt,
 	}
 }
 
@@ -1079,6 +1080,7 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 		}
 		if event.Terminal != nil {
 			out.StateChanged.ExitCode = copyIntPtr(event.Terminal.ExitCode)
+			out.StateChanged.ExitedAt = event.Terminal.ExitedAt
 		}
 	case EventTerminalResized:
 		out.Type = protocol.EventTerminalResized
@@ -1094,6 +1096,7 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 			out.StateChanged = &protocol.TerminalStateChangedData{
 				NewState: string(event.Terminal.State),
 				ExitCode: copyIntPtr(event.Terminal.ExitCode),
+				ExitedAt: event.Terminal.ExitedAt,
 			}
 		}
 	case EventTerminalRemoved:

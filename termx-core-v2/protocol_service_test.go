@@ -67,6 +67,48 @@ func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceExitMetadataRoundTrips(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "job",
+		Command: []string{"bash", "-lc", "make test"},
+		Size:    protocol.Size{Cols: 12, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	events, err := client.Events(context.Background(), protocol.EventsParams{
+		TerminalID: "term-1",
+		Types:      []protocol.EventType{protocol.EventTerminalStateChanged},
+	})
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	serverProcess(t, server, "term-1").exit(23)
+	event := requireProtocolEvent(t, events)
+	if event.StateChanged == nil || event.StateChanged.ExitCode == nil || *event.StateChanged.ExitCode != 23 || event.StateChanged.ExitedAt.IsZero() {
+		t.Fatalf("expected exited event metadata, got %#v", event)
+	}
+	var info protocol.TerminalInfo
+	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if info.State != string(TerminalStateExited) || info.ExitCode == nil || *info.ExitCode != 23 || !info.ExitedAt.Equal(event.StateChanged.ExitedAt) {
+		t.Fatalf("expected get to carry exit metadata, got %#v event=%#v", info, event)
+	}
+	if got := strings.Join(info.Command, " "); !strings.Contains(got, "make test") {
+		t.Fatalf("expected command metadata, got %#v", info.Command)
+	}
+	list, err := client.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list.Terminals) != 1 || !list.Terminals[0].ExitedAt.Equal(info.ExitedAt) {
+		t.Fatalf("expected list to carry exited_at, got %#v want=%s", list, info.ExitedAt)
+	}
+}
+
 func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

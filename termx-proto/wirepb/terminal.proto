@@ -51,6 +51,7 @@ message TerminalInfo {
   optional int32 exit_code = 10;
   ResizeOwnership resize_ownership = 11;
   int32 resize_owner_attachment_count = 12;
+  int64 exited_at_unix_nano = 13;
 }
 
 message CreateParams {
@@ -152,6 +153,7 @@ message TerminalStateChangedData {
   string old_state = 1;
   string new_state = 2;
   optional int32 exit_code = 3;
+  int64 exited_at_unix_nano = 4;
 }
 
 message TerminalResizedData {

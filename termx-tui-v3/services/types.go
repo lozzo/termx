@@ -93,7 +93,10 @@ type TerminalPoolItem struct {
 	Title      string
 	State      string
 	CWD        string
+	Command    []string
 	Tags       map[string]string
+	ExitCode   *int
+	ExitedAt   time.Time
 	Cols       int
 	Rows       int
 }
@@ -244,6 +247,8 @@ type TerminalLiveEvent struct {
 	Snapshot   state.LiveSurfaceSnapshot
 	Exited     bool
 	ExitCode   int
+	ExitedAt   time.Time
+	Command    []string
 	Reason     string
 	Tags       map[string]string
 	Metadata   bool
@@ -775,6 +780,11 @@ func cloneTerminalPoolItems(items []TerminalPoolItem) []TerminalPoolItem {
 	cloned := make([]TerminalPoolItem, len(items))
 	for i, item := range items {
 		cloned[i] = item
+		cloned[i].Command = append([]string(nil), item.Command...)
+		if item.ExitCode != nil {
+			code := *item.ExitCode
+			cloned[i].ExitCode = &code
+		}
 		if len(item.Tags) > 0 {
 			cloned[i].Tags = make(map[string]string, len(item.Tags))
 			for key, value := range item.Tags {

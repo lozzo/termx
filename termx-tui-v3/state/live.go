@@ -1,5 +1,7 @@
 package state
 
+import "time"
+
 type TerminalLiveState string
 
 const (
@@ -24,6 +26,8 @@ type TerminalSurfaceStore struct {
 	State          TerminalLiveState
 	ExitCode       int
 	ExitReason     string
+	ExitedAt       time.Time
+	Command        []string
 	Err            string
 	ResizeBoundary LiveResizeBoundary
 	Surfaces       map[string]LiveSurfaceSnapshot
@@ -48,12 +52,12 @@ type LiveCursor struct {
 
 // LiveTerminalModes 只保存影响 TUI 输入转发的终端模式位。
 type LiveTerminalModes struct {
-	MouseTracking bool
-	MouseX10      bool
-	MouseNormal   bool
-	MouseButton   bool
-	MouseAny      bool
-	MouseSGR      bool
+	MouseTracking  bool
+	MouseX10       bool
+	MouseNormal    bool
+	MouseButton    bool
+	MouseAny       bool
+	MouseSGR       bool
 	BracketedPaste bool
 }
 
@@ -98,6 +102,8 @@ type TerminalSessionStore struct {
 	State              TerminalLiveState
 	ExitCode           int
 	ExitReason         string
+	ExitedAt           time.Time
+	Command            []string
 }
 
 // LiveSurfaceSnapshot 是 terminal service/event 回投给 reducer 的实时投影。
@@ -114,6 +120,8 @@ type LiveSurfaceSnapshot struct {
 	State      TerminalLiveState
 	ExitCode   int
 	ExitReason string
+	ExitedAt   time.Time
+	Command    []string
 	Err        string
 }
 
@@ -167,6 +175,8 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 	store.State = TerminalLiveAttached
 	store.ExitCode = 0
 	store.ExitReason = ""
+	store.ExitedAt = time.Time{}
+	store.Command = nil
 	store.Err = ""
 	store.ResizeBoundary = LiveResizeBoundary{}
 	if terminalID != "" {
@@ -189,6 +199,8 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 		snapshot.State = TerminalLiveAttached
 		snapshot.ExitCode = 0
 		snapshot.ExitReason = ""
+		snapshot.ExitedAt = time.Time{}
+		snapshot.Command = nil
 		snapshot.Err = ""
 		store.Surfaces[terminalID] = snapshot
 		if len(snapshot.Lines) > 0 || len(snapshot.Screen) > 0 || snapshot.Title != "" || snapshot.Cursor.Visible {
@@ -199,6 +211,10 @@ func (store TerminalSurfaceStore) Attach(terminalID string, cols int, rows int) 
 }
 
 func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSurfaceStore {
+	return store.MarkExitedWithMetadata(terminalID, exitCode, reason, time.Time{}, nil)
+}
+
+func (store TerminalSurfaceStore) MarkExitedWithMetadata(terminalID string, exitCode int, reason string, exitedAt time.Time, command []string) TerminalSurfaceStore {
 	if terminalID != "" {
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 		snapshot, ok := store.snapshotForTerminal(terminalID)
@@ -209,6 +225,8 @@ func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, re
 		snapshot.State = TerminalLiveExited
 		snapshot.ExitCode = exitCode
 		snapshot.ExitReason = reason
+		snapshot.ExitedAt = exitedAt
+		snapshot.Command = cloneStrings(command)
 		snapshot.Err = ""
 		snapshot.Cursor = LiveCursor{}
 		snapshot.Modes = LiveTerminalModes{}
@@ -221,6 +239,8 @@ func (store TerminalSurfaceStore) MarkExited(terminalID string, exitCode int, re
 		store.State = TerminalLiveExited
 		store.ExitCode = exitCode
 		store.ExitReason = reason
+		store.ExitedAt = exitedAt
+		store.Command = cloneStrings(command)
 		store.Err = ""
 		store.ResizeBoundary = LiveResizeBoundary{}
 		store.Cursor = LiveCursor{}
@@ -307,6 +327,8 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 	store.State = ""
 	store.ExitCode = 0
 	store.ExitReason = ""
+	store.ExitedAt = time.Time{}
+	store.Command = nil
 	store.Err = ""
 	store.ResizeBoundary = LiveResizeBoundary{}
 	return store
@@ -337,6 +359,29 @@ func (store TerminalSessionStore) RemoveTerminal(terminalID string) TerminalSess
 	store.State = ""
 	store.ExitCode = 0
 	store.ExitReason = ""
+	store.ExitedAt = time.Time{}
+	store.Command = nil
+	return store
+}
+
+func (store TerminalSessionStore) ClearInputChannel(terminalID string) TerminalSessionStore {
+	if terminalID == "" {
+		return store
+	}
+	if len(store.InputChannels) > 0 {
+		store.InputChannels = cloneInputChannels(store.InputChannels)
+		delete(store.InputChannels, terminalID)
+	}
+	if store.TerminalID == terminalID {
+		store.Channel = 0
+		store.Attached = false
+		store.State = TerminalLivePending
+		store.ExitCode = 0
+		store.ExitReason = ""
+		store.ExitedAt = time.Time{}
+		store.Command = nil
+		store.LastError = ""
+	}
 	return store
 }
 
@@ -357,6 +402,8 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 	}
 	store.ExitCode = snapshot.ExitCode
 	store.ExitReason = snapshot.ExitReason
+	store.ExitedAt = snapshot.ExitedAt
+	store.Command = cloneStrings(snapshot.Command)
 	store.Err = snapshot.Err
 	return store
 }
@@ -392,6 +439,8 @@ func (store TerminalSurfaceStore) snapshotForTerminal(terminalID string) (LiveSu
 		State:      store.State,
 		ExitCode:   store.ExitCode,
 		ExitReason: store.ExitReason,
+		ExitedAt:   store.ExitedAt,
+		Command:    cloneStrings(store.Command),
 		Err:        store.Err,
 	}, true
 }
@@ -464,6 +513,8 @@ func (store TerminalSessionStore) AttachWithResizeOwner(terminalID string, chann
 	store.State = TerminalLiveAttached
 	store.ExitCode = 0
 	store.ExitReason = ""
+	store.ExitedAt = time.Time{}
+	store.Command = nil
 	return store
 }
 
@@ -536,6 +587,10 @@ func (store TerminalSessionStore) SetError(err string) TerminalSessionStore {
 }
 
 func (store TerminalSessionStore) MarkExited(terminalID string, exitCode int, reason string) TerminalSessionStore {
+	return store.MarkExitedWithMetadata(terminalID, exitCode, reason, time.Time{}, nil)
+}
+
+func (store TerminalSessionStore) MarkExitedWithMetadata(terminalID string, exitCode int, reason string, exitedAt time.Time, command []string) TerminalSessionStore {
 	if terminalID != "" {
 		store.TerminalID = terminalID
 	}
@@ -543,6 +598,8 @@ func (store TerminalSessionStore) MarkExited(terminalID string, exitCode int, re
 	store.State = TerminalLiveExited
 	store.ExitCode = exitCode
 	store.ExitReason = reason
+	store.ExitedAt = exitedAt
+	store.Command = cloneStrings(command)
 	store.LastError = ""
 	store.ResizePolicy = ""
 	store.SurfaceID = ""
