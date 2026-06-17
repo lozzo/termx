@@ -1179,15 +1179,11 @@ func (runtime *AppRuntime) paneMouseTrackingEnabled(paneID string) bool {
 	if paneID == "" {
 		return false
 	}
-	pane, ok := runtime.state.Shell.PaneByID(paneID)
-	if !ok {
+	binding, ok := runtime.state.TerminalViews.PaneBinding(paneID)
+	if !ok || binding.TerminalID == "" {
 		return false
 	}
-	terminalID := pane.TerminalID
-	if binding, ok := runtime.state.TerminalViews.PaneBinding(paneID); ok && binding.TerminalID != "" {
-		terminalID = binding.TerminalID
-	}
-	surface := runtime.state.Surface.SurfaceForTerminal(terminalID)
+	surface := runtime.state.Surface.SurfaceForTerminal(binding.TerminalID)
 	return surface.Modes.MousePassthroughEnabled()
 }
 

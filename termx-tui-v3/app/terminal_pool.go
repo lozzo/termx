@@ -25,6 +25,7 @@ func (TerminalPoolListResultMsg) isMsg() {}
 
 type TerminalPoolAttachRequestMsg struct {
 	TerminalID       string
+	TargetPaneID     string
 	TargetFloatingID string
 	ResizePolicy     string
 }
@@ -33,6 +34,7 @@ func (TerminalPoolAttachRequestMsg) isMsg() {}
 
 type TerminalPoolAttachResultMsg struct {
 	TerminalID       string
+	TargetPaneID     string
 	TargetFloatingID string
 	ResizePolicy     string
 	Result           services.TerminalAttachResult
@@ -46,12 +48,14 @@ type TerminalPoolCreateRequestMsg struct {
 	Command          []string
 	CWD              string
 	Tags             map[string]string
+	TargetPaneID     string
 	TargetFloatingID string
 }
 
 func (TerminalPoolCreateRequestMsg) isMsg() {}
 
 type TerminalPoolCreateResultMsg struct {
+	TargetPaneID     string
 	TargetFloatingID string
 	Result           services.TerminalCreateResult
 	Err              error
@@ -74,6 +78,7 @@ func (TerminalPoolRestartResultMsg) isMsg() {}
 
 type TerminalPoolReconnectRequestMsg struct {
 	TerminalID       string
+	TargetPaneID     string
 	TargetFloatingID string
 }
 
@@ -81,6 +86,7 @@ func (TerminalPoolReconnectRequestMsg) isMsg() {}
 
 type TerminalPoolReconnectResultMsg struct {
 	TerminalID       string
+	TargetPaneID     string
 	TargetFloatingID string
 	ResizePolicy     string
 	Result           services.TerminalAttachResult
@@ -226,15 +232,12 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "terminal service missing"})
 		return root.Advance(), nil
 	}
-	cols, rows := terminalPoolAttachSize(root)
-	targetFloatingID := msg.TargetFloatingID
-	if targetFloatingID == "" {
-		targetFloatingID = root.Shell.EnsureDefaults().ActiveFloatingID
+	target, ok := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "missing target panel"})
+		return root.Advance(), nil
 	}
-	viewID := state.TerminalPaneViewID(root.Shell.EnsureDefaults().ActivePaneID)
-	if targetFloatingID != "" {
-		viewID = state.TerminalFloatingViewID(targetFloatingID)
-	}
+	cols, rows := terminalPoolAttachSizeForTarget(root, target)
 	resizePolicy := msg.ResizePolicy
 	if resizePolicy == "" {
 		resizePolicy = state.TerminalResizeRoleFollower
@@ -248,9 +251,9 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				Mode:         "collaborator",
 				ResizePolicy: resizePolicy,
 				SurfaceID:    "termx-tui-v3",
-				ViewID:       viewID,
+				ViewID:       target.ViewID,
 			})
-			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
+			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
 		},
 	}}
 }
@@ -266,6 +269,13 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	if result.TerminalID == "" {
 		result.TerminalID = msg.TerminalID
 	}
+	target, _ := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+	if result.ViewID == "" {
+		result.ViewID = target.ViewID
+	}
+	if result.SurfaceID == "" {
+		result.SurfaceID = "termx-tui-v3"
+	}
 	if shouldPreserveTerminalPoolAttachResizePolicy(root, result.TerminalID, msg.ResizePolicy) {
 		result.ResizePolicy = msg.ResizePolicy
 		if msg.ResizePolicy != state.TerminalResizeRoleOwner {
@@ -276,7 +286,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
 	if msg.TargetFloatingID != "" {
-		paneID := ""
+		paneID := msg.TargetPaneID
 		for _, floating := range root.Shell.Floatings {
 			if floating.ID == msg.TargetFloatingID {
 				paneID = floating.Pane.ID
@@ -289,10 +299,13 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		root.Shell = root.Shell.BindFloatingTerminal(msg.TargetFloatingID, result.TerminalID)
 	} else {
 		root.Shell = root.Shell.EnsureActiveTabForAttach()
-		activePaneID := root.Shell.EnsureDefaults().ActivePaneID
-		root = invalidateCopyModeForTerminalRebind(root, activePaneID, result.ViewID, result.TerminalID)
-		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
-		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(activePaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
+		targetPaneID := msg.TargetPaneID
+		if targetPaneID == "" {
+			targetPaneID = root.Shell.EnsureDefaults().ActivePaneID
+		}
+		root = invalidateCopyModeForTerminalRebind(root, targetPaneID, result.ViewID, result.TerminalID)
+		root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: targetPaneID}, result.TerminalID)
+		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(targetPaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 	}
 	root.Shell = root.Shell.CloseOverlay()
@@ -307,7 +320,12 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: "terminal service missing"})
 		return root.Advance(), nil
 	}
-	cols, rows := terminalPoolAttachSize(root)
+	target, ok := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.new", Body: "missing target panel"})
+		return root.Advance(), nil
+	}
+	cols, rows := terminalPoolAttachSizeForTarget(root, target)
 	terminalID := nextTerminalPoolID(root)
 	title := strings.TrimSpace(msg.Title)
 	if title == "" {
@@ -330,7 +348,7 @@ func reduceTerminalPoolCreateRequest(root state.Root, msg TerminalPoolCreateRequ
 				Cols:       cols,
 				Rows:       rows,
 			})
-			return TerminalPoolCreateResultMsg{TargetFloatingID: msg.TargetFloatingID, Result: result, Err: err}
+			return TerminalPoolCreateResultMsg{TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, Result: result, Err: err}
 		},
 	}}
 }
@@ -350,7 +368,7 @@ func reduceTerminalPoolCreateResult(root state.Root, msg TerminalPoolCreateResul
 	effects := []Effect{
 		FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: msg.Result.TerminalID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: state.TerminalResizeRoleOwner}
+			return TerminalPoolAttachRequestMsg{TerminalID: msg.Result.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: state.TerminalResizeRoleOwner}
 		}},
 	}
 	return root.Advance(), effects
@@ -381,23 +399,20 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.reconnect", Body: "terminal unavailable"})
 		return root.Advance(), nil
 	}
-	cols, rows := terminalPoolAttachSize(root)
-	targetFloatingID := msg.TargetFloatingID
-	if targetFloatingID == "" {
-		targetFloatingID = root.Shell.EnsureDefaults().ActiveFloatingID
+	target, ok := terminalPoolTargetFromRequest(root, msg.TargetPaneID, msg.TargetFloatingID)
+	if !ok {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.reconnect", Body: "missing target panel"})
+		return root.Advance(), nil
 	}
-	viewID := state.TerminalPaneViewID(root.Shell.EnsureDefaults().ActivePaneID)
-	if targetFloatingID != "" {
-		viewID = state.TerminalFloatingViewID(targetFloatingID)
-	}
+	cols, rows := terminalPoolAttachSizeForTarget(root, target)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "termx-tui-v3", ViewID: viewID})
-		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: targetFloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err}
+		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "termx-tui-v3", ViewID: target.ViewID})
+		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err}
 	}}}
 }
 
 func reduceTerminalPoolReconnectResult(root state.Root, msg TerminalPoolReconnectResultMsg, deps LiveDeps) (state.Root, []Effect) {
-	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
+	return reduceTerminalPoolAttachResult(root, TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetPaneID: msg.TargetPaneID, TargetFloatingID: msg.TargetFloatingID, ResizePolicy: msg.ResizePolicy, Result: msg.Result, Err: msg.Err}, deps)
 }
 
 func reduceTerminalPoolKillRequest(root state.Root, msg TerminalPoolKillRequestMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -524,32 +539,39 @@ type terminalSizeLockTarget struct {
 	TerminalID string
 }
 
+type terminalPoolTarget struct {
+	PaneID     string
+	FloatingID string
+	ViewID     string
+}
+
+func terminalPoolTargetFromRequest(root state.Root, paneID string, floatingID string) (terminalPoolTarget, bool) {
+	shell := root.Shell.EnsureDefaults()
+	if floatingID != "" {
+		paneID = ""
+		for _, floating := range shell.Floatings {
+			if floating.ID == floatingID {
+				paneID = floating.Pane.ID
+				break
+			}
+		}
+		return terminalPoolTarget{PaneID: paneID, FloatingID: floatingID, ViewID: state.TerminalFloatingViewID(floatingID)}, true
+	}
+	if paneID == "" {
+		paneID = shell.ActivePaneID
+	}
+	if paneID == "" {
+		return terminalPoolTarget{}, false
+	}
+	return terminalPoolTarget{PaneID: paneID, ViewID: state.TerminalPaneViewID(paneID)}, true
+}
+
 func activeTerminalSizeLockTarget(root state.Root) (terminalSizeLockTarget, bool) {
 	if binding, ok := activeTerminalViewBinding(root); ok && binding.TerminalID != "" {
 		if binding.HasResizeOwner() {
 			return terminalSizeLockTarget{TerminalID: binding.TerminalID}, true
 		}
 		return terminalSizeLockTarget{}, false
-	}
-	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		for _, floating := range shell.Floatings {
-			if floating.ID == shell.ActiveFloatingID && floating.Pane.TerminalID != "" {
-				if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && !binding.HasResizeOwner() {
-					return terminalSizeLockTarget{}, false
-				}
-				return terminalSizeLockTarget{TerminalID: floating.Pane.TerminalID}, true
-			}
-		}
-	}
-	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok && pane.TerminalID != "" {
-		if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && !binding.HasResizeOwner() {
-			return terminalSizeLockTarget{}, false
-		}
-		return terminalSizeLockTarget{TerminalID: pane.TerminalID}, true
-	}
-	if root.Session.TerminalID != "" {
-		return terminalSizeLockTarget{TerminalID: root.Session.TerminalID}, true
 	}
 	return terminalSizeLockTarget{}, false
 }
@@ -661,6 +683,41 @@ func terminalPoolAttachSize(root state.Root) (int, int) {
 		rows = 24
 	}
 	return cols, rows
+}
+
+func terminalPoolAttachSizeForTarget(root state.Root, target terminalPoolTarget) (int, int) {
+	if rect, ok := terminalPoolTargetContentRect(root, target, render.Rect{}); ok {
+		return rect.W, rect.H
+	}
+	cols, rows := liveAttachContentSize(root, LiveConfig{Cols: root.Session.Cols, Rows: root.Session.Rows})
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	return cols, rows
+}
+
+func terminalPoolTargetContentRect(root state.Root, target terminalPoolTarget, fallbackViewport render.Rect) (render.Rect, bool) {
+	plan, ok := terminalLayoutPlan(root, fallbackViewport)
+	if !ok {
+		return render.Rect{}, false
+	}
+	if target.FloatingID != "" {
+		for _, layout := range plan.Floatings {
+			if layout.Floating.ID == target.FloatingID && layout.ContentRect.W > 0 && layout.ContentRect.H > 0 {
+				return layout.ContentRect, true
+			}
+		}
+		return render.Rect{}, false
+	}
+	for _, panel := range plan.Panels {
+		if panel.Panel.ID == target.PaneID && panel.ContentRect.W > 0 && panel.ContentRect.H > 0 {
+			return panel.ContentRect, true
+		}
+	}
+	return render.Rect{}, false
 }
 
 func nextTerminalPoolID(root state.Root) string {

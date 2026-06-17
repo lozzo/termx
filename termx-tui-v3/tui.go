@@ -91,7 +91,7 @@ func SmokeRunDetailed(ctx context.Context) (SmokeResult, error) {
 }
 
 func smokeLiveRoot() state.Root {
-	return state.Root{
+	root := state.Root{
 		Shell: state.DefaultShell(),
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "termx-live",
@@ -100,6 +100,9 @@ func smokeLiveRoot() state.Root {
 			Lines:      []string{"termx live 🚀", "你好 output"},
 		},
 	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "termx-live", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "termx-live")
+	return root
 }
 
 func smokeSplitHiddenToastRoot() state.Root {
@@ -244,7 +247,7 @@ func smokeTabWorkspaceRoot() state.Root {
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
 	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
 	shell = shell.SetInteractionMode(state.InteractionModeWorkspace)
-	return state.Root{
+	root := state.Root{
 		Shell: shell,
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "termx-workspace",
@@ -253,6 +256,10 @@ func smokeTabWorkspaceRoot() state.Root {
 			Lines:      []string{"workspace live"},
 		},
 	}
+	paneID := root.Shell.EnsureDefaults().ActivePaneID
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(paneID, "termx-workspace", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(paneID), true))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: paneID}, "termx-workspace")
+	return root
 }
 
 func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, renderer render.Renderer) (render.Frame, error) {
@@ -267,6 +274,8 @@ func smokePaneCommandFrame(ctx context.Context, builder render.RenderVMBuilder, 
 			Lines:      []string{"pane command live"},
 		},
 	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "termx-pane-command", 7, 64, 16, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "termx-pane-command")
 	runtime := app.NewAppRuntime(root, app.NewShellReducer(), func(root state.Root) render.Frame {
 		return renderer.Render(builder.Build(root))
 	}, host, app.NewSyncEffectRunner())
@@ -334,6 +343,9 @@ func smokeVisualAuditFrame(ctx context.Context, builder render.RenderVMBuilder, 
 		Viewport: state.ViewportStore{Valid: true, Cols: 140, Rows: 40},
 		Surface:  visualAuditSurfaceStore(),
 	}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(activeShellPaneID, "term-shell", 7, 82, 34, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(activeShellPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-logs", "term-logs", 8, 30, 34, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-logs"), false))
 	runtime := app.NewAppRuntime(root, nil, func(root state.Root) render.Frame {
 		vm := builder.Build(root)
 		vm.Shell.Footer.GlobalSummary = "ws:main float:1 terminals:1"

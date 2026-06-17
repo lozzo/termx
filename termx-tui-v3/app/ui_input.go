@@ -218,10 +218,11 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 		}
 	}
 	if selected.CreateNew {
+		target := terminalPoolTargetForOverlay(root)
 		return root, []Effect{
 			handledEffect{},
 			FuncEffect{Run: func(context.Context) Msg {
-				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+				return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
 			}},
 		}
 	}
@@ -229,19 +230,11 @@ func reduceTerminalPickerConfirm(root state.Root, items []state.TerminalPickerIt
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.attach", Body: "no terminal"})
 		return root.Advance(), []Effect{handledEffect{}}
 	}
-	if root.Shell.EnsureDefaults().ActiveFloatingID != "" {
-		targetFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
-		return root, []Effect{
-			handledEffect{},
-			FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: targetFloatingID}
-			}},
-		}
-	}
+	target := terminalPoolTargetForOverlay(root)
 	return root, []Effect{
 		handledEffect{},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 		}},
 	}
 }
@@ -294,10 +287,11 @@ func reduceTerminalPoolPageAttach(root state.Root, items []state.TerminalPoolPag
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "pool.attach", Body: "no terminal"})
 		return root.Advance(), []Effect{handledEffect{}}
 	}
+	target := terminalPoolTargetForOverlay(root)
 	return root, []Effect{
 		handledEffect{},
 		FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 		}},
 	}
 }

@@ -830,10 +830,10 @@ func TestLiveInputRoutesToFocusedPaneTerminal(t *testing.T) {
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 90, Rows: 24}}); err != nil {
 		t.Fatalf("post main attach: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-2", Channel: 2, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-2")}}); err != nil {
 		t.Fatalf("post term-2 attach result: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-3", Channel: 3, Cols: 42, Rows: 20}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-3", Channel: 3, Cols: 42, Rows: 20, ViewID: state.TerminalPaneViewID("pane-3")}}); err != nil {
 		t.Fatalf("post term-3 attach result: %v", err)
 	}
 	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{Action: state.PaneCommandFocus, Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID}, Source: state.PaneCommandSourceTest}}); err != nil {
@@ -908,7 +908,7 @@ func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("post main attach: %v", err)
 	}
-	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6}}); err != nil {
+	if err := runtime.Post(LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-float", Channel: 9, Cols: 28, Rows: 6, ViewID: state.TerminalFloatingViewID("floating-1")}}); err != nil {
 		t.Fatalf("post floating attach result: %v", err)
 	}
 	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: "floating-1", Source: state.PaneCommandSourceTest}}); err != nil {
@@ -926,6 +926,60 @@ func TestLiveInputTargetsActiveFloatingBeforeTiledPane(t *testing.T) {
 
 	if len(terminal.Inputs) != 1 || terminal.Inputs[0].TerminalID != "term-float" || terminal.Inputs[0].Channel != 9 || string(terminal.Inputs[0].Bytes) != "f" {
 		t.Fatalf("active floating input should route to floating terminal, got %#v", terminal.Inputs)
+	}
+}
+
+func TestTerminalPoolPaneReattachDoesNotStealSharedFloatingBinding(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{
+			TerminalID:   "term-b",
+			Channel:      9,
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: state.TerminalResizeRoleFollower,
+			SurfaceID:    "surface",
+		},
+	}
+	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-a")
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-a"},
+		Rect:     state.FloatingRect{X: 8, Y: 4, W: 40, H: 10},
+		Source:   state.PaneCommandSourceTest,
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-a", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-a", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("floating-1"), false))
+	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})
+
+	root, effects := reducer(root, TerminalPoolAttachRequestMsg{TerminalID: "term-b", TargetPaneID: state.DefaultPaneID})
+	if len(effects) != 1 {
+		t.Fatalf("expected attach effect, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolAttachResultMsg)
+	if !ok {
+		t.Fatalf("expected attach result, got %#v", msg)
+	}
+	root, _ = reducer(root, msg)
+
+	paneBinding, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || paneBinding.TerminalID != "term-b" || paneBinding.Channel != 9 {
+		t.Fatalf("pane should rebind to term-b, binding=%#v ok=%v", paneBinding, ok)
+	}
+	floatingBinding, ok := root.TerminalViews.FloatingBinding("floating-1")
+	if !ok || floatingBinding.TerminalID != "term-a" || floatingBinding.Channel != 8 {
+		t.Fatalf("floating binding must remain on term-a, binding=%#v ok=%v", floatingBinding, ok)
+	}
+	root.Shell, _ = root.Shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandFocusRaise, TargetID: "floating-1", Source: state.PaneCommandSourceTest})
+	target, ok := liveInputTarget(root)
+	if !ok || target.TerminalID != "term-a" || target.Channel != 8 || !target.Floating {
+		t.Fatalf("focused floating input must keep its own binding, target=%#v ok=%v", target, ok)
 	}
 }
 
@@ -1334,8 +1388,12 @@ func TestLiveSurfaceStoreKeepsPaneTerminalBindingsIsolated(t *testing.T) {
 		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
 	host := NewFakeTerminalHost(8)
 	host.SetSize(100, 24)
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 7, 48, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-logs", 8, 48, 20, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
 	runtime := NewLiveRuntime(
-		state.Root{Shell: shell},
+		root,
 		host,
 		NewSyncEffectRunner(),
 		LiveDeps{Terminal: &services.FakeTerminalService{}},

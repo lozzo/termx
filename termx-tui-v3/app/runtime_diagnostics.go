@@ -272,7 +272,9 @@ func floatingDiagnosticKey(root state.Root) string {
 		builder.WriteString(":")
 		builder.WriteString(floating.Pane.ID)
 		builder.WriteString(":")
-		builder.WriteString(floating.Pane.TerminalID)
+		if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok {
+			builder.WriteString(binding.TerminalID)
+		}
 		builder.WriteString(":")
 		builder.WriteString(fmt.Sprintf("%d,%d,%d,%d", floating.Rect.X, floating.Rect.Y, floating.Rect.W, floating.Rect.H))
 		if floating.Active {

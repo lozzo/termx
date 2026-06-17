@@ -474,25 +474,22 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			selected = state.TerminalPickerItem{PaneID: msg.PaneID}
 			ok = true
 		}
-		if ok && root.Shell.EnsureDefaults().ActiveFloatingID != "" && selected.TerminalID != "" {
-			targetFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
-			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetFloatingID: targetFloatingID}
-			}}}
-		}
 		if ok && selected.CreateNew {
+			target := terminalPoolTargetForOverlay(root)
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+				return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
 			}}}
 		}
 		if ok && selected.TerminalID != "" {
+			target := terminalPoolTargetForOverlay(root)
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 			}}}
 		}
 	case render.ActionPickerNew:
+		target := terminalPoolTargetForOverlay(root)
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ShellOpenPromptMsg{Prompt: createTerminalPrompt(root.Shell.EnsureDefaults().ActivePaneID)}
+			return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
 		}}}
 	case render.ActionPickerSplit:
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
@@ -502,8 +499,9 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}
 		shell := root.Shell.EnsureDefaults()
 		next, effects := reducePaneCommand(root, state.PaneCommand{Action: state.PaneCommandSplit, Target: state.PaneCommandTarget{PaneID: shell.ActivePaneID}, SplitDirection: state.SplitDirectionVertical, NewPane: state.PaneState{ID: nextKeyboardPaneID(shell), Title: "pane", Kind: state.PaneEmpty}, Source: state.PaneCommandSourceKeyboard})
+		targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
 		return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+			return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
 		}})
 	case render.ActionPickerEdit:
 		selected, ok := terminalPickerItemAt(state.TerminalPickerItems(root), msg.Row)
@@ -538,15 +536,17 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), nil
 	case render.ActionPoolAttach:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
+			target := terminalPoolTargetForOverlay(root)
 			return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 			}}}
 		}
 	case render.ActionPoolAttachTab:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
 			next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourceKeyboard})
+			targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
 			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
-				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID}
+				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
 			}})
 		}
 	case render.ActionPoolAttachFloat:
@@ -672,15 +672,17 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
 		}}}
 	case render.ActionExitedReconnect:
+		target := terminalPoolTargetForContentAction(root, msg)
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
+			return TerminalPoolReconnectRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg), TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID}
 		}}}
 	case render.ActionEmptyManager:
 		root.Shell = root.Shell.OpenTerminalPool()
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 	case render.ActionEmptyCreate:
+		target := terminalPoolTargetForContentAction(root, msg)
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return ShellOpenPromptMsg{Prompt: createTerminalPrompt(msg.PaneID)}
+			return ShellOpenPromptMsg{Prompt: createTerminalPromptForTarget(root, target)}
 		}}}
 	case render.ActionEmptyAttach:
 		root.Shell = root.Shell.OpenTerminalPicker()
@@ -773,7 +775,6 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 				root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.create", Body: err.Error()})
 				return root.Advance(), nil
 			}
-			request.TargetFloatingID = root.Shell.EnsureDefaults().ActiveFloatingID
 			root.Shell = root.Shell.CloseOverlay()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return request }}}
 		}
@@ -901,6 +902,22 @@ func createTerminalPrompt(targetPaneID string) state.PromptState {
 	}
 }
 
+func createTerminalPromptForTarget(root state.Root, target terminalPoolTarget) state.PromptState {
+	if target.FloatingID != "" {
+		prompt := createTerminalPrompt(target.PaneID)
+		prompt.Context = "floating"
+		prompt.TargetID = target.FloatingID
+		return prompt
+	}
+	if target.PaneID == "" {
+		target = terminalPoolTargetForActive(root)
+	}
+	prompt := createTerminalPrompt(target.PaneID)
+	prompt.Context = "pane"
+	prompt.TargetID = target.PaneID
+	return prompt
+}
+
 func terminalCreateRequestFromPrompt(prompt state.PromptState) (TerminalPoolCreateRequestMsg, error) {
 	name := strings.TrimSpace(prompt.FieldValue("name"))
 	if name == "" {
@@ -920,7 +937,13 @@ func terminalCreateRequestFromPrompt(prompt state.PromptState) (TerminalPoolCrea
 	if workdir == "" {
 		workdir = strings.TrimSpace(prompt.Workdir)
 	}
-	return TerminalPoolCreateRequestMsg{Title: name, Command: command, CWD: workdir}, nil
+	request := TerminalPoolCreateRequestMsg{Title: name, Command: command, CWD: workdir}
+	if prompt.Context == "floating" {
+		request.TargetFloatingID = prompt.TargetID
+	} else {
+		request.TargetPaneID = prompt.TargetID
+	}
+	return request, nil
 }
 
 func parsePromptCommand(value string) ([]string, error) {
@@ -1159,9 +1182,6 @@ func terminalIDForContentAction(root state.Root, paneID string) string {
 	if binding, ok := root.TerminalViews.PaneBinding(paneID); ok && binding.TerminalID != "" {
 		return binding.TerminalID
 	}
-	if pane, ok := root.Shell.Pane(state.PaneCommandTarget{PaneID: paneID}); ok {
-		return pane.TerminalID
-	}
 	return ""
 }
 
@@ -1171,12 +1191,56 @@ func terminalIDForShellContentAction(root state.Root, msg ShellContentActionMsg)
 		if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok && binding.TerminalID != "" {
 			return binding.TerminalID
 		}
-		if floating, ok := root.Shell.FloatingByPaneID(msg.PaneID); ok {
-			return floating.Pane.TerminalID
-		}
 		return ""
 	}
 	return terminalIDForContentAction(root, msg.PaneID)
+}
+
+func terminalPoolTargetForOverlay(root state.Root) terminalPoolTarget {
+	shell := root.Shell.EnsureDefaults()
+	if targetID := shell.Overlay.TargetID; targetID != "" {
+		if target, ok := terminalPoolTargetForID(shell, targetID); ok {
+			return target
+		}
+	}
+	return terminalPoolTargetForActive(root)
+}
+
+func terminalPoolTargetForContentAction(root state.Root, msg ShellContentActionMsg) terminalPoolTarget {
+	if msg.Floating {
+		if floatingID := floatingTargetIDForContentAction(root, msg); floatingID != "" {
+			if target, ok := terminalPoolTargetForID(root.Shell.EnsureDefaults(), floatingID); ok {
+				return target
+			}
+		}
+	}
+	if msg.PaneID != "" {
+		return terminalPoolTarget{PaneID: msg.PaneID, ViewID: state.TerminalPaneViewID(msg.PaneID)}
+	}
+	return terminalPoolTargetForActive(root)
+}
+
+func terminalPoolTargetForActive(root state.Root) terminalPoolTarget {
+	shell := root.Shell.EnsureDefaults()
+	if shell.ActiveFloatingID != "" {
+		if target, ok := terminalPoolTargetForID(shell, shell.ActiveFloatingID); ok {
+			return target
+		}
+	}
+	return terminalPoolTarget{PaneID: shell.ActivePaneID, ViewID: state.TerminalPaneViewID(shell.ActivePaneID)}
+}
+
+func terminalPoolTargetForID(shell state.ShellStore, id string) (terminalPoolTarget, bool) {
+	shell = shell.EnsureDefaults()
+	for _, floating := range shell.Floatings {
+		if floating.ID == id || floating.Pane.ID == id {
+			return terminalPoolTarget{PaneID: floating.Pane.ID, FloatingID: floating.ID, ViewID: state.TerminalFloatingViewID(floating.ID)}, true
+		}
+	}
+	if _, ok := shell.Pane(state.PaneCommandTarget{PaneID: id}); ok {
+		return terminalPoolTarget{PaneID: id, ViewID: state.TerminalPaneViewID(id)}, true
+	}
+	return terminalPoolTarget{}, false
 }
 
 func floatingTargetIDForContentAction(root state.Root, msg ShellContentActionMsg) string {

@@ -72,13 +72,7 @@ func contentProjectorShell(ctx ContentProjectorContext) state.ShellStore {
 
 func projectTerminalLiveContent(ctx ContentProjectorContext) ContentVM {
 	surface := ctx.Surface
-	if surface.TerminalID == "" && ctx.Pane.ID != "" {
-		surface = surfaceForPane(ctx.Root, ctx.Pane)
-	}
 	session := ctx.Session
-	if session.TerminalID == "" {
-		session = ctx.Root.Session
-	}
 	if !ctx.Active && liveSurfaceIsPending(surface, session) {
 		return placeholderContentForPane(ctx.Pane)
 	}

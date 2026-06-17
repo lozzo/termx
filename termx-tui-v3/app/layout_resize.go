@@ -166,12 +166,8 @@ func activeFloatingHasTerminal(root state.Root) bool {
 	if shell.ActiveFloatingID == "" {
 		return false
 	}
-	for _, floating := range shell.Floatings {
-		if floating.ID == shell.ActiveFloatingID && floating.Pane.TerminalID != "" {
-			return true
-		}
-	}
-	return false
+	binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+	return ok && binding.TerminalID != ""
 }
 
 func liveAttachContentSize(root state.Root, cfg LiveConfig) (int, int) {
@@ -226,14 +222,8 @@ func activeFloatingContentRectFromPlan(root state.Root, plan render.LayoutPlan, 
 		return render.Rect{}, false
 	}
 	if requireTerminal {
-		hasTerminal := false
-		for _, floating := range shell.Floatings {
-			if floating.ID == activeFloatingID && floating.Pane.TerminalID != "" {
-				hasTerminal = true
-				break
-			}
-		}
-		if !hasTerminal {
+		binding, ok := root.TerminalViews.FloatingBinding(activeFloatingID)
+		if !ok || binding.TerminalID == "" {
 			return render.Rect{}, false
 		}
 	}

@@ -7,6 +7,33 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
+func bindTestPaneTerminal(root state.Root, paneID string, terminalID string) state.Root {
+	if paneID == "" {
+		paneID = state.DefaultPaneID
+	}
+	if terminalID == "" {
+		terminalID = root.Surface.TerminalID
+	}
+	if terminalID == "" {
+		terminalID = root.Session.TerminalID
+	}
+	if terminalID == "" {
+		return root
+	}
+	cols, rows := root.Surface.Cols, root.Surface.Rows
+	if cols <= 0 {
+		cols = root.Session.Cols
+	}
+	if rows <= 0 {
+		rows = root.Session.Rows
+	}
+	binding := state.NewPaneTerminalView(paneID, terminalID, 7, cols, rows, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(paneID), true)
+	binding.LastError = root.Session.LastError
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: paneID}, terminalID)
+	return root
+}
+
 func TestRenderVMBuilderUsesCopyModeOnlyWhenBoundToHistory(t *testing.T) {
 	root := state.Root{
 		History: state.HistoryStore{
@@ -105,6 +132,7 @@ func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 			Lines:      []string{"build live"},
 		},
 	}
+	root = bindTestPaneTerminal(root, "pane-build", "term-2")
 
 	vm := NewRenderVMBuilder().Build(root)
 	if len(vm.Shell.Header.Tabs) != 2 || vm.Shell.Header.Tabs[0].Title != "shell" || vm.Shell.Header.Tabs[1].Title != "build" || !vm.Shell.Header.Tabs[1].Active {
@@ -399,10 +427,10 @@ func TestRenderVMBuilderBuildsPaneStateSlotsFromContent(t *testing.T) {
 	}{
 		{
 			name: "active live",
-			root: state.Root{
+			root: bindTestPaneTerminal(state.Root{
 				Shell:   state.DefaultShell(),
 				Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true, Lines: []string{"live"}},
-			},
+			}, state.DefaultPaneID, "term-live"),
 			paneID:  state.DefaultPaneID,
 			want:    "active",
 			wantSty: StyleSuccess,
@@ -418,20 +446,20 @@ func TestRenderVMBuilderBuildsPaneStateSlotsFromContent(t *testing.T) {
 		},
 		{
 			name: "error live",
-			root: state.Root{
+			root: bindTestPaneTerminal(state.Root{
 				Shell:   state.DefaultShell(),
-				Session: state.TerminalSessionStore{LastError: "boom"},
-			},
+				Session: state.TerminalSessionStore{TerminalID: "term-live", LastError: "boom"},
+			}, state.DefaultPaneID, "term-live"),
 			paneID:  state.DefaultPaneID,
 			want:    "error",
 			wantSty: StyleDanger,
 		},
 		{
 			name: "empty live",
-			root: state.Root{
+			root: bindTestPaneTerminal(state.Root{
 				Shell:   state.DefaultShell(),
 				Surface: state.TerminalSurfaceStore{TerminalID: "term-empty", Ready: true},
-			},
+			}, state.DefaultPaneID, "term-empty"),
 			paneID:  state.DefaultPaneID,
 			want:    "empty",
 			wantSty: StyleMuted,
@@ -444,7 +472,7 @@ func TestRenderVMBuilderBuildsPaneStateSlotsFromContent(t *testing.T) {
 					FocusPane(state.PaneCommandTarget{PaneID: "pane-logs"})
 				shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
 				surface := (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-main", Lines: []string{"main live"}})
-				return state.Root{Shell: shell, Surface: surface}
+				return bindTestPaneTerminal(state.Root{Shell: shell, Surface: surface}, state.DefaultPaneID, "term-main")
 			}(),
 			paneID:  state.DefaultPaneID,
 			want:    "idle",
@@ -1201,6 +1229,7 @@ func TestRenderVMBuilderBuildsProductHeaderFooterSummaries(t *testing.T) {
 			Attached:   true,
 		},
 	}
+	root = bindTestPaneTerminal(root, "pane-2", "term-live")
 
 	vm := NewRenderVMBuilder().Build(root)
 	header := vm.Shell.Header
@@ -1283,7 +1312,9 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main").
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical)
 	shell = shell.SetInteractionMode(state.InteractionModePane)
-	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-logs", 7, 80, 24, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+	vm := NewRenderVMBuilder().Build(root)
 	if vm.Shell.Footer.Mode != "pane" ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "w", "CLOSE", ActionPaneFooterClose.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "d", "DETACH", ActionPaneFooterDetach.String()) ||
@@ -1651,6 +1682,7 @@ func TestRenderVMBuilderUsesLiveSurface(t *testing.T) {
 			State:      state.TerminalLiveAttached,
 		},
 	}
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
@@ -1679,6 +1711,7 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 		},
 		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 20, Rows: 5},
 	}
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
@@ -1700,21 +1733,22 @@ func TestRenderVMBuilderProjectsTerminalLiveANSIStyleCursorAndState(t *testing.T
 		t.Fatalf("live content must expose terminal surface extent, got %#v", content.Extent)
 	}
 
-	legacy := NewRenderVMBuilder().Build(state.Root{Surface: state.TerminalSurfaceStore{
+	legacyRoot := bindTestPaneTerminal(state.Root{Surface: state.TerminalSurfaceStore{
 		TerminalID: "term-live",
 		Ready:      true,
 		Lines:      []string{"\x1b[31mERR\x1b[0m"},
-	}})
+	}}, state.DefaultPaneID, "term-live")
+	legacy := NewRenderVMBuilder().Build(legacyRoot)
 	if content := activeContent(legacy.Shell); !lineHasStyledCell(content.Lines[0], "ERR", StyleDanger) {
 		t.Fatalf("expected legacy ANSI line fallback to keep working, got %#v", content.Lines[0])
 	}
 
-	pending := NewRenderVMBuilder().Build(state.Root{})
+	pending := NewRenderVMBuilder().Build(bindTestPaneTerminal(state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-live"}}, state.DefaultPaneID, "term-live"))
 	if content := activeContent(pending.Shell); !content.Pending || content.Empty || content.Lines[0].PlainString() != "live surface pending" {
 		t.Fatalf("expected pending live surface content, got %#v", content)
 	}
 
-	empty := NewRenderVMBuilder().Build(state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true}})
+	empty := NewRenderVMBuilder().Build(bindTestPaneTerminal(state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Ready: true}}, state.DefaultPaneID, "term-live"))
 	if content := activeContent(empty.Shell); !content.Empty || content.Pending || content.Lines[0].PlainString() != "live surface empty" {
 		t.Fatalf("expected empty live surface content, got %#v", content)
 	}
@@ -1758,7 +1792,8 @@ func TestRenderVMBuilderDoesNotApplyLiveExtentToStatusFallbacks(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			content := activeContent(NewRenderVMBuilder().Build(tc.root).Shell)
+			root := bindTestPaneTerminal(tc.root, state.DefaultPaneID, "term-live")
+			content := activeContent(NewRenderVMBuilder().Build(root).Shell)
 			if content.Pending != tc.pending || content.Empty != tc.empty || content.Lines[0].PlainString() != tc.want {
 				t.Fatalf("unexpected fallback content %#v", content)
 			}
@@ -1805,7 +1840,8 @@ func TestRenderVMBuilderDoesNotApplyResizeBoundaryExtentToStatusFallbacks(t *tes
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			content := activeContent(NewRenderVMBuilder().Build(tc.root).Shell)
+			root := bindTestPaneTerminal(tc.root, state.DefaultPaneID, "term-live")
+			content := activeContent(NewRenderVMBuilder().Build(root).Shell)
 			if content.Extent.Known {
 				t.Fatalf("resize fallback must not enable live extent dots, got %#v", content.Extent)
 			}
@@ -1831,6 +1867,7 @@ func TestRenderVMBuilderUsesSessionSizeAsLiveExtentWhenSurfaceSizeMissing(t *tes
 		},
 	}
 
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
 	content := activeContent(NewRenderVMBuilder().Build(root).Shell)
 	if content.Extent != (ContentExtent{Known: true, Cols: 14, Rows: 3}) {
 		t.Fatalf("live content should fall back to session size for extent, got %#v", content.Extent)
@@ -1853,6 +1890,7 @@ func TestRenderVMBuilderProjectsLiveExitLifecycle(t *testing.T) {
 		},
 	}
 
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
 	if content.Kind != ContentTerminalLive || !content.Empty || content.Pending || content.Cursor.Visible {
@@ -2286,8 +2324,9 @@ func TestRenderVMBuilderProjectsPromptAndHelpOverlay(t *testing.T) {
 
 func TestRenderVMBuilderShowsLiveError(t *testing.T) {
 	root := state.Root{
-		Surface: state.TerminalSurfaceStore{Err: "boom"},
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", Err: "boom"},
 	}
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-live")
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)

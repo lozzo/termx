@@ -86,7 +86,7 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 	mode := footerMode(root, shell)
 	hint := content.Status
 	if hint == "" {
-		hint = liveStatus(root.Surface, root.Session)
+		hint = activeViewLiveStatus(root, shell)
 	}
 	return FooterVM{
 		Visible:       shell.FooterVisible,
@@ -96,6 +96,20 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 		ActiveTarget:  activeTargetSummary(shell, root),
 		GlobalSummary: globalSummary(root, shell),
 	}
+}
+
+func activeViewLiveStatus(root state.Root, shell state.ShellStore) string {
+	var binding state.TerminalViewBinding
+	var ok bool
+	if shell.ActiveFloatingID != "" {
+		binding, ok = root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+	} else {
+		binding, ok = root.TerminalViews.PaneBinding(shell.ActivePaneID)
+	}
+	if !ok || binding.TerminalID == "" {
+		return ""
+	}
+	return liveStatus(surfaceForBinding(root, binding), sessionForBinding(root, binding))
 }
 
 func terminalSummary(root state.Root) string {
@@ -113,12 +127,9 @@ func terminalCount(root state.Root) int {
 			ids[terminalID] = struct{}{}
 		}
 	}
-	shell := root.Shell.EnsureDefaults()
-	for _, tab := range shell.Workspace.Tabs {
-		for _, pane := range tab.Panes {
-			if pane.TerminalID != "" {
-				ids[pane.TerminalID] = struct{}{}
-			}
+	for _, binding := range root.TerminalViews.Views {
+		if binding.TerminalID != "" {
+			ids[binding.TerminalID] = struct{}{}
 		}
 	}
 	if root.Surface.TerminalID != "" {
@@ -198,8 +209,8 @@ func footerActionAvailable(actionID string, mode string, root state.Root, shell 
 	case ActionPaneFooterClose:
 		return activeTabPaneCount(shell) > 1
 	case ActionPaneFooterDetach:
-		pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
-		return ok && pane.TerminalID != ""
+		binding, ok := root.TerminalViews.PaneBinding(shell.ActivePaneID)
+		return ok && binding.TerminalID != ""
 	case ActionPaneFooterFocus:
 		return activeTabPaneCount(shell) > 1
 	case ActionPaneFooterBalance, ActionResizeBalance, ActionResizeLeft, ActionResizeRight, ActionResizeUp, ActionResizeDown:
@@ -488,18 +499,25 @@ func buildHeaderTabVMs(shell state.ShellStore) []HeaderTabVM {
 }
 
 func terminalStateSummary(root state.Root, pane state.PaneState) string {
+	binding, hasBinding := root.TerminalViews.PaneBinding(pane.ID)
+	surface := state.TerminalSurfaceStore{}
+	session := state.TerminalSessionStore{}
+	if hasBinding && binding.TerminalID != "" {
+		surface = root.Surface.SurfaceForTerminal(binding.TerminalID)
+		session = sessionForBinding(root, binding)
+	}
 	switch {
-	case root.Session.LastError != "" || root.Surface.Err != "":
+	case session.LastError != "" || surface.Err != "":
 		return "error"
 	case copyModeBelongsToPane(root.CopyMode, pane.ID, root.Shell.EnsureDefaults().ActivePaneID):
 		return "copy"
-	case root.Session.State == state.TerminalLiveExited || root.Surface.State == state.TerminalLiveExited:
+	case session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited:
 		return "exited"
-	case root.Session.Attached:
+	case hasBinding && binding.Attached:
 		return "attached"
-	case root.Surface.TerminalID != "":
+	case surface.TerminalID != "":
 		return "live"
-	case pane.TerminalID != "":
+	case hasBinding && binding.TerminalID != "":
 		return "bound"
 	default:
 		return ""
@@ -825,7 +843,11 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 		if pane.Kind == state.PaneEmpty {
 			return buildEmptyPaneContentWithSelection(pane, shell.EmptyPaneCTA.SelectedIndex)
 		}
-		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: sessionForPane(root, pane), Active: true})
+		if root.Session.LastError != "" && root.Session.TerminalID == "" {
+			return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Session: root.Session, Active: true})
+		}
+		surface, session := terminalContentStoresForPane(root, pane)
+		return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: contentKindForPane(pane), Surface: surface, Session: session, Active: true})
 	}
 	if len(shell.Workspace.Tabs) == 0 {
 		return buildEmptyWorkspaceContent(shell.Workspace)
@@ -833,7 +855,7 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 	if tab := activeTab(shell); len(tab.Panes) == 0 {
 		return buildEmptyTabContent(tab)
 	}
-	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentTerminalLive, Surface: root.Surface, Session: root.Session, Active: true})
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Kind: ContentPlaceholder, Active: true})
 }
 
 func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneState, activeContent ContentVM, active bool) ContentVM {
@@ -843,11 +865,8 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 	if active {
 		return activeContent
 	}
-	session := state.TerminalSessionStore{}
-	if pane.Kind == state.PaneTerminalLive && pane.TerminalID != "" {
-		session = sessionForPane(root, pane)
-	}
-	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surfaceForPane(root, pane), Session: session, Active: false})
+	surface, session := terminalContentStoresForPane(root, pane)
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surface, Session: session, Active: false})
 }
 
 func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
@@ -867,8 +886,8 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 		Pane:    floating.Pane,
 		Kind:    contentKindForPane(floating.Pane),
 		Active:  floating.Active,
-		Surface: surfaceForPane(root, floating.Pane),
-		Session: sessionForPane(root, floating.Pane),
+		Surface: surfaceForFloating(root, floating.ID),
+		Session: sessionForFloating(root, floating.ID),
 	})
 }
 
@@ -911,37 +930,65 @@ func contentKindForPane(pane state.PaneState) ContentKind {
 	}
 }
 
-func surfaceForPane(root state.Root, pane state.PaneState) state.TerminalSurfaceStore {
-	terminalID := pane.TerminalID
-	if terminalID == "" && pane.Active {
-		terminalID = root.Session.TerminalID
+func terminalContentStoresForPane(root state.Root, pane state.PaneState) (state.TerminalSurfaceStore, state.TerminalSessionStore) {
+	binding, ok := root.TerminalViews.PaneBinding(pane.ID)
+	if !ok || binding.TerminalID == "" {
+		return state.TerminalSurfaceStore{}, state.TerminalSessionStore{}
 	}
-	if terminalID == "" && pane.ID == root.Shell.EnsureDefaults().ActivePaneID {
-		terminalID = root.Session.TerminalID
-	}
-	if terminalID == "" {
-		return root.Surface
-	}
-	return root.Surface.SurfaceForTerminal(terminalID)
+	return surfaceForBinding(root, binding), sessionForBinding(root, binding)
 }
 
-func sessionForPane(root state.Root, pane state.PaneState) state.TerminalSessionStore {
-	terminalID := pane.TerminalID
-	if terminalID == "" && pane.Kind == state.PaneTerminalLive && pane.ID == root.Shell.EnsureDefaults().ActivePaneID {
-		terminalID = root.Session.TerminalID
+func surfaceForFloating(root state.Root, floatingID string) state.TerminalSurfaceStore {
+	binding, ok := root.TerminalViews.FloatingBinding(floatingID)
+	if !ok || binding.TerminalID == "" {
+		return state.TerminalSurfaceStore{}
 	}
-	if terminalID == "" || terminalID == root.Session.TerminalID {
-		return root.Session
+	return surfaceForBinding(root, binding)
+}
+
+func sessionForFloating(root state.Root, floatingID string) state.TerminalSessionStore {
+	binding, ok := root.TerminalViews.FloatingBinding(floatingID)
+	if !ok || binding.TerminalID == "" {
+		return state.TerminalSessionStore{}
 	}
-	session := state.TerminalSessionStore{TerminalID: terminalID}
-	if channel, ok := root.Session.InputChannelFor(terminalID); ok {
-		session.Channel = channel
-		session.Attached = true
+	return sessionForBinding(root, binding)
+}
+
+func surfaceForBinding(root state.Root, binding state.TerminalViewBinding) state.TerminalSurfaceStore {
+	if binding.TerminalID == "" {
+		return state.TerminalSurfaceStore{}
 	}
-	surface := root.Surface.SurfaceForTerminal(terminalID)
-	session.Cols = surface.Cols
-	session.Rows = surface.Rows
-	session.State = surface.State
+	return root.Surface.SurfaceForTerminal(binding.TerminalID)
+}
+
+func sessionForBinding(root state.Root, binding state.TerminalViewBinding) state.TerminalSessionStore {
+	if binding.TerminalID == "" {
+		return state.TerminalSessionStore{}
+	}
+	surface := root.Surface.SurfaceForTerminal(binding.TerminalID)
+	cols, rows := binding.DesiredCols, binding.DesiredRows
+	if cols <= 0 {
+		cols = surface.Cols
+	}
+	if rows <= 0 {
+		rows = surface.Rows
+	}
+	session := state.TerminalSessionStore{
+		TerminalID:   binding.TerminalID,
+		Channel:      binding.Channel,
+		Attached:     binding.Attached,
+		Cols:         cols,
+		Rows:         rows,
+		ResizePolicy: binding.ResizeRole,
+		SurfaceID:    binding.SurfaceID,
+		ViewID:       binding.ViewID,
+		DesiredCols:  binding.DesiredCols,
+		DesiredRows:  binding.DesiredRows,
+		LastError:    binding.LastError,
+		State:        surface.State,
+		ExitCode:     surface.ExitCode,
+		ExitReason:   surface.ExitReason,
+	}
 	return session
 }
 

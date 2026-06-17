@@ -328,6 +328,10 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		// 只要 shell 结构里仍存在这个目标 view，就必须允许它继续落到当前 truth。
 		return root, nil
 	}
+	target, hasTarget := liveAttachTargetForViewID(root, viewID)
+	if hasTarget && target.PaneID != "" {
+		activePaneID = target.PaneID
+	}
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
@@ -355,6 +359,27 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
 			return root.Advance(), effects
 		}
+	}
+	if hasTarget && target.FloatingID != "" {
+		root = invalidateCopyModeForTerminalRebind(root, target.PaneID, viewID, result.TerminalID)
+		binding := state.NewFloatingTerminalView(target.FloatingID, target.PaneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID, result.CanResize)
+		root.TerminalViews = root.TerminalViews.BindFloating(binding)
+		root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(viewID, state.TerminalResizeControlProjection{
+			CanResize:      result.CanResize,
+			SizeLocked:     result.SizeLocked,
+			ControlReason:  result.ControlReason,
+			OwnerSurfaceID: result.OwnerSurfaceID,
+			OwnerViewID:    result.OwnerViewID,
+			ResizeEpoch:    result.ResizeEpoch,
+			ResizeRole:     result.ResizePolicy,
+			SurfaceID:      result.SurfaceID,
+			ViewID:         viewID,
+		})
+		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
+		root.Shell = root.Shell.BindFloatingTerminal(target.FloatingID, result.TerminalID)
+		effects := workbenchPersistEffects("terminal.attach")
+		effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+		return root.Advance(), effects
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
@@ -406,6 +431,34 @@ func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 		}
 	}
 	return false
+}
+
+type liveAttachViewTarget struct {
+	PaneID     string
+	FloatingID string
+}
+
+func liveAttachTargetForViewID(root state.Root, viewID string) (liveAttachViewTarget, bool) {
+	if viewID == "" {
+		return liveAttachViewTarget{}, false
+	}
+	if existing, ok := root.TerminalViews.Views[viewID]; ok {
+		return liveAttachViewTarget{PaneID: existing.PaneID, FloatingID: existing.FloatingID}, true
+	}
+	shell := root.Shell.EnsureDefaults()
+	for _, tab := range shell.Workspace.Tabs {
+		for _, pane := range tab.Panes {
+			if state.TerminalPaneViewID(pane.ID) == viewID {
+				return liveAttachViewTarget{PaneID: pane.ID}, true
+			}
+		}
+	}
+	for _, floating := range shell.Floatings {
+		if state.TerminalFloatingViewID(floating.ID) == viewID {
+			return liveAttachViewTarget{PaneID: floating.Pane.ID, FloatingID: floating.ID}, true
+		}
+	}
+	return liveAttachViewTarget{}, false
 }
 
 func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
@@ -643,33 +696,28 @@ type liveInputTargetInfo struct {
 
 func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 	shell := root.Shell.EnsureDefaults()
-	for _, floating := range shell.Floatings {
-		if floating.ID != shell.ActiveFloatingID || floating.Pane.TerminalID == "" {
-			continue
+	if shell.ActiveFloatingID != "" {
+		binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+		if !ok || binding.TerminalID == "" {
+			return liveInputTargetInfo{}, false
 		}
-		target := liveInputTargetInfo{PaneID: floating.Pane.ID, TerminalID: floating.Pane.TerminalID, Floating: true}
-		if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && binding.TerminalID == floating.Pane.TerminalID {
-			target.Channel = binding.Channel
-		} else if channel, ok := root.Session.InputChannelFor(floating.Pane.TerminalID); ok {
-			target.Channel = channel
+		if binding.Channel == 0 {
+			return liveInputTargetInfo{}, false
 		}
-		return target, true
+		return liveInputTargetInfo{PaneID: binding.PaneID, TerminalID: binding.TerminalID, Channel: binding.Channel, Floating: true}, true
 	}
 	pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID})
 	if !ok {
 		return liveInputTargetInfo{}, false
 	}
-	terminalID := pane.TerminalID
-	if terminalID == "" {
+	binding, ok := root.TerminalViews.PaneBinding(pane.ID)
+	if !ok || binding.TerminalID == "" {
 		return liveInputTargetInfo{}, false
 	}
-	target := liveInputTargetInfo{PaneID: pane.ID, TerminalID: terminalID}
-	if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && binding.TerminalID == terminalID {
-		target.Channel = binding.Channel
-	} else if channel, ok := root.Session.InputChannelFor(terminalID); ok {
-		target.Channel = channel
+	if binding.Channel == 0 {
+		return liveInputTargetInfo{}, false
 	}
-	return target, true
+	return liveInputTargetInfo{PaneID: pane.ID, TerminalID: binding.TerminalID, Channel: binding.Channel}, true
 }
 
 func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target liveInputTargetInfo) bool {

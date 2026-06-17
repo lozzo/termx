@@ -349,6 +349,7 @@ func TestFrameworkRendersTerminalLiveExtentFromBuilder(t *testing.T) {
 		},
 		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 6, Rows: 2},
 	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-live", 7, 6, 2, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	layer := firstLayer(t, result, LayerPanel)
@@ -447,6 +448,7 @@ func TestFrameworkRendersTerminalLiveOverflowFromBuilder(t *testing.T) {
 		},
 		Session: state.TerminalSessionStore{TerminalID: "term-live", Attached: true, Cols: 20, Rows: 8},
 	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-live", 7, 20, 8, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
 	layer := firstLayer(t, result, LayerPanel)

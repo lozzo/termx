@@ -13,7 +13,7 @@ import (
 
 func TestPanelContentAcceptanceMatrix(t *testing.T) {
 	t.Run("single pane live", func(t *testing.T) {
-		frame := renderPanelContentAcceptanceFrame(state.Root{
+		frame := renderPanelContentAcceptanceFrame(panelAcceptanceBindPaneTerminal(state.Root{
 			Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
 			Session:  state.TerminalSessionStore{TerminalID: "term-main", Attached: true, Cols: 78, Rows: 20},
 			Surface: state.TerminalSurfaceStore{
@@ -23,7 +23,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 				Rows:       20,
 				Lines:      []string{"top output"},
 			},
-		})
+		}, state.DefaultPaneID, "term-main"))
 		assertPanelFrameContains(t, frame, "top output")
 		assertPanelFrameWidth(t, frame, 80)
 	})
@@ -33,7 +33,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 			SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
 			FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
 		shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
-		frame := renderPanelContentAcceptanceFrame(state.Root{
+		frame := renderPanelContentAcceptanceFrame(panelAcceptanceBindPaneTerminal(state.Root{
 			Shell:    shell,
 			Viewport: state.ViewportStore{Valid: true, Cols: 96, Rows: 24},
 			Session:  state.TerminalSessionStore{TerminalID: "term-main", Attached: true, Cols: 45, Rows: 20},
@@ -44,7 +44,7 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 				Rows:       20,
 				Lines:      []string{"main live"},
 			},
-		})
+		}, state.DefaultPaneID, "term-main"))
 		assertPanelFrameContains(t, frame, "main live")
 		assertPanelFrameContains(t, frame, "logs inactive")
 		assertPanelFrameNotContains(t, frame, "live surface pending")
@@ -170,11 +170,11 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 		if result.Status != state.FloatingCommandOK {
 			t.Fatalf("create floating: %#v", result)
 		}
-		frame := renderPanelContentAcceptanceFrame(state.Root{
+		frame := renderPanelContentAcceptanceFrame(panelAcceptanceBindPaneTerminal(state.Root{
 			Shell:    shell,
 			Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
 			Surface:  state.TerminalSurfaceStore{TerminalID: "term-main", Lines: []string{"tiled live"}},
-		})
+		}, state.DefaultPaneID, "term-main"))
 		assertPanelFrameContains(t, frame, "unconnected")
 		assertPanelFrameContains(t, frame, "Attach existing terminal")
 		assertPanelFrameContains(t, frame, "["+render.DefaultPaneChromeGlyphs().Zoom+"]─["+render.DefaultPaneChromeGlyphs().Close+"]")
@@ -211,8 +211,10 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 	t.Run("live burst latest wins", func(t *testing.T) {
 		host := NewFakeTerminalHost(8)
 		host.SetSize(80, 24)
+		root := state.Root{}
+		root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 7, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
 		runtime := NewLiveRuntime(
-			state.Root{},
+			root,
 			host,
 			NewSyncEffectRunner(),
 			LiveDeps{Terminal: &services.FakeTerminalService{}},
@@ -251,6 +253,22 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 
 func renderPanelContentAcceptanceFrame(root state.Root) render.Frame {
 	return render.NewRenderer(render.DefaultTheme()).Render(render.NewRenderVMBuilder().Build(root))
+}
+
+func panelAcceptanceBindPaneTerminal(root state.Root, paneID string, terminalID string) state.Root {
+	if paneID == "" {
+		paneID = state.DefaultPaneID
+	}
+	cols, rows := root.Surface.Cols, root.Surface.Rows
+	if cols <= 0 {
+		cols = root.Session.Cols
+	}
+	if rows <= 0 {
+		rows = root.Session.Rows
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(paneID, terminalID, 7, cols, rows, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(paneID), true))
+	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: paneID}, terminalID)
+	return root
 }
 
 func assertPanelFrameContains(t *testing.T, frame render.Frame, value string) {

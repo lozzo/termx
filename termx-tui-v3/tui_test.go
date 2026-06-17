@@ -41,11 +41,10 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-live"].Lines, "┌─ shell") {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
 	}
-	if !frameContains(cases["workbench-live"].Lines, "active") {
-		t.Fatalf("workbench live smoke missing pane state slot: %#v", cases["workbench-live"].Lines)
+	if !frameContains(cases["workbench-live"].Lines, "◆ owner") {
+		t.Fatalf("workbench live smoke missing terminal owner chrome: %#v", cases["workbench-live"].Lines)
 	}
-	if frameContains(cases["workbench-live"].Lines, "◆ owner") ||
-		frameContains(cases["workbench-live"].Lines, "⇄2") ||
+	if frameContains(cases["workbench-live"].Lines, "⇄2") ||
 		frameContains(cases["workbench-live"].Lines, "1/31") {
 		t.Fatalf("workbench live smoke should not render premature pane chrome tokens: %#v", cases["workbench-live"].Lines)
 	}
@@ -151,9 +150,9 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["visual-audit-current"].Lines, "[]─[]") {
 		t.Fatalf("visual review smoke missing fixed visual markers: %#v", cases["visual-audit-current"].Lines)
 	}
-	if frameContains(cases["visual-audit-current"].Lines, "⇄2") ||
-		frameContains(cases["visual-audit-current"].Lines, "◆ owner") {
-		t.Fatalf("visual review smoke should not render premature pane chrome tokens: %#v", cases["visual-audit-current"].Lines)
+	if !frameContains(cases["visual-audit-current"].Lines, "◆ owner") ||
+		!frameContains(cases["visual-audit-current"].Lines, "◇ follow") {
+		t.Fatalf("visual review smoke should render bound terminal role chrome: %#v", cases["visual-audit-current"].Lines)
 	}
 	if frameContains(cases["visual-audit-current"].Lines, "visual acceptance") {
 		t.Fatalf("visual review smoke must not claim acceptance: %#v", cases["visual-audit-current"].Lines)
