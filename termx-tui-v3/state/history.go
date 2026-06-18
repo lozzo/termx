@@ -178,18 +178,20 @@ type CopyModeStore struct {
 	ViewID       string
 	TerminalID   string
 	EnteringLive *LiveSurfaceSnapshot
-	ViewportTop  int
-	ViewRows     int
-	Cursor       CopyPosition
-	Mark         *CopyPosition
-	Selection    *CopySelection
-	Query        string
-	Matches      []CopyMatch
-	ActiveMatch  int
-	BoundToken   string
-	BoundCols    int
-	RequestID    RequestID
-	Empty        bool
+	// latest 飞行期间只累计净滚动行数；不能保存输入事件队列或历史文本副本。
+	EnteringScrollDelta int
+	ViewportTop         int
+	ViewRows            int
+	Cursor              CopyPosition
+	Mark                *CopyPosition
+	Selection           *CopySelection
+	Query               string
+	Matches             []CopyMatch
+	ActiveMatch         int
+	BoundToken          string
+	BoundCols           int
+	RequestID           RequestID
+	Empty               bool
 }
 
 type CopyPosition struct {
@@ -545,6 +547,7 @@ func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID s
 	store.ViewID = viewID
 	store.TerminalID = terminalID
 	store.EnteringLive = cloneLiveSurfaceSnapshotPtr(enteringLive)
+	store.EnteringScrollDelta = 0
 	store.RequestID = requestID
 	store.BoundCols = cols
 	store.ViewRows = rows
@@ -556,6 +559,8 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 	store.Active = true
 	store.Entering = false
 	store.EnteringLive = nil
+	pendingScroll := store.EnteringScrollDelta
+	store.EnteringScrollDelta = 0
 	store.PaneID = window.PaneID
 	store.ViewID = window.ViewID
 	store.TerminalID = window.TerminalID
@@ -572,6 +577,9 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 		// 否则一页内容超过 pane 高度时用户会看不到刚输出的最新日志。
 		store.Cursor = CopyPosition{Row: totalRows - 1}
 		store.ViewportTop = maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
+		if pendingScroll != 0 {
+			store = store.ScrollCursor(pendingScroll, totalRows)
+		}
 	} else {
 		store.ViewportTop = 0
 		store.Cursor = CopyPosition{}

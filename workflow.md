@@ -262,10 +262,11 @@
 | 215E1-R89. SK copy 入口即时反馈与 buffer 内存收敛 | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已处理真实现场：高压 live 输出期间鼠标上滑或 Ctrl-V 先进入 view-scoped copy entering 可见态，不等历史 latest；runtime 输入优先于普通 live 帧；core/TUI/FrameSink 消费 buffer 后清尾释放 payload 引用；protocol frozen pin 限量保留并避免 pinned latest 全量 payload 重拷贝 |
 | 215E1-R90. SK copy 无 pending 闪屏与轻量 frozen pin | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已处理真实现场：进入 copy mode 时 latest 异步期间只拦截输入并保持 live 画面，不显示 pending 文本或闪屏；退出/取消 copy 释放本地 history window；core frozen token 只保留 committed 边界和必要 frontier，按页从 store 加载，不 pin 整份历史 lines |
 | 215E1-R91. SK copy entering 冻结 live 反馈 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已处理真实现场：连续 live 输出时按 Ctrl-V 后立即冻结当前 view 的可见 live 画面并拦截输入，不显示 pending 文本，也不继续被后续 live 帧滚动覆盖；latest 回来后再切 authoritative copy history |
+| 215E1-R92. SK copy entering 滚动意图接续 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已处理真实现场：copy entering 冻结 live 后，滚轮/PageUp/PageDown 会累计成 copy cursor 滚动意图；latest 回来后立即从尾部应用，超出 latest 页的上滚会继续发 older 并带上未消费行数，不再等一会儿跳到非预期位置 |
 
 当前下一步：
 
-- `215E1-R91 copy entering 冻结 live 反馈` 已完成：修正 R90 在连续输出下 entering 仍继续显示最新 live 帧导致 Ctrl-V 看起来延迟的问题；进入等待 latest 时冻结当前 view 的 live 投影，只保留窗口大小的临时显示数据。
+- `215E1-R92 copy entering 滚动意图接续` 已完成：进入 latest 等待期后滚轮/PageUp/PageDown 不再被吞掉，也不落到 terminal；reducer 只保存一个累计滚动 delta，authoritative latest/older 返回时按 copy cursor 主链消费。
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
 - 当前 sibling view 输入隔离：同一 TUI client 的 protocol control request 会并发处理；一个 view 进入 copy/history 触发的 history latest barrier 可以等待自己的 history ingest buffer 追平，但不能 head-of-line blocking 后续 sibling view `input` 请求。TUI copy-mode 输入拦截只在当前 active TerminalView 属于该 copy session 时生效。
 - 当前 resize owner 语义：owner 主动获取、attach result 投影成 owner、关闭旧 owner 后 sibling 自动接任，都会触发一次 view-scoped `ensure_resize`；如果目标尺寸等于 core 当前 PTY size，core 只返回最新 ownership/control，不调用实际 PTY resize。

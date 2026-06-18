@@ -527,6 +527,145 @@ func TestCopyModeEnteringFreezesVisibleLiveFrameDuringOutput(t *testing.T) {
 	}
 }
 
+func TestCopyModeEnteringWheelScrollAppliesWhenLatestArrives(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	core := &blockingHistoryClient{}
+	terminal := &services.FakeTerminalService{}
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, terminal, NewAsyncEffectRunner())
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-v: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain ctrl-v: %v", err)
+	}
+	content := frameHitRegion(t, lastFrame(t, host.Frames()), render.HitRegionPaneContent, state.DefaultPaneID)
+	wheelUp := mouseEventAt(content.Rect)
+	wheelUp.Mouse = input.MouseWheelUp
+	wheelUp.RawSeq = "\x1b[<64;10;5M"
+	wheelDown := mouseEventAt(content.Rect)
+	wheelDown.Mouse = input.MouseWheelDown
+	wheelDown.RawSeq = "\x1b[<65;10;5M"
+	for _, event := range []input.InputEvent{wheelUp, wheelUp, wheelDown} {
+		if err := host.SendInput(event); err != nil {
+			t.Fatalf("send entering wheel: %v", err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain entering wheel: %v", err)
+		}
+	}
+	if got := runtime.State().CopyMode.EnteringScrollDelta; got != -1 {
+		t.Fatalf("entering should keep net wheel intent, got %d in %#v", got, runtime.State().CopyMode)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("entering wheel input must not leak to terminal, got %#v", terminal.Inputs)
+	}
+
+	core.finishLatest(services.HistoryResult{
+		Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			historyRowsForEnteringScrollTest("latest", 10, 100),
+		),
+	}, nil)
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for !runtime.State().CopyMode.Active && time.Now().Before(deadline) {
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain async latest result: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if runtime.State().CopyMode.Cursor.Row != 8 {
+		t.Fatalf("latest should apply entering scroll from tail immediately, got copy=%#v", runtime.State().CopyMode)
+	}
+	if runtime.State().CopyMode.EnteringScrollDelta != 0 || runtime.State().CopyMode.Entering {
+		t.Fatalf("latest should clear entering scroll state, got %#v", runtime.State().CopyMode)
+	}
+}
+
+func TestCopyModeEnteringPageUpBeyondLatestContinuesOlder(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	core := &blockingHistoryClient{allowOlder: true}
+	terminal := &services.FakeTerminalService{}
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, terminal, NewAsyncEffectRunner())
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-v: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain ctrl-v: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send entering page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain entering page up: %v", err)
+	}
+	if got := runtime.State().CopyMode.EnteringScrollDelta; got != -18 {
+		t.Fatalf("entering page up should keep pending page delta, got %d", got)
+	}
+
+	latest := historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		historyRowsForEnteringScrollTest("latest", 3, 100),
+	)
+	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 100}
+	core.finishLatest(services.HistoryResult{Window: latest}, nil)
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for len(core.olderRequests()) == 0 && time.Now().Before(deadline) {
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain async latest result: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(core.olderRequests()) != 1 {
+		t.Fatalf("entering page up beyond latest should request older, got %#v", core.olderRequests())
+	}
+	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestOlder || runtime.State().History.Pending.ScrollDeltaAfterPrepend != 16 {
+		t.Fatalf("older request should carry unconsumed entering scroll, got %#v", runtime.State().History.Pending)
+	}
+	if runtime.State().CopyMode.Cursor.Row != 0 || runtime.State().CopyMode.Entering {
+		t.Fatalf("latest should consume local rows before older, got copy=%#v", runtime.State().CopyMode)
+	}
+	if len(terminal.Inputs) != 0 {
+		t.Fatalf("entering page up must not leak to terminal, got %#v", terminal.Inputs)
+	}
+
+	older := historyWindowForApp(
+		state.HistoryWindowPrepend,
+		"term-1",
+		"tok-1",
+		78,
+		7,
+		historyRowsForEnteringScrollTest("older", 20, 80),
+	)
+	older.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: 80}
+	older.Boundary = state.HistoryBoundary{FirstLineID: 80, LastLineID: 102}
+	core.finishOlder(services.HistoryResult{Window: older}, nil)
+	deadline = time.Now().Add(200 * time.Millisecond)
+	for runtime.State().History.Pending != nil && time.Now().Before(deadline) {
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain async older result: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if runtime.State().History.Pending != nil {
+		t.Fatalf("older result should clear pending, got %#v", runtime.State().History.Pending)
+	}
+	if runtime.State().CopyMode.Cursor.Row != 4 {
+		t.Fatalf("older result should continue pending entering scroll, got copy=%#v", runtime.State().CopyMode)
+	}
+}
+
 func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
@@ -6015,8 +6154,11 @@ func (runner *recordingEffectRunner) Cancel(CancelToken) {}
 
 type blockingHistoryClient struct {
 	mu            sync.Mutex
+	allowOlder    bool
 	latestReqs    []services.HistoryLatestRequest
+	olderReqs     []services.HistoryOlderRequest
 	latestResultC chan blockingHistoryResult
+	olderResultC  chan blockingHistoryResult
 }
 
 type blockingHistoryResult struct {
@@ -6041,8 +6183,25 @@ func (client *blockingHistoryClient) HistoryLatest(ctx context.Context, req serv
 	}
 }
 
-func (client *blockingHistoryClient) HistoryOlder(context.Context, services.HistoryOlderRequest) (services.HistoryResult, error) {
-	return services.HistoryResult{}, errors.New("unexpected older request")
+func (client *blockingHistoryClient) HistoryOlder(ctx context.Context, req services.HistoryOlderRequest) (services.HistoryResult, error) {
+	client.mu.Lock()
+	client.olderReqs = append(client.olderReqs, req)
+	if !client.allowOlder {
+		client.mu.Unlock()
+		return services.HistoryResult{}, errors.New("unexpected older request")
+	}
+	if client.olderResultC == nil {
+		client.olderResultC = make(chan blockingHistoryResult, 1)
+	}
+	resultC := client.olderResultC
+	client.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return services.HistoryResult{}, ctx.Err()
+	case item := <-resultC:
+		item.result.RequestID = req.RequestID
+		return item.result, item.err
+	}
 }
 
 func (client *blockingHistoryClient) HistoryOldest(context.Context, services.HistoryOldestRequest) (services.HistoryResult, error) {
@@ -6057,12 +6216,30 @@ func (client *blockingHistoryClient) latestRequests() []services.HistoryLatestRe
 	return out
 }
 
+func (client *blockingHistoryClient) olderRequests() []services.HistoryOlderRequest {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	out := make([]services.HistoryOlderRequest, len(client.olderReqs))
+	copy(out, client.olderReqs)
+	return out
+}
+
 func (client *blockingHistoryClient) finishLatest(result services.HistoryResult, err error) {
 	client.mu.Lock()
 	if client.latestResultC == nil {
 		client.latestResultC = make(chan blockingHistoryResult, 1)
 	}
 	resultC := client.latestResultC
+	client.mu.Unlock()
+	resultC <- blockingHistoryResult{result: result, err: err}
+}
+
+func (client *blockingHistoryClient) finishOlder(result services.HistoryResult, err error) {
+	client.mu.Lock()
+	if client.olderResultC == nil {
+		client.olderResultC = make(chan blockingHistoryResult, 1)
+	}
+	resultC := client.olderResultC
 	client.mu.Unlock()
 	resultC <- blockingHistoryResult{result: result, err: err}
 }
@@ -6107,6 +6284,17 @@ func historyWindowForApp(
 		Generation:  generation,
 		Boundary:    state.HistoryBoundary{FirstLineID: firstLine, LastLineID: lastLine},
 	}
+}
+
+func historyRowsForEnteringScrollTest(prefix string, count int, firstLine uint64) []state.HistoryRow {
+	rows := make([]state.HistoryRow, count)
+	for i := range rows {
+		rows[i] = state.HistoryRow{
+			Text:   fmt.Sprintf("%s-%02d", prefix, i),
+			LineID: firstLine + uint64(i),
+		}
+	}
+	return rows
 }
 
 func historyLogicalLinesForApp(rows []state.HistoryRow) []state.HistoryLogicalLine {

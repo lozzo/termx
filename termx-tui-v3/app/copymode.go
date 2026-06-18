@@ -119,7 +119,7 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			next, effects := beginCopyModeLatestForView(root, deps, msg.Binding, msg.Cols, msg.Rows)
 			return next, append([]Effect{handledEffect{}}, effects...)
 		case CopyModeHistoryResultMsg:
-			return reduceCopyModeHistoryResult(root, msg)
+			return reduceCopyModeHistoryResult(root, msg, deps)
 		case CopyModeMoveCursorMsg:
 			root.CopyMode = root.CopyMode.MoveCursor(msg.Position)
 			return root.Advance(), nil
@@ -282,9 +282,32 @@ func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.R
 		root = exitCopyMode(root)
 		return root.Advance(), []Effect{handledEffect{}}, true
 	}
+	if delta, ok := copyModeEnteringScrollDelta(root.CopyMode, intent); ok {
+		root.CopyMode.EnteringScrollDelta += delta
+		return root.Advance(), []Effect{handledEffect{}}, true
+	}
 	// 中文说明：latest 还没回来时 copy/history 尚未真正激活；这段时间只拦截输入，
 	// 防止 p/P/H 或普通按键落到 terminal，也不提前打开依赖 frozen history 的功能。
 	return root, []Effect{handledEffect{}}, true
+}
+
+func copyModeEnteringScrollDelta(copyMode state.CopyModeStore, intent input.Intent) (int, bool) {
+	switch intent.Kind {
+	case input.IntentRequestOlder:
+		rows := copyModeOlderScrollRows(copyMode, intent.Event)
+		if rows <= 0 {
+			rows = 1
+		}
+		return -rows, true
+	default:
+		if intent.Event.Kind == input.EventKindMouse && intent.Event.Mouse == input.MouseWheelDown {
+			return copyModeLineScrollRows(), true
+		}
+		if intent.Event.Kind == input.EventKindKey && intent.Event.Key == input.KeyPageDn {
+			return copyModePageRows(copyMode), true
+		}
+		return 0, false
+	}
 }
 
 func reduceCopyModeMouseInput(root state.Root, event input.InputEvent) (state.Root, bool) {
@@ -644,7 +667,7 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 	}}
 }
 
-func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) (state.Root, []Effect) {
+func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, deps CopyModeDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		if staleCopyModeHistoryResult(root, msg) {
 			return root, nil
@@ -655,6 +678,10 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		return setCopyModeError(root, msg.Err.Error()), nil
 	}
 	pending := root.History.Pending
+	enteringScrollDelta := 0
+	if pending != nil && pending.Kind == state.HistoryRequestLatest {
+		enteringScrollDelta = root.CopyMode.EnteringScrollDelta
+	}
 	beforeHistory := root.History
 	nextHistory, inserted, err := root.History.ApplyWindow(state.RequestID(msg.Result.RequestID), msg.Result.Window)
 	if err != nil {
@@ -667,8 +694,10 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
+	remainingEnteringOlderRows := 0
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
 		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
+		remainingEnteringOlderRows = copyModeEnteringOlderRemainder(enteringScrollDelta, len(nextHistory.Rows))
 	} else if pending != nil && pending.Kind == state.HistoryRequestOldest {
 		root.CopyMode = root.CopyMode.AcceptOldest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
 	} else {
@@ -683,7 +712,25 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) 
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
 	}
 	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+	if remainingEnteringOlderRows > 0 && root.History.OlderRequestState() == state.OlderRequestReady {
+		return beginCopyModeOlder(root, deps, remainingEnteringOlderRows)
+	}
 	return root.Advance(), nil
+}
+
+func copyModeEnteringOlderRemainder(scrollDelta int, loadedRows int) int {
+	if scrollDelta >= 0 {
+		return 0
+	}
+	localRowsAboveTail := loadedRows - 1
+	if localRowsAboveTail < 0 {
+		localRowsAboveTail = 0
+	}
+	olderRows := -scrollDelta - localRowsAboveTail
+	if olderRows < 0 {
+		return 0
+	}
+	return olderRows
 }
 
 func rejectMatchingHistoryResponse(root state.Root, msg CopyModeHistoryResultMsg, err error) state.Root {
