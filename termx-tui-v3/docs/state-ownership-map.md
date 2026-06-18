@@ -1,41 +1,41 @@
-# TUI / core state ownership map
+# TUI 与 Core 状态归属图
 
-本文梳理当前 `termx-tui-v3` 与 `termx-core-v2` 持有的状态数据，以及这些状态能不能作为 lifecycle、input routing、history truth 或共享协作 truth 使用。
+本文梳理当前 `termx-tui-v3` 与 `termx-core-v2` 持有的状态数据，以及这些状态能不能作为终端生命周期、输入路由、历史真相或共享协作真相使用。
 
-本文不是 wire schema，也不是持久化格式；它是排查边界问题时看的 owner 清单。字段名按当前代码里的主要 struct 归并，少量派生字段只写语义。
+本文不是协议结构，也不是持久化格式。它是排查边界问题时看的状态归属清单：代码里的 struct 名、字段名、文件路径保留原名，语义说明全部使用中文。
 
-## 总览 JSON
+## 大 JSON 总图
 
 ```json
 {
-  "core_v2": {
-    "terminal_entity_truth": {
-      "owner": "termx-core-v2",
-      "primary_files": [
+  "Core_v2持有状态": {
+    "终端实体真相": {
+      "归属方": "termx-core-v2",
+      "主要文件": [
         "termx-core-v2/server.go",
         "termx-core-v2/registry.go",
         "termx-core-v2/terminal.go",
         "termx-core-v2/types.go"
       ],
-      "state": {
-        "terminal_registry": {
-          "struct": "terminalRegistry",
-          "fields": ["terminals: map[terminal_id]TerminalInfo"],
-          "truth": [
-            "terminal id/name/command/tags",
-            "terminal PTY size",
-            "terminal lifecycle: created/running/exited/removed",
+      "状态分组": {
+        "终端注册表": {
+          "关键结构": "terminalRegistry",
+          "关键字段": ["terminals: map[terminal_id]TerminalInfo"],
+          "可作为真相": [
+            "终端 id/name/command/tags",
+            "终端 PTY 尺寸",
+            "终端生命周期: created/running/exited/removed",
             "created_at/exit_code/exited_at"
           ],
-          "not_truth": [
+          "不能作为真相": [
             "TUI pane/floating identity",
-            "TUI active focus",
+            "TUI 当前焦点",
             "TUI runtime channel"
           ]
         },
-        "terminal_runtime": {
-          "struct": "Terminal",
-          "fields": [
+        "终端运行实体": {
+          "关键结构": "Terminal",
+          "关键字段": [
             "info",
             "process",
             "live: *live.SurfaceTrack",
@@ -43,35 +43,35 @@
             "historyQ",
             "events"
           ],
-          "truth": [
-            "running process handle",
-            "current terminal lifecycle",
-            "live surface/cursor/modes",
-            "authoritative logical-line history"
+          "可作为真相": [
+            "正在运行的进程句柄",
+            "当前终端生命周期",
+            "实时表面、光标和终端模式",
+            "权威 logical-line history"
           ],
-          "not_truth": [
-            "which pane is active",
-            "which TUI should receive keyboard focus",
-            "workbench layout"
+          "不能作为真相": [
+            "哪个 pane 当前 active",
+            "哪个 TUI 应该接收键盘焦点",
+            "workbench 布局"
           ]
         },
-        "terminal_process": {
-          "structs": ["ProcessSpec", "TerminalProcess", "ProcessExit"],
-          "fields": ["terminal_id", "command", "size", "wait/exit"],
-          "truth": [
-            "the spawned command",
-            "process exit code/time/reason available to core"
+        "进程状态": {
+          "关键结构": ["ProcessSpec", "TerminalProcess", "ProcessExit"],
+          "关键字段": ["terminal_id", "command", "size", "wait/exit"],
+          "可作为真相": [
+            "实际启动的 command",
+            "core 可以观测到的进程退出码、退出时间和退出原因"
           ]
         }
       }
     },
-    "attachment_and_protocol_session_state": {
-      "owner": "termx-core-v2 protocol session",
-      "primary_file": "termx-core-v2/protocol_service.go",
-      "state": {
-        "protocol_session": {
-          "struct": "protocolSession",
-          "fields": [
+    "协议连接与视图附件状态": {
+      "归属方": "termx-core-v2 协议会话",
+      "主要文件": ["termx-core-v2/protocol_service.go"],
+      "状态分组": {
+        "协议会话": {
+          "关键结构": "protocolSession",
+          "关键字段": [
             "attachments: map[channel]protocolAttachment",
             "resizeOwners: map[terminal_id]channel",
             "sizeLocks: map[terminal_id]bool",
@@ -80,21 +80,21 @@
             "historyPins",
             "historyLatest"
           ],
-          "truth": [
-            "per-connection attachment channel validity",
-            "channel -> terminal/view/surface binding",
-            "resize owner and size lock projection for this protocol session",
-            "frozen history snapshot pins for copy/history paging"
+          "可作为真相": [
+            "当前连接内 attachment channel 是否有效",
+            "channel -> terminal/view/surface 绑定",
+            "当前协议会话内 resize owner 和 size lock 投影",
+            "copy/history 分页用的冻结历史快照 pin"
           ],
-          "not_truth": [
-            "TUI pane layout",
+          "不能作为真相": [
+            "TUI pane 布局",
             "TUI active pane",
-            "terminal lifecycle itself"
+            "终端生命周期本身"
           ]
         },
-        "protocol_attachment": {
-          "struct": "protocolAttachment",
-          "fields": [
+        "协议附件": {
+          "关键结构": "protocolAttachment",
+          "关键字段": [
             "terminal_id",
             "channel",
             "mode",
@@ -103,20 +103,20 @@
             "view_id",
             "epoch"
           ],
-          "truth": [
-            "whether a protocol input/resize request is allowed for this channel",
-            "which terminal a channel currently targets"
+          "可作为真相": [
+            "某个 protocol input/resize request 是否允许走这个 channel",
+            "某个 channel 当前指向哪个 terminal"
           ],
-          "not_truth": [
-            "pane/floating existence",
-            "whether the terminal is exited"
+          "不能作为真相": [
+            "pane/floating 是否存在",
+            "终端是否 exited"
           ]
         }
       }
     },
-    "history_truth": {
-      "owner": "termx-core-v2 history track",
-      "primary_files": [
+    "历史真相": {
+      "归属方": "termx-core-v2 历史轨道",
+      "主要文件": [
         "termx-core-v2/history/track.go",
         "termx-core-v2/history/types.go",
         "termx-core-v2/history/store.go",
@@ -125,10 +125,10 @@
         "termx-core-v2/history/window.go",
         "termx-core-v2/history/snapshot.go"
       ],
-      "state": {
-        "history_track": {
-          "struct": "history.HistoryTrack",
-          "fields": [
+      "状态分组": {
+        "历史状态机": {
+          "关键结构": "history.HistoryTrack",
+          "关键字段": [
             "store",
             "committed",
             "frontier",
@@ -141,63 +141,63 @@
             "screenRow",
             "screen ownership map"
           ],
-          "truth": [
-            "authoritative history state machine",
-            "current primary screen ownership",
-            "current mutable frontier",
-            "history generation for stale guard"
+          "可作为真相": [
+            "权威历史状态机",
+            "当前 primary screen ownership",
+            "当前 mutable frontier",
+            "历史 generation stale guard"
           ]
         },
-        "logical_line_store": {
-          "struct": "MemoryLogicalLineStore",
-          "fields": ["backend", "nextID"],
-          "truth": [
-            "logical line payload allocation",
-            "line payload replacement/deletion"
+        "逻辑行存储": {
+          "关键结构": "MemoryLogicalLineStore",
+          "关键字段": ["backend", "nextID"],
+          "可作为真相": [
+            "logical line payload 分配",
+            "line payload 替换和删除"
           ]
         },
-        "storage_backend": {
-          "struct": "MemoryStorageBackend",
-          "fields": ["lines: map[LogicalLineID]LogicalLine"],
-          "truth": [
+        "payload 后端": {
+          "关键结构": "MemoryStorageBackend",
+          "关键字段": ["lines: map[LogicalLineID]LogicalLine"],
+          "可作为真相": [
             "logical line payload bytes/cells"
           ],
-          "not_truth": [
-            "whether a line is committed",
-            "whether a line is still mutable"
+          "不能作为真相": [
+            "某条 line 是否 committed",
+            "某条 line 是否仍然 mutable"
           ]
         },
-        "committed_index": {
-          "struct": "CommittedHistoryIndex",
-          "fields": ["ids", "present", "generation"],
-          "truth": [
-            "which logical lines count as committed history",
-            "committed ordering",
+        "已提交历史索引": {
+          "关键结构": "CommittedHistoryIndex",
+          "关键字段": ["ids", "present", "generation"],
+          "可作为真相": [
+            "哪些 logical lines 计入已提交历史",
+            "已提交历史顺序",
             "older pagination boundary"
           ]
         },
-        "mutable_frontier": {
-          "struct": "MutableFrontier",
-          "fields": ["ids", "present", "hidden", "generation"],
-          "truth": [
-            "which logical lines can still be mutated by terminal semantics",
-            "hidden frontier after resize"
+        "可变前沿": {
+          "关键结构": "MutableFrontier",
+          "关键字段": ["ids", "present", "hidden", "generation"],
+          "可作为真相": [
+            "哪些 logical lines 仍可被终端语义修改",
+            "resize 后隐藏的 frontier"
           ]
         },
-        "frozen_snapshot": {
-          "struct": "history.FrozenSnapshot",
-          "fields": ["token", "generation", "lines", "committedLines"],
-          "truth": [
-            "read-only pin of logical lines for one copy/history session"
+        "冻结快照": {
+          "关键结构": "history.FrozenSnapshot",
+          "关键字段": ["token", "generation", "lines", "committedLines"],
+          "可作为真相": [
+            "某次 copy/history 会话 pin 住的只读 logical-line 序列"
           ],
-          "not_truth": [
-            "a second history model",
-            "TUI selection state"
+          "不能作为真相": [
+            "第二份历史模型",
+            "TUI 选择状态"
           ]
         },
-        "history_window": {
-          "struct": "history.HistoryWindow",
-          "fields": [
+        "历史窗口": {
+          "关键结构": "history.HistoryWindow",
+          "关键字段": [
             "token",
             "op",
             "cols",
@@ -212,122 +212,122 @@
             "totalRows",
             "totalLines"
           ],
-          "truth": [
-            "authoritative projection response for requested cols/rows"
+          "可作为真相": [
+            "core 针对某次 cols/rows 请求返回的权威投影"
           ],
-          "not_truth": [
-            "stored history payload",
-            "TUI pane scroll position"
+          "不能作为真相": [
+            "存储中的历史 payload",
+            "TUI pane 滚动位置"
           ]
         }
       }
     },
-    "live_surface_truth": {
-      "owner": "termx-core-v2 live surface",
-      "primary_files": [
+    "实时终端表面": {
+      "归属方": "termx-core-v2 实时表面",
+      "主要文件": [
         "termx-core-v2/live/types.go",
         "termx-core-v2/terminal.go",
         "termx-core-v2/terminal_live_queue.go"
       ],
-      "state": {
-        "surface_track": {
-          "struct": "live.SurfaceTrack",
-          "fields": [
+      "状态分组": {
+        "实时表面": {
+          "关键结构": "live.SurfaceTrack",
+          "关键字段": [
             "size",
             "vt",
             "pending",
             "preserveAltScreenFrameOnExit"
           ],
-          "truth": [
-            "current live screen cell matrix",
-            "current live cursor",
-            "current terminal modes",
-            "pending incomplete escape sequence"
+          "可作为真相": [
+            "当前实时 screen cell matrix",
+            "当前实时光标",
+            "当前终端模式",
+            "尚未完整解析的转义序列"
           ],
-          "not_truth": [
-            "committed history",
-            "copy/history frozen window"
+          "不能作为真相": [
+            "已提交历史",
+            "copy/history 冻结窗口"
           ]
         },
-        "surface_snapshot": {
-          "struct": "live.SurfaceSnapshot",
-          "fields": ["size", "screen", "cursor", "modes"],
-          "truth": [
-            "size-bound live projection returned to clients"
+        "实时快照": {
+          "关键结构": "live.SurfaceSnapshot",
+          "关键字段": ["size", "screen", "cursor", "modes"],
+          "可作为真相": [
+            "返回给 client 的尺寸绑定实时投影"
           ],
-          "not_truth": [
-            "history source"
+          "不能作为真相": [
+            "历史来源"
           ]
         },
-        "live_ingest_queue": {
-          "struct": "terminalLiveIngestQueue",
-          "fields": ["pending", "closed", "done"],
-          "truth": [
-            "queued live output waiting to update current screen"
+        "实时写入队列": {
+          "关键结构": "terminalLiveIngestQueue",
+          "关键字段": ["pending", "closed", "done"],
+          "可作为真相": [
+            "等待更新当前 screen 的实时输出批次"
           ],
-          "not_truth": [
-            "terminal lifecycle",
-            "history completeness"
+          "不能作为真相": [
+            "终端生命周期",
+            "历史完整性"
           ]
         }
       }
     },
-    "daemon_storage_and_events": {
-      "owner": "termx-core-v2 daemon",
-      "primary_files": [
+    "daemon存储与事件": {
+      "归属方": "termx-core-v2 daemon",
+      "主要文件": [
         "termx-core-v2/storage.go",
         "termx-core-v2/events.go",
         "termx-core-v2/workbench.go"
       ],
-      "state": {
-        "opaque_storage": {
-          "struct": "storageStore",
-          "fields": ["entries: map[app_id, scope, owner_id, key]StorageEntry"],
-          "truth": [
-            "opaque app-scoped value bytes",
-            "storage version",
+      "状态分组": {
+        "透明存储": {
+          "关键结构": "storageStore",
+          "关键字段": ["entries: map[app_id, scope, owner_id, key]StorageEntry"],
+          "可作为真相": [
+            "app 作用域 opaque value bytes",
+            "storage 版本",
             "updated_at",
             "CAS conflict boundary"
           ],
-          "not_truth": [
-            "terminal lifecycle",
-            "input channel validity",
-            "history truth"
+          "不能作为真相": [
+            "终端生命周期",
+            "input channel 有效性",
+            "历史真相"
           ]
         },
-        "event_broker": {
-          "struct": "eventBroker",
-          "fields": ["subscribers", "filters", "buffer", "nextID", "closed"],
-          "truth": [
-            "who should receive core events"
+        "事件分发": {
+          "关键结构": "eventBroker",
+          "关键字段": ["subscribers", "filters", "buffer", "nextID", "closed"],
+          "可作为真相": [
+            "哪些订阅者应该收到 core events"
           ],
-          "not_truth": [
-            "event delivery as durable state"
+          "不能作为真相": [
+            "持久化业务状态"
           ]
         },
-        "legacy_workbench_store": {
-          "struct": "workbenchStore",
-          "fields": ["snapshot", "nextID"],
-          "status": "legacy/migration debt",
-          "truth": [
-            "old workbench API state if that API is used"
+        "旧workbench存储": {
+          "关键结构": "workbenchStore",
+          "关键字段": ["snapshot", "nextID"],
+          "状态": "legacy/migration debt",
+          "可作为真相": [
+            "旧 workbench API 被调用时的旧 snapshot 状态"
           ],
-          "not_truth": [
-            "new tui-v3 terminal lifecycle",
-            "new input routing"
+          "不能作为真相": [
+            "新的 tui-v3 终端生命周期",
+            "新的输入路由"
           ]
         }
       }
     }
   },
-  "tui_v3": {
-    "reducer_owned_root": {
-      "owner": "current TUI process",
-      "primary_file": "termx-tui-v3/state/root.go",
-      "state": {
-        "root": {
-          "struct": "state.Root",
-          "fields": [
+  "TUI_v3持有状态": {
+    "reducer状态根": {
+      "归属方": "当前 TUI 进程",
+      "主要文件": ["termx-tui-v3/state/root.go"],
+      "状态分组": {
+        "状态根": {
+          "关键结构": "state.Root",
+          "关键字段": [
             "generation",
             "history",
             "copyMode",
@@ -341,28 +341,28 @@
             "hostTheme",
             "workbenchSync"
           ],
-          "truth": [
-            "current TUI process UI state",
-            "current reducer-owned caches/projections"
+          "可作为真相": [
+            "当前 TUI 进程的 UI 状态",
+            "当前 reducer 持有的缓存和投影"
           ],
-          "not_truth": [
-            "core terminal lifecycle",
-            "core history truth",
+          "不能作为真相": [
+            "core 终端生命周期",
+            "core 历史真相",
             "daemon attachment registry"
           ]
         }
       }
     },
-    "shell_and_workbench_ui_state": {
-      "owner": "current TUI process, optionally persisted as opaque workbench storage",
-      "primary_files": [
+    "Shell与workbench界面状态": {
+      "归属方": "当前 TUI 进程；部分可作为 opaque workbench storage 持久化",
+      "主要文件": [
         "termx-tui-v3/state/shell.go",
         "termx-tui-v3/state/workbench_storage.go"
       ],
-      "state": {
-        "shell": {
-          "struct": "ShellStore",
-          "fields": [
+      "状态分组": {
+        "Shell": {
+          "关键结构": "ShellStore",
+          "关键字段": [
             "workspace",
             "workspaces",
             "floatings",
@@ -381,45 +381,45 @@
             "nextToastSeq",
             "nextFloatingSeq"
           ],
-          "truth": [
-            "which pane/floating is active in this TUI",
-            "workspace/tab/pane/floating layout",
-            "overlay and prompt state",
+          "可作为真相": [
+            "当前 TUI 里哪个 pane/floating active",
+            "workspace/tab/pane/floating 布局",
+            "overlay 和 prompt 状态",
             "UI CTA selection",
-            "current interaction mode"
+            "当前 interaction mode"
           ],
-          "not_truth": [
-            "terminal running/exited",
+          "不能作为真相": [
+            "终端 running/exited",
             "input channel",
-            "history source"
+            "历史来源"
           ]
         },
-        "pane": {
-          "struct": "PaneState",
-          "fields": ["id", "title", "kind", "terminalID", "active"],
-          "truth": [
+        "普通面板": {
+          "关键结构": "PaneState",
+          "关键字段": ["id", "title", "kind", "terminalID", "active"],
+          "可作为真相": [
             "panel slot identity",
-            "presentation-level terminal intent"
+            "展示层 terminal 连接意图"
           ],
-          "not_truth": [
-            "terminal lifecycle",
+          "不能作为真相": [
+            "终端生命周期",
             "attachment channel"
           ],
-          "allowed_kinds": ["empty", "terminal-live"]
+          "允许的当前kind": ["empty", "terminal-live"]
         },
-        "floating": {
-          "struct": "FloatingPaneState",
-          "fields": ["id", "title", "pane", "rect", "z", "active", "collapsed", "fitMode", "autoFit"],
-          "truth": [
-            "floating panel local layout and presentation"
+        "浮动面板": {
+          "关键结构": "FloatingPaneState",
+          "关键字段": ["id", "title", "pane", "rect", "z", "active", "collapsed", "fitMode", "autoFit"],
+          "可作为真相": [
+            "floating panel 本地布局和展示状态"
           ],
-          "not_truth": [
-            "terminal lifecycle"
+          "不能作为真相": [
+            "终端生命周期"
           ]
         },
-        "workbench_storage_snapshot": {
-          "struct": "WorkbenchStorageSnapshot",
-          "fields": [
+        "workbench存储快照": {
+          "关键结构": "WorkbenchStorageSnapshot",
+          "关键字段": [
             "schema",
             "schemaVersion",
             "workspace",
@@ -433,20 +433,20 @@
             "footerVisible",
             "terminalViews"
           ],
-          "truth": [
-            "persisted/shared TUI workbench layout",
-            "persisted/shared connection intent"
+          "可作为真相": [
+            "持久化/共享的 TUI workbench 布局",
+            "持久化/共享的连接意图"
           ],
-          "not_truth": [
-            "current terminal lifecycle",
-            "runtime channel freshness",
+          "不能作为真相": [
+            "当前终端生命周期",
+            "runtime channel 是否新鲜",
             "copy mode selection",
-            "live cursor"
+            "实时光标"
           ]
         },
-        "workbench_sync": {
-          "struct": "WorkbenchSyncStore",
-          "fields": [
+        "workbench同步状态": {
+          "关键结构": "WorkbenchSyncStore",
+          "关键字段": [
             "ref",
             "lastSavedVersion",
             "lastAppliedVersion",
@@ -455,39 +455,39 @@
             "conflictVersion",
             "conflict"
           ],
-          "truth": [
-            "current TUI sync bookkeeping against core opaque storage"
+          "可作为真相": [
+            "当前 TUI 与 core opaque storage 的同步 bookkeeping"
           ],
-          "not_truth": [
-            "workbench schema itself",
-            "terminal lifecycle"
+          "不能作为真相": [
+            "workbench schema 本身",
+            "终端生命周期"
           ]
         }
       }
     },
-    "terminal_view_and_input_binding_state": {
-      "owner": "current TUI process",
-      "primary_file": "termx-tui-v3/state/terminal_view.go",
-      "state": {
-        "terminal_views": {
-          "struct": "TerminalViewStore",
-          "fields": [
+    "TerminalView与输入绑定状态": {
+      "归属方": "当前 TUI 进程",
+      "主要文件": ["termx-tui-v3/state/terminal_view.go"],
+      "状态分组": {
+        "TerminalView索引": {
+          "关键结构": "TerminalViewStore",
+          "关键字段": [
             "views: map[view_id]TerminalViewBinding",
             "paneViews: map[pane_id]view_id",
             "floatingViews: map[floating_id]view_id"
           ],
-          "truth": [
-            "which TerminalView binding belongs to which panel",
-            "active panel input target lookup basis"
+          "可作为真相": [
+            "哪个 TerminalView binding 属于哪个 panel",
+            "active panel 输入目标查找依据"
           ],
-          "not_truth": [
-            "core terminal lifecycle",
-            "global fallback input target"
+          "不能作为真相": [
+            "core 终端生命周期",
+            "全局 fallback 输入目标"
           ]
         },
-        "terminal_view_binding": {
-          "struct": "TerminalViewBinding",
-          "fields": [
+        "TerminalView绑定": {
+          "关键结构": "TerminalViewBinding",
+          "关键字段": [
             "viewID",
             "surfaceID",
             "terminalID",
@@ -508,37 +508,37 @@
             "ownerViewID",
             "resizeEpoch"
           ],
-          "truth": [
-            "current TUI's view-scoped connection intent and latest known channel",
-            "current TUI's resize projection for this view",
-            "input routing target after active pane/floating is resolved"
+          "可作为真相": [
+            "当前 TUI 的 view-scoped 连接意图和最新已知 channel",
+            "当前 TUI 对这个 view 的 resize projection",
+            "active pane/floating 解析完成后的输入路由目标"
           ],
-          "not_truth": [
-            "whether terminal process is running",
-            "whether a stale channel is still accepted by core",
+          "不能作为真相": [
+            "终端进程是否 running",
+            "stale channel 是否仍被 core 接受",
             "sibling panel channel"
           ]
         },
-        "terminal_view_layout": {
-          "struct": "TerminalViewLayout",
-          "fields": ["sizeLocked", "mode", "panX", "panY", "alignX", "alignY"],
-          "truth": [
-            "view-local presentation/layout preference"
+        "TerminalView本地布局": {
+          "关键结构": "TerminalViewLayout",
+          "关键字段": ["sizeLocked", "mode", "panX", "panY", "alignX", "alignY"],
+          "可作为真相": [
+            "view-local 展示和布局偏好"
           ],
-          "not_truth": [
-            "terminal PTY size lock truth",
-            "core resize owner truth"
+          "不能作为真相": [
+            "terminal PTY size lock 真相",
+            "core resize owner 权威状态"
           ]
         }
       }
     },
-    "live_projection_and_session_cache": {
-      "owner": "current TUI process",
-      "primary_file": "termx-tui-v3/state/live.go",
-      "state": {
-        "surface": {
-          "struct": "TerminalSurfaceStore",
-          "fields": [
+    "实时投影与session缓存": {
+      "归属方": "当前 TUI 进程",
+      "主要文件": ["termx-tui-v3/state/live.go"],
+      "状态分组": {
+        "实时表面缓存": {
+          "关键结构": "TerminalSurfaceStore",
+          "关键字段": [
             "terminalID",
             "revision",
             "cols",
@@ -558,19 +558,19 @@
             "resizeBoundary",
             "surfaces: map[terminal_id]LiveSurfaceSnapshot"
           ],
-          "truth": [
-            "current TUI's cached live surface projection",
-            "current TUI's cached lifecycle projection from core list/surface/event"
+          "可作为真相": [
+            "当前 TUI 缓存的实时表面投影",
+            "当前 TUI 缓存的来自 core list/surface/event 的生命周期投影"
           ],
-          "not_truth": [
-            "authoritative history",
-            "primary terminal lifecycle owner",
-            "input target if active view binding disagrees"
+          "不能作为真相": [
+            "权威历史",
+            "主终端生命周期归属方",
+            "active view binding 不一致时的输入目标"
           ]
         },
-        "live_snapshot": {
-          "struct": "LiveSurfaceSnapshot",
-          "fields": [
+        "实时快照消息": {
+          "关键结构": "LiveSurfaceSnapshot",
+          "关键字段": [
             "terminalID",
             "revision",
             "cols",
@@ -588,16 +588,16 @@
             "command",
             "err"
           ],
-          "truth": [
-            "service/event result to be reduced into TerminalSurfaceStore"
+          "可作为真相": [
+            "service/event result 进入 reducer 前的实时投影载体"
           ],
-          "not_truth": [
-            "TUI storage state"
+          "不能作为真相": [
+            "TUI storage 状态"
           ]
         },
-        "session": {
-          "struct": "TerminalSessionStore",
-          "fields": [
+        "session缓存": {
+          "关键结构": "TerminalSessionStore",
+          "关键字段": [
             "terminalID",
             "channel",
             "inputChannels",
@@ -618,18 +618,18 @@
             "exitedAt",
             "command"
           ],
-          "truth": [
-            "current TUI's attach/session cache",
-            "legacy/global-ish compatibility projection for active session"
+          "可作为真相": [
+            "当前 TUI 的 attach/session 缓存",
+            "active session 的兼容投影"
           ],
-          "not_truth": [
-            "input target for multi-view routing",
-            "terminal lifecycle authority"
+          "不能作为真相": [
+            "multi-view 输入目标",
+            "终端生命周期权威来源"
           ]
         },
-        "live_modes": {
-          "struct": "LiveTerminalModes",
-          "fields": [
+        "终端模式投影": {
+          "关键结构": "LiveTerminalModes",
+          "关键字段": [
             "mouseTracking",
             "mouseX10",
             "mouseNormal",
@@ -638,22 +638,22 @@
             "mouseSGR",
             "bracketedPaste"
           ],
-          "truth": [
-            "whether host mouse/key sequences should be passed through to terminal"
+          "可作为真相": [
+            "宿主鼠标/按键序列是否应该透传给 terminal"
           ],
-          "not_truth": [
-            "which terminal receives ordinary keyboard input"
+          "不能作为真相": [
+            "哪个 terminal 接收普通键盘输入"
           ]
         }
       }
     },
-    "history_and_copy_interaction_state": {
-      "owner": "current TUI process",
-      "primary_file": "termx-tui-v3/state/history.go",
-      "state": {
-        "history_store": {
-          "struct": "HistoryStore",
-          "fields": [
+    "history与copy交互状态": {
+      "归属方": "当前 TUI 进程",
+      "主要文件": ["termx-tui-v3/state/history.go"],
+      "状态分组": {
+        "history缓存": {
+          "关键结构": "HistoryStore",
+          "关键字段": [
             "viewID",
             "paneID",
             "terminalID",
@@ -669,18 +669,18 @@
             "exhausted",
             "pending"
           ],
-          "truth": [
-            "current TUI's accepted authoritative history window/cache",
+          "可作为真相": [
+            "当前 TUI 已接纳的权威 history window/cache",
             "pending request guard"
           ],
-          "not_truth": [
-            "committed history storage",
-            "live surface truth"
+          "不能作为真相": [
+            "已提交历史存储",
+            "实时表面真相"
           ]
         },
-        "copy_mode": {
-          "struct": "CopyModeStore",
-          "fields": [
+        "copy模式": {
+          "关键结构": "CopyModeStore",
+          "关键字段": [
             "active",
             "entering",
             "paneID",
@@ -699,18 +699,18 @@
             "requestID",
             "empty"
           ],
-          "truth": [
-            "copy/history user interaction state",
-            "selection/cursor/search state over current authoritative window"
+          "可作为真相": [
+            "copy/history 用户交互状态",
+            "当前权威 window 上的 selection/cursor/search 状态"
           ],
-          "not_truth": [
-            "history payload truth",
-            "terminal lifecycle"
+          "不能作为真相": [
+            "history payload 真相",
+            "终端生命周期"
           ]
         },
-        "history_window_dto": {
-          "struct": "state.HistoryWindow",
-          "fields": [
+        "history窗口DTO": {
+          "关键结构": "state.HistoryWindow",
+          "关键字段": [
             "viewID",
             "paneID",
             "terminalID",
@@ -728,22 +728,22 @@
             "totalLines",
             "responseKind"
           ],
-          "truth": [
-            "TUI-side DTO converted from core authoritative response"
+          "可作为真相": [
+            "从 core 权威 response 转换后的 TUI DTO"
           ],
-          "not_truth": [
-            "a second history model"
+          "不能作为真相": [
+            "第二份历史模型"
           ]
         }
       }
     },
-    "terminal_pool_projection_state": {
-      "owner": "current TUI process",
-      "primary_file": "termx-tui-v3/state/terminal_pool.go",
-      "state": {
-        "terminal_pool": {
-          "struct": "TerminalPoolStore",
-          "fields": [
+    "终端池投影状态": {
+      "归属方": "当前 TUI 进程",
+      "主要文件": ["termx-tui-v3/state/terminal_pool.go"],
+      "状态分组": {
+        "终端池缓存": {
+          "关键结构": "TerminalPoolStore",
+          "关键字段": [
             "status",
             "items",
             "requestSeq",
@@ -756,18 +756,18 @@
             "lastEditedID",
             "lastRestartedID"
           ],
-          "truth": [
-            "current TUI's cached result of core terminal list/actions",
-            "stale guard for terminal list"
+          "可作为真相": [
+            "当前 TUI 缓存的 core terminal list/action response",
+            "terminal list 过期响应保护"
           ],
-          "not_truth": [
+          "不能作为真相": [
             "core terminal registry",
-            "input route target"
+            "输入路由目标"
           ]
         },
-        "terminal_pool_item": {
-          "struct": "TerminalPoolItem",
-          "fields": [
+        "终端池条目": {
+          "关键结构": "TerminalPoolItem",
+          "关键字段": [
             "terminalID",
             "title",
             "state",
@@ -780,27 +780,27 @@
             "rows",
             "attached"
           ],
-          "truth": [
-            "projection of core terminal info for picker/list/render"
+          "可作为真相": [
+            "用于 picker/list/render 的 core terminal info 投影"
           ],
-          "not_truth": [
-            "TUI storage truth",
-            "channel freshness"
+          "不能作为真相": [
+            "TUI storage 真相",
+            "channel 是否新鲜"
           ]
         }
       }
     },
-    "clipboard_and_host_state": {
-      "owner": "current TUI process, optionally synced through core opaque storage",
-      "primary_files": [
+    "剪贴板与宿主状态": {
+      "归属方": "当前 TUI 进程；部分可通过 core opaque storage 同步",
+      "主要文件": [
         "termx-tui-v3/state/clipboard.go",
         "termx-tui-v3/state/viewport.go",
         "termx-tui-v3/state/host_theme.go"
       ],
-      "state": {
-        "clipboard": {
-          "struct": "ClipboardStore",
-          "fields": [
+      "状态分组": {
+        "剪贴板历史": {
+          "关键结构": "ClipboardStore",
+          "关键字段": [
             "entries",
             "lastSavedVersion",
             "lastAppliedVersion",
@@ -811,40 +811,40 @@
             "dirty",
             "dirtyMergeable"
           ],
-          "truth": [
-            "current TUI clipboard history projection",
-            "storage sync bookkeeping"
+          "可作为真相": [
+            "当前 TUI 剪贴板历史投影",
+            "storage 同步账本"
           ],
-          "not_truth": [
-            "system clipboard state"
+          "不能作为真相": [
+            "系统剪贴板状态"
           ]
         },
-        "viewport": {
-          "struct": "ViewportStore",
-          "fields": ["cols", "rows", "valid"],
-          "truth": [
-            "host TTY drawable canvas size"
+        "宿主viewport": {
+          "关键结构": "ViewportStore",
+          "关键字段": ["cols", "rows", "valid"],
+          "可作为真相": [
+            "host TTY 可绘制画布尺寸"
           ],
-          "not_truth": [
-            "terminal PTY size",
-            "history projection cols unless explicitly requested"
+          "不能作为真相": [
+            "terminal PTY 尺寸",
+            "未显式请求时的 history 投影列数"
           ]
         },
-        "host_theme": {
-          "struct": "HostThemeStore",
-          "fields": ["defaultFG", "defaultBG", "palette", "probed"],
-          "truth": [
-            "current host terminal theme/palette probe result"
+        "宿主主题": {
+          "关键结构": "HostThemeStore",
+          "关键字段": ["defaultFG", "defaultBG", "palette", "probed"],
+          "可作为真相": [
+            "host terminal theme/palette 探测结果"
           ],
-          "not_truth": [
-            "terminal content SGR colors"
+          "不能作为真相": [
+            "terminal 内容 SGR 颜色"
           ]
         }
       }
     },
-    "runtime_host_and_render_ephemeral_state": {
-      "owner": "current TUI process runtime/host/render output boundary",
-      "primary_files": [
+    "runtime宿主与render临时状态": {
+      "归属方": "当前 TUI 进程 runtime/host/render 输出边界",
+      "主要文件": [
         "termx-tui-v3/app/runtime.go",
         "termx-tui-v3/terminalhost/host.go",
         "termx-tui-v3/terminalhost/input_parser.go",
@@ -853,10 +853,10 @@
         "termx-tui-v3/render/types.go",
         "termx-tui-v3/render/vm.go"
       ],
-      "state": {
-        "app_runtime": {
-          "struct": "AppRuntime",
-          "fields": [
+      "状态分组": {
+        "应用运行时": {
+          "关键结构": "AppRuntime",
+          "关键字段": [
             "state",
             "queue",
             "lastHitRegions",
@@ -871,19 +871,19 @@
             "copyHistoryPatch",
             "diagnostics"
           ],
-          "truth": [
-            "event loop scheduling and current process interaction cache",
-            "last render hit regions for mouse routing"
+          "可作为真相": [
+            "事件循环调度与当前进程交互缓存",
+            "鼠标路由使用的上一次渲染 hit regions"
           ],
-          "not_truth": [
-            "terminal lifecycle",
-            "history truth",
-            "persistent workbench state"
+          "不能作为真相": [
+            "终端生命周期",
+            "历史真相",
+            "持久化 workbench 状态"
           ]
         },
-        "terminal_host": {
-          "struct": "terminalhost.Host",
-          "fields": [
+        "宿主终端": {
+          "关键结构": "terminalhost.Host",
+          "关键字段": [
             "input/output/fd",
             "cancelReader",
             "resizeSignalStop",
@@ -896,49 +896,49 @@
             "entered",
             "closed"
           ],
-          "truth": [
-            "host TTY mode and event stream state"
+          "可作为真相": [
+            "host TTY mode 与事件流状态"
           ],
-          "not_truth": [
-            "core terminal process state",
-            "TUI business state"
+          "不能作为真相": [
+            "core 终端进程状态",
+            "TUI 业务状态"
           ]
         },
-        "input_parser": {
-          "struct": "InputParser",
-          "fields": ["pending"],
-          "truth": [
-            "incomplete host input escape sequence"
+        "宿主输入解析": {
+          "关键结构": "InputParser",
+          "关键字段": ["pending"],
+          "可作为真相": [
+            "尚未完整解析的宿主输入转义序列"
           ],
-          "not_truth": [
-            "terminal input route"
+          "不能作为真相": [
+            "terminal 输入路由"
           ]
         },
-        "frame_sink": {
-          "struct": "FrameSink",
-          "fields": ["lastLines", "lastWidth", "lastHeight", "lastCursor", "hasLastFrame"],
-          "truth": [
-            "host output diff cache"
+        "帧输出缓存": {
+          "关键结构": "FrameSink",
+          "关键字段": ["lastLines", "lastWidth", "lastHeight", "lastCursor", "hasLastFrame"],
+          "可作为真相": [
+            "宿主输出差异缓存"
           ],
-          "not_truth": [
-            "render view model",
-            "terminal content"
+          "不能作为真相": [
+            "渲染视图模型",
+            "terminal 内容"
           ]
         },
-        "latest_frame_sink": {
-          "struct": "LatestFrameSink",
-          "fields": ["pending", "patches", "closed", "highWaterMark"],
-          "truth": [
-            "output backpressure queue"
+        "latest帧背压": {
+          "关键结构": "LatestFrameSink",
+          "关键字段": ["pending", "patches", "closed", "highWaterMark"],
+          "可作为真相": [
+            "输出背压队列"
           ],
-          "not_truth": [
-            "UI state",
-            "terminal state"
+          "不能作为真相": [
+            "UI 状态",
+            "terminal 状态"
           ]
         },
-        "render_frame": {
-          "struct": "render.Frame",
-          "fields": [
+        "渲染帧": {
+          "关键结构": "render.Frame",
+          "关键字段": [
             "lines",
             "styledLines",
             "ansiLines",
@@ -950,11 +950,12 @@
             "metadata",
             "theme"
           ],
-          "truth": [
-            "derived output for one render pass"
+          "可作为真相": [
+            "一次渲染轮次派生出的输出"
           ],
-          "not_truth": [
-            "persistent or reducer-owned state"
+          "不能作为真相": [
+            "持久化状态",
+            "reducer 持有状态"
           ]
         }
       }
@@ -963,91 +964,91 @@
 }
 ```
 
-## Owner table
+## 归属总表
 
-| Owner | Main structs | Data held | Can decide terminal lifecycle? | Can route ordinary keyboard input? | Can decide history truth? |
+| 归属方 | 主要结构 | 持有的数据 | 能否判断终端生命周期 | 能否路由普通键盘输入 | 能否决定历史真相 |
 | --- | --- | --- | --- | --- | --- |
-| core terminal registry | `terminalRegistry`, `TerminalInfo` | terminal id/name/command/tags/size/state/exit metadata | Yes | No | No |
-| core terminal runtime | `Terminal` | process handle, live surface, history pipeline, queues | Yes | Only after protocol/session validates channel | Owns history through `HistoryTrack` |
-| core protocol session | `protocolSession`, `protocolAttachment` | per-connection channel attachment, resize owner, size lock, history pins | No, reads terminal info | Yes, validates channel/view/terminal | Pins frozen snapshots, not the base truth |
-| core history | `HistoryTrack`, `LogicalLineStore`, `CommittedHistoryIndex`, `MutableFrontier` | logical lines, committed order, mutable frontier, screen ownership | No | No | Yes |
-| core live surface | `live.SurfaceTrack` | current screen/cursor/modes/pending escape | No | Mouse/bracketed-paste mode projection only | No |
-| core opaque storage | `storageStore`, `StorageEntry` | app-scoped bytes/version/update time | No | No | No |
-| TUI shell | `ShellStore`, `PaneState`, `FloatingPaneState` | active pane/floating, layout, overlay, CTA, interaction mode | No | Only selects active panel before `TerminalViewStore` lookup | No |
-| TUI terminal views | `TerminalViewStore`, `TerminalViewBinding` | panel -> view -> terminal/channel binding | No | Yes, this is the only TUI-side input target source | No |
-| TUI live/session cache | `TerminalSurfaceStore`, `TerminalSessionStore` | live projection, lifecycle projection, session cache | No, cache only | No global fallback allowed | No |
-| TUI history/copy | `HistoryStore`, `CopyModeStore` | accepted history windows, copy cursor/selection/search | No | Consumes copy-mode keys before terminal routing | No |
-| TUI terminal pool | `TerminalPoolStore` | cached terminal list/action results | Cache only | No | No |
-| TUI workbench storage projection | `WorkbenchStorageSnapshot`, `WorkbenchSyncStore` | persisted layout and connection intent | No | No | No |
-| TUI runtime/host | `AppRuntime`, `Host`, `InputParser`, `FrameSink` | event queue, hit regions, mouse drag, raw mode, output diff cache | No | Generates input events and hit regions only | No |
-| render output | `RenderVM`, `RenderResult`, `Frame` | derived view model/frame/hit regions | No | Hit regions help mouse focus/action only | No |
+| core 终端注册表 | `terminalRegistry`, `TerminalInfo` | 终端 id/name/command/tags/size/state/exit metadata | 能 | 不能 | 不能 |
+| core 终端运行时 | `Terminal` | process handle、live surface、history pipeline、queues | 能 | 只能在 protocol/session 校验 channel 后写入 | 通过 `HistoryTrack` 拥有 |
+| core 协议会话 | `protocolSession`, `protocolAttachment` | 每个连接内的 channel attachment、resize owner、size lock、history pins | 不能，只读取 terminal info | 能，负责校验 channel/view/terminal | pin frozen snapshots，但不是基础真相 |
+| core 历史 | `HistoryTrack`, `LogicalLineStore`, `CommittedHistoryIndex`, `MutableFrontier` | logical lines、committed order、mutable frontier、screen ownership | 不能 | 不能 | 能 |
+| core 实时表面 | `live.SurfaceTrack` | current screen/cursor/modes/pending escape | 不能 | 只能提供 mouse/bracketed-paste mode 投影 | 不能 |
+| core 透明存储 | `storageStore`, `StorageEntry` | app 作用域 bytes/version/update time | 不能 | 不能 | 不能 |
+| TUI shell | `ShellStore`, `PaneState`, `FloatingPaneState` | active pane/floating、layout、overlay、CTA、interaction mode | 不能 | 只能先选出 active panel，再交给 `TerminalViewStore` | 不能 |
+| TUI terminal views | `TerminalViewStore`, `TerminalViewBinding` | panel -> view -> terminal/channel binding | 不能 | 能，是 TUI 侧唯一输入目标来源 | 不能 |
+| TUI live/session cache | `TerminalSurfaceStore`, `TerminalSessionStore` | live projection、lifecycle projection、session cache | 只是缓存 | 不能作为全局 fallback | 不能 |
+| TUI history/copy | `HistoryStore`, `CopyModeStore` | accepted history windows、copy cursor/selection/search | 不能 | copy mode key 先消费，未消费才进入 terminal routing | 不能 |
+| TUI terminal pool | `TerminalPoolStore` | cached terminal list/action results | 只是缓存 | 不能 | 不能 |
+| TUI workbench storage projection | `WorkbenchStorageSnapshot`, `WorkbenchSyncStore` | persisted layout 和 connection intent | 不能 | 不能 | 不能 |
+| TUI runtime/host | `AppRuntime`, `Host`, `InputParser`, `FrameSink` | event queue、hit regions、mouse drag、raw mode、output diff cache | 不能 | 只生成 input events 和 hit regions | 不能 |
+| render output | `RenderVM`, `RenderResult`, `Frame` | derived view model/frame/hit regions | 不能 | hit regions 只能辅助 mouse focus/action | 不能 |
 
-## TUI reducer-owned state
+## TUI reducer 持有状态
 
-| Store | File | Important fields | Owner meaning | Boundary note |
+| 状态 | 文件 | 关键字段 | 归属语义 | 边界说明 |
 | --- | --- | --- | --- | --- |
-| `Root` | `state/root.go` | `Generation`, `History`, `CopyMode`, `Clipboard`, `Surface`, `Session`, `TerminalViews`, `TerminalPool`, `Viewport`, `Shell`, `HostTheme`, `WorkbenchSync` | One current TUI process reducer state root | No field here is core truth; some fields are projections of core truth. |
-| `ShellStore` | `state/shell.go` | workspace, workspaces, floatings, active ids, `InteractionMode`, overlay, CTA, toasts | Workbench UI structure and current focus | `PaneState.Kind` is only `empty` or `terminal-live`; exited/copy-history are not current pane states. |
-| `TerminalViewStore` | `state/terminal_view.go` | `Views`, `PaneViews`, `FloatingViews` | Current process view binding map | Ordinary terminal input must resolve through active pane/floating -> binding. |
-| `TerminalViewBinding` | `state/terminal_view.go` | `ViewID`, `SurfaceID`, `TerminalID`, `Channel`, `ResizeRole`, desired size, pane/floating ids, `Attached`, resize projection | Current TUI's connection intent and latest known attachment projection | Channel may be stale; send failure must reattach this view only. |
-| `TerminalSurfaceStore` | `state/live.go` | current terminal projection plus `Surfaces` map | Cached live surface/lifecycle projection | It can clear stale exited UI when core sends lifecycle-known running, but it does not own lifecycle truth. |
-| `TerminalSessionStore` | `state/live.go` | `TerminalID`, `Channel`, `InputChannels`, attach status, desired resize, lifecycle cache | Legacy/session projection for attach/live path | Must not be used as global input fallback when a specific TerminalView binding exists. |
-| `TerminalPoolStore` | `state/terminal_pool.go` | list status, items, request/applied seq, last action ids | Cached core terminal list/action response | Useful for picker and lifecycle projection; not input routing truth. |
-| `HistoryStore` | `state/history.go` | accepted `SourceLines`, `Rows`, token/generation/cursor/boundary, pending/exhausted | Current authoritative history window cache | Payload comes from core; TUI only caches and locally reflows accepted windows. |
-| `CopyModeStore` | `state/history.go` | active/entering, pane/view/terminal ids, cursor, mark, selection, query, matches, bound token/cols | Copy/history interaction state | Never a history source. It selects and searches over `HistoryStore`. |
-| `ClipboardStore` | `state/clipboard.go` | entries, storage versions, conflict/dirty flags | Current TUI clipboard-history projection | System clipboard IO and core storage are separate. |
-| `ViewportStore` | `state/viewport.go` | host cols/rows/valid | Host TTY drawable size | Not the PTY size of any terminal. |
-| `HostThemeStore` | `state/host_theme.go` | default fg/bg, palette, probed | Host terminal theme probe | Does not rewrite terminal content colors. |
-| `WorkbenchSyncStore` | `state/root.go` | storage ref, saved/applied/event/base/conflict versions | Sync bookkeeping for core opaque workbench storage | Version state only; not lifecycle or input truth. |
+| `Root` | `state/root.go` | `Generation`, `History`, `CopyMode`, `Clipboard`, `Surface`, `Session`, `TerminalViews`, `TerminalPool`, `Viewport`, `Shell`, `HostTheme`, `WorkbenchSync` | 当前 TUI 进程唯一 reducer 状态根 | 这里没有 core 真相；部分字段只是 core 真相的投影缓存。 |
+| `ShellStore` | `state/shell.go` | workspace、workspaces、floatings、active ids、`InteractionMode`、overlay、CTA、toasts | Workbench UI 结构和当前焦点 | `PaneState.Kind` 当前只能是 `empty` 或 `terminal-live`；exited/copy-history 不是当前 pane 状态。 |
+| `TerminalViewStore` | `state/terminal_view.go` | `Views`, `PaneViews`, `FloatingViews` | 当前进程 view binding map | 普通 terminal input 必须通过 active pane/floating -> binding 解析。 |
+| `TerminalViewBinding` | `state/terminal_view.go` | `ViewID`, `SurfaceID`, `TerminalID`, `Channel`, `ResizeRole`, desired size、pane/floating ids、`Attached`、resize projection | 当前 TUI 的连接意图和最新已知 attachment 投影 | Channel 可能 stale；send 失败时只能 reattach 当前 view。 |
+| `TerminalSurfaceStore` | `state/live.go` | 当前 terminal projection 和 `Surfaces` map | cached live surface/lifecycle projection | core 发来 lifecycle-known running 时可以清 stale exited UI，但它不拥有 lifecycle 真相。 |
+| `TerminalSessionStore` | `state/live.go` | `TerminalID`, `Channel`, `InputChannels`, attach status、desired resize、lifecycle cache | attach/live path 的 legacy/session projection | 多 view 输入不能用它当 global fallback。 |
+| `TerminalPoolStore` | `state/terminal_pool.go` | list status、items、request/applied seq、last action ids | cached core terminal list/action response | 用于 picker 和 lifecycle 投影；不是 input routing truth。 |
+| `HistoryStore` | `state/history.go` | accepted `SourceLines`, `Rows`, token/generation/cursor/boundary、pending/exhausted | 当前 authoritative history window cache | payload 来自 core；TUI 只缓存和本地 reflow 已接纳窗口。 |
+| `CopyModeStore` | `state/history.go` | active/entering、pane/view/terminal ids、cursor、mark、selection、query、matches、bound token/cols | copy/history 交互状态 | 永远不是 history source，只在 `HistoryStore` 上选择和搜索。 |
+| `ClipboardStore` | `state/clipboard.go` | entries、storage versions、conflict/dirty flags | 当前 TUI clipboard-history projection | system clipboard IO 和 core storage 是另外的边界。 |
+| `ViewportStore` | `state/viewport.go` | host cols/rows/valid | host TTY drawable size | 不是任何 terminal 的 PTY size。 |
+| `HostThemeStore` | `state/host_theme.go` | default fg/bg、palette、probed | host terminal theme probe | 不改写 terminal content colors。 |
+| `WorkbenchSyncStore` | `state/root.go` | storage ref、saved/applied/event/base/conflict versions | core opaque workbench storage 的同步 bookkeeping | 只是版本状态，不是 lifecycle 或 input truth。 |
 
-## Core state
+## Core 持有状态
 
-| Area | File | Structs | Data held | Boundary note |
+| 区域 | 文件 | 主要结构 | 持有的数据 | 边界说明 |
 | --- | --- | --- | --- | --- |
-| Server runtime | `server.go` | `Server`, `serverConfig` | config, registry, storage, workbench legacy store, terminal map, event broker, listeners/transports, lifecycle/closed flags | Owns daemon process runtime, not TUI focus. |
-| Terminal registry | `registry.go`, `types.go` | `terminalRegistry`, `TerminalInfo` | terminal identity, metadata, size, state, create/exit metadata | This is the simple source for running/exited. |
-| Terminal runtime | `terminal.go` | `Terminal` | `TerminalInfo`, process, live surface, history pipeline, ingest queues, event broker callback | Restart changes process and lifecycle but keeps terminal identity/history/live tail as designed. |
-| Protocol attachments | `protocol_service.go` | `protocolSession`, `protocolAttachment` | channel registry, per-view surface/view id, resize owner, size lock, event subscriptions, history pins | Channel validity lives here; storage snapshots cannot validate current channel. |
-| Process | `process.go` | `ProcessSpec`, `TerminalProcess`, `ProcessExit` | command, size, PTY/process handle, exit result | TUI only sees projected terminal info and events. |
-| Live surface | `live/types.go` | `SurfaceTrack`, `SurfaceSnapshot` | VTerm screen, cursor, modes, pending escape, preserve-alt option | Live surface is not history truth. |
-| History parser/pipeline | `terminal_history_pipeline.go`, `history_ingest.go` | `terminalHistoryPipeline`, `historyANSIParser` | parser state, screen size, alt capture, `HistoryTrack` | Converts PTY stream to history events; does not read TUI layout. |
-| History truth | `history/*.go` | `HistoryTrack`, `LogicalLineStore`, `CommittedHistoryIndex`, `MutableFrontier` | logical line payloads, committed index, mutable frontier, generation, primary screen ownership | The only committed history truth. |
-| History windows/snapshots | `history/window.go`, `history/snapshot.go` | `HistoryWindow`, `FrozenSnapshot` | requested projection and frozen read-only copy session pin | Output contracts derived from history truth. |
-| Core opaque storage | `storage.go` | `storageStore`, `StorageEntry` | `app_id/scope/owner_id/key -> bytes/version/updated_at` | Daemon stores bytes and versions; it does not understand TUI pane lifecycle. |
-| Events | `events.go` | `eventBroker`, `Event`, `EventFilter` | event subscriptions and filters | Notification boundary, not durable truth. |
-| Legacy workbench API | `workbench.go` | `workbenchStore` | old protocol workbench snapshot | Migration debt; do not use as new TUI lifecycle/input source. |
+| Server 运行时 | `server.go` | `Server`, `serverConfig` | config、registry、storage、legacy workbench store、terminal map、event broker、listeners/transports、lifecycle/closed flags | 拥有 daemon process runtime，不拥有 TUI focus。 |
+| 终端注册表 | `registry.go`, `types.go` | `terminalRegistry`, `TerminalInfo` | terminal identity、metadata、size、state、create/exit metadata | running/exited 的最简单来源。 |
+| 终端运行时 | `terminal.go` | `Terminal` | `TerminalInfo`、process、live surface、history pipeline、ingest queues、event broker callback | restart 改 process/lifecycle，但按设计保留 terminal identity/history/live tail。 |
+| 协议附件 | `protocol_service.go` | `protocolSession`, `protocolAttachment` | channel registry、per-view surface/view id、resize owner、size lock、event subscriptions、history pins | channel validity 在这里；storage snapshot 不能验证当前 channel。 |
+| 进程 | `process.go` | `ProcessSpec`, `TerminalProcess`, `ProcessExit` | command、size、PTY/process handle、exit result | TUI 只能看到 terminal info 和 events 的投影。 |
+| 实时表面 | `live/types.go` | `SurfaceTrack`, `SurfaceSnapshot` | VTerm screen、cursor、modes、pending escape、preserve-alt option | live surface 不是 history truth。 |
+| 历史解析器/管线 | `terminal_history_pipeline.go`, `history_ingest.go` | `terminalHistoryPipeline`, `historyANSIParser` | parser state、screen size、alt capture、`HistoryTrack` | 把 PTY stream 转成 history events，不读取 TUI layout。 |
+| 历史真相 | `history/*.go` | `HistoryTrack`, `LogicalLineStore`, `CommittedHistoryIndex`, `MutableFrontier` | logical line payloads、committed index、mutable frontier、generation、primary screen ownership | 唯一 committed history truth。 |
+| 历史窗口/快照 | `history/window.go`, `history/snapshot.go` | `HistoryWindow`, `FrozenSnapshot` | requested projection 和 frozen copy session pin | 从 history truth 派生的输出 contract。 |
+| Core 透明存储 | `storage.go` | `storageStore`, `StorageEntry` | `app_id/scope/owner_id/key -> bytes/version/updated_at` | daemon 只存 bytes 和 version，不理解 TUI pane lifecycle。 |
+| 事件 | `events.go` | `eventBroker`, `Event`, `EventFilter` | event subscriptions and filters | 通知边界，不是 durable truth。 |
+| 旧 workbench API | `workbench.go` | `workbenchStore` | old protocol workbench snapshot | 迁移债；不要作为新的 TUI lifecycle/input source。 |
 
-## Workbench storage payload owned by TUI schema
+## TUI schema 拥有的 workbench 存储内容
 
-This payload is stored in core opaque storage, but interpreted by `termx-tui-v3`.
+这份内容存在 core opaque storage 里，但 schema 和语义由 `termx-tui-v3` 解释。
 
-| Field | Stored? | Meaning | Must not mean |
+| 字段 | 是否存储 | 含义 | 绝不能表示 |
 | --- | --- | --- | --- |
-| `Workspace`, `Workspaces` | Yes | Shared TUI workspace/tab/pane tree | Core workbench domain truth |
-| `Floatings`, `ActiveFloatingID` | Yes | Shared TUI floating layout/focus intent | Core attachment truth |
-| `PanelPresentation`, `ZoomedPaneID`, header/footer flags | Yes | Presentation preference | Terminal lifecycle |
-| `ActivePaneID` | Yes | Restore focus intent | Current process input route until runtime activates and binding exists |
-| `TerminalViews` | Yes | Connection intent: view/pane/floating -> terminal plus last known view metadata | Current channel validity or lifecycle |
-| legacy `"exited"` / `"copy-history"` pane kind | May exist in old snapshots | Restore compatibility input | Current pane state; must be scrubbed to `terminal-live` intent |
+| `Workspace`, `Workspaces` | 是 | 共享的 TUI workspace/tab/pane tree | core workbench 领域真相 |
+| `Floatings`, `ActiveFloatingID` | 是 | 共享的 TUI floating layout/focus intent | core attachment 真相 |
+| `PanelPresentation`, `ZoomedPaneID`, header/footer flags | 是 | 展示偏好 | 终端生命周期 |
+| `ActivePaneID` | 是 | restore focus intent | runtime 激活且 binding 存在前的当前进程 input route |
+| `TerminalViews` | 是 | connection intent：view/pane/floating -> terminal 以及 last known view metadata | 当前 channel 有效性或生命周期 |
+| legacy `"exited"` / `"copy-history"` pane kind | 旧 snapshot 可能存在 | restore compatibility input | 当前 pane state；必须在 restore 边界 scrub 成 `terminal-live` intent |
 
-## Rules for using state
+## 状态使用规则
 
-1. Terminal lifecycle is decided by core terminal info or lifecycle-known live projection. TUI storage, pane kind, copy mode, session cache, and render output cannot decide it.
-2. Ordinary keyboard input target is resolved only from current active pane/floating plus `TerminalViewStore` binding. `TerminalSessionStore`, storage snapshot, terminal pool selection, sibling binding, and global fallback cannot select the target.
-3. Channel validity is decided by core protocol attachment registry. TUI may cache a channel in `TerminalViewBinding`, but any stale-channel error must reattach the same view and replay only that input.
-4. History truth is only core `HistoryTrack` logical lines. TUI `HistoryStore` and `CopyModeStore` cache authoritative windows and interaction state; they cannot synthesize committed history from live rows.
-5. Workbench storage is layout and connection intent only. It can restore a panel connected to terminal X; it cannot say terminal X is exited/running.
-6. Live surface is current screen/cursor/modes. It can include lifecycle projection for UI clearing, but it is not history truth and cannot be used to reconstruct committed history.
-7. Render `Frame` and hit regions are derived output. Hit regions can activate focus or actions, but render output cannot become state owner for lifecycle, input route, or history.
-8. Runtime/host caches are process-local performance and IO state. Queue coalescing, last frame, input parser pending bytes, and mouse drag state must not be persisted or treated as shared truth.
+1. 终端生命周期只能由 core terminal info 或 lifecycle-known live projection 决定。TUI storage、pane kind、copy mode、session cache、render output 都不能决定 lifecycle。
+2. 普通键盘输入目标只能由当前 active pane/floating 加 `TerminalViewStore` binding 解析。`TerminalSessionStore`、storage snapshot、terminal pool selection、sibling binding、global fallback 都不能选择目标。
+3. Channel validity 由 core protocol attachment registry 决定。TUI 可以在 `TerminalViewBinding` 缓存 channel，但 stale-channel error 只能 reattach 同一个 view，并且只 replay 这次 input。
+4. 历史真相只在 core `HistoryTrack` logical lines。TUI `HistoryStore` 和 `CopyModeStore` 只缓存 authoritative windows 和交互状态，不能从 live rows 合成 committed history。
+5. Workbench storage 只保存布局和连接意图。它可以恢复“某 panel 连接 terminal X”的意图，但不能表示 terminal X 是 exited/running。
+6. Live surface 表达当前 screen/cursor/modes。它可以携带 lifecycle projection 用于 UI 清理，但不是 history truth，也不能用于重建 committed history。
+7. Render `Frame` 和 hit regions 都是派生输出。Hit regions 可以触发 focus 或 action，但 render output 不能成为 lifecycle、input route 或 history 的状态 owner。
+8. Runtime/host caches 都是当前进程内的性能和 IO 状态。queue coalescing、last frame、input parser pending bytes、mouse drag state 都不能持久化，也不能当共享 truth。
 
-## Common bug classification
+## 常见问题归因表
 
-| Symptom | First owner to inspect | Do not explain it with |
+| 现象 | 第一优先检查的归属方 | 不要用这些解释 |
 | --- | --- | --- |
-| Re-enter TUI still shows restart after successful restart | core terminal list state, lifecycle-known surface/event, `TerminalSurfaceStore` projection | workbench pane kind |
-| Active panel border moves but keyboard goes nowhere | `ShellStore` active ids -> `TerminalViewStore` binding -> protocol attachment channel | `TerminalSessionStore.Channel` global fallback |
-| Reattach current panel breaks sibling panel | `TerminalViewStore` update scope and protocol attachment detach/restart behavior | terminal pool selected item |
-| Copy/history shows wrong content | core `HistoryTrack` window response and TUI `HistoryStore` stale guard | live surface scrollback |
-| Cursor wrong after restart | core `SurfaceTrack` cursor in snapshot and TUI live cursor projection | text tail synthesis |
-| Mouse works but keyboard fails | host input parser and runtime input routing split after `InputMsg` | storage snapshot |
+| restart 成功后重进 TUI 仍显示 restart | core terminal list state、lifecycle-known surface/event、`TerminalSurfaceStore` projection | workbench pane kind |
+| active panel 边框移动了但键盘输入没进 terminal | `ShellStore` active ids -> `TerminalViewStore` binding -> protocol attachment channel | `TerminalSessionStore.Channel` global fallback |
+| reattach 当前 panel 后 sibling panel 失效 | `TerminalViewStore` update scope 和 protocol attachment detach/restart 行为 | terminal pool selected item |
+| copy/history 内容不对 | core `HistoryTrack` window response 和 TUI `HistoryStore` stale guard | live surface scrollback |
+| restart 后 cursor 错位 | core `SurfaceTrack` snapshot cursor 和 TUI live cursor projection | text tail synthesis |
+| 鼠标有效但键盘无效 | host input parser 和 runtime input routing 在 `InputMsg` 之后的分流 | storage snapshot |
