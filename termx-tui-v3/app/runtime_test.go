@@ -3357,7 +3357,7 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 			state.DefaultPaneID, "term-exited", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
 		)),
 	}
-	exitedTerminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-next", Title: "next", State: "running"}}}}
+	exitedTerminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-exited", Title: "done", State: string(state.TerminalLiveExited)}}}}
 	exitedRuntime := newShellHitRuntimeWithTerminal(exitedRoot, exitedHost, exitedTerminal)
 	if err := exitedRuntime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("post exited render: %v", err)
@@ -3372,8 +3372,28 @@ func TestAppRuntimeDispatchesProductContentActions(t *testing.T) {
 	if err := exitedRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain exited restart: %v", err)
 	}
-	if len(exitedTerminal.Restarts) != 1 || exitedTerminal.Restarts[0].TerminalID != "term-exited" {
-		t.Fatalf("exited restart click should restart bound terminal, restarts=%#v", exitedTerminal.Restarts)
+	if len(exitedTerminal.Lists) == 0 || len(exitedTerminal.Restarts) != 1 || exitedTerminal.Restarts[0].TerminalID != "term-exited" {
+		t.Fatalf("exited restart click should query core then restart bound exited terminal, lists=%#v restarts=%#v", exitedTerminal.Lists, exitedTerminal.Restarts)
+	}
+
+	runningHost := NewFakeTerminalHost(8)
+	runningTerminal := &services.FakeTerminalService{ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-exited", Title: "live", State: "running"}}}}
+	runningRuntime := newShellHitRuntimeWithTerminal(exitedRoot, runningHost, runningTerminal)
+	if err := runningRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post stale exited render: %v", err)
+	}
+	if err := runningRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stale exited render: %v", err)
+	}
+	staleRestartAction := frameActionHitRegion(t, lastRuntimeFrame(t, runningHost), render.ActionExitedRestart.String(), state.DefaultPaneID)
+	if err := runningHost.SendInput(mouseEventAt(staleRestartAction.Rect)); err != nil {
+		t.Fatalf("send stale exited restart click: %v", err)
+	}
+	if err := runningRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain stale exited restart: %v", err)
+	}
+	if len(runningTerminal.Lists) == 0 || len(runningTerminal.Restarts) != 0 {
+		t.Fatalf("stale exited cache must query core and skip restart for running terminal, lists=%#v restarts=%#v", runningTerminal.Lists, runningTerminal.Restarts)
 	}
 
 	pickerExitedHost := NewFakeTerminalHost(8)

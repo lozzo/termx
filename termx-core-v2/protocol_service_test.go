@@ -109,6 +109,41 @@ func TestProtocolServiceExitMetadataRoundTrips(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceRestartPublishesRunningLifecycleEvent(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "job",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 12, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	events, err := client.Events(context.Background(), protocol.EventsParams{
+		TerminalID: "term-1",
+		Types:      []protocol.EventType{protocol.EventTerminalStateChanged},
+	})
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	serverProcess(t, server, "term-1").exit(23)
+	exited := requireProtocolEvent(t, events)
+	if exited.StateChanged == nil || exited.StateChanged.NewState != string(TerminalStateExited) {
+		t.Fatalf("expected exited lifecycle before restart, got %#v", exited)
+	}
+	if err := client.Restart(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	event := requireProtocolEvent(t, events)
+	if event.StateChanged == nil || event.StateChanged.NewState != string(TerminalStateRunning) {
+		t.Fatalf("restart should publish authoritative running lifecycle, got %#v", event)
+	}
+	if event.StateChanged.ExitCode != nil || !event.StateChanged.ExitedAt.IsZero() {
+		t.Fatalf("running lifecycle should clear exit metadata, got %#v", event.StateChanged)
+	}
+}
+
 func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

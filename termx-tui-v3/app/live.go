@@ -126,8 +126,9 @@ type LiveAttachResultMsg struct {
 func (LiveAttachResultMsg) isMsg() {}
 
 type LiveSurfaceMsg struct {
-	Snapshot state.LiveSurfaceSnapshot
-	Err      error
+	Snapshot       state.LiveSurfaceSnapshot
+	Err            error
+	LifecycleKnown bool
 }
 
 func (LiveSurfaceMsg) isMsg() {}
@@ -210,14 +211,14 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				return root.Advance(), nil
 			}
-			root.Surface = root.Surface.ApplySnapshot(msg.Snapshot)
-			if msg.Snapshot.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && msg.Snapshot.TerminalID == root.Session.TerminalID {
+			root.Surface = root.Surface.ApplySnapshotWithLifecycle(msg.Snapshot, msg.LifecycleKnown)
+			if msg.LifecycleKnown && msg.Snapshot.State == state.TerminalLiveAttached && msg.Snapshot.TerminalID == root.Session.TerminalID {
 				root.Session = root.Session.MarkAttached(msg.Snapshot.TerminalID)
 			}
 			logLifecycleTrace(deps.Logger, "live.surface",
 				"terminal_id", msg.Snapshot.TerminalID,
 				"snapshot_state", string(msg.Snapshot.State),
-				"lifecycle_known", msg.Snapshot.LifecycleKnown,
+				"lifecycle_known", msg.LifecycleKnown,
 				"snapshot_exit_code", msg.Snapshot.ExitCode,
 				"snapshot_exited_at", lifecycleTimeSummary(msg.Snapshot.ExitedAt),
 				"snapshot_command", strings.Join(msg.Snapshot.Command, " "),
@@ -645,7 +646,7 @@ func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []E
 			if result.Snapshot.Rows == 0 {
 				result.Snapshot.Rows = rows
 			}
-			return LiveSurfaceMsg{Snapshot: result.Snapshot}
+			return LiveSurfaceMsg{Snapshot: result.Snapshot, LifecycleKnown: result.LifecycleKnown}
 		},
 	}}
 }
@@ -768,14 +769,14 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 		if event.Snapshot.TerminalID == "" {
 			event.Snapshot.TerminalID = event.TerminalID
 		}
-		root.Surface = root.Surface.ApplySnapshot(event.Snapshot)
-		if event.Snapshot.LifecycleKnown && event.Snapshot.State == state.TerminalLiveAttached && event.Snapshot.TerminalID == root.Session.TerminalID {
+		root.Surface = root.Surface.ApplySnapshotWithLifecycle(event.Snapshot, event.LifecycleKnown)
+		if event.LifecycleKnown && event.Snapshot.State == state.TerminalLiveAttached && event.Snapshot.TerminalID == root.Session.TerminalID {
 			root.Session = root.Session.MarkAttached(event.Snapshot.TerminalID)
 		}
 		logLifecycleTrace(deps.Logger, "live.event",
 			"terminal_id", event.Snapshot.TerminalID,
 			"snapshot_state", string(event.Snapshot.State),
-			"lifecycle_known", event.Snapshot.LifecycleKnown,
+			"lifecycle_known", event.LifecycleKnown,
 			"surface_state", string(root.Surface.State),
 			"session_state", string(root.Session.State),
 			"active_terminal", lifecycleActiveTerminalID(root),

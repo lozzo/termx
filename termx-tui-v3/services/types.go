@@ -228,6 +228,8 @@ type TerminalResizeResult struct {
 type TerminalSurfaceResult struct {
 	Snapshot state.LiveSurfaceSnapshot
 	Ready    bool
+	// 中文说明：只标记这一次 service result 来自 core lifecycle 查询；不要写进 TUI store。
+	LifecycleKnown bool
 }
 
 type TerminalSurfaceRequest struct {
@@ -245,15 +247,17 @@ type TerminalLiveEventRequest struct {
 type TerminalLiveEvent struct {
 	TerminalID string
 	Snapshot   state.LiveSurfaceSnapshot
-	Exited     bool
-	ExitCode   int
-	ExitedAt   time.Time
-	Command    []string
-	Reason     string
-	Tags       map[string]string
-	Metadata   bool
-	Err        error
-	Ready      bool
+	// 中文说明：只标记这一次 event 承载 core lifecycle 变化；reducer 用完即丢。
+	LifecycleKnown bool
+	Exited         bool
+	ExitCode       int
+	ExitedAt       time.Time
+	Command        []string
+	Reason         string
+	Tags           map[string]string
+	Metadata       bool
+	Err            error
+	Ready          bool
 }
 
 type SessionService interface {

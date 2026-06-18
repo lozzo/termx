@@ -61,12 +61,12 @@ TUI 里不能自己发明 terminal lifecycle。restart 后是否还应该显示 
 
 - `ShellStore`：当前 workspace、pane/floating、active id、overlay、CTA selection。
 - `TerminalViewStore`：当前 pane/floating 到 terminal attachment 的 view binding。
-- `TerminalPoolStore`：core terminal list 的当前投影缓存。
-- `TerminalSurfaceStore`：live surface / lifecycle 投影缓存。
+- `TerminalPoolStore`：core terminal list 的展示缓存和当前 action 查询结果。
+- `TerminalSurfaceStore`：live surface 画面和 live event 投影缓存。
 - `TerminalSessionStore`：当前 attach/session/input channel 投影缓存。
 - `CopyModeStore` / `HistoryStore`：copy/history 交互态和 authoritative history window。
 
-TUI memory 可以缓存 exited/running 投影，但必须能被 core 的 running/exited 权威信号覆盖。
+TUI memory 不持有 terminal lifecycle truth；需要决定 restart / running / exited 时必须重新查询 core 或消费 core live surface/event 回投。
 
 ## 启动 / restore 链路
 
@@ -109,7 +109,7 @@ TUI memory 可以缓存 exited/running 投影，但必须能被 core 的 running
   - `active_terminal`
   - `terminal_views`
 
-## terminal list / lifecycle 投影链路
+## terminal list / lifecycle 查询链路
 
 入口：
 
@@ -123,16 +123,14 @@ TUI memory 可以缓存 exited/running 投影，但必须能被 core 的 running
 流程：
 
 1. TUI 调用 terminal service list。
-2. list result 写入 `TerminalPoolStore`。
-3. `projectTerminalPoolLifecycleMetadata` 把 core list 中的 terminal state 投影到 TUI memory：
-   - running / attached / pending -> `root.Surface.MarkAttached`
-   - exited -> `root.Surface.MarkExitedWithMetadata`
+2. list result 写入 `TerminalPoolStore`，只服务 picker / pool 展示和当前 action 的一次性决策。
+3. list result 不允许把 running / exited 写入 `root.Surface` 或 `root.Session`；pane 的 live 状态只能来自 live surface/event 或 restart/attach result。
 
 应该成立的不变量：
 
-- 如果 core list 返回 `term-main:running`，旧 exited surface/session 应该被清掉。
-- pool/list 是 lifecycle metadata 投影，不是输入路由依据，也不是 history truth。
-- 如果 list 返回 running 但 UI 仍显示 restart，下一步要看 `root.Surface` 和 `root.Session` 有没有被覆盖回 exited。
+- 如果 core list 返回 `term-main:running`，restart action 必须跳过，不能因为旧 surface/session 显示 exited 就继续重启。
+- pool/list 是 core 查询响应和列表展示缓存，不是 pane live 状态、不作为 input routing truth，也不是 history truth。
+- 如果 list 返回 running 但 UI 仍触发 restart，下一步要看 action 是否绕过了 `TerminalPoolRestartIfExitedRequestMsg`。
 
 重点日志：
 
@@ -164,13 +162,13 @@ TUI memory 可以缓存 exited/running 投影，但必须能被 core 的 running
 1. restore 或 restart 之后会为 view binding 发出 `LiveAttachMsg`。
 2. attach result 会更新 view binding / session channel。
 3. surface request/event 回来后变成 `LiveSurfaceMsg` 或 `LiveEventMsg`。
-4. `TerminalSurfaceStore.ApplySnapshot` 投影 live surface。
-5. 如果 snapshot 是 `LifecycleKnown=true` 且 `State=attached`，`root.Session.MarkAttached` 应该清掉旧 exited session metadata。
+4. `LiveSurfaceMsg` / `LiveEventMsg` 携带一次性的 `LifecycleKnown=true` 时，才表示本次消息来自 core lifecycle 查询或事件。
+5. `TerminalSurfaceStore.ApplySnapshotWithLifecycle` 投影 live surface；如果消息是 `LifecycleKnown=true` 且 `State=attached`，`root.Session.MarkAttached` 应该清掉旧 exited session metadata。
 
 应该成立的不变量：
 
-- running lifecycle-known snapshot 是 core lifecycle 权威信号。
-- ordinary live frame 不能覆盖或吞掉 lifecycle-known running / exited 状态。
+- running lifecycle-known 消息是 core lifecycle 权威信号，不能落到 TUI store 里当 terminal 状态缓存。
+- ordinary live frame 不能覆盖或吞掉 lifecycle-known running / exited 消息。
 - live cursor 只来自 core/protocol surface cursor，不从文本尾部合成。
 
 重点日志：
@@ -208,7 +206,7 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 
 当前语义：
 
-- `LifecycleKnown=true` 的 snapshot 不是 ordinary frame。
+- `LifecycleKnown=true` 的 `LiveSurfaceMsg` / `LiveEventMsg` 不是 ordinary frame。
 - 带 error / exit metadata 的 snapshot 不是 ordinary frame。
 - lifecycle-known frame 必须作为 queue boundary 保留。
 
@@ -282,12 +280,12 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 1. render 给 exited actions 生成 hit regions：
    - `exited.restart`
    - `exited.reconnect`
-2. 键盘上下/Enter 只在当前 active TerminalView 对应 terminal 已 exited 时处理。
-3. restart action 变成 `TerminalPoolRestartRequestMsg`。
+2. 键盘上下/Enter 只在当前 active TerminalView 对应 live surface 已显示 exited CTA 时处理。
+3. restart action 先变成 `TerminalPoolRestartIfExitedRequestMsg`，重新查询 core 当前 terminal state。
 
 应该成立的不变量：
 
-- `paneHasExitedTerminal` 只通过 TerminalView binding 找 terminal id，然后看 surface state。
+- `paneHasExitedTerminal` 只决定当前是否有 exited CTA 输入态；真正 restart 之前必须重新查询 core。
 - 不能从 storage、pane kind、global session 判断是否处于 exited CTA。
 
 ## restart 链路
@@ -308,13 +306,14 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 流程：
 
 1. 用户触发 restart current terminal。
-2. TUI 调 terminal service `Restart(ctx, TerminalRestartRequest{TerminalID})`。
-3. restart result 成功后：
+2. TUI 先发 `TerminalPoolRestartIfExitedRequestMsg` 查询 core list。
+3. 只有 core list 当前仍显示该 terminal exited，才调 terminal service `Restart(ctx, TerminalRestartRequest{TerminalID})`。
+4. restart result 成功后：
    - `root.TerminalPool.ApplyRestarted`
    - `root.Surface.RestartPreservingContent`
    - `root.TerminalViews.MarkTerminalReattaching`
    - `root.Session.ClearInputChannel`
-4. 发起：
+5. 发起：
    - `TerminalPoolListRequestMsg`
    - `restartTerminalViewEffects`，逐 view reattach。
 
@@ -393,13 +392,12 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 
 期望：
 
-- surface/session 不再是 exited。
+- `terminal.restart_if_exited.result state=running` 时不会出现后续 restart request。
 
 如果还是 exited：
 
-- 查 `projectTerminalPoolLifecycleMetadata`
-- 查 `TerminalSurfaceStore.MarkAttached`
-- 查 `TerminalSessionStore.MarkAttached`
+- 查 restart action 是否直接发了 `TerminalPoolRestartRequestMsg`
+- 查 live surface/event 是否还没有返回 core 当前 running snapshot
 
 ### 5. lifecycle-known running surface 是否到达
 
@@ -414,7 +412,7 @@ runtime 会合并普通 live 帧，避免高频输出把队列撑爆。这个合
 
 如果没有出现：
 
-- 查 protocol adapter 是否给 snapshot 填了 `LifecycleKnown=true`。
+- 查 protocol adapter 是否给 `TerminalSurfaceResult` / `TerminalLiveEvent` 填了 `LifecycleKnown=true`。
 - 查 terminal service `Surface` / event stream。
 
 如果出现过但最终 UI 仍 restart：
@@ -487,4 +485,3 @@ active pane/floating
 - global session fallback。
 - sibling panel binding。
 - live lines 中存在 `terminal exited: ...` 文本。
-

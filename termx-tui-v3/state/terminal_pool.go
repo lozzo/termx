@@ -93,7 +93,6 @@ func (store TerminalPoolStore) ApplyRestarted(terminalID string, err string) Ter
 	}
 	store.LastRestartedID = terminalID
 	store.LastError = ""
-	store.Items = markTerminalPoolRunning(store.Items, terminalID)
 	return store
 }
 
@@ -168,20 +167,6 @@ func markTerminalPoolAttached(items []TerminalPoolItem, terminalID string) []Ter
 	cloned := cloneTerminalPoolItems(items)
 	for index := range cloned {
 		cloned[index].Attached = cloned[index].TerminalID == terminalID
-	}
-	return cloned
-}
-
-func markTerminalPoolRunning(items []TerminalPoolItem, terminalID string) []TerminalPoolItem {
-	cloned := cloneTerminalPoolItems(items)
-	for index := range cloned {
-		if cloned[index].TerminalID != terminalID {
-			continue
-		}
-		// 中文说明：restart 已由 core ack，pool 缓存必须先切回 running，避免旧 exited item 污染随后 reattach。
-		cloned[index].State = "running"
-		cloned[index].ExitCode = nil
-		cloned[index].ExitedAt = time.Time{}
 	}
 	return cloned
 }

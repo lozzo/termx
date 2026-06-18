@@ -655,7 +655,8 @@ type queuedLiveUpdate struct {
 func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 	switch msg := msg.(type) {
 	case LiveSurfaceMsg:
-		if msg.Err != nil || !ordinaryLiveSnapshot(msg.Snapshot) {
+		// 中文说明：core lifecycle 查询结果必须按边界消息处理，不能被普通 live 帧合并丢掉。
+		if msg.Err != nil || msg.LifecycleKnown || !ordinaryLiveSnapshot(msg.Snapshot) {
 			return queuedLiveUpdate{}, false
 		}
 		if msg.Snapshot.TerminalID == "" {
@@ -663,7 +664,8 @@ func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 		}
 		return queuedLiveUpdate{terminalID: msg.Snapshot.TerminalID, revision: msg.Snapshot.Revision}, true
 	case LiveEventMsg:
-		if msg.Event.Err != nil || msg.Event.Exited || !msg.Event.Ready || !ordinaryLiveSnapshot(msg.Event.Snapshot) {
+		// 中文说明：event stream 里的 lifecycle 变化同样是边界，不进入 latest-only 合并。
+		if msg.Event.Err != nil || msg.Event.Exited || msg.Event.LifecycleKnown || !msg.Event.Ready || !ordinaryLiveSnapshot(msg.Event.Snapshot) {
 			return queuedLiveUpdate{}, false
 		}
 		terminalID := msg.Event.Snapshot.TerminalID
@@ -695,10 +697,6 @@ func liveQueueBoundary(msg Msg) bool {
 }
 
 func ordinaryLiveSnapshot(snapshot state.LiveSurfaceSnapshot) bool {
-	if snapshot.LifecycleKnown {
-		// 中文说明：core lifecycle 是 terminal running/exited 权威信号，不能被普通 live 帧合并丢掉。
-		return false
-	}
 	if snapshot.Err != "" || snapshot.ExitCode != 0 || snapshot.ExitReason != "" {
 		return false
 	}

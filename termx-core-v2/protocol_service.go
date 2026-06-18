@@ -1217,7 +1217,7 @@ func protocolEventFromCoreV2(event Event) protocol.Event {
 		out.Type = protocol.EventTerminalMetadataChanged
 	case EventTerminalChanged:
 		out.Type = protocol.EventTerminalStateChanged
-		if event.Terminal != nil && event.Terminal.State == TerminalStateExited {
+		if event.Terminal != nil && (event.LifecycleKnown || event.Terminal.State == TerminalStateExited) {
 			out.StateChanged = &protocol.TerminalStateChangedData{
 				NewState: string(event.Terminal.State),
 				ExitCode: copyIntPtr(event.Terminal.ExitCode),

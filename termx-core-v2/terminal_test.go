@@ -1482,6 +1482,29 @@ func TestTerminalRestartClearsExitMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalRestartEventIsLifecycleBoundary(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalChanged}})
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "ordinary\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	ordinary := assertEventValue(t, events, EventTerminalChanged, "term-1")
+	if ordinary.LifecycleKnown {
+		t.Fatalf("ordinary output changed event must not be lifecycle authority, got %#v", ordinary)
+	}
+	if err := server.RestartTerminal(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart terminal: %v", err)
+	}
+	restarted := assertEventValue(t, events, EventTerminalChanged, "term-1")
+	if !restarted.LifecycleKnown || restarted.Terminal == nil || restarted.Terminal.State != TerminalStateRunning {
+		t.Fatalf("restart should publish running lifecycle boundary, got %#v", restarted)
+	}
+}
+
 func TestTerminalProcessDrainsOutputBeforeExit(t *testing.T) {
 	factory := &exitBeforeOutputProcessFactory{}
 	server := NewServer(WithProcessFactory(factory))

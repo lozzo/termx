@@ -870,7 +870,7 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyExitedPaneUsesCoreRunningLifecy
 	terminal := &services.FakeTerminalService{
 		ListResult:    services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
 		AttachResult:  services.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
-		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, LifecycleKnown: true, State: state.TerminalLiveAttached}},
+		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, State: state.TerminalLiveAttached}},
 	}
 	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
 
@@ -940,7 +940,7 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCor
 	terminal := &services.FakeTerminalService{
 		ListResult:    services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
 		AttachResult:  services.TerminalAttachResult{TerminalID: "term-main", Channel: 12, Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner},
-		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, LifecycleKnown: true, State: state.TerminalLiveAttached}},
+		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-main", Cols: 80, Rows: 24, Lines: []string{"terminal exited: term-main code:0 exited", "% "}, Cursor: state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"}, State: state.TerminalLiveAttached}},
 	}
 	initial := state.Root{
 		Surface: state.TerminalSurfaceStore{}.ApplySnapshot(state.LiveSurfaceSnapshot{

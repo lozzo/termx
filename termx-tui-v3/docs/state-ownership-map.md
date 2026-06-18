@@ -976,9 +976,9 @@
 | core 透明存储 | `storageStore`, `StorageEntry` | app 作用域 bytes/version/update time | 不能 | 不能 | 不能 |
 | TUI shell | `ShellStore`, `PaneState`, `FloatingPaneState` | active pane/floating、layout、overlay、CTA、interaction mode | 不能 | 只能先选出 active panel，再交给 `TerminalViewStore` | 不能 |
 | TUI terminal views | `TerminalViewStore`, `TerminalViewBinding` | panel -> view -> terminal/channel binding | 不能 | 能，是 TUI 侧唯一输入目标来源 | 不能 |
-| TUI live/session cache | `TerminalSurfaceStore`, `TerminalSessionStore` | live projection、lifecycle projection、session cache | 只是缓存 | 不能作为全局 fallback | 不能 |
+| TUI live/session projection | `TerminalSurfaceStore`, `TerminalSessionStore` | live surface/event 投影、session channel 投影 | 不能，只能显示刚回投的 core lifecycle 消息 | 不能作为全局 fallback | 不能 |
 | TUI history/copy | `HistoryStore`, `CopyModeStore` | accepted history windows、copy cursor/selection/search | 不能 | copy mode key 先消费，未消费才进入 terminal routing | 不能 |
-| TUI terminal pool | `TerminalPoolStore` | cached terminal list/action results | 只是缓存 | 不能 | 不能 |
+| TUI terminal pool | `TerminalPoolStore` | 最近一次 list/action response | 不能，restart 等动作必须重新查询 core | 不能 | 不能 |
 | TUI workbench storage projection | `WorkbenchStorageSnapshot`, `WorkbenchSyncStore` | persisted layout 和 connection intent | 不能 | 不能 | 不能 |
 | TUI runtime/host | `AppRuntime`, `Host`, `InputParser`, `FrameSink` | event queue、hit regions、mouse drag、raw mode、output diff cache | 不能 | 只生成 input events 和 hit regions | 不能 |
 | render output | `RenderVM`, `RenderResult`, `Frame` | derived view model/frame/hit regions | 不能 | hit regions 只能辅助 mouse focus/action | 不能 |
@@ -987,13 +987,13 @@
 
 | 状态 | 文件 | 关键字段 | 归属语义 | 边界说明 |
 | --- | --- | --- | --- | --- |
-| `Root` | `state/root.go` | `Generation`, `History`, `CopyMode`, `Clipboard`, `Surface`, `Session`, `TerminalViews`, `TerminalPool`, `Viewport`, `Shell`, `HostTheme`, `WorkbenchSync` | 当前 TUI 进程唯一 reducer 状态根 | 这里没有 core 真相；部分字段只是 core 真相的投影缓存。 |
+| `Root` | `state/root.go` | `Generation`, `History`, `CopyMode`, `Clipboard`, `Surface`, `Session`, `TerminalViews`, `TerminalPool`, `Viewport`, `Shell`, `HostTheme`, `WorkbenchSync` | 当前 TUI 进程唯一 reducer 状态根 | 这里没有 core terminal lifecycle 真相；字段只能保存 UI 交互态、连接意图或刚收到的投影。 |
 | `ShellStore` | `state/shell.go` | workspace、workspaces、floatings、active ids、`InteractionMode`、overlay、CTA、toasts | Workbench UI 结构和当前焦点 | `PaneState.Kind` 当前只能是 `empty` 或 `terminal-live`；exited/copy-history 不是当前 pane 状态。 |
 | `TerminalViewStore` | `state/terminal_view.go` | `Views`, `PaneViews`, `FloatingViews` | 当前进程 view binding map | 普通 terminal input 必须通过 active pane/floating -> binding 解析。 |
 | `TerminalViewBinding` | `state/terminal_view.go` | `ViewID`, `SurfaceID`, `TerminalID`, `Channel`, `ResizeRole`, desired size、pane/floating ids、`Attached`、resize projection | 当前 TUI 的连接意图和最新已知 attachment 投影 | Channel 可能 stale；send 失败时只能 reattach 当前 view。 |
-| `TerminalSurfaceStore` | `state/live.go` | 当前 terminal projection 和 `Surfaces` map | cached live surface/lifecycle projection | core 发来 lifecycle-known running 时可以清 stale exited UI，但它不拥有 lifecycle 真相。 |
-| `TerminalSessionStore` | `state/live.go` | `TerminalID`, `Channel`, `InputChannels`, attach status、desired resize、lifecycle cache | attach/live path 的 legacy/session projection | 多 view 输入不能用它当 global fallback。 |
-| `TerminalPoolStore` | `state/terminal_pool.go` | list status、items、request/applied seq、last action ids | cached core terminal list/action response | 用于 picker 和 lifecycle 投影；不是 input routing truth。 |
+| `TerminalSurfaceStore` | `state/live.go` | 当前 terminal projection 和 `Surfaces` map | live surface/event 展示投影 | 只显示 live surface/event 已回投的画面和退出提示；不能回答“现在是否应该 restart”，也不能从 terminal pool/list 推导 lifecycle。 |
+| `TerminalSessionStore` | `state/live.go` | `TerminalID`, `Channel`, `InputChannels`, attach status、desired resize、last error | attach/live path 的 session projection | 多 view 输入不能用它当 global fallback；不持有 core terminal lifecycle truth，旧退出展示态只能被 core lifecycle 消息覆盖。 |
+| `TerminalPoolStore` | `state/terminal_pool.go` | list status、items、request/applied seq、last action ids | 最近一次 core terminal list/action response | 用于 picker/pool 展示；restart、running/exited 判定必须重新查询 core，不得写回 pane live lifecycle，也不是 input routing truth。 |
 | `HistoryStore` | `state/history.go` | accepted `SourceLines`, `Rows`, token/generation/cursor/boundary、pending/exhausted | 当前 authoritative history window cache | payload 来自 core；TUI 只缓存和本地 reflow 已接纳窗口。 |
 | `CopyModeStore` | `state/history.go` | active/entering、pane/view/terminal ids、cursor、mark、selection、query、matches、bound token/cols | copy/history 交互状态 | 永远不是 history source，只在 `HistoryStore` 上选择和搜索。 |
 | `ClipboardStore` | `state/clipboard.go` | entries、storage versions、conflict/dirty flags | 当前 TUI clipboard-history projection | system clipboard IO 和 core storage 是另外的边界。 |
@@ -1033,12 +1033,12 @@
 
 ## 状态使用规则
 
-1. 终端生命周期只能由 core terminal info 或 lifecycle-known live projection 决定。TUI storage、pane kind、copy mode、session cache、render output 都不能决定 lifecycle。
+1. 终端生命周期只能由当次 core terminal info 查询或 core lifecycle live event/surface 消息决定。TUI storage、pane kind、copy mode、session/surface 投影、render output 都不能决定 lifecycle；需要判断时重新查询 core。
 2. 普通键盘输入目标只能由当前 active pane/floating 加 `TerminalViewStore` binding 解析。`TerminalSessionStore`、storage snapshot、terminal pool selection、sibling binding、global fallback 都不能选择目标。
 3. Channel validity 由 core protocol attachment registry 决定。TUI 可以在 `TerminalViewBinding` 缓存 channel，但 stale-channel error 只能 reattach 同一个 view，并且只 replay 这次 input。
 4. 历史真相只在 core `HistoryTrack` logical lines。TUI `HistoryStore` 和 `CopyModeStore` 只缓存 authoritative windows 和交互状态，不能从 live rows 合成 committed history。
 5. Workbench storage 只保存布局和连接意图。它可以恢复“某 panel 连接 terminal X”的意图，但不能表示 terminal X 是 exited/running。
-6. Live surface 表达当前 screen/cursor/modes。它可以携带 lifecycle projection 用于 UI 清理，但不是 history truth，也不能用于重建 committed history。
+6. Live surface 表达当前 screen/cursor/modes。core lifecycle live event/surface 消息可以用于更新当前 UI 展示，但不是可持久化 truth，也不能用于重建 committed history 或代替下一次 lifecycle 查询。
 7. Render `Frame` 和 hit regions 都是派生输出。Hit regions 可以触发 focus 或 action，但 render output 不能成为 lifecycle、input route 或 history 的状态 owner。
 8. Runtime/host caches 都是当前进程内的性能和 IO 状态。queue coalescing、last frame、input parser pending bytes、mouse drag state 都不能持久化，也不能当共享 truth。
 

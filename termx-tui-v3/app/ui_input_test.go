@@ -80,9 +80,9 @@ func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
 	if !ok || effect.Run == nil {
 		t.Fatalf("pane restart should emit restart effect, got %#v", effects)
 	}
-	restartMsg, ok := effect.Run(context.Background()).(TerminalPoolRestartRequestMsg)
+	restartMsg, ok := effect.Run(context.Background()).(TerminalPoolRestartIfExitedRequestMsg)
 	if !ok || restartMsg.TerminalID != "term-1" {
-		t.Fatalf("pane restart should target active pane terminal, got %#v", restartMsg)
+		t.Fatalf("pane restart should query active pane terminal lifecycle, got %#v", restartMsg)
 	}
 }
 
@@ -226,6 +226,34 @@ func TestUIInputReducerExitedPaneCTAKeyboardRestartDefault(t *testing.T) {
 	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
 	if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
 		t.Fatalf("enter should execute default restart CTA, got %#v", msg)
+	}
+}
+
+func TestUIInputReducerExitedCacheRestartQueriesCoreLifecycle(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{
+		Shell:   state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-live", State: state.TerminalLiveExited, ExitCode: 23},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-live", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+
+	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if len(effects) != 2 {
+		t.Fatalf("exited CTA enter should be handled and schedule core lifecycle query, got %#v", effects)
+	}
+	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(ShellContentActionMsg)
+	if !ok || msg.ActionID != render.ActionExitedRestart.String() || msg.PaneID != state.DefaultPaneID {
+		t.Fatalf("enter should still route through exited restart action, got %#v", msg)
+	}
+	next, effects := NewShellReducer()(root, msg)
+	if len(effects) != 1 {
+		t.Fatalf("restart action should schedule a restart-if-exited core query, root=%#v effects=%#v", next, effects)
+	}
+	query, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRestartIfExitedRequestMsg)
+	if !ok || query.TerminalID != "term-live" {
+		t.Fatalf("restart action must query core lifecycle before restart, got %#v", query)
 	}
 }
 
@@ -1164,8 +1192,8 @@ func TestTerminalPoolReducerHandlesRestartAndReconnectResults(t *testing.T) {
 	if root.Surface.State != state.TerminalLiveAttached || root.Surface.ExitCode != 0 || !root.Surface.ExitedAt.IsZero() || len(root.Surface.Command) != 0 {
 		t.Fatalf("restart should clear exited surface metadata, got %#v", root.Surface)
 	}
-	if root.TerminalPool.Items[0].State != "running" || root.TerminalPool.Items[0].ExitCode != nil || !root.TerminalPool.Items[0].ExitedAt.IsZero() {
-		t.Fatalf("restart ack should clear stale exited pool item before reattach, got %#v", root.TerminalPool.Items[0])
+	if root.TerminalPool.Items[0].State != string(state.TerminalLiveExited) || root.TerminalPool.Items[0].ExitCode == nil {
+		t.Fatalf("restart ack must not forge pool running state before next core list, got %#v", root.TerminalPool.Items[0])
 	}
 	if len(root.Surface.Lines) != 1 || root.Surface.Lines[0] != "old live tail" || !root.Surface.Ready {
 		t.Fatalf("restart should preserve live tail while reattaching, got %#v", root.Surface)
@@ -1311,8 +1339,8 @@ func TestLiveAttachResultChecksCoreLifecycleBeforeRestartingExitedRoot(t *testin
 		t.Fatalf("restart-if-exited should use terminal list, msg=%#v lists=%#v", resultMsg, terminal.Lists)
 	}
 	root, effects = reducer(root, resultMsg)
-	if root.Surface.State != state.TerminalLiveExited {
-		t.Fatalf("core exited lifecycle should project to surface before restart, surface=%#v", root.Surface)
+	if root.Surface.State == state.TerminalLiveExited {
+		t.Fatalf("terminal pool list must not project lifecycle into live surface, surface=%#v", root.Surface)
 	}
 	if len(effects) != 1 {
 		t.Fatalf("exited core lifecycle should request restart, effects=%#v", effects)
@@ -1357,7 +1385,7 @@ func TestRestartIfExitedSkipsRunningCoreTerminal(t *testing.T) {
 	}
 }
 
-func TestTerminalPoolRunningListClearsExitedLifecycleBeforeSnapshot(t *testing.T) {
+func TestTerminalPoolRunningListDoesNotCacheLifecycleBeforeSurface(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	runtime := NewInteractiveRuntime(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}}, CopyModeDeps{})
 	root := runtime.State()
@@ -1374,6 +1402,13 @@ func TestTerminalPoolRunningListClearsExitedLifecycleBeforeSnapshot(t *testing.T
 	if err := runtime.Post(TerminalPoolListResultMsg{Seq: seq, Result: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", State: "running", Command: []string{"/bin/zsh"}, Cols: 80, Rows: 24}}}}); err != nil {
 		t.Fatalf("post running list: %v", err)
 	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain running list: %v", err)
+	}
+	afterList := runtime.State()
+	if afterList.Surface.State != state.TerminalLiveExited || afterList.Session.State != state.TerminalLiveExited {
+		t.Fatalf("running list must not mutate live surface/session lifecycle, surface=%#v session=%#v", afterList.Surface, afterList.Session)
+	}
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Revision:   3,
@@ -1381,20 +1416,21 @@ func TestTerminalPoolRunningListClearsExitedLifecycleBeforeSnapshot(t *testing.T
 		Rows:       24,
 		Lines:      []string{"terminal exited: term-1 code:0 exited", "% "},
 		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
-	}}); err != nil {
+		State:      state.TerminalLiveAttached,
+	}, LifecycleKnown: true}); err != nil {
 		t.Fatalf("post live surface: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain running list: %v", err)
+		t.Fatalf("drain running surface: %v", err)
 	}
 
 	final := runtime.State()
 	if final.Surface.State != state.TerminalLiveAttached || final.Surface.ExitReason != "" || final.Session.State == state.TerminalLiveExited {
-		t.Fatalf("running list should clear exited lifecycle, surface=%#v session=%#v", final.Surface, final.Session)
+		t.Fatalf("running live surface should clear exited lifecycle after list-only cache, surface=%#v session=%#v", final.Surface, final.Session)
 	}
 	frame := lastFrame(t, host.Frames())
 	if !frameContains(frame, "% ") || frameContains(frame, "R restart current terminal") || !frame.Cursor.Visible {
-		t.Fatalf("running list should unblock fresh live prompt and cursor, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
+		t.Fatalf("running live surface should unblock fresh live prompt and cursor, lines=%#v cursor=%#v", frame.Lines, frame.Cursor)
 	}
 }
 

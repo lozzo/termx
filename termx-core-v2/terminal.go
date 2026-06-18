@@ -191,7 +191,7 @@ func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) e
 	terminal.syncInfo(info)
 	terminal.watchProcess(process)
 	_ = old.Close()
-	terminal.publish(EventTerminalChanged, info)
+	terminal.publishLifecycle(EventTerminalChanged, info)
 	return nil
 }
 
@@ -248,14 +248,23 @@ func (terminal *Terminal) historyPipeline() *terminalHistoryPipeline {
 }
 
 func (terminal *Terminal) publish(typ EventType, info TerminalInfo) {
+	terminal.publishEvent(typ, info, false)
+}
+
+func (terminal *Terminal) publishLifecycle(typ EventType, info TerminalInfo) {
+	terminal.publishEvent(typ, info, true)
+}
+
+func (terminal *Terminal) publishEvent(typ EventType, info TerminalInfo, lifecycleKnown bool) {
 	if terminal.events == nil {
 		return
 	}
 	terminalCopy := info.Clone()
 	terminal.events.publish(Event{
-		Type:       typ,
-		TerminalID: info.ID,
-		Terminal:   &terminalCopy,
+		Type:           typ,
+		TerminalID:     info.ID,
+		Terminal:       &terminalCopy,
+		LifecycleKnown: lifecycleKnown,
 	})
 }
 

@@ -339,7 +339,7 @@ func TestTerminalPoolReattachCurrentPaneDoesNotOverwriteSiblingBinding(t *testin
 	}
 }
 
-func TestTerminalPoolAttachExitedTerminalPreservesLifecycleBeforeInput(t *testing.T) {
+func TestTerminalPoolAttachExitedTerminalDoesNotCacheLifecycleBeforeSurface(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
 	exitCode := 23
 	terminal := &services.FakeTerminalService{
@@ -378,11 +378,49 @@ func TestTerminalPoolAttachExitedTerminalPreservesLifecycleBeforeInput(t *testin
 	next, _ = reducer(next, msg)
 
 	surface := next.Surface.SurfaceForTerminal("term-exited")
-	if surface.State != state.TerminalLiveExited || surface.ExitCode != 23 || !surface.ExitedAt.Equal(exitedAt) || strings.Join(surface.Command, " ") != "bash -lc exit 23" {
-		t.Fatalf("picker attach to exited terminal should keep lifecycle immediately, surface=%#v", surface)
+	if surface.State == state.TerminalLiveExited || surface.ExitCode != 0 || !surface.ExitedAt.IsZero() || len(surface.Command) != 0 {
+		t.Fatalf("picker attach must not copy pool lifecycle into live surface before core surface query, surface=%#v exited_at=%s command=%s", surface, exitedAt, strings.Join([]string{"bash", "-lc", "exit 23"}, " "))
 	}
 	if next.Session.TerminalID != "term-exited" || !next.Session.Attached || next.Session.Channel != 21 {
 		t.Fatalf("attach should still bind the selected terminal view/session, session=%#v", next.Session)
+	}
+}
+
+func TestLiveEffectsPreserveLifecycleBoundaryOnSurfaceMessage(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Cols:       80,
+				Rows:       24,
+				State:      state.TerminalLiveAttached,
+			},
+			LifecycleKnown: true,
+		},
+	}
+	effects := liveEffects("term-1", 80, 24, LiveDeps{Terminal: terminal})
+	var surface LiveSurfaceMsg
+	found := false
+	for _, effect := range effects {
+		funcEffect, ok := effect.(FuncEffect)
+		if !ok {
+			continue
+		}
+		msg := funcEffect.Run(context.Background())
+		candidate, ok := msg.(LiveSurfaceMsg)
+		if !ok {
+			continue
+		}
+		surface = candidate
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("expected live surface msg in effects, got %#v", effects)
+	}
+	if !surface.LifecycleKnown || surface.Snapshot.TerminalID != "term-1" || surface.Snapshot.State != state.TerminalLiveAttached {
+		t.Fatalf("live surface effect must preserve lifecycle message boundary, got %#v", surface)
 	}
 }
 
@@ -2411,7 +2449,7 @@ func TestLiveResizeFallbacksDoNotUseResizeBoundaryDots(t *testing.T) {
 		t.Fatalf("empty fallback should not be filled by resize-boundary dots, got %#v", emptyLayer.Lines)
 	}
 
-	if err := runtime.Post(LiveExitMsg{TerminalID: "term-1", ExitCode: 0}); err != nil {
+	if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Exited: true, ExitCode: 0, Reason: "exited"}}); err != nil {
 		t.Fatalf("post exit: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2497,15 +2535,14 @@ func TestLiveSurfaceAuthoritativeRunningClearsExitedSessionAndSurface(t *testing
 	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}})
 
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
-		TerminalID:     "term-1",
-		Revision:       3,
-		Cols:           80,
-		Rows:           24,
-		Lines:          []string{"terminal exited: term-1 code:0 exited", "% "},
-		Cursor:         state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
-		LifecycleKnown: true,
-		State:          state.TerminalLiveAttached,
-	}}); err != nil {
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+		State:      state.TerminalLiveAttached,
+	}, LifecycleKnown: true}); err != nil {
 		t.Fatalf("post running surface: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2555,15 +2592,14 @@ func TestLiveQueueKeepsAuthoritativeRunningLifecycleWhenOrdinaryFrameFollows(t *
 	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: &services.FakeTerminalService{}})
 
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
-		TerminalID:     "term-1",
-		Revision:       3,
-		Cols:           80,
-		Rows:           24,
-		Lines:          []string{"terminal exited: term-1 code:0 exited", "% "},
-		Cursor:         state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
-		LifecycleKnown: true,
-		State:          state.TerminalLiveAttached,
-	}}); err != nil {
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+		State:      state.TerminalLiveAttached,
+	}, LifecycleKnown: true}); err != nil {
 		t.Fatalf("post authoritative running surface: %v", err)
 	}
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{

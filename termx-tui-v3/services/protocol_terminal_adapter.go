@@ -306,12 +306,11 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 		return TerminalSurfaceResult{}, err
 	}
 	liveSnapshot := state.LiveSurfaceSnapshot{
-		TerminalID:     req.TerminalID,
-		Cols:           int(snapshot.Size.Cols),
-		Rows:           int(snapshot.Size.Rows),
-		Lines:          lines,
-		Screen:         screen,
-		LifecycleKnown: true,
+		TerminalID: req.TerminalID,
+		Cols:       int(snapshot.Size.Cols),
+		Rows:       int(snapshot.Size.Rows),
+		Lines:      lines,
+		Screen:     screen,
 		Cursor: state.LiveCursor{
 			Visible: snapshot.Cursor.Visible,
 			Row:     snapshot.Cursor.Row,
@@ -322,8 +321,9 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	}
 	liveSnapshot = applyProtocolTerminalLifecycle(liveSnapshot, info)
 	return TerminalSurfaceResult{
-		Ready:    true,
-		Snapshot: liveSnapshot,
+		Ready:          true,
+		Snapshot:       liveSnapshot,
+		LifecycleKnown: true,
 	}, nil
 }
 
@@ -452,6 +452,7 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 		return out
 	}
 	out.Snapshot = surface.Snapshot
+	out.LifecycleKnown = surface.LifecycleKnown
 	if out.Exited {
 		out.Snapshot.State = state.TerminalLiveExited
 		out.Snapshot.ExitCode = out.ExitCode
@@ -486,7 +487,6 @@ func (adapter ProtocolTerminalServiceAdapter) terminalInfo(ctx context.Context, 
 
 func applyProtocolTerminalLifecycle(snapshot state.LiveSurfaceSnapshot, info protocol.TerminalInfo) state.LiveSurfaceSnapshot {
 	// 中文说明：terminal lifecycle 的权威来源是 core terminal list，不是 live 画面里的文本。
-	snapshot.LifecycleKnown = true
 	snapshot.ExitCode = 0
 	snapshot.ExitReason = ""
 	snapshot.ExitedAt = time.Time{}

@@ -28,10 +28,12 @@ type Event struct {
 	Terminal   *TerminalInfo
 	Storage    *StorageChanged
 	Workbench  *WorkbenchChanged
-	SocketPath string
-	OldSize    Size
-	NewSize    Size
-	Timestamp  time.Time
+	// 中文说明：true 表示该事件承载 terminal lifecycle 变化，而不是普通 live 输出刷新。
+	LifecycleKnown bool
+	SocketPath     string
+	OldSize        Size
+	NewSize        Size
+	Timestamp      time.Time
 }
 
 type EventFilter struct {

@@ -718,7 +718,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandToggleCollapse, TargetID: floatingTargetIDForContentAction(root, msg), Source: state.PaneCommandSourceMouse})
 	case render.ActionExitedRestart:
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return TerminalPoolRestartRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
+			return TerminalPoolRestartIfExitedRequestMsg{TerminalID: terminalIDForShellContentAction(root, msg)}
 		}}}
 	case render.ActionExitedReconnect:
 		root.Shell = root.Shell.OpenTerminalPicker()

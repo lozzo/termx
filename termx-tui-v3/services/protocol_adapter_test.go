@@ -965,8 +965,8 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	if !result.Snapshot.Modes.MousePassthroughEnabled() || !result.Snapshot.Modes.MouseButton || !result.Snapshot.Modes.MouseSGR {
 		t.Fatalf("expected protocol terminal mouse modes to be preserved, got %#v", result.Snapshot.Modes)
 	}
-	if !result.Snapshot.LifecycleKnown || result.Snapshot.State != state.TerminalLiveAttached || result.Snapshot.ExitReason != "" || len(result.Snapshot.Command) != 0 {
-		t.Fatalf("expected running core lifecycle on live surface, got %#v", result.Snapshot)
+	if !result.LifecycleKnown || result.Snapshot.State != state.TerminalLiveAttached || result.Snapshot.ExitReason != "" || len(result.Snapshot.Command) != 0 {
+		t.Fatalf("expected running core lifecycle on live surface, result=%#v snapshot=%#v", result, result.Snapshot)
 	}
 }
 
@@ -996,8 +996,8 @@ func TestProtocolTerminalServiceAdapterMapsExitedLiveSurfaceLifecycle(t *testing
 		t.Fatalf("live surface: %v", err)
 	}
 
-	if !result.Snapshot.LifecycleKnown || result.Snapshot.State != state.TerminalLiveExited || result.Snapshot.ExitCode != 23 || !result.Snapshot.ExitedAt.Equal(exitedAt) || strings.Join(result.Snapshot.Command, " ") != "bash -lc exit 23" {
-		t.Fatalf("expected exited core lifecycle on live surface, got %#v", result.Snapshot)
+	if !result.LifecycleKnown || result.Snapshot.State != state.TerminalLiveExited || result.Snapshot.ExitCode != 23 || !result.Snapshot.ExitedAt.Equal(exitedAt) || strings.Join(result.Snapshot.Command, " ") != "bash -lc exit 23" {
+		t.Fatalf("expected exited core lifecycle on live surface, result=%#v snapshot=%#v", result, result.Snapshot)
 	}
 }
 

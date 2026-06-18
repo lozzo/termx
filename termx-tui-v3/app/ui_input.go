@@ -787,7 +787,7 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.restart", Body: "no active terminal"})
 			return root.Advance(), []Effect{handledEffect{}}, true
 		}
-		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolRestartRequestMsg{TerminalID: terminalID} }}}, true
+		return root, []Effect{handledEffect{}, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolRestartIfExitedRequestMsg{TerminalID: terminalID} }}}, true
 	default:
 		return root, nil, false
 	}

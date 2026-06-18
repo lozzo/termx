@@ -221,7 +221,7 @@ func TestTerminalSurfaceExitBoundaryRejectsLateOrdinaryFrame(t *testing.T) {
 		Rows:       24,
 		Lines:      []string{"last screen"},
 	})
-	store = store.MarkExited("term-1", 0, "done")
+	store = store.MarkExitedWithMetadata("term-1", 0, "done", time.Time{}, nil)
 	store = store.ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Revision:   3,
@@ -238,7 +238,7 @@ func TestTerminalSurfaceExitBoundaryRejectsLateOrdinaryFrame(t *testing.T) {
 	}
 }
 
-func TestTerminalSurfaceAuthoritativeRunningSnapshotClearsExitBoundary(t *testing.T) {
+func TestTerminalSurfaceOrdinaryRunningSnapshotDoesNotClearExitBoundary(t *testing.T) {
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",
 		Revision:   9,
@@ -248,24 +248,17 @@ func TestTerminalSurfaceAuthoritativeRunningSnapshotClearsExitBoundary(t *testin
 	})
 	store = store.MarkExitedWithMetadata("term-1", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"})
 	store = store.ApplySnapshot(LiveSurfaceSnapshot{
-		TerminalID:     "term-1",
-		Revision:       3,
-		Cols:           80,
-		Rows:           24,
-		Lines:          []string{"terminal exited: term-1 code:0 exited", "% "},
-		Cursor:         LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
-		LifecycleKnown: true,
-		State:          TerminalLiveAttached,
+		TerminalID: "term-1",
+		Revision:   3,
+		Cols:       80,
+		Rows:       24,
+		Lines:      []string{"terminal exited: term-1 code:0 exited", "% "},
+		Cursor:     LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+		State:      TerminalLiveAttached,
 	})
 
-	if store.State != TerminalLiveAttached || store.ExitReason != "" || !store.ExitedAt.IsZero() || len(store.Command) != 0 {
-		t.Fatalf("authoritative running lifecycle should clear stale exit boundary, got %#v", store)
-	}
-	if store.Revision != 3 || len(store.Lines) != 2 || store.Lines[1] != "% " {
-		t.Fatalf("authoritative running snapshot should replace stale exited projection, got %#v", store)
-	}
-	if !store.Cursor.Visible || store.Cursor.Row != 1 || store.Cursor.Col != 2 {
-		t.Fatalf("authoritative running snapshot should preserve core cursor, got %#v", store.Cursor)
+	if store.State != TerminalLiveExited || store.ExitReason != "exited" || store.Revision != 9 {
+		t.Fatalf("ordinary live snapshot must not clear exited boundary, got %#v", store)
 	}
 }
 
@@ -277,7 +270,7 @@ func TestTerminalSurfaceAttachAllowsFreshFrameAfterExitBoundary(t *testing.T) {
 		Rows:       24,
 		Lines:      []string{"last screen"},
 	})
-	store = store.MarkExited("term-1", 0, "done")
+	store = store.MarkExitedWithMetadata("term-1", 0, "done", time.Time{}, nil)
 	store = store.Attach("term-1", 80, 24)
 	store = store.ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",

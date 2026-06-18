@@ -90,11 +90,11 @@ TUI-v3 的状态分三类，不能互相替代：
 
 - core terminal 实体状态：terminal id/name/title、command/cwd/tags、process lifecycle、exit code/exited at、PTY size、resize ownership、attachment/channel 校验、live surface/cursor/modes 和 authoritative logical-line history。它不属于某一个 TUI client；restart、重进 TUI、多个 TUI 共享时都以 core 当前 terminal 属性为准。
 - core 托管的 TUI shared state：通过 `termx.tui.v3.workbench` opaque storage 保存 workspace/tab/pane/floating 布局、panel presentation、active ids 和 pane/floating 到 terminal 的连接意图。core 只负责存储、版本和广播，不解释这些字段；这里不得保存当前 terminal lifecycle、runtime channel、live cursor、copy selection 或当前进程内输入路由状态。
-- 当前 TUI 内存状态：active pane/floating focus、interaction mode、overlay/toast/CTA、TerminalView runtime binding channel、TerminalPool projection cache、TerminalSurface/Session render cache、copy mode cursor/selection/frozen window、host size/theme 和 pending effect。它们只服务当前 TUI 进程，允许缓存 core 数据，但必须被 core list/event/surface 的权威生命周期覆盖。
+- 当前 TUI 内存状态：active pane/floating focus、interaction mode、overlay/toast/CTA、TerminalView runtime binding channel、TerminalPool 查询结果投影、TerminalSurface/Session render cache、copy mode cursor/selection/frozen window、host size/theme 和 pending effect。它们只服务当前 TUI 进程；terminal running/exited、退出码、退出时间、命令和 restart 判断不能作为 TUI truth 缓存，必须来自当次 core 查询或 core lifecycle event/surface 消息。
 
 pane/floating 的状态边界必须保持很窄：pane 只有“空槽位”或“连接到 TerminalView”两类当前模型。`exited` 不是 pane 状态，`copy-history` 也不是 pane 状态；退出态由该 view 绑定的 terminal lifecycle 投影，copy/history 由 `CopyModeStore`/`HistoryStore` 投影。workbench storage 只能保存布局和连接意图，旧 snapshot 里的 `"exited"` / `"copy-history"` pane kind 只能在 restore 边界迁移成 `terminal-live` 连接意图。
 
-terminal lifecycle 的判断规则必须简单：如果 core terminal 属性是 exited，就展示 exited/restart；如果 core terminal 属性是 running，就清掉 TUI 内存里的 stale exited cache。exit marker 是 core 写入 live surface/history 的 terminal 数据，不能反推当前 lifecycle。
+terminal lifecycle 的判断规则必须简单：如果当次 core 查询或 core lifecycle event/surface 表明 terminal exited，就展示 exited/restart；如果表明 running，就清掉当前 render 投影里的 exited 展示态。restart 入口必须先查询 core terminal 当前状态，不能直接相信 TUI 内存里上次看到的 exited/running。exit marker 是 core 写入 live surface/history 的 terminal 数据，不能反推当前 lifecycle。
 
 ## 4. 模块图
 
