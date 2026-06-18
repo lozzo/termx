@@ -377,6 +377,26 @@ func (store TerminalSurfaceStore) SurfaceForTerminal(terminalID string) Terminal
 	return (TerminalSurfaceStore{}).projectSnapshot(snapshot, snapshot.State != TerminalLivePending)
 }
 
+func (store TerminalSurfaceStore) Snapshot() LiveSurfaceSnapshot {
+	return LiveSurfaceSnapshot{
+		TerminalID: store.TerminalID,
+		Revision:   store.Revision,
+		Cols:       store.Cols,
+		Rows:       store.Rows,
+		Lines:      cloneStrings(store.Lines),
+		Screen:     cloneLiveCellRows(store.Screen),
+		Title:      store.Title,
+		Cursor:     store.Cursor,
+		Modes:      store.Modes,
+		State:      store.State,
+		ExitCode:   store.ExitCode,
+		ExitReason: store.ExitReason,
+		ExitedAt:   store.ExitedAt,
+		Command:    cloneStrings(store.Command),
+		Err:        store.Err,
+	}
+}
+
 func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurfaceStore {
 	if terminalID == "" {
 		return store
@@ -714,11 +734,24 @@ func cloneStrings(values []string) []string {
 func cloneLiveSurfaceSnapshots(values map[string]LiveSurfaceSnapshot) map[string]LiveSurfaceSnapshot {
 	cloned := make(map[string]LiveSurfaceSnapshot, len(values)+1)
 	for key, value := range values {
-		value.Lines = cloneStrings(value.Lines)
-		value.Screen = cloneLiveCellRows(value.Screen)
-		cloned[key] = value
+		cloned[key] = CloneLiveSurfaceSnapshot(value)
 	}
 	return cloned
+}
+
+func CloneLiveSurfaceSnapshot(value LiveSurfaceSnapshot) LiveSurfaceSnapshot {
+	value.Lines = cloneStrings(value.Lines)
+	value.Screen = cloneLiveCellRows(value.Screen)
+	value.Command = cloneStrings(value.Command)
+	return value
+}
+
+func cloneLiveSurfaceSnapshotPtr(value LiveSurfaceSnapshot) *LiveSurfaceSnapshot {
+	if value.TerminalID == "" && len(value.Lines) == 0 && len(value.Screen) == 0 && value.Title == "" && !value.Cursor.Visible {
+		return nil
+	}
+	cloned := CloneLiveSurfaceSnapshot(value)
+	return &cloned
 }
 
 func cloneInputChannels(values map[string]uint16) map[string]uint16 {

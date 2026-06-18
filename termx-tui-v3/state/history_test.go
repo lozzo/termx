@@ -453,7 +453,7 @@ func TestHistoryStoreRejectsOldestFromDifferentFrozenToken(t *testing.T) {
 }
 
 func TestCopyModeBindsLatestAndAdjustsOlderViewport(t *testing.T) {
-	copyMode := CopyModeStore{}.BindLatest("pane-1", "pane:pane-1", "term-1", 1, 80, 20)
+	copyMode := CopyModeStore{}.BindLatest("pane-1", "pane:pane-1", "term-1", 1, 80, 20, LiveSurfaceSnapshot{})
 	if copyMode.Active || !copyMode.Entering || !copyMode.Empty || copyMode.PaneID != "pane-1" || copyMode.ViewID != "pane:pane-1" || copyMode.TerminalID != "term-1" || copyMode.BoundCols != 80 || copyMode.ViewRows != 20 {
 		t.Fatalf("unexpected bound copy mode %#v", copyMode)
 	}

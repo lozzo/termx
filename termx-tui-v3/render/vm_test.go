@@ -1091,7 +1091,7 @@ func TestRenderVMBuilderKeepsLiveFrameWhileCopyModeEntering(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
-			Lines:      []string{"live-row"},
+			Lines:      []string{"new-live-row"},
 		},
 		CopyMode: state.CopyModeStore{
 			Entering:   true,
@@ -1099,6 +1099,11 @@ func TestRenderVMBuilderKeepsLiveFrameWhileCopyModeEntering(t *testing.T) {
 			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
 			TerminalID: "term-1",
 			BoundCols:  80,
+			EnteringLive: &state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Lines:      []string{"frozen-live-row"},
+				State:      state.TerminalLiveAttached,
+			},
 		},
 		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
 			state.DefaultPaneID, "term-1", 4, 80, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
@@ -1110,7 +1115,7 @@ func TestRenderVMBuilderKeepsLiveFrameWhileCopyModeEntering(t *testing.T) {
 	if content.Kind != ContentTerminalLive || content.Pending {
 		t.Fatalf("entering copy mode should keep live content until latest arrives, got %#v", content)
 	}
-	if len(content.Lines) != 1 || content.Lines[0].PlainString() != "live-row" {
+	if len(content.Lines) != 1 || content.Lines[0].PlainString() != "frozen-live-row" {
 		t.Fatalf("entering copy mode should not show pending copy text, got %#v", content.Lines)
 	}
 }

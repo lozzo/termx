@@ -481,6 +481,52 @@ func TestCopyModeEnteringSwallowsInputAndEscCancelsPendingLatest(t *testing.T) {
 	}
 }
 
+func TestCopyModeEnteringFreezesVisibleLiveFrameDuringOutput(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	core := &blockingHistoryClient{}
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, core, nil, &services.FakeTerminalService{}, NewAsyncEffectRunner())
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		Cols:       78,
+		Rows:       20,
+		Lines:      []string{"live-before-copy"},
+		State:      state.TerminalLiveAttached,
+	}}); err != nil {
+		t.Fatalf("post initial live: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial live: %v", err)
+	}
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}); err != nil {
+		t.Fatalf("send ctrl-v: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain ctrl-v: %v", err)
+	}
+	if !runtime.State().CopyMode.Entering || runtime.State().CopyMode.EnteringLive == nil {
+		t.Fatalf("expected copy entering with frozen live frame, got %#v", runtime.State().CopyMode)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Cols:       78,
+		Rows:       20,
+		Lines:      []string{"live-after-copy-should-not-move"},
+		State:      state.TerminalLiveAttached,
+	}}); err != nil {
+		t.Fatalf("post later live: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain later live: %v", err)
+	}
+	last := lastFrame(t, host.Frames())
+	if !frameContains(last, "live-before-copy") || frameContains(last, "live-after-copy-should-not-move") || frameContains(last, "window pending") {
+		t.Fatalf("entering copy should freeze current live frame without pending text, got %#v", last.Lines)
+	}
+}
+
 func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	runner := &recordingEffectRunner{}
@@ -4632,6 +4678,7 @@ func TestCopyModeIgnoresDelayedHistoryErrorForSupersededPendingRequest(t *testin
 		2,
 		78,
 		20,
+		state.LiveSurfaceSnapshot{},
 	)
 
 	if err := runtime.Post(CopyModeHistoryResultMsg{
@@ -4677,6 +4724,7 @@ func TestCopyModeIgnoresDelayedHistoryWindowForSupersededPendingRequest(t *testi
 		2,
 		78,
 		20,
+		state.LiveSurfaceSnapshot{},
 	)
 
 	superseded := historyWindowForApp(
@@ -4751,6 +4799,7 @@ func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 		4,
 		78,
 		20,
+		state.LiveSurfaceSnapshot{},
 	)
 	runtime.state.CopyMode.BoundToken = "tok-1"
 

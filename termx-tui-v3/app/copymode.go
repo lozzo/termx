@@ -514,7 +514,8 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 		return setCopyModeError(root, err.Error()), nil
 	}
 	root.History = nextHistory
-	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint)
+	enteringLive := state.CloneLiveSurfaceSnapshot(root.Surface.SurfaceForTerminal(binding.TerminalID).Snapshot())
+	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint, enteringLive)
 	rows := requestRows(rowsHint, deps.Rows)
 	return root.Advance(), []Effect{FuncEffect{
 		// history.window 真实走 protocol/client 时可能明显慢于一帧；

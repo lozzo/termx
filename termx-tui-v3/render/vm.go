@@ -834,6 +834,9 @@ func splitActionLabel(action string) (string, string) {
 
 func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM {
 	shell := root.Shell.EnsureDefaults()
+	if content, ok := copyModeEnteringLiveContent(root); ok {
+		return content
+	}
 	if copyModeFloatingActive(root.CopyMode, shell) {
 		return projector.copyHistoryContent(root, shell, state.PaneState{}, true)
 	}
@@ -860,6 +863,9 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 }
 
 func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneState, activeContent ContentVM, active bool) ContentVM {
+	if content, ok := copyModeEnteringLiveContentForPane(root, pane.ID); ok {
+		return content
+	}
 	if copyModeBelongsToPane(root.CopyMode, pane.ID, root.Shell.EnsureDefaults().ActivePaneID) {
 		return projector.copyHistoryContent(root, root.Shell.EnsureDefaults(), pane, active)
 	}
@@ -875,6 +881,9 @@ func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.
 }
 
 func (projector ShellProjector) contentForFloating(root state.Root, shell state.ShellStore, floating state.FloatingPaneState) ContentVM {
+	if content, ok := copyModeEnteringLiveContentForFloating(root, floating.ID); ok {
+		return content
+	}
 	if copyModeBelongsToFloating(root.CopyMode, floating.ID) {
 		return projector.copyHistoryContent(root, shell, floating.Pane, floating.Active)
 	}
@@ -914,6 +923,68 @@ func copyModeFloatingActive(copyMode state.CopyModeStore, shell state.ShellStore
 		return true
 	}
 	return copyMode.ViewID == state.TerminalFloatingViewID(shell.ActiveFloatingID)
+}
+
+func copyModeEnteringLiveContent(root state.Root) (ContentVM, bool) {
+	copyMode := root.CopyMode
+	if !copyMode.Entering || copyMode.EnteringLive == nil {
+		return ContentVM{}, false
+	}
+	shell := root.Shell.EnsureDefaults()
+	if strings.HasPrefix(copyMode.ViewID, "floating:") {
+		if shell.ActiveFloatingID != "" && copyMode.ViewID != state.TerminalFloatingViewID(shell.ActiveFloatingID) {
+			return ContentVM{}, false
+		}
+		return buildCopyModeEnteringLiveContent(root), true
+	}
+	if copyMode.PaneID == "" || copyMode.PaneID == shell.ActivePaneID {
+		return buildCopyModeEnteringLiveContent(root), true
+	}
+	return ContentVM{}, false
+}
+
+func copyModeEnteringLiveContentForPane(root state.Root, paneID string) (ContentVM, bool) {
+	if !root.CopyMode.Entering || root.CopyMode.EnteringLive == nil || paneID == "" {
+		return ContentVM{}, false
+	}
+	if root.CopyMode.PaneID != "" && root.CopyMode.PaneID != paneID {
+		return ContentVM{}, false
+	}
+	if strings.HasPrefix(root.CopyMode.ViewID, "floating:") {
+		return ContentVM{}, false
+	}
+	return buildCopyModeEnteringLiveContent(root), true
+}
+
+func copyModeEnteringLiveContentForFloating(root state.Root, floatingID string) (ContentVM, bool) {
+	if !root.CopyMode.Entering || root.CopyMode.EnteringLive == nil || floatingID == "" {
+		return ContentVM{}, false
+	}
+	if root.CopyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
+		return ContentVM{}, false
+	}
+	return buildCopyModeEnteringLiveContent(root), true
+}
+
+func buildCopyModeEnteringLiveContent(root state.Root) ContentVM {
+	snapshot := *root.CopyMode.EnteringLive
+	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(snapshot)
+	session := sessionForCopyModeEntering(root, snapshot)
+	return buildLiveContentVM(surface, session)
+}
+
+func sessionForCopyModeEntering(root state.Root, snapshot state.LiveSurfaceSnapshot) state.TerminalSessionStore {
+	session := state.TerminalSessionStore{TerminalID: snapshot.TerminalID, State: snapshot.State, Cols: snapshot.Cols, Rows: snapshot.Rows}
+	if binding, ok := root.TerminalViews.Views[root.CopyMode.ViewID]; ok {
+		session.Channel = binding.Channel
+		session.Attached = binding.Attached
+		session.ResizePolicy = binding.ResizeRole
+		session.SurfaceID = binding.SurfaceID
+		session.ViewID = binding.ViewID
+		session.DesiredCols = binding.DesiredCols
+		session.DesiredRows = binding.DesiredRows
+	}
+	return session
 }
 
 func contentKindForPane(pane state.PaneState) ContentKind {
