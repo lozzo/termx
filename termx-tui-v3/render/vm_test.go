@@ -1087,6 +1087,34 @@ func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderShowsPendingWhileCopyModeEntering(t *testing.T) {
+	root := state.Root{
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Lines:      []string{"live-row"},
+		},
+		CopyMode: state.CopyModeStore{
+			Entering:   true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-1",
+			BoundCols:  80,
+		},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 4, 80, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true,
+		)),
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentCopyHistory || !content.Pending {
+		t.Fatalf("entering copy mode should render pending copy-history content, got %#v", content)
+	}
+	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "window pending") {
+		t.Fatalf("entering copy mode should show pending window, got %#v", content.Lines)
+	}
+}
+
 func TestRenderVMBuilderShowsPendingAfterCopyResizeInvalidation(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{

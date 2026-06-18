@@ -404,7 +404,7 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 	}
 
 	if runtime.State().CopyMode.Active || !runtime.State().CopyMode.Entering {
-		t.Fatalf("expected copy mode entering without visible activation, got %#v", runtime.State().CopyMode)
+		t.Fatalf("expected copy mode entering before history activation, got %#v", runtime.State().CopyMode)
 	}
 	if runtime.State().History.Pending == nil || runtime.State().History.Pending.Kind != state.HistoryRequestLatest {
 		t.Fatalf("expected pending latest request immediately, got %#v", runtime.State().History)
@@ -413,8 +413,8 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 		t.Fatalf("expected async latest request to start, got %#v", core.latestRequests())
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "live stays visible while copy history loads") || frameContains(frame, "window pending") {
-		t.Fatalf("entering copy mode must keep live pane visible and avoid pending flash, got %#v", frame.Lines)
+	if !frameContains(frame, "window pending") || frameContains(frame, "live stays visible while copy history loads") {
+		t.Fatalf("entering copy mode must be visible as pending authoritative history, got %#v", frame.Lines)
 	}
 
 	core.finishLatest(services.HistoryResult{
@@ -511,8 +511,8 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 		t.Fatalf("duplicate latest while pending must not surface error, got %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "live") || frameContains(last, "window pending") {
-		t.Fatalf("duplicate pending latest should keep live pane visible without fake error or pending flash, got %#v", last.Lines)
+	if !frameContains(last, "window pending") || frameContains(last, "live") {
+		t.Fatalf("duplicate pending latest should keep visible copy pending without fake error, got %#v", last.Lines)
 	}
 }
 
@@ -601,6 +601,76 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 	}
 	if len(core.LatestRequests) != 1 || !runtime.State().CopyMode.Active {
 		t.Fatalf("raw wheel up should enter copy mode, latest=%#v copy=%#v", core.LatestRequests, runtime.State().CopyMode)
+	}
+}
+
+func TestCopyModeMouseWheelTargetsHitPaneWithoutWaitingForFocus(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			30,
+			7,
+			[]state.HistoryRow{{Text: "hit-pane-copy", LineID: 20}},
+		)}},
+	}
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	root := state.Root{
+		Shell: shell,
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-1",
+			Channel:    4,
+			InputChannels: map[string]uint16{
+				"term-1": 4,
+			},
+			Attached: true,
+			Cols:     80,
+			Rows:     24,
+		},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"live"},
+			State:      state.TerminalLiveAttached,
+		},
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 30, 20, state.TerminalResizeRoleOwner, "surface-left", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+			BindPane(state.NewPaneTerminalView("pane-2", "term-1", 4, 30, 20, state.TerminalResizeRoleFollower, "surface-right", state.TerminalPaneViewID("pane-2"), false)),
+	}
+	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: core})
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	frame := lastFrame(t, host.Frames())
+	content := frameHitRegion(t, frame, render.HitRegionPaneContent, "pane-2")
+	wheel := mouseEventAt(content.Rect)
+	wheel.Mouse = input.MouseWheelUp
+	wheel.RawSeq = "\x1b[<64;10;5M"
+
+	if err := host.SendInput(wheel); err != nil {
+		t.Fatalf("send pane-2 wheel: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane-2 wheel: %v", err)
+	}
+	if len(core.LatestRequests) != 1 || core.LatestRequests[0].ViewID != state.TerminalPaneViewID("pane-2") {
+		t.Fatalf("wheel should request latest for hit pane view, requests=%#v", core.LatestRequests)
+	}
+	if runtime.State().CopyMode.PaneID != "pane-2" || !runtime.State().CopyMode.Active {
+		t.Fatalf("wheel should enter copy mode for hit pane, got %#v", runtime.State().CopyMode)
 	}
 }
 
@@ -4430,8 +4500,8 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 	if frameContains(last, "old-frozen") || frameContains(last, "stale-after-exit") {
 		t.Fatalf("re-enter pending frame must not reuse stale frozen rows, got %#v", last.Lines)
 	}
-	if !frameContains(last, "live") || frameContains(last, "window pending") {
-		t.Fatalf("re-enter pending should keep live pane visible without stale frozen rows or pending flash, got %#v", last.Lines)
+	if !frameContains(last, "window pending") || frameContains(last, "live") {
+		t.Fatalf("re-enter pending should show copy pending without stale frozen rows, got %#v", last.Lines)
 	}
 }
 

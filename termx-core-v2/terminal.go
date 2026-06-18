@@ -231,6 +231,10 @@ func (terminal *Terminal) FreezeSnapshot() history.FrozenSnapshot {
 	return terminal.historyPipeline().FreezeSnapshot()
 }
 
+func (terminal *Terminal) FreezePinnedSnapshot() history.FrozenSnapshot {
+	return terminal.historyPipeline().FreezePinnedSnapshot()
+}
+
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	terminal.queueMu.Lock()
 	queue := terminal.historyQ

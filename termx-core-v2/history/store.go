@@ -52,6 +52,14 @@ func (store *MemoryLogicalLineStore) Line(id LogicalLineID) (LogicalLine, bool) 
 	return store.backend.LoadLine(id)
 }
 
+func (store *MemoryLogicalLineStore) SnapshotLine(id LogicalLineID) (LogicalLine, bool) {
+	backend, ok := store.backend.(snapshotLineBackend)
+	if !ok {
+		return store.backend.LoadLine(id)
+	}
+	return backend.LoadSnapshotLine(id)
+}
+
 func (store *MemoryLogicalLineStore) ReplaceLine(line LogicalLine) (LogicalLine, error) {
 	if err := validateLine(line); err != nil {
 		return LogicalLine{}, err

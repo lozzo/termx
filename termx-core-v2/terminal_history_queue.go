@@ -152,8 +152,7 @@ func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestIte
 		count++
 	}
 	batch := append([]terminalHistoryIngestItem(nil), queue.pending[:count]...)
-	copy(queue.pending, queue.pending[count:])
-	queue.pending = queue.pending[:len(queue.pending)-count]
+	queue.dropPendingPrefixLocked(count)
 	if len(queue.pending) > 0 {
 		queue.cond.Signal()
 	}
@@ -198,4 +197,20 @@ func joinTerminalHistoryIngestBatch(batch []terminalHistoryIngestItem) string {
 		builder.WriteString(part.text)
 	}
 	return builder.String()
+}
+
+func (queue *terminalHistoryIngestQueue) dropPendingPrefixLocked(count int) {
+	if count <= 0 {
+		return
+	}
+	remaining := len(queue.pending) - count
+	copy(queue.pending, queue.pending[count:])
+	for i := remaining; i < len(queue.pending); i++ {
+		queue.pending[i] = terminalHistoryIngestItem{}
+	}
+	if remaining == 0 {
+		queue.pending = nil
+		return
+	}
+	queue.pending = queue.pending[:remaining]
 }

@@ -32,6 +32,14 @@ type CopyModeHistoryResultMsg struct {
 
 func (CopyModeHistoryResultMsg) isMsg() {}
 
+type CopyModeEnterViewMsg struct {
+	Binding state.TerminalViewBinding
+	Cols    int
+	Rows    int
+}
+
+func (CopyModeEnterViewMsg) isMsg() {}
+
 type CopyModeMoveCursorMsg struct {
 	Position state.CopyPosition
 }
@@ -107,6 +115,9 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 				return root, nil
 			}
 			return reduceCopyModeIntent(root, intent, deps)
+		case CopyModeEnterViewMsg:
+			next, effects := beginCopyModeLatestForView(root, deps, msg.Binding, msg.Cols, msg.Rows)
+			return next, append([]Effect{handledEffect{}}, effects...)
 		case CopyModeHistoryResultMsg:
 			return reduceCopyModeHistoryResult(root, msg)
 		case CopyModeMoveCursorMsg:
@@ -489,6 +500,12 @@ func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 }
 
 func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding state.TerminalViewBinding, cols int, rowsHint int) (state.Root, []Effect) {
+	if deps.Core == nil {
+		return setCopyModeError(root, "core client missing"), nil
+	}
+	if binding.TerminalID == "" || cols <= 0 {
+		return setCopyModeError(root, "copy mode requires attached terminal and cols"), nil
+	}
 	requestID := nextHistoryRequestID(root)
 	nextHistory, err := root.History.BeginLatest(state.HistoryPendingRequest{
 		ID:         requestID,

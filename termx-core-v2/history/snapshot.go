@@ -13,7 +13,16 @@ type FrozenSnapshot struct {
 }
 
 func (track *HistoryTrack) FreezeSnapshot() FrozenSnapshot {
-	ids := track.committed.IDs()
+	return track.freezeSnapshot(true)
+}
+
+func (track *HistoryTrack) FreezePinnedSnapshot() FrozenSnapshot {
+	return track.freezeSnapshot(false)
+}
+
+func (track *HistoryTrack) freezeSnapshot(detach bool) FrozenSnapshot {
+	committedIDs := track.committed.IDs()
+	ids := cloneLineIDs(committedIDs)
 	for _, id := range track.frontier.IDs() {
 		if !track.frontier.IsHidden(id) && !containsLineID(ids, id) {
 			ids = append(ids, id)
@@ -22,7 +31,7 @@ func (track *HistoryTrack) FreezeSnapshot() FrozenSnapshot {
 	lines := make([]SnapshotLine, 0, len(ids))
 	committedLines := 0
 	for _, id := range ids {
-		line, ok := track.store.Line(id)
+		line, ok := snapshotLine(track.store, id, detach)
 		if !ok {
 			continue
 		}
@@ -31,8 +40,8 @@ func (track *HistoryTrack) FreezeSnapshot() FrozenSnapshot {
 			committedLines++
 		}
 		lines = append(lines, SnapshotLine{
-			// store.Line 已经返回 detached copy，这里不能再额外 Clone 一次；
-			// copy mode 入口在大历史下不能把 cell payload 重复复制两遍。
+			// 中文说明：MemoryStorageBackend 保存时已经 copy-on-write；冻结快照只复制
+			// line header，不再重复复制整段 cell payload，避免 protocol 大历史 copy 入口内存翻倍。
 			Line:      line,
 			Committed: committed,
 		})
@@ -47,4 +56,24 @@ func (track *HistoryTrack) FreezeSnapshot() FrozenSnapshot {
 
 func makeSnapshotToken(generation Generation) string {
 	return fmt.Sprintf("snap:g%d", generation)
+}
+
+type snapshotLineStore interface {
+	SnapshotLine(LogicalLineID) (LogicalLine, bool)
+}
+
+func snapshotLine(store LogicalLineStore, id LogicalLineID, detach bool) (LogicalLine, bool) {
+	if !detach {
+		if snapshotStore, ok := store.(snapshotLineStore); ok {
+			return snapshotStore.SnapshotLine(id)
+		}
+	}
+	if snapshotStore, ok := store.(snapshotLineStore); ok {
+		line, ok := snapshotStore.SnapshotLine(id)
+		if !ok {
+			return LogicalLine{}, false
+		}
+		return line.Clone(), true
+	}
+	return store.Line(id)
 }

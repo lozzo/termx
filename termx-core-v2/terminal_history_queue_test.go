@@ -70,6 +70,32 @@ func TestTerminalHistoryIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	close(queue.done)
 }
 
+func TestTerminalHistoryIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue()
+	chunk := strings.Repeat("x", terminalHistoryIngestBatchMaxBytes)
+	if !queue.Enqueue(chunk) || !queue.Enqueue("tail") {
+		t.Fatal("expected enqueue before close")
+	}
+
+	first, ok := queue.nextBatch()
+	if !ok || len(first) != 1 {
+		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
+	}
+	retained := queue.pending[:cap(queue.pending)]
+	if len(queue.pending) != 1 || retained[1].text != "" {
+		t.Fatalf("consumed history payload should not remain in backing array, len=%d retained=%#v", len(queue.pending), retained)
+	}
+
+	second, ok := queue.nextBatch()
+	if !ok || len(second) != 1 {
+		t.Fatalf("expected second batch, got batch=%d ok=%v", len(second), ok)
+	}
+	if queue.pending != nil {
+		t.Fatalf("empty history buffer should release backing array, got len=%d cap=%d", len(queue.pending), cap(queue.pending))
+	}
+	close(queue.done)
+}
+
 func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
 	started := make(chan struct{})

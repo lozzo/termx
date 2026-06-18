@@ -67,6 +67,51 @@ func TestAppRuntimeDequeClearsProcessedMessageReferences(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeCoalescedLiveUpdateClearsStalePayloadReference(t *testing.T) {
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	largeLine := strings.Repeat("x", 1024)
+	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		Lines:      []string{largeLine},
+		State:      state.TerminalLiveAttached,
+	}})
+	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Lines:      []string{"latest"},
+		State:      state.TerminalLiveAttached,
+	}})
+
+	if len(runtime.queue) != 1 {
+		t.Fatalf("live updates should coalesce to one message, queue=%#v", runtime.queue)
+	}
+	retained := runtime.queue[:cap(runtime.queue)]
+	for i := len(runtime.queue); i < len(retained); i++ {
+		if retained[i] != nil {
+			t.Fatalf("coalesced live update kept stale queue slot %d: %#v", i, retained[i])
+		}
+	}
+}
+
+func TestAppRuntimePrioritizesInputBeforeQueuedOrdinaryLiveUpdate(t *testing.T) {
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.enqueue(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   1,
+		State:      state.TerminalLiveAttached,
+	}})
+	runtime.enqueue(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}})
+
+	msg, ok := runtime.dequeue()
+	if !ok {
+		t.Fatal("expected queued input")
+	}
+	if _, ok := msg.(InputMsg); !ok {
+		t.Fatalf("input should be processed before ordinary live update, got %#v", msg)
+	}
+}
+
 func TestAppRuntimeCoalescesQueuedWorkbenchStorageRequests(t *testing.T) {
 	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
 	runtime.enqueue(testMsg{Name: "before"})

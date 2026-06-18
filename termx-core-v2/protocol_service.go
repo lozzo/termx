@@ -626,7 +626,7 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 		if err := terminal.FlushHistory(ctx); err != nil {
 			return nil, err
 		}
-		snapshot := terminal.FreezeSnapshot()
+		snapshot := terminal.FreezePinnedSnapshot()
 		snapshot.Token = session.sessionFrozenSnapshotToken(params.TerminalID, snapshot.Token)
 		session.storeFrozenSnapshot(params.TerminalID, snapshot)
 		window = frozenSnapshotLatestWindow(snapshot, cols, limit)
@@ -1345,11 +1345,25 @@ func normalizeAttachMode(mode string) string {
 func (session *protocolSession) storeFrozenSnapshot(terminalID string, snapshot history.FrozenSnapshot) {
 	session.historyMu.Lock()
 	defer session.historyMu.Unlock()
+	if previous := session.historyLatest[terminalID]; previous != "" && previous != snapshot.Token {
+		session.dropSupersededFrozenSnapshotsLocked(terminalID, snapshot.Token, previous)
+	}
 	session.historyPins[snapshot.Token] = frozenHistorySnapshot{
 		TerminalID: terminalID,
 		Snapshot:   snapshot,
 	}
 	session.historyLatest[terminalID] = snapshot.Token
+}
+
+func (session *protocolSession) dropSupersededFrozenSnapshotsLocked(terminalID string, currentToken string, previousToken string) {
+	for token, pin := range session.historyPins {
+		if pin.TerminalID != terminalID || token == currentToken || token == previousToken {
+			continue
+		}
+		// 中文说明：保留当前 token 和上一个 token，保证刚被新 latest 超过的
+		// copy 会话还能继续 older；更旧 pin 不再无限持有大历史 payload。
+		delete(session.historyPins, token)
+	}
 }
 
 func (session *protocolSession) sessionFrozenSnapshotToken(terminalID string, base string) string {
@@ -1967,7 +1981,7 @@ func tailStartSnapshot(totalRows int, maxRows int) int {
 }
 
 func countCommittedSnapshotLines(snapshot history.FrozenSnapshot) int {
-	if snapshot.CommittedLines > 0 && snapshot.CommittedLines <= len(snapshot.Lines) {
+	if snapshot.CommittedLines > 0 {
 		return snapshot.CommittedLines
 	}
 	count := 0

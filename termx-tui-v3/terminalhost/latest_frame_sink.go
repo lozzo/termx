@@ -116,6 +116,10 @@ func (sink *LatestFrameSink) next() (render.Frame, bool) {
 	copy(sink.patches, sink.patches[1:])
 	last := len(sink.patches) - 1
 	sink.patches[last] = render.Frame{}
+	if last == 0 {
+		sink.patches = nil
+		return frame, true
+	}
 	sink.patches = sink.patches[:last]
 	return frame, true
 }

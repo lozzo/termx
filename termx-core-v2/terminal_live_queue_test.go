@@ -68,3 +68,29 @@ func TestTerminalLiveIngestQueueSplitsLargePendingBatch(t *testing.T) {
 	}
 	close(queue.done)
 }
+
+func TestTerminalLiveIngestQueueDropsConsumedPayloadReferences(t *testing.T) {
+	queue := newTerminalLiveIngestQueue()
+	chunk := strings.Repeat("x", terminalLiveIngestBatchMaxBytes)
+	if !queue.Enqueue(chunk) || !queue.Enqueue("tail") {
+		t.Fatal("expected enqueue before close")
+	}
+
+	first, ok := queue.nextBatch()
+	if !ok || len(first) != 1 {
+		t.Fatalf("expected first capped batch, got batch=%d ok=%v", len(first), ok)
+	}
+	retained := queue.pending[:cap(queue.pending)]
+	if len(queue.pending) != 1 || retained[1] != "" {
+		t.Fatalf("consumed live payload should not remain in backing array, len=%d retained=%#v", len(queue.pending), retained)
+	}
+
+	second, ok := queue.nextBatch()
+	if !ok || len(second) != 1 {
+		t.Fatalf("expected second batch, got batch=%d ok=%v", len(second), ok)
+	}
+	if queue.pending != nil {
+		t.Fatalf("empty live buffer should release backing array, got len=%d cap=%d", len(queue.pending), cap(queue.pending))
+	}
+	close(queue.done)
+}

@@ -152,6 +152,12 @@ func (pipeline *terminalHistoryPipeline) FreezeSnapshot() history.FrozenSnapshot
 	return pipeline.track.FreezeSnapshot()
 }
 
+func (pipeline *terminalHistoryPipeline) FreezePinnedSnapshot() history.FrozenSnapshot {
+	pipeline.mu.Lock()
+	defer pipeline.mu.Unlock()
+	return pipeline.track.FreezePinnedSnapshot()
+}
+
 func (pipeline *terminalHistoryPipeline) Line(id history.LogicalLineID) (history.LogicalLine, bool) {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()

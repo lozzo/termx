@@ -516,8 +516,24 @@ func (runtime *AppRuntime) enqueue(msg Msg) {
 		runtime.signalWakeLocked()
 		return
 	}
+	if runtime.prioritizeQueuedInputLocked(msg) {
+		runtime.signalWakeLocked()
+		return
+	}
 	runtime.queue = append(runtime.queue, msg)
 	runtime.signalWakeLocked()
+}
+
+func (runtime *AppRuntime) prioritizeQueuedInputLocked(msg Msg) bool {
+	if _, ok := msg.(InputMsg); !ok {
+		return false
+	}
+	index := firstOrdinaryLiveUpdateIndex(runtime.queue)
+	if index < 0 {
+		return false
+	}
+	runtime.insertAtLocked(index, msg)
+	return true
 }
 
 func (runtime *AppRuntime) coalesceQueuedHostResize(msg Msg) bool {
@@ -526,8 +542,9 @@ func (runtime *AppRuntime) coalesceQueuedHostResize(msg Msg) bool {
 		return false
 	}
 	first := -1
-	filtered := runtime.queue[:0]
-	for _, queued := range runtime.queue {
+	original := runtime.queue
+	filtered := original[:0]
+	for _, queued := range original {
 		if _, ok := queued.(HostResizeMsg); ok {
 			if first < 0 {
 				first = len(filtered)
@@ -536,7 +553,7 @@ func (runtime *AppRuntime) coalesceQueuedHostResize(msg Msg) bool {
 		}
 		filtered = append(filtered, queued)
 	}
-	runtime.queue = filtered
+	runtime.setQueueFilteredLocked(original, filtered)
 	if first < 0 {
 		return false
 	}
@@ -545,14 +562,15 @@ func (runtime *AppRuntime) coalesceQueuedHostResize(msg Msg) bool {
 }
 
 func (runtime *AppRuntime) dropQueuedHostResizeLocked() {
-	filtered := runtime.queue[:0]
-	for _, queued := range runtime.queue {
+	original := runtime.queue
+	filtered := original[:0]
+	for _, queued := range original {
 		if _, ok := queued.(HostResizeMsg); ok {
 			continue
 		}
 		filtered = append(filtered, queued)
 	}
-	runtime.queue = filtered
+	runtime.setQueueFilteredLocked(original, filtered)
 }
 
 func (runtime *AppRuntime) insertAtLocked(index int, msg Msg) {
@@ -586,7 +604,7 @@ func (runtime *AppRuntime) coalesceQueuedLiveUpdate(msg Msg) bool {
 		if liveRevisionNewer(existing.revision, incoming.revision) {
 			return true
 		}
-		runtime.queue = append(runtime.queue[:i], runtime.queue[i+1:]...)
+		runtime.removeAtLocked(i)
 		runtime.queue = append(runtime.queue, msg)
 		return true
 	}
@@ -606,8 +624,9 @@ func (runtime *AppRuntime) coalesceQueuedWorkbenchStorage(msg Msg) bool {
 
 func (runtime *AppRuntime) replaceQueuedWorkbenchStorageLoadLocked(msg WorkbenchStorageLoadRequestMsg) bool {
 	first := -1
-	filtered := runtime.queue[:0]
-	for _, queued := range runtime.queue {
+	original := runtime.queue
+	filtered := original[:0]
+	for _, queued := range original {
 		if _, ok := queued.(WorkbenchStorageLoadRequestMsg); ok {
 			if first < 0 {
 				first = len(filtered)
@@ -619,7 +638,8 @@ func (runtime *AppRuntime) replaceQueuedWorkbenchStorageLoadLocked(msg Workbench
 	if first < 0 {
 		return false
 	}
-	runtime.queue = append(filtered, nil)
+	runtime.setQueueFilteredLocked(original, filtered)
+	runtime.queue = append(runtime.queue, nil)
 	copy(runtime.queue[first+1:], runtime.queue[first:])
 	runtime.queue[first] = msg
 	return true
@@ -627,8 +647,9 @@ func (runtime *AppRuntime) replaceQueuedWorkbenchStorageLoadLocked(msg Workbench
 
 func (runtime *AppRuntime) replaceQueuedWorkbenchStoragePersistLocked(msg WorkbenchStoragePersistRequestMsg) bool {
 	first := -1
-	filtered := runtime.queue[:0]
-	for _, queued := range runtime.queue {
+	original := runtime.queue
+	filtered := original[:0]
+	for _, queued := range original {
 		if _, ok := queued.(WorkbenchStoragePersistRequestMsg); ok {
 			if first < 0 {
 				first = len(filtered)
@@ -641,7 +662,8 @@ func (runtime *AppRuntime) replaceQueuedWorkbenchStoragePersistLocked(msg Workbe
 		return false
 	}
 	// persist request 不携带 snapshot；真正保存时读取当时 root，因此保留最后一个请求即可。
-	runtime.queue = append(filtered, nil)
+	runtime.setQueueFilteredLocked(original, filtered)
+	runtime.queue = append(runtime.queue, nil)
 	copy(runtime.queue[first+1:], runtime.queue[first:])
 	runtime.queue[first] = msg
 	return true
@@ -707,6 +729,43 @@ func liveRevisionNewer(existing uint64, incoming uint64) bool {
 	return existing != 0 && incoming != 0 && existing > incoming
 }
 
+func firstOrdinaryLiveUpdateIndex(queue []Msg) int {
+	for i, queued := range queue {
+		if _, ok := queuedOrdinaryLiveUpdate(queued); ok {
+			return i
+		}
+		if liveQueueBoundary(queued) {
+			return -1
+		}
+	}
+	return -1
+}
+
+func (runtime *AppRuntime) removeAtLocked(index int) {
+	if index < 0 || index >= len(runtime.queue) {
+		return
+	}
+	copy(runtime.queue[index:], runtime.queue[index+1:])
+	last := len(runtime.queue) - 1
+	runtime.queue[last] = nil
+	if last == 0 {
+		runtime.queue = nil
+		return
+	}
+	runtime.queue = runtime.queue[:last]
+}
+
+func (runtime *AppRuntime) setQueueFilteredLocked(original []Msg, filtered []Msg) {
+	for i := len(filtered); i < len(original); i++ {
+		original[i] = nil
+	}
+	if len(filtered) == 0 {
+		runtime.queue = nil
+		return
+	}
+	runtime.queue = filtered
+}
+
 func (runtime *AppRuntime) prepend(msg Msg) {
 	if msg == nil {
 		return
@@ -730,6 +789,10 @@ func (runtime *AppRuntime) dequeue() (Msg, bool) {
 	copy(runtime.queue, runtime.queue[1:])
 	last := len(runtime.queue) - 1
 	runtime.queue[last] = nil
+	if last == 0 {
+		runtime.queue = nil
+		return msg, true
+	}
 	runtime.queue = runtime.queue[:last]
 	return msg, true
 }
@@ -842,6 +905,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 	resolution := resolveMouseHitRegions(runtime.lastHitRegions, inputMsg.Event)
 	if inputMsg.Event.Mouse != input.MouseLeft {
 		if msg, ok := runtime.overlayMouseSelectMsg(inputMsg.Event, resolution); ok {
+			return msg
+		}
+		if msg, ok := runtime.copyModeMouseWheelEnterMsg(inputMsg.Event, resolution); ok {
 			return msg
 		}
 		if inputMsg.Event.RawSeq != "" {
@@ -1141,6 +1207,69 @@ func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) b
 		return true
 	}
 	return false
+}
+
+func (runtime *AppRuntime) copyModeMouseWheelEnterMsg(event input.InputEvent, resolution mouseHitResolution) (Msg, bool) {
+	if event.Kind != input.EventKindMouse || event.Mouse != input.MouseWheelUp || copyModeInputContext(runtime.state.CopyMode) {
+		return nil, false
+	}
+	region, ok := copyModeWheelTargetRegion(resolution)
+	if !ok {
+		return nil, false
+	}
+	binding, ok := runtime.terminalViewBindingForMouseRegion(region)
+	if !ok || binding.TerminalID == "" {
+		return nil, false
+	}
+	rect := region.Rect
+	if rect.W <= 0 || rect.H <= 0 {
+		if fallback, ok := terminalViewContentRect(runtime.state, runtimeViewportRect(runtime.state.Viewport), binding); ok {
+			rect = fallback
+		}
+	}
+	if rect.W <= 0 {
+		return nil, false
+	}
+	// 中文说明：滚轮上滑是 copy/history 入口，必须绑定鼠标命中的 TerminalView；
+	// 不能先丢给 active pane，否则非 active sibling 要等下一次事件才进入 copy。
+	return CopyModeEnterViewMsg{Binding: binding, Cols: rect.W, Rows: rect.H}, true
+}
+
+func copyModeWheelTargetRegion(resolution mouseHitResolution) (render.HitRegion, bool) {
+	if resolution.HasHistoryRow {
+		return resolution.HistoryRow, true
+	}
+	if !resolution.HasForeground {
+		return render.HitRegion{}, false
+	}
+	switch resolution.Foreground.Kind {
+	case render.HitRegionPaneContent, render.HitRegionHistoryRow, render.HitRegionContentAction:
+		return resolution.Foreground, true
+	default:
+		return render.HitRegion{}, false
+	}
+}
+
+func (runtime *AppRuntime) terminalViewBindingForMouseRegion(region render.HitRegion) (state.TerminalViewBinding, bool) {
+	if region.Floating {
+		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok {
+			return runtime.state.TerminalViews.FloatingBinding(floatingID)
+		}
+	}
+	if binding, ok := runtime.state.TerminalViews.PaneBinding(region.PaneID); ok {
+		return binding, true
+	}
+	if binding, ok := runtime.state.TerminalViews.FloatingBinding(region.PaneID); ok {
+		return binding, true
+	}
+	return state.TerminalViewBinding{}, false
+}
+
+func runtimeViewportRect(viewport state.ViewportStore) render.Rect {
+	if !viewport.Valid {
+		return render.Rect{}
+	}
+	return render.Rect{W: viewport.Cols, H: viewport.Rows}
 }
 
 func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent, resolution mouseHitResolution) bool {

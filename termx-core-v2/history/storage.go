@@ -11,6 +11,10 @@ type StorageBackend interface {
 	LineIDs() []LogicalLineID
 }
 
+type snapshotLineBackend interface {
+	LoadSnapshotLine(LogicalLineID) (LogicalLine, bool)
+}
+
 // MemoryStorageBackend is the first in-memory backend used by the domain
 // harness before file or mmap persistence exists.
 type MemoryStorageBackend struct {
@@ -36,6 +40,11 @@ func (backend *MemoryStorageBackend) LoadLine(id LogicalLineID) (LogicalLine, bo
 		return LogicalLine{}, false
 	}
 	return line.Clone(), true
+}
+
+func (backend *MemoryStorageBackend) LoadSnapshotLine(id LogicalLineID) (LogicalLine, bool) {
+	line, ok := backend.lines[id]
+	return line, ok
 }
 
 func (backend *MemoryStorageBackend) DeleteLine(id LogicalLineID) bool {
