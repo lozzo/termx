@@ -69,6 +69,21 @@ type TerminalPoolRestartRequestMsg struct {
 
 func (TerminalPoolRestartRequestMsg) isMsg() {}
 
+type TerminalPoolRestartIfExitedRequestMsg struct {
+	TerminalID string
+}
+
+func (TerminalPoolRestartIfExitedRequestMsg) isMsg() {}
+
+type TerminalPoolRestartIfExitedResultMsg struct {
+	TerminalID string
+	Seq        uint64
+	Result     services.TerminalListResult
+	Err        error
+}
+
+func (TerminalPoolRestartIfExitedResultMsg) isMsg() {}
+
 type TerminalPoolRestartResultMsg struct {
 	TerminalID string
 	Err        error
@@ -166,6 +181,10 @@ func NewTerminalPoolReducer(deps LiveDeps) Reducer {
 			return reduceTerminalPoolCreateResult(root, msg)
 		case TerminalPoolRestartRequestMsg:
 			return reduceTerminalPoolRestartRequest(root, msg, deps)
+		case TerminalPoolRestartIfExitedRequestMsg:
+			return reduceTerminalPoolRestartIfExitedRequest(root, msg, deps)
+		case TerminalPoolRestartIfExitedResultMsg:
+			return reduceTerminalPoolRestartIfExitedResult(root, msg, deps)
 		case TerminalPoolRestartResultMsg:
 			return reduceTerminalPoolRestartResult(root, msg, deps)
 		case TerminalPoolReconnectRequestMsg:
@@ -212,6 +231,10 @@ func reduceTerminalPoolListRequest(root state.Root, deps LiveDeps) (state.Root, 
 
 func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	errText := errorString(msg.Err)
+	beforeSurfaceTerminal := root.Surface.TerminalID
+	beforeSurfaceState := root.Surface.State
+	beforeSessionTerminal := root.Session.TerminalID
+	beforeSessionState := root.Session.State
 	next, applied := root.TerminalPool.ApplyList(msg.Seq, terminalPoolItemsFromService(msg.Result.Items), errText)
 	if !applied {
 		return root, nil
@@ -225,8 +248,11 @@ func reduceTerminalPoolListResult(root state.Root, msg TerminalPoolListResultMsg
 		"active_terminal", lifecycleActiveTerminalID(root),
 		"surface_terminal", root.Surface.TerminalID,
 		"surface_state", string(root.Surface.State),
+		"surface_before", fmt.Sprintf("%s:%s", beforeSurfaceTerminal, beforeSurfaceState),
 		"session_terminal", root.Session.TerminalID,
 		"session_state", string(root.Session.State),
+		"session_before", fmt.Sprintf("%s:%s", beforeSessionTerminal, beforeSessionState),
+		"bindings", lifecycleTerminalViewsSummary(root.TerminalViews),
 	)
 	if errText != "" {
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.pool", Body: errText})
@@ -395,18 +421,100 @@ func reduceTerminalPoolRestartRequest(root state.Root, msg TerminalPoolRestartRe
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.restart", Body: "terminal unavailable"})
 		return root.Advance(), nil
 	}
+	logLifecycleTrace(deps.Logger, "terminal.restart.request",
+		"terminal_id", msg.TerminalID,
+		"surface_state", string(root.Surface.SurfaceForTerminal(msg.TerminalID).State),
+		"session_terminal", root.Session.TerminalID,
+		"session_state", string(root.Session.State),
+		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		"input_channels", lifecycleInputChannelsSummary(root.Session.InputChannels),
+	)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
 		err := deps.Terminal.Restart(ctx, services.TerminalRestartRequest{TerminalID: msg.TerminalID})
 		return TerminalPoolRestartResultMsg{TerminalID: msg.TerminalID, Err: err}
 	}}}
 }
 
+func reduceTerminalPoolRestartIfExitedRequest(root state.Root, msg TerminalPoolRestartIfExitedRequestMsg, deps LiveDeps) (state.Root, []Effect) {
+	if msg.TerminalID == "" || deps.Terminal == nil {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.restart", Body: "terminal unavailable"})
+		return root.Advance(), nil
+	}
+	root.TerminalPool = root.TerminalPool.RequestList()
+	seq := root.TerminalPool.RequestSeq
+	logLifecycleTrace(deps.Logger, "terminal.restart_if_exited.request",
+		"terminal_id", msg.TerminalID,
+		"seq", seq,
+		"surface_state", string(root.Surface.SurfaceForTerminal(msg.TerminalID).State),
+		"session_terminal", root.Session.TerminalID,
+		"session_state", string(root.Session.State),
+		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+	)
+	return root.Advance(), []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
+		result, err := deps.Terminal.List(ctx, services.TerminalListRequest{})
+		return TerminalPoolRestartIfExitedResultMsg{TerminalID: msg.TerminalID, Seq: seq, Result: result, Err: err}
+	}}}
+}
+
+func reduceTerminalPoolRestartIfExitedResult(root state.Root, msg TerminalPoolRestartIfExitedResultMsg, deps LiveDeps) (state.Root, []Effect) {
+	if root.TerminalPool.IsStale(msg.Seq) {
+		logLifecycleTrace(deps.Logger, "terminal.restart_if_exited.result",
+			"terminal_id", msg.TerminalID,
+			"seq", msg.Seq,
+			"stale", true,
+			"request_seq", root.TerminalPool.RequestSeq,
+		)
+		return root, nil
+	}
+	next, effects := reduceTerminalPoolListResult(root, TerminalPoolListResultMsg{Seq: msg.Seq, Result: msg.Result, Err: msg.Err}, deps)
+	if msg.Err != nil {
+		logLifecycleTrace(deps.Logger, "terminal.restart_if_exited.result",
+			"terminal_id", msg.TerminalID,
+			"seq", msg.Seq,
+			"err", msg.Err.Error(),
+			"bindings", lifecycleTerminalViewBindingsSummary(next.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		)
+		return next, effects
+	}
+	item, ok := terminalPoolItem(next.TerminalPool, msg.TerminalID)
+	stateValue := ""
+	if ok {
+		stateValue = item.State
+	}
+	logLifecycleTrace(deps.Logger, "terminal.restart_if_exited.result",
+		"terminal_id", msg.TerminalID,
+		"seq", msg.Seq,
+		"state", stateValue,
+		"found", ok,
+		"surface_state", string(next.Surface.SurfaceForTerminal(msg.TerminalID).State),
+		"session_terminal", next.Session.TerminalID,
+		"session_state", string(next.Session.State),
+		"bindings", lifecycleTerminalViewBindingsSummary(next.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+	)
+	if !ok || item.State != string(state.TerminalLiveExited) {
+		return next, effects
+	}
+	effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+		return TerminalPoolRestartRequestMsg{TerminalID: msg.TerminalID}
+	}})
+	return next, effects
+}
+
 func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		root.TerminalPool = root.TerminalPool.ApplyRestarted(msg.TerminalID, msg.Err.Error())
+		logLifecycleTrace(deps.Logger, "terminal.restart.result",
+			"terminal_id", msg.TerminalID,
+			"err", msg.Err.Error(),
+			"surface_state", string(root.Surface.SurfaceForTerminal(msg.TerminalID).State),
+			"session_state", string(root.Session.State),
+			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		)
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "picker.restart", Body: msg.Err.Error()})
 		return root.Advance(), nil
 	}
+	beforeBindings := lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID))
+	beforeSurface := root.Surface.SurfaceForTerminal(msg.TerminalID)
 	root.TerminalPool = root.TerminalPool.ApplyRestarted(msg.TerminalID, "")
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "picker.restart", Body: msg.TerminalID})
 	root.Surface = root.Surface.RestartPreservingContent(msg.TerminalID, root.Surface.Cols, root.Surface.Rows)
@@ -414,9 +522,14 @@ func reduceTerminalPoolRestartResult(root state.Root, msg TerminalPoolRestartRes
 	root.Session = root.Session.ClearInputChannel(msg.TerminalID)
 	logLifecycleTrace(deps.Logger, "terminal.restart.result",
 		"terminal_id", msg.TerminalID,
+		"surface_before", string(beforeSurface.State),
+		"surface_before_exited_at", lifecycleTimeSummary(beforeSurface.ExitedAt),
 		"surface_state", string(root.Surface.State),
 		"session_state", string(root.Session.State),
 		"active_terminal", lifecycleActiveTerminalID(root),
+		"bindings_before", beforeBindings,
+		"bindings_after", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		"input_channels", lifecycleInputChannelsSummary(root.Session.InputChannels),
 	)
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 	effects = append(effects, restartTerminalViewEffects(root, msg.TerminalID)...)
@@ -739,12 +852,23 @@ func terminalPoolTerminalExited(pool state.TerminalPoolStore, terminalID string)
 	if terminalID == "" {
 		return false
 	}
+	item, ok := terminalPoolItem(pool, terminalID)
+	if !ok {
+		return false
+	}
+	return item.State == string(state.TerminalLiveExited)
+}
+
+func terminalPoolItem(pool state.TerminalPoolStore, terminalID string) (state.TerminalPoolItem, bool) {
+	if terminalID == "" {
+		return state.TerminalPoolItem{}, false
+	}
 	for _, item := range pool.Items {
 		if item.TerminalID == terminalID {
-			return item.State == string(state.TerminalLiveExited)
+			return item, true
 		}
 	}
-	return false
+	return state.TerminalPoolItem{}, false
 }
 
 func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {

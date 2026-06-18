@@ -308,7 +308,26 @@ func (server *Server) RestartTerminal(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return terminal.Restart(ctx, server.cfg.processFactory)
+	before := terminal.Info()
+	coreLifecycleTrace(server.cfg.logger, "server.restart.request", coreTerminalInfoAttrs(before)...)
+	if err := terminal.Restart(ctx, server.cfg.processFactory); err != nil {
+		coreLifecycleTrace(server.cfg.logger, "server.restart.result",
+			"terminal_id", id,
+			"error", err.Error(),
+			"state_before", string(before.State),
+			"exit_code_before", coreTraceExitCode(before.ExitCode),
+			"exited_at_before", coreTraceTime(before.ExitedAt),
+		)
+		return err
+	}
+	after := terminal.Info()
+	attrs := coreTerminalInfoAttrs(after)
+	attrs = append(attrs,
+		"state_before", string(before.State),
+		"exited_at_before", coreTraceTime(before.ExitedAt),
+	)
+	coreLifecycleTrace(server.cfg.logger, "server.restart.result", attrs...)
+	return nil
 }
 
 func (server *Server) LiveRows(id string) ([]string, error) {

@@ -185,6 +185,7 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	root.Shell = shell
 	root.TerminalViews = terminalViews
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
+	restoredAttachBindings := workbenchRestoredTerminalAttachBindings(previousViews, root.TerminalViews.Bindings())
 	logLifecycleTrace(deps.Logger, "workbench.restore",
 		"version", msg.Result.Version,
 		"active_pane", root.Shell.ActivePaneID,
@@ -192,11 +193,18 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 		"active_pane_kind", lifecycleActivePaneKind(root),
 		"active_terminal", lifecycleActiveTerminalID(root),
 		"terminal_views", len(root.TerminalViews.Views),
+		"bindings", lifecycleTerminalViewsSummary(root.TerminalViews),
+		"previous_bindings", lifecycleTerminalViewsSummary(previousViews),
+		"reattach_bindings", lifecycleTerminalViewBindingsSummary(restoredAttachBindings),
+		"surface_terminal", root.Surface.TerminalID,
+		"surface_state", string(root.Surface.State),
+		"session_terminal", root.Session.TerminalID,
+		"session_state", string(root.Session.State),
 	)
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: "loaded"})
 	if len(root.TerminalViews.Views) > 0 {
 		effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
-		effects = append(effects, workbenchRestoredTerminalAttachEffects(previousViews, root.TerminalViews.Bindings())...)
+		effects = append(effects, workbenchRestoredTerminalAttachEffectsForBindings(restoredAttachBindings)...)
 		return root.Advance(), effects
 	}
 	return root.Advance(), nil
@@ -260,20 +268,35 @@ func activeTerminalBinding(root state.Root) (state.TerminalViewBinding, bool) {
 	return root.TerminalViews.PaneBinding(shell.ActivePaneID)
 }
 
-func workbenchRestoredTerminalAttachEffects(previous state.TerminalViewStore, bindings []state.TerminalViewBinding) []Effect {
+func workbenchRestoredTerminalAttachBindings(previous state.TerminalViewStore, bindings []state.TerminalViewBinding) []state.TerminalViewBinding {
 	if len(bindings) == 0 {
 		return nil
 	}
 	ordered := orderedRestoredTerminalBindings(bindings)
-	effects := make([]Effect, 0, len(ordered))
+	out := make([]state.TerminalViewBinding, 0, len(ordered))
 	for _, binding := range ordered {
-		binding := binding
 		if binding.TerminalID == "" || binding.ViewID == "" {
 			continue
 		}
 		if workbenchBindingAlreadyLive(previous, binding) {
 			continue
 		}
+		out = append(out, binding)
+	}
+	return out
+}
+
+func workbenchRestoredTerminalAttachEffects(previous state.TerminalViewStore, bindings []state.TerminalViewBinding) []Effect {
+	return workbenchRestoredTerminalAttachEffectsForBindings(workbenchRestoredTerminalAttachBindings(previous, bindings))
+}
+
+func workbenchRestoredTerminalAttachEffectsForBindings(bindings []state.TerminalViewBinding) []Effect {
+	if len(bindings) == 0 {
+		return nil
+	}
+	effects := make([]Effect, 0, len(bindings))
+	for _, binding := range bindings {
+		binding := binding
 		cols, rows := binding.DesiredCols, binding.DesiredRows
 		if cols <= 0 {
 			cols = 80
@@ -287,16 +310,18 @@ func workbenchRestoredTerminalAttachEffects(previous state.TerminalViewStore, bi
 		if resizePolicy == "" {
 			resizePolicy = state.TerminalResizeRoleFollower
 		}
+		cfg := LiveConfig{
+			TerminalID:   binding.TerminalID,
+			Cols:         cols,
+			Rows:         rows,
+			Mode:         "collaborator",
+			ResizePolicy: resizePolicy,
+			SurfaceID:    binding.SurfaceID,
+			ViewID:       binding.ViewID,
+		}
+		cfgCopy := cfg
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
-			return LiveAttachMsg{Config: LiveConfig{
-				TerminalID:   binding.TerminalID,
-				Cols:         cols,
-				Rows:         rows,
-				Mode:         "collaborator",
-				ResizePolicy: resizePolicy,
-				SurfaceID:    binding.SurfaceID,
-				ViewID:       binding.ViewID,
-			}}
+			return LiveAttachMsg{Config: cfgCopy}
 		}})
 	}
 	return effects

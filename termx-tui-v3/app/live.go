@@ -13,13 +13,14 @@ import (
 )
 
 type LiveConfig struct {
-	TerminalID   string
-	Cols         int
-	Rows         int
-	Mode         string
-	ResizePolicy string
-	SurfaceID    string
-	ViewID       string
+	TerminalID                 string
+	Cols                       int
+	Rows                       int
+	Mode                       string
+	ResizePolicy               string
+	SurfaceID                  string
+	ViewID                     string
+	RestartIfExitedAfterAttach bool
 }
 
 type LiveDeps struct {
@@ -116,9 +117,10 @@ type LiveAttachMsg struct {
 func (LiveAttachMsg) isMsg() {}
 
 type LiveAttachResultMsg struct {
-	TerminalID string
-	Result     services.TerminalAttachResult
-	Err        error
+	TerminalID                 string
+	Result                     services.TerminalAttachResult
+	Err                        error
+	RestartIfExitedAfterAttach bool
 }
 
 func (LiveAttachResultMsg) isMsg() {}
@@ -197,6 +199,12 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveSurfaceMsg:
 			if msg.Err != nil {
 				if next, ok := markTerminalExitedFromError(root, msg.Snapshot.TerminalID, msg.Err); ok {
+					logLifecycleTrace(deps.Logger, "live.surface.error.exited",
+						"terminal_id", msg.Snapshot.TerminalID,
+						"error", msg.Err.Error(),
+						"surface_state", string(next.Surface.SurfaceForTerminal(msg.Snapshot.TerminalID).State),
+						"session_state", string(next.Session.State),
+					)
 					return next.Advance(), nil
 				}
 				root.Surface = root.Surface.SetError(msg.Err.Error())
@@ -210,9 +218,14 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				"terminal_id", msg.Snapshot.TerminalID,
 				"snapshot_state", string(msg.Snapshot.State),
 				"lifecycle_known", msg.Snapshot.LifecycleKnown,
+				"snapshot_exit_code", msg.Snapshot.ExitCode,
+				"snapshot_exited_at", lifecycleTimeSummary(msg.Snapshot.ExitedAt),
+				"snapshot_command", strings.Join(msg.Snapshot.Command, " "),
 				"surface_state", string(root.Surface.State),
+				"surface_terminal_state", string(root.Surface.SurfaceForTerminal(msg.Snapshot.TerminalID).State),
 				"session_state", string(root.Session.State),
 				"active_terminal", lifecycleActiveTerminalID(root),
+				"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.Snapshot.TerminalID)),
 			)
 			return maybeRefreshFloatingAutoFit(root, msg.Snapshot.TerminalID)
 		case LiveEventMsg:
@@ -323,6 +336,20 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 	if cfg.ResizePolicy == "" {
 		cfg.ResizePolicy = state.TerminalResizeRoleOwner
 	}
+	logLifecycleTrace(deps.Logger, "live.attach.request",
+		"terminal_id", cfg.TerminalID,
+		"view_id", cfg.ViewID,
+		"surface_id", cfg.SurfaceID,
+		"cols", cfg.Cols,
+		"rows", cfg.Rows,
+		"mode", cfg.Mode,
+		"resize_policy", cfg.ResizePolicy,
+		"restart_if_exited_after_attach", cfg.RestartIfExitedAfterAttach,
+		"existing_bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(cfg.TerminalID)),
+		"surface_state", string(root.Surface.SurfaceForTerminal(cfg.TerminalID).State),
+		"session_terminal", root.Session.TerminalID,
+		"session_state", string(root.Session.State),
+	)
 	return root, []Effect{FuncEffect{
 		Async:            true,
 		ForceSyncInTests: true,
@@ -336,7 +363,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 				SurfaceID:    cfg.SurfaceID,
 				ViewID:       cfg.ViewID,
 			})
-			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, Result: result, Err: err}
+			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, Result: result, Err: err, RestartIfExitedAfterAttach: cfg.RestartIfExitedAfterAttach}
 		},
 	}}
 }
@@ -344,8 +371,19 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
 		if next, ok := markTerminalExitedFromError(root, msg.TerminalID, msg.Err); ok {
+			logLifecycleTrace(deps.Logger, "live.attach.result.exited",
+				"terminal_id", msg.TerminalID,
+				"error", msg.Err.Error(),
+				"surface_state", string(next.Surface.SurfaceForTerminal(msg.TerminalID).State),
+				"session_state", string(next.Session.State),
+			)
 			return next.Advance(), nil
 		}
+		logLifecycleTrace(deps.Logger, "live.attach.result",
+			"terminal_id", msg.TerminalID,
+			"error", msg.Err.Error(),
+			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(msg.TerminalID)),
+		)
 		return setLiveError(root, msg.Err.Error()), nil
 	}
 	result := msg.Result
@@ -361,6 +399,12 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		// 外部 reload/restore 替换 pane/view 结构后，旧 view 的迟到 attach result
 		// 不能回退绑定到当前 pane/floating；但首次 attach 时 view binding 可能还没建，
 		// 只要 shell 结构里仍存在这个目标 view，就必须允许它继续落到当前 truth。
+		logLifecycleTrace(deps.Logger, "live.attach.result.stale_view",
+			"terminal_id", result.TerminalID,
+			"view_id", viewID,
+			"channel", result.Channel,
+			"bindings", lifecycleTerminalViewsSummary(root.TerminalViews),
+		)
 		return root, nil
 	}
 	target, hasTarget := liveAttachTargetForViewID(root, viewID)
@@ -390,9 +434,10 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 				ViewID:         viewID,
 			})
 			root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
+			logLiveAttachApplied(deps, root, result, "floating-existing")
 			effects := workbenchPersistEffects("terminal.attach")
 			effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
-			return root.Advance(), effects
+			return root.Advance(), liveAttachPostEffects(effects, result.TerminalID, msg.RestartIfExitedAfterAttach)
 		}
 	}
 	if hasTarget && target.FloatingID != "" {
@@ -412,9 +457,10 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		})
 		root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
 		root.Shell = root.Shell.BindFloatingTerminal(target.FloatingID, result.TerminalID)
+		logLiveAttachApplied(deps, root, result, "floating-target")
 		effects := workbenchPersistEffects("terminal.attach")
 		effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
-		return root.Advance(), effects
+		return root.Advance(), liveAttachPostEffects(effects, result.TerminalID, msg.RestartIfExitedAfterAttach)
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
@@ -436,9 +482,42 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		ViewID:         viewID,
 	})
 	root.TerminalViews = projectTerminalAttachResultLock(root.TerminalViews, result)
+	logLiveAttachApplied(deps, root, result, "pane")
 	effects := workbenchPersistEffects("terminal.attach")
 	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
-	return root.Advance(), effects
+	return root.Advance(), liveAttachPostEffects(effects, result.TerminalID, msg.RestartIfExitedAfterAttach)
+}
+
+func liveAttachPostEffects(effects []Effect, terminalID string, restartIfExited bool) []Effect {
+	if !restartIfExited || terminalID == "" {
+		return effects
+	}
+	// 中文说明：root 入口发现 core 里的 terminal 已退出时，只记录重启意图；
+	// 真正是否 restart 必须在 view/channel 已落地后重新查询 core lifecycle。
+	return append(effects, FuncEffect{Run: func(context.Context) Msg {
+		return TerminalPoolRestartIfExitedRequestMsg{TerminalID: terminalID}
+	}})
+}
+
+func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.TerminalAttachResult, targetKind string) {
+	logLifecycleTrace(deps.Logger, "live.attach.result",
+		"target_kind", targetKind,
+		"terminal_id", result.TerminalID,
+		"view_id", result.ViewID,
+		"surface_id", result.SurfaceID,
+		"channel", result.Channel,
+		"cols", result.Cols,
+		"rows", result.Rows,
+		"resize_policy", result.ResizePolicy,
+		"can_resize", result.CanResize,
+		"size_locked", result.SizeLocked,
+		"control_reason", result.ControlReason,
+		"owner_view_id", result.OwnerViewID,
+		"surface_state", string(root.Surface.SurfaceForTerminal(result.TerminalID).State),
+		"session_terminal", root.Session.TerminalID,
+		"session_state", string(root.Session.State),
+		"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(result.TerminalID)),
+	)
 }
 
 func liveAttachViewStillPresent(root state.Root, viewID string) bool {

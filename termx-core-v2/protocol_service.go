@@ -169,6 +169,10 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, protocol.CreateResult{TerminalID: info.ID, State: string(info.State)})
 	case "list":
 		items := session.server.ListTerminals()
+		coreLifecycleTrace(session.server.cfg.logger, "protocol.list",
+			"count", len(items),
+			"items", coreTerminalListSummary(items),
+		)
 		out := protocol.ListResult{Terminals: make([]protocol.TerminalInfo, 0, len(items))}
 		for _, item := range items {
 			out.Terminals = append(out.Terminals, session.protocolInfoFromCoreV2(item))
@@ -208,9 +212,24 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, nil)
 	case "restart":
 		in := params.(protocol.GetParams)
+		if info, err := session.server.GetTerminal(in.TerminalID); err == nil {
+			coreLifecycleTrace(session.server.cfg.logger, "protocol.restart.request", coreTerminalInfoAttrs(info)...)
+		} else {
+			coreLifecycleTrace(session.server.cfg.logger, "protocol.restart.request",
+				"terminal_id", in.TerminalID,
+				"error", err.Error(),
+			)
+		}
 		err := session.server.RestartTerminal(ctx, in.TerminalID)
 		if err != nil {
+			coreLifecycleTrace(session.server.cfg.logger, "protocol.restart.result",
+				"terminal_id", in.TerminalID,
+				"error", err.Error(),
+			)
 			return nil, false, errorCode(err), err
+		}
+		if info, infoErr := session.server.GetTerminal(in.TerminalID); infoErr == nil {
+			coreLifecycleTrace(session.server.cfg.logger, "protocol.restart.result", coreTerminalInfoAttrs(info)...)
 		}
 		return encodeMethodResult(req.Method, nil)
 	case "remove":
@@ -397,6 +416,14 @@ func (session *protocolSession) liveSnapshot(params protocol.SnapshotParams) (*p
 	if err != nil {
 		return nil, err
 	}
+	attrs := coreTerminalInfoAttrs(info)
+	attrs = append(attrs,
+		"screen_rows", len(snapshot.Screen.Cells),
+		"cursor_row", snapshot.Cursor.Row,
+		"cursor_col", snapshot.Cursor.Col,
+		"cursor_visible", snapshot.Cursor.Visible,
+	)
+	coreLifecycleTrace(session.server.cfg.logger, "protocol.snapshot", attrs...)
 	return &protocol.Snapshot{
 		TerminalID: params.TerminalID,
 		Size:       protocolSizeFromCore(info.Size),
@@ -676,8 +703,23 @@ func (session *protocolSession) clearEventSubscription(id uint64) {
 func (session *protocolSession) attach(params protocol.AttachParams) (protocolAttachment, *protocol.ResizeControl, error) {
 	info, err := session.server.GetTerminal(params.TerminalID)
 	if err != nil {
+		coreLifecycleTrace(session.server.cfg.logger, "protocol.attach.request",
+			"terminal_id", params.TerminalID,
+			"view_id", params.ViewID,
+			"surface_id", params.SurfaceID,
+			"resize_policy", params.ResizePolicy,
+			"error", err.Error(),
+		)
 		return protocolAttachment{}, nil, err
 	}
+	attrs := coreTerminalInfoAttrs(info)
+	attrs = append(attrs,
+		"view_id", params.ViewID,
+		"surface_id", params.SurfaceID,
+		"resize_policy", params.ResizePolicy,
+		"mode", params.Mode,
+	)
+	coreLifecycleTrace(session.server.cfg.logger, "protocol.attach.request", attrs...)
 	channel := uint16(session.nextCh.Add(1))
 	attachment := protocolAttachment{
 		TerminalID:   params.TerminalID,
@@ -697,6 +739,18 @@ func (session *protocolSession) attach(params protocol.AttachParams) (protocolAt
 	}
 	session.attachments[channel] = attachment
 	control := session.resizeControlForAttachmentLocked(attachment, protocolSizeFromCore(info.Size))
+	coreLifecycleTrace(session.server.cfg.logger, "protocol.attach.result",
+		"terminal_id", attachment.TerminalID,
+		"channel", attachment.Channel,
+		"view_id", attachment.ViewID,
+		"surface_id", attachment.SurfaceID,
+		"resize_policy", attachment.ResizePolicy,
+		"can_resize", control.CanResize,
+		"control_reason", control.Reason,
+		"owner_view_id", control.OwnerViewID,
+		"owner_surface_id", control.OwnerSurfaceID,
+		"state", string(info.State),
+	)
 	return attachment, control, nil
 }
 
@@ -734,18 +788,80 @@ func detachMatches(params protocol.DetachParams, channel uint16, attachment prot
 func (session *protocolSession) input(ctx context.Context, params protocol.InputParams) error {
 	attachment, err := session.attachmentForChannel(params.Channel)
 	if err != nil {
+		coreLifecycleTrace(session.server.cfg.logger, "protocol.input",
+			"terminal_id", params.TerminalID,
+			"channel", params.Channel,
+			"view_id", params.ViewID,
+			"surface_id", params.SurfaceID,
+			"bytes", len(params.Data),
+			"error", err.Error(),
+		)
 		return err
 	}
 	if attachment.TerminalID != params.TerminalID {
-		return fmt.Errorf("%w: input channel %d is attached to %s, not %s", errProtocolAttachmentMismatch, params.Channel, attachment.TerminalID, params.TerminalID)
+		err := fmt.Errorf("%w: input channel %d is attached to %s, not %s", errProtocolAttachmentMismatch, params.Channel, attachment.TerminalID, params.TerminalID)
+		coreLifecycleTrace(session.server.cfg.logger, "protocol.input",
+			"terminal_id", params.TerminalID,
+			"attached_terminal", attachment.TerminalID,
+			"channel", params.Channel,
+			"view_id", params.ViewID,
+			"attached_view_id", attachment.ViewID,
+			"surface_id", params.SurfaceID,
+			"attached_surface_id", attachment.SurfaceID,
+			"bytes", len(params.Data),
+			"error", err.Error(),
+		)
+		return err
 	}
 	if params.SurfaceID != "" && attachment.SurfaceID != params.SurfaceID {
-		return fmt.Errorf("%w: input channel %d surface mismatch: %s != %s", errProtocolAttachmentMismatch, params.Channel, attachment.SurfaceID, params.SurfaceID)
+		err := fmt.Errorf("%w: input channel %d surface mismatch: %s != %s", errProtocolAttachmentMismatch, params.Channel, attachment.SurfaceID, params.SurfaceID)
+		coreLifecycleTrace(session.server.cfg.logger, "protocol.input",
+			"terminal_id", params.TerminalID,
+			"channel", params.Channel,
+			"view_id", params.ViewID,
+			"attached_view_id", attachment.ViewID,
+			"surface_id", params.SurfaceID,
+			"attached_surface_id", attachment.SurfaceID,
+			"bytes", len(params.Data),
+			"error", err.Error(),
+		)
+		return err
 	}
 	if params.ViewID != "" && attachment.ViewID != params.ViewID {
-		return fmt.Errorf("%w: input channel %d view mismatch: %s != %s", errProtocolAttachmentMismatch, params.Channel, attachment.ViewID, params.ViewID)
+		err := fmt.Errorf("%w: input channel %d view mismatch: %s != %s", errProtocolAttachmentMismatch, params.Channel, attachment.ViewID, params.ViewID)
+		coreLifecycleTrace(session.server.cfg.logger, "protocol.input",
+			"terminal_id", params.TerminalID,
+			"channel", params.Channel,
+			"view_id", params.ViewID,
+			"attached_view_id", attachment.ViewID,
+			"surface_id", params.SurfaceID,
+			"attached_surface_id", attachment.SurfaceID,
+			"bytes", len(params.Data),
+			"error", err.Error(),
+		)
+		return err
 	}
-	return session.server.WriteInput(ctx, attachment.TerminalID, params.Data)
+	err = session.server.WriteInput(ctx, attachment.TerminalID, params.Data)
+	if err != nil {
+		coreLifecycleTrace(session.server.cfg.logger, "protocol.input",
+			"terminal_id", params.TerminalID,
+			"channel", params.Channel,
+			"view_id", params.ViewID,
+			"surface_id", params.SurfaceID,
+			"bytes", len(params.Data),
+			"error", err.Error(),
+		)
+		return err
+	}
+	coreLifecycleTrace(session.server.cfg.logger, "protocol.input",
+		"terminal_id", params.TerminalID,
+		"channel", params.Channel,
+		"view_id", params.ViewID,
+		"surface_id", params.SurfaceID,
+		"bytes", len(params.Data),
+		"result", "ok",
+	)
+	return nil
 }
 
 func (session *protocolSession) promoteResizeOwnerLocked(terminalID string) {
