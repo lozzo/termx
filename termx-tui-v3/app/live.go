@@ -13,14 +13,13 @@ import (
 )
 
 type LiveConfig struct {
-	TerminalID                 string
-	Cols                       int
-	Rows                       int
-	Mode                       string
-	ResizePolicy               string
-	SurfaceID                  string
-	ViewID                     string
-	RestartIfExitedAfterAttach bool
+	TerminalID   string
+	Cols         int
+	Rows         int
+	Mode         string
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
 }
 
 type LiveDeps struct {
@@ -117,10 +116,9 @@ type LiveAttachMsg struct {
 func (LiveAttachMsg) isMsg() {}
 
 type LiveAttachResultMsg struct {
-	TerminalID                 string
-	Result                     services.TerminalAttachResult
-	Err                        error
-	RestartIfExitedAfterAttach bool
+	TerminalID string
+	Result     services.TerminalAttachResult
+	Err        error
 }
 
 func (LiveAttachResultMsg) isMsg() {}
@@ -360,7 +358,6 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 		"rows", cfg.Rows,
 		"mode", cfg.Mode,
 		"resize_policy", cfg.ResizePolicy,
-		"restart_if_exited_after_attach", cfg.RestartIfExitedAfterAttach,
 		"existing_bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(cfg.TerminalID)),
 		"surface_state", string(root.Surface.SurfaceForTerminal(cfg.TerminalID).State),
 		"session_terminal", root.Session.TerminalID,
@@ -379,7 +376,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 				SurfaceID:    cfg.SurfaceID,
 				ViewID:       cfg.ViewID,
 			})
-			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, Result: result, Err: err, RestartIfExitedAfterAttach: cfg.RestartIfExitedAfterAttach}
+			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, Result: result, Err: err}
 		},
 	}}
 }
@@ -453,7 +450,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			logLiveAttachApplied(deps, root, result, "floating-existing")
 			effects := workbenchPersistEffects("terminal.attach")
 			effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
-			return root.Advance(), liveAttachPostEffects(effects, result.TerminalID, msg.RestartIfExitedAfterAttach)
+			return root.Advance(), effects
 		}
 	}
 	if hasTarget && target.FloatingID != "" {
@@ -476,7 +473,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		logLiveAttachApplied(deps, root, result, "floating-target")
 		effects := workbenchPersistEffects("terminal.attach")
 		effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
-		return root.Advance(), liveAttachPostEffects(effects, result.TerminalID, msg.RestartIfExitedAfterAttach)
+		return root.Advance(), effects
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: activePaneID}, result.TerminalID)
@@ -501,18 +498,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	logLiveAttachApplied(deps, root, result, "pane")
 	effects := workbenchPersistEffects("terminal.attach")
 	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
-	return root.Advance(), liveAttachPostEffects(effects, result.TerminalID, msg.RestartIfExitedAfterAttach)
-}
-
-func liveAttachPostEffects(effects []Effect, terminalID string, restartIfExited bool) []Effect {
-	if !restartIfExited || terminalID == "" {
-		return effects
-	}
-	// 中文说明：root 入口发现 core 里的 terminal 已退出时，只记录重启意图；
-	// 真正是否 restart 必须在 view/channel 已落地后重新查询 core lifecycle。
-	return append(effects, FuncEffect{Run: func(context.Context) Msg {
-		return TerminalPoolRestartIfExitedRequestMsg{TerminalID: terminalID}
-	}})
+	return root.Advance(), effects
 }
 
 func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.TerminalAttachResult, targetKind string) {

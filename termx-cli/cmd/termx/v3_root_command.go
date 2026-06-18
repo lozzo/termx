@@ -48,7 +48,7 @@ func runV3RootRuntime(ctx context.Context, cfg v3RootConfig) error {
 	if err != nil {
 		return err
 	}
-	terminalID, restartIfExitedAfterAttach, err := ensureV3RootTerminal(ctx, client)
+	terminalID, err := ensureV3RootTerminal(ctx, client)
 	closeErr := client.Close()
 	if err != nil {
 		return err
@@ -58,25 +58,24 @@ func runV3RootRuntime(ctx context.Context, cfg v3RootConfig) error {
 	}
 	logger.Info("starting tui-v3 root command", "terminal_id", terminalID, "socket", cfg.SocketPath, "log_file", logPath)
 	return runV3Attach(ctx, v3AttachConfig{
-		TerminalID:                 terminalID,
-		SocketPath:                 cfg.SocketPath,
-		LogFile:                    logPath,
-		RestartIfExitedAfterAttach: restartIfExitedAfterAttach,
+		TerminalID: terminalID,
+		SocketPath: cfg.SocketPath,
+		LogFile:    logPath,
 	})
 }
 
-func ensureV3RootTerminal(ctx context.Context, client *protocol.Client) (string, bool, error) {
+func ensureV3RootTerminal(ctx context.Context, client *protocol.Client) (string, error) {
 	list, err := client.List(ctx)
 	if err != nil {
-		return "", false, fmt.Errorf("list core-v2 terminals for root: %w", err)
+		return "", fmt.Errorf("list core-v2 terminals for root: %w", err)
 	}
 	if id := selectV3RootTerminal(list.Terminals); id != "" {
-		return id, false, nil
+		return id, nil
 	}
-	// 固定 root terminal 退出后仍会留在 core 里；root 入口只选择连接对象，
-	// lifecycle 判断和 restart 必须在 TUI attach 到具体 view 后再按 core 状态执行。
+	// 固定 root terminal 退出后仍会留在 core 里；root 入口只选择连接对象。
+	// restart 必须是用户显式动作，不能在重进 TUI 时自动 HUP 旧 PTY。
 	if item, ok := findV3RootTerminal(list.Terminals); ok {
-		return item.ID, true, nil
+		return item.ID, nil
 	}
 	created, err := client.Create(ctx, protocol.CreateParams{
 		ID:      v3RootTerminalID,
@@ -88,15 +87,15 @@ func ensureV3RootTerminal(ctx context.Context, client *protocol.Client) (string,
 		refreshed, listErr := client.List(ctx)
 		if listErr == nil {
 			if id := selectV3RootTerminal(refreshed.Terminals); id != "" {
-				return id, false, nil
+				return id, nil
 			}
 			if item, ok := findV3RootTerminal(refreshed.Terminals); ok {
-				return item.ID, true, nil
+				return item.ID, nil
 			}
 		}
-		return "", false, fmt.Errorf("create core-v2 root terminal: %w", err)
+		return "", fmt.Errorf("create core-v2 root terminal: %w", err)
 	}
-	return created.TerminalID, false, nil
+	return created.TerminalID, nil
 }
 
 func selectV3RootTerminal(items []protocol.TerminalInfo) string {

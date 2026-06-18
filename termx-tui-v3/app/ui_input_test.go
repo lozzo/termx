@@ -1288,69 +1288,6 @@ func TestTerminalPoolRestartResultPreventsStaleExitedPoolFromPoisoningReattach(t
 	}
 }
 
-func TestLiveAttachResultChecksCoreLifecycleBeforeRestartingExitedRoot(t *testing.T) {
-	code := 0
-	terminal := &services.FakeTerminalService{
-		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{
-			TerminalID: "term-1",
-			Title:      "main",
-			State:      string(state.TerminalLiveExited),
-			ExitCode:   &code,
-			ExitedAt:   time.Date(2026, 6, 18, 1, 2, 28, 0, time.UTC),
-			Command:    []string{"/bin/zsh"},
-			Cols:       80,
-			Rows:       24,
-		}}},
-	}
-	reducer := ComposeReducers(NewTerminalPoolReducer(LiveDeps{Terminal: terminal}), NewLiveReducer(LiveDeps{Terminal: terminal}))
-	root := state.Root{Shell: state.DefaultShell()}
-
-	root, effects := reducer(root, LiveAttachResultMsg{
-		TerminalID:                 "term-1",
-		RestartIfExitedAfterAttach: true,
-		Result: services.TerminalAttachResult{
-			TerminalID:   "term-1",
-			Channel:      7,
-			Cols:         80,
-			Rows:         24,
-			ResizePolicy: state.TerminalResizeRoleOwner,
-			SurfaceID:    "surface",
-			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
-			CanResize:    true,
-		},
-	})
-	if _, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok {
-		t.Fatalf("attach result should bind the active pane before lifecycle restart check, root=%#v", root)
-	}
-	if len(effects) == 0 {
-		t.Fatal("expected attach result effects")
-	}
-	checkMsg, ok := effects[len(effects)-1].(FuncEffect).Run(context.Background()).(TerminalPoolRestartIfExitedRequestMsg)
-	if !ok || checkMsg.TerminalID != "term-1" {
-		t.Fatalf("attach result should schedule restart-if-exited check, got %#v ok=%v", checkMsg, ok)
-	}
-
-	root, effects = reducer(root, checkMsg)
-	if len(effects) != 1 {
-		t.Fatalf("restart-if-exited request should list core lifecycle once, effects=%#v", effects)
-	}
-	resultMsg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRestartIfExitedResultMsg)
-	if !ok || resultMsg.TerminalID != "term-1" || len(terminal.Lists) != 1 {
-		t.Fatalf("restart-if-exited should use terminal list, msg=%#v lists=%#v", resultMsg, terminal.Lists)
-	}
-	root, effects = reducer(root, resultMsg)
-	if root.Surface.State == state.TerminalLiveExited {
-		t.Fatalf("terminal pool list must not project lifecycle into live surface, surface=%#v", root.Surface)
-	}
-	if len(effects) != 1 {
-		t.Fatalf("exited core lifecycle should request restart, effects=%#v", effects)
-	}
-	restartMsg, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalPoolRestartRequestMsg)
-	if !ok || restartMsg.TerminalID != "term-1" {
-		t.Fatalf("expected restart request for exited terminal, got %#v ok=%v", restartMsg, ok)
-	}
-}
-
 func TestRestartIfExitedSkipsRunningCoreTerminal(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{

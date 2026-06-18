@@ -1048,7 +1048,7 @@ func TestV3RootRuntimeReusesRunningTerminal(t *testing.T) {
 	}
 }
 
-func TestV3RootRuntimeDefersExitedRootRestartUntilTUIAttach(t *testing.T) {
+func TestV3RootRuntimeAttachesExitedRootWithoutAutoRestart(t *testing.T) {
 	processes := newCoreV2ResizeRecordingProcessFactory()
 	server, client, closeClient := newCoreV2ProtocolClientForCLITestWithOptions(t, corev2.WithProcessFactory(processes))
 	defer closeClient()
@@ -1087,15 +1087,12 @@ func TestV3RootRuntimeDefersExitedRootRestartUntilTUIAttach(t *testing.T) {
 	if gotAttach.TerminalID != v3RootTerminalID {
 		t.Fatalf("expected exited root terminal to attach, got %#v", gotAttach)
 	}
-	if !gotAttach.RestartIfExitedAfterAttach {
-		t.Fatalf("expected root attach to request core-state restart after attach, got %#v", gotAttach)
-	}
 	info, err := server.GetTerminal(v3RootTerminalID)
 	if err != nil {
 		t.Fatalf("get root terminal: %v", err)
 	}
 	if info.State != corev2.TerminalStateExited || info.ExitCode == nil || info.ExitedAt.IsZero() {
-		t.Fatalf("root preflight must not mutate core lifecycle before TUI attach, got %#v", info)
+		t.Fatalf("root entry must not auto restart or mutate exited lifecycle, got %#v", info)
 	}
 }
 

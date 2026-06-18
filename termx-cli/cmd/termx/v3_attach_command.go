@@ -29,10 +29,9 @@ type v3TerminalHostLogger interface {
 type v3AttachRunner func(context.Context, v3AttachConfig) error
 
 type v3AttachConfig struct {
-	TerminalID                 string
-	SocketPath                 string
-	LogFile                    string
-	RestartIfExitedAfterAttach bool
+	TerminalID string
+	SocketPath string
+	LogFile    string
 }
 
 var (
@@ -102,14 +101,13 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	}
 	runtime := newV3InteractiveRuntime(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger)
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
-		TerminalID:                 cfg.TerminalID,
-		Cols:                       cols,
-		Rows:                       rows,
-		Mode:                       "collaborator",
-		ResizePolicy:               protocol.ResizePolicyOwner,
-		SurfaceID:                  "termx-cli-v3",
-		ViewID:                     "termx-cli-v3-main",
-		RestartIfExitedAfterAttach: cfg.RestartIfExitedAfterAttach,
+		TerminalID:   cfg.TerminalID,
+		Cols:         cols,
+		Rows:         rows,
+		Mode:         "collaborator",
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    "termx-cli-v3",
+		ViewID:       "termx-cli-v3-main",
 	}}); err != nil {
 		return err
 	}

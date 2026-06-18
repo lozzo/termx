@@ -749,6 +749,38 @@ func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T)
 	}
 }
 
+func TestLiveAttachResultDoesNotAutoRestartExitedTerminal(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	root := state.Root{
+		Shell:   state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{TerminalID: "term-1", State: state.TerminalLiveExited},
+	}
+
+	root, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+		TerminalID:   "term-1",
+		Channel:      7,
+		Cols:         80,
+		Rows:         24,
+		ResizePolicy: state.TerminalResizeRoleOwner,
+		SurfaceID:    "termx-cli-v3",
+		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+		CanResize:    true,
+	}})
+
+	if _, ok := root.TerminalViews.PaneBinding(state.DefaultPaneID); !ok {
+		t.Fatalf("attach result should only bind the active pane, root=%#v", root)
+	}
+	for _, effect := range effects {
+		funcEffect, ok := effect.(FuncEffect)
+		if !ok || funcEffect.Run == nil {
+			continue
+		}
+		if msg, ok := funcEffect.Run(context.Background()).(TerminalPoolRestartIfExitedRequestMsg); ok {
+			t.Fatalf("attach result must not auto restart or query restart, got %#v", msg)
+		}
+	}
+}
+
 func TestLiveAttachAndInitialSurfaceEffectsAreAsync(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	root := state.Root{Shell: state.DefaultShell()}
