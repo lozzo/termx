@@ -922,11 +922,11 @@ func TestRenderVMBuilderCopyHistorySelectionPreservesEmptyStyledCellFootprint(t 
 		Focus:  state.CopyPosition{Row: 2, Col: 1},
 	}
 	content = activeContent(NewRenderVMBuilder().Build(root).Shell)
-	if got := content.Lines[1].PlainString(); got != "X   Y" {
+	if got := content.Lines[1].PlainString(); got != "X   Y   " {
 		t.Fatalf("selection should not drop empty styled footprint, got %q cells=%#v", got, content.Lines[1].Cells)
 	}
-	if got := lineANSIStyleDisplayWidth(content.Lines[1], copyHistorySelectionANSIStyle); got != 5 {
-		t.Fatalf("selection should cover full history row footprint, got selected width=%d cells=%#v", got, content.Lines[1].Cells)
+	if got := lineANSIStyleDisplayWidth(content.Lines[1], copyHistorySelectionANSIStyle); got != 8 {
+		t.Fatalf("selection should cover full visual row including tail blanks, got selected width=%d cells=%#v", got, content.Lines[1].Cells)
 	}
 }
 

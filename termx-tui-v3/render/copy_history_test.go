@@ -44,3 +44,36 @@ func TestCopyHistoryContentANSILineUsesTailFillDisplayOnly(t *testing.T) {
 		t.Fatalf("tail fill should render display-only background to EOL, got %q", ansi)
 	}
 }
+
+func TestCopyHistoryContentANSILineSelectionFillsRowTail(t *testing.T) {
+	history := state.HistoryStore{
+		Cols: 8,
+		Rows: []state.HistoryRow{{
+			Text:   "uv",
+			LineID: 1,
+			Cells: []state.HistoryCell{
+				{Text: "u", Width: 1},
+				{Text: "v", Width: 1},
+			},
+		}},
+	}
+	copyMode := state.CopyModeStore{
+		Active:    true,
+		BoundCols: 8,
+		Selection: &state.CopySelection{
+			Anchor: state.CopyPosition{Row: 0, Col: 0},
+			Focus:  state.CopyPosition{Row: 0, Col: 8},
+		},
+	}
+
+	line := copyHistoryLine(history.Rows[0], 0, normalizedCopySelection(copyMode), copySearchRange{}, 8)
+	if len(line.Cells) != 3 || line.Cells[2].Width != 6 || line.Cells[2].ANSIStyle != copyHistorySelectionANSIStyle {
+		t.Fatalf("selection should paint display-only row tail like tmux, got %#v", line.Cells)
+	}
+	if got := line.Width(); got != 8 {
+		t.Fatalf("selection line should fill to viewport width, got %d cells=%#v", got, line.Cells)
+	}
+	if got := state.HistoryRowDisplayWidth(history.Rows[0]); got != 2 {
+		t.Fatalf("selection fill must not mutate logical row width, got %d", got)
+	}
+}

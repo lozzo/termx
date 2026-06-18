@@ -270,9 +270,11 @@
 | 215E1-R97. SK clipboard history 手工新增 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已复刻 tuiv2 clipboard history 的 New entry 能力：v3 overlay 提供新建入口，提交后写入 reducer-owned clipboard store，并通过 core-v2 daemon storage 持久化 |
 | 215E1-R98. SK clipboard history 快捷入口 | 完成 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 `Ctrl-V` 后 `H` 入口：copy entering 阶段也能打开 v3 clipboard history overlay，copy footer 明确展示 `H CLIPBOARD` |
 | 215E1-R99. SK clipboard history modal 线框与模糊搜索 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已按确认稿重画 clipboard history：标题嵌入 v3 细边框，内部只保留搜索区和左窄右宽 T 字分栏；footer 展示全局快捷键；搜索复用 picker 子序列匹配并高亮命中字母 |
+| 215E1-R100. SK copy selection 显示与最近粘贴回归 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已修复 copy/history 选区行尾空白不染色的问题：选区显示会像 tmux 一样把选中 visual row 的 display-only 空白补成黄底，但不进入复制文本；`p` 粘贴最近复制时若 clipboard service 缓存为空，会回退到 reducer-owned clipboard history 最新项 |
 
 当前下一步：
 
+- `215E1-R100 copy selection 显示与最近粘贴回归` 已完成：copy/history 选区现在会把选中行的行尾空白显示成黄底；Enter 复制仍写入 clipboard history，`Ctrl-V` 后 `p` 会从最近复制或 clipboard history 最新项粘贴，不再误报 copy buffer empty。
 - `215E1-R99 clipboard history modal 线框与模糊搜索` 已完成：clipboard history modal 现在是 `Clipboard History` 顶边标题 + 搜索区 + 左窄右宽 T 字分栏；快捷键留在全局 footer；输入 `gft` 这类子序列能匹配 `git commit ... fix terminal` 并高亮命中字母。
 - `215E1-R98 clipboard history 快捷入口` 已完成：`Ctrl-V` 进入 copy/history 后按 `H` 会打开 v3 clipboard history overlay；latest 仍在飞的 entering 阶段也不再吞掉 `H`，copy footer 会显示 `H CLIPBOARD` 可点击入口。
 - `215E1-R97 clipboard history 手工新增` 已完成：v3 clipboard history overlay 现在有 New entry 入口，支持 `Ctrl-N` 和 content action 打开 v3 prompt，提交后写入 reducer-owned clipboard store 并保存到 core-v2 daemon storage。

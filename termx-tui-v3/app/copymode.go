@@ -824,6 +824,9 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 				}
 				text = result.Text
 			}
+			if text == "" && !readSystemClipboard {
+				text = latestClipboardHistoryText(root.Clipboard)
+			}
 			if text == "" {
 				if readSystemClipboard {
 					return CopyModePasteResultMsg{Err: errors.New("system clipboard is empty")}
@@ -843,6 +846,16 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 		},
 	})
 	return root, effects
+}
+
+func latestClipboardHistoryText(store state.ClipboardStore) string {
+	for _, entry := range store.Entries {
+		text := strings.TrimSpace(entry.Text)
+		if text != "" {
+			return entry.Text
+		}
+	}
+	return ""
 }
 
 func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (state.Root, []Effect) {

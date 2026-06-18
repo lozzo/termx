@@ -372,6 +372,9 @@ func TestInteractiveRuntimeAttachCopyModeMainlineAcceptance(t *testing.T) {
 	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "cdef\nbe" {
 		t.Fatalf("copy should assemble logical-line text after local reflow, got %#v", clipboard.Writes)
 	}
+	if len(runtime.State().Clipboard.Entries) == 0 || runtime.State().Clipboard.Entries[0].Text != "cdef\nbe" {
+		t.Fatalf("copy should also update reducer-owned clipboard history, got %#v", runtime.State().Clipboard)
+	}
 	if len(runtime.State().Shell.Toasts) == 0 || runtime.State().Shell.Toasts[len(runtime.State().Shell.Toasts)-1].Title != "Copied to clipboard" {
 		t.Fatalf("copy should add clipboard toast, got %#v", runtime.State().Shell.Toasts)
 	}
@@ -5317,6 +5320,33 @@ func TestCopyModePasteLastCopyExitsAndTargetsActiveTerminal(t *testing.T) {
 	}
 	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "hello\nworld" {
 		t.Fatalf("paste last copy should target active terminal, got %#v", terminal.Inputs)
+	}
+}
+
+func TestCopyModePasteLastCopyFallsBackToClipboardHistory(t *testing.T) {
+	clipboard := &services.FakeClipboardService{}
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(8)
+	runtime := newInteractiveCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, clipboard, terminal, NewSyncEffectRunner())
+	runtime.state.Clipboard = state.ClipboardStore{}.WithCopiedText("from-history")
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		ViewRows:   4,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"}); err != nil {
+		t.Fatalf("send p: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain p: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != "from-history" {
+		t.Fatalf("paste last copy should fallback to reducer clipboard history, got %#v", terminal.Inputs)
 	}
 }
 

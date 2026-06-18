@@ -36,6 +36,7 @@ func copyHistoryLines(history state.HistoryStore, copyMode state.CopyModeStore) 
 
 func copyHistoryLine(row state.HistoryRow, rowIndex int, selection copySelectionRange, search copySearchRange, width int) Line {
 	cells := copyHistoryRowCells(row, rowIndex, selection, search)
+	cells = copyHistoryApplySelectionFill(cells, rowIndex, selection, width)
 	cells = copyHistoryApplyTailFill(cells, row, width)
 	if row.ClippedEnd {
 		cells = append(cells, styledCell(" ⇣", StyleMuted))
@@ -285,14 +286,30 @@ func copyHistoryRenderWidth(history state.HistoryStore, copyMode state.CopyModeS
 	return history.Cols
 }
 
+func copyHistoryApplySelectionFill(cells []Cell, row int, selection copySelectionRange, width int) []Cell {
+	if !selection.active || width <= 0 || row < selection.start.Row || row > selection.end.Row {
+		return cells
+	}
+	lineWidth := copyHistoryCellsWidth(cells)
+	from, to := selectionColumnsForRow(selection, row, width)
+	if to <= lineWidth {
+		return cells
+	}
+	out := append([]Cell(nil), cells...)
+	if from > lineWidth {
+		out = append(out, NewCell(strings.Repeat(" ", from-lineWidth)))
+		lineWidth = from
+	}
+	// 中文说明：这里补的是 copy mode 选区的显示背景，不能进入 SelectedText。
+	out = append(out, copyHistorySelectionBlankCell(to-lineWidth))
+	return out
+}
+
 func copyHistoryApplyTailFill(cells []Cell, row state.HistoryRow, width int) []Cell {
 	if row.TailFill == nil || width <= 0 {
 		return cells
 	}
-	lineWidth := 0
-	for _, cell := range cells {
-		lineWidth += maxInt(0, cell.Width)
-	}
+	lineWidth := copyHistoryCellsWidth(cells)
 	padWidth := width - lineWidth
 	if padWidth <= 0 {
 		return cells
@@ -313,6 +330,27 @@ func copyHistoryApplyTailFill(cells []Cell, row state.HistoryRow, width int) []C
 		Safe:            true,
 	})
 	return out
+}
+
+func copyHistorySelectionBlankCell(width int) Cell {
+	if width <= 0 {
+		return NewCell("")
+	}
+	return Cell{
+		Text:            strings.Repeat(" ", width),
+		Width:           width,
+		ANSIStyle:       copyHistorySelectionANSIStyle,
+		TerminalContent: true,
+		Safe:            true,
+	}
+}
+
+func copyHistoryCellsWidth(cells []Cell) int {
+	width := 0
+	for _, cell := range cells {
+		width += maxInt(0, cell.Width)
+	}
+	return width
 }
 
 func renderCellsFromHistory(cell state.HistoryCell, row int, from int, selection copySelectionRange, search copySearchRange) []Cell {
