@@ -101,7 +101,11 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
 		case InputMsg:
-			intent := input.Route(msg.Event, copyModeInputContext(root.CopyMode))
+			copyOwnsInput := copyModeOwnsActiveInput(root)
+			intent := input.Route(msg.Event, copyOwnsInput)
+			if !copyOwnsInput && !copyModeEnterIntent(intent) {
+				return root, nil
+			}
 			return reduceCopyModeIntent(root, intent, deps)
 		case CopyModeHistoryResultMsg:
 			return reduceCopyModeHistoryResult(root, msg)
@@ -176,6 +180,26 @@ func copyModeInputContext(copyMode state.CopyModeStore) bool {
 	return copyMode.Active || copyMode.Entering
 }
 
+func copyModeOwnsActiveInput(root state.Root) bool {
+	if !copyModeInputContext(root.CopyMode) {
+		return false
+	}
+	if root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+		return true
+	}
+	binding, ok := activeTerminalViewBinding(root)
+	if !ok {
+		return false
+	}
+	if root.CopyMode.ViewID != "" {
+		return binding.ViewID == root.CopyMode.ViewID
+	}
+	if root.CopyMode.PaneID != "" {
+		return binding.PaneID == root.CopyMode.PaneID
+	}
+	return true
+}
+
 func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDeps) (state.Root, []Effect) {
 	if next, effects, handled := reduceCopyModeEnteringIntent(root, intent); handled {
 		return next, effects
@@ -238,6 +262,10 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		}
 		return root, nil
 	}
+}
+
+func copyModeEnterIntent(intent input.Intent) bool {
+	return intent.Kind == input.IntentEnterCopyMode
 }
 
 func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.Root, []Effect, bool) {

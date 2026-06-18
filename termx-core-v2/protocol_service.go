@@ -43,6 +43,7 @@ type protocolSession struct {
 	historyMu     sync.Mutex
 	historyPins   map[string]frozenHistorySnapshot
 	historyLatest map[string]string
+	requests      sync.WaitGroup
 }
 
 type frozenHistorySnapshot struct {
@@ -79,7 +80,11 @@ func newProtocolSession(server *Server, conn transport.Transport) *protocolSessi
 func (session *protocolSession) run(ctx context.Context) error {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	defer session.stopEvents()
+	defer func() {
+		cancel()
+		session.requests.Wait()
+		session.stopEvents()
+	}()
 	for {
 		frame, err := session.conn.Recv()
 		if err != nil {
@@ -123,7 +128,14 @@ func (session *protocolSession) handleControlFrame(ctx context.Context, typ uint
 		if err != nil {
 			return session.sendError(0, protocolErrorBadRequest, err.Error())
 		}
-		return session.handleRequest(ctx, req)
+		// 中文说明：control request 不能在同一 client 上互相 head-of-line blocking。
+		// history.window latest 可能短暂等待 history 追平，普通 input ack 仍要能并发处理。
+		session.requests.Add(1)
+		go func() {
+			defer session.requests.Done()
+			_ = session.handleRequest(ctx, req)
+		}()
+		return nil
 	default:
 		return session.sendError(0, protocolErrorBadRequest, fmt.Sprintf("unsupported control frame type %d", typ))
 	}

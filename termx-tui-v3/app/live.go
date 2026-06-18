@@ -985,7 +985,7 @@ func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target
 	if event.Kind != input.EventKindMouse || event.RawSeq == "" {
 		return false
 	}
-	if root.Shell.EnsureDefaults().Overlay.Open || copyModeInputContext(root.CopyMode) {
+	if root.Shell.EnsureDefaults().Overlay.Open || copyModeOwnsActiveInput(root) {
 		return false
 	}
 	if target.TerminalID == "" {

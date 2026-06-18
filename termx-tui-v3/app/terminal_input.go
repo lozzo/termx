@@ -31,7 +31,7 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		})
 		return setLiveError(root, "terminal service missing"), nil
 	}
-	if copyModeInputContext(root.CopyMode) {
+	if copyModeOwnsActiveInput(root) {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{
 			Event:  msg.Event,
 			Result: "consumed",

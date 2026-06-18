@@ -177,6 +177,46 @@ func TestTerminalInputRouterLogsActiveViewRoute(t *testing.T) {
 	}
 }
 
+func TestCopyModeBoundToSiblingPaneDoesNotConsumeActivePaneInput(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-shared"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})
+	root := state.Root{
+		Shell: shell,
+		CopyMode: state.CopyModeStore{
+			Active:     true,
+			PaneID:     state.DefaultPaneID,
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID: "term-shared",
+			BoundToken: "tok-copy",
+			BoundCols:  80,
+			ViewRows:   24,
+		},
+	}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-shared", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-shared", 8, 80, 24, state.TerminalResizeRoleFollower, "surface-2", state.TerminalPaneViewID("pane-2"), false))
+	reducer := ComposeReducers(
+		NewUIInputReducer(),
+		NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}}),
+		NewTerminalInputRouterReducer(LiveDeps{Terminal: terminal}),
+	)
+
+	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l", RawSeq: "l"}})
+	if len(effects) != 1 {
+		t.Fatalf("active sibling pane key should reach terminal router, got %#v", effects)
+	}
+	msg, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveInputResultMsg)
+	if !ok || msg.Err != nil {
+		t.Fatalf("expected terminal input result, got %#v ok=%v", msg, ok)
+	}
+	if len(terminal.Inputs) != 1 || terminal.Inputs[0].Channel != 8 || terminal.Inputs[0].ViewID != state.TerminalPaneViewID("pane-2") || string(terminal.Inputs[0].Bytes) != "l" {
+		t.Fatalf("copy mode must not consume active sibling view input, got %#v", terminal.Inputs)
+	}
+}
+
 func TestLiveInputRoutesBetweenTiledAndFloatingSharedTerminalChannels(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-shared")

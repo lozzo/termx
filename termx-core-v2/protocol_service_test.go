@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1661,7 +1662,7 @@ func TestProtocolServiceHistoryWindowPreservesProcessOutputANSIStyles(t *testing
 	}
 }
 
-func TestProtocolServiceHistoryWindowLatestFlushesProcessHistoryQueueBeforeFreeze(t *testing.T) {
+func TestProtocolServiceHistoryWindowLatestFlushesFastProcessHistoryQueueBeforeFreeze(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
 	defer closeClient()
@@ -1674,8 +1675,59 @@ func TestProtocolServiceHistoryWindowLatestFlushesProcessHistoryQueueBeforeFreez
 		t.Fatalf("create: %v", err)
 	}
 	process := factory.process("term-1")
+	process.emitOutput("000001 first\n100000 final\n")
+	assertEventually(t, time.Second, func() bool {
+		rows, err := server.LiveRows("term-1")
+		return err == nil && strings.Contains(strings.Join(rows, "\n"), "100000 final")
+	}, "live output should reach surface before latest freezes history")
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       40,
+		Limit:      4,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if len(latest.Rows) == 0 || rowText(latest.Rows[len(latest.Rows)-1]) != "100000 final" {
+		t.Fatalf("latest must freeze after fast async history catches up, got %#v", latest.Rows)
+	}
+}
+
+func TestProtocolServiceHistoryWindowLatestBarrierDoesNotBlockSameSessionInput(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	_, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	attachOne, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
+		TerminalID: "term-1",
+		SurfaceID:  "surface-1",
+		ViewID:     "pane:one",
+	})
+	if err != nil {
+		t.Fatalf("attach one: %v", err)
+	}
+	attachTwo, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{
+		TerminalID: "term-1",
+		SurfaceID:  "surface-2",
+		ViewID:     "pane:two",
+	})
+	if err != nil {
+		t.Fatalf("attach two: %v", err)
+	}
+
+	process := factory.process("term-1")
 	enteredHistory := make(chan struct{})
 	releaseHistory := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseHistory) }) }
 	terminalHistoryPipelineBeforeIngestHook = func() {
 		select {
 		case <-enteredHistory:
@@ -1687,6 +1739,7 @@ func TestProtocolServiceHistoryWindowLatestFlushesProcessHistoryQueueBeforeFreez
 	defer func() {
 		terminalHistoryPipelineBeforeIngestHook = nil
 	}()
+	defer release()
 
 	process.emitOutput("000001 first\n100000 final\n")
 	select {
@@ -1694,43 +1747,55 @@ func TestProtocolServiceHistoryWindowLatestFlushesProcessHistoryQueueBeforeFreez
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for async history worker")
 	}
-	assertEventually(t, time.Second, func() bool {
-		rows, err := server.LiveRows("term-1")
-		return err == nil && strings.Contains(strings.Join(rows, "\n"), "100000 final")
-	}, "live output should reach surface while history worker is blocked")
 
-	latestCh := make(chan *protocol.HistoryWindow, 1)
-	errCh := make(chan error, 1)
+	latestCh := make(chan error, 1)
 	go func() {
-		latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		_, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 			TerminalID: "term-1",
 			Cols:       40,
 			Limit:      4,
 		})
-		if err != nil {
-			errCh <- err
-			return
-		}
-		latestCh <- latest
+		latestCh <- err
+	}()
+	inputCh := make(chan error, 1)
+	go func() {
+		inputCh <- client.InputWithOptions(context.Background(), protocol.InputParams{
+			TerminalID: "term-1",
+			Channel:    attachTwo.Channel,
+			SurfaceID:  "surface-2",
+			ViewID:     "pane:two",
+			Data:       []byte("ls\n"),
+		})
 	}()
 	select {
-	case err := <-errCh:
-		t.Fatalf("latest returned error before history queue flushed: %v", err)
-	case latest := <-latestCh:
-		t.Fatalf("latest returned before history queue flushed: %#v", latest)
-	case <-time.After(20 * time.Millisecond):
+	case err := <-inputCh:
+		if err != nil {
+			t.Fatalf("sibling view input should not wait for slow history latest: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("sibling view input was blocked behind slow history latest")
 	}
-	close(releaseHistory)
+	inputs, _, _, _ := process.snapshot()
+	if len(inputs) != 1 || string(inputs[0]) != "ls\n" {
+		t.Fatalf("expected input to reach process immediately, got %#v", inputs)
+	}
 
 	select {
-	case err := <-errCh:
-		t.Fatalf("latest after flush: %v", err)
-	case latest := <-latestCh:
-		if len(latest.Rows) == 0 || rowText(latest.Rows[len(latest.Rows)-1]) != "100000 final" {
-			t.Fatalf("latest must freeze after async history catches up, got %#v", latest.Rows)
+	case err := <-latestCh:
+		t.Fatalf("latest should keep waiting on its own history barrier, got %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	release()
+	select {
+	case err := <-latestCh:
+		if err != nil {
+			t.Fatalf("latest after barrier release: %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for latest after releasing history worker")
+		t.Fatal("latest should finish once history barrier is released")
+	}
+	if attachOne.Channel == 0 {
+		t.Fatalf("expected first attachment to be valid: %#v", attachOne)
 	}
 }
 
