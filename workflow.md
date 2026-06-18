@@ -256,10 +256,11 @@
 | 215E1-R83. SK terminal lifecycle reentry authority | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已收口重进 TUI 后 restart CTA 误判：TUI 不把 terminal pool/list 的 running/exited 写入 pane live 状态，restart 入口先查询 core terminal 当前状态；lifecycle-known 只作为消息/result/event 的一次性边界，不落进 TUI snapshot/store |
 | 215E1-R84. SK bound terminal lifecycle restore query | 完成 | `termx-tui-v3/app/`、`workflow.md` | 已处理重进/restore 后已绑定 panel 没有主动查询 core lifecycle 的回归：workbench restore 完成后对 preserve 的 already-live TerminalView binding 发起一次 core surface/lifecycle 查询，不在 TUI 缓存 terminal running/exited |
 | 215E1-R85. SK root attach no auto restart | 完成 | `termx-cli/`、`termx-tui-v3/app/`、`workflow.md` | 已处理重进 TUI 时全屏程序被自动 restart/HUP 的回归：root/attach 入口不再携带自动 restart 意图，只 attach/query core lifecycle；用户明确按 R 时才 restart |
+| 215E1-R86. SK restart lifecycle truth guard | 完成 | `termx-core-v2/`、`termx-cli/`、`termx-tui-v3/app/`、`workflow.md` | 已修复 restart 后重进 TUI 仍显示 exited 的根因：core restart 新进程不能绑定到本次 protocol request/session ctx；TUI 关闭 socket 不再 cancel 刚重启出的 PTY |
 
 当前下一步：
 
-- `215E1-R85 root attach no auto restart` 已完成：root/attach 不再自动 restart；相关 root/attach 与 TUI lifecycle 测试通过。`cd termx-cli && go test ./... -count=1` 仍有既有 resize/tmux visual smoke 失败，失败点不在本切片改动链路。
+- `215E1-R86 restart lifecycle truth guard` 已完成：restart 仍用请求 ctx 等待历史 flush，但新 PTY spawn 改为 daemon-owned context；protocol 回归测试覆盖 restart 后关闭 client session 仍保持 terminal running。
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
 - 当前 resize owner 语义：owner 主动获取、attach result 投影成 owner、关闭旧 owner 后 sibling 自动接任，都会触发一次 view-scoped `ensure_resize`；如果目标尺寸等于 core 当前 PTY size，core 只返回最新 ownership/control，不调用实际 PTY resize。
 - 当前 restart 语义：terminal lifecycle 和 terminal data 分离；process 退出/重启不会清空 core-v2 authoritative history，也不会清空 live tail。restart 会让所有 view channel 失效并逐 view reattach，但 TUI 等待 reattach 时继续显示旧 live tail。

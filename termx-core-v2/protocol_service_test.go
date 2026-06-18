@@ -144,6 +144,43 @@ func TestProtocolServiceRestartPublishesRunningLifecycleEvent(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceRestartedProcessSurvivesClientSessionClose(t *testing.T) {
+	factory := newSessionBoundRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Name:    "job",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 12, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := client.Restart(context.Background(), "term-1"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	restarted := factory.process("term-1")
+	if restarted == nil {
+		t.Fatal("expected restarted process")
+	}
+
+	closeClient()
+
+	select {
+	case exit, ok := <-restarted.Wait():
+		if ok {
+			t.Fatalf("restarted process must not be tied to closed protocol session, exit=%#v", exit)
+		}
+	case <-time.After(100 * time.Millisecond):
+	}
+	info, err := server.GetTerminal("term-1")
+	if err != nil {
+		t.Fatalf("get terminal after client close: %v", err)
+	}
+	if info.State != TerminalStateRunning {
+		t.Fatalf("closing client session must not mark restarted terminal exited, got %#v", info)
+	}
+}
+
 func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
