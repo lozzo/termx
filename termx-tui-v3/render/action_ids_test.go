@@ -103,6 +103,7 @@ func TestActionSpecCatalogIsSingleSourceForRenderedActions(t *testing.T) {
 		ActionWorkbenchDelete,
 		ActionClipboardHistorySelect,
 		ActionClipboardHistoryPaste,
+		ActionClipboardHistoryNew,
 		ActionClipboardHistoryEdit,
 		ActionClipboardHistoryDelete,
 		ActionPromptSubmit,
@@ -161,6 +162,7 @@ func TestActionSpecCatalogClassifiesVisibleClickableAndDispatchActions(t *testin
 	assertSpec(ActionHelpClose, ActionSurfaceHelp, ActionDispatchApp)
 	assertSpec(ActionPoolAttach, ActionSurfaceContent, ActionDispatchApp)
 	assertSpec(ActionClipboardHistoryPaste, ActionSurfaceContent, ActionDispatchApp)
+	assertSpec(ActionClipboardHistoryNew, ActionSurfaceContent, ActionDispatchApp)
 	assertSpec(ActionPromptSubmit, ActionSurfaceContent, ActionDispatchApp)
 }
 

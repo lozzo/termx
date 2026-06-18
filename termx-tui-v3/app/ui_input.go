@@ -625,6 +625,8 @@ func clipboardHistoryKeyboardAction(event input.InputEvent) (render.ActionID, bo
 		return "", false
 	}
 	switch event.Char {
+	case "\x0e", "n":
+		return render.ActionClipboardHistoryNew, true
 	case "\x05", "e":
 		return render.ActionClipboardHistoryEdit, true
 	case "\x18", "x":

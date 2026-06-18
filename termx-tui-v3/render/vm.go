@@ -322,6 +322,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 			footerActionSpec("search", "", "", StyleStatusAccent),
 			footerActionSpec("↑/↓", "select", "", StyleStatusAccent),
 			footerActionFor(ActionClipboardHistoryPaste),
+			footerActionFor(ActionClipboardHistoryNew),
 			footerActionFor(ActionClipboardHistoryEdit),
 			footerActionFor(ActionClipboardHistoryDelete),
 			footerActionSpec("esc", "", "", StyleStatusMuted),

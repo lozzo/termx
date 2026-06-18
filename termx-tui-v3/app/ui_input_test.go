@@ -376,6 +376,9 @@ func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T
 	_, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x05", Ctrl: true}})
 	assertContentActionEffect(t, effects, render.ActionClipboardHistoryEdit)
 
+	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0e", Ctrl: true}})
+	assertContentActionEffect(t, effects, render.ActionClipboardHistoryNew)
+
 	_, effects = inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x18", Ctrl: true}})
 	assertContentActionEffect(t, effects, render.ActionClipboardHistoryDelete)
 }

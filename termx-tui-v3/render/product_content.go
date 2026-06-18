@@ -296,14 +296,16 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 	actionOffset := len(lines)
 	lines = append(lines,
 		contentActionLine("paste", "Paste"),
+		contentActionLine("new", "New"),
 		contentActionLine("edit", "Edit"),
 		contentActionLine("delete", "Delete"),
 	)
 	regions := clipboardHistoryHitRegions(rows, rowOffset)
 	regions = append(regions,
 		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryPaste.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryEdit.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryDelete.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryNew.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryEdit.String()},
+		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 3, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryDelete.String()},
 	)
 	return ContentVM{
 		Kind:       ContentClipboardHistory,
@@ -590,6 +592,7 @@ func helpActionGroups() []helpActionGroup {
 		{Label: "Display / Copy", Items: []helpActionItem{
 			{Action: ActionCopyOlder},
 			{Action: ActionClipboardHistoryPaste},
+			{Action: ActionClipboardHistoryNew},
 			{Action: ActionClipboardHistoryEdit},
 			{Action: ActionClipboardHistoryDelete},
 		}, Details: []string{"authoritative HistoryWindow"}},

@@ -1613,8 +1613,11 @@ func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
 	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "enter", "paste", ActionClipboardHistoryPaste.String()) {
 		t.Fatalf("clipboard history footer should expose paste action, got %#v", vm.Shell.Footer)
 	}
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "new", "", ActionClipboardHistoryNew.String()) {
+		t.Fatalf("clipboard history footer should expose new action, got %#v", vm.Shell.Footer)
+	}
 	content := vm.Shell.Overlay.Content
-	if content.Status != "clipboard history: 2" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[2].PlainString(), "alpha") {
+	if content.Status != "clipboard history: 2" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[2].PlainString(), "alpha") || !strings.Contains(content.Lines[len(content.Lines)-3].PlainString(), "[new]") {
 		t.Fatalf("expected clipboard history content, got %#v", content)
 	}
 }

@@ -267,9 +267,11 @@
 | 215E1-R94. SK copy latest 冻结边界回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场：进入 copy mode 后画面能立刻停住，但继续滚动要等 latest 追平；冻结窗口还会包含用户进入 copy 之后的未来日志。latest 现在不等待 history ingest backlog，TUI 会把进入时观察到的 history generation 带给 core，core 按该边界冻结 authoritative history，不把进入后的 future line 混进旧 copy 会话 |
 | 215E1-R95. SK live snapshot generation 非阻塞 | 完成 | `termx-core-v2/`、`workflow.md` | 已处理真实现场：R94 为了给 copy latest 带 history generation，让 live snapshot 读取 history pipeline 锁，导致高压输出下 live surface 刷新被 history ingest 节奏拖慢。history pipeline 现在维护原子 last-completed generation；live snapshot 只读这个非阻塞投影，不再等待 history parser |
 | 215E1-R96. SK sticky shortcut mode 超时退出 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`workflow.md` | 已对齐 tuiv2：pane/resize/tab/workspace/floating/global 这类前缀快捷键 mode 在 3 秒无输入后自动退出，并在有效快捷动作后续期；terminal picker、terminal pool、prompt、help、clipboard history、copy/history 等真实 overlay 或交互页面不自动退出 |
+| 215E1-R97. SK clipboard history 手工新增 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已复刻 tuiv2 clipboard history 的 New entry 能力：v3 overlay 提供新建入口，提交后写入 reducer-owned clipboard store，并通过 core-v2 daemon storage 持久化 |
 
 当前下一步：
 
+- `215E1-R97 clipboard history 手工新增` 已完成：v3 clipboard history overlay 现在有 New entry 入口，支持 `Ctrl-N` 和 content action 打开 v3 prompt，提交后写入 reducer-owned clipboard store 并保存到 core-v2 daemon storage。
 - `215E1-R96 sticky shortcut mode 超时退出` 已完成：v3 现在只让 pane/resize/tab/workspace/floating/global 这类 sticky prefix mode 空闲 3 秒后退出；有效快捷动作会续期，overlay/copy 页面仍保持显式关闭语义。
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
 - 当前 sibling view 输入隔离：同一 TUI client 的 protocol control request 会并发处理；一个 view 进入 copy/history 触发的 history latest 不再等待 history ingest backlog 追平，也不能 head-of-line blocking 后续 sibling view `input` 请求。TUI copy-mode 输入拦截只在当前 active TerminalView 属于该 copy session 时生效。

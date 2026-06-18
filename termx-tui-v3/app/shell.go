@@ -426,6 +426,8 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), nil
 	case render.ActionClipboardHistoryPaste:
 		return reduceClipboardHistoryPaste(root)
+	case render.ActionClipboardHistoryNew:
+		return reduceClipboardHistoryNew(root)
 	case render.ActionClipboardHistoryEdit:
 		return reduceClipboardHistoryEdit(root)
 	case render.ActionClipboardHistoryDelete:
@@ -833,6 +835,13 @@ func reducePromptSubmit(root state.Root) (state.Root, []Effect) {
 				return ClipboardStoragePersistRequestMsg{Reason: "edit"}
 			}}}
 		}
+		if after.Purpose == "clipboard.new" {
+			root.Clipboard = root.Clipboard.WithCopiedText(after.LastResult)
+			root.Shell = root.Shell.CloseOverlay()
+			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+				return ClipboardStoragePersistRequestMsg{Reason: "new"}
+			}}}
+		}
 		root.Shell = root.Shell.CloseOverlay()
 		if command, ok := promptWorkbenchCommand(after); ok {
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
@@ -902,6 +911,16 @@ func reduceClipboardHistoryEdit(root state.Root) (state.Root, []Effect) {
 		Purpose:     "clipboard.edit",
 		TargetID:    selected.ID,
 		Value:       selected.Text,
+		Placeholder: "clipboard text",
+	})
+	return root.Advance(), nil
+}
+
+func reduceClipboardHistoryNew(root state.Root) (state.Root, []Effect) {
+	root.Shell = root.Shell.OpenPrompt(state.PromptState{
+		Title:       "New Clipboard Entry",
+		Context:     "Create a clipboard entry. Submit updates clipboard history storage.",
+		Purpose:     "clipboard.new",
 		Placeholder: "clipboard text",
 	})
 	return root.Advance(), nil

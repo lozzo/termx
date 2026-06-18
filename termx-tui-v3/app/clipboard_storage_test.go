@@ -106,6 +106,34 @@ func TestClipboardHistoryOpenRequestsStorageLoad(t *testing.T) {
 	}
 }
 
+func TestClipboardHistoryNewEntryPersistsStorage(t *testing.T) {
+	storage := &services.FakeClipboardStorageService{}
+	reducer := ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewClipboardStorageReducer(ClipboardDeps{Storage: storage}))
+	root := state.Root{Shell: state.DefaultShell().OpenClipboardHistory()}
+
+	root, effects := reduceClipboardHistoryNew(root)
+	if len(effects) != 0 || root.Shell.EnsureDefaults().Overlay.Kind != state.OverlayPrompt || root.Shell.EnsureDefaults().Overlay.Prompt.Purpose != "clipboard.new" {
+		t.Fatalf("expected new clipboard prompt, root=%#v effects=%#v", root, effects)
+	}
+	root.Shell = root.Shell.SetPromptValue("manual\nentry")
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEnter}})
+	if len(effects) != 1 {
+		t.Fatalf("expected prompt submit effect, got %#v", effects)
+	}
+	root, effects = reducer(root, effects[0].(FuncEffect).Run(context.Background()))
+	if len(effects) != 1 || len(root.Clipboard.Entries) != 1 || root.Clipboard.Entries[0].Text != "manual\nentry" {
+		t.Fatalf("expected new clipboard entry and persist request, root=%#v effects=%#v", root, effects)
+	}
+	root, effects = reducer(root, effects[0].(FuncEffect).Run(context.Background()))
+	if len(effects) != 1 {
+		t.Fatalf("expected storage save effect, got %#v", effects)
+	}
+	root, _ = reducer(root, effects[0].(FuncEffect).Run(context.Background()))
+	if len(storage.Saves) != 1 || len(storage.Saves[0].Snapshot.Entries) != 1 || storage.Saves[0].Snapshot.Entries[0].Text != "manual\nentry" {
+		t.Fatalf("expected new clipboard save, saves=%#v root=%#v", storage.Saves, root)
+	}
+}
+
 func TestClipboardHistoryEditAndDeletePersistStorage(t *testing.T) {
 	storage := &services.FakeClipboardStorageService{}
 	reducer := ComposeReducers(NewShellReducer(), NewUIInputReducer(), NewClipboardStorageReducer(ClipboardDeps{Storage: storage}))
