@@ -813,7 +813,7 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 			Opaque: true,
 			Content: ContentVM{
 				Kind:   ContentWorkbenchTree,
-				Cursor: Cursor{Visible: true, Row: 1, Col: 10, Shape: CursorShapeBar},
+				Cursor: Cursor{Visible: true, Row: 0, Col: 10, Shape: CursorShapeBar},
 				HitRegions: []HitRegion{
 					{Kind: HitRegionContentAction, Rect: Rect{Y: 2, W: 72, H: 1}, ActionID: "workbench.select"},
 					{Kind: HitRegionContentAction, Rect: Rect{Y: 9, W: 12, H: 1}, ActionID: "workbench.open"},
@@ -826,7 +826,7 @@ func TestMeasureLayoutWorkbenchTreeUsesPageSizedOverlay(t *testing.T) {
 	if plan.Overlay.W < 70 || plan.Overlay.H < 14 || plan.OverlayContentRect.H < 12 {
 		t.Fatalf("workbench tree must use page-sized overlay, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
-	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+10 || got.Y != plan.OverlayContentRect.Y+1 {
+	if got := plan.CursorRect; got.X != plan.OverlayContentRect.X+10 || got.Y != plan.OverlayContentRect.Y {
 		t.Fatalf("unexpected tree cursor rect content=%#v cursor=%#v", plan.OverlayContentRect, got)
 	}
 	for _, action := range []string{"workbench.select", "workbench.open"} {

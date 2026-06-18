@@ -2500,13 +2500,18 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[2].PlainString(), "▸") ||
 		!strings.Contains(content.Lines[2].PlainString(), "日志🚀") ||
 		!strings.Contains(plainLines(content.Lines), "SNAPSHOT") ||
-		!strings.Contains(content.Lines[len(content.Lines)-4].PlainString(), "[open]  Open") ||
-		!strings.Contains(content.Lines[len(content.Lines)-3].PlainString(), "[zoom]  Zoom") ||
-		!strings.Contains(content.Lines[len(content.Lines)-2].PlainString(), "[detach]  Detach") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[close]  Close") {
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Open") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Zoom") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Detach") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Close") ||
+		strings.Contains(plainLines(content.Lines), "[open]") {
 		t.Fatalf("expected navigator tree/snapshot/action content, got %#v", content.Lines)
 	}
-	if content.Meta.WorkbenchTreeWidth != 36 ||
+	if content.Meta.WorkbenchTreeWidth < 28 ||
+		content.Meta.WorkbenchBodyRows < 8 ||
+		content.Meta.WorkbenchSnapshotRect.W < 30 ||
+		content.Meta.WorkbenchSnapshotRect.H < 6 ||
+		content.Meta.WorkbenchSnapshotRect.X <= content.Meta.WorkbenchTreeWidth ||
 		content.Meta.WorkbenchSnapshotPanel == nil ||
 		content.Meta.WorkbenchSnapshotPanel.Content.Kind != ContentTerminalLive ||
 		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "live snapshot row") ||
@@ -2519,6 +2524,9 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	}
 	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
 		t.Fatalf("expected workbench search cursor, got %#v", content.Cursor)
+	}
+	if content.Cursor.Row != 0 || content.Meta.WorkbenchActionRow != len(content.Lines)-1 {
+		t.Fatalf("expected workbench cursor on search row and action row at footer, cursor=%#v meta=%#v lines=%d", content.Cursor, content.Meta, len(content.Lines))
 	}
 
 	root.Shell = state.DefaultShell().OpenWorkbenchTree().SetWorkbenchTreeQuery("missing")

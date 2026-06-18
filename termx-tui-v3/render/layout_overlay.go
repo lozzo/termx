@@ -58,6 +58,31 @@ func measurePageOverlay(viewport Rect) Rect {
 	}
 }
 
+func measureWorkbenchNavigatorOverlay(viewport Rect) Rect {
+	width := maxInt(92, viewport.W-12)
+	height := minInt(maxInt(20, viewport.H*3/5), 34)
+	if viewport.W < 100 {
+		width = minInt(maxInt(76, viewport.W-4), viewport.W)
+	}
+	if viewport.H < 28 {
+		height = minInt(maxInt(16, viewport.H-4), viewport.H)
+	}
+	if width < 40 {
+		width = maxInt(8, viewport.W)
+	}
+	if height < 10 {
+		height = maxInt(3, minInt(viewport.H, 12))
+	}
+	width = minInt(width, viewport.W)
+	height = minInt(height, viewport.H)
+	return Rect{
+		X: maxInt(0, (viewport.W-width)/2),
+		Y: maxInt(0, (viewport.H-height)/2),
+		W: width,
+		H: height,
+	}
+}
+
 func compactOverlayPadding(rect Rect) (int, int) {
 	padX := 4
 	padY := 2

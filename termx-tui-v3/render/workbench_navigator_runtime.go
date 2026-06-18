@@ -31,9 +31,23 @@ func renderWorkbenchNavigatorSnapshotContent(c *canvas, content ContentVM, rect 
 		contentRect.H = 0
 	}
 	panel := *content.Meta.WorkbenchSnapshotPanel
-	layout := PanelLayoutPlan{Panel: panel, Rect: snapshotRect, Body: snapshotRect, ContentRect: contentRect}
-	renderCardPanel(c, layout)
+	style := paneChromeStyle(panel)
+	ownerID := owner + ":workbench-snapshot:" + panel.ID
+	c.drawStyledPaneFrame(snapshotRect, style, ownerID+":chrome", layer)
+	renderWorkbenchNavigatorSnapshotTitle(c, snapshotRect, panel, style, ownerID+":title", layer)
 	if contentRect.W > 0 && contentRect.H > 0 {
-		renderContent(c, panel.Content, contentRect, owner+":workbench-snapshot:"+panel.ID, layer)
+		renderContent(c, panel.Content, contentRect, ownerID, layer)
 	}
+}
+
+func renderWorkbenchNavigatorSnapshotTitle(c *canvas, rect Rect, panel PanelVM, style StyleToken, owner string, layer LayerKind) {
+	if rect.W < 8 || rect.H <= 0 {
+		return
+	}
+	title := " " + panelTitle(panel) + " "
+	width := minInt(DisplayWidth(title), maxInt(0, rect.W-4))
+	if width <= 0 {
+		return
+	}
+	c.overlayTextStyled(rect.X+2, rect.Y, width, title, style, owner, layer)
 }

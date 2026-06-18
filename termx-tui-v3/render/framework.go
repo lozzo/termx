@@ -27,6 +27,7 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		contentResult := renderContent(c, shell.Layout.BodyContent, plan.Body, "shell:body:content", LayerPanel)
 		layers = append(layers, Layer{Kind: LayerPanel, Rect: plan.Body, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
 	}
+	overlayOwnsChrome := shell.Overlay.Opaque && shell.Overlay.Kind != OverlayNone
 	for _, layout := range plan.Panels {
 		switch layout.Panel.Presentation {
 		case PanelPresentationSplitLine:
@@ -35,7 +36,9 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 			renderCardPanel(c, layout)
 		}
 		contentResult := renderContent(c, layout.Panel.Content, layout.ContentRect, "panel:"+layout.Panel.ID+":content", LayerPanel)
-		renderPanelContentOverflowMarkers(c, layout, contentResult.Overflow)
+		if !overlayOwnsChrome {
+			renderPanelContentOverflowMarkers(c, layout, contentResult.Overflow)
+		}
 		layers = append(layers, Layer{Kind: LayerPanel, Rect: layout.Rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow})
 	}
 	for _, floating := range plan.Floatings {

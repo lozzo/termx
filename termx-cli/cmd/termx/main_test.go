@@ -469,9 +469,9 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 		"⌕ search 日志",
 		"[kill]  Kill",
 		"case: workbench-tree-page",
-		"Workbench Tree",
-		"TUI storage projection",
-		"[open]  Open",
+		"Workbench Navigator",
+		"SNAPSHOT",
+		"Open  Zoom  Detach  Close",
 		"case: visual-audit-current",
 		"visual review",
 		"[]─[]",
@@ -1532,6 +1532,32 @@ func TestV3VisualSnapshotCommandCanWriteANSIScreen(t *testing.T) {
 	text := out.String()
 	if !strings.Contains(text, "\x1b[?2026h") || !strings.Contains(text, "\x1b[31mstyled\x1b[0m") || !strings.Contains(text, "\x1b[?2026l") {
 		t.Fatalf("ANSI visual snapshot should use FrameSink repaint output, got %q", text)
+	}
+}
+
+func TestV3VisualSnapshotCommandCanSelectSmokeCase(t *testing.T) {
+	oldRunSmoke := runTUIv3SmokeDetailed
+	t.Cleanup(func() {
+		runTUIv3SmokeDetailed = oldRunSmoke
+	})
+	runTUIv3SmokeDetailed = func(ctx context.Context) (tuiv3.SmokeResult, error) {
+		return tuiv3.SmokeResult{Cases: []tuiv3.SmokeCase{
+			{Name: "visual-audit-current", Frame: render.Frame{Lines: []string{"default"}}},
+			{Name: "workbench-tree-page", Frame: render.Frame{Lines: []string{"workbench frame"}}},
+		}}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"v3", "visual-snapshot", "--case", "workbench-tree-page"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "workbench frame") || strings.Contains(got, "default") {
+		t.Fatalf("visual snapshot should print selected smoke case, got %q", got)
 	}
 }
 

@@ -212,7 +212,9 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 		return measureCompactOverlay(overlay.Content, viewport)
 	case ContentClipboardHistory:
 		return measureClipboardHistoryOverlay(overlay.Content, viewport)
-	case ContentTerminalPool, ContentWorkbenchTree, ContentHelp:
+	case ContentWorkbenchTree:
+		return measureWorkbenchNavigatorOverlay(viewport)
+	case ContentTerminalPool, ContentHelp:
 		return measurePageOverlay(viewport)
 	}
 	return measureDefaultOverlay(viewport)

@@ -183,16 +183,20 @@ func smokeWorkbenchTreeRoot() state.Root {
 		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
 		OpenWorkbenchTree().
 		SetWorkbenchTreeQuery("日志")
-	return state.Root{
+	root := state.Root{
 		Shell:    shell,
-		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 30},
+		Viewport: state.ViewportStore{Valid: true, Cols: 160, Rows: 40},
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-logs",
-			Cols:       100,
-			Rows:       30,
+			Cols:       160,
+			Rows:       40,
+			Ready:      true,
 			Lines:      []string{"tree page base"},
 		},
+		Session: state.TerminalSessionStore{TerminalID: "term-logs", Attached: true, Cols: 160, Rows: 40, State: state.TerminalLiveAttached},
 	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-logs", "term-logs", 1, 160, 40, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID("pane-logs"), true))
+	return root
 }
 
 func smokeCopyEmptyRoot() state.Root {

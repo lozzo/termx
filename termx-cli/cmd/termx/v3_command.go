@@ -138,11 +138,12 @@ func v3SmokeCommand() *cobra.Command {
 
 func v3VisualSnapshotCommand() *cobra.Command {
 	var ansi bool
+	var caseName string
 	cmd := &cobra.Command{
 		Use:   "visual-snapshot",
-		Short: "Render the fixed tui-v3 visual review frame",
+		Short: "Render a tui-v3 visual review smoke case",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			frame, err := v3VisualReviewFrame(cmd.Context())
+			frame, err := v3VisualSmokeCaseFrame(cmd.Context(), caseName)
 			if err != nil {
 				return err
 			}
@@ -156,20 +157,29 @@ func v3VisualSnapshotCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&ansi, "ansi", false, "write the frame as an ANSI terminal screen repaint")
+	cmd.Flags().StringVar(&caseName, "case", "visual-audit-current", "smoke case name to render")
 	return cmd
 }
 
 func v3VisualReviewFrame(ctx context.Context) (render.Frame, error) {
+	return v3VisualSmokeCaseFrame(ctx, "visual-audit-current")
+}
+
+func v3VisualSmokeCaseFrame(ctx context.Context, caseName string) (render.Frame, error) {
+	caseName = strings.TrimSpace(caseName)
+	if caseName == "" {
+		caseName = "visual-audit-current"
+	}
 	result, err := runTUIv3SmokeDetailed(ctx)
 	if err != nil {
 		return render.Frame{}, err
 	}
 	for _, item := range result.Cases {
-		if item.Name == "visual-audit-current" {
+		if item.Name == caseName {
 			return item.Frame, nil
 		}
 	}
-	return render.Frame{}, fmt.Errorf("visual-audit-current smoke case not found")
+	return render.Frame{}, fmt.Errorf("%s smoke case not found", caseName)
 }
 
 func writeVisualSnapshotANSI(writer io.Writer, frame render.Frame) error {

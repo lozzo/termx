@@ -1648,7 +1648,7 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 		t.Fatalf("tree query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Workbench Navigator") || !frameContains(frame, "TREE") || !frameContains(frame, "PANE") || !frameContains(frame, "日志🚀") || !frameContains(frame, "[open]  Open") {
+	if !frameContains(frame, "Workbench Navigator") || !frameContains(frame, "TREE") || !frameContains(frame, "PANE") || !frameContains(frame, "日志🚀") || !frameContains(frame, "Open  Zoom  Detach  Close") {
 		t.Fatalf("expected workbench navigator frame, got %#v", frame.Lines)
 	}
 	if frame.Cursor.Shape != render.CursorShapeBar {

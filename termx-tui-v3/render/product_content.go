@@ -19,6 +19,18 @@ const exitedPaneActionCount = 2
 
 const defaultWorkbenchNavigatorTreeWidth = 36
 
+type workbenchNavigatorLayout struct {
+	ContentWidth   int
+	BodyRows       int
+	TreeWidth      int
+	RightWidth     int
+	ActionRow      int
+	SnapshotX      int
+	SnapshotY      int
+	SnapshotWidth  int
+	SnapshotHeight int
+}
+
 func EmptyPaneActionCount() int {
 	return emptyPaneActionCount
 }
@@ -250,29 +262,21 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	shell = shell.EnsureDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.WorkbenchTreeItems(root)
-	treeWidth := workbenchNavigatorTreeWidth(root.Viewport)
-	lines := workbenchNavigatorLines(root, rows, query, treeWidth)
+	layout := workbenchNavigatorLayoutForViewport(root.Viewport)
+	lines := workbenchNavigatorLines(root, rows, query, layout)
 	rowOffset := 2
-	actionOffset := len(lines)
-	lines = append(lines,
-		workbenchNavigatorBodyLine(contentActionLine("open", "Open"), Line{}, treeWidth),
-		workbenchNavigatorBodyLine(contentActionLine("zoom", "Zoom"), Line{}, treeWidth),
-		workbenchNavigatorBodyLine(contentActionLine("detach", "Detach"), Line{}, treeWidth),
-		workbenchNavigatorBodyLine(contentActionLine("close", "Close"), Line{}, treeWidth),
-	)
-	regions := workbenchTreeHitRegions(rows, rowOffset, treeWidth)
-	regions = append(regions,
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchOpen.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchZoom.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchDetach.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 3, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionWorkbenchDelete.String()},
-	)
+	visibleRows := rows
+	if len(visibleRows) > layout.BodyRows {
+		visibleRows = visibleRows[:layout.BodyRows]
+	}
+	regions := workbenchTreeHitRegions(visibleRows, rowOffset, layout.TreeWidth)
+	regions = append(regions, workbenchNavigatorActionHitRegions(layout)...)
 	return ContentVM{
 		Kind:       ContentWorkbenchTree,
 		Lines:      lines,
-		Meta:       workbenchNavigatorMeta(root, rows, treeWidth),
+		Meta:       workbenchNavigatorMeta(root, rows, layout),
 		Status:     workbenchTreeStatus(len(rows), query),
-		Cursor:     Cursor{Visible: true, Row: 1, Col: searchCursorCol(query), Shape: CursorShapeBar},
+		Cursor:     Cursor{Visible: true, Row: 0, Col: searchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: regions,
 		Empty:      len(rows) == 0,
 	}
@@ -1005,10 +1009,18 @@ func terminalPoolPageRowLine(row state.TerminalPoolPageItem) Line {
 
 func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 	marker := "  "
-	style := StyleMuted
+	markerStyle := StyleMuted
+	prefixStyle := StyleMuted
+	kindStyle := StyleForeground
+	titleStyle := StyleForeground
+	statusStyle := StyleMuted
 	if row.Selected {
 		marker = "▸ "
-		style = StyleAccent
+		markerStyle = StyleAccent
+		prefixStyle = StyleForeground
+		kindStyle = StyleAccent
+		titleStyle = StyleAccent
+		statusStyle = StyleForeground
 	}
 	status := row.Summary
 	if row.Active {
@@ -1020,25 +1032,24 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 		prefix = strings.Repeat("│ ", row.Depth-1) + "├─"
 	}
 	return Line{Cells: []Cell{
-		styledCell(marker, style),
-		styledCell(prefix, StyleMuted),
-		tokenCell(workbenchTreeKindGlyph(row), style),
+		styledCell(marker, markerStyle),
+		styledCell(prefix, prefixStyle),
+		tokenCell(workbenchTreeKindGlyph(row), kindStyle),
 		NewCell(" "),
-		styledCell(title, style),
+		styledCell(title, titleStyle),
 		NewCell(" "),
-		styledCell(workbenchTreeStatusTags(row, status), StyleMuted),
+		styledCell(workbenchTreeStatusTags(row, status), statusStyle),
 	}}
 }
 
-func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, query string, treeWidth int) []Line {
+func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, query string, layout workbenchNavigatorLayout) []Line {
 	selected, selectedOK := selectedWorkbenchTreeItem(rows)
-	right := workbenchNavigatorRightLines(root, selected, treeWidth)
-	visibleRows := maxInt(len(rows)+1, len(right))
+	right := workbenchNavigatorRightLines(root, selected, layout)
 	lines := []Line{
-		workbenchNavigatorFullLine(searchRowLine(query, "main"), treeWidth),
-		workbenchNavigatorBodyLine(workbenchNavigatorHeaderLine("TREE"), workbenchNavigatorHeaderLine(workbenchNavigatorRightHeader(selected, selectedOK)), treeWidth),
+		workbenchNavigatorFullLine(searchRowLine(query, "main"), layout),
+		workbenchNavigatorBodyLine(workbenchNavigatorHeaderLine("TREE"), workbenchNavigatorHeaderLine(workbenchNavigatorRightHeader(selected, selectedOK)), layout),
 	}
-	for row := 0; row < visibleRows; row++ {
+	for row := 0; row < layout.BodyRows; row++ {
 		left := Line{}
 		if row < len(rows) {
 			left = workbenchTreeRowLine(rows[row])
@@ -1047,24 +1058,37 @@ func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, qu
 		if row < len(right) {
 			rightLine = right[row]
 		}
-		lines = append(lines, workbenchNavigatorBodyLine(left, rightLine, treeWidth))
+		lines = append(lines, workbenchNavigatorBodyLine(left, rightLine, layout))
 	}
+	lines = append(lines, workbenchNavigatorBodyLine(Line{}, workbenchNavigatorActionLine(), layout))
 	return lines
 }
 
-func workbenchNavigatorFullLine(line Line, treeWidth int) Line {
-	return fitContentLine(line, treeWidth+1+120, StyleForeground)
+func workbenchNavigatorFullLine(line Line, layout workbenchNavigatorLayout) Line {
+	return fitContentLine(line, layout.ContentWidth, StyleForeground)
 }
 
-func workbenchNavigatorBodyLine(left Line, right Line, treeWidth int) Line {
-	cells := fitContentLine(left, treeWidth, StyleForeground).Cells
+func workbenchNavigatorBodyLine(left Line, right Line, layout workbenchNavigatorLayout) Line {
+	cells := fitContentLine(left, layout.TreeWidth, StyleForeground).Cells
 	cells = append(cells, styledCell("│", StyleForeground))
-	cells = append(cells, right.Cells...)
+	cells = append(cells, fitContentLine(right, layout.RightWidth, StyleForeground).Cells...)
 	return Line{Cells: cells}
 }
 
 func workbenchNavigatorHeaderLine(label string) Line {
 	return Line{Cells: []Cell{styledCell(label, StyleStrongForeground)}}
+}
+
+func workbenchNavigatorActionLine() Line {
+	return Line{Cells: []Cell{
+		styledCell("Open", StyleAccent),
+		NewCell("  "),
+		styledCell("Zoom", StyleAccent),
+		NewCell("  "),
+		styledCell("Detach", StyleAccent),
+		NewCell("  "),
+		styledCell("Close", StyleAccent),
+	}}
 }
 
 func selectedWorkbenchTreeItem(rows []state.WorkbenchTreeItem) (state.WorkbenchTreeItem, bool) {
@@ -1098,14 +1122,14 @@ func workbenchNavigatorRightHeader(selected state.WorkbenchTreeItem, ok bool) st
 	}
 }
 
-func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeItem, treeWidth int) []Line {
+func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeItem, layout workbenchNavigatorLayout) []Line {
 	if selected.Kind == "" {
 		return []Line{NewLine("No workbench node selected")}
 	}
 	title := workbenchTreeTitle(selected)
 	switch selected.Kind {
 	case state.WorkbenchTreeKindPane:
-		return workbenchNavigatorPaneLines(root, selected, treeWidth)
+		return workbenchNavigatorPaneLines(root, selected, layout)
 	case state.WorkbenchTreeKindTab:
 		return []Line{
 			{Cells: []Cell{styledCell(title, StyleForeground)}},
@@ -1132,28 +1156,70 @@ func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeI
 	}
 }
 
-func workbenchNavigatorPaneLines(root state.Root, selected state.WorkbenchTreeItem, treeWidth int) []Line {
+func workbenchNavigatorPaneLines(root state.Root, selected state.WorkbenchTreeItem, layout workbenchNavigatorLayout) []Line {
 	lines := []Line{
 		{Cells: []Cell{styledCell(workbenchTreeTitle(selected), StyleForeground)}},
 		workbenchNavigatorTokenLine([]string{selected.WorkspaceName, "tab:" + selected.TabTitle, workbenchPaneStateLabel(root, selected), workbenchPaneRoleLabel(root, selected)}),
 		{Cells: []Cell{styledCell("SNAPSHOT", StyleStrongForeground)}},
 	}
-	lines = append(lines, workbenchNavigatorPaneSnapshotLines(root, selected, treeWidth)...)
+	lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
 	return lines
 }
 
-func workbenchNavigatorPaneSnapshotLines(root state.Root, selected state.WorkbenchTreeItem, treeWidth int) []Line {
-	width := workbenchNavigatorSnapshotWidth(root.Viewport, treeWidth)
-	height := workbenchNavigatorSnapshotHeight(root.Viewport)
-	lines := make([]Line, 0, height)
-	for row := 0; row < height; row++ {
-		lines = append(lines, NewLine(strings.Repeat(" ", width)))
+func workbenchNavigatorPaneSnapshotLines(layout workbenchNavigatorLayout) []Line {
+	lines := make([]Line, 0, layout.SnapshotHeight)
+	for row := 0; row < layout.SnapshotHeight; row++ {
+		lines = append(lines, NewLine(strings.Repeat(" ", layout.SnapshotWidth)))
 	}
 	return lines
 }
 
-func workbenchNavigatorMeta(root state.Root, rows []state.WorkbenchTreeItem, treeWidth int) ContentMetaVM {
-	meta := ContentMetaVM{WorkbenchTreeWidth: treeWidth}
+func workbenchNavigatorLayoutForViewport(viewport state.ViewportStore) workbenchNavigatorLayout {
+	cols := 100
+	rows := 30
+	if viewport.Valid && viewport.Cols > 0 {
+		cols = viewport.Cols
+	}
+	if viewport.Valid && viewport.Rows > 0 {
+		rows = viewport.Rows
+	}
+	overlay := measureWorkbenchNavigatorOverlay(Rect{W: cols, H: rows})
+	content := measureOverlayContentRect(OverlayVM{Content: ContentVM{Kind: ContentWorkbenchTree}}, overlay)
+	contentWidth := maxInt(40, content.W)
+	contentHeight := maxInt(10, content.H)
+	treeWidth := clampInt(contentWidth*34/100, defaultWorkbenchNavigatorTreeWidth, 64)
+	if contentWidth < 96 {
+		treeWidth = clampInt(contentWidth*40/100, 28, 40)
+	}
+	rightWidth := maxInt(20, contentWidth-treeWidth-1)
+	if rightWidth < 36 && contentWidth > 44 {
+		treeWidth = maxInt(24, contentWidth-37)
+		rightWidth = maxInt(20, contentWidth-treeWidth-1)
+	}
+	bodyRows := maxInt(6, contentHeight-3)
+	actionRow := bodyRows + 2
+	// 中文说明：snapshot 坐标以 overlay content rect 为原点，和最终 runtime 叠加坐标保持一致。
+	snapshotWidth := maxInt(0, rightWidth-2)
+	snapshotHeight := clampInt(bodyRows-3, 4, bodyRows)
+	return workbenchNavigatorLayout{
+		ContentWidth:   contentWidth,
+		BodyRows:       bodyRows,
+		TreeWidth:      treeWidth,
+		RightWidth:     rightWidth,
+		ActionRow:      actionRow,
+		SnapshotX:      treeWidth + 2,
+		SnapshotY:      5,
+		SnapshotWidth:  snapshotWidth,
+		SnapshotHeight: snapshotHeight,
+	}
+}
+
+func workbenchNavigatorMeta(root state.Root, rows []state.WorkbenchTreeItem, layout workbenchNavigatorLayout) ContentMetaVM {
+	meta := ContentMetaVM{
+		WorkbenchTreeWidth: layout.TreeWidth,
+		WorkbenchBodyRows:  layout.BodyRows,
+		WorkbenchActionRow: layout.ActionRow,
+	}
 	selected, ok := selectedWorkbenchTreeItem(rows)
 	if !ok || selected.Kind != state.WorkbenchTreeKindPane {
 		return meta
@@ -1162,11 +1228,9 @@ func workbenchNavigatorMeta(root state.Root, rows []state.WorkbenchTreeItem, tre
 	if !ok {
 		return meta
 	}
-	width := workbenchNavigatorSnapshotWidth(root.Viewport, treeWidth)
-	height := workbenchNavigatorSnapshotHeight(root.Viewport)
 	meta.WorkbenchSnapshotPanel = &panel
-	meta.WorkbenchSnapshotRect = Rect{X: treeWidth + 1, Y: 5, W: width, H: height}
-	meta.WorkbenchSnapshotContent = Rect{X: treeWidth + 2, Y: 6, W: maxInt(0, width-2), H: maxInt(0, height-2)}
+	meta.WorkbenchSnapshotRect = Rect{X: layout.SnapshotX, Y: layout.SnapshotY, W: layout.SnapshotWidth, H: layout.SnapshotHeight}
+	meta.WorkbenchSnapshotContent = Rect{X: layout.SnapshotX + 1, Y: layout.SnapshotY + 1, W: maxInt(0, layout.SnapshotWidth-2), H: maxInt(0, layout.SnapshotHeight-2)}
 	return meta
 }
 
@@ -1197,37 +1261,6 @@ func workbenchNavigatorPaneContent(root state.Root, pane state.PaneState) Conten
 	default:
 		return placeholderContentForPane(pane)
 	}
-}
-
-func workbenchNavigatorTreeWidth(viewport state.ViewportStore) int {
-	if !viewport.Valid || viewport.Cols <= 0 {
-		return defaultWorkbenchNavigatorTreeWidth
-	}
-	if viewport.Cols >= 160 {
-		return clampInt(viewport.Cols/3, 44, 72)
-	}
-	if viewport.Cols >= 100 {
-		return 44
-	}
-	return defaultWorkbenchNavigatorTreeWidth
-}
-
-func workbenchNavigatorSnapshotWidth(viewport state.ViewportStore, treeWidth int) int {
-	if !viewport.Valid || viewport.Cols <= 0 {
-		return 84
-	}
-	if treeWidth <= 0 {
-		treeWidth = defaultWorkbenchNavigatorTreeWidth
-	}
-	return clampInt(viewport.Cols-treeWidth-24, 36, 140)
-}
-
-func workbenchNavigatorSnapshotHeight(viewport state.ViewportStore) int {
-	if !viewport.Valid || viewport.Rows <= 0 {
-		return 12
-	}
-	contentRows := viewport.Rows - 13
-	return clampInt(contentRows-9, 6, 18)
 }
 
 func workbenchNavigatorTokenLine(tokens []string) Line {
@@ -1365,6 +1398,32 @@ func workbenchTreeHitRegions(rows []state.WorkbenchTreeItem, rowOffset int, tree
 			PaneID:   row.PaneID,
 			ActionID: ActionWorkbenchSelect.String(),
 		})
+	}
+	return regions
+}
+
+func workbenchNavigatorActionHitRegions(layout workbenchNavigatorLayout) []HitRegion {
+	x := layout.TreeWidth + 1
+	y := layout.ActionRow
+	actions := []struct {
+		action ActionID
+		label  string
+	}{
+		{ActionWorkbenchOpen, "Open"},
+		{ActionWorkbenchZoom, "Zoom"},
+		{ActionWorkbenchDetach, "Detach"},
+		{ActionWorkbenchDelete, "Close"},
+	}
+	regions := make([]HitRegion, 0, len(actions))
+	for _, item := range actions {
+		width := DisplayWidth(item.label)
+		regions = append(regions, HitRegion{
+			Kind:     HitRegionContentAction,
+			Rect:     Rect{X: x, Y: y, W: width, H: 1},
+			Row:      -1,
+			ActionID: item.action.String(),
+		})
+		x += width + 2
 	}
 	return regions
 }

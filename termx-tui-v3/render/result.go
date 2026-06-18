@@ -674,6 +674,8 @@ type ContentVM struct {
 type ContentMetaVM struct {
 	ClipboardNameWidth       int
 	WorkbenchTreeWidth       int
+	WorkbenchBodyRows        int
+	WorkbenchActionRow       int
 	WorkbenchSnapshotPanel   *PanelVM
 	WorkbenchSnapshotRect    Rect
 	WorkbenchSnapshotContent Rect
