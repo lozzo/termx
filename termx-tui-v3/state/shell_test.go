@@ -458,6 +458,30 @@ func TestClipboardHistoryItemsFilterAndSelection(t *testing.T) {
 	}
 }
 
+func TestClipboardHistoryNameWidthDefaultsAndClamps(t *testing.T) {
+	shell := DefaultShell().OpenClipboardHistory()
+	if got := ClipboardHistoryNameWidth(shell.Overlay); got != DefaultClipboardHistoryNameWidth {
+		t.Fatalf("expected default clipboard name width %d, got %d", DefaultClipboardHistoryNameWidth, got)
+	}
+
+	shell = shell.MoveClipboardHistoryNameWidth(8)
+	if got := ClipboardHistoryNameWidth(shell.Overlay); got != DefaultClipboardHistoryNameWidth+8 {
+		t.Fatalf("expected dragged clipboard name width, got %d", got)
+	}
+	shell = shell.SetClipboardHistoryNameWidth(-100)
+	if got := ClipboardHistoryNameWidth(shell.Overlay); got != DefaultClipboardHistoryNameWidth {
+		t.Fatalf("non-positive explicit width should fall back to default, got %d", got)
+	}
+	shell = shell.SetClipboardHistoryNameWidth(1)
+	if got := ClipboardHistoryNameWidth(shell.Overlay); got != MinClipboardHistoryNameWidth {
+		t.Fatalf("expected min clipboard name width %d, got %d", MinClipboardHistoryNameWidth, got)
+	}
+	shell = shell.SetClipboardHistoryNameWidth(999)
+	if got := ClipboardHistoryNameWidth(shell.Overlay); got != MaxClipboardHistoryNameWidth {
+		t.Fatalf("expected max clipboard name width %d, got %d", MaxClipboardHistoryNameWidth, got)
+	}
+}
+
 func TestShellSplitActivePaneCreatesMinimalPaneTree(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{
 		ID:         "pane-2",

@@ -589,7 +589,7 @@ func TestFrameworkRendersClipboardHistoryThinTModal(t *testing.T) {
 	lines := result.Lines()
 	modalText := strings.Join(lines[8:16], "\n")
 	if !linesContain(lines, "Clipboard History") ||
-		!linesContain(lines, "Search  gft") ||
+		!linesContain(lines, "Search: gft") ||
 		!linesContain(lines, "├") ||
 		!linesContain(lines, "┬") ||
 		!linesContain(lines, "┴") ||
@@ -598,7 +598,7 @@ func TestFrameworkRendersClipboardHistoryThinTModal(t *testing.T) {
 		!linesContain(lines, "│second preview line with branch detail") {
 		t.Fatalf("clipboard history should render confirmed thin T modal, got %#v", lines)
 	}
-	if result.Metadata.Width != 132 || !lineContainsLongBoxRun(lines, 100) {
+	if result.Metadata.Width != 132 || !lineContainsLongBoxRun(lines, 80) {
 		t.Fatalf("clipboard history modal should use outer viewport width, width=%d lines=%#v", result.Metadata.Width, lines)
 	}
 	if strings.Contains(modalText, "[new]") || strings.Contains(modalText, "copied entries") {

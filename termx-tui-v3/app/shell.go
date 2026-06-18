@@ -120,6 +120,12 @@ type ShellContentActionMsg struct {
 
 func (ShellContentActionMsg) isMsg() {}
 
+type ShellMoveClipboardHistoryDividerMsg struct {
+	Delta int
+}
+
+func (ShellMoveClipboardHistoryDividerMsg) isMsg() {}
+
 type ShellActivateTerminalInputMsg struct {
 	PaneID     string
 	FloatingID string
@@ -255,6 +261,8 @@ func NewShellReducer() Reducer {
 		case ShellContentActionMsg:
 			next, effects := reduceShellContentAction(root, msg)
 			return rearmInteractionModeTimeout(next, effects)
+		case ShellMoveClipboardHistoryDividerMsg:
+			root.Shell = root.Shell.MoveClipboardHistoryNameWidth(msg.Delta)
 		case ShellActivateTerminalInputMsg:
 			return reduceShellActivateTerminalInput(root, msg)
 		case ShellArmOwnerConfirmMsg:

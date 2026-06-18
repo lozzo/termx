@@ -159,10 +159,11 @@ func (store ShellStore) OpenClipboardHistory() ShellStore {
 		targetID = store.ActiveFloatingID
 	}
 	store.Overlay = OverlayState{
-		Kind:          OverlayClipboardHistory,
-		Open:          true,
-		TargetID:      targetID,
-		SelectedIndex: 0,
+		Kind:               OverlayClipboardHistory,
+		Open:               true,
+		TargetID:           targetID,
+		SelectedIndex:      0,
+		ClipboardNameWidth: DefaultClipboardHistoryNameWidth,
 	}
 	return store
 }

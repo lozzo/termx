@@ -206,13 +206,14 @@ type SplitNode struct {
 }
 
 type OverlayState struct {
-	Kind          OverlayKind
-	Open          bool
-	TargetID      string
-	Query         string
-	SelectedIndex int
-	Prompt        PromptState
-	HelpSection   string
+	Kind               OverlayKind
+	Open               bool
+	TargetID           string
+	Query              string
+	SelectedIndex      int
+	Prompt             PromptState
+	HelpSection        string
+	ClipboardNameWidth int
 }
 
 type PromptState struct {

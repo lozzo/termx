@@ -662,12 +662,17 @@ type ContentVM struct {
 	Lines      []Line
 	Extent     ContentExtent
 	Layout     ContentLayoutVM
+	Meta       ContentMetaVM
 	Status     string
 	Pending    bool
 	Empty      bool
 	Error      string
 	Cursor     Cursor
 	HitRegions []HitRegion
+}
+
+type ContentMetaVM struct {
+	ClipboardNameWidth int
 }
 
 // ContentExtent 表达 terminal 内容在 content rect 内实际占用的 cell 区域。

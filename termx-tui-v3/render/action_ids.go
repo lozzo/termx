@@ -124,12 +124,13 @@ const (
 	ActionWorkbenchDetach ActionID = "workbench.detach"
 	ActionWorkbenchZoom   ActionID = "workbench.zoom"
 
-	ActionClipboardHistoryOpen   ActionID = "clipboard-history.open"
-	ActionClipboardHistorySelect ActionID = "clipboard-history.select"
-	ActionClipboardHistoryPaste  ActionID = "clipboard-history.paste"
-	ActionClipboardHistoryNew    ActionID = "clipboard-history.new"
-	ActionClipboardHistoryEdit   ActionID = "clipboard-history.edit"
-	ActionClipboardHistoryDelete ActionID = "clipboard-history.delete"
+	ActionClipboardHistoryOpen        ActionID = "clipboard-history.open"
+	ActionClipboardHistorySelect      ActionID = "clipboard-history.select"
+	ActionClipboardHistoryPaste       ActionID = "clipboard-history.paste"
+	ActionClipboardHistoryNew         ActionID = "clipboard-history.new"
+	ActionClipboardHistoryEdit        ActionID = "clipboard-history.edit"
+	ActionClipboardHistoryDelete      ActionID = "clipboard-history.delete"
+	ActionClipboardHistoryDividerDrag ActionID = "clipboard-history.divider-drag"
 
 	ActionPromptSubmit ActionID = "prompt.submit"
 	ActionPromptCancel ActionID = "prompt.cancel"
@@ -331,6 +332,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionClipboardHistoryNew, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("new", "", StyleStatusAccent).withHelp("new clipboard entry"),
 		actionSpec(ActionClipboardHistoryEdit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("edit", "", StyleStatusAccent).withHelp("edit clipboard entry"),
 		actionSpec(ActionClipboardHistoryDelete, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("delete", "", StyleStatusWarning).withHelp("delete clipboard entry").withDanger(),
+		actionSpec(ActionClipboardHistoryDividerDrag, ActionDispatchDrag, ActionSurfaceContent).withHelp("resize clipboard columns"),
 		actionSpec(ActionPromptSubmit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("enter", "submit", StyleStatusAccent).withHelp("submit"),
 		actionSpec(ActionPromptCancel, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("esc", "cancel", StyleStatusWarning).withHelp("cancel"),
 		actionSpec(ActionPromptOpen, ActionDispatchApp, ActionSurfaceInput).withHelp("open prompt"),

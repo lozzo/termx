@@ -68,8 +68,8 @@ func TestMeasureLayoutClipboardHistoryUsesOuterViewportWidth(t *testing.T) {
 	shell := ShellVM{Overlay: OverlayVM{Kind: OverlayClipboardHistory, Content: ContentVM{Kind: ContentClipboardHistory, Lines: []Line{NewLine("Search"), NewLine(""), NewLine("› git commit│git commit -m fix terminal")}}}}
 
 	plan := MeasureLayout(shell, Rect{W: 160, H: 40})
-	if plan.Overlay.W < 140 || plan.Overlay.H < 30 {
-		t.Fatalf("clipboard history should expand from outer viewport, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
+	if plan.Overlay.W < 120 || plan.Overlay.W > 136 || plan.Overlay.H < 8 || plan.Overlay.H > 16 {
+		t.Fatalf("clipboard history should expand horizontally but stay content-height, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)
 	}
 	if plan.OverlayContentRect.W != plan.Overlay.W-2 || plan.OverlayContentRect.H != plan.Overlay.H-2 {
 		t.Fatalf("clipboard history should keep thin one-cell modal border, overlay=%#v content=%#v", plan.Overlay, plan.OverlayContentRect)

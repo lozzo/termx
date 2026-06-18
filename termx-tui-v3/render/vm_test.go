@@ -1620,8 +1620,9 @@ func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
 		t.Fatalf("clipboard history footer should expose new action, got %#v", vm.Shell.Footer)
 	}
 	content := vm.Shell.Overlay.Content
-	if content.Status != "clipboard history: 2" || len(content.HitRegions) != 2 ||
-		!strings.Contains(content.Lines[0].PlainString(), "Search") ||
+	if content.Status != "clipboard history: 2" || len(content.HitRegions) != 3 ||
+		content.Meta.ClipboardNameWidth != state.DefaultClipboardHistoryNameWidth ||
+		!strings.Contains(content.Lines[0].PlainString(), "Search:") ||
 		!strings.Contains(content.Lines[2].PlainString(), "› alpha") ||
 		!strings.Contains(content.Lines[2].PlainString(), "│alpha") ||
 		strings.Contains(plainLines(content.Lines), "[new]") ||
@@ -1631,6 +1632,9 @@ func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
 	if content.HitRegions[0].Rect.Y != 2 || content.HitRegions[0].ActionID != ActionClipboardHistorySelect.String() {
 		t.Fatalf("clipboard rows should expose select hit regions only, got %#v", content.HitRegions)
 	}
+	if content.HitRegions[2].ActionID != ActionClipboardHistoryDividerDrag.String() || content.HitRegions[2].Rect.X != state.DefaultClipboardHistoryNameWidth {
+		t.Fatalf("clipboard divider should expose resize drag hit region, got %#v", content.HitRegions)
+	}
 	shell = shell.SetClipboardHistorySelectedIndex(1, 2)
 	root.Shell = shell
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
@@ -1639,6 +1643,11 @@ func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[3].PlainString(), "│log") ||
 		!strings.Contains(content.Lines[4].PlainString(), "│third line") {
 		t.Fatalf("clipboard history should preview selected entry body across lines, got %#v", content.Lines)
+	}
+	if !styledLinesContainText(content.Lines[2:5], "build", StyleForeground) ||
+		!styledLinesContainText(content.Lines[2:5], "log", StyleForeground) ||
+		styledLinesContainText(content.Lines[2:5], "build", StylePickerMuted) {
+		t.Fatalf("clipboard preview body should render as foreground text, got %#v", content.Lines[2:5])
 	}
 }
 

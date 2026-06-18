@@ -8,11 +8,11 @@ func renderClipboardHistoryOverlay(c *canvas, overlay OverlayVM, rect Rect, cont
 	c.drawStyledBox(rect, squareBoxStyle, StyleForeground, owner, layer)
 	renderChromeCardTitle(c, rect, primitive.Title.Text, "", "", StyleAccent, owner, layer)
 	contentResult := renderContent(c, overlay.Content, contentRect, owner+":content", layer)
-	renderClipboardHistoryTChrome(c, rect, contentRect, owner, layer)
+	renderClipboardHistoryTChrome(c, overlay.Content, rect, contentRect, owner, layer)
 	return Layer{Kind: LayerOverlay, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}
 }
 
-func renderClipboardHistoryTChrome(c *canvas, rect Rect, contentRect Rect, owner string, layer LayerKind) {
+func renderClipboardHistoryTChrome(c *canvas, content ContentVM, rect Rect, contentRect Rect, owner string, layer LayerKind) {
 	if rect.W < 4 || rect.H < 4 || contentRect.W <= 0 || contentRect.H <= 0 {
 		return
 	}
@@ -25,7 +25,7 @@ func renderClipboardHistoryTChrome(c *canvas, rect Rect, contentRect Rect, owner
 	}
 	c.mergeStyledBoxCell(rect.X, searchBottomY, boxConnUp|boxConnDown|boxConnRight, StyleForeground, owner, layer)
 	c.mergeStyledBoxCell(rect.X+rect.W-1, searchBottomY, boxConnUp|boxConnDown|boxConnLeft, StyleForeground, owner, layer)
-	dividerX := contentRect.X + clipboardHistoryNameWidth
+	dividerX := contentRect.X + clipboardHistoryContentNameWidth(content)
 	if dividerX <= rect.X || dividerX >= rect.X+rect.W-1 {
 		return
 	}

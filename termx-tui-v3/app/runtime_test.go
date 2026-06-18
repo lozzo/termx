@@ -3082,6 +3082,61 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDragsClipboardHistoryDivider(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 30)
+	root := state.Root{
+		Shell: state.DefaultShell().OpenClipboardHistory(),
+		Clipboard: state.ClipboardStore{Entries: []state.ClipboardEntry{
+			{ID: "clip:1", Title: "git commit", Text: "git commit -m fix terminal\nsecond preview line", Preview: "git commit -m fix terminal"},
+		}},
+	}
+	runtime := newShellHitRuntime(root, host)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post clipboard history render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain clipboard history render: %v", err)
+	}
+
+	divider := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionClipboardHistoryDividerDrag.String(), "")
+	start := mouseEventAt(divider.Rect)
+	if err := host.SendInput(start); err != nil {
+		t.Fatalf("send clipboard divider drag start: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain clipboard divider drag start: %v", err)
+	}
+	if runtime.mouseDrag.Kind != mouseDragClipboardDivider {
+		t.Fatalf("expected clipboard divider drag state, got %#v", runtime.mouseDrag)
+	}
+
+	drag := start
+	drag.Mouse = input.MouseLeftDrag
+	drag.Col += 7
+	if err := host.SendInput(drag); err != nil {
+		t.Fatalf("send clipboard divider drag move: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain clipboard divider drag move: %v", err)
+	}
+	if got := state.ClipboardHistoryNameWidth(runtime.State().Shell.Overlay); got != state.DefaultClipboardHistoryNameWidth+7 {
+		t.Fatalf("clipboard divider drag should resize name column, got %d", got)
+	}
+
+	release := drag
+	release.Mouse = input.MouseLeftUp
+	if err := host.SendInput(release); err != nil {
+		t.Fatalf("send clipboard divider drag release: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain clipboard divider drag release: %v", err)
+	}
+	if runtime.mouseDrag.Active {
+		t.Fatalf("clipboard divider release should clear drag state, got %#v", runtime.mouseDrag)
+	}
+}
+
 func TestAppRuntimeMouseHitPriorityAndMissFallback(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	root := state.Root{

@@ -3,9 +3,10 @@ package render
 func measureClipboardHistoryOverlay(content ContentVM, viewport Rect) Rect {
 	// 中文说明：clipboard history 是全局弹窗，宽高跟随外部 terminal viewport 留边展开。
 	width := viewport.W - clipboardHistoryHorizontalMargin(viewport.W)
-	height := viewport.H - clipboardHistoryVerticalMargin(viewport.H)
-	width = maxInt(width, clipboardHistoryMinimumWidth())
-	height = maxInt(height, minInt(maxInt(len(content.Lines)+3, 8), 18))
+	maxHeight := viewport.H - clipboardHistoryVerticalMargin(viewport.H)
+	height := minInt(maxInt(len(content.Lines)+2, 8), 16)
+	width = maxInt(width, clipboardHistoryMinimumWidth(content))
+	height = minInt(height, maxHeight)
 	width = minInt(width, viewport.W)
 	height = minInt(height, viewport.H)
 	return Rect{
@@ -23,11 +24,11 @@ func measureClipboardHistoryContentRect(rect Rect) Rect {
 func clipboardHistoryHorizontalMargin(width int) int {
 	switch {
 	case width >= 160:
-		return 16
+		return maxInt(24, width/5)
 	case width >= 100:
-		return 8
+		return 16
 	case width >= 48:
-		return 4
+		return 8
 	case width >= 16:
 		return 2
 	default:
@@ -38,9 +39,9 @@ func clipboardHistoryHorizontalMargin(width int) int {
 func clipboardHistoryVerticalMargin(height int) int {
 	switch {
 	case height >= 32:
-		return 8
+		return maxInt(8, height/4)
 	case height >= 18:
-		return 4
+		return 6
 	case height >= 8:
 		return 2
 	default:
@@ -48,6 +49,6 @@ func clipboardHistoryVerticalMargin(height int) int {
 	}
 }
 
-func clipboardHistoryMinimumWidth() int {
-	return clipboardHistoryNameWidth + 1 + 24 + 2
+func clipboardHistoryMinimumWidth(content ContentVM) int {
+	return clipboardHistoryContentNameWidth(content) + 1 + 32 + 2
 }

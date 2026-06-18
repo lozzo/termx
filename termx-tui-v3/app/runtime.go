@@ -225,9 +225,10 @@ type mouseHitResolution struct {
 type mouseDragKind string
 
 const (
-	mouseDragPaneResize     mouseDragKind = "pane-resize"
-	mouseDragFloatingMove   mouseDragKind = "floating-move"
-	mouseDragFloatingResize mouseDragKind = "floating-resize"
+	mouseDragPaneResize       mouseDragKind = "pane-resize"
+	mouseDragFloatingMove     mouseDragKind = "floating-move"
+	mouseDragFloatingResize   mouseDragKind = "floating-resize"
+	mouseDragClipboardDivider mouseDragKind = "clipboard-divider"
 )
 
 func NewAppRuntime(
@@ -942,6 +943,10 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			Source:   state.PaneCommandSourceMouse,
 		}}
 	}
+	if drag, ok := clipboardHistoryDividerDragState(region, inputMsg.Event); ok {
+		runtime.mouseDrag = drag
+		return NoopMsg{}
+	}
 	if region.Kind == render.HitRegionPaneAction && region.ActionID == render.ActionPaneClose.String() {
 		return ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{
 			Action: state.WorkbenchCommandPaneClose,
@@ -1429,12 +1434,32 @@ func (runtime *AppRuntime) dispatchMouseDrag(event input.InputEvent) (Msg, bool)
 				DeltaH:   deltaH,
 				Source:   state.PaneCommandSourceMouse,
 			}}, true
+		case mouseDragClipboardDivider:
+			delta := event.Col - runtime.mouseDrag.LastCol
+			if delta == 0 {
+				return NoopMsg{}, true
+			}
+			runtime.mouseDrag.LastCol = event.Col
+			runtime.mouseDrag.LastRow = event.Row
+			return ShellMoveClipboardHistoryDividerMsg{Delta: delta}, true
 		default:
 			return NoopMsg{}, true
 		}
 	default:
 		return nil, false
 	}
+}
+
+func clipboardHistoryDividerDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {
+	if region.Kind != render.HitRegionContentAction || region.ActionID != render.ActionClipboardHistoryDividerDrag.String() {
+		return mouseDragState{}, false
+	}
+	return mouseDragState{
+		Active:  true,
+		Kind:    mouseDragClipboardDivider,
+		LastCol: event.Col,
+		LastRow: event.Row,
+	}, true
 }
 
 func paneResizeDragState(region render.HitRegion, event input.InputEvent) (mouseDragState, bool) {

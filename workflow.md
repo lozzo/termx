@@ -272,9 +272,11 @@
 | 215E1-R99. SK clipboard history modal 线框与模糊搜索 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已按确认稿重画 clipboard history：标题嵌入 v3 细边框，内部只保留搜索区和左窄右宽 T 字分栏；footer 展示全局快捷键；搜索复用 picker 子序列匹配并高亮命中字母 |
 | 215E1-R100. SK copy selection 显示与最近粘贴回归 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已修复 copy/history 选区行尾空白不染色的问题：选区显示会像 tmux 一样把选中 visual row 的 display-only 空白补成黄底，但不进入复制文本；`p` 粘贴最近复制时若 clipboard service 缓存为空，会回退到 reducer-owned clipboard history 最新项 |
 | 215E1-R101. SK clipboard history viewport 预览回归 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已处理 clipboard history modal 仍按旧固定宽度展示、右侧预览过窄的问题：弹窗尺寸来自外部 terminal viewport，右侧展示选中项多行正文预览 |
+| 215E1-R102. SK clipboard history 列宽样式回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已处理 clipboard history modal 细节：预览正文用前景色，搜索命中保持黄色，搜索标签改成 `Search:`，弹窗高度收窄，名称列默认加宽并支持鼠标拖拽分隔符调整 |
 
 当前下一步：
 
+- `215E1-R102 clipboard history 列宽样式回归` 已完成：clipboard history 预览正文改为前景色，搜索命中字母保持黄色；modal 高度改为内容驱动，名称列默认加宽并支持鼠标拖拽分隔符调整。
 - `215E1-R101 clipboard history viewport 预览回归` 已完成：clipboard history modal 现在按外部 terminal viewport 留边展开，左侧保持窄名称列，右侧展示选中项多行正文预览。
 - `215E1-R100 copy selection 显示与最近粘贴回归` 已完成：copy/history 选区现在会把选中行的行尾空白显示成黄底；Enter 复制仍写入 clipboard history，`Ctrl-V` 后 `p` 会从最近复制或 clipboard history 最新项粘贴，不再误报 copy buffer empty。
 - `215E1-R99 clipboard history modal 线框与模糊搜索` 已完成：clipboard history modal 现在是 `Clipboard History` 顶边标题 + 搜索区 + 左窄右宽 T 字分栏；快捷键留在全局 footer；输入 `gft` 这类子序列能匹配 `git commit ... fix terminal` 并高亮命中字母。
