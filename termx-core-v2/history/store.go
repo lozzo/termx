@@ -62,13 +62,15 @@ func (store *MemoryLogicalLineStore) CreateLine(req CreateLineRequest) (LogicalL
 		return LogicalLine{}, err
 	}
 	line := LogicalLine{
-		ID:         store.nextID,
-		Generation: 1,
-		Seal:       seal,
-		Cells:      cloneCells(req.Cells),
-		TailFill:   cloneRowTailFill(req.TailFill),
-		Dirty:      req.Dirty,
-		Residency:  residency,
+		ID:                store.nextID,
+		Generation:        1,
+		CreatedGeneration: req.CreatedGeneration,
+		ContentGeneration: req.ContentGeneration,
+		Seal:              seal,
+		Cells:             cloneCells(req.Cells),
+		TailFill:          cloneRowTailFill(req.TailFill),
+		Dirty:             req.Dirty,
+		Residency:         residency,
 	}
 	if err := store.backend.SaveLine(line); err != nil {
 		return LogicalLine{}, err
@@ -123,6 +125,12 @@ func (store *MemoryLogicalLineStore) ReplaceLine(line LogicalLine) (LogicalLine,
 	}
 	store.retainCurrentLineLocked(current)
 	line.Generation = current.Generation + 1
+	if line.CreatedGeneration == 0 {
+		line.CreatedGeneration = current.CreatedGeneration
+	}
+	if line.ContentGeneration == 0 {
+		line.ContentGeneration = current.ContentGeneration
+	}
 	line.Cells = cloneCells(line.Cells)
 	line.TailFill = cloneRowTailFill(line.TailFill)
 	if err := store.backend.SaveLine(line); err != nil {

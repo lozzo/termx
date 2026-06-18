@@ -188,13 +188,18 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 	// 必须丢弃旧 metadata，避免 resize/copy 时把背景延伸到错误位置。
 	line.TailFill = nil
 	line.Dirty = true
+	nextGeneration := track.nextGeneration()
+	if line.CreatedGeneration == 0 {
+		line.CreatedGeneration = nextGeneration
+	}
+	line.ContentGeneration = nextGeneration
 	line, err = track.store.ReplaceLine(line)
 	if err != nil {
 		return err
 	}
 	track.activeLine = line.ID
 	track.overwrite = track.activeCol < lineWidth
-	track.bumpGeneration()
+	track.setGeneration(nextGeneration)
 	return nil
 }
 
@@ -206,8 +211,10 @@ func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
 		}
 	}
 	line, err := track.store.CreateLine(CreateLineRequest{
-		Seal:      SealStateOpen,
-		Residency: ResidencyMemory,
+		Seal:              SealStateOpen,
+		CreatedGeneration: track.generation,
+		ContentGeneration: track.generation,
+		Residency:         ResidencyMemory,
 	})
 	if err != nil {
 		return LogicalLine{}, err
@@ -406,6 +413,8 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 	line.Cells = eraseLineCellsAtColumn(line.Cells, track.activeCol, mode, screenCols, style)
 	line.TailFill = nil
 	line.Dirty = true
+	nextGeneration := track.nextGeneration()
+	line.ContentGeneration = nextGeneration
 	line, err := track.store.ReplaceLine(line)
 	if err != nil {
 		return err
@@ -413,7 +422,7 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 	track.activeLine = line.ID
 	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
 	track.overwrite = false
-	track.bumpGeneration()
+	track.setGeneration(nextGeneration)
 	return nil
 }
 
@@ -427,12 +436,14 @@ func (track *HistoryTrack) setActiveLineTailFill(style CellStyle) error {
 	}
 	line.TailFill = &RowTailFill{Style: style}
 	line.Dirty = true
+	nextGeneration := track.nextGeneration()
+	line.ContentGeneration = nextGeneration
 	line, err = track.store.ReplaceLine(line)
 	if err != nil {
 		return err
 	}
 	track.activeLine = line.ID
-	track.bumpGeneration()
+	track.setGeneration(nextGeneration)
 	return nil
 }
 
@@ -601,10 +612,13 @@ func (track *HistoryTrack) sealActiveLine() error {
 }
 
 func (track *HistoryTrack) sealBlankLine() error {
+	nextGeneration := track.nextGeneration()
 	line, err := track.store.CreateLine(CreateLineRequest{
-		Seal:      SealStateSealed,
-		Dirty:     true,
-		Residency: ResidencyMemory,
+		Seal:              SealStateSealed,
+		CreatedGeneration: nextGeneration,
+		ContentGeneration: nextGeneration,
+		Dirty:             true,
+		Residency:         ResidencyMemory,
 	})
 	if err != nil {
 		return err
@@ -614,7 +628,7 @@ func (track *HistoryTrack) sealBlankLine() error {
 	}
 	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
 	track.advanceScreenCursorLine()
-	track.bumpGeneration()
+	track.setGeneration(nextGeneration)
 	return nil
 }
 
@@ -639,6 +653,8 @@ func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
 	line.Cells = cloneCells(event.Cells)
 	line.TailFill = nil
 	line.Dirty = true
+	nextGeneration := track.nextGeneration()
+	line.ContentGeneration = nextGeneration
 	line, err := track.store.ReplaceLine(line)
 	if err != nil {
 		return err
@@ -647,7 +663,7 @@ func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
 	track.activeCol = logicalLineWidth(line.Cells)
 	track.overwrite = false
 	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
-	track.bumpGeneration()
+	track.setGeneration(nextGeneration)
 	return nil
 }
 
@@ -701,6 +717,7 @@ func (track *HistoryTrack) eraseActiveLineWithoutBump(mode int) (bool, error) {
 	next.Cells = eraseLineCellsAtColumn(next.Cells, track.activeCol, mode, 0, CellStyle{})
 	next.TailFill = nil
 	next.Dirty = true
+	next.ContentGeneration = track.nextGeneration()
 	replaced, err := track.store.ReplaceLine(next)
 	if err != nil {
 		return false, err
@@ -965,6 +982,18 @@ func (track *HistoryTrack) resize(event HistoryEvent) error {
 
 func (track *HistoryTrack) bumpGeneration() {
 	track.generation++
+}
+
+func (track *HistoryTrack) nextGeneration() Generation {
+	return track.generation + 1
+}
+
+func (track *HistoryTrack) setGeneration(generation Generation) {
+	if generation > track.generation {
+		track.generation = generation
+		return
+	}
+	track.bumpGeneration()
 }
 
 func (track *HistoryTrack) lineCommittable(id LogicalLineID) bool {

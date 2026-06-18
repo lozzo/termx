@@ -554,6 +554,9 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 				TerminalID: binding.TerminalID,
 				Cols:       cols,
 				Rows:       rows,
+				// 中文说明：真实 protocol live snapshot 的 Revision 承载 core history generation；
+				// latest 只能冻结到用户进入 copy 时已经观察到的 generation，避免混入未来日志。
+				GenerationBoundary: enteringLive.Revision,
 			})
 			result.Window.PaneID = binding.PaneID
 			result.Window.ViewID = binding.ViewID

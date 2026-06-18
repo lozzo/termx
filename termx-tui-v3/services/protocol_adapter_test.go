@@ -944,8 +944,9 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 			Command: []string{"/bin/zsh"},
 		}}},
 		snapshotResult: &protocol.Snapshot{
-			TerminalID: "term-1",
-			Size:       protocol.Size{Cols: 12, Rows: 2},
+			TerminalID:        "term-1",
+			Size:              protocol.Size{Cols: 12, Rows: 2},
+			HistoryGeneration: 42,
 			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 				{{Content: "$ "}, {Content: "你好", Width: 2, Style: protocol.CellStyle{FG: "ansi:2"}}, {Content: "🚀", Width: 2}},
 				{{Content: "done"}},
@@ -970,6 +971,9 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	}
 	if !result.Ready || result.Snapshot.Cols != 12 || result.Snapshot.Rows != 2 || len(result.Snapshot.Lines) != 2 {
 		t.Fatalf("unexpected live surface result %#v", result)
+	}
+	if result.Snapshot.Revision != 42 {
+		t.Fatalf("expected history generation to become live revision boundary, got %d", result.Snapshot.Revision)
 	}
 	if result.Snapshot.Lines[0] != "$ 你好🚀" || result.Snapshot.Lines[1] != "done" {
 		t.Fatalf("unexpected live surface lines %#v", result.Snapshot.Lines)

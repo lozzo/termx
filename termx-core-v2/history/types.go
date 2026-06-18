@@ -62,13 +62,15 @@ type RowTailFill struct {
 // LogicalLine is the single payload model for committed history and mutable
 // frontier membership.
 type LogicalLine struct {
-	ID         LogicalLineID
-	Generation Generation
-	Seal       SealState
-	Cells      []Cell
-	TailFill   *RowTailFill
-	Dirty      bool
-	Residency  Residency
+	ID                LogicalLineID
+	Generation        Generation
+	CreatedGeneration Generation
+	ContentGeneration Generation
+	Seal              SealState
+	Cells             []Cell
+	TailFill          *RowTailFill
+	Dirty             bool
+	Residency         Residency
 }
 
 // SnapshotLine 是 copy/history 冻结快照里的单条 logical line 载体。
@@ -90,11 +92,13 @@ func (line LogicalLine) Clone() LogicalLine {
 // CreateLineRequest describes the initial payload and orthogonal state for a
 // new logical line.
 type CreateLineRequest struct {
-	Seal      SealState
-	Cells     []Cell
-	TailFill  *RowTailFill
-	Dirty     bool
-	Residency Residency
+	Seal              SealState
+	CreatedGeneration Generation
+	ContentGeneration Generation
+	Cells             []Cell
+	TailFill          *RowTailFill
+	Dirty             bool
+	Residency         Residency
 }
 
 var (

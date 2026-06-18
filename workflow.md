@@ -264,12 +264,13 @@
 | 215E1-R91. SK copy entering 冻结 live 反馈 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已处理真实现场：连续 live 输出时按 Ctrl-V 后立即冻结当前 view 的可见 live 画面并拦截输入，不显示 pending 文本，也不继续被后续 live 帧滚动覆盖；latest 回来后再切 authoritative copy history |
 | 215E1-R92. SK copy entering 滚动意图接续 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已处理真实现场：copy entering 冻结 live 后，滚轮/PageUp/PageDown 会累计成 copy cursor 滚动意图；latest 回来后立即从尾部应用，超出 latest 页的上滚会继续发 older 并带上未消费行数，不再等一会儿跳到非预期位置 |
 | 215E1-R93. SK history observer 延迟删除和版本保留 | 完成 | `termx-core-v2/history/`、`termx-core-v2/protocol_service.go`、`internal/protocol/`、`termx-tui-v3/services/`、`termx-tui-v3/app/`、`workflow.md` | 已按 observer epoch 收口 copy/history 冻结语义：进入历史模式不拷贝整份历史；删除先按 epoch 标记，新进入的 observer 不再看到，已进入的 observer 仍按进入时刻可见；修改已被旧 observer 观察的 line 时写时保留旧版本，TUI 退出 copy 时主动释放 frozen token，所有 observer 离开后再物理清理 |
+| 215E1-R94. SK copy latest 冻结边界回归 | 完成 | `termx-core-v2/`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场：进入 copy mode 后画面能立刻停住，但继续滚动要等 latest 追平；冻结窗口还会包含用户进入 copy 之后的未来日志。latest 现在不等待 history ingest backlog，TUI 会把进入时观察到的 history generation 带给 core，core 按该边界冻结 authoritative history，不把进入后的 future line 混进旧 copy 会话 |
 
 当前下一步：
 
-- `215E1-R93 history observer 延迟删除和版本保留` 已完成：copy/history 进入时只注册 observer epoch，不拷贝整份历史；core 删除和修改 logical line 时按 observer 可见性做延迟删除和写时版本保留，TUI 退出 copy 会主动释放 frozen token，session 关闭和 superseded token 也会兜底释放 observer。
+- `215E1-R94 copy latest 冻结边界回归` 已完成：copy latest 不再等待 history ingest backlog 追平；TUI 进入 copy 时把当前 live snapshot 对应的 history generation 带给 core，core 按 generation boundary 冻结，不把进入后的 future line 混进旧 copy 会话。
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
-- 当前 sibling view 输入隔离：同一 TUI client 的 protocol control request 会并发处理；一个 view 进入 copy/history 触发的 history latest barrier 可以等待自己的 history ingest buffer 追平，但不能 head-of-line blocking 后续 sibling view `input` 请求。TUI copy-mode 输入拦截只在当前 active TerminalView 属于该 copy session 时生效。
+- 当前 sibling view 输入隔离：同一 TUI client 的 protocol control request 会并发处理；一个 view 进入 copy/history 触发的 history latest 不再等待 history ingest backlog 追平，也不能 head-of-line blocking 后续 sibling view `input` 请求。TUI copy-mode 输入拦截只在当前 active TerminalView 属于该 copy session 时生效。
 - 当前 resize owner 语义：owner 主动获取、attach result 投影成 owner、关闭旧 owner 后 sibling 自动接任，都会触发一次 view-scoped `ensure_resize`；如果目标尺寸等于 core 当前 PTY size，core 只返回最新 ownership/control，不调用实际 PTY resize。
 - 当前 restart 语义：terminal lifecycle 和 terminal data 分离；process 退出/重启不会清空 core-v2 authoritative history，也不会清空 live tail。restart 会让所有 view channel 失效并逐 view reattach，但 TUI 等待 reattach 时继续显示旧 live tail。
 - 当前 exit marker 语义：process 退出时 core-v2 先 force commit primary frontier，再把 `terminal exited`、`exited at`、`command` 三类 marker 作为显式系统输出追加到 live surface 和 authoritative history；这不是 storage/snapshot/TUI overlay 推导出来的当前进程内状态。

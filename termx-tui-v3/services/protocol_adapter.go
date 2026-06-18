@@ -31,6 +31,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryLatest(ctx context.Context, req 
 		TerminalID: req.TerminalID,
 		Limit:      req.Rows,
 		Cols:       req.Cols,
+		Generation: req.GenerationBoundary,
 	})
 	if err != nil {
 		return HistoryResult{}, err

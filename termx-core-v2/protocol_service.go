@@ -444,6 +444,10 @@ func (session *protocolSession) liveSnapshot(params protocol.SnapshotParams) (*p
 	if err != nil {
 		return nil, err
 	}
+	terminal, err := session.server.Terminal(params.TerminalID)
+	if err != nil {
+		return nil, err
+	}
 	attrs := coreTerminalInfoAttrs(info)
 	attrs = append(attrs,
 		"screen_rows", len(snapshot.Screen.Cells),
@@ -459,10 +463,11 @@ func (session *protocolSession) liveSnapshot(params protocol.SnapshotParams) (*p
 			Cells:             vtermRowsToProtocolCells(snapshot.Screen.Cells),
 			IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
 		},
-		Cursor:          vtermCursorToProtocol(snapshot.Cursor),
-		Modes:           vtermModesToProtocol(snapshot.Modes),
-		ScreenOwnership: repeatString(protocol.RowOwnershipScreen, len(snapshot.Screen.Cells)),
-		Timestamp:       time.Now().UTC(),
+		Cursor:            vtermCursorToProtocol(snapshot.Cursor),
+		Modes:             vtermModesToProtocol(snapshot.Modes),
+		HistoryGeneration: uint64(terminal.HistoryGeneration()),
+		ScreenOwnership:   repeatString(protocol.RowOwnershipScreen, len(snapshot.Screen.Cells)),
+		Timestamp:         time.Now().UTC(),
 	}, nil
 }
 
@@ -630,10 +635,13 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 		if err != nil {
 			return nil, err
 		}
-		if err := terminal.FlushHistory(ctx); err != nil {
-			return nil, err
-		}
+		// 中文说明：copy/latest 的 frozen boundary 是用户进入历史模式时 core 已经入账的
+		// logical line 边界；这里不能等待 history queue 追平后续高压输出，否则会卡住
+		// entering 滚动，并把用户进入 copy 之后的“未来日志”混进本次 snapshot。
 		snapshot := terminal.FreezePinnedSnapshot()
+		if params.Generation != 0 {
+			snapshot = terminal.FreezePinnedSnapshotAtGeneration(history.Generation(params.Generation))
+		}
 		snapshot.Token = session.sessionFrozenSnapshotToken(params.TerminalID, snapshot.Token)
 		session.storeFrozenSnapshot(params.TerminalID, snapshot)
 		window = frozenSnapshotLatestWindow(snapshot, cols, limit)

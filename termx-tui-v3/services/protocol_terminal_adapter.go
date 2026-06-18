@@ -307,6 +307,7 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	}
 	liveSnapshot := state.LiveSurfaceSnapshot{
 		TerminalID: req.TerminalID,
+		Revision:   snapshot.HistoryGeneration,
 		Cols:       int(snapshot.Size.Cols),
 		Rows:       int(snapshot.Size.Rows),
 		Lines:      lines,

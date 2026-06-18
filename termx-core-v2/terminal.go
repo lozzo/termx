@@ -235,6 +235,14 @@ func (terminal *Terminal) FreezePinnedSnapshot() history.FrozenSnapshot {
 	return terminal.historyPipeline().FreezePinnedSnapshot()
 }
 
+func (terminal *Terminal) FreezePinnedSnapshotAtGeneration(generation history.Generation) history.FrozenSnapshot {
+	return terminal.historyPipeline().FreezePinnedSnapshotAtGeneration(generation)
+}
+
+func (terminal *Terminal) HistoryGeneration() history.Generation {
+	return terminal.historyPipeline().Generation()
+}
+
 func (terminal *Terminal) RetainedHistoryLineCount() int {
 	return terminal.historyPipeline().RetainedHistoryLineCount()
 }

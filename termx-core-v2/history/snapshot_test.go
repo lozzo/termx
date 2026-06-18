@@ -196,3 +196,23 @@ func TestPinnedFrozenSnapshotDropsUnobservedIntermediateVersions(t *testing.T) {
 		t.Fatalf("release should cleanup retained version, got %d", got)
 	}
 }
+
+func TestPinnedFrozenSnapshotAtGenerationExcludesFutureLines(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "visible")
+	boundary := track.Generation()
+	commitLine(t, track, "future")
+
+	snapshot := track.FreezePinnedSnapshotAtGeneration(boundary)
+	defer snapshot.ReleaseObserver()
+	if got := snapshot.VisibleLineCount(); got != 1 {
+		t.Fatalf("expected only boundary-visible line, got %d", got)
+	}
+	line, ok := snapshot.LineAt(0)
+	if !ok || lineText(line.Line) != "visible" {
+		t.Fatalf("expected boundary snapshot to keep visible line, got %#v ok=%v", line, ok)
+	}
+	if _, ok := snapshot.LineAt(1); ok {
+		t.Fatal("boundary snapshot must not expose line created after copy entry")
+	}
+}

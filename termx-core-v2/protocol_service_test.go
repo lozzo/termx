@@ -1811,7 +1811,7 @@ func TestProtocolServiceHistoryWindowPreservesProcessOutputANSIStyles(t *testing
 	}
 }
 
-func TestProtocolServiceHistoryWindowLatestFlushesFastProcessHistoryQueueBeforeFreeze(t *testing.T) {
+func TestProtocolServiceHistoryWindowLatestFreezesCurrentHistoryWithoutWaitingForQueue(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
 	defer closeClient()
@@ -1823,12 +1823,37 @@ func TestProtocolServiceHistoryWindowLatestFlushesFastProcessHistoryQueueBeforeF
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
+	if err := server.IngestOutput(context.Background(), "term-1", "000001 committed\n"); err != nil {
+		t.Fatalf("seed history: %v", err)
+	}
 	process := factory.process("term-1")
-	process.emitOutput("000001 first\n100000 final\n")
+	enteredHistory := make(chan struct{})
+	releaseHistory := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseHistory) }) }
+	terminalHistoryPipelineBeforeIngestHook = func() {
+		select {
+		case <-enteredHistory:
+		default:
+			close(enteredHistory)
+		}
+		<-releaseHistory
+	}
+	defer func() {
+		terminalHistoryPipelineBeforeIngestHook = nil
+	}()
+	defer release()
+
+	process.emitOutput("100000 future\n")
+	select {
+	case <-enteredHistory:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async history worker")
+	}
 	assertEventually(t, time.Second, func() bool {
 		rows, err := server.LiveRows("term-1")
-		return err == nil && strings.Contains(strings.Join(rows, "\n"), "100000 final")
-	}, "live output should reach surface before latest freezes history")
+		return err == nil && strings.Contains(strings.Join(rows, "\n"), "100000 future")
+	}, "live output should reach surface while history queue is blocked")
 
 	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID: "term-1",
@@ -1838,12 +1863,60 @@ func TestProtocolServiceHistoryWindowLatestFlushesFastProcessHistoryQueueBeforeF
 	if err != nil {
 		t.Fatalf("latest history.window: %v", err)
 	}
-	if len(latest.Rows) == 0 || rowText(latest.Rows[len(latest.Rows)-1]) != "100000 final" {
-		t.Fatalf("latest must freeze after fast async history catches up, got %#v", latest.Rows)
+	text := historyWindowRowsText(latest.Rows)
+	if !strings.Contains(text, "000001 committed") {
+		t.Fatalf("latest must include already recorded history, got %#v", latest.Rows)
+	}
+	if strings.Contains(text, "100000 future") {
+		t.Fatalf("latest must not wait for queued future output, got %#v", latest.Rows)
+	}
+	release()
+}
+
+func TestProtocolServiceHistoryWindowLatestHonorsGenerationBoundary(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "000001 visible\n"); err != nil {
+		t.Fatalf("ingest visible: %v", err)
+	}
+	snapshot, err := client.Snapshot(context.Background(), "term-1", 0, 4)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if snapshot.HistoryGeneration == 0 {
+		t.Fatal("snapshot must expose history generation boundary")
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "100000 future\n"); err != nil {
+		t.Fatalf("ingest future: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       40,
+		Limit:      4,
+		Generation: snapshot.HistoryGeneration,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	text := historyWindowRowsText(latest.Rows)
+	if !strings.Contains(text, "000001 visible") {
+		t.Fatalf("latest should keep line visible at boundary, got %#v", latest.Rows)
+	}
+	if strings.Contains(text, "100000 future") {
+		t.Fatalf("latest must not include line after boundary generation, got %#v", latest.Rows)
 	}
 }
 
-func TestProtocolServiceHistoryWindowLatestBarrierDoesNotBlockSameSessionInput(t *testing.T) {
+func TestProtocolServiceHistoryWindowLatestDoesNotWaitForOwnBarrierOrBlockSameSessionInput(t *testing.T) {
 	factory := newRecordingProcessFactory()
 	_, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
 	defer closeClient()
@@ -1931,18 +2004,13 @@ func TestProtocolServiceHistoryWindowLatestBarrierDoesNotBlockSameSessionInput(t
 
 	select {
 	case err := <-latestCh:
-		t.Fatalf("latest should keep waiting on its own history barrier, got %v", err)
-	case <-time.After(20 * time.Millisecond):
+		if err != nil {
+			t.Fatalf("latest should not wait for its own history barrier: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("latest waited for its own history barrier")
 	}
 	release()
-	select {
-	case err := <-latestCh:
-		if err != nil {
-			t.Fatalf("latest after barrier release: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("latest should finish once history barrier is released")
-	}
 	if attachOne.Channel == 0 {
 		t.Fatalf("expected first attachment to be valid: %#v", attachOne)
 	}

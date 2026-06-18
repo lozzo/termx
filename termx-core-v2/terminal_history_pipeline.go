@@ -146,6 +146,12 @@ func (pipeline *terminalHistoryPipeline) CommittedCursorValid(cols int, cursor h
 	return pipeline.track.CommittedCursorValid(cols, cursor)
 }
 
+func (pipeline *terminalHistoryPipeline) Generation() history.Generation {
+	pipeline.mu.Lock()
+	defer pipeline.mu.Unlock()
+	return pipeline.track.Generation()
+}
+
 func (pipeline *terminalHistoryPipeline) FreezeSnapshot() history.FrozenSnapshot {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
@@ -156,6 +162,12 @@ func (pipeline *terminalHistoryPipeline) FreezePinnedSnapshot() history.FrozenSn
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
 	return pipeline.track.FreezePinnedSnapshot()
+}
+
+func (pipeline *terminalHistoryPipeline) FreezePinnedSnapshotAtGeneration(generation history.Generation) history.FrozenSnapshot {
+	pipeline.mu.Lock()
+	defer pipeline.mu.Unlock()
+	return pipeline.track.FreezePinnedSnapshotAtGeneration(generation)
 }
 
 func (pipeline *terminalHistoryPipeline) Line(id history.LogicalLineID) (history.LogicalLine, bool) {

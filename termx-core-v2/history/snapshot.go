@@ -30,6 +30,10 @@ func (track *HistoryTrack) FreezePinnedSnapshot() FrozenSnapshot {
 	return track.freezeSnapshot(false)
 }
 
+func (track *HistoryTrack) FreezePinnedSnapshotAtGeneration(generation Generation) FrozenSnapshot {
+	return track.freezeSnapshotAtGeneration(false, generation)
+}
+
 func NewDetachedFrozenSnapshot(token string, generation Generation, lines []SnapshotLine) FrozenSnapshot {
 	cloned := make([]SnapshotLine, 0, len(lines))
 	committed := 0
@@ -50,10 +54,17 @@ func NewDetachedFrozenSnapshot(token string, generation Generation, lines []Snap
 }
 
 func (track *HistoryTrack) freezeSnapshot(detach bool) FrozenSnapshot {
+	return track.freezeSnapshotAtGeneration(detach, 0)
+}
+
+func (track *HistoryTrack) freezeSnapshotAtGeneration(detach bool, generation Generation) FrozenSnapshot {
 	committedIDs := track.committed.IDs()
+	if generation > 0 {
+		committedIDs = track.lineIDsAtOrBeforeGeneration(committedIDs, generation)
+	}
 	frontierIDs := make([]LogicalLineID, 0)
 	for _, id := range track.frontier.IDs() {
-		if !track.frontier.IsHidden(id) && !containsLineID(committedIDs, id) {
+		if !track.frontier.IsHidden(id) && !containsLineID(committedIDs, id) && track.lineAtOrBeforeGeneration(id, generation) {
 			frontierIDs = append(frontierIDs, id)
 		}
 	}
@@ -95,6 +106,37 @@ func (track *HistoryTrack) freezeSnapshot(detach bool) FrozenSnapshot {
 		snapshot.materializeDetachedLines()
 	}
 	return snapshot
+}
+
+func (track *HistoryTrack) lineIDsAtOrBeforeGeneration(ids []LogicalLineID, generation Generation) []LogicalLineID {
+	if generation == 0 || len(ids) == 0 {
+		return ids
+	}
+	filtered := make([]LogicalLineID, 0, len(ids))
+	for _, id := range ids {
+		if track.lineAtOrBeforeGeneration(id, generation) {
+			filtered = append(filtered, id)
+		}
+	}
+	return filtered
+}
+
+func (track *HistoryTrack) lineAtOrBeforeGeneration(id LogicalLineID, generation Generation) bool {
+	if generation == 0 {
+		return true
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return false
+	}
+	contentGeneration := line.ContentGeneration
+	if contentGeneration == 0 {
+		contentGeneration = line.CreatedGeneration
+	}
+	if contentGeneration == 0 {
+		return true
+	}
+	return contentGeneration <= generation
 }
 
 func (snapshot *FrozenSnapshot) materializeDetachedLines() {
