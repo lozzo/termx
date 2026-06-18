@@ -36,6 +36,9 @@ func overlayTitle(kind OverlayKind) string {
 	if kind == OverlayClipboardHistory {
 		return "Clipboard History"
 	}
+	if kind == OverlayWorkbenchTree {
+		return "Workbench Navigator"
+	}
 	title := strings.TrimSpace(string(kind))
 	if title == "" {
 		return "overlay"

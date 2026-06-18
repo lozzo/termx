@@ -97,6 +97,45 @@ func TestFrameworkRendersTuiv2FloatingTerminalHeader(t *testing.T) {
 	}
 }
 
+func TestFrameworkRendersWorkbenchNavigatorSnapshot(t *testing.T) {
+	shell := state.DefaultShell().
+		SplitActivePane(state.PaneState{ID: "pane-logs", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-logs"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-logs"}).
+		OpenWorkbenchTree()
+	root := state.Root{
+		Shell:    shell,
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 36},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-logs",
+			Cols:       40,
+			Rows:       10,
+			Ready:      true,
+			Lines:      []string{"snapshot live row"},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-logs", Attached: true, Cols: 40, Rows: 10, State: state.TerminalLiveAttached},
+	}
+	root = bindTestPaneTerminal(root, "pane-logs", "term-logs")
+	items := state.WorkbenchTreeItems(root)
+	for index, item := range items {
+		if item.Kind == state.WorkbenchTreeKindPane && item.PaneID == "pane-logs" {
+			root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(index, len(items))
+			break
+		}
+	}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	lines := result.Lines()
+	if !linesContain(lines, "Workbench Navigator") ||
+		!linesContain(lines, "TREE") ||
+		!linesContain(lines, "PANE") ||
+		!linesContain(lines, "SNAPSHOT") ||
+		!linesContain(lines, "snapshot live row") {
+		t.Fatalf("expected navigator title/tree/snapshot in frame, got %#v", lines)
+	}
+	assertFrameSize(t, result, 120, 36)
+	assertAllRowsWidth(t, lines, 120)
+}
+
 func TestFrameworkRendersUnconnectedPaneWithoutChromeActionCluster(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneEmpty

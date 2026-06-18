@@ -672,7 +672,11 @@ type ContentVM struct {
 }
 
 type ContentMetaVM struct {
-	ClipboardNameWidth int
+	ClipboardNameWidth       int
+	WorkbenchTreeWidth       int
+	WorkbenchSnapshotPanel   *PanelVM
+	WorkbenchSnapshotRect    Rect
+	WorkbenchSnapshotContent Rect
 }
 
 // ContentExtent 表达 terminal 内容在 content rect 内实际占用的 cell 区域。

@@ -242,7 +242,7 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.OpenTerminalPool()
 			return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 		case ShellOpenWorkbenchTreeMsg:
-			root.Shell = root.Shell.OpenWorkbenchTree()
+			root.Shell = openWorkbenchTreeAtActivePane(root)
 		case ShellOpenFloatingOverviewMsg:
 			root.Shell = root.Shell.OpenFloatingOverview()
 		case ShellOpenPromptMsg:
@@ -313,6 +313,22 @@ func ownerConfirmClearEffect(seq uint64) Effect {
 			}
 		},
 	}
+}
+
+func openWorkbenchTreeAtActivePane(root state.Root) state.ShellStore {
+	shell := root.Shell.OpenWorkbenchTree()
+	activePaneID := shell.ActivePaneID
+	if activePaneID == "" {
+		return shell
+	}
+	root.Shell = shell
+	items := state.WorkbenchTreeItems(root)
+	for index, item := range items {
+		if item.Kind == state.WorkbenchTreeKindPane && item.PaneID == activePaneID {
+			return shell.SetWorkbenchTreeSelectedIndex(index, len(items))
+		}
+	}
+	return shell
 }
 
 func reduceShellActivateTerminalInput(root state.Root, msg ShellActivateTerminalInputMsg) (state.Root, []Effect) {

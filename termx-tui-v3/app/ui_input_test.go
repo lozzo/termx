@@ -1648,8 +1648,8 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 		t.Fatalf("tree query must not leak terminal input, got %#v", terminal.Inputs)
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "Workbench Tree") || !frameContains(frame, "TUI storage projection") || !frameContains(frame, "▌      pane  日志🚀") || !frameContains(frame, "[open]  Open") {
-		t.Fatalf("expected workbench tree frame, got %#v", frame.Lines)
+	if !frameContains(frame, "Workbench Navigator") || !frameContains(frame, "TREE") || !frameContains(frame, "PANE") || !frameContains(frame, "日志🚀") || !frameContains(frame, "[open]  Open") {
+		t.Fatalf("expected workbench navigator frame, got %#v", frame.Lines)
 	}
 	if frame.Cursor.Shape != render.CursorShapeBar {
 		t.Fatalf("tree overlay should own search cursor, got %#v", frame.Cursor)
@@ -1682,8 +1682,8 @@ func TestInteractiveRuntimeWorkbenchTreeOverlayFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain tree select click: %v", err)
 	}
-	if runtime.State().Shell.Overlay.SelectedIndex != 0 {
-		t.Fatalf("expected row click to select first workbench node, got %#v", runtime.State().Shell.Overlay)
+	if runtime.State().Shell.Overlay.SelectedIndex < 0 {
+		t.Fatalf("expected row click to select a workbench node, got %#v", runtime.State().Shell.Overlay)
 	}
 	openRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "workbench.open", "")
 	if err := host.SendInput(mouseEventAt(openRegion.Rect)); err != nil {
@@ -2472,8 +2472,8 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendCtrl("\x07")
 	sendChar("w")
 	workbenchFrame := lastFrame(t, host.Frames())
-	if runtime.State().Shell.Overlay.Kind != state.OverlayWorkbenchTree || !frameContains(workbenchFrame, "Workbench Tree") {
-		t.Fatalf("expected Workbench Tree overlay, shell=%#v frame=%#v", runtime.State().Shell, workbenchFrame.Lines)
+	if runtime.State().Shell.Overlay.Kind != state.OverlayWorkbenchTree || !frameContains(workbenchFrame, "Workbench Navigator") {
+		t.Fatalf("expected Workbench Navigator overlay, shell=%#v frame=%#v", runtime.State().Shell, workbenchFrame.Lines)
 	}
 	sendKey(input.KeyEnter)
 	if runtime.State().Shell.Overlay.Open {

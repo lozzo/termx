@@ -2476,25 +2476,45 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
 		OpenWorkbenchTree().
 		SetWorkbenchTreeQuery("日志")
-	root := state.Root{Shell: shell}
+	root := state.Root{
+		Shell: shell,
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-2",
+			Cols:       32,
+			Rows:       8,
+			Ready:      true,
+			Lines:      []string{"live snapshot row"},
+		},
+		Session: state.TerminalSessionStore{TerminalID: "term-2", Attached: true, Cols: 32, Rows: 8, State: state.TerminalLiveAttached},
+	}
+	root = bindTestPaneTerminal(root, "pane-2", "term-2")
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := vm.Shell.Overlay.Content
 	if vm.Shell.Overlay.Kind != OverlayWorkbenchTree || !vm.Shell.Overlay.Opaque || content.Kind != ContentWorkbenchTree {
 		t.Fatalf("expected workbench tree opaque overlay, got %#v", vm.Shell.Overlay)
 	}
-	if !strings.Contains(content.Lines[0].PlainString(), "Workbench Tree") ||
-		!strings.Contains(content.Lines[1].PlainString(), "⌕ search 日志") ||
-		!strings.Contains(content.Lines[2].PlainString(), "▌      pane  日志🚀") ||
-		!strings.Contains(content.Lines[0].PlainString(), "TUI storage projection") ||
-		!strings.Contains(content.Lines[3].PlainString(), "DETAIL 日志🚀") ||
+	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search 日志") ||
+		!strings.Contains(content.Lines[1].PlainString(), "TREE") ||
+		!strings.Contains(content.Lines[1].PlainString(), "PANE") ||
+		!strings.Contains(content.Lines[2].PlainString(), "▸") ||
+		!strings.Contains(content.Lines[2].PlainString(), "日志🚀") ||
+		!strings.Contains(plainLines(content.Lines), "SNAPSHOT") ||
 		!strings.Contains(content.Lines[len(content.Lines)-4].PlainString(), "[open]  Open") ||
-		!strings.Contains(content.Lines[len(content.Lines)-3].PlainString(), "[rename]  Rename") ||
-		!strings.Contains(content.Lines[len(content.Lines)-2].PlainString(), "[new]  New") ||
-		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[delete]  Delete") {
-		t.Fatalf("expected tree header/search/row/detail/action, got %#v", content.Lines)
+		!strings.Contains(content.Lines[len(content.Lines)-3].PlainString(), "[zoom]  Zoom") ||
+		!strings.Contains(content.Lines[len(content.Lines)-2].PlainString(), "[detach]  Detach") ||
+		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "[close]  Close") {
+		t.Fatalf("expected navigator tree/snapshot/action content, got %#v", content.Lines)
 	}
-	if !contentHasAction(content, "workbench.select") || !contentHasAction(content, "workbench.open") || !contentHasAction(content, "workbench.rename") || !contentHasAction(content, "workbench.new") || !contentHasAction(content, "workbench.delete") {
+	if content.Meta.WorkbenchTreeWidth != 36 ||
+		content.Meta.WorkbenchSnapshotPanel == nil ||
+		content.Meta.WorkbenchSnapshotPanel.Content.Kind != ContentTerminalLive ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshotPanel.Content.Lines), "live snapshot row") ||
+		!contentHasAction(content, "workbench.select") ||
+		!contentHasAction(content, "workbench.open") ||
+		!contentHasAction(content, "workbench.zoom") ||
+		!contentHasAction(content, "workbench.detach") ||
+		!contentHasAction(content, "workbench.delete") {
 		t.Fatalf("expected workbench hit regions, got %#v", content.HitRegions)
 	}
 	if !content.Cursor.Visible || content.Cursor.Col != DisplayWidth("⌕ search 日志") {
@@ -2503,7 +2523,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 
 	root.Shell = state.DefaultShell().OpenWorkbenchTree().SetWorkbenchTreeQuery("missing")
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !content.Empty || !strings.Contains(content.Lines[2].PlainString(), "no workbench node selected") {
+	if !content.Empty || !strings.Contains(plainLines(content.Lines), "No workbench node selected") {
 		t.Fatalf("expected empty tree page, got %#v", content)
 	}
 }

@@ -641,6 +641,7 @@ func renderContent(c *canvas, content ContentVM, rect Rect, owner string, layer 
 	for i, line := range result.Lines {
 		c.writeLine(rect.X, rect.Y+i, rect.W, line, owner, layer)
 	}
+	renderWorkbenchNavigatorSnapshotContent(c, content, rect, owner, layer)
 	return result
 }
 
