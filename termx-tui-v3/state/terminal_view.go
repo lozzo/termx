@@ -43,6 +43,7 @@ type TerminalViewBinding struct {
 	OwnerSurfaceID string             `json:"ownerSurfaceId,omitempty"`
 	OwnerViewID    string             `json:"ownerViewId,omitempty"`
 	ResizeEpoch    uint64             `json:"resizeEpoch,omitempty"`
+	ResizePending  bool               `json:"resizePending,omitempty"`
 }
 
 // TerminalViewLayout 是 pane/floating 的 view-local 内容布局状态。
@@ -138,6 +139,20 @@ func (store TerminalViewStore) bind(binding TerminalViewBinding) TerminalViewSto
 	store.PaneViews = cloneTerminalViewIDs(store.PaneViews)
 	store.FloatingViews = cloneTerminalViewIDs(store.FloatingViews)
 	if binding.ResizeRole == TerminalResizeRoleOwner {
+		_, hadDifferentOwner := store.ownerIdentityBinding(binding.TerminalID)
+		if owner, ok := store.ownerIdentityBinding(binding.TerminalID); ok && owner.ViewID == binding.ViewID {
+			hadDifferentOwner = false
+		}
+		if existing, ok := store.Views[binding.ViewID]; ok && existing.TerminalID == binding.TerminalID && !existing.HasResizeOwner() {
+			// 中文说明：attach result 可能把 follower 投影成 owner；这同样需要下一帧主动校验 PTY size。
+			binding.ResizePending = true
+		}
+		if hadDifferentOwner {
+			// 中文说明：新建 view 直接以 owner 写入时也属于 owner transfer，不能等后续输入输出才同步尺寸。
+			binding.ResizePending = true
+		}
+	}
+	if binding.ResizeRole == TerminalResizeRoleOwner {
 		store.demoteResizeOwnersLocked(binding.TerminalID, binding.ViewID)
 	}
 	store.Views[binding.ViewID] = binding
@@ -160,6 +175,7 @@ func (store TerminalViewStore) demoteResizeOwnersLocked(terminalID string, excep
 		}
 		candidate.ResizeRole = TerminalResizeRoleFollower
 		candidate.CanResize = false
+		candidate.ResizePending = false
 		store.Views[candidateID] = candidate
 	}
 }
@@ -349,6 +365,8 @@ func (store TerminalViewStore) promoteReplacementOwnerLocked(terminalID string) 
 		// 否则 close/unzoom 这类布局回弹会被误判成“尺寸未变”，漏发真实 PTY resize。
 		binding.DesiredCols = 0
 		binding.DesiredRows = 0
+		// 中文说明：被动接任 owner 后必须至少走一次 ensure_resize，让 core 同步 owner 尺寸语义。
+		binding.ResizePending = true
 		store.Views[viewID] = binding
 		store.demoteResizeOwnersLocked(terminalID, viewID)
 		return
@@ -367,14 +385,20 @@ func (store TerminalViewStore) TransferResizeOwner(viewID string) TerminalViewSt
 			continue
 		}
 		if candidateID == viewID {
+			becameOwner := !binding.HasResizeOwner()
 			binding.ResizeRole = TerminalResizeRoleOwner
 			binding = binding.applyTerminalSizeLockProjection(locked)
 			if !locked {
 				binding.CanResize = true
 			}
+			if becameOwner {
+				// 中文说明：主动抢 owner 是 attachment ownership 变化，尺寸相同也要校验一次。
+				binding.ResizePending = true
+			}
 		} else if binding.ResizeRole == TerminalResizeRoleOwner {
 			binding.ResizeRole = TerminalResizeRoleFollower
 			binding.CanResize = false
+			binding.ResizePending = false
 			binding = binding.applyTerminalSizeLockProjection(locked)
 		} else {
 			binding = binding.applyTerminalSizeLockProjection(locked)
@@ -408,12 +432,13 @@ func (store TerminalViewStore) RequestViewResize(viewID string, cols int, rows i
 		return store, decision
 	}
 	decision.Allowed = true
-	if binding.DesiredCols == cols && binding.DesiredRows == rows {
+	if binding.DesiredCols == cols && binding.DesiredRows == rows && !binding.ResizePending {
 		decision.Reason = "unchanged"
 		return store, decision
 	}
 	binding.DesiredCols = cols
 	binding.DesiredRows = rows
+	binding.ResizePending = false
 	binding.RequestSeq++
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.Views[viewID] = binding
@@ -430,6 +455,7 @@ func (store TerminalViewStore) ApplyResizeResult(viewID string, seq uint64, cols
 	}
 	binding.DesiredCols = cols
 	binding.DesiredRows = rows
+	binding.ResizePending = false
 	binding.LastError = lastError
 	store.Views = cloneTerminalViewBindings(store.Views)
 	store.Views[viewID] = binding
@@ -460,7 +486,12 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 	binding.OwnerViewID = projection.OwnerViewID
 	binding.ResizeEpoch = projection.ResizeEpoch
 	if projection.ResizeRole != "" {
+		wasOwner := binding.HasResizeOwner()
 		binding.ResizeRole = normalizeTerminalResizeRole(projection.ResizeRole)
+		if !wasOwner && binding.HasResizeOwner() {
+			// 中文说明：core 投影把当前 view 提升为 owner 后，下一次 layout pass 必须主动校验尺寸。
+			binding.ResizePending = true
+		}
 	}
 	if projection.SurfaceID != "" {
 		binding.SurfaceID = projection.SurfaceID

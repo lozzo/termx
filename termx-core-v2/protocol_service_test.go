@@ -1864,6 +1864,17 @@ func TestProtocolServiceMultipleAttachmentsResizeOwnership(t *testing.T) {
 	if len(resizes) != 1 || resizes[0] != (Size{Cols: 30, Rows: 8}) {
 		t.Fatalf("expected only owner resize to reach process, got %#v", resizes)
 	}
+	sameSize, err := client.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: owner.Channel, Cols: 30, Rows: 8, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-owner", ViewID: "view-owner"})
+	if err != nil {
+		t.Fatalf("same-size owner ensure_resize: %v", err)
+	}
+	if sameSize.Resized || sameSize.Size != (protocol.Size{Cols: 30, Rows: 8}) || sameSize.ResizeControl == nil || !sameSize.ResizeControl.CanResize {
+		t.Fatalf("same-size owner ensure_resize should refresh control without PTY resize, got %#v", sameSize)
+	}
+	_, resizes, _, _ = process.snapshot()
+	if len(resizes) != 1 {
+		t.Fatalf("same-size ensure_resize must not reach process again, got %#v", resizes)
+	}
 	var info protocol.TerminalInfo
 	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
 		t.Fatalf("get: %v", err)

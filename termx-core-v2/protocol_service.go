@@ -287,6 +287,15 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 				ResizeControl: control,
 			})
 		}
+		if control.ResizeOwnership != nil && control.ResizeOwnership.Size == (protocol.Size{Cols: in.Cols, Rows: in.Rows}) {
+			// 中文说明：owner 转移后仍要走 ensure_resize 同步 ownership；
+			// 但 PTY 尺寸没变时不能实际 resize，避免制造多余 resize 事件和历史 invalidation。
+			return encodeMethodResult(req.Method, protocol.EnsureResizeResult{
+				Size:          control.ResizeOwnership.Size,
+				Resized:       false,
+				ResizeControl: control,
+			})
+		}
 		err = session.server.ResizeTerminal(ctx, in.TerminalID, in.Cols, in.Rows)
 		if err != nil {
 			return nil, false, errorCode(err), err

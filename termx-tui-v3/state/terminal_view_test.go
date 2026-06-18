@@ -37,6 +37,9 @@ func TestTerminalViewStoreDetachAndKillHaveDifferentScope(t *testing.T) {
 	if second.ResizeRole != TerminalResizeRoleOwner || !second.CanResize {
 		t.Fatalf("sibling pane should inherit resize owner after owner detach, got %#v", second)
 	}
+	if !second.ResizePending {
+		t.Fatalf("sibling pane promoted to resize owner must require one resize check, got %#v", second)
+	}
 
 	store = store.RemoveTerminal("term-1")
 	if bindings := store.BindingsForTerminal("term-1"); len(bindings) != 0 {
@@ -80,6 +83,9 @@ func TestTerminalViewStoreTransfersResizeOwnerWithinTerminal(t *testing.T) {
 	}
 	if second.ResizeRole != TerminalResizeRoleOwner || !second.CanResize {
 		t.Fatalf("target pane should become owner, got %#v", second)
+	}
+	if !second.ResizePending {
+		t.Fatalf("target pane should force one owner resize check after transfer, got %#v", second)
 	}
 	if third.ResizeRole != TerminalResizeRoleOwner || !third.CanResize {
 		t.Fatalf("unrelated terminal owner should be preserved, got %#v", third)
@@ -190,6 +196,26 @@ func TestTerminalViewStoreResizeRequestRequiresOwnerAndGuardsStaleResults(t *tes
 	current, _ = stale.PaneBinding("pane-1")
 	if current.DesiredCols != 110 || current.DesiredRows != 32 {
 		t.Fatalf("stale result must not overwrite desired size, got %#v", current)
+	}
+}
+
+func TestTerminalViewStoreOwnerTransferForcesSameSizeResizeOnce(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, TerminalResizeRoleFollower, "surface", "view-2", false))
+	store = store.TransferPaneResizeOwner("pane-2")
+
+	next, decision := store.RequestPaneResize("pane-2", 80, 24)
+	if !decision.Allowed || !decision.Changed || decision.Seq != 1 {
+		t.Fatalf("new owner must issue one same-size resize check, decision=%#v", decision)
+	}
+	binding, _ := next.PaneBinding("pane-2")
+	if binding.ResizePending || binding.RequestSeq != 1 || binding.DesiredCols != 80 || binding.DesiredRows != 24 {
+		t.Fatalf("resize check should clear pending and keep desired size, got %#v", binding)
+	}
+	_, duplicate := next.RequestPaneResize("pane-2", 80, 24)
+	if !duplicate.Allowed || duplicate.Changed || duplicate.Reason != "unchanged" {
+		t.Fatalf("same-size resize after pending check must dedupe, decision=%#v", duplicate)
 	}
 }
 

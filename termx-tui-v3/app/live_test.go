@@ -1191,6 +1191,29 @@ func TestTakeResizeOwnerAttachResultTriggersOwnerViewResize(t *testing.T) {
 	}
 }
 
+func TestTakeResizeOwnerAttachResultTriggersSameSizeOwnerResize(t *testing.T) {
+	reducer := ComposeReducers(NewLiveReducer(LiveDeps{}), NewTerminalLayoutResizeReducer())
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:    shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 122, Rows: 28},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 59, Rows: 24, DesiredCols: 59, DesiredRows: 24},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 59, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 59, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, effects := reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 59, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: "view-2", CanResize: true, OwnerSurfaceID: "surface", OwnerViewID: "view-2", ResizeEpoch: 2}})
+	msg, ok := liveResizeMsgFromEffects(effects)
+	if !ok || msg.ViewID != "view-2" || msg.Seq != 1 || msg.Cols != 59 || msg.Rows != 24 {
+		t.Fatalf("owner attach result should force same-size resize check, msg=%#v effects=%#v", msg, effects)
+	}
+	owner, _ := next.TerminalViews.PaneBinding("pane-2")
+	if owner.ResizePending || owner.RequestSeq != 1 {
+		t.Fatalf("same-size owner resize request should clear pending, got %#v", owner)
+	}
+}
+
 func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
@@ -3002,6 +3025,43 @@ func TestClosePaneTransfersResizeOwnerAndRestoresFullContentRect(t *testing.T) {
 	}
 	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.ResizeRole != state.TerminalResizeRoleOwner || !binding.CanResize {
 		t.Fatalf("remaining pane should own resize after sibling close, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestCloseResizeOwnerPromotesFollowerAndResizesImmediately(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(122, 28)
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:    shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 122, Rows: 28},
+		Session:  state.TerminalSessionStore{TerminalID: "term-1", Channel: 7, Attached: true, Cols: 59, Rows: 24, DesiredCols: 59, DesiredRows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "surface", ViewID: "view-1"},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 59, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 59, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal})
+
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action: state.PaneCommandClose,
+		Target: state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+	}}); err != nil {
+		t.Fatalf("post close owner: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain close owner: %v", err)
+	}
+
+	if len(terminal.Resizes) != 1 {
+		t.Fatalf("promoted follower should resize immediately once, got %#v", terminal.Resizes)
+	}
+	if got := terminal.Resizes[0]; got.TerminalID != "term-1" || got.Channel != 8 || got.ViewID != "view-2" || got.ResizePolicy != state.TerminalResizeRoleOwner || got.Cols != 120 || got.Rows != 24 {
+		t.Fatalf("promoted follower resize should use new owner content rect and channel, got %#v", got)
+	}
+	binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2")
+	if !ok || binding.ResizeRole != state.TerminalResizeRoleOwner || !binding.CanResize || binding.ResizePending || binding.RequestSeq != 1 {
+		t.Fatalf("remaining pane should own resize with completed pending check, binding=%#v ok=%v", binding, ok)
 	}
 }
 

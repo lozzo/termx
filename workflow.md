@@ -252,11 +252,13 @@
 | 215E1-R79. SK terminal lifecycle 链路文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已新增 `terminal-lifecycle-debug-chain.md`，按 workbench restore、TerminalView binding、terminal pool list、live surface/session、runtime queue、render exited CTA、restart action 分段记录关键代码、状态 owner、不变量和排查顺序 |
 | 215E1-R80. SK TUI/core 状态归属文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已新增 `state-ownership-map.md`，用 JSON 总图和 owner 表梳理 core terminal、attachment、history、live、storage，以及 TUI shell、TerminalView、surface/session、history/copy、pool、runtime/host/render 缓存的状态归属和禁止跨边界使用规则 |
 | 215E1-R81. SK 状态归属文档中文化 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已把 `state-ownership-map.md` 的标题、章节、JSON key、表头和语义说明改成中文；代码结构名、字段名和文件路径保留原名，方便按文档回查代码 |
+| 215E1-R82. SK resize owner 接任主动校验 | 完成 | `termx-core-v2/`、`termx-tui-v3/state/`、`termx-tui-v3/app/`、`workflow.md` | 已修复 owner 主动/被动转移后不立即 resize 的回归：TerminalView owner 变化会标记一次 pending owner resize，layout reducer 立即发 view-scoped `ensure_resize`；core-v2 `ensure_resize` 在尺寸相同情况下只刷新 ownership/control，不实际 resize PTY |
 
 当前下一步：
 
-- `215E1-R81 状态归属文档中文化` 已完成
+- `215E1-R82 resize owner 接任主动校验` 已完成
 - 当前有效输入模型：TerminalHost 的 key/mouse 入口同源；runtime 先做 mouse hit-test 激活输入态，普通 key 与 terminal mouse passthrough 统一进入 `TerminalInputRouter`，只按 active TerminalView binding 发起带 ack 的 protocol `input` 请求；protocol/core 按 view-scoped attachment 校验，失败只重连当前 view，不覆盖 sibling binding
+- 当前 resize owner 语义：owner 主动获取、attach result 投影成 owner、关闭旧 owner 后 sibling 自动接任，都会触发一次 view-scoped `ensure_resize`；如果目标尺寸等于 core 当前 PTY size，core 只返回最新 ownership/control，不调用实际 PTY resize。
 - 当前 restart 语义：terminal lifecycle 和 terminal data 分离；process 退出/重启不会清空 core-v2 authoritative history，也不会清空 live tail。restart 会让所有 view channel 失效并逐 view reattach，但 TUI 等待 reattach 时继续显示旧 live tail。
 - 当前 exit marker 语义：process 退出时 core-v2 先 force commit primary frontier，再把 `terminal exited`、`exited at`、`command` 三类 marker 作为显式系统输出追加到 live surface 和 authoritative history；这不是 storage/snapshot/TUI overlay 推导出来的当前进程内状态。
 - 当前 lifecycle 权威边界：当前 terminal 是否 exited/running 只看 core terminal 属性；pane/floating 只有空槽位或连接到 TerminalView 的状态，workbench storage 只保存布局和连接意图，不参与当前 lifecycle 或输入路由判断。

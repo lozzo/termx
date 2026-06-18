@@ -126,6 +126,7 @@ func terminalLayoutMayNeedResize(root state.Root, msg Msg) bool {
 		LiveEventMsg,
 		TerminalPoolAttachResultMsg,
 		TerminalSizeLockToggleResultMsg,
+		ShellWorkbenchCommandMsg,
 		ShellSetPanelPresentationMsg,
 		ShellTogglePanelPresentationMsg,
 		ShellSetHeaderVisibleMsg,
@@ -136,10 +137,19 @@ func terminalLayoutMayNeedResize(root state.Root, msg Msg) bool {
 		ShellPaneCommandMsg:
 		return true
 	case ShellFloatingCommandMsg:
-		return floatingCommandMayResizeTerminal(root, msg.Command)
+		return floatingCommandMayResizeTerminal(root, msg.Command) || terminalHasPendingOwnerResize(root)
 	default:
 		return false
 	}
+}
+
+func terminalHasPendingOwnerResize(root state.Root) bool {
+	for _, binding := range root.TerminalViews.Bindings() {
+		if binding.ResizePending && binding.HasAuthoritativeResizeOwner() {
+			return true
+		}
+	}
+	return false
 }
 
 func floatingCommandMayResizeTerminal(root state.Root, command state.FloatingCommand) bool {
