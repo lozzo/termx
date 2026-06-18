@@ -2,6 +2,7 @@ package termxcorev2
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
@@ -19,17 +20,22 @@ type terminalHistoryPipeline struct {
 	altCap *live.SurfaceTrack
 	cols   int
 	rows   int
+	// 中文说明：live snapshot 只需要知道 history 已经完成到哪个 generation；
+	// 这里用原子投影，避免实时刷新为了读 generation 去等 history parser 锁。
+	lastCompletedGeneration atomic.Uint64
 }
 
 func newTerminalHistoryPipeline(cols int, rows int) *terminalHistoryPipeline {
 	track := history.NewHistoryTrack()
 	track.SetPrimaryScreenRows(rows)
-	return &terminalHistoryPipeline{
+	pipeline := &terminalHistoryPipeline{
 		track:  track,
 		altCap: live.NewSurfaceTrack(live.SurfaceSize{Cols: cols, Rows: rows}),
 		cols:   cols,
 		rows:   rows,
 	}
+	pipeline.publishGenerationLocked()
+	return pipeline
 }
 
 func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
@@ -54,6 +60,7 @@ func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
 			}
 		}
 	}
+	pipeline.publishGenerationLocked()
 	return nil
 }
 
@@ -65,7 +72,11 @@ func (pipeline *terminalHistoryPipeline) Resize(cols int, rows int, event histor
 	pipeline.ingest.SetScreenSize(cols, rows)
 	pipeline.altCap.Resize(live.SurfaceSize{Cols: cols, Rows: rows})
 	pipeline.track.SetPrimaryScreenRows(rows)
-	return pipeline.track.Apply(event)
+	if err := pipeline.track.Apply(event); err != nil {
+		return err
+	}
+	pipeline.publishGenerationLocked()
+	return nil
 }
 
 func (pipeline *terminalHistoryPipeline) ResetForRestart() error {
@@ -90,13 +101,18 @@ func (pipeline *terminalHistoryPipeline) ResetForRestart() error {
 	pipeline.ingest = historyANSIParser{}
 	pipeline.ingest.SetScreenSize(pipeline.cols, pipeline.rows)
 	pipeline.altCap = live.NewSurfaceTrack(live.SurfaceSize{Cols: pipeline.cols, Rows: pipeline.rows})
+	pipeline.publishGenerationLocked()
 	return nil
 }
 
 func (pipeline *terminalHistoryPipeline) ForceCommitFrontier() error {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
-	return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier})
+	if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		return err
+	}
+	pipeline.publishGenerationLocked()
+	return nil
 }
 
 func (pipeline *terminalHistoryPipeline) AppendSystemLines(lines []string) error {
@@ -125,6 +141,7 @@ func (pipeline *terminalHistoryPipeline) AppendSystemLines(lines []string) error
 			return err
 		}
 	}
+	pipeline.publishGenerationLocked()
 	return nil
 }
 
@@ -147,9 +164,7 @@ func (pipeline *terminalHistoryPipeline) CommittedCursorValid(cols int, cursor h
 }
 
 func (pipeline *terminalHistoryPipeline) Generation() history.Generation {
-	pipeline.mu.Lock()
-	defer pipeline.mu.Unlock()
-	return pipeline.track.Generation()
+	return history.Generation(pipeline.lastCompletedGeneration.Load())
 }
 
 func (pipeline *terminalHistoryPipeline) FreezeSnapshot() history.FrozenSnapshot {
@@ -276,6 +291,10 @@ func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegme
 		}
 	}
 	return nil
+}
+
+func (pipeline *terminalHistoryPipeline) publishGenerationLocked() {
+	pipeline.lastCompletedGeneration.Store(uint64(pipeline.track.Generation()))
 }
 
 func historyRowsFromVTermRows(rows [][]vterm.Cell) [][]history.Cell {

@@ -1873,6 +1873,83 @@ func TestProtocolServiceHistoryWindowLatestFreezesCurrentHistoryWithoutWaitingFo
 	release()
 }
 
+func TestProtocolServiceSnapshotDoesNotWaitForHistoryGenerationLock(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "000001 committed\n"); err != nil {
+		t.Fatalf("seed history: %v", err)
+	}
+	boundary, err := client.Snapshot(context.Background(), "term-1", 0, 4)
+	if err != nil {
+		t.Fatalf("initial snapshot: %v", err)
+	}
+	if boundary.HistoryGeneration == 0 {
+		t.Fatal("initial snapshot should expose completed history generation")
+	}
+
+	process := factory.process("term-1")
+	enteredHistory := make(chan struct{})
+	releaseHistory := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseHistory) }) }
+	terminalHistoryPipelineBeforeIngestHook = func() {
+		select {
+		case <-enteredHistory:
+		default:
+			close(enteredHistory)
+		}
+		<-releaseHistory
+	}
+	defer func() {
+		terminalHistoryPipelineBeforeIngestHook = nil
+	}()
+	defer release()
+
+	process.emitOutput("100000 live-only-for-now\n")
+	select {
+	case <-enteredHistory:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async history worker")
+	}
+	assertEventually(t, time.Second, func() bool {
+		rows, err := server.LiveRows("term-1")
+		return err == nil && strings.Contains(strings.Join(rows, "\n"), "100000 live-only-for-now")
+	}, "live output should reach surface while history queue is blocked")
+
+	snapshotCh := make(chan struct {
+		snapshot *protocol.Snapshot
+		err      error
+	}, 1)
+	go func() {
+		snapshot, err := client.Snapshot(context.Background(), "term-1", 0, 4)
+		snapshotCh <- struct {
+			snapshot *protocol.Snapshot
+			err      error
+		}{snapshot: snapshot, err: err}
+	}()
+	select {
+	case result := <-snapshotCh:
+		if result.err != nil {
+			t.Fatalf("snapshot should not wait for history lock: %v", result.err)
+		}
+		if result.snapshot.HistoryGeneration != boundary.HistoryGeneration {
+			t.Fatalf("snapshot should report last completed generation while history is blocked, got %d want %d", result.snapshot.HistoryGeneration, boundary.HistoryGeneration)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("snapshot waited for history generation lock")
+	}
+	release()
+}
+
 func TestProtocolServiceHistoryWindowLatestHonorsGenerationBoundary(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
