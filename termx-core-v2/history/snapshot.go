@@ -1,6 +1,9 @@
 package history
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // FrozenSnapshot 是 copy/history 进入时刻的冻结 logical-line 视图。
 // 它不是第二份历史 truth，只是 protocol session 在当下 generation 上
@@ -10,6 +13,12 @@ type FrozenSnapshot struct {
 	Generation     Generation
 	Lines          []SnapshotLine
 	CommittedLines int
+	CommittedFirst LogicalLineID
+	CommittedIDs   []LogicalLineID
+	CommittedUpper LogicalLineID
+	FrozenFrontier []SnapshotLine
+	store          LogicalLineStore
+	detached       bool
 }
 
 func (track *HistoryTrack) FreezeSnapshot() FrozenSnapshot {
@@ -20,38 +29,212 @@ func (track *HistoryTrack) FreezePinnedSnapshot() FrozenSnapshot {
 	return track.freezeSnapshot(false)
 }
 
+func NewDetachedFrozenSnapshot(token string, generation Generation, lines []SnapshotLine) FrozenSnapshot {
+	cloned := make([]SnapshotLine, 0, len(lines))
+	committed := 0
+	for _, line := range lines {
+		line.Line = line.Line.Clone()
+		if line.Committed {
+			committed++
+		}
+		cloned = append(cloned, line)
+	}
+	return FrozenSnapshot{
+		Token:          token,
+		Generation:     generation,
+		Lines:          cloned,
+		CommittedLines: committed,
+		detached:       true,
+	}
+}
+
 func (track *HistoryTrack) freezeSnapshot(detach bool) FrozenSnapshot {
 	committedIDs := track.committed.IDs()
-	ids := cloneLineIDs(committedIDs)
+	frontierIDs := make([]LogicalLineID, 0)
 	for _, id := range track.frontier.IDs() {
-		if !track.frontier.IsHidden(id) && !containsLineID(ids, id) {
-			ids = append(ids, id)
+		if !track.frontier.IsHidden(id) && !containsLineID(committedIDs, id) {
+			frontierIDs = append(frontierIDs, id)
 		}
 	}
-	lines := make([]SnapshotLine, 0, len(ids))
-	committedLines := 0
-	for _, id := range ids {
+	snapshot := FrozenSnapshot{
+		Token:          makeSnapshotToken(track.generation),
+		Generation:     track.generation,
+		CommittedLines: len(committedIDs),
+		store:          track.store,
+		detached:       detach,
+	}
+	if len(committedIDs) > 0 {
+		snapshot.CommittedFirst = committedIDs[0]
+		snapshot.CommittedUpper = committedIDs[len(committedIDs)-1]
+		if !lineIDsContiguous(committedIDs) {
+			snapshot.CommittedIDs = cloneLineIDs(committedIDs)
+		}
+	}
+	if detach && len(snapshot.CommittedIDs) == 0 {
+		snapshot.CommittedIDs = cloneLineIDs(committedIDs)
+	}
+	for _, id := range frontierIDs {
 		line, ok := snapshotLine(track.store, id, detach)
 		if !ok {
 			continue
 		}
-		committed := track.committed.Contains(id)
-		if committed {
-			committedLines++
-		}
-		lines = append(lines, SnapshotLine{
-			// 中文说明：MemoryStorageBackend 保存时已经 copy-on-write；冻结快照只复制
-			// line header，不再重复复制整段 cell payload，避免 protocol 大历史 copy 入口内存翻倍。
+		snapshot.FrozenFrontier = append(snapshot.FrozenFrontier, SnapshotLine{
+			// 中文说明：只有 still-mutable frontier 需要冻结 payload；committed history
+			// 已经在 store 中稳定存在，protocol pin 只记录 ID 边界，分页时按需取。
 			Line:      line,
-			Committed: committed,
+			Committed: false,
 		})
 	}
-	return FrozenSnapshot{
-		Token:          makeSnapshotToken(track.generation),
-		Generation:     track.generation,
-		Lines:          lines,
-		CommittedLines: committedLines,
+	if detach {
+		snapshot.materializeDetachedLines()
 	}
+	return snapshot
+}
+
+func (snapshot *FrozenSnapshot) materializeDetachedLines() {
+	if len(snapshot.Lines) > 0 {
+		return
+	}
+	lines := make([]SnapshotLine, 0, len(snapshot.CommittedIDs)+len(snapshot.FrozenFrontier))
+	for _, id := range snapshot.CommittedIDs {
+		line, ok := snapshotLine(snapshot.store, id, true)
+		if !ok {
+			continue
+		}
+		lines = append(lines, SnapshotLine{Line: line, Committed: true})
+	}
+	lines = append(lines, snapshot.FrozenFrontier...)
+	snapshot.Lines = lines
+	snapshot.store = nil
+}
+
+func (snapshot FrozenSnapshot) VisibleLineCount() int {
+	if len(snapshot.Lines) > 0 {
+		return len(snapshot.Lines)
+	}
+	return snapshot.CommittedLines + len(snapshot.FrozenFrontier)
+}
+
+func (snapshot FrozenSnapshot) LineAt(index int) (SnapshotLine, bool) {
+	if index < 0 {
+		return SnapshotLine{}, false
+	}
+	if len(snapshot.Lines) > 0 {
+		if index >= len(snapshot.Lines) {
+			return SnapshotLine{}, false
+		}
+		return snapshot.Lines[index], true
+	}
+	if index < snapshot.CommittedLines {
+		id, ok := snapshot.committedIDAt(index)
+		if !ok {
+			return SnapshotLine{}, false
+		}
+		line, ok := snapshotLine(snapshot.store, id, false)
+		if !ok {
+			return SnapshotLine{}, false
+		}
+		return SnapshotLine{Line: line, Committed: true}, true
+	}
+	frontierIndex := index - snapshot.CommittedLines
+	if frontierIndex < 0 || frontierIndex >= len(snapshot.FrozenFrontier) {
+		return SnapshotLine{}, false
+	}
+	return snapshot.FrozenFrontier[frontierIndex], true
+}
+
+func (snapshot FrozenSnapshot) LineIndex(id LogicalLineID) (int, bool) {
+	if id == 0 {
+		return -1, false
+	}
+	if len(snapshot.Lines) > 0 {
+		for index, line := range snapshot.Lines {
+			if line.Line.ID == id {
+				return index, true
+			}
+		}
+		return -1, false
+	}
+	if index, ok := snapshot.committedLineIndex(id); ok {
+		return index, true
+	}
+	for index, line := range snapshot.FrozenFrontier {
+		if line.Line.ID == id {
+			return snapshot.CommittedLines + index, true
+		}
+	}
+	return -1, false
+}
+
+func (snapshot FrozenSnapshot) CommittedLineIDs() []LogicalLineID {
+	if len(snapshot.Lines) > 0 {
+		ids := make([]LogicalLineID, 0, snapshot.CommittedLines)
+		for _, line := range snapshot.Lines {
+			if line.Committed {
+				ids = append(ids, line.Line.ID)
+			}
+		}
+		return ids
+	}
+	if len(snapshot.CommittedIDs) > 0 {
+		return cloneLineIDs(snapshot.CommittedIDs)
+	}
+	if snapshot.CommittedFirst == 0 || snapshot.CommittedLines <= 0 {
+		return nil
+	}
+	ids := make([]LogicalLineID, snapshot.CommittedLines)
+	for i := range ids {
+		ids[i] = snapshot.CommittedFirst + LogicalLineID(i)
+	}
+	return ids
+}
+
+func (snapshot FrozenSnapshot) committedIDAt(index int) (LogicalLineID, bool) {
+	if index < 0 || index >= snapshot.CommittedLines {
+		return 0, false
+	}
+	if len(snapshot.CommittedIDs) > 0 {
+		if index >= len(snapshot.CommittedIDs) {
+			return 0, false
+		}
+		return snapshot.CommittedIDs[index], true
+	}
+	if snapshot.CommittedFirst == 0 {
+		return 0, false
+	}
+	return snapshot.CommittedFirst + LogicalLineID(index), true
+}
+
+func (snapshot FrozenSnapshot) committedLineIndex(id LogicalLineID) (int, bool) {
+	if id == 0 || snapshot.CommittedLines <= 0 {
+		return -1, false
+	}
+	if len(snapshot.CommittedIDs) > 0 {
+		index := sort.Search(len(snapshot.CommittedIDs), func(i int) bool {
+			return snapshot.CommittedIDs[i] >= id
+		})
+		if index < len(snapshot.CommittedIDs) && snapshot.CommittedIDs[index] == id {
+			return index, true
+		}
+		return -1, false
+	}
+	if snapshot.CommittedFirst == 0 || id < snapshot.CommittedFirst || id > snapshot.CommittedUpper {
+		return -1, false
+	}
+	index := int(id - snapshot.CommittedFirst)
+	if index < 0 || index >= snapshot.CommittedLines {
+		return -1, false
+	}
+	return index, true
+}
+
+func lineIDsContiguous(ids []LogicalLineID) bool {
+	for i := 1; i < len(ids); i++ {
+		if ids[i] != ids[i-1]+1 {
+			return false
+		}
+	}
+	return true
 }
 
 func makeSnapshotToken(generation Generation) string {

@@ -893,7 +893,7 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 }
 
 func copyModeBelongsToPane(copyMode state.CopyModeStore, paneID string, activePaneID string) bool {
-	if !copyModeInputContextVM(copyMode) || paneID == "" {
+	if !copyMode.Active || paneID == "" {
 		return false
 	}
 	if copyMode.PaneID == "" {
@@ -903,21 +903,17 @@ func copyModeBelongsToPane(copyMode state.CopyModeStore, paneID string, activePa
 }
 
 func copyModeBelongsToFloating(copyMode state.CopyModeStore, floatingID string) bool {
-	return copyModeInputContextVM(copyMode) && floatingID != "" && copyMode.ViewID == state.TerminalFloatingViewID(floatingID)
+	return copyMode.Active && floatingID != "" && copyMode.ViewID == state.TerminalFloatingViewID(floatingID)
 }
 
 func copyModeFloatingActive(copyMode state.CopyModeStore, shell state.ShellStore) bool {
-	if !copyModeInputContextVM(copyMode) || copyMode.ViewID == "" || !strings.HasPrefix(copyMode.ViewID, "floating:") {
+	if !copyMode.Active || copyMode.ViewID == "" || !strings.HasPrefix(copyMode.ViewID, "floating:") {
 		return false
 	}
 	if shell.ActiveFloatingID == "" {
 		return true
 	}
 	return copyMode.ViewID == state.TerminalFloatingViewID(shell.ActiveFloatingID)
-}
-
-func copyModeInputContextVM(copyMode state.CopyModeStore) bool {
-	return copyMode.Active || copyMode.Entering
 }
 
 func contentKindForPane(pane state.PaneState) ContentKind {
@@ -1011,10 +1007,8 @@ func canRenderCopyHistory(root state.Root, history state.HistoryStore, copyMode 
 
 func copyHistoryPendingReason(root state.Root, history state.HistoryStore, copyMode state.CopyModeStore) string {
 	switch {
-	case !copyModeInputContextVM(copyMode):
+	case !copyMode.Active:
 		return ""
-	case copyMode.Entering:
-		return "copy history pending: window pending"
 	case copyMode.TerminalID == "":
 		return "copy history pending: terminal binding missing"
 	case !copyModeBindingStillValid(root, copyMode):
@@ -1069,7 +1063,7 @@ func buildCopyHistoryContentVM(root state.Root, history state.HistoryStore, copy
 }
 
 func copyModeBindingStillValid(root state.Root, copyMode state.CopyModeStore) bool {
-	if !copyModeInputContextVM(copyMode) {
+	if !copyMode.Active {
 		return false
 	}
 	if copyMode.ViewID != "" {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1432,20 +1431,28 @@ func frozenSnapshotBoundaryValid(snapshot history.FrozenSnapshot, cols int, firs
 	if cols <= 0 {
 		return false
 	}
-	lines := snapshotVisibleLines(snapshot)
-	if len(lines) == 0 {
+	lineCount := snapshot.VisibleLineCount()
+	if lineCount == 0 {
 		return firstLineID == 0 && lastLineID == 0
 	}
 	if firstLineID == 0 {
-		firstLineID = uint64(lines[0].Line.ID)
+		first, ok := snapshot.LineAt(0)
+		if !ok {
+			return false
+		}
+		firstLineID = uint64(first.Line.ID)
 	}
-	if lastLineID == 0 {
-		lastLineID = uint64(lines[len(lines)-1].Line.ID)
-	}
-	if lastLineID != uint64(lines[len(lines)-1].Line.ID) {
+	last, ok := snapshot.LineAt(lineCount - 1)
+	if !ok {
 		return false
 	}
-	_, ok := snapshotLineIndex(lines, history.LogicalLineID(firstLineID))
+	if lastLineID == 0 {
+		lastLineID = uint64(last.Line.ID)
+	}
+	if lastLineID != uint64(last.Line.ID) {
+		return false
+	}
+	_, ok = snapshotLineIndex(snapshot, history.LogicalLineID(firstLineID))
 	return ok
 }
 
@@ -1539,15 +1546,26 @@ func buildSnapshotWindowRows(rows []snapshotProjectedRow) ([]history.LogicalLine
 }
 
 func projectFrozenSnapshotLatestRows(snapshot history.FrozenSnapshot, cols int) []snapshotProjectedRow {
-	return projectFrozenSnapshotRows(snapshot.Lines, cols)
+	rows := make([]snapshotProjectedRow, 0)
+	for i := 0; i < snapshot.VisibleLineCount(); i++ {
+		line, ok := snapshot.LineAt(i)
+		if !ok {
+			continue
+		}
+		rows = append(rows, projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)...)
+	}
+	return rows
 }
 
 func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols int, maxRows int) ([]snapshotProjectedRow, bool) {
-	lines := snapshotVisibleLines(snapshot)
 	rows := make([]snapshotProjectedRow, 0, maxRows)
 	hasMore := false
-	for i := len(lines) - 1; i >= 0; i-- {
-		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[i]}, cols)
+	for i := snapshot.VisibleLineCount() - 1; i >= 0; i-- {
+		line, ok := snapshot.LineAt(i)
+		if !ok {
+			continue
+		}
+		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
 		for rowIndex := len(lineRows) - 1; rowIndex >= 0; rowIndex-- {
 			if len(rows) >= maxRows {
 				hasMore = true
@@ -1564,10 +1582,13 @@ func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols i
 }
 
 func projectFrozenSnapshotOldestHeadRows(snapshot history.FrozenSnapshot, cols int, maxRows int) ([]snapshotProjectedRow, bool) {
-	lines := snapshotVisibleLines(snapshot)
 	rows := make([]snapshotProjectedRow, 0, maxRows)
 	hasMore := false
-	for _, line := range lines {
+	for i := 0; i < snapshot.VisibleLineCount(); i++ {
+		line, ok := snapshot.LineAt(i)
+		if !ok {
+			continue
+		}
 		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
 		for _, row := range lineRows {
 			if len(rows) >= maxRows {
@@ -1590,9 +1611,12 @@ func projectFrozenSnapshotOlderRowsBeforeCursor(snapshot history.FrozenSnapshot,
 	}
 	rows := make([]snapshotProjectedRow, 0, maxRows)
 	hasMore := false
-	lines := snapshot.Lines
 	for lineIndex := startLineIndex; lineIndex >= 0; lineIndex-- {
-		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[lineIndex]}, cols)
+		line, ok := snapshot.LineAt(lineIndex)
+		if !ok {
+			continue
+		}
+		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
 		rowIndex := len(lineRows) - 1
 		if lineIndex == startLineIndex {
 			rowIndex = startRowIndex
@@ -1630,23 +1654,31 @@ func snapshotCursorStartPosition(snapshot history.FrozenSnapshot, cols int, curs
 	if !cursor.Valid {
 		return -1, -1, false
 	}
-	lines := snapshot.Lines
 	if cursor.BeforeLineID == 0 {
-		if len(lines) == 0 {
+		lineCount := snapshot.VisibleLineCount()
+		if lineCount == 0 {
 			return -1, -1, false
 		}
-		lineIndex := len(lines) - 1
-		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[lineIndex]}, cols)
+		lineIndex := lineCount - 1
+		line, ok := snapshot.LineAt(lineIndex)
+		if !ok {
+			return -1, -1, false
+		}
+		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
 		if len(lineRows) == 0 {
 			return lineIndex - 1, -1, true
 		}
 		return lineIndex, len(lineRows) - 1, true
 	}
-	lineIndex, ok := snapshotLineIndex(lines, cursor.BeforeLineID)
+	lineIndex, ok := snapshotLineIndex(snapshot, cursor.BeforeLineID)
 	if !ok {
 		return -1, -1, false
 	}
-	lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{lines[lineIndex]}, cols)
+	line, ok := snapshot.LineAt(lineIndex)
+	if !ok {
+		return -1, -1, false
+	}
+	lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
 	for rowIndex, row := range lineRows {
 		if row.row.RowInLine == cursor.BeforeRowInLine {
 			return lineIndex, rowIndex - 1, true
@@ -1656,12 +1688,23 @@ func snapshotCursorStartPosition(snapshot history.FrozenSnapshot, cols int, curs
 }
 
 func snapshotVisibleLines(snapshot history.FrozenSnapshot) []history.SnapshotLine {
-	return snapshot.Lines
+	lines := make([]history.SnapshotLine, 0, snapshot.VisibleLineCount())
+	for i := 0; i < snapshot.VisibleLineCount(); i++ {
+		line, ok := snapshot.LineAt(i)
+		if ok {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 func snapshotCommittedLines(snapshot history.FrozenSnapshot) []history.SnapshotLine {
-	lines := make([]history.SnapshotLine, 0, snapshot.CommittedLines)
-	for _, line := range snapshot.Lines {
+	lines := make([]history.SnapshotLine, 0, countCommittedSnapshotLines(snapshot))
+	for i := 0; i < snapshot.VisibleLineCount(); i++ {
+		line, ok := snapshot.LineAt(i)
+		if !ok {
+			continue
+		}
 		if line.Committed {
 			lines = append(lines, line)
 		}
@@ -1670,35 +1713,23 @@ func snapshotCommittedLines(snapshot history.FrozenSnapshot) []history.SnapshotL
 }
 
 func snapshotCommittedEnd(snapshot history.FrozenSnapshot) int {
-	if snapshot.CommittedLines > 0 && snapshot.CommittedLines <= len(snapshot.Lines) {
+	if snapshot.CommittedLines > 0 && snapshot.CommittedLines <= snapshot.VisibleLineCount() {
 		return snapshot.CommittedLines
 	}
-	for index, line := range snapshot.Lines {
+	for index := 0; index < snapshot.VisibleLineCount(); index++ {
+		line, ok := snapshot.LineAt(index)
+		if !ok {
+			continue
+		}
 		if !line.Committed {
 			return index
 		}
 	}
-	return len(snapshot.Lines)
+	return snapshot.VisibleLineCount()
 }
 
-func snapshotLineIndex(lines []history.SnapshotLine, id history.LogicalLineID) (int, bool) {
-	if id == 0 || len(lines) == 0 {
-		return -1, false
-	}
-	// 中文说明：FrozenSnapshot 的 line 序列来自 committed index + frontier，
-	// line id 单调递增；older 每页只需要二分定位 cursor/boundary，不应全量扫描。
-	index := sort.Search(len(lines), func(i int) bool {
-		return lines[i].Line.ID >= id
-	})
-	if index < len(lines) && lines[index].Line.ID == id {
-		return index, true
-	}
-	for index, line := range lines {
-		if line.Line.ID == id {
-			return index, true
-		}
-	}
-	return -1, false
+func snapshotLineIndex(snapshot history.FrozenSnapshot, id history.LogicalLineID) (int, bool) {
+	return snapshot.LineIndex(id)
 }
 
 func reverseSnapshotProjectedRows(rows []snapshotProjectedRow) {
@@ -1708,8 +1739,12 @@ func reverseSnapshotProjectedRows(rows []snapshotProjectedRow) {
 }
 
 func projectFrozenSnapshotCommittedRows(snapshot history.FrozenSnapshot, cols int) []snapshotProjectedRow {
-	lines := make([]history.SnapshotLine, 0, len(snapshot.Lines))
-	for _, line := range snapshot.Lines {
+	lines := make([]history.SnapshotLine, 0, countCommittedSnapshotLines(snapshot))
+	for i := 0; i < snapshot.VisibleLineCount(); i++ {
+		line, ok := snapshot.LineAt(i)
+		if !ok {
+			continue
+		}
 		if line.Committed {
 			lines = append(lines, line)
 		}
@@ -1985,7 +2020,11 @@ func countCommittedSnapshotLines(snapshot history.FrozenSnapshot) int {
 		return snapshot.CommittedLines
 	}
 	count := 0
-	for _, line := range snapshot.Lines {
+	for i := 0; i < snapshot.VisibleLineCount(); i++ {
+		line, ok := snapshot.LineAt(i)
+		if !ok {
+			continue
+		}
 		if line.Committed {
 			count++
 		}

@@ -413,8 +413,8 @@ func TestInteractiveRuntimeCtrlVEntersCopyModeWithoutBlockingOnSlowHistoryLatest
 		t.Fatalf("expected async latest request to start, got %#v", core.latestRequests())
 	}
 	frame := lastFrame(t, host.Frames())
-	if !frameContains(frame, "window pending") || frameContains(frame, "live stays visible while copy history loads") {
-		t.Fatalf("entering copy mode must be visible as pending authoritative history, got %#v", frame.Lines)
+	if !frameContains(frame, "live stays visible while copy history loads") || frameContains(frame, "window pending") {
+		t.Fatalf("entering copy mode must keep live frame until authoritative history arrives, got %#v", frame.Lines)
 	}
 
 	core.finishLatest(services.HistoryResult{
@@ -511,8 +511,8 @@ func TestCopyModeDuplicateLatestWhilePendingDoesNotSurfaceError(t *testing.T) {
 		t.Fatalf("duplicate latest while pending must not surface error, got %#v", runtime.State())
 	}
 	last := lastFrame(t, host.Frames())
-	if !frameContains(last, "window pending") || frameContains(last, "live") {
-		t.Fatalf("duplicate pending latest should keep visible copy pending without fake error, got %#v", last.Lines)
+	if !frameContains(last, "live") || frameContains(last, "window pending") {
+		t.Fatalf("duplicate pending latest should keep live frame without fake error, got %#v", last.Lines)
 	}
 }
 
@@ -4467,6 +4467,9 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 	if runtime.State().CopyMode.Active {
 		t.Fatalf("expected copy mode to exit, got %#v", runtime.State().CopyMode)
 	}
+	if runtime.State().History.Token != "" || len(runtime.State().History.Rows) != 0 || len(runtime.State().History.SourceLines) != 0 || len(runtime.State().History.Lines) != 0 {
+		t.Fatalf("copy exit must release local frozen history window, got %#v", runtime.State().History)
+	}
 
 	stale := historyWindowForApp(
 		state.HistoryWindowReplace,
@@ -4482,8 +4485,8 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain stale after exit: %v", err)
 	}
-	if runtime.State().History.Token != "tok-old" {
-		t.Fatalf("stale response after exit must not replace cached history without pending request, got %#v", runtime.State().History)
+	if runtime.State().History.Token != "" || len(runtime.State().History.Rows) != 0 {
+		t.Fatalf("stale response after exit must not revive released history, got %#v", runtime.State().History)
 	}
 
 	runner.Effects = nil
@@ -4497,11 +4500,11 @@ func TestCopyModeExitThenReenterPendingDoesNotReuseStaleFrozenRows(t *testing.T)
 		t.Fatalf("expected new pending latest request after re-enter, got %#v", runtime.State().History.Pending)
 	}
 	last := lastFrame(t, host.Frames())
-	if frameContains(last, "old-frozen") || frameContains(last, "stale-after-exit") {
-		t.Fatalf("re-enter pending frame must not reuse stale frozen rows, got %#v", last.Lines)
+	if frameContains(last, "old-frozen") || frameContains(last, "stale-after-exit") || frameContains(last, "window pending") {
+		t.Fatalf("re-enter pending frame must not reuse stale frozen rows or show pending text, got %#v", last.Lines)
 	}
-	if !frameContains(last, "window pending") || frameContains(last, "live") {
-		t.Fatalf("re-enter pending should show copy pending without stale frozen rows, got %#v", last.Lines)
+	if !frameContains(last, "live") {
+		t.Fatalf("re-enter pending should keep live frame while latest loads, got %#v", last.Lines)
 	}
 }
 

@@ -223,12 +223,7 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		next, effects := reduceCopyModeScrollOlder(root, deps, intent.Event)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentExitCopyMode:
-		// 中文说明：退出 copy mode 后，任何仍在飞的 authoritative history 请求都不能再回填
-		// 当前 history store；否则延迟返回的 latest/older 会在 copy mode 已关闭后污染状态。
-		if root.History.Pending != nil {
-			root.History.Pending = nil
-		}
-		root.CopyMode = state.CopyModeStore{}
+		root = exitCopyMode(root)
 		return root.Advance(), []Effect{handledEffect{}}
 	case input.IntentOpenClipboardHistory:
 		root.Shell = root.Shell.OpenClipboardHistory()
@@ -284,10 +279,7 @@ func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.R
 		return root, nil, false
 	}
 	if intent.Kind == input.IntentExitCopyMode {
-		if root.History.Pending != nil {
-			root.History.Pending = nil
-		}
-		root.CopyMode = state.CopyModeStore{}
+		root = exitCopyMode(root)
 		return root.Advance(), []Effect{handledEffect{}}, true
 	}
 	// 中文说明：latest 还没回来时 copy/history 尚未真正激活；这段时间只拦截输入，
@@ -397,7 +389,7 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 		}
 		if root.CopyMode.Selection != nil {
 			next, effects := reduceCopyModeCopySelection(root, deps)
-			next.CopyMode = state.CopyModeStore{}
+			next = exitCopyMode(next)
 			return next, effects, true
 		}
 	case input.KeyChar:
@@ -760,10 +752,7 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.input", Body: "no terminal bound"})
 		return root.Advance(), nil
 	}
-	root.CopyMode = state.CopyModeStore{}
-	if root.History.Pending != nil {
-		root.History.Pending = nil
-	}
+	root = exitCopyMode(root)
 	root = root.Advance()
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
@@ -808,10 +797,7 @@ func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (s
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard history", Body: "no clipboard entry"})
 		return root.Advance(), nil
 	}
-	root.CopyMode = state.CopyModeStore{}
-	if root.History.Pending != nil {
-		root.History.Pending = nil
-	}
+	root = exitCopyMode(root)
 	root = root.Advance()
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
@@ -1000,7 +986,14 @@ func setCopyModeError(root state.Root, message string) state.Root {
 }
 
 func setCopyModeEnterError(root state.Root, message string) state.Root {
-	root.History.Pending = nil
-	root.CopyMode = state.CopyModeStore{}
+	root = exitCopyMode(root)
 	return setCopyModeError(root, message)
+}
+
+func exitCopyMode(root state.Root) state.Root {
+	// 中文说明：copy/history window 只是当前交互投影；退出或取消后必须释放，
+	// 否则 TUI 会继续持有 rows/source lines 的 backing array。
+	root.History = root.History.InvalidateWindow()
+	root.CopyMode = state.CopyModeStore{}
+	return root
 }

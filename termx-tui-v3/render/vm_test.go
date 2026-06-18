@@ -1087,7 +1087,7 @@ func TestRenderVMBuilderShowsPendingWithoutAuthoritativeHistory(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderShowsPendingWhileCopyModeEntering(t *testing.T) {
+func TestRenderVMBuilderKeepsLiveFrameWhileCopyModeEntering(t *testing.T) {
 	root := state.Root{
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-1",
@@ -1107,11 +1107,11 @@ func TestRenderVMBuilderShowsPendingWhileCopyModeEntering(t *testing.T) {
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
-	if content.Kind != ContentCopyHistory || !content.Pending {
-		t.Fatalf("entering copy mode should render pending copy-history content, got %#v", content)
+	if content.Kind != ContentTerminalLive || content.Pending {
+		t.Fatalf("entering copy mode should keep live content until latest arrives, got %#v", content)
 	}
-	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "window pending") {
-		t.Fatalf("entering copy mode should show pending window, got %#v", content.Lines)
+	if len(content.Lines) != 1 || content.Lines[0].PlainString() != "live-row" {
+		t.Fatalf("entering copy mode should not show pending copy text, got %#v", content.Lines)
 	}
 }
 

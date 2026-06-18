@@ -2465,15 +2465,10 @@ func requireNoProtocolEvent(t *testing.T, events <-chan protocol.Event) {
 }
 
 func frozenSnapshotForBenchmark(lines int) history.FrozenSnapshot {
-	snapshot := history.FrozenSnapshot{
-		Token:          "bench-snapshot",
-		Generation:     1,
-		Lines:          make([]history.SnapshotLine, 0, lines),
-		CommittedLines: lines,
-	}
+	snapshotLines := make([]history.SnapshotLine, 0, lines)
 	for i := 1; i <= lines; i++ {
 		text := "line-" + strconv.Itoa(i)
-		snapshot.Lines = append(snapshot.Lines, history.SnapshotLine{
+		snapshotLines = append(snapshotLines, history.SnapshotLine{
 			Line: history.LogicalLine{
 				ID:         history.LogicalLineID(i),
 				Generation: 1,
@@ -2484,7 +2479,7 @@ func frozenSnapshotForBenchmark(lines int) history.FrozenSnapshot {
 			Committed: true,
 		})
 	}
-	return snapshot
+	return history.NewDetachedFrozenSnapshot("bench-snapshot", 1, snapshotLines)
 }
 
 func rowText(row protocol.CompactRow) string {
