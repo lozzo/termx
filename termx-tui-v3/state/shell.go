@@ -114,24 +114,25 @@ type WorkbenchCommandResult struct {
 // ShellStore 保存 Workbench 外壳相关的 reducer-owned 产品状态。
 // 它只描述用户可操作的结构，不计算最终屏幕矩形，也不画 panel chrome。
 type ShellStore struct {
-	Workspace         WorkspaceState
-	Workspaces        []WorkspaceState
-	Floatings         []FloatingPaneState
-	ActiveFloatingID  string
-	PanelPresentation PanelPresentation
-	ActivePaneID      string
-	ZoomedPaneID      string
-	InteractionMode   InteractionMode
-	OwnerConfirm      OwnerConfirmState
-	HeaderVisible     bool
-	FooterVisible     bool
-	Overlay           OverlayState
-	EmptyPaneCTA      EmptyPaneCTAState
-	ExitedPaneCTA     ExitedPaneCTAState
-	Toasts            []ToastState
-	nextToastSeq      uint64
-	nextFloatingSeq   uint64
-	initialized       bool
+	Workspace          WorkspaceState
+	Workspaces         []WorkspaceState
+	Floatings          []FloatingPaneState
+	ActiveFloatingID   string
+	PanelPresentation  PanelPresentation
+	ActivePaneID       string
+	ZoomedPaneID       string
+	InteractionMode    InteractionMode
+	InteractionModeSeq uint64
+	OwnerConfirm       OwnerConfirmState
+	HeaderVisible      bool
+	FooterVisible      bool
+	Overlay            OverlayState
+	EmptyPaneCTA       EmptyPaneCTAState
+	ExitedPaneCTA      ExitedPaneCTAState
+	Toasts             []ToastState
+	nextToastSeq       uint64
+	nextFloatingSeq    uint64
+	initialized        bool
 }
 
 type WorkspaceState struct {
@@ -509,7 +510,31 @@ func (store ShellStore) SetInteractionMode(mode InteractionMode) ShellStore {
 	store = store.EnsureDefaults()
 	switch mode {
 	case InteractionModeNormal, InteractionModePane, InteractionModeResize, InteractionModeGlobal, InteractionModeFloating, InteractionModeTab, InteractionModeWorkspace:
+		if store.InteractionMode != mode || stickyInteractionMode(mode) {
+			store.InteractionModeSeq++
+		}
 		store.InteractionMode = mode
 	}
 	return store
+}
+
+func (store ShellStore) RearmInteractionMode() ShellStore {
+	store = store.EnsureDefaults()
+	if stickyInteractionMode(store.InteractionMode) {
+		store.InteractionModeSeq++
+	}
+	return store
+}
+
+func (store ShellStore) StickyInteractionMode() bool {
+	return stickyInteractionMode(store.EnsureDefaults().InteractionMode)
+}
+
+func stickyInteractionMode(mode InteractionMode) bool {
+	switch mode {
+	case InteractionModePane, InteractionModeResize, InteractionModeGlobal, InteractionModeFloating, InteractionModeTab, InteractionModeWorkspace:
+		return true
+	default:
+		return false
+	}
 }

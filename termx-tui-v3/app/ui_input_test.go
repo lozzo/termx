@@ -37,6 +37,87 @@ func TestUIInputReducerOpensTerminalPickerFromCtrlF(t *testing.T) {
 	if effect, ok := effects[1].(FuncEffect); !ok || effect.Run == nil {
 		t.Fatalf("expected terminal pool list effect, got %#v", effects[1])
 	}
+	if hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("terminal picker is an overlay and must not arm sticky timeout, got %#v", effects)
+	}
+}
+
+func TestUIInputReducerStickyInteractionModeTimeoutAndRearm(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModePane || !hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("ctrl-p should enter pane mode and arm timeout, shell=%#v effects=%#v", root.Shell, effects)
+	}
+	paneSeq := root.Shell.InteractionModeSeq
+
+	root, _ = reducer(root, ShellInteractionModeTimeoutMsg{Mode: state.InteractionModePane, Seq: paneSeq})
+	if root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("matching timeout should exit sticky mode, shell=%#v", root.Shell)
+	}
+
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x12", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModeResize || !hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("ctrl-r should enter resize mode and arm timeout, shell=%#v effects=%#v", root.Shell, effects)
+	}
+	oldSeq := root.Shell.InteractionModeSeq
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight}})
+	if root.Shell.InteractionMode != state.InteractionModeResize || root.Shell.InteractionModeSeq <= oldSeq || !hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("resize action should rearm sticky timeout, shell=%#v effects=%#v oldSeq=%d", root.Shell, effects, oldSeq)
+	}
+
+	root, _ = reducer(root, ShellInteractionModeTimeoutMsg{Mode: state.InteractionModeResize, Seq: oldSeq})
+	if root.Shell.InteractionMode != state.InteractionModeResize {
+		t.Fatalf("stale timeout must not exit renewed mode, shell=%#v", root.Shell)
+	}
+	root, _ = reducer(root, ShellInteractionModeTimeoutMsg{Mode: state.InteractionModeResize, Seq: root.Shell.InteractionModeSeq})
+	if root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("latest timeout should exit renewed mode, shell=%#v", root.Shell)
+	}
+}
+
+func TestUIInputReducerStickyTimeoutDoesNotCloseOverlayOrCopyMode(t *testing.T) {
+	reducer := NewUIInputReducer()
+	shell := state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).OpenTerminalPicker()
+	root := state.Root{
+		Shell:    shell,
+		CopyMode: state.CopyModeStore{Active: true, TerminalID: "term-1"},
+	}
+	seq := root.Shell.InteractionModeSeq
+
+	root, _ = reducer(root, ShellInteractionModeTimeoutMsg{Mode: state.InteractionModeGlobal, Seq: seq})
+	if root.Shell.InteractionMode != state.InteractionModeNormal {
+		t.Fatalf("timeout should clear only sticky interaction mode, shell=%#v", root.Shell)
+	}
+	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker {
+		t.Fatalf("timeout must not close overlay, overlay=%#v", root.Shell.Overlay)
+	}
+	if !root.CopyMode.Active || root.CopyMode.TerminalID != "term-1" {
+		t.Fatalf("timeout must not mutate copy mode, copy=%#v", root.CopyMode)
+	}
+}
+
+func hasStickyInteractionModeTimeoutEffect(effects []Effect) bool {
+	for _, effect := range effects {
+		if fn, ok := effect.(FuncEffect); ok && fn.Token == stickyInteractionModeTimeoutToken {
+			return true
+		}
+	}
+	return false
+}
+
+func runFirstNonStickyTimeoutEffect(t *testing.T, effects []Effect) Msg {
+	t.Helper()
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || fn.Run == nil || fn.Token == stickyInteractionModeTimeoutToken {
+			continue
+		}
+		return fn.Run(context.Background())
+	}
+	t.Fatalf("expected non-timeout function effect, got %#v", effects)
+	return nil
 }
 
 func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
@@ -48,39 +129,32 @@ func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 4, 80, 24, state.TerminalResizeRoleOwner, "surface-1", "", true))
 
 	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true}})
-	if root.Shell.InteractionMode != state.InteractionModePane || len(effects) != 1 {
+	if root.Shell.InteractionMode != state.InteractionModePane || !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("ctrl-p should enter pane mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
 	}
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "a"}})
 	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.PaneID != "pane-2" {
 		t.Fatalf("pane owner shortcut must keep current owner until service result, owner=%#v ok=%v", owner, ok)
 	}
-	if len(effects) != 2 {
-		t.Fatalf("pane owner shortcut should emit handled and attach effect, got %#v", effects)
-	}
-	ownerMsg, ok := effects[1].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+	ownerMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(LiveAttachMsg)
 	if !ok || ownerMsg.Config.TerminalID != "term-1" || ownerMsg.Config.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || ownerMsg.Config.ResizePolicy != state.TerminalResizeRoleOwner {
 		t.Fatalf("pane owner shortcut should request authoritative owner attach, got %#v", ownerMsg)
 	}
 
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"}})
-	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker || len(effects) != 2 {
+	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker || !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane reconnect should open picker and refresh pool, overlay=%#v effects=%#v", root.Shell.Overlay, effects)
 	}
-	if effect, ok := effects[1].(FuncEffect); !ok || effect.Run == nil {
+	if _, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolListRequestMsg); !ok {
 		t.Fatalf("pane reconnect should emit pool list effect, got %#v", effects)
 	}
 
 	root.Shell = root.Shell.CloseOverlay().SetInteractionMode(state.InteractionModePane)
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"}})
-	if len(effects) != 2 {
+	if !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane restart should emit handled and restart effects, got %#v", effects)
 	}
-	effect, ok := effects[1].(FuncEffect)
-	if !ok || effect.Run == nil {
-		t.Fatalf("pane restart should emit restart effect, got %#v", effects)
-	}
-	restartMsg, ok := effect.Run(context.Background()).(TerminalPoolRestartIfExitedRequestMsg)
+	restartMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolRestartIfExitedRequestMsg)
 	if !ok || restartMsg.TerminalID != "term-1" {
 		t.Fatalf("pane restart should query active pane terminal lifecycle, got %#v", restartMsg)
 	}
@@ -95,18 +169,14 @@ func TestUIInputReducerFloatingModeTuiv2PickerAndOwner(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("float-1", "", "term-1", 5, 80, 24, state.TerminalResizeRoleFollower, "surface-1", "", false))
 
 	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x0f", Ctrl: true}})
-	if root.Shell.InteractionMode != state.InteractionModeFloating || len(effects) != 1 {
+	if root.Shell.InteractionMode != state.InteractionModeFloating || !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("ctrl-o should enter floating mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
 	}
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}})
-	if len(effects) != 2 {
+	if !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("floating picker shortcut should emit handled and picker effects, got %#v", effects)
 	}
-	effect, ok := effects[1].(FuncEffect)
-	if !ok || effect.Run == nil {
-		t.Fatalf("floating picker shortcut should emit picker effect, got %#v", effects)
-	}
-	if msg, ok := effect.Run(context.Background()).(ShellOpenTerminalPickerMsg); !ok {
+	if msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(ShellOpenTerminalPickerMsg); !ok {
 		t.Fatalf("floating picker shortcut should request picker open, got %#v", msg)
 	}
 
@@ -115,10 +185,7 @@ func TestUIInputReducerFloatingModeTuiv2PickerAndOwner(t *testing.T) {
 	if owner, ok := root.TerminalViews.OwnerBinding("term-1"); !ok || owner.PaneID != state.DefaultPaneID {
 		t.Fatalf("floating owner shortcut must keep current owner until service result, owner=%#v ok=%v", owner, ok)
 	}
-	if len(effects) != 2 {
-		t.Fatalf("floating owner shortcut should emit handled and attach effect, got %#v", effects)
-	}
-	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
+	msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(LiveAttachMsg)
 	if !ok || msg.Config.TerminalID != "term-1" || msg.Config.ViewID != state.TerminalFloatingViewID("float-1") || msg.Config.ResizePolicy != state.TerminalResizeRoleOwner {
 		t.Fatalf("floating owner shortcut should request authoritative owner attach, got %#v", msg)
 	}
@@ -646,13 +713,13 @@ func TestUIInputReducerGlobalQuitShortcutEmitsQuitMsg(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
 
 	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "q"}})
-	if len(effects) != 2 {
+	if !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("global q should be handled and emit quit effect, got %#v", effects)
 	}
 	if _, ok := effects[0].(handledEffect); !ok {
 		t.Fatalf("global q should mark input handled, got %#v", effects[0])
 	}
-	msg := effects[1].(FuncEffect).Run(context.Background())
+	msg := runFirstNonStickyTimeoutEffect(t, effects)
 	if _, ok := msg.(QuitMsg); !ok {
 		t.Fatalf("global q should emit QuitMsg, got %#v", msg)
 	}
@@ -2898,10 +2965,10 @@ func TestResizeModeTerminalSizeLockKeyAndFooterEmitTerminalLockRequest(t *testin
 
 	inputReducer := NewUIInputReducer()
 	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if len(effects) != 2 {
+	if !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("size lock key should emit request effect, got %#v", effects)
 	}
-	msg, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleRequestMsg)
+	msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalSizeLockToggleRequestMsg)
 	if !ok || msg != (TerminalSizeLockToggleRequestMsg{}) {
 		t.Fatalf("resize s should request terminal size lock toggle, got %#v", msg)
 	}
@@ -2912,11 +2979,11 @@ func TestResizeModeTerminalSizeLockKeyAndFooterEmitTerminalLockRequest(t *testin
 
 	shellReducer := NewShellReducer()
 	_, effects = shellReducer(next, ShellContentActionMsg{ActionID: render.ActionResizeLayoutLock.String()})
-	if len(effects) != 1 {
+	if !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("footer lock should emit request effect, got %#v", effects)
 	}
-	if _, ok := effects[0].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleRequestMsg); !ok {
-		t.Fatalf("footer lock should request terminal size lock toggle, got %#v", effects[0])
+	if _, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalSizeLockToggleRequestMsg); !ok {
+		t.Fatalf("footer lock should request terminal size lock toggle, got %#v", effects)
 	}
 }
 
@@ -2958,11 +3025,11 @@ func TestPaneModeLockUsesTerminalSizeLockPath(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 
 	next, effects := NewUIInputReducer()(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if len(effects) != 2 {
+	if !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane s should emit terminal size lock request, got %#v", effects)
 	}
-	if _, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalSizeLockToggleRequestMsg); !ok {
-		t.Fatalf("pane s should request terminal size lock toggle, got %#v", effects[1])
+	if _, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalSizeLockToggleRequestMsg); !ok {
+		t.Fatalf("pane s should request terminal size lock toggle, got %#v", effects)
 	}
 	binding, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
 	if binding.Layout.SizeLocked {
@@ -2970,7 +3037,7 @@ func TestPaneModeLockUsesTerminalSizeLockPath(t *testing.T) {
 	}
 
 	next, effects = NewUIInputReducer()(state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if len(effects) != 2 {
+	if !hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane s without active terminal still routes to size lock reducer, got %#v toasts=%#v", effects, next.Shell.Toasts)
 	}
 }

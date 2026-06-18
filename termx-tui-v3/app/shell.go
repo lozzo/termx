@@ -253,7 +253,8 @@ func NewShellReducer() Reducer {
 			root.Shell = root.Shell.CancelPrompt().CloseOverlay()
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "prompt.cancel", Body: "canceled"})
 		case ShellContentActionMsg:
-			return reduceShellContentAction(root, msg)
+			next, effects := reduceShellContentAction(root, msg)
+			return rearmInteractionModeTimeout(next, effects)
 		case ShellActivateTerminalInputMsg:
 			return reduceShellActivateTerminalInput(root, msg)
 		case ShellArmOwnerConfirmMsg:

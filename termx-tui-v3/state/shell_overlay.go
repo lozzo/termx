@@ -2,6 +2,9 @@ package state
 
 func (store ShellStore) ExitInteractionMode() ShellStore {
 	store = store.EnsureDefaults()
+	if store.InteractionMode != InteractionModeNormal {
+		store.InteractionModeSeq++
+	}
 	store.InteractionMode = InteractionModeNormal
 	return store
 }

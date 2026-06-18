@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -21,8 +22,22 @@ type ShellExitInteractionModeMsg struct{}
 
 func (ShellExitInteractionModeMsg) isMsg() {}
 
+type ShellInteractionModeTimeoutMsg struct {
+	Mode state.InteractionMode
+	Seq  uint64
+}
+
+func (ShellInteractionModeTimeoutMsg) isMsg() {}
+
+const stickyInteractionModeTimeout = 3 * time.Second
+
+const stickyInteractionModeTimeoutToken CancelToken = "shell.interaction-mode.timeout"
+
 func NewUIInputReducer() Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
+		if timeoutMsg, ok := msg.(ShellInteractionModeTimeoutMsg); ok {
+			return reduceInteractionModeTimeout(root, timeoutMsg)
+		}
 		if mouseMsg, ok := msg.(ShellOverlayMouseSelectMsg); ok {
 			return reduceOverlayMouseSelect(root, mouseMsg)
 		}
@@ -79,19 +94,67 @@ func NewUIInputReducer() Reducer {
 		case input.IntentSetInteractionMode:
 			root.Shell = root.Shell.SetInteractionMode(stateInteractionMode(intent.Mode))
 			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: string(root.Shell.InteractionMode) + " mode"})
-			return root.Advance(), []Effect{handledEffect{}}
+			return root.Advance(), appendInteractionModeTimeoutEffect(root.Shell, []Effect{handledEffect{}})
 		case input.IntentExitInteraction:
 			root.Shell = root.Shell.ExitInteractionMode()
 			return root.Advance(), []Effect{handledEffect{}}
 		case input.IntentShellAction:
-			return reduceShellActionIntent(root, intent)
+			next, effects := reduceShellActionIntent(root, intent)
+			return rearmInteractionModeTimeout(next, effects)
 		case input.IntentPaneCommand:
-			return reducePaneCommandIntent(root, intent)
+			next, effects := reducePaneCommandIntent(root, intent)
+			return rearmInteractionModeTimeout(next, effects)
 		case input.IntentWorkbenchCommand:
-			return reduceWorkbenchCommandIntent(root, intent)
+			next, effects := reduceWorkbenchCommandIntent(root, intent)
+			return rearmInteractionModeTimeout(next, effects)
 		default:
 			return root, nil
 		}
+	}
+}
+
+func reduceInteractionModeTimeout(root state.Root, msg ShellInteractionModeTimeoutMsg) (state.Root, []Effect) {
+	shell := root.Shell.EnsureDefaults()
+	if !shell.StickyInteractionMode() || shell.InteractionMode != msg.Mode || shell.InteractionModeSeq != msg.Seq {
+		return root, nil
+	}
+	root.Shell = shell.ExitInteractionMode()
+	return root.Advance(), nil
+}
+
+func appendInteractionModeTimeoutEffect(shell state.ShellStore, effects []Effect) []Effect {
+	shell = shell.EnsureDefaults()
+	if !shell.StickyInteractionMode() {
+		return effects
+	}
+	return append(effects, interactionModeTimeoutEffect(shell.InteractionMode, shell.InteractionModeSeq))
+}
+
+func rearmInteractionModeTimeout(root state.Root, effects []Effect) (state.Root, []Effect) {
+	shell := root.Shell.EnsureDefaults()
+	if !shell.StickyInteractionMode() {
+		root.Shell = shell
+		return root, effects
+	}
+	root.Shell = shell.RearmInteractionMode()
+	return root, appendInteractionModeTimeoutEffect(root.Shell, effects)
+}
+
+func interactionModeTimeoutEffect(mode state.InteractionMode, seq uint64) Effect {
+	return FuncEffect{
+		Token: stickyInteractionModeTimeoutToken,
+		Async: true,
+		Run: func(ctx context.Context) Msg {
+			// sticky mode 是前缀键提示态；超时只退出 mode，不关闭 overlay/copy 页面。
+			timer := time.NewTimer(stickyInteractionModeTimeout)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-timer.C:
+				return ShellInteractionModeTimeoutMsg{Mode: mode, Seq: seq}
+			}
+		},
 	}
 }
 

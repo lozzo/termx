@@ -185,10 +185,7 @@ func TestTerminalViewLayoutCommandPersistsWorkbenchSnapshot(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-1", state.TerminalPaneViewID(state.DefaultPaneID), true))
 
 	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyRight, Shift: true}})
-	if len(effects) != 1 {
-		t.Fatalf("layout pan should emit one persist effect after handled marker is stripped, got %#v", effects)
-	}
-	persistMsg := effects[0].(FuncEffect).Run(context.Background())
+	persistMsg := firstWorkbenchPersistRequestMsg(t, effects)
 	root, effects = reducer(root, persistMsg)
 	if len(effects) != 1 {
 		t.Fatalf("persist request should emit storage save effect, got %#v", effects)
@@ -206,6 +203,21 @@ func TestTerminalViewLayoutCommandPersistsWorkbenchSnapshot(t *testing.T) {
 	if root.WorkbenchSync.LastSavedVersion != 1 {
 		t.Fatalf("layout persist should update saved version, got %#v", root.WorkbenchSync)
 	}
+}
+
+func firstWorkbenchPersistRequestMsg(t *testing.T, effects []Effect) WorkbenchStoragePersistRequestMsg {
+	t.Helper()
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok || fn.Run == nil || fn.Token == stickyInteractionModeTimeoutToken {
+			continue
+		}
+		if msg, ok := fn.Run(context.Background()).(WorkbenchStoragePersistRequestMsg); ok {
+			return msg
+		}
+	}
+	t.Fatalf("expected workbench persist request effect, got %#v", effects)
+	return WorkbenchStoragePersistRequestMsg{}
 }
 
 func TestWorkbenchRestoreAttachEffectsPreserveStoredResizeRole(t *testing.T) {
