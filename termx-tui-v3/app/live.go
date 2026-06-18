@@ -133,6 +133,19 @@ type LiveSurfaceMsg struct {
 
 func (LiveSurfaceMsg) isMsg() {}
 
+type LiveLifecycleQueryTarget struct {
+	TerminalID string
+	Cols       int
+	Rows       int
+}
+
+type LiveLifecycleQueryMsg struct {
+	Reason  string
+	Targets []LiveLifecycleQueryTarget
+}
+
+func (LiveLifecycleQueryMsg) isMsg() {}
+
 type LiveEventMsg struct {
 	Event services.TerminalLiveEvent
 }
@@ -197,6 +210,8 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return reduceLiveAttach(root, msg, deps)
 		case LiveAttachResultMsg:
 			return reduceLiveAttachResult(root, msg, deps)
+		case LiveLifecycleQueryMsg:
+			return reduceLiveLifecycleQuery(root, msg, deps)
 		case LiveSurfaceMsg:
 			if msg.Err != nil {
 				if next, ok := markTerminalExitedFromError(root, msg.Snapshot.TerminalID, msg.Err); ok {
@@ -614,6 +629,41 @@ func liveEffects(terminalID string, cols int, rows int, deps LiveDeps) []Effect 
 	effects := liveSurfaceEffect(terminalID, cols, rows, deps)
 	effects = append(effects, liveStreamEffect(terminalID, cols, rows, deps)...)
 	return effects
+}
+
+func reduceLiveLifecycleQuery(root state.Root, msg LiveLifecycleQueryMsg, deps LiveDeps) (state.Root, []Effect) {
+	if len(msg.Targets) == 0 {
+		return root, nil
+	}
+	seen := map[string]struct{}{}
+	effects := make([]Effect, 0, len(msg.Targets))
+	for _, target := range msg.Targets {
+		terminalID := strings.TrimSpace(target.TerminalID)
+		if terminalID == "" {
+			continue
+		}
+		if _, ok := seen[terminalID]; ok {
+			continue
+		}
+		seen[terminalID] = struct{}{}
+		cols, rows := target.Cols, target.Rows
+		if cols <= 0 {
+			cols = 80
+		}
+		if rows <= 0 {
+			rows = 24
+		}
+		// 中文说明：这是按需向 core 查询 terminal lifecycle，不把 running/exited 权威性缓存进 TUI。
+		logLifecycleTrace(deps.Logger, "live.lifecycle.query",
+			"reason", msg.Reason,
+			"terminal_id", terminalID,
+			"cols", cols,
+			"rows", rows,
+			"bindings", lifecycleTerminalViewBindingsSummary(root.TerminalViews.BindingsForTerminal(terminalID)),
+		)
+		effects = append(effects, liveSurfaceEffect(terminalID, cols, rows, deps)...)
+	}
+	return root, effects
 }
 
 func liveSurfaceEffect(terminalID string, cols int, rows int, deps LiveDeps) []Effect {

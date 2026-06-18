@@ -204,6 +204,7 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "workbench.storage", Body: "loaded"})
 	if len(root.TerminalViews.Views) > 0 {
 		effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
+		effects = append(effects, workbenchRestoredTerminalLifecycleQueryEffects(previousViews, root.TerminalViews.Bindings())...)
 		effects = append(effects, workbenchRestoredTerminalAttachEffectsForBindings(restoredAttachBindings)...)
 		return root.Advance(), effects
 	}
@@ -325,6 +326,46 @@ func workbenchRestoredTerminalAttachEffectsForBindings(bindings []state.Terminal
 		}})
 	}
 	return effects
+}
+
+func workbenchRestoredTerminalLifecycleQueryEffects(previous state.TerminalViewStore, bindings []state.TerminalViewBinding) []Effect {
+	targets := workbenchRestoredTerminalLifecycleQueryTargets(previous, bindings)
+	if len(targets) == 0 {
+		return nil
+	}
+	return []Effect{FuncEffect{Run: func(context.Context) Msg {
+		return LiveLifecycleQueryMsg{Reason: "workbench.restore", Targets: targets}
+	}}}
+}
+
+func workbenchRestoredTerminalLifecycleQueryTargets(previous state.TerminalViewStore, bindings []state.TerminalViewBinding) []LiveLifecycleQueryTarget {
+	if len(bindings) == 0 {
+		return nil
+	}
+	ordered := orderedRestoredTerminalBindings(bindings)
+	targets := make([]LiveLifecycleQueryTarget, 0, len(ordered))
+	seen := map[string]struct{}{}
+	for _, binding := range ordered {
+		if binding.TerminalID == "" {
+			continue
+		}
+		if !workbenchBindingAlreadyLive(previous, binding) {
+			continue
+		}
+		if _, ok := seen[binding.TerminalID]; ok {
+			continue
+		}
+		seen[binding.TerminalID] = struct{}{}
+		cols, rows := binding.DesiredCols, binding.DesiredRows
+		if cols <= 0 {
+			cols = 80
+		}
+		if rows <= 0 {
+			rows = 24
+		}
+		targets = append(targets, LiveLifecycleQueryTarget{TerminalID: binding.TerminalID, Cols: cols, Rows: rows})
+	}
+	return targets
 }
 
 func workbenchBindingAlreadyLive(previous state.TerminalViewStore, binding state.TerminalViewBinding) bool {

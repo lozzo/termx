@@ -974,6 +974,74 @@ func TestInteractiveRuntimeWorkbenchRestoreLegacyPaneWithoutTerminalViewsUsesCor
 	}
 }
 
+func TestInteractiveRuntimeWorkbenchRestoreAlreadyLiveBindingQueriesCoreLifecycle(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(80, 24)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0].Kind = state.PaneTerminalLive
+	shell.Workspace.Tabs[0].Panes[0].TerminalID = "term-main"
+	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-main", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)
+	views := state.TerminalViewStore{}.BindPane(binding)
+	storage := &services.FakeWorkbenchStorageService{
+		LoadResult: services.WorkbenchStorageLoadResult{
+			Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}),
+			Version:  7,
+			Found:    true,
+		},
+		WatchCh: watchCh,
+	}
+	initial := state.Root{
+		Shell:         shell,
+		TerminalViews: views,
+		Surface: state.TerminalSurfaceStore{}.ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-main",
+			Revision:   9,
+			Cols:       80,
+			Rows:       24,
+			Lines:      []string{"terminal exited: term-main code:0 exited"},
+			State:      state.TerminalLiveAttached,
+		}).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+		Session: state.TerminalSessionStore{}.Attach("term-main", 7, 80, 24).MarkExitedWithMetadata("term-main", 0, "exited", time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC), []string{"/bin/zsh"}),
+	}
+	terminal := &services.FakeTerminalService{
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-main", Title: "main", State: "running", Cols: 80, Rows: 24}}},
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready:          true,
+			LifecycleKnown: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-main",
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"terminal exited: term-main code:0 exited", "% "},
+				Cursor:     state.LiveCursor{Visible: true, Row: 1, Col: 2, Shape: "bar"},
+				State:      state.TerminalLiveAttached,
+			},
+		},
+	}
+	runtime := NewInteractiveRuntimeWithWorkbench(initial, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(terminal.Attaches) != 0 {
+		t.Fatalf("already-live restored binding should not reattach, attaches=%#v", terminal.Attaches)
+	}
+	if len(terminal.Surfaces) == 0 || terminal.Surfaces[0].TerminalID != "term-main" {
+		t.Fatalf("restore must query core lifecycle for bound terminal, surfaces=%#v", terminal.Surfaces)
+	}
+	root := runtime.State()
+	if root.Surface.State != state.TerminalLiveAttached || root.Session.State == state.TerminalLiveExited {
+		t.Fatalf("core running lifecycle should clear stale exited projection, session=%#v surface=%#v", root.Session, root.Surface)
+	}
+	frame := lastFrame(t, host.Frames())
+	if frameContains(frame, "restart current terminal") || !frameContains(frame, "% ") || !frame.Cursor.Visible {
+		t.Fatalf("running queried terminal should render prompt without restart CTA, frame=%#v cursor=%#v", frame.Lines, frame.Cursor)
+	}
+}
+
 func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 24)
