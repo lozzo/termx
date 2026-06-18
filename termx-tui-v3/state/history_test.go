@@ -848,6 +848,20 @@ func TestHistoryStoreReflowsFrozenLogicalLineTextWithoutCellsAtNewCols(t *testin
 	}
 }
 
+func TestHistoryStoreReflowTextOnlyASCIIFastPathKeepsWrap(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		Text:   "0123456789",
+		LineID: 10,
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 4)
+	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"0123", "4567", "89"}) {
+		t.Fatalf("ascii fast path should wrap by local cols, got %v", got)
+	}
+	if got := spanRows(spans); !reflect.DeepEqual(got, []spanRow{{id: 10, start: 0, end: 2}}) {
+		t.Fatalf("expected ascii source span, got %v", got)
+	}
+}
+
 func TestHistoryInvalidateWindowClearsAuthoritativeRowsAndPending(t *testing.T) {
 	store := HistoryStore{
 		TerminalID: "term-1",

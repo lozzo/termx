@@ -1190,6 +1190,9 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 }
 
 func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
+	if singleWidthASCIIText(line.Text) {
+		return reflowPlainASCIIHistoryLogicalLine(line, cols)
+	}
 	clusters := textGraphemeClusters(line.Text)
 	if len(clusters) == 0 {
 		return []HistoryRow{{LineID: line.LineID}}
@@ -1226,6 +1229,41 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)
 	return rows
+}
+
+func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
+	if line.Text == "" {
+		return []HistoryRow{{LineID: line.LineID}}
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	rows := make([]HistoryRow, 0, (len(line.Text)+cols-1)/cols)
+	for start := 0; start < len(line.Text); start += cols {
+		end := start + cols
+		if end > len(line.Text) {
+			end = len(line.Text)
+		}
+		rows = append(rows, HistoryRow{
+			Text:      line.Text[start:end],
+			LineID:    line.LineID,
+			RowInLine: len(rows),
+		})
+	}
+	applyTailFillToLastHistoryRow(rows, line.TailFill)
+	return rows
+}
+
+func singleWidthASCIIText(text string) bool {
+	if text == "" {
+		return true
+	}
+	for i := 0; i < len(text); i++ {
+		if text[i] < 0x20 || text[i] >= 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func applyTailFillToLastHistoryRow(rows []HistoryRow, fill *HistoryCellStyle) {

@@ -257,6 +257,7 @@
 | 215E1-R84. SK bound terminal lifecycle restore query | 完成 | `termx-tui-v3/app/`、`workflow.md` | 已处理重进/restore 后已绑定 panel 没有主动查询 core lifecycle 的回归：workbench restore 完成后对 preserve 的 already-live TerminalView binding 发起一次 core surface/lifecycle 查询，不在 TUI 缓存 terminal running/exited |
 | 215E1-R85. SK root attach no auto restart | 完成 | `termx-cli/`、`termx-tui-v3/app/`、`workflow.md` | 已处理重进 TUI 时全屏程序被自动 restart/HUP 的回归：root/attach 入口不再携带自动 restart 意图，只 attach/query core lifecycle；用户明确按 R 时才 restart |
 | 215E1-R86. SK restart lifecycle truth guard | 完成 | `termx-core-v2/`、`termx-cli/`、`termx-tui-v3/app/`、`workflow.md` | 已修复 restart 后重进 TUI 仍显示 exited 的根因：core restart 新进程不能绑定到本次 protocol request/session ctx；TUI 关闭 socket 不再 cancel 刚重启出的 PTY |
+| 215E1-R87. SK copy history 滚动 perf 和下滑回归 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/state/`、`workflow.md` | 已修复新 history/copy 模式 raw mouse wheel down 被 runtime 吞掉的问题；同时给 text-only ASCII logical line reflow 加 fast path，常见日志 older prepend 从约 `0.9ms / 1.6MB / 828 allocs` 降到约 `0.09ms / 1.4MB / 135 allocs` |
 
 当前下一步：
 

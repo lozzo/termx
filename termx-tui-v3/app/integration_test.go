@@ -604,6 +604,69 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 	}
 }
 
+func TestCopyModeMouseWheelRawSeqScrollsDown(t *testing.T) {
+	latestRows := make([]state.HistoryRow, 0, 40)
+	for i := 1; i <= 40; i++ {
+		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("raw-wheel-%02d", i), LineID: uint64(i)})
+	}
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			latestRows,
+		)}},
+	}
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 12)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 12}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain attach: %v", err)
+	}
+	frame := lastFrame(t, host.Frames())
+	content := frameHitRegion(t, frame, render.HitRegionPaneContent, state.DefaultPaneID)
+	wheelUp := mouseEventAt(content.Rect)
+	wheelUp.Mouse = input.MouseWheelUp
+	wheelUp.RawSeq = "\x1b[<64;10;5M"
+	if err := host.SendInput(wheelUp); err != nil {
+		t.Fatalf("send raw wheel up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain raw wheel up: %v", err)
+	}
+
+	runtime.state.CopyMode.ViewportTop = 10
+	runtime.state.CopyMode.Cursor = state.CopyPosition{Row: 10, Col: 2}
+	frame = lastFrame(t, host.Frames())
+	historyRow := frameHitRegion(t, frame, render.HitRegionHistoryRow, state.DefaultPaneID)
+	wheelDown := mouseEventAt(historyRow.Rect)
+	wheelDown.Mouse = input.MouseWheelDown
+	wheelDown.RawSeq = "\x1b[<65;10;5M"
+	if err := host.SendInput(wheelDown); err != nil {
+		t.Fatalf("send raw wheel down: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain raw wheel down: %v", err)
+	}
+	if runtime.State().CopyMode.Cursor.Row != 11 || runtime.State().CopyMode.ViewportTop != 10 {
+		t.Fatalf("raw wheel down should stay in copy/history reducer, got %#v", runtime.State().CopyMode)
+	}
+}
+
 func TestCopyModeLatestStartsAtNewestVisibleTail(t *testing.T) {
 	latestRows := make([]state.HistoryRow, 0, 10)
 	for i := 1; i <= 10; i++ {
