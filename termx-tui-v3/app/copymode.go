@@ -282,12 +282,19 @@ func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.R
 		next, effects := exitCopyModeWithRelease(root, CopyModeDeps{})
 		return next.Advance(), append([]Effect{handledEffect{}}, effects...), true
 	}
+	if intent.Kind == input.IntentOpenClipboardHistory {
+		root.Shell = root.Shell.OpenClipboardHistory()
+		return root.Advance(), []Effect{
+			handledEffect{},
+			FuncEffect{Run: func(context.Context) Msg { return ClipboardStorageLoadRequestMsg{Reason: "open"} }},
+		}, true
+	}
 	if delta, ok := copyModeEnteringScrollDelta(root.CopyMode, intent); ok {
 		root.CopyMode.EnteringScrollDelta += delta
 		return root.Advance(), []Effect{handledEffect{}}, true
 	}
 	// 中文说明：latest 还没回来时 copy/history 尚未真正激活；这段时间只拦截输入，
-	// 防止 p/P/H 或普通按键落到 terminal，也不提前打开依赖 frozen history 的功能。
+	// 防止 p/P 或普通按键落到 terminal，也不提前打开依赖 frozen history 的功能。
 	return root, []Effect{handledEffect{}}, true
 }
 

@@ -653,6 +653,11 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceWorkbenchTreeDetach(root, state.WorkbenchTreeItems(root))
 	case render.ActionWorkbenchZoom:
 		return reduceWorkbenchTreeZoom(root, state.WorkbenchTreeItems(root))
+	case render.ActionClipboardHistoryOpen:
+		root.Shell = root.Shell.OpenClipboardHistory()
+		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return ClipboardStorageLoadRequestMsg{Reason: "open"}
+		}}}
 	case render.ActionPromptSubmit:
 		return reducePromptSubmit(root)
 	case render.ActionPromptCancel:

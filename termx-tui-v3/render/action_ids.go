@@ -124,6 +124,7 @@ const (
 	ActionWorkbenchDetach ActionID = "workbench.detach"
 	ActionWorkbenchZoom   ActionID = "workbench.zoom"
 
+	ActionClipboardHistoryOpen   ActionID = "clipboard-history.open"
 	ActionClipboardHistorySelect ActionID = "clipboard-history.select"
 	ActionClipboardHistoryPaste  ActionID = "clipboard-history.paste"
 	ActionClipboardHistoryNew    ActionID = "clipboard-history.new"
@@ -324,6 +325,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionWorkbenchDelete, ActionDispatchApp, ActionSurfaceContent).withHelp("delete").withDanger(),
 		actionSpec(ActionWorkbenchDetach, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("detach pane"),
 		actionSpec(ActionWorkbenchZoom, ActionDispatchApp, ActionSurfaceInput, ActionSurfaceHelp).withHelp("zoom pane"),
+		actionSpec(ActionClipboardHistoryOpen, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("H", "CLIPBOARD", StyleStatusAccent).withHelp("open clipboard history"),
 		actionSpec(ActionClipboardHistorySelect, ActionDispatchApp, ActionSurfaceContent, ActionSurfaceHelp).withHelp("select clipboard entry"),
 		actionSpec(ActionClipboardHistoryPaste, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("enter", "paste", StyleStatusAccent).withHelp("paste clipboard entry"),
 		actionSpec(ActionClipboardHistoryNew, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceContent, ActionSurfaceHelp).withFooter("new", "", StyleStatusAccent).withHelp("new clipboard entry"),

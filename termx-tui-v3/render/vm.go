@@ -294,6 +294,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 	case "copy":
 		return footerActionSpecs(
 			footerActionFor(ActionCopyOlder),
+			footerActionFor(ActionClipboardHistoryOpen),
 			footerActionSpec("wheel", "", "", StyleStatusAccent),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)

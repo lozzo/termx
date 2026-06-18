@@ -26,7 +26,7 @@ func actionIDForShellAction(action input.ShellAction, reason string) (render.Act
 	case input.ShellActionOpenHelp:
 		return render.ActionHelpOpen, true
 	case input.ShellActionOpenClipboardHistory:
-		return render.ActionClipboardHistoryPaste, true
+		return render.ActionClipboardHistoryOpen, true
 	case input.ShellActionQuit:
 		return render.ActionFooterQuit, true
 	case input.ShellActionFloatingNew:

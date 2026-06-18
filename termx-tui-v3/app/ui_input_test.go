@@ -364,6 +364,22 @@ func TestUIInputReducerOpensClipboardHistoryFromCopyModeH(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerOpensClipboardHistoryWhileCopyModeEntering(t *testing.T) {
+	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Clipboard: &services.FakeClipboardService{}, Terminal: &services.FakeTerminalService{}, Rows: 20})
+	root := state.Root{CopyMode: state.CopyModeStore{Entering: true, RequestID: 1}}
+
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "H"}})
+	if !next.Shell.Overlay.Open || next.Shell.Overlay.Kind != state.OverlayClipboardHistory || !next.CopyMode.Entering {
+		t.Fatalf("expected clipboard history overlay without canceling entering copy mode, got %#v", next)
+	}
+	if len(effects) != 2 {
+		t.Fatalf("expected handled and storage load effects, got %#v", effects)
+	}
+	if _, ok := effects[1].(FuncEffect); !ok {
+		t.Fatalf("expected storage load effect, got %#v", effects)
+	}
+}
+
 func TestOverlayKeyboardCommandsRouteClipboardHistoryContentActions(t *testing.T) {
 	inputReducer := NewUIInputReducer()
 	root := state.Root{

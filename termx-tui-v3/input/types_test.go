@@ -82,6 +82,10 @@ func TestRouteCtrlFAndCtrlVToUIIntents(t *testing.T) {
 }
 
 func TestRouteCopyModePasteShortcuts(t *testing.T) {
+	history := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "H"}, true)
+	if history.Kind != IntentOpenClipboardHistory {
+		t.Fatalf("expected clipboard history intent, got %#v", history)
+	}
 	lastCopy := Route(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, true)
 	if lastCopy.Kind != IntentPasteLastCopy {
 		t.Fatalf("expected paste last copy intent, got %#v", lastCopy)

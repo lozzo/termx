@@ -1489,6 +1489,9 @@ func TestRenderVMBuilderDerivesFooterModePrecedence(t *testing.T) {
 	if !containsFooterAction(copyFooter.ActionTokens, "PgUp", "SCROLL", ActionCopyOlder.String()) {
 		t.Fatalf("expected copy footer older action id, got %#v", copyFooter.ActionTokens)
 	}
+	if !containsFooterAction(copyFooter.ActionTokens, "H", "CLIPBOARD", ActionClipboardHistoryOpen.String()) {
+		t.Fatalf("expected copy footer clipboard action id, got %#v", copyFooter.ActionTokens)
+	}
 	if got := builder.Build(state.Root{
 		Shell:    state.DefaultShell().OpenTerminalPicker().SetInteractionMode(state.InteractionModeGlobal),
 		CopyMode: state.CopyModeStore{Active: true, TerminalID: "term-copy", BoundCols: 80},
