@@ -575,10 +575,11 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 
 func TestFrameworkRendersClipboardHistoryThinTModal(t *testing.T) {
 	root := state.Root{
-		Shell: state.DefaultShell().OpenClipboardHistory().SetClipboardHistoryQuery("gft"),
+		Shell:    state.DefaultShell().OpenClipboardHistory().SetClipboardHistoryQuery("gft"),
+		Viewport: state.ViewportStore{Valid: true, Cols: 132, Rows: 34},
 		Clipboard: state.ClipboardStore{
 			Entries: []state.ClipboardEntry{
-				{ID: "clip:1", Title: "git commit", Text: "git commit -m fix terminal", Preview: "git commit -m fix terminal"},
+				{ID: "clip:1", Title: "git commit", Text: "git commit -m fix terminal\nsecond preview line with branch detail", Preview: "git commit -m fix terminal"},
 				{ID: "clip:2", Title: "status check", Text: "status check --watch", Preview: "status check --watch"},
 			},
 		},
@@ -593,8 +594,12 @@ func TestFrameworkRendersClipboardHistoryThinTModal(t *testing.T) {
 		!linesContain(lines, "┬") ||
 		!linesContain(lines, "┴") ||
 		!linesContain(lines, "› git commit") ||
-		!linesContain(lines, "│git commit -m fix terminal") {
+		!linesContain(lines, "│git commit -m fix terminal") ||
+		!linesContain(lines, "│second preview line with branch detail") {
 		t.Fatalf("clipboard history should render confirmed thin T modal, got %#v", lines)
+	}
+	if result.Metadata.Width != 132 || !lineContainsLongBoxRun(lines, 100) {
+		t.Fatalf("clipboard history modal should use outer viewport width, width=%d lines=%#v", result.Metadata.Width, lines)
 	}
 	if strings.Contains(modalText, "[new]") || strings.Contains(modalText, "copied entries") {
 		t.Fatalf("clipboard history modal must keep shortcuts out of content, got %#v", lines)
@@ -1152,6 +1157,15 @@ func assertAllRowsWidth(t *testing.T, lines []string, width int) {
 func linesContain(lines []string, value string) bool {
 	for _, line := range lines {
 		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func lineContainsLongBoxRun(lines []string, minWidth int) bool {
+	for _, line := range lines {
+		if strings.Contains(line, "Clipboard History") && strings.Count(line, "─") >= minWidth {
 			return true
 		}
 	}

@@ -9,8 +9,9 @@ import (
 
 const contentActionWidth = 12
 
-const clipboardHistoryNameWidth = 16
-const clipboardHistoryPreviewWidth = 50
+const clipboardHistoryNameWidth = 18
+const clipboardHistoryPreviewWidth = 200
+const clipboardHistoryBodyRows = 16
 
 const emptyPaneActionCount = 4
 
@@ -287,13 +288,31 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 	rows := state.ClipboardHistoryItems(root)
 	lines := []Line{clipboardHistorySearchLine(query), clipboardHistoryDividerSpaceLine()}
 	rowOffset := len(lines)
-	for _, row := range rows {
-		lines = append(lines, clipboardHistoryRowLine(row))
-	}
+	bodyRowLimit := clipboardHistoryBodyRowsForViewport(root.Viewport)
+	selectedIndex := clipboardHistorySelectedIndex(rows)
+	listStart := clipboardHistoryListStart(selectedIndex, len(rows), bodyRowLimit)
+	selectedItem, selectedOK := clipboardHistorySelectedItem(rows)
+	// 中文说明：右侧预览展示当前选中项正文，左侧列表只负责选择入口。
+	previewSegments := clipboardHistoryPreviewSegments(selectedItem, selectedOK, query, clipboardHistoryPreviewWidth, bodyRowLimit)
+	bodyRows := maxInt(bodyRowLimit, len(previewSegments))
 	if len(rows) == 0 {
-		lines = append(lines, clipboardHistoryEmptyLine())
+		previewSegments = []clipboardHistoryPreviewSegment{{Text: "No clipboard entries"}}
+		bodyRows = bodyRowLimit
 	}
-	regions := clipboardHistoryHitRegions(rows, rowOffset)
+	for row := 0; row < bodyRows; row++ {
+		entryIndex := listStart + row
+		var entry state.ClipboardHistoryItem
+		hasEntry := entryIndex >= 0 && entryIndex < len(rows)
+		if hasEntry {
+			entry = rows[entryIndex]
+		}
+		preview := clipboardHistoryPreviewSegment{}
+		if row < len(previewSegments) {
+			preview = previewSegments[row]
+		}
+		lines = append(lines, clipboardHistoryBodyLine(entry, hasEntry, preview))
+	}
+	regions := clipboardHistoryHitRegions(rows, rowOffset, listStart, bodyRows)
 	return ContentVM{
 		Kind:       ContentClipboardHistory,
 		Lines:      lines,
@@ -340,7 +359,22 @@ func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) Conte
 	}
 }
 
-func clipboardHistoryRowLine(row state.ClipboardHistoryItem) Line {
+type clipboardHistoryPreviewSegment struct {
+	Text       string
+	MatchIndex []int
+}
+
+func clipboardHistoryBodyLine(row state.ClipboardHistoryItem, hasRow bool, preview clipboardHistoryPreviewSegment) Line {
+	cells := clipboardHistoryNameCells(row, hasRow)
+	cells = append(cells, styledCell("│", StyleForeground))
+	cells = append(cells, clipboardHistoryColumnCells(preview.Text, preview.MatchIndex, StylePickerMuted, clipboardHistoryPreviewWidth)...)
+	return Line{Cells: cells}
+}
+
+func clipboardHistoryNameCells(row state.ClipboardHistoryItem, hasRow bool) []Cell {
+	if !hasRow {
+		return []Cell{styledCell(strings.Repeat(" ", clipboardHistoryNameWidth), StylePicker)}
+	}
 	prefix := "  "
 	titleStyle := StylePicker
 	if row.Selected {
@@ -348,20 +382,13 @@ func clipboardHistoryRowLine(row state.ClipboardHistoryItem) Line {
 		titleStyle = StylePickerAccent
 	}
 	title := strings.TrimSpace(row.Title)
-	preview := strings.TrimSpace(row.Preview)
 	if title == "" {
 		title = clipboardHistoryTitleFromText(row.Text)
 	}
-	if preview == "" {
-		preview = strings.TrimSpace(row.Text)
-	}
 	nameWidth := clipboardHistoryNameWidth
-	previewWidth := clipboardHistoryPreviewWidth
 	cells := []Cell{styledCell(prefix, titleStyle)}
 	cells = append(cells, clipboardHistoryColumnCells(title, row.TitleMatchIndexes, titleStyle, nameWidth-DisplayWidth(prefix))...)
-	cells = append(cells, styledCell("│", StyleForeground))
-	cells = append(cells, clipboardHistoryColumnCells(preview, row.PreviewMatchIndexes, StylePickerMuted, previewWidth)...)
-	return Line{Cells: cells}
+	return cells
 }
 
 func clipboardHistorySearchLine(query string) Line {
@@ -374,13 +401,6 @@ func clipboardHistorySearchLine(query string) Line {
 		value = "Search  " + value
 	}
 	return clipboardHistoryPlainLine(value, style)
-}
-
-func clipboardHistoryEmptyLine() Line {
-	cells := []Cell{styledCell(strings.Repeat(" ", clipboardHistoryNameWidth), StylePicker)}
-	cells = append(cells, styledCell("│", StyleForeground))
-	cells = append(cells, styledCell("No clipboard entries", StylePickerMuted))
-	return Line{Cells: cells}
 }
 
 func clipboardHistoryDividerSpaceLine() Line {
@@ -440,6 +460,120 @@ func clipboardHistoryTitleFromText(text string) string {
 	return TruncateCells(text, clipboardHistoryNameWidth-2)
 }
 
+func clipboardHistorySelectedIndex(rows []state.ClipboardHistoryItem) int {
+	for index, row := range rows {
+		if row.Selected {
+			return index
+		}
+	}
+	if len(rows) > 0 {
+		return 0
+	}
+	return -1
+}
+
+func clipboardHistorySelectedItem(rows []state.ClipboardHistoryItem) (state.ClipboardHistoryItem, bool) {
+	index := clipboardHistorySelectedIndex(rows)
+	if index < 0 || index >= len(rows) {
+		return state.ClipboardHistoryItem{}, false
+	}
+	return rows[index], true
+}
+
+func clipboardHistoryBodyRowsForViewport(viewport state.ViewportStore) int {
+	if !viewport.Valid || viewport.Rows <= 0 {
+		return clipboardHistoryBodyRows
+	}
+	bodyRows := viewport.Rows - clipboardHistoryVerticalMargin(viewport.Rows) - 4
+	return clampInt(bodyRows, clipboardHistoryBodyRows, 64)
+}
+
+func clipboardHistoryListStart(selected int, total int, visibleRows int) int {
+	if selected < 0 || total <= visibleRows {
+		return 0
+	}
+	start := selected - visibleRows/2
+	maxStart := maxInt(0, total-visibleRows)
+	return clampInt(start, 0, maxStart)
+}
+
+func clipboardHistoryPreviewSegments(item state.ClipboardHistoryItem, ok bool, query string, width int, limit int) []clipboardHistoryPreviewSegment {
+	if !ok || width <= 0 || limit <= 0 {
+		return nil
+	}
+	text := clipboardHistoryPreviewText(item)
+	if text == "" {
+		return nil
+	}
+	var matches []int
+	if strings.TrimSpace(query) != "" {
+		matches = state.TerminalPickerQueryMatchIndexes(text, query)
+	}
+	return clipboardHistoryPreviewTextSegments(text, matches, width, limit)
+}
+
+func clipboardHistoryPreviewText(item state.ClipboardHistoryItem) string {
+	text := item.Text
+	if strings.TrimSpace(text) == "" {
+		text = item.Preview
+	}
+	if strings.TrimSpace(text) == "" {
+		text = item.Title
+	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.ReplaceAll(text, "\r", "\n")
+}
+
+func clipboardHistoryPreviewTextSegments(text string, matchIndexes []int, width int, limit int) []clipboardHistoryPreviewSegment {
+	segments := make([]clipboardHistoryPreviewSegment, 0, limit)
+	runeStart := 0
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := SafeLine(rawLine)
+		if line == "" {
+			segments = append(segments, clipboardHistoryPreviewSegment{})
+			runeStart++
+			if len(segments) >= limit {
+				return segments
+			}
+			continue
+		}
+		for DisplayWidth(line) > width {
+			chunk := SliceCells(line, 0, width)
+			segments = append(segments, clipboardHistoryPreviewSegment{
+				Text:       chunk,
+				MatchIndex: clipboardHistoryShiftMatchIndexes(matchIndexes, runeStart, len([]rune(chunk))),
+			})
+			runeStart += len([]rune(chunk))
+			line = SliceCells(line, width, DisplayWidth(line))
+			if len(segments) >= limit {
+				return segments
+			}
+		}
+		segments = append(segments, clipboardHistoryPreviewSegment{
+			Text:       line,
+			MatchIndex: clipboardHistoryShiftMatchIndexes(matchIndexes, runeStart, len([]rune(line))),
+		})
+		runeStart += len([]rune(line)) + 1
+		if len(segments) >= limit {
+			return segments
+		}
+	}
+	return segments
+}
+
+func clipboardHistoryShiftMatchIndexes(matchIndexes []int, start int, length int) []int {
+	if len(matchIndexes) == 0 || length <= 0 {
+		return nil
+	}
+	out := make([]int, 0, len(matchIndexes))
+	for _, index := range matchIndexes {
+		if index >= start && index < start+length {
+			out = append(out, index-start)
+		}
+	}
+	return out
+}
+
 func clipboardHistoryRowWidth() int {
 	return clipboardHistoryNameWidth + 1 + clipboardHistoryPreviewWidth
 }
@@ -451,12 +585,16 @@ func clipboardHistorySearchCursorCol(query string) int {
 	return DisplayWidth("Search  ") + DisplayWidth(query)
 }
 
-func clipboardHistoryHitRegions(rows []state.ClipboardHistoryItem, rowOffset int) []HitRegion {
-	regions := make([]HitRegion, 0, len(rows))
-	for index := range rows {
+func clipboardHistoryHitRegions(rows []state.ClipboardHistoryItem, rowOffset int, listStart int, visibleRows int) []HitRegion {
+	if visibleRows <= 0 || listStart >= len(rows) {
+		return nil
+	}
+	end := minInt(len(rows), listStart+visibleRows)
+	regions := make([]HitRegion, 0, maxInt(0, end-listStart))
+	for index := listStart; index < end; index++ {
 		regions = append(regions, HitRegion{
 			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index, W: clipboardHistoryRowWidth(), H: 1},
+			Rect:     Rect{Y: rowOffset + index - listStart, W: clipboardHistoryNameWidth, H: 1},
 			Row:      index,
 			ActionID: ActionClipboardHistorySelect.String(),
 		})

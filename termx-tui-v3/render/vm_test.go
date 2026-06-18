@@ -1604,7 +1604,7 @@ func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
 		Clipboard: state.ClipboardStore{
 			Entries: []state.ClipboardEntry{
 				{ID: "clip:1", Title: "alpha", Text: "alpha", Preview: "alpha"},
-				{ID: "clip:2", Title: "build log", Text: "build\nlog", Preview: "build …"},
+				{ID: "clip:2", Title: "build log", Text: "build\nlog\nthird line", Preview: "build …"},
 			},
 		},
 	}
@@ -1630,6 +1630,15 @@ func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
 	}
 	if content.HitRegions[0].Rect.Y != 2 || content.HitRegions[0].ActionID != ActionClipboardHistorySelect.String() {
 		t.Fatalf("clipboard rows should expose select hit regions only, got %#v", content.HitRegions)
+	}
+	shell = shell.SetClipboardHistorySelectedIndex(1, 2)
+	root.Shell = shell
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if len(content.Lines) < 5 ||
+		!strings.Contains(content.Lines[2].PlainString(), "│build") ||
+		!strings.Contains(content.Lines[3].PlainString(), "│log") ||
+		!strings.Contains(content.Lines[4].PlainString(), "│third line") {
+		t.Fatalf("clipboard history should preview selected entry body across lines, got %#v", content.Lines)
 	}
 }
 
