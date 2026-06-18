@@ -573,6 +573,45 @@ func TestFrameworkRendersStructuredHeaderAndFooterTokens(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 96)
 }
 
+func TestFrameworkRendersClipboardHistoryThinTModal(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenClipboardHistory().SetClipboardHistoryQuery("gft"),
+		Clipboard: state.ClipboardStore{
+			Entries: []state.ClipboardEntry{
+				{ID: "clip:1", Title: "git commit", Text: "git commit -m fix terminal", Preview: "git commit -m fix terminal"},
+				{ID: "clip:2", Title: "status check", Text: "status check --watch", Preview: "status check --watch"},
+			},
+		},
+	}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))
+	lines := result.Lines()
+	modalText := strings.Join(lines[8:16], "\n")
+	if !linesContain(lines, "Clipboard History") ||
+		!linesContain(lines, "Search  gft") ||
+		!linesContain(lines, "├") ||
+		!linesContain(lines, "┬") ||
+		!linesContain(lines, "┴") ||
+		!linesContain(lines, "› git commit") ||
+		!linesContain(lines, "│git commit -m fix terminal") {
+		t.Fatalf("clipboard history should render confirmed thin T modal, got %#v", lines)
+	}
+	if strings.Contains(modalText, "[new]") || strings.Contains(modalText, "copied entries") {
+		t.Fatalf("clipboard history modal must keep shortcuts out of content, got %#v", lines)
+	}
+	footer := lines[len(lines)-1]
+	for _, token := range []string{"[↑↓] SELECT", "[enter] PASTE", "[n] NEW", "[e] EDIT", "[x] DELETE"} {
+		if !strings.Contains(footer, token) {
+			t.Fatalf("clipboard history shortcuts should stay in global footer, missing %q from %q", token, footer)
+		}
+	}
+	if !styledLinesContainText(result.StyledLines(), "g", StylePickerMatch) ||
+		!styledLinesContainText(result.StyledLines(), "f", StylePickerMatch) ||
+		!styledLinesContainText(result.StyledLines(), "t", StylePickerMatch) {
+		t.Fatalf("clipboard fuzzy matches should be highlighted, got %#v", result.StyledLines())
+	}
+}
+
 func TestFrameworkRendersStructuredPaneChromeSlots(t *testing.T) {
 	panel := PanelVM{
 		ID:           "pane-1",

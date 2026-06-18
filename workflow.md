@@ -269,9 +269,11 @@
 | 215E1-R96. SK sticky shortcut mode 超时退出 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`workflow.md` | 已对齐 tuiv2：pane/resize/tab/workspace/floating/global 这类前缀快捷键 mode 在 3 秒无输入后自动退出，并在有效快捷动作后续期；terminal picker、terminal pool、prompt、help、clipboard history、copy/history 等真实 overlay 或交互页面不自动退出 |
 | 215E1-R97. SK clipboard history 手工新增 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已复刻 tuiv2 clipboard history 的 New entry 能力：v3 overlay 提供新建入口，提交后写入 reducer-owned clipboard store，并通过 core-v2 daemon storage 持久化 |
 | 215E1-R98. SK clipboard history 快捷入口 | 完成 | `termx-tui-v3/input/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 `Ctrl-V` 后 `H` 入口：copy entering 阶段也能打开 v3 clipboard history overlay，copy footer 明确展示 `H CLIPBOARD` |
+| 215E1-R99. SK clipboard history modal 线框与模糊搜索 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已按确认稿重画 clipboard history：标题嵌入 v3 细边框，内部只保留搜索区和左窄右宽 T 字分栏；footer 展示全局快捷键；搜索复用 picker 子序列匹配并高亮命中字母 |
 
 当前下一步：
 
+- `215E1-R99 clipboard history modal 线框与模糊搜索` 已完成：clipboard history modal 现在是 `Clipboard History` 顶边标题 + 搜索区 + 左窄右宽 T 字分栏；快捷键留在全局 footer；输入 `gft` 这类子序列能匹配 `git commit ... fix terminal` 并高亮命中字母。
 - `215E1-R98 clipboard history 快捷入口` 已完成：`Ctrl-V` 进入 copy/history 后按 `H` 会打开 v3 clipboard history overlay；latest 仍在飞的 entering 阶段也不再吞掉 `H`，copy footer 会显示 `H CLIPBOARD` 可点击入口。
 - `215E1-R97 clipboard history 手工新增` 已完成：v3 clipboard history overlay 现在有 New entry 入口，支持 `Ctrl-N` 和 content action 打开 v3 prompt，提交后写入 reducer-owned clipboard store 并保存到 core-v2 daemon storage。
 - `215E1-R96 sticky shortcut mode 超时退出` 已完成：v3 现在只让 pane/resize/tab/workspace/floating/global 这类 sticky prefix mode 空闲 3 秒后退出；有效快捷动作会续期，overlay/copy 页面仍保持显式关闭语义。

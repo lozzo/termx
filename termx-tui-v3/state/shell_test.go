@@ -444,10 +444,16 @@ func TestClipboardHistoryItemsFilterAndSelection(t *testing.T) {
 	if len(items) != 1 || !items[0].Selected || items[0].Title != "build log" {
 		t.Fatalf("expected filtered clipboard item, got %#v", items)
 	}
+	root.Clipboard.Entries = append([]ClipboardEntry{{ID: "clip:3", Title: "git commit", Text: "git commit -m fix terminal", Preview: "git commit -m fix terminal"}}, root.Clipboard.Entries...)
+	root.Shell = root.Shell.SetClipboardHistoryQuery("gft")
+	items = ClipboardHistoryItems(root)
+	if len(items) != 1 || items[0].Title != "git commit" || len(items[0].PreviewMatchIndexes) != 3 {
+		t.Fatalf("expected fuzzy clipboard query to match git commit preview, got %#v", items)
+	}
 	root.Shell = root.Shell.SetClipboardHistoryQuery("")
 	root.Shell = root.Shell.MoveClipboardHistorySelection(1, len(ClipboardHistoryItems(root)))
 	items = ClipboardHistoryItems(root)
-	if len(items) != 2 || !items[1].Selected || items[1].Title != "build log" {
+	if len(items) != 3 || !items[1].Selected || items[1].Title != "alpha" {
 		t.Fatalf("expected selection moved to second clipboard item, got %#v", items)
 	}
 }

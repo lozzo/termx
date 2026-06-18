@@ -295,14 +295,6 @@ type WorkbenchTreeItem struct {
 	Summary       string
 }
 
-type ClipboardHistoryItem struct {
-	ID       string
-	Title    string
-	Preview  string
-	Text     string
-	Selected bool
-}
-
 const (
 	WorkbenchTreeKindWorkspace = "workspace"
 	WorkbenchTreeKindTab       = "tab"

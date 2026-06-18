@@ -2,9 +2,19 @@ package state
 
 import "strings"
 
+type ClipboardHistoryItem struct {
+	ID                  string
+	Title               string
+	Preview             string
+	Text                string
+	Selected            bool
+	TitleMatchIndexes   []int
+	PreviewMatchIndexes []int
+}
+
 func ClipboardHistoryItems(root Root) []ClipboardHistoryItem {
 	shell := root.Shell.EnsureDefaults()
-	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
+	query := strings.TrimSpace(shell.Overlay.Query)
 	items := make([]ClipboardHistoryItem, 0, len(root.Clipboard.Entries))
 	for _, entry := range root.Clipboard.Entries {
 		item := ClipboardHistoryItem{
@@ -13,7 +23,8 @@ func ClipboardHistoryItems(root Root) []ClipboardHistoryItem {
 			Preview: entry.Preview,
 			Text:    entry.Text,
 		}
-		if !matchesClipboardHistoryQuery(item, query) {
+		item, ok := matchClipboardHistoryItem(item, query)
+		if !ok {
 			continue
 		}
 		items = append(items, item)
@@ -31,12 +42,23 @@ func ClipboardHistoryItems(root Root) []ClipboardHistoryItem {
 	return items
 }
 
-func matchesClipboardHistoryQuery(item ClipboardHistoryItem, query string) bool {
+func matchClipboardHistoryItem(item ClipboardHistoryItem, query string) (ClipboardHistoryItem, bool) {
 	if query == "" {
-		return true
+		return item, true
 	}
-	title := strings.ToLower(item.Title)
-	preview := strings.ToLower(item.Preview)
-	text := strings.ToLower(item.Text)
-	return strings.Contains(title, query) || strings.Contains(preview, query) || strings.Contains(text, query)
+	if indexes := TerminalPickerQueryMatchIndexes(item.Title, query); indexes != nil {
+		item.TitleMatchIndexes = indexes
+		return item, true
+	}
+	if indexes := TerminalPickerQueryMatchIndexes(item.Preview, query); indexes != nil {
+		item.PreviewMatchIndexes = indexes
+		return item, true
+	}
+	if indexes := TerminalPickerQueryMatchIndexes(item.Text, query); indexes != nil {
+		if previewIndexes := TerminalPickerQueryMatchIndexes(item.Preview, query); previewIndexes != nil {
+			item.PreviewMatchIndexes = previewIndexes
+		}
+		return item, true
+	}
+	return item, false
 }

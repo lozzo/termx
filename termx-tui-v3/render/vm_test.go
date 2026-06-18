@@ -1613,15 +1613,46 @@ func TestRenderVMBuilderProjectsClipboardHistoryOverlay(t *testing.T) {
 	if vm.Shell.Overlay.Kind != OverlayClipboardHistory || vm.Shell.Overlay.Content.Kind != ContentClipboardHistory {
 		t.Fatalf("expected clipboard history overlay VM, got %#v", vm.Shell.Overlay)
 	}
-	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "enter", "paste", ActionClipboardHistoryPaste.String()) {
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "enter", "PASTE", ActionClipboardHistoryPaste.String()) {
 		t.Fatalf("clipboard history footer should expose paste action, got %#v", vm.Shell.Footer)
 	}
-	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "new", "", ActionClipboardHistoryNew.String()) {
+	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "n", "NEW", ActionClipboardHistoryNew.String()) {
 		t.Fatalf("clipboard history footer should expose new action, got %#v", vm.Shell.Footer)
 	}
 	content := vm.Shell.Overlay.Content
-	if content.Status != "clipboard history: 2" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[2].PlainString(), "alpha") || !strings.Contains(content.Lines[len(content.Lines)-3].PlainString(), "[new]") {
+	if content.Status != "clipboard history: 2" || len(content.HitRegions) != 2 ||
+		!strings.Contains(content.Lines[0].PlainString(), "Search") ||
+		!strings.Contains(content.Lines[2].PlainString(), "› alpha") ||
+		!strings.Contains(content.Lines[2].PlainString(), "│alpha") ||
+		strings.Contains(plainLines(content.Lines), "[new]") ||
+		strings.Contains(plainLines(content.Lines), "copied entries") {
 		t.Fatalf("expected clipboard history content, got %#v", content)
+	}
+	if content.HitRegions[0].Rect.Y != 2 || content.HitRegions[0].ActionID != ActionClipboardHistorySelect.String() {
+		t.Fatalf("clipboard rows should expose select hit regions only, got %#v", content.HitRegions)
+	}
+}
+
+func TestRenderVMBuilderProjectsClipboardHistoryFuzzyMatches(t *testing.T) {
+	root := state.Root{
+		Shell: state.DefaultShell().OpenClipboardHistory().SetClipboardHistoryQuery("gft"),
+		Clipboard: state.ClipboardStore{
+			Entries: []state.ClipboardEntry{
+				{ID: "clip:1", Title: "git commit", Text: "git commit -m fix terminal", Preview: "git commit -m fix terminal"},
+				{ID: "clip:2", Title: "status check", Text: "status check --watch", Preview: "status check --watch"},
+			},
+		},
+	}
+
+	items := state.ClipboardHistoryItems(root)
+	if len(items) != 1 || items[0].Title != "git commit" || len(items[0].PreviewMatchIndexes) != 3 {
+		t.Fatalf("expected gft to fuzzy-match git commit preview, got %#v", items)
+	}
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if len(content.Lines) < 3 || !styledLinesContainText(content.Lines[2:3], "g", StylePickerMatch) ||
+		!styledLinesContainText(content.Lines[2:3], "f", StylePickerMatch) ||
+		!styledLinesContainText(content.Lines[2:3], "t", StylePickerMatch) {
+		t.Fatalf("expected clipboard fuzzy match letters highlighted, got %#v", content.Lines)
 	}
 }
 

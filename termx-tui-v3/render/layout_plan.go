@@ -207,67 +207,15 @@ func measureOverlay(overlay OverlayVM, viewport Rect) Rect {
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" {
 		return Rect{}
 	}
-	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt {
+	switch overlay.Content.Kind {
+	case ContentTerminalPicker, ContentPrompt:
 		return measureCompactOverlay(overlay.Content, viewport)
-	}
-	if overlay.Content.Kind == ContentTerminalPool || overlay.Content.Kind == ContentWorkbenchTree || overlay.Content.Kind == ContentClipboardHistory || overlay.Content.Kind == ContentHelp {
+	case ContentClipboardHistory:
+		return measureClipboardHistoryOverlay(overlay.Content, viewport)
+	case ContentTerminalPool, ContentWorkbenchTree, ContentHelp:
 		return measurePageOverlay(viewport)
 	}
-	width := minInt(maxInt(54, viewport.W*3/5), viewport.W-8)
-	height := minInt(maxInt(10, viewport.H/3), viewport.H-4)
-	if width < 16 || height < 4 {
-		width = maxInt(8, viewport.W)
-		height = maxInt(3, minInt(viewport.H, 4))
-	}
-	return Rect{
-		X: maxInt(0, (viewport.W-width)/2),
-		Y: maxInt(0, (viewport.H-height)/2),
-		W: minInt(width, viewport.W),
-		H: minInt(height, viewport.H),
-	}
-}
-
-func measureCompactOverlay(content ContentVM, viewport Rect) Rect {
-	lineWidth := DisplayWidth("terminal picker")
-	for _, line := range content.Lines {
-		lineWidth = maxInt(lineWidth, line.Width())
-	}
-	padX, padY := compactOverlayPadding(viewport)
-	width := minInt(maxInt(lineWidth+padX*2+2, 64), 80)
-	height := minInt(maxInt(len(content.Lines)+padY*2+2, 6), 12)
-	if width > viewport.W-4 {
-		width = maxInt(8, viewport.W-2)
-	}
-	if height > viewport.H-4 {
-		height = maxInt(3, viewport.H-2)
-	}
-	width = minInt(width, viewport.W)
-	height = minInt(height, viewport.H)
-	return Rect{
-		X: maxInt(0, (viewport.W-width)/2),
-		Y: maxInt(0, (viewport.H-height)/2),
-		W: width,
-		H: height,
-	}
-}
-
-func measurePageOverlay(viewport Rect) Rect {
-	width := minInt(maxInt(76, viewport.W-12), 132)
-	height := minInt(maxInt(18, viewport.H-8), viewport.H-6)
-	if width < 40 {
-		width = maxInt(8, viewport.W)
-	}
-	if height < 10 {
-		height = maxInt(3, minInt(viewport.H, 12))
-	}
-	width = minInt(width, viewport.W)
-	height = minInt(height, viewport.H)
-	return Rect{
-		X: maxInt(0, (viewport.W-width)/2),
-		Y: maxInt(0, (viewport.H-height)/2),
-		W: width,
-		H: height,
-	}
+	return measureDefaultOverlay(viewport)
 }
 
 func measureOverlayContentRect(overlay OverlayVM, rect Rect) Rect {
@@ -278,6 +226,9 @@ func measureOverlayContentRect(overlay OverlayVM, rect Rect) Rect {
 		padX, padY := compactOverlayPadding(rect)
 		return Rect{X: rect.X + padX, Y: rect.Y + padY, W: maxInt(0, rect.W-padX*2), H: maxInt(0, rect.H-padY*2)}
 	}
+	if overlay.Content.Kind == ContentClipboardHistory {
+		return measureClipboardHistoryContentRect(rect)
+	}
 	if rect.W >= 48 && rect.H >= 10 {
 		return Rect{X: rect.X + 4, Y: rect.Y + 3, W: maxInt(0, rect.W-8), H: maxInt(0, rect.H-5)}
 	}
@@ -285,21 +236,6 @@ func measureOverlayContentRect(overlay OverlayVM, rect Rect) Rect {
 		return Rect{X: rect.X + 2, Y: rect.Y + 2, W: maxInt(0, rect.W-4), H: maxInt(0, rect.H-3)}
 	}
 	return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
-}
-
-func compactOverlayPadding(rect Rect) (int, int) {
-	padX := 4
-	padY := 2
-	if rect.W < 56 {
-		padX = 2
-	}
-	if rect.W < 32 {
-		padX = 1
-	}
-	if rect.W < 32 || rect.H < 6 {
-		padY = 1
-	}
-	return padX, padY
 }
 
 func measureToasts(toasts []ToastVM, viewport Rect) []Rect {

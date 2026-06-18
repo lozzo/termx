@@ -320,12 +320,11 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		)
 	case string(state.OverlayClipboardHistory):
 		return footerActionSpecs(
-			footerActionSpec("search", "", "", StyleStatusAccent),
-			footerActionSpec("↑/↓", "select", "", StyleStatusAccent),
-			footerActionFor(ActionClipboardHistoryPaste),
-			footerActionFor(ActionClipboardHistoryNew),
-			footerActionFor(ActionClipboardHistoryEdit),
-			footerActionFor(ActionClipboardHistoryDelete),
+			footerActionSpec("↑↓", "SELECT", "", StyleStatusAccent),
+			footerActionWithKey(ActionClipboardHistoryPaste, "enter", "PASTE"),
+			footerActionWithKey(ActionClipboardHistoryNew, "n", "NEW"),
+			footerActionWithKey(ActionClipboardHistoryEdit, "e", "EDIT"),
+			footerActionWithKey(ActionClipboardHistoryDelete, "x", "DELETE"),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)
 	case string(state.OverlayFloatingOverview):

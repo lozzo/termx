@@ -6,6 +6,9 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	if overlay.Kind == OverlayNone || overlay.Content.Kind == "" || rect.W <= 0 || rect.H <= 0 {
 		return Layer{}
 	}
+	if overlay.Content.Kind == ContentClipboardHistory {
+		return renderClipboardHistoryOverlay(c, overlay, rect, contentRect)
+	}
 	primitive := OverlayChromePrimitive(overlay, rect, contentRect)
 	c.fillStyledRect(rect, StyleForeground, primitive.Owner, primitive.Layer)
 	chromeStyle := StyleForeground
@@ -30,6 +33,9 @@ func overlayInnerRect(rect Rect) Rect {
 }
 
 func overlayTitle(kind OverlayKind) string {
+	if kind == OverlayClipboardHistory {
+		return "Clipboard History"
+	}
 	title := strings.TrimSpace(string(kind))
 	if title == "" {
 		return "overlay"

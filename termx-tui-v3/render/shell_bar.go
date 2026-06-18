@@ -72,7 +72,7 @@ func footerLeftSegments(footer FooterVM, width int) []barSegment {
 	}
 	available := footerActionAvailableWidth(footer, width)
 	left := []barSegment{}
-	if mode != "live" && mode != "normal" {
+	if mode != "live" && mode != "normal" && mode != string(OverlayClipboardHistory) {
 		left = append(left, barText(" "+strings.ToUpper(mode)+" ", StyleFooterAccent, 1))
 	}
 	if len(footer.ActionTokens) > 0 || len(footer.Actions) > 0 {

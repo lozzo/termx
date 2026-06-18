@@ -9,6 +9,9 @@ import (
 
 const contentActionWidth = 12
 
+const clipboardHistoryNameWidth = 16
+const clipboardHistoryPreviewWidth = 50
+
 const emptyPaneActionCount = 4
 
 const exitedPaneActionCount = 2
@@ -282,36 +285,20 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 	shell = shell.EnsureDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.ClipboardHistoryItems(root)
-	lines := []Line{
-		pageTitleLine("Clipboard History", "copied entries"),
-		searchRowLine(query, "filter"),
-	}
+	lines := []Line{clipboardHistorySearchLine(query), clipboardHistoryDividerSpaceLine()}
 	rowOffset := len(lines)
 	for _, row := range rows {
 		lines = append(lines, clipboardHistoryRowLine(row))
 	}
 	if len(rows) == 0 {
-		lines = append(lines, Line{Cells: []Cell{styledCell("No clipboard entries", StyleMuted)}})
+		lines = append(lines, clipboardHistoryEmptyLine())
 	}
-	actionOffset := len(lines)
-	lines = append(lines,
-		contentActionLine("paste", "Paste"),
-		contentActionLine("new", "New"),
-		contentActionLine("edit", "Edit"),
-		contentActionLine("delete", "Delete"),
-	)
 	regions := clipboardHistoryHitRegions(rows, rowOffset)
-	regions = append(regions,
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryPaste.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryNew.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryEdit.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 3, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionClipboardHistoryDelete.String()},
-	)
 	return ContentVM{
 		Kind:       ContentClipboardHistory,
 		Lines:      lines,
 		Status:     clipboardHistoryStatus(len(rows), query),
-		Cursor:     Cursor{Visible: true, Row: 1, Col: searchCursorCol(query), Shape: CursorShapeBar},
+		Cursor:     Cursor{Visible: true, Row: 0, Col: clipboardHistorySearchCursorCol(query), Shape: CursorShapeBar},
 		HitRegions: regions,
 		Empty:      len(rows) == 0,
 	}
@@ -362,13 +349,106 @@ func clipboardHistoryRowLine(row state.ClipboardHistoryItem) Line {
 	}
 	title := strings.TrimSpace(row.Title)
 	preview := strings.TrimSpace(row.Preview)
-	if preview == "" || preview == title {
-		return Line{Cells: []Cell{styledCell(prefix+title, titleStyle)}}
+	if title == "" {
+		title = clipboardHistoryTitleFromText(row.Text)
 	}
-	return Line{Cells: []Cell{
-		styledCell(prefix+title, titleStyle),
-		styledCell("  "+preview, StylePickerMuted),
-	}}
+	if preview == "" {
+		preview = strings.TrimSpace(row.Text)
+	}
+	nameWidth := clipboardHistoryNameWidth
+	previewWidth := clipboardHistoryPreviewWidth
+	cells := []Cell{styledCell(prefix, titleStyle)}
+	cells = append(cells, clipboardHistoryColumnCells(title, row.TitleMatchIndexes, titleStyle, nameWidth-DisplayWidth(prefix))...)
+	cells = append(cells, styledCell("│", StyleForeground))
+	cells = append(cells, clipboardHistoryColumnCells(preview, row.PreviewMatchIndexes, StylePickerMuted, previewWidth)...)
+	return Line{Cells: cells}
+}
+
+func clipboardHistorySearchLine(query string) Line {
+	value := query
+	style := StylePickerAccent
+	if value == "" {
+		value = "Search"
+		style = StylePickerMuted
+	} else {
+		value = "Search  " + value
+	}
+	return clipboardHistoryPlainLine(value, style)
+}
+
+func clipboardHistoryEmptyLine() Line {
+	cells := []Cell{styledCell(strings.Repeat(" ", clipboardHistoryNameWidth), StylePicker)}
+	cells = append(cells, styledCell("│", StyleForeground))
+	cells = append(cells, styledCell("No clipboard entries", StylePickerMuted))
+	return Line{Cells: cells}
+}
+
+func clipboardHistoryDividerSpaceLine() Line {
+	return clipboardHistoryPlainLine("", StylePicker)
+}
+
+func clipboardHistoryColumnCells(value string, matchIndexes []int, baseStyle StyleToken, width int) []Cell {
+	if width <= 0 {
+		return nil
+	}
+	value = TruncateCells(value, width)
+	cells := clipboardHistoryHighlightedCells(value, matchIndexes, baseStyle)
+	if pad := width - DisplayWidth(value); pad > 0 {
+		cells = append(cells, styledCell(strings.Repeat(" ", pad), baseStyle))
+	}
+	return cells
+}
+
+func clipboardHistoryHighlightedCells(value string, matchIndexes []int, baseStyle StyleToken) []Cell {
+	if value == "" {
+		return nil
+	}
+	if len(matchIndexes) == 0 {
+		return []Cell{styledCell(value, baseStyle)}
+	}
+	matchSet := make(map[int]struct{}, len(matchIndexes))
+	for _, index := range matchIndexes {
+		matchSet[index] = struct{}{}
+	}
+	runes := []rune(value)
+	cells := make([]Cell, 0, len(runes))
+	for index, r := range runes {
+		style := baseStyle
+		if _, ok := matchSet[index]; ok {
+			style = StylePickerMatch
+		}
+		cells = append(cells, styledCell(string(r), style))
+	}
+	return cells
+}
+
+func clipboardHistoryPlainLine(value string, style StyleToken) Line {
+	width := clipboardHistoryRowWidth()
+	value = TruncateCells(value, width)
+	cells := []Cell{styledCell(value, style)}
+	if pad := width - DisplayWidth(value); pad > 0 {
+		cells = append(cells, styledCell(strings.Repeat(" ", pad), StylePicker))
+	}
+	return Line{Cells: cells}
+}
+
+func clipboardHistoryTitleFromText(text string) string {
+	text = strings.TrimSpace(strings.ReplaceAll(text, "\n", " "))
+	if text == "" {
+		return "clipboard"
+	}
+	return TruncateCells(text, clipboardHistoryNameWidth-2)
+}
+
+func clipboardHistoryRowWidth() int {
+	return clipboardHistoryNameWidth + 1 + clipboardHistoryPreviewWidth
+}
+
+func clipboardHistorySearchCursorCol(query string) int {
+	if query == "" {
+		return DisplayWidth("Search")
+	}
+	return DisplayWidth("Search  ") + DisplayWidth(query)
 }
 
 func clipboardHistoryHitRegions(rows []state.ClipboardHistoryItem, rowOffset int) []HitRegion {
@@ -376,7 +456,7 @@ func clipboardHistoryHitRegions(rows []state.ClipboardHistoryItem, rowOffset int
 	for index := range rows {
 		regions = append(regions, HitRegion{
 			Kind:     HitRegionContentAction,
-			Rect:     Rect{Y: rowOffset + index, W: 72, H: 1},
+			Rect:     Rect{Y: rowOffset + index, W: clipboardHistoryRowWidth(), H: 1},
 			Row:      index,
 			ActionID: ActionClipboardHistorySelect.String(),
 		})
