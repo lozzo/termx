@@ -54,6 +54,9 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("oldest: %v", err)
 	}
+	if err := client.ReleaseHistory(context.Background(), HistoryReleaseRequest{TerminalID: "term-1", Token: "latest"}); err != nil {
+		t.Fatalf("release history: %v", err)
+	}
 
 	if latest.RequestID != 1 || latest.Window.Token != "latest" {
 		t.Fatalf("unexpected latest result %#v", latest)
@@ -72,6 +75,9 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	}
 	if len(client.OldestRequests) != 1 || client.OldestRequests[0].Boundary.LastLineID != 20 {
 		t.Fatalf("unexpected oldest requests %#v", client.OldestRequests)
+	}
+	if len(client.ReleaseRequests) != 1 || client.ReleaseRequests[0].Token != "latest" {
+		t.Fatalf("unexpected release requests %#v", client.ReleaseRequests)
 	}
 }
 

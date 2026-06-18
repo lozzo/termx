@@ -121,6 +121,13 @@ func (track *HistoryTrack) LineIDs() []LogicalLineID {
 	return track.store.LineIDs()
 }
 
+func (track *HistoryTrack) RetainedLineCount() int {
+	if store, ok := track.store.(interface{ RetainedLineCount() int }); ok {
+		return store.RetainedLineCount()
+	}
+	return 0
+}
+
 func (track *HistoryTrack) CommittedIDs() []LogicalLineID {
 	return track.committed.IDs()
 }

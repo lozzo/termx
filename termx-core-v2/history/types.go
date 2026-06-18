@@ -5,6 +5,9 @@ import "errors"
 // LogicalLineID identifies one logical line in the history track.
 type LogicalLineID uint64
 
+// ObserverEpoch marks the visibility point of a frozen copy/history observer.
+type ObserverEpoch uint64
+
 // Generation changes when a line, index, frontier, or future history track
 // changes in a way that should invalidate stale projections or cursors.
 type Generation uint64

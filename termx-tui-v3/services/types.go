@@ -55,6 +55,11 @@ type HistoryOldestRequest struct {
 	Boundary   state.HistoryBoundary
 }
 
+type HistoryReleaseRequest struct {
+	TerminalID string
+	Token      string
+}
+
 type HistoryResult struct {
 	RequestID RequestID
 	Window    state.HistoryWindow
@@ -64,6 +69,7 @@ type CoreClient interface {
 	HistoryLatest(context.Context, HistoryLatestRequest) (HistoryResult, error)
 	HistoryOlder(context.Context, HistoryOlderRequest) (HistoryResult, error)
 	HistoryOldest(context.Context, HistoryOldestRequest) (HistoryResult, error)
+	ReleaseHistory(context.Context, HistoryReleaseRequest) error
 }
 
 type TerminalService interface {
@@ -421,6 +427,8 @@ type FakeCoreClient struct {
 	LatestRequests  []HistoryLatestRequest
 	OlderRequests   []HistoryOlderRequest
 	OldestRequests  []HistoryOldestRequest
+	ReleaseRequests []HistoryReleaseRequest
+	ReleaseErr      error
 }
 
 func (client *FakeCoreClient) HistoryLatest(_ context.Context, req HistoryLatestRequest) (HistoryResult, error) {
@@ -454,6 +462,11 @@ func (client *FakeCoreClient) HistoryOldest(_ context.Context, req HistoryOldest
 	client.OldestResponses = client.OldestResponses[1:]
 	result.RequestID = req.RequestID
 	return result, nil
+}
+
+func (client *FakeCoreClient) ReleaseHistory(_ context.Context, req HistoryReleaseRequest) error {
+	client.ReleaseRequests = append(client.ReleaseRequests, req)
+	return client.ReleaseErr
 }
 
 type FakeTerminalService struct {

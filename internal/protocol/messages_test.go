@@ -671,6 +671,27 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestHistoryReleaseParamsControlPayloadRoundTrip(t *testing.T) {
+	encoded, err := EncodeMethodParams("history.release", HistoryWindowParams{
+		TerminalID: "term-hist",
+		Token:      "snap-token",
+	})
+	if err != nil {
+		t.Fatalf("encode history release params failed: %v", err)
+	}
+	decoded, err := DecodeMethodParams("history.release", encoded)
+	if err != nil {
+		t.Fatalf("decode history release params failed: %v", err)
+	}
+	params, ok := decoded.(HistoryWindowParams)
+	if !ok {
+		t.Fatalf("expected HistoryWindowParams, got %T", decoded)
+	}
+	if params.TerminalID != "term-hist" || params.Token != "snap-token" {
+		t.Fatalf("unexpected history release params: %#v", params)
+	}
+}
+
 func TestDetachParamsControlPayloadRoundTripKeepsAttachmentIdentity(t *testing.T) {
 	params := DetachParams{
 		TerminalID: "term-1",

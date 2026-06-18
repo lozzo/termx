@@ -481,6 +481,38 @@ func TestCopyModeEnteringSwallowsInputAndEscCancelsPendingLatest(t *testing.T) {
 	}
 }
 
+func TestCopyModeExitReleasesFrozenHistoryToken(t *testing.T) {
+	host := NewFakeTerminalHost(16)
+	core := &services.FakeCoreClient{}
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.History = state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       78,
+		Rows:       []state.HistoryRow{{Text: "alpha", LineID: 10}},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+	}
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
+		t.Fatalf("send esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain esc: %v", err)
+	}
+
+	if runtime.State().CopyMode.Active || runtime.State().History.Token != "" {
+		t.Fatalf("copy exit should clear local history state, copy=%#v history=%#v", runtime.State().CopyMode, runtime.State().History)
+	}
+	if len(core.ReleaseRequests) != 1 || core.ReleaseRequests[0].TerminalID != "term-1" || core.ReleaseRequests[0].Token != "tok-1" {
+		t.Fatalf("copy exit should release frozen history token, got %#v", core.ReleaseRequests)
+	}
+}
+
 func TestCopyModeEnteringFreezesVisibleLiveFrameDuringOutput(t *testing.T) {
 	host := NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
@@ -6208,6 +6240,10 @@ func (client *blockingHistoryClient) HistoryOldest(context.Context, services.His
 	return services.HistoryResult{}, errors.New("unexpected oldest request")
 }
 
+func (client *blockingHistoryClient) ReleaseHistory(context.Context, services.HistoryReleaseRequest) error {
+	return nil
+}
+
 func (client *blockingHistoryClient) latestRequests() []services.HistoryLatestRequest {
 	client.mu.Lock()
 	defer client.mu.Unlock()
@@ -6245,8 +6281,9 @@ func (client *blockingHistoryClient) finishOlder(result services.HistoryResult, 
 }
 
 type acceptanceProtocolHistoryClient struct {
-	requests []protocol.HistoryWindowParams
-	windows  []*protocol.HistoryWindow
+	requests        []protocol.HistoryWindowParams
+	releaseRequests []protocol.HistoryWindowParams
+	windows         []*protocol.HistoryWindow
 }
 
 func (client *acceptanceProtocolHistoryClient) HistoryWindow(_ context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
@@ -6257,6 +6294,11 @@ func (client *acceptanceProtocolHistoryClient) HistoryWindow(_ context.Context, 
 	window := client.windows[0]
 	client.windows = client.windows[1:]
 	return window, nil
+}
+
+func (client *acceptanceProtocolHistoryClient) ReleaseHistory(_ context.Context, params protocol.HistoryWindowParams) error {
+	client.releaseRequests = append(client.releaseRequests, params)
+	return nil
 }
 
 func historyWindowForApp(

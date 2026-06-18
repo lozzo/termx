@@ -409,6 +409,10 @@ func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) 
 	return DecodeHistoryWindowPayload(payload)
 }
 
+func (c *Client) ReleaseHistory(ctx context.Context, params HistoryWindowParams) error {
+	return c.doRequest(ctx, "history.release", params, nil)
+}
+
 func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
 	var out StorageEntry
 	if err := c.doRequest(ctx, "storage.get", params, &out); err != nil {

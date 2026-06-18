@@ -83,6 +83,7 @@ func (session *protocolSession) run(ctx context.Context) error {
 		cancel()
 		session.requests.Wait()
 		session.stopEvents()
+		session.releaseAllFrozenSnapshots()
 	}()
 	for {
 		frame, err := session.conn.Recv()
@@ -422,6 +423,13 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			return nil, true, protocolErrorInternal, err
 		}
 		return payload, true, 0, nil
+	case "history.release":
+		in := params.(protocol.HistoryWindowParams)
+		if in.Token == "" {
+			return nil, false, protocolErrorBadRequest, fmt.Errorf("history release requires token")
+		}
+		session.releaseFrozenSnapshot(in.TerminalID, in.Token)
+		return encodeMethodResult(req.Method, nil)
 	default:
 		return nil, false, protocolErrorNotFound, fmt.Errorf("unknown method: %s", req.Method)
 	}
@@ -1362,6 +1370,45 @@ func (session *protocolSession) dropSupersededFrozenSnapshotsLocked(terminalID s
 		// 中文说明：保留当前 token 和上一个 token，保证刚被新 latest 超过的
 		// copy 会话还能继续 older；更旧 pin 不再无限持有大历史 payload。
 		delete(session.historyPins, token)
+		pin.Snapshot.ReleaseObserver()
+	}
+}
+
+func (session *protocolSession) releaseFrozenSnapshot(terminalID string, token string) {
+	if token == "" {
+		return
+	}
+	session.historyMu.Lock()
+	pin, ok := session.historyPins[token]
+	if ok && (terminalID == "" || pin.TerminalID == terminalID) {
+		delete(session.historyPins, token)
+		for terminalID, latest := range session.historyLatest {
+			if latest == token {
+				delete(session.historyLatest, terminalID)
+			}
+		}
+	} else {
+		ok = false
+	}
+	session.historyMu.Unlock()
+	if ok {
+		// 中文说明：token drop 是 observer 生命周期边界，释放后 store 可清理延迟删除 payload。
+		pin.Snapshot.ReleaseObserver()
+	}
+}
+
+func (session *protocolSession) releaseAllFrozenSnapshots() {
+	session.historyMu.Lock()
+	pins := make([]frozenHistorySnapshot, 0, len(session.historyPins))
+	for token, pin := range session.historyPins {
+		pins = append(pins, pin)
+		delete(session.historyPins, token)
+	}
+	session.historyLatest = make(map[string]string)
+	session.historyMu.Unlock()
+	for _, pin := range pins {
+		// 中文说明：client session 关闭时兜底释放所有 frozen observer，避免 daemon 长期保留旧版本。
+		pin.Snapshot.ReleaseObserver()
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 type FrozenSnapshot struct {
 	Token          string
 	Generation     Generation
+	ObserverEpoch  ObserverEpoch
 	Lines          []SnapshotLine
 	CommittedLines int
 	CommittedFirst LogicalLineID
@@ -56,9 +57,14 @@ func (track *HistoryTrack) freezeSnapshot(detach bool) FrozenSnapshot {
 			frontierIDs = append(frontierIDs, id)
 		}
 	}
+	observerEpoch := ObserverEpoch(0)
+	if !detach {
+		observerEpoch = track.acquireObserver(committedIDs, frontierIDs)
+	}
 	snapshot := FrozenSnapshot{
 		Token:          makeSnapshotToken(track.generation),
 		Generation:     track.generation,
+		ObserverEpoch:  observerEpoch,
 		CommittedLines: len(committedIDs),
 		store:          track.store,
 		detached:       detach,
@@ -74,7 +80,7 @@ func (track *HistoryTrack) freezeSnapshot(detach bool) FrozenSnapshot {
 		snapshot.CommittedIDs = cloneLineIDs(committedIDs)
 	}
 	for _, id := range frontierIDs {
-		line, ok := snapshotLine(track.store, id, detach)
+		line, ok := snapshotLine(track.store, id, detach, observerEpoch)
 		if !ok {
 			continue
 		}
@@ -97,7 +103,7 @@ func (snapshot *FrozenSnapshot) materializeDetachedLines() {
 	}
 	lines := make([]SnapshotLine, 0, len(snapshot.CommittedIDs)+len(snapshot.FrozenFrontier))
 	for _, id := range snapshot.CommittedIDs {
-		line, ok := snapshotLine(snapshot.store, id, true)
+		line, ok := snapshotLine(snapshot.store, id, true, snapshot.ObserverEpoch)
 		if !ok {
 			continue
 		}
@@ -106,6 +112,7 @@ func (snapshot *FrozenSnapshot) materializeDetachedLines() {
 	lines = append(lines, snapshot.FrozenFrontier...)
 	snapshot.Lines = lines
 	snapshot.store = nil
+	snapshot.ObserverEpoch = 0
 }
 
 func (snapshot FrozenSnapshot) VisibleLineCount() int {
@@ -130,7 +137,7 @@ func (snapshot FrozenSnapshot) LineAt(index int) (SnapshotLine, bool) {
 		if !ok {
 			return SnapshotLine{}, false
 		}
-		line, ok := snapshotLine(snapshot.store, id, false)
+		line, ok := snapshotLine(snapshot.store, id, false, snapshot.ObserverEpoch)
 		if !ok {
 			return SnapshotLine{}, false
 		}
@@ -228,6 +235,15 @@ func (snapshot FrozenSnapshot) committedLineIndex(id LogicalLineID) (int, bool) 
 	return index, true
 }
 
+func (snapshot FrozenSnapshot) ReleaseObserver() {
+	if snapshot.ObserverEpoch == 0 || snapshot.store == nil {
+		return
+	}
+	if store, ok := snapshot.store.(observerLineStore); ok {
+		store.ReleaseObserver(snapshot.ObserverEpoch)
+	}
+}
+
 func lineIDsContiguous(ids []LogicalLineID) bool {
 	for i := 1; i < len(ids); i++ {
 		if ids[i] != ids[i-1]+1 {
@@ -245,7 +261,46 @@ type snapshotLineStore interface {
 	SnapshotLine(LogicalLineID) (LogicalLine, bool)
 }
 
-func snapshotLine(store LogicalLineStore, id LogicalLineID, detach bool) (LogicalLine, bool) {
+type observerLineStore interface {
+	AcquireObserver(ObserverLineVisibility) ObserverEpoch
+	ReleaseObserver(ObserverEpoch)
+	ObserverSnapshotLine(LogicalLineID, ObserverEpoch) (LogicalLine, bool)
+}
+
+func (track *HistoryTrack) acquireObserver(committedIDs []LogicalLineID, frontierIDs []LogicalLineID) ObserverEpoch {
+	if store, ok := track.store.(observerLineStore); ok {
+		visibility := ObserverLineVisibility{IDs: frontierIDs}
+		if len(committedIDs) > 0 {
+			visibility.First = committedIDs[0]
+			visibility.Upper = committedIDs[len(committedIDs)-1]
+		}
+		return store.AcquireObserver(visibility)
+	}
+	return 0
+}
+
+func (track *HistoryTrack) ReleaseObserver(epoch ObserverEpoch) {
+	if epoch == 0 {
+		return
+	}
+	if store, ok := track.store.(observerLineStore); ok {
+		store.ReleaseObserver(epoch)
+	}
+}
+
+func snapshotLine(store LogicalLineStore, id LogicalLineID, detach bool, observerEpoch ObserverEpoch) (LogicalLine, bool) {
+	if observerEpoch > 0 {
+		if observerStore, ok := store.(observerLineStore); ok {
+			line, ok := observerStore.ObserverSnapshotLine(id, observerEpoch)
+			if !ok {
+				return LogicalLine{}, false
+			}
+			if detach {
+				return line.Clone(), true
+			}
+			return line, true
+		}
+	}
 	if !detach {
 		if snapshotStore, ok := store.(snapshotLineStore); ok {
 			return snapshotStore.SnapshotLine(id)

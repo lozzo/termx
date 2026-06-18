@@ -223,8 +223,8 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		next, effects := reduceCopyModeScrollOlder(root, deps, intent.Event)
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentExitCopyMode:
-		root = exitCopyMode(root)
-		return root.Advance(), []Effect{handledEffect{}}
+		next, effects := exitCopyModeWithRelease(root, deps)
+		return next.Advance(), append([]Effect{handledEffect{}}, effects...)
 	case input.IntentOpenClipboardHistory:
 		root.Shell = root.Shell.OpenClipboardHistory()
 		return root.Advance(), []Effect{
@@ -279,8 +279,8 @@ func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.R
 		return root, nil, false
 	}
 	if intent.Kind == input.IntentExitCopyMode {
-		root = exitCopyMode(root)
-		return root.Advance(), []Effect{handledEffect{}}, true
+		next, effects := exitCopyModeWithRelease(root, CopyModeDeps{})
+		return next.Advance(), append([]Effect{handledEffect{}}, effects...), true
 	}
 	if delta, ok := copyModeEnteringScrollDelta(root.CopyMode, intent); ok {
 		root.CopyMode.EnteringScrollDelta += delta
@@ -412,7 +412,8 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 		}
 		if root.CopyMode.Selection != nil {
 			next, effects := reduceCopyModeCopySelection(root, deps)
-			next = exitCopyMode(next)
+			next, releaseEffects := exitCopyModeWithRelease(next, deps)
+			effects = append(effects, releaseEffects...)
 			return next, effects, true
 		}
 	case input.KeyChar:
@@ -800,9 +801,10 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.input", Body: "no terminal bound"})
 		return root.Advance(), nil
 	}
-	root = exitCopyMode(root)
+	root, releaseEffects := exitCopyModeWithRelease(root, deps)
 	root = root.Advance()
-	return root, []Effect{FuncEffect{
+	effects := append([]Effect{}, releaseEffects...)
+	effects = append(effects, FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			text := deps.Clipboard.LastCopy()
 			if readSystemClipboard {
@@ -829,7 +831,8 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 			})
 			return CopyModePasteResultMsg{Text: text, Err: err}
 		},
-	}}
+	})
+	return root, effects
 }
 
 func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (state.Root, []Effect) {
@@ -845,9 +848,10 @@ func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (s
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "clipboard history", Body: "no clipboard entry"})
 		return root.Advance(), nil
 	}
-	root = exitCopyMode(root)
+	root, releaseEffects := exitCopyModeWithRelease(root, deps)
 	root = root.Advance()
-	return root, []Effect{FuncEffect{
+	effects := append([]Effect{}, releaseEffects...)
+	effects = append(effects, FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			err := deps.Terminal.SendInput(ctx, services.TerminalInputRequest{
 				TerminalID: target.TerminalID,
@@ -858,7 +862,8 @@ func reduceCopyModePasteText(root state.Root, deps CopyModeDeps, text string) (s
 			})
 			return CopyModePasteResultMsg{Text: text, Err: err}
 		},
-	}}
+	})
+	return root, effects
 }
 
 func SelectedText(history state.HistoryStore, copyMode state.CopyModeStore) string {
@@ -1036,6 +1041,26 @@ func setCopyModeError(root state.Root, message string) state.Root {
 func setCopyModeEnterError(root state.Root, message string) state.Root {
 	root = exitCopyMode(root)
 	return setCopyModeError(root, message)
+}
+
+func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
+	token := root.CopyMode.BoundToken
+	terminalID := root.CopyMode.TerminalID
+	root = exitCopyMode(root)
+	if deps.Core == nil || token == "" {
+		return root, nil
+	}
+	return root, []Effect{FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
+		Run: func(ctx context.Context) Msg {
+			_ = deps.Core.ReleaseHistory(ctx, services.HistoryReleaseRequest{
+				TerminalID: terminalID,
+				Token:      token,
+			})
+			return NoopMsg{}
+		},
+	}}
 }
 
 func exitCopyMode(root state.Root) state.Root {

@@ -170,6 +170,12 @@ func (pipeline *terminalHistoryPipeline) LineIDs() []history.LogicalLineID {
 	return pipeline.track.LineIDs()
 }
 
+func (pipeline *terminalHistoryPipeline) RetainedHistoryLineCount() int {
+	pipeline.mu.Lock()
+	defer pipeline.mu.Unlock()
+	return pipeline.track.RetainedLineCount()
+}
+
 func (pipeline *terminalHistoryPipeline) CommittedIDs() []history.LogicalLineID {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()

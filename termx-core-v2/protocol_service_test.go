@@ -302,6 +302,155 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceFrozenSnapshotSurvivesClearScrollbackForOldObserver(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if rowText(latest.Rows[0]) != "four" || !latest.CursorValid {
+		t.Fatalf("expected latest tail with older cursor, got %#v", latest)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[3J"); err != nil {
+		t.Fatalf("clear scrollback: %v", err)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("older after clear scrollback: %v", err)
+	}
+	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
+		t.Fatalf("old observer should still page deleted committed history, got %#v", older)
+	}
+
+	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      4,
+	})
+	if err != nil {
+		t.Fatalf("latest after clear scrollback: %v", err)
+	}
+	if reloaded.LogicalTotal != 0 {
+		t.Fatalf("new observer must not count cleared committed history, got %#v", reloaded)
+	}
+	for _, row := range reloaded.Rows {
+		if got := rowText(row); got == "one" || got == "two" {
+			t.Fatalf("new latest should not expose cleared committed row %q in %#v", got, reloaded.Rows)
+		}
+	}
+}
+
+func TestProtocolServiceSessionCloseReleasesFrozenObserver(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if latest.Token == "" {
+		t.Fatalf("expected frozen token, got %#v", latest)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[3J"); err != nil {
+		t.Fatalf("clear scrollback: %v", err)
+	}
+	terminal, err := server.Terminal("term-1")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if got := terminal.RetainedHistoryLineCount(); got == 0 {
+		t.Fatal("expected clear to retain deleted payload for active frozen observer")
+	}
+
+	closeClient()
+	if got := terminal.RetainedHistoryLineCount(); got != 0 {
+		t.Fatalf("session close should release frozen observer and cleanup payloads, got %d", got)
+	}
+}
+
+func TestProtocolServiceHistoryReleaseDropsFrozenObserver(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 2}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[3J"); err != nil {
+		t.Fatalf("clear scrollback: %v", err)
+	}
+	terminal, err := server.Terminal("term-1")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	if got := terminal.RetainedHistoryLineCount(); got == 0 {
+		t.Fatal("expected clear to retain deleted payload for active frozen observer")
+	}
+	if err := client.ReleaseHistory(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Token: latest.Token}); err != nil {
+		t.Fatalf("history release: %v", err)
+	}
+	if got := terminal.RetainedHistoryLineCount(); got != 0 {
+		t.Fatalf("history release should cleanup retained payloads, got %d", got)
+	}
+	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:      "term-1",
+		Cols:            10,
+		Limit:           1,
+		Token:           latest.Token,
+		Generation:      latest.Generation,
+		CursorValid:     latest.CursorValid,
+		BeforeLineID:    latest.CursorLineID,
+		BeforeRowInLine: latest.CursorRow,
+	})
+	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
+		t.Fatalf("released token should be stale, got %v", err)
+	}
+}
+
 func TestProtocolServiceOlderAcceptsBoundaryFromMultiRowLatestSnapshot(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

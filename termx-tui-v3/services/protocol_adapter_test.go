@@ -12,13 +12,19 @@ import (
 )
 
 type fakeProtocolHistoryClient struct {
-	requests []protocol.HistoryWindowParams
-	window   *protocol.HistoryWindow
+	requests        []protocol.HistoryWindowParams
+	releaseRequests []protocol.HistoryWindowParams
+	window          *protocol.HistoryWindow
 }
 
 func (client *fakeProtocolHistoryClient) HistoryWindow(_ context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
 	client.requests = append(client.requests, params)
 	return client.window, nil
+}
+
+func (client *fakeProtocolHistoryClient) ReleaseHistory(_ context.Context, params protocol.HistoryWindowParams) error {
+	client.releaseRequests = append(client.releaseRequests, params)
+	return nil
 }
 
 type fakeProtocolTerminalClient struct {
@@ -427,6 +433,18 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	params = client.requests[2]
 	if params.Token != "tok-1" || params.Generation != 7 || params.CursorValid || params.BeforeLineID != 0 || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected oldest params %#v", params)
+	}
+}
+
+func TestProtocolCoreClientAdapterReleasesHistoryToken(t *testing.T) {
+	client := &fakeProtocolHistoryClient{}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	if err := adapter.ReleaseHistory(context.Background(), HistoryReleaseRequest{TerminalID: "term-1", Token: "tok-1"}); err != nil {
+		t.Fatalf("release history: %v", err)
+	}
+	if len(client.releaseRequests) != 1 || client.releaseRequests[0].TerminalID != "term-1" || client.releaseRequests[0].Token != "tok-1" {
+		t.Fatalf("unexpected release requests %#v", client.releaseRequests)
 	}
 }
 

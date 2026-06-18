@@ -365,7 +365,7 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			ScrollbackLimit:  int32(value.ScrollbackLimit),
 			Cols:             int32(value.Cols),
 		})
-	case "history.window":
+	case "history.window", "history.release":
 		value, ok := params.(HistoryWindowParams)
 		if !ok {
 			if ptr, ptrOK := params.(*HistoryWindowParams); ptrOK && ptr != nil {
@@ -569,7 +569,7 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return GridViewportParams{TerminalID: msg.GetTerminalId(), ScrollbackOffset: int(msg.GetScrollbackOffset()), ScrollbackLimit: int(msg.GetScrollbackLimit()), Cols: int(msg.GetCols())}, nil
-	case "history.window":
+	case "history.window", "history.release":
 		var msg wirepb.HistoryWindowParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err

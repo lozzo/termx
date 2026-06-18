@@ -1,6 +1,9 @@
 package history
 
-import "sort"
+import (
+	"sort"
+	"sync"
+)
 
 // StorageBackend persists logical line payloads and does not define whether a
 // line is mutable, committed, or retained.
@@ -18,6 +21,7 @@ type snapshotLineBackend interface {
 // MemoryStorageBackend is the first in-memory backend used by the domain
 // harness before file or mmap persistence exists.
 type MemoryStorageBackend struct {
+	mu    sync.RWMutex
 	lines map[LogicalLineID]LogicalLine
 }
 
@@ -30,11 +34,15 @@ func (backend *MemoryStorageBackend) SaveLine(line LogicalLine) error {
 	if err != nil {
 		return err
 	}
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
 	backend.lines[line.ID] = line.Clone()
 	return nil
 }
 
 func (backend *MemoryStorageBackend) LoadLine(id LogicalLineID) (LogicalLine, bool) {
+	backend.mu.RLock()
+	defer backend.mu.RUnlock()
 	line, ok := backend.lines[id]
 	if !ok {
 		return LogicalLine{}, false
@@ -43,11 +51,15 @@ func (backend *MemoryStorageBackend) LoadLine(id LogicalLineID) (LogicalLine, bo
 }
 
 func (backend *MemoryStorageBackend) LoadSnapshotLine(id LogicalLineID) (LogicalLine, bool) {
+	backend.mu.RLock()
+	defer backend.mu.RUnlock()
 	line, ok := backend.lines[id]
 	return line, ok
 }
 
 func (backend *MemoryStorageBackend) DeleteLine(id LogicalLineID) bool {
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
 	if _, ok := backend.lines[id]; !ok {
 		return false
 	}
@@ -56,6 +68,8 @@ func (backend *MemoryStorageBackend) DeleteLine(id LogicalLineID) bool {
 }
 
 func (backend *MemoryStorageBackend) LineIDs() []LogicalLineID {
+	backend.mu.RLock()
+	defer backend.mu.RUnlock()
 	ids := make([]LogicalLineID, 0, len(backend.lines))
 	for id := range backend.lines {
 		ids = append(ids, id)

@@ -12,6 +12,7 @@ import (
 
 type ProtocolHistoryClient interface {
 	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
+	ReleaseHistory(context.Context, protocol.HistoryWindowParams) error
 }
 
 type ProtocolStorageClient interface {
@@ -70,6 +71,16 @@ func (adapter ProtocolCoreClientAdapter) HistoryOldest(ctx context.Context, req 
 		return HistoryResult{}, err
 	}
 	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
+}
+
+func (adapter ProtocolCoreClientAdapter) ReleaseHistory(ctx context.Context, req HistoryReleaseRequest) error {
+	if adapter.Client == nil || req.Token == "" {
+		return nil
+	}
+	return adapter.Client.ReleaseHistory(ctx, protocol.HistoryWindowParams{
+		TerminalID: req.TerminalID,
+		Token:      req.Token,
+	})
 }
 
 func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (state.HistoryWindow, error) {
