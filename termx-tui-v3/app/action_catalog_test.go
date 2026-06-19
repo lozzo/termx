@@ -43,6 +43,78 @@ func TestInputShellActionsMapToActionCatalog(t *testing.T) {
 	}
 }
 
+func TestTabWorkspaceFooterHintsMatchInputBindings(t *testing.T) {
+	shell := state.DefaultShell()
+	var result state.WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create tab fixture: %#v", result)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create workspace fixture: %#v", result)
+	}
+
+	cases := []struct {
+		name   string
+		mode   state.InteractionMode
+		input  input.InteractionMode
+		expect map[string]string
+	}{
+		{
+			name:  "tab",
+			mode:  state.InteractionModeTab,
+			input: input.InteractionModeTab,
+			expect: map[string]string{
+				render.ActionTabCreate.String():   "tab create",
+				render.ActionTabPrevious.String(): "tab previous",
+				render.ActionTabNext.String():     "tab next",
+				render.ActionTabRename.String():   "tab rename",
+				render.ActionTabClose.String():    "tab close",
+			},
+		},
+		{
+			name:  "workspace",
+			mode:  state.InteractionModeWorkspace,
+			input: input.InteractionModeWorkspace,
+			expect: map[string]string{
+				render.ActionFooterNewWorkspace.String():      "workspace create",
+				render.ActionFooterPreviousWorkspace.String(): "workspace previous",
+				render.ActionFooterNextWorkspace.String():     "workspace next",
+				render.ActionFooterRenameWorkspace.String():   "workspace rename",
+				render.ActionFooterDeleteWorkspace.String():   "workspace delete confirm=accepted",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		caseShell := shell.SetInteractionMode(tc.mode)
+		if tc.mode == state.InteractionModeTab {
+			var switchResult state.WorkbenchCommandResult
+			caseShell, switchResult = caseShell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceSwitch, TargetID: state.DefaultWorkspaceID})
+			if switchResult.Status != state.WorkbenchCommandOK {
+				t.Fatalf("switch tab footer fixture: %#v", switchResult)
+			}
+			caseShell = caseShell.SetInteractionMode(tc.mode)
+		}
+		vm := render.NewRenderVMBuilder().Build(state.Root{Shell: caseShell})
+		for _, token := range vm.Shell.Footer.ActionTokens {
+			command, ok := tc.expect[token.ActionID]
+			if !ok {
+				continue
+			}
+			intent := input.RouteWithMode(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: token.Key}, false, tc.input)
+			if intent.Kind != input.IntentWorkbenchCommand || intent.Command != command {
+				t.Fatalf("%s footer key %q action %q should route to %q, got %#v", tc.name, token.Key, token.ActionID, command, intent)
+			}
+			delete(tc.expect, token.ActionID)
+		}
+		if len(tc.expect) != 0 {
+			t.Fatalf("%s footer missed expected actions %#v in %#v", tc.name, tc.expect, vm.Shell.Footer.ActionTokens)
+		}
+	}
+}
+
 func actionCatalogDispatchRoot() state.Root {
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).

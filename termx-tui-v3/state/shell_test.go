@@ -107,6 +107,79 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 	}
 }
 
+func TestShellWorkbenchTabCommandsRespectTargetWorkspace(t *testing.T) {
+	shell := DefaultShell()
+
+	var result WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceCreate, Name: "remote"})
+	if result.Status != WorkbenchCommandOK {
+		t.Fatalf("expected workspace create, result=%#v", result)
+	}
+	remoteID := result.ID
+	remotePaneID := shell.ActivePaneID
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceSwitch, TargetID: DefaultWorkspaceID})
+	if result.Status != WorkbenchCommandOK {
+		t.Fatalf("expected switch to default workspace, result=%#v", result)
+	}
+
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{
+		Action: WorkbenchCommandTabCreate,
+		Target: PaneCommandTarget{WorkspaceID: remoteID},
+		Name:   "remote-build",
+	})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ID != remoteID {
+		t.Fatalf("targeted tab create should switch and create in remote workspace, result=%#v shell=%#v", result, shell)
+	}
+	remoteTabID := result.ID
+	if shell.Workspace.Tabs[1].Title != "remote-build" {
+		t.Fatalf("expected remote tab created, workspace=%#v", shell.Workspace)
+	}
+
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceSwitch, TargetID: DefaultWorkspaceID})
+	if result.Status != WorkbenchCommandOK {
+		t.Fatalf("expected switch to default workspace, result=%#v", result)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{
+		Action:   WorkbenchCommandTabRename,
+		TargetID: DefaultTabID,
+		Target:   PaneCommandTarget{WorkspaceID: remoteID},
+		Name:     "remote-main",
+	})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ID != remoteID || shell.Workspace.Tabs[0].Title != "remote-main" {
+		t.Fatalf("targeted tab rename should rename remote workspace tab, result=%#v shell=%#v", result, shell)
+	}
+	defaultWorkspace, ok := workspaceByID(shell.Workspaces, DefaultWorkspaceID)
+	if !ok || defaultWorkspace.Tabs[0].Title != "main" {
+		t.Fatalf("targeted tab rename must not change default workspace, ok=%v workspace=%#v", ok, defaultWorkspace)
+	}
+
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceSwitch, TargetID: DefaultWorkspaceID})
+	if result.Status != WorkbenchCommandOK {
+		t.Fatalf("expected switch to default workspace, result=%#v", result)
+	}
+	shell = shell.FocusPane(PaneCommandTarget{WorkspaceID: remoteID, TabID: DefaultTabID, PaneID: remotePaneID})
+	if shell.Workspace.ID != remoteID || shell.ActivePaneID != remotePaneID {
+		t.Fatalf("targeted focus should switch to remote pane, shell=%#v", shell)
+	}
+
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceSwitch, TargetID: DefaultWorkspaceID})
+	if result.Status != WorkbenchCommandOK {
+		t.Fatalf("expected switch to default workspace, result=%#v", result)
+	}
+	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{
+		Action:   WorkbenchCommandTabClose,
+		TargetID: remoteTabID,
+		Target:   PaneCommandTarget{WorkspaceID: remoteID},
+	})
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ID != remoteID || len(shell.Workspace.Tabs) != 1 || shell.Workspace.Tabs[0].Title != "remote-main" {
+		t.Fatalf("targeted tab close should close remote tab only, result=%#v shell=%#v", result, shell)
+	}
+	defaultWorkspace, ok = workspaceByID(shell.Workspaces, DefaultWorkspaceID)
+	if !ok || len(defaultWorkspace.Tabs) != 1 || defaultWorkspace.Tabs[0].Title != "main" {
+		t.Fatalf("targeted tab close must not change default workspace, ok=%v workspace=%#v", ok, defaultWorkspace)
+	}
+}
+
 func TestShellEmptyWorkspaceCreatesTabForTerminalAttach(t *testing.T) {
 	shell := DefaultShell()
 	var result WorkbenchCommandResult

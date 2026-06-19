@@ -113,9 +113,13 @@ func TestRouteInteractionModePrefixesAndModeKeys(t *testing.T) {
 	if paneFocus.Kind != IntentPaneCommand || paneFocus.Command != "pane focus-next" {
 		t.Fatalf("expected focus-next pane command, got %#v", paneFocus)
 	}
-	tabNew := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModeTab)
+	tabNew := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, false, InteractionModeTab)
 	if tabNew.Kind != IntentWorkbenchCommand || tabNew.Command != "tab create" {
 		t.Fatalf("expected tab create command, got %#v", tabNew)
+	}
+	tabNext := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, false, InteractionModeTab)
+	if tabNext.Kind != IntentWorkbenchCommand || tabNext.Command != "tab next" {
+		t.Fatalf("expected tab next command, got %#v", tabNext)
 	}
 	tabRename := RouteWithMode(InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "r"}, false, InteractionModeTab)
 	if tabRename.Kind != IntentWorkbenchCommand || tabRename.Command != "tab rename" {
@@ -196,7 +200,11 @@ func TestBindingCatalogIsUniqueAndContainsDocumentedAliases(t *testing.T) {
 		{name: "floating 3 summon", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "3"}, kind: IntentShellAction, action: ShellActionFloatingSummon},
 		{name: "floating a owner", mode: InteractionModeFloating, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "a"}, kind: IntentWorkbenchCommand, command: "floating take-owner"},
 		{name: "tab c create", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "tab create"},
+		{name: "tab n next", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, kind: IntentWorkbenchCommand, command: "tab next"},
+		{name: "tab p previous", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, kind: IntentWorkbenchCommand, command: "tab previous"},
 		{name: "tab X kill", mode: InteractionModeTab, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "X"}, kind: IntentWorkbenchCommand, command: "tab kill confirm=accepted"},
+		{name: "workspace c create", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "c"}, kind: IntentWorkbenchCommand, command: "workspace create"},
+		{name: "workspace n next", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "n"}, kind: IntentWorkbenchCommand, command: "workspace next"},
 		{name: "workspace p previous", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "p"}, kind: IntentWorkbenchCommand, command: "workspace previous"},
 		{name: "workspace x delete", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "x"}, kind: IntentWorkbenchCommand, command: "workspace delete confirm=accepted"},
 		{name: "workspace f tree", mode: InteractionModeWorkspace, event: InputEvent{Kind: EventKindKey, Key: KeyChar, Char: "f"}, kind: IntentShellAction, action: ShellActionOpenTree},

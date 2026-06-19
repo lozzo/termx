@@ -53,6 +53,14 @@ func (store ShellStore) SplitActivePane(newPane PaneState, direction SplitDirect
 
 func (store ShellStore) FocusPane(target PaneCommandTarget) ShellStore {
 	store = store.EnsureDefaults()
+	if target.WorkspaceID != "" && target.WorkspaceID != store.Workspace.ID {
+		// focus 是用户显式打开节点，跨 workspace 时先切 workspace 再定位 pane。
+		next, result := store.switchWorkspace(target.WorkspaceID, WorkbenchCommandWorkspaceSwitch)
+		if result.Status != WorkbenchCommandOK {
+			return store
+		}
+		store = next
+	}
 	if !store.HasPane(target) {
 		return store
 	}

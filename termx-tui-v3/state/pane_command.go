@@ -184,6 +184,15 @@ func (command PaneCommand) Validate(shell ShellStore) PaneCommandResult {
 }
 
 func (store ShellStore) ApplyPaneCommand(command PaneCommand) (ShellStore, PaneCommandResult) {
+	store = store.EnsureDefaults()
+	if command.Target.WorkspaceID != "" && command.Target.WorkspaceID != store.Workspace.ID {
+		// Pane command 也可能来自 Workbench Navigator，先切到目标 workspace 再补默认 tab/pane。
+		next, result := store.switchWorkspace(command.Target.WorkspaceID, WorkbenchCommandAction(command.Action))
+		if result.Status != WorkbenchCommandOK {
+			return store, paneCommandInvalid(command.Action, "workspace not found")
+		}
+		store = next
+	}
 	command = command.WithDefaults(store)
 	result := command.Validate(store)
 	if result.Status != PaneCommandOK {

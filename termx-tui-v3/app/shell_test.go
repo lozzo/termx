@@ -313,6 +313,83 @@ func TestShellReducerWorkbenchTreeCRUDContentActionsUseWorkbenchCommands(t *test
 	}
 }
 
+func TestShellReducerWorkbenchTreeCRUDTargetsSelectedWorkspace(t *testing.T) {
+	reducer := NewShellReducer()
+	shell := state.DefaultShell()
+	var result state.WorkbenchCommandResult
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: "remote"})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create remote workspace: %#v", result)
+	}
+	remoteID := result.ID
+	shell, result = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceSwitch, TargetID: state.DefaultWorkspaceID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("switch default workspace: %#v", result)
+	}
+
+	root := state.Root{Shell: shell.OpenWorkbenchTree()}
+	root = selectWorkbenchTreeItemInWorkspace(t, root, state.WorkbenchTreeKindTab, remoteID, state.DefaultTabID)
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchRename.String()})
+	if len(effects) != 0 || !next.Shell.Overlay.Open || next.Shell.Overlay.Prompt.TargetWorkspaceID != remoteID || next.Shell.Overlay.Prompt.TargetID != state.DefaultTabID {
+		t.Fatalf("tree tab rename should keep selected workspace target, root=%#v effects=%#v", next, effects)
+	}
+	next.Shell = next.Shell.SetPromptValue("remote-main")
+	next, effects = reducer(next, ShellPromptSubmitMsg{})
+	if len(effects) != 1 {
+		t.Fatalf("prompt tab rename should emit workbench command, got %#v", effects)
+	}
+	next, effects = reducer(next, effects[0].(FuncEffect).Run(context.Background()))
+	if len(effects) != 1 {
+		t.Fatalf("targeted tab rename should persist, root=%#v effects=%#v", next, effects)
+	}
+	remoteWorkspace, ok := findWorkspaceForTest(next.Shell.Workspaces, remoteID)
+	if !ok || remoteWorkspace.Tabs[0].Title != "remote-main" {
+		t.Fatalf("remote tab should be renamed, ok=%v workspace=%#v", ok, remoteWorkspace)
+	}
+	defaultWorkspace, ok := findWorkspaceForTest(next.Shell.Workspaces, state.DefaultWorkspaceID)
+	if !ok || defaultWorkspace.Tabs[0].Title != "main" {
+		t.Fatalf("default workspace tab must not be renamed, ok=%v workspace=%#v", ok, defaultWorkspace)
+	}
+
+	next.Shell, result = next.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceSwitch, TargetID: state.DefaultWorkspaceID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("switch default workspace before tree new: %#v", result)
+	}
+	root = state.Root{Shell: next.Shell.OpenWorkbenchTree()}
+	root = selectWorkbenchTreeItemInWorkspace(t, root, state.WorkbenchTreeKindTab, remoteID, state.DefaultTabID)
+	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchNew.String()})
+	if len(effects) != 1 {
+		t.Fatalf("tree tab new should persist, root=%#v effects=%#v", next, effects)
+	}
+	remoteWorkspace, ok = findWorkspaceForTest(next.Shell.Workspaces, remoteID)
+	if !ok || len(remoteWorkspace.Tabs) != 2 || remoteWorkspace.Tabs[1].Title != "tab 2" {
+		t.Fatalf("tree new on selected tab should create tab in selected workspace, ok=%v workspace=%#v", ok, remoteWorkspace)
+	}
+	defaultWorkspace, ok = findWorkspaceForTest(next.Shell.Workspaces, state.DefaultWorkspaceID)
+	if !ok || len(defaultWorkspace.Tabs) != 1 {
+		t.Fatalf("tree new on selected tab must not create default workspace tab, ok=%v workspace=%#v", ok, defaultWorkspace)
+	}
+
+	next.Shell, result = next.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceSwitch, TargetID: state.DefaultWorkspaceID})
+	if result.Status != state.WorkbenchCommandOK {
+		t.Fatalf("switch default workspace before tree delete: %#v", result)
+	}
+	root = state.Root{Shell: next.Shell.OpenWorkbenchTree()}
+	root = selectWorkbenchTreeItemInWorkspace(t, root, state.WorkbenchTreeKindTab, remoteID, "tab-2")
+	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchDelete.String()})
+	if len(effects) != 1 {
+		t.Fatalf("tree tab delete should persist, root=%#v effects=%#v", next, effects)
+	}
+	remoteWorkspace, ok = findWorkspaceForTest(next.Shell.Workspaces, remoteID)
+	if !ok || len(remoteWorkspace.Tabs) != 1 || remoteWorkspace.Tabs[0].Title != "remote-main" {
+		t.Fatalf("tree delete on selected tab should close selected workspace tab, ok=%v workspace=%#v", ok, remoteWorkspace)
+	}
+	defaultWorkspace, ok = findWorkspaceForTest(next.Shell.Workspaces, state.DefaultWorkspaceID)
+	if !ok || len(defaultWorkspace.Tabs) != 1 || defaultWorkspace.Tabs[0].Title != "main" {
+		t.Fatalf("tree delete on selected tab must not change default workspace, ok=%v workspace=%#v", ok, defaultWorkspace)
+	}
+}
+
 func TestShellReducerHandlesCloseFocusAndZoomPaneCommands(t *testing.T) {
 	reducer := NewShellReducer()
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "logs"}, state.SplitDirectionHorizontal)}
@@ -422,5 +499,25 @@ func selectWorkbenchTreeKind(t *testing.T, root state.Root, kind string, id stri
 		return root
 	}
 	t.Fatalf("missing workbench tree item kind=%s id=%s items=%#v", kind, id, items)
+	return root
+}
+
+func selectWorkbenchTreeItemInWorkspace(t *testing.T, root state.Root, kind string, workspaceID string, id string) state.Root {
+	t.Helper()
+	items := state.WorkbenchTreeItems(root)
+	for index, item := range items {
+		if item.Kind != kind {
+			continue
+		}
+		if workspaceID != "" && item.WorkspaceID != workspaceID {
+			continue
+		}
+		if id != "" && item.PaneID != id && item.TabID != id && item.WorkspaceID != id {
+			continue
+		}
+		root.Shell = root.Shell.SetWorkbenchTreeSelectedIndex(index, len(items))
+		return root
+	}
+	t.Fatalf("missing workbench tree item kind=%s workspace=%s id=%s items=%#v", kind, workspaceID, id, items)
 	return root
 }

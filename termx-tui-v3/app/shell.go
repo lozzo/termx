@@ -894,7 +894,7 @@ func promptWorkbenchCommand(prompt state.PromptState) (state.WorkbenchCommand, b
 	}
 	switch prompt.Purpose {
 	case "tab.rename":
-		return state.WorkbenchCommand{Action: state.WorkbenchCommandTabRename, TargetID: prompt.TargetID, Name: name, Source: state.PaneCommandSourcePalette}, true
+		return state.WorkbenchCommand{Action: state.WorkbenchCommandTabRename, TargetID: prompt.TargetID, Target: state.PaneCommandTarget{WorkspaceID: prompt.TargetWorkspaceID}, Name: name, Source: state.PaneCommandSourcePalette}, true
 	case "workspace.rename":
 		return state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceRename, TargetID: prompt.TargetID, Name: name, Source: state.PaneCommandSourcePalette}, true
 	case "pane.rename":
@@ -1134,7 +1134,7 @@ func reduceWorkbenchTreeOpen(root state.Root, items []state.WorkbenchTreeItem) (
 	case state.WorkbenchTreeKindTab:
 		targetPaneID := selected.PaneID
 		if targetPaneID == "" {
-			targetPaneID = firstPaneIDForTab(root.Shell, selected.TabID)
+			targetPaneID = firstPaneIDForTab(root.Shell, selected.WorkspaceID, selected.TabID)
 		}
 		if targetPaneID != "" {
 			root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: targetPaneID})
@@ -1158,6 +1158,19 @@ func reduceWorkbenchTreeOpen(root state.Root, items []state.WorkbenchTreeItem) (
 		if selected.FloatingID == "" {
 			root.Shell = root.Shell.OpenFloatingOverview()
 			return root.Advance(), nil
+		}
+		if selected.TabID != "" {
+			var switchResult state.WorkbenchCommandResult
+			root.Shell, switchResult = root.Shell.ApplyWorkbenchCommand(state.WorkbenchCommand{
+				Action:   state.WorkbenchCommandTabSwitch,
+				TargetID: selected.TabID,
+				Target:   state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID},
+				Source:   state.PaneCommandSourceMouse,
+			})
+			if switchResult.Status != state.WorkbenchCommandOK {
+				root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating", Body: switchResult.Reason})
+				return root.Advance(), nil
+			}
 		}
 		var result state.FloatingCommandResult
 		root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
@@ -1204,16 +1217,18 @@ func reduceWorkbenchTreeNew(root state.Root, items []state.WorkbenchTreeItem) (s
 	switch selected.Kind {
 	case state.WorkbenchTreeKindWorkspace:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: nextWorkspaceName(root.Shell), Source: state.PaneCommandSourceMouse})
-	case state.WorkbenchTreeKindTab, state.WorkbenchTreeKindPane:
+	case state.WorkbenchTreeKindTab:
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Target: state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID}, Name: nextTabNameForWorkspace(root.Shell, selected.WorkspaceID), Source: state.PaneCommandSourceMouse})
+	case state.WorkbenchTreeKindPane:
 		target := state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID}
 		if target.PaneID == "" {
-			target.PaneID = firstPaneIDForTab(root.Shell, selected.TabID)
+			target.PaneID = firstPaneIDForTab(root.Shell, selected.WorkspaceID, selected.TabID)
 		}
 		command := state.PaneCommand{
 			Action:         state.PaneCommandSplit,
 			Target:         target,
 			SplitDirection: state.SplitDirectionVertical,
-			NewPane:        state.PaneState{ID: nextKeyboardPaneID(root.Shell), Title: "pane", Kind: state.PaneEmpty},
+			NewPane:        state.PaneState{ID: nextKeyboardPaneIDForWorkspace(root.Shell, selected.WorkspaceID), Title: "pane", Kind: state.PaneEmpty},
 			Source:         state.PaneCommandSourceMouse,
 		}
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneSplit, Pane: command, Source: state.PaneCommandSourceMouse})
@@ -1233,7 +1248,7 @@ func reduceWorkbenchTreeDelete(root state.Root, items []state.WorkbenchTreeItem)
 	case state.WorkbenchTreeKindWorkspace:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceDelete, TargetID: selected.WorkspaceID, Confirm: state.PaneConfirmAccepted, Source: state.PaneCommandSourceMouse})
 	case state.WorkbenchTreeKindTab:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: selected.TabID, Source: state.PaneCommandSourceMouse})
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: selected.TabID, Target: state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID}, Source: state.PaneCommandSourceMouse})
 	case state.WorkbenchTreeKindPane:
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandPaneClose, Target: state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID}, Source: state.PaneCommandSourceMouse})
 	default:
@@ -1280,14 +1295,52 @@ func workbenchTreeSelectedItem(items []state.WorkbenchTreeItem) (state.Workbench
 	return items[0], true
 }
 
-func firstPaneIDForTab(shell state.ShellStore, tabID string) string {
-	shell = shell.EnsureDefaults()
-	for _, tab := range shell.Workspace.Tabs {
+func firstPaneIDForTab(shell state.ShellStore, workspaceID string, tabID string) string {
+	workspace := workspaceForWorkbenchAction(shell, workspaceID)
+	for _, tab := range workspace.Tabs {
 		if tab.ID == tabID && len(tab.Panes) > 0 {
 			return tab.Panes[0].ID
 		}
 	}
 	return ""
+}
+
+func nextTabNameForWorkspace(shell state.ShellStore, workspaceID string) string {
+	workspace := workspaceForWorkbenchAction(shell, workspaceID)
+	return fmt.Sprintf("tab %d", len(workspace.Tabs)+1)
+}
+
+func nextKeyboardPaneIDForWorkspace(shell state.ShellStore, workspaceID string) string {
+	workspace := workspaceForWorkbenchAction(shell, workspaceID)
+	for i := 2; ; i++ {
+		id := fmt.Sprintf("pane-%d", i)
+		if !workspaceHasPaneID(workspace, id) {
+			return id
+		}
+	}
+}
+
+func workspaceForWorkbenchAction(shell state.ShellStore, workspaceID string) state.WorkspaceState {
+	shell = shell.EnsureDefaults()
+	workspace := shell.Workspace
+	for _, candidate := range shell.Workspaces {
+		if candidate.ID == workspaceID {
+			workspace = candidate
+			break
+		}
+	}
+	return workspace
+}
+
+func workspaceHasPaneID(workspace state.WorkspaceState, paneID string) bool {
+	for _, tab := range workspace.Tabs {
+		for _, pane := range tab.Panes {
+			if pane.ID == paneID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func terminalIDForContentAction(root state.Root, paneID string) string {

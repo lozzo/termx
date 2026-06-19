@@ -250,7 +250,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionTerminalTakeResizeOwner, ActionDispatchApp, ActionSurfacePaneChrome, ActionSurfaceHelp).withChromeGlyph("◇ follow").withHelp("take resize owner"),
 		actionSpec(ActionTabCreate, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("c", "NEW", StyleStatusAccent).withHelp("create"),
 		actionSpec(ActionTabSwitch, ActionDispatchApp, ActionSurfaceLayout, ActionSurfaceHelp).withHelp("switch"),
-		actionSpec(ActionTabClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("x", "KILL", StyleStatusWarning).withHelp("kill").withDanger(),
+		actionSpec(ActionTabClose, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("x", "CLOSE", StyleStatusWarning).withHelp("close").withDanger(),
 		actionSpec(ActionTabRename, ActionDispatchApp, ActionSurfaceFooter).withFooter("r", "RENAME", StyleStatusAccent).withHelp("rename"),
 		actionSpec(ActionTabPrevious, ActionDispatchApp, ActionSurfaceFooter).withFooter("p", "PREV", StyleStatusAccent).withHelp("previous"),
 		actionSpec(ActionTabNext, ActionDispatchApp, ActionSurfaceFooter).withFooter("n", "NEXT", StyleStatusAccent).withHelp("next"),

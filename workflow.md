@@ -281,9 +281,11 @@
 | 215E1-R108. SK workbench navigator tab terminal 展示 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已把 Workbench Navigator tab 下的 terminal-live 子节点显示为连接的 terminal 名称；搜索同时保留 pane 原标题匹配；选中 tab 时右侧只预览该 tab 下已连接的 terminal |
 | 215E1-R109. SK floating tab-scoped model 重构 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`termx-tui-v3/services/`、`workflow.md` | 已把 floating window 从 Shell 全局状态重构为 tab 子集；不做旧全局 floating storage 迁移兼容，Workbench Navigator 按 tab 子节点展示和预览 floating terminal |
 | 215E1-R110. SK workbench navigator workspace 操作回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已修正 Workbench Navigator：展示所有 workspace，选中节点名称带下划线，底部/快捷入口支持创建 workspace，floating 子节点按 terminal 图标和状态颜色展示 |
+| 215E1-R111. SK workspace tab CRUD 快捷键闭环 | 完成 | `termx-tui-v3/input/`、`termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已补齐 workspace/tab CRUD 快捷键闭环：footer 键位和 input binding 对齐，Workbench Navigator 对非当前 workspace 的 tab/pane/floating 目标路由正确 |
 
 当前下一步：
 
+- `215E1-R111 workspace tab CRUD 快捷键闭环` 已完成：tab/workspace 模式使用 `c` 新建、`n` 下一个、`p` 上一个、`r` 重命名、`x` 关闭/删除；footer 展示和 input binding 已用测试锁定；Workbench Navigator 选中非当前 workspace 下的 tab/pane/floating 时，open/new/rename/delete/zoom 会先路由到目标 workspace。
 - `215E1-R110 workbench navigator workspace 操作回归` 已完成：Workbench Navigator tree 现在遍历所有 workspace；选中 item 的名称带下划线；`Ctrl-N`/底部 New 在 workspace 节点上创建新 workspace；floating 子节点使用 terminal 图标并按 pane/terminal 状态着色；右侧 preview 按选中 workspace/tab 查找 pane/floating。
 - `215E1-R109 floating tab-scoped model 重构` 已完成：floating window 只挂在 tab 下，命令、渲染、输入、storage、Workbench Navigator 和浮窗 overview 都消费当前 tab 的 floating；旧顶层 floating storage 已移除，不做迁移兼容。选中 tab 时右侧会同时预览该 tab 下的 tiled pane 与 floating terminal，floating 行显示连接的 terminal 名称并保留 `floating` 状态标签。
 - `215E1-R108 workbench navigator tab terminal 展示` 已完成：Workbench tree item 增加 display title，tab 下子节点显示 terminal pool 名称或 terminal id；pane 原标题仍参与搜索；tab 右侧 preview 过滤未连接空槽位，展示该 tab 下所有已连接 terminal。

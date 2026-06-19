@@ -53,6 +53,11 @@ func (store ShellStore) ApplyWorkbenchCommand(command WorkbenchCommand) (ShellSt
 }
 
 func (store ShellStore) createTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	var ok bool
+	store, ok = store.withCommandWorkspace(command)
+	if !ok {
+		return store, workbenchCommandInvalid(command.Action, "workspace not found")
+	}
 	id := strings.TrimSpace(command.TargetID)
 	if id == "" {
 		id = nextTabID(store.Workspace)
@@ -102,6 +107,11 @@ func (store ShellStore) switchRelativeTab(offset int, action WorkbenchCommandAct
 }
 
 func (store ShellStore) switchTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	var ok bool
+	store, ok = store.withCommandWorkspace(command)
+	if !ok {
+		return store, workbenchCommandInvalid(command.Action, "workspace not found")
+	}
 	if len(store.Workspace.Tabs) == 0 {
 		return store, workbenchCommandInvalid(command.Action, "no tab")
 	}
@@ -114,6 +124,11 @@ func (store ShellStore) switchTab(command WorkbenchCommand) (ShellStore, Workben
 }
 
 func (store ShellStore) renameTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	var ok bool
+	store, ok = store.withCommandWorkspace(command)
+	if !ok {
+		return store, workbenchCommandInvalid(command.Action, "workspace not found")
+	}
 	name := strings.TrimSpace(command.Name)
 	if name == "" {
 		return store, workbenchCommandInvalid(command.Action, "missing tab name")
@@ -131,6 +146,11 @@ func (store ShellStore) renameTab(command WorkbenchCommand) (ShellStore, Workben
 }
 
 func (store ShellStore) closeTab(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
+	var ok bool
+	store, ok = store.withCommandWorkspace(command)
+	if !ok {
+		return store, workbenchCommandInvalid(command.Action, "workspace not found")
+	}
 	index := store.activeTabIndex()
 	if command.TargetID != "" {
 		index = store.tabIndexByID(command.TargetID)
@@ -165,6 +185,11 @@ func (store ShellStore) killTab(command WorkbenchCommand) (ShellStore, Workbench
 	if command.Confirm != PaneConfirmAccepted {
 		return store, WorkbenchCommandResult{Status: WorkbenchCommandNeedsConfirmation, Action: command.Action, Reason: "confirm tab kill"}
 	}
+	var ok bool
+	store, ok = store.withCommandWorkspace(command)
+	if !ok {
+		return store, workbenchCommandInvalid(command.Action, "workspace not found")
+	}
 	index := store.activeTabIndex()
 	if command.TargetID != "" {
 		index = store.tabIndexByID(command.TargetID)
@@ -176,6 +201,7 @@ func (store ShellStore) killTab(command WorkbenchCommand) (ShellStore, Workbench
 	next, result := store.closeTab(WorkbenchCommand{
 		Action:   WorkbenchCommandTabClose,
 		TargetID: command.TargetID,
+		Target:   command.Target,
 		Source:   command.Source,
 	})
 	if result.Status != WorkbenchCommandOK {
@@ -311,79 +337,18 @@ func (store ShellStore) switchWorkspace(id string, action WorkbenchCommandAction
 	return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: action, ID: id}
 }
 
-func (store ShellStore) splitPaneWorkbench(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
-	paneCommand := command.Pane
-	paneCommand.Action = PaneCommandSplit
-	if paneCommand.Source == "" {
-		paneCommand.Source = command.Source
+func (store ShellStore) withCommandWorkspace(command WorkbenchCommand) (ShellStore, bool) {
+	store = store.EnsureDefaults()
+	workspaceID := strings.TrimSpace(command.Target.WorkspaceID)
+	if workspaceID == "" || workspaceID == store.Workspace.ID {
+		return store, true
 	}
-	if paneCommand.Target.PaneID == "" || paneCommand.Target.TabID == "" || paneCommand.Target.WorkspaceID == "" {
-		paneCommand.Target = store.workbenchPaneTarget(WorkbenchCommand{Target: paneCommand.Target, TargetID: command.TargetID})
+	// Workbench Navigator 会对非当前 workspace 的节点发命令，执行前必须先切到目标 workspace。
+	next, result := store.switchWorkspace(workspaceID, command.Action)
+	if result.Status != WorkbenchCommandOK {
+		return store, false
 	}
-	next, result := store.ApplyPaneCommand(paneCommand)
-	if result.Status != PaneCommandOK {
-		return store, workbenchCommandInvalid(command.Action, result.Reason)
-	}
-	next.Workspaces = upsertWorkspace(next.Workspaces, next.Workspace)
-	return next, WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: paneCommand.NewPane.ID}
-}
-
-func (store ShellStore) renamePane(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
-	name := strings.TrimSpace(command.Name)
-	if name == "" {
-		return store, workbenchCommandInvalid(command.Action, "missing pane name")
-	}
-	target := store.workbenchPaneTarget(command)
-	tabIndex := store.tabIndexForTarget(target)
-	if tabIndex < 0 {
-		return store, workbenchCommandInvalid(command.Action, "pane not found")
-	}
-	paneID := target.PaneID
-	if paneID == "" {
-		paneID = store.ActivePaneID
-	}
-	for index := range store.Workspace.Tabs[tabIndex].Panes {
-		if store.Workspace.Tabs[tabIndex].Panes[index].ID != paneID {
-			continue
-		}
-		store.Workspace.Tabs[tabIndex].Panes[index].Title = name
-		store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
-		store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
-		return store.EnsureDefaults(), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: paneID}
-	}
-	return store, workbenchCommandInvalid(command.Action, "pane not found")
-}
-
-func (store ShellStore) detachPane(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
-	target := store.workbenchPaneTarget(command)
-	pane, ok := store.Pane(target)
-	if !ok {
-		return store, workbenchCommandInvalid(command.Action, "pane not found")
-	}
-	// detach 只断开 workbench pane 与 terminal 的绑定，不销毁 daemon terminal。
-	store = store.setPaneDetached(target)
-	return store, WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: pane.ID}
-}
-
-func (store ShellStore) closePaneWorkbench(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
-	target := store.workbenchPaneTarget(command)
-	return store.removePaneWorkbench(command.Action, target, nil)
-}
-
-func (store ShellStore) killPane(command WorkbenchCommand) (ShellStore, WorkbenchCommandResult) {
-	if command.Confirm != PaneConfirmAccepted {
-		return store, WorkbenchCommandResult{Status: WorkbenchCommandNeedsConfirmation, Action: command.Action, Reason: "confirm pane kill"}
-	}
-	target := store.workbenchPaneTarget(command)
-	pane, ok := store.Pane(target)
-	if !ok {
-		return store, workbenchCommandInvalid(command.Action, "pane not found")
-	}
-	killed := []string{}
-	if pane.TerminalID != "" {
-		killed = []string{pane.TerminalID}
-	}
-	return store.removePaneWorkbench(command.Action, target, killed)
+	return next, true
 }
 
 func (store ShellStore) focusTabByIndex(index int) ShellStore {
@@ -481,63 +446,6 @@ func terminalIDsForTab(tab TabState) []string {
 		out = append(out, pane.TerminalID)
 	}
 	return out
-}
-
-func (store ShellStore) workbenchPaneTarget(command WorkbenchCommand) PaneCommandTarget {
-	target := command.Target
-	if target.PaneID == "" {
-		target.PaneID = strings.TrimSpace(command.TargetID)
-	}
-	if target.PaneID == "" {
-		target.PaneID = store.EnsureDefaults().ActivePaneID
-	}
-	if target.WorkspaceID == "" {
-		target.WorkspaceID = store.EnsureDefaults().Workspace.ID
-	}
-	if target.TabID == "" {
-		target.TabID = store.EnsureDefaults().Workspace.ActiveTabID
-	}
-	return target
-}
-
-func (store ShellStore) setPaneDetached(target PaneCommandTarget) ShellStore {
-	store = store.EnsureDefaults()
-	tabIndex := store.tabIndexForTarget(target)
-	if tabIndex < 0 {
-		return store
-	}
-	paneID := target.PaneID
-	if paneID == "" {
-		paneID = store.ActivePaneID
-	}
-	for index := range store.Workspace.Tabs[tabIndex].Panes {
-		pane := &store.Workspace.Tabs[tabIndex].Panes[index]
-		if pane.ID != paneID {
-			continue
-		}
-		pane.TerminalID = ""
-		pane.Kind = PaneEmpty
-		if pane.Title == "" {
-			pane.Title = "empty"
-		}
-		store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
-		store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
-		return store
-	}
-	return store
-}
-
-func (store ShellStore) removePaneWorkbench(action WorkbenchCommandAction, target PaneCommandTarget, killed []string) (ShellStore, WorkbenchCommandResult) {
-	target = store.workbenchPaneTarget(WorkbenchCommand{Target: target})
-	pane, ok := store.Pane(target)
-	if !ok {
-		return store, workbenchCommandInvalid(action, "pane not found")
-	}
-	if store.paneCountForTarget(target) <= 1 {
-		return store, workbenchCommandInvalid(action, "cannot close last pane")
-	}
-	store = store.ClosePane(target)
-	return store, WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: action, ID: pane.ID, Killed: killed}
 }
 
 func nextTabID(workspace WorkspaceState) string {
