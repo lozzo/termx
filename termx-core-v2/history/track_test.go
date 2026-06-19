@@ -50,6 +50,22 @@ func TestHistoryTrackWritesSealsAndCommitsLogicalLines(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackWritePrimaryCellsKeepsCallerCellsDetached(t *testing.T) {
+	track := NewHistoryTrack()
+	cells := []Cell{{Text: "owned", Width: 5}}
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells})
+	cells[0].Text = "mutated caller"
+
+	line, ok := track.Line(track.ActiveLineID())
+	if !ok {
+		t.Fatal("expected active line")
+	}
+	if got := line.Cells[0].Text; got != "owned" {
+		t.Fatalf("history leaked caller mutation into owned write path, got %q", got)
+	}
+}
+
 func TestHistoryTrackCommitFrontierRequiresLeavingPrimaryScreenOwnership(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(2)

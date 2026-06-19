@@ -99,6 +99,7 @@ type CreateLineRequest struct {
 	TailFill          *RowTailFill
 	Dirty             bool
 	Residency         Residency
+	ownedCells        bool
 }
 
 var (
@@ -156,6 +157,15 @@ func validateLine(line LogicalLine) error {
 }
 
 func normalizeLine(line LogicalLine) (LogicalLine, error) {
+	line, err := normalizeOwnedLine(line)
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	line.Cells = cloneCells(line.Cells)
+	return line, nil
+}
+
+func normalizeOwnedLine(line LogicalLine) (LogicalLine, error) {
 	if line.ID == 0 {
 		return LogicalLine{}, ErrInvalidLineID
 	}
@@ -169,7 +179,6 @@ func normalizeLine(line LogicalLine) (LogicalLine, error) {
 	}
 	line.Seal = seal
 	line.Residency = residency
-	line.Cells = cloneCells(line.Cells)
 	line.TailFill = cloneRowTailFill(line.TailFill)
 	return line, nil
 }

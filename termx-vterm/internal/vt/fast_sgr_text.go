@@ -28,13 +28,8 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	if scroll.Min.X != 0 || scroll.Min.Y != 0 || scroll.Max.X != width || scroll.Max.Y != height {
 		return false
 	}
-	rows := make([]uv.Line, height)
-	wrapped := make([]bool, height)
-	used := make([]int, height)
-	for y := 0; y < height; y++ {
-		rows[y] = cloneFastSGRLine(e.scr.buf.Line(y), width)
-		wrapped[y] = e.scr.LineWrapped(y)
-		used[y] = e.scr.LineUsed(y)
+	if !canApplyFastSGRTextBatch(data) {
+		return false
 	}
 	x, cursorY := e.scr.CursorPosition()
 	if x < 0 {
@@ -75,27 +70,24 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 			}
 			scrollbackDamages = append(scrollbackDamages, damage)
 			if scrollback != nil {
-				scrollbackRows = append(scrollbackRows, fastSGRScrollbackRow{line: row, wrapped: wasWrapped})
+				scrollbackRows = append(scrollbackRows, fastSGRScrollbackRow{line: cloneFastSGRLine(row, len(row)), wrapped: wasWrapped})
 			}
 			scrollY++
 			return
 		}
-		scrollbackRows = append(scrollbackRows, fastSGRScrollbackRow{line: row, wrapped: wasWrapped})
+		if scrollback != nil {
+			scrollbackRows = append(scrollbackRows, fastSGRScrollbackRow{line: cloneFastSGRLine(row, len(row)), wrapped: wasWrapped})
+		}
 		scrollY++
 	}
 
 	linefeed := func() {
 		if cursorY == height-1 {
-			scrolled := rows[0]
-			scrolledWrapped := wrapped[0]
-			scrolledUsed := clampLocalInt(used[0], 0, len(scrolled))
+			scrolled := e.scr.buf.Line(0)
+			scrolledWrapped := e.scr.LineWrapped(0)
+			scrolledUsed := clampLocalInt(e.scr.LineUsed(0), 0, len(scrolled))
 			flushScrollbackRow(scrolled[:scrolledUsed], scrolledWrapped)
-			copy(rows, rows[1:])
-			copy(wrapped, wrapped[1:])
-			copy(used, used[1:])
-			rows[height-1] = fastSGRBlankLine(width, style)
-			wrapped[height-1] = false
-			used[height-1] = 0
+			scrollFastSGRScreenRows(e.scr, style)
 			return
 		}
 		cursorY++
@@ -103,7 +95,7 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	printRun := func(run []byte) {
 		for len(run) > 0 {
 			if atPhantom {
-				wrapped[cursorY] = true
+				e.scr.SetLineWrapped(cursorY, true)
 				linefeed()
 				x = 0
 				atPhantom = false
@@ -114,17 +106,30 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 				continue
 			}
 			count := min(len(run), available)
-			row := rows[cursorY]
-			for i, b := range run[:count] {
-				row[x+i] = uv.Cell{
-					Content: printableASCIIStrings[b],
-					Width:   1,
-					Style:   style,
-					Link:    link,
+			row := e.scr.buf.Line(cursorY)
+			if row == nil || len(row) != width {
+				for i, b := range run[:count] {
+					cell := uv.Cell{
+						Content: printableASCIIStrings[b],
+						Width:   1,
+						Style:   style,
+						Link:    link,
+					}
+					e.scr.SetCell(x+i, cursorY, &cell)
 				}
+			} else {
+				for i, b := range run[:count] {
+					row[x+i] = uv.Cell{
+						Content: printableASCIIStrings[b],
+						Width:   1,
+						Style:   style,
+						Link:    link,
+					}
+				}
+				e.scr.buf.TouchLine(x, cursorY, count)
 			}
-			used[cursorY] = max(used[cursorY], x+count)
 			lastChar = rune(run[count-1])
+			e.scr.markUsed(cursorY, x+count)
 			run = run[count:]
 			if x+count >= width {
 				x = width - 1
@@ -171,22 +176,6 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 			return false
 		}
 	}
-
-	for y := 0; y < height; y++ {
-		row := rows[y]
-		line := e.scr.buf.Line(y)
-		if line == nil || len(line) != width {
-			for col := 0; col < width; col++ {
-				cell := row[col]
-				e.scr.buf.Buffer.SetCell(col, y, &cell)
-			}
-		} else {
-			copy(line, row)
-		}
-		e.scr.wrapped[y] = wrapped[y]
-		e.scr.used[y] = used[y]
-		e.scr.buf.TouchLine(0, y, width)
-	}
 	if scrollback != nil {
 		for _, row := range scrollbackRows {
 			scrollback.PushWrapped(row.line, row.wrapped)
@@ -203,9 +192,72 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	return true
 }
 
+func canApplyFastSGRTextBatch(data []byte) bool {
+	var paramsScratch []int
+	for i := 0; i < len(data); {
+		start := i
+		for i < len(data) && isPrintableASCII(data[i]) {
+			i++
+		}
+		if i > start {
+			continue
+		}
+		switch data[i] {
+		case '\r', '\n':
+			i++
+		case ansi.ESC:
+			next, ok := fastSGRSequenceEnd(data, i)
+			if !ok {
+				return false
+			}
+			paramsScratch = paramsScratch[:0]
+			params, ok := parseSGRParams(data[i+2:next], paramsScratch)
+			if !ok || !canApplyFastSGRStyle(params) {
+				return false
+			}
+			i = next + 1
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 type fastSGRScrollbackRow struct {
 	line    uv.Line
 	wrapped bool
+}
+
+func scrollFastSGRScreenRows(screen *Screen, style uv.Style) {
+	if screen == nil || screen.buf == nil {
+		return
+	}
+	height := screen.buf.Height()
+	width := screen.buf.Width()
+	if height <= 0 || width <= 0 {
+		return
+	}
+	lines := screen.buf.Lines
+	if len(lines) < height {
+		deleteFullWidthLines(screen.buf, 0, 1, screen.ScrollRegion(), fastSGRBlankCell(style))
+		screen.deleteWrappedLines(0, 1)
+		screen.deleteUsedLines(0, 1)
+		return
+	}
+	// 中文说明：fast SGR 压力日志只需要 live latest screen。这里复用离屏行作为新底行，
+	// 避免每个 PTY 批次先复制整屏；离屏历史仍在调用方按 used width 显式复制。
+	reused := lines[0]
+	copy(lines[0:height-1], lines[1:height])
+	if len(reused) != width {
+		reused = uv.NewLine(width)
+	}
+	fillFastSGRLine(reused, style)
+	lines[height-1] = reused
+	screen.deleteWrappedLines(0, 1)
+	screen.deleteUsedLines(0, 1)
+	for y := 0; y < height; y++ {
+		screen.buf.TouchLine(0, y, width)
+	}
 }
 
 func cloneFastSGRLine(line uv.Line, width int) uv.Line {
@@ -219,12 +271,25 @@ func cloneFastSGRLine(line uv.Line, width int) uv.Line {
 
 func fastSGRBlankLine(width int, style uv.Style) uv.Line {
 	line := make(uv.Line, width)
+	fillFastSGRLine(line, style)
+	return line
+}
+
+func fillFastSGRLine(line uv.Line, style uv.Style) {
 	cell := uv.EmptyCell
 	cell.Style.Bg = style.Bg
 	for i := range line {
 		line[i] = cell
 	}
-	return line
+}
+
+func fastSGRBlankCell(style uv.Style) *uv.Cell {
+	if style.Bg == nil {
+		return nil
+	}
+	cell := uv.EmptyCell
+	cell.Style.Bg = style.Bg
+	return &cell
 }
 
 func fastSGRSequenceEnd(data []byte, start int) (int, bool) {

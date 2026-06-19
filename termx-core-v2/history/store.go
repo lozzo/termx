@@ -61,18 +61,22 @@ func (store *MemoryLogicalLineStore) CreateLine(req CreateLineRequest) (LogicalL
 	if err != nil {
 		return LogicalLine{}, err
 	}
+	cells := req.Cells
+	if !req.ownedCells {
+		cells = cloneCells(req.Cells)
+	}
 	line := LogicalLine{
 		ID:                store.nextID,
 		Generation:        1,
 		CreatedGeneration: req.CreatedGeneration,
 		ContentGeneration: req.ContentGeneration,
 		Seal:              seal,
-		Cells:             cloneCells(req.Cells),
+		Cells:             cells,
 		TailFill:          cloneRowTailFill(req.TailFill),
 		Dirty:             req.Dirty,
 		Residency:         residency,
 	}
-	if err := store.backend.SaveLine(line); err != nil {
+	if err := store.saveOwnedLineLocked(line); err != nil {
 		return LogicalLine{}, err
 	}
 	store.nextID++
@@ -114,6 +118,11 @@ func (store *MemoryLogicalLineStore) snapshotLineLocked(id LogicalLineID, epoch 
 }
 
 func (store *MemoryLogicalLineStore) ReplaceLine(line LogicalLine) (LogicalLine, error) {
+	line.Cells = cloneCells(line.Cells)
+	return store.replaceOwnedLine(line)
+}
+
+func (store *MemoryLogicalLineStore) replaceOwnedLine(line LogicalLine) (LogicalLine, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if err := validateLine(line); err != nil {
@@ -131,13 +140,19 @@ func (store *MemoryLogicalLineStore) ReplaceLine(line LogicalLine) (LogicalLine,
 	if line.ContentGeneration == 0 {
 		line.ContentGeneration = current.ContentGeneration
 	}
-	line.Cells = cloneCells(line.Cells)
 	line.TailFill = cloneRowTailFill(line.TailFill)
-	if err := store.backend.SaveLine(line); err != nil {
+	if err := store.saveOwnedLineLocked(line); err != nil {
 		return LogicalLine{}, err
 	}
 	store.cleanupRetiredLocked()
 	return line.Clone(), nil
+}
+
+func (store *MemoryLogicalLineStore) saveOwnedLineLocked(line LogicalLine) error {
+	if backend, ok := store.backend.(ownedLineBackend); ok {
+		return backend.saveOwnedLine(line)
+	}
+	return store.backend.SaveLine(line)
 }
 
 func (store *MemoryLogicalLineStore) DeleteLine(id LogicalLineID) bool {

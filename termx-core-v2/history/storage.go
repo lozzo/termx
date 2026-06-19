@@ -19,6 +19,10 @@ type snapshotLineBackend interface {
 	LoadSnapshotLine(LogicalLineID) (LogicalLine, bool)
 }
 
+type ownedLineBackend interface {
+	saveOwnedLine(LogicalLine) error
+}
+
 // MemoryStorageBackend is the first in-memory backend used by the domain
 // harness before file or mmap persistence exists.
 type MemoryStorageBackend struct {
@@ -39,6 +43,18 @@ func (backend *MemoryStorageBackend) SaveLine(line LogicalLine) error {
 	if err != nil {
 		return err
 	}
+	return backend.saveNormalizedLine(line)
+}
+
+func (backend *MemoryStorageBackend) saveOwnedLine(line LogicalLine) error {
+	line, err := normalizeOwnedLine(line)
+	if err != nil {
+		return err
+	}
+	return backend.saveNormalizedLine(line)
+}
+
+func (backend *MemoryStorageBackend) saveNormalizedLine(line LogicalLine) error {
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
 	if compactLogicalLineEligible(line) {

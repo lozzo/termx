@@ -223,7 +223,7 @@ func (pipeline *terminalHistoryPipeline) CommittableIDs() []history.LogicalLineI
 
 func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegment) error {
 	if len(segment.Cells) > 0 {
-		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: segment.Cells}); err != nil {
+		if err := pipeline.track.ApplyOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: segment.Cells}); err != nil {
 			return err
 		}
 	}

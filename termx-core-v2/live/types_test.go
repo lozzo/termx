@@ -81,6 +81,26 @@ func TestSurfaceTrackLargeWriteKeepsLatestScreen(t *testing.T) {
 	}
 }
 
+func BenchmarkSurfaceTrackFastSGRStressWrite(b *testing.B) {
+	output := benchmarkSurfaceFastSGROutput(2048)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(output)))
+
+	for i := 0; i < b.N; i++ {
+		surface := NewSurfaceTrack(SurfaceSize{Cols: 120, Rows: 36})
+		surface.Write(output)
+	}
+}
+
+func benchmarkSurfaceFastSGROutput(lines int) string {
+	var builder strings.Builder
+	for i := 0; i < lines; i++ {
+		fmt.Fprintf(&builder, "\x1b[3%dm%06d live payload payload payload payload payload payload payload\x1b[0m\n", i%8, i)
+	}
+	builder.WriteString("999999 stress latest-tail")
+	return builder.String()
+}
+
 func TestSurfaceTrackPreservesAltScreenFrameOnExit(t *testing.T) {
 	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
 	surface.Write("primary")

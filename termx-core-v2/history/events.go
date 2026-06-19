@@ -46,6 +46,7 @@ const (
 type HistoryEvent struct {
 	Kind            EventKind
 	Cells           []Cell
+	ownedCells      bool
 	Rows            [][]Cell
 	Style           CellStyle
 	LineID          LogicalLineID

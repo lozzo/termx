@@ -60,9 +60,19 @@ func (track *HistoryTrack) SetPrimaryScreenRows(rows int) {
 }
 
 func (track *HistoryTrack) Apply(event HistoryEvent) error {
+	event.ownedCells = false
+	return track.apply(event)
+}
+
+func (track *HistoryTrack) ApplyOwned(event HistoryEvent) error {
+	event.ownedCells = true
+	return track.apply(event)
+}
+
+func (track *HistoryTrack) apply(event HistoryEvent) error {
 	switch event.Kind {
 	case EventWritePrimaryCells:
-		return track.writePrimaryCells(event.Cells)
+		return track.writePrimaryCells(event.Cells, event.ownedCells)
 	case EventCarriageReturn:
 		return track.carriageReturn()
 	case EventCursorForward:
@@ -166,17 +176,20 @@ func (track *HistoryTrack) ActiveLineID() LogicalLineID {
 	return track.activeLine
 }
 
-func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
+func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) error {
 	if track.altScreen || len(cells) == 0 {
 		return nil
 	}
-	line, err := track.ensureWritableActiveLine()
+	nextGeneration := track.nextGeneration()
+	line, created, err := track.ensureWritableActiveLineForCells(cells, ownedCells, nextGeneration)
 	if err != nil {
 		return err
 	}
 	lineWidth := logicalLineWidth(line.Cells)
 	incomingWidth := logicalLineWidth(cells)
-	if !track.overwrite && track.activeCol == lineWidth {
+	if created {
+		track.activeCol = incomingWidth
+	} else if !track.overwrite && track.activeCol == lineWidth {
 		line.Cells = append(line.Cells, cloneCells(cells)...)
 		track.activeCol += incomingWidth
 	} else {
@@ -188,12 +201,17 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 	// 必须丢弃旧 metadata，避免 resize/copy 时把背景延伸到错误位置。
 	line.TailFill = nil
 	line.Dirty = true
-	nextGeneration := track.nextGeneration()
 	if line.CreatedGeneration == 0 {
 		line.CreatedGeneration = nextGeneration
 	}
 	line.ContentGeneration = nextGeneration
-	line, err = track.store.ReplaceLine(line)
+	if created {
+		track.activeLine = line.ID
+		track.overwrite = false
+		track.setGeneration(nextGeneration)
+		return nil
+	}
+	line, err = track.replaceOwnedLine(line)
 	if err != nil {
 		return err
 	}
@@ -201,6 +219,44 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell) error {
 	track.overwrite = track.activeCol < lineWidth
 	track.setGeneration(nextGeneration)
 	return nil
+}
+
+func (track *HistoryTrack) replaceOwnedLine(line LogicalLine) (LogicalLine, error) {
+	type ownedReplacer interface {
+		replaceOwnedLine(LogicalLine) (LogicalLine, error)
+	}
+	if store, ok := track.store.(ownedReplacer); ok {
+		return store.replaceOwnedLine(line)
+	}
+	return track.store.ReplaceLine(line)
+}
+
+func (track *HistoryTrack) ensureWritableActiveLineForCells(cells []Cell, ownedCells bool, generation Generation) (LogicalLine, bool, error) {
+	if track.activeLine != 0 && (track.frontier.Contains(track.activeLine) || track.committed.Contains(track.activeLine)) {
+		line, ok := track.store.Line(track.activeLine)
+		if ok {
+			return line, false, nil
+		}
+	}
+	// 中文说明：只有 pipeline 内部明确交出所有权的首批 cells 才跳过 clone；
+	// 普通 Apply 调用仍由 store clone caller slice，避免外部 mutation 污染 history truth。
+	line, err := track.store.CreateLine(CreateLineRequest{
+		Seal:              SealStateOpen,
+		CreatedGeneration: generation,
+		ContentGeneration: generation,
+		Cells:             cells,
+		ownedCells:        ownedCells,
+		Dirty:             true,
+		Residency:         ResidencyMemory,
+	})
+	if err != nil {
+		return LogicalLine{}, false, err
+	}
+	if err := track.frontier.Add(line.ID); err != nil {
+		return LogicalLine{}, false, err
+	}
+	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
+	return line, true, nil
 }
 
 func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
@@ -943,7 +999,7 @@ func (track *HistoryTrack) appendAltScreenFrame(rows [][]Cell) error {
 	// snapshot 反推历史；每一行作为新的 logical line 追加并立即提交。
 	for _, row := range rows {
 		if len(row) > 0 {
-			if err := track.writePrimaryCells(row); err != nil {
+			if err := track.writePrimaryCells(row, false); err != nil {
 				return err
 			}
 		}

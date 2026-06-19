@@ -136,7 +136,9 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 		}
 	}
 	parser.flush()
-	return cloneHistoryOutputSegments(parser.segments)
+	// 中文说明：parser 是 terminalHistoryPipeline 私有状态，Parse 返回的 batch
+	// 会在同一锁内立即消费；不做整批 clone，避免压力日志把 history 写入高水位放大。
+	return parser.segments
 }
 
 func (parser *historyANSIParser) SetScreenSize(cols int, rows int) {
@@ -686,38 +688,6 @@ func firstTwoCSIParams(text string, defaultFirst int, defaultSecond int) (int, i
 		second = params[1]
 	}
 	return first, second
-}
-
-func cloneHistoryOutputSegments(segments []historyOutputSegment) []historyOutputSegment {
-	if len(segments) == 0 {
-		return nil
-	}
-	out := make([]historyOutputSegment, len(segments))
-	for i, segment := range segments {
-		out[i].Seal = segment.Seal
-		out[i].CarriageReturn = segment.CarriageReturn
-		out[i].CursorForward = segment.CursorForward
-		out[i].CursorBackward = segment.CursorBackward
-		out[i].CursorHorizontalAbsolute = segment.CursorHorizontalAbsolute
-		out[i].CursorUp = segment.CursorUp
-		out[i].CursorDown = segment.CursorDown
-		out[i].CursorPosition = segment.CursorPosition
-		out[i].EraseInLine = segment.EraseInLine
-		out[i].EraseInDisplay = segment.EraseInDisplay
-		out[i].SetTailFill = segment.SetTailFill
-		out[i].SwitchAltScreen = segment.SwitchAltScreen
-		out[i].EnterAltScreen = segment.EnterAltScreen
-		out[i].Count = segment.Count
-		out[i].Row = segment.Row
-		out[i].Column = segment.Column
-		out[i].EraseMode = segment.EraseMode
-		out[i].Style = segment.Style
-		if len(segment.Cells) > 0 {
-			out[i].Cells = make([]history.Cell, len(segment.Cells))
-			copy(out[i].Cells, segment.Cells)
-		}
-	}
-	return out
 }
 
 func parseAltScreenMode(text string, final byte) (bool, bool) {
