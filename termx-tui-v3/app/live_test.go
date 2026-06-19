@@ -2748,14 +2748,18 @@ func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
 		t.Fatalf("live resize mismatch should expose chrome overflow, layer=%#v ok=%v", panelLayer, ok)
 	}
 	rightMarkerRow := panelLayer.Rect.Y + panelLayer.Rect.H - 1
-	rightMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 2
+	rightMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 3
 	if got := render.SliceCells(frame.Lines[rightMarkerRow], rightMarkerCol, rightMarkerCol+1); got != ">" {
 		t.Fatalf("right overflow marker should be shown for live resize mismatch, got %q frame=%#v", got, frame.Lines)
 	}
 	bottomMarkerRow := panelLayer.Rect.Y + panelLayer.Rect.H - 1
-	bottomMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 1
+	bottomMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 2
 	if got := render.SliceCells(frame.Lines[bottomMarkerRow], bottomMarkerCol, bottomMarkerCol+1); got != "v" {
 		t.Fatalf("bottom overflow marker should be shown for live resize mismatch, got %q frame=%#v", got, frame.Lines)
+	}
+	cornerCol := panelLayer.Rect.X + panelLayer.Rect.W - 1
+	if got := render.SliceCells(frame.Lines[bottomMarkerRow], cornerCol, cornerCol+1); got != "┘" {
+		t.Fatalf("overflow marker should keep pane corner, got %q frame=%#v", got, frame.Lines)
 	}
 	for _, line := range panelLayer.Lines {
 		if strings.Contains(line.PlainString(), ">") || strings.Contains(line.PlainString(), "v") {

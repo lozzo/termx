@@ -38,7 +38,8 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 	}
 	if !frameContains(cases["workbench-live"].Lines, "termx live 🚀") ||
 		!frameContains(cases["workbench-live"].Lines, "你好 output") ||
-		!frameContains(cases["workbench-live"].Lines, "┌─ shell") {
+		!frameContains(cases["workbench-live"].Lines, " shell ") ||
+		!frameContains(cases["workbench-live"].Lines, "["+render.DefaultPaneChromeGlyphs().SizeUnlock+"]") {
 		t.Fatalf("workbench live smoke missing shell/live content: %#v", cases["workbench-live"].Lines)
 	}
 	if !frameContains(cases["workbench-live"].Lines, "◆ owner") {
@@ -292,14 +293,13 @@ func isPaneBorderGlyph(value string) bool {
 }
 
 func isLeftPaneBorderOrOverflowGlyph(row int, left string) bool {
-	// overflow.Left/Top 只允许在 pane 左上角覆盖成 < 或 ^。
-	return isPaneBorderGlyph(left) || (row == 1 && (left == "<" || left == "^"))
+	return isPaneBorderGlyph(left)
 }
 
 func isRightPaneBorderOrOverflowGlyph(row int, lineCount int, previousRight string, right string) bool {
-	// overflow.Right/Bottom 只允许在 pane 右下角覆盖成 >v。
+	// overflow.Right/Bottom 角标贴着右下角内侧，最右角本身仍应保留边框。
 	bottomRow := lineCount - 2
-	return isPaneBorderGlyph(right) || (row == bottomRow && ((previousRight == ">" && right == "v") || right == ">" || right == "v"))
+	return isPaneBorderGlyph(right) || (row == bottomRow && previousRight == "v" && right == "┘")
 }
 
 func frameContains(lines []string, value string) bool {

@@ -68,7 +68,7 @@ func TestChromePrimitivePaneOwnerTokenDrivesTakeOwnerHitRegion(t *testing.T) {
 	}
 }
 
-func TestChromePrimitiveTerminalSizeLockButtonFollowsTitleAndDrivesHitRegion(t *testing.T) {
+func TestChromePrimitiveTerminalSizeLockButtonPrecedesTitleAndDrivesHitRegion(t *testing.T) {
 	panel := terminalChromeSlotTestPanel("pane-1", "shell")
 	panel.Chrome.Actions = []ChromeActionVM{paneChromeActionVM(ActionPaneClose, StyleAccent)}
 	panel.Chrome.Terminal.Owner = ChromeSlotVM{Text: "◆ owner", Style: StyleSuccess}
@@ -78,10 +78,10 @@ func TestChromePrimitiveTerminalSizeLockButtonFollowsTitleAndDrivesHitRegion(t *
 	primitive := PaneChromePrimitive(panel, rect, StyleAccent)
 	unlocked, ok := chromeSlotByAction(primitive.ActionSlots, ActionResizeLayoutLock.String())
 	if !ok || unlocked.Text != paneChromeBracketToken(paneChromeSizeUnlockGlyph()) {
-		t.Fatalf("unlocked terminal should expose size lock button after title, got %#v", primitive.ActionSlots)
+		t.Fatalf("unlocked terminal should expose size lock button before title, got %#v", primitive.ActionSlots)
 	}
-	if primitive.Title.Text == "" || unlocked.Rect.X <= primitive.Title.Rect.X+primitive.Title.Rect.W-1 {
-		t.Fatalf("size lock button should sit after title slot, title=%#v lock=%#v", primitive.Title, unlocked)
+	if primitive.Title.Text == "" || unlocked.Rect.X >= primitive.Title.Rect.X {
+		t.Fatalf("size lock button should sit before title slot, title=%#v lock=%#v", primitive.Title, unlocked)
 	}
 	regions := appendPaneActionRegions(nil, panel, rect, panel.ID, rect)
 	if !hitRegionsContainActionRect(regions, ActionResizeLayoutLock.String(), unlocked.Rect) {
@@ -187,6 +187,9 @@ func TestChromePrimitiveFloatingSizeLockStaysInTerminalLabel(t *testing.T) {
 	lock, ok := chromeSlotByAction(primitive.ActionSlots, ActionResizeLayoutLock.String())
 	if !ok || lock.Text != paneChromeBracketToken(paneChromeSizeLockGlyph()) {
 		t.Fatalf("floating terminal label should expose size lock action slot, got %#v", primitive.ActionSlots)
+	}
+	if len(primitive.LabelSlots) == 0 || lock.Rect.X >= primitive.LabelSlots[len(primitive.LabelSlots)-1].Rect.X {
+		t.Fatalf("floating size lock slot should sit before terminal title, lock=%#v labels=%#v", lock, primitive.LabelSlots)
 	}
 	if chromeSlotsContainAction(floatingChromeControlSlots(primitive.ActionSlots), ActionResizeLayoutLock.String()) {
 		t.Fatalf("floating right control cluster must not duplicate terminal size lock slot, got %#v", primitive.ActionSlots)

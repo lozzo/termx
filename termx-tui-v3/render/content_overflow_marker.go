@@ -20,14 +20,19 @@ func renderContentOverflowMarkers(c *canvas, chromeRect Rect, contentRect Rect, 
 		return
 	}
 	if marker := contentOverflowCornerMarker(overflow.Left, overflow.Top, "<", "^"); marker != "" {
-		// 左/上溢出只占左上角，避免在 pane 边框中段打断分割线。
-		c.overlayTextStyled(chromeRect.X, chromeRect.Y, minInt(chromeRect.W, DisplayWidth(marker)), marker, style, owner, layer)
+		// 角标贴着拐角内侧绘制，保留 pane 本身的拐角 glyph。
+		width := minInt(maxInt(0, chromeRect.W-2), DisplayWidth(marker))
+		if width > 0 {
+			c.overlayTextStyled(chromeRect.X+1, chromeRect.Y, width, marker, style, owner, layer)
+		}
 	}
 	if marker := contentOverflowCornerMarker(overflow.Right, overflow.Bottom, ">", "v"); marker != "" {
-		width := minInt(chromeRect.W, DisplayWidth(marker))
-		x := chromeRect.X + chromeRect.W - width
-		y := chromeRect.Y + chromeRect.H - 1
-		c.overlayTextStyled(x, y, width, marker, style, owner, layer)
+		width := minInt(maxInt(0, chromeRect.W-2), DisplayWidth(marker))
+		if width > 0 {
+			x := chromeRect.X + chromeRect.W - 1 - width
+			y := chromeRect.Y + chromeRect.H - 1
+			c.overlayTextStyled(x, y, width, marker, style, owner, layer)
+		}
 	}
 }
 

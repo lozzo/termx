@@ -23,17 +23,18 @@ func paneChromeTerminalLeftSlots(terminal TerminalChromeVM, panel PanelVM, width
 	if width <= 0 {
 		return nil
 	}
-	suffix := paneChromeTerminalSizeLockSlot(terminal, borderStyle)
-	for len(suffix) > 0 && paneChromeSlotsWidth(suffix)+paneChromeTerminalMinimumTitleWidth(terminal) > width {
-		suffix = suffix[:len(suffix)-1]
+	prefix := paneChromeTerminalSizeLockSlot(terminal, borderStyle)
+	for len(prefix) > 0 && paneChromeSlotsWidth(prefix)+paneChromeTerminalMinimumTitleWidth(terminal) > width {
+		prefix = prefix[:len(prefix)-1]
 	}
-	titleWidth := maxInt(0, width-paneChromeSlotsWidth(suffix))
+	titleWidth := maxInt(0, width-paneChromeSlotsWidth(prefix))
 	title := paneChromeTerminalLeftTitle(terminal, panel, titleWidth, borderStyle)
-	slots := make([]paneChromeTopSlot, 0, 1+len(suffix))
+	slots := make([]paneChromeTopSlot, 0, len(prefix)+1)
+	slots = append(slots, prefix...)
 	if strings.TrimSpace(title.text) != "" {
 		slots = append(slots, title)
 	}
-	return append(slots, suffix...)
+	return slots
 }
 
 func paneChromeTerminalLeftTitle(terminal TerminalChromeVM, panel PanelVM, width int, borderStyle StyleToken) paneChromeTopSlot {
