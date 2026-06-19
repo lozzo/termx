@@ -287,9 +287,11 @@
 | 215E1-R114. SK root 空终端启动 picker | 完成 | `termx-cli/`、`termx-tui-v3/app/`、`workflow.md` | 已让 root 入口无 core terminal 时不再自动创建 main terminal，直接启动空 workbench 并打开 terminal picker；Esc 后保留 unconnected panel，并跳过启动时旧 workbench storage load |
 | 215E1-R115. SK 空 tab 顶栏光标残留回归 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已修复空 tab 提示页暴露可见/隐藏 cursor，避免顶栏附近出现多余竖线 |
 | 215E1-R116. SK tab create unconnected pane 与空 workspace header | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已对齐 tuiv2 新 tab 创建 unconnected pane 的结构，并修复无 tab 时 header 仍伪造 main tab |
+| 215E1-R117. SK TUI 配置管理文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已梳理 v3 TUI 配置管理边界、主题 token、配置项和加载优先级，先落文档再进入实现 |
 
 当前下一步：
 
+- `215E1-R117 TUI 配置管理文档` 已完成：新增 v3 独立 TUI 配置管理基准，不复用 tuiv2 shared config 作为运行时依赖；明确主题、chrome、interaction、keymap 等配置项、加载优先级、host palette 与用户覆盖的合成规则，以及 renderer/input 只能消费 resolved token 的边界。
 - `215E1-R116 tab create unconnected pane 与空 workspace header` 已完成：v3 `tab.create` 现在会生成 active `unconnected` pane 和 root split；无 tab workspace 的 header 不再 fallback 出虚假的 `main` tab，只保留 workspace 名和新建 tab 入口。
 - `215E1-R115 空 tab 顶栏光标残留回归` 已完成：空 tab 提示页不再生成可见 bar cursor；无 panel 的空 body 提示页也不会 fallback 成隐藏 IME anchor，避免真实终端光标停在 tab/header 附近形成多余竖线。
 - `215E1-R114 root 空终端启动 picker` 已完成：root 入口只复用现存 terminal；没有 terminal 时启动空 workbench、打开 Terminal Picker，由用户显式创建或 Esc 回到 `unconnected` pane；该空启动会跳过旧 workbench storage 初始恢复，避免没有 core terminal 时被旧连接意图覆盖。
