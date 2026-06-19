@@ -428,6 +428,22 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	if len(items) != 5 || items[4].Kind != WorkbenchTreeKindFloating || items[4].FloatingID != "float-1" || items[4].PaneID != "float-pane" || items[4].TerminalID != "term-float" || !strings.Contains(items[4].Summary, "floating") {
 		t.Fatalf("expected actual floating row, got %#v", items)
 	}
+	var workbenchResult WorkbenchCommandResult
+	root.Shell, workbenchResult = root.Shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceCreate, TargetID: "workspace-2", Name: "remote"})
+	if workbenchResult.Status != WorkbenchCommandOK {
+		t.Fatalf("create workspace: %#v", workbenchResult)
+	}
+	root.Shell = root.Shell.OpenWorkbenchTree()
+	items = WorkbenchTreeItems(root)
+	workspaceRows := 0
+	for _, item := range items {
+		if item.Kind == WorkbenchTreeKindWorkspace {
+			workspaceRows++
+		}
+	}
+	if workspaceRows != 2 || items[0].WorkspaceID != DefaultWorkspaceID || items[5].WorkspaceID != "workspace-2" || !items[5].Active {
+		t.Fatalf("workbench tree should show all workspaces with active marker, items=%#v", items)
+	}
 
 	root.Shell = root.Shell.SetWorkbenchTreeQuery("日志")
 	items = WorkbenchTreeItems(root)
@@ -437,7 +453,7 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	root.Shell = root.Shell.SetWorkbenchTreeQuery("")
 	root.Shell = root.Shell.MoveWorkbenchTreeSelection(2, len(WorkbenchTreeItems(root)))
 	items = WorkbenchTreeItems(root)
-	if len(items) != 5 || !items[2].Selected || items[2].PaneID != DefaultPaneID {
+	if len(items) != 8 || !items[2].Selected || items[2].PaneID != DefaultPaneID {
 		t.Fatalf("selection should move to default pane row, got %#v", items)
 	}
 }

@@ -315,6 +315,7 @@ func footerActionCatalog(mode string) []FooterActionVM {
 		return footerActionSpecs(
 			footerActionSpec("search", "", "", StyleStatusAccent),
 			footerActionFor(ActionWorkbenchOpen),
+			footerActionWithKey(ActionWorkbenchNew, "ctrl-n", "NEW"),
 			footerActionFor(ActionWorkbenchSelect),
 			footerActionSpec("esc", "", "", StyleStatusMuted),
 		)

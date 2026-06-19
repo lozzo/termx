@@ -8,81 +8,88 @@ import (
 func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 	shell := root.Shell.EnsureDefaults()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
-	workspace := shell.Workspace
-	items := make([]WorkbenchTreeItem, 0, 2+len(workspace.Tabs)*3)
+	workspaces := shell.Workspaces
+	if len(workspaces) == 0 {
+		workspaces = []WorkspaceState{shell.Workspace}
+	}
+	items := make([]WorkbenchTreeItem, 0, len(workspaces)*4)
 	appendItem := func(item WorkbenchTreeItem) {
 		if matchesWorkbenchTreeQuery(item, query) {
 			items = append(items, item)
 		}
 	}
 
-	appendItem(WorkbenchTreeItem{
-		Kind:          WorkbenchTreeKindWorkspace,
-		WorkspaceID:   workspace.ID,
-		WorkspaceName: workspace.Name,
-		Depth:         0,
-		Active:        true,
-		Summary:       workbenchWorkspaceSummary(workspace),
-	})
-	for _, tab := range workspace.Tabs {
-		tabActive := tab.ID == workspace.ActiveTabID
+	for _, workspace := range workspaces {
+		workspace = workspace.ensureDefaults()
+		workspaceActive := workspace.ID == shell.Workspace.ID
 		appendItem(WorkbenchTreeItem{
-			Kind:          WorkbenchTreeKindTab,
+			Kind:          WorkbenchTreeKindWorkspace,
 			WorkspaceID:   workspace.ID,
 			WorkspaceName: workspace.Name,
-			TabID:         tab.ID,
-			TabTitle:      tab.Title,
-			PaneID:        tab.ActivePaneID,
-			Depth:         1,
-			Active:        tabActive,
-			Summary:       workbenchTabSummary(tab),
+			Depth:         0,
+			Active:        workspaceActive,
+			Summary:       workbenchWorkspaceSummary(workspace),
 		})
-		for _, pane := range tab.Panes {
-			terminalID := workbenchPaneTerminalID(root, pane)
-			displayTitle := ""
-			if pane.Kind == PaneTerminalLive && terminalID != "" {
-				displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
-			}
+		for _, tab := range workspace.Tabs {
+			tabActive := workspaceActive && tab.ID == workspace.ActiveTabID
 			appendItem(WorkbenchTreeItem{
-				Kind:          WorkbenchTreeKindPane,
+				Kind:          WorkbenchTreeKindTab,
 				WorkspaceID:   workspace.ID,
 				WorkspaceName: workspace.Name,
 				TabID:         tab.ID,
 				TabTitle:      tab.Title,
-				PaneID:        pane.ID,
-				PaneTitle:     paneTitle(pane),
-				DisplayTitle:  displayTitle,
-				PaneKind:      pane.Kind,
-				TerminalID:    terminalID,
-				Depth:         2,
-				Active:        tabActive && pane.ID == shell.ActivePaneID,
-				Summary:       workbenchPaneSummary(pane, terminalID),
+				PaneID:        tab.ActivePaneID,
+				Depth:         1,
+				Active:        tabActive,
+				Summary:       workbenchTabSummary(tab),
 			})
-		}
-		for _, floating := range tab.Floatings {
-			pane := floating.Pane
-			terminalID := workbenchFloatingTerminalID(root, floating)
-			displayTitle := ""
-			if terminalID != "" {
-				displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
+			for _, pane := range tab.Panes {
+				terminalID := workbenchPaneTerminalID(root, pane)
+				displayTitle := ""
+				if pane.Kind == PaneTerminalLive && terminalID != "" {
+					displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
+				}
+				appendItem(WorkbenchTreeItem{
+					Kind:          WorkbenchTreeKindPane,
+					WorkspaceID:   workspace.ID,
+					WorkspaceName: workspace.Name,
+					TabID:         tab.ID,
+					TabTitle:      tab.Title,
+					PaneID:        pane.ID,
+					PaneTitle:     paneTitle(pane),
+					DisplayTitle:  displayTitle,
+					PaneKind:      pane.Kind,
+					TerminalID:    terminalID,
+					Depth:         2,
+					Active:        tabActive && pane.ID == shell.ActivePaneID,
+					Summary:       workbenchPaneSummary(pane, terminalID),
+				})
 			}
-			appendItem(WorkbenchTreeItem{
-				Kind:          WorkbenchTreeKindFloating,
-				WorkspaceID:   workspace.ID,
-				WorkspaceName: workspace.Name,
-				TabID:         tab.ID,
-				TabTitle:      tab.Title,
-				FloatingID:    floating.ID,
-				FloatingTitle: floating.Title,
-				PaneID:        pane.ID,
-				PaneTitle:     paneTitle(pane),
-				DisplayTitle:  displayTitle,
-				PaneKind:      pane.Kind,
-				TerminalID:    terminalID,
-				Depth:         2,
-				Active:        tabActive && floating.Active,
-				Summary:       workbenchFloatingSummary(floating, terminalID),
-			})
+			for _, floating := range tab.Floatings {
+				pane := floating.Pane
+				terminalID := workbenchFloatingTerminalID(root, floating)
+				displayTitle := ""
+				if terminalID != "" {
+					displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
+				}
+				appendItem(WorkbenchTreeItem{
+					Kind:          WorkbenchTreeKindFloating,
+					WorkspaceID:   workspace.ID,
+					WorkspaceName: workspace.Name,
+					TabID:         tab.ID,
+					TabTitle:      tab.Title,
+					FloatingID:    floating.ID,
+					FloatingTitle: floating.Title,
+					PaneID:        pane.ID,
+					PaneTitle:     paneTitle(pane),
+					DisplayTitle:  displayTitle,
+					PaneKind:      pane.Kind,
+					TerminalID:    terminalID,
+					Depth:         2,
+					Active:        tabActive && floating.Active,
+					Summary:       workbenchFloatingSummary(floating, terminalID),
+				})
+			}
 		}
 	}
 	if len(items) > 0 {

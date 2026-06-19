@@ -305,10 +305,10 @@ func TestShellReducerWorkbenchTreeCRUDContentActionsUseWorkbenchCommands(t *test
 
 	root = state.Root{Shell: state.DefaultShell().OpenWorkbenchTree()}
 	next, effects = reducer(root, ShellContentActionMsg{ActionID: render.ActionWorkbenchNew.String()})
-	if len(next.Shell.Workspace.Tabs) != 2 || len(effects) != 1 {
-		t.Fatalf("tree new on workspace should create tab through workbench command, root=%#v effects=%#v", next, effects)
+	if len(next.Shell.Workspaces) != 2 || next.Shell.Workspace.ID == state.DefaultWorkspaceID || len(effects) != 1 {
+		t.Fatalf("tree new on workspace should create workspace through workbench command, root=%#v effects=%#v", next, effects)
 	}
-	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandTabCreate) {
+	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != string(state.WorkbenchCommandWorkspaceCreate) {
 		t.Fatalf("expected tree new persist, got %#v", msg)
 	}
 }

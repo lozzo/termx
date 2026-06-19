@@ -108,7 +108,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-tree-page"].Lines, "▸") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "日志终端") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "SNAPSHOT") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "Open  Zoom  Detach  Close") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "Open  New  Zoom  Detach  Close") ||
 		frameContains(cases["workbench-tree-page"].Lines, "[open]  Open") {
 		t.Fatalf("workbench tree smoke missing page visual contract: %#v", cases["workbench-tree-page"].Lines)
 	}
@@ -227,7 +227,7 @@ func assertDefaultVisualReviewChrome(t *testing.T, cases map[string]render.Frame
 	requiredOverlays := map[string][]string{
 		"terminal-picker":     {"┌─ terminal picker", "search:", "termx-picker shell", "running", "80x24"},
 		"terminal-pool-page":  {"┌─ terminal pool", "● open", "esc", "Terminal Pool", "⌕ search 日志", "DETAIL 日志🚀", "[kill]  Kill"},
-		"workbench-tree-page": {"┌─ Workbench Navigator", "● open", "esc", "⌕ search 日志", "TREE", "PANE", "SNAPSHOT", "Open  Zoom  Detach  Close"},
+		"workbench-tree-page": {"┌─ Workbench Navigator", "● open", "esc", "⌕ search 日志", "TREE", "PANE", "SNAPSHOT", "Open  New  Zoom  Detach  Close"},
 		"prompt-overlay":      {"┌─ prompt", "Command Prompt", "重命名"},
 		"help-overlay":        {"┌─ help", "● open", "esc", "Most used", "Terminal Pool"},
 	}

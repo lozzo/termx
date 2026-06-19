@@ -2510,6 +2510,9 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[2].PlainString(), "PANE") ||
 		!strings.Contains(content.Lines[3].PlainString(), "▸") ||
 		!strings.Contains(content.Lines[3].PlainString(), "日志终端") ||
+		!lineHasStyledANSICell(content.Lines[3], "日志终端", StyleAccent, ANSICellStyle{Underline: true}) ||
+		!strings.Contains(content.Lines[4].PlainString(), "浮窗终端") ||
+		!lineHasStyledCell(content.Lines[4], "  ", StyleSuccess) ||
 		strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
 		!strings.Contains(plainLines(content.Lines), "SNAPSHOT") ||
 		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Open") ||
@@ -2598,7 +2601,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeFloatingSnapshot(t *testing.T) {
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if !strings.Contains(content.Lines[3].PlainString(), "term-float") ||
-		!lineHasStyledCell(content.Lines[3], " 󰐕 ", StyleAccent) ||
+		!lineHasStyledCell(content.Lines[3], "  ", StyleAccent) ||
 		!lineHasStyledCell(content.Lines[3], "terminal-live", StyleSuccess) ||
 		len(content.Meta.WorkbenchSnapshots) != 1 ||
 		content.Meta.WorkbenchSnapshots[0].Panel.Title != "term-float" ||
@@ -2799,6 +2802,15 @@ func containsFooterActionID(actions []FooterActionVM, actionID string) bool {
 func lineHasStyledCell(line Line, text string, style StyleToken) bool {
 	for _, cell := range line.Cells {
 		if cell.Text == text && cell.Style == style {
+			return true
+		}
+	}
+	return false
+}
+
+func lineHasStyledANSICell(line Line, text string, style StyleToken, ansiStyle ANSICellStyle) bool {
+	for _, cell := range line.Cells {
+		if cell.Text == text && cell.Style == style && cell.ANSIStyle == ansiStyle {
 			return true
 		}
 	}

@@ -1203,7 +1203,7 @@ func reduceWorkbenchTreeNew(root state.Root, items []state.WorkbenchTreeItem) (s
 	}
 	switch selected.Kind {
 	case state.WorkbenchTreeKindWorkspace:
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell), Source: state.PaneCommandSourceMouse})
+		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandWorkspaceCreate, Name: nextWorkspaceName(root.Shell), Source: state.PaneCommandSourceMouse})
 	case state.WorkbenchTreeKindTab, state.WorkbenchTreeKindPane:
 		target := state.PaneCommandTarget{WorkspaceID: selected.WorkspaceID, TabID: selected.TabID, PaneID: selected.PaneID}
 		if target.PaneID == "" {

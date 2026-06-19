@@ -1031,7 +1031,7 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 		styledCell(prefix, prefixStyle),
 		tokenCell(workbenchTreeKindGlyph(row), workbenchTreeKindStyle(row)),
 		NewCell(" "),
-		styledCell(title, workbenchTreeTitleStyle(row)),
+		workbenchTreeTitleCell(title, row),
 		NewCell(" "),
 	}
 	cells = append(cells, workbenchTreeStatusCells(row, status)...)
@@ -1083,6 +1083,8 @@ func workbenchNavigatorHeaderLine(label string) Line {
 func workbenchNavigatorActionLine() Line {
 	return Line{Cells: []Cell{
 		styledCell("Open", StyleAccent),
+		NewCell("  "),
+		styledCell("New", StyleStatusAccent),
 		NewCell("  "),
 		styledCell("Zoom", StyleAccent),
 		NewCell("  "),
@@ -1279,13 +1281,17 @@ func workbenchNavigatorPreviewPanes(root state.Root, selected state.WorkbenchTre
 	shell := root.Shell.EnsureDefaults()
 	switch selected.Kind {
 	case state.WorkbenchTreeKindPane:
-		pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: selected.PaneID})
+		pane, ok := workbenchNavigatorPane(shell, selected.WorkspaceID, selected.TabID, selected.PaneID)
 		if !ok {
 			return nil
 		}
 		return []workbenchNavigatorPreviewPane{{Pane: pane, Active: selected.Active}}
 	case state.WorkbenchTreeKindTab:
-		tab, ok := workbenchNavigatorTab(shell.Workspace, selected.TabID)
+		workspace, ok := workbenchNavigatorWorkspace(shell, selected.WorkspaceID)
+		if !ok {
+			return nil
+		}
+		tab, ok := workbenchNavigatorTab(workspace, selected.TabID)
 		if !ok {
 			return nil
 		}
@@ -1308,7 +1314,7 @@ func workbenchNavigatorPreviewPanes(root state.Root, selected state.WorkbenchTre
 		if selected.FloatingID == "" {
 			return nil
 		}
-		floating, ok := workbenchNavigatorFloating(shell, selected.FloatingID)
+		floating, ok := workbenchNavigatorFloating(shell, selected.WorkspaceID, selected.TabID, selected.FloatingID)
 		if !ok {
 			return nil
 		}
@@ -1443,6 +1449,19 @@ func workbenchPreviewChromeStyle(active bool) StyleToken {
 	return StyleMuted
 }
 
+func workbenchNavigatorWorkspace(shell state.ShellStore, workspaceID string) (state.WorkspaceState, bool) {
+	shell = shell.EnsureDefaults()
+	if workspaceID == "" || workspaceID == shell.Workspace.ID {
+		return shell.Workspace, true
+	}
+	for _, workspace := range shell.Workspaces {
+		if workspace.ID == workspaceID {
+			return workspace, true
+		}
+	}
+	return state.WorkspaceState{}, false
+}
+
 func workbenchNavigatorTab(workspace state.WorkspaceState, tabID string) (state.TabState, bool) {
 	for _, tab := range workspace.Tabs {
 		if tab.ID == tabID {
@@ -1452,8 +1471,40 @@ func workbenchNavigatorTab(workspace state.WorkspaceState, tabID string) (state.
 	return state.TabState{}, false
 }
 
-func workbenchNavigatorFloating(shell state.ShellStore, floatingID string) (state.FloatingPaneState, bool) {
-	return shell.FloatingByID(floatingID)
+func workbenchNavigatorPane(shell state.ShellStore, workspaceID string, tabID string, paneID string) (state.PaneState, bool) {
+	workspace, ok := workbenchNavigatorWorkspace(shell, workspaceID)
+	if !ok {
+		return state.PaneState{}, false
+	}
+	for _, tab := range workspace.Tabs {
+		if tabID != "" && tab.ID != tabID {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane.ID == paneID {
+				return pane, true
+			}
+		}
+	}
+	return state.PaneState{}, false
+}
+
+func workbenchNavigatorFloating(shell state.ShellStore, workspaceID string, tabID string, floatingID string) (state.FloatingPaneState, bool) {
+	workspace, ok := workbenchNavigatorWorkspace(shell, workspaceID)
+	if !ok {
+		return state.FloatingPaneState{}, false
+	}
+	for _, tab := range workspace.Tabs {
+		if tabID != "" && tab.ID != tabID {
+			continue
+		}
+		for _, floating := range tab.Floatings {
+			if floating.ID == floatingID {
+				return floating, true
+			}
+		}
+	}
+	return state.FloatingPaneState{}, false
 }
 
 func workbenchNavigatorTokenLine(tokens []string) Line {
@@ -1603,6 +1654,7 @@ func workbenchNavigatorActionHitRegions(layout workbenchNavigatorLayout) []HitRe
 		label  string
 	}{
 		{ActionWorkbenchOpen, "Open"},
+		{ActionWorkbenchNew, "New"},
 		{ActionWorkbenchZoom, "Zoom"},
 		{ActionWorkbenchDetach, "Detach"},
 		{ActionWorkbenchDelete, "Close"},
@@ -1677,7 +1729,7 @@ func workbenchTreeKindGlyph(row state.WorkbenchTreeItem) string {
 	case state.WorkbenchTreeKindPane:
 		return ""
 	case state.WorkbenchTreeKindFloating:
-		return "󰐕"
+		return ""
 	default:
 		return workbenchTreeKindLabel(row)
 	}
@@ -1705,10 +1757,14 @@ func workbenchTreeKindStyle(row state.WorkbenchTreeItem) StyleToken {
 			return StyleForeground
 		}
 	case state.WorkbenchTreeKindFloating:
-		if row.Active {
-			return StyleAccent
+		switch row.PaneKind {
+		case state.PaneEmpty:
+			return StyleWarning
+		case state.PaneTerminalLive:
+			return StyleSuccess
+		default:
+			return StyleForeground
 		}
-		return StyleWarning
 	default:
 		return StyleForeground
 	}
@@ -1725,6 +1781,14 @@ func workbenchTreeTitleStyle(row state.WorkbenchTreeItem) StyleToken {
 		return StyleForeground
 	}
 	return StyleForeground
+}
+
+func workbenchTreeTitleCell(title string, row state.WorkbenchTreeItem) Cell {
+	cell := styledCell(title, workbenchTreeTitleStyle(row))
+	if row.Selected {
+		cell.ANSIStyle.Underline = true
+	}
+	return cell
 }
 
 func workbenchTreeStatusCells(row state.WorkbenchTreeItem, summary string) []Cell {
