@@ -209,6 +209,16 @@ func TestShellWorkbenchWorkspaceCommandsSwitchAndRename(t *testing.T) {
 	if shell.Workspace.ID != result.ID || shell.Workspace.Name != "work-2" || len(shell.Workspaces) != 2 {
 		t.Fatalf("expected new workspace active and stored, result=%#v shell=%#v", result, shell)
 	}
+	if len(shell.Workspace.Tabs) != 1 || shell.Workspace.ActiveTabID != DefaultTabID || shell.ActivePaneID == "" {
+		t.Fatalf("new workspace must create one active tab and pane slot, result=%#v shell=%#v", result, shell)
+	}
+	activeTab := shell.Workspace.Tabs[0]
+	if len(activeTab.Panes) != 1 || activeTab.RootSplit.PaneID != activeTab.Panes[0].ID {
+		t.Fatalf("new workspace must create one fullscreen pane slot, tab=%#v shell=%#v", activeTab, shell)
+	}
+	if pane := activeTab.Panes[0]; pane.Kind != PaneEmpty || pane.TerminalID != "" || pane.Title != "unconnected" || !pane.Active {
+		t.Fatalf("new workspace pane must be unconnected without terminal, pane=%#v shell=%#v", pane, shell)
+	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandWorkspaceRename, Name: "云端🚀"})
 	if result.Status != WorkbenchCommandOK || shell.Workspace.Name != "云端🚀" {
 		t.Fatalf("expected active workspace rename, result=%#v shell=%#v", result, shell)

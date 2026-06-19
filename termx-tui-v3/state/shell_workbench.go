@@ -235,8 +235,9 @@ func (store ShellStore) createWorkspace(command WorkbenchCommand) (ShellStore, W
 			ID:           DefaultTabID,
 			Title:        "main",
 			ActivePaneID: paneID,
-			Panes:        []PaneState{{ID: paneID, Title: "shell", Kind: PaneTerminalLive, Active: true}},
-			RootSplit:    SplitNode{PaneID: paneID},
+			// 新 workspace 只创建可连接槽位；terminal 必须由用户显式 attach/create。
+			Panes:     []PaneState{{ID: paneID, Title: "unconnected", Kind: PaneEmpty, Active: true}},
+			RootSplit: SplitNode{PaneID: paneID},
 		}},
 	}
 	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)

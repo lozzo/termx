@@ -2280,11 +2280,16 @@ func TestRenderVMBuilderProjectsEmptyWorkspaceWithoutSyntheticTab(t *testing.T) 
 	if len(vm.Shell.Layout.Panels) != 0 {
 		t.Fatalf("empty workspace must not create synthetic panel VMs, got %#v", vm.Shell.Layout.Panels)
 	}
-	if content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No tabs in workspace main") || !strings.Contains(content.Lines[2].PlainString(), "Create tab") {
+	plain := plainLines(content.Lines)
+	if content.Kind != ContentEmptyPane ||
+		!content.Empty ||
+		!strings.Contains(plain, "No tabs in this workspace") ||
+		!strings.Contains(plain, "Ctrl-F open terminal picker") ||
+		!strings.Contains(plain, "Ctrl-T then c create a new tab") {
 		t.Fatalf("expected empty workspace content, got %#v", content)
 	}
-	if !contentHasAction(content, "tab.create") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") {
-		t.Fatalf("expected empty workspace CTA action regions, got %#v", content.HitRegions)
+	if content.Cursor.Visible || len(content.HitRegions) != 0 {
+		t.Fatalf("empty workspace hint must not synthesize CTA hit regions, got cursor=%#v hitRegions=%#v", content.Cursor, content.HitRegions)
 	}
 }
 

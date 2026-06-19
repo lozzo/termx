@@ -168,29 +168,18 @@ func buildEmptyTabContent(tab state.TabState) ContentVM {
 	}
 }
 
-// empty workspace 表示用户已关闭全部 tab；CTA 只创建真实 tab 或进入 terminal flow。
+// empty workspace 表示用户已关闭全部 tab；这里不伪造 tab/pane，只提示全局入口。
 func buildEmptyWorkspaceContent(workspace state.WorkspaceState) ContentVM {
-	title := strings.TrimSpace(workspace.Name)
-	if title == "" {
-		title = workspace.ID
-	}
-	if title == "" {
-		title = "workspace"
-	}
 	lines := []Line{
-		{Cells: []Cell{styledCell("No tabs in workspace ", StyleMuted), styledCell(title, StyleAccent)}},
-		NewLine(""),
-		contentActionLine("tab", "Create tab"),
-		contentActionLine("create", "New terminal"),
-		contentActionLine("manager", "Terminal Pool"),
+		centeredStyledLine("No tabs in this workspace", StyleForeground),
+		centeredStyledLine("Ctrl-F open terminal picker", StyleMuted),
+		centeredStyledLine("Ctrl-T then c create a new tab", StyleMuted),
 	}
 	return ContentVM{
-		Kind:       ContentEmptyPane,
-		Lines:      lines,
-		Status:     "empty workspace: Create tab / New terminal / Terminal Pool",
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("No tabs in workspace ") + DisplayWidth(title), Shape: CursorShapeBar},
-		Empty:      true,
-		HitRegions: contentActionRegions([]ActionID{ActionTabCreate, ActionEmptyCreate, ActionEmptyManager}, "", 2),
+		Kind:   ContentEmptyPane,
+		Lines:  lines,
+		Status: "empty workspace: Ctrl-F picker / Ctrl-T c tab",
+		Empty:  true,
 	}
 }
 
