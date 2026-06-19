@@ -587,6 +587,32 @@ func TestInteractiveRuntimeWithWorkbenchPersistsWorkbenchCommand(t *testing.T) {
 	}
 }
 
+func TestInteractiveRuntimeWithWorkbenchCanSkipInitialLoad(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	watchCh := make(chan services.WorkbenchStorageEvent)
+	close(watchCh)
+	storage := &services.FakeWorkbenchStorageService{WatchCh: watchCh}
+	runtime := NewInteractiveRuntimeWithStorage(
+		state.Root{Shell: state.DefaultShell()},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+		WorkbenchDeps{Storage: storage, SkipInitialLoad: true},
+		ClipboardDeps{},
+	)
+
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(storage.Loads) != 0 {
+		t.Fatalf("skip initial load should not restore stale workbench snapshot, loads=%#v", storage.Loads)
+	}
+	if len(storage.Watches) != 1 {
+		t.Fatalf("skip initial load should keep storage watch active, watches=%#v", storage.Watches)
+	}
+}
+
 func TestInteractiveRuntimeWithWorkbenchPersistsFloatingCommand(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	watchCh := make(chan services.WorkbenchStorageEvent)

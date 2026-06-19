@@ -79,7 +79,9 @@ func NewInteractiveRuntimeWithStorage(
 	runtime.SetLogger(live.Logger)
 	if workbench.Storage != nil {
 		// 启动时先恢复 core-v2 opaque storage 中的 workbench truth，再订阅后续变化。
-		runtime.enqueue(WorkbenchStorageLoadRequestMsg{})
+		if !workbench.SkipInitialLoad {
+			runtime.enqueue(WorkbenchStorageLoadRequestMsg{})
+		}
 		runtime.enqueue(WorkbenchStorageWatchRequestMsg{})
 	}
 	if clipboard.Storage != nil {

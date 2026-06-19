@@ -3,24 +3,31 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/spf13/cobra"
 )
 
 const v3RootTerminalID = "termx-main"
 
 type v3RootRunner func(context.Context, v3RootConfig) error
+type v3RootEmptyRunner func(context.Context, v3RootEmptyConfig) error
 
 type v3RootConfig struct {
 	SocketPath string
 	LogFile    string
 }
 
+type v3RootEmptyConfig struct {
+	SocketPath string
+	LogFile    string
+}
+
 var runV3Root = runV3RootRuntime
+var runV3RootEmpty = runV3RootEmptyRuntime
 
 func runV3RootCommand(cmd *cobra.Command, socket string, logFile string) error {
 	if !isInteractiveTerminal() {
@@ -48,13 +55,20 @@ func runV3RootRuntime(ctx context.Context, cfg v3RootConfig) error {
 	if err != nil {
 		return err
 	}
-	terminalID, err := ensureV3RootTerminal(ctx, client)
+	terminalID, ok, err := selectV3RootAttachTerminal(ctx, client)
 	closeErr := client.Close()
 	if err != nil {
 		return err
 	}
 	if closeErr != nil {
 		return closeErr
+	}
+	if !ok {
+		logger.Info("starting tui-v3 root empty command", "socket", cfg.SocketPath, "log_file", logPath)
+		return runV3RootEmpty(ctx, v3RootEmptyConfig{
+			SocketPath: cfg.SocketPath,
+			LogFile:    logPath,
+		})
 	}
 	logger.Info("starting tui-v3 root command", "terminal_id", terminalID, "socket", cfg.SocketPath, "log_file", logPath)
 	return runV3Attach(ctx, v3AttachConfig{
@@ -64,38 +78,70 @@ func runV3RootRuntime(ctx context.Context, cfg v3RootConfig) error {
 	})
 }
 
-func ensureV3RootTerminal(ctx context.Context, client *protocol.Client) (string, error) {
+func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
+	logger, closeLogger, logPath, err := openLogFileLogger(cfg.LogFile)
+	if err != nil {
+		return err
+	}
+	defer closeLogger()
+	client, err := dialOrStartV3Client(cfg.SocketPath, logPath, logger)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	workbenchStorageClient, err := v3DialClient(cfg.SocketPath)
+	if err != nil {
+		return fmt.Errorf("dial core-v2 workbench storage events client: %w", err)
+	}
+	defer workbenchStorageClient.Close()
+	clipboardStorageClient, err := v3DialClient(cfg.SocketPath)
+	if err != nil {
+		return fmt.Errorf("dial core-v2 clipboard storage events client: %w", err)
+	}
+	defer clipboardStorageClient.Close()
+
+	host := newV3TerminalHost()
+	if loggerHost, ok := host.(v3TerminalHostLogger); ok {
+		loggerHost.SetLogger(logger)
+	}
+	if err := host.Enter(ctx); err != nil {
+		return err
+	}
+	defer host.Close()
+
+	cols, rows, err := host.Size()
+	if err != nil || cols <= 0 || rows <= 0 {
+		cols, rows = 80, 24
+	}
+	runtime := newV3InteractiveRuntimeWithOptions("", cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
+		SkipWorkbenchInitialLoad: true,
+	})
+	// root 空启动不创建 terminal；先让用户在 picker 中显式选择创建或连接。
+	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {
+		return err
+	}
+	for {
+		if err := runtime.Run(ctx); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
+}
+
+func selectV3RootAttachTerminal(ctx context.Context, client *protocol.Client) (string, bool, error) {
 	list, err := client.List(ctx)
 	if err != nil {
-		return "", fmt.Errorf("list core-v2 terminals for root: %w", err)
+		return "", false, fmt.Errorf("list core-v2 terminals for root: %w", err)
 	}
 	if id := selectV3RootTerminal(list.Terminals); id != "" {
-		return id, nil
+		return id, true, nil
 	}
 	// 固定 root terminal 退出后仍会留在 core 里；root 入口只选择连接对象。
 	// restart 必须是用户显式动作，不能在重进 TUI 时自动 HUP 旧 PTY。
 	if item, ok := findV3RootTerminal(list.Terminals); ok {
-		return item.ID, nil
+		return item.ID, true, nil
 	}
-	created, err := client.Create(ctx, protocol.CreateParams{
-		ID:      v3RootTerminalID,
-		Name:    "main",
-		Command: defaultV3RootCommand(),
-		Size:    defaultV3RootSize(),
-	})
-	if err != nil {
-		refreshed, listErr := client.List(ctx)
-		if listErr == nil {
-			if id := selectV3RootTerminal(refreshed.Terminals); id != "" {
-				return id, nil
-			}
-			if item, ok := findV3RootTerminal(refreshed.Terminals); ok {
-				return item.ID, nil
-			}
-		}
-		return "", fmt.Errorf("create core-v2 root terminal: %w", err)
-	}
-	return created.TerminalID, nil
+	return "", false, nil
 }
 
 func selectV3RootTerminal(items []protocol.TerminalInfo) string {
@@ -114,20 +160,4 @@ func findV3RootTerminal(items []protocol.TerminalInfo) (protocol.TerminalInfo, b
 		}
 	}
 	return protocol.TerminalInfo{}, false
-}
-
-func defaultV3RootCommand() []string {
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	return []string{shell}
-}
-
-func defaultV3RootSize() protocol.Size {
-	size := currentSize()
-	if size.Cols == 0 || size.Rows == 0 {
-		return protocol.Size{Cols: 80, Rows: 24}
-	}
-	return size
 }

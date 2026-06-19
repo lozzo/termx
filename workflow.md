@@ -284,9 +284,11 @@
 | 215E1-R111. SK workspace tab CRUD 快捷键闭环 | 完成 | `termx-tui-v3/input/`、`termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已补齐 workspace/tab CRUD 快捷键闭环：footer 键位和 input binding 对齐，Workbench Navigator 对非当前 workspace 的 tab/pane/floating 目标路由正确 |
 | 215E1-R112. SK workspace 空槽位语义 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已让新建 workspace 默认创建 main tab 和全屏 empty pane，不自动创建 terminal；无 tab workspace 只展示居中快捷键提示 |
 | 215E1-R113. SK 顶部栏鼠标交互 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已让顶部 workspace 名称点击打开 Workbench Navigator；tab/close/create 点击区域保持可用，加号改成带间距的 Nerd Font 图标 |
+| 215E1-R114. SK root 空终端启动 picker | 完成 | `termx-cli/`、`termx-tui-v3/app/`、`workflow.md` | 已让 root 入口无 core terminal 时不再自动创建 main terminal，直接启动空 workbench 并打开 terminal picker；Esc 后保留 unconnected panel，并跳过启动时旧 workbench storage load |
 
 当前下一步：
 
+- `215E1-R114 root 空终端启动 picker` 已完成：root 入口只复用现存 terminal；没有 terminal 时启动空 workbench、打开 Terminal Picker，由用户显式创建或 Esc 回到 `unconnected` pane；该空启动会跳过旧 workbench storage 初始恢复，避免没有 core terminal 时被旧连接意图覆盖。
 - `215E1-R112 workspace 空槽位语义` 已完成：新建 workspace 会得到 main tab 和全屏 `unconnected` empty pane，不自动绑定 terminal；关闭所有 tab 后只展示居中快捷键提示。
 - `215E1-R113 顶部栏鼠标交互` 已完成：workspace 名称点击打开 Workbench Navigator；tab switch/close/create 鼠标路径有 runtime 回归；创建按钮改为带间距的 `󰐕`。
 - `215E1-R111 workspace tab CRUD 快捷键闭环` 已完成：tab/workspace 模式使用 `c` 新建、`n` 下一个、`p` 上一个、`r` 重命名、`x` 关闭/删除；footer 展示和 input binding 已用测试锁定；Workbench Navigator 选中非当前 workspace 下的 tab/pane/floating 时，open/new/rename/delete/zoom 会先路由到目标 workspace。

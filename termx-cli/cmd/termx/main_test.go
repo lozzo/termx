@@ -963,16 +963,18 @@ func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 	}
 }
 
-func TestV3RootRuntimeCreatesDefaultTerminalAndAttaches(t *testing.T) {
+func TestV3RootRuntimeWithoutTerminalOpensPickerWithoutCreatingTerminal(t *testing.T) {
 	server, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
 	defer closeClient()
 	oldDial := v3DialClient
 	oldStart := startV3Daemon
 	oldRunAttach := runV3Attach
+	oldRunEmpty := runV3RootEmpty
 	t.Cleanup(func() {
 		v3DialClient = oldDial
 		startV3Daemon = oldStart
 		runV3Attach = oldRunAttach
+		runV3RootEmpty = oldRunEmpty
 	})
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
@@ -987,24 +989,24 @@ func TestV3RootRuntimeCreatesDefaultTerminalAndAttaches(t *testing.T) {
 		t.Fatal("v3 root must not auto-start when injected client is available")
 		return nil
 	}
-	var gotAttach v3AttachConfig
+	var gotEmpty v3RootEmptyConfig
 	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
-		gotAttach = cfg
+		t.Fatalf("v3 root must not attach when the core-v2 terminal list is empty, cfg=%#v", cfg)
+		return nil
+	}
+	runV3RootEmpty = func(ctx context.Context, cfg v3RootEmptyConfig) error {
+		gotEmpty = cfg
 		return nil
 	}
 
 	if err := runV3RootRuntime(context.Background(), v3RootConfig{SocketPath: socketPath, LogFile: logPath}); err != nil {
 		t.Fatalf("runV3RootRuntime returned error: %v", err)
 	}
-	if gotAttach.TerminalID != v3RootTerminalID || gotAttach.SocketPath != socketPath || gotAttach.LogFile != logPath {
-		t.Fatalf("unexpected v3 root attach config %#v", gotAttach)
+	if gotEmpty.SocketPath != socketPath || gotEmpty.LogFile != logPath {
+		t.Fatalf("unexpected v3 root empty config %#v", gotEmpty)
 	}
-	info, err := server.GetTerminal(v3RootTerminalID)
-	if err != nil {
-		t.Fatalf("expected v3 root terminal to be created: %v", err)
-	}
-	if info.Name != "main" || len(info.Command) == 0 || info.Size.Cols == 0 || info.Size.Rows == 0 {
-		t.Fatalf("unexpected v3 root terminal info %#v", info)
+	if _, err := server.GetTerminal(v3RootTerminalID); err == nil {
+		t.Fatal("v3 root should not auto-create the default terminal on empty startup")
 	}
 }
 
@@ -1093,6 +1095,35 @@ func TestV3RootRuntimeAttachesExitedRootWithoutAutoRestart(t *testing.T) {
 	}
 	if info.State != corev2.TerminalStateExited || info.ExitCode == nil || info.ExitedAt.IsZero() {
 		t.Fatalf("root entry must not auto restart or mutate exited lifecycle, got %#v", info)
+	}
+}
+
+func TestV3RootEmptyInteractiveRuntimeStartsPickerAndEscLeavesUnconnectedPane(t *testing.T) {
+	_, client, closeClient := newCoreV2ProtocolClientForCLITest(t)
+	defer closeClient()
+	host := app.NewFakeTerminalHost(8)
+	host.SetSize(100, 30)
+	runtime := newV3InteractiveRuntime("", 100, 30, client, nil, nil, host, nil)
+
+	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {
+		t.Fatalf("post terminal picker: %v", err)
+	}
+	root := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		return root.Shell.Overlay.Open && root.Shell.Overlay.Kind == tuistate.OverlayTerminalPicker
+	}, "empty root opens terminal picker")
+	if root.Session.TerminalID != "" || root.Session.Attached {
+		t.Fatalf("empty root must not attach a terminal before user choice, session=%#v", root.Session)
+	}
+
+	if err := host.SendInput(tuiinput.InputEvent{Kind: tuiinput.EventKindKey, Key: tuiinput.KeyEsc}); err != nil {
+		t.Fatalf("send esc: %v", err)
+	}
+	root = waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		pane, ok := root.Shell.EnsureDefaults().Pane(tuistate.PaneCommandTarget{PaneID: tuistate.DefaultPaneID})
+		return !root.Shell.Overlay.Open && ok && pane.Kind == tuistate.PaneEmpty && pane.TerminalID == "" && pane.Title == "unconnected"
+	}, "esc closes picker and leaves unconnected pane")
+	if root.Session.TerminalID != "" || root.Session.Attached {
+		t.Fatalf("esc from empty root picker must not attach terminal, session=%#v", root.Session)
 	}
 }
 

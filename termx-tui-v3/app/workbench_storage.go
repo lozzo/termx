@@ -14,6 +14,8 @@ type WorkbenchDeps struct {
 	Storage services.WorkbenchStorageService
 	Ref     state.WorkbenchStorageRef
 	Logger  *slog.Logger
+	// root 空 terminal 启动时不能用旧 workbench snapshot 恢复连接意图。
+	SkipInitialLoad bool
 }
 
 const (

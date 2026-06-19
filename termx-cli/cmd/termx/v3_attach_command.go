@@ -120,6 +120,14 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 }
 
 func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger) *app.AppRuntime {
+	return newV3InteractiveRuntimeWithOptions(terminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{})
+}
+
+type v3InteractiveRuntimeOptions struct {
+	SkipWorkbenchInitialLoad bool
+}
+
+func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
 	initial := state.Root{
 		Session: state.TerminalSessionStore{
 			TerminalID: terminalID,
@@ -131,6 +139,9 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 			Cols:       cols,
 			Rows:       rows,
 		},
+	}
+	if terminalID == "" {
+		initial.Shell = v3EmptyRootShell()
 	}
 	terminal := services.ProtocolTerminalServiceAdapter{Client: client}
 	core := services.ProtocolCoreClientAdapter{Client: client}
@@ -151,7 +162,18 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 		app.NewAsyncEffectRunner(),
 		app.LiveDeps{Terminal: terminal, Logger: logger},
 		app.CopyModeDeps{Core: core, Clipboard: &services.SystemClipboardService{}, Terminal: terminal, Rows: rows},
-		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger},
+		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)
+}
+
+func v3EmptyRootShell() state.ShellStore {
+	shell := state.DefaultShell()
+	shell.Workspace.Tabs[0].Panes[0] = state.PaneState{
+		ID:     state.DefaultPaneID,
+		Title:  "unconnected",
+		Kind:   state.PaneEmpty,
+		Active: true,
+	}
+	return shell
 }
