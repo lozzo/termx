@@ -181,7 +181,8 @@ type ShellFloatingCommandMsg struct {
 func (ShellFloatingCommandMsg) isMsg() {}
 
 type ShellWorkbenchCommandMsg struct {
-	Command state.WorkbenchCommand
+	Command           state.WorkbenchCommand
+	OpenPickerAfterOK bool
 }
 
 func (ShellWorkbenchCommandMsg) isMsg() {}
@@ -289,7 +290,7 @@ func NewShellReducer() Reducer {
 		case ShellFloatingCommandMsg:
 			return reduceFloatingCommand(root, msg.Command)
 		case ShellWorkbenchCommandMsg:
-			return reduceWorkbenchCommand(root, msg.Command)
+			return reduceWorkbenchCommandWithOptions(root, msg.Command, workbenchCommandOptions{OpenPickerAfterOK: msg.OpenPickerAfterOK})
 		default:
 			return root, nil
 		}
@@ -399,7 +400,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: msg.PaneID, Source: state.PaneCommandSourceMouse})
 	case render.ActionTabCreate:
 		shell := root.Shell.EnsureDefaults()
-		return reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse})
+		return reduceWorkbenchCommandWithOptions(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(shell), Source: state.PaneCommandSourceMouse}, workbenchCommandOptions{OpenPickerAfterOK: true})
 	case render.ActionTabRename:
 		root.Shell = root.Shell.OpenPrompt(tabRenamePrompt(root.Shell.EnsureDefaults()))
 		return root.Advance(), nil
@@ -619,7 +620,7 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		}
 	case render.ActionPoolAttachTab:
 		if selected, ok := terminalPoolPageItemForAction(root, msg.Row); ok {
-			next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourceKeyboard})
+			next, effects := reduceWorkbenchCommand(root, state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: nextTabName(root.Shell.EnsureDefaults()), Source: state.PaneCommandSourcePalette})
 			targetPaneID := next.Shell.EnsureDefaults().ActivePaneID
 			return next, append(effects, FuncEffect{Run: func(context.Context) Msg {
 				return TerminalPoolAttachRequestMsg{TerminalID: selected.TerminalID, TargetPaneID: targetPaneID}
@@ -1494,6 +1495,14 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 }
 
 func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (state.Root, []Effect) {
+	return reduceWorkbenchCommandWithOptions(root, command, workbenchCommandOptions{})
+}
+
+type workbenchCommandOptions struct {
+	OpenPickerAfterOK bool
+}
+
+func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchCommand, options workbenchCommandOptions) (state.Root, []Effect) {
 	previousShell := root.Shell
 	nextShell, result := root.Shell.ApplyWorkbenchCommand(command)
 	root.Shell = addWorkbenchCommandToast(nextShell, result)
@@ -1507,6 +1516,9 @@ func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (st
 	effects := []Effect{FuncEffect{Run: func(context.Context) Msg {
 		return WorkbenchStoragePersistRequestMsg{Reason: string(result.Action)}
 	}}}
+	if options.OpenPickerAfterOK && command.Action == state.WorkbenchCommandTabCreate {
+		root, effects = openTerminalPickerForCreatedTab(root, effects)
+	}
 	for _, terminalID := range result.Killed {
 		id := terminalID
 		effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
@@ -1514,6 +1526,12 @@ func reduceWorkbenchCommand(root state.Root, command state.WorkbenchCommand) (st
 		}})
 	}
 	return root.Advance(), effects
+}
+
+func openTerminalPickerForCreatedTab(root state.Root, effects []Effect) (state.Root, []Effect) {
+	root.Shell = root.Shell.OpenTerminalPicker()
+	effects = append(effects, FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }})
+	return root, effects
 }
 
 func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneCommand, targetPane state.PaneState, hasTargetPane bool) state.Root {

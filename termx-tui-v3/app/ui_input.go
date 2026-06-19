@@ -822,7 +822,9 @@ func reduceWorkbenchCommandIntent(root state.Root, intent input.Intent) (state.R
 	}
 	return root, []Effect{
 		handledEffect{},
-		FuncEffect{Run: func(context.Context) Msg { return ShellWorkbenchCommandMsg{Command: command} }},
+		FuncEffect{Run: func(context.Context) Msg {
+			return ShellWorkbenchCommandMsg{Command: command, OpenPickerAfterOK: command.Action == state.WorkbenchCommandTabCreate}
+		}},
 	}
 }
 

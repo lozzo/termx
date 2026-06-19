@@ -2520,6 +2520,8 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 
 	sendCtrl("\x14")
 	sendChar("c")
+	sendKey(input.KeyEsc)
+	sendCtrl("\x14")
 	sendChar("r")
 	sendChar("构")
 	sendKey(input.KeyEnter)
@@ -2842,6 +2844,8 @@ func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "构"},
 		{Kind: input.EventKindKey, Key: input.KeyEnter},
@@ -3237,7 +3241,11 @@ func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyEsc},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "3"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "9"},

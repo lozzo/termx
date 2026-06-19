@@ -86,6 +86,25 @@ func TestShellReducerHandlesTerminalPickerOverlaySemanticActions(t *testing.T) {
 	}
 }
 
+func TestShellReducerTabCreateOpensPickerForUnconnectedPane(t *testing.T) {
+	reducer := NewShellReducer()
+	root := state.Root{Shell: state.DefaultShell()}
+
+	root, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"}, OpenPickerAfterOK: true})
+	if len(root.Shell.Workspace.Tabs) != 2 || root.Shell.ActivePaneID == state.DefaultPaneID || root.Shell.ActivePaneID == "" {
+		t.Fatalf("tab create should activate a new unconnected pane, shell=%#v", root.Shell)
+	}
+	if overlay := root.Shell.Overlay; !overlay.Open || overlay.Kind != state.OverlayTerminalPicker || overlay.TargetID != root.Shell.ActivePaneID {
+		t.Fatalf("tab create should open picker for new pane, overlay=%#v shell=%#v", overlay, root.Shell)
+	}
+	if len(effects) != 2 {
+		t.Fatalf("tab create should persist and request terminal list, got %#v", effects)
+	}
+	if _, ok := effects[1].(FuncEffect).Run(context.Background()).(TerminalPoolListRequestMsg); !ok {
+		t.Fatalf("expected terminal list request after tab create, got %#v", effects[1])
+	}
+}
+
 func TestShellReducerHandlesPaneSplitSemanticAction(t *testing.T) {
 	reducer := NewShellReducer()
 	root := state.Root{Shell: state.DefaultShell()}
@@ -137,7 +156,7 @@ func TestShellReducerWorkbenchCommandAndPromptRename(t *testing.T) {
 	reducer := NewShellReducer()
 	root := state.Root{Shell: state.DefaultShell()}
 
-	root, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"}})
+	root, effects := reducer(root, ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs", Source: state.PaneCommandSourceTest}})
 	if len(effects) != 1 {
 		t.Fatalf("workbench command should emit persist request effect, got %#v", effects)
 	}

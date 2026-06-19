@@ -1179,10 +1179,10 @@ func TestFrameworkRendersOverlayPopupAbovePromptModal(t *testing.T) {
 }
 
 func TestFrameworkHidesCursorForEmptyTabBody(t *testing.T) {
-	shell, commandResult := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
-	if commandResult.Status != state.WorkbenchCommandOK {
-		t.Fatalf("create tab: %#v", commandResult)
-	}
+	shell := state.DefaultShell()
+	shell.Workspace.ActiveTabID = "tab-empty"
+	shell.Workspace.Tabs = append(shell.Workspace.Tabs, state.TabState{ID: "tab-empty", Title: "logs"})
+	shell.ActivePaneID = ""
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(state.Root{Shell: shell}))
 	if result.Cursor.Visible || result.Cursor.Anchor || result.CursorRect.W != 0 || result.CursorRect.H != 0 {
@@ -1190,6 +1190,25 @@ func TestFrameworkHidesCursorForEmptyTabBody(t *testing.T) {
 	}
 	if !frameContains(result.Frame(), "No panel in tab logs") {
 		t.Fatalf("expected empty tab hint in rendered frame, got %#v", result.Content)
+	}
+}
+
+func TestFrameworkDoesNotRenderMainTabForEmptyWorkspace(t *testing.T) {
+	shell, commandResult := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose})
+	if commandResult.Status != state.WorkbenchCommandOK {
+		t.Fatalf("close tab: %#v", commandResult)
+	}
+
+	frame := NewRenderer(DefaultTheme()).Render(NewRenderVMBuilder().Build(state.Root{Shell: shell}))
+	if !frameContains(frame, "No tabs in this workspace") {
+		t.Fatalf("expected empty workspace body, got %#v", frame.Lines)
+	}
+	header := frame.Lines[0]
+	if strings.Contains(header, " main x") || strings.Contains(header, " main ") || strings.Contains(header, " 1 main") {
+		t.Fatalf("empty workspace header must not render a synthetic main tab, header=%q", header)
+	}
+	if !strings.Contains(header, HeaderTabCreateText) {
+		t.Fatalf("empty workspace header should still expose tab create, header=%q", header)
 	}
 }
 

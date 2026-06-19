@@ -35,14 +35,10 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 	if workspace == "" {
 		workspace = "termx"
 	}
-	tab := header.Tab
-	if tab == "" {
-		tab = "main"
-	}
 	left := []barSegment{
 		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction(ActionFooterOpenTree.String()),
 	}
-	left = append(left, headerTabSegmentsForHeader(header, tab)...)
+	left = append(left, headerTabSegmentsForHeader(header, header.Tab)...)
 	left = append(left, barText(HeaderTabCreateText, StyleHeaderCreate, 3).withAction(ActionTabCreate.String()))
 	if header.Notice != "" {
 		if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
@@ -227,6 +223,9 @@ func footerSummarySegments(value string) []barSegment {
 
 func headerTabSegmentsForHeader(header HeaderVM, fallback string) []barSegment {
 	if len(header.Tabs) == 0 {
+		if strings.TrimSpace(fallback) == "" {
+			return nil
+		}
 		return headerTabSegments(fallback)
 	}
 	segments := make([]barSegment, 0, len(header.Tabs)*3)

@@ -69,9 +69,14 @@ func (store ShellStore) createTab(command WorkbenchCommand) (ShellStore, Workben
 	if name == "" {
 		name = id
 	}
+	paneID := id + "-pane"
 	tab := TabState{
-		ID:    id,
-		Title: name,
+		ID:           id,
+		Title:        name,
+		ActivePaneID: paneID,
+		// 新 tab 对齐 tuiv2：先创建可连接槽位，terminal 由 picker/create 后续显式绑定。
+		Panes:     []PaneState{{ID: paneID, Title: "unconnected", Kind: PaneEmpty, Active: true}},
+		RootSplit: SplitNode{PaneID: paneID},
 	}
 	store.Workspace.Tabs = append(cloneTabs(store.Workspace.Tabs), tab)
 	return store.focusTabByIndex(len(store.Workspace.Tabs) - 1), WorkbenchCommandResult{Status: WorkbenchCommandOK, Action: command.Action, ID: id}

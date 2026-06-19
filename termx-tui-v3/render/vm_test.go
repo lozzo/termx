@@ -2247,25 +2247,26 @@ func TestRenderVMBuilderRespectsActiveEmptyAndExitedPaneContent(t *testing.T) {
 	}
 }
 
-func TestRenderVMBuilderProjectsEmptyTabContentWithoutSyntheticPanel(t *testing.T) {
+func TestRenderVMBuilderProjectsCreatedTabAsUnconnectedPane(t *testing.T) {
 	shell, result := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
 	if result.Status != state.WorkbenchCommandOK {
 		t.Fatalf("create tab: %#v", result)
 	}
 
 	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
-	content := vm.Shell.Layout.BodyContent
-	if len(vm.Shell.Layout.Panels) != 0 {
-		t.Fatalf("empty tab must not create synthetic panel VMs, got %#v", vm.Shell.Layout.Panels)
+	if len(vm.Shell.Layout.Panels) != 1 {
+		t.Fatalf("created tab should project its unconnected pane, got %#v", vm.Shell.Layout.Panels)
 	}
-	if content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No panel in tab logs") || !strings.Contains(content.Lines[2].PlainString(), "Choose terminal") {
-		t.Fatalf("expected empty tab content, got %#v", content)
+	panel := vm.Shell.Layout.Panels[0]
+	content := panel.Content
+	if panel.ID == "" || panel.ID != shell.ActivePaneID || content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "unconnected") || !strings.Contains(content.Lines[1].PlainString(), "Attach existing terminal") {
+		t.Fatalf("expected created tab unconnected pane, panel=%#v shell=%#v", panel, shell)
 	}
 	if content.Cursor.Visible || content.Cursor.Anchor {
-		t.Fatalf("empty tab hint must not expose a content cursor, got %#v", content.Cursor)
+		t.Fatalf("unconnected pane must not expose a content cursor, got %#v", content.Cursor)
 	}
 	if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") {
-		t.Fatalf("expected empty tab CTA action regions, got %#v", content.HitRegions)
+		t.Fatalf("expected unconnected pane CTA action regions, got %#v", content.HitRegions)
 	}
 }
 

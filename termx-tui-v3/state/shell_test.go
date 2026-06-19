@@ -66,13 +66,14 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 	if result.Status != WorkbenchCommandOK || result.ID == "" {
 		t.Fatalf("expected tab create ok, result=%#v shell=%#v", result, shell)
 	}
-	if len(shell.Workspace.Tabs) != 2 || shell.Workspace.ActiveTabID != result.ID || shell.ActivePaneID != "" {
-		t.Fatalf("expected new empty tab active, result=%#v shell=%#v", result, shell)
+	if len(shell.Workspace.Tabs) != 2 || shell.Workspace.ActiveTabID != result.ID || shell.ActivePaneID == "" {
+		t.Fatalf("expected new unconnected tab active, result=%#v shell=%#v", result, shell)
 	}
-	if active := shell.activeTab(); len(active.Panes) != 0 || active.RootSplit.PaneID != "" || active.RootSplit.Direction != "" || len(active.RootSplit.Children) != 0 {
-		t.Fatalf("new tab must not synthesize a pane, got %#v", active)
+	if active := shell.activeTab(); len(active.Panes) != 1 || active.Panes[0].Kind != PaneEmpty || active.Panes[0].Title != "unconnected" || active.ActivePaneID != active.Panes[0].ID || active.RootSplit.PaneID != active.Panes[0].ID {
+		t.Fatalf("new tab must create an unconnected pane, got %#v", active)
 	}
 	buildTabID := result.ID
+	buildPaneID := shell.ActivePaneID
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabRename, Name: "构建🚀"})
 	if result.Status != WorkbenchCommandOK || shell.activeTab().Title != "构建🚀" {
 		t.Fatalf("expected tab rename, result=%#v tab=%#v", result, shell.activeTab())
@@ -82,7 +83,7 @@ func TestShellWorkbenchTabCommandsManageActiveTab(t *testing.T) {
 		t.Fatalf("expected previous tab active, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: buildTabID})
-	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != buildTabID || shell.ActivePaneID != "" {
+	if result.Status != WorkbenchCommandOK || shell.Workspace.ActiveTabID != buildTabID || shell.ActivePaneID != buildPaneID {
 		t.Fatalf("expected switch tab active, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: "missing-tab"})

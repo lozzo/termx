@@ -1362,8 +1362,12 @@ func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
 	if err := createRuntime.Drain(context.Background()); err != nil {
 		t.Fatalf("create drain: %v", err)
 	}
-	if tabs := createRuntime.State().Shell.EnsureDefaults().Workspace.Tabs; len(tabs) != 2 || createRuntime.State().Shell.EnsureDefaults().Workspace.ActiveTabID == state.DefaultTabID {
+	createShell := createRuntime.State().Shell.EnsureDefaults()
+	if tabs := createShell.Workspace.Tabs; len(tabs) != 2 || createShell.Workspace.ActiveTabID == state.DefaultTabID || createShell.ActivePaneID == "" {
 		t.Fatalf("tab create click should add and activate a tab, got %#v", createRuntime.State().Shell)
+	}
+	if overlay := createShell.Overlay; !overlay.Open || overlay.Kind != state.OverlayTerminalPicker || overlay.TargetID != createShell.ActivePaneID {
+		t.Fatalf("tab create click should open picker for new pane, overlay=%#v shell=%#v", overlay, createShell)
 	}
 
 	lastHost := NewFakeTerminalHost(8)
