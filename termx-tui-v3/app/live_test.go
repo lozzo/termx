@@ -2747,13 +2747,13 @@ func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
 	if !ok || panelLayer.ContentOverflow != (render.ContentOverflow{Right: true, Bottom: true}) {
 		t.Fatalf("live resize mismatch should expose chrome overflow, layer=%#v ok=%v", panelLayer, ok)
 	}
-	rightMarkerRow := panelLayer.Rect.Y
-	rightMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 1
+	rightMarkerRow := panelLayer.Rect.Y + panelLayer.Rect.H - 1
+	rightMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 2
 	if got := render.SliceCells(frame.Lines[rightMarkerRow], rightMarkerCol, rightMarkerCol+1); got != ">" {
 		t.Fatalf("right overflow marker should be shown for live resize mismatch, got %q frame=%#v", got, frame.Lines)
 	}
 	bottomMarkerRow := panelLayer.Rect.Y + panelLayer.Rect.H - 1
-	bottomMarkerCol := panelLayer.Rect.X
+	bottomMarkerCol := panelLayer.Rect.X + panelLayer.Rect.W - 1
 	if got := render.SliceCells(frame.Lines[bottomMarkerRow], bottomMarkerCol, bottomMarkerCol+1); got != "v" {
 		t.Fatalf("bottom overflow marker should be shown for live resize mismatch, got %q frame=%#v", got, frame.Lines)
 	}

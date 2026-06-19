@@ -377,8 +377,8 @@ func TestFrameworkRendersLiveExtentBoundaryDotsWithChromeOverflowMarker(t *testi
 		t.Fatalf("terminal live resize extent mismatch should expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[0], 15, 16); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on pane top-right corner, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[7], 15, 16); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") {
 		t.Fatalf("right overflow marker must not be written into content layer, got %#v", layer.Lines)
@@ -409,11 +409,41 @@ func TestFrameworkRendersTerminalLiveBottomOverflowOnPaneChrome(t *testing.T) {
 		t.Fatalf("terminal live bottom overflow should reach chrome, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[7], 0, 1); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn on pane bottom-left corner, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[7], 15, 16); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
 		t.Fatalf("bottom overflow marker must not be written into content layer, got %#v", layer.Lines)
+	}
+}
+
+func TestFrameworkRendersTerminalLiveLeftTopOverflowOnPaneChrome(t *testing.T) {
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 16, H: 8}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "pane",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{
+				Kind:   ContentTerminalLive,
+				Lines:  []Line{NewLine("abcdefghijklmn"), NewLine("opqrstuvwxyz")},
+				Extent: ContentExtent{Known: true, Cols: 14, Rows: 6},
+				Layout: ContentLayoutVM{Known: true, PanX: 2, PanY: 1},
+			},
+		}}},
+	}})
+
+	layer := firstLayer(t, result, LayerPanel)
+	if layer.ContentOverflow != (ContentOverflow{Left: true, Top: true}) {
+		t.Fatalf("terminal live pan should expose left/top chrome overflow, got %#v", layer.ContentOverflow)
+	}
+	lines := result.Lines()
+	if got := SliceCells(lines[0], 0, 2); got != "<^" {
+		t.Fatalf("left/top overflow marker should be drawn on pane top-left corner, got %q frame=%#v", got, lines)
+	}
+	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "<") ||
+		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "^") {
+		t.Fatalf("left/top overflow markers must stay out of content layer, got %#v", layer.Lines)
 	}
 }
 
@@ -540,11 +570,11 @@ func TestFrameworkRendersTerminalLiveOverflowFromBuilder(t *testing.T) {
 		t.Fatalf("terminal live extent mismatch should expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[1], 17, 18); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on pane top-right corner, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[6], 16, 17); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[6], 0, 1); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn on pane bottom-left corner, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[6], 17, 18); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane bottom-right corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||
 		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
