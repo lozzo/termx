@@ -2477,7 +2477,8 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		OpenWorkbenchTree().
 		SetWorkbenchTreeQuery("日志")
 	root := state.Root{
-		Shell: shell,
+		Shell:        shell,
+		TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady, Items: []state.TerminalPoolItem{{TerminalID: "term-main", Title: "shell", State: "running"}, {TerminalID: "term-2", Title: "日志终端", State: "running"}}},
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-2",
 			Cols:       32,
@@ -2495,7 +2496,6 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		t.Fatalf("expected workbench tree opaque overlay, got %#v", vm.Shell.Overlay)
 	}
 	if !strings.Contains(content.Lines[0].PlainString(), "⌕ search 日志") ||
-		!strings.Contains(content.Lines[1].PlainString(), "┬") ||
 		!strings.Contains(content.Lines[2].PlainString(), "TREE") ||
 		!strings.Contains(content.Lines[2].PlainString(), "PANE") ||
 		!strings.Contains(content.Lines[3].PlainString(), "▸") ||
@@ -2541,7 +2541,9 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if len(content.Meta.WorkbenchSnapshots) != 2 ||
 		content.Meta.WorkbenchSnapshots[0].Panel.ID != state.DefaultPaneID ||
+		content.Meta.WorkbenchSnapshots[0].Panel.Title != "shell" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.ID != "pane-2" ||
+		content.Meta.WorkbenchSnapshots[1].Panel.Title != "日志终端" ||
 		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[1].Panel.Content.Lines), "live snapshot row") {
 		t.Fatalf("tab selection should project every pane snapshot, meta=%#v", content.Meta)
 	}

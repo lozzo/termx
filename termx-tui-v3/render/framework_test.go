@@ -132,6 +132,7 @@ func TestFrameworkRendersWorkbenchNavigatorSnapshot(t *testing.T) {
 		!linesContain(lines, "snapshot live row") {
 		t.Fatalf("expected navigator title/tree/snapshot in frame, got %#v", lines)
 	}
+	assertWorkbenchNavigatorTFrame(t, lines)
 	assertFrameSize(t, result, 120, 36)
 	assertAllRowsWidth(t, lines, 120)
 }
@@ -1209,6 +1210,33 @@ func lineContainsLongBoxRun(lines []string, minWidth int) bool {
 		}
 	}
 	return false
+}
+
+func assertWorkbenchNavigatorTFrame(t *testing.T, lines []string) {
+	t.Helper()
+	titleRow := -1
+	for index, line := range lines {
+		if strings.Contains(line, "Workbench Navigator") {
+			titleRow = index
+			break
+		}
+	}
+	if titleRow < 0 || titleRow+2 >= len(lines) {
+		t.Fatalf("missing workbench title row in %#v", lines)
+	}
+	if !strings.Contains(lines[titleRow+1], "⌕ search") {
+		t.Fatalf("workbench search should sit directly below title border, title row=%d next=%q", titleRow, lines[titleRow+1])
+	}
+	divider := lines[titleRow+2]
+	if !strings.Contains(divider, "├") || !strings.Contains(divider, "┬") || !strings.Contains(divider, "┤") {
+		t.Fatalf("workbench divider should connect to both outer borders, got %q", divider)
+	}
+	for _, line := range lines[titleRow+3:] {
+		if strings.Contains(line, "┴") {
+			return
+		}
+	}
+	t.Fatalf("workbench vertical divider should connect to bottom border, got %#v", lines)
 }
 
 func styledLinesContain(lines []Line, value string, style StyleToken) bool {

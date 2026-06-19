@@ -231,6 +231,9 @@ func measureOverlayContentRect(overlay OverlayVM, rect Rect) Rect {
 	if overlay.Content.Kind == ContentClipboardHistory {
 		return measureClipboardHistoryContentRect(rect)
 	}
+	if overlay.Content.Kind == ContentWorkbenchTree {
+		return Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
+	}
 	if rect.W >= 48 && rect.H >= 10 {
 		return Rect{X: rect.X + 4, Y: rect.Y + 3, W: maxInt(0, rect.W-8), H: maxInt(0, rect.H-5)}
 	}

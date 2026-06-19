@@ -1066,20 +1066,12 @@ func workbenchNavigatorFullLine(line Line, layout workbenchNavigatorLayout) Line
 }
 
 func workbenchNavigatorDividerLine(layout workbenchNavigatorLayout) Line {
-	cells := []Cell{}
-	if layout.TreeWidth > 0 {
-		cells = append(cells, styledCell(strings.Repeat("─", layout.TreeWidth), StyleForeground))
-	}
-	cells = append(cells, styledCell("┬", StyleForeground))
-	if layout.RightWidth > 0 {
-		cells = append(cells, styledCell(strings.Repeat("─", layout.RightWidth), StyleForeground))
-	}
-	return Line{Cells: cells}
+	return NewLine(strings.Repeat(" ", layout.ContentWidth))
 }
 
 func workbenchNavigatorBodyLine(left Line, right Line, layout workbenchNavigatorLayout) Line {
 	cells := fitContentLine(left, layout.TreeWidth, StyleForeground).Cells
-	cells = append(cells, styledCell("│", StyleForeground))
+	cells = append(cells, NewCell(" "))
 	cells = append(cells, fitContentLine(right, layout.RightWidth, StyleForeground).Cells...)
 	return Line{Cells: cells}
 }
@@ -1354,10 +1346,7 @@ func workbenchNavigatorSnapshotRects(layout workbenchNavigatorLayout, count int)
 func workbenchNavigatorSnapshotPanelForPreview(root state.Root, preview workbenchNavigatorPreviewPane) PanelVM {
 	content := workbenchNavigatorPreviewContent(root, preview)
 	pane := preview.Pane
-	title := activePaneTitle(pane)
-	if preview.FloatingMode && strings.TrimSpace(preview.Floating.Title) != "" {
-		title = preview.Floating.Title
-	}
+	title := workbenchNavigatorPreviewTitle(root, preview)
 	chrome := buildPanelChromeVM(root, pane, preview.Active, content)
 	if preview.FloatingMode {
 		chrome = PanelChromeVM{
@@ -1375,6 +1364,42 @@ func workbenchNavigatorSnapshotPanelForPreview(root state.Root, preview workbenc
 		Content:      content,
 		Chrome:       chrome,
 	}
+}
+
+func workbenchNavigatorPreviewTitle(root state.Root, preview workbenchNavigatorPreviewPane) string {
+	if preview.FloatingMode && strings.TrimSpace(preview.Floating.Title) != "" {
+		return preview.Floating.Title
+	}
+	if terminalID := workbenchNavigatorPreviewTerminalID(root, preview); terminalID != "" {
+		return workbenchNavigatorTerminalTitle(root, terminalID)
+	}
+	return activePaneTitle(preview.Pane)
+}
+
+func workbenchNavigatorPreviewTerminalID(root state.Root, preview workbenchNavigatorPreviewPane) string {
+	if preview.FloatingMode {
+		if binding, ok := root.TerminalViews.FloatingBinding(preview.Floating.ID); ok {
+			return binding.TerminalID
+		}
+		return strings.TrimSpace(preview.Pane.TerminalID)
+	}
+	if binding, ok := root.TerminalViews.PaneBinding(preview.Pane.ID); ok {
+		return binding.TerminalID
+	}
+	return strings.TrimSpace(preview.Pane.TerminalID)
+}
+
+func workbenchNavigatorTerminalTitle(root state.Root, terminalID string) string {
+	for _, item := range root.TerminalPool.Items {
+		if item.TerminalID != terminalID {
+			continue
+		}
+		if title := strings.TrimSpace(item.Title); title != "" {
+			return title
+		}
+		break
+	}
+	return terminalID
 }
 
 func workbenchNavigatorPreviewContent(root state.Root, preview workbenchNavigatorPreviewPane) ContentVM {
