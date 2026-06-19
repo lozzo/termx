@@ -343,6 +343,25 @@ func TestUIInputReducerTerminalPickerDeleteKeysTrimQuery(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerWorkbenchTreeDeleteKeysTrimQuery(t *testing.T) {
+	reducer := NewUIInputReducer()
+	root := state.Root{Shell: state.DefaultShell().OpenWorkbenchTree().SetWorkbenchTreeQuery("日志")}
+
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyBackspace}})
+	if got := root.Shell.EnsureDefaults().Overlay.Query; got != "日" {
+		t.Fatalf("backspace should trim workbench query, got %q", got)
+	}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyDelete}})
+	if got := root.Shell.EnsureDefaults().Overlay.Query; got != "" {
+		t.Fatalf("delete should trim workbench query, got %q", got)
+	}
+	root = state.Root{Shell: root.Shell.SetWorkbenchTreeQuery("x")}
+	root, _ = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x7f"}})
+	if got := root.Shell.EnsureDefaults().Overlay.Query; got != "" {
+		t.Fatalf("DEL char should trim workbench query, got %q", got)
+	}
+}
+
 func TestUIInputReducerOpensClipboardHistoryFromCopyModeH(t *testing.T) {
 	reducer := NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Clipboard: &services.FakeClipboardService{}, Terminal: &services.FakeTerminalService{}, Rows: 20})
 	root := state.Root{

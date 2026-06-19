@@ -286,6 +286,8 @@ type WorkbenchTreeItem struct {
 	WorkspaceName string
 	TabID         string
 	TabTitle      string
+	FloatingID    string
+	FloatingTitle string
 	PaneID        string
 	PaneTitle     string
 	PaneKind      PaneKind

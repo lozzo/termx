@@ -1011,16 +1011,10 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 	marker := "  "
 	markerStyle := StyleMuted
 	prefixStyle := StyleMuted
-	kindStyle := StyleForeground
-	titleStyle := StyleForeground
-	statusStyle := StyleMuted
 	if row.Selected {
 		marker = "▸ "
 		markerStyle = StyleAccent
 		prefixStyle = StyleForeground
-		kindStyle = StyleAccent
-		titleStyle = StyleAccent
-		statusStyle = StyleForeground
 	}
 	status := row.Summary
 	if row.Active {
@@ -1031,15 +1025,16 @@ func workbenchTreeRowLine(row state.WorkbenchTreeItem) Line {
 	if row.Depth > 0 {
 		prefix = strings.Repeat("│ ", row.Depth-1) + "├─"
 	}
-	return Line{Cells: []Cell{
+	cells := []Cell{
 		styledCell(marker, markerStyle),
 		styledCell(prefix, prefixStyle),
-		tokenCell(workbenchTreeKindGlyph(row), kindStyle),
+		tokenCell(workbenchTreeKindGlyph(row), workbenchTreeKindStyle(row)),
 		NewCell(" "),
-		styledCell(title, titleStyle),
+		styledCell(title, workbenchTreeTitleStyle(row)),
 		NewCell(" "),
-		styledCell(workbenchTreeStatusTags(row, status), statusStyle),
-	}}
+	}
+	cells = append(cells, workbenchTreeStatusCells(row, status)...)
+	return Line{Cells: cells}
 }
 
 func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, query string, layout workbenchNavigatorLayout) []Line {
@@ -1131,12 +1126,13 @@ func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeI
 	case state.WorkbenchTreeKindPane:
 		return workbenchNavigatorPaneLines(root, selected, layout)
 	case state.WorkbenchTreeKindTab:
-		return []Line{
+		lines := []Line{
 			{Cells: []Cell{styledCell(title, StyleForeground)}},
 			workbenchNavigatorTokenLine([]string{selected.WorkspaceName, "tab:" + selected.TabTitle, selected.Summary}),
 			{Cells: []Cell{styledCell("PANES", StyleStrongForeground)}},
-			{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}},
 		}
+		lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
+		return lines
 	case state.WorkbenchTreeKindWorkspace:
 		return []Line{
 			{Cells: []Cell{styledCell(title, StyleForeground)}},
@@ -1145,12 +1141,17 @@ func workbenchNavigatorRightLines(root state.Root, selected state.WorkbenchTreeI
 			{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}},
 		}
 	case state.WorkbenchTreeKindFloating:
-		return []Line{
+		lines := []Line{
 			{Cells: []Cell{styledCell(title, StyleForeground)}},
 			workbenchNavigatorTokenLine([]string{selected.Summary}),
-			{Cells: []Cell{styledCell("DETAIL", StyleStrongForeground)}},
-			{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}},
+			{Cells: []Cell{styledCell("SNAPSHOT", StyleStrongForeground)}},
 		}
+		if selected.FloatingID == "" {
+			lines = append(lines, Line{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}})
+			return lines
+		}
+		lines = append(lines, workbenchNavigatorPaneSnapshotLines(layout)...)
+		return lines
 	default:
 		return []Line{{Cells: []Cell{styledCell(workbenchTreePreview(selected), StyleMuted)}}}
 	}
@@ -1221,46 +1222,186 @@ func workbenchNavigatorMeta(root state.Root, rows []state.WorkbenchTreeItem, lay
 		WorkbenchActionRow: layout.ActionRow,
 	}
 	selected, ok := selectedWorkbenchTreeItem(rows)
-	if !ok || selected.Kind != state.WorkbenchTreeKindPane {
-		return meta
-	}
-	panel, ok := workbenchNavigatorSnapshotPanel(root, selected)
 	if !ok {
 		return meta
 	}
-	meta.WorkbenchSnapshotPanel = &panel
-	meta.WorkbenchSnapshotRect = Rect{X: layout.SnapshotX, Y: layout.SnapshotY, W: layout.SnapshotWidth, H: layout.SnapshotHeight}
-	meta.WorkbenchSnapshotContent = Rect{X: layout.SnapshotX + 1, Y: layout.SnapshotY + 1, W: maxInt(0, layout.SnapshotWidth-2), H: maxInt(0, layout.SnapshotHeight-2)}
+	meta.WorkbenchSnapshots = workbenchNavigatorSnapshotVMs(root, selected, layout)
+	if len(meta.WorkbenchSnapshots) > 0 {
+		first := meta.WorkbenchSnapshots[0]
+		meta.WorkbenchSnapshotPanel = &first.Panel
+		meta.WorkbenchSnapshotRect = first.Rect
+		meta.WorkbenchSnapshotContent = first.Content
+	}
 	return meta
 }
 
-func workbenchNavigatorSnapshotPanel(root state.Root, selected state.WorkbenchTreeItem) (PanelVM, bool) {
-	pane, ok := root.Shell.EnsureDefaults().Pane(state.PaneCommandTarget{PaneID: selected.PaneID})
-	if !ok {
-		return PanelVM{}, false
-	}
-	content := workbenchNavigatorPaneContent(root, pane)
-	return PanelVM{
-		ID:           pane.ID,
-		Title:        activePaneTitle(pane),
-		Presentation: PanelPresentationCard,
-		Active:       selected.Active,
-		Content:      content,
-		Chrome:       buildPanelChromeVM(root, pane, selected.Active, content),
-	}, true
+type workbenchNavigatorPreviewPane struct {
+	Pane         state.PaneState
+	Floating     state.FloatingPaneState
+	Active       bool
+	FloatingMode bool
 }
 
-func workbenchNavigatorPaneContent(root state.Root, pane state.PaneState) ContentVM {
+func workbenchNavigatorSnapshotVMs(root state.Root, selected state.WorkbenchTreeItem, layout workbenchNavigatorLayout) []WorkbenchSnapshotVM {
+	panes := workbenchNavigatorPreviewPanes(root, selected)
+	if len(panes) == 0 {
+		return nil
+	}
+	rects := workbenchNavigatorSnapshotRects(layout, len(panes))
+	out := make([]WorkbenchSnapshotVM, 0, minInt(len(panes), len(rects)))
+	for index, preview := range panes {
+		if index >= len(rects) {
+			break
+		}
+		panel := workbenchNavigatorSnapshotPanelForPreview(root, preview)
+		rect := rects[index]
+		content := Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
+		out = append(out, WorkbenchSnapshotVM{Panel: panel, Rect: rect, Content: content})
+	}
+	return out
+}
+
+func workbenchNavigatorPreviewPanes(root state.Root, selected state.WorkbenchTreeItem) []workbenchNavigatorPreviewPane {
+	shell := root.Shell.EnsureDefaults()
+	switch selected.Kind {
+	case state.WorkbenchTreeKindPane:
+		pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: selected.PaneID})
+		if !ok {
+			return nil
+		}
+		return []workbenchNavigatorPreviewPane{{Pane: pane, Active: selected.Active}}
+	case state.WorkbenchTreeKindTab:
+		tab, ok := workbenchNavigatorTab(shell.Workspace, selected.TabID)
+		if !ok {
+			return nil
+		}
+		out := make([]workbenchNavigatorPreviewPane, 0, len(tab.Panes))
+		for _, pane := range tab.Panes {
+			out = append(out, workbenchNavigatorPreviewPane{Pane: pane, Active: selected.Active && pane.ID == tab.ActivePaneID})
+		}
+		return out
+	case state.WorkbenchTreeKindFloating:
+		if selected.FloatingID == "" {
+			return nil
+		}
+		floating, ok := workbenchNavigatorFloating(shell, selected.FloatingID)
+		if !ok {
+			return nil
+		}
+		return []workbenchNavigatorPreviewPane{{Pane: floating.Pane, Floating: floating, Active: floating.Active, FloatingMode: true}}
+	default:
+		return nil
+	}
+}
+
+func workbenchNavigatorSnapshotRects(layout workbenchNavigatorLayout, count int) []Rect {
+	if count <= 0 || layout.SnapshotWidth <= 0 || layout.SnapshotHeight <= 0 {
+		return nil
+	}
+	if count == 1 {
+		return []Rect{{X: layout.SnapshotX, Y: layout.SnapshotY, W: layout.SnapshotWidth, H: layout.SnapshotHeight}}
+	}
+	gap := 1
+	usable := layout.SnapshotHeight - gap*(count-1)
+	if usable < count*3 {
+		gap = 0
+		usable = layout.SnapshotHeight
+	}
+	base := maxInt(1, usable/count)
+	remainder := usable % count
+	rects := make([]Rect, 0, count)
+	y := layout.SnapshotY
+	for index := 0; index < count; index++ {
+		height := base
+		if index < remainder {
+			height++
+		}
+		remaining := layout.SnapshotY + layout.SnapshotHeight - y
+		if height > remaining {
+			height = remaining
+		}
+		if height <= 0 {
+			break
+		}
+		rects = append(rects, Rect{X: layout.SnapshotX, Y: y, W: layout.SnapshotWidth, H: height})
+		y += height + gap
+	}
+	return rects
+}
+
+func workbenchNavigatorSnapshotPanelForPreview(root state.Root, preview workbenchNavigatorPreviewPane) PanelVM {
+	content := workbenchNavigatorPreviewContent(root, preview)
+	pane := preview.Pane
+	title := activePaneTitle(pane)
+	if preview.FloatingMode && strings.TrimSpace(preview.Floating.Title) != "" {
+		title = preview.Floating.Title
+	}
+	chrome := buildPanelChromeVM(root, pane, preview.Active, content)
+	if preview.FloatingMode {
+		chrome = PanelChromeVM{
+			Title:    ChromeSlotVM{Text: title, Style: workbenchPreviewChromeStyle(preview.Active)},
+			State:    paneChromeStateSlot(preview.Active, content),
+			Terminal: terminalChromeVMForFloating(root, preview.Floating, content, workbenchPreviewChromeStyle(preview.Active)),
+			Actions:  defaultPaneChromeActionVMs(workbenchPreviewChromeStyle(preview.Active)),
+		}
+	}
+	return PanelVM{
+		ID:           pane.ID,
+		Title:        title,
+		Presentation: PanelPresentationCard,
+		Active:       preview.Active,
+		Content:      content,
+		Chrome:       chrome,
+	}
+}
+
+func workbenchNavigatorPreviewContent(root state.Root, preview workbenchNavigatorPreviewPane) ContentVM {
+	pane := preview.Pane
 	switch pane.Kind {
 	case state.PaneEmpty:
 		return buildEmptyPaneContent(pane)
 	case state.PaneTerminalLive:
-		surface, session := terminalContentStoresForPane(root, pane)
+		var surface state.TerminalSurfaceStore
+		var session state.TerminalSessionStore
+		if preview.FloatingMode {
+			surface = surfaceForFloating(root, preview.Floating.ID)
+			session = sessionForFloating(root, preview.Floating.ID)
+		} else {
+			surface, session = terminalContentStoresForPane(root, pane)
+		}
 		content := buildLiveContentVM(surface, session)
+		if preview.FloatingMode {
+			return contentWithFloatingLayout(root, preview.Floating, content)
+		}
 		return contentWithPaneLayout(root, pane, content)
 	default:
 		return placeholderContentForPane(pane)
 	}
+}
+
+func workbenchPreviewChromeStyle(active bool) StyleToken {
+	if active {
+		return StyleAccent
+	}
+	return StyleMuted
+}
+
+func workbenchNavigatorTab(workspace state.WorkspaceState, tabID string) (state.TabState, bool) {
+	for _, tab := range workspace.Tabs {
+		if tab.ID == tabID {
+			return tab, true
+		}
+	}
+	return state.TabState{}, false
+}
+
+func workbenchNavigatorFloating(shell state.ShellStore, floatingID string) (state.FloatingPaneState, bool) {
+	for _, floating := range shell.Floatings {
+		if floating.ID == floatingID {
+			return floating, true
+		}
+	}
+	return state.FloatingPaneState{}, false
 }
 
 func workbenchNavigatorTokenLine(tokens []string) Line {
@@ -1490,20 +1631,109 @@ func workbenchTreeKindGlyph(row state.WorkbenchTreeItem) string {
 	}
 }
 
-func workbenchTreeStatusTags(row state.WorkbenchTreeItem, summary string) string {
+func workbenchTreeKindStyle(row state.WorkbenchTreeItem) StyleToken {
+	if row.Selected {
+		return StyleAccent
+	}
+	switch row.Kind {
+	case state.WorkbenchTreeKindWorkspace:
+		return StyleStatusAccent
+	case state.WorkbenchTreeKindTab:
+		if row.Active {
+			return StyleAccent
+		}
+		return StyleStrongForeground
+	case state.WorkbenchTreeKindPane:
+		switch row.PaneKind {
+		case state.PaneEmpty:
+			return StyleWarning
+		case state.PaneTerminalLive:
+			return StyleSuccess
+		default:
+			return StyleForeground
+		}
+	case state.WorkbenchTreeKindFloating:
+		if row.Active {
+			return StyleAccent
+		}
+		return StyleWarning
+	default:
+		return StyleForeground
+	}
+}
+
+func workbenchTreeTitleStyle(row state.WorkbenchTreeItem) StyleToken {
+	if row.Selected {
+		return StyleAccent
+	}
+	if row.Active {
+		return StyleStrongForeground
+	}
+	if row.Kind == state.WorkbenchTreeKindFloating {
+		return StyleForeground
+	}
+	return StyleForeground
+}
+
+func workbenchTreeStatusCells(row state.WorkbenchTreeItem, summary string) []Cell {
 	tags := []string{}
 	if summary != "" {
-		tags = append(tags, summary)
+		tags = append(tags, strings.Fields(summary)...)
 	}
 	if row.Kind == state.WorkbenchTreeKindPane {
-		if row.TerminalID != "" {
+		if row.TerminalID != "" && !workbenchTreeHasTagPrefix(tags, "term:") {
 			tags = append(tags, "term:"+row.TerminalID)
 		}
 	}
 	if len(tags) == 0 {
-		return ""
+		return nil
 	}
-	return "[" + strings.Join(tags, "] [") + "]"
+	cells := []Cell{NewCell("[")}
+	for index, tag := range tags {
+		if index > 0 {
+			cells = append(cells, NewCell("] ["))
+		}
+		cells = append(cells, styledCell(tag, workbenchTreeStatusStyle(row, tag)))
+	}
+	cells = append(cells, NewCell("]"))
+	return cells
+}
+
+func workbenchTreeHasTagPrefix(tags []string, prefix string) bool {
+	for _, tag := range tags {
+		if strings.HasPrefix(strings.ToLower(tag), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func workbenchTreeStatusStyle(row state.WorkbenchTreeItem, tag string) StyleToken {
+	token := strings.ToLower(strings.Trim(tag, "[]"))
+	switch {
+	case token == "active":
+		return StyleAccent
+	case token == "running" || token == "attached" || token == "open" || token == string(state.PaneTerminalLive):
+		return StyleSuccess
+	case token == "exited" || token == "collapsed" || token == "pending":
+		return StyleWarning
+	case token == "error":
+		return StyleDanger
+	case token == "owner" || token == string(state.TerminalResizeRoleOwner):
+		return StyleSuccess
+	case token == "follower" || token == string(state.TerminalResizeRoleFollower) || token == "manual" || token == "auto-fit":
+		return StyleStatusAccent
+	case strings.HasPrefix(token, "term:") || strings.HasPrefix(token, "tabs:") || strings.HasPrefix(token, "panes:") || strings.HasPrefix(token, "active:") || strings.HasPrefix(token, "float:"):
+		if row.Selected {
+			return StyleForeground
+		}
+		return StyleMuted
+	default:
+		if row.Selected {
+			return StyleForeground
+		}
+		return StyleMuted
+	}
 }
 
 func workbenchTreeTitle(row state.WorkbenchTreeItem) string {
@@ -1524,6 +1754,15 @@ func workbenchTreeTitle(row state.WorkbenchTreeItem) string {
 		}
 		return row.PaneID
 	case state.WorkbenchTreeKindFloating:
+		if row.FloatingTitle != "" {
+			return row.FloatingTitle
+		}
+		if row.PaneTitle != "" {
+			return row.PaneTitle
+		}
+		if row.FloatingID != "" {
+			return row.FloatingID
+		}
 		return "floating panes"
 	default:
 		return "node"
@@ -1537,6 +1776,9 @@ func workbenchTreePath(row state.WorkbenchTreeItem) string {
 	}
 	if row.TabTitle != "" {
 		parts = append(parts, "tab:"+row.TabTitle)
+	}
+	if row.FloatingTitle != "" {
+		parts = append(parts, "floating:"+row.FloatingTitle)
 	}
 	if row.PaneTitle != "" {
 		parts = append(parts, "pane:"+row.PaneTitle)
@@ -1560,6 +1802,9 @@ func workbenchTreeTarget(row state.WorkbenchTreeItem) string {
 	case state.WorkbenchTreeKindWorkspace:
 		return "workspace:" + row.WorkspaceID
 	case state.WorkbenchTreeKindFloating:
+		if row.FloatingID != "" {
+			return "floating:" + row.FloatingID
+		}
 		return row.Summary
 	default:
 		return "-"
@@ -1568,7 +1813,10 @@ func workbenchTreeTarget(row state.WorkbenchTreeItem) string {
 
 func workbenchTreePreview(row state.WorkbenchTreeItem) string {
 	if row.Kind == state.WorkbenchTreeKindFloating {
-		return "floating overview placeholder; drag/resize belongs to later floating slice"
+		if row.FloatingID != "" {
+			return row.Summary
+		}
+		return "no floating panes"
 	}
 	if row.Summary != "" {
 		return row.Summary

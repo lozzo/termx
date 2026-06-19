@@ -1154,7 +1154,22 @@ func reduceWorkbenchTreeOpen(root state.Root, items []state.WorkbenchTreeItem) (
 			Source:   state.PaneCommandSourceMouse,
 		})
 	case state.WorkbenchTreeKindFloating:
-		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating", Body: "not implemented"})
+		if selected.FloatingID == "" {
+			root.Shell = root.Shell.OpenFloatingOverview()
+			return root.Advance(), nil
+		}
+		var result state.FloatingCommandResult
+		root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+			Action:   state.FloatingCommandSummon,
+			TargetID: selected.FloatingID,
+			Source:   state.PaneCommandSourceKeyboard,
+		})
+		if result.Status != state.FloatingCommandOK {
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "floating", Body: result.Reason})
+			return root.Advance(), nil
+		}
+		root.Shell = root.Shell.CloseOverlay()
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "floating", Body: selected.FloatingID})
 	default:
 		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "workbench.open", Body: "unknown node"})
 	}

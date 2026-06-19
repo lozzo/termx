@@ -448,6 +448,9 @@ func reduceWorkbenchTreeInput(root state.Root, event input.InputEvent) (state.Ro
 	case input.KeyEnter:
 		next, effects := reduceWorkbenchTreeOpen(root, items)
 		return next, append([]Effect{handledEffect{}}, effects...)
+	case input.KeyBackspace, input.KeyDelete:
+		root.Shell = root.Shell.SetWorkbenchTreeQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))
+		return root.Advance(), []Effect{handledEffect{}}
 	case input.KeyChar:
 		if isBackspaceEvent(event) {
 			root.Shell = root.Shell.SetWorkbenchTreeQuery(trimLastRune(root.Shell.EnsureDefaults().Overlay.Query))

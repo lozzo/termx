@@ -2528,11 +2528,62 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	if content.Cursor.Row != 0 || content.Meta.WorkbenchActionRow != len(content.Lines)-1 {
 		t.Fatalf("expected workbench cursor on search row and action row at footer, cursor=%#v meta=%#v lines=%d", content.Cursor, content.Meta, len(content.Lines))
 	}
+	if len(content.Meta.WorkbenchSnapshots) != 1 ||
+		!lineHasStyledCell(content.Lines[2], "  ", StyleAccent) ||
+		!lineHasStyledCell(content.Lines[2], "日志🚀", StyleAccent) ||
+		!lineHasStyledCell(content.Lines[2], "terminal-live", StyleSuccess) {
+		t.Fatalf("expected selected pane row styled tokens and one snapshot, meta=%#v line=%#v", content.Meta, content.Lines[2])
+	}
+
+	root.Shell = root.Shell.SetWorkbenchTreeQuery("")
+	root.Shell = root.Shell.MoveWorkbenchTreeSelection(1, len(state.WorkbenchTreeItems(root)))
+	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if len(content.Meta.WorkbenchSnapshots) != 2 ||
+		content.Meta.WorkbenchSnapshots[0].Panel.ID != state.DefaultPaneID ||
+		content.Meta.WorkbenchSnapshots[1].Panel.ID != "pane-2" ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[1].Panel.Content.Lines), "live snapshot row") {
+		t.Fatalf("tab selection should project every pane snapshot, meta=%#v", content.Meta)
+	}
 
 	root.Shell = state.DefaultShell().OpenWorkbenchTree().SetWorkbenchTreeQuery("missing")
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
 	if !content.Empty || !strings.Contains(plainLines(content.Lines), "No workbench node selected") {
 		t.Fatalf("expected empty tree page, got %#v", content)
+	}
+}
+
+func TestRenderVMBuilderProjectsWorkbenchTreeFloatingSnapshot(t *testing.T) {
+	shell := state.DefaultShell()
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float pane", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	shell = shell.OpenWorkbenchTree().SetWorkbenchTreeQuery("float pane")
+	root := state.Root{
+		Shell: shell,
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-float",
+			Cols:       32,
+			Rows:       8,
+			Lines:      []string{"floating live row"},
+		}),
+		Session: state.TerminalSessionStore{TerminalID: "term-float", Attached: true, Cols: 32, Rows: 8, State: state.TerminalLiveAttached},
+	}
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("float-1", "float-pane", "term-float", 8, 32, 8, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("float-1"), true))
+
+	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
+	if !strings.Contains(content.Lines[2].PlainString(), "float pane") ||
+		!lineHasStyledCell(content.Lines[2], " 󰐕 ", StyleAccent) ||
+		!lineHasStyledCell(content.Lines[2], "terminal-live", StyleSuccess) ||
+		len(content.Meta.WorkbenchSnapshots) != 1 ||
+		content.Meta.WorkbenchSnapshots[0].Panel.Title != "float pane" ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[0].Panel.Content.Lines), "floating live row") {
+		t.Fatalf("expected floating tree row and snapshot, line=%#v meta=%#v", content.Lines[2], content.Meta)
 	}
 }
 

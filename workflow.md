@@ -275,9 +275,11 @@
 | 215E1-R102. SK clipboard history 列宽样式回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已处理 clipboard history modal 细节：预览正文用前景色，搜索命中保持黄色，搜索标签改成 `Search:`，弹窗高度收窄，名称列默认加宽并支持鼠标拖拽分隔符调整 |
 | 215E1-R103. SK workbench navigator 快照复刻 | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已把 v3 workbench tree 改成 tuiv2 风格 Workbench Navigator：左侧展示 workspace/tab/pane 树和状态，右侧复用 v3 panel/live renderer 展示选中 pane 的实时 snapshot，并默认选中当前 active pane |
 | 215E1-R104. SK workbench navigator 真实 dump 校准 | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/`、`termx-cli/`、`workflow.md` | 已按子代理审核和 tmux `capture-pane -epN` 真实 dump 校准 Workbench Navigator：搜索光标回到 search 行，内部布局改按弹窗 content rect 分配，右侧 snapshot 放大并展示 live 内容，action 改到底部语义行；CLI 支持 `visual-snapshot --case workbench-tree-page` 直接复抓 |
+| 215E1-R105. SK workbench navigator tree 交互回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 Workbench Navigator 搜索删除、floating 节点展示、tab 多 pane snapshot 预览和 tree 图标/文本/状态着色 |
 
 当前下一步：
 
+- `215E1-R105 workbench navigator tree 交互回归` 已完成：Workbench Navigator 搜索支持 Backspace/Delete 删除；floating 会作为实际节点展示并可打开；选中 tab 时右侧按 pane 列表分配多个 live snapshot；tree 行的图标、标题和状态 token 按 active/running/floating/owner 等状态着色。
 - `215E1-R104 workbench navigator 真实 dump 校准` 已完成：新增可选择 smoke case 的 visual snapshot 入口，并用 tmux `capture-pane -epN` 产出 Workbench Navigator plain/ANSI dump；Workbench Navigator 现在按弹窗内部空间放大右侧 snapshot，搜索光标在 search 行，action 留在底部语义行。
 - `215E1-R103 workbench navigator 快照复刻` 已完成：Workbench Navigator 使用左树右快照布局；左侧展示 workspace/tab/pane 状态，右侧复用现有 panel/live renderer 展示当前 pane snapshot，打开时默认落到 active pane。
 - `215E1-R102 clipboard history 列宽样式回归` 已完成：clipboard history 预览正文改为前景色，搜索命中字母保持黄色；modal 高度改为内容驱动，名称列默认加宽并支持鼠标拖拽分隔符调整。

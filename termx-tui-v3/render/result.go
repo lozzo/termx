@@ -679,6 +679,13 @@ type ContentMetaVM struct {
 	WorkbenchSnapshotPanel   *PanelVM
 	WorkbenchSnapshotRect    Rect
 	WorkbenchSnapshotContent Rect
+	WorkbenchSnapshots       []WorkbenchSnapshotVM
+}
+
+type WorkbenchSnapshotVM struct {
+	Panel   PanelVM
+	Rect    Rect
+	Content Rect
 }
 
 // ContentExtent 表达 terminal 内容在 content rect 内实际占用的 cell 区域。

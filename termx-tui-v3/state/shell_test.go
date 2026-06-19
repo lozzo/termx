@@ -409,6 +409,19 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	if items[4].Kind != WorkbenchTreeKindFloating || items[4].Summary != "float:0" {
 		t.Fatalf("expected floating summary row, got %#v", items[4])
 	}
+	var result FloatingCommandResult
+	root.Shell, result = root.Shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-1",
+		Pane:     PaneState{ID: "float-pane", Title: "浮窗", Kind: PaneTerminalLive, TerminalID: "term-float"},
+	})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	items = WorkbenchTreeItems(root)
+	if len(items) != 5 || items[4].Kind != WorkbenchTreeKindFloating || items[4].FloatingID != "float-1" || items[4].PaneID != "float-pane" || items[4].TerminalID != "term-float" {
+		t.Fatalf("expected actual floating row, got %#v", items)
+	}
 
 	root.Shell = root.Shell.SetWorkbenchTreeQuery("日志")
 	items = WorkbenchTreeItems(root)

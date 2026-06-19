@@ -1,11 +1,27 @@
 package render
 
+import "strconv"
+
 func renderWorkbenchNavigatorSnapshotContent(c *canvas, content ContentVM, rect Rect, owner string, layer LayerKind) {
-	if content.Kind != ContentWorkbenchTree || content.Meta.WorkbenchSnapshotPanel == nil {
+	if content.Kind != ContentWorkbenchTree {
 		return
 	}
+	snapshots := content.Meta.WorkbenchSnapshots
+	if len(snapshots) == 0 && content.Meta.WorkbenchSnapshotPanel != nil {
+		snapshots = []WorkbenchSnapshotVM{{
+			Panel:   *content.Meta.WorkbenchSnapshotPanel,
+			Rect:    content.Meta.WorkbenchSnapshotRect,
+			Content: content.Meta.WorkbenchSnapshotContent,
+		}}
+	}
+	for index, snapshot := range snapshots {
+		renderWorkbenchNavigatorSnapshot(c, snapshot, rect, owner, index, layer)
+	}
+}
+
+func renderWorkbenchNavigatorSnapshot(c *canvas, snapshot WorkbenchSnapshotVM, rect Rect, owner string, index int, layer LayerKind) {
 	// 中文说明：Workbench 投影只携带 snapshot panel VM，真实嵌套绘制留在 renderer runtime 边界。
-	snapshotRect := content.Meta.WorkbenchSnapshotRect
+	snapshotRect := snapshot.Rect
 	if snapshotRect.W <= 0 || snapshotRect.H <= 0 {
 		return
 	}
@@ -19,7 +35,7 @@ func renderWorkbenchNavigatorSnapshotContent(c *canvas, content ContentVM, rect 
 	if snapshotRect.W <= 0 || snapshotRect.H <= 0 {
 		return
 	}
-	contentRect := content.Meta.WorkbenchSnapshotContent
+	contentRect := snapshot.Content
 	contentRect.X += rect.X
 	contentRect.Y += rect.Y
 	contentRect.W = minInt(contentRect.W, snapshotRect.X+snapshotRect.W-contentRect.X)
@@ -30,9 +46,9 @@ func renderWorkbenchNavigatorSnapshotContent(c *canvas, content ContentVM, rect 
 	if contentRect.H < 0 {
 		contentRect.H = 0
 	}
-	panel := *content.Meta.WorkbenchSnapshotPanel
+	panel := snapshot.Panel
 	style := paneChromeStyle(panel)
-	ownerID := owner + ":workbench-snapshot:" + panel.ID
+	ownerID := owner + ":workbench-snapshot:" + panel.ID + ":" + strconv.Itoa(index)
 	c.drawStyledPaneFrame(snapshotRect, style, ownerID+":chrome", layer)
 	renderWorkbenchNavigatorSnapshotTitle(c, snapshotRect, panel, style, ownerID+":title", layer)
 	if contentRect.W > 0 && contentRect.H > 0 {
