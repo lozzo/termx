@@ -383,7 +383,7 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 	if strings.HasPrefix(frame.Lines[0], "┌") || strings.HasSuffix(frame.Lines[0], "┐") || strings.Contains(frame.Lines[0], "─┬─") {
 		t.Fatalf("top bar should be a product bar, not an outer wireframe, got %#v", frame.Lines[0])
 	}
-	if !strings.Contains(frame.Lines[0], "  main") || !strings.Contains(frame.Lines[0], "▎ 1 1 ") || !strings.Contains(frame.Lines[0], " ") || !strings.Contains(frame.Lines[0], "pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
+	if !strings.Contains(frame.Lines[0], "  main") || !strings.Contains(frame.Lines[0], "▎ 1 1 ") || !strings.Contains(frame.Lines[0], HeaderTabCreateText) || !strings.Contains(frame.Lines[0], "pane:pane-1") || !strings.Contains(frame.Lines[0], "! ok") {
 		t.Fatalf("top bar should contain tuiv2-like workspace/tab/create/notice slots, got %#v", frame.Lines[0])
 	}
 	if strings.Contains(frame.Lines[0], "[＋]") || strings.Contains(frame.Lines[0], "[ ]") || strings.Contains(frame.Lines[0], "1:1") || strings.Contains(frame.Lines[0], "×") {
@@ -400,7 +400,7 @@ func TestFrameworkRendersStyledTopAndBottomBars(t *testing.T) {
 		t.Fatalf("bottom bar should use status-bar metadata slots, got %#v", footer)
 	}
 	if !styledLinesContainText(frame.StyledLines[:1], "  main", StyleHeaderWorkspace) ||
-		!styledLinesContainText(frame.StyledLines[:1], " ", StyleHeaderCreate) ||
+		!styledLinesContainText(frame.StyledLines[:1], HeaderTabCreateText, StyleHeaderCreate) ||
 		!styledLinesContainText(frame.StyledLines[:1], "! ok", StyleStatusWarning) ||
 		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "Ctrl", StyleFooterAccent) ||
 		!styledLinesContainText(frame.StyledLines[len(frame.StyledLines)-1:], "PANE", StyleFooterMuted) {

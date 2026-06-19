@@ -266,6 +266,10 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	closeRegion := hitRegionByAction(t, plan.HitRegions, ActionTabClose.String())
 	switchRegion := hitRegionByAction(t, plan.HitRegions, ActionTabSwitch.String())
 	createRegion := hitRegionByAction(t, plan.HitRegions, ActionTabCreate.String())
+	workspaceRegion := hitRegionByAction(t, plan.HitRegions, ActionFooterOpenTree.String())
+	if workspaceRegion.Kind != HitRegionContentAction || workspaceRegion.Rect.Y != plan.Header.Y || workspaceRegion.Rect.W != DisplayWidth("  main") {
+		t.Fatalf("unexpected workspace navigator region %#v", workspaceRegion)
+	}
 	if closeRegion.Kind != HitRegionContentAction || closeRegion.Rect.Y != plan.Header.Y || closeRegion.Rect.W != DisplayWidth("") {
 		t.Fatalf("unexpected tab close region %#v", closeRegion)
 	}
@@ -275,7 +279,7 @@ func TestMeasureLayoutAddsHeaderTabActionHitRegions(t *testing.T) {
 	if switchRegion.Kind != HitRegionContentAction || switchRegion.PaneID != "tab-main" || switchRegion.Rect.Y != plan.Header.Y || switchRegion.Rect.W == 0 {
 		t.Fatalf("unexpected tab switch region %#v", switchRegion)
 	}
-	if createRegion.Kind != HitRegionContentAction || createRegion.Rect.Y != plan.Header.Y || createRegion.Rect.W != DisplayWidth(" ") {
+	if createRegion.Kind != HitRegionContentAction || createRegion.Rect.Y != plan.Header.Y || createRegion.Rect.W != DisplayWidth(HeaderTabCreateText) {
 		t.Fatalf("unexpected tab create region %#v", createRegion)
 	}
 	if closeRegion.Rect.X >= createRegion.Rect.X {

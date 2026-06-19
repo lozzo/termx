@@ -1263,6 +1263,25 @@ func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t
 }
 
 func TestAppRuntimeDispatchesHeaderTabActionHitRegions(t *testing.T) {
+	workspaceHost := NewFakeTerminalHost(8)
+	workspaceRuntime := newShellHitRuntime(state.Root{Shell: state.DefaultShell()}, workspaceHost)
+	if err := workspaceRuntime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("post workspace initial render: %v", err)
+	}
+	if err := workspaceRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("workspace initial drain: %v", err)
+	}
+	workspaceAction := frameActionHitRegion(t, lastRuntimeFrame(t, workspaceHost), render.ActionFooterOpenTree.String(), "")
+	if err := workspaceHost.SendInput(mouseEventAt(workspaceAction.Rect)); err != nil {
+		t.Fatalf("send workspace navigator click: %v", err)
+	}
+	if err := workspaceRuntime.Drain(context.Background()); err != nil {
+		t.Fatalf("workspace navigator drain: %v", err)
+	}
+	if overlay := workspaceRuntime.State().Shell.Overlay; !overlay.Open || overlay.Kind != state.OverlayWorkbenchTree {
+		t.Fatalf("workspace name click should open workbench navigator, overlay=%#v shell=%#v", overlay, workspaceRuntime.State().Shell)
+	}
+
 	closeHost := NewFakeTerminalHost(8)
 	closeShell, _ := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
 	closeRoot := state.Root{

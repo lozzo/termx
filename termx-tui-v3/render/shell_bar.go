@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const HeaderTabCreateText = "  󰐕"
+
 func renderShellFrame(c *canvas, plan LayoutPlan) {
 	// shell 默认不绘制整屏外框；边界由 pane、floating 和 overlay 各自表达。
 	_ = c
@@ -38,10 +40,10 @@ func headerLeftSegments(header HeaderVM) []barSegment {
 		tab = "main"
 	}
 	left := []barSegment{
-		barText("  "+workspace, StyleHeaderWorkspace, 1),
+		barText("  "+workspace, StyleHeaderWorkspace, 1).withAction(ActionFooterOpenTree.String()),
 	}
 	left = append(left, headerTabSegmentsForHeader(header, tab)...)
-	left = append(left, barText(" ", StyleHeaderCreate, 3).withAction(ActionTabCreate.String()))
+	left = append(left, barText(HeaderTabCreateText, StyleHeaderCreate, 3).withAction(ActionTabCreate.String()))
 	if header.Notice != "" {
 		if active := compactHeaderMeta("pane", header.ActivePane); active != "" {
 			left = append(left, headerSep(), barText(" "+active+" ", StyleStatusMuted, 4))

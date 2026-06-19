@@ -920,7 +920,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			}
 			return NoopMsg{}
 		}
-		if runtime.mouseEventHitsUI(resolution) {
+		if runtime.mouseEventHitsUI(inputMsg.Event, resolution) {
 			return NoopMsg{}
 		}
 		return msg
@@ -1294,8 +1294,11 @@ func (runtime *AppRuntime) mouseEventCanPassthrough(event input.InputEvent, reso
 	return runtime.focusOwnerMouseTrackingEnabled(resolution.FocusOwner)
 }
 
-func (runtime *AppRuntime) mouseEventHitsUI(resolution mouseHitResolution) bool {
+func (runtime *AppRuntime) mouseEventHitsUI(event input.InputEvent, resolution mouseHitResolution) bool {
 	if !resolution.HasForeground {
+		return false
+	}
+	if event.Kind == input.EventKindMouse && mouseEventIsWheel(event) {
 		return false
 	}
 	region := resolution.Foreground
@@ -1307,6 +1310,10 @@ func (runtime *AppRuntime) mouseEventHitsUI(resolution mouseHitResolution) bool 
 	default:
 		return true
 	}
+}
+
+func mouseEventIsWheel(event input.InputEvent) bool {
+	return event.Mouse == input.MouseWheelUp || event.Mouse == input.MouseWheelDown
 }
 
 func mouseForegroundAllowsTerminalPassthrough(region render.HitRegion) bool {
