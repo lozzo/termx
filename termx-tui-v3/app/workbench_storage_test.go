@@ -621,8 +621,8 @@ func TestInteractiveRuntimeWithWorkbenchPersistsFloatingCommand(t *testing.T) {
 	if len(storage.Saves) != 1 {
 		t.Fatalf("floating command should persist workbench snapshot, saves=%#v", storage.Saves)
 	}
-	if len(storage.Saves[0].Snapshot.Floatings) != 1 || !storage.Saves[0].Snapshot.Floatings[0].Collapsed {
-		t.Fatalf("persisted floating snapshot should include collapsed state, snapshot=%#v", storage.Saves[0].Snapshot.Floatings)
+	if len(storage.Saves[0].Snapshot.Workspace.Tabs[0].Floatings) != 1 || !storage.Saves[0].Snapshot.Workspace.Tabs[0].Floatings[0].Collapsed {
+		t.Fatalf("persisted tab floating snapshot should include collapsed state, snapshot=%#v", storage.Saves[0].Snapshot.Workspace.Tabs[0].Floatings)
 	}
 }
 
@@ -670,7 +670,7 @@ func TestInteractiveRuntimeFloatingAutoFitRefreshDoesNotPersist(t *testing.T) {
 		t.Fatalf("drain live surface update: %v", err)
 	}
 
-	floating := runtime.State().Shell.EnsureDefaults().Floatings[0]
+	floating := runtime.State().Shell.ActiveFloatings()[0]
 	if floating.AutoFit.Cols != 60 || floating.AutoFit.Rows != 20 || floating.Rect.W != 62 || floating.Rect.H != 22 {
 		t.Fatalf("auto-fit refresh should update floating geometry from live size, got %#v", floating)
 	}

@@ -43,6 +43,7 @@ func cloneTabs(tabs []TabState) []TabState {
 		cloned[i] = tab
 		cloned[i].Panes = clonePanes(tab.Panes)
 		cloned[i].RootSplit = cloneSplitNode(tab.RootSplit)
+		cloned[i].Floatings = cloneFloatings(tab.Floatings)
 	}
 	return cloned
 }

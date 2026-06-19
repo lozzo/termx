@@ -6,7 +6,6 @@ func cloneWorkbenchStorageSnapshot(snapshot state.WorkbenchStorageSnapshot) stat
 	clone := snapshot
 	clone.Workspace = cloneWorkspaceState(snapshot.Workspace)
 	clone.Workspaces = cloneWorkspaceStates(snapshot.Workspaces)
-	clone.Floatings = cloneFloatingPaneStates(snapshot.Floatings)
 	return clone
 }
 
@@ -43,6 +42,7 @@ func cloneTabStates(tabs []state.TabState) []state.TabState {
 		out[i] = tab
 		out[i].Panes = clonePaneStates(tab.Panes)
 		out[i].RootSplit = cloneSplitNode(tab.RootSplit)
+		out[i].Floatings = cloneFloatingPaneStates(tab.Floatings)
 	}
 	return out
 }

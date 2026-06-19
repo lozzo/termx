@@ -97,8 +97,8 @@ func (diag *runtimeDiagnostics) observeMessage(runtime *AppRuntime, msg Msg, eff
 		"root_generation", runtime.state.Generation,
 		"queue_len", runtime.queueLength(),
 		"viewport", diagnosticsViewport(runtime.state.Viewport),
-		"floatings", len(runtime.state.Shell.EnsureDefaults().Floatings),
-		"active_floating", runtime.state.Shell.EnsureDefaults().ActiveFloatingID,
+		"floatings", len(runtime.state.Shell.ActiveFloatings()),
+		"active_floating", runtime.state.Shell.ActiveFloatingID(),
 		"copy_mode", runtime.state.CopyMode.Active,
 		"copy_view", runtime.state.CopyMode.ViewID,
 		"history_rows", len(runtime.state.History.Rows),
@@ -159,7 +159,7 @@ func (diag *runtimeDiagnostics) observePatchFrame(runtime *AppRuntime, frame ren
 		"lines_ansi", len(patch.LinesANSI),
 		"lines_ansi_bytes", diagnosticsStringSliceBytes(patch.LinesANSI),
 		"copy_view", runtime.state.CopyMode.ViewID,
-		"active_floating", runtime.state.Shell.EnsureDefaults().ActiveFloatingID,
+		"active_floating", runtime.state.Shell.ActiveFloatingID(),
 		"heap_alloc", mem.HeapAlloc,
 		"heap_objects", mem.HeapObjects,
 	)
@@ -268,8 +268,8 @@ func diagnosticsRect(rect render.Rect) string {
 func floatingDiagnosticKey(root state.Root) string {
 	shell := root.Shell.EnsureDefaults()
 	var builder strings.Builder
-	builder.WriteString(shell.ActiveFloatingID)
-	for _, floating := range shell.Floatings {
+	builder.WriteString(shell.ActiveFloatingID())
+	for _, floating := range shell.ActiveFloatings() {
 		builder.WriteString("|")
 		builder.WriteString(floating.ID)
 		builder.WriteString(":")

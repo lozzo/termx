@@ -110,8 +110,8 @@ func terminalViewContentRect(root state.Root, fallbackViewport render.Rect, bind
 
 func activeTerminalViewBinding(root state.Root) (state.TerminalViewBinding, bool) {
 	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		if binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID); ok {
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		if binding, ok := root.TerminalViews.FloatingBinding(activeFloatingID); ok {
 			return binding, true
 		}
 	}
@@ -173,10 +173,11 @@ func floatingCommandMayResizeTerminal(root state.Root, command state.FloatingCom
 
 func activeFloatingHasTerminal(root state.Root) bool {
 	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID == "" {
+	activeFloatingID := shell.ActiveFloatingID()
+	if activeFloatingID == "" {
 		return false
 	}
-	binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+	binding, ok := root.TerminalViews.FloatingBinding(activeFloatingID)
 	return ok && binding.TerminalID != ""
 }
 
@@ -227,7 +228,7 @@ func terminalLayoutPlan(root state.Root, fallbackViewport render.Rect) (render.L
 
 func activeFloatingContentRectFromPlan(root state.Root, plan render.LayoutPlan, requireTerminal bool) (render.Rect, bool) {
 	shell := root.Shell.EnsureDefaults()
-	activeFloatingID := shell.ActiveFloatingID
+	activeFloatingID := shell.ActiveFloatingID()
 	if activeFloatingID == "" {
 		return render.Rect{}, false
 	}

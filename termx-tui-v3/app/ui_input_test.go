@@ -2308,7 +2308,7 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	runtime.state.History = state.HistoryStore{}
 	runtime.state.Shell.InteractionMode = state.InteractionModeNormal
 	runtime.state.Shell = runtime.state.Shell.CloseOverlay()
-	runtime.state.Shell.ActiveFloatingID = ""
+	runtime.state.Shell, _ = runtime.state.Shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandDeactivate, Source: state.PaneCommandSourceTest})
 
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
 		t.Fatalf("send copy entry: %v", err)
@@ -2459,7 +2459,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendChar("c")
 	sendKey(input.KeyEsc)
 	floatingFrame := lastFrame(t, host.Frames())
-	if len(runtime.State().Shell.Floatings) != 1 ||
+	if len(runtime.State().Shell.ActiveFloatings()) != 1 ||
 		!frameContains(floatingFrame, "unconnected") ||
 		!frameContains(floatingFrame, "Attach existing terminal") ||
 		!frameContains(floatingFrame, "["+render.DefaultPaneChromeGlyphs().Zoom+"]─["+render.DefaultPaneChromeGlyphs().Close+"]") ||
@@ -2471,8 +2471,8 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("floating close hit region should carry floating flag, got %#v", floatingClose)
 	}
 	send(mouseEventAt(floatingClose.Rect))
-	if len(runtime.State().Shell.Floatings) != 0 {
-		t.Fatalf("floating close action should remove floating pane, got %#v", runtime.State().Shell.Floatings)
+	if len(runtime.State().Shell.ActiveFloatings()) != 0 {
+		t.Fatalf("floating close action should remove floating pane, got %#v", runtime.State().Shell.ActiveFloatings())
 	}
 
 	sendCtrl("\x07")
@@ -2708,10 +2708,11 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		}
 	}
 	shell := runtime.State().Shell.EnsureDefaults()
-	if len(shell.Floatings) != 1 || !shell.Floatings[0].Active || shell.Floatings[0].Collapsed {
-		t.Fatalf("expected active restored floating, got %#v", shell.Floatings)
+	floatings := shell.ActiveFloatings()
+	if len(floatings) != 1 || !floatings[0].Active || floatings[0].Collapsed {
+		t.Fatalf("expected active restored floating, got %#v", floatings)
 	}
-	floatingRect := shell.Floatings[0].Rect
+	floatingRect := floatings[0].Rect
 	frameAfterFloating := lastFrame(t, host.Frames())
 	if frameAfterFloating.CursorRect.X < floatingRect.X+1 || frameAfterFloating.CursorRect.X >= floatingRect.X+floatingRect.W-1 ||
 		frameAfterFloating.CursorRect.Y < floatingRect.Y+1 || frameAfterFloating.CursorRect.Y >= floatingRect.Y+floatingRect.H-1 {
@@ -2721,8 +2722,8 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	if len(vmAfterFloating.Shell.Layout.Panels) == 0 || vmAfterFloating.Shell.Layout.Panels[0].Active {
 		t.Fatalf("active floating should dim tiled pane visual active state, panels=%#v floating=%#v", vmAfterFloating.Shell.Layout.Panels, vmAfterFloating.Shell.Layout.Floating)
 	}
-	if shell.Floatings[0].Rect.W <= 44 || shell.Floatings[0].Rect.H <= 12 {
-		t.Fatalf("expected keyboard resize to grow floating rect, got %#v", shell.Floatings[0].Rect)
+	if shell.ActiveFloatings()[0].Rect.W <= 44 || shell.ActiveFloatings()[0].Rect.H <= 12 {
+		t.Fatalf("expected keyboard resize to grow floating rect, got %#v", shell.ActiveFloatings()[0].Rect)
 	}
 	if len(terminal.Inputs) != 0 {
 		t.Fatalf("floating shortcuts must not leak terminal input, got %#v", terminal.Inputs)
@@ -2755,7 +2756,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 		t.Fatalf("drain floating raise: %v", err)
 	}
 	moveRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.move-drag", "floating-pane-1")
-	beforeMove := runtime.State().Shell.Floatings[0].Rect
+	beforeMove := runtime.State().Shell.ActiveFloatings()[0].Rect
 	moveStart := mouseEventAt(moveRegion.Rect)
 	moveDrag := moveStart
 	moveDrag.Mouse = input.MouseLeftDrag
@@ -2771,12 +2772,12 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 			t.Fatalf("drain floating move event %#v: %v", event, err)
 		}
 	}
-	afterMove := runtime.State().Shell.Floatings[0].Rect
+	afterMove := runtime.State().Shell.ActiveFloatings()[0].Rect
 	if afterMove.X != beforeMove.X+3 || afterMove.Y != beforeMove.Y+2 {
 		t.Fatalf("mouse move should move floating rect, before=%#v after=%#v", beforeMove, afterMove)
 	}
 	resizeRegion := frameActionHitRegion(t, lastFrame(t, host.Frames()), "floating.resize-drag", "floating-pane-1")
-	before := runtime.State().Shell.Floatings[0].Rect
+	before := runtime.State().Shell.ActiveFloatings()[0].Rect
 	resizeStart := mouseEventAt(resizeRegion.Rect)
 	resizeDrag := resizeStart
 	resizeDrag.Mouse = input.MouseLeftDrag
@@ -2792,7 +2793,7 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 			t.Fatalf("drain floating resize event %#v: %v", event, err)
 		}
 	}
-	after := runtime.State().Shell.Floatings[0].Rect
+	after := runtime.State().Shell.ActiveFloatings()[0].Rect
 	if after.W <= before.W || after.H <= before.H {
 		t.Fatalf("mouse resize should grow floating rect, before=%#v after=%#v", before, after)
 	}
@@ -2809,8 +2810,8 @@ func TestInteractiveRuntimeFloatingPaneProductFlow(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating close: %v", err)
 	}
-	if len(runtime.State().Shell.Floatings) != 0 {
-		t.Fatalf("mouse close should remove floating pane, got %#v", runtime.State().Shell.Floatings)
+	if len(runtime.State().Shell.ActiveFloatings()) != 0 {
+		t.Fatalf("mouse close should remove floating pane, got %#v", runtime.State().Shell.ActiveFloatings())
 	}
 	vmAfterClose := render.NewRenderVMBuilder().Build(runtime.State())
 	if len(vmAfterClose.Shell.Layout.Panels) == 0 || !vmAfterClose.Shell.Layout.Panels[0].Active {
@@ -2911,28 +2912,28 @@ func TestShellReducerHandlesFloatingContentActions(t *testing.T) {
 		Shell:    shell,
 		Viewport: state.ViewportStore{Valid: true, Cols: 80, Rows: 24},
 	}, ShellContentActionMsg{ActionID: "floating.resize", PaneID: "floating-1"})
-	if got := root.Shell.Floatings[0].Rect; got.W != 32 || got.H != 9 {
+	if got := root.Shell.ActiveFloatings()[0].Rect; got.W != 32 || got.H != 9 {
 		t.Fatalf("floating resize action should update rect, got %#v", got)
 	}
 	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCenter.String(), PaneID: "floating-1"})
-	if got := root.Shell.Floatings[0].Rect; got.X != 24 || got.Y != 7 {
+	if got := root.Shell.ActiveFloatings()[0].Rect; got.X != 24 || got.Y != 7 {
 		t.Fatalf("floating center action should center rect, got %#v", got)
 	}
 	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCollapse.String(), PaneID: "floating-1"})
-	if !root.Shell.Floatings[0].Collapsed {
-		t.Fatalf("floating collapse action should toggle collapsed state, got %#v", root.Shell.Floatings[0])
+	if !root.Shell.ActiveFloatings()[0].Collapsed {
+		t.Fatalf("floating collapse action should toggle collapsed state, got %#v", root.Shell.ActiveFloatings()[0])
 	}
 	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingShowAll.String()})
-	if root.Shell.Floatings[0].Collapsed {
-		t.Fatalf("floating show-all action should expand collapsed panes, got %#v", root.Shell.Floatings[0])
+	if root.Shell.ActiveFloatings()[0].Collapsed {
+		t.Fatalf("floating show-all action should expand collapsed panes, got %#v", root.Shell.ActiveFloatings()[0])
 	}
 	root, _ = reducer(root, ShellContentActionMsg{ActionID: render.ActionFloatingCollapseAll.String()})
-	if !root.Shell.Floatings[0].Collapsed {
-		t.Fatalf("floating collapse-all action should collapse all panes, got %#v", root.Shell.Floatings[0])
+	if !root.Shell.ActiveFloatings()[0].Collapsed {
+		t.Fatalf("floating collapse-all action should collapse all panes, got %#v", root.Shell.ActiveFloatings()[0])
 	}
 	root, _ = reducer(root, ShellContentActionMsg{ActionID: "floating.close", PaneID: "floating-1"})
-	if len(root.Shell.Floatings) != 0 {
-		t.Fatalf("floating close action should remove floating, got %#v", root.Shell.Floatings)
+	if len(root.Shell.ActiveFloatings()) != 0 {
+		t.Fatalf("floating close action should remove floating, got %#v", root.Shell.ActiveFloatings())
 	}
 }
 
@@ -3108,7 +3109,7 @@ func TestOverlayContentActionsUseSelectedItemsAndReducers(t *testing.T) {
 	root.TerminalPool, _ = root.TerminalPool.ApplyList(0, []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs", State: "running", Cols: 100, Rows: 30}}, "")
 
 	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionPoolAttachFloat.String(), Row: -1})
-	if len(next.Shell.Floatings) != 1 || next.Shell.ActiveFloatingID != "floating-1" {
+	if len(next.Shell.ActiveFloatings()) != 1 || next.Shell.ActiveFloatingID() != "floating-1" {
 		t.Fatalf("pool ctrl-o should create floating before attach, shell=%#v", next.Shell)
 	}
 	var requestMsg TerminalPoolAttachRequestMsg

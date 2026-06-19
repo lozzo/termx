@@ -189,7 +189,7 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	logLifecycleTrace(deps.Logger, "workbench.restore",
 		"version", msg.Result.Version,
 		"active_pane", root.Shell.ActivePaneID,
-		"active_floating", root.Shell.ActiveFloatingID,
+		"active_floating", root.Shell.ActiveFloatingID(),
 		"active_pane_kind", lifecycleActivePaneKind(root),
 		"active_terminal", lifecycleActiveTerminalID(root),
 		"terminal_views", len(root.TerminalViews.Views),
@@ -240,9 +240,9 @@ func preserveWorkbenchRuntimeTerminalViews(previous state.TerminalViewStore, res
 
 func lifecycleActivePaneKind(root state.Root) string {
 	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		for _, floating := range shell.Floatings {
-			if floating.ID == shell.ActiveFloatingID {
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		for _, floating := range shell.ActiveFloatings() {
+			if floating.ID == activeFloatingID {
 				return string(floating.Pane.Kind)
 			}
 		}
@@ -263,8 +263,8 @@ func lifecycleActiveTerminalID(root state.Root) string {
 
 func activeTerminalBinding(root state.Root) (state.TerminalViewBinding, bool) {
 	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		return root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		return root.TerminalViews.FloatingBinding(activeFloatingID)
 	}
 	return root.TerminalViews.PaneBinding(shell.ActivePaneID)
 }

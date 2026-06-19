@@ -20,11 +20,12 @@ func (store ShellStore) applyFloatingGroupCommand(command FloatingCommand) (Shel
 }
 
 func (store ShellStore) toggleAllFloatings(action FloatingCommandAction) (ShellStore, FloatingCommandResult) {
-	if len(store.Floatings) == 0 {
+	floatings := store.activeFloatings()
+	if len(floatings) == 0 {
 		return store, floatingCommandInvalid(action, "no floating")
 	}
 	hasExpanded := false
-	for _, floating := range store.Floatings {
+	for _, floating := range floatings {
 		if !floating.Collapsed {
 			hasExpanded = true
 			break
@@ -34,19 +35,21 @@ func (store ShellStore) toggleAllFloatings(action FloatingCommandAction) (ShellS
 }
 
 func (store ShellStore) setAllFloatingsCollapsed(collapsed bool, action FloatingCommandAction) (ShellStore, FloatingCommandResult) {
-	if len(store.Floatings) == 0 {
+	floatings := cloneFloatings(store.activeFloatings())
+	if len(floatings) == 0 {
 		return store, floatingCommandInvalid(action, "no floating")
 	}
-	for index := range store.Floatings {
-		store.Floatings[index].Collapsed = collapsed
+	for index := range floatings {
+		floatings[index].Collapsed = collapsed
 	}
+	activeID := ""
 	if collapsed {
-		store.ActiveFloatingID = ""
+		activeID = ""
 	} else {
-		store.ActiveFloatingID = topFloatingID(store.Floatings)
+		activeID = topFloatingID(floatings)
 	}
-	store = store.ensureFloatingDefaults()
-	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action, ID: store.ActiveFloatingID}
+	store = store.withActiveTabFloatings(floatings, activeID).EnsureDefaults()
+	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action, ID: activeID}
 }
 
 func (store ShellStore) fitFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -57,13 +60,15 @@ func (store ShellStore) fitFloating(command FloatingCommand) (ShellStore, Floati
 	if command.FitCols <= 0 || command.FitRows <= 0 {
 		return store, floatingCommandInvalid(command.Action, "fit size unavailable")
 	}
+	floatings := cloneFloatings(store.activeFloatings())
 	rect := floatingRectForContentSize(command.FitCols, command.FitRows)
 	rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
-	store.Floatings[index].Rect = rect
-	store.Floatings[index].Collapsed = false
-	store.Floatings[index].FitMode = FloatingFitManual
-	store.Floatings[index].AutoFit = FloatingAutoFitState{}
-	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
+	floatings[index].Rect = rect
+	floatings[index].Collapsed = false
+	floatings[index].FitMode = FloatingFitManual
+	floatings[index].AutoFit = FloatingAutoFitState{}
+	id := floatings[index].ID
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(id, command.Action)
 }
 
 func (store ShellStore) toggleAutoFitFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -71,11 +76,13 @@ func (store ShellStore) toggleAutoFitFloating(command FloatingCommand) (ShellSto
 	if index < 0 {
 		return store, floatingCommandInvalid(command.Action, "floating not found")
 	}
-	floating := &store.Floatings[index]
+	floatings := cloneFloatings(store.activeFloatings())
+	floating := &floatings[index]
 	if floating.FitMode == FloatingFitAuto {
 		floating.FitMode = FloatingFitManual
 		floating.AutoFit = FloatingAutoFitState{}
-		return store.focusRaiseFloating(floating.ID, command.Action)
+		id := floating.ID
+		return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(id, command.Action)
 	}
 	if command.FitCols <= 0 || command.FitRows <= 0 {
 		return store, floatingCommandInvalid(command.Action, "fit size unavailable")
@@ -85,7 +92,8 @@ func (store ShellStore) toggleAutoFitFloating(command FloatingCommand) (ShellSto
 	rect := floatingRectForContentSize(command.FitCols, command.FitRows)
 	floating.Rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
 	floating.Collapsed = false
-	return store.focusRaiseFloating(floating.ID, command.Action)
+	id := floating.ID
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(id, command.Action)
 }
 
 func (store ShellStore) refreshAutoFitFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -93,7 +101,8 @@ func (store ShellStore) refreshAutoFitFloating(command FloatingCommand) (ShellSt
 	if index < 0 {
 		return store, floatingCommandInvalid(command.Action, "floating not found")
 	}
-	floating := store.Floatings[index]
+	floatings := cloneFloatings(store.activeFloatings())
+	floating := floatings[index]
 	if floating.FitMode != FloatingFitAuto {
 		return store, floatingCommandInvalid(command.Action, "auto-fit disabled")
 	}
@@ -103,9 +112,10 @@ func (store ShellStore) refreshAutoFitFloating(command FloatingCommand) (ShellSt
 	if floating.AutoFit.Cols == command.FitCols && floating.AutoFit.Rows == command.FitRows {
 		return store, FloatingCommandResult{Status: FloatingCommandOK, Action: command.Action, ID: floating.ID}
 	}
-	store.Floatings[index].AutoFit = FloatingAutoFitState{Cols: command.FitCols, Rows: command.FitRows}
+	floatings[index].AutoFit = FloatingAutoFitState{Cols: command.FitCols, Rows: command.FitRows}
 	rect := floatingRectForContentSize(command.FitCols, command.FitRows)
-	store.Floatings[index].Rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
+	floatings[index].Rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
+	store = store.withActiveTabFloatings(floatings, store.activeFloatingID()).EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: command.Action, ID: floating.ID}
 }
 

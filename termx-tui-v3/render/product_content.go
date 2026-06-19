@@ -1289,12 +1289,19 @@ func workbenchNavigatorPreviewPanes(root state.Root, selected state.WorkbenchTre
 		if !ok {
 			return nil
 		}
-		out := make([]workbenchNavigatorPreviewPane, 0, len(tab.Panes))
+		out := make([]workbenchNavigatorPreviewPane, 0, len(tab.Panes)+len(tab.Floatings))
 		for _, pane := range tab.Panes {
 			if workbenchNavigatorPreviewTerminalID(root, workbenchNavigatorPreviewPane{Pane: pane}) == "" {
 				continue
 			}
 			out = append(out, workbenchNavigatorPreviewPane{Pane: pane, Active: selected.Active && pane.ID == tab.ActivePaneID})
+		}
+		for _, floating := range tab.Floatings {
+			preview := workbenchNavigatorPreviewPane{Pane: floating.Pane, Floating: floating, Active: selected.Active && floating.Active, FloatingMode: true}
+			if workbenchNavigatorPreviewTerminalID(root, preview) == "" {
+				continue
+			}
+			out = append(out, preview)
 		}
 		return out
 	case state.WorkbenchTreeKindFloating:
@@ -1370,11 +1377,11 @@ func workbenchNavigatorSnapshotPanelForPreview(root state.Root, preview workbenc
 }
 
 func workbenchNavigatorPreviewTitle(root state.Root, preview workbenchNavigatorPreviewPane) string {
-	if preview.FloatingMode && strings.TrimSpace(preview.Floating.Title) != "" {
-		return preview.Floating.Title
-	}
 	if terminalID := workbenchNavigatorPreviewTerminalID(root, preview); terminalID != "" {
 		return workbenchNavigatorTerminalTitle(root, terminalID)
+	}
+	if preview.FloatingMode && strings.TrimSpace(preview.Floating.Title) != "" {
+		return preview.Floating.Title
 	}
 	return activePaneTitle(preview.Pane)
 }
@@ -1446,12 +1453,7 @@ func workbenchNavigatorTab(workspace state.WorkspaceState, tabID string) (state.
 }
 
 func workbenchNavigatorFloating(shell state.ShellStore, floatingID string) (state.FloatingPaneState, bool) {
-	for _, floating := range shell.Floatings {
-		if floating.ID == floatingID {
-			return floating, true
-		}
-	}
-	return state.FloatingPaneState{}, false
+	return shell.FloatingByID(floatingID)
 }
 
 func workbenchNavigatorTokenLine(tokens []string) Line {
@@ -1807,6 +1809,9 @@ func workbenchTreeTitle(row state.WorkbenchTreeItem) string {
 		}
 		return row.PaneID
 	case state.WorkbenchTreeKindFloating:
+		if row.DisplayTitle != "" {
+			return row.DisplayTitle
+		}
 		if row.FloatingTitle != "" {
 			return row.FloatingTitle
 		}

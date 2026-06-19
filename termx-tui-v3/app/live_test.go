@@ -1612,7 +1612,7 @@ func TestMousePaneContentActivationExitsInteractionModeBeforeLiveInput(t *testin
 	}
 
 	shell = runtime.State().Shell.EnsureDefaults()
-	if shell.ActivePaneID != "pane-2" || shell.ActiveFloatingID != "" || shell.InteractionMode != state.InteractionModeNormal {
+	if shell.ActivePaneID != "pane-2" || shell.ActiveFloatingID() != "" || shell.InteractionMode != state.InteractionModeNormal {
 		t.Fatalf("content click should activate pane input mode, shell=%#v", shell)
 	}
 	if len(terminal.Inputs) != 1 || terminal.Inputs[0].TerminalID != "term-2" || terminal.Inputs[0].Channel != 2 || string(terminal.Inputs[0].Bytes) != "l" {
@@ -1716,7 +1716,7 @@ func TestMouseFloatingContentActivationExitsInteractionModeBeforeLiveInput(t *te
 	}
 
 	shell = runtime.State().Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "floating-1" || shell.InteractionMode != state.InteractionModeNormal {
+	if shell.ActiveFloatingID() != "floating-1" || shell.InteractionMode != state.InteractionModeNormal {
 		t.Fatalf("content click should activate floating input mode, shell=%#v", shell)
 	}
 	if len(terminal.Inputs) != 1 || terminal.Inputs[0].TerminalID != "term-float" || terminal.Inputs[0].Channel != 9 || string(terminal.Inputs[0].Bytes) != "f" {
@@ -1896,7 +1896,7 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 	if floatAttach.TerminalID != "term-float" || floatAttach.Cols != 28 || floatAttach.Rows != 6 {
 		t.Fatalf("floating attach should use floating content rect, got %#v", floatAttach)
 	}
-	floating := runtime.State().Shell.EnsureDefaults().Floatings[0]
+	floating := runtime.State().Shell.ActiveFloatings()[0]
 	if !floating.Active || floating.Pane.Kind != state.PaneTerminalLive || floating.Pane.TerminalID != "term-float" || runtime.State().Shell.Overlay.Open {
 		t.Fatalf("floating should bind selected terminal and close picker, floating=%#v overlay=%#v", floating, runtime.State().Shell.Overlay)
 	}
@@ -1936,8 +1936,8 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating close: %v", err)
 	}
-	if len(runtime.State().Shell.Floatings) != 0 || len(terminal.Kills) != 0 {
-		t.Fatalf("closing floating should remove window without killing terminal, floatings=%#v kills=%#v", runtime.State().Shell.Floatings, terminal.Kills)
+	if len(runtime.State().Shell.ActiveFloatings()) != 0 || len(terminal.Kills) != 0 {
+		t.Fatalf("closing floating should remove window without killing terminal, floatings=%#v kills=%#v", runtime.State().Shell.ActiveFloatings(), terminal.Kills)
 	}
 }
 
@@ -2798,8 +2798,8 @@ func TestHostResizeUsesBusinessActivePaneWhenFloatingOwnsVisualFocus(t *testing.
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating: %v", err)
 	}
-	if !runtime.State().Shell.Floatings[0].Active {
-		t.Fatalf("test expects active floating, got %#v", runtime.State().Shell.Floatings)
+	if !runtime.State().Shell.ActiveFloatings()[0].Active {
+		t.Fatalf("test expects active floating, got %#v", runtime.State().Shell.ActiveFloatings())
 	}
 	if err := host.SendResize(100, 40); err != nil {
 		t.Fatalf("send resize: %v", err)

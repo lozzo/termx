@@ -2473,23 +2473,32 @@ func TestRenderVMBuilderProjectsTerminalPoolPage(t *testing.T) {
 func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	shell := state.DefaultShell().
 		SplitActivePane(state.PaneState{ID: "pane-2", Title: "日志🚀", Kind: state.PaneTerminalLive, TerminalID: "term-2"}, state.SplitDirectionVertical).
-		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID}).
+		FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
+	var floatingResult state.FloatingCommandResult
+	shell, floatingResult = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-logs",
+		Pane:     state.PaneState{ID: "float-logs-pane", Title: "日志浮窗", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Title:    "日志浮窗",
+	})
+	if floatingResult.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", floatingResult)
+	}
+	shell = shell.
 		OpenWorkbenchTree().
 		SetWorkbenchTreeQuery("日志")
+	surfaces := state.TerminalSurfaceStore{}
+	surfaces = surfaces.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-2", Cols: 32, Rows: 8, Lines: []string{"live snapshot row"}})
+	surfaces = surfaces.ApplySnapshot(state.LiveSurfaceSnapshot{TerminalID: "term-float", Cols: 30, Rows: 7, Lines: []string{"floating snapshot row"}})
 	root := state.Root{
 		Shell:        shell,
-		TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady, Items: []state.TerminalPoolItem{{TerminalID: "term-main", Title: "shell", State: "running"}, {TerminalID: "term-2", Title: "日志终端", State: "running"}}},
-		Surface: state.TerminalSurfaceStore{
-			TerminalID: "term-2",
-			Cols:       32,
-			Rows:       8,
-			Ready:      true,
-			Lines:      []string{"live snapshot row"},
-		},
-		Session: state.TerminalSessionStore{TerminalID: "term-2", Attached: true, Cols: 32, Rows: 8, State: state.TerminalLiveAttached},
+		TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady, Items: []state.TerminalPoolItem{{TerminalID: "term-main", Title: "shell", State: "running"}, {TerminalID: "term-2", Title: "日志终端", State: "running"}, {TerminalID: "term-float", Title: "浮窗终端", State: "running"}}},
+		Surface:      surfaces,
+		Session:      state.TerminalSessionStore{TerminalID: "term-2", Attached: true, Cols: 32, Rows: 8, State: state.TerminalLiveAttached},
 	}
 	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-main")
 	root = bindTestPaneTerminal(root, "pane-2", "term-2")
+	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("float-logs", "float-logs-pane", "term-float", 8, 30, 7, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("float-logs"), true))
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := vm.Shell.Overlay.Content
@@ -2541,15 +2550,19 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	root.Shell = root.Shell.SetWorkbenchTreeQuery("")
 	root.Shell = root.Shell.MoveWorkbenchTreeSelection(1, len(state.WorkbenchTreeItems(root)))
 	content = NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if len(content.Meta.WorkbenchSnapshots) != 2 ||
+	if len(content.Meta.WorkbenchSnapshots) != 3 ||
 		content.Meta.WorkbenchSnapshots[0].Panel.ID != state.DefaultPaneID ||
 		content.Meta.WorkbenchSnapshots[0].Panel.Title != "shell" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.ID != "pane-2" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.Title != "日志终端" ||
+		content.Meta.WorkbenchSnapshots[2].Panel.ID != "float-logs-pane" ||
+		content.Meta.WorkbenchSnapshots[2].Panel.Title != "浮窗终端" ||
 		content.Meta.WorkbenchSnapshots[0].Panel.Chrome.Terminal.Title.Text != "shell" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.Chrome.Terminal.Title.Text != "日志终端" ||
-		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[1].Panel.Content.Lines), "live snapshot row") {
-		t.Fatalf("tab selection should project every pane snapshot, meta=%#v", content.Meta)
+		content.Meta.WorkbenchSnapshots[2].Panel.Chrome.Terminal.Title.Text != "浮窗终端" ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[1].Panel.Content.Lines), "live snapshot row") ||
+		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[2].Panel.Content.Lines), "floating snapshot row") {
+		t.Fatalf("tab selection should project every pane and floating snapshot, meta=%#v", content.Meta)
 	}
 
 	root.Shell = state.DefaultShell().OpenWorkbenchTree().SetWorkbenchTreeQuery("missing")
@@ -2584,11 +2597,11 @@ func TestRenderVMBuilderProjectsWorkbenchTreeFloatingSnapshot(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("float-1", "float-pane", "term-float", 8, 32, 8, state.TerminalResizeRoleFollower, "surface", state.TerminalFloatingViewID("float-1"), true))
 
 	content := NewRenderVMBuilder().Build(root).Shell.Overlay.Content
-	if !strings.Contains(content.Lines[3].PlainString(), "float pane") ||
+	if !strings.Contains(content.Lines[3].PlainString(), "term-float") ||
 		!lineHasStyledCell(content.Lines[3], " 󰐕 ", StyleAccent) ||
 		!lineHasStyledCell(content.Lines[3], "terminal-live", StyleSuccess) ||
 		len(content.Meta.WorkbenchSnapshots) != 1 ||
-		content.Meta.WorkbenchSnapshots[0].Panel.Title != "float pane" ||
+		content.Meta.WorkbenchSnapshots[0].Panel.Title != "term-float" ||
 		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[0].Panel.Content.Lines), "floating live row") {
 		t.Fatalf("expected floating tree row and snapshot, line=%#v meta=%#v", content.Lines[3], content.Meta)
 	}

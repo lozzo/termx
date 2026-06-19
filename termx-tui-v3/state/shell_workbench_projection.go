@@ -9,7 +9,7 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 	shell := root.Shell.EnsureDefaults()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	workspace := shell.Workspace
-	items := make([]WorkbenchTreeItem, 0, 2+len(workspace.Tabs)*2+len(shell.Floatings))
+	items := make([]WorkbenchTreeItem, 0, 2+len(workspace.Tabs)*3)
 	appendItem := func(item WorkbenchTreeItem) {
 		if matchesWorkbenchTreeQuery(item, query) {
 			items = append(items, item)
@@ -59,31 +59,28 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 				Summary:       workbenchPaneSummary(pane, terminalID),
 			})
 		}
-	}
-	if len(shell.Floatings) == 0 {
-		appendItem(WorkbenchTreeItem{
-			Kind:          WorkbenchTreeKindFloating,
-			WorkspaceID:   workspace.ID,
-			WorkspaceName: workspace.Name,
-			Depth:         1,
-			Summary:       "float:0",
-		})
-	} else {
-		for _, floating := range shell.Floatings {
+		for _, floating := range tab.Floatings {
 			pane := floating.Pane
-			terminalID := workbenchPaneTerminalID(root, pane)
+			terminalID := workbenchFloatingTerminalID(root, floating)
+			displayTitle := ""
+			if terminalID != "" {
+				displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
+			}
 			appendItem(WorkbenchTreeItem{
 				Kind:          WorkbenchTreeKindFloating,
 				WorkspaceID:   workspace.ID,
 				WorkspaceName: workspace.Name,
+				TabID:         tab.ID,
+				TabTitle:      tab.Title,
 				FloatingID:    floating.ID,
 				FloatingTitle: floating.Title,
 				PaneID:        pane.ID,
 				PaneTitle:     paneTitle(pane),
+				DisplayTitle:  displayTitle,
 				PaneKind:      pane.Kind,
 				TerminalID:    terminalID,
-				Depth:         1,
-				Active:        floating.Active,
+				Depth:         2,
+				Active:        tabActive && floating.Active,
 				Summary:       workbenchFloatingSummary(floating, terminalID),
 			})
 		}
@@ -99,6 +96,13 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 		items[selected].Selected = true
 	}
 	return items
+}
+
+func workbenchFloatingTerminalID(root Root, floating FloatingPaneState) string {
+	if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && binding.TerminalID != "" {
+		return binding.TerminalID
+	}
+	return workbenchPaneTerminalID(root, floating.Pane)
 }
 
 func workbenchPaneTerminalID(root Root, pane PaneState) string {
@@ -161,7 +165,10 @@ func workbenchWorkspaceSummary(workspace WorkspaceState) string {
 }
 
 func workbenchTabSummary(tab TabState) string {
-	return fmt.Sprintf("panes:%d active:%s", len(tab.Panes), tab.ActivePaneID)
+	if len(tab.Floatings) == 0 {
+		return fmt.Sprintf("panes:%d active:%s", len(tab.Panes), tab.ActivePaneID)
+	}
+	return fmt.Sprintf("panes:%d floating:%d active:%s", len(tab.Panes), len(tab.Floatings), tab.ActivePaneID)
 }
 
 func workbenchPaneSummary(pane PaneState, terminalID string) string {
@@ -173,7 +180,7 @@ func workbenchPaneSummary(pane PaneState, terminalID string) string {
 }
 
 func workbenchFloatingSummary(floating FloatingPaneState, terminalID string) string {
-	tags := []string{}
+	tags := []string{"floating"}
 	if floating.Pane.Kind != "" {
 		tags = append(tags, string(floating.Pane.Kind))
 	}

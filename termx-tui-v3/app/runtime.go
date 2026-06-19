@@ -1019,7 +1019,7 @@ func (runtime *AppRuntime) terminalInputActivationMsg(region render.HitRegion) (
 		if region.PaneID == "" {
 			return nil, false
 		}
-		if shell.ActivePaneID == region.PaneID && shell.ActiveFloatingID == "" && shell.InteractionMode == state.InteractionModeNormal {
+		if shell.ActivePaneID == region.PaneID && shell.ActiveFloatingID() == "" && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
 		return ShellActivateTerminalInputMsg{PaneID: region.PaneID}, true
@@ -1031,7 +1031,7 @@ func (runtime *AppRuntime) terminalInputActivationMsg(region render.HitRegion) (
 		if !ok {
 			return nil, false
 		}
-		if shell.ActiveFloatingID == floatingID && shell.InteractionMode == state.InteractionModeNormal {
+		if shell.ActiveFloatingID() == floatingID && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
 		return ShellActivateTerminalInputMsg{PaneID: region.PaneID, FloatingID: floatingID}, true
@@ -1157,7 +1157,7 @@ func (runtime *AppRuntime) focusMsgForOwnerRegion(region render.HitRegion) (Msg,
 			return nil, false
 		}
 		shell := runtime.state.Shell.EnsureDefaults()
-		if shell.ActiveFloatingID == floatingID && shell.InteractionMode == state.InteractionModeNormal {
+		if shell.ActiveFloatingID() == floatingID && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
 		return ShellActivateTerminalInputMsg{PaneID: region.PaneID, FloatingID: floatingID}, true
@@ -1171,16 +1171,16 @@ func (runtime *AppRuntime) focusMsgForOwner(ownerID string) (Msg, bool) {
 	}
 	shell := runtime.state.Shell.EnsureDefaults()
 	if _, ok := shell.PaneByID(ownerID); ok {
-		if shell.ActivePaneID == ownerID && shell.ActiveFloatingID == "" && shell.InteractionMode == state.InteractionModeNormal {
+		if shell.ActivePaneID == ownerID && shell.ActiveFloatingID() == "" && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
 		return ShellActivateTerminalInputMsg{PaneID: ownerID}, true
 	}
-	for _, floating := range shell.Floatings {
+	for _, floating := range shell.ActiveFloatings() {
 		if floating.ID != ownerID {
 			continue
 		}
-		if shell.ActiveFloatingID == ownerID && shell.InteractionMode == state.InteractionModeNormal {
+		if shell.ActiveFloatingID() == ownerID && shell.InteractionMode == state.InteractionModeNormal {
 			return nil, false
 		}
 		return ShellActivateTerminalInputMsg{PaneID: floating.Pane.ID, FloatingID: ownerID}, true
@@ -1208,7 +1208,7 @@ func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) b
 		return true
 	}
 	shell := runtime.state.Shell.EnsureDefaults()
-	if shell.ActivePaneID == region.PaneID && shell.ActiveFloatingID == "" && copyMode.PaneID == "" && copyMode.ViewID == "" {
+	if shell.ActivePaneID == region.PaneID && shell.ActiveFloatingID() == "" && copyMode.PaneID == "" && copyMode.ViewID == "" {
 		return true
 	}
 	return false
@@ -1324,7 +1324,7 @@ func (runtime *AppRuntime) focusOwnerMouseTrackingEnabled(region render.HitRegio
 	shell := runtime.state.Shell.EnsureDefaults()
 	switch region.Kind {
 	case render.HitRegionPaneContent:
-		if region.PaneID != shell.ActivePaneID || shell.ActiveFloatingID != "" {
+		if region.PaneID != shell.ActivePaneID || shell.ActiveFloatingID() != "" {
 			return false
 		}
 		return runtime.paneMouseTrackingEnabled(region.PaneID)
@@ -1333,7 +1333,7 @@ func (runtime *AppRuntime) focusOwnerMouseTrackingEnabled(region render.HitRegio
 			return false
 		}
 		floatingID, ok := runtime.floatingIDForPaneID(region.PaneID)
-		if !ok || floatingID != shell.ActiveFloatingID {
+		if !ok || floatingID != shell.ActiveFloatingID() {
 			return false
 		}
 		return runtime.floatingMouseTrackingEnabled(floatingID)

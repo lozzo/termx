@@ -5,9 +5,11 @@ func (store ShellStore) FloatingByPaneID(paneID string) (FloatingPaneState, bool
 		return FloatingPaneState{}, false
 	}
 	store = store.EnsureDefaults()
-	for _, floating := range store.Floatings {
-		if floating.Pane.ID == paneID {
-			return floating, true
+	for _, tab := range store.Workspace.Tabs {
+		for _, floating := range tab.Floatings {
+			if floating.Pane.ID == paneID {
+				return floating, true
+			}
 		}
 	}
 	return FloatingPaneState{}, false

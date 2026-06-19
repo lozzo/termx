@@ -46,18 +46,19 @@ func (store ShellStore) BindFloatingTerminal(id string, terminalID string) Shell
 	if index < 0 {
 		return store
 	}
-	if store.Floatings[index].Pane.ID == "" {
-		store.Floatings[index].Pane = PaneState{ID: store.Floatings[index].ID + "-pane", Title: store.Floatings[index].Title, Kind: PaneTerminalLive}
+	floatings := cloneFloatings(store.activeFloatings())
+	if floatings[index].Pane.ID == "" {
+		floatings[index].Pane = PaneState{ID: floatings[index].ID + "-pane", Title: floatings[index].Title, Kind: PaneTerminalLive}
 	}
-	store.Floatings[index].Pane.TerminalID = terminalID
-	store.Floatings[index].Pane.Kind = PaneTerminalLive
-	if store.Floatings[index].Pane.Title == "" {
-		store.Floatings[index].Pane.Title = terminalID
+	floatings[index].Pane.TerminalID = terminalID
+	floatings[index].Pane.Kind = PaneTerminalLive
+	if floatings[index].Pane.Title == "" {
+		floatings[index].Pane.Title = terminalID
 	}
-	store.Floatings[index].Active = true
-	store.ActiveFloatingID = store.Floatings[index].ID
-	store.Floatings[index].Z = store.nextFloatingZ() + 1
-	return store.ensureFloatingDefaults()
+	floatings[index].Active = true
+	activeID := floatings[index].ID
+	floatings[index].Z = store.nextFloatingZ() + 1
+	return store.withActiveTabFloatings(floatings, activeID).EnsureDefaults()
 }
 
 func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -103,9 +104,8 @@ func (store ShellStore) createFloating(command FloatingCommand) (ShellStore, Flo
 		Active:  true,
 		FitMode: FloatingFitManual,
 	}
-	store.Floatings = append(cloneFloatings(store.Floatings), floating)
-	store.ActiveFloatingID = id
-	store = store.ensureFloatingDefaults()
+	floatings := append(cloneFloatings(store.activeFloatings()), floating)
+	store = store.withActiveTabFloatings(floatings, id).EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: command.Action, ID: id}
 }
 
@@ -114,19 +114,18 @@ func (store ShellStore) focusRaiseFloating(id string, action FloatingCommandActi
 	if index < 0 {
 		return store, floatingCommandInvalid(action, "floating not found")
 	}
-	id = store.Floatings[index].ID
-	store.Floatings[index].Z = store.nextFloatingZ() + 1
-	store.ActiveFloatingID = id
-	store = store.ensureFloatingDefaults()
+	floatings := cloneFloatings(store.activeFloatings())
+	id = floatings[index].ID
+	floatings[index].Z = store.nextFloatingZ() + 1
+	store = store.withActiveTabFloatings(floatings, id).EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action, ID: id}
 }
 
 func (store ShellStore) deactivateFloating(action FloatingCommandAction) (ShellStore, FloatingCommandResult) {
-	if store.ActiveFloatingID == "" {
+	if store.activeFloatingID() == "" {
 		return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action}
 	}
-	store.ActiveFloatingID = ""
-	store = store.ensureFloatingDefaults()
+	store = store.withActiveTabFloatings(store.activeFloatings(), "").EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action}
 }
 
@@ -135,16 +134,15 @@ func (store ShellStore) closeFloating(id string) (ShellStore, FloatingCommandRes
 	if index < 0 {
 		return store, floatingCommandInvalid(FloatingCommandClose, "floating not found")
 	}
-	id = store.Floatings[index].ID
-	next := make([]FloatingPaneState, 0, len(store.Floatings)-1)
-	for i, floating := range store.Floatings {
+	floatings := store.activeFloatings()
+	id = floatings[index].ID
+	next := make([]FloatingPaneState, 0, len(floatings)-1)
+	for i, floating := range floatings {
 		if i != index {
 			next = append(next, floating)
 		}
 	}
-	store.Floatings = next
-	store.ActiveFloatingID = topFloatingID(store.Floatings)
-	store = store.ensureFloatingDefaults()
+	store = store.withActiveTabFloatings(next, topFloatingID(next)).EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: FloatingCommandClose, ID: id}
 }
 
@@ -153,9 +151,11 @@ func (store ShellStore) centerFloating(command FloatingCommand) (ShellStore, Flo
 	if index < 0 {
 		return store, floatingCommandInvalid(command.Action, "floating not found")
 	}
-	rect := store.Floatings[index].Rect
-	store.Floatings[index].Rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
-	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
+	floatings := cloneFloatings(store.activeFloatings())
+	rect := floatings[index].Rect
+	floatings[index].Rect = centerFloatingRect(rect, command.BoundsW, command.BoundsH)
+	id := floatings[index].ID
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(id, command.Action)
 }
 
 func (store ShellStore) toggleCollapseFloating(id string) (ShellStore, FloatingCommandResult) {
@@ -163,8 +163,10 @@ func (store ShellStore) toggleCollapseFloating(id string) (ShellStore, FloatingC
 	if index < 0 {
 		return store, floatingCommandInvalid(FloatingCommandToggleCollapse, "floating not found")
 	}
-	store.Floatings[index].Collapsed = !store.Floatings[index].Collapsed
-	return store.focusRaiseFloating(store.Floatings[index].ID, FloatingCommandToggleCollapse)
+	floatings := cloneFloatings(store.activeFloatings())
+	floatings[index].Collapsed = !floatings[index].Collapsed
+	targetID := floatings[index].ID
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(targetID, FloatingCommandToggleCollapse)
 }
 
 func (store ShellStore) summonFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -172,11 +174,13 @@ func (store ShellStore) summonFloating(command FloatingCommand) (ShellStore, Flo
 	if command.TargetID != "" {
 		index = store.floatingIndex(command.TargetID)
 	}
-	if index < 0 || index >= len(store.Floatings) {
+	floatings := cloneFloatings(store.activeFloatings())
+	if index < 0 || index >= len(floatings) {
 		return store, floatingCommandInvalid(command.Action, "floating not found")
 	}
-	store.Floatings[index].Collapsed = false
-	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
+	floatings[index].Collapsed = false
+	id := floatings[index].ID
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(id, command.Action)
 }
 
 func (store ShellStore) moveFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -184,13 +188,15 @@ func (store ShellStore) moveFloating(command FloatingCommand) (ShellStore, Float
 	if index < 0 {
 		return store, floatingCommandInvalid(command.Action, "floating not found")
 	}
-	rect := store.Floatings[index].Rect
+	floatings := cloneFloatings(store.activeFloatings())
+	rect := floatings[index].Rect
 	rect.X += command.DeltaX
 	rect.Y += command.DeltaY
-	store.Floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
-	store.Floatings[index].FitMode = FloatingFitManual
-	store.Floatings[index].AutoFit = FloatingAutoFitState{}
-	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
+	floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
+	floatings[index].FitMode = FloatingFitManual
+	floatings[index].AutoFit = FloatingAutoFitState{}
+	id := floatings[index].ID
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(id, command.Action)
 }
 
 func (store ShellStore) resizeFloating(command FloatingCommand) (ShellStore, FloatingCommandResult) {
@@ -198,46 +204,15 @@ func (store ShellStore) resizeFloating(command FloatingCommand) (ShellStore, Flo
 	if index < 0 {
 		return store, floatingCommandInvalid(command.Action, "floating not found")
 	}
-	rect := store.Floatings[index].Rect
+	floatings := cloneFloatings(store.activeFloatings())
+	rect := floatings[index].Rect
 	rect.W += command.DeltaW
 	rect.H += command.DeltaH
-	store.Floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
-	store.Floatings[index].FitMode = FloatingFitManual
-	store.Floatings[index].AutoFit = FloatingAutoFitState{}
-	return store.focusRaiseFloating(store.Floatings[index].ID, command.Action)
-}
-
-func (store ShellStore) floatingIndex(id string) int {
-	for index, floating := range store.Floatings {
-		if floating.ID == id {
-			return index
-		}
-	}
-	return -1
-}
-
-func (store ShellStore) floatingIndexOrActive(id string) int {
-	if id != "" {
-		return store.floatingIndex(id)
-	}
-	if store.ActiveFloatingID != "" {
-		return store.floatingIndex(store.ActiveFloatingID)
-	}
-	if len(store.Floatings) == 0 {
-		return -1
-	}
-	topID := topFloatingID(store.Floatings)
-	return store.floatingIndex(topID)
-}
-
-func (store ShellStore) nextFloatingZ() int {
-	maxZ := 0
-	for _, floating := range store.Floatings {
-		if floating.Z > maxZ {
-			maxZ = floating.Z
-		}
-	}
-	return maxZ
+	floatings[index].Rect = clampFloatingRect(rect, command.BoundsW, command.BoundsH)
+	floatings[index].FitMode = FloatingFitManual
+	floatings[index].AutoFit = FloatingAutoFitState{}
+	id := floatings[index].ID
+	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(id, command.Action)
 }
 
 func topFloatingID(floatings []FloatingPaneState) string {

@@ -2,8 +2,10 @@ package state
 
 func FloatingOverviewItems(root Root) []FloatingOverviewItem {
 	shell := root.Shell.EnsureDefaults()
-	items := make([]FloatingOverviewItem, 0, len(shell.Floatings))
-	for _, floating := range shell.Floatings {
+	floatings := shell.ActiveFloatings()
+	activeFloatingID := shell.ActiveFloatingID()
+	items := make([]FloatingOverviewItem, 0, len(floatings))
+	for _, floating := range floatings {
 		item := FloatingOverviewItem{
 			FloatingID: floating.ID,
 			Title:      floating.Title,
@@ -12,7 +14,7 @@ func FloatingOverviewItems(root Root) []FloatingOverviewItem {
 			TerminalID: pickerTerminalID(root, floating.Pane),
 			Rect:       floating.Rect,
 			Z:          floating.Z,
-			Active:     floating.ID == shell.ActiveFloatingID,
+			Active:     floating.ID == activeFloatingID,
 			Collapsed:  floating.Collapsed,
 			FitMode:    floating.FitMode,
 		}

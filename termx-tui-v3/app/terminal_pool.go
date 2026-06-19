@@ -323,11 +323,8 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
 	if msg.TargetFloatingID != "" {
 		paneID := msg.TargetPaneID
-		for _, floating := range root.Shell.Floatings {
-			if floating.ID == msg.TargetFloatingID {
-				paneID = floating.Pane.ID
-				break
-			}
+		if floating, ok := root.Shell.FloatingByID(msg.TargetFloatingID); ok {
+			paneID = floating.Pane.ID
 		}
 		root = invalidateCopyModeForTerminalRebind(root, paneID, result.ViewID, result.TerminalID)
 		root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView(msg.TargetFloatingID, paneID, result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID, result.CanResize))
@@ -685,11 +682,8 @@ func terminalPoolTargetFromRequest(root state.Root, paneID string, floatingID st
 	shell := root.Shell.EnsureDefaults()
 	if floatingID != "" {
 		paneID = ""
-		for _, floating := range shell.Floatings {
-			if floating.ID == floatingID {
-				paneID = floating.Pane.ID
-				break
-			}
+		if floating, ok := shell.FloatingByID(floatingID); ok {
+			paneID = floating.Pane.ID
 		}
 		return terminalPoolTarget{PaneID: paneID, FloatingID: floatingID, ViewID: state.TerminalFloatingViewID(floatingID)}, true
 	}

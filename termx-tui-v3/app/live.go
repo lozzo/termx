@@ -541,9 +541,11 @@ func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 			}
 		}
 	}
-	for _, floating := range shell.Floatings {
-		if state.TerminalFloatingViewID(floating.ID) == viewID {
-			return true
+	for _, tab := range shell.Workspace.Tabs {
+		for _, floating := range tab.Floatings {
+			if state.TerminalFloatingViewID(floating.ID) == viewID {
+				return true
+			}
 		}
 	}
 	return false
@@ -569,9 +571,11 @@ func liveAttachTargetForViewID(root state.Root, viewID string) (liveAttachViewTa
 			}
 		}
 	}
-	for _, floating := range shell.Floatings {
-		if state.TerminalFloatingViewID(floating.ID) == viewID {
-			return liveAttachViewTarget{PaneID: floating.Pane.ID, FloatingID: floating.ID}, true
+	for _, tab := range shell.Workspace.Tabs {
+		for _, floating := range tab.Floatings {
+			if state.TerminalFloatingViewID(floating.ID) == viewID {
+				return liveAttachViewTarget{PaneID: floating.Pane.ID, FloatingID: floating.ID}, true
+			}
 		}
 	}
 	return liveAttachViewTarget{}, false
@@ -739,7 +743,7 @@ func maybeRefreshFloatingAutoFit(root state.Root, terminalID string) (state.Root
 		return root.Advance(), nil
 	}
 	shell := root.Shell.EnsureDefaults()
-	for _, floating := range shell.Floatings {
+	for _, floating := range shell.ActiveFloatings() {
 		if floating.Pane.TerminalID != terminalID || floating.FitMode != state.FloatingFitAuto {
 			continue
 		}
@@ -837,8 +841,8 @@ type liveInputTargetInfo struct {
 
 func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
 	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		binding, ok := root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		binding, ok := root.TerminalViews.FloatingBinding(activeFloatingID)
 		if !ok || binding.TerminalID == "" {
 			return liveInputTargetInfo{}, false
 		}

@@ -114,8 +114,8 @@ func defaultToastDismissAfterTicks(spec ToastSpec) uint64 {
 func (store ShellStore) OpenTerminalPicker() ShellStore {
 	store = store.EnsureDefaults()
 	targetID := store.ActivePaneID
-	if store.ActiveFloatingID != "" {
-		targetID = store.ActiveFloatingID
+	if activeFloatingID := store.ActiveFloatingID(); activeFloatingID != "" {
+		targetID = activeFloatingID
 	}
 	store.Overlay = OverlayState{
 		Kind:          OverlayTerminalPicker,
@@ -129,8 +129,8 @@ func (store ShellStore) OpenTerminalPicker() ShellStore {
 func (store ShellStore) OpenTerminalPool() ShellStore {
 	store = store.EnsureDefaults()
 	targetID := store.ActivePaneID
-	if store.ActiveFloatingID != "" {
-		targetID = store.ActiveFloatingID
+	if activeFloatingID := store.ActiveFloatingID(); activeFloatingID != "" {
+		targetID = activeFloatingID
 	}
 	store.Overlay = OverlayState{
 		Kind:          OverlayTerminalPool,
@@ -155,8 +155,8 @@ func (store ShellStore) OpenWorkbenchTree() ShellStore {
 func (store ShellStore) OpenClipboardHistory() ShellStore {
 	store = store.EnsureDefaults()
 	targetID := store.ActivePaneID
-	if store.ActiveFloatingID != "" {
-		targetID = store.ActiveFloatingID
+	if activeFloatingID := store.ActiveFloatingID(); activeFloatingID != "" {
+		targetID = activeFloatingID
 	}
 	store.Overlay = OverlayState{
 		Kind:               OverlayClipboardHistory,
@@ -173,7 +173,7 @@ func (store ShellStore) OpenFloatingOverview() ShellStore {
 	store.Overlay = OverlayState{
 		Kind:          OverlayFloatingOverview,
 		Open:          true,
-		TargetID:      store.ActiveFloatingID,
+		TargetID:      store.ActiveFloatingID(),
 		SelectedIndex: 0,
 	}
 	return store

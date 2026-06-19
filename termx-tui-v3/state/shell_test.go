@@ -1,6 +1,9 @@
 package state
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDefaultShellOwnsWorkbenchTreeAndChromeState(t *testing.T) {
 	shell := DefaultShell()
@@ -400,8 +403,8 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	}
 
 	items := WorkbenchTreeItems(root)
-	if len(items) != 5 {
-		t.Fatalf("expected workspace/tab/two panes/floating rows, got %#v", items)
+	if len(items) != 4 {
+		t.Fatalf("expected workspace/tab/two pane rows before floating, got %#v", items)
 	}
 	if items[0].Kind != WorkbenchTreeKindWorkspace || !items[0].Selected {
 		t.Fatalf("expected workspace selected first, got %#v", items)
@@ -411,9 +414,6 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	}
 	if items[2].DisplayTitle != "main terminal" || items[3].DisplayTitle != "日志终端" || items[3].PaneTitle != "日志🚀" {
 		t.Fatalf("tab children should display connected terminal names, got %#v %#v", items[2], items[3])
-	}
-	if items[4].Kind != WorkbenchTreeKindFloating || items[4].Summary != "float:0" {
-		t.Fatalf("expected floating summary row, got %#v", items[4])
 	}
 	var result FloatingCommandResult
 	root.Shell, result = root.Shell.ApplyFloatingCommand(FloatingCommand{
@@ -425,7 +425,7 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 		t.Fatalf("create floating: %#v", result)
 	}
 	items = WorkbenchTreeItems(root)
-	if len(items) != 5 || items[4].Kind != WorkbenchTreeKindFloating || items[4].FloatingID != "float-1" || items[4].PaneID != "float-pane" || items[4].TerminalID != "term-float" {
+	if len(items) != 5 || items[4].Kind != WorkbenchTreeKindFloating || items[4].FloatingID != "float-1" || items[4].PaneID != "float-pane" || items[4].TerminalID != "term-float" || !strings.Contains(items[4].Summary, "floating") {
 		t.Fatalf("expected actual floating row, got %#v", items)
 	}
 
@@ -718,36 +718,42 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 		BoundsW:  80,
 		BoundsH:  24,
 	})
-	if result.Status != FloatingCommandOK || len(shell.Floatings) != 1 || shell.ActiveFloatingID != "float-1" {
+	floatings := shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || len(floatings) != 1 || shell.ActiveFloatingID() != "float-1" {
 		t.Fatalf("expected created active floating, result=%#v shell=%#v", result, shell)
 	}
-	created := shell.Floatings[0]
+	created := floatings[0]
 	if created.Rect.X <= 0 || created.Rect.Y <= 0 || created.Rect.W < 16 || created.Rect.H < 4 || !created.Active {
 		t.Fatalf("expected centered clamped floating, got %#v", created)
 	}
 
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandMove, TargetID: "float-1", DeltaX: -999, DeltaY: -999, BoundsW: 80, BoundsH: 24})
-	if result.Status != FloatingCommandOK || shell.Floatings[0].Rect.X != 0 || shell.Floatings[0].Rect.Y != 0 {
-		t.Fatalf("move should clamp to viewport, result=%#v floating=%#v", result, shell.Floatings[0])
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || floatings[0].Rect.X != 0 || floatings[0].Rect.Y != 0 {
+		t.Fatalf("move should clamp to viewport, result=%#v floating=%#v", result, floatings[0])
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandResize, TargetID: "float-1", DeltaW: -999, DeltaH: -999, BoundsW: 80, BoundsH: 24})
-	if result.Status != FloatingCommandOK || shell.Floatings[0].Rect.W != 16 || shell.Floatings[0].Rect.H != 4 {
-		t.Fatalf("resize should keep minimum floating size, result=%#v floating=%#v", result, shell.Floatings[0])
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || floatings[0].Rect.W != 16 || floatings[0].Rect.H != 4 {
+		t.Fatalf("resize should keep minimum floating size, result=%#v floating=%#v", result, floatings[0])
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleCollapse, TargetID: "float-1"})
-	if result.Status != FloatingCommandOK || !shell.Floatings[0].Collapsed {
-		t.Fatalf("expected collapsed floating, result=%#v floating=%#v", result, shell.Floatings[0])
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || !floatings[0].Collapsed {
+		t.Fatalf("expected collapsed floating, result=%#v floating=%#v", result, floatings[0])
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandFocusRaise, TargetID: "float-1"})
-	if result.Status != FloatingCommandOK || shell.ActiveFloatingID != "float-1" || !shell.Floatings[0].Active {
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() != "float-1" || !floatings[0].Active {
 		t.Fatalf("expected raised floating, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandDeactivate})
-	if result.Status != FloatingCommandOK || shell.ActiveFloatingID != "" || shell.Floatings[0].Active {
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() != "" || floatings[0].Active {
 		t.Fatalf("deactivate should keep floating but clear active state, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandClose, TargetID: "float-1"})
-	if result.Status != FloatingCommandOK || len(shell.Floatings) != 0 || shell.ActiveFloatingID != "" {
+	if result.Status != FloatingCommandOK || len(shell.ActiveFloatings()) != 0 || shell.ActiveFloatingID() != "" {
 		t.Fatalf("expected closed floating, result=%#v shell=%#v", result, shell)
 	}
 }
@@ -779,21 +785,25 @@ func TestShellFloatingGroupCommandsManageCollapseAndFitMode(t *testing.T) {
 	}
 
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandCollapseAll})
-	if result.Status != FloatingCommandOK || shell.ActiveFloatingID != "" || !shell.Floatings[0].Collapsed || !shell.Floatings[1].Collapsed {
+	floatings := shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() != "" || !floatings[0].Collapsed || !floatings[1].Collapsed {
 		t.Fatalf("collapse all should collapse every floating, result=%#v shell=%#v", result, shell)
 	}
 
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandShowAll})
-	if result.Status != FloatingCommandOK || shell.ActiveFloatingID == "" || shell.Floatings[0].Collapsed || shell.Floatings[1].Collapsed {
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() == "" || floatings[0].Collapsed || floatings[1].Collapsed {
 		t.Fatalf("show all should restore every floating, result=%#v shell=%#v", result, shell)
 	}
 
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleAll})
-	if result.Status != FloatingCommandOK || !shell.Floatings[0].Collapsed || !shell.Floatings[1].Collapsed {
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || !floatings[0].Collapsed || !floatings[1].Collapsed {
 		t.Fatalf("toggle all should collapse open floatings, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleAll})
-	if result.Status != FloatingCommandOK || shell.Floatings[0].Collapsed || shell.Floatings[1].Collapsed {
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || floatings[0].Collapsed || floatings[1].Collapsed {
 		t.Fatalf("toggle all should restore collapsed floatings, result=%#v shell=%#v", result, shell)
 	}
 
@@ -801,7 +811,7 @@ func TestShellFloatingGroupCommandsManageCollapseAndFitMode(t *testing.T) {
 	if result.Status != FloatingCommandOK {
 		t.Fatalf("fit floating: %#v", result)
 	}
-	if got := shell.Floatings[0]; got.Rect.W != 52 || got.Rect.H != 18 || got.FitMode != FloatingFitManual || got.AutoFit != (FloatingAutoFitState{}) {
+	if got := shell.ActiveFloatings()[0]; got.Rect.W != 52 || got.Rect.H != 18 || got.FitMode != FloatingFitManual || got.AutoFit != (FloatingAutoFitState{}) {
 		t.Fatalf("fit should resize to content extent plus chrome, got %#v", got)
 	}
 
@@ -809,7 +819,7 @@ func TestShellFloatingGroupCommandsManageCollapseAndFitMode(t *testing.T) {
 	if result.Status != FloatingCommandOK {
 		t.Fatalf("enable auto-fit: %#v", result)
 	}
-	if got := shell.Floatings[0]; got.FitMode != FloatingFitAuto || got.AutoFit.Cols != 60 || got.AutoFit.Rows != 20 || got.Rect.W != 62 || got.Rect.H != 22 {
+	if got := shell.ActiveFloatings()[0]; got.FitMode != FloatingFitAuto || got.AutoFit.Cols != 60 || got.AutoFit.Rows != 20 || got.Rect.W != 62 || got.Rect.H != 22 {
 		t.Fatalf("auto-fit should save latest fit size and update rect, got %#v", got)
 	}
 
@@ -817,7 +827,7 @@ func TestShellFloatingGroupCommandsManageCollapseAndFitMode(t *testing.T) {
 	if result.Status != FloatingCommandOK {
 		t.Fatalf("refresh auto-fit: %#v", result)
 	}
-	if got := shell.Floatings[0]; got.AutoFit.Cols != 70 || got.AutoFit.Rows != 18 || got.Rect.W != 72 || got.Rect.H != 20 {
+	if got := shell.ActiveFloatings()[0]; got.AutoFit.Cols != 70 || got.AutoFit.Rows != 18 || got.Rect.W != 72 || got.Rect.H != 20 {
 		t.Fatalf("refresh auto-fit should update metadata and rect, got %#v", got)
 	}
 
@@ -825,7 +835,7 @@ func TestShellFloatingGroupCommandsManageCollapseAndFitMode(t *testing.T) {
 	if result.Status != FloatingCommandOK {
 		t.Fatalf("manual resize after auto-fit: %#v", result)
 	}
-	if got := shell.Floatings[0]; got.FitMode != FloatingFitManual || got.AutoFit != (FloatingAutoFitState{}) {
+	if got := shell.ActiveFloatings()[0]; got.FitMode != FloatingFitManual || got.AutoFit != (FloatingAutoFitState{}) {
 		t.Fatalf("manual resize should clear auto-fit state, got %#v", got)
 	}
 }
@@ -843,15 +853,56 @@ func TestShellBindFloatingTerminal(t *testing.T) {
 	}
 
 	shell = shell.BindFloatingTerminal("float-1", "term-float")
-	if shell.ActiveFloatingID != "float-1" || len(shell.Floatings) != 1 || !shell.Floatings[0].Active {
-		t.Fatalf("floating bind should focus target floating, got %#v", shell.Floatings)
+	floatings := shell.ActiveFloatings()
+	if shell.ActiveFloatingID() != "float-1" || len(floatings) != 1 || !floatings[0].Active {
+		t.Fatalf("floating bind should focus target floating, got %#v", floatings)
 	}
-	if pane := shell.Floatings[0].Pane; pane.Kind != PaneTerminalLive || pane.TerminalID != "term-float" {
+	if pane := floatings[0].Pane; pane.Kind != PaneTerminalLive || pane.TerminalID != "term-float" {
 		t.Fatalf("floating pane should bind terminal-live target, got %#v", pane)
 	}
 	tiled, ok := shell.Pane(PaneCommandTarget{PaneID: DefaultPaneID})
 	if !ok || tiled.TerminalID != "term-main" {
 		t.Fatalf("floating bind must not rewrite tiled pane terminal, got %#v ok=%v", tiled, ok)
+	}
+}
+
+func TestShellFloatingsAreScopedToActiveTab(t *testing.T) {
+	shell := DefaultShell()
+	var result FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-main",
+		Pane:     PaneState{ID: "float-main-pane", Title: "main float", Kind: PaneEmpty},
+	})
+	if result.Status != FloatingCommandOK || len(shell.ActiveFloatings()) != 1 {
+		t.Fatalf("expected floating under default tab, result=%#v shell=%#v", result, shell)
+	}
+
+	var workbenchResult WorkbenchCommandResult
+	shell, workbenchResult = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabCreate, TargetID: "tab-build", Name: "build"})
+	if workbenchResult.Status != WorkbenchCommandOK {
+		t.Fatalf("create tab: %#v", workbenchResult)
+	}
+	if shell.Workspace.ActiveTabID != "tab-build" || len(shell.ActiveFloatings()) != 0 || shell.ActiveFloatingID() != "" {
+		t.Fatalf("new active tab should not inherit previous tab floating, shell=%#v", shell)
+	}
+
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-build",
+		Pane:     PaneState{ID: "float-build-pane", Title: "build float", Kind: PaneEmpty},
+	})
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() != "float-build" {
+		t.Fatalf("expected floating under build tab, result=%#v shell=%#v", result, shell)
+	}
+
+	shell, workbenchResult = shell.ApplyWorkbenchCommand(WorkbenchCommand{Action: WorkbenchCommandTabSwitch, TargetID: DefaultTabID})
+	if workbenchResult.Status != WorkbenchCommandOK {
+		t.Fatalf("switch tab: %#v", workbenchResult)
+	}
+	floatings := shell.ActiveFloatings()
+	if len(floatings) != 1 || floatings[0].ID != "float-main" || shell.ActiveFloatingID() != "float-main" {
+		t.Fatalf("switching back should restore default tab floating only, floatings=%#v active=%q", floatings, shell.ActiveFloatingID())
 	}
 }
 

@@ -63,6 +63,7 @@ func (store ShellStore) FocusPane(target PaneCommandTarget) ShellStore {
 	paneID := target.PaneID
 	store.Workspace.ActiveTabID = store.Workspace.Tabs[tabIndex].ID
 	store.Workspace.Tabs[tabIndex].ActivePaneID = paneID
+	store.Workspace.Tabs[tabIndex].ActiveFloatingID = ""
 	store.ActivePaneID = paneID
 	if store.ZoomedPaneID != "" {
 		store.ZoomedPaneID = paneID
@@ -125,13 +126,6 @@ func (store ShellStore) RemoveTerminalBindings(terminalID string) ShellStore {
 			store.Workspaces[index] = store.Workspace
 		}
 	}
-	for index := range store.Floatings {
-		if store.Floatings[index].Pane.TerminalID != terminalID {
-			continue
-		}
-		store.Floatings[index].Pane.TerminalID = ""
-		store.Floatings[index].Pane.Kind = PaneEmpty
-	}
 	return store.EnsureDefaults()
 }
 
@@ -144,6 +138,13 @@ func (workspace WorkspaceState) removeTerminalBindings(terminalID string) Worksp
 			}
 			workspace.Tabs[tabIndex].Panes[paneIndex].TerminalID = ""
 			workspace.Tabs[tabIndex].Panes[paneIndex].Kind = PaneEmpty
+		}
+		for floatingIndex := range workspace.Tabs[tabIndex].Floatings {
+			if workspace.Tabs[tabIndex].Floatings[floatingIndex].Pane.TerminalID != terminalID {
+				continue
+			}
+			workspace.Tabs[tabIndex].Floatings[floatingIndex].Pane.TerminalID = ""
+			workspace.Tabs[tabIndex].Floatings[floatingIndex].Pane.Kind = PaneEmpty
 		}
 	}
 	return workspace

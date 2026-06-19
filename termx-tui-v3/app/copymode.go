@@ -184,7 +184,7 @@ func copyModeMouseSelectTargetMatches(root state.Root, paneID string) bool {
 		}
 	}
 	shell := root.Shell.EnsureDefaults()
-	return copyMode.PaneID == "" && copyMode.ViewID == "" && paneID == shell.ActivePaneID && shell.ActiveFloatingID == ""
+	return copyMode.PaneID == "" && copyMode.ViewID == "" && paneID == shell.ActivePaneID && shell.ActiveFloatingID() == ""
 }
 
 func copyModeInputContext(copyMode state.CopyModeStore) bool {

@@ -63,7 +63,7 @@ func (registry ContentProjectorRegistry) Project(ctx ContentProjectorContext) Co
 }
 
 func contentProjectorShell(ctx ContentProjectorContext) state.ShellStore {
-	if ctx.Shell.Workspace.ID != "" || len(ctx.Shell.Workspace.Tabs) > 0 || len(ctx.Shell.Floatings) > 0 || ctx.Shell.Overlay.Open {
+	if ctx.Shell.Workspace.ID != "" || len(ctx.Shell.Workspace.Tabs) > 0 || ctx.Shell.Overlay.Open {
 		return ctx.Shell.EnsureDefaults()
 	}
 	return ctx.Root.Shell.EnsureDefaults()

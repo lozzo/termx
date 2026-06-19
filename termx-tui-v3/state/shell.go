@@ -116,8 +116,6 @@ type WorkbenchCommandResult struct {
 type ShellStore struct {
 	Workspace          WorkspaceState
 	Workspaces         []WorkspaceState
-	Floatings          []FloatingPaneState
-	ActiveFloatingID   string
 	PanelPresentation  PanelPresentation
 	ActivePaneID       string
 	ZoomedPaneID       string
@@ -143,11 +141,13 @@ type WorkspaceState struct {
 }
 
 type TabState struct {
-	ID           string
-	Title        string
-	Panes        []PaneState
-	ActivePaneID string
-	RootSplit    SplitNode
+	ID               string
+	Title            string
+	Panes            []PaneState
+	ActivePaneID     string
+	RootSplit        SplitNode
+	Floatings        []FloatingPaneState
+	ActiveFloatingID string
 }
 
 type PaneState struct {
@@ -338,7 +338,6 @@ func DefaultShell() ShellStore {
 func (store ShellStore) EnsureDefaults() ShellStore {
 	store.Workspace = cloneWorkspace(store.Workspace)
 	store.Workspaces = cloneWorkspaces(store.Workspaces)
-	store.Floatings = cloneFloatings(store.Floatings)
 	store.Toasts = cloneToasts(store.Toasts)
 	seedDefaultWorkbench := !store.initialized && len(store.Workspace.Tabs) == 0
 	if !store.initialized {
@@ -376,60 +375,6 @@ func (store ShellStore) EnsureDefaults() ShellStore {
 	store = store.ensureFloatingDefaults()
 	store.Workspace = store.Workspace.ensureActive(store.ActivePaneID)
 	store.Workspaces = upsertWorkspace(store.Workspaces, store.Workspace)
-	return store
-}
-
-func (store ShellStore) ensureFloatingDefaults() ShellStore {
-	if len(store.Floatings) == 0 {
-		store.ActiveFloatingID = ""
-		return store
-	}
-	activeFound := false
-	for index := range store.Floatings {
-		floating := &store.Floatings[index]
-		if floating.ID == "" {
-			continue
-		}
-		if floating.Title == "" {
-			floating.Title = floating.ID
-		}
-		if floating.Pane.ID == "" {
-			floating.Pane = PaneState{ID: floating.ID + "-pane", Title: floating.Title, Kind: PaneEmpty}
-		}
-		if floating.Pane.Title == "" {
-			floating.Pane.Title = floating.Title
-		}
-		if floating.Pane.Kind == "" {
-			floating.Pane.Kind = PaneEmpty
-		}
-		if floating.Rect.W <= 0 {
-			floating.Rect.W = 40
-		}
-		if floating.Rect.H <= 0 {
-			floating.Rect.H = 10
-		}
-		if floating.Z <= 0 {
-			floating.Z = index + 1
-		}
-		if floating.FitMode != FloatingFitAuto {
-			floating.FitMode = FloatingFitManual
-			if floating.AutoFit.Cols < 0 {
-				floating.AutoFit.Cols = 0
-			}
-			if floating.AutoFit.Rows < 0 {
-				floating.AutoFit.Rows = 0
-			}
-		}
-		if floating.ID == store.ActiveFloatingID {
-			activeFound = true
-		}
-	}
-	if store.ActiveFloatingID != "" && !activeFound {
-		store.ActiveFloatingID = topFloatingID(store.Floatings)
-	}
-	for index := range store.Floatings {
-		store.Floatings[index].Active = store.Floatings[index].ID == store.ActiveFloatingID
-	}
 	return store
 }
 

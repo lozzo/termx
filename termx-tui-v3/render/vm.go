@@ -102,8 +102,8 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 func activeViewLiveStatus(root state.Root, shell state.ShellStore) string {
 	var binding state.TerminalViewBinding
 	var ok bool
-	if shell.ActiveFloatingID != "" {
-		binding, ok = root.TerminalViews.FloatingBinding(shell.ActiveFloatingID)
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		binding, ok = root.TerminalViews.FloatingBinding(activeFloatingID)
 	} else {
 		binding, ok = root.TerminalViews.PaneBinding(shell.ActivePaneID)
 	}
@@ -150,7 +150,7 @@ func terminalCount(root state.Root) int {
 
 func floatingSummary(shell state.ShellStore) string {
 	shell = shell.EnsureDefaults()
-	return fmt.Sprintf("float:%d", len(shell.Floatings))
+	return fmt.Sprintf("float:%d", len(shell.ActiveFloatings()))
 }
 
 func footerMode(root state.Root, shell state.ShellStore) string {
@@ -223,9 +223,9 @@ func footerActionAvailable(actionID string, mode string, root state.Root, shell 
 	case ActionFooterCloseToast, ActionFooterClearToasts:
 		return len(shell.EnsureDefaults().Toasts) > 0
 	case ActionFloatingSummon, ActionFloatingToggleAll, ActionFloatingShowAll, ActionFloatingCollapseAll:
-		return len(shell.EnsureDefaults().Floatings) > 0
+		return len(shell.ActiveFloatings()) > 0
 	case ActionFloatingTakeOwner, ActionFloatingFit, ActionFloatingAutoFit, ActionFloatingCenter, ActionFloatingCollapse, ActionFloatingClose:
-		return shell.EnsureDefaults().ActiveFloatingID != "" || mode == string(state.OverlayFloatingOverview) && len(shell.EnsureDefaults().Floatings) > 0
+		return shell.ActiveFloatingID() != "" || mode == string(state.OverlayFloatingOverview) && len(shell.ActiveFloatings()) > 0
 	case ActionPoolAttach, ActionPoolEdit, ActionPoolKill:
 		return len(root.TerminalPool.Items) > 0
 	case ActionClipboardHistoryPaste, ActionClipboardHistoryEdit, ActionClipboardHistoryDelete:
@@ -555,7 +555,7 @@ func viewportRect(viewport state.ViewportStore) Rect {
 func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
 	shell = shell.EnsureDefaults()
 	tab := activeTab(shell)
-	floatingOwnsFocus := shell.ActiveFloatingID != ""
+	floatingOwnsFocus := shell.ActiveFloatingID() != ""
 	if len(tab.Panes) == 0 {
 		return nil
 	}
@@ -599,11 +599,12 @@ func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, acti
 
 func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root state.Root) []FloatingVM {
 	shell = shell.EnsureDefaults()
-	if len(shell.Floatings) == 0 {
+	floatings := shell.ActiveFloatings()
+	if len(floatings) == 0 {
 		return nil
 	}
-	out := make([]FloatingVM, 0, len(shell.Floatings))
-	for _, floating := range shell.Floatings {
+	out := make([]FloatingVM, 0, len(floatings))
+	for _, floating := range floatings {
 		content := projector.contentForFloating(root, shell, floating)
 		content = contentWithFloatingLayout(root, floating, content)
 		out = append(out, FloatingVM{
@@ -920,10 +921,11 @@ func copyModeFloatingActive(copyMode state.CopyModeStore, shell state.ShellStore
 	if !copyMode.Active || copyMode.ViewID == "" || !strings.HasPrefix(copyMode.ViewID, "floating:") {
 		return false
 	}
-	if shell.ActiveFloatingID == "" {
+	activeFloatingID := shell.ActiveFloatingID()
+	if activeFloatingID == "" {
 		return true
 	}
-	return copyMode.ViewID == state.TerminalFloatingViewID(shell.ActiveFloatingID)
+	return copyMode.ViewID == state.TerminalFloatingViewID(activeFloatingID)
 }
 
 func copyModeEnteringLiveContent(root state.Root) (ContentVM, bool) {
@@ -933,7 +935,7 @@ func copyModeEnteringLiveContent(root state.Root) (ContentVM, bool) {
 	}
 	shell := root.Shell.EnsureDefaults()
 	if strings.HasPrefix(copyMode.ViewID, "floating:") {
-		if shell.ActiveFloatingID != "" && copyMode.ViewID != state.TerminalFloatingViewID(shell.ActiveFloatingID) {
+		if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" && copyMode.ViewID != state.TerminalFloatingViewID(activeFloatingID) {
 			return ContentVM{}, false
 		}
 		return buildCopyModeEnteringLiveContent(root), true

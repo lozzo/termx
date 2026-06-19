@@ -1251,7 +1251,7 @@ func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t
 	if len(terminal.TagEdits) != 1 || terminal.TagEdits[0].TerminalID != "term-float" || terminal.TagEdits[0].Tags["role"] != "float" || terminal.TagEdits[0].Tags["termx.size_lock"] != "lock" {
 		t.Fatalf("floating chrome size lock should target floating terminal, edits=%#v", terminal.TagEdits)
 	}
-	if runtime.State().Shell.EnsureDefaults().ActiveFloatingID != "floating-1" {
+	if runtime.State().Shell.ActiveFloatingID() != "floating-1" {
 		t.Fatalf("floating size lock click should focus floating, shell=%#v", runtime.State().Shell)
 	}
 	if floating, ok := runtime.State().TerminalViews.FloatingBinding("floating-1"); !ok || !floating.SizeLocked || floating.CanResize {
@@ -1682,7 +1682,8 @@ func TestInteractiveRuntimeFloatingFooterActions(t *testing.T) {
 		t.Fatalf("drain floating new footer click: %v", err)
 	}
 	shell := runtime.State().Shell.EnsureDefaults()
-	if len(shell.Floatings) != 1 || shell.ActiveFloatingID == "" || !shell.Floatings[0].Active {
+	floatings := shell.ActiveFloatings()
+	if len(floatings) != 1 || shell.ActiveFloatingID() == "" || !floatings[0].Active {
 		t.Fatalf("floating new footer action should create active floating, shell=%#v", shell)
 	}
 
@@ -1694,7 +1695,7 @@ func TestInteractiveRuntimeFloatingFooterActions(t *testing.T) {
 		t.Fatalf("drain active floating close footer click: %v", err)
 	}
 	shell = runtime.State().Shell.EnsureDefaults()
-	if len(shell.Floatings) != 0 || shell.ActiveFloatingID != "" {
+	if len(shell.ActiveFloatings()) != 0 || shell.ActiveFloatingID() != "" {
 		t.Fatalf("floating close footer action should close active floating, shell=%#v", shell)
 	}
 	if len(terminal.Inputs) != 0 {
@@ -1790,10 +1791,11 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 	if shell.Overlay.SelectedIndex != 1 {
 		t.Fatalf("floating overview should move selection to second floating, overlay=%#v", shell.Overlay)
 	}
-	if len(shell.Floatings) != 2 || shell.Floatings[0].Collapsed || shell.Floatings[1].Collapsed {
-		t.Fatalf("collapse-all then show-all should end with both floatings expanded, floatings=%#v", shell.Floatings)
+	floatings := shell.ActiveFloatings()
+	if len(floatings) != 2 || floatings[0].Collapsed || floatings[1].Collapsed {
+		t.Fatalf("collapse-all then show-all should end with both floatings expanded, floatings=%#v", floatings)
 	}
-	if shell.ActiveFloatingID != "floating-2" || !shell.Floatings[1].Active {
+	if shell.ActiveFloatingID() != "floating-2" || !floatings[1].Active {
 		t.Fatalf("enter open should raise selected floating, shell=%#v", shell)
 	}
 	frame := lastRuntimeFrame(t, host)
@@ -1815,8 +1817,9 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 		t.Fatalf("drain floating collapse-all hotkey: %v", err)
 	}
 	shell = runtime.State().Shell.EnsureDefaults()
-	if !shell.Floatings[0].Collapsed || !shell.Floatings[1].Collapsed {
-		t.Fatalf("collapse-all hotkey should collapse every floating, floatings=%#v", shell.Floatings)
+	floatings = shell.ActiveFloatings()
+	if !floatings[0].Collapsed || !floatings[1].Collapsed {
+		t.Fatalf("collapse-all hotkey should collapse every floating, floatings=%#v", floatings)
 	}
 
 	rowAction := frameActionHitRegion(t, lastRuntimeFrame(t, host), render.ActionFloatingSummon.String(), "floating-1")
@@ -1827,7 +1830,8 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 		t.Fatalf("drain floating row summon click: %v", err)
 	}
 	shell = runtime.State().Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "floating-1" || shell.Floatings[0].Collapsed {
+	floatings = shell.ActiveFloatings()
+	if shell.ActiveFloatingID() != "floating-1" || floatings[0].Collapsed {
 		t.Fatalf("row summon should activate and expand selected floating, shell=%#v", shell)
 	}
 
@@ -1838,7 +1842,8 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 		t.Fatalf("drain floating summon hotkey: %v", err)
 	}
 	shell = runtime.State().Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "floating-2" || shell.Floatings[1].Collapsed {
+	floatings = shell.ActiveFloatings()
+	if shell.ActiveFloatingID() != "floating-2" || floatings[1].Collapsed {
 		t.Fatalf("number summon should activate indexed floating, shell=%#v", shell)
 	}
 
@@ -1849,7 +1854,8 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 		t.Fatalf("drain floating close hotkey: %v", err)
 	}
 	shell = runtime.State().Shell.EnsureDefaults()
-	if len(shell.Floatings) != 1 || shell.Floatings[0].ID != "floating-1" {
+	floatings = shell.ActiveFloatings()
+	if len(floatings) != 1 || floatings[0].ID != "floating-1" {
 		t.Fatalf("overview close should remove selected floating, shell=%#v", shell)
 	}
 	if !shell.Overlay.Open || shell.Overlay.Kind != state.OverlayFloatingOverview {
@@ -2414,7 +2420,7 @@ func TestAppRuntimeTiledPaneClickDeactivatesFloatingFocus(t *testing.T) {
 		BoundsW:  90,
 		BoundsH:  28,
 	})
-	if result.Status != state.FloatingCommandOK || root.Shell.ActiveFloatingID == "" {
+	if result.Status != state.FloatingCommandOK || root.Shell.ActiveFloatingID() == "" {
 		t.Fatalf("expected active floating setup, result=%#v shell=%#v", result, root.Shell)
 	}
 
@@ -2438,7 +2444,8 @@ func TestAppRuntimeTiledPaneClickDeactivatesFloatingFocus(t *testing.T) {
 		t.Fatalf("drain tiled pane click: %v", err)
 	}
 	shell := runtime.State().Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" || len(shell.Floatings) != 1 || shell.Floatings[0].Active {
+	floatings := shell.ActiveFloatings()
+	if shell.ActiveFloatingID() != "" || len(floatings) != 1 || floatings[0].Active {
 		t.Fatalf("tiled pane click should deactivate floating without closing it, shell=%#v", shell)
 	}
 	if shell.ActivePaneID != "pane-2" {
@@ -3005,7 +3012,7 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating move drag: %v", err)
 	}
-	moved := runtime.State().Shell.Floatings[0].Rect
+	moved := runtime.State().Shell.ActiveFloatings()[0].Rect
 	if moved.X != 14 || moved.Y != 7 {
 		t.Fatalf("floating title drag should move rect, got %#v", moved)
 	}
@@ -3038,7 +3045,7 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	if runtime.mouseDrag.Kind != mouseDragFloatingResize || runtime.mouseDrag.FloatingID != "floating-1" {
 		t.Fatalf("expected floating resize drag state, got %#v", runtime.mouseDrag)
 	}
-	beforeResize := runtime.State().Shell.Floatings[0].Rect
+	beforeResize := runtime.State().Shell.ActiveFloatings()[0].Rect
 	resizeDrag := resizeStart
 	resizeDrag.Mouse = input.MouseLeftDrag
 	resizeDrag.Col += 6
@@ -3049,7 +3056,7 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating resize drag: %v", err)
 	}
-	resized := runtime.State().Shell.Floatings[0].Rect
+	resized := runtime.State().Shell.ActiveFloatings()[0].Rect
 	if resized.W != beforeResize.W+6 || resized.H != beforeResize.H+2 {
 		t.Fatalf("floating resize drag should resize rect, before=%#v after=%#v", beforeResize, resized)
 	}
@@ -3074,7 +3081,7 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating drag after release: %v", err)
 	}
-	if got := runtime.State().Shell.Floatings[0].Rect; got != resized {
+	if got := runtime.State().Shell.ActiveFloatings()[0].Rect; got != resized {
 		t.Fatalf("drag after release must not resize floating, before=%#v after=%#v", resized, got)
 	}
 	if len(terminal.Inputs) != beforeInputCount {

@@ -123,7 +123,7 @@ func TestHostCursorProjectionLiveCopyPromptFloatingAndOverlayPriority(t *testing
 		t.Fatalf("drain floating cursor: %v", err)
 	}
 	floatingFrame := lastFrame(t, host.Frames())
-	floatingRect := runtime.State().Shell.EnsureDefaults().Floatings[0].Rect
+	floatingRect := runtime.State().Shell.ActiveFloatings()[0].Rect
 	if !floatingFrame.Cursor.Visible || floatingFrame.CursorRect.X < floatingRect.X+1 || floatingFrame.CursorRect.X >= floatingRect.X+floatingRect.W-1 ||
 		floatingFrame.CursorRect.Y < floatingRect.Y+1 || floatingFrame.CursorRect.Y >= floatingRect.Y+floatingRect.H-1 {
 		t.Fatalf("active floating terminal should own visible cursor inside floating content, floating=%#v cursor=%#v rect=%#v", floatingRect, floatingFrame.Cursor, floatingFrame.CursorRect)

@@ -737,11 +737,12 @@ func reduceShellContentAction(root state.Root, msg ShellContentActionMsg) (state
 		return root.Advance(), []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 	case render.ActionFloatingTakeOwner:
 		shell := root.Shell.EnsureDefaults()
-		if shell.ActiveFloatingID == "" {
+		activeFloatingID := shell.ActiveFloatingID()
+		if activeFloatingID == "" {
 			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
 			return root.Advance(), nil
 		}
-		return requestFloatingResizeOwner(root, shell.ActiveFloatingID)
+		return requestFloatingResizeOwner(root, activeFloatingID)
 	case render.ActionFloatingResize:
 		return reduceFloatingCommand(root, state.FloatingCommand{Action: state.FloatingCommandResize, TargetID: floatingTargetIDForContentAction(root, msg), DeltaW: 2, DeltaH: 1, Source: state.PaneCommandSourceMouse})
 	case render.ActionFloatingCenter:
@@ -1333,8 +1334,8 @@ func terminalPoolTargetForContentAction(root state.Root, msg ShellContentActionM
 
 func terminalPoolTargetForActive(root state.Root) terminalPoolTarget {
 	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		if target, ok := terminalPoolTargetForID(shell, shell.ActiveFloatingID); ok {
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		if target, ok := terminalPoolTargetForID(shell, activeFloatingID); ok {
 			return target
 		}
 	}
@@ -1343,7 +1344,7 @@ func terminalPoolTargetForActive(root state.Root) terminalPoolTarget {
 
 func terminalPoolTargetForID(shell state.ShellStore, id string) (terminalPoolTarget, bool) {
 	shell = shell.EnsureDefaults()
-	for _, floating := range shell.Floatings {
+	for _, floating := range shell.ActiveFloatings() {
 		if floating.ID == id || floating.Pane.ID == id {
 			return terminalPoolTarget{PaneID: floating.Pane.ID, FloatingID: floating.ID, ViewID: state.TerminalFloatingViewID(floating.ID)}, true
 		}
@@ -1362,14 +1363,15 @@ func floatingTargetIDForContentAction(root state.Root, msg ShellContentActionMsg
 func floatingIDForContentAction(root state.Root, msg ShellContentActionMsg) (string, bool) {
 	shell := root.Shell.EnsureDefaults()
 	if msg.PaneID == "" {
-		return shell.ActiveFloatingID, shell.ActiveFloatingID != ""
+		activeFloatingID := shell.ActiveFloatingID()
+		return activeFloatingID, activeFloatingID != ""
 	}
 	if msg.Floating {
 		if floatingID, ok := shell.FloatingIDForPaneID(msg.PaneID); ok {
 			return floatingID, true
 		}
 	}
-	for _, floating := range shell.Floatings {
+	for _, floating := range shell.ActiveFloatings() {
 		if floating.ID == msg.PaneID {
 			return floating.ID, true
 		}
@@ -1549,8 +1551,8 @@ func invalidateCopyModeForInactiveView(root state.Root) state.Root {
 		return root
 	}
 	shell := root.Shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		if root.CopyMode.ViewID == state.TerminalFloatingViewID(shell.ActiveFloatingID) {
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		if root.CopyMode.ViewID == state.TerminalFloatingViewID(activeFloatingID) {
 			return root
 		}
 		root.History = root.History.InvalidateWindow()
@@ -1718,7 +1720,7 @@ func floatingCommandBinding(root state.Root, command state.FloatingCommand) (sta
 			return binding, true
 		}
 	}
-	activeFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID
+	activeFloatingID := root.Shell.EnsureDefaults().ActiveFloatingID()
 	if activeFloatingID == "" {
 		return state.TerminalViewBinding{}, false
 	}

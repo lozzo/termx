@@ -146,7 +146,7 @@ func logTerminalInputRoute(deps LiveDeps, root state.Root, entry terminalInputRo
 		"raw_mouse", entry.RawMouse,
 		"needs_attach", entry.NeedsAttach,
 		"active_pane", shell.ActivePaneID,
-		"active_floating", shell.ActiveFloatingID,
+		"active_floating", shell.ActiveFloatingID(),
 		"interaction_mode", string(shell.InteractionMode),
 		"overlay_open", shell.Overlay.Open,
 		"overlay_kind", string(shell.Overlay.Kind),

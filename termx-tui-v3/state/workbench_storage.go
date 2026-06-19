@@ -33,8 +33,6 @@ type WorkbenchStorageSnapshot struct {
 	SchemaVersion     int                   `json:"schemaVersion"`
 	Workspace         WorkspaceState        `json:"workspace"`
 	Workspaces        []WorkspaceState      `json:"workspaces"`
-	Floatings         []FloatingPaneState   `json:"floatings,omitempty"`
-	ActiveFloatingID  string                `json:"activeFloatingId,omitempty"`
 	PanelPresentation PanelPresentation     `json:"panelPresentation"`
 	ActivePaneID      string                `json:"activePaneId"`
 	ZoomedPaneID      string                `json:"zoomedPaneId,omitempty"`
@@ -86,8 +84,6 @@ func SnapshotRootWorkbenchForStorage(root Root) WorkbenchStorageSnapshot {
 		SchemaVersion:     WorkbenchStorageSchemaV2,
 		Workspace:         workbenchStorageWorkspace(shell.Workspace),
 		Workspaces:        workbenchStorageWorkspaces(shell.Workspaces),
-		Floatings:         workbenchStorageFloatings(shell.Floatings),
-		ActiveFloatingID:  shell.ActiveFloatingID,
 		PanelPresentation: shell.PanelPresentation,
 		ActivePaneID:      shell.ActivePaneID,
 		ZoomedPaneID:      shell.ZoomedPaneID,
@@ -114,19 +110,11 @@ func workbenchStorageWorkspace(workspace WorkspaceState) WorkspaceState {
 		for paneIndex := range workspace.Tabs[tabIndex].Panes {
 			workspace.Tabs[tabIndex].Panes[paneIndex] = workbenchStoragePane(workspace.Tabs[tabIndex].Panes[paneIndex])
 		}
+		for floatingIndex := range workspace.Tabs[tabIndex].Floatings {
+			workspace.Tabs[tabIndex].Floatings[floatingIndex].Pane = workbenchStoragePane(workspace.Tabs[tabIndex].Floatings[floatingIndex].Pane)
+		}
 	}
 	return workspace
-}
-
-func workbenchStorageFloatings(floatings []FloatingPaneState) []FloatingPaneState {
-	if len(floatings) == 0 {
-		return nil
-	}
-	out := cloneFloatings(floatings)
-	for index := range out {
-		out[index].Pane = workbenchStoragePane(out[index].Pane)
-	}
-	return out
 }
 
 func workbenchStoragePane(pane PaneState) PaneState {
@@ -149,8 +137,6 @@ func (snapshot WorkbenchStorageSnapshot) ToShellStore() (ShellStore, error) {
 	shell := ShellStore{
 		Workspace:         workbenchStorageWorkspace(snapshot.Workspace),
 		Workspaces:        workbenchStorageWorkspaces(snapshot.Workspaces),
-		Floatings:         workbenchStorageFloatings(snapshot.Floatings),
-		ActiveFloatingID:  snapshot.ActiveFloatingID,
 		PanelPresentation: snapshot.PanelPresentation,
 		ActivePaneID:      snapshot.ActivePaneID,
 		ZoomedPaneID:      snapshot.ZoomedPaneID,
@@ -174,23 +160,14 @@ func (snapshot WorkbenchStorageSnapshot) ToTerminalViewStore() (TerminalViewStor
 		}
 		store = store.BindPane(binding)
 	}
-	store = store.withLegacyWorkbenchPaneBindings(snapshot.Workspace, snapshot.Workspaces, snapshot.Floatings)
+	store = store.withLegacyWorkbenchPaneBindings(snapshot.Workspace, snapshot.Workspaces)
 	return store, nil
 }
 
-func (store TerminalViewStore) withLegacyWorkbenchPaneBindings(active WorkspaceState, workspaces []WorkspaceState, floatings []FloatingPaneState) TerminalViewStore {
+func (store TerminalViewStore) withLegacyWorkbenchPaneBindings(active WorkspaceState, workspaces []WorkspaceState) TerminalViewStore {
 	store = store.withLegacyWorkspacePaneBindings(active)
 	for _, workspace := range workspaces {
 		store = store.withLegacyWorkspacePaneBindings(workspace)
-	}
-	for _, floating := range floatings {
-		if floating.ID == "" || floating.Pane.TerminalID == "" {
-			continue
-		}
-		if _, ok := store.FloatingBinding(floating.ID); ok {
-			continue
-		}
-		store = store.BindFloating(NewFloatingTerminalView(floating.ID, floating.Pane.ID, floating.Pane.TerminalID, 0, 0, 0, TerminalResizeRoleFollower, "", TerminalFloatingViewID(floating.ID), false))
 	}
 	return store
 }
@@ -207,6 +184,15 @@ func (store TerminalViewStore) withLegacyWorkspacePaneBindings(workspace Workspa
 			// 中文说明：V2 早期 snapshot 只有 pane.TerminalID；恢复时迁移成 view binding，
 			// 之后输入和 lifecycle 都只通过 TerminalViewStore 连接意图投影。
 			store = store.BindPane(NewPaneTerminalView(pane.ID, pane.TerminalID, 0, 0, 0, TerminalResizeRoleFollower, "", TerminalPaneViewID(pane.ID), false))
+		}
+		for _, floating := range tab.Floatings {
+			if floating.ID == "" || floating.Pane.TerminalID == "" {
+				continue
+			}
+			if _, ok := store.FloatingBinding(floating.ID); ok {
+				continue
+			}
+			store = store.BindFloating(NewFloatingTerminalView(floating.ID, floating.Pane.ID, floating.Pane.TerminalID, 0, 0, 0, TerminalResizeRoleFollower, "", TerminalFloatingViewID(floating.ID), false))
 		}
 	}
 	return store

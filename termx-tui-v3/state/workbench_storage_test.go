@@ -55,7 +55,7 @@ func TestWorkbenchStorageSnapshotRoundTripsShellStructure(t *testing.T) {
 	if restored.FooterVisible || !restored.HeaderVisible {
 		t.Fatalf("chrome visibility must round trip, restored=%#v", restored)
 	}
-	if len(restored.Workspaces) != len(shell.Workspaces) || len(restored.Floatings) != 1 || restored.ActiveFloatingID != shell.ActiveFloatingID {
+	if len(restored.Workspaces) != len(shell.Workspaces) || len(restored.ActiveFloatings()) != 1 || restored.ActiveFloatingID() != shell.ActiveFloatingID() {
 		t.Fatalf("workspace/floating structure mismatch, restored=%#v shell=%#v", restored, shell)
 	}
 	if len(restored.Toasts) != 0 || restored.Overlay.Open {
@@ -157,8 +157,8 @@ func TestWorkbenchStorageSnapshotScrubsTransientPaneKinds(t *testing.T) {
 	if got := snapshot.Workspace.Tabs[0].Panes[1]; got.Kind != PaneTerminalLive || got.TerminalID != "term-history" {
 		t.Fatalf("storage should keep terminal intent but not legacy copy-history pane kind, got %#v", got)
 	}
-	if len(snapshot.Floatings) != 1 || snapshot.Floatings[0].Pane.Kind != PaneTerminalLive || snapshot.Floatings[0].Pane.TerminalID != "term-float" {
-		t.Fatalf("storage should scrub floating transient pane kind, got %#v", snapshot.Floatings)
+	if len(snapshot.Workspace.Tabs[0].Floatings) != 1 || snapshot.Workspace.Tabs[0].Floatings[0].Pane.Kind != PaneTerminalLive || snapshot.Workspace.Tabs[0].Floatings[0].Pane.TerminalID != "term-float" {
+		t.Fatalf("storage should scrub tab floating transient pane kind, got %#v", snapshot.Workspace.Tabs[0].Floatings)
 	}
 	if pane, ok := restored.Pane(PaneCommandTarget{PaneID: DefaultPaneID}); !ok || pane.Kind != PaneTerminalLive || pane.TerminalID != "term-main" {
 		t.Fatalf("restored tiled pane should await core lifecycle, pane=%#v ok=%v", pane, ok)
@@ -186,6 +186,12 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 					TerminalID: "term-main",
 					Active:     true,
 				}},
+				Floatings: []FloatingPaneState{{
+					ID:    "floating-1",
+					Title: "float",
+					Pane:  PaneState{ID: "floating-1-pane", Title: "float", Kind: PaneKind("copy-history"), TerminalID: "term-float"},
+					Rect:  FloatingRect{X: 1, Y: 1, W: 40, H: 10},
+				}},
 			}},
 		},
 		Workspaces: []WorkspaceState{{
@@ -202,6 +208,12 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 					TerminalID: "term-main",
 					Active:     true,
 				}},
+				Floatings: []FloatingPaneState{{
+					ID:    "floating-1",
+					Title: "float",
+					Pane:  PaneState{ID: "floating-1-pane", Title: "float", Kind: PaneKind("copy-history"), TerminalID: "term-float"},
+					Rect:  FloatingRect{X: 1, Y: 1, W: 40, H: 10},
+				}},
 			}},
 		}, {
 			ID:          "workspace-secondary",
@@ -217,12 +229,6 @@ func TestWorkbenchStorageRestoreScrubsLegacyTransientPaneKinds(t *testing.T) {
 					TerminalID: "term-secondary",
 				}},
 			}},
-		}},
-		Floatings: []FloatingPaneState{{
-			ID:    "floating-1",
-			Title: "float",
-			Pane:  PaneState{ID: "floating-1-pane", Title: "float", Kind: PaneKind("copy-history"), TerminalID: "term-float"},
-			Rect:  FloatingRect{X: 1, Y: 1, W: 40, H: 10},
 		}},
 		PanelPresentation: PanelPresentationCard,
 		ActivePaneID:      DefaultPaneID,

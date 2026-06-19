@@ -218,9 +218,9 @@ func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, sta
 
 func activeEmptyPaneCTATarget(shell state.ShellStore) (state.PaneState, bool, bool) {
 	shell = shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		for _, floating := range shell.Floatings {
-			if floating.ID == shell.ActiveFloatingID && floating.Pane.Kind == state.PaneEmpty {
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		for _, floating := range shell.ActiveFloatings() {
+			if floating.ID == activeFloatingID && floating.Pane.Kind == state.PaneEmpty {
 				return floating.Pane, true, true
 			}
 		}
@@ -270,9 +270,9 @@ func reduceExitedPaneCTAInput(root state.Root, event input.InputEvent) (bool, st
 
 func activeExitedPaneCTATarget(root state.Root, shell state.ShellStore) (state.PaneState, bool, bool) {
 	shell = shell.EnsureDefaults()
-	if shell.ActiveFloatingID != "" {
-		for _, floating := range shell.Floatings {
-			if floating.ID == shell.ActiveFloatingID && paneHasExitedTerminal(root, floating.Pane.ID, true) {
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		for _, floating := range shell.ActiveFloatings() {
+			if floating.ID == activeFloatingID && paneHasExitedTerminal(root, floating.Pane.ID, true) {
 				return floating.Pane, true, true
 			}
 		}
@@ -840,11 +840,12 @@ func reduceViewWorkbenchShortcut(root state.Root, command string) (state.Root, [
 		next, effects := requestPaneResizeOwner(root, shell.ActivePaneID)
 		return next, append([]Effect{handledEffect{}}, effects...), true
 	case "floating take-owner":
-		if shell.ActiveFloatingID == "" {
+		activeFloatingID := shell.ActiveFloatingID()
+		if activeFloatingID == "" {
 			root.Shell = shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no active floating"})
 			return root.Advance(), []Effect{handledEffect{}}, true
 		}
-		next, effects := requestFloatingResizeOwner(root, shell.ActiveFloatingID)
+		next, effects := requestFloatingResizeOwner(root, activeFloatingID)
 		return next, append([]Effect{handledEffect{}}, effects...), true
 	case "pane reconnect":
 		root.Shell = shell.OpenTerminalPicker()
@@ -869,8 +870,8 @@ func applyActiveTerminalViewLayoutCommand(root state.Root, command state.Termina
 	shell := root.Shell.EnsureDefaults()
 	var binding state.TerminalViewBinding
 	var ok bool
-	if shell.ActiveFloatingID != "" {
-		root.TerminalViews, binding, ok = root.TerminalViews.ApplyFloatingLayoutCommand(shell.ActiveFloatingID, command)
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		root.TerminalViews, binding, ok = root.TerminalViews.ApplyFloatingLayoutCommand(activeFloatingID, command)
 	} else {
 		root.TerminalViews, binding, ok = root.TerminalViews.ApplyPaneLayoutCommand(shell.ActivePaneID, command)
 	}
@@ -1247,7 +1248,7 @@ func nextFloatingPaneID(shell state.ShellStore) string {
 	for i := 1; ; i++ {
 		id := fmt.Sprintf("floating-pane-%d", i)
 		exists := false
-		for _, floating := range shell.Floatings {
+		for _, floating := range shell.ActiveFloatings() {
 			if floating.Pane.ID == id {
 				exists = true
 				break
@@ -1264,7 +1265,7 @@ func nextFloatingID(shell state.ShellStore) string {
 	for i := 1; ; i++ {
 		id := fmt.Sprintf("floating-%d", i)
 		exists := false
-		for _, floating := range shell.Floatings {
+		for _, floating := range shell.ActiveFloatings() {
 			if floating.ID == id {
 				exists = true
 				break
