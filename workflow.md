@@ -292,9 +292,13 @@
 | 215E1-R118. SK TUI 标准配置样例 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已补充 v3 标准配置样例，每个配置项都写中文注释、默认含义和可选示例 |
 | 215E1-R119. SK TUI 配置代码适配 | 完成 | `termx-tui-v3/config/`、`termx-tui-v3/render/`、`termx-cli/`、`workflow.md` | 已接入 v3 独立配置模型、标准模板解析、env 覆盖、theme resolver 和 CLI 启动读取，并补最小单测 |
 | 215E1-R120. SK daemon/TUI/history 内存 profile 优化 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-vterm/`、`workflow.md` | 已基于 pprof 收掉 daemon live/history surface 的固定常驻内存：vterm ANSI parser data buffer 从每个 surface 4MB 降到 64KB；单个 history pipeline inuse profile 从约 7.0MB 降到约 3.0MB，core ingest alloc/op 从约 30.7MB 降到约 26.6MB，copy/history 滚动 CPU benchmark 未回退 |
+| 215E1-R121. SK daemon/TUI/history 真实 RSS 测量 | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-tui-v3/`、`termx-shared/`、`scripts/`、`workflow.md` | 已补真实 daemon/attach/copy RSS smoke 与 daemon/TUI heap profile；收掉 transport zstd 固定大窗口、history sealed clean line 内存形态和 commit 热路径 clone。1000 行 daemon 保持 50MB 内；30000 行 daemon RSS 仍约 124MB，heap 约 37-46MB，证据指向 live/vterm 写入临时分配造成 Go RSS 高水位，需要后续单独优化 |
+| 215E1-R122. SK live/vterm 写入 RSS 高水位优化 | 待开始 | `termx-core-v2/`、`termx-vterm/`、`scripts/`、`workflow.md` | 基于 R121 证据继续处理 30000 行 stress 下 daemon RSS：alloc profile 主要来自 live surface/vterm fast SGR path 的整屏 clone、blank line 和 scrollback damage 转换；不得靠丢 live/history truth 或定时 scrub 降内存 |
 
 当前下一步：
 
+- `215E1-R122 live/vterm 写入 RSS 高水位优化` 待开始：R121 证明 30000 行 stress 下 daemon live heap 已降到约 37-46MB，但 RSS 仍约 124MB；alloc profile 显示剩余高水位主要来自 live/vterm 写入路径的 GB 级临时分配，而不是 history/copy truth 常驻数据。
+- `215E1-R121 daemon/TUI/history 真实 RSS 测量` 已完成：新增真实 `scripts/termx_memory_smoke.sh`，记录 daemon idle / stress 后 / copy latest / copy oldest 与 TUI attach/copy RSS，并落 daemon/TUI heap profile。1000 行场景 daemon 约 46MB；30000 行场景 daemon 约 124MB、TUI copy-oldest 约 51MB，不能证明大场景已达 50MB。
 - `215E1-R120 daemon/TUI/history 内存 profile 优化` 已完成：pprof 证明主要固定常驻来自 core terminal 的 live surface 与 history alt-capture surface 内部 vterm parser data buffer。已把每个 vterm 固定 data buffer 从 4MB 收到 64KB，并补 32KB OSC title 回归测试；常规 copy/history benchmark 保持稳定。继续把历史模式本地已加载 older 缓存做有界窗口，需要单独切片设计 cursor/search/selection 坐标迁移，不能用丢 slice 的症状补丁直接处理。
 - `215E1-R119 TUI 配置代码适配` 已完成：新增 v3 独立 config package，支持解析 `tui-v3.yaml`、缺省默认、env 覆盖、unknown field/坏颜色报错和 keymap 冲突检测；`state.Root.Config` 会进入 render theme resolver，CLI 默认 root/attach 启动会读取 `$XDG_CONFIG_HOME/termx/tui-v3.yaml`，不存在则用内置默认。
 - `215E1-R118 TUI 标准配置样例` 已完成：新增完整 `tui-v3.example.yaml` 标准模板，字段齐全，中文注释说明用途、默认行为和示例值，并挂回配置管理设计文档作为后续 loader/schema 对齐基准。

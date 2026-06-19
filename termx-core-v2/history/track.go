@@ -774,7 +774,7 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 			continue
 		}
 		// 普通 commit 只允许提交已经 sealed 且不再被 primary screen 持有的 line。
-		if !force && !track.lineCommittable(id) {
+		if !force && !track.lineCommittableLoaded(id, line) {
 			continue
 		}
 		if line.Dirty {
@@ -1004,7 +1004,14 @@ func (track *HistoryTrack) lineCommittable(id LogicalLineID) bool {
 	if !ok || line.Seal != SealStateSealed {
 		return false
 	}
-	return !track.screen.containsLine(id)
+	return track.lineCommittableLoaded(id, line)
+}
+
+func (track *HistoryTrack) lineCommittableLoaded(id LogicalLineID, line LogicalLine) bool {
+	return track.frontier.Contains(id) &&
+		!track.frontier.IsHidden(id) &&
+		line.Seal == SealStateSealed &&
+		!track.screen.containsLine(id)
 }
 
 func (track *HistoryTrack) visibleFrontierIDs() []LogicalLineID {
@@ -1190,7 +1197,7 @@ func overwriteLineCellsAtColumn(existing []Cell, column int, incoming []Cell) []
 
 func logicalLineWidth(cells []Cell) int {
 	width := 0
-	for _, cell := range expandUnmeasuredCellsForMutation(cells) {
+	for _, cell := range cells {
 		width += cellWidth(cell)
 	}
 	return width

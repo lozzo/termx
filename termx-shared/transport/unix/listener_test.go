@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -357,5 +358,85 @@ func TestListenerDialRoundTripConcurrentSmallFrames(t *testing.T) {
 		if received[string(payload)] != 1 {
 			t.Fatalf("expected payload %q exactly once, got count=%d", string(payload), received[string(payload)])
 		}
+	}
+}
+
+func TestTransportZstdWindowKeepsConnectionHeapBounded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("memory smoke is not needed in short mode")
+	}
+	var before runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+
+	path := filepath.Join(t.TempDir(), "termx.sock")
+	listener, err := NewListener(path)
+	if err != nil {
+		t.Fatalf("new listener failed: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	accepted := make(chan transport.Transport, 4)
+	go func() {
+		for i := 0; i < 4; i++ {
+			conn, err := listener.Accept(ctx)
+			if err != nil {
+				return
+			}
+			accepted <- conn
+		}
+	}()
+
+	clients := make([]*Transport, 0, 4)
+	servers := make([]transport.Transport, 0, 4)
+	defer func() {
+		for _, client := range clients {
+			_ = client.Close()
+		}
+		for _, server := range servers {
+			_ = server.Close()
+		}
+	}()
+
+	for i := 0; i < 4; i++ {
+		client, err := Dial(path)
+		if err != nil {
+			t.Fatalf("dial %d failed: %v", i, err)
+		}
+		clients = append(clients, client)
+		select {
+		case server := <-accepted:
+			servers = append(servers, server)
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for accept")
+		}
+	}
+
+	payload := bytes.Repeat([]byte("termx-memory-transport-"), 32*1024)
+	for i, client := range clients {
+		if err := client.Send(payload); err != nil {
+			t.Fatalf("client send %d failed: %v", i, err)
+		}
+		got, err := servers[i].Recv()
+		if err != nil {
+			t.Fatalf("server recv %d failed: %v", i, err)
+		}
+		if !bytes.Equal(got, payload) {
+			t.Fatalf("payload mismatch for connection %d", i)
+		}
+	}
+
+	var after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	var heapGrowth uint64
+	if after.HeapAlloc > before.HeapAlloc {
+		heapGrowth = after.HeapAlloc - before.HeapAlloc
+	}
+	const maxTransportHeapGrowth = 16 << 20
+	if heapGrowth > maxTransportHeapGrowth {
+		t.Fatalf("transport heap grew too much: got=%d want<=%d", heapGrowth, maxTransportHeapGrowth)
 	}
 }

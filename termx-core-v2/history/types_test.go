@@ -152,6 +152,80 @@ func TestMemoryStorageBackendOverwritesAndDeletesPersistedLines(t *testing.T) {
 	}
 }
 
+func TestMemoryStorageBackendCompactsCleanSealedLines(t *testing.T) {
+	backend := NewMemoryStorageBackend()
+	line := LogicalLine{
+		ID:                7,
+		Generation:        3,
+		CreatedGeneration: 2,
+		ContentGeneration: 3,
+		Seal:              SealStateSealed,
+		Cells: []Cell{
+			{
+				Text:       "styled",
+				Width:      6,
+				Style:      CellStyle{FG: "ansi:2", BG: "ansi:4", Bold: true, Underline: true},
+				LinkURL:    "https://example.test",
+				LinkParams: "id=7",
+			},
+			{
+				Text:  "tail",
+				Width: 4,
+				Style: CellStyle{Italic: true, Reverse: true},
+			},
+		},
+		TailFill:  &RowTailFill{Style: CellStyle{BG: "ansi:5"}},
+		Residency: ResidencyMemory,
+	}
+	if err := backend.SaveLine(line); err != nil {
+		t.Fatalf("save line: %v", err)
+	}
+	stored, ok := backend.compactLines[7]
+	if !ok || len(stored.EncodedCells) == 0 {
+		t.Fatalf("expected clean sealed line to use compact storage, got %#v", backend.compactLines[7])
+	}
+	if _, ok := backend.lines[7]; ok {
+		t.Fatalf("compact line must not keep ordinary storage copy, got %#v", backend.lines[7])
+	}
+
+	loaded, ok := backend.LoadLine(7)
+	if !ok {
+		t.Fatal("expected compact line to load")
+	}
+	if !reflect.DeepEqual(loaded, line) {
+		t.Fatalf("loaded compact line changed payload:\nwant %#v\ngot  %#v", line, loaded)
+	}
+	loaded.Cells[0].Text = "caller mutation"
+	loaded.TailFill.Style.BG = "mutated"
+
+	loadedAgain, ok := backend.LoadLine(7)
+	if !ok {
+		t.Fatal("expected compact line to load again")
+	}
+	if !reflect.DeepEqual(loadedAgain, line) {
+		t.Fatalf("compact line leaked caller mutation:\nwant %#v\ngot  %#v", line, loadedAgain)
+	}
+	snapshotLine, ok := backend.LoadSnapshotLine(7)
+	if !ok {
+		t.Fatal("expected compact snapshot line")
+	}
+	if !reflect.DeepEqual(snapshotLine, line) {
+		t.Fatalf("snapshot compact line changed payload:\nwant %#v\ngot  %#v", line, snapshotLine)
+	}
+
+	line.Dirty = true
+	if err := backend.SaveLine(line); err != nil {
+		t.Fatalf("save dirty line: %v", err)
+	}
+	if _, ok := backend.compactLines[7]; ok {
+		t.Fatalf("dirty line must stay mutable in ordinary storage, got %#v", stored)
+	}
+	storedLine, ok := backend.lines[7]
+	if !ok || len(storedLine.Cells) == 0 {
+		t.Fatalf("dirty line must stay mutable in ordinary storage, got %#v", backend.lines[7])
+	}
+}
+
 func TestCommittedHistoryIndexStoresMembershipOnly(t *testing.T) {
 	index := NewCommittedHistoryIndex()
 	if index.Generation() != 0 {

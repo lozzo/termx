@@ -50,6 +50,11 @@ const (
 	maxBatchedBytes      = 128 << 10
 )
 
+const (
+	zstdTransportEncoderWindowSize = 128 << 10
+	zstdTransportDecoderMaxWindow  = 256 << 10
+)
+
 func Dial(path string) (*Transport, error) {
 	actualPath, _ := resolveSocketPath(path)
 	conn, err := net.Dial("unix", actualPath)
@@ -231,12 +236,27 @@ func newTransport(conn net.Conn) (*Transport, error) {
 	if conn == nil {
 		return nil, io.EOF
 	}
-	writer, err := zstd.NewWriter(conn)
+	// 本地 RPC 已按 64KB 分片、128KB 批量发送；默认 8MB zstd window 会让每个
+	// attach 的多条连接常驻几十 MB 历史表，真实收益很低。
+	writer, err := zstd.NewWriter(
+		conn,
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithEncoderLevel(zstd.SpeedFastest),
+		zstd.WithWindowSize(zstdTransportEncoderWindowSize),
+		zstd.WithLowerEncoderMem(true),
+	)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
-	reader, err := zstd.NewReader(conn)
+	reader, err := zstd.NewReader(
+		conn,
+		zstd.WithDecoderConcurrency(1),
+		zstd.WithDecoderLowmem(true),
+		// decoder 上限高于本端 encoder window，用来兼容同版本不同发送方向的批量，
+		// 但仍明显低于库默认的超大 window。
+		zstd.WithDecoderMaxWindow(zstdTransportDecoderMaxWindow),
+	)
 	if err != nil {
 		_ = writer.Close()
 		_ = conn.Close()

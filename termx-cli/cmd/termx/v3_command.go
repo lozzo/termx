@@ -75,12 +75,14 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 			srv := newCoreV2Server(opts...)
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
+			writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
 
 			logger.Info("starting core-v2 daemon", "socket", socketPath, "log_file", logPath)
 			err = srv.ListenAndServe(ctx)
+			writeHeapProfile("exit")
 			if err != nil {
 				logger.Error("core-v2 daemon exited with error", "error", err)
 			} else {
