@@ -823,7 +823,7 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 		t.Fatalf("expected created active floating, result=%#v shell=%#v", result, shell)
 	}
 	created := floatings[0]
-	if created.Rect.X <= 0 || created.Rect.Y <= 0 || created.Rect.W < 16 || created.Rect.H < 4 || !created.Active {
+	if created.Rect != (FloatingRect{X: 16, Y: 5, W: 48, H: 14}) || !created.Active {
 		t.Fatalf("expected centered clamped floating, got %#v", created)
 	}
 

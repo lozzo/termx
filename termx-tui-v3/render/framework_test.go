@@ -755,6 +755,12 @@ func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	if layer.Rect != (Rect{X: 8, Y: 4, W: 36, H: 8}) {
 		t.Fatalf("unexpected floating layer rect %#v", layer)
 	}
+	if got := SliceCells(frame.Lines[11], 42, 43); got == "v" {
+		t.Fatalf("floating should not render a standalone resize handle glyph, got %#v", frame.Lines)
+	}
+	if got := SliceCells(frame.Lines[11], 43, 44); got != "┘" {
+		t.Fatalf("floating should keep bottom-right corner, got %q frame=%#v", got, frame.Lines)
+	}
 	assertAllRowsWidth(t, frame.Lines, 64)
 }
 

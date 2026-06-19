@@ -546,9 +546,6 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
 	renderFloatingTerminalChrome(c, primitive)
 	renderFloatingChromeActions(c, primitive)
-	if rect.W >= 2 && rect.H >= 2 && floating.Chrome.ShowResizeHandle {
-		c.overlayTextStyled(rect.X+rect.W-2, rect.Y+rect.H-1, 1, "v", style, owner, LayerFloating)
-	}
 	var contentResult ContentRenderResult
 	if !floating.Collapsed {
 		contentResult = renderContent(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating)

@@ -659,7 +659,7 @@ func floatingChromeVM(root state.Root, floating state.FloatingPaneState, content
 	}
 	return FloatingChromeVM{
 		FillOverlay:      true,
-		ShowResizeHandle: true,
+		ShowResizeHandle: false,
 		Terminal:         terminalChromeVMForFloating(root, floating, content, style),
 		Actions:          defaultFloatingChromeActionVMs(style),
 	}
