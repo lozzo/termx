@@ -337,6 +337,24 @@ func TestMeasureLayoutFooterActionHitRegionsFollowNarrowSelection(t *testing.T) 
 	}
 }
 
+func TestMeasureLayoutAddsFloatingSummaryHitRegion(t *testing.T) {
+	shell := ShellVM{
+		Footer: FooterVM{
+			Visible:             true,
+			Mode:                "live",
+			ActionTokens:        []FooterActionVM{{Key: "^G", Label: "GLOBAL", ActionID: "footer.global"}},
+			GlobalSummary:       "ws:main float:1 collapsed:1 terminals:1",
+			FloatingSummaryOpen: true,
+		},
+		Layout: LayoutVM{Panels: []PanelVM{{ID: "pane-main", Presentation: PanelPresentationCard, Active: true}}},
+	}
+	plan := MeasureLayout(shell, Rect{W: 100, H: 20})
+	region := hitRegionByAction(t, plan.HitRegions, ActionFloatingOverview.String())
+	if region.Kind != HitRegionContentAction || region.Rect.Y != plan.Footer.Y || region.Rect.W != DisplayWidth(" float:1 collapsed:1") {
+		t.Fatalf("floating summary should open overview, got %#v footer=%#v", region, plan.Footer)
+	}
+}
+
 func TestMeasureLayoutAnchorsCursorWhenContentHasNoVisibleCursor(t *testing.T) {
 	shell := ShellVM{
 		Header: HeaderVM{Visible: true, Title: "main"},

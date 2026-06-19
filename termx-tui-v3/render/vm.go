@@ -90,12 +90,13 @@ func buildFooterVM(root state.Root, content ContentVM) FooterVM {
 		hint = activeViewLiveStatus(root, shell)
 	}
 	return FooterVM{
-		Visible:       shell.FooterVisible,
-		Mode:          mode,
-		Hint:          hint,
-		ActionTokens:  footerActionCatalogForRoot(mode, root, shell),
-		ActiveTarget:  activeTargetSummary(shell, root),
-		GlobalSummary: globalSummary(root, shell),
+		Visible:             shell.FooterVisible,
+		Mode:                mode,
+		Hint:                hint,
+		ActionTokens:        footerActionCatalogForRoot(mode, root, shell),
+		ActiveTarget:        activeTargetSummary(shell, root),
+		GlobalSummary:       globalSummary(root, shell),
+		FloatingSummaryOpen: len(shell.ActiveFloatings()) > 0,
 	}
 }
 
@@ -150,7 +151,17 @@ func terminalCount(root state.Root) int {
 
 func floatingSummary(shell state.ShellStore) string {
 	shell = shell.EnsureDefaults()
-	return fmt.Sprintf("float:%d", len(shell.ActiveFloatings()))
+	floatings := shell.ActiveFloatings()
+	collapsed := 0
+	for _, floating := range floatings {
+		if floating.Collapsed {
+			collapsed++
+		}
+	}
+	if collapsed > 0 {
+		return fmt.Sprintf("float:%d collapsed:%d", len(floatings), collapsed)
+	}
+	return fmt.Sprintf("float:%d", len(floatings))
 }
 
 func footerMode(root state.Root, shell state.ShellStore) string {

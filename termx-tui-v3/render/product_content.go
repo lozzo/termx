@@ -320,7 +320,7 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) ContentVM {
 	shell = shell.EnsureDefaults()
 	rows := state.FloatingOverviewItems(root)
-	lines := []Line{pageTitleLine("Floating Overview", "summon and raise")}
+	lines := []Line{NewLine("Restore, collapse, close, or summon floating panes")}
 	rowOffset := len(lines)
 	for index, row := range rows {
 		lines = append(lines, floatingOverviewRowLine(index, row))
@@ -328,20 +328,7 @@ func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) Conte
 	if len(rows) == 0 {
 		lines = append(lines, Line{Cells: []Cell{styledCell("No floating panes", StyleMuted)}})
 	}
-	actionOffset := len(lines)
-	lines = append(lines,
-		contentActionLine("summon", "Open Selected"),
-		contentActionLine("show-all", "Show All"),
-		contentActionLine("collapse-all", "Collapse All"),
-		contentActionLine("close", "Close Selected"),
-	)
 	regions := floatingOverviewHitRegions(rows, rowOffset)
-	regions = append(regions,
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingSummon.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 1, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingShowAll.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 2, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingCollapseAll.String()},
-		HitRegion{Kind: HitRegionContentAction, Rect: Rect{Y: actionOffset + 3, W: contentActionWidth, H: 1}, Row: -1, ActionID: ActionFloatingClose.String()},
-	)
 	return ContentVM{
 		Kind:       ContentFloatingOverview,
 		Lines:      lines,
@@ -1514,17 +1501,20 @@ func workbenchNavigatorTokenLine(tokens []string) Line {
 }
 
 func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
-	marker := "  "
+	_ = index
 	style := StyleMuted
 	if row.Selected {
-		marker = "▌ "
 		style = StyleAccent
 	}
-	active := "parked"
-	if row.Active {
-		active = "active"
+	title := row.Title
+	if title == "" {
+		title = row.FloatingID
 	}
-	collapsed := "open"
+	titleCell := styledCell(title, style)
+	if row.Selected {
+		titleCell.ANSIStyle.Underline = true
+	}
+	collapsed := "expanded"
 	if row.Collapsed {
 		collapsed = "collapsed"
 	}
@@ -1532,25 +1522,14 @@ func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
 	if row.FitMode == state.FloatingFitAuto {
 		fitMode = "auto-fit"
 	}
-	terminalID := row.TerminalID
-	if terminalID == "" {
-		terminalID = "unbound"
-	}
 	return Line{Cells: []Cell{
-		styledCell(marker, style),
-		tokenCell(fmt.Sprintf("%d", index+1), StyleStatusAccent),
-		NewCell(" "),
-		styledCell(row.Title, style),
-		NewCell(" "),
-		tokenCell(active, style),
-		NewCell(" "),
-		tokenCell(collapsed, StyleMuted),
-		NewCell(" "),
+		titleCell,
+		NewCell("  "),
+		tokenCell(collapsed, style),
+		NewCell("  "),
 		tokenCell(fitMode, StyleMuted),
-		NewCell(" "),
-		styledCell(terminalID, StyleMuted),
-		NewCell(" "),
-		styledCell(floatingOverviewRectLabel(row.Rect), StyleMuted),
+		NewCell("  "),
+		styledCell(floatingOverviewSizeLabel(row.Rect), StyleMuted),
 	}}
 }
 
@@ -2031,11 +2010,11 @@ func workbenchTreeStatus(count int, query string) string {
 }
 
 func floatingOverviewStatus(count int) string {
-	return fmt.Sprintf("floating overview: %d items", count)
+	return fmt.Sprintf("floating windows: %d items", count)
 }
 
-func floatingOverviewRectLabel(rect state.FloatingRect) string {
-	return fmt.Sprintf("%dx%d@%d,%d", rect.W, rect.H, rect.X, rect.Y)
+func floatingOverviewSizeLabel(rect state.FloatingRect) string {
+	return fmt.Sprintf("%dx%d", rect.W, rect.H)
 }
 
 func terminalPoolSizeLabel(cols int, rows int) string {

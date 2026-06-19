@@ -1822,17 +1822,10 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 		t.Fatalf("enter open should raise selected floating, shell=%#v", shell)
 	}
 	frame := lastRuntimeFrame(t, host)
-	if !frameContains(frame, "Floating Overview") || !frameContains(frame, "logs") || !frameContains(frame, "shell") {
+	if !frameContains(frame, "Floating Windows") || !frameContains(frame, "logs") || !frameContains(frame, "shell") {
 		t.Fatalf("expected floating overview frame, got %#v", frame.Lines)
 	}
 
-	showAllAction := frameActionHitRegion(t, frame, render.ActionFloatingShowAll.String(), "")
-	if err := host.SendInput(mouseEventAt(showAllAction.Rect)); err != nil {
-		t.Fatalf("send floating show-all click: %v", err)
-	}
-	if err := runtime.Drain(context.Background()); err != nil {
-		t.Fatalf("drain floating show-all click: %v", err)
-	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"}); err != nil {
 		t.Fatalf("send floating collapse-all hotkey: %v", err)
 	}

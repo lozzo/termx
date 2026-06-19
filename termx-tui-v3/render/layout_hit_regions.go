@@ -76,69 +76,6 @@ func appendTranslatedRegionsWithOwnerKind(out []HitRegion, regions []HitRegion, 
 	return appendTranslatedRegions(out, owned, origin, viewport)
 }
 
-func appendHeaderHitRegions(out []HitRegion, header HeaderVM, rect Rect, viewport Rect) []HitRegion {
-	if rect.W <= 0 || rect.H <= 0 || !header.Visible {
-		return out
-	}
-	x := rect.X
-	for _, segment := range headerLeftSegments(header) {
-		width := DisplayWidth(segment.text)
-		if width <= 0 {
-			continue
-		}
-		if segment.actionID != "" {
-			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: Rect{X: x, Y: rect.Y, W: width, H: rect.H}, ActionID: segment.actionID, PaneID: segment.targetID}, viewport)
-		}
-		x += width
-		if x >= rect.X+rect.W {
-			break
-		}
-	}
-	return out
-}
-
-func appendFooterHitRegions(out []HitRegion, footer FooterVM, rect Rect, frame Rect, viewport Rect) []HitRegion {
-	if rect.W <= 0 || rect.H <= 0 || !footer.Visible {
-		return out
-	}
-	_ = frame
-	y := rect.Y
-	x := rect.X
-	currentAction := ""
-	currentRect := Rect{}
-	flush := func() {
-		if currentAction != "" && currentRect.W > 0 {
-			out = appendRegion(out, HitRegion{Kind: HitRegionContentAction, Rect: currentRect, ActionID: currentAction}, viewport)
-		}
-		currentAction = ""
-		currentRect = Rect{}
-	}
-	for _, segment := range footerLeftSegments(footer, rect.W) {
-		width := DisplayWidth(segment.text)
-		if width <= 0 {
-			continue
-		}
-		if segment.actionID == "" {
-			flush()
-			x += width
-			continue
-		}
-		if currentAction == segment.actionID && currentRect.X+currentRect.W == x {
-			currentRect.W += width
-		} else {
-			flush()
-			currentAction = segment.actionID
-			currentRect = Rect{X: x, Y: y, W: width, H: 1}
-		}
-		x += width
-		if x >= rect.X+rect.W {
-			break
-		}
-	}
-	flush()
-	return out
-}
-
 func appendFloatingHitRegions(out []HitRegion, floating FloatingLayoutPlan, viewport Rect) []HitRegion {
 	if floating.Rect.W <= 0 || floating.Rect.H <= 0 {
 		return out

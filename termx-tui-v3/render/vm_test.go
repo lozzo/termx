@@ -1393,7 +1393,7 @@ func TestRenderVMBuilderProjectsTabStripAndWorkspaceSummary(t *testing.T) {
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "f", "PICK", ActionFloatingPick.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "a", "OWNER", ActionFloatingTakeOwner.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "CENTER", ActionFloatingCenter.String()) ||
-		!containsFooterAction(vm.Shell.Footer.ActionTokens, "m", "COLLAPSE", ActionFloatingCollapse.String()) ||
+		!containsFooterAction(vm.Shell.Footer.ActionTokens, "m", "HIDE", ActionFloatingCollapse.String()) ||
 		!containsFooterAction(vm.Shell.Footer.ActionTokens, "x", "CLOSE", ActionFloatingClose.String()) {
 		t.Fatalf("expected floating footer structural actions, got %#v", vm.Shell.Footer)
 	}
@@ -1586,8 +1586,15 @@ func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
 		t.Fatalf("expected floating overview overlay VM, got %#v", vm.Shell.Overlay)
 	}
 	content := vm.Shell.Overlay.Content
-	if content.Status != "floating overview: 1 items" || len(content.HitRegions) == 0 || !strings.Contains(content.Lines[1].PlainString(), "logs") || !strings.Contains(content.Lines[1].PlainString(), "auto-fit") {
+	if content.Status != "floating windows: 1 items" || len(content.HitRegions) == 0 ||
+		!strings.Contains(content.Lines[0].PlainString(), "Restore, collapse, close, or summon floating panes") ||
+		!strings.Contains(content.Lines[1].PlainString(), "logs") ||
+		!strings.Contains(content.Lines[1].PlainString(), "auto-fit") ||
+		!strings.Contains(content.Lines[1].PlainString(), "50x16") {
 		t.Fatalf("expected floating overview content with action regions, got %#v", content)
+	}
+	if !lineHasStyledANSICell(content.Lines[1], "logs", StyleAccent, ANSICellStyle{Underline: true}) {
+		t.Fatalf("selected floating row should underline the name, got %#v", content.Lines[1])
 	}
 	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "1-9", "SUMMON", ActionFloatingSummon.String()) {
 		t.Fatalf("floating overview footer should expose summon action, got %#v", vm.Shell.Footer)

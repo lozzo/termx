@@ -283,7 +283,7 @@ func ActionSpecCatalog() []ActionSpec {
 		actionSpec(ActionFloatingTakeOwner, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("a", "OWNER", StyleStatusAccent).withHelp("take resize owner"),
 		actionSpec(ActionFloatingResize, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withHelp("resize"),
 		actionSpec(ActionFloatingCenter, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("c", "CENTER", StyleStatusAccent).withChromeGlyph("").withHelp("center"),
-		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("m", "COLLAPSE", StyleStatusAccent).withChromeGlyph("").withHelp("collapse"),
+		actionSpec(ActionFloatingCollapse, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceFloatingChrome, ActionSurfaceInput).withFooter("m", "HIDE", StyleStatusAccent).withChromeGlyph("").withHelp("hide"),
 		actionSpec(ActionFloatingToggleAll, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("v", "ALL", StyleStatusAccent).withHelp("toggle all floating panes"),
 		actionSpec(ActionFloatingFit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("=", "FIT", StyleStatusAccent).withHelp("fit floating to live content"),
 		actionSpec(ActionFloatingAutoFit, ActionDispatchApp, ActionSurfaceFooter, ActionSurfaceHelp).withFooter("s", "AUTO-FIT", StyleStatusAccent).withHelp("toggle floating auto-fit"),

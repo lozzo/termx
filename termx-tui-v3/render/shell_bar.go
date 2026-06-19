@@ -149,13 +149,24 @@ func footerSummaryReservedWidth(footer FooterVM, width int) int {
 	if width >= 120 {
 		return barSegmentsWidth(segments)
 	}
-	return footerSummaryTokenWidth(segments, "ws:") + footerSummaryTokenWidth(segments, "float:") + 1
+	return footerSummaryTokenWidth(segments, "ws:") + footerFloatingSummaryWidth(segments) + 1
 }
 
 func footerSummaryTokenWidth(segments []barSegment, prefix string) int {
 	width := 0
 	for _, segment := range segments {
 		if strings.HasPrefix(strings.TrimSpace(segment.text), prefix) {
+			width += DisplayWidth(segment.text)
+		}
+	}
+	return width
+}
+
+func footerFloatingSummaryWidth(segments []barSegment) int {
+	width := 0
+	for _, segment := range segments {
+		token := strings.TrimSpace(segment.text)
+		if strings.HasPrefix(token, "float:") || strings.HasPrefix(token, "collapsed:") {
 			width += DisplayWidth(segment.text)
 		}
 	}
@@ -189,7 +200,7 @@ func footerMetadataSegments(footer FooterVM, hintIsCritical bool) []barSegment {
 			right = append(right, barText(" "+target+" ", StyleFooterAccent, 2))
 		}
 	}
-	right = append(right, footerSummarySegments(compactFooterSummary(footer.GlobalSummary))...)
+	right = append(right, footerSummarySegmentsForFooter(footer)...)
 	if hintIsCritical && footer.Hint != "" {
 		right = append(right, barText(" "+footer.Hint+" ", StyleWarning, 0))
 	}
@@ -201,6 +212,11 @@ func compactFooterSummary(value string) string {
 }
 
 func footerSummarySegments(value string) []barSegment {
+	return footerSummarySegmentsForFooter(FooterVM{GlobalSummary: value})
+}
+
+func footerSummarySegmentsForFooter(footer FooterVM) []barSegment {
+	value := compactFooterSummary(footer.GlobalSummary)
 	tokens := metadataTokens(value)
 	if len(tokens) == 0 {
 		return nil
@@ -209,13 +225,23 @@ func footerSummarySegments(value string) []barSegment {
 	for _, token := range tokens {
 		style := StyleFooterMuted
 		priority := 2
+		actionID := ""
 		if strings.HasPrefix(token, "float:") {
 			style = StyleFooterAccent
 			priority = 1
+			if footer.FloatingSummaryOpen {
+				actionID = ActionFloatingOverview.String()
+			}
+		} else if strings.HasPrefix(token, "collapsed:") {
+			style = StyleFooterAccent
+			priority = 1
+			if footer.FloatingSummaryOpen {
+				actionID = ActionFloatingOverview.String()
+			}
 		} else if strings.HasPrefix(token, "terminals:") {
 			priority = 4
 		}
-		segments = append(segments, barText(" "+token, style, priority))
+		segments = append(segments, barText(" "+token, style, priority).withAction(actionID))
 	}
 	segments = append(segments, barText(" ", StyleFooterMuted, 4))
 	return segments

@@ -885,13 +885,14 @@ type FooterActionVM struct {
 }
 
 type FooterVM struct {
-	Visible       bool
-	Mode          string
-	Hint          string
-	Actions       []string
-	ActionTokens  []FooterActionVM
-	ActiveTarget  string
-	GlobalSummary string
+	Visible             bool
+	Mode                string
+	Hint                string
+	Actions             []string
+	ActionTokens        []FooterActionVM
+	ActiveTarget        string
+	GlobalSummary       string
+	FloatingSummaryOpen bool
 }
 
 type ToastSeverity string
