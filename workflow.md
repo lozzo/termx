@@ -278,9 +278,11 @@
 | 215E1-R105. SK workbench navigator tree 交互回归 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`termx-tui-v3/render/`、`workflow.md` | 已修复 Workbench Navigator 搜索删除、floating 节点展示、tab 多 pane snapshot 预览和 tree 图标/文本/状态着色 |
 | 215E1-R106. SK workbench navigator 布局微调 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已把 Workbench Navigator 左侧 tree 列在可用空间内加宽约 10 字符，并在搜索行和内容区之间补横线分隔 |
 | 215E1-R107. SK workbench navigator T 框贴边回归 | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已把 Workbench Navigator 内部分割框改成和外框合并的 T 字框，去掉 search 上方空白，并让 tab 多 pane 预览 frame 标题使用连接的 terminal 名称 |
+| 215E1-R108. SK workbench navigator tab terminal 展示 | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已把 Workbench Navigator tab 下的 terminal-live 子节点显示为连接的 terminal 名称；搜索同时保留 pane 原标题匹配；选中 tab 时右侧只预览该 tab 下已连接的 terminal |
 
 当前下一步：
 
+- `215E1-R108 workbench navigator tab terminal 展示` 已完成：Workbench tree item 增加 display title，tab 下子节点显示 terminal pool 名称或 terminal id；pane 原标题仍参与搜索；tab 右侧 preview 过滤未连接空槽位，展示该 tab 下所有已连接 terminal。
 - `215E1-R107 workbench navigator T 框贴边回归` 已完成：Workbench Navigator content rect 贴外框内侧绘制，内部横线/竖线由 overlay chrome 合并到左右和底部边框；search 直接位于标题边框下一行；tab 预览里的每个 pane frame 使用 terminal pool 名称或 terminal id 展示。
 - `215E1-R106 workbench navigator 布局微调` 已完成：左侧 tree 列比 R105 更宽，搜索行下方有横线分隔，snapshot/hit region 坐标同步下移。
 - `215E1-R105 workbench navigator tree 交互回归` 已完成：Workbench Navigator 搜索支持 Backspace/Delete 删除；floating 会作为实际节点展示并可打开；选中 tab 时右侧按 pane 列表分配多个 live snapshot；tree 行的图标、标题和状态 token 按 active/running/floating/owner 等状态着色。

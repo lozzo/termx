@@ -2488,6 +2488,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		},
 		Session: state.TerminalSessionStore{TerminalID: "term-2", Attached: true, Cols: 32, Rows: 8, State: state.TerminalLiveAttached},
 	}
+	root = bindTestPaneTerminal(root, state.DefaultPaneID, "term-main")
 	root = bindTestPaneTerminal(root, "pane-2", "term-2")
 
 	vm := NewRenderVMBuilder().Build(root)
@@ -2499,7 +2500,8 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		!strings.Contains(content.Lines[2].PlainString(), "TREE") ||
 		!strings.Contains(content.Lines[2].PlainString(), "PANE") ||
 		!strings.Contains(content.Lines[3].PlainString(), "▸") ||
-		!strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
+		!strings.Contains(content.Lines[3].PlainString(), "日志终端") ||
+		strings.Contains(content.Lines[3].PlainString(), "日志🚀") ||
 		!strings.Contains(plainLines(content.Lines), "SNAPSHOT") ||
 		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Open") ||
 		!strings.Contains(content.Lines[len(content.Lines)-1].PlainString(), "Zoom") ||
@@ -2531,7 +2533,7 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 	}
 	if len(content.Meta.WorkbenchSnapshots) != 1 ||
 		!lineHasStyledCell(content.Lines[3], "  ", StyleAccent) ||
-		!lineHasStyledCell(content.Lines[3], "日志🚀", StyleAccent) ||
+		!lineHasStyledCell(content.Lines[3], "日志终端", StyleAccent) ||
 		!lineHasStyledCell(content.Lines[3], "terminal-live", StyleSuccess) {
 		t.Fatalf("expected selected pane row styled tokens and one snapshot, meta=%#v line=%#v", content.Meta, content.Lines[3])
 	}
@@ -2544,6 +2546,8 @@ func TestRenderVMBuilderProjectsWorkbenchTreeOverlay(t *testing.T) {
 		content.Meta.WorkbenchSnapshots[0].Panel.Title != "shell" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.ID != "pane-2" ||
 		content.Meta.WorkbenchSnapshots[1].Panel.Title != "日志终端" ||
+		content.Meta.WorkbenchSnapshots[0].Panel.Chrome.Terminal.Title.Text != "shell" ||
+		content.Meta.WorkbenchSnapshots[1].Panel.Chrome.Terminal.Title.Text != "日志终端" ||
 		!strings.Contains(plainLines(content.Meta.WorkbenchSnapshots[1].Panel.Content.Lines), "live snapshot row") {
 		t.Fatalf("tab selection should project every pane snapshot, meta=%#v", content.Meta)
 	}

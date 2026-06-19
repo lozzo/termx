@@ -394,7 +394,10 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 		SplitActivePane(PaneState{ID: "pane-2", Title: "日志🚀", Kind: PaneTerminalLive, TerminalID: "term-2"}, SplitDirectionVertical).
 		FocusPane(PaneCommandTarget{PaneID: DefaultPaneID}).
 		OpenWorkbenchTree()
-	root := Root{Shell: shell, Session: TerminalSessionStore{TerminalID: "term-main"}}
+	root := Root{
+		Shell:        shell.BindPaneTerminal(PaneCommandTarget{PaneID: DefaultPaneID}, "term-main"),
+		TerminalPool: TerminalPoolStore{Items: []TerminalPoolItem{{TerminalID: "term-main", Title: "main terminal"}, {TerminalID: "term-2", Title: "日志终端"}}},
+	}
 
 	items := WorkbenchTreeItems(root)
 	if len(items) != 5 {
@@ -405,6 +408,9 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	}
 	if items[3].Kind != WorkbenchTreeKindPane || items[3].PaneID != "pane-2" || items[3].TerminalID != "term-2" {
 		t.Fatalf("expected pane-2 row with terminal binding, got %#v", items[3])
+	}
+	if items[2].DisplayTitle != "main terminal" || items[3].DisplayTitle != "日志终端" || items[3].PaneTitle != "日志🚀" {
+		t.Fatalf("tab children should display connected terminal names, got %#v %#v", items[2], items[3])
 	}
 	if items[4].Kind != WorkbenchTreeKindFloating || items[4].Summary != "float:0" {
 		t.Fatalf("expected floating summary row, got %#v", items[4])
@@ -426,7 +432,7 @@ func TestWorkbenchTreeItemsProjectStructureSearchAndSelection(t *testing.T) {
 	root.Shell = root.Shell.SetWorkbenchTreeQuery("日志")
 	items = WorkbenchTreeItems(root)
 	if len(items) != 1 || items[0].PaneID != "pane-2" || !items[0].Selected {
-		t.Fatalf("query should filter to matching wide-char pane row, got %#v", items)
+		t.Fatalf("query should filter to matching terminal-name pane row, got %#v", items)
 	}
 	root.Shell = root.Shell.SetWorkbenchTreeQuery("")
 	root.Shell = root.Shell.MoveWorkbenchTreeSelection(2, len(WorkbenchTreeItems(root)))

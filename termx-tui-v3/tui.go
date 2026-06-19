@@ -186,6 +186,13 @@ func smokeWorkbenchTreeRoot() state.Root {
 	root := state.Root{
 		Shell:    shell,
 		Viewport: state.ViewportStore{Valid: true, Cols: 160, Rows: 40},
+		TerminalPool: state.TerminalPoolStore{Status: state.TerminalPoolReady, Items: []state.TerminalPoolItem{{
+			TerminalID: "term-logs",
+			Title:      "日志终端",
+			State:      "running",
+			Cols:       160,
+			Rows:       40,
+		}}},
 		Surface: state.TerminalSurfaceStore{
 			TerminalID: "term-logs",
 			Cols:       160,

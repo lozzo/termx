@@ -1291,6 +1291,9 @@ func workbenchNavigatorPreviewPanes(root state.Root, selected state.WorkbenchTre
 		}
 		out := make([]workbenchNavigatorPreviewPane, 0, len(tab.Panes))
 		for _, pane := range tab.Panes {
+			if workbenchNavigatorPreviewTerminalID(root, workbenchNavigatorPreviewPane{Pane: pane}) == "" {
+				continue
+			}
 			out = append(out, workbenchNavigatorPreviewPane{Pane: pane, Active: selected.Active && pane.ID == tab.ActivePaneID})
 		}
 		return out
@@ -1796,6 +1799,9 @@ func workbenchTreeTitle(row state.WorkbenchTreeItem) string {
 		}
 		return row.TabID
 	case state.WorkbenchTreeKindPane:
+		if row.DisplayTitle != "" {
+			return row.DisplayTitle
+		}
 		if row.PaneTitle != "" {
 			return row.PaneTitle
 		}

@@ -290,6 +290,7 @@ type WorkbenchTreeItem struct {
 	FloatingTitle string
 	PaneID        string
 	PaneTitle     string
+	DisplayTitle  string
 	PaneKind      PaneKind
 	TerminalID    string
 	Depth         int

@@ -106,7 +106,7 @@ func TestSmokeRunDetailedCoversUIFramework(t *testing.T) {
 		!frameContains(cases["workbench-tree-page"].Lines, "TREE") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "PANE") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "▸") ||
-		!frameContains(cases["workbench-tree-page"].Lines, "日志🚀") ||
+		!frameContains(cases["workbench-tree-page"].Lines, "日志终端") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "SNAPSHOT") ||
 		!frameContains(cases["workbench-tree-page"].Lines, "Open  Zoom  Detach  Close") ||
 		frameContains(cases["workbench-tree-page"].Lines, "[open]  Open") {

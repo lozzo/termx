@@ -38,7 +38,11 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 			Summary:       workbenchTabSummary(tab),
 		})
 		for _, pane := range tab.Panes {
-			terminalID := pickerTerminalID(root, pane)
+			terminalID := workbenchPaneTerminalID(root, pane)
+			displayTitle := ""
+			if pane.Kind == PaneTerminalLive && terminalID != "" {
+				displayTitle = workbenchTerminalTitle(root.TerminalPool, terminalID)
+			}
 			appendItem(WorkbenchTreeItem{
 				Kind:          WorkbenchTreeKindPane,
 				WorkspaceID:   workspace.ID,
@@ -47,6 +51,7 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 				TabTitle:      tab.Title,
 				PaneID:        pane.ID,
 				PaneTitle:     paneTitle(pane),
+				DisplayTitle:  displayTitle,
 				PaneKind:      pane.Kind,
 				TerminalID:    terminalID,
 				Depth:         2,
@@ -66,7 +71,7 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 	} else {
 		for _, floating := range shell.Floatings {
 			pane := floating.Pane
-			terminalID := pickerTerminalID(root, pane)
+			terminalID := workbenchPaneTerminalID(root, pane)
 			appendItem(WorkbenchTreeItem{
 				Kind:          WorkbenchTreeKindFloating,
 				WorkspaceID:   workspace.ID,
@@ -96,6 +101,16 @@ func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
 	return items
 }
 
+func workbenchPaneTerminalID(root Root, pane PaneState) string {
+	if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok && binding.TerminalID != "" {
+		return binding.TerminalID
+	}
+	if pane.TerminalID != "" {
+		return pane.TerminalID
+	}
+	return ""
+}
+
 func pickerTerminalID(root Root, pane PaneState) string {
 	if pane.TerminalID != "" {
 		return pane.TerminalID
@@ -112,6 +127,16 @@ func pickerTerminalID(root Root, pane PaneState) string {
 	return ""
 }
 
+func workbenchTerminalTitle(pool TerminalPoolStore, terminalID string) string {
+	for _, item := range pool.Items {
+		if item.TerminalID != terminalID {
+			continue
+		}
+		return terminalPoolTitle(item)
+	}
+	return terminalID
+}
+
 func matchesWorkbenchTreeQuery(item WorkbenchTreeItem, query string) bool {
 	if query == "" {
 		return true
@@ -124,6 +149,7 @@ func matchesWorkbenchTreeQuery(item WorkbenchTreeItem, query string) bool {
 		strings.Contains(strings.ToLower(item.FloatingTitle), query) ||
 		strings.Contains(strings.ToLower(item.FloatingID), query) ||
 		strings.Contains(strings.ToLower(item.PaneTitle), query) ||
+		strings.Contains(strings.ToLower(item.DisplayTitle), query) ||
 		strings.Contains(strings.ToLower(item.PaneID), query) ||
 		strings.Contains(strings.ToLower(string(item.PaneKind)), query) ||
 		strings.Contains(strings.ToLower(item.TerminalID), query) ||
