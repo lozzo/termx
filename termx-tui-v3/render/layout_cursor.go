@@ -31,6 +31,10 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 		}
 		return cursorWithRectOrAnchor(cursor, panel.ContentRect)
 	}
+	if len(plan.Panels) == 0 && shell.Layout.BodyContent.Kind == ContentEmptyPane {
+		// 空 tab / 空 workspace 是纯提示页，没有输入焦点，不能停靠宿主光标。
+		return Cursor{}, Rect{}
+	}
 	return cursorWithRectOrAnchor(shell.Cursor, plan.Body)
 }
 

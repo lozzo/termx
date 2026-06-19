@@ -2261,6 +2261,9 @@ func TestRenderVMBuilderProjectsEmptyTabContentWithoutSyntheticPanel(t *testing.
 	if content.Kind != ContentEmptyPane || !content.Empty || !strings.Contains(content.Lines[0].PlainString(), "No panel in tab logs") || !strings.Contains(content.Lines[2].PlainString(), "Choose terminal") {
 		t.Fatalf("expected empty tab content, got %#v", content)
 	}
+	if content.Cursor.Visible || content.Cursor.Anchor {
+		t.Fatalf("empty tab hint must not expose a content cursor, got %#v", content.Cursor)
+	}
 	if !contentHasAction(content, "empty.attach") || !contentHasAction(content, "empty.create") || !contentHasAction(content, "empty.manager") {
 		t.Fatalf("expected empty tab CTA action regions, got %#v", content.HitRegions)
 	}

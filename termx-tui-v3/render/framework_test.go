@@ -1178,6 +1178,21 @@ func TestFrameworkRendersOverlayPopupAbovePromptModal(t *testing.T) {
 	}
 }
 
+func TestFrameworkHidesCursorForEmptyTabBody(t *testing.T) {
+	shell, commandResult := state.DefaultShell().ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	if commandResult.Status != state.WorkbenchCommandOK {
+		t.Fatalf("create tab: %#v", commandResult)
+	}
+
+	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(state.Root{Shell: shell}))
+	if result.Cursor.Visible || result.Cursor.Anchor || result.CursorRect.W != 0 || result.CursorRect.H != 0 {
+		t.Fatalf("empty tab body must not park or show host cursor, cursor=%#v rect=%#v", result.Cursor, result.CursorRect)
+	}
+	if !frameContains(result.Frame(), "No panel in tab logs") {
+		t.Fatalf("expected empty tab hint in rendered frame, got %#v", result.Content)
+	}
+}
+
 func assertFrameSize(t *testing.T, result RenderResult, width int, height int) {
 	t.Helper()
 	if result.Metadata.Width != width || result.Metadata.Height != height || len(result.Content) != height {

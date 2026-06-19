@@ -162,7 +162,6 @@ func buildEmptyTabContent(tab state.TabState) ContentVM {
 		Kind:       ContentEmptyPane,
 		Lines:      lines,
 		Status:     "empty tab: Choose terminal / New terminal / Terminal Pool",
-		Cursor:     Cursor{Visible: true, Row: 0, Col: DisplayWidth("No panel in tab ") + DisplayWidth(title), Shape: CursorShapeBar},
 		Empty:      true,
 		HitRegions: contentActionRegions([]ActionID{ActionEmptyAttach, ActionEmptyCreate, ActionEmptyManager}, "", 2),
 	}
