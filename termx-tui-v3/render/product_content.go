@@ -18,6 +18,7 @@ const emptyPaneActionCount = 4
 const exitedPaneActionCount = 2
 
 const defaultWorkbenchNavigatorTreeWidth = 36
+const workbenchNavigatorTreeWidthBoost = 10
 
 type workbenchNavigatorLayout struct {
 	ContentWidth   int
@@ -264,7 +265,7 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 	rows := state.WorkbenchTreeItems(root)
 	layout := workbenchNavigatorLayoutForViewport(root.Viewport)
 	lines := workbenchNavigatorLines(root, rows, query, layout)
-	rowOffset := 2
+	rowOffset := 3
 	visibleRows := rows
 	if len(visibleRows) > layout.BodyRows {
 		visibleRows = visibleRows[:layout.BodyRows]
@@ -1042,6 +1043,7 @@ func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, qu
 	right := workbenchNavigatorRightLines(root, selected, layout)
 	lines := []Line{
 		workbenchNavigatorFullLine(searchRowLine(query, "main"), layout),
+		workbenchNavigatorDividerLine(layout),
 		workbenchNavigatorBodyLine(workbenchNavigatorHeaderLine("TREE"), workbenchNavigatorHeaderLine(workbenchNavigatorRightHeader(selected, selectedOK)), layout),
 	}
 	for row := 0; row < layout.BodyRows; row++ {
@@ -1061,6 +1063,18 @@ func workbenchNavigatorLines(root state.Root, rows []state.WorkbenchTreeItem, qu
 
 func workbenchNavigatorFullLine(line Line, layout workbenchNavigatorLayout) Line {
 	return fitContentLine(line, layout.ContentWidth, StyleForeground)
+}
+
+func workbenchNavigatorDividerLine(layout workbenchNavigatorLayout) Line {
+	cells := []Cell{}
+	if layout.TreeWidth > 0 {
+		cells = append(cells, styledCell(strings.Repeat("─", layout.TreeWidth), StyleForeground))
+	}
+	cells = append(cells, styledCell("┬", StyleForeground))
+	if layout.RightWidth > 0 {
+		cells = append(cells, styledCell(strings.Repeat("─", layout.RightWidth), StyleForeground))
+	}
+	return Line{Cells: cells}
 }
 
 func workbenchNavigatorBodyLine(left Line, right Line, layout workbenchNavigatorLayout) Line {
@@ -1197,8 +1211,16 @@ func workbenchNavigatorLayoutForViewport(viewport state.ViewportStore) workbench
 		treeWidth = maxInt(24, contentWidth-37)
 		rightWidth = maxInt(20, contentWidth-treeWidth-1)
 	}
-	bodyRows := maxInt(6, contentHeight-3)
-	actionRow := bodyRows + 2
+	maxBoostedTreeWidth := contentWidth - 1 - 36
+	if maxBoostedTreeWidth < treeWidth {
+		maxBoostedTreeWidth = contentWidth - 1 - 20
+	}
+	if maxBoostedTreeWidth > treeWidth {
+		treeWidth = minInt(treeWidth+workbenchNavigatorTreeWidthBoost, maxBoostedTreeWidth)
+		rightWidth = maxInt(20, contentWidth-treeWidth-1)
+	}
+	bodyRows := maxInt(6, contentHeight-4)
+	actionRow := bodyRows + 3
 	// 中文说明：snapshot 坐标以 overlay content rect 为原点，和最终 runtime 叠加坐标保持一致。
 	snapshotWidth := maxInt(0, rightWidth-2)
 	snapshotHeight := clampInt(bodyRows-3, 4, bodyRows)
@@ -1209,7 +1231,7 @@ func workbenchNavigatorLayoutForViewport(viewport state.ViewportStore) workbench
 		RightWidth:     rightWidth,
 		ActionRow:      actionRow,
 		SnapshotX:      treeWidth + 2,
-		SnapshotY:      5,
+		SnapshotY:      6,
 		SnapshotWidth:  snapshotWidth,
 		SnapshotHeight: snapshotHeight,
 	}
