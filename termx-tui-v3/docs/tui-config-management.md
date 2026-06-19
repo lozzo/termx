@@ -20,6 +20,8 @@ $XDG_CONFIG_HOME/termx/tui-v3.yaml
 ~/.config/termx/tui-v3.yaml
 ```
 
+标准模板见 `termx-tui-v3/docs/tui-v3.example.yaml`。模板包含全部第一阶段配置项，并用中文注释说明用途、默认行为和示例值。
+
 实现入口优先级：
 
 1. 代码内置默认值。
@@ -71,6 +73,8 @@ Renderer / TerminalHost
 - terminal live 内容的 ANSI 颜色直通，不被 TUI theme 重映射。
 
 ## 4. 初始 schema
+
+完整带注释示例以 `termx-tui-v3/docs/tui-v3.example.yaml` 为准。下面只保留字段结构，避免阅读设计文档时被注释噪音打断。
 
 ```yaml
 version: 1

@@ -1,0 +1,370 @@
+# termx-tui-v3 标准配置模板
+#
+# 推荐保存位置：
+#   $XDG_CONFIG_HOME/termx/tui-v3.yaml
+#   或 ~/.config/termx/tui-v3.yaml
+#
+# 说明：
+# - 这份文件是完整模板，不是当前运行时已经接入的实现文件。
+# - 空字符串 "" 表示使用 v3 内置默认值、host theme 推导值或派生值。
+# - 颜色第一阶段只使用 "#RRGGBB"。示例："#d65cff"。
+# - terminal 内容自己的 ANSI 颜色不会被这里的 TUI theme 重映射。
+
+# 配置 schema 版本。
+# 默认值：1。
+# 当前实现设计只接受版本 1；后续 schema 变更再新增版本，不做旧格式迁移兼容。
+# 示例：version: 1
+version: 1
+
+# tui 是当前 TUI 客户端的用户偏好配置根节点。
+# 它只控制当前客户端的视觉、交互和快捷键，不保存 workspace/tab/pane 布局，不保存 terminal lifecycle。
+tui:
+  # profile 是预留的配置 profile 名称。
+  # 默认值：default。
+  # 第一阶段只读取名称，不做多 profile merge；后续可以用它支持不同使用场景。
+  # 示例：profile: work
+  profile: default
+
+  # theme 控制 TUI chrome 的颜色 token。
+  # 它影响 header、footer、pane border、overlay、toast、picker、navigator、selection/focus 等 UI 元素。
+  # 它不影响 terminal 输出内容自己的 ANSI 前景色和背景色。
+  theme:
+    # mode 选择内置亮暗基线。
+    # 默认值：dark。
+    # 可选值：dark、light、system。
+    # 当前第一阶段里 system 等同 host-aware dark；后续可接宿主系统主题。
+    # 示例：mode: light
+    mode: dark
+
+    # palette 决定默认主题是否从宿主终端 palette 推导。
+    # 默认值：host。
+    # 可选值：host、builtin。
+    # host：先读取宿主 foreground/background/palette，再叠加用户显式颜色。
+    # builtin：完全使用 TermX 内置颜色，再叠加用户显式颜色。
+    # 示例：palette: builtin
+    palette: host
+
+    # primary 是主色。
+    # 默认值：当前内置主色，等价于 render.DefaultTheme().Accent，当前为 "#a970ff"。
+    # 用途：active pane border、当前选中项、focus marker、主快捷键 token、重要 CTA。
+    # 示例：primary: "#d65cff"
+    primary: "#a970ff"
+
+    # secondary 是次色。
+    # 默认值：当前内置信息色，当前为 "#7ab8ff"。
+    # 用途：次级强调、信息型标签、preview 轻量强调、非破坏性辅助动作。
+    # 示例：secondary: "#66e3ff"
+    secondary: "#7ab8ff"
+
+    # foreground 是 TUI chrome 的默认前景色。
+    # 默认值：""，表示使用 host foreground 或内置 foreground。
+    # 用途：普通 UI 文本、panel 标题、overlay 正文。
+    # 示例：foreground: "#e7e2ef"
+    foreground: ""
+
+    # background 是 TUI chrome 的默认背景色。
+    # 默认值：""，表示使用 host background 或内置 background。
+    # 用途：shell 背景、派生 chrome/status/overlay/toast 背景。
+    # 示例：background: "#050507"
+    background: ""
+
+    # muted 是弱化色。
+    # 默认值：""，表示使用 host palette 8 或内置 muted。
+    # 用途：inactive、disabled、弱文本、未选中边框、辅助分隔线。
+    # 示例：muted: "#77717f"
+    muted: ""
+
+    # success 是成功/运行正常的语义色。
+    # 默认值：""，表示使用 host palette 2 或内置 success。
+    # 用途：running、attached、成功 toast、可用状态点。
+    # 示例：success: "#8adf7a"
+    success: ""
+
+    # warning 是警告/搜索命中的语义色。
+    # 默认值：""，表示使用 host palette 3 或内置 warning。
+    # 用途：搜索命中字母、高亮警告、需要注意但不阻断的状态。
+    # 示例：warning: "#f0c45c"
+    warning: ""
+
+    # danger 是危险/错误/破坏性动作的语义色。
+    # 默认值：""，表示使用 host palette 1 或内置 danger。
+    # 用途：error、close/delete/kill、失败 toast、退出异常状态。
+    # 示例：danger: "#ff6b6b"
+    danger: ""
+
+    # info 是信息提示语义色。
+    # 默认值：""，表示使用 secondary，或 host palette 4 / 内置 info。
+    # 用途：信息标签、非焦点提示、辅助状态。
+    # 示例：info: "#7ab8ff"
+    info: ""
+
+    # border 控制 pane、overlay、navigator 等边框 token。
+    # 留空时由 primary/muted/background 派生，保持全局主题一致。
+    border:
+      # panel 是普通 panel 边框色。
+      # 默认值：""，表示从 muted 和 primary 混合派生。
+      # 用途：普通 pane、overlay 外框、split-line 外框。
+      # 示例：panel: "#9b93a6"
+      panel: ""
+
+      # active 是当前 active pane 或当前 focus item 的边框色。
+      # 默认值：""，表示使用 primary。
+      # 用途：active pane border、当前选中区域边框、navigator active preview。
+      # 示例：active: "#d65cff"
+      active: ""
+
+      # inactive 是非 active pane 的边框/弱状态色。
+      # 默认值：""，表示使用 muted。
+      # 用途：inactive pane border、未选中 floating、非焦点 preview。
+      # 示例：inactive: "#5b5663"
+      inactive: ""
+
+      # muted 是更弱的边框色。
+      # 默认值：""，表示使用 muted。
+      # 用途：内部分割线、次级框线、disabled outline。
+      # 示例：muted: "#4b4754"
+      muted: ""
+
+    # surface 控制 chrome 类背景 token。
+    # 留空时从 background 和 foreground 混合派生，避免出现一整套割裂的背景颜色。
+    surface:
+      # chrome_bg 是 header、tab strip、panel chrome 的背景色。
+      # 默认值：""，表示从 background 派生。
+      # 示例：chrome_bg: "#111016"
+      chrome_bg: ""
+
+      # status_bg 是 footer/status bar 的背景色。
+      # 默认值：""，表示从 background 派生。
+      # 示例：status_bg: "#08080d"
+      status_bg: ""
+
+      # overlay_bg 是 modal、picker、navigator 等浮层背景色。
+      # 默认值：""，表示从 background 派生。
+      # 示例：overlay_bg: "#14121b"
+      overlay_bg: ""
+
+      # toast_bg 是右上角 toast/message 的背景色。
+      # 默认值：""，表示从 background 派生。
+      # 示例：toast_bg: "#15131d"
+      toast_bg: ""
+
+  # chrome 控制 TUI 外层 chrome 的布局和显示方式。
+  # 它只影响展示，不改变 workspace/tab/pane/floating 的结构 truth。
+  chrome:
+    # header 控制顶部 workspace/tab 栏是否显示。
+    # 默认值：true。
+    # false 时 body 会获得更多空间；关键状态必须进入 toast/help，不能直接丢失。
+    # 示例：header: false
+    header: true
+
+    # footer 控制底部 mode/status/hints 栏是否显示。
+    # 默认值：true。
+    # false 时快捷键提示会减少，但 mode 仍应能通过 toast/help 被识别。
+    # 示例：footer: false
+    footer: true
+
+    # panel_presentation 控制 tiled pane 的视觉布局。
+    # 默认值：split-line。
+    # 可选值：split-line、card。
+    # split-line：相邻 pane 共享细分割线，更接近 tmux，内容利用率高。
+    # card：每个 pane 有独立完整边框，可读性更强。
+    # 这个选项不能改变 pane id、terminal binding、active pane 或 copy mode 绑定。
+    # 示例：panel_presentation: card
+    panel_presentation: split-line
+
+    # tab_create_icon 是 tab strip 上创建新 tab 的图标。
+    # 默认值："󰐕"。
+    # 要求：必须是终端能正确显示的 Nerd Font 图标或短文本，后续实现必须校验 cell width。
+    # 示例：tab_create_icon: "+"
+    tab_create_icon: "󰐕"
+
+  # interaction 控制当前 TUI 客户端的交互细节。
+  # 这些配置是用户偏好，不进入 workbench storage，也不表达 terminal 状态。
+  interaction:
+    # mouse 控制是否启用宿主终端鼠标模式和 hit region。
+    # 默认值：true。
+    # false 时点击 header/tab/pane/overlay 不触发鼠标 action，只保留键盘交互。
+    # 示例：mouse: false
+    mouse: true
+
+    # sticky_prefix_timeout_ms 控制 sticky shortcut mode 的空闲退出时间。
+    # 默认值：3000。
+    # 单位：毫秒。
+    # 只作用于 pane/resize/tab/workspace/floating/global 这类前缀模式。
+    # 不作用于 terminal picker、prompt、clipboard history、copy/history 等显式 overlay 页面。
+    # 示例：sticky_prefix_timeout_ms: 5000
+    sticky_prefix_timeout_ms: 3000
+
+    # confirm_destructive 控制破坏性动作是否需要确认。
+    # 默认值：true。
+    # 影响：close/delete/kill/remove workspace 等可能丢状态或终止进程的动作。
+    # 示例：confirm_destructive: false
+    confirm_destructive: true
+
+    # clipboard_history 控制剪贴板历史 overlay 的展示和本地上限。
+    # 注意：剪贴板历史内容本身由 core 托管 storage 保存，这里不保存具体条目。
+    clipboard_history:
+      # max_items 是剪贴板历史最多保留/展示的条目数。
+      # 默认值：200。
+      # 后续实现可以在写入 core storage 前按这个值裁剪最旧条目。
+      # 示例：max_items: 500
+      max_items: 200
+
+      # name_width 是剪贴板历史左侧名称/缩写列宽度。
+      # 默认值：34。
+      # 单位：terminal cell。
+      # 用户仍可以在 overlay 内通过鼠标拖拽临时调整左右分栏。
+      # 示例：name_width: 42
+      name_width: 34
+
+      # preview_width_ratio 是剪贴板历史右侧预览区的目标宽度比例。
+      # 默认值：0.68。
+      # 取值建议：0.50 到 0.80。
+      # 实际布局仍会受终端宽度、最小列宽和拖拽分隔符约束。
+      # 示例：preview_width_ratio: 0.72
+      preview_width_ratio: 0.68
+
+    # picker 控制 picker 类 overlay 的搜索行为。
+    picker:
+      # fuzzy_match 控制模糊搜索算法。
+      # 默认值：subsequence。
+      # 可选值：subsequence。
+      # subsequence 表示按顺序子序列匹配，例如输入 "gft" 可以命中 "git commit fix terminal"。
+      # 示例：fuzzy_match: subsequence
+      fuzzy_match: subsequence
+
+      # highlight_matches 控制搜索命中字母是否高亮。
+      # 默认值：true。
+      # true 时命中字母使用 warning token；false 时只过滤列表，不额外着色。
+      # 示例：highlight_matches: false
+      highlight_matches: true
+
+  # keymap 控制快捷键绑定。
+  # 加载期必须检测冲突；同一个 mode 下两个 action 不能抢同一个键。
+  # 键名约定：ctrl-x、shift-p、alt-x、enter、esc、tab、backspace、delete、up、down、left、right，普通字符直接写小写字母。
+  keymap:
+    # root 是默认工作台状态下可用的全局入口。
+    root:
+      # terminal_picker 打开 Terminal Picker。
+      # 默认值：ctrl-f。
+      # 用途：选择已有 terminal、创建新 terminal、连接当前 empty/unconnected pane。
+      # 示例：terminal_picker: ctrl-space
+      terminal_picker: ctrl-f
+
+      # copy_mode 进入 authoritative copy/history 模式。
+      # 默认值：ctrl-v。
+      # 用途：冻结当前 view 并请求 core-v2 history window。
+      # 示例：copy_mode: ctrl-y
+      copy_mode: ctrl-v
+
+      # tab_mode 进入 tab sticky shortcut mode。
+      # 默认值：ctrl-t。
+      # 后续按 c/x/r/n/p 执行 tab create/close/rename/next/previous。
+      # 示例：tab_mode: alt-t
+      tab_mode: ctrl-t
+
+      # workspace_mode 进入 workspace sticky shortcut mode。
+      # 默认值：ctrl-w。
+      # 后续按 w/c/x/r 等执行 navigator/create/delete/rename。
+      # 示例：workspace_mode: alt-w
+      workspace_mode: ctrl-w
+
+      # floating_mode 进入 floating sticky shortcut mode。
+      # 默认值：ctrl-o。
+      # 用途：创建、显示、聚焦或管理当前 tab 下的 floating pane。
+      # 示例：floating_mode: alt-o
+      floating_mode: ctrl-o
+
+      # pane_mode 进入 pane sticky shortcut mode。
+      # 默认值：ctrl-p。
+      # 用途：pane split/focus/close/zoom 等结构命令入口。
+      # 示例：pane_mode: alt-p
+      pane_mode: ctrl-p
+
+      # resize_mode 进入 pane resize sticky shortcut mode。
+      # 默认值：ctrl-r。
+      # 用途：键盘调整 pane 大小，并触发 owner view resize effect。
+      # 示例：resize_mode: alt-r
+      resize_mode: ctrl-r
+
+      # global_mode 进入 global sticky shortcut mode。
+      # 默认值：ctrl-g。
+      # 用途：全局命令入口，后续可挂 Help、command palette、配置 reload 等。
+      # 示例：global_mode: alt-g
+      global_mode: ctrl-g
+
+    # copy 是 copy/history 模式下的局部快捷键。
+    copy:
+      # clipboard_history 打开剪贴板历史 overlay。
+      # 默认值：h。
+      # 当前交互语义：先按 ctrl-v 进入 copy/history，再按 h 打开历史。
+      # 示例：clipboard_history: y
+      clipboard_history: h
+
+      # paste_latest 粘贴最近一次复制/剪贴板历史最新项。
+      # 默认值：p。
+      # 用途：退出 copy mode，并把最近 copy buffer 写入 active terminal。
+      # 示例：paste_latest: p
+      paste_latest: p
+
+      # paste_system 粘贴系统剪贴板内容。
+      # 默认值：shift-p。
+      # 用途：读取系统 clipboard，退出 copy mode，并写入 active terminal。
+      # 示例：paste_system: ctrl-p
+      paste_system: shift-p
+
+    # tab 是 tab sticky shortcut mode 下的快捷键。
+    # 默认入口：先按 root.tab_mode，再按下面的键。
+    tab:
+      # create 新建 tab。
+      # 默认值：c。
+      # 语义：创建一个带 unconnected full-screen pane 的新 tab，不自动创建 terminal。
+      # 示例：create: n
+      create: c
+
+      # close 关闭当前 tab。
+      # 默认值：x。
+      # 受 confirm_destructive 控制，必要时需要确认。
+      # 示例：close: q
+      close: x
+
+      # rename 重命名当前 tab。
+      # 默认值：r。
+      # 示例：rename: e
+      rename: r
+
+      # next 切到下一个 tab。
+      # 默认值：n。
+      # 示例：next: l
+      next: n
+
+      # previous 切到上一个 tab。
+      # 默认值：p。
+      # 示例：previous: h
+      previous: p
+
+    # workspace 是 workspace sticky shortcut mode 下的快捷键。
+    # 默认入口：先按 root.workspace_mode，再按下面的键。
+    workspace:
+      # navigator 打开 Workbench Navigator。
+      # 默认值：w。
+      # 用途：查看所有 workspace/tab/pane/floating，并在右侧预览 terminal snapshot。
+      # 示例：navigator: n
+      navigator: w
+
+      # create 新建 workspace。
+      # 默认值：c。
+      # 语义：创建 workspace，并自动创建 main tab 和一个 unconnected full-screen pane，不自动创建 terminal。
+      # 示例：create: n
+      create: c
+
+      # delete 删除当前或选中的 workspace。
+      # 默认值：x。
+      # 受 confirm_destructive 控制，必要时需要确认。
+      # 示例：delete: d
+      delete: x
+
+      # rename 重命名当前或选中的 workspace。
+      # 默认值：r。
+      # 示例：rename: e
+      rename: r
