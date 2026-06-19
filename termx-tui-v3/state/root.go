@@ -13,6 +13,7 @@ type Root struct {
 	Viewport      ViewportStore
 	Shell         ShellStore
 	HostTheme     HostThemeStore
+	Config        TUIConfigStore
 	WorkbenchSync WorkbenchSyncStore
 }
 

@@ -471,7 +471,7 @@ func TestV3SmokeCommandIncludesVisualReviewCases(t *testing.T) {
 		"case: workbench-tree-page",
 		"Workbench Navigator",
 		"SNAPSHOT",
-		"Open  Zoom  Detach  Close",
+		"Open  New  Zoom  Detach  Close",
 		"case: visual-audit-current",
 		"visual review",
 		"[]─[]",
@@ -1529,7 +1529,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"  main", "▎ 1 main  2 logs  ", "visual review", "[]─[]", "└──────────────────────────v┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
+	for _, want := range []string{"  main", "▎ 1 main  2 logs   󰐕", "visual review", "[]─[]", "└──────────────────────────v┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}

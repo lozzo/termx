@@ -262,6 +262,47 @@ func TestThemeFromHostThemeUsesHostPaletteForChromeOnly(t *testing.T) {
 	}
 }
 
+func TestThemeFromHostThemeConfigUserTokensOverrideHostPalette(t *testing.T) {
+	host := state.HostThemeStore{}
+	host = host.ApplyUpdate(state.HostThemeUpdate{DefaultFG: "#eeeeee"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{DefaultBG: "#101010"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{PaletteIndex: 5, PaletteColor: "#bb66ff"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{PaletteIndex: 4, PaletteColor: "#3366dd"})
+	cfg := state.TUIConfigStore{
+		Theme: state.TUIThemeConfig{
+			Palette:   "host",
+			Primary:   "#d65cff",
+			Secondary: "#66e3ff",
+			Border:    state.TUIThemeBorderConfig{Active: "#ff00aa"},
+			Surface:   state.TUIThemeSurfaceConfig{StatusBG: "#090909"},
+		},
+	}
+	theme := ThemeFromHostThemeConfig(host, cfg)
+	if theme.HostFG != "#eeeeee" || theme.HostBG != "#101010" {
+		t.Fatalf("host fg/bg should stay host-aware, got %#v", theme)
+	}
+	if theme.Accent != "#d65cff" || theme.Info != "#66e3ff" {
+		t.Fatalf("user primary/secondary should override host palette, got %#v", theme)
+	}
+	if theme.ActivePaneBorder != "#ff00aa" || theme.StatusBG != "#090909" {
+		t.Fatalf("user border/surface overrides should win, got %#v", theme)
+	}
+}
+
+func TestThemeFromHostThemeConfigBuiltinPaletteIgnoresHostPalette(t *testing.T) {
+	host := state.HostThemeStore{}
+	host = host.ApplyUpdate(state.HostThemeUpdate{DefaultFG: "#eeeeee"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{DefaultBG: "#101010"})
+	host = host.ApplyUpdate(state.HostThemeUpdate{PaletteIndex: 5, PaletteColor: "#bb66ff"})
+	theme := ThemeFromHostThemeConfig(host, state.TUIConfigStore{Theme: state.TUIThemeConfig{Palette: "builtin"}})
+	if theme.HostFG == "#eeeeee" || theme.HostBG == "#101010" || theme.Accent == "#bb66ff" {
+		t.Fatalf("builtin palette should ignore host theme, got %#v", theme)
+	}
+	if theme != DefaultTheme().WithFallback() {
+		t.Fatalf("builtin palette without user overrides should equal default theme, got %#v", theme)
+	}
+}
+
 func TestFrameCloneDetachesLines(t *testing.T) {
 	frame := Frame{
 		Lines:       []string{"one"},

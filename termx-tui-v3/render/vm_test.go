@@ -2943,6 +2943,42 @@ func TestRenderVMBuilderCarriesHostAwareTheme(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderCarriesUserConfiguredTheme(t *testing.T) {
+	root := state.Root{}
+	root.HostTheme = root.HostTheme.ApplyUpdate(state.HostThemeUpdate{PaletteIndex: 5, PaletteColor: "#bb66ff"})
+	root.Config = state.TUIConfigStore{
+		Theme: state.TUIThemeConfig{
+			Palette: "host",
+			Primary: "#d65cff",
+		},
+	}
+	vm := NewRenderVMBuilder().Build(root)
+	if vm.Theme.Accent != "#d65cff" || vm.Theme.ActivePaneBorder != "#d65cff" {
+		t.Fatalf("configured primary should override host accent in VM, got %#v", vm.Theme)
+	}
+	frame := NewRenderer(DefaultTheme()).Render(RenderVM{
+		Shell: ShellVM{
+			Layout: LayoutVM{
+				Viewport: Rect{W: 20, H: 3},
+				Panels: []PanelVM{{
+					ID:           "pane-1",
+					Title:        "pane",
+					Active:       true,
+					Presentation: PanelPresentationCard,
+					Content:      ContentVM{Kind: ContentTerminalLive, Lines: []Line{NewLine("ok")}},
+				}},
+			},
+		},
+		Theme: vm.Theme,
+	})
+	if frame.Theme.Accent != "#d65cff" {
+		t.Fatalf("renderer should prefer configured VM theme, got %#v", frame.Theme)
+	}
+	if !strings.Contains(strings.Join(frame.ANSILines, "\n"), "38;2;214;92;255") {
+		t.Fatalf("styled frame should use configured primary, got %#v", frame.ANSILines)
+	}
+}
+
 func plainLines(lines []Line) string {
 	values := make([]string, len(lines))
 	for i, line := range lines {

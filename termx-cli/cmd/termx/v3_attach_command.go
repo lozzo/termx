@@ -32,6 +32,7 @@ type v3AttachConfig struct {
 	TerminalID string
 	SocketPath string
 	LogFile    string
+	TUIConfig  state.TUIConfigStore
 }
 
 var (
@@ -55,10 +56,15 @@ func v3AttachCommand(socket *string, logFile *string) *cobra.Command {
 			logPath := resolveV3LogFilePath(*logFile)
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
+			tuiConfig, err := loadV3TUIConfig()
+			if err != nil {
+				return err
+			}
 			return runV3Attach(ctx, v3AttachConfig{
 				TerminalID: args[0],
 				SocketPath: resolveV3Socket(*socket),
 				LogFile:    logPath,
+				TUIConfig:  tuiConfig,
 			})
 		},
 	}
@@ -99,7 +105,9 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	if err != nil || cols <= 0 || rows <= 0 {
 		cols, rows = 80, 24
 	}
-	runtime := newV3InteractiveRuntime(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger)
+	runtime := newV3InteractiveRuntimeWithOptions(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
+		TUIConfig: cfg.TUIConfig,
+	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   cfg.TerminalID,
 		Cols:         cols,
@@ -125,6 +133,7 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 
 type v3InteractiveRuntimeOptions struct {
 	SkipWorkbenchInitialLoad bool
+	TUIConfig                state.TUIConfigStore
 }
 
 func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
@@ -139,6 +148,7 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 			Cols:       cols,
 			Rows:       rows,
 		},
+		Config: opts.TUIConfig,
 	}
 	if terminalID == "" {
 		initial.Shell = v3EmptyRootShell()

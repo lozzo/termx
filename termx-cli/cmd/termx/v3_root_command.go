@@ -8,6 +8,7 @@ import (
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/app"
+	"github.com/lozzow/termx/termx-tui-v3/state"
 	"github.com/spf13/cobra"
 )
 
@@ -19,11 +20,13 @@ type v3RootEmptyRunner func(context.Context, v3RootEmptyConfig) error
 type v3RootConfig struct {
 	SocketPath string
 	LogFile    string
+	TUIConfig  state.TUIConfigStore
 }
 
 type v3RootEmptyConfig struct {
 	SocketPath string
 	LogFile    string
+	TUIConfig  state.TUIConfigStore
 }
 
 var runV3Root = runV3RootRuntime
@@ -38,9 +41,14 @@ func runV3RootCommand(cmd *cobra.Command, socket string, logFile string) error {
 	}
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	tuiConfig, err := loadV3TUIConfig()
+	if err != nil {
+		return err
+	}
 	return runV3Root(ctx, v3RootConfig{
 		SocketPath: resolveV3Socket(socket),
 		LogFile:    resolveV3LogFilePath(logFile),
+		TUIConfig:  tuiConfig,
 	})
 }
 
@@ -68,6 +76,7 @@ func runV3RootRuntime(ctx context.Context, cfg v3RootConfig) error {
 		return runV3RootEmpty(ctx, v3RootEmptyConfig{
 			SocketPath: cfg.SocketPath,
 			LogFile:    logPath,
+			TUIConfig:  cfg.TUIConfig,
 		})
 	}
 	logger.Info("starting tui-v3 root command", "terminal_id", terminalID, "socket", cfg.SocketPath, "log_file", logPath)
@@ -75,6 +84,7 @@ func runV3RootRuntime(ctx context.Context, cfg v3RootConfig) error {
 		TerminalID: terminalID,
 		SocketPath: cfg.SocketPath,
 		LogFile:    logPath,
+		TUIConfig:  cfg.TUIConfig,
 	})
 }
 
@@ -115,6 +125,7 @@ func runV3RootEmptyRuntime(ctx context.Context, cfg v3RootEmptyConfig) error {
 	}
 	runtime := newV3InteractiveRuntimeWithOptions("", cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
 		SkipWorkbenchInitialLoad: true,
+		TUIConfig:                cfg.TUIConfig,
 	})
 	// root 空启动不创建 terminal；先让用户在 picker 中显式选择创建或连接。
 	if err := runtime.Post(app.ShellOpenTerminalPickerMsg{}); err != nil {

@@ -4,7 +4,7 @@ import "github.com/lozzow/termx/termx-tui-v3/state"
 
 func (RenderVMBuilder) Build(root state.Root) RenderVM {
 	shell := NewShellProjector().Project(root)
-	return RenderVM{Shell: shell, Theme: ThemeFromHostTheme(root.HostTheme)}
+	return RenderVM{Shell: shell, Theme: ThemeFromHostThemeConfig(root.HostTheme, root.Config)}
 }
 
 type ShellProjector struct {

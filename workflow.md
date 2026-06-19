@@ -289,9 +289,11 @@
 | 215E1-R116. SK tab create unconnected pane 与空 workspace header | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已对齐 tuiv2 新 tab 创建 unconnected pane 的结构，并修复无 tab 时 header 仍伪造 main tab |
 | 215E1-R117. SK TUI 配置管理文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已梳理 v3 TUI 配置管理边界、主题 token、配置项和加载优先级，先落文档再进入实现 |
 | 215E1-R118. SK TUI 标准配置样例 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已补充 v3 标准配置样例，每个配置项都写中文注释、默认含义和可选示例 |
+| 215E1-R119. SK TUI 配置代码适配 | 完成 | `termx-tui-v3/config/`、`termx-tui-v3/render/`、`termx-cli/`、`workflow.md` | 已接入 v3 独立配置模型、标准模板解析、env 覆盖、theme resolver 和 CLI 启动读取，并补最小单测 |
 
 当前下一步：
 
+- `215E1-R119 TUI 配置代码适配` 已完成：新增 v3 独立 config package，支持解析 `tui-v3.yaml`、缺省默认、env 覆盖、unknown field/坏颜色报错和 keymap 冲突检测；`state.Root.Config` 会进入 render theme resolver，CLI 默认 root/attach 启动会读取 `$XDG_CONFIG_HOME/termx/tui-v3.yaml`，不存在则用内置默认。
 - `215E1-R118 TUI 标准配置样例` 已完成：新增完整 `tui-v3.example.yaml` 标准模板，字段齐全，中文注释说明用途、默认行为和示例值，并挂回配置管理设计文档作为后续 loader/schema 对齐基准。
 - `215E1-R117 TUI 配置管理文档` 已完成：新增 v3 独立 TUI 配置管理基准，不复用 tuiv2 shared config 作为运行时依赖；明确主题、chrome、interaction、keymap 等配置项、加载优先级、host palette 与用户覆盖的合成规则，以及 renderer/input 只能消费 resolved token 的边界。
 - `215E1-R116 tab create unconnected pane 与空 workspace header` 已完成：v3 `tab.create` 现在会生成 active `unconnected` pane 和 root split；无 tab workspace 的 header 不再 fallback 出虚假的 `main` tab，只保留 workspace 名和新建 tab 入口。

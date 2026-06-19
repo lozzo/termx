@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	tuiconfig "github.com/lozzow/termx/termx-tui-v3/config"
 )
 
 func resolveV3Socket(path string) string {
@@ -20,7 +22,7 @@ func resolveV3LogFilePath(path string) string {
 }
 
 func v3ConfigPathPolicy() string {
-	return "unused"
+	return tuiconfig.DefaultPath()
 }
 
 func v3StatePathPolicy() string {

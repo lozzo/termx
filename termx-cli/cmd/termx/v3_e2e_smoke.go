@@ -310,7 +310,7 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		return fmt.Errorf("v3 e2e smoke: no frames rendered")
 	}
 	frame := frames[len(frames)-1]
-	required := []string{"  main", "▎ 1 main ", " ", "┌─ shell", "◆ owner", "ws:main"}
+	required := []string{"  main", "▎ 1 main ", "󰐕", "┌─ shell", "◆ owner", "ws:main"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {

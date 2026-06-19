@@ -45,16 +45,16 @@ tui:
     palette: host
 
     # primary 是主色。
-    # 默认值：当前内置主色，等价于 render.DefaultTheme().Accent，当前为 "#a970ff"。
+    # 默认值：""，表示使用 host palette 5 或内置主色，当前内置值为 "#a970ff"。
     # 用途：active pane border、当前选中项、focus marker、主快捷键 token、重要 CTA。
     # 示例：primary: "#d65cff"
-    primary: "#a970ff"
+    primary: ""
 
     # secondary 是次色。
-    # 默认值：当前内置信息色，当前为 "#7ab8ff"。
+    # 默认值：""，表示使用 host palette 4 或内置信息色，当前内置值为 "#7ab8ff"。
     # 用途：次级强调、信息型标签、preview 轻量强调、非破坏性辅助动作。
     # 示例：secondary: "#66e3ff"
-    secondary: "#7ab8ff"
+    secondary: ""
 
     # foreground 是 TUI chrome 的默认前景色。
     # 默认值：""，表示使用 host foreground 或内置 foreground。

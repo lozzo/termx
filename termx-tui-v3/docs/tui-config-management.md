@@ -85,8 +85,8 @@ tui:
   theme:
     mode: dark              # dark | light | system
     palette: host           # host | builtin
-    primary: "#d65cff"      # 主色：active、focus、主要快捷键 token
-    secondary: "#66e3ff"    # 次色：次级强调、信息型标签
+    primary: ""             # 留空表示使用 host palette 5 或内置主色
+    secondary: ""           # 留空表示使用 host palette 4 或内置信息色
 
     foreground: ""          # 留空表示沿用 host-aware 默认值
     background: ""
@@ -166,8 +166,8 @@ tui:
 | `tui.profile` | `default` | loader | 预留多 profile；第一阶段只解析当前 profile 名称，不做 profile merge。 |
 | `theme.mode` | `dark` | theme resolver | 选择内置亮暗基线；`system` 第一阶段等同 host-aware dark，后续可接宿主检测。 |
 | `theme.palette` | `host` | theme resolver | `host` 表示先用宿主 foreground/background/palette 推导默认 token；`builtin` 表示完全使用内置默认值再应用用户覆盖。 |
-| `theme.primary` | 当前 `DefaultTheme().Accent` | theme resolver | 主色。用于 active pane border、选中标记、当前 item underline、主要快捷键 token、重要 CTA。 |
-| `theme.secondary` | 当前 `DefaultTheme().Info` | theme resolver | 次色。用于次级标签、信息提示、非破坏性辅助动作、preview 中的轻量强调。 |
+| `theme.primary` | `""` | theme resolver | 主色。留空时使用 host palette 5 或 `DefaultTheme().Accent`；显式设置后用于 active pane border、选中标记、当前 item underline、主要快捷键 token、重要 CTA。 |
+| `theme.secondary` | `""` | theme resolver | 次色。留空时使用 host palette 4 或 `DefaultTheme().Info`；显式设置后用于次级标签、信息提示、非破坏性辅助动作、preview 中的轻量强调。 |
 | `theme.foreground/background` | host-aware 默认值 | theme resolver | TUI chrome 的默认前景/背景，不影响 terminal 内容 ANSI。 |
 | `theme.muted` | host palette 8 或内置灰色 | theme resolver | inactive、disabled、弱文本、未选中边框的默认来源。 |
 | `theme.success/warning/danger/info` | host palette 2/3/1/4 或内置值 | theme resolver | 状态语义色。显式设置后不再被 host palette 覆盖。 |

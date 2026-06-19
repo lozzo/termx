@@ -64,47 +64,118 @@ func DefaultTheme() Theme {
 }
 
 func ThemeFromHostTheme(host state.HostThemeStore) Theme {
+	return ThemeFromHostThemeConfig(host, state.TUIConfigStore{})
+}
+
+func ThemeFromHostThemeConfig(host state.HostThemeStore, cfg state.TUIConfigStore) Theme {
 	theme := DefaultTheme()
 	paletteDrivenBorder := false
-	if host.DefaultFG != "" {
-		theme.HostFG = host.DefaultFG
-		theme.ChromeFG = host.DefaultFG
-		theme.StatusFG = host.DefaultFG
-	}
-	if host.DefaultBG != "" {
-		theme.HostBG = host.DefaultBG
-		theme.StatusBG = host.DefaultBG
-		theme.ChromeBG = mixHostColor(host.DefaultBG, "#ffffff", 0.06)
-		theme.ToastBG = mixHostColor(host.DefaultBG, "#ffffff", 0.08)
-		theme.OverlayBG = mixHostColor(host.DefaultBG, "#ffffff", 0.10)
-	}
-	if color, ok := host.PaletteColor(5); ok {
-		theme.Accent = color
-		theme.ActivePaneBorder = color
-		paletteDrivenBorder = true
-	}
-	if color, ok := host.PaletteColor(8); ok {
-		theme.Muted = color
-		theme.MutedBorder = color
-		theme.InactivePane = color
-		paletteDrivenBorder = true
-	}
-	if color, ok := host.PaletteColor(2); ok {
-		theme.Success = color
-	}
-	if color, ok := host.PaletteColor(3); ok {
-		theme.Warning = color
-	}
-	if color, ok := host.PaletteColor(1); ok {
-		theme.Danger = color
-	}
-	if color, ok := host.PaletteColor(4); ok {
-		theme.Info = color
+	if cfg.Theme.Palette != "builtin" {
+		if host.DefaultFG != "" {
+			theme.HostFG = host.DefaultFG
+			theme.ChromeFG = host.DefaultFG
+			theme.StatusFG = host.DefaultFG
+		}
+		if host.DefaultBG != "" {
+			theme.HostBG = host.DefaultBG
+			theme.StatusBG = host.DefaultBG
+			theme.ChromeBG = mixHostColor(host.DefaultBG, "#ffffff", 0.06)
+			theme.ToastBG = mixHostColor(host.DefaultBG, "#ffffff", 0.08)
+			theme.OverlayBG = mixHostColor(host.DefaultBG, "#ffffff", 0.10)
+		}
+		if color, ok := host.PaletteColor(5); ok {
+			theme.Accent = color
+			theme.ActivePaneBorder = color
+			paletteDrivenBorder = true
+		}
+		if color, ok := host.PaletteColor(8); ok {
+			theme.Muted = color
+			theme.MutedBorder = color
+			theme.InactivePane = color
+			paletteDrivenBorder = true
+		}
+		if color, ok := host.PaletteColor(2); ok {
+			theme.Success = color
+		}
+		if color, ok := host.PaletteColor(3); ok {
+			theme.Warning = color
+		}
+		if color, ok := host.PaletteColor(1); ok {
+			theme.Danger = color
+		}
+		if color, ok := host.PaletteColor(4); ok {
+			theme.Info = color
+		}
 	}
 	if paletteDrivenBorder && theme.PanelBorder == DefaultTheme().PanelBorder && theme.Muted != "" {
 		theme.PanelBorder = mixHostColor(theme.Muted, theme.Accent, 0.45)
 	}
+	theme = applyThemeConfig(theme, cfg.Theme)
 	return theme.WithFallback()
+}
+
+func applyThemeConfig(theme Theme, cfg state.TUIThemeConfig) Theme {
+	if cfg.Foreground != "" {
+		theme.HostFG = cfg.Foreground
+		theme.ChromeFG = cfg.Foreground
+		theme.StatusFG = cfg.Foreground
+	}
+	if cfg.Background != "" {
+		theme.HostBG = cfg.Background
+		theme.StatusBG = cfg.Background
+		theme.ChromeBG = mixHostColor(cfg.Background, "#ffffff", 0.06)
+		theme.ToastBG = mixHostColor(cfg.Background, "#ffffff", 0.08)
+		theme.OverlayBG = mixHostColor(cfg.Background, "#ffffff", 0.10)
+	}
+	if cfg.Primary != "" {
+		theme.Accent = cfg.Primary
+		theme.ActivePaneBorder = cfg.Primary
+	}
+	if cfg.Secondary != "" {
+		theme.Info = cfg.Secondary
+	}
+	if cfg.Muted != "" {
+		theme.Muted = cfg.Muted
+		theme.MutedBorder = cfg.Muted
+		theme.InactivePane = cfg.Muted
+	}
+	if cfg.Success != "" {
+		theme.Success = cfg.Success
+	}
+	if cfg.Warning != "" {
+		theme.Warning = cfg.Warning
+	}
+	if cfg.Danger != "" {
+		theme.Danger = cfg.Danger
+	}
+	if cfg.Info != "" {
+		theme.Info = cfg.Info
+	}
+	if cfg.Border.Panel != "" {
+		theme.PanelBorder = cfg.Border.Panel
+	}
+	if cfg.Border.Active != "" {
+		theme.ActivePaneBorder = cfg.Border.Active
+	}
+	if cfg.Border.Inactive != "" {
+		theme.InactivePane = cfg.Border.Inactive
+	}
+	if cfg.Border.Muted != "" {
+		theme.MutedBorder = cfg.Border.Muted
+	}
+	if cfg.Surface.ChromeBG != "" {
+		theme.ChromeBG = cfg.Surface.ChromeBG
+	}
+	if cfg.Surface.StatusBG != "" {
+		theme.StatusBG = cfg.Surface.StatusBG
+	}
+	if cfg.Surface.OverlayBG != "" {
+		theme.OverlayBG = cfg.Surface.OverlayBG
+	}
+	if cfg.Surface.ToastBG != "" {
+		theme.ToastBG = cfg.Surface.ToastBG
+	}
+	return theme
 }
 
 func (theme Theme) WithFallback() Theme {
