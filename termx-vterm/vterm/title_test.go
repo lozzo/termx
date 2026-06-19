@@ -56,6 +56,27 @@ func TestVTermTitleBELPreservesFollowingPromptText(t *testing.T) {
 	}
 }
 
+func TestVTermLongTitleWithinParserBuffer(t *testing.T) {
+	title := strings.Repeat("x", 32*1024)
+	var capturedTitle string
+	vt := New(80, 24, 1000, nil)
+	vt.SetTitleHandler(func(title string) {
+		capturedTitle = title
+	})
+
+	if _, err := vt.Write([]byte("\x1b]2;" + title + "\x07prompt")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if capturedTitle != title {
+		t.Fatalf("expected long title to survive parser buffer, got len=%d want=%d", len(capturedTitle), len(title))
+	}
+	rendered := strings.Join(vt.RenderLines(), "\n")
+	if !strings.Contains(rendered, "prompt") {
+		t.Fatalf("expected prompt text after long title, got %q", rendered)
+	}
+}
+
 func TestVTermWorkingDirectoryCallback(t *testing.T) {
 	var captured string
 	vt := New(80, 24, 1000, nil)

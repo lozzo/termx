@@ -96,6 +96,7 @@
 - `termx-shared/`
 - `termx-testkit/`
 - `termx-remote/`
+- `termx-remote-v2/`
 - `scripts/`
 
 ### 3.3 只读参考范围
@@ -290,9 +291,11 @@
 | 215E1-R117. SK TUI 配置管理文档 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已梳理 v3 TUI 配置管理边界、主题 token、配置项和加载优先级，先落文档再进入实现 |
 | 215E1-R118. SK TUI 标准配置样例 | 完成 | `termx-tui-v3/docs/`、`workflow.md` | 已补充 v3 标准配置样例，每个配置项都写中文注释、默认含义和可选示例 |
 | 215E1-R119. SK TUI 配置代码适配 | 完成 | `termx-tui-v3/config/`、`termx-tui-v3/render/`、`termx-cli/`、`workflow.md` | 已接入 v3 独立配置模型、标准模板解析、env 覆盖、theme resolver 和 CLI 启动读取，并补最小单测 |
+| 215E1-R120. SK daemon/TUI/history 内存 profile 优化 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-vterm/`、`workflow.md` | 已基于 pprof 收掉 daemon live/history surface 的固定常驻内存：vterm ANSI parser data buffer 从每个 surface 4MB 降到 64KB；单个 history pipeline inuse profile 从约 7.0MB 降到约 3.0MB，core ingest alloc/op 从约 30.7MB 降到约 26.6MB，copy/history 滚动 CPU benchmark 未回退 |
 
 当前下一步：
 
+- `215E1-R120 daemon/TUI/history 内存 profile 优化` 已完成：pprof 证明主要固定常驻来自 core terminal 的 live surface 与 history alt-capture surface 内部 vterm parser data buffer。已把每个 vterm 固定 data buffer 从 4MB 收到 64KB，并补 32KB OSC title 回归测试；常规 copy/history benchmark 保持稳定。继续把历史模式本地已加载 older 缓存做有界窗口，需要单独切片设计 cursor/search/selection 坐标迁移，不能用丢 slice 的症状补丁直接处理。
 - `215E1-R119 TUI 配置代码适配` 已完成：新增 v3 独立 config package，支持解析 `tui-v3.yaml`、缺省默认、env 覆盖、unknown field/坏颜色报错和 keymap 冲突检测；`state.Root.Config` 会进入 render theme resolver，CLI 默认 root/attach 启动会读取 `$XDG_CONFIG_HOME/termx/tui-v3.yaml`，不存在则用内置默认。
 - `215E1-R118 TUI 标准配置样例` 已完成：新增完整 `tui-v3.example.yaml` 标准模板，字段齐全，中文注释说明用途、默认行为和示例值，并挂回配置管理设计文档作为后续 loader/schema 对齐基准。
 - `215E1-R117 TUI 配置管理文档` 已完成：新增 v3 独立 TUI 配置管理基准，不复用 tuiv2 shared config 作为运行时依赖；明确主题、chrome、interaction、keymap 等配置项、加载优先级、host palette 与用户覆盖的合成规则，以及 renderer/input 只能消费 resolved token 的边界。

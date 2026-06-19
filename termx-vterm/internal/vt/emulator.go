@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/x/ansi/parser"
 )
 
+const emulatorParserDataBufferSize = 64 * 1024
+
 // Logger represents a logger interface.
 type Logger interface {
 	Printf(format string, v ...any)
@@ -87,7 +89,8 @@ func NewEmulator(w, h int) *Emulator {
 	t.scrs[1].cb = &t.cb
 	t.parser = ansi.NewParser()
 	t.parser.SetParamsSize(parser.MaxParamsSize)
-	t.parser.SetDataSize(1024 * 1024 * 4) // 4MB data buffer
+	// 中文说明：OSC/DCS 只需要有限 data buffer；避免每个 live surface 固定预分配数 MB。
+	t.parser.SetDataSize(emulatorParserDataBufferSize)
 	t.parser.SetHandler(ansi.Handler{
 		Print:     t.handlePrint,
 		Execute:   t.handleControl,
