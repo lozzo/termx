@@ -209,7 +209,7 @@ func assertContinuousCardPaneBorder(t *testing.T, name string, frame render.Fram
 	for row := 1; row < len(frame.Lines)-1; row++ {
 		left := render.SliceCells(frame.Lines[row], 0, 1)
 		right := render.SliceCells(frame.Lines[row], width-1, width)
-		if !isPaneBorderGlyph(left) || !isRightPaneBorderOrOverflowGlyph(right) {
+		if !isLeftPaneBorderOrOverflowGlyph(left, right) || !isRightPaneBorderOrOverflowGlyph(left, right) {
 			t.Fatalf("smoke case %s pane border discontinuity row=%d left=%q right=%q frame=%#v", name, row, left, right, frame.Lines)
 		}
 	}
@@ -287,8 +287,14 @@ func isPaneBorderGlyph(value string) bool {
 	}
 }
 
-func isRightPaneBorderOrOverflowGlyph(value string) bool {
-	return isPaneBorderGlyph(value) || value == ">"
+func isLeftPaneBorderOrOverflowGlyph(left string, right string) bool {
+	// overflow.Bottom 用左下角 v 替换边框角；其它行仍必须是正常边框。
+	return isPaneBorderGlyph(left) || (left == "v" && right == "┘")
+}
+
+func isRightPaneBorderOrOverflowGlyph(left string, right string) bool {
+	// overflow.Right 用右上角 > 替换边框角；其它行仍必须是正常边框。
+	return isPaneBorderGlyph(right) || (right == ">" && left == "┌")
 }
 
 func frameContains(lines []string, value string) bool {

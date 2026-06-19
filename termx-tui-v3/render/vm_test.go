@@ -749,11 +749,11 @@ func TestFrameworkRendersCopyHistoryOverflowMarkersOnPaneChrome(t *testing.T) {
 		t.Fatalf("copy history overflow should be exposed through panel layer, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[4], 17, 18); got != ">" {
-		t.Fatalf("right overflow marker should be drawn on pane chrome, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[1], 17, 18); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane top-right corner, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[6], 9, 10); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn on pane chrome, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[6], 0, 1); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane bottom-left corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||
 		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {

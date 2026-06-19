@@ -377,8 +377,8 @@ func TestFrameworkRendersLiveExtentBoundaryDotsWithChromeOverflowMarker(t *testi
 		t.Fatalf("terminal live resize extent mismatch should expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[4], 15, 16); got != ">" {
-		t.Fatalf("right overflow marker should be drawn for terminal live resize mismatch, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[0], 15, 16); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane top-right corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") {
 		t.Fatalf("right overflow marker must not be written into content layer, got %#v", layer.Lines)
@@ -409,8 +409,8 @@ func TestFrameworkRendersTerminalLiveBottomOverflowOnPaneChrome(t *testing.T) {
 		t.Fatalf("terminal live bottom overflow should reach chrome, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[7], 8, 9); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn for terminal live resize mismatch, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[7], 0, 1); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane bottom-left corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
 		t.Fatalf("bottom overflow marker must not be written into content layer, got %#v", layer.Lines)
@@ -540,11 +540,11 @@ func TestFrameworkRendersTerminalLiveOverflowFromBuilder(t *testing.T) {
 		t.Fatalf("terminal live extent mismatch should expose chrome overflow, got %#v", layer.ContentOverflow)
 	}
 	lines := result.Lines()
-	if got := SliceCells(lines[4], 17, 18); got != ">" {
-		t.Fatalf("right overflow marker should be drawn for terminal live resize mismatch, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[1], 17, 18); got != ">" {
+		t.Fatalf("right overflow marker should be drawn on pane top-right corner, got %q frame=%#v", got, lines)
 	}
-	if got := SliceCells(lines[6], 9, 10); got != "v" {
-		t.Fatalf("bottom overflow marker should be drawn for terminal live resize mismatch, got %q frame=%#v", got, lines)
+	if got := SliceCells(lines[6], 0, 1); got != "v" {
+		t.Fatalf("bottom overflow marker should be drawn on pane bottom-left corner, got %q frame=%#v", got, lines)
 	}
 	if strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), ">") ||
 		strings.Contains(strings.Join(plainContentViewportLines(layer.Lines), "\n"), "v") {
