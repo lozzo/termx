@@ -716,7 +716,12 @@ func TestCopyModeApplyHistoryTrimRebasesCursorSelectionAndMatches(t *testing.T) 
 		ViewportTop: 5,
 		Cursor:      CopyPosition{Row: 6, Col: 2},
 		Mark:        &mark,
-		Selection:   &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 6, Col: 2}},
+		Selection: &CopySelection{
+			Anchor:        mark,
+			Focus:         CopyPosition{Row: 6, Col: 2},
+			LogicalAnchor: CopyLogicalPosition{Valid: true, LineID: 40, Col: 1},
+			LogicalFocus:  CopyLogicalPosition{Valid: true, LineID: 42, Col: 2},
+		},
 		Matches:     []CopyMatch{{StartRow: 3, StartCol: 0, EndRow: 3, EndCol: 4}, {StartRow: 6, StartCol: 1, EndRow: 6, EndCol: 3}},
 		ActiveMatch: 1,
 	}
@@ -732,8 +737,43 @@ func TestCopyModeApplyHistoryTrimRebasesCursorSelectionAndMatches(t *testing.T) 
 	if copyMode.Selection == nil || copyMode.Selection.Anchor != (CopyPosition{Row: 1, Col: 1}) || copyMode.Selection.Focus != (CopyPosition{Row: 3, Col: 2}) {
 		t.Fatalf("trim should rebase selection, got %#v", copyMode.Selection)
 	}
+	if copyMode.Selection.LogicalAnchor != (CopyLogicalPosition{Valid: true, LineID: 40, Col: 1}) || copyMode.Selection.LogicalFocus != (CopyLogicalPosition{Valid: true, LineID: 42, Col: 2}) {
+		t.Fatalf("trim must preserve logical selection range for backend copy, got %#v", copyMode.Selection)
+	}
 	if len(copyMode.Matches) != 2 || copyMode.Matches[0].StartRow != 0 || copyMode.Matches[1].StartRow != 3 {
 		t.Fatalf("trim should rebase matches inside retained window, got %#v", copyMode.Matches)
+	}
+}
+
+func TestCopyModeLogicalSelectionRefreshKeepsTrimmedAnchor(t *testing.T) {
+	history := HistoryStore{
+		Rows: []HistoryRow{
+			{Text: "current", LineID: 30},
+		},
+	}
+	copyMode := CopyModeStore{
+		Active: true,
+		Selection: &CopySelection{
+			Anchor:        CopyPosition{Row: 0, Col: 0},
+			Focus:         CopyPosition{Row: 0, Col: 3},
+			LogicalAnchor: CopyLogicalPosition{Valid: true, LineID: 10, Col: 0},
+		},
+	}
+
+	copyMode = copyMode.EnsureLogicalSelection(history)
+	if copyMode.Selection.LogicalAnchor.LineID != 10 || copyMode.Selection.LogicalFocus.LineID != 30 || copyMode.Selection.LogicalFocus.Col != 3 {
+		t.Fatalf("ensure should preserve existing anchor and fill missing focus, got %#v", copyMode.Selection)
+	}
+	copyMode.Selection.Focus = CopyPosition{Row: 0, Col: 5}
+	copyMode = copyMode.RefreshLogicalSelectionFocus(history)
+	if copyMode.Selection.LogicalAnchor.LineID != 10 || copyMode.Selection.LogicalFocus.LineID != 30 || copyMode.Selection.LogicalFocus.Col != 5 {
+		t.Fatalf("focus refresh should update only focus endpoint, got %#v", copyMode.Selection)
+	}
+	mark := CopyPosition{Row: 0, Col: 0}
+	copyMode.Mark = &mark
+	copyMode = copyMode.MoveCursor(CopyPosition{Row: 0, Col: 6}).RefreshLogicalSelectionFocus(history)
+	if copyMode.Selection.LogicalAnchor.LineID != 10 || copyMode.Selection.LogicalFocus.LineID != 30 || copyMode.Selection.LogicalFocus.Col != 6 {
+		t.Fatalf("move cursor should preserve trimmed anchor and update focus, got %#v", copyMode.Selection)
 	}
 }
 

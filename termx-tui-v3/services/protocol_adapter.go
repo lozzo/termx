@@ -12,6 +12,7 @@ import (
 
 type ProtocolHistoryClient interface {
 	HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
+	HistoryCopy(context.Context, protocol.HistoryWindowParams) (string, error)
 	ReleaseHistory(context.Context, protocol.HistoryWindowParams) error
 }
 
@@ -102,6 +103,26 @@ func (adapter ProtocolCoreClientAdapter) ReleaseHistory(ctx context.Context, req
 		TerminalID: req.TerminalID,
 		Token:      req.Token,
 	})
+}
+
+func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, req HistoryCopyRangeRequest) (HistoryCopyRangeResult, error) {
+	text, err := adapter.Client.HistoryCopy(ctx, protocol.HistoryWindowParams{
+		TerminalID:          req.TerminalID,
+		Cols:                req.Cols,
+		Token:               req.Token,
+		Generation:          req.Generation,
+		BoundaryFirstLineID: req.Boundary.FirstLineID,
+		BoundaryLastLineID:  req.Boundary.LastLineID,
+		RangeValid:          req.Start.Valid && req.End.Valid,
+		RangeStartLineID:    req.Start.LineID,
+		RangeStartCol:       req.Start.Col,
+		RangeEndLineID:      req.End.LineID,
+		RangeEndCol:         req.End.Col,
+	})
+	if err != nil {
+		return HistoryCopyRangeResult{}, err
+	}
+	return HistoryCopyRangeResult{Text: text}, nil
 }
 
 func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (state.HistoryWindow, error) {

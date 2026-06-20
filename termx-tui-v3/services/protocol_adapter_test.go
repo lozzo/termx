@@ -17,13 +17,20 @@ import (
 
 type fakeProtocolHistoryClient struct {
 	requests        []protocol.HistoryWindowParams
+	copyRequests    []protocol.HistoryWindowParams
 	releaseRequests []protocol.HistoryWindowParams
 	window          *protocol.HistoryWindow
+	copyText        string
 }
 
 func (client *fakeProtocolHistoryClient) HistoryWindow(_ context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
 	client.requests = append(client.requests, params)
 	return client.window, nil
+}
+
+func (client *fakeProtocolHistoryClient) HistoryCopy(_ context.Context, params protocol.HistoryWindowParams) (string, error) {
+	client.copyRequests = append(client.copyRequests, params)
+	return client.copyText, nil
 }
 
 func (client *fakeProtocolHistoryClient) ReleaseHistory(_ context.Context, params protocol.HistoryWindowParams) error {
@@ -459,6 +466,30 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	params = client.requests[3]
 	if params.Token != "tok-1" || params.Generation != 7 || params.CursorValid || params.BeforeLineID != 0 || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected oldest params %#v", params)
+	}
+
+	client.copyText = "copied text"
+	copied, err := adapter.HistoryCopyRange(context.Background(), HistoryCopyRangeRequest{
+		TerminalID: "term-1",
+		Cols:       80,
+		Token:      "tok-1",
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 42, LastLineID: 43},
+		Start:      state.CopyLogicalPosition{Valid: true, LineID: 42, Col: 1},
+		End:        state.CopyLogicalPosition{Valid: true, LineID: 43, Col: 3},
+	})
+	if err != nil {
+		t.Fatalf("copy range: %v", err)
+	}
+	if copied.Text != "copied text" {
+		t.Fatalf("unexpected copy range result %#v", copied)
+	}
+	if len(client.copyRequests) != 1 {
+		t.Fatalf("expected copy request, got %#v", client.copyRequests)
+	}
+	copyParams := client.copyRequests[0]
+	if copyParams.Token != "tok-1" || copyParams.Generation != 7 || copyParams.BoundaryFirstLineID != 42 || copyParams.BoundaryLastLineID != 43 || !copyParams.RangeValid || copyParams.RangeStartLineID != 42 || copyParams.RangeStartCol != 1 || copyParams.RangeEndLineID != 43 || copyParams.RangeEndCol != 3 {
+		t.Fatalf("unexpected copy params %#v", copyParams)
 	}
 }
 

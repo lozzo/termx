@@ -5211,6 +5211,60 @@ func TestCopyModeSelectionCopiesAuthoritativeRows(t *testing.T) {
 	}
 }
 
+func TestCopyModeSelectionFetchesTrimmedRangeFromBackend(t *testing.T) {
+	clipboard := &services.FakeClipboardService{}
+	core := &services.FakeCoreClient{
+		CopyResponses: []services.HistoryCopyRangeResult{{Text: "older\ntrimmed\ncurrent"}},
+	}
+	host := NewFakeTerminalHost(4)
+	runtime := newCopyModeRuntime(host, core, clipboard)
+	runtime.state.History = state.HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       78,
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 30},
+		SourceLines: []state.HistoryLogicalLine{
+			{Text: "current", LineID: 30},
+		},
+		Rows: []state.HistoryRow{
+			{Text: "current", LineID: 30},
+		},
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:     true,
+		TerminalID: "term-1",
+		BoundToken: "tok-1",
+		BoundCols:  78,
+		Selection: &state.CopySelection{
+			Anchor:        state.CopyPosition{Row: 0, Col: 0},
+			Focus:         state.CopyPosition{Row: 0, Col: 7},
+			LogicalAnchor: state.CopyLogicalPosition{Valid: true, LineID: 10, Col: 0},
+			LogicalFocus:  state.CopyLogicalPosition{Valid: true, LineID: 30, Col: 7},
+		},
+	}
+
+	if err := runtime.Post(CopyModeCopySelectionMsg{}); err != nil {
+		t.Fatalf("post copy: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(core.CopyRequests) != 1 {
+		t.Fatalf("expected backend copy range request, got %#v", core.CopyRequests)
+	}
+	req := core.CopyRequests[0]
+	if req.Token != "tok-1" || req.Generation != 7 || req.Boundary.FirstLineID != 10 || req.Boundary.LastLineID != 30 || req.Start.LineID != 10 || req.End.LineID != 30 {
+		t.Fatalf("unexpected backend copy request %#v", req)
+	}
+	if len(clipboard.Writes) != 1 || clipboard.Writes[0].Text != "older\ntrimmed\ncurrent" {
+		t.Fatalf("unexpected clipboard writes %#v", clipboard.Writes)
+	}
+	if len(runtime.State().Clipboard.Entries) == 0 || runtime.State().Clipboard.Entries[0].Text != "older\ntrimmed\ncurrent" {
+		t.Fatalf("copy should update reducer clipboard from backend text, got %#v", runtime.State().Clipboard)
+	}
+}
+
 func TestCopyModeCanonicalKeysMoveSelectAndCopy(t *testing.T) {
 	clipboard := &services.FakeClipboardService{}
 	host := NewFakeTerminalHost(16)
@@ -6422,6 +6476,10 @@ func (client *blockingHistoryClient) HistoryNewer(context.Context, services.Hist
 	return services.HistoryResult{}, errors.New("unexpected newer request")
 }
 
+func (client *blockingHistoryClient) HistoryCopyRange(context.Context, services.HistoryCopyRangeRequest) (services.HistoryCopyRangeResult, error) {
+	return services.HistoryCopyRangeResult{}, errors.New("unexpected copy range request")
+}
+
 func (client *blockingHistoryClient) ReleaseHistory(context.Context, services.HistoryReleaseRequest) error {
 	return nil
 }
@@ -6472,6 +6530,7 @@ func (client *blockingHistoryClient) finishOlder(result services.HistoryResult, 
 
 type acceptanceProtocolHistoryClient struct {
 	requests        []protocol.HistoryWindowParams
+	copyRequests    []protocol.HistoryWindowParams
 	releaseRequests []protocol.HistoryWindowParams
 	windows         []*protocol.HistoryWindow
 }
@@ -6489,6 +6548,11 @@ func (client *acceptanceProtocolHistoryClient) HistoryWindow(_ context.Context, 
 func (client *acceptanceProtocolHistoryClient) ReleaseHistory(_ context.Context, params protocol.HistoryWindowParams) error {
 	client.releaseRequests = append(client.releaseRequests, params)
 	return nil
+}
+
+func (client *acceptanceProtocolHistoryClient) HistoryCopy(_ context.Context, params protocol.HistoryWindowParams) (string, error) {
+	client.copyRequests = append(client.copyRequests, params)
+	return "", nil
 }
 
 func historyWindowForApp(

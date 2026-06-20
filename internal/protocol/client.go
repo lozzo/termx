@@ -409,6 +409,14 @@ func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) 
 	return DecodeHistoryWindowPayload(payload)
 }
 
+func (c *Client) HistoryCopy(ctx context.Context, params HistoryWindowParams) (string, error) {
+	payload, err := c.doRequestPayload(ctx, "history.copy", params)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
 func (c *Client) ReleaseHistory(ctx context.Context, params HistoryWindowParams) error {
 	return c.doRequest(ctx, "history.release", params, nil)
 }

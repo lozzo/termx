@@ -479,6 +479,11 @@ type HistoryWindowParams struct {
 	AfterRowInLine      int
 	BoundaryFirstLineID uint64
 	BoundaryLastLineID  uint64
+	RangeValid          bool
+	RangeStartLineID    uint64
+	RangeStartCol       int
+	RangeEndLineID      uint64
+	RangeEndCol         int
 }
 
 type ScreenRect struct {

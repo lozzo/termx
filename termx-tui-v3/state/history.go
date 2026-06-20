@@ -211,6 +211,13 @@ type CopyPosition struct {
 	Col int
 }
 
+type CopyLogicalPosition struct {
+	Valid  bool
+	LineID uint64
+	// Col 是 logical line 内的 display cell column，用于窗口被裁剪后回 core/backend 拉文本。
+	Col int
+}
+
 type CopyMatch struct {
 	// Start/End 使用 authoritative row + display cell column，允许同一 logical line
 	// 的匹配跨越本地 reflow 产生的多个 visual row。
@@ -221,8 +228,10 @@ type CopyMatch struct {
 }
 
 type CopySelection struct {
-	Anchor CopyPosition
-	Focus  CopyPosition
+	Anchor        CopyPosition
+	Focus         CopyPosition
+	LogicalAnchor CopyLogicalPosition
+	LogicalFocus  CopyLogicalPosition
 }
 
 // HistoryTrimResult 描述一次 TUI 本地 history window 裁剪。
@@ -942,16 +951,10 @@ func (store CopyModeStore) shiftAfterOlderPrepend(insertedRows int) CopyModeStor
 		store.Mark = &mark
 	}
 	if store.Selection != nil {
-		store.Selection = &CopySelection{
-			Anchor: CopyPosition{
-				Row: store.Selection.Anchor.Row + insertedRows,
-				Col: store.Selection.Anchor.Col,
-			},
-			Focus: CopyPosition{
-				Row: store.Selection.Focus.Row + insertedRows,
-				Col: store.Selection.Focus.Col,
-			},
-		}
+		selection := *store.Selection
+		selection.Anchor.Row += insertedRows
+		selection.Focus.Row += insertedRows
+		store.Selection = &selection
 	}
 	return store
 }
@@ -979,10 +982,10 @@ func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows in
 		store.Mark = &mark
 	}
 	if store.Selection != nil {
-		store.Selection = &CopySelection{
-			Anchor: shiftCopyPositionAfterTrim(store.Selection.Anchor, shift, totalRows),
-			Focus:  shiftCopyPositionAfterTrim(store.Selection.Focus, shift, totalRows),
-		}
+		selection := *store.Selection
+		selection.Anchor = shiftCopyPositionAfterTrim(selection.Anchor, shift, totalRows)
+		selection.Focus = shiftCopyPositionAfterTrim(selection.Focus, shift, totalRows)
+		store.Selection = &selection
 	}
 	store.Matches = shiftCopyMatchesAfterTrim(store.Matches, shift, totalRows)
 	if store.ActiveMatch >= len(store.Matches) {
@@ -1047,10 +1050,10 @@ func (store CopyModeStore) RebindToReflowedHistory(before HistoryStore, after Hi
 		store.Mark = &mark
 	}
 	if store.Selection != nil {
-		store.Selection = &CopySelection{
-			Anchor: reflowCopyPosition(before, after, store.Selection.Anchor),
-			Focus:  reflowCopyPosition(before, after, store.Selection.Focus),
-		}
+		selection := *store.Selection
+		selection.Anchor = reflowCopyPosition(before, after, selection.Anchor)
+		selection.Focus = reflowCopyPosition(before, after, selection.Focus)
+		store.Selection = &selection
 	}
 	if store.Query != "" {
 		matches := FindCopyMatches(after, store.Query)
@@ -1072,6 +1075,9 @@ func (store CopyModeStore) MoveCursor(pos CopyPosition) CopyModeStore {
 	store.Cursor = pos
 	if store.Mark != nil {
 		selection := CopySelection{Anchor: *store.Mark, Focus: pos}
+		if store.Selection != nil && store.Selection.Anchor == *store.Mark {
+			selection.LogicalAnchor = store.Selection.LogicalAnchor
+		}
 		store.Selection = &selection
 	}
 	return store
@@ -1109,6 +1115,70 @@ func (store CopyModeStore) SetMark(pos CopyPosition) CopyModeStore {
 	store.Mark = &pos
 	store.Selection = &CopySelection{Anchor: pos, Focus: pos}
 	return store
+}
+
+func (store CopyModeStore) RefreshLogicalSelection(history HistoryStore) CopyModeStore {
+	if store.Selection == nil {
+		return store
+	}
+	selection := *store.Selection
+	selection.LogicalAnchor = CopyLogicalPositionForPosition(history, selection.Anchor)
+	selection.LogicalFocus = CopyLogicalPositionForPosition(history, selection.Focus)
+	store.Selection = &selection
+	return store
+}
+
+func (store CopyModeStore) EnsureLogicalSelection(history HistoryStore) CopyModeStore {
+	if store.Selection == nil {
+		return store
+	}
+	selection := *store.Selection
+	if !selection.LogicalAnchor.Valid {
+		selection.LogicalAnchor = CopyLogicalPositionForPosition(history, selection.Anchor)
+	}
+	if !selection.LogicalFocus.Valid {
+		selection.LogicalFocus = CopyLogicalPositionForPosition(history, selection.Focus)
+	}
+	store.Selection = &selection
+	return store
+}
+
+func (store CopyModeStore) RefreshLogicalSelectionFocus(history HistoryStore) CopyModeStore {
+	if store.Selection == nil {
+		return store
+	}
+	selection := *store.Selection
+	selection.LogicalFocus = CopyLogicalPositionForPosition(history, selection.Focus)
+	store.Selection = &selection
+	return store
+}
+
+func (store CopyModeStore) SelectionLogicalRange(history HistoryStore) (CopyLogicalPosition, CopyLogicalPosition, bool) {
+	if store.Selection == nil {
+		return CopyLogicalPosition{}, CopyLogicalPosition{}, false
+	}
+	start := store.Selection.LogicalAnchor
+	if !start.Valid {
+		start = CopyLogicalPositionForPosition(history, store.Selection.Anchor)
+	}
+	end := store.Selection.LogicalFocus
+	if !end.Valid {
+		end = CopyLogicalPositionForPosition(history, store.Selection.Focus)
+	}
+	if !start.Valid || !end.Valid {
+		return CopyLogicalPosition{}, CopyLogicalPosition{}, false
+	}
+	return start, end, true
+}
+
+func (store CopyModeStore) SelectionNeedsBackend(history HistoryStore) bool {
+	if store.Selection == nil || !store.Selection.LogicalAnchor.Valid || !store.Selection.LogicalFocus.Valid {
+		return false
+	}
+	currentAnchor := CopyLogicalPositionForPosition(history, store.Selection.Anchor)
+	currentFocus := CopyLogicalPositionForPosition(history, store.Selection.Focus)
+	return !copyLogicalPositionSame(currentAnchor, store.Selection.LogicalAnchor) ||
+		!copyLogicalPositionSame(currentFocus, store.Selection.LogicalFocus)
 }
 
 func (store CopyModeStore) SetQuery(query string, matches []CopyMatch) CopyModeStore {
@@ -1764,6 +1834,18 @@ func reflowCopyPosition(before HistoryStore, after HistoryStore, pos CopyPositio
 	offset := historyLogicalOffsetForPosition(before, pos)
 	offset.col += historyLogicalPrependedPrefixWidth(before, after, offset.lineID)
 	return positionForHistoryLogicalOffset(after, offset)
+}
+
+func CopyLogicalPositionForPosition(history HistoryStore, pos CopyPosition) CopyLogicalPosition {
+	offset := historyLogicalOffsetForPosition(history, pos)
+	if offset.lineID == 0 {
+		return CopyLogicalPosition{}
+	}
+	return CopyLogicalPosition{Valid: true, LineID: offset.lineID, Col: offset.col}
+}
+
+func copyLogicalPositionSame(left CopyLogicalPosition, right CopyLogicalPosition) bool {
+	return left.Valid == right.Valid && left.LineID == right.LineID && left.Col == right.Col
 }
 
 func historyLogicalOffsetForPosition(history HistoryStore, pos CopyPosition) historyLogicalOffset {

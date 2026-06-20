@@ -302,6 +302,68 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceHistoryCopyUsesFrozenLogicalRange(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 8, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "alpha  \nbeta\n好wide\ngamma"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       8,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if latest.Token == "" || latest.Generation == 0 || len(latest.RowLineIDs) == 0 {
+		t.Fatalf("expected frozen latest metadata, got %#v", latest)
+	}
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                8,
+		Limit:               2,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("older history.window: %v", err)
+	}
+	if len(older.RowLineIDs) < 2 {
+		t.Fatalf("expected older rows, got %#v", older)
+	}
+
+	text, err := client.HistoryCopy(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                8,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: older.RowLineIDs[0],
+		BoundaryLastLineID:  latest.LastLineID,
+		RangeValid:          true,
+		RangeStartLineID:    older.RowLineIDs[0],
+		RangeStartCol:       2,
+		RangeEndLineID:      latest.RowLineIDs[len(latest.RowLineIDs)-1],
+		RangeEndCol:         3,
+	})
+	if err != nil {
+		t.Fatalf("history.copy: %v", err)
+	}
+	if text != "pha  \nbeta\n好wide\ngam" {
+		t.Fatalf("unexpected copied text %q", text)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotSurvivesClearScrollbackForOldObserver(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

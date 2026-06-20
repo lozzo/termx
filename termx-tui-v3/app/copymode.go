@@ -58,8 +58,9 @@ type CopyModeCopySelectionMsg struct{}
 func (CopyModeCopySelectionMsg) isMsg() {}
 
 type CopyModeCopyResultMsg struct {
-	Text string
-	Err  error
+	Text   string
+	Err    error
+	Commit bool
 }
 
 func (CopyModeCopyResultMsg) isMsg() {}
@@ -122,10 +123,10 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 		case CopyModeHistoryResultMsg:
 			return reduceCopyModeHistoryResult(root, msg, deps)
 		case CopyModeMoveCursorMsg:
-			root.CopyMode = root.CopyMode.MoveCursor(msg.Position)
+			root.CopyMode = root.CopyMode.MoveCursor(msg.Position).RefreshLogicalSelectionFocus(root.History)
 			return root.Advance(), nil
 		case CopyModeSetMarkMsg:
-			root.CopyMode = root.CopyMode.SetMark(msg.Position)
+			root.CopyMode = root.CopyMode.SetMark(msg.Position).RefreshLogicalSelection(root.History)
 			return root.Advance(), nil
 		case CopyModeCopySelectionMsg:
 			return reduceCopyModeCopySelection(root, deps)
@@ -135,7 +136,13 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 				root.Session = root.Session.SetError(msg.Err.Error())
 				return root.Advance(), nil
 			}
-			return root, nil
+			if !msg.Commit || msg.Text == "" {
+				return root, nil
+			}
+			root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Copied to clipboard", DismissAfterTicks: 3})
+			root.Clipboard = root.Clipboard.WithCopiedText(msg.Text)
+			root = root.Advance()
+			return root, []Effect{FuncEffect{Run: func(context.Context) Msg { return ClipboardStoragePersistRequestMsg{Reason: "copy"} }}}
 		case CopyModePasteResultMsg:
 			if msg.Err != nil {
 				root.Surface = root.Surface.SetError(msg.Err.Error())
@@ -155,7 +162,7 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			return root.Advance(), nil
 		case CopyModeScrollMsg:
 			root.CopyMode = root.CopyMode.ScrollCursor(msg.Delta, len(root.History.Rows))
-			return root.Advance(), nil
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil
 		case CopyModeMouseSelectMsg:
 			if !copyModeMouseSelectTargetMatches(root, msg.PaneID) {
 				return root, nil
@@ -164,6 +171,7 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			root.CopyMode = root.CopyMode.RefreshLogicalSelection(root.History)
 			return root.Advance(), nil
 		default:
 			return root, nil
@@ -186,6 +194,11 @@ func copyModeMouseSelectTargetMatches(root state.Root, paneID string) bool {
 	}
 	shell := root.Shell.EnsureDefaults()
 	return copyMode.PaneID == "" && copyMode.ViewID == "" && paneID == shell.ActivePaneID && shell.ActiveFloatingID() == ""
+}
+
+func refreshCopyModeLogicalSelectionFocus(root state.Root) state.Root {
+	root.CopyMode = root.CopyMode.RefreshLogicalSelectionFocus(root.History)
+	return root
 }
 
 func copyModeInputContext(copyMode state.CopyModeStore) bool {
@@ -252,6 +265,7 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 			return root, []Effect{handledEffect{}}
 		}
 		root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
+		root.CopyMode = root.CopyMode.RefreshLogicalSelection(root.History)
 		return root.Advance(), []Effect{handledEffect{}}
 	default:
 		if root.CopyMode.Active {
@@ -325,7 +339,7 @@ func reduceCopyModeMouseInput(root state.Root, event input.InputEvent, deps Copy
 	switch event.Mouse {
 	case input.MouseWheelUp:
 		root.CopyMode = root.CopyMode.ScrollCursor(-copyModeLineScrollRows(), len(root.History.Rows))
-		return root.Advance(), nil, true
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 	case input.MouseWheelDown:
 		next, effects := reduceCopyModeScrollNewer(root, deps, copyModeLineScrollRows())
 		return next, effects, true
@@ -346,7 +360,7 @@ func reduceCopyModeScrollNewer(root state.Root, deps CopyModeDeps, rows int) (st
 	root.CopyMode = root.CopyMode.ScrollCursor(rows, len(root.History.Rows))
 	if root.CopyMode.Cursor.Row < len(root.History.Rows)-1 || root.History.NewerRequestState() != state.NewerRequestReady {
 		if root.CopyMode.Cursor.Row != previousCursorRow || root.CopyMode.ViewportTop != previousTop {
-			return root.Advance(), nil
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil
 		}
 		return root, nil
 	}
@@ -365,7 +379,7 @@ func reduceCopyModeScrollNewer(root state.Root, deps CopyModeDeps, rows int) (st
 		return next, effects
 	}
 	if root.CopyMode.Cursor.Row != previousCursorRow || root.CopyMode.ViewportTop != previousTop {
-		return root.Advance(), nil
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil
 	}
 	return root, nil
 }
@@ -394,13 +408,13 @@ func reduceCopyModeScrollOlder(root state.Root, deps CopyModeDeps, event input.I
 				root.History.Pending.ScrollDeltaAfterPrepend += unconsumedRows
 			}
 			if root.CopyMode.Cursor.Row != previousCursorRow || root.CopyMode.ViewportTop != previousTop {
-				return root.Advance(), nil
+				return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil
 			}
 		}
 		if root.History.Pending != nil && root.History.Pending.Kind == state.HistoryRequestOlder {
 			next := root
 			next.History.Pending.ScrollDeltaAfterPrepend += rows
-			return next.Advance(), nil
+			return refreshCopyModeLogicalSelectionFocus(next).Advance(), nil
 		}
 	}
 	return beginCopyModeOlder(root, deps, rows)
@@ -417,19 +431,19 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 	case input.KeyHome:
 		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: 0})
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
-		return root.Advance(), nil, true
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 	case input.KeyEnd:
 		root.CopyMode = root.CopyMode.MoveCursor(copyModeLineEndPosition(root.History, root.CopyMode.Cursor.Row))
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
-		return root.Advance(), nil, true
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 	case input.KeyLeft:
 		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col - 1})
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
-		return root.Advance(), nil, true
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 	case input.KeyRight:
 		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col + 1})
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
-		return root.Advance(), nil, true
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 	case input.KeyDown:
 		if root.CopyMode.Query != "" {
 			root.CopyMode = root.CopyMode.MoveMatch(1)
@@ -438,7 +452,7 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 		}
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 		root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-		return root.Advance(), nil, true
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 	case input.KeyUp:
 		if root.CopyMode.Query != "" {
 			root.CopyMode = root.CopyMode.MoveMatch(-1)
@@ -447,7 +461,7 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 		}
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 		root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-		return root.Advance(), nil, true
+		return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 	case input.KeyEnter:
 		if root.CopyMode.Query != "" {
 			root.CopyMode = root.CopyMode.MoveMatch(1)
@@ -474,21 +488,21 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 		case "h":
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col - 1})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
-			return root.Advance(), nil, true
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 		case "l":
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: root.CopyMode.Cursor.Col + 1})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
-			return root.Advance(), nil, true
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 		case "j":
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row + 1, Col: root.CopyMode.Cursor.Col})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-			return root.Advance(), nil, true
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 		case "k":
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row - 1, Col: root.CopyMode.Cursor.Col})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-			return root.Advance(), nil, true
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 		case "g":
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: 0, Col: root.CopyMode.Cursor.Col})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
@@ -499,7 +513,7 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 				next, effects := beginCopyModeOldest(root, deps)
 				return next, effects, true
 			}
-			return root.Advance(), nil, true
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 		case "G":
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: len(root.History.Rows) - 1, Col: root.CopyMode.Cursor.Col})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
@@ -508,15 +522,16 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 				next, effects := beginCopyModeNewer(root, deps, 0)
 				return next, effects, true
 			}
-			return root.Advance(), nil, true
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 		case "u":
 			root.CopyMode = root.CopyMode.ScrollCursor(-(copyModePageRows(root.CopyMode) / 2), len(root.History.Rows))
-			return root.Advance(), nil, true
+			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil, true
 		case "d":
 			next, effects := reduceCopyModeScrollNewer(root, deps, copyModePageRows(root.CopyMode)/2)
 			return next, effects, true
 		case " ":
 			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
+			root.CopyMode = root.CopyMode.RefreshLogicalSelection(root.History)
 			return root.Advance(), nil, true
 		case "y":
 			if root.CopyMode.Selection != nil {
@@ -827,6 +842,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
 	}
 	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+	root = refreshCopyModeLogicalSelectionFocus(root)
 	if pending != nil && pending.Kind == state.HistoryRequestOlder {
 		root = trimCopyModeHistoryWindow(root, deps)
 	}
@@ -848,6 +864,7 @@ func trimCopyModeHistoryWindow(root state.Root, deps CopyModeDeps) state.Root {
 	if len(root.History.Rows) <= keepRows {
 		return root
 	}
+	root.CopyMode = root.CopyMode.EnsureLogicalSelection(root.History)
 	start, end := copyModeHistoryTrimRange(root.CopyMode, len(root.History.Rows), keepRows)
 	nextHistory, trim := root.History.TrimRows(start, end)
 	if trim.DroppedRowsBefore == 0 && trim.DroppedRowsAfter == 0 {
@@ -903,11 +920,6 @@ func copyModeHistoryTrimRange(copyMode state.CopyModeStore, totalRows int, keepR
 		end = marginEnd
 	}
 	start, end = expandTrimRangeForSelection(copyMode, start, end, totalRows)
-	if end-start+1 > keepRows*2 {
-		// 中文说明：超大选区复制需要后续按 logical index 从 core/backend 拉取；
-		// 当前协议没有 range copy contract，不能为了省内存破坏正在进行的本地选择。
-		return 0, totalRows - 1
-	}
 	start = clampColumn(start, 0, totalRows-1)
 	end = clampColumn(end, start, totalRows-1)
 	return start, end
@@ -915,11 +927,16 @@ func copyModeHistoryTrimRange(copyMode state.CopyModeStore, totalRows int, keepR
 
 func expandTrimRangeForSelection(copyMode state.CopyModeStore, start int, end int, totalRows int) (int, int) {
 	positions := []state.CopyPosition{copyMode.Cursor}
-	if copyMode.Mark != nil {
-		positions = append(positions, *copyMode.Mark)
-	}
-	if copyMode.Selection != nil {
-		positions = append(positions, copyMode.Selection.Anchor, copyMode.Selection.Focus)
+	selectionHasLogicalRange := copyMode.Selection != nil &&
+		copyMode.Selection.LogicalAnchor.Valid &&
+		copyMode.Selection.LogicalFocus.Valid
+	if !selectionHasLogicalRange {
+		if copyMode.Mark != nil {
+			positions = append(positions, *copyMode.Mark)
+		}
+		if copyMode.Selection != nil {
+			positions = append(positions, copyMode.Selection.Anchor, copyMode.Selection.Focus)
+		}
 	}
 	for _, pos := range positions {
 		if pos.Row < start {
@@ -983,24 +1000,51 @@ func copyModeOwnsPendingHistory(root state.Root) bool {
 }
 
 func reduceCopyModeCopySelection(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
-	text := SelectedText(root.History, root.CopyMode)
-	if text == "" {
-		return root, nil
-	}
 	if deps.Clipboard == nil {
 		return setCopyModeError(root, "clipboard service missing"), nil
 	}
-	root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastSuccess, Title: "Copied to clipboard", DismissAfterTicks: 3})
-	root.Clipboard = root.Clipboard.WithCopiedText(text)
+	text := SelectedText(root.History, root.CopyMode)
+	start, end, hasRange := root.CopyMode.SelectionLogicalRange(root.History)
+	needsBackend := root.CopyMode.SelectionNeedsBackend(root.History)
+	if text == "" && (!hasRange || !needsBackend) {
+		return root, nil
+	}
+	req := services.HistoryCopyRangeRequest{
+		TerminalID: root.History.TerminalID,
+		Cols:       root.History.Cols,
+		Token:      root.History.Token,
+		Generation: root.History.Generation,
+		Boundary:   root.History.Boundary,
+		Start:      start,
+		End:        end,
+	}
+	shouldFetchBackend := needsBackend && hasRange && deps.Core != nil && req.TerminalID != "" && req.Token != ""
+	if needsBackend && !shouldFetchBackend {
+		return setCopyModeError(root, "history copy backend missing"), nil
+	}
 	root = root.Advance()
 	return root, []Effect{
 		FuncEffect{
+			Async:            true,
+			ForceSyncInTests: true,
 			Run: func(ctx context.Context) Msg {
-				err := deps.Clipboard.Write(ctx, services.ClipboardWriteRequest{Text: text})
-				return CopyModeCopyResultMsg{Text: text, Err: err}
+				copied := text
+				if shouldFetchBackend {
+					// 中文说明：本地窗口被虚拟滚动裁掉后，只保留 logical range，
+					// 复制正文必须从 frozen core/backend 拉回，不能要求 TUI 常驻旧 rows。
+					result, err := deps.Core.HistoryCopyRange(ctx, req)
+					if err != nil {
+						return CopyModeCopyResultMsg{Err: err}
+					}
+					copied = result.Text
+				}
+				if copied == "" {
+					return CopyModeCopyResultMsg{}
+				}
+				err := deps.Clipboard.Write(ctx, services.ClipboardWriteRequest{Text: copied})
+				return CopyModeCopyResultMsg{Text: copied, Err: err, Commit: true}
 			},
 		},
-		FuncEffect{Run: func(context.Context) Msg { return ClipboardStoragePersistRequestMsg{Reason: "copy"} }},
 	}
 }
 

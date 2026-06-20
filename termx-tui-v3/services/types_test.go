@@ -24,6 +24,7 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 		OlderResponses:  []HistoryResult{{Window: state.HistoryWindow{Token: "older"}}},
 		NewerResponses:  []HistoryResult{{Window: state.HistoryWindow{Token: "newer"}}},
 		OldestResponses: []HistoryResult{{Window: state.HistoryWindow{Token: "oldest"}}},
+		CopyResponses:   []HistoryCopyRangeResult{{Text: "copied"}},
 	}
 
 	latest, err := client.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 80, Rows: 24})
@@ -71,6 +72,18 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	if err := client.ReleaseHistory(context.Background(), HistoryReleaseRequest{TerminalID: "term-1", Token: "latest"}); err != nil {
 		t.Fatalf("release history: %v", err)
 	}
+	copied, err := client.HistoryCopyRange(context.Background(), HistoryCopyRangeRequest{
+		TerminalID: "term-1",
+		Cols:       80,
+		Token:      "latest",
+		Generation: 7,
+		Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 20},
+		Start:      state.CopyLogicalPosition{Valid: true, LineID: 10, Col: 2},
+		End:        state.CopyLogicalPosition{Valid: true, LineID: 20, Col: 4},
+	})
+	if err != nil {
+		t.Fatalf("copy range: %v", err)
+	}
 
 	if latest.RequestID != 1 || latest.Window.Token != "latest" {
 		t.Fatalf("unexpected latest result %#v", latest)
@@ -98,6 +111,9 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	}
 	if len(client.ReleaseRequests) != 1 || client.ReleaseRequests[0].Token != "latest" {
 		t.Fatalf("unexpected release requests %#v", client.ReleaseRequests)
+	}
+	if copied.Text != "copied" || len(client.CopyRequests) != 1 || client.CopyRequests[0].Start.LineID != 10 || client.CopyRequests[0].End.Col != 4 {
+		t.Fatalf("unexpected copy range result=%#v requests=%#v", copied, client.CopyRequests)
 	}
 }
 

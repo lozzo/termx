@@ -366,7 +366,7 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			ScrollbackLimit:  int32(value.ScrollbackLimit),
 			Cols:             int32(value.Cols),
 		})
-	case "history.window", "history.release":
+	case "history.window", "history.release", "history.copy":
 		value, ok := params.(HistoryWindowParams)
 		if !ok {
 			if ptr, ptrOK := params.(*HistoryWindowParams); ptrOK && ptr != nil {
@@ -572,7 +572,7 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return GridViewportParams{TerminalID: msg.GetTerminalId(), ScrollbackOffset: int(msg.GetScrollbackOffset()), ScrollbackLimit: int(msg.GetScrollbackLimit()), Cols: int(msg.GetCols())}, nil
-	case "history.window", "history.release":
+	case "history.window", "history.release", "history.copy":
 		var msg wirepb.HistoryWindowParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
@@ -1798,6 +1798,11 @@ const (
 	historyWindowAfterCursorValidFieldNumber protowire.Number = 13
 	historyWindowAfterLineIDFieldNumber      protowire.Number = 14
 	historyWindowAfterRowInLineFieldNumber   protowire.Number = 15
+	historyWindowRangeValidFieldNumber       protowire.Number = 16
+	historyWindowRangeStartLineIDFieldNumber protowire.Number = 17
+	historyWindowRangeStartColFieldNumber    protowire.Number = 18
+	historyWindowRangeEndLineIDFieldNumber   protowire.Number = 19
+	historyWindowRangeEndColFieldNumber      protowire.Number = 20
 )
 
 func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params HistoryWindowParams) {
@@ -1807,6 +1812,11 @@ func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, par
 	setBoolProtoFieldOrUnknown(msg, historyWindowAfterCursorValidFieldNumber, params.AfterCursorValid)
 	setUint64ProtoFieldOrUnknown(msg, historyWindowAfterLineIDFieldNumber, params.AfterLineID)
 	setInt32ProtoFieldOrUnknown(msg, historyWindowAfterRowInLineFieldNumber, int32(params.AfterRowInLine))
+	setBoolProtoFieldOrUnknown(msg, historyWindowRangeValidFieldNumber, params.RangeValid)
+	setUint64ProtoFieldOrUnknown(msg, historyWindowRangeStartLineIDFieldNumber, params.RangeStartLineID)
+	setInt32ProtoFieldOrUnknown(msg, historyWindowRangeStartColFieldNumber, int32(params.RangeStartCol))
+	setUint64ProtoFieldOrUnknown(msg, historyWindowRangeEndLineIDFieldNumber, params.RangeEndLineID)
+	setInt32ProtoFieldOrUnknown(msg, historyWindowRangeEndColFieldNumber, int32(params.RangeEndCol))
 }
 
 func decodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params *HistoryWindowParams) {
@@ -1817,6 +1827,11 @@ func decodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, par
 	params.AfterCursorValid = boolProtoFieldOrUnknown(msg, historyWindowAfterCursorValidFieldNumber)
 	params.AfterLineID = uint64ProtoFieldOrUnknown(msg, historyWindowAfterLineIDFieldNumber)
 	params.AfterRowInLine = int(int32ProtoFieldOrUnknown(msg, historyWindowAfterRowInLineFieldNumber))
+	params.RangeValid = boolProtoFieldOrUnknown(msg, historyWindowRangeValidFieldNumber)
+	params.RangeStartLineID = uint64ProtoFieldOrUnknown(msg, historyWindowRangeStartLineIDFieldNumber)
+	params.RangeStartCol = int(int32ProtoFieldOrUnknown(msg, historyWindowRangeStartColFieldNumber))
+	params.RangeEndLineID = uint64ProtoFieldOrUnknown(msg, historyWindowRangeEndLineIDFieldNumber)
+	params.RangeEndCol = int(int32ProtoFieldOrUnknown(msg, historyWindowRangeEndColFieldNumber))
 }
 
 func setStringProtoFieldOrUnknown(msg proto.Message, field protowire.Number, value string) {

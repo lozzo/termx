@@ -246,6 +246,11 @@ message HistoryWindowParams {
   bool after_cursor_valid = 13;
   uint64 after_line_id = 14;
   int32 after_row_in_line = 15;
+  bool range_valid = 16;
+  uint64 range_start_line_id = 17;
+  int32 range_start_col = 18;
+  uint64 range_end_line_id = 19;
+  int32 range_end_col = 20;
 }
 
 message ListResult {

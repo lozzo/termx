@@ -457,6 +457,14 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		}
 		maybeReclaimProtocolRequestHeap()
 		return payload, true, 0, nil
+	case "history.copy":
+		in := params.(protocol.HistoryWindowParams)
+		payload, err := session.historyCopy(ctx, in)
+		if err != nil {
+			return nil, true, errorCode(err), err
+		}
+		maybeReclaimProtocolRequestHeap()
+		return payload, true, 0, nil
 	case "history.release":
 		in := params.(protocol.HistoryWindowParams)
 		if in.Token == "" {
@@ -726,6 +734,37 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 	}
 	size := Size{Cols: uint16(cols), Rows: info.Size.Rows}
 	return protocolHistoryWindowFromCore(params.TerminalID, size, window), nil
+}
+
+func (session *protocolSession) historyCopy(ctx context.Context, params protocol.HistoryWindowParams) ([]byte, error) {
+	cols := params.Cols
+	if cols <= 0 {
+		info, err := session.server.GetTerminal(params.TerminalID)
+		if err != nil {
+			return nil, err
+		}
+		cols = int(info.Size.Cols)
+	}
+	if err := session.validateFrozenWindowRequest(params, cols); err != nil {
+		return nil, err
+	}
+	if !params.RangeValid || params.RangeStartLineID == 0 || params.RangeEndLineID == 0 {
+		return nil, fmt.Errorf("history copy requires logical range")
+	}
+	snapshot, ok := session.frozenSnapshot(params.TerminalID, params.Token)
+	if !ok {
+		return nil, ErrStaleHistoryWindow
+	}
+	text, err := frozenSnapshotCopyRange(snapshot, historyCopyRange{
+		startLineID: history.LogicalLineID(params.RangeStartLineID),
+		startCol:    params.RangeStartCol,
+		endLineID:   history.LogicalLineID(params.RangeEndLineID),
+		endCol:      params.RangeEndCol,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return []byte(text), nil
 }
 
 func (session *protocolSession) validateOlderWindowRequest(params protocol.HistoryWindowParams, cols int) error {
@@ -1549,6 +1588,151 @@ func protocolAfterCursorToCore(params protocol.HistoryWindowParams) history.Hist
 		BeforeLineID:    history.LogicalLineID(params.AfterLineID),
 		BeforeRowInLine: params.AfterRowInLine,
 	}
+}
+
+type historyCopyRange struct {
+	startLineID history.LogicalLineID
+	startCol    int
+	endLineID   history.LogicalLineID
+	endCol      int
+}
+
+func frozenSnapshotCopyRange(snapshot history.FrozenSnapshot, copyRange historyCopyRange) (string, error) {
+	startIndex, ok := snapshot.LineIndex(copyRange.startLineID)
+	if !ok {
+		return "", ErrStaleHistoryWindow
+	}
+	endIndex, ok := snapshot.LineIndex(copyRange.endLineID)
+	if !ok {
+		return "", ErrStaleHistoryWindow
+	}
+	if startIndex > endIndex || (startIndex == endIndex && copyRange.startCol > copyRange.endCol) {
+		startIndex, endIndex = endIndex, startIndex
+		copyRange.startLineID, copyRange.endLineID = copyRange.endLineID, copyRange.startLineID
+		copyRange.startCol, copyRange.endCol = copyRange.endCol, copyRange.startCol
+	}
+	var builder strings.Builder
+	for index := startIndex; index <= endIndex; index++ {
+		line, ok := snapshot.LineAt(index)
+		if !ok {
+			return "", ErrStaleHistoryWindow
+		}
+		from := 0
+		to := historyLineDisplayWidth(line.Line)
+		if index == startIndex {
+			from = clampProtocolCopyInt(copyRange.startCol, 0, to)
+		}
+		if index == endIndex {
+			to = clampProtocolCopyInt(copyRange.endCol, 0, to)
+		}
+		if from > to {
+			from, to = to, from
+		}
+		if index > startIndex {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(historyLineSliceDisplay(line.Line, from, to))
+	}
+	return builder.String(), nil
+}
+
+func historyLineDisplayWidth(line history.LogicalLine) int {
+	width := 0
+	for _, cell := range line.Cells {
+		width += historyCellDisplayWidthSnapshot(cell)
+	}
+	return width
+}
+
+func historyLineSliceDisplay(line history.LogicalLine, from int, to int) string {
+	width := historyLineDisplayWidth(line)
+	from = clampProtocolCopyInt(from, 0, width)
+	to = clampProtocolCopyInt(to, from, width)
+	if to <= from {
+		return ""
+	}
+	var builder strings.Builder
+	cursor := 0
+	for _, cell := range line.Cells {
+		cellWidth := historyCellDisplayWidthSnapshot(cell)
+		next := cursor + cellWidth
+		if rangesOverlapProtocolCopy(cursor, next, from, to) {
+			builder.WriteString(historyCellSliceDisplaySnapshot(cell, from-cursor, to-cursor))
+		}
+		cursor = next
+	}
+	return builder.String()
+}
+
+func historyCellDisplayWidthSnapshot(cell history.Cell) int {
+	if cell.Width > 0 {
+		return cell.Width
+	}
+	return historyCellTextWidth(cell.Text)
+}
+
+func historyCellSliceDisplaySnapshot(cell history.Cell, from int, to int) string {
+	width := historyCellDisplayWidthSnapshot(cell)
+	from = clampProtocolCopyInt(from, 0, width)
+	to = clampProtocolCopyInt(to, from, width)
+	if to <= from {
+		return ""
+	}
+	textWidth := historyCellTextWidth(cell.Text)
+	textPart := ""
+	if from < textWidth {
+		textEnd := to
+		if textEnd > textWidth {
+			textEnd = textWidth
+		}
+		textPart = historyTextSliceDisplaySnapshot(cell.Text, from, textEnd)
+	}
+	pad := to - maxProtocolCopyInt(from, textWidth)
+	if pad <= 0 {
+		return textPart
+	}
+	return textPart + strings.Repeat(" ", pad)
+}
+
+func historyTextSliceDisplaySnapshot(text string, from int, to int) string {
+	if to <= from {
+		return ""
+	}
+	var builder strings.Builder
+	cursor := 0
+	for _, cluster := range historyTextClustersSnapshot(text) {
+		width := uniseg.StringWidth(cluster)
+		next := cursor + width
+		if width == 0 {
+			next = cursor
+		}
+		if rangesOverlapProtocolCopy(cursor, maxProtocolCopyInt(next, cursor+1), from, to) {
+			builder.WriteString(cluster)
+		}
+		cursor += width
+	}
+	return builder.String()
+}
+
+func rangesOverlapProtocolCopy(leftFrom int, leftTo int, rightFrom int, rightTo int) bool {
+	return leftFrom < rightTo && rightFrom < leftTo
+}
+
+func clampProtocolCopyInt(value int, minValue int, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func maxProtocolCopyInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func frozenSnapshotLatestWindow(snapshot history.FrozenSnapshot, cols int, rows int) history.HistoryWindow {

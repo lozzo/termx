@@ -650,6 +650,11 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		AfterRowInLine:      2,
 		BoundaryFirstLineID: 42,
 		BoundaryLastLineID:  43,
+		RangeValid:          true,
+		RangeStartLineID:    40,
+		RangeStartCol:       3,
+		RangeEndLineID:      44,
+		RangeEndCol:         9,
 	})
 	if err != nil {
 		t.Fatalf("encode control params failed: %v", err)
@@ -678,6 +683,11 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		AfterRowInLine:      2,
 		BoundaryFirstLineID: 42,
 		BoundaryLastLineID:  43,
+		RangeValid:          true,
+		RangeStartLineID:    40,
+		RangeStartCol:       3,
+		RangeEndLineID:      44,
+		RangeEndCol:         9,
 	}) {
 		t.Fatalf("unexpected decoded history window params: %#v", params)
 	}

@@ -76,9 +76,23 @@ type HistoryReleaseRequest struct {
 	Token      string
 }
 
+type HistoryCopyRangeRequest struct {
+	TerminalID string
+	Cols       int
+	Token      string
+	Generation uint64
+	Boundary   state.HistoryBoundary
+	Start      state.CopyLogicalPosition
+	End        state.CopyLogicalPosition
+}
+
 type HistoryResult struct {
 	RequestID RequestID
 	Window    state.HistoryWindow
+}
+
+type HistoryCopyRangeResult struct {
+	Text string
 }
 
 type CoreClient interface {
@@ -86,6 +100,7 @@ type CoreClient interface {
 	HistoryOlder(context.Context, HistoryOlderRequest) (HistoryResult, error)
 	HistoryNewer(context.Context, HistoryNewerRequest) (HistoryResult, error)
 	HistoryOldest(context.Context, HistoryOldestRequest) (HistoryResult, error)
+	HistoryCopyRange(context.Context, HistoryCopyRangeRequest) (HistoryCopyRangeResult, error)
 	ReleaseHistory(context.Context, HistoryReleaseRequest) error
 }
 
@@ -443,10 +458,12 @@ type FakeCoreClient struct {
 	OlderResponses  []HistoryResult
 	NewerResponses  []HistoryResult
 	OldestResponses []HistoryResult
+	CopyResponses   []HistoryCopyRangeResult
 	LatestRequests  []HistoryLatestRequest
 	OlderRequests   []HistoryOlderRequest
 	NewerRequests   []HistoryNewerRequest
 	OldestRequests  []HistoryOldestRequest
+	CopyRequests    []HistoryCopyRangeRequest
 	ReleaseRequests []HistoryReleaseRequest
 	ReleaseErr      error
 }
@@ -492,6 +509,16 @@ func (client *FakeCoreClient) HistoryOldest(_ context.Context, req HistoryOldest
 	result := client.OldestResponses[0]
 	client.OldestResponses = client.OldestResponses[1:]
 	result.RequestID = req.RequestID
+	return result, nil
+}
+
+func (client *FakeCoreClient) HistoryCopyRange(_ context.Context, req HistoryCopyRangeRequest) (HistoryCopyRangeResult, error) {
+	client.CopyRequests = append(client.CopyRequests, req)
+	if len(client.CopyResponses) == 0 {
+		return HistoryCopyRangeResult{}, ErrMissingHistoryResponse
+	}
+	result := client.CopyResponses[0]
+	client.CopyResponses = client.CopyResponses[1:]
 	return result, nil
 }
 

@@ -58,13 +58,18 @@ func TestCopySelectionPersistsClipboardHistoryToCoreStorage(t *testing.T) {
 	}
 
 	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "y"}})
-	if len(effects) != 2 {
-		t.Fatalf("expected clipboard write and storage persist request effects, got %#v", effects)
+	if len(effects) != 1 {
+		t.Fatalf("expected clipboard write effect, got %#v", effects)
 	}
-	if msg := effects[0].(FuncEffect).Run(context.Background()); msg == nil {
+	copyMsg := effects[0].(FuncEffect).Run(context.Background())
+	if copyMsg == nil {
 		t.Fatalf("expected clipboard write result")
 	}
-	persistMsg := effects[1].(FuncEffect).Run(context.Background())
+	root, effects = reducer(root, copyMsg)
+	if len(effects) != 1 {
+		t.Fatalf("expected storage persist request effect, got %#v", effects)
+	}
+	persistMsg := effects[0].(FuncEffect).Run(context.Background())
 	root, effects = reducer(root, persistMsg)
 	if len(effects) != 1 {
 		t.Fatalf("expected storage save effect, got %#v", effects)
