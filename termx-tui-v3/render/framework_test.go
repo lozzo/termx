@@ -801,6 +801,47 @@ func TestFrameworkFloatingClearsBackgroundWithoutOverlayFill(t *testing.T) {
 	}
 }
 
+func TestFrameworkFloatingTerminalKeepsBackgroundOutsideLiveExtent(t *testing.T) {
+	backgroundRows := make([]Line, 12)
+	for i := range backgroundRows {
+		backgroundRows[i] = NewLine(strings.Repeat("b", 48))
+	}
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 50, H: 12},
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Title:        "history",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentTerminalLive, Lines: backgroundRows},
+			}},
+			Floating: []FloatingVM{{
+				ID:    "float-1",
+				Title: "float",
+				Rect:  Rect{X: 10, Y: 3, W: 30, H: 6},
+				Z:     1,
+				Content: ContentVM{
+					Kind:   ContentTerminalLive,
+					Lines:  []Line{NewLine("term")},
+					Extent: ContentExtent{Known: true, X: 8, Cols: 10, Rows: 4},
+				},
+			}},
+		},
+	}})
+	frame := result.Frame()
+
+	if left := SliceCells(frame.Lines[4], 11, 18); left != strings.Repeat("b", 7) {
+		t.Fatalf("floating side band outside terminal extent should keep background text, got %q line=%q", left, frame.Lines[4])
+	}
+	if right := SliceCells(frame.Lines[4], 29, 39); right != strings.Repeat("b", 10) {
+		t.Fatalf("floating side band outside terminal extent should keep background text, got %q line=%q", right, frame.Lines[4])
+	}
+	if term := SliceCells(frame.Lines[4], 19, 23); term != "term" {
+		t.Fatalf("terminal extent should still render floating content, got %q line=%q", term, frame.Lines[4])
+	}
+}
+
 func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 	cases := []struct {
 		name string

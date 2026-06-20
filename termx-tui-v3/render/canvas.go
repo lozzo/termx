@@ -421,12 +421,13 @@ func (c *canvas) clearCell(y int, x int) {
 	if c.rows[y][x].continuation {
 		for col := x - 1; col >= 0; col-- {
 			if !c.rows[y][col].continuation {
-				c.clearCellFootprint(y, col)
+				c.clearCellColumnInFootprint(y, col, x)
 				break
 			}
 		}
+		return
 	}
-	c.clearCellFootprint(y, x)
+	c.clearCellColumnInFootprint(y, x, x)
 }
 
 func (c *canvas) clearCellFootprint(y int, x int) {

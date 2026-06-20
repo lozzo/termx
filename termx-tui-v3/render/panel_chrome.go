@@ -540,18 +540,53 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	primitive := FloatingChromePrimitive(floating, rect, style)
 	owner := primitive.Owner
-	// 中文说明：floating 是覆盖层，需要先用默认背景空白清掉底层 pane；
-	// 但不能套 StyleOverlay，否则浮窗主体会被染成 overlay 背景色。
-	c.fillRect(rect, owner, LayerFloating)
+	if floating.Content.Kind != ContentTerminalLive {
+		// 中文说明：非 terminal 浮窗是完整面板，需要先用默认背景空白清掉底层 pane；
+		// 但不能套 StyleOverlay，否则浮窗主体会被染成 overlay 背景色。
+		c.fillRect(rect, owner, LayerFloating)
+	}
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
 	renderFloatingTerminalChrome(c, primitive)
 	renderFloatingChromeActions(c, primitive)
 	var contentResult ContentRenderResult
 	if !floating.Collapsed {
-		contentResult = renderContent(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating)
+		if floating.Content.Kind == ContentTerminalLive {
+			contentResult = renderFloatingTerminalContent(c, floating.Content, layout.ContentRect, owner+":content")
+		} else {
+			contentResult = renderContent(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating)
+		}
 		renderFloatingContentOverflowMarkers(c, layout, contentResult.Overflow)
 	}
 	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}
+}
+
+func renderFloatingTerminalContent(c *canvas, content ContentVM, rect Rect, owner string) ContentRenderResult {
+	if rect.W <= 0 || rect.H <= 0 {
+		return ContentRenderResult{}
+	}
+	result := RenderContentViewport(ContentRenderRequest{Rect: rect, Content: content})
+	terminalRect := floatingTerminalVisibleContentRect(content, rect)
+	if terminalRect.W <= 0 || terminalRect.H <= 0 {
+		return result
+	}
+	for row := 0; row < terminalRect.H; row++ {
+		sourceRow := terminalRect.Y - rect.Y + row
+		if sourceRow < 0 || sourceRow >= len(result.Lines) {
+			continue
+		}
+		sourceCol := terminalRect.X - rect.X
+		line := contentViewportLineWindow(result.Lines[sourceRow], sourceCol, terminalRect.W)
+		c.writeLine(terminalRect.X, terminalRect.Y+row, terminalRect.W, line, owner, LayerFloating)
+	}
+	return result
+}
+
+func floatingTerminalVisibleContentRect(content ContentVM, rect Rect) Rect {
+	extent := normalizeContentExtent(content.Extent, rect)
+	extent = applyContentLayoutToExtent(content.Layout, extent, rect)
+	terminal := Rect{X: rect.X + extent.X, Y: rect.Y + extent.Y, W: extent.Cols, H: extent.Rows}
+	// 中文说明：floating terminal 只覆盖真实 terminal extent；extent 外侧应保留底层 pane 文本。
+	return intersectRect(rect, terminal)
 }
 
 func renderFloatingTerminalChrome(c *canvas, primitive ChromePrimitive) {
