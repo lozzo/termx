@@ -783,6 +783,42 @@ func TestHistoryStoreTrimRowsReleasesWindowButKeepsFrozenTailBoundary(t *testing
 	}
 }
 
+func TestHistoryStoreTrimRowsDetachesDroppedBackingArrays(t *testing.T) {
+	source := make([]HistoryLogicalLine, 0, 64)
+	for i := 0; i < 64; i++ {
+		source = append(source, HistoryLogicalLine{
+			Text:   "payload",
+			LineID: uint64(i + 1),
+			Cells:  []HistoryCell{{Text: "payload", Width: 7}},
+		})
+	}
+	store := HistoryStore{
+		Cols:        80,
+		SourceLines: source,
+		Boundary:    HistoryBoundary{FirstLineID: 1, LastLineID: 64},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(24, 31)
+
+	if result.DroppedRowsBefore != 24 || result.DroppedRowsAfter != 32 {
+		t.Fatalf("unexpected trim accounting: %#v", result)
+	}
+	if len(trimmed.SourceLines) != 8 || cap(trimmed.SourceLines) != len(trimmed.SourceLines) {
+		t.Fatalf("trimmed source lines must not retain dropped backing array, len=%d cap=%d", len(trimmed.SourceLines), cap(trimmed.SourceLines))
+	}
+	if len(trimmed.Rows) != 8 || cap(trimmed.Rows) != len(trimmed.Rows) {
+		t.Fatalf("trimmed rows must not retain dropped backing array, len=%d cap=%d", len(trimmed.Rows), cap(trimmed.Rows))
+	}
+	if len(trimmed.Lines) != 8 || cap(trimmed.Lines) != len(trimmed.Lines) {
+		t.Fatalf("trimmed spans must not retain dropped backing array, len=%d cap=%d", len(trimmed.Lines), cap(trimmed.Lines))
+	}
+	store.SourceLines[24].Cells[0].Text = "mutated-old"
+	if trimmed.SourceLines[0].Cells[0].Text != "payload" {
+		t.Fatalf("trimmed source cells must be detached from dropped window, got %#v", trimmed.SourceLines[0].Cells)
+	}
+}
+
 func TestCopyModeApplyHistoryTrimRebasesCursorSelectionAndMatches(t *testing.T) {
 	mark := CopyPosition{Row: 4, Col: 1}
 	copyMode := CopyModeStore{

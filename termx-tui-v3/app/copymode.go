@@ -1523,7 +1523,7 @@ func exitCopyMode(root state.Root) state.Root {
 	// 中文说明：copy/history window 只是当前交互投影；退出或取消后必须释放，
 	// 否则 TUI 会继续持有 rows/source lines 的 backing array。
 	viewID := copyHistoryWorkingViewID(root)
-	root.History = root.History.InvalidateWindow()
+	root.History = state.HistoryStore{}
 	root.CopyMode = state.CopyModeStore{}
 	if viewID != "" {
 		root = root.WithoutCopyHistorySession(viewID)

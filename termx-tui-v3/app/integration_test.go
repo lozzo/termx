@@ -2730,8 +2730,8 @@ func TestCopyModePaneCloseInvalidatesFrozenHistoryForClosedPane(t *testing.T) {
 	if len(effects) == 0 {
 		t.Fatalf("pane close should keep normal pane command effects, got %#v", effects)
 	}
-	if next.History.Token != "" || next.History.TerminalID != "term-2" || len(next.History.Rows) != 0 {
-		t.Fatalf("pane close must invalidate frozen history for closed pane, got %#v", next.History)
+	if next.History.Token != "" || next.History.TerminalID != "" || len(next.History.Rows) != 0 || len(next.History.SourceLines) != 0 {
+		t.Fatalf("pane close must release frozen history for closed pane, got %#v", next.History)
 	}
 	if next.CopyMode.Active || next.CopyMode.PaneID != "" || next.CopyMode.BoundToken != "" {
 		t.Fatalf("pane close must clear copy mode bound to closed pane, got %#v", next.CopyMode)

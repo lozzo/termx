@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/services"
 	"github.com/lozzow/termx/termx-tui-v3/state"
@@ -106,6 +107,64 @@ func TestCopyHistoryPatchDisabledWhenFloatingOverlapsContent(t *testing.T) {
 	}
 	if host.sink.patchFrames != 0 || host.sink.frames != 0 {
 		t.Fatalf("disabled patch should not write partial frame, frames=%d patches=%d", host.sink.frames, host.sink.patchFrames)
+	}
+}
+
+func TestCopyHistoryExitClearsSessionsAndPatchCache(t *testing.T) {
+	host := newCopyHistoryPerfIncrementalHost(16)
+	host.SetSize(80, 24)
+	core := &services.FakeCoreClient{}
+	root := copyHistoryPerfRoot(80, 24, 256)
+	viewID := root.CopyMode.ViewID
+	root = root.WithCopyHistorySession(viewID, root.History, root.CopyMode)
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 20})),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	if !runtime.copyHistoryPatch.Valid {
+		t.Fatal("expected active copy/history frame to seed incremental patch cache")
+	}
+
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}}); err != nil {
+		t.Fatalf("post esc: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain esc: %v", err)
+	}
+
+	next := runtime.State()
+	if next.History.TerminalID != "" || next.History.Token != "" || len(next.History.Rows) != 0 || len(next.History.SourceLines) != 0 {
+		t.Fatalf("ESC exit must release current history window, got %#v", next.History)
+	}
+	if next.CopyMode.Active || next.CopyMode.TerminalID != "" || next.CopyMode.BoundToken != "" {
+		t.Fatalf("ESC exit must clear copy mode, got %#v", next.CopyMode)
+	}
+	if _, ok := next.HistoryByView[viewID]; ok {
+		t.Fatalf("ESC exit must remove history session for %s, got %#v", viewID, next.HistoryByView)
+	}
+	if _, ok := next.CopyModeByView[viewID]; ok {
+		t.Fatalf("ESC exit must remove copy session for %s, got %#v", viewID, next.CopyModeByView)
+	}
+	if runtime.copyHistoryPatch.Valid {
+		t.Fatalf("ESC exit must clear copy/history patch cache, got %#v", runtime.copyHistoryPatch)
+	}
+	if len(core.ReleaseRequests) != 1 || core.ReleaseRequests[0].TerminalID != "term-1" || core.ReleaseRequests[0].Token != "tok-perf" {
+		t.Fatalf("ESC exit should release frozen history token, got %#v", core.ReleaseRequests)
+	}
+	if copyHistoryPerfFrame.Patch != nil {
+		t.Fatalf("after copy/history exit renderer must write a full frame, got patch %#v", copyHistoryPerfFrame.Patch)
 	}
 }
 

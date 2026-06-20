@@ -72,7 +72,9 @@ func (r Root) WithoutCopyHistorySession(viewID string) Root {
 		return r
 	}
 	if historyStoreMatchesView(r.History, viewID) || copyModeStoreMatchesView(r.CopyMode, viewID) {
-		r.History = r.History.InvalidateWindow()
+		// 中文说明：删除 view 级 copy/history 会话时，current root 也不能留下
+		// terminal id 空壳，否则 render 侧仍会把它当成 copy/history terminal。
+		r.History = HistoryStore{}
 		r.CopyMode = CopyModeStore{}
 	}
 	if _, ok := r.HistoryByView[viewID]; ok {
