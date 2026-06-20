@@ -1240,11 +1240,15 @@ func TestRenderVMBuilderShowsPendingWhenCopyFloatingBindingMissing(t *testing.T)
 
 	vm := NewRenderVMBuilder().Build(root)
 	content := activeContent(vm.Shell)
-	if content.Kind != ContentCopyHistory || !content.Pending {
-		t.Fatalf("missing floating binding should keep copy-history pending, got %#v", content)
+	hasStaleHistory := false
+	for _, line := range content.Lines {
+		if strings.Contains(line.PlainString(), "float-history") {
+			hasStaleHistory = true
+			break
+		}
 	}
-	if len(content.Lines) != 1 || !strings.Contains(content.Lines[0].PlainString(), "copy binding missing") {
-		t.Fatalf("missing floating binding must not render stale history rows, got %#v", content.Lines)
+	if content.Kind == ContentCopyHistory || hasStaleHistory {
+		t.Fatalf("missing floating binding must not project stale floating history into active body, got %#v", content)
 	}
 }
 

@@ -1082,7 +1082,7 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			return NoopMsg{}
 		}
 		col := historyHitRegionDisplayColumn(inputMsg.Event, resolution.HistoryRow)
-		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: resolution.HistoryRow.Row, Col: col}, PaneID: resolution.HistoryRow.PaneID}
+		return CopyModeMouseSelectMsg{Position: state.CopyPosition{Row: resolution.HistoryRow.Row, Col: col}, PaneID: resolution.HistoryRow.PaneID, ViewID: runtime.copyHistoryViewIDForRegion(resolution.HistoryRow)}
 	}
 	if command, ok := PaneCommandFromHitRegion(region); ok {
 		runtime.fillMousePaneCommandDefaults(&command)
@@ -1131,20 +1131,21 @@ func (runtime *AppRuntime) mouseWheelCanRouteToCopyMode(event input.InputEvent, 
 	switch event.Mouse {
 	case input.MouseWheelUp:
 	case input.MouseWheelDown:
-		if !copyModeInputContext(runtime.state.CopyMode) {
-			return false
-		}
 	default:
 		return false
 	}
 	// 中文说明：带 RawSeq 的普通鼠标事件默认会被 terminal mouse tracking 吞掉；上滑需要保留
 	// 进入 copy/history 的入口，已进入 copy/history 后下滑也必须继续交给 copy reducer。
 	if !resolution.HasForeground {
-		return true
+		return event.Mouse == input.MouseWheelUp || copyModeInputContext(runtime.state.CopyMode)
 	}
 	switch resolution.Foreground.Kind {
 	case render.HitRegionPaneContent, render.HitRegionHistoryRow:
-		return true
+		if event.Mouse == input.MouseWheelUp {
+			return true
+		}
+		_, copyMode := runtime.state.CopyHistorySessionForView(runtime.copyHistoryViewIDForRegion(resolution.Foreground))
+		return copyModeInputContext(copyMode)
 	default:
 		return false
 	}
@@ -1273,7 +1274,8 @@ func (runtime *AppRuntime) focusMsgForOwner(ownerID string) (Msg, bool) {
 }
 
 func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) bool {
-	copyMode := runtime.state.CopyMode
+	viewID := runtime.copyHistoryViewIDForRegion(region)
+	_, copyMode := runtime.state.CopyHistorySessionForView(viewID)
 	if !copyMode.Active {
 		return false
 	}
@@ -1299,11 +1301,14 @@ func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) b
 }
 
 func (runtime *AppRuntime) copyModeMouseWheelEnterMsg(event input.InputEvent, resolution mouseHitResolution) (Msg, bool) {
-	if event.Kind != input.EventKindMouse || event.Mouse != input.MouseWheelUp || copyModeInputContext(runtime.state.CopyMode) {
+	if event.Kind != input.EventKindMouse || event.Mouse != input.MouseWheelUp {
 		return nil, false
 	}
 	region, ok := copyModeWheelTargetRegion(resolution)
 	if !ok {
+		return nil, false
+	}
+	if _, copyMode := runtime.state.CopyHistorySessionForView(runtime.copyHistoryViewIDForRegion(region)); copyModeInputContext(copyMode) {
 		return nil, false
 	}
 	binding, ok := runtime.terminalViewBindingForMouseRegion(region)
@@ -1322,6 +1327,21 @@ func (runtime *AppRuntime) copyModeMouseWheelEnterMsg(event input.InputEvent, re
 	// 中文说明：滚轮上滑是 copy/history 入口，必须绑定鼠标命中的 TerminalView；
 	// 不能先丢给 active pane，否则非 active sibling 要等下一次事件才进入 copy。
 	return CopyModeEnterViewMsg{Binding: binding, Cols: rect.W, Rows: rect.H}, true
+}
+
+func (runtime *AppRuntime) copyHistoryViewIDForRegion(region render.HitRegion) string {
+	if binding, ok := runtime.terminalViewBindingForMouseRegion(region); ok {
+		return binding.ViewID
+	}
+	if region.Floating {
+		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok {
+			return state.TerminalFloatingViewID(floatingID)
+		}
+	}
+	if region.PaneID != "" {
+		return state.TerminalPaneViewID(region.PaneID)
+	}
+	return ""
 }
 
 func copyModeWheelTargetRegion(resolution mouseHitResolution) (render.HitRegion, bool) {

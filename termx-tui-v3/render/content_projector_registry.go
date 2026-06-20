@@ -13,13 +13,15 @@ func (fn ContentProjectorFunc) ProjectContent(ctx ContentProjectorContext) Conte
 }
 
 type ContentProjectorContext struct {
-	Root    state.Root
-	Shell   state.ShellStore
-	Pane    state.PaneState
-	Kind    ContentKind
-	Active  bool
-	Surface state.TerminalSurfaceStore
-	Session state.TerminalSessionStore
+	Root     state.Root
+	Shell    state.ShellStore
+	Pane     state.PaneState
+	Kind     ContentKind
+	Active   bool
+	Surface  state.TerminalSurfaceStore
+	Session  state.TerminalSessionStore
+	History  state.HistoryStore
+	CopyMode state.CopyModeStore
 }
 
 type ContentProjectorRegistry struct {
@@ -93,10 +95,15 @@ func liveSurfaceIsPending(surface state.TerminalSurfaceStore, session state.Term
 }
 
 func projectCopyHistoryContent(ctx ContentProjectorContext) ContentVM {
-	if !ctx.Active && !ctx.Root.CopyMode.Active {
+	copyMode := ctx.CopyMode
+	history := ctx.History
+	if !copyMode.Active && !copyMode.Entering {
+		history, copyMode = ctx.Root.History, ctx.Root.CopyMode
+	}
+	if !ctx.Active && !copyMode.Active {
 		return placeholderContentForPane(ctx.Pane)
 	}
-	return buildCopyHistoryContentVM(ctx.Root, ctx.Root.History, ctx.Root.CopyMode)
+	return buildCopyHistoryContentVM(ctx.Root, history, copyMode)
 }
 
 func projectEmptyPaneContent(ctx ContentProjectorContext) ContentVM {

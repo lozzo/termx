@@ -179,11 +179,12 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 		return root.Advance(), nil
 	}
 	previousViews := root.TerminalViews
+	previousHistoryTerminalID := root.History.TerminalID
 	terminalViews = preserveWorkbenchRuntimeTerminalViews(previousViews, terminalViews)
 	// 外部 workbench snapshot 会整体替换 pane/view 结构；旧 frozen history、
 	// pending request 和 copy 绑定都不能跨这次替换继续复用。
-	root.History = root.History.InvalidateWindow()
-	root.CopyMode = state.CopyModeStore{}
+	root = root.ClearCopyHistorySessions()
+	root.History = state.HistoryStore{TerminalID: previousHistoryTerminalID}
 	root.Shell = shell
 	root.TerminalViews = terminalViews
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)

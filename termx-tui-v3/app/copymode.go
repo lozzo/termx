@@ -27,8 +27,11 @@ const (
 )
 
 type CopyModeHistoryResultMsg struct {
-	Result services.HistoryResult
-	Err    error
+	Result     services.HistoryResult
+	Err        error
+	PaneID     string
+	ViewID     string
+	TerminalID string
 }
 
 func (CopyModeHistoryResultMsg) isMsg() {}
@@ -99,6 +102,7 @@ func (CopyModeScrollMsg) isMsg() {}
 type CopyModeMouseSelectMsg struct {
 	Position state.CopyPosition
 	PaneID   string
+	ViewID   string
 }
 
 func (CopyModeMouseSelectMsg) isMsg() {}
@@ -107,29 +111,149 @@ func staleCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) b
 	return root.History.Pending == nil || state.RequestID(msg.Result.RequestID) != root.History.Pending.ID
 }
 
+func rootWithActiveCopyHistorySession(root state.Root) (state.Root, string) {
+	viewID := ""
+	if binding, ok := activeTerminalViewBinding(root); ok {
+		viewID = binding.ViewID
+	}
+	if viewID == "" {
+		viewID = copyHistoryWorkingViewID(root)
+	}
+	if workingViewID := copyHistoryWorkingViewID(root); workingViewID != "" {
+		if viewID == "" || workingViewID == viewID || root.CopyModeByView[viewID].ViewID == "" && root.HistoryByView[viewID].ViewID == "" {
+			return root, workingViewID
+		}
+	}
+	if copyModeInputContext(root.CopyMode) && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+		return root, viewID
+	}
+	return rootWithCopyHistorySessionForView(root, viewID), viewID
+}
+
+func rootWithCopyHistorySessionForResult(root state.Root, msg CopyModeHistoryResultMsg) (state.Root, string) {
+	viewID := copyHistoryResultViewID(root, msg)
+	if viewID == "" {
+		return root, copyHistoryWorkingViewID(root)
+	}
+	return rootWithCopyHistorySessionForView(root, viewID), viewID
+}
+
+func rootWithCopyHistorySessionForView(root state.Root, viewID string) state.Root {
+	if viewID == "" {
+		return root
+	}
+	history, copyMode := root.CopyHistorySessionForView(viewID)
+	root.History = history
+	root.CopyMode = copyMode
+	return root
+}
+
+func saveCopyHistorySessionForView(root state.Root, viewID string) state.Root {
+	if viewID == "" {
+		viewID = copyHistoryWorkingViewID(root)
+	}
+	if viewID == "" {
+		return root
+	}
+	// 中文说明：reducer 仍复用单会话算法，提交时按 TerminalView 写回，
+	// 避免 floating/pane 的 history 交互态互相覆盖。
+	return root.WithCopyHistorySession(viewID, root.History, root.CopyMode)
+}
+
+func copyHistoryWorkingViewID(root state.Root) string {
+	if root.CopyMode.ViewID != "" {
+		return root.CopyMode.ViewID
+	}
+	if root.History.ViewID != "" {
+		return root.History.ViewID
+	}
+	if root.CopyMode.PaneID != "" {
+		return state.TerminalPaneViewID(root.CopyMode.PaneID)
+	}
+	if root.History.PaneID != "" {
+		return state.TerminalPaneViewID(root.History.PaneID)
+	}
+	return ""
+}
+
+func copyHistoryResultViewID(root state.Root, msg CopyModeHistoryResultMsg) string {
+	requestID := state.RequestID(msg.Result.RequestID)
+	if requestID != 0 {
+		if viewID := copyHistoryPendingViewID(root.History, root.CopyMode, requestID); viewID != "" {
+			return viewID
+		}
+		for viewID, history := range root.HistoryByView {
+			copyMode := root.CopyModeByView[viewID]
+			if pendingViewID := copyHistoryPendingViewID(history, copyMode, requestID); pendingViewID != "" {
+				return pendingViewID
+			}
+		}
+		return ""
+	}
+	if msg.ViewID != "" {
+		return msg.ViewID
+	}
+	if msg.Result.Window.ViewID != "" {
+		return msg.Result.Window.ViewID
+	}
+	if msg.PaneID != "" {
+		return state.TerminalPaneViewID(msg.PaneID)
+	}
+	return ""
+}
+
+func copyHistoryPendingViewID(history state.HistoryStore, copyMode state.CopyModeStore, requestID state.RequestID) string {
+	if history.Pending == nil || history.Pending.ID != requestID {
+		return ""
+	}
+	if history.Pending.ViewID != "" {
+		return history.Pending.ViewID
+	}
+	if copyMode.ViewID != "" {
+		return copyMode.ViewID
+	}
+	if history.ViewID != "" {
+		return history.ViewID
+	}
+	if history.Pending.PaneID != "" {
+		return state.TerminalPaneViewID(history.Pending.PaneID)
+	}
+	return ""
+}
+
 func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
 		case InputMsg:
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			copyOwnsInput := copyModeOwnsActiveInput(root)
 			intent := input.Route(msg.Event, copyOwnsInput)
 			if !copyOwnsInput && !copyModeEnterIntent(intent) {
 				return root, nil
 			}
-			return reduceCopyModeIntent(root, intent, deps)
+			next, effects := reduceCopyModeIntent(root, intent, deps)
+			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeEnterViewMsg:
 			next, effects := beginCopyModeLatestForView(root, deps, msg.Binding, msg.Cols, msg.Rows)
 			return next, append([]Effect{handledEffect{}}, effects...)
 		case CopyModeHistoryResultMsg:
-			return reduceCopyModeHistoryResult(root, msg, deps)
+			root, viewID := rootWithCopyHistorySessionForResult(root, msg)
+			next, effects := reduceCopyModeHistoryResult(root, msg, deps)
+			return saveCopyHistorySessionForView(next, viewID), effects
 		case CopyModeMoveCursorMsg:
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			root.CopyMode = root.CopyMode.MoveCursor(msg.Position).RefreshLogicalSelectionFocus(root.History)
-			return root.Advance(), nil
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
 		case CopyModeSetMarkMsg:
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			root.CopyMode = root.CopyMode.SetMark(msg.Position).RefreshLogicalSelection(root.History)
-			return root.Advance(), nil
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
 		case CopyModeCopySelectionMsg:
-			return reduceCopyModeCopySelection(root, deps)
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
+			next, effects := reduceCopyModeCopySelection(root, deps)
+			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeCopyResultMsg:
 			if msg.Err != nil {
 				root.Surface = root.Surface.SetError(msg.Err.Error())
@@ -151,19 +275,28 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			}
 			return root, nil
 		case CopyModePasteTextMsg:
-			return reduceCopyModePasteText(root, deps, msg.Text)
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
+			next, effects := reduceCopyModePasteText(root, deps, msg.Text)
+			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeSetQueryMsg:
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			root.CopyMode = root.CopyMode.SetQuery(msg.Query, state.FindCopyMatches(root.History, msg.Query))
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-			return root.Advance(), nil
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
 		case CopyModeMoveMatchMsg:
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			root.CopyMode = root.CopyMode.MoveMatch(msg.Delta)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
-			return root.Advance(), nil
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
 		case CopyModeScrollMsg:
+			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			root.CopyMode = root.CopyMode.ScrollCursor(msg.Delta, len(root.History.Rows))
-			return refreshCopyModeLogicalSelectionFocus(root).Advance(), nil
+			root = refreshCopyModeLogicalSelectionFocus(root).Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
 		case CopyModeMouseSelectMsg:
+			root = rootWithCopyHistorySessionForView(root, msg.ViewID)
 			if !copyModeMouseSelectTargetMatches(root, msg.PaneID) {
 				return root, nil
 			}
@@ -172,7 +305,8 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
 			root.CopyMode = root.CopyMode.RefreshLogicalSelection(root.History)
-			return root.Advance(), nil
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, msg.ViewID), nil
 		default:
 			return root, nil
 		}
@@ -579,6 +713,7 @@ func beginCopyModeLatest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 }
 
 func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding state.TerminalViewBinding, cols int, rowsHint int) (state.Root, []Effect) {
+	root = rootWithCopyHistorySessionForView(root, binding.ViewID)
 	if deps.Core == nil {
 		return setCopyModeError(root, "core client missing"), nil
 	}
@@ -604,7 +739,9 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 	enteringLive := state.CloneLiveSurfaceSnapshot(root.Surface.SurfaceForTerminal(binding.TerminalID).Snapshot())
 	root.CopyMode = root.CopyMode.BindLatest(binding.PaneID, binding.ViewID, binding.TerminalID, requestID, cols, rowsHint, enteringLive)
 	rows := requestRows(rowsHint, deps.Rows)
-	return root.Advance(), []Effect{FuncEffect{
+	root = root.Advance()
+	root = saveCopyHistorySessionForView(root, binding.ViewID)
+	return root, []Effect{FuncEffect{
 		// history.window 真实走 protocol/client 时可能明显慢于一帧；
 		// 这里必须异步请求，不能把 copy mode 入口卡在 runtime 主循环里。
 		Async:            true,
@@ -623,7 +760,7 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 			})
 			result.Window.PaneID = binding.PaneID
 			result.Window.ViewID = binding.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err}
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: binding.PaneID, ViewID: binding.ViewID, TerminalID: binding.TerminalID}
 		},
 	}}
 }
@@ -678,7 +815,7 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 			})
 			result.Window.PaneID = req.PaneID
 			result.Window.ViewID = req.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err}
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, TerminalID: req.TerminalID}
 		},
 	}}
 }
@@ -736,7 +873,7 @@ func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppe
 			})
 			result.Window.PaneID = req.PaneID
 			result.Window.ViewID = req.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err}
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, TerminalID: req.TerminalID}
 		},
 	}}
 }
@@ -787,7 +924,7 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 			})
 			result.Window.PaneID = req.PaneID
 			result.Window.ViewID = req.ViewID
-			return CopyModeHistoryResultMsg{Result: result, Err: err}
+			return CopyModeHistoryResultMsg{Result: result, Err: err, PaneID: req.PaneID, ViewID: req.ViewID, TerminalID: req.TerminalID}
 		},
 	}}
 }
@@ -1318,7 +1455,9 @@ func setCopyModeEnterError(root state.Root, message string) state.Root {
 func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
 	token := root.CopyMode.BoundToken
 	terminalID := root.CopyMode.TerminalID
+	viewID := copyHistoryWorkingViewID(root)
 	root = exitCopyMode(root)
+	root = root.WithoutCopyHistorySession(viewID)
 	if deps.Core == nil || token == "" {
 		return root, nil
 	}
@@ -1338,7 +1477,11 @@ func exitCopyModeWithRelease(root state.Root, deps CopyModeDeps) (state.Root, []
 func exitCopyMode(root state.Root) state.Root {
 	// 中文说明：copy/history window 只是当前交互投影；退出或取消后必须释放，
 	// 否则 TUI 会继续持有 rows/source lines 的 backing array。
+	viewID := copyHistoryWorkingViewID(root)
 	root.History = root.History.InvalidateWindow()
 	root.CopyMode = state.CopyModeStore{}
+	if viewID != "" {
+		root = root.WithoutCopyHistorySession(viewID)
+	}
 	return root
 }

@@ -140,11 +140,8 @@ func terminalCount(root state.Root) int {
 	if root.Session.TerminalID != "" {
 		ids[root.Session.TerminalID] = struct{}{}
 	}
-	if root.History.TerminalID != "" {
-		ids[root.History.TerminalID] = struct{}{}
-	}
-	if root.CopyMode.TerminalID != "" {
-		ids[root.CopyMode.TerminalID] = struct{}{}
+	for _, terminalID := range root.CopyHistoryTerminalIDs() {
+		ids[terminalID] = struct{}{}
 	}
 	return len(ids)
 }
@@ -171,7 +168,7 @@ func footerMode(root state.Root, shell state.ShellStore) string {
 	if shell.InteractionMode != state.InteractionModeNormal {
 		return string(shell.InteractionMode)
 	}
-	if root.CopyMode.Active {
+	if root.HasActiveCopyMode() {
 		return "copy"
 	}
 	return "live"
@@ -523,7 +520,7 @@ func terminalStateSummary(root state.Root, pane state.PaneState) string {
 	switch {
 	case session.LastError != "" || surface.Err != "":
 		return "error"
-	case copyModeBelongsToPane(root.CopyMode, pane.ID, root.Shell.EnsureDefaults().ActivePaneID):
+	case copyModeBelongsToPane(root, pane.ID):
 		return "copy"
 	case session.State == state.TerminalLiveExited || surface.State == state.TerminalLiveExited:
 		return "exited"
@@ -575,7 +572,7 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 	for i, pane := range tab.Panes {
 		active := pane.ID == shell.ActivePaneID
 		content := projector.contentForPane(root, pane, activeContent, active)
-		if active && !copyModeBelongsToPane(root.CopyMode, pane.ID, shell.ActivePaneID) {
+		if active && !floatingOwnsFocus && !copyModeBelongsToPane(root, pane.ID) {
 			content = activeContent
 		}
 		content = contentWithPaneLayout(root, pane, content)
@@ -851,12 +848,12 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 	if content, ok := copyModeEnteringLiveContent(root); ok {
 		return content
 	}
-	if copyModeFloatingActive(root.CopyMode, shell) {
-		return projector.copyHistoryContent(root, shell, state.PaneState{}, true)
+	if floatingID := shell.ActiveFloatingID(); floatingID != "" && copyModeBelongsToFloating(root, floatingID) {
+		return projector.copyHistoryContentForView(root, shell, state.TerminalFloatingViewID(floatingID), state.PaneState{}, true)
 	}
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
-		if copyModeBelongsToPane(root.CopyMode, pane.ID, shell.ActivePaneID) {
-			return projector.copyHistoryContent(root, shell, pane, true)
+		if copyModeBelongsToPane(root, pane.ID) {
+			return projector.copyHistoryContentForView(root, shell, state.TerminalPaneViewID(pane.ID), pane, true)
 		}
 		if pane.Kind == state.PaneEmpty {
 			return buildEmptyPaneContentWithSelection(pane, shell.EmptyPaneCTA.SelectedIndex)
@@ -880,8 +877,8 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 	if content, ok := copyModeEnteringLiveContentForPane(root, pane.ID); ok {
 		return content
 	}
-	if copyModeBelongsToPane(root.CopyMode, pane.ID, root.Shell.EnsureDefaults().ActivePaneID) {
-		return projector.copyHistoryContent(root, root.Shell.EnsureDefaults(), pane, active)
+	if copyModeBelongsToPane(root, pane.ID) {
+		return projector.copyHistoryContentForView(root, root.Shell.EnsureDefaults(), state.TerminalPaneViewID(pane.ID), pane, active)
 	}
 	if active {
 		return activeContent
@@ -891,15 +888,27 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 }
 
 func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
-	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: ContentCopyHistory, Active: active})
+	return projector.copyHistoryContentForView(root, shell, copyHistoryViewIDForPane(pane), pane, active)
+}
+
+func (projector ShellProjector) copyHistoryContentForView(root state.Root, shell state.ShellStore, viewID string, pane state.PaneState, active bool) ContentVM {
+	history, copyMode := root.CopyHistorySessionForView(viewID)
+	if historyStoreBelongsToView(root.History, viewID) || copyModeStoreBelongsToView(root.CopyMode, viewID) {
+		history = root.History
+		copyMode = root.CopyMode
+	} else if root.CopyMode.Active && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+		history = root.History
+		copyMode = root.CopyMode
+	}
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: shell, Pane: pane, Kind: ContentCopyHistory, Active: active, History: history, CopyMode: copyMode})
 }
 
 func (projector ShellProjector) contentForFloating(root state.Root, shell state.ShellStore, floating state.FloatingPaneState) ContentVM {
 	if content, ok := copyModeEnteringLiveContentForFloating(root, floating.ID); ok {
 		return content
 	}
-	if copyModeBelongsToFloating(root.CopyMode, floating.ID) {
-		return projector.copyHistoryContent(root, shell, floating.Pane, floating.Active)
+	if copyModeBelongsToFloating(root, floating.ID) {
+		return projector.copyHistoryContentForView(root, shell, state.TerminalFloatingViewID(floating.ID), floating.Pane, floating.Active)
 	}
 	if floating.Active && floating.Pane.Kind == state.PaneEmpty {
 		return buildEmptyPaneContentWithSelection(floating.Pane, shell.EmptyPaneCTA.SelectedIndex)
@@ -915,82 +924,126 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 	})
 }
 
-func copyModeBelongsToPane(copyMode state.CopyModeStore, paneID string, activePaneID string) bool {
+func copyModeBelongsToPane(root state.Root, paneID string) bool {
+	copyMode := copyModeForView(root, state.TerminalPaneViewID(paneID))
 	if !copyMode.Active || paneID == "" {
 		return false
 	}
 	if copyMode.PaneID == "" {
-		return paneID == activePaneID
+		return paneID == root.Shell.EnsureDefaults().ActivePaneID
 	}
 	return copyMode.PaneID == paneID
 }
 
-func copyModeBelongsToFloating(copyMode state.CopyModeStore, floatingID string) bool {
+func copyModeBelongsToFloating(root state.Root, floatingID string) bool {
+	copyMode := copyModeForView(root, state.TerminalFloatingViewID(floatingID))
 	return copyMode.Active && floatingID != "" && copyMode.ViewID == state.TerminalFloatingViewID(floatingID)
 }
 
-func copyModeFloatingActive(copyMode state.CopyModeStore, shell state.ShellStore) bool {
-	if !copyMode.Active || copyMode.ViewID == "" || !strings.HasPrefix(copyMode.ViewID, "floating:") {
+func copyModeForView(root state.Root, viewID string) state.CopyModeStore {
+	if copyModeStoreBelongsToView(root.CopyMode, viewID) {
+		return root.CopyMode
+	}
+	if root.CopyMode.Active && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+		return root.CopyMode
+	}
+	_, copyMode := root.CopyHistorySessionForView(viewID)
+	return copyMode
+}
+
+func copyModeStoreBelongsToView(copyMode state.CopyModeStore, viewID string) bool {
+	if viewID == "" {
 		return false
 	}
-	activeFloatingID := shell.ActiveFloatingID()
-	if activeFloatingID == "" {
+	if copyMode.ViewID == viewID {
 		return true
 	}
-	return copyMode.ViewID == state.TerminalFloatingViewID(activeFloatingID)
+	return copyMode.ViewID == "" && copyMode.PaneID != "" && state.TerminalPaneViewID(copyMode.PaneID) == viewID
+}
+
+func historyStoreBelongsToView(history state.HistoryStore, viewID string) bool {
+	if viewID == "" {
+		return false
+	}
+	if history.ViewID == viewID {
+		return true
+	}
+	return history.ViewID == "" && history.PaneID != "" && state.TerminalPaneViewID(history.PaneID) == viewID
+}
+
+func copyHistoryViewIDForPane(pane state.PaneState) string {
+	if pane.ID == "" {
+		return ""
+	}
+	return state.TerminalPaneViewID(pane.ID)
 }
 
 func copyModeEnteringLiveContent(root state.Root) (ContentVM, bool) {
-	copyMode := root.CopyMode
+	shell := root.Shell.EnsureDefaults()
+	viewID := state.TerminalPaneViewID(shell.ActivePaneID)
+	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
+		viewID = state.TerminalFloatingViewID(activeFloatingID)
+	}
+	_, copyMode := root.CopyHistorySessionForView(viewID)
+	if !copyMode.Entering && root.CopyMode.Entering && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+		copyMode = root.CopyMode
+	}
 	if !copyMode.Entering || copyMode.EnteringLive == nil {
 		return ContentVM{}, false
 	}
-	shell := root.Shell.EnsureDefaults()
 	if strings.HasPrefix(copyMode.ViewID, "floating:") {
 		if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" && copyMode.ViewID != state.TerminalFloatingViewID(activeFloatingID) {
 			return ContentVM{}, false
 		}
-		return buildCopyModeEnteringLiveContent(root), true
+		return buildCopyModeEnteringLiveContent(root, copyMode), true
 	}
 	if copyMode.PaneID == "" || copyMode.PaneID == shell.ActivePaneID {
-		return buildCopyModeEnteringLiveContent(root), true
+		return buildCopyModeEnteringLiveContent(root, copyMode), true
 	}
 	return ContentVM{}, false
 }
 
 func copyModeEnteringLiveContentForPane(root state.Root, paneID string) (ContentVM, bool) {
-	if !root.CopyMode.Entering || root.CopyMode.EnteringLive == nil || paneID == "" {
+	_, copyMode := root.CopyHistorySessionForView(state.TerminalPaneViewID(paneID))
+	if !copyMode.Entering && root.CopyMode.Entering && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+		copyMode = root.CopyMode
+	}
+	if !copyMode.Entering || copyMode.EnteringLive == nil || paneID == "" {
 		return ContentVM{}, false
 	}
-	if root.CopyMode.PaneID != "" && root.CopyMode.PaneID != paneID {
+	if copyMode.PaneID != "" && copyMode.PaneID != paneID {
 		return ContentVM{}, false
 	}
-	if strings.HasPrefix(root.CopyMode.ViewID, "floating:") {
+	if strings.HasPrefix(copyMode.ViewID, "floating:") {
 		return ContentVM{}, false
 	}
-	return buildCopyModeEnteringLiveContent(root), true
+	return buildCopyModeEnteringLiveContent(root, copyMode), true
 }
 
 func copyModeEnteringLiveContentForFloating(root state.Root, floatingID string) (ContentVM, bool) {
-	if !root.CopyMode.Entering || root.CopyMode.EnteringLive == nil || floatingID == "" {
+	_, copyMode := root.CopyHistorySessionForView(state.TerminalFloatingViewID(floatingID))
+	if !copyMode.Entering && root.CopyMode.Entering && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
+		copyMode = root.CopyMode
+	}
+	if !copyMode.Entering || copyMode.EnteringLive == nil || floatingID == "" {
 		return ContentVM{}, false
 	}
-	if root.CopyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
+	if copyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
 		return ContentVM{}, false
 	}
-	return buildCopyModeEnteringLiveContent(root), true
+	return buildCopyModeEnteringLiveContent(root, copyMode), true
 }
 
-func buildCopyModeEnteringLiveContent(root state.Root) ContentVM {
-	snapshot := *root.CopyMode.EnteringLive
+func buildCopyModeEnteringLiveContent(root state.Root, copyMode state.CopyModeStore) ContentVM {
+	snapshot := *copyMode.EnteringLive
 	surface := (state.TerminalSurfaceStore{}).ApplySnapshot(snapshot)
-	session := sessionForCopyModeEntering(root, snapshot)
+	session := sessionForCopyModeEntering(root, copyMode, snapshot)
 	return buildLiveContentVM(surface, session)
 }
 
-func sessionForCopyModeEntering(root state.Root, snapshot state.LiveSurfaceSnapshot) state.TerminalSessionStore {
+func sessionForCopyModeEntering(root state.Root, copyMode state.CopyModeStore, snapshot state.LiveSurfaceSnapshot) state.TerminalSessionStore {
 	session := state.TerminalSessionStore{TerminalID: snapshot.TerminalID, State: snapshot.State, Cols: snapshot.Cols, Rows: snapshot.Rows}
-	if binding, ok := root.TerminalViews.Views[root.CopyMode.ViewID]; ok {
+	if binding, ok := root.TerminalViews.Views[copyMode.ViewID]; ok {
 		session.Channel = binding.Channel
 		session.Attached = binding.Attached
 		session.ResizePolicy = binding.ResizeRole

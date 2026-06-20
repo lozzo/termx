@@ -165,6 +165,7 @@ func (runtime *AppRuntime) rememberCopyHistoryPatchFrame(frame render.Frame) {
 }
 
 func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistoryPatchCache, bool) {
+	root, _ = rootWithActiveCopyHistorySession(root)
 	if !copyHistoryPatchStateEligible(root) {
 		return copyHistoryPatchCache{}, false
 	}
@@ -200,6 +201,7 @@ func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistor
 }
 
 func buildCopyHistoryPatchCacheFromPrevious(root state.Root, previous copyHistoryPatchCache) (copyHistoryPatchCache, bool) {
+	root, _ = rootWithActiveCopyHistorySession(root)
 	if !copyHistoryPatchStateEligible(root) {
 		return copyHistoryPatchCache{}, false
 	}

@@ -1600,41 +1600,22 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 }
 
 func invalidateCopyModeForClosedPane(root state.Root, paneID string) state.Root {
-	if paneID == "" || !copyModeInputContext(root.CopyMode) || root.CopyMode.PaneID != paneID {
+	if paneID == "" {
 		return root
 	}
-	root.History = root.History.InvalidateWindow()
-	root.CopyMode = state.CopyModeStore{}
-	return root
+	return root.WithoutCopyHistorySession(state.TerminalPaneViewID(paneID))
 }
 
 func invalidateCopyModeForClosedFloating(root state.Root, floatingID string) state.Root {
-	if floatingID == "" || !copyModeInputContext(root.CopyMode) || root.CopyMode.ViewID != state.TerminalFloatingViewID(floatingID) {
+	if floatingID == "" {
 		return root
 	}
-	root.History = root.History.InvalidateWindow()
-	root.CopyMode = state.CopyModeStore{}
-	return root
+	return root.WithoutCopyHistorySession(state.TerminalFloatingViewID(floatingID))
 }
 
 func invalidateCopyModeForInactiveView(root state.Root) state.Root {
-	if !copyModeInputContext(root.CopyMode) {
-		return root
-	}
-	shell := root.Shell.EnsureDefaults()
-	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
-		if root.CopyMode.ViewID == state.TerminalFloatingViewID(activeFloatingID) {
-			return root
-		}
-		root.History = root.History.InvalidateWindow()
-		root.CopyMode = state.CopyModeStore{}
-		return root
-	}
-	if root.CopyMode.ViewID == state.TerminalPaneViewID(shell.ActivePaneID) {
-		return root
-	}
-	root.History = root.History.InvalidateWindow()
-	root.CopyMode = state.CopyModeStore{}
+	// 中文说明：history/copy 是每个 TerminalView 的主动交互态；
+	// 切换 active pane/floating 不能替其它 view 自动退出。
 	return root
 }
 

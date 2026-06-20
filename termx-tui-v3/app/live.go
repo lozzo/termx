@@ -347,11 +347,16 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				root.Session = nextSession
 				root.Surface = root.Surface.Resize(cols, rows)
 			}
-			if root.CopyMode.Active && root.CopyMode.BoundCols != cols {
-				root.CopyMode = root.CopyMode.Resize(cols, rows)
-			} else if root.CopyMode.Active {
-				root.CopyMode = root.CopyMode.SetViewRows(rows)
-				root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+			if resizeViewID := msg.ViewID; resizeViewID != "" {
+				root = rootWithCopyHistorySessionForView(root, resizeViewID)
+				if root.CopyMode.Active && root.CopyMode.BoundCols != cols {
+					root.CopyMode = root.CopyMode.Resize(cols, rows)
+					root = saveCopyHistorySessionForView(root, resizeViewID)
+				} else if root.CopyMode.Active {
+					root.CopyMode = root.CopyMode.SetViewRows(rows)
+					root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+					root = saveCopyHistorySessionForView(root, resizeViewID)
+				}
 			}
 			return maybeRefreshFloatingAutoFit(root, liveResizeTerminalID(root, msg))
 		default:
@@ -607,6 +612,9 @@ func liveAttachTargetForViewID(root state.Root, viewID string) (liveAttachViewTa
 }
 
 func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {
+	if viewID != "" {
+		root = rootWithCopyHistorySessionForView(root, viewID)
+	}
 	if !copyModeInputContext(root.CopyMode) || terminalID == "" || root.CopyMode.TerminalID == terminalID {
 		return root
 	}
@@ -619,6 +627,7 @@ func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID 
 		root.History = root.History.InvalidateWindow()
 		root.History.TerminalID = terminalID
 		root.CopyMode = state.CopyModeStore{}
+		root = root.WithoutCopyHistorySession(viewID)
 		return root
 	}
 	// 当前 pane/view 已经重绑到新的 terminal，旧 frozen history 不能继续留在屏幕上。
@@ -637,6 +646,7 @@ func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID 
 	root.CopyMode.Matches = nil
 	root.CopyMode.ActiveMatch = 0
 	root.CopyMode.Empty = true
+	root = saveCopyHistorySessionForView(root, viewID)
 	return root
 }
 

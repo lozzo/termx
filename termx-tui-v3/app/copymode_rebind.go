@@ -9,7 +9,11 @@ import (
 // 进入 frozen copy mode 后，宽度变化只做本地重排；不再回 core 请求新投影。
 func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
-		if !copyModeLayoutMayNeedRebind(msg) || !root.CopyMode.Active || deps.Core == nil {
+		if !copyModeLayoutMayNeedRebind(msg) || deps.Core == nil {
+			return root, nil
+		}
+		root, activeViewID := rootWithActiveCopyHistorySession(root)
+		if !root.CopyMode.Active {
 			return root, nil
 		}
 		rect, ok := copyModeContentRect(root)
@@ -22,7 +26,8 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			}
 			root.CopyMode = root.CopyMode.SetViewRows(rect.H)
 			root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
-			return root.Advance(), nil
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
 		}
 		if len(root.History.SourceLines) == 0 {
 			root.History = root.History.EnsureSourceLines()
@@ -39,7 +44,8 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 			root.CopyMode.Matches = nil
 			root.CopyMode.ActiveMatch = 0
 			root.CopyMode.Empty = true
-			return root.Advance(), nil
+			root = root.Advance()
+			return saveCopyHistorySessionForView(root, activeViewID), nil
 		}
 		root.CopyMode = root.CopyMode.Resize(rect.W, rect.H)
 		beforeHistory := root.History
@@ -47,7 +53,8 @@ func NewCopyModeResizeRebindReducer(deps CopyModeDeps) Reducer {
 		root.History.Rows, root.History.Lines = state.ReflowHistoryLogicalLines(root.History.SourceLines, rect.W)
 		root.CopyMode = root.CopyMode.RebindToReflowedHistory(beforeHistory, root.History)
 		root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
-		return root.Advance(), nil
+		root = root.Advance()
+		return saveCopyHistorySessionForView(root, activeViewID), nil
 	}
 }
 

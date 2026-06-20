@@ -866,14 +866,7 @@ func removeTerminalFromRoot(root state.Root, terminalID string) state.Root {
 	root.Shell = root.Shell.RemoveTerminalBindings(terminalID)
 	root.Session = root.Session.RemoveTerminal(terminalID)
 	root.Surface = root.Surface.RemoveTerminal(terminalID)
-	if root.History.TerminalID == terminalID {
-		root.History = root.History.InvalidateWindow()
-		root.History.TerminalID = ""
-	}
-	if root.CopyMode.TerminalID == terminalID {
-		root.CopyMode = state.CopyModeStore{}
-	}
-	return root
+	return root.WithoutCopyHistorySessionsForTerminal(terminalID)
 }
 
 func terminalPoolAttachSize(root state.Root) (int, int) {
