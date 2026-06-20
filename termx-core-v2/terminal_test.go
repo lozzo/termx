@@ -1044,6 +1044,28 @@ func TestTerminalIngestOutputPreservesANSIStylesInHistoryCells(t *testing.T) {
 	}
 }
 
+func TestTerminalIngestOutputBatchesTextRunsWithoutCrossingControlEvents(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := "\x1b[31mred\x1b[0m-\x1b[32mgreen\x1b[0m\rOK\x1b[K\nnext"
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if len(window.Rows) != 2 || strings.TrimRight(window.Rows[0].Text, " ") != "OK" || window.Rows[1].Text != "next" {
+		t.Fatalf("control events must still split batched text runs correctly, got %#v", window.Rows)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) == 0 || cells[0].Text != "O" || cells[0].Style != (history.CellStyle{}) {
+		t.Fatalf("carriage return and erase-in-line should leave only plain OK, got %#v", cells)
+	}
+}
+
 func TestTerminalIngestOutputCarriesANSIStateAcrossChunks(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{ID: "term-1", Command: []string{"shell"}, Size: Size{Cols: 20, Rows: 4}}); err != nil {

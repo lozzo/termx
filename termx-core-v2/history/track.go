@@ -344,9 +344,9 @@ func (track *HistoryTrack) ensureWritableActiveLineForCells(cells []Cell, ownedC
 			return LogicalLine{ID: track.activeLine}, false, nil
 		}
 	}
-	// 中文说明：只有 pipeline 内部明确交出所有权的首批 cells 才跳过 clone；
-	// 普通 Apply 调用仍由 store clone caller slice，避免外部 mutation 污染 history truth。
-	line, err := track.store.CreateLine(CreateLineRequest{
+	// 中文说明：只有 pipeline 内部明确交出所有权的首批 cells 才走 owned-create；
+	// 普通 Apply 仍由 store 返回 detached line，避免外部 mutation 污染 history truth。
+	line, err := track.createLine(CreateLineRequest{
 		Seal:              SealStateOpen,
 		CreatedGeneration: generation,
 		ContentGeneration: generation,
@@ -363,6 +363,18 @@ func (track *HistoryTrack) ensureWritableActiveLineForCells(cells []Cell, ownedC
 	}
 	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
 	return line, true, nil
+}
+
+func (track *HistoryTrack) createLine(req CreateLineRequest) (LogicalLine, error) {
+	if req.ownedCells {
+		type ownedCreator interface {
+			createLineOwned(CreateLineRequest) (LogicalLine, error)
+		}
+		if store, ok := track.store.(ownedCreator); ok {
+			return store.createLineOwned(req)
+		}
+	}
+	return track.store.CreateLine(req)
 }
 
 func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
@@ -748,12 +760,12 @@ func (track *HistoryTrack) sealActiveLine() error {
 	if track.activeLine == 0 {
 		return track.sealBlankLine()
 	}
-	line, ok := track.store.Line(track.activeLine)
+	seal, _, ok := track.lineCommitState(track.activeLine)
 	if !ok {
 		track.activeLine = 0
 		return nil
 	}
-	if line.Seal == SealStateSealed {
+	if seal == SealStateSealed {
 		track.activeLine = 0
 		track.activeCol = 0
 		track.overwrite = false
@@ -761,8 +773,7 @@ func (track *HistoryTrack) sealActiveLine() error {
 		track.bumpGeneration()
 		return nil
 	}
-	line.Seal = SealStateSealed
-	if _, err := track.replaceOwnedLine(line); err != nil {
+	if err := track.sealLineDirty(track.activeLine); err != nil {
 		return err
 	}
 	track.activeLine = 0

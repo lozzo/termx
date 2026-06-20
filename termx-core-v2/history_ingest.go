@@ -40,6 +40,7 @@ type historyANSIParser struct {
 	linkURL            string
 	linkArgs           string
 	buffer             strings.Builder
+	bufferWidth        int
 	col                int
 	pending            string
 	segments           []historyOutputSegment
@@ -314,6 +315,7 @@ func (parser *historyANSIParser) writeText(text string) {
 			parser.beforePhysicalPrint(width)
 		}
 		parser.buffer.WriteString(cluster)
+		parser.bufferWidth += width
 		if width > 0 {
 			parser.col += width
 			parser.advancePhysicalPrint(width)
@@ -327,6 +329,7 @@ func (parser *historyANSIParser) writeASCIIText(text string) {
 	}
 	if parser.screenCols <= 0 || parser.screenRows <= 0 {
 		parser.buffer.WriteString(text)
+		parser.bufferWidth += len(text)
 		parser.col += len(text)
 		return
 	}
@@ -345,6 +348,7 @@ func (parser *historyANSIParser) writeASCIIText(text string) {
 			count = available
 		}
 		parser.buffer.WriteString(text[:count])
+		parser.bufferWidth += count
 		parser.col += count
 		parser.screenCol += count
 		text = text[count:]
@@ -371,10 +375,12 @@ func (parser *historyANSIParser) flush() {
 		return
 	}
 	text := parser.buffer.String()
+	width := parser.bufferWidth
 	parser.buffer.Reset()
+	parser.bufferWidth = 0
 	parser.segments = append(parser.segments, historyOutputSegment{Cells: []history.Cell{{
 		Text:       text,
-		Width:      xansi.StringWidth(text),
+		Width:      width,
 		Style:      parser.style,
 		LinkURL:    parser.linkURL,
 		LinkParams: parser.linkArgs,

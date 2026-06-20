@@ -517,6 +517,7 @@ func vtermRowsToProtocolCells(rows [][]vterm.Cell) [][]protocol.Cell {
 }
 
 func vtermCellsToProtocol(cells []vterm.Cell) []protocol.Cell {
+	cells = trimDefaultBlankVTermSuffix(cells)
 	if len(cells) == 0 {
 		return nil
 	}
@@ -531,6 +532,27 @@ func vtermCellsToProtocol(cells []vterm.Cell) []protocol.Cell {
 		}
 	}
 	return out
+}
+
+func trimDefaultBlankVTermSuffix(cells []vterm.Cell) []vterm.Cell {
+	end := len(cells)
+	for end > 0 && isDefaultBlankVTermCell(cells[end-1]) {
+		end--
+	}
+	return cells[:end]
+}
+
+func isDefaultBlankVTermCell(cell vterm.Cell) bool {
+	if cell.Content != "" && cell.Content != " " {
+		return false
+	}
+	if cell.Width > 1 {
+		return false
+	}
+	if cell.Style != (vterm.CellStyle{}) || cell.LinkURL != "" || cell.LinkParams != "" {
+		return false
+	}
+	return true
 }
 
 func vtermStyleToProtocol(style vterm.CellStyle) protocol.CellStyle {

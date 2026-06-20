@@ -2576,6 +2576,45 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceSnapshotTrimsPlainBlankTailOnly(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 8, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "abc"); err != nil {
+		t.Fatalf("ingest plain: %v", err)
+	}
+
+	snapshot, err := client.Snapshot(context.Background(), "term-1", 0, 3)
+	if err != nil {
+		t.Fatalf("snapshot plain: %v", err)
+	}
+	if got := len(snapshot.Screen.Cells[0]); got != 3 {
+		t.Fatalf("plain live row should trim default blank tail before protocol allocation, got len=%d row=%#v", got, snapshot.Screen.Cells[0])
+	}
+	if got := cellsText(snapshot.Screen.Cells[0]); got != "abc" {
+		t.Fatalf("unexpected trimmed plain row text %q", got)
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-1", "\r\n\x1b[44mxy  "); err != nil {
+		t.Fatalf("ingest styled blanks: %v", err)
+	}
+	snapshot, err = client.Snapshot(context.Background(), "term-1", 0, 3)
+	if err != nil {
+		t.Fatalf("snapshot styled: %v", err)
+	}
+	if got := len(snapshot.Screen.Cells[1]); got < 4 {
+		t.Fatalf("styled trailing blanks must survive live snapshot protocol trim, got len=%d row=%#v", got, snapshot.Screen.Cells[1])
+	}
+	for _, cell := range snapshot.Screen.Cells[1][:4] {
+		if cell.Style.BG != "ansi:4" {
+			t.Fatalf("styled live row cell should keep background through protocol trim, got %#v", snapshot.Screen.Cells[1][:4])
+		}
+	}
+}
+
 func TestProtocolServiceSnapshotKeepsAltScreenFinalFrameOnExit(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

@@ -61,6 +61,20 @@ func NewMemoryLogicalLineStore(backend StorageBackend) *MemoryLogicalLineStore {
 func (store *MemoryLogicalLineStore) CreateLine(req CreateLineRequest) (LogicalLine, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	line, err := store.createLineLocked(req)
+	if err != nil {
+		return LogicalLine{}, err
+	}
+	return line.Clone(), nil
+}
+
+func (store *MemoryLogicalLineStore) createLineOwned(req CreateLineRequest) (LogicalLine, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.createLineLocked(req)
+}
+
+func (store *MemoryLogicalLineStore) createLineLocked(req CreateLineRequest) (LogicalLine, error) {
 	seal, err := normalizeSeal(req.Seal)
 	if err != nil {
 		return LogicalLine{}, err
@@ -88,7 +102,7 @@ func (store *MemoryLogicalLineStore) CreateLine(req CreateLineRequest) (LogicalL
 		return LogicalLine{}, err
 	}
 	store.nextID++
-	return line.Clone(), nil
+	return line, nil
 }
 
 func (store *MemoryLogicalLineStore) Line(id LogicalLineID) (LogicalLine, bool) {

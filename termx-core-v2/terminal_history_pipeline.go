@@ -124,11 +124,36 @@ func (pipeline *terminalHistoryPipeline) ResetForRestart() error {
 
 func (pipeline *terminalHistoryPipeline) ingestPrimaryOutputLocked(output string) error {
 	segments := pipeline.ingest.Parse(output)
+	var pendingCells []history.Cell
+	flushPendingCells := func() error {
+		if len(pendingCells) == 0 {
+			return nil
+		}
+		cells := pendingCells
+		pendingCells = nil
+		return pipeline.track.ApplyOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: cells})
+	}
 	for _, segment := range segments {
+		if len(segment.Cells) > 0 {
+			if len(pendingCells) == 0 {
+				pendingCells = segment.Cells
+			} else {
+				pendingCells = append(pendingCells, segment.Cells...)
+			}
+			continue
+		}
+		if err := flushPendingCells(); err != nil {
+			pipeline.ingest.clearSegments()
+			return err
+		}
 		if err := pipeline.applySegment(segment); err != nil {
 			pipeline.ingest.clearSegments()
 			return err
 		}
+	}
+	if err := flushPendingCells(); err != nil {
+		pipeline.ingest.clearSegments()
+		return err
 	}
 	pipeline.ingest.clearSegments()
 	return nil
