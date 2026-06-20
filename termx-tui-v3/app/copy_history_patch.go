@@ -266,7 +266,13 @@ func copyHistoryPatchVisualDelta(previous copyHistoryPatchCache, current copyHis
 	// 中文说明：older prepend 后 RowsLen/Boundary 会变，但旧内容只是整体下移；
 	// 这里用上一帧 top anchor 在当前 rows 中的位置抵消 inserted rows，避免误判成整屏跳变。
 	if previous.TopAnchor.Valid {
-		if shiftedTop, ok := copyHistoryPatchFindAnchorNear(history, previous.TopAnchor, current.ViewportTop, current.ViewportTop+maxCopyHistoryPatchInt(0, current.RowsLen-previous.RowsLen)); ok {
+		searchEnd := current.ViewportTop + maxCopyHistoryPatchInt(0, current.RowsLen-previous.RowsLen)
+		// 中文说明：older prepend 后如果同时回收了已经滚过的新尾部，RowsLen 可能净减少；
+		// 但上一帧 top anchor 仍应落在当前可见窗口附近，不能因此退回全量帧。
+		if visibleEnd := current.ViewportTop + current.ViewRows; searchEnd < visibleEnd {
+			searchEnd = visibleEnd
+		}
+		if shiftedTop, ok := copyHistoryPatchFindAnchorNear(history, previous.TopAnchor, current.ViewportTop, searchEnd); ok {
 			return current.ViewportTop - shiftedTop, true
 		}
 	}

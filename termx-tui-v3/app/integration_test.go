@@ -5918,6 +5918,79 @@ func TestCopyModeOlderPrependKeepsCursorAndSelectionOnOriginalContent(t *testing
 	}
 }
 
+func TestCopyModeContinuousOlderKeepsBoundedLocalHistoryWindow(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(100, 12)
+	latestRows := make([]state.HistoryRow, 0, 128)
+	for i := 2000; i < 2128; i++ {
+		latestRows = append(latestRows, state.HistoryRow{Text: fmt.Sprintf("new-%04d", i), LineID: uint64(i)})
+	}
+	core := &services.FakeCoreClient{}
+	runtime := newCopyModeRuntime(host, core, nil)
+	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 98, 7, latestRows)
+	latest.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: latestRows[0].LineID}
+	latest.HasMore = true
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       latest.Token,
+		Cols:        latest.Cols,
+		SourceLines: latest.SourceLines,
+		Rows:        latest.Rows,
+		Lines:       latest.Lines,
+		Cursor:      latest.Cursor,
+		Generation:  latest.Generation,
+		Boundary:    state.HistoryBoundary{FirstLineID: latestRows[0].LineID, LastLineID: latestRows[len(latestRows)-1].LineID},
+		HasMore:     true,
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		BoundToken:  latest.Token,
+		BoundCols:   latest.Cols,
+		ViewRows:    8,
+		ViewportTop: 0,
+		Cursor:      state.CopyPosition{},
+	}
+
+	for page := 0; page < 10; page++ {
+		runtime.state.CopyMode.ViewportTop = 0
+		runtime.state.CopyMode.Cursor = state.CopyPosition{}
+		first := 2000 - (page+1)*64
+		olderRows := make([]state.HistoryRow, 0, 64)
+		for i := 0; i < 64; i++ {
+			lineID := uint64(first + i)
+			olderRows = append(olderRows, state.HistoryRow{Text: fmt.Sprintf("old-%04d", lineID), LineID: lineID})
+		}
+		beginPendingOlderForTest(&runtime.state, state.RequestID(page+2), 0)
+		if got := runtime.state.History.Pending.Boundary.LastLineID; got != latestRows[len(latestRows)-1].LineID {
+			t.Fatalf("pending older must keep frozen tail boundary after local trim, got %d", got)
+		}
+		window := historyWindowForApp(state.HistoryWindowPrepend, "term-1", "tok-1", 98, 7, olderRows)
+		window.Cursor = state.HistoryCursor{Valid: true, BeforeLineID: olderRows[0].LineID}
+		window.Boundary = state.HistoryBoundary{FirstLineID: olderRows[0].LineID, LastLineID: latestRows[len(latestRows)-1].LineID}
+		window.HasMore = true
+		if err := postHistoryResultForTest(runtime, services.RequestID(page+2), window); err != nil {
+			t.Fatalf("post older page %d: %v", page, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain older page %d: %v", page, err)
+		}
+		if got := len(runtime.State().History.Rows); got > copyModeHistoryMaxRequestRows {
+			t.Fatalf("continuous older should keep bounded TUI rows, got %d", got)
+		}
+	}
+	if len(runtime.State().History.SourceLines) != len(runtime.State().History.Rows) {
+		t.Fatalf("source lines should be trimmed with rows, rows=%d source=%d", len(runtime.State().History.Rows), len(runtime.State().History.SourceLines))
+	}
+	if runtime.State().History.Boundary.LastLineID != latestRows[len(latestRows)-1].LineID {
+		t.Fatalf("trim must not rewrite frozen tail stale guard, got %#v", runtime.State().History.Boundary)
+	}
+}
+
 func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(6, 12)

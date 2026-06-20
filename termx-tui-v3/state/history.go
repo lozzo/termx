@@ -214,6 +214,14 @@ type CopySelection struct {
 	Focus  CopyPosition
 }
 
+// HistoryTrimResult 描述一次 TUI 本地 history window 裁剪。
+type HistoryTrimResult struct {
+	DroppedRowsBefore  int
+	DroppedRowsAfter   int
+	DroppedLinesBefore int
+	DroppedLinesAfter  int
+}
+
 var (
 	ErrHistoryRequestPending = errors.New("history request pending")
 	ErrStaleHistoryResponse  = errors.New("stale history response")
@@ -538,6 +546,91 @@ func (store HistoryStore) EnsureSourceLines() HistoryStore {
 	return store
 }
 
+func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, HistoryTrimResult) {
+	totalRows := len(store.Rows)
+	if totalRows == 0 {
+		return store, HistoryTrimResult{}
+	}
+	if startRow < 0 {
+		startRow = 0
+	}
+	if endRow >= totalRows {
+		endRow = totalRows - 1
+	}
+	if startRow <= 0 && endRow >= totalRows-1 {
+		return store, HistoryTrimResult{}
+	}
+	if startRow > endRow {
+		return store, HistoryTrimResult{}
+	}
+	store = store.EnsureSourceLines()
+	if len(store.SourceLines) == 0 {
+		return store, HistoryTrimResult{}
+	}
+	firstLineID := store.Rows[startRow].LineID
+	lastLineID := store.Rows[endRow].LineID
+	startLine := historySourceLineIndexByID(store.SourceLines, firstLineID)
+	endLine := historySourceLineIndexByID(store.SourceLines, lastLineID)
+	if startLine < 0 || endLine < startLine {
+		return store, HistoryTrimResult{}
+	}
+	firstKeptRow := historyFirstRowIndexByLineID(store.Rows, store.SourceLines[startLine].LineID)
+	lastKeptRow := historyLastRowIndexByLineID(store.Rows, store.SourceLines[endLine].LineID)
+	if firstKeptRow < 0 || lastKeptRow < firstKeptRow {
+		return store, HistoryTrimResult{}
+	}
+	result := HistoryTrimResult{
+		DroppedRowsBefore:  firstKeptRow,
+		DroppedRowsAfter:   totalRows - lastKeptRow - 1,
+		DroppedLinesBefore: startLine,
+		DroppedLinesAfter:  len(store.SourceLines) - endLine - 1,
+	}
+	boundaryLast := store.Boundary.LastLineID
+	// 中文说明：copy/history 的本地 rows 只是当前窗口投影，不是历史 truth。
+	// 裁剪时重新分配 slice，确保被丢弃窗口的 backing array 和 cell payload 可以被 GC。
+	source := cloneHistoryLogicalLines(store.SourceLines[startLine : endLine+1])
+	store.SourceLines = source
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(source, store.Cols)
+	if len(store.Rows) > 0 {
+		store.Boundary.FirstLineID = store.Rows[0].LineID
+		if boundaryLast == 0 {
+			boundaryLast = store.Rows[len(store.Rows)-1].LineID
+		}
+		store.Boundary.LastLineID = boundaryLast
+	}
+	return store, result
+}
+
+func historyFirstRowIndexByLineID(rows []HistoryRow, lineID uint64) int {
+	for index, row := range rows {
+		if row.LineID == lineID {
+			return index
+		}
+	}
+	return -1
+}
+
+func historyLastRowIndexByLineID(rows []HistoryRow, lineID uint64) int {
+	for index := len(rows) - 1; index >= 0; index-- {
+		if rows[index].LineID == lineID {
+			return index
+		}
+	}
+	return -1
+}
+
+func historySourceLineIndexByID(lines []HistoryLogicalLine, lineID uint64) int {
+	if lineID == 0 {
+		return -1
+	}
+	for index, line := range lines {
+		if line.LineID == lineID {
+			return index
+		}
+	}
+	return -1
+}
+
 func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID string, requestID RequestID, cols int, rows int, enteringLive LiveSurfaceSnapshot) CopyModeStore {
 	// 中文说明：进入 copy/history 分两步。latest 请求飞行期间只拦截输入，
 	// 不把 pane 内容切成 pending 占位；authoritative window 回来后才 Active。
@@ -705,6 +798,60 @@ func (store CopyModeStore) ApplyDeferredOlderScroll(rows int, totalRows int) Cop
 	// older prepend 已经把原 visible top 重新锚到同一条 logical line；
 	// 这里仅消费用户在等待分页时还想继续向上的行数，保持“请求按页、浏览按行”。
 	return store.ScrollCursor(-rows, totalRows)
+}
+
+func (store CopyModeStore) ApplyHistoryTrim(trim HistoryTrimResult, totalRows int) CopyModeStore {
+	if trim.DroppedRowsBefore <= 0 && trim.DroppedRowsAfter <= 0 {
+		return store.Scroll(0, totalRows)
+	}
+	shift := trim.DroppedRowsBefore
+	if shift > 0 {
+		store.ViewportTop -= shift
+	}
+	store.Cursor = shiftCopyPositionAfterTrim(store.Cursor, shift, totalRows)
+	if store.Mark != nil {
+		mark := shiftCopyPositionAfterTrim(*store.Mark, shift, totalRows)
+		store.Mark = &mark
+	}
+	if store.Selection != nil {
+		store.Selection = &CopySelection{
+			Anchor: shiftCopyPositionAfterTrim(store.Selection.Anchor, shift, totalRows),
+			Focus:  shiftCopyPositionAfterTrim(store.Selection.Focus, shift, totalRows),
+		}
+	}
+	store.Matches = shiftCopyMatchesAfterTrim(store.Matches, shift, totalRows)
+	if store.ActiveMatch >= len(store.Matches) {
+		store.ActiveMatch = maxCopyInt(0, len(store.Matches)-1)
+	}
+	store.ViewportTop = clampCopyInt(store.ViewportTop, 0, maxCopyInt(0, totalRows-copyVisibleRowsForStore(store)))
+	return store.FollowCursor(totalRows)
+}
+
+func shiftCopyPositionAfterTrim(pos CopyPosition, droppedBefore int, totalRows int) CopyPosition {
+	pos.Row -= droppedBefore
+	if totalRows <= 0 {
+		return CopyPosition{}
+	}
+	pos.Row = clampCopyInt(pos.Row, 0, totalRows-1)
+	return pos
+}
+
+func shiftCopyMatchesAfterTrim(matches []CopyMatch, droppedBefore int, totalRows int) []CopyMatch {
+	if len(matches) == 0 || totalRows <= 0 {
+		return nil
+	}
+	out := make([]CopyMatch, 0, len(matches))
+	for _, match := range matches {
+		match.StartRow -= droppedBefore
+		match.EndRow -= droppedBefore
+		if match.EndRow < 0 || match.StartRow >= totalRows {
+			continue
+		}
+		match.StartRow = clampCopyInt(match.StartRow, 0, totalRows-1)
+		match.EndRow = clampCopyInt(match.EndRow, 0, totalRows-1)
+		out = append(out, match)
+	}
+	return out
 }
 
 func (store CopyModeStore) Resize(cols int, rows int) CopyModeStore {

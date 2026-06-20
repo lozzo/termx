@@ -631,6 +631,66 @@ func TestCopyModeAcceptOlderFastShiftsSimplePrependWithoutRebind(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreTrimRowsReleasesWindowButKeepsFrozenTailBoundary(t *testing.T) {
+	source := make([]HistoryLogicalLine, 0, 12)
+	for i := 0; i < 12; i++ {
+		source = append(source, HistoryLogicalLine{
+			Text:   "line",
+			LineID: uint64(i + 1),
+		})
+	}
+	store := HistoryStore{
+		Cols:        80,
+		SourceLines: source,
+		Boundary:    HistoryBoundary{FirstLineID: 1, LastLineID: 12},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, result := store.TrimRows(2, 6)
+
+	if result.DroppedRowsBefore != 2 || result.DroppedRowsAfter != 5 {
+		t.Fatalf("unexpected trim accounting: %#v", result)
+	}
+	if len(trimmed.Rows) != 5 || len(trimmed.SourceLines) != 5 {
+		t.Fatalf("trim should keep only requested local window, rows=%d sources=%d", len(trimmed.Rows), len(trimmed.SourceLines))
+	}
+	if trimmed.Rows[0].LineID != 3 || trimmed.Rows[len(trimmed.Rows)-1].LineID != 7 {
+		t.Fatalf("trim kept wrong rows: %#v", trimmed.Rows)
+	}
+	if trimmed.Boundary.FirstLineID != 3 || trimmed.Boundary.LastLineID != 12 {
+		t.Fatalf("trim must update local first boundary but keep frozen tail guard, got %#v", trimmed.Boundary)
+	}
+}
+
+func TestCopyModeApplyHistoryTrimRebasesCursorSelectionAndMatches(t *testing.T) {
+	mark := CopyPosition{Row: 4, Col: 1}
+	copyMode := CopyModeStore{
+		Active:      true,
+		ViewRows:    4,
+		ViewportTop: 5,
+		Cursor:      CopyPosition{Row: 6, Col: 2},
+		Mark:        &mark,
+		Selection:   &CopySelection{Anchor: mark, Focus: CopyPosition{Row: 6, Col: 2}},
+		Matches:     []CopyMatch{{StartRow: 3, StartCol: 0, EndRow: 3, EndCol: 4}, {StartRow: 6, StartCol: 1, EndRow: 6, EndCol: 3}},
+		ActiveMatch: 1,
+	}
+
+	copyMode = copyMode.ApplyHistoryTrim(HistoryTrimResult{DroppedRowsBefore: 3, DroppedRowsAfter: 8}, 7)
+
+	if copyMode.ViewportTop != 2 || copyMode.Cursor != (CopyPosition{Row: 3, Col: 2}) {
+		t.Fatalf("trim should rebase viewport and cursor, got %#v", copyMode)
+	}
+	if copyMode.Mark == nil || *copyMode.Mark != (CopyPosition{Row: 1, Col: 1}) {
+		t.Fatalf("trim should rebase mark, got %#v", copyMode.Mark)
+	}
+	if copyMode.Selection == nil || copyMode.Selection.Anchor != (CopyPosition{Row: 1, Col: 1}) || copyMode.Selection.Focus != (CopyPosition{Row: 3, Col: 2}) {
+		t.Fatalf("trim should rebase selection, got %#v", copyMode.Selection)
+	}
+	if len(copyMode.Matches) != 2 || copyMode.Matches[0].StartRow != 0 || copyMode.Matches[1].StartRow != 3 {
+		t.Fatalf("trim should rebase matches inside retained window, got %#v", copyMode.Matches)
+	}
+}
+
 func TestCopyModeApplyDeferredOlderScrollConsumesPendingRows(t *testing.T) {
 	copyMode := CopyModeStore{Active: true, ViewRows: 5, ViewportTop: 8, Cursor: CopyPosition{Row: 8, Col: 2}}
 	copyMode = copyMode.ApplyDeferredOlderScroll(1, 30)

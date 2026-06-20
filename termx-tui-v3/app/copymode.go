@@ -23,6 +23,7 @@ const (
 	copyModeHistoryPrefetchScreens = 2
 	copyModeHistoryMinRequestRows  = 64
 	copyModeHistoryMaxRequestRows  = 512
+	copyModeHistoryWindowScreens   = 8
 )
 
 type CopyModeHistoryResultMsg struct {
@@ -723,10 +724,96 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
 	}
 	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
+	if pending != nil && pending.Kind == state.HistoryRequestOlder {
+		root = trimCopyModeHistoryWindow(root, deps)
+	}
 	if remainingEnteringOlderRows > 0 && root.History.OlderRequestState() == state.OlderRequestReady {
 		return beginCopyModeOlder(root, deps, remainingEnteringOlderRows)
 	}
 	return root.Advance(), nil
+}
+
+func trimCopyModeHistoryWindow(root state.Root, deps CopyModeDeps) state.Root {
+	if !root.CopyMode.Active || len(root.History.Rows) == 0 {
+		return root
+	}
+	visible := copyModePanelRows(root, deps)
+	if visible <= 0 {
+		visible = copyModePageRows(root.CopyMode)
+	}
+	keepRows := clampColumn(visible*copyModeHistoryWindowScreens, copyModeHistoryMinRequestRows, copyModeHistoryMaxRequestRows)
+	if len(root.History.Rows) <= keepRows {
+		return root
+	}
+	start, end := copyModeHistoryTrimRange(root.CopyMode, len(root.History.Rows), keepRows)
+	nextHistory, trim := root.History.TrimRows(start, end)
+	if trim.DroppedRowsBefore == 0 && trim.DroppedRowsAfter == 0 {
+		return root
+	}
+	root.History = nextHistory
+	root.CopyMode = root.CopyMode.ApplyHistoryTrim(trim, len(root.History.Rows))
+	if root.CopyMode.Query != "" {
+		root.CopyMode = root.CopyMode.RefreshQueryMatches(state.FindCopyMatches(root.History, root.CopyMode.Query))
+	}
+	return root
+}
+
+func copyModeHistoryTrimRange(copyMode state.CopyModeStore, totalRows int, keepRows int) (int, int) {
+	if totalRows <= 0 {
+		return 0, -1
+	}
+	if keepRows <= 0 || keepRows >= totalRows {
+		return 0, totalRows - 1
+	}
+	visible := copyMode.ViewRows
+	if visible <= 0 {
+		visible = 8
+	}
+	// 中文说明：当前协议只有 older cursor，没有 newer/around window。
+	// 因此本阶段只能回收已经滚过的新尾部，不能丢更老方向的前缀，否则后续 PageUp 会跳过行。
+	start := 0
+	end := keepRows - 1
+	viewportEnd := copyMode.ViewportTop + visible - 1
+	if viewportEnd > end {
+		end = viewportEnd
+	}
+	marginEnd := viewportEnd + visible*copyModeHistoryPrefetchScreens
+	if marginEnd > end {
+		end = marginEnd
+	}
+	if end >= totalRows {
+		end = totalRows - 1
+	}
+	start, end = expandTrimRangeForSelection(copyMode, start, end, totalRows)
+	if end-start+1 > keepRows*2 {
+		// 中文说明：超大选区复制需要后续按 logical index 从 core/backend 拉取；
+		// 当前协议没有 range copy contract，不能为了省内存破坏正在进行的本地选择。
+		return 0, totalRows - 1
+	}
+	start = clampColumn(start, 0, totalRows-1)
+	end = clampColumn(end, start, totalRows-1)
+	return start, end
+}
+
+func expandTrimRangeForSelection(copyMode state.CopyModeStore, start int, end int, totalRows int) (int, int) {
+	positions := []state.CopyPosition{copyMode.Cursor}
+	if copyMode.Mark != nil {
+		positions = append(positions, *copyMode.Mark)
+	}
+	if copyMode.Selection != nil {
+		positions = append(positions, copyMode.Selection.Anchor, copyMode.Selection.Focus)
+	}
+	for _, pos := range positions {
+		if pos.Row < start {
+			start = pos.Row
+		}
+		if pos.Row > end {
+			end = pos.Row
+		}
+	}
+	start = clampColumn(start, 0, totalRows-1)
+	end = clampColumn(end, start, totalRows-1)
+	return start, end
 }
 
 func copyModeEnteringOlderRemainder(scrollDelta int, loadedRows int) int {
