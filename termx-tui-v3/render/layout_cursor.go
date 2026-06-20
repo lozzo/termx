@@ -13,7 +13,8 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 		if cursorWasClipped(floating.Floating.Content.Cursor, cursor) {
 			return Cursor{}, Rect{}
 		}
-		return cursorWithRectOrAnchor(cursor, floating.ContentRect)
+		measuredCursor, cursorRect := cursorWithRectOrAnchor(cursor, floating.ContentRect)
+		return cursorCoveredByFloating(measuredCursor, cursorRect, plan.Floatings, i)
 	}
 	for _, panel := range plan.Panels {
 		if !panel.Panel.Active {
@@ -29,13 +30,35 @@ func measureCursor(shell ShellVM, plan LayoutPlan) (Cursor, Rect) {
 		if !cursor.Visible {
 			cursor = shell.Cursor
 		}
-		return cursorWithRectOrAnchor(cursor, panel.ContentRect)
+		measuredCursor, cursorRect := cursorWithRectOrAnchor(cursor, panel.ContentRect)
+		return cursorCoveredByFloating(measuredCursor, cursorRect, plan.Floatings, -1)
 	}
 	if len(plan.Panels) == 0 && shell.Layout.BodyContent.Kind == ContentEmptyPane {
 		// 空 tab / 空 workspace 是纯提示页，没有输入焦点，不能停靠宿主光标。
 		return Cursor{}, Rect{}
 	}
-	return cursorWithRectOrAnchor(shell.Cursor, plan.Body)
+	measuredCursor, cursorRect := cursorWithRectOrAnchor(shell.Cursor, plan.Body)
+	return cursorCoveredByFloating(measuredCursor, cursorRect, plan.Floatings, -1)
+}
+
+func cursorCoveredByFloating(cursor Cursor, rect Rect, floatings []FloatingLayoutPlan, ownerIndex int) (Cursor, Rect) {
+	if !cursor.Visible || rect.W <= 0 || rect.H <= 0 {
+		return cursor, rect
+	}
+	for index := len(floatings) - 1; index >= 0; index-- {
+		if index == ownerIndex || (ownerIndex >= 0 && index <= ownerIndex) {
+			continue
+		}
+		floating := floatings[index]
+		if floating.Rect.W <= 0 || floating.Rect.H <= 0 {
+			continue
+		}
+		if intersectRect(rect, floating.Rect) == rect {
+			// 中文说明：宿主硬光标不能透过 floating；保留 anchor 位置但隐藏可见光标。
+			return Cursor{Anchor: true, Row: cursor.Row, Col: cursor.Col, Shape: cursor.Shape}, rect
+		}
+	}
+	return cursor, rect
 }
 
 func cursorWasClipped(source Cursor, projected Cursor) bool {

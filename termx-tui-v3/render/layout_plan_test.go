@@ -216,6 +216,38 @@ func TestMeasureLayoutProducesGlobalHitRegionsAndCursorRect(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutFloatingCoversUnderlyingPaneCursor(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content: ContentVM{
+					Kind:   ContentTerminalLive,
+					Cursor: Cursor{Visible: true, Row: 3, Col: 5, Shape: CursorShapeBar},
+				},
+			}},
+			Floating: []FloatingVM{{
+				ID:      "float-1",
+				PaneID:  "float-pane-1",
+				Rect:    Rect{X: 4, Y: 3, W: 18, H: 5},
+				Z:       1,
+				Active:  false,
+				Content: ContentVM{Kind: ContentTerminalLive},
+			}},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 40, H: 12})
+	if plan.Cursor.Visible || !plan.Cursor.Anchor {
+		t.Fatalf("floating should hide covered pane cursor but keep anchor, cursor=%#v rect=%#v", plan.Cursor, plan.CursorRect)
+	}
+	if plan.CursorRect != (Rect{X: 6, Y: 4, W: 1, H: 1}) {
+		t.Fatalf("covered cursor should retain original global anchor rect, got %#v", plan.CursorRect)
+	}
+}
+
 func TestMeasureLayoutClipsContentHitRegionsToContentRect(t *testing.T) {
 	shell := ShellVM{
 		Layout: LayoutVM{Panels: []PanelVM{{

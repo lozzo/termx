@@ -141,6 +141,71 @@ func TestHostCursorProjectionLiveCopyPromptFloatingAndOverlayPriority(t *testing
 	}
 }
 
+func TestHostCursorProjectionHidesPaneCursorCoveredByFloating(t *testing.T) {
+	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 7, Cols: 78, Rows: 20}}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-main",
+		Revision:   1,
+		Cols:       78,
+		Rows:       20,
+		Lines:      []string{"main live"},
+		Cursor:     state.LiveCursor{Visible: true, Row: 5, Col: 10, Shape: "bar"},
+	}}); err != nil {
+		t.Fatalf("post live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain live cursor: %v", err)
+	}
+	liveFrame := lastFrame(t, host.Frames())
+	if !liveFrame.Cursor.Visible || liveFrame.CursorRect.W != 1 || liveFrame.CursorRect.H != 1 {
+		t.Fatalf("live pane should expose visible cursor before floating cover, cursor=%#v rect=%#v", liveFrame.Cursor, liveFrame.CursorRect)
+	}
+
+	coverRect := state.FloatingRect{X: liveFrame.CursorRect.X - 2, Y: liveFrame.CursorRect.Y - 1, W: 24, H: 6}
+	if coverRect.X < 0 {
+		coverRect.X = 0
+	}
+	if coverRect.Y < 0 {
+		coverRect.Y = 0
+	}
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-cover",
+		Pane:     state.PaneState{ID: "floating-cover-pane", Title: "float", Kind: state.PaneEmpty},
+		Rect:     coverRect,
+		Source:   state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("create floating cover: %v", err)
+	}
+	if err := runtime.Post(ShellFloatingCommandMsg{Command: state.FloatingCommand{
+		Action: state.FloatingCommandDeactivate,
+		Source: state.PaneCommandSourceTest,
+	}}); err != nil {
+		t.Fatalf("deactivate floating cover: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating cover: %v", err)
+	}
+
+	coveredFrame := lastFrame(t, host.Frames())
+	if coveredFrame.Cursor.Visible || !coveredFrame.Cursor.Anchor || coveredFrame.CursorRect != liveFrame.CursorRect {
+		t.Fatalf("floating should hide covered pane cursor but keep IME anchor, cursor=%#v rect=%#v live=%#v", coveredFrame.Cursor, coveredFrame.CursorRect, liveFrame.CursorRect)
+	}
+}
+
 func TestHostCursorProjectionStaysInViewportAfterResize(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-main", Channel: 3, Cols: 78, Rows: 20}}
 	host := NewFakeTerminalHost(16)
