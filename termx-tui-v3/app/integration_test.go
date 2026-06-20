@@ -6347,14 +6347,88 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 	if req.Cursor.BeforeLineID != loadedRows[len(loadedRows)-1].LineID || req.Cursor.BeforeRowInLine != loadedRows[len(loadedRows)-1].RowInLine {
 		t.Fatalf("newer request should start after local tail, got %#v", req.Cursor)
 	}
-	if got := runtime.State().History.Rows[len(runtime.State().History.Rows)-1].LineID; got != newerRows[len(newerRows)-1].LineID {
-		t.Fatalf("newer append should restore backend rows, got tail %d", got)
+	if got := len(runtime.State().History.Rows); got > copyModeHistoryMaxRequestRows {
+		t.Fatalf("newer append should keep a bounded local window, got %d", got)
 	}
 	if cursorLine := runtime.State().History.Rows[runtime.State().CopyMode.Cursor.Row].LineID; cursorLine <= loadedRows[len(loadedRows)-1].LineID {
 		t.Fatalf("page down should continue into appended newer rows, cursor row=%d line=%d", runtime.State().CopyMode.Cursor.Row, cursorLine)
 	}
 	if runtime.State().History.Boundary.LastLineID != 1199 {
 		t.Fatalf("append must keep frozen tail boundary, got %#v", runtime.State().History.Boundary)
+	}
+}
+
+func TestCopyModeContinuousNewerKeepsBoundedLocalHistoryWindow(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(100, 12)
+	loadedRows := make([]state.HistoryRow, 0, 384)
+	for i := 1000; i < 1384; i++ {
+		loadedRows = append(loadedRows, state.HistoryRow{Text: fmt.Sprintf("old-%04d", i), LineID: uint64(i)})
+	}
+	core := &services.FakeCoreClient{}
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        98,
+		SourceLines: historyLogicalLinesForApp(loadedRows),
+		Rows:        loadedRows,
+		Lines:       []state.HistoryLineSpan{{LineID: loadedRows[0].LineID, StartRow: 0, EndRow: len(loadedRows) - 1}},
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: loadedRows[0].LineID},
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1999},
+		HasMore:     true,
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		BoundToken:  "tok-1",
+		BoundCols:   98,
+		ViewRows:    8,
+		ViewportTop: len(loadedRows) - 8,
+		Cursor:      state.CopyPosition{Row: len(loadedRows) - 1},
+	}
+
+	nextLineID := 1384
+	for page := 0; page < 10; page++ {
+		first := nextLineID
+		newerRows := make([]state.HistoryRow, 0, 64)
+		for i := 0; i < 64; i++ {
+			lineID := uint64(first + i)
+			newerRows = append(newerRows, state.HistoryRow{Text: fmt.Sprintf("new-%04d", lineID), LineID: lineID})
+		}
+		nextLineID += len(newerRows)
+		window := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 98, 7, newerRows)
+		window.Boundary = state.HistoryBoundary{FirstLineID: runtime.State().History.Boundary.FirstLineID, LastLineID: 1999}
+		core.NewerResponses = append(core.NewerResponses, services.HistoryResult{Window: window})
+
+		runtime.state.CopyMode.ViewportTop = len(runtime.state.History.Rows) - runtime.state.CopyMode.ViewRows
+		runtime.state.CopyMode.Cursor = state.CopyPosition{Row: len(runtime.state.History.Rows) - 1}
+		if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}}); err != nil {
+			t.Fatalf("post page down %d: %v", page, err)
+		}
+		if err := runtime.Drain(context.Background()); err != nil {
+			t.Fatalf("drain newer page %d: %v", page, err)
+		}
+		if got := len(runtime.State().History.Rows); got > copyModeHistoryMaxRequestRows {
+			t.Fatalf("continuous newer should keep bounded TUI rows, got %d", got)
+		}
+		if runtime.State().History.Boundary.LastLineID != 1999 {
+			t.Fatalf("trim must keep frozen tail boundary, got %#v", runtime.State().History.Boundary)
+		}
+		if runtime.State().History.Rows[runtime.State().CopyMode.Cursor.Row].LineID < uint64(first) {
+			t.Fatalf("page down should continue into appended newer rows, state=%#v", runtime.State().CopyMode)
+		}
+	}
+	if len(core.NewerRequests) != 10 {
+		t.Fatalf("expected ten newer requests, got %#v", core.NewerRequests)
+	}
+	if len(runtime.State().History.SourceLines) != len(runtime.State().History.Rows) {
+		t.Fatalf("source lines should be trimmed with rows, rows=%d source=%d", len(runtime.State().History.Rows), len(runtime.State().History.SourceLines))
 	}
 }
 

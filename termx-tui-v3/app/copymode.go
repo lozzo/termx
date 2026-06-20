@@ -980,7 +980,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	}
 	root.CopyMode = root.CopyMode.Scroll(0, len(root.History.Rows))
 	root = refreshCopyModeLogicalSelectionFocus(root)
-	if pending != nil && pending.Kind == state.HistoryRequestOlder {
+	if pending != nil && (pending.Kind == state.HistoryRequestOlder || pending.Kind == state.HistoryRequestNewer) {
 		root = trimCopyModeHistoryWindow(root, deps)
 	}
 	if remainingEnteringOlderRows > 0 && root.History.OlderRequestState() == state.OlderRequestReady {
