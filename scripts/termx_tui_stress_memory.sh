@@ -17,8 +17,8 @@ Options:
   --bin PATH            existing termx binary; default builds into ROOT/termx
   --lines N             stress line count; default 100000
   --repeat N            run the stress script N times in the same terminal; default 1
-  --seed N              stress seed; default 100
-  --width-hint N        stress width hint; default 120
+  --seed N              stress seed; default omitted to match the user command
+  --width-hint N        stress width hint; default omitted to use the generator default
   --attach-size CxR     tmux attach size; default 120x36
   --baseline-time       run the same stress script outside termx first (default)
   --no-baseline-time    skip outside-termx baseline timing
@@ -29,6 +29,7 @@ Options:
                         set TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB for request-boundary page reclaim
   --daemon-history-file-backend
                         force daemon compact history payloads into artifact file backend dir
+  --use-real-state      do not isolate XDG_STATE_HOME; useful for reproducing user default-state RSS
   --tui-memory-limit-mb N
                         set TERMX_TUI_MEMORY_LIMIT_MB for TUI runtime GC pacing
   --wait-seconds N      max wait for attach/copy markers; default 90
@@ -43,6 +44,8 @@ Artifacts:
   baseline-time.txt     outside-termx baseline time(1) output when enabled
   stress-time.txt       captured time(1) output from the last TUI stress run
   stress-times.tsv      parsed per-run time(1) output captured from the TUI pane
+  stress-commands.tsv   exact stress command typed into the TUI pane
+  history-trace.tsv     live/copy captures checked for oldest/newest stress markers
   history-files.tsv     compact history file count/bytes after each stress run
   profile-summary.txt   daemon/TUI pprof top summaries
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
@@ -221,9 +224,19 @@ write_memory_peaks() {
 history_backend_dir() {
   if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
     printf '%s\n' "$DAEMON_HISTORY_BACKEND_DIR"
+  elif [[ "$USE_REAL_STATE" == "1" ]]; then
+    printf '%s/termx/core-v2-history\n' "$(real_state_home)"
   else
     printf '%s\n' "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR"
   fi
+}
+
+real_state_home() {
+  if [[ -n "${XDG_STATE_HOME:-}" ]]; then
+    printf '%s' "$XDG_STATE_HOME"
+    return 0
+  fi
+  printf '%s/.local/state' "$HOME"
 }
 
 history_backend_stats() {
@@ -260,16 +273,53 @@ EOF
 }
 
 append_stress_time() {
-  local run="$1"
-  local seed="$2"
-  local path="$3"
-  local real="" user="" sys=""
-  if [[ -s "$path" ]]; then
-    real="$(awk '$1 == "real" { print $2; found=1 } END { if (!found) print "" }' "$path")"
-    user="$(awk '$1 == "user" { print $2; found=1 } END { if (!found) print "" }' "$path")"
-    sys="$(awk '$1 == "sys" { print $2; found=1 } END { if (!found) print "" }' "$path")"
+	local run="$1"
+	local seed="$2"
+	local path="$3"
+	local real="" user="" sys="" seed_label
+	seed_label="${seed:--}"
+	if [[ -s "$path" ]]; then
+		real="$(parse_time_field "$path" real)"
+		user="$(parse_time_field "$path" user)"
+		sys="$(parse_time_field "$path" sys)"
+	fi
+	printf '%s\t%s\t%s\t%s\t%s\n' "$run" "$seed_label" "$real" "$user" "$sys" >>"$STRESS_TIMES_REPORT"
+}
+
+parse_time_field() {
+  local path="$1"
+  local field="$2"
+  awk -v field="$field" '
+    $1 == field { print $2; found=1; exit }
+    field == "real" && $NF == "total" { print $(NF-1); found=1; exit }
+    field == "user" && $NF == "user" { print $(NF-1); found=1; exit }
+    field == "sys" && $NF == "system" { print $(NF-1); found=1; exit }
+    field == "sys" && $NF == "sys" { print $(NF-1); found=1; exit }
+    END { if (!found) print "" }
+  ' "$path"
+}
+
+stress_script_args() {
+  local run_seed="$1"
+  printf ' --lines %s' "$LINES"
+  if [[ -n "$run_seed" ]]; then
+    printf ' --seed %s' "$run_seed"
   fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$run" "$seed" "$real" "$user" "$sys" >>"$STRESS_TIMES_REPORT"
+  if [[ -n "$WIDTH_HINT" ]]; then
+    printf ' --width-hint %s' "$WIDTH_HINT"
+  fi
+}
+
+stress_command_display() {
+  local run_seed="$1"
+  printf 'python3 scripts/generate_terminal_stress.py'
+  stress_script_args "$run_seed"
+}
+
+stress_command_shell() {
+  local run_seed="$1"
+  printf 'python3 %s' "$(shell_quote "$STRESS_SCRIPT")"
+  stress_script_args "$run_seed"
 }
 
 record_rss() {
@@ -337,6 +387,27 @@ capture_pane() {
   tmux capture-pane -t "$target" -ep -S -4000 >"$ROOT/$name.raw.txt" || true
 }
 
+append_history_trace() {
+  local stage="$1"
+  local path="$2"
+  local oldest newest done
+  oldest=0
+  newest=0
+  done=0
+  if [[ -s "$path" ]]; then
+    if LC_ALL=C grep -Fq "000000" "$path"; then
+      oldest=1
+    fi
+    if LC_ALL=C grep -Fq "$(printf '%06d' "$LINES")" "$path"; then
+      newest=1
+    fi
+    if LC_ALL=C grep -Fq "TERM_X_TUI_STRESS_DONE" "$path"; then
+      done=1
+    fi
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$stage" "$oldest" "$newest" "$done" "$path" >>"$HISTORY_TRACE_REPORT"
+}
+
 latest_profile() {
   local dir="$1"
   find "$dir" -type f -name '*.pprof' -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -n 1 || true
@@ -393,10 +464,20 @@ write_profile_summary() {
       echo "## stress time per run"
       cat "$ROOT/stress-times.tsv"
     fi
+    if [[ -s "$ROOT/stress-commands.tsv" ]]; then
+      echo
+      echo "## stress commands"
+      cat "$ROOT/stress-commands.tsv"
+    fi
     if [[ -s "$ROOT/history-files.tsv" ]]; then
       echo
       echo "## history file sizes"
       cat "$ROOT/history-files.tsv"
+    fi
+    if [[ -s "$ROOT/history-trace.tsv" ]]; then
+      echo
+      echo "## history trace"
+      cat "$ROOT/history-trace.tsv"
     fi
     if [[ -d "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" ]]; then
       echo
@@ -455,14 +536,15 @@ ROOT=""
 BIN=""
 LINES=100000
 REPEAT=1
-SEED=100
-WIDTH_HINT=120
+SEED=""
+WIDTH_HINT=""
 ATTACH_SIZE="120x36"
 WAIT_SECONDS=90
 CLEANUP_ROOT=0
 DAEMON_MEMORY_LIMIT_MB=""
 DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB=""
 DAEMON_HISTORY_FILE_BACKEND=0
+USE_REAL_STATE=0
 TUI_MEMORY_LIMIT_MB=""
 BASELINE_TIME=1
 PROFILE_MODE="final"
@@ -521,6 +603,10 @@ while [[ $# -gt 0 ]]; do
       DAEMON_HISTORY_FILE_BACKEND=1
       shift
       ;;
+    --use-real-state)
+      USE_REAL_STATE=1
+      shift
+      ;;
     --tui-memory-limit-mb)
       TUI_MEMORY_LIMIT_MB="$2"
       shift 2
@@ -554,6 +640,12 @@ positive_integer "--repeat" "$REPEAT"
 positive_integer "--wait-seconds" "$WAIT_SECONDS"
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
   positive_integer "--daemon-memory-limit-mb" "$DAEMON_MEMORY_LIMIT_MB"
+fi
+if [[ -n "$SEED" ]]; then
+  positive_integer "--seed" "$SEED"
+fi
+if [[ -n "$WIDTH_HINT" ]]; then
+  positive_integer "--width-hint" "$WIDTH_HINT"
 fi
 if [[ -n "$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" ]]; then
   positive_integer "--daemon-request-reclaim-min-heap-mb" "$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
@@ -593,6 +685,8 @@ LOG="$ROOT/termx.log"
 REPORT="$ROOT/memory.tsv"
 HISTORY_REPORT="$ROOT/history-files.tsv"
 STRESS_TIMES_REPORT="$ROOT/stress-times.tsv"
+STRESS_COMMANDS_REPORT="$ROOT/stress-commands.tsv"
+HISTORY_TRACE_REPORT="$ROOT/history-trace.tsv"
 DAEMON_HEAP_DIR="$ROOT/daemon-heap"
 TUI_HEAP_DIR="$ROOT/tui-heap"
 DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
@@ -645,6 +739,8 @@ fi
 printf 'stage\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$REPORT"
 printf 'stage\tfiles\tbytes\tmib\tdir\n' >"$HISTORY_REPORT"
 printf 'run\tseed\treal\tuser\tsys\n' >"$STRESS_TIMES_REPORT"
+printf 'run\tseed\tcommand\n' >"$STRESS_COMMANDS_REPORT"
+printf 'stage\thas_oldest_000000\thas_newest_line\thas_done_marker\tpath\n' >"$HISTORY_TRACE_REPORT"
 mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
 mkdir -p "$TUI_MEMSTATS_DIR"
@@ -654,18 +750,23 @@ if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
 fi
 
 if [[ "$BASELINE_TIME" == "1" ]]; then
-  log "running outside-termx stress baseline: lines=$LINES seed=$SEED"
-  /usr/bin/time -p python3 "$STRESS_SCRIPT" --lines "$LINES" --seed "$SEED" --width-hint "$WIDTH_HINT" >"$ROOT/baseline-output.txt" 2>"$ROOT/baseline-time.txt"
+  log "running outside-termx stress baseline: $(stress_command_display "$SEED")"
+  /usr/bin/time -p "$(command -v python3)" "$STRESS_SCRIPT" $(stress_script_args "$SEED") >"$ROOT/baseline-output.txt" 2>"$ROOT/baseline-time.txt"
   rm -f "$ROOT/baseline-output.txt"
 fi
 
 log "starting daemon"
-DAEMON_ENV_PREFIX=(XDG_STATE_HOME="$DAEMON_DEFAULT_STATE_DIR")
+DAEMON_ENV_PREFIX=(TERMX_STRESS_HARNESS=1)
+if [[ "$USE_REAL_STATE" == "0" ]]; then
+  DAEMON_ENV_PREFIX+=(XDG_STATE_HOME="$DAEMON_DEFAULT_STATE_DIR")
+fi
 DAEMON_HISTORY_FILE_BACKEND_ENV=""
 if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
   log "daemon history file backend: $DAEMON_HISTORY_BACKEND_DIR"
   DAEMON_HISTORY_FILE_BACKEND_ENV="$DAEMON_HISTORY_BACKEND_DIR"
   DAEMON_ENV_PREFIX+=(TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR="$DAEMON_HISTORY_FILE_BACKEND_ENV")
+elif [[ "$USE_REAL_STATE" == "1" ]]; then
+  log "daemon default history file backend: real user state"
 else
   log "daemon default history file backend: $DAEMON_DEFAULT_HISTORY_BACKEND_DIR"
 fi
@@ -701,6 +802,9 @@ export TERMX_TUI_HEAP_PROFILE_DIR=$(shell_quote "$TUI_HEAP_DIR")
 export TERMX_TUI_MEMSTATS_DIR=$(shell_quote "$TUI_MEMSTATS_DIR")
 export TERMX_DIAG_STAGE_FILE=$(shell_quote "$DIAG_STAGE_FILE")
 EOF
+if [[ "$USE_REAL_STATE" == "0" ]]; then
+  printf 'export XDG_STATE_HOME=%s\n' "$(shell_quote "$DAEMON_DEFAULT_STATE_DIR")" >>"$ATTACH_SCRIPT"
+fi
 if [[ "$PROFILE_MODE" == "all" ]]; then
   cat >>"$ATTACH_SCRIPT" <<EOF
 export TERMX_TUI_HEAP_PROFILE_EVERY_MB=8
@@ -735,12 +839,17 @@ maybe_capture_stage_profile "tui_idle" "tui" "$TUI_PID"
 TIME_FILE=""
 for RUN in $(seq 1 "$REPEAT"); do
   RUN_LABEL="$(printf '%02d' "$RUN")"
-  RUN_SEED=$((SEED + RUN - 1))
+  RUN_SEED=""
+  if [[ -n "$SEED" ]]; then
+    RUN_SEED=$((SEED + RUN - 1))
+  fi
   DONE_MARKER="TERM_X_TUI_STRESS_DONE_${RUN_LABEL}"
   TIME_FILE="$ROOT/stress-time-run-${RUN_LABEL}.txt"
-  STRESS_CMD="/usr/bin/time -p python3 $(shell_quote "$STRESS_SCRIPT") --lines $LINES --seed $RUN_SEED --width-hint $WIDTH_HINT 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
+  STRESS_DISPLAY="$(stress_command_display "$RUN_SEED")"
+  STRESS_CMD="/usr/bin/time -p $(stress_command_shell "$RUN_SEED") 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
+  printf '%s\t%s\t%s\n' "$RUN_LABEL" "${RUN_SEED:--}" "$STRESS_DISPLAY" >>"$STRESS_COMMANDS_REPORT"
 
-  log "typing stress command in TUI: run=$RUN_LABEL/$REPEAT lines=$LINES seed=$RUN_SEED"
+  log "typing stress command in TUI: run=$RUN_LABEL/$REPEAT $STRESS_DISPLAY"
   SAMPLE_STOP_FILE="$ROOT/.stress-sampling-done-${RUN_LABEL}"
   rm -f "$SAMPLE_STOP_FILE"
   sample_processes_until_stopped "$SAMPLE_STOP_FILE" 0.2 "$DAEMON_PID" "$TUI_PID" "stress_run_${RUN_LABEL}" &
@@ -757,6 +866,7 @@ for RUN in $(seq 1 "$REPEAT"); do
   wait "$SAMPLE_PID" 2>/dev/null || true
   append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
   capture_pane "$TARGET" "live-run-${RUN_LABEL}"
+  append_history_trace "live_run_${RUN_LABEL}" "$ROOT/live-run-${RUN_LABEL}.txt"
   record_stage "daemon_after_stress_run_${RUN_LABEL}" "daemon" "$DAEMON_PID"
   maybe_capture_stage_profile "daemon_after_stress_run_${RUN_LABEL}" "daemon" "$DAEMON_PID"
   record_stage "tui_after_stress_run_${RUN_LABEL}" "tui" "$TUI_PID"
@@ -765,6 +875,7 @@ for RUN in $(seq 1 "$REPEAT"); do
 done
 write_memory_peaks
 capture_pane "$TARGET" "live"
+append_history_trace "live" "$ROOT/live.txt"
 record_stage "daemon_after_stress" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_after_stress" "daemon" "$DAEMON_PID"
 record_stage "tui_after_stress" "tui" "$TUI_PID"
@@ -774,6 +885,7 @@ log "entering copy/history latest"
 tmux send-keys -t "$TARGET" C-v
 sleep 3
 capture_pane "$TARGET" "copy-latest"
+append_history_trace "copy_latest" "$ROOT/copy-latest.txt"
 record_stage "daemon_copy_latest" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_copy_latest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_latest" "tui" "$TUI_PID"
@@ -783,6 +895,7 @@ log "jumping to oldest history page"
 tmux send-keys -t "$TARGET" g
 sleep 4
 capture_pane "$TARGET" "copy-oldest"
+append_history_trace "copy_oldest" "$ROOT/copy-oldest.txt"
 record_stage "daemon_copy_oldest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_oldest" "tui" "$TUI_PID"
 sleep 2
@@ -829,6 +942,14 @@ if [[ -s "$ROOT/stress-times.tsv" ]]; then
     cat "$ROOT/stress-times.tsv"
   fi
 fi
+if [[ -s "$ROOT/stress-commands.tsv" ]]; then
+  log "stress commands"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "$ROOT/stress-commands.tsv"
+  else
+    cat "$ROOT/stress-commands.tsv"
+  fi
+fi
 if [[ -s "$ROOT/memory-peaks.tsv" ]]; then
   log "stress RSS peaks"
   if command -v column >/dev/null 2>&1; then
@@ -843,6 +964,14 @@ if [[ -s "$ROOT/history-files.tsv" ]]; then
     column -t -s $'\t' "$ROOT/history-files.tsv"
   else
     cat "$ROOT/history-files.tsv"
+  fi
+fi
+if [[ -s "$ROOT/history-trace.tsv" ]]; then
+  log "history trace"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "$ROOT/history-trace.tsv"
+  else
+    cat "$ROOT/history-trace.tsv"
   fi
 fi
 if [[ -s "$ROOT/profile-summary.txt" ]]; then

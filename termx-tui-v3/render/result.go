@@ -3,6 +3,7 @@ package render
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
 )
@@ -57,6 +58,13 @@ type ANSICellStyle struct {
 func (style ANSICellStyle) IsZero() bool {
 	return style == ANSICellStyle{}
 }
+
+const ansiCellStyleCacheLimit = 32768
+
+var ansiCellStyleCache = struct {
+	sync.RWMutex
+	values map[ANSICellStyle]string
+}{values: make(map[ANSICellStyle]string)}
 
 type StyleToken string
 
@@ -489,31 +497,56 @@ func headerChromeAltBG(theme Theme) string {
 }
 
 func ansiForCellStyle(style ANSICellStyle) string {
-	var params []string
-	if style.Bold {
-		params = append(params, "1")
-	}
-	if style.Italic {
-		params = append(params, "3")
-	}
-	if style.Underline {
-		params = append(params, "4")
-	}
-	if style.Blink {
-		params = append(params, "5")
-	}
-	if style.Reverse {
-		params = append(params, "7")
-	}
-	if style.Strikethrough {
-		params = append(params, "9")
-	}
-	params = appendANSIColorParams(params, style.FG, true)
-	params = appendANSIColorParams(params, style.BG, false)
-	if len(params) == 0 {
+	if style.IsZero() {
 		return ""
 	}
-	return "\x1b[" + strings.Join(params, ";") + "m"
+	ansiCellStyleCache.RLock()
+	cached, ok := ansiCellStyleCache.values[style]
+	ansiCellStyleCache.RUnlock()
+	if ok {
+		return cached
+	}
+	seq := buildANSICellStyle(style)
+	ansiCellStyleCache.Lock()
+	if cached, ok := ansiCellStyleCache.values[style]; ok {
+		ansiCellStyleCache.Unlock()
+		return cached
+	}
+	if len(ansiCellStyleCache.values) >= ansiCellStyleCacheLimit {
+		// 中文说明：terminal truecolor 可能是无界输入；缓存只服务重复样式热路径，到上限整体释放。
+		ansiCellStyleCache.values = make(map[ANSICellStyle]string)
+	}
+	ansiCellStyleCache.values[style] = seq
+	ansiCellStyleCache.Unlock()
+	return seq
+}
+
+func buildANSICellStyle(style ANSICellStyle) string {
+	var out strings.Builder
+	if style.Bold {
+		appendSGRParam(&out, "1")
+	}
+	if style.Italic {
+		appendSGRParam(&out, "3")
+	}
+	if style.Underline {
+		appendSGRParam(&out, "4")
+	}
+	if style.Blink {
+		appendSGRParam(&out, "5")
+	}
+	if style.Reverse {
+		appendSGRParam(&out, "7")
+	}
+	if style.Strikethrough {
+		appendSGRParam(&out, "9")
+	}
+	appendANSIColorParams(&out, style.FG, true)
+	appendANSIColorParams(&out, style.BG, false)
+	if out.Len() == 0 {
+		return ""
+	}
+	return "\x1b[" + out.String() + "m"
 }
 
 func ansiLinkOpenClose(linkURL string, linkParams string) (string, string) {
@@ -534,30 +567,49 @@ func sanitizeOSC8Field(value string) string {
 	return value
 }
 
-func appendANSIColorParams(params []string, value string, foreground bool) []string {
+func appendSGRParam(out *strings.Builder, value string) {
+	if value == "" {
+		return
+	}
+	if out.Len() > 0 {
+		out.WriteByte(';')
+	}
+	out.WriteString(value)
+}
+
+func appendANSIColorParams(out *strings.Builder, value string, foreground bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return params
+		return
 	}
 	if code, ok := ansiPaletteColorCode(value, foreground); ok {
-		return append(params, strconv.Itoa(code))
+		appendSGRParam(out, strconv.Itoa(code))
+		return
 	}
 	if index, ok := ansiIndexedColor(value); ok {
 		prefix := "38"
 		if !foreground {
 			prefix = "48"
 		}
-		return append(params, prefix, "5", strconv.Itoa(index))
+		// 中文说明：terminal cell SGR 是 render 热路径，直接拼参数，避免每格分配 []string 后 Join。
+		appendSGRParam(out, prefix)
+		appendSGRParam(out, "5")
+		appendSGRParam(out, strconv.Itoa(index))
+		return
 	}
 	r, g, b, ok := parseHexColor(value)
 	if !ok {
-		return params
+		return
 	}
 	prefix := "38"
 	if !foreground {
 		prefix = "48"
 	}
-	return append(params, prefix, "2", r, g, b)
+	appendSGRParam(out, prefix)
+	appendSGRParam(out, "2")
+	appendSGRParam(out, r)
+	appendSGRParam(out, g)
+	appendSGRParam(out, b)
 }
 
 func ansiPaletteColorCode(value string, foreground bool) (int, bool) {
