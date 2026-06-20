@@ -853,7 +853,7 @@ func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM 
 	}
 	if pane, ok := shell.Pane(state.PaneCommandTarget{PaneID: shell.ActivePaneID}); ok {
 		if copyModeBelongsToPane(root, pane.ID) {
-			return projector.copyHistoryContentForView(root, shell, state.TerminalPaneViewID(pane.ID), pane, true)
+			return projector.copyHistoryContentForPane(root, shell, pane, true)
 		}
 		if pane.Kind == state.PaneEmpty {
 			return buildEmptyPaneContentWithSelection(pane, shell.EmptyPaneCTA.SelectedIndex)
@@ -878,7 +878,7 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 		return content
 	}
 	if copyModeBelongsToPane(root, pane.ID) {
-		return projector.copyHistoryContentForView(root, root.Shell.EnsureDefaults(), state.TerminalPaneViewID(pane.ID), pane, active)
+		return projector.copyHistoryContentForPane(root, root.Shell.EnsureDefaults(), pane, active)
 	}
 	if active {
 		return activeContent
@@ -888,7 +888,11 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 }
 
 func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
-	return projector.copyHistoryContentForView(root, shell, copyHistoryViewIDForPane(pane), pane, active)
+	return projector.copyHistoryContentForPane(root, shell, pane, active)
+}
+
+func (projector ShellProjector) copyHistoryContentForPane(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
+	return projector.copyHistoryContentForView(root, shell, copyHistoryViewIDForPane(root, pane.ID), pane, active)
 }
 
 func (projector ShellProjector) copyHistoryContentForView(root state.Root, shell state.ShellStore, viewID string, pane state.PaneState, active bool) ContentVM {
@@ -925,7 +929,8 @@ func (projector ShellProjector) contentForFloating(root state.Root, shell state.
 }
 
 func copyModeBelongsToPane(root state.Root, paneID string) bool {
-	copyMode := copyModeForView(root, state.TerminalPaneViewID(paneID))
+	viewID := copyHistoryViewIDForPane(root, paneID)
+	copyMode := copyModeForView(root, viewID)
 	if !copyMode.Active || paneID == "" {
 		return false
 	}
@@ -971,16 +976,21 @@ func historyStoreBelongsToView(history state.HistoryStore, viewID string) bool {
 	return history.ViewID == "" && history.PaneID != "" && state.TerminalPaneViewID(history.PaneID) == viewID
 }
 
-func copyHistoryViewIDForPane(pane state.PaneState) string {
-	if pane.ID == "" {
+func copyHistoryViewIDForPane(root state.Root, paneID string) string {
+	if paneID == "" {
 		return ""
 	}
-	return state.TerminalPaneViewID(pane.ID)
+	// 中文说明：真实 CLI / restore 里的 TerminalView ID 不一定等于 pane:<paneID>。
+	// copy/history 会话必须按绑定的 ViewID 查找，否则最新/oldest 已写回但 pane 仍渲染旧会话。
+	if binding, ok := root.TerminalViews.PaneBinding(paneID); ok && binding.ViewID != "" {
+		return binding.ViewID
+	}
+	return state.TerminalPaneViewID(paneID)
 }
 
 func copyModeEnteringLiveContent(root state.Root) (ContentVM, bool) {
 	shell := root.Shell.EnsureDefaults()
-	viewID := state.TerminalPaneViewID(shell.ActivePaneID)
+	viewID := copyHistoryViewIDForPane(root, shell.ActivePaneID)
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		viewID = state.TerminalFloatingViewID(activeFloatingID)
 	}
@@ -1004,7 +1014,7 @@ func copyModeEnteringLiveContent(root state.Root) (ContentVM, bool) {
 }
 
 func copyModeEnteringLiveContentForPane(root state.Root, paneID string) (ContentVM, bool) {
-	_, copyMode := root.CopyHistorySessionForView(state.TerminalPaneViewID(paneID))
+	_, copyMode := root.CopyHistorySessionForView(copyHistoryViewIDForPane(root, paneID))
 	if !copyMode.Entering && root.CopyMode.Entering && root.CopyMode.ViewID == "" && root.CopyMode.PaneID == "" {
 		copyMode = root.CopyMode
 	}

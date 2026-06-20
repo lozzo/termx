@@ -114,6 +114,46 @@ func TestRenderVMBuilderKeepsCopyHistoryOnBoundPaneWhenInactive(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderUsesBoundPaneViewIDForCopyHistory(t *testing.T) {
+	viewID := "termx-cli-v3-main"
+	root := state.Root{
+		Shell: state.DefaultShell(),
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Lines:      []string{"live tail"},
+		},
+		HistoryByView: map[string]state.HistoryStore{
+			viewID: {
+				PaneID:     state.DefaultPaneID,
+				ViewID:     viewID,
+				TerminalID: "term-1",
+				Token:      "tok-1",
+				Cols:       80,
+				Rows:       []state.HistoryRow{{Text: "bound view oldest", LineID: 1}},
+			},
+		},
+		CopyModeByView: map[string]state.CopyModeStore{
+			viewID: {
+				Active:     true,
+				PaneID:     state.DefaultPaneID,
+				ViewID:     viewID,
+				TerminalID: "term-1",
+				BoundToken: "tok-1",
+				BoundCols:  80,
+			},
+		},
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID, "term-1", 7, 80, 10, state.TerminalResizeRoleOwner, "surface", viewID, true,
+		)),
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	content := activeContent(vm.Shell)
+	if content.Kind != ContentCopyHistory || len(content.Lines) == 0 || content.Lines[0].PlainString() != "bound view oldest" {
+		t.Fatalf("copy history must use bound TerminalView ID, got %#v", content)
+	}
+}
+
 func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	root := state.Root{
 		Shell: state.ShellStore{
