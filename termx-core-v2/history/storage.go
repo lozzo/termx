@@ -28,7 +28,7 @@ type ownedLineBackend interface {
 type MemoryStorageBackend struct {
 	mu               sync.RWMutex
 	lines            map[LogicalLineID]LogicalLine
-	compactLines     []compactLogicalLine
+	compactLines     [][]byte
 	compactSparse    map[LogicalLineID]compactLogicalLine
 	compactLineCount int
 }
@@ -74,8 +74,7 @@ func (backend *MemoryStorageBackend) LoadLine(id LogicalLineID) (LogicalLine, bo
 	if line, ok := backend.lines[id]; ok {
 		return line.Clone(), true
 	}
-	line, ok := backend.compactLine(id)
-	return line.Line(), ok
+	return backend.loadCompactLine(id)
 }
 
 func (backend *MemoryStorageBackend) LoadSnapshotLine(id LogicalLineID) (LogicalLine, bool) {
@@ -84,8 +83,7 @@ func (backend *MemoryStorageBackend) LoadSnapshotLine(id LogicalLineID) (Logical
 	if line, ok := backend.lines[id]; ok {
 		return line, true
 	}
-	line, ok := backend.compactLine(id)
-	return line.Line(), ok
+	return backend.loadCompactLine(id)
 }
 
 func (backend *MemoryStorageBackend) DeleteLine(id LogicalLineID) bool {
@@ -106,9 +104,9 @@ func (backend *MemoryStorageBackend) LineIDs() []LogicalLineID {
 	for id := range backend.lines {
 		ids = append(ids, id)
 	}
-	for _, line := range backend.compactLines {
-		if line.ID != 0 {
-			ids = append(ids, line.ID)
+	for index, encodedLine := range backend.compactLines {
+		if len(encodedLine) > 0 {
+			ids = append(ids, LogicalLineID(index+1))
 		}
 	}
 	for id := range backend.compactSparse {
@@ -118,8 +116,6 @@ func (backend *MemoryStorageBackend) LineIDs() []LogicalLineID {
 	return ids
 }
 
-// 中文说明：compact 只是 sealed clean logical line 的内存编码形态，
-// 仍由 LogicalLineStore/StorageBackend 按 ID 管理，不引入第二份 history truth。
 type compactLogicalLine struct {
 	ID                LogicalLineID
 	Generation        Generation
@@ -137,6 +133,13 @@ const (
 	compactResidencyFile
 	compactResidencyMmap
 	compactResidencyEvicted
+)
+
+const (
+	compactLineHeaderCreatedDifferent uint64 = 1 << iota
+	compactLineHeaderContentDifferent
+	compactLineHeaderResidencyDifferent
+	compactLineHeaderTailFill
 )
 
 func compactLogicalLineEligible(line LogicalLine) bool {
@@ -180,6 +183,80 @@ func (line compactLogicalLine) Line() LogicalLine {
 	}
 }
 
+func decodeCompactLine(id LogicalLineID, data []byte) (LogicalLine, bool) {
+	line, _, ok := decodeCompactLineParts(id, data)
+	return line, ok
+}
+
+func decodeCompactLineParts(id LogicalLineID, data []byte) (LogicalLine, []byte, bool) {
+	offset := 0
+	flags, ok := readCompactUvarint(data, &offset)
+	if !ok {
+		return LogicalLine{}, nil, false
+	}
+	generation, ok := readCompactUvarint(data, &offset)
+	if !ok {
+		return LogicalLine{}, nil, false
+	}
+	createdGeneration := generation
+	if flags&compactLineHeaderCreatedDifferent != 0 {
+		createdGeneration, ok = readCompactUvarint(data, &offset)
+		if !ok {
+			return LogicalLine{}, nil, false
+		}
+	}
+	contentGeneration := generation
+	if flags&compactLineHeaderContentDifferent != 0 {
+		contentGeneration, ok = readCompactUvarint(data, &offset)
+		if !ok {
+			return LogicalLine{}, nil, false
+		}
+	}
+	residency := uint64(compactResidencyMemory)
+	if flags&compactLineHeaderResidencyDifferent != 0 {
+		residency, ok = readCompactUvarint(data, &offset)
+		if !ok {
+			return LogicalLine{}, nil, false
+		}
+	}
+	var tailFill *RowTailFill
+	if flags&compactLineHeaderTailFill != 0 {
+		style, ok := readCompactCellStyle(data, &offset)
+		if !ok {
+			return LogicalLine{}, nil, false
+		}
+		tailFill = &RowTailFill{Style: style}
+	}
+	encodedCells := data[offset:]
+	return LogicalLine{
+		ID:                id,
+		Generation:        Generation(generation),
+		CreatedGeneration: Generation(createdGeneration),
+		ContentGeneration: Generation(contentGeneration),
+		Seal:              SealStateSealed,
+		Cells:             decodeCompactCells(encodedCells),
+		TailFill:          tailFill,
+		Dirty:             false,
+		Residency:         compactResidency(residency).Residency(),
+	}, encodedCells, true
+}
+
+func compactLogicalLineFromEncodedLine(id LogicalLineID, data []byte) (compactLogicalLine, bool) {
+	line, encodedCells, ok := decodeCompactLineParts(id, data)
+	if !ok {
+		return compactLogicalLine{}, false
+	}
+	return compactLogicalLine{
+		ID:                line.ID,
+		Generation:        line.Generation,
+		CreatedGeneration: line.CreatedGeneration,
+		ContentGeneration: line.ContentGeneration,
+		TailFill:          cloneRowTailFill(line.TailFill),
+		Residency:         compactResidencyFrom(line.Residency),
+		EncodedCells:      encodedCells,
+	}, true
+}
+
 func compactResidencyFrom(residency Residency) compactResidency {
 	switch residency {
 	case ResidencyFile:
@@ -210,10 +287,10 @@ const maxCompactDenseGap = 4096
 
 func (backend *MemoryStorageBackend) saveCompactLine(line compactLogicalLine) {
 	if slot, ok := backend.compactLineSlot(line.ID); ok {
-		if slot.ID == 0 {
+		if len(*slot) == 0 {
 			backend.compactLineCount++
 		}
-		*slot = line
+		*slot = encodeCompactLogicalLine(line)
 		if backend.compactSparse != nil {
 			delete(backend.compactSparse, line.ID)
 		}
@@ -234,9 +311,9 @@ func (backend *MemoryStorageBackend) compactLine(id LogicalLineID) (compactLogic
 	}
 	index := compactDenseIndex(id)
 	if index >= 0 && index < len(backend.compactLines) {
-		line := backend.compactLines[index]
-		if line.ID == id {
-			return line, true
+		encodedLine := backend.compactLines[index]
+		if len(encodedLine) > 0 {
+			return compactLogicalLineFromEncodedLine(id, encodedLine)
 		}
 	}
 	if backend.compactSparse == nil {
@@ -249,8 +326,8 @@ func (backend *MemoryStorageBackend) compactLine(id LogicalLineID) (compactLogic
 func (backend *MemoryStorageBackend) deleteCompactLine(id LogicalLineID) bool {
 	index := compactDenseIndex(id)
 	if index >= 0 && index < len(backend.compactLines) {
-		if backend.compactLines[index].ID == id {
-			backend.compactLines[index] = compactLogicalLine{}
+		if len(backend.compactLines[index]) > 0 {
+			backend.compactLines[index] = nil
 			backend.compactLineCount--
 			return true
 		}
@@ -269,7 +346,7 @@ func (backend *MemoryStorageBackend) deleteCompactLine(id LogicalLineID) bool {
 	return true
 }
 
-func (backend *MemoryStorageBackend) compactLineSlot(id LogicalLineID) (*compactLogicalLine, bool) {
+func (backend *MemoryStorageBackend) compactLineSlot(id LogicalLineID) (*[]byte, bool) {
 	index := compactDenseIndex(id)
 	if index < 0 {
 		return nil, false
@@ -279,9 +356,89 @@ func (backend *MemoryStorageBackend) compactLineSlot(id LogicalLineID) (*compact
 		if gap > maxCompactDenseGap {
 			return nil, false
 		}
-		backend.compactLines = append(backend.compactLines, make([]compactLogicalLine, index-len(backend.compactLines)+1)...)
+		backend.compactLines = append(backend.compactLines, make([][]byte, index-len(backend.compactLines)+1)...)
 	}
 	return &backend.compactLines[index], true
+}
+
+func (backend *MemoryStorageBackend) loadCompactLine(id LogicalLineID) (LogicalLine, bool) {
+	if id == 0 {
+		return LogicalLine{}, false
+	}
+	index := compactDenseIndex(id)
+	if index >= 0 && index < len(backend.compactLines) {
+		encodedLine := backend.compactLines[index]
+		if len(encodedLine) > 0 {
+			return decodeCompactLine(id, encodedLine)
+		}
+	}
+	if backend.compactSparse == nil {
+		return LogicalLine{}, false
+	}
+	line, ok := backend.compactSparse[id]
+	return line.Line(), ok
+}
+
+func encodeCompactLogicalLine(line compactLogicalLine) []byte {
+	flags := compactLogicalLineHeaderFlags(line)
+	out := make([]byte, 0, compactLogicalLineEncodedCapacity(line, flags))
+	return appendCompactLogicalLine(out, line, flags)
+}
+
+func appendCompactLogicalLine(out []byte, line compactLogicalLine, flags uint64) []byte {
+	// 中文说明：header 只写非默认元数据；ID 由 dense slot 持有，cells 仍是唯一历史 payload。
+	out = appendCompactUvarint(out, flags)
+	out = appendCompactUvarint(out, uint64(line.Generation))
+	if flags&compactLineHeaderCreatedDifferent != 0 {
+		out = appendCompactUvarint(out, uint64(line.CreatedGeneration))
+	}
+	if flags&compactLineHeaderContentDifferent != 0 {
+		out = appendCompactUvarint(out, uint64(line.ContentGeneration))
+	}
+	if flags&compactLineHeaderResidencyDifferent != 0 {
+		out = appendCompactUvarint(out, uint64(line.Residency))
+	}
+	if flags&compactLineHeaderTailFill != 0 {
+		out = appendCompactCellStyle(out, line.TailFill.Style)
+	}
+	return append(out, line.EncodedCells...)
+}
+
+func compactLogicalLineHeaderFlags(line compactLogicalLine) uint64 {
+	var flags uint64
+	if line.CreatedGeneration != line.Generation {
+		flags |= compactLineHeaderCreatedDifferent
+	}
+	if line.ContentGeneration != line.Generation {
+		flags |= compactLineHeaderContentDifferent
+	}
+	if line.Residency != compactResidencyMemory {
+		flags |= compactLineHeaderResidencyDifferent
+	}
+	if line.TailFill != nil {
+		flags |= compactLineHeaderTailFill
+	}
+	return flags
+}
+
+func compactLogicalLineEncodedCapacity(line compactLogicalLine, flags uint64) int {
+	capacity := compactUvarintSize(flags)
+	capacity += compactUvarintSize(uint64(line.Generation))
+	if flags&compactLineHeaderCreatedDifferent != 0 {
+		capacity += compactUvarintSize(uint64(line.CreatedGeneration))
+	}
+	if flags&compactLineHeaderContentDifferent != 0 {
+		capacity += compactUvarintSize(uint64(line.ContentGeneration))
+	}
+	if flags&compactLineHeaderResidencyDifferent != 0 {
+		capacity += compactUvarintSize(uint64(line.Residency))
+	}
+	if flags&compactLineHeaderTailFill != 0 {
+		capacity += compactCellStyleEncodedSize(line.TailFill.Style)
+		capacity += len(line.TailFill.Style.FG) + len(line.TailFill.Style.BG)
+	}
+	capacity += len(line.EncodedCells)
+	return capacity
 }
 
 func compactDenseIndex(id LogicalLineID) int {
@@ -301,6 +458,10 @@ func cellStyleZero(style CellStyle) bool {
 
 func encodeCompactCells(cells []Cell) []byte {
 	out := make([]byte, 0, compactCellsEncodedCapacity(cells))
+	return appendCompactCells(out, cells)
+}
+
+func appendCompactCells(out []byte, cells []Cell) []byte {
 	out = appendCompactUvarint(out, uint64(len(cells)))
 	for _, cell := range cells {
 		out = appendCompactString(out, cell.Text)

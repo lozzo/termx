@@ -185,6 +185,9 @@ func TestMemoryStorageBackendCompactsCleanSealedLines(t *testing.T) {
 	if !ok || len(stored.EncodedCells) == 0 {
 		t.Fatalf("expected clean sealed line to use compact storage, got %#v", stored)
 	}
+	if got, want := len(backend.compactLines[compactDenseIndex(7)]), len(encodeCompactLogicalLine(stored)); got != want {
+		t.Fatalf("dense compact slot should store only encoded payload, got len=%d want=%d", got, want)
+	}
 	if _, ok := backend.lines[7]; ok {
 		t.Fatalf("compact line must not keep ordinary storage copy, got %#v", backend.lines[7])
 	}
@@ -272,6 +275,81 @@ func TestCompactCellsEncodedCapacityMatchesEncodedLength(t *testing.T) {
 	}
 	if decoded := decodeCompactCells(encoded); !reflect.DeepEqual(decoded, cells) {
 		t.Fatalf("compact round trip changed cells:\nwant %#v\ngot  %#v", cells, decoded)
+	}
+}
+
+func TestCompactLogicalLineHeaderOmitsDefaultMetadata(t *testing.T) {
+	line := compactLogicalLine{
+		ID:                11,
+		Generation:        9,
+		CreatedGeneration: 9,
+		ContentGeneration: 9,
+		Residency:         compactResidencyMemory,
+		EncodedCells:      encodeCompactCells([]Cell{{Text: "payload", Width: 7}}),
+	}
+
+	encoded := encodeCompactLogicalLine(line)
+	if got, want := cap(encoded), len(encoded); got != want {
+		t.Fatalf("compact line should allocate exact backing capacity, cap=%d len=%d", got, want)
+	}
+	flags := compactLogicalLineHeaderFlags(line)
+	if flags != 0 {
+		t.Fatalf("default metadata should not set header flags, got %d", flags)
+	}
+	// 中文说明：默认 header 只保留 flags + generation，避免每条常规历史行重复存 created/content/residency/tail 标记。
+	if got, want := len(encoded), 2+len(line.EncodedCells); got != want {
+		t.Fatalf("default metadata header size changed, got len=%d want=%d", got, want)
+	}
+
+	loaded, ok := decodeCompactLine(line.ID, encoded)
+	if !ok {
+		t.Fatal("expected compact line to decode")
+	}
+	if loaded.Generation != 9 || loaded.CreatedGeneration != 9 || loaded.ContentGeneration != 9 || loaded.Residency != ResidencyMemory {
+		t.Fatalf("default metadata round trip changed line: %#v", loaded)
+	}
+	if !reflect.DeepEqual(loaded.Cells, []Cell{{Text: "payload", Width: 7}}) {
+		t.Fatalf("default metadata round trip changed cells: %#v", loaded.Cells)
+	}
+}
+
+func TestCompactLogicalLineHeaderPreservesNonDefaultMetadata(t *testing.T) {
+	line := compactLogicalLine{
+		ID:                12,
+		Generation:        9,
+		CreatedGeneration: 7,
+		ContentGeneration: 8,
+		TailFill:          &RowTailFill{Style: CellStyle{BG: "ansi:4", Reverse: true}},
+		Residency:         compactResidencyFile,
+		EncodedCells:      encodeCompactCells([]Cell{{Text: "payload", Width: 7, Style: CellStyle{FG: "ansi:2"}}}),
+	}
+
+	encoded := encodeCompactLogicalLine(line)
+	if got, want := cap(encoded), len(encoded); got != want {
+		t.Fatalf("compact line should allocate exact backing capacity, cap=%d len=%d", got, want)
+	}
+	flags := compactLogicalLineHeaderFlags(line)
+	wantFlags := compactLineHeaderCreatedDifferent | compactLineHeaderContentDifferent | compactLineHeaderResidencyDifferent | compactLineHeaderTailFill
+	if flags != wantFlags {
+		t.Fatalf("unexpected non-default metadata flags, got=%d want=%d", flags, wantFlags)
+	}
+
+	loaded, ok := decodeCompactLine(line.ID, encoded)
+	if !ok {
+		t.Fatal("expected compact line to decode")
+	}
+	want := LogicalLine{
+		ID:                line.ID,
+		Generation:        line.Generation,
+		CreatedGeneration: line.CreatedGeneration,
+		ContentGeneration: line.ContentGeneration,
+		Seal:              SealStateSealed,
+		Cells:             []Cell{{Text: "payload", Width: 7, Style: CellStyle{FG: "ansi:2"}}},
+		TailFill:          &RowTailFill{Style: CellStyle{BG: "ansi:4", Reverse: true}},
+		Residency:         ResidencyFile,
+	}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("non-default metadata round trip changed line:\nwant %#v\ngot  %#v", want, loaded)
 	}
 }
 
