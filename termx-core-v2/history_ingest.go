@@ -10,6 +10,8 @@ import (
 
 type historyOutputSegment struct {
 	Cells                    []history.Cell
+	Cell                     history.Cell
+	HasCell                  bool
 	Seal                     bool
 	CarriageReturn           bool
 	CursorForward            bool
@@ -302,7 +304,7 @@ func (parser *historyANSIParser) consumeOSC(input string) int {
 func (parser *historyANSIParser) writeText(text string) {
 	for text != "" {
 		if asciiLen := historyParserASCIITextRun(text); asciiLen > 0 {
-			parser.writeASCIIText(text[:asciiLen])
+			parser.writeASCIIText(text[:asciiLen], asciiLen == len(text))
 			text = text[asciiLen:]
 			continue
 		}
@@ -323,15 +325,32 @@ func (parser *historyANSIParser) writeText(text string) {
 	}
 }
 
-func (parser *historyANSIParser) writeASCIIText(text string) {
+func (parser *historyANSIParser) writeASCIIText(text string, endsTextRun bool) {
 	if text == "" {
 		return
 	}
 	if parser.screenCols <= 0 || parser.screenRows <= 0 {
-		parser.buffer.WriteString(text)
-		parser.bufferWidth += len(text)
+		if endsTextRun {
+			parser.appendTextCell(text, len(text))
+		} else {
+			parser.buffer.WriteString(text)
+			parser.bufferWidth += len(text)
+		}
 		parser.col += len(text)
 		return
+	}
+	if endsTextRun && parser.buffer.Len() == 0 && !parser.atPhantom {
+		available := parser.screenCols - parser.screenCol
+		if len(text) <= available {
+			parser.appendTextCell(text, len(text))
+			parser.col += len(text)
+			parser.screenCol += len(text)
+			if parser.screenCol >= parser.screenCols {
+				parser.screenCol = parser.screenCols - 1
+				parser.atPhantom = true
+			}
+			return
+		}
 	}
 	for len(text) > 0 {
 		if parser.atPhantom {
@@ -359,6 +378,24 @@ func (parser *historyANSIParser) writeASCIIText(text string) {
 	}
 }
 
+func (parser *historyANSIParser) appendTextCell(text string, width int) {
+	if text == "" {
+		return
+	}
+	if parser.buffer.Len() == 0 {
+		parser.segments = append(parser.segments, historyOutputSegment{HasCell: true, Cell: history.Cell{
+			Text:       text,
+			Width:      width,
+			Style:      parser.style,
+			LinkURL:    parser.linkURL,
+			LinkParams: parser.linkArgs,
+		}})
+		return
+	}
+	parser.buffer.WriteString(text)
+	parser.bufferWidth += width
+}
+
 func (parser *historyANSIParser) writeTab() {
 	const tabStop = 8
 	spaces := tabStop - parser.col%tabStop
@@ -378,13 +415,13 @@ func (parser *historyANSIParser) flush() {
 	width := parser.bufferWidth
 	parser.buffer.Reset()
 	parser.bufferWidth = 0
-	parser.segments = append(parser.segments, historyOutputSegment{Cells: []history.Cell{{
+	parser.segments = append(parser.segments, historyOutputSegment{HasCell: true, Cell: history.Cell{
 		Text:       text,
 		Width:      width,
 		Style:      parser.style,
 		LinkURL:    parser.linkURL,
 		LinkParams: parser.linkArgs,
-	}}})
+	}})
 }
 
 func (parser *historyANSIParser) beforePhysicalPrint(width int) {

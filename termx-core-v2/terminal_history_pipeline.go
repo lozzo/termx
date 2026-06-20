@@ -140,20 +140,46 @@ func (pipeline *terminalHistoryPipeline) ResetForRestart() error {
 
 func (pipeline *terminalHistoryPipeline) ingestPrimaryOutputLocked(output string) error {
 	segments := pipeline.ingest.Parse(output)
+	var pendingFirst history.Cell
+	pendingFirstSet := false
 	var pendingCells []history.Cell
 	flushPendingCells := func() error {
-		if len(pendingCells) == 0 {
+		if !pendingFirstSet {
 			return nil
 		}
 		cells := pendingCells
+		if len(cells) == 0 {
+			cells = []history.Cell{pendingFirst}
+		}
+		pendingFirst = history.Cell{}
+		pendingFirstSet = false
 		pendingCells = nil
 		return pipeline.track.ApplyOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: cells})
 	}
 	for _, segment := range segments {
-		if len(segment.Cells) > 0 {
-			if len(pendingCells) == 0 {
-				pendingCells = segment.Cells
+		if segment.HasCell {
+			if !pendingFirstSet {
+				pendingFirst = segment.Cell
+				pendingFirstSet = true
 			} else {
+				if len(pendingCells) == 0 {
+					pendingCells = append(pendingCells, pendingFirst)
+				}
+				pendingCells = append(pendingCells, segment.Cell)
+			}
+			continue
+		}
+		if len(segment.Cells) > 0 {
+			if !pendingFirstSet {
+				pendingFirst = segment.Cells[0]
+				pendingFirstSet = true
+				if len(segment.Cells) > 1 {
+					pendingCells = segment.Cells
+				}
+			} else {
+				if len(pendingCells) == 0 {
+					pendingCells = append(pendingCells, pendingFirst)
+				}
 				pendingCells = append(pendingCells, segment.Cells...)
 			}
 			continue
