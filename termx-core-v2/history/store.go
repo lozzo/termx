@@ -31,6 +31,14 @@ type ObserverLineVisibility struct {
 	IDs   []LogicalLineID
 }
 
+type primaryCellsWriteRequest struct {
+	Cells             []Cell
+	OwnedCells        bool
+	ActiveCol         int
+	Overwrite         bool
+	ContentGeneration Generation
+}
+
 func NewMemoryLogicalLineStore(backend StorageBackend) *MemoryLogicalLineStore {
 	if backend == nil {
 		backend = NewMemoryStorageBackend()
@@ -89,6 +97,16 @@ func (store *MemoryLogicalLineStore) Line(id LogicalLineID) (LogicalLine, bool) 
 	return store.backend.LoadLine(id)
 }
 
+func (store *MemoryLogicalLineStore) HasLine(id LogicalLineID) bool {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if backend, ok := store.backend.(lineExistsBackend); ok {
+		return backend.HasLine(id)
+	}
+	_, ok := store.backend.LoadLine(id)
+	return ok
+}
+
 func (store *MemoryLogicalLineStore) SnapshotLine(id LogicalLineID) (LogicalLine, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -128,7 +146,7 @@ func (store *MemoryLogicalLineStore) replaceOwnedLine(line LogicalLine) (Logical
 	if err := validateLine(line); err != nil {
 		return LogicalLine{}, err
 	}
-	current, ok := store.backend.LoadLine(line.ID)
+	current, ok := store.loadOwnedLineLocked(line.ID)
 	if !ok {
 		return LogicalLine{}, ErrUnknownLine
 	}
@@ -148,6 +166,119 @@ func (store *MemoryLogicalLineStore) replaceOwnedLine(line LogicalLine) (Logical
 	return line.Clone(), nil
 }
 
+func (store *MemoryLogicalLineStore) mutateOwnedLine(id LogicalLineID, mutate func(*LogicalLine)) (LogicalLine, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	current, ok := store.loadOwnedLineLocked(id)
+	if !ok {
+		return LogicalLine{}, ErrUnknownLine
+	}
+	store.retainCurrentLineLocked(current)
+	line := current
+	mutate(&line)
+	return store.saveMutatedLineLocked(current, line)
+}
+
+func (store *MemoryLogicalLineStore) writePrimaryCellsOwned(id LogicalLineID, req primaryCellsWriteRequest) (LogicalLine, int, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	current, ok := store.loadOwnedLineLocked(id)
+	if !ok {
+		return LogicalLine{}, 0, ErrUnknownLine
+	}
+	store.retainCurrentLineLocked(current)
+	line := current
+	lineWidth := logicalLineWidth(line.Cells)
+	if !req.Overwrite && req.ActiveCol == lineWidth {
+		if req.OwnedCells {
+			line.Cells = append(line.Cells, req.Cells...)
+		} else {
+			line.Cells = append(line.Cells, cloneCells(req.Cells)...)
+		}
+	} else {
+		line.Cells = overwriteLineCellsAtColumn(line.Cells, req.ActiveCol, req.Cells)
+		lineWidth = logicalLineWidth(line.Cells)
+	}
+	line.TailFill = nil
+	line.Dirty = true
+	if line.CreatedGeneration == 0 {
+		line.CreatedGeneration = req.ContentGeneration
+	}
+	line.ContentGeneration = req.ContentGeneration
+	line, err := store.saveMutatedLineLocked(current, line)
+	return line, lineWidth, err
+}
+
+func (store *MemoryLogicalLineStore) lineCommitState(id LogicalLineID) (SealState, bool, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	line, ok := store.loadOwnedLineLocked(id)
+	if !ok {
+		return "", false, false
+	}
+	return line.Seal, line.Dirty, true
+}
+
+func (store *MemoryLogicalLineStore) sealLineDirty(id LogicalLineID) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	current, ok := store.loadOwnedLineLocked(id)
+	if !ok {
+		return ErrUnknownLine
+	}
+	store.retainCurrentLineLocked(current)
+	line := current
+	line.Seal = SealStateSealed
+	line.Dirty = true
+	_, err := store.saveMutatedLineLocked(current, line)
+	return err
+}
+
+func (store *MemoryLogicalLineStore) markLineClean(id LogicalLineID) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	current, ok := store.loadOwnedLineLocked(id)
+	if !ok {
+		return ErrUnknownLine
+	}
+	store.retainCurrentLineLocked(current)
+	line := current
+	line.Dirty = false
+	_, err := store.saveMutatedLineLocked(current, line)
+	return err
+}
+
+func (store *MemoryLogicalLineStore) saveMutatedLineLocked(current LogicalLine, line LogicalLine) (LogicalLine, error) {
+	if err := validateLine(line); err != nil {
+		return LogicalLine{}, err
+	}
+	if line.ID != current.ID {
+		return LogicalLine{}, ErrInvalidLineID
+	}
+	line.Generation = current.Generation + 1
+	if line.CreatedGeneration == 0 {
+		line.CreatedGeneration = current.CreatedGeneration
+	}
+	if line.ContentGeneration == 0 {
+		line.ContentGeneration = current.ContentGeneration
+	}
+	line.TailFill = cloneRowTailFill(line.TailFill)
+	if err := store.saveOwnedLineLocked(line); err != nil {
+		return LogicalLine{}, err
+	}
+	store.cleanupRetiredLocked()
+	return line, nil
+}
+
+func (store *MemoryLogicalLineStore) loadOwnedLineLocked(id LogicalLineID) (LogicalLine, bool) {
+	// 中文说明：公开 Line 仍返回 detached copy；store 内部替换/删除/可写 mutation
+	// 已经持有锁和 COW observer 边界，可以读取 owned line 来避免热路径整行 clone。
+	if backend, ok := store.backend.(snapshotLineBackend); ok {
+		return backend.LoadSnapshotLine(id)
+	}
+	return store.backend.LoadLine(id)
+}
+
 func (store *MemoryLogicalLineStore) saveOwnedLineLocked(line LogicalLine) error {
 	if backend, ok := store.backend.(ownedLineBackend); ok {
 		return backend.saveOwnedLine(line)
@@ -158,7 +289,7 @@ func (store *MemoryLogicalLineStore) saveOwnedLineLocked(line LogicalLine) error
 func (store *MemoryLogicalLineStore) DeleteLine(id LogicalLineID) bool {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	current, ok := store.backend.LoadLine(id)
+	current, ok := store.loadOwnedLineLocked(id)
 	if !ok {
 		return false
 	}

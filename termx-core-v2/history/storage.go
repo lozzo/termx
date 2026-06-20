@@ -19,6 +19,10 @@ type snapshotLineBackend interface {
 	LoadSnapshotLine(LogicalLineID) (LogicalLine, bool)
 }
 
+type lineExistsBackend interface {
+	HasLine(LogicalLineID) bool
+}
+
 type ownedLineBackend interface {
 	saveOwnedLine(LogicalLine) error
 }
@@ -84,6 +88,15 @@ func (backend *MemoryStorageBackend) LoadSnapshotLine(id LogicalLineID) (Logical
 		return line, true
 	}
 	return backend.loadCompactLine(id)
+}
+
+func (backend *MemoryStorageBackend) HasLine(id LogicalLineID) bool {
+	backend.mu.RLock()
+	defer backend.mu.RUnlock()
+	if _, ok := backend.lines[id]; ok {
+		return true
+	}
+	return backend.hasCompactLine(id)
 }
 
 func (backend *MemoryStorageBackend) DeleteLine(id LogicalLineID) bool {
@@ -321,6 +334,21 @@ func (backend *MemoryStorageBackend) compactLine(id LogicalLineID) (compactLogic
 	}
 	line, ok := backend.compactSparse[id]
 	return line, ok
+}
+
+func (backend *MemoryStorageBackend) hasCompactLine(id LogicalLineID) bool {
+	if id == 0 {
+		return false
+	}
+	index := compactDenseIndex(id)
+	if index >= 0 && index < len(backend.compactLines) {
+		return len(backend.compactLines[index]) > 0
+	}
+	if backend.compactSparse == nil {
+		return false
+	}
+	_, ok := backend.compactSparse[id]
+	return ok
 }
 
 func (backend *MemoryStorageBackend) deleteCompactLine(id LogicalLineID) bool {

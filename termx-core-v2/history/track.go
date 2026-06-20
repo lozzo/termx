@@ -185,20 +185,53 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) erro
 	if err != nil {
 		return err
 	}
-	lineWidth := logicalLineWidth(line.Cells)
 	incomingWidth := logicalLineWidth(cells)
 	if created {
 		track.activeCol = incomingWidth
-	} else if !track.overwrite && track.activeCol == lineWidth {
-		if ownedCells {
-			line.Cells = append(line.Cells, cells...)
+		track.activeLine = line.ID
+		track.overwrite = false
+		track.setGeneration(nextGeneration)
+		return nil
+	}
+	activeCol := track.activeCol
+	overwrite := track.overwrite
+	line, lineWidth, err := track.writePrimaryCellsOwned(line.ID, primaryCellsWriteRequest{
+		Cells:             cells,
+		OwnedCells:        ownedCells,
+		ActiveCol:         activeCol,
+		Overwrite:         overwrite,
+		ContentGeneration: nextGeneration,
+	})
+	if err != nil {
+		return err
+	}
+	track.activeLine = line.ID
+	track.activeCol += incomingWidth
+	track.overwrite = track.activeCol < lineWidth
+	track.setGeneration(nextGeneration)
+	return nil
+}
+
+func (track *HistoryTrack) writePrimaryCellsOwned(id LogicalLineID, req primaryCellsWriteRequest) (LogicalLine, int, error) {
+	type primaryWriter interface {
+		writePrimaryCellsOwned(LogicalLineID, primaryCellsWriteRequest) (LogicalLine, int, error)
+	}
+	if store, ok := track.store.(primaryWriter); ok {
+		return store.writePrimaryCellsOwned(id, req)
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return LogicalLine{}, 0, ErrUnknownLine
+	}
+	lineWidth := logicalLineWidth(line.Cells)
+	if !req.Overwrite && req.ActiveCol == lineWidth {
+		if req.OwnedCells {
+			line.Cells = append(line.Cells, req.Cells...)
 		} else {
-			line.Cells = append(line.Cells, cloneCells(cells)...)
+			line.Cells = append(line.Cells, cloneCells(req.Cells)...)
 		}
-		track.activeCol += incomingWidth
 	} else {
-		line.Cells = overwriteLineCellsAtColumn(line.Cells, track.activeCol, cells)
-		track.activeCol += incomingWidth
+		line.Cells = overwriteLineCellsAtColumn(line.Cells, req.ActiveCol, req.Cells)
 		lineWidth = logicalLineWidth(line.Cells)
 	}
 	// 中文说明：TailFill 只描述“当前内容末尾到行尾”的背景；后续真实写入会改变末尾位置，
@@ -206,23 +239,11 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) erro
 	line.TailFill = nil
 	line.Dirty = true
 	if line.CreatedGeneration == 0 {
-		line.CreatedGeneration = nextGeneration
+		line.CreatedGeneration = req.ContentGeneration
 	}
-	line.ContentGeneration = nextGeneration
-	if created {
-		track.activeLine = line.ID
-		track.overwrite = false
-		track.setGeneration(nextGeneration)
-		return nil
-	}
-	line, err = track.replaceOwnedLine(line)
-	if err != nil {
-		return err
-	}
-	track.activeLine = line.ID
-	track.overwrite = track.activeCol < lineWidth
-	track.setGeneration(nextGeneration)
-	return nil
+	line.ContentGeneration = req.ContentGeneration
+	line, err := track.replaceOwnedLine(line)
+	return line, lineWidth, err
 }
 
 func (track *HistoryTrack) replaceOwnedLine(line LogicalLine) (LogicalLine, error) {
@@ -235,11 +256,92 @@ func (track *HistoryTrack) replaceOwnedLine(line LogicalLine) (LogicalLine, erro
 	return track.store.ReplaceLine(line)
 }
 
+func (track *HistoryTrack) mutateOwnedLine(id LogicalLineID, mutate func(*LogicalLine)) (LogicalLine, error) {
+	type ownedMutator interface {
+		mutateOwnedLine(LogicalLineID, func(*LogicalLine)) (LogicalLine, error)
+	}
+	if store, ok := track.store.(ownedMutator); ok {
+		return store.mutateOwnedLine(id, mutate)
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return LogicalLine{}, ErrUnknownLine
+	}
+	mutate(&line)
+	return track.replaceOwnedLine(line)
+}
+
+func (track *HistoryTrack) lineExists(id LogicalLineID) bool {
+	type lineChecker interface {
+		HasLine(LogicalLineID) bool
+	}
+	if store, ok := track.store.(lineChecker); ok {
+		return store.HasLine(id)
+	}
+	_, ok := track.store.Line(id)
+	return ok
+}
+
+func (track *HistoryTrack) inspectLine(id LogicalLineID, inspect func(LogicalLine)) bool {
+	line, ok := track.store.Line(id)
+	if !ok {
+		return false
+	}
+	inspect(line)
+	return true
+}
+
+func (track *HistoryTrack) lineCommitState(id LogicalLineID) (SealState, bool, bool) {
+	type commitStateReader interface {
+		lineCommitState(LogicalLineID) (SealState, bool, bool)
+	}
+	if store, ok := track.store.(commitStateReader); ok {
+		return store.lineCommitState(id)
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return "", false, false
+	}
+	return line.Seal, line.Dirty, true
+}
+
+func (track *HistoryTrack) sealLineDirty(id LogicalLineID) error {
+	type dirtySealer interface {
+		sealLineDirty(LogicalLineID) error
+	}
+	if store, ok := track.store.(dirtySealer); ok {
+		return store.sealLineDirty(id)
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return ErrUnknownLine
+	}
+	line.Seal = SealStateSealed
+	line.Dirty = true
+	_, err := track.replaceOwnedLine(line)
+	return err
+}
+
+func (track *HistoryTrack) markLineClean(id LogicalLineID) error {
+	type cleaner interface {
+		markLineClean(LogicalLineID) error
+	}
+	if store, ok := track.store.(cleaner); ok {
+		return store.markLineClean(id)
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return ErrUnknownLine
+	}
+	line.Dirty = false
+	_, err := track.replaceOwnedLine(line)
+	return err
+}
+
 func (track *HistoryTrack) ensureWritableActiveLineForCells(cells []Cell, ownedCells bool, generation Generation) (LogicalLine, bool, error) {
 	if track.activeLine != 0 && (track.frontier.Contains(track.activeLine) || track.committed.Contains(track.activeLine)) {
-		line, ok := track.store.Line(track.activeLine)
-		if ok {
-			return line, false, nil
+		if track.lineExists(track.activeLine) {
+			return LogicalLine{ID: track.activeLine}, false, nil
 		}
 	}
 	// 中文说明：只有 pipeline 内部明确交出所有权的首批 cells 才跳过 clone；
@@ -822,24 +924,26 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 
 	changed := false
 	for _, id := range ids {
-		line, ok := track.store.Line(id)
+		seal, dirty, ok := track.lineCommitState(id)
 		if !ok {
 			return ErrUnknownLine
 		}
-		if force && line.Seal != SealStateSealed {
-			line.Seal = SealStateSealed
-			line.Dirty = true
+		if force && seal != SealStateSealed {
+			if err := track.sealLineDirty(id); err != nil {
+				return err
+			}
+			seal = SealStateSealed
+			dirty = true
 		}
-		if !force && line.Seal != SealStateSealed {
+		if !force && seal != SealStateSealed {
 			continue
 		}
 		// 普通 commit 只允许提交已经 sealed 且不再被 primary screen 持有的 line。
-		if !force && !track.lineCommittableLoaded(id, line) {
+		if !force && !track.lineCommittableID(id) {
 			continue
 		}
-		if line.Dirty {
-			line.Dirty = false
-			if _, err := track.replaceOwnedLine(line); err != nil {
+		if dirty {
+			if err := track.markLineClean(id); err != nil {
 				return err
 			}
 			changed = true
@@ -1060,17 +1164,25 @@ func (track *HistoryTrack) lineCommittable(id LogicalLineID) bool {
 	if !track.frontier.Contains(id) || track.frontier.IsHidden(id) {
 		return false
 	}
-	line, ok := track.store.Line(id)
-	if !ok || line.Seal != SealStateSealed {
+	committable := false
+	if !track.inspectLine(id, func(line LogicalLine) {
+		committable = line.Seal == SealStateSealed && track.lineCommittableLoaded(id, line)
+	}) {
 		return false
 	}
-	return track.lineCommittableLoaded(id, line)
+	return committable
 }
 
 func (track *HistoryTrack) lineCommittableLoaded(id LogicalLineID, line LogicalLine) bool {
 	return track.frontier.Contains(id) &&
 		!track.frontier.IsHidden(id) &&
 		line.Seal == SealStateSealed &&
+		!track.screen.containsLine(id)
+}
+
+func (track *HistoryTrack) lineCommittableID(id LogicalLineID) bool {
+	return track.frontier.Contains(id) &&
+		!track.frontier.IsHidden(id) &&
 		!track.screen.containsLine(id)
 }
 
