@@ -905,6 +905,30 @@ func TestTerminalIngestOutputAltScreenFinalFrameKeepsHistoryStyle(t *testing.T) 
 	}
 }
 
+func TestTerminalIngestOutputSplitAltScreenCSIStillCapturesFinalFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	for _, chunk := range []string{"primary\n\x1b[?10", "49h\x1b[2Jalt-final\x1b[?1049l"} {
+		if err := server.IngestOutput(context.Background(), "term-1", chunk); err != nil {
+			t.Fatalf("ingest chunk %q: %v", chunk, err)
+		}
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest after split alt-screen CSI: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "primary" || window.Rows[1].Text != "alt-final" {
+		t.Fatalf("split alt-screen CSI should preserve final frame, got %#v", window.Rows)
+	}
+}
+
 func TestTerminalIngestOutputEnterAltScreenPreservesStressTail(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

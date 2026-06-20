@@ -3,6 +3,8 @@ package history
 import (
 	"encoding/binary"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -63,7 +65,7 @@ func (backend *MemoryStorageBackend) saveNormalizedLine(line LogicalLine) error 
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
 	if compactLogicalLineEligible(line) {
-		backend.saveCompactLine(compactLogicalLineFromLine(line))
+		backend.saveCompactLogicalLine(line)
 		delete(backend.lines, line.ID)
 		return nil
 	}
@@ -169,16 +171,20 @@ func compactLogicalLineEligible(line LogicalLine) bool {
 }
 
 func compactLogicalLineFromLine(line LogicalLine) compactLogicalLine {
-	compact := compactLogicalLine{
+	compact := compactLogicalLineMetadataFromLine(line)
+	compact.EncodedCells = encodeCompactCells(line.Cells)
+	return compact
+}
+
+func compactLogicalLineMetadataFromLine(line LogicalLine) compactLogicalLine {
+	return compactLogicalLine{
 		ID:                line.ID,
 		Generation:        line.Generation,
 		CreatedGeneration: line.CreatedGeneration,
 		ContentGeneration: line.ContentGeneration,
 		TailFill:          cloneRowTailFill(line.TailFill),
 		Residency:         compactResidencyFrom(line.Residency),
-		EncodedCells:      encodeCompactCells(line.Cells),
 	}
-	return compact
 }
 
 func (line compactLogicalLine) Line() LogicalLine {
@@ -298,6 +304,26 @@ func (residency compactResidency) Residency() Residency {
 
 const maxCompactDenseGap = 4096
 
+func (backend *MemoryStorageBackend) saveCompactLogicalLine(line LogicalLine) {
+	if slot, ok := backend.compactLineSlot(line.ID); ok {
+		if len(*slot) == 0 {
+			backend.compactLineCount++
+		}
+		*slot = encodeCompactLogicalLineFromLine(line)
+		if backend.compactSparse != nil {
+			delete(backend.compactSparse, line.ID)
+		}
+		return
+	}
+	if backend.compactSparse == nil {
+		backend.compactSparse = make(map[LogicalLineID]compactLogicalLine)
+	}
+	if _, ok := backend.compactSparse[line.ID]; !ok {
+		backend.compactLineCount++
+	}
+	backend.compactSparse[line.ID] = compactLogicalLineFromLine(line)
+}
+
 func (backend *MemoryStorageBackend) saveCompactLine(line compactLogicalLine) {
 	if slot, ok := backend.compactLineSlot(line.ID); ok {
 		if len(*slot) == 0 {
@@ -413,7 +439,20 @@ func encodeCompactLogicalLine(line compactLogicalLine) []byte {
 	return appendCompactLogicalLine(out, line, flags)
 }
 
+func encodeCompactLogicalLineFromLine(line LogicalLine) []byte {
+	compact := compactLogicalLineMetadataFromLine(line)
+	flags := compactLogicalLineHeaderFlags(compact)
+	out := make([]byte, 0, compactLogicalLineHeaderEncodedCapacity(compact, flags)+compactCellsEncodedCapacity(line.Cells))
+	out = appendCompactLogicalLineHeader(out, compact, flags)
+	return appendCompactCells(out, line.Cells)
+}
+
 func appendCompactLogicalLine(out []byte, line compactLogicalLine, flags uint64) []byte {
+	out = appendCompactLogicalLineHeader(out, line, flags)
+	return append(out, line.EncodedCells...)
+}
+
+func appendCompactLogicalLineHeader(out []byte, line compactLogicalLine, flags uint64) []byte {
 	// 中文说明：header 只写非默认元数据；ID 由 dense slot 持有，cells 仍是唯一历史 payload。
 	out = appendCompactUvarint(out, flags)
 	out = appendCompactUvarint(out, uint64(line.Generation))
@@ -429,7 +468,7 @@ func appendCompactLogicalLine(out []byte, line compactLogicalLine, flags uint64)
 	if flags&compactLineHeaderTailFill != 0 {
 		out = appendCompactCellStyle(out, line.TailFill.Style)
 	}
-	return append(out, line.EncodedCells...)
+	return out
 }
 
 func compactLogicalLineHeaderFlags(line compactLogicalLine) uint64 {
@@ -450,6 +489,12 @@ func compactLogicalLineHeaderFlags(line compactLogicalLine) uint64 {
 }
 
 func compactLogicalLineEncodedCapacity(line compactLogicalLine, flags uint64) int {
+	capacity := compactLogicalLineHeaderEncodedCapacity(line, flags)
+	capacity += len(line.EncodedCells)
+	return capacity
+}
+
+func compactLogicalLineHeaderEncodedCapacity(line compactLogicalLine, flags uint64) int {
 	capacity := compactUvarintSize(flags)
 	capacity += compactUvarintSize(uint64(line.Generation))
 	if flags&compactLineHeaderCreatedDifferent != 0 {
@@ -465,7 +510,6 @@ func compactLogicalLineEncodedCapacity(line compactLogicalLine, flags uint64) in
 		capacity += compactCellStyleEncodedSize(line.TailFill.Style)
 		capacity += len(line.TailFill.Style.FG) + len(line.TailFill.Style.BG)
 	}
-	capacity += len(line.EncodedCells)
 	return capacity
 }
 
@@ -489,30 +533,110 @@ func encodeCompactCells(cells []Cell) []byte {
 	return appendCompactCells(out, cells)
 }
 
+const (
+	compactCellsRunEncodingMarker uint64 = 0
+	compactCellsRunEncodingV1     uint64 = 1
+)
+
+const (
+	compactCellRunWidthsExplicit uint64 = 1 << iota
+	compactCellRunLinkURL
+	compactCellRunLinkParams
+)
+
 func appendCompactCells(out []byte, cells []Cell) []byte {
+	out = appendCompactUvarint(out, compactCellsRunEncodingMarker)
+	out = appendCompactUvarint(out, compactCellsRunEncodingV1)
 	out = appendCompactUvarint(out, uint64(len(cells)))
-	for _, cell := range cells {
-		out = appendCompactString(out, cell.Text)
-		out = appendCompactUvarint(out, uint64(cell.Width))
-		out = appendCompactCellStyle(out, cell.Style)
-		out = appendCompactString(out, cell.LinkURL)
-		out = appendCompactString(out, cell.LinkParams)
+	for start := 0; start < len(cells); {
+		end, flags := compactCellRunEnd(cells, start)
+		first := cells[start]
+		out = appendCompactUvarint(out, uint64(end-start))
+		out = appendCompactUvarint(out, flags)
+		out = appendCompactCellStyleV1(out, first.Style)
+		if flags&compactCellRunLinkURL != 0 {
+			out = appendCompactString(out, first.LinkURL)
+		}
+		if flags&compactCellRunLinkParams != 0 {
+			out = appendCompactString(out, first.LinkParams)
+		}
+		for i := start; i < end; i++ {
+			out = appendCompactString(out, cells[i].Text)
+			if flags&compactCellRunWidthsExplicit != 0 {
+				out = appendCompactUvarint(out, uint64(cells[i].Width))
+			}
+		}
+		start = end
 	}
 	return out
 }
 
 func compactCellsEncodedCapacity(cells []Cell) int {
-	capacity := compactUvarintSize(uint64(len(cells)))
-	for _, cell := range cells {
-		capacity += len(cell.Text) + len(cell.LinkURL) + len(cell.LinkParams)
-		capacity += len(cell.Style.FG) + len(cell.Style.BG)
-		capacity += compactUvarintSize(uint64(len(cell.Text)))
-		capacity += compactUvarintSize(uint64(cell.Width))
-		capacity += compactCellStyleEncodedSize(cell.Style)
-		capacity += compactUvarintSize(uint64(len(cell.LinkURL)))
-		capacity += compactUvarintSize(uint64(len(cell.LinkParams)))
+	capacity := compactUvarintSize(compactCellsRunEncodingMarker)
+	capacity += compactUvarintSize(compactCellsRunEncodingV1)
+	capacity += compactUvarintSize(uint64(len(cells)))
+	for start := 0; start < len(cells); {
+		end, flags := compactCellRunEnd(cells, start)
+		first := cells[start]
+		capacity += compactUvarintSize(uint64(end - start))
+		capacity += compactUvarintSize(flags)
+		capacity += compactCellStyleV1EncodedSize(first.Style)
+		if flags&compactCellRunLinkURL != 0 {
+			capacity += compactStringEncodedSize(first.LinkURL)
+		}
+		if flags&compactCellRunLinkParams != 0 {
+			capacity += compactStringEncodedSize(first.LinkParams)
+		}
+		for i := start; i < end; i++ {
+			capacity += compactStringEncodedSize(cells[i].Text)
+			if flags&compactCellRunWidthsExplicit != 0 {
+				capacity += compactUvarintSize(uint64(cells[i].Width))
+			}
+		}
+		start = end
 	}
 	return capacity
+}
+
+func compactCellRunEnd(cells []Cell, start int) (int, uint64) {
+	first := cells[start]
+	widthsExplicit := !compactCellWidthInferred(first)
+	end := start + 1
+	for end < len(cells) {
+		next := cells[end]
+		if next.Style != first.Style || next.LinkURL != first.LinkURL || next.LinkParams != first.LinkParams {
+			break
+		}
+		if !compactCellWidthInferred(next) != widthsExplicit {
+			break
+		}
+		end++
+	}
+	var flags uint64
+	if widthsExplicit {
+		flags |= compactCellRunWidthsExplicit
+	}
+	if first.LinkURL != "" {
+		flags |= compactCellRunLinkURL
+	}
+	if first.LinkParams != "" {
+		flags |= compactCellRunLinkParams
+	}
+	return end, flags
+}
+
+func compactCellWidthInferred(cell Cell) bool {
+	width, ok := compactASCIITextWidth(cell.Text)
+	return ok && cell.Width == width
+}
+
+func compactASCIITextWidth(text string) (int, bool) {
+	for i := 0; i < len(text); i++ {
+		if text[i] < 0x20 || text[i] >= 0x7f {
+			return 0, false
+		}
+	}
+	return len(text), true
 }
 
 func compactCellStyleEncodedSize(style CellStyle) int {
@@ -541,6 +665,13 @@ func compactCellStyleEncodedSize(style CellStyle) int {
 }
 
 func appendCompactCellStyle(out []byte, style CellStyle) []byte {
+	out = appendCompactUvarint(out, compactCellStyleAttrFlags(style))
+	out = appendCompactString(out, style.FG)
+	out = appendCompactString(out, style.BG)
+	return out
+}
+
+func compactCellStyleAttrFlags(style CellStyle) uint64 {
 	var flags uint64
 	if style.Bold {
 		flags |= 1 << 0
@@ -560,47 +691,92 @@ func appendCompactCellStyle(out []byte, style CellStyle) []byte {
 	if style.Strikethrough {
 		flags |= 1 << 5
 	}
-	out = appendCompactUvarint(out, flags)
-	out = appendCompactString(out, style.FG)
-	out = appendCompactString(out, style.BG)
+	return flags
+}
+
+func appendCompactCellStyleV1(out []byte, style CellStyle) []byte {
+	out = appendCompactUvarint(out, compactCellStyleAttrFlags(style))
+	out = appendCompactColor(out, style.FG)
+	out = appendCompactColor(out, style.BG)
 	return out
+}
+
+func compactCellStyleV1EncodedSize(style CellStyle) int {
+	return compactUvarintSize(compactCellStyleAttrFlags(style)) +
+		compactColorEncodedSize(style.FG) +
+		compactColorEncodedSize(style.BG)
 }
 
 func decodeCompactCells(data []byte) []Cell {
 	offset := 0
-	count, ok := readCompactUvarint(data, &offset)
-	if !ok || count == 0 {
+	marker, ok := readCompactUvarint(data, &offset)
+	if !ok || marker != compactCellsRunEncodingMarker {
 		return nil
 	}
+	return decodeCompactCellsV1(data, &offset)
+}
+
+func decodeCompactCellsV1(data []byte, offset *int) []Cell {
+	version, ok := readCompactUvarint(data, offset)
+	if !ok || version != compactCellsRunEncodingV1 {
+		return nil
+	}
+	count, ok := readCompactUvarint(data, offset)
+	if !ok || count > uint64(maxInt()) {
+		return nil
+	}
+	if count == 0 {
+		return []Cell{}
+	}
 	cells := make([]Cell, 0, int(count))
-	for i := uint64(0); i < count; i++ {
-		text, ok := readCompactString(data, &offset)
+	for uint64(len(cells)) < count {
+		runLen, ok := readCompactUvarint(data, offset)
+		if !ok || runLen == 0 || runLen > count-uint64(len(cells)) {
+			return cells
+		}
+		flags, ok := readCompactUvarint(data, offset)
 		if !ok {
 			return cells
 		}
-		width, ok := readCompactUvarint(data, &offset)
+		style, ok := readCompactCellStyleV1(data, offset)
 		if !ok {
 			return cells
 		}
-		style, ok := readCompactCellStyle(data, &offset)
-		if !ok {
-			return cells
+		linkURL := ""
+		if flags&compactCellRunLinkURL != 0 {
+			linkURL, ok = readCompactString(data, offset)
+			if !ok {
+				return cells
+			}
 		}
-		linkURL, ok := readCompactString(data, &offset)
-		if !ok {
-			return cells
+		linkParams := ""
+		if flags&compactCellRunLinkParams != 0 {
+			linkParams, ok = readCompactString(data, offset)
+			if !ok {
+				return cells
+			}
 		}
-		linkParams, ok := readCompactString(data, &offset)
-		if !ok {
-			return cells
+		for i := uint64(0); i < runLen; i++ {
+			text, ok := readCompactString(data, offset)
+			if !ok {
+				return cells
+			}
+			width := len(text)
+			if flags&compactCellRunWidthsExplicit != 0 {
+				rawWidth, ok := readCompactUvarint(data, offset)
+				if !ok {
+					return cells
+				}
+				width = int(rawWidth)
+			}
+			cells = append(cells, Cell{
+				Text:       text,
+				Width:      width,
+				Style:      style,
+				LinkURL:    linkURL,
+				LinkParams: linkParams,
+			})
 		}
-		cells = append(cells, Cell{
-			Text:       text,
-			Width:      int(width),
-			Style:      style,
-			LinkURL:    linkURL,
-			LinkParams: linkParams,
-		})
 	}
 	return cells
 }
@@ -630,9 +806,189 @@ func readCompactCellStyle(data []byte, offset *int) (CellStyle, bool) {
 	}, true
 }
 
+func readCompactCellStyleV1(data []byte, offset *int) (CellStyle, bool) {
+	flags, ok := readCompactUvarint(data, offset)
+	if !ok {
+		return CellStyle{}, false
+	}
+	fg, ok := readCompactColor(data, offset)
+	if !ok {
+		return CellStyle{}, false
+	}
+	bg, ok := readCompactColor(data, offset)
+	if !ok {
+		return CellStyle{}, false
+	}
+	return CellStyle{
+		FG:            fg,
+		BG:            bg,
+		Bold:          flags&(1<<0) != 0,
+		Italic:        flags&(1<<1) != 0,
+		Underline:     flags&(1<<2) != 0,
+		Blink:         flags&(1<<3) != 0,
+		Reverse:       flags&(1<<4) != 0,
+		Strikethrough: flags&(1<<5) != 0,
+	}, true
+}
+
+type compactColorKind uint64
+
+const (
+	compactColorNone compactColorKind = iota
+	compactColorANSI
+	compactColorIndex
+	compactColorRGB
+	compactColorLiteral
+)
+
+type compactColorEncoding struct {
+	kind    compactColorKind
+	number  uint64
+	rgb     [3]byte
+	literal string
+}
+
+func compactColorEncodingFor(value string) compactColorEncoding {
+	if value == "" {
+		return compactColorEncoding{kind: compactColorNone}
+	}
+	if number, ok := compactCanonicalDecimalSuffix(value, "ansi:"); ok {
+		return compactColorEncoding{kind: compactColorANSI, number: number}
+	}
+	if number, ok := compactCanonicalDecimalSuffix(value, "idx:"); ok {
+		return compactColorEncoding{kind: compactColorIndex, number: number}
+	}
+	if rgb, ok := compactCanonicalRGB(value); ok {
+		return compactColorEncoding{kind: compactColorRGB, rgb: rgb}
+	}
+	return compactColorEncoding{kind: compactColorLiteral, literal: value}
+}
+
+func appendCompactColor(out []byte, value string) []byte {
+	encoded := compactColorEncodingFor(value)
+	out = appendCompactUvarint(out, uint64(encoded.kind))
+	switch encoded.kind {
+	case compactColorANSI, compactColorIndex:
+		out = appendCompactUvarint(out, encoded.number)
+	case compactColorRGB:
+		out = append(out, encoded.rgb[:]...)
+	case compactColorLiteral:
+		out = appendCompactString(out, encoded.literal)
+	}
+	return out
+}
+
+func compactColorEncodedSize(value string) int {
+	encoded := compactColorEncodingFor(value)
+	size := compactUvarintSize(uint64(encoded.kind))
+	switch encoded.kind {
+	case compactColorANSI, compactColorIndex:
+		size += compactUvarintSize(encoded.number)
+	case compactColorRGB:
+		size += len(encoded.rgb)
+	case compactColorLiteral:
+		size += compactStringEncodedSize(encoded.literal)
+	}
+	return size
+}
+
+func readCompactColor(data []byte, offset *int) (string, bool) {
+	rawKind, ok := readCompactUvarint(data, offset)
+	if !ok {
+		return "", false
+	}
+	switch compactColorKind(rawKind) {
+	case compactColorNone:
+		return "", true
+	case compactColorANSI:
+		number, ok := readCompactUvarint(data, offset)
+		if !ok {
+			return "", false
+		}
+		return "ansi:" + strconv.FormatUint(number, 10), true
+	case compactColorIndex:
+		number, ok := readCompactUvarint(data, offset)
+		if !ok {
+			return "", false
+		}
+		return "idx:" + strconv.FormatUint(number, 10), true
+	case compactColorRGB:
+		if *offset+3 > len(data) {
+			return "", false
+		}
+		rgb := data[*offset : *offset+3]
+		*offset += 3
+		return "#" + compactHexByte(rgb[0]) + compactHexByte(rgb[1]) + compactHexByte(rgb[2]), true
+	case compactColorLiteral:
+		return readCompactString(data, offset)
+	default:
+		return "", false
+	}
+}
+
+func compactCanonicalDecimalSuffix(value string, prefix string) (uint64, bool) {
+	if !strings.HasPrefix(value, prefix) {
+		return 0, false
+	}
+	digits := value[len(prefix):]
+	if digits == "" || (len(digits) > 1 && digits[0] == '0') {
+		return 0, false
+	}
+	number, err := strconv.ParseUint(digits, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	if strconv.FormatUint(number, 10) != digits {
+		return 0, false
+	}
+	return number, true
+}
+
+func compactCanonicalRGB(value string) ([3]byte, bool) {
+	var rgb [3]byte
+	if len(value) != 7 || value[0] != '#' {
+		return rgb, false
+	}
+	for i := 0; i < 3; i++ {
+		high, ok := compactHexNibble(value[1+i*2])
+		if !ok {
+			return rgb, false
+		}
+		low, ok := compactHexNibble(value[2+i*2])
+		if !ok {
+			return rgb, false
+		}
+		rgb[i] = high<<4 | low
+	}
+	if "#"+compactHexByte(rgb[0])+compactHexByte(rgb[1])+compactHexByte(rgb[2]) != value {
+		return rgb, false
+	}
+	return rgb, true
+}
+
+func compactHexNibble(value byte) (byte, bool) {
+	switch {
+	case value >= '0' && value <= '9':
+		return value - '0', true
+	case value >= 'a' && value <= 'f':
+		return value - 'a' + 10, true
+	default:
+		return 0, false
+	}
+}
+
+func compactHexByte(value byte) string {
+	const digits = "0123456789abcdef"
+	return string([]byte{digits[value>>4], digits[value&0x0f]})
+}
+
 func appendCompactString(out []byte, value string) []byte {
 	out = appendCompactUvarint(out, uint64(len(value)))
 	return append(out, value...)
+}
+
+func compactStringEncodedSize(value string) int {
+	return compactUvarintSize(uint64(len(value))) + len(value)
 }
 
 func readCompactString(data []byte, offset *int) (string, bool) {
@@ -680,4 +1036,8 @@ func sortLogicalLineIDs(ids []LogicalLineID) {
 	sort.Slice(ids, func(i, j int) bool {
 		return ids[i] < ids[j]
 	})
+}
+
+func maxInt() int {
+	return int(^uint(0) >> 1)
 }

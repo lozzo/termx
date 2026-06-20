@@ -278,6 +278,64 @@ func TestCompactCellsEncodedCapacityMatchesEncodedLength(t *testing.T) {
 	}
 }
 
+func TestCompactCellsRunEncodingPreservesStylesLinksAndWidths(t *testing.T) {
+	cells := []Cell{
+		{Text: "alpha ", Width: 6, Style: CellStyle{FG: "idx:42", BG: "ansi:4", Bold: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+		{Text: "beta", Width: 4, Style: CellStyle{FG: "idx:42", BG: "ansi:4", Bold: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+		{Text: "好", Width: 2, Style: CellStyle{FG: "#ffcc00", Underline: true}},
+		{Text: "literal", Width: 7, Style: CellStyle{FG: "theme:accent", Reverse: true}},
+	}
+
+	encoded := encodeCompactCells(cells)
+	if got, want := cap(encoded), len(encoded); got != want {
+		t.Fatalf("compact cells should allocate exact backing capacity, cap=%d len=%d", got, want)
+	}
+	if got, want := compactCellsEncodedCapacity(cells), len(encoded); got != want {
+		t.Fatalf("compact capacity estimate mismatch, got=%d want=%d", got, want)
+	}
+	if len(encoded) < 2 || encoded[0] != byte(compactCellsRunEncodingMarker) || encoded[1] != byte(compactCellsRunEncodingV1) {
+		t.Fatalf("expected v1 run encoded cells, got %#v", encoded[:minInt(len(encoded), 2)])
+	}
+	if decoded := decodeCompactCells(encoded); !reflect.DeepEqual(decoded, cells) {
+		t.Fatalf("run compact round trip changed cells:\nwant %#v\ngot  %#v", cells, decoded)
+	}
+}
+
+func TestCompactCellsRunEncodingPreservesEmptySlice(t *testing.T) {
+	decoded := decodeCompactCells(encodeCompactCells([]Cell{}))
+	if decoded == nil || len(decoded) != 0 {
+		t.Fatalf("empty compact cells should round-trip as empty slice, got %#v", decoded)
+	}
+}
+
+func TestCompactLogicalLineDirectDenseEncodingMatchesCompactLineEncoding(t *testing.T) {
+	line := LogicalLine{
+		ID:                21,
+		Generation:        5,
+		CreatedGeneration: 5,
+		ContentGeneration: 5,
+		Seal:              SealStateSealed,
+		Cells: []Cell{
+			{Text: "plain", Width: 5},
+			{Text: "styled", Width: 6, Style: CellStyle{FG: "idx:24", Bold: true}},
+		},
+		Residency: ResidencyMemory,
+	}
+
+	direct := encodeCompactLogicalLineFromLine(line)
+	viaCompact := encodeCompactLogicalLine(compactLogicalLineFromLine(line))
+	if !reflect.DeepEqual(direct, viaCompact) {
+		t.Fatalf("direct dense compact encoding diverged from compact line encoding:\ndirect=%#v\nvia=%#v", direct, viaCompact)
+	}
+	loaded, ok := decodeCompactLine(line.ID, direct)
+	if !ok {
+		t.Fatal("expected direct encoded compact line to decode")
+	}
+	if !reflect.DeepEqual(loaded, line) {
+		t.Fatalf("direct encoded line changed payload:\nwant %#v\ngot  %#v", line, loaded)
+	}
+}
+
 func TestCompactLogicalLineHeaderOmitsDefaultMetadata(t *testing.T) {
 	line := compactLogicalLine{
 		ID:                11,

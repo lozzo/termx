@@ -1,6 +1,7 @@
 package termxcorev2
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -29,10 +30,9 @@ func newTerminalHistoryPipeline(cols int, rows int) *terminalHistoryPipeline {
 	track := history.NewHistoryTrack()
 	track.SetPrimaryScreenRows(rows)
 	pipeline := &terminalHistoryPipeline{
-		track:  track,
-		altCap: live.NewSurfaceTrack(live.SurfaceSize{Cols: cols, Rows: rows}),
-		cols:   cols,
-		rows:   rows,
+		track: track,
+		cols:  cols,
+		rows:  rows,
 	}
 	pipeline.publishGenerationLocked()
 	return pipeline
@@ -45,23 +45,30 @@ func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
 	pipeline.ingest.SetScreenSize(pipeline.cols, pipeline.rows)
-	result := pipeline.altCap.WriteWithResult(output)
+	if !pipeline.needsAltCaptureLocked(output) {
+		if err := pipeline.ingestPrimaryOutputLocked(output); err != nil {
+			return err
+		}
+		pipeline.publishGenerationLocked()
+		return nil
+	}
+	result := pipeline.writeAltCapturedOutputLocked(output)
 	for _, writeSegment := range result.Segments {
 		if writeSegment.Raw != "" {
-			segments := pipeline.ingest.Parse(writeSegment.Raw)
-			for _, segment := range segments {
-				if err := pipeline.applySegment(segment); err != nil {
-					pipeline.ingest.clearSegments()
-					return err
-				}
+			if err := pipeline.ingestPrimaryOutputLocked(writeSegment.Raw); err != nil {
+				return err
 			}
-			pipeline.ingest.clearSegments()
 		}
 		if len(writeSegment.AltScreenExitFrame) > 0 {
 			if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventAppendAltScreenFrame, Rows: historyRowsFromVTermRows(writeSegment.AltScreenExitFrame)}); err != nil {
 				return err
 			}
 		}
+	}
+	if !pipeline.track.InAltScreen() {
+		// 中文说明：altCap 只服务 alt-screen final-frame 捕获；退出后立即释放，
+		// 避免普通 primary 压力日志长期维护第二套 live/vterm 状态。
+		pipeline.altCap = nil
 	}
 	pipeline.publishGenerationLocked()
 	return nil
@@ -73,7 +80,9 @@ func (pipeline *terminalHistoryPipeline) Resize(cols int, rows int, event histor
 	pipeline.cols = cols
 	pipeline.rows = rows
 	pipeline.ingest.SetScreenSize(cols, rows)
-	pipeline.altCap.Resize(live.SurfaceSize{Cols: cols, Rows: rows})
+	if pipeline.altCap != nil {
+		pipeline.altCap.Resize(live.SurfaceSize{Cols: cols, Rows: rows})
+	}
 	pipeline.track.SetPrimaryScreenRows(rows)
 	if err := pipeline.track.Apply(event); err != nil {
 		return err
@@ -103,9 +112,81 @@ func (pipeline *terminalHistoryPipeline) ResetForRestart() error {
 	}
 	pipeline.ingest = historyANSIParser{}
 	pipeline.ingest.SetScreenSize(pipeline.cols, pipeline.rows)
-	pipeline.altCap = live.NewSurfaceTrack(live.SurfaceSize{Cols: pipeline.cols, Rows: pipeline.rows})
+	pipeline.altCap = nil
 	pipeline.publishGenerationLocked()
 	return nil
+}
+
+func (pipeline *terminalHistoryPipeline) ingestPrimaryOutputLocked(output string) error {
+	segments := pipeline.ingest.Parse(output)
+	for _, segment := range segments {
+		if err := pipeline.applySegment(segment); err != nil {
+			pipeline.ingest.clearSegments()
+			return err
+		}
+	}
+	pipeline.ingest.clearSegments()
+	return nil
+}
+
+func (pipeline *terminalHistoryPipeline) needsAltCaptureLocked(output string) bool {
+	if pipeline.track.InAltScreen() {
+		return true
+	}
+	if containsAltScreenModeCSI(output) {
+		return true
+	}
+	if pipeline.ingest.pending == "" {
+		return false
+	}
+	return containsAltScreenModeCSI(pipeline.ingest.pending + output)
+}
+
+func (pipeline *terminalHistoryPipeline) writeAltCapturedOutputLocked(output string) live.SurfaceWriteResult {
+	input := output
+	if pipeline.ingest.pending != "" {
+		// 中文说明：alt-screen CSI 可能跨 PTY chunk。进入 alt capture 时把 parser
+		// 的 pending 前缀交给同一份 altCap，同时清掉 pending，避免后续解析重复拼接。
+		input = pipeline.ingest.pending + output
+		pipeline.ingest.pending = ""
+	}
+	pipeline.ensureAltCaptureLocked()
+	return pipeline.altCap.WriteWithResult(input)
+}
+
+func (pipeline *terminalHistoryPipeline) ensureAltCaptureLocked() {
+	if pipeline.altCap != nil {
+		return
+	}
+	pipeline.altCap = live.NewSurfaceTrack(live.SurfaceSize{Cols: pipeline.cols, Rows: pipeline.rows})
+}
+
+func containsAltScreenModeCSI(input string) bool {
+	for {
+		index := strings.Index(input, "\x1b[?")
+		if index < 0 {
+			return false
+		}
+		input = input[index:]
+		end := -1
+		for i := 2; i < len(input); i++ {
+			b := input[i]
+			if b >= 0x40 && b <= 0x7e {
+				end = i
+				break
+			}
+		}
+		if end < 0 {
+			return false
+		}
+		final := input[end]
+		if (final == 'h' || final == 'l') && strings.HasPrefix(input[2:end], "?") {
+			if _, ok := parseAltScreenMode(input[2:end], final); ok {
+				return true
+			}
+		}
+		input = input[end+1:]
+	}
 }
 
 func (pipeline *terminalHistoryPipeline) ForceCommitFrontier() error {

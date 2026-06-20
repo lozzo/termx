@@ -74,7 +74,8 @@
 ## 实现纪律
 
 - 先写 domain model 和小 harness，再接真实 protocol、terminal 或 CLI 入口。
-- 不为兼容旧内部实现保留双路径、适配层或桥接代码，除非 `workflow.md` 明确要求。
+- 当前处于开发周期，不做旧内部实现、旧 storage/协议格式、旧 snapshot/workbench schema 或旧运行时行为的兼容；需要破坏性调整时直接按新模型改，删除旧路径。
+- 不为兼容旧内部实现保留双路径、适配层、桥接代码、旧格式读取分支或迁移兜底，除非 `workflow.md` 明确要求。
 - 从旧实现迁移代码时，迁入新目录后必须按新边界重命名、裁剪依赖并补 v2/v3 harness。
 - service 不得直接修改 reducer-owned state；必须通过 message/effect 回到主循环。
 - renderer 只消费 view-model，不读 core client、history source、runtime service 或 protocol client。
