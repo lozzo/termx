@@ -30,6 +30,7 @@ func canvasRowANSIString(row []canvasCell, theme Theme) string {
 		return ""
 	}
 	var out strings.Builder
+	out.Grow(canvasRowANSICapacity(row))
 	modelCol := 1
 	previous := Cell{}
 	hasPrevious := false
@@ -48,6 +49,30 @@ func canvasRowANSIString(row []canvasCell, theme Theme) string {
 		hasPrevious = true
 	}
 	return out.String()
+}
+
+func canvasRowANSICapacity(row []canvasCell) int {
+	capacity := len(ANSIReset)
+	modelCol := 1
+	previous := Cell{}
+	hasPrevious := false
+	for _, cell := range row {
+		if cell.continuation {
+			continue
+		}
+		next := canvasOutputCellFromMatrix(cell)
+		if hasPrevious && !canMergeCanvasOutputCell(previous, next) {
+			capacity += ansiColumnCapacity(modelCol)
+		}
+		capacity += ansiStyledCellCapacity(next)
+		modelCol += maxInt(0, next.Width)
+		previous = next
+		hasPrevious = true
+	}
+	if capacity < len(row)+len(ANSIReset) {
+		capacity = len(row) + len(ANSIReset)
+	}
+	return capacity
 }
 
 func canvasOutputCellCapacity(row []canvasCell) int {

@@ -835,7 +835,7 @@ func TestFrameworkPreservesStyledContentThroughMatrixAndANSIFrame(t *testing.T) 
 			Content: ContentVM{Kind: ContentTerminalLive, Lines: []Line{{Cells: []Cell{
 				{Text: "accent", Width: 6, Style: StyleAccent, Safe: true},
 				{Text: " plain", Width: 6, Safe: true},
-				{Text: " dir", Width: 4, ANSIStyle: ANSICellStyle{FG: "ansi:4", Bold: true}, Safe: true},
+				{Text: " dir", Width: 4, ANSIStyle: ANSICellStyle{FG: "ansi:4", Bold: true}, TerminalContent: true, Safe: true},
 			}}}},
 		}}},
 	}})
@@ -847,16 +847,35 @@ func TestFrameworkPreservesStyledContentThroughMatrixAndANSIFrame(t *testing.T) 
 	if !linesContain(frame.ANSILines, "\x1b[1;38;2;169;112;255m") || !linesContain(frame.ANSILines, ANSIReset) {
 		t.Fatalf("ANSI frame should retain styled matrix cells and reset, got %#v", frame.ANSILines)
 	}
-	if !linesContain(frame.ANSILines, "\x1b[1;34md") || !linesContain(frame.ANSILines, "\x1b[1;34mr") || linesContain(frame.ANSILines, "38;2;122;184;255m") {
+	if !linesContain(frame.ANSILines, "\x1b[1;34m dir") || linesContain(frame.ANSILines, "38;2;122;184;255m") {
 		t.Fatalf("terminal ANSI cell style should survive compositor as host palette code, got %#v", frame.ANSILines)
 	}
 	if !styledLinesContain(frame.StyledLines, "a", StyleAccent) {
 		t.Fatalf("styled frame should retain StyleAccent cells, got %#v", frame.StyledLines)
 	}
-	if !styledLinesContainANSI(frame.StyledLines, " ", ANSICellStyle{FG: "ansi:4", Bold: true}) {
+	if !styledLinesContainANSI(frame.StyledLines, " dir", ANSICellStyle{FG: "ansi:4", Bold: true}) {
 		t.Fatalf("styled frame should retain terminal ANSI cell style, got %#v", frame.StyledLines)
 	}
 	assertAllRowsWidth(t, frame.Lines, 36)
+}
+
+func TestCanvasMatrixKeepsSafeASCIIRunAsSingleSegment(t *testing.T) {
+	c := newCanvas(12, 1)
+	c.writeLine(0, 0, 12, Line{Cells: []Cell{
+		{Text: "abcdef", Width: 6, TerminalContent: true, Safe: true},
+		{Text: "ok", Width: 2, ANSIStyle: ANSICellStyle{FG: "ansi:2"}, TerminalContent: true, Safe: true},
+	}}, "pane-1", LayerPanel)
+
+	if got := c.rows[0][0]; got.text != "abcdef" || got.width != 6 || got.continuation {
+		t.Fatalf("safe ASCII terminal run should stay as one canvas segment, got %#v", got)
+	}
+	if got := c.rows[0][1]; !got.continuation || got.owner != "pane-1" || got.layer != LayerPanel {
+		t.Fatalf("ASCII run continuation should keep footprint metadata, got %#v", got)
+	}
+	ansi := c.ansiLines(DefaultTheme())[0]
+	if strings.Contains(ansi, "a\x1b[2G") || !strings.Contains(ansi, "abcdef") || !strings.Contains(ansi, "\x1b[32mok") {
+		t.Fatalf("safe ASCII terminal run should not re-anchor every column, got %q", ansi)
+	}
 }
 
 func TestCanvasMatrixTracksOwnerLayerContinuationAndSafeFlag(t *testing.T) {

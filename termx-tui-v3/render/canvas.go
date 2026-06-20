@@ -138,6 +138,28 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 			remaining -= cellWidth
 			continue
 		}
+		if canWriteCanvasCellAsSingleSegment(text, cell, cellWidth) {
+			if cellWidth > remaining {
+				break
+			}
+			// 中文说明：live surface 已经把相同样式 ASCII run 合并；这里保留整段，
+			// 避免再拆成逐列 terminal cell 后在 ANSI 输出里反复写模型列锚点。
+			c.writeSegmentNoClear(cursor, y, canvasSegment{
+				text:       text,
+				width:      cellWidth,
+				style:      cell.Style,
+				ansiStyle:  cell.ANSIStyle,
+				linkURL:    cell.LinkURL,
+				linkParams: cell.LinkParams,
+				owner:      owner,
+				layer:      layer,
+				terminal:   cell.TerminalContent,
+				safe:       cell.Safe,
+			})
+			cursor += cellWidth
+			remaining -= cellWidth
+			continue
+		}
 		for len(text) > 0 && remaining > 0 {
 			cluster, clusterWidth := xansi.FirstGraphemeCluster(text, xansi.GraphemeWidth)
 			if cluster == "" {
@@ -178,6 +200,18 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 		cursor++
 		remaining--
 	}
+}
+
+func canWriteCanvasCellAsSingleSegment(text string, cell Cell, cellWidth int) bool {
+	if text == "" || cellWidth <= 1 || cellWidth != len(text) {
+		return false
+	}
+	for i := 0; i < len(text); i++ {
+		if text[i] < 0x20 || text[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *canvas) writeBoxCell(x int, y int, glyph string) {

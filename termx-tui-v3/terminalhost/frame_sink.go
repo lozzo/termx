@@ -73,6 +73,7 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	}
 
 	var builder strings.Builder
+	builder.Grow(sink.frameWriteCapacity(lines, width, fullRepaint, cursorSequence))
 	builder.WriteString(synchronizedOutputBegin)
 	builder.WriteString(hideCursor)
 	if !fullRepaint && sink.writeScrollShift(&builder, lines) {
@@ -143,17 +144,47 @@ func (sink *FrameSink) writePresentedRows(builder *strings.Builder, lines []stri
 		builder.WriteString(cursorPosition(row+1, 1))
 		// 中文说明：同尺寸帧不清整行，直接覆盖变化行；新内容变短时补空格盖掉旧尾巴，
 		// 避免 clear-line 造成整行闪烁。
-		builder.WriteString(presentedRowLine(lines[row], rowWidth(width, lines[row], sink.lastLines[row])))
+		writePresentedRowLine(builder, lines[row], rowWidth(width, lines[row], sink.lastLines[row]))
 		builder.WriteString(render.ANSIReset)
 	}
 }
 
-func presentedRowLine(line string, width int) string {
+func (sink *FrameSink) frameWriteCapacity(lines []string, width int, fullRepaint bool, cursorSequence string) int {
+	capacity := len(synchronizedOutputBegin) + len(hideCursor) + len(render.ANSIReset) + len(cursorSequence) + len(synchronizedOutputEnd)
+	if fullRepaint {
+		capacity += len(cursorHome) + len(clearScreen)
+		for row, line := range lines {
+			capacity += cursorPositionCapacity(row+1, 1) + len(clearLine) + len(line) + len(render.ANSIReset)
+		}
+		return capacity
+	}
+	for row, line := range lines {
+		if row < len(sink.lastLines) && sink.lastLines[row] == line {
+			continue
+		}
+		previous := ""
+		if row < len(sink.lastLines) {
+			previous = sink.lastLines[row]
+		}
+		targetWidth := rowWidth(width, line, previous)
+		padding := targetWidth - frameSinkLineWidth(line)
+		if padding < 0 {
+			padding = 0
+		}
+		capacity += cursorPositionCapacity(row+1, 1) + len(line) + len(render.ANSIReset) + padding + len(render.ANSIReset)
+	}
+	return capacity
+}
+
+func writePresentedRowLine(builder *strings.Builder, line string, width int) {
 	displayWidth := frameSinkLineWidth(line)
 	if width <= displayWidth {
-		return line
+		builder.WriteString(line)
+		return
 	}
-	return line + render.ANSIReset + strings.Repeat(" ", width-displayWidth)
+	builder.WriteString(line)
+	builder.WriteString(render.ANSIReset)
+	builder.WriteString(strings.Repeat(" ", width-displayWidth))
 }
 
 func rowWidth(frameWidth int, next string, previous string) int {
@@ -364,6 +395,16 @@ func cursorPosition(row int, col int) string {
 	return fmt.Sprintf("\x1b[%d;%dH", row, col)
 }
 
+func cursorPositionCapacity(row int, col int) int {
+	if row < 1 {
+		row = 1
+	}
+	if col < 1 {
+		col = 1
+	}
+	return 4 + decimalDigits(row) + decimalDigits(col)
+}
+
 func scrollRegion(top int, bottom int) string {
 	if top < 1 {
 		top = 1
@@ -379,4 +420,16 @@ func eraseChars(count int) string {
 		return ""
 	}
 	return fmt.Sprintf("\x1b[%dX", count)
+}
+
+func decimalDigits(value int) int {
+	if value < 0 {
+		value = -value
+	}
+	digits := 1
+	for value >= 10 {
+		value /= 10
+		digits++
+	}
+	return digits
 }

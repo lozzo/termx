@@ -606,8 +606,11 @@ func TestRenderContentWritesRequestedOwnerLayer(t *testing.T) {
 		t.Fatalf("expected content viewport output, got %q", got)
 	}
 	cell := c.rows[1][1]
-	if cell.text != "f" || cell.owner != "floating:float-1:content" || cell.layer != LayerFloating {
+	if cell.text != "float" || cell.width != 5 || cell.owner != "floating:float-1:content" || cell.layer != LayerFloating {
 		t.Fatalf("content writer must preserve requested owner/layer, got %#v", cell)
+	}
+	if continuation := c.rows[1][2]; !continuation.continuation || continuation.owner != "floating:float-1:content" || continuation.layer != LayerFloating {
+		t.Fatalf("content continuation must preserve requested owner/layer, got %#v", continuation)
 	}
 }
 

@@ -159,6 +159,7 @@ func (line Line) ansiString(theme Theme, baseColumn int) string {
 	if baseColumn < 1 {
 		baseColumn = 1
 	}
+	out.Grow(lineANSICapacity(line, baseColumn))
 	modelCol := baseColumn
 	for index, cell := range line.Cells {
 		writeANSIStyledCell(&out, cell, theme, modelCol)
@@ -169,6 +170,19 @@ func (line Line) ansiString(theme Theme, baseColumn int) string {
 		}
 	}
 	return out.String()
+}
+
+func lineANSICapacity(line Line, baseColumn int) int {
+	capacity := len(ANSIReset)
+	modelCol := baseColumn
+	for index, cell := range line.Cells {
+		capacity += ansiStyledCellCapacity(cell)
+		modelCol += maxInt(0, cell.Width)
+		if index < len(line.Cells)-1 {
+			capacity += ansiColumnCapacity(modelCol)
+		}
+	}
+	return capacity
 }
 
 func writeANSIStyledCell(out *strings.Builder, cell Cell, theme Theme, modelCol int) {
@@ -192,6 +206,34 @@ func writeANSIStyledCell(out *strings.Builder, cell Cell, theme Theme, modelCol 
 	if linkClose != "" {
 		out.WriteString(linkClose)
 	}
+}
+
+func ansiStyledCellCapacity(cell Cell) int {
+	capacity := ansiTextCapacity(cell)
+	if !cell.ANSIStyle.IsZero() {
+		capacity += 32 + len(cell.ANSIStyle.FG) + len(cell.ANSIStyle.BG)
+	} else if cell.Style != "" {
+		capacity += 40
+	}
+	if !cell.ANSIStyle.IsZero() || cell.Style != "" {
+		capacity += len(ANSIReset)
+	}
+	if cell.LinkURL != "" {
+		capacity += 24 + len(cell.LinkURL) + len(cell.LinkParams)
+	}
+	return capacity
+}
+
+func ansiTextCapacity(cell Cell) int {
+	textLen := len(cell.Text)
+	pad := maxInt(0, cell.Width) - textLen
+	if pad > 0 {
+		textLen += pad
+	}
+	if cell.TerminalContent && cell.Width > 1 && strings.Contains(cell.Text, "\ufe0f") {
+		textLen += cell.Width * 8
+	}
+	return textLen
 }
 
 func writeANSIText(out *strings.Builder, cell Cell, startModelCol int) {
@@ -260,6 +302,25 @@ func ansiColumn(col int) string {
 		col = 1
 	}
 	return "\x1b[" + strconv.Itoa(col) + "G"
+}
+
+func ansiColumnCapacity(col int) int {
+	if col < 1 {
+		col = 1
+	}
+	return 3 + decimalDigits(col)
+}
+
+func decimalDigits(value int) int {
+	if value < 0 {
+		value = -value
+	}
+	digits := 1
+	for value >= 10 {
+		value /= 10
+		digits++
+	}
+	return digits
 }
 
 func (line Line) Clone() Line {
