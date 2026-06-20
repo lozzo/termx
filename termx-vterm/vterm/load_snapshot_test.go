@@ -478,6 +478,35 @@ func TestLoadSnapshotDefaultBlankRowsDoNotBecomeUsedRows(t *testing.T) {
 	}
 }
 
+func TestTrimmedScreenContentDropsOnlyDefaultBlankTail(t *testing.T) {
+	vt := New(8, 3, 100, nil)
+	if _, err, _ := vt.WriteForLatestFrame([]byte("abc\r\n\x1b[44mxy  ")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	screen := vt.TrimmedScreenContent()
+	if len(screen.Cells) != 3 {
+		t.Fatalf("trimmed live snapshot must preserve screen row count, got %#v", screen.Cells)
+	}
+	if got := rowText(screen.Cells[0], 8); got != "abc" || len(screen.Cells[0]) != 3 {
+		t.Fatalf("plain row should drop only default blank suffix, got text=%q row=%#v", got, screen.Cells[0])
+	}
+	if got := len(screen.Cells[1]); got < 4 {
+		t.Fatalf("styled trailing blanks must survive trim, got %#v", screen.Cells[1])
+	}
+	for index, cell := range screen.Cells[1][:4] {
+		if cell.Style.BG != "ansi:4" {
+			t.Fatalf("styled blank %d should keep background, got %#v", index, screen.Cells[1])
+		}
+	}
+	if got := len(screen.Cells[2]); got != 0 {
+		t.Fatalf("pure default blank row should be represented without cloned cells, got %#v", screen.Cells[2])
+	}
+	if got := len(vt.ScreenRowView(2)); got != 8 {
+		t.Fatalf("full public screen row must remain indexable, got %d", got)
+	}
+}
+
 func TestLoadSnapshotWithExtendedMetadataRestoresWrappedRows(t *testing.T) {
 	vt := New(5, 3, 100, nil)
 	screen := ScreenData{Cells: [][]Cell{

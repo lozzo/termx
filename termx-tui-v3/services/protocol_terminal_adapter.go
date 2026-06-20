@@ -572,36 +572,54 @@ func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
 	if len(cells) == 0 {
 		return nil
 	}
-	out := make([]state.LiveCell, 0, len(cells))
-	for _, cell := range cells {
-		width := cell.Width
-		if width < 0 {
-			width = 0
-		}
-		if width == 0 && cell.Content == "" {
-			// 中文说明：protocol/vterm 会把 wide cell continuation 暴露成零宽空占位。
-			// live surface 只需要保留真实 terminal footprint 起点；continuation 交给渲染侧按前一格 width 物化。
-			// 否则会把同一个 FE0F footprint 额外展开成一格可见空白，导致 follower dots 被提前推左。
+	out := make([]state.LiveCell, 0, liveSurfaceRunCapacity(len(cells)))
+	for index := 0; index < len(cells); {
+		next, ok := liveSurfaceCellFromProtocol(cells[index])
+		if !ok {
+			index++
 			continue
 		}
-		if width == 0 {
-			width = 1
+		if !liveSurfaceCellIsSingleWidthASCII(next) {
+			out = append(out, next)
+			index++
+			continue
 		}
-		next := state.LiveCell{
-			Text:          cell.Content,
-			Width:         width,
-			FG:            cell.Style.FG,
-			BG:            cell.Style.BG,
-			Bold:          cell.Style.Bold,
-			Italic:        cell.Style.Italic,
-			Underline:     cell.Style.Underline,
-			Blink:         cell.Style.Blink,
-			Reverse:       cell.Style.Reverse,
-			Strikethrough: cell.Style.Strikethrough,
-			LinkURL:       cell.LinkURL,
-			LinkParams:    cell.LinkParams,
+		runEnd := index + 1
+		runWidth := next.Width
+		runBytes := len(next.Text)
+		runCells := 1
+		for runEnd < len(cells) {
+			runCell, ok := liveSurfaceCellFromProtocol(cells[runEnd])
+			if !ok {
+				runEnd++
+				continue
+			}
+			if !canMergeLiveSurfaceCellRun(next, runCell) {
+				break
+			}
+			runWidth += runCell.Width
+			runBytes += len(runCell.Text)
+			runCells++
+			runEnd++
 		}
-		out = appendLiveSurfaceCellRun(out, next)
+		if runCells == 1 {
+			out = append(out, next)
+			index = runEnd
+			continue
+		}
+		// 中文说明：高频 live 行合并时先算准 run 容量，再一次构造字符串，
+		// 避免逐 cell 拼接或小容量 builder 增长制造 alloc churn。
+		var builder strings.Builder
+		builder.Grow(runBytes)
+		for runIndex := index; runIndex < runEnd; runIndex++ {
+			if runCell, ok := liveSurfaceCellFromProtocol(cells[runIndex]); ok {
+				builder.WriteString(runCell.Text)
+			}
+		}
+		next.Text = builder.String()
+		next.Width = runWidth
+		out = append(out, next)
+		index = runEnd
 	}
 	if len(out) == 0 {
 		return nil
@@ -609,14 +627,44 @@ func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
 	return out
 }
 
-func appendLiveSurfaceCellRun(out []state.LiveCell, next state.LiveCell) []state.LiveCell {
-	if len(out) == 0 || !canMergeLiveSurfaceCellRun(out[len(out)-1], next) {
-		return append(out, next)
+func liveSurfaceRunCapacity(cellCount int) int {
+	if cellCount <= 0 {
+		return 0
 	}
-	last := &out[len(out)-1]
-	last.Text += next.Text
-	last.Width += next.Width
-	return out
+	if cellCount < 16 {
+		return cellCount
+	}
+	return 16
+}
+
+func liveSurfaceCellFromProtocol(cell protocol.Cell) (state.LiveCell, bool) {
+	width := cell.Width
+	if width < 0 {
+		width = 0
+	}
+	if width == 0 && cell.Content == "" {
+		// 中文说明：protocol/vterm 会把 wide cell continuation 暴露成零宽空占位。
+		// live surface 只需要保留真实 terminal footprint 起点；continuation 交给渲染侧按前一格 width 物化。
+		// 否则会把同一个 FE0F footprint 额外展开成一格可见空白，导致 follower dots 被提前推左。
+		return state.LiveCell{}, false
+	}
+	if width == 0 {
+		width = 1
+	}
+	return state.LiveCell{
+		Text:          cell.Content,
+		Width:         width,
+		FG:            cell.Style.FG,
+		BG:            cell.Style.BG,
+		Bold:          cell.Style.Bold,
+		Italic:        cell.Style.Italic,
+		Underline:     cell.Style.Underline,
+		Blink:         cell.Style.Blink,
+		Reverse:       cell.Style.Reverse,
+		Strikethrough: cell.Style.Strikethrough,
+		LinkURL:       cell.LinkURL,
+		LinkParams:    cell.LinkParams,
+	}, true
 }
 
 func canMergeLiveSurfaceCellRun(left state.LiveCell, right state.LiveCell) bool {

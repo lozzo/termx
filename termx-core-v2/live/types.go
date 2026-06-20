@@ -242,8 +242,10 @@ func (surface *SurfaceTrack) Rows() []string {
 func (surface *SurfaceTrack) Snapshot() SurfaceSnapshot {
 	surface.ensureVTerm()
 	return SurfaceSnapshot{
-		Size:   surface.size,
-		Screen: surface.vt.ScreenContent(),
+		Size: surface.size,
+		// 中文说明：live snapshot 是协议/渲染高频路径，保留行数和 styled footprint，
+		// 但不克隆每行尾部的纯默认空白，避免压力输出反复搬运整屏空白。
+		Screen: surface.vt.TrimmedScreenContent(),
 		Cursor: surface.vt.CursorState(),
 		Modes:  surface.vt.Modes(),
 	}

@@ -36,7 +36,7 @@ Options:
   -h, --help            show this help
 
 Artifacts:
-  memory.tsv            RSS, CPU%, and cumulative CPU samples
+  memory.tsv            RSS, CPU%, cumulative CPU, idle, and post-profile-GC diagnostic stages
   memory-samples.tsv    daemon/TUI RSS samples collected during stress
   memory-peaks.tsv      daemon/TUI peak RSS derived from stress samples
   baseline-time.txt     outside-termx baseline time(1) output when enabled
@@ -252,6 +252,7 @@ capture_heap_profile() {
   fi
   if kill -0 "$pid" 2>/dev/null; then
     log "capturing ${process} heap profile: $stage"
+    printf '%s\n' "$stage" >"$DIAG_STAGE_FILE"
     kill -USR1 "$pid" 2>/dev/null || true
     sleep 0.3
   fi
@@ -689,9 +690,15 @@ sleep 4
 capture_pane "$TARGET" "copy-oldest"
 record_stage "daemon_copy_oldest" "daemon" "$DAEMON_PID"
 record_stage "tui_copy_oldest" "tui" "$TUI_PID"
+sleep 2
+record_stage "daemon_copy_oldest_idle" "daemon" "$DAEMON_PID"
+record_stage "tui_copy_oldest_idle" "tui" "$TUI_PID"
 if [[ "$PROFILE_MODE" == "final" ]]; then
   capture_heap_profile "copy_oldest_final" "daemon" "$DAEMON_PID"
   capture_heap_profile "copy_oldest_final" "tui" "$TUI_PID"
+  sleep 1
+  record_stage "daemon_after_profile_gc" "daemon" "$DAEMON_PID"
+  record_stage "tui_after_profile_gc" "tui" "$TUI_PID"
 fi
 
 if ! LC_ALL=C grep -Fq "000000" "$ROOT/copy-oldest.txt"; then

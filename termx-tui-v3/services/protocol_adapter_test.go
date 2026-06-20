@@ -1031,6 +1031,23 @@ func TestProtocolTerminalServiceAdapterMergesPlainASCIILiveCellRuns(t *testing.T
 	}
 }
 
+func BenchmarkLiveSurfaceCellsFromProtocolASCIIStyledRuns(b *testing.B) {
+	cells := make([]protocol.Cell, 0, 120)
+	for i := 0; i < 120; i++ {
+		cell := protocol.Cell{Content: string(byte('a' + i%26)), Width: 1}
+		if i >= 60 {
+			cell.Style.FG = "ansi:2"
+		}
+		cells = append(cells, cell)
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if got := liveSurfaceCellsFromProtocol(cells); len(got) != 2 {
+			b.Fatalf("expected two style runs, got %#v", got)
+		}
+	}
+}
+
 func TestProtocolTerminalServiceAdapterMapsExitedLiveSurfaceLifecycle(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
 	exitCode := 23

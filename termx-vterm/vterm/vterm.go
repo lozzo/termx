@@ -1621,6 +1621,23 @@ func (v *VTerm) UsedScreenContent() ScreenData {
 	}
 }
 
+// TrimmedScreenContent preserves live row positions but drops pure default
+// blank suffixes. 这条路径只服务高频 live snapshot/protocol，不改变
+// ScreenContent/UsedScreenContent 这些需要完整索引语义的公开快照。
+func (v *VTerm) TrimmedScreenContent() ScreenData {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	height := v.emu.Height()
+	rows := make([][]Cell, height)
+	for y := 0; y < height; y++ {
+		rows[y] = v.trimmedScreenRowCellsLocked(y)
+	}
+	return ScreenData{
+		Cells:             rows,
+		IsAlternateScreen: v.emu.IsAltScreen(),
+	}
+}
+
 func (v *VTerm) ScreenRowCount() int {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -2094,6 +2111,14 @@ func uvLine(row []Cell) uv.Line {
 
 func cellIsBlank(cell Cell) bool {
 	return strings.TrimSpace(cell.Content) == "" &&
+		cell.Style == (CellStyle{}) &&
+		cell.LinkURL == "" &&
+		cell.LinkParams == "" &&
+		cell.Width <= 1
+}
+
+func cellIsDefaultBlank(cell Cell) bool {
+	return (cell.Content == "" || cell.Content == " ") &&
 		cell.Style == (CellStyle{}) &&
 		cell.LinkURL == "" &&
 		cell.LinkParams == "" &&
@@ -2643,6 +2668,28 @@ func (v *VTerm) screenRowUsedViewLocked(y int) []Cell {
 		used = len(row)
 	}
 	return row[:used]
+}
+
+func (v *VTerm) trimmedScreenRowCellsLocked(y int) []Cell {
+	if v.emu == nil || y < 0 || y >= v.emu.Height() {
+		return nil
+	}
+	width := v.emu.Width()
+	end := width
+	for end > 0 {
+		if !cellIsDefaultBlank(v.convertCell(v.emu.CellAt(end-1, y))) {
+			break
+		}
+		end--
+	}
+	if end <= 0 {
+		return nil
+	}
+	row := make([]Cell, end)
+	for x := 0; x < end; x++ {
+		row[x] = v.convertCell(v.emu.CellAt(x, y))
+	}
+	return row
 }
 
 func (v *VTerm) expandedScreenRowSpanLocked(y, start, end int) (int, []Cell) {
