@@ -92,7 +92,7 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 		if remaining <= 0 {
 			break
 		}
-		text := xansi.Strip(SafeLine(cell.Text))
+		text := safeCanvasCellText(cell)
 		cellWidth := maxInt(0, cell.Width)
 		if text == "" {
 			if cellWidth > 0 {
@@ -200,6 +200,23 @@ func (c *canvas) writeLine(x int, y int, width int, line Line, owner string, lay
 		cursor++
 		remaining--
 	}
+}
+
+func safeCanvasCellText(cell Cell) string {
+	if cell.Safe && !canvasCellTextNeedsSanitize(cell.Text) {
+		return cell.Text
+	}
+	return xansi.Strip(SafeLine(cell.Text))
+}
+
+func canvasCellTextNeedsSanitize(text string) bool {
+	for i := 0; i < len(text); i++ {
+		b := text[i]
+		if b < 0x20 || b == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func canWriteCanvasCellAsSingleSegment(text string, cell Cell, cellWidth int) bool {

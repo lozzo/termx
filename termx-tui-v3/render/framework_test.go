@@ -1295,6 +1295,32 @@ func assertAllRowsWidth(t *testing.T, lines []string, width int) {
 	}
 }
 
+func TestCanvasSafeCellSkipsStripForPlainText(t *testing.T) {
+	c := newCanvas(16, 1)
+	c.writeLine(0, 0, 16, Line{Cells: []Cell{
+		{Text: "\x1b[31mred\x1b[0m", Width: 3},
+		{Text: " ok", Width: 3, Safe: true},
+	}}, "pane-1", LayerPanel)
+
+	line := c.lines()[0].PlainString()
+	if strings.Contains(line, "\x1b[") || !strings.Contains(line, "red ok") {
+		t.Fatalf("unsafe cell should be stripped and safe text preserved, got %q", line)
+	}
+}
+
+func TestCanvasSafeCellStillStripsControlText(t *testing.T) {
+	c := newCanvas(16, 1)
+	c.writeLine(0, 0, 16, Line{Cells: []Cell{
+		{Text: "\x1b[31mraw\x1b[0m", Width: 3, Safe: true},
+		{Text: " a\nb", Width: 4, Safe: true},
+	}}, "pane-1", LayerPanel)
+
+	line := c.lines()[0].PlainString()
+	if strings.Contains(line, "\x1b[") || !strings.Contains(line, "raw a b") {
+		t.Fatalf("safe cell with control text should still be sanitized, got %q", line)
+	}
+}
+
 func linesContain(lines []string, value string) bool {
 	for _, line := range lines {
 		if strings.Contains(line, value) {
