@@ -283,6 +283,28 @@ func TestTerminalIngestOutputCarriageReturnOverwritesMutableTailWithoutCommittin
 	}
 }
 
+func TestTerminalIngestOutputTreatsCRLFAsLineFeedWithoutLosingBareCR(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\r\ntwo\rT\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "one" || window.Rows[1].Text != "Two" {
+		t.Fatalf("CRLF should commit a line while bare CR still edits tail, got %#v", window.Rows)
+	}
+}
+
 func TestTerminalIngestOutputCursorBackwardOverwritesMutableTailWithoutCommitting(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{

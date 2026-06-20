@@ -19,6 +19,19 @@ func BenchmarkHistoryPipelineIngestPlainLogBatch(b *testing.B) {
 	}
 }
 
+func BenchmarkHistoryPipelineIngestCRLFPlainLogBatch(b *testing.B) {
+	output := strings.ReplaceAll(benchmarkPlainHistoryOutput(512), "\n", "\r\n")
+	b.ReportAllocs()
+	b.SetBytes(int64(len(output)))
+
+	for i := 0; i < b.N; i++ {
+		pipeline := newTerminalHistoryPipeline(80, 24)
+		if err := pipeline.Ingest(output); err != nil {
+			b.Fatalf("ingest CRLF plain output: %v", err)
+		}
+	}
+}
+
 func BenchmarkHistoryPipelineIngestLineEditBatch(b *testing.B) {
 	output := benchmarkLineEditHistoryOutput(512)
 	b.ReportAllocs()
@@ -45,6 +58,25 @@ func BenchmarkHistoryQueueSegmentedPlainLogBatch(b *testing.B) {
 		pipeline := newTerminalHistoryPipeline(80, 24)
 		if err := pipeline.IngestBatch(chunks); err != nil {
 			b.Fatalf("ingest segmented plain output: %v", err)
+		}
+	}
+}
+
+func BenchmarkHistoryQueueSegmentedCRLFPlainLogBatch(b *testing.B) {
+	chunks := benchmarkPlainHistoryChunks(512, 32)
+	bytes := 0
+	for index, chunk := range chunks {
+		chunk = strings.ReplaceAll(chunk, "\n", "\r\n")
+		chunks[index] = chunk
+		bytes += len(chunk)
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(bytes))
+
+	for i := 0; i < b.N; i++ {
+		pipeline := newTerminalHistoryPipeline(80, 24)
+		if err := pipeline.IngestBatch(chunks); err != nil {
+			b.Fatalf("ingest segmented CRLF plain output: %v", err)
 		}
 	}
 }

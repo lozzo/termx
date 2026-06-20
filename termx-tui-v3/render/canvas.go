@@ -232,11 +232,22 @@ func canWriteCanvasCellAsSingleSegment(text string, cell Cell, cellWidth int) bo
 }
 
 func (c *canvas) writeBoxCell(x int, y int, glyph string) {
-	c.writeTextStyled(x, y, 1, glyph, StyleMuted, "chrome", LayerChrome)
+	c.writeStyledBoxCell(x, y, glyph, StyleMuted, "chrome", LayerChrome)
 }
 
 func (c *canvas) writeStyledBoxCell(x int, y int, glyph string, style StyleToken, owner string, layer LayerKind) {
-	c.writeTextStyled(x, y, 1, glyph, style, owner, layer)
+	if DisplayWidth(glyph) != 1 {
+		c.writeTextStyled(x, y, 1, glyph, style, owner, layer)
+		return
+	}
+	c.writeSegment(x, y, canvasSegment{
+		text:  glyph,
+		width: 1,
+		style: style,
+		owner: owner,
+		layer: layer,
+		safe:  true,
+	})
 }
 
 func (c *canvas) mergeBoxCell(x int, y int, connections uint8) {

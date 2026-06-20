@@ -61,7 +61,6 @@ type historyANSIParser struct {
 // live surface 或这个 parser 的文本投影反推 committed history。
 func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 	parser.segments = parser.segments[:0]
-	output = normalizeTerminalOutput(output)
 	if parser.pending != "" {
 		output = parser.pending + output
 		parser.pending = ""
@@ -100,6 +99,11 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 				continue
 			}
 			output = output[consumed:]
+		case strings.HasPrefix(output, "\r\n"):
+			// 中文说明：真实 PTY 常把脚本输出的 LF 回显成 CRLF；这里直接按 LF 消费，
+			// 避免先为整个 chunk 做 strings.ReplaceAll，同时保留裸 CR 的行编辑语义。
+			parser.consumeLineFeed()
+			output = output[2:]
 		case output[0] == '\r':
 			parser.flush()
 			parser.segments = append(parser.segments, historyOutputSegment{CarriageReturn: true})
@@ -119,11 +123,7 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 			parser.atPhantom = false
 			output = output[1:]
 		case output[0] == '\n':
-			parser.flush()
-			parser.finishPhysicalRow()
-			parser.segments = append(parser.segments, historyOutputSegment{Seal: true})
-			parser.col = 0
-			parser.advancePhysicalLine(parser.style)
+			parser.consumeLineFeed()
 			output = output[1:]
 		case output[0] == '\t':
 			parser.writeTab()
@@ -143,6 +143,14 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 	// 中文说明：parser 是 terminalHistoryPipeline 私有状态，Parse 返回的 batch
 	// 会在同一锁内立即消费；不做整批 clone，避免压力日志把 history 写入高水位放大。
 	return parser.segments
+}
+
+func (parser *historyANSIParser) consumeLineFeed() {
+	parser.flush()
+	parser.finishPhysicalRow()
+	parser.segments = append(parser.segments, historyOutputSegment{Seal: true})
+	parser.col = 0
+	parser.advancePhysicalLine(parser.style)
 }
 
 func (parser *historyANSIParser) clearSegments() {
