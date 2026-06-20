@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func TestMemoryLogicalLineStoreCreatesStableLines(t *testing.T) {
@@ -293,7 +294,7 @@ func TestFileBackedMemoryStorageBackendCompactsCleanSealedLinesOffHeap(t *testin
 		t.Fatalf("file compact backend must not keep encoded payload in memory, dense=%d sparse=%#v", len(backend.compactLines), backend.compactSparse)
 	}
 	slot := backend.compactFileLines[compactDenseIndex(line.ID)]
-	if !slot.Present || slot.Length == 0 {
+	if !slot.Present() || slot.Length() == 0 {
 		t.Fatalf("expected file compact slot, got %#v", slot)
 	}
 	if backend.compactLineCount != 1 {
@@ -303,8 +304,8 @@ func TestFileBackedMemoryStorageBackendCompactsCleanSealedLinesOffHeap(t *testin
 	if err != nil {
 		t.Fatalf("stat compact file: %v", err)
 	}
-	if info.Size() != int64(slot.Length) {
-		t.Fatalf("compact file size mismatch got=%d want=%d", info.Size(), slot.Length)
+	if info.Size() != int64(slot.Length()) {
+		t.Fatalf("compact file size mismatch got=%d want=%d", info.Size(), slot.Length())
 	}
 
 	loaded, ok := backend.LoadLine(line.ID)
@@ -343,7 +344,7 @@ func TestFileBackedMemoryStorageBackendCompactsCleanSealedLinesOffHeap(t *testin
 		t.Fatalf("overwrite file compact line: %v", err)
 	}
 	updatedSlot := backend.compactFileLines[compactDenseIndex(line.ID)]
-	if !updatedSlot.Present || updatedSlot.Offset <= slot.Offset {
+	if !updatedSlot.Present() || updatedSlot.Offset() <= slot.Offset() {
 		t.Fatalf("expected overwritten file compact line to append new payload, old=%#v updated=%#v", slot, updatedSlot)
 	}
 	loaded, ok = backend.LoadLine(line.ID)
@@ -385,7 +386,7 @@ func TestFileBackedMemoryStorageBackendCompactsSparseHighIDWithoutDenseGap(t *te
 	if got, wantMax := len(backend.compactFileLines), maxCompactDenseGap+1; got > wantMax {
 		t.Fatalf("high sparse id should not expand dense file compact storage, len=%d want <= %d", got, wantMax)
 	}
-	if backend.compactFileSparse == nil || !backend.compactFileSparse[line.ID].Present {
+	if backend.compactFileSparse == nil || !backend.compactFileSparse[line.ID].Present() {
 		t.Fatalf("expected high id file compact line to use sparse slot, got %#v", backend.compactFileSparse)
 	}
 	loaded, ok := backend.LoadLine(line.ID)
@@ -589,6 +590,49 @@ func TestCommittedHistoryIndexStoresMembershipOnly(t *testing.T) {
 	}
 	if got := index.IDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
 		t.Fatalf("unexpected committed ids after remove %v", got)
+	}
+}
+
+func TestCommittedHistoryIndexKeepsSequentialIDsAsRange(t *testing.T) {
+	index := NewCommittedHistoryIndex()
+	for id := LogicalLineID(1); id <= 1000; id++ {
+		if err := index.Append(id); err != nil {
+			t.Fatalf("append %d: %v", id, err)
+		}
+	}
+	if got := index.Len(); got != 1000 {
+		t.Fatalf("unexpected len %d", got)
+	}
+	if !index.Contains(1) || !index.Contains(1000) || index.Contains(1001) {
+		t.Fatal("unexpected range membership")
+	}
+	if len(index.ids) != 0 || index.present != nil {
+		t.Fatalf("sequential index should stay compact, ids=%d present=%#v", len(index.ids), index.present)
+	}
+	if !index.Remove(1) || !index.Contains(2) || index.Contains(1) {
+		t.Fatal("range head remove did not keep membership")
+	}
+	if len(index.ids) != 0 {
+		t.Fatalf("head remove should keep compact range, ids=%d", len(index.ids))
+	}
+	if !index.Remove(500) {
+		t.Fatal("expected middle remove")
+	}
+	if len(index.ids) == 0 {
+		t.Fatal("middle remove must materialize non-contiguous membership")
+	}
+	if index.Contains(500) {
+		t.Fatal("expected removed middle id to be absent")
+	}
+}
+
+func TestCompactFileSlotStaysPacked(t *testing.T) {
+	if got := unsafe.Sizeof(compactFileSlot(0)); got != 8 {
+		t.Fatalf("compact file slot must stay 8 bytes, got %d", got)
+	}
+	slot := makeCompactFileSlot(7, 11)
+	if !slot.Present() || slot.Offset() != 7 || slot.Length() != 11 {
+		t.Fatalf("unexpected packed slot %#v offset=%d length=%d", slot, slot.Offset(), slot.Length())
 	}
 }
 

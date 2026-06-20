@@ -98,7 +98,7 @@ func (track *HistoryTrack) LatestWindow(req HistoryWindowRequest) (HistoryWindow
 		LastLineID:  lastLine,
 		LoadedLines: len(spans),
 		TotalRows:   len(selected),
-		TotalLines:  len(track.committed.IDs()),
+		TotalLines:  track.committed.Len(),
 	}, nil
 }
 
@@ -124,7 +124,7 @@ func (track *HistoryTrack) OlderWindow(req HistoryWindowRequest) (HistoryWindow,
 		LastLineID:  lastLine,
 		LoadedLines: len(spans),
 		TotalRows:   len(selected),
-		TotalLines:  len(track.committed.IDs()),
+		TotalLines:  track.committed.Len(),
 	}, nil
 }
 
@@ -148,7 +148,7 @@ func (track *HistoryTrack) emptyWindow(op HistoryWindowOp, cols int) HistoryWind
 		Op:         op,
 		Cols:       cols,
 		Generation: track.generation,
-		TotalLines: len(track.committed.IDs()),
+		TotalLines: track.committed.Len(),
 	}
 }
 

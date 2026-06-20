@@ -58,37 +58,32 @@ func (track *HistoryTrack) freezeSnapshot(detach bool) FrozenSnapshot {
 }
 
 func (track *HistoryTrack) freezeSnapshotAtGeneration(detach bool, generation Generation) FrozenSnapshot {
-	committedIDs := track.committed.IDs()
-	if generation > 0 {
-		committedIDs = track.lineIDsAtOrBeforeGeneration(committedIDs, generation)
-	}
+	var committedIDs []LogicalLineID
+	committedIDs, committedFirst, committedUpper, committedLines, committedRange := track.committedSnapshotBounds(generation)
 	frontierIDs := make([]LogicalLineID, 0)
 	for _, id := range track.frontier.IDs() {
-		if !track.frontier.IsHidden(id) && !containsLineID(committedIDs, id) && track.lineAtOrBeforeGeneration(id, generation) {
+		if !track.frontier.IsHidden(id) && !committedSnapshotContains(id, committedFirst, committedUpper, committedIDs, committedRange) && track.lineAtOrBeforeGeneration(id, generation) {
 			frontierIDs = append(frontierIDs, id)
 		}
 	}
 	observerEpoch := ObserverEpoch(0)
 	if !detach {
-		observerEpoch = track.acquireObserver(committedIDs, frontierIDs)
+		observerEpoch = track.acquireObserver(committedFirst, committedUpper, committedIDs, frontierIDs)
 	}
 	snapshot := FrozenSnapshot{
 		Token:          makeSnapshotToken(track.generation),
 		Generation:     track.generation,
 		ObserverEpoch:  observerEpoch,
-		CommittedLines: len(committedIDs),
+		CommittedLines: committedLines,
 		store:          track.store,
 		detached:       detach,
 	}
-	if len(committedIDs) > 0 {
-		snapshot.CommittedFirst = committedIDs[0]
-		snapshot.CommittedUpper = committedIDs[len(committedIDs)-1]
-		if !lineIDsContiguous(committedIDs) {
+	if committedLines > 0 {
+		snapshot.CommittedFirst = committedFirst
+		snapshot.CommittedUpper = committedUpper
+		if !committedRange {
 			snapshot.CommittedIDs = cloneLineIDs(committedIDs)
 		}
-	}
-	if detach && len(snapshot.CommittedIDs) == 0 {
-		snapshot.CommittedIDs = cloneLineIDs(committedIDs)
 	}
 	for _, id := range frontierIDs {
 		line, ok := snapshotLine(track.store, id, detach, observerEpoch)
@@ -108,8 +103,41 @@ func (track *HistoryTrack) freezeSnapshotAtGeneration(detach bool, generation Ge
 	return snapshot
 }
 
+func (track *HistoryTrack) committedSnapshotBounds(generation Generation) ([]LogicalLineID, LogicalLineID, LogicalLineID, int, bool) {
+	if generation == 0 || generation >= track.generation {
+		if first, upper, count, ok := track.committed.contiguousBounds(); ok {
+			// 中文说明：顺序 committed history 在 frozen snapshot 中只需保存 range；
+			// 避免 copy/latest 为 100 万行临时构造完整 ID slice。
+			return nil, first, upper, count, true
+		}
+	}
+	ids := track.committed.IDs()
+	if generation > 0 {
+		ids = track.lineIDsAtOrBeforeGeneration(ids, generation)
+	}
+	if len(ids) == 0 {
+		return ids, 0, 0, 0, false
+	}
+	return ids, ids[0], ids[len(ids)-1], len(ids), lineIDsContiguous(ids)
+}
+
+func committedSnapshotContains(id LogicalLineID, first LogicalLineID, upper LogicalLineID, ids []LogicalLineID, committedRange bool) bool {
+	if id == 0 {
+		return false
+	}
+	if committedRange && first != 0 && id >= first && id <= upper {
+		return true
+	}
+	return containsLineID(ids, id)
+}
+
 func (track *HistoryTrack) lineIDsAtOrBeforeGeneration(ids []LogicalLineID, generation Generation) []LogicalLineID {
 	if generation == 0 || len(ids) == 0 {
+		return ids
+	}
+	if generation >= track.generation {
+		// 中文说明：copy/latest 入口通常 pin 当前 generation；此时所有已提交行都已可见，
+		// 不能再逐行从 file backend 解码检查，否则 10x stress 会把落盘历史重新拉回堆上。
 		return ids
 	}
 	filtered := make([]LogicalLineID, 0, len(ids))
@@ -143,8 +171,12 @@ func (snapshot *FrozenSnapshot) materializeDetachedLines() {
 	if len(snapshot.Lines) > 0 {
 		return
 	}
-	lines := make([]SnapshotLine, 0, len(snapshot.CommittedIDs)+len(snapshot.FrozenFrontier))
-	for _, id := range snapshot.CommittedIDs {
+	lines := make([]SnapshotLine, 0, snapshot.CommittedLines+len(snapshot.FrozenFrontier))
+	for index := 0; index < snapshot.CommittedLines; index++ {
+		id, ok := snapshot.committedIDAt(index)
+		if !ok {
+			continue
+		}
 		line, ok := snapshotLine(snapshot.store, id, true, snapshot.ObserverEpoch)
 		if !ok {
 			continue
@@ -309,10 +341,13 @@ type observerLineStore interface {
 	ObserverSnapshotLine(LogicalLineID, ObserverEpoch) (LogicalLine, bool)
 }
 
-func (track *HistoryTrack) acquireObserver(committedIDs []LogicalLineID, frontierIDs []LogicalLineID) ObserverEpoch {
+func (track *HistoryTrack) acquireObserver(committedFirst LogicalLineID, committedUpper LogicalLineID, committedIDs []LogicalLineID, frontierIDs []LogicalLineID) ObserverEpoch {
 	if store, ok := track.store.(observerLineStore); ok {
 		visibility := ObserverLineVisibility{IDs: frontierIDs}
-		if len(committedIDs) > 0 {
+		if committedFirst != 0 && committedUpper >= committedFirst {
+			visibility.First = committedFirst
+			visibility.Upper = committedUpper
+		} else if len(committedIDs) > 0 {
 			visibility.First = committedIDs[0]
 			visibility.Upper = committedIDs[len(committedIDs)-1]
 		}

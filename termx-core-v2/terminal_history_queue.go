@@ -125,6 +125,9 @@ func (queue *terminalHistoryIngestQueue) Run(ingest func(string) error) {
 			queue.markFlushed(target)
 		}
 		queue.finishBatch()
+		// 中文说明：history 批次已经写入 LogicalLineStore/file backend 后，
+		// 归还解析/编码临时页；不删除 history truth，也不做后台定时 scrub。
+		maybeReclaimDaemonBoundaryHeap()
 	}
 }
 

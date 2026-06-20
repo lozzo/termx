@@ -216,3 +216,21 @@ func TestPinnedFrozenSnapshotAtGenerationExcludesFutureLines(t *testing.T) {
 		t.Fatal("boundary snapshot must not expose line created after copy entry")
 	}
 }
+
+func TestPinnedFrozenSnapshotAtCurrentGenerationDoesNotScanCommittedPayload(t *testing.T) {
+	track := NewHistoryTrackWith(&countingLineStore{lines: make(map[LogicalLineID]LogicalLine)}, NewCommittedHistoryIndex(), NewMutableFrontier())
+	for i := 0; i < 1000; i++ {
+		commitLine(t, track, "x")
+	}
+	store := track.store.(*countingLineStore)
+	store.loads = 0
+
+	snapshot := track.FreezePinnedSnapshotAtGeneration(track.Generation())
+	defer snapshot.ReleaseObserver()
+	if got := snapshot.VisibleLineCount(); got != 1000 {
+		t.Fatalf("expected all current committed lines, got %d", got)
+	}
+	if store.loads != 0 {
+		t.Fatalf("current-generation freeze must not decode committed payload, loaded %d lines", store.loads)
+	}
+}

@@ -27,35 +27,57 @@ const (
 	protocolErrorInternal   = 500
 )
 
-const protocolRequestReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
+const daemonBoundaryReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
+const daemonBoundaryReclaimDefaultMinHeapBytes = 8 << 20
 
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")
-var protocolRequestReclaimMinHeapBytes = parseProtocolRequestReclaimMinHeapBytes()
+var daemonBoundaryReclaimMinHeapBytes = parseDaemonBoundaryReclaimMinHeapBytes()
+var daemonBoundaryReclaimLastHeapSys atomic.Uint64
 
-func parseProtocolRequestReclaimMinHeapBytes() uint64 {
-	raw := strings.TrimSpace(os.Getenv(protocolRequestReclaimMinHeapMBEnv))
+func parseDaemonBoundaryReclaimMinHeapBytes() uint64 {
+	raw := strings.TrimSpace(os.Getenv(daemonBoundaryReclaimMinHeapMBEnv))
 	if raw == "" {
-		return 0
+		return daemonBoundaryReclaimDefaultMinHeapBytes
 	}
 	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil || value == 0 {
+	if err != nil {
 		return 0
 	}
 	return value << 20
 }
 
-func maybeReclaimProtocolRequestHeap() {
-	if protocolRequestReclaimMinHeapBytes == 0 {
+func maybeReclaimDaemonBoundaryHeap() {
+	if daemonBoundaryReclaimMinHeapBytes == 0 {
 		return
 	}
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
-	if mem.HeapAlloc < protocolRequestReclaimMinHeapBytes {
+	idleUnreleased := uint64(0)
+	if mem.HeapIdle > mem.HeapReleased {
+		idleUnreleased = mem.HeapIdle - mem.HeapReleased
+	}
+	if mem.HeapAlloc < daemonBoundaryReclaimMinHeapBytes && idleUnreleased < daemonBoundaryReclaimMinHeapBytes {
 		return
 	}
-	// 中文说明：这是 request 边界上的显式 runtime page 归还，只在 history/snapshot
-	// response 已编码完成后运行；它不删除任何 history truth，也不是后台定时 scrub。
+	if !claimDaemonBoundaryReclaimHeapSys(mem.HeapSys) {
+		return
+	}
+	// 中文说明：这是 request/terminal 批次边界上的显式 runtime page 归还，只在
+	// history/snapshot response 已发送或 history 批次已落盘后运行；它不删除任何
+	// history truth，也不是后台定时 scrub。
 	debug.FreeOSMemory()
+}
+
+func claimDaemonBoundaryReclaimHeapSys(heapSys uint64) bool {
+	for {
+		last := daemonBoundaryReclaimLastHeapSys.Load()
+		if last != 0 && heapSys < last+daemonBoundaryReclaimMinHeapBytes {
+			return false
+		}
+		if daemonBoundaryReclaimLastHeapSys.CompareAndSwap(last, heapSys) {
+			return true
+		}
+	}
 }
 
 type protocolSession struct {
@@ -183,13 +205,17 @@ func (session *protocolSession) handleRequest(ctx context.Context, req protocol.
 		if err != nil {
 			return err
 		}
-		return session.sendFrame(0, wire.TypeResponseBinary, payload)
+		err = session.sendFrame(0, wire.TypeResponseBinary, payload)
+		maybeReclaimDaemonBoundaryHeap()
+		return err
 	}
 	payload, err := protocol.EncodeResponsePayload(protocol.Response{ID: req.ID, Result: result})
 	if err != nil {
 		return err
 	}
-	return session.sendFrame(0, wire.TypeResponse, payload)
+	err = session.sendFrame(0, wire.TypeResponse, payload)
+	maybeReclaimDaemonBoundaryHeap()
+	return err
 }
 
 func (session *protocolSession) dispatchRequest(ctx context.Context, req protocol.Request) ([]byte, bool, int, error) {
@@ -374,7 +400,6 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if err != nil {
 			return nil, true, protocolErrorInternal, err
 		}
-		maybeReclaimProtocolRequestHeap()
 		return payload, true, 0, nil
 	case "events":
 		in := params.(protocol.EventsParams)
@@ -455,7 +480,6 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if err != nil {
 			return nil, true, protocolErrorInternal, err
 		}
-		maybeReclaimProtocolRequestHeap()
 		return payload, true, 0, nil
 	case "history.copy":
 		in := params.(protocol.HistoryWindowParams)
@@ -463,7 +487,6 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if err != nil {
 			return nil, true, errorCode(err), err
 		}
-		maybeReclaimProtocolRequestHeap()
 		return payload, true, 0, nil
 	case "history.release":
 		in := params.(protocol.HistoryWindowParams)

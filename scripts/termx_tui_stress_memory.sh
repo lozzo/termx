@@ -16,6 +16,7 @@ Options:
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary; default builds into ROOT/termx
   --lines N             stress line count; default 100000
+  --repeat N            run the stress script N times in the same terminal; default 1
   --seed N              stress seed; default 100
   --width-hint N        stress width hint; default 120
   --attach-size CxR     tmux attach size; default 120x36
@@ -37,10 +38,12 @@ Options:
 
 Artifacts:
   memory.tsv            RSS, CPU%, cumulative CPU, idle, and post-profile-GC diagnostic stages
-  memory-samples.tsv    daemon/TUI RSS samples collected during stress
-  memory-peaks.tsv      daemon/TUI peak RSS derived from stress samples
+  memory-samples.tsv    daemon/TUI RSS samples collected during stress, grouped by phase
+  memory-peaks.tsv      daemon/TUI peak RSS derived from stress samples, grouped by phase
   baseline-time.txt     outside-termx baseline time(1) output when enabled
-  stress-time.txt       captured time(1) output line from the TUI pane
+  stress-time.txt       captured time(1) output from the last TUI stress run
+  stress-times.tsv      parsed per-run time(1) output captured from the TUI pane
+  history-files.tsv     compact history file count/bytes after each stress run
   profile-summary.txt   daemon/TUI pprof top summaries
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
   daemon-memstats/       daemon runtime MemStats samples collected at RSS stages
@@ -151,21 +154,25 @@ sample_processes_until_stopped() {
   local interval="$2"
   local daemon_pid="$3"
   local tui_pid="$4"
+  local phase="$5"
   local samples="$ROOT/memory-samples.tsv"
-  printf 'unix_ms\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$samples"
+  if [[ ! -s "$samples" ]]; then
+    printf 'unix_ms\tphase\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$samples"
+  fi
   while [[ ! -f "$stop_file" ]]; do
-    sample_process_once "daemon" "$daemon_pid" "$samples"
-    sample_process_once "tui" "$tui_pid" "$samples"
+    sample_process_once "$phase" "daemon" "$daemon_pid" "$samples"
+    sample_process_once "$phase" "tui" "$tui_pid" "$samples"
     sleep "$interval"
   done
-  sample_process_once "daemon" "$daemon_pid" "$samples"
-  sample_process_once "tui" "$tui_pid" "$samples"
+  sample_process_once "$phase" "daemon" "$daemon_pid" "$samples"
+  sample_process_once "$phase" "tui" "$tui_pid" "$samples"
 }
 
 sample_process_once() {
-  local process="$1"
-  local pid="$2"
-  local samples="$3"
+  local phase="$1"
+  local process="$2"
+  local pid="$3"
+  local samples="$4"
   local stats rss cpu_percent cpu_time unix_ms
   stats="$(process_stats "$pid")"
   IFS=$'\t' read -r rss cpu_percent cpu_time <<EOF
@@ -176,8 +183,8 @@ import time
 print(int(time.time() * 1000))
 PY
 )"
-  awk -v unix_ms="$unix_ms" -v process="$process" -v pid="$pid" -v rss="$rss" -v cpu_percent="$cpu_percent" -v cpu_time="$cpu_time" 'BEGIN {
-    printf "%s\t%s\t%s\t%d\t%.1f\t%.1f\t%s\n", unix_ms, process, pid, rss, rss / 1024, cpu_percent, cpu_time
+  awk -v unix_ms="$unix_ms" -v phase="$phase" -v process="$process" -v pid="$pid" -v rss="$rss" -v cpu_percent="$cpu_percent" -v cpu_time="$cpu_time" 'BEGIN {
+    printf "%s\t%s\t%s\t%s\t%d\t%.1f\t%.1f\t%s\n", unix_ms, phase, process, pid, rss, rss / 1024, cpu_percent, cpu_time
   }' >>"$samples"
 }
 
@@ -190,23 +197,79 @@ write_memory_peaks() {
   awk -F '\t' '
     NR == 1 { next }
     {
-      process=$2
-      rss=$4 + 0
-      if (!(process in peak) || rss > peak[process]) {
-        peak[process]=rss
-        peak_mib[process]=$5
-        peak_cpu_percent[process]=$6
-        peak_cpu_time[process]=$7
-        peak_unix_ms[process]=$1
+      phase=$2
+      process=$3
+      key=phase "\t" process
+      rss=$5 + 0
+      if (!(key in peak) || rss > peak[key]) {
+        peak[key]=rss
+        peak_mib[key]=$6
+        peak_cpu_percent[key]=$7
+        peak_cpu_time[key]=$8
+        peak_unix_ms[key]=$1
       }
     }
     END {
-      print "process\tpeak_unix_ms\tpeak_rss_kib\tpeak_rss_mib\tcpu_percent_at_peak\tcpu_time_at_peak"
-      for (process in peak) {
-        printf "%s\t%s\t%d\t%.1f\t%.1f\t%s\n", process, peak_unix_ms[process], peak[process], peak_mib[process], peak_cpu_percent[process], peak_cpu_time[process]
+      print "phase\tprocess\tpeak_unix_ms\tpeak_rss_kib\tpeak_rss_mib\tcpu_percent_at_peak\tcpu_time_at_peak"
+      for (key in peak) {
+        printf "%s\t%s\t%d\t%.1f\t%.1f\t%s\n", key, peak_unix_ms[key], peak[key], peak_mib[key], peak_cpu_percent[key], peak_cpu_time[key]
       }
     }
   ' "$samples" >"$peaks"
+}
+
+history_backend_dir() {
+  if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
+    printf '%s\n' "$DAEMON_HISTORY_BACKEND_DIR"
+  else
+    printf '%s\n' "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR"
+  fi
+}
+
+history_backend_stats() {
+  local dir="$1"
+  if [[ ! -d "$dir" ]]; then
+    printf '0\t0\t0.0\n'
+    return 0
+  fi
+  find "$dir" -type f -name '*.compact' -print0 2>/dev/null | python3 -c '
+import os
+import sys
+
+data = sys.stdin.buffer.read().split(b"\0")
+files = [path.decode("utf-8", "surrogateescape") for path in data if path]
+total = 0
+for path in files:
+    try:
+        total += os.path.getsize(path)
+    except OSError:
+        pass
+print(f"{len(files)}\t{total}\t{total / 1048576:.1f}")
+'
+}
+
+record_history_backend_size() {
+  local stage="$1"
+  local dir stats files bytes mib
+  dir="$(history_backend_dir)"
+  stats="$(history_backend_stats "$dir")"
+  IFS=$'\t' read -r files bytes mib <<EOF
+$stats
+EOF
+  printf '%s\t%s\t%s\t%s\t%s\n' "$stage" "$files" "$bytes" "$mib" "$dir" >>"$HISTORY_REPORT"
+}
+
+append_stress_time() {
+  local run="$1"
+  local seed="$2"
+  local path="$3"
+  local real="" user="" sys=""
+  if [[ -s "$path" ]]; then
+    real="$(awk '$1 == "real" { print $2; found=1 } END { if (!found) print "" }' "$path")"
+    user="$(awk '$1 == "user" { print $2; found=1 } END { if (!found) print "" }' "$path")"
+    sys="$(awk '$1 == "sys" { print $2; found=1 } END { if (!found) print "" }' "$path")"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$run" "$seed" "$real" "$user" "$sys" >>"$STRESS_TIMES_REPORT"
 }
 
 record_rss() {
@@ -325,6 +388,16 @@ write_profile_summary() {
       echo "## stress RSS peaks"
       cat "$ROOT/memory-peaks.tsv"
     fi
+    if [[ -s "$ROOT/stress-times.tsv" ]]; then
+      echo
+      echo "## stress time per run"
+      cat "$ROOT/stress-times.tsv"
+    fi
+    if [[ -s "$ROOT/history-files.tsv" ]]; then
+      echo
+      echo "## history file sizes"
+      cat "$ROOT/history-files.tsv"
+    fi
     if [[ -d "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" ]]; then
       echo
       echo "## daemon default history file backend"
@@ -381,6 +454,7 @@ positive_integer() {
 ROOT=""
 BIN=""
 LINES=100000
+REPEAT=1
 SEED=100
 WIDTH_HINT=120
 ATTACH_SIZE="120x36"
@@ -405,6 +479,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --lines)
       LINES="$2"
+      shift 2
+      ;;
+    --repeat)
+      REPEAT="$2"
       shift 2
       ;;
     --seed)
@@ -472,6 +550,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 positive_integer "--lines" "$LINES"
+positive_integer "--repeat" "$REPEAT"
 positive_integer "--wait-seconds" "$WAIT_SECONDS"
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
   positive_integer "--daemon-memory-limit-mb" "$DAEMON_MEMORY_LIMIT_MB"
@@ -512,6 +591,8 @@ ROOT="$(cd "$ROOT" && pwd)"
 SOCK="$ROOT/termx-core-v2.sock"
 LOG="$ROOT/termx.log"
 REPORT="$ROOT/memory.tsv"
+HISTORY_REPORT="$ROOT/history-files.tsv"
+STRESS_TIMES_REPORT="$ROOT/stress-times.tsv"
 DAEMON_HEAP_DIR="$ROOT/daemon-heap"
 TUI_HEAP_DIR="$ROOT/tui-heap"
 DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
@@ -562,6 +643,8 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 printf 'stage\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$REPORT"
+printf 'stage\tfiles\tbytes\tmib\tdir\n' >"$HISTORY_REPORT"
+printf 'run\tseed\treal\tuser\tsys\n' >"$STRESS_TIMES_REPORT"
 mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
 mkdir -p "$TUI_MEMSTATS_DIR"
@@ -649,25 +732,37 @@ sleep 1
 record_stage "tui_idle" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_idle" "tui" "$TUI_PID"
 
-DONE_MARKER="TERM_X_TUI_STRESS_DONE"
-TIME_FILE="$ROOT/stress-time.txt"
-STRESS_CMD="/usr/bin/time -p python3 $(shell_quote "$STRESS_SCRIPT") --lines $LINES --seed $SEED --width-hint $WIDTH_HINT 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
+TIME_FILE=""
+for RUN in $(seq 1 "$REPEAT"); do
+  RUN_LABEL="$(printf '%02d' "$RUN")"
+  RUN_SEED=$((SEED + RUN - 1))
+  DONE_MARKER="TERM_X_TUI_STRESS_DONE_${RUN_LABEL}"
+  TIME_FILE="$ROOT/stress-time-run-${RUN_LABEL}.txt"
+  STRESS_CMD="/usr/bin/time -p python3 $(shell_quote "$STRESS_SCRIPT") --lines $LINES --seed $RUN_SEED --width-hint $WIDTH_HINT 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
 
-log "typing stress command in TUI: lines=$LINES seed=$SEED"
-SAMPLE_STOP_FILE="$ROOT/.stress-sampling-done"
-rm -f "$SAMPLE_STOP_FILE"
-sample_processes_until_stopped "$SAMPLE_STOP_FILE" 0.2 "$DAEMON_PID" "$TUI_PID" &
-SAMPLE_PID=$!
-tmux send-keys -t "$TARGET" "$STRESS_CMD" Enter
-if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS"; then
+  log "typing stress command in TUI: run=$RUN_LABEL/$REPEAT lines=$LINES seed=$RUN_SEED"
+  SAMPLE_STOP_FILE="$ROOT/.stress-sampling-done-${RUN_LABEL}"
+  rm -f "$SAMPLE_STOP_FILE"
+  sample_processes_until_stopped "$SAMPLE_STOP_FILE" 0.2 "$DAEMON_PID" "$TUI_PID" "stress_run_${RUN_LABEL}" &
+  SAMPLE_PID=$!
+  tmux send-keys -t "$TARGET" "$STRESS_CMD" Enter
+  if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS"; then
+    touch "$SAMPLE_STOP_FILE"
+    wait "$SAMPLE_PID" 2>/dev/null || true
+    capture_pane "$TARGET" "live-timeout-run-${RUN_LABEL}"
+    echo "stress command run $RUN_LABEL did not reach done marker within ${WAIT_SECONDS}s" >&2
+    exit 1
+  fi
   touch "$SAMPLE_STOP_FILE"
   wait "$SAMPLE_PID" 2>/dev/null || true
-  capture_pane "$TARGET" "live-timeout"
-  echo "stress command did not reach done marker within ${WAIT_SECONDS}s" >&2
-  exit 1
-fi
-touch "$SAMPLE_STOP_FILE"
-wait "$SAMPLE_PID" 2>/dev/null || true
+  append_stress_time "$RUN_LABEL" "$RUN_SEED" "$TIME_FILE"
+  capture_pane "$TARGET" "live-run-${RUN_LABEL}"
+  record_stage "daemon_after_stress_run_${RUN_LABEL}" "daemon" "$DAEMON_PID"
+  maybe_capture_stage_profile "daemon_after_stress_run_${RUN_LABEL}" "daemon" "$DAEMON_PID"
+  record_stage "tui_after_stress_run_${RUN_LABEL}" "tui" "$TUI_PID"
+  maybe_capture_stage_profile "tui_after_stress_run_${RUN_LABEL}" "tui" "$TUI_PID"
+  record_history_backend_size "after_stress_run_${RUN_LABEL}"
+done
 write_memory_peaks
 capture_pane "$TARGET" "live"
 record_stage "daemon_after_stress" "daemon" "$DAEMON_PID"
@@ -707,6 +802,7 @@ if ! LC_ALL=C grep -Fq "000000" "$ROOT/copy-oldest.txt"; then
 fi
 
 if [[ -s "$TIME_FILE" ]]; then
+  cp "$TIME_FILE" "$ROOT/stress-time.txt"
   cp "$TIME_FILE" "$ROOT/stress-time.raw.txt"
 fi
 write_profile_summary
@@ -722,8 +818,16 @@ if [[ -s "$ROOT/baseline-time.txt" ]]; then
   cat "$ROOT/baseline-time.txt"
 fi
 if [[ -s "$TIME_FILE" ]]; then
-  log "stress time"
+  log "last stress time"
   cat "$TIME_FILE"
+fi
+if [[ -s "$ROOT/stress-times.tsv" ]]; then
+  log "stress times by run"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "$ROOT/stress-times.tsv"
+  else
+    cat "$ROOT/stress-times.tsv"
+  fi
 fi
 if [[ -s "$ROOT/memory-peaks.tsv" ]]; then
   log "stress RSS peaks"
@@ -731,6 +835,14 @@ if [[ -s "$ROOT/memory-peaks.tsv" ]]; then
     column -t -s $'\t' "$ROOT/memory-peaks.tsv"
   else
     cat "$ROOT/memory-peaks.tsv"
+  fi
+fi
+if [[ -s "$ROOT/history-files.tsv" ]]; then
+  log "history file sizes"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "$ROOT/history-files.tsv"
+  else
+    cat "$ROOT/history-files.tsv"
   fi
 fi
 if [[ -s "$ROOT/profile-summary.txt" ]]; then
