@@ -299,8 +299,13 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	if err != nil {
 		return TerminalSurfaceResult{}, err
 	}
-	lines := liveSurfaceLinesFromSnapshot(snapshot)
 	screen := liveSurfaceScreenFromSnapshot(snapshot)
+	var lines []string
+	if len(screen) == 0 {
+		// 中文说明：Screen 是 live render 主路径；只有没有 styled cells 时才保留旧 Lines fallback，
+		// 避免压力输出时为同一帧同时维护 cell screen 和纯文本行副本。
+		lines = liveSurfaceLinesFromSnapshot(snapshot)
+	}
 	info, err := adapter.terminalInfo(ctx, req.TerminalID)
 	if err != nil {
 		return TerminalSurfaceResult{}, err

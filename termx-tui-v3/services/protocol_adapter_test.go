@@ -969,14 +969,17 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
 		t.Fatalf("expected snapshot request, got %#v", client.snapshotIDs)
 	}
-	if !result.Ready || result.Snapshot.Cols != 12 || result.Snapshot.Rows != 2 || len(result.Snapshot.Lines) != 2 {
+	if !result.Ready || result.Snapshot.Cols != 12 || result.Snapshot.Rows != 2 || len(result.Snapshot.Screen) != 2 {
 		t.Fatalf("unexpected live surface result %#v", result)
 	}
 	if result.Snapshot.Revision != 42 {
 		t.Fatalf("expected history generation to become live revision boundary, got %d", result.Snapshot.Revision)
 	}
-	if result.Snapshot.Lines[0] != "$ 你好🚀" || result.Snapshot.Lines[1] != "done" {
-		t.Fatalf("unexpected live surface lines %#v", result.Snapshot.Lines)
+	if len(result.Snapshot.Lines) != 0 {
+		t.Fatalf("live surface with screen cells should not keep duplicate text lines %#v", result.Snapshot.Lines)
+	}
+	if result.Snapshot.Screen[0][0].Text != "$ " || result.Snapshot.Screen[0][1].Text != "你好" || result.Snapshot.Screen[0][2].Text != "🚀" || result.Snapshot.Screen[1][0].Text != "done" {
+		t.Fatalf("unexpected live surface screen %#v", result.Snapshot.Screen)
 	}
 	if len(result.Snapshot.Screen) != 2 || len(result.Snapshot.Screen[0]) != 3 || result.Snapshot.Screen[0][1].FG != "ansi:2" || result.Snapshot.Screen[0][1].Width != 2 {
 		t.Fatalf("expected live surface cells and style to be preserved, got %#v", result.Snapshot.Screen)
@@ -1051,8 +1054,8 @@ func TestProtocolTerminalServiceAdapterRunningLifecycleIgnoresExitMarkerText(t *
 	if result.Snapshot.State != state.TerminalLiveAttached || result.Snapshot.ExitReason != "" || result.Snapshot.ExitCode != 0 || !result.Snapshot.ExitedAt.IsZero() {
 		t.Fatalf("running core lifecycle must win over marker text, got %#v", result.Snapshot)
 	}
-	if len(result.Snapshot.Lines) != 3 || result.Snapshot.Lines[2] != "%" || !result.Snapshot.Cursor.Visible {
-		t.Fatalf("live surface should still keep marker history and cursor, got %#v", result.Snapshot)
+	if len(result.Snapshot.Lines) != 0 || len(result.Snapshot.Screen) != 3 || result.Snapshot.Screen[2][0].Text != "% " || !result.Snapshot.Cursor.Visible {
+		t.Fatalf("live surface should still keep marker screen and cursor, got %#v", result.Snapshot)
 	}
 }
 
@@ -1129,7 +1132,7 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
 
 	got := <-events
-	if !got.Ready || got.Snapshot.TerminalID != "term-1" || len(got.Snapshot.Lines) != 2 || got.Snapshot.Lines[0] != "backend" || got.Snapshot.Lines[1] != "update" {
+	if !got.Ready || got.Snapshot.TerminalID != "term-1" || liveScreenRowText(got.Snapshot, 0) != "backend" || liveScreenRowText(got.Snapshot, 1) != "update" {
 		t.Fatalf("unexpected live event %#v", got)
 	}
 	if len(got.Snapshot.Screen) != 2 || got.Snapshot.Screen[0][0].FG != "ansi:3" {
@@ -1179,13 +1182,13 @@ func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(
 	}
 
 	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
-	if got := readTerminalLiveEvent(t, termOneEvents); got.TerminalID != "term-1" || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "one" {
+	if got := readTerminalLiveEvent(t, termOneEvents); got.TerminalID != "term-1" || liveScreenRowText(got.Snapshot, 0) != "one" {
 		t.Fatalf("term-1 stream must receive its own event without blocking behind term-2 subscription, got %#v", got)
 	}
 	assertNoTerminalLiveEvent(t, termTwoEvents)
 
 	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-2"}
-	if got := readTerminalLiveEvent(t, termTwoEvents); got.TerminalID != "term-2" || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "two" {
+	if got := readTerminalLiveEvent(t, termTwoEvents); got.TerminalID != "term-2" || liveScreenRowText(got.Snapshot, 0) != "two" {
 		t.Fatalf("term-2 stream must receive its own event, got %#v", got)
 	}
 	assertNoTerminalLiveEvent(t, termOneEvents)
@@ -1206,6 +1209,17 @@ func readTerminalLiveEvent(t *testing.T, events <-chan TerminalLiveEvent) Termin
 		t.Fatal("timed out waiting for terminal live event")
 	}
 	return TerminalLiveEvent{}
+}
+
+func liveScreenRowText(snapshot state.LiveSurfaceSnapshot, rowIndex int) string {
+	if rowIndex < 0 || rowIndex >= len(snapshot.Screen) {
+		return ""
+	}
+	var builder strings.Builder
+	for _, cell := range snapshot.Screen[rowIndex] {
+		builder.WriteString(cell.Text)
+	}
+	return strings.TrimRight(builder.String(), " ")
 }
 
 func assertNoTerminalLiveEvent(t *testing.T, events <-chan TerminalLiveEvent) {
@@ -1312,7 +1326,7 @@ func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *test
 		if !ok {
 			t.Fatal("expected coalesced live event")
 		}
-		if !got.Ready || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "latest" {
+		if !got.Ready || liveScreenRowText(got.Snapshot, 0) != "latest" {
 			t.Fatalf("unexpected coalesced live event %#v", got)
 		}
 	case <-time.After(time.Second):
@@ -1362,7 +1376,7 @@ func TestProtocolTerminalServiceAdapterLiveEventCoalescingDoesNotStarveSnapshot(
 	select {
 	case got := <-events:
 		cancel()
-		if !got.Ready || len(got.Snapshot.Lines) != 1 || got.Snapshot.Lines[0] != "visible" {
+		if !got.Ready || liveScreenRowText(got.Snapshot, 0) != "visible" {
 			t.Fatalf("unexpected live event %#v", got)
 		}
 	case <-time.After(time.Second):

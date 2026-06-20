@@ -19,6 +19,9 @@ Options:
   --seed N              stress seed; default 100
   --width-hint N        stress width hint; default 120
   --attach-size CxR     tmux attach size; default 120x36
+  --baseline-time       run the same stress script outside termx first (default)
+  --no-baseline-time    skip outside-termx baseline timing
+  --profile-mode MODE   heap profile capture mode: final, all, or none; default final
   --daemon-memory-limit-mb N
                         set TERMX_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
   --tui-memory-limit-mb N
@@ -29,12 +32,15 @@ Options:
   -h, --help            show this help
 
 Artifacts:
-  memory.tsv            RSS samples in KiB and MiB
+  memory.tsv            RSS, CPU%, and cumulative CPU samples
+  baseline-time.txt     outside-termx baseline time(1) output when enabled
   stress-time.txt       captured time(1) output line from the TUI pane
+  profile-summary.txt   daemon/TUI pprof top summaries
+  profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
   live.txt              tmux capture after stress completes
   copy-oldest.txt       capture after copy/history oldest jump
-  daemon-heap/          daemon heap profiles captured at RSS sample points
-  tui-heap/             TUI heap profiles captured at RSS sample points
+  daemon-heap/          daemon heap profiles captured by --profile-mode
+  tui-heap/             TUI heap profiles captured by --profile-mode
 EOF
 }
 
@@ -120,19 +126,51 @@ rss_kib() {
   ps -o rss= -p "$pid" 2>/dev/null | awk 'NF { print $1 + 0; found=1 } END { if (!found) print 0 }'
 }
 
+process_stats() {
+  local pid="$1"
+  ps -o rss= -o %cpu= -o time= -p "$pid" 2>/dev/null | awk 'NF >= 3 {
+    printf "%d\t%.1f\t%s\n", $1 + 0, $2 + 0, $3
+    found=1
+  } END {
+    if (!found) print "0\t0.0\t0:00.00"
+  }'
+}
+
 record_rss() {
   local stage="$1"
   local process="$2"
   local pid="$3"
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -USR1 "$pid" 2>/dev/null || true
-    sleep 0.2
-  fi
-  local rss
-  rss="$(rss_kib "$pid")"
-  awk -v stage="$stage" -v process="$process" -v pid="$pid" -v rss="$rss" 'BEGIN {
-    printf "%s\t%s\t%s\t%d\t%.1f\n", stage, process, pid, rss, rss / 1024
+  local stats rss cpu_percent cpu_time
+  stats="$(process_stats "$pid")"
+  IFS=$'\t' read -r rss cpu_percent cpu_time <<EOF
+$stats
+EOF
+  awk -v stage="$stage" -v process="$process" -v pid="$pid" -v rss="$rss" -v cpu_percent="$cpu_percent" -v cpu_time="$cpu_time" 'BEGIN {
+    printf "%s\t%s\t%s\t%d\t%.1f\t%.1f\t%s\n", stage, process, pid, rss, rss / 1024, cpu_percent, cpu_time
   }' >>"$REPORT"
+}
+
+capture_heap_profile() {
+  local stage="$1"
+  local process="$2"
+  local pid="$3"
+  if [[ "$PROFILE_MODE" == "none" ]]; then
+    return 0
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    log "capturing ${process} heap profile: $stage"
+    kill -USR1 "$pid" 2>/dev/null || true
+    sleep 0.3
+  fi
+}
+
+maybe_capture_stage_profile() {
+  local stage="$1"
+  local process="$2"
+  local pid="$3"
+  if [[ "$PROFILE_MODE" == "all" ]]; then
+    capture_heap_profile "$stage" "$process" "$pid"
+  fi
 }
 
 capture_pane() {
@@ -140,6 +178,70 @@ capture_pane() {
   local name="$2"
   tmux capture-pane -t "$target" -p -S -4000 >"$ROOT/$name.txt" || true
   tmux capture-pane -t "$target" -ep -S -4000 >"$ROOT/$name.raw.txt" || true
+}
+
+latest_profile() {
+  local dir="$1"
+  find "$dir" -type f -name '*.pprof' -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -n 1 || true
+}
+
+write_profile_svg() {
+  local title="$1"
+  local output="$2"
+  shift 2
+  local err
+  err="$("$@" 2>&1 >/dev/null)" || {
+    {
+      echo "$title"
+      echo "$err"
+      echo
+    } >>"$ROOT/profile-graphs/README.txt"
+    return 0
+  }
+  printf '%s\n' "$output"
+}
+
+write_profile_summary() {
+  local summary="$ROOT/profile-summary.txt"
+  local daemon_profile tui_profile
+  local graphs_dir="$ROOT/profile-graphs"
+  daemon_profile="$(latest_profile "$DAEMON_HEAP_DIR")"
+  tui_profile="$(latest_profile "$TUI_HEAP_DIR")"
+  mkdir -p "$graphs_dir"
+  : >"$graphs_dir/README.txt"
+  {
+    echo "# termx TUI stress profile summary"
+    echo
+    echo "artifact_root=$ROOT"
+    echo "profile_mode=$PROFILE_MODE"
+    echo "daemon_profile=$daemon_profile"
+    echo "tui_profile=$tui_profile"
+    echo
+    if [[ -n "$daemon_profile" ]]; then
+      echo "## daemon inuse_space"
+      go tool pprof -top "$daemon_profile" || true
+      echo
+      echo "## daemon alloc_space"
+      go tool pprof -top -alloc_space "$daemon_profile" || true
+      echo
+      go tool pprof -dot -output "$graphs_dir/daemon-inuse.dot" "$daemon_profile" >/dev/null 2>&1 || true
+      go tool pprof -dot -alloc_space -output "$graphs_dir/daemon-alloc.dot" "$daemon_profile" >/dev/null 2>&1 || true
+      write_profile_svg "daemon inuse SVG failed" "$graphs_dir/daemon-inuse.svg" go tool pprof -svg -output "$graphs_dir/daemon-inuse.svg" "$daemon_profile"
+      write_profile_svg "daemon alloc SVG failed" "$graphs_dir/daemon-alloc.svg" go tool pprof -svg -alloc_space -output "$graphs_dir/daemon-alloc.svg" "$daemon_profile"
+    fi
+    if [[ -n "$tui_profile" ]]; then
+      echo "## tui inuse_space"
+      go tool pprof -top "$tui_profile" || true
+      echo
+      echo "## tui alloc_space"
+      go tool pprof -top -alloc_space "$tui_profile" || true
+      echo
+      go tool pprof -dot -output "$graphs_dir/tui-inuse.dot" "$tui_profile" >/dev/null 2>&1 || true
+      go tool pprof -dot -alloc_space -output "$graphs_dir/tui-alloc.dot" "$tui_profile" >/dev/null 2>&1 || true
+      write_profile_svg "tui inuse SVG failed" "$graphs_dir/tui-inuse.svg" go tool pprof -svg -output "$graphs_dir/tui-inuse.svg" "$tui_profile"
+      write_profile_svg "tui alloc SVG failed" "$graphs_dir/tui-alloc.svg" go tool pprof -svg -alloc_space -output "$graphs_dir/tui-alloc.svg" "$tui_profile"
+    fi
+  } >"$summary"
 }
 
 positive_integer() {
@@ -167,6 +269,8 @@ WAIT_SECONDS=90
 CLEANUP_ROOT=0
 DAEMON_MEMORY_LIMIT_MB=""
 TUI_MEMORY_LIMIT_MB=""
+BASELINE_TIME=1
+PROFILE_MODE="final"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -192,6 +296,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --attach-size)
       ATTACH_SIZE="$2"
+      shift 2
+      ;;
+    --baseline-time)
+      BASELINE_TIME=1
+      shift
+      ;;
+    --no-baseline-time)
+      BASELINE_TIME=0
+      shift
+      ;;
+    --profile-mode)
+      PROFILE_MODE="$2"
       shift 2
       ;;
     --daemon-memory-limit-mb)
@@ -234,6 +350,14 @@ fi
 if [[ -n "$TUI_MEMORY_LIMIT_MB" ]]; then
   positive_integer "--tui-memory-limit-mb" "$TUI_MEMORY_LIMIT_MB"
 fi
+case "$PROFILE_MODE" in
+  final|all|none)
+    ;;
+  *)
+    echo "--profile-mode must be final, all, or none" >&2
+    exit 1
+    ;;
+esac
 
 need awk
 need go
@@ -243,6 +367,7 @@ need python3
 need tmux
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STRESS_SCRIPT="$REPO_ROOT/scripts/generate_terminal_stress.py"
 read -r ATTACH_COLS ATTACH_ROWS < <(parse_size "$ATTACH_SIZE")
 
 if [[ -z "$ROOT" ]]; then
@@ -298,9 +423,15 @@ if [[ ! -x "$BIN" ]]; then
   exit 1
 fi
 
-printf 'stage\tprocess\tpid\trss_kib\trss_mib\n' >"$REPORT"
+printf 'stage\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$REPORT"
 mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
+
+if [[ "$BASELINE_TIME" == "1" ]]; then
+  log "running outside-termx stress baseline: lines=$LINES seed=$SEED"
+  /usr/bin/time -p python3 "$STRESS_SCRIPT" --lines "$LINES" --seed "$SEED" --width-hint "$WIDTH_HINT" >"$ROOT/baseline-output.txt" 2>"$ROOT/baseline-time.txt"
+  rm -f "$ROOT/baseline-output.txt"
+fi
 
 log "starting daemon"
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
@@ -315,6 +446,7 @@ if ! wait_for_socket "$SOCK" "$WAIT_SECONDS"; then
   exit 1
 fi
 record_rss "daemon_idle" "daemon" "$DAEMON_PID"
+maybe_capture_stage_profile "daemon_idle" "daemon" "$DAEMON_PID"
 
 log "creating interactive shell terminal"
 TERMINAL_ID="$("$BIN" --socket "$SOCK" --log-file "$LOG" v3 new --name stress-shell -- /bin/sh -l)"
@@ -326,11 +458,16 @@ cat >"$ATTACH_SCRIPT" <<EOF
 echo "\$\$" > $(shell_quote "$ATTACH_PID_FILE")
 export TERM=xterm-256color
 export TERMX_ALLOW_NESTED=1
+export TERMX_TUI_HEAP_PROFILE_MODE=$(shell_quote "$PROFILE_MODE")
 export TERMX_TUI_HEAP_PROFILE_DIR=$(shell_quote "$TUI_HEAP_DIR")
+EOF
+if [[ "$PROFILE_MODE" == "all" ]]; then
+  cat >>"$ATTACH_SCRIPT" <<EOF
 export TERMX_TUI_HEAP_PROFILE_EVERY_MB=8
 export TERMX_TUI_DIAG=1
 export TERMX_TUI_DIAG_INTERVAL_MS=200
 EOF
+fi
 if [[ -n "$TUI_MEMORY_LIMIT_MB" ]]; then
   log "TUI memory limit: ${TUI_MEMORY_LIMIT_MB}MB"
   printf 'export TERMX_TUI_MEMORY_LIMIT_MB=%s\n' "$(shell_quote "$TUI_MEMORY_LIMIT_MB")" >>"$ATTACH_SCRIPT"
@@ -353,8 +490,8 @@ if [[ -z "$TUI_PID" ]]; then
 fi
 sleep 1
 record_rss "tui_idle" "tui" "$TUI_PID"
+maybe_capture_stage_profile "tui_idle" "tui" "$TUI_PID"
 
-STRESS_SCRIPT="$REPO_ROOT/scripts/generate_terminal_stress.py"
 DONE_MARKER="TERM_X_TUI_STRESS_DONE"
 TIME_FILE="$ROOT/stress-time.txt"
 STRESS_CMD="/usr/bin/time -p python3 $(shell_quote "$STRESS_SCRIPT") --lines $LINES --seed $SEED --width-hint $WIDTH_HINT 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
@@ -368,14 +505,18 @@ if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS"; then
 fi
 capture_pane "$TARGET" "live"
 record_rss "daemon_after_stress" "daemon" "$DAEMON_PID"
+maybe_capture_stage_profile "daemon_after_stress" "daemon" "$DAEMON_PID"
 record_rss "tui_after_stress" "tui" "$TUI_PID"
+maybe_capture_stage_profile "tui_after_stress" "tui" "$TUI_PID"
 
 log "entering copy/history latest"
 tmux send-keys -t "$TARGET" C-v
 sleep 3
 capture_pane "$TARGET" "copy-latest"
 record_rss "daemon_copy_latest" "daemon" "$DAEMON_PID"
+maybe_capture_stage_profile "daemon_copy_latest" "daemon" "$DAEMON_PID"
 record_rss "tui_copy_latest" "tui" "$TUI_PID"
+maybe_capture_stage_profile "tui_copy_latest" "tui" "$TUI_PID"
 
 log "jumping to oldest history page"
 tmux send-keys -t "$TARGET" g
@@ -383,6 +524,10 @@ sleep 4
 capture_pane "$TARGET" "copy-oldest"
 record_rss "daemon_copy_oldest" "daemon" "$DAEMON_PID"
 record_rss "tui_copy_oldest" "tui" "$TUI_PID"
+if [[ "$PROFILE_MODE" == "final" ]]; then
+  capture_heap_profile "copy_oldest_final" "daemon" "$DAEMON_PID"
+  capture_heap_profile "copy_oldest_final" "tui" "$TUI_PID"
+fi
 
 if ! LC_ALL=C grep -Fq "000000" "$ROOT/copy-oldest.txt"; then
   echo "copy-oldest did not show oldest stress line 000000" >&2
@@ -392,6 +537,7 @@ fi
 if [[ -s "$TIME_FILE" ]]; then
   cp "$TIME_FILE" "$ROOT/stress-time.raw.txt"
 fi
+write_profile_summary
 
 log "RSS report"
 if command -v column >/dev/null 2>&1; then
@@ -399,8 +545,16 @@ if command -v column >/dev/null 2>&1; then
 else
   cat "$REPORT"
 fi
+if [[ -s "$ROOT/baseline-time.txt" ]]; then
+  log "outside-termx baseline time"
+  cat "$ROOT/baseline-time.txt"
+fi
 if [[ -s "$TIME_FILE" ]]; then
   log "stress time"
   cat "$TIME_FILE"
+fi
+if [[ -s "$ROOT/profile-summary.txt" ]]; then
+  log "profile summary"
+  sed -n '1,80p' "$ROOT/profile-summary.txt"
 fi
 log "artifacts kept at: $ROOT"

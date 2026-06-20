@@ -52,9 +52,13 @@ func newRuntimeDiagnostics(logger *slog.Logger) *runtimeDiagnostics {
 	}
 	diag.inputTraceEnabled = diag.enabled || diagnosticsEnabledFromEnv(tuiInputTraceEnv)
 	if dir := strings.TrimSpace(os.Getenv(tuiHeapProfileDirEnv)); dir != "" {
-		diag.enabled = true
 		diag.heapProfileDir = dir
-		diag.heapProfileEvery = diagnosticsProfileEveryBytes()
+		if strings.TrimSpace(os.Getenv(tuiHeapProfileEveryEnv)) != "" {
+			// 中文说明：profile dir 只负责允许 SIGUSR1 手动抓 heap；
+			// 周期采样必须显式设置 every，避免真实 RSS/CPU harness 被诊断循环污染。
+			diag.enabled = true
+			diag.heapProfileEvery = diagnosticsProfileEveryBytes()
+		}
 	}
 	return diag
 }
