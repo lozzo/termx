@@ -31,6 +31,7 @@ type TerminalSurfaceStore struct {
 	Err            string
 	ResizeBoundary LiveResizeBoundary
 	Surfaces       map[string]LiveSurfaceSnapshot
+	Refreshes      map[string]LiveSurfaceRefreshState
 }
 
 // LiveResizeBoundary 是一次 content rect resize 后等待匹配 surface 的基线。
@@ -40,6 +41,14 @@ type LiveResizeBoundary struct {
 	PreviousRows int
 	Cols         int
 	Rows         int
+}
+
+// LiveSurfaceRefreshState 是 TUI 对 live snapshot 拉取的背压状态，不是 core truth。
+type LiveSurfaceRefreshState struct {
+	InFlight bool
+	Dirty    bool
+	Cols     int
+	Rows     int
 }
 
 // LiveCursor 是 live surface 的 content-local 光标状态。
@@ -137,6 +146,7 @@ func (store TerminalSurfaceStore) ApplySnapshotWithLifecycle(snapshot LiveSurfac
 	if snapshot.TerminalID == "" {
 		return store
 	}
+	store = store.FinishRefresh(snapshot.TerminalID)
 	if snapshot.State == "" {
 		snapshot.State = TerminalLiveAttached
 	}
@@ -405,6 +415,10 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 		store.Surfaces = cloneLiveSurfaceSnapshots(store.Surfaces)
 		delete(store.Surfaces, terminalID)
 	}
+	if len(store.Refreshes) > 0 {
+		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+		delete(store.Refreshes, terminalID)
+	}
 	if store.TerminalID != terminalID {
 		return store
 	}
@@ -426,6 +440,65 @@ func (store TerminalSurfaceStore) RemoveTerminal(terminalID string) TerminalSurf
 	store.Err = ""
 	store.ResizeBoundary = LiveResizeBoundary{}
 	return store
+}
+
+func (store TerminalSurfaceStore) RequestRefresh(terminalID string, cols int, rows int) (TerminalSurfaceStore, bool) {
+	if terminalID == "" {
+		return store, false
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	refresh := store.Refreshes[terminalID]
+	refresh.Cols = cols
+	refresh.Rows = rows
+	if refresh.InFlight {
+		refresh.Dirty = true
+		store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+		store.Refreshes[terminalID] = refresh
+		return store, false
+	}
+	refresh.InFlight = true
+	refresh.Dirty = false
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	store.Refreshes[terminalID] = refresh
+	return store, true
+}
+
+func (store TerminalSurfaceStore) FinishRefresh(terminalID string) TerminalSurfaceStore {
+	if terminalID == "" {
+		return store
+	}
+	refresh, ok := store.Refreshes[terminalID]
+	if !ok {
+		return store
+	}
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	if refresh.Dirty {
+		refresh.InFlight = false
+		refresh.Dirty = false
+		store.Refreshes[terminalID] = refresh
+		return store
+	}
+	delete(store.Refreshes, terminalID)
+	return store
+}
+
+func (store TerminalSurfaceStore) ConsumeDirtyRefresh(terminalID string) (TerminalSurfaceStore, int, int, bool) {
+	if terminalID == "" {
+		return store, 0, 0, false
+	}
+	refresh, ok := store.Refreshes[terminalID]
+	if !ok || refresh.InFlight || refresh.Dirty {
+		return store, 0, 0, false
+	}
+	refresh.InFlight = true
+	store.Refreshes = cloneLiveSurfaceRefreshStates(store.Refreshes)
+	store.Refreshes[terminalID] = refresh
+	return store, refresh.Cols, refresh.Rows, true
 }
 
 func (store TerminalSessionStore) RemoveTerminal(terminalID string) TerminalSessionStore {
@@ -501,8 +574,10 @@ func (store TerminalSurfaceStore) projectSnapshot(snapshot LiveSurfaceSnapshot, 
 	store.Revision = snapshot.Revision
 	store.Cols = snapshot.Cols
 	store.Rows = snapshot.Rows
-	store.Lines = cloneStrings(snapshot.Lines)
-	store.Screen = cloneLiveCellRows(snapshot.Screen)
+	// 中文说明：写入 store 前已经克隆成 reducer-owned payload；active projection
+	// 和 Surfaces map 共享同一份不可变帧，避免每个 live frame 再深拷贝一次。
+	store.Lines = snapshot.Lines
+	store.Screen = snapshot.Screen
 	store.Title = snapshot.Title
 	store.Cursor = snapshot.Cursor
 	store.Modes = snapshot.Modes
@@ -734,7 +809,17 @@ func cloneStrings(values []string) []string {
 func cloneLiveSurfaceSnapshots(values map[string]LiveSurfaceSnapshot) map[string]LiveSurfaceSnapshot {
 	cloned := make(map[string]LiveSurfaceSnapshot, len(values)+1)
 	for key, value := range values {
-		cloned[key] = CloneLiveSurfaceSnapshot(value)
+		// 中文说明：Surfaces map 只需要结构级 COW；每个 snapshot 在写入 map 前已经
+		// 克隆成 reducer-owned payload，更新其它 terminal 时不能重复深拷贝旧 screen。
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneLiveSurfaceRefreshStates(values map[string]LiveSurfaceRefreshState) map[string]LiveSurfaceRefreshState {
+	cloned := make(map[string]LiveSurfaceRefreshState, len(values)+1)
+	for key, value := range values {
+		cloned[key] = value
 	}
 	return cloned
 }

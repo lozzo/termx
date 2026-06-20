@@ -256,6 +256,7 @@ type TerminalLiveEventRequest struct {
 type TerminalLiveEvent struct {
 	TerminalID string
 	Snapshot   state.LiveSurfaceSnapshot
+	Refresh    bool
 	// 中文说明：只标记这一次 event 承载 core lifecycle 变化；reducer 用完即丢。
 	LifecycleKnown bool
 	Exited         bool

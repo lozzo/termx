@@ -26,6 +26,14 @@ type testMsg struct {
 
 func (testMsg) isMsg() {}
 
+type skipRenderTestMsg struct {
+	Name string
+}
+
+func (skipRenderTestMsg) isMsg() {}
+
+func (skipRenderTestMsg) SkipRender() bool { return true }
+
 type retainingMsg struct {
 	Payload []byte
 }
@@ -295,6 +303,53 @@ func TestAppRuntimeCoalescesMessageBurstIntoOneFrame(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeSkipRenderMessageDoesNotWriteStaleFrame(t *testing.T) {
+	host := NewFakeTerminalHost(4)
+	var seen []string
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			switch msg := msg.(type) {
+			case skipRenderTestMsg:
+				seen = append(seen, msg.Name)
+			case testMsg:
+				seen = append(seen, msg.Name)
+			default:
+				t.Fatalf("unexpected message %T", msg)
+			}
+			return root.Advance(), nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{fmt.Sprintf("frame-%d", root.Generation)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := runtime.Post(skipRenderTestMsg{Name: "refresh"}); err != nil {
+		t.Fatalf("post refresh: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain refresh: %v", err)
+	}
+	if runtime.State().Generation != 1 || len(host.Frames()) != 0 {
+		t.Fatalf("skip-render message should update state without writing a stale frame, generation=%d frames=%#v", runtime.State().Generation, host.Frames())
+	}
+
+	if err := runtime.Post(testMsg{Name: "surface"}); err != nil {
+		t.Fatalf("post surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain surface: %v", err)
+	}
+	if !reflect.DeepEqual(seen, []string{"refresh", "surface"}) {
+		t.Fatalf("unexpected message order %v", seen)
+	}
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"frame-2"}) {
+		t.Fatalf("ordinary message should render latest state after skipped frame, got %v", got)
+	}
+}
+
 func TestAppRuntimeContinuesDrainForMessagesArrivingDuringFrameWrite(t *testing.T) {
 	host := NewFakeTerminalHost(4)
 	runtime := NewAppRuntime(
@@ -543,6 +598,43 @@ func TestAppRuntimeCoalescesQueuedLiveEventsByTerminalID(t *testing.T) {
 
 	if !reflect.DeepEqual(revisions, []uint64{3}) {
 		t.Fatalf("expected only latest queued live event revision, got %v", revisions)
+	}
+}
+
+func TestAppRuntimeCoalescesQueuedLiveRefreshEventsByTerminalID(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	var seen []string
+	runtime := NewAppRuntime(
+		state.Root{},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			event, ok := msg.(LiveEventMsg)
+			if !ok {
+				t.Fatalf("expected LiveEventMsg, got %T", msg)
+			}
+			seen = append(seen, fmt.Sprintf("%s:%t", event.Event.TerminalID, event.Event.Refresh))
+			return root.Advance(), nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{fmt.Sprintf("frame-%d", root.Generation)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	for i := 0; i < 3; i++ {
+		if err := runtime.Post(LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}); err != nil {
+			t.Fatalf("post refresh %d: %v", i, err)
+		}
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if !reflect.DeepEqual(seen, []string{"term-1:true"}) {
+		t.Fatalf("expected only latest queued refresh event, got %v", seen)
+	}
+	if len(host.Frames()) != 0 {
+		t.Fatalf("queued refresh invalidation should not render before latest surface arrives, got %#v", host.Frames())
 	}
 }
 

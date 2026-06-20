@@ -123,7 +123,6 @@ func terminalLayoutMayNeedResize(root state.Root, msg Msg) bool {
 	case HostResizeMsg,
 		LiveAttachResultMsg,
 		LiveResizeResultMsg,
-		LiveEventMsg,
 		TerminalPoolAttachResultMsg,
 		TerminalSizeLockToggleResultMsg,
 		ShellWorkbenchCommandMsg,
@@ -136,6 +135,9 @@ func terminalLayoutMayNeedResize(root state.Root, msg Msg) bool {
 		ShellSplitActivePaneMsg,
 		ShellPaneCommandMsg:
 		return true
+	case LiveEventMsg:
+		// 中文说明：普通 refresh 只是 live surface 失效信号；不能因此构造完整 RenderVM 做布局测量。
+		return !msg.isOrdinaryRefresh()
 	case ShellFloatingCommandMsg:
 		return floatingCommandMayResizeTerminal(root, msg.Command) || terminalHasPendingOwnerResize(root)
 	default:

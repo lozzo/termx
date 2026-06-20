@@ -27,6 +27,10 @@ type NoopMsg struct{}
 
 func (NoopMsg) isMsg() {}
 
+type noRenderMsg interface {
+	SkipRender() bool
+}
+
 // QuitMsg 请求 runtime 退出。
 type QuitMsg struct{}
 
@@ -374,7 +378,9 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 		runtime.state = next
 		runtime.observeRuntimeMessage(msg, effects)
 		processed++
-		needsRender = true
+		if !messageSkipsRender(msg) {
+			needsRender = true
+		}
 		if _, ok := msg.(HostResizeMsg); ok {
 			runtime.renderFrame()
 			needsRender = false
@@ -404,6 +410,11 @@ func (runtime *AppRuntime) messageBatchLimit() int {
 		return runtime.maxMessagesPerBatch
 	}
 	return defaultMaxMessagesPerBatch
+}
+
+func messageSkipsRender(msg Msg) bool {
+	noRender, ok := msg.(noRenderMsg)
+	return ok && noRender.SkipRender()
 }
 
 func (runtime *AppRuntime) scheduleEffect(ctx context.Context, effect Effect) {
@@ -712,6 +723,12 @@ func queuedOrdinaryLiveUpdate(msg Msg) (queuedLiveUpdate, bool) {
 		return queuedLiveUpdate{terminalID: msg.Snapshot.TerminalID, revision: msg.Snapshot.Revision}, true
 	case LiveEventMsg:
 		// 中文说明：event stream 里的 lifecycle 变化同样是边界，不进入 latest-only 合并。
+		if ordinaryLiveRefreshEvent(msg.Event) {
+			if msg.Event.TerminalID == "" {
+				return queuedLiveUpdate{}, false
+			}
+			return queuedLiveUpdate{terminalID: msg.Event.TerminalID}, true
+		}
 		if msg.Event.Err != nil || msg.Event.Exited || msg.Event.LifecycleKnown || !msg.Event.Ready || !ordinaryLiveSnapshot(msg.Event.Snapshot) {
 			return queuedLiveUpdate{}, false
 		}

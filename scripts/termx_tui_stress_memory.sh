@@ -33,6 +33,8 @@ Options:
 
 Artifacts:
   memory.tsv            RSS, CPU%, and cumulative CPU samples
+  memory-samples.tsv    daemon/TUI RSS samples collected during stress
+  memory-peaks.tsv      daemon/TUI peak RSS derived from stress samples
   baseline-time.txt     outside-termx baseline time(1) output when enabled
   stress-time.txt       captured time(1) output line from the TUI pane
   profile-summary.txt   daemon/TUI pprof top summaries
@@ -136,6 +138,69 @@ process_stats() {
   }'
 }
 
+sample_processes_until_stopped() {
+  local stop_file="$1"
+  local interval="$2"
+  local daemon_pid="$3"
+  local tui_pid="$4"
+  local samples="$ROOT/memory-samples.tsv"
+  printf 'unix_ms\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$samples"
+  while [[ ! -f "$stop_file" ]]; do
+    sample_process_once "daemon" "$daemon_pid" "$samples"
+    sample_process_once "tui" "$tui_pid" "$samples"
+    sleep "$interval"
+  done
+  sample_process_once "daemon" "$daemon_pid" "$samples"
+  sample_process_once "tui" "$tui_pid" "$samples"
+}
+
+sample_process_once() {
+  local process="$1"
+  local pid="$2"
+  local samples="$3"
+  local stats rss cpu_percent cpu_time unix_ms
+  stats="$(process_stats "$pid")"
+  IFS=$'\t' read -r rss cpu_percent cpu_time <<EOF
+$stats
+EOF
+  unix_ms="$(python3 - <<'PY'
+import time
+print(int(time.time() * 1000))
+PY
+)"
+  awk -v unix_ms="$unix_ms" -v process="$process" -v pid="$pid" -v rss="$rss" -v cpu_percent="$cpu_percent" -v cpu_time="$cpu_time" 'BEGIN {
+    printf "%s\t%s\t%s\t%d\t%.1f\t%.1f\t%s\n", unix_ms, process, pid, rss, rss / 1024, cpu_percent, cpu_time
+  }' >>"$samples"
+}
+
+write_memory_peaks() {
+  local samples="$ROOT/memory-samples.tsv"
+  local peaks="$ROOT/memory-peaks.tsv"
+  if [[ ! -s "$samples" ]]; then
+    return 0
+  fi
+  awk -F '\t' '
+    NR == 1 { next }
+    {
+      process=$2
+      rss=$4 + 0
+      if (!(process in peak) || rss > peak[process]) {
+        peak[process]=rss
+        peak_mib[process]=$5
+        peak_cpu_percent[process]=$6
+        peak_cpu_time[process]=$7
+        peak_unix_ms[process]=$1
+      }
+    }
+    END {
+      print "process\tpeak_unix_ms\tpeak_rss_kib\tpeak_rss_mib\tcpu_percent_at_peak\tcpu_time_at_peak"
+      for (process in peak) {
+        printf "%s\t%s\t%d\t%.1f\t%.1f\t%s\n", process, peak_unix_ms[process], peak[process], peak_mib[process], peak_cpu_percent[process], peak_cpu_time[process]
+      }
+    }
+  ' "$samples" >"$peaks"
+}
+
 record_rss() {
   local stage="$1"
   local process="$2"
@@ -216,6 +281,11 @@ write_profile_summary() {
     echo "profile_mode=$PROFILE_MODE"
     echo "daemon_profile=$daemon_profile"
     echo "tui_profile=$tui_profile"
+    if [[ -s "$ROOT/memory-peaks.tsv" ]]; then
+      echo
+      echo "## stress RSS peaks"
+      cat "$ROOT/memory-peaks.tsv"
+    fi
     echo
     if [[ -n "$daemon_profile" ]]; then
       echo "## daemon inuse_space"
@@ -497,12 +567,21 @@ TIME_FILE="$ROOT/stress-time.txt"
 STRESS_CMD="/usr/bin/time -p python3 $(shell_quote "$STRESS_SCRIPT") --lines $LINES --seed $SEED --width-hint $WIDTH_HINT 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
 
 log "typing stress command in TUI: lines=$LINES seed=$SEED"
+SAMPLE_STOP_FILE="$ROOT/.stress-sampling-done"
+rm -f "$SAMPLE_STOP_FILE"
+sample_processes_until_stopped "$SAMPLE_STOP_FILE" 0.2 "$DAEMON_PID" "$TUI_PID" &
+SAMPLE_PID=$!
 tmux send-keys -t "$TARGET" "$STRESS_CMD" Enter
 if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS"; then
+  touch "$SAMPLE_STOP_FILE"
+  wait "$SAMPLE_PID" 2>/dev/null || true
   capture_pane "$TARGET" "live-timeout"
   echo "stress command did not reach done marker within ${WAIT_SECONDS}s" >&2
   exit 1
 fi
+touch "$SAMPLE_STOP_FILE"
+wait "$SAMPLE_PID" 2>/dev/null || true
+write_memory_peaks
 capture_pane "$TARGET" "live"
 record_rss "daemon_after_stress" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_after_stress" "daemon" "$DAEMON_PID"
@@ -552,6 +631,14 @@ fi
 if [[ -s "$TIME_FILE" ]]; then
   log "stress time"
   cat "$TIME_FILE"
+fi
+if [[ -s "$ROOT/memory-peaks.tsv" ]]; then
+  log "stress RSS peaks"
+  if command -v column >/dev/null 2>&1; then
+    column -t -s $'\t' "$ROOT/memory-peaks.tsv"
+  else
+    cat "$ROOT/memory-peaks.tsv"
+  fi
 fi
 if [[ -s "$ROOT/profile-summary.txt" ]]; then
   log "profile summary"

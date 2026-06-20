@@ -917,6 +917,104 @@ func TestLiveStreamContextCanceledDoesNotPostPanelError(t *testing.T) {
 	}
 }
 
+func TestLiveEventRefreshRequestsLatestSurfaceAfterEventLoopCoalescing(t *testing.T) {
+	terminal := &services.FakeTerminalService{
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Lines:      []string{"latest"},
+			},
+		},
+	}
+	shell := state.DefaultShell().
+		BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1").
+		SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical).
+		FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})
+	root := state.Root{
+		Shell:   shell,
+		Session: state.TerminalSessionStore{TerminalID: "term-1", Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24},
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Cols:       70,
+			Rows:       18,
+			Lines:      []string{"stale"},
+		},
+	}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 96, 30, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+		BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID("pane-2"), false))
+
+	next, effects := reduceLiveEvent(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}, LiveDeps{Terminal: terminal})
+	if next.Generation != root.Generation || next.Surface.Lines[0] != "stale" {
+		t.Fatalf("refresh invalidation should not mutate live state before surface returns, next=%#v", next.Surface)
+	}
+	if len(effects) != 1 {
+		t.Fatalf("expected one live surface refresh effect, got %#v", effects)
+	}
+	effect, ok := effects[0].(FuncEffect)
+	if !ok || !effect.Async || !effect.ForceSyncInTests {
+		t.Fatalf("refresh surface fetch must stay async in real runtime and sync-capable in tests, got %#v", effects[0])
+	}
+	msg, ok := effect.Run(context.Background()).(LiveSurfaceMsg)
+	if !ok || msg.Snapshot.TerminalID != "term-1" || msg.Snapshot.Lines[0] != "latest" {
+		t.Fatalf("expected latest live surface message, got %#v ok=%v", msg, ok)
+	}
+	if len(terminal.Surfaces) != 1 || terminal.Surfaces[0].Cols != 96 || terminal.Surfaces[0].Rows != 30 {
+		t.Fatalf("refresh should use resize owner surface size, got %#v", terminal.Surfaces)
+	}
+	refreshMsg := LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}
+	if !refreshMsg.SkipRender() {
+		t.Fatal("ordinary refresh invalidation should not render stale frame")
+	}
+}
+
+func TestLiveEventRefreshBackpressureSchedulesOneFetchUntilSurfaceReturns(t *testing.T) {
+	terminal := &services.FakeTerminalService{SurfaceResult: services.TerminalSurfaceResult{
+		Ready:    true,
+		Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"latest"}},
+	}}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{Surface: state.TerminalSurfaceStore{TerminalID: "term-1", Cols: 80, Rows: 24}}
+
+	root, effects := reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
+	if len(effects) != 1 {
+		t.Fatalf("first refresh should schedule one surface fetch, got %#v", effects)
+	}
+	root, effects = reducer(root, LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}})
+	if len(effects) != 0 {
+		t.Fatalf("second refresh while in-flight should only mark dirty, got %#v", effects)
+	}
+	if refresh := root.Surface.Refreshes["term-1"]; !refresh.InFlight || !refresh.Dirty {
+		t.Fatalf("expected in-flight dirty refresh state, got %#v", refresh)
+	}
+
+	root, effects = reducer(root, LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-1", Lines: []string{"first"}}, RequestedCols: 80, RequestedRows: 24})
+	if len(effects) != 1 {
+		t.Fatalf("dirty refresh should schedule one follow-up fetch after surface returns, got %#v", effects)
+	}
+	if refresh := root.Surface.Refreshes["term-1"]; !refresh.InFlight || refresh.Dirty {
+		t.Fatalf("follow-up fetch should be in-flight and clean, got %#v", refresh)
+	}
+	msg := effects[0].(FuncEffect).Run(context.Background())
+	surface, ok := msg.(LiveSurfaceMsg)
+	if !ok || surface.Snapshot.TerminalID != "term-1" || surface.Snapshot.Lines[0] != "latest" {
+		t.Fatalf("expected follow-up live surface msg, got %#v ok=%v", msg, ok)
+	}
+}
+
+func TestLiveEventRefreshDoesNotTriggerLayoutResizeMeasurement(t *testing.T) {
+	root := state.Root{Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24, DesiredCols: 80, DesiredRows: 24}}
+	refresh := LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Refresh: true}}
+	if terminalLayoutMayNeedResize(root, refresh) {
+		t.Fatal("ordinary live refresh must not enter layout resize measurement")
+	}
+	metadata := LiveEventMsg{Event: services.TerminalLiveEvent{TerminalID: "term-1", Metadata: true}}
+	if !terminalLayoutMayNeedResize(root, metadata) {
+		t.Fatal("metadata event should still allow layout resize checks")
+	}
+}
+
 func TestTerminalPoolReconnectUsesActiveViewIdentity(t *testing.T) {
 	terminal := &services.FakeTerminalService{AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 11, Cols: 80, Rows: 24, CanResize: true}}
 	reducer := NewTerminalPoolReducer(LiveDeps{Terminal: terminal})

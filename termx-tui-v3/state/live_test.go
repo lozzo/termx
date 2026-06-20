@@ -42,6 +42,26 @@ func TestTerminalSurfaceApplySnapshotIsDetached(t *testing.T) {
 	}
 }
 
+func TestTerminalSurfaceSnapshotReturnsDetachedPayload(t *testing.T) {
+	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   7,
+		Lines:      []string{"one"},
+		Screen:     [][]LiveCell{{{Text: "one", Width: 3, FG: "ansi:2"}}},
+	})
+
+	snapshot := store.Snapshot()
+	snapshot.Lines[0] = "mutated"
+	snapshot.Screen[0][0].Text = "mutated"
+
+	if store.Lines[0] != "one" {
+		t.Fatalf("snapshot must not expose mutable store lines, got %#v", store.Lines)
+	}
+	if store.Screen[0][0].Text != "one" || store.Surfaces["term-1"].Screen[0][0].Text != "one" {
+		t.Fatalf("snapshot must not expose mutable store cells, store=%#v cached=%#v", store.Screen, store.Surfaces["term-1"].Screen)
+	}
+}
+
 func TestTerminalSurfaceRejectsStaleLiveRevision(t *testing.T) {
 	store := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",
@@ -432,5 +452,38 @@ func TestTerminalSessionTracksResizeOwner(t *testing.T) {
 	}
 	if exited := session.MarkExited("term-1", 0, "done"); exited.ResizePolicy != "" || exited.SurfaceID != "" || exited.ViewID != "" {
 		t.Fatalf("exit state must clear resize owner metadata, got %#v", exited)
+	}
+}
+
+func TestTerminalSurfaceRefreshBackpressureCoalescesInFlightRequests(t *testing.T) {
+	var store TerminalSurfaceStore
+	var fetch bool
+	store, fetch = store.RequestRefresh("term-1", 80, 24)
+	if !fetch || !store.Refreshes["term-1"].InFlight || store.Refreshes["term-1"].Dirty {
+		t.Fatalf("first refresh should start a fetch, store=%#v fetch=%v", store.Refreshes, fetch)
+	}
+
+	store, fetch = store.RequestRefresh("term-1", 96, 30)
+	if fetch {
+		t.Fatalf("in-flight refresh should not start a second fetch, store=%#v", store.Refreshes)
+	}
+	if refresh := store.Refreshes["term-1"]; !refresh.InFlight || !refresh.Dirty || refresh.Cols != 96 || refresh.Rows != 30 {
+		t.Fatalf("in-flight refresh should keep latest dirty size, got %#v", refresh)
+	}
+
+	store = store.FinishRefresh("term-1")
+	if refresh := store.Refreshes["term-1"]; refresh.InFlight || refresh.Dirty || refresh.Cols != 96 || refresh.Rows != 30 {
+		t.Fatalf("finishing dirty fetch should keep a pending clean refresh, got %#v", refresh)
+	}
+
+	var cols, rows int
+	store, cols, rows, fetch = store.ConsumeDirtyRefresh("term-1")
+	if !fetch || cols != 96 || rows != 30 || !store.Refreshes["term-1"].InFlight {
+		t.Fatalf("dirty refresh should schedule latest fetch, cols=%d rows=%d fetch=%v store=%#v", cols, rows, fetch, store.Refreshes)
+	}
+
+	store = store.FinishRefresh("term-1")
+	if _, ok := store.Refreshes["term-1"]; ok {
+		t.Fatalf("clean fetch completion should clear refresh state, store=%#v", store.Refreshes)
 	}
 }

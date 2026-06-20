@@ -3,6 +3,10 @@ package services
 import (
 	"context"
 	"errors"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1107,22 +1111,10 @@ func TestProtocolTerminalServiceAdapterSkipsZeroWidthContinuationPlaceholders(t 
 	}
 }
 
-func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testing.T) {
+func TestProtocolTerminalServiceAdapterMapsOrdinaryLiveEventsToRefreshInvalidation(t *testing.T) {
 	eventCh := make(chan protocol.Event, 1)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:    "term-1",
-			State: "running",
-		}}},
-		snapshotResult: &protocol.Snapshot{
-			TerminalID: "term-1",
-			Size:       protocol.Size{Cols: 80, Rows: 24},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "backend", Width: 7, Style: protocol.CellStyle{FG: "ansi:3"}}},
-				{{Content: "update"}},
-			}},
-		},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
 	events, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
@@ -1132,17 +1124,14 @@ func TestProtocolTerminalServiceAdapterMapsLiveEventsToSurfaceSnapshot(t *testin
 	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
 
 	got := <-events
-	if !got.Ready || got.Snapshot.TerminalID != "term-1" || liveScreenRowText(got.Snapshot, 0) != "backend" || liveScreenRowText(got.Snapshot, 1) != "update" {
+	if !got.Refresh || got.Ready || got.TerminalID != "term-1" || got.Snapshot.TerminalID != "" || len(got.Snapshot.Screen) != 0 {
 		t.Fatalf("unexpected live event %#v", got)
-	}
-	if len(got.Snapshot.Screen) != 2 || got.Snapshot.Screen[0][0].FG != "ansi:3" {
-		t.Fatalf("expected live event to keep styled screen cells, got %#v", got.Snapshot.Screen)
 	}
 	if len(client.eventParams) != 1 || client.eventParams[0].TerminalID != "term-1" {
 		t.Fatalf("expected protocol events subscription, got %#v", client.eventParams)
 	}
-	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
-		t.Fatalf("expected live event to refresh snapshot, got %#v", client.snapshotIDs)
+	if len(client.snapshotIDs) != 0 {
+		t.Fatalf("ordinary live event should not decode snapshot before app coalescing, got %#v", client.snapshotIDs)
 	}
 }
 
@@ -1150,26 +1139,6 @@ func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(
 	eventCh := make(chan protocol.Event, 4)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{
-			{ID: "term-1", State: "running"},
-			{ID: "term-2", State: "running"},
-		}},
-		snapshotResults: map[string]*protocol.Snapshot{
-			"term-1": {
-				TerminalID: "term-1",
-				Size:       protocol.Size{Cols: 80, Rows: 24},
-				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-					{{Content: "one"}},
-				}},
-			},
-			"term-2": {
-				TerminalID: "term-2",
-				Size:       protocol.Size{Cols: 80, Rows: 24},
-				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-					{{Content: "two"}},
-				}},
-			},
-		},
 	}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}
 	termOneEvents, err := adapter.LiveEvents(context.Background(), TerminalLiveEventRequest{TerminalID: "term-1", Cols: 80, Rows: 24})
@@ -1182,18 +1151,21 @@ func TestProtocolTerminalServiceAdapterLiveEventsKeepIndependentTerminalStreams(
 	}
 
 	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
-	if got := readTerminalLiveEvent(t, termOneEvents); got.TerminalID != "term-1" || liveScreenRowText(got.Snapshot, 0) != "one" {
+	if got := readTerminalLiveEvent(t, termOneEvents); got.TerminalID != "term-1" || !got.Refresh || got.Ready {
 		t.Fatalf("term-1 stream must receive its own event without blocking behind term-2 subscription, got %#v", got)
 	}
 	assertNoTerminalLiveEvent(t, termTwoEvents)
 
 	eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-2"}
-	if got := readTerminalLiveEvent(t, termTwoEvents); got.TerminalID != "term-2" || liveScreenRowText(got.Snapshot, 0) != "two" {
+	if got := readTerminalLiveEvent(t, termTwoEvents); got.TerminalID != "term-2" || !got.Refresh || got.Ready {
 		t.Fatalf("term-2 stream must receive its own event, got %#v", got)
 	}
 	assertNoTerminalLiveEvent(t, termOneEvents)
 	if len(client.eventParams) != 2 || client.eventParams[0].TerminalID != "term-1" || client.eventParams[1].TerminalID != "term-2" {
 		t.Fatalf("expected independent protocol event subscriptions, got %#v", client.eventParams)
+	}
+	if len(client.snapshotIDs) != 0 {
+		t.Fatalf("independent ordinary streams should not fetch snapshots in service layer, got %#v", client.snapshotIDs)
 	}
 }
 
@@ -1294,21 +1266,10 @@ func TestProtocolTerminalServiceAdapterMapsExitedEventMetadata(t *testing.T) {
 	}
 }
 
-func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *testing.T) {
+func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveRefreshEvents(t *testing.T) {
 	eventCh := make(chan protocol.Event, 8)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:    "term-1",
-			State: "running",
-		}}},
-		snapshotResult: &protocol.Snapshot{
-			TerminalID: "term-1",
-			Size:       protocol.Size{Cols: 80, Rows: 24},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "latest"}},
-			}},
-		},
 	}
 	for i := 0; i < 5; i++ {
 		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
@@ -1326,7 +1287,7 @@ func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *test
 		if !ok {
 			t.Fatal("expected coalesced live event")
 		}
-		if !got.Ready || liveScreenRowText(got.Snapshot, 0) != "latest" {
+		if !got.Refresh || got.Ready || got.TerminalID != "term-1" {
 			t.Fatalf("unexpected coalesced live event %#v", got)
 		}
 	case <-time.After(time.Second):
@@ -1340,26 +1301,33 @@ func TestProtocolTerminalServiceAdapterCoalescesQueuedOrdinaryLiveEvents(t *test
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for coalesced stream close")
 	}
-	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
-		t.Fatalf("ordinary live burst should request one snapshot, got %#v", client.snapshotIDs)
+	if len(client.snapshotIDs) != 0 {
+		t.Fatalf("ordinary live burst should coalesce before any snapshot request, got %#v", client.snapshotIDs)
 	}
 }
 
-func TestProtocolTerminalServiceAdapterLiveEventCoalescingDoesNotStarveSnapshot(t *testing.T) {
+func TestProtocolTerminalServiceAdapterLiveEventDrainUsesQueuedBacklogOnly(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(2, 0)}
+
+	got, pending, closed := drainProtocolLiveRefreshEvents(events, protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1", Timestamp: time.Unix(1, 0)})
+	if closed || pending != nil {
+		t.Fatalf("unexpected drain state: pending=%#v closed=%v", pending, closed)
+	}
+	if !got.Timestamp.Equal(time.Unix(2, 0)) {
+		t.Fatalf("expected queued latest event to win, got %#v", got)
+	}
+
+	got, pending, closed = drainProtocolLiveRefreshEvents(events, got)
+	if closed || pending != nil || !got.Timestamp.Equal(time.Unix(2, 0)) {
+		t.Fatalf("empty backlog should return current event immediately, got=%#v pending=%#v closed=%v", got, pending, closed)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterLiveEventDrainDoesNotStarveRefresh(t *testing.T) {
 	eventCh := make(chan protocol.Event, maxProtocolLiveRefreshDrain+16)
 	client := &fakeProtocolTerminalClient{
 		eventCh: eventCh,
-		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
-			ID:    "term-1",
-			State: "running",
-		}}},
-		snapshotResult: &protocol.Snapshot{
-			TerminalID: "term-1",
-			Size:       protocol.Size{Cols: 80, Rows: 24},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-				{{Content: "visible"}},
-			}},
-		},
 	}
 	for i := 0; i < cap(eventCh); i++ {
 		eventCh <- protocol.Event{Type: protocol.EventTerminalStateChanged, TerminalID: "term-1"}
@@ -1376,11 +1344,36 @@ func TestProtocolTerminalServiceAdapterLiveEventCoalescingDoesNotStarveSnapshot(
 	select {
 	case got := <-events:
 		cancel()
-		if !got.Ready || liveScreenRowText(got.Snapshot, 0) != "visible" {
+		if !got.Refresh || got.Ready || got.TerminalID != "term-1" {
 			t.Fatalf("unexpected live event %#v", got)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("ordinary live coalescing starved snapshot refresh")
+		t.Fatal("ordinary live coalescing starved refresh invalidation")
+	}
+	if len(client.snapshotIDs) != 0 {
+		t.Fatalf("refresh invalidation must not fetch snapshot in service layer, got %#v", client.snapshotIDs)
+	}
+}
+
+func TestProtocolTerminalAdapterDoesNotUseFixedLiveFrameInterval(t *testing.T) {
+	path := filepath.Join("protocol_terminal_adapter.go")
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read adapter source: %v", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), path, source, parser.ParseComments); err != nil {
+		t.Fatalf("parse adapter source: %v", err)
+	}
+	text := string(source)
+	for _, forbidden := range []string{
+		"protocolLiveRefreshFrameInterval",
+		"time.NewTimer(",
+		"time.NewTicker(",
+		"time.After(",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("protocol live refresh must be driven by queued events/backpressure, found fixed timing primitive %q", forbidden)
+		}
 	}
 }
 

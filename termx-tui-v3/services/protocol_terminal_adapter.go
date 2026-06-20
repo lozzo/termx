@@ -435,6 +435,12 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 		out.Tags = tags
 		return out
 	}
+	if ordinaryProtocolLiveRefreshEvent(event) {
+		// 中文说明：普通 changed 事件只表达 live surface 已失效；真正 snapshot 拉取
+		// 交给 app 事件循环合并后执行，避免 service 层提前 decode 被丢弃的帧。
+		out.Refresh = true
+		return out
+	}
 	if event.StateChanged != nil && event.StateChanged.NewState == "exited" {
 		out.Exited = true
 		if event.StateChanged.ExitCode != nil {
