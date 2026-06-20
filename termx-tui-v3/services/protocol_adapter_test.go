@@ -20,16 +20,24 @@ type fakeProtocolHistoryClient struct {
 	copyRequests    []protocol.HistoryWindowParams
 	releaseRequests []protocol.HistoryWindowParams
 	window          *protocol.HistoryWindow
+	windowErr       error
 	copyText        string
+	copyErr         error
 }
 
 func (client *fakeProtocolHistoryClient) HistoryWindow(_ context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
 	client.requests = append(client.requests, params)
+	if client.windowErr != nil {
+		return nil, client.windowErr
+	}
 	return client.window, nil
 }
 
 func (client *fakeProtocolHistoryClient) HistoryCopy(_ context.Context, params protocol.HistoryWindowParams) (string, error) {
 	client.copyRequests = append(client.copyRequests, params)
+	if client.copyErr != nil {
+		return "", client.copyErr
+	}
 	return client.copyText, nil
 }
 
@@ -503,6 +511,36 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	copyParams := client.copyRequests[0]
 	if copyParams.Token != "tok-1" || copyParams.Generation != 7 || copyParams.BoundaryFirstLineID != 42 || copyParams.BoundaryLastLineID != 43 || !copyParams.RangeValid || copyParams.RangeStartLineID != 42 || copyParams.RangeStartCol != 1 || copyParams.RangeEndLineID != 43 || copyParams.RangeEndCol != 3 {
 		t.Fatalf("unexpected copy params %#v", copyParams)
+	}
+}
+
+func TestProtocolCoreClientAdapterNormalizesStaleHistoryWindowError(t *testing.T) {
+	client := &fakeProtocolHistoryClient{windowErr: errors.New("protocol error 400: stale history window")}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryOlder(context.Background(), HistoryOlderRequest{
+		RequestID:  99,
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       10,
+		Token:      "tok-1",
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 42},
+	})
+	if !errors.Is(err, ErrStaleHistoryWindow) {
+		t.Fatalf("expected stale history sentinel, got result=%#v err=%v", result, err)
+	}
+	if result.RequestID != 99 {
+		t.Fatalf("history errors must keep request id for reducer correlation, got %#v", result)
+	}
+	if len(client.requests) != 1 || client.requests[0].Token != "tok-1" {
+		t.Fatalf("unexpected history request params %#v", client.requests)
+	}
+
+	client.windowErr = nil
+	client.copyErr = errors.New("protocol error 400: stale history window")
+	_, err = adapter.HistoryCopyRange(context.Background(), HistoryCopyRangeRequest{TerminalID: "term-1", Cols: 80, Token: "tok-1"})
+	if !errors.Is(err, ErrStaleHistoryWindow) {
+		t.Fatalf("expected copy range stale sentinel, got %v", err)
 	}
 }
 

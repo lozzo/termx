@@ -267,6 +267,10 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeCopyResultMsg:
 			if msg.Err != nil {
+				if errors.Is(msg.Err, services.ErrStaleHistoryWindow) {
+					root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "History window expired", Body: "retry copy mode", DismissAfterTicks: 3})
+					return root.Advance(), nil
+				}
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				root.Session = root.Session.SetError(msg.Err.Error())
 				return root.Advance(), nil
@@ -955,6 +959,9 @@ func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effe
 
 func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, deps CopyModeDeps) (state.Root, []Effect) {
 	if msg.Err != nil {
+		if errors.Is(msg.Err, services.ErrStaleHistoryWindow) {
+			return rejectStaleHistoryWindowError(root, msg), nil
+		}
 		if staleCopyModeHistoryResult(root, msg) {
 			return root, nil
 		}
@@ -1138,6 +1145,20 @@ func rejectMatchingHistoryResponse(root state.Root, msg CopyModeHistoryResultMsg
 		return setCopyModeEnterError(root, err.Error())
 	}
 	return setCopyModeError(root, err.Error())
+}
+
+func rejectStaleHistoryWindowError(root state.Root, msg CopyModeHistoryResultMsg) state.Root {
+	if root.History.Pending == nil || state.RequestID(msg.Result.RequestID) != root.History.Pending.ID || !copyModeOwnsPendingHistory(root) {
+		return root
+	}
+	pending := *root.History.Pending
+	// 中文说明：protocol stale history window 表达 frozen token/cursor 已过期；
+	// 这是请求生命周期控制信号，不能把 protocol 400 暴露成用户可见错误。
+	root.History.Pending = nil
+	if pending.Kind == state.HistoryRequestLatest && root.CopyMode.Entering {
+		return exitCopyMode(root).Advance()
+	}
+	return root.Advance()
 }
 
 func copyModeOwnsPendingHistory(root state.Root) bool {

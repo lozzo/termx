@@ -1079,6 +1079,99 @@ func TestCopyModeRuntimeFloatingWheelScrollUsesHitView(t *testing.T) {
 	}
 }
 
+func TestCopyModeRuntimeWheelHitRegionsKeepFloatingAndTiledViewsIsolated(t *testing.T) {
+	paneView := state.TerminalPaneViewID(state.DefaultPaneID)
+	floatingView := state.TerminalFloatingViewID("floating-1")
+	shell := state.DefaultShell()
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 8, Y: 4, W: 48, H: 12},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root := state.Root{
+		Shell: shell,
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 4, 78, 20, state.TerminalResizeRoleOwner, "surface-pane", paneView, true)).
+			BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 5, 46, 10, state.TerminalResizeRoleFollower, "surface-float", floatingView, true)),
+		Viewport: state.ViewportStore{Valid: true, Cols: 100, Rows: 28},
+	}
+	paneHistory, paneCopy := copyHistorySessionForWheelIsolation(state.DefaultPaneID, paneView, "term-pane", "tok-pane", 78, "pane", 20, 6)
+	floatHistory, floatCopy := copyHistorySessionForWheelIsolation("float-pane", floatingView, "term-float", "tok-float", 46, "float", 20, 6)
+	root = root.WithCopyHistorySession(paneView, paneHistory, paneCopy)
+	root = root.WithCopyHistorySession(floatingView, floatHistory, floatCopy)
+	root.History, root.CopyMode = root.CopyHistorySessionForView(floatingView)
+
+	host := newCopyHistoryPerfIncrementalHost(16)
+	host.SetSize(100, 28)
+	runtime := NewAppRuntime(
+		root,
+		ComposeReducers(NewCopyModeReducer(CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10})),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	floatingRegion := copyHistoryRowHitRegionForPane(t, copyHistoryPerfFrame, "float-pane", floatCopy.Cursor.Row)
+	if !floatingRegion.Floating {
+		t.Fatalf("initial floating history hit region must carry floating flag, got %#v", floatingRegion)
+	}
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp, Row: floatingRegion.Rect.Y + 1, Col: floatingRegion.Rect.X + 1}}); err != nil {
+		t.Fatalf("first floating wheel: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain first floating wheel: %v", err)
+	}
+	_, paneAfterFirst := runtime.State().CopyHistorySessionForView(paneView)
+	_, floatAfterFirst := runtime.State().CopyHistorySessionForView(floatingView)
+	if paneAfterFirst.Cursor.Row != paneCopy.Cursor.Row || floatAfterFirst.Cursor.Row != floatCopy.Cursor.Row-1 {
+		t.Fatalf("first floating wheel should only move floating copy, pane=%#v float=%#v", paneAfterFirst, floatAfterFirst)
+	}
+
+	floatRaise := frameActionHitRegion(t, copyHistoryPerfFrame, render.ActionFloatingRaise.String(), "float-pane")
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp, Row: floatRaise.Rect.Y + floatRaise.Rect.H, Col: floatRaise.Rect.X + floatRaise.Rect.W}}); err != nil {
+		t.Fatalf("floating blank wheel: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain floating blank wheel: %v", err)
+	}
+	_, paneAfterBlank := runtime.State().CopyHistorySessionForView(paneView)
+	_, floatAfterBlank := runtime.State().CopyHistorySessionForView(floatingView)
+	if paneAfterBlank.Cursor.Row != paneCopy.Cursor.Row || floatAfterBlank.Cursor.Row != floatCopy.Cursor.Row-2 {
+		t.Fatalf("floating blank wheel should still target floating view only, pane=%#v float=%#v", paneAfterBlank, floatAfterBlank)
+	}
+
+	paneCopy = paneAfterBlank
+	floatCopy = floatAfterBlank
+	tiledRegion := copyHistoryRowHitRegionForPane(t, render.Frame{HitRegions: runtime.lastHitRegions}, state.DefaultPaneID, paneCopy.Cursor.Row)
+	if tiledRegion.Floating {
+		t.Fatalf("tiled history hit region must not be marked floating, got %#v", tiledRegion)
+	}
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindMouse, Mouse: input.MouseWheelUp, Row: tiledRegion.Rect.Y + 1, Col: tiledRegion.Rect.X + 1}}); err != nil {
+		t.Fatalf("tiled wheel: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tiled wheel: %v", err)
+	}
+	_, paneAfterTiled := runtime.State().CopyHistorySessionForView(paneView)
+	_, floatAfterTiled := runtime.State().CopyHistorySessionForView(floatingView)
+	if paneAfterTiled.Cursor.Row != paneCopy.Cursor.Row-1 || floatAfterTiled.Cursor.Row != floatCopy.Cursor.Row {
+		t.Fatalf("tiled wheel should not leak to floating copy, pane=%#v float=%#v", paneAfterTiled, floatAfterTiled)
+	}
+}
+
 func TestCopyModeEnteringSecondViewKeepsFirstUntilEsc(t *testing.T) {
 	paneView := state.TerminalPaneViewID(state.DefaultPaneID)
 	floatingView := state.TerminalFloatingViewID("floating-1")
@@ -5436,6 +5529,69 @@ func TestCopyModeClearsOlderPendingForMatchingStaleHistoryWindow(t *testing.T) {
 	}
 }
 
+func TestCopyModeSwallowsMatchingProtocolStaleHistoryWindowError(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runner := &recordingEffectRunner{}
+	runtime := newCopyModeRuntimeWithRunner(host, &services.FakeCoreClient{}, nil, &services.FakeTerminalService{}, runner)
+
+	store := state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        78,
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: 20, LastLineID: 30},
+		SourceLines: []state.HistoryLogicalLine{{Text: "new", LineID: 30}},
+		Rows:        []state.HistoryRow{{Text: "new", LineID: 30}},
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: 30},
+	}
+	pending, err := store.BeginOlder(state.HistoryPendingRequest{
+		ID:         4,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID: "term-1",
+		Cols:       78,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 30},
+		Boundary:   state.HistoryBoundary{FirstLineID: 20, LastLineID: 30},
+	})
+	if err != nil {
+		t.Fatalf("begin older seed: %v", err)
+	}
+	runtime.state.History = pending
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		BoundToken:  "tok-1",
+		BoundCols:   78,
+		ViewRows:    8,
+		Cursor:      state.CopyPosition{Row: 0},
+		ViewportTop: 0,
+	}
+	if err := runtime.Post(CopyModeHistoryResultMsg{
+		Result: services.HistoryResult{RequestID: 4},
+		Err:    fmt.Errorf("%w: protocol error 400: stale history window", services.ErrStaleHistoryWindow),
+	}); err != nil {
+		t.Fatalf("post protocol stale older error: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain protocol stale older error: %v", err)
+	}
+	if runtime.State().History.Pending != nil {
+		t.Fatalf("protocol stale error must clear pending older request, got %#v", runtime.State().History.Pending)
+	}
+	if runtime.State().Surface.Err != "" || runtime.State().Session.LastError != "" {
+		t.Fatalf("protocol stale error must not surface raw protocol error, state=%#v", runtime.State())
+	}
+	if !runtime.State().CopyMode.Active || runtime.State().CopyMode.BoundToken != "tok-1" || len(runtime.State().History.Rows) != 1 {
+		t.Fatalf("protocol stale error should keep current copy history view, state=%#v", runtime.State())
+	}
+}
+
 func TestInteractiveRuntimeRoutesTerminalInputAndCopyModeInput(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
@@ -7106,6 +7262,38 @@ func historyLogicalLinesForApp(rows []state.HistoryRow) []state.HistoryLogicalLi
 		}
 	}
 	return lines
+}
+
+func copyHistorySessionForWheelIsolation(paneID string, viewID string, terminalID string, token string, cols int, prefix string, rowCount int, viewRows int) (state.HistoryStore, state.CopyModeStore) {
+	rows := make([]state.HistoryRow, rowCount)
+	for i := range rows {
+		rows[i] = state.HistoryRow{Text: fmt.Sprintf("%s-row-%02d", prefix, i), LineID: uint64(i + 1)}
+	}
+	history := state.HistoryStore{
+		PaneID:      paneID,
+		ViewID:      viewID,
+		TerminalID:  terminalID,
+		Token:       token,
+		Cols:        cols,
+		Generation:  1,
+		Boundary:    state.HistoryBoundary{FirstLineID: 1, LastLineID: uint64(rowCount)},
+		SourceLines: historyLogicalLinesForApp(rows),
+		Rows:        rows,
+		HasMore:     true,
+	}
+	cursor := rowCount / 2
+	copyMode := state.CopyModeStore{
+		Active:      true,
+		PaneID:      paneID,
+		ViewID:      viewID,
+		TerminalID:  terminalID,
+		BoundToken:  token,
+		BoundCols:   cols,
+		ViewRows:    viewRows,
+		Cursor:      state.CopyPosition{Row: cursor},
+		ViewportTop: cursor,
+	}
+	return history, copyMode
 }
 
 func historyStoreForCopySelection() state.HistoryStore {

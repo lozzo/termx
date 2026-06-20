@@ -448,6 +448,7 @@ type ClipboardStorageEvent struct {
 var (
 	ErrMissingHistoryResponse   = errors.New("missing history response")
 	ErrUnexpectedHistoryCall    = errors.New("unexpected history call")
+	ErrStaleHistoryWindow       = errors.New("stale history window")
 	ErrMissingTerminalClient    = errors.New("missing terminal client")
 	ErrWorkbenchStorageConflict = errors.New("workbench storage version conflict")
 	ErrClipboardStorageConflict = errors.New("clipboard storage version conflict")

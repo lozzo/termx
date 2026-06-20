@@ -1788,10 +1788,10 @@ func resolveMouseHitRegions(regions []render.HitRegion, event input.InputEvent) 
 		if !resolution.HasForeground {
 			resolution.Foreground = region
 			resolution.HasForeground = true
-		}
-		if !resolution.HasHistoryRow && region.Kind == render.HitRegionHistoryRow {
-			resolution.HistoryRow = region
-			resolution.HasHistoryRow = true
+			if region.Kind == render.HitRegionHistoryRow {
+				resolution.HistoryRow = region
+				resolution.HasHistoryRow = true
+			}
 		}
 		if !resolution.HasFocusOwner && mouseFocusOwnerRegion(region) {
 			resolution.FocusOwner = region

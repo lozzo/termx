@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -36,7 +37,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryLatest(ctx context.Context, req 
 		Generation: req.GenerationBoundary,
 	})
 	if err != nil {
-		return HistoryResult{}, err
+		return HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
 	}
 	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -55,7 +56,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req H
 		BoundaryLastLineID:  req.Boundary.LastLineID,
 	})
 	if err != nil {
-		return HistoryResult{}, err
+		return HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
 	}
 	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -75,7 +76,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryNewer(ctx context.Context, req H
 		BoundaryLastLineID:  req.Boundary.LastLineID,
 	})
 	if err != nil {
-		return HistoryResult{}, err
+		return HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
 	}
 	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -91,7 +92,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryOldest(ctx context.Context, req 
 		BoundaryLastLineID:  req.Boundary.LastLineID,
 	})
 	if err != nil {
-		return HistoryResult{}, err
+		return HistoryResult{RequestID: req.RequestID}, normalizeProtocolHistoryError(err)
 	}
 	return HistoryResult{RequestID: req.RequestID, Window: window}, nil
 }
@@ -121,7 +122,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, r
 		RangeEndCol:         req.End.Col,
 	})
 	if err != nil {
-		return HistoryCopyRangeResult{}, err
+		return HistoryCopyRangeResult{}, normalizeProtocolHistoryError(err)
 	}
 	return HistoryCopyRangeResult{Text: text}, nil
 }
@@ -129,9 +130,24 @@ func (adapter ProtocolCoreClientAdapter) HistoryCopyRange(ctx context.Context, r
 func (adapter ProtocolCoreClientAdapter) historyWindow(ctx context.Context, params protocol.HistoryWindowParams) (state.HistoryWindow, error) {
 	window, err := adapter.Client.HistoryWindow(ctx, params)
 	if err != nil {
-		return state.HistoryWindow{}, err
+		return state.HistoryWindow{}, normalizeProtocolHistoryError(err)
 	}
 	return historyWindowFromProtocol(window, params.Cols), nil
+}
+
+func normalizeProtocolHistoryError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrStaleHistoryWindow) {
+		return err
+	}
+	if strings.Contains(strings.ToLower(err.Error()), ErrStaleHistoryWindow.Error()) {
+		// 中文说明：core 用 stale history window 拒绝过期 token/cursor，这是历史会话控制信号；
+		// TUI 需要按 typed sentinel 处理，不能把 protocol 400 直接显示给用户。
+		return fmt.Errorf("%w: %v", ErrStaleHistoryWindow, err)
+	}
+	return err
 }
 
 func historyWindowFromProtocol(window *protocol.HistoryWindow, requestedCols int) state.HistoryWindow {

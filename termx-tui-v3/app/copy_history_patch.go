@@ -1,12 +1,15 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
 type copyHistoryPatchCache struct {
 	Valid       bool
+	ViewID      string
 	TerminalID  string
 	Token       string
 	Cols        int
@@ -37,25 +40,25 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 	if !runtime.copyHistoryPatch.Valid || !runtime.canUseIncompleteFrameSink() {
 		return false
 	}
-	current, ok := buildCopyHistoryPatchCacheFromPrevious(runtime.state, runtime.copyHistoryPatch)
+	patchRoot, current, ok := buildCopyHistoryPatchCacheFromPrevious(runtime.state, runtime.copyHistoryPatch)
 	if !ok || !copyHistoryPatchStable(runtime.copyHistoryPatch, current) {
 		return false
 	}
-	delta, ok := copyHistoryPatchVisualDelta(runtime.copyHistoryPatch, current, runtime.state.History)
+	delta, ok := copyHistoryPatchVisualDelta(runtime.copyHistoryPatch, current, patchRoot.History)
 	if !ok {
 		return false
 	}
 	if delta == 0 {
-		return runtime.tryRenderCopyHistoryCursorPatch(current)
+		return runtime.tryRenderCopyHistoryCursorPatch(patchRoot, current)
 	}
 	visibleRows := current.ContentRect.H
-	if visibleRows <= 1 || visibleRows > len(runtime.state.History.Rows) {
+	if visibleRows <= 1 || visibleRows > len(patchRoot.History.Rows) {
 		return false
 	}
 	if delta <= -visibleRows || delta >= visibleRows {
 		return false
 	}
-	if current.ViewportTop < 0 || current.ViewportTop+visibleRows > len(runtime.state.History.Rows) {
+	if current.ViewportTop < 0 || current.ViewportTop+visibleRows > len(patchRoot.History.Rows) {
 		return false
 	}
 	if copyHistoryPatchCoveredByFloating(runtime.state, current.ContentRect) {
@@ -75,24 +78,24 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 		// pane 内容区不是全宽时滚动整行会把边框卷走，所以退化为只重写内容矩形。
 		patch.Rewrite = true
 		patch.LineY = current.ContentRect.Y
-		patch.LinesANSI = copyHistoryPatchANSILinesAt(runtime.state.History, runtime.state.CopyMode, current.ViewportTop, visibleRows, current.ContentRect.W, current.ContentRect.X, current.Theme)
+		patch.LinesANSI = copyHistoryPatchANSILinesAt(patchRoot.History, patchRoot.CopyMode, current.ViewportTop, visibleRows, current.ContentRect.W, current.ContentRect.X, current.Theme)
 	} else if delta > 0 {
 		patch.Dir = render.FramePatchScrollUp
 		patch.LineY = current.ContentRect.Y + visibleRows - scrollRows
-		copyHistoryPatchSetANSILines(&patch, runtime.state.History, runtime.state.CopyMode, current.ViewportTop+visibleRows-scrollRows, scrollRows, current.ContentRect.W, current.Theme)
+		copyHistoryPatchSetANSILines(&patch, patchRoot.History, patchRoot.CopyMode, current.ViewportTop+visibleRows-scrollRows, scrollRows, current.ContentRect.W, current.Theme)
 	} else {
 		patch.Dir = render.FramePatchScrollDown
 		patch.LineY = current.ContentRect.Y + scrollRows - 1
-		copyHistoryPatchSetANSILines(&patch, runtime.state.History, runtime.state.CopyMode, current.ViewportTop, scrollRows, current.ContentRect.W, current.Theme)
+		copyHistoryPatchSetANSILines(&patch, patchRoot.History, patchRoot.CopyMode, current.ViewportTop, scrollRows, current.ContentRect.W, current.Theme)
 	}
 	frame := render.Frame{
 		Patch:      &patch,
-		Cursor:     copyHistoryPatchCursor(runtime.state.History, runtime.state.CopyMode),
-		CursorRect: copyHistoryPatchCursorRect(runtime.state.History, runtime.state.CopyMode, current.ContentRect),
+		Cursor:     copyHistoryPatchCursor(patchRoot.History, patchRoot.CopyMode),
+		CursorRect: copyHistoryPatchCursorRect(patchRoot.History, patchRoot.CopyMode, current.ContentRect),
 		Metadata:   current.Metadata,
 		Theme:      current.Theme,
 	}
-	runtime.lastHitRegions = copyHistoryPatchHitRegions(runtime.lastHitRegions, runtime.state.History, runtime.state.CopyMode, current.ContentRect)
+	runtime.lastHitRegions = copyHistoryPatchHitRegions(runtime.lastHitRegions, patchRoot.History, patchRoot.CopyMode, current.ContentRect)
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
 	runtime.copyHistoryPatch = current
@@ -100,7 +103,7 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 	return true
 }
 
-func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(current copyHistoryPatchCache) bool {
+func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(root state.Root, current copyHistoryPatchCache) bool {
 	if current.Cursor == runtime.copyHistoryPatch.Cursor {
 		return false
 	}
@@ -109,8 +112,8 @@ func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(current copyHistoryPa
 	}
 	frame := render.Frame{
 		Patch:      &render.FramePatch{CursorOnly: true},
-		Cursor:     copyHistoryPatchCursor(runtime.state.History, runtime.state.CopyMode),
-		CursorRect: copyHistoryPatchCursorRect(runtime.state.History, runtime.state.CopyMode, current.ContentRect),
+		Cursor:     copyHistoryPatchCursor(root.History, root.CopyMode),
+		CursorRect: copyHistoryPatchCursorRect(root.History, root.CopyMode, current.ContentRect),
 		Metadata:   current.Metadata,
 		Theme:      current.Theme,
 	}
@@ -188,6 +191,7 @@ func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistor
 	theme = theme.WithFallback()
 	return copyHistoryPatchCache{
 		Valid:       true,
+		ViewID:      root.CopyMode.ViewID,
 		TerminalID:  root.CopyMode.TerminalID,
 		Token:       root.CopyMode.BoundToken,
 		Cols:        root.CopyMode.BoundCols,
@@ -206,21 +210,26 @@ func buildCopyHistoryPatchCache(root state.Root, theme render.Theme) (copyHistor
 	}, true
 }
 
-func buildCopyHistoryPatchCacheFromPrevious(root state.Root, previous copyHistoryPatchCache) (copyHistoryPatchCache, bool) {
-	root, _ = rootWithActiveCopyHistorySession(root)
+func buildCopyHistoryPatchCacheFromPrevious(root state.Root, previous copyHistoryPatchCache) (state.Root, copyHistoryPatchCache, bool) {
+	if previous.ViewID != "" {
+		root = rootWithCopyHistorySessionForView(root, previous.ViewID)
+	} else {
+		root, _ = rootWithActiveCopyHistorySession(root)
+	}
 	if !copyHistoryPatchStateEligible(root) {
-		return copyHistoryPatchCache{}, false
+		return state.Root{}, copyHistoryPatchCache{}, false
 	}
 	if root.Viewport.Cols != previous.Metadata.Width || root.Viewport.Rows != previous.Metadata.Height {
-		return copyHistoryPatchCache{}, false
+		return state.Root{}, copyHistoryPatchCache{}, false
 	}
 	if root.CopyMode.ViewRows != previous.ViewRows || root.CopyMode.BoundCols != previous.Cols || root.History.Cols != previous.Cols {
-		return copyHistoryPatchCache{}, false
+		return state.Root{}, copyHistoryPatchCache{}, false
 	}
 	if root.CopyMode.ViewportTop < 0 || root.CopyMode.ViewportTop+previous.ContentRect.H > len(root.History.Rows) {
-		return copyHistoryPatchCache{}, false
+		return state.Root{}, copyHistoryPatchCache{}, false
 	}
 	current := previous
+	current.ViewID = root.CopyMode.ViewID
 	current.TerminalID = root.CopyMode.TerminalID
 	current.Token = root.CopyMode.BoundToken
 	current.Cols = root.CopyMode.BoundCols
@@ -234,7 +243,7 @@ func buildCopyHistoryPatchCacheFromPrevious(root state.Root, previous copyHistor
 	current.Cursor = root.CopyMode.Cursor
 	current.TopAnchor = copyHistoryPatchRowAnchorAt(root.History, root.CopyMode.ViewportTop)
 	current.Valid = true
-	return current, true
+	return root, current, true
 }
 
 func copyHistoryPatchStateEligible(root state.Root) bool {
@@ -255,7 +264,8 @@ func copyHistoryPatchStateEligible(root state.Root) bool {
 }
 
 func copyHistoryPatchStable(previous copyHistoryPatchCache, current copyHistoryPatchCache) bool {
-	return previous.TerminalID == current.TerminalID &&
+	return previous.ViewID == current.ViewID &&
+		previous.TerminalID == current.TerminalID &&
 		previous.Token == current.Token &&
 		previous.Cols == current.Cols &&
 		previous.HistoryGen == current.HistoryGen &&
@@ -348,15 +358,40 @@ func copyHistoryPatchCursorRect(history state.HistoryStore, copyMode state.CopyM
 }
 
 func copyHistoryPatchHitRegions(previous []render.HitRegion, history state.HistoryStore, copyMode state.CopyModeStore, rect render.Rect) []render.HitRegion {
+	replacement := makeCopyHistoryPatchHitRegions(history, copyMode, rect)
+	insertAt := -1
 	write := 0
 	for read, region := range previous {
-		if region.Kind != render.HitRegionHistoryRow {
-			previous[write] = previous[read]
-			write++
+		if region.Kind == render.HitRegionHistoryRow && !regionBelongsToDifferentCopyView(region, copyMode) {
+			if insertAt < 0 {
+				insertAt = write
+			}
+			continue
 		}
+		if write != read {
+			previous[write] = previous[read]
+		}
+		write++
 	}
 	out := previous[:write]
+	if len(replacement) == 0 {
+		return out
+	}
+	if insertAt < 0 {
+		insertAt = len(out)
+	}
+	tail := append([]render.HitRegion(nil), out[insertAt:]...)
+	out = append(out[:insertAt], replacement...)
+	return append(out, tail...)
+}
+
+func makeCopyHistoryPatchHitRegions(history state.HistoryStore, copyMode state.CopyModeStore, rect render.Rect) []render.HitRegion {
 	limit := minCopyHistoryPatchInt(rect.H, len(history.Rows)-copyMode.ViewportTop)
+	if limit <= 0 {
+		return nil
+	}
+	out := make([]render.HitRegion, 0, limit)
+	floating := strings.HasPrefix(copyMode.ViewID, "floating:")
 	for i := 0; i < limit; i++ {
 		rowIndex := copyMode.ViewportTop + i
 		row := history.Rows[rowIndex]
@@ -370,14 +405,25 @@ func copyHistoryPatchHitRegions(previous []render.HitRegion, history state.Histo
 			regionWidth = 1
 		}
 		out = append(out, render.HitRegion{
-			Kind:   render.HitRegionHistoryRow,
-			Rect:   render.Rect{X: rect.X + prefix, Y: rect.Y + i, W: regionWidth, H: 1},
-			LineID: row.LineID,
-			Row:    rowIndex,
-			PaneID: copyMode.PaneID,
+			Kind:     render.HitRegionHistoryRow,
+			Rect:     render.Rect{X: rect.X + prefix, Y: rect.Y + i, W: regionWidth, H: 1},
+			LineID:   row.LineID,
+			Row:      rowIndex,
+			PaneID:   copyMode.PaneID,
+			Floating: floating,
 		})
 	}
 	return out
+}
+
+func regionBelongsToDifferentCopyView(region render.HitRegion, copyMode state.CopyModeStore) bool {
+	if copyMode.ViewID == "" || region.PaneID == "" {
+		return false
+	}
+	if copyMode.PaneID != "" {
+		return region.PaneID != copyMode.PaneID
+	}
+	return true
 }
 
 func copyHistoryPatchCanScrollRegion(cache copyHistoryPatchCache) bool {

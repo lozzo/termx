@@ -334,6 +334,7 @@
 | 215E1-R160. SK floating move repaint union | 完成 | `termx-tui-v3/app/`、`termx-tui-v3/render/`、`termx-tui-v3/terminalhost/`、`workflow.md` | 已修复产品回归：floating pane 移动/缩放/开关这类覆盖层几何变化会给下一帧打完整校准标记，FrameSink 看到 `ForceFullRepaint` 后清屏重画完整 frame，避免旧浮窗位置、拖拽伪影或底层 ANSI 背景残留；普通 live 文本变化仍走行级增量，copy/history 专用 patch 不受影响。新增 FrameSink 与 runtime drag 回归；准入 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check` 通过 |
 | 215E1-R161. SK floating covers host cursor | 完成 | `termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已修复产品回归：floating 覆盖背后 pane terminal 光标时，宿主硬光标会转为隐藏 anchor，不再透过浮窗显示；浮窗自身 cursor、overlay/copy mode cursor 优先级保持不变。新增 render 纯布局回归和 runtime host cursor 投影回归；准入 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check` 通过 |
 | 215E1-R162. SK floating terminal transparent side bands | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已修复产品回归：根因不是移动重绘，而是 canvas 局部覆盖合并 ASCII run 时会清掉整段 footprint，导致浮窗左右侧背后文本被擦成黑块。现在 canvas 只清目标列并保留左右未覆盖片段；floating terminal-live 只写真实 terminal extent，extent 外侧保留背后 pane 文本。新增 render 回归；准入 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check` 通过 |
+| 215E1-R163. SK history stale error and wheel view isolation | 完成 | `termx-tui-v3/services/`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场两个 copy/history 回归：protocol `400 stale history window` 会在 TUI protocol adapter 归一成内部 stale sentinel，匹配当前 pending 时只清请求不写 UI raw error；floating/tiled 同时处于 history 时，鼠标 wheel 命中区只按最前景 TerminalView 路由，floating 空白/raise 区域不会透到底层 pane，patch hit regions 保留 view/floating 身份。准入 `go test ./termx-tui-v3/... -count=1`、`git diff --check` 通过 |
 
 当前下一步：
 
@@ -345,6 +346,7 @@
 - `215E1-R160 floating move repaint union` 已完成：floating 几何变化触发一次完整帧校准，移动/缩放时旧位置会恢复底层 pane，不再依赖普通行级覆盖。
 - `215E1-R161 floating covers host cursor` 已完成：floating 覆盖背后 pane 光标时，宿主硬光标转为隐藏 anchor；IME anchor 位置保留，视觉光标不再透过浮窗。
 - `215E1-R162 floating terminal transparent side bands` 已完成：修正 canvas 局部覆盖宽 ASCII run 清整段 footprint 的问题，浮窗左右侧不再把背后 pane 文本擦成黑块。
+- `215E1-R163 history stale error and wheel view isolation` 已完成：protocol stale history window 不再冒成用户可见 `protocol error 400`；wheel 命中只绑定最前景 history/floating view，浮窗和背后 pane 的历史滚动不会互相串动。
 - `215E1-R149 canvas safe cell strip pressure` 已完成：Safe 且无控制字符的 canvas cell 跳过重复 ANSI strip，100k TUI alloc_space 降到约 90.9MB；RSS 仍在约 42-43MB，后续若继续压应看 history source/protocol decode 常驻和 footer/chrome 生成分配，而不是继续抠 `ansi.Strip`。
 - `215E1-R154 floating copy history view input isolation` 已完成：真实 runtime/hit-region 回归覆盖 floating history wheel 只滚 floating view，不改最后 active tiled view；`cd termx-tui-v3 && go test ./... -count=1` 通过。
 - `215E1-R153 compact commit-state metadata fast path` 已完成：commit 扫描只读 seal/dirty metadata，不为 compact line 解码 payload；100k RSS/时间基本持平，属于小 CPU/alloc 收口。下一步不要继续死磕 commit-state，应转向 live snapshot 直出 compact rows，减少 `trimmedScreenRowCellsLocked` + `vtermCellsToProtocol` 中间表示分配。
