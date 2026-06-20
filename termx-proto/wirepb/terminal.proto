@@ -242,6 +242,10 @@ message HistoryWindowParams {
   int32 before_row_in_line = 9;
   uint64 boundary_first_line_id = 10;
   uint64 boundary_last_line_id = 11;
+  string mode = 12;
+  bool after_cursor_valid = 13;
+  uint64 after_line_id = 14;
+  int32 after_row_in_line = 15;
 }
 
 message ListResult {

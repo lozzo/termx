@@ -18,6 +18,7 @@ const (
 	HistoryRequestLatest HistoryRequestKind = "latest"
 	HistoryRequestOldest HistoryRequestKind = "oldest"
 	HistoryRequestOlder  HistoryRequestKind = "older"
+	HistoryRequestNewer  HistoryRequestKind = "newer"
 )
 
 // HistoryWindowOp 是 core-v2 authoritative window 合并方式。
@@ -26,6 +27,7 @@ type HistoryWindowOp string
 const (
 	HistoryWindowReplace HistoryWindowOp = "replace"
 	HistoryWindowPrepend HistoryWindowOp = "prepend"
+	HistoryWindowAppend  HistoryWindowOp = "append"
 )
 
 // HistoryCursor 是 older pagination 的 logical boundary。
@@ -170,6 +172,15 @@ const (
 	OlderRequestMissing   OlderRequestState = "missing"
 )
 
+// NewerRequestState 汇总本地窗口尾部是否已经被回收，以及能否从 frozen backend 拉回。
+type NewerRequestState string
+
+const (
+	NewerRequestReady   NewerRequestState = "ready"
+	NewerRequestPending NewerRequestState = "pending"
+	NewerRequestMissing NewerRequestState = "missing"
+)
+
 // CopyModeStore 只保存 copy mode 交互态。
 type CopyModeStore struct {
 	Active       bool
@@ -247,6 +258,15 @@ func (store HistoryStore) BeginOlder(req HistoryPendingRequest) (HistoryStore, e
 	return store, nil
 }
 
+func (store HistoryStore) BeginNewer(req HistoryPendingRequest) (HistoryStore, error) {
+	if store.Pending != nil {
+		return store, ErrHistoryRequestPending
+	}
+	req.Kind = HistoryRequestNewer
+	store.Pending = &req
+	return store, nil
+}
+
 func (store HistoryStore) BeginOldest(req HistoryPendingRequest) (HistoryStore, error) {
 	if store.Pending != nil {
 		return store, ErrHistoryRequestPending
@@ -283,6 +303,14 @@ func (store HistoryStore) ApplyWindow(requestID RequestID, window HistoryWindow)
 			return store, 0, nil
 		}
 		store = store.prepend(window)
+		inserted := len(store.Rows) - beforeRows
+		if inserted < 0 {
+			inserted = 0
+		}
+		return store, inserted, nil
+	case HistoryWindowAppend:
+		beforeRows := len(store.Rows)
+		store = store.append(window)
 		inserted := len(store.Rows) - beforeRows
 		if inserted < 0 {
 			inserted = 0
@@ -326,6 +354,20 @@ func (store HistoryStore) OlderRequestState() OlderRequestState {
 	return OlderRequestReady
 }
 
+func (store HistoryStore) NewerRequestState() NewerRequestState {
+	if store.Pending != nil {
+		return NewerRequestPending
+	}
+	if store.Token == "" || len(store.Rows) == 0 || store.Boundary.LastLineID == 0 {
+		return NewerRequestMissing
+	}
+	tail := store.Rows[len(store.Rows)-1]
+	if tail.LineID == 0 || tail.LineID == store.Boundary.LastLineID {
+		return NewerRequestMissing
+	}
+	return NewerRequestReady
+}
+
 func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryWindow) error {
 	if pending.TerminalID != "" && pending.TerminalID != window.TerminalID {
 		return ErrHistoryWindowMismatch
@@ -366,6 +408,25 @@ func validateWindowAgainstPending(pending HistoryPendingRequest, window HistoryW
 			return ErrStaleHistoryResponse
 		}
 		if pending.Generation != 0 && pending.Generation != window.Generation {
+			return ErrStaleHistoryResponse
+		}
+		if len(window.SourceLines) != 0 && pending.Boundary.LastLineID != 0 && pending.Boundary.LastLineID != window.Boundary.LastLineID {
+			return ErrStaleHistoryResponse
+		}
+	case HistoryRequestNewer:
+		if window.Op != HistoryWindowAppend {
+			return ErrHistoryWindowMismatch
+		}
+		if pending.Cols != 0 && pending.Cols != window.Cols {
+			return ErrHistoryWindowMismatch
+		}
+		if pending.Token != "" && pending.Token != window.Token {
+			return ErrStaleHistoryResponse
+		}
+		if pending.Generation != 0 && pending.Generation != window.Generation {
+			return ErrStaleHistoryResponse
+		}
+		if len(window.SourceLines) != 0 && pending.Boundary.FirstLineID != 0 && pending.Boundary.FirstLineID != window.Boundary.FirstLineID {
 			return ErrStaleHistoryResponse
 		}
 		if len(window.SourceLines) != 0 && pending.Boundary.LastLineID != 0 && pending.Boundary.LastLineID != window.Boundary.LastLineID {
@@ -419,6 +480,28 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	return store
 }
 
+func (store HistoryStore) append(window HistoryWindow) HistoryStore {
+	existing := store.SourceLines
+	if len(existing) == 0 && len(store.Rows) > 0 {
+		existing = historyRowsToLogicalLines(store.Rows, store.Lines)
+	}
+	newer := historyWindowSourceLines(window)
+	if fast, rows, spans := fastAppendedHistoryRows(existing, newer, store.Rows, store.Lines, store.Cols); fast {
+		store.SourceLines = appendHistoryLogicalLines(existing, newer)
+		store.Rows = rows
+		store.Lines = spans
+	} else {
+		store.SourceLines = mergeAppendedHistoryLogicalLines(existing, newer)
+		store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+	}
+	store.Token = window.Token
+	store.Generation = window.Generation
+	store.Boundary.LastLineID = window.Boundary.LastLineID
+	store.HasMore = window.HasMore
+	store.Exhausted = ExhaustedMarker{}
+	return store
+}
+
 func fastPrependedHistoryRows(older []HistoryLogicalLine, existing []HistoryLogicalLine, existingRows []HistoryRow, existingSpans []HistoryLineSpan, cols int) (bool, []HistoryRow, []HistoryLineSpan) {
 	if historyPrependNeedsBoundaryMerge(older, existing) {
 		return false, nil, nil
@@ -441,6 +524,26 @@ func fastPrependedHistoryRows(older []HistoryLogicalLine, existing []HistoryLogi
 	return true, rows, spans
 }
 
+func fastAppendedHistoryRows(existing []HistoryLogicalLine, newer []HistoryLogicalLine, existingRows []HistoryRow, existingSpans []HistoryLineSpan, cols int) (bool, []HistoryRow, []HistoryLineSpan) {
+	if historyAppendNeedsBoundaryMerge(existing, newer) {
+		return false, nil, nil
+	}
+	newerRows, newerSpans := ReflowHistoryLogicalLines(newer, cols)
+	if len(existing) > 0 && len(existingRows) == 0 {
+		return false, nil, nil
+	}
+	rows := make([]HistoryRow, 0, len(existingRows)+len(newerRows))
+	rows = append(rows, existingRows...)
+	rows = append(rows, newerRows...)
+	if len(existingSpans) == 0 && len(existingRows) > 0 {
+		existingSpans = historyLineSpansForSearch(HistoryStore{Rows: existingRows})
+	}
+	spans := make([]HistoryLineSpan, 0, len(existingSpans)+len(newerSpans))
+	spans = append(spans, existingSpans...)
+	spans = appendRebasedHistoryLineSpans(spans, newerSpans, len(existingRows))
+	return true, rows, spans
+}
+
 func historyPrependNeedsBoundaryMerge(older []HistoryLogicalLine, existing []HistoryLogicalLine) bool {
 	if len(older) == 0 || len(existing) == 0 {
 		return false
@@ -453,6 +556,18 @@ func historyPrependNeedsBoundaryMerge(older []HistoryLogicalLine, existing []His
 		firstExisting.ClippedBefore
 }
 
+func historyAppendNeedsBoundaryMerge(existing []HistoryLogicalLine, newer []HistoryLogicalLine) bool {
+	if len(existing) == 0 || len(newer) == 0 {
+		return false
+	}
+	lastExisting := existing[len(existing)-1]
+	firstNewer := newer[0]
+	return lastExisting.LineID != 0 &&
+		lastExisting.LineID == firstNewer.LineID &&
+		lastExisting.ClippedAfter &&
+		firstNewer.ClippedBefore
+}
+
 func prependHistoryLogicalLines(older []HistoryLogicalLine, existing []HistoryLogicalLine) []HistoryLogicalLine {
 	if len(older) == 0 {
 		return existing
@@ -463,6 +578,18 @@ func prependHistoryLogicalLines(older []HistoryLogicalLine, existing []HistoryLo
 	out := make([]HistoryLogicalLine, 0, len(older)+len(existing))
 	out = append(out, older...)
 	return append(out, existing...)
+}
+
+func appendHistoryLogicalLines(existing []HistoryLogicalLine, newer []HistoryLogicalLine) []HistoryLogicalLine {
+	if len(newer) == 0 {
+		return existing
+	}
+	if len(existing) == 0 {
+		return newer
+	}
+	out := make([]HistoryLogicalLine, 0, len(existing)+len(newer))
+	out = append(out, existing...)
+	return append(out, newer...)
 }
 
 func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []HistoryLogicalLine) []HistoryLogicalLine {
@@ -489,6 +616,32 @@ func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []Hi
 		// 正好拼上了同一 logical line 的中缝；合并后只保留真正外侧还没补齐的 clipped 边。
 		lastOlder.ClippedBefore = lastOlder.ClippedBefore
 		lastOlder.ClippedAfter = firstExisting.ClippedAfter
+		rest = rest[1:]
+	}
+	return append(merged, rest...)
+}
+
+func mergeAppendedHistoryLogicalLines(existing []HistoryLogicalLine, newer []HistoryLogicalLine) []HistoryLogicalLine {
+	if len(existing) == 0 {
+		return cloneHistoryLogicalLines(newer)
+	}
+	if len(newer) == 0 {
+		return cloneHistoryLogicalLines(existing)
+	}
+	merged := cloneHistoryLogicalLines(existing)
+	rest := cloneHistoryLogicalLines(newer)
+	lastExisting := &merged[len(merged)-1]
+	firstNewer := rest[0]
+	if lastExisting.LineID != 0 &&
+		lastExisting.LineID == firstNewer.LineID &&
+		lastExisting.ClippedAfter &&
+		firstNewer.ClippedBefore {
+		lastExisting.Text += firstNewer.Text
+		lastExisting.Cells = append(lastExisting.Cells, cloneHistoryCells(firstNewer.Cells)...)
+		if firstNewer.TailFill != nil {
+			lastExisting.TailFill = cloneHistoryCellStyle(firstNewer.TailFill)
+		}
+		lastExisting.ClippedAfter = firstNewer.ClippedAfter
 		rest = rest[1:]
 	}
 	return append(merged, rest...)
@@ -597,8 +750,20 @@ func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, Hist
 			boundaryLast = store.Rows[len(store.Rows)-1].LineID
 		}
 		store.Boundary.LastLineID = boundaryLast
+		store.Cursor = cursorBeforeFirstLocalRow(store.Rows)
 	}
 	return store, result
+}
+
+func cursorBeforeFirstLocalRow(rows []HistoryRow) HistoryCursor {
+	if len(rows) == 0 {
+		return HistoryCursor{}
+	}
+	first := rows[0]
+	if first.LineID == 0 {
+		return HistoryCursor{}
+	}
+	return HistoryCursor{Valid: true, BeforeLineID: first.LineID, BeforeRowInLine: first.RowInLine}
 }
 
 func historyFirstRowIndexByLineID(rows []HistoryRow, lineID uint64) int {

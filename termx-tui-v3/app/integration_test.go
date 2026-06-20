@@ -5991,6 +5991,76 @@ func TestCopyModeContinuousOlderKeepsBoundedLocalHistoryWindow(t *testing.T) {
 	}
 }
 
+func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	host.SetSize(100, 12)
+	loadedRows := make([]state.HistoryRow, 0, 128)
+	for i := 1000; i < 1128; i++ {
+		loadedRows = append(loadedRows, state.HistoryRow{Text: fmt.Sprintf("old-%04d", i), LineID: uint64(i)})
+	}
+	newerRows := make([]state.HistoryRow, 0, 64)
+	for i := 1128; i < 1192; i++ {
+		newerRows = append(newerRows, state.HistoryRow{Text: fmt.Sprintf("new-%04d", i), LineID: uint64(i)})
+	}
+	newer := historyWindowForApp(state.HistoryWindowAppend, "term-1", "tok-1", 98, 7, newerRows)
+	newer.Boundary = state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1199}
+	core := &services.FakeCoreClient{
+		NewerResponses: []services.HistoryResult{{Window: newer}},
+	}
+	runtime := newCopyModeRuntime(host, core, nil)
+	runtime.state.History = state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Cols:        98,
+		SourceLines: historyLogicalLinesForApp(loadedRows),
+		Rows:        loadedRows,
+		Lines:       []state.HistoryLineSpan{{LineID: loadedRows[0].LineID, StartRow: 0, EndRow: len(loadedRows) - 1}},
+		Cursor:      state.HistoryCursor{Valid: true, BeforeLineID: loadedRows[0].LineID},
+		Generation:  7,
+		Boundary:    state.HistoryBoundary{FirstLineID: loadedRows[0].LineID, LastLineID: 1199},
+		HasMore:     true,
+	}
+	runtime.state.CopyMode = state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		TerminalID:  "term-1",
+		BoundToken:  "tok-1",
+		BoundCols:   98,
+		ViewRows:    8,
+		ViewportTop: len(loadedRows) - 8,
+		Cursor:      state.CopyPosition{Row: len(loadedRows) - 1},
+	}
+
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageDn}}); err != nil {
+		t.Fatalf("post page down: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain page down: %v", err)
+	}
+	if len(core.NewerRequests) != 1 {
+		t.Fatalf("expected one newer request, got %#v", core.NewerRequests)
+	}
+	req := core.NewerRequests[0]
+	if req.Token != "tok-1" || req.Generation != 7 || req.Boundary.LastLineID != 1199 {
+		t.Fatalf("newer request must keep frozen token/generation/tail boundary, got %#v", req)
+	}
+	if req.Cursor.BeforeLineID != loadedRows[len(loadedRows)-1].LineID || req.Cursor.BeforeRowInLine != loadedRows[len(loadedRows)-1].RowInLine {
+		t.Fatalf("newer request should start after local tail, got %#v", req.Cursor)
+	}
+	if got := runtime.State().History.Rows[len(runtime.State().History.Rows)-1].LineID; got != newerRows[len(newerRows)-1].LineID {
+		t.Fatalf("newer append should restore backend rows, got tail %d", got)
+	}
+	if cursorLine := runtime.State().History.Rows[runtime.State().CopyMode.Cursor.Row].LineID; cursorLine <= loadedRows[len(loadedRows)-1].LineID {
+		t.Fatalf("page down should continue into appended newer rows, cursor row=%d line=%d", runtime.State().CopyMode.Cursor.Row, cursorLine)
+	}
+	if runtime.State().History.Boundary.LastLineID != 1199 {
+		t.Fatalf("append must keep frozen tail boundary, got %#v", runtime.State().History.Boundary)
+	}
+}
+
 func TestCopyModeOlderBoundaryOverlapKeepsSelectionOnOriginalContent(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(6, 12)
@@ -6296,6 +6366,7 @@ type blockingHistoryClient struct {
 	allowOlder    bool
 	latestReqs    []services.HistoryLatestRequest
 	olderReqs     []services.HistoryOlderRequest
+	newerReqs     []services.HistoryNewerRequest
 	latestResultC chan blockingHistoryResult
 	olderResultC  chan blockingHistoryResult
 }
@@ -6347,6 +6418,10 @@ func (client *blockingHistoryClient) HistoryOldest(context.Context, services.His
 	return services.HistoryResult{}, errors.New("unexpected oldest request")
 }
 
+func (client *blockingHistoryClient) HistoryNewer(context.Context, services.HistoryNewerRequest) (services.HistoryResult, error) {
+	return services.HistoryResult{}, errors.New("unexpected newer request")
+}
+
 func (client *blockingHistoryClient) ReleaseHistory(context.Context, services.HistoryReleaseRequest) error {
 	return nil
 }
@@ -6364,6 +6439,14 @@ func (client *blockingHistoryClient) olderRequests() []services.HistoryOlderRequ
 	defer client.mu.Unlock()
 	out := make([]services.HistoryOlderRequest, len(client.olderReqs))
 	copy(out, client.olderReqs)
+	return out
+}
+
+func (client *blockingHistoryClient) newerRequests() []services.HistoryNewerRequest {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	out := make([]services.HistoryNewerRequest, len(client.newerReqs))
+	copy(out, client.newerReqs)
 	return out
 }
 

@@ -22,6 +22,7 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	client := &FakeCoreClient{
 		LatestResponses: []HistoryResult{{Window: state.HistoryWindow{Token: "latest"}}},
 		OlderResponses:  []HistoryResult{{Window: state.HistoryWindow{Token: "older"}}},
+		NewerResponses:  []HistoryResult{{Window: state.HistoryWindow{Token: "newer"}}},
 		OldestResponses: []HistoryResult{{Window: state.HistoryWindow{Token: "oldest"}}},
 	}
 
@@ -42,8 +43,21 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("older: %v", err)
 	}
-	oldest, err := client.HistoryOldest(context.Background(), HistoryOldestRequest{
+	newer, err := client.HistoryNewer(context.Background(), HistoryNewerRequest{
 		RequestID:  3,
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       10,
+		Token:      "latest",
+		Generation: 7,
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 20},
+		Boundary:   state.HistoryBoundary{FirstLineID: 10, LastLineID: 30},
+	})
+	if err != nil {
+		t.Fatalf("newer: %v", err)
+	}
+	oldest, err := client.HistoryOldest(context.Background(), HistoryOldestRequest{
+		RequestID:  4,
 		TerminalID: "term-1",
 		Cols:       80,
 		Rows:       10,
@@ -64,7 +78,10 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	if older.RequestID != 2 || older.Window.Token != "older" {
 		t.Fatalf("unexpected older result %#v", older)
 	}
-	if oldest.RequestID != 3 || oldest.Window.Token != "oldest" {
+	if newer.RequestID != 3 || newer.Window.Token != "newer" {
+		t.Fatalf("unexpected newer result %#v", newer)
+	}
+	if oldest.RequestID != 4 || oldest.Window.Token != "oldest" {
 		t.Fatalf("unexpected oldest result %#v", oldest)
 	}
 	if len(client.LatestRequests) != 1 || client.LatestRequests[0].TerminalID != "term-1" {
@@ -72,6 +89,9 @@ func TestFakeCoreClientRecordsHistoryRequests(t *testing.T) {
 	}
 	if len(client.OlderRequests) != 1 || client.OlderRequests[0].Token != "latest" {
 		t.Fatalf("unexpected older requests %#v", client.OlderRequests)
+	}
+	if len(client.NewerRequests) != 1 || client.NewerRequests[0].Boundary.LastLineID != 30 {
+		t.Fatalf("unexpected newer requests %#v", client.NewerRequests)
 	}
 	if len(client.OldestRequests) != 1 || client.OldestRequests[0].Boundary.LastLineID != 20 {
 		t.Fatalf("unexpected oldest requests %#v", client.OldestRequests)

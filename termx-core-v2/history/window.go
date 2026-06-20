@@ -15,6 +15,7 @@ type HistoryWindowOp string
 const (
 	HistoryWindowReplace HistoryWindowOp = "replace"
 	HistoryWindowPrepend HistoryWindowOp = "prepend"
+	HistoryWindowAppend  HistoryWindowOp = "append"
 )
 
 // WindowToken 绑定 HistoryTrack generation、cols 与 logical boundary，用于

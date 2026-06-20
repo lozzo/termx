@@ -418,9 +418,31 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		t.Fatalf("unexpected older params %#v", params)
 	}
 
+	client.window.Op = protocol.HistoryWindowAppend
+	newer, err := adapter.HistoryNewer(context.Background(), HistoryNewerRequest{
+		RequestID:  3,
+		TerminalID: "term-1",
+		Cols:       80,
+		Rows:       10,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 43, BeforeRowInLine: 2},
+		Boundary:   state.HistoryBoundary{FirstLineID: 40, LastLineID: 50},
+	})
+	if err != nil {
+		t.Fatalf("newer: %v", err)
+	}
+	if newer.RequestID != 3 || newer.Window.Op != state.HistoryWindowAppend {
+		t.Fatalf("unexpected newer result %#v", newer)
+	}
+	params = client.requests[2]
+	if params.Mode != "newer" || params.Token != "tok-1" || params.Generation != 7 || !params.AfterCursorValid || params.AfterLineID != 43 || params.AfterRowInLine != 2 || params.BoundaryFirstLineID != 40 || params.BoundaryLastLineID != 50 {
+		t.Fatalf("unexpected newer params %#v", params)
+	}
+
 	client.window.Op = protocol.HistoryWindowReplace
 	oldest, err := adapter.HistoryOldest(context.Background(), HistoryOldestRequest{
-		RequestID:  3,
+		RequestID:  4,
 		TerminalID: "term-1",
 		Cols:       80,
 		Rows:       10,
@@ -431,10 +453,10 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("oldest: %v", err)
 	}
-	if oldest.RequestID != 3 || oldest.Window.Op != state.HistoryWindowReplace {
+	if oldest.RequestID != 4 || oldest.Window.Op != state.HistoryWindowReplace {
 		t.Fatalf("unexpected oldest result %#v", oldest)
 	}
-	params = client.requests[2]
+	params = client.requests[3]
 	if params.Token != "tok-1" || params.Generation != 7 || params.CursorValid || params.BeforeLineID != 0 || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected oldest params %#v", params)
 	}

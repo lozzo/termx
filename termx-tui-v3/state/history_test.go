@@ -170,6 +170,52 @@ func TestHistoryStorePrependsOlderAndRebasesExistingSpans(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreAppendsNewerAndKeepsFrozenBoundary(t *testing.T) {
+	store := HistoryStore{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Cols:       80,
+		Rows: []HistoryRow{
+			{Text: "old", LineID: 10},
+		},
+		Lines:      []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0}},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 20},
+	}
+	store, err := store.BeginNewer(HistoryPendingRequest{
+		ID:         3,
+		TerminalID: "term-1",
+		Cols:       80,
+		Token:      "tok-1",
+		Generation: 7,
+		Cursor:     HistoryCursor{Valid: true, BeforeLineID: 10},
+		Boundary:   store.Boundary,
+	})
+	if err != nil {
+		t.Fatalf("begin newer: %v", err)
+	}
+
+	window := historyWindow(HistoryWindowAppend, "term-1", "tok-1", 80, 7, []HistoryRow{
+		{Text: "new", LineID: 11},
+		{Text: "newer", LineID: 12},
+	})
+	window.Boundary = HistoryBoundary{FirstLineID: 10, LastLineID: 20}
+	store, inserted, err := store.ApplyWindow(3, window)
+	if err != nil {
+		t.Fatalf("apply newer: %v", err)
+	}
+
+	if inserted != 2 {
+		t.Fatalf("expected 2 appended rows, got %d", inserted)
+	}
+	if got := rowTexts(store.Rows); !reflect.DeepEqual(got, []string{"old", "new", "newer"}) {
+		t.Fatalf("unexpected rows %v", got)
+	}
+	if store.Boundary.FirstLineID != 10 || store.Boundary.LastLineID != 20 {
+		t.Fatalf("append must keep frozen boundary, got %#v", store.Boundary)
+	}
+}
+
 func TestHistoryStorePrependMergesBoundaryOverlapForSameLogicalLine(t *testing.T) {
 	store := HistoryStore{
 		TerminalID: "term-1",

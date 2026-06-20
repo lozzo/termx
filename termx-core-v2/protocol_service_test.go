@@ -639,6 +639,75 @@ func TestFrozenSnapshotOlderWindowUsesLargeSnapshotCursor(t *testing.T) {
 	if oldest.FirstLineID != 1 || oldest.Rows[0].LineID != 1 || !oldest.HasMore {
 		t.Fatalf("oldest page should start at first logical line and report skipped newer rows, got %#v", oldest)
 	}
+
+	newer := frozenSnapshotNewerWindow(snapshot, 80, 24, history.HistoryCursor{Valid: true, BeforeLineID: older.LastLineID, BeforeRowInLine: older.Rows[len(older.Rows)-1].RowInLine})
+	if newer.Op != history.HistoryWindowAppend || len(newer.Rows) != 24 {
+		t.Fatalf("expected append newer page, got %#v", newer)
+	}
+	if newer.Rows[0].LineID <= older.LastLineID {
+		t.Fatalf("newer page must move forward after local tail, olderLast=%d firstNewer=%d", older.LastLineID, newer.Rows[0].LineID)
+	}
+}
+
+func TestProtocolServiceHistoryWindowNewerUsesFrozenSnapshot(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 1}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "one\ntwo\nthree\nfour\nfive"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       10,
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               2,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("older history.window: %v", err)
+	}
+	if len(older.Rows) != 2 || rowText(older.Rows[len(older.Rows)-1]) != "four" {
+		t.Fatalf("expected older page ending at four, got %#v", older)
+	}
+	newer, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		Mode:                "newer",
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		AfterCursorValid:    true,
+		AfterLineID:         older.RowLineIDs[len(older.RowLineIDs)-1],
+		AfterRowInLine:      0,
+		BoundaryFirstLineID: older.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err != nil {
+		t.Fatalf("newer history.window: %v", err)
+	}
+	if newer.Op != protocol.HistoryWindowAppend || len(newer.Rows) != 1 || rowText(newer.Rows[0]) != "five" {
+		t.Fatalf("expected append newer page with five, got %#v", newer)
+	}
+	if newer.FirstLineID != older.FirstLineID || newer.LastLineID != latest.LastLineID {
+		t.Fatalf("newer response must keep frozen merged boundary, got first=%d last=%d", newer.FirstLineID, newer.LastLineID)
+	}
 }
 
 func TestProtocolServiceFrozenSnapshotContinuousOlderMovesBackward(t *testing.T) {

@@ -468,11 +468,15 @@ type HistoryWindowParams struct {
 	BeforeOffset        int
 	Limit               int
 	Cols                int
+	Mode                string
 	Token               string
 	Generation          uint64
 	CursorValid         bool
 	BeforeLineID        uint64
 	BeforeRowInLine     int
+	AfterCursorValid    bool
+	AfterLineID         uint64
+	AfterRowInLine      int
 	BoundaryFirstLineID uint64
 	BoundaryLastLineID  uint64
 }
@@ -2024,6 +2028,7 @@ type HistoryWindowOp string
 const (
 	HistoryWindowReplace HistoryWindowOp = "replace"
 	HistoryWindowPrepend HistoryWindowOp = "prepend"
+	HistoryWindowAppend  HistoryWindowOp = "append"
 )
 
 type HistoryLineSpan struct {

@@ -8,6 +8,7 @@ import (
 	"github.com/lozzow/termx/termx-proto/wirepb"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 func EncodeHelloPayload(hello Hello) ([]byte, error) {
@@ -376,7 +377,7 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		if !ok {
 			return nil, methodParamsTypeError(method, "protocol.HistoryWindowParams", params)
 		}
-		return proto.Marshal(&wirepb.HistoryWindowParams{
+		msg := &wirepb.HistoryWindowParams{
 			TerminalId:          value.TerminalID,
 			BeforeOffset:        int32(value.BeforeOffset),
 			Limit:               int32(value.Limit),
@@ -388,7 +389,9 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			BeforeRowInLine:     int32(value.BeforeRowInLine),
 			BoundaryFirstLineId: value.BoundaryFirstLineID,
 			BoundaryLastLineId:  value.BoundaryLastLineID,
-		})
+		}
+		encodeHistoryWindowParamsUnknownFields(msg, value)
+		return proto.Marshal(msg)
 	case "remote.pair.start":
 		switch value := params.(type) {
 		case interface {
@@ -574,7 +577,7 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
 		}
-		return HistoryWindowParams{
+		params := HistoryWindowParams{
 			TerminalID:          msg.GetTerminalId(),
 			BeforeOffset:        int(msg.GetBeforeOffset()),
 			Limit:               int(msg.GetLimit()),
@@ -586,7 +589,9 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			BeforeRowInLine:     int(msg.GetBeforeRowInLine()),
 			BoundaryFirstLineID: msg.GetBoundaryFirstLineId(),
 			BoundaryLastLineID:  msg.GetBoundaryLastLineId(),
-		}, nil
+		}
+		decodeHistoryWindowParamsUnknownFields(&msg, &params)
+		return params, nil
 	case "remote.pair.start":
 		var msg wirepb.RemotePairStartParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -1787,21 +1792,172 @@ func timePtrToUnixNano(value *time.Time) int64 {
 }
 
 const (
-	terminalInfoExitedAtFieldNumber         protowire.Number = 13
-	terminalStateChangedExitedAtFieldNumber protowire.Number = 4
+	terminalInfoExitedAtFieldNumber          protowire.Number = 13
+	terminalStateChangedExitedAtFieldNumber  protowire.Number = 4
+	historyWindowModeFieldNumber             protowire.Number = 12
+	historyWindowAfterCursorValidFieldNumber protowire.Number = 13
+	historyWindowAfterLineIDFieldNumber      protowire.Number = 14
+	historyWindowAfterRowInLineFieldNumber   protowire.Number = 15
 )
+
+func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params HistoryWindowParams) {
+	// 中文说明：terminal.pb.go 当前存在历史生成差异；新增 field 先按正式
+	// proto field number 写入 unknown，wire contract 不借用旧字段。
+	setStringProtoFieldOrUnknown(msg, historyWindowModeFieldNumber, params.Mode)
+	setBoolProtoFieldOrUnknown(msg, historyWindowAfterCursorValidFieldNumber, params.AfterCursorValid)
+	setUint64ProtoFieldOrUnknown(msg, historyWindowAfterLineIDFieldNumber, params.AfterLineID)
+	setInt32ProtoFieldOrUnknown(msg, historyWindowAfterRowInLineFieldNumber, int32(params.AfterRowInLine))
+}
+
+func decodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params *HistoryWindowParams) {
+	if msg == nil || params == nil {
+		return
+	}
+	params.Mode = stringProtoFieldOrUnknown(msg, historyWindowModeFieldNumber)
+	params.AfterCursorValid = boolProtoFieldOrUnknown(msg, historyWindowAfterCursorValidFieldNumber)
+	params.AfterLineID = uint64ProtoFieldOrUnknown(msg, historyWindowAfterLineIDFieldNumber)
+	params.AfterRowInLine = int(int32ProtoFieldOrUnknown(msg, historyWindowAfterRowInLineFieldNumber))
+}
+
+func setStringProtoFieldOrUnknown(msg proto.Message, field protowire.Number, value string) {
+	if msg == nil || value == "" {
+		return
+	}
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		msg.ProtoReflect().Set(fd, protoreflect.ValueOfString(value))
+		return
+	}
+	setStringUnknownField(msg, field, value)
+}
+
+func setBoolProtoFieldOrUnknown(msg proto.Message, field protowire.Number, value bool) {
+	if msg == nil || !value {
+		return
+	}
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		msg.ProtoReflect().Set(fd, protoreflect.ValueOfBool(value))
+		return
+	}
+	setBoolUnknownField(msg, field, value)
+}
+
+func setUint64ProtoFieldOrUnknown(msg proto.Message, field protowire.Number, value uint64) {
+	if msg == nil || value == 0 {
+		return
+	}
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		msg.ProtoReflect().Set(fd, protoreflect.ValueOfUint64(value))
+		return
+	}
+	setUint64UnknownField(msg, field, value)
+}
+
+func setInt32ProtoFieldOrUnknown(msg proto.Message, field protowire.Number, value int32) {
+	if msg == nil || value == 0 {
+		return
+	}
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		msg.ProtoReflect().Set(fd, protoreflect.ValueOfInt32(value))
+		return
+	}
+	setInt32UnknownField(msg, field, value)
+}
+
+func stringProtoFieldOrUnknown(msg proto.Message, field protowire.Number) string {
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		if value := msg.ProtoReflect().Get(fd).String(); value != "" {
+			return value
+		}
+	}
+	return stringUnknownField(msg, field)
+}
+
+func boolProtoFieldOrUnknown(msg proto.Message, field protowire.Number) bool {
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		if value := msg.ProtoReflect().Get(fd).Bool(); value {
+			return true
+		}
+	}
+	return boolUnknownField(msg, field)
+}
+
+func uint64ProtoFieldOrUnknown(msg proto.Message, field protowire.Number) uint64 {
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		if value := msg.ProtoReflect().Get(fd).Uint(); value != 0 {
+			return value
+		}
+	}
+	return uint64UnknownField(msg, field)
+}
+
+func int32ProtoFieldOrUnknown(msg proto.Message, field protowire.Number) int32 {
+	if fd := protoFieldDescriptor(msg, field); fd != nil {
+		if value := msg.ProtoReflect().Get(fd).Int(); value != 0 {
+			return int32(value)
+		}
+	}
+	return int32UnknownField(msg, field)
+}
+
+func protoFieldDescriptor(msg proto.Message, field protowire.Number) protoreflect.FieldDescriptor {
+	if msg == nil {
+		return nil
+	}
+	return msg.ProtoReflect().Descriptor().Fields().ByNumber(protoreflect.FieldNumber(field))
+}
 
 func setInt64UnknownField(msg proto.Message, field protowire.Number, value int64) {
 	if msg == nil || value == 0 {
 		return
 	}
+	setUint64UnknownField(msg, field, uint64(value))
+}
+
+func setUint64UnknownField(msg proto.Message, field protowire.Number, value uint64) {
+	if msg == nil || value == 0 {
+		return
+	}
+	appendUnknownField(msg, field, protowire.VarintType, func(out []byte) []byte {
+		return protowire.AppendVarint(out, value)
+	})
+}
+
+func setInt32UnknownField(msg proto.Message, field protowire.Number, value int32) {
+	if msg == nil || value == 0 {
+		return
+	}
+	setUint64UnknownField(msg, field, uint64(value))
+}
+
+func setBoolUnknownField(msg proto.Message, field protowire.Number, value bool) {
+	if !value {
+		return
+	}
+	setUint64UnknownField(msg, field, 1)
+}
+
+func setStringUnknownField(msg proto.Message, field protowire.Number, value string) {
+	if msg == nil || value == "" {
+		return
+	}
+	appendUnknownField(msg, field, protowire.BytesType, func(out []byte) []byte {
+		out = protowire.AppendVarint(out, uint64(len(value)))
+		return append(out, value...)
+	})
+}
+
+func appendUnknownField(msg proto.Message, field protowire.Number, typ protowire.Type, appendValue func([]byte) []byte) {
 	unknown := msg.ProtoReflect().GetUnknown()
-	unknown = protowire.AppendTag(unknown, field, protowire.VarintType)
-	unknown = protowire.AppendVarint(unknown, uint64(value))
+	unknown = protowire.AppendTag(unknown, field, typ)
+	unknown = appendValue(unknown)
 	msg.ProtoReflect().SetUnknown(unknown)
 }
 
 func int64UnknownField(msg proto.Message, field protowire.Number) int64 {
+	return int64(uint64UnknownField(msg, field))
+}
+
+func uint64UnknownField(msg proto.Message, field protowire.Number) uint64 {
 	if msg == nil {
 		return 0
 	}
@@ -1820,11 +1976,47 @@ func int64UnknownField(msg proto.Message, field protowire.Number) int64 {
 		if num == field && typ == protowire.VarintType {
 			value, consumed := protowire.ConsumeVarint(valueStart)
 			if consumed >= 0 {
-				return int64(value)
+				return value
 			}
 			return 0
 		}
 		unknown = unknown[n:]
 	}
 	return 0
+}
+
+func int32UnknownField(msg proto.Message, field protowire.Number) int32 {
+	return int32(uint64UnknownField(msg, field))
+}
+
+func boolUnknownField(msg proto.Message, field protowire.Number) bool {
+	return uint64UnknownField(msg, field) != 0
+}
+
+func stringUnknownField(msg proto.Message, field protowire.Number) string {
+	if msg == nil {
+		return ""
+	}
+	unknown := msg.ProtoReflect().GetUnknown()
+	for len(unknown) > 0 {
+		num, typ, n := protowire.ConsumeTag(unknown)
+		if n < 0 {
+			return ""
+		}
+		unknown = unknown[n:]
+		valueStart := unknown
+		n = protowire.ConsumeFieldValue(num, typ, unknown)
+		if n < 0 {
+			return ""
+		}
+		if num == field && typ == protowire.BytesType {
+			value, consumed := protowire.ConsumeBytes(valueStart)
+			if consumed >= 0 {
+				return string(value)
+			}
+			return ""
+		}
+		unknown = unknown[n:]
+	}
+	return ""
 }

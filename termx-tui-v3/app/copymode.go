@@ -255,9 +255,9 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 		return root.Advance(), []Effect{handledEffect{}}
 	default:
 		if root.CopyMode.Active {
-			next, handled := reduceCopyModeMouseInput(root, intent.Event)
+			next, mouseEffects, handled := reduceCopyModeMouseInput(root, intent.Event, deps)
 			if handled {
-				return next, []Effect{handledEffect{}}
+				return next, append([]Effect{handledEffect{}}, mouseEffects...)
 			}
 			next, keyEffects, handled := reduceCopyModeKeyInput(root, intent.Event, deps)
 			if handled {
@@ -318,20 +318,56 @@ func copyModeEnteringScrollDelta(copyMode state.CopyModeStore, intent input.Inte
 	}
 }
 
-func reduceCopyModeMouseInput(root state.Root, event input.InputEvent) (state.Root, bool) {
+func reduceCopyModeMouseInput(root state.Root, event input.InputEvent, deps CopyModeDeps) (state.Root, []Effect, bool) {
 	if event.Kind != input.EventKindMouse {
-		return root, false
+		return root, nil, false
 	}
 	switch event.Mouse {
 	case input.MouseWheelUp:
 		root.CopyMode = root.CopyMode.ScrollCursor(-copyModeLineScrollRows(), len(root.History.Rows))
-		return root.Advance(), true
+		return root.Advance(), nil, true
 	case input.MouseWheelDown:
-		root.CopyMode = root.CopyMode.ScrollCursor(copyModeLineScrollRows(), len(root.History.Rows))
-		return root.Advance(), true
+		next, effects := reduceCopyModeScrollNewer(root, deps, copyModeLineScrollRows())
+		return next, effects, true
 	default:
-		return root, false
+		return root, nil, false
 	}
+}
+
+func reduceCopyModeScrollNewer(root state.Root, deps CopyModeDeps, rows int) (state.Root, []Effect) {
+	if rows <= 0 {
+		rows = 1
+	}
+	if !root.CopyMode.Active {
+		return root, nil
+	}
+	previousCursorRow := root.CopyMode.Cursor.Row
+	previousTop := root.CopyMode.ViewportTop
+	root.CopyMode = root.CopyMode.ScrollCursor(rows, len(root.History.Rows))
+	if root.CopyMode.Cursor.Row < len(root.History.Rows)-1 || root.History.NewerRequestState() != state.NewerRequestReady {
+		if root.CopyMode.Cursor.Row != previousCursorRow || root.CopyMode.ViewportTop != previousTop {
+			return root.Advance(), nil
+		}
+		return root, nil
+	}
+	unconsumedRows := rows
+	if previousCursorRow >= 0 {
+		consumedRows := root.CopyMode.Cursor.Row - previousCursorRow
+		if consumedRows > 0 {
+			unconsumedRows = rows - consumedRows
+		}
+	}
+	if unconsumedRows < 0 {
+		unconsumedRows = 0
+	}
+	next, effects := beginCopyModeNewer(root, deps, unconsumedRows)
+	if len(effects) > 0 {
+		return next, effects
+	}
+	if root.CopyMode.Cursor.Row != previousCursorRow || root.CopyMode.ViewportTop != previousTop {
+		return root.Advance(), nil
+	}
+	return root, nil
 }
 
 func reduceCopyModeScrollOlder(root state.Root, deps CopyModeDeps, event input.InputEvent) (state.Root, []Effect) {
@@ -376,8 +412,8 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 	}
 	switch event.Key {
 	case input.KeyPageDn:
-		root.CopyMode = root.CopyMode.ScrollCursor(copyModePageRows(root.CopyMode), len(root.History.Rows))
-		return root.Advance(), nil, true
+		next, effects := reduceCopyModeScrollNewer(root, deps, copyModePageRows(root.CopyMode))
+		return next, effects, true
 	case input.KeyHome:
 		root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: root.CopyMode.Cursor.Row, Col: 0})
 		root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
@@ -468,13 +504,17 @@ func reduceCopyModeKeyInput(root state.Root, event input.InputEvent, deps CopyMo
 			root.CopyMode = root.CopyMode.MoveCursor(state.CopyPosition{Row: len(root.History.Rows) - 1, Col: root.CopyMode.Cursor.Col})
 			root.CopyMode = clampCopyCursor(root.CopyMode, root.History)
 			root.CopyMode = ensureCopyCursorVisible(root.CopyMode, len(root.History.Rows))
+			if root.History.NewerRequestState() == state.NewerRequestReady {
+				next, effects := beginCopyModeNewer(root, deps, 0)
+				return next, effects, true
+			}
 			return root.Advance(), nil, true
 		case "u":
 			root.CopyMode = root.CopyMode.ScrollCursor(-(copyModePageRows(root.CopyMode) / 2), len(root.History.Rows))
 			return root.Advance(), nil, true
 		case "d":
-			root.CopyMode = root.CopyMode.ScrollCursor(copyModePageRows(root.CopyMode)/2, len(root.History.Rows))
-			return root.Advance(), nil, true
+			next, effects := reduceCopyModeScrollNewer(root, deps, copyModePageRows(root.CopyMode)/2)
+			return next, effects, true
 		case " ":
 			root.CopyMode = root.CopyMode.SetMark(root.CopyMode.Cursor)
 			return root.Advance(), nil, true
@@ -628,6 +668,64 @@ func beginCopyModeOlder(root state.Root, deps CopyModeDeps, scrollDeltaAfterPrep
 	}}
 }
 
+func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppend int) (state.Root, []Effect) {
+	if deps.Core == nil {
+		return setCopyModeError(root, "core client missing"), nil
+	}
+	if root.History.NewerRequestState() != state.NewerRequestReady {
+		return root, nil
+	}
+	tail := root.History.Rows[len(root.History.Rows)-1]
+	requestID := nextHistoryRequestID(root)
+	req := state.HistoryPendingRequest{
+		ID:         requestID,
+		PaneID:     root.History.PaneID,
+		ViewID:     root.History.ViewID,
+		TerminalID: root.History.TerminalID,
+		Cols:       root.History.Cols,
+		Token:      root.History.Token,
+		Generation: root.History.Generation,
+		Cursor: state.HistoryCursor{
+			Valid:           tail.LineID != 0,
+			BeforeLineID:    tail.LineID,
+			BeforeRowInLine: tail.RowInLine,
+		},
+		Boundary:                root.History.Boundary,
+		ScrollDeltaAfterPrepend: scrollDeltaAfterAppend,
+	}
+	nextHistory, err := root.History.BeginNewer(req)
+	if err != nil {
+		if errors.Is(err, state.ErrHistoryRequestPending) {
+			return root, nil
+		}
+		return setCopyModeError(root, err.Error()), nil
+	}
+	root.History = nextHistory
+	rows := copyModeHistoryRequestRows(root, deps)
+	return root.Advance(), []Effect{FuncEffect{
+		// newer 只在本地窗口已回收较新尾部时触发，仍然按事件循环异步拉取。
+		Async:            true,
+		ForceSyncInTests: true,
+		Run: func(ctx context.Context) Msg {
+			result, err := deps.Core.HistoryNewer(ctx, services.HistoryNewerRequest{
+				RequestID:  services.RequestID(requestID),
+				PaneID:     req.PaneID,
+				ViewID:     req.ViewID,
+				TerminalID: req.TerminalID,
+				Cols:       req.Cols,
+				Rows:       rows,
+				Token:      req.Token,
+				Generation: req.Generation,
+				Cursor:     req.Cursor,
+				Boundary:   req.Boundary,
+			})
+			result.Window.PaneID = req.PaneID
+			result.Window.ViewID = req.ViewID
+			return CopyModeHistoryResultMsg{Result: result, Err: err}
+		},
+	}}
+}
+
 func beginCopyModeOldest(root state.Root, deps CopyModeDeps) (state.Root, []Effect) {
 	if deps.Core == nil {
 		return setCopyModeError(root, "core client missing"), nil
@@ -712,6 +810,11 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 		remainingEnteringOlderRows = copyModeEnteringOlderRemainder(enteringScrollDelta, len(nextHistory.Rows))
 	} else if pending != nil && pending.Kind == state.HistoryRequestOldest {
 		root.CopyMode = root.CopyMode.AcceptOldest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
+	} else if pending != nil && pending.Kind == state.HistoryRequestNewer {
+		root.CopyMode.BoundToken = msg.Result.Window.Token
+		root.CopyMode.BoundCols = nextHistory.Cols
+		root.CopyMode = root.CopyMode.FollowCursor(len(nextHistory.Rows))
+		root.CopyMode = root.CopyMode.ScrollCursor(pending.ScrollDeltaAfterPrepend, len(nextHistory.Rows))
 	} else {
 		root.CopyMode = root.CopyMode.AcceptOlder(inserted, beforeHistory, nextHistory, msg.Result.Window, nextHistory.Cols)
 		deferredRows := 0
@@ -769,20 +872,35 @@ func copyModeHistoryTrimRange(copyMode state.CopyModeStore, totalRows int, keepR
 	if visible <= 0 {
 		visible = 8
 	}
-	// 中文说明：当前协议只有 older cursor，没有 newer/around window。
-	// 因此本阶段只能回收已经滚过的新尾部，不能丢更老方向的前缀，否则后续 PageUp 会跳过行。
-	start := 0
-	end := keepRows - 1
-	viewportEnd := copyMode.ViewportTop + visible - 1
-	if viewportEnd > end {
-		end = viewportEnd
+	// 中文说明：history.window 已有 older/newer cursor，TUI 只保留围绕当前
+	// viewport 的本地投影；窗口外内容后续按 frozen token 从 core/backend 拉回。
+	center := copyMode.ViewportTop + visible/2
+	start := center - keepRows/2
+	if start < 0 {
+		start = 0
 	}
-	marginEnd := viewportEnd + visible*copyModeHistoryPrefetchScreens
-	if marginEnd > end {
-		end = marginEnd
-	}
+	end := start + keepRows - 1
 	if end >= totalRows {
 		end = totalRows - 1
+		start = end - keepRows + 1
+		if start < 0 {
+			start = 0
+		}
+	}
+	viewportEnd := copyMode.ViewportTop + visible - 1
+	marginStart := copyMode.ViewportTop - visible*copyModeHistoryPrefetchScreens
+	marginEnd := viewportEnd + visible*copyModeHistoryPrefetchScreens
+	if marginStart < 0 {
+		marginStart = 0
+	}
+	if marginEnd >= totalRows {
+		marginEnd = totalRows - 1
+	}
+	if marginStart < start {
+		start = marginStart
+	}
+	if marginEnd > end {
+		end = marginEnd
 	}
 	start, end = expandTrimRangeForSelection(copyMode, start, end, totalRows)
 	if end-start+1 > keepRows*2 {

@@ -659,7 +659,25 @@ func (session *protocolSession) historyWindow(ctx context.Context, params protoc
 		cols = int(info.Size.Cols)
 	}
 	var window history.HistoryWindow
-	if params.CursorValid {
+	if params.Mode == "newer" {
+		if err := session.validateNewerWindowRequest(params, cols); err != nil {
+			return nil, err
+		}
+		snapshot, ok := session.frozenSnapshot(params.TerminalID, params.Token)
+		if !ok {
+			return nil, ErrStaleHistoryWindow
+		}
+		window = frozenSnapshotNewerWindow(snapshot, cols, limit, protocolAfterCursorToCore(params))
+		window.Token = history.WindowToken(params.Token)
+		if params.BoundaryFirstLineID != 0 {
+			// newer response 的 payload 只包含本页较新 rows，但它要接回客户端
+			// 已加载 frozen 视图；FirstLineID 必须保持当前 head boundary。
+			window.FirstLineID = history.LogicalLineID(params.BoundaryFirstLineID)
+		}
+		if params.BoundaryLastLineID != 0 {
+			window.LastLineID = history.LogicalLineID(params.BoundaryLastLineID)
+		}
+	} else if params.CursorValid {
 		if err := session.validateOlderWindowRequest(params, cols); err != nil {
 			return nil, err
 		}
@@ -720,6 +738,20 @@ func (session *protocolSession) validateOlderWindowRequest(params protocol.Histo
 		if !frozenSnapshotCursorValid(snapshot, cols, cursor) {
 			return ErrStaleHistoryWindow
 		}
+	}
+	return nil
+}
+
+func (session *protocolSession) validateNewerWindowRequest(params protocol.HistoryWindowParams, cols int) error {
+	if err := session.validateFrozenWindowRequest(params, cols); err != nil {
+		return err
+	}
+	if !params.AfterCursorValid {
+		return ErrStaleHistoryWindow
+	}
+	snapshot, _ := session.frozenSnapshot(params.TerminalID, params.Token)
+	if !frozenSnapshotAfterCursorValid(snapshot, cols, protocolAfterCursorToCore(params)) {
+		return ErrStaleHistoryWindow
 	}
 	return nil
 }
@@ -1511,12 +1543,36 @@ func protocolCursorToCore(params protocol.HistoryWindowParams) history.HistoryCu
 	}
 }
 
+func protocolAfterCursorToCore(params protocol.HistoryWindowParams) history.HistoryCursor {
+	return history.HistoryCursor{
+		Valid:           params.AfterCursorValid,
+		BeforeLineID:    history.LogicalLineID(params.AfterLineID),
+		BeforeRowInLine: params.AfterRowInLine,
+	}
+}
+
 func frozenSnapshotLatestWindow(snapshot history.FrozenSnapshot, cols int, rows int) history.HistoryWindow {
 	return frozenSnapshotWindow(snapshot, cols, rows, history.HistoryCursor{}, history.HistoryWindowReplace)
 }
 
 func frozenSnapshotOlderWindow(snapshot history.FrozenSnapshot, cols int, rows int, cursor history.HistoryCursor) history.HistoryWindow {
 	return frozenSnapshotWindow(snapshot, cols, rows, cursor, history.HistoryWindowPrepend)
+}
+
+func frozenSnapshotNewerWindow(snapshot history.FrozenSnapshot, cols int, rows int, cursor history.HistoryCursor) history.HistoryWindow {
+	if rows <= 0 {
+		rows = 24
+	}
+	selected, hasMore, ok := projectFrozenSnapshotNewerRowsAfterCursor(snapshot, cols, rows, cursor)
+	if !ok {
+		return history.HistoryWindow{
+			Token:      history.WindowToken(snapshot.Token),
+			Op:         history.HistoryWindowAppend,
+			Cols:       cols,
+			Generation: snapshot.Generation,
+		}
+	}
+	return buildFrozenSnapshotWindow(snapshot, cols, history.HistoryWindowAppend, selected, history.HistoryCursor{}, hasMore)
 }
 
 func frozenSnapshotOldestWindow(snapshot history.FrozenSnapshot, cols int, rows int) history.HistoryWindow {
@@ -1532,6 +1588,14 @@ func frozenSnapshotCursorValid(snapshot history.FrozenSnapshot, cols int, cursor
 		return false
 	}
 	_, _, ok := snapshotCursorStartPosition(snapshot, cols, cursor)
+	return ok
+}
+
+func frozenSnapshotAfterCursorValid(snapshot history.FrozenSnapshot, cols int, cursor history.HistoryCursor) bool {
+	if cols <= 0 || !cursor.Valid || cursor.BeforeLineID == 0 {
+		return false
+	}
+	_, _, ok := snapshotCursorEndPosition(snapshot, cols, cursor)
 	return ok
 }
 
@@ -1751,6 +1815,37 @@ func projectFrozenSnapshotOlderRowsBeforeCursor(snapshot history.FrozenSnapshot,
 	return rows, nextCursor, hasMore, true
 }
 
+func projectFrozenSnapshotNewerRowsAfterCursor(snapshot history.FrozenSnapshot, cols int, maxRows int, cursor history.HistoryCursor) ([]snapshotProjectedRow, bool, bool) {
+	startLineIndex, startRowIndex, ok := snapshotCursorEndPosition(snapshot, cols, cursor)
+	if !ok {
+		return nil, false, false
+	}
+	rows := make([]snapshotProjectedRow, 0, maxRows)
+	hasMore := false
+	for lineIndex := startLineIndex; lineIndex < snapshot.VisibleLineCount(); lineIndex++ {
+		line, ok := snapshot.LineAt(lineIndex)
+		if !ok {
+			continue
+		}
+		lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
+		rowIndex := 0
+		if lineIndex == startLineIndex {
+			rowIndex = startRowIndex
+		}
+		for ; rowIndex < len(lineRows); rowIndex++ {
+			if len(rows) >= maxRows {
+				hasMore = true
+				break
+			}
+			rows = append(rows, lineRows[rowIndex])
+		}
+		if hasMore {
+			break
+		}
+	}
+	return rows, hasMore, true
+}
+
 func latestCursorSnapshotTail(rows []snapshotProjectedRow, hasMore bool) history.HistoryCursor {
 	if !hasMore || len(rows) == 0 {
 		return history.HistoryCursor{}
@@ -1793,6 +1888,30 @@ func snapshotCursorStartPosition(snapshot history.FrozenSnapshot, cols int, curs
 	for rowIndex, row := range lineRows {
 		if row.row.RowInLine == cursor.BeforeRowInLine {
 			return lineIndex, rowIndex - 1, true
+		}
+	}
+	return -1, -1, false
+}
+
+func snapshotCursorEndPosition(snapshot history.FrozenSnapshot, cols int, cursor history.HistoryCursor) (int, int, bool) {
+	if !cursor.Valid || cursor.BeforeLineID == 0 {
+		return -1, -1, false
+	}
+	lineIndex, ok := snapshotLineIndex(snapshot, cursor.BeforeLineID)
+	if !ok {
+		return -1, -1, false
+	}
+	line, ok := snapshot.LineAt(lineIndex)
+	if !ok {
+		return -1, -1, false
+	}
+	lineRows := projectFrozenSnapshotRows([]history.SnapshotLine{line}, cols)
+	for rowIndex, row := range lineRows {
+		if row.row.RowInLine == cursor.BeforeRowInLine {
+			if rowIndex+1 < len(lineRows) {
+				return lineIndex, rowIndex + 1, true
+			}
+			return lineIndex + 1, 0, true
 		}
 	}
 	return -1, -1, false

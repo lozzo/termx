@@ -46,6 +46,19 @@ type HistoryOlderRequest struct {
 	Boundary   state.HistoryBoundary
 }
 
+type HistoryNewerRequest struct {
+	RequestID  RequestID
+	PaneID     string
+	ViewID     string
+	TerminalID string
+	Cols       int
+	Rows       int
+	Token      string
+	Generation uint64
+	Cursor     state.HistoryCursor
+	Boundary   state.HistoryBoundary
+}
+
 type HistoryOldestRequest struct {
 	RequestID  RequestID
 	PaneID     string
@@ -71,6 +84,7 @@ type HistoryResult struct {
 type CoreClient interface {
 	HistoryLatest(context.Context, HistoryLatestRequest) (HistoryResult, error)
 	HistoryOlder(context.Context, HistoryOlderRequest) (HistoryResult, error)
+	HistoryNewer(context.Context, HistoryNewerRequest) (HistoryResult, error)
 	HistoryOldest(context.Context, HistoryOldestRequest) (HistoryResult, error)
 	ReleaseHistory(context.Context, HistoryReleaseRequest) error
 }
@@ -427,9 +441,11 @@ var (
 type FakeCoreClient struct {
 	LatestResponses []HistoryResult
 	OlderResponses  []HistoryResult
+	NewerResponses  []HistoryResult
 	OldestResponses []HistoryResult
 	LatestRequests  []HistoryLatestRequest
 	OlderRequests   []HistoryOlderRequest
+	NewerRequests   []HistoryNewerRequest
 	OldestRequests  []HistoryOldestRequest
 	ReleaseRequests []HistoryReleaseRequest
 	ReleaseErr      error
@@ -453,6 +469,17 @@ func (client *FakeCoreClient) HistoryOlder(_ context.Context, req HistoryOlderRe
 	}
 	result := client.OlderResponses[0]
 	client.OlderResponses = client.OlderResponses[1:]
+	result.RequestID = req.RequestID
+	return result, nil
+}
+
+func (client *FakeCoreClient) HistoryNewer(_ context.Context, req HistoryNewerRequest) (HistoryResult, error) {
+	client.NewerRequests = append(client.NewerRequests, req)
+	if len(client.NewerResponses) == 0 {
+		return HistoryResult{}, ErrMissingHistoryResponse
+	}
+	result := client.NewerResponses[0]
+	client.NewerResponses = client.NewerResponses[1:]
 	result.RequestID = req.RequestID
 	return result, nil
 }
