@@ -714,6 +714,73 @@ func TestProtocolCoreClientAdapterMergesSameLogicalLineRowsIntoFrozenSource(t *t
 	}
 }
 
+func TestProtocolCoreClientAdapterMergesMixedPlainAndStyledRowsIntoCompleteCells(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 3, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "a"}, {Content: "b"}, {Content: "c"}}),
+				protocol.CompactRowFromCells([]protocol.Cell{
+					{Content: "E", Style: protocol.CellStyle{FG: "ansi:1", Bold: true}},
+					{Content: "R", Style: protocol.CellStyle{FG: "ansi:1", Bold: true}},
+					{Content: "R", Style: protocol.CellStyle{FG: "ansi:1", Bold: true}},
+				}),
+			},
+			Lines:       []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 1}},
+			RowLineIDs:  []uint64{42, 42},
+			RowInLine:   []int{0, 1},
+			LoadedLines: 1,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 3, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	source := result.Window.SourceLines
+	if len(source) != 1 || source[0].Text != "abcERR" || len(source[0].Cells) != 4 {
+		t.Fatalf("mixed protocol rows should create complete source cells, got %#v", source)
+	}
+	if source[0].Cells[0].Text != "abc" || source[0].Cells[0].Width != 3 || source[0].Cells[1].Style.FG != "ansi:1" {
+		t.Fatalf("mixed source cells lost plain prefix or styled suffix, got %#v", source[0].Cells)
+	}
+	reflowedRows, _ := state.ReflowHistoryLogicalLines(source, 6)
+	if got := rowTextsForProtocolAdapter(reflowedRows); len(got) != 1 || got[0] != "abcERR" {
+		t.Fatalf("complete source cells should support wider local reflow, got %#v", reflowedRows)
+	}
+}
+
+func TestProtocolCoreClientAdapterSynthesizesSpansWhenProtocolOmitsLines(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 3, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "a"}, {Content: "b"}, {Content: "c"}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "d"}, {Content: "e"}, {Content: "f"}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "x"}, {Content: "y"}, {Content: "z"}}),
+			},
+			RowLineIDs: []uint64{42, 42, 43},
+			RowInLine:  []int{0, 1, 0},
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 3, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got := result.Window.Lines; len(got) != 2 || got[0].LineID != 42 || got[0].StartRow != 0 || got[0].EndRow != 1 || got[1].LineID != 43 || got[1].StartRow != 2 || got[1].EndRow != 2 {
+		t.Fatalf("adapter should synthesize row spans when protocol omits lines, got %#v", got)
+	}
+}
+
 func TestProtocolCoreClientAdapterPreservesClippedLogicalLineSource(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{

@@ -456,8 +456,15 @@ func (store HistoryStore) replace(window HistoryWindow, cols int) HistoryStore {
 		cols = window.Cols
 	}
 	store.Cols = cols
-	store.SourceLines = historyWindowSourceLines(window)
-	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, cols)
+	store.SourceLines = historyWindowSourceLinesOwned(window)
+	if len(window.SourceLines) > 0 && cols == window.Cols && len(window.Rows) > 0 {
+		// 中文说明：带 SourceLines 的 HistoryWindow 经 message 进入 reducer 后由 reducer 接管；
+		// cols 未变化时直接复用已投影 rows/spans，避免 copy/history 入口重复 reflow 和深拷贝 cells。
+		store.Rows = window.Rows
+		store.Lines = window.Lines
+	} else {
+		store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, cols)
+	}
 	store.Cursor = window.Cursor
 	store.Generation = window.Generation
 	store.Boundary = window.Boundary
@@ -471,8 +478,8 @@ func (store HistoryStore) prepend(window HistoryWindow) HistoryStore {
 	if len(existing) == 0 && len(store.Rows) > 0 {
 		existing = historyRowsToLogicalLines(store.Rows, store.Lines)
 	}
-	older := historyWindowSourceLines(window)
-	if fast, rows, spans := fastPrependedHistoryRows(older, existing, store.Rows, store.Lines, store.Cols); fast {
+	older := historyWindowSourceLinesOwned(window)
+	if fast, rows, spans := fastPrependedHistoryRows(older, existing, store.Rows, store.Lines, store.Cols, window); fast {
 		store.SourceLines = prependHistoryLogicalLines(older, existing)
 		store.Rows = rows
 		store.Lines = spans
@@ -494,8 +501,8 @@ func (store HistoryStore) append(window HistoryWindow) HistoryStore {
 	if len(existing) == 0 && len(store.Rows) > 0 {
 		existing = historyRowsToLogicalLines(store.Rows, store.Lines)
 	}
-	newer := historyWindowSourceLines(window)
-	if fast, rows, spans := fastAppendedHistoryRows(existing, newer, store.Rows, store.Lines, store.Cols); fast {
+	newer := historyWindowSourceLinesOwned(window)
+	if fast, rows, spans := fastAppendedHistoryRows(existing, newer, store.Rows, store.Lines, store.Cols, window); fast {
 		store.SourceLines = appendHistoryLogicalLines(existing, newer)
 		store.Rows = rows
 		store.Lines = spans
@@ -511,11 +518,11 @@ func (store HistoryStore) append(window HistoryWindow) HistoryStore {
 	return store
 }
 
-func fastPrependedHistoryRows(older []HistoryLogicalLine, existing []HistoryLogicalLine, existingRows []HistoryRow, existingSpans []HistoryLineSpan, cols int) (bool, []HistoryRow, []HistoryLineSpan) {
+func fastPrependedHistoryRows(older []HistoryLogicalLine, existing []HistoryLogicalLine, existingRows []HistoryRow, existingSpans []HistoryLineSpan, cols int, window HistoryWindow) (bool, []HistoryRow, []HistoryLineSpan) {
 	if historyPrependNeedsBoundaryMerge(older, existing) {
 		return false, nil, nil
 	}
-	olderRows, olderSpans := ReflowHistoryLogicalLines(older, cols)
+	olderRows, olderSpans := windowRowsForCols(window, older, cols)
 	if len(existing) > 0 && len(existingRows) == 0 {
 		return false, nil, nil
 	}
@@ -533,11 +540,11 @@ func fastPrependedHistoryRows(older []HistoryLogicalLine, existing []HistoryLogi
 	return true, rows, spans
 }
 
-func fastAppendedHistoryRows(existing []HistoryLogicalLine, newer []HistoryLogicalLine, existingRows []HistoryRow, existingSpans []HistoryLineSpan, cols int) (bool, []HistoryRow, []HistoryLineSpan) {
+func fastAppendedHistoryRows(existing []HistoryLogicalLine, newer []HistoryLogicalLine, existingRows []HistoryRow, existingSpans []HistoryLineSpan, cols int, window HistoryWindow) (bool, []HistoryRow, []HistoryLineSpan) {
 	if historyAppendNeedsBoundaryMerge(existing, newer) {
 		return false, nil, nil
 	}
-	newerRows, newerSpans := ReflowHistoryLogicalLines(newer, cols)
+	newerRows, newerSpans := windowRowsForCols(window, newer, cols)
 	if len(existing) > 0 && len(existingRows) == 0 {
 		return false, nil, nil
 	}
@@ -656,9 +663,16 @@ func mergeAppendedHistoryLogicalLines(existing []HistoryLogicalLine, newer []His
 	return append(merged, rest...)
 }
 
-func historyWindowSourceLines(window HistoryWindow) []HistoryLogicalLine {
+func windowRowsForCols(window HistoryWindow, lines []HistoryLogicalLine, cols int) ([]HistoryRow, []HistoryLineSpan) {
+	if len(window.SourceLines) > 0 && cols == window.Cols && len(window.Rows) > 0 {
+		return window.Rows, window.Lines
+	}
+	return ReflowHistoryLogicalLines(lines, cols)
+}
+
+func historyWindowSourceLinesOwned(window HistoryWindow) []HistoryLogicalLine {
 	if len(window.SourceLines) > 0 {
-		return cloneHistoryLogicalLines(window.SourceLines)
+		return window.SourceLines
 	}
 	if len(window.Rows) == 0 {
 		return nil

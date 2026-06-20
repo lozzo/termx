@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
@@ -142,7 +143,7 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow, requestedCols int
 		cols = int(window.Size.Cols)
 	}
 	sourceLines := historySourceLinesFromProtocol(window)
-	rows, lines := state.ReflowHistoryLogicalLines(sourceLines, cols)
+	rows, lines := historyRowsFromProtocol(window, sourceLines, cols)
 	return state.HistoryWindow{
 		TerminalID:  window.TerminalID,
 		Token:       window.Token,
@@ -181,14 +182,12 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 	lines := make([]state.HistoryLogicalLine, 0, len(window.Rows))
 	for i, row := range window.Rows {
 		lineID := uint64At(window.RowLineIDs, i)
-		cells := historyCellsFromProtocol(row.DecodeCells())
-		text := historyCellsPlainText(cells)
+		text, cells := historyTextAndCellsFromCompactRow(row)
 		span, hasSpan := spansByLineID[lineID]
 		// protocol 可能按当前 cols 把一条 logical line 切成多行；这里必须先按
 		// stable line id 合回 frozen source，再交给 TUI 本地 reflow。
 		if len(lines) > 0 && lineID != 0 && lines[len(lines)-1].LineID == lineID {
-			lines[len(lines)-1].Text += text
-			lines[len(lines)-1].Cells = append(lines[len(lines)-1].Cells, cloneHistoryCells(cells)...)
+			appendHistoryProtocolSegment(&lines[len(lines)-1], text, cells)
 			if tail := historyTailFillFromProtocol(row.TailFill); tail != nil {
 				lines[len(lines)-1].TailFill = tail
 			}
@@ -204,6 +203,96 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 		})
 	}
 	return lines
+}
+
+func appendHistoryProtocolSegment(line *state.HistoryLogicalLine, text string, cells []state.HistoryCell) {
+	if line == nil {
+		return
+	}
+	if len(line.Cells) > 0 && len(cells) == 0 && text != "" {
+		cells = []state.HistoryCell{{Text: text, Width: displayWidthForProtocolHistoryText(text)}}
+	}
+	if len(line.Cells) == 0 && len(cells) > 0 && line.Text != "" {
+		// 中文说明：同一 logical line 中只要任一 protocol row 需要 cell 元数据，
+		// source line 的 Cells 就必须覆盖完整 Text，否则后续本地 reflow 会忽略纯文本前缀。
+		line.Cells = []state.HistoryCell{{Text: line.Text, Width: displayWidthForProtocolHistoryText(line.Text)}}
+	}
+	line.Text += text
+	line.Cells = append(line.Cells, cells...)
+}
+
+func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state.HistoryLogicalLine, cols int) ([]state.HistoryRow, []state.HistoryLineSpan) {
+	if window == nil || len(window.Rows) == 0 {
+		return nil, nil
+	}
+	if cols != int(window.Size.Cols) {
+		return state.ReflowHistoryLogicalLines(sourceLines, cols)
+	}
+	rows := make([]state.HistoryRow, 0, len(window.Rows))
+	for i, row := range window.Rows {
+		text, cells := historyTextAndCellsFromCompactRow(row)
+		rows = append(rows, state.HistoryRow{
+			Text:      text,
+			Cells:     cells,
+			TailFill:  historyTailFillFromProtocol(row.TailFill),
+			LineID:    uint64At(window.RowLineIDs, i),
+			RowInLine: intAt(window.RowInLine, i),
+		})
+	}
+	lines := make([]state.HistoryLineSpan, 0, len(window.Lines))
+	for _, span := range window.Lines {
+		lines = append(lines, state.HistoryLineSpan{
+			LineID:        span.LogicalLineID,
+			StartRow:      span.StartRow,
+			EndRow:        span.EndRow,
+			ClippedBefore: span.ClippedBefore,
+			ClippedAfter:  span.ClippedAfter,
+		})
+	}
+	if len(lines) == 0 {
+		lines = historyLineSpansFromRows(rows, sourceLines)
+	}
+	return rows, lines
+}
+
+func historyLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.HistoryLogicalLine) []state.HistoryLineSpan {
+	if len(rows) == 0 {
+		return nil
+	}
+	clipped := make(map[uint64]state.HistoryLogicalLine, len(sourceLines))
+	for _, line := range sourceLines {
+		if line.LineID == 0 {
+			continue
+		}
+		if line.ClippedBefore || line.ClippedAfter {
+			clipped[line.LineID] = line
+		}
+	}
+	spans := make([]state.HistoryLineSpan, 0, len(rows))
+	start := 0
+	current := rows[0].LineID
+	for row := 1; row < len(rows); row++ {
+		if rows[row].LineID == current {
+			continue
+		}
+		spans = append(spans, historyLineSpanFromRowGroup(current, start, row-1, clipped))
+		start = row
+		current = rows[row].LineID
+	}
+	spans = append(spans, historyLineSpanFromRowGroup(current, start, len(rows)-1, clipped))
+	return spans
+}
+
+func historyLineSpanFromRowGroup(lineID uint64, start int, end int, clipped map[uint64]state.HistoryLogicalLine) state.HistoryLineSpan {
+	span := state.HistoryLineSpan{LineID: lineID, StartRow: start, EndRow: end}
+	if lineID == 0 {
+		return span
+	}
+	if line, ok := clipped[lineID]; ok {
+		span.ClippedBefore = line.ClippedBefore
+		span.ClippedAfter = line.ClippedAfter
+	}
+	return span
 }
 
 func historyTailFillFromProtocol(style *protocol.CompactRowStyle) *state.HistoryCellStyle {
@@ -226,24 +315,67 @@ func historyTailFillFromProtocol(style *protocol.CompactRowStyle) *state.History
 	return &out
 }
 
-func historyCellsFromProtocol(cells []protocol.Cell) []state.HistoryCell {
-	if len(cells) == 0 {
-		return nil
+func historyTextAndCellsFromCompactRow(row protocol.CompactRow) (string, []state.HistoryCell) {
+	if row.Text != "" {
+		// 中文说明：plain compact row 已经是无样式单宽文本，Text 本身足够支撑
+		// search/copy/reflow；不物化 per-cell payload，避免大历史窗口常驻 cells。
+		return row.Text, nil
 	}
-	out := make([]state.HistoryCell, len(cells))
-	for i, cell := range cells {
+	if len(row.Runs) > 0 {
+		cells := historyCellsFromCompactRuns(row.Runs)
+		return historyCellsPlainText(cells), cells
+	}
+	if len(row.Cells) == 0 {
+		return "", nil
+	}
+	out := make([]state.HistoryCell, len(row.Cells))
+	for i, cell := range row.Cells {
 		out[i] = state.HistoryCell{
 			Text:       cell.Content,
 			Width:      cell.Width,
-			Style:      historyCellStyleFromProtocol(cell.Style),
+			Style:      historyCellStyleFromCompact(cell.Style),
 			LinkURL:    cell.LinkURL,
 			LinkParams: cell.LinkParams,
+		}
+	}
+	return historyCellsPlainText(out), out
+}
+
+func historyCellsFromCompactRuns(runs []protocol.CompactRowRun) []state.HistoryCell {
+	out := make([]state.HistoryCell, 0, compactRunCellCount(runs))
+	for _, run := range runs {
+		style := historyCellStyleFromCompact(run.Style)
+		for len(run.Text) > 0 {
+			r, size := utf8.DecodeRuneInString(run.Text)
+			if r == utf8.RuneError && size == 0 {
+				break
+			}
+			text := run.Text[:size]
+			out = append(out, state.HistoryCell{
+				Text:       text,
+				Width:      1,
+				Style:      style,
+				LinkURL:    run.LinkURL,
+				LinkParams: run.LinkParams,
+			})
+			run.Text = run.Text[size:]
 		}
 	}
 	return out
 }
 
-func historyCellStyleFromProtocol(style protocol.CellStyle) state.HistoryCellStyle {
+func compactRunCellCount(runs []protocol.CompactRowRun) int {
+	total := 0
+	for _, run := range runs {
+		total += utf8.RuneCountInString(run.Text)
+	}
+	return total
+}
+
+func historyCellStyleFromCompact(style *protocol.CompactRowStyle) state.HistoryCellStyle {
+	if style == nil {
+		return state.HistoryCellStyle{}
+	}
 	return state.HistoryCellStyle{
 		FG:            style.FG,
 		BG:            style.BG,

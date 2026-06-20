@@ -42,8 +42,8 @@ func TestHistoryStoreAcceptsLatestReplace(t *testing.T) {
 	}
 
 	store.Rows[0].Text = "mutated"
-	if window.Rows[0].Text != "one" {
-		t.Fatal("store should detach accepted rows")
+	if window.Rows[0].Text != "mutated" {
+		t.Fatal("source-backed window rows are reducer-owned and should be reused")
 	}
 }
 
@@ -72,8 +72,83 @@ func TestHistoryStoreDetachesStyledRowCells(t *testing.T) {
 	}
 	store.Rows[0].Cells[0].Text = "mutated"
 	store.Rows[0].Cells[2].Style.FG = "ansi:2"
-	if window.Rows[0].Cells[0].Text != "ERR" || window.Rows[0].Cells[2].Style.FG != "#ffcc00" {
-		t.Fatalf("history rows should detach styled cells, window=%#v store=%#v", window.Rows[0].Cells, store.Rows[0].Cells)
+	if window.Rows[0].Cells[0].Text != "mutated" || window.Rows[0].Cells[2].Style.FG != "ansi:2" {
+		t.Fatalf("source-backed window rows should be reducer-owned, window=%#v store=%#v", window.Rows[0].Cells, store.Rows[0].Cells)
+	}
+}
+
+func TestHistoryStoreTakesOwnedSourceLinesAndRowsWhenColsMatch(t *testing.T) {
+	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
+		ID:         1,
+		TerminalID: "term-1",
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+	source := []HistoryLogicalLine{{
+		Text:   "owned",
+		LineID: 10,
+		Cells:  []HistoryCell{{Text: "owned", Width: 5}},
+	}}
+	rows, spans := ReflowHistoryLogicalLines(source, 80)
+	window := HistoryWindow{
+		TerminalID:  "term-1",
+		Token:       "tok-1",
+		Op:          HistoryWindowReplace,
+		Cols:        80,
+		SourceLines: source,
+		Rows:        rows,
+		Lines:       spans,
+		Generation:  7,
+		Boundary:    HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+	}
+
+	store, _, err = store.ApplyWindow(1, window)
+	if err != nil {
+		t.Fatalf("apply latest: %v", err)
+	}
+	if len(store.SourceLines) != 1 || len(store.SourceLines[0].Cells) == 0 || &store.SourceLines[0].Cells[0] != &source[0].Cells[0] {
+		t.Fatalf("store should take owned source lines without deep clone, store=%#v source=%#v", store.SourceLines, source)
+	}
+	if len(store.Rows) != 1 || len(store.Rows[0].Cells) == 0 || &store.Rows[0].Cells[0] != &rows[0].Cells[0] {
+		t.Fatalf("store should reuse window rows when cols match, store=%#v rows=%#v", store.Rows, rows)
+	}
+}
+
+func TestHistoryStoreRowsOnlyWindowStillDetachesCells(t *testing.T) {
+	store, err := (HistoryStore{}).BeginLatest(HistoryPendingRequest{
+		ID:         1,
+		TerminalID: "term-1",
+		Cols:       80,
+	})
+	if err != nil {
+		t.Fatalf("begin latest: %v", err)
+	}
+	rows := []HistoryRow{{
+		Text:   "ERR",
+		LineID: 10,
+		Cells:  []HistoryCell{{Text: "ERR", Width: 3, Style: HistoryCellStyle{FG: "ansi:1"}}},
+	}}
+	window := HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-1",
+		Op:         HistoryWindowReplace,
+		Cols:       80,
+		Rows:       rows,
+		Lines:      []HistoryLineSpan{{LineID: 10, StartRow: 0, EndRow: 0}},
+		Generation: 7,
+		Boundary:   HistoryBoundary{FirstLineID: 10, LastLineID: 10},
+	}
+
+	store, _, err = store.ApplyWindow(1, window)
+	if err != nil {
+		t.Fatalf("apply latest: %v", err)
+	}
+	store.SourceLines[0].Cells[0].Text = "mutated"
+	store.Rows[0].Cells[0].Text = "row-mutated"
+	if rows[0].Cells[0].Text != "ERR" {
+		t.Fatalf("rows-only window must still detach cells, rows=%#v storeSource=%#v storeRows=%#v", rows, store.SourceLines, store.Rows)
 	}
 }
 
