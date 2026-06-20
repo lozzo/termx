@@ -21,7 +21,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const daemonHistoryFileBackendDirEnv = "TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR"
+const (
+	daemonHistoryBackendEnv        = "TERMX_DAEMON_HISTORY_BACKEND"
+	daemonHistoryFileBackendDirEnv = "TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR"
+)
 
 type coreV2Server interface {
 	ListenAndServe(context.Context) error
@@ -105,7 +108,7 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 }
 
 func newDaemonHistoryStorageFactory(logger *slog.Logger) corev2.HistoryStorageFactory {
-	dir := strings.TrimSpace(os.Getenv(daemonHistoryFileBackendDirEnv))
+	dir := resolveDaemonHistoryFileBackendDir()
 	if dir == "" {
 		return nil
 	}
@@ -123,6 +126,23 @@ func newDaemonHistoryStorageFactory(logger *slog.Logger) corev2.HistoryStorageFa
 		logger.Info("core-v2 daemon file history backend enabled", "terminal_id", terminalID, "path", path)
 		return backend, nil
 	}
+}
+
+func resolveDaemonHistoryFileBackendDir() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(daemonHistoryBackendEnv))) {
+	case "memory", "mem", "off", "disabled", "disable":
+		return ""
+	}
+	if dir := strings.TrimSpace(os.Getenv(daemonHistoryFileBackendDirEnv)); dir != "" {
+		return dir
+	}
+	if stateDir := os.Getenv("XDG_STATE_HOME"); stateDir != "" {
+		return filepath.Join(stateDir, "termx", "core-v2-history")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "state", "termx", "core-v2-history")
+	}
+	return filepath.Join(os.TempDir(), "termx-core-v2-history")
 }
 
 func daemonHistoryBackendFileName(terminalID string) string {

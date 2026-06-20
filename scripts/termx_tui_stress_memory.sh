@@ -27,7 +27,7 @@ Options:
   --daemon-request-reclaim-min-heap-mb N
                         set TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB for request-boundary page reclaim
   --daemon-history-file-backend
-                        store daemon compact clean history payloads in artifact file backend
+                        force daemon compact history payloads into artifact file backend dir
   --tui-memory-limit-mb N
                         set TERMX_TUI_MEMORY_LIMIT_MB for TUI runtime GC pacing
   --wait-seconds N      max wait for attach/copy markers; default 90
@@ -45,7 +45,8 @@ Artifacts:
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
   daemon-memstats/       daemon runtime MemStats samples collected at RSS stages
   tui-memstats/          TUI runtime MemStats samples collected at RSS stages
-  daemon-history-backend/ daemon file-backed compact history payloads when enabled
+  state/termx/core-v2-history/ default daemon file-backed compact history payloads
+  daemon-history-backend/ forced compact history payload dir when --daemon-history-file-backend is set
   live.txt              tmux capture after stress completes
   copy-oldest.txt       capture after copy/history oldest jump
   daemon-heap/          daemon heap profiles captured by --profile-mode
@@ -323,9 +324,14 @@ write_profile_summary() {
       echo "## stress RSS peaks"
       cat "$ROOT/memory-peaks.tsv"
     fi
+    if [[ -d "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" ]]; then
+      echo
+      echo "## daemon default history file backend"
+      find "$DAEMON_DEFAULT_HISTORY_BACKEND_DIR" -type f -name '*.compact' -print0 2>/dev/null | xargs -0 ls -lh 2>/dev/null || true
+    fi
     if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
       echo
-      echo "## daemon history file backend"
+      echo "## daemon forced history file backend"
       find "$DAEMON_HISTORY_BACKEND_DIR" -type f -name '*.compact' -print0 2>/dev/null | xargs -0 ls -lh 2>/dev/null || true
     fi
     echo
@@ -510,6 +516,8 @@ TUI_HEAP_DIR="$ROOT/tui-heap"
 DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
 TUI_MEMSTATS_DIR="$ROOT/tui-memstats"
 DAEMON_HISTORY_BACKEND_DIR="$ROOT/daemon-history-backend"
+DAEMON_DEFAULT_STATE_DIR="$ROOT/state"
+DAEMON_DEFAULT_HISTORY_BACKEND_DIR="$DAEMON_DEFAULT_STATE_DIR/termx/core-v2-history"
 DIAG_STAGE_FILE="$ROOT/diag-stage.txt"
 SESSION="termx-tui-stress-$$"
 TARGET="$SESSION:0.0"
@@ -568,19 +576,23 @@ if [[ "$BASELINE_TIME" == "1" ]]; then
 fi
 
 log "starting daemon"
+DAEMON_ENV_PREFIX=(XDG_STATE_HOME="$DAEMON_DEFAULT_STATE_DIR")
 DAEMON_HISTORY_FILE_BACKEND_ENV=""
 if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
   log "daemon history file backend: $DAEMON_HISTORY_BACKEND_DIR"
   DAEMON_HISTORY_FILE_BACKEND_ENV="$DAEMON_HISTORY_BACKEND_DIR"
+  DAEMON_ENV_PREFIX+=(TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR="$DAEMON_HISTORY_FILE_BACKEND_ENV")
+else
+  log "daemon default history file backend: $DAEMON_DEFAULT_HISTORY_BACKEND_DIR"
 fi
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
   log "daemon memory limit: ${DAEMON_MEMORY_LIMIT_MB}MB"
-  TERMX_DAEMON_MEMORY_LIMIT_MB="$DAEMON_MEMORY_LIMIT_MB" TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR="$DAEMON_HISTORY_FILE_BACKEND_ENV" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" TERMX_DAEMON_MEMSTATS_DIR="$DAEMON_MEMSTATS_DIR" TERMX_DIAG_STAGE_FILE="$DIAG_STAGE_FILE" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+  env "${DAEMON_ENV_PREFIX[@]}" TERMX_DAEMON_MEMORY_LIMIT_MB="$DAEMON_MEMORY_LIMIT_MB" TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" TERMX_DAEMON_MEMSTATS_DIR="$DAEMON_MEMSTATS_DIR" TERMX_DIAG_STAGE_FILE="$DIAG_STAGE_FILE" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
 else
   if [[ -n "$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" ]]; then
     log "daemon request reclaim min heap: ${DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB}MB"
   fi
-  TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR="$DAEMON_HISTORY_FILE_BACKEND_ENV" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" TERMX_DAEMON_MEMSTATS_DIR="$DAEMON_MEMSTATS_DIR" TERMX_DIAG_STAGE_FILE="$DIAG_STAGE_FILE" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+  env "${DAEMON_ENV_PREFIX[@]}" TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" TERMX_DAEMON_MEMSTATS_DIR="$DAEMON_MEMSTATS_DIR" TERMX_DIAG_STAGE_FILE="$DIAG_STAGE_FILE" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
 fi
 DAEMON_PID=$!
 if ! wait_for_socket "$SOCK" "$WAIT_SECONDS"; then
