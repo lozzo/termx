@@ -2565,7 +2565,7 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 		t.Fatalf("expected size-bound live screen rows, got %#v", snapshot.Screen.Cells)
 	}
 	got := []string{cellsText(snapshot.Screen.Cells[0]), cellsText(snapshot.Screen.Cells[1])}
-	if got[0] != "alpha       " || !strings.HasPrefix(got[1], "OK   ERR ok ") || len(snapshot.Scrollback) != 0 {
+	if got[0] != "alpha" || !strings.HasPrefix(got[1], "OK   ERR ok") || len(snapshot.Scrollback) != 0 {
 		t.Fatalf("snapshot must expose live screen cell matrix without scrollback truth, got rows=%#v scrollback=%#v", got, snapshot.Scrollback)
 	}
 	if snapshot.Screen.Cells[1][0].Style.FG != "ansi:2" {

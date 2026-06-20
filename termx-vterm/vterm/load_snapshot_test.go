@@ -2052,6 +2052,32 @@ func TestWriteWithDamageDoesNotPadHardNewlineScrollbackRowsToScreenWidth(t *test
 	t.Fatalf("expected non-padded scrollback row, got %#v", damage.ScrollbackAppend)
 }
 
+func TestWriteForLatestFrameSkipsScrollbackDamagePayload(t *testing.T) {
+	vt := New(12, 2, 100, nil)
+	_, err, damage := vt.WriteForLatestFrame([]byte("first\r\nsecond\r\nthird"))
+	if err != nil {
+		t.Fatalf("write latest frame: %v", err)
+	}
+	if !damage.RequiresFullReplace {
+		t.Fatalf("expected latest-frame write to advertise full replace, got %#v", damage)
+	}
+	if len(damage.ScrollbackAppend) != 0 || len(damage.AlternateAppend) != 0 {
+		t.Fatalf("latest-frame path must not allocate scrollback damage payload, got %#v", damage)
+	}
+	if got := strings.Join(trimmedScreenRowsText(vt.ScreenContent().Cells), "\n"); !strings.Contains(got, "third") {
+		t.Fatalf("expected latest screen to keep newest output, got %q", got)
+	}
+
+	vtWithDamage := New(12, 2, 100, nil)
+	_, err, damage = vtWithDamage.WriteWithDamage([]byte("first\r\nsecond\r\nthird"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if len(damage.ScrollbackAppend) == 0 {
+		t.Fatalf("expected incremental damage path to keep scrollback append payload, got %#v", damage)
+	}
+}
+
 func firstWriteSpanOp(t *testing.T, damage WriteDamage) DamageOp {
 	t.Helper()
 	return firstOpWithCode(t, damage, ScreenOpWriteSpan)

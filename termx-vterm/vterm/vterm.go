@@ -694,6 +694,8 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 	return v.write(data, true)
 }
 
+// WriteForLatestFrame 只维护当前 live screen；调用方不消费增量 damage，
+// 因此这里不能为压力输出构造 scrollback damage 临时对象。
 func (v *VTerm) WriteForLatestFrame(data []byte) (n int, err error, damage WriteDamage) {
 	return v.writeLatest(data)
 }
@@ -874,8 +876,7 @@ func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) 
 	v.clearTouchedRowsLocked()
 	clearTouchedFinish(0)
 	emulatorFinish := traceMeasure("vterm.write_latest.emulator")
-	directN, directErr, directDamages, _ := safeEmulatorWriteWithScrollbackDamage(v.emu, normalized)
-	n, err = directN, directErr
+	n, err = safeEmulatorWrite(v.emu, normalized)
 	emulatorFinish(len(normalized))
 	pos := v.emu.CursorPosition()
 	v.cursor.Row = pos.Y
@@ -921,19 +922,6 @@ func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) 
 	rowCacheFinish(0)
 	damage = v.writeDamageHeaderLocked(cachePlan)
 	damage.RequiresFullReplace = true
-	if len(directDamages) > 0 && afterAltScreen && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
-		damage.AlternateAppend = v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
-		v.appendScrollbackDamageLocked(&damage, cachePlan)
-	} else if len(directDamages) > 0 && !afterAltScreen && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
-		if historyOps := v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds); len(historyOps) > 0 {
-			damage.ScrollbackAppend = historyOps
-			damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
-		} else {
-			v.appendScrollbackDamageLocked(&damage, cachePlan)
-		}
-	} else {
-		v.appendScrollbackDamageLocked(&damage, cachePlan)
-	}
 	damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
 	traceCount("vterm.write_latest.changed_rows", damageChangedRowCount(damage))
 	traceCount("vterm.write_latest.changed_cells", damageChangedCellCount(damage))
