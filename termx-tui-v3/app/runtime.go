@@ -995,6 +995,9 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		if msg, ok := runtime.copyModeMouseWheelEnterMsg(inputMsg.Event, resolution); ok {
 			return msg
 		}
+		if msg, ok := runtime.copyModeMouseWheelMsg(inputMsg.Event, resolution); ok {
+			return msg
+		}
 		if inputMsg.Event.RawSeq != "" {
 			if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
 				return msg
@@ -1327,6 +1330,27 @@ func (runtime *AppRuntime) copyModeMouseWheelEnterMsg(event input.InputEvent, re
 	// 中文说明：滚轮上滑是 copy/history 入口，必须绑定鼠标命中的 TerminalView；
 	// 不能先丢给 active pane，否则非 active sibling 要等下一次事件才进入 copy。
 	return CopyModeEnterViewMsg{Binding: binding, Cols: rect.W, Rows: rect.H}, true
+}
+
+func (runtime *AppRuntime) copyModeMouseWheelMsg(event input.InputEvent, resolution mouseHitResolution) (Msg, bool) {
+	if event.Kind != input.EventKindMouse || !mouseEventIsWheel(event) {
+		return nil, false
+	}
+	region, ok := copyModeWheelTargetRegion(resolution)
+	if !ok {
+		return nil, false
+	}
+	viewID := runtime.copyHistoryViewIDForRegion(region)
+	if viewID == "" {
+		return nil, false
+	}
+	_, copyMode := runtime.state.CopyHistorySessionForView(viewID)
+	if !copyModeInputContext(copyMode) {
+		return nil, false
+	}
+	// 中文说明：鼠标滚轮命中的是具体 TerminalView，不能回退到 active pane；
+	// floating/pane 的 copy history 会话必须各自滚动、各自退出。
+	return CopyModeWheelMsg{Event: event, ViewID: viewID}, true
 }
 
 func (runtime *AppRuntime) copyHistoryViewIDForRegion(region render.HitRegion) string {

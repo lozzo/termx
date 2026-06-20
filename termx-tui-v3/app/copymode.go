@@ -94,7 +94,8 @@ type CopyModeMoveMatchMsg struct {
 func (CopyModeMoveMatchMsg) isMsg() {}
 
 type CopyModeScrollMsg struct {
-	Delta int
+	Delta  int
+	ViewID string
 }
 
 func (CopyModeScrollMsg) isMsg() {}
@@ -106,6 +107,13 @@ type CopyModeMouseSelectMsg struct {
 }
 
 func (CopyModeMouseSelectMsg) isMsg() {}
+
+type CopyModeWheelMsg struct {
+	Event  input.InputEvent
+	ViewID string
+}
+
+func (CopyModeWheelMsg) isMsg() {}
 
 func staleCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg) bool {
 	return root.History.Pending == nil || state.RequestID(msg.Result.RequestID) != root.History.Pending.ID
@@ -294,7 +302,12 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			root = root.Advance()
 			return saveCopyHistorySessionForView(root, activeViewID), nil
 		case CopyModeScrollMsg:
-			root, activeViewID := rootWithActiveCopyHistorySession(root)
+			activeViewID := msg.ViewID
+			if activeViewID != "" {
+				root = rootWithCopyHistorySessionForView(root, activeViewID)
+			} else {
+				root, activeViewID = rootWithActiveCopyHistorySession(root)
+			}
 			root.CopyMode = root.CopyMode.ScrollCursor(msg.Delta, len(root.History.Rows))
 			root = refreshCopyModeLogicalSelectionFocus(root).Advance()
 			return saveCopyHistorySessionForView(root, activeViewID), nil
@@ -310,6 +323,14 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			root.CopyMode = root.CopyMode.RefreshLogicalSelection(root.History)
 			root = root.Advance()
 			return saveCopyHistorySessionForView(root, msg.ViewID), nil
+		case CopyModeWheelMsg:
+			root = rootWithCopyHistorySessionForView(root, msg.ViewID)
+			if !copyModeInputContext(root.CopyMode) {
+				return root, nil
+			}
+			intent := input.Route(msg.Event, true)
+			next, effects := reduceCopyModeIntent(root, intent, deps)
+			return saveCopyHistorySessionForView(next, msg.ViewID), effects
 		default:
 			return root, nil
 		}

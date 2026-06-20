@@ -971,6 +971,114 @@ func TestCopyModeFloatingScrollDoesNotMutateTiledCopySession(t *testing.T) {
 	}
 }
 
+func TestCopyModeRuntimeFloatingWheelScrollUsesHitView(t *testing.T) {
+	paneView := state.TerminalPaneViewID(state.DefaultPaneID)
+	floatingView := state.TerminalFloatingViewID("floating-1")
+	shell := state.DefaultShell()
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 6, Y: 3, W: 44, H: 12},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root := state.Root{
+		Shell: shell,
+		Surface: (state.TerminalSurfaceStore{}).ApplySnapshot(state.LiveSurfaceSnapshot{
+			TerminalID: "term-pane",
+			State:      state.TerminalLiveAttached,
+			Lines:      []string{"tiled live tail"},
+		}),
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 4, 78, 20, state.TerminalResizeRoleOwner, "surface-pane", paneView, true)).
+			BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 5, 40, 10, state.TerminalResizeRoleFollower, "surface-float", floatingView, true)),
+	}
+	paneHistory := state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      paneView,
+		TerminalID:  "term-pane",
+		Token:       "tok-pane",
+		Cols:        78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "pane-old", LineID: 1}, {Text: "pane-current", LineID: 2}}),
+		Rows:        []state.HistoryRow{{Text: "pane-old", LineID: 1}, {Text: "pane-current", LineID: 2}},
+	}
+	paneCopy := state.CopyModeStore{
+		Active:      true,
+		PaneID:      state.DefaultPaneID,
+		ViewID:      paneView,
+		TerminalID:  "term-pane",
+		BoundToken:  "tok-pane",
+		BoundCols:   78,
+		ViewRows:    8,
+		Cursor:      state.CopyPosition{Row: 1},
+		ViewportTop: 1,
+	}
+	floatHistory := state.HistoryStore{
+		PaneID:      "float-pane",
+		ViewID:      floatingView,
+		TerminalID:  "term-float",
+		Token:       "tok-float",
+		Cols:        40,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "float-old", LineID: 11}, {Text: "float-current", LineID: 12}}),
+		Rows:        []state.HistoryRow{{Text: "float-old", LineID: 11}, {Text: "float-current", LineID: 12}},
+	}
+	floatCopy := state.CopyModeStore{
+		Active:      true,
+		PaneID:      "float-pane",
+		ViewID:      floatingView,
+		TerminalID:  "term-float",
+		BoundToken:  "tok-float",
+		BoundCols:   40,
+		ViewRows:    8,
+		Cursor:      state.CopyPosition{Row: 1},
+		ViewportTop: 1,
+	}
+	root = root.WithCopyHistorySession(paneView, paneHistory, paneCopy)
+	root = root.WithCopyHistorySession(floatingView, floatHistory, floatCopy)
+	root.History, root.CopyMode = root.CopyHistorySessionForView(paneView)
+
+	host := NewFakeTerminalHost(16)
+	host.SetSize(120, 32)
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: &services.FakeTerminalService{}},
+		CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 10},
+	)
+	if err := runtime.Post(NoopMsg{}); err != nil {
+		t.Fatalf("initial render: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain initial render: %v", err)
+	}
+	region := copyHistoryRowHitRegionForPane(t, lastFrame(t, host.Frames()), "float-pane", 1)
+	if err := runtime.Post(InputMsg{Event: input.InputEvent{
+		Kind:  input.EventKindMouse,
+		Mouse: input.MouseWheelUp,
+		Row:   region.Rect.Y + 1,
+		Col:   region.Rect.X + 1,
+	}}); err != nil {
+		t.Fatalf("wheel floating history: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain wheel: %v", err)
+	}
+
+	_, nextPaneCopy := runtime.State().CopyHistorySessionForView(paneView)
+	_, nextFloatCopy := runtime.State().CopyHistorySessionForView(floatingView)
+	if nextPaneCopy.Cursor.Row != 1 || nextPaneCopy.ViewportTop != 1 {
+		t.Fatalf("floating wheel must not mutate tiled copy session, got %#v", nextPaneCopy)
+	}
+	if nextFloatCopy.Cursor.Row != 0 {
+		t.Fatalf("floating wheel should mutate only floating copy session, got %#v", nextFloatCopy)
+	}
+}
+
 func TestCopyModeEnteringSecondViewKeepsFirstUntilEsc(t *testing.T) {
 	paneView := state.TerminalPaneViewID(state.DefaultPaneID)
 	floatingView := state.TerminalFloatingViewID("floating-1")
