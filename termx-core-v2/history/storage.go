@@ -122,6 +122,20 @@ func (backend *MemoryStorageBackend) LoadSnapshotLine(id LogicalLineID) (Logical
 	return backend.loadCompactLine(id)
 }
 
+func (backend *MemoryStorageBackend) lineCommitState(id LogicalLineID) (SealState, bool, bool) {
+	backend.mu.RLock()
+	defer backend.mu.RUnlock()
+	if line, ok := backend.lines[id]; ok {
+		return line.Seal, line.Dirty, true
+	}
+	// 中文说明：compact backend 只保存 clean sealed line；commit 扫描只需要
+	// seal/dirty 状态，不能为此反复解码整条 payload。
+	if backend.hasCompactLine(id) {
+		return SealStateSealed, false, true
+	}
+	return "", false, false
+}
+
 func (backend *MemoryStorageBackend) HasLine(id LogicalLineID) bool {
 	backend.mu.RLock()
 	defer backend.mu.RUnlock()

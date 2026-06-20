@@ -365,6 +365,47 @@ func TestFileBackedMemoryStorageBackendCompactsCleanSealedLinesOffHeap(t *testin
 	}
 }
 
+func TestMemoryLogicalLineStoreCommitStateUsesCompactMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.compact")
+	backend, err := NewFileBackedMemoryStorageBackend(path)
+	if err != nil {
+		t.Fatalf("create file backend: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = backend.Close()
+	})
+	store := NewMemoryLogicalLineStore(backend)
+
+	clean, err := store.CreateLine(CreateLineRequest{
+		Seal:  SealStateSealed,
+		Dirty: false,
+		Cells: []Cell{{Text: "styled", Width: 6, Style: CellStyle{FG: "ansi:2"}}},
+	})
+	if err != nil {
+		t.Fatalf("create clean line: %v", err)
+	}
+	if _, ok := backend.lines[clean.ID]; ok {
+		t.Fatalf("clean sealed line should compact off map storage: %#v", backend.lines[clean.ID])
+	}
+	seal, dirty, ok := store.lineCommitState(clean.ID)
+	if !ok || seal != SealStateSealed || dirty {
+		t.Fatalf("unexpected compact commit state ok=%v seal=%q dirty=%v", ok, seal, dirty)
+	}
+
+	dirtyLine, err := store.CreateLine(CreateLineRequest{
+		Seal:  SealStateSealed,
+		Dirty: true,
+		Cells: []Cell{{Text: "dirty", Width: 5, Style: CellStyle{FG: "ansi:3"}}},
+	})
+	if err != nil {
+		t.Fatalf("create dirty line: %v", err)
+	}
+	seal, dirty, ok = store.lineCommitState(dirtyLine.ID)
+	if !ok || seal != SealStateSealed || !dirty {
+		t.Fatalf("unexpected dirty commit state ok=%v seal=%q dirty=%v", ok, seal, dirty)
+	}
+}
+
 func TestFileBackedMemoryStorageBackendCompactsSparseHighIDWithoutDenseGap(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "history.compact")
 	backend, err := NewFileBackedMemoryStorageBackend(path)

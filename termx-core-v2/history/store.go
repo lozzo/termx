@@ -226,6 +226,11 @@ func (store *MemoryLogicalLineStore) writePrimaryCellsOwned(id LogicalLineID, re
 func (store *MemoryLogicalLineStore) lineCommitState(id LogicalLineID) (SealState, bool, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
+	if backend, ok := store.backend.(interface {
+		lineCommitState(LogicalLineID) (SealState, bool, bool)
+	}); ok {
+		return backend.lineCommitState(id)
+	}
 	line, ok := store.loadOwnedLineLocked(id)
 	if !ok {
 		return "", false, false
