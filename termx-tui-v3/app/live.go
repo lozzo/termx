@@ -131,9 +131,18 @@ type LiveSurfaceMsg struct {
 	LifecycleKnown bool
 	RequestedCols  int
 	RequestedRows  int
+	Superseded     bool
 }
 
 func (LiveSurfaceMsg) isMsg() {}
+
+func (msg LiveSurfaceMsg) SkipRender() bool {
+	return msg.isSupersededOrdinarySurface()
+}
+
+func (msg LiveSurfaceMsg) isSupersededOrdinarySurface() bool {
+	return msg.Err == nil && !msg.LifecycleKnown && msg.Superseded && ordinaryLiveSnapshot(msg.Snapshot)
+}
 
 type LiveLifecycleQueryTarget struct {
 	TerminalID string

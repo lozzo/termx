@@ -381,6 +381,7 @@ func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 			}
 			continue
 		}
+		msg = runtime.prepareRenderPressureMessage(msg)
 		next, effects := runtime.reduce(runtime.state, msg)
 		runtime.state = next
 		runtime.observeRuntimeMessage(msg, effects)
@@ -458,6 +459,41 @@ func (runtime *AppRuntime) prepareRuntimeMessage(msg Msg) bool {
 	default:
 		return true
 	}
+}
+
+func (runtime *AppRuntime) prepareRenderPressureMessage(msg Msg) Msg {
+	surface, ok := msg.(LiveSurfaceMsg)
+	if !ok || surface.Superseded || surface.Err != nil || surface.LifecycleKnown || !ordinaryLiveSnapshot(surface.Snapshot) {
+		return msg
+	}
+	if !runtime.liveSurfaceHasQueuedOrDirtySuccessor(surface.Snapshot.TerminalID) {
+		return msg
+	}
+	// 中文说明：压力输出时由事件积压和 refresh 背压决定是否丢中间帧；
+	// 这里只跳过已被后续 ordinary surface 取代的渲染，不按固定帧率限速。
+	surface.Superseded = true
+	return surface
+}
+
+func (runtime *AppRuntime) liveSurfaceHasQueuedOrDirtySuccessor(terminalID string) bool {
+	if terminalID == "" {
+		return false
+	}
+	if refresh, ok := runtime.state.Surface.Refreshes[terminalID]; ok && refresh.Dirty {
+		return true
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	for _, queued := range runtime.queue {
+		if liveQueueBoundary(queued) {
+			return false
+		}
+		update, ok := queuedOrdinaryLiveUpdate(queued)
+		if ok && update.terminalID == terminalID {
+			return true
+		}
+	}
+	return false
 }
 
 func (runtime *AppRuntime) ingestHostInitialSize() {

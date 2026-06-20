@@ -658,6 +658,96 @@ func TestAppRuntimeCoalescesQueuedLiveRefreshEventsByTerminalID(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeSkipsSupersededLiveSurfaceWhileDirtyRefreshIsPending(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	reducer := NewLiveReducer(LiveDeps{Terminal: &services.FakeTerminalService{
+		SurfaceResult: services.TerminalSurfaceResult{
+			Ready: true,
+			Snapshot: state.LiveSurfaceSnapshot{
+				TerminalID: "term-1",
+				Revision:   3,
+				Lines:      []string{"latest"},
+			},
+		},
+	}})
+	runtime := NewAppRuntime(
+		state.Root{Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Refreshes: map[string]state.LiveSurfaceRefreshState{
+				"term-1": {InFlight: true, Dirty: true, Cols: 80, Rows: 24},
+			},
+		}},
+		reducer,
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{root.Surface.Lines[0]}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Revision:   2,
+		Lines:      []string{"middle"},
+	}, RequestedCols: 80, RequestedRows: 24}); err != nil {
+		t.Fatalf("post middle surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{"latest"}) {
+		t.Fatalf("dirty successor should suppress middle live frame and render latest only, got %v", got)
+	}
+	if runtime.State().Surface.Revision != 3 {
+		t.Fatalf("latest surface should win, got %#v", runtime.State().Surface)
+	}
+}
+
+func TestAppRuntimeDoesNotSkipLifecycleLiveSurfaceUnderPressure(t *testing.T) {
+	host := NewFakeTerminalHost(8)
+	runtime := NewAppRuntime(
+		state.Root{Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Refreshes: map[string]state.LiveSurfaceRefreshState{
+				"term-1": {InFlight: true, Dirty: true, Cols: 80, Rows: 24},
+			},
+		}},
+		func(root state.Root, msg Msg) (state.Root, []Effect) {
+			surface, ok := msg.(LiveSurfaceMsg)
+			if !ok {
+				t.Fatalf("expected LiveSurfaceMsg, got %T", msg)
+			}
+			root.Surface = root.Surface.ApplySnapshotWithLifecycle(surface.Snapshot, surface.LifecycleKnown)
+			return root.Advance(), nil
+		},
+		func(root state.Root) render.Frame {
+			return render.Frame{Lines: []string{string(root.Surface.State)}}
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := runtime.Post(LiveSurfaceMsg{
+		Snapshot: state.LiveSurfaceSnapshot{
+			TerminalID: "term-1",
+			Revision:   2,
+			State:      state.TerminalLiveExited,
+			ExitReason: "exited",
+		},
+		LifecycleKnown: true,
+	}); err != nil {
+		t.Fatalf("post lifecycle surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if got := frameLines(host.Frames()); !reflect.DeepEqual(got, []string{string(state.TerminalLiveExited)}) {
+		t.Fatalf("lifecycle surface must render even while dirty refresh is pending, got %v", got)
+	}
+}
+
 func TestAppRuntimeKeepsLiveSemanticBoundariesBetweenQueuedUpdates(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	var seen []string
