@@ -21,7 +21,7 @@ func RenderContentViewport(request ContentRenderRequest) ContentRenderResult {
 	extent = applyContentLayoutToExtent(content.Layout, extent, rect)
 	overflow := contentViewportOverflow(lines, extent, rect)
 	markOutsideExtent := contentViewportMarksOutsideExtent(content)
-	if contentViewportCanUseDirectRows(extent, rect, markOutsideExtent) {
+	if contentViewportCanUseDirectRows(extent, rect) {
 		return ContentRenderResult{
 			Lines:      contentViewportDirectRows(lines, rect.W, rect.H),
 			Cursor:     contentViewportCursor(content.Cursor, extent, rect),
@@ -108,9 +108,9 @@ func contentViewportMarksOutsideExtent(content ContentVM) bool {
 	return content.Kind == ContentTerminalLive && content.Extent.Known && !content.Pending && !content.Empty && content.Error == ""
 }
 
-func contentViewportCanUseDirectRows(extent ContentExtent, rect Rect, markOutsideExtent bool) bool {
-	return !markOutsideExtent &&
-		extent.Known &&
+func contentViewportCanUseDirectRows(extent ContentExtent, rect Rect) bool {
+	// 中文说明：extent 正好覆盖内容区时没有外部区域需要标记，live surface 也可以走直投快路径。
+	return extent.Known &&
 		extent.X == 0 &&
 		extent.Y == 0 &&
 		extent.Cols == rect.W &&
@@ -258,32 +258,38 @@ func contentViewportOverflow(lines []Line, extent ContentExtent, rect Rect) Cont
 }
 
 func renderContentViewportRow(lines []Line, extent ContentExtent, width int, row int, markOutsideExtent bool) Line {
-	cells := make([]Cell, 0, width)
 	if width <= 0 {
 		return Line{}
 	}
-	for col := 0; col < width; {
-		if !contentViewportInsideExtent(extent, col, row) {
-			cells = append(cells, contentViewportOutsideExtentCell(markOutsideExtent))
-			col++
-			continue
+	sourceRow := row - extent.Y
+	if sourceRow < 0 || sourceRow >= extent.Rows {
+		return contentViewportOutsideExtentLine(width, markOutsideExtent)
+	}
+	line := Line{}
+	if sourceRow < len(lines) {
+		line = lines[sourceRow]
+	}
+	insideStart := maxInt(0, extent.X)
+	insideEnd := minInt(width, extent.X+extent.Cols)
+	if insideStart >= insideEnd {
+		return contentViewportOutsideExtentLine(width, markOutsideExtent)
+	}
+	if insideStart == 0 && insideEnd == width {
+		start := -extent.X
+		if start == 0 {
+			return contentViewportFitLine(line, width)
 		}
-		runEnd := minInt(width, extent.X+extent.Cols)
-		if runEnd <= col {
-			runEnd = col + 1
-		}
-		line := Line{}
-		sourceRow := row - extent.Y
-		if sourceRow >= 0 && sourceRow < len(lines) {
-			line = lines[sourceRow]
-		}
-		visible := contentViewportLineWindow(line, col-extent.X, runEnd-col)
-		cells = append(cells, visible.Cells...)
-		col += visible.Width()
-		if visible.Width() == 0 {
-			cells = append(cells, contentViewportBlankCell())
-			col++
-		}
+		return contentViewportLineWindow(line, start, width)
+	}
+
+	cells := make([]Cell, 0, minInt(width, len(line.Cells)+2))
+	if insideStart > 0 {
+		cells = append(cells, contentViewportOutsideExtentRun(insideStart, markOutsideExtent))
+	}
+	visible := contentViewportLineWindow(line, insideStart-extent.X, insideEnd-insideStart)
+	cells = append(cells, visible.Cells...)
+	if insideEnd < width {
+		cells = append(cells, contentViewportOutsideExtentRun(width-insideEnd, markOutsideExtent))
 	}
 	return Line{Cells: cells}
 }
@@ -384,4 +390,21 @@ func contentViewportOutsideExtentCell(markOutsideExtent bool) Cell {
 		return Cell{Text: "·", Width: 1, Safe: true}
 	}
 	return contentViewportBlankCell()
+}
+
+func contentViewportOutsideExtentRun(width int, markOutsideExtent bool) Cell {
+	if width <= 1 {
+		return contentViewportOutsideExtentCell(markOutsideExtent)
+	}
+	if !markOutsideExtent {
+		return contentViewportBlankRun(width)
+	}
+	return Cell{Text: strings.Repeat("·", width), Width: width, Safe: true}
+}
+
+func contentViewportOutsideExtentLine(width int, markOutsideExtent bool) Line {
+	if width <= 0 {
+		return Line{}
+	}
+	return Line{Cells: []Cell{contentViewportOutsideExtentRun(width, markOutsideExtent)}}
 }

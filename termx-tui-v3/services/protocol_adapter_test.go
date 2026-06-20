@@ -999,6 +999,38 @@ func TestProtocolTerminalServiceAdapterMapsLiveSurfaceSnapshot(t *testing.T) {
 	}
 }
 
+func TestProtocolTerminalServiceAdapterMergesPlainASCIILiveCellRuns(t *testing.T) {
+	client := &fakeProtocolTerminalClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			State: "running",
+		}}},
+		snapshotResult: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 8, Rows: 1},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+				{Content: "a", Width: 1},
+				{Content: "b", Width: 1},
+				{Content: "c", Width: 1},
+				{Content: "d", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
+				{Content: "e", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
+				{Content: "f", Width: 1},
+			}}},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 8, Rows: 1})
+	if err != nil {
+		t.Fatalf("live surface: %v", err)
+	}
+
+	row := result.Snapshot.Screen[0]
+	if len(row) != 3 || row[0].Text != "abc" || row[0].Width != 3 || row[1].Text != "de" || row[1].Width != 2 || row[1].FG != "ansi:2" || row[2].Text != "f" {
+		t.Fatalf("plain ASCII live cells should merge by style run, got %#v", row)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterMapsExitedLiveSurfaceLifecycle(t *testing.T) {
 	exitedAt := time.Date(2026, 6, 17, 12, 45, 0, 0, time.UTC)
 	exitCode := 23

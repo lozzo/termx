@@ -68,10 +68,11 @@ func DecodeGridViewportPayload(payload []byte) (*GridViewport, error) {
 
 func snapshotToWirePB(snapshot *Snapshot) *wirepb.Snapshot {
 	return &wirepb.Snapshot{
-		TerminalId:             snapshot.TerminalID,
-		Size:                   sizeToWirePB(snapshot.Size),
-		ScreenIsAlternate:      snapshot.Screen.IsAlternateScreen,
-		Screen:                 rowSetToWirePB(CompactRowsFromCellsPreserveTrailingBlankRows(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped, snapshot.ScreenOwnership),
+		TerminalId:        snapshot.TerminalID,
+		Size:              sizeToWirePB(snapshot.Size),
+		ScreenIsAlternate: snapshot.Screen.IsAlternateScreen,
+		// 中文说明：live snapshot 的几何由 Size/Extent 表达；无样式行尾空白不需要进 wire payload。
+		Screen:                 rowSetToWirePB(CompactRowsFromCells(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped, snapshot.ScreenOwnership),
 		Scrollback:             rowSetToWirePB(snapshot.Scrollback, snapshot.ScrollbackTimestamps, snapshot.ScrollbackRowKinds, snapshot.ScrollbackWrapped, snapshot.ScrollbackOwnership),
 		ScrollbackOffset:       int64(snapshot.ScrollbackOffset),
 		ScrollbackTotal:        int64(snapshot.ScrollbackTotal),

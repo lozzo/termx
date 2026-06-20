@@ -23,5 +23,17 @@ func (renderer Renderer) Render(vm RenderVM) Frame {
 }
 
 func (renderer Renderer) RenderANSI(vm RenderVM) Frame {
-	return ANSIFrameFromRenderResult(renderer.RenderResult(vm))
+	if vm.Theme != (Theme{}) {
+		renderer.Theme = vm.Theme
+	}
+	frame := renderer.renderFrameworkCanvas(vm)
+	defer releaseCanvas(frame.Canvas)
+	return Frame{
+		ANSILines:  frame.Canvas.ansiLines(frame.Theme),
+		Cursor:     frame.Cursor,
+		CursorRect: frame.CursorRect,
+		HitRegions: cloneHitRegions(frame.HitRegions),
+		Metadata:   RenderMetadata{Width: frame.Canvas.width, Height: frame.Canvas.height},
+		Theme:      frame.Theme,
+	}
 }

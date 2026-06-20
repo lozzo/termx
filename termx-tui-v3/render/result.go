@@ -153,33 +153,37 @@ func (line Line) ansiString(theme Theme, baseColumn int) string {
 	}
 	modelCol := baseColumn
 	for index, cell := range line.Cells {
-		styleSeq := ""
-		if !cell.ANSIStyle.IsZero() {
-			styleSeq = ansiForCellStyle(cell.ANSIStyle)
-		} else if cell.Style != "" {
-			styleSeq = ansiForStyleToken(cell.Style, theme)
-		}
-		linkOpen, linkClose := ansiLinkOpenClose(cell.LinkURL, cell.LinkParams)
-		if linkOpen != "" {
-			out.WriteString(linkOpen)
-		}
-		if styleSeq != "" {
-			out.WriteString(styleSeq)
-		}
-		writeANSIText(&out, cell, modelCol)
+		writeANSIStyledCell(&out, cell, theme, modelCol)
 		modelCol += maxInt(0, cell.Width)
-		if styleSeq != "" {
-			out.WriteString(ANSIReset)
-		}
-		if linkClose != "" {
-			out.WriteString(linkClose)
-		}
 		if index < len(line.Cells)-1 {
 			// 中文说明：真实 TTY 对 emoji/FE0F 的列宽可能与模型不同；每个 cell 边界按模型列复位。
 			out.WriteString(ansiColumn(modelCol))
 		}
 	}
 	return out.String()
+}
+
+func writeANSIStyledCell(out *strings.Builder, cell Cell, theme Theme, modelCol int) {
+	styleSeq := ""
+	if !cell.ANSIStyle.IsZero() {
+		styleSeq = ansiForCellStyle(cell.ANSIStyle)
+	} else if cell.Style != "" {
+		styleSeq = ansiForStyleToken(cell.Style, theme)
+	}
+	linkOpen, linkClose := ansiLinkOpenClose(cell.LinkURL, cell.LinkParams)
+	if linkOpen != "" {
+		out.WriteString(linkOpen)
+	}
+	if styleSeq != "" {
+		out.WriteString(styleSeq)
+	}
+	writeANSIText(out, cell, modelCol)
+	if styleSeq != "" {
+		out.WriteString(ANSIReset)
+	}
+	if linkClose != "" {
+		out.WriteString(linkClose)
+	}
 }
 
 func writeANSIText(out *strings.Builder, cell Cell, startModelCol int) {

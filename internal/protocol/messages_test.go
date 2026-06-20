@@ -17,6 +17,7 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 				{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
 				{{Content: "重", Width: 2}, {Content: "", Width: 0}},
 				{{Content: "A", Width: 1}, {Content: " ", Width: 1}, {Content: " ", Width: 1}},
+				{{Content: "B", Width: 1}, {Content: " ", Width: 1, Style: CellStyle{BG: "#112233"}}},
 			},
 			IsAlternateScreen: true,
 		},
@@ -27,9 +28,9 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 		ScrollbackTimestamps: []time.Time{time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC)},
 		ScreenRowKinds:       []string{SnapshotRowKindRestart},
 		ScrollbackRowKinds:   []string{"log"},
-		ScreenWrapped:        []bool{false, true, false},
+		ScreenWrapped:        []bool{false, true, false, false},
 		ScrollbackWrapped:    []bool{true},
-		ScreenOwnership:      []string{RowOwnershipScreen, RowOwnershipScreen, RowOwnershipScreen},
+		ScreenOwnership:      []string{RowOwnershipScreen, RowOwnershipScreen, RowOwnershipScreen, RowOwnershipScreen},
 		ScrollbackOwnership:  []string{RowOwnershipPersisted},
 		Cursor:               CursorState{Row: 1, Col: 2, Visible: true, Shape: "bar", Blink: true},
 		Modes:                TerminalModes{AlternateScreen: true, AlternateScroll: true, BracketedPaste: true, ApplicationCursor: true, AutoWrap: true},
@@ -55,16 +56,19 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	if got := rowToStringForTest(decoded.Screen.Cells[1]); got != "重" {
 		t.Fatalf("unexpected decoded wide row: %q %#v", got, decoded.Screen.Cells[1])
 	}
-	if got := rowToStringForTest(decoded.Screen.Cells[2]); got != "A  " {
-		t.Fatalf("expected decoded screen row to preserve trailing spaces, got %q %#v", got, decoded.Screen.Cells[2])
+	if got := rowToStringForTest(decoded.Screen.Cells[2]); got != "A" {
+		t.Fatalf("expected decoded live screen row to trim plain trailing spaces, got %q %#v", got, decoded.Screen.Cells[2])
+	}
+	if got := rowToStringForTest(decoded.Screen.Cells[3]); got != "B " || decoded.Screen.Cells[3][1].Style.BG != "#112233" {
+		t.Fatalf("expected decoded live screen row to preserve styled trailing spaces, got %q %#v", got, decoded.Screen.Cells[3])
 	}
 	if row := decoded.Scrollback[0].DecodeCells(); rowToStringForTest(row) != "hi" || row[0].Style.FG != "#ff0000" {
 		t.Fatalf("unexpected decoded scrollback: %#v", row)
 	}
-	if len(decoded.ScreenWrapped) != 3 || !decoded.ScreenWrapped[1] || len(decoded.ScrollbackWrapped) != 1 || !decoded.ScrollbackWrapped[0] {
+	if len(decoded.ScreenWrapped) != 4 || !decoded.ScreenWrapped[1] || len(decoded.ScrollbackWrapped) != 1 || !decoded.ScrollbackWrapped[0] {
 		t.Fatalf("unexpected decoded wrapped metadata: %#v %#v", decoded.ScreenWrapped, decoded.ScrollbackWrapped)
 	}
-	if len(decoded.ScreenOwnership) != 3 || decoded.ScreenOwnership[0] != RowOwnershipScreen || len(decoded.ScrollbackOwnership) != 1 || decoded.ScrollbackOwnership[0] != RowOwnershipPersisted {
+	if len(decoded.ScreenOwnership) != 4 || decoded.ScreenOwnership[0] != RowOwnershipScreen || len(decoded.ScrollbackOwnership) != 1 || decoded.ScrollbackOwnership[0] != RowOwnershipPersisted {
 		t.Fatalf("unexpected decoded ownership metadata: %#v %#v", decoded.ScreenOwnership, decoded.ScrollbackOwnership)
 	}
 	if decoded.Cursor.Shape != "bar" || !decoded.Modes.BracketedPaste || !decoded.Modes.AutoWrap {

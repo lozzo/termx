@@ -587,7 +587,7 @@ func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
 		if width == 0 {
 			width = 1
 		}
-		out = append(out, state.LiveCell{
+		next := state.LiveCell{
 			Text:          cell.Content,
 			Width:         width,
 			FG:            cell.Style.FG,
@@ -600,12 +600,52 @@ func liveSurfaceCellsFromProtocol(cells []protocol.Cell) []state.LiveCell {
 			Strikethrough: cell.Style.Strikethrough,
 			LinkURL:       cell.LinkURL,
 			LinkParams:    cell.LinkParams,
-		})
+		}
+		out = appendLiveSurfaceCellRun(out, next)
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func appendLiveSurfaceCellRun(out []state.LiveCell, next state.LiveCell) []state.LiveCell {
+	if len(out) == 0 || !canMergeLiveSurfaceCellRun(out[len(out)-1], next) {
+		return append(out, next)
+	}
+	last := &out[len(out)-1]
+	last.Text += next.Text
+	last.Width += next.Width
+	return out
+}
+
+func canMergeLiveSurfaceCellRun(left state.LiveCell, right state.LiveCell) bool {
+	return left.FG == right.FG &&
+		left.BG == right.BG &&
+		left.Bold == right.Bold &&
+		left.Italic == right.Italic &&
+		left.Underline == right.Underline &&
+		left.Blink == right.Blink &&
+		left.Reverse == right.Reverse &&
+		left.Strikethrough == right.Strikethrough &&
+		left.LinkURL == "" &&
+		right.LinkURL == "" &&
+		left.LinkParams == "" &&
+		right.LinkParams == "" &&
+		liveSurfaceCellIsSingleWidthASCII(left) &&
+		liveSurfaceCellIsSingleWidthASCII(right)
+}
+
+func liveSurfaceCellIsSingleWidthASCII(cell state.LiveCell) bool {
+	if cell.Width != len(cell.Text) {
+		return false
+	}
+	for index := 0; index < len(cell.Text); index++ {
+		if cell.Text[index] < 0x20 || cell.Text[index] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func terminalPoolTitleFromProtocol(terminal protocol.TerminalInfo) string {

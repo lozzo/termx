@@ -8,11 +8,36 @@ const (
 )
 
 func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
+	frame := renderer.renderFrameworkCanvas(vm)
+	defer releaseCanvas(frame.Canvas)
+
+	lines := frame.Canvas.lines()
+	return RenderResult{
+		Content:    lines,
+		Cursor:     frame.Cursor,
+		CursorRect: frame.CursorRect,
+		HitRegions: frame.HitRegions,
+		Metadata:   RenderMetadata{Width: frame.Canvas.width, Height: frame.Canvas.height},
+		Layers:     frame.Layers,
+		Theme:      frame.Theme,
+	}
+}
+
+type renderedFrameworkCanvas struct {
+	Canvas     *canvas
+	Cursor     Cursor
+	CursorRect Rect
+	HitRegions []HitRegion
+	Layers     []Layer
+	Theme      Theme
+}
+
+func (renderer Renderer) renderFrameworkCanvas(vm RenderVM) renderedFrameworkCanvas {
 	shell := vm.Shell
 	// 暂时屏蔽右上角 toast 卡片，只保留 reducer 内的反馈状态供快捷键清理和后续恢复。
 	shell.Toasts = nil
 	plan := MeasureLayout(shell, shell.Layout.Viewport)
-	c := newCanvas(plan.Viewport.W, plan.Viewport.H)
+	c := acquireCanvas(plan.Viewport.W, plan.Viewport.H)
 
 	renderShellFrame(c, plan)
 	if plan.Header.W > 0 && plan.Header.H > 0 {
@@ -62,13 +87,11 @@ func (renderer Renderer) renderFramework(vm RenderVM) RenderResult {
 		layers = append(layers, popupLayer)
 	}
 
-	lines := c.lines()
-	return RenderResult{
-		Content:    lines,
+	return renderedFrameworkCanvas{
+		Canvas:     c,
 		Cursor:     plan.Cursor,
 		CursorRect: plan.CursorRect,
 		HitRegions: plan.HitRegions,
-		Metadata:   RenderMetadata{Width: c.width, Height: c.height},
 		Layers:     layers,
 		Theme:      renderer.Theme.WithFallback(),
 	}

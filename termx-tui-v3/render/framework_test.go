@@ -871,6 +871,48 @@ func TestCanvasMatrixTracksOwnerLayerContinuationAndSafeFlag(t *testing.T) {
 	}
 }
 
+func TestCanvasPoolClearsReturnedCells(t *testing.T) {
+	c := acquireCanvas(4, 1)
+	c.writeTextStyled(0, 0, 4, "leak", StyleAccent, "pane-1", LayerPanel)
+	releaseCanvas(c)
+
+	next := acquireCanvas(4, 1)
+	defer releaseCanvas(next)
+	for col, cell := range next.rows[0] {
+		if cell != (canvasCell{}) {
+			t.Fatalf("pooled canvas retained cell at col %d: %#v", col, cell)
+		}
+	}
+}
+
+func TestRenderANSIMatchesRenderResultANSILines(t *testing.T) {
+	vm := RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{Viewport: Rect{W: 16, H: 7}, Panels: []PanelVM{{
+			ID:           "pane-1",
+			Title:        "pane",
+			Presentation: PanelPresentationCard,
+			Active:       true,
+			Content: ContentVM{
+				Kind: ContentTerminalLive,
+				Lines: []Line{{Cells: []Cell{
+					{Text: "x", Width: 1, TerminalContent: true, Safe: true},
+					{Text: "🚀", Width: 2, ANSIStyle: ANSICellStyle{FG: "ansi:2"}, TerminalContent: true, Safe: true},
+					{Text: " ok", Width: 3, Style: StyleSuccess, Safe: true},
+				}}},
+				Extent: ContentExtent{Known: true, Cols: 6, Rows: 1},
+			},
+		}}},
+	}}
+	renderer := NewRenderer(DefaultTheme())
+
+	direct := renderer.RenderANSI(vm)
+	viaResult := renderer.RenderResult(vm)
+
+	if got, want := strings.Join(direct.ANSILines, "\n"), strings.Join(viaResult.ANSILines(), "\n"); got != want {
+		t.Fatalf("direct ANSI frame must match RenderResult ANSI\n got=%q\nwant=%q", got, want)
+	}
+}
+
 func TestCanvasMatrixPreservesEmptyANSICellFootprint(t *testing.T) {
 	style := ANSICellStyle{BG: "ansi:4"}
 	c := newCanvas(5, 1)
