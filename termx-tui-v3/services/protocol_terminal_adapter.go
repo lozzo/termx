@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
@@ -24,6 +25,10 @@ type ProtocolTerminalClient interface {
 	Resize(context.Context, uint16, uint16, uint16) error
 	EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
 	Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error)
+}
+
+type ProtocolCompactSnapshotClient interface {
+	SnapshotCompact(context.Context, string, int, int) (*protocol.CompactSnapshot, error)
 }
 
 type ProtocolInputRequestClient interface {
@@ -295,35 +300,39 @@ func (adapter ProtocolTerminalServiceAdapter) LiveSurface(ctx context.Context, r
 	if limit <= 0 {
 		limit = 24
 	}
-	snapshot, err := adapter.Client.Snapshot(ctx, req.TerminalID, 0, limit)
+	snapshot, compactSnapshot, err := adapter.liveSnapshot(ctx, req.TerminalID, limit)
 	if err != nil {
 		return TerminalSurfaceResult{}, err
 	}
-	screen := liveSurfaceScreenFromSnapshot(snapshot)
+	screen := liveSurfaceScreenFromSnapshots(snapshot, compactSnapshot)
 	var lines []string
 	if len(screen) == 0 {
 		// 中文说明：Screen 是 live render 主路径；只有没有 styled cells 时才保留旧 Lines fallback，
 		// 避免压力输出时为同一帧同时维护 cell screen 和纯文本行副本。
-		lines = liveSurfaceLinesFromSnapshot(snapshot)
+		lines = liveSurfaceLinesFromSnapshots(snapshot, compactSnapshot)
 	}
 	info, err := adapter.terminalInfo(ctx, req.TerminalID)
 	if err != nil {
 		return TerminalSurfaceResult{}, err
 	}
+	size := liveSnapshotSize(snapshot, compactSnapshot)
+	cursor := liveSnapshotCursor(snapshot, compactSnapshot)
+	modes := liveSnapshotModes(snapshot, compactSnapshot)
+	revision := liveSnapshotRevision(snapshot, compactSnapshot)
 	liveSnapshot := state.LiveSurfaceSnapshot{
 		TerminalID: req.TerminalID,
-		Revision:   snapshot.HistoryGeneration,
-		Cols:       int(snapshot.Size.Cols),
-		Rows:       int(snapshot.Size.Rows),
+		Revision:   revision,
+		Cols:       int(size.Cols),
+		Rows:       int(size.Rows),
 		Lines:      lines,
 		Screen:     screen,
 		Cursor: state.LiveCursor{
-			Visible: snapshot.Cursor.Visible,
-			Row:     snapshot.Cursor.Row,
-			Col:     snapshot.Cursor.Col,
-			Shape:   snapshot.Cursor.Shape,
+			Visible: cursor.Visible,
+			Row:     cursor.Row,
+			Col:     cursor.Col,
+			Shape:   cursor.Shape,
 		},
-		Modes: liveSurfaceModesFromProtocol(snapshot.Modes),
+		Modes: liveSurfaceModesFromProtocol(modes),
 	}
 	liveSnapshot = applyProtocolTerminalLifecycle(liveSnapshot, info)
 	return TerminalSurfaceResult{
@@ -518,6 +527,62 @@ func applyProtocolTerminalLifecycle(snapshot state.LiveSurfaceSnapshot, info pro
 	return snapshot
 }
 
+func (adapter ProtocolTerminalServiceAdapter) liveSnapshot(ctx context.Context, terminalID string, limit int) (*protocol.Snapshot, *protocol.CompactSnapshot, error) {
+	if compactClient, ok := adapter.Client.(ProtocolCompactSnapshotClient); ok {
+		compactSnapshot, err := compactClient.SnapshotCompact(ctx, terminalID, 0, limit)
+		return nil, compactSnapshot, err
+	}
+	snapshot, err := adapter.Client.Snapshot(ctx, terminalID, 0, limit)
+	return snapshot, nil, err
+}
+
+func liveSnapshotSize(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) protocol.Size {
+	if compactSnapshot != nil {
+		return compactSnapshot.Size
+	}
+	if snapshot != nil {
+		return snapshot.Size
+	}
+	return protocol.Size{}
+}
+
+func liveSnapshotRevision(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) uint64 {
+	if compactSnapshot != nil {
+		return compactSnapshot.HistoryGeneration
+	}
+	if snapshot != nil {
+		return snapshot.HistoryGeneration
+	}
+	return 0
+}
+
+func liveSnapshotCursor(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) protocol.CursorState {
+	if compactSnapshot != nil {
+		return compactSnapshot.Cursor
+	}
+	if snapshot != nil {
+		return snapshot.Cursor
+	}
+	return protocol.CursorState{}
+}
+
+func liveSnapshotModes(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) protocol.TerminalModes {
+	if compactSnapshot != nil {
+		return compactSnapshot.Modes
+	}
+	if snapshot != nil {
+		return snapshot.Modes
+	}
+	return protocol.TerminalModes{}
+}
+
+func liveSurfaceLinesFromSnapshots(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) []string {
+	if compactSnapshot != nil {
+		return liveSurfaceLinesFromCompactRows(compactSnapshot.ScreenRows)
+	}
+	return liveSurfaceLinesFromSnapshot(snapshot)
+}
+
 func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {
 	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
 		return nil
@@ -528,6 +593,17 @@ func liveSurfaceLinesFromSnapshot(snapshot *protocol.Snapshot) []string {
 			lines[rowIndex] += cell.Content
 		}
 		lines[rowIndex] = strings.TrimRight(lines[rowIndex], " ")
+	}
+	return trimTrailingEmptySurfaceLines(lines)
+}
+
+func liveSurfaceLinesFromCompactRows(rows []protocol.CompactRow) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	lines := make([]string, len(rows))
+	for rowIndex, row := range rows {
+		lines[rowIndex] = strings.TrimRight(liveSurfaceCompactRowText(row), " ")
 	}
 	return trimTrailingEmptySurfaceLines(lines)
 }
@@ -545,6 +621,13 @@ func trimTrailingEmptySurfaceLines(lines []string) []string {
 	return out
 }
 
+func liveSurfaceScreenFromSnapshots(snapshot *protocol.Snapshot, compactSnapshot *protocol.CompactSnapshot) [][]state.LiveCell {
+	if compactSnapshot != nil {
+		return liveSurfaceScreenFromCompactRows(compactSnapshot.ScreenRows)
+	}
+	return liveSurfaceScreenFromSnapshot(snapshot)
+}
+
 func liveSurfaceScreenFromSnapshot(snapshot *protocol.Snapshot) [][]state.LiveCell {
 	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
 		return nil
@@ -552,6 +635,17 @@ func liveSurfaceScreenFromSnapshot(snapshot *protocol.Snapshot) [][]state.LiveCe
 	screen := make([][]state.LiveCell, len(snapshot.Screen.Cells))
 	for rowIndex, row := range snapshot.Screen.Cells {
 		screen[rowIndex] = liveSurfaceCellsFromProtocol(row)
+	}
+	return screen
+}
+
+func liveSurfaceScreenFromCompactRows(rows []protocol.CompactRow) [][]state.LiveCell {
+	if len(rows) == 0 {
+		return nil
+	}
+	screen := make([][]state.LiveCell, len(rows))
+	for rowIndex, row := range rows {
+		screen[rowIndex] = liveSurfaceCellsFromCompactRow(row)
 	}
 	return screen
 }
@@ -565,6 +659,170 @@ func liveSurfaceModesFromProtocol(modes protocol.TerminalModes) state.LiveTermin
 		MouseAny:       modes.MouseAnyEvent,
 		MouseSGR:       modes.MouseSGR,
 		BracketedPaste: modes.BracketedPaste,
+	}
+}
+
+func liveSurfaceCellsFromCompactRow(row protocol.CompactRow) []state.LiveCell {
+	if row.Text != "" {
+		return []state.LiveCell{{Text: row.Text, Width: liveSurfaceTextWidth(row.Text)}}
+	}
+	if len(row.Runs) > 0 {
+		out := make([]state.LiveCell, 0, len(row.Runs))
+		for _, run := range row.Runs {
+			cell, ok := liveSurfaceCellFromCompactRun(run)
+			if ok {
+				out = append(out, cell)
+			}
+		}
+		return out
+	}
+	if len(row.Cells) == 0 {
+		return nil
+	}
+	return liveSurfaceCellsFromCompactCells(row.Cells)
+}
+
+func liveSurfaceCompactRowText(row protocol.CompactRow) string {
+	if row.Text != "" {
+		return row.Text
+	}
+	if len(row.Runs) > 0 {
+		var builder strings.Builder
+		for _, run := range row.Runs {
+			builder.WriteString(run.Text)
+		}
+		return builder.String()
+	}
+	if len(row.Cells) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	for _, cell := range row.Cells {
+		builder.WriteString(cell.Content)
+	}
+	return builder.String()
+}
+
+func liveSurfaceCellFromCompactRun(run protocol.CompactRowRun) (state.LiveCell, bool) {
+	if run.Text == "" {
+		return state.LiveCell{}, false
+	}
+	style := liveSurfaceStyleFromCompact(run.Style)
+	return state.LiveCell{
+		Text:          run.Text,
+		Width:         liveSurfaceTextWidth(run.Text),
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+		LinkURL:       run.LinkURL,
+		LinkParams:    run.LinkParams,
+	}, true
+}
+
+func liveSurfaceCellsFromCompactCells(cells []protocol.CompactRowCell) []state.LiveCell {
+	out := make([]state.LiveCell, 0, liveSurfaceRunCapacity(len(cells)))
+	for index := 0; index < len(cells); {
+		next, ok := liveSurfaceCellFromCompactCell(cells[index])
+		if !ok {
+			index++
+			continue
+		}
+		if !liveSurfaceCellIsSingleWidthASCII(next) {
+			out = append(out, next)
+			index++
+			continue
+		}
+		runEnd := index + 1
+		runWidth := next.Width
+		runBytes := len(next.Text)
+		runCells := 1
+		for runEnd < len(cells) {
+			runCell, ok := liveSurfaceCellFromCompactCell(cells[runEnd])
+			if !ok {
+				runEnd++
+				continue
+			}
+			if !canMergeLiveSurfaceCellRun(next, runCell) {
+				break
+			}
+			runWidth += runCell.Width
+			runBytes += len(runCell.Text)
+			runCells++
+			runEnd++
+		}
+		if runCells == 1 {
+			out = append(out, next)
+			index = runEnd
+			continue
+		}
+		var builder strings.Builder
+		builder.Grow(runBytes)
+		for runIndex := index; runIndex < runEnd; runIndex++ {
+			if runCell, ok := liveSurfaceCellFromCompactCell(cells[runIndex]); ok {
+				builder.WriteString(runCell.Text)
+			}
+		}
+		next.Text = builder.String()
+		next.Width = runWidth
+		out = append(out, next)
+		index = runEnd
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func liveSurfaceTextWidth(text string) int {
+	return xansi.StringWidth(strings.ReplaceAll(text, "\n", " "))
+}
+
+func liveSurfaceCellFromCompactCell(cell protocol.CompactRowCell) (state.LiveCell, bool) {
+	width := cell.Width
+	if width < 0 {
+		width = 0
+	}
+	if width == 0 && cell.Content == "" {
+		return state.LiveCell{}, false
+	}
+	if width == 0 {
+		width = 1
+	}
+	style := liveSurfaceStyleFromCompact(cell.Style)
+	return state.LiveCell{
+		Text:          cell.Content,
+		Width:         width,
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+		LinkURL:       cell.LinkURL,
+		LinkParams:    cell.LinkParams,
+	}, true
+}
+
+func liveSurfaceStyleFromCompact(style *protocol.CompactRowStyle) protocol.CellStyle {
+	if style == nil {
+		return protocol.CellStyle{}
+	}
+	return protocol.CellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
 	}
 }
 

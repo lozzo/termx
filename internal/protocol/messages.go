@@ -2008,6 +2008,33 @@ type Snapshot struct {
 	Timestamp              time.Time
 }
 
+type CompactSnapshot struct {
+	TerminalID             string
+	Size                   Size
+	ScreenRows             []CompactRow
+	ScreenIsAlternate      bool
+	Scrollback             []CompactRow
+	ScrollbackOffset       int
+	ScrollbackTotal        int
+	ScrollbackLogicalTotal int
+	ScrollbackHasMore      bool
+	ScrollbackLoadedRows   int
+	HistoryGeneration      uint64
+	ScrollbackFirstRowID   uint64
+	ScrollbackLastRowID    uint64
+	ScreenTimestamps       []time.Time
+	ScrollbackTimestamps   []time.Time
+	ScreenRowKinds         []string
+	ScrollbackRowKinds     []string
+	ScreenWrapped          []bool
+	ScrollbackWrapped      []bool
+	ScreenOwnership        []string
+	ScrollbackOwnership    []string
+	Cursor                 CursorState
+	Modes                  TerminalModes
+	Timestamp              time.Time
+}
+
 type GridViewport struct {
 	TerminalID             string
 	Size                   Size

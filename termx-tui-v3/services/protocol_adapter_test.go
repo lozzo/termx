@@ -277,6 +277,19 @@ func (client *fakeProtocolTerminalClient) StorageGet(_ context.Context, params p
 	return &protocol.StorageEntry{}, nil
 }
 
+type fakeCompactProtocolTerminalClient struct {
+	*fakeProtocolTerminalClient
+	compactSnapshot *protocol.CompactSnapshot
+}
+
+func (client *fakeCompactProtocolTerminalClient) SnapshotCompact(_ context.Context, terminalID string, _ int, _ int) (*protocol.CompactSnapshot, error) {
+	client.snapshotIDs = append(client.snapshotIDs, terminalID)
+	if client.compactSnapshot != nil {
+		return client.compactSnapshot, nil
+	}
+	return &protocol.CompactSnapshot{TerminalID: terminalID}, nil
+}
+
 func (client *fakeProtocolTerminalClient) StoragePut(_ context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
 	client.storagePuts = append(client.storagePuts, params)
 	if client.storagePutErr != nil {
@@ -1148,6 +1161,57 @@ func TestProtocolTerminalServiceAdapterMergesPlainASCIILiveCellRuns(t *testing.T
 	row := result.Snapshot.Screen[0]
 	if len(row) != 3 || row[0].Text != "abc" || row[0].Width != 3 || row[1].Text != "de" || row[1].Width != 2 || row[1].FG != "ansi:2" || row[2].Text != "f" {
 		t.Fatalf("plain ASCII live cells should merge by style run, got %#v", row)
+	}
+}
+
+func TestProtocolTerminalServiceAdapterMapsCompactLiveSurfaceSnapshot(t *testing.T) {
+	base := &fakeProtocolTerminalClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			State: "running",
+		}}},
+	}
+	client := &fakeCompactProtocolTerminalClient{
+		fakeProtocolTerminalClient: base,
+		compactSnapshot: &protocol.CompactSnapshot{
+			TerminalID:        "term-1",
+			Size:              protocol.Size{Cols: 12, Rows: 2},
+			HistoryGeneration: 77,
+			ScreenRows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{
+					{Content: "$", Width: 1},
+					{Content: " ", Width: 1},
+					{Content: "o", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
+					{Content: "k", Width: 1, Style: protocol.CellStyle{FG: "ansi:2"}},
+				}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "done", Width: 4}}),
+			},
+			Cursor: protocol.CursorState{Visible: true, Row: 1, Col: 4, Shape: "block"},
+			Modes:  protocol.TerminalModes{MouseTracking: true, MouseButtonEvent: true, MouseSGR: true},
+		},
+	}
+	adapter := ProtocolTerminalServiceAdapter{Client: client}
+
+	result, err := adapter.LiveSurface(context.Background(), TerminalSurfaceRequest{TerminalID: "term-1", Cols: 12, Rows: 2})
+	if err != nil {
+		t.Fatalf("compact live surface: %v", err)
+	}
+
+	if len(client.snapshotIDs) != 1 || client.snapshotIDs[0] != "term-1" {
+		t.Fatalf("expected compact snapshot request only, got %#v", client.snapshotIDs)
+	}
+	if result.Snapshot.Revision != 77 || result.Snapshot.Cols != 12 || result.Snapshot.Rows != 2 {
+		t.Fatalf("compact snapshot metadata not preserved: %#v", result.Snapshot)
+	}
+	if len(result.Snapshot.Lines) != 0 {
+		t.Fatalf("compact screen rows should not keep duplicate lines, got %#v", result.Snapshot.Lines)
+	}
+	row := result.Snapshot.Screen[0]
+	if len(row) != 2 || row[0].Text != "$ " || row[0].Width != 2 || row[1].Text != "ok" || row[1].FG != "ansi:2" {
+		t.Fatalf("compact rows should map directly to merged live cells, got %#v", row)
+	}
+	if !result.Snapshot.Cursor.Visible || result.Snapshot.Cursor.Shape != "block" || !result.Snapshot.Modes.MousePassthroughEnabled() {
+		t.Fatalf("compact cursor/modes not preserved: %#v %#v", result.Snapshot.Cursor, result.Snapshot.Modes)
 	}
 }
 

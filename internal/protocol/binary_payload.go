@@ -51,6 +51,14 @@ func DecodeSnapshotPayload(payload []byte) (*Snapshot, error) {
 	return snapshotFromWirePB(&msg)
 }
 
+func DecodeCompactSnapshotPayload(payload []byte) (*CompactSnapshot, error) {
+	var msg wirepb.Snapshot
+	if err := proto.Unmarshal(payload, &msg); err != nil {
+		return nil, err
+	}
+	return compactSnapshotFromWirePB(&msg)
+}
+
 func EncodeGridViewportPayload(viewport *GridViewport) ([]byte, error) {
 	if viewport == nil {
 		return nil, fmt.Errorf("nil grid viewport")
@@ -104,6 +112,46 @@ func snapshotFromWirePB(msg *wirepb.Snapshot) (*Snapshot, error) {
 		TerminalID:             msg.GetTerminalId(),
 		Size:                   sizeFromWirePB(msg.GetSize()),
 		Screen:                 ScreenData{Cells: CompactRowsToCells(screenRows), IsAlternateScreen: msg.GetScreenIsAlternate()},
+		Scrollback:             scrollbackRows,
+		ScrollbackOffset:       int(msg.GetScrollbackOffset()),
+		ScrollbackTotal:        int(msg.GetScrollbackTotal()),
+		ScrollbackLogicalTotal: int(msg.GetScrollbackLogicalTotal()),
+		ScrollbackHasMore:      msg.GetScrollbackHasMore(),
+		ScrollbackLoadedRows:   int(msg.GetScrollbackLoadedRows()),
+		HistoryGeneration:      msg.GetHistoryGeneration(),
+		ScrollbackFirstRowID:   msg.GetScrollbackFirstRowId(),
+		ScrollbackLastRowID:    msg.GetScrollbackLastRowId(),
+		ScreenTimestamps:       screenTimes,
+		ScrollbackTimestamps:   scrollbackTimes,
+		ScreenRowKinds:         screenKinds,
+		ScrollbackRowKinds:     scrollbackKinds,
+		ScreenWrapped:          screenWrapped,
+		ScrollbackWrapped:      scrollbackWrapped,
+		ScreenOwnership:        screenOwnership,
+		ScrollbackOwnership:    scrollbackOwnership,
+		Cursor:                 cursorFromWirePB(msg.GetCursor()),
+		Modes:                  modesFromWirePB(msg.GetModes()),
+		Timestamp:              unixNanoToTime(msg.GetTimestampUnixNano()),
+	}, nil
+}
+
+func compactSnapshotFromWirePB(msg *wirepb.Snapshot) (*CompactSnapshot, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("nil snapshot payload")
+	}
+	screenRows, screenTimes, screenKinds, screenWrapped, screenOwnership, err := rowSetFromWirePB(msg.GetScreen())
+	if err != nil {
+		return nil, err
+	}
+	scrollbackRows, scrollbackTimes, scrollbackKinds, scrollbackWrapped, scrollbackOwnership, err := rowSetFromWirePB(msg.GetScrollback())
+	if err != nil {
+		return nil, err
+	}
+	return &CompactSnapshot{
+		TerminalID:             msg.GetTerminalId(),
+		Size:                   sizeFromWirePB(msg.GetSize()),
+		ScreenRows:             screenRows,
+		ScreenIsAlternate:      msg.GetScreenIsAlternate(),
 		Scrollback:             scrollbackRows,
 		ScrollbackOffset:       int(msg.GetScrollbackOffset()),
 		ScrollbackTotal:        int(msg.GetScrollbackTotal()),

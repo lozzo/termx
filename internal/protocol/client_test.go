@@ -56,6 +56,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"SetMetadata",
 		"SetTags",
 		"Snapshot",
+		"SnapshotCompact",
 		"StorageDelete",
 		"StorageGet",
 		"StorageList",
@@ -185,6 +186,14 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 	if snap.TerminalID != "term-1" || len(snap.Scrollback) != 1 {
 		t.Fatalf("unexpected snapshot result: %#v", snap)
+	}
+
+	compactSnap, err := client.SnapshotCompact(ctx, "term-1", 0, 50)
+	if err != nil {
+		t.Fatalf("compact snapshot failed: %v", err)
+	}
+	if compactSnap.TerminalID != "term-1" || len(compactSnap.ScreenRows) != 1 || compactSnap.ScreenRows[0].Text != "hi" {
+		t.Fatalf("unexpected compact snapshot result: %#v", compactSnap)
 	}
 
 	viewport, err := client.GridViewport(ctx, "term-1", 1, 2, 80)
@@ -1092,6 +1101,14 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		Modes:      TerminalModes{AutoWrap: true},
 		Timestamp:  time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
 	})
+	if err != nil {
+		return err
+	}
+	if err := sendBinaryResponse(tr, req.ID, snapshotResult); err != nil {
+		return err
+	}
+
+	req, err = expectRequest(tr, "snapshot")
 	if err != nil {
 		return err
 	}

@@ -74,6 +74,23 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	if decoded.Cursor.Shape != "bar" || !decoded.Modes.BracketedPaste || !decoded.Modes.AutoWrap {
 		t.Fatalf("unexpected decoded cursor/modes: %#v %#v", decoded.Cursor, decoded.Modes)
 	}
+
+	compact, err := DecodeCompactSnapshotPayload(payload)
+	if err != nil {
+		t.Fatalf("decode compact snapshot payload failed: %v", err)
+	}
+	if compact.TerminalID != snap.TerminalID || compact.Size != snap.Size || !compact.ScreenIsAlternate {
+		t.Fatalf("unexpected compact decoded header: %#v", compact)
+	}
+	if len(compact.ScreenRows) != 4 || compact.ScreenRows[0].Text != "ok" {
+		t.Fatalf("compact decode should keep live screen rows compact, got %#v", compact.ScreenRows)
+	}
+	if got := compact.ScreenRows[1].DecodeCells(); rowToStringForTest(got) != "重" {
+		t.Fatalf("compact screen row should still be decodable on demand, got %#v", got)
+	}
+	if len(compact.Scrollback) != 1 || compact.Scrollback[0].DecodeCells()[0].Style.FG != "#ff0000" {
+		t.Fatalf("compact decode should preserve scrollback rows, got %#v", compact.Scrollback)
+	}
 }
 
 func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {

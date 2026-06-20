@@ -388,6 +388,18 @@ func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit 
 	return DecodeSnapshotPayload(payload)
 }
 
+func (c *Client) SnapshotCompact(ctx context.Context, terminalID string, offset, limit int) (*CompactSnapshot, error) {
+	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
+		TerminalID:       terminalID,
+		ScrollbackOffset: offset,
+		ScrollbackLimit:  limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return DecodeCompactSnapshotPayload(payload)
+}
+
 func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*GridViewport, error) {
 	payload, err := c.doRequestPayload(ctx, "grid.viewport", GridViewportParams{
 		TerminalID:       terminalID,
