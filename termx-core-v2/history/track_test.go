@@ -66,6 +66,24 @@ func TestHistoryTrackWritePrimaryCellsKeepsCallerCellsDetached(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackApplyAppendKeepsCallerCellsDetached(t *testing.T) {
+	track := NewHistoryTrack()
+	first := []Cell{{Text: "a", Width: 1}}
+	second := []Cell{{Text: "b", Width: 1}}
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: first},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: second},
+	)
+	first[0].Text = "mutated-a"
+	second[0].Text = "mutated-b"
+
+	line := requireLine(t, track, track.ActiveLineID())
+	if got := lineText(line); got != "ab" {
+		t.Fatalf("append leaked caller mutation into history, got %q", got)
+	}
+}
+
 func TestHistoryTrackCommitFrontierRequiresLeavingPrimaryScreenOwnership(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(2)

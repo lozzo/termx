@@ -51,8 +51,9 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	lastChar := e.lastChar
 	scrollY := 0
 	scrollback := e.Scrollback()
-	scrollbackRows := []fastSGRScrollbackRow(nil)
-	scrollbackDamages := []ScrollbackDamage(nil)
+	scrollbackHint := fastSGRScrollbackHint(data, cursorY, height)
+	scrollbackRows := make([]fastSGRScrollbackRow, 0, scrollbackHint)
+	scrollbackDamages := make([]ScrollbackDamage, 0, scrollbackHint)
 
 	flushScrollbackRow := func(row uv.Line, wasWrapped bool) {
 		if e.scr.damage != nil && e.scr.damage.scrollbackOnly {
@@ -140,7 +141,8 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 		}
 	}
 
-	var paramsScratch []int
+	var paramsStack [16]int
+	paramsScratch := paramsStack[:0]
 	for i := 0; i < len(data); {
 		start := i
 		for i < len(data) && isPrintableASCII(data[i]) {
@@ -193,7 +195,8 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 }
 
 func canApplyFastSGRTextBatch(data []byte) bool {
-	var paramsScratch []int
+	var paramsStack [16]int
+	paramsScratch := paramsStack[:0]
 	for i := 0; i < len(data); {
 		start := i
 		for i < len(data) && isPrintableASCII(data[i]) {
@@ -307,6 +310,22 @@ func fastSGRSequenceEnd(data []byte, start int) (int, bool) {
 		return 0, false
 	}
 	return 0, false
+}
+
+func fastSGRScrollbackHint(data []byte, cursorY int, height int) int {
+	if height <= 0 || cursorY < 0 {
+		return 0
+	}
+	lines := cursorY
+	for _, b := range data {
+		if b == '\n' {
+			lines++
+		}
+	}
+	if lines < height {
+		return 0
+	}
+	return lines - height + 1
 }
 
 func parseSGRParams(data []byte, scratch []int) ([]int, bool) {

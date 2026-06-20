@@ -17,6 +17,8 @@ Options:
   --seed N              stress seed; default 100
   --width-hint N        stress width hint; default 120
   --attach-size CxR     tmux attach size; default 120x36
+  --daemon-memory-limit-mb N
+                        set TERMX_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
   --wait-seconds N      max wait for attach/copy markers; default 30
   --keep-root           keep artifact root after success/failure (default)
   --cleanup-root        remove artifact root on exit
@@ -144,6 +146,7 @@ WIDTH_HINT=120
 ATTACH_SIZE="120x36"
 WAIT_SECONDS=30
 CLEANUP_ROOT=0
+DAEMON_MEMORY_LIMIT_MB=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -169,6 +172,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --attach-size)
       ATTACH_SIZE="$2"
+      shift 2
+      ;;
+    --daemon-memory-limit-mb)
+      DAEMON_MEMORY_LIMIT_MB="$2"
       shift 2
       ;;
     --wait-seconds)
@@ -207,6 +214,18 @@ case "$WAIT_SECONDS" in
     exit 1
     ;;
 esac
+case "$DAEMON_MEMORY_LIMIT_MB" in
+  ''|*[!0-9]*)
+    if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
+      echo "--daemon-memory-limit-mb must be a positive integer" >&2
+      exit 1
+    fi
+    ;;
+esac
+if [[ -n "$DAEMON_MEMORY_LIMIT_MB" && "$DAEMON_MEMORY_LIMIT_MB" -le 0 ]]; then
+  echo "--daemon-memory-limit-mb must be a positive integer" >&2
+  exit 1
+fi
 
 need awk
 need go
@@ -276,7 +295,12 @@ mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
 
 log "starting daemon"
-TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
+  log "daemon memory limit: ${DAEMON_MEMORY_LIMIT_MB}MB"
+  TERMX_DAEMON_MEMORY_LIMIT_MB="$DAEMON_MEMORY_LIMIT_MB" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+else
+  TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+fi
 DAEMON_PID=$!
 if ! wait_for_socket "$SOCK" "$WAIT_SECONDS"; then
   echo "daemon socket did not become ready: $SOCK" >&2

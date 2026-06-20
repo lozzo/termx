@@ -190,7 +190,11 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) erro
 	if created {
 		track.activeCol = incomingWidth
 	} else if !track.overwrite && track.activeCol == lineWidth {
-		line.Cells = append(line.Cells, cloneCells(cells)...)
+		if ownedCells {
+			line.Cells = append(line.Cells, cells...)
+		} else {
+			line.Cells = append(line.Cells, cloneCells(cells)...)
+		}
 		track.activeCol += incomingWidth
 	} else {
 		line.Cells = overwriteLineCellsAtColumn(line.Cells, track.activeCol, cells)
@@ -471,7 +475,7 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 	line.Dirty = true
 	nextGeneration := track.nextGeneration()
 	line.ContentGeneration = nextGeneration
-	line, err := track.store.ReplaceLine(line)
+	line, err := track.replaceOwnedLine(line)
 	if err != nil {
 		return err
 	}
@@ -494,7 +498,7 @@ func (track *HistoryTrack) setActiveLineTailFill(style CellStyle) error {
 	line.Dirty = true
 	nextGeneration := track.nextGeneration()
 	line.ContentGeneration = nextGeneration
-	line, err = track.store.ReplaceLine(line)
+	line, err = track.replaceOwnedLine(line)
 	if err != nil {
 		return err
 	}
@@ -546,7 +550,7 @@ func (track *HistoryTrack) clearPrimaryScreenPageBreak() error {
 		}
 		if line.Dirty {
 			line.Dirty = false
-			if _, err := track.store.ReplaceLine(line); err != nil {
+			if _, err := track.replaceOwnedLine(line); err != nil {
 				return err
 			}
 			changed = true
@@ -656,7 +660,7 @@ func (track *HistoryTrack) sealActiveLine() error {
 		return nil
 	}
 	line.Seal = SealStateSealed
-	if _, err := track.store.ReplaceLine(line); err != nil {
+	if _, err := track.replaceOwnedLine(line); err != nil {
 		return err
 	}
 	track.activeLine = 0
@@ -711,7 +715,7 @@ func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
 	line.Dirty = true
 	nextGeneration := track.nextGeneration()
 	line.ContentGeneration = nextGeneration
-	line, err := track.store.ReplaceLine(line)
+	line, err := track.replaceOwnedLine(line)
 	if err != nil {
 		return err
 	}
@@ -774,7 +778,7 @@ func (track *HistoryTrack) eraseActiveLineWithoutBump(mode int) (bool, error) {
 	next.TailFill = nil
 	next.Dirty = true
 	next.ContentGeneration = track.nextGeneration()
-	replaced, err := track.store.ReplaceLine(next)
+	replaced, err := track.replaceOwnedLine(next)
 	if err != nil {
 		return false, err
 	}
@@ -835,7 +839,7 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 		}
 		if line.Dirty {
 			line.Dirty = false
-			if _, err := track.store.ReplaceLine(line); err != nil {
+			if _, err := track.replaceOwnedLine(line); err != nil {
 				return err
 			}
 			changed = true

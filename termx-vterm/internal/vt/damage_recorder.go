@@ -212,6 +212,8 @@ func compactASCIIStyleRuns(line uv.Line) ([]ScrollbackRun, bool) {
 	runs := make([]ScrollbackRun, 0, 4)
 	var current ScrollbackRun
 	var currentText strings.Builder
+	currentText.Grow(len(line))
+	runStart := 0
 	currentStyleSet := false
 	for i := 0; i < len(line); i++ {
 		cell := line[i]
@@ -219,20 +221,20 @@ func compactASCIIStyleRuns(line uv.Line) ([]ScrollbackRun, bool) {
 			return nil, false
 		}
 		if currentStyleSet && compactASCIIStyleEqual(current.Style, cell.Style) {
-			currentText.WriteString(cell.Content)
+			currentText.WriteByte(cell.Content[0])
 			continue
 		}
-		if currentStyleSet && currentText.Len() > 0 {
-			current.Text = currentText.String()
+		if currentStyleSet && currentText.Len() > runStart {
+			current.Text = currentText.String()[runStart:]
 			runs = append(runs, current)
-			currentText.Reset()
+			runStart = currentText.Len()
 		}
 		current = ScrollbackRun{Style: cell.Style}
 		currentStyleSet = true
-		currentText.WriteString(cell.Content)
+		currentText.WriteByte(cell.Content[0])
 	}
-	if currentStyleSet && currentText.Len() > 0 {
-		current.Text = currentText.String()
+	if currentStyleSet && currentText.Len() > runStart {
+		current.Text = currentText.String()[runStart:]
 		runs = append(runs, current)
 	}
 	return runs, true

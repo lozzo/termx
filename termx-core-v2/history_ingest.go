@@ -50,6 +50,7 @@ type historyANSIParser struct {
 	atPhantom          bool
 	rowFootprintStyle  history.CellStyle
 	rowFootprintActive bool
+	paramsScratch      []int
 }
 
 // historyANSIParser 只解析会成为 logical-line payload 的文本样式元数据。
@@ -197,7 +198,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 	if final == 'J' {
 		parser.flush()
 		mode := 0
-		params := parseSGRParams(input[2:end])
+		params := parser.parseCSIParams(input[2:end])
 		if len(params) > 0 {
 			mode = params[0]
 		}
@@ -207,7 +208,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 	if final == 'K' {
 		parser.flush()
 		mode := 0
-		params := parseSGRParams(input[2:end])
+		params := parser.parseCSIParams(input[2:end])
 		if len(params) > 0 {
 			mode = params[0]
 		}
@@ -220,26 +221,26 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 	switch final {
 	case 'A':
 		parser.flush()
-		count := firstCSIParam(input[2:end], 1)
+		count := firstCSIParamIn(parser.parseCSIParams(input[2:end]), 1)
 		parser.segments = append(parser.segments, historyOutputSegment{CursorUp: true, Count: count})
 		parser.movePhysicalRowBy(-count)
 		return end + 1
 	case 'B':
 		parser.flush()
-		count := firstCSIParam(input[2:end], 1)
+		count := firstCSIParamIn(parser.parseCSIParams(input[2:end]), 1)
 		parser.segments = append(parser.segments, historyOutputSegment{CursorDown: true, Count: count})
 		parser.movePhysicalRowBy(count)
 		return end + 1
 	case 'C':
 		parser.flush()
-		count := firstCSIParam(input[2:end], 1)
+		count := firstCSIParamIn(parser.parseCSIParams(input[2:end]), 1)
 		parser.segments = append(parser.segments, historyOutputSegment{CursorForward: true, Count: count})
 		parser.col += count
 		parser.movePhysicalColumnBy(count)
 		return end + 1
 	case 'D':
 		parser.flush()
-		count := firstCSIParam(input[2:end], 1)
+		count := firstCSIParamIn(parser.parseCSIParams(input[2:end]), 1)
 		parser.segments = append(parser.segments, historyOutputSegment{CursorBackward: true, Count: count})
 		parser.col -= count
 		if parser.col < 0 {
@@ -249,7 +250,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		return end + 1
 	case 'G':
 		parser.flush()
-		column := firstCSIParam(input[2:end], 1)
+		column := firstCSIParamIn(parser.parseCSIParams(input[2:end]), 1)
 		parser.segments = append(parser.segments, historyOutputSegment{CursorHorizontalAbsolute: true, Count: column})
 		parser.col = column - 1
 		if parser.col < 0 {
@@ -259,7 +260,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		return end + 1
 	case 'H', 'f':
 		parser.flush()
-		row, column := firstTwoCSIParams(input[2:end], 1, 1)
+		row, column := firstTwoCSIParamsIn(parser.parseCSIParams(input[2:end]), 1, 1)
 		parser.segments = append(parser.segments, historyOutputSegment{CursorPosition: true, Row: row, Column: column})
 		parser.col = column - 1
 		if parser.col < 0 {
@@ -272,7 +273,7 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 		return end + 1
 	}
 	parser.flush()
-	parser.applySGR(input[2:end])
+	parser.applySGRParams(parser.parseCSIParams(input[2:end]))
 	return end + 1
 }
 
@@ -523,6 +524,10 @@ func historyParserASCIITextRun(text string) int {
 
 func (parser *historyANSIParser) applySGR(paramsText string) {
 	params := parseSGRParams(paramsText)
+	parser.applySGRParams(params)
+}
+
+func (parser *historyANSIParser) applySGRParams(params []int) {
 	if len(params) == 0 {
 		parser.style = history.CellStyle{}
 		return
@@ -661,24 +666,55 @@ func parseSGRParams(text string) []int {
 	if text == "" {
 		return nil
 	}
-	parts := strings.Split(strings.ReplaceAll(text, ":", ";"), ";")
-	params := make([]int, 0, len(parts))
-	for _, part := range parts {
-		if part == "" {
+	return parseSGRParamsInto(text, make([]int, 0, countSGRParams(text)))
+}
+
+func (parser *historyANSIParser) parseCSIParams(text string) []int {
+	parser.paramsScratch = parseSGRParamsInto(text, parser.paramsScratch[:0])
+	return parser.paramsScratch
+}
+
+func parseSGRParamsInto(text string, params []int) []int {
+	if text == "" {
+		return params
+	}
+	start := 0
+	for start <= len(text) {
+		end := start
+		for end < len(text) && text[end] != ';' && text[end] != ':' {
+			end++
+		}
+		if end == start {
 			params = append(params, 0)
-			continue
+		} else if value, err := strconv.Atoi(text[start:end]); err == nil {
+			params = append(params, value)
 		}
-		value, err := strconv.Atoi(part)
-		if err != nil {
-			continue
+		if end == len(text) {
+			break
 		}
-		params = append(params, value)
+		start = end + 1
 	}
 	return params
 }
 
+func countSGRParams(text string) int {
+	if text == "" {
+		return 0
+	}
+	count := 1
+	for i := 0; i < len(text); i++ {
+		if text[i] == ';' || text[i] == ':' {
+			count++
+		}
+	}
+	return count
+}
+
 func firstTwoCSIParams(text string, defaultFirst int, defaultSecond int) (int, int) {
-	params := parseSGRParams(text)
+	return firstTwoCSIParamsIn(parseSGRParams(text), defaultFirst, defaultSecond)
+}
+
+func firstTwoCSIParamsIn(params []int, defaultFirst int, defaultSecond int) (int, int) {
 	first := defaultFirst
 	second := defaultSecond
 	if len(params) > 0 && params[0] > 0 {
@@ -702,7 +738,10 @@ func parseAltScreenMode(text string, final byte) (bool, bool) {
 }
 
 func firstCSIParam(text string, fallback int) int {
-	params := parseSGRParams(text)
+	return firstCSIParamIn(parseSGRParams(text), fallback)
+}
+
+func firstCSIParamIn(params []int, fallback int) int {
 	if len(params) == 0 || params[0] <= 0 {
 		return fallback
 	}

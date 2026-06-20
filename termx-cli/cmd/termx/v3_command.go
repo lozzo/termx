@@ -71,6 +71,7 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 			defer closeLogger()
 
 			socketPath := resolveV3Socket(*socket)
+			applyDaemonRuntimeTuning(logger)
 			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath)}
 			srv := newCoreV2Server(opts...)
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
