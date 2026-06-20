@@ -27,8 +27,9 @@ type Cursor struct {
 }
 
 type RenderMetadata struct {
-	Width  int
-	Height int
+	Width            int
+	Height           int
+	ForceFullRepaint bool
 }
 
 type Cell struct {

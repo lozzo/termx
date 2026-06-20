@@ -480,6 +480,22 @@ func TestFrameSinkWritesOnlyChangedRows(t *testing.T) {
 	}
 }
 
+func TestFrameSinkForceFullRepaintClearsScreen(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "two"}, Metadata: render.RenderMetadata{Width: 5, Height: 2}}); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	if err := sink.WriteFrame(render.Frame{Lines: []string{"one", "three"}, Metadata: render.RenderMetadata{Width: 5, Height: 2, ForceFullRepaint: true}}); err != nil {
+		t.Fatalf("write repaint frame: %v", err)
+	}
+	got := output.String()
+	if !strings.Contains(got, cursorHome+clearScreen) || !strings.Contains(got, cursorPosition(1, 1)+clearLine+"one") || !strings.Contains(got, cursorPosition(2, 1)+clearLine+"three") {
+		t.Fatalf("force-full repaint must clear and rewrite complete frame, got %q", got)
+	}
+}
+
 func TestFrameSinkUsesScrollRegionForOneRowShiftUp(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)

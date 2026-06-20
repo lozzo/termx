@@ -57,7 +57,7 @@ func (sink *FrameSink) WriteFrame(frame render.Frame) error {
 	if height == 0 {
 		height = len(lines)
 	}
-	fullRepaint := !sink.hasLastFrame || width != sink.lastWidth || height != sink.lastHeight || len(lines) != len(sink.lastLines)
+	fullRepaint := frame.Metadata.ForceFullRepaint || !sink.hasLastFrame || width != sink.lastWidth || height != sink.lastHeight || len(lines) != len(sink.lastLines)
 	cursorSequence := frameCursorSequence(frame)
 	dirtyRows := fullRepaint
 	if !dirtyRows {

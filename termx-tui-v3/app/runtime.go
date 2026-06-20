@@ -186,8 +186,23 @@ type AppRuntime struct {
 	startupFrameReady   bool
 	maxMessagesPerBatch int
 	copyHistoryPatch    copyHistoryPatchCache
+	lastFloatingRepaint floatingRepaintSignature
 	diagnostics         *runtimeDiagnostics
 	stopDiagnostics     func()
+}
+
+type floatingRepaintSignature struct {
+	Values []floatingRepaintItem
+}
+
+type floatingRepaintItem struct {
+	ID        string
+	X         int
+	Y         int
+	W         int
+	H         int
+	Z         int
+	Collapsed bool
 }
 
 type mouseDragState struct {
@@ -964,6 +979,7 @@ func (runtime *AppRuntime) renderFrame() {
 		return
 	}
 	frame := runtime.render(runtime.state)
+	runtime.markFloatingRepaintFrame(&frame)
 	runtime.lastHitRegions = cloneRenderHitRegions(frame.HitRegions)
 	_ = runtime.host.FrameSink().WriteFrame(frame)
 	runtime.firstFrameWritten = true
@@ -973,6 +989,48 @@ func (runtime *AppRuntime) renderFrame() {
 
 func (runtime *AppRuntime) shouldWriteFirstFrame() bool {
 	return runtime.startupFrameReady && !runtime.firstFrameWritten && runtime.state.Viewport.Valid
+}
+
+func (runtime *AppRuntime) markFloatingRepaintFrame(frame *render.Frame) {
+	current := floatingRepaintSignatureFromRoot(runtime.state)
+	if !floatingRepaintSignatureEqual(runtime.lastFloatingRepaint, current) {
+		// 中文说明：floating 是覆盖层；移动/缩放/开关会同时影响新旧矩形。
+		// 真实 TTY 的行级增量覆盖不足以保证旧区域恢复，需要一次完整帧校准。
+		frame.Metadata.ForceFullRepaint = true
+	}
+	runtime.lastFloatingRepaint = current
+}
+
+func floatingRepaintSignatureFromRoot(root state.Root) floatingRepaintSignature {
+	floatings := root.Shell.ActiveFloatings()
+	if len(floatings) == 0 {
+		return floatingRepaintSignature{}
+	}
+	values := make([]floatingRepaintItem, len(floatings))
+	for i, floating := range floatings {
+		values[i] = floatingRepaintItem{
+			ID:        floating.ID,
+			X:         floating.Rect.X,
+			Y:         floating.Rect.Y,
+			W:         floating.Rect.W,
+			H:         floating.Rect.H,
+			Z:         floating.Z,
+			Collapsed: floating.Collapsed,
+		}
+	}
+	return floatingRepaintSignature{Values: values}
+}
+
+func floatingRepaintSignatureEqual(left floatingRepaintSignature, right floatingRepaintSignature) bool {
+	if len(left.Values) != len(right.Values) {
+		return false
+	}
+	for index := range left.Values {
+		if left.Values[index] != right.Values[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {

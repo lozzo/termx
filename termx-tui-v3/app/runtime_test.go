@@ -3237,6 +3237,7 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	if runtime.mouseDrag.Kind != mouseDragFloatingMove || runtime.mouseDrag.FloatingID != "floating-1" {
 		t.Fatalf("expected floating move drag state, got %#v", runtime.mouseDrag)
 	}
+	framesBeforeMove := len(host.Frames())
 	moveDrag := moveStart
 	moveDrag.Mouse = input.MouseLeftDrag
 	moveDrag.Col += 4
@@ -3250,6 +3251,9 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	moved := runtime.State().Shell.ActiveFloatings()[0].Rect
 	if moved.X != 14 || moved.Y != 7 {
 		t.Fatalf("floating title drag should move rect, got %#v", moved)
+	}
+	if !lastRuntimeNewFrame(t, host, framesBeforeMove).Metadata.ForceFullRepaint {
+		t.Fatalf("floating move frame must force full repaint to restore old rect, got %#v", lastRuntimeNewFrame(t, host, framesBeforeMove).Metadata)
 	}
 	if len(runtime.State().Shell.Toasts) != beforeToastCount {
 		t.Fatalf("floating move drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
@@ -3281,6 +3285,7 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 		t.Fatalf("expected floating resize drag state, got %#v", runtime.mouseDrag)
 	}
 	beforeResize := runtime.State().Shell.ActiveFloatings()[0].Rect
+	framesBeforeResize := len(host.Frames())
 	resizeDrag := resizeStart
 	resizeDrag.Mouse = input.MouseLeftDrag
 	resizeDrag.Col += 6
@@ -3294,6 +3299,9 @@ func TestAppRuntimeDragsFloatingMoveAndResizeHitRegions(t *testing.T) {
 	resized := runtime.State().Shell.ActiveFloatings()[0].Rect
 	if resized.W != beforeResize.W+6 || resized.H != beforeResize.H+2 {
 		t.Fatalf("floating resize drag should resize rect, before=%#v after=%#v", beforeResize, resized)
+	}
+	if !lastRuntimeNewFrame(t, host, framesBeforeResize).Metadata.ForceFullRepaint {
+		t.Fatalf("floating resize frame must force full repaint to restore old rect, got %#v", lastRuntimeNewFrame(t, host, framesBeforeResize).Metadata)
 	}
 	if len(runtime.State().Shell.Toasts) != beforeToastCount {
 		t.Fatalf("floating resize drag success should not add toast, before=%d after=%#v", beforeToastCount, runtime.State().Shell.Toasts)
@@ -3950,6 +3958,15 @@ func lastRuntimeFrame(t *testing.T, host *FakeTerminalHost) render.Frame {
 	frames := host.Frames()
 	if len(frames) == 0 {
 		t.Fatal("expected at least one rendered frame")
+	}
+	return frames[len(frames)-1]
+}
+
+func lastRuntimeNewFrame(t *testing.T, host *FakeTerminalHost, before int) render.Frame {
+	t.Helper()
+	frames := host.Frames()
+	if len(frames) <= before {
+		t.Fatalf("expected new rendered frame after %d, got %d", before, len(frames))
 	}
 	return frames[len(frames)-1]
 }
