@@ -44,17 +44,34 @@ func newTerminalHistoryPipelineWithStorage(cols int, rows int, backend history.S
 }
 
 func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
+	return pipeline.IngestBatch([]string{output})
+}
+
+func (pipeline *terminalHistoryPipeline) IngestBatch(outputs []string) error {
 	if terminalHistoryPipelineBeforeIngestHook != nil {
 		terminalHistoryPipelineBeforeIngestHook()
 	}
 	pipeline.mu.Lock()
 	defer pipeline.mu.Unlock()
 	pipeline.ingest.SetScreenSize(pipeline.cols, pipeline.rows)
+	// 同一批 chunk 共享 parser 状态和一次 generation publish，不通过 join 复制整批文本。
+	for _, output := range outputs {
+		if output == "" {
+			continue
+		}
+		if err := pipeline.ingestOutputLocked(output); err != nil {
+			return err
+		}
+	}
+	pipeline.publishGenerationLocked()
+	return nil
+}
+
+func (pipeline *terminalHistoryPipeline) ingestOutputLocked(output string) error {
 	if !pipeline.needsAltCaptureLocked(output) {
 		if err := pipeline.ingestPrimaryOutputLocked(output); err != nil {
 			return err
 		}
-		pipeline.publishGenerationLocked()
 		return nil
 	}
 	result := pipeline.writeAltCapturedOutputLocked(output)
@@ -75,7 +92,6 @@ func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
 		// 避免普通 primary 压力日志长期维护第二套 live/vterm 状态。
 		pipeline.altCap = nil
 	}
-	pipeline.publishGenerationLocked()
 	return nil
 }
 

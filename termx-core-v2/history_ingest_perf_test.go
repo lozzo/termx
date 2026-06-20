@@ -32,12 +32,48 @@ func BenchmarkHistoryPipelineIngestLineEditBatch(b *testing.B) {
 	}
 }
 
+func BenchmarkHistoryQueueSegmentedPlainLogBatch(b *testing.B) {
+	chunks := benchmarkPlainHistoryChunks(512, 32)
+	bytes := 0
+	for _, chunk := range chunks {
+		bytes += len(chunk)
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(bytes))
+
+	for i := 0; i < b.N; i++ {
+		pipeline := newTerminalHistoryPipeline(80, 24)
+		if err := pipeline.IngestBatch(chunks); err != nil {
+			b.Fatalf("ingest segmented plain output: %v", err)
+		}
+	}
+}
+
 func benchmarkPlainHistoryOutput(lines int) string {
 	var builder strings.Builder
 	for i := 0; i < lines; i++ {
 		fmt.Fprintf(&builder, "%06d [INFO ] worker=%03d status=ok path=/tmp/termx/perf/%06d bytes=%d\n", i, i%128, i, 4096+i)
 	}
 	return builder.String()
+}
+
+func benchmarkPlainHistoryChunks(lines int, linesPerChunk int) []string {
+	if linesPerChunk <= 0 {
+		linesPerChunk = 1
+	}
+	chunks := make([]string, 0, (lines+linesPerChunk-1)/linesPerChunk)
+	var builder strings.Builder
+	for i := 0; i < lines; i++ {
+		fmt.Fprintf(&builder, "%06d [INFO ] worker=%03d status=ok path=/tmp/termx/perf/%06d bytes=%d\n", i, i%128, i, 4096+i)
+		if (i+1)%linesPerChunk == 0 {
+			chunks = append(chunks, builder.String())
+			builder.Reset()
+		}
+	}
+	if builder.Len() > 0 {
+		chunks = append(chunks, builder.String())
+	}
+	return chunks
 }
 
 func benchmarkLineEditHistoryOutput(lines int) string {

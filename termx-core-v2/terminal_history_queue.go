@@ -2,7 +2,6 @@ package termxcorev2
 
 import (
 	"context"
-	"strings"
 	"sync"
 )
 
@@ -110,16 +109,19 @@ func (queue *terminalHistoryIngestQueue) Wait() {
 	<-queue.done
 }
 
-func (queue *terminalHistoryIngestQueue) Run(ingest func(string) error) {
+func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error) {
 	defer close(queue.done)
 	for {
 		batch, ok := queue.nextBatch()
 		if !ok {
 			return
 		}
-		text := joinTerminalHistoryIngestBatch(batch)
-		if ingest != nil && text != "" {
-			_ = ingest(text)
+		if ingest != nil {
+			// 不再把同一批输入拼成一个大字符串，避免 daemon 在高吞吐日志下制造短生命周期大对象。
+			texts := terminalHistoryIngestBatchTexts(batch)
+			if len(texts) > 0 {
+				_ = ingest(texts)
+			}
 		}
 		if target, ok := terminalHistoryIngestBatchFlushTarget(batch); ok {
 			queue.markFlushed(target)
@@ -129,6 +131,19 @@ func (queue *terminalHistoryIngestQueue) Run(ingest func(string) error) {
 		// 归还解析/编码临时页；不删除 history truth，也不做后台定时 scrub。
 		maybeReclaimDaemonBoundaryHeap()
 	}
+}
+
+func terminalHistoryIngestBatchTexts(batch []terminalHistoryIngestItem) []string {
+	if len(batch) == 0 {
+		return nil
+	}
+	texts := make([]string, 0, len(batch))
+	for _, item := range batch {
+		if item.text != "" {
+			texts = append(texts, item.text)
+		}
+	}
+	return texts
 }
 
 func (queue *terminalHistoryIngestQueue) nextBatch() ([]terminalHistoryIngestItem, bool) {
@@ -186,20 +201,6 @@ func terminalHistoryIngestBatchFlushTarget(batch []terminalHistoryIngestItem) (u
 		}
 	}
 	return 0, false
-}
-
-func joinTerminalHistoryIngestBatch(batch []terminalHistoryIngestItem) string {
-	if len(batch) == 0 {
-		return ""
-	}
-	if len(batch) == 1 {
-		return batch[0].text
-	}
-	var builder strings.Builder
-	for _, part := range batch {
-		builder.WriteString(part.text)
-	}
-	return builder.String()
 }
 
 func (queue *terminalHistoryIngestQueue) dropPendingPrefixLocked(count int) {

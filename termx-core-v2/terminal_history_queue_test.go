@@ -11,7 +11,7 @@ func TestTerminalHistoryIngestQueueEnqueueDoesNotWaitForSlowIngest(t *testing.T)
 	queue := newTerminalHistoryIngestQueue()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	go queue.Run(func(string) error {
+	go queue.Run(func([]string) error {
 		select {
 		case <-started:
 		default:
@@ -101,8 +101,10 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	ingested := make(chan string, 2)
-	go queue.Run(func(text string) error {
-		ingested <- text
+	go queue.Run(func(texts []string) error {
+		for _, text := range texts {
+			ingested <- text
+		}
 		select {
 		case <-started:
 		default:
@@ -142,9 +144,11 @@ func TestTerminalHistoryIngestQueueFlushWaitsForInFlightBatch(t *testing.T) {
 
 func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *testing.T) {
 	queue := newTerminalHistoryIngestQueue()
-	ingested := make(chan string, 2)
-	go queue.Run(func(text string) error {
-		ingested <- text
+	ingested := make(chan string, 3)
+	go queue.Run(func(texts []string) error {
+		for _, text := range texts {
+			ingested <- text
+		}
 		return nil
 	})
 
@@ -158,11 +162,39 @@ func TestTerminalHistoryIngestQueueFlushDoesNotPullFutureOutputIntoSameBatch(t *
 		t.Fatal("expected enqueue after flush")
 	}
 	if got := <-ingested; got != "before\n" {
-		t.Fatalf("flush batch should only include pre-marker output, got %q", got)
+		t.Fatalf("flush should process pre-marker output before returning, got %q", got)
 	}
 	if got := <-ingested; got != "after\n" {
 		t.Fatalf("future output should stay in later batch, got %q", got)
 	}
 	queue.Close()
 	queue.Wait()
+}
+
+func TestTerminalHistoryIngestQueueSegmentedIngestKeepsParserPendingAcrossChunks(t *testing.T) {
+	queue := newTerminalHistoryIngestQueue()
+	pipeline := newTerminalHistoryPipeline(80, 24)
+	go queue.Run(func(texts []string) error {
+		return pipeline.IngestBatch(texts)
+	})
+
+	if !queue.Enqueue("\x1b[31") || !queue.Enqueue("mred\x1b[0m\n") {
+		t.Fatal("expected enqueue before flush")
+	}
+	if err := queue.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	queue.Close()
+	queue.Wait()
+
+	window, err := pipeline.LatestWindow(80, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "red" {
+		t.Fatalf("expected segmented parser to keep text, got %#v", window.Rows)
+	}
+	if len(window.Rows[0].Cells) != 1 || window.Rows[0].Cells[0].Style.FG != "ansi:1" {
+		t.Fatalf("expected split CSI style to survive segmented ingest, row=%#v", window.Rows[0])
+	}
 }

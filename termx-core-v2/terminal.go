@@ -332,8 +332,8 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	go liveQueue.Run(func(output string) error {
 		return terminal.ingestProcessLiveOutput(process, output)
 	})
-	go historyQueue.Run(func(output string) error {
-		return terminal.ingestProcessHistoryOutput(process, output)
+	go historyQueue.Run(func(outputs []string) error {
+		return terminal.ingestProcessHistoryOutputBatch(process, outputs)
 	})
 	go func() {
 		defer close(done)
@@ -424,6 +424,10 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 }
 
 func (terminal *Terminal) ingestProcessHistoryOutput(process TerminalProcess, output string) error {
+	return terminal.ingestProcessHistoryOutputBatch(process, []string{output})
+}
+
+func (terminal *Terminal) ingestProcessHistoryOutputBatch(process TerminalProcess, outputs []string) error {
 	terminal.mu.Lock()
 	if terminal.process != process {
 		terminal.mu.Unlock()
@@ -437,7 +441,7 @@ func (terminal *Terminal) ingestProcessHistoryOutput(process TerminalProcess, ou
 	pipeline := terminal.history
 	terminal.historyMu.Unlock()
 	terminal.mu.Unlock()
-	return pipeline.Ingest(output)
+	return pipeline.IngestBatch(outputs)
 }
 
 func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) {
