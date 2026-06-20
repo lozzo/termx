@@ -282,6 +282,15 @@ func (c *canvas) fillStyledRect(rect Rect, style StyleToken, owner string, layer
 	}
 }
 
+func (c *canvas) fillRect(rect Rect, owner string, layer LayerKind) {
+	if rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	for y := rect.Y; y < rect.Y+rect.H; y++ {
+		c.writeLine(rect.X, y, rect.W, Line{}, owner, layer)
+	}
+}
+
 func (c *canvas) drawBox(rect Rect, style boxStyle) {
 	c.drawStyledBox(rect, style, StyleMuted, "chrome", LayerChrome)
 }

@@ -540,15 +540,15 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	primitive := FloatingChromePrimitive(floating, rect, style)
 	owner := primitive.Owner
-	// 中文说明：floating 是覆盖层，不论是否 active 都必须先铺满自身矩形；
-	// 否则底层 terminal/history 的 ANSI 背景会从空白区透进浮窗。
-	c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
+	// 中文说明：floating 是覆盖层，需要先用默认背景空白清掉底层 pane；
+	// 但不能套 StyleOverlay，否则浮窗主体会被染成 overlay 背景色。
+	c.fillRect(rect, owner, LayerFloating)
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
 	renderFloatingTerminalChrome(c, primitive)
 	renderFloatingChromeActions(c, primitive)
 	var contentResult ContentRenderResult
 	if !floating.Collapsed {
-		contentResult = renderContentWithFill(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating, StyleOverlay)
+		contentResult = renderContent(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating)
 		renderFloatingContentOverflowMarkers(c, layout, contentResult.Overflow)
 	}
 	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}

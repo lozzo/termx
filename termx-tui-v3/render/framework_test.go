@@ -764,7 +764,7 @@ func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 64)
 }
 
-func TestFrameworkFloatingFillsBackgroundOverStyledPane(t *testing.T) {
+func TestFrameworkFloatingClearsBackgroundWithoutOverlayFill(t *testing.T) {
 	yellowRows := make([]Line, 16)
 	for i := range yellowRows {
 		yellowRows[i] = Line{Cells: []Cell{{Text: strings.Repeat("x", 62), Width: 62, ANSIStyle: ANSICellStyle{BG: "ansi:3"}, TerminalContent: true, Safe: true}}}
@@ -790,11 +790,11 @@ func TestFrameworkFloatingFillsBackgroundOverStyledPane(t *testing.T) {
 	}})
 	frame := result.Frame()
 	insideBlank, ok := lineCellAtDisplayColumn(frame.StyledLines[6], 20)
-	if !ok || insideBlank.Style != StyleOverlay || insideBlank.ANSIStyle != (ANSICellStyle{}) {
-		t.Fatalf("floating blank area must be overlay-owned, got %#v line=%#v", insideBlank, frame.StyledLines[6])
+	if !ok || insideBlank.Style != "" || insideBlank.ANSIStyle != (ANSICellStyle{}) {
+		t.Fatalf("floating blank area must clear with default background, got %#v line=%#v", insideBlank, frame.StyledLines[6])
 	}
-	if !styledLinesContainText(frame.StyledLines[6:7], " ", StyleOverlay) {
-		t.Fatalf("floating should materialize overlay background spaces, got %#v", frame.StyledLines[6])
+	if styledLinesContainStyle(frame.StyledLines[6:7], StyleOverlay) {
+		t.Fatalf("floating body must not use overlay background, got %#v", frame.StyledLines[6])
 	}
 	if styledLinesContainANSI(frame.StyledLines[6:7], " ", ANSICellStyle{BG: "ansi:3"}) {
 		t.Fatalf("floating blank area must not inherit pane ANSI background, got %#v", frame.StyledLines[6])
