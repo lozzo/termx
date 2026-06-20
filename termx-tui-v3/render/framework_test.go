@@ -764,6 +764,43 @@ func TestFrameworkRendersFloatingLayerAboveTiledPane(t *testing.T) {
 	assertAllRowsWidth(t, frame.Lines, 64)
 }
 
+func TestFrameworkFloatingFillsBackgroundOverStyledPane(t *testing.T) {
+	yellowRows := make([]Line, 16)
+	for i := range yellowRows {
+		yellowRows[i] = Line{Cells: []Cell{{Text: strings.Repeat("x", 62), Width: 62, ANSIStyle: ANSICellStyle{BG: "ansi:3"}, TerminalContent: true, Safe: true}}}
+	}
+	result := NewRenderer(DefaultTheme()).RenderResult(RenderVM{Shell: ShellVM{
+		Layout: LayoutVM{
+			Viewport: Rect{W: 64, H: 18},
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Title:        "history",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentCopyHistory, Lines: yellowRows},
+			}},
+			Floating: []FloatingVM{{
+				ID:      "float-1",
+				Title:   "float",
+				Rect:    Rect{X: 8, Y: 4, W: 36, H: 8},
+				Z:       1,
+				Content: ContentVM{Kind: ContentEmptyPane, Lines: []Line{NewLine("float body")}},
+			}},
+		},
+	}})
+	frame := result.Frame()
+	insideBlank, ok := lineCellAtDisplayColumn(frame.StyledLines[6], 20)
+	if !ok || insideBlank.Style != StyleOverlay || insideBlank.ANSIStyle != (ANSICellStyle{}) {
+		t.Fatalf("floating blank area must be overlay-owned, got %#v line=%#v", insideBlank, frame.StyledLines[6])
+	}
+	if !styledLinesContainText(frame.StyledLines[6:7], " ", StyleOverlay) {
+		t.Fatalf("floating should materialize overlay background spaces, got %#v", frame.StyledLines[6])
+	}
+	if styledLinesContainANSI(frame.StyledLines[6:7], " ", ANSICellStyle{BG: "ansi:3"}) {
+		t.Fatalf("floating blank area must not inherit pane ANSI background, got %#v", frame.StyledLines[6])
+	}
+}
+
 func TestFrameworkRendersModeSpecificFooterHints(t *testing.T) {
 	cases := []struct {
 		name string
@@ -1412,6 +1449,24 @@ func styledLinesContainANSI(lines []Line, value string, style ANSICellStyle) boo
 		}
 	}
 	return false
+}
+
+func lineCellAtDisplayColumn(line Line, column int) (Cell, bool) {
+	cursor := 0
+	for _, cell := range line.Cells {
+		width := cell.Width
+		if width <= 0 {
+			width = DisplayWidth(cell.Text)
+		}
+		if width <= 0 {
+			continue
+		}
+		if column >= cursor && column < cursor+width {
+			return cell, true
+		}
+		cursor += width
+	}
+	return Cell{}, false
 }
 
 func cellIndex(line string, needle string) int {

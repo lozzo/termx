@@ -540,15 +540,15 @@ func renderFloating(c *canvas, layout FloatingLayoutPlan) Layer {
 	}
 	primitive := FloatingChromePrimitive(floating, rect, style)
 	owner := primitive.Owner
-	if floating.Chrome.FillOverlay {
-		c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
-	}
+	// 中文说明：floating 是覆盖层，不论是否 active 都必须先铺满自身矩形；
+	// 否则底层 terminal/history 的 ANSI 背景会从空白区透进浮窗。
+	c.fillStyledRect(rect, StyleOverlay, owner, LayerFloating)
 	c.drawStyledBox(rect, squareBoxStyle, style, owner, LayerFloating)
 	renderFloatingTerminalChrome(c, primitive)
 	renderFloatingChromeActions(c, primitive)
 	var contentResult ContentRenderResult
 	if !floating.Collapsed {
-		contentResult = renderContent(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating)
+		contentResult = renderContentWithFill(c, floating.Content, layout.ContentRect, owner+":content", LayerFloating, StyleOverlay)
 		renderFloatingContentOverflowMarkers(c, layout, contentResult.Overflow)
 	}
 	return Layer{Kind: LayerFloating, Rect: rect, Lines: contentResult.Lines, ContentOverflow: contentResult.Overflow}
@@ -628,16 +628,4 @@ func floatingChromeActionItems(width int) []paneChromeActionItem {
 		return closeOnly
 	}
 	return nil
-}
-
-func renderContent(c *canvas, content ContentVM, rect Rect, owner string, layer LayerKind) ContentRenderResult {
-	if rect.W <= 0 || rect.H <= 0 {
-		return ContentRenderResult{}
-	}
-	result := RenderContentViewport(ContentRenderRequest{Rect: rect, Content: content})
-	for i, line := range result.Lines {
-		c.writeLine(rect.X, rect.Y+i, rect.W, line, owner, layer)
-	}
-	renderWorkbenchNavigatorSnapshotContent(c, content, rect, owner, layer)
-	return result
 }

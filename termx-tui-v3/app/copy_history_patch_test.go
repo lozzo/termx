@@ -63,6 +63,52 @@ func TestCopyHistoryOlderResultUsesIncrementalPatchWhenVisibleContentOnlyShifts(
 	}
 }
 
+func TestCopyHistoryPatchDisabledWhenFloatingOverlapsContent(t *testing.T) {
+	host := newCopyHistoryPerfIncrementalHost(16)
+	host.SetSize(80, 24)
+	root := copyHistoryPerfRoot(80, 24, 256)
+	root.CopyMode.ViewportTop = 120
+	root.CopyMode.Cursor = state.CopyPosition{Row: 120}
+	var result state.FloatingCommandResult
+	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Pane:     state.PaneState{ID: "floating-pane-1", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 8, Y: 6, W: 30, H: 8},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root.Shell, result = root.Shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandDeactivate})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("deactivate floating: %#v", result)
+	}
+	runtime := NewAppRuntime(
+		root,
+		copyHistoryPerfLineScrollReducer(),
+		func(root state.Root) render.Frame {
+			return render.NewRenderer(render.DefaultTheme()).RenderANSI(render.NewRenderVMBuilder().Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+	cache, ok := buildCopyHistoryPatchCache(root, render.DefaultTheme())
+	if !ok {
+		t.Fatal("expected copy history patch cache")
+	}
+	cache.Metadata = render.RenderMetadata{Width: 80, Height: 24}
+	runtime.copyHistoryPatch = cache
+
+	root.CopyMode = root.CopyMode.ScrollCursor(-1, len(root.History.Rows))
+	runtime.state = root.Advance()
+	if runtime.tryRenderCopyHistoryPatch() {
+		t.Fatalf("overlapped floating should force complete frame, got patch %#v", copyHistoryPerfFrame.Patch)
+	}
+	if host.sink.patchFrames != 0 || host.sink.frames != 0 {
+		t.Fatalf("disabled patch should not write partial frame, frames=%d patches=%d", host.sink.frames, host.sink.patchFrames)
+	}
+}
+
 func TestCopyHistoryRewritePatchOffsetsANSIColumnAnchors(t *testing.T) {
 	host := newCopyHistoryPerfIncrementalHost(16)
 	host.SetSize(80, 24)

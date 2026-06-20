@@ -58,6 +58,9 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 	if current.ViewportTop < 0 || current.ViewportTop+visibleRows > len(runtime.state.History.Rows) {
 		return false
 	}
+	if copyHistoryPatchCoveredByFloating(runtime.state, current.ContentRect) {
+		return false
+	}
 	scrollRows := delta
 	if scrollRows < 0 {
 		scrollRows = -scrollRows
@@ -99,6 +102,9 @@ func (runtime *AppRuntime) tryRenderCopyHistoryPatch() bool {
 
 func (runtime *AppRuntime) tryRenderCopyHistoryCursorPatch(current copyHistoryPatchCache) bool {
 	if current.Cursor == runtime.copyHistoryPatch.Cursor {
+		return false
+	}
+	if copyHistoryPatchCoveredByFloating(runtime.state, current.ContentRect) {
 		return false
 	}
 	frame := render.Frame{
@@ -376,6 +382,46 @@ func copyHistoryPatchHitRegions(previous []render.HitRegion, history state.Histo
 
 func copyHistoryPatchCanScrollRegion(cache copyHistoryPatchCache) bool {
 	return cache.ContentRect.X == 0 && cache.ContentRect.W == cache.Metadata.Width
+}
+
+func copyHistoryPatchCoveredByFloating(root state.Root, rect render.Rect) bool {
+	if rect.W <= 0 || rect.H <= 0 {
+		return false
+	}
+	viewport := render.Rect{W: root.Viewport.Cols, H: root.Viewport.Rows}
+	for _, floating := range root.Shell.ActiveFloatings() {
+		if floating.Collapsed {
+			continue
+		}
+		floatingRect := render.Rect{X: floating.Rect.X, Y: floating.Rect.Y, W: floating.Rect.W, H: floating.Rect.H}
+		if viewport.W > 0 && viewport.H > 0 {
+			floatingRect = intersectCopyHistoryPatchRect(floatingRect, viewport)
+		}
+		if copyHistoryPatchRectsOverlap(rect, floatingRect) {
+			return true
+		}
+	}
+	return false
+}
+
+func copyHistoryPatchRectsOverlap(left render.Rect, right render.Rect) bool {
+	return left.W > 0 && left.H > 0 &&
+		right.W > 0 && right.H > 0 &&
+		left.X < right.X+right.W &&
+		right.X < left.X+left.W &&
+		left.Y < right.Y+right.H &&
+		right.Y < left.Y+left.H
+}
+
+func intersectCopyHistoryPatchRect(left render.Rect, right render.Rect) render.Rect {
+	x1 := maxCopyHistoryPatchInt(left.X, right.X)
+	y1 := maxCopyHistoryPatchInt(left.Y, right.Y)
+	x2 := minCopyHistoryPatchInt(left.X+maxCopyHistoryPatchInt(0, left.W), right.X+maxCopyHistoryPatchInt(0, right.W))
+	y2 := minCopyHistoryPatchInt(left.Y+maxCopyHistoryPatchInt(0, left.H), right.Y+maxCopyHistoryPatchInt(0, right.H))
+	if x2 <= x1 || y2 <= y1 {
+		return render.Rect{}
+	}
+	return render.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}
 }
 
 func copyHistoryPatchPrefixWidth(row state.HistoryRow) int {

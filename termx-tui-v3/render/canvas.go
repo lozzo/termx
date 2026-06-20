@@ -479,7 +479,7 @@ func (c *canvas) cellText(x int, y int) string {
 }
 
 func lineFillStyle(line Line) StyleToken {
-	return ""
+	return line.FillStyle
 }
 
 func blankCanvasCell() canvasCell {

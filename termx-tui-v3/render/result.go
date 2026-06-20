@@ -117,7 +117,8 @@ const (
 )
 
 type Line struct {
-	Cells []Cell
+	Cells     []Cell
+	FillStyle StyleToken
 }
 
 func NewLine(text string) Line {
@@ -325,11 +326,11 @@ func decimalDigits(value int) int {
 
 func (line Line) Clone() Line {
 	if len(line.Cells) == 0 {
-		return Line{}
+		return Line{FillStyle: line.FillStyle}
 	}
 	cells := make([]Cell, len(line.Cells))
 	copy(cells, line.Cells)
-	return Line{Cells: cells}
+	return Line{Cells: cells, FillStyle: line.FillStyle}
 }
 
 func (line Line) Width() int {
