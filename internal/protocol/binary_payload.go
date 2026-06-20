@@ -43,6 +43,13 @@ func EncodeSnapshotPayload(snapshot *Snapshot) ([]byte, error) {
 	return proto.Marshal(snapshotToWirePB(snapshot))
 }
 
+func EncodeCompactSnapshotPayload(snapshot *CompactSnapshot) ([]byte, error) {
+	if snapshot == nil {
+		return nil, fmt.Errorf("nil compact snapshot")
+	}
+	return proto.Marshal(compactSnapshotToWirePB(snapshot))
+}
+
 func DecodeSnapshotPayload(payload []byte) (*Snapshot, error) {
 	var msg wirepb.Snapshot
 	if err := proto.Unmarshal(payload, &msg); err != nil {
@@ -81,6 +88,27 @@ func snapshotToWirePB(snapshot *Snapshot) *wirepb.Snapshot {
 		ScreenIsAlternate: snapshot.Screen.IsAlternateScreen,
 		// 中文说明：live snapshot 的几何由 Size/Extent 表达；无样式行尾空白不需要进 wire payload。
 		Screen:                 rowSetToWirePB(CompactRowsFromCells(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped, snapshot.ScreenOwnership),
+		Scrollback:             rowSetToWirePB(snapshot.Scrollback, snapshot.ScrollbackTimestamps, snapshot.ScrollbackRowKinds, snapshot.ScrollbackWrapped, snapshot.ScrollbackOwnership),
+		ScrollbackOffset:       int64(snapshot.ScrollbackOffset),
+		ScrollbackTotal:        int64(snapshot.ScrollbackTotal),
+		ScrollbackLogicalTotal: int64(snapshot.ScrollbackLogicalTotal),
+		ScrollbackHasMore:      snapshot.ScrollbackHasMore,
+		ScrollbackLoadedRows:   int64(snapshot.ScrollbackLoadedRows),
+		HistoryGeneration:      snapshot.HistoryGeneration,
+		ScrollbackFirstRowId:   snapshot.ScrollbackFirstRowID,
+		ScrollbackLastRowId:    snapshot.ScrollbackLastRowID,
+		Cursor:                 cursorToWirePB(snapshot.Cursor),
+		Modes:                  modesToWirePB(snapshot.Modes),
+		TimestampUnixNano:      timeToUnixNano(snapshot.Timestamp),
+	}
+}
+
+func compactSnapshotToWirePB(snapshot *CompactSnapshot) *wirepb.Snapshot {
+	return &wirepb.Snapshot{
+		TerminalId:             snapshot.TerminalID,
+		Size:                   sizeToWirePB(snapshot.Size),
+		ScreenIsAlternate:      snapshot.ScreenIsAlternate,
+		Screen:                 rowSetToWirePB(snapshot.ScreenRows, snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped, snapshot.ScreenOwnership),
 		Scrollback:             rowSetToWirePB(snapshot.Scrollback, snapshot.ScrollbackTimestamps, snapshot.ScrollbackRowKinds, snapshot.ScrollbackWrapped, snapshot.ScrollbackOwnership),
 		ScrollbackOffset:       int64(snapshot.ScrollbackOffset),
 		ScrollbackTotal:        int64(snapshot.ScrollbackTotal),

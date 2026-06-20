@@ -251,6 +251,11 @@ func (surface *SurfaceTrack) Snapshot() SurfaceSnapshot {
 	}
 }
 
+func (surface *SurfaceTrack) VisitTrimmedScreenRows(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) vterm.TrimmedScreenRowsInfo {
+	surface.ensureVTerm()
+	return surface.vt.VisitTrimmedScreenRows(visit)
+}
+
 func (surface *SurfaceTrack) ensureVTerm() {
 	if surface.vt != nil {
 		return

@@ -106,6 +106,14 @@ type ScreenData struct {
 	IsAlternateScreen bool
 }
 
+type TrimmedScreenRowsInfo struct {
+	Cols              int
+	Rows              int
+	IsAlternateScreen bool
+	Cursor            CursorState
+	Modes             TerminalModes
+}
+
 type SurfaceSnapshot struct {
 	Cols                 int
 	Rows                 int
@@ -1636,6 +1644,46 @@ func (v *VTerm) TrimmedScreenContent() ScreenData {
 		Cells:             rows,
 		IsAlternateScreen: v.emu.IsAltScreen(),
 	}
+}
+
+func (v *VTerm) VisitTrimmedScreenRows(visit func(rowIndex int, cellCount int, cellAt func(int) Cell)) TrimmedScreenRowsInfo {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.emu == nil {
+		return TrimmedScreenRowsInfo{}
+	}
+	width := v.emu.Width()
+	height := v.emu.Height()
+	info := TrimmedScreenRowsInfo{
+		Cols:              width,
+		Rows:              height,
+		IsAlternateScreen: v.emu.IsAltScreen(),
+		Cursor:            v.cursor,
+		Modes:             v.modes,
+	}
+	if visit == nil {
+		return info
+	}
+	for y := 0; y < height; y++ {
+		end := width
+		for end > 0 {
+			if !cellIsDefaultBlank(v.convertCell(v.emu.CellAt(end-1, y))) {
+				break
+			}
+			end--
+		}
+		rowIndex := y
+		rowEnd := end
+		// 中文说明：callback 只在读锁内同步使用 cellAt，不能保存闭包或把
+		// 它传到锁外；这样 live snapshot 可以直出 compact rows 而不克隆整行。
+		visit(rowIndex, rowEnd, func(index int) Cell {
+			if index < 0 || index >= rowEnd {
+				return Cell{}
+			}
+			return v.convertCell(v.emu.CellAt(index, rowIndex))
+		})
+	}
+	return info
 }
 
 func (v *VTerm) ScreenRowCount() int {

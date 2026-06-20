@@ -93,6 +93,37 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	}
 }
 
+func TestCompactSnapshotPayloadRoundTripKeepsSnapshotCompatibility(t *testing.T) {
+	snap := &CompactSnapshot{
+		TerminalID:        "term-compact",
+		Size:              Size{Cols: 20, Rows: 3},
+		ScreenRows:        []CompactRow{CompactRowFromCells([]Cell{{Content: "c", Width: 1}, {Content: "1", Width: 1}})},
+		ScreenIsAlternate: true,
+		ScreenOwnership:   []string{RowOwnershipScreen},
+		Cursor:            CursorState{Row: 0, Col: 2, Visible: true},
+		Modes:             TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Timestamp:         time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC),
+	}
+	payload, err := EncodeCompactSnapshotPayload(snap)
+	if err != nil {
+		t.Fatalf("encode compact snapshot payload failed: %v", err)
+	}
+	compact, err := DecodeCompactSnapshotPayload(payload)
+	if err != nil {
+		t.Fatalf("decode compact snapshot payload failed: %v", err)
+	}
+	if compact.TerminalID != snap.TerminalID || compact.Size != snap.Size || compact.ScreenRows[0].Text != "c1" {
+		t.Fatalf("unexpected compact round trip %#v", compact)
+	}
+	decoded, err := DecodeSnapshotPayload(payload)
+	if err != nil {
+		t.Fatalf("decode compact payload as snapshot failed: %v", err)
+	}
+	if decoded.TerminalID != snap.TerminalID || !decoded.Screen.IsAlternateScreen || rowToStringForTest(decoded.Screen.Cells[0]) != "c1" {
+		t.Fatalf("compact payload must remain old snapshot compatible, got %#v", decoded)
+	}
+}
+
 func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	viewport := &GridViewport{
 		TerminalID:             "term-grid",
@@ -148,6 +179,19 @@ func TestCompactRowsReuseASCIIStrings(t *testing.T) {
 		if unsafe.StringData(cell.Content) != unsafe.StringData(first) {
 			t.Fatalf("expected ASCII cell content to reuse backing string at %d", i)
 		}
+	}
+}
+
+func TestBuildCompactRowMatchesSliceBuilder(t *testing.T) {
+	row := []Cell{
+		{Content: "A", Width: 1, Style: CellStyle{FG: "#ff0000"}},
+		{Content: "B", Width: 1, Style: CellStyle{FG: "#ff0000"}},
+		{Content: " ", Width: 1},
+	}
+	streamed := BuildCompactRowPreserveTrailingBlankCells(len(row), func(index int) Cell { return row[index] })
+	sliced := CompactRowFromCellsPreserveTrailingBlankCells(row, true)
+	if !reflect.DeepEqual(streamed, sliced) {
+		t.Fatalf("streamed compact row mismatch\nwant %#v\ngot  %#v", sliced, streamed)
 	}
 }
 

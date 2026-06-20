@@ -392,11 +392,11 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		return encodeMethodResult(req.Method, protocol.ResizeControlResult{Size: control.ResizeOwnership.Size, ResizeControl: control})
 	case "snapshot":
 		in := params.(protocol.SnapshotParams)
-		snapshot, err := session.liveSnapshot(in)
+		snapshot, err := session.liveCompactSnapshot(in)
 		if err != nil {
 			return nil, true, errorCode(err), err
 		}
-		payload, err := protocol.EncodeSnapshotPayload(snapshot)
+		payload, err := protocol.EncodeCompactSnapshotPayload(snapshot)
 		if err != nil {
 			return nil, true, protocolErrorInternal, err
 		}
@@ -500,12 +500,8 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 	}
 }
 
-func (session *protocolSession) liveSnapshot(params protocol.SnapshotParams) (*protocol.Snapshot, error) {
+func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotParams) (*protocol.CompactSnapshot, error) {
 	info, err := session.server.GetTerminal(params.TerminalID)
-	if err != nil {
-		return nil, err
-	}
-	snapshot, err := session.server.LiveSnapshot(params.TerminalID)
 	if err != nil {
 		return nil, err
 	}
@@ -513,77 +509,52 @@ func (session *protocolSession) liveSnapshot(params protocol.SnapshotParams) (*p
 	if err != nil {
 		return nil, err
 	}
+	var rows []protocol.CompactRow
+	screenInfo := terminal.VisitLiveTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
+		if rows == nil {
+			rows = make([]protocol.CompactRow, 0, rowIndex+1)
+		}
+		for len(rows) < rowIndex {
+			rows = append(rows, protocol.CompactRow{})
+		}
+		// 中文说明：snapshot 协议已经是 compact rows，不能再先构造
+		// [][]protocol.Cell；这里按需读取 vterm cell 并直接压成 wire row。
+		rows = append(rows, protocol.BuildCompactRowPreserveTrailingBlankCells(cellCount, func(index int) protocol.Cell {
+			return vtermCellToProtocol(cellAt(index))
+		}))
+	})
+	for len(rows) < screenInfo.Rows {
+		rows = append(rows, protocol.CompactRow{})
+	}
 	attrs := coreTerminalInfoAttrs(info)
 	attrs = append(attrs,
-		"screen_rows", len(snapshot.Screen.Cells),
-		"cursor_row", snapshot.Cursor.Row,
-		"cursor_col", snapshot.Cursor.Col,
-		"cursor_visible", snapshot.Cursor.Visible,
+		"screen_rows", len(rows),
+		"cursor_row", screenInfo.Cursor.Row,
+		"cursor_col", screenInfo.Cursor.Col,
+		"cursor_visible", screenInfo.Cursor.Visible,
 	)
 	coreLifecycleTrace(session.server.cfg.logger, "protocol.snapshot", attrs...)
-	return &protocol.Snapshot{
-		TerminalID: params.TerminalID,
-		Size:       protocolSizeFromCore(info.Size),
-		Screen: protocol.ScreenData{
-			Cells:             vtermRowsToProtocolCells(snapshot.Screen.Cells),
-			IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
-		},
-		Cursor:            vtermCursorToProtocol(snapshot.Cursor),
-		Modes:             vtermModesToProtocol(snapshot.Modes),
+	return &protocol.CompactSnapshot{
+		TerminalID:        params.TerminalID,
+		Size:              protocolSizeFromCore(info.Size),
+		ScreenRows:        rows,
+		ScreenIsAlternate: screenInfo.IsAlternateScreen,
+		Cursor:            vtermCursorToProtocol(screenInfo.Cursor),
+		Modes:             vtermModesToProtocol(screenInfo.Modes),
 		HistoryGeneration: uint64(terminal.HistoryGeneration()),
-		ScreenOwnership:   repeatString(protocol.RowOwnershipScreen, len(snapshot.Screen.Cells)),
+		ScreenOwnership:   repeatString(protocol.RowOwnershipScreen, len(rows)),
 		Timestamp:         time.Now().UTC(),
 	}, nil
 }
 
-func vtermRowsToProtocolCells(rows [][]vterm.Cell) [][]protocol.Cell {
-	if len(rows) == 0 {
-		return nil
+func vtermCellToProtocol(cell vterm.Cell) protocol.Cell {
+	return protocol.Cell{
+		Content:    cell.Content,
+		Width:      cell.Width,
+		Style:      vtermStyleToProtocol(cell.Style),
+		LinkURL:    cell.LinkURL,
+		LinkParams: cell.LinkParams,
 	}
-	out := make([][]protocol.Cell, len(rows))
-	for rowIndex, row := range rows {
-		out[rowIndex] = vtermCellsToProtocol(row)
-	}
-	return out
-}
-
-func vtermCellsToProtocol(cells []vterm.Cell) []protocol.Cell {
-	cells = trimDefaultBlankVTermSuffix(cells)
-	if len(cells) == 0 {
-		return nil
-	}
-	out := make([]protocol.Cell, len(cells))
-	for i, cell := range cells {
-		out[i] = protocol.Cell{
-			Content:    cell.Content,
-			Width:      cell.Width,
-			Style:      vtermStyleToProtocol(cell.Style),
-			LinkURL:    cell.LinkURL,
-			LinkParams: cell.LinkParams,
-		}
-	}
-	return out
-}
-
-func trimDefaultBlankVTermSuffix(cells []vterm.Cell) []vterm.Cell {
-	end := len(cells)
-	for end > 0 && isDefaultBlankVTermCell(cells[end-1]) {
-		end--
-	}
-	return cells[:end]
-}
-
-func isDefaultBlankVTermCell(cell vterm.Cell) bool {
-	if cell.Content != "" && cell.Content != " " {
-		return false
-	}
-	if cell.Width > 1 {
-		return false
-	}
-	if cell.Style != (vterm.CellStyle{}) || cell.LinkURL != "" || cell.LinkParams != "" {
-		return false
-	}
-	return true
 }
 
 func vtermStyleToProtocol(style vterm.CellStyle) protocol.CellStyle {

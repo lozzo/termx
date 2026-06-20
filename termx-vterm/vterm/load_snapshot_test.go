@@ -507,6 +507,31 @@ func TestTrimmedScreenContentDropsOnlyDefaultBlankTail(t *testing.T) {
 	}
 }
 
+func TestVisitTrimmedScreenRowsMatchesTrimmedScreenContent(t *testing.T) {
+	vt := New(8, 3, 100, nil)
+	if _, err, _ := vt.WriteForLatestFrame([]byte("abc\r\n\x1b[44mxy  ")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	screen := vt.TrimmedScreenContent()
+	visited := make([][]Cell, 0, 3)
+	info := vt.VisitTrimmedScreenRows(func(_ int, cellCount int, cellAt func(int) Cell) {
+		var row []Cell
+		if cellCount > 0 {
+			row = make([]Cell, 0, cellCount)
+		}
+		for index := 0; index < cellCount; index++ {
+			row = append(row, cellAt(index))
+		}
+		visited = append(visited, row)
+	})
+	if info.Cols != 8 || info.Rows != 3 || info.IsAlternateScreen != screen.IsAlternateScreen {
+		t.Fatalf("unexpected visitor metadata %#v screen=%#v", info, screen)
+	}
+	if !reflect.DeepEqual(visited, screen.Cells) {
+		t.Fatalf("visited rows changed trimmed screen\nwant %#v\ngot  %#v", screen.Cells, visited)
+	}
+}
+
 func TestLoadSnapshotWithExtendedMetadataRestoresWrappedRows(t *testing.T) {
 	vt := New(5, 3, 100, nil)
 	screen := ScreenData{Cells: [][]Cell{

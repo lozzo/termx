@@ -2705,6 +2705,23 @@ func TestProtocolServiceSnapshotReturnsLiveSurfaceRows(t *testing.T) {
 	if !snapshot.Cursor.Visible || snapshot.Cursor.Row != 1 || snapshot.Cursor.Col == 0 {
 		t.Fatalf("snapshot must preserve live cursor, got %#v", snapshot.Cursor)
 	}
+
+	compact, err := client.SnapshotCompact(context.Background(), "term-1", 0, 2)
+	if err != nil {
+		t.Fatalf("compact snapshot: %v", err)
+	}
+	if compact.TerminalID != "term-1" || compact.Size != (protocol.Size{Cols: 12, Rows: 4}) {
+		t.Fatalf("unexpected compact snapshot metadata %#v", compact)
+	}
+	if len(compact.ScreenRows) != 4 {
+		t.Fatalf("expected compact snapshot to preserve screen row count, got %#v", compact.ScreenRows)
+	}
+	if got := compact.ScreenRows[0].Text; got != "alpha" {
+		t.Fatalf("compact snapshot should keep row compact text, got %#v", compact.ScreenRows[0])
+	}
+	if got := compact.ScreenRows[1].DecodeCells(); len(got) == 0 || got[0].Style.FG != "ansi:2" {
+		t.Fatalf("compact snapshot must preserve live style on demand, got %#v", got)
+	}
 }
 
 func TestProtocolServiceSnapshotTrimsPlainBlankTailOnly(t *testing.T) {

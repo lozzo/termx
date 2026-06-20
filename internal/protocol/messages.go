@@ -2187,6 +2187,34 @@ func CompactRowFromCells(row []Cell) CompactRow {
 	return CompactRowFromCellsPreserveTrailingBlankCells(row, false)
 }
 
+func BuildCompactRow(cellCount int, cellAt func(int) Cell) CompactRow {
+	if cellCount <= 0 || cellAt == nil {
+		return CompactRow{}
+	}
+	last := cellCount
+	for last > 0 {
+		cell := cellAt(last - 1)
+		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
+			break
+		}
+		if !cell.Style.isZero() {
+			break
+		}
+		if cell.LinkURL != "" || cell.LinkParams != "" {
+			break
+		}
+		last--
+	}
+	return buildCompactRow(last, cellAt)
+}
+
+func BuildCompactRowPreserveTrailingBlankCells(cellCount int, cellAt func(int) Cell) CompactRow {
+	if cellCount <= 0 || cellAt == nil {
+		return CompactRow{}
+	}
+	return buildCompactRow(cellCount, cellAt)
+}
+
 func CompactRowFromCellsPreserveTrailingBlankCells(row []Cell, preserveTrailingBlankCells bool) CompactRow {
 	last := len(row)
 	if !preserveTrailingBlankCells {
@@ -2208,10 +2236,20 @@ func CompactRowFromCellsPreserveTrailingBlankCells(row []Cell, preserveTrailingB
 	if len(row) == 0 {
 		return CompactRow{}
 	}
+	return buildCompactRow(len(row), func(index int) Cell {
+		return row[index]
+	})
+}
+
+func buildCompactRow(count int, cellAt func(int) Cell) CompactRow {
+	if count <= 0 {
+		return CompactRow{}
+	}
 	var text strings.Builder
 	allSimple := true
 	allPlain := true
-	for _, cell := range row {
+	for i := 0; i < count; i++ {
+		cell := cellAt(i)
 		cellText, ok := compactCellText(cell)
 		if !ok {
 			allSimple = false
@@ -2231,9 +2269,10 @@ func CompactRowFromCellsPreserveTrailingBlankCells(row []Cell, preserveTrailingB
 	if allSimple {
 		runs := make([]CompactRowRun, 0, 4)
 		var runText strings.Builder
-		runStyle := row[0].Style
-		runLinkURL := row[0].LinkURL
-		runLinkParams := row[0].LinkParams
+		first := cellAt(0)
+		runStyle := first.Style
+		runLinkURL := first.LinkURL
+		runLinkParams := first.LinkParams
 		flushRun := func() {
 			if runText.Len() == 0 {
 				return
@@ -2246,7 +2285,8 @@ func CompactRowFromCellsPreserveTrailingBlankCells(row []Cell, preserveTrailingB
 			})
 			runText.Reset()
 		}
-		for _, cell := range row {
+		for i := 0; i < count; i++ {
+			cell := cellAt(i)
 			if cell.Style != runStyle || cell.LinkURL != runLinkURL || cell.LinkParams != runLinkParams {
 				flushRun()
 				runStyle = cell.Style
@@ -2259,8 +2299,9 @@ func CompactRowFromCellsPreserveTrailingBlankCells(row []Cell, preserveTrailingB
 		flushRun()
 		return CompactRow{Runs: runs}
 	}
-	cells := make([]CompactRowCell, 0, len(row))
-	for _, cell := range row {
+	cells := make([]CompactRowCell, 0, count)
+	for i := 0; i < count; i++ {
+		cell := cellAt(i)
 		cells = append(cells, CompactRowCell{
 			Content:    cell.Content,
 			Width:      compactCellWidth(cell),

@@ -10,6 +10,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type Terminal struct {
@@ -227,6 +228,12 @@ func (terminal *Terminal) LiveSnapshot() live.SurfaceSnapshot {
 	terminal.liveMu.Lock()
 	defer terminal.liveMu.Unlock()
 	return terminal.live.Snapshot()
+}
+
+func (terminal *Terminal) VisitLiveTrimmedScreenRows(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) vterm.TrimmedScreenRowsInfo {
+	terminal.liveMu.Lock()
+	defer terminal.liveMu.Unlock()
+	return terminal.live.VisitTrimmedScreenRows(visit)
 }
 
 func (terminal *Terminal) LatestWindow(cols, rows int) (history.HistoryWindow, error) {
