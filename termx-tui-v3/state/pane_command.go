@@ -243,7 +243,7 @@ func (store ShellStore) HasPane(target PaneCommandTarget) bool {
 }
 
 func (store ShellStore) Pane(target PaneCommandTarget) (PaneState, bool) {
-	store = store.EnsureDefaults()
+	store = store.ReadonlyDefaults()
 	if target.WorkspaceID != "" && target.WorkspaceID != store.Workspace.ID {
 		return PaneState{}, false
 	}

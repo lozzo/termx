@@ -83,7 +83,7 @@ func NewUIInputReducer() Reducer {
 		if root.CopyMode.Entering && copyModeOwnsActiveInput(root) {
 			return root, nil
 		}
-		intent := input.RouteWithMode(inputMsg.Event, copyModeOwnsActiveInput(root), inputMode(root.Shell.EnsureDefaults().InteractionMode))
+		intent := input.RouteWithMode(inputMsg.Event, copyModeOwnsActiveInput(root), inputMode(root.Shell.ReadonlyDefaults().InteractionMode))
 		switch intent.Kind {
 		case input.IntentOpenTerminalPicker:
 			root.Shell = root.Shell.OpenTerminalPicker()
@@ -217,7 +217,7 @@ func reduceEmptyPaneCTAInput(root state.Root, event input.InputEvent) (bool, sta
 }
 
 func activeEmptyPaneCTATarget(shell state.ShellStore) (state.PaneState, bool, bool) {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		for _, floating := range shell.ActiveFloatings() {
 			if floating.ID == activeFloatingID && floating.Pane.Kind == state.PaneEmpty {
@@ -269,7 +269,7 @@ func reduceExitedPaneCTAInput(root state.Root, event input.InputEvent) (bool, st
 }
 
 func activeExitedPaneCTATarget(root state.Root, shell state.ShellStore) (state.PaneState, bool, bool) {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		for _, floating := range shell.ActiveFloatings() {
 			if floating.ID == activeFloatingID && paneHasExitedTerminal(root, floating.Pane.ID, true) {
@@ -288,7 +288,7 @@ func activeExitedPaneCTATarget(root state.Root, shell state.ShellStore) (state.P
 func paneHasExitedTerminal(root state.Root, paneID string, floating bool) bool {
 	terminalID := ""
 	if floating {
-		if floatingID, ok := root.Shell.EnsureDefaults().FloatingIDForPaneID(paneID); ok {
+		if floatingID, ok := root.Shell.ReadonlyDefaults().FloatingIDForPaneID(paneID); ok {
 			if binding, ok := root.TerminalViews.FloatingBinding(floatingID); ok {
 				terminalID = binding.TerminalID
 			}

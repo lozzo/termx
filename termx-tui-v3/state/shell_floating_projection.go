@@ -1,7 +1,7 @@
 package state
 
 func FloatingOverviewItems(root Root) []FloatingOverviewItem {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	floatings := shell.ActiveFloatings()
 	activeFloatingID := shell.ActiveFloatingID()
 	items := make([]FloatingOverviewItem, 0, len(floatings))

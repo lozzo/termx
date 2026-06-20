@@ -66,9 +66,9 @@ func (registry ContentProjectorRegistry) Project(ctx ContentProjectorContext) Co
 
 func contentProjectorShell(ctx ContentProjectorContext) state.ShellStore {
 	if ctx.Shell.Workspace.ID != "" || len(ctx.Shell.Workspace.Tabs) > 0 || ctx.Shell.Overlay.Open {
-		return ctx.Shell.EnsureDefaults()
+		return ctx.Shell.ReadonlyDefaults()
 	}
-	return ctx.Root.Shell.EnsureDefaults()
+	return ctx.Root.Shell.ReadonlyDefaults()
 }
 
 func projectTerminalLiveContent(ctx ContentProjectorContext) ContentVM {
@@ -79,7 +79,7 @@ func projectTerminalLiveContent(ctx ContentProjectorContext) ContentVM {
 	}
 	selectedIndex := 0
 	if ctx.Active {
-		selectedIndex = ctx.Shell.EnsureDefaults().ExitedPaneCTA.SelectedIndex
+		selectedIndex = ctx.Shell.ReadonlyDefaults().ExitedPaneCTA.SelectedIndex
 	}
 	return buildLiveContentVMWithSelection(surface, session, selectedIndex)
 }

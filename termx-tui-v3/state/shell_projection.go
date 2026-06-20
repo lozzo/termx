@@ -7,7 +7,7 @@ import (
 
 // TerminalPickerItems 从 reducer-owned root 推导 picker 列表；服务端 Terminal Pool 必须先回投到 TerminalPoolStore。
 func TerminalPickerItems(root Root) []TerminalPickerItem {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	items := []TerminalPickerItem{}
 	createItem := TerminalPickerItem{Title: "new terminal", Kind: PaneTerminalLive, CreateNew: true}
@@ -97,7 +97,7 @@ func terminalPickerItemFromSession(root Root) TerminalPickerItem {
 }
 
 func TerminalPoolPageItems(root Root) []TerminalPoolPageItem {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	items := make([]TerminalPoolPageItem, 0, len(root.TerminalPool.Items))
 	for _, poolItem := range root.TerminalPool.Items {

@@ -184,7 +184,7 @@ func buildEmptyWorkspaceContent(workspace state.WorkspaceState) ContentVM {
 
 // Terminal Picker 只消费 reducer-owned root；服务端 terminal list 必须先回投 TerminalPoolStore。
 func buildTerminalPickerContent(root state.Root, shell state.ShellStore) ContentVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	lines := []Line{terminalPickerSearchLine(query)}
 	if poolLine, ok := terminalPoolStateLine(root.TerminalPool); ok {
@@ -207,7 +207,7 @@ func buildTerminalPickerContent(root state.Root, shell state.ShellStore) Content
 
 // Terminal Pool Page 是独立管理页面；renderer 只消费 reducer-owned page/list state。
 func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.TerminalPoolPageItems(root)
 	lines := []Line{
@@ -248,7 +248,7 @@ func buildTerminalPoolContent(root state.Root, shell state.ShellStore) ContentVM
 
 // Workbench Navigator 展示 reducer-owned workspace/tab/pane 树；右侧 snapshot 只消费当前 TUI 已持有的 live 投影。
 func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.WorkbenchTreeItems(root)
 	layout := workbenchNavigatorLayoutForViewport(root.Viewport)
@@ -273,7 +273,7 @@ func buildWorkbenchTreeContent(root state.Root, shell state.ShellStore) ContentV
 
 // Clipboard History overlay 只消费 reducer-owned clipboard 历史快照。
 func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) ContentVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	rows := state.ClipboardHistoryItems(root)
 	nameWidth := clipboardHistoryNameWidth(shell)
@@ -318,7 +318,7 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 
 // Floating Overview 只投影 reducer-owned floating 列表；打开/召回通过 ActionID 回到 app reducer。
 func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) ContentVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	rows := state.FloatingOverviewItems(root)
 	lines := []Line{NewLine("Restore, collapse, close, or summon floating panes")}
 	rowOffset := len(lines)
@@ -554,7 +554,7 @@ func clipboardHistoryShiftMatchIndexes(matchIndexes []int, start int, length int
 }
 
 func clipboardHistoryNameWidth(shell state.ShellStore) int {
-	return state.ClipboardHistoryNameWidth(shell.EnsureDefaults().Overlay)
+	return state.ClipboardHistoryNameWidth(shell.ReadonlyDefaults().Overlay)
 }
 
 func clipboardHistoryContentNameWidth(content ContentVM) int {
@@ -606,7 +606,7 @@ func clipboardHistoryStatus(count int, query string) string {
 
 // Prompt 是 reducer-owned 表单 overlay；提交只回投 shell message，不直接执行业务 IO。
 func buildPromptContent(shell state.ShellStore) ContentVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	prompt := shell.Overlay.Prompt
 	title := prompt.Title
 	if title == "" {
@@ -716,7 +716,7 @@ func promptFieldCursorDisplayWidth(field state.PromptFieldState) int {
 }
 
 func buildHelpContent(shell state.ShellStore) ContentVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	lines := []Line{pageTitleLine("Help", "core workflows")}
 	for _, group := range helpActionGroups() {
 		if line, ok := helpActionGroupLine(group); ok {
@@ -1253,7 +1253,7 @@ func workbenchNavigatorSnapshotVMs(root state.Root, selected state.WorkbenchTree
 }
 
 func workbenchNavigatorPreviewPanes(root state.Root, selected state.WorkbenchTreeItem) []workbenchNavigatorPreviewPane {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	switch selected.Kind {
 	case state.WorkbenchTreeKindPane:
 		pane, ok := workbenchNavigatorPane(shell, selected.WorkspaceID, selected.TabID, selected.PaneID)
@@ -1425,7 +1425,7 @@ func workbenchPreviewChromeStyle(active bool) StyleToken {
 }
 
 func workbenchNavigatorWorkspace(shell state.ShellStore, workspaceID string) (state.WorkspaceState, bool) {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	if workspaceID == "" || workspaceID == shell.Workspace.ID {
 		return shell.Workspace, true
 	}

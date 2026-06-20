@@ -1056,6 +1056,54 @@ func TestShellUpdatesDoNotMutatePreviousSlices(t *testing.T) {
 	}
 }
 
+func TestShellReadonlyDefaultsDoesNotCloneInitializedSlices(t *testing.T) {
+	shell := DefaultShell().AddToast(ToastSpec{ID: "one"})
+	view := shell.ReadonlyDefaults()
+
+	if len(view.Workspace.Tabs) == 0 || len(shell.Workspace.Tabs) == 0 {
+		t.Fatalf("test expects default tab, view=%#v shell=%#v", view.Workspace, shell.Workspace)
+	}
+	if &view.Workspace.Tabs[0] != &shell.Workspace.Tabs[0] {
+		t.Fatalf("readonly defaults should reuse initialized workspace tab slice")
+	}
+	if len(view.Workspace.Tabs[0].Panes) == 0 || len(shell.Workspace.Tabs[0].Panes) == 0 {
+		t.Fatalf("test expects default pane, view=%#v shell=%#v", view.Workspace.Tabs[0], shell.Workspace.Tabs[0])
+	}
+	if &view.Workspace.Tabs[0].Panes[0] != &shell.Workspace.Tabs[0].Panes[0] {
+		t.Fatalf("readonly defaults should reuse initialized pane slice")
+	}
+	if len(view.Toasts) == 0 || len(shell.Toasts) == 0 || &view.Toasts[0] != &shell.Toasts[0] {
+		t.Fatalf("readonly defaults should reuse toast slice, view=%#v shell=%#v", view.Toasts, shell.Toasts)
+	}
+}
+
+func TestShellReadonlyDefaultsFallsBackForZeroValue(t *testing.T) {
+	view := (ShellStore{}).ReadonlyDefaults()
+
+	if view.Workspace.ID != DefaultWorkspaceID || view.ActivePaneID != DefaultPaneID {
+		t.Fatalf("zero shell should be normalized, got %#v", view)
+	}
+	if len(view.Workspace.Tabs) != 1 || len(view.Workspace.Tabs[0].Panes) != 1 {
+		t.Fatalf("zero shell should seed default tab and pane, got %#v", view.Workspace)
+	}
+}
+
+func TestShellReadonlyDefaultsFallsBackForStaleWorkspaceList(t *testing.T) {
+	shell := DefaultShell()
+	shell.Workspace.Tabs[0].Title = "active-title"
+	shell.Workspaces = cloneWorkspaces(shell.Workspaces)
+	shell.Workspaces[0].Tabs[0].Title = "stale-title"
+
+	view := shell.ReadonlyDefaults()
+
+	if view.Workspaces[0].Tabs[0].Title != "active-title" {
+		t.Fatalf("stale workspace list should be repaired, got %#v", view.Workspaces[0].Tabs[0])
+	}
+	if &view.Workspace.Tabs[0] == &shell.Workspace.Tabs[0] {
+		t.Fatalf("fallback normalization should not reuse stale workspace backing")
+	}
+}
+
 func containsPaneID(node SplitNode, paneID string) bool {
 	if node.PaneID == paneID {
 		return true

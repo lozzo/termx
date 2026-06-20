@@ -125,7 +125,7 @@ func (store ShellStore) nextFloatingZ() int {
 }
 
 func (store ShellStore) FloatingByID(id string) (FloatingPaneState, bool) {
-	store = store.EnsureDefaults()
+	store = store.ReadonlyDefaults()
 	for _, tab := range store.Workspace.Tabs {
 		for _, floating := range tab.Floatings {
 			if floating.ID == id {
@@ -137,9 +137,9 @@ func (store ShellStore) FloatingByID(id string) (FloatingPaneState, bool) {
 }
 
 func (store ShellStore) ActiveFloatingID() string {
-	return store.EnsureDefaults().activeFloatingID()
+	return store.ReadonlyDefaults().activeFloatingID()
 }
 
 func (store ShellStore) ActiveFloatings() []FloatingPaneState {
-	return cloneFloatings(store.EnsureDefaults().activeFloatings())
+	return cloneFloatings(store.ReadonlyDefaults().activeFloatings())
 }

@@ -19,11 +19,12 @@ func (projector ShellProjector) Project(root state.Root) ShellVM {
 	if projector.Content.projectors == nil {
 		projector.Content = DefaultContentProjectorRegistry()
 	}
-	shellState := root.Shell.EnsureDefaults()
-	activeContent := projector.buildActiveContentVM(root)
+	shellState := root.Shell.ReadonlyDefaults()
+	root.Shell = shellState
+	activeContent := projector.buildActiveContentVM(root, shellState)
 	return ShellVM{
 		Header:  buildHeaderVM(shellState, root),
-		Footer:  buildFooterVM(root, activeContent),
+		Footer:  buildFooterVM(root, shellState, activeContent),
 		Layout:  projector.buildLayoutVM(shellState, activeContent, root),
 		Overlay: projector.buildOverlayVM(root, shellState),
 		Toasts:  buildToastVMs(shellState),

@@ -6,7 +6,7 @@ import (
 )
 
 func WorkbenchTreeItems(root Root) []WorkbenchTreeItem {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	query := strings.ToLower(strings.TrimSpace(shell.Overlay.Query))
 	workspaces := shell.Workspaces
 	if len(workspaces) == 0 {

@@ -242,7 +242,7 @@ func preserveWorkbenchRuntimeTerminalViews(previous state.TerminalViewStore, res
 }
 
 func lifecycleActivePaneKind(root state.Root) string {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		for _, floating := range shell.ActiveFloatings() {
 			if floating.ID == activeFloatingID {
@@ -265,7 +265,7 @@ func lifecycleActiveTerminalID(root state.Root) string {
 }
 
 func activeTerminalBinding(root state.Root) (state.TerminalViewBinding, bool) {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		return root.TerminalViews.FloatingBinding(activeFloatingID)
 	}

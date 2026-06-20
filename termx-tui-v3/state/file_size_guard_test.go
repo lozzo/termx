@@ -18,6 +18,7 @@ func TestShellSourceFilesStaySplitByResponsibility(t *testing.T) {
 		"shell_projection.go":  340,
 		"shell_workspace.go":   140,
 		"shell_clone.go":       120,
+		"shell_readonly.go":    140,
 	}
 	for path, limit := range limits {
 		data, err := os.ReadFile(path)

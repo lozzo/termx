@@ -13,7 +13,7 @@ type ClipboardHistoryItem struct {
 }
 
 func ClipboardHistoryItems(root Root) []ClipboardHistoryItem {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	query := strings.TrimSpace(shell.Overlay.Query)
 	items := make([]ClipboardHistoryItem, 0, len(root.Clipboard.Entries))
 	for _, entry := range root.Clipboard.Entries {

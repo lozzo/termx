@@ -82,8 +82,8 @@ func buildHeaderVM(shell state.ShellStore, root state.Root) HeaderVM {
 	}
 }
 
-func buildFooterVM(root state.Root, content ContentVM) FooterVM {
-	shell := root.Shell.EnsureDefaults()
+func buildFooterVM(root state.Root, shell state.ShellStore, content ContentVM) FooterVM {
+	shell = shell.ReadonlyDefaults()
 	mode := footerMode(root, shell)
 	hint := content.Status
 	if hint == "" {
@@ -147,7 +147,7 @@ func terminalCount(root state.Root) int {
 }
 
 func floatingSummary(shell state.ShellStore) string {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	floatings := shell.ActiveFloatings()
 	collapsed := 0
 	for _, floating := range floatings {
@@ -227,9 +227,9 @@ func footerActionAvailable(actionID string, mode string, root state.Root, shell 
 	case ActionTabPrevious, ActionTabNext, ActionTabClose:
 		return activeWorkspaceTabCount(shell) > 1
 	case ActionFooterPreviousWorkspace, ActionFooterNextWorkspace, ActionFooterDeleteWorkspace:
-		return len(shell.EnsureDefaults().Workspaces) > 1
+		return len(shell.ReadonlyDefaults().Workspaces) > 1
 	case ActionFooterCloseToast, ActionFooterClearToasts:
-		return len(shell.EnsureDefaults().Toasts) > 0
+		return len(shell.ReadonlyDefaults().Toasts) > 0
 	case ActionFloatingSummon, ActionFloatingToggleAll, ActionFloatingShowAll, ActionFloatingCollapseAll:
 		return len(shell.ActiveFloatings()) > 0
 	case ActionFloatingTakeOwner, ActionFloatingFit, ActionFloatingAutoFit, ActionFloatingCenter, ActionFloatingCollapse, ActionFloatingClose:
@@ -244,12 +244,12 @@ func footerActionAvailable(actionID string, mode string, root state.Root, shell 
 }
 
 func activeWorkspaceTabCount(shell state.ShellStore) int {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	return len(shell.Workspace.Tabs)
 }
 
 func activeTabPaneCount(shell state.ShellStore) int {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	activeTabID := shell.Workspace.ActiveTabID
 	for _, tab := range shell.Workspace.Tabs {
 		if activeTabID == "" || tab.ID == activeTabID {
@@ -460,7 +460,7 @@ func globalSummary(root state.Root, shell state.ShellStore) string {
 }
 
 func tabStripSummary(shell state.ShellStore) string {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	if len(shell.Workspace.Tabs) == 0 {
 		return ""
 	}
@@ -483,7 +483,7 @@ func tabStripSummary(shell state.ShellStore) string {
 }
 
 func buildHeaderTabVMs(shell state.ShellStore) []HeaderTabVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	tabs := shell.Workspace.Tabs
 	if len(tabs) == 0 {
 		return nil
@@ -562,7 +562,7 @@ func viewportRect(viewport state.ViewportStore) Rect {
 }
 
 func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	tab := activeTab(shell)
 	floatingOwnsFocus := shell.ActiveFloatingID() != ""
 	if len(tab.Panes) == 0 {
@@ -589,7 +589,7 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 }
 
 func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	for _, pane := range activeTab(shell).Panes {
 		if pane.ID == shell.ZoomedPaneID {
 			content := projector.contentForPane(root, pane, activeContent, pane.ID == shell.ActivePaneID)
@@ -607,7 +607,7 @@ func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, acti
 }
 
 func (projector ShellProjector) buildFloatingVMs(shell state.ShellStore, root state.Root) []FloatingVM {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	floatings := shell.ActiveFloatings()
 	if len(floatings) == 0 {
 		return nil
@@ -728,7 +728,7 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 	}
 	ownerText := "◇ follow"
 	ownerStyle := StyleMuted
-	if root.Shell.EnsureDefaults().OwnerConfirm.ViewID == binding.ViewID {
+	if root.Shell.ReadonlyDefaults().OwnerConfirm.ViewID == binding.ViewID {
 		ownerText = "◆ owner?"
 		ownerStyle = StyleWarning
 	} else if binding.HasResizeOwner() {
@@ -843,8 +843,8 @@ func splitActionLabel(action string) (string, string) {
 	return parts[0], strings.Join(parts[1:], " ")
 }
 
-func (projector ShellProjector) buildActiveContentVM(root state.Root) ContentVM {
-	shell := root.Shell.EnsureDefaults()
+func (projector ShellProjector) buildActiveContentVM(root state.Root, shell state.ShellStore) ContentVM {
+	shell = shell.ReadonlyDefaults()
 	if content, ok := copyModeEnteringLiveContent(root); ok {
 		return content
 	}
@@ -878,13 +878,13 @@ func (projector ShellProjector) contentForPane(root state.Root, pane state.PaneS
 		return content
 	}
 	if copyModeBelongsToPane(root, pane.ID) {
-		return projector.copyHistoryContentForPane(root, root.Shell.EnsureDefaults(), pane, active)
+		return projector.copyHistoryContentForPane(root, root.Shell.ReadonlyDefaults(), pane, active)
 	}
 	if active {
 		return activeContent
 	}
 	surface, session := terminalContentStoresForPane(root, pane)
-	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.EnsureDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surface, Session: session, Active: false})
+	return projector.Content.Project(ContentProjectorContext{Root: root, Shell: root.Shell.ReadonlyDefaults(), Pane: pane, Kind: contentKindForPane(pane), Surface: surface, Session: session, Active: false})
 }
 
 func (projector ShellProjector) copyHistoryContent(root state.Root, shell state.ShellStore, pane state.PaneState, active bool) ContentVM {
@@ -935,7 +935,7 @@ func copyModeBelongsToPane(root state.Root, paneID string) bool {
 		return false
 	}
 	if copyMode.PaneID == "" {
-		return paneID == root.Shell.EnsureDefaults().ActivePaneID
+		return paneID == root.Shell.ReadonlyDefaults().ActivePaneID
 	}
 	return copyMode.PaneID == paneID
 }
@@ -998,7 +998,7 @@ func copyModeIsFloating(root state.Root, copyMode state.CopyModeStore) bool {
 }
 
 func copyModeEnteringLiveContent(root state.Root) (ContentVM, bool) {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	viewID := copyHistoryViewIDForPane(root, shell.ActivePaneID)
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		viewID = copyHistoryViewIDForFloating(root, activeFloatingID)
@@ -1232,7 +1232,7 @@ func copyModeBindingStillValid(root state.Root, copyMode state.CopyModeStore) bo
 		return false
 	}
 	if copyMode.PaneID != "" {
-		if _, ok := root.Shell.EnsureDefaults().Pane(state.PaneCommandTarget{PaneID: copyMode.PaneID}); ok {
+		if _, ok := root.Shell.ReadonlyDefaults().Pane(state.PaneCommandTarget{PaneID: copyMode.PaneID}); ok {
 			return true
 		}
 		return false
@@ -1579,7 +1579,7 @@ func activeContent(shell ShellVM) ContentVM {
 }
 
 func activeTab(shell state.ShellStore) state.TabState {
-	shell = shell.EnsureDefaults()
+	shell = shell.ReadonlyDefaults()
 	for _, tab := range shell.Workspace.Tabs {
 		if tab.ID == shell.Workspace.ActiveTabID {
 			return tab

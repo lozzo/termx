@@ -39,7 +39,7 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		})
 		return root, []Effect{handledEffect{}}
 	}
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	if shell.Overlay.Open {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{
 			Event:  msg.Event,
@@ -137,7 +137,7 @@ func logTerminalInputRoute(deps LiveDeps, root state.Root, entry terminalInputRo
 	if deps.Logger == nil || !terminalInputTraceEnabled() {
 		return
 	}
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	deps.Logger.Info("tui-v3 input route",
 		"event", terminalInputEventSummary(entry.Event),
 		"result", entry.Result,

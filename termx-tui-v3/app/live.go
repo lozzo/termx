@@ -435,7 +435,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	result = normalizeTerminalAttachResultForLock(root, result)
 	viewID := result.ViewID
-	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
+	activePaneID := root.Shell.ReadonlyDefaults().ActivePaneID
 	if viewID == "" {
 		viewID = liveAttachDefaultViewID(root)
 	} else if !liveAttachViewStillPresent(root, viewID) {
@@ -553,7 +553,7 @@ func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.Termin
 }
 
 func liveAttachDefaultViewID(root state.Root) string {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	// 中文说明：无显式 ViewID 的 root attach 是默认 tiled 入口语义；
 	// floating attach 必须由调用方传入 floating binding 的 ViewID。
 	return root.TerminalViews.PaneViewID(shell.ActivePaneID)
@@ -570,7 +570,7 @@ func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 	if _, ok := root.TerminalViews.Views[viewID]; ok {
 		return true
 	}
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	for _, tab := range shell.Workspace.Tabs {
 		for _, pane := range tab.Panes {
 			if liveAttachPaneViewID(root, pane.ID) == viewID {
@@ -600,7 +600,7 @@ func liveAttachTargetForViewID(root state.Root, viewID string) (liveAttachViewTa
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		return liveAttachViewTarget{PaneID: existing.PaneID, FloatingID: existing.FloatingID}, true
 	}
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	for _, tab := range shell.Workspace.Tabs {
 		for _, pane := range tab.Panes {
 			if liveAttachPaneViewID(root, pane.ID) == viewID {
@@ -792,7 +792,7 @@ func maybeRefreshFloatingAutoFit(root state.Root, terminalID string) (state.Root
 	if terminalID == "" {
 		return root.Advance(), nil
 	}
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	for _, floating := range shell.ActiveFloatings() {
 		if floating.Pane.TerminalID != terminalID || floating.FitMode != state.FloatingFitAuto {
 			continue
@@ -945,7 +945,7 @@ type liveInputTargetInfo struct {
 }
 
 func liveInputTarget(root state.Root) (liveInputTargetInfo, bool) {
-	shell := root.Shell.EnsureDefaults()
+	shell := root.Shell.ReadonlyDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		binding, ok := root.TerminalViews.FloatingBinding(activeFloatingID)
 		if !ok || binding.TerminalID == "" {
@@ -1094,7 +1094,7 @@ func liveMousePassthroughEnabled(root state.Root, event input.InputEvent, target
 	if event.Kind != input.EventKindMouse || event.RawSeq == "" {
 		return false
 	}
-	if root.Shell.EnsureDefaults().Overlay.Open || copyModeOwnsActiveInput(root) {
+	if root.Shell.ReadonlyDefaults().Overlay.Open || copyModeOwnsActiveInput(root) {
 		return false
 	}
 	if target.TerminalID == "" {
