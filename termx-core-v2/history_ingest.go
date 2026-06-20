@@ -142,6 +142,15 @@ func (parser *historyANSIParser) Parse(output string) []historyOutputSegment {
 	return parser.segments
 }
 
+func (parser *historyANSIParser) clearSegments() {
+	// 中文说明：segments 是单次 parse/apply 的临时投递队列；应用后必须断开
+	// Cells/Text 引用，避免已落入 authoritative store 的历史文本被 parser 挂住。
+	for index := range parser.segments {
+		parser.segments[index] = historyOutputSegment{}
+	}
+	parser.segments = parser.segments[:0]
+}
+
 func (parser *historyANSIParser) SetScreenSize(cols int, rows int) {
 	sizeChanged := parser.screenCols != cols || parser.screenRows != rows
 	parser.screenCols = cols

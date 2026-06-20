@@ -73,6 +73,23 @@ func TestTerminalLifecycleAndPipeline(t *testing.T) {
 	}
 }
 
+func TestTerminalHistoryPipelineClearsParserSegmentsAfterIngest(t *testing.T) {
+	pipeline := newTerminalHistoryPipeline(20, 4)
+	if err := pipeline.Ingest("\x1b[31mstyled\x1b[0m\nplain\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	if got := len(pipeline.ingest.segments); got != 0 {
+		t.Fatalf("parser segments should be cleared after ingest, got %d", got)
+	}
+	window, err := pipeline.LatestWindow(20, 10)
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "styled" || window.Rows[1].Text != "plain" {
+		t.Fatalf("clearing parser segments must not clear stored history, got %#v", window.Rows)
+	}
+}
+
 func TestTerminalIngestOutputPublishesLiveChangedEvent(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	events := server.Events(context.Background(), EventFilter{Types: []EventType{EventTerminalChanged}})

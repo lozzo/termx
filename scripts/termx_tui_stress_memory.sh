@@ -1,0 +1,406 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/termx_tui_stress_memory.sh [options]
+
+Run the real interactive stress path:
+  build/use termx -> start core-v2 daemon -> create shell terminal
+  -> attach tui-v3 in tmux -> type and run:
+     time python3 scripts/generate_terminal_stress.py --lines N
+  -> record daemon/TUI RSS + heap profiles -> enter copy/history oldest
+  -> verify the oldest page can trace back to line 000000.
+
+Options:
+  --root PATH           artifact root; default is a new /tmp directory
+  --bin PATH            existing termx binary; default builds into ROOT/termx
+  --lines N             stress line count; default 100000
+  --seed N              stress seed; default 100
+  --width-hint N        stress width hint; default 120
+  --attach-size CxR     tmux attach size; default 120x36
+  --daemon-memory-limit-mb N
+                        set TERMX_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
+  --tui-memory-limit-mb N
+                        set TERMX_TUI_MEMORY_LIMIT_MB for TUI runtime GC pacing
+  --wait-seconds N      max wait for attach/copy markers; default 90
+  --keep-root           keep artifact root after success/failure (default)
+  --cleanup-root        remove artifact root on exit
+  -h, --help            show this help
+
+Artifacts:
+  memory.tsv            RSS samples in KiB and MiB
+  stress-time.txt       captured time(1) output line from the TUI pane
+  live.txt              tmux capture after stress completes
+  copy-oldest.txt       capture after copy/history oldest jump
+  daemon-heap/          daemon heap profiles captured at RSS sample points
+  tui-heap/             TUI heap profiles captured at RSS sample points
+EOF
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+log() {
+  printf '[termx-tui-stress-memory] %s\n' "$*"
+}
+
+parse_size() {
+  local value="$1"
+  local cols="${value%x*}"
+  local rows="${value#*x}"
+  if [[ -z "$cols" || -z "$rows" || "$cols" == "$value" || "$rows" == "$value" ]]; then
+    echo "invalid size: $value (want COLSxROWS)" >&2
+    exit 1
+  fi
+  printf '%s %s\n' "$cols" "$rows"
+}
+
+shell_quote() {
+  printf '%q' "$1"
+}
+
+wait_for_socket() {
+  local socket_path="$1"
+  local deadline="$2"
+  local attempt
+  for attempt in $(seq 1 "$deadline"); do
+    if [[ -S "$socket_path" ]] && python3 - "$socket_path" >/dev/null 2>&1 <<'PY'
+import socket
+import sys
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(0.2)
+try:
+    sock.connect(sys.argv[1])
+finally:
+    sock.close()
+PY
+    then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+wait_for_file_value() {
+  local path="$1"
+  local deadline="$2"
+  local attempt
+  for attempt in $(seq 1 "$deadline"); do
+    if [[ -s "$path" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+wait_for_capture() {
+  local target="$1"
+  local pattern="$2"
+  local deadline="$3"
+  local attempt
+  for attempt in $(seq 1 "$deadline"); do
+    if tmux capture-pane -t "$target" -p -S -4000 2>/dev/null | LC_ALL=C grep -Fq "$pattern"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+rss_kib() {
+  local pid="$1"
+  ps -o rss= -p "$pid" 2>/dev/null | awk 'NF { print $1 + 0; found=1 } END { if (!found) print 0 }'
+}
+
+record_rss() {
+  local stage="$1"
+  local process="$2"
+  local pid="$3"
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -USR1 "$pid" 2>/dev/null || true
+    sleep 0.2
+  fi
+  local rss
+  rss="$(rss_kib "$pid")"
+  awk -v stage="$stage" -v process="$process" -v pid="$pid" -v rss="$rss" 'BEGIN {
+    printf "%s\t%s\t%s\t%d\t%.1f\n", stage, process, pid, rss, rss / 1024
+  }' >>"$REPORT"
+}
+
+capture_pane() {
+  local target="$1"
+  local name="$2"
+  tmux capture-pane -t "$target" -p -S -4000 >"$ROOT/$name.txt" || true
+  tmux capture-pane -t "$target" -ep -S -4000 >"$ROOT/$name.raw.txt" || true
+}
+
+positive_integer() {
+  local name="$1"
+  local value="$2"
+  case "$value" in
+    ''|*[!0-9]*)
+      echo "$name must be a positive integer" >&2
+      exit 1
+      ;;
+  esac
+  if [[ "$value" -le 0 ]]; then
+    echo "$name must be a positive integer" >&2
+    exit 1
+  fi
+}
+
+ROOT=""
+BIN=""
+LINES=100000
+SEED=100
+WIDTH_HINT=120
+ATTACH_SIZE="120x36"
+WAIT_SECONDS=90
+CLEANUP_ROOT=0
+DAEMON_MEMORY_LIMIT_MB=""
+TUI_MEMORY_LIMIT_MB=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --root)
+      ROOT="$2"
+      shift 2
+      ;;
+    --bin)
+      BIN="$2"
+      shift 2
+      ;;
+    --lines)
+      LINES="$2"
+      shift 2
+      ;;
+    --seed)
+      SEED="$2"
+      shift 2
+      ;;
+    --width-hint)
+      WIDTH_HINT="$2"
+      shift 2
+      ;;
+    --attach-size)
+      ATTACH_SIZE="$2"
+      shift 2
+      ;;
+    --daemon-memory-limit-mb)
+      DAEMON_MEMORY_LIMIT_MB="$2"
+      shift 2
+      ;;
+    --tui-memory-limit-mb)
+      TUI_MEMORY_LIMIT_MB="$2"
+      shift 2
+      ;;
+    --wait-seconds)
+      WAIT_SECONDS="$2"
+      shift 2
+      ;;
+    --keep-root)
+      CLEANUP_ROOT=0
+      shift
+      ;;
+    --cleanup-root)
+      CLEANUP_ROOT=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+positive_integer "--lines" "$LINES"
+positive_integer "--wait-seconds" "$WAIT_SECONDS"
+if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
+  positive_integer "--daemon-memory-limit-mb" "$DAEMON_MEMORY_LIMIT_MB"
+fi
+if [[ -n "$TUI_MEMORY_LIMIT_MB" ]]; then
+  positive_integer "--tui-memory-limit-mb" "$TUI_MEMORY_LIMIT_MB"
+fi
+
+need awk
+need go
+need grep
+need ps
+need python3
+need tmux
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+read -r ATTACH_COLS ATTACH_ROWS < <(parse_size "$ATTACH_SIZE")
+
+if [[ -z "$ROOT" ]]; then
+  ROOT="$(mktemp -d "${TMPDIR:-/tmp}/termx-tui-stress-memory.XXXXXX")"
+else
+  mkdir -p "$ROOT"
+fi
+ROOT="$(cd "$ROOT" && pwd)"
+
+SOCK="$ROOT/termx-core-v2.sock"
+LOG="$ROOT/termx.log"
+REPORT="$ROOT/memory.tsv"
+DAEMON_HEAP_DIR="$ROOT/daemon-heap"
+TUI_HEAP_DIR="$ROOT/tui-heap"
+SESSION="termx-tui-stress-$$"
+TARGET="$SESSION:0.0"
+ATTACH_PID_FILE="$ROOT/tui.pid"
+TERMINAL_ID_FILE="$ROOT/terminal.id"
+DAEMON_PID=""
+TERMINAL_ID=""
+
+cleanup() {
+  set +e
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    tmux kill-session -t "$SESSION" 2>/dev/null
+  fi
+  if [[ -n "$TERMINAL_ID" && -x "$BIN" ]]; then
+    "$BIN" --socket "$SOCK" --log-file "$LOG" v3 kill "$TERMINAL_ID" >/dev/null 2>&1
+    "$BIN" --socket "$SOCK" --log-file "$LOG" v3 rm "$TERMINAL_ID" >/dev/null 2>&1
+  fi
+  if [[ -n "$DAEMON_PID" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
+    kill "$DAEMON_PID" 2>/dev/null
+    wait "$DAEMON_PID" 2>/dev/null
+  fi
+  if [[ "$CLEANUP_ROOT" == "1" ]]; then
+    rm -rf "$ROOT"
+  fi
+}
+trap cleanup EXIT
+
+log "artifact root: $ROOT"
+
+if [[ -z "$BIN" ]]; then
+  BIN="$ROOT/termx"
+  log "building termx binary"
+  (cd "$REPO_ROOT" && go build -o "$BIN" ./termx-cli/cmd/termx)
+else
+  BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
+fi
+
+if [[ ! -x "$BIN" ]]; then
+  echo "termx binary is not executable: $BIN" >&2
+  exit 1
+fi
+
+printf 'stage\tprocess\tpid\trss_kib\trss_mib\n' >"$REPORT"
+mkdir -p "$TUI_HEAP_DIR"
+mkdir -p "$DAEMON_HEAP_DIR"
+
+log "starting daemon"
+if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
+  log "daemon memory limit: ${DAEMON_MEMORY_LIMIT_MB}MB"
+  TERMX_DAEMON_MEMORY_LIMIT_MB="$DAEMON_MEMORY_LIMIT_MB" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+else
+  TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+fi
+DAEMON_PID=$!
+if ! wait_for_socket "$SOCK" "$WAIT_SECONDS"; then
+  echo "daemon socket did not become ready: $SOCK" >&2
+  exit 1
+fi
+record_rss "daemon_idle" "daemon" "$DAEMON_PID"
+
+log "creating interactive shell terminal"
+TERMINAL_ID="$("$BIN" --socket "$SOCK" --log-file "$LOG" v3 new --name stress-shell -- /bin/sh -l)"
+printf '%s\n' "$TERMINAL_ID" >"$TERMINAL_ID_FILE"
+
+ATTACH_SCRIPT="$ROOT/attach.sh"
+cat >"$ATTACH_SCRIPT" <<EOF
+#!/bin/sh
+echo "\$\$" > $(shell_quote "$ATTACH_PID_FILE")
+export TERM=xterm-256color
+export TERMX_ALLOW_NESTED=1
+export TERMX_TUI_HEAP_PROFILE_DIR=$(shell_quote "$TUI_HEAP_DIR")
+export TERMX_TUI_HEAP_PROFILE_EVERY_MB=8
+export TERMX_TUI_DIAG=1
+export TERMX_TUI_DIAG_INTERVAL_MS=200
+EOF
+if [[ -n "$TUI_MEMORY_LIMIT_MB" ]]; then
+  log "TUI memory limit: ${TUI_MEMORY_LIMIT_MB}MB"
+  printf 'export TERMX_TUI_MEMORY_LIMIT_MB=%s\n' "$(shell_quote "$TUI_MEMORY_LIMIT_MB")" >>"$ATTACH_SCRIPT"
+fi
+cat >>"$ATTACH_SCRIPT" <<EOF
+exec $(shell_quote "$BIN") --socket $(shell_quote "$SOCK") --log-file $(shell_quote "$LOG") v3 attach $(shell_quote "$TERMINAL_ID")
+EOF
+chmod +x "$ATTACH_SCRIPT"
+
+log "starting tmux attach session: $SESSION"
+tmux new-session -d -x "$ATTACH_COLS" -y "$ATTACH_ROWS" -s "$SESSION" /bin/sh "$ATTACH_SCRIPT"
+if ! wait_for_file_value "$ATTACH_PID_FILE" "$WAIT_SECONDS"; then
+  echo "TUI PID file did not appear: $ATTACH_PID_FILE" >&2
+  exit 1
+fi
+TUI_PID="$(tr -dc '0-9' <"$ATTACH_PID_FILE")"
+if [[ -z "$TUI_PID" ]]; then
+  echo "empty TUI PID file: $ATTACH_PID_FILE" >&2
+  exit 1
+fi
+sleep 1
+record_rss "tui_idle" "tui" "$TUI_PID"
+
+STRESS_SCRIPT="$REPO_ROOT/scripts/generate_terminal_stress.py"
+DONE_MARKER="TERM_X_TUI_STRESS_DONE"
+TIME_FILE="$ROOT/stress-time.txt"
+STRESS_CMD="/usr/bin/time -p python3 $(shell_quote "$STRESS_SCRIPT") --lines $LINES --seed $SEED --width-hint $WIDTH_HINT 2>$(shell_quote "$TIME_FILE"); printf '\\n$DONE_MARKER\\n'"
+
+log "typing stress command in TUI: lines=$LINES seed=$SEED"
+tmux send-keys -t "$TARGET" "$STRESS_CMD" Enter
+if ! wait_for_capture "$TARGET" "$DONE_MARKER" "$WAIT_SECONDS"; then
+  capture_pane "$TARGET" "live-timeout"
+  echo "stress command did not reach done marker within ${WAIT_SECONDS}s" >&2
+  exit 1
+fi
+capture_pane "$TARGET" "live"
+record_rss "daemon_after_stress" "daemon" "$DAEMON_PID"
+record_rss "tui_after_stress" "tui" "$TUI_PID"
+
+log "entering copy/history latest"
+tmux send-keys -t "$TARGET" C-v
+sleep 3
+capture_pane "$TARGET" "copy-latest"
+record_rss "daemon_copy_latest" "daemon" "$DAEMON_PID"
+record_rss "tui_copy_latest" "tui" "$TUI_PID"
+
+log "jumping to oldest history page"
+tmux send-keys -t "$TARGET" g
+sleep 4
+capture_pane "$TARGET" "copy-oldest"
+record_rss "daemon_copy_oldest" "daemon" "$DAEMON_PID"
+record_rss "tui_copy_oldest" "tui" "$TUI_PID"
+
+if ! LC_ALL=C grep -Fq "000000" "$ROOT/copy-oldest.txt"; then
+  echo "copy-oldest did not show oldest stress line 000000" >&2
+  exit 1
+fi
+
+if [[ -s "$TIME_FILE" ]]; then
+  cp "$TIME_FILE" "$ROOT/stress-time.raw.txt"
+fi
+
+log "RSS report"
+if command -v column >/dev/null 2>&1; then
+  column -t -s $'\t' "$REPORT"
+else
+  cat "$REPORT"
+fi
+if [[ -s "$TIME_FILE" ]]; then
+  log "stress time"
+  cat "$TIME_FILE"
+fi
+log "artifacts kept at: $ROOT"

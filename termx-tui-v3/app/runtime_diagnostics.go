@@ -9,6 +9,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lozzow/termx/termx-tui-v3/render"
@@ -26,6 +27,7 @@ const (
 )
 
 type runtimeDiagnostics struct {
+	mu                sync.Mutex
 	logger            *slog.Logger
 	enabled           bool
 	inputTraceEnabled bool
@@ -177,12 +179,21 @@ func (diag *runtimeDiagnostics) maybeWriteHeapProfile(root state.Root, reason st
 	if diag.lastHeapProfileAt != 0 && mem.HeapAlloc-diag.lastHeapProfileAt < tuiHeapProfileMinDeltaMB*1024*1024 {
 		return
 	}
+	diag.writeHeapProfile(root, reason, mem)
+}
+
+func (diag *runtimeDiagnostics) writeHeapProfile(root state.Root, reason string, mem goruntime.MemStats) {
+	if diag == nil || diag.heapProfileDir == "" {
+		return
+	}
+	diag.mu.Lock()
+	defer diag.mu.Unlock()
 	if err := os.MkdirAll(diag.heapProfileDir, 0o755); err != nil {
 		diag.logger.Warn("tui-v3 heap profile directory unavailable", "dir", diag.heapProfileDir, "error", err)
 		return
 	}
 	diag.lastHeapProfileAt = mem.HeapAlloc
-	path := filepath.Join(diag.heapProfileDir, fmt.Sprintf("termx-tui-v3-%s-gen%d-heap%d.pprof", reason, root.Generation, mem.HeapAlloc))
+	path := filepath.Join(diag.heapProfileDir, fmt.Sprintf("termx-tui-v3-%s-gen%d-heap%d.pprof", sanitizeHeapProfileReason(reason), root.Generation, mem.HeapAlloc))
 	file, err := os.Create(path)
 	if err != nil {
 		diag.logger.Warn("tui-v3 heap profile create failed", "path", path, "error", err)
@@ -195,6 +206,30 @@ func (diag *runtimeDiagnostics) maybeWriteHeapProfile(root state.Root, reason st
 		return
 	}
 	diag.logger.Info("tui-v3 heap profile written", "path", path, "heap_alloc", mem.HeapAlloc, "reason", reason)
+}
+
+func (diag *runtimeDiagnostics) RequestHeapProfile(root state.Root, reason string) {
+	if diag == nil || diag.heapProfileDir == "" {
+		return
+	}
+	diag.writeHeapProfile(root, reason, diagnosticsMemStats())
+}
+
+func sanitizeHeapProfileReason(reason string) string {
+	reason = strings.TrimSpace(strings.ToLower(reason))
+	if reason == "" {
+		return "sample"
+	}
+	var builder strings.Builder
+	for _, r := range reason {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			builder.WriteRune(r)
+		}
+	}
+	if builder.Len() == 0 {
+		return "sample"
+	}
+	return builder.String()
 }
 
 func (runtime *AppRuntime) queueLength() int {

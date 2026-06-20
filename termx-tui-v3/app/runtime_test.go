@@ -162,6 +162,23 @@ func TestAppRuntimeDiagnosticsRespectsEnvironmentToggle(t *testing.T) {
 	}
 }
 
+func TestAppRuntimeDiagnosticsWritesRequestedHeapProfile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(tuiHeapProfileDirEnv, dir)
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	runtime.diagnostics.RequestHeapProfile(runtime.State(), "usr1")
+
+	files, err := filepath.Glob(filepath.Join(dir, "termx-tui-v3-usr1-*.pprof"))
+	if err != nil {
+		t.Fatalf("glob heap profiles: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected one heap profile, got %d files=%#v", len(files), files)
+	}
+}
+
 func TestAppPackageDoesNotImportBubbleTea(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {

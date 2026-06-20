@@ -48,11 +48,14 @@ func (pipeline *terminalHistoryPipeline) Ingest(output string) error {
 	result := pipeline.altCap.WriteWithResult(output)
 	for _, writeSegment := range result.Segments {
 		if writeSegment.Raw != "" {
-			for _, segment := range pipeline.ingest.Parse(writeSegment.Raw) {
+			segments := pipeline.ingest.Parse(writeSegment.Raw)
+			for _, segment := range segments {
 				if err := pipeline.applySegment(segment); err != nil {
+					pipeline.ingest.clearSegments()
 					return err
 				}
 			}
+			pipeline.ingest.clearSegments()
 		}
 		if len(writeSegment.AltScreenExitFrame) > 0 {
 			if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventAppendAltScreenFrame, Rows: historyRowsFromVTermRows(writeSegment.AltScreenExitFrame)}); err != nil {

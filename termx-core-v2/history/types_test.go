@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -180,9 +181,9 @@ func TestMemoryStorageBackendCompactsCleanSealedLines(t *testing.T) {
 	if err := backend.SaveLine(line); err != nil {
 		t.Fatalf("save line: %v", err)
 	}
-	stored, ok := backend.compactLines[7]
+	stored, ok := backend.compactLine(7)
 	if !ok || len(stored.EncodedCells) == 0 {
-		t.Fatalf("expected clean sealed line to use compact storage, got %#v", backend.compactLines[7])
+		t.Fatalf("expected clean sealed line to use compact storage, got %#v", stored)
 	}
 	if _, ok := backend.lines[7]; ok {
 		t.Fatalf("compact line must not keep ordinary storage copy, got %#v", backend.lines[7])
@@ -217,12 +218,60 @@ func TestMemoryStorageBackendCompactsCleanSealedLines(t *testing.T) {
 	if err := backend.SaveLine(line); err != nil {
 		t.Fatalf("save dirty line: %v", err)
 	}
-	if _, ok := backend.compactLines[7]; ok {
+	if _, ok := backend.compactLine(7); ok {
 		t.Fatalf("dirty line must stay mutable in ordinary storage, got %#v", stored)
 	}
 	storedLine, ok := backend.lines[7]
 	if !ok || len(storedLine.Cells) == 0 {
 		t.Fatalf("dirty line must stay mutable in ordinary storage, got %#v", backend.lines[7])
+	}
+}
+
+func TestMemoryStorageBackendCompactsSparseHighIDWithoutDenseGap(t *testing.T) {
+	backend := NewMemoryStorageBackend()
+	line := LogicalLine{
+		ID:        100_000,
+		Seal:      SealStateSealed,
+		Cells:     []Cell{{Text: "styled", Width: 6, Style: CellStyle{FG: "ansi:3"}}},
+		Residency: ResidencyMemory,
+	}
+	if err := backend.SaveLine(line); err != nil {
+		t.Fatalf("save high id compact line: %v", err)
+	}
+	if got, wantMax := len(backend.compactLines), maxCompactDenseGap+1; got > wantMax {
+		t.Fatalf("high sparse id should not expand dense compact storage, len=%d want <= %d", got, wantMax)
+	}
+	if _, ok := backend.compactLine(line.ID); !ok {
+		t.Fatal("expected high id compact line to load from sparse storage")
+	}
+	loaded, ok := backend.LoadLine(line.ID)
+	if !ok {
+		t.Fatal("expected high id compact line to load")
+	}
+	if !reflect.DeepEqual(loaded, line) {
+		t.Fatalf("loaded high id compact line changed payload:\nwant %#v\ngot  %#v", line, loaded)
+	}
+	if got := backend.LineIDs(); !reflect.DeepEqual(got, []LogicalLineID{line.ID}) {
+		t.Fatalf("unexpected line ids: %#v", got)
+	}
+}
+
+func TestCompactCellsEncodedCapacityMatchesEncodedLength(t *testing.T) {
+	cells := []Cell{
+		{Text: "plain", Width: 5},
+		{Text: strings.Repeat("x", 180), Width: 180, Style: CellStyle{FG: "ansi:2", BG: "idx:24", Bold: true, Underline: true}},
+		{Text: "link", Width: 4, Style: CellStyle{FG: "#ffcc00", Reverse: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
+	}
+
+	encoded := encodeCompactCells(cells)
+	if got, want := cap(encoded), len(encoded); got != want {
+		t.Fatalf("compact cells should allocate exact backing capacity, cap=%d len=%d", got, want)
+	}
+	if got, want := compactCellsEncodedCapacity(cells), len(encoded); got != want {
+		t.Fatalf("compact capacity estimate mismatch, got=%d want=%d", got, want)
+	}
+	if decoded := decodeCompactCells(encoded); !reflect.DeepEqual(decoded, cells) {
+		t.Fatalf("compact round trip changed cells:\nwant %#v\ngot  %#v", cells, decoded)
 	}
 }
 

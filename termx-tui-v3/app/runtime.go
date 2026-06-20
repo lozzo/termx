@@ -183,6 +183,7 @@ type AppRuntime struct {
 	maxMessagesPerBatch int
 	copyHistoryPatch    copyHistoryPatchCache
 	diagnostics         *runtimeDiagnostics
+	stopDiagnostics     func()
 }
 
 type mouseDragState struct {
@@ -262,7 +263,13 @@ func NewAppRuntime(
 }
 
 func (runtime *AppRuntime) SetLogger(logger *slog.Logger) {
+	if runtime.stopDiagnostics != nil {
+		runtime.stopDiagnostics()
+		runtime.stopDiagnostics = nil
+	}
+	applyRuntimeTuning(logger)
 	runtime.diagnostics = newRuntimeDiagnostics(logger)
+	runtime.stopDiagnostics = startRuntimeHeapSignalProfiler(runtime, logger)
 }
 
 func (runtime *AppRuntime) State() state.Root {
@@ -282,6 +289,7 @@ func (runtime *AppRuntime) Drain(ctx context.Context) error {
 	runtime.running = true
 	defer func() {
 		runtime.running = false
+		runtime.stopRuntimeDiagnostics()
 	}()
 	return runtime.drainBatch(ctx)
 }
@@ -292,6 +300,7 @@ func (runtime *AppRuntime) Run(ctx context.Context) error {
 	runtime.running = true
 	defer func() {
 		runtime.running = false
+		runtime.stopRuntimeDiagnostics()
 	}()
 	for {
 		if err := runtime.drainBatch(ctx); err != nil {
@@ -307,6 +316,21 @@ func (runtime *AppRuntime) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func (runtime *AppRuntime) stopRuntimeDiagnostics() {
+	if runtime.stopDiagnostics == nil {
+		return
+	}
+	runtime.stopDiagnostics()
+	runtime.stopDiagnostics = nil
+}
+
+func (runtime *AppRuntime) RequestHeapProfile(reason string) {
+	if runtime == nil || runtime.diagnostics == nil {
+		return
+	}
+	runtime.diagnostics.RequestHeapProfile(runtime.State(), reason)
 }
 
 func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
