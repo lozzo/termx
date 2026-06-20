@@ -22,6 +22,9 @@ const (
 	tuiDiagnosticsInterval   = "TERMX_TUI_DIAG_INTERVAL_MS"
 	tuiHeapProfileDirEnv     = "TERMX_TUI_HEAP_PROFILE_DIR"
 	tuiHeapProfileEveryEnv   = "TERMX_TUI_HEAP_PROFILE_EVERY_MB"
+	tuiMemstatsDirEnv        = "TERMX_TUI_MEMSTATS_DIR"
+	tuiMemstatsStageEnv      = "TERMX_DIAG_STAGE"
+	tuiMemstatsStageFileEnv  = "TERMX_DIAG_STAGE_FILE"
 	tuiHeapProfileDefaultMB  = uint64(128)
 	tuiHeapProfileMinDeltaMB = uint64(8)
 )
@@ -37,6 +40,7 @@ type runtimeDiagnostics struct {
 	patchSeq          uint64
 	lastFloatingKey   string
 	heapProfileDir    string
+	memstatsDir       string
 	heapProfileEvery  uint64
 	lastHeapProfileAt uint64
 }
@@ -59,6 +63,9 @@ func newRuntimeDiagnostics(logger *slog.Logger) *runtimeDiagnostics {
 			diag.enabled = true
 			diag.heapProfileEvery = diagnosticsProfileEveryBytes()
 		}
+	}
+	if dir := strings.TrimSpace(os.Getenv(tuiMemstatsDirEnv)); dir != "" {
+		diag.memstatsDir = dir
 	}
 	return diag
 }
@@ -210,6 +217,7 @@ func (diag *runtimeDiagnostics) writeHeapProfile(root state.Root, reason string,
 		return
 	}
 	diag.logger.Info("tui-v3 heap profile written", "path", path, "heap_alloc", mem.HeapAlloc, "reason", reason)
+	diag.writeMemstats(root, reason, diagnosticsMemStats())
 }
 
 func (diag *runtimeDiagnostics) RequestHeapProfile(root state.Root, reason string) {
@@ -217,6 +225,79 @@ func (diag *runtimeDiagnostics) RequestHeapProfile(root state.Root, reason strin
 		return
 	}
 	diag.writeHeapProfile(root, reason, diagnosticsMemStats())
+}
+
+func (diag *runtimeDiagnostics) RequestMemstats(root state.Root, reason string) {
+	if diag == nil || diag.memstatsDir == "" {
+		return
+	}
+	diag.writeMemstats(root, reason, diagnosticsMemStats())
+}
+
+func (diag *runtimeDiagnostics) writeMemstats(root state.Root, reason string, mem goruntime.MemStats) {
+	if diag == nil || diag.memstatsDir == "" {
+		return
+	}
+	diag.mu.Lock()
+	defer diag.mu.Unlock()
+	if err := os.MkdirAll(diag.memstatsDir, 0o755); err != nil {
+		diag.logger.Warn("tui-v3 memstats directory unavailable", "dir", diag.memstatsDir, "error", err)
+		return
+	}
+	path := filepath.Join(diag.memstatsDir, "memstats.tsv")
+	newFile := false
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		newFile = true
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		diag.logger.Warn("tui-v3 memstats open failed", "path", path, "error", err)
+		return
+	}
+	defer file.Close()
+	if newFile {
+		fmt.Fprintln(file, "unix_ns\tprocess\tstage\treason\tgeneration\theap_alloc\theap_sys\theap_idle\theap_inuse\theap_released\theap_objects\tstack_sys\tmspan_sys\tmcache_sys\tbuck_hash_sys\tgc_sys\tother_sys\tsys\tnext_gc\tnum_gc")
+	}
+	stage := sanitizeHeapProfileReason(os.Getenv(tuiMemstatsStageEnv))
+	if stage == "sample" {
+		stage = sanitizeHeapProfileReason(readRuntimeMemstatsStageFile())
+	}
+	if stage == "sample" {
+		stage = sanitizeHeapProfileReason(reason)
+	}
+	fmt.Fprintf(file, "%d\ttui\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+		time.Now().UnixNano(),
+		stage,
+		sanitizeHeapProfileReason(reason),
+		root.Generation,
+		mem.HeapAlloc,
+		mem.HeapSys,
+		mem.HeapIdle,
+		mem.HeapInuse,
+		mem.HeapReleased,
+		mem.HeapObjects,
+		mem.StackSys,
+		mem.MSpanSys,
+		mem.MCacheSys,
+		mem.BuckHashSys,
+		mem.GCSys,
+		mem.OtherSys,
+		mem.Sys,
+		mem.NextGC,
+		mem.NumGC,
+	)
+}
+
+func readRuntimeMemstatsStageFile() string {
+	path := strings.TrimSpace(os.Getenv(tuiMemstatsStageFileEnv))
+	if path == "" {
+		return ""
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(content))
 }
 
 func sanitizeHeapProfileReason(reason string) string {

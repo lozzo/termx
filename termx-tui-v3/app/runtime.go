@@ -337,6 +337,13 @@ func (runtime *AppRuntime) RequestHeapProfile(reason string) {
 	runtime.diagnostics.RequestHeapProfile(runtime.State(), reason)
 }
 
+func (runtime *AppRuntime) RequestMemstats(reason string) {
+	if runtime == nil || runtime.diagnostics == nil {
+		return
+	}
+	runtime.diagnostics.RequestMemstats(runtime.State(), reason)
+}
+
 func (runtime *AppRuntime) drainBatch(ctx context.Context) error {
 	needsRender := false
 	processed := 0

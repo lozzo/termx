@@ -103,11 +103,12 @@ type CreateLineRequest struct {
 }
 
 var (
-	ErrInvalidLineID    = errors.New("invalid logical line id")
-	ErrInvalidSeal      = errors.New("invalid logical line seal state")
-	ErrInvalidResidency = errors.New("invalid logical line residency")
-	ErrUnknownLine      = errors.New("unknown logical line")
-	ErrDuplicateLineID  = errors.New("duplicate logical line id")
+	ErrInvalidLineID       = errors.New("invalid logical line id")
+	ErrInvalidSeal         = errors.New("invalid logical line seal state")
+	ErrInvalidResidency    = errors.New("invalid logical line residency")
+	ErrUnknownLine         = errors.New("unknown logical line")
+	ErrDuplicateLineID     = errors.New("duplicate logical line id")
+	ErrCompactFileTooLarge = errors.New("compact history file is too large")
 )
 
 // LogicalLineStore is the single history truth.

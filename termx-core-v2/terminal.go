@@ -13,28 +13,34 @@ import (
 )
 
 type Terminal struct {
-	mu        sync.Mutex
-	info      TerminalInfo
-	process   TerminalProcess
-	liveMu    sync.Mutex
-	live      *live.SurfaceTrack
-	historyMu sync.Mutex
-	history   *terminalHistoryPipeline
-	queueMu   sync.Mutex
-	historyQ  *terminalHistoryIngestQueue
-	events    *eventBroker
-	update    func(TerminalInfo)
+	mu           sync.Mutex
+	info         TerminalInfo
+	process      TerminalProcess
+	liveMu       sync.Mutex
+	live         *live.SurfaceTrack
+	historyMu    sync.Mutex
+	history      *terminalHistoryPipeline
+	historyClose func() error
+	queueMu      sync.Mutex
+	historyQ     *terminalHistoryIngestQueue
+	events       *eventBroker
+	update       func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker, update func(TerminalInfo)) *Terminal {
+func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyBackend history.StorageBackend) *Terminal {
 	size := live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}
+	var historyClose func() error
+	if closer, ok := historyBackend.(interface{ Close() error }); ok {
+		historyClose = closer.Close
+	}
 	terminal := &Terminal{
-		info:    info.Clone(),
-		process: process,
-		live:    live.NewSurfaceTrack(size),
-		history: newTerminalHistoryPipeline(int(info.Size.Cols), int(info.Size.Rows)),
-		events:  events,
-		update:  update,
+		info:         info.Clone(),
+		process:      process,
+		live:         live.NewSurfaceTrack(size),
+		history:      newTerminalHistoryPipelineWithStorage(int(info.Size.Cols), int(info.Size.Rows), historyBackend),
+		historyClose: historyClose,
+		events:       events,
+		update:       update,
 	}
 	terminal.watchProcess(process)
 	return terminal
@@ -146,9 +152,17 @@ func (terminal *Terminal) Close() error {
 	process := terminal.process
 	terminal.info.State = TerminalStateRemoved
 	info := terminal.info.Clone()
+	closeHistory := terminal.historyClose
+	terminal.historyClose = nil
 	terminal.mu.Unlock()
 	terminal.syncInfo(info)
-	return process.Close()
+	processErr := process.Close()
+	if closeHistory != nil {
+		if err := closeHistory(); err != nil && processErr == nil {
+			return err
+		}
+	}
+	return processErr
 }
 
 func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) error {

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,7 +27,36 @@ const (
 	protocolErrorInternal   = 500
 )
 
+const protocolRequestReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
+
 var errProtocolAttachmentMismatch = errors.New("protocol attachment mismatch")
+var protocolRequestReclaimMinHeapBytes = parseProtocolRequestReclaimMinHeapBytes()
+
+func parseProtocolRequestReclaimMinHeapBytes() uint64 {
+	raw := strings.TrimSpace(os.Getenv(protocolRequestReclaimMinHeapMBEnv))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value == 0 {
+		return 0
+	}
+	return value << 20
+}
+
+func maybeReclaimProtocolRequestHeap() {
+	if protocolRequestReclaimMinHeapBytes == 0 {
+		return
+	}
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	if mem.HeapAlloc < protocolRequestReclaimMinHeapBytes {
+		return
+	}
+	// 中文说明：这是 request 边界上的显式 runtime page 归还，只在 history/snapshot
+	// response 已编码完成后运行；它不删除任何 history truth，也不是后台定时 scrub。
+	debug.FreeOSMemory()
+}
 
 type protocolSession struct {
 	server        *Server
@@ -342,6 +374,7 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if err != nil {
 			return nil, true, protocolErrorInternal, err
 		}
+		maybeReclaimProtocolRequestHeap()
 		return payload, true, 0, nil
 	case "events":
 		in := params.(protocol.EventsParams)
@@ -422,6 +455,7 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		if err != nil {
 			return nil, true, protocolErrorInternal, err
 		}
+		maybeReclaimProtocolRequestHeap()
 		return payload, true, 0, nil
 	case "history.release":
 		in := params.(protocol.HistoryWindowParams)

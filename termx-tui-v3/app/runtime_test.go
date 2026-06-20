@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -184,6 +185,25 @@ func TestAppRuntimeDiagnosticsWritesRequestedHeapProfile(t *testing.T) {
 	}
 	if len(files) != 1 {
 		t.Fatalf("expected one heap profile, got %d files=%#v", len(files), files)
+	}
+}
+
+func TestAppRuntimeDiagnosticsWritesRequestedMemstats(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(tuiMemstatsDirEnv, dir)
+	t.Setenv(tuiMemstatsStageEnv, "copy-oldest")
+	runtime := NewAppRuntime(state.Root{}, nil, nil, nil, nil)
+	runtime.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	runtime.RequestMemstats("usr2")
+
+	data, err := os.ReadFile(filepath.Join(dir, "memstats.tsv"))
+	if err != nil {
+		t.Fatalf("read memstats: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "process\tstage") || !strings.Contains(text, "\ttui\tcopy-oldest\tusr2\t") {
+		t.Fatalf("unexpected memstats tsv:\n%s", text)
 	}
 }
 

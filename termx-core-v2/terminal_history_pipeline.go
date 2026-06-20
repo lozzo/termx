@@ -27,7 +27,12 @@ type terminalHistoryPipeline struct {
 }
 
 func newTerminalHistoryPipeline(cols int, rows int) *terminalHistoryPipeline {
-	track := history.NewHistoryTrack()
+	return newTerminalHistoryPipelineWithStorage(cols, rows, nil)
+}
+
+func newTerminalHistoryPipelineWithStorage(cols int, rows int, backend history.StorageBackend) *terminalHistoryPipeline {
+	store := history.NewMemoryLogicalLineStore(backend)
+	track := history.NewHistoryTrackWith(store, nil, nil)
 	track.SetPrimaryScreenRows(rows)
 	pipeline := &terminalHistoryPipeline{
 		track: track,

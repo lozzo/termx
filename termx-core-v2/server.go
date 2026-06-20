@@ -16,16 +16,18 @@ import (
 )
 
 type ListenerFactory func(socketPath string) (transport.Listener, error)
+type HistoryStorageFactory func(terminalID string) (history.StorageBackend, error)
 
 type ServerOption func(*serverConfig)
 
 type serverConfig struct {
-	socketPath      string
-	defaultSize     Size
-	logger          *slog.Logger
-	listenerFactory ListenerFactory
-	processFactory  ProcessFactory
-	eventBuffer     int
+	socketPath            string
+	defaultSize           Size
+	logger                *slog.Logger
+	listenerFactory       ListenerFactory
+	processFactory        ProcessFactory
+	historyStorageFactory HistoryStorageFactory
+	eventBuffer           int
 }
 
 type Server struct {
@@ -110,6 +112,12 @@ func WithProcessFactory(factory ProcessFactory) ServerOption {
 	}
 }
 
+func WithHistoryStorageFactory(factory HistoryStorageFactory) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyStorageFactory = factory
+	}
+}
+
 func WithEventBuffer(size int) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.eventBuffer = size
@@ -143,7 +151,13 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	terminal := newTerminal(info, process, server.events, server.updateTerminalInfo)
+	historyBackend, err := server.newHistoryStorageBackend(info.ID)
+	if err != nil {
+		_ = process.Close()
+		_, _ = server.registry.remove(info.ID)
+		return TerminalInfo{}, err
+	}
+	terminal := newTerminal(info, process, server.events, server.updateTerminalInfo, historyBackend)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
@@ -251,6 +265,13 @@ func (server *Server) RemoveTerminal(id string) error {
 	}
 	server.publishTerminalEvent(EventTerminalRemoved, info)
 	return nil
+}
+
+func (server *Server) newHistoryStorageBackend(terminalID string) (history.StorageBackend, error) {
+	if server.cfg.historyStorageFactory == nil {
+		return nil, nil
+	}
+	return server.cfg.historyStorageFactory(terminalID)
 }
 
 func (server *Server) updateTerminalInfo(info TerminalInfo) {

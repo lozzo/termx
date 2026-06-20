@@ -2,6 +2,8 @@ package history
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -256,6 +258,145 @@ func TestMemoryStorageBackendCompactsSparseHighIDWithoutDenseGap(t *testing.T) {
 	}
 	if got := backend.LineIDs(); !reflect.DeepEqual(got, []LogicalLineID{line.ID}) {
 		t.Fatalf("unexpected line ids: %#v", got)
+	}
+}
+
+func TestFileBackedMemoryStorageBackendCompactsCleanSealedLinesOffHeap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.compact")
+	backend, err := NewFileBackedMemoryStorageBackend(path)
+	if err != nil {
+		t.Fatalf("create file backend: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = backend.Close()
+	})
+	line := LogicalLine{
+		ID:                7,
+		Generation:        3,
+		CreatedGeneration: 2,
+		ContentGeneration: 3,
+		Seal:              SealStateSealed,
+		Cells: []Cell{
+			{Text: "styled", Width: 6, Style: CellStyle{FG: "ansi:2", BG: "ansi:4", Bold: true}},
+			{Text: "tail", Width: 4, Style: CellStyle{Underline: true}},
+		},
+		TailFill:  &RowTailFill{Style: CellStyle{BG: "ansi:5"}},
+		Residency: ResidencyMemory,
+	}
+	if err := backend.SaveLine(line); err != nil {
+		t.Fatalf("save file compact line: %v", err)
+	}
+	if _, ok := backend.lines[line.ID]; ok {
+		t.Fatalf("file compact line must not keep ordinary storage copy, got %#v", backend.lines[line.ID])
+	}
+	if len(backend.compactLines) != 0 || backend.compactSparse != nil {
+		t.Fatalf("file compact backend must not keep encoded payload in memory, dense=%d sparse=%#v", len(backend.compactLines), backend.compactSparse)
+	}
+	slot := backend.compactFileLines[compactDenseIndex(line.ID)]
+	if !slot.Present || slot.Length == 0 {
+		t.Fatalf("expected file compact slot, got %#v", slot)
+	}
+	if backend.compactLineCount != 1 {
+		t.Fatalf("unexpected compact count %d", backend.compactLineCount)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat compact file: %v", err)
+	}
+	if info.Size() != int64(slot.Length) {
+		t.Fatalf("compact file size mismatch got=%d want=%d", info.Size(), slot.Length)
+	}
+
+	loaded, ok := backend.LoadLine(line.ID)
+	if !ok {
+		t.Fatal("expected file compact line to load")
+	}
+	if !reflect.DeepEqual(loaded, line) {
+		t.Fatalf("loaded file compact line changed payload:\nwant %#v\ngot  %#v", line, loaded)
+	}
+	loaded.Cells[0].Text = "caller mutation"
+	loaded.TailFill.Style.BG = "mutated"
+	loadedAgain, ok := backend.LoadLine(line.ID)
+	if !ok {
+		t.Fatal("expected file compact line to load again")
+	}
+	if !reflect.DeepEqual(loadedAgain, line) {
+		t.Fatalf("file compact line leaked caller mutation:\nwant %#v\ngot  %#v", line, loadedAgain)
+	}
+	snapshotLine, ok := backend.LoadSnapshotLine(line.ID)
+	if !ok {
+		t.Fatal("expected file compact snapshot line")
+	}
+	if !reflect.DeepEqual(snapshotLine, line) {
+		t.Fatalf("snapshot file compact line changed payload:\nwant %#v\ngot  %#v", line, snapshotLine)
+	}
+	if got := backend.LineIDs(); !reflect.DeepEqual(got, []LogicalLineID{line.ID}) {
+		t.Fatalf("unexpected file compact line ids: %#v", got)
+	}
+	if !backend.HasLine(line.ID) {
+		t.Fatal("expected file compact backend to report line exists")
+	}
+
+	line.Generation = 4
+	line.Cells = []Cell{{Text: "replaced", Width: 8, Style: CellStyle{FG: "ansi:3"}}}
+	if err := backend.SaveLine(line); err != nil {
+		t.Fatalf("overwrite file compact line: %v", err)
+	}
+	updatedSlot := backend.compactFileLines[compactDenseIndex(line.ID)]
+	if !updatedSlot.Present || updatedSlot.Offset <= slot.Offset {
+		t.Fatalf("expected overwritten file compact line to append new payload, old=%#v updated=%#v", slot, updatedSlot)
+	}
+	loaded, ok = backend.LoadLine(line.ID)
+	if !ok || !reflect.DeepEqual(loaded, line) {
+		t.Fatalf("unexpected overwritten file compact line ok=%v line=%#v", ok, loaded)
+	}
+	if !backend.DeleteLine(line.ID) {
+		t.Fatal("expected file compact delete to report true")
+	}
+	if backend.HasLine(line.ID) {
+		t.Fatal("expected deleted file compact line to be absent")
+	}
+	if got := backend.LineIDs(); len(got) != 0 {
+		t.Fatalf("expected no line ids after delete, got %#v", got)
+	}
+	if backend.compactLineCount != 0 {
+		t.Fatalf("expected compact count 0 after delete, got %d", backend.compactLineCount)
+	}
+}
+
+func TestFileBackedMemoryStorageBackendCompactsSparseHighIDWithoutDenseGap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.compact")
+	backend, err := NewFileBackedMemoryStorageBackend(path)
+	if err != nil {
+		t.Fatalf("create file backend: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = backend.Close()
+	})
+	line := LogicalLine{
+		ID:        100_000,
+		Seal:      SealStateSealed,
+		Cells:     []Cell{{Text: "styled", Width: 6, Style: CellStyle{FG: "ansi:3"}}},
+		Residency: ResidencyMemory,
+	}
+	if err := backend.SaveLine(line); err != nil {
+		t.Fatalf("save high id file compact line: %v", err)
+	}
+	if got, wantMax := len(backend.compactFileLines), maxCompactDenseGap+1; got > wantMax {
+		t.Fatalf("high sparse id should not expand dense file compact storage, len=%d want <= %d", got, wantMax)
+	}
+	if backend.compactFileSparse == nil || !backend.compactFileSparse[line.ID].Present {
+		t.Fatalf("expected high id file compact line to use sparse slot, got %#v", backend.compactFileSparse)
+	}
+	loaded, ok := backend.LoadLine(line.ID)
+	if !ok {
+		t.Fatal("expected high id file compact line to load")
+	}
+	if !reflect.DeepEqual(loaded, line) {
+		t.Fatalf("loaded high id file compact line changed payload:\nwant %#v\ngot  %#v", line, loaded)
+	}
+	if got := backend.LineIDs(); !reflect.DeepEqual(got, []LogicalLineID{line.ID}) {
+		t.Fatalf("unexpected high id file compact line ids: %#v", got)
 	}
 }
 

@@ -24,6 +24,10 @@ Options:
   --profile-mode MODE   heap profile capture mode: final, all, or none; default final
   --daemon-memory-limit-mb N
                         set TERMX_DAEMON_MEMORY_LIMIT_MB for daemon runtime GC pacing
+  --daemon-request-reclaim-min-heap-mb N
+                        set TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB for request-boundary page reclaim
+  --daemon-history-file-backend
+                        store daemon compact clean history payloads in artifact file backend
   --tui-memory-limit-mb N
                         set TERMX_TUI_MEMORY_LIMIT_MB for TUI runtime GC pacing
   --wait-seconds N      max wait for attach/copy markers; default 90
@@ -39,6 +43,9 @@ Artifacts:
   stress-time.txt       captured time(1) output line from the TUI pane
   profile-summary.txt   daemon/TUI pprof top summaries
   profile-graphs/       daemon/TUI pprof DOT graphs and SVG graphs when Graphviz exists
+  daemon-memstats/       daemon runtime MemStats samples collected at RSS stages
+  tui-memstats/          TUI runtime MemStats samples collected at RSS stages
+  daemon-history-backend/ daemon file-backed compact history payloads when enabled
   live.txt              tmux capture after stress completes
   copy-oldest.txt       capture after copy/history oldest jump
   daemon-heap/          daemon heap profiles captured by --profile-mode
@@ -215,6 +222,26 @@ EOF
   }' >>"$REPORT"
 }
 
+capture_memstats() {
+  local stage="$1"
+  local process="$2"
+  local pid="$3"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+  printf '%s\n' "$stage" >"$DIAG_STAGE_FILE"
+  kill -USR2 "$pid" 2>/dev/null || true
+  sleep 0.05
+}
+
+record_stage() {
+  local stage="$1"
+  local process="$2"
+  local pid="$3"
+  record_rss "$stage" "$process" "$pid"
+  capture_memstats "$stage" "$process" "$pid"
+}
+
 capture_heap_profile() {
   local stage="$1"
   local process="$2"
@@ -281,10 +308,25 @@ write_profile_summary() {
     echo "profile_mode=$PROFILE_MODE"
     echo "daemon_profile=$daemon_profile"
     echo "tui_profile=$tui_profile"
+    if [[ -s "$DAEMON_MEMSTATS_DIR/memstats.tsv" ]]; then
+      echo
+      echo "## daemon memstats"
+      cat "$DAEMON_MEMSTATS_DIR/memstats.tsv"
+    fi
+    if [[ -s "$TUI_MEMSTATS_DIR/memstats.tsv" ]]; then
+      echo
+      echo "## tui memstats"
+      cat "$TUI_MEMSTATS_DIR/memstats.tsv"
+    fi
     if [[ -s "$ROOT/memory-peaks.tsv" ]]; then
       echo
       echo "## stress RSS peaks"
       cat "$ROOT/memory-peaks.tsv"
+    fi
+    if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
+      echo
+      echo "## daemon history file backend"
+      find "$DAEMON_HISTORY_BACKEND_DIR" -type f -name '*.compact' -print0 2>/dev/null | xargs -0 ls -lh 2>/dev/null || true
     fi
     echo
     if [[ -n "$daemon_profile" ]]; then
@@ -338,6 +380,8 @@ ATTACH_SIZE="120x36"
 WAIT_SECONDS=90
 CLEANUP_ROOT=0
 DAEMON_MEMORY_LIMIT_MB=""
+DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB=""
+DAEMON_HISTORY_FILE_BACKEND=0
 TUI_MEMORY_LIMIT_MB=""
 BASELINE_TIME=1
 PROFILE_MODE="final"
@@ -384,6 +428,14 @@ while [[ $# -gt 0 ]]; do
       DAEMON_MEMORY_LIMIT_MB="$2"
       shift 2
       ;;
+    --daemon-request-reclaim-min-heap-mb)
+      DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$2"
+      shift 2
+      ;;
+    --daemon-history-file-backend)
+      DAEMON_HISTORY_FILE_BACKEND=1
+      shift
+      ;;
     --tui-memory-limit-mb)
       TUI_MEMORY_LIMIT_MB="$2"
       shift 2
@@ -416,6 +468,9 @@ positive_integer "--lines" "$LINES"
 positive_integer "--wait-seconds" "$WAIT_SECONDS"
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
   positive_integer "--daemon-memory-limit-mb" "$DAEMON_MEMORY_LIMIT_MB"
+fi
+if [[ -n "$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" ]]; then
+  positive_integer "--daemon-request-reclaim-min-heap-mb" "$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
 fi
 if [[ -n "$TUI_MEMORY_LIMIT_MB" ]]; then
   positive_integer "--tui-memory-limit-mb" "$TUI_MEMORY_LIMIT_MB"
@@ -452,6 +507,10 @@ LOG="$ROOT/termx.log"
 REPORT="$ROOT/memory.tsv"
 DAEMON_HEAP_DIR="$ROOT/daemon-heap"
 TUI_HEAP_DIR="$ROOT/tui-heap"
+DAEMON_MEMSTATS_DIR="$ROOT/daemon-memstats"
+TUI_MEMSTATS_DIR="$ROOT/tui-memstats"
+DAEMON_HISTORY_BACKEND_DIR="$ROOT/daemon-history-backend"
+DIAG_STAGE_FILE="$ROOT/diag-stage.txt"
 SESSION="termx-tui-stress-$$"
 TARGET="$SESSION:0.0"
 ATTACH_PID_FILE="$ROOT/tui.pid"
@@ -496,6 +555,11 @@ fi
 printf 'stage\tprocess\tpid\trss_kib\trss_mib\tcpu_percent\tcpu_time\n' >"$REPORT"
 mkdir -p "$TUI_HEAP_DIR"
 mkdir -p "$DAEMON_HEAP_DIR"
+mkdir -p "$TUI_MEMSTATS_DIR"
+mkdir -p "$DAEMON_MEMSTATS_DIR"
+if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
+  mkdir -p "$DAEMON_HISTORY_BACKEND_DIR"
+fi
 
 if [[ "$BASELINE_TIME" == "1" ]]; then
   log "running outside-termx stress baseline: lines=$LINES seed=$SEED"
@@ -504,18 +568,26 @@ if [[ "$BASELINE_TIME" == "1" ]]; then
 fi
 
 log "starting daemon"
+DAEMON_HISTORY_FILE_BACKEND_ENV=""
+if [[ "$DAEMON_HISTORY_FILE_BACKEND" == "1" ]]; then
+  log "daemon history file backend: $DAEMON_HISTORY_BACKEND_DIR"
+  DAEMON_HISTORY_FILE_BACKEND_ENV="$DAEMON_HISTORY_BACKEND_DIR"
+fi
 if [[ -n "$DAEMON_MEMORY_LIMIT_MB" ]]; then
   log "daemon memory limit: ${DAEMON_MEMORY_LIMIT_MB}MB"
-  TERMX_DAEMON_MEMORY_LIMIT_MB="$DAEMON_MEMORY_LIMIT_MB" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+  TERMX_DAEMON_MEMORY_LIMIT_MB="$DAEMON_MEMORY_LIMIT_MB" TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR="$DAEMON_HISTORY_FILE_BACKEND_ENV" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" TERMX_DAEMON_MEMSTATS_DIR="$DAEMON_MEMSTATS_DIR" TERMX_DIAG_STAGE_FILE="$DIAG_STAGE_FILE" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
 else
-  TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
+  if [[ -n "$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" ]]; then
+    log "daemon request reclaim min heap: ${DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB}MB"
+  fi
+  TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB="$DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB" TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR="$DAEMON_HISTORY_FILE_BACKEND_ENV" TERMX_DAEMON_HEAP_PROFILE_DIR="$DAEMON_HEAP_DIR" TERMX_DAEMON_MEMSTATS_DIR="$DAEMON_MEMSTATS_DIR" TERMX_DIAG_STAGE_FILE="$DIAG_STAGE_FILE" "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$ROOT/daemon.stdout" 2>"$ROOT/daemon.stderr" &
 fi
 DAEMON_PID=$!
 if ! wait_for_socket "$SOCK" "$WAIT_SECONDS"; then
   echo "daemon socket did not become ready: $SOCK" >&2
   exit 1
 fi
-record_rss "daemon_idle" "daemon" "$DAEMON_PID"
+record_stage "daemon_idle" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_idle" "daemon" "$DAEMON_PID"
 
 log "creating interactive shell terminal"
@@ -530,6 +602,8 @@ export TERM=xterm-256color
 export TERMX_ALLOW_NESTED=1
 export TERMX_TUI_HEAP_PROFILE_MODE=$(shell_quote "$PROFILE_MODE")
 export TERMX_TUI_HEAP_PROFILE_DIR=$(shell_quote "$TUI_HEAP_DIR")
+export TERMX_TUI_MEMSTATS_DIR=$(shell_quote "$TUI_MEMSTATS_DIR")
+export TERMX_DIAG_STAGE_FILE=$(shell_quote "$DIAG_STAGE_FILE")
 EOF
 if [[ "$PROFILE_MODE" == "all" ]]; then
   cat >>"$ATTACH_SCRIPT" <<EOF
@@ -559,7 +633,7 @@ if [[ -z "$TUI_PID" ]]; then
   exit 1
 fi
 sleep 1
-record_rss "tui_idle" "tui" "$TUI_PID"
+record_stage "tui_idle" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_idle" "tui" "$TUI_PID"
 
 DONE_MARKER="TERM_X_TUI_STRESS_DONE"
@@ -583,26 +657,26 @@ touch "$SAMPLE_STOP_FILE"
 wait "$SAMPLE_PID" 2>/dev/null || true
 write_memory_peaks
 capture_pane "$TARGET" "live"
-record_rss "daemon_after_stress" "daemon" "$DAEMON_PID"
+record_stage "daemon_after_stress" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_after_stress" "daemon" "$DAEMON_PID"
-record_rss "tui_after_stress" "tui" "$TUI_PID"
+record_stage "tui_after_stress" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_after_stress" "tui" "$TUI_PID"
 
 log "entering copy/history latest"
 tmux send-keys -t "$TARGET" C-v
 sleep 3
 capture_pane "$TARGET" "copy-latest"
-record_rss "daemon_copy_latest" "daemon" "$DAEMON_PID"
+record_stage "daemon_copy_latest" "daemon" "$DAEMON_PID"
 maybe_capture_stage_profile "daemon_copy_latest" "daemon" "$DAEMON_PID"
-record_rss "tui_copy_latest" "tui" "$TUI_PID"
+record_stage "tui_copy_latest" "tui" "$TUI_PID"
 maybe_capture_stage_profile "tui_copy_latest" "tui" "$TUI_PID"
 
 log "jumping to oldest history page"
 tmux send-keys -t "$TARGET" g
 sleep 4
 capture_pane "$TARGET" "copy-oldest"
-record_rss "daemon_copy_oldest" "daemon" "$DAEMON_PID"
-record_rss "tui_copy_oldest" "tui" "$TUI_PID"
+record_stage "daemon_copy_oldest" "daemon" "$DAEMON_PID"
+record_stage "tui_copy_oldest" "tui" "$TUI_PID"
 if [[ "$PROFILE_MODE" == "final" ]]; then
   capture_heap_profile "copy_oldest_final" "daemon" "$DAEMON_PID"
   capture_heap_profile "copy_oldest_final" "tui" "$TUI_PID"

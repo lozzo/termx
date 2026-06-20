@@ -2,6 +2,8 @@ package history
 
 import (
 	"encoding/binary"
+	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,17 +34,43 @@ type ownedLineBackend interface {
 // MemoryStorageBackend is the first in-memory backend used by the domain
 // harness before file or mmap persistence exists.
 type MemoryStorageBackend struct {
-	mu               sync.RWMutex
-	lines            map[LogicalLineID]LogicalLine
-	compactLines     [][]byte
-	compactSparse    map[LogicalLineID]compactLogicalLine
-	compactLineCount int
+	mu                sync.RWMutex
+	lines             map[LogicalLineID]LogicalLine
+	compactLines      [][]byte
+	compactSparse     map[LogicalLineID]compactLogicalLine
+	compactFile       *os.File
+	compactFileLines  []compactFileLine
+	compactFileSparse map[LogicalLineID]compactFileLine
+	compactFileOffset int64
+	compactLineCount  int
 }
 
 func NewMemoryStorageBackend() *MemoryStorageBackend {
 	return &MemoryStorageBackend{
 		lines: make(map[LogicalLineID]LogicalLine),
 	}
+}
+
+func NewFileBackedMemoryStorageBackend(path string) (*MemoryStorageBackend, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return &MemoryStorageBackend{
+		lines:       make(map[LogicalLineID]LogicalLine),
+		compactFile: file,
+	}, nil
+}
+
+func (backend *MemoryStorageBackend) Close() error {
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if backend.compactFile == nil {
+		return nil
+	}
+	file := backend.compactFile
+	backend.compactFile = nil
+	return file.Close()
 }
 
 func (backend *MemoryStorageBackend) SaveLine(line LogicalLine) error {
@@ -65,7 +93,9 @@ func (backend *MemoryStorageBackend) saveNormalizedLine(line LogicalLine) error 
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
 	if compactLogicalLineEligible(line) {
-		backend.saveCompactLogicalLine(line)
+		if err := backend.saveCompactLogicalLine(line); err != nil {
+			return err
+		}
 		delete(backend.lines, line.ID)
 		return nil
 	}
@@ -119,16 +149,33 @@ func (backend *MemoryStorageBackend) LineIDs() []LogicalLineID {
 	for id := range backend.lines {
 		ids = append(ids, id)
 	}
-	for index, encodedLine := range backend.compactLines {
-		if len(encodedLine) > 0 {
-			ids = append(ids, LogicalLineID(index+1))
+	if backend.compactFile != nil {
+		for index, slot := range backend.compactFileLines {
+			if slot.Present {
+				ids = append(ids, LogicalLineID(index+1))
+			}
 		}
-	}
-	for id := range backend.compactSparse {
-		ids = append(ids, id)
+		for id := range backend.compactFileSparse {
+			ids = append(ids, id)
+		}
+	} else {
+		for index, encodedLine := range backend.compactLines {
+			if len(encodedLine) > 0 {
+				ids = append(ids, LogicalLineID(index+1))
+			}
+		}
+		for id := range backend.compactSparse {
+			ids = append(ids, id)
+		}
 	}
 	sortLogicalLineIDs(ids)
 	return ids
+}
+
+type compactFileLine struct {
+	Offset  uint32
+	Length  uint32
+	Present bool
 }
 
 type compactLogicalLine struct {
@@ -303,17 +350,28 @@ func (residency compactResidency) Residency() Residency {
 }
 
 const maxCompactDenseGap = 4096
+const (
+	maxCompactFileLineOffset = uint64(^uint32(0))
+	maxCompactFileLineLength = uint64(^uint32(0))
+)
 
-func (backend *MemoryStorageBackend) saveCompactLogicalLine(line LogicalLine) {
+func (backend *MemoryStorageBackend) saveCompactLogicalLine(line LogicalLine) error {
+	if backend.compactFile != nil {
+		return backend.saveCompactLineToFile(line.ID, encodeCompactLogicalLineFromLine(line))
+	}
 	if slot, ok := backend.compactLineSlot(line.ID); ok {
-		if len(*slot) == 0 {
+		sparseHad := false
+		if backend.compactSparse != nil {
+			_, sparseHad = backend.compactSparse[line.ID]
+		}
+		if len(*slot) == 0 && !sparseHad {
 			backend.compactLineCount++
 		}
 		*slot = encodeCompactLogicalLineFromLine(line)
-		if backend.compactSparse != nil {
+		if sparseHad {
 			delete(backend.compactSparse, line.ID)
 		}
-		return
+		return nil
 	}
 	if backend.compactSparse == nil {
 		backend.compactSparse = make(map[LogicalLineID]compactLogicalLine)
@@ -322,18 +380,26 @@ func (backend *MemoryStorageBackend) saveCompactLogicalLine(line LogicalLine) {
 		backend.compactLineCount++
 	}
 	backend.compactSparse[line.ID] = compactLogicalLineFromLine(line)
+	return nil
 }
 
-func (backend *MemoryStorageBackend) saveCompactLine(line compactLogicalLine) {
+func (backend *MemoryStorageBackend) saveCompactLine(line compactLogicalLine) error {
+	if backend.compactFile != nil {
+		return backend.saveCompactLineToFile(line.ID, encodeCompactLogicalLine(line))
+	}
 	if slot, ok := backend.compactLineSlot(line.ID); ok {
-		if len(*slot) == 0 {
+		sparseHad := false
+		if backend.compactSparse != nil {
+			_, sparseHad = backend.compactSparse[line.ID]
+		}
+		if len(*slot) == 0 && !sparseHad {
 			backend.compactLineCount++
 		}
 		*slot = encodeCompactLogicalLine(line)
-		if backend.compactSparse != nil {
+		if sparseHad {
 			delete(backend.compactSparse, line.ID)
 		}
-		return
+		return nil
 	}
 	if backend.compactSparse == nil {
 		backend.compactSparse = make(map[LogicalLineID]compactLogicalLine)
@@ -342,11 +408,19 @@ func (backend *MemoryStorageBackend) saveCompactLine(line compactLogicalLine) {
 		backend.compactLineCount++
 	}
 	backend.compactSparse[line.ID] = line
+	return nil
 }
 
 func (backend *MemoryStorageBackend) compactLine(id LogicalLineID) (compactLogicalLine, bool) {
 	if id == 0 {
 		return compactLogicalLine{}, false
+	}
+	if backend.compactFile != nil {
+		data, ok := backend.loadCompactLineBytesFromFile(id)
+		if !ok {
+			return compactLogicalLine{}, false
+		}
+		return compactLogicalLineFromEncodedLine(id, data)
 	}
 	index := compactDenseIndex(id)
 	if index >= 0 && index < len(backend.compactLines) {
@@ -366,6 +440,12 @@ func (backend *MemoryStorageBackend) hasCompactLine(id LogicalLineID) bool {
 	if id == 0 {
 		return false
 	}
+	if backend.compactFile != nil {
+		if slot, ok := backend.compactFileSlot(id); ok {
+			return slot.Present
+		}
+		return false
+	}
 	index := compactDenseIndex(id)
 	if index >= 0 && index < len(backend.compactLines) {
 		return len(backend.compactLines[index]) > 0
@@ -378,6 +458,9 @@ func (backend *MemoryStorageBackend) hasCompactLine(id LogicalLineID) bool {
 }
 
 func (backend *MemoryStorageBackend) deleteCompactLine(id LogicalLineID) bool {
+	if backend.compactFile != nil {
+		return backend.deleteCompactLineFromFile(id)
+	}
 	index := compactDenseIndex(id)
 	if index >= 0 && index < len(backend.compactLines) {
 		if len(backend.compactLines[index]) > 0 {
@@ -419,6 +502,13 @@ func (backend *MemoryStorageBackend) loadCompactLine(id LogicalLineID) (LogicalL
 	if id == 0 {
 		return LogicalLine{}, false
 	}
+	if backend.compactFile != nil {
+		data, ok := backend.loadCompactLineBytesFromFile(id)
+		if !ok {
+			return LogicalLine{}, false
+		}
+		return decodeCompactLine(id, data)
+	}
 	index := compactDenseIndex(id)
 	if index >= 0 && index < len(backend.compactLines) {
 		encodedLine := backend.compactLines[index]
@@ -431,6 +521,134 @@ func (backend *MemoryStorageBackend) loadCompactLine(id LogicalLineID) (LogicalL
 	}
 	line, ok := backend.compactSparse[id]
 	return line.Line(), ok
+}
+
+func (backend *MemoryStorageBackend) saveCompactLineToFile(id LogicalLineID, data []byte) error {
+	if id == 0 {
+		return ErrInvalidLineID
+	}
+	if uint64(len(data)) > maxCompactFileLineLength {
+		return ErrCompactFileTooLarge
+	}
+	if backend.compactFileOffset < 0 || backend.compactFileOffset > int64(maxCompactFileLineOffset) {
+		return ErrCompactFileTooLarge
+	}
+	slot := compactFileLine{
+		Offset:  uint32(backend.compactFileOffset),
+		Length:  uint32(len(data)),
+		Present: true,
+	}
+	if len(data) > 0 {
+		written, err := backend.compactFile.WriteAt(data, int64(slot.Offset))
+		if err != nil {
+			return err
+		}
+		if written != len(data) {
+			return io.ErrShortWrite
+		}
+	}
+	backend.compactFileOffset += int64(slot.Length)
+	// 中文说明：文件 compact backend 只在 Go heap 保留 offset/length；
+	// encoded cells payload 已经落到文件，仍由 LogicalLineStore 统一索引和删除。
+	if denseSlot, ok := backend.compactFileLineSlot(id); ok {
+		sparseHad := false
+		if backend.compactFileSparse != nil {
+			previous, ok := backend.compactFileSparse[id]
+			sparseHad = ok && previous.Present
+		}
+		if !denseSlot.Present && !sparseHad {
+			backend.compactLineCount++
+		}
+		*denseSlot = slot
+		if sparseHad {
+			delete(backend.compactFileSparse, id)
+		}
+		return nil
+	}
+	if backend.compactFileSparse == nil {
+		backend.compactFileSparse = make(map[LogicalLineID]compactFileLine)
+	}
+	if previous, ok := backend.compactFileSparse[id]; !ok || !previous.Present {
+		backend.compactLineCount++
+	}
+	backend.compactFileSparse[id] = slot
+	return nil
+}
+
+func (backend *MemoryStorageBackend) compactFileLineSlot(id LogicalLineID) (*compactFileLine, bool) {
+	index := compactDenseIndex(id)
+	if index < 0 {
+		return nil, false
+	}
+	if index >= len(backend.compactFileLines) {
+		gap := index - len(backend.compactFileLines)
+		if gap > maxCompactDenseGap {
+			return nil, false
+		}
+		backend.compactFileLines = append(backend.compactFileLines, make([]compactFileLine, index-len(backend.compactFileLines)+1)...)
+	}
+	return &backend.compactFileLines[index], true
+}
+
+func (backend *MemoryStorageBackend) compactFileSlot(id LogicalLineID) (compactFileLine, bool) {
+	index := compactDenseIndex(id)
+	if index >= 0 && index < len(backend.compactFileLines) {
+		slot := backend.compactFileLines[index]
+		if slot.Present {
+			return slot, true
+		}
+	}
+	if backend.compactFileSparse == nil {
+		return compactFileLine{}, false
+	}
+	slot, ok := backend.compactFileSparse[id]
+	if !ok || !slot.Present {
+		return compactFileLine{}, false
+	}
+	return slot, true
+}
+
+func (backend *MemoryStorageBackend) loadCompactLineBytesFromFile(id LogicalLineID) ([]byte, bool) {
+	slot, ok := backend.compactFileSlot(id)
+	if !ok || backend.compactFile == nil {
+		return nil, false
+	}
+	data := make([]byte, slot.Length)
+	if slot.Length == 0 {
+		return data, true
+	}
+	read, err := backend.compactFile.ReadAt(data, int64(slot.Offset))
+	if err != nil && err != io.EOF {
+		return nil, false
+	}
+	if read != len(data) {
+		return nil, false
+	}
+	return data, true
+}
+
+func (backend *MemoryStorageBackend) deleteCompactLineFromFile(id LogicalLineID) bool {
+	index := compactDenseIndex(id)
+	if index >= 0 && index < len(backend.compactFileLines) {
+		if backend.compactFileLines[index].Present {
+			backend.compactFileLines[index] = compactFileLine{}
+			backend.compactLineCount--
+			return true
+		}
+	}
+	if backend.compactFileSparse == nil {
+		return false
+	}
+	slot, ok := backend.compactFileSparse[id]
+	if !ok || !slot.Present {
+		return false
+	}
+	delete(backend.compactFileSparse, id)
+	backend.compactLineCount--
+	if len(backend.compactFileSparse) == 0 {
+		backend.compactFileSparse = nil
+	}
+	return true
 }
 
 func encodeCompactLogicalLine(line compactLogicalLine) []byte {

@@ -3,18 +3,25 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"log/slog"
+	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
 	corev2 "github.com/lozzow/termx/termx-core-v2"
+	"github.com/lozzow/termx/termx-core-v2/history"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	tuiapp "github.com/lozzow/termx/termx-tui-v3/app"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	"github.com/lozzow/termx/termx-tui-v3/terminalhost"
 	"github.com/spf13/cobra"
 )
+
+const daemonHistoryFileBackendDirEnv = "TERMX_DAEMON_HISTORY_FILE_BACKEND_DIR"
 
 type coreV2Server interface {
 	ListenAndServe(context.Context) error
@@ -73,6 +80,9 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 			socketPath := resolveV3Socket(*socket)
 			applyDaemonRuntimeTuning(logger)
 			opts := []corev2.ServerOption{corev2.WithLogger(logger), corev2.WithSocketPath(socketPath)}
+			if historyFactory := newDaemonHistoryStorageFactory(logger); historyFactory != nil {
+				opts = append(opts, corev2.WithHistoryStorageFactory(historyFactory))
+			}
 			srv := newCoreV2Server(opts...)
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
@@ -92,6 +102,35 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 			return err
 		},
 	}
+}
+
+func newDaemonHistoryStorageFactory(logger *slog.Logger) corev2.HistoryStorageFactory {
+	dir := strings.TrimSpace(os.Getenv(daemonHistoryFileBackendDirEnv))
+	if dir == "" {
+		return nil
+	}
+	return func(terminalID string) (history.StorageBackend, error) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+		path := filepath.Join(dir, daemonHistoryBackendFileName(terminalID))
+		backend, err := history.NewFileBackedMemoryStorageBackend(path)
+		if err != nil {
+			return nil, err
+		}
+		// 中文说明：文件 history backend 只改变 compact payload 落点；创建失败
+		// 必须显式报错，不能静默 fallback 到内存掩盖 RSS 证据。
+		logger.Info("core-v2 daemon file history backend enabled", "terminal_id", terminalID, "path", path)
+		return backend, nil
+	}
+}
+
+func daemonHistoryBackendFileName(terminalID string) string {
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(terminalID))
+	// 中文说明：terminal id 先规整成人可读前缀，再加稳定 hash，避免不同 id
+	// sanitize 后撞到同一个 compact 文件。
+	return fmt.Sprintf("%s-%016x.compact", daemonHeapProfileReason(terminalID), hash.Sum64())
 }
 
 func v3PingCommand(socket *string, logFile *string) *cobra.Command {
