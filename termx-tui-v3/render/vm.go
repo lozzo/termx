@@ -571,8 +571,9 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 	panels := make([]PanelVM, len(tab.Panes))
 	for i, pane := range tab.Panes {
 		active := pane.ID == shell.ActivePaneID
-		content := projector.contentForPane(root, pane, activeContent, active)
-		if active && !floatingOwnsFocus && !copyModeBelongsToPane(root, pane.ID) {
+		focused := active && !floatingOwnsFocus
+		content := projector.contentForPane(root, pane, activeContent, focused)
+		if focused && !copyModeBelongsToPane(root, pane.ID) {
 			content = activeContent
 		}
 		content = contentWithPaneLayout(root, pane, content)
@@ -580,9 +581,9 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 			ID:           pane.ID,
 			Title:        activePaneTitle(pane),
 			Presentation: renderPanelPresentation(shell.PanelPresentation),
-			Active:       active && !floatingOwnsFocus,
+			Active:       focused,
 			Content:      content,
-			Chrome:       buildPanelChromeVM(root, pane, active && !floatingOwnsFocus, content),
+			Chrome:       buildPanelChromeVM(root, pane, focused, content),
 		}
 	}
 	return panels
@@ -590,16 +591,18 @@ func (projector ShellProjector) buildPanelVMs(shell state.ShellStore, activeCont
 
 func (projector ShellProjector) buildZoomedPanelVMs(shell state.ShellStore, activeContent ContentVM, root state.Root) []PanelVM {
 	shell = shell.ReadonlyDefaults()
+	floatingOwnsFocus := shell.ActiveFloatingID() != ""
 	for _, pane := range activeTab(shell).Panes {
 		if pane.ID == shell.ZoomedPaneID {
-			content := projector.contentForPane(root, pane, activeContent, pane.ID == shell.ActivePaneID)
+			focused := pane.ID == shell.ActivePaneID && !floatingOwnsFocus
+			content := projector.contentForPane(root, pane, activeContent, focused)
 			return []PanelVM{{
 				ID:           pane.ID,
 				Title:        activePaneTitle(pane),
 				Presentation: renderPanelPresentation(shell.PanelPresentation),
-				Active:       true,
+				Active:       focused,
 				Content:      content,
-				Chrome:       buildPanelChromeVM(root, pane, true, content),
+				Chrome:       buildPanelChromeVM(root, pane, focused, content),
 			}}
 		}
 	}

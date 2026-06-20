@@ -232,6 +232,9 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 				return root, nil
 			}
 			next, effects := reduceCopyModeIntent(root, intent, deps)
+			if copyModeEnterIntent(intent) {
+				activeViewID = copyHistoryWorkingViewID(next)
+			}
 			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeEnterViewMsg:
 			next, effects := beginCopyModeLatestForView(root, deps, msg.Binding, msg.Cols, msg.Rows)

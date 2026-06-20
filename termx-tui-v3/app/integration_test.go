@@ -1141,6 +1141,81 @@ func TestCopyModeEnteringFloatingWithBoundViewIDKeepsPaneUntilEsc(t *testing.T) 
 	}
 }
 
+func TestCopyModeCtrlVEnteringSecondViewDoesNotOverwriteFirstSession(t *testing.T) {
+	paneView := state.TerminalPaneViewID(state.DefaultPaneID)
+	floatingView := "termx-floating-view-main"
+	shell := state.DefaultShell()
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 4, Y: 2, W: 40, H: 12},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	paneHistory := state.HistoryStore{
+		PaneID:      state.DefaultPaneID,
+		ViewID:      paneView,
+		TerminalID:  "term-pane",
+		Token:       "tok-pane",
+		Cols:        78,
+		SourceLines: historyLogicalLinesForApp([]state.HistoryRow{{Text: "pane-history", LineID: 1}}),
+		Rows:        []state.HistoryRow{{Text: "pane-history", LineID: 1}},
+	}
+	paneCopy := state.CopyModeStore{
+		Active:     true,
+		PaneID:     state.DefaultPaneID,
+		ViewID:     paneView,
+		TerminalID: "term-pane",
+		BoundToken: "tok-pane",
+		BoundCols:  78,
+		ViewRows:   10,
+	}
+	root := state.Root{
+		Shell: shell,
+		Surface: state.TerminalSurfaceStore{Surfaces: map[string]state.LiveSurfaceSnapshot{
+			"term-float": {TerminalID: "term-float", Cols: 40, Rows: 10, Revision: 7},
+		}},
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 4, 78, 20, state.TerminalResizeRoleOwner, "surface-pane", paneView, true)).
+			BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 5, 40, 10, state.TerminalResizeRoleOwner, "surface-float", floatingView, true)),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 24},
+	}
+	root = root.WithCopyHistorySession(paneView, paneHistory, paneCopy)
+	root.History, root.CopyMode = root.CopyHistorySessionForView(paneView)
+
+	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+		state.HistoryWindowReplace,
+		"term-float",
+		"tok-float",
+		40,
+		9,
+		[]state.HistoryRow{{Text: "float-history", LineID: 10}},
+	)}}}
+	reducer := NewCopyModeReducer(CopyModeDeps{Core: core, Rows: 10})
+	next, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x16", Ctrl: true}})
+	for _, effect := range effects {
+		fn, ok := effect.(FuncEffect)
+		if !ok {
+			continue
+		}
+		msg := fn.Run(context.Background())
+		next, _ = reducer(next, msg)
+	}
+
+	_, keptPaneCopy := next.CopyHistorySessionForView(paneView)
+	_, enteredFloatCopy := next.CopyHistorySessionForView(floatingView)
+	if !keptPaneCopy.Active || keptPaneCopy.BoundToken != "tok-pane" || keptPaneCopy.ViewID != paneView {
+		t.Fatalf("Ctrl-V in floating must keep existing pane copy session, got %#v", keptPaneCopy)
+	}
+	if !enteredFloatCopy.Active || enteredFloatCopy.BoundToken != "tok-float" || enteredFloatCopy.ViewID != floatingView {
+		t.Fatalf("Ctrl-V in floating should enter floating copy session, got %#v", enteredFloatCopy)
+	}
+}
+
 func TestCopyModeMouseWheelRawSeqScrollsDown(t *testing.T) {
 	latestRows := make([]state.HistoryRow, 0, 40)
 	for i := 1; i <= 40; i++ {
