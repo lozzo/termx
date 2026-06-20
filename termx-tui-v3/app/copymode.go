@@ -318,7 +318,7 @@ func copyModeMouseSelectTargetMatches(root state.Root, paneID string) bool {
 		return true
 	}
 	copyMode := root.CopyMode
-	if copyMode.PaneID == paneID || copyMode.ViewID == state.TerminalFloatingViewID(paneID) {
+	if copyMode.PaneID == paneID || copyMode.ViewID == root.TerminalViews.FloatingViewID(paneID) {
 		return true
 	}
 	for _, binding := range root.TerminalViews.Bindings() {

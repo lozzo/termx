@@ -1286,11 +1286,11 @@ func (runtime *AppRuntime) copyModeMouseSelectAllowed(region render.HitRegion) b
 		return true
 	}
 	if region.Floating {
-		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok && copyMode.ViewID == state.TerminalFloatingViewID(floatingID) {
+		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok && copyMode.ViewID == runtime.state.TerminalViews.FloatingViewID(floatingID) {
 			return true
 		}
 	}
-	if copyMode.ViewID == state.TerminalFloatingViewID(region.PaneID) {
+	if copyMode.ViewID == runtime.state.TerminalViews.FloatingViewID(region.PaneID) {
 		return true
 	}
 	shell := runtime.state.Shell.EnsureDefaults()
@@ -1335,11 +1335,11 @@ func (runtime *AppRuntime) copyHistoryViewIDForRegion(region render.HitRegion) s
 	}
 	if region.Floating {
 		if floatingID, ok := runtime.floatingIDForPaneID(region.PaneID); ok {
-			return state.TerminalFloatingViewID(floatingID)
+			return runtime.state.TerminalViews.FloatingViewID(floatingID)
 		}
 	}
 	if region.PaneID != "" {
-		return state.TerminalPaneViewID(region.PaneID)
+		return runtime.state.TerminalViews.PaneViewID(region.PaneID)
 	}
 	return ""
 }

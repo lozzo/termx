@@ -265,6 +265,16 @@ func (store TerminalViewStore) PaneBinding(paneID string) (TerminalViewBinding, 
 	return binding, ok
 }
 
+func (store TerminalViewStore) PaneViewID(paneID string) string {
+	if paneID == "" {
+		return ""
+	}
+	if viewID := store.PaneViews[paneID]; viewID != "" {
+		return viewID
+	}
+	return TerminalPaneViewID(paneID)
+}
+
 func (store TerminalViewStore) FloatingBinding(floatingID string) (TerminalViewBinding, bool) {
 	viewID := store.FloatingViews[floatingID]
 	if viewID == "" {
@@ -272,6 +282,16 @@ func (store TerminalViewStore) FloatingBinding(floatingID string) (TerminalViewB
 	}
 	binding, ok := store.Views[viewID]
 	return binding, ok
+}
+
+func (store TerminalViewStore) FloatingViewID(floatingID string) string {
+	if floatingID == "" {
+		return ""
+	}
+	if viewID := store.FloatingViews[floatingID]; viewID != "" {
+		return viewID
+	}
+	return TerminalFloatingViewID(floatingID)
 }
 
 func (store TerminalViewStore) BindingsForTerminal(terminalID string) []TerminalViewBinding {

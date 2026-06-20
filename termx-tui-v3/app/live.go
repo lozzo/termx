@@ -375,7 +375,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 		cfg.SurfaceID = "termx-tui-v3"
 	}
 	if cfg.ViewID == "" {
-		cfg.ViewID = state.TerminalPaneViewID(root.Shell.EnsureDefaults().ActivePaneID)
+		cfg.ViewID = liveAttachDefaultViewID(root)
 	}
 	if cfg.ResizePolicy == "" {
 		cfg.ResizePolicy = state.TerminalResizeRoleOwner
@@ -437,7 +437,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	viewID := result.ViewID
 	activePaneID := root.Shell.EnsureDefaults().ActivePaneID
 	if viewID == "" {
-		viewID = state.TerminalPaneViewID(activePaneID)
+		viewID = liveAttachDefaultViewID(root)
 	} else if !liveAttachViewStillPresent(root, viewID) {
 		// 外部 reload/restore 替换 pane/view 结构后，旧 view 的迟到 attach result
 		// 不能回退绑定到当前 pane/floating；但首次 attach 时 view binding 可能还没建，
@@ -552,6 +552,13 @@ func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.Termin
 	)
 }
 
+func liveAttachDefaultViewID(root state.Root) string {
+	shell := root.Shell.EnsureDefaults()
+	// 中文说明：无显式 ViewID 的 root attach 是默认 tiled 入口语义；
+	// floating attach 必须由调用方传入 floating binding 的 ViewID。
+	return root.TerminalViews.PaneViewID(shell.ActivePaneID)
+}
+
 func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 	if viewID == "" {
 		return false
@@ -566,14 +573,14 @@ func liveAttachViewStillPresent(root state.Root, viewID string) bool {
 	shell := root.Shell.EnsureDefaults()
 	for _, tab := range shell.Workspace.Tabs {
 		for _, pane := range tab.Panes {
-			if state.TerminalPaneViewID(pane.ID) == viewID {
+			if liveAttachPaneViewID(root, pane.ID) == viewID {
 				return true
 			}
 		}
 	}
 	for _, tab := range shell.Workspace.Tabs {
 		for _, floating := range tab.Floatings {
-			if state.TerminalFloatingViewID(floating.ID) == viewID {
+			if liveAttachFloatingViewID(root, floating.ID) == viewID {
 				return true
 			}
 		}
@@ -596,19 +603,27 @@ func liveAttachTargetForViewID(root state.Root, viewID string) (liveAttachViewTa
 	shell := root.Shell.EnsureDefaults()
 	for _, tab := range shell.Workspace.Tabs {
 		for _, pane := range tab.Panes {
-			if state.TerminalPaneViewID(pane.ID) == viewID {
+			if liveAttachPaneViewID(root, pane.ID) == viewID {
 				return liveAttachViewTarget{PaneID: pane.ID}, true
 			}
 		}
 	}
 	for _, tab := range shell.Workspace.Tabs {
 		for _, floating := range tab.Floatings {
-			if state.TerminalFloatingViewID(floating.ID) == viewID {
+			if liveAttachFloatingViewID(root, floating.ID) == viewID {
 				return liveAttachViewTarget{PaneID: floating.Pane.ID, FloatingID: floating.ID}, true
 			}
 		}
 	}
 	return liveAttachViewTarget{}, false
+}
+
+func liveAttachPaneViewID(root state.Root, paneID string) string {
+	return root.TerminalViews.PaneViewID(paneID)
+}
+
+func liveAttachFloatingViewID(root state.Root, floatingID string) string {
+	return root.TerminalViews.FloatingViewID(floatingID)
 }
 
 func invalidateCopyModeForTerminalRebind(root state.Root, paneID string, viewID string, terminalID string) state.Root {

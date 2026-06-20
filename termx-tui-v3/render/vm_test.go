@@ -154,6 +154,78 @@ func TestRenderVMBuilderUsesBoundPaneViewIDForCopyHistory(t *testing.T) {
 	}
 }
 
+func TestRenderVMBuilderUsesBoundFloatingViewIDForCopyHistory(t *testing.T) {
+	viewID := "termx-floating-view-main"
+	shell := state.DefaultShell()
+	var result state.FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-1",
+		Title:    "float",
+		Pane:     state.PaneState{ID: "float-pane", Title: "float", Kind: state.PaneTerminalLive, TerminalID: "term-float"},
+		Rect:     state.FloatingRect{X: 4, Y: 2, W: 40, H: 12},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	root := state.Root{
+		Shell: shell,
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-pane",
+			Lines:      []string{"pane live tail"},
+		},
+		HistoryByView: map[string]state.HistoryStore{
+			viewID: {
+				PaneID:     "float-pane",
+				ViewID:     viewID,
+				TerminalID: "term-float",
+				Token:      "tok-float",
+				Cols:       40,
+				Rows:       []state.HistoryRow{{Text: "floating bound oldest", LineID: 1}},
+			},
+			state.TerminalPaneViewID(state.DefaultPaneID): {
+				PaneID:     state.DefaultPaneID,
+				ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID: "term-pane",
+				Token:      "tok-pane",
+				Cols:       80,
+				Rows:       []state.HistoryRow{{Text: "tiled history", LineID: 2}},
+			},
+		},
+		CopyModeByView: map[string]state.CopyModeStore{
+			viewID: {
+				Active:     true,
+				PaneID:     "float-pane",
+				ViewID:     viewID,
+				TerminalID: "term-float",
+				BoundToken: "tok-float",
+				BoundCols:  40,
+			},
+			state.TerminalPaneViewID(state.DefaultPaneID): {
+				Active:     true,
+				PaneID:     state.DefaultPaneID,
+				ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+				TerminalID: "term-pane",
+				BoundToken: "tok-pane",
+				BoundCols:  80,
+			},
+		},
+		TerminalViews: state.TerminalViewStore{}.
+			BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 7, 80, 10, state.TerminalResizeRoleOwner, "surface-pane", state.TerminalPaneViewID(state.DefaultPaneID), true)).
+			BindFloating(state.NewFloatingTerminalView("floating-1", "float-pane", "term-float", 8, 40, 10, state.TerminalResizeRoleFollower, "surface-float", viewID, true)),
+	}
+
+	vm := NewRenderVMBuilder().Build(root)
+	floating := floatingByID(vm.Shell.Layout.Floating, "floating-1")
+	panel := panelByID(vm.Shell.Layout.Panels, state.DefaultPaneID)
+	if floating == nil || floating.Content.Kind != ContentCopyHistory || len(floating.Content.Lines) == 0 || floating.Content.Lines[0].PlainString() != "floating bound oldest" {
+		t.Fatalf("floating copy history must use bound TerminalView ID, floating=%#v", floating)
+	}
+	if panel == nil || panel.Content.Kind != ContentCopyHistory || len(panel.Content.Lines) == 0 || panel.Content.Lines[0].PlainString() != "tiled history" {
+		t.Fatalf("tiled panel must keep its own copy history, panel=%#v", panel)
+	}
+}
+
 func TestRenderVMBuilderBuildsStructuredChromeSlots(t *testing.T) {
 	root := state.Root{
 		Shell: state.ShellStore{
@@ -549,6 +621,15 @@ func panelByID(panels []PanelVM, id string) *PanelVM {
 	for index := range panels {
 		if panels[index].ID == id {
 			return &panels[index]
+		}
+	}
+	return nil
+}
+
+func floatingByID(floatings []FloatingVM, id string) *FloatingVM {
+	for index := range floatings {
+		if floatings[index].ID == id {
+			return &floatings[index]
 		}
 	}
 	return nil

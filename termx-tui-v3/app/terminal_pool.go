@@ -685,7 +685,7 @@ func terminalPoolTargetFromRequest(root state.Root, paneID string, floatingID st
 		if floating, ok := shell.FloatingByID(floatingID); ok {
 			paneID = floating.Pane.ID
 		}
-		return terminalPoolTarget{PaneID: paneID, FloatingID: floatingID, ViewID: state.TerminalFloatingViewID(floatingID)}, true
+		return terminalPoolTarget{PaneID: paneID, FloatingID: floatingID, ViewID: root.TerminalViews.FloatingViewID(floatingID)}, true
 	}
 	if paneID == "" {
 		paneID = shell.ActivePaneID
@@ -693,7 +693,7 @@ func terminalPoolTargetFromRequest(root state.Root, paneID string, floatingID st
 	if paneID == "" {
 		return terminalPoolTarget{}, false
 	}
-	return terminalPoolTarget{PaneID: paneID, ViewID: state.TerminalPaneViewID(paneID)}, true
+	return terminalPoolTarget{PaneID: paneID, ViewID: root.TerminalViews.PaneViewID(paneID)}, true
 }
 
 func activeTerminalSizeLockTarget(root state.Root) (terminalSizeLockTarget, bool) {

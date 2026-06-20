@@ -1376,12 +1376,13 @@ func terminalPoolTargetForContentAction(root state.Root, msg ShellContentActionM
 	if msg.Floating {
 		if floatingID := floatingTargetIDForContentAction(root, msg); floatingID != "" {
 			if target, ok := terminalPoolTargetForID(root.Shell.EnsureDefaults(), floatingID); ok {
+				target.ViewID = root.TerminalViews.FloatingViewID(floatingID)
 				return target
 			}
 		}
 	}
 	if msg.PaneID != "" {
-		return terminalPoolTarget{PaneID: msg.PaneID, ViewID: state.TerminalPaneViewID(msg.PaneID)}
+		return terminalPoolTarget{PaneID: msg.PaneID, ViewID: root.TerminalViews.PaneViewID(msg.PaneID)}
 	}
 	return terminalPoolTargetForActive(root)
 }
@@ -1390,10 +1391,11 @@ func terminalPoolTargetForActive(root state.Root) terminalPoolTarget {
 	shell := root.Shell.EnsureDefaults()
 	if activeFloatingID := shell.ActiveFloatingID(); activeFloatingID != "" {
 		if target, ok := terminalPoolTargetForID(shell, activeFloatingID); ok {
+			target.ViewID = root.TerminalViews.FloatingViewID(activeFloatingID)
 			return target
 		}
 	}
-	return terminalPoolTarget{PaneID: shell.ActivePaneID, ViewID: state.TerminalPaneViewID(shell.ActivePaneID)}
+	return terminalPoolTarget{PaneID: shell.ActivePaneID, ViewID: root.TerminalViews.PaneViewID(shell.ActivePaneID)}
 }
 
 func terminalPoolTargetForID(shell state.ShellStore, id string) (terminalPoolTarget, bool) {
@@ -1480,8 +1482,8 @@ func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (stat
 	root.Shell = addFloatingCommandToast(nextShell, command, result)
 	effects := []Effect{}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
-		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
 		root = invalidateCopyModeForClosedFloating(root, result.ID)
+		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
 	}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandDeactivate {
 		root = invalidateCopyModeForInactiveView(root)
@@ -1563,15 +1565,15 @@ func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneComm
 		}
 		root.TerminalViews = root.TerminalViews.BindPane(binding).TransferPaneResizeOwner(command.NewPane.ID)
 	case state.PaneCommandClose:
-		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
 		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
+		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
 	case state.PaneCommandCloseAndKill:
+		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 		if hasTargetPane && targetPane.TerminalID != "" {
 			root.TerminalViews = root.TerminalViews.RemoveTerminal(targetPane.TerminalID)
 		} else {
 			root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
 		}
-		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 	}
 	return root
 }
@@ -1581,19 +1583,19 @@ func updateTerminalViewsAfterWorkbenchCommand(root state.Root, previousShell sta
 	case state.WorkbenchCommandPaneSplit:
 		root = bindWorkbenchSplitTerminalView(root, previousShell, command, result)
 	case state.WorkbenchCommandPaneDetach:
-		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 		root = invalidateCopyModeForClosedPane(root, result.ID)
+		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 	case state.WorkbenchCommandPaneClose:
-		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 		root = invalidateCopyModeForClosedPane(root, result.ID)
+		root.TerminalViews = root.TerminalViews.DetachPane(result.ID)
 	case state.WorkbenchCommandPaneKill, state.WorkbenchCommandTabKill:
 		for _, terminalID := range result.Killed {
 			root.TerminalViews = root.TerminalViews.RemoveTerminal(terminalID)
 		}
 	case state.WorkbenchCommandTabClose:
 		for _, pane := range panesForWorkbenchTarget(previousShell, command.TargetID) {
-			root.TerminalViews = root.TerminalViews.DetachPane(pane.ID)
 			root = invalidateCopyModeForClosedPane(root, pane.ID)
+			root.TerminalViews = root.TerminalViews.DetachPane(pane.ID)
 		}
 	}
 	return root
@@ -1603,14 +1605,14 @@ func invalidateCopyModeForClosedPane(root state.Root, paneID string) state.Root 
 	if paneID == "" {
 		return root
 	}
-	return root.WithoutCopyHistorySession(state.TerminalPaneViewID(paneID))
+	return root.WithoutCopyHistorySession(root.TerminalViews.PaneViewID(paneID))
 }
 
 func invalidateCopyModeForClosedFloating(root state.Root, floatingID string) state.Root {
 	if floatingID == "" {
 		return root
 	}
-	return root.WithoutCopyHistorySession(state.TerminalFloatingViewID(floatingID))
+	return root.WithoutCopyHistorySession(root.TerminalViews.FloatingViewID(floatingID))
 }
 
 func invalidateCopyModeForInactiveView(root state.Root) state.Root {
