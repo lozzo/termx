@@ -49,7 +49,7 @@ func floatingOverviewTerminalID(root Root, floating FloatingPaneState) string {
 }
 
 func floatingOverviewTerminalProjection(root Root, floating FloatingPaneState, terminalID string) (string, string, int, int) {
-	title := floating.Title
+	title := ""
 	stateText := string(floating.Pane.Kind)
 	cols, rows := floating.Rect.W-2, floating.Rect.H-2
 	if terminalID != "" {
@@ -85,8 +85,20 @@ func floatingOverviewTerminalProjection(root Root, floating FloatingPaneState, t
 			}
 		}
 	}
-	if title == "" {
+	if terminalID == "" {
+		title = "unconnected"
+		if floating.Pane.Kind == PaneEmpty || stateText == "" {
+			stateText = "empty"
+		}
+	}
+	if title == "" && terminalID == "" {
+		title = floating.Title
+	}
+	if title == "" && terminalID == "" {
 		title = floating.Pane.Title
+	}
+	if title == "" {
+		title = terminalID
 	}
 	if title == "" {
 		title = floating.ID

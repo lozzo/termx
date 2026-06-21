@@ -43,7 +43,7 @@ func overlayTitle(kind OverlayKind) string {
 		return "Workbench Navigator"
 	}
 	if kind == OverlayFloatingOverview {
-		return ""
+		return "Floating Windows"
 	}
 	title := strings.TrimSpace(string(kind))
 	if title == "" {

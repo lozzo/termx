@@ -17,6 +17,11 @@ const emptyPaneActionCount = 4
 
 const exitedPaneActionCount = 2
 
+const floatingOverviewTitleWidth = 24
+const floatingOverviewStateWidth = 12
+const floatingOverviewSizeWidth = 8
+const floatingOverviewIDWidth = 18
+
 const defaultWorkbenchNavigatorTreeWidth = 36
 const workbenchNavigatorTreeWidthBoost = 10
 
@@ -1522,31 +1527,34 @@ func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
 		styledCell("●", terminalPoolStateStyle(stateText)),
 		pickerSpace(" "),
 	}
-	cells = append(cells, terminalPickerColumnCells(title, "", textStyle, 24)...)
+	cells = append(cells, terminalPickerColumnCells(title, "", textStyle, floatingOverviewTitleWidth)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells, terminalPickerColumnCells(stateText, "", terminalPoolStateStyle(stateText), 10)...)
+	cells = append(cells, terminalPickerColumnCells(stateText, "", terminalPoolStateStyle(stateText), floatingOverviewStateWidth)...)
 	cells = append(cells, pickerSpace("  "))
-	cells = append(cells, terminalPickerColumnCells(sizeText, "", textStyle, 8)...)
+	cells = append(cells, terminalPickerColumnCells(sizeText, "", textStyle, floatingOverviewSizeWidth)...)
 	cells = append(cells, pickerSpace("  "))
 	id := row.TerminalID
 	if id == "" {
 		id = row.FloatingID
 	}
-	cells = append(cells, terminalPickerColumnCells(id, "", StylePickerMuted, 18)...)
+	cells = append(cells, terminalPickerColumnCells(id, "", StylePickerMuted, floatingOverviewIDWidth)...)
 	return Line{Cells: cells}
 }
 
 func floatingOverviewHeaderLine() Line {
-	return Line{Cells: []Cell{
-		styledCell("   ", StylePickerMuted),
-		styledCell("terminal", StylePickerMuted),
-		pickerSpace(strings.Repeat(" ", 16)),
-		styledCell("state", StylePickerMuted),
-		pickerSpace(strings.Repeat(" ", 5)),
-		styledCell("size", StylePickerMuted),
-		pickerSpace(strings.Repeat(" ", 4)),
-		styledCell("floating", StylePickerMuted),
-	}}
+	cells := []Cell{
+		styledCell("  ", StylePickerMuted),
+		styledCell(" ", StylePickerMuted),
+		pickerSpace(" "),
+	}
+	cells = append(cells, terminalPickerColumnCells("terminal", "", StylePickerMuted, floatingOverviewTitleWidth)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, terminalPickerColumnCells("state", "", StylePickerMuted, floatingOverviewStateWidth)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, terminalPickerColumnCells("size", "", StylePickerMuted, floatingOverviewSizeWidth)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, terminalPickerColumnCells("floating", "", StylePickerMuted, floatingOverviewIDWidth)...)
+	return Line{Cells: cells}
 }
 
 func floatingOverviewStateLabel(row state.FloatingOverviewItem) string {

@@ -2041,10 +2041,10 @@ func TestInteractiveRuntimeFloatingOverviewKeyboardAndContentActions(t *testing.
 		t.Fatalf("enter open should raise selected floating, shell=%#v", shell)
 	}
 	frame := lastRuntimeFrame(t, host)
-	if frameContains(frame, "Floating Windows") || frameContains(frame, "● open") || frameContains(frame, "Restore, collapse") {
+	if frameContains(frame, "● open") || frameContains(frame, "Restore, collapse") {
 		t.Fatalf("floating overview should not render old title/status/help copy, got %#v", frame.Lines)
 	}
-	if !frameContains(frame, "terminal") || !frameContains(frame, "logs") || !frameContains(frame, "shell") {
+	if !frameContains(frame, "Floating Windows") || !frameContains(frame, "terminal") || !frameContains(frame, "unconnected") || !frameContains(frame, "empty") {
 		t.Fatalf("expected floating overview frame, got %#v", frame.Lines)
 	}
 

@@ -1792,6 +1792,13 @@ func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
 	if !lineHasStyledANSICell(content.Lines[1], "▸ ", StylePickerAccent, ANSICellStyle{}) {
 		t.Fatalf("selected floating row should use picker marker, got %#v", content.Lines[1])
 	}
+	header := content.Lines[0].PlainString()
+	row := content.Lines[1].PlainString()
+	for _, pair := range [][2]string{{"state", "running"}, {"size", "48x14"}, {"floating", "term-logs"}} {
+		if displayColumnOf(header, pair[0]) != displayColumnOf(row, pair[1]) {
+			t.Fatalf("floating overview column %q should align with row value %q, header=%q row=%q", pair[0], pair[1], header, row)
+		}
+	}
 	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "1-9", "SUMMON", ActionFloatingSummon.String()) {
 		t.Fatalf("floating overview footer should expose summon action, got %#v", vm.Shell.Footer)
 	}
@@ -1800,6 +1807,30 @@ func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
 	}
 	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "c", "COLLAPSE ALL", ActionFloatingCollapseAll.String()) {
 		t.Fatalf("floating overview footer should expose collapse-all action, got %#v", vm.Shell.Footer)
+	}
+}
+
+func TestRenderVMBuilderProjectsUnconnectedFloatingOverviewRow(t *testing.T) {
+	shell := state.DefaultShell()
+	shell, result := shell.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "floating-empty",
+		Title:    "floating",
+		Pane:     state.PaneState{ID: "floating-empty-pane", Title: "floating", Kind: state.PaneEmpty},
+		Rect:     state.FloatingRect{X: 4, Y: 3, W: 32, H: 9},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	shell = shell.OpenFloatingOverview()
+
+	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	content := vm.Shell.Overlay.Content
+	if len(content.Lines) < 2 ||
+		!strings.Contains(content.Lines[1].PlainString(), "unconnected") ||
+		!strings.Contains(content.Lines[1].PlainString(), "empty") ||
+		strings.Contains(content.Lines[1].PlainString(), " floating  empty") {
+		t.Fatalf("unconnected floating row should show connection state, got %#v", content.Lines)
 	}
 }
 
@@ -3049,6 +3080,14 @@ func lineANSIStyleDisplayWidth(line Line, style ANSICellStyle) int {
 		}
 	}
 	return width
+}
+
+func displayColumnOf(line string, needle string) int {
+	index := strings.Index(line, needle)
+	if index < 0 {
+		return -1
+	}
+	return DisplayWidth(line[:index])
 }
 
 func lineHasLinkCell(line Line, text string, linkURL string, linkParams string) bool {
