@@ -27,7 +27,7 @@
 当前阶段只迁 remote 的后端控制链路：
 
 1. 明确 remote 现有 method、service、storage、transport 和 CLI fallback 边界。
-2. 把 remote/protocol contract 迁到 core-v2 domain 结构，而不是为旧 core 保留兼容层。
+2. 把 `termx-proto` wire contract 与 `internal/protocol` Go contract 迁到 core-v2 domain 结构，而不是为旧 core 保留兼容层。
 3. 在 core-v2 补齐 remote 所需的 typed protocol、transport scope、terminal create、storage/events 和 service hook。
 4. 用 core-v2 adapter 接上 `termx-remote` public service，而不是把默认入口退回旧 core。
 5. 分步迁移 `remote.status`、`remote.local.*`、`remote.pair.start` 和 remote terminal/storage routing。
@@ -48,6 +48,7 @@
 - tui-v3：`termx-tui-v3/docs/architecture.md`
 - CLI 切换审计：`termx-cli/docs/v2-v3-switch-audit.md`
 - remote public service：`termx-remote/`
+- wire protocol contract：`termx-proto/`
 - protocol contract：`internal/protocol/`
 
 如果实现发现设计文档过期，必须和当前切片一起更新；不要代码先跑偏，文档以后再补。
@@ -62,6 +63,7 @@
 - `termx-cli/docs/v2-v3-switch-audit.md`
 - `termx-core-v2/`
 - `termx-remote/`
+- `termx-proto/`
 - `internal/protocol/`
 
 ### 3.2 受限联动范围
@@ -70,7 +72,6 @@
 
 - `termx-cli/cmd/termx/` 内非 `remote_*.go` 的必要 glue 或测试
 - `termx-tui-v3/` 中受 protocol/service adapter 影响的 smoke 或 harness
-- `termx-proto/`，仅当 remote protocol payload 必须调整
 - `termx-shared/`，仅当 transport/session contract 必须调整
 - `termx-testkit/`
 - `scripts/`
@@ -108,6 +109,7 @@
 - 旧 `termx-core/` 和 `tuiv2/` 只能通过 `termx legacy ...` 或当前尚未迁完的 remote fallback 隔离文件间接存在。
 - 默认入口依赖守卫不能放松，不能新增默认源文件对旧 core/TUI 的 import。
 - remote/protocol 迁移后不得保留旧 core wire format、storage format、method adapter、双 handler、fallback 读写或兼容 shim。
+- 跨进程、daemon client 或 remote service 需要共享的 payload 字段必须先进入 `termx-proto/wirepb/terminal.proto`，再由 `internal/protocol` 映射为 core-v2 Go domain；不能只在 CLI adapter 或反射 helper 里临时承接。
 
 ### 4.2 remote 不能拥有第二份 terminal truth
 
@@ -120,6 +122,7 @@
 - 先审计 method/contract，再接 core-v2 extension hook，再接 service adapter，再启用 CLI flow。
 - remote management request 必须通过清晰 adapter 路由到 core-v2 public/protocol 方法。
 - 新 protocol structure 必须直接表达 core-v2 的 terminal、attachment、history、storage 和 event 模型；不得先模拟旧 core 协议再翻译到 core-v2。
+- `.proto` 是 wire contract，不是旧 core contract；字段命名、optional/repeated 语义、时间单位、枚举和 scope 必须向 core-v2 domain 对齐。
 - 不得直接读写 TUI reducer state、renderer、TerminalHost 或旧 core runtime。
 - 不得用 storage scrub、定时刷新、重复 attach、局部 fallback 分支掩盖状态错乱。
 - 禁止补丁式迁移：不能为了让某个 remote 命令暂时可用而叠加临时 if、重复同步、隐式状态修正或旧路径兜底；每个切片必须先明确 domain owner、truth source、消息链路和失败条件，再用契约测试或 harness 锁住语义。
@@ -155,7 +158,7 @@
 - `internal/protocol` 已有 remote wire protobuf，但当前用反射/getter/wirepb 指针承接 remote params/results；迁移目标是新增显式 `protocol.Remote*` domain structs，移除反射和 legacy getter 兼容。
 - `termx-core-v2` 已有 storage/events 和 protocol dispatch，但没有 remote service hook，也没有 public `ServeTransport/ServeScopedTransport`；remote WebRTC datachannel 需要 core-v2 自己的 transport scope API。
 - `termx-core-v2` 的 `ProcessSpec` 当前只包含 `TerminalID/Command/Size`，而 `protocol.CreateParams` 和 remote terminal management 会传 `Dir/Env/Scrollback*`；这些字段必须进入 core-v2 create/process contract，不能在 remote adapter 里丢弃。
-- `termx-proto/wirepb/terminal.proto` 已有 remote messages；只有 contract 字段必须变化时才动 proto。当前环境缺 `protoc`/`protoc-gen-go`，需要生成 proto 时再视为阻塞。
+- `termx-proto/wirepb/terminal.proto` 是 remote/core-v2 跨进程 wire contract 的入口。当前已包含 `CreateParams` 的 `dir/env/scrollback_*` 和 `RemoteStatus/RemotePairStart*/RemoteLocal*`，但后续必须先审计这些字段是否完整表达 core-v2 domain；需要共享的新字段必须写入 `.proto` 并同步生成 `terminal.pb.go`，不能只补在 Go 侧反射/adapter。
 
 ### 5.2 任务队列
 
@@ -170,19 +173,20 @@
 | R173B. SK 禁止补丁式实现准入 | 完成 | `AGENTS.md`、`workflow.md` | 已把禁止补丁式实现写成硬语义：先定位 truth/source/message chain，再按模型和 harness 实现 |
 | R173C. SK core-v2 protocol-only 准入 | 完成 | `AGENTS.md`、`workflow.md` | 已明确 remote/protocol 迁移不对旧 core 做任何兼容，协议结构必须迁到 core-v2 domain contract |
 | R174. SK remote 迁移代码扫描与队列设计 | 完成 | `workflow.md`、只读扫描 `termx-cli/`、`termx-remote/`、`termx-core-v2/`、`internal/protocol/`、`termx-proto/`、旧 `termx-core/` | 已定位 CLI legacy daemon 入口、旧 core adapter、remote service 边界、core-v2 缺口和后续切片顺序 |
-| R175. SK remote protocol typed contract | 待开始 | `internal/protocol/`、按需 `termx-proto/` | 新增显式 `protocol.RemoteStatus`、`RemotePairStartParams/Result`、`RemoteLocalEnableParams`、`RemoteLocalStatus`；`Encode/DecodeMethod*` 不再用反射/getter/wirepb 指针作为 remote domain；补 protocol tests |
-| R176. SK core-v2 create/process remote contract | 待开始 | `termx-core-v2/`、`internal/protocol/` | 让 core-v2 terminal create/process contract 承载 `Dir`、`Env`、必要 CWD metadata 和 remote create 需要的 scrollback 参数；不得在 remote adapter 里静默丢字段 |
-| R177. SK core-v2 transport scope API | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-shared/` 按需 | 给 core-v2 提供 public `ServeTransport` / `ServeScopedTransport` / `TransportScope` 能力，供 remote WebRTC datachannel 接入；scope 只能过滤/约束 protocol session，不能创建第二份 terminal truth |
-| R178. SK core-v2 remote method hook | 待开始 | `termx-core-v2/`、`internal/protocol/` | 在 core-v2 protocol dispatch 中接入 typed remote service hook，用 fake service 证明 `remote.status`、`remote.pair.start`、`remote.local.*` 进入 core-v2；不照搬旧 `ProtocolMethodHandler` wire bytes contract |
-| R179. SK core-v2 remote daemon adapter | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-core-v2/`、`termx-remote/` | 用 core-v2 server/domain 实现 `termx-remote.Service` 需要的 Daemon/StorageDaemon/ScopedDaemon adapter；删除或改写旧 `remote_runtime.go` 对 `termx-core` 的 import |
-| R180. SK core-v2 daemon remote lifecycle | 待开始 | `termx-cli/cmd/termx/`、`termx-core-v2/`、`termx-remote/` | 默认 `termx daemon` 装配 remote config/service/start/close/local auto-enable；remote runtime 生命周期跟随 core-v2 daemon，不回退 legacy daemon |
-| R181. SK remote client switch to core-v2 daemon | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-cli/cmd/termx/*test.go` | `termx remote status/info/open/enable/disable/pair` 使用 `resolveV3Socket` + `dialOrStartV3Client`，不再调用 `dialOrStartClient` 或启动 legacy daemon |
-| R182. SK remote config path 脱离 tuiv2 | 待开始 | `termx-cli/cmd/termx/remote_config.go`、按需共享 config helper | 移除 remote config 对 `tuiv2/shared` 的依赖；默认 config path 与当前 v3 config policy 明确，remote 文件不再 import 旧 TUI |
-| R183. SK remote status/local/pair core-v2 smoke | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-remote/` | 补 CLI/core-v2 smoke：`remote.status`、`remote.local.enable/status/disable`、`remote.pair.start` 都经过 core-v2 daemon 和 `termx-remote.Service`，不经过旧 core |
-| R184. SK remote terminal management/storage/events routing | 待开始 | `termx-remote/`、`termx-core-v2/`、`termx-cli/`、`termx-testkit/` 按需 | 验证 remote runtime API 的 terminal list/create/get_directory/set_metadata/restart/remove、storage get/put/delete/list、events subscription 都路由到 core-v2 truth |
-| R185. SK remote transport session core-v2 routing | 待开始 | `termx-core-v2/`、`termx-remote/`、`termx-shared/`、`termx-testkit/` 按需 | 验证 remote WebRTC/datachannel transport 通过 core-v2 `ServeScopedTransport` 进入 protocol session，terminal scope 与 machine-events-only scope 行为正确 |
-| R186. SK remote legacy fallback cleanup | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-cli/cmd/termx/default_dependency_guard_test.go`、`go.work`、`go.work.sum`、相关文档 | 清理 remote fallback 对旧 core/tuiv2 的默认依赖证据；remote 源文件不再作为旧依赖豁免，旧 core 只允许显式 `legacy_*` 路径 |
-| R187. SK remote migration docs finalization | 待开始 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、必要顶层文档 | 更新审计文档和当前状态，记录 remote 已迁 core-v2 contract、旧 fallback 删除边界和最终测试证据 |
+| R175. SK termx-proto core-v2 wire contract | 待开始 | `termx-proto/`、`internal/protocol/` 只读参照、`termx-core-v2/` 只读参照、`termx-remote/` 只读参照 | 先审计并对齐 `.proto`：remote/status/local/pair、create/process、terminal info、storage/events、transport scope 需要共享的字段必须进入 `terminal.proto`；如改 `.proto` 必须同步生成 `terminal.pb.go`，环境缺 `protoc` 时本切片标阻塞 |
+| R176. SK remote protocol typed contract | 待开始 | `internal/protocol/`、按需 `termx-proto/` | 新增显式 `protocol.RemoteStatus`、`RemotePairStartParams/Result`、`RemoteLocalEnableParams`、`RemoteLocalStatus`；`Encode/DecodeMethod*` 不再用反射/getter/wirepb 指针作为 remote domain；补 protocol tests |
+| R177. SK core-v2 create/process remote contract | 待开始 | `termx-core-v2/`、`internal/protocol/`、按需 `termx-proto/` | 让 core-v2 terminal create/process contract 承载 `Dir`、`Env`、必要 CWD metadata 和 remote create 需要的 scrollback 参数；wire 字段缺失时先回到 `termx-proto`，不得在 remote adapter 里静默丢字段 |
+| R178. SK core-v2 transport scope API | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` 按需、`termx-shared/` 按需 | 给 core-v2 提供 public `ServeTransport` / `ServeScopedTransport` / `TransportScope` 能力，供 remote WebRTC datachannel 接入；scope 只能过滤/约束 protocol session，不能创建第二份 terminal truth |
+| R179. SK core-v2 remote method hook | 待开始 | `termx-core-v2/`、`internal/protocol/` | 在 core-v2 protocol dispatch 中接入 typed remote service hook，用 fake service 证明 `remote.status`、`remote.pair.start`、`remote.local.*` 进入 core-v2；不照搬旧 `ProtocolMethodHandler` wire bytes contract |
+| R180. SK core-v2 remote daemon adapter | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-core-v2/`、`termx-remote/` | 用 core-v2 server/domain 实现 `termx-remote.Service` 需要的 Daemon/StorageDaemon/ScopedDaemon adapter；删除或改写旧 `remote_runtime.go` 对 `termx-core` 的 import |
+| R181. SK core-v2 daemon remote lifecycle | 待开始 | `termx-cli/cmd/termx/`、`termx-core-v2/`、`termx-remote/` | 默认 `termx daemon` 装配 remote config/service/start/close/local auto-enable；remote runtime 生命周期跟随 core-v2 daemon，不回退 legacy daemon |
+| R182. SK remote client switch to core-v2 daemon | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-cli/cmd/termx/*test.go` | `termx remote status/info/open/enable/disable/pair` 使用 `resolveV3Socket` + `dialOrStartV3Client`，不再调用 `dialOrStartClient` 或启动 legacy daemon |
+| R183. SK remote config path 脱离 tuiv2 | 待开始 | `termx-cli/cmd/termx/remote_config.go`、按需共享 config helper | 移除 remote config 对 `tuiv2/shared` 的依赖；默认 config path 与当前 v3 config policy 明确，remote 文件不再 import 旧 TUI |
+| R184. SK remote status/local/pair core-v2 smoke | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-remote/` | 补 CLI/core-v2 smoke：`remote.status`、`remote.local.enable/status/disable`、`remote.pair.start` 都经过 core-v2 daemon 和 `termx-remote.Service`，不经过旧 core |
+| R185. SK remote terminal management/storage/events routing | 待开始 | `termx-remote/`、`termx-core-v2/`、`termx-cli/`、`termx-testkit/` 按需 | 验证 remote runtime API 的 terminal list/create/get_directory/set_metadata/restart/remove、storage get/put/delete/list、events subscription 都路由到 core-v2 truth |
+| R186. SK remote transport session core-v2 routing | 待开始 | `termx-core-v2/`、`termx-remote/`、`termx-shared/`、`termx-testkit/` 按需 | 验证 remote WebRTC/datachannel transport 通过 core-v2 `ServeScopedTransport` 进入 protocol session，terminal scope 与 machine-events-only scope 行为正确 |
+| R187. SK remote legacy fallback cleanup | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-cli/cmd/termx/default_dependency_guard_test.go`、`go.work`、`go.work.sum`、相关文档 | 清理 remote fallback 对旧 core/tuiv2 的默认依赖证据；remote 源文件不再作为旧依赖豁免，旧 core 只允许显式 `legacy_*` 路径 |
+| R188. SK remote migration docs finalization | 待开始 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、必要顶层文档 | 更新审计文档和当前状态，记录 remote 已迁 core-v2 contract、旧 fallback 删除边界和最终测试证据 |
 
 ## 6. 测试准入
 
@@ -194,6 +198,7 @@
 - CLI remote 改动：`cd termx-cli && go test ./cmd/termx -count=1`
 - protocol 改动：`cd internal && go test ./protocol/... -count=1`
 - proto 改动：`cd termx-proto && go test ./... -count=1`
+- `.proto` 改动：必须同步更新对应生成文件；如果本机缺少 `protoc` 或 `protoc-gen-go`，不得手写生成文件，当前切片应标 `阻塞` 并写清缺口。
 - 默认入口或依赖边界改动：`cd termx-cli && go test ./cmd/termx -run TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI -count=1`
 - remote fallback/旧依赖清理改动：除 CLI 测试外，必须确认 `termx-cli/cmd/termx/remote_*.go` 不再 import `termx-core` 或 `tuiv2`，且默认依赖守卫不再把 remote 文件作为旧依赖豁免。
 - 跨模块迁移改动：按需加跑 `make test-v2-migration`
@@ -218,7 +223,7 @@
 - `R173` 已完成：`AGENTS.md` 明确 remote 迁移不能退回旧 daemon/TUI，`workflow.md` 已压缩为 remote 迁移队列。
 - `R173B` 已完成：禁止补丁式实现成为 AGENTS 与 workflow 的硬准入，后续 remote 切片必须先讲清状态归属和 contract。
 - `R173C` 已完成：remote/protocol 迁移只面向 core-v2 contract，不对旧 core 保留兼容层或 fallback。
-- `R174` 已完成：已扫描 CLI remote、`termx-remote.Service`、core-v2 protocol/server/storage/events、旧 core extension/transport 源边界，并把迁移队列细化到 R175-R187。
+- `R174` 已完成：已扫描 CLI remote、`termx-remote.Service`、core-v2 protocol/server/storage/events、旧 core extension/transport 源边界，并把迁移队列细化到 R175-R188。
 - `termx remote ...` 仍是下一阶段实现主线，旧 fallback 只能作为待删除边界存在，不能作为默认本地切换完成证据。
 - 当前明确缺口：`remote_client.go` 仍连 legacy daemon；`remote_runtime.go` 仍 import 旧 `termx-core`；`remote_config.go` 仍 import `tuiv2/shared`；`internal/protocol` remote codec 仍用反射/wirepb；core-v2 仍缺 remote hook 与 public scoped transport API。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
