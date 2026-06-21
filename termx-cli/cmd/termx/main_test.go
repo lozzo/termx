@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,30 +16,23 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
-	termx "github.com/lozzow/termx/termx-core"
 	corev2 "github.com/lozzow/termx/termx-core-v2"
-	"github.com/lozzow/termx/termx-remote/discovery"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
-	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
-	"github.com/lozzow/termx/termx-shared/transport"
 	tuiv3 "github.com/lozzow/termx/termx-tui-v3"
 	"github.com/lozzow/termx/termx-tui-v3/app"
 	tuiinput "github.com/lozzow/termx/termx-tui-v3/input"
 	"github.com/lozzow/termx/termx-tui-v3/render"
 	tuiservices "github.com/lozzow/termx/termx-tui-v3/services"
 	tuistate "github.com/lozzow/termx/termx-tui-v3/state"
-	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/spf13/cobra"
 )
 
 func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunRoot := runV3Root
-	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
 		runV3Root = oldRunRoot
-		runTUIv2 = oldRunv2
 	})
 
 	isInteractiveTerminal = func() bool { return true }
@@ -54,10 +46,6 @@ func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
 		calledRoot = true
 		gotCfg = cfg
-		return nil
-	}
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		t.Fatal("default root command must not call tuiv2")
 		return nil
 	}
 
@@ -81,84 +69,17 @@ func TestRootCmdRoutesToTUIv3ByDefault(t *testing.T) {
 		t.Fatalf("default root must not create tuiv2 config at %s, stat err=%v", configPath, err)
 	}
 }
-
-func TestLegacyRootRoutesToTUIv2(t *testing.T) {
-	oldInteractive := isInteractiveTerminal
-	oldRunRoot := runV3Root
-	oldRunv2 := runTUIv2
-	t.Cleanup(func() {
-		isInteractiveTerminal = oldInteractive
-		runV3Root = oldRunRoot
-		runTUIv2 = oldRunv2
-	})
-
-	isInteractiveTerminal = func() bool { return true }
-	stateHome := t.TempDir()
-	configHome := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateHome)
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-
-	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
-		t.Fatal("legacy root command must not call tui-v3 root runner")
-		return nil
-	}
-	var gotCfg shared.Config
-	called := false
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		called = true
-		gotCfg = cfg
-		return nil
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log"), "legacy"})
-	cmd.SetIn(bytes.NewBuffer(nil))
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if !called {
-		t.Fatal("expected legacy root command to call runTUIv2")
-	}
-	if gotCfg.Workspace != "main" {
-		t.Fatalf("expected workspace=main, got %q", gotCfg.Workspace)
-	}
-	if gotCfg.SessionID != "main" {
-		t.Fatalf("expected session=main, got %q", gotCfg.SessionID)
-	}
-	if gotCfg.AttachID != "" {
-		t.Fatalf("expected empty attach id for legacy root command, got %q", gotCfg.AttachID)
-	}
-	if want := filepath.Join(stateHome, "termx", "workspace-state.json"); gotCfg.WorkspaceStatePath != want {
-		t.Fatalf("expected workspace state path %q, got %q", want, gotCfg.WorkspaceStatePath)
-	}
-	if want := filepath.Join(configHome, "termx", "termx.yaml"); gotCfg.ConfigPath != want {
-		t.Fatalf("expected config path %q, got %q", want, gotCfg.ConfigPath)
-	}
-	if _, err := os.Stat(gotCfg.ConfigPath); err != nil {
-		t.Fatalf("expected default config file to be created: %v", err)
-	}
-}
-
 func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunRoot := runV3Root
-	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
 		runV3Root = oldRunRoot
-		runTUIv2 = oldRunv2
 	})
 
 	isInteractiveTerminal = func() bool { return true }
 	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
 		t.Fatal("runV3Root should not be called when nested TUI is blocked")
-		return nil
-	}
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		t.Fatal("runTUIv2 should not be called when nested TUI is blocked")
 		return nil
 	}
 
@@ -180,20 +101,14 @@ func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
 func TestAttachCmdRoutesToTUIv3ByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunAttach := runV3Attach
-	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
 		runV3Attach = oldRunAttach
-		runTUIv2 = oldRunv2
 	})
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	logPath := filepath.Join(t.TempDir(), "termx.log")
 	isInteractiveTerminal = func() bool { return true }
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		t.Fatal("default attach command must not call tuiv2")
-		return nil
-	}
 	var got v3AttachConfig
 	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
 		got = cfg
@@ -213,68 +128,18 @@ func TestAttachCmdRoutesToTUIv3ByDefault(t *testing.T) {
 		t.Fatalf("unexpected v3 attach config %#v", got)
 	}
 }
-
-func TestLegacyAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
-	oldRunv2 := runTUIv2
-	t.Cleanup(func() {
-		runTUIv2 = oldRunv2
-	})
-
-	configHome := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configHome)
-
-	var gotCfg shared.Config
-	called := false
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		called = true
-		gotCfg = cfg
-		return nil
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"legacy", "attach", "term-001"})
-	cmd.SetIn(bytes.NewBuffer(nil))
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("expected legacy attach command to succeed, got %v", err)
-	}
-	if !called {
-		t.Fatal("expected legacy attach command to call runTUIv2")
-	}
-	if gotCfg.AttachID != "term-001" {
-		t.Fatalf("expected attach id term-001, got %q", gotCfg.AttachID)
-	}
-	if gotCfg.SessionID != "main" {
-		t.Fatalf("expected attach command session main, got %q", gotCfg.SessionID)
-	}
-	if gotCfg.WorkspaceStatePath != "" {
-		t.Fatalf("expected attach command to avoid workspace persistence path, got %q", gotCfg.WorkspaceStatePath)
-	}
-	if want := filepath.Join(configHome, "termx", "termx.yaml"); gotCfg.ConfigPath != want {
-		t.Fatalf("expected config path %q, got %q", want, gotCfg.ConfigPath)
-	}
-}
-
 func TestAttachCmdAllowsNestedTUIWhenOverrideIsSet(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunAttach := runV3Attach
-	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
 		runV3Attach = oldRunAttach
-		runTUIv2 = oldRunv2
 	})
 
 	isInteractiveTerminal = func() bool { return true }
 	called := false
 	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
 		called = true
-		return nil
-	}
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		t.Fatal("default attach command must not call tuiv2")
 		return nil
 	}
 
@@ -298,20 +163,14 @@ func TestAttachCmdAllowsNestedTUIWhenOverrideIsSet(t *testing.T) {
 func TestAttachCmdBlocksNestedTUIByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunAttach := runV3Attach
-	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
 		runV3Attach = oldRunAttach
-		runTUIv2 = oldRunv2
 	})
 
 	isInteractiveTerminal = func() bool { return true }
 	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
 		t.Fatal("runV3Attach should not be called when nested attach is blocked")
-		return nil
-	}
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		t.Fatal("runTUIv2 should not be called when nested attach is blocked")
 		return nil
 	}
 
@@ -329,53 +188,13 @@ func TestAttachCmdBlocksNestedTUIByDefault(t *testing.T) {
 		t.Fatalf("expected nested attach rejection, got %v", err)
 	}
 }
-
-func TestLegacyRootUsesExplicitConfigPath(t *testing.T) {
-	oldInteractive := isInteractiveTerminal
-	oldRunRoot := runV3Root
-	oldRunv2 := runTUIv2
-	t.Cleanup(func() {
-		isInteractiveTerminal = oldInteractive
-		runV3Root = oldRunRoot
-		runTUIv2 = oldRunv2
-	})
-
-	isInteractiveTerminal = func() bool { return true }
-	configPath := filepath.Join(t.TempDir(), "custom-termx.yaml")
-
-	runV3Root = func(ctx context.Context, cfg v3RootConfig) error {
-		t.Fatal("legacy root command must not call tui-v3 root runner")
-		return nil
-	}
-	var gotCfg shared.Config
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		gotCfg = cfg
-		return nil
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "legacy"})
-	cmd.SetIn(bytes.NewBuffer(nil))
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if gotCfg.ConfigPath != configPath {
-		t.Fatalf("expected explicit config path %q, got %q", configPath, gotCfg.ConfigPath)
-	}
-}
-
 func TestDefaultRootDoesNotRunTUIv2OrV3Smoke(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunRoot := runV3Root
-	oldRunv2 := runTUIv2
 	oldRunSmoke := runTUIv3Smoke
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
 		runV3Root = oldRunRoot
-		runTUIv2 = oldRunv2
 		runTUIv3Smoke = oldRunSmoke
 	})
 
@@ -386,10 +205,7 @@ func TestDefaultRootDoesNotRunTUIv2OrV3Smoke(t *testing.T) {
 		calledRoot = true
 		return nil
 	}
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		t.Fatal("default root command must not call tuiv2")
-		return nil
-	}
+
 	runTUIv3Smoke = func(ctx context.Context) (render.Frame, error) {
 		calledV3Smoke = true
 		return render.Frame{}, nil
@@ -504,54 +320,16 @@ func TestV3PaneCommandAdapterParsesMiniCommand(t *testing.T) {
 		t.Fatalf("unexpected pane command adapter output:\n%s", text)
 	}
 }
-
-func TestV3DaemonUsesCoreV2Server(t *testing.T) {
-	oldNewCoreV2Server := newCoreV2Server
-	oldNewServer := newServer
-	t.Cleanup(func() {
-		newCoreV2Server = oldNewCoreV2Server
-		newServer = oldNewServer
-	})
-
-	fakeV3 := &fakeCoreV2Server{}
-	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
-		fakeV3.newServerCalls++
-		return fakeV3
-	}
-	newServer = func(opts ...termx.ServerOption) termxServer {
-		t.Fatal("termx v3 daemon must not construct legacy termx-core server")
-		return nil
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx-v2.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "v3", "daemon"})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if fakeV3.newServerCalls != 1 || fakeV3.listenCalls != 1 || fakeV3.shutdownCalls != 1 {
-		t.Fatalf("unexpected core-v2 fake server calls: new=%d listen=%d shutdown=%d", fakeV3.newServerCalls, fakeV3.listenCalls, fakeV3.shutdownCalls)
-	}
-}
-
 func TestDefaultDaemonUsesCoreV2Server(t *testing.T) {
 	oldNewCoreV2Server := newCoreV2Server
-	oldNewServer := newServer
 	t.Cleanup(func() {
 		newCoreV2Server = oldNewCoreV2Server
-		newServer = oldNewServer
 	})
 
 	fakeV3 := &fakeCoreV2Server{}
 	newCoreV2Server = func(opts ...corev2.ServerOption) coreV2Server {
 		fakeV3.newServerCalls++
 		return fakeV3
-	}
-	newServer = func(opts ...termx.ServerOption) termxServer {
-		t.Fatal("default daemon must not construct legacy termx-core server")
-		return nil
 	}
 
 	cmd := newRootCmd()
@@ -747,30 +525,6 @@ func TestStartCoreV2DaemonCommandUsesV3Daemon(t *testing.T) {
 		t.Fatalf("unexpected v3 daemon args: %#v", got.Args)
 	}
 }
-
-func TestStartLegacyDaemonCommandUsesLegacyDaemon(t *testing.T) {
-	oldExecutable := osExecutable
-	t.Cleanup(func() {
-		osExecutable = oldExecutable
-	})
-
-	exe := filepath.Join(t.TempDir(), "termx")
-	osExecutable = func() (string, error) {
-		return exe, nil
-	}
-	got, err := buildStartLegacyDaemonCommand("/tmp/termx.sock", "/tmp/termx.log")
-	if err != nil {
-		t.Fatalf("buildStartLegacyDaemonCommand returned error: %v", err)
-	}
-	if got.Path != exe {
-		t.Fatalf("expected executable %q, got %q", exe, got.Path)
-	}
-	wantArgs := []string{exe, "--socket", "/tmp/termx.sock", "--log-file", "/tmp/termx.log", "legacy", "daemon"}
-	if !reflect.DeepEqual(got.Args, wantArgs) {
-		t.Fatalf("unexpected legacy daemon args: %#v", got.Args)
-	}
-}
-
 func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	server := corev2.NewServer(corev2.WithSocketPath(socketPath))
@@ -930,20 +684,14 @@ func TestV3AttachRejectsNonInteractiveTerminal(t *testing.T) {
 func TestV3AttachRoutesToTUIv3Runtime(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldRunAttach := runV3Attach
-	oldRunv2 := runTUIv2
 	t.Cleanup(func() {
 		isInteractiveTerminal = oldInteractive
 		runV3Attach = oldRunAttach
-		runTUIv2 = oldRunv2
 	})
 
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	logPath := filepath.Join(t.TempDir(), "termx.log")
 	isInteractiveTerminal = func() bool { return true }
-	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		t.Fatal("termx v3 attach must not call tuiv2")
-		return nil
-	}
 	var got v3AttachConfig
 	runV3Attach = func(ctx context.Context, cfg v3AttachConfig) error {
 		got = cfg
@@ -2182,67 +1930,6 @@ func buildTermxBinaryForTest(t *testing.T) string {
 	}
 	return path
 }
-
-func TestLegacyRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	socketPath := filepath.Join(t.TempDir(), "termx.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath), termx.WithDefaultKeepAfterExit(10*time.Second))
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.ListenAndServe(ctx)
-	}()
-	defer func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Fatal("server did not stop in time")
-		}
-	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if _, err := os.Stat(socketPath); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for socket %s", socketPath)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	created, err := srv.Create(context.Background(), termx.CreateOptions{
-		Command: []string{"sh", "-c", "sleep 30"},
-		Name:    "remove-smoke",
-	})
-	if err != nil {
-		t.Fatalf("create terminal: %v", err)
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "legacy", "rm", created.ID})
-	cmd.SetIn(bytes.NewBuffer(nil))
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("rm command failed: %v", err)
-	}
-	if _, err := srv.Get(context.Background(), created.ID); err == nil || !strings.Contains(err.Error(), "terminal not found") {
-		t.Fatalf("expected removed terminal lookup to fail, got %v", err)
-	}
-
-	aliasCmd := newRootCmd()
-	aliasCmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "legacy", "delete", "missing"})
-	aliasCmd.SetIn(bytes.NewBuffer(nil))
-	aliasCmd.SetOut(io.Discard)
-	aliasCmd.SetErr(io.Discard)
-	err = aliasCmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "protocol error 404") {
-		t.Fatalf("expected delete alias to call remove protocol and return 404, got %v", err)
-	}
-}
-
 func TestRemoteConfigFromEnv(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_ENABLE", "true")
 	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
@@ -2556,103 +2243,6 @@ func TestRemoteConfigFromFileRejectsMalformedRemoteSection(t *testing.T) {
 		t.Fatalf("expected malformed remote config error, got %v", err)
 	}
 }
-
-func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
-	oldLoader := remoteConfigLoader
-	oldNewServer := newServer
-	oldRemoteRuntimeHost := newRemoteRuntimeHostFn
-	t.Cleanup(func() {
-		remoteConfigLoader = oldLoader
-		newServer = oldNewServer
-		newRemoteRuntimeHostFn = oldRemoteRuntimeHost
-	})
-
-	configPath := filepath.Join(t.TempDir(), "termx.yaml")
-	var gotConfigPath string
-	var gotRemoteConfig remoteprotocol.Config
-	remoteConfigLoader = func(path string) (remoteprotocol.Config, error) {
-		gotConfigPath = path
-		return remoteprotocol.Config{
-			Enabled:     true,
-			ControlURL:  "https://control-config.example.test",
-			HubURL:      "https://hub-config.example.test",
-			AccessToken: "loader-secret",
-			DataDir:     t.TempDir(),
-			DeviceName:  "config-device",
-			Mode:        "hub",
-		}, nil
-	}
-	newRemoteRuntimeHostFn = func(core remoteRuntimeCore, cfg remoteprotocol.Config) *remoteRuntimeHost {
-		gotRemoteConfig = cfg
-		return nil
-	}
-	fake := &fakeTermxServer{}
-	newServer = func(opts ...termx.ServerOption) termxServer {
-		fake.newServerCalls++
-		return fake
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "legacy", "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if gotConfigPath != configPath {
-		t.Fatalf("expected daemon to load root config path %q, got %q", configPath, gotConfigPath)
-	}
-	if !gotRemoteConfig.Enabled ||
-		gotRemoteConfig.ControlURL != "https://control-config.example.test" ||
-		gotRemoteConfig.HubURL != "https://hub-config.example.test" ||
-		gotRemoteConfig.AccessToken != "loader-secret" ||
-		gotRemoteConfig.DataDir == "" ||
-		gotRemoteConfig.DeviceName != "config-device" {
-		t.Fatalf("daemon did not pass loaded remote config to server option: %#v", gotRemoteConfig)
-	}
-	if fake.newServerCalls != 1 || fake.listenCalls != 1 || fake.shutdownCalls != 1 {
-		t.Fatalf("unexpected fake server calls: new=%d listen=%d shutdown=%d", fake.newServerCalls, fake.listenCalls, fake.shutdownCalls)
-	}
-}
-
-func TestDaemonStartsConfiguredLocalRuntime(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "termx.yaml")
-	config := `remote:
-  enabled: true
-  mode: both
-  control_url: https://control.example.test
-  access_token: loader-secret
-  local_web_addr: 127.0.0.1:0
-  ice_tcp_addr: 127.0.0.1:0
-`
-	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	fake := &fakeTermxServer{}
-	oldNewServer := newServer
-	t.Cleanup(func() {
-		newServer = oldNewServer
-	})
-	newServer = func(opts ...termx.ServerOption) termxServer {
-		fake.newServerCalls++
-		return fake
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "legacy", "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if fake.newServerCalls != 1 || fake.listenCalls != 1 || fake.shutdownCalls != 1 {
-		t.Fatalf("unexpected fake server calls: new=%d listen=%d shutdown=%d", fake.newServerCalls, fake.listenCalls, fake.shutdownCalls)
-	}
-}
-
 func TestDaemonLocalAddrDefaultsFromEnabledMode(t *testing.T) {
 	cfg := remoteprotocol.Config{Enabled: true, Mode: "both"}
 	if got := daemonLocalWebAddr(cfg); got != defaultRemoteLocalWebAddr {
@@ -2732,135 +2322,6 @@ func TestRemoteLocalICETCPAddrFromEnv(t *testing.T) {
 		t.Fatalf("expected explicit ICE TCP addr, got %q", got)
 	}
 }
-
-func TestStartRemoteLocalRuntimeServesEmbeddedHub(t *testing.T) {
-	srv := termx.NewServer()
-	remoteHost := newRemoteRuntimeHost(srv, remoteprotocol.Config{
-		Enabled:    true,
-		DataDir:    t.TempDir(),
-		DeviceName: "cli-local-hub",
-	})
-	defer srv.Shutdown(context.Background())
-	defer func() { _ = remoteHost.Close(context.Background()) }()
-
-	if err := remoteHost.Start(context.Background()); err != nil {
-		t.Fatalf("remote start returned error: %v", err)
-	}
-	localRuntime, err := remoteHost.service.LocalEnable(context.Background(), remoteprotocol.LocalEnableParams{
-		LocalWebAddr: "127.0.0.1:0",
-		ICETCPAddr:   "127.0.0.1:0",
-	})
-	if err != nil {
-		t.Fatalf("RemoteLocalEnable returned error: %v", err)
-	}
-	defer func() {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer shutdownCancel()
-		if _, err := remoteHost.service.LocalDisable(shutdownCtx); err != nil {
-			t.Fatalf("shutdown local web: %v", err)
-		}
-	}()
-	baseURL := localRuntime.HTTPURL
-
-	client := http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(baseURL + "/api/health")
-	if err != nil {
-		t.Fatalf("GET local hub health: %v", err)
-	}
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		t.Fatalf("read local hub health: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected local hub health status 200, got %d: %s", resp.StatusCode, string(body))
-	}
-	if !strings.Contains(string(body), "termx-hub") {
-		t.Fatalf("expected hub health response, got %s", string(body))
-	}
-
-	grpcClient, err := discovery.NewGRPCHubClient(baseURL, "local")
-	if err != nil {
-		t.Fatalf("new grpc local hub client: %v", err)
-	}
-	defer grpcClient.Close()
-	grpcCtx, grpcCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer grpcCancel()
-	stream, err := grpcClient.Connect(grpcCtx)
-	if err != nil {
-		t.Fatalf("connect local hub grpc: %v", err)
-	}
-	if err := stream.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_Register{
-		Register: &pb.RegisterRequest{
-			DeviceId:    "manual-cli-local-hub",
-			MachineId:   "manual-cli-local-hub",
-			AgentId:     "agent-cli-local-hub",
-			DisplayName: "TermX CLI Local Hub Test",
-			Version:     "test",
-			Terminals:   []*pb.Terminal{},
-		},
-	}}); err != nil {
-		t.Fatalf("send local hub grpc register: %v", err)
-	}
-	msg, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("recv local hub grpc register ack: %v", err)
-	}
-	ack := msg.GetRegisterAck()
-	if ack.GetAgentSessionId() == "" {
-		t.Fatalf("expected agent_session_id in register ack, got %#v", ack)
-	}
-	for _, server := range ack.GetIceServers() {
-		for _, url := range server.GetUrls() {
-			if strings.HasPrefix(strings.ToLower(url), "turn:") || strings.HasPrefix(strings.ToLower(url), "turns:") {
-				t.Fatalf("local hub register must not expose TURN credentials: %+v", ack.GetIceServers())
-			}
-		}
-	}
-
-	session, err := remoteHost.service.PairStart(remoteprotocol.PairStartParams{
-		LocalPairURL: baseURL + "/api/v1/pairing/claims",
-		TTLSeconds:   int(time.Minute.Seconds()),
-	})
-	if err != nil {
-		t.Fatalf("RemotePairStart returned error: %v", err)
-	}
-	pairPayload := strings.NewReader(`{
-		"machine_id":"` + session.MachineID + `",
-		"pair_session_id":"` + session.PairSessionID + `",
-		"pair_secret":"` + session.PairSecret + `",
-		"app_device_id":"app-cli-local-web",
-		"app_name":"TermX CLI Local Web Test",
-		"requested_capabilities":["terminal","file_manager"]
-	}`)
-	resp, err = client.Post(baseURL+"/api/v1/pairing/claims", "application/json", pairPayload)
-	if err != nil {
-		t.Fatalf("POST local pairing claim: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected local pairing claim 200, got %d: %s", resp.StatusCode, string(body))
-	}
-	var pair map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil {
-		t.Fatalf("decode local pairing claim: %v", err)
-	}
-	if pair["machine_id"] != session.MachineID {
-		t.Fatalf("expected pair machine_id %q, got %#v", session.MachineID, pair)
-	}
-	if pair["session_token"] == "" {
-		t.Fatalf("expected completed pairing response, got %#v", pair)
-	}
-
-	if _, err := remoteHost.service.LocalDisable(context.Background()); err != nil {
-		t.Fatalf("LocalDisable returned error: %v", err)
-	}
-	if _, err := client.Get(baseURL + "/api/health"); err == nil {
-		t.Fatalf("expected disabled local hub to reject health requests")
-	}
-}
-
 func TestRootCmdHasRemoteStatusAndPairCommands(t *testing.T) {
 	cmd := newRootCmd()
 	for _, args := range [][]string{
@@ -3742,52 +3203,6 @@ func TestRemoteEnableBrowserForcesFreshTokenOverSavedAuth(t *testing.T) {
 	}
 }
 
-type fakeTermxServer struct {
-	newServerCalls int
-	listenCalls    int
-	shutdownCalls  int
-}
-
-func (s *fakeTermxServer) ListenAndServe(context.Context) error {
-	s.listenCalls++
-	return nil
-}
-
-func (s *fakeTermxServer) Shutdown(context.Context) error {
-	s.shutdownCalls++
-	return nil
-}
-
-func (s *fakeTermxServer) Create(context.Context, termx.CreateOptions) (*termx.TerminalInfo, error) {
-	return &termx.TerminalInfo{ID: "fake-terminal"}, nil
-}
-
-func (s *fakeTermxServer) Get(context.Context, string) (*termx.TerminalInfo, error) {
-	return &termx.TerminalInfo{ID: "fake-terminal"}, nil
-}
-
-func (s *fakeTermxServer) List(context.Context, ...termx.ListOptions) ([]*termx.TerminalInfo, error) {
-	return nil, nil
-}
-
-func (s *fakeTermxServer) SetMetadata(context.Context, string, string, map[string]string) error {
-	return nil
-}
-
-func (s *fakeTermxServer) Restart(context.Context, string) error {
-	return nil
-}
-
-func (s *fakeTermxServer) Remove(context.Context, string) error {
-	return nil
-}
-
-func (s *fakeTermxServer) Events(context.Context, ...termx.EventsOption) <-chan termx.Event {
-	ch := make(chan termx.Event)
-	close(ch)
-	return ch
-}
-
 type fakeCoreV2Server struct {
 	newServerCalls int
 	listenCalls    int
@@ -4090,42 +3505,4 @@ func lastFramePaneResizeRegionForCLITest(t *testing.T, host *app.FakeTerminalHos
 
 func testShellSleepCommand() []string {
 	return []string{"/bin/sh", "-c", "while true; do sleep 1; done"}
-}
-
-func (s *fakeTermxServer) StorageGet(context.Context, termx.StorageGetRequest) (termx.StorageEntry, error) {
-	return termx.StorageEntry{}, termx.ErrNotFound
-}
-
-func (s *fakeTermxServer) StoragePut(_ context.Context, req termx.StoragePutRequest) (termx.StorageEntry, error) {
-	return termx.StorageEntry{
-		AppID:   req.AppID,
-		Scope:   req.Scope,
-		OwnerID: req.OwnerID,
-		Key:     req.Key,
-		Value:   append([]byte(nil), req.Value...),
-		Version: 1,
-	}, nil
-}
-
-func (s *fakeTermxServer) StorageDelete(_ context.Context, req termx.StorageDeleteRequest) (termx.StorageDeleteResult, error) {
-	return termx.StorageDeleteResult{
-		AppID:   req.AppID,
-		Scope:   req.Scope,
-		OwnerID: req.OwnerID,
-		Key:     req.Key,
-		Deleted: true,
-		Version: 1,
-	}, nil
-}
-
-func (s *fakeTermxServer) StorageList(context.Context, termx.StorageListRequest) ([]termx.StorageEntry, error) {
-	return nil, nil
-}
-
-func (s *fakeTermxServer) ServeTransport(context.Context, transport.Transport, string) error {
-	return nil
-}
-
-func (s *fakeTermxServer) ServeScopedTransport(context.Context, transport.Transport, string, termx.TransportScope) error {
-	return nil
 }

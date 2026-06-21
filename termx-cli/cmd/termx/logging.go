@@ -38,6 +38,33 @@ func resolveWorkspaceStatePath() string {
 	return filepath.Join(os.TempDir(), "termx-workspace-state.json")
 }
 
+func resolveConfigFilePath(explicit string) string {
+	if strings.TrimSpace(explicit) != "" {
+		return explicit
+	}
+	if configDir := os.Getenv("XDG_CONFIG_HOME"); configDir != "" {
+		return filepath.Join(configDir, "termx", "termx.yaml")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".config", "termx", "termx.yaml")
+	}
+	return filepath.Join(os.TempDir(), "termx.yaml")
+}
+
+func resolveStateFilePath(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "termx.state"
+	}
+	if stateDir := os.Getenv("XDG_STATE_HOME"); stateDir != "" {
+		return filepath.Join(stateDir, "termx", name)
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "state", "termx", name)
+	}
+	return filepath.Join(os.TempDir(), name)
+}
+
 func resolveGridStatePath() string {
 	if path := os.Getenv("TERMX_GRID_DIR"); path != "" {
 		return path

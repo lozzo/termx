@@ -8,19 +8,19 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
-	termx "github.com/lozzow/termx/termx-core"
+	corev2 "github.com/lozzow/termx/termx-core-v2"
 	"github.com/lozzow/termx/termx-proto/wire"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
 
 const (
-	ModeCollaborator = string(termx.ModeCollaborator)
-	StateExited      = string(termx.StateExited)
+	ModeCollaborator = "collaborator"
+	StateExited      = string(corev2.TerminalStateExited)
 )
 
 type Daemon struct {
 	socketPath string
-	server     *termx.Server
+	server     *corev2.Server
 	done       chan error
 	cancel     context.CancelFunc
 }
@@ -32,7 +32,7 @@ func StartDaemon(t testing.TB, ctx context.Context, socketName string) *Daemon {
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	socketPath := filepath.Join(t.TempDir(), socketName)
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srv := corev2.NewServer(corev2.WithSocketPath(socketPath))
 	done := make(chan error, 1)
 	go func() {
 		done <- srv.ListenAndServe(runCtx)
@@ -73,12 +73,9 @@ func (d *Daemon) TerminalState(ctx context.Context, terminalID string) (string, 
 	if d == nil || d.server == nil {
 		return "", errors.New("test daemon is nil")
 	}
-	info, err := d.server.Get(ctx, terminalID)
+	info, err := d.server.GetTerminal(terminalID)
 	if err != nil {
 		return "", err
-	}
-	if info == nil {
-		return "", errors.New("terminal not found")
 	}
 	return string(info.State), nil
 }

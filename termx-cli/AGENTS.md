@@ -3,7 +3,8 @@
 ## Boundary
 
 - `termx-cli` 是产品壳与唯一 remote 集成层，不是 core。
-- 可以依赖 `termx-core` 和 `termx-remote` 的 public package。
+- 可以依赖 `termx-core-v2`、`termx-tui-v3` 和 `termx-remote` 的 public package。
+- 不得恢复旧 `termx-core`、`tuiv2`、legacy daemon 或 remote fallback adapter。
 - 不要把新的 shell-neutral 能力继续塞回 CLI。
 
 ## Remote CLI Rules
@@ -11,7 +12,7 @@
 `termx-cli` 负责：
 
 - 启动/连接 daemon（in-process 或 socket）
-- 绑定 `termx-core/clientapi`
+- 绑定 core-v2 daemon/protocol/service extension
 - 装配 `termx-remote.Service`
 - 根据 `--mode` 启动对应运行时：
   - `local`：嵌入 hub（cmux: HTTP/2+HTTP/1+ICE-TCP），LAN 暴露

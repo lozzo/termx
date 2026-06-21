@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	"github.com/spf13/cobra"
 )
 
@@ -419,7 +418,7 @@ func defaultRemoteAuthStorePath(configPath string) (string, error) {
 	if strings.TrimSpace(configPath) != "" {
 		return filepath.Join(filepath.Dir(configPath), "remote-auth.json"), nil
 	}
-	return filepath.Join(shared.StateDir(), "remote-auth.json"), nil
+	return resolveStateFilePath("remote-auth.json"), nil
 }
 
 func saveRemoteAuthRecord(path string, record remoteAuthRecord) error {
@@ -463,7 +462,7 @@ func loadRemoteAuthRecord(path string) (remoteAuthRecord, error) {
 
 func ensureRemoteConfigBootstrap(configPath string, controlURL string, hubURL string, authStorePath string, mode string, localWebAddr string, iceTCPAddr string) error {
 	if strings.TrimSpace(configPath) == "" {
-		configPath = shared.DefaultConfigPath()
+		configPath = resolveConfigFilePath("")
 	}
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err

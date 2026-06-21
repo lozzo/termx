@@ -8,7 +8,6 @@ import (
 	"time"
 
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
-	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 )
 
 const (
@@ -120,7 +119,7 @@ func remoteConfigFromFile(path string) (remoteprotocol.Config, error) {
 
 func loadRemoteConfigFromFile(path string) (remoteprotocol.Config, bool, error) {
 	if strings.TrimSpace(path) == "" {
-		path = shared.DefaultConfigPath()
+		path = resolveConfigFilePath("")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

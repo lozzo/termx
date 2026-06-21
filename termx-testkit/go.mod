@@ -6,7 +6,7 @@ toolchain go1.26.1
 
 require (
 	github.com/lozzow/termx/internal v0.0.0
-	github.com/lozzow/termx/termx-core v0.0.0
+	github.com/lozzow/termx/termx-core-v2 v0.0.0
 	github.com/lozzow/termx/termx-proto v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 )
@@ -31,13 +31,13 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/lozzow/termx/internal => ../internal
 
-replace github.com/lozzow/termx/termx-core => ../termx-core
+replace github.com/lozzow/termx/termx-core-v2 => ../termx-core-v2
 
 replace github.com/lozzow/termx/termx-proto => ../termx-proto
 

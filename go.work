@@ -3,7 +3,6 @@ go 1.26.0
 use (
 	./internal
 	./termx-cli
-	./termx-core
 	./termx-core-v2
 	./termx-hub
 	./termx-proto
@@ -12,5 +11,4 @@ use (
 	./termx-testkit
 	./termx-tui-v3
 	./termx-vterm
-	./tuiv2
 )

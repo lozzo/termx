@@ -37,9 +37,8 @@ func TestTermxRemoteModuleSkeleton(t *testing.T) {
 		}
 	}
 
-	coreGoMod := string(readFile(t, filepath.Join(repoRoot, "termx-core", "go.mod")))
-	if strings.Contains(coreGoMod, "github.com/lozzow/termx/termx-remote") {
-		t.Fatalf("termx-core/go.mod must not depend on termx-remote:\n%s", coreGoMod)
+	if _, err := os.Stat(filepath.Join(repoRoot, "termx-core")); !os.IsNotExist(err) {
+		t.Fatalf("legacy termx-core directory must remain deleted, stat err=%v", err)
 	}
 
 	goWork := string(readFile(t, filepath.Join(repoRoot, "go.work")))

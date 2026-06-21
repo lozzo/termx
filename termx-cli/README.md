@@ -6,7 +6,7 @@
 
 - `termx` 根命令
 - daemon / new / ls / attach / kill / web 等命令入口
-- 把 `termx-core` 与 `tuiv2` 组装成最终 CLI 行为
+- 把 `termx-core-v2` 与 `termx-tui-v3` 组装成最终 CLI 行为
 
 ## Remote Both Mode Smoke Flow
 

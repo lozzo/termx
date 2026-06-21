@@ -8,6 +8,9 @@ import (
 )
 
 func TestWF003RemoteProtocolSessionPackagesMigratedFromCore(t *testing.T) {
+	if _, err := os.Stat("../termx-core"); !os.IsNotExist(err) {
+		t.Fatalf("legacy termx-core directory must remain deleted, stat err=%v", err)
+	}
 	for _, dir := range []string{
 		"protocol/hubv1",
 		"pairing",
@@ -20,24 +23,10 @@ func TestWF003RemoteProtocolSessionPackagesMigratedFromCore(t *testing.T) {
 		requireGoPackageDir(t, dir)
 	}
 
-	for _, dir := range []string{
-		"../termx-core/remote/hubv1",
-		"../termx-core/internal/remote/pairing",
-		"../termx-core/internal/remote/discovery",
-		"../termx-core/internal/remote/rtc",
-		"../termx-core/internal/remote/cert",
-		"../termx-core/internal/remote/identity",
-		"../termx-core/internal/remote/bridge",
-		"../termx-core/internal/remote/fileapi",
-	} {
-		if files := nonTestGoFiles(t, dir); len(files) > 0 {
-			t.Fatalf("termx-core still owns remote implementation files in %s: %v", dir, files)
-		}
-	}
 }
 
 func TestWF003CoreRedirectsToTermxRemotePackages(t *testing.T) {
-	for _, root := range []string{"../termx-core", "."} {
+	for _, root := range []string{"."} {
 		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
 				return err

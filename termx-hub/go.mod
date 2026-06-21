@@ -24,8 +24,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/lozzow/termx/termx-core => ../termx-core
-
 replace github.com/lozzow/termx/termx-remote => ../termx-remote
 
 replace github.com/lozzow/termx/termx-vterm => ../termx-vterm

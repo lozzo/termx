@@ -32,16 +32,16 @@
 
 - 允许主动工作目录只能来自 `workflow.md` 的“当前主线范围”和“受限联动范围”。
 - 不允许因为“看起来有关”自行扩散到其他目录。
-- 旧 `termx-core/` 与 `tuiv2/` 默认只读参考；不得继续原地修补旧 logical-line、copy mode、snapshot/grid viewport history path。
-- 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；旧 `termx-core/` 和 `tuiv2/` 只能通过 `termx legacy ...` 或 remote legacy/fallback 隔离文件间接存在。
-- `termx-cli/cmd/termx/legacy_*.go` 是显式旧本地入口隔离文件；不得被默认 root、daemon、attach、new、ls、kill、rm 路径调用。
-- `termx-cli/cmd/termx/remote_*.go` 当前是 remote legacy/fallback 隔离文件；remote 未迁移到 core-v2 extension 前，不得把它作为默认本地切换完成证据。
+- 旧 `termx-core/` 与 `tuiv2/` 已退出本分支，不再作为只读参考、legacy fallback 或默认依赖存在。
+- 当前默认本地 CLI 入口必须走 `termx-core-v2/` 与 `termx-tui-v3/`；不得重新引入 `termx legacy ...`、旧 daemon、旧 TUI 或 remote legacy/fallback。
+- `termx-cli/cmd/termx/legacy_*.go` 不得重新出现；旧本地入口已经删除。
+- `termx-cli/cmd/termx/remote_*.go` 只能通过 core-v2 daemon/protocol/service extension 接入，不得 import 旧 `termx-core` 或 `tuiv2`。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - 当前进入 remote 迁移阶段时，仍必须保持默认本地入口走 `termx-core-v2/` 与 `termx-tui-v3/`；remote 迁移只能通过 core-v2 protocol/service extension、`termx-remote` public package 和 CLI glue 接入，不能把默认路径退回旧 daemon 或旧 TUI。
 - `termx remote ...` 从 legacy/fallback 迁出必须按 `workflow.md` 切片逐步完成：先审计和契约，再 core-v2 extension hook，再 CLI 装配，再启用 local/pair flow。不得一次性大搬旧实现。
 - 协议迁移必须以 core-v2 domain contract 为唯一目标；不为旧 `termx-core/` 保留 wire format、storage format、method adapter、双 handler、fallback 读写或兼容 shim。
 - remote 迁移期间允许触碰 `termx-remote/` 和必要的 `termx-cli/cmd/termx/remote_*.go`，但只能在 `workflow.md` 当前切片列明时修改；`remote-ui/`、`web-control/`、`termx-hub/` 仍冻结。
-- 如果确实必须修改旧目录，先修改 `workflow.md` 的范围表并说明原因。
+- 如果确实必须恢复旧目录，先修改 `workflow.md` 的范围表并说明原因；默认不允许恢复。
 - 冻结目录不得触碰，除非 `workflow.md` 先明确解冻。
 - 关键代码需要写上注释,使用中文
 ## 目录职责
@@ -50,8 +50,8 @@
 - `termx-core-v2/docs/architecture.md`：core-v2 技术设计基准。
 - `termx-tui-v3/`：新 TUI 主线目录，负责自有 `AppRuntime`、`TerminalHost`、`EffectRunner`、`FrameSink`、authoritative history store/source、copy mode、滚动、selection、render 与相关 harness。
 - `termx-tui-v3/docs/architecture.md`：tui-v3 技术设计基准。
-- `termx-core/`：旧 core 参考目录，只能读取、搜索、运行测试或摘取外部契约参考；默认本地 CLI 不得直接依赖。
-- `tuiv2/`：旧 TUI 参考目录，只能读取、搜索、运行测试或摘取外部契约参考；默认本地 CLI 不得直接依赖。
+- `termx-core/`：已删除旧 core 目录；不得作为 fallback 恢复。
+- `tuiv2/`：已删除旧 TUI 目录；不得作为 fallback 恢复。
 - `termx-vterm/`：受限联动目录，只在新 core-v2/tui-v3 的 terminal 或 protocol 契约确实需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 `history.window` contract 或 protocol adapter 切片需要时最小化触及。
 - `termx-remote/`：remote runtime/service 主线目录，只在 remote 迁移切片中修改；它不能直接拥有 core-v2 terminal/history truth，只能通过 core-v2 daemon/protocol adapter 访问。

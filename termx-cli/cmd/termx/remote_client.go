@@ -12,7 +12,7 @@ var (
 	defaultRemoteControlURL = "http://114.66.58.243:12306"
 
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
-		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		client, err := dialOrStartV3Client(resolveV3Socket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -24,7 +24,7 @@ var (
 		return &out, nil
 	}
 	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
-		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		client, err := dialOrStartV3Client(resolveV3Socket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -36,7 +36,7 @@ var (
 		return &out, nil
 	}
 	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
-		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		client, err := dialOrStartV3Client(resolveV3Socket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -48,7 +48,7 @@ var (
 		return &out, nil
 	}
 	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
-		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		client, err := dialOrStartV3Client(resolveV3Socket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +60,7 @@ var (
 		return &out, nil
 	}
 	remoteLocalDisableClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
-		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		client, err := dialOrStartV3Client(resolveV3Socket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func v3NewCommand(socket *string, logFile *string) *cobra.Command {
@@ -57,6 +58,14 @@ func v3NewCommand(socket *string, logFile *string) *cobra.Command {
 
 func newV3TerminalID() string {
 	return "term-" + uuid.NewString()
+}
+
+func currentSize() protocol.Size {
+	cols, rows, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		return protocol.Size{}
+	}
+	return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
 }
 
 func v3LsCommand(socket *string, logFile *string) *cobra.Command {

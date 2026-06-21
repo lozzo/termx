@@ -1,225 +1,51 @@
-# v2/v3 默认入口切换审计与迁移矩阵
+# v2/v3 默认入口与 remote 迁移审计
 
-本文档是切片 11 的产物，用于约束后续把 `termx-cli` 默认运行时从旧 `termx-core` + `tuiv2` 切到 `termx-core-v2` + `termx-tui-v3` 的执行顺序、能力边界和验收口径。
+本文档只保留当前分支仍有效的边界。旧切片细节按 git 历史追溯；如与根目录 `workflow.md` 冲突，以 `workflow.md` 为准。
 
-## 1. 当前结论
+## 当前结论
 
-当前本地默认入口已在切片 25-26 切换到新链路；remote 仍保持 legacy/fallback 隔离：
+- 默认本地入口已经切到 `termx-core-v2` + `termx-tui-v3`。
+- 旧 `termx-core/` 与 `tuiv2/` 已删除，不再作为只读参考、legacy 命令、remote fallback 或 go.mod replace 存在。
+- `termx legacy ...`、旧 daemon auto-start、`remote_runtime.go` 和 `remote_protocol_codec.go` 已删除。
+- `termx remote ...` 只能通过 `resolveV3Socket` + `dialOrStartV3Client` 连接 core-v2 daemon；core-v2 remote hook 未迁移完成前，应由 core-v2 protocol 明确失败，不能启动旧 daemon 或回退旧 adapter。
+- remote config/auth 路径由 CLI helper 处理，不再依赖 `tuiv2/shared`。
 
-| 入口 | 当前实现 | 证据 | 迁移目标 |
-| --- | --- | --- | --- |
-| `termx` root | 调用 `runV3RootCommand`，自动连接/启动 core-v2 daemon，并进入 tui-v3 attach runtime | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_root_command.go` | 切片 25 已完成；旧 root 仅保留为 `termx legacy` |
-| `termx attach <id>` | 调用 `v3AttachCommand`，使用 tui-v3 attach runtime | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_attach_command.go` | 切片 26 已完成；旧 attach 仅保留为 `termx legacy attach` |
-| `termx daemon` | 调用 `v3DaemonCommand`，启动 core-v2 server | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_command.go` | 切片 26 已完成；旧 daemon 仅保留为 `termx legacy daemon` |
-| `termx new/ls/kill/rm` | 调用 v3 控制命令，通过 core-v2 protocol client 工作 | `termx-cli/cmd/termx/main.go`、`termx-cli/cmd/termx/v3_control_commands.go` | 切片 26 已完成；旧控制命令仅保留为 `termx legacy ...` |
-| `termx remote ...` | 依赖 CLI remote glue、旧配置 helper 和 daemon protocol extension | `termx-cli/cmd/termx/remote_commands.go`、`termx-cli/cmd/termx/remote_login.go`、`termx-cli/cmd/termx/remote_runtime.go` | 切片 24 已明确暂留 legacy/fallback 隔离；默认切换不能隐式丢 remote 或旧 `tuiv2/shared` 配置依赖 |
+## 命令矩阵
 
-当前新模块状态：
-
-| 模块 | 已有能力 | 尚缺能力 |
+| 命令 | 当前路径 | 关键约束 |
 | --- | --- | --- |
-| `termx-core-v2` | logical line history domain、HistoryWindow 投影、独立 server/daemon API、PTY lifecycle、protocol service、event stream、history.window 实服务 | CLI v3 daemon 装配、自动启动路径、remote extension/config 收口、默认入口切换后的回归验收 |
-| `termx-tui-v3` | 自有 AppRuntime、state、render、input、真实 TerminalHost/FrameSink、live app、copy mode 真实 protocol path、services adapters | CLI attach/root 装配、本地端到端 smoke、默认入口切换后的回归验收 |
+| `termx` | core-v2 daemon + tui-v3 root runtime | 不读取旧 TUI config，不恢复 `runTUIv2` |
+| `termx attach <id>` | tui-v3 attach runtime | 只绑定 core-v2 terminal |
+| `termx daemon` | core-v2 `NewServer` | 不构造旧 core server |
+| `termx new/ls/kill/rm` | core-v2 protocol client | 默认 socket 使用 v3 路径 |
+| `termx remote login` | CLI HTTP login + CLI config/auth helper | 不依赖旧 TUI shared helper |
+| `termx remote status/local/pair` | core-v2 protocol client | 等待后续 core-v2 remote service hook 和 adapter |
 
-## 2. 实验入口策略
+## 守卫规则
 
-默认入口不得直接切换。后续必须先提供显式实验入口：
+- `termx-cli/cmd/termx/default_dependency_guard_test.go` 扫描所有非测试 CLI 源文件，包括 `remote_*.go`。
+- 默认和 remote CLI 源文件不得 import `github.com/lozzow/termx/termx-core` 或 `github.com/lozzow/termx/tuiv2`。
+- `legacy_*.go` 不得重新出现。
+- `go.work`、`termx-cli/go.mod`、`termx-testkit/go.mod` 和相关 module 文件不得恢复旧 `termx-core` / `tuiv2` replace。
 
-| 阶段 | 命令形态 | 约束 |
-| --- | --- | --- |
-| 切片 18-24 | `termx v3 ...` | 明确标识为 v3 实验入口；默认 `termx` 仍走旧链路 |
-| 切片 25 | `termx` root | 默认 root 已切到 v2/v3；旧 root 移到 `termx legacy` |
-| 切片 26 | `termx ...` | 默认 attach、daemon、new、ls、kill、rm 已切到 v2/v3；旧本地命令移到 `termx legacy ...` |
-| 切片 27 | `termx ...` | 对默认入口做全量回归验收 |
-| 切片 25 之后 | `termx legacy ...` | 保留旧本地链路只能显式命名；不得用隐藏环境变量作为默认回退 |
+## 后续 remote 迁移
 
-推荐实验命令矩阵：
+后续切片必须继续按 core-v2 contract 迁移，不允许补旧 fallback：
 
-| 实验命令 | 对应默认命令 | 目标 backend |
-| --- | --- | --- |
-| `termx v3 daemon` | `termx daemon` | core-v2 server |
-| `termx v3 new -- CMD` | `termx new -- CMD` | core-v2 protocol create |
-| `termx v3 ls` | `termx ls` | core-v2 protocol list |
-| `termx v3 attach <id>` | `termx attach <id>` | tui-v3 + core-v2 attach/history/input |
-| `termx v3 kill <id>` | `termx kill <id>` | core-v2 protocol kill |
-| `termx v3 rm <id>` | `termx rm <id>` | core-v2 protocol remove |
+1. 先审计并对齐 `termx-proto` / `internal/protocol` remote wire 和 typed domain contract。
+2. 在 core-v2 增加 remote service hook、transport scope API、terminal create/process 字段和 storage/events routing。
+3. 用 core-v2 daemon/domain adapter 装配 `termx-remote.Service`。
+4. 用 smoke 证明 `remote.status`、`remote.local.*`、`remote.pair.start` 和 remote terminal/storage/transport routing 都经过 core-v2 truth。
 
-## 3. 当前 CLI 命令迁移矩阵
+## 验收命令
 
-| 命令 | 当前依赖 | v2/v3 目标 | 最早切片 | 验收证据 |
-| --- | --- | --- | --- | --- |
-| `termx` | `runV3RootCommand` -> core-v2 daemon -> tui-v3 attach runtime | tui-v3 root app，默认 session `main/main` | 25 | 非交互 `--help` 可编译；CLI test 断言默认 root 不再调用 `runTUIv2` |
-| `termx attach <id>` | tui-v3 attach app，绑定指定 terminal | tui-v3 attach app，绑定指定 terminal | 21、26 | attach 后能渲染 live surface、输入、resize、copy mode |
-| `termx daemon` | core-v2 `NewServer` | core-v2 `NewServer` 或等价 constructor | 18、26 | socket listen、shutdown、events、protocol smoke 通过 |
-| `termx new -- CMD` | core-v2 protocol `create` | core-v2 protocol `create` | 20、26 | 返回 terminal id；`ls` 可见；PTY 有输出 |
-| `termx ls` | core-v2 protocol `list` | core-v2 protocol `list` | 20、26 | 输出 id/name/command/state/size |
-| `termx kill <id>` | core-v2 protocol `kill` | core-v2 protocol `kill` | 20、26 | running 进程退出；事件发出 |
-| `termx rm <id>` | core-v2 protocol `remove` | core-v2 protocol `remove` | 20、26 | inventory 删除；attach channel 清理 |
-| `termx remote login` | CLI HTTP login + 旧 `tuiv2/shared` 配置 helper | 暂留 legacy/fallback；后续若进入默认路径，配置 helper 必须从 tuiv2 解耦 | 23、24、28 | 登录、保存 token、配置路径和敏感信息保护测试通过，或默认切换时明确 legacy/fallback |
-| `termx remote status/info/open` | daemon remote protocol methods | 暂留 legacy/fallback；未迁移到 `termx v3` | 24 | `termx v3 remote ...` 不挂载；旧 `termx remote ...` 保留 |
-| `termx remote enable/disable/pair` | CLI remote glue + daemon extension | 暂留 legacy/fallback；未迁移到 `termx v3` | 24 | `termx v3 remote ...` 不挂载；旧 remote CLI 测试继续通过 |
+当前删除旧 fallback 切片的基线验收：
 
-## 3.1 v3 实验入口路径策略
-
-切片 23 起，`termx v3 ...` 实验入口的路径策略如下：
-
-| 项目 | v3 实验入口策略 | 与旧默认入口差异 |
-| --- | --- | --- |
-| socket | `--socket` 显式值优先；未指定时使用 `XDG_RUNTIME_DIR/termx-v2.sock` 或 `/tmp/termx-v2-$UID.sock` | 旧默认入口使用 `termx.sock` 或 `/tmp/termx-$UID.sock`；v3 在实验期必须避免误连旧 daemon |
-| log | 复用 CLI 全局 `--log-file`、`TERMX_LOG_FILE`、`XDG_STATE_HOME/termx/termx.log`、用户 state dir fallback | 与旧默认入口保持一致，便于对照调试 |
-| config | v3 本地实验入口暂不读取或创建 `termx.yaml` | 旧 TUI root/attach 会通过 `tuiv2/shared` 创建和读取配置；v3 在默认切换前不得为了本地 attach 依赖 `tuiv2/shared` |
-| state | v3 本地实验入口暂不读取或创建 workspace state | 旧 root 会使用 workspace-state；v3 后续如需 state，必须使用新路径 helper 或共享 helper，不得回引旧 TUI 配置层 |
-
-当前保留限制：remote login/config 仍在旧 CLI remote glue 内，切片 24 必须给出迁移或 legacy/fallback 隔离结论。
-
-## 3.2 remote 兼容与隔离结论
-
-切片 24 的结论：remote 暂不迁移到 `termx v3 ...` 实验命令组，保持 legacy/fallback 隔离。
-
-| 项目 | 当前结论 | 后续默认切换要求 |
-| --- | --- | --- |
-| `termx v3 remote ...` | 不挂载，命令应返回 unknown command | 防止用户误以为 remote 已经跑在 core-v2 extension 上 |
-| `termx remote login` | 暂留旧 CLI remote glue，用于账号、token、auth store 和配置文件行为 | 切片 28 前必须清理默认路径对 `tuiv2/shared` 的依赖，或把 remote 明确移动到 legacy/fallback 入口 |
-| `termx remote status/info/open` | 仍依赖旧 daemon remote protocol methods | 默认切换时不能宣称 core-v2 remote 完成；若未迁移，必须显式 legacy/fallback |
-| `termx remote enable/disable/pair` | 仍依赖旧 daemon extension 和本地 remote runtime 装配 | 默认切换前需二选一：迁移到 core-v2 extension，或在默认 v2/v3 切换后保留为显式 legacy/fallback |
-
-因此，切片 25-27 只能切换本地 root/daemon/attach/control 主路径。remote 不得作为“已默认迁移到 core-v2”的证据；如果仍未迁移，必须在默认入口切换提交中保持显式隔离说明。
-
-## 3.3 切片 28 旧依赖冻结结论
-
-切片 28 的冻结口径如下：
-
-| 项目 | 结论 |
+| 范围 | 命令 |
 | --- | --- |
-| 默认本地入口 | `termx`、`termx daemon`、`termx attach`、`termx new`、`termx ls`、`termx kill`、`termx rm` 的源文件不得 import 旧 `termx-core` 或 `tuiv2` |
-| 旧本地入口 | 仅允许存在于 `termx-cli/cmd/termx/legacy_*.go`，通过 `termx legacy ...` 显式调用 |
-| remote fallback | 仅允许存在于 `termx-cli/cmd/termx/remote_*.go`；仍是 legacy/fallback，不计入 core-v2 默认本地切换完成证据 |
-| 依赖守卫 | `TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI` 和 `make test-cli-default-deps` 检查默认源文件不回引旧 runtime import |
-| module 依赖 | `termx-cli/go.mod` 暂时保留旧 `termx-core`/`tuiv2`，只服务 legacy/remote 隔离文件；移除需等待 remote 迁移或独立 legacy binary |
-
-后续如果要彻底从 `termx-cli` module 移除旧依赖，必须先把 remote 迁移到 core-v2 extension，或把 legacy/remote fallback 拆成独立 module/binary；不得在默认本地入口中重新引入旧 runtime。
-
-## 4. Protocol 方法迁移矩阵
-
-core-v2 必须先实现本地默认路径所需方法，再收口 remote。
-
-| 方法或 frame | 当前旧 server 行为 | core-v2 目标 | 最早切片 |
-| --- | --- | --- | --- |
-| `hello` | protocol 握手 | 保持 wire version 兼容 | 12 |
-| `create` | 创建 PTY terminal，返回 id/state | core-v2 registry + PTY lifecycle + history ingest | 13、14 |
-| `list` | 返回 terminal inventory | core-v2 registry 排序输出 | 12、14 |
-| `get` | 返回 terminal info | core-v2 terminal info | 14 |
-| `kill` | 结束 running terminal 或移除 exited terminal | core-v2 process control | 13、14 |
-| `restart` | 重启 terminal | core-v2 process restart；可在实验入口先标注受限 | 13、14 |
-| `remove` | 关闭 terminal、清理持久状态、发事件 | core-v2 lifecycle + storage cleanup | 13、14 |
-| `set_tags` | 修改 tags | core-v2 metadata | 14 |
-| `set_metadata` | 修改 name/tags 并发 inventory 变化 | core-v2 metadata + duplicate guard | 14 |
-| `resize` | 按 terminal id resize | core-v2 resize event，不能凭空创建 history | 13、14 |
-| `ensure_resize` | attach channel resize ownership guard | core-v2 resize ownership 或等价 owner/follower 规则 | 14 |
-| `attach` | 分配 channel，订阅 stream，返回 resize control | core-v2 attach channel + stream pump | 14 |
-| `detach` | 清理 terminal attachment | core-v2 attachment cleanup | 14 |
-| `events` | 订阅 terminal/storage events | core-v2 event broker | 12、14 |
-| `snapshot` | legacy realtime projection | 仅作为实时兼容投影，不是 history truth | 14 |
-| `grid.viewport` | legacy realtime projection | 仅作为实时兼容投影，不是 copy mode truth | 14 |
-| `history.window` | 当前旧 core 已扩展 token/generation/logical cursor 字段，但实现仍在旧 core | core-v2 authoritative HistoryWindow，来自 logical line truth | 14 |
-| `storage.get` | app storage | core-v2 storage service 或迁移兼容层 | 23、24 |
-| `storage.put` | app storage | core-v2 storage service 或迁移兼容层 | 23、24 |
-| `storage.delete` | app storage | core-v2 storage service 或迁移兼容层 | 23、24 |
-| `storage.list` | app storage | core-v2 storage service 或迁移兼容层 | 23、24 |
-| `remote.status` | remote extension handler | core-v2 daemon 装配 remote handler，或显式 legacy/fallback 隔离 | 24 |
-| `remote.pair.start` | remote extension handler | core-v2 daemon 装配 remote handler，或显式 legacy/fallback 隔离 | 24 |
-| `remote.local.enable` | remote extension handler | core-v2 daemon 装配 remote local runtime，或显式 legacy/fallback 隔离 | 24 |
-| `remote.local.status` | remote extension handler | core-v2 daemon 装配 remote local runtime，或显式 legacy/fallback 隔离 | 24 |
-| `remote.local.disable` | remote extension handler | core-v2 daemon 装配 remote local runtime，或显式 legacy/fallback 隔离 | 24 |
-| `wire.TypeInput` | attach channel 输入写入 PTY | tui-v3 input -> protocol input -> core-v2 PTY | 13、16 |
-| `wire.TypeResize` | attach channel resize | tui-v3 resize -> protocol resize frame -> core-v2 resize | 13、16 |
-| `wire.TypeStreamReady` | stream backpressure/recovery hint | core-v2 stream pump 支持或定义等价语义 | 14、16 |
-| output stream frames | screen update、resize、closed、sync lost | core-v2 live surface stream；tui-v3 不从 stream 推断 history truth | 14、16 |
-
-## 5. core-v2 daemon 能力矩阵
-
-| 能力 | 旧 core 现状 | core-v2 目标 | 关键约束 |
-| --- | --- | --- | --- |
-| server constructor/options | `NewServer` + socket/default size/grid root/logger | 独立 `NewServer` 或等价 API | `termx-cli` 不得通过旧 `termx-core.NewServer` 启动 |
-| socket listen/shutdown | Unix socket listener + graceful shutdown | core-v2 自有 listener/shutdown | 自动启动 daemon 行为必须保持 |
-| terminal registry | map terminal id -> Terminal | core-v2 registry | `list/get/remove/events` 共用同一 truth |
-| PTY lifecycle | create/read/write/resize/kill/restart | core-v2 lifecycle package | 输出进入 live surface 和 history ingest 边界 |
-| live surface | VTerm/screen stream | core-v2 live projection | 只服务实时显示，不是 committed history truth |
-| history truth | 旧 mixed grid/persisted/live-tail path | `LogicalLineStore` + committed index + mutable frontier | logical line 是唯一 history truth |
-| HistoryWindow | 旧 core authoritative window 过渡实现 | core-v2 authoritative window service | 支持 token/generation/cursor/boundary/cols |
-| stream attachment | channel allocator + stream pump | core-v2 attachment manager | 支持 input/resize/closed/sync lost |
-| resize ownership | owner/follower/observer | core-v2 resize control | resize 不能创建 history |
-| events | terminal/storage event fanout | core-v2 event broker | remote/local CLI 都消费同一事件流 |
-| storage | public/private app storage | core-v2 storage 或兼容 service | remote/session 配置不能丢 |
-| remote extension | `ProtocolMethodHandler` | core-v2 server extension hook，或显式 legacy/fallback 隔离 | 切片 24 前不能宣称 remote 完成 |
-| remote login/config | CLI HTTP login + `tuiv2/shared` 配置 helper | CLI 自有或共享配置 helper，不依赖 tuiv2 默认 runtime | 切片 28 前必须清理默认旧依赖 |
-| persistence/recovery | grid root + terminal store | logical line store + runtime recovery | recovery/full replace 不得凭空创建 committed history |
-| logging/diagnostics | slow op、socket、daemon logs | core-v2 logging hooks | CLI `--log-file` 行为保持 |
-
-## 6. tui-v3 能力矩阵
-
-| 能力 | tuiv2 现状 | tui-v3 目标 | 最早切片 |
-| --- | --- | --- | --- |
-| runtime | Bubble Tea program；TTY 上部分绕过 standardRenderer | 自有 `AppRuntime`、`Msg`、`Effect`、`EffectRunner` | 15 |
-| terminal host | Bubble Tea input + 自定义 cursor writer | 自有 raw mode、input loop、FrameSink | 15 |
-| protocol services | `tuiv2/bridge` + runtime managers | tui-v3 services + protocol adapters | 16 |
-| live render | 本地 VTerm/snapshot/runtime registry | core-v2 live surface projection -> RenderVM | 16 |
-| input | tea key/mouse -> action -> runtime input | `InputEvent` -> semantic intent -> protocol input | 16 |
-| resize | pane/layout/owner resize managers | TerminalHost size + protocol resize/ensure_resize | 16 |
-| copy mode | 已接入 authoritative history.window，但仍在 tuiv2 state/render | `HistoryStore` + `CopyModeStore` 只消费 core-v2 window | 17 |
-| session/workspace | tuiv2 persist/workbench/session store | v3 最小 session state，后续再扩展复杂布局 | 16、23 |
-| render styling | tuiv2 render + lipgloss v1/自定义 writer | tui-v3 RenderVM + Renderer + lipgloss/v2/x/ansi | 15、16 |
-| Bubble Tea | 主 runtime contract | 禁止进入 v3 主线 | 全阶段 |
-
-## 7. 分阶段验收口径
-
-| 阶段 | 验收重点 | 必跑检查 |
-| --- | --- | --- |
-| 切片 11 | 本文档存在，矩阵覆盖 CLI、protocol、daemon、TUI、验收口径 | `git diff --check` |
-| 切片 12 | core-v2 server API 和 daemon 骨架 | `cd termx-core-v2 && go test ./... -count=1` |
-| 切片 13 | PTY lifecycle 和输出 ingest | core-v2 tests；必要时 termx-vterm tests |
-| 切片 14 | core-v2 protocol service + history.window | core-v2 tests、`cd internal && go test ./protocol/... -count=1`、`cd termx-proto && go test ./... -count=1` |
-| 切片 15 | tui-v3 真实 TerminalHost/FrameSink | `cd termx-tui-v3 && go test ./... -count=1` |
-| 切片 16 | tui-v3 attach/live/input/resize 主路径 | tui-v3 tests + 最小 fake/真实协议 harness |
-| 切片 17 | copy mode 真实 core client path | tui-v3 tests，覆盖 latest/older/stale/selection/copy |
-| 切片 18 | `termx v3` 命令组、core-v2 daemon 骨架、tui-v3 smoke 装配 | `cd termx-cli && go test ./... -count=1`、`make test-v2-migration` |
-| 切片 19 | v3 daemon 连接和自动启动基础 | `cd termx-cli && go test ./... -count=1`、`make test-v2-migration` |
-| 切片 20 | v3 本地控制命令 | CLI tests + v3 local command smoke |
-| 切片 21 | v3 attach/TUI 装配 | CLI tests + tui-v3 tests + attach harness |
-| 切片 22 | v3 本地端到端 smoke | `make test-v2-migration` + v3 local e2e smoke |
-| 切片 23 | 配置、日志与状态路径收口 | CLI tests；路径差异必须显式记录 |
-| 切片 24 | remote 兼容与隔离结论 | CLI remote tests；未完成项必须显式记录 |
-| 切片 25 | 默认 root 入口切换 | `go run ./termx-cli/cmd/termx --help`、CLI tests、迁移 smoke |
-| 切片 26 | 默认 daemon/attach/control 切换 | CLI tests、迁移 smoke、默认本地单 session smoke |
-| 切片 27 | 默认入口回归验收 | CLI/core-v2/tui-v3/protocol 相关 tests、`make test-v2-migration`、默认入口 smoke |
-| 切片 28 | 旧默认依赖清理与冻结 | `make test-cli-default-deps`；grep 守卫默认路径不 import `termx-core`/`tuiv2`；文档-only 部分至少 `git diff --check` |
-
-## 7.1 切片 27 默认入口回归验收记录
-
-切片 27 已完成默认入口回归验收，结论如下：
-
-| 验收项 | 命令 | 结论 |
-| --- | --- | --- |
-| CLI tests | `cd termx-cli && go test ./... -count=1` | 通过 |
-| core-v2 tests | `cd termx-core-v2 && go test ./... -count=1` | 通过 |
-| tui-v3 tests | `cd termx-tui-v3 && go test ./... -count=1` | 通过 |
-| protocol tests | `cd internal && go test ./protocol/... -count=1` | 通过 |
-| proto tests | `cd termx-proto && go test ./... -count=1` | 通过 |
-| 迁移 smoke | `make test-v2-migration` | 通过 |
-| 默认入口非交互 smoke | `make test-cli-default-smoke`，并已纳入 `make test-v2-migration` | 通过 |
-
-默认入口 smoke 覆盖 `termx --help`、默认 `termx daemon`、默认 `termx new`、默认 `termx ls`、默认 `termx kill`、默认 `termx rm`。`termx attach` 的真实交互路径仍通过 CLI fake harness 和 tui-v3/core-v2 protocol harness 覆盖，非交互环境只允许明确错误或专用 smoke。
-
-remote 仍按切片 24 结论保持 legacy/fallback 隔离：`termx remote ...` 未迁移到 core-v2 extension，不得被计入本地默认入口完成证据；切片 28 必须继续显式保留或冻结该差异。
-
-## 8. 非目标与延期项
-
-- 切片 11 不写 runtime 代码，只建立迁移审计基准。
-- `snapshot` 与 `grid.viewport` 后续只能作为实时兼容投影，不得重新变成 history truth。
-- 复杂多 pane/workspace/floating UI 不作为 v3 实验入口首个验收门槛；首个门槛是本地单 session create/attach/render/input/resize/history/copy mode。
-- remote 可以晚于本地实验入口完成，但默认入口切换前必须有明确兼容结论或显式延期记录。
-- 外部账号、DNS、TLS、OAuth 等人工配置事项不阻塞本地默认切换；必须用 mock/stub 或文档记录。
-
-## 9. 后续切片关系
-
-切片 12-14 负责让 core-v2 具备 daemon/server/protocol 能力；切片 15-17 负责让 tui-v3 具备真实 TTY 和交互能力；切片 18-24 在 CLI 内用 `termx v3 ...` 跑通实验入口、本地命令、attach/TUI、端到端 smoke、配置和 remote 收口；切片 25-27 切换默认 root、daemon、attach 和本地控制命令并完成回归验收；切片 28 清理默认旧依赖并冻结旧目录。
+| CLI | `cd termx-cli && go test ./cmd/termx -count=1` |
+| 默认依赖守卫 | `cd termx-cli && go test ./cmd/termx -run TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI -count=1` |
+| remote | `cd termx-remote && go test ./... -count=1` |
+| testkit | `cd termx-testkit && go test ./... -count=1` |
+| hub module boundary | `cd termx-hub && go test ./... -count=1` |
+| diff | `git diff --check` |
