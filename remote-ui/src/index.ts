@@ -159,6 +159,34 @@ export type {
   TerminalSnapshotPayload,
 } from './terminal/terminalClient'
 export {
+  CORE_V2_HISTORY_WINDOW_MODES,
+  CORE_V2_HISTORY_WINDOW_OPS,
+  CORE_V2_TERMINAL_METHODS,
+  assertLiveCacheOnlyAPIName,
+  coreV2EventFromRuntimeEvent,
+  coreV2HistoryCopyRequestToProtocolRequest,
+  coreV2HistoryReleaseRequestToProtocolRequest,
+  coreV2HistoryWindowFromAPI,
+  coreV2HistoryWindowRequestToParams,
+} from './terminal/coreV2TerminalProtocol'
+export type {
+  CoreV2HistoryCell,
+  CoreV2HistoryCellStyle,
+  CoreV2HistoryCopyRequest,
+  CoreV2HistoryCursor,
+  CoreV2HistoryLineSpan,
+  CoreV2HistoryRange,
+  CoreV2HistoryReleaseRequest,
+  CoreV2HistoryRow,
+  CoreV2HistoryWindow,
+  CoreV2HistoryWindowMode,
+  CoreV2HistoryWindowOp,
+  CoreV2HistoryWindowParams,
+  CoreV2HistoryWindowRequest,
+  CoreV2TerminalProtocolEvent,
+  CoreV2TerminalProtocolRequest,
+} from './terminal/coreV2TerminalProtocol'
+export {
   DEFAULT_TERMINAL_SETTINGS,
   TERMINAL_FONT_OPTIONS,
   TERMINAL_SETTINGS_STORAGE_KEY,
