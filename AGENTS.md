@@ -37,6 +37,9 @@
 - `termx-cli/cmd/termx/legacy_*.go` 是显式旧本地入口隔离文件；不得被默认 root、daemon、attach、new、ls、kill、rm 路径调用。
 - `termx-cli/cmd/termx/remote_*.go` 当前是 remote legacy/fallback 隔离文件；remote 未迁移到 core-v2 extension 前，不得把它作为默认本地切换完成证据。
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
+- 当前进入 remote 迁移阶段时，仍必须保持默认本地入口走 `termx-core-v2/` 与 `termx-tui-v3/`；remote 迁移只能通过 core-v2 protocol/service extension、`termx-remote` public package 和 CLI glue 接入，不能把默认路径退回旧 daemon 或旧 TUI。
+- `termx remote ...` 从 legacy/fallback 迁出必须按 `workflow.md` 切片逐步完成：先审计和契约，再 core-v2 extension hook，再 CLI 装配，再启用 local/pair flow。不得一次性大搬旧实现。
+- remote 迁移期间允许触碰 `termx-remote/` 和必要的 `termx-cli/cmd/termx/remote_*.go`，但只能在 `workflow.md` 当前切片列明时修改；`remote-ui/`、`web-control/`、`termx-hub/` 仍冻结。
 - 如果确实必须修改旧目录，先修改 `workflow.md` 的范围表并说明原因。
 - 冻结目录不得触碰，除非 `workflow.md` 先明确解冻。
 - 关键代码需要写上注释,使用中文
@@ -50,6 +53,8 @@
 - `tuiv2/`：旧 TUI 参考目录，只能读取、搜索、运行测试或摘取外部契约参考；默认本地 CLI 不得直接依赖。
 - `termx-vterm/`：受限联动目录，只在新 core-v2/tui-v3 的 terminal 或 protocol 契约确实需要时最小化触及。
 - `internal/protocol/` 与 `termx-proto/`：受限联动目录，只在 `history.window` contract 或 protocol adapter 切片需要时最小化触及。
+- `termx-remote/`：remote runtime/service 主线目录，只在 remote 迁移切片中修改；它不能直接拥有 core-v2 terminal/history truth，只能通过 core-v2 daemon/protocol adapter 访问。
+- `termx-remote-v2/`：remote v2 设计/实验目录；默认不触碰，除非 `workflow.md` 明确把它纳入当前切片。
 - `termx-cli/`、`termx-shared/`、`termx-testkit/`、`scripts/`、`Makefile`、`go.work`、`go.work.sum`、必要顶层说明文档：受限联动范围，只在当前切片需要时最小化触及。
 
 ## 硬语义规则
@@ -70,6 +75,9 @@
 - 禁止在 tui-v3 主线引入 Bubble Tea `Program`、`standardRenderer`、`tea.Model`、`tea.Msg`、`tea.Cmd`、`tea.KeyMsg`、`tea.MouseMsg`、`bubbles` 或依赖这些 contract 的 UI 组件。
 - 允许 `lipgloss/v2`、`x/ansi` 作为纯渲染/样式/ANSI 辅助；允许 `ultraviolet` 隔离在 `TerminalHost` 或 `FrameSink` 内作为终端 primitive。
 - `hot/cold` 只能出现在旧模型问题说明或迁移记录中，不得作为新代码、测试 helper、内部 contract 或运行时状态命名。
+- remote 不能拥有第二份 terminal truth：terminal lifecycle、PTY size、attachment、events、history 和 storage 必须来自 core-v2 daemon/protocol；remote 只负责授权、配对、transport/session 和请求路由。
+- remote storage 只能走 core-v2 storage API；不得把 TUI workbench、terminal lifecycle 或 copy/history 交互态写成 remote 私有 truth。
+- remote management request 必须通过清晰 adapter 路由到 core-v2 public/protocol 方法；不得直接读写 TUI reducer state、renderer、TerminalHost 或旧 core runtime。
 
 ## 实现纪律
 
