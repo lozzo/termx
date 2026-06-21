@@ -312,6 +312,75 @@ func TestAnswerOfferMachineScopedPolicyAllowsAnyTerminalChannel(t *testing.T) {
 	}
 }
 
+func TestAnswerOfferRoutesMachineEventsDataChannelToTransportSink(t *testing.T) {
+	sessionCtx, cancelSession := context.WithCancel(context.Background())
+	defer cancelSession()
+	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer offerPC.Close()
+
+	dc, err := offerPC.CreateDataChannel("machine-events", nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel(machine-events) returned error: %v", err)
+	}
+	open := make(chan struct{})
+	dc.OnOpen(func() {
+		select {
+		case <-open:
+		default:
+			close(open)
+		}
+	})
+
+	offer, err := offerPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := offerPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitTestPeerICE(t, offerPC, 5*time.Second)
+
+	served := make(chan string, 1)
+	answer, err := AnswerOfferWithOptions(context.Background(), hubv1.SignalingOffer{
+		SessionID: "machine-events-protocol-session",
+		MachineID: "machine-1",
+		SDP:       offerPC.LocalDescription().SDP,
+	}, nil, transportSinkFunc(func(_ context.Context, t transport.Transport, remote string) error {
+		defer t.Close()
+		served <- remote
+		return nil
+	}), fileapi.NewManager(), AnswerOptions{
+		ChannelPolicy: ChannelPolicy{AllowEvents: true},
+		SessionContext: sessionCtx,
+	})
+	if err != nil {
+		t.Fatalf("AnswerOfferWithOptions returned error: %v", err)
+	}
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  answer.SDP,
+	}); err != nil {
+		t.Fatalf("SetRemoteDescription returned error: %v", err)
+	}
+
+	select {
+	case <-open:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for machine-events data channel to open")
+	}
+	select {
+	case remote := <-served:
+		if remote != "webrtc:machine-events" {
+			t.Fatalf("machine-events data channel used remote label %q", remote)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for machine-events transport sink")
+	}
+}
+
 func TestAnswerOfferTerminalChannelBuffersFrameSentOnClientOpen(t *testing.T) {
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
 	defer cancelSession()

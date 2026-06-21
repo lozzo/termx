@@ -65,6 +65,21 @@ func TestDaemonRuntimeAdapterRoutesTerminalTransportThroughScopedDaemon(t *testi
 	}
 }
 
+func TestDaemonRuntimeAdapterRoutesMachineEventsTransportThroughScopedDaemon(t *testing.T) {
+	daemon := &scopedTransportDaemonStub{}
+	adapter := daemonRuntimeAdapter{daemon: daemon}
+
+	if err := adapter.ServeRemoteTransport(context.Background(), nil, "webrtc:machine-events"); err != nil {
+		t.Fatalf("ServeRemoteTransport returned error: %v", err)
+	}
+	if daemon.scopedCalls != 1 || daemon.unscopedCalls != 0 {
+		t.Fatalf("expected scoped machine-events transport call only, scoped=%d unscoped=%d", daemon.scopedCalls, daemon.unscopedCalls)
+	}
+	if daemon.remote != "webrtc:machine-events" || daemon.scope.TerminalID != "" || !daemon.scope.MachineEventsOnly {
+		t.Fatalf("unexpected machine-events scope remote=%q scope=%#v", daemon.remote, daemon.scope)
+	}
+}
+
 func TestDaemonRuntimeAdapterFallsBackForUnscopedDaemon(t *testing.T) {
 	daemon := &terminalManagementDaemonStub{}
 	adapter := daemonRuntimeAdapter{daemon: daemon}

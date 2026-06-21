@@ -78,7 +78,7 @@ func NewService(cfg remoteprotocol.Config, daemon Daemon) *Service {
 		pairing:   &pairingStore{},
 	}
 	runtimeAdapter := daemonRuntimeAdapter{daemon: daemon}
-	s.manager = runtime.NewManager(runtimeConfig(cfg), runtimeAdapter, runtimeAdapter)
+	s.manager = runtime.NewManager(runtimeConfig(cfg), runtimeAdapter, s)
 	s.manager.SetPairClaimer(pairClaimer{store: s.pairing})
 	return s
 }
@@ -135,6 +135,16 @@ func (s *Service) SubscribeRemoteEvents(ctx context.Context, filters remotertc.E
 		return nil, func() {}, fmt.Errorf("remote service is nil")
 	}
 	return daemonRuntimeAdapter{daemon: s.daemon}.SubscribeRemoteEvents(ctx, filters)
+}
+
+func (s *Service) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
+	if s == nil {
+		if t != nil {
+			_ = t.Close()
+		}
+		return fmt.Errorf("remote service is nil")
+	}
+	return daemonRuntimeAdapter{daemon: s.daemon}.ServeRemoteTransport(ctx, t, remote)
 }
 
 func (s *Service) Status() remoteprotocol.Status {
@@ -340,6 +350,12 @@ func (p daemonRuntimeAdapter) ServeRemoteTransport(ctx context.Context, t transp
 func scopedTransportScopeFromRemote(remote string) (TransportScope, bool, error) {
 	label := strings.TrimSpace(remote)
 	label = strings.TrimPrefix(label, "webrtc:")
+	switch label {
+	case "machine-events", "events:machine", "events":
+		// 中文说明：machine events 是受限 protocol transport，只能订阅 core-v2
+		// terminal lifecycle/metadata 事件，不能回落成完整 daemon session。
+		return TransportScope{MachineEventsOnly: true}, true, nil
+	}
 	if !strings.HasPrefix(label, "terminal:") {
 		return TransportScope{}, false, nil
 	}

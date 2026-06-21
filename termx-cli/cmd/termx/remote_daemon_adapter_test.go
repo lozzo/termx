@@ -337,6 +337,63 @@ func TestRemoteRuntimeAPIRoutesTerminalStorageAndEventsThroughCoreV2Truth(t *tes
 	}
 }
 
+func TestRemoteServiceTransportRoutesThroughCoreV2ScopedProtocolSession(t *testing.T) {
+	factory := &remoteAdapterProcessFactory{}
+	server := corev2.NewServer(corev2.WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(corev2.TerminalRecord{ID: "term-1", Name: "one", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register term-1: %v", err)
+	}
+	if _, err := server.RegisterTerminal(corev2.TerminalRecord{ID: "term-2", Name: "two", Command: []string{"shell"}}); err != nil {
+		t.Fatalf("register term-2: %v", err)
+	}
+	service := remote.NewService(
+		remoteprotocol.Config{Enabled: true, DataDir: t.TempDir(), DeviceName: "transport-routing"},
+		newCoreV2RemoteDaemonAdapter(server),
+	)
+
+	terminalClient, closeTerminalClient := newRemoteServiceProtocolClient(t, service, "webrtc:terminal:machine-1:term-1")
+	defer closeTerminalClient()
+	var termOne coreprotocol.TerminalInfo
+	if err := terminalClient.Call(context.Background(), "get", coreprotocol.GetParams{TerminalID: "term-1"}, &termOne); err != nil {
+		t.Fatalf("terminal-scoped service transport did not reach core-v2 get: %v", err)
+	}
+	if termOne.ID != "term-1" {
+		t.Fatalf("terminal-scoped service transport returned wrong terminal %#v", termOne)
+	}
+	var termTwo coreprotocol.TerminalInfo
+	if err := terminalClient.Call(context.Background(), "get", coreprotocol.GetParams{TerminalID: "term-2"}, &termTwo); err == nil || !strings.Contains(err.Error(), "transport scope") {
+		t.Fatalf("terminal-scoped service transport should reject term-2, got %v", err)
+	}
+
+	machineClient, closeMachineClient := newRemoteServiceProtocolClient(t, service, "webrtc:machine-events")
+	defer closeMachineClient()
+	if err := machineClient.Call(context.Background(), "get", coreprotocol.GetParams{TerminalID: "term-1"}, &coreprotocol.TerminalInfo{}); err == nil || !strings.Contains(err.Error(), "machine-events-only") {
+		t.Fatalf("machine-events service transport should reject terminal method, got %v", err)
+	}
+	if err := machineClient.Call(context.Background(), "events", coreprotocol.EventsParams{
+		StorageAppID: "remote-ui",
+	}, nil); err == nil || !strings.Contains(err.Error(), "machine-events-only") {
+		t.Fatalf("machine-events service transport should reject storage event filter, got %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, err := machineClient.Events(ctx, coreprotocol.EventsParams{})
+	if err != nil {
+		t.Fatalf("machine-events service transport did not allow terminal event subscription: %v", err)
+	}
+	if _, err := server.SetMetadata(context.Background(), "term-1", "one-renamed", nil); err != nil {
+		t.Fatalf("set metadata: %v", err)
+	}
+	select {
+	case event := <-events:
+		if event.TerminalID != "term-1" || event.Type != coreprotocol.EventTerminalMetadataChanged {
+			t.Fatalf("machine-events service transport returned wrong event %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for machine-events terminal event")
+	}
+}
+
 func routeRemoteTerminalAPI(t *testing.T, service *remote.Service, path string, body proto.Message) []byte {
 	t.Helper()
 	status, payload, errMsg := service.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
@@ -418,6 +475,30 @@ func newRemoteAdapterScopedClient(t *testing.T, adapter *coreV2RemoteDaemonAdapt
 			}
 		case <-time.After(time.Second):
 			t.Fatal("scoped transport did not stop")
+		}
+	}
+}
+
+func newRemoteServiceProtocolClient(t *testing.T, service *remote.Service, remoteLabel string) (*coreprotocol.Client, func()) {
+	t.Helper()
+	clientTransport, serverTransport := memory.NewPair()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- service.ServeRemoteTransport(context.Background(), serverTransport, remoteLabel)
+	}()
+	client := coreprotocol.NewClient(clientTransport)
+	if err := client.Hello(context.Background(), coreprotocol.Hello{Version: wire.Version, Client: "remote-service-transport-test"}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	return client, func() {
+		_ = client.Close()
+		select {
+		case err := <-errCh:
+			if err != nil && !strings.Contains(err.Error(), "EOF") {
+				t.Fatalf("service transport returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("service transport did not stop")
 		}
 	}
 }

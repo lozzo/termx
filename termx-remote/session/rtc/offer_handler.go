@@ -160,6 +160,22 @@ func AnswerOfferWithOptions(
 					_ = sink.ServeRemoteTransport(sessionCtx, transport, "webrtc:"+dc.Label())
 				}()
 			})
+		case label == "machine-events":
+			if sink == nil {
+				dc.OnOpen(func() {
+					_ = dc.Close()
+				})
+				return
+			}
+			// 中文说明：machine-events 是 core-v2 protocol 的受限 transport，
+			// 不复用 runtimepb events channel，也不允许退回完整 daemon session。
+			transport := bridge.NewDataChannelTransport(dc)
+			dc.OnOpen(func() {
+				go func() {
+					defer transport.Close()
+					_ = sink.ServeRemoteTransport(sessionCtx, transport, "webrtc:"+dc.Label())
+				}()
+			})
 		case label == "api":
 			handleAPIChannel(sessionCtx, dc, fileManager, opts.TerminalManagement, opts.Storage, func(ctx context.Context) context.Context {
 				return withRelayConnection(ctx, IsRelayConnection(pc))
