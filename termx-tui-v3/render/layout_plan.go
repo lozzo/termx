@@ -190,14 +190,15 @@ func measureFloatings(floatings []FloatingVM, viewport Rect) []FloatingLayoutPla
 	}
 	out := make([]FloatingLayoutPlan, 0, len(sorted))
 	for _, floating := range sorted {
+		if floating.Collapsed {
+			// hide 语义是整个 floating pane 不可见且不可命中，不只是隐藏内容区。
+			continue
+		}
 		rect := intersectRect(floating.Rect, viewport)
 		if rect.W <= 0 || rect.H <= 0 {
 			continue
 		}
 		contentRect := Rect{X: rect.X + 1, Y: rect.Y + 1, W: maxInt(0, rect.W-2), H: maxInt(0, rect.H-2)}
-		if floating.Collapsed {
-			contentRect = Rect{}
-		}
 		out = append(out, FloatingLayoutPlan{Floating: floating, Rect: rect, ContentRect: contentRect})
 	}
 	return out

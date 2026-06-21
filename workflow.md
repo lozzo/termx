@@ -338,9 +338,11 @@
 | 215E1-R164. SK copy history exit release boundary | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`workflow.md` | 已确认并补强 history/copy 本地窗口释放边界：连续滚动 trim 后重新分配保留窗口，不持有旧大 backing array；主动 ESC 退出或关闭 pane 后 current root、view session map 与增量 patch cache 都断开 authoritative rows/source lines 引用。准入 `go test ./termx-tui-v3/... -count=1`、`git diff --check` 通过 |
 | 215E1-R165. SK floating overview terminal table | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已将 floating overview 改成类似 terminal picker 的 float terminal 表格；弹窗顶边不再展示 `Floating Windows`、`open`、`esc` 状态提示，内容只展示可选择的 floating terminal 行 |
 | 215E1-R166. SK floating overview title and alignment | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已修正 floating overview：恢复弹窗名称但不恢复状态/esc，未连接项显示 unconnected，表头和行使用同一列宽对齐 |
+| 215E1-R167. SK hidden floating whole pane | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`workflow.md` | 已收口 hide floating 语义：隐藏后整个 floating pane 不再进入布局计划，不渲染边框/chrome，不暴露 move/resize/action 命中区，也不会继续作为 active 输入目标；`z/m` 仍可从全 hidden 状态召回最高 Z floating |
 
 当前下一步：
 
+- `215E1-R167 hidden floating whole pane` 已完成：hide floating 会隐藏整个 pane，包括边框、chrome action、move/resize 命中区和 active 输入目标；`z/m` 仍可从全 hidden 状态召回最高 Z floating。
 - `215E1-R165 floating overview terminal table` 已完成：floating overview 顶边不再显示 `Floating Windows`、`open`、`esc`，内容改成 picker 风格 floating terminal 表格；行数据优先使用 TerminalView binding 和 terminal pool/live 投影，点击/上下/Enter 仍走原 summon/open reducer 链路。
 - `215E1-R166 floating overview title and alignment` 已完成：floating overview 恢复标题 `Floating Windows`，但不显示 `● open`/`esc` 状态；未连接 floating 行显示 `unconnected`，连接后显示 terminal 名称，表头和行按统一列宽对齐。
 - `215E1-R155 live snapshot 直出 compact rows` 已完成：core snapshot 直出 compact rows，100k daemon alloc_space 降到约 755.9MB，daemon/TUI copy-oldest 约 39.2MB/41.7MB；下一步若继续压，应看 daemon history parser/string builder/clone churn 与 TUI history/render 残余分配，不再把 live snapshot 中间矩阵作为主热点。

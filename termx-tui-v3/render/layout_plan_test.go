@@ -1008,6 +1008,54 @@ func TestMeasureLayoutFloatingHitRegionsPrecedeTiledPane(t *testing.T) {
 	}
 }
 
+func TestMeasureLayoutSkipsCollapsedFloatingPaneAndHitRegions(t *testing.T) {
+	shell := ShellVM{
+		Layout: LayoutVM{
+			Panels: []PanelVM{{
+				ID:           "pane-1",
+				Presentation: PanelPresentationCard,
+				Active:       true,
+				Content:      ContentVM{Kind: ContentTerminalLive},
+			}},
+			Floating: []FloatingVM{{
+				ID:        "float-1",
+				PaneID:    "float-pane-1",
+				Title:     "float",
+				Rect:      Rect{X: 10, Y: 4, W: 30, H: 8},
+				Z:         2,
+				Active:    true,
+				Collapsed: true,
+				Content:   ContentVM{Kind: ContentTerminalLive},
+			}},
+		},
+	}
+
+	plan := MeasureLayout(shell, Rect{W: 80, H: 24})
+	if len(plan.Floatings) != 0 {
+		t.Fatalf("collapsed floating should not produce a layout plan, got %#v", plan.Floatings)
+	}
+	for _, action := range []string{
+		ActionFloatingCenter.String(),
+		ActionFloatingCollapse.String(),
+		ActionPaneZoom.String(),
+		ActionFloatingClose.String(),
+		ActionFloatingMoveDrag.String(),
+		ActionFloatingResizeDrag.String(),
+		ActionFloatingRaise.String(),
+	} {
+		for _, region := range plan.HitRegions {
+			if region.ActionID == action && (region.Floating || region.PaneID == "float-pane-1") {
+				t.Fatalf("collapsed floating should not expose action %s, hit regions=%#v", action, plan.HitRegions)
+			}
+		}
+	}
+	for _, region := range plan.HitRegions {
+		if region.Floating || region.PaneID == "float-pane-1" {
+			t.Fatalf("collapsed floating should not expose floating hit regions, got %#v in %#v", region, plan.HitRegions)
+		}
+	}
+}
+
 func TestMeasureLayoutCentersEmptyPaneActionHitRegions(t *testing.T) {
 	lines, regions, cursor := emptyPaneContentLayout("pane-1", 0)
 	shell := ShellVM{Layout: LayoutVM{Panels: []PanelVM{{

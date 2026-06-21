@@ -46,7 +46,7 @@ func (store ShellStore) setAllFloatingsCollapsed(collapsed bool, action Floating
 	if collapsed {
 		activeID = ""
 	} else {
-		activeID = topFloatingID(floatings)
+		activeID = topExpandedFloatingID(floatings)
 	}
 	store = store.withActiveTabFloatings(floatings, activeID).EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action, ID: activeID}

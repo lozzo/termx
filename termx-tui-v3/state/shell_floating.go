@@ -111,6 +111,9 @@ func (store ShellStore) focusRaiseFloating(id string, action FloatingCommandActi
 	}
 	floatings := cloneFloatings(store.activeFloatings())
 	id = floatings[index].ID
+	if floatings[index].Collapsed {
+		return store, floatingCommandInvalid(action, "floating hidden")
+	}
 	floatings[index].Z = store.nextFloatingZ() + 1
 	store = store.withActiveTabFloatings(floatings, id).EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: action, ID: id}
@@ -137,7 +140,7 @@ func (store ShellStore) closeFloating(id string) (ShellStore, FloatingCommandRes
 			next = append(next, floating)
 		}
 	}
-	store = store.withActiveTabFloatings(next, topFloatingID(next)).EnsureDefaults()
+	store = store.withActiveTabFloatings(next, topExpandedFloatingID(next)).EnsureDefaults()
 	return store, FloatingCommandResult{Status: FloatingCommandOK, Action: FloatingCommandClose, ID: id}
 }
 
@@ -154,13 +157,18 @@ func (store ShellStore) centerFloating(command FloatingCommand) (ShellStore, Flo
 }
 
 func (store ShellStore) toggleCollapseFloating(id string) (ShellStore, FloatingCommandResult) {
-	index := store.floatingIndexOrActive(id)
+	index := store.floatingIndexForToggleCollapse(id)
 	if index < 0 {
 		return store, floatingCommandInvalid(FloatingCommandToggleCollapse, "floating not found")
 	}
 	floatings := cloneFloatings(store.activeFloatings())
 	floatings[index].Collapsed = !floatings[index].Collapsed
 	targetID := floatings[index].ID
+	if floatings[index].Collapsed {
+		// hide 后不能继续作为 active 输入目标，否则窗口不可见但键盘仍可能路由进去。
+		store = store.withActiveTabFloatings(floatings, "").EnsureDefaults()
+		return store, FloatingCommandResult{Status: FloatingCommandOK, Action: FloatingCommandToggleCollapse, ID: targetID}
+	}
 	return store.withActiveTabFloatings(floatings, store.activeFloatingID()).focusRaiseFloating(targetID, FloatingCommandToggleCollapse)
 }
 
@@ -217,6 +225,19 @@ func topFloatingID(floatings []FloatingPaneState) string {
 	top := floatings[0]
 	for _, floating := range floatings {
 		if floating.Z >= top.Z {
+			top = floating
+		}
+	}
+	return top.ID
+}
+
+func topExpandedFloatingID(floatings []FloatingPaneState) string {
+	top := FloatingPaneState{}
+	for _, floating := range floatings {
+		if floating.Collapsed || floating.ID == "" {
+			continue
+		}
+		if top.ID == "" || floating.Z >= top.Z {
 			top = floating
 		}
 	}

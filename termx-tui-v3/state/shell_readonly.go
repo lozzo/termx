@@ -105,7 +105,7 @@ func readonlyFloatingsDefaultsReady(floatings []FloatingPaneState, activeFloatin
 		if floating.Rect.W <= 0 || floating.Rect.H <= 0 || floating.Z <= 0 || floating.FitMode == "" {
 			return false
 		}
-		if floating.ID == activeFloatingID {
+		if floating.ID == activeFloatingID && !floating.Collapsed {
 			activeFound = true
 		}
 		if floating.Active != (floating.ID == activeFloatingID) {

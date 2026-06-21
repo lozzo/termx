@@ -49,12 +49,12 @@ func ensureTabFloatingDefaults(tab TabState) TabState {
 				floating.AutoFit.Rows = 0
 			}
 		}
-		if floating.ID == tab.ActiveFloatingID {
+		if floating.ID == tab.ActiveFloatingID && !floating.Collapsed {
 			activeFound = true
 		}
 	}
 	if tab.ActiveFloatingID != "" && !activeFound {
-		tab.ActiveFloatingID = topFloatingID(tab.Floatings)
+		tab.ActiveFloatingID = topExpandedFloatingID(tab.Floatings)
 	}
 	for index := range tab.Floatings {
 		tab.Floatings[index].Active = tab.Floatings[index].ID == tab.ActiveFloatingID
@@ -110,8 +110,28 @@ func (store ShellStore) floatingIndexOrActive(id string) int {
 	if len(floatings) == 0 {
 		return -1
 	}
-	topID := topFloatingID(floatings)
+	topID := topExpandedFloatingID(floatings)
+	if topID == "" {
+		return -1
+	}
 	return store.floatingIndex(topID)
+}
+
+func (store ShellStore) floatingIndexForToggleCollapse(id string) int {
+	if id != "" {
+		return store.floatingIndex(id)
+	}
+	if activeID := store.activeFloatingID(); activeID != "" {
+		return store.floatingIndex(activeID)
+	}
+	floatings := store.activeFloatings()
+	if len(floatings) == 0 {
+		return -1
+	}
+	if topID := topExpandedFloatingID(floatings); topID != "" {
+		return store.floatingIndex(topID)
+	}
+	return store.floatingIndex(topFloatingID(floatings))
 }
 
 func (store ShellStore) nextFloatingZ() int {

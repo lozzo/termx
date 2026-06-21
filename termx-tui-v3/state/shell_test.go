@@ -839,13 +839,18 @@ func TestShellFloatingCommandsManageRectZOrderAndCollapse(t *testing.T) {
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleCollapse, TargetID: "float-1"})
 	floatings = shell.ActiveFloatings()
-	if result.Status != FloatingCommandOK || !floatings[0].Collapsed {
-		t.Fatalf("expected collapsed floating, result=%#v floating=%#v", result, floatings[0])
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() != "" || !floatings[0].Collapsed || floatings[0].Active {
+		t.Fatalf("expected collapsed floating to clear active target, result=%#v shell=%#v floating=%#v", result, shell, floatings[0])
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandFocusRaise, TargetID: "float-1"})
 	floatings = shell.ActiveFloatings()
-	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() != "float-1" || !floatings[0].Active {
-		t.Fatalf("expected raised floating, result=%#v shell=%#v", result, shell)
+	if result.Status != FloatingCommandInvalid || shell.ActiveFloatingID() != "" || floatings[0].Active {
+		t.Fatalf("hidden floating should not be focus-raised, result=%#v shell=%#v", result, shell)
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandSummon, TargetID: "float-1"})
+	floatings = shell.ActiveFloatings()
+	if result.Status != FloatingCommandOK || shell.ActiveFloatingID() != "float-1" || floatings[0].Collapsed || !floatings[0].Active {
+		t.Fatalf("summon should expand and raise hidden floating, result=%#v shell=%#v", result, shell)
 	}
 	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandDeactivate})
 	floatings = shell.ActiveFloatings()
