@@ -5,7 +5,7 @@
 - `remote-ui` 是 Web / embedded Web UI，不是 `termx-core` 或 `termx-remote`。
 - `remote-ui` 负责：连接建立、运行时 WebRTC session、terminal/file/events 消费、UI 状态编排。
 - `remote-ui` 不反向定义或污染 `termx-core` / `termx-remote` 的产品边界。
-- 当前阶段只实现 browser adapter；native adapter 只保留 future boundary，不落实现。
+- 当前 remote + App 迁移阶段允许在根 `workflow.md` 明确切片内维护 `termx-app` 注入的 native runtime adapter contract；`remote-ui` 组件层仍不得直接依赖 Capacitor、Kotlin bridge、WebSocket bridge、`RTCPeerConnection`、`RTCDataChannel`、`fetch` 或 `localStorage`。
 - 当前仍是开发阶段。重构时不要保留兼容别名、旧导出、wrapper 文件或旧模块名；直接改成新的命名和边界，并同步更新所有调用方。
 
 ## Current Build Direction
@@ -114,9 +114,17 @@ termx:// URI payload（schema_version: 4）：
 - 运行时 transport 统一基于 WebRTC DataChannel。
 - 所有网络能力必须先定义 TypeScript `interface`，再提供 browser implementation。
 - 组件层不得直接依赖：`RTCPeerConnection`、`RTCDataChannel`、`fetch`、`localStorage`。
+- App/native 实现只能作为这些 TypeScript interface 的实现注入，不能把 native bridge 状态升级成 terminal、history、copy 或 storage truth。
 - 客户端 path 只允许：`local`、`hub`。
 - relay 只能表现为 capability/policy/connection info，不能变成第四种 transport。
 - Hub 是 dumb relay，`remote-ui` 不假设 Hub 会做任何 cert 验证或 policy 决策。
+
+## App History Boundary
+
+- `remote-ui` 的 live terminal 可以使用 xterm、snapshot、replay、短 scrollback 和本地 render/cache window。
+- App copy mode、search、selection text 和无限历史窗口必须通过 core-v2 logical-line history/window contract 取数。
+- 不得从 xterm buffer、snapshot rows、DOM/canvas rows、native bridge backlog、App 本地 append log 或 `loadScrollback` visual rows 拼接最终 copy/history 文本。
+- `termx-app-history-ref/` 只可只读参考窗口化渲染、overscan 和 cache 结构；其中 mock source、visual-row truth 和 demo 数据不得成为协议或运行时真值。
 
 ## Workflow
 

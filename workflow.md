@@ -186,6 +186,7 @@
 - `termx-app/src/plugins/nativeConnection.ts` 的 native contract 是 machine/session/bridge/transfer 维度，当前没有 logical-line history/copy contract；后续如需 App history 必须通过 remote/core-v2 runtime API 补齐，而不是塞进 native bridge 私有状态。
 - `remote-ui/` 是 `termx-app` 当前依赖的共享 UI/runtime 包。它现在的 terminal 路径仍包含 snapshot/scrollback、xterm scrollback、`loadScrollback` 和本地 text prefix 拼接逻辑；这些可以作为 live display/cache 参考，但 copy/history 迁移时必须改成 core-v2 logical-line source。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，包含 `MockHistorySource`、`HistoryCacheWindow`、`HistorySurfaceApp` 与 WebGL/Canvas/DOM renderer demo；只能参考其 window/cache/overscan/renderer 结构，不能照搬 mock source 或 visual-row truth。
+- R189 已补 `remote-ui/docs/app-core-v2-contract.md`：`termx-app` 注入 native runtime adapter，`remote-ui` 保持 TypeScript interface 边界；runtime API、terminal live datachannel、logical-line `CoreV2HistorySource`/`HistorySurface` 分层；现有 snapshot、`loadScrollback`、xterm buffer、native bridge backlog 和 App 本地 append/cache 明确只能作为 live display/cache，不得作为 App copy/search/selection truth。
 
 ### 5.2 任务队列
 
@@ -215,7 +216,7 @@
 | R186. SK remote transport session core-v2 routing | 完成 | `termx-core-v2/`、`termx-remote/`、`termx-shared/`、`termx-testkit/` 按需 | 已验证 remote WebRTC/datachannel transport 通过 `termx-remote.Service` 进入 core-v2 `ServeScopedTransport` protocol session，terminal scope 与 machine-events-only scope 行为正确 |
 | R187. SK remote backend contract smoke | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/`、必要文档 | 已用后端 contract smoke 验证 remote status/local/pair、terminal/storage/events、transport session 全部经过 core-v2 truth，并守卫旧 fallback 目录/文件不得恢复 |
 | R188. SK remote backend docs checkpoint | 完成 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、必要顶层文档 | 已更新审计文档和当前状态，记录 remote 后端已迁 core-v2 contract、旧 fallback 已删除边界和 backend smoke 证据；后续继续 App 集成 |
-| R189. SK App/remote-ui contract 准入设计 | 待开始 | `termx-app/`、`remote-ui/`、`workflow.md`、按需 `remote-ui/AGENTS.md` | 基于现有 `TermxApp`、Native bridge、`RemoteControlApp` 和 terminal client，明确 App 连接 CLI remote runtime 所需 TypeScript runtime/history contract；如果 `remote-ui/AGENTS.md` 的 browser-only 说明阻碍当前 workflow，先同步更新 |
+| R189. SK App/remote-ui contract 准入设计 | 完成 | `termx-app/`、`remote-ui/`、`workflow.md`、按需 `remote-ui/AGENTS.md` | 已基于现有 `TermxApp`、Native bridge、`RemoteControlApp` 和 terminal client 明确 App 连接 CLI remote runtime 的 TypeScript runtime/history contract；`remote-ui/AGENTS.md` 已允许 workflow 切片内维护 App/native runtime adapter contract，同时锁定 copy/history 必须走 core-v2 logical-line |
 | R190. SK remote-ui core-v2 terminal protocol contract | 待开始 | `remote-ui/`、按需 `termx-proto/` 生成产物只读参照、`internal/protocol/` 只读参照 | 在 shared UI/runtime 层建立 core-v2 remote terminal/history method/event contract；旧 snapshot/scrollback API 只能服务 live display/cache，不再作为 copy/history 数据源 |
 | R191. SK termx-app 连接 CLI remote runtime | 待开始 | `termx-app/`、`remote-ui/`、按需 `termx-cli/`、`termx-remote/` | 让真实 App 通过当前 CLI 启动的 local/hub remote runtime 完成配对、连接、session 复用和状态展示；不得新增绕过 `termx-remote.Service` 的 App 私有 local API |
 | R192. SK App terminal 管理与 live surface | 待开始 | `termx-app/`、`remote-ui/`、按需 `termx-remote/`、`termx-core-v2/` | App 能 list/create/attach/input/resize/restart/remove terminal；live surface 可以保留 xterm.js 和短 scrollback，但 terminal lifecycle 和 PTY truth 来自 core-v2 |
