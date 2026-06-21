@@ -77,6 +77,37 @@ func TestUIInputReducerStickyInteractionModeTimeoutAndRearm(t *testing.T) {
 	}
 }
 
+func TestUIInputReducerPrefixModeCommandExitPolicy(t *testing.T) {
+	reducer := NewUIInputReducer()
+	shell := state.DefaultShell()
+	shell, _ = shell.ApplyPaneCommand(state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		Target:         state.PaneCommandTarget{PaneID: state.DefaultPaneID},
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "pane-2", Kind: state.PaneEmpty},
+	})
+	root := state.Root{Shell: shell.SetInteractionMode(state.InteractionModePane)}
+
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"}})
+	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("ordinary pane command should exit prefix mode, shell=%#v effects=%#v", root.Shell, effects)
+	}
+
+	root.Shell = root.Shell.SetInteractionMode(state.InteractionModePane)
+	oldSeq := root.Shell.InteractionModeSeq
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"}})
+	if root.Shell.InteractionMode != state.InteractionModePane || root.Shell.InteractionModeSeq <= oldSeq || !hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("pane focus command should keep prefix mode for repeated navigation, shell=%#v effects=%#v oldSeq=%d", root.Shell, effects, oldSeq)
+	}
+
+	root.Shell = root.Shell.SetInteractionMode(state.InteractionModeTab)
+	oldSeq = root.Shell.InteractionModeSeq
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "n"}})
+	if root.Shell.InteractionMode != state.InteractionModeTab || root.Shell.InteractionModeSeq <= oldSeq || !hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("tab next should keep prefix mode for repeated navigation, shell=%#v effects=%#v oldSeq=%d", root.Shell, effects, oldSeq)
+	}
+}
+
 func TestUIInputReducerStickyTimeoutDoesNotCloseOverlayOrCopyMode(t *testing.T) {
 	reducer := NewUIInputReducer()
 	shell := state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal).OpenTerminalPicker()
@@ -140,9 +171,16 @@ func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
 	if !ok || ownerMsg.Config.TerminalID != "term-1" || ownerMsg.Config.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) || ownerMsg.Config.ResizePolicy != state.TerminalResizeRoleOwner {
 		t.Fatalf("pane owner shortcut should request authoritative owner attach, got %#v", ownerMsg)
 	}
+	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("pane owner shortcut should exit prefix mode, shell=%#v effects=%#v", root.Shell, effects)
+	}
 
+	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true}})
+	if root.Shell.InteractionMode != state.InteractionModePane || !hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("ctrl-p should re-enter pane mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
+	}
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"}})
-	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker || !hasStickyInteractionModeTimeoutEffect(effects) {
+	if !root.Shell.Overlay.Open || root.Shell.Overlay.Kind != state.OverlayTerminalPicker || root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane reconnect should open picker and refresh pool, overlay=%#v effects=%#v", root.Shell.Overlay, effects)
 	}
 	if _, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolListRequestMsg); !ok {
@@ -151,12 +189,15 @@ func TestUIInputReducerPaneModeTuiv2OwnerPickerAndRestart(t *testing.T) {
 
 	root.Shell = root.Shell.CloseOverlay().SetInteractionMode(state.InteractionModePane)
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "R"}})
-	if !hasStickyInteractionModeTimeoutEffect(effects) {
+	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane restart should emit handled and restart effects, got %#v", effects)
 	}
 	restartMsg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalPoolRestartIfExitedRequestMsg)
 	if !ok || restartMsg.TerminalID != "term-1" {
 		t.Fatalf("pane restart should query active pane terminal lifecycle, got %#v", restartMsg)
+	}
+	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("pane restart shortcut should exit prefix mode, shell=%#v effects=%#v", root.Shell, effects)
 	}
 }
 
@@ -173,7 +214,7 @@ func TestUIInputReducerFloatingModeTuiv2PickerAndOwner(t *testing.T) {
 		t.Fatalf("ctrl-o should enter floating mode, mode=%#v effects=%#v", root.Shell.InteractionMode, effects)
 	}
 	root, effects = reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"}})
-	if !hasStickyInteractionModeTimeoutEffect(effects) {
+	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("floating picker shortcut should emit handled and picker effects, got %#v", effects)
 	}
 	if msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(ShellOpenTerminalPickerMsg); !ok {
@@ -188,6 +229,9 @@ func TestUIInputReducerFloatingModeTuiv2PickerAndOwner(t *testing.T) {
 	msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(LiveAttachMsg)
 	if !ok || msg.Config.TerminalID != "term-1" || msg.Config.ViewID != state.TerminalFloatingViewID("float-1") || msg.Config.ResizePolicy != state.TerminalResizeRoleOwner {
 		t.Fatalf("floating owner shortcut should request authoritative owner attach, got %#v", msg)
+	}
+	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
+		t.Fatalf("floating owner shortcut should exit prefix mode, shell=%#v effects=%#v", root.Shell, effects)
 	}
 }
 
@@ -750,8 +794,8 @@ func TestUIInputReducerGlobalQuitShortcutEmitsQuitMsg(t *testing.T) {
 	reducer := NewUIInputReducer()
 	root := state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModeGlobal)}
 
-	_, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "q"}})
-	if !hasStickyInteractionModeTimeoutEffect(effects) {
+	root, effects := reducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "q"}})
+	if root.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("global q should be handled and emit quit effect, got %#v", effects)
 	}
 	if _, ok := effects[0].(handledEffect); !ok {
@@ -2111,6 +2155,7 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 		{Kind: input.EventKindKey, Key: input.KeyEsc},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"},
 	} {
 		if err := host.SendInput(event); err != nil {
@@ -2124,11 +2169,17 @@ func TestInteractiveRuntimeActivePaneVisualFeedbackFollowsKeyboardAndMouse(t *te
 	if runtime.State().Shell.ZoomedPaneID != "pane-2" {
 		t.Fatalf("zoom should keep active pane zoomed, got %#v", runtime.State().Shell)
 	}
-	if !frameContains(zoomFrame, "PANE") || len(runtime.State().Shell.Toasts) == 0 {
+	if runtime.State().Shell.EnsureDefaults().InteractionMode != state.InteractionModeNormal || len(runtime.State().Shell.Toasts) == 0 {
 		t.Fatalf("resize/presentation/zoom should keep visible active feedback, got %#v", zoomFrame.Lines)
 	}
 	assertPaneVisualState(t, zoomFrame, "pane", render.StyleAccent)
 
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true}); err != nil {
+		t.Fatalf("send pane mode before unzoom: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain pane mode before unzoom: %v", err)
+	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "z"}); err != nil {
 		t.Fatalf("send unzoom before close: %v", err)
 	}
@@ -2197,17 +2248,21 @@ func TestInteractiveRuntimeUIFrameworkProductizationFlow(t *testing.T) {
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "p"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x10", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "b"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x12", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyLeft},
 		{Kind: input.EventKindKey, Key: input.KeyEsc},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "T"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
-		{Kind: input.EventKindKey, Key: input.KeyEsc},
 	} {
 		if err := host.SendInput(event); err != nil {
 			t.Fatalf("send product flow input %#v: %v", event, err)
@@ -2432,6 +2487,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendKey(input.KeyEsc)
 	sendCtrl("\x10")
 	sendChar("p")
+	sendCtrl("\x10")
 	sendChar("b")
 
 	shell := runtime.State().Shell.EnsureDefaults()
@@ -2445,7 +2501,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 		t.Fatalf("resize mode should drive content rect terminal resize")
 	}
 	paneFrame := lastFrame(t, host.Frames())
-	if !frameContains(paneFrame, "PANE") || !frameContains(paneFrame, "VSPLIT") || !frameContains(paneFrame, "HSPLIT") {
+	if shell.InteractionMode != state.InteractionModeNormal || !frameContains(paneFrame, "ws:main") {
 		t.Fatalf("expected pane mode footer and active feedback, got %#v", paneFrame.Lines)
 	}
 
@@ -2527,6 +2583,7 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 	sendKey(input.KeyEnter)
 	sendCtrl("\x17")
 	sendChar("c")
+	sendCtrl("\x17")
 	sendChar("r")
 	sendChar("云")
 	sendKey(input.KeyEnter)
@@ -2546,10 +2603,12 @@ func TestInteractiveRuntimeTUIProductShellAcceptanceFlow(t *testing.T) {
 
 	sendCtrl("\x07")
 	sendChar("h")
+	sendCtrl("\x07")
 	sendChar("f")
+	sendCtrl("\x07")
 	sendChar("T")
+	sendCtrl("\x07")
 	sendChar("c")
-	sendKey(input.KeyEsc)
 	shell = runtime.State().Shell.EnsureDefaults()
 	if shell.HeaderVisible || shell.FooterVisible || len(shell.Toasts) != 0 || shell.InteractionMode != state.InteractionModeNormal {
 		t.Fatalf("global mode should hide chrome, clear toasts and return normal, got %#v", shell)
@@ -2650,8 +2709,8 @@ func TestInteractiveRuntimeGlobalModeTogglesChromeAndEscExitsMode(t *testing.T) 
 	for _, event := range []input.InputEvent{
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x07", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "f"},
-		{Kind: input.EventKindKey, Key: input.KeyEsc},
 	} {
 		if err := host.SendInput(event); err != nil {
 			t.Fatalf("send input %#v: %v", event, err)
@@ -2853,6 +2912,7 @@ func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "h"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x17", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "c"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x17", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "r"},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "云"},
 		{Kind: input.EventKindKey, Key: input.KeyEnter},
@@ -2865,8 +2925,8 @@ func TestInteractiveRuntimeTabAndWorkspaceProductFlow(t *testing.T) {
 		}
 	}
 	workspaceModeFrame := lastFrame(t, host.Frames())
-	if !frameContains(workspaceModeFrame, "workspace 2云") || !frameContains(workspaceModeFrame, "WORKSPACE") {
-		t.Fatalf("expected frame to expose workspace mode and active workspace, got %#v", workspaceModeFrame.Lines)
+	if !frameContains(workspaceModeFrame, "workspace 2云") || frameContains(workspaceModeFrame, "WORKSPACE") {
+		t.Fatalf("expected frame to expose active workspace after prefix exit, got %#v", workspaceModeFrame.Lines)
 	}
 	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyEsc}); err != nil {
 		t.Fatalf("send workspace esc: %v", err)
@@ -3008,7 +3068,7 @@ func TestResizeModeTerminalSizeLockKeyAndFooterEmitTerminalLockRequest(t *testin
 
 	inputReducer := NewUIInputReducer()
 	next, effects := inputReducer(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if !hasStickyInteractionModeTimeoutEffect(effects) {
+	if next.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("size lock key should emit request effect, got %#v", effects)
 	}
 	msg, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalSizeLockToggleRequestMsg)
@@ -3022,7 +3082,7 @@ func TestResizeModeTerminalSizeLockKeyAndFooterEmitTerminalLockRequest(t *testin
 
 	shellReducer := NewShellReducer()
 	_, effects = shellReducer(next, ShellContentActionMsg{ActionID: render.ActionResizeLayoutLock.String()})
-	if !hasStickyInteractionModeTimeoutEffect(effects) {
+	if hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("footer lock should emit request effect, got %#v", effects)
 	}
 	if _, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalSizeLockToggleRequestMsg); !ok {
@@ -3068,7 +3128,7 @@ func TestPaneModeLockUsesTerminalSizeLockPath(t *testing.T) {
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
 
 	next, effects := NewUIInputReducer()(root, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if !hasStickyInteractionModeTimeoutEffect(effects) {
+	if next.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane s should emit terminal size lock request, got %#v", effects)
 	}
 	if _, ok := runFirstNonStickyTimeoutEffect(t, effects).(TerminalSizeLockToggleRequestMsg); !ok {
@@ -3080,7 +3140,7 @@ func TestPaneModeLockUsesTerminalSizeLockPath(t *testing.T) {
 	}
 
 	next, effects = NewUIInputReducer()(state.Root{Shell: state.DefaultShell().SetInteractionMode(state.InteractionModePane)}, InputMsg{Event: input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "s"}})
-	if !hasStickyInteractionModeTimeoutEffect(effects) {
+	if next.Shell.InteractionMode != state.InteractionModeNormal || hasStickyInteractionModeTimeoutEffect(effects) {
 		t.Fatalf("pane s without active terminal still routes to size lock reducer, got %#v toasts=%#v", effects, next.Shell.Toasts)
 	}
 }
@@ -3247,7 +3307,9 @@ func TestInteractiveRuntimeTabJumpUsesWorkbenchCommand(t *testing.T) {
 		{Kind: input.EventKindKey, Key: input.KeyEsc},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "1"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "3"},
+		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "\x14", Ctrl: true},
 		{Kind: input.EventKindKey, Key: input.KeyChar, Char: "9"},
 	} {
 		if err := host.SendInput(event); err != nil {

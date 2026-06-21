@@ -100,13 +100,13 @@ func NewUIInputReducer() Reducer {
 			return root.Advance(), []Effect{handledEffect{}}
 		case input.IntentShellAction:
 			next, effects := reduceShellActionIntent(root, intent)
-			return rearmInteractionModeTimeout(next, effects)
+			return finishInteractionModeAfterIntent(next, effects, intent)
 		case input.IntentPaneCommand:
 			next, effects := reducePaneCommandIntent(root, intent)
-			return rearmInteractionModeTimeout(next, effects)
+			return finishInteractionModeAfterIntent(next, effects, intent)
 		case input.IntentWorkbenchCommand:
 			next, effects := reduceWorkbenchCommandIntent(root, intent)
-			return rearmInteractionModeTimeout(next, effects)
+			return finishInteractionModeAfterIntent(next, effects, intent)
 		default:
 			return root, nil
 		}
@@ -138,6 +138,64 @@ func rearmInteractionModeTimeout(root state.Root, effects []Effect) (state.Root,
 	}
 	root.Shell = shell.RearmInteractionMode()
 	return root, appendInteractionModeTimeoutEffect(root.Shell, effects)
+}
+
+func finishInteractionModeAfterIntent(root state.Root, effects []Effect, intent input.Intent) (state.Root, []Effect) {
+	shell := root.Shell.EnsureDefaults()
+	if !shell.StickyInteractionMode() {
+		root.Shell = shell
+		return root, effects
+	}
+	if interactionIntentKeepsPrefixMode(intent) {
+		return rearmInteractionModeTimeout(root, effects)
+	}
+	// 普通 prefix 命令执行后回到主菜单；只有连续调节类动作会续期留在当前 mode。
+	root.Shell = shell.ExitInteractionMode()
+	return root, effects
+}
+
+func interactionIntentKeepsPrefixMode(intent input.Intent) bool {
+	switch intent.Kind {
+	case input.IntentPaneCommand:
+		return paneIntentKeepsPrefixMode(intent.Command)
+	case input.IntentShellAction:
+		return shellActionIntentKeepsPrefixMode(intent)
+	case input.IntentWorkbenchCommand:
+		return workbenchIntentKeepsPrefixMode(intent.Command)
+	default:
+		return false
+	}
+}
+
+func paneIntentKeepsPrefixMode(command string) bool {
+	if strings.HasPrefix(command, "pane resize ") {
+		return true
+	}
+	switch command {
+	case "pane focus-next", "pane focus-prev":
+		return true
+	default:
+		return false
+	}
+}
+
+func shellActionIntentKeepsPrefixMode(intent input.Intent) bool {
+	switch intent.Action {
+	case input.ShellActionFloatingMove, input.ShellActionFloatingSize:
+		return true
+	default:
+		return false
+	}
+}
+
+func workbenchIntentKeepsPrefixMode(command string) bool {
+	switch command {
+	case "tab next", "tab previous", "workspace next", "workspace previous",
+		"terminal layout pan-left", "terminal layout pan-right", "terminal layout pan-up", "terminal layout pan-down":
+		return true
+	default:
+		return false
+	}
 }
 
 func interactionModeTimeoutEffect(mode state.InteractionMode, seq uint64) Effect {
