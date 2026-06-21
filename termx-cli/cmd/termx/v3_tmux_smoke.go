@@ -1006,7 +1006,7 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 func v3VisualTargetPlain() string {
 	lines := []string{
 		"  main ▎ 1 main  2 logs   󰐕",
-		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner ─[]─[]─[]─[]──┬─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
+		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner?─[]─[]─[]─[]──┬─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
 		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                              ····················│ visual review baseline       ·····│",
 		"│> make test                                                                       ····················│ target visual mismatch       ·····│",
 		"│ok   termx-tui-v3/render                                                          ····················│ emoji 🚀 and 中文            ·····│",

@@ -166,3 +166,49 @@ func TestViewScopedResizeErrorSurfacesInSessionAndBinding(t *testing.T) {
 		t.Fatalf("view-scoped resize error must be recorded on binding, binding=%#v ok=%v", binding, ok)
 	}
 }
+
+func TestStaleViewScopedResizeErrorStillSurfacesInSession(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	root := state.Root{
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-1",
+			Channel:    7,
+			Attached:   true,
+			SurfaceID:  "surface-main",
+			ViewID:     viewID,
+		}.Resize(118, 36),
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Cols:       118,
+			Rows:       36,
+		}.Resize(118, 36),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID,
+			"term-1",
+			7,
+			118,
+			36,
+			state.TerminalResizeRoleOwner,
+			"surface-main",
+			viewID,
+			true,
+		)),
+	}
+	root.TerminalViews, _ = root.TerminalViews.RequestViewResize(viewID, 118, 36)
+	root.TerminalViews, _ = root.TerminalViews.RequestViewResize(viewID, 120, 38)
+
+	next, effects := reducer(root, LiveResizeResultMsg{
+		ViewID: viewID,
+		Seq:    1,
+		Cols:   118,
+		Rows:   36,
+		Err:    errors.New("pty resize failed"),
+	})
+	if len(effects) != 0 {
+		t.Fatalf("resize error should not emit stale recovery effects, got %#v", effects)
+	}
+	if next.Session.Attached || next.Session.LastError != "pty resize failed" || next.Surface.Err != "pty resize failed" {
+		t.Fatalf("stale resize error must still surface in session and surface, session=%#v surface=%#v", next.Session, next.Surface)
+	}
+}

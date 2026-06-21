@@ -395,6 +395,14 @@ func TestTerminalSessionAttachResizeAndError(t *testing.T) {
 	}
 }
 
+func TestTerminalSessionErrorIsNotClearedByLifecycleAttachedProjection(t *testing.T) {
+	session := (TerminalSessionStore{}).Attach("term-1", 7, 80, 24).SetError("pty resize failed")
+	next := session.MarkAttached("term-1")
+	if next.LastError != "pty resize failed" || next.State != TerminalLiveError || next.Attached {
+		t.Fatalf("lifecycle attached projection must not clear live session error, got %#v", next)
+	}
+}
+
 func TestTerminalLiveLifecycleTracksAttachSwitchExitAndError(t *testing.T) {
 	surface := (TerminalSurfaceStore{}).ApplySnapshot(LiveSurfaceSnapshot{
 		TerminalID: "term-1",

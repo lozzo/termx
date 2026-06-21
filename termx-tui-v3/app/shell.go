@@ -1473,10 +1473,12 @@ func reducePaneCommand(root state.Root, command state.PaneCommand) (state.Root, 
 	command = inheritSplitTerminalPane(root, command, targetPane, hasTargetPane)
 	nextShell, result := root.Shell.ApplyPaneCommand(command)
 	if result.Status == state.PaneCommandOK {
+		detachEffects := terminalDetachEffectsForPaneCommand(root, command, result)
 		root.Shell = deactivateFloatingAfterPaneCommand(nextShell, command)
 		root = updateTerminalViewsAfterPaneCommand(root, command, targetPane, hasTargetPane)
 		root.Shell = addPaneCommandToast(root.Shell, command, result)
 		effects := paneCommandEffects(command, result, targetPane, hasTargetPane)
+		effects = append(effects, detachEffects...)
 		return root.Advance(), effects
 	}
 	root.Shell = addPaneCommandToast(root.Shell, command, result)
@@ -1510,12 +1512,14 @@ func inheritSplitTerminalPane(root state.Root, command state.PaneCommand, target
 
 func reduceFloatingCommand(root state.Root, command state.FloatingCommand) (state.Root, []Effect) {
 	command = withFloatingCommandDefaults(root, command)
+	detachEffects := terminalDetachEffectsForFloatingCommand(root, command)
 	nextShell, result := root.Shell.ApplyFloatingCommand(command)
 	root.Shell = addFloatingCommandToast(nextShell, command, result)
 	effects := []Effect{}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandClose {
 		root = invalidateCopyModeForClosedFloating(root, result.ID)
 		root.TerminalViews = root.TerminalViews.DetachFloating(result.ID)
+		effects = append(effects, detachEffects...)
 	}
 	if result.Status == state.FloatingCommandOK && command.Action == state.FloatingCommandDeactivate {
 		root = invalidateCopyModeForInactiveView(root)
@@ -1543,6 +1547,7 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 	if result.Status != state.WorkbenchCommandOK {
 		return root.Advance(), nil
 	}
+	detachEffects := terminalDetachEffectsForWorkbenchCommand(root, previousShell, command, result)
 	root = updateTerminalViewsAfterWorkbenchCommand(root, previousShell, command, result)
 	if workbenchCommandChangesActiveView(command.Action) {
 		root = invalidateCopyModeForInactiveView(root)
@@ -1559,6 +1564,7 @@ func reduceWorkbenchCommandWithOptions(root state.Root, command state.WorkbenchC
 			return TerminalPoolKillRequestMsg{TerminalID: id}
 		}})
 	}
+	effects = append(effects, detachEffects...)
 	return root.Advance(), effects
 }
 
@@ -1832,6 +1838,80 @@ func paneCommandEffects(command state.PaneCommand, result state.PaneCommandResul
 		}})
 	}
 	return effects
+}
+
+func terminalDetachEffectsForPaneCommand(root state.Root, command state.PaneCommand, result state.PaneCommandResult) []Effect {
+	if result.Status != state.PaneCommandOK || command.Action != state.PaneCommandClose {
+		return nil
+	}
+	if binding, ok := root.TerminalViews.PaneBinding(command.Target.PaneID); ok {
+		if req, ok := terminalDetachRequestFromBinding(binding); ok {
+			return []Effect{terminalDetachEffect(req)}
+		}
+	}
+	return nil
+}
+
+func terminalDetachEffectsForFloatingCommand(root state.Root, command state.FloatingCommand) []Effect {
+	if command.Action != state.FloatingCommandClose {
+		return nil
+	}
+	binding, ok := floatingCommandBinding(root, command)
+	if !ok {
+		return nil
+	}
+	if req, ok := terminalDetachRequestFromBinding(binding); ok {
+		return []Effect{terminalDetachEffect(req)}
+	}
+	return nil
+}
+
+func terminalDetachEffectsForWorkbenchCommand(root state.Root, previousShell state.ShellStore, command state.WorkbenchCommand, result state.WorkbenchCommandResult) []Effect {
+	if result.Status != state.WorkbenchCommandOK {
+		return nil
+	}
+	var bindings []state.TerminalViewBinding
+	switch result.Action {
+	case state.WorkbenchCommandPaneDetach, state.WorkbenchCommandPaneClose:
+		if binding, ok := root.TerminalViews.PaneBinding(result.ID); ok {
+			bindings = append(bindings, binding)
+		}
+	case state.WorkbenchCommandTabClose:
+		for _, pane := range panesForWorkbenchTarget(previousShell, command.TargetID) {
+			if binding, ok := root.TerminalViews.PaneBinding(pane.ID); ok {
+				bindings = append(bindings, binding)
+			}
+		}
+	default:
+		return nil
+	}
+	effects := make([]Effect, 0, len(bindings))
+	for _, binding := range bindings {
+		if req, ok := terminalDetachRequestFromBinding(binding); ok {
+			effects = append(effects, terminalDetachEffect(req))
+		}
+	}
+	return effects
+}
+
+func terminalDetachRequestFromBinding(binding state.TerminalViewBinding) (services.TerminalDetachRequest, bool) {
+	if binding.TerminalID == "" || binding.Channel == 0 {
+		return services.TerminalDetachRequest{}, false
+	}
+	return services.TerminalDetachRequest{
+		TerminalID: binding.TerminalID,
+		Channel:    binding.Channel,
+		SurfaceID:  binding.SurfaceID,
+		ViewID:     binding.ViewID,
+	}, true
+}
+
+func terminalDetachEffect(req services.TerminalDetachRequest) Effect {
+	// 中文说明：pane/floating close 删除的是当前 view；core attachment 必须同步释放，
+	// 否则 terminal pool 的 xN 和 resize owner 会长期保留僵尸 view。
+	return FuncEffect{Run: func(context.Context) Msg {
+		return LiveDetachRequestMsg{Request: req}
+	}}
 }
 
 func addPaneCommandToast(shell state.ShellStore, command state.PaneCommand, result state.PaneCommandResult) state.ShellStore {

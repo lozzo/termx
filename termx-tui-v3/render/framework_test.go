@@ -41,7 +41,10 @@ func TestFrameworkRendersCardPanelShellAndContent(t *testing.T) {
 func TestFrameworkRendersTuiv2TerminalOwnerHeader(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell.Workspace.Tabs[0].Panes[0].Title = "123"
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	ownerBinding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true)
+	ownerBinding.OwnerSurfaceID = "surface"
+	ownerBinding.OwnerViewID = "view-1"
+	root.TerminalViews = root.TerminalViews.BindPane(ownerBinding)
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Ready: true, State: state.TerminalLiveAttached, Lines: []string{"ready"}}
 
@@ -58,7 +61,10 @@ func TestFrameworkRendersTuiv2TerminalOwnerHeader(t *testing.T) {
 func TestFrameworkTerminalHeaderKeepsTopBorderBetweenTitleAndStatus(t *testing.T) {
 	root := state.Root{Shell: state.DefaultShell()}
 	root.Shell.Workspace.Tabs[0].Panes[0].Title = "main"
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	ownerBinding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true)
+	ownerBinding.OwnerSurfaceID = "surface"
+	ownerBinding.OwnerViewID = "view-1"
+	root.TerminalViews = root.TerminalViews.BindPane(ownerBinding)
 	root.Surface = state.TerminalSurfaceStore{TerminalID: "term-1", Ready: true, State: state.TerminalLiveAttached, Lines: []string{"ready"}}
 
 	result := NewRenderer(DefaultTheme()).RenderResult(NewRenderVMBuilder().Build(root))

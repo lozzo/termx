@@ -106,6 +106,7 @@ type CoreClient interface {
 
 type TerminalService interface {
 	Attach(context.Context, TerminalAttachRequest) (TerminalAttachResult, error)
+	Detach(context.Context, TerminalDetachRequest) error
 	List(context.Context, TerminalListRequest) (TerminalListResult, error)
 	Create(context.Context, TerminalCreateRequest) (TerminalCreateResult, error)
 	Restart(context.Context, TerminalRestartRequest) error
@@ -178,6 +179,13 @@ type TerminalAttachRequest struct {
 	ResizePolicy string
 	SurfaceID    string
 	ViewID       string
+}
+
+type TerminalDetachRequest struct {
+	TerminalID string
+	Channel    uint16
+	SurfaceID  string
+	ViewID     string
 }
 
 type TerminalAttachResult struct {
@@ -558,6 +566,7 @@ type FakeTerminalService struct {
 	LiveEventsCh      chan TerminalLiveEvent
 	LiveEventsErr     error
 	Attaches          []TerminalAttachRequest
+	Detaches          []TerminalDetachRequest
 	Lists             []TerminalListRequest
 	Creates           []TerminalCreateRequest
 	Restarts          []TerminalRestartRequest
@@ -709,6 +718,11 @@ func (service *FakeTerminalService) Attach(_ context.Context, req TerminalAttach
 	return result, nil
 }
 
+func (service *FakeTerminalService) Detach(_ context.Context, req TerminalDetachRequest) error {
+	service.Detaches = append(service.Detaches, req)
+	return nil
+}
+
 func (service *FakeTerminalService) List(_ context.Context, req TerminalListRequest) (TerminalListResult, error) {
 	service.Lists = append(service.Lists, req)
 	if service.ListErr != nil {
@@ -817,6 +831,14 @@ func (service *FakeTerminalService) Resize(_ context.Context, req TerminalResize
 	if !result.SizeLocked && result.ControlReason == "" {
 		result.Resized = true
 		result.CanResize = true
+	}
+	if result.CanResize && result.ResizePolicy == state.TerminalResizeRoleOwner {
+		if result.OwnerSurfaceID == "" {
+			result.OwnerSurfaceID = result.SurfaceID
+		}
+		if result.OwnerViewID == "" {
+			result.OwnerViewID = result.ViewID
+		}
 	}
 	return result, nil
 }

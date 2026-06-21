@@ -396,7 +396,10 @@ func TestRenderVMBuilderProjectsTerminalResizeOwnerChrome(t *testing.T) {
 	shell := state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
 	root := state.Root{Shell: shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"})}
 	root.TerminalPool = state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running", AttachmentCount: 4}}}
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	ownerBinding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true)
+	ownerBinding.OwnerSurfaceID = "surface"
+	ownerBinding.OwnerViewID = "view-1"
+	root.TerminalViews = root.TerminalViews.BindPane(ownerBinding)
 	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
 
 	vm := NewRenderVMBuilder().Build(root)
@@ -468,6 +471,8 @@ func TestRenderVMBuilderKeepsLockedOwnerChromeAsOwner(t *testing.T) {
 	binding := state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", false)
 	binding.SizeLocked = true
 	binding.ControlReason = "size_locked"
+	binding.OwnerSurfaceID = "surface"
+	binding.OwnerViewID = "view-1"
 	root.TerminalViews = root.TerminalViews.BindPane(binding)
 
 	panel := NewRenderVMBuilder().Build(root).Shell.Layout.Panels[0]

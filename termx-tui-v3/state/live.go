@@ -556,6 +556,9 @@ func (store TerminalSessionStore) MarkAttached(terminalID string) TerminalSessio
 	if terminalID == "" || store.TerminalID != terminalID {
 		return store
 	}
+	if store.State == TerminalLiveError && !store.Attached {
+		return store
+	}
 	store.ExitCode = 0
 	store.ExitReason = ""
 	store.ExitedAt = time.Time{}

@@ -352,6 +352,10 @@ func (c *Client) AttachWithOptions(ctx context.Context, params AttachParams) (*A
 	return &out, nil
 }
 
+func (c *Client) Detach(ctx context.Context, params DetachParams) error {
+	return c.doRequest(ctx, "detach", params, nil)
+}
+
 func (c *Client) EnsureResize(ctx context.Context, params EnsureResizeParams) (*EnsureResizeResult, error) {
 	var out EnsureResizeResult
 	if err := c.doRequest(ctx, "ensure_resize", params, &out); err != nil {

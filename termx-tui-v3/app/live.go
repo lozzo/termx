@@ -135,6 +135,19 @@ type LiveAttachResultMsg struct {
 
 func (LiveAttachResultMsg) isMsg() {}
 
+type LiveDetachRequestMsg struct {
+	Request services.TerminalDetachRequest
+}
+
+func (LiveDetachRequestMsg) isMsg() {}
+
+type LiveDetachResultMsg struct {
+	Request services.TerminalDetachRequest
+	Err     error
+}
+
+func (LiveDetachResultMsg) isMsg() {}
+
 type LiveSurfaceMsg struct {
 	Snapshot       state.LiveSurfaceSnapshot
 	Err            error
@@ -239,6 +252,14 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return reduceLiveAttach(root, msg, deps)
 		case LiveAttachResultMsg:
 			return reduceLiveAttachResult(root, msg, deps)
+		case LiveDetachRequestMsg:
+			return reduceLiveDetachRequest(root, msg, deps)
+		case LiveDetachResultMsg:
+			if msg.Err != nil {
+				root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.detach", Body: msg.Err.Error()})
+				return root.Advance(), nil
+			}
+			return root, nil
 		case LiveLifecycleQueryMsg:
 			return reduceLiveLifecycleQuery(root, msg, deps)
 		case LiveSurfaceMsg:
@@ -307,6 +328,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 		case LiveResizeMsg:
 			return reduceLiveResize(root, msg, deps)
 		case LiveResizeResultMsg:
+			if msg.Err != nil {
+				return reduceLiveResizeError(root, msg)
+			}
 			if shouldRecoverOwnerDesiredAfterResizeResult(root, msg) {
 				return recoverLatestResizeAfterStaleResult(root, msg)
 			}
@@ -327,24 +351,6 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			}
 			if !viewScoped && root.Session.IsStaleResizeResult(msg.Seq) {
 				return recoverLatestResizeAfterStaleResult(root, msg)
-			}
-			if msg.Err != nil {
-				if next, ok := markTerminalExitedFromError(root, root.Session.TerminalID, msg.Err); ok {
-					return next.Advance(), nil
-				}
-				if msg.ViewID != "" {
-					if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
-						root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, binding.DesiredCols, binding.DesiredRows, msg.Err.Error())
-						if binding.TerminalID == root.Session.TerminalID {
-							root.Session = root.Session.SetError(msg.Err.Error())
-							root.Surface = root.Surface.SetError(msg.Err.Error())
-						}
-						return root.Advance(), nil
-					}
-				}
-				root.Session = root.Session.SetError(msg.Err.Error())
-				root.Surface = root.Surface.SetError(msg.Err.Error())
-				return root.Advance(), nil
 			}
 			cols, rows := msg.Cols, msg.Rows
 			if msg.Result.Cols > 0 {
@@ -387,6 +393,24 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 			return root, nil
 		}
 	}
+}
+
+func reduceLiveDetachRequest(root state.Root, msg LiveDetachRequestMsg, deps LiveDeps) (state.Root, []Effect) {
+	if deps.Terminal == nil {
+		return root, nil
+	}
+	req := msg.Request
+	if req.TerminalID == "" || (req.Channel == 0 && req.SurfaceID == "" && req.ViewID == "") {
+		return root, nil
+	}
+	return root, []Effect{FuncEffect{
+		Async:            true,
+		ForceSyncInTests: true,
+		Run: func(ctx context.Context) Msg {
+			err := deps.Terminal.Detach(ctx, req)
+			return LiveDetachResultMsg{Request: req, Err: err}
+		},
+	}}
 }
 
 func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.Root, []Effect) {
@@ -1372,6 +1396,27 @@ func resolvedResizeResultSize(msg LiveResizeResultMsg) (int, int) {
 		rows = msg.Result.Rows
 	}
 	return cols, rows
+}
+
+func reduceLiveResizeError(root state.Root, msg LiveResizeResultMsg) (state.Root, []Effect) {
+	terminalID := staleResizeResultTerminalID(root, msg)
+	if next, ok := markTerminalExitedFromError(root, terminalID, msg.Err); ok {
+		return next.Advance(), nil
+	}
+	message := msg.Err.Error()
+	if msg.ViewID != "" {
+		if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
+			root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, binding.DesiredCols, binding.DesiredRows, message)
+			if binding.TerminalID == root.Session.TerminalID {
+				root.Session = root.Session.SetError(message)
+				root.Surface = root.Surface.SetError(message)
+			}
+			return root.Advance(), nil
+		}
+	}
+	root.Session = root.Session.SetError(message)
+	root.Surface = root.Surface.SetError(message)
+	return root.Advance(), nil
 }
 
 func setLiveError(root state.Root, message string) state.Root {

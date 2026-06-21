@@ -672,6 +672,16 @@ func (binding TerminalViewBinding) HasAuthoritativeResizeOwner() bool {
 	return binding.HasResizeOwner()
 }
 
+func (binding TerminalViewBinding) HasProjectedResizeOwner() bool {
+	if binding.ResizeRole != TerminalResizeRoleOwner {
+		return false
+	}
+	if binding.OwnerViewID == "" || binding.OwnerSurfaceID == "" {
+		return false
+	}
+	return binding.OwnerViewID == binding.ViewID && binding.OwnerSurfaceID == binding.SurfaceID
+}
+
 func (binding TerminalViewBinding) HasResizeOwner() bool {
 	if binding.ResizeRole != TerminalResizeRoleOwner {
 		return false

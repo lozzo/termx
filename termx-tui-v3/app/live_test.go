@@ -3354,12 +3354,56 @@ func TestCloseResizeOwnerPromotesFollowerAndResizesImmediately(t *testing.T) {
 	if len(terminal.Resizes) != 1 {
 		t.Fatalf("promoted follower should resize immediately once, got %#v", terminal.Resizes)
 	}
+	if len(terminal.Detaches) != 1 {
+		t.Fatalf("closing owner pane should detach the closed attachment, got %#v", terminal.Detaches)
+	}
+	if got := terminal.Detaches[0]; got.TerminalID != "term-1" || got.Channel != 7 || got.SurfaceID != "surface" || got.ViewID != "view-1" {
+		t.Fatalf("detach should use closed owner attachment identity, got %#v", got)
+	}
 	if got := terminal.Resizes[0]; got.TerminalID != "term-1" || got.Channel != 8 || got.ViewID != "view-2" || got.ResizePolicy != state.TerminalResizeRoleOwner || got.Cols != 120 || got.Rows != 24 {
 		t.Fatalf("promoted follower resize should use new owner content rect and channel, got %#v", got)
 	}
 	binding, ok := runtime.State().TerminalViews.PaneBinding("pane-2")
 	if !ok || binding.ResizeRole != state.TerminalResizeRoleOwner || !binding.CanResize || binding.ResizePending || binding.RequestSeq != 1 {
 		t.Fatalf("remaining pane should own resize with completed pending check, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestClosingTabDetachesAllTerminalViewAttachments(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	host := NewFakeTerminalHost(16)
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	shell, _ = shell.ApplyWorkbenchCommand(state.WorkbenchCommand{Action: state.WorkbenchCommandTabCreate, Name: "logs"})
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-logs-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	tabPanes := panesForWorkbenchTarget(shell, "tab-2")
+	if len(tabPanes) != 2 {
+		t.Fatalf("expected test tab to contain two panes, got %#v", tabPanes)
+	}
+	root := state.Root{Shell: shell}
+	root.TerminalViews = root.TerminalViews.
+		BindPane(state.NewPaneTerminalView(tabPanes[0].ID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(tabPanes[0].ID), true)).
+		BindPane(state.NewPaneTerminalView(tabPanes[1].ID, "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", state.TerminalPaneViewID(tabPanes[1].ID), false))
+	runtime := NewLiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal})
+
+	if err := runtime.Post(ShellWorkbenchCommandMsg{Command: state.WorkbenchCommand{Action: state.WorkbenchCommandTabClose, TargetID: "tab-2"}}); err != nil {
+		t.Fatalf("post tab close: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tab close: %v", err)
+	}
+
+	if len(terminal.Detaches) != 2 {
+		t.Fatalf("closing tab should detach every pane attachment, got %#v", terminal.Detaches)
+	}
+	channels := map[uint16]bool{}
+	for _, detach := range terminal.Detaches {
+		channels[detach.Channel] = true
+		if detach.TerminalID != "term-1" || detach.SurfaceID != "surface" || detach.ViewID == "" {
+			t.Fatalf("detach should keep terminal attachment identity, got %#v", detach)
+		}
+	}
+	if !channels[7] || !channels[8] {
+		t.Fatalf("closing tab should detach both attachment channels, got %#v", terminal.Detaches)
 	}
 }
 

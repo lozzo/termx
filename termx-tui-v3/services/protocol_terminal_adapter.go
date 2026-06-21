@@ -13,6 +13,7 @@ import (
 
 type ProtocolTerminalClient interface {
 	AttachWithOptions(context.Context, protocol.AttachParams) (*protocol.AttachResult, error)
+	Detach(context.Context, protocol.DetachParams) error
 	Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error)
 	List(context.Context) (*protocol.ListResult, error)
 	Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error)
@@ -74,6 +75,18 @@ func (adapter ProtocolTerminalServiceAdapter) Attach(ctx context.Context, req Te
 		applyProtocolResizeControlToAttach(&out, result.ResizeControl)
 	}
 	return out, nil
+}
+
+func (adapter ProtocolTerminalServiceAdapter) Detach(ctx context.Context, req TerminalDetachRequest) error {
+	if adapter.Client == nil {
+		return ErrMissingTerminalClient
+	}
+	return adapter.Client.Detach(ctx, protocol.DetachParams{
+		TerminalID: req.TerminalID,
+		Channel:    req.Channel,
+		SurfaceID:  req.SurfaceID,
+		ViewID:     req.ViewID,
+	})
 }
 
 func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ TerminalListRequest) (TerminalListResult, error) {

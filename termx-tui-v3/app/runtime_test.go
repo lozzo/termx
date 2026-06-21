@@ -1358,14 +1358,16 @@ func TestAppRuntimeTakeResizeOwnerRequiresDoubleClick(t *testing.T) {
 func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{
-			TerminalID:   "term-1",
-			Channel:      7,
-			Cols:         80,
-			Rows:         24,
-			ResizePolicy: state.TerminalResizeRoleOwner,
-			CanResize:    true,
-			SurfaceID:    "surface",
-			ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+			TerminalID:     "term-1",
+			Channel:        7,
+			Cols:           80,
+			Rows:           24,
+			ResizePolicy:   state.TerminalResizeRoleOwner,
+			CanResize:      true,
+			SurfaceID:      "surface",
+			ViewID:         state.TerminalPaneViewID(state.DefaultPaneID),
+			OwnerSurfaceID: "surface",
+			OwnerViewID:    state.TerminalPaneViewID(state.DefaultPaneID),
 		},
 	}
 	host := NewFakeTerminalHost(16)
@@ -1446,8 +1448,14 @@ func TestInteractiveRuntimeFloatingSizeLockChromeButtonTargetsFloatingTerminal(t
 			{TerminalID: "term-float", Title: "float", Tags: map[string]string{"role": "float"}},
 		}},
 	}
-	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 3, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true))
-	root.TerminalViews = root.TerminalViews.BindFloating(state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-float", 4, 40, 10, state.TerminalResizeRoleOwner, "surface", state.TerminalFloatingViewID("floating-1"), true))
+	paneBinding := state.NewPaneTerminalView(state.DefaultPaneID, "term-pane", 3, 80, 24, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)
+	paneBinding.OwnerSurfaceID = "surface"
+	paneBinding.OwnerViewID = state.TerminalPaneViewID(state.DefaultPaneID)
+	floatingBinding := state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-float", 4, 40, 10, state.TerminalResizeRoleOwner, "surface", state.TerminalFloatingViewID("floating-1"), true)
+	floatingBinding.OwnerSurfaceID = "surface"
+	floatingBinding.OwnerViewID = state.TerminalFloatingViewID("floating-1")
+	root.TerminalViews = root.TerminalViews.BindPane(paneBinding)
+	root.TerminalViews = root.TerminalViews.BindFloating(floatingBinding)
 	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
 	if err := runtime.Post(NoopMsg{}); err != nil {
 		t.Fatalf("post initial render: %v", err)

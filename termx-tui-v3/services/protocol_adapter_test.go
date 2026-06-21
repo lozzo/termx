@@ -48,6 +48,7 @@ func (client *fakeProtocolHistoryClient) ReleaseHistory(_ context.Context, param
 
 type fakeProtocolTerminalClient struct {
 	attachParams       []protocol.AttachParams
+	detachParams       []protocol.DetachParams
 	listCalls          int
 	createParams       []protocol.CreateParams
 	restartIDs         []string
@@ -92,6 +93,11 @@ func (client *fakeProtocolTerminalClient) AttachWithOptions(_ context.Context, p
 		return client.attachResult, nil
 	}
 	return &protocol.AttachResult{Channel: 11}, nil
+}
+
+func (client *fakeProtocolTerminalClient) Detach(_ context.Context, params protocol.DetachParams) error {
+	client.detachParams = append(client.detachParams, params)
+	return nil
 }
 
 func (client *fakeProtocolTerminalClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
@@ -1073,6 +1079,17 @@ func TestProtocolTerminalServiceAdapterMapsAttachInputAndResize(t *testing.T) {
 	}
 	if len(client.ensureParams) != 1 || client.ensureParams[0].Cols != 120 || client.ensureParams[0].Rows != 50 {
 		t.Fatalf("unexpected ensure resize params %#v", client.ensureParams)
+	}
+	if err := adapter.Detach(context.Background(), TerminalDetachRequest{
+		TerminalID: "term-1",
+		Channel:    11,
+		SurfaceID:  "surface-1",
+		ViewID:     "view-1",
+	}); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if len(client.detachParams) != 1 || client.detachParams[0].TerminalID != "term-1" || client.detachParams[0].Channel != 11 || client.detachParams[0].SurfaceID != "surface-1" || client.detachParams[0].ViewID != "view-1" {
+		t.Fatalf("unexpected detach params %#v", client.detachParams)
 	}
 }
 
