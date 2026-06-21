@@ -448,6 +448,30 @@ func (server *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
+func (server *Server) ServeTransport(ctx context.Context, conn transport.Transport) error {
+	return server.ServeScopedTransport(ctx, conn, TransportScope{})
+}
+
+func (server *Server) ServeScopedTransport(ctx context.Context, conn transport.Transport, scope TransportScope) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	scope = scope.normalized()
+	if err := scope.validate(); err != nil {
+		_ = conn.Close()
+		return err
+	}
+	server.wgMu.Lock()
+	if server.closed.Load() {
+		server.wgMu.Unlock()
+		_ = conn.Close()
+		return ErrServerClosed
+	}
+	server.trackTransport(conn)
+	server.wgMu.Unlock()
+	return server.serveTrackedTransport(ctx, conn, scope)
+}
+
 func (server *Server) Shutdown(ctx context.Context) error {
 	_ = ctx
 	server.lifecycleMu.Lock()
@@ -496,12 +520,16 @@ func (server *Server) removeTerminalHandle(id string) *Terminal {
 
 func (server *Server) handleTransport(ctx context.Context, conn transport.Transport) {
 	defer server.wg.Done()
-	defer server.untrackTransport(conn)
-	defer func() { _ = conn.Close() }()
-	session := newProtocolSession(server, conn)
-	if err := session.run(ctx); err != nil && !errors.Is(err, transport.ErrListenerClosed) {
+	if err := server.serveTrackedTransport(ctx, conn, TransportScope{}); err != nil && !errors.Is(err, transport.ErrListenerClosed) {
 		server.cfg.logger.Debug("core-v2 protocol session stopped", "error", err)
 	}
+}
+
+func (server *Server) serveTrackedTransport(ctx context.Context, conn transport.Transport, scope TransportScope) error {
+	defer server.untrackTransport(conn)
+	defer func() { _ = conn.Close() }()
+	session := newProtocolSession(server, conn, scope)
+	return session.run(ctx)
 }
 
 func (server *Server) startTransport(ctx context.Context, conn transport.Transport) bool {

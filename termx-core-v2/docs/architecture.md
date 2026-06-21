@@ -147,6 +147,9 @@ protocol adapter 负责把 core-v2 domain model 映射到外部协议。
 - stale guard 只能使用 token、generation、cursor、logical boundary，不能使用 snapshot totals、row count 或 LoadedRows。
 - `history.window` 是 terminal-scoped contract：请求和响应都只表达 terminal 的 authoritative history projection，不回显 TUI pane/floating/workspace truth，也不承担 attachment ownership 语义。
 - `history.window` 不需要携带 `SurfaceID`、`ViewID` 或 pane id；如果客户端要把 response 重新绑定到本地 view，只能依赖本地 pending request 与 token/generation/cursor/boundary 命中后回填，不能把 daemon 端 protocol payload 扩张成 workspace schema。
+- `ServeTransport` 是完整 daemon protocol session 入口；`ServeScopedTransport` 只给 remote datachannel 这类受限 transport 使用。
+- `TransportScope` 只能在 protocol session 边界过滤 method、terminal id、事件类型和 stream channel，不能保存 terminal lifecycle、attachment、history 或 storage truth。
+- terminal scope 会把空事件订阅收窄到目标 terminal；machine-events-only scope 只允许 terminal lifecycle/metadata 事件，不能访问 terminal method、storage 或 workbench。
 
 attachment 相关 protocol 适配必须满足：
 

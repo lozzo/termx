@@ -2534,8 +2534,12 @@ func TestProtocolServiceResizeOwnershipIsGlobalAcrossClientSessions(t *testing.T
 	clientTwoTransport, serverTwoTransport := memory.NewPair()
 	errOne := make(chan error, 1)
 	errTwo := make(chan error, 1)
-	go func() { errOne <- newProtocolSession(server, serverOneTransport).run(context.Background()) }()
-	go func() { errTwo <- newProtocolSession(server, serverTwoTransport).run(context.Background()) }()
+	go func() {
+		errOne <- newProtocolSession(server, serverOneTransport, TransportScope{}).run(context.Background())
+	}()
+	go func() {
+		errTwo <- newProtocolSession(server, serverTwoTransport, TransportScope{}).run(context.Background())
+	}()
 	clientOne := protocol.NewClient(clientOneTransport)
 	clientTwo := protocol.NewClient(clientTwoTransport)
 	defer func() {
@@ -2616,8 +2620,12 @@ func TestProtocolServiceClientCloseReleasesAttachmentsAndPromotesOwner(t *testin
 	clientTwo := protocol.NewClient(clientTwoTransport)
 	errOne := make(chan error, 1)
 	errTwo := make(chan error, 1)
-	go func() { errOne <- newProtocolSession(server, serverOneTransport).run(context.Background()) }()
-	go func() { errTwo <- newProtocolSession(server, serverTwoTransport).run(context.Background()) }()
+	go func() {
+		errOne <- newProtocolSession(server, serverOneTransport, TransportScope{}).run(context.Background())
+	}()
+	go func() {
+		errTwo <- newProtocolSession(server, serverTwoTransport, TransportScope{}).run(context.Background())
+	}()
 	defer func() {
 		if clientOne != nil {
 			_ = clientOne.Close()
@@ -3048,7 +3056,7 @@ func newProtocolClientWithProcessFactory(t *testing.T, factory ProcessFactory) (
 	server := NewServer(WithProcessFactory(factory))
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- newProtocolSession(server, serverTransport).run(context.Background())
+		errCh <- newProtocolSession(server, serverTransport, TransportScope{}).run(context.Background())
 	}()
 	client := protocol.NewClient(clientTransport)
 	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {

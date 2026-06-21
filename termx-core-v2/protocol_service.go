@@ -23,6 +23,7 @@ import (
 
 const (
 	protocolErrorBadRequest = 400
+	protocolErrorForbidden  = 403
 	protocolErrorNotFound   = 404
 	protocolErrorInternal   = 500
 )
@@ -83,6 +84,7 @@ func claimDaemonBoundaryReclaimHeapSys(heapSys uint64) bool {
 type protocolSession struct {
 	server        *Server
 	conn          transport.Transport
+	scope         TransportScope
 	sessionID     uint64
 	sendMu        sync.Mutex
 	nextCh        atomic.Uint32
@@ -119,10 +121,11 @@ type protocolAttachmentKey struct {
 	Channel   uint16
 }
 
-func newProtocolSession(server *Server, conn transport.Transport) *protocolSession {
+func newProtocolSession(server *Server, conn transport.Transport, scope TransportScope) *protocolSession {
 	session := &protocolSession{
 		server:        server,
 		conn:          conn,
+		scope:         scope.normalized(),
 		sessionID:     server.nextProtocolSessionID.Add(1),
 		attachments:   make(map[uint16]protocolAttachment),
 		eventCancels:  make(map[uint64]context.CancelFunc),
@@ -226,6 +229,10 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 	params, err := protocol.DecodeMethodParams(req.Method, req.Params)
 	if err != nil {
 		return nil, false, protocolErrorBadRequest, err
+	}
+	params, err = session.scope.constrainMethod(req.Method, params)
+	if err != nil {
+		return nil, false, protocolErrorForbidden, err
 	}
 	switch req.Method {
 	case "create":
@@ -634,6 +641,9 @@ func encodeMethodResult(method string, result any) ([]byte, bool, int, error) {
 func (session *protocolSession) handleStreamFrame(ctx context.Context, channel uint16, typ uint8, payload []byte) error {
 	attachment, err := session.attachmentForChannel(channel)
 	if err != nil {
+		return err
+	}
+	if err := session.scope.allowsAttachment(attachment); err != nil {
 		return err
 	}
 	switch typ {
