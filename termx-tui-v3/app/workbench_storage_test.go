@@ -264,6 +264,27 @@ func TestWorkbenchRestoreSkipsReattachForAlreadyLiveBinding(t *testing.T) {
 	}
 }
 
+func TestWorkbenchRestoreSkipsReattachForPendingStartupAttach(t *testing.T) {
+	viewID := state.TerminalPaneViewID(state.DefaultPaneID)
+	previous := state.TerminalViewStore{}.
+		MarkAttachPending(state.TerminalViewBinding{
+			ViewID:      viewID,
+			SurfaceID:   "runtime-a",
+			TerminalID:  "term-1",
+			ResizeRole:  state.TerminalResizeRoleFollower,
+			DesiredCols: 80,
+			DesiredRows: 24,
+			PaneID:      state.DefaultPaneID,
+		})
+	stored := state.TerminalViewStore{}.
+		BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 0, 80, 24, state.TerminalResizeRoleFollower, "", viewID, false))
+
+	restored := preserveWorkbenchRuntimeTerminalViews(previous, stored)
+	if effects := workbenchRestoredTerminalAttachEffects(previous, restored.Bindings()); len(effects) != 0 {
+		t.Fatalf("pending startup attach should claim same view/terminal before channel arrives, effects=%#v", effects)
+	}
+}
+
 func TestWorkbenchRestorePreservesLocalFloatingDisplayState(t *testing.T) {
 	local := state.DefaultShell()
 	var result state.FloatingCommandResult
@@ -1152,8 +1173,8 @@ func TestInteractiveRuntimeStartupLoadsTerminalPoolTitleAfterWorkbenchRestore(t 
 		t.Fatalf("drain: %v", err)
 	}
 
-	if len(terminal.Lists) != 1 {
-		t.Fatalf("startup should load terminal pool once, lists=%#v", terminal.Lists)
+	if len(terminal.Lists) == 0 {
+		t.Fatalf("startup should load terminal pool, lists=%#v", terminal.Lists)
 	}
 	frame := lastFrame(t, host.Frames())
 	if frameContains(frame, " shell ") || !frameContains(frame, " main ") {

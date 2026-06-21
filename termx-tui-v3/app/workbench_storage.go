@@ -459,6 +459,7 @@ func preserveWorkbenchRuntimeTerminalViews(previous state.TerminalViewStore, res
 		binding.OwnerSurfaceID = previousBinding.OwnerSurfaceID
 		binding.OwnerViewID = previousBinding.OwnerViewID
 		binding.ResizeEpoch = previousBinding.ResizeEpoch
+		binding.AttachPending = previousBinding.AttachPending
 		binding.LastError = previousBinding.LastError
 		restored.Views[viewID] = binding
 	}
@@ -596,7 +597,13 @@ func workbenchBindingAlreadyLive(previous state.TerminalViewStore, binding state
 	if !ok {
 		return false
 	}
-	if !existing.Attached || existing.TerminalID == "" || existing.TerminalID != binding.TerminalID {
+	if existing.TerminalID == "" || existing.TerminalID != binding.TerminalID {
+		return false
+	}
+	if existing.AttachPending {
+		return true
+	}
+	if !existing.Attached {
 		return false
 	}
 	if existing.Channel == 0 {

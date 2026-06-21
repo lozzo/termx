@@ -68,6 +68,35 @@ func TestTerminalViewStoreMarkTerminalReattachingClearsOnlyRestartedChannels(t *
 	}
 }
 
+func TestTerminalViewStoreMarkAttachPendingClaimsViewWithoutChannel(t *testing.T) {
+	store := TerminalViewStore{}.
+		BindPane(NewPaneTerminalView("pane-1", "term-old", 7, 80, 24, TerminalResizeRoleOwner, "surface-old", "view-1", true))
+
+	store = store.MarkAttachPending(TerminalViewBinding{
+		ViewID:      "view-1",
+		SurfaceID:   "surface-new",
+		TerminalID:  "term-new",
+		ResizeRole:  TerminalResizeRoleFollower,
+		DesiredCols: 100,
+		DesiredRows: 30,
+		PaneID:      "pane-1",
+	})
+
+	binding, ok := store.PaneBinding("pane-1")
+	if !ok || !binding.AttachPending || binding.Attached || binding.Channel != 0 {
+		t.Fatalf("pending attach should claim pane view before channel arrives, binding=%#v ok=%v", binding, ok)
+	}
+	if binding.TerminalID != "term-new" || binding.SurfaceID != "surface-new" || binding.DesiredCols != 100 || binding.DesiredRows != 30 {
+		t.Fatalf("pending attach should keep requested identity and size, got %#v", binding)
+	}
+
+	store = store.ClearAttachPending("view-1", "attach failed")
+	binding, _ = store.PaneBinding("pane-1")
+	if binding.AttachPending || binding.LastError != "attach failed" {
+		t.Fatalf("clear pending should keep binding intent and record error, got %#v", binding)
+	}
+}
+
 func TestTerminalViewStoreTransfersResizeOwnerWithinTerminal(t *testing.T) {
 	store := TerminalViewStore{}
 	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))

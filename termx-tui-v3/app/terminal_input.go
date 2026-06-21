@@ -87,6 +87,10 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 		RawMouse:    intent.RawMouse,
 		NeedsAttach: target.Channel == 0,
 	})
+	if target.AttachPending {
+		root.Shell = root.Shell.AddToast(state.ToastSpec{Severity: state.ToastInfo, Title: "terminal.input", Body: "attach pending", Pending: true})
+		return root.Advance(), []Effect{handledEffect{}}
+	}
 	if target.Channel == 0 {
 		return root, []Effect{liveAttachForInputEffect(root, target, msg.Event, intent.Bytes, deps)}
 	}

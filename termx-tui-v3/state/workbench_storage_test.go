@@ -133,12 +133,13 @@ func TestWorkbenchStorageSnapshotScrubsRuntimeAttachmentIdentity(t *testing.T) {
 		t.Fatalf("expected one stored terminal view, got %#v", snapshot.TerminalViews)
 	}
 	stored := snapshot.TerminalViews[0]
-	if stored.Channel != 0 || stored.Attached || stored.CanResize || stored.SizeLocked || stored.SurfaceID != "" || stored.OwnerSurfaceID != "" || stored.OwnerViewID != "" || stored.ResizeEpoch != 0 || stored.LastError != "" || stored.ResizeRole != TerminalResizeRoleFollower {
+	if stored.Channel != 0 || stored.Attached || stored.AttachPending || stored.CanResize || stored.SizeLocked || stored.SurfaceID != "" || stored.OwnerSurfaceID != "" || stored.OwnerViewID != "" || stored.ResizeEpoch != 0 || stored.LastError != "" || stored.ResizeRole != TerminalResizeRoleFollower {
 		t.Fatalf("snapshot must not persist protocol session identity, got %#v", stored)
 	}
 
 	stored.Channel = 99
 	stored.Attached = true
+	stored.AttachPending = true
 	stored.CanResize = true
 	stored.SurfaceID = "old-surface"
 	stored.OwnerSurfaceID = "old-surface"
@@ -153,7 +154,7 @@ func TestWorkbenchStorageSnapshotScrubsRuntimeAttachmentIdentity(t *testing.T) {
 		t.Fatalf("restore terminal views: %v", err)
 	}
 	binding, ok := restored.PaneBinding(DefaultPaneID)
-	if !ok || binding.Channel != 0 || binding.Attached || binding.CanResize || binding.SizeLocked || binding.SurfaceID != "" || binding.OwnerSurfaceID != "" || binding.OwnerViewID != "" || binding.ResizeEpoch != 0 || binding.LastError != "" {
+	if !ok || binding.Channel != 0 || binding.Attached || binding.AttachPending || binding.CanResize || binding.SizeLocked || binding.SurfaceID != "" || binding.OwnerSurfaceID != "" || binding.OwnerViewID != "" || binding.ResizeEpoch != 0 || binding.LastError != "" {
 		t.Fatalf("restore must scrub old protocol session identity, binding=%#v ok=%v", binding, ok)
 	}
 	if binding.TerminalID != "term-1" || binding.ResizeRole != TerminalResizeRoleFollower || binding.DesiredCols != 80 || binding.DesiredRows != 24 {

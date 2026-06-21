@@ -98,6 +98,34 @@ func ownerLiveAttachConfigForPane(terminalID string, cols int, rows int, paneID 
 	}
 }
 
+func firstWorkbenchPersistEffect(t *testing.T, effects []Effect) WorkbenchStoragePersistRequestMsg {
+	t.Helper()
+	for _, effect := range effects {
+		funcEffect, ok := effect.(FuncEffect)
+		if !ok || funcEffect.Run == nil {
+			continue
+		}
+		if msg, ok := funcEffect.Run(context.Background()).(WorkbenchStoragePersistRequestMsg); ok {
+			return msg
+		}
+	}
+	t.Fatalf("expected workbench persist effect, got %#v", effects)
+	return WorkbenchStoragePersistRequestMsg{}
+}
+
+func hasTerminalPoolListEffect(effects []Effect) bool {
+	for _, effect := range effects {
+		funcEffect, ok := effect.(FuncEffect)
+		if !ok || funcEffect.Run == nil {
+			continue
+		}
+		if _, ok := funcEffect.Run(context.Background()).(TerminalPoolListRequestMsg); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func TestLiveInputRoutesLSSequenceAcrossTwoTiledPaneBindings(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	shell := state.DefaultShell().
@@ -581,16 +609,57 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 	}
 }
 
+func TestLiveAttachMarksViewPendingBeforeResult(t *testing.T) {
+	terminal := &services.FakeTerminalService{}
+	reducer := NewLiveReducer(LiveDeps{Terminal: terminal})
+	root := state.Root{Shell: state.DefaultShell(), RuntimeSurfaceID: "runtime-a"}
+
+	next, effects := reducer(root, LiveAttachMsg{Config: LiveConfig{
+		TerminalID:   "term-1",
+		Cols:         80,
+		Rows:         24,
+		ResizePolicy: state.TerminalResizeRoleFollower,
+		SurfaceID:    "runtime-a",
+		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+	}})
+	if len(effects) != 1 {
+		t.Fatalf("expected attach effect, got %#v", effects)
+	}
+	binding, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || !binding.AttachPending || binding.Attached || binding.Channel != 0 {
+		t.Fatalf("attach request should claim pending pane binding before result, binding=%#v ok=%v", binding, ok)
+	}
+	if binding.TerminalID != "term-1" || binding.SurfaceID != "runtime-a" || binding.DesiredCols != 78 || binding.DesiredRows != 20 {
+		t.Fatalf("pending binding should keep attach request identity, got %#v", binding)
+	}
+}
+
+func TestLiveAttachResultRefreshesTerminalPoolProjection(t *testing.T) {
+	root := state.Root{Shell: state.DefaultShell()}
+	next, effects := reduceLiveAttachResult(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{
+		TerminalID:   "term-1",
+		Channel:      7,
+		Cols:         80,
+		Rows:         24,
+		ResizePolicy: state.TerminalResizeRoleFollower,
+		SurfaceID:    "surface",
+		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
+	}}, LiveDeps{})
+	if _, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID); !ok {
+		t.Fatalf("attach result should bind active pane, root=%#v", next)
+	}
+	if !hasTerminalPoolListEffect(effects) {
+		t.Fatalf("attach result should refresh terminal pool projection for xN, effects=%#v", effects)
+	}
+}
+
 func TestLiveAttachmentStoreSupportsSameTerminalAcrossTwoPanes(t *testing.T) {
 	reducer := NewLiveReducer(LiveDeps{})
 	root := state.Root{Shell: state.DefaultShell().SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneEmpty}, state.SplitDirectionVertical)}
 
 	var effects []Effect
 	root, effects = reducer(root, LiveAttachResultMsg{Result: services.TerminalAttachResult{TerminalID: "term-1", Channel: 8, Cols: 40, Rows: 12, ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "surface", ViewID: state.TerminalPaneViewID("pane-2")}})
-	if len(effects) != 1 {
-		t.Fatalf("expected workbench persist effect without live deps, got %#v", effects)
-	}
-	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != "terminal.attach" {
+	if msg := firstWorkbenchPersistEffect(t, effects); msg.Reason != "terminal.attach" {
 		t.Fatalf("expected terminal attach persist request, got %#v", msg)
 	}
 	root.Shell = root.Shell.FocusPane(state.PaneCommandTarget{PaneID: state.DefaultPaneID})
@@ -661,6 +730,44 @@ func TestLiveInputAttachesActiveViewWhenChannelMissing(t *testing.T) {
 	}
 	if binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); !ok || binding.Channel != 21 {
 		t.Fatalf("fresh channel should be stored on active view, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestLiveInputDoesNotReattachWhileViewAttachPending(t *testing.T) {
+	terminal := &refreshingInputTerminalService{nextChannel: 21}
+	host := NewFakeTerminalHost(8)
+	host.SetSize(100, 30)
+	root := state.Root{Shell: state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-1")}
+	root.TerminalViews = root.TerminalViews.MarkAttachPending(state.TerminalViewBinding{
+		ViewID:      state.TerminalPaneViewID(state.DefaultPaneID),
+		SurfaceID:   "surface",
+		TerminalID:  "term-1",
+		ResizeRole:  state.TerminalResizeRoleFollower,
+		DesiredCols: 80,
+		DesiredRows: 24,
+		PaneID:      state.DefaultPaneID,
+	})
+	runtime := NewInteractiveRuntime(
+		root,
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: &services.FakeCoreClient{}},
+	)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyChar, Char: "l"}); err != nil {
+		t.Fatalf("send key: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+
+	if len(terminal.Attaches) != 0 || len(terminal.Inputs) != 0 {
+		t.Fatalf("pending attach should consume input without issuing another attach/input, attaches=%#v inputs=%#v", terminal.Attaches, terminal.Inputs)
+	}
+	binding, ok := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || !binding.AttachPending || binding.Channel != 0 {
+		t.Fatalf("pending binding should remain waiting for original attach result, binding=%#v ok=%v", binding, ok)
 	}
 }
 
@@ -790,10 +897,7 @@ func TestLiveAttachResultAcceptsPrefilledSessionBeforeFirstBinding(t *testing.T)
 		CanResize:    true,
 	}}, LiveDeps{})
 
-	if len(effects) != 1 {
-		t.Fatalf("expected workbench persist effect without live deps, got %#v", effects)
-	}
-	if msg := effects[0].(FuncEffect).Run(context.Background()); msg.(WorkbenchStoragePersistRequestMsg).Reason != "terminal.attach" {
+	if msg := firstWorkbenchPersistEffect(t, effects); msg.Reason != "terminal.attach" {
 		t.Fatalf("expected terminal attach persist request, got %#v", msg)
 	}
 	if !root.Session.Attached || root.Session.Channel != 7 || root.Session.ViewID != "termx-cli-v3-main" {
@@ -1999,6 +2103,10 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 			TerminalID: "term-float",
 			Title:      "floating shell",
 			State:      "running",
+		}, {
+			TerminalID: "term-main",
+			Title:      "main",
+			State:      "running",
 		}}},
 	}
 	shell := state.DefaultShell().BindPaneTerminal(state.PaneCommandTarget{PaneID: state.DefaultPaneID}, "term-main")
@@ -2038,7 +2146,7 @@ func TestFloatingEmptyPaneAttachesExistingTerminalFromPicker(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain floating empty attach: %v", err)
 	}
-	if len(terminal.Lists) != 1 || runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPicker || runtime.State().Shell.Overlay.TargetID != "floating-1" {
+	if len(terminal.Lists) == 0 || runtime.State().Shell.Overlay.Kind != state.OverlayTerminalPicker || runtime.State().Shell.Overlay.TargetID != "floating-1" {
 		t.Fatalf("empty attach should open picker for floating, lists=%#v overlay=%#v", terminal.Lists, runtime.State().Shell.Overlay)
 	}
 	if !frameContains(lastFrame(t, host.Frames()), "floating shell") || frameContains(lastFrame(t, host.Frames()), "@pool") {

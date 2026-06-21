@@ -1369,6 +1369,7 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T)
 			OwnerSurfaceID: "surface",
 			OwnerViewID:    state.TerminalPaneViewID(state.DefaultPaneID),
 		},
+		ListResult: services.TerminalListResult{Items: []services.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
 	}
 	host := NewFakeTerminalHost(16)
 	host.SetSize(96, 28)

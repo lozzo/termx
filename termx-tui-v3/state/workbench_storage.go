@@ -232,6 +232,7 @@ func (binding TerminalViewBinding) ForWorkbenchStorage() TerminalViewBinding {
 	binding.OwnerViewID = ""
 	binding.ResizeEpoch = 0
 	binding.ResizePending = false
+	binding.AttachPending = false
 	binding.LastError = ""
 	binding.ResizeRole = TerminalResizeRoleFollower
 	return binding

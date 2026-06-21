@@ -44,6 +44,7 @@ type TerminalViewBinding struct {
 	OwnerViewID    string             `json:"ownerViewId,omitempty"`
 	ResizeEpoch    uint64             `json:"resizeEpoch,omitempty"`
 	ResizePending  bool               `json:"resizePending,omitempty"`
+	AttachPending  bool               `json:"attachPending,omitempty"`
 }
 
 // TerminalViewLayout 是 pane/floating 的 view-local 内容布局状态。
@@ -315,6 +316,64 @@ func (store TerminalViewStore) Bindings() []TerminalViewBinding {
 	return bindings
 }
 
+func (store TerminalViewStore) MarkAttachPending(binding TerminalViewBinding) TerminalViewStore {
+	if binding.TerminalID == "" || binding.ViewID == "" {
+		return store
+	}
+	existing, hasExisting := store.Views[binding.ViewID]
+	if hasExisting {
+		binding.Layout = existing.Layout
+		if binding.PaneID == "" {
+			binding.PaneID = existing.PaneID
+		}
+		if binding.FloatingID == "" {
+			binding.FloatingID = existing.FloatingID
+		}
+		if binding.DesiredCols <= 0 {
+			binding.DesiredCols = existing.DesiredCols
+		}
+		if binding.DesiredRows <= 0 {
+			binding.DesiredRows = existing.DesiredRows
+		}
+		if binding.ResizeRole == "" {
+			binding.ResizeRole = existing.ResizeRole
+		}
+		if binding.SurfaceID == "" {
+			binding.SurfaceID = existing.SurfaceID
+		}
+		binding.SizeLocked = existing.SizeLocked
+	}
+	binding.Channel = 0
+	binding.Attached = false
+	binding.AttachPending = true
+	binding.CanResize = false
+	binding.LastError = ""
+	if binding.PaneID != "" {
+		return store.BindPane(binding)
+	}
+	if binding.FloatingID != "" {
+		return store.BindFloating(binding)
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	store.Views[binding.ViewID] = binding
+	return store
+}
+
+func (store TerminalViewStore) ClearAttachPending(viewID string, err string) TerminalViewStore {
+	if viewID == "" {
+		return store
+	}
+	binding, ok := store.Views[viewID]
+	if !ok || !binding.AttachPending {
+		return store
+	}
+	binding.AttachPending = false
+	binding.LastError = err
+	store.Views = cloneTerminalViewBindings(store.Views)
+	store.Views[viewID] = binding
+	return store
+}
+
 func (store TerminalViewStore) MarkTerminalReattaching(terminalID string) TerminalViewStore {
 	if terminalID == "" {
 		return store
@@ -328,6 +387,7 @@ func (store TerminalViewStore) MarkTerminalReattaching(terminalID string) Termin
 		// 但必须让输入路径重新 attach 当前 view 后再发送。
 		binding.Channel = 0
 		binding.Attached = false
+		binding.AttachPending = false
 		binding.LastError = ""
 		store.Views[viewID] = binding
 	}
