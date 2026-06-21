@@ -1,8 +1,8 @@
-# 工作流：termx remote 迁移主线
+# 工作流：termx remote + app 端到端迁移主线
 
 本文件是当前分支唯一有效的活动驱动文件。后续分析、实现、测试、提交都先看这里；如果本文件与旧说明、聊天记录、旧代码行为冲突，以本文件为准。
 
-本文件已经从旧 history/copy 长队列压缩为 remote 迁移队列。旧队列和完成记录不再在这里重复备份，按 git 历史追溯；本文件只保留当前阶段需要执行和约束的内容。
+本文件已经从旧 history/copy 长队列压缩为 remote + app 端到端迁移队列。旧队列和完成记录不再在这里重复备份，按 git 历史追溯；本文件只保留当前阶段需要执行和约束的内容。
 
 ## 0. 怎么读
 
@@ -20,11 +20,11 @@
 
 ### 1.1 一句话目标
 
-把 `termx remote ...` 迁到 core-v2 protocol/service extension，同时保持默认本地 CLI 入口继续走 `termx-core-v2/` 与 `termx-tui-v3/`，并删除旧 `termx-core/`、`tuiv2/` fallback。
+把 `termx remote ...`、core-v2 remote runtime 和真实 `termx-app/` 打通：CLI 启动和管理 remote，App 连接该 runtime 打开 terminal；App 可以持有自己的显示/滚动历史缓存，但复制模式和历史真值必须走 core-v2 authoritative logical-line history。
 
 ### 1.2 这轮只关心什么
 
-当前阶段只迁 remote 的后端控制链路：
+当前阶段先迁 remote 的后端控制链路，再接真实 App：
 
 1. 明确 remote 现有 method、service、storage、transport 和 CLI fallback 边界。
 2. 把 `termx-proto` wire contract 与 `internal/protocol` Go contract 迁到 core-v2 domain 结构，而不是为旧 core 保留兼容层。
@@ -33,14 +33,18 @@
 5. 分步迁移 `remote.status`、`remote.local.*`、`remote.pair.start` 和 remote terminal/storage routing。
 6. 切换 CLI remote client/config 到 core-v2 默认 daemon，并清理旧 fallback 边界。
 7. 保留 remote terminal/storage routing 的 core-v2 truth，不新增第二份 terminal truth。
+8. 让 `termx-app/` 通过当前 CLI remote runtime 连接、列出、创建、进入 terminal。
+9. 把 App 侧 live terminal display 和 infinite history surface 分层：live display 可以有本地短缓存，history/copy 必须通过 core-v2 logical-line window。
+10. 后续无限历史回滚、窗口化渲染、选择和复制可以参考 `termx-app-history-ref/`，但不得把参考实现升级成新的历史真值。
 
 ### 1.3 不在当前阶段做什么
 
-- 不迁 `remote-ui/`、`web-control/`、`termx-hub/`。
+- 不迁 `web-control/`、`termx-hub/`。
 - 不把 `termx-remote-v2/` 纳入实现范围；它当前只作为未跟踪实验目录存在。
 - 不恢复旧 `termx-core/` 或 `tuiv2/`。
 - 不对旧 core 协议、旧 storage 格式、旧 daemon method 或旧 remote fallback 做任何兼容；冲突时直接迁到 core-v2 contract。
-- 不借 remote 迁移重开 history/copy/floating 的长尾问题；除非当前切片直接触发回归。
+- 不借 remote/App 迁移重开 TUI floating 的长尾问题；除非当前切片直接触发回归。
+- 不把 App 本地显示缓存、xterm scrollback、DOM/canvas rows 或 native bridge backlog 当作 copy/history truth。
 
 ## 2. 技术设计基准
 
@@ -50,6 +54,9 @@
 - remote public service：`termx-remote/`
 - wire protocol contract：`termx-proto/`
 - protocol contract：`internal/protocol/`
+- real app：`termx-app/`
+- app shared UI/runtime package：`remote-ui/`
+- infinite history UI reference：`termx-app-history-ref/`
 
 如果实现发现设计文档过期，必须和当前切片一起更新；不要代码先跑偏，文档以后再补。
 
@@ -66,6 +73,7 @@
 - `termx-remote/`
 - `termx-proto/`
 - `internal/protocol/`
+- `termx-app/`，仅当当前切片进入真实 App remote/runtime/history 集成阶段
 
 ### 3.2 受限联动范围
 
@@ -73,6 +81,7 @@
 
 - `termx-cli/cmd/termx/` 内非 `remote_*.go` 的必要 glue、旧 fallback 删除或测试
 - `termx-tui-v3/` 中受 protocol/service adapter 影响的 smoke 或 harness
+- `remote-ui/`，仅当 `termx-app/` 的 terminal/runtime/history/copy contract 必须调整
 - `termx-shared/`，仅当 transport/session contract 必须调整
 - `termx-testkit/`
 - `scripts/`
@@ -93,15 +102,14 @@
 默认不得修改：
 
 - `termx-remote-v2/`
+- `termx-app-history-ref/`，当前作为未跟踪本地参考目录，只读参考无限历史回滚和 history surface 设计
 
 ### 3.5 冻结范围
 
 不得主动触碰，除非本文件先明确解冻：
 
-- `remote-ui/`
 - `web-control/`
 - `termx-hub/`
-- `termx-app/`
 - `bin/`
 - `.claude/`
 - 顶层可执行产物和测试产物
@@ -140,7 +148,17 @@
 - copy/history 仍只消费 core-v2 authoritative history，不从 live/snapshot/VTerm scrollback fallback。
 - panel/pane 只表达工作台槽位和连接意图，不表达 terminal running/exited 或 copy/history 交互态。
 
-### 4.5 实现纪律
+### 4.5 App remote/history/copy 边界
+
+- `termx-app/` 是真实 App 入口，必须连接 CLI 启动的 remote/core-v2 runtime；不得另起一套 App 私有 terminal lifecycle、PTY、history 或 storage truth。
+- `remote-ui/` 可以承载 App/Web 共享 UI、运行时接口、terminal live surface、history surface 和缓存，但不能反向定义 core-v2 protocol truth。
+- App 允许自己持有显示历史、短 scrollback、render window、离线滚动缓存和 native bridge 状态；这些只能是 projection/cache，不能作为 copy mode、search、selection text 或历史窗口的权威来源。
+- App 的 copy mode 必须通过 core-v2 logical-line history/window contract 取数；不得从 xterm buffer、snapshot scrollback、DOM/canvas rows、native bridge backlog 或 App 本地 append log 拼接最终文本。
+- 无限历史回滚使用 logical-line cursor/token/generation 这类后端窗口语义；不得以 visual row、wrapped row、像素 offset 或 xterm scrollback index 作为后端 contract。
+- `LiveSurface` 和 `HistorySurface` 必须分层：live surface 展示实时终端和短上下文，history surface 显式进入后按 frozen/tokenized history window 渲染、选择、复制、搜索。
+- `termx-app-history-ref/` 只作为无限历史回滚、窗口化渲染、overscan、WebGL/Canvas/DOM renderer 的参考；参考实现里的 mock source、visual row 逻辑和 demo 数据不得成为新协议或历史真值。
+
+### 4.6 实现纪律
 
 - 先写 domain model、小 harness 或契约测试，再接真实 protocol、terminal 或 CLI。
 - 代码必须按正确模型写完整；如果方案依赖“再刷一次状态”“失败就 fallback”“先 scrub storage”“兼容旧内部格式”才能成立，默认不合格，需要回到状态归属和 contract 重做。
@@ -155,16 +173,19 @@
 
 这次扫描到的当前边界如下，后续切片必须按这些边界拆，不得用补丁式兼容绕过去：
 
-- `termx-cli/cmd/termx/remote_client.go` 现在调用 `dialOrStartClient(resolveSocket(...))`，会自动启动 `legacy daemon`；迁移后必须改为 core-v2 socket/client 路径，不能继续连旧 daemon。
-- `termx-cli/cmd/termx/remote_runtime.go` 同时承担旧 core adapter、remote method handler、storage/events/transport adapter，并直接 import `termx-core`；迁移目标是删除这个旧 core adapter，改成 core-v2 domain adapter。
-- `termx-cli/cmd/termx/remote_protocol_codec.go` 是旧 adapter 私有 remote codec；迁移后 remote method codec 应收口到 `internal/protocol` typed contract，不在 CLI 里保留第二套 remote codec。
-- `termx-cli/cmd/termx/remote_config.go` 只因默认 config path 依赖 `tuiv2/shared`；这不是 protocol truth，但会阻止 remote 文件脱离旧 TUI 依赖，必须独立清理。
+- R175 后旧 `remote_runtime.go`、旧 CLI 私有 `remote_protocol_codec.go`、legacy daemon auto-start 和旧 `termx-core/tuiv2` fallback 已删除；`termx-cli/cmd/termx/remote_client.go` 现在只保留 `remote.status`、`remote.local.*`、`remote.pair.start` client 调用骨架，等待 core-v2 daemon 承接这些 method。
+- `termx-cli/cmd/termx/remote_config.go` 已不再依赖旧 TUI，但 remote config path 与 v3 config policy 仍需要单独锁定，避免 App/CLI/local runtime 后续形成多套配置入口。
 - `termx-remote.Service` 的边界是合理的：它只需要 daemon 提供 terminal management、storage、events、transport/session，不应拥有 terminal lifecycle/history/storage truth。
 - `termx-remote` 的 `runtimepb` 是 remote runtime/localweb/WebRTC API，可保留；不能把它当成 core daemon protocol truth，也不能让 core-v2 模拟旧 core protocol 后再翻译。
 - `internal/protocol` 已有 remote wire protobuf，但当前用反射/getter/wirepb 指针承接 remote params/results；迁移目标是新增显式 `protocol.Remote*` domain structs，移除反射和 legacy getter 兼容。
 - `termx-core-v2` 已有 storage/events 和 protocol dispatch，但没有 remote service hook，也没有 public `ServeTransport/ServeScopedTransport`；remote WebRTC datachannel 需要 core-v2 自己的 transport scope API。
 - `termx-core-v2` 的 `ProcessSpec` 当前只包含 `TerminalID/Command/Size`，而 `protocol.CreateParams` 和 remote terminal management 会传 `Dir/Env/Scrollback*`；这些字段必须进入 core-v2 create/process contract，不能在 remote adapter 里丢弃。
 - `termx-proto/wirepb/terminal.proto` 是 remote/core-v2 跨进程 wire contract 的入口。当前已包含 `CreateParams` 的 `dir/env/scrollback_*` 和 `RemoteStatus/RemotePairStart*/RemoteLocal*`，但后续必须先审计这些字段是否完整表达 core-v2 domain；需要共享的新字段必须写入 `.proto` 并同步生成 `terminal.pb.go`，不能只补在 Go 侧反射/adapter。
+- `termx-app/` 是 Capacitor React 真实 App：`TermxApp.tsx` 挂载 `RemoteControlApp`，注入 Native HTTP/storage/QR、`createNativeMachineRuntime` 和 native file transfer context。
+- `termx-app/src/NativeConnectionProxy.ts` 通过 Capacitor `NativeConnection` 插件做控制面，通过本地 WebSocket bridge 承载 WebRTC/datachannel 二进制帧，并把 `terminal:${machineId}:${terminalId}` channel 映射成 `RtcSession.openTerminal`；它不是 terminal/history truth。
+- `termx-app/src/plugins/nativeConnection.ts` 的 native contract 是 machine/session/bridge/transfer 维度，当前没有 logical-line history/copy contract；后续如需 App history 必须通过 remote/core-v2 runtime API 补齐，而不是塞进 native bridge 私有状态。
+- `remote-ui/` 是 `termx-app` 当前依赖的共享 UI/runtime 包。它现在的 terminal 路径仍包含 snapshot/scrollback、xterm scrollback、`loadScrollback` 和本地 text prefix 拼接逻辑；这些可以作为 live display/cache 参考，但 copy/history 迁移时必须改成 core-v2 logical-line source。
+- `termx-app-history-ref/` 当前是未跟踪本地参考目录，包含 `MockHistorySource`、`HistoryCacheWindow`、`HistorySurfaceApp` 与 WebGL/Canvas/DOM renderer demo；只能参考其 window/cache/overscan/renderer 结构，不能照搬 mock source 或 visual-row truth。
 
 ### 5.2 任务队列
 
@@ -180,6 +201,7 @@
 | R173C. SK core-v2 protocol-only 准入 | 完成 | `AGENTS.md`、`workflow.md` | 已明确 remote/protocol 迁移不对旧 core 做任何兼容，协议结构必须迁到 core-v2 domain contract |
 | R174. SK remote 迁移代码扫描与队列设计 | 完成 | `workflow.md`、只读扫描 `termx-cli/`、`termx-remote/`、`termx-core-v2/`、`internal/protocol/`、`termx-proto/`、旧 `termx-core/` | 已定位 CLI legacy daemon 入口、旧 core adapter、remote service 边界、core-v2 缺口和后续切片顺序 |
 | R175. SK 删除旧 core/tuiv2 fallback | 完成 | `termx-core/`、`tuiv2/`、`AGENTS.md`、`workflow.md`、`go.work`、`go.work.sum`、`termx-cli/`、`termx-testkit/`、`termx-remote/`、按需 `termx-hub/go.mod` | 已删除 `termx-core/` 与 `tuiv2/`，移除 legacy command、旧 daemon auto-start、remote fallback adapter 和所有构建引用；remote 命令只连 core-v2 daemon，未迁 hook 时由 core-v2 contract 明确失败 |
+| R175B. SK 真实 App 和历史参考并入工作流 | 完成 | `workflow.md`、只读扫描 `termx-app/`、`remote-ui/`、`termx-app-history-ref/` | 已把目标扩展为 CLI remote + core-v2 + 真实 App 端到端；`termx-app` 解冻到后续 App 切片，`remote-ui` 作为受限联动，`termx-app-history-ref` 作为只读无限历史参考；写明 App 本地历史只能是显示缓存，copy/history truth 必须走 core-v2 logical-line |
 | R176. SK termx-proto core-v2 wire contract | 待开始 | `termx-proto/`、`internal/protocol/` 只读参照、`termx-core-v2/` 只读参照、`termx-remote/` 只读参照 | 先审计并对齐 `.proto`：remote/status/local/pair、create/process、terminal info、storage/events、transport scope 需要共享的字段必须进入 `terminal.proto`；如改 `.proto` 必须同步生成 `terminal.pb.go`，环境缺 `protoc` 时本切片标阻塞 |
 | R177. SK remote protocol typed contract | 待开始 | `internal/protocol/`、按需 `termx-proto/` | 新增显式 `protocol.RemoteStatus`、`RemotePairStartParams/Result`、`RemoteLocalEnableParams`、`RemoteLocalStatus`；`Encode/DecodeMethod*` 不再用反射/getter/wirepb 指针作为 remote domain；补 protocol tests |
 | R178. SK core-v2 create/process remote contract | 待开始 | `termx-core-v2/`、`internal/protocol/`、按需 `termx-proto/` | 让 core-v2 terminal create/process contract 承载 `Dir`、`Env`、必要 CWD metadata 和 remote create 需要的 scrollback 参数；wire 字段缺失时先回到 `termx-proto`，不得在 remote adapter 里静默丢字段 |
@@ -191,8 +213,17 @@
 | R184. SK remote status/local/pair core-v2 smoke | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-remote/` | 补 CLI/core-v2 smoke：`remote.status`、`remote.local.enable/status/disable`、`remote.pair.start` 都经过 core-v2 daemon 和 `termx-remote.Service`，不经过旧 core |
 | R185. SK remote terminal management/storage/events routing | 待开始 | `termx-remote/`、`termx-core-v2/`、`termx-cli/`、`termx-testkit/` 按需 | 验证 remote runtime API 的 terminal list/create/get_directory/set_metadata/restart/remove、storage get/put/delete/list、events subscription 都路由到 core-v2 truth |
 | R186. SK remote transport session core-v2 routing | 待开始 | `termx-core-v2/`、`termx-remote/`、`termx-shared/`、`termx-testkit/` 按需 | 验证 remote WebRTC/datachannel transport 通过 core-v2 `ServeScopedTransport` 进入 protocol session，terminal scope 与 machine-events-only scope 行为正确 |
-| R187. SK remote contract final smoke | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/`、必要文档 | 旧 fallback 已在 R175 删除；最终验证 remote status/local/pair、terminal/storage/events、transport session 全部经过 core-v2 truth，守卫旧目录不得恢复 |
-| R188. SK remote migration docs finalization | 待开始 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、必要顶层文档 | 更新审计文档和当前状态，记录 remote 已迁 core-v2 contract、旧 fallback 已删除边界和最终测试证据 |
+| R187. SK remote backend contract smoke | 待开始 | `termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/`、必要文档 | 旧 fallback 已在 R175 删除；验证 remote status/local/pair、terminal/storage/events、transport session 全部经过 core-v2 truth，守卫旧目录不得恢复 |
+| R188. SK remote backend docs checkpoint | 待开始 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、必要顶层文档 | 更新审计文档和当前状态，记录 remote 后端已迁 core-v2 contract、旧 fallback 已删除边界和 backend smoke 证据；这不是全局结束，后续继续 App 集成 |
+| R189. SK App/remote-ui contract 准入设计 | 待开始 | `termx-app/`、`remote-ui/`、`workflow.md`、按需 `remote-ui/AGENTS.md` | 基于现有 `TermxApp`、Native bridge、`RemoteControlApp` 和 terminal client，明确 App 连接 CLI remote runtime 所需 TypeScript runtime/history contract；如果 `remote-ui/AGENTS.md` 的 browser-only 说明阻碍当前 workflow，先同步更新 |
+| R190. SK remote-ui core-v2 terminal protocol contract | 待开始 | `remote-ui/`、按需 `termx-proto/` 生成产物只读参照、`internal/protocol/` 只读参照 | 在 shared UI/runtime 层建立 core-v2 remote terminal/history method/event contract；旧 snapshot/scrollback API 只能服务 live display/cache，不再作为 copy/history 数据源 |
+| R191. SK termx-app 连接 CLI remote runtime | 待开始 | `termx-app/`、`remote-ui/`、按需 `termx-cli/`、`termx-remote/` | 让真实 App 通过当前 CLI 启动的 local/hub remote runtime 完成配对、连接、session 复用和状态展示；不得新增绕过 `termx-remote.Service` 的 App 私有 local API |
+| R192. SK App terminal 管理与 live surface | 待开始 | `termx-app/`、`remote-ui/`、按需 `termx-remote/`、`termx-core-v2/` | App 能 list/create/attach/input/resize/restart/remove terminal；live surface 可以保留 xterm.js 和短 scrollback，但 terminal lifecycle 和 PTY truth 来自 core-v2 |
+| R193. SK App logical-line HistorySource | 待开始 | `remote-ui/`、`termx-app/`、按需 `termx-proto/`、`internal/protocol/` | 把 App history source 接到 core-v2 `HistoryWindow`/logical-line contract，支持 latest/older/range 或等价窗口请求；返回 logical line 与 style/cell footprint，不返回 xterm scrollback truth |
+| R194. SK App infinite history surface/cache | 待开始 | `remote-ui/`、`termx-app/`、只读参考 `termx-app-history-ref/` | 基于 `termx-app-history-ref` 的窗口化渲染、overscan、缓存和 renderer 思路实现 App history surface；App 可持有 render/cache window，但必须用 core-v2 cursor/token/generation 校验和失效 |
+| R195. SK App copy/search/selection logical-line 化 | 待开始 | `remote-ui/`、`termx-app/`、按需 `termx-testkit/` | App 复制模式、搜索和选择都从 logical-line history surface 组装文本；测试必须证明不会从 xterm selection、snapshot rows、DOM/canvas rows 或 App 本地 append log 返回最终 copy 文本 |
+| R196. SK App 端到端 smoke | 待开始 | `termx-app/`、`remote-ui/`、`termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/` 按需 | 验证 CLI daemon/remote local enable -> App 配对/连接 -> terminal 创建/附着/输入输出 -> history rollback -> logical-line copy 的端到端路径 |
+| R197. SK remote + App migration docs finalization | 待开始 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、`remote-ui/docs/` 或必要顶层文档 | 更新最终迁移记录、App 连接方式、history/copy truth 边界、无限历史参考取舍和完整测试证据 |
 
 ## 6. 测试准入
 
@@ -205,6 +236,10 @@
 - protocol 改动：`cd internal && go test ./protocol/... -count=1`
 - proto 改动：`cd termx-proto && go test ./... -count=1`
 - `.proto` 改动：必须同步更新对应生成文件；如果本机缺少 `protoc` 或 `protoc-gen-go`，不得手写生成文件，当前切片应标 `阻塞` 并写清缺口。
+- remote-ui 改动：`cd remote-ui && npm run typecheck && npm run test`；涉及 public entry、terminal renderer、protocol 或打包行为时加跑 `npm run build`
+- termx-app 改动：`cd termx-app && npm run build`
+- termx-app native/Capacitor 改动：在 App build 外按需跑 `cd termx-app && npm run cap:sync`；若本机缺 Android/Capacitor 环境，最终说明必须写清
+- App history/copy 改动：必须有 focused harness 证明 copy/search/selection 使用 core-v2 logical-line source，不从 xterm/snapshot/DOM/cache 拼最终文本
 - 默认入口或依赖边界改动：`cd termx-cli && go test ./cmd/termx -run TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI -count=1`
 - remote fallback/旧依赖清理改动：除 CLI 测试外，必须确认 `termx-cli/cmd/termx/remote_*.go` 不再 import `termx-core` 或 `tuiv2`，且默认依赖守卫不再把 remote 文件作为旧依赖豁免。
 - 跨模块迁移改动：按需加跑 `make test-v2-migration`
@@ -231,7 +266,10 @@
 - `R173C` 已完成：remote/protocol 迁移只面向 core-v2 contract，不对旧 core 保留兼容层或 fallback。
 - `R174` 已完成：已扫描 CLI remote、`termx-remote.Service`、core-v2 protocol/server/storage/events、旧 core extension/transport 源边界，并把迁移队列细化到 R175-R188。
 - `R175` 已完成：已按用户确认删除旧 `termx-core/` 与 `tuiv2/`，清理 legacy/fallback 入口和构建引用，压缩 CLI 切换审计文档。
-- `termx remote ...` 仍是下一阶段实现主线，旧 fallback 已删除，不能作为默认本地切换完成证据。
-- 当前明确缺口：`internal/protocol` remote codec 仍用反射/wirepb；core-v2 仍缺 remote hook 与 public scoped transport API。
+- `R175B` 已完成：已扫描 `termx-app/`、`remote-ui/`、`termx-app-history-ref/`，并把工作流扩展为 remote backend + 真实 App 端到端；App 本地历史只允许作为显示/cache，copy/history truth 必须走 core-v2 logical-line。
+- `termx remote ...` 仍是下一阶段后端实现主线，旧 fallback 已删除，不能作为默认本地切换完成证据；后端收口后继续 R189-R197 的真实 App 集成。
+- 当前最早未完成切片是 `R176. SK termx-proto core-v2 wire contract`。
+- 当前明确缺口：`internal/protocol` remote codec 仍用反射/wirepb；core-v2 仍缺 remote hook 与 public scoped transport API；`remote-ui` terminal 路径仍包含 snapshot/scrollback copy/history 风险，需在 App 阶段迁到 logical-line history source。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
+- `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
 - 当前已知环境缺口：本机没有 `protoc` 与 `protoc-gen-go`；只有需要重新生成 proto 时才构成阻塞。
