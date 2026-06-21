@@ -462,7 +462,7 @@ func loadRemoteAuthRecord(path string) (remoteAuthRecord, error) {
 
 func ensureRemoteConfigBootstrap(configPath string, controlURL string, hubURL string, authStorePath string, mode string, localWebAddr string, iceTCPAddr string) error {
 	if strings.TrimSpace(configPath) == "" {
-		configPath = resolveConfigFilePath("")
+		configPath = resolveRemoteConfigPath("")
 	}
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err

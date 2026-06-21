@@ -17,6 +17,9 @@ func remoteCommand(socket *string, logFile *string, configPath *string) *cobra.C
 	cmd := &cobra.Command{
 		Use:   "remote",
 		Short: "Manage TermX remote access",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			cmd.SetContext(remoteContextWithConfigPath(cmd.Context(), configPath))
+		},
 	}
 	cmd.AddCommand(remoteLoginCommand(configPath))
 	cmd.AddCommand(remoteStatusCommand(socket, logFile))
@@ -33,11 +36,11 @@ func remoteStatusCommand(socket *string, logFile *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			status, err := remoteStatusClient(context.Background(), *socket, *logFile)
+			status, err := remoteStatusClient(cmd.Context(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
-			localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
+			localStatus, err := remoteLocalStatusClient(cmd.Context(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
@@ -66,11 +69,11 @@ func remoteInfoCommand(socket *string, logFile *string) *cobra.Command {
 		Aliases: []string{"show"},
 		Short:   "Show remote runtime and local web details",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			remoteStatus, err := remoteStatusClient(context.Background(), *socket, *logFile)
+			remoteStatus, err := remoteStatusClient(cmd.Context(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
-			localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
+			localStatus, err := remoteLocalStatusClient(cmd.Context(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
@@ -168,7 +171,7 @@ func remoteDisableCommand(socket *string, logFile *string) *cobra.Command {
 		Use:   "disable",
 		Short: "Disable the local remote web/ICE TCP runtime",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			status, err := remoteLocalDisableClient(context.Background(), *socket, *logFile)
+			status, err := remoteLocalDisableClient(cmd.Context(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
@@ -211,7 +214,7 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			localURL = strings.TrimSpace(localURL)
 			if localURL == "" {
-				localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
+				localStatus, err := remoteLocalStatusClient(cmd.Context(), *socket, *logFile)
 				if err != nil {
 					return err
 				}
@@ -280,7 +283,7 @@ func remoteOpenCommand(socket *string, logFile *string) *cobra.Command {
 		Use:   "open",
 		Short: "Open the local remote web UI",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
+			localStatus, err := remoteLocalStatusClient(cmd.Context(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
@@ -303,7 +306,7 @@ func remoteOpenCommand(socket *string, logFile *string) *cobra.Command {
 }
 
 func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, addr string, iceTCPAddr string, hub remoteprotocol.Config, outputJSON bool) error {
-	status, err := remoteLocalEnableClient(context.Background(), *socket, *logFile, remoteprotocol.LocalEnableParams{
+	status, err := remoteLocalEnableClient(cmd.Context(), *socket, *logFile, remoteprotocol.LocalEnableParams{
 		LocalWebAddr: addr,
 		ICETCPAddr:   iceTCPAddr,
 		HubURLs:      compactStringList(hub.HubURLs),

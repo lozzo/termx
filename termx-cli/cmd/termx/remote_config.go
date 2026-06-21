@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -14,6 +15,40 @@ const (
 	defaultRemoteLocalWebAddr = "127.0.0.1:18888"
 	defaultRemoteLocalICEAddr = "127.0.0.1:18889"
 )
+
+type remoteConfigPathContextKey struct{}
+
+func remoteConfigPathValue(path *string) string {
+	if path == nil {
+		return ""
+	}
+	return strings.TrimSpace(*path)
+}
+
+func resolveRemoteConfigPath(path string) string {
+	return resolveConfigFilePath(strings.TrimSpace(path))
+}
+
+func remoteContextWithConfigPath(ctx context.Context, configPath *string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	path := remoteConfigPathValue(configPath)
+	if path == "" {
+		return ctx
+	}
+	// 中文说明：remote 命令的 --config 只作为请求上下文传给 core-v2
+	// daemon auto-start；已运行 daemon 不会被 CLI 侧隐式重配。
+	return context.WithValue(ctx, remoteConfigPathContextKey{}, path)
+}
+
+func remoteConfigPathFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	path, _ := ctx.Value(remoteConfigPathContextKey{}).(string)
+	return strings.TrimSpace(path)
+}
 
 func remoteConfigFromEnv() remoteprotocol.Config {
 	enabled, enabledSet, _ := envBoolValue("TERMX_REMOTE_ENABLE")
@@ -118,9 +153,7 @@ func remoteConfigFromFile(path string) (remoteprotocol.Config, error) {
 }
 
 func loadRemoteConfigFromFile(path string) (remoteprotocol.Config, bool, error) {
-	if strings.TrimSpace(path) == "" {
-		path = resolveConfigFilePath("")
-	}
+	path = resolveRemoteConfigPath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

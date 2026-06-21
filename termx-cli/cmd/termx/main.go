@@ -27,13 +27,13 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
 	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "termx config path (default: XDG config dir termx.yaml)")
-	cmd.AddCommand(v3DaemonCommand(&socket, &logFile))
+	cmd.AddCommand(v3DaemonCommand(&socket, &logFile, &configPath))
 	cmd.AddCommand(v3NewCommand(&socket, &logFile))
 	cmd.AddCommand(v3LsCommand(&socket, &logFile))
 	cmd.AddCommand(v3KillCommand(&socket, &logFile))
 	cmd.AddCommand(v3RemoveCommand(&socket, &logFile))
 	cmd.AddCommand(v3AttachCommand(&socket, &logFile))
 	cmd.AddCommand(remoteCommand(&socket, &logFile, &configPath))
-	cmd.AddCommand(v3Command(&socket, &logFile))
+	cmd.AddCommand(v3Command(&socket, &logFile, &configPath))
 	return cmd
 }

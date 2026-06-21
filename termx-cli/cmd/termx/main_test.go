@@ -525,6 +525,103 @@ func TestStartCoreV2DaemonCommandUsesV3Daemon(t *testing.T) {
 		t.Fatalf("unexpected v3 daemon args: %#v", got.Args)
 	}
 }
+
+func TestStartCoreV2DaemonCommandCanCarryRemoteConfigPath(t *testing.T) {
+	oldExecutable := osExecutable
+	t.Cleanup(func() {
+		osExecutable = oldExecutable
+	})
+
+	exe := filepath.Join(t.TempDir(), "termx")
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	osExecutable = func() (string, error) {
+		return exe, nil
+	}
+	got, err := buildStartCoreV2DaemonCommandWithConfig("/tmp/termx-v2.sock", "/tmp/termx.log", configPath)
+	if err != nil {
+		t.Fatalf("buildStartCoreV2DaemonCommandWithConfig returned error: %v", err)
+	}
+	wantArgs := []string{exe, "--socket", "/tmp/termx-v2.sock", "--log-file", "/tmp/termx.log", "--config", configPath, "daemon"}
+	if !reflect.DeepEqual(got.Args, wantArgs) {
+		t.Fatalf("unexpected v3 daemon args with config: %#v", got.Args)
+	}
+}
+
+func TestDialOrStartV3ClientUsesConfigStarterWhenContextHasRemoteConfig(t *testing.T) {
+	oldDial := v3DialClient
+	oldStart := startV3Daemon
+	oldStartWithConfig := startV3DaemonWithConfig
+	t.Cleanup(func() {
+		v3DialClient = oldDial
+		startV3Daemon = oldStart
+		startV3DaemonWithConfig = oldStartWithConfig
+	})
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	socketPath := filepath.Join(t.TempDir(), "termx.sock")
+	logPath := filepath.Join(t.TempDir(), "termx.log")
+	dialCalls := 0
+	v3DialClient = func(path string) (*protocol.Client, error) {
+		dialCalls++
+		if dialCalls == 1 {
+			return nil, errors.New("not running")
+		}
+		return nil, nil
+	}
+	startV3Daemon = func(path string, logFile string) error {
+		t.Fatal("plain daemon starter must not be used when remote config path is present")
+		return nil
+	}
+	var gotSocket, gotLog, gotConfig string
+	startV3DaemonWithConfig = func(path string, logFile string, cfg string) error {
+		gotSocket, gotLog, gotConfig = path, logFile, cfg
+		return nil
+	}
+
+	client, err := dialOrStartV3ClientWithConfig(socketPath, logPath, configPath, nil)
+	if err != nil {
+		t.Fatalf("dialOrStartV3ClientWithConfig returned error: %v", err)
+	}
+	if client != nil {
+		_ = client.Close()
+	}
+	if gotSocket != socketPath || gotLog != logPath || gotConfig != configPath {
+		t.Fatalf("config starter got socket=%q log=%q config=%q", gotSocket, gotLog, gotConfig)
+	}
+}
+
+func TestRemoteCommandContextCarriesConfigPathForDaemonAutostart(t *testing.T) {
+	oldStatus := remoteStatusClient
+	oldLocalStatus := remoteLocalStatusClient
+	t.Cleanup(func() {
+		remoteStatusClient = oldStatus
+		remoteLocalStatusClient = oldLocalStatus
+	})
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	var gotConfigPath string
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		gotConfigPath = remoteConfigPathFromContext(ctx)
+		return &remoteprotocol.Status{
+			State:      "offline",
+			DeviceName: "config-test",
+		}, nil
+	}
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{}, nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath, "remote", "status"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("remote status returned error: %v", err)
+	}
+	if gotConfigPath != configPath {
+		t.Fatalf("remote command context did not carry config path: got %q want %q", gotConfigPath, configPath)
+	}
+}
+
 func TestDefaultLocalControlCommandsUseCoreV2Protocol(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "termx-v2.sock")
 	server := corev2.NewServer(corev2.WithSocketPath(socketPath))

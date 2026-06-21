@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -133,6 +135,101 @@ func TestDefaultDaemonConfiguresRemoteLifecycleFromEnvironment(t *testing.T) {
 	}
 	if fake.startCalls != 1 || fake.localEnableCalls != 1 || fake.closeCalls != 1 {
 		t.Fatalf("unexpected lifecycle calls start=%d local=%d close=%d", fake.startCalls, fake.localEnableCalls, fake.closeCalls)
+	}
+}
+
+func TestDefaultDaemonLoadsRemoteConfigFromExplicitPath(t *testing.T) {
+	oldNewService := newCoreV2DaemonRemoteLifecycleService
+	t.Cleanup(func() {
+		newCoreV2DaemonRemoteLifecycleService = oldNewService
+	})
+	fake := &daemonRemoteLifecycleFake{
+		status: coreprotocol.RemoteStatus{State: "configured", DeviceID: "machine-file"},
+		localStatus: coreprotocol.RemoteLocalStatus{
+			Enabled:      true,
+			HTTPURL:      "http://127.0.0.1:18888",
+			LocalWebAddr: "127.0.0.1:0",
+			UpdatedAt:    time.Now().UTC(),
+		},
+	}
+	var gotCfg remoteprotocol.Config
+	newCoreV2DaemonRemoteLifecycleService = func(cfg remoteprotocol.Config, daemon remote.Daemon) coreV2RemoteLifecycleService {
+		gotCfg = cfg
+		return fake
+	}
+	configPath := filepath.Join(t.TempDir(), "custom-termx.yaml")
+	if err := os.WriteFile(configPath, []byte(`remote:
+  enabled: true
+  mode: local
+  device_name: daemon-file-device
+  local_web_addr: 127.0.0.1:0
+  ice_tcp_addr: 127.0.0.1:0
+`), 0o600); err != nil {
+		t.Fatalf("write remote config: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd := newRootCmd()
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "--config", configPath, "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("daemon command returned error: %v", err)
+	}
+	if !gotCfg.Enabled || gotCfg.DeviceName != "daemon-file-device" || gotCfg.Mode != "local" {
+		t.Fatalf("daemon did not load explicit remote config: %#v", gotCfg)
+	}
+	if fake.startCalls != 1 || fake.localEnableCalls != 1 || fake.closeCalls != 1 {
+		t.Fatalf("unexpected lifecycle calls start=%d local=%d close=%d", fake.startCalls, fake.localEnableCalls, fake.closeCalls)
+	}
+}
+
+func TestV3DaemonLoadsRemoteConfigFromExplicitPath(t *testing.T) {
+	oldNewService := newCoreV2DaemonRemoteLifecycleService
+	t.Cleanup(func() {
+		newCoreV2DaemonRemoteLifecycleService = oldNewService
+	})
+	fake := &daemonRemoteLifecycleFake{
+		status: coreprotocol.RemoteStatus{State: "configured", DeviceID: "machine-v3-file"},
+		localStatus: coreprotocol.RemoteLocalStatus{
+			Enabled:      true,
+			HTTPURL:      "http://127.0.0.1:18888",
+			LocalWebAddr: "127.0.0.1:0",
+			UpdatedAt:    time.Now().UTC(),
+		},
+	}
+	var gotCfg remoteprotocol.Config
+	newCoreV2DaemonRemoteLifecycleService = func(cfg remoteprotocol.Config, daemon remote.Daemon) coreV2RemoteLifecycleService {
+		gotCfg = cfg
+		return fake
+	}
+	configPath := filepath.Join(t.TempDir(), "v3-termx.yaml")
+	if err := os.WriteFile(configPath, []byte(`remote:
+  enabled: true
+  mode: local
+  device_name: daemon-v3-file-device
+  local_web_addr: 127.0.0.1:0
+  ice_tcp_addr: 127.0.0.1:0
+`), 0o600); err != nil {
+		t.Fatalf("write remote config: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd := newRootCmd()
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--socket", filepath.Join(t.TempDir(), "termx.sock"), "--log-file", filepath.Join(t.TempDir(), "termx.log"), "--config", configPath, "v3", "daemon"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("v3 daemon command returned error: %v", err)
+	}
+	if !gotCfg.Enabled || gotCfg.DeviceName != "daemon-v3-file-device" || gotCfg.Mode != "local" {
+		t.Fatalf("v3 daemon did not load explicit remote config: %#v", gotCfg)
 	}
 }
 

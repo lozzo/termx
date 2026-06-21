@@ -39,7 +39,7 @@ var (
 	runTUIv3SmokeDetailed = tuiv3.SmokeRunDetailed
 )
 
-func v3Command(socket *string, logFile *string) *cobra.Command {
+func v3Command(socket *string, logFile *string, configPath *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "v3",
 		Short: "Run experimental termx-core-v2 and termx-tui-v3 commands",
@@ -48,7 +48,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(v3DaemonCommand(socket, logFile))
+	cmd.AddCommand(v3DaemonCommand(socket, logFile, configPath))
 	cmd.AddCommand(v3PingCommand(socket, logFile))
 	cmd.AddCommand(v3SmokeCommand())
 	cmd.AddCommand(v3VisualSnapshotCommand())
@@ -69,7 +69,7 @@ func v3Command(socket *string, logFile *string) *cobra.Command {
 	return cmd
 }
 
-func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
+func v3DaemonCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the core-v2 daemon in the foreground",
@@ -87,7 +87,7 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 				opts = append(opts, corev2.WithHistoryStorageFactory(historyFactory))
 			}
 			srv := newCoreV2Server(opts...)
-			remoteCfg, err := remoteConfigFromFileAndEnv("")
+			remoteCfg, err := remoteConfigFromFileAndEnv(remoteConfigPathValue(configPath))
 			if err != nil {
 				return err
 			}
