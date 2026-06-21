@@ -31,8 +31,12 @@ func (adapter *coreV2RemoteDaemonAdapter) Create(_ context.Context, params corep
 	if err != nil {
 		return nil, err
 	}
+	terminalID := params.ID
+	if terminalID == "" {
+		terminalID = newV3TerminalID()
+	}
 	info, err := server.RegisterTerminal(corev2.TerminalRecord{
-		ID:      params.ID,
+		ID:      terminalID,
 		Name:    params.Name,
 		Command: append([]string(nil), params.Command...),
 		Tags:    cloneRemoteAdapterStringMap(params.Tags),

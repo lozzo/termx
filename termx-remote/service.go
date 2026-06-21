@@ -114,6 +114,29 @@ func (s *Service) TriggerSync() {
 	s.manager.TriggerSync()
 }
 
+func (s *Service) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
+	if s == nil {
+		return http.StatusServiceUnavailable, nil, "remote service is nil"
+	}
+	// 中文说明：runtime API 只通过 daemon adapter 访问 terminal truth；
+	// Service 不持有也不缓存第二份 terminal lifecycle。
+	return terminalManagementRouter{daemon: s.daemon}.RouteTerminalManagementRequest(ctx, req)
+}
+
+func (s *Service) RouteStorageRequest(ctx context.Context, req remotertc.StorageRequest) (int32, []byte, string) {
+	if s == nil {
+		return http.StatusServiceUnavailable, nil, "remote service is nil"
+	}
+	return daemonRuntimeAdapter{daemon: s.daemon}.RouteStorageRequest(ctx, req)
+}
+
+func (s *Service) SubscribeRemoteEvents(ctx context.Context, filters remotertc.EventFilters) (<-chan []byte, func(), error) {
+	if s == nil {
+		return nil, func() {}, fmt.Errorf("remote service is nil")
+	}
+	return daemonRuntimeAdapter{daemon: s.daemon}.SubscribeRemoteEvents(ctx, filters)
+}
+
 func (s *Service) Status() remoteprotocol.Status {
 	if s == nil || s.manager == nil {
 		return remoteprotocol.Status{

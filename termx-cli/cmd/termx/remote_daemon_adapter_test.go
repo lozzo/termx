@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -12,7 +13,10 @@ import (
 	"github.com/lozzow/termx/termx-proto/wire"
 	remote "github.com/lozzow/termx/termx-remote"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
+	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestCoreV2RemoteDaemonAdapterRoutesTerminalStorageEventsAndScope(t *testing.T) {
@@ -208,6 +212,189 @@ func TestRemoteClientsUseCoreV2TypedRemoteProtocol(t *testing.T) {
 	}
 	if _, err := remoteLocalDisableClient(context.Background(), server.SocketPath(), ""); err != nil {
 		t.Fatalf("remoteLocalDisableClient returned error: %v", err)
+	}
+}
+
+func TestRemoteRuntimeAPIRoutesTerminalStorageAndEventsThroughCoreV2Truth(t *testing.T) {
+	factory := &remoteAdapterProcessFactory{}
+	server := corev2.NewServer(corev2.WithProcessFactory(factory))
+	adapter := newCoreV2RemoteDaemonAdapter(server)
+	service := remote.NewService(remoteprotocol.Config{Enabled: true, DataDir: t.TempDir(), DeviceName: "runtime-api"}, adapter)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	events, unsubscribe, err := service.SubscribeRemoteEvents(ctx, remotertc.EventFilters{
+		Types: []int{int(coreprotocol.EventTerminalCreated), int(coreprotocol.EventTerminalMetadataChanged), int(coreprotocol.EventTerminalRemoved)},
+	})
+	if err != nil {
+		t.Fatalf("SubscribeRemoteEvents returned error: %v", err)
+	}
+	defer unsubscribe()
+
+	createBody := routeRemoteTerminalAPI(t, service, "create", &runtimepb.TerminalCreateRequest{
+		Name:           "api shell",
+		Command:        []string{"shell", "-l"},
+		Dir:            "/srv/app",
+		Env:            []string{"A=B"},
+		Tags:           map[string]string{"termx.size_lock": "warn"},
+		ScrollbackSize: 128,
+	})
+	var created runtimepb.TerminalInventoryItem
+	unmarshalRuntimeAPI(t, createBody, &created)
+	if created.GetTerminalId() == "" || created.GetName() != "api shell" || created.GetCwd() != "/srv/app" {
+		t.Fatalf("unexpected remote create result %#v", &created)
+	}
+	spec := factory.spawnedSpec(created.GetTerminalId())
+	if spec.Dir != "/srv/app" || !equalStringSlices(spec.Env, []string{"A=B"}) || spec.ScrollbackSize != 128 {
+		t.Fatalf("remote create did not reach core-v2 create/process truth: %#v", spec)
+	}
+	requireRuntimeEvent(t, events, "terminal_created", created.GetTerminalId())
+
+	listBody := routeRemoteTerminalAPI(t, service, "list", &runtimepb.Empty{})
+	var list runtimepb.TerminalListResponse
+	unmarshalRuntimeAPI(t, listBody, &list)
+	if len(list.GetTerminals()) != 1 || list.GetTerminals()[0].GetTerminalId() != created.GetTerminalId() {
+		t.Fatalf("remote list did not reflect core-v2 registry: %#v", &list)
+	}
+
+	dirBody := routeRemoteTerminalAPI(t, service, "get_directory", &runtimepb.TerminalDirectoryRequest{TerminalId: created.GetTerminalId()})
+	var directory runtimepb.TerminalDirectoryResponse
+	unmarshalRuntimeAPI(t, dirBody, &directory)
+	if directory.GetPath() != "/srv/app" {
+		t.Fatalf("remote get_directory did not read core-v2 terminal cwd: %#v", &directory)
+	}
+
+	metaBody := routeRemoteTerminalAPI(t, service, "set_metadata", &runtimepb.TerminalSetMetadataRequest{
+		TerminalId: created.GetTerminalId(),
+		Name:       "renamed shell",
+		Tags:       map[string]string{"cwd": "/srv/renamed", "environment": "prod", "termx.size_lock": "lock"},
+	})
+	var renamed runtimepb.TerminalInventoryItem
+	unmarshalRuntimeAPI(t, metaBody, &renamed)
+	if renamed.GetName() != "renamed shell" || renamed.GetCwd() != "/srv/app" || renamed.GetEnvironment() != "prod" || !renamed.GetSizeLocked() {
+		t.Fatalf("remote set_metadata did not update core-v2 terminal metadata: %#v", &renamed)
+	}
+	info, err := server.GetTerminal(created.GetTerminalId())
+	if err != nil {
+		t.Fatalf("get core-v2 terminal after metadata update: %v", err)
+	}
+	if info.Tags["termx.cwd"] != "/srv/renamed" || info.Tags["termx.environment"] != "prod" {
+		t.Fatalf("remote set_metadata did not write core-v2 terminal tags: %#v", info.Tags)
+	}
+	requireRuntimeEvent(t, events, "terminal_metadata_changed", created.GetTerminalId())
+
+	routeRemoteStorageAPI(t, service, "/storage/put", &runtimepb.StoragePutRequest{
+		AppId:   "remote-ui",
+		Scope:   string(coreprotocol.StorageScopePublic),
+		OwnerId: "app-1",
+		Key:     "prefs/theme",
+		Value:   []byte("dark"),
+	})
+	getBody := routeRemoteStorageAPI(t, service, "/storage/get", &runtimepb.StorageGetRequest{
+		AppId:   "remote-ui",
+		Scope:   string(coreprotocol.StorageScopePublic),
+		OwnerId: "app-1",
+		Key:     "prefs/theme",
+	})
+	var got runtimepb.StorageEntry
+	unmarshalRuntimeAPI(t, getBody, &got)
+	if string(got.GetValue()) != "dark" || got.GetVersion() != 1 {
+		t.Fatalf("remote storage get did not read core-v2 storage truth: %#v", &got)
+	}
+	listStorageBody := routeRemoteStorageAPI(t, service, "/storage/list", &runtimepb.StorageListRequest{
+		AppId:   "remote-ui",
+		Scope:   string(coreprotocol.StorageScopePublic),
+		OwnerId: "app-1",
+		Prefix:  "prefs/",
+	})
+	var storageList runtimepb.StorageListResponse
+	unmarshalRuntimeAPI(t, listStorageBody, &storageList)
+	if len(storageList.GetEntries()) != 1 || storageList.GetEntries()[0].GetKey() != "prefs/theme" {
+		t.Fatalf("remote storage list did not reflect core-v2 storage truth: %#v", &storageList)
+	}
+	deleteBody := routeRemoteStorageAPI(t, service, "/storage/delete", &runtimepb.StorageDeleteRequest{
+		AppId:   "remote-ui",
+		Scope:   string(coreprotocol.StorageScopePublic),
+		OwnerId: "app-1",
+		Key:     "prefs/theme",
+	})
+	var deleted runtimepb.StorageDeleteResponse
+	unmarshalRuntimeAPI(t, deleteBody, &deleted)
+	if !deleted.GetDeleted() {
+		t.Fatalf("remote storage delete did not delete core-v2 entry: %#v", &deleted)
+	}
+
+	routeRemoteTerminalAPI(t, service, "restart", &runtimepb.TerminalIDRequest{TerminalId: created.GetTerminalId()})
+	restartedSpec := factory.spawnedSpec(created.GetTerminalId())
+	if restartedSpec.TerminalID != created.GetTerminalId() || restartedSpec.Dir != "/srv/app" {
+		t.Fatalf("remote restart did not reuse core-v2 process options: %#v", restartedSpec)
+	}
+
+	routeRemoteTerminalAPI(t, service, "remove", &runtimepb.TerminalIDRequest{TerminalId: created.GetTerminalId()})
+	requireRuntimeEvent(t, events, "terminal_removed", created.GetTerminalId())
+	if _, err := server.GetTerminal(created.GetTerminalId()); err == nil {
+		t.Fatalf("remote remove did not remove terminal from core-v2 registry")
+	}
+}
+
+func routeRemoteTerminalAPI(t *testing.T, service *remote.Service, path string, body proto.Message) []byte {
+	t.Helper()
+	status, payload, errMsg := service.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: path,
+		Path:   path,
+		Body:   mustMarshalRemoteRuntimeProto(t, body),
+	})
+	if errMsg != "" || status != http.StatusOK {
+		t.Fatalf("terminal API %s failed status=%d err=%q body=%s", path, status, errMsg, string(payload))
+	}
+	return payload
+}
+
+func routeRemoteStorageAPI(t *testing.T, service *remote.Service, path string, body proto.Message) []byte {
+	t.Helper()
+	status, payload, errMsg := service.RouteStorageRequest(context.Background(), remotertc.StorageRequest{
+		Method: "POST",
+		Path:   path,
+		Body:   mustMarshalRemoteRuntimeProto(t, body),
+	})
+	if errMsg != "" || status != http.StatusOK {
+		t.Fatalf("storage API %s failed status=%d err=%q body=%s", path, status, errMsg, string(payload))
+	}
+	return payload
+}
+
+func mustMarshalRemoteRuntimeProto(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal runtime proto: %v", err)
+	}
+	return data
+}
+
+func unmarshalRuntimeAPI(t *testing.T, data []byte, msg proto.Message) {
+	t.Helper()
+	if err := proto.Unmarshal(data, msg); err != nil {
+		t.Fatalf("unmarshal runtime proto: %v\n%s", err, string(data))
+	}
+}
+
+func requireRuntimeEvent(t *testing.T, events <-chan []byte, typ string, terminalID string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case payload := <-events:
+			var event runtimepb.EventEnvelope
+			if err := proto.Unmarshal(payload, &event); err != nil {
+				t.Fatalf("unmarshal event: %v", err)
+			}
+			if event.GetType() == typ && event.GetTerminalId() == terminalID {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for event %s terminal=%s", typ, terminalID)
+		}
 	}
 }
 
