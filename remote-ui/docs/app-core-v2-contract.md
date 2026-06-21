@@ -1,11 +1,11 @@
 # App core-v2 remote contract
 
-This document is the R189 admission contract for connecting the real
-`termx-app/` to the CLI-started remote/core-v2 runtime through `remote-ui`.
+This document records the current contract for connecting the real `termx-app/`
+to the CLI-started remote/core-v2 runtime through `remote-ui`.
 
 The active scope and execution order are still defined by the repository-root
-`workflow.md`. This file only records the TypeScript runtime/history boundary
-that later App slices must implement.
+`workflow.md`. This file records the TypeScript runtime/history boundary that
+the App slices R189-R196 established.
 
 ## Current code boundary
 
@@ -27,6 +27,12 @@ that later App slices must implement.
   snapshot recovery and visual scrollback replay.
 - `remote-ui/src/terminal/useTerminalSession.tsx` currently merges snapshot,
   stream output and visual scrollback into a bounded live text projection.
+- `remote-ui/src/terminal/coreV2HistorySource.ts` owns the App/shared
+  `history.window` and `history.copy` adapter for core-v2 logical-line history.
+- `remote-ui/src/terminal/coreV2HistorySurface.ts` owns the App render/cache
+  window projection over `CoreV2HistorySource`.
+- `remote-ui/src/terminal/coreV2HistoryInteraction.ts` owns logical-line
+  selection, search range and copy request assembly.
 
 ## Truth sources
 
@@ -57,9 +63,19 @@ Later implementation slices should converge on these interface roles:
   - receives live stream/snapshot data as display projection.
 - `CoreV2HistorySource`
   - requests `HistoryWindow` data from core-v2 logical-line history;
-  - supports latest/older/range-or-equivalent window requests;
+  - supports latest/older/newer/range-style window requests;
+  - calls `history.copy` for final copied text;
   - returns logical-line identifiers, cursor/token/generation metadata and cell
     content/style sufficient for render, search, selection and copy.
+- `CoreV2HistorySurface`
+  - creates the frozen latest window for explicit history mode;
+  - pages older/newer with logical cursors and line boundaries;
+  - holds only App render/cache rows and overscan metadata;
+  - invalidates local cache when token/generation changes.
+- `CoreV2HistoryInteraction`
+  - maps selection points to logical-line ranges;
+  - searches only loaded logical-line surface rows;
+  - sends copy requests through `CoreV2HistorySource.copy`.
 - `LiveTerminalSurface`
   - consumes stream output, snapshot recovery and short display cache;
   - can use xterm, canvas/WebGL, replay strings and local scrollback;
@@ -76,13 +92,14 @@ React components must not depend directly on `RTCPeerConnection`,
 
 ## Channel and method boundary
 
-The runtime API channel is machine-scoped. It can carry:
+The runtime API channel is machine-scoped. It carries:
 
 - terminal inventory/list;
 - terminal create, metadata update, restart, remove and directory requests;
 - storage get/put/delete/list;
 - event subscription;
-- future history window requests that map directly to core-v2 domain.
+- `history.window`, `history.copy` and `history.release` requests that map
+  directly to core-v2 domain.
 
 The terminal datachannel is terminal-scoped. It can carry:
 
@@ -93,9 +110,9 @@ The terminal datachannel is terminal-scoped. It can carry:
 - terminal close/lifecycle notifications.
 
 History/copy must not be hidden inside terminal-scoped `loadScrollback` visual
-rows. A history request that is used for copy/search/selection must be a typed
-logical-line window request and must include enough identity metadata to detect
-generation changes and stale cursors.
+rows. A history request that is used for copy/search/selection is a typed
+logical-line window/copy request and must include enough identity metadata to
+detect generation changes and stale cursors.
 
 ## Existing APIs that are live-cache only
 
@@ -116,58 +133,87 @@ These are display projection/cache. They may improve live rendering, recovery
 and scroll ergonomics, but they cannot produce final copied text or search
 matches once App copy/history is implemented.
 
-## History window contract shape
+## History Contract Shape
 
-The TypeScript contract should mirror core-v2 concepts rather than xterm rows:
+The TypeScript contract mirrors core-v2 concepts rather than xterm rows:
 
 ```ts
 export interface CoreV2HistoryWindowRequest {
   terminalId: string
-  mode: 'latest' | 'older' | 'range'
+  mode: 'latest' | 'older' | 'newer' | 'oldest' | 'range'
   limit: number
-  cursor?: string
-  afterCursor?: string
-  startLineId?: string
-  endLineId?: string
-  generation?: string | number
-}
-
-export interface CoreV2LogicalLine {
-  id: string
-  number?: number
-  text: string
-  cells?: CoreV2HistoryCell[]
-  hardWrapped?: boolean
-  timestampUnixMs?: number
+  cols: number
+  token?: string
+  generation?: string | number | bigint
+  beforeCursor?: { lineId: string; rowInLine: number }
+  afterCursor?: { lineId: string; rowInLine: number }
+  boundaryFirstLineId?: string
+  boundaryLastLineId?: string
+  range?: {
+    startLineId: string
+    startCol: number
+    endLineId: string
+    endCol: number
+  }
 }
 
 export interface CoreV2HistoryWindow {
   terminalId: string
-  generation: string | number
-  lines: CoreV2LogicalLine[]
-  firstCursor?: string
-  lastCursor?: string
-  hasOlder: boolean
-  hasNewer: boolean
+  token: string
+  generation: string
+  renderRows: CoreV2HistoryRow[]
+  lines: CoreV2HistoryLineSpan[]
+  firstLineId?: string
+  lastLineId?: string
+  cursor?: { lineId: string; rowInLine: number }
+  hasMore: boolean
+}
+
+export interface CoreV2HistorySurfaceSnapshot {
+  token: string | null
+  generation: string | null
+  rows: CoreV2HistoryRow[]
+  renderRows: CoreV2HistoryRow[]
+  renderWindow: CoreV2HistoryRenderWindow
+  stale: boolean
+}
+
+export interface CoreV2HistorySelection {
+  anchor: { lineId: string; col: number }
+  focus: { lineId: string; col: number }
 }
 ```
 
-Exact names may change during R190-R193, but the semantics cannot: logical lines
-are the unit of truth, cursor/generation metadata gates cache validity, and
-visual wrapping is a renderer concern.
+The semantics are fixed: logical lines are the unit of truth,
+token/generation/cursor metadata gates cache validity, and visual wrapping is a
+renderer concern.
 
-## Acceptance for later slices
+## Completion Evidence
 
-- R190 should introduce the shared core-v2 terminal/history TypeScript contract
-  and tests that keep old snapshot/scrollback APIs out of copy/history paths.
-- R191 should prove `termx-app` connects to the CLI-started remote runtime using
-  the same injected runtime interfaces, without a private App terminal API.
-- R192 should prove terminal list/create/attach/input/resize/restart/remove go
-  through the runtime API and terminal datachannel backed by core-v2 truth.
-- R193 should connect App history to core-v2 `HistoryWindow` logical lines.
-- R194 should build the infinite history surface/cache on top of logical-line
-  windows; `termx-app-history-ref/` is only a renderer/cache reference.
-- R195 should prove copy/search/selection assemble text from logical-line
-  history, not xterm/snapshot/DOM/native/local append cache.
-- R196 should run the full CLI daemon -> remote local enable -> App connect ->
-  terminal -> history rollback -> logical-line copy smoke.
+- R190 introduced the shared core-v2 terminal/history TypeScript contract and
+  tests that keep old snapshot/scrollback APIs out of copy/history paths.
+- R191 removed the App/remote-ui private local status API caller. Native local
+  probing now uses the CLI remote local/hub `/api/v1/sessions/ice` route.
+- R192 proved terminal list/create/attach/input/resize/restart/remove go through
+  the runtime API and terminal datachannel backed by core-v2 truth.
+- R193 connected App history to core-v2 `HistoryWindow` logical-line rows.
+- R194 built the infinite history surface/cache over logical-line windows;
+  `termx-app-history-ref/` remains only a renderer/cache reference.
+- R195 proved copy/search/selection assemble logical ranges from the history
+  surface and final copy text comes from core-v2 `history.copy`, not
+  xterm/snapshot/DOM/native/local append cache.
+- R196 added an App core-v2 smoke that covers terminal create, attach, input,
+  resize, history rollback and logical-line copy through one runtime session.
+
+Current verification commands:
+
+| Scope | Command |
+| --- | --- |
+| remote-ui | `cd remote-ui && npm run typecheck && npm run test && npm run build` |
+| App build | `cd termx-app && npm run build` |
+| App e2e smoke | `cd remote-ui && npm run test -- src/integration/appCoreV2EndToEndSmoke.test.ts` |
+| App history/copy | `cd remote-ui && npm run test -- src/terminal/coreV2HistorySource.test.ts src/terminal/coreV2HistorySurface.test.ts src/terminal/coreV2HistoryInteraction.test.ts` |
+
+Android/Kotlin compilation was not part of the completed checkpoint because the
+machine is missing the Android SDK referenced by
+`termx-app/android/local.properties`.

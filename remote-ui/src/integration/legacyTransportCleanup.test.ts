@@ -4,11 +4,23 @@ import indexSource from '../index.ts?raw'
 import useFileManagerSource from '../files/useFileManager.tsx?raw'
 
 const sourceModules = import.meta.glob('../*.ts', { query: '?raw', import: 'default', eager: false })
+const runtimeSources = import.meta.glob('../**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
 describe('legacy transport cleanup', () => {
   it('does not keep compatibility modules for old local transport names', () => {
     expect(sourceModules).not.toHaveProperty('./localWebRtcTransport.ts')
     expect(sourceModules).not.toHaveProperty('./localTerminalProtocolTransport.ts')
+  })
+
+  it('does not keep private local API callers in runtime sources', () => {
+    const source = Object.entries(runtimeSources)
+      .filter(([path]) => !/\.test\.tsx?$/.test(path) && !path.includes('/test/'))
+      .map(([path, content]) => `${path}\n${content}`)
+      .join('\n')
+
+    for (const legacyPath of ['/api/local/status', '/api/local/rtc/offer', '/api/local/pair', '/api/local/terminals']) {
+      expect(source).not.toContain(legacyPath)
+    }
   })
 
   it('does not export old local WebRTC or terminal transport aliases from the package barrel', () => {

@@ -20,8 +20,11 @@ import kotlin.coroutines.coroutineContext
 object LocalConnector {
 
     private const val TAG = "TermxLocalConnector"
-    private const val PROBE_TIMEOUT = 3000
-    private const val STATUS_PATH = "/api/local/status"
+    private const val ICE_PATH = "/api/v1/sessions/ice"
+    private const val ICE_PROBE_TIMEOUT = 8000
+
+    private data class LocalHubProbe(val hubUrl: String, val iceServers: JSONArray?)
+    private data class IceServerProbe(val ok: Boolean, val iceServers: JSONArray?)
 
     sealed class Result {
         data class Success(val transport: WebRTCTransport) : Result()
@@ -38,22 +41,17 @@ object LocalConnector {
         var transport: WebRTCTransport? = null
         try {
             onProgress?.invoke("Probing local addresses...")
-            val hubUrl = probeLocalHub(localAddresses)
+            val localHub = probeLocalHub(localAddresses, machineId, sessionToken)
             coroutineContext.ensureActive()
-            if (hubUrl == null) return Result.Failure("unreachable")
+            if (localHub == null) return Result.Failure("unreachable")
 
-            Log.i(TAG, "Found local hub: $hubUrl")
+            Log.i(TAG, "Found local hub: ${localHub.hubUrl}")
             onProgress?.invoke("Connecting locally...")
-
-            val iceServers = runInterruptible(Dispatchers.IO) {
-                fetchIceServers(hubUrl, machineId, sessionToken)
-            }
-            coroutineContext.ensureActive()
 
             val t = WebRTCTransport(bridge, machineId)
             transport = t
             val ok = runInterruptible(Dispatchers.IO) {
-                t.connectHub(hubUrl, sessionToken, iceServers, onProgress = onProgress)
+                t.connectHub(localHub.hubUrl, sessionToken, localHub.iceServers, onProgress = onProgress)
             }
             coroutineContext.ensureActive()
             if (ok) { transport = null; return Result.Success(t) }
@@ -70,26 +68,26 @@ object LocalConnector {
         return Result.Failure("connect_failed")
     }
 
-    private suspend fun probeLocalHub(addresses: List<String>): String? {
+    private suspend fun probeLocalHub(addresses: List<String>, machineId: String, sessionToken: String): LocalHubProbe? {
         if (addresses.isEmpty()) return null
 
-        // Try each address concurrently, return first success
+        // 本地探测也必须走 Hub/core-v2 session API，不能访问 App 私有 local status。
         return coroutineScope {
-            val winner = CompletableDeferred<String?>()
+            val winner = CompletableDeferred<LocalHubProbe?>()
             val jobs = addresses.map { addr ->
                 async(Dispatchers.IO) {
                     val url = normalizeUrl(addr)
-                    val status = runInterruptible {
-                        HttpHelper.probe("$url$STATUS_PATH", PROBE_TIMEOUT)
+                    val probe = runInterruptible {
+                        requestIceServers(url, machineId, sessionToken)
                     }
-                    if (status > 0 && status < 500) {
-                        winner.complete(url)
+                    if (probe.ok) {
+                        winner.complete(LocalHubProbe(url, probe.iceServers))
                     }
                 }
             }
             launch {
                 jobs.forEach { it.join() }
-                winner.complete(null) // all failed
+                winner.complete(null)
             }
             val result = winner.await()
             jobs.forEach { it.cancel() }
@@ -97,7 +95,7 @@ object LocalConnector {
         }
     }
 
-    private fun fetchIceServers(hubUrl: String, machineId: String, sessionToken: String): org.json.JSONArray? {
+    private fun requestIceServers(hubUrl: String, machineId: String, sessionToken: String): IceServerProbe {
         return try {
             val headers = mapOf(
                 "Content-Type" to "application/json",
@@ -107,12 +105,14 @@ object LocalConnector {
                 .put("machine_id", machineId)
                 .put("session_token", sessionToken)
                 .toString()
-            val resp = HttpHelper.post("$hubUrl/api/v1/sessions/ice", headers, body, 8000)
-            if (!resp.isOk) return null
-            JSONObject(resp.bodyString()).optJSONArray("ice_servers")
+            val resp = HttpHelper.post("$hubUrl$ICE_PATH", headers, body, ICE_PROBE_TIMEOUT)
+            if (!resp.isOk) return IceServerProbe(false, null)
+            val responseBody = resp.bodyString()
+            val iceServers = if (responseBody.isBlank()) null else JSONObject(responseBody).optJSONArray("ice_servers")
+            IceServerProbe(true, iceServers)
         } catch (e: Exception) {
-            Log.w(TAG, "fetchIceServers failed: ${e.message}")
-            null
+            Log.w(TAG, "probe local hub failed: ${e.message}")
+            IceServerProbe(false, null)
         }
     }
 

@@ -10,7 +10,7 @@
 - `termx remote ...` 只能通过 `resolveV3Socket` + `dialOrStartV3Client` 连接 core-v2 daemon；remote status/local/pair 已由 core-v2 typed `RemoteService` hook 承接，不再有旧 daemon 或旧 adapter fallback。
 - remote runtime API 的 terminal management、storage、events 和 WebRTC/datachannel transport 都经 `termx-remote.Service` 路由到 core-v2 daemon truth；remote 不持有第二份 terminal/storage truth。
 - remote config/auth 路径由 CLI helper 处理，不再依赖 `tuiv2/shared`；显式 `--config` 会传给 core-v2 daemon auto-start 与 remote bootstrap。
-- 后续主线已经进入真实 `termx-app/` 与 `remote-ui/` 集成；App 可以保留 live display/cache，但 copy/history truth 必须走 core-v2 logical-line history/window。
+- 真实 `termx-app/` 与 `remote-ui/` 已完成 remote runtime/history/copy contract 收口；App 可以保留 live display/cache，但 copy/history truth 必须走 core-v2 logical-line history/window/copy。
 
 ## 命令矩阵
 
@@ -42,14 +42,16 @@ R176-R187 已按 core-v2 contract 收口 remote 后端，不允许补旧 fallbac
 4. `remote.status`、`remote.local.*`、`remote.pair.start`、remote terminal/storage/events 和 remote transport session 都有 core-v2 truth smoke。
 5. `remote_backend_contract_test.go` 串联验证 daemon socket remote hook、runtime API、events、storage、scoped transport，并守卫旧 fallback 目录/文件不得恢复。
 
-## 后续 App 集成
+## App 集成结果
 
-后续切片必须继续按 `workflow.md` 的 App 队列推进，不得把 App 侧缓存升级成历史 truth：
+R189-R196 已按真实 App 入口和 shared UI/runtime 收口，不得把 App 侧缓存升级成历史 truth：
 
-1. 先在 `termx-app/` 与 `remote-ui/` 明确 CLI remote runtime、terminal protocol 和 history/copy contract。
-2. 真实 App 必须通过当前 CLI remote/core-v2 runtime 配对、连接、列出、创建和进入 terminal。
+1. `termx-app/` 仍通过 `RemoteControlApp` 注入 native/browser runtime，native 本地探测走 CLI remote local/hub 的 `/api/v1/sessions/ice`，不再访问 App 私有 local status API。
+2. App terminal list/create/attach/input/resize/restart/remove 都经同一个 core-v2 runtime session 的 API channel 或 terminal datachannel。
 3. live surface 可以保留 xterm.js、短 scrollback、native bridge backlog 或 render cache 作为显示 projection。
-4. copy/search/selection 和无限历史回滚必须请求 core-v2 logical-line `HistoryWindow`，不能从 xterm buffer、snapshot rows、DOM/canvas rows 或 App 本地 append log 拼最终文本。
+4. App infinite history 由 `remote-ui` 的 `CoreV2HistorySource`、`CoreV2HistorySurface` 和 `CoreV2HistoryInteraction` 分层承接：source 调 `history.window`/`history.copy`，surface 只持有 render/cache window，selection/search/copy 只用 logical-line range。
+5. copy/search/selection 和无限历史回滚必须请求 core-v2 logical-line history/copy contract，不能从 xterm buffer、snapshot rows、DOM/canvas rows 或 App 本地 append log 拼最终文本。
+6. `termx-app-history-ref/` 只作为窗口化渲染、overscan、cache 和 renderer 参考；其中 mock source、visual-row truth 或 demo 数据不得进入协议或 App 历史真值。
 
 ## 验收命令
 
@@ -63,5 +65,13 @@ R176-R187 已按 core-v2 contract 收口 remote 后端，不允许补旧 fallbac
 | remote | `cd termx-remote && go test ./... -count=1` |
 | remote backend contract | `cd termx-cli && go test ./cmd/termx -run TestRemoteBackendContractRoutesEverythingThroughCoreV2Truth -count=1` |
 | 旧 fallback 文件守卫 | `cd termx-cli && go test ./cmd/termx -run TestRemoteBackendLegacyFallbackBoundaryIsGone -count=1` |
+| App remote-ui | `cd remote-ui && npm run typecheck && npm run test && npm run build` |
+| App build | `cd termx-app && npm run build` |
+| App end-to-end smoke | `cd remote-ui && npm run test -- src/integration/appCoreV2EndToEndSmoke.test.ts` |
+| App history/copy harness | `cd remote-ui && npm run test -- src/terminal/coreV2HistorySource.test.ts src/terminal/coreV2HistorySurface.test.ts src/terminal/coreV2HistoryInteraction.test.ts` |
 | remote 旧 import 检查 | `rg '"github.com/lozzow/termx/termx-core"|\"github.com/lozzow/termx/tuiv2' termx-cli/cmd/termx/remote_*.go -n` 应无结果 |
 | diff | `git diff --check` |
+
+Android/Kotlin 编译需要本机 Android SDK。当前机器已有 Homebrew 安装的 OpenJDK 21，但
+`termx-app/android/local.properties` 指向的 `/Users/lozzow/Library/Android/sdk`
+不存在，因此 App native 编译未作为当前 checkpoint 的通过条件。
