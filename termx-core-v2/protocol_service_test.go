@@ -68,6 +68,68 @@ func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceCreateCarriesRemoteProcessContract(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	_, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:                 "term-remote",
+		Name:               "remote",
+		Command:            []string{"shell"},
+		Size:               protocol.Size{Cols: 100, Rows: 40},
+		Dir:                "/tmp/termx-remote",
+		Env:                []string{"TERMUX_REMOTE=1", "TERMUX_REGION=local"},
+		ScrollbackSize:     123,
+		ScrollbackMaxBytes: 4567,
+		ScrollbackMaxAge:   2 * time.Hour,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	specs := factory.spawnedSpecs("term-remote")
+	if len(specs) != 1 {
+		t.Fatalf("expected one process spawn, got %#v", specs)
+	}
+	assertRemoteProcessSpec(t, specs[0])
+
+	list, err := client.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list.Terminals) != 1 || list.Terminals[0].CWD != "/tmp/termx-remote" || list.Terminals[0].LiveCWD != "/tmp/termx-remote" {
+		t.Fatalf("list should expose create cwd, got %#v", list)
+	}
+	var info protocol.TerminalInfo
+	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-remote"}, &info); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if info.CWD != "/tmp/termx-remote" || info.LiveCWD != "/tmp/termx-remote" {
+		t.Fatalf("get should expose create cwd, got %#v", info)
+	}
+
+	if err := client.Restart(context.Background(), "term-remote"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	specs = factory.spawnedSpecs("term-remote")
+	if len(specs) != 2 {
+		t.Fatalf("expected restart to spawn second process, got %#v", specs)
+	}
+	assertRemoteProcessSpec(t, specs[1])
+}
+
+func assertRemoteProcessSpec(t *testing.T, spec ProcessSpec) {
+	t.Helper()
+	if spec.TerminalID != "term-remote" || spec.Dir != "/tmp/termx-remote" || spec.Size != (Size{Cols: 100, Rows: 40}) {
+		t.Fatalf("process spec lost terminal/dir/size: %#v", spec)
+	}
+	if got := strings.Join(spec.Env, "\x00"); !strings.Contains(got, "TERMUX_REMOTE=1") || !strings.Contains(got, "TERMUX_REGION=local") {
+		t.Fatalf("process spec lost env: %#v", spec.Env)
+	}
+	if spec.ScrollbackSize != 123 || spec.ScrollbackMaxBytes != 4567 || spec.ScrollbackMaxAge != 2*time.Hour {
+		t.Fatalf("process spec lost scrollback contract: %#v", spec)
+	}
+}
+
 func TestProtocolServiceExitMetadataRoundTrips(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

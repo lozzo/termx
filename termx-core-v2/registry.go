@@ -42,6 +42,8 @@ func (registry *terminalRegistry) register(record TerminalRecord, defaultSize Si
 		Tags:      cloneStringMap(record.Tags),
 		Size:      size,
 		State:     TerminalStateRunning,
+		CWD:       record.Options.Dir,
+		LiveCWD:   record.Options.Dir,
 		CreatedAt: time.Now().UTC(),
 	}
 	registry.mu.Lock()

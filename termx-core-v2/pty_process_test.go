@@ -2,6 +2,8 @@ package termxcorev2
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -40,6 +42,34 @@ func TestPTYProcessFactoryFeedsLiveSurfaceAndHistory(t *testing.T) {
 	assertEventuallyEvent(t, events, EventTerminalChanged, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalResized, "term-pty")
 	assertEventuallyEvent(t, events, EventTerminalExited, "term-pty")
+}
+
+func TestPTYProcessFactoryUsesCreateDirAndEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pty integration requires a Unix-like PTY")
+	}
+	dir, err := os.MkdirTemp("/tmp", "termx-pty-env-")
+	if err != nil {
+		t.Fatalf("create pty cwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve pty cwd: %v", err)
+	}
+	server := NewServer()
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-pty-env",
+		Command: []string{"/bin/sh", "-c", "printf 'cwd:%s env:%s\\n' \"$PWD\" \"$TERMX_REMOTE_TEST\""},
+		Size:    Size{Cols: 120, Rows: 4},
+		Options: TerminalCreateOptions{
+			Dir: dir,
+			Env: []string{"TERMX_REMOTE_TEST=ok"},
+		},
+	}); err != nil {
+		t.Fatalf("register pty terminal: %v", err)
+	}
+	waitForHistoryRow(t, server, "term-pty-env", "cwd:"+realDir+" env:ok")
 }
 
 func assertEventuallyEvent(t *testing.T, events <-chan Event, typ EventType, terminalID string) Event {

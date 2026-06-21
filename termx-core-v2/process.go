@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	creackpty "github.com/creack/pty"
 )
@@ -24,9 +25,20 @@ func (fn ProcessFactoryFunc) Spawn(ctx context.Context, spec ProcessSpec) (Termi
 }
 
 type ProcessSpec struct {
-	TerminalID string
-	Command    []string
-	Size       Size
+	TerminalID         string
+	Command            []string
+	Size               Size
+	Dir                string
+	Env                []string
+	ScrollbackSize     int
+	ScrollbackMaxBytes int64
+	ScrollbackMaxAge   time.Duration
+}
+
+func cloneProcessSpec(spec ProcessSpec) ProcessSpec {
+	spec.Command = append([]string(nil), spec.Command...)
+	spec.Env = append([]string(nil), spec.Env...)
+	return spec
 }
 
 type TerminalProcess interface {
@@ -54,7 +66,8 @@ func (ptyProcessFactory) Spawn(ctx context.Context, spec ProcessSpec) (TerminalP
 		size = Size{Cols: 80, Rows: 24}
 	}
 	cmd := exec.CommandContext(ctx, spec.Command[0], spec.Command[1:]...)
-	cmd.Env = ptyProcessEnv(spec.TerminalID, nil)
+	cmd.Dir = spec.Dir
+	cmd.Env = ptyProcessEnv(spec.TerminalID, spec.Env)
 	file, err := creackpty.StartWithSize(cmd, &creackpty.Winsize{Cols: size.Cols, Rows: size.Rows})
 	if err != nil {
 		return nil, err

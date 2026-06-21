@@ -236,6 +236,13 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 			Command: append([]string(nil), in.Command...),
 			Tags:    cloneStringMap(in.Tags),
 			Size:    coreSizeFromProtocol(in.Size),
+			Options: TerminalCreateOptions{
+				Dir:                in.Dir,
+				Env:                append([]string(nil), in.Env...),
+				ScrollbackSize:     in.ScrollbackSize,
+				ScrollbackMaxBytes: in.ScrollbackMaxBytes,
+				ScrollbackMaxAge:   in.ScrollbackMaxAge,
+			},
 		})
 		if err != nil {
 			return nil, false, errorCode(err), err
@@ -1475,6 +1482,8 @@ func protocolInfoFromCoreV2(info TerminalInfo) protocol.TerminalInfo {
 		Tags:      cloneStringMap(info.Tags),
 		Size:      protocolSizeFromCore(info.Size),
 		State:     string(info.State),
+		CWD:       info.CWD,
+		LiveCWD:   info.LiveCWD,
 		CreatedAt: info.CreatedAt,
 		ExitCode:  copyIntPtr(info.ExitCode),
 		ExitedAt:  info.ExitedAt,

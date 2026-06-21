@@ -153,11 +153,7 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	process, err := server.cfg.processFactory.Spawn(context.Background(), ProcessSpec{
-		TerminalID: info.ID,
-		Command:    info.Command,
-		Size:       info.Size,
-	})
+	process, err := server.cfg.processFactory.Spawn(context.Background(), processSpecFromTerminal(info, record.Options))
 	if err != nil {
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
@@ -168,12 +164,25 @@ func (server *Server) RegisterTerminal(record TerminalRecord) (TerminalInfo, err
 		_, _ = server.registry.remove(info.ID)
 		return TerminalInfo{}, err
 	}
-	terminal := newTerminal(info, process, server.events, server.updateTerminalInfo, historyBackend)
+	terminal := newTerminal(info, record.Options, process, server.events, server.updateTerminalInfo, historyBackend)
 	server.mu.Lock()
 	server.terminals[info.ID] = terminal
 	server.mu.Unlock()
 	server.publishTerminalEvent(EventTerminalCreated, info)
 	return info, nil
+}
+
+func processSpecFromTerminal(info TerminalInfo, options TerminalCreateOptions) ProcessSpec {
+	return ProcessSpec{
+		TerminalID:         info.ID,
+		Command:            append([]string(nil), info.Command...),
+		Size:               info.Size,
+		Dir:                options.Dir,
+		Env:                append([]string(nil), options.Env...),
+		ScrollbackSize:     options.ScrollbackSize,
+		ScrollbackMaxBytes: options.ScrollbackMaxBytes,
+		ScrollbackMaxAge:   options.ScrollbackMaxAge,
+	}
 }
 
 func (server *Server) GetTerminal(id string) (TerminalInfo, error) {

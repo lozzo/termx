@@ -1656,10 +1656,11 @@ func TestServerShutdownRejectsLaterTerminalRegistration(t *testing.T) {
 type recordingProcessFactory struct {
 	mu        sync.Mutex
 	processes map[string][]*recordingProcess
+	specs     map[string][]ProcessSpec
 }
 
 func newRecordingProcessFactory() *recordingProcessFactory {
-	return &recordingProcessFactory{processes: make(map[string][]*recordingProcess)}
+	return &recordingProcessFactory{processes: make(map[string][]*recordingProcess), specs: make(map[string][]ProcessSpec)}
 }
 
 func (factory *recordingProcessFactory) Spawn(_ context.Context, spec ProcessSpec) (TerminalProcess, error) {
@@ -1670,6 +1671,7 @@ func (factory *recordingProcessFactory) Spawn(_ context.Context, spec ProcessSpe
 	}
 	factory.mu.Lock()
 	factory.processes[spec.TerminalID] = append(factory.processes[spec.TerminalID], process)
+	factory.specs[spec.TerminalID] = append(factory.specs[spec.TerminalID], cloneProcessSpec(spec))
 	factory.mu.Unlock()
 	return process, nil
 }
@@ -1682,6 +1684,17 @@ func (factory *recordingProcessFactory) process(id string) *recordingProcess {
 		return nil
 	}
 	return processes[len(processes)-1]
+}
+
+func (factory *recordingProcessFactory) spawnedSpecs(id string) []ProcessSpec {
+	factory.mu.Lock()
+	defer factory.mu.Unlock()
+	specs := factory.specs[id]
+	out := make([]ProcessSpec, 0, len(specs))
+	for _, spec := range specs {
+		out = append(out, cloneProcessSpec(spec))
+	}
+	return out
 }
 
 type sessionBoundRecordingProcessFactory struct {

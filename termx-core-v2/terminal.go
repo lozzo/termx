@@ -16,6 +16,7 @@ import (
 type Terminal struct {
 	mu           sync.Mutex
 	info         TerminalInfo
+	options      TerminalCreateOptions
 	process      TerminalProcess
 	liveMu       sync.Mutex
 	live         *live.SurfaceTrack
@@ -28,7 +29,7 @@ type Terminal struct {
 	update       func(TerminalInfo)
 }
 
-func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyBackend history.StorageBackend) *Terminal {
+func newTerminal(info TerminalInfo, options TerminalCreateOptions, process TerminalProcess, events *eventBroker, update func(TerminalInfo), historyBackend history.StorageBackend) *Terminal {
 	size := live.SurfaceSize{Cols: int(info.Size.Cols), Rows: int(info.Size.Rows)}
 	var historyClose func() error
 	if closer, ok := historyBackend.(interface{ Close() error }); ok {
@@ -36,6 +37,7 @@ func newTerminal(info TerminalInfo, process TerminalProcess, events *eventBroker
 	}
 	terminal := &Terminal{
 		info:         info.Clone(),
+		options:      cloneTerminalCreateOptions(options),
 		process:      process,
 		live:         live.NewSurfaceTrack(size),
 		history:      newTerminalHistoryPipelineWithStorage(int(info.Size.Cols), int(info.Size.Rows), historyBackend),
@@ -169,13 +171,14 @@ func (terminal *Terminal) Close() error {
 func (terminal *Terminal) Restart(ctx context.Context, factory ProcessFactory) error {
 	terminal.mu.Lock()
 	info := terminal.info.Clone()
+	options := terminal.options
 	terminal.mu.Unlock()
 	if err := terminal.FlushHistory(ctx); err != nil {
 		return err
 	}
 	// 中文说明：restart 生成的是 core 持有的新 terminal process，不能绑定到本次
 	// protocol request/session 的 ctx；否则 TUI 退出关闭 socket 会把刚重启的 PTY 杀掉。
-	process, err := factory.Spawn(context.Background(), ProcessSpec{TerminalID: info.ID, Command: info.Command, Size: info.Size})
+	process, err := factory.Spawn(context.Background(), processSpecFromTerminal(info, options))
 	if err != nil {
 		return err
 	}

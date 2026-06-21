@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+type TerminalCreateOptions struct {
+	Dir                string
+	Env                []string
+	ScrollbackSize     int
+	ScrollbackMaxBytes int64
+	ScrollbackMaxAge   time.Duration
+}
+
+func cloneTerminalCreateOptions(options TerminalCreateOptions) TerminalCreateOptions {
+	options.Env = append([]string(nil), options.Env...)
+	return options
+}
+
 type Size struct {
 	Cols uint16
 	Rows uint16
@@ -30,6 +43,8 @@ type TerminalInfo struct {
 	Tags      map[string]string
 	Size      Size
 	State     TerminalState
+	CWD       string
+	LiveCWD   string
 	CreatedAt time.Time
 	ExitCode  *int
 	ExitedAt  time.Time
@@ -51,6 +66,7 @@ type TerminalRecord struct {
 	Command []string
 	Tags    map[string]string
 	Size    Size
+	Options TerminalCreateOptions
 }
 
 var (
