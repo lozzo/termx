@@ -47,6 +47,8 @@ type Server struct {
 	protocolResizeOwners  map[string]string
 	protocolSizeLocks     map[string]bool
 	protocolOwnerEpoch    uint64
+	remoteServiceMu       sync.RWMutex
+	remoteService         RemoteService
 	mu                    sync.Mutex
 	listeners             []transport.Listener
 	transports            map[transport.Transport]struct{}
@@ -88,6 +90,7 @@ func NewServer(opts ...ServerOption) *Server {
 		protocolChannelIndex: make(map[protocolAttachmentKey]string),
 		protocolResizeOwners: make(map[string]string),
 		protocolSizeLocks:    make(map[string]bool),
+		remoteService:        cfg.remoteService,
 		transports:           make(map[transport.Transport]struct{}),
 	}
 }
@@ -140,6 +143,19 @@ func WithEventBuffer(size int) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.eventBuffer = size
 	}
+}
+
+// SetRemoteService 允许 daemon 完成 core-v2 server 构造后再注入 remote runtime hook。
+func (server *Server) SetRemoteService(service RemoteService) {
+	server.remoteServiceMu.Lock()
+	defer server.remoteServiceMu.Unlock()
+	server.remoteService = service
+}
+
+func (server *Server) RemoteService() RemoteService {
+	server.remoteServiceMu.RLock()
+	defer server.remoteServiceMu.RUnlock()
+	return server.remoteService
 }
 
 func (server *Server) SocketPath() string {

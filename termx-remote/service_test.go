@@ -50,6 +50,30 @@ func TestPairStartUsesConfiguredTokenTTL(t *testing.T) {
 	}
 }
 
+func TestDaemonRuntimeAdapterRoutesTerminalTransportThroughScopedDaemon(t *testing.T) {
+	daemon := &scopedTransportDaemonStub{}
+	adapter := daemonRuntimeAdapter{daemon: daemon}
+
+	if err := adapter.ServeRemoteTransport(context.Background(), nil, "webrtc:terminal:machine-1:term-1"); err != nil {
+		t.Fatalf("ServeRemoteTransport returned error: %v", err)
+	}
+	if daemon.scopedCalls != 1 || daemon.unscopedCalls != 0 {
+		t.Fatalf("expected scoped transport call only, scoped=%d unscoped=%d", daemon.scopedCalls, daemon.unscopedCalls)
+	}
+	if daemon.remote != "webrtc:terminal:machine-1:term-1" || daemon.scope.TerminalID != "term-1" || daemon.scope.MachineEventsOnly {
+		t.Fatalf("unexpected scoped transport data remote=%q scope=%#v", daemon.remote, daemon.scope)
+	}
+}
+
+func TestDaemonRuntimeAdapterFallsBackForUnscopedDaemon(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{}
+	adapter := daemonRuntimeAdapter{daemon: daemon}
+
+	if err := adapter.ServeRemoteTransport(context.Background(), nil, "webrtc:terminal:term-1"); err != nil {
+		t.Fatalf("ServeRemoteTransport returned error: %v", err)
+	}
+}
+
 func TestPairStartAuthTTLOverridesConfiguredTokenTTL(t *testing.T) {
 	service := NewService(remoteprotocol.Config{
 		Enabled:         true,
@@ -133,6 +157,29 @@ func TestTerminalManagementCreatePassesRetentionBudgets(t *testing.T) {
 	}
 	if daemon.createScrollbackMaxAge != 2*time.Hour {
 		t.Fatalf("expected scrollback max age 2h, got %s", daemon.createScrollbackMaxAge)
+	}
+}
+
+func TestTerminalManagementCreatePassesEnvironmentToCoreCreateParams(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{}
+	router := terminalManagementRouter{daemon: daemon}
+
+	status, _, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "create",
+		Path:   "create",
+		Body: mustMarshalRuntimeProto(t, &runtimepb.TerminalCreateRequest{
+			Command: []string{"/bin/zsh", "-l"},
+			Env:     []string{"A=B", " C=D "},
+		}),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d", status)
+	}
+	if got := strings.Join(daemon.createEnv, ","); got != "A=B,C=D" {
+		t.Fatalf("expected environment to reach core create params, got %#v", daemon.createEnv)
 	}
 }
 
@@ -427,6 +474,7 @@ type terminalManagementDaemonStub struct {
 	createName               string
 	createCommand            []string
 	createDir                string
+	createEnv                []string
 	createScrollbackSize     int
 	createScrollbackMaxBytes int64
 	createScrollbackMaxAge   time.Duration
@@ -439,6 +487,7 @@ func (d *terminalManagementDaemonStub) Create(_ context.Context, params protocol
 	d.createName = params.Name
 	d.createCommand = append([]string(nil), params.Command...)
 	d.createDir = params.Dir
+	d.createEnv = append([]string(nil), params.Env...)
 	d.createScrollbackSize = params.ScrollbackSize
 	d.createScrollbackMaxBytes = params.ScrollbackMaxBytes
 	d.createScrollbackMaxAge = params.ScrollbackMaxAge
@@ -486,6 +535,27 @@ func (d *terminalManagementDaemonStub) Events(context.Context, protocol.EventsPa
 }
 
 func (d *terminalManagementDaemonStub) ServeTransport(context.Context, transport.Transport, string) error {
+	return nil
+}
+
+type scopedTransportDaemonStub struct {
+	terminalManagementDaemonStub
+	scopedCalls   int
+	unscopedCalls int
+	remote        string
+	scope         TransportScope
+}
+
+func (d *scopedTransportDaemonStub) ServeTransport(_ context.Context, _ transport.Transport, remote string) error {
+	d.unscopedCalls++
+	d.remote = remote
+	return nil
+}
+
+func (d *scopedTransportDaemonStub) ServeScopedTransport(_ context.Context, _ transport.Transport, remote string, scope TransportScope) error {
+	d.scopedCalls++
+	d.remote = remote
+	d.scope = scope
 	return nil
 }
 

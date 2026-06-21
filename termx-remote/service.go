@@ -302,7 +302,37 @@ func (p daemonRuntimeAdapter) ServeRemoteTransport(ctx context.Context, t transp
 	if p.daemon == nil {
 		return nil
 	}
+	if scoped, ok := p.daemon.(ScopedDaemon); ok && scoped != nil {
+		scope, scopedRemote, err := scopedTransportScopeFromRemote(remote)
+		if err != nil {
+			return err
+		}
+		if scopedRemote {
+			return scoped.ServeScopedTransport(ctx, t, remote, scope)
+		}
+	}
 	return p.daemon.ServeTransport(ctx, t, remote)
+}
+
+func scopedTransportScopeFromRemote(remote string) (TransportScope, bool, error) {
+	label := strings.TrimSpace(remote)
+	label = strings.TrimPrefix(label, "webrtc:")
+	if !strings.HasPrefix(label, "terminal:") {
+		return TransportScope{}, false, nil
+	}
+	payload := strings.TrimSpace(strings.TrimPrefix(label, "terminal:"))
+	if payload == "" {
+		return TransportScope{}, true, fmt.Errorf("terminal transport label requires terminal id")
+	}
+	// 中文说明：App native bridge 可能使用 terminal:<machine>:<terminal>，服务端
+	// 当前 session 已经绑定 machine，所以 terminal scope 只取最后一段 terminal id。
+	if idx := strings.LastIndex(payload, ":"); idx >= 0 {
+		payload = strings.TrimSpace(payload[idx+1:])
+	}
+	if payload == "" {
+		return TransportScope{}, true, fmt.Errorf("terminal transport label requires terminal id")
+	}
+	return TransportScope{TerminalID: payload}, true, nil
 }
 
 func (p daemonRuntimeAdapter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
@@ -503,7 +533,7 @@ func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 			body.GetName(),
 			body.GetCommand(),
 			body.GetDir(),
-			firstNonEmpty(body.GetEnv()),
+			body.GetEnv(),
 			body.GetTags()[terminalmeta.SizeLockTag],
 			int(body.GetScrollbackSize()),
 			body.GetScrollbackMaxBytes(),
@@ -573,17 +603,20 @@ func (r terminalManagementRouter) listTerminals(ctx context.Context) ([]runtime.
 	return out, nil
 }
 
-func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, environment string, sizeLockMode string, scrollbackSize int, scrollbackMaxBytes int64, scrollbackMaxAge time.Duration) (runtime.TerminalInventoryItem, error) {
+func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, env []string, sizeLockMode string, scrollbackSize int, scrollbackMaxBytes int64, scrollbackMaxAge time.Duration) (runtime.TerminalInventoryItem, error) {
 	if r.daemon == nil {
 		return runtime.TerminalInventoryItem{}, nil
 	}
 	resolvedCommand := defaultTerminalCommand(command)
 	resolvedDir := defaultTerminalDir(dir)
+	resolvedEnv := terminalEnvironmentFromRemote(env)
+	environmentTag := strings.Join(resolvedEnv, "\n")
 	created, err := r.daemon.Create(ctx, protocol.CreateParams{
 		Command:            append([]string(nil), resolvedCommand...),
 		Name:               strings.TrimSpace(name),
-		Tags:               localTerminalTags(resolvedDir, environment, sizeLockMode),
+		Tags:               localTerminalTags(resolvedDir, environmentTag, sizeLockMode),
 		Dir:                resolvedDir,
+		Env:                resolvedEnv,
 		ScrollbackSize:     scrollbackSize,
 		ScrollbackMaxBytes: scrollbackMaxBytes,
 		ScrollbackMaxAge:   scrollbackMaxAge,
@@ -930,6 +963,17 @@ func localTerminalTags(cwd string, environment string, sizeLockMode string) map[
 	return tags
 }
 
+func terminalEnvironmentFromRemote(environment []string) []string {
+	out := make([]string, 0, len(environment))
+	for _, line := range environment {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 func mergeLocalTerminalTags(tags map[string]string, cwd string, environment string, sizeLockMode string) {
 	if strings.TrimSpace(cwd) != "" {
 		tags["termx.cwd"] = strings.TrimSpace(cwd)
@@ -1000,15 +1044,6 @@ func storageErrorStatus(err error) int32 {
 	default:
 		return http.StatusInternalServerError
 	}
-}
-
-func firstNonEmpty(values []string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func nonEmpty(first, fallback string) string {

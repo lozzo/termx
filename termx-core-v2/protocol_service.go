@@ -577,10 +577,11 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 }
 
 func (session *protocolSession) remoteService() (RemoteService, error) {
-	if session.server.cfg.remoteService == nil {
+	service := session.server.RemoteService()
+	if service == nil {
 		return nil, ErrRemoteServiceUnavailable
 	}
-	return session.server.cfg.remoteService, nil
+	return service, nil
 }
 
 func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotParams) (*protocol.CompactSnapshot, error) {
@@ -1185,9 +1186,7 @@ func (session *protocolSession) resizeControlForOwner(attachment protocolAttachm
 }
 
 func (session *protocolSession) protocolInfoFromCoreV2(info TerminalInfo) protocol.TerminalInfo {
-	out := protocolInfoFromCoreV2(info)
-	session.applyProtocolOwnershipToInfo(&out, protocolSizeFromCore(info.Size))
-	return out
+	return session.server.ProtocolTerminalInfo(info)
 }
 
 func (session *protocolSession) registerProtocolAttachment(attachment protocolAttachment, size protocol.Size) *protocol.ResizeControl {
@@ -1357,14 +1356,18 @@ func (session *protocolSession) resizeControlForGlobalAttachmentLocked(attachmen
 }
 
 func (session *protocolSession) applyProtocolOwnershipToInfo(out *protocol.TerminalInfo, size protocol.Size) {
+	session.server.applyProtocolOwnershipToInfo(out, size)
+}
+
+func (server *Server) applyProtocolOwnershipToInfo(out *protocol.TerminalInfo, size protocol.Size) {
 	if out == nil {
 		return
 	}
-	session.server.protocolAttachmentMu.Lock()
-	defer session.server.protocolAttachmentMu.Unlock()
-	ownerKey := session.server.protocolResizeOwners[out.ID]
-	owner, hasOwner := session.server.protocolAttachments[ownerKey]
-	for _, attachment := range session.server.protocolAttachments {
+	server.protocolAttachmentMu.Lock()
+	defer server.protocolAttachmentMu.Unlock()
+	ownerKey := server.protocolResizeOwners[out.ID]
+	owner, hasOwner := server.protocolAttachments[ownerKey]
+	for _, attachment := range server.protocolAttachments {
 		if attachment.TerminalID == out.ID {
 			out.ResizeOwnerAttachmentCount++
 		}
@@ -1375,7 +1378,7 @@ func (session *protocolSession) applyProtocolOwnershipToInfo(out *protocol.Termi
 			OwnerSurfaceID:    owner.SurfaceID,
 			OwnerViewID:       owner.ViewID,
 			Size:              size,
-			SizeLocked:        session.server.protocolSizeLocks[out.ID],
+			SizeLocked:        server.protocolSizeLocks[out.ID],
 			Epoch:             owner.Epoch,
 		}
 	}
@@ -1560,6 +1563,16 @@ func protocolInfoFromCoreV2(info TerminalInfo) protocol.TerminalInfo {
 	}
 }
 
+func (server *Server) ProtocolTerminalInfo(info TerminalInfo) protocol.TerminalInfo {
+	out := protocolInfoFromCoreV2(info)
+	server.applyProtocolOwnershipToInfo(&out, ProtocolSizeFromCore(info.Size))
+	return out
+}
+
+func ProtocolEventFromCoreV2(event Event) protocol.Event {
+	return protocolEventFromCoreV2(event)
+}
+
 func protocolEventFromCoreV2(event Event) protocol.Event {
 	out := protocol.Event{
 		TerminalID: event.TerminalID,
@@ -1662,6 +1675,10 @@ func eventFilterFromProtocol(params protocol.EventsParams) EventFilter {
 	return out
 }
 
+func EventFilterFromProtocol(params protocol.EventsParams) EventFilter {
+	return eventFilterFromProtocol(params)
+}
+
 func protocolStorageEntryFromCore(entry StorageEntry) protocol.StorageEntry {
 	return protocol.StorageEntry{
 		AppID:     entry.AppID,
@@ -1674,6 +1691,10 @@ func protocolStorageEntryFromCore(entry StorageEntry) protocol.StorageEntry {
 	}
 }
 
+func ProtocolStorageEntryFromCore(entry StorageEntry) protocol.StorageEntry {
+	return protocolStorageEntryFromCore(entry)
+}
+
 func protocolStorageScopeFromCore(scope StorageScope) protocol.StorageScope {
 	switch scope {
 	case StorageScopePrivate:
@@ -1681,6 +1702,10 @@ func protocolStorageScopeFromCore(scope StorageScope) protocol.StorageScope {
 	default:
 		return protocol.StorageScopePublic
 	}
+}
+
+func ProtocolStorageScopeFromCore(scope StorageScope) protocol.StorageScope {
+	return protocolStorageScopeFromCore(scope)
 }
 
 func storageScopeFromProtocol(scope protocol.StorageScope) StorageScope {
@@ -1692,12 +1717,24 @@ func storageScopeFromProtocol(scope protocol.StorageScope) StorageScope {
 	}
 }
 
+func StorageScopeFromProtocol(scope protocol.StorageScope) StorageScope {
+	return storageScopeFromProtocol(scope)
+}
+
 func protocolSizeFromCore(size Size) protocol.Size {
 	return protocol.Size{Cols: size.Cols, Rows: size.Rows}
 }
 
+func ProtocolSizeFromCore(size Size) protocol.Size {
+	return protocolSizeFromCore(size)
+}
+
 func coreSizeFromProtocol(size protocol.Size) Size {
 	return Size{Cols: size.Cols, Rows: size.Rows}
+}
+
+func SizeFromProtocol(size protocol.Size) Size {
+	return coreSizeFromProtocol(size)
 }
 
 func normalizeAttachMode(mode string) string {

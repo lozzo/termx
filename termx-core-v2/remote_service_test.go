@@ -120,6 +120,24 @@ func TestProtocolServiceRemoteMethodsRequireConfiguredHook(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceRemoteHookCanBeInjectedAfterServerConstruction(t *testing.T) {
+	fake := &fakeRemoteService{
+		status: protocol.RemoteStatus{State: "online", DeviceID: "machine-dynamic"},
+	}
+	server, client, closeClient := newProtocolClientWithOptions(t)
+	defer closeClient()
+
+	server.SetRemoteService(fake)
+
+	var status protocol.RemoteStatus
+	if err := client.Call(context.Background(), "remote.status", map[string]any{}, &status); err != nil {
+		t.Fatalf("remote.status after SetRemoteService: %v", err)
+	}
+	if status.DeviceID != "machine-dynamic" {
+		t.Fatalf("unexpected remote status after SetRemoteService %#v", status)
+	}
+}
+
 func newProtocolClientWithOptions(t *testing.T, opts ...ServerOption) (*Server, *protocol.Client, func()) {
 	t.Helper()
 	all := append([]ServerOption{WithProcessFactory(newRecordingProcessFactory())}, opts...)
