@@ -202,7 +202,7 @@
 | R174. SK remote 迁移代码扫描与队列设计 | 完成 | `workflow.md`、只读扫描 `termx-cli/`、`termx-remote/`、`termx-core-v2/`、`internal/protocol/`、`termx-proto/`、旧 `termx-core/` | 已定位 CLI legacy daemon 入口、旧 core adapter、remote service 边界、core-v2 缺口和后续切片顺序 |
 | R175. SK 删除旧 core/tuiv2 fallback | 完成 | `termx-core/`、`tuiv2/`、`AGENTS.md`、`workflow.md`、`go.work`、`go.work.sum`、`termx-cli/`、`termx-testkit/`、`termx-remote/`、按需 `termx-hub/go.mod` | 已删除 `termx-core/` 与 `tuiv2/`，移除 legacy command、旧 daemon auto-start、remote fallback adapter 和所有构建引用；remote 命令只连 core-v2 daemon，未迁 hook 时由 core-v2 contract 明确失败 |
 | R175B. SK 真实 App 和历史参考并入工作流 | 完成 | `workflow.md`、只读扫描 `termx-app/`、`remote-ui/`、`termx-app-history-ref/` | 已把目标扩展为 CLI remote + core-v2 + 真实 App 端到端；`termx-app` 解冻到后续 App 切片，`remote-ui` 作为受限联动，`termx-app-history-ref` 作为只读无限历史参考；写明 App 本地历史只能是显示缓存，copy/history truth 必须走 core-v2 logical-line |
-| R176. SK termx-proto core-v2 wire contract | 待开始 | `termx-proto/`、`internal/protocol/` 只读参照、`termx-core-v2/` 只读参照、`termx-remote/` 只读参照 | 先审计并对齐 `.proto`：remote/status/local/pair、create/process、terminal info、storage/events、transport scope 需要共享的字段必须进入 `terminal.proto`；如改 `.proto` 必须同步生成 `terminal.pb.go`，环境缺 `protoc` 时本切片标阻塞 |
+| R176. SK termx-proto core-v2 wire contract | 阻塞 | `termx-proto/`、`internal/protocol/` 只读参照、`termx-core-v2/` 只读参照、`termx-remote/` 只读参照 | 审计确认 `.proto` 已声明 core-v2 history/window 所需 `mode/after_cursor/range` 等字段，但 `terminal.pb.go` 仍只生成到 `HistoryWindowParams` 11 号字段；当前 PATH 缺 `protoc`，不得手写生成文件，需安装/提供 `protoc` 后重新生成并继续本切片 |
 | R177. SK remote protocol typed contract | 待开始 | `internal/protocol/`、按需 `termx-proto/` | 新增显式 `protocol.RemoteStatus`、`RemotePairStartParams/Result`、`RemoteLocalEnableParams`、`RemoteLocalStatus`；`Encode/DecodeMethod*` 不再用反射/getter/wirepb 指针作为 remote domain；补 protocol tests |
 | R178. SK core-v2 create/process remote contract | 待开始 | `termx-core-v2/`、`internal/protocol/`、按需 `termx-proto/` | 让 core-v2 terminal create/process contract 承载 `Dir`、`Env`、必要 CWD metadata 和 remote create 需要的 scrollback 参数；wire 字段缺失时先回到 `termx-proto`，不得在 remote adapter 里静默丢字段 |
 | R179. SK core-v2 transport scope API | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` 按需、`termx-shared/` 按需 | 给 core-v2 提供 public `ServeTransport` / `ServeScopedTransport` / `TransportScope` 能力，供 remote WebRTC datachannel 接入；scope 只能过滤/约束 protocol session，不能创建第二份 terminal truth |
@@ -268,8 +268,9 @@
 - `R175` 已完成：已按用户确认删除旧 `termx-core/` 与 `tuiv2/`，清理 legacy/fallback 入口和构建引用，压缩 CLI 切换审计文档。
 - `R175B` 已完成：已扫描 `termx-app/`、`remote-ui/`、`termx-app-history-ref/`，并把工作流扩展为 remote backend + 真实 App 端到端；App 本地历史只允许作为显示/cache，copy/history truth 必须走 core-v2 logical-line。
 - `termx remote ...` 仍是下一阶段后端实现主线，旧 fallback 已删除，不能作为默认本地切换完成证据；后端收口后继续 R189-R197 的真实 App 集成。
-- 当前最早未完成切片是 `R176. SK termx-proto core-v2 wire contract`。
+- 当前最早未完成切片是 `R176. SK termx-proto core-v2 wire contract`，状态为 `阻塞`。
+- R176 阻塞原因：`termx-proto/wirepb/terminal.proto` 已声明 `HistoryWindowParams` 的 `mode`、`after_cursor_*`、`range_*` 等 core-v2 logical-line history 字段，但 `termx-proto/wirepb/terminal.pb.go` 仍只生成到 11 号字段；当前 PATH 缺 `protoc`，只有 `protoc-gen-go`，按准入不得手写生成文件。
 - 当前明确缺口：`internal/protocol` remote codec 仍用反射/wirepb；core-v2 仍缺 remote hook 与 public scoped transport API；`remote-ui` terminal 路径仍包含 snapshot/scrollback copy/history 风险，需在 App 阶段迁到 logical-line history source。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
-- 当前已知环境缺口：本机没有 `protoc` 与 `protoc-gen-go`；只有需要重新生成 proto 时才构成阻塞。
+- 当前已知环境缺口：本机没有 `protoc`，但存在 `protoc-gen-go`；R176 需要重新生成 proto，因此构成阻塞。
