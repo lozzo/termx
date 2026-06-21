@@ -87,16 +87,17 @@ func (adapter ProtocolTerminalServiceAdapter) List(ctx context.Context, _ Termin
 	items := make([]TerminalPoolItem, 0, len(result.Terminals))
 	for _, terminal := range result.Terminals {
 		items = append(items, TerminalPoolItem{
-			TerminalID: terminal.ID,
-			Title:      terminalPoolTitleFromProtocol(terminal),
-			State:      terminal.State,
-			CWD:        terminal.CWD,
-			Command:    append([]string(nil), terminal.Command...),
-			Tags:       cloneStringMap(terminal.Tags),
-			ExitCode:   cloneIntPointer(terminal.ExitCode),
-			ExitedAt:   terminal.ExitedAt,
-			Cols:       int(terminal.Size.Cols),
-			Rows:       int(terminal.Size.Rows),
+			TerminalID:      terminal.ID,
+			Title:           terminalPoolTitleFromProtocol(terminal),
+			State:           terminal.State,
+			CWD:             terminal.CWD,
+			Command:         append([]string(nil), terminal.Command...),
+			Tags:            cloneStringMap(terminal.Tags),
+			ExitCode:        cloneIntPointer(terminal.ExitCode),
+			ExitedAt:        terminal.ExitedAt,
+			Cols:            int(terminal.Size.Cols),
+			Rows:            int(terminal.Size.Rows),
+			AttachmentCount: terminal.ResizeOwnerAttachmentCount,
 		})
 	}
 	return TerminalListResult{Items: items}, nil
@@ -436,12 +437,20 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 	}
 	if event.Type == protocol.EventTerminalMetadataChanged {
 		out.Metadata = true
-		tags, err := adapter.terminalTags(ctx, out.TerminalID)
+		info, err := adapter.terminalInfo(ctx, out.TerminalID)
 		if err != nil {
 			out.Err = err
 			return out
 		}
-		out.Tags = tags
+		out.Tags = cloneStringMap(info.Tags)
+		out.AttachmentProjection = true
+		out.AttachmentCount = info.ResizeOwnerAttachmentCount
+		if info.ResizeOwnership != nil {
+			out.OwnerSurfaceID = info.ResizeOwnership.OwnerSurfaceID
+			out.OwnerViewID = info.ResizeOwnership.OwnerViewID
+			out.ResizeEpoch = info.ResizeOwnership.Epoch
+			out.SizeLocked = info.ResizeOwnership.SizeLocked
+		}
 		return out
 	}
 	if ordinaryProtocolLiveRefreshEvent(event) {
@@ -483,14 +492,6 @@ func (adapter ProtocolTerminalServiceAdapter) liveEventFromProtocol(ctx context.
 	}
 	out.Ready = surface.Ready
 	return out
-}
-
-func (adapter ProtocolTerminalServiceAdapter) terminalTags(ctx context.Context, terminalID string) (map[string]string, error) {
-	info, err := adapter.terminalInfo(ctx, terminalID)
-	if err != nil {
-		return nil, err
-	}
-	return cloneStringMap(info.Tags), nil
 }
 
 func (adapter ProtocolTerminalServiceAdapter) terminalInfo(ctx context.Context, terminalID string) (protocol.TerminalInfo, error) {

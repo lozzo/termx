@@ -332,6 +332,16 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				if next, ok := markTerminalExitedFromError(root, root.Session.TerminalID, msg.Err); ok {
 					return next.Advance(), nil
 				}
+				if msg.ViewID != "" {
+					if binding, ok := root.TerminalViews.Views[msg.ViewID]; ok {
+						root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, binding.DesiredCols, binding.DesiredRows, msg.Err.Error())
+						if binding.TerminalID == root.Session.TerminalID {
+							root.Session = root.Session.SetError(msg.Err.Error())
+							root.Surface = root.Surface.SetError(msg.Err.Error())
+						}
+						return root.Advance(), nil
+					}
+				}
 				root.Session = root.Session.SetError(msg.Err.Error())
 				root.Surface = root.Surface.SetError(msg.Err.Error())
 				return root.Advance(), nil
@@ -347,6 +357,7 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				if hasResizeControlResult(msg.Result) {
 					root.TerminalViews, _ = root.TerminalViews.ApplyResizeControl(msg.ViewID, resizeControlProjectionFromResult(msg.Result))
 				}
+				root = applyTerminalAttachmentProjectionFromResize(root, msg.Result)
 				root.TerminalViews, _ = root.TerminalViews.ApplyResizeResult(msg.ViewID, msg.Seq, cols, rows, "")
 				if msg.Result.Resized || !hasResizeControlResult(msg.Result) {
 					root.Session = root.Session.Resize(cols, rows)
@@ -469,6 +480,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	}
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, viewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
+	root = applyTerminalAttachmentProjectionFromAttach(root, result)
 	if existing, ok := root.TerminalViews.Views[viewID]; ok {
 		if existing.PaneID != "" {
 			activePaneID = existing.PaneID
@@ -897,7 +909,18 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 	}
 	if event.Metadata {
 		root.TerminalPool = root.TerminalPool.ApplyTagsEdited(event.TerminalID, event.Tags, "")
-		root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock(event.TerminalID, terminalmeta.SizeLocked(event.Tags))
+		if event.AttachmentProjection {
+			root.TerminalPool = root.TerminalPool.ApplyAttachmentProjection(event.TerminalID, event.AttachmentCount)
+			root.TerminalViews = root.TerminalViews.ApplyTerminalResizeControl(event.TerminalID, state.TerminalResizeControlProjection{
+				SizeLocked:     event.SizeLocked || terminalmeta.SizeLocked(event.Tags),
+				ControlReason:  terminalResizeControlReason(event.SizeLocked || terminalmeta.SizeLocked(event.Tags)),
+				OwnerSurfaceID: event.OwnerSurfaceID,
+				OwnerViewID:    event.OwnerViewID,
+				ResizeEpoch:    event.ResizeEpoch,
+			})
+		} else {
+			root.TerminalViews = root.TerminalViews.ApplyTerminalSizeLock(event.TerminalID, terminalmeta.SizeLocked(event.Tags))
+		}
 		return root.Advance(), nil
 	}
 	if event.Exited {
@@ -934,6 +957,29 @@ func reduceLiveEvent(root state.Root, msg LiveEventMsg, deps LiveDeps) (state.Ro
 
 func ordinaryLiveRefreshEvent(event services.TerminalLiveEvent) bool {
 	return event.Refresh && event.Err == nil && !event.Exited && !event.LifecycleKnown && !event.Metadata && !event.Ready
+}
+
+func terminalResizeControlReason(sizeLocked bool) string {
+	if sizeLocked {
+		return "size_locked"
+	}
+	return ""
+}
+
+func applyTerminalAttachmentProjectionFromAttach(root state.Root, result services.TerminalAttachResult) state.Root {
+	if result.TerminalID == "" || result.AttachmentCount <= 0 {
+		return root
+	}
+	root.TerminalPool = root.TerminalPool.ApplyAttachmentProjection(result.TerminalID, result.AttachmentCount)
+	return root
+}
+
+func applyTerminalAttachmentProjectionFromResize(root state.Root, result services.TerminalResizeResult) state.Root {
+	if result.TerminalID == "" || result.AttachmentCount <= 0 {
+		return root
+	}
+	root.TerminalPool = root.TerminalPool.ApplyAttachmentProjection(result.TerminalID, result.AttachmentCount)
+	return root
 }
 
 func maybeScheduleDirtyLiveSurfaceRefresh(root state.Root, terminalID string, fallbackCols int, fallbackRows int, deps LiveDeps) (state.Root, []Effect) {

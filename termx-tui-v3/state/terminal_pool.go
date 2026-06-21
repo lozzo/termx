@@ -26,17 +26,18 @@ type TerminalPoolStore struct {
 }
 
 type TerminalPoolItem struct {
-	TerminalID string
-	Title      string
-	State      string
-	CWD        string
-	Command    []string
-	Tags       map[string]string
-	ExitCode   *int
-	ExitedAt   time.Time
-	Cols       int
-	Rows       int
-	Attached   bool
+	TerminalID      string
+	Title           string
+	State           string
+	CWD             string
+	Command         []string
+	Tags            map[string]string
+	ExitCode        *int
+	ExitedAt        time.Time
+	Cols            int
+	Rows            int
+	AttachmentCount int
+	Attached        bool
 }
 
 func (store TerminalPoolStore) RequestList() TerminalPoolStore {
@@ -142,6 +143,14 @@ func (store TerminalPoolStore) ApplyTagsEdited(terminalID string, tags map[strin
 	return store
 }
 
+func (store TerminalPoolStore) ApplyAttachmentProjection(terminalID string, attachmentCount int) TerminalPoolStore {
+	if terminalID == "" {
+		return store
+	}
+	store.Items = updateTerminalPoolItemAttachmentCount(store.Items, terminalID, attachmentCount)
+	return store
+}
+
 func (store TerminalPoolStore) IsStale(seq uint64) bool {
 	return seq != 0 && seq < store.RequestSeq
 }
@@ -190,6 +199,16 @@ func updateTerminalPoolItemTags(items []TerminalPoolItem, terminalID string, tag
 	for index := range cloned {
 		if cloned[index].TerminalID == terminalID {
 			cloned[index].Tags = cloneStringMap(tags)
+		}
+	}
+	return cloned
+}
+
+func updateTerminalPoolItemAttachmentCount(items []TerminalPoolItem, terminalID string, attachmentCount int) []TerminalPoolItem {
+	cloned := cloneTerminalPoolItems(items)
+	for index := range cloned {
+		if cloned[index].TerminalID == terminalID {
+			cloned[index].AttachmentCount = attachmentCount
 		}
 	}
 	return cloned

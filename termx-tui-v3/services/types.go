@@ -127,16 +127,17 @@ type TerminalLiveEventService interface {
 }
 
 type TerminalPoolItem struct {
-	TerminalID string
-	Title      string
-	State      string
-	CWD        string
-	Command    []string
-	Tags       map[string]string
-	ExitCode   *int
-	ExitedAt   time.Time
-	Cols       int
-	Rows       int
+	TerminalID      string
+	Title           string
+	State           string
+	CWD             string
+	Command         []string
+	Tags            map[string]string
+	ExitCode        *int
+	ExitedAt        time.Time
+	Cols            int
+	Rows            int
+	AttachmentCount int
 }
 
 type TerminalListRequest struct{}
@@ -180,19 +181,20 @@ type TerminalAttachRequest struct {
 }
 
 type TerminalAttachResult struct {
-	TerminalID     string
-	Channel        uint16
-	Cols           int
-	Rows           int
-	CanResize      bool
-	SizeLocked     bool
-	ControlReason  string
-	OwnerSurfaceID string
-	OwnerViewID    string
-	ResizeEpoch    uint64
-	ResizePolicy   string
-	SurfaceID      string
-	ViewID         string
+	TerminalID      string
+	Channel         uint16
+	Cols            int
+	Rows            int
+	CanResize       bool
+	SizeLocked      bool
+	ControlReason   string
+	OwnerSurfaceID  string
+	OwnerViewID     string
+	ResizeEpoch     uint64
+	ResizePolicy    string
+	SurfaceID       string
+	ViewID          string
+	AttachmentCount int
 }
 
 type TerminalRestartRequest struct {
@@ -248,19 +250,20 @@ type TerminalResizeRequest struct {
 }
 
 type TerminalResizeResult struct {
-	TerminalID     string
-	Cols           int
-	Rows           int
-	Resized        bool
-	CanResize      bool
-	SizeLocked     bool
-	ControlReason  string
-	OwnerSurfaceID string
-	OwnerViewID    string
-	ResizeEpoch    uint64
-	ResizePolicy   string
-	SurfaceID      string
-	ViewID         string
+	TerminalID      string
+	Cols            int
+	Rows            int
+	Resized         bool
+	CanResize       bool
+	SizeLocked      bool
+	ControlReason   string
+	OwnerSurfaceID  string
+	OwnerViewID     string
+	ResizeEpoch     uint64
+	ResizePolicy    string
+	SurfaceID       string
+	ViewID          string
+	AttachmentCount int
 }
 
 type TerminalSurfaceResult struct {
@@ -287,16 +290,22 @@ type TerminalLiveEvent struct {
 	Snapshot   state.LiveSurfaceSnapshot
 	Refresh    bool
 	// 中文说明：只标记这一次 event 承载 core lifecycle 变化；reducer 用完即丢。
-	LifecycleKnown bool
-	Exited         bool
-	ExitCode       int
-	ExitedAt       time.Time
-	Command        []string
-	Reason         string
-	Tags           map[string]string
-	Metadata       bool
-	Err            error
-	Ready          bool
+	LifecycleKnown       bool
+	Exited               bool
+	ExitCode             int
+	ExitedAt             time.Time
+	Command              []string
+	Reason               string
+	Tags                 map[string]string
+	Metadata             bool
+	AttachmentProjection bool
+	AttachmentCount      int
+	OwnerSurfaceID       string
+	OwnerViewID          string
+	ResizeEpoch          uint64
+	SizeLocked           bool
+	Err                  error
+	Ready                bool
 }
 
 type SessionService interface {

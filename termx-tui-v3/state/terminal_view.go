@@ -377,6 +377,11 @@ func (store TerminalViewStore) promoteReplacementOwnerLocked(terminalID string) 
 			continue
 		}
 		binding.ResizeRole = TerminalResizeRoleOwner
+		// 中文说明：关闭旧 owner 后本地接任不能保留已关闭 view 的 core owner identity；
+		// 接任 view 会通过 pending ensure_resize 把 daemon 全局 owner 转到自己。
+		binding.OwnerSurfaceID = ""
+		binding.OwnerViewID = ""
+		binding.ControlReason = ""
 		binding = binding.applyTerminalSizeLockProjection(locked)
 		if !locked {
 			binding.CanResize = true
@@ -542,6 +547,85 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 	return store, true
 }
 
+func (store TerminalViewStore) ApplyTerminalResizeControl(terminalID string, projection TerminalResizeControlProjection) TerminalViewStore {
+	if terminalID == "" {
+		return store
+	}
+	if store.terminalResizeControlProjectionStale(terminalID, projection) {
+		return store
+	}
+	store.Views = cloneTerminalViewBindings(store.Views)
+	for viewID, binding := range store.Views {
+		if binding.TerminalID != terminalID {
+			continue
+		}
+		viewProjection := projection
+		viewProjection.SurfaceID = binding.SurfaceID
+		viewProjection.ViewID = binding.ViewID
+		if projection.OwnerViewID == binding.ViewID && projection.OwnerSurfaceID == binding.SurfaceID {
+			viewProjection.ResizeRole = TerminalResizeRoleOwner
+			viewProjection.CanResize = !projection.SizeLocked
+		} else {
+			viewProjection.ResizeRole = TerminalResizeRoleFollower
+			viewProjection.CanResize = false
+		}
+		binding.CanResize = viewProjection.CanResize
+		binding.SizeLocked = viewProjection.SizeLocked
+		binding.ControlReason = viewProjection.ControlReason
+		binding.OwnerSurfaceID = viewProjection.OwnerSurfaceID
+		binding.OwnerViewID = viewProjection.OwnerViewID
+		binding.ResizeEpoch = viewProjection.ResizeEpoch
+		wasOwner := binding.HasResizeOwner()
+		binding.ResizeRole = normalizeTerminalResizeRole(viewProjection.ResizeRole)
+		if !binding.HasResizeOwner() {
+			binding.ResizePending = false
+		} else if !wasOwner {
+			// 中文说明：外部投影把当前 view 提升为 owner 后，下一轮布局要校验一次 PTY 尺寸。
+			binding.ResizePending = true
+		}
+		binding = binding.applyTerminalSizeLockProjection(binding.SizeLocked)
+		store.Views[viewID] = binding
+	}
+	return store
+}
+
+func (store TerminalViewStore) terminalResizeControlProjectionStale(terminalID string, projection TerminalResizeControlProjection) bool {
+	var maxEpoch uint64
+	var localOwner TerminalViewBinding
+	var hasLocalOwner bool
+	var projectedLocalOwner TerminalViewBinding
+	var hasProjectedLocalOwner bool
+	for _, binding := range store.Views {
+		if binding.TerminalID != terminalID {
+			continue
+		}
+		if binding.HasResizeOwner() {
+			localOwner = binding
+			hasLocalOwner = true
+		}
+		if projection.OwnerViewID != "" && projection.OwnerSurfaceID != "" &&
+			binding.ViewID == projection.OwnerViewID && binding.SurfaceID == projection.OwnerSurfaceID {
+			projectedLocalOwner = binding
+			hasProjectedLocalOwner = true
+		}
+		if binding.ResizeEpoch > maxEpoch {
+			maxEpoch = binding.ResizeEpoch
+		}
+		if binding.ResizeRole == TerminalResizeRoleOwner && binding.ResizePending && projection.OwnerViewID != "" {
+			if projection.OwnerViewID != binding.ViewID || projection.OwnerSurfaceID != binding.SurfaceID {
+				return true
+			}
+		}
+	}
+	if hasLocalOwner && hasProjectedLocalOwner && !projectedLocalOwner.HasResizeOwner() &&
+		(localOwner.ViewID != projectedLocalOwner.ViewID || localOwner.SurfaceID != projectedLocalOwner.SurfaceID) {
+		// 中文说明：本 TUI 刚把 owner 转到另一个 view 后，旧 owner 的异步 resize/metadata
+		// 可能带着更晚的 epoch 回来；它不能把本地 follower 再提升回 owner。
+		return true
+	}
+	return projection.ResizeEpoch != 0 && maxEpoch > projection.ResizeEpoch
+}
+
 func (store TerminalViewStore) ApplyTerminalSizeLock(terminalID string, locked bool) TerminalViewStore {
 	if terminalID == "" {
 		return store
@@ -597,9 +681,7 @@ func (binding TerminalViewBinding) HasResizeOwner() bool {
 			return false
 		}
 		// 中文说明：不同 TUI 实例可以有相同 logical ViewID；core owner 必须同时匹配 surface。
-		if binding.OwnerSurfaceID != "" {
-			return binding.OwnerSurfaceID == binding.SurfaceID
-		}
+		return binding.OwnerSurfaceID != "" && binding.OwnerSurfaceID == binding.SurfaceID
 	}
 	return true
 }

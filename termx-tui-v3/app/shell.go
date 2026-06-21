@@ -791,9 +791,11 @@ func requestPaneResizeOwner(root state.Root, paneID string) (state.Root, []Effec
 			cols = rect.W
 			rows = rect.H
 		}
-		root.TerminalViews, _ = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
+		var decision state.TerminalViewResizeDecision
+		root.TerminalViews, decision = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
+		seq := decision.Seq
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, ViewID: binding.ViewID}
+			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
 		}}}
 	}
 	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
@@ -816,9 +818,11 @@ func requestFloatingResizeOwner(root state.Root, floatingID string) (state.Root,
 			cols = rect.W
 			rows = rect.H
 		}
-		root.TerminalViews, _ = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
+		var decision state.TerminalViewResizeDecision
+		root.TerminalViews, decision = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
+		seq := decision.Seq
 		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, ViewID: binding.ViewID}
+			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
 		}}}
 	}
 	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {

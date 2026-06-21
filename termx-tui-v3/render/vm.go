@@ -749,7 +749,7 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		AlignY:       layout.AlignY,
 		Title:        ChromeSlotVM{Text: title, Style: style},
 		State:        terminalChromeStateSlot(root, binding.TerminalID, active, content),
-		AttachCount:  len(root.TerminalViews.BindingsForTerminal(binding.TerminalID)),
+		AttachCount:  terminalChromeAttachCount(root, binding.TerminalID),
 		Owner:        ChromeSlotVM{Text: ownerText, Style: ownerStyle},
 		TakeOwner:    !binding.HasResizeOwner(),
 		CanLockSize:  binding.HasResizeOwner(),
@@ -758,6 +758,15 @@ func terminalChromeVMFromBinding(root state.Root, pane state.PaneState, binding 
 		TerminalID:   binding.TerminalID,
 		TerminalView: binding.ViewID,
 	}
+}
+
+func terminalChromeAttachCount(root state.Root, terminalID string) int {
+	for _, item := range root.TerminalPool.Items {
+		if item.TerminalID == terminalID && item.AttachmentCount > 0 {
+			return item.AttachmentCount
+		}
+	}
+	return len(root.TerminalViews.BindingsForTerminal(terminalID))
 }
 
 func defaultFloatingChromeActionVMs(style StyleToken) []ChromeActionVM {

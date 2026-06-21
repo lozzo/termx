@@ -322,6 +322,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 	result = normalizeTerminalAttachResultForLock(root, result)
 	root.Session = root.Session.AttachWithResizeOwner(result.TerminalID, result.Channel, result.Cols, result.Rows, result.ResizePolicy, result.SurfaceID, result.ViewID)
 	root.Surface = root.Surface.Attach(result.TerminalID, result.Cols, result.Rows)
+	root = applyTerminalAttachmentProjectionFromAttach(root, result)
 	if msg.TargetFloatingID != "" {
 		paneID := msg.TargetPaneID
 		if floating, ok := root.Shell.FloatingByID(msg.TargetFloatingID); ok {
@@ -775,16 +776,17 @@ func terminalPoolItemsFromService(items []services.TerminalPoolItem) []state.Ter
 	out := make([]state.TerminalPoolItem, len(items))
 	for i, item := range items {
 		out[i] = state.TerminalPoolItem{
-			TerminalID: item.TerminalID,
-			Title:      item.Title,
-			State:      item.State,
-			CWD:        item.CWD,
-			Command:    append([]string(nil), item.Command...),
-			Tags:       cloneStringMap(item.Tags),
-			ExitCode:   cloneIntPointer(item.ExitCode),
-			ExitedAt:   item.ExitedAt,
-			Cols:       item.Cols,
-			Rows:       item.Rows,
+			TerminalID:      item.TerminalID,
+			Title:           item.Title,
+			State:           item.State,
+			CWD:             item.CWD,
+			Command:         append([]string(nil), item.Command...),
+			Tags:            cloneStringMap(item.Tags),
+			ExitCode:        cloneIntPointer(item.ExitCode),
+			ExitedAt:        item.ExitedAt,
+			Cols:            item.Cols,
+			Rows:            item.Rows,
+			AttachmentCount: item.AttachmentCount,
 		}
 	}
 	return out

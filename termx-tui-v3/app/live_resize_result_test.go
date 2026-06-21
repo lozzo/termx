@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/lozzow/termx/termx-tui-v3/services"
@@ -115,5 +116,53 @@ func TestDetachedViewResizeRequestDoesNotReuseCurrentSessionChannel(t *testing.T
 	}
 	if next.Session.Cols != 118 || next.Session.Rows != 38 {
 		t.Fatalf("detached view resize request must not change session, got %#v", next.Session)
+	}
+}
+
+func TestViewScopedResizeErrorSurfacesInSessionAndBinding(t *testing.T) {
+	reducer := NewLiveReducer(LiveDeps{})
+	root := state.Root{
+		Session: state.TerminalSessionStore{
+			TerminalID: "term-1",
+			Channel:    7,
+			Attached:   true,
+			SurfaceID:  "surface-main",
+			ViewID:     state.TerminalPaneViewID(state.DefaultPaneID),
+		}.Resize(98, 26),
+		Surface: state.TerminalSurfaceStore{
+			TerminalID: "term-1",
+			Cols:       98,
+			Rows:       26,
+		}.Resize(98, 26),
+		TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(
+			state.DefaultPaneID,
+			"term-1",
+			7,
+			118,
+			36,
+			state.TerminalResizeRoleOwner,
+			"surface-main",
+			state.TerminalPaneViewID(state.DefaultPaneID),
+			true,
+		)),
+	}
+	root.TerminalViews, _ = root.TerminalViews.RequestViewResize(state.TerminalPaneViewID(state.DefaultPaneID), 118, 36)
+
+	next, effects := reducer(root, LiveResizeResultMsg{
+		ViewID: state.TerminalPaneViewID(state.DefaultPaneID),
+		Seq:    1,
+		Cols:   118,
+		Rows:   36,
+		Err:    errors.New("pty resize failed"),
+	})
+	if len(effects) != 0 {
+		t.Fatalf("resize error should not emit effects, got %#v", effects)
+	}
+	if next.Session.Attached || next.Session.LastError != "pty resize failed" || next.Surface.Err != "pty resize failed" {
+		t.Fatalf("view-scoped resize error must surface in session and surface, session=%#v surface=%#v", next.Session, next.Surface)
+	}
+	binding, ok := next.TerminalViews.PaneBinding(state.DefaultPaneID)
+	if !ok || binding.LastError != "pty resize failed" {
+		t.Fatalf("view-scoped resize error must be recorded on binding, binding=%#v ok=%v", binding, ok)
 	}
 }

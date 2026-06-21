@@ -1049,6 +1049,43 @@ func TestTerminalPoolReconnectUsesActiveViewIdentity(t *testing.T) {
 	}
 }
 
+func TestLiveMetadataProjectionUpdatesGlobalOwnerAndAttachmentCount(t *testing.T) {
+	rootA := state.Root{
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running", AttachmentCount: 2}}},
+	}
+	rootA.TerminalViews = rootA.TerminalViews.BindPane(state.NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface-a", "pane:main", true))
+	rootB := state.Root{
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "shell", State: "running", AttachmentCount: 2}}},
+	}
+	rootB.TerminalViews = rootB.TerminalViews.BindPane(state.NewPaneTerminalView("pane-1", "term-1", 8, 80, 24, state.TerminalResizeRoleOwner, "surface-b", "pane:main", true))
+
+	event := LiveEventMsg{Event: services.TerminalLiveEvent{
+		TerminalID:           "term-1",
+		Metadata:             true,
+		AttachmentProjection: true,
+		AttachmentCount:      4,
+		OwnerSurfaceID:       "surface-b",
+		OwnerViewID:          "pane:main",
+		ResizeEpoch:          9,
+	}}
+	nextA, _ := reduceLiveEvent(rootA, event, LiveDeps{})
+	nextB, _ := reduceLiveEvent(rootB, event, LiveDeps{})
+	if got := nextA.TerminalPool.Items[0].AttachmentCount; got != 4 {
+		t.Fatalf("metadata projection should update global attachment count, got %d", got)
+	}
+	if got := nextB.TerminalPool.Items[0].AttachmentCount; got != 4 {
+		t.Fatalf("metadata projection should update global attachment count in owner TUI, got %d", got)
+	}
+	first, _ := nextA.TerminalViews.PaneBinding("pane-1")
+	second, _ := nextB.TerminalViews.PaneBinding("pane-1")
+	if first.HasResizeOwner() || first.CanResize {
+		t.Fatalf("same panel id in other surface must be follower, got %#v", first)
+	}
+	if !second.HasResizeOwner() || !second.CanResize {
+		t.Fatalf("matching surface+panel should remain owner, got %#v", second)
+	}
+}
+
 func TestLiveAppLayoutResizePreservesAttachResizeOwner(t *testing.T) {
 	terminal := &services.FakeTerminalService{
 		AttachResult: services.TerminalAttachResult{
@@ -1473,6 +1510,28 @@ func TestViewScopedOwnerResizeUsesBindingResizePolicy(t *testing.T) {
 	}
 	if binding, ok := next.TerminalViews.PaneBinding("pane-owner"); !ok || binding.DesiredCols != 100 || binding.DesiredRows != 30 {
 		t.Fatalf("owner binding should track requested desired size, binding=%#v ok=%v", binding, ok)
+	}
+}
+
+func TestPaneTakeOwnerCommandCarriesViewScopedResizeSeq(t *testing.T) {
+	reducer := NewShellReducer()
+	shell := state.DefaultShell().SetPanelPresentation(state.PanelPresentationSplitLine)
+	shell = shell.SplitActivePane(state.PaneState{ID: "pane-2", Title: "two", Kind: state.PaneTerminalLive, TerminalID: "term-1"}, state.SplitDirectionVertical)
+	root := state.Root{
+		Shell:    shell.FocusPane(state.PaneCommandTarget{PaneID: "pane-2"}),
+		Viewport: state.ViewportStore{Valid: true, Cols: 120, Rows: 40},
+	}
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-1", true))
+	root.TerminalViews = root.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-2", false))
+
+	next, effects := reducer(root, ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: "pane-2"})
+	msg, ok := liveResizeMsgFromEffects(effects)
+	if !ok || msg.ViewID != "view-2" || msg.Seq == 0 {
+		t.Fatalf("take owner command should emit view-scoped resize with binding seq, msg=%#v effects=%#v", msg, effects)
+	}
+	binding, _ := next.TerminalViews.PaneBinding("pane-2")
+	if binding.RequestSeq != msg.Seq {
+		t.Fatalf("resize message seq must match target binding seq, binding=%#v msg=%#v", binding, msg)
 	}
 }
 

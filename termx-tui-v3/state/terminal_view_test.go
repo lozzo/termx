@@ -92,6 +92,27 @@ func TestTerminalViewStoreTransfersResizeOwnerWithinTerminal(t *testing.T) {
 	}
 }
 
+func TestTerminalViewStorePromotesReplacementOwnerClearsClosedOwnerIdentity(t *testing.T) {
+	store := TerminalViewStore{}
+	owner := NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true)
+	owner.OwnerSurfaceID = "surface"
+	owner.OwnerViewID = "view-1"
+	follower := NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, TerminalResizeRoleFollower, "surface", "view-2", false)
+	follower.OwnerSurfaceID = "surface"
+	follower.OwnerViewID = "view-1"
+	store = store.BindPane(owner)
+	store = store.BindPane(follower)
+
+	store = store.DetachPane("pane-1")
+	next, _ := store.PaneBinding("pane-2")
+	if !next.HasResizeOwner() || !next.CanResize || !next.ResizePending {
+		t.Fatalf("replacement owner should be pending local owner, got %#v", next)
+	}
+	if next.OwnerSurfaceID != "" || next.OwnerViewID != "" {
+		t.Fatalf("replacement owner must not keep closed owner identity, got %#v", next)
+	}
+}
+
 func TestTerminalViewStoreDemotesPreviousOwnerOnBind(t *testing.T) {
 	store := TerminalViewStore{}
 	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))
@@ -136,6 +157,71 @@ func TestTerminalViewBindingResizeOwnerRequiresMatchingSurfaceAndView(t *testing
 	binding.OwnerViewID = "view-2"
 	if binding.HasResizeOwner() || binding.HasAuthoritativeResizeOwner() {
 		t.Fatalf("matching surface with different view should not be local owner, binding=%#v", binding)
+	}
+	binding.OwnerViewID = "view-1"
+	binding.OwnerSurfaceID = ""
+	if binding.HasResizeOwner() || binding.HasAuthoritativeResizeOwner() {
+		t.Fatalf("core owner projection with view but no surface must not be treated as local owner, binding=%#v", binding)
+	}
+}
+
+func TestTerminalViewStoreAppliesTerminalResizeControlBySurfaceAndView(t *testing.T) {
+	projection := TerminalResizeControlProjection{
+		OwnerSurfaceID: "surface-b",
+		OwnerViewID:    "pane:main",
+		ResizeEpoch:    3,
+	}
+	firstStore := TerminalViewStore{}.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-a", "pane:main", true))
+	firstStore = firstStore.ApplyTerminalResizeControl("term-1", projection)
+	first, _ := firstStore.PaneBinding("pane-1")
+	if first.HasResizeOwner() || first.CanResize || first.ResizeRole != TerminalResizeRoleFollower {
+		t.Fatalf("same panel id in another TUI surface must be follower, got %#v", first)
+	}
+
+	secondStore := TerminalViewStore{}.BindPane(NewPaneTerminalView("pane-1", "term-1", 8, 80, 24, TerminalResizeRoleOwner, "surface-b", "pane:main", true))
+	secondStore = secondStore.ApplyTerminalResizeControl("term-1", projection)
+	second, _ := secondStore.PaneBinding("pane-1")
+	if !second.HasResizeOwner() || !second.CanResize || second.ResizeRole != TerminalResizeRoleOwner {
+		t.Fatalf("matching surface+panel should be owner, got %#v", second)
+	}
+}
+
+func TestTerminalViewStoreIgnoresStaleTerminalResizeControlDuringPendingOwner(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-a", "view-owner", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, TerminalResizeRoleFollower, "surface-a", "view-next", false))
+	store = store.TransferPaneResizeOwner("pane-2")
+
+	store = store.ApplyTerminalResizeControl("term-1", TerminalResizeControlProjection{
+		OwnerSurfaceID: "surface-a",
+		OwnerViewID:    "view-owner",
+		ResizeEpoch:    1,
+	})
+	next, _ := store.PaneBinding("pane-2")
+	if !next.HasResizeOwner() || !next.ResizePending || !next.CanResize {
+		t.Fatalf("stale old-owner projection must not clear pending local owner, got %#v", next)
+	}
+}
+
+func TestTerminalViewStoreIgnoresLocalOldOwnerProjectionAfterTransfer(t *testing.T) {
+	store := TerminalViewStore{}
+	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-a", "view-owner", true))
+	store = store.BindPane(NewPaneTerminalView("pane-2", "term-1", 8, 80, 24, TerminalResizeRoleFollower, "surface-a", "view-next", false))
+	store = store.TransferPaneResizeOwner("pane-2")
+	store, _ = store.RequestPaneResize("pane-2", 80, 24)
+
+	store = store.ApplyTerminalResizeControl("term-1", TerminalResizeControlProjection{
+		OwnerSurfaceID: "surface-a",
+		OwnerViewID:    "view-owner",
+		ResizeEpoch:    99,
+	})
+	first, _ := store.PaneBinding("pane-1")
+	second, _ := store.PaneBinding("pane-2")
+	if first.HasResizeOwner() || first.CanResize {
+		t.Fatalf("old local owner projection must not re-promote previous owner, got %#v", first)
+	}
+	if !second.HasResizeOwner() || !second.CanResize {
+		t.Fatalf("current local owner must survive old-owner projection, got %#v", second)
 	}
 }
 

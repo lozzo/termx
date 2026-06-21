@@ -2465,6 +2465,77 @@ func TestProtocolServiceMultipleAttachmentsResizeOwnership(t *testing.T) {
 	}
 }
 
+func TestProtocolServiceResizeOwnershipIsGlobalAcrossClientSessions(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	clientOneTransport, serverOneTransport := memory.NewPair()
+	clientTwoTransport, serverTwoTransport := memory.NewPair()
+	errOne := make(chan error, 1)
+	errTwo := make(chan error, 1)
+	go func() { errOne <- newProtocolSession(server, serverOneTransport).run(context.Background()) }()
+	go func() { errTwo <- newProtocolSession(server, serverTwoTransport).run(context.Background()) }()
+	clientOne := protocol.NewClient(clientOneTransport)
+	clientTwo := protocol.NewClient(clientTwoTransport)
+	defer func() {
+		_ = clientOne.Close()
+		_ = clientTwo.Close()
+		for _, errCh := range []chan error{errOne, errTwo} {
+			select {
+			case err := <-errCh:
+				if err != nil && !strings.Contains(err.Error(), "EOF") {
+					t.Fatalf("server session returned error: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("server session did not stop")
+			}
+		}
+	}()
+	if err := clientOne.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "test-1"}); err != nil {
+		t.Fatalf("hello one: %v", err)
+	}
+	if err := clientTwo.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "test-2"}); err != nil {
+		t.Fatalf("hello two: %v", err)
+	}
+	if _, err := clientOne.Create(context.Background(), protocol.CreateParams{ID: "term-1", Command: []string{"shell"}, Size: protocol.Size{Cols: 10, Rows: 3}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	owner, err := clientOne.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-one", ViewID: "pane:main"})
+	if err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	follower, err := clientTwo.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-two", ViewID: "pane:main"})
+	if err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+	if owner.ResizeControl == nil || !owner.ResizeControl.CanResize || owner.ResizeControl.OwnerSurfaceID != "surface-one" || owner.ResizeControl.OwnerViewID != "pane:main" {
+		t.Fatalf("first client should own resize globally, got %#v", owner.ResizeControl)
+	}
+	if follower.ResizeControl == nil || follower.ResizeControl.CanResize || follower.ResizeControl.OwnerSurfaceID != "surface-one" || follower.ResizeControl.OwnerViewID != "pane:main" {
+		t.Fatalf("same panel in another surface must be follower, got %#v", follower.ResizeControl)
+	}
+	result, err := clientTwo.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: follower.Channel, Cols: 10, Rows: 3, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-two", ViewID: "pane:main"})
+	if err != nil {
+		t.Fatalf("take owner same size: %v", err)
+	}
+	if result.ResizeControl == nil || !result.ResizeControl.CanResize || result.ResizeControl.OwnerSurfaceID != "surface-two" || result.ResizeControl.OwnerViewID != "pane:main" {
+		t.Fatalf("second client should take global owner by surface+panel, got %#v", result.ResizeControl)
+	}
+	refresh, err := clientOne.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: owner.Channel, Cols: 10, Rows: 3, ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-one", ViewID: "pane:main"})
+	if err != nil {
+		t.Fatalf("refresh first client: %v", err)
+	}
+	if refresh.ResizeControl == nil || refresh.ResizeControl.CanResize || refresh.ResizeControl.OwnerSurfaceID != "surface-two" || refresh.ResizeControl.OwnerViewID != "pane:main" {
+		t.Fatalf("first client should now see other surface owner, got %#v", refresh.ResizeControl)
+	}
+	var info protocol.TerminalInfo
+	if err := clientOne.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if info.ResizeOwnerAttachmentCount != 2 || info.ResizeOwnership == nil || info.ResizeOwnership.OwnerSurfaceID != "surface-two" || info.ResizeOwnership.OwnerViewID != "pane:main" {
+		t.Fatalf("terminal info should expose global attachment count and owner, got %#v", info)
+	}
+}
+
 func TestProtocolServiceTerminalSizeLockRequiresManualUnlockBeforeResize(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()

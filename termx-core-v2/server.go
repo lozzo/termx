@@ -31,19 +31,26 @@ type serverConfig struct {
 }
 
 type Server struct {
-	cfg         serverConfig
-	registry    *terminalRegistry
-	storage     *storageStore
-	workbench   *workbenchStore
-	terminals   map[string]*Terminal
-	events      *eventBroker
-	closed      atomic.Bool
-	lifecycleMu sync.Mutex
-	mu          sync.Mutex
-	listeners   []transport.Listener
-	transports  map[transport.Transport]struct{}
-	wgMu        sync.Mutex
-	wg          sync.WaitGroup
+	cfg                   serverConfig
+	registry              *terminalRegistry
+	storage               *storageStore
+	workbench             *workbenchStore
+	terminals             map[string]*Terminal
+	events                *eventBroker
+	closed                atomic.Bool
+	nextProtocolSessionID atomic.Uint64
+	lifecycleMu           sync.Mutex
+	protocolAttachmentMu  sync.Mutex
+	protocolAttachments   map[string]protocolAttachment
+	protocolChannelIndex  map[protocolAttachmentKey]string
+	protocolResizeOwners  map[string]string
+	protocolSizeLocks     map[string]bool
+	protocolOwnerEpoch    uint64
+	mu                    sync.Mutex
+	listeners             []transport.Listener
+	transports            map[transport.Transport]struct{}
+	wgMu                  sync.Mutex
+	wg                    sync.WaitGroup
 }
 
 func NewServer(opts ...ServerOption) *Server {
@@ -70,13 +77,17 @@ func NewServer(opts ...ServerOption) *Server {
 		cfg.processFactory = newPTYProcessFactory()
 	}
 	return &Server{
-		cfg:        cfg,
-		registry:   newTerminalRegistry(),
-		storage:    newStorageStore(),
-		workbench:  newWorkbenchStore(),
-		terminals:  make(map[string]*Terminal),
-		events:     newEventBroker(cfg.eventBuffer),
-		transports: make(map[transport.Transport]struct{}),
+		cfg:                  cfg,
+		registry:             newTerminalRegistry(),
+		storage:              newStorageStore(),
+		workbench:            newWorkbenchStore(),
+		terminals:            make(map[string]*Terminal),
+		events:               newEventBroker(cfg.eventBuffer),
+		protocolAttachments:  make(map[string]protocolAttachment),
+		protocolChannelIndex: make(map[protocolAttachmentKey]string),
+		protocolResizeOwners: make(map[string]string),
+		protocolSizeLocks:    make(map[string]bool),
+		transports:           make(map[transport.Transport]struct{}),
 	}
 }
 
