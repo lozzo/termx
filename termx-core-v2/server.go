@@ -27,6 +27,7 @@ type serverConfig struct {
 	listenerFactory       ListenerFactory
 	processFactory        ProcessFactory
 	historyStorageFactory HistoryStorageFactory
+	remoteService         RemoteService
 	eventBuffer           int
 }
 
@@ -126,6 +127,12 @@ func WithProcessFactory(factory ProcessFactory) ServerOption {
 func WithHistoryStorageFactory(factory HistoryStorageFactory) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.historyStorageFactory = factory
+	}
+}
+
+func WithRemoteService(service RemoteService) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.remoteService = service
 	}
 }
 

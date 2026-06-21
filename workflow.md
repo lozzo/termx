@@ -206,7 +206,7 @@
 | R177. SK remote protocol typed contract | 完成 | `internal/protocol/`、按需 `termx-proto/` | 已新增显式 `protocol.RemoteStatus`、`RemotePairStartParams/Result`、`RemoteLocalEnableParams`、`RemoteLocalStatus`；`Encode/DecodeMethod*` 不再用反射/getter/wirepb 指针作为 remote domain，并补 protocol tests |
 | R178. SK core-v2 create/process remote contract | 完成 | `termx-core-v2/`、`internal/protocol/`、按需 `termx-proto/` | 已让 core-v2 terminal create/process contract 承载 `Dir`、`Env`、CWD metadata 和 remote create 需要的 scrollback 参数；process spawn 与 restart 复用同一 create options，不在 remote adapter 里静默丢字段 |
 | R179. SK core-v2 transport scope API | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` 按需、`termx-shared/` 按需 | 已给 core-v2 提供 public `ServeTransport` / `ServeScopedTransport` / `TransportScope` 能力；scope 在 protocol session 边界约束 terminal method、stream channel 和事件订阅，不创建第二份 terminal truth |
-| R180. SK core-v2 remote method hook | 待开始 | `termx-core-v2/`、`internal/protocol/` | 在 core-v2 protocol dispatch 中接入 typed remote service hook，用 fake service 证明 `remote.status`、`remote.pair.start`、`remote.local.*` 进入 core-v2；不照搬旧 `ProtocolMethodHandler` wire bytes contract |
+| R180. SK core-v2 remote method hook | 完成 | `termx-core-v2/`、`internal/protocol/` | 已在 core-v2 protocol dispatch 中接入 typed `RemoteService` hook，用 fake service 证明 `remote.status`、`remote.pair.start`、`remote.local.*` 经过 core-v2；未恢复旧 `ProtocolMethodHandler` wire bytes contract |
 | R181. SK core-v2 remote daemon adapter | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-core-v2/`、`termx-remote/` | 用 core-v2 server/domain 实现 `termx-remote.Service` 需要的 Daemon/StorageDaemon/ScopedDaemon adapter；不得恢复旧 `remote_runtime.go` 对 `termx-core` 的 import |
 | R182. SK core-v2 daemon remote lifecycle | 待开始 | `termx-cli/cmd/termx/`、`termx-core-v2/`、`termx-remote/` | 默认 `termx daemon` 装配 remote config/service/start/close/local auto-enable；remote runtime 生命周期跟随 core-v2 daemon，不回退 legacy daemon |
 | R183. SK remote config path 独立策略 | 待开始 | `termx-cli/cmd/termx/remote_config.go`、按需共享 config helper | remote config path 与当前 v3 config policy 明确，remote 文件不得 import 旧 TUI |
@@ -272,8 +272,9 @@
 - `R177` 已完成：`internal/protocol` remote codec 已切到显式 `protocol.Remote*` domain contract，参数/结果不再接受 getter、任意 struct 反射或 `wirepb` 指针作为业务类型；准入 `cd internal && go test ./protocol/... -count=1` 已通过。
 - `R178` 已完成：`TerminalRecord`/`ProcessSpec` 已承接 `Dir`、`Env`、`Scrollback*`，protocol create 不再丢这些字段；core-v2 list/get 暴露创建 CWD，PTY spawn 使用 create dir/env，restart 复用原 create options；准入 `cd termx-core-v2 && go test ./... -count=1` 与 `cd internal && go test ./protocol/... -count=1` 已通过。
 - `R179` 已完成：core-v2 已公开 `ServeTransport` / `ServeScopedTransport` / `TransportScope`；terminal scope 会约束 terminal-bound method、stream channel 并把空事件订阅收窄到目标 terminal，machine-events-only scope 只允许 terminal 事件流；focused scope harness 已通过，完整 core-v2/protocol 准入在本切片提交前运行。
-- 当前最早未完成切片是 `R180. SK core-v2 remote method hook`，状态为 `待开始`。
-- 当前明确缺口：core-v2 仍缺 typed remote service hook；`remote-ui` terminal 路径仍包含 snapshot/scrollback copy/history 风险，需在 App 阶段迁到 logical-line history source。
+- `R180` 已完成：core-v2 新增 typed `RemoteService` hook 与 `WithRemoteService` 注入点，protocol dispatch 已承接 `remote.status`、`remote.pair.start`、`remote.local.enable/status/disable`；未配置 remote service 时返回明确 unavailable 错误，fake harness 证明请求参数和结果都走 `protocol.Remote*` domain 类型。
+- 当前最早未完成切片是 `R181. SK core-v2 remote daemon adapter`，状态为 `待开始`。
+- 当前明确缺口：core-v2 仍缺对真实 `termx-remote.Service` 的 daemon adapter；`remote-ui` terminal 路径仍包含 snapshot/scrollback copy/history 风险，需在 App 阶段迁到 logical-line history source。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
 - 当前已知环境缺口：本机没有 `protoc`，但存在 `buf` 与 `protoc-gen-go`；后续如需生成 proto，可继续使用 `buf generate`。

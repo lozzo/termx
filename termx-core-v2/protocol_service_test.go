@@ -3052,8 +3052,12 @@ func newProtocolClient(t *testing.T) (*Server, *protocol.Client, func()) {
 
 func newProtocolClientWithProcessFactory(t *testing.T, factory ProcessFactory) (*Server, *protocol.Client, func()) {
 	t.Helper()
+	return newProtocolClientWithServer(t, NewServer(WithProcessFactory(factory)))
+}
+
+func newProtocolClientWithServer(t *testing.T, server *Server) (*Server, *protocol.Client, func()) {
+	t.Helper()
 	clientTransport, serverTransport := memory.NewPair()
-	server := NewServer(WithProcessFactory(factory))
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- newProtocolSession(server, serverTransport, TransportScope{}).run(context.Background())

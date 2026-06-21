@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	protocolErrorBadRequest = 400
-	protocolErrorForbidden  = 403
-	protocolErrorNotFound   = 404
-	protocolErrorInternal   = 500
+	protocolErrorBadRequest  = 400
+	protocolErrorForbidden   = 403
+	protocolErrorNotFound    = 404
+	protocolErrorUnavailable = 503
+	protocolErrorInternal    = 500
 )
 
 const daemonBoundaryReclaimMinHeapMBEnv = "TERMX_DAEMON_REQUEST_RECLAIM_MIN_HEAP_MB"
@@ -518,9 +519,68 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		}
 		session.releaseFrozenSnapshot(in.TerminalID, in.Token)
 		return encodeMethodResult(req.Method, nil)
+	case "remote.status":
+		service, err := session.remoteService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		status, err := service.Status(ctx)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, status)
+	case "remote.pair.start":
+		service, err := session.remoteService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		in := params.(protocol.RemotePairStartParams)
+		result, err := service.PairStart(ctx, in)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, result)
+	case "remote.local.enable":
+		service, err := session.remoteService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		in := params.(protocol.RemoteLocalEnableParams)
+		status, err := service.LocalEnable(ctx, in)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, status)
+	case "remote.local.status":
+		service, err := session.remoteService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		status, err := service.LocalStatus(ctx)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, status)
+	case "remote.local.disable":
+		service, err := session.remoteService()
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		status, err := service.LocalDisable(ctx)
+		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		return encodeMethodResult(req.Method, status)
 	default:
 		return nil, false, protocolErrorNotFound, fmt.Errorf("unknown method: %s", req.Method)
 	}
+}
+
+func (session *protocolSession) remoteService() (RemoteService, error) {
+	if session.server.cfg.remoteService == nil {
+		return nil, ErrRemoteServiceUnavailable
+	}
+	return session.server.cfg.remoteService, nil
 }
 
 func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotParams) (*protocol.CompactSnapshot, error) {
@@ -2621,6 +2681,8 @@ func errorCode(err error) int {
 		return protocolErrorBadRequest
 	case errors.Is(err, ErrStorageEntryNotFound), errors.Is(err, ErrWorkbenchNotFound):
 		return protocolErrorNotFound
+	case errors.Is(err, ErrRemoteServiceUnavailable):
+		return protocolErrorUnavailable
 	default:
 		return protocolErrorInternal
 	}

@@ -150,6 +150,7 @@ protocol adapter 负责把 core-v2 domain model 映射到外部协议。
 - `ServeTransport` 是完整 daemon protocol session 入口；`ServeScopedTransport` 只给 remote datachannel 这类受限 transport 使用。
 - `TransportScope` 只能在 protocol session 边界过滤 method、terminal id、事件类型和 stream channel，不能保存 terminal lifecycle、attachment、history 或 storage truth。
 - terminal scope 会把空事件订阅收窄到目标 terminal；machine-events-only scope 只允许 terminal lifecycle/metadata 事件，不能访问 terminal method、storage 或 workbench。
+- `RemoteService` 是 core-v2 对 remote runtime 的 typed hook，只接受 `internal/protocol` 的 `Remote*` domain 类型；真实 `termx-remote.Service` 的类型转换属于 daemon adapter，不属于 protocol dispatch。
 
 attachment 相关 protocol 适配必须满足：
 
