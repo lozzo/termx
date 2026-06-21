@@ -27,7 +27,7 @@
 当前阶段只迁 remote 的后端控制链路：
 
 1. 明确 remote 现有 method、service、storage、transport 和 CLI fallback 边界。
-2. 在 core-v2 daemon/protocol 侧提供 remote extension hook。
+2. 把 remote/protocol contract 迁到 core-v2 domain 结构，而不是为旧 core 保留兼容层。
 3. 用 core-v2 adapter 接上 `termx-remote` public service，而不是把默认入口退回旧 core。
 4. 分步迁移 `remote.status`、`remote.local.*`、`remote.pair.start`。
 5. 保留 remote terminal/storage routing 的 core-v2 truth，不新增第二份 terminal truth。
@@ -37,6 +37,7 @@
 - 不迁 `remote-ui/`、`web-control/`、`termx-hub/`。
 - 不把 `termx-remote-v2/` 纳入实现范围；它当前只作为未跟踪实验目录存在。
 - 不继续修补旧 `termx-core/` 或 `tuiv2/`。
+- 不对旧 core 协议、旧 storage 格式、旧 daemon method 或旧 remote fallback 做任何兼容；冲突时直接迁到 core-v2 contract。
 - 不借 remote 迁移重开 history/copy/floating 的长尾问题；除非当前切片直接触发回归。
 
 ## 2. 技术设计基准
@@ -104,6 +105,7 @@
 - 默认 `termx`、`daemon`、`attach`、`new`、`ls`、`kill`、`rm` 仍必须走 `termx-core-v2/` 和 `termx-tui-v3/`。
 - 旧 `termx-core/` 和 `tuiv2/` 只能通过 `termx legacy ...` 或当前尚未迁完的 remote fallback 隔离文件间接存在。
 - 默认入口依赖守卫不能放松，不能新增默认源文件对旧 core/TUI 的 import。
+- remote/protocol 迁移后不得保留旧 core wire format、storage format、method adapter、双 handler、fallback 读写或兼容 shim。
 
 ### 4.2 remote 不能拥有第二份 terminal truth
 
@@ -115,6 +117,7 @@
 
 - 先审计 method/contract，再接 core-v2 extension hook，再接 service adapter，再启用 CLI flow。
 - remote management request 必须通过清晰 adapter 路由到 core-v2 public/protocol 方法。
+- 新 protocol structure 必须直接表达 core-v2 的 terminal、attachment、history、storage 和 event 模型；不得先模拟旧 core 协议再翻译到 core-v2。
 - 不得直接读写 TUI reducer state、renderer、TerminalHost 或旧 core runtime。
 - 不得用 storage scrub、定时刷新、重复 attach、局部 fallback 分支掩盖状态错乱。
 - 禁止补丁式迁移：不能为了让某个 remote 命令暂时可用而叠加临时 if、重复同步、隐式状态修正或旧路径兜底；每个切片必须先明确 domain owner、truth source、消息链路和失败条件，再用契约测试或 harness 锁住语义。
@@ -146,7 +149,8 @@
 | 背景里程碑：local v2/v3 切换与 history/copy/floating 收口 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、相关文档 | 默认本地入口、TerminalView/Attachment、authoritative history、copy/history、floating、owner/attachment 计数已经收口；细节按 git 历史追溯 |
 | R173. SK remote 迁移工作流重置 | 完成 | `AGENTS.md`、`workflow.md` | 已收紧 AGENTS 的 remote 迁移边界，压缩 workflow 为 remote 主线，并保留测试/提交准入 |
 | R173B. SK 禁止补丁式实现准入 | 完成 | `AGENTS.md`、`workflow.md` | 已把禁止补丁式实现写成硬语义：先定位 truth/source/message chain，再按模型和 harness 实现 |
-| R174. SK remote method contract audit | 待开始 | `termx-cli/docs/v2-v3-switch-audit.md`、`termx-cli/cmd/termx/remote_*.go`、`termx-remote/`、`termx-core-v2/`、`internal/protocol/` | 梳理 `remote.status`、`remote.pair.start`、`remote.local.*`、terminal/storage routing 现在走哪里、迁到 core-v2 需要哪些 adapter 和测试 |
+| R173C. SK core-v2 protocol-only 准入 | 完成 | `AGENTS.md`、`workflow.md` | 已明确 remote/protocol 迁移不对旧 core 做任何兼容，协议结构必须迁到 core-v2 domain contract |
+| R174. SK remote method contract audit | 待开始 | `termx-cli/docs/v2-v3-switch-audit.md`、`termx-cli/cmd/termx/remote_*.go`、`termx-remote/`、`termx-core-v2/`、`internal/protocol/` | 梳理 `remote.status`、`remote.pair.start`、`remote.local.*`、terminal/storage routing 现在走哪里；输出 core-v2 contract 目标，标出要删除的旧 core fallback，不设计兼容层 |
 | R175. SK core-v2 remote extension hook | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-cli/` 按需 | 在 core-v2 daemon/protocol 中提供 remote method 注册/路由 hook，用 fake handler 证明非 legacy method 能进入 core-v2 |
 | R176. SK remote service core-v2 adapter | 待开始 | `termx-core-v2/`、`termx-remote/`、`termx-cli/` 按需 | 实现 core-v2 daemon/storage adapter，满足 `termx-remote` service 需要的 terminal management、storage、events、transport 入口 |
 | R177. SK remote status core-v2 path | 待开始 | `termx-cli/cmd/termx/remote_*.go`、`termx-core-v2/`、`termx-remote/` | 让 `termx remote status` 默认打到 core-v2 remote service，不再以 legacy daemon 作为成功路径 |
@@ -187,6 +191,7 @@
 - 当前分支已经完成本地默认入口 v2/v3 切换；最近收口提交为 `c9d133d4 SK: 修复启动重复附件计数`。
 - `R173` 已完成：`AGENTS.md` 明确 remote 迁移不能退回旧 daemon/TUI，`workflow.md` 已压缩为 remote 迁移队列。
 - `R173B` 已完成：禁止补丁式实现成为 AGENTS 与 workflow 的硬准入，后续 remote 切片必须先讲清状态归属和 contract。
+- `R173C` 已完成：remote/protocol 迁移只面向 core-v2 contract，不对旧 core 保留兼容层或 fallback。
 - `termx remote ...` 仍是下一阶段迁移主线，旧 fallback 只能作为待迁边界存在，不能作为默认本地切换完成证据。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - 当前已知环境缺口：本机没有 `protoc` 与 `protoc-gen-go`；只有需要重新生成 proto 时才构成阻塞。

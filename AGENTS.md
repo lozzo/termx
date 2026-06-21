@@ -39,6 +39,7 @@
 - `termx-cli/cmd/termx/default_dependency_guard_test.go` 是默认入口依赖守卫；默认源文件不得 import 旧 `termx-core` 或 `tuiv2`。
 - 当前进入 remote 迁移阶段时，仍必须保持默认本地入口走 `termx-core-v2/` 与 `termx-tui-v3/`；remote 迁移只能通过 core-v2 protocol/service extension、`termx-remote` public package 和 CLI glue 接入，不能把默认路径退回旧 daemon 或旧 TUI。
 - `termx remote ...` 从 legacy/fallback 迁出必须按 `workflow.md` 切片逐步完成：先审计和契约，再 core-v2 extension hook，再 CLI 装配，再启用 local/pair flow。不得一次性大搬旧实现。
+- 协议迁移必须以 core-v2 domain contract 为唯一目标；不为旧 `termx-core/` 保留 wire format、storage format、method adapter、双 handler、fallback 读写或兼容 shim。
 - remote 迁移期间允许触碰 `termx-remote/` 和必要的 `termx-cli/cmd/termx/remote_*.go`，但只能在 `workflow.md` 当前切片列明时修改；`remote-ui/`、`web-control/`、`termx-hub/` 仍冻结。
 - 如果确实必须修改旧目录，先修改 `workflow.md` 的范围表并说明原因。
 - 冻结目录不得触碰，除非 `workflow.md` 先明确解冻。
@@ -79,6 +80,7 @@
 - remote 不能拥有第二份 terminal truth：terminal lifecycle、PTY size、attachment、events、history 和 storage 必须来自 core-v2 daemon/protocol；remote 只负责授权、配对、transport/session 和请求路由。
 - remote storage 只能走 core-v2 storage API；不得把 TUI workbench、terminal lifecycle 或 copy/history 交互态写成 remote 私有 truth。
 - remote management request 必须通过清晰 adapter 路由到 core-v2 public/protocol 方法；不得直接读写 TUI reducer state、renderer、TerminalHost 或旧 core runtime。
+- 新协议结构必须直接表达 core-v2 的 terminal、attachment、history、storage 和 event 模型；不得先模拟旧 core 协议再翻译到 core-v2。
 
 ## 实现纪律
 
@@ -86,6 +88,7 @@
 - 代码必须按正确模型写完整：如果只能靠“再补一个判断”“再刷一次状态”“失败就 fallback”“先 scrub storage”才能成立，默认方案不合格，需要回到状态归属和契约设计重新做。
 - 当前处于开发周期，不做旧内部实现、旧 storage/协议格式、旧 snapshot/workbench schema 或旧运行时行为的兼容；需要破坏性调整时直接按新模型改，删除旧路径。
 - 不为兼容旧内部实现保留双路径、适配层、桥接代码、旧格式读取分支或迁移兜底，除非 `workflow.md` 明确要求。
+- remote/protocol 迁移时发现旧 core contract 与 core-v2 contract 冲突，必须改向 core-v2；不得为了旧客户端或旧 daemon 继续工作而保留兼容代码。
 - 从旧实现迁移代码时，迁入新目录后必须按新边界重命名、裁剪依赖并补 v2/v3 harness。
 - service 不得直接修改 reducer-owned state；必须通过 message/effect 回到主循环。
 - renderer 只消费 view-model，不读 core client、history source、runtime service 或 protocol client。
