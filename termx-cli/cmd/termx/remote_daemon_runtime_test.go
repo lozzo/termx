@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -231,6 +234,124 @@ func TestV3DaemonLoadsRemoteConfigFromExplicitPath(t *testing.T) {
 	if !gotCfg.Enabled || gotCfg.DeviceName != "daemon-v3-file-device" || gotCfg.Mode != "local" {
 		t.Fatalf("v3 daemon did not load explicit remote config: %#v", gotCfg)
 	}
+}
+
+func TestRemoteStatusLocalPairCommandsRouteThroughCoreV2DaemonService(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "termx.sock")
+	remoteDataDir := filepath.Join(t.TempDir(), "remote-data")
+	server := corev2.NewServer(corev2.WithSocketPath(socketPath), corev2.WithProcessFactory(&remoteAdapterProcessFactory{}))
+	cfg := remoteprotocol.Config{
+		Enabled:      true,
+		Mode:         "local",
+		DataDir:      remoteDataDir,
+		DeviceName:   "smoke-device",
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	}
+	runtime, err := configureCoreV2DaemonRemoteRuntime(context.Background(), server, cfg, nil)
+	if err != nil {
+		t.Fatalf("configure remote runtime: %v", err)
+	}
+	defer func() {
+		if err := runtime.Close(context.Background()); err != nil {
+			t.Fatalf("close remote runtime: %v", err)
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = server.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("core-v2 server did not stop")
+		}
+	}()
+	if err := waitForSocket(socketPath, 2*time.Second, func() error {
+		client, err := dialV3Client(socketPath)
+		if err != nil {
+			return err
+		}
+		return client.Close()
+	}); err != nil {
+		t.Fatalf("core-v2 daemon did not become ready: %v", err)
+	}
+
+	statusOut := runRemoteCLISmokeCommand(t, "--socket", socketPath, "remote", "status")
+	if !strings.Contains(statusOut, "device_name:\tsmoke-device") ||
+		!strings.Contains(statusOut, "local_enabled:\ttrue") ||
+		!strings.Contains(statusOut, "local_web_url:\thttp://") ||
+		!strings.Contains(statusOut, "ice_tcp_enabled:\ttrue") {
+		t.Fatalf("remote status did not route through running core-v2 remote service:\n%s", statusOut)
+	}
+
+	enableOut := runRemoteCLISmokeCommand(t, "--socket", socketPath, "remote", "enable", "--mode", "local", "--addr", "127.0.0.1:0", "--ice-tcp-addr", "127.0.0.1:0")
+	if !strings.Contains(enableOut, "local_enabled:\ttrue") || !strings.Contains(enableOut, "local_pair_url:\thttp://") {
+		t.Fatalf("remote local enable did not return service local status:\n%s", enableOut)
+	}
+
+	pairOut := runRemoteCLISmokeCommand(t, "--socket", socketPath, "remote", "pair", "--json", "--ttl", "30s", "--auth-ttl", "2h")
+	var pair struct {
+		URI     string         `json:"uri"`
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(pairOut), &pair); err != nil {
+		t.Fatalf("pair output is not JSON: %v\n%s", err, pairOut)
+	}
+	if !strings.HasPrefix(pair.URI, "termx://pair?payload=") {
+		t.Fatalf("unexpected pair URI: %s", pair.URI)
+	}
+	machine, ok := pair.Payload["machine"].(map[string]any)
+	if !ok || machine["name"] != "smoke-device" {
+		t.Fatalf("pair payload did not come from termx-remote service identity: %#v", pair.Payload)
+	}
+	pairing, ok := pair.Payload["pairing"].(map[string]any)
+	if !ok || strings.TrimSpace(asString(pairing["session_id"])) == "" || strings.TrimSpace(asString(pairing["answer_proof_secret"])) == "" {
+		t.Fatalf("pair payload missing termx-remote session fields: %#v", pair.Payload)
+	}
+
+	disableOut := runRemoteCLISmokeCommand(t, "--socket", socketPath, "remote", "disable", "--json")
+	var disabled remoteprotocol.LocalStatus
+	if err := json.Unmarshal([]byte(disableOut), &disabled); err != nil {
+		t.Fatalf("disable output is not JSON: %v\n%s", err, disableOut)
+	}
+	if disabled.Enabled {
+		t.Fatalf("remote disable should stop local runtime, got %#v", disabled)
+	}
+	var finalLocal coreprotocol.RemoteLocalStatus
+	client, err := dialV3Client(socketPath)
+	if err != nil {
+		t.Fatalf("dial final local status: %v", err)
+	}
+	defer client.Close()
+	if err := client.Call(context.Background(), "remote.local.status", map[string]any{}, &finalLocal); err != nil {
+		t.Fatalf("remote.local.status after CLI disable: %v", err)
+	}
+	if finalLocal.Enabled {
+		t.Fatalf("core-v2 remote hook still reports local enabled after CLI disable: %#v", finalLocal)
+	}
+}
+
+func runRemoteCLISmokeCommand(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := newRootCmd()
+	cmd.SetArgs(args)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("termx %s returned error: %v", strings.Join(args, " "), err)
+	}
+	return out.String()
+}
+
+func asString(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 type daemonRemoteLifecycleFake struct {
