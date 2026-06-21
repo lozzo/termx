@@ -117,6 +117,7 @@
 - remote management request 必须通过清晰 adapter 路由到 core-v2 public/protocol 方法。
 - 不得直接读写 TUI reducer state、renderer、TerminalHost 或旧 core runtime。
 - 不得用 storage scrub、定时刷新、重复 attach、局部 fallback 分支掩盖状态错乱。
+- 禁止补丁式迁移：不能为了让某个 remote 命令暂时可用而叠加临时 if、重复同步、隐式状态修正或旧路径兜底；每个切片必须先明确 domain owner、truth source、消息链路和失败条件，再用契约测试或 harness 锁住语义。
 
 ### 4.4 tui-v3 和 history/copy 基线不能被破坏
 
@@ -128,6 +129,7 @@
 ### 4.5 实现纪律
 
 - 先写 domain model、小 harness 或契约测试，再接真实 protocol、terminal 或 CLI。
+- 代码必须按正确模型写完整；如果方案依赖“再刷一次状态”“失败就 fallback”“先 scrub storage”“兼容旧内部格式”才能成立，默认不合格，需要回到状态归属和 contract 重做。
 - 关键代码写简短中文注释，只解释不自明的边界或约束。
 - 手工编辑文件必须使用 `apply_patch`。
 - 不得覆盖用户或其他代理的未提交改动。
@@ -143,6 +145,7 @@
 | --- | --- | --- | --- |
 | 背景里程碑：local v2/v3 切换与 history/copy/floating 收口 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、相关文档 | 默认本地入口、TerminalView/Attachment、authoritative history、copy/history、floating、owner/attachment 计数已经收口；细节按 git 历史追溯 |
 | R173. SK remote 迁移工作流重置 | 完成 | `AGENTS.md`、`workflow.md` | 已收紧 AGENTS 的 remote 迁移边界，压缩 workflow 为 remote 主线，并保留测试/提交准入 |
+| R173B. SK 禁止补丁式实现准入 | 完成 | `AGENTS.md`、`workflow.md` | 已把禁止补丁式实现写成硬语义：先定位 truth/source/message chain，再按模型和 harness 实现 |
 | R174. SK remote method contract audit | 待开始 | `termx-cli/docs/v2-v3-switch-audit.md`、`termx-cli/cmd/termx/remote_*.go`、`termx-remote/`、`termx-core-v2/`、`internal/protocol/` | 梳理 `remote.status`、`remote.pair.start`、`remote.local.*`、terminal/storage routing 现在走哪里、迁到 core-v2 需要哪些 adapter 和测试 |
 | R175. SK core-v2 remote extension hook | 待开始 | `termx-core-v2/`、`internal/protocol/`、`termx-cli/` 按需 | 在 core-v2 daemon/protocol 中提供 remote method 注册/路由 hook，用 fake handler 证明非 legacy method 能进入 core-v2 |
 | R176. SK remote service core-v2 adapter | 待开始 | `termx-core-v2/`、`termx-remote/`、`termx-cli/` 按需 | 实现 core-v2 daemon/storage adapter，满足 `termx-remote` service 需要的 terminal management、storage、events、transport 入口 |
@@ -183,6 +186,7 @@
 
 - 当前分支已经完成本地默认入口 v2/v3 切换；最近收口提交为 `c9d133d4 SK: 修复启动重复附件计数`。
 - `R173` 已完成：`AGENTS.md` 明确 remote 迁移不能退回旧 daemon/TUI，`workflow.md` 已压缩为 remote 迁移队列。
+- `R173B` 已完成：禁止补丁式实现成为 AGENTS 与 workflow 的硬准入，后续 remote 切片必须先讲清状态归属和 contract。
 - `termx remote ...` 仍是下一阶段迁移主线，旧 fallback 只能作为待迁边界存在，不能作为默认本地切换完成证据。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - 当前已知环境缺口：本机没有 `protoc` 与 `protoc-gen-go`；只有需要重新生成 proto 时才构成阻塞。
