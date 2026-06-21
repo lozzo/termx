@@ -220,31 +220,30 @@ func firstWorkbenchPersistRequestMsg(t *testing.T, effects []Effect) WorkbenchSt
 	return WorkbenchStoragePersistRequestMsg{}
 }
 
-func TestWorkbenchRestoreAttachEffectsPreserveStoredResizeRole(t *testing.T) {
+func TestWorkbenchRestoreAttachEffectsUseFollowerRuntimeSurface(t *testing.T) {
 	bindings := []state.TerminalViewBinding{
 		state.NewPaneTerminalView("pane-follower", "term-1", 8, 40, 12, state.TerminalResizeRoleFollower, "surface", "view-follower", false),
 		state.NewPaneTerminalView("pane-owner", "term-1", 7, 80, 24, state.TerminalResizeRoleOwner, "surface", "view-owner", true),
 		state.NewPaneTerminalView("pane-observer", "term-2", 9, 30, 10, state.TerminalResizeRoleObserver, "surface", "view-observer", false),
 	}
+	root := state.Root{RuntimeSurfaceID: "runtime-a"}
 
-	effects := workbenchRestoredTerminalAttachEffects(state.TerminalViewStore{}, bindings)
+	effects := workbenchRestoredTerminalAttachEffectsForBindings(root, workbenchRestoredTerminalAttachBindings(state.TerminalViewStore{}, bindings))
 	if len(effects) != 3 {
 		t.Fatalf("expected one attach effect per binding, got %#v", effects)
 	}
-	got := map[string]string{}
 	for _, effect := range effects {
 		msg, ok := effect.(FuncEffect).Run(context.Background()).(LiveAttachMsg)
 		if !ok {
 			t.Fatalf("expected LiveAttachMsg effect, got %#v", effect)
 		}
-		got[msg.Config.ViewID] = msg.Config.ResizePolicy
-	}
-	if got["view-owner"] != state.TerminalResizeRoleOwner || got["view-follower"] != state.TerminalResizeRoleFollower || got["view-observer"] != state.TerminalResizeRoleObserver {
-		t.Fatalf("restore attach should preserve stored resize roles, got %#v", got)
+		if msg.Config.ResizePolicy != state.TerminalResizeRoleFollower || msg.Config.SurfaceID != "runtime-a" {
+			t.Fatalf("restore attach must not inherit stored owner/surface, got %#v", msg.Config)
+		}
 	}
 	first, ok := effects[0].(FuncEffect).Run(context.Background()).(LiveAttachMsg)
 	if !ok || first.Config.ViewID != "view-owner" {
-		t.Fatalf("restore must reattach owner before same-terminal followers, got %#v", first)
+		t.Fatalf("restore keeps stable ordering even though all requests are follower, got %#v", first)
 	}
 }
 
@@ -262,6 +261,49 @@ func TestWorkbenchRestoreSkipsReattachForAlreadyLiveBinding(t *testing.T) {
 	}
 	if effects := workbenchRestoredTerminalAttachEffects(previous, restored.Bindings()); len(effects) != 0 {
 		t.Fatalf("already live same view/terminal should not reattach, effects=%#v", effects)
+	}
+}
+
+func TestWorkbenchRestorePreservesLocalFloatingDisplayState(t *testing.T) {
+	local := state.DefaultShell()
+	var result state.FloatingCommandResult
+	local, result = local.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-1",
+		Title:    "local",
+		Pane:     state.PaneState{ID: "float-1-pane", Title: "local", Kind: state.PaneTerminalLive, TerminalID: "term-local"},
+		Rect:     state.FloatingRect{X: 5, Y: 6, W: 70, H: 20},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create local floating: %#v", result)
+	}
+	local, result = local.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandToggleCollapse, TargetID: "float-1"})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("collapse local floating: %#v", result)
+	}
+
+	remote := state.DefaultShell()
+	remote, result = remote.ApplyFloatingCommand(state.FloatingCommand{
+		Action:   state.FloatingCommandCreate,
+		TargetID: "float-1",
+		Title:    "remote",
+		Pane:     state.PaneState{ID: "float-1-pane", Title: "remote", Kind: state.PaneTerminalLive, TerminalID: "term-remote"},
+		Rect:     state.FloatingRect{X: 1, Y: 2, W: 30, H: 8},
+	})
+	if result.Status != state.FloatingCommandOK {
+		t.Fatalf("create remote floating: %#v", result)
+	}
+
+	merged := mergeLocalWorkbenchRuntimeState(local, remote, true)
+	floating, ok := merged.FloatingByID("float-1")
+	if !ok {
+		t.Fatalf("expected floating after restore, shell=%#v", merged)
+	}
+	if floating.Pane.TerminalID != "term-remote" || floating.Title != "remote" {
+		t.Fatalf("restore should take shared slot/binding fields, floating=%#v", floating)
+	}
+	if floating.Rect != (state.FloatingRect{X: 5, Y: 6, W: 70, H: 20}) || !floating.Collapsed || merged.ActiveFloatingID() != "" {
+		t.Fatalf("restore should keep local floating geometry/display state, floating=%#v active=%q", floating, merged.ActiveFloatingID())
 	}
 }
 
@@ -362,7 +404,7 @@ func TestWorkbenchStorageChangedReloadsExternalSnapshot(t *testing.T) {
 	root, _ = reducer(root, loadResult)
 
 	if root.Shell.ActivePaneID != "pane-external" || root.WorkbenchSync.LastAppliedVersion != 8 {
-		t.Fatalf("external snapshot should refresh shell, root=%#v", root)
+		t.Fatalf("first external snapshot should refresh shell from remote active pane, root=%#v", root)
 	}
 }
 
@@ -454,8 +496,8 @@ func TestWorkbenchStorageConflictReloadsLatestSnapshot(t *testing.T) {
 	loadResult := effects[0].(FuncEffect).Run(context.Background())
 	root, _ = reducer(root, loadResult)
 
-	if root.Shell.ActivePaneID != "pane-remote" || root.WorkbenchSync.Conflict || root.WorkbenchSync.SaveVersion() != 9 {
-		t.Fatalf("conflict reload should apply latest remote snapshot, root=%#v", root)
+	if root.Shell.ActivePaneID != state.DefaultPaneID || root.Shell.Workspace.Tabs[0].Panes[1].ID != "pane-remote" || root.WorkbenchSync.Conflict || root.WorkbenchSync.SaveVersion() != 9 {
+		t.Fatalf("conflict reload should apply latest remote structure while preserving local active pane, root=%#v", root)
 	}
 }
 
@@ -644,11 +686,8 @@ func TestInteractiveRuntimeWithWorkbenchPersistsFloatingCommand(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 
-	if len(storage.Saves) != 1 {
-		t.Fatalf("floating command should persist workbench snapshot, saves=%#v", storage.Saves)
-	}
-	if len(storage.Saves[0].Snapshot.Workspace.Tabs[0].Floatings) != 1 || !storage.Saves[0].Snapshot.Workspace.Tabs[0].Floatings[0].Collapsed {
-		t.Fatalf("persisted tab floating snapshot should include collapsed state, snapshot=%#v", storage.Saves[0].Snapshot.Workspace.Tabs[0].Floatings)
+	if len(storage.Saves) != 0 {
+		t.Fatalf("floating display command should stay local and not persist workbench snapshot, saves=%#v", storage.Saves)
 	}
 }
 
@@ -762,7 +801,7 @@ func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *te
 		BindPane(state.NewPaneTerminalView("pane-restored", "term-restored", 11, 80, 24, state.TerminalResizeRoleOwner, "surface-restored", state.TerminalPaneViewID("pane-restored"), true))
 	storage := &services.FakeWorkbenchStorageService{LoadResult: services.WorkbenchStorageLoadResult{Snapshot: state.SnapshotRootWorkbenchForStorage(state.Root{Shell: shell, TerminalViews: views}), Version: 7, Found: true}, WatchCh: watchCh}
 	terminal := &services.FakeTerminalService{
-		AttachResult:  services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true, OwnerViewID: state.TerminalPaneViewID("pane-restored")},
+		AttachResult:  services.TerminalAttachResult{Channel: 42, Cols: 100, Rows: 30, ResizePolicy: state.TerminalResizeRoleOwner, CanResize: true, OwnerSurfaceID: DefaultRuntimeSurfaceID, OwnerViewID: state.TerminalPaneViewID("pane-restored")},
 		SurfaceResult: services.TerminalSurfaceResult{Ready: true, Snapshot: state.LiveSurfaceSnapshot{TerminalID: "term-restored", Cols: 100, Rows: 30, Lines: []string{"changed by another tui"}, State: state.TerminalLiveAttached}},
 	}
 	runtime := NewInteractiveRuntimeWithWorkbench(state.Root{}, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}}, WorkbenchDeps{Storage: storage})
@@ -775,8 +814,8 @@ func TestInteractiveRuntimeWorkbenchRestoreReattachesTerminalViewsFromCore(t *te
 		t.Fatalf("restored terminal view should reattach through core, attaches=%#v", terminal.Attaches)
 	}
 	attach := terminal.Attaches[0]
-	if attach.TerminalID != "term-restored" || attach.ViewID != state.TerminalPaneViewID("pane-restored") || attach.ResizePolicy != state.TerminalResizeRoleOwner {
-		t.Fatalf("restore attach must preserve stored owner intent, attach=%#v", attach)
+	if attach.TerminalID != "term-restored" || attach.ViewID != state.TerminalPaneViewID("pane-restored") || attach.ResizePolicy != state.TerminalResizeRoleFollower {
+		t.Fatalf("restore attach must start as follower for this runtime, attach=%#v", attach)
 	}
 	root := runtime.State()
 	binding, ok := root.TerminalViews.PaneBinding("pane-restored")

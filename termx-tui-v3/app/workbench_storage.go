@@ -185,7 +185,8 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	// pending request 和 copy 绑定都不能跨这次替换继续复用。
 	root = root.ClearCopyHistorySessions()
 	root.History = state.HistoryStore{TerminalID: previousHistoryTerminalID}
-	root.Shell = shell
+	preserveLocalOperation := root.WorkbenchSync.LastAppliedVersion != 0 || root.WorkbenchSync.LastSavedVersion != 0
+	root.Shell = mergeLocalWorkbenchRuntimeState(root.Shell, shell, preserveLocalOperation)
 	root.TerminalViews = terminalViews
 	root.WorkbenchSync = root.WorkbenchSync.MarkApplied(msg.Result.Version)
 	restoredAttachBindings := workbenchRestoredTerminalAttachBindings(previousViews, root.TerminalViews.Bindings())
@@ -208,10 +209,233 @@ func reduceWorkbenchStorageLoadResult(root state.Root, msg WorkbenchStorageLoadR
 	if len(root.TerminalViews.Views) > 0 {
 		effects := []Effect{FuncEffect{Run: func(context.Context) Msg { return TerminalPoolListRequestMsg{} }}}
 		effects = append(effects, workbenchRestoredTerminalLifecycleQueryEffects(previousViews, root.TerminalViews.Bindings())...)
-		effects = append(effects, workbenchRestoredTerminalAttachEffectsForBindings(restoredAttachBindings)...)
+		effects = append(effects, workbenchRestoredTerminalAttachEffectsForBindings(root, restoredAttachBindings)...)
 		return root.Advance(), effects
 	}
 	return root.Advance(), nil
+}
+
+func mergeLocalWorkbenchRuntimeState(previous state.ShellStore, restored state.ShellStore, preserveLocalOperation bool) state.ShellStore {
+	previous = previous.ReadonlyDefaults()
+	restored = restored.EnsureDefaults()
+	restored = mergeLocalWorkbenchFloatingState(previous, restored)
+	if preserveLocalOperation {
+		restored = preserveLocalActiveWorkspace(previous, restored)
+		restored = preserveLocalActiveTabAndPane(previous, restored)
+		restored.ZoomedPaneID = preserveLocalZoomedPane(previous, restored)
+		restored.InteractionMode = previous.InteractionMode
+		restored.InteractionModeSeq = previous.InteractionModeSeq
+		restored.OwnerConfirm = previous.OwnerConfirm
+		restored.Overlay = previous.Overlay
+		restored.EmptyPaneCTA = previous.EmptyPaneCTA
+		restored.ExitedPaneCTA = previous.ExitedPaneCTA
+	}
+	return restored.EnsureDefaults()
+}
+
+func preserveLocalActiveWorkspace(previous state.ShellStore, restored state.ShellStore) state.ShellStore {
+	if previous.Workspace.ID == "" {
+		return restored
+	}
+	for _, workspace := range restored.Workspaces {
+		if workspace.ID == previous.Workspace.ID {
+			restored.Workspace = workspace
+			return restored
+		}
+	}
+	return restored
+}
+
+func mergeLocalWorkbenchFloatingState(previous state.ShellStore, restored state.ShellStore) state.ShellStore {
+	local := localFloatingRuntimeState(previous)
+	if len(local) == 0 {
+		return restored
+	}
+	for workspaceIndex := range restored.Workspaces {
+		for tabIndex := range restored.Workspaces[workspaceIndex].Tabs {
+			workspaceID := restored.Workspaces[workspaceIndex].ID
+			tabID := restored.Workspaces[workspaceIndex].Tabs[tabIndex].ID
+			restored.Workspaces[workspaceIndex].Tabs[tabIndex] = mergeLocalTabFloatingState(workspaceID, tabID, restored.Workspaces[workspaceIndex].Tabs[tabIndex], local)
+		}
+		if restored.Workspaces[workspaceIndex].ID == restored.Workspace.ID {
+			restored.Workspace = restored.Workspaces[workspaceIndex]
+		}
+	}
+	restored.Workspace = mergeLocalTabFloatingStateForWorkspace(restored.Workspace, local)
+	restored.Workspaces = upsertRestoredWorkspace(restored.Workspaces, restored.Workspace)
+	return restored
+}
+
+type localFloatingKey struct {
+	WorkspaceID string
+	TabID       string
+	FloatingID  string
+}
+
+type localFloatingState struct {
+	Rect      state.FloatingRect
+	Z         int
+	Active    bool
+	Collapsed bool
+	FitMode   state.FloatingFitMode
+	AutoFit   state.FloatingAutoFitState
+}
+
+func localFloatingRuntimeState(shell state.ShellStore) map[localFloatingKey]localFloatingState {
+	out := map[localFloatingKey]localFloatingState{}
+	for _, workspace := range shell.Workspaces {
+		for _, tab := range workspace.Tabs {
+			for _, floating := range tab.Floatings {
+				if floating.ID == "" {
+					continue
+				}
+				key := localFloatingKey{WorkspaceID: workspace.ID, TabID: tab.ID, FloatingID: floating.ID}
+				out[key] = localFloatingState{
+					Rect:      floating.Rect,
+					Z:         floating.Z,
+					Active:    floating.Active,
+					Collapsed: floating.Collapsed,
+					FitMode:   floating.FitMode,
+					AutoFit:   floating.AutoFit,
+				}
+			}
+		}
+	}
+	return out
+}
+
+func mergeLocalTabFloatingStateForWorkspace(workspace state.WorkspaceState, local map[localFloatingKey]localFloatingState) state.WorkspaceState {
+	for tabIndex := range workspace.Tabs {
+		workspace.Tabs[tabIndex] = mergeLocalTabFloatingState(workspace.ID, workspace.Tabs[tabIndex].ID, workspace.Tabs[tabIndex], local)
+	}
+	return workspace
+}
+
+func mergeLocalTabFloatingState(workspaceID string, tabID string, tab state.TabState, local map[localFloatingKey]localFloatingState) state.TabState {
+	activeID := ""
+	for index := range tab.Floatings {
+		floating := &tab.Floatings[index]
+		localState, ok := local[localFloatingKey{WorkspaceID: workspaceID, TabID: tabID, FloatingID: floating.ID}]
+		if !ok {
+			floating.Active = false
+			continue
+		}
+		// 中文说明：workbench storage 只同步 floating slot/绑定；显示态按当前 TUI 保留。
+		floating.Rect = localState.Rect
+		floating.Z = localState.Z
+		floating.Active = localState.Active
+		floating.Collapsed = localState.Collapsed
+		floating.FitMode = localState.FitMode
+		floating.AutoFit = localState.AutoFit
+		if floating.Active && !floating.Collapsed {
+			activeID = floating.ID
+		}
+	}
+	tab.ActiveFloatingID = activeID
+	return tab
+}
+
+func preserveLocalActiveTabAndPane(previous state.ShellStore, restored state.ShellStore) state.ShellStore {
+	activeTabID := restored.Workspace.ActiveTabID
+	if tabExistsInWorkspace(restored.Workspace, previous.Workspace.ActiveTabID) {
+		activeTabID = previous.Workspace.ActiveTabID
+	}
+	restored.Workspace.ActiveTabID = activeTabID
+	activePaneID := previous.ActivePaneID
+	if !paneExistsInWorkspaceTab(restored.Workspace, activeTabID, activePaneID) {
+		activePaneID = activePaneIDForTab(restored.Workspace, activeTabID)
+	}
+	restored.ActivePaneID = activePaneID
+	for tabIndex := range restored.Workspace.Tabs {
+		if restored.Workspace.Tabs[tabIndex].ID == activeTabID {
+			restored.Workspace.Tabs[tabIndex].ActivePaneID = activePaneID
+			break
+		}
+	}
+	restored.Workspaces = upsertRestoredWorkspace(restored.Workspaces, restored.Workspace)
+	return restored
+}
+
+func preserveLocalZoomedPane(previous state.ShellStore, restored state.ShellStore) string {
+	if previous.ZoomedPaneID != "" && paneExistsInShell(restored, previous.ZoomedPaneID) {
+		return previous.ZoomedPaneID
+	}
+	return ""
+}
+
+func paneExistsInShell(shell state.ShellStore, paneID string) bool {
+	if paneID == "" {
+		return false
+	}
+	for _, workspace := range shell.Workspaces {
+		for _, tab := range workspace.Tabs {
+			for _, pane := range tab.Panes {
+				if pane.ID == paneID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func tabExistsInWorkspace(workspace state.WorkspaceState, tabID string) bool {
+	if tabID == "" {
+		return false
+	}
+	for _, tab := range workspace.Tabs {
+		if tab.ID == tabID {
+			return true
+		}
+	}
+	return false
+}
+
+func paneExistsInWorkspaceTab(workspace state.WorkspaceState, tabID string, paneID string) bool {
+	if paneID == "" {
+		return false
+	}
+	for _, tab := range workspace.Tabs {
+		if tab.ID != tabID {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane.ID == paneID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func activePaneIDForTab(workspace state.WorkspaceState, tabID string) string {
+	for _, tab := range workspace.Tabs {
+		if tab.ID != tabID {
+			continue
+		}
+		if tab.ActivePaneID != "" {
+			return tab.ActivePaneID
+		}
+		if len(tab.Panes) > 0 {
+			return tab.Panes[0].ID
+		}
+		return ""
+	}
+	return ""
+}
+
+func upsertRestoredWorkspace(workspaces []state.WorkspaceState, workspace state.WorkspaceState) []state.WorkspaceState {
+	if workspace.ID == "" {
+		return workspaces
+	}
+	out := append([]state.WorkspaceState(nil), workspaces...)
+	for index := range out {
+		if out[index].ID == workspace.ID {
+			out[index] = workspace
+			return out
+		}
+	}
+	return append(out, workspace)
 }
 
 func preserveWorkbenchRuntimeTerminalViews(previous state.TerminalViewStore, restored state.TerminalViewStore) state.TerminalViewStore {
@@ -291,10 +515,10 @@ func workbenchRestoredTerminalAttachBindings(previous state.TerminalViewStore, b
 }
 
 func workbenchRestoredTerminalAttachEffects(previous state.TerminalViewStore, bindings []state.TerminalViewBinding) []Effect {
-	return workbenchRestoredTerminalAttachEffectsForBindings(workbenchRestoredTerminalAttachBindings(previous, bindings))
+	return workbenchRestoredTerminalAttachEffectsForBindings(state.Root{}, workbenchRestoredTerminalAttachBindings(previous, bindings))
 }
 
-func workbenchRestoredTerminalAttachEffectsForBindings(bindings []state.TerminalViewBinding) []Effect {
+func workbenchRestoredTerminalAttachEffectsForBindings(root state.Root, bindings []state.TerminalViewBinding) []Effect {
 	if len(bindings) == 0 {
 		return nil
 	}
@@ -308,19 +532,15 @@ func workbenchRestoredTerminalAttachEffectsForBindings(bindings []state.Terminal
 		if rows <= 0 {
 			rows = 24
 		}
-		// storage 里记录的是上次退出时的 view 意图；重进时必须原样向 core 申请，
-		// 最终 owner/follower truth 仍以 core-v2 attach 返回的 ResizeControl 为准。
-		resizePolicy := binding.ResizeRole
-		if resizePolicy == "" {
-			resizePolicy = state.TerminalResizeRoleFollower
-		}
+		// 中文说明：storage 只保存结构/连接意图；恢复时不继承其它 TUI 的 owner。
+		resizePolicy := state.TerminalResizeRoleFollower
 		cfg := LiveConfig{
 			TerminalID:   binding.TerminalID,
 			Cols:         cols,
 			Rows:         rows,
 			Mode:         "collaborator",
 			ResizePolicy: resizePolicy,
-			SurfaceID:    binding.SurfaceID,
+			SurfaceID:    runtimeSurfaceID(root),
 			ViewID:       binding.ViewID,
 		}
 		cfgCopy := cfg
@@ -380,12 +600,6 @@ func workbenchBindingAlreadyLive(previous state.TerminalViewStore, binding state
 		return false
 	}
 	if existing.Channel == 0 {
-		return false
-	}
-	if existing.ResizeRole != binding.ResizeRole {
-		return false
-	}
-	if existing.DesiredCols != binding.DesiredCols || existing.DesiredRows != binding.DesiredRows {
 		return false
 	}
 	return true

@@ -63,6 +63,34 @@ func TestWorkbenchStorageSnapshotRoundTripsShellStructure(t *testing.T) {
 	}
 }
 
+func TestWorkbenchStorageSnapshotScrubsFloatingDisplayState(t *testing.T) {
+	shell := DefaultShell()
+	var result FloatingCommandResult
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{
+		Action:   FloatingCommandCreate,
+		TargetID: "float-1",
+		Title:    "scratch",
+		Pane:     PaneState{ID: "float-1-pane", Title: "scratch", Kind: PaneEmpty},
+		Rect:     FloatingRect{X: 4, Y: 3, W: 72, H: 18},
+	})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("create floating: %#v", result)
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleCollapse, TargetID: "float-1"})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("collapse floating: %#v", result)
+	}
+	shell, result = shell.ApplyFloatingCommand(FloatingCommand{Action: FloatingCommandToggleAutoFit, TargetID: "float-1", FitCols: 60, FitRows: 20, BoundsW: 120, BoundsH: 40})
+	if result.Status != FloatingCommandOK {
+		t.Fatalf("auto-fit floating: %#v", result)
+	}
+
+	snapshot := SnapshotWorkbenchForStorage(shell)
+	if got := snapshot.Workspace.Tabs[0].Floatings[0]; got.Rect != (FloatingRect{}) || got.Z != 0 || got.Active || got.Collapsed || got.FitMode != "" || got.AutoFit != (FloatingAutoFitState{}) {
+		t.Fatalf("snapshot must not persist local floating display state, got %#v", got)
+	}
+}
+
 func TestWorkbenchStorageSnapshotV2RoundTripsTerminalViews(t *testing.T) {
 	shell := DefaultShell().SplitActivePane(PaneState{ID: "pane-logs", Title: "logs", Kind: PaneTerminalLive, TerminalID: "term-1"}, SplitDirectionVertical)
 	views := TerminalViewStore{}
@@ -105,27 +133,30 @@ func TestWorkbenchStorageSnapshotScrubsRuntimeAttachmentIdentity(t *testing.T) {
 		t.Fatalf("expected one stored terminal view, got %#v", snapshot.TerminalViews)
 	}
 	stored := snapshot.TerminalViews[0]
-	if stored.Channel != 0 || stored.Attached || stored.CanResize || stored.SizeLocked || stored.OwnerViewID != "" || stored.ResizeEpoch != 0 || stored.LastError != "" {
+	if stored.Channel != 0 || stored.Attached || stored.CanResize || stored.SizeLocked || stored.SurfaceID != "" || stored.OwnerSurfaceID != "" || stored.OwnerViewID != "" || stored.ResizeEpoch != 0 || stored.LastError != "" || stored.ResizeRole != TerminalResizeRoleFollower {
 		t.Fatalf("snapshot must not persist protocol session identity, got %#v", stored)
 	}
 
 	stored.Channel = 99
 	stored.Attached = true
 	stored.CanResize = true
+	stored.SurfaceID = "old-surface"
+	stored.OwnerSurfaceID = "old-surface"
 	stored.OwnerViewID = stored.ViewID
 	stored.ResizeEpoch = 9
 	stored.LastError = "old-session"
 	stored.SizeLocked = true
+	stored.ResizeRole = TerminalResizeRoleOwner
 	snapshot.TerminalViews[0] = stored
 	restored, err := snapshot.ToTerminalViewStore()
 	if err != nil {
 		t.Fatalf("restore terminal views: %v", err)
 	}
 	binding, ok := restored.PaneBinding(DefaultPaneID)
-	if !ok || binding.Channel != 0 || binding.Attached || binding.CanResize || binding.SizeLocked || binding.OwnerViewID != "" || binding.ResizeEpoch != 0 || binding.LastError != "" {
+	if !ok || binding.Channel != 0 || binding.Attached || binding.CanResize || binding.SizeLocked || binding.SurfaceID != "" || binding.OwnerSurfaceID != "" || binding.OwnerViewID != "" || binding.ResizeEpoch != 0 || binding.LastError != "" {
 		t.Fatalf("restore must scrub old protocol session identity, binding=%#v ok=%v", binding, ok)
 	}
-	if binding.TerminalID != "term-1" || binding.ResizeRole != TerminalResizeRoleOwner || binding.DesiredCols != 80 || binding.DesiredRows != 24 {
+	if binding.TerminalID != "term-1" || binding.ResizeRole != TerminalResizeRoleFollower || binding.DesiredCols != 80 || binding.DesiredRows != 24 {
 		t.Fatalf("restore should keep workbench connection intent, binding=%#v", binding)
 	}
 }

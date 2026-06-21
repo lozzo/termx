@@ -1170,7 +1170,7 @@ func TestV3InteractiveRuntimeAttachesThroughProtocolClient(t *testing.T) {
 		Mode:         "collaborator",
 		ResizePolicy: protocol.ResizePolicyOwner,
 		SurfaceID:    "test-surface",
-		ViewID:       "test-view",
+		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
@@ -1250,14 +1250,14 @@ func TestV3InteractiveRuntimeCorrectsProtocolResizeToContentRect(t *testing.T) {
 		Mode:         "collaborator",
 		ResizePolicy: protocol.ResizePolicyOwner,
 		SurfaceID:    "test-surface",
-		ViewID:       "test-view",
+		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	current := waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
 		return root.Session.Cols == 98 && root.Session.Rows == 26
 	}, "initial attach content rect correction")
-	if current.Session.SurfaceID != "test-surface" || current.Session.ViewID != "test-view" {
+	if current.Session.SurfaceID != "test-surface" || current.Session.ViewID != tuistate.TerminalPaneViewID(tuistate.DefaultPaneID) {
 		t.Fatalf("runtime must keep protocol resize owner metadata, session=%#v", current.Session)
 	}
 	process := waitForCoreV2ResizeRecordingProcess(t, processes, "term-1")
@@ -1288,7 +1288,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		Mode:         "collaborator",
 		ResizePolicy: protocol.ResizePolicyOwner,
 		SurfaceID:    "test-surface",
-		ViewID:       "test-view",
+		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
@@ -1324,6 +1324,7 @@ func TestV3InteractiveRuntimeLayoutResizeReachesCoreV2Process(t *testing.T) {
 		t.Fatalf("post split: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
+	attachV3PaneOwnerForCLITest(t, runtime, "term-1", "pane-2", 58, 38)
 	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 58, Rows: 38}, seenResize)
 
 	if err := runtime.Post(app.ShellPaneCommandMsg{Command: tuistate.PaneCommand{
@@ -1395,7 +1396,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 		Mode:         "collaborator",
 		ResizePolicy: protocol.ResizePolicyOwner,
 		SurfaceID:    "test-surface",
-		ViewID:       "test-view",
+		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
@@ -1414,6 +1415,7 @@ func TestV3InteractiveRuntimeMouseDividerResizeReachesCoreV2Process(t *testing.T
 		t.Fatalf("post split: %v", err)
 	}
 	drainV3RuntimeForCLITest(t, runtime)
+	attachV3PaneOwnerForCLITest(t, runtime, "term-1", "pane-2", 48, 26)
 	seenResize = waitForCoreV2ProcessResizeAfter(t, process, corev2.Size{Cols: 48, Rows: 26}, seenResize)
 	inputsBefore, _ := process.snapshot()
 
@@ -1462,7 +1464,7 @@ func TestV3InteractiveRuntimeCoreV2ResizeFailureSurfacesInSession(t *testing.T) 
 		Mode:         "collaborator",
 		ResizePolicy: protocol.ResizePolicyOwner,
 		SurfaceID:    "test-surface",
-		ViewID:       "test-view",
+		ViewID:       tuistate.TerminalPaneViewID(tuistate.DefaultPaneID),
 	}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
@@ -1529,7 +1531,7 @@ func TestV3VisualSnapshotCommandPrintsFixedVisualFrame(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"  main", "▎ 1 main  2 logs   󰐕", "visual review", "[]─[]", "└──────────────────────────v┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
+	for _, want := range []string{"  main", "▎ 1 main  2 logs   󰐕", "visual review", "[]─[]", "└───────────────────────────┘", "[Ctrl] • [P] PANE", "ws:main float:1 terminals:1"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("visual snapshot missing %q:\n%s", want, text)
 		}
@@ -3970,6 +3972,28 @@ func drainV3RuntimeForCLITest(t *testing.T, runtime *app.AppRuntime) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain runtime: %v", err)
 	}
+}
+
+func attachV3PaneOwnerForCLITest(t *testing.T, runtime *app.AppRuntime, terminalID string, paneID string, cols int, rows int) {
+	t.Helper()
+	root := runtime.State()
+	binding, ok := root.TerminalViews.PaneBinding(paneID)
+	if !ok || binding.TerminalID != terminalID {
+		t.Fatalf("missing pane binding for owner transfer pane=%s terminal=%s root=%#v", paneID, terminalID, root)
+	}
+	if err := runtime.Post(app.ShellContentActionMsg{ActionID: render.ActionTerminalTakeResizeOwner.String(), PaneID: paneID}); err != nil {
+		t.Fatalf("post pane owner action: %v", err)
+	}
+	waitForV3RuntimeState(t, runtime, func(root tuistate.Root) bool {
+		binding, ok := root.TerminalViews.PaneBinding(paneID)
+		return ok &&
+			binding.TerminalID == terminalID &&
+			binding.ViewID == tuistate.TerminalPaneViewID(paneID) &&
+			binding.ResizeRole == tuistate.TerminalResizeRoleOwner &&
+			binding.CanResize &&
+			binding.DesiredCols == cols &&
+			binding.DesiredRows == rows
+	}, "pane owner attach")
 }
 
 func waitForV3RuntimeState(t *testing.T, runtime *app.AppRuntime, predicate func(tuistate.Root) bool, label string) tuistate.Root {

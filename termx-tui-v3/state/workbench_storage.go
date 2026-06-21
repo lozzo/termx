@@ -111,7 +111,7 @@ func workbenchStorageWorkspace(workspace WorkspaceState) WorkspaceState {
 			workspace.Tabs[tabIndex].Panes[paneIndex] = workbenchStoragePane(workspace.Tabs[tabIndex].Panes[paneIndex])
 		}
 		for floatingIndex := range workspace.Tabs[tabIndex].Floatings {
-			workspace.Tabs[tabIndex].Floatings[floatingIndex].Pane = workbenchStoragePane(workspace.Tabs[tabIndex].Floatings[floatingIndex].Pane)
+			workspace.Tabs[tabIndex].Floatings[floatingIndex] = workbenchStorageFloating(workspace.Tabs[tabIndex].Floatings[floatingIndex])
 		}
 	}
 	return workspace
@@ -128,6 +128,16 @@ func workbenchStoragePane(pane PaneState) PaneState {
 		}
 	}
 	return pane
+}
+
+func workbenchStorageFloating(floating FloatingPaneState) FloatingPaneState {
+	pane := workbenchStoragePane(floating.Pane)
+	// 中文说明：floating 是共享 slot；坐标、大小、层级、隐藏/折叠和 fit 都是每个 TUI 的本地显示态。
+	return FloatingPaneState{
+		ID:    floating.ID,
+		Title: floating.Title,
+		Pane:  pane,
+	}
 }
 
 func (snapshot WorkbenchStorageSnapshot) ToShellStore() (ShellStore, error) {
@@ -212,6 +222,7 @@ func terminalViewBindingsForWorkbenchStorage(bindings []TerminalViewBinding) []T
 // ForWorkbenchStorage 只保留 pane/floating 到 terminal 的连接意图。
 // Channel、CanResize、SizeLocked、OwnerViewID 等字段属于 core 当前 truth，重进 TUI 后必须重新 attach 获取。
 func (binding TerminalViewBinding) ForWorkbenchStorage() TerminalViewBinding {
+	binding.SurfaceID = ""
 	binding.Channel = 0
 	binding.Attached = false
 	binding.CanResize = false
@@ -222,6 +233,7 @@ func (binding TerminalViewBinding) ForWorkbenchStorage() TerminalViewBinding {
 	binding.ResizeEpoch = 0
 	binding.ResizePending = false
 	binding.LastError = ""
+	binding.ResizeRole = TerminalResizeRoleFollower
 	return binding
 }
 

@@ -29,7 +29,7 @@ type ShellInteractionModeTimeoutMsg struct {
 
 func (ShellInteractionModeTimeoutMsg) isMsg() {}
 
-const stickyInteractionModeTimeout = 3 * time.Second
+const stickyInteractionModeTimeout = 1 * time.Second
 
 const stickyInteractionModeTimeoutToken CancelToken = "shell.interaction-mode.timeout"
 

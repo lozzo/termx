@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-tui-v3/app"
@@ -105,17 +107,19 @@ func runV3AttachRuntime(ctx context.Context, cfg v3AttachConfig) error {
 	if err != nil || cols <= 0 || rows <= 0 {
 		cols, rows = 80, 24
 	}
+	surfaceID := newV3RuntimeSurfaceID()
 	runtime := newV3InteractiveRuntimeWithOptions(cfg.TerminalID, cols, rows, client, workbenchStorageClient, clipboardStorageClient, host, logger, v3InteractiveRuntimeOptions{
-		TUIConfig: cfg.TUIConfig,
+		RuntimeSurfaceID: surfaceID,
+		TUIConfig:        cfg.TUIConfig,
 	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   cfg.TerminalID,
 		Cols:         cols,
 		Rows:         rows,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
-		SurfaceID:    "termx-cli-v3",
-		ViewID:       "termx-cli-v3-main",
+		ResizePolicy: protocol.ResizePolicyFollower,
+		SurfaceID:    surfaceID,
+		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 	}}); err != nil {
 		return err
 	}
@@ -133,11 +137,17 @@ func newV3InteractiveRuntime(terminalID string, cols int, rows int, client *prot
 
 type v3InteractiveRuntimeOptions struct {
 	SkipWorkbenchInitialLoad bool
+	RuntimeSurfaceID         string
 	TUIConfig                state.TUIConfigStore
 }
 
 func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, client *protocol.Client, workbenchStorageClient *protocol.Client, clipboardStorageClient *protocol.Client, host app.TerminalHost, logger *slog.Logger, opts v3InteractiveRuntimeOptions) *app.AppRuntime {
+	runtimeSurfaceID := opts.RuntimeSurfaceID
+	if runtimeSurfaceID == "" {
+		runtimeSurfaceID = app.DefaultRuntimeSurfaceID
+	}
 	initial := state.Root{
+		RuntimeSurfaceID: runtimeSurfaceID,
 		Session: state.TerminalSessionStore{
 			TerminalID: terminalID,
 			Cols:       cols,
@@ -175,6 +185,10 @@ func newV3InteractiveRuntimeWithOptions(terminalID string, cols int, rows int, c
 		app.WorkbenchDeps{Storage: storage, Ref: state.DefaultWorkbenchStorageRef(state.DefaultWorkspaceID), Logger: logger, SkipInitialLoad: opts.SkipWorkbenchInitialLoad},
 		app.ClipboardDeps{Storage: clipboardStorage, Ref: state.DefaultClipboardStorageRef(state.DefaultWorkspaceID), Logger: logger},
 	)
+}
+
+func newV3RuntimeSurfaceID() string {
+	return fmt.Sprintf("termx-cli-v3:%d:%d", os.Getpid(), time.Now().UnixNano())
 }
 
 func v3EmptyRootShell() state.ShellStore {

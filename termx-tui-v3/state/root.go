@@ -2,21 +2,22 @@ package state
 
 // Root 是 reducer-owned TUI-v3 state root。
 type Root struct {
-	Generation     uint64
-	History        HistoryStore
-	CopyMode       CopyModeStore
-	HistoryByView  map[string]HistoryStore
-	CopyModeByView map[string]CopyModeStore
-	Clipboard      ClipboardStore
-	Surface        TerminalSurfaceStore
-	Session        TerminalSessionStore
-	TerminalViews  TerminalViewStore
-	TerminalPool   TerminalPoolStore
-	Viewport       ViewportStore
-	Shell          ShellStore
-	HostTheme      HostThemeStore
-	Config         TUIConfigStore
-	WorkbenchSync  WorkbenchSyncStore
+	Generation       uint64
+	RuntimeSurfaceID string
+	History          HistoryStore
+	CopyMode         CopyModeStore
+	HistoryByView    map[string]HistoryStore
+	CopyModeByView   map[string]CopyModeStore
+	Clipboard        ClipboardStore
+	Surface          TerminalSurfaceStore
+	Session          TerminalSessionStore
+	TerminalViews    TerminalViewStore
+	TerminalPool     TerminalPoolStore
+	Viewport         ViewportStore
+	Shell            ShellStore
+	HostTheme        HostThemeStore
+	Config           TUIConfigStore
+	WorkbenchSync    WorkbenchSyncStore
 }
 
 // Advance 返回 generation 递增后的副本。

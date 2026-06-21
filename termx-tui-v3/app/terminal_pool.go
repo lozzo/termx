@@ -278,6 +278,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 	if resizePolicy == "" {
 		resizePolicy = state.TerminalResizeRoleFollower
 	}
+	surfaceID := runtimeSurfaceID(root)
 	return root, []Effect{FuncEffect{
 		Run: func(ctx context.Context) Msg {
 			result, err := deps.Terminal.Attach(ctx, services.TerminalAttachRequest{
@@ -286,7 +287,7 @@ func reduceTerminalPoolAttachRequest(root state.Root, msg TerminalPoolAttachRequ
 				Rows:         rows,
 				Mode:         "collaborator",
 				ResizePolicy: resizePolicy,
-				SurfaceID:    "termx-tui-v3",
+				SurfaceID:    surfaceID,
 				ViewID:       target.ViewID,
 			})
 			return TerminalPoolAttachResultMsg{TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: resizePolicy, Result: result, Err: err}
@@ -310,7 +311,7 @@ func reduceTerminalPoolAttachResult(root state.Root, msg TerminalPoolAttachResul
 		result.ViewID = target.ViewID
 	}
 	if result.SurfaceID == "" {
-		result.SurfaceID = "termx-tui-v3"
+		result.SurfaceID = runtimeSurfaceID(root)
 	}
 	if shouldPreserveTerminalPoolAttachResizePolicy(root, result.TerminalID, msg.ResizePolicy) {
 		result.ResizePolicy = msg.ResizePolicy
@@ -538,8 +539,9 @@ func reduceTerminalPoolReconnectRequest(root state.Root, msg TerminalPoolReconne
 		return root.Advance(), nil
 	}
 	cols, rows := terminalPoolAttachSizeForTarget(root, target)
+	surfaceID := runtimeSurfaceID(root)
 	return root, []Effect{FuncEffect{Run: func(ctx context.Context) Msg {
-		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: "termx-tui-v3", ViewID: target.ViewID})
+		result, err := deps.Terminal.Reconnect(ctx, services.TerminalReconnectRequest{TerminalID: msg.TerminalID, Cols: cols, Rows: rows, Mode: "collaborator", ResizePolicy: state.TerminalResizeRoleFollower, SurfaceID: surfaceID, ViewID: target.ViewID})
 		return TerminalPoolReconnectResultMsg{TerminalID: msg.TerminalID, TargetPaneID: target.PaneID, TargetFloatingID: target.FloatingID, ResizePolicy: state.TerminalResizeRoleFollower, Result: result, Err: err}
 	}}}
 }
@@ -843,8 +845,12 @@ func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
 			rows = 24
 		}
 		resizePolicy := binding.ResizeRole
-		if resizePolicy == "" {
+		if !binding.HasAuthoritativeResizeOwner() {
 			resizePolicy = state.TerminalResizeRoleFollower
+		}
+		surfaceID := binding.SurfaceID
+		if surfaceID == "" {
+			surfaceID = runtimeSurfaceID(root)
 		}
 		cfg := LiveConfig{
 			TerminalID:   terminalID,
@@ -852,7 +858,7 @@ func restartTerminalViewEffects(root state.Root, terminalID string) []Effect {
 			Rows:         rows,
 			Mode:         "collaborator",
 			ResizePolicy: resizePolicy,
-			SurfaceID:    binding.SurfaceID,
+			SurfaceID:    surfaceID,
 			ViewID:       binding.ViewID,
 		}
 		cfgCopy := cfg

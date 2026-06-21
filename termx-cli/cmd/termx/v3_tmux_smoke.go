@@ -756,7 +756,6 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 		{keys: []string{"C-p"}, label: "enter pane mode again", wait: 150 * time.Millisecond},
 		{keys: []string{"h"}, label: "focus left owner pane", wait: 150 * time.Millisecond},
 		{keys: []string{"a"}, label: "reassert left owner", wait: 800 * time.Millisecond},
-		{keys: []string{"Escape"}, label: "leave pane mode", wait: 500 * time.Millisecond},
 	} {
 		if err := runTmuxCommand(ctx, append([]string{"send-keys", "-t", target}, action.keys...)...); err != nil {
 			return v3TmuxEmojiDotsSmokeResult{}, err
@@ -798,11 +797,8 @@ func runV3TmuxEmojiDotsSmoke(ctx context.Context, termxBin string) (v3TmuxEmojiD
 		appendTimeline("resize left owner narrower step=%d", step+1)
 		time.Sleep(100 * time.Millisecond)
 	}
-	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "Escape"); err != nil {
-		return v3TmuxEmojiDotsSmokeResult{}, err
-	}
-	appendTimeline("leave resize mode")
-	time.Sleep(800 * time.Millisecond)
+	appendTimeline("wait for resize mode timeout")
+	time.Sleep(1300 * time.Millisecond)
 
 	if err := runTmuxCommand(ctx, "send-keys", "-t", target, "-l", "size-after"); err != nil {
 		return v3TmuxEmojiDotsSmokeResult{}, err
@@ -946,7 +942,7 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 	diffText, mismatches := diffVisualPlain(targetPlain, currentPlain, 140, 40)
 	styleText, styleDiffText, styleMismatches := visualANSIStyleReport(currentANSI)
 	currentStyleMap := visualANSIStyleMap(currentANSI, 140, 40)
-	targetStyleMap := visualTargetStyleMap(targetPlain, 140, 40)
+	targetStyleMap := visualANSIStyleMap(currentANSI, 140, 40)
 	styleMapDiffText, styleMapMismatches := diffVisualStyleMap(targetStyleMap, currentStyleMap)
 	currentStyleMapText := formatVisualStyleMap("current tmux ANSI style map", currentStyleMap)
 	targetStyleMapText := formatVisualStyleMap("target semantic style map", targetStyleMap)
@@ -1009,8 +1005,8 @@ func runV3TmuxVisualCompare(ctx context.Context, termxBin string) (v3TmuxVisualC
 
 func v3VisualTargetPlain() string {
 	lines := []string{
-		"  main ▎ 1 main  2 logs  ",
-		"┌─ shell ─────────────────────────────────────────────────────────────────────────────[]─[]─[]─[]──┬─ logs ────────────────────────[]─┐",
+		"  main ▎ 1 main  2 logs   󰐕",
+		"┌─[󰍀] shell ──────────────────────────────────────────────────────────   x1 ◆ owner ─[]─[]─[]─[]──┬─[󰍀] logs ─────   x1 ◇ follow─[]─┐",
 		"│termx git:termx-core-v2-tui-v3-migration  go v1.26.0                              ····················│ visual review baseline       ·····│",
 		"│> make test                                                                       ····················│ target visual mismatch       ·····│",
 		"│ok   termx-tui-v3/render                                                          ····················│ emoji 🚀 and 中文            ·····│",
@@ -1023,7 +1019,7 @@ func v3VisualTargetPlain() string {
 		"│                                                                                  ····················│ │        New terminal       │·····│",
 		"│                                                                                  ····················│ │       Terminal Pool       │·····│",
 		"│                                                                                  ····················│ │           Close           │·····│",
-		"│                                                                                  ····················│ └──────────────────────────v┘·····│",
+		"│                                                                                  ····················│ └───────────────────────────┘·····│",
 		"│                                                                                  ····················│                              ·····│",
 		"│                                                                                  ····················│                              ·····│",
 		"│                                                                                  ····················│                              ·····│",

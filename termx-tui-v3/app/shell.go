@@ -782,8 +782,22 @@ func requestPaneResizeOwner(root state.Root, paneID string) (state.Root, []Effec
 		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no terminal view"})
 		return root.Advance(), nil
 	}
+	if binding.Channel != 0 {
+		root.TerminalViews = root.TerminalViews.TransferPaneResizeOwner(paneID)
+		binding, _ = root.TerminalViews.PaneBinding(paneID)
+		cols := binding.DesiredCols
+		rows := binding.DesiredRows
+		if rect, ok := terminalViewContentRect(root, render.Rect{}, binding); ok {
+			cols = rect.W
+			rows = rect.H
+		}
+		root.TerminalViews, _ = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, ViewID: binding.ViewID}
+		}}}
+	}
 	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-		return liveAttachMsgForResizeOwner(binding)
+		return liveAttachMsgForResizeOwner(root, binding)
 	}}}
 }
 
@@ -793,18 +807,32 @@ func requestFloatingResizeOwner(root state.Root, floatingID string) (state.Root,
 		root.Shell = root.Shell.EnsureDefaults().AddToast(state.ToastSpec{Severity: state.ToastWarning, Title: "terminal.owner", Body: "no terminal view"})
 		return root.Advance(), nil
 	}
+	if binding.Channel != 0 {
+		root.TerminalViews = root.TerminalViews.TransferResizeOwner(binding.ViewID)
+		binding, _ = root.TerminalViews.FloatingBinding(floatingID)
+		cols := binding.DesiredCols
+		rows := binding.DesiredRows
+		if rect, ok := terminalViewContentRect(root, render.Rect{}, binding); ok {
+			cols = rect.W
+			rows = rect.H
+		}
+		root.TerminalViews, _ = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
+		return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
+			return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, ViewID: binding.ViewID}
+		}}}
+	}
 	return root, []Effect{FuncEffect{Run: func(context.Context) Msg {
-		return liveAttachMsgForResizeOwner(binding)
+		return liveAttachMsgForResizeOwner(root, binding)
 	}}}
 }
 
-func liveAttachMsgForResizeOwner(binding state.TerminalViewBinding) LiveAttachMsg {
+func liveAttachMsgForResizeOwner(root state.Root, binding state.TerminalViewBinding) LiveAttachMsg {
 	return LiveAttachMsg{Config: LiveConfig{
 		TerminalID:   binding.TerminalID,
 		Cols:         binding.DesiredCols,
 		Rows:         binding.DesiredRows,
 		ResizePolicy: state.TerminalResizeRoleOwner,
-		SurfaceID:    binding.SurfaceID,
+		SurfaceID:    runtimeSurfaceID(root),
 		ViewID:       binding.ViewID,
 	}}
 }
@@ -1557,13 +1585,13 @@ func updateTerminalViewsAfterPaneCommand(root state.Root, command state.PaneComm
 		if terminalID == "" {
 			return root
 		}
-		binding := state.NewPaneTerminalView(command.NewPane.ID, terminalID, 0, 0, 0, state.TerminalResizeRoleOwner, "", state.TerminalPaneViewID(command.NewPane.ID), true)
+		binding := state.NewPaneTerminalView(command.NewPane.ID, terminalID, 0, 0, 0, state.TerminalResizeRoleFollower, "", state.TerminalPaneViewID(command.NewPane.ID), false)
 		if hasTargetBinding && targetBinding.TerminalID == terminalID {
 			binding.SurfaceID = targetBinding.SurfaceID
 			binding.DesiredCols = targetBinding.DesiredCols
 			binding.DesiredRows = targetBinding.DesiredRows
 		}
-		root.TerminalViews = root.TerminalViews.BindPane(binding).TransferPaneResizeOwner(command.NewPane.ID)
+		root.TerminalViews = root.TerminalViews.BindPane(binding)
 	case state.PaneCommandClose:
 		root = invalidateCopyModeForClosedPane(root, command.Target.PaneID)
 		root.TerminalViews = root.TerminalViews.DetachPane(command.Target.PaneID)
@@ -1665,13 +1693,13 @@ func bindWorkbenchSplitTerminalView(root state.Root, previousShell state.ShellSt
 	if terminalID == "" {
 		return root
 	}
-	binding := state.NewPaneTerminalView(result.ID, terminalID, 0, 0, 0, state.TerminalResizeRoleOwner, "", state.TerminalPaneViewID(result.ID), true)
+	binding := state.NewPaneTerminalView(result.ID, terminalID, 0, 0, 0, state.TerminalResizeRoleFollower, "", state.TerminalPaneViewID(result.ID), false)
 	if hasTargetBinding && targetBinding.TerminalID == terminalID {
 		binding.SurfaceID = targetBinding.SurfaceID
 		binding.DesiredCols = targetBinding.DesiredCols
 		binding.DesiredRows = targetBinding.DesiredRows
 	}
-	root.TerminalViews = root.TerminalViews.BindPane(binding).TransferPaneResizeOwner(result.ID)
+	root.TerminalViews = root.TerminalViews.BindPane(binding)
 	root.Shell = root.Shell.BindPaneTerminal(state.PaneCommandTarget{PaneID: result.ID}, terminalID)
 	return root
 }
@@ -1733,17 +1761,7 @@ func shouldSuppressFloatingCommandSuccessToast(command state.FloatingCommand) bo
 func shouldPersistFloatingCommand(command state.FloatingCommand) bool {
 	switch command.Action {
 	case state.FloatingCommandCreate,
-		state.FloatingCommandClose,
-		state.FloatingCommandCenter,
-		state.FloatingCommandToggleCollapse,
-		state.FloatingCommandSummon,
-		state.FloatingCommandMove,
-		state.FloatingCommandResize,
-		state.FloatingCommandToggleAll,
-		state.FloatingCommandShowAll,
-		state.FloatingCommandCollapseAll,
-		state.FloatingCommandFit,
-		state.FloatingCommandToggleAutoFit:
+		state.FloatingCommandClose:
 		return true
 	default:
 		return false

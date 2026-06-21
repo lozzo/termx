@@ -2410,6 +2410,14 @@ func TestProtocolServiceMultipleAttachmentsResizeOwnership(t *testing.T) {
 	if follower.ResizeControl.CanResize || follower.ResizeControl.Reason != protocol.ResizeControlReasonFollower || follower.ResizeControl.OwnerViewID != "view-owner" {
 		t.Fatalf("follower should not own resize, got %#v", follower.ResizeControl)
 	}
+	nextOwner, err := client.AttachWithOptions(context.Background(), protocol.AttachParams{TerminalID: "term-1", ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-next", ViewID: "view-next"})
+	if err != nil {
+		t.Fatalf("attach next owner: %v", err)
+	}
+	if nextOwner.ResizeControl == nil || !nextOwner.ResizeControl.CanResize || nextOwner.ResizeControl.OwnerViewID != "view-next" {
+		t.Fatalf("explicit owner attach should take resize owner, got %#v", nextOwner.ResizeControl)
+	}
+	owner = nextOwner
 
 	result, err := client.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: follower.Channel, Cols: 40, Rows: 10, ResizePolicy: protocol.ResizePolicyFollower, SurfaceID: "surface-follower", ViewID: "view-follower"})
 	if err != nil {
@@ -2437,11 +2445,22 @@ func TestProtocolServiceMultipleAttachmentsResizeOwnership(t *testing.T) {
 	if len(resizes) != 1 {
 		t.Fatalf("same-size ensure_resize must not reach process again, got %#v", resizes)
 	}
+	transfer, err := client.EnsureResize(context.Background(), protocol.EnsureResizeParams{TerminalID: "term-1", Channel: follower.Channel, Cols: 30, Rows: 8, ResizePolicy: protocol.ResizePolicyOwner, SurfaceID: "surface-follower", ViewID: "view-follower"})
+	if err != nil {
+		t.Fatalf("same-size owner transfer ensure_resize: %v", err)
+	}
+	if transfer.Resized || transfer.ResizeControl == nil || !transfer.ResizeControl.CanResize || transfer.ResizeControl.OwnerViewID != "view-follower" {
+		t.Fatalf("same-size owner transfer should refresh ownership without PTY resize, got %#v", transfer)
+	}
+	_, resizes, _, _ = process.snapshot()
+	if len(resizes) != 1 {
+		t.Fatalf("same-size owner transfer must not resize process again, got %#v", resizes)
+	}
 	var info protocol.TerminalInfo
 	if err := client.Call(context.Background(), "get", protocol.GetParams{TerminalID: "term-1"}, &info); err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if info.ResizeOwnership == nil || info.ResizeOwnership.OwnerViewID != "view-owner" || info.ResizeOwnerAttachmentCount != 2 {
+	if info.ResizeOwnership == nil || info.ResizeOwnership.OwnerViewID != "view-follower" || info.ResizeOwnerAttachmentCount != 3 {
 		t.Fatalf("expected ownership summary in terminal info, got %#v", info)
 	}
 }

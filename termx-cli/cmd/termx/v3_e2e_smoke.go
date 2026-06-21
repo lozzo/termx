@@ -94,15 +94,17 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 
 	host := app.NewFakeTerminalHost(16)
 	host.SetSize(80, 24)
-	runtime := newV3InteractiveRuntime(created.TerminalID, 80, 24, client, workbenchStorageClient, clipboardStorageClient, host, nil)
+	runtime := newV3InteractiveRuntimeWithOptions(created.TerminalID, 80, 24, client, workbenchStorageClient, clipboardStorageClient, host, nil, v3InteractiveRuntimeOptions{
+		RuntimeSurfaceID: "v3-e2e-smoke",
+	})
 	if err := runtime.Post(app.LiveAttachMsg{Config: app.LiveConfig{
 		TerminalID:   created.TerminalID,
 		Cols:         80,
 		Rows:         24,
 		Mode:         "collaborator",
-		ResizePolicy: protocol.ResizePolicyOwner,
+		ResizePolicy: protocol.ResizePolicyFollower,
 		SurfaceID:    "v3-e2e-smoke",
-		ViewID:       "v3-e2e-smoke-main",
+		ViewID:       state.TerminalPaneViewID(state.DefaultPaneID),
 	}}); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
@@ -125,7 +127,7 @@ func runV3E2ESmoke(ctx context.Context) (v3E2ESmokeResult, error) {
 	if err := drainV3RuntimeUntilFrameContains(ctx, runtime, host, "beta"); err != nil {
 		return v3E2ESmokeResult{}, err
 	}
-	if len(runtime.State().Surface.Lines) < 2 || runtime.State().Surface.Lines[0] != "alpha" || runtime.State().Surface.Lines[1] != "beta" {
+	if !v3E2ESurfaceContains(runtime.State().Surface, "alpha") || !v3E2ESurfaceContains(runtime.State().Surface, "beta") {
 		return v3E2ESmokeResult{}, fmt.Errorf("v3 e2e smoke: attach did not hydrate live surface rows, surface=%#v", runtime.State().Surface)
 	}
 	if !v3E2EFramesContain(host.Frames(), "alpha") || !v3E2EFramesContain(host.Frames(), "beta") {
@@ -310,7 +312,7 @@ func validateV3E2EStyledChrome(frames []render.Frame) error {
 		return fmt.Errorf("v3 e2e smoke: no frames rendered")
 	}
 	frame := frames[len(frames)-1]
-	required := []string{"  main", "▎ 1 main ", "󰐕", "┌─ shell", "◆ owner", "ws:main"}
+	required := []string{"  main", "▎ 1 main ", "󰐕", "shell", "◆ owner", "ws:main"}
 	for _, marker := range required {
 		found := false
 		for _, line := range frame.Lines {
@@ -358,6 +360,24 @@ func v3E2EFramesContain(frames []render.Frame, value string) bool {
 			if strings.Contains(line, value) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func v3E2ESurfaceContains(surface state.TerminalSurfaceStore, value string) bool {
+	for _, line := range surface.Lines {
+		if strings.Contains(line, value) {
+			return true
+		}
+	}
+	for _, row := range surface.Screen {
+		var builder strings.Builder
+		for _, cell := range row {
+			builder.WriteString(cell.Text)
+		}
+		if strings.Contains(builder.String(), value) {
+			return true
 		}
 	}
 	return false

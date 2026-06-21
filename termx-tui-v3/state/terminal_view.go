@@ -407,6 +407,11 @@ func (store TerminalViewStore) TransferResizeOwner(viewID string) TerminalViewSt
 		if candidateID == viewID {
 			becameOwner := !binding.HasResizeOwner()
 			binding.ResizeRole = TerminalResizeRoleOwner
+			// 中文说明：本地抢 owner 后不能继续保留旧 core owner identity；
+			// 否则后续 layout pass 仍会把当前 view 判成 follower，再把 resize 打回旧 owner。
+			binding.OwnerSurfaceID = ""
+			binding.OwnerViewID = ""
+			binding.ControlReason = ""
 			binding = binding.applyTerminalSizeLockProjection(locked)
 			if !locked {
 				binding.CanResize = true
@@ -499,6 +504,15 @@ func (store TerminalViewStore) ApplyResizeControl(viewID string, projection Term
 	if !ok {
 		return store, false
 	}
+	if binding.ResizeRole == TerminalResizeRoleOwner &&
+		binding.ResizePending &&
+		projection.ResizeRole == TerminalResizeRoleFollower &&
+		projection.OwnerViewID != "" &&
+		projection.OwnerViewID != binding.ViewID {
+		// 中文说明：本地刚显式抢 owner 后，旧 attach/resize projection 可能仍带着前任 owner；
+		// 这类 follower 回包不能把 pending owner 立刻降回 follower。
+		return store, false
+	}
 	binding.CanResize = projection.CanResize
 	binding.SizeLocked = projection.SizeLocked
 	binding.ControlReason = projection.ControlReason
@@ -579,7 +593,13 @@ func (binding TerminalViewBinding) HasResizeOwner() bool {
 		return false
 	}
 	if binding.OwnerViewID != "" {
-		return binding.OwnerViewID == binding.ViewID
+		if binding.OwnerViewID != binding.ViewID {
+			return false
+		}
+		// 中文说明：不同 TUI 实例可以有相同 logical ViewID；core owner 必须同时匹配 surface。
+		if binding.OwnerSurfaceID != "" {
+			return binding.OwnerSurfaceID == binding.SurfaceID
+		}
 	}
 	return true
 }

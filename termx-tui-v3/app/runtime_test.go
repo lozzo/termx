@@ -1350,8 +1350,8 @@ func TestAppRuntimeTakeResizeOwnerRequiresDoubleClick(t *testing.T) {
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("second drain: %v", err)
 	}
-	if binding, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); binding.ResizeRole != state.TerminalResizeRoleFollower || binding.CanResize {
-		t.Fatalf("double click should not change owner before service result, got %#v", binding)
+	if binding, _ := runtime.State().TerminalViews.PaneBinding(state.DefaultPaneID); binding.ResizeRole != state.TerminalResizeRoleOwner || !binding.CanResize {
+		t.Fatalf("double click should switch local owner before service confirmation, got %#v", binding)
 	}
 }
 
@@ -1375,7 +1375,7 @@ func TestInteractiveRuntimeTerminalSizeLockChromeButtonTogglesTags(t *testing.T)
 		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-1", Title: "main", Tags: map[string]string{"role": "shell"}}}},
 	}
 	runtime := NewInteractiveRuntime(root, host, NewSyncEffectRunner(), LiveDeps{Terminal: terminal}, CopyModeDeps{Core: &services.FakeCoreClient{}})
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24, ResizePolicy: state.TerminalResizeRoleOwner, SurfaceID: "test-surface", ViewID: state.TerminalPaneViewID(state.DefaultPaneID)}}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2790,7 +2790,7 @@ func TestAppRuntimeDragsPaneResizeHitRegions(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 		CopyModeDeps{Core: &services.FakeCoreClient{}},
 	)
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {

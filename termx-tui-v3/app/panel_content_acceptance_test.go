@@ -65,7 +65,14 @@ func TestPanelContentAcceptanceMatrix(t *testing.T) {
 			LiveDeps{Terminal: terminal},
 			CopyModeDeps{Core: &services.FakeCoreClient{}, Rows: 20},
 		)
-		if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-main", Cols: 100, Rows: 28}}); err != nil {
+		if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{
+			TerminalID:   "term-main",
+			Cols:         100,
+			Rows:         28,
+			ResizePolicy: state.TerminalResizeRoleOwner,
+			SurfaceID:    "test-surface",
+			ViewID:       state.TerminalPaneViewID("pane-right"),
+		}}); err != nil {
 			t.Fatalf("post attach: %v", err)
 		}
 		if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{

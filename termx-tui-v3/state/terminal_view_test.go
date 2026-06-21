@@ -122,6 +122,23 @@ func TestTerminalViewStoreDoesNotPromoteOwnerRoleToResizePermission(t *testing.T
 	}
 }
 
+func TestTerminalViewBindingResizeOwnerRequiresMatchingSurfaceAndView(t *testing.T) {
+	binding := NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface-a", "view-1", true)
+	binding.OwnerSurfaceID = "surface-b"
+	binding.OwnerViewID = "view-1"
+	if binding.HasResizeOwner() || binding.HasAuthoritativeResizeOwner() {
+		t.Fatalf("owner from another runtime surface must not be local owner, binding=%#v", binding)
+	}
+	binding.OwnerSurfaceID = "surface-a"
+	if !binding.HasResizeOwner() || !binding.HasAuthoritativeResizeOwner() {
+		t.Fatalf("matching surface+view should be local owner, binding=%#v", binding)
+	}
+	binding.OwnerViewID = "view-2"
+	if binding.HasResizeOwner() || binding.HasAuthoritativeResizeOwner() {
+		t.Fatalf("matching surface with different view should not be local owner, binding=%#v", binding)
+	}
+}
+
 func TestTerminalViewStoreResizeControlDemotesPreviousOwner(t *testing.T) {
 	store := TerminalViewStore{}
 	store = store.BindPane(NewPaneTerminalView("pane-1", "term-1", 7, 80, 24, TerminalResizeRoleOwner, "surface", "view-1", true))

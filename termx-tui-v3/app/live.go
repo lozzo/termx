@@ -12,6 +12,8 @@ import (
 	"github.com/lozzow/termx/termx-tui-v3/state"
 )
 
+const DefaultRuntimeSurfaceID = "termx-tui-v3"
+
 type LiveConfig struct {
 	TerminalID   string
 	Cols         int
@@ -28,6 +30,13 @@ type LiveDeps struct {
 }
 
 const liveStreamTokenPrefix = "terminal.live.stream:"
+
+func runtimeSurfaceID(root state.Root) string {
+	if root.RuntimeSurfaceID != "" {
+		return root.RuntimeSurfaceID
+	}
+	return DefaultRuntimeSurfaceID
+}
 
 // NewLiveRuntime 组合 live app 主路径：TerminalHost 输入 -> reducer/effect ->
 // terminal service -> render VM -> FrameSink。
@@ -118,9 +127,10 @@ type LiveAttachMsg struct {
 func (LiveAttachMsg) isMsg() {}
 
 type LiveAttachResultMsg struct {
-	TerminalID string
-	Result     services.TerminalAttachResult
-	Err        error
+	TerminalID            string
+	RequestedResizePolicy string
+	Result                services.TerminalAttachResult
+	Err                   error
 }
 
 func (LiveAttachResultMsg) isMsg() {}
@@ -311,6 +321,9 @@ func NewLiveReducer(deps LiveDeps) Reducer {
 				if binding.IsStaleResizeResult(msg.Seq) {
 					return recoverLatestResizeAfterStaleResult(root, msg)
 				}
+				if liveResizeResultConflictsWithLocalOwner(root, binding, msg.Result) {
+					return recoverLatestResizeAfterStaleResult(root, msg)
+				}
 			}
 			if !viewScoped && root.Session.IsStaleResizeResult(msg.Seq) {
 				return recoverLatestResizeAfterStaleResult(root, msg)
@@ -372,13 +385,13 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 	cfg := msg.Config
 	cfg.Cols, cfg.Rows = liveAttachContentSize(root, cfg)
 	if cfg.SurfaceID == "" {
-		cfg.SurfaceID = "termx-tui-v3"
+		cfg.SurfaceID = runtimeSurfaceID(root)
 	}
 	if cfg.ViewID == "" {
 		cfg.ViewID = liveAttachDefaultViewID(root)
 	}
 	if cfg.ResizePolicy == "" {
-		cfg.ResizePolicy = state.TerminalResizeRoleOwner
+		cfg.ResizePolicy = state.TerminalResizeRoleFollower
 	}
 	logLifecycleTrace(deps.Logger, "live.attach.request",
 		"terminal_id", cfg.TerminalID,
@@ -406,7 +419,7 @@ func reduceLiveAttach(root state.Root, msg LiveAttachMsg, deps LiveDeps) (state.
 				SurfaceID:    cfg.SurfaceID,
 				ViewID:       cfg.ViewID,
 			})
-			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, Result: result, Err: err}
+			return LiveAttachResultMsg{TerminalID: cfg.TerminalID, RequestedResizePolicy: cfg.ResizePolicy, Result: result, Err: err}
 		},
 	}}
 }
@@ -480,6 +493,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 			logLiveAttachApplied(deps, root, result, "floating-existing")
 			effects := workbenchPersistEffects("terminal.attach")
 			effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+			root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 			return root.Advance(), effects
 		}
 	}
@@ -503,6 +517,7 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 		logLiveAttachApplied(deps, root, result, "floating-target")
 		effects := workbenchPersistEffects("terminal.attach")
 		effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+		root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 		return root.Advance(), effects
 	}
 	root.Shell = root.Shell.EnsureActiveTabForAttach()
@@ -528,7 +543,36 @@ func reduceLiveAttachResult(root state.Root, msg LiveAttachResultMsg, deps LiveD
 	logLiveAttachApplied(deps, root, result, "pane")
 	effects := workbenchPersistEffects("terminal.attach")
 	effects = append(effects, liveEffects(result.TerminalID, result.Cols, result.Rows, deps)...)
+	root, effects = appendResizeOwnerConfirmAfterAttach(root, msg, result, viewID, effects)
 	return root.Advance(), effects
+}
+
+func appendResizeOwnerConfirmAfterAttach(root state.Root, msg LiveAttachResultMsg, result services.TerminalAttachResult, viewID string, effects []Effect) (state.Root, []Effect) {
+	if msg.RequestedResizePolicy != state.TerminalResizeRoleOwner || result.CanResize || viewID == "" {
+		return root, effects
+	}
+	binding, ok := root.TerminalViews.Views[viewID]
+	if !ok || binding.Channel == 0 || binding.TerminalID == "" {
+		return root, effects
+	}
+	root.TerminalViews = root.TerminalViews.TransferResizeOwner(viewID)
+	binding = root.TerminalViews.Views[viewID]
+	cols := binding.DesiredCols
+	rows := binding.DesiredRows
+	if rect, ok := terminalViewContentRect(root, render.Rect{}, binding); ok {
+		cols = rect.W
+		rows = rect.H
+	}
+	seq := uint64(0)
+	root.TerminalViews, _ = root.TerminalViews.RequestViewResize(binding.ViewID, cols, rows)
+	if nextBinding, ok := root.TerminalViews.Views[viewID]; ok {
+		binding = nextBinding
+		seq = binding.RequestSeq
+	}
+	effects = append(effects, FuncEffect{Run: func(context.Context) Msg {
+		return LiveResizeMsg{TerminalID: binding.TerminalID, Cols: cols, Rows: rows, Seq: seq, ViewID: binding.ViewID}
+	}})
+	return root, effects
 }
 
 func logLiveAttachApplied(deps LiveDeps, root state.Root, result services.TerminalAttachResult, targetKind string) {
@@ -988,9 +1032,6 @@ func liveInputTargetFromBinding(binding state.TerminalViewBinding) liveInputTarg
 		DesiredRows: binding.DesiredRows,
 		Floating:    binding.FloatingID != "",
 	}
-	if info.SurfaceID == "" {
-		info.SurfaceID = "termx-tui-v3"
-	}
 	return info
 }
 
@@ -1015,7 +1056,7 @@ func liveInputAttachRequest(root state.Root, target liveInputTargetInfo) service
 	}
 	surfaceID := target.SurfaceID
 	if surfaceID == "" {
-		surfaceID = "termx-tui-v3"
+		surfaceID = runtimeSurfaceID(root)
 	}
 	return services.TerminalAttachRequest{
 		TerminalID:   target.TerminalID,
@@ -1176,6 +1217,22 @@ func adoptActiveOwnerResizeBinding(root state.Root, msg LiveResizeMsg) (state.Ro
 
 func hasResizeControlResult(result services.TerminalResizeResult) bool {
 	return result.TerminalID != "" || result.ControlReason != "" || result.SizeLocked || result.ResizeEpoch != 0 || result.OwnerSurfaceID != "" || result.OwnerViewID != "" || result.ResizePolicy != "" || result.SurfaceID != "" || result.ViewID != "" || result.CanResize || result.Resized
+}
+
+func liveResizeResultConflictsWithLocalOwner(root state.Root, binding state.TerminalViewBinding, result services.TerminalResizeResult) bool {
+	if !hasResizeControlResult(result) || result.TerminalID == "" || result.OwnerViewID != binding.ViewID {
+		return false
+	}
+	if binding.HasResizeOwner() {
+		return false
+	}
+	owner, ok := root.TerminalViews.OwnerBinding(binding.TerminalID)
+	if !ok {
+		return false
+	}
+	// 中文说明：旧 owner 的异步 resize result 可能晚于用户 take-owner 返回；
+	// 若本地已有另一个 owner，就不能让旧 result 再把 ownership 投影抢回去。
+	return owner.ViewID != "" && owner.ViewID != binding.ViewID
 }
 
 func resizeControlProjectionFromResult(result services.TerminalResizeResult) state.TerminalResizeControlProjection {

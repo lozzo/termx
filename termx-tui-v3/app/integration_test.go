@@ -805,7 +805,7 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 		CopyModeDeps{Core: core},
 	)
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfigForPane("term-1", 80, 24, "pane-2")}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -4751,7 +4751,7 @@ func TestCopyModePaneSizeCommandRebindsLatestAtContentCols(t *testing.T) {
 		CopyModeDeps{Core: core, Rows: 20},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfigForPane("term-1", 80, 24, "pane-2")}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -4804,7 +4804,7 @@ func TestInteractiveRuntimeHostResizeKeepsReboundCopyWindowAfterTerminalResizeRe
 		CopyModeDeps{Core: core, Rows: 20},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {

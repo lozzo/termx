@@ -83,6 +83,21 @@ func (service *refreshingInputTerminalService) SendInput(_ context.Context, req 
 	return nil
 }
 
+func ownerLiveAttachConfig(terminalID string, cols int, rows int) LiveConfig {
+	return ownerLiveAttachConfigForPane(terminalID, cols, rows, state.DefaultPaneID)
+}
+
+func ownerLiveAttachConfigForPane(terminalID string, cols int, rows int, paneID string) LiveConfig {
+	return LiveConfig{
+		TerminalID:   terminalID,
+		Cols:         cols,
+		Rows:         rows,
+		ResizePolicy: state.TerminalResizeRoleOwner,
+		SurfaceID:    "test-surface",
+		ViewID:       state.TerminalPaneViewID(paneID),
+	}
+}
+
 func TestLiveInputRoutesLSSequenceAcrossTwoTiledPaneBindings(t *testing.T) {
 	terminal := &services.FakeTerminalService{}
 	shell := state.DefaultShell().
@@ -521,7 +536,7 @@ func TestLiveAppAttachRenderInputAndResize(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -1162,9 +1177,9 @@ func TestTerminalSizeLockBlocksSplitLayoutResize(t *testing.T) {
 	if _, ok := liveResizeMsgFromEffects(effects); ok {
 		t.Fatalf("splitting a locked terminal must not emit PTY resize, effects=%#v", effects)
 	}
-	owner, _ := next.TerminalViews.PaneBinding("pane-2")
-	if owner.ResizeRole != state.TerminalResizeRoleOwner || owner.CanResize || !owner.SizeLocked || owner.ControlReason != "size_locked" {
-		t.Fatalf("new split owner should inherit terminal lock without resize authority, got %#v", owner)
+	follower, _ := next.TerminalViews.PaneBinding("pane-2")
+	if follower.ResizeRole != state.TerminalResizeRoleFollower || follower.CanResize || !follower.SizeLocked || follower.ControlReason != "size_locked" {
+		t.Fatalf("new split view should inherit terminal lock as follower intent, got %#v", follower)
 	}
 	previous, _ := next.TerminalViews.PaneBinding(state.DefaultPaneID)
 	if previous.CanResize || !previous.SizeLocked {
@@ -1172,9 +1187,9 @@ func TestTerminalSizeLockBlocksSplitLayoutResize(t *testing.T) {
 	}
 
 	next.TerminalViews = next.TerminalViews.ApplyTerminalSizeLock("term-1", false)
-	owner, _ = next.TerminalViews.PaneBinding("pane-2")
-	if owner.SizeLocked || !owner.CanResize {
-		t.Fatalf("unlock should restore resize authority to current owner, got %#v", owner)
+	follower, _ = next.TerminalViews.PaneBinding("pane-2")
+	if follower.SizeLocked || follower.CanResize || follower.ResizeRole != state.TerminalResizeRoleFollower {
+		t.Fatalf("unlock should clear lock projection without inventing owner authority, got %#v", follower)
 	}
 }
 
@@ -1549,7 +1564,7 @@ func TestLiveAppInputDisplaysOnlyAfterSurfaceEventAndExitState(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2152,7 +2167,7 @@ func TestLiveAppAttachHydratesReadySurfaceFromService(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2219,7 +2234,7 @@ func TestLiveRuntimeConsumesBackendLiveEventsAndRedraws(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2421,7 +2436,7 @@ func TestAttachResultWithExistingSizeIsCorrectedToContentRect(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2450,7 +2465,7 @@ func TestHostResizeUsesActiveContentRectAndDeduplicates(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2485,7 +2500,7 @@ func TestLiveResizeKeepsLatestContentRectAndIgnoresOldSizeSurface(t *testing.T) 
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2652,7 +2667,7 @@ func TestLiveSurfaceProtocolTerminalExitedIsNotErrorUI(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 40}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 100, 40)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2808,7 +2823,7 @@ func TestLiveResizeOverflowMarkersStayOnChrome(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 40}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 100, 40)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2882,7 +2897,7 @@ func TestHostResizeUsesBusinessActivePaneWhenFloatingOwnsVisualFocus(t *testing.
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2929,7 +2944,7 @@ func TestHeaderFooterHideResizesTerminalWithReclaimedContentRows(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -2991,7 +3006,7 @@ func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -3010,8 +3025,8 @@ func TestVerticalSplitActivePaneReservesDividerCellForResize(t *testing.T) {
 		t.Fatalf("drain split: %v", err)
 	}
 
-	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 38 || got.Rows != 20 {
-		t.Fatalf("active pane right of divider must reserve split divider without shell frame inset, got %#v", got)
+	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 39 || got.Rows != 20 || got.ViewID != state.TerminalPaneViewID(state.DefaultPaneID) {
+		t.Fatalf("split should resize existing owner pane rather than follower split pane, got %#v", got)
 	}
 }
 
@@ -3026,7 +3041,7 @@ func TestNestedEmptySplitResizesOwnerTerminalViewContentRect(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 140, Rows: 36}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 140, 36)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Post(ShellSetPanelPresentationMsg{Presentation: state.PanelPresentationSplitLine}); err != nil {
@@ -3111,7 +3126,7 @@ func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 80, 24)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
@@ -3126,6 +3141,11 @@ func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("post split active pane: %v", err)
 	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split: %v", err)
+	}
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 9, 39, 20, state.TerminalResizeRoleOwner, "test-surface", state.TerminalPaneViewID("pane-2"), true)).TransferPaneResizeOwner("pane-2")
+	terminal.Resizes = nil
 	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
 		Action:   state.PaneCommandSetSize,
 		Target:   state.PaneCommandTarget{PaneID: "pane-2"},
@@ -3138,6 +3158,9 @@ func TestPaneSizeCommandResizesActiveTerminalContentRect(t *testing.T) {
 		t.Fatalf("drain size command: %v", err)
 	}
 
+	if len(terminal.Resizes) == 0 {
+		t.Fatalf("expected explicit pane owner resize request")
+	}
 	if got := terminal.Resizes[len(terminal.Resizes)-1]; got.Cols != 22 || got.Rows != 20 {
 		t.Fatalf("fixed right pane size must drive active content resize, got %#v all=%#v", got, terminal.Resizes)
 	}
@@ -3154,19 +3177,25 @@ func TestBatchedPaneCommandsResizeTerminalToLatestContentRect(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 100, Rows: 40}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 100, 40)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
 		t.Fatalf("drain attach: %v", err)
 	}
+	if err := runtime.Post(ShellPaneCommandMsg{Command: state.PaneCommand{
+		Action:         state.PaneCommandSplit,
+		SplitDirection: state.SplitDirectionVertical,
+		NewPane:        state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive},
+	}}); err != nil {
+		t.Fatalf("post split command: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain split command: %v", err)
+	}
+	runtime.state.TerminalViews = runtime.state.TerminalViews.BindPane(state.NewPaneTerminalView("pane-2", "term-1", 9, 48, 36, state.TerminalResizeRoleOwner, "test-surface", state.TerminalPaneViewID("pane-2"), true)).TransferPaneResizeOwner("pane-2")
 	terminal.Resizes = nil
 	for _, command := range []state.PaneCommand{
-		{
-			Action:         state.PaneCommandSplit,
-			SplitDirection: state.SplitDirectionVertical,
-			NewPane:        state.PaneState{ID: "pane-2", Title: "right", Kind: state.PaneTerminalLive},
-		},
 		{Action: state.PaneCommandResize, Target: state.PaneCommandTarget{PaneID: "pane-2"}, ResizeDirection: state.PaneResizeLeft, Delta: 6},
 		{Action: state.PaneCommandZoom, Target: state.PaneCommandTarget{PaneID: "pane-2"}},
 	} {
@@ -3200,7 +3229,7 @@ func TestClosePaneTransfersResizeOwnerAndRestoresFullContentRect(t *testing.T) {
 		LiveDeps{Terminal: terminal},
 	)
 
-	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 120, Rows: 40}}); err != nil {
+	if err := runtime.Post(LiveAttachMsg{Config: ownerLiveAttachConfig("term-1", 120, 40)}); err != nil {
 		t.Fatalf("post attach: %v", err)
 	}
 	if err := runtime.Drain(context.Background()); err != nil {
