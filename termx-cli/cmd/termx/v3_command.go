@@ -87,10 +87,26 @@ func v3DaemonCommand(socket *string, logFile *string) *cobra.Command {
 				opts = append(opts, corev2.WithHistoryStorageFactory(historyFactory))
 			}
 			srv := newCoreV2Server(opts...)
+			remoteCfg, err := remoteConfigFromFileAndEnv("")
+			if err != nil {
+				return err
+			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 			writeHeapProfile := startDaemonHeapProfiler(ctx, logger)
+			var remoteRuntime *coreV2DaemonRemoteRuntime
+			if coreServer, ok := srv.(*corev2.Server); ok {
+				remoteRuntime, err = configureCoreV2DaemonRemoteRuntime(ctx, coreServer, remoteCfg, logger)
+				if err != nil {
+					return err
+				}
+			}
 			defer func() {
+				if remoteRuntime != nil {
+					if err := remoteRuntime.Close(context.Background()); err != nil {
+						logger.Warn("core-v2 daemon remote runtime close failed", "error", err)
+					}
+				}
 				_ = srv.Shutdown(context.Background())
 			}()
 
