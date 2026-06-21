@@ -17,13 +17,13 @@ func renderOverlay(c *canvas, overlay OverlayVM, rect Rect, contentRect Rect) La
 	chromeStyle := StyleForeground
 	titleStyle := StyleAccent
 	titleAction := "esc"
-	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt {
+	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt || overlay.Content.Kind == ContentFloatingOverview {
 		titleStyle = StyleForeground
 		titleAction = ""
 	}
 	c.drawStyledBox(rect, squareBoxStyle, chromeStyle, primitive.Owner, primitive.Layer)
 	state := primitive.State.Text
-	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt {
+	if overlay.Content.Kind == ContentTerminalPicker || overlay.Content.Kind == ContentPrompt || overlay.Content.Kind == ContentFloatingOverview {
 		state = ""
 	}
 	renderChromeCardTitle(c, rect, primitive.Title.Text, state, titleAction, titleStyle, primitive.Owner, primitive.Layer)
@@ -43,7 +43,7 @@ func overlayTitle(kind OverlayKind) string {
 		return "Workbench Navigator"
 	}
 	if kind == OverlayFloatingOverview {
-		return "Floating Windows"
+		return ""
 	}
 	title := strings.TrimSpace(string(kind))
 	if title == "" {

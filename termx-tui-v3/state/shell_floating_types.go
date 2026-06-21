@@ -6,6 +6,9 @@ type FloatingOverviewItem struct {
 	PaneID     string
 	PaneKind   PaneKind
 	TerminalID string
+	State      string
+	Cols       int
+	Rows       int
 	Rect       FloatingRect
 	Z          int
 	Active     bool

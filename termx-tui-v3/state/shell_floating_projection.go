@@ -6,12 +6,17 @@ func FloatingOverviewItems(root Root) []FloatingOverviewItem {
 	activeFloatingID := shell.ActiveFloatingID()
 	items := make([]FloatingOverviewItem, 0, len(floatings))
 	for _, floating := range floatings {
+		terminalID := floatingOverviewTerminalID(root, floating)
+		title, stateText, cols, rows := floatingOverviewTerminalProjection(root, floating, terminalID)
 		item := FloatingOverviewItem{
 			FloatingID: floating.ID,
-			Title:      floating.Title,
+			Title:      title,
 			PaneID:     floating.Pane.ID,
 			PaneKind:   floating.Pane.Kind,
-			TerminalID: pickerTerminalID(root, floating.Pane),
+			TerminalID: terminalID,
+			State:      stateText,
+			Cols:       cols,
+			Rows:       rows,
 			Rect:       floating.Rect,
 			Z:          floating.Z,
 			Active:     floating.ID == activeFloatingID,
@@ -34,4 +39,72 @@ func FloatingOverviewItems(root Root) []FloatingOverviewItem {
 		items[selected].Selected = true
 	}
 	return items
+}
+
+func floatingOverviewTerminalID(root Root, floating FloatingPaneState) string {
+	if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok && binding.TerminalID != "" {
+		return binding.TerminalID
+	}
+	return pickerTerminalID(root, floating.Pane)
+}
+
+func floatingOverviewTerminalProjection(root Root, floating FloatingPaneState, terminalID string) (string, string, int, int) {
+	title := floating.Title
+	stateText := string(floating.Pane.Kind)
+	cols, rows := floating.Rect.W-2, floating.Rect.H-2
+	if terminalID != "" {
+		// 中文说明：overview 只做展示投影，terminal lifecycle/size 仍以 core/pool/live/binding 为来源。
+		if poolItem, ok := terminalPoolItemByID(root.TerminalPool, terminalID); ok {
+			title = terminalPoolTitle(poolItem)
+			stateText = poolItem.State
+			cols, rows = poolItem.Cols, poolItem.Rows
+		} else {
+			surface := root.Surface.SurfaceForTerminal(terminalID)
+			if surface.Title != "" {
+				title = surface.Title
+			}
+			if surface.State != "" && surface.State != TerminalLivePending {
+				stateText = string(surface.State)
+			}
+			if surface.Cols > 0 {
+				cols = surface.Cols
+			}
+			if surface.Rows > 0 {
+				rows = surface.Rows
+			}
+		}
+		if binding, ok := root.TerminalViews.FloatingBinding(floating.ID); ok {
+			if title == "" {
+				title = binding.TerminalID
+			}
+			if cols <= 0 {
+				cols = binding.DesiredCols
+			}
+			if rows <= 0 {
+				rows = binding.DesiredRows
+			}
+		}
+	}
+	if title == "" {
+		title = floating.Pane.Title
+	}
+	if title == "" {
+		title = floating.ID
+	}
+	if stateText == "" {
+		stateText = "floating"
+	}
+	return title, stateText, cols, rows
+}
+
+func terminalPoolItemByID(pool TerminalPoolStore, terminalID string) (TerminalPoolItem, bool) {
+	if terminalID == "" {
+		return TerminalPoolItem{}, false
+	}
+	for _, item := range pool.Items {
+		if item.TerminalID == terminalID {
+			return item, true
+		}
+	}
+	return TerminalPoolItem{}, false
 }

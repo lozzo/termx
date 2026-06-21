@@ -246,7 +246,7 @@ func TestRenderVMBuilderDoesNotProjectFloatingCopyHistoryIntoLastActiveTiledPane
 		Lines:      []string{"tiled live tail"},
 	})
 	root := state.Root{
-		Shell: shell,
+		Shell:   shell,
 		Surface: surface,
 		HistoryByView: map[string]state.HistoryStore{
 			floatingView: {
@@ -1764,20 +1764,33 @@ func TestRenderVMBuilderProjectsFloatingOverviewOverlay(t *testing.T) {
 	shell, _ = shell.ApplyFloatingCommand(state.FloatingCommand{Action: state.FloatingCommandToggleAutoFit, TargetID: "floating-1", FitCols: 48, FitRows: 14, BoundsW: 100, BoundsH: 30})
 	shell = shell.OpenFloatingOverview()
 
-	vm := NewRenderVMBuilder().Build(state.Root{Shell: shell})
+	root := state.Root{
+		Shell: shell,
+		TerminalViews: state.TerminalViewStore{}.BindFloating(
+			state.NewFloatingTerminalView("floating-1", "floating-pane-1", "term-logs", 7, 48, 14, state.TerminalResizeRoleOwner, "surface-1", "", true),
+		),
+		TerminalPool: state.TerminalPoolStore{Items: []state.TerminalPoolItem{{TerminalID: "term-logs", Title: "logs", State: "running", Cols: 48, Rows: 14}}},
+	}
+	vm := NewRenderVMBuilder().Build(root)
 	if vm.Shell.Overlay.Kind != OverlayFloatingOverview || vm.Shell.Overlay.Content.Kind != ContentFloatingOverview {
 		t.Fatalf("expected floating overview overlay VM, got %#v", vm.Shell.Overlay)
 	}
 	content := vm.Shell.Overlay.Content
 	if content.Status != "floating windows: 1 items" || len(content.HitRegions) == 0 ||
-		!strings.Contains(content.Lines[0].PlainString(), "Restore, collapse, close, or summon floating panes") ||
+		!strings.Contains(content.Lines[0].PlainString(), "terminal") ||
+		!strings.Contains(content.Lines[0].PlainString(), "state") ||
 		!strings.Contains(content.Lines[1].PlainString(), "logs") ||
-		!strings.Contains(content.Lines[1].PlainString(), "auto-fit") ||
-		!strings.Contains(content.Lines[1].PlainString(), "50x16") {
+		!strings.Contains(content.Lines[1].PlainString(), "running") ||
+		!strings.Contains(content.Lines[1].PlainString(), "48x14") ||
+		!strings.Contains(content.Lines[1].PlainString(), "term-logs") {
 		t.Fatalf("expected floating overview content with action regions, got %#v", content)
 	}
-	if !lineHasStyledANSICell(content.Lines[1], "logs", StyleAccent, ANSICellStyle{Underline: true}) {
-		t.Fatalf("selected floating row should underline the name, got %#v", content.Lines[1])
+	if strings.Contains(content.Lines[0].PlainString(), "Restore, collapse") ||
+		strings.Contains(content.Lines[1].PlainString(), "auto-fit") {
+		t.Fatalf("floating overview should render terminal table without old help copy, got %#v", content.Lines)
+	}
+	if !lineHasStyledANSICell(content.Lines[1], "▸ ", StylePickerAccent, ANSICellStyle{}) {
+		t.Fatalf("selected floating row should use picker marker, got %#v", content.Lines[1])
 	}
 	if !containsFooterAction(vm.Shell.Footer.ActionTokens, "1-9", "SUMMON", ActionFloatingSummon.String()) {
 		t.Fatalf("floating overview footer should expose summon action, got %#v", vm.Shell.Footer)

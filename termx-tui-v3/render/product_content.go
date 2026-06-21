@@ -320,13 +320,13 @@ func buildClipboardHistoryContent(root state.Root, shell state.ShellStore) Conte
 func buildFloatingOverviewContent(root state.Root, shell state.ShellStore) ContentVM {
 	shell = shell.ReadonlyDefaults()
 	rows := state.FloatingOverviewItems(root)
-	lines := []Line{NewLine("Restore, collapse, close, or summon floating panes")}
+	lines := []Line{floatingOverviewHeaderLine()}
 	rowOffset := len(lines)
 	for index, row := range rows {
 		lines = append(lines, floatingOverviewRowLine(index, row))
 	}
 	if len(rows) == 0 {
-		lines = append(lines, Line{Cells: []Cell{styledCell("No floating panes", StyleMuted)}})
+		lines = append(lines, Line{Cells: []Cell{styledCell("No floating terminals", StyleMuted)}})
 	}
 	regions := floatingOverviewHitRegions(rows, rowOffset)
 	return ContentVM{
@@ -1502,35 +1502,66 @@ func workbenchNavigatorTokenLine(tokens []string) Line {
 
 func floatingOverviewRowLine(index int, row state.FloatingOverviewItem) Line {
 	_ = index
-	style := StyleMuted
+	textStyle := StylePicker
+	markerStyle := StylePicker
 	if row.Selected {
-		style = StyleAccent
+		markerStyle = StylePickerAccent
 	}
 	title := row.Title
 	if title == "" {
 		title = row.FloatingID
 	}
-	titleCell := styledCell(title, style)
+	stateText := floatingOverviewStateLabel(row)
+	sizeText := floatingOverviewSizeText(row)
+	marker := "  "
 	if row.Selected {
-		titleCell.ANSIStyle.Underline = true
+		marker = "▸ "
 	}
-	collapsed := "expanded"
-	if row.Collapsed {
-		collapsed = "collapsed"
+	cells := []Cell{
+		styledCell(marker, markerStyle),
+		styledCell("●", terminalPoolStateStyle(stateText)),
+		pickerSpace(" "),
 	}
-	fitMode := "manual"
-	if row.FitMode == state.FloatingFitAuto {
-		fitMode = "auto-fit"
+	cells = append(cells, terminalPickerColumnCells(title, "", textStyle, 24)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, terminalPickerColumnCells(stateText, "", terminalPoolStateStyle(stateText), 10)...)
+	cells = append(cells, pickerSpace("  "))
+	cells = append(cells, terminalPickerColumnCells(sizeText, "", textStyle, 8)...)
+	cells = append(cells, pickerSpace("  "))
+	id := row.TerminalID
+	if id == "" {
+		id = row.FloatingID
 	}
+	cells = append(cells, terminalPickerColumnCells(id, "", StylePickerMuted, 18)...)
+	return Line{Cells: cells}
+}
+
+func floatingOverviewHeaderLine() Line {
 	return Line{Cells: []Cell{
-		titleCell,
-		NewCell("  "),
-		tokenCell(collapsed, style),
-		NewCell("  "),
-		tokenCell(fitMode, StyleMuted),
-		NewCell("  "),
-		styledCell(floatingOverviewSizeLabel(row.Rect), StyleMuted),
+		styledCell("   ", StylePickerMuted),
+		styledCell("terminal", StylePickerMuted),
+		pickerSpace(strings.Repeat(" ", 16)),
+		styledCell("state", StylePickerMuted),
+		pickerSpace(strings.Repeat(" ", 5)),
+		styledCell("size", StylePickerMuted),
+		pickerSpace(strings.Repeat(" ", 4)),
+		styledCell("floating", StylePickerMuted),
 	}}
+}
+
+func floatingOverviewStateLabel(row state.FloatingOverviewItem) string {
+	stateText := strings.TrimSpace(row.State)
+	if stateText == "" || stateText == string(state.PaneTerminalLive) {
+		stateText = "live"
+	}
+	if row.Collapsed {
+		stateText = "collapsed"
+	}
+	return stateText
+}
+
+func floatingOverviewSizeText(row state.FloatingOverviewItem) string {
+	return floatingOverviewSizeLabel(row)
 }
 
 func terminalPoolDetailLines(rows []state.TerminalPoolPageItem) []Line {
@@ -2013,8 +2044,16 @@ func floatingOverviewStatus(count int) string {
 	return fmt.Sprintf("floating windows: %d items", count)
 }
 
-func floatingOverviewSizeLabel(rect state.FloatingRect) string {
-	return fmt.Sprintf("%dx%d", rect.W, rect.H)
+func floatingOverviewSizeLabel(row state.FloatingOverviewItem) string {
+	cols, rows := row.Cols, row.Rows
+	if cols <= 0 || rows <= 0 {
+		cols = maxInt(0, row.Rect.W-2)
+		rows = maxInt(0, row.Rect.H-2)
+	}
+	if cols <= 0 || rows <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%dx%d", cols, rows)
 }
 
 func terminalPoolSizeLabel(cols int, rows int) string {

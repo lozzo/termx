@@ -336,9 +336,11 @@
 | 215E1-R162. SK floating terminal transparent side bands | 完成 | `termx-tui-v3/render/`、`workflow.md` | 已修复产品回归：根因不是移动重绘，而是 canvas 局部覆盖合并 ASCII run 时会清掉整段 footprint，导致浮窗左右侧背后文本被擦成黑块。现在 canvas 只清目标列并保留左右未覆盖片段；floating terminal-live 只写真实 terminal extent，extent 外侧保留背后 pane 文本。新增 render 回归；准入 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check` 通过 |
 | 215E1-R163. SK history stale error and wheel view isolation | 完成 | `termx-tui-v3/services/`、`termx-tui-v3/app/`、`workflow.md` | 已处理真实现场两个 copy/history 回归：protocol `400 stale history window` 会在 TUI protocol adapter 归一成内部 stale sentinel，匹配当前 pending 时只清请求不写 UI raw error；floating/tiled 同时处于 history 时，鼠标 wheel 命中区只按最前景 TerminalView 路由，floating 空白/raise 区域不会透到底层 pane，patch hit regions 保留 view/floating 身份。准入 `go test ./termx-tui-v3/... -count=1`、`git diff --check` 通过 |
 | 215E1-R164. SK copy history exit release boundary | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/app/`、`workflow.md` | 已确认并补强 history/copy 本地窗口释放边界：连续滚动 trim 后重新分配保留窗口，不持有旧大 backing array；主动 ESC 退出或关闭 pane 后 current root、view session map 与增量 patch cache 都断开 authoritative rows/source lines 引用。准入 `go test ./termx-tui-v3/... -count=1`、`git diff --check` 通过 |
+| 215E1-R165. SK floating overview terminal table | 完成 | `termx-tui-v3/state/`、`termx-tui-v3/render/`、`termx-tui-v3/app/`、`workflow.md` | 已将 floating overview 改成类似 terminal picker 的 float terminal 表格；弹窗顶边不再展示 `Floating Windows`、`open`、`esc` 状态提示，内容只展示可选择的 floating terminal 行 |
 
 当前下一步：
 
+- `215E1-R165 floating overview terminal table` 已完成：floating overview 顶边不再显示 `Floating Windows`、`open`、`esc`，内容改成 picker 风格 floating terminal 表格；行数据优先使用 TerminalView binding 和 terminal pool/live 投影，点击/上下/Enter 仍走原 summon/open reducer 链路。
 - `215E1-R155 live snapshot 直出 compact rows` 已完成：core snapshot 直出 compact rows，100k daemon alloc_space 降到约 755.9MB，daemon/TUI copy-oldest 约 39.2MB/41.7MB；下一步若继续压，应看 daemon history parser/string builder/clone churn 与 TUI history/render 残余分配，不再把 live snapshot 中间矩阵作为主热点。
 - `215E1-R156 history parser segment allocation pressure` 已完成：parser flush 单 cell slice 热点已退下，100k daemon alloc_space 降到约 669.3MB；下一步若继续压性能，应看 history pipeline 聚合/encode/clone、PTY/live write 和真实 RSS 高水位，而不是继续死磕 parser flush。
 - `215E1-R157 floating overlay repaint isolation` 已完成：copy/history 增量 patch 遇到 floating 覆盖会退回整帧；floating 渲染会先覆盖自身矩形并清理背后内容，避免底层 pane 的 history 样式污染浮窗。
