@@ -86,6 +86,60 @@ type CreateResult struct {
 	State      string
 }
 
+// Remote* 是 core-v2 daemon 暴露给 CLI/App 的显式 remote domain contract。
+// wirepb 只作为跨进程编码格式，不能泄露成调用方依赖的业务类型。
+type RemoteStatus struct {
+	State         string
+	Detail        string
+	DeviceID      string
+	DeviceName    string
+	ControlURL    string
+	HubURL        string
+	HubURLs       []string
+	DataDir       string
+	Mode          string
+	AllowLAN      bool
+	TerminalCount int
+	UpdatedAt     time.Time
+}
+
+type RemotePairStartParams struct {
+	LocalPairURL   string
+	TTLSeconds     int
+	AuthTTLSeconds int
+}
+
+type RemotePairStartResult struct {
+	Type              string
+	MachineID         string
+	MachineName       string
+	LocalPairURL      string
+	PairSessionID     string
+	PairSecret        string
+	AnswerProofSecret string
+	ExpiresAt         time.Time
+}
+
+type RemoteLocalEnableParams struct {
+	LocalWebAddr string
+	ICETCPAddr   string
+	HubURLs      []string
+	ControlURL   string
+	AccessToken  string
+	Region       string
+}
+
+type RemoteLocalStatus struct {
+	Enabled       bool
+	HTTPURL       string
+	LocalWebAddr  string
+	LocalPairURL  string
+	ICETCPEnabled bool
+	ICETCPAddr    string
+	ICETCPPort    int
+	UpdatedAt     time.Time
+}
+
 type GetParams struct {
 	TerminalID string
 }

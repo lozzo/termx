@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/lozzow/termx/termx-proto/wirepb"
@@ -393,49 +392,29 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		encodeHistoryWindowParamsUnknownFields(msg, value)
 		return proto.Marshal(msg)
 	case "remote.pair.start":
-		switch value := params.(type) {
-		case interface {
-			GetLocalPairURL() string
-			GetTTLSeconds() int
-			GetAuthTTLSeconds() int
-		}:
-			return proto.Marshal(&wirepb.RemotePairStartParams{
-				LocalPairUrl:   value.GetLocalPairURL(),
-				TtlSeconds:     int32(value.GetTTLSeconds()),
-				AuthTtlSeconds: int32(value.GetAuthTTLSeconds()),
-			})
-		case interface {
-			GetLocalPairURL() string
-			GetTTLSeconds() int
-		}:
-			return proto.Marshal(&wirepb.RemotePairStartParams{
-				LocalPairUrl: value.GetLocalPairURL(),
-				TtlSeconds:   int32(value.GetTTLSeconds()),
-			})
-		default:
-			localPairURL, ttlSeconds, authTTLSeconds, ok := remotePairStartFields(params)
-			if !ok {
-				return nil, methodParamsTypeError(method, "remote pair start params", params)
-			}
-			return proto.Marshal(&wirepb.RemotePairStartParams{
-				LocalPairUrl:   localPairURL,
-				TtlSeconds:     int32(ttlSeconds),
-				AuthTtlSeconds: int32(authTTLSeconds),
-			})
-		}
-	case "remote.local.enable":
-		localWebAddr, iceTCPAddr, hubURLs, controlURL, accessToken, region, ok := remoteLocalEnableFields(params)
+		value, ok := params.(RemotePairStartParams)
 		if !ok {
-			return nil, methodParamsTypeError(method, "remote local enable params", params)
+			if ptr, ptrOK := params.(*RemotePairStartParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
 		}
-		return proto.Marshal(&wirepb.RemoteLocalEnableParams{
-			LocalWebAddr: localWebAddr,
-			IceTcpAddr:   iceTCPAddr,
-			HubUrls:      hubURLs,
-			ControlUrl:   controlURL,
-			AccessToken:  accessToken,
-			Region:       region,
-		})
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.RemotePairStartParams", params)
+		}
+		return proto.Marshal(remotePairStartParamsToWirePB(value))
+	case "remote.local.enable":
+		value, ok := params.(RemoteLocalEnableParams)
+		if !ok {
+			if ptr, ptrOK := params.(*RemoteLocalEnableParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.RemoteLocalEnableParams", params)
+		}
+		return proto.Marshal(remoteLocalEnableParamsToWirePB(value))
 	default:
 		return nil, fmt.Errorf("protocol: no protobuf params codec for method %q", method)
 	}
@@ -597,13 +576,13 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
 		}
-		return &msg, nil
+		return remotePairStartParamsFromWirePB(&msg), nil
 	case "remote.local.enable":
 		var msg wirepb.RemoteLocalEnableParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return nil, err
 		}
-		return &msg, nil
+		return remoteLocalEnableParamsFromWirePB(&msg), nil
 	default:
 		return nil, fmt.Errorf("protocol: no protobuf params codec for method %q", method)
 	}
@@ -744,23 +723,41 @@ func EncodeMethodResult(method string, result any) ([]byte, error) {
 		}
 		return proto.Marshal(workbenchMutateResultToWirePB(value))
 	case "remote.status":
-		msg, ok := result.(*wirepb.RemoteStatus)
-		if !ok || msg == nil {
-			return nil, methodResultTypeError(method, "*wirepb.RemoteStatus", result)
+		value, ok := result.(RemoteStatus)
+		if !ok {
+			if ptr, ptrOK := result.(*RemoteStatus); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
 		}
-		return proto.Marshal(msg)
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.RemoteStatus", result)
+		}
+		return proto.Marshal(remoteStatusToWirePB(value))
 	case "remote.pair.start":
-		msg, ok := result.(*wirepb.RemotePairStartResult)
-		if !ok || msg == nil {
-			return nil, methodResultTypeError(method, "*wirepb.RemotePairStartResult", result)
+		value, ok := result.(RemotePairStartResult)
+		if !ok {
+			if ptr, ptrOK := result.(*RemotePairStartResult); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
 		}
-		return proto.Marshal(msg)
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.RemotePairStartResult", result)
+		}
+		return proto.Marshal(remotePairStartResultToWirePB(value))
 	case "remote.local.enable", "remote.local.status", "remote.local.disable":
-		msg, ok := result.(*wirepb.RemoteLocalStatus)
-		if !ok || msg == nil {
-			return nil, methodResultTypeError(method, "*wirepb.RemoteLocalStatus", result)
+		value, ok := result.(RemoteLocalStatus)
+		if !ok {
+			if ptr, ptrOK := result.(*RemoteLocalStatus); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
 		}
-		return proto.Marshal(msg)
+		if !ok {
+			return nil, methodResultTypeError(method, "protocol.RemoteLocalStatus", result)
+		}
+		return proto.Marshal(remoteLocalStatusToWirePB(value))
 	default:
 		return nil, fmt.Errorf("protocol: no protobuf result codec for method %q", method)
 	}
@@ -894,19 +891,34 @@ func DecodeMethodResult(method string, payload []byte, out any) error {
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return err
 		}
-		return assignRemoteResult(out, &msg)
+		ptr, ok := out.(*RemoteStatus)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.RemoteStatus", out)
+		}
+		*ptr = remoteStatusFromWirePB(&msg)
+		return nil
 	case "remote.pair.start":
 		var msg wirepb.RemotePairStartResult
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return err
 		}
-		return assignRemoteResult(out, &msg)
+		ptr, ok := out.(*RemotePairStartResult)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.RemotePairStartResult", out)
+		}
+		*ptr = remotePairStartResultFromWirePB(&msg)
+		return nil
 	case "remote.local.enable", "remote.local.status", "remote.local.disable":
 		var msg wirepb.RemoteLocalStatus
 		if err := proto.Unmarshal(payload, &msg); err != nil {
 			return err
 		}
-		return assignRemoteResult(out, &msg)
+		ptr, ok := out.(*RemoteLocalStatus)
+		if !ok || ptr == nil {
+			return methodOutTypeError(method, "*protocol.RemoteLocalStatus", out)
+		}
+		*ptr = remoteLocalStatusFromWirePB(&msg)
+		return nil
 	default:
 		return fmt.Errorf("protocol: no protobuf result codec for method %q", method)
 	}
@@ -937,160 +949,6 @@ func methodOutTypeError(method, want string, got any) error {
 	return fmt.Errorf("protocol: method %q decode target must be %s, got %T", method, want, got)
 }
 
-func remotePairStartFields(params any) (string, int, int, bool) {
-	value := reflect.Indirect(reflect.ValueOf(params))
-	if !value.IsValid() || value.Kind() != reflect.Struct {
-		return "", 0, 0, false
-	}
-	localPairURL := stringField(value, "LocalPairURL")
-	ttlSeconds := intField(value, "TTLSeconds")
-	authTTLSeconds := intField(value, "AuthTTLSeconds")
-	return localPairURL, ttlSeconds, authTTLSeconds, true
-}
-
-func remoteLocalEnableFields(params any) (string, string, []string, string, string, string, bool) {
-	value := reflect.Indirect(reflect.ValueOf(params))
-	if !value.IsValid() || value.Kind() != reflect.Struct {
-		return "", "", nil, "", "", "", false
-	}
-	return stringField(value, "LocalWebAddr"),
-		stringField(value, "ICETCPAddr"),
-		stringSliceField(value, "HubURLs"),
-		stringField(value, "ControlURL"),
-		stringField(value, "AccessToken"),
-		stringField(value, "Region"),
-		true
-}
-
-func assignRemoteResult(out any, msg proto.Message) error {
-	target := reflect.ValueOf(out)
-	if !target.IsValid() || target.Kind() != reflect.Pointer || target.IsNil() {
-		return fmt.Errorf("protocol: remote decode target must be non-nil pointer, got %T", out)
-	}
-	switch source := msg.(type) {
-	case *wirepb.RemoteStatus:
-		elem := target.Elem()
-		if elem.Kind() != reflect.Struct {
-			return fmt.Errorf("protocol: remote.status decode target must point to struct, got %T", out)
-		}
-		setStringField(elem, "State", source.GetState())
-		setStringField(elem, "Detail", source.GetDetail())
-		setStringField(elem, "DeviceID", source.GetDeviceId())
-		setStringField(elem, "DeviceName", source.GetDeviceName())
-		setStringField(elem, "ControlURL", source.GetControlUrl())
-		setStringField(elem, "HubURL", source.GetHubUrl())
-		setStringSliceField(elem, "HubURLs", source.GetHubUrls())
-		setStringField(elem, "DataDir", source.GetDataDir())
-		setStringField(elem, "Mode", source.GetMode())
-		setBoolField(elem, "AllowLAN", source.GetAllowLan())
-		setIntField(elem, "TerminalCount", int(source.GetTerminalCount()))
-		setTimeField(elem, "UpdatedAt", unixNanoToTime(source.GetUpdatedAtUnixNano()))
-		return nil
-	case *wirepb.RemotePairStartResult:
-		elem := target.Elem()
-		if elem.Kind() != reflect.Struct {
-			return fmt.Errorf("protocol: remote.pair.start decode target must point to struct, got %T", out)
-		}
-		setStringField(elem, "Type", source.GetType())
-		setStringField(elem, "MachineID", source.GetMachineId())
-		setStringField(elem, "MachineName", source.GetMachineName())
-		setStringField(elem, "LocalPairURL", source.GetLocalPairUrl())
-		setStringField(elem, "PairSessionID", source.GetPairSessionId())
-		setStringField(elem, "PairSecret", source.GetPairSecret())
-		setStringField(elem, "AnswerProofSecret", source.GetAnswerProofSecret())
-		setTimeField(elem, "ExpiresAt", unixNanoToTime(source.GetExpiresAtUnixNano()))
-		return nil
-	case *wirepb.RemoteLocalStatus:
-		elem := target.Elem()
-		if elem.Kind() != reflect.Struct {
-			return fmt.Errorf("protocol: remote.local status decode target must point to struct, got %T", out)
-		}
-		setBoolField(elem, "Enabled", source.GetEnabled())
-		setStringField(elem, "HTTPURL", source.GetHttpUrl())
-		setStringField(elem, "LocalWebAddr", source.GetLocalWebAddr())
-		setStringField(elem, "LocalPairURL", source.GetLocalPairUrl())
-		setBoolField(elem, "ICETCPEnabled", source.GetIceTcpEnabled())
-		setStringField(elem, "ICETCPAddr", source.GetIceTcpAddr())
-		setIntField(elem, "ICETCPPort", int(source.GetIceTcpPort()))
-		setTimeField(elem, "UpdatedAt", unixNanoToTime(source.GetUpdatedAtUnixNano()))
-		return nil
-	default:
-		return fmt.Errorf("protocol: unsupported remote result %T", msg)
-	}
-}
-
-func stringField(value reflect.Value, name string) string {
-	field := value.FieldByName(name)
-	if !field.IsValid() || field.Kind() != reflect.String {
-		return ""
-	}
-	return field.String()
-}
-
-func intField(value reflect.Value, name string) int {
-	field := value.FieldByName(name)
-	if !field.IsValid() {
-		return 0
-	}
-	switch field.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return int(field.Int())
-	default:
-		return 0
-	}
-}
-
-func stringSliceField(value reflect.Value, name string) []string {
-	field := value.FieldByName(name)
-	if !field.IsValid() || field.Kind() != reflect.Slice || field.Type().Elem().Kind() != reflect.String {
-		return nil
-	}
-	out := make([]string, field.Len())
-	for i := 0; i < field.Len(); i++ {
-		out[i] = field.Index(i).String()
-	}
-	return out
-}
-
-func setStringField(value reflect.Value, name string, text string) {
-	field := value.FieldByName(name)
-	if field.IsValid() && field.CanSet() && field.Kind() == reflect.String {
-		field.SetString(text)
-	}
-}
-
-func setStringSliceField(value reflect.Value, name string, values []string) {
-	field := value.FieldByName(name)
-	if field.IsValid() && field.CanSet() && field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.String {
-		field.Set(reflect.ValueOf(append([]string(nil), values...)))
-	}
-}
-
-func setBoolField(value reflect.Value, name string, flag bool) {
-	field := value.FieldByName(name)
-	if field.IsValid() && field.CanSet() && field.Kind() == reflect.Bool {
-		field.SetBool(flag)
-	}
-}
-
-func setIntField(value reflect.Value, name string, number int) {
-	field := value.FieldByName(name)
-	if !field.IsValid() || !field.CanSet() {
-		return
-	}
-	switch field.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		field.SetInt(int64(number))
-	}
-}
-
-func setTimeField(value reflect.Value, name string, ts time.Time) {
-	field := value.FieldByName(name)
-	if field.IsValid() && field.CanSet() && field.Type() == reflect.TypeOf(time.Time{}) {
-		field.Set(reflect.ValueOf(ts))
-	}
-}
-
 func cloneStringMap(values map[string]string) map[string]string {
 	if len(values) == 0 {
 		return nil
@@ -1100,6 +958,145 @@ func cloneStringMap(values map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func remoteStatusToWirePB(status RemoteStatus) *wirepb.RemoteStatus {
+	return &wirepb.RemoteStatus{
+		State:             status.State,
+		Detail:            status.Detail,
+		DeviceId:          status.DeviceID,
+		DeviceName:        status.DeviceName,
+		ControlUrl:        status.ControlURL,
+		HubUrl:            status.HubURL,
+		HubUrls:           append([]string(nil), status.HubURLs...),
+		DataDir:           status.DataDir,
+		Mode:              status.Mode,
+		AllowLan:          status.AllowLAN,
+		TerminalCount:     int32(status.TerminalCount),
+		UpdatedAtUnixNano: timeToUnixNano(status.UpdatedAt),
+	}
+}
+
+func remoteStatusFromWirePB(msg *wirepb.RemoteStatus) RemoteStatus {
+	if msg == nil {
+		return RemoteStatus{}
+	}
+	return RemoteStatus{
+		State:         msg.GetState(),
+		Detail:        msg.GetDetail(),
+		DeviceID:      msg.GetDeviceId(),
+		DeviceName:    msg.GetDeviceName(),
+		ControlURL:    msg.GetControlUrl(),
+		HubURL:        msg.GetHubUrl(),
+		HubURLs:       append([]string(nil), msg.GetHubUrls()...),
+		DataDir:       msg.GetDataDir(),
+		Mode:          msg.GetMode(),
+		AllowLAN:      msg.GetAllowLan(),
+		TerminalCount: int(msg.GetTerminalCount()),
+		UpdatedAt:     unixNanoToTime(msg.GetUpdatedAtUnixNano()),
+	}
+}
+
+func remotePairStartParamsToWirePB(params RemotePairStartParams) *wirepb.RemotePairStartParams {
+	return &wirepb.RemotePairStartParams{
+		LocalPairUrl:   params.LocalPairURL,
+		TtlSeconds:     int32(params.TTLSeconds),
+		AuthTtlSeconds: int32(params.AuthTTLSeconds),
+	}
+}
+
+func remotePairStartParamsFromWirePB(msg *wirepb.RemotePairStartParams) RemotePairStartParams {
+	if msg == nil {
+		return RemotePairStartParams{}
+	}
+	return RemotePairStartParams{
+		LocalPairURL:   msg.GetLocalPairUrl(),
+		TTLSeconds:     int(msg.GetTtlSeconds()),
+		AuthTTLSeconds: int(msg.GetAuthTtlSeconds()),
+	}
+}
+
+func remotePairStartResultToWirePB(result RemotePairStartResult) *wirepb.RemotePairStartResult {
+	return &wirepb.RemotePairStartResult{
+		Type:              result.Type,
+		MachineId:         result.MachineID,
+		MachineName:       result.MachineName,
+		LocalPairUrl:      result.LocalPairURL,
+		PairSessionId:     result.PairSessionID,
+		PairSecret:        result.PairSecret,
+		AnswerProofSecret: result.AnswerProofSecret,
+		ExpiresAtUnixNano: timeToUnixNano(result.ExpiresAt),
+	}
+}
+
+func remotePairStartResultFromWirePB(msg *wirepb.RemotePairStartResult) RemotePairStartResult {
+	if msg == nil {
+		return RemotePairStartResult{}
+	}
+	return RemotePairStartResult{
+		Type:              msg.GetType(),
+		MachineID:         msg.GetMachineId(),
+		MachineName:       msg.GetMachineName(),
+		LocalPairURL:      msg.GetLocalPairUrl(),
+		PairSessionID:     msg.GetPairSessionId(),
+		PairSecret:        msg.GetPairSecret(),
+		AnswerProofSecret: msg.GetAnswerProofSecret(),
+		ExpiresAt:         unixNanoToTime(msg.GetExpiresAtUnixNano()),
+	}
+}
+
+func remoteLocalEnableParamsToWirePB(params RemoteLocalEnableParams) *wirepb.RemoteLocalEnableParams {
+	return &wirepb.RemoteLocalEnableParams{
+		LocalWebAddr: params.LocalWebAddr,
+		IceTcpAddr:   params.ICETCPAddr,
+		HubUrls:      append([]string(nil), params.HubURLs...),
+		ControlUrl:   params.ControlURL,
+		AccessToken:  params.AccessToken,
+		Region:       params.Region,
+	}
+}
+
+func remoteLocalEnableParamsFromWirePB(msg *wirepb.RemoteLocalEnableParams) RemoteLocalEnableParams {
+	if msg == nil {
+		return RemoteLocalEnableParams{}
+	}
+	return RemoteLocalEnableParams{
+		LocalWebAddr: msg.GetLocalWebAddr(),
+		ICETCPAddr:   msg.GetIceTcpAddr(),
+		HubURLs:      append([]string(nil), msg.GetHubUrls()...),
+		ControlURL:   msg.GetControlUrl(),
+		AccessToken:  msg.GetAccessToken(),
+		Region:       msg.GetRegion(),
+	}
+}
+
+func remoteLocalStatusToWirePB(status RemoteLocalStatus) *wirepb.RemoteLocalStatus {
+	return &wirepb.RemoteLocalStatus{
+		Enabled:           status.Enabled,
+		HttpUrl:           status.HTTPURL,
+		LocalWebAddr:      status.LocalWebAddr,
+		LocalPairUrl:      status.LocalPairURL,
+		IceTcpEnabled:     status.ICETCPEnabled,
+		IceTcpAddr:        status.ICETCPAddr,
+		IceTcpPort:        int32(status.ICETCPPort),
+		UpdatedAtUnixNano: timeToUnixNano(status.UpdatedAt),
+	}
+}
+
+func remoteLocalStatusFromWirePB(msg *wirepb.RemoteLocalStatus) RemoteLocalStatus {
+	if msg == nil {
+		return RemoteLocalStatus{}
+	}
+	return RemoteLocalStatus{
+		Enabled:       msg.GetEnabled(),
+		HTTPURL:       msg.GetHttpUrl(),
+		LocalWebAddr:  msg.GetLocalWebAddr(),
+		LocalPairURL:  msg.GetLocalPairUrl(),
+		ICETCPEnabled: msg.GetIceTcpEnabled(),
+		ICETCPAddr:    msg.GetIceTcpAddr(),
+		ICETCPPort:    int(msg.GetIceTcpPort()),
+		UpdatedAt:     unixNanoToTime(msg.GetUpdatedAtUnixNano()),
+	}
 }
 
 func createParamsToWirePB(params CreateParams) *wirepb.CreateParams {

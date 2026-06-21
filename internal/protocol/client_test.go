@@ -36,6 +36,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"Call",
 		"Close",
 		"Create",
+		"Detach",
 		"EnsureResize",
 		"Events",
 		"GridViewport",
@@ -78,28 +79,144 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 	}
 }
 
-func TestEncodeRemotePairStartAcceptsLegacyGetterParams(t *testing.T) {
-	payload, err := EncodeMethodParams("remote.pair.start", legacyRemotePairStartParams{
-		localPairURL: "http://127.0.0.1:18888/pair",
-		ttlSeconds:   120,
-	})
+func TestRemoteProtocolTypedParams(t *testing.T) {
+	pairParams := RemotePairStartParams{
+		LocalPairURL:   "http://127.0.0.1:18888/pair",
+		TTLSeconds:     120,
+		AuthTTLSeconds: 30,
+	}
+	payload, err := EncodeMethodParams("remote.pair.start", pairParams)
 	if err != nil {
-		t.Fatalf("encode remote pair start legacy params: %v", err)
+		t.Fatalf("encode remote pair start params: %v", err)
 	}
 	decoded, err := DecodeMethodParams("remote.pair.start", payload)
 	if err != nil {
 		t.Fatalf("decode remote pair start params: %v", err)
 	}
-	params, ok := decoded.(interface {
-		GetLocalPairUrl() string
-		GetTtlSeconds() int32
-		GetAuthTtlSeconds() int32
-	})
+	gotPairParams, ok := decoded.(RemotePairStartParams)
 	if !ok {
 		t.Fatalf("unexpected decoded params type: %T", decoded)
 	}
-	if params.GetLocalPairUrl() != "http://127.0.0.1:18888/pair" || params.GetTtlSeconds() != 120 || params.GetAuthTtlSeconds() != 0 {
-		t.Fatalf("unexpected decoded params: %#v", params)
+	if !reflect.DeepEqual(gotPairParams, pairParams) {
+		t.Fatalf("remote pair start params mismatch:\n got: %#v\nwant: %#v", gotPairParams, pairParams)
+	}
+
+	localParams := RemoteLocalEnableParams{
+		LocalWebAddr: "127.0.0.1:18080",
+		ICETCPAddr:   "127.0.0.1:19090",
+		HubURLs:      []string{"https://hub-a.example", "https://hub-b.example"},
+		ControlURL:   "https://control.example",
+		AccessToken:  "token",
+		Region:       "local",
+	}
+	payload, err = EncodeMethodParams("remote.local.enable", &localParams)
+	if err != nil {
+		t.Fatalf("encode remote local enable params: %v", err)
+	}
+	decoded, err = DecodeMethodParams("remote.local.enable", payload)
+	if err != nil {
+		t.Fatalf("decode remote local enable params: %v", err)
+	}
+	gotLocalParams, ok := decoded.(RemoteLocalEnableParams)
+	if !ok {
+		t.Fatalf("unexpected decoded local params type: %T", decoded)
+	}
+	if !reflect.DeepEqual(gotLocalParams, localParams) {
+		t.Fatalf("remote local enable params mismatch:\n got: %#v\nwant: %#v", gotLocalParams, localParams)
+	}
+}
+
+func TestRemoteProtocolRejectsLegacyGetterParams(t *testing.T) {
+	_, err := EncodeMethodParams("remote.pair.start", legacyRemotePairStartParams{
+		localPairURL: "http://127.0.0.1:18888/pair",
+		ttlSeconds:   120,
+	})
+	if err == nil {
+		t.Fatal("expected legacy remote pair params to be rejected")
+	}
+	if !strings.Contains(err.Error(), "protocol.RemotePairStartParams") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRemoteProtocolTypedResults(t *testing.T) {
+	updatedAt := time.Date(2026, 6, 22, 1, 2, 3, 4, time.UTC)
+	expiresAt := time.Date(2026, 6, 22, 2, 3, 4, 5, time.UTC)
+
+	status := RemoteStatus{
+		State:         "running",
+		Detail:        "ready",
+		DeviceID:      "device-1",
+		DeviceName:    "devbox",
+		ControlURL:    "https://control.example",
+		HubURL:        "https://hub.example",
+		HubURLs:       []string{"https://hub-a.example", "https://hub-b.example"},
+		DataDir:       "/tmp/termx",
+		Mode:          "local",
+		AllowLAN:      true,
+		TerminalCount: 3,
+		UpdatedAt:     updatedAt,
+	}
+	payload, err := EncodeMethodResult("remote.status", status)
+	if err != nil {
+		t.Fatalf("encode remote status: %v", err)
+	}
+	statusPayload := payload
+	var gotStatus RemoteStatus
+	if err := DecodeMethodResult("remote.status", payload, &gotStatus); err != nil {
+		t.Fatalf("decode remote status: %v", err)
+	}
+	if !reflect.DeepEqual(gotStatus, status) {
+		t.Fatalf("remote status mismatch:\n got: %#v\nwant: %#v", gotStatus, status)
+	}
+
+	pairResult := RemotePairStartResult{
+		Type:              "local",
+		MachineID:         "machine-1",
+		MachineName:       "devbox",
+		LocalPairURL:      "http://127.0.0.1:18080/pair",
+		PairSessionID:     "session-1",
+		PairSecret:        "pair-secret",
+		AnswerProofSecret: "answer-secret",
+		ExpiresAt:         expiresAt,
+	}
+	payload, err = EncodeMethodResult("remote.pair.start", &pairResult)
+	if err != nil {
+		t.Fatalf("encode remote pair start result: %v", err)
+	}
+	var gotPairResult RemotePairStartResult
+	if err := DecodeMethodResult("remote.pair.start", payload, &gotPairResult); err != nil {
+		t.Fatalf("decode remote pair start result: %v", err)
+	}
+	if !reflect.DeepEqual(gotPairResult, pairResult) {
+		t.Fatalf("remote pair start result mismatch:\n got: %#v\nwant: %#v", gotPairResult, pairResult)
+	}
+
+	localStatus := RemoteLocalStatus{
+		Enabled:       true,
+		HTTPURL:       "http://127.0.0.1:18080",
+		LocalWebAddr:  "127.0.0.1:18080",
+		LocalPairURL:  "http://127.0.0.1:18080/pair",
+		ICETCPEnabled: true,
+		ICETCPAddr:    "127.0.0.1:19090",
+		ICETCPPort:    19090,
+		UpdatedAt:     updatedAt,
+	}
+	payload, err = EncodeMethodResult("remote.local.status", localStatus)
+	if err != nil {
+		t.Fatalf("encode remote local status: %v", err)
+	}
+	var gotLocalStatus RemoteLocalStatus
+	if err := DecodeMethodResult("remote.local.status", payload, &gotLocalStatus); err != nil {
+		t.Fatalf("decode remote local status: %v", err)
+	}
+	if !reflect.DeepEqual(gotLocalStatus, localStatus) {
+		t.Fatalf("remote local status mismatch:\n got: %#v\nwant: %#v", gotLocalStatus, localStatus)
+	}
+
+	var wrongTarget struct{ State string }
+	if err := DecodeMethodResult("remote.status", statusPayload, &wrongTarget); err == nil {
+		t.Fatal("expected remote result decode to reject arbitrary struct target")
 	}
 }
 
