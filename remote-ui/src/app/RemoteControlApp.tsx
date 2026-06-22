@@ -15,7 +15,7 @@ import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../pl
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { parsePairingPayload, type PairingPayload } from '../state/pairingPayload'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
-import type { ConnectionInfo, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
+import type { ConnectionInfo, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
 import { normalizeTerminalInventory } from '../terminal/terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from '../api/webControlApi'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
@@ -51,7 +51,27 @@ type PairInput = HubPairInput
 type PairResult = HubPairResult
 type HubRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
 type MachineAuthorizationState = 'ready' | 'expired' | 'unauthorized'
+type DisplayMachine = WebControlMachine & {
+  reachability?: MachineReachabilityView | undefined
+}
+interface MachineReachabilityView {
+  hubOnline: boolean
+  localChecked: boolean
+  localOnline: boolean
+  localOnlineUrls: string[]
+}
+interface LocalHubReachabilityTarget {
+  machineId: string
+  urls: string[]
+}
+interface LocalHubReachabilitySnapshot {
+  machineId: string
+  urls: string[]
+  onlineUrls: string[]
+  checkedAt: number
+}
 const pairingClaimTimeoutMs = 15_000
+const localHubReachabilityProbeTimeoutMs = 2_500
 export interface ScanPairingCodeOptions {
   onCancel?: (() => void) | undefined
   onManualEntry?: (() => void) | undefined
@@ -115,6 +135,7 @@ export function RemoteControlApp({
     return storage ? createMachineStore({ storage }).listMachines() : []
   })
   const [machines, setMachines] = useState<WebControlMachine[]>([])
+  const [localHubReachability, setLocalHubReachability] = useState<Map<string, LocalHubReachabilitySnapshot>>(() => new Map())
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
   const [pairIntent, setPairIntent] = useState<PairIntent>('add-local')
@@ -185,7 +206,7 @@ export function RemoteControlApp({
     void runtime.dispose?.()
   }, [])
 
-  const getMachineRuntime = useCallback((machine: WebControlMachine): MachineRuntime | null => {
+  const getMachineRuntime = useCallback((machine: DisplayMachine): MachineRuntime | null => {
     if (!storage || !runtimeCacheRef.current) return null
     const cache = runtimeCacheRef.current.runtimes
     const existing = cache.get(machine.id)
@@ -222,33 +243,71 @@ export function RemoteControlApp({
     }
   }, [storage, pairVersion])
 
+  const localHubReachabilityTargets = useMemo(() => {
+    return buildLocalHubReachabilityTargets(localMachines, machines, signedIn)
+  }, [localMachines, machines, signedIn])
+
+  useEffect(() => {
+    setLocalHubReachability((current) => pruneLocalHubReachability(current, localHubReachabilityTargets))
+    if (localHubReachabilityTargets.length === 0) return
+    const controller = new AbortController()
+    for (const target of localHubReachabilityTargets) {
+      void probeLocalHubReachability(networkRuntime.fetch, target, controller.signal).then((snapshot) => {
+        if (controller.signal.aborted) return
+        setLocalHubReachability((current) => {
+          const previous = current.get(snapshot.machineId)
+          if (sameReachabilitySnapshot(previous, snapshot)) return current
+          const next = new Map(current)
+          next.set(snapshot.machineId, snapshot)
+          return next
+        })
+      })
+    }
+    return () => controller.abort()
+  }, [localHubReachabilityTargets, networkRuntime.fetch])
+
   const displayMachines = useMemo(() => {
-    const map = new Map<string, WebControlMachine>()
+    const map = new Map<string, DisplayMachine>()
     const localById = new Map(localMachines.map((machine) => [machine.machineId, machine]))
     for (const local of localMachines) {
+      const reachability = localHubReachability.get(local.machineId)
+      const localOnline = localMachineOnline(local, reachability)
       map.set(local.machineId, {
         id: local.machineId,
         name: local.name,
         hostname: local.hostname,
-        online: local.state === 'online',
+        online: localOnline,
         source: local.source === 'hub' ? 'hub' : 'local',
         hubUrls: hubUrlsFromStoredMachine(local),
         localHubUrls: localHubUrlsFromStoredMachine(local),
         localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local),
+        reachability: machineReachabilityView({
+          hubOnline: false,
+          localOnline,
+          snapshot: reachability,
+        }),
       })
     }
     for (const hub of machines) {
       const local = localById.get(hub.id)
+      const reachability = local ? localHubReachability.get(local.machineId) : undefined
+      const localOnline = local ? localMachineOnline(local, reachability) : false
       map.set(hub.id, {
         ...hub,
+        online: hub.online || localOnline,
         ...(local ? {
           localHubUrls: localHubUrlsFromStoredMachine(local),
           localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local, hub.hubUrls),
         } : {}),
+        reachability: machineReachabilityView({
+          hubOnline: hub.online,
+          localOnline,
+          snapshot: reachability,
+        }),
       })
     }
     return Array.from(map.values())
-  }, [localMachines, machines])
+  }, [localHubReachability, localMachines, machines])
 
   const selectedMachine = displayMachines.find((machine) => machine.id === selectedMachineId) ?? null
   const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
@@ -392,11 +451,11 @@ export function RemoteControlApp({
     setScanAutoStartToken((current) => current + 1)
   }, [])
 
-  const openMachinePairSheet = useCallback((machine: WebControlMachine) => {
+  const openMachinePairSheet = useCallback((machine: DisplayMachine) => {
     openPairSheet(machine.id)
   }, [openPairSheet])
 
-  const selectMachine = useCallback((machine: WebControlMachine) => {
+  const selectMachine = useCallback((machine: DisplayMachine) => {
     hapticImpact()
     setSelectedMachineId(machine.id)
     if (!authorizedMachineIds.has(machine.id)) {
@@ -743,7 +802,7 @@ function MachineTerminalListView({
   onNeedsReauthorization,
   onTerminalSettingsChange,
 }: {
-  machine: WebControlMachine
+  machine: DisplayMachine
   storage: RemoteRuntimeStorage | undefined
   terminalSettings: TerminalSettings
   runtime: MachineRuntime | null
@@ -783,7 +842,7 @@ function MachineTerminalListView({
   )
 }
 
-function MachineRuntimeHeader({ machine, onBack }: { machine: WebControlMachine; onBack: () => void }) {
+function MachineRuntimeHeader({ machine, onBack }: { machine: DisplayMachine; onBack: () => void }) {
   return (
     <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <button
@@ -812,7 +871,7 @@ function MachineRuntimeErrorShell({
   machine,
   onBack,
 }: {
-  machine: WebControlMachine
+  machine: DisplayMachine
   onBack: () => void
 }) {
   return (
@@ -843,18 +902,18 @@ function HomeView({
   fileTransfer?: FileTransferContext | undefined
   transferState: { transfers: TransferInfo[]; hasActiveTransfers: boolean }
   loading: boolean
-  machines: WebControlMachine[]
+  machines: DisplayMachine[]
   authorizedMachineIds: Set<string>
   authorizationExpiries: Map<string, string>
   signedIn: boolean
   user: WebControlUser | null
   onAddLocalDevice: () => void
-  onForgetMachineAuthorization: (machine: WebControlMachine) => void
+  onForgetMachineAuthorization: (machine: DisplayMachine) => void
   onOpenSettings: () => void
   onOpenTransferCenter: () => void
-  onPairMachine: (machine: WebControlMachine) => void
+  onPairMachine: (machine: DisplayMachine) => void
   onRefresh: () => void
-  onSelectMachine: (machine: WebControlMachine) => void
+  onSelectMachine: (machine: DisplayMachine) => void
   onSignIn: () => void
 }) {
   return (
@@ -1627,10 +1686,10 @@ function MachineRow({
 }: {
   authorizationExpiresAt?: string | undefined
   authorizationState: MachineAuthorizationState
-  machine: WebControlMachine
-  onForgetMachineAuthorization: (machine: WebControlMachine) => void
-  onPairMachine: (machine: WebControlMachine) => void
-  onSelectMachine: (machine: WebControlMachine) => void
+  machine: DisplayMachine
+  onForgetMachineAuthorization: (machine: DisplayMachine) => void
+  onPairMachine: (machine: DisplayMachine) => void
+  onSelectMachine: (machine: DisplayMachine) => void
 }) {
   const actionLabel = authorizationState === 'ready'
     ? 'Open'
@@ -1708,7 +1767,7 @@ function MachineRow({
 }
 
 function authorizationAvailabilityText(
-  machine: WebControlMachine,
+  machine: DisplayMachine,
   authorizationState: MachineAuthorizationState,
   expiresAt: string | undefined,
 ): string {
@@ -1734,7 +1793,7 @@ function formatAuthorizationExpiry(value: string): string {
 }
 
 function machineAuthorizationState(
-  machine: WebControlMachine,
+  machine: DisplayMachine,
   authorizedMachineIds: Set<string>,
   authorizationExpiries: Map<string, string>,
 ): MachineAuthorizationState {
@@ -1852,6 +1911,133 @@ function readAuthorizationExpiries(storage: RemoteRuntimeStorage | undefined): M
     return expiries
   } catch {
     return new Map()
+  }
+}
+
+function buildLocalHubReachabilityTargets(
+  localMachines: StoredMachineRecord[],
+  hubMachines: WebControlMachine[],
+  signedIn: boolean,
+): LocalHubReachabilityTarget[] {
+  const targets = new Map<string, string[]>()
+  for (const machine of localMachines) {
+    const urls = compactHubUrls([
+      ...localHubUrlsFromStoredMachine(machine),
+      ...localFallbackHubUrlsFromStoredMachine(machine),
+    ])
+    if (urls.length > 0) targets.set(machine.machineId, urls)
+  }
+  if (signedIn) {
+    for (const machine of hubMachines) {
+      const urls = compactHubUrls([
+        ...(machine.localHubUrls ?? []),
+        ...(machine.localFallbackHubUrls ?? []),
+        ...(targets.get(machine.id) ?? []),
+      ])
+      if (urls.length > 0) targets.set(machine.id, urls)
+    }
+  }
+  return Array.from(targets.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([machineId, urls]) => ({ machineId, urls }))
+}
+
+function pruneLocalHubReachability(
+  snapshots: Map<string, LocalHubReachabilitySnapshot>,
+  targets: LocalHubReachabilityTarget[],
+): Map<string, LocalHubReachabilitySnapshot> {
+  if (snapshots.size === 0) return snapshots
+  const liveTargets = new Map(targets.map((target) => [target.machineId, target.urls.join('\n')]))
+  let changed = false
+  const next = new Map<string, LocalHubReachabilitySnapshot>()
+  for (const [machineId, snapshot] of snapshots) {
+    if (liveTargets.get(machineId) !== snapshot.urls.join('\n')) {
+      changed = true
+      continue
+    }
+    next.set(machineId, snapshot)
+  }
+  return changed ? next : snapshots
+}
+
+async function probeLocalHubReachability(
+  fetchImpl: RemoteRuntimeFetch,
+  target: LocalHubReachabilityTarget,
+  parentSignal: AbortSignal,
+): Promise<LocalHubReachabilitySnapshot> {
+  const results = await Promise.all(target.urls.map(async (url) => {
+    const online = await probeLocalHubHealth(fetchImpl, url, parentSignal)
+    return { url, online }
+  }))
+  return {
+    machineId: target.machineId,
+    urls: target.urls,
+    onlineUrls: results.filter((result) => result.online).map((result) => result.url),
+    checkedAt: Date.now(),
+  }
+}
+
+async function probeLocalHubHealth(
+  fetchImpl: RemoteRuntimeFetch,
+  hubUrl: string,
+  parentSignal: AbortSignal,
+): Promise<boolean> {
+  const baseUrl = normalizeHubBaseUrlCandidate(hubUrl)
+  if (!baseUrl || parentSignal.aborted) return false
+  const controller = new AbortController()
+  const abort = () => controller.abort(parentSignal.reason)
+  parentSignal.addEventListener('abort', abort, { once: true })
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    // 本地模式的 Hub 和 daemon 是同一个运行时；health 可达即认为本地通路在线。
+    const request = fetchImpl(`${baseUrl}/api/health`, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    }).then((response) => response.ok, () => false)
+    const deadline = new Promise<boolean>((resolve) => {
+      timeout = setTimeout(() => {
+        controller.abort(new Error('local Hub health probe timeout'))
+        resolve(false)
+      }, localHubReachabilityProbeTimeoutMs)
+    })
+    return await Promise.race([request, deadline])
+  } catch {
+    return false
+  } finally {
+    if (timeout) clearTimeout(timeout)
+    parentSignal.removeEventListener('abort', abort)
+  }
+}
+
+function sameReachabilitySnapshot(
+  left: LocalHubReachabilitySnapshot | undefined,
+  right: LocalHubReachabilitySnapshot,
+): boolean {
+  return Boolean(left) &&
+    left!.machineId === right.machineId &&
+    left!.urls.join('\n') === right.urls.join('\n') &&
+    left!.onlineUrls.join('\n') === right.onlineUrls.join('\n')
+}
+
+function localMachineOnline(
+  machine: StoredMachineRecord,
+  snapshot: LocalHubReachabilitySnapshot | undefined,
+): boolean {
+  if (snapshot) return snapshot.onlineUrls.length > 0
+  return machine.state === 'online'
+}
+
+function machineReachabilityView(input: {
+  hubOnline: boolean
+  localOnline: boolean
+  snapshot?: LocalHubReachabilitySnapshot | undefined
+}): MachineReachabilityView {
+  return {
+    hubOnline: input.hubOnline,
+    localChecked: Boolean(input.snapshot),
+    localOnline: input.localOnline,
+    localOnlineUrls: input.snapshot?.onlineUrls ?? [],
   }
 }
 
@@ -2356,14 +2542,17 @@ function nonEmptyHubUrls(machine: WebControlMachine): string[] {
 }
 
 function endpointsFromMachine(machine: WebControlMachine): HubEndpoint[] {
+  const reachability = (machine as DisplayMachine).reachability
+  const localHubUrls = orderReachableHubUrls(machine.localHubUrls ?? [], reachability?.localOnlineUrls ?? [])
+  const localFallbackHubUrls = orderReachableHubUrls(machine.localFallbackHubUrls ?? [], reachability?.localOnlineUrls ?? [])
   return compactHubEndpoints([
-    ...compactHubUrls(machine.localHubUrls ?? []).map((url) => ({
+    ...localHubUrls.map((url) => ({
       url,
       kind: 'local' as const,
       scope: localHubScope(url),
       source: 'stored_machine' as const,
     })),
-    ...compactHubUrls(machine.localFallbackHubUrls ?? []).map((url) => ({
+    ...localFallbackHubUrls.map((url) => ({
       url,
       kind: 'local' as const,
       scope: 'public_mapping' as const,
@@ -2378,6 +2567,19 @@ function endpointsFromMachine(machine: WebControlMachine): HubEndpoint[] {
         source: 'web_control' as const,
       }))),
   ])
+}
+
+function orderReachableHubUrls(
+  urls: readonly string[],
+  reachableUrls: readonly string[],
+): string[] {
+  const compact = compactHubUrls(urls)
+  if (reachableUrls.length === 0) return compact
+  const reachable = new Set(compactHubUrls(reachableUrls))
+  return [
+    ...compact.filter((url) => reachable.has(url)),
+    ...compact.filter((url) => !reachable.has(url)),
+  ]
 }
 
 function compactHubEndpoints(endpoints: readonly HubEndpoint[]): HubEndpoint[] {

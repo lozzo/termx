@@ -1105,6 +1105,95 @@ describe('RemoteControlApp', () => {
     })
   })
 
+  it('marks stored local machines online from local Hub health before opening', async () => {
+    const storage = new MemoryStorage()
+    createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
+      machineId: 'local-device-1',
+      name: 'Local Box',
+      addresses: {
+        local: ['http://192.168.0.103:18888'],
+        lan: [],
+        public: [],
+      },
+    }))))
+    const fetch = new RouteFetch((url) => {
+      if (url === 'http://192.168.0.103:18888/api/health') {
+        return jsonResponse(200, { ok: true })
+      }
+      throw new Error(`unexpected request to ${url}`)
+    })
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(fetch.requests.some((request) => request.url === 'http://192.168.0.103:18888/api/health')).toBe(true))
+    await waitFor(() => expect(screen.getByText('Online')).toBeTruthy())
+    expect(screen.getByRole('button', { name: /^pair local box$/i })).toBeTruthy()
+  })
+
+  it('keeps dual-mode machines online when Web Control is offline but local Hub health is reachable', async () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.remote.accessToken', 'access-token-1')
+    createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      addresses: {
+        local: ['http://192.168.0.103:18888'],
+        lan: [],
+        public: [],
+      },
+    }))))
+    const fetch = new RouteFetch((url) => {
+      if (url === 'http://192.168.0.103:18888/api/health') {
+        return jsonResponse(200, { ok: true })
+      }
+      if (url === 'http://114.66.58.243:12306/api/v1/auth/me') {
+        return jsonResponse(200, {
+          user: {
+            id: 'user-1',
+            username: 'lozzow',
+            email: 'lozzow@example.test',
+          },
+        })
+      }
+      if (url === 'http://114.66.58.243:12306/api/v1/machines') {
+        return jsonResponse(200, {
+          machines: [{
+            id: 'device-1',
+            name: 'RedmiBook',
+            hostname: 'redmibook',
+            online: false,
+            source: 'hub',
+            current_hub_url: 'https://hub-1.termx.test',
+            hub_urls: ['https://hub-1.termx.test'],
+            hub_status: 'offline',
+          }],
+        })
+      }
+      throw new Error(`unexpected request to ${url}`)
+    })
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await waitFor(() => expect(fetch.requests.some((request) => request.url === 'http://192.168.0.103:18888/api/health')).toBe(true))
+    await waitFor(() => expect(screen.getByText('Online')).toBeTruthy())
+    expect(screen.getByText('Hub')).toBeTruthy()
+  })
+
   it('opens authorized Web Control machines by racing the registered hubs from Web Control', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
@@ -1198,14 +1287,18 @@ describe('RemoteControlApp', () => {
     )
 
     await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await waitFor(() => expect(healthRequestUrls(fetch.requests)).toEqual(expect.arrayContaining([
+      'http://127.0.0.1:18888/api/health',
+      'http://192.168.1.20:18888/api/health',
+    ])))
     await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
 
-    expect(fetch.requests.map((request) => request.url)).toEqual([
+    expect(nonHealthRequestUrls(fetch.requests)).toEqual([
       'http://114.66.58.243:12306/api/v1/auth/me',
       'http://114.66.58.243:12306/api/v1/machines',
-      'http://127.0.0.1:18888/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions/ice',
+      'http://127.0.0.1:18888/api/v1/sessions/ice',
       'https://hub-1.termx.test/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions',
     ])
@@ -1253,10 +1346,15 @@ describe('RemoteControlApp', () => {
     )
 
     await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await waitFor(() => expect(healthRequestUrls(fetch.requests)).toEqual(expect.arrayContaining([
+      'http://127.0.0.1:18888/api/health',
+      'http://192.168.1.20:18888/api/health',
+      'https://frp.termx.test/api/health',
+    ])))
     await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
 
-    expect(fetch.requests.map((request) => request.url)).toEqual([
+    expect(nonHealthRequestUrls(fetch.requests)).toEqual([
       'http://114.66.58.243:12306/api/v1/auth/me',
       'http://114.66.58.243:12306/api/v1/machines',
       'http://127.0.0.1:18888/api/v1/sessions/ice',
@@ -1297,12 +1395,18 @@ describe('RemoteControlApp', () => {
     )
 
     await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await waitFor(() => expect(healthRequestUrls(fetch.requests)).toEqual(expect.arrayContaining([
+      'http://127.0.0.1:18888/api/health',
+      'http://192.168.1.20:18888/api/health',
+      'http://114.66.58.243:8447/api/health',
+      'https://frp.termx.test/api/health',
+    ])))
     await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
 
-    expect(fetch.requests.map((request) => request.url)).toEqual([
-      'http://127.0.0.1:18888/api/v1/sessions/ice',
+    expect(nonHealthRequestUrls(fetch.requests)).toEqual([
       'http://192.168.1.20:18888/api/v1/sessions/ice',
+      'http://127.0.0.1:18888/api/v1/sessions/ice',
       'http://114.66.58.243:8447/api/v1/sessions/ice',
       'https://frp.termx.test/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions',
@@ -1313,11 +1417,18 @@ describe('RemoteControlApp', () => {
 
   it('keeps a machine runtime alive when returning to the machine list', async () => {
     const storage = new MemoryStorage()
-    createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'device-1',
       name: 'RedmiBook',
-      addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
-    }))))
+      hostname: 'redmibook',
+      state: 'online',
+      terminalCount: 0,
+      source: 'hub',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: { hub: 'https://hub-1.termx.test' },
+      addedAt: '2026-05-05T10:00:00.000Z',
+      updatedAt: '2026-05-05T10:00:00.000Z',
+    }]))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const dispose = vi.fn()
     const listTerminals = vi.fn(async () => [{
@@ -1376,11 +1487,18 @@ describe('RemoteControlApp', () => {
 
   it('keeps the default hub WebRTC session alive when returning to the machine list', async () => {
     const storage = new MemoryStorage()
-    createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'device-1',
       name: 'RedmiBook',
-      addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
-    }))))
+      hostname: 'redmibook',
+      state: 'online',
+      terminalCount: 0,
+      source: 'hub',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: { hub: 'https://hub-1.termx.test' },
+      addedAt: '2026-05-05T10:00:00.000Z',
+      updatedAt: '2026-05-05T10:00:00.000Z',
+    }]))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const fetch = new ManagedRuntimeFetch()
     const sessions: Array<ReturnType<typeof hubTestRtcSession>> = []
@@ -1692,17 +1810,39 @@ class RecordingFetch {
   }
 
   readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const url = String(input)
     this.requests.push({
-      url: String(input),
+      url,
       method: init.method ?? 'GET',
       headers: recordHeaders(init.headers),
       ...(typeof init.body === 'string' ? { body: JSON.parse(init.body) } : {}),
     })
+    if (url.endsWith('/api/health')) {
+      return jsonResponse(503, { ok: false })
+    }
     const response = this.responses.shift()
     if (!response) {
-      throw new Error(`unexpected request to ${String(input)}`)
+      throw new Error(`unexpected request to ${url}`)
     }
     return response
+  }
+}
+
+class RouteFetch {
+  readonly requests: RecordedRequest[] = []
+
+  constructor(private readonly route: (url: string, init: RequestInit, body: unknown) => Response | Promise<Response>) {}
+
+  readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+    const url = String(input)
+    this.requests.push({
+      url,
+      method: init.method ?? 'GET',
+      headers: recordHeaders(init.headers),
+      ...(body !== undefined ? { body } : {}),
+    })
+    return this.route(url, init, body)
   }
 }
 
@@ -1779,6 +1919,10 @@ class LocalPairRaceFetch {
         }, 50)
       })
     }
+    if (url.endsWith('/api/health')) {
+      const online = url.includes('192.168.1.20')
+      return jsonResponse(online ? 200 : 503, { ok: online })
+    }
     throw new Error(`unexpected request to ${url}`)
   }
 }
@@ -1818,6 +1962,9 @@ class WebControlHubFallbackFetch {
           hub_status: 'online',
         }],
       })
+    }
+    if (url.endsWith('/api/health')) {
+      return jsonResponse(503, { ok: false })
     }
     if (url === 'https://hub-1.termx.test/api/v1/sessions/ice') {
       return jsonResponse(200, {
@@ -1905,6 +2052,10 @@ class SignedInLocalFirstFetch {
         }],
       })
     }
+    if (url.endsWith('/api/health')) {
+      const online = url.includes('192.168.1.20')
+      return jsonResponse(online ? 200 : 503, { ok: online })
+    }
     if (url === 'http://127.0.0.1:18888/api/v1/sessions/ice') {
       throw new TypeError('Failed to fetch')
     }
@@ -1971,6 +2122,10 @@ class SignedInPublicLocalFallbackFetch {
           hub_status: 'online',
         }],
       })
+    }
+    if (url.endsWith('/api/health')) {
+      const online = url === 'https://frp.termx.test/api/health'
+      return jsonResponse(online ? 200 : 503, { ok: online })
     }
     if (url === 'http://127.0.0.1:18888/api/v1/sessions/ice') {
       throw new TypeError('Failed to fetch')
@@ -2058,6 +2213,10 @@ class LocalRuntimeFetch {
       headers: recordHeaders(init.headers),
       ...(body !== undefined ? { body } : {}),
     })
+    if (url.endsWith('/api/health')) {
+      const online = url.includes('192.168.1.20')
+      return jsonResponse(online ? 200 : 503, { ok: online })
+    }
     if (url === 'http://127.0.0.1:18888/api/v1/sessions/ice') {
       throw new TypeError('Failed to fetch')
     }
@@ -2125,6 +2284,14 @@ function testNetworkRuntime(fetch: WebControlFetch, storage?: RemoteRuntimeStora
 
 function headerAddLocalDeviceButton(): HTMLElement {
   return screen.getAllByRole('button', { name: /^scan new machine$/i })[0] as HTMLElement
+}
+
+function healthRequestUrls(requests: readonly RecordedRequest[]): string[] {
+  return requests.filter((request) => request.url.endsWith('/api/health')).map((request) => request.url)
+}
+
+function nonHealthRequestUrls(requests: readonly RecordedRequest[]): string[] {
+  return requests.filter((request) => !request.url.endsWith('/api/health')).map((request) => request.url)
 }
 
 function jsonResponse(status: number, body: unknown): Response {
