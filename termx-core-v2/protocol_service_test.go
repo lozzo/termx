@@ -2329,6 +2329,37 @@ func TestProtocolServiceFrozenSnapshotReflowsCombiningAndWideStyledCells(t *test
 	}
 }
 
+func TestProtocolServiceAttachmentStreamsLiveScreenUpdates(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 20, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	attach, err := client.Attach(context.Background(), "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	stream, stop := client.Stream(attach.Channel)
+	defer stop()
+
+	if err := server.IngestOutput(context.Background(), "term-1", "typed-live"); err != nil {
+		t.Fatalf("ingest live output: %v", err)
+	}
+
+	update := waitForScreenUpdateContaining(t, stream, "typed-live")
+	if !update.FullReplace {
+		t.Fatalf("attachment live stream should send full-replace screen update, got %#v", update)
+	}
+	if update.Size != (protocol.Size{Cols: 20, Rows: 4}) {
+		t.Fatalf("screen update should carry terminal size, got %#v", update.Size)
+	}
+}
+
 func TestProtocolServiceAttachRoutesInputResizeAndEvents(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
@@ -3105,6 +3136,44 @@ func waitForProtocolHistoryRow(t *testing.T, client *protocol.Client, terminalID
 	})
 	t.Fatalf("timed out waiting for protocol history row %q, got %#v", want, window)
 	return nil
+}
+
+func waitForScreenUpdateContaining(t *testing.T, stream <-chan protocol.StreamFrame, want string) protocol.ScreenUpdate {
+	t.Helper()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case frame, ok := <-stream:
+			if !ok {
+				t.Fatalf("stream closed before screen update containing %q", want)
+			}
+			if frame.Type != wire.TypeScreenUpdate {
+				continue
+			}
+			update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
+			if err != nil {
+				t.Fatalf("decode screen update: %v", err)
+			}
+			if screenUpdateContainsText(update, want) {
+				return update
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for screen update containing %q", want)
+		}
+	}
+}
+
+func screenUpdateContainsText(update protocol.ScreenUpdate, want string) bool {
+	for _, row := range update.Screen.Cells {
+		var builder strings.Builder
+		for _, cell := range row {
+			builder.WriteString(cell.Content)
+		}
+		if strings.Contains(builder.String(), want) {
+			return true
+		}
+	}
+	return false
 }
 
 func protocolHistoryWindowContainsText(window *protocol.HistoryWindow, want string) bool {

@@ -92,6 +92,7 @@ type protocolSession struct {
 	nextSnapshot  atomic.Uint64
 	mu            sync.RWMutex
 	attachments   map[uint16]protocolAttachment
+	streamCancels map[uint16]context.CancelFunc
 	eventCancels  map[uint64]context.CancelFunc
 	nextEventSub  uint64
 	historyMu     sync.Mutex
@@ -129,6 +130,7 @@ func newProtocolSession(server *Server, conn transport.Transport, scope Transpor
 		scope:         scope.normalized(),
 		sessionID:     server.nextProtocolSessionID.Add(1),
 		attachments:   make(map[uint16]protocolAttachment),
+		streamCancels: make(map[uint16]context.CancelFunc),
 		eventCancels:  make(map[uint64]context.CancelFunc),
 		historyPins:   make(map[string]frozenHistorySnapshot),
 		historyLatest: make(map[string]string),
@@ -143,6 +145,7 @@ func (session *protocolSession) run(ctx context.Context) error {
 	defer func() {
 		cancel()
 		session.requests.Wait()
+		session.stopAllAttachmentStreams()
 		session.stopEvents()
 		session.releaseProtocolAttachments()
 		session.releaseAllFrozenSnapshots()
@@ -345,6 +348,10 @@ func (session *protocolSession) dispatchRequest(ctx context.Context, req protoco
 		in := params.(protocol.AttachParams)
 		attachment, control, err := session.attach(in)
 		if err != nil {
+			return nil, false, errorCode(err), err
+		}
+		if err := session.startAttachmentStream(ctx, attachment); err != nil {
+			session.detach(protocol.DetachParams{Channel: attachment.Channel})
 			return nil, false, errorCode(err), err
 		}
 		return encodeMethodResult(req.Method, protocol.AttachResult{
@@ -629,6 +636,45 @@ func (session *protocolSession) liveCompactSnapshot(params protocol.SnapshotPara
 		ScreenOwnership:   repeatString(protocol.RowOwnershipScreen, len(rows)),
 		Timestamp:         time.Now().UTC(),
 	}, nil
+}
+
+func (session *protocolSession) liveScreenUpdatePayload(terminalID string) ([]byte, error) {
+	info, err := session.server.GetTerminal(terminalID)
+	if err != nil {
+		return nil, err
+	}
+	terminal, err := session.server.Terminal(terminalID)
+	if err != nil {
+		return nil, err
+	}
+	var rows [][]protocol.Cell
+	screenInfo := terminal.VisitLiveTrimmedScreenRows(func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell) {
+		for len(rows) <= rowIndex {
+			rows = append(rows, nil)
+		}
+		if cellCount <= 0 {
+			rows[rowIndex] = nil
+			return
+		}
+		row := make([]protocol.Cell, cellCount)
+		for i := 0; i < cellCount; i++ {
+			row[i] = vtermCellToProtocol(cellAt(i))
+		}
+		rows[rowIndex] = row
+	})
+	for len(rows) < screenInfo.Rows {
+		rows = append(rows, nil)
+	}
+	return protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		FullReplace: true,
+		Size:        protocolSizeFromCore(info.Size),
+		Screen: protocol.ScreenData{
+			Cells:             rows,
+			IsAlternateScreen: screenInfo.IsAlternateScreen,
+		},
+		Cursor: vtermCursorToProtocol(screenInfo.Cursor),
+		Modes:  vtermModesToProtocol(screenInfo.Modes),
+	})
 }
 
 func vtermCellToProtocol(cell vterm.Cell) protocol.Cell {
@@ -1002,6 +1048,90 @@ func (session *protocolSession) attach(params protocol.AttachParams) (protocolAt
 	return attachment, control, nil
 }
 
+func (session *protocolSession) startAttachmentStream(ctx context.Context, attachment protocolAttachment) error {
+	streamCtx, cancel := context.WithCancel(ctx)
+	session.mu.Lock()
+	if previous := session.streamCancels[attachment.Channel]; previous != nil {
+		previous()
+	}
+	session.streamCancels[attachment.Channel] = cancel
+	session.mu.Unlock()
+	events := session.server.Events(streamCtx, EventFilter{
+		TerminalID: attachment.TerminalID,
+		Types: []EventType{
+			EventTerminalChanged,
+			EventTerminalResized,
+			EventTerminalExited,
+		},
+	})
+	go session.forwardAttachmentStream(streamCtx, attachment, events)
+	if err := session.sendLiveScreenUpdate(attachment); err != nil {
+		session.stopAttachmentStreams([]uint16{attachment.Channel})
+		return err
+	}
+	return nil
+}
+
+func (session *protocolSession) forwardAttachmentStream(ctx context.Context, attachment protocolAttachment, events <-chan Event) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-events:
+			if !ok {
+				return
+			}
+			if err := session.sendLiveScreenUpdate(attachment); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (session *protocolSession) sendLiveScreenUpdate(attachment protocolAttachment) error {
+	if _, err := session.attachmentForChannel(attachment.Channel); err != nil {
+		return err
+	}
+	payload, err := session.liveScreenUpdatePayload(attachment.TerminalID)
+	if err != nil {
+		return err
+	}
+	// 中文说明：stream frame 属于 attachment channel 的 live 投影；它只读 core-v2
+	// live surface，不创建 history truth，也不把 App 本地缓存写回 core。
+	return session.sendFrame(attachment.Channel, wire.TypeScreenUpdate, payload)
+}
+
+func (session *protocolSession) stopAttachmentStreams(channels []uint16) {
+	if len(channels) == 0 {
+		return
+	}
+	session.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(channels))
+	for _, channel := range channels {
+		if cancel := session.streamCancels[channel]; cancel != nil {
+			cancels = append(cancels, cancel)
+			delete(session.streamCancels, channel)
+		}
+	}
+	session.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
+func (session *protocolSession) stopAllAttachmentStreams() {
+	session.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(session.streamCancels))
+	for channel, cancel := range session.streamCancels {
+		cancels = append(cancels, cancel)
+		delete(session.streamCancels, channel)
+	}
+	session.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
 func (session *protocolSession) detach(params protocol.DetachParams) {
 	session.mu.Lock()
 	var detached []protocolAttachment
@@ -1013,6 +1143,11 @@ func (session *protocolSession) detach(params protocol.DetachParams) {
 		detached = append(detached, attachment)
 	}
 	session.mu.Unlock()
+	channels := make([]uint16, 0, len(detached))
+	for _, attachment := range detached {
+		channels = append(channels, attachment.Channel)
+	}
+	session.stopAttachmentStreams(channels)
 	session.unregisterProtocolAttachments(detached)
 }
 
@@ -1280,6 +1415,11 @@ func (session *protocolSession) releaseProtocolAttachments() {
 		detached = append(detached, attachment)
 	}
 	session.mu.Unlock()
+	channels := make([]uint16, 0, len(detached))
+	for _, attachment := range detached {
+		channels = append(channels, attachment.Channel)
+	}
+	session.stopAttachmentStreams(channels)
 	session.unregisterProtocolAttachments(detached)
 }
 
