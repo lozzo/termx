@@ -308,19 +308,71 @@ function sessionIDFromToken(token: string): string {
   if (!payload) {
     throw new Error('session token payload is required for answer proof verification')
   }
-  const decoded = JSON.parse(decodeBase64url(payload)) as { sid?: unknown }
-  if (typeof decoded.sid !== 'string' || decoded.sid.trim() === '') {
-    throw new Error('session token sid is required for answer proof verification')
+  try {
+    const sessionID = readSessionIDFromTokenPayload(decodeBase64urlBytes(payload))
+    if (sessionID) return sessionID
+  } catch {
+    throw new Error('Stored session token is invalid. Pair this machine again before opening the terminal.')
   }
-  return decoded.sid.trim()
+  throw new Error('Stored session token is invalid. Pair this machine again before opening the terminal.')
 }
 
-function decodeBase64url(value: string): string {
+function decodeBase64urlBytes(value: string): Uint8Array {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
   const binary = atob(padded)
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
-  return new TextDecoder().decode(bytes)
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0))
+}
+
+function readSessionIDFromTokenPayload(bytes: Uint8Array): string | null {
+  let offset = 0
+  while (offset < bytes.length) {
+    const key = readProtoVarint(bytes, offset)
+    offset = key.nextOffset
+    const fieldNumber = Math.floor(key.value / 8)
+    const wireType = key.value & 7
+    if (fieldNumber === 1) {
+      // Go session token payload 是 tokenpb.Claims；field 1 是 session_id。
+      if (wireType !== 2) throw new Error('session token session_id wire type is invalid')
+      const length = readProtoVarint(bytes, offset)
+      offset = length.nextOffset
+      const end = offset + length.value
+      if (end > bytes.length) throw new Error('session token session_id is truncated')
+      return new TextDecoder().decode(bytes.slice(offset, end)).trim() || null
+    }
+    offset = skipProtoField(bytes, offset, wireType)
+  }
+  return null
+}
+
+function readProtoVarint(bytes: Uint8Array, startOffset: number): { value: number; nextOffset: number } {
+  let value = 0
+  let shift = 0
+  let offset = startOffset
+  while (offset < bytes.length && shift <= 28) {
+    const byte = bytes[offset] ?? 0
+    value += (byte & 0x7f) * (2 ** shift)
+    offset += 1
+    if ((byte & 0x80) === 0) return { value, nextOffset: offset }
+    shift += 7
+  }
+  throw new Error('session token varint is invalid')
+}
+
+function skipProtoField(bytes: Uint8Array, offset: number, wireType: number): number {
+  if (wireType === 0) return readProtoVarint(bytes, offset).nextOffset
+  if (wireType === 1) return checkedProtoOffset(bytes, offset + 8)
+  if (wireType === 2) {
+    const length = readProtoVarint(bytes, offset)
+    return checkedProtoOffset(bytes, length.nextOffset + length.value)
+  }
+  if (wireType === 5) return checkedProtoOffset(bytes, offset + 4)
+  throw new Error('session token wire type is unsupported')
+}
+
+function checkedProtoOffset(bytes: Uint8Array, offset: number): number {
+  if (offset > bytes.length) throw new Error('session token field is truncated')
+  return offset
 }
 
 function base64url(bytes: Uint8Array): string {

@@ -288,6 +288,26 @@ describe('HubRtcConnector', () => {
     expect(session.disconnectCalls).toBe(1)
   })
 
+  it('reports stale pair ids stored as session tokens without leaking JSON parse errors', async () => {
+    const api = new MockHubApi({ answerProofSecret: 'proof-secret', pairSessionId: 'pair-1' })
+    const session = new MockOffererSession()
+    const connector = createHubRtcConnector({
+      api,
+      createSession: () => session,
+    })
+
+    await expect(connector.connect({
+      machineId: 'machine-1',
+      sessionToken: 'pair_UB6D_cached',
+      answerProofSecret: 'proof-secret',
+    })).rejects.toThrow(/Stored session token is invalid.*Pair this machine again/i)
+    await expect(connector.connect({
+      machineId: 'machine-1',
+      sessionToken: 'pair_UB6D_cached',
+      answerProofSecret: 'proof-secret',
+    })).rejects.not.toThrow(/Unexpected token|not valid JSON/i)
+  })
+
   it('keeps hub Hub signaling separate from runtime transport taxonomy', () => {
     expect(source).not.toMatch(/WebSocket|paid_relay|managed_p2p|anonymous_p2p|relayTransport|path:\s*['"]relay['"]/)
   })
@@ -459,7 +479,16 @@ function expectedAnswerProof(secret: string, pairSessionId: string, offerSession
 }
 
 function sessionTokenWithID(sessionId: string): string {
-  return `${base64url(new TextEncoder().encode(JSON.stringify({ sid: sessionId })))}.mac`
+  return `${base64url(protoClaimsPayloadForTest(sessionId))}.mac`
+}
+
+function protoClaimsPayloadForTest(sessionId: string): Uint8Array {
+  const sessionID = new TextEncoder().encode(sessionId)
+  const payload = new Uint8Array(2 + sessionID.length)
+  payload[0] = 0x0a
+  payload[1] = sessionID.length
+  payload.set(sessionID, 2)
+  return payload
 }
 
 function base64url(bytes: Uint8Array): string {

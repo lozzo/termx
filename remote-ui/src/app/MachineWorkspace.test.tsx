@@ -1593,6 +1593,49 @@ describe('MachineWorkspace', () => {
     expect(sessionStore.getSessionToken('machine-local')).toBe('session-token-local')
   })
 
+  it('refreshes terminal inventory after pairing a local device', async () => {
+    const sessionStore = createMachineSessionStore(new MemoryStorage())
+    let paired = false
+    const api = createMockLocalAgentApi({ terminals: [] })
+    const listTerminals = vi.fn(async () => (
+      paired ? [terminalFixture({ title: 'zsh', terminalId: 'terminal-after-pair' })] : []
+    ))
+    api.listTerminals = listTerminals
+    const pairApi = createMockPairApi()
+    pairApi.pair = vi.fn(async () => {
+      paired = true
+      return {
+        machineId: 'machine-local',
+        sessionToken: 'session-token-local',
+        expiresAt: '2099-05-01T07:00:00Z',
+      }
+    })
+
+    render(
+      <MachineWorkspace
+        api={api}
+        connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }}
+        pair={{
+          api: pairApi,
+          sessionStore,
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: /open zsh/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /verify device/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), {
+      target: { value: termxPairUri(localPairPayload()) },
+    })
+    await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    expect(listTerminals).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps pair reachable when first-run terminal connect needs a token and retries after pairing', async () => {
     const sessionStore = createMachineSessionStore(new MemoryStorage())
     let paired = false
@@ -1644,6 +1687,61 @@ describe('MachineWorkspace', () => {
     const sessionStore = createMachineSessionStore(new MemoryStorage())
     sessionStore.saveSessionToken('machine-local', 'stale-token', '2099-05-01T07:00:00Z')
     const connect = vi.fn(() => Promise.reject(new Error('auth')))
+
+    render(
+      <MachineWorkspace
+        api={createMockLocalAgentApi()}
+        connector={{ connect }}
+        pair={{
+          api: createMockPairApi(),
+          sessionStore,
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+
+    await waitFor(() => expect(screen.getAllByTestId('termx-pair-sheet').length).toBeGreaterThan(0))
+    expect(screen.getByTestId('termx-machine-network-overlay').textContent).toContain('re-authorize')
+    expect(sessionStore.getSessionToken('machine-local')).toBeNull()
+  })
+
+  it('reopens pairing when a cached runtime session token cannot be parsed', async () => {
+    const sessionStore = createMachineSessionStore(new MemoryStorage())
+    sessionStore.saveSessionToken('machine-local', 'stale-token', '2099-05-01T07:00:00Z')
+    const connect = vi.fn(() =>
+      Promise.reject(new Error('Stored session token is invalid. Pair this machine again before opening the terminal.')),
+    )
+
+    render(
+      <MachineWorkspace
+        api={createMockLocalAgentApi()}
+        connector={{ connect }}
+        pair={{
+          api: createMockPairApi(),
+          sessionStore,
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+
+    await waitFor(() => expect(screen.getAllByTestId('termx-pair-sheet').length).toBeGreaterThan(0))
+    expect(screen.getByTestId('termx-machine-network-overlay').textContent).toContain('re-authorize')
+    expect(screen.getAllByTestId('termx-local-pair-panel').length).toBeGreaterThan(0)
+    expect(sessionStore.getSessionToken('machine-local')).toBeNull()
+  })
+
+  it('reopens pairing when Hub rejects a cached runtime session token', async () => {
+    const sessionStore = createMachineSessionStore(new MemoryStorage())
+    sessionStore.saveSessionToken('machine-local', 'stale-token', '2099-05-01T07:00:00Z')
+    const connect = vi.fn(() =>
+      Promise.reject(new Error('cloud_answer_error: invalid session token: invalid token format')),
+    )
 
     render(
       <MachineWorkspace

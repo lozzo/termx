@@ -391,6 +391,28 @@ describe('HubApi', () => {
     await expect(api.createSession(validSessionInput())).rejects.not.toThrow(/^Failed to fetch$/)
   })
 
+  it('reports successful non-JSON Hub responses with endpoint and body preview', async () => {
+    const fetch = new RecordingFetch([
+      new Response('pair_UB6D_cached', {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      }),
+    ])
+    const api = createHubApi({
+      baseUrl: 'http://192.168.0.103:18888',
+      fetch: fetch.fetch,
+    })
+
+    await expect(api.getSessionIce({
+      machineId: 'device-a67a80f711a7d629',
+      sessionToken: 'session-token-1',
+    })).rejects.toThrow(/Hub POST http:\/\/192\.168\.0\.103:18888\/api\/v1\/sessions\/ice returned invalid JSON with HTTP 200: pair_UB6D_cached/)
+    await expect(api.getSessionIce({
+      machineId: 'device-a67a80f711a7d629',
+      sessionToken: 'session-token-1',
+    })).rejects.not.toThrow(/Unexpected token|not valid JSON/i)
+  })
+
   it('claims a pairing code through the Hub while leaving secret validation to the agent', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {

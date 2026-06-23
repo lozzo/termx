@@ -247,12 +247,26 @@ class HubHttpApi implements HubApi {
     if (text.trim() === '') {
       return {}
     }
-    return record(JSON.parse(text), 'Hub response')
+    return parseJSONRecord(text, `Hub ${method} ${url}`, response.status)
   }
 
   private url(path: string): string {
     return `${this.baseUrl}${path.replace(/^\//, '')}`
   }
+}
+
+function parseJSONRecord(text: string, label: string, status: number): Record<string, unknown> {
+  try {
+    return record(JSON.parse(text), 'Hub response')
+  } catch {
+    throw new Error(`${label} returned invalid JSON with HTTP ${status}: ${previewBody(text)}`)
+  }
+}
+
+function previewBody(text: string): string {
+  const trimmed = text.trim().replace(/\s+/g, ' ')
+  if (trimmed.length <= 160) return trimmed
+  return `${trimmed.slice(0, 160)}...`
 }
 
 function hubSessionFromResponse(response: Record<string, unknown>): HubSession {

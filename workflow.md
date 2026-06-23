@@ -236,6 +236,7 @@
 | R196. SK App 端到端 smoke | 完成 | `termx-app/`、`remote-ui/`、`termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/` 按需 | 验证 CLI daemon/remote local enable -> App 配对/连接 -> terminal 创建/附着/输入输出 -> history rollback -> logical-line copy 的端到端路径 |
 | R197. SK remote + App migration docs finalization | 完成 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、`remote-ui/docs/` 或必要顶层文档 | 更新最终迁移记录、App 连接方式、history/copy truth 边界、无限历史参考取舍和完整测试证据 |
 | R198. SK 终端慢流不可能三角备忘 | 完成 | `workflow.md`、`terminal-live-stream-tradeoff.md` | 记录完整 PTY、本地不丢和不反压程序三者不能同时成立；后续实时展示回到 core latest screen，完整历史走 core logical-line history |
+| R199. SK App local Hub JSON 响应诊断修复 | 完成 | `remote-ui/`、`termx-app/`、`termx-remote/localweb/static`、按需 `workflow.md` | 已修复 local/hub 连接中 `pair_...` pairing id 或损坏 runtime token 暴露 JSON.parse/invalid token 原始错误的问题；按真实 protobuf session token 解析 answer proof session id，缓存 token 失效会自动重新配对，配对后刷新 terminal inventory，并已用 Chrome 跑通 localweb 配对和打开 terminal |
 
 ## 6. 测试准入
 
@@ -295,6 +296,7 @@
 - `R188` 已完成：`termx-cli/docs/v2-v3-switch-audit.md` 已更新为 remote 后端迁移完成 checkpoint，记录 `termx remote ...` 只连 core-v2 daemon、status/local/pair 经 typed hook、runtime API terminal/storage/events 与 WebRTC/datachannel transport 经 `termx-remote.Service` 路由到 core-v2 truth、旧 fallback 不得恢复，并把 App/remote-ui history/copy 边界写为当时的后续阶段。准入 `git diff --check` 已通过。
 - `R189-R197` 已完成：真实 `termx-app/` 与 `remote-ui/` 已建立 CLI remote runtime 连接方式、terminal management/live surface、logical-line `CoreV2HistorySource`、infinite history surface/cache、logical-line copy/search/selection 和 App end-to-end smoke；迁移文档已记录最终边界和测试证据。
 - `R198` 已完成：`terminal-live-stream-tradeoff.md` 已记录终端慢消费者不可能三角，明确最新屏用于实时展示，完整历史必须走 core-v2 logical-line history，客户端本地 scrollback 只允许作为缓存。
+- `R199` 已完成：App/local web 会把缓存里的 `pair_...` pairing session id 视为错误 runtime token 并清理；损坏或服务端拒绝的 runtime token 会走 auth failure，清缓存并打开重新配对；Hub 成功响应若不是 JSON 会带 endpoint/status/body preview；answer-proof 验证按 Go `tokenpb.Claims` protobuf payload 读取 `session_id`，不再把合法 `session_token` 当 JSON 解析失败；配对成功后会刷新 terminal inventory。准入已通过 `remote-ui` focused tests/typecheck/test/build:localweb、`termx-app` build、`termx-remote` 全量 Go tests、CLI remote focused tests、`git diff --check`，并用 Chrome DevTools Protocol 跑通隔离 local runtime：坏 token -> 重新配对 -> terminal inventory 刷新 -> 打开 `browser-smoke-final`，页面无 `Unexpected token` 或 `invalid session token`。
 - 当前任务队列已无 `待开始`、`进行中` 或 `阻塞` 切片；后续新增目标必须先更新本文件。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。

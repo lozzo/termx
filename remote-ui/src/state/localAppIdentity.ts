@@ -15,6 +15,11 @@ export function createMachineSessionStore(
     getSessionToken: (machineId) => {
       const token = storage.getItem(`termx.session.${machineId}.token`)
       if (!token) return null
+      if (looksLikePairSessionID(token)) {
+        storage.removeItem(`termx.session.${machineId}.token`)
+        storage.removeItem(`termx.session.${machineId}.answerProofSecret`)
+        return null
+      }
       const exp = storage.getItem(`termx.session.${machineId}.exp`)
       if (exp) {
         try {
@@ -45,6 +50,10 @@ export function createMachineSessionStore(
     getSessionExpiry: (machineId) =>
       storage.getItem(`termx.session.${machineId}.exp`),
     saveSessionToken: (machineId, token, expiresAt, answerProofSecret) => {
+      // pair_session_id 只用于领取授权，不能作为 runtime session_token 缓存。
+      if (looksLikePairSessionID(token)) {
+        throw new Error('pairing session id cannot be stored as a runtime session token')
+      }
       storage.setItem(`termx.session.${machineId}.token`, token)
       storage.setItem(`termx.session.${machineId}.exp`, expiresAt)
       if (answerProofSecret?.trim()) {
@@ -59,4 +68,8 @@ export function createMachineSessionStore(
       storage.removeItem(`termx.session.${machineId}.answerProofSecret`)
     },
   }
+}
+
+function looksLikePairSessionID(value: string): boolean {
+  return /^pair[_-]/i.test(value.trim())
 }

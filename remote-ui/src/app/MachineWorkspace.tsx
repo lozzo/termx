@@ -1029,7 +1029,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setPairStatus(`Paired with ${machineId}`)
     setConnectionRetryToken((current) => current + 1)
     setMobileSheet(null)
-  }, [])
+    void refreshTerminals()
+  }, [refreshTerminals])
 
   const retryConnection = useCallback((options: { forceRelay?: boolean; closeDialog?: boolean } = {}) => {
     const targetForceRelay = options.forceRelay ?? forceRelayConnection
@@ -2795,6 +2796,10 @@ function isAuthConnectionError(error: unknown): boolean {
   const normalized = message.trim().toLowerCase()
   return normalized === 'auth' ||
     normalized === 'authentication failed' ||
+    // 本地缓存的 runtime token 失效时，恢复路径必须回到重新配对。
+    normalized.includes('stored session token is invalid') ||
+    normalized.includes('pair this machine again') ||
+    normalized.includes('invalid session token') ||
     normalized.includes('unauthorized') ||
     normalized.includes('forbidden')
 }

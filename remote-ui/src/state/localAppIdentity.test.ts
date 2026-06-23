@@ -89,6 +89,29 @@ describe('MachineSessionStore', () => {
 
     expect(store.getSessionToken('machine-1')).toBe('session-token-1')
   })
+
+  it('clears cached pair session ids instead of treating them as runtime session tokens', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineSessionStore(storage)
+
+    storage.setItem('termx.session.machine-1.token', 'pair_UB6D_cached')
+    storage.setItem('termx.session.machine-1.exp', '2099-01-01T00:00:00Z')
+    storage.setItem('termx.session.machine-1.answerProofSecret', 'answer-proof-secret')
+
+    expect(store.getSessionToken('machine-1')).toBeNull()
+    expect(store.getAnswerProofSecret('machine-1')).toBeNull()
+    expect(storage.dump()).toEqual({
+      'termx.session.machine-1.exp': '2099-01-01T00:00:00Z',
+    })
+  })
+
+  it('rejects saving a pair session id as the runtime session token', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineSessionStore(storage)
+
+    expect(() => store.saveSessionToken('machine-1', 'pair_UB6D_cached', '2099-01-01T00:00:00Z')).toThrow(/pairing session id/i)
+    expect(storage.dump()).toEqual({})
+  })
 })
 
 class MemoryStorage implements Storage {
