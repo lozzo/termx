@@ -57,6 +57,7 @@
 - real app：`termx-app/`
 - app shared UI/runtime package：`remote-ui/`
 - infinite history UI reference：`termx-app-history-ref/`
+- terminal live stream tradeoff memo：`terminal-live-stream-tradeoff.md`
 
 如果实现发现设计文档过期，必须和当前切片一起更新；不要代码先跑偏，文档以后再补。
 
@@ -195,6 +196,7 @@
 - R195 已补 `remote-ui/src/terminal/coreV2HistoryInteraction.ts`，把 App history selection/range/search/copy 都绑定到 `CoreV2HistorySurfaceSnapshot` 的 logical line/cell 坐标；`CoreV2HistorySource.copy()` 通过 machine-scoped API 调 `history.copy`，最终文本由 core-v2 frozen logical-line snapshot 生成。focused harness 证明 copy 不调用 xterm selection、visual scrollback、DOM/canvas renderer text 或 App append log，search 只返回 logical-line range；R195 已通过 `remote-ui` focused test/typecheck/test/build 与 `termx-app` build。
 - R196 已补 `remote-ui/src/integration/appCoreV2EndToEndSmoke.test.ts`，用同一个 core-v2 App session 串起 terminal create、terminal datachannel attach/input/resize、logical-line history latest/older rollback 和 `history.copy`；smoke 断言 rollback/copy 不走旧 terminal history replay/live scrollback。R196 已通过 `remote-ui` focused test/typecheck/test/build、`termx-app` build、`termx-cli` remote/default focused Go tests、`termx-core-v2` scoped transport/history copy focused Go tests 和 `termx-remote` 全量 Go tests；Android/Kotlin 编译仍因本机缺 Android SDK 未运行。
 - R197 已更新 `termx-cli/docs/v2-v3-switch-audit.md` 与 `remote-ui/docs/app-core-v2-contract.md`，把 remote + App 迁移从“后续 App 集成”收口为当前完成状态：记录 App 连接 CLI remote runtime 的方式、terminal/live/history/copy truth 边界、`CoreV2HistorySource/Surface/Interaction` 分层、`termx-app-history-ref/` 只读参考取舍、完整测试证据和 Android SDK 缺失说明。R197 为 docs-only，准入 `git diff --check`。
+- R198 已补 `terminal-live-stream-tradeoff.md`：记录完整连续客户端 PTY bytes、慢客户端不丢、不反压程序三者不能同时成立；后续默认回到 core-v2 维护 latest screen 和 logical-line history，App/TUI 本地 scrollback 只能作为显示缓存，copy/search/history truth 必须走 core history。
 
 ### 5.2 任务队列
 
@@ -233,6 +235,7 @@
 | R195. SK App copy/search/selection logical-line 化 | 完成 | `remote-ui/`、`termx-app/`、按需 `termx-testkit/` | App 复制模式、搜索和选择都从 logical-line history surface 组装文本；测试必须证明不会从 xterm selection、snapshot rows、DOM/canvas rows 或 App 本地 append log 返回最终 copy 文本 |
 | R196. SK App 端到端 smoke | 完成 | `termx-app/`、`remote-ui/`、`termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/` 按需 | 验证 CLI daemon/remote local enable -> App 配对/连接 -> terminal 创建/附着/输入输出 -> history rollback -> logical-line copy 的端到端路径 |
 | R197. SK remote + App migration docs finalization | 完成 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、`remote-ui/docs/` 或必要顶层文档 | 更新最终迁移记录、App 连接方式、history/copy truth 边界、无限历史参考取舍和完整测试证据 |
+| R198. SK 终端慢流不可能三角备忘 | 完成 | `workflow.md`、`terminal-live-stream-tradeoff.md` | 记录完整 PTY、本地不丢和不反压程序三者不能同时成立；后续实时展示回到 core latest screen，完整历史走 core logical-line history |
 
 ## 6. 测试准入
 
@@ -291,6 +294,7 @@
 - `R187` 已完成：新增 remote backend contract smoke，启动真实 core-v2 daemon socket 并注入真实 `termx-remote.Service` hook，串联验证 `remote.status`、`remote.local.status/enable/disable`、`remote.pair.start`、runtime API terminal create/storage put/events、remote service scoped transport 都落到 core-v2 truth；同时守卫旧 `termx-core/`、`tuiv2/`、`remote_runtime.go`、`remote_protocol_codec.go`、`legacy_commands.go` 不得恢复。准入 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-remote && go test ./... -count=1`、`cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫、remote 旧 import 检查与 `git diff --check` 已通过。
 - `R188` 已完成：`termx-cli/docs/v2-v3-switch-audit.md` 已更新为 remote 后端迁移完成 checkpoint，记录 `termx remote ...` 只连 core-v2 daemon、status/local/pair 经 typed hook、runtime API terminal/storage/events 与 WebRTC/datachannel transport 经 `termx-remote.Service` 路由到 core-v2 truth、旧 fallback 不得恢复，并把 App/remote-ui history/copy 边界写为当时的后续阶段。准入 `git diff --check` 已通过。
 - `R189-R197` 已完成：真实 `termx-app/` 与 `remote-ui/` 已建立 CLI remote runtime 连接方式、terminal management/live surface、logical-line `CoreV2HistorySource`、infinite history surface/cache、logical-line copy/search/selection 和 App end-to-end smoke；迁移文档已记录最终边界和测试证据。
+- `R198` 已完成：`terminal-live-stream-tradeoff.md` 已记录终端慢消费者不可能三角，明确最新屏用于实时展示，完整历史必须走 core-v2 logical-line history，客户端本地 scrollback 只允许作为缓存。
 - 当前任务队列已无 `待开始`、`进行中` 或 `阻塞` 切片；后续新增目标必须先更新本文件。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
