@@ -95,6 +95,8 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 		return track.cursorPosition(event.Row, event.Column)
 	case EventEraseCharacters:
 		return track.eraseCharacters(event.Count, eraseBlankStyle(event.Style))
+	case EventDeleteCharacters:
+		return track.deleteCharacters(event.Count, eraseBlankStyle(event.Style))
 	case EventEraseInLine:
 		return track.eraseInLine(event.EraseMode, event.EraseCols, eraseBlankStyle(event.Style))
 	case EventEraseInDisplay:
@@ -671,6 +673,36 @@ func (track *HistoryTrack) eraseCharacters(count int, style CellStyle) error {
 		return nil
 	}
 	line.Cells = eraseCharacterCellsAtColumn(line.Cells, track.activeCol, count, style)
+	line.TailFill = nil
+	line.Dirty = true
+	nextGeneration := track.nextGeneration()
+	line.ContentGeneration = nextGeneration
+	line, err := track.replaceOwnedLine(line)
+	if err != nil {
+		return err
+	}
+	track.activeLine = line.ID
+	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
+	track.overwrite = true
+	track.setGeneration(nextGeneration)
+	return nil
+}
+
+func (track *HistoryTrack) deleteCharacters(count int, style CellStyle) error {
+	if track.altScreen || count <= 0 || track.activeLine == 0 {
+		return nil
+	}
+	if !track.frontier.Contains(track.activeLine) && !track.committed.Contains(track.activeLine) {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return nil
+	}
+	line, ok := track.store.Line(track.activeLine)
+	if !ok {
+		return nil
+	}
+	line.Cells = deleteCharacterCellsAtColumn(line.Cells, track.activeCol, count, style)
 	line.TailFill = nil
 	line.Dirty = true
 	nextGeneration := track.nextGeneration()
@@ -1733,6 +1765,31 @@ func eraseCharacterCellsAtColumn(existing []Cell, column int, count int, style C
 	}
 	for i := column; i < eraseTo; i++ {
 		base[i] = Cell{Text: " ", Width: 1, Style: style}
+	}
+	return compactMutationCells(base)
+}
+
+func deleteCharacterCellsAtColumn(existing []Cell, column int, count int, style CellStyle) []Cell {
+	base := expandUnmeasuredCellsForMutation(existing)
+	if len(base) == 0 || count <= 0 {
+		return base
+	}
+	if column < 0 {
+		column = 0
+	}
+	if column >= len(base) {
+		return compactMutationCells(base)
+	}
+	deleteTo := column + count
+	if deleteTo > len(base) {
+		deleteTo = len(base)
+	}
+	copy(base[column:], base[deleteTo:])
+	base = base[:len(base)-(deleteTo-column)]
+	if styleCreatesVisibleBlank(style) {
+		for i := 0; i < deleteTo-column; i++ {
+			base = append(base, Cell{Text: " ", Width: 1, Style: style})
+		}
 	}
 	return compactMutationCells(base)
 }

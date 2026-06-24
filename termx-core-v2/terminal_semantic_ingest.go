@@ -247,7 +247,16 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 				}
 				hasOps = true
 			case vterm.ScreenOpScrollRect:
-				if op.Dx != 0 || op.Dy == 0 {
+				if op.Dx != 0 {
+					if op.Dy == 0 && op.Dx < 0 && semanticOpsContainControl(damage.SemanticOps, "dch") {
+						// 中文说明：DCH 的横向 scroll rect 只是 live screen diff；
+						// history 只消费同批 ordered dch control，不能从这里推断删除语义。
+						hasOps = true
+						continue
+					}
+					return false
+				}
+				if op.Dy == 0 {
 					return false
 				}
 				if op.Dy < 0 {
@@ -322,7 +331,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
+	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
 		return true
 	default:
 		return false
@@ -892,6 +901,12 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 	case "ech":
 		return pipeline.track.Apply(history.HistoryEvent{
 			Kind:  history.EventEraseCharacters,
+			Count: op.Mode,
+			Style: historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
+		})
+	case "dch":
+		return pipeline.track.Apply(history.HistoryEvent{
+			Kind:  history.EventDeleteCharacters,
 			Count: op.Mode,
 			Style: historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
 		})

@@ -358,6 +358,23 @@ func TestHistoryTrackEraseCharactersMutatesFixedCellRange(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackDeleteCharactersShiftsMutableCellsLeft(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ABCDE")},
+		HistoryEvent{Kind: EventCursorHorizontalAbsolute, Count: 2},
+		HistoryEvent{Kind: EventDeleteCharacters, Count: 2},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "ADE" {
+		t.Fatalf("DCH should delete cells and shift the suffix left, got %q cells=%#v", got, line.Cells)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("delete-characters must stay in mutable frontier, got committed %v", got)
+	}
+}
+
 func TestHistoryTrackEraseInLinePreservesStyledBlankToVisualRowEnd(t *testing.T) {
 	track := NewHistoryTrack()
 	style := CellStyle{BG: "idx:24"}

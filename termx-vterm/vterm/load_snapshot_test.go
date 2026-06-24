@@ -1390,6 +1390,31 @@ func TestVTermWriteWithDamageSemanticEraseCharacter(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticDeleteCharacter(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("ABCDE\x1b[2G\x1b[2P"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+			if op.Control == "dch" && (op.Col != 1 || op.Mode != 2) {
+				t.Fatalf("expected DCH at col 1 count 2, got %#v", op)
+			}
+		}
+	}
+	want := []string{"write:ABCDE", "control:cha", "control:dch"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic DCH must preserve raw delete order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticEraseDisplayComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 

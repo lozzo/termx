@@ -639,7 +639,10 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('P', func(params ansi.Params) bool {
 		// Delete Character [ansi.DCH]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
 		e.scr.DeleteCell(n)
+		e.scr.damage.recordControlWithCell("dch", x, y, n, blank)
 		return true
 	})
 
