@@ -347,12 +347,16 @@ func (e *Emulator) registerDefaultEscHandlers() {
 	e.RegisterEscHandler('=', func() bool {
 		// Keypad Application Mode [ansi.DECKPAM]
 		e.setMode(ansi.ModeNumericKeypad, ansi.ModeSet)
+		// 中文说明：DECKPAM 等价于 DEC private keypad mode ?66，语义流需要保留顺序。
+		e.scr.damage.recordMode(66, true, true)
 		return true
 	})
 
 	e.RegisterEscHandler('>', func() bool {
 		// Keypad Numeric Mode [ansi.DECKPNM]
 		e.setMode(ansi.ModeNumericKeypad, ansi.ModeReset)
+		// 中文说明：DECKPNM 关闭同一个 ?66 keypad mode，history 侧只消费语义不保存状态。
+		e.scr.damage.recordMode(66, true, false)
 		return true
 	})
 

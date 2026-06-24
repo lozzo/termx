@@ -1364,6 +1364,28 @@ func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticKeypadEscModes(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b=esc-keys\x1b>"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:66:on", "write:esc-keys", "mode:66:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic keypad ESC modes must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticAlternateScrollMode(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
