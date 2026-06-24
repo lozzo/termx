@@ -2257,6 +2257,51 @@ func TestTerminalSemanticProjectorConsumesTabClearRawWithoutFallback(t *testing.
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesTabResetRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(16, 3, 100, nil)
+	raw := "ab\x1bH\x1b[?5W\r\tZ"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	decst8c := firstDamageControl(damage, "decst8c")
+	ht := firstDamageControl(damage, "ht")
+	if decst8c.Control != "decst8c" || decst8c.Mode != 5 || ht.Control != "ht" || ht.Col != 8 {
+		t.Fatalf("tab reset raw should expose DECST8C and vterm-resolved HT semantic controls, decst8c=%#v ht=%#v damage=%#v", decst8c, ht, damage)
+	}
+	pipeline := newTerminalHistoryPipeline(16, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            16,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 4 || stats.WriteSpanOps == 0 {
+		t.Fatalf("tab reset raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(16, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "ab      Z" {
+		t.Fatalf("tab reset semantic projector should use vterm default tabstop state, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesEraseCharacterRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

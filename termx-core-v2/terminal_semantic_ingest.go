@@ -373,7 +373,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "hts", "tbc", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm", "decslrm", "ris":
+	case "cr", "bs", "ht", "cbt", "hts", "tbc", "decst8c", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm", "decslrm", "ris":
 		return true
 	default:
 		return false
@@ -977,8 +977,8 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCommitFrontier})
 	case "ri":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: 1})
-	case "hts", "tbc", "decstbm", "decslrm":
-		// 中文说明：HTS/TBC 与 DECSTBM/DECSLRM 都只改变 shared vterm 的
+	case "hts", "tbc", "decst8c", "decstbm", "decslrm":
+		// 中文说明：HTS/TBC/DECST8C 与 DECSTBM/DECSLRM 都只改变 shared vterm 的
 		// 内部状态；history 不保存第二份 tab/margin truth，后续 resolved
 		// cursor/write/scroll-out 语义会显式投影。
 		return nil

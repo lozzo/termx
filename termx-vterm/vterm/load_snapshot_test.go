@@ -1570,6 +1570,36 @@ func TestVTermWriteWithDamageSemanticTabClear(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticTabReset(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("ab\x1bH\x1b[?5W\r\tZ"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	decst8c := firstSemanticControlOp(t, damage, "decst8c")
+	if decst8c.Mode != 5 {
+		t.Fatalf("expected DECST8C mode 5 to be recorded, got %#v damage=%#v", decst8c, damage)
+	}
+	ht := firstSemanticControlOp(t, damage, "ht")
+	if ht.Col != 8 {
+		t.Fatalf("expected HT to land on default tab stop col 8 after DECST8C, got %#v damage=%#v", ht, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		}
+	}
+	want := []string{"write:ab", "control:hts", "control:decst8c", "control:cr", "control:ht", "write:Z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic tab reset ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticSpecialDrawingCharset(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

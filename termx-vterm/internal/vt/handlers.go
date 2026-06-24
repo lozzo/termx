@@ -700,7 +700,11 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler(ansi.Command('?', 0, 'W'), func(params ansi.Params) bool {
 		// Set Tab at Every 8 Columns [ansi.DECST8C]
 		if len(params) == 1 && params[0] == 5 {
+			x, y := e.scr.CursorPosition()
 			e.resetTabStops()
+			// 中文说明：DECST8C 重置的是 vterm tab stop 状态；history
+			// 只消费后续 HT 的 resolved column，不保存第二份 tab truth。
+			e.scr.damage.recordControl("decst8c", x, y, 5)
 			return true
 		}
 		return false
