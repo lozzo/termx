@@ -864,6 +864,64 @@ func TestTerminalSemanticProjectorConsumesRealVTermEraseDisplay(t *testing.T) {
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesRepeatedPrimaryRepaintRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.EraseDisplayOps += next.EraseDisplayOps
+		stats.ModeOps += next.ModeOps
+		stats.ControlOps += next.ControlOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(40, 6, 100, nil)
+	pipeline := newTerminalHistoryPipeline(40, 6)
+	for _, raw := range []string{
+		"shell-one\nshell-two\n",
+		"\x1b[?2026h\x1b[H\x1b[Jframe-one\x1b[6;1Hinput-old",
+		"\x1b[H\x1b[Jframe-two\x1b[6;1Hinput-new\x1b[?2026l",
+	} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            40,
+			Rows:            6,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 || stats.EraseDisplayOps < 2 || stats.ModeOps < 2 || stats.ControlOps == 0 {
+		t.Fatalf("repeated primary repaint should use vterm semantic projector without parser fallback, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(40, 10)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("repeated repaint must not increase committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	text := historyWindowJoinedText(window)
+	for _, want := range []string{"shell-one", "shell-two", "frame-two", "input-new"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("latest should contain %q after repeated repaint, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	for _, stale := range []string{"frame-one", "input-old"} {
+		if strings.Contains(text, stale) {
+			t.Fatalf("repeated repaint should replace stale %q, text=%q rows=%#v", stale, text, window.Rows)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermPrimaryScrollOut(t *testing.T) {
 	for _, rows := range []int{1, 2} {
 		t.Run("rows_"+string(rune('0'+rows)), func(t *testing.T) {
