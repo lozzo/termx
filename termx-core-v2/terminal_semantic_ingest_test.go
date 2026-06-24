@@ -462,6 +462,49 @@ func TestTerminalSemanticProjectorConsumesVerticalAbsoluteRawWithoutFallback(t *
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesHorizontalPositionAbsoluteRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(12, 3, 100, nil)
+	raw := "abcdef\r\x1b[4`XY"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	hpa := firstDamageControl(damage, "cha")
+	if hpa.Control != "cha" || hpa.Col != 3 {
+		t.Fatalf("horizontal position absolute raw should expose vterm HPA semantic col 3, got %#v damage=%#v", hpa, damage)
+	}
+	pipeline := newTerminalHistoryPipeline(12, 3)
+	if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            12,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 2 || stats.WriteSpanOps == 0 {
+		t.Fatalf("horizontal position absolute raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(12, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "abcXYf" {
+		t.Fatalf("horizontal position absolute semantic projector should rewrite at vterm column, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorPrefersOrderedSemanticOps(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(12, 3)
 	batch := terminalSemanticBatch{

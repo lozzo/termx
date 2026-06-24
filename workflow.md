@@ -299,6 +299,7 @@
 | R201BG. SK Unicode Core mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 Unicode Core mode `?2027h/l`：Unicode/grapheme mode 状态只由 shared vterm 持有，core-v2 raw shared batch 消费 mode/text semantic ops 但不把该 mode 写成 history truth |
 | R201BH. SK repeated primary repaint raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 Codex-style repeated home+ED repaint 只替换 current mutable frame，不把旧 frame/input 写入 committed history，也不回退 `historyANSIParser` |
 | R201BI. SK vertical absolute raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 `CSI d` / VPA 垂直绝对定位只消费 shared vterm 已归一坐标，不让 `historyANSIParser` 忽略该控制后承接同批文本 |
+| R201BJ. SK horizontal position absolute raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 `CSI \`` / HPA 水平绝对定位只消费 shared vterm 已归一列，不让 `historyANSIParser` 忽略该控制后承接同批文本 |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入
@@ -415,6 +416,7 @@
 - `R201BG` 已完成：Unicode Core mode `?2027h/l` 现在由 shared vterm mode semantic ops 进入 core-v2 raw shared projector；core 只消费该 mode/text 顺序，不把 Unicode/grapheme mode 写成 history truth，同批 combining/wide 文本仍由 vterm text cells 和 core projector 保持 logical cell 边界。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticUnicodeCoreMode -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesUnicodeCoreModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
 - `R201BH` 已完成：补 raw shared-vterm repeated primary repaint harness，验证第二次 home+ED repaint 只替换 current mutable frame，不把旧 frame/input 写入 committed history，并保持 `RawFallbacks == 0`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesRepeatedPrimaryRepaintRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R201BI` 已完成：补 raw shared-vterm VPA harness，验证 `CSI d` 垂直绝对定位使用 vterm 已归一 row/col 进入 projector，后续同批文本不回退 `historyANSIParser`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesVerticalAbsoluteRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
+- `R201BJ` 已完成：补 raw shared-vterm HPA harness，验证 `CSI \`` 水平绝对定位使用 vterm 已归一 column 进入 projector，后续同批文本不回退 `historyANSIParser`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesHorizontalPositionAbsoluteRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R202` 待开始：Web 桌面 terminal 可视区修复保留在后续切片；已有 remote-ui/localweb 未提交改动不纳入当前 core-v2 semantic ingest 切片。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
