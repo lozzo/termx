@@ -1134,6 +1134,47 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesBracketedPasteModeRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ModeOps += next.ModeOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(20, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	for _, raw := range []string{"\x1b[?2004h", "paste-ready\n", "\x1b[?2004l"} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            20,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 2 || stats.WriteSpanOps == 0 {
+		t.Fatalf("bracketed paste mode raw should use vterm semantic projector without parser fallback, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(20, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "paste-ready") {
+		t.Fatalf("bracketed paste mode should not suppress ordinary primary text, rows=%#v", window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesAltScreenRunningRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

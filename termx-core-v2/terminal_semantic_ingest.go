@@ -332,7 +332,7 @@ func rawSharedModeCanUseSemanticOp(op vterm.DamageOp) bool {
 		return false
 	}
 	switch op.Mode {
-	case 25, 47, 1047, 1049, 1000, 1002, 1003, 1004, 1006, 2026:
+	case 25, 47, 1047, 1049, 1000, 1002, 1003, 1004, 1006, 2004, 2026:
 		return true
 	default:
 		return false
