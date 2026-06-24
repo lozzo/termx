@@ -1271,6 +1271,64 @@ func TestVTermWriteWithDamageC1CSIControlsKeepSemanticOrder(t *testing.T) {
 func TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder(t *testing.T) {
 	c1 := string([]byte{0x9b})
 
+	t.Run("erase below cursor", func(t *testing.T) {
+		vt := New(12, 3, 100, nil)
+		_, err, _ := vt.WriteWithDamage([]byte("top\r\nmiddle\r\nbottom"))
+		if err != nil {
+			t.Fatalf("seed write with damage: %v", err)
+		}
+		_, err, damage := vt.WriteWithDamage([]byte(c1 + "2;4H" + c1 + "Jtail"))
+		if err != nil {
+			t.Fatalf("write with damage: %v", err)
+		}
+		ed := firstSemanticControlOp(t, damage, "ed")
+		if ed.Mode != 0 || ed.Row != 1 || ed.Col != 3 {
+			t.Fatalf("expected C1 CSI ED0 at row=1 col=3, got %#v damage=%#v", ed, damage)
+		}
+		var got []string
+		for _, op := range damage.SemanticOps {
+			switch op.Code {
+			case ScreenOpControl:
+				got = append(got, "control:"+op.Control)
+			case ScreenOpWriteSpan:
+				got = append(got, "write:"+semanticCellsContent(op.Cells))
+			}
+		}
+		want := []string{"control:cup", "control:ed", "write:tail"}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("C1 CSI ED0 semantic ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+		}
+	})
+
+	t.Run("erase above cursor", func(t *testing.T) {
+		vt := New(12, 3, 100, nil)
+		_, err, _ := vt.WriteWithDamage([]byte("top\r\nmiddle\r\nbottom"))
+		if err != nil {
+			t.Fatalf("seed write with damage: %v", err)
+		}
+		_, err, damage := vt.WriteWithDamage([]byte(c1 + "2;4H" + c1 + "1Jtail"))
+		if err != nil {
+			t.Fatalf("write with damage: %v", err)
+		}
+		ed := firstSemanticControlOp(t, damage, "ed")
+		if ed.Mode != 1 || ed.Row != 1 || ed.Col != 3 {
+			t.Fatalf("expected C1 CSI ED1 at row=1 col=3, got %#v damage=%#v", ed, damage)
+		}
+		var got []string
+		for _, op := range damage.SemanticOps {
+			switch op.Code {
+			case ScreenOpControl:
+				got = append(got, "control:"+op.Control)
+			case ScreenOpWriteSpan:
+				got = append(got, "write:"+semanticCellsContent(op.Cells))
+			}
+		}
+		want := []string{"control:cup", "control:ed", "write:tail"}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("C1 CSI ED1 semantic ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+		}
+	})
+
 	t.Run("page break", func(t *testing.T) {
 		vt := New(12, 3, 100, nil)
 		_, err, _ := vt.WriteWithDamage([]byte("shell\r\npage"))

@@ -1255,6 +1255,115 @@ func TestTerminalSemanticProjectorConsumesC1CSIEraseDisplayModesRawWithoutFallba
 	})
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSIPartialEraseDisplayRawWithoutFallback(t *testing.T) {
+	c1 := string([]byte{0x9b})
+
+	for _, tc := range []struct {
+		name       string
+		raw        string
+		mode       int
+		want       []string
+		forbidden  []string
+		totalLines int
+	}{
+		{
+			name:       "erase-below-cursor",
+			raw:        c1 + "2;4H" + c1 + "Jtail",
+			mode:       0,
+			want:       []string{"top", "midtail"},
+			forbidden:  []string{"bottom"},
+			totalLines: 0,
+		},
+		{
+			name:       "erase-above-cursor",
+			raw:        c1 + "2;4H" + c1 + "1Jtail",
+			mode:       1,
+			want:       []string{"midtail", "bottom"},
+			forbidden:  []string{"top"},
+			totalLines: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.WriteSpanOps += next.WriteSpanOps
+				stats.EraseDisplayOps += next.EraseDisplayOps
+				stats.ControlOps += next.ControlOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			term := vterm.New(12, 3, 100, nil)
+			pipeline := newTerminalHistoryPipeline(12, 3)
+			seed := "top\r\nmiddle\r\nbottom"
+			_, err, seedDamage := term.WriteWithDamage([]byte(seed))
+			if err != nil {
+				t.Fatalf("seed vterm write: %v", err)
+			}
+			if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+				Raw:             seed,
+				Damages:         []vterm.WriteDamage{seedDamage},
+				Cols:            12,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}); err != nil {
+				t.Fatalf("seed ingest semantic batch: %v", err)
+			}
+
+			resetTerminalSemanticIngestTestHooks()
+			stats = terminalSemanticProjectorStats{}
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.WriteSpanOps += next.WriteSpanOps
+				stats.EraseDisplayOps += next.EraseDisplayOps
+				stats.ControlOps += next.ControlOps
+			}
+
+			_, err, damage := term.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			ed := firstDamageControl(damage, "ed")
+			if ed.Control != "ed" || ed.Mode != tc.mode {
+				t.Fatalf("C1 CSI ED%d raw batch should expose vterm ed control, got %#v damage=%#v", tc.mode, ed, damage)
+			}
+			if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+				Raw:             tc.raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            12,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.EraseDisplayOps == 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+				t.Fatalf("C1 CSI ED%d raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", tc.mode, stats, damage)
+			}
+			window, err := pipeline.LatestWindow(12, 6)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			text := historyWindowJoinedText(window)
+			if window.TotalLines != tc.totalLines {
+				t.Fatalf("C1 CSI ED%d partial erase should not alter committed depth, total=%d rows=%#v", tc.mode, window.TotalLines, window.Rows)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Fatalf("C1 CSI ED%d latest should contain %q, text=%q rows=%#v", tc.mode, want, text, window.Rows)
+				}
+			}
+			for _, forbidden := range tc.forbidden {
+				if strings.Contains(text, forbidden) {
+					t.Fatalf("C1 CSI ED%d latest should erase %q, text=%q rows=%#v", tc.mode, forbidden, text, window.Rows)
+				}
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRepeatedPrimaryRepaintRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
