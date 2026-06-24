@@ -388,6 +388,76 @@ func TestTerminalSemanticProjectorPrefersOrderedSemanticOps(t *testing.T) {
 	}
 }
 
+func TestTerminalSemanticProjectorIgnoresFullReplaceOnlyRawHistory(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.FullReplaceOnly += next.FullReplaceOnly
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	pipeline := newTerminalHistoryPipeline(20, 4)
+	if err := pipeline.Ingest("committed\n"); err != nil {
+		t.Fatalf("seed ingest: %v", err)
+	}
+	batch := terminalSemanticBatch{
+		Raw: "parser-must-not-append",
+		Damages: []vterm.WriteDamage{{
+			RequiresFullReplace: true,
+			FullReplaceReason:   "test",
+			SizeCols:            20,
+			SizeRows:            4,
+		}},
+		Cols:            20,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest full replace batch: %v", err)
+	}
+	if stats.FullReplaceOnly != 1 {
+		t.Fatalf("expected full-replace-only boundary stat, got %#v", stats)
+	}
+	window, err := pipeline.LatestWindow(20, 5)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if historyWindowContainsText(window, "parser-must-not-append") || !historyWindowContainsText(window, "committed") {
+		t.Fatalf("full-replace-only shared batch must not append raw parser history, rows=%#v", window.Rows)
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesSyntheticFullReplaceSemanticOps(t *testing.T) {
+	pipeline := newTerminalHistoryPipeline(20, 4)
+	batch := terminalSemanticBatch{
+		Damages: []vterm.WriteDamage{{
+			RequiresFullReplace: true,
+			FullReplaceReason:   "test",
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("semantic-full")},
+			},
+			Ops: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("screen-diff")},
+			},
+			SizeCols: 20,
+			SizeRows: 4,
+		}},
+		Cols:            20,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest full replace semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(20, 5)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "semantic-full") || historyWindowContainsText(window, "screen-diff") {
+		t.Fatalf("full-replace semantic ops should be consumed without parser/screen diff history, rows=%#v", window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorUsesSemanticClearControl(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(12, 3)
 	batch := terminalSemanticBatch{

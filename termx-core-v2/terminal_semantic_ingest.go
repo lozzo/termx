@@ -116,6 +116,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 	if len(batch.AltExitFrame) > 0 {
 		stats.AltExitFrames++
 	}
+	fullReplaceOnly := sharedBatchFullReplaceOnly(batch.Damages)
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
 		if batch.Raw != "" {
 			pipeline.shadowParsePrimaryOutputLocked(batch.Raw)
@@ -124,11 +125,12 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		if err != nil {
 			return err
 		}
-	} else if batch.Raw != "" {
+	} else if batch.Raw != "" && !(batch.FromSharedVTerm && fullReplaceOnly) {
 		var err error
 		if batch.FromSharedVTerm {
 			// 中文说明：shared vterm 已经给出 alt-screen final-frame 和 damage；
-			// 只有 vterm 暂未产出可消费语义时才允许 raw parser 作为迁移辅助。
+			// 只有 vterm 暂未产出可消费语义、且不是 full-replace/stale 边界时
+			// 才允许 raw parser 作为迁移辅助。
 			err = pipeline.ingestPrimaryOutputLocked(batch.Raw)
 		} else {
 			err = pipeline.ingestOutputLocked(batch.Raw)
@@ -168,6 +170,19 @@ func semanticBatchHasHistoryOps(damages []vterm.WriteDamage) bool {
 		}
 	}
 	return false
+}
+
+func sharedBatchFullReplaceOnly(damages []vterm.WriteDamage) bool {
+	hasFullReplace := false
+	for _, damage := range damages {
+		if damage.RequiresFullReplace {
+			hasFullReplace = true
+		}
+		if len(semanticOpsForHistoryDamage(damage)) > 0 || len(damage.ScrollbackAppend) > 0 || len(damage.AlternateAppend) > 0 {
+			return false
+		}
+	}
+	return hasFullReplace
 }
 
 func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
