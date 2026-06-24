@@ -1225,6 +1225,49 @@ func TestVTermWriteWithDamageEmitsCursorControlOps(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSIControlsKeepSemanticOrder(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	raw := "abcdef" + string([]byte{0x9b}) + "3DXYZ" +
+		string([]byte{0x9b}) + "2;5H!" +
+		string([]byte{0x9b}) + "Ktail"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+semanticCellsContent(op.Cells))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+			switch op.Control {
+			case "cub":
+				if op.Mode != 3 {
+					t.Fatalf("expected C1 CUB count 3, got %#v", op)
+				}
+			case "cup":
+				if op.Row != 1 || op.Col != 4 {
+					t.Fatalf("expected C1 CUP cursor position row=1 col=4, got %#v", op)
+				}
+			case "el":
+				if op.Mode != 0 {
+					t.Fatalf("expected C1 EL mode 0, got %#v", op)
+				}
+			case "ech":
+				if op.Mode != 7 {
+					t.Fatalf("expected C1 EL to expose erased cell count through ECH mode 7, got %#v", op)
+				}
+			}
+		}
+	}
+	want := []string{"write:abcdef", "control:cub", "write:XYZ", "control:cup", "write:!", "control:ech", "control:el", "write:tail"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 CSI semantic ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticOpsPreserveRawOrder(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
