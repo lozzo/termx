@@ -1487,6 +1487,48 @@ func TestTerminalSemanticProjectorConsumesInsertCharacterRawWithoutFallback(t *t
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesRepeatCharacterRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "AB\x1b[3bC"
+	term := vterm.New(12, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if !damageOpsContainText(damage.SemanticOps, "B") {
+		t.Fatalf("REP raw should expose repeated vterm text semantic ops, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(12, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            12,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("repeat character raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(12, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "ABBBBC" {
+		t.Fatalf("REP semantic projector should repeat previous character, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesLineOperationsRawWithoutFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -1716,6 +1758,20 @@ func firstDamageControl(damage vterm.WriteDamage, control string) vterm.DamageOp
 		}
 	}
 	return vterm.DamageOp{}
+}
+
+func damageOpsContainText(ops []vterm.DamageOp, text string) bool {
+	for _, op := range ops {
+		if op.Code != vterm.ScreenOpWriteSpan {
+			continue
+		}
+		for _, cell := range op.Cells {
+			if cell.Content == text {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func unexpectedLineOperationTexts(expected []string) []string {

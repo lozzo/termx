@@ -1440,6 +1440,25 @@ func TestVTermWriteWithDamageSemanticInsertCharacter(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticRepeatCharacter(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("AB\x1b[3bC"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		if op.Code != ScreenOpWriteSpan {
+			continue
+		}
+		got = append(got, rowText(op.Cells, len(op.Cells)))
+	}
+	if strings.Join(got, "|") != "AB|B|B|B|C" {
+		t.Fatalf("REP should emit repeated text semantic ops from print path, got %v damage=%#v", got, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticLineOperations(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
