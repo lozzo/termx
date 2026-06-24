@@ -22,6 +22,7 @@ type terminalHistoryIngestQueue struct {
 
 type terminalHistoryIngestItem struct {
 	text     string
+	batch    *terminalSemanticBatch
 	flushSeq uint64
 }
 
@@ -41,6 +42,21 @@ func (queue *terminalHistoryIngestQueue) Enqueue(text string) bool {
 		return false
 	}
 	queue.pending = append(queue.pending, terminalHistoryIngestItem{text: text})
+	queue.cond.Signal()
+	return true
+}
+
+func (queue *terminalHistoryIngestQueue) EnqueueBatch(batch terminalSemanticBatch) bool {
+	if batch.Raw == "" && len(batch.AltExitFrame) == 0 {
+		return true
+	}
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	if queue.closed {
+		return false
+	}
+	batchCopy := batch
+	queue.pending = append(queue.pending, terminalHistoryIngestItem{batch: &batchCopy})
 	queue.cond.Signal()
 	return true
 }
@@ -109,8 +125,12 @@ func (queue *terminalHistoryIngestQueue) Wait() {
 	<-queue.done
 }
 
-func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error) {
+func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error, ingestBatches ...func([]terminalSemanticBatch) error) {
 	defer close(queue.done)
+	var ingestBatch func([]terminalSemanticBatch) error
+	if len(ingestBatches) > 0 {
+		ingestBatch = ingestBatches[0]
+	}
 	for {
 		batch, ok := queue.nextBatch()
 		if !ok {
@@ -123,6 +143,12 @@ func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error) {
 				_ = ingest(texts)
 			}
 		}
+		if ingestBatch != nil {
+			batches := terminalHistoryIngestSemanticBatches(batch)
+			if len(batches) > 0 {
+				_ = ingestBatch(batches)
+			}
+		}
 		if target, ok := terminalHistoryIngestBatchFlushTarget(batch); ok {
 			queue.markFlushed(target)
 		}
@@ -131,6 +157,19 @@ func (queue *terminalHistoryIngestQueue) Run(ingest func([]string) error) {
 		// 归还解析/编码临时页；不删除 history truth，也不做后台定时 scrub。
 		maybeReclaimDaemonBoundaryHeap()
 	}
+}
+
+func terminalHistoryIngestSemanticBatches(batch []terminalHistoryIngestItem) []terminalSemanticBatch {
+	if len(batch) == 0 {
+		return nil
+	}
+	batches := make([]terminalSemanticBatch, 0, len(batch))
+	for _, item := range batch {
+		if item.batch != nil {
+			batches = append(batches, *item.batch)
+		}
+	}
+	return batches
 }
 
 func terminalHistoryIngestBatchTexts(batch []terminalHistoryIngestItem) []string {

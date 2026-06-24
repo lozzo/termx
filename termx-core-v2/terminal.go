@@ -24,6 +24,7 @@ type Terminal struct {
 	history      *terminalHistoryPipeline
 	historyClose func() error
 	queueMu      sync.Mutex
+	liveQ        *terminalLiveIngestQueue
 	historyQ     *terminalHistoryIngestQueue
 	events       *eventBroker
 	update       func(TerminalInfo)
@@ -107,11 +108,14 @@ func (terminal *Terminal) IngestOutput(output string) error {
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	surface.Write(rawOutput)
+	result := surface.WriteWithResult(rawOutput)
+	size := surface.Size()
 	terminal.liveMu.Unlock()
 
-	if err := terminal.historyPipeline().Ingest(output); err != nil {
-		return err
+	for _, batch := range terminalSemanticBatchesFromSurfaceResult(result, size) {
+		if err := terminal.historyPipeline().IngestSemanticBatch(batch); err != nil {
+			return err
+		}
 	}
 	terminal.publish(EventTerminalChanged, info)
 	return nil
@@ -291,14 +295,20 @@ func (terminal *Terminal) RetainedHistoryLineCount() int {
 
 func (terminal *Terminal) FlushHistory(ctx context.Context) error {
 	terminal.queueMu.Lock()
-	queue := terminal.historyQ
+	liveQueue := terminal.liveQ
+	historyQueue := terminal.historyQ
 	terminal.queueMu.Unlock()
-	if queue == nil {
+	if liveQueue != nil {
+		if err := liveQueue.Flush(ctx); err != nil {
+			return err
+		}
+	}
+	if historyQueue == nil {
 		return nil
 	}
 	// 中文说明：copy/history 冻结前只等待已经读入队列的历史输出追平；
 	// 不持 terminal 主锁，避免 history worker 处理同批输出时反向等待自己。
-	return queue.Flush(ctx)
+	return historyQueue.Flush(ctx)
 }
 
 func (terminal *Terminal) historyPipeline() *terminalHistoryPipeline {
@@ -356,12 +366,12 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 	}
 	liveQueue := newTerminalLiveIngestQueue()
 	historyQueue := newTerminalHistoryIngestQueue()
-	terminal.setHistoryQueue(process, historyQueue)
+	terminal.setIngestQueues(process, liveQueue, historyQueue)
 	go liveQueue.Run(func(output string) error {
-		return terminal.ingestProcessLiveOutput(process, output)
+		return terminal.ingestProcessSemanticOutput(process, historyQueue, output)
 	})
-	go historyQueue.Run(func(outputs []string) error {
-		return terminal.ingestProcessHistoryOutputBatch(process, outputs)
+	go historyQueue.Run(nil, func(batches []terminalSemanticBatch) error {
+		return terminal.ingestProcessHistorySemanticBatches(process, batches)
 	})
 	go func() {
 		defer close(done)
@@ -370,7 +380,7 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 			liveQueue.Wait()
 			historyQueue.Close()
 			historyQueue.Wait()
-			terminal.clearHistoryQueue(process, historyQueue)
+			terminal.clearIngestQueues(process, liveQueue, historyQueue)
 		}()
 		for chunk := range output {
 			if len(chunk) == 0 {
@@ -378,13 +388,12 @@ func (terminal *Terminal) watchOutput(process TerminalProcess) <-chan struct{} {
 			}
 			text := string(chunk)
 			liveQueue.Enqueue(text)
-			historyQueue.Enqueue(text)
 		}
 	}()
 	return done
 }
 
-func (terminal *Terminal) setHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
+func (terminal *Terminal) setIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue, historyQueue *terminalHistoryIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -392,11 +401,12 @@ func (terminal *Terminal) setHistoryQueue(process TerminalProcess, queue *termin
 		return
 	}
 	terminal.queueMu.Lock()
-	terminal.historyQ = queue
+	terminal.liveQ = liveQueue
+	terminal.historyQ = historyQueue
 	terminal.queueMu.Unlock()
 }
 
-func (terminal *Terminal) clearHistoryQueue(process TerminalProcess, queue *terminalHistoryIngestQueue) {
+func (terminal *Terminal) clearIngestQueues(process TerminalProcess, liveQueue *terminalLiveIngestQueue, historyQueue *terminalHistoryIngestQueue) {
 	terminal.mu.Lock()
 	current := terminal.process == process
 	terminal.mu.Unlock()
@@ -404,7 +414,10 @@ func (terminal *Terminal) clearHistoryQueue(process TerminalProcess, queue *term
 		return
 	}
 	terminal.queueMu.Lock()
-	if terminal.historyQ == queue {
+	if terminal.liveQ == liveQueue {
+		terminal.liveQ = nil
+	}
+	if terminal.historyQ == historyQueue {
 		terminal.historyQ = nil
 	}
 	terminal.queueMu.Unlock()
@@ -423,7 +436,7 @@ func (terminal *Terminal) watchExit(process TerminalProcess, outputDone <-chan s
 	}()
 }
 
-func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, output string) error {
+func (terminal *Terminal) ingestProcessSemanticOutput(process TerminalProcess, historyQueue *terminalHistoryIngestQueue, output string) error {
 	terminal.mu.Lock()
 	if terminal.process != process {
 		terminal.mu.Unlock()
@@ -438,8 +451,15 @@ func (terminal *Terminal) ingestProcessLiveOutput(process TerminalProcess, outpu
 	terminal.mu.Unlock()
 
 	terminal.liveMu.Lock()
-	surface.Write(output)
+	result := surface.WriteWithResult(output)
+	size := surface.Size()
 	terminal.liveMu.Unlock()
+
+	for _, batch := range terminalSemanticBatchesFromSurfaceResult(result, size) {
+		if !historyQueue.EnqueueBatch(batch) {
+			return nil
+		}
+	}
 
 	terminal.mu.Lock()
 	stillCurrent := terminal.process == process && terminal.info.State != TerminalStateExited && terminal.info.State != TerminalStateRemoved
@@ -470,6 +490,28 @@ func (terminal *Terminal) ingestProcessHistoryOutputBatch(process TerminalProces
 	terminal.historyMu.Unlock()
 	terminal.mu.Unlock()
 	return pipeline.IngestBatch(outputs)
+}
+
+func (terminal *Terminal) ingestProcessHistorySemanticBatches(process TerminalProcess, batches []terminalSemanticBatch) error {
+	terminal.mu.Lock()
+	if terminal.process != process {
+		terminal.mu.Unlock()
+		return nil
+	}
+	if terminal.info.State == TerminalStateExited || terminal.info.State == TerminalStateRemoved {
+		terminal.mu.Unlock()
+		return ErrTerminalExited
+	}
+	terminal.historyMu.Lock()
+	pipeline := terminal.history
+	terminal.historyMu.Unlock()
+	terminal.mu.Unlock()
+	for _, batch := range batches {
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (terminal *Terminal) markExited(process TerminalProcess, exit ProcessExit) {

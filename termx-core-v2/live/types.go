@@ -39,6 +39,7 @@ type SurfaceWriteResult struct {
 
 type SurfaceWriteSegment struct {
 	Raw                string
+	Damages            []vterm.WriteDamage
 	AltScreenExitFrame [][]vterm.Cell
 }
 
@@ -122,6 +123,7 @@ func (surface *SurfaceTrack) Write(text string) {
 func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 	var result SurfaceWriteResult
 	var raw strings.Builder
+	var damages []vterm.WriteDamage
 	if text == "" && surface.pending == "" {
 		return result
 	}
@@ -131,13 +133,13 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 	for text != "" {
 		idx := strings.Index(text, "\x1b[?")
 		if idx < 0 {
-			surface.writeRaw(text)
+			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text))
 			raw.WriteString(text)
-			appendSurfaceWriteRawSegment(&result, &raw)
+			appendSurfaceWriteRawSegment(&result, &raw, &damages)
 			return result
 		}
 		if idx > 0 {
-			surface.writeRaw(text[:idx])
+			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:idx]))
 			raw.WriteString(text[:idx])
 			text = text[idx:]
 			continue
@@ -145,11 +147,11 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 		consumed, action, _, complete := consumePrivateModeCSI(text)
 		if !complete {
 			surface.pending = text
-			appendSurfaceWriteRawSegment(&result, &raw)
+			appendSurfaceWriteRawSegment(&result, &raw, &damages)
 			return result
 		}
 		if consumed <= 0 {
-			surface.writeRaw(text[:1])
+			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:1]))
 			raw.WriteString(text[:1])
 			text = text[1:]
 			continue
@@ -159,46 +161,69 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 			if surface.preserveAltScreenFrameOnExit {
 				altFrame = surface.altScreenFrameCells()
 			}
-			surface.writeRaw(text[:consumed])
+			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:consumed]))
 			raw.WriteString(text[:consumed])
 			if surface.preserveAltScreenFrameOnExit {
 				surface.appendAltScreenFrameCells(altFrame)
 				if len(altFrame) > 0 {
 					result.Segments = append(result.Segments, SurfaceWriteSegment{
 						Raw:                raw.String(),
+						Damages:            cloneSurfaceWriteDamages(damages),
 						AltScreenExitFrame: cloneVTermCellRows(altFrame),
 					})
 					raw.Reset()
+					damages = nil
 				}
 			}
 			text = text[consumed:]
 			continue
 		}
-		surface.writeRaw(text[:consumed])
+		damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:consumed]))
 		raw.WriteString(text[:consumed])
 		text = text[consumed:]
 	}
 	if raw.Len() > 0 {
-		appendSurfaceWriteRawSegment(&result, &raw)
+		appendSurfaceWriteRawSegment(&result, &raw, &damages)
 	}
 	return result
 }
 
-func appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Builder) {
+func appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Builder, damages *[]vterm.WriteDamage) {
 	if result == nil || raw == nil || raw.Len() == 0 {
 		return
 	}
-	result.Segments = append(result.Segments, SurfaceWriteSegment{Raw: raw.String()})
+	result.Segments = append(result.Segments, SurfaceWriteSegment{
+		Raw:     raw.String(),
+		Damages: cloneSurfaceWriteDamages(*damages),
+	})
 	raw.Reset()
+	*damages = nil
 }
 
-func (surface *SurfaceTrack) writeRaw(text string) {
-	if text == "" {
-		return
+func appendSurfaceWriteDamage(damages []vterm.WriteDamage, damage vterm.WriteDamage) []vterm.WriteDamage {
+	if damage.SizeCols == 0 && damage.SizeRows == 0 && len(damage.Ops) == 0 && len(damage.ScrollbackAppend) == 0 && len(damage.AlternateAppend) == 0 && !damage.RequiresFullReplace {
+		return damages
 	}
-	// 中文说明：core-v2 live surface 只暴露当前 screen snapshot，不消费增量 damage。
-	// 所以这里始终走 latest-frame 写入，避免压力输出为每个 PTY 小块构造细粒度 damage。
-	_, _, _ = surface.vt.WriteForLatestFrame([]byte(text))
+	return append(damages, damage)
+}
+
+func cloneSurfaceWriteDamages(in []vterm.WriteDamage) []vterm.WriteDamage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]vterm.WriteDamage, len(in))
+	copy(out, in)
+	return out
+}
+
+func (surface *SurfaceTrack) writeRaw(text string) vterm.WriteDamage {
+	if text == "" {
+		return vterm.WriteDamage{}
+	}
+	// 中文说明：同一批 PTY bytes 只在 core 持有的 vterm 中解码一次；返回的
+	// damage 是 EventRouter 的语义输入，不是 history truth 或 live snapshot。
+	_, _, damage := surface.vt.WriteWithDamage([]byte(text))
+	return damage
 }
 
 func (surface *SurfaceTrack) altScreenFrameCells() [][]vterm.Cell {
