@@ -2184,9 +2184,10 @@ func TestTerminalSemanticProjectorConsumesCustomTabStopRawWithoutFallback(t *tes
 	if err != nil {
 		t.Fatalf("vterm write: %v", err)
 	}
+	hts := firstDamageControl(damage, "hts")
 	ht := firstDamageControl(damage, "ht")
-	if ht.Control != "ht" || ht.Col != 2 {
-		t.Fatalf("custom tab stop raw should expose vterm HT semantic col 2, got %#v damage=%#v", ht, damage)
+	if hts.Control != "hts" || hts.Col != 2 || ht.Control != "ht" || ht.Col != 2 {
+		t.Fatalf("custom tab stop raw should expose HTS and vterm-resolved HT semantic controls, hts=%#v ht=%#v damage=%#v", hts, ht, damage)
 	}
 	pipeline := newTerminalHistoryPipeline(16, 3)
 	batch := terminalSemanticBatch{
@@ -2199,7 +2200,7 @@ func TestTerminalSemanticProjectorConsumesCustomTabStopRawWithoutFallback(t *tes
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
 	}
-	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 3 || stats.WriteSpanOps == 0 {
 		t.Fatalf("custom tab stop raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
 	}
 	window, err := pipeline.LatestWindow(16, 4)

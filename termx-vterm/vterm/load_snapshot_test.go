@@ -1517,6 +1517,10 @@ func TestVTermWriteWithDamageSemanticCustomTabStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write with damage: %v", err)
 	}
+	hts := firstSemanticControlOp(t, damage, "hts")
+	if hts.Col != 2 {
+		t.Fatalf("expected HTS to record custom tab stop col 2, got %#v damage=%#v", hts, damage)
+	}
 	ht := firstSemanticControlOp(t, damage, "ht")
 	if ht.Col != 2 {
 		t.Fatalf("expected HT to land on custom tab stop col 2, got %#v damage=%#v", ht, damage)
@@ -1530,7 +1534,7 @@ func TestVTermWriteWithDamageSemanticCustomTabStop(t *testing.T) {
 			got = append(got, "control:"+op.Control)
 		}
 	}
-	want := []string{"write:ab", "control:cr", "control:ht", "write:Z"}
+	want := []string{"write:ab", "control:hts", "control:cr", "control:ht", "write:Z"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("semantic custom tab stop ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
 	}

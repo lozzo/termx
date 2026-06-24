@@ -373,7 +373,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "tbc", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm", "decslrm", "ris":
+	case "cr", "bs", "ht", "cbt", "hts", "tbc", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm", "decslrm", "ris":
 		return true
 	default:
 		return false
@@ -977,9 +977,10 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCommitFrontier})
 	case "ri":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: 1})
-	case "decstbm", "decslrm":
-		// 中文说明：DECSTBM/DECSLRM 只改变 vterm 的滚动区域；
-		// history 不保存第二份 margin truth，后续 cursor/write/scroll-out 语义会显式投影。
+	case "hts", "tbc", "decstbm", "decslrm":
+		// 中文说明：HTS/TBC 与 DECSTBM/DECSLRM 都只改变 shared vterm 的
+		// 内部状态；history 不保存第二份 tab/margin truth，后续 resolved
+		// cursor/write/scroll-out 语义会显式投影。
 		return nil
 	case "ris":
 		// 中文说明：RIS 丢弃当前 primary mutable frontier，但不能从清屏后的

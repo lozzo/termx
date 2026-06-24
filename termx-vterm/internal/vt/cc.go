@@ -53,8 +53,11 @@ func (e *Emulator) indexMove() {
 
 // horizontalTabSet sets a horizontal tab stop at the current cursor position.
 func (e *Emulator) horizontalTabSet() {
-	x, _ := e.scr.CursorPosition()
+	x, y := e.scr.CursorPosition()
 	e.tabstops.Set(x)
+	// 中文说明：HTS 修改的是 vterm tab stop 状态；history 只消费后续
+	// HT 的 resolved column，这里只把状态变更保留在 ordered semantic stream。
+	e.scr.damage.recordControl("hts", x, y, 0)
 }
 
 // reverseIndex moves the cursor up one line, or scrolling down. This does not
