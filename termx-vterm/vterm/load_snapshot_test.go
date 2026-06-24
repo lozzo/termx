@@ -1485,6 +1485,43 @@ func TestVTermWriteWithDamageSemanticDeviceAttributes(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageOSCDefaultColorsKeepSemanticText(t *testing.T) {
+	responses := make(chan string, 4)
+	vt := New(20, 3, 100, func(data []byte) {
+		responses <- string(data)
+	})
+
+	raw := "\x1b]10;#112233\x07\x1b]11;#445566\x07\x1b]12;#778899\x07" +
+		"\x1b]10;?\x07\x1b]11;?\x07\x1b]12;?\x07" +
+		"palette" +
+		"\x1b]110\x07\x1b]111\x07\x1b]112\x07"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "palette") {
+		t.Fatalf("OSC default color batch should keep following text as semantic text, ops=%#v damage=%#v", damage.SemanticOps, damage)
+	}
+	if gotResponses := collectVTermResponses(responses, 3); len(gotResponses) < 3 {
+		t.Fatalf("expected OSC color query responses from vterm, got %#v damage=%#v", gotResponses, damage)
+	} else {
+		joined := strings.Join(gotResponses, "")
+		for _, want := range []string{"\x1b]10;rgb:", "\x1b]11;rgb:", "\x1b]12;rgb:"} {
+			if !strings.Contains(joined, want) {
+				t.Fatalf("expected color query response %q, got %#v damage=%#v", want, gotResponses, damage)
+			}
+		}
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl || op.Code == ScreenOpTitle {
+			t.Fatalf("OSC default colors are vterm-owned state, not history semantic ops, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	if row := rowText(vt.ScreenRowView(0), len("palette")); row != "palette" {
+		t.Fatalf("OSC default colors must not render as text, got %q damage=%#v", row, damage)
+	}
+}
+
 func collectVTermResponses(ch <-chan string, want int) []string {
 	responses := make([]string, 0, want)
 	timer := time.NewTimer(200 * time.Millisecond)

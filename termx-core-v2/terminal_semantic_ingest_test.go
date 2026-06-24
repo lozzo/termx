@@ -2022,6 +2022,62 @@ func TestTerminalSemanticProjectorConsumesDeviceAttributesRawWithoutFallback(t *
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesOSCDefaultColorsRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b]10;#112233\x07\x1b]11;#445566\x07\x1b]12;#778899\x07" +
+		"\x1b]10;?\x07\x1b]11;?\x07\x1b]12;?\x07" +
+		"palette" +
+		"\x1b]110\x07\x1b]111\x07\x1b]112\x07"
+	term := vterm.New(20, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if !damageOpsContainTextSpan(damage.SemanticOps, "palette") {
+		t.Fatalf("OSC default color batch should expose following text through vterm semantic ops, damage=%#v", damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == vterm.ScreenOpControl || op.Code == vterm.ScreenOpTitle {
+			t.Fatalf("OSC default colors must remain vterm-owned state, got history semantic op %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            20,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("OSC default color raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(20, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, forbidden := range []string{"]10;", "]11;", "]12;", "]110", "]111", "]112", "#112233", "#445566", "#778899"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("OSC default color control must not enter history text %q, got %q rows=%#v", forbidden, text, window.Rows)
+		}
+	}
+	if !strings.Contains(text, "palette") {
+		t.Fatalf("expected text after OSC default colors from semantic projector, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
@@ -3573,6 +3629,22 @@ func damageOpsContainText(ops []vterm.DamageOp, text string) bool {
 			if cell.Content == text {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func damageOpsContainTextSpan(ops []vterm.DamageOp, text string) bool {
+	for _, op := range ops {
+		if op.Code != vterm.ScreenOpWriteSpan {
+			continue
+		}
+		var b strings.Builder
+		for _, cell := range op.Cells {
+			b.WriteString(cell.Content)
+		}
+		if strings.Contains(b.String(), text) {
+			return true
 		}
 	}
 	return false
