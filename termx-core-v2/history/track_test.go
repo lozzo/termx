@@ -146,6 +146,26 @@ func TestHistoryTrackWritesNewLogicalLineAfterSeal(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackSoftWrapKeepsLogicalLineOpen(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(2)
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("abcd")},
+		HistoryEvent{Kind: EventSoftWrapLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ef")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventCommitFrontier},
+	)
+
+	if got := lineText(requireLine(t, track, 1)); got != "abcdef" {
+		t.Fatalf("soft-wrap should append to same logical line, got %q", got)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("visible soft-wrapped line should not commit before leaving screen, got %v", got)
+	}
+}
+
 func TestHistoryTrackPreservesExplicitBlankLines(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(4)

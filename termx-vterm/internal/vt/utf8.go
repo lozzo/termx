@@ -36,7 +36,7 @@ func (e *Emulator) handleASCIIPrint(b byte) {
 		// moves cursor down similar to [Terminal.linefeed] except it doesn't
 		// respects [ansi.LNM] mode.
 		// This will reset the phantom state i.e. pending wrap state.
-		e.index()
+		e.softWrapIndex()
 		_, y = e.scr.CursorPosition()
 		x = 0
 	}
@@ -83,7 +83,7 @@ func (e *Emulator) handleASCIIPrintRun(data []byte) {
 		x, y := e.scr.CursorPosition()
 		if e.atPhantom && awm {
 			e.scr.SetLineWrapped(y, true)
-			e.index()
+			e.softWrapIndex()
 			_, y = e.scr.CursorPosition()
 			x = 0
 		}
@@ -162,7 +162,7 @@ func (e *Emulator) handleGrapheme(content string, width int) {
 		// moves cursor down similar to [Terminal.linefeed] except it doesn't
 		// respects [ansi.LNM] mode.
 		// This will reset the phantom state i.e. pending wrap state.
-		e.index()
+		e.softWrapIndex()
 		_, y = e.scr.CursorPosition()
 		x = 0
 	}

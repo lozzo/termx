@@ -26,9 +26,17 @@ func (e *Emulator) linefeed() {
 // index moves the cursor down one line, scrolling up if necessary. This
 // always resets the phantom state i.e. pending wrap state.
 func (e *Emulator) index() {
+	e.indexWithControl("ind")
+}
+
+func (e *Emulator) softWrapIndex() {
+	e.indexWithControl("soft-wrap")
+}
+
+func (e *Emulator) indexWithControl(kind string) {
 	x, y := e.scr.CursorPosition()
 	e.indexMove()
-	e.scr.damage.recordControl("ind", x, y, 0)
+	e.scr.damage.recordControl(kind, x, y, 0)
 }
 
 func (e *Emulator) indexMove() {

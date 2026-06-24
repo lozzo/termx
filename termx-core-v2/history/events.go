@@ -22,6 +22,7 @@ const (
 	EventPrimaryScrollOut         EventKind = "primary-scroll-out"
 	EventAppendAltScreenFrame     EventKind = "append-alt-screen-frame"
 	EventSealLogicalLine          EventKind = "seal-logical-line"
+	EventSoftWrapLine             EventKind = "soft-wrap-line"
 	EventMutateFrontier           EventKind = "mutate-frontier"
 	EventResetFrontier            EventKind = "reset-frontier"
 	EventCommitFrontier           EventKind = "commit-frontier"

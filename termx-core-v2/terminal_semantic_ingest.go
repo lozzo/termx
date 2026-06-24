@@ -28,6 +28,8 @@ type terminalSemanticProjectorStats struct {
 	ScrollbackAppends int
 	AltExitFrames     int
 	FullReplaceOnly   int
+	SemanticProjectors int
+	RawFallbacks       int
 }
 
 func resetTerminalSemanticIngestTestHooks() {
@@ -118,6 +120,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 	}
 	fullReplaceOnly := sharedBatchFullReplaceOnly(batch.Damages)
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
+		stats.SemanticProjectors++
 		if batch.Raw != "" {
 			pipeline.shadowParsePrimaryOutputLocked(batch.Raw)
 		}
@@ -126,6 +129,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			return err
 		}
 	} else if batch.Raw != "" && !(batch.FromSharedVTerm && fullReplaceOnly) {
+		stats.RawFallbacks++
 		var err error
 		if batch.FromSharedVTerm {
 			// 中文说明：shared vterm 已经给出 alt-screen final-frame 和 damage；
@@ -199,9 +203,6 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 				return false
 			}
 			scrollbackAppends += len(damage.ScrollbackAppend)
-			if scrollbackAppends > 1 {
-				return false
-			}
 			hasOps = true
 		}
 		if len(damage.SemanticOps) == 0 {
@@ -218,14 +219,11 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 				if !rawSharedControlCanUseSemanticOp(op.Control) {
 					return false
 				}
-				if op.Control == "lf" || op.Control == "ind" {
+				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
 					if !lowRows {
 						return false
 					}
 					linefeedControls++
-					if linefeedControls > 1 {
-						return false
-					}
 				}
 				hasOps = true
 			case vterm.ScreenOpModes:
@@ -253,12 +251,15 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 			}
 		}
 	}
+	if scrollbackAppends > 1 && linefeedControls <= 1 {
+		return false
+	}
 	return hasOps
 }
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind", "ri", "decstbm":
+	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
 		return true
 	default:
 		return false
@@ -287,6 +288,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		scrollbackApplied := 0
 		controlLinefeedInDamage := semanticOpsContainLinefeedControl(ops)
 		reverseIndexScrollDowns := semanticOpsReverseIndexScrollDownCount(ops)
+		softWrapContinuation := false
 		for _, op := range ops {
 			switch op.Code {
 			case vterm.ScreenOpWriteSpan:
@@ -294,8 +296,12 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if len(cells) == 0 {
 					continue
 				}
-				if err := pipeline.applyCursorPositionFromVTerm(op.Row, op.Col); err != nil {
-					return applied, err
+				if softWrapContinuation {
+					softWrapContinuation = false
+				} else {
+					if err := pipeline.applyCursorPositionFromVTerm(op.Row, op.Col); err != nil {
+						return applied, err
+					}
 				}
 				if err := pipeline.track.ApplyOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: cells}); err != nil {
 					return applied, err
@@ -351,8 +357,11 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if err := pipeline.applyVTermControlEventLocked(op); err != nil {
 					return applied, err
 				}
-				if op.Control == "lf" || op.Control == "ind" {
-					scrollbackApplied = len(damage.ScrollbackAppend)
+				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
+					if scrollbackApplied < len(damage.ScrollbackAppend) {
+						scrollbackApplied++
+					}
+					softWrapContinuation = op.Control == "soft-wrap"
 				}
 				applied = true
 			case vterm.ScreenOpModes:
@@ -373,7 +382,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 }
 
 func semanticOpsContainLinefeedControl(ops []vterm.DamageOp) bool {
-	return semanticOpsContainControl(ops, "lf") || semanticOpsContainControl(ops, "ind")
+	return semanticOpsContainControl(ops, "lf") ||
+		semanticOpsContainControl(ops, "ind") ||
+		semanticOpsContainControl(ops, "soft-wrap")
 }
 
 func semanticOpsContainControl(ops []vterm.DamageOp, control string) bool {
@@ -423,6 +434,8 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 	switch op.Control {
 	case "cr":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCarriageReturn})
+	case "soft-wrap":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSoftWrapLine})
 	case "lf", "ind":
 		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
 			return err

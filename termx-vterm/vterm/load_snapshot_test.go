@@ -1246,6 +1246,31 @@ func TestVTermWriteWithDamageSemanticOpsPreserveRawOrder(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageDistinguishesSoftWrapFromIndex(t *testing.T) {
+	vt := New(4, 2, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abcde"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if firstSemanticControlOp(t, damage, "soft-wrap").Control != "soft-wrap" {
+		t.Fatalf("expected automatic wrap semantic control, got %#v", damage.SemanticOps)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl && op.Control == "ind" {
+			t.Fatalf("automatic wrap must not be exposed as explicit index, got %#v", damage.SemanticOps)
+		}
+	}
+
+	_, err, damage = vt.WriteWithDamage([]byte("\x1bD"))
+	if err != nil {
+		t.Fatalf("write explicit index: %v", err)
+	}
+	if firstSemanticControlOp(t, damage, "ind").Control != "ind" {
+		t.Fatalf("expected explicit index semantic control, got %#v", damage.SemanticOps)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticTextComesFromPrintPath(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

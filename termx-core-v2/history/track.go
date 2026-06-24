@@ -109,6 +109,8 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 		return track.appendAltScreenFrame(event.Rows)
 	case EventSealLogicalLine:
 		return track.sealActiveLine()
+	case EventSoftWrapLine:
+		return track.softWrapActiveLine()
 	case EventMutateFrontier:
 		return track.mutateFrontierLine(event)
 	case EventResetFrontier:
@@ -937,6 +939,27 @@ func (track *HistoryTrack) sealBlankLine() error {
 	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
 	track.advanceScreenCursorLine()
 	track.setGeneration(nextGeneration)
+	return nil
+}
+
+func (track *HistoryTrack) softWrapActiveLine() error {
+	if track.altScreen {
+		return nil
+	}
+	if track.activeLine == 0 {
+		track.advanceScreenCursorLine()
+		track.bumpGeneration()
+		return nil
+	}
+	if !track.activeCursorLineValid() {
+		return nil
+	}
+	// 中文说明：自动换行只改变当前 logical line 在 primary screen 上的
+	// visual-row ownership；logical line 仍保持 open，不能被 seal 成两条历史。
+	track.advanceScreenCursorLine()
+	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: track.activeLine})
+	track.overwrite = false
+	track.bumpGeneration()
 	return nil
 }
 

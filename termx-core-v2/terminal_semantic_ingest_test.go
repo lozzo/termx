@@ -776,12 +776,24 @@ func TestTerminalSemanticProjectorConsumesRealVTermPrimaryScrollOut(t *testing.T
 	}
 }
 
-func TestTerminalSemanticProjectorLeavesMultiScrollRawBatchToParser(t *testing.T) {
+func TestTerminalSemanticProjectorConsumesLowRowsMultiScrollRawBatch(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.ScrollbackAppends += next.ScrollbackAppends
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
 	term := vterm.New(10, 2, 100, nil)
 	raw := "one\ntwo\nthree\nfour\nfive"
 	_, err, damage := term.WriteWithDamage([]byte(raw))
 	if err != nil {
 		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageControl(damage, "soft-wrap").Control != "soft-wrap" {
+		t.Fatalf("low rows multi-scroll batch should expose vterm soft-wrap semantic control, damage=%#v", damage)
 	}
 	pipeline := newTerminalHistoryPipeline(10, 2)
 	batch := terminalSemanticBatch{
@@ -794,6 +806,9 @@ func TestTerminalSemanticProjectorLeavesMultiScrollRawBatchToParser(t *testing.T
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
 	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ScrollbackAppends < 2 {
+		t.Fatalf("low rows multi-scroll batch should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
 	window, err := pipeline.LatestWindow(10, 10)
 	if err != nil {
 		t.Fatalf("latest: %v", err)
@@ -801,7 +816,7 @@ func TestTerminalSemanticProjectorLeavesMultiScrollRawBatchToParser(t *testing.T
 	text := historyWindowJoinedText(window)
 	for _, want := range []string{"one", "two", "three", "four", "five"} {
 		if strings.Count(text, want) != 1 {
-			t.Fatalf("multi-scroll parser-assisted batch should preserve %q once, got %q rows=%#v", want, text, window.Rows)
+			t.Fatalf("multi-scroll semantic batch should preserve %q once, got %q rows=%#v damage=%#v", want, text, window.Rows, damage)
 		}
 	}
 }
