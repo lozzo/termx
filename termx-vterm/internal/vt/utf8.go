@@ -63,6 +63,7 @@ func (e *Emulator) handleASCIIPrint(b byte) {
 	}
 	e.lastChar = rune(b)
 	e.scr.SetCell(x, y, &cell)
+	e.scr.damage.recordTextSpan(x, y, []uv.Cell{cell})
 
 	e.atPhantom = awm && x >= e.scr.Width()-1
 	if !e.atPhantom {
@@ -101,6 +102,18 @@ func (e *Emulator) handleASCIIPrintRun(data []byte) {
 		}
 		count := min(len(data), available)
 		e.scr.SetASCIICells(x, y, data[:count], style, link)
+		if e.scr.damage != nil && !e.scr.damage.scrollbackOnly {
+			cells := make([]uv.Cell, count)
+			for i, b := range data[:count] {
+				cells[i] = uv.Cell{
+					Content: printableASCIIStrings[b],
+					Width:   1,
+					Style:   style,
+					Link:    link,
+				}
+			}
+			e.scr.damage.recordTextSpan(x, y, cells)
+		}
 		e.lastChar = rune(data[count-1])
 		data = data[count:]
 		e.atPhantom = awm && x+count >= width
@@ -180,6 +193,7 @@ func (e *Emulator) handleGrapheme(content string, width int) {
 	}
 
 	e.scr.SetCell(x, y, &cell)
+	e.scr.damage.recordTextSpan(x, y, []uv.Cell{cell})
 
 	// Handle phantom state at the end of the line
 	e.atPhantom = awm && x >= e.scr.Width()-1

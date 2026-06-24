@@ -12,6 +12,7 @@ type screenDamageRecorder struct {
 	scrollbackOnly bool
 	damages        []Damage
 	spanCells      []uv.Cell
+	textCells      []uv.Cell
 	tailSpan       *SpanDamage
 	tailSpanStart  int
 	tailSpanEnd    int
@@ -25,6 +26,10 @@ func (r *screenDamageRecorder) record(d Damage) {
 		if _, ok := d.(ScrollbackDamage); !ok {
 			return
 		}
+	}
+	if text, ok := d.(TextDamage); ok {
+		r.recordText(text)
+		return
 	}
 	if span, ok := d.(SpanDamage); ok {
 		r.recordSpan(span)
@@ -46,6 +51,13 @@ func (r *screenDamageRecorder) recordMode(mode int, private bool, enabled bool) 
 		return
 	}
 	r.record(ModeDamage{Mode: mode, Private: private, Enabled: enabled})
+}
+
+func (r *screenDamageRecorder) recordTextSpan(x, y int, cells []uv.Cell) {
+	if r == nil || r.scrollbackOnly || len(cells) == 0 {
+		return
+	}
+	r.record(TextDamage{X: x, Y: y, Cells: cells})
 }
 
 func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
@@ -120,6 +132,19 @@ func (r *screenDamageRecorder) recordSpan(span SpanDamage) {
 	r.tailSpanEnd = span.X + spanDamageWidth(span)
 }
 
+func (r *screenDamageRecorder) recordText(text TextDamage) {
+	if r == nil || r.scrollbackOnly || len(text.Cells) == 0 {
+		return
+	}
+	start := len(r.textCells)
+	r.textCells = append(r.textCells, text.Cells...)
+	r.damages = append(r.damages, TextDamage{
+		X:     text.X,
+		Y:     text.Y,
+		Cells: r.textCells[start:len(r.textCells)],
+	})
+}
+
 func (r *screenDamageRecorder) mergeTrailingSpan(next SpanDamage) bool {
 	if r == nil || len(next.Cells) == 0 || r.tailSpan == nil || next.Y != r.tailSpan.Y || next.X != r.tailSpanEnd {
 		return false
@@ -145,6 +170,13 @@ func (r *screenDamageRecorder) snapshot() []Damage {
 	for i, damage := range r.damages {
 		if span, ok := damage.(*SpanDamage); ok {
 			out[i] = *span
+			continue
+		}
+		if text, ok := damage.(TextDamage); ok {
+			cells := make([]uv.Cell, len(text.Cells))
+			copy(cells, text.Cells)
+			text.Cells = cells
+			out[i] = text
 			continue
 		}
 		out[i] = damage

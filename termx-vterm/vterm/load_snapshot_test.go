@@ -1246,6 +1246,24 @@ func TestVTermWriteWithDamageSemanticOpsPreserveRawOrder(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticTextComesFromPrintPath(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[31mred\x1b[0m"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	span := firstSemanticOpWithCode(t, damage, ScreenOpWriteSpan)
+	if got := rowText(span.Cells, len(span.Cells)); got != "red" {
+		t.Fatalf("expected semantic print text, got %q op=%#v damage=%#v", got, span, damage)
+	}
+	for _, cell := range span.Cells {
+		if cell.Style.FG != "ansi:1" {
+			t.Fatalf("expected print semantic cells to keep style, got %#v op=%#v", cell, span)
+		}
+	}
+}
+
 func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 

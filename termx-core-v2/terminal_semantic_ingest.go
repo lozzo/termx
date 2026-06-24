@@ -174,7 +174,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el":
+	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa":
 		return true
 	default:
 		return false

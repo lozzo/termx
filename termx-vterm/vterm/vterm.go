@@ -822,21 +822,21 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
 			if reason, broad := directStats.fullReplaceReason(); broad {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
-				damage.SemanticOps = semanticControlOpsFromCharmVTDamages(directDamages)
+				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
 				}
 				traceCount("vterm.write.direct_damage_full_replace", 1)
 			} else if directOps, ok := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, afterHeight, v.screenTimestamps, v.screenRowKinds); ok {
-				damage = v.writeDamageFromDirectOpsLocked(directOps, cachePlan)
+				damage = v.writeDamageFromDirectOpsLocked(directOps, v.semanticControlOpsFromCharmVTDamagesLocked(directDamages), cachePlan)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
 				}
 			} else {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "direct_damage_unsupported")
-				damage.SemanticOps = semanticControlOpsFromCharmVTDamages(directDamages)
+				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -3150,13 +3150,27 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 	v.scrollbackRowCache = nextScrollbackCache
 }
 
-func semanticControlOpsFromCharmVTDamages(damages []charmvt.Damage) []DamageOp {
+func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Damage) []DamageOp {
 	if len(damages) == 0 {
 		return nil
 	}
 	ops := make([]DamageOp, 0, len(damages))
 	for _, raw := range damages {
 		switch d := raw.(type) {
+		case charmvt.TextDamage:
+			if len(d.Cells) == 0 {
+				continue
+			}
+			cells := uvCellsToVTermDamageCells(v, d.Cells)
+			if len(cells) == 0 {
+				continue
+			}
+			ops = append(ops, DamageOp{
+				Code:  ScreenOpWriteSpan,
+				Row:   d.Y,
+				Col:   maxInt(0, d.X),
+				Cells: cells,
+			})
 		case charmvt.ControlDamage:
 			if d.Kind == "" {
 				continue
@@ -3180,10 +3194,10 @@ func semanticControlOpsFromCharmVTDamages(damages []charmvt.Damage) []DamageOp {
 	return ops
 }
 
-func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, plan rowCacheReconcilePlan) WriteDamage {
+func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, semanticOps []DamageOp, plan rowCacheReconcilePlan) WriteDamage {
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.Ops = ops
-	damage.SemanticOps = semanticOpsFromDirectOps(ops)
+	damage.SemanticOps = appendSemanticScreenOps(semanticOps, ops)
 	v.appendScrollbackDamageLocked(&damage, plan)
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
@@ -3198,14 +3212,14 @@ func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan,
 	return damage
 }
 
-func semanticOpsFromDirectOps(ops []DamageOp) []DamageOp {
+func appendSemanticScreenOps(base []DamageOp, ops []DamageOp) []DamageOp {
 	if len(ops) == 0 {
-		return nil
+		return base
 	}
-	out := make([]DamageOp, 0, len(ops))
+	out := base
 	for _, op := range ops {
 		switch op.Code {
-		case ScreenOpWriteSpan, ScreenOpScrollRect, ScreenOpControl, ScreenOpModes:
+		case ScreenOpScrollRect:
 			out = append(out, op)
 		}
 	}
@@ -4075,6 +4089,8 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 	}
 	for _, raw := range damages {
 		switch d := raw.(type) {
+		case charmvt.TextDamage:
+			continue
 		case charmvt.SpanDamage:
 			width := spanDamageCellWidth(d.Cells)
 			if width <= 0 {
@@ -4163,6 +4179,8 @@ func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidt
 	ops := make([]DamageOp, 0, len(damages))
 	for _, raw := range damages {
 		switch d := raw.(type) {
+		case charmvt.TextDamage:
+			continue
 		case charmvt.SpanDamage:
 			if len(d.Cells) == 0 {
 				continue

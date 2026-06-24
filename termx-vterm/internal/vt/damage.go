@@ -41,6 +41,19 @@ func (d SpanDamage) Bounds() uv.Rectangle {
 	return uv.Rect(d.X, d.Y, width, 1)
 }
 
+// TextDamage 表示真实 print path 写入的文本语义。它和 SpanDamage 分开：
+// SpanDamage 是 screen diff，可能来自填充、clear 或重排；TextDamage 才能给
+// history projector 当成 PTY 文本写入语义。
+type TextDamage struct {
+	X, Y  int
+	Cells []uv.Cell
+}
+
+// Bounds returns the bounds of the text semantic area.
+func (d TextDamage) Bounds() uv.Rectangle {
+	return SpanDamage{X: d.X, Y: d.Y, Cells: d.Cells}.Bounds()
+}
+
 // RectDamage represents a damaged rectangle.
 type RectDamage uv.Rectangle
 
