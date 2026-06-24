@@ -549,6 +549,53 @@ func TestTerminalSemanticProjectorConsumesFullReplaceRawSemanticOpsWithoutFallba
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesFullReplaceRawCursorControlsWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	pipeline := newTerminalHistoryPipeline(20, 4)
+	batch := terminalSemanticBatch{
+		Raw: "parser-duplicate\n",
+		Damages: []vterm.WriteDamage{{
+			RequiresFullReplace: true,
+			FullReplaceReason:   "test",
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("top")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 0, Col: 3},
+				{Code: vterm.ScreenOpWriteSpan, Row: 1, Col: 0, Cells: vtermCells("middle")},
+				{Code: vterm.ScreenOpControl, Control: "cuu", Row: 0, Col: 6, Mode: 1},
+				{Code: vterm.ScreenOpControl, Control: "cr", Row: 0, Col: 6},
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("TOP")},
+			},
+			SizeCols: 20,
+			SizeRows: 4,
+		}},
+		Cols:            20,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest full replace cursor semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("full-replace cursor semantic batch should use vterm projector without parser fallback, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(20, 5)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "TOP") || !historyWindowContainsText(window, "middle") || historyWindowContainsText(window, "parser-duplicate") {
+		t.Fatalf("full-replace cursor semantic ops should not append parser history, rows=%#v", window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorUsesSemanticClearControl(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(12, 3)
 	batch := terminalSemanticBatch{

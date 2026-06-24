@@ -429,7 +429,7 @@ func rawSharedFullReplaceDamageCanUseSemanticOps(damage vterm.WriteDamage) bool 
 			}
 			hasSemantic = true
 		case vterm.ScreenOpControl:
-			if !rawSharedFullReplaceControlCanUseSemanticOp(op.Control) {
+			if !rawSharedControlCanUseSemanticOp(op.Control) {
 				return false
 			}
 			hasSemantic = true
@@ -443,15 +443,6 @@ func rawSharedFullReplaceDamageCanUseSemanticOps(damage vterm.WriteDamage) bool 
 		}
 	}
 	return hasSemantic
-}
-
-func rawSharedFullReplaceControlCanUseSemanticOp(control string) bool {
-	switch control {
-	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind", "soft-wrap":
-		return true
-	default:
-		return false
-	}
 }
 
 func rawSharedTallASCIITextDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
