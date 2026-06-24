@@ -1673,6 +1673,45 @@ func TestVTermWriteWithDamageC1CSIPrivateModesKeepSemanticOrder(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSILinefeedNewlineModeKeepSemanticOrder(t *testing.T) {
+	vt := New(12, 4, 100, nil)
+	c1 := string([]byte{0x9b})
+
+	raw := c1 + "20h" + "abc\nZ" + c1 + "20l"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if mode := firstSemanticModeOp(t, damage, 20); mode.Code != ScreenOpModes || mode.Private {
+		t.Fatalf("expected C1 CSI LNM to expose ANSI mode 20 semantic op, got %#v damage=%#v", mode, damage)
+	}
+	cr := firstSemanticControlOp(t, damage, "cr")
+	if cr.Col != 3 || cr.Row != 1 {
+		t.Fatalf("expected LNM CR after LF to be recorded from next row col=3, got %#v damage=%#v", cr, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		}
+	}
+	want := []string{"mode:20:on", "write:abc", "control:lf", "control:cr", "write:Z", "mode:20:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 CSI LNM semantic ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if row0 := strings.TrimRight(rowText(vt.ScreenRowView(0), 12), " "); row0 != "abc" {
+		t.Fatalf("expected C1 CSI LNM to keep first row text, got %q damage=%#v", row0, damage)
+	}
+	if row1 := strings.TrimRight(rowText(vt.ScreenRowView(1), 12), " "); row1 != "Z" {
+		t.Fatalf("expected C1 CSI LNM to return following text to line start, got %q damage=%#v", row1, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticCursorVisibilityMode(t *testing.T) {
 	vt := New(20, 3, 100, nil)
 

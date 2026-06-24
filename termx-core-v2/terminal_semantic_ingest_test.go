@@ -3638,6 +3638,53 @@ func TestTerminalSemanticProjectorConsumesLinefeedNewlineModeRawWithoutFallback(
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSILinefeedNewlineModeRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ModeOps += next.ModeOps
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(12, 4, 100, nil)
+	c1 := string([]byte{0x9b})
+	raw := c1 + "20habc\nZ" + c1 + "20l"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageMode(damage, 20).Mode != 20 {
+		t.Fatalf("C1 CSI linefeed-newline raw should expose ANSI mode 20 semantic op, damage=%#v", damage)
+	}
+	if firstDamageControl(damage, "cr").Control != "cr" {
+		t.Fatalf("C1 CSI linefeed-newline mode should let vterm expose LF followed by CR, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(12, 4)
+	if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            12,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 2 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("C1 CSI linefeed-newline raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(12, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "abc" || window.Rows[1].Text != "Z" {
+		t.Fatalf("C1 CSI linefeed-newline semantic projector should write following text at line start, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesBackwardTabRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
