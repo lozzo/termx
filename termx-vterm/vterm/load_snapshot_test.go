@@ -1199,6 +1199,23 @@ func TestVTermWriteWithDamageUsesDirectSpanOps(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageEmitsCursorControlOps(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abcdef\x1b[3DXYZ\x1b[2;5H!"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	cub := firstControlOp(t, damage, "cub")
+	if cub.Mode != 3 {
+		t.Fatalf("expected CUB count 3, got %#v", cub)
+	}
+	cup := firstControlOp(t, damage, "cup")
+	if cup.Row != 1 || cup.Col != 4 {
+		t.Fatalf("expected CUP cursor position row=1 col=4, got %#v", cup)
+	}
+}
+
 func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
 	vt := New(80, 24, 100, nil)
 	prevWithDamage := safeEmulatorWriteWithDamage
@@ -2145,5 +2162,16 @@ func firstOpWithCode(t *testing.T, damage WriteDamage, code ScreenOpCode) Damage
 		}
 	}
 	t.Fatalf("expected op %v in damage, got %#v", code, damage)
+	return DamageOp{}
+}
+
+func firstControlOp(t *testing.T, damage WriteDamage, control string) DamageOp {
+	t.Helper()
+	for _, op := range damage.Ops {
+		if op.Code == ScreenOpControl && op.Control == control {
+			return op
+		}
+	}
+	t.Fatalf("expected control op %q in damage, got %#v", control, damage)
 	return DamageOp{}
 }

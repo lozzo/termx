@@ -468,6 +468,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Up [ansi.CUU]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, -n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuu", x, y, n)
 		return true
 	})
 
@@ -475,6 +477,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Down [ansi.CUD]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cud", x, y, n)
 		return true
 	})
 
@@ -482,6 +486,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Forward [ansi.CUF]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(n, 0)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuf", x, y, n)
 		return true
 	})
 
@@ -489,6 +495,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Backward [ansi.CUB]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(-n, 0)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cub", x, y, n)
 		return true
 	})
 
@@ -496,6 +504,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Next Line [ansi.CNL]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cud", x, y, n)
 		e.carriageReturn()
 		return true
 	})
@@ -504,6 +514,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Cursor Previous Line [ansi.CPL]
 		n, _, _ := params.Param(0, 1)
 		e.moveCursor(0, -n)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuu", x, y, n)
 		e.carriageReturn()
 		return true
 	})
@@ -513,6 +525,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		n, _, _ := params.Param(0, 1)
 		_, y := e.scr.CursorPosition()
 		e.setCursor(n-1, y)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cha", x, y, n)
 		return true
 	})
 
@@ -530,6 +544,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		y := min(height-1, row-1)
 		x := min(width-1, col-1)
 		e.setCursorPosition(x, y)
+		e.scr.damage.recordControl("cup", x, y, 0)
 		return true
 	})
 
@@ -670,6 +685,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		width := e.Width()
 		_, y := e.scr.CursorPosition()
 		e.setCursorPosition(min(width-1, n-1), y)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("cha", x, y, n)
 		return true
 	})
 
@@ -679,6 +696,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		width := e.Width()
 		x, y := e.scr.CursorPosition()
 		e.setCursorPosition(min(width-1, x+n), y)
+		x, y = e.scr.CursorPosition()
+		e.scr.damage.recordControl("cuf", x, y, n)
 		return true
 	})
 
@@ -728,6 +747,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		height := e.Height()
 		x, _ := e.scr.CursorPosition()
 		e.setCursorPosition(x, min(height-1, n-1))
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("vpa", x, y, n)
 		return true
 	})
 
@@ -737,6 +758,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		height := e.Height()
 		x, y := e.scr.CursorPosition()
 		e.setCursorPosition(x, min(height-1, y+n))
+		x, y = e.scr.CursorPosition()
+		e.scr.damage.recordControl("cud", x, y, n)
 		return true
 	})
 
@@ -748,6 +771,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		y := min(height-1, row-1)
 		x := min(width-1, col-1)
 		e.setCursor(x, y)
+		e.scr.damage.recordControl("cup", x, y, 0)
 		return true
 	})
 

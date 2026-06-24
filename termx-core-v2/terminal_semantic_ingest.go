@@ -238,6 +238,18 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCommitFrontier})
 	case "ri":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: 1})
+	case "cuu":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: op.Mode})
+	case "cud":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorDown, Count: op.Mode})
+	case "cuf":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorForward, Count: op.Mode})
+	case "cub":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorBackward, Count: op.Mode})
+	case "cha":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorHorizontalAbsolute, Count: op.Col + 1})
+	case "cup", "vpa":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorPosition, Row: op.Row + 1, Column: op.Col + 1})
 	case "el":
 		return pipeline.track.Apply(history.HistoryEvent{
 			Kind:      history.EventEraseInLine,
