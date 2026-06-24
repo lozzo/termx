@@ -142,6 +142,19 @@ func (sink *FrameSink) writePresentedRows(builder *strings.Builder, lines []stri
 			continue
 		}
 		builder.WriteString(cursorPosition(row+1, 1))
+		previous := ""
+		if row < len(sink.lastLines) {
+			previous = sink.lastLines[row]
+		}
+		if frameSinkLineRequiresWholeRowClear(lines[row], previous) {
+			// 中文说明：renderer 的 ANSI 行可能含 CSI G/X 这类绝对列定位；
+			// 这种行不是线性文本，不能靠 StringWidth 估算尾部补空格。
+			builder.WriteString(render.ANSIReset)
+			builder.WriteString(clearLine)
+			builder.WriteString(lines[row])
+			builder.WriteString(render.ANSIReset)
+			continue
+		}
 		// 中文说明：同尺寸帧不清整行，直接覆盖变化行；新内容变短时补空格盖掉旧尾巴，
 		// 避免 clear-line 造成整行闪烁。
 		writePresentedRowLine(builder, lines[row], rowWidth(width, lines[row], sink.lastLines[row]))
@@ -166,6 +179,10 @@ func (sink *FrameSink) frameWriteCapacity(lines []string, width int, fullRepaint
 		if row < len(sink.lastLines) {
 			previous = sink.lastLines[row]
 		}
+		if frameSinkLineRequiresWholeRowClear(line, previous) {
+			capacity += cursorPositionCapacity(row+1, 1) + len(render.ANSIReset) + len(clearLine) + len(line) + len(render.ANSIReset)
+			continue
+		}
 		targetWidth := rowWidth(width, line, previous)
 		padding := targetWidth - frameSinkLineWidth(line)
 		if padding < 0 {
@@ -174,6 +191,32 @@ func (sink *FrameSink) frameWriteCapacity(lines []string, width int, fullRepaint
 		capacity += cursorPositionCapacity(row+1, 1) + len(line) + len(render.ANSIReset) + padding + len(render.ANSIReset)
 	}
 	return capacity
+}
+
+func frameSinkLineRequiresWholeRowClear(next string, previous string) bool {
+	return frameSinkLineHasCursorAddressing(next) || frameSinkLineHasCursorAddressing(previous)
+}
+
+func frameSinkLineHasCursorAddressing(line string) bool {
+	for i := 0; i < len(line); i++ {
+		if line[i] != '\x1b' || i+1 >= len(line) || line[i+1] != '[' {
+			continue
+		}
+		j := i + 2
+		for ; j < len(line); j++ {
+			b := line[j]
+			if b < 0x40 || b > 0x7e {
+				continue
+			}
+			switch b {
+			case 'G', 'H', 'f', 'C', 'D', 'X':
+				return true
+			}
+			i = j
+			break
+		}
+	}
+	return false
 }
 
 func writePresentedRowLine(builder *strings.Builder, line string, width int) {
@@ -254,6 +297,7 @@ func (sink *FrameSink) writePatchFrame(frame render.Frame) error {
 			lineY -= len(lines) - 1 - i
 		}
 		builder.WriteString(cursorPosition(lineY+1, patch.LineX+1))
+		builder.WriteString(render.ANSIReset)
 		builder.WriteString(eraseChars(patch.LineWidth))
 		builder.WriteString(line)
 		builder.WriteString(render.ANSIReset)
@@ -307,6 +351,7 @@ func (sink *FrameSink) writeRewritePatchFrame(frame render.Frame, patch render.F
 			continue
 		}
 		builder.WriteString(cursorPosition(lineY+1, patch.LineX+1))
+		builder.WriteString(render.ANSIReset)
 		builder.WriteString(eraseChars(patch.LineWidth))
 		builder.WriteString(line)
 		builder.WriteString(render.ANSIReset)

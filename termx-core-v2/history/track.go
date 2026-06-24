@@ -697,6 +697,13 @@ func (track *HistoryTrack) exitPrimaryFullscreen(mode int) error {
 	if !track.primaryFullscreenIntent && !track.primaryFullscreenFrame {
 		return nil
 	}
+	if track.primaryFullscreenFrame {
+		// 中文说明：primary-screen TUI 会在运行中切换 cursor/mouse mode；
+		// 这些 mode 退出不能等价于程序退出，否则正在刷新的输入框会暴露进 history。
+		track.primaryFullscreenIntent = false
+		track.primaryFullscreenModes = nil
+		return nil
+	}
 	track.clearPrimaryFullscreenState()
 	track.bumpGeneration()
 	return nil
@@ -1010,6 +1017,9 @@ func (track *HistoryTrack) deleteFrontierLinesWithoutBump(ids []LogicalLineID) (
 
 func (track *HistoryTrack) commitFrontier(force bool) error {
 	if track.altScreen && !force {
+		return nil
+	}
+	if track.primaryFullscreenFrame && !force {
 		return nil
 	}
 	if force {

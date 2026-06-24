@@ -480,6 +480,28 @@ func TestFrameSinkWritesOnlyChangedRows(t *testing.T) {
 	}
 }
 
+func TestFrameSinkClearsChangedANSIAddressedRows(t *testing.T) {
+	var output bytes.Buffer
+	sink := NewFrameSink(&output)
+	first := "prefix" + "\x1b[16G" + "\x1b[48;5;236m" + strings.Repeat(" ", 10) + "\x1b[0m" + "tail"
+	second := "短" + "\x1b[10Gtail"
+	if err := sink.WriteFrame(render.Frame{ANSILines: []string{first}, Metadata: render.RenderMetadata{Width: 30, Height: 1}}); err != nil {
+		t.Fatalf("write first frame: %v", err)
+	}
+	output.Reset()
+	if err := sink.WriteFrame(render.Frame{ANSILines: []string{second}, Metadata: render.RenderMetadata{Width: 30, Height: 1}}); err != nil {
+		t.Fatalf("write second frame: %v", err)
+	}
+	got := output.String()
+	if strings.Contains(got, clearScreen) {
+		t.Fatalf("same-size addressed row update should not clear screen, got %q", got)
+	}
+	want := cursorPosition(1, 1) + render.ANSIReset + clearLine + second
+	if !strings.Contains(got, want) {
+		t.Fatalf("addressed ANSI rows must clear the whole row before repaint, want %q in %q", want, got)
+	}
+}
+
 func TestFrameSinkForceFullRepaintClearsScreen(t *testing.T) {
 	var output bytes.Buffer
 	sink := NewFrameSink(&output)
@@ -573,7 +595,7 @@ func TestFrameSinkWritesIncrementalScrollPatch(t *testing.T) {
 		t.Fatalf("write patch frame: %v", err)
 	}
 	got := output.String()
-	for _, part := range []string{scrollRegion(3, 6), cursorPosition(6, 1) + scrollUpOne, resetScrollRegion, cursorPosition(6, 2) + eraseChars(10) + "new row"} {
+	for _, part := range []string{scrollRegion(3, 6), cursorPosition(6, 1) + scrollUpOne, resetScrollRegion, cursorPosition(6, 2) + render.ANSIReset + eraseChars(10) + "new row"} {
 		if !strings.Contains(got, part) {
 			t.Fatalf("missing patch part %q in %q", part, got)
 		}
@@ -601,7 +623,7 @@ func TestFrameSinkWritesMultiLineIncrementalScrollPatch(t *testing.T) {
 		t.Fatalf("write patch frame: %v", err)
 	}
 	got := output.String()
-	for _, part := range []string{scrollRegion(2, 7), cursorPosition(7, 1) + scrollUpOne + scrollUpOne, cursorPosition(6, 3) + eraseChars(8) + "new a", cursorPosition(7, 3) + eraseChars(8) + "new b"} {
+	for _, part := range []string{scrollRegion(2, 7), cursorPosition(7, 1) + scrollUpOne + scrollUpOne, cursorPosition(6, 3) + render.ANSIReset + eraseChars(8) + "new a", cursorPosition(7, 3) + render.ANSIReset + eraseChars(8) + "new b"} {
 		if !strings.Contains(got, part) {
 			t.Fatalf("missing multi-line patch part %q in %q", part, got)
 		}
@@ -628,7 +650,7 @@ func TestFrameSinkWritesRewritePatchWithoutScrollRegion(t *testing.T) {
 		t.Fatalf("write rewrite patch frame: %v", err)
 	}
 	got := output.String()
-	for _, part := range []string{cursorPosition(2, 3) + eraseChars(8) + "row a", cursorPosition(3, 3) + eraseChars(8) + "row b", cursorPosition(4, 3) + eraseChars(8) + "row c"} {
+	for _, part := range []string{cursorPosition(2, 3) + render.ANSIReset + eraseChars(8) + "row a", cursorPosition(3, 3) + render.ANSIReset + eraseChars(8) + "row b", cursorPosition(4, 3) + render.ANSIReset + eraseChars(8) + "row c"} {
 		if !strings.Contains(got, part) {
 			t.Fatalf("missing rewrite patch part %q in %q", part, got)
 		}

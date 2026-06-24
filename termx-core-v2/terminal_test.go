@@ -1086,6 +1086,75 @@ func TestTerminalIngestOutputRepeatedFullscreenHomeClearKeepsLatestFrameOnly(t *
 	}
 }
 
+func TestTerminalIngestOutputPrimaryFullscreenCursorShowKeepsRunningFrameOutOfHistory(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 8},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := strings.Join([]string{
+		"shell-one\nshell-two",
+		"\x1b[?25l\x1b[H\x1b[Jframe-header\nframe-body",
+		"\x1b[4;1H> Summarize recent commits\x1b[?25h",
+	}, "")
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 80, 10)
+	if err != nil {
+		t.Fatalf("latest after cursor-show repaint: %v", err)
+	}
+	for _, want := range []string{"shell-one", "shell-two"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("latest should preserve pre-fullscreen shell history %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
+		}
+	}
+	for _, stale := range []string{"frame-header", "frame-body", "Summarize recent commits"} {
+		if historyWindowContainsText(window, stale) {
+			t.Fatalf("cursor-show inside primary fullscreen must not expose running frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+		}
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("running primary fullscreen frame should stay outside logical history, got total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
+func TestTerminalIngestOutputPrimaryFullscreenNewlinesDoNotCommitRunningFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 8},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := strings.Join([]string{
+		"shell-one\nshell-two",
+		"\x1b[?25l\x1b[H\x1b[Jframe-a\nframe-b\nframe-c",
+		"\x1b[H\x1b[Jframe-d\nframe-e",
+	}, "")
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 80, 20)
+	if err != nil {
+		t.Fatalf("latest after fullscreen frame newlines: %v", err)
+	}
+	for _, stale := range []string{"frame-a", "frame-b", "frame-c", "frame-d", "frame-e"} {
+		if historyWindowContainsText(window, stale) {
+			t.Fatalf("primary fullscreen newlines must not commit running frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+		}
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("only pre-fullscreen shell history should be committed, got total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
 func stressHistoryLine(n int) string {
 	return fmt.Sprintf("%06d [DEBUG ] stream pending id=%06d path=/var/tmp/alpha/beta/gamma wrap============================================== tail-marker", n, n)
 }
