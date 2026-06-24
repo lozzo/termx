@@ -637,6 +637,12 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 	}
 	switch mode {
 	case 0:
+		if track.activeCol == 0 && track.primaryFullscreenFrame {
+			return track.replacePrimaryFullscreenFrame()
+		}
+		if track.activeCol == 0 && track.primaryFullscreenIntent {
+			return track.startPrimaryFullscreenFrame()
+		}
 		if track.screenRow == 0 && track.activeCol == 0 {
 			if track.primaryFullscreenFrame {
 				return track.replacePrimaryFullscreenFrame()

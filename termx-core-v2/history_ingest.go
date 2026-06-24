@@ -818,7 +818,7 @@ func parsePrimaryFullscreenMode(text string, final byte) (bool, int, bool) {
 		switch mode {
 		case 25:
 			return final == 'l', mode, true
-		case 1000, 1002, 1003, 1006:
+		case 1000, 1002, 1003, 1004, 1006, 2026:
 			return final == 'h', mode, true
 		}
 	}

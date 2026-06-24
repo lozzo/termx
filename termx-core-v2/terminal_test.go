@@ -1168,6 +1168,74 @@ func TestTerminalIngestOutputPrimaryFullscreenNewlinesDoNotCommitRunningFrame(t 
 	}
 }
 
+func TestTerminalIngestOutputCodexTmuxRawFrameKeepsCurrentInputAndStatus(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 160, Rows: 48},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := strings.Join([]string{
+		"before-one\nbefore-two\n",
+		"\x1b[?2026h",
+		"\x1b[?1004h",
+		"\x1b[5;1H\x1b[J",
+		"\x1b[5;48r\x1b[5;1H\x1bM\x1bM\x1bM\x1bM\x1bM\x1bM\x1bM",
+		"\x1b[r\x1b[1;11r\x1b[4;1H",
+		"\x1b[39;49m\x1b[K╭─ update ─╮",
+		"\x1b[13;1H╭─ OpenAI Codex ─╮",
+		"\x1b[21;1H› \x1b[21;3HSummarize recent commits",
+		"\x1b[23;3Hgpt-5.5 xhigh · ~/Documents/workdir/termx",
+		"\x1b[?2026l",
+	}, "")
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 160, 20)
+	if err != nil {
+		t.Fatalf("latest after codex tmux raw frame: %v", err)
+	}
+	for _, want := range []string{"before-one", "before-two", "Summarize recent commits", "gpt-5.5 xhigh"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("latest should contain %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
+		}
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("Codex raw frame must stay mutable outside committed history depth, got total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+
+	repaint := strings.Join([]string{
+		"\x1b[?2026h",
+		"\x1b[5;1H\x1b[J",
+		"\x1b[5;48r\x1b[5;1H\x1bM\x1bM",
+		"\x1b[r\x1b[1;11r\x1b[4;1H",
+		"\x1b[21;1H› \x1b[21;3HExplain this codebase",
+		"\x1b[23;3Hgpt-5.5 xhigh · ~/Documents/workdir/termx",
+		"\x1b[?2026l",
+	}, "")
+	if err := server.IngestOutput(context.Background(), "term-1", repaint); err != nil {
+		t.Fatalf("ingest repaint: %v", err)
+	}
+	window, err = server.LatestWindow("term-1", 160, 20)
+	if err != nil {
+		t.Fatalf("latest after codex tmux repaint: %v", err)
+	}
+	if historyWindowContainsText(window, "Summarize recent commits") {
+		t.Fatalf("repeated Codex raw repaint must replace previous input frame, got rows=%#v", window.Rows)
+	}
+	for _, want := range []string{"before-one", "before-two", "Explain this codebase", "gpt-5.5 xhigh"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("repaint latest should contain %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
+		}
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("Codex raw repaint must not increase committed history depth, got total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
 func stressHistoryLine(n int) string {
 	return fmt.Sprintf("%06d [DEBUG ] stream pending id=%06d path=/var/tmp/alpha/beta/gamma wrap============================================== tail-marker", n, n)
 }
