@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -138,6 +139,39 @@ func TestDefaultDaemonConfiguresRemoteLifecycleFromEnvironment(t *testing.T) {
 	}
 	if fake.startCalls != 1 || fake.localEnableCalls != 1 || fake.closeCalls != 1 {
 		t.Fatalf("unexpected lifecycle calls start=%d local=%d close=%d", fake.startCalls, fake.localEnableCalls, fake.closeCalls)
+	}
+}
+
+func TestConfigureRemoteRuntimeKeepsDaemonAliveWhenLocalAutoEnableFails(t *testing.T) {
+	oldNewService := newCoreV2DaemonRemoteLifecycleService
+	t.Cleanup(func() {
+		newCoreV2DaemonRemoteLifecycleService = oldNewService
+	})
+	fake := &daemonRemoteLifecycleFake{
+		status:         coreprotocol.RemoteStatus{State: "configured", DeviceID: "machine-bind-fail"},
+		localEnableErr: fmt.Errorf("listen tcp 192.168.0.103:18888: bind: can't assign requested address"),
+	}
+	newCoreV2DaemonRemoteLifecycleService = func(cfg remoteprotocol.Config, daemon remote.Daemon) coreV2RemoteLifecycleService {
+		return fake
+	}
+	server := corev2.NewServer()
+	runtime, err := configureCoreV2DaemonRemoteRuntime(context.Background(), server, remoteprotocol.Config{
+		Enabled:      true,
+		Mode:         "local",
+		LocalWebAddr: "192.168.0.103:18888",
+		ICETCPAddr:   "127.0.0.1:0",
+	}, nil)
+	if err != nil {
+		t.Fatalf("local auto-enable failure must not stop core daemon startup: %v", err)
+	}
+	if runtime == nil || server.RemoteService() == nil {
+		t.Fatalf("remote hook should remain installed after local auto-enable warning, runtime=%#v service=%#v", runtime, server.RemoteService())
+	}
+	if fake.startCalls != 1 || fake.localEnableCalls != 1 || fake.closeCalls != 0 {
+		t.Fatalf("unexpected lifecycle calls start=%d local=%d close=%d", fake.startCalls, fake.localEnableCalls, fake.closeCalls)
+	}
+	if err := runtime.Close(context.Background()); err != nil {
+		t.Fatalf("close remote runtime: %v", err)
 	}
 }
 
@@ -362,6 +396,7 @@ type daemonRemoteLifecycleFake struct {
 	status           coreprotocol.RemoteStatus
 	localStatus      coreprotocol.RemoteLocalStatus
 	localParams      coreprotocol.RemoteLocalEnableParams
+	localEnableErr   error
 }
 
 func (fake *daemonRemoteLifecycleFake) Start(context.Context) error {
@@ -392,6 +427,9 @@ func (fake *daemonRemoteLifecycleFake) LocalEnable(_ context.Context, params cor
 	fake.localEnableCalls++
 	fake.localParams = params
 	fake.localParams.HubURLs = append([]string(nil), params.HubURLs...)
+	if fake.localEnableErr != nil {
+		return coreprotocol.RemoteLocalStatus{}, fake.localEnableErr
+	}
 	return fake.localStatus, nil
 }
 

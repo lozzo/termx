@@ -67,7 +67,16 @@ func (runtime *coreV2DaemonRemoteRuntime) start(ctx context.Context, cfg remotep
 	if params, ok := daemonRemoteLocalEnableParams(cfg); ok {
 		status, err := runtime.service.LocalEnable(ctx, coreLocalEnableParamsFromRemote(params))
 		if err != nil {
-			return err
+			if runtime.logger != nil {
+				// 中文说明：local web/ICE 只是 remote 辅助入口；绑定地址失效时不能阻断
+				// core daemon socket 启动，否则默认本地 TUI/CLI 会只看到 daemon timeout。
+				runtime.logger.Warn("core-v2 daemon remote local auto-enable failed; continuing without local runtime",
+					"error", err,
+					"local_web_addr", params.LocalWebAddr,
+					"ice_tcp_addr", params.ICETCPAddr,
+				)
+			}
+			return nil
 		}
 		if runtime.logger != nil {
 			runtime.logger.Info("core-v2 daemon remote local runtime enabled",
