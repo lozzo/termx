@@ -7,7 +7,7 @@ import type {
   RtcConnectionStateSnapshot,
   RtcEvent,
   RtcJsonRpcChannel,
-  RtcSession,
+  ManagedRtcSession,
   RtcSubscription,
 } from '../core/transport'
 import type { RemoteNetworkState, RemoteNetworkStateManager } from './remoteNetworkState'
@@ -113,7 +113,7 @@ describe('MachineConnectionStore', () => {
   })
 
   it('does not publish failed when an in-flight connection is cancelled by explicit reconnect', async () => {
-    const firstConnect = deferred<RtcSession>()
+    const firstConnect = deferred<ManagedRtcSession>()
     const second = new StoreTestSession('machine-1')
     const connect = vi.fn((options?: { signal?: AbortSignal }) => {
       if (connect.mock.calls.length === 1) {
@@ -239,7 +239,7 @@ describe('MachineConnectionStore', () => {
   })
 
   it('cancels an in-flight session request when resume recovery starts', async () => {
-    const firstConnect = deferred<RtcSession>()
+    const firstConnect = deferred<ManagedRtcSession>()
     const second = new StoreTestSession('machine-1')
     const connect = vi.fn((options?: { signal?: AbortSignal }) => {
       if (connect.mock.calls.length === 1) {
@@ -273,12 +273,18 @@ describe('MachineConnectionStore', () => {
   })
 })
 
-function createLease(session: RtcSession): RtcSession {
+function createLease(session: ManagedRtcSession): ManagedRtcSession {
   return {
     openTerminal: (terminalId) => session.openTerminal(terminalId),
     openApi: () => session.openApi(),
     openFileTransfer: (transferId) => session.openFileTransfer(transferId),
     subscribeEvents: (handler) => session.subscribeEvents(handler),
+    subscribeConnectionState: (handler) => session.subscribeConnectionState(handler),
+    onDisconnect: (handler) => session.onDisconnect(handler),
+    isAlive: () => session.isAlive(),
+    handleAppResume: () => session.handleAppResume(),
+    waitUntilConnected: (signal) => session.waitUntilConnected(signal),
+    closeTerminalDataChannel: (terminalId) => session.closeTerminalDataChannel(terminalId),
     getConnectionInfo: () => session.getConnectionInfo(),
     getCapabilities: () => session.getCapabilities(),
     async disconnect() {},
@@ -307,7 +313,7 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-class StoreTestSession implements RtcSession {
+class StoreTestSession implements ManagedRtcSession {
   disconnectCalls = 0
   connectionInfoDelay: ReturnType<typeof deferred<ConnectionInfo>> | null = null
   apiRequestDelay: ReturnType<typeof deferred<unknown>> | null = null
@@ -360,6 +366,16 @@ class StoreTestSession implements RtcSession {
   isAlive(): boolean {
     return true
   }
+
+  handleAppResume(): Promise<boolean> {
+    return Promise.resolve(true)
+  }
+
+  waitUntilConnected(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  closeTerminalDataChannel(): void {}
 
   async getConnectionInfo(): Promise<ConnectionInfo> {
     if (this.connectionInfoDelay) return this.connectionInfoDelay.promise

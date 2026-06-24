@@ -12,13 +12,13 @@ import type {
   ConnectionCapabilities,
   ConnectionInfo,
   ConnectionPath,
+  ManagedRtcConnector,
+  ManagedRtcSession,
   RtcBinaryChannel,
-  RtcConnector,
   RtcConnectOptions,
   RtcConnectionStateSnapshot,
   RtcEvent,
   RtcJsonRpcChannel,
-  RtcSession,
   RtcSubscription,
 } from '@termx/remote-ui'
 import {
@@ -725,7 +725,7 @@ class NativeBridgeClient {
 
 // ─── NativeRtcSession ─────────────────────────────────────────────────────────
 
-export class NativeRtcSession implements RtcSession {
+export class NativeRtcSession implements ManagedRtcSession {
   private bridge: NativeBridgeClient
   private machineId: string
   private path: NativeRuntimePath
@@ -1334,14 +1334,14 @@ export interface NativeRtcConnectInput {
   connectOpts: Omit<NativeConnectOpts, 'machineId'>
 }
 
-export class NativeRtcConnector implements RtcConnector<{ machineId: string }> {
+export class NativeRtcConnector implements ManagedRtcConnector<{ machineId: string }> {
   private readonly connectOpts: Omit<NativeConnectOpts, 'machineId'>
 
   constructor(connectOpts: Omit<NativeConnectOpts, 'machineId'>) {
     this.connectOpts = connectOpts
   }
 
-  async connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<RtcSession> {
+  async connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<NativeRtcSession> {
     const { machineId } = input
     const signal = options?.signal
 

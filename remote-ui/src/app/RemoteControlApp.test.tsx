@@ -1667,6 +1667,20 @@ const fakeHubRtcSessionFactory = (target?: { machineId?: string | undefined }) =
   subscribeEvents() {
     return { close() {} }
   },
+  subscribeConnectionState() {
+    return { close() {} }
+  },
+  onDisconnect() {
+    return { close() {} }
+  },
+  isAlive() {
+    return true
+  },
+  async handleAppResume() {
+    return true
+  },
+  async waitUntilConnected() {},
+  closeTerminalDataChannel() {},
   async getConnectionInfo() {
     return {
       path: 'hub' as const,
@@ -1689,6 +1703,12 @@ const fakeHubRtcSessionFactory = (target?: { machineId?: string | undefined }) =
 }) satisfies RtcSession & {
   createOffer(): Promise<{ sessionId: string; description: { type: 'offer'; sdp: string } }>
   acceptAnswer(): Promise<void>
+  subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
+  onDisconnect(handler: () => void): RtcSubscription
+  isAlive(): boolean
+  handleAppResume(): Promise<boolean>
+  waitUntilConnected(): Promise<void>
+  closeTerminalDataChannel(terminalId: string): void
 }
 
 function hubTestRtcSession(machineId: string) {
@@ -1744,6 +1764,9 @@ function hubTestRtcSession(machineId: string) {
     subscribeEvents() {
       return { close() {} }
     },
+    onDisconnect() {
+      return { close() {} }
+    },
     subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription {
       connectionStateHandlers.add(handler)
       if (path) {
@@ -1760,6 +1783,11 @@ function hubTestRtcSession(machineId: string) {
     isAlive() {
       return true
     },
+    async handleAppResume() {
+      return true
+    },
+    async waitUntilConnected() {},
+    closeTerminalDataChannel() {},
     async getConnectionInfo() {
       return {
         path: path ?? 'hub',
@@ -1789,7 +1817,11 @@ function hubTestRtcSession(machineId: string) {
     createOffer(input: RtcSessionNegotiationTarget): Promise<{ sessionId: string; description: { type: 'offer'; sdp: string } }>
     acceptAnswer(): Promise<void>
     subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
+    onDisconnect(handler: () => void): RtcSubscription
     isAlive(): boolean
+    handleAppResume(): Promise<boolean>
+    waitUntilConnected(): Promise<void>
+    closeTerminalDataChannel(terminalId: string): void
     lastPath(): RtcSessionNegotiationTarget['path'] | undefined
   }
 }

@@ -16,6 +16,7 @@ const xtermMocks = vi.hoisted(() => {
     rows = 24
     disposed = false
     element: HTMLElement | undefined
+    readonly resizeCalls: Array<{ cols: number; rows: number }> = []
     buffer = {
       active: {
         type: 'normal' as const,
@@ -165,6 +166,7 @@ const xtermMocks = vi.hoisted(() => {
       this.assertActive()
       this.cols = cols
       this.rows = rows
+      this.resizeCalls.push({ cols, rows })
     }
 
     clear(): void {
@@ -854,8 +856,9 @@ describe('Terminal', () => {
     }).not.toThrow()
   })
 
-  it('re-fits after xterm opens so an early one-row measurement does not persist', async () => {
+  it('does not apply or send an early one-row fit measurement', async () => {
     const session = createMockRtcTerminalSession()
+    session.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })
     xtermMocks.FakeFitAddon.nextDimensionsSequence = [
       { cols: 80, rows: 1 },
       { cols: 80, rows: 1 },
@@ -870,9 +873,15 @@ describe('Terminal', () => {
       />,
     )
 
-    await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(31))
-    expect(xtermMocks.FakeFitAddon.instances[0]?.fitCalls).toBeGreaterThanOrEqual(3)
-    expect(session.sentResize('terminal-1')).toBeUndefined()
+    const term = await waitFor(() => {
+      const current = xtermMocks.FakeXTerm.instances[0]
+      expect(current).toBeTruthy()
+      return current!
+    })
+
+    await waitFor(() => expect(term.rows).toBe(31))
+    expect(term.resizeCalls).not.toContainEqual({ cols: 80, rows: 1 })
+    await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
   })
 
   it('allows remote resize only when resize ownership is granted by terminal protocol', async () => {

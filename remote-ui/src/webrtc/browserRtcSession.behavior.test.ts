@@ -439,7 +439,7 @@ describe('BrowserRtcSession', () => {
     }
   })
 
-  it('notifies disconnect handlers when the api channel closes unexpectedly', async () => {
+  it('keeps the browser session alive and recreates api after the raw api channel closes', async () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
@@ -452,11 +452,21 @@ describe('BrowserRtcSession', () => {
 
     await session.createOffer({ machineId: 'machine-local', path: 'hub' })
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
-    factory.channel('api').close()
+    const firstRawApi = factory.channel('api')
+    firstRawApi.close()
     await flushMicrotasks()
+    const secondApi = await session.openApi()
+    const secondRawApi = factory.channel('api')
+    const request = secondApi.request('list', {})
+    secondRawApi.emitMessage(apiResponseChunk('req_1', {
+      status: 200,
+      body: { terminals: [] },
+    }))
 
-    expect(onDisconnect).toHaveBeenCalledTimes(1)
-    expect(session.isAlive()).toBe(false)
+    await expect(request).resolves.toEqual({ terminals: [] })
+    expect(secondRawApi).not.toBe(firstRawApi)
+    expect(onDisconnect).not.toHaveBeenCalled()
+    expect(session.isAlive()).toBe(true)
   })
 
   it('does not infer incoming channel ownership from hub path when the browser created the offer', async () => {
@@ -881,6 +891,32 @@ describe('BrowserRtcSession', () => {
     apiChannel.close()
 
     await expect(request).rejects.toThrow(/api.*closed|closed.*api/i)
+  })
+
+  it('does not close the shared browser api data channel when an api lease is closed', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      path: 'local',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-local-1',
+    })
+    await connectBrowserSession(session)
+    const api = await session.openApi()
+    const apiChannel = factory.channel('api')
+
+    api.close()
+    const reopenedApi = await session.openApi()
+    const request = reopenedApi.request('list', {})
+    apiChannel.emitMessage(apiResponseChunk('req_1', {
+      status: 200,
+      body: { terminals: [] },
+    }))
+
+    await expect(request).resolves.toEqual({ terminals: [] })
+    expect(factory.channel('api')).toBe(apiChannel)
+    expect(apiChannel.readyState).toBe('open')
   })
 
   it('rejects pending api requests when the response chunk is invalid', async () => {

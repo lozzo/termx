@@ -6,13 +6,11 @@ import {
 import type { RemoteNetworkState, RemoteNetworkStateManager } from './remoteNetworkState'
 import type {
   ConnectionInfo,
+  ManagedRtcSession,
   RtcConnectOptions,
   RtcConnectionPhase,
   RtcConnectionStateSnapshot,
   RtcEvent,
-  RtcSession,
-  RtcSessionConnectionStateEvents,
-  RtcSessionLiveness,
   RtcSubscription,
 } from '../core/transport'
 
@@ -20,7 +18,7 @@ export interface MachineConnectionSnapshot {
   machineId: string
   phase: RtcConnectionPhase
   statusText: string
-  session: RtcSession | null
+  session: ManagedRtcSession | null
   connectionInfo: ConnectionInfo | null
   forceRelay: boolean
   relayInUse: boolean
@@ -30,8 +28,8 @@ export interface MachineConnectionSnapshot {
 
 export interface MachineConnectionStoreOptions {
   machineId: string
-  connect(options?: RtcConnectOptions): Promise<RtcSession>
-  createLease?: ((session: RtcSession) => RtcSession) | undefined
+  connect(options?: RtcConnectOptions): Promise<ManagedRtcSession>
+  createLease?: ((session: ManagedRtcSession) => ManagedRtcSession) | undefined
   networkStateManager?: RemoteNetworkStateManager | undefined
 }
 
@@ -53,8 +51,8 @@ export class MachineConnectionStore {
   private readonly connectionState = createConnectionStatePublisher()
   private readonly snapshotListeners = new Set<SnapshotListener>()
   private readonly eventSubscriptions = new Set<LogicalEventSubscription>()
-  private currentSession: RtcSession | null = null
-  private sessionPromise: Promise<RtcSession> | null = null
+  private currentSession: ManagedRtcSession | null = null
+  private sessionPromise: Promise<ManagedRtcSession> | null = null
   private connectionStateSubscription: RtcSubscription | null = null
   private disconnectSubscription: RtcSubscription | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -117,7 +115,7 @@ export class MachineConnectionStore {
     }
   }
 
-  async get(options: RtcConnectOptions = {}): Promise<RtcSession> {
+  async get(options: RtcConnectOptions = {}): Promise<ManagedRtcSession> {
     return this.createLease(await this.ensureSession(options))
   }
 
@@ -156,7 +154,7 @@ export class MachineConnectionStore {
     this.publishCurrentConnectionState()
   }
 
-  private async ensureSession(options: RtcConnectOptions = {}, behavior: { publishFailure?: boolean } = {}): Promise<RtcSession> {
+  private async ensureSession(options: RtcConnectOptions = {}, behavior: { publishFailure?: boolean } = {}): Promise<ManagedRtcSession> {
     if (this.released) throw new Error('machine connection store released')
     const forceRelay = options.forceRelay ?? (this.currentForceRelay || this.pendingForceRelay)
     if (this.currentSession) {
@@ -233,13 +231,13 @@ export class MachineConnectionStore {
     return promise
   }
 
-  private async attachSession(session: RtcSession): Promise<void> {
+  private async attachSession(session: ManagedRtcSession): Promise<void> {
     this.connectionStateSubscription?.close()
-    this.connectionStateSubscription = subscribeSessionConnectionState(session, (snapshot) => {
+    this.connectionStateSubscription = session.subscribeConnectionState((snapshot) => {
       this.publishConnectionSnapshot(snapshot)
     })
     this.disconnectSubscription?.close()
-    this.disconnectSubscription = subscribeSessionDisconnect(session, () => {
+    this.disconnectSubscription = session.onDisconnect(() => {
       if (this.currentSession !== session || this.released) return
       this.currentSession = null
       this.connectionStateSubscription?.close()
@@ -383,7 +381,7 @@ export class MachineConnectionStore {
     }
   }
 
-  private async handleSessionDead(session: RtcSession, message: string): Promise<void> {
+  private async handleSessionDead(session: ManagedRtcSession, message: string): Promise<void> {
     if (this.currentSession !== session || this.released) return
     this.verificationGeneration += 1
     this.currentSession = null
@@ -489,13 +487,13 @@ export class MachineConnectionStore {
     })
   }
 
-  private bindLogicalEventSubscriptions(session: RtcSession): void {
+  private bindLogicalEventSubscriptions(session: ManagedRtcSession): void {
     for (const logical of this.eventSubscriptions) {
       this.bindLogicalEventSubscription(logical, session)
     }
   }
 
-  private bindLogicalEventSubscription(logical: LogicalEventSubscription, session: RtcSession): void {
+  private bindLogicalEventSubscription(logical: LogicalEventSubscription, session: ManagedRtcSession): void {
     if (logical.closed || logical.inner) return
     logical.inner = session.subscribeEvents(logical.handler)
   }
@@ -507,44 +505,23 @@ export class MachineConnectionStore {
     }
   }
 
-  private createLease(session: RtcSession): RtcSession {
+  private createLease(session: ManagedRtcSession): ManagedRtcSession {
     return this.options.createLease?.(session) ?? session
   }
 }
 
-function subscribeSessionConnectionState(
-  session: RtcSession,
-  handler: (snapshot: RtcConnectionStateSnapshot) => void,
-): RtcSubscription | null {
-  const candidate = session as RtcSession & Partial<RtcSessionConnectionStateEvents>
-  if (typeof candidate.subscribeConnectionState !== 'function') return null
-  return candidate.subscribeConnectionState(handler)
+function isRtcSessionAlive(session: ManagedRtcSession): boolean {
+  return session.isAlive()
 }
 
-function subscribeSessionDisconnect(session: RtcSession, handler: () => void): RtcSubscription | null {
-  const candidate = session as RtcSession & Partial<{ onDisconnect(handler: () => void): RtcSubscription }>
-  if (typeof candidate.onDisconnect !== 'function') return null
-  return candidate.onDisconnect(handler)
-}
-
-function isRtcSessionAlive(session: RtcSession): boolean {
-  const candidate = session as RtcSession & Partial<RtcSessionLiveness>
-  if (typeof candidate.isAlive !== 'function') return true
-  return candidate.isAlive()
-}
-
-async function verifySession(session: RtcSession, timeoutMs: number): Promise<void> {
-  const candidate = session as RtcSession & Partial<{ handleAppResume(): Promise<boolean> }>
-  if (typeof candidate.handleAppResume === 'function') {
-    const ok = await withTimeout(
-      candidate.handleAppResume(),
-      timeoutMs,
-      () => new Error('connection verification timed out'),
-    )
-    if (!ok) throw new Error('connection verification failed')
-    return
-  }
-  if (!isRtcSessionAlive(session)) throw new Error('connection is no longer alive')
+async function verifySession(session: ManagedRtcSession, timeoutMs: number): Promise<void> {
+  const ok = await withTimeout(
+    session.handleAppResume(),
+    timeoutMs,
+    () => new Error('connection verification timed out'),
+  )
+  if (!ok) throw new Error('connection verification failed')
+  if (!session.isAlive()) throw new Error('connection is no longer alive')
   const api = await session.openApi()
   await withTimeout(
     api.request('GET', { path: '/status' }),

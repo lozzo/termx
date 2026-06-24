@@ -15,7 +15,7 @@ import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../pl
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { parsePairingPayload, type PairingPayload } from '../state/pairingPayload'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
-import type { ConnectionInfo, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
+import type { ConnectionInfo, LocalStatus, MachineConnectionStateEvents, ManagedRtcSession, RemoteNetworkRuntime, RemoteRuntimeFetch, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionNegotiator, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
 import { normalizeTerminalInventory } from '../terminal/terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from '../api/webControlApi'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
@@ -2317,7 +2317,7 @@ function createHubMachineSessionManager(input: {
       if (isTerminalInventoryRuntimeEvent(event)) handler({ type: 'inventory_changed', payload: event.payload })
     })
   }
-  const connect = async (options?: RtcConnectOptions & { onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> => {
+  const connect = async (options?: RtcConnectOptions & { onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<ManagedRtcSession> => {
     if (options?.signal?.aborted) {
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error('connection aborted')
     }
@@ -2351,7 +2351,7 @@ function createHubMachineSessionManager(input: {
         options?.onSnapshot?.(snapshot)
       },
     }, options)
-    return result.session
+    return assertManagedRtcSession(result.session)
   }
   return {
     get: (options?: RtcConnectOptions) => connectionStore.get(options),
@@ -2397,7 +2397,7 @@ function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
     event.type === 'terminal_metadata_changed'
 }
 
-function createHubMachineSessionLease(session: RtcSession): RtcSession & RtcTerminalDataChannelController & RtcSessionLiveness {
+function createHubMachineSessionLease(session: ManagedRtcSession): ManagedRtcSession {
   const openedTerminals = new Map<string, RtcBinaryChannel>()
   const openedFiles = new Map<string, RtcBinaryChannel>()
   const subscriptions = new Set<RtcSubscription>()
@@ -2413,10 +2413,7 @@ function createHubMachineSessionLease(session: RtcSession): RtcSession & RtcTerm
       const channel = openedTerminals.get(id)
       openedTerminals.delete(id)
       channel?.close()
-      const controller = session as RtcSession & Partial<RtcTerminalDataChannelController>
-      if (typeof controller.closeTerminalDataChannel === 'function') {
-        controller.closeTerminalDataChannel(id)
-      }
+      session.closeTerminalDataChannel(id)
     },
     async openApi() {
       if (closed) throw new Error('machine session lease is closed')
@@ -2447,9 +2444,37 @@ function createHubMachineSessionLease(session: RtcSession): RtcSession & RtcTerm
     },
     isAlive() {
       if (closed) return false
-      const candidate = session as RtcSession & Partial<RtcSessionLiveness>
-      if (typeof candidate.isAlive !== 'function') return true
-      return candidate.isAlive()
+      return session.isAlive()
+    },
+    subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void) {
+      if (closed) return { close() {} }
+      const subscription = session.subscribeConnectionState(handler)
+      subscriptions.add(subscription)
+      return {
+        close() {
+          subscriptions.delete(subscription)
+          subscription.close()
+        },
+      }
+    },
+    onDisconnect(handler: () => void) {
+      if (closed) return { close() {} }
+      const subscription = session.onDisconnect(handler)
+      subscriptions.add(subscription)
+      return {
+        close() {
+          subscriptions.delete(subscription)
+          subscription.close()
+        },
+      }
+    },
+    handleAppResume() {
+      if (closed) return Promise.resolve(false)
+      return session.handleAppResume()
+    },
+    waitUntilConnected(signal?: AbortSignal) {
+      if (closed) return Promise.reject(new Error('machine session lease is closed'))
+      return session.waitUntilConnected(signal)
     },
     async disconnect() {
       closed = true
@@ -2476,6 +2501,23 @@ function createSharedApiLeaseChannel(channel: RtcJsonRpcChannel): RtcJsonRpcChan
     },
     close() {},
   }
+}
+
+function assertManagedRtcSession(session: RtcSession): ManagedRtcSession {
+  const candidate = session as RtcSession & Partial<ManagedRtcSession>
+  const required: Array<keyof ManagedRtcSession> = [
+    'subscribeConnectionState',
+    'onDisconnect',
+    'isAlive',
+    'handleAppResume',
+    'waitUntilConnected',
+    'closeTerminalDataChannel',
+  ]
+  const missing = required.filter((key) => typeof candidate[key] !== 'function')
+  if (missing.length > 0) {
+    throw new Error(`runtime session does not implement managed WebRTC contract: ${missing.join(', ')}`)
+  }
+  return candidate as ManagedRtcSession
 }
 
 function normalizeTerminalsForMachine(machineId: string, terminals: Record<string, unknown>[]) {

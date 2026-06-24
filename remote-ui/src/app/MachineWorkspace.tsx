@@ -2200,7 +2200,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         ) : (
           <>
         <header
-          className="relative z-30 flex min-h-10 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
+          className="relative z-30 row-start-1 flex min-h-10 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
           data-testid="termx-terminal-header"
         >
           <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -2312,7 +2312,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
         <div
           ref={terminalAreaRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)]"
+          className="relative row-start-2 h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)]"
           data-testid="termx-terminal-body"
         >
           {terminalToolbarOpen ? (
@@ -2460,7 +2460,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
         <MobileTerminalKeybar
           ref={mobileKeybarRef}
-          className="relative z-20 w-full max-w-full"
+          className="relative z-20 row-start-3 w-full max-w-full"
           onInput={sendTerminalInput}
           onFocusKeyboard={focusActiveTerminal}
           onBlurKeyboard={blurActiveTerminal}

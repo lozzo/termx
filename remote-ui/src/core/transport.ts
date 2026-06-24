@@ -129,6 +129,10 @@ export interface RtcSessionLiveness {
   isAlive(): boolean
 }
 
+export interface RtcSessionDisconnectEvents {
+  onDisconnect(handler: () => void): RtcSubscription
+}
+
 export interface RtcSessionConnectionStateEvents {
   subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
 }
@@ -141,8 +145,24 @@ export interface RtcTerminalDataChannelController {
   closeTerminalDataChannel(terminalId: string): void
 }
 
+export interface RtcSessionRecovery {
+  handleAppResume(): Promise<boolean>
+  waitUntilConnected(signal?: AbortSignal): Promise<void>
+}
+
+export type ManagedRtcSession = RtcSession &
+  RtcSessionConnectionStateEvents &
+  RtcSessionDisconnectEvents &
+  RtcSessionLiveness &
+  RtcSessionRecovery &
+  RtcTerminalDataChannelController
+
 export interface RtcConnector<TInput extends RtcConnectionTarget = RtcConnectionTarget> {
   connect(input: TInput, options?: RtcConnectOptions): Promise<RtcSession>
+}
+
+export interface ManagedRtcConnector<TInput extends RtcConnectionTarget = RtcConnectionTarget> {
+  connect(input: TInput, options?: RtcConnectOptions): Promise<ManagedRtcSession>
 }
 
 export interface LocalStatus {

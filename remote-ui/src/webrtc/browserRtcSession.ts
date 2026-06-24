@@ -2,6 +2,7 @@ import type {
   ConnectionCapabilities,
   ConnectionInfo,
   ConnectionPath,
+  ManagedRtcSession,
   RtcSessionCapabilityUpdater,
   RtcBinaryChannel,
   RtcEvent,
@@ -9,7 +10,6 @@ import type {
   RtcConnectOptions,
   RtcConnectionPhase,
   RtcConnectionStateSnapshot,
-  RtcSession,
   RtcSessionDescription,
   RtcSessionConnectionStateEvents,
   RtcSessionNegotiator,
@@ -54,9 +54,10 @@ export interface BrowserRtcSessionLifecycle {
   onDisconnect(handler: () => void): RtcSubscription
   isAlive(): boolean
   handleAppResume(): Promise<boolean>
+  waitUntilConnected(signal?: AbortSignal): Promise<void>
 }
 
-export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle & RtcTerminalDataChannelController & RtcSessionConnectionStateEvents
+export type BrowserRtcConnectedSession = ManagedRtcSession & RtcSessionNegotiator & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle & RtcTerminalDataChannelController & RtcSessionConnectionStateEvents
 
 export interface RTCPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null
@@ -132,6 +133,11 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private lastRttMs = 0
   private networkChangeCleanup: (() => void) | null = null
   private negotiationConnectionStateHandler: ((snapshot: RtcConnectionStateSnapshot) => void) | null = null
+  private connectedWaiters = new Set<{
+    resolve(): void
+    reject(error: Error): void
+    cleanup?: (() => void) | undefined
+  }>()
   private capabilities: ConnectionCapabilities = {
     terminalAllowed: true,
     apiAllowed: true,
@@ -291,7 +297,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     if (!this.apiJsonChannel) {
       this.apiJsonChannel = new LocalApiChannel(await this.ensureAPIChannel())
     }
-    return this.apiJsonChannel
+    return sharedApiLeaseChannel(this.apiJsonChannel)
   }
 
   async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
@@ -336,7 +342,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   isAlive(): boolean {
     if (!this.pc) return false
-    if (this.apiChannel?.readyState !== 'open') return false
     const state = this.pc.connectionState
     return state === undefined || state === 'new' || state === 'connecting' || state === 'connected'
   }
@@ -351,6 +356,33 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       await this.failConnection(new Error('browser WebRTC session did not respond after app resume'))
       return false
     }
+  }
+
+  waitUntilConnected(signal?: AbortSignal): Promise<void> {
+    if (this.disconnecting || !this.pc) return Promise.reject(new Error('browser WebRTC session is closed'))
+    if (this.connected) return Promise.resolve()
+    if (signal?.aborted) return Promise.reject(new Error('aborted'))
+    return new Promise<void>((resolve, reject) => {
+      const waiter = {
+        resolve: () => {
+          cleanup()
+          resolve()
+        },
+        reject: (error: Error) => {
+          cleanup()
+          reject(error)
+        },
+        cleanup: undefined as (() => void) | undefined,
+      }
+      const onAbort = () => waiter.reject(new Error('aborted'))
+      const cleanup = () => {
+        this.connectedWaiters.delete(waiter)
+        if (signal) signal.removeEventListener('abort', onAbort)
+      }
+      waiter.cleanup = cleanup
+      this.connectedWaiters.add(waiter)
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
   }
 
   updateConnectionCapabilities(capabilities: ConnectionCapabilities): void {
@@ -405,7 +437,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   }
 
   private async ensureAPIChannel(): Promise<RTCDataChannelLike> {
-    if (this.apiChannel && this.apiChannel.readyState !== 'closed') return this.apiChannel
+    if (this.apiChannel && this.apiChannel.readyState !== 'closing' && this.apiChannel.readyState !== 'closed') return this.apiChannel
     this.clearApiChannel()
     this.apiChannel = this.openRTCChannel('api')
     this.attachAPIChannelLifecycle(this.apiChannel)
@@ -520,14 +552,25 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       if (this.apiChannel === channel) {
         this.clearApiChannel()
       }
-      if (!this.disconnecting && !this.suppressedFailureChannels.has(channel)) {
-        if (this.disconnectGuard) return
-        void this.failConnection(new Error('browser WebRTC api channel closed'))
+      if (!this.disconnecting && !this.suppressedFailureChannels.has(channel) && !this.disconnectGuard) {
+        this.log('api_channel_closed', {
+          level: 'warn',
+          sessionId: this.connectionId,
+          details: {
+            peerConnectionState: this.pc?.connectionState,
+          },
+        })
       }
     })
     channel.addEventListener('error', () => {
       if (!this.disconnecting && !this.suppressedFailureChannels.has(channel)) {
-        void this.failConnection(new Error('browser WebRTC api channel failed'))
+        this.log('api_channel_error', {
+          level: 'warn',
+          sessionId: this.connectionId,
+          details: {
+            peerConnectionState: this.pc?.connectionState,
+          },
+        })
       }
     })
   }
@@ -565,6 +608,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       sessionId: this.connectionId,
     })
     this.publishConnectionState('connected', 'Connected')
+    this.resolveConnectedWaiters()
     this.startHeartbeat()
   }
 
@@ -582,6 +626,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       },
     })
     this.publishConnectionState('connected', 'Connected')
+    this.resolveConnectedWaiters()
     if (state === undefined || state === 'connected') {
       this.startHeartbeat()
     }
@@ -628,10 +673,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.heartbeatTimer = setTimeout(() => {
       this.heartbeatTimer = null
       if (!this.connected || this.disconnecting) return
-      if (!this.apiChannel || this.apiChannel.readyState !== 'open') {
-        void this.failConnection(new Error('browser WebRTC api channel is not open'))
-        return
-      }
       const start = Date.now()
       this.pingRuntime().then(() => {
         this.lastRttMs = Date.now() - start
@@ -737,6 +778,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     eventsChannel?.close()
     await pc?.close()
     this.eventHandlers.clear()
+    this.rejectConnectedWaiters(err)
     this.disconnectGuard = false
     this.disconnecting = false
     if (!notify) this.publishConnectionState('idle', 'Ready')
@@ -744,6 +786,14 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     if (notify) {
       for (const handler of Array.from(this.disconnectHandlers)) handler()
     }
+  }
+
+  private resolveConnectedWaiters(): void {
+    for (const waiter of Array.from(this.connectedWaiters)) waiter.resolve()
+  }
+
+  private rejectConnectedWaiters(error: Error): void {
+    for (const waiter of Array.from(this.connectedWaiters)) waiter.reject(error)
   }
 
   private publishConnectionState(phase: RtcConnectionPhase, statusText: string, path: ConnectionPath | undefined = this.path ?? this.options.path): void {
@@ -1054,6 +1104,18 @@ function toBinaryChannel(channel: RTCDataChannelLike): RtcBinaryChannel {
     },
     waitOpen() {
       return waitChannelOpen(channel)
+    },
+  }
+}
+
+function sharedApiLeaseChannel(channel: RtcJsonRpcChannel): RtcJsonRpcChannel {
+  return {
+    request<TResponse>(method: string, params?: unknown): Promise<TResponse> {
+      return channel.request<TResponse>(method, params)
+    },
+    close(): void {
+      // 中文说明：api datachannel 是 machine session 的共享控制面；
+      // lease 释放不能关闭底层 WebRTC channel，否则 Web 和 Native 行为会分裂。
     },
   }
 }

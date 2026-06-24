@@ -31,6 +31,24 @@ const liveOutputPendingHardLimitChars = 1024 * 1024
 const liveOutputWatchdogMs = 4000
 const eventLoopProbeIntervalMs = 1000
 const eventLoopLagWarnMs = 250
+const minimumTrustedTerminalCols = 2
+const minimumTrustedTerminalRows = 2
+const untrustedFitRetryMs = 120
+const untrustedFitLongRetryMs = 500
+const untrustedFitShortRetryLimit = 8
+
+type TerminalDimensions = { cols: number; rows: number }
+
+function trustedTerminalDimensions(dimensions: TerminalDimensions | undefined): TerminalDimensions | undefined {
+  if (!dimensions) return undefined
+  const cols = Math.floor(dimensions.cols)
+  const rows = Math.floor(dimensions.rows)
+  if (!Number.isFinite(cols) || !Number.isFinite(rows)) return undefined
+  // localweb 初始挂载时 xterm 可能在父容器尚未完成布局前把高度夹成 1 行；
+  // 这个瞬时值不能写回 core PTY，否则 latest screen 会被真实压扁。
+  if (cols < minimumTrustedTerminalCols || rows < minimumTrustedTerminalRows) return undefined
+  return { cols, rows }
+}
 
 function terminalHistoryLoadedRowsLimit(settings: TerminalSettings): number {
   return Math.max(historyLoadedRowsSoftLimit, settings.scrollback)
@@ -167,6 +185,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const hasTerminalSnapshotRef = useRef(false)
   const snapshotAlternateScreenRef = useRef(false)
   const fitFrameRef = useRef<number | null>(null)
+  const fitRetryTimerRef = useRef<number | null>(null)
+  const fitRetryCountRef = useRef(0)
   const preventFocusRef = useRef(preventFocus)
   const bottomAnchorUntilRef = useRef(0)
   const bottomAnchorFrameRef = useRef<number | null>(null)
@@ -254,6 +274,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     stats.pendingCallbacks += 1
     const writeId = stats.writes
     const now = terminalNow()
+    logTerminal('write_enqueue', {
+      details: {
+        writeId,
+        reason,
+        chars: text.length,
+        preview: text.replace(/\x1b/g, '\\u001b').replace(/\r/g, '\\r').replace(/\n/g, '\\n').slice(0, 180),
+        pendingCallbacks: stats.pendingCallbacks,
+      },
+    })
     if (text.length >= xtermWriteLargeChars || now - stats.lastLogAt >= xtermWriteStatsIntervalMs) {
       const elapsedSeconds = Math.max(0.001, (now - stats.lastLogAt) / 1000)
       const intervalChars = stats.chars - stats.lastChars
@@ -443,12 +472,38 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (!term || !fitAddon || !container) return
     const shouldKeepBottom = Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term)
 
-    let dimensions: { cols: number; rows: number } | undefined
+    let dimensions: TerminalDimensions | undefined
     try {
-      fitAddon.fit()
-      dimensions = fitAddon.proposeDimensions()
-      if (!dimensions) return
+      const proposedDimensions = fitAddon.proposeDimensions()
+      dimensions = trustedTerminalDimensions(proposedDimensions)
+      if (!dimensions) {
+        if (fitRetryTimerRef.current === null && typeof window !== 'undefined') {
+          const retryCount = fitRetryCountRef.current
+          fitRetryCountRef.current += 1
+          fitRetryTimerRef.current = window.setTimeout(() => {
+            fitRetryTimerRef.current = null
+            fitAndMaybeSendResize()
+          }, retryCount < untrustedFitShortRetryLimit ? untrustedFitRetryMs : untrustedFitLongRetryMs)
+          if (retryCount === 0) {
+            logTerminal('fit_untrusted_dimensions', {
+              level: 'warn',
+              details: {
+                proposedCols: proposedDimensions?.cols,
+                proposedRows: proposedDimensions?.rows,
+                containerWidth: container.clientWidth,
+                containerHeight: container.clientHeight,
+              },
+            })
+          }
+        }
+        return
+      }
       if (terminalDisposedRef.current || xtermRef.current !== term) return
+      if (fitRetryTimerRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(fitRetryTimerRef.current)
+        fitRetryTimerRef.current = null
+      }
+      fitRetryCountRef.current = 0
       term.resize(dimensions.cols, dimensions.rows)
       if (shouldKeepBottom) term.scrollToBottom()
     } catch {
@@ -463,7 +518,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (last?.cols === dimensions.cols && last.rows === dimensions.rows) return
     lastSentResizeRef.current = dimensions
     terminalSession.sendResize(dimensions.cols, dimensions.rows)
-  }, [isScrolledToBottom, terminalSession.sendResize])
+  }, [isScrolledToBottom, logTerminal, terminalSession.sendResize])
 
   const scrollToBottomIfCurrent = useCallback((term: XTerm) => {
     if (terminalDisposedRef.current || xtermRef.current !== term) return
@@ -516,8 +571,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const fitAddon = fitAddonRef.current
     if (!term || !fitAddon) return undefined
     try {
-      fitAddon.fit()
-      const dimensions = fitAddon.proposeDimensions()
+      const dimensions = trustedTerminalDimensions(fitAddon.proposeDimensions())
       if (!dimensions) return undefined
       if (terminalDisposedRef.current || xtermRef.current !== term) return undefined
       term.resize(dimensions.cols, dimensions.rows)
@@ -1899,6 +1953,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         window.cancelAnimationFrame(fitFrameRef.current)
         fitFrameRef.current = null
       }
+      if (fitRetryTimerRef.current !== null) {
+        window.clearTimeout(fitRetryTimerRef.current)
+        fitRetryTimerRef.current = null
+      }
+      fitRetryCountRef.current = 0
       cancelBottomAnchor()
       clearLiveOutputWatchdog()
       liveOutputInFlightRef.current = false

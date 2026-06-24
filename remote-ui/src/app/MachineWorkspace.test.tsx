@@ -379,8 +379,13 @@ describe('MachineWorkspace', () => {
     expect(page.className).toContain('max-w-full')
     expect(header.className).toContain('shrink-0')
     expect(header.className).toContain('overflow-hidden')
+    expect(header.className).toContain('row-start-1')
+    // 桌面端 header/keybar 会 display:none；body 必须固定在 grid 的 1fr 行里，不能落到 auto 行后被 absolute xterm 压成 0 高。
+    expect(body.className).toContain('row-start-2')
+    expect(body.className).toContain('h-full')
     expect(body.className).toContain('flex-1')
     expect(body.className).toContain('min-w-0')
+    expect(keybar.className).toContain('row-start-3')
     expect(keybar.className).toContain('shrink-0')
     expect(keybar.className).toContain('max-w-full')
   })

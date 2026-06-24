@@ -160,6 +160,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       details: {
         streamChannel: this.streamChannel,
         earlyFrames: this.earlyStreamFrames.length,
+        resizeControl: this.resizeControl,
       },
     })
     return {
@@ -392,6 +393,17 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     this.receivedFrames += 1
     this.receivedBytes += data.byteLength
     const frame = decodeTermxFrame(data)
+    if (frame.channel !== 0 || frame.type !== TERMX_FRAME_TYPES.response) {
+      this.log('frame_received', {
+        details: {
+          channel: frame.channel,
+          type: frame.type,
+          payloadBytes: frame.payload.byteLength,
+          streamChannel: this.streamChannel,
+          receivedFrames: this.receivedFrames,
+        },
+      })
+    }
     if (data.byteLength >= largeFrameBytes) {
       this.log('large_frame_received', {
         level: 'warn',
@@ -422,6 +434,13 @@ class TerminalProtocolClient implements TerminalProtocolSession {
         this.screenUpdateFrames += 1
         this.screenUpdateBytes += frame.payload.byteLength
         this.maybeLogStreamStats()
+        this.log('screen_update_received', {
+          details: {
+            payloadBytes: frame.payload.byteLength,
+            screenUpdateFrames: this.screenUpdateFrames,
+            screenUpdateBytes: this.screenUpdateBytes,
+          },
+        })
         let replay: string | null = null
         try {
           replay = screenUpdatePayloadToReplay(frame.payload)
@@ -439,6 +458,12 @@ class TerminalProtocolClient implements TerminalProtocolSession {
           this.scheduleSnapshotRefresh('sync_lost', 'terminal screen update could not be replayed')
           return
         }
+        this.log('screen_update_replay', {
+          details: {
+            replayChars: replay.length,
+            preview: previewText(replay),
+          },
+        })
         if (replay.length > 0) {
           this.emit(this.options.terminalId, { type: 'output', data: new TextEncoder().encode(replay) })
         }
@@ -529,6 +554,15 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       | { type: 'input'; data: string; cols?: number; rows?: number }
       | { type: 'resize'; cols: number; rows: number }
     if (message.type === 'input') {
+      this.log('send_terminal_input_message', {
+        details: {
+          chars: message.data.length,
+          preview: previewText(message.data),
+          cols: message.cols,
+          rows: message.rows,
+          streamChannel: this.streamChannel,
+        },
+      })
       if (this.shouldEnsureResizeForInput(message)) {
         void this.ensureResizeForInput(message).then(() => {
           try {
@@ -555,6 +589,13 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     if (this.options.channel.readyState !== 'open') {
       throw new Error(`terminal data channel ${this.options.channel.label} is not open`)
     }
+    this.log('send_input_frame', {
+      details: {
+        chars: data.length,
+        preview: previewText(data),
+        streamChannel: this.streamChannel,
+      },
+    })
     this.options.channel.send(encodeTermxFrame(this.streamChannel, TERMX_FRAME_TYPES.input, new TextEncoder().encode(data)))
   }
 
@@ -657,6 +698,21 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.lastSnapshotRefreshAt = Date.now()
       if (recovery) this.recoveryRevision += 1
       const normalized = normalizeSnapshot(snapshot)
+      this.log('snapshot_normalized', {
+        details: {
+          reason,
+          textChars: normalized.text.length,
+          replayChars: normalized.replay?.length ?? 0,
+          screenTextChars: normalized.screenText?.length ?? 0,
+          screenReplayChars: normalized.screenReplay?.length ?? 0,
+          rows: normalized.rows,
+          cols: normalized.cols,
+          alternateScreen: normalized.alternateScreen === true,
+          textPreview: previewText(normalized.text),
+          replayPreview: previewText(normalized.replay ?? ''),
+          screenPreview: previewText(normalized.screenText ?? ''),
+        },
+      })
       if (recovery) {
         this.consecutiveRecoveryRefreshes += 1
       } else {
@@ -1083,4 +1139,8 @@ function streamErrorMessage(payload: Uint8Array): string {
   } catch {
     return 'terminal stream error'
   }
+}
+
+function previewText(text: string): string {
+  return text.replace(/\x1b/g, '\\u001b').replace(/\r/g, '\\r').replace(/\n/g, '\\n').slice(0, 180)
 }

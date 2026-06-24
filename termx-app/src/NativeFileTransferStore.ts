@@ -15,7 +15,7 @@
  *   → Native 发送 FRAME_TRANSFER_SYNC 进度更新 → UI 显示进度
  */
 
-import type { NativeRtcSession, TransferSyncPayload } from './NativeConnectionProxy'
+import type { TransferSyncPayload } from './NativeConnectionProxy'
 import { NativeConnection } from './plugins/nativeConnection'
 
 export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
@@ -44,12 +44,20 @@ export interface FileTransferStoreSnapshot {
   hasActiveTransfers: boolean
 }
 
-type NativeTransferSessionResolver = (machineId: string) => Promise<NativeRtcSession | null | undefined>
+export interface NativeTransferSession {
+  onTransferSync(handler: (data: TransferSyncPayload) => void): () => void
+  onSyncResponse(handler: (data: { transfers?: TransferSyncPayload['transfers'] | undefined }) => void): () => void
+  sendTransferRequest(request: Record<string, unknown>): void
+  sendSyncRequest(): void
+  isAlive(): boolean
+}
+
+type NativeTransferSessionResolver = (machineId: string) => Promise<NativeTransferSession | null | undefined>
 
 export class NativeFileTransferStore {
   private _transfers: TransferInfo[] = []
   private _listeners = new Set<() => void>()
-  private _session: NativeRtcSession | null = null
+  private _session: NativeTransferSession | null = null
   private _unsub: (() => void) | null = null
   private _snapshotVersion = 0
   private _cachedSnapshot?: FileTransferStoreSnapshot
@@ -71,7 +79,7 @@ export class NativeFileTransferStore {
 
   // ─── Session binding ───────────────────────────────────────────────────────
 
-  setSession(session: NativeRtcSession | null): void {
+  setSession(session: NativeTransferSession | null): void {
     if (this._unsub) {
       this._unsub()
       this._unsub = null
@@ -438,7 +446,7 @@ export class NativeFileTransferStore {
     }
   }
 
-  private async _ensureSession(machineId?: string): Promise<NativeRtcSession> {
+  private async _ensureSession(machineId?: string): Promise<NativeTransferSession> {
     if (machineId && this._sessionResolver) {
       const session = await this._sessionResolver(machineId)
       if (session) this.setSession(session)
@@ -457,10 +465,9 @@ export class NativeFileTransferStore {
     return this._session
   }
 
-  private _isSessionUsable(session: NativeRtcSession | null): session is NativeRtcSession {
+  private _isSessionUsable(session: NativeTransferSession | null): session is NativeTransferSession {
     if (!session) return false
-    const candidate = session as NativeRtcSession & Partial<{ isAlive(): boolean }>
-    return typeof candidate.isAlive === 'function' ? candidate.isAlive() : true
+    return session.isAlive()
   }
 
   private _measureSpeed(id: string, transferredSize: number, nativeSpeed?: number): {

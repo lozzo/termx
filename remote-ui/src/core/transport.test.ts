@@ -5,6 +5,8 @@ import type {
   ConnectionInfo,
   ConnectionPath,
   LocalAgentApi,
+  ManagedRtcConnector,
+  ManagedRtcSession,
   RemoteNetworkRuntime,
   RemoteRuntimeStorage,
   RtcBinaryChannel,
@@ -65,6 +67,18 @@ describe('RtcSession public interfaces', () => {
     >()
     expectTypeOf<RtcConnector<{ machineId: string }>>().toMatchTypeOf<{
       connect(input: { machineId: string }, options?: unknown): Promise<RtcSession>
+    }>()
+    expectTypeOf<keyof ManagedRtcSession>().toEqualTypeOf<
+      | keyof RtcSession
+      | 'subscribeConnectionState'
+      | 'onDisconnect'
+      | 'isAlive'
+      | 'handleAppResume'
+      | 'waitUntilConnected'
+      | 'closeTerminalDataChannel'
+    >()
+    expectTypeOf<ManagedRtcConnector<{ machineId: string }>>().toMatchTypeOf<{
+      connect(input: { machineId: string }, options?: unknown): Promise<ManagedRtcSession>
     }>()
     expectTypeOf<RtcBinaryChannel>().toMatchTypeOf<{
       onMessage(handler: (data: Uint8Array) => void): { close(): void }

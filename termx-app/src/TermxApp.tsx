@@ -19,11 +19,10 @@ import type {
   RemoteNetworkRuntime,
   RemoteRuntimeFetch,
   RemoteRuntimeStorage,
+  ManagedRtcSession,
   RtcConnectOptions,
   RtcConnectionStateSnapshot,
   RtcEvent,
-  RtcSession,
-  RtcSessionConnectionStateEvents,
   RtcSubscription,
   StoredMachineRecord,
   TerminalInventoryEvents,
@@ -46,6 +45,7 @@ type MachineRuntimeFactory = NonNullable<RemoteControlAppProps['machineRuntimeFa
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
 type NativeSessionManager = ReturnType<typeof createNativeSessionManager>
 type NativeConnector = Pick<NativeRtcConnector, 'connect'> & {
+  connect(input: { machineId: string }, options?: RtcConnectOptions): Promise<NativeRtcSession>
   release?(machineId: string): Promise<void>
 }
 type NativeSessionEntry = {
@@ -53,11 +53,7 @@ type NativeSessionEntry = {
   connector: NativeConnector
   manager: NativeSessionManager
 }
-type NativeSessionLease = RtcSession & {
-  isAlive(): boolean
-  waitUntilConnected(signal?: AbortSignal): Promise<void>
-  closeTerminalDataChannel(terminalId: string): void
-  subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
+type NativeSessionLease = ManagedRtcSession & {
   onTransferSync: NativeRtcSession['onTransferSync']
   onSyncResponse: NativeRtcSession['onSyncResponse']
   sendTransferRequest: NativeRtcSession['sendTransferRequest']
@@ -373,11 +369,7 @@ function createNativeAppRuntime(): {
   const transferStore = new NativeFileTransferStore()
   const sessionManagers = new Map<string, NativeSessionEntry>()
   transferStore.setSessionResolver(async (machineId) => {
-    const session = await sessionManagers.get(machineId)?.manager.get()
-    const nativeSession = session as RtcSession & Partial<NativeRtcSession>
-    return typeof nativeSession.onTransferSync === 'function'
-      ? nativeSession as NativeRtcSession
-      : null
+    return await sessionManagers.get(machineId)?.manager.get() ?? null
   })
 
   return {
@@ -470,10 +462,7 @@ function createNativeMachineRuntime(
         const sessionPromise = sessionManager.lease(options)
         // Bind transfer store to the new session when it connects
         sessionPromise.then((session) => {
-          const nativeSession = session as RtcSession & Partial<NativeRtcSession>
-          if (typeof nativeSession.onTransferSync === 'function') {
-            transferStore.setSession(nativeSession as NativeRtcSession)
-          }
+          transferStore.setSession(session)
         }).catch(() => {})
         return sessionPromise
       },
@@ -563,8 +552,8 @@ function createNativeConnector(
 }
 
 function createNativeSessionManager(machineId: string, connector: NativeConnector) {
-  let sessionPromise: Promise<RtcSession> | null = null
-  let currentSession: RtcSession | null = null
+  let sessionPromise: Promise<NativeRtcSession> | null = null
+  let currentSession: NativeRtcSession | null = null
   let currentForceRelay = false
   let pendingForceRelay = false
   let connectAbortController: AbortController | null = null
@@ -601,13 +590,13 @@ function createNativeSessionManager(machineId: string, connector: NativeConnecto
     if (session) closeNativeSessionClientOnly(session)
   }
 
-  const get = async (options?: RtcConnectOptions): Promise<RtcSession> => {
+  const get = async (options?: RtcConnectOptions): Promise<NativeRtcSession> => {
     const signal = options?.signal
     const requestedForceRelay = options?.forceRelay
     const forceRelay = requestedForceRelay ?? (currentForceRelay || pendingForceRelay)
     if (signal?.aborted) throw abortError(signal)
-    if (currentSession && isSessionAlive(currentSession) && currentForceRelay === forceRelay) {
-      await waitForSessionConnected(currentSession, signal)
+    if (currentSession && currentSession.isAlive() && currentForceRelay === forceRelay) {
+      await currentSession.waitUntilConnected(signal)
       return currentSession
     }
     if (currentSession) await reset()
@@ -632,7 +621,7 @@ function createNativeSessionManager(machineId: string, connector: NativeConnecto
         currentSession = session
         currentForceRelay = forceRelay
         disconnectSubscription?.close()
-        disconnectSubscription = attachDisconnectReset(session, () => {
+        disconnectSubscription = session.onDisconnect(() => {
           if (currentSession === session) {
             currentSession = null
             sessionPromise = null
@@ -659,7 +648,7 @@ function createNativeSessionManager(machineId: string, connector: NativeConnecto
 
   return {
     get,
-    async lease(options?: RtcConnectOptions): Promise<RtcSession> {
+    async lease(options?: RtcConnectOptions): Promise<NativeSessionLease> {
       const session = await get(options)
       return createSessionLease(session)
     },
@@ -796,19 +785,13 @@ function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortS
   return controller.signal
 }
 
-function closeNativeSessionClientOnly(session: RtcSession): void {
-  const candidate = session as RtcSession & Partial<{ closeBridgeOnly(): void }>
-  if (typeof candidate.closeBridgeOnly === 'function') {
-    candidate.closeBridgeOnly()
-    return
-  }
-  void session.disconnect()
+function closeNativeSessionClientOnly(session: NativeRtcSession): void {
+  session.closeBridgeOnly()
 }
 
-function createSessionLease(session: RtcSession): NativeSessionLease {
+function createSessionLease(session: NativeRtcSession): NativeSessionLease {
   const subscriptions = new Set<RtcSubscription>()
-  const terminalChannels = new Map<string, Awaited<ReturnType<RtcSession['openTerminal']>>>()
-  const nativeSession = session as RtcSession & Partial<NativeRtcSession>
+  const terminalChannels = new Map<string, Awaited<ReturnType<NativeRtcSession['openTerminal']>>>()
   let closed = false
   const closeOnce = () => {
     if (closed) return
@@ -841,9 +824,7 @@ function createSessionLease(session: RtcSession): NativeSessionLease {
     getConnectionInfo: () => session.getConnectionInfo(),
     getCapabilities: () => session.getCapabilities(),
     subscribeConnectionState(handler) {
-      const connectionState = session as RtcSession & Partial<RtcSessionConnectionStateEvents>
-      const subscription = connectionState.subscribeConnectionState?.(handler)
-      if (!subscription) return { close() {} }
+      const subscription = session.subscribeConnectionState(handler)
       subscriptions.add(subscription)
       return {
         close() {
@@ -853,30 +834,45 @@ function createSessionLease(session: RtcSession): NativeSessionLease {
       }
     },
     onTransferSync(handler) {
-      return nativeSession.onTransferSync?.(handler) ?? (() => {})
+      return session.onTransferSync(handler)
     },
     onSyncResponse(handler) {
-      return nativeSession.onSyncResponse?.(handler) ?? (() => {})
+      return session.onSyncResponse(handler)
     },
     sendTransferRequest(request) {
-      nativeSession.sendTransferRequest?.(request)
+      session.sendTransferRequest(request)
     },
     sendSyncRequest() {
-      nativeSession.sendSyncRequest?.()
+      session.sendSyncRequest()
     },
     async disconnect() {
       closeOnce()
     },
     isAlive() {
-      return !closed && isSessionAlive(session)
+      return !closed && session.isAlive()
     },
     waitUntilConnected(signal?: AbortSignal) {
-      return waitForSessionConnected(session, signal)
+      return session.waitUntilConnected(signal)
     },
     closeTerminalDataChannel(terminalId: string) {
       terminalChannels.get(terminalId)?.close()
       terminalChannels.delete(terminalId)
-      nativeSession.closeTerminalDataChannel?.(terminalId)
+      session.closeTerminalDataChannel(terminalId)
+    },
+    onDisconnect(handler: () => void) {
+      if (closed) return { close() {} }
+      const subscription = session.onDisconnect(handler)
+      subscriptions.add(subscription)
+      return {
+        close() {
+          subscription.close()
+          subscriptions.delete(subscription)
+        },
+      }
+    },
+    handleAppResume() {
+      if (closed) return Promise.resolve(false)
+      return session.handleAppResume()
     },
   }
 }
@@ -895,23 +891,6 @@ function compactStrings(values: readonly (string | undefined)[]): string[] {
     out.push(value)
   }
   return out
-}
-
-function isSessionAlive(session: RtcSession): boolean {
-  const candidate = session as RtcSession & Partial<{ isAlive(): boolean }>
-  return typeof candidate.isAlive === 'function' ? candidate.isAlive() : true
-}
-
-function waitForSessionConnected(session: RtcSession, signal?: AbortSignal): Promise<void> {
-  const candidate = session as RtcSession & Partial<{ waitUntilConnected(signal?: AbortSignal): Promise<void> }>
-  return typeof candidate.waitUntilConnected === 'function'
-    ? candidate.waitUntilConnected(signal)
-    : Promise.resolve()
-}
-
-function attachDisconnectReset(session: RtcSession, handler: () => void): RtcSubscription | null {
-  const candidate = session as RtcSession & Partial<{ onDisconnect(handler: () => void): RtcSubscription }>
-  return candidate.onDisconnect?.(handler) ?? null
 }
 
 function isTerminalInventoryEvent(event: RtcEvent): boolean {

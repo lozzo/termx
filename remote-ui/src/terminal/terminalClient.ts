@@ -1,6 +1,7 @@
 import { normalizeTerminal, type Terminal } from '../core/model'
 import type { ConnectionInfo } from '../core/transport'
 import type { ConnectionMessage } from '../connection/connectionMessageReducer'
+import { logTerminalDiagnostic } from './terminalDiagnostics'
 
 export interface TerminalSnapshotPayload {
   text: string
@@ -136,6 +137,7 @@ export class TerminalClient {
   }
 
   connect(terminalId: string, session: TerminalProtocolSession): void {
+    this.log('connect_start', { terminalId })
     void this.bind(terminalId, session, { closePrevious: true }).catch(() => {})
   }
 
@@ -160,17 +162,36 @@ export class TerminalClient {
   }
 
   sendInput(data: string, size?: TerminalInputSize): boolean {
-    return this.sendMessage(
+    const sent = this.sendMessage(
       { type: 'input', data, ...(size ? { cols: size.cols, rows: size.rows } : {}) },
       { reportInputFailure: true },
     )
+    this.log('send_input', {
+      terminalId: this.terminalId,
+      details: {
+        sent,
+        chars: data.length,
+        preview: previewText(data),
+        size,
+      },
+    })
+    return sent
   }
 
   sendResize(cols: number, rows: number): boolean {
     if (!this.resizeControl.canResize) {
+      this.log('send_resize_skipped', {
+        terminalId: this.terminalId,
+        details: { cols, rows, resizeControl: this.resizeControl },
+      })
       return false
     }
-    return this.sendMessage({ type: 'resize', cols, rows }, { reportInputFailure: false })
+    const sent = this.sendMessage({ type: 'resize', cols, rows }, { reportInputFailure: false })
+    this.log('send_resize', {
+      terminalId: this.terminalId,
+      details: { sent, cols, rows, resizeControl: this.resizeControl },
+    })
+    return sent
   }
 
   async requestResizeOwner(size?: TerminalInputSize): Promise<TerminalResizeControl> {
@@ -239,6 +260,12 @@ export class TerminalClient {
         throw new Error(`unexpected terminal channel label ${channel.label}`)
       }
       this.channel = channel
+      this.log('channel_bound', {
+        machineId,
+        terminalId,
+        channelLabel: channel.label,
+        details: { readyState: channel.readyState, generation },
+      })
       this.callbacks.onOpen?.()
       this.callbacks.onLifecycle?.({
         type: 'terminal.channelOpen',
@@ -248,6 +275,11 @@ export class TerminalClient {
       return
     }).catch((err: unknown) => {
       if (!this.isCurrentBinding(session, terminalId, generation)) return
+      this.log('bind_failed', {
+        terminalId,
+        level: 'error',
+        details: { reason: errorMessage(err), generation },
+      })
       this.callbacks.onError(errorMessage(err))
       this.callbacks.onClose()
     })
@@ -281,6 +313,10 @@ export class TerminalClient {
   }
 
   private handleProtocolEvent(event: TerminalProtocolEvent): void {
+    this.log('protocol_event', {
+      terminalId: this.terminalId,
+      details: protocolEventDetails(event),
+    })
     switch (event.type) {
       case 'output':
         this.callbacks.onOutput(event.data)
@@ -317,6 +353,14 @@ export class TerminalClient {
   ): boolean {
     const channel = this.channel
     if (!channel || channel.readyState !== 'open') {
+      this.log('send_message_no_channel', {
+        terminalId: this.terminalId,
+        level: options.reportInputFailure ? 'warn' : 'debug',
+        details: {
+          type: message.type,
+          readyState: channel?.readyState,
+        },
+      })
       if (options.reportInputFailure) {
         this.callbacks.onInputDropped?.()
         this.callbacks.onInputSendFailed?.('terminal channel is not open')
@@ -328,6 +372,14 @@ export class TerminalClient {
       channel.send(new TextEncoder().encode(JSON.stringify(message)))
       return true
     } catch (err) {
+      this.log('send_message_failed', {
+        terminalId: this.terminalId,
+        level: options.reportInputFailure ? 'warn' : 'debug',
+        details: {
+          type: message.type,
+          reason: errorMessage(err),
+        },
+      })
       if (options.reportInputFailure) {
         this.callbacks.onInputDropped?.()
         this.callbacks.onInputSendFailed?.(errorMessage(err))
@@ -345,8 +397,56 @@ export class TerminalClient {
     const info: ConnectionInfo = await session.getConnectionInfo()
     return info.machineId
   }
+
+  private log(event: string, input: {
+    level?: 'debug' | 'info' | 'warn' | 'error'
+    machineId?: string
+    terminalId?: string
+    channelLabel?: string
+    details?: Record<string, unknown>
+  } = {}): void {
+    logTerminalDiagnostic(`client.${event}`, {
+      level: input.level,
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      channelLabel: input.channelLabel,
+      details: input.details,
+    })
+  }
 }
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function protocolEventDetails(event: TerminalProtocolEvent): Record<string, unknown> {
+  switch (event.type) {
+    case 'output':
+      return { type: event.type, bytes: event.data.byteLength, preview: previewBytes(event.data) }
+    case 'snapshot':
+      return {
+        type: event.type,
+        textChars: event.snapshot.text.length,
+        replayChars: event.snapshot.replay?.length ?? 0,
+        screenTextChars: event.snapshot.screenText?.length ?? 0,
+        screenReplayChars: event.snapshot.screenReplay?.length ?? 0,
+        rows: event.snapshot.rows,
+        cols: event.snapshot.cols,
+        alternateScreen: event.snapshot.alternateScreen === true,
+      }
+    case 'info':
+      return { type: event.type, terminalId: event.info.id, status: event.info.status }
+    case 'resizeControl':
+      return { type: event.type, control: event.control }
+    case 'closed':
+      return { type: event.type, reason: event.reason }
+  }
+}
+
+function previewBytes(data: Uint8Array): string {
+  return previewText(new TextDecoder().decode(data.slice(0, 160)))
+}
+
+function previewText(text: string): string {
+  return text.replace(/\x1b/g, '\\u001b').slice(0, 160)
 }
