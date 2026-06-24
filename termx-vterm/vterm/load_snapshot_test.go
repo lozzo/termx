@@ -1344,6 +1344,32 @@ func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticCustomTabStop(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("ab\x1bH\r\tZ"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	ht := firstSemanticControlOp(t, damage, "ht")
+	if ht.Col != 2 {
+		t.Fatalf("expected HT to land on custom tab stop col 2, got %#v damage=%#v", ht, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		}
+	}
+	want := []string{"write:ab", "control:cr", "control:ht", "write:Z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic custom tab stop ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
