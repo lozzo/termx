@@ -1604,6 +1604,36 @@ func TestVTermWriteWithDamageSemanticLockingShiftCharset(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticG2G3LockingShiftCharset(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "ls2", raw: "\x1b*0\x1bnq\x0fq"},
+		{name: "ls3", raw: "\x1b+0\x1boq\x0fq"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vt := New(16, 3, 100, nil)
+
+			_, err, damage := vt.WriteWithDamage([]byte(tt.raw))
+			if err != nil {
+				t.Fatalf("write with damage: %v", err)
+			}
+			var got []string
+			for _, op := range damage.SemanticOps {
+				if op.Code == ScreenOpWriteSpan {
+					got = append(got, rowText(op.Cells, len(op.Cells)))
+				}
+			}
+			want := []string{"─", "q"}
+			if strings.Join(got, "|") != strings.Join(want, "|") {
+				t.Fatalf("semantic G2/G3 locking shift text must come from vterm GL charset state, got %v want %v damage=%#v", got, want, damage)
+			}
+		})
+	}
+}
+
 func TestVTermWriteWithDamageSemanticSingleShiftCharset(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

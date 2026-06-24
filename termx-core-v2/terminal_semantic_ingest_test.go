@@ -2654,6 +2654,58 @@ func TestTerminalSemanticProjectorConsumesLockingShiftCharsetRawWithoutFallback(
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesG2G3LockingShiftRawWithoutFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "ls2", raw: "\x1b*0\x1bnq\x0fq"},
+		{name: "ls3", raw: "\x1b+0\x1boq\x0fq"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			term := vterm.New(16, 3, 100, nil)
+			_, err, damage := term.WriteWithDamage([]byte(tt.raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			if !damageOpsContainText(damage.SemanticOps, "─") {
+				t.Fatalf("G2/G3 locking shift raw should expose mapped vterm text, damage=%#v", damage)
+			}
+			pipeline := newTerminalHistoryPipeline(16, 3)
+			batch := terminalSemanticBatch{
+				Raw:             tt.raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            16,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+				t.Fatalf("G2/G3 locking shift raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+			}
+			window, err := pipeline.LatestWindow(16, 4)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			if len(window.Rows) != 1 || window.Rows[0].Text != "─q" {
+				t.Fatalf("G2/G3 locking shift semantic projector should use vterm GL charset state, got %#v damage=%#v", window.Rows, damage)
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesSingleShiftCharsetRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
