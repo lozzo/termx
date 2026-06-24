@@ -375,7 +375,7 @@ func rawSharedModeCanUseSemanticOp(op vterm.DamageOp) bool {
 		return op.Mode == 20
 	}
 	switch op.Mode {
-	case 25, 47, 1047, 1049, 1000, 1002, 1003, 1004, 1006, 2004, 2026:
+	case 9, 25, 47, 1047, 1049, 1000, 1001, 1002, 1003, 1004, 1006, 2004, 2026:
 		return true
 	default:
 		return false
@@ -1037,7 +1037,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermModeEventLocked(op vterm.Dama
 			Kind:        history.EventExitPrimaryFullscreen,
 			PrimaryMode: op.Mode,
 		})
-	case 1000, 1002, 1003, 1004, 1006, 2026:
+	case 9, 1000, 1001, 1002, 1003, 1004, 1006, 2026:
 		if op.Enabled {
 			return pipeline.track.Apply(history.HistoryEvent{
 				Kind:        history.EventEnterPrimaryFullscreen,

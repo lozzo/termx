@@ -2,6 +2,7 @@ package vterm
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1316,6 +1317,28 @@ func TestVTermWriteWithDamageSemanticModesComeFromParserTransaction(t *testing.T
 	}
 	if len(enabled) != 2 || !enabled[0] || enabled[1] {
 		t.Fatalf("expected mode enable then disable, got enabled=%v ops=%#v", enabled, damage.SemanticOps)
+	}
+}
+
+func TestVTermWriteWithDamageSemanticLegacyMouseModes(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?9h\x1b[?1001htext\x1b[?1001l\x1b[?9l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:9:on", "mode:1001:on", "write:text", "mode:1001:off", "mode:9:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic legacy mouse modes must preserve raw order, got %v want %v damage=%#v", got, want, damage)
 	}
 }
 
@@ -2783,6 +2806,14 @@ func firstSemanticModeOp(t *testing.T, damage WriteDamage, mode int) DamageOp {
 	}
 	t.Fatalf("expected semantic mode op %d in damage, got %#v", mode, damage)
 	return DamageOp{}
+}
+
+func modeOpLabel(op DamageOp) string {
+	state := "off"
+	if op.Enabled {
+		state = "on"
+	}
+	return "mode:" + strconv.Itoa(op.Mode) + ":" + state
 }
 
 func semanticOpsContainText(ops []DamageOp, text string) bool {
