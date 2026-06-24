@@ -559,6 +559,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		y := min(height-1, row-1)
 		x := min(width-1, col-1)
 		e.setCursorPosition(x, y)
+		// 语义 damage 只记录 DECOM/滚动区域归一后的最终坐标，不能把原始 CSI 参数当 history truth。
+		x, y = e.scr.CursorPosition()
 		e.scr.damage.recordControl("cup", x, y, 0)
 		return true
 	})
@@ -805,7 +807,9 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		col, _, _ := params.Param(1, 1)
 		y := min(height-1, row-1)
 		x := min(width-1, col-1)
-		e.setCursor(x, y)
+		e.setCursorPosition(x, y)
+		// HVP 与 CUP 同义，也必须输出 origin mode 归一后的最终坐标。
+		x, y = e.scr.CursorPosition()
 		e.scr.damage.recordControl("cup", x, y, 0)
 		return true
 	})

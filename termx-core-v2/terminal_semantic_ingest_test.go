@@ -1311,6 +1311,61 @@ func TestTerminalSemanticProjectorConsumesLegacyMouseModesRawWithoutFallback(t *
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesOriginModeRawWithoutFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cursor string
+	}{
+		{name: "cup", cursor: "\x1b[1;1H"},
+		{name: "hvp", cursor: "\x1b[1;1f"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ModeOps += next.ModeOps
+				stats.ControlOps += next.ControlOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			raw := "\x1b[2;4r\x1b[?6h" + tc.cursor + "X"
+			term := vterm.New(16, 6, 100, nil)
+			_, err, damage := term.WriteWithDamage([]byte(raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			cup := firstDamageControl(damage, "cup")
+			if firstDamageMode(damage, 6).Code != vterm.ScreenOpModes || cup.Row != 1 || cup.Col != 0 {
+				t.Fatalf("origin mode should expose vterm-resolved CUP coordinates, cup=%#v damage=%#v", cup, damage)
+			}
+			pipeline := newTerminalHistoryPipeline(16, 6)
+			batch := terminalSemanticBatch{
+				Raw:             raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            16,
+				Rows:            6,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps == 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+				t.Fatalf("origin mode raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+			}
+			window, err := pipeline.LatestWindow(16, 6)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			if !historyWindowContainsText(window, "X") {
+				t.Fatalf("origin mode text should remain visible through vterm semantic projector, rows=%#v damage=%#v", window.Rows, damage)
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesLinefeedNewlineModeRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

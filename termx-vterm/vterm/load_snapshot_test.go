@@ -1755,6 +1755,47 @@ func TestVTermWriteWithDamageSemanticScrollRegionAndRI(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticOriginModeCursorPosition(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cursor string
+	}{
+		{name: "cup", cursor: "\x1b[1;1H"},
+		{name: "hvp", cursor: "\x1b[1;1f"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vt := New(16, 6, 100, nil)
+
+			_, err, damage := vt.WriteWithDamage([]byte("\x1b[2;4r\x1b[?6h" + tc.cursor + "X"))
+			if err != nil {
+				t.Fatalf("write with damage: %v", err)
+			}
+			if firstSemanticModeOp(t, damage, 6).Code != ScreenOpModes {
+				t.Fatalf("expected origin mode semantic op, got %#v", damage.SemanticOps)
+			}
+			cup := firstSemanticControlOp(t, damage, "cup")
+			if cup.Row != 1 || cup.Col != 0 {
+				t.Fatalf("expected CUP to be resolved relative to scroll-region origin, got %#v damage=%#v", cup, damage)
+			}
+			var got []string
+			for _, op := range damage.SemanticOps {
+				switch op.Code {
+				case ScreenOpControl:
+					got = append(got, "control:"+op.Control)
+				case ScreenOpModes:
+					got = append(got, modeOpLabel(op))
+				case ScreenOpWriteSpan:
+					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+				}
+			}
+			want := []string{"control:decstbm", "mode:6:on", "control:cup", "write:X"}
+			if strings.Join(got, "|") != strings.Join(want, "|") {
+				t.Fatalf("semantic origin-mode ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+			}
+		})
+	}
+}
+
 func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
