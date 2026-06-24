@@ -2189,7 +2189,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       {renderTerminalListPage()}
 
       <main
-        className={`relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${page === 'terminal-list' ? 'hidden md:flex md:items-center md:justify-center md:bg-zinc-50/50' : 'grid grid-rows-[auto_minmax(0,1fr)_auto]'}`}
+        className={`relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${page === 'terminal-list' ? 'hidden md:flex md:items-center md:justify-center md:bg-zinc-50/50' : 'grid grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)]'}`}
         data-testid="termx-terminal-page"
       >
         {page === 'terminal-list' ? (
@@ -2312,7 +2312,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
         <div
           ref={terminalAreaRef}
-          className="relative row-start-2 h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)]"
+          className="relative row-start-2 h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] md:row-start-1"
           data-testid="termx-terminal-body"
         >
           {terminalToolbarOpen ? (

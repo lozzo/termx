@@ -380,8 +380,10 @@ describe('MachineWorkspace', () => {
     expect(header.className).toContain('shrink-0')
     expect(header.className).toContain('overflow-hidden')
     expect(header.className).toContain('row-start-1')
-    // 桌面端 header/keybar 会 display:none；body 必须固定在 grid 的 1fr 行里，不能落到 auto 行后被 absolute xterm 压成 0 高。
+    // 移动端保留 header/body/keybar 三行；桌面端 header/keybar 隐藏后只保留 terminal 的 1fr 行。
     expect(body.className).toContain('row-start-2')
+    expect(page.className).toContain('md:grid-rows-[minmax(0,1fr)]')
+    expect(body.className).toContain('md:row-start-1')
     expect(body.className).toContain('h-full')
     expect(body.className).toContain('flex-1')
     expect(body.className).toContain('min-w-0')
