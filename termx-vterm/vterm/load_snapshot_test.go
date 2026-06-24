@@ -1446,6 +1446,33 @@ func TestVTermWriteWithDamageSemanticFocusAndSGRMouseModes(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSIPrivateModesKeepSemanticOrder(t *testing.T) {
+	vt := New(24, 3, 100, nil)
+
+	raw := string([]byte{0x9b}) + "?2026h" +
+		string([]byte{0x9b}) + "?1004h" +
+		"frame" +
+		string([]byte{0x9b}) + "?1004l" +
+		string([]byte{0x9b}) + "?2026l"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:2026:on", "mode:1004:on", "write:frame", "mode:1004:off", "mode:2026:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 CSI private modes must preserve semantic raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticCursorVisibilityMode(t *testing.T) {
 	vt := New(20, 3, 100, nil)
 
