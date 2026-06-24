@@ -1364,6 +1364,28 @@ func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticAlternateScrollMode(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?1007hscroll\x1b[?1007l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:1007:on", "write:scroll", "mode:1007:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic alternate scroll mode must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
