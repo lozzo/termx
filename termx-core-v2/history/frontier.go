@@ -134,10 +134,47 @@ func (frontier *MutableFrontier) IDs() []LogicalLineID {
 	return cloneLineIDs(frontier.ids)
 }
 
+func (frontier *MutableFrontier) Reorder(ids []LogicalLineID) error {
+	if len(ids) != len(frontier.ids) {
+		return ErrInvalidLineID
+	}
+	seen := make(map[LogicalLineID]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			return ErrInvalidLineID
+		}
+		if _, ok := frontier.present[id]; !ok {
+			return ErrLineNotMutable
+		}
+		if _, ok := seen[id]; ok {
+			return ErrDuplicateLineID
+		}
+		seen[id] = struct{}{}
+	}
+	if equalLogicalLineIDs(frontier.ids, ids) {
+		return nil
+	}
+	frontier.ids = cloneLineIDs(ids)
+	frontier.bumpGeneration()
+	return nil
+}
+
 func (frontier *MutableFrontier) Generation() Generation {
 	return frontier.generation
 }
 
 func (frontier *MutableFrontier) bumpGeneration() {
 	frontier.generation++
+}
+
+func equalLogicalLineIDs(a []LogicalLineID, b []LogicalLineID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

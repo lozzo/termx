@@ -620,9 +620,13 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('L', func(params ansi.Params) bool {
 		// Insert Line [ansi.IL]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		if e.scr.InsertLine(n) {
 			// Move the cursor to the left margin.
 			e.scr.setCursorX(0, true)
+			e.scr.damage.recordControlWithCellAndBottom("il", x, y, n, scroll.Max.Y, blank)
 		}
 		return true
 	})
@@ -630,11 +634,15 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('M', func(params ansi.Params) bool {
 		// Delete Line [ansi.DL]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		if e.scr.DeleteLine(n) {
 			// If the line was deleted successfully, move the cursor to the
 			// left.
 			// Move the cursor to the left margin.
 			e.scr.setCursorX(0, true)
+			e.scr.damage.recordControlWithCellAndBottom("dl", x, y, n, scroll.Max.Y, blank)
 		}
 		return true
 	})
@@ -652,14 +660,22 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('S', func(params ansi.Params) bool {
 		// Scroll Up [ansi.SU]
 		n, _, _ := params.Param(0, 1)
+		x, _ := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		e.scr.ScrollUp(n)
+		e.scr.damage.recordControlWithCellAndBottom("su", x, scroll.Min.Y, n, scroll.Max.Y, blank)
 		return true
 	})
 
 	e.RegisterCsiHandler('T', func(params ansi.Params) bool {
 		// Scroll Down [ansi.SD]
 		n, _, _ := params.Param(0, 1)
+		x, _ := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
+		scroll := e.scr.ScrollRegion()
 		e.scr.ScrollDown(n)
+		e.scr.damage.recordControlWithCellAndBottom("sd", x, scroll.Min.Y, n, scroll.Max.Y, blank)
 		return true
 	})
 

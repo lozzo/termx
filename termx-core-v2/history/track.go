@@ -99,6 +99,14 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 		return track.deleteCharacters(event.Count, eraseBlankStyle(event.Style))
 	case EventInsertCharacters:
 		return track.insertCharacters(event.Count, eraseBlankStyle(event.Style))
+	case EventDeleteLines:
+		return track.deleteLines(event.Row, event.Bottom, event.Count, false)
+	case EventInsertLines:
+		return track.insertLines(event.Row, event.Bottom, event.Count)
+	case EventScrollUpLines:
+		return track.deleteLines(event.Row, event.Bottom, event.Count, true)
+	case EventScrollDownLines:
+		return track.insertLines(event.Row, event.Bottom, event.Count)
 	case EventEraseInLine:
 		return track.eraseInLine(event.EraseMode, event.EraseCols, eraseBlankStyle(event.Style))
 	case EventEraseInDisplay:
@@ -248,6 +256,9 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) erro
 		track.activeCol = incomingWidth
 		track.activeLine = line.ID
 		track.overwrite = false
+		if _, err := track.reorderVisibleFrontierFromScreen(); err != nil {
+			return err
+		}
 		track.setGeneration(nextGeneration)
 		return nil
 	}
@@ -266,6 +277,9 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) erro
 	track.activeLine = line.ID
 	track.activeCol += incomingWidth
 	track.overwrite = track.activeCol < lineWidth
+	if _, err := track.reorderVisibleFrontierFromScreen(); err != nil {
+		return err
+	}
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -750,6 +764,151 @@ func (track *HistoryTrack) insertCharacters(count int, style CellStyle) error {
 	return nil
 }
 
+func (track *HistoryTrack) insertLines(row int, bottom int, count int) error {
+	if track.altScreen || count <= 0 {
+		return nil
+	}
+	row, bottom = track.normalizedLineOperationRange(row, bottom)
+	dropped := track.screen.insertLines(row, bottom, count)
+	changed, err := track.deleteLineOwnersWithoutBump(dropped)
+	if err != nil {
+		return err
+	}
+	if track.activeLine != 0 || track.activeCol != 0 || track.overwrite {
+		changed = true
+	}
+	track.screenRow = row
+	track.activeLine = 0
+	track.activeCol = 0
+	track.overwrite = false
+	if reordered, err := track.reorderVisibleFrontierFromScreen(); err != nil {
+		return err
+	} else if reordered {
+		changed = true
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) deleteLines(row int, bottom int, count int, commitScrolledOut bool) error {
+	if track.altScreen || count <= 0 {
+		return nil
+	}
+	row, bottom = track.normalizedLineOperationRange(row, bottom)
+	dropped := track.screen.deleteLines(row, bottom, count)
+	changed := len(dropped) > 0
+	for _, owner := range dropped {
+		if owner.LineID == 0 {
+			continue
+		}
+		if commitScrolledOut && track.frontier.Contains(owner.LineID) {
+			if err := track.ensureScrolledOutLineSealed(owner.LineID); err != nil {
+				return err
+			}
+			continue
+		}
+		if deleted, err := track.deleteLineOwnerWithoutBump(owner); err != nil {
+			return err
+		} else if deleted {
+			changed = true
+		}
+	}
+	if track.activeLine != 0 || track.activeCol != 0 || track.overwrite {
+		changed = true
+	}
+	track.screenRow = row
+	track.activeLine = 0
+	track.activeCol = 0
+	track.overwrite = false
+	if err := track.bindActiveLineFromScreenRow(); err != nil {
+		return err
+	}
+	if reordered, err := track.reorderVisibleFrontierFromScreen(); err != nil {
+		return err
+	} else if reordered {
+		changed = true
+	}
+	if commitScrolledOut {
+		if err := track.commitFrontier(false); err != nil {
+			return err
+		}
+		return nil
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) normalizedLineOperationRange(row int, bottom int) (int, int) {
+	if track.screenRows <= 0 {
+		return 0, 0
+	}
+	if bottom <= 0 {
+		row = track.screenRow
+		bottom = track.screenRows
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= track.screenRows {
+		row = track.screenRows - 1
+	}
+	if bottom <= row || bottom > track.screenRows {
+		bottom = track.screenRows
+	}
+	return row, bottom
+}
+
+func (track *HistoryTrack) reorderVisibleFrontierFromScreen() (bool, error) {
+	if track.screenRows <= 0 {
+		return false, nil
+	}
+	current := track.frontier.IDs()
+	if len(current) == 0 {
+		return false, nil
+	}
+	screenOrdered := make([]LogicalLineID, 0, len(current))
+	screenOwned := make(map[LogicalLineID]struct{}, len(current))
+	for _, owner := range track.screen.rows {
+		id := owner.LineID
+		if id == 0 || !track.frontier.Contains(id) || track.frontier.IsHidden(id) {
+			continue
+		}
+		if _, ok := screenOwned[id]; ok {
+			continue
+		}
+		screenOrdered = append(screenOrdered, id)
+		screenOwned[id] = struct{}{}
+	}
+	if len(screenOrdered) == 0 {
+		return false, nil
+	}
+	ordered := make([]LogicalLineID, 0, len(current))
+	insertedScreenBlock := false
+	for _, id := range current {
+		if _, ok := screenOwned[id]; ok {
+			if !insertedScreenBlock {
+				ordered = append(ordered, screenOrdered...)
+				insertedScreenBlock = true
+			}
+			continue
+		}
+		ordered = append(ordered, id)
+	}
+	if equalLogicalLineIDs(current, ordered) {
+		return false, nil
+	}
+	// 中文说明：行级终端操作移动的是 primary screen ownership；latest
+	// mutable tail 必须按新的 screen top-to-bottom 顺序投影，不能保留创建顺序。
+	if err := track.frontier.Reorder(ordered); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (track *HistoryTrack) setActiveLineTailFill(style CellStyle) error {
 	if track.altScreen || !styleCreatesVisibleBlank(style) {
 		return nil
@@ -1182,6 +1341,49 @@ func (track *HistoryTrack) deleteFrontierLinesWithoutBump(ids []LogicalLineID) (
 	return changed, nil
 }
 
+func (track *HistoryTrack) deleteLineOwnersWithoutBump(owners []primaryScreenLineOwner) (bool, error) {
+	if len(owners) == 0 {
+		return false, nil
+	}
+	changed := false
+	for _, owner := range owners {
+		deleted, err := track.deleteLineOwnerWithoutBump(owner)
+		if err != nil {
+			return changed, err
+		}
+		if deleted {
+			changed = true
+		}
+	}
+	return changed, nil
+}
+
+func (track *HistoryTrack) deleteLineOwnerWithoutBump(owner primaryScreenLineOwner) (bool, error) {
+	if owner.LineID == 0 {
+		return false, nil
+	}
+	changed := false
+	if track.frontier.Remove(owner.LineID) {
+		changed = true
+	}
+	if track.committed.Contains(owner.LineID) {
+		// 中文说明：screen-owned committed 行可能被光标回写重新进入可变边界；
+		// 行级删除必须撤掉 committed index，避免旧 payload 同时留在历史里。
+		track.committed.Remove(owner.LineID)
+		changed = true
+	}
+	if track.store.DeleteLine(owner.LineID) {
+		changed = true
+	}
+	if track.activeLine == owner.LineID {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+	}
+	track.screen.removeLine(owner.LineID)
+	return changed, nil
+}
+
 func (track *HistoryTrack) commitFrontier(force bool) error {
 	if track.altScreen && !force {
 		return nil
@@ -1592,6 +1794,56 @@ func (screen *primaryScreenLineMap) scrollUp() {
 	screen.rows[len(screen.rows)-1] = primaryScreenLineOwner{}
 }
 
+func (screen *primaryScreenLineMap) insertLines(row int, bottom int, count int) []primaryScreenLineOwner {
+	if len(screen.rows) == 0 || count <= 0 {
+		return nil
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= len(screen.rows) {
+		return nil
+	}
+	if bottom <= row || bottom > len(screen.rows) {
+		bottom = len(screen.rows)
+	}
+	if count > bottom-row {
+		count = bottom - row
+	}
+	dropped := cloneScreenOwners(screen.rows[bottom-count : bottom])
+	for i := bottom - 1; i >= row+count; i-- {
+		screen.rows[i] = screen.rows[i-count]
+	}
+	for i := row; i < row+count; i++ {
+		screen.rows[i] = primaryScreenLineOwner{}
+	}
+	return dropped
+}
+
+func (screen *primaryScreenLineMap) deleteLines(row int, bottom int, count int) []primaryScreenLineOwner {
+	if len(screen.rows) == 0 || count <= 0 {
+		return nil
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= len(screen.rows) {
+		return nil
+	}
+	if bottom <= row || bottom > len(screen.rows) {
+		bottom = len(screen.rows)
+	}
+	if count > bottom-row {
+		count = bottom - row
+	}
+	dropped := cloneScreenOwners(screen.rows[row : row+count])
+	copy(screen.rows[row:bottom-count], screen.rows[row+count:bottom])
+	for i := bottom - count; i < bottom; i++ {
+		screen.rows[i] = primaryScreenLineOwner{}
+	}
+	return dropped
+}
+
 func (screen *primaryScreenLineMap) removeLine(id LogicalLineID) {
 	if id == 0 {
 		return
@@ -1613,6 +1865,15 @@ func (screen *primaryScreenLineMap) containsLine(id LogicalLineID) bool {
 		}
 	}
 	return false
+}
+
+func cloneScreenOwners(owners []primaryScreenLineOwner) []primaryScreenLineOwner {
+	if len(owners) == 0 {
+		return nil
+	}
+	out := make([]primaryScreenLineOwner, len(owners))
+	copy(out, owners)
+	return out
 }
 
 func overwriteLineCellsAtColumn(existing []Cell, column int, incoming []Cell) []Cell {

@@ -1487,6 +1487,105 @@ func TestTerminalSemanticProjectorConsumesInsertCharacterRawWithoutFallback(t *t
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesLineOperationsRawWithoutFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		raw      string
+		control  string
+		expected []string
+	}{
+		{
+			name:     "insert-line",
+			raw:      "\x1b[2;1H\x1b[1Lafter",
+			control:  "il",
+			expected: []string{"top", "after", "middle"},
+		},
+		{
+			name:     "delete-line",
+			raw:      "\x1b[2;1H\x1b[1MAFTER!",
+			control:  "dl",
+			expected: []string{"top", "AFTER!"},
+		},
+		{
+			name:     "scroll-up",
+			raw:      "\x1b[1S\x1b[3;1Hafter",
+			control:  "su",
+			expected: []string{"top", "middle", "bottom", "after"},
+		},
+		{
+			name:     "scroll-down",
+			raw:      "\x1b[1T\x1b[1;1Hafter",
+			control:  "sd",
+			expected: []string{"after", "top", "middle"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			term := vterm.New(12, 3, 100, nil)
+			pipeline := newTerminalHistoryPipeline(12, 3)
+			seedRaw := "top\r\nmiddle\r\nbottom"
+			_, err, seedDamage := term.WriteWithDamage([]byte(seedRaw))
+			if err != nil {
+				t.Fatalf("seed vterm write: %v", err)
+			}
+			if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+				Raw:             seedRaw,
+				Damages:         []vterm.WriteDamage{seedDamage},
+				Cols:            12,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}); err != nil {
+				t.Fatalf("seed semantic batch: %v", err)
+			}
+
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ControlOps += next.ControlOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			_, err, damage := term.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			if firstDamageControl(damage, tc.control).Control != tc.control {
+				t.Fatalf("line operation raw should expose vterm %s semantic control, damage=%#v", tc.control, damage)
+			}
+			batch := terminalSemanticBatch{
+				Raw:             tc.raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            12,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+				t.Fatalf("line operation raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+			}
+			window, err := pipeline.LatestWindow(12, 6)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			text := historyWindowJoinedText(window)
+			for _, want := range tc.expected {
+				if strings.Count(text, want) != 1 {
+					t.Fatalf("%s semantic projector should contain %q once, got %q rows=%#v damage=%#v", tc.control, want, text, window.Rows, damage)
+				}
+			}
+			for _, unexpected := range unexpectedLineOperationTexts(tc.expected) {
+				if strings.Contains(text, unexpected) {
+					t.Fatalf("%s semantic projector should not contain %q, got %q rows=%#v damage=%#v", tc.control, unexpected, text, window.Rows, damage)
+				}
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesAltScreenRunningRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
@@ -1617,6 +1716,24 @@ func firstDamageControl(damage vterm.WriteDamage, control string) vterm.DamageOp
 		}
 	}
 	return vterm.DamageOp{}
+}
+
+func unexpectedLineOperationTexts(expected []string) []string {
+	candidates := []string{"top", "middle", "bottom", "after", "AFTER!"}
+	unexpected := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		found := false
+		for _, want := range expected {
+			if candidate == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			unexpected = append(unexpected, candidate)
+		}
+	}
+	return unexpected
 }
 
 func firstDamageMode(damage vterm.WriteDamage, mode int) vterm.DamageOp {

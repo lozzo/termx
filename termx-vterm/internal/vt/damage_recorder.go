@@ -65,6 +65,18 @@ func (r *screenDamageRecorder) recordControlWithCell(kind string, x int, y int, 
 	r.record(damage)
 }
 
+func (r *screenDamageRecorder) recordControlWithCellAndBottom(kind string, x int, y int, mode int, bottom int, cell *uv.Cell) {
+	if r == nil || r.scrollbackOnly || kind == "" {
+		return
+	}
+	damage := ControlDamage{Kind: kind, X: x, Y: y, Mode: mode, Bottom: bottom}
+	if cell != nil {
+		damage.Cell = *cell
+		damage.HasCell = true
+	}
+	r.record(damage)
+}
+
 func (r *screenDamageRecorder) recordMode(mode int, private bool, enabled bool) {
 	if r == nil || r.scrollbackOnly || mode == 0 {
 		return

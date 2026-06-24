@@ -197,6 +197,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 	hasOps := false
 	linefeedControls := 0
 	scrollbackAppends := 0
+	lineOperationScrollback := false
 	for _, damage := range damages {
 		altScreenRunning := rawSharedAltScreenRunningDamageCanUseSemanticOps(damage)
 		if len(damage.AlternateAppend) > 0 && !altScreenRunning {
@@ -215,7 +216,12 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		tallLinefeedNewlineText := rawSharedTallLinefeedNewlineTextDamageCanUseSemanticOps(damage)
 		if len(damage.ScrollbackAppend) > 0 {
 			if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut {
-				return false
+				if !semanticOpsContainControl(damage.SemanticOps, "su") {
+					return false
+				}
+				// 中文说明：SU 会让 vterm 同批产生真实 scrollback append；
+				// history 仍由 ordered su control 提交 screen ownership，不把 append 行当 truth。
+				lineOperationScrollback = true
 			}
 			scrollbackAppends += len(damage.ScrollbackAppend)
 			hasOps = true
@@ -230,6 +236,14 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					continue
 				}
 				hasOps = true
+			case vterm.ScreenOpClearToEOL, vterm.ScreenOpClearRect:
+				if semanticOpsContainAnyControl(damage.SemanticOps, "il", "dl", "su", "sd") {
+					// 中文说明：行级操作的 blank fill 只是 live diff；
+					// history 按同批 ordered line-control 更新 ownership。
+					hasOps = true
+					continue
+				}
+				return false
 			case vterm.ScreenOpControl:
 				if !rawSharedControlCanUseSemanticOp(op.Control) {
 					return false
@@ -267,6 +281,12 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 				}
 				if op.Dy < 0 {
 					if len(damage.ScrollbackAppend) == 0 {
+						if semanticOpsContainAnyControl(damage.SemanticOps, "dl", "su") {
+							// 中文说明：DL/SU 的垂直 scroll rect 只是 live screen diff；
+							// history 只消费同批 ordered line-control，不能从这里推断整行删除。
+							hasOps = true
+							continue
+						}
 						if altScreenRunning {
 							hasOps = true
 							continue
@@ -274,12 +294,18 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 						return false
 					}
 					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut {
+						if semanticOpsContainControl(damage.SemanticOps, "su") {
+							// 中文说明：SU 自带真实 scrollback append，但 history
+							// 提交由 ordered su control 更新 ownership，不能回退 parser。
+							hasOps = true
+							continue
+						}
 						return false
 					}
 					hasOps = true
 					continue
 				}
-				if len(damage.ScrollbackAppend) > 0 || !semanticOpsContainControl(damage.SemanticOps, "ri") {
+				if len(damage.ScrollbackAppend) > 0 || !semanticOpsContainAnyControl(damage.SemanticOps, "ri", "il", "sd") {
 					return false
 				}
 				hasOps = true
@@ -288,7 +314,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 			}
 		}
 	}
-	if scrollbackAppends > 1 && linefeedControls <= 1 {
+	if scrollbackAppends > 1 && linefeedControls <= 1 && !lineOperationScrollback {
 		return false
 	}
 	return hasOps
@@ -337,7 +363,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
+	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
 		return true
 	default:
 		return false
@@ -665,6 +691,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		}
 		scrollbackApplied := 0
 		controlLinefeedInDamage := semanticOpsContainLinefeedControl(ops)
+		lineOperationInDamage := semanticOpsContainAnyControl(ops, "il", "dl", "su", "sd")
 		reverseIndexScrollDowns := semanticOpsReverseIndexScrollDownCount(ops)
 		softWrapContinuation := false
 		lastWriteRow := -1
@@ -715,6 +742,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if err := flushPendingWrite(); err != nil {
 					return applied, err
 				}
+				if lineOperationInDamage {
+					continue
+				}
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				if err := pipeline.applyCursorPositionFromVTerm(op.Row, op.Col); err != nil {
@@ -733,6 +763,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if err := flushPendingWrite(); err != nil {
 					return applied, err
 				}
+				if lineOperationInDamage {
+					continue
+				}
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				if op.Rect.Width <= 0 || op.Rect.Height <= 0 {
@@ -750,6 +783,11 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 			case vterm.ScreenOpScrollRect:
 				if err := flushPendingWrite(); err != nil {
 					return applied, err
+				}
+				if lineOperationInDamage {
+					// 中文说明：IL/DL/SU/SD 已作为 ordered control 投影；
+					// accompanying scroll rect 只是 live diff，不能再当 scroll-out 语义。
+					continue
 				}
 				if controlLinefeedInDamage {
 					continue
@@ -831,6 +869,15 @@ func semanticOpsContainLinefeedControl(ops []vterm.DamageOp) bool {
 func semanticOpsContainControl(ops []vterm.DamageOp, control string) bool {
 	for _, op := range ops {
 		if op.Code == vterm.ScreenOpControl && op.Control == control {
+			return true
+		}
+	}
+	return false
+}
+
+func semanticOpsContainAnyControl(ops []vterm.DamageOp, controls ...string) bool {
+	for _, control := range controls {
+		if semanticOpsContainControl(ops, control) {
 			return true
 		}
 	}
@@ -921,6 +968,38 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 			Kind:  history.EventInsertCharacters,
 			Count: op.Mode,
 			Style: historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
+		})
+	case "il":
+		return pipeline.track.Apply(history.HistoryEvent{
+			Kind:   history.EventInsertLines,
+			Count:  op.Mode,
+			Row:    op.Row,
+			Bottom: op.Bottom,
+			Style:  historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
+		})
+	case "dl":
+		return pipeline.track.Apply(history.HistoryEvent{
+			Kind:   history.EventDeleteLines,
+			Count:  op.Mode,
+			Row:    op.Row,
+			Bottom: op.Bottom,
+			Style:  historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
+		})
+	case "su":
+		return pipeline.track.Apply(history.HistoryEvent{
+			Kind:   history.EventScrollUpLines,
+			Count:  op.Mode,
+			Row:    op.Row,
+			Bottom: op.Bottom,
+			Style:  historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
+		})
+	case "sd":
+		return pipeline.track.Apply(history.HistoryEvent{
+			Kind:   history.EventScrollDownLines,
+			Count:  op.Mode,
+			Row:    op.Row,
+			Bottom: op.Bottom,
+			Style:  historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
 		})
 	case "el":
 		return pipeline.track.Apply(history.HistoryEvent{

@@ -17,6 +17,10 @@ const (
 	EventEraseCharacters          EventKind = "erase-characters"
 	EventDeleteCharacters         EventKind = "delete-characters"
 	EventInsertCharacters         EventKind = "insert-characters"
+	EventDeleteLines              EventKind = "delete-lines"
+	EventInsertLines              EventKind = "insert-lines"
+	EventScrollUpLines            EventKind = "scroll-up-lines"
+	EventScrollDownLines          EventKind = "scroll-down-lines"
 	EventEraseInLine              EventKind = "erase-in-line"
 	EventEraseInDisplay           EventKind = "erase-in-display"
 	EventSetActiveLineTailFill    EventKind = "set-active-line-tail-fill"
@@ -61,6 +65,7 @@ type HistoryEvent struct {
 	Count           int
 	Row             int
 	Column          int
+	Bottom          int
 	EraseMode       int
 	EraseCols       int
 	EnterAltScreen  bool

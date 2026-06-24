@@ -392,6 +392,119 @@ func TestHistoryTrackInsertCharactersShiftsMutableCellsRight(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackInsertLinesShiftsScreenOwnershipDown(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(3)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("top")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("middle")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bottom")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 2, Column: 1},
+		HistoryEvent{Kind: EventInsertLines, Count: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("inserted")},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 5})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTextsFromWindow(window.Rows); !reflect.DeepEqual(got, []string{"top", "inserted", "middle"}) {
+		t.Fatalf("insert-line should shift screen ownership down and drop bottom, got %v rows=%#v", got, window.Rows)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("insert-line is a screen edit and must not commit history, got %v", got)
+	}
+	if _, ok := track.Line(3); ok {
+		t.Fatal("line pushed below the primary screen by IL should leave mutable truth")
+	}
+}
+
+func TestHistoryTrackDeleteLinesShiftsScreenOwnershipUp(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(3)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("top")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("middle")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bottom")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 2, Column: 1},
+		HistoryEvent{Kind: EventDeleteLines, Count: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("AFTER!")},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 5})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTextsFromWindow(window.Rows); !reflect.DeepEqual(got, []string{"top", "AFTER!"}) {
+		t.Fatalf("delete-line should shift screen ownership up and clear the target row, got %v rows=%#v", got, window.Rows)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("delete-line is a screen edit and must not commit history, got %v", got)
+	}
+	if _, ok := track.Line(2); ok {
+		t.Fatal("deleted primary screen line should leave mutable truth")
+	}
+}
+
+func TestHistoryTrackScrollUpLinesCommitsOnlyScrolledOutTopLine(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(3)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("top")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("middle")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bottom")},
+		HistoryEvent{Kind: EventScrollUpLines, Row: 0, Bottom: 3, Count: 1},
+		HistoryEvent{Kind: EventCursorPosition, Row: 3, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("after")},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("SU should commit only the top scrolled-out line, got %v", got)
+	}
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 5})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTextsFromWindow(window.Rows); !reflect.DeepEqual(got, []string{"top", "middle", "bottom", "after"}) {
+		t.Fatalf("scroll-up should preserve committed top plus mutable shifted rows, got %v rows=%#v", got, window.Rows)
+	}
+}
+
+func TestHistoryTrackScrollDownLinesShiftsScreenOwnershipDownWithoutCommit(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(3)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("top")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("middle")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("bottom")},
+		HistoryEvent{Kind: EventScrollDownLines, Row: 0, Bottom: 3, Count: 1},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("after")},
+	)
+
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("SD should not create committed history, got %v", got)
+	}
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 5})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTextsFromWindow(window.Rows); !reflect.DeepEqual(got, []string{"after", "top", "middle"}) {
+		t.Fatalf("scroll-down should insert a blank top row and drop bottom ownership, got %v rows=%#v", got, window.Rows)
+	}
+	if _, ok := track.Line(3); ok {
+		t.Fatal("line pushed below primary screen by SD should leave mutable truth")
+	}
+}
+
 func TestHistoryTrackEraseInLinePreservesStyledBlankToVisualRowEnd(t *testing.T) {
 	track := NewHistoryTrack()
 	style := CellStyle{BG: "idx:24"}
