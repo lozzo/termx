@@ -362,19 +362,21 @@ func historyCellsFromCompactRuns(runs []protocol.CompactRowRun) []state.HistoryC
 	for _, run := range runs {
 		style := historyCellStyleFromCompact(run.Style)
 		for len(run.Text) > 0 {
-			r, size := utf8.DecodeRuneInString(run.Text)
-			if r == utf8.RuneError && size == 0 {
+			cluster, width := xansi.FirstGraphemeCluster(run.Text, xansi.GraphemeWidth)
+			if cluster == "" {
 				break
 			}
-			text := run.Text[:size]
+			if width < 0 {
+				width = 0
+			}
 			out = append(out, state.HistoryCell{
-				Text:       text,
-				Width:      1,
+				Text:       cluster,
+				Width:      width,
 				Style:      style,
 				LinkURL:    run.LinkURL,
 				LinkParams: run.LinkParams,
 			})
-			run.Text = run.Text[size:]
+			run.Text = run.Text[len(cluster):]
 		}
 	}
 	return out

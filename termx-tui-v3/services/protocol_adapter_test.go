@@ -597,6 +597,49 @@ func TestProtocolCoreClientAdapterMapsStyledHistoryCells(t *testing.T) {
 	}
 }
 
+func TestProtocolCoreClientAdapterMapsStyledHistoryRunWideCells(t *testing.T) {
+	style := &protocol.CompactRowStyle{BG: "idx:236"}
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 20, Rows: 24},
+			Rows: []protocol.CompactRow{{
+				Runs: []protocol.CompactRowRun{
+					{Text: "验证通过", Style: style},
+					{Text: " ok", Style: style},
+				},
+				TailFill: style,
+			}},
+			RowLineIDs: []uint64{42},
+			RowInLine:  []int{0},
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 20, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+
+	row := result.Window.Rows[0]
+	if row.Text != "验证通过 ok" || state.HistoryRowDisplayWidth(row) != 11 || len(row.Cells) != 7 {
+		t.Fatalf("styled wide run should keep terminal display width, got %#v", row)
+	}
+	for index, want := range []int{2, 2, 2, 2, 1, 1, 1} {
+		if row.Cells[index].Width != want {
+			t.Fatalf("cell %d should have display width %d, got %#v", index, want, row.Cells[index])
+		}
+	}
+	if got := state.HistoryRowSliceDisplay(row, 0, state.HistoryRowDisplayWidth(row)); got != "验证通过 ok" {
+		t.Fatalf("row slice should not lose wide styled text, got %q row=%#v", got, row)
+	}
+	if row.TailFill == nil || row.TailFill.BG != "idx:236" {
+		t.Fatalf("tail fill should stay display-only metadata, got %#v", row.TailFill)
+	}
+}
+
 func TestProtocolCoreClientAdapterPreservesTrailingBlankHistoryCells(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{

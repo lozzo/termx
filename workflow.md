@@ -241,6 +241,7 @@
 | R201A. SK TUI 前台程序鼠标滚轮透传 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复 Codex、Claude Code、opencode 等前台 TUI 已启用 terminal mouse tracking 时，raw 鼠标滚轮被 TermX 抢先进入无限历史的问题；前台 terminal 内容区优先透传 raw mouse，未启用 tracking 时才进入 TermX copy/history |
 | R201B. SK core primary fullscreen 帧历史收口 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 Codex 这类不进 alt-screen、但在 primary screen 上反复 `CSI H/J` 全屏刷新的程序被当成普通滚动历史累计的问题；进入 fullscreen 时保留前一页，后续 fullscreen 帧只替换 mutable frame，copy/history 不展示每一帧刷新日志 |
 | R201C. SK core primary fullscreen 运行帧排除 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 Codex 运行中的 primary fullscreen UI frame 被 latest/history/copy 当成滚动历史展示的问题；运行帧只属于 live surface，不进入 authoritative history window 或 frozen copy snapshot，process exit/force commit 时再把最终帧写入历史 |
+| R201D. SK TUI history styled 宽字符渲染收口 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复 TUI copy/history 渲染 Codex 日志时 styled compact run 内中文宽度被当成 1 列，导致 ANSI 列锚点回退、背景块覆盖、底部文本缺字和宽度错乱的问题；history 仍只消费 core-v2 logical-line window |
 | R201. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入
@@ -306,6 +307,7 @@
 - `R201A` 已完成：TUI 鼠标路由现在在 runtime 命中测试确认 active terminal 内容区且前台程序启用 mouse tracking 时，为 raw mouse 标记 terminal passthrough；UI/copy reducer 避让，terminal input router 发送 raw seq 给子进程。未启用 tracking 的滚轮仍进入 authoritative logical-line copy/history，已通过 `cd termx-tui-v3 && go test ./... -count=1`。
 - `R201B` 已完成：core-v2 history 现在把 primary-screen 前台 TUI 的控制序列拆成 fullscreen intent 与可替换 mutable frame；第一次 home-clear 仍按 page-break 提交进入前的 shell 页面，后续 repeated home-clear 只 reset 当前 fullscreen frame，不再把 Codex repaint 帧累计到 committed history。准入已通过 focused history/terminal ingest tests、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check -- ...`。
 - `R201C` 已完成：运行中的 primary fullscreen frame 只归 live surface 展示，不再进入 authoritative latest/history window 或 frozen copy snapshot，因此 Codex 输入框、footer、局部 repaint UI 不会被滚进 TermX 无限历史；进入 fullscreen 前的 shell/logical-line 历史仍保留，process exit/force commit 仍会把最终帧写入历史。准入已通过 focused history/protocol/terminal 回归、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check -- ...`。
+- `R201D` 已完成：TUI protocol history adapter 现在按 grapheme display width 解析 styled compact run，copy/history renderer 增加 styled 宽字符 ANSI 锚点回归，避免中文日志行按 1 列推进造成背景块覆盖、缺字和底部宽度错乱。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check -- ...`；已有 remote-ui/localweb 未提交改动未纳入本切片。
 - `R201` 待开始：Web 桌面 terminal 可视区修复保留在后续切片；已有 remote-ui/localweb 未提交改动不纳入当前 TUI 鼠标修复。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。

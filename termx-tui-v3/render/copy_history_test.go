@@ -77,3 +77,28 @@ func TestCopyHistoryContentANSILineSelectionFillsRowTail(t *testing.T) {
 		t.Fatalf("selection fill must not mutate logical row width, got %d", got)
 	}
 }
+
+func TestCopyHistoryContentANSILineAnchorsAfterStyledWideCells(t *testing.T) {
+	style := state.HistoryCellStyle{BG: "idx:236"}
+	history := state.HistoryStore{
+		Cols: 12,
+		Rows: []state.HistoryRow{{
+			Text:   "验证 ok",
+			LineID: 1,
+			Cells: []state.HistoryCell{
+				{Text: "验", Width: 2, Style: style},
+				{Text: "证", Width: 2, Style: style},
+				{Text: " ok", Width: 3, Style: style},
+			},
+			TailFill: &style,
+		}},
+	}
+
+	ansi := CopyHistoryContentANSILineAt(history, state.CopyModeStore{BoundCols: 12}, 0, 12, 0, DefaultTheme())
+	if !strings.Contains(ansi, "\x1b[3G") || !strings.Contains(ansi, "\x1b[5G") || !strings.Contains(ansi, "\x1b[8G") || strings.Contains(ansi, "\x1b[2G") || strings.Contains(ansi, "\x1b[4G") {
+		t.Fatalf("styled wide cells should advance ANSI anchors by display width, got %q", ansi)
+	}
+	if !strings.Contains(ansi, "\x1b[48;5;236m     ") {
+		t.Fatalf("tail fill should start after wide text footprint, got %q", ansi)
+	}
+}
