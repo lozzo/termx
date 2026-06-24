@@ -214,16 +214,24 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		tallASCIIText := rawSharedTallASCIITextDamageCanUseSemanticOps(damage)
 		tallGraphemeText := rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage)
 		tallLinefeedNewlineText := rawSharedTallLinefeedNewlineTextDamageCanUseSemanticOps(damage)
+		eraseDisplaySemantic := semanticOpsContainControl(damage.SemanticOps, "ed")
 		if len(damage.ScrollbackAppend) > 0 {
 			if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut {
 				if !semanticOpsContainControl(damage.SemanticOps, "su") {
-					return false
+					if !eraseDisplaySemantic {
+						return false
+					}
+					// 中文说明：ED2 page-break 会让 live vterm 伴随 scrollback append；
+					// history truth 只能来自 ordered ed control，不能把 append row 当输出历史。
+				} else {
+					// 中文说明：SU 会让 vterm 同批产生真实 scrollback append；
+					// history 仍由 ordered su control 提交 screen ownership，不把 append 行当 truth。
+					lineOperationScrollback = true
 				}
-				// 中文说明：SU 会让 vterm 同批产生真实 scrollback append；
-				// history 仍由 ordered su control 提交 screen ownership，不把 append 行当 truth。
-				lineOperationScrollback = true
 			}
-			scrollbackAppends += len(damage.ScrollbackAppend)
+			if !eraseDisplaySemantic {
+				scrollbackAppends += len(damage.ScrollbackAppend)
+			}
 			hasOps = true
 		}
 		if len(damage.SemanticOps) == 0 {
@@ -249,9 +257,11 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut && !tallASCIIText && !tallGraphemeText && !tallLinefeedNewlineText && !fullReplaceSemantic && !altScreenRunning {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut && !tallASCIIText && !tallGraphemeText && !tallLinefeedNewlineText && !fullReplaceSemantic && !altScreenRunning && !eraseDisplaySemantic {
 						return false
 					}
+					// 中文说明：ED 后的文本可能从清屏前 cursor 继续写并 soft-wrap；
+					// page-break truth 仍由同批 ordered ed control 驱动，不能退回 parser。
 					linefeedControls++
 				}
 				hasOps = true
@@ -692,6 +702,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		scrollbackApplied := 0
 		controlLinefeedInDamage := semanticOpsContainLinefeedControl(ops)
 		lineOperationInDamage := semanticOpsContainAnyControl(ops, "il", "dl", "su", "sd")
+		eraseDisplayInDamage := semanticOpsContainControl(ops, "ed")
 		reverseIndexScrollDowns := semanticOpsReverseIndexScrollDownCount(ops)
 		softWrapContinuation := false
 		nextWritePreserveLeadingColumns := false
@@ -870,6 +881,11 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		}
 		if err := flushPendingWrite(); err != nil {
 			return applied, err
+		}
+		if eraseDisplayInDamage {
+			// 中文说明：ED2 page-break / ED3 clear-scrollback 的 history 语义只由
+			// ordered ed control 承接；vterm 伴随 scrollback append 只是 live surface 信号。
+			continue
 		}
 		for ; scrollbackApplied < len(damage.ScrollbackAppend); scrollbackApplied++ {
 			if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventPrimaryScrollOut, Count: 1}); err != nil {
