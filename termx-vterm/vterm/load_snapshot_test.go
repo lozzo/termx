@@ -1370,6 +1370,25 @@ func TestVTermWriteWithDamageSemanticCustomTabStop(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticSpecialDrawingCharset(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b(0lqk\x1b(Bok"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpWriteSpan {
+			got = append(got, rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"┌", "─", "┐", "ok"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic SCS text must come from mapped vterm print cells, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 

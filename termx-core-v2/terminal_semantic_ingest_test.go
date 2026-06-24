@@ -1573,6 +1573,50 @@ func TestTerminalSemanticProjectorConsumesRepeatCharacterRawWithoutFallback(t *t
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesSpecialDrawingCharsetRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b(0lqk\x1b(Bok"
+	term := vterm.New(16, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	for _, want := range []string{"┌", "─", "┐"} {
+		if !damageOpsContainText(damage.SemanticOps, want) {
+			t.Fatalf("SCS raw should expose mapped vterm text %q, damage=%#v", want, damage)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(16, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            16,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("SCS raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(16, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "┌─┐ok" {
+		t.Fatalf("SCS semantic projector should use vterm mapped glyphs, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesSaveRestoreCursorRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
