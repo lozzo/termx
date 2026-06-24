@@ -209,6 +209,8 @@ func (store *MemoryLogicalLineStore) writePrimaryCellsOwned(id LogicalLineID, re
 		} else {
 			line.Cells = append(line.Cells, cloneCells(req.Cells)...)
 		}
+		line.Cells = mergeAppendableCellRuns(line.Cells)
+		lineWidth = logicalLineWidth(line.Cells)
 	} else {
 		line.Cells = overwriteLineCellsAtColumn(line.Cells, req.ActiveCol, req.Cells)
 		lineWidth = logicalLineWidth(line.Cells)

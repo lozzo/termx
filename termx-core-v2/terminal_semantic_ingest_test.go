@@ -866,6 +866,58 @@ func TestTerminalSemanticProjectorConsumesTallRowsPrimaryScrollOutRawBatch(t *te
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesRealVTermStyledLinkTextRawBatch(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(24, 4, 100, nil)
+	raw := "\x1b[1;31mERR\x1b[0m \x1b]8;id=termx;https://example.test\aLINK\x1b]8;;\a\nplain"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(24, 4)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            24,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("styled/link raw batch should use vterm semantic text cells without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(24, 8)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 2 || window.Rows[0].Text != "ERR LINK" || window.Rows[1].Text != "plain" {
+		t.Fatalf("styled/link semantic text should preserve logical rows, got %#v damage=%#v", window.Rows, damage)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) != 3 {
+		t.Fatalf("expected styled/link cells from vterm semantic text, got %#v rows=%#v", cells, window.Rows)
+	}
+	if cells[0].Text != "ERR" || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
+		t.Fatalf("expected red bold ERR from vterm semantic text, got %#v rows=%#v", cells[0], window.Rows)
+	}
+	if cells[2].Text != "LINK" || cells[2].LinkURL != "https://example.test" || cells[2].LinkParams != "id=termx" {
+		t.Fatalf("expected OSC8 link metadata from vterm semantic text, got %#v rows=%#v", cells[2], window.Rows)
+	}
+	if window.Rows[1].Cells[0].Text != "plain" || window.Rows[1].Cells[0].Style != (history.CellStyle{}) || window.Rows[1].Cells[0].LinkURL != "" {
+		t.Fatalf("expected following line to be plain after SGR/OSC8 reset, got %#v", window.Rows[1].Cells)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.T) {
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)

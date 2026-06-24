@@ -282,6 +282,8 @@ func (track *HistoryTrack) writePrimaryCellsOwned(id LogicalLineID, req primaryC
 		} else {
 			line.Cells = append(line.Cells, cloneCells(req.Cells)...)
 		}
+		line.Cells = mergeAppendableCellRuns(line.Cells)
+		lineWidth = logicalLineWidth(line.Cells)
 	} else {
 		line.Cells = overwriteLineCellsAtColumn(line.Cells, req.ActiveCol, req.Cells)
 		lineWidth = logicalLineWidth(line.Cells)
@@ -1595,6 +1597,44 @@ func compactMutationCells(cells []Cell) []Cell {
 		out = append(out, cell)
 	}
 	return out
+}
+
+func mergeAppendableCellRuns(cells []Cell) []Cell {
+	if len(cells) < 2 {
+		return cells
+	}
+	out := make([]Cell, 0, len(cells))
+	for _, cell := range cells {
+		if len(out) > 0 && canMergeAppendableCell(out[len(out)-1], cell) {
+			out[len(out)-1].Text += cell.Text
+			out[len(out)-1].Width += cell.Width
+			continue
+		}
+		out = append(out, cell)
+	}
+	return out
+}
+
+func canMergeAppendableCell(left Cell, right Cell) bool {
+	return left.Style == right.Style &&
+		left.LinkURL == right.LinkURL &&
+		left.LinkParams == right.LinkParams &&
+		left.Width > 0 &&
+		right.Width > 0 &&
+		asciiSingleWidthText(left.Text) &&
+		asciiSingleWidthText(right.Text)
+}
+
+func asciiSingleWidthText(text string) bool {
+	if text == "" {
+		return false
+	}
+	for _, r := range text {
+		if r < 0x20 || r >= 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func eraseLineCellsAtColumn(existing []Cell, column int, mode int, screenCols int, style CellStyle) []Cell {

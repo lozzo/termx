@@ -84,6 +84,44 @@ func TestHistoryTrackApplyAppendKeepsCallerCellsDetached(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackAppendMergesAdjacentASCIIStyleRuns(t *testing.T) {
+	track := NewHistoryTrack()
+	style := CellStyle{FG: "ansi:1", Bold: true}
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "E", Width: 1, Style: style}}},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "R", Width: 1, Style: style}}},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "R", Width: 1, Style: style}}},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: " ", Width: 1}}},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "L", Width: 1, LinkURL: "https://example.test", LinkParams: "id=termx"}}},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "I", Width: 1, LinkURL: "https://example.test", LinkParams: "id=termx"}}},
+	)
+
+	line := requireLine(t, track, track.ActiveLineID())
+	if got := lineText(line); got != "ERR LI" {
+		t.Fatalf("unexpected merged append text %q cells=%#v", got, line.Cells)
+	}
+	if len(line.Cells) != 3 {
+		t.Fatalf("append should merge adjacent ASCII style/link runs, got %#v", line.Cells)
+	}
+	if line.Cells[0].Text != "ERR" || line.Cells[0].Style != style {
+		t.Fatalf("expected merged styled ERR cell, got %#v", line.Cells)
+	}
+	if line.Cells[2].Text != "LI" || line.Cells[2].LinkURL != "https://example.test" || line.Cells[2].LinkParams != "id=termx" {
+		t.Fatalf("expected merged OSC8 link cell, got %#v", line.Cells)
+	}
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventCursorBackward, Count: 2},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: []Cell{{Text: "!", Width: 1}}},
+	)
+
+	line = requireLine(t, track, track.ActiveLineID())
+	if got := lineText(line); got != "ERR !I" {
+		t.Fatalf("unexpected merged/overwritten text %q cells=%#v", got, line.Cells)
+	}
+}
+
 func TestHistoryTrackCommitFrontierRequiresLeavingPrimaryScreenOwnership(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(2)
