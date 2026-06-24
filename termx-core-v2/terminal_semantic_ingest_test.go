@@ -2078,6 +2078,63 @@ func TestTerminalSemanticProjectorConsumesOSCDefaultColorsRawWithoutFallback(t *
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesStringControlsRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1bP1;2+qignored-dcs\x1b\\" +
+		"\x1b_ignored-apc\x1b\\" +
+		"\x1bXignored-sos\x1b\\" +
+		"\x1b^ignored-pm\x1b\\" +
+		"after"
+	term := vterm.New(30, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if !damageOpsContainTextSpan(damage.SemanticOps, "after") {
+		t.Fatalf("string controls should expose following text through vterm semantic ops, damage=%#v", damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == vterm.ScreenOpControl || op.Code == vterm.ScreenOpTitle {
+			t.Fatalf("string controls must remain vterm parser-owned state, got history semantic op %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(30, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            30,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("string-control raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(30, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, forbidden := range []string{"ignored-dcs", "ignored-apc", "ignored-sos", "ignored-pm"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("string control payload must not enter history text %q, got %q rows=%#v", forbidden, text, window.Rows)
+		}
+	}
+	if !strings.Contains(text, "after") {
+		t.Fatalf("expected text after string controls from semantic projector, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

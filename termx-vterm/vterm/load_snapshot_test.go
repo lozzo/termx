@@ -1522,6 +1522,37 @@ func TestVTermWriteWithDamageOSCDefaultColorsKeepSemanticText(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageStringControlsKeepSemanticText(t *testing.T) {
+	vt := New(30, 3, 100, nil)
+
+	raw := "\x1bP1;2+qignored-dcs\x1b\\" +
+		"\x1b_ignored-apc\x1b\\" +
+		"\x1bXignored-sos\x1b\\" +
+		"\x1b^ignored-pm\x1b\\" +
+		"after"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "after") {
+		t.Fatalf("string controls should keep following text as semantic text, ops=%#v damage=%#v", damage.SemanticOps, damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl || op.Code == ScreenOpTitle {
+			t.Fatalf("string controls are vterm parser-owned state, not history semantic ops, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	text := rowText(vt.ScreenRowView(0), 30)
+	for _, forbidden := range []string{"ignored-dcs", "ignored-apc", "ignored-sos", "ignored-pm"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("string control payload must not render as text %q, got %q damage=%#v", forbidden, text, damage)
+		}
+	}
+	if !strings.Contains(text, "after") {
+		t.Fatalf("text after string controls must remain visible, got %q damage=%#v", text, damage)
+	}
+}
+
 func collectVTermResponses(ch <-chan string, want int) []string {
 	responses := make([]string, 0, want)
 	timer := time.NewTimer(200 * time.Millisecond)
