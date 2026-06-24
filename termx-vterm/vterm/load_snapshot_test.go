@@ -1896,6 +1896,47 @@ func TestVTermWriteWithDamageSemanticCustomTabStop(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1ControlsKeepSemanticOrder(t *testing.T) {
+	vt := New(16, 4, 100, nil)
+
+	raw := "ab" + string([]byte{0x88}) +
+		string([]byte{0x84}) + "down" +
+		string([]byte{0x8d}) + "\r\tZ"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	hts := firstSemanticControlOp(t, damage, "hts")
+	if hts.Col != 2 {
+		t.Fatalf("expected C1 HTS to record custom tab stop col 2, got %#v damage=%#v", hts, damage)
+	}
+	ind := firstSemanticControlOp(t, damage, "ind")
+	if ind.Row != 0 || ind.Col != 2 {
+		t.Fatalf("expected C1 IND at row 0 col 2, got %#v damage=%#v", ind, damage)
+	}
+	ri := firstSemanticControlOp(t, damage, "ri")
+	if ri.Row != 1 || ri.Col != 6 {
+		t.Fatalf("expected C1 RI at row 1 col 6, got %#v damage=%#v", ri, damage)
+	}
+	ht := firstSemanticControlOp(t, damage, "ht")
+	if ht.Col != 2 {
+		t.Fatalf("expected HT after C1 HTS to land on custom tab stop col 2, got %#v damage=%#v", ht, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		}
+	}
+	want := []string{"write:ab", "control:hts", "control:ind", "write:down", "control:ri", "control:cr", "control:ht", "write:Z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 controls semantic ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticTabClear(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

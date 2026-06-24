@@ -2295,6 +2295,55 @@ func TestTerminalSemanticProjectorConsumesC1CSIRawWithoutFallback(t *testing.T) 
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1ControlsRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "ab" + string([]byte{0x88}) +
+		string([]byte{0x84}) + "down" +
+		string([]byte{0x8d}) + "\r\tZ"
+	term := vterm.New(16, 2, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	hts := firstDamageControl(damage, "hts")
+	ind := firstDamageControl(damage, "ind")
+	ri := firstDamageControl(damage, "ri")
+	ht := firstDamageControl(damage, "ht")
+	if hts.Control != "hts" || hts.Col != 2 || ind.Control != "ind" || ri.Control != "ri" || ht.Control != "ht" || ht.Col != 2 {
+		t.Fatalf("C1 control raw should expose vterm HTS/IND/RI/HT semantic controls, hts=%#v ind=%#v ri=%#v ht=%#v damage=%#v", hts, ind, ri, ht, damage)
+	}
+	pipeline := newTerminalHistoryPipeline(16, 2)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            16,
+		Rows:            2,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 5 || stats.WriteSpanOps == 0 {
+		t.Fatalf("C1 controls raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(16, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) < 2 || window.Rows[0].Text != "abZ" || !strings.Contains(historyWindowJoinedText(window), "down") {
+		t.Fatalf("C1 control semantic projector should apply vterm IND/RI/HTS controls, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
