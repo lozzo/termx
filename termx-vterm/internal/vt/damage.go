@@ -149,6 +149,7 @@ type ControlDamage struct {
 	Kind    string
 	X, Y    int
 	Mode    int
+	Bottom  int
 	Cell    uv.Cell
 	HasCell bool
 }

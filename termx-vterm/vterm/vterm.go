@@ -252,6 +252,7 @@ type DamageOp struct {
 	Row        int
 	Col        int
 	Mode       int
+	Bottom     int
 	Private    bool
 	Enabled    bool
 	Cells      []Cell
@@ -395,7 +396,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 	case ScreenOpModes:
 		return DamageOp{Code: op.Code, Mode: op.Mode, Private: op.Private, Enabled: op.Enabled}
 	case ScreenOpControl:
-		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode, Cells: op.Cells}
+		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode, Bottom: op.Bottom, Cells: op.Cells}
 	}
 	return op
 }
@@ -3181,6 +3182,7 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 				Row:     d.Y,
 				Col:     d.X,
 				Mode:    d.Mode,
+				Bottom:  d.Bottom,
 			}
 			if d.HasCell {
 				op.Cells = uvCellsToVTermDamageCells(v, []uv.Cell{d.Cell})
@@ -4273,6 +4275,7 @@ func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidt
 				Row:     d.Y,
 				Col:     d.X,
 				Mode:    d.Mode,
+				Bottom:  d.Bottom,
 			}
 			if d.HasCell {
 				op.Cells = uvCellsToVTermDamageCells(v, []uv.Cell{d.Cell})

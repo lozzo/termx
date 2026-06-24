@@ -85,6 +85,7 @@ func TestTerminalSemanticProjectorConsumesVTermDamage(t *testing.T) {
 		stats.ClearToEOLOps += next.ClearToEOLOps
 		stats.EraseDisplayOps += next.EraseDisplayOps
 		stats.ModeOps += next.ModeOps
+		stats.ControlOps += next.ControlOps
 		stats.ScrollbackAppends += next.ScrollbackAppends
 		stats.FullReplaceOnly += next.FullReplaceOnly
 	}
@@ -151,6 +152,82 @@ func TestTerminalSemanticProjectorCodexRawDamageSignals(t *testing.T) {
 	}
 	if window.TotalLines != 2 || !historyWindowContainsAll(window, "before-one", "before-two", "Summarize recent commits", "gpt-5.5") {
 		t.Fatalf("Codex raw semantic ingest boundary regressed, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesRealVTermScrollRegionRIAndAbsoluteCursor(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.DamageBatches += next.DamageBatches
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.ControlOps += next.ControlOps
+		stats.ModeOps += next.ModeOps
+		stats.ScrollbackAppends += next.ScrollbackAppends
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(80, 12, 100, nil)
+	pipeline := newTerminalHistoryPipeline(80, 12)
+	for _, raw := range []string{"pre-one\n", "pre-two\n"} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("seed vterm write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            80,
+			Rows:            12,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("seed ingest %q: %v", raw, err)
+		}
+	}
+	if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventForceCommitFrontier}); err != nil {
+		t.Fatalf("force commit seed: %v", err)
+	}
+	raw := strings.Join([]string{
+		"\x1b[?2026h",
+		"\x1b[3;10r\x1b[3;1H\x1bM\x1bM",
+		"\x1b[r\x1b[1;6r\x1b[4;1H",
+		"\x1b[K╭─ update ─╮",
+		"\x1b[9;3HScroll region prompt",
+		"\x1b[11;3Hstatus line",
+		"\x1b[?2026l",
+	}, "")
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageControl(damage, "decstbm").Control == "" || firstDamageControl(damage, "ri").Control == "" {
+		t.Fatalf("test requires real vterm scroll-region and RI semantic controls, damage=%#v", damage)
+	}
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            80,
+		Rows:            12,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("scroll-region/RI raw batch should be consumed from vterm semantic ops, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(80, 16)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("scroll-region/RI repaint must not change committed depth, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
+	}
+	for _, want := range []string{"pre-one", "pre-two", "Scroll region prompt", "status line"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("latest should contain %q after vterm scroll-region/RI ingest, rows=%#v damage=%#v", want, window.Rows, damage)
+		}
 	}
 }
 
@@ -730,6 +807,15 @@ func historyWindowContainsAll(window history.HistoryWindow, wants ...string) boo
 		}
 	}
 	return true
+}
+
+func firstDamageControl(damage vterm.WriteDamage, control string) vterm.DamageOp {
+	for _, op := range damage.SemanticOps {
+		if op.Code == vterm.ScreenOpControl && op.Control == control {
+			return op
+		}
+	}
+	return vterm.DamageOp{}
 }
 
 func vtermCells(text string) []vterm.Cell {

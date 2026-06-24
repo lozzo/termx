@@ -1336,6 +1336,39 @@ func TestVTermWriteWithDamageSemanticEraseDisplayComesFromControl(t *testing.T) 
 	}
 }
 
+func TestVTermWriteWithDamageSemanticScrollRegionAndRI(t *testing.T) {
+	vt := New(16, 6, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[2;5r\x1b[2;1H\x1bMregion"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	region := firstSemanticControlOp(t, damage, "decstbm")
+	if region.Mode != 2 || region.Bottom != 5 {
+		t.Fatalf("expected scroll region top=2 bottom=5, got %#v", region)
+	}
+	ri := firstSemanticControlOp(t, damage, "ri")
+	if ri.Row != 1 || ri.Col != 0 {
+		t.Fatalf("expected RI at scroll-region top, got %#v", ri)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"control:decstbm", "control:cup", "control:ri", "write:region"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic ops must preserve scroll-region/RI order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if firstOpWithCode(t, damage, ScreenOpScrollRect).Dy <= 0 {
+		t.Fatalf("expected RI to produce down-scroll screen op, got %#v", damage.Ops)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 

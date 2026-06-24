@@ -908,6 +908,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// Rect is [x, y) which means y is exclusive. So the top margin
 		// is the top of the screen minus one.
 		e.scr.setVerticalMargins(top-1, bottom)
+		e.scr.damage.recordScrollRegion(top, bottom)
 
 		// Move the cursor to the top-left of the screen or scroll region
 		// depending on [ansi.DECOM].

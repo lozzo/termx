@@ -24,6 +24,7 @@ type terminalSemanticProjectorStats struct {
 	ClearToEOLOps     int
 	EraseDisplayOps   int
 	ModeOps           int
+	ControlOps        int
 	ScrollbackAppends int
 	FullReplaceOnly   int
 }
@@ -99,6 +100,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			case vterm.ScreenOpClearToEOL:
 				stats.ClearToEOLOps++
 			case vterm.ScreenOpControl:
+				stats.ControlOps++
 				if op.Control == "el" {
 					stats.ClearToEOLOps++
 				} else if op.Control == "ed" {
@@ -213,7 +215,17 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 				}
 				hasOps = true
 			case vterm.ScreenOpScrollRect:
-				if !lowRows || len(damage.ScrollbackAppend) == 0 || op.Dy >= 0 {
+				if op.Dx != 0 || op.Dy == 0 {
+					return false
+				}
+				if op.Dy < 0 {
+					if !lowRows || len(damage.ScrollbackAppend) == 0 {
+						return false
+					}
+					hasOps = true
+					continue
+				}
+				if len(damage.ScrollbackAppend) > 0 || !semanticOpsContainControl(damage.SemanticOps, "ri") {
 					return false
 				}
 				hasOps = true
@@ -227,7 +239,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind":
+	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind", "ri", "decstbm":
 		return true
 	default:
 		return false
@@ -255,6 +267,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		}
 		scrollbackApplied := 0
 		controlLinefeedInDamage := semanticOpsContainLinefeedControl(ops)
+		reverseIndexScrollDowns := semanticOpsReverseIndexScrollDownCount(ops)
 		for _, op := range ops {
 			switch op.Code {
 			case vterm.ScreenOpWriteSpan:
@@ -311,6 +324,11 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				scrollbackApplied += count
 				applied = true
 			case vterm.ScreenOpControl:
+				if op.Control == "ri" && reverseIndexScrollDowns > 0 {
+					reverseIndexScrollDowns--
+					applied = true
+					continue
+				}
 				if err := pipeline.applyVTermControlEventLocked(op); err != nil {
 					return applied, err
 				}
@@ -336,12 +354,29 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 }
 
 func semanticOpsContainLinefeedControl(ops []vterm.DamageOp) bool {
+	return semanticOpsContainControl(ops, "lf") || semanticOpsContainControl(ops, "ind")
+}
+
+func semanticOpsContainControl(ops []vterm.DamageOp, control string) bool {
 	for _, op := range ops {
-		if op.Code == vterm.ScreenOpControl && (op.Control == "lf" || op.Control == "ind") {
+		if op.Code == vterm.ScreenOpControl && op.Control == control {
 			return true
 		}
 	}
 	return false
+}
+
+func semanticOpsReverseIndexScrollDownCount(ops []vterm.DamageOp) int {
+	if !semanticOpsContainControl(ops, "ri") {
+		return 0
+	}
+	count := 0
+	for _, op := range ops {
+		if op.Code == vterm.ScreenOpScrollRect && op.Dy > 0 {
+			count += op.Dy
+		}
+	}
+	return count
 }
 
 func semanticOpsForHistoryDamage(damage vterm.WriteDamage) []vterm.DamageOp {
@@ -376,6 +411,10 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCommitFrontier})
 	case "ri":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: 1})
+	case "decstbm":
+		// 中文说明：DECSTBM 只改变 vterm 的滚动区域；history 不保存第二份
+		// scroll-region truth，后续 cursor/write/scroll-out 语义会显式投影。
+		return nil
 	case "cuu":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: op.Mode})
 	case "cud":
