@@ -47,7 +47,7 @@ func (queue *terminalHistoryIngestQueue) Enqueue(text string) bool {
 }
 
 func (queue *terminalHistoryIngestQueue) EnqueueBatch(batch terminalSemanticBatch) bool {
-	if batch.Raw == "" && len(batch.AltExitFrame) == 0 {
+	if batch.Raw == "" && len(batch.Damages) == 0 && len(batch.AltExitFrame) == 0 {
 		return true
 	}
 	queue.mu.Lock()

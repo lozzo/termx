@@ -570,6 +570,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		default:
 			return false
 		}
+		e.scr.damage.recordControl("ed", x, y, n)
 		return true
 	})
 
@@ -593,6 +594,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		default:
 			return false
 		}
+		e.scr.damage.recordControl("el", x, y, n)
 		return true
 	})
 

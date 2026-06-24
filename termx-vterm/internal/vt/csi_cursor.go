@@ -95,6 +95,7 @@ func (e *Emulator) carriageReturn() {
 		e.scr.setCursor(0, y, false)
 	}
 	e.atPhantom = false
+	e.scr.damage.recordControl("cr", x, y, 0)
 }
 
 // repeatPreviousCharacter repeats the previous character n times. This is

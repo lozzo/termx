@@ -31,6 +31,7 @@ func (e *Emulator) handleMode(params ansi.Params, set, isAnsi bool) {
 		}
 
 		e.setMode(mode, setting)
+		e.scr.damage.recordMode(param, !isAnsi, set)
 	}
 }
 

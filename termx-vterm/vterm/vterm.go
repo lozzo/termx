@@ -232,6 +232,7 @@ const (
 	ScreenOpModes
 	ScreenOpResize
 	ScreenOpTitle
+	ScreenOpControl
 )
 
 type Size struct {
@@ -241,6 +242,7 @@ type Size struct {
 
 type DamageOp struct {
 	Code       ScreenOpCode
+	Control    string
 	Rect       DamageRect
 	Src        DamageRect
 	DstX       int
@@ -249,6 +251,9 @@ type DamageOp struct {
 	Dy         int
 	Row        int
 	Col        int
+	Mode       int
+	Private    bool
+	Enabled    bool
 	Cells      []Cell
 	Runs       []CellRun
 	Size       Size
@@ -385,8 +390,12 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 		op.Runs = nil
 		op.Wrapped = false
 		op.WrappedSet = false
-	case ScreenOpCursor, ScreenOpModes, ScreenOpTitle:
+	case ScreenOpCursor, ScreenOpTitle:
 		return DamageOp{Code: op.Code}
+	case ScreenOpModes:
+		return DamageOp{Code: op.Code, Mode: op.Mode, Private: op.Private, Enabled: op.Enabled}
+	case ScreenOpControl:
+		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode}
 	}
 	return op
 }
@@ -427,7 +436,8 @@ func isValidScreenOpCode(code ScreenOpCode) bool {
 		ScreenOpCursor,
 		ScreenOpModes,
 		ScreenOpResize,
-		ScreenOpTitle:
+		ScreenOpTitle,
+		ScreenOpControl:
 		return true
 	default:
 		return false
@@ -811,6 +821,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
 			if reason, broad := directStats.fullReplaceReason(); broad {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
+				damage.Ops = semanticOpsFromCharmVTDamages(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -824,6 +835,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 				}
 			} else {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "direct_damage_unsupported")
+				damage.Ops = semanticOpsFromCharmVTDamages(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -3137,6 +3149,36 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 	v.scrollbackRowCache = nextScrollbackCache
 }
 
+func semanticOpsFromCharmVTDamages(damages []charmvt.Damage) []DamageOp {
+	if len(damages) == 0 {
+		return nil
+	}
+	ops := make([]DamageOp, 0, len(damages))
+	for _, raw := range damages {
+		switch d := raw.(type) {
+		case charmvt.ControlDamage:
+			if d.Kind == "" {
+				continue
+			}
+			ops = append(ops, DamageOp{
+				Code:    ScreenOpControl,
+				Control: d.Kind,
+				Row:     d.Y,
+				Col:     d.X,
+				Mode:    d.Mode,
+			})
+		case charmvt.ModeDamage:
+			ops = append(ops, DamageOp{
+				Code:    ScreenOpModes,
+				Mode:    d.Mode,
+				Private: d.Private,
+				Enabled: d.Enabled,
+			})
+		}
+	}
+	return ops
+}
+
 func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, plan rowCacheReconcilePlan) WriteDamage {
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.Ops = ops
@@ -3913,6 +3955,8 @@ func damageChangedRowCount(damage WriteDamage) int {
 			for row := op.DstY; row < op.DstY+op.Src.Height; row++ {
 				seen[row] = struct{}{}
 			}
+		case ScreenOpControl:
+			seen[op.Row] = struct{}{}
 		}
 	}
 	return len(seen) + len(damage.ScrollbackAppend)
@@ -3930,6 +3974,8 @@ func damageChangedCellCount(damage WriteDamage) int {
 			count++
 		case ScreenOpScrollRect, ScreenOpCopyRect:
 			count += maxInt(0, op.Rect.Width*op.Rect.Height)
+		case ScreenOpControl:
+			count++
 		}
 	}
 	for _, row := range damage.ScrollbackAppend {
@@ -4041,6 +4087,10 @@ func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) 
 				markItemRow(row)
 			}
 		case charmvt.ScrollbackDamage:
+			continue
+		case charmvt.ControlDamage:
+			continue
+		case charmvt.ModeDamage:
 			continue
 		case charmvt.ScrollDamage, charmvt.MoveDamage:
 			stats.HasScrollOrMove = true
@@ -4171,6 +4221,24 @@ func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidt
 				Rect: DamageRect{X: rect.Min.X, Y: rect.Min.Y, Width: rect.Dx(), Height: rect.Dy()},
 				Dx:   d.Dx,
 				Dy:   d.Dy,
+			})
+		case charmvt.ControlDamage:
+			if d.Kind == "" {
+				continue
+			}
+			ops = append(ops, DamageOp{
+				Code:    ScreenOpControl,
+				Control: d.Kind,
+				Row:     d.Y,
+				Col:     d.X,
+				Mode:    d.Mode,
+			})
+		case charmvt.ModeDamage:
+			ops = append(ops, DamageOp{
+				Code:    ScreenOpModes,
+				Mode:    d.Mode,
+				Private: d.Private,
+				Enabled: d.Enabled,
 			})
 		case charmvt.ScrollbackDamage:
 			continue

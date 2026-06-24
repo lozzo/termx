@@ -103,6 +103,8 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 		return track.enterPrimaryFullscreen(event.PrimaryMode)
 	case EventExitPrimaryFullscreen:
 		return track.exitPrimaryFullscreen(event.PrimaryMode)
+	case EventPrimaryScrollOut:
+		return track.primaryScrollOut(event.Count)
 	case EventAppendAltScreenFrame:
 		return track.appendAltScreenFrame(event.Rows)
 	case EventSealLogicalLine:
@@ -131,6 +133,44 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 	default:
 		return ErrInvalidEventKind
 	}
+}
+
+func (track *HistoryTrack) primaryScrollOut(count int) error {
+	if track.altScreen {
+		return nil
+	}
+	if count <= 0 {
+		count = 1
+	}
+	for i := 0; i < count; i++ {
+		// 中文说明：vterm scrollback row 不能成为 history truth；这里只用
+		// primary screen ownership 判断哪条 logical line 离开屏幕并可提交。
+		owner, ok := track.screen.owner(0)
+		track.screen.scrollUp()
+		if ok && owner.LineID != 0 {
+			if err := track.ensureScrolledOutLineSealed(owner.LineID); err != nil {
+				return err
+			}
+		}
+		if track.screenRow > 0 {
+			track.screenRow--
+		}
+	}
+	return track.commitFrontier(false)
+}
+
+func (track *HistoryTrack) ensureScrolledOutLineSealed(id LogicalLineID) error {
+	if id == 0 || !track.frontier.Contains(id) {
+		return nil
+	}
+	seal, _, ok := track.lineCommitState(id)
+	if !ok {
+		return ErrUnknownLine
+	}
+	if seal == SealStateSealed {
+		return nil
+	}
+	return track.sealLineDirty(id)
 }
 
 func (track *HistoryTrack) Line(id LogicalLineID) (LogicalLine, bool) {

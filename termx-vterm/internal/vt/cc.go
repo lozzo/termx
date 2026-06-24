@@ -15,7 +15,9 @@ func (e *Emulator) handleControl(r byte) {
 
 // linefeed is the same as [index], except that it respects [ansi.LNM] mode.
 func (e *Emulator) linefeed() {
-	e.index()
+	x, y := e.scr.CursorPosition()
+	e.indexMove()
+	e.scr.damage.recordControl("lf", x, y, 0)
 	if e.isModeSet(ansi.ModeLineFeedNewLine) {
 		e.carriageReturn()
 	}
@@ -24,6 +26,12 @@ func (e *Emulator) linefeed() {
 // index moves the cursor down one line, scrolling up if necessary. This
 // always resets the phantom state i.e. pending wrap state.
 func (e *Emulator) index() {
+	x, y := e.scr.CursorPosition()
+	e.indexMove()
+	e.scr.damage.recordControl("ind", x, y, 0)
+}
+
+func (e *Emulator) indexMove() {
 	x, y := e.scr.CursorPosition()
 	scroll := e.scr.ScrollRegion()
 	// XXX: Handle scrollback whenever we add it.
@@ -51,6 +59,7 @@ func (e *Emulator) reverseIndex() {
 	} else {
 		e.scr.moveCursor(0, -1)
 	}
+	e.scr.damage.recordControl("ri", x, y, 0)
 }
 
 // backspace moves the cursor back one cell, if possible.

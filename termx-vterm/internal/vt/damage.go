@@ -130,6 +130,31 @@ func (d ScrollDamage) Bounds() uv.Rectangle {
 	return d.Rectangle
 }
 
+// ControlDamage 记录同一 parser transaction 内的控制语义；这些控制不一定
+// 产生 cell damage，但 history projector 需要按顺序消费。
+type ControlDamage struct {
+	Kind string
+	X, Y int
+	Mode int
+}
+
+// Bounds 返回控制语义发生时的 cursor 位置。
+func (d ControlDamage) Bounds() uv.Rectangle {
+	return uv.Rect(d.X, d.Y, 1, 1)
+}
+
+// ModeDamage 记录同一 parser transaction 内的 mode 变化。
+type ModeDamage struct {
+	Mode    int
+	Private bool
+	Enabled bool
+}
+
+// Bounds 返回 origin 占位；mode 变化是语义控制，不是 cell mutation。
+func (d ModeDamage) Bounds() uv.Rectangle {
+	return uv.Rect(0, 0, 1, 1)
+}
+
 // ScrollbackDamage represents a row captured before it leaves the visible
 // screen and enters scrollback.
 type ScrollbackDamage struct {
