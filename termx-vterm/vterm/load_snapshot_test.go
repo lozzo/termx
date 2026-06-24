@@ -1417,6 +1417,40 @@ func TestVTermWriteWithDamageSemanticCursorStyle(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticReportRequests(t *testing.T) {
+	var responses []string
+	vt := New(20, 3, 100, func(data []byte) {
+		responses = append(responses, string(data))
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[6n\x1b[?6n\x1b[?25$pframe"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpControl:
+			switch op.Control {
+			case "dsr", "decxcpr", "decrqm":
+				got = append(got, "control:"+op.Control+":"+strconv.Itoa(op.Mode))
+			}
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"control:dsr:6", "control:decxcpr:6", "control:decrqm:0", "write:frame"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic report requests must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if len(responses) < 3 {
+		t.Fatalf("expected DSR/DECRQM responses from vterm, got %#v damage=%#v", responses, damage)
+	}
+	if row := rowText(vt.ScreenRowView(0), len("frame")); row != "frame" {
+		t.Fatalf("terminal report requests must not render as text, got %q damage=%#v", row, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

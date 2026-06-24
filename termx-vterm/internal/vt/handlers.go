@@ -894,6 +894,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			return false
 		}
 
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("dsr", x, y, n)
 		return true
 	})
 
@@ -911,18 +913,24 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			return false
 		}
 
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decxcpr", x, y, n)
 		return true
 	})
 
 	e.RegisterCsiHandler(ansi.Command(0, '$', 'p'), func(params ansi.Params) bool {
 		// Request Mode [ansi.DECRQM] - ANSI
 		e.handleRequestMode(params, true)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decrqm", x, y, 0)
 		return true
 	})
 
 	e.RegisterCsiHandler(ansi.Command('?', '$', 'p'), func(params ansi.Params) bool {
 		// Request Mode [ansi.DECRQM] - DEC
 		e.handleRequestMode(params, false)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decrqm", x, y, 0)
 		return true
 	})
 
