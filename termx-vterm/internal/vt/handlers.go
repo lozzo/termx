@@ -821,15 +821,18 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('g', func(params ansi.Params) bool {
 		// Tab Clear [ansi.TBC]
 		value, _, _ := params.Param(0, 0)
+		x, y := e.scr.CursorPosition()
 		switch value {
 		case 0:
-			x, _ := e.scr.CursorPosition()
 			e.tabstops.Reset(x)
 		case 3:
 			e.tabstops.Clear()
 		default:
 			return false
 		}
+		// 中文说明：TBC 修改的是 vterm 内部 tab stop 状态；history 只需要
+		// 按同批后续 HT 的 resolved column 投影，不能由 parser 固定 8 列重放。
+		e.scr.damage.recordControl("tbc", x, y, value)
 
 		return true
 	})

@@ -303,6 +303,7 @@
 | R201BK. SK erase display modes raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 `CSI 2J/3J` 的 page-break 与 clear-scrollback 语义由 vterm `ed` control 进入 `HistoryTrack`，不让 `historyANSIParser` 承接清屏/截断历史语义 |
 | R201BL. SK in-band resize mode raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 `CSI ?2048h/l`：in-band resize mode 属于 shared vterm/input-report 状态，history projector 只消费同批文本语义，不把该 mode 写成第二份 history truth，也不回退 `historyANSIParser` |
 | R201BM. SK input/report private modes raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 `CSI ?67/?2031/?9001 h/l`：这些 input/report private modes 由 shared vterm 持有，history projector 只消费同批文本并保持未知 mode 拒绝边界 |
+| R201BN. SK tab clear raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI g` / TBC：tab stop 清理状态由 shared vterm 持有，后续 `TAB` 通过 vterm resolved `ht` 坐标进入 history projector，不让 `historyANSIParser` 固定 8 列 tab 语义承接 |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入
@@ -423,6 +424,7 @@
 - `R201BK` 已完成：raw shared-vterm gate 现在允许同批 ordered `ed` control 承接 `CSI 2J/3J`，并把 vterm 伴随 scrollback append 保持为 live signal 而非 history truth；focused harness 证明 ED2 page-break 和 ED3 clear-scrollback 均使用 shared vterm semantic projector、`RawFallbacks == 0`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesEraseDisplayModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R201BL` 已完成：raw shared-vterm gate 现在允许 `CSI ?2048h/l` in-band resize mode；core-v2 只消费该 mode/text 顺序，不把 resize-report/input mode 写成 history truth，也不让同批文本回退 `historyANSIParser`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesInBandResizeModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R201BM` 已完成：raw shared-vterm gate 现在允许 `CSI ?67/?2031/?9001 h/l` input/report private modes；core-v2 只消费这些 mode/text 顺序，不把输入/报告状态写成 history truth，同时新增未知 private mode 负例守住 parser fallback 边界。准入已通过 `go test ./termx-core-v2 -run 'TestTerminalSemanticProjector(ConsumesInputReportPrivateModesRawWithoutFallback|RejectsUnknownPrivateModeRaw)' -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
+- `R201BN` 已完成：vterm 现在为 `CSI g` / TBC 输出 ordered `tbc` control，core-v2 raw shared gate 放行该 no-op 控制并继续消费后续 vterm-resolved `ht` 坐标；focused harness 证明清掉 tab stops 后 `TAB` 跳到末列，`historyANSIParser` 固定 8 列 tab 语义不再承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticTabClear -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesTabClearRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
 - `R202` 待开始：Web 桌面 terminal 可视区修复保留在后续切片；已有 remote-ui/localweb 未提交改动不纳入当前 core-v2 semantic ingest 切片。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。

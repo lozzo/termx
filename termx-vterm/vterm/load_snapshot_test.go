@@ -1536,6 +1536,36 @@ func TestVTermWriteWithDamageSemanticCustomTabStop(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticTabClear(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("ab\r\x1b[3g\tZ"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	tbc := firstSemanticControlOp(t, damage, "tbc")
+	if tbc.Mode != 3 {
+		t.Fatalf("expected TBC mode 3 to be recorded, got %#v damage=%#v", tbc, damage)
+	}
+	ht := firstSemanticControlOp(t, damage, "ht")
+	if ht.Col != 15 {
+		t.Fatalf("expected HT to land on final column after clearing tabs, got %#v damage=%#v", ht, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		}
+	}
+	want := []string{"write:ab", "control:cr", "control:tbc", "control:ht", "write:Z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic tab clear ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticSpecialDrawingCharset(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
