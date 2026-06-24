@@ -1441,8 +1441,8 @@ func TestProtocolServiceHistoryWindowPreservesStressTailAcrossFullscreenHomeClea
 			Cols:       120,
 			Limit:      120,
 		})
-		return err == nil && latest != nil && protocolHistoryWindowContainsText(latest, "CODEX_FULLSCREEN_MARK")
-	}, "fullscreen output should reach history before assertion")
+		return err == nil && latest != nil && latest.LogicalTotal >= 100 && protocolHistoryWindowContainsText(latest, "000100")
+	}, "fullscreen page-break should commit stress tail before assertion")
 	for i := 59; i <= 100; i++ {
 		marker := fmt.Sprintf("%06d", i)
 		if !protocolHistoryWindowContainsText(latest, marker) {
@@ -1452,8 +1452,8 @@ func TestProtocolServiceHistoryWindowPreservesStressTailAcrossFullscreenHomeClea
 	if latest.LogicalTotal < 100 {
 		t.Fatalf("fullscreen clear should commit stress primary page, got total=%d window=%#v", latest.LogicalTotal, latest)
 	}
-	if !protocolHistoryWindowContainsText(latest, "CODEX_FULLSCREEN_MARK") {
-		t.Fatalf("fullscreen payload after page-break should be visible as fresh tail, got %#v", latest.Rows)
+	if protocolHistoryWindowContainsText(latest, "CODEX_FULLSCREEN_MARK") {
+		t.Fatalf("active primary fullscreen frame must stay out of protocol history.window until exit, got %#v", latest.Rows)
 	}
 }
 

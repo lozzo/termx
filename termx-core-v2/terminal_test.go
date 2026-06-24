@@ -1044,8 +1044,8 @@ func TestTerminalIngestOutputFullscreenHomeClearPreservesStressTail(t *testing.T
 	if window.TotalLines < 100 {
 		t.Fatalf("fullscreen home clear must commit all primary stress lines, got total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
-	if !historyWindowContainsText(window, "CODEX_FULLSCREEN_MARK") {
-		t.Fatalf("fullscreen payload after page-break should start fresh live tail, got %#v", window.Rows)
+	if historyWindowContainsText(window, "CODEX_FULLSCREEN_MARK") {
+		t.Fatalf("active primary fullscreen frame must stay out of history latest until exit, got %#v", window.Rows)
 	}
 }
 
@@ -1071,14 +1071,14 @@ func TestTerminalIngestOutputRepeatedFullscreenHomeClearKeepsLatestFrameOnly(t *
 	if err != nil {
 		t.Fatalf("latest after repeated fullscreen clear: %v", err)
 	}
-	for _, want := range []string{"shell-one", "shell-two", "frame-two", "frame-new"} {
+	for _, want := range []string{"shell-one", "shell-two"} {
 		if !historyWindowContainsText(window, want) {
 			t.Fatalf("latest should contain %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
 		}
 	}
-	for _, stale := range []string{"frame-one", "frame-old"} {
+	for _, stale := range []string{"frame-one", "frame-old", "frame-two", "frame-new"} {
 		if historyWindowContainsText(window, stale) {
-			t.Fatalf("latest should not contain stale fullscreen frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+			t.Fatalf("latest should not contain active fullscreen frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
 		}
 	}
 	if window.TotalLines != 2 {

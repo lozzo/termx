@@ -161,11 +161,7 @@ func validateWindowRequest(req HistoryWindowRequest) error {
 
 func (track *HistoryTrack) projectLatestRows(cols int) []projectedRow {
 	ids := track.committed.IDs()
-	for _, id := range track.frontier.IDs() {
-		if !track.frontier.IsHidden(id) && !containsLineID(ids, id) {
-			ids = append(ids, id)
-		}
-	}
+	ids = track.appendLatestHistoryFrontierIDs(ids)
 	return track.projectRows(ids, cols)
 }
 
@@ -247,6 +243,13 @@ func latestTailCursor(rows []projectedRow, hasMore bool) HistoryCursor {
 
 func (track *HistoryTrack) latestLineIDs() []LogicalLineID {
 	ids := track.committed.IDs()
+	return track.appendLatestHistoryFrontierIDs(ids)
+}
+
+func (track *HistoryTrack) appendLatestHistoryFrontierIDs(ids []LogicalLineID) []LogicalLineID {
+	if track.primaryFullscreenFrame {
+		return ids
+	}
 	for _, id := range track.frontier.IDs() {
 		if !track.frontier.IsHidden(id) && !containsLineID(ids, id) {
 			ids = append(ids, id)

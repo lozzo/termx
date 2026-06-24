@@ -397,6 +397,80 @@ func TestLatestWindowIncludesEligibleMutableFrontier(t *testing.T) {
 	}
 }
 
+func TestLatestWindowExcludesActivePrimaryFullscreenFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(5)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell")},
+		HistoryEvent{Kind: EventEnterPrimaryFullscreen},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("header")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("body")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventCursorPosition, Row: 4, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("prompt old")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 4, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("prompt new")},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"shell"}) {
+		t.Fatalf("active fullscreen frame must stay out of history latest, got %v rows=%#v", got, window.Rows)
+	}
+	if got := rowLineIDs(window.Rows); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("latest should keep only committed shell tail, got %v", got)
+	}
+}
+
+func TestFreezeSnapshotExcludesActivePrimaryFullscreenFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell")},
+		HistoryEvent{Kind: EventEnterPrimaryFullscreen},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("codex input")},
+	)
+
+	snapshot := track.FreezePinnedSnapshot()
+	defer snapshot.ReleaseObserver()
+
+	if snapshot.VisibleLineCount() != 1 {
+		t.Fatalf("active fullscreen frame must not be frozen into copy snapshot, got count=%d", snapshot.VisibleLineCount())
+	}
+	line, ok := snapshot.LineAt(0)
+	if !ok || lineText(line.Line) != "shell" || !line.Committed {
+		t.Fatalf("snapshot should only expose committed shell history, got line=%#v ok=%v", line, ok)
+	}
+}
+
+func TestForceCommitIncludesPrimaryFullscreenFrameOnExit(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell")},
+		HistoryEvent{Kind: EventEnterPrimaryFullscreen},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("final frame")},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"shell", "final frame"}) {
+		t.Fatalf("force commit should preserve fullscreen exit frame, got %v", got)
+	}
+}
+
 func TestLatestWindowCursorCanPageBackFromMutableOnlyTail(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "committed")
