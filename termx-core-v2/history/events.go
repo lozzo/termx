@@ -16,6 +16,7 @@ const (
 	EventCursorPosition           EventKind = "cursor-position"
 	EventEraseCharacters          EventKind = "erase-characters"
 	EventDeleteCharacters         EventKind = "delete-characters"
+	EventInsertCharacters         EventKind = "insert-characters"
 	EventEraseInLine              EventKind = "erase-in-line"
 	EventEraseInDisplay           EventKind = "erase-in-display"
 	EventSetActiveLineTailFill    EventKind = "set-active-line-tail-fill"

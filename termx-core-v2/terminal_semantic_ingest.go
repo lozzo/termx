@@ -254,6 +254,12 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 						hasOps = true
 						continue
 					}
+					if op.Dy == 0 && op.Dx > 0 && semanticOpsContainControl(damage.SemanticOps, "ich") {
+						// 中文说明：ICH 的横向 scroll rect 只是 live screen diff；
+						// history 只消费同批 ordered ich control，不能从这里推断插入语义。
+						hasOps = true
+						continue
+					}
 					return false
 				}
 				if op.Dy == 0 {
@@ -331,7 +337,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
+	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
 		return true
 	default:
 		return false
@@ -907,6 +913,12 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 	case "dch":
 		return pipeline.track.Apply(history.HistoryEvent{
 			Kind:  history.EventDeleteCharacters,
+			Count: op.Mode,
+			Style: historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
+		})
+	case "ich":
+		return pipeline.track.Apply(history.HistoryEvent{
+			Kind:  history.EventInsertCharacters,
 			Count: op.Mode,
 			Style: historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
 		})

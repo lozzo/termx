@@ -460,7 +460,10 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 	e.RegisterCsiHandler('@', func(params ansi.Params) bool {
 		// Insert Character [ansi.ICH]
 		n, _, _ := params.Param(0, 1)
+		x, y := e.scr.CursorPosition()
+		blank := e.scr.blankCell()
 		e.scr.InsertCell(n)
+		e.scr.damage.recordControlWithCell("ich", x, y, n, blank)
 		return true
 	})
 

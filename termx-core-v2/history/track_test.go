@@ -375,6 +375,23 @@ func TestHistoryTrackDeleteCharactersShiftsMutableCellsLeft(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackInsertCharactersShiftsMutableCellsRight(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ABCDE")},
+		HistoryEvent{Kind: EventCursorHorizontalAbsolute, Count: 2},
+		HistoryEvent{Kind: EventInsertCharacters, Count: 2},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "A  BCDE" {
+		t.Fatalf("ICH should insert blank cells and shift the suffix right, got %q cells=%#v", got, line.Cells)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("insert-characters must stay in mutable frontier, got committed %v", got)
+	}
+}
+
 func TestHistoryTrackEraseInLinePreservesStyledBlankToVisualRowEnd(t *testing.T) {
 	track := NewHistoryTrack()
 	style := CellStyle{BG: "idx:24"}
