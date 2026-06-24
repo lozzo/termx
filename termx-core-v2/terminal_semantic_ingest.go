@@ -201,10 +201,11 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		}
 		lowRows := damage.SizeRows > 0 && damage.SizeRows <= 2
 		tallPlainScrollOut := rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage)
+		tallStyledScrollOut := rawSharedTallStyledScrollOutDamageCanUseSemanticOps(damage)
 		tallASCIIText := rawSharedTallASCIITextDamageCanUseSemanticOps(damage)
 		tallGraphemeText := rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage)
 		if len(damage.ScrollbackAppend) > 0 {
-			if !lowRows && !tallPlainScrollOut {
+			if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut {
 				return false
 			}
 			scrollbackAppends += len(damage.ScrollbackAppend)
@@ -225,7 +226,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows && !tallPlainScrollOut && !tallASCIIText && !tallGraphemeText {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallASCIIText && !tallGraphemeText {
 						return false
 					}
 					linefeedControls++
@@ -244,7 +245,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					if len(damage.ScrollbackAppend) == 0 {
 						return false
 					}
-					if !lowRows && !tallPlainScrollOut {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut {
 						return false
 					}
 					hasOps = true
@@ -315,6 +316,45 @@ func rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage vterm.WriteDamage
 		}
 	}
 	return true
+}
+
+func rawSharedTallStyledScrollOutDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	// 中文说明：R201AC 只放开大高度 styled primary scroll-out；
+	// vterm 必须在行结束 control 上显式给出 TailFill，core 不从 scrollback row 反推。
+	if damage.SizeRows <= 2 || len(damage.ScrollbackAppend) == 0 || damage.RequiresFullReplace || len(damage.AlternateAppend) > 0 {
+		return false
+	}
+	hasTailFill := false
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) == 0 {
+				continue
+			}
+			for _, cell := range op.Cells {
+				if !rawSharedGraphemeTextCell(cell) {
+					return false
+				}
+			}
+		case vterm.ScreenOpControl:
+			if op.Control != "lf" && op.Control != "ind" && op.Control != "soft-wrap" && op.Control != "cr" {
+				return false
+			}
+			if op.TailFill != nil {
+				if *op.TailFill == (vterm.CellStyle{}) || op.TailFill.BG == "" {
+					return false
+				}
+				hasTailFill = true
+			}
+		case vterm.ScreenOpScrollRect:
+			if op.Dx != 0 || op.Dy >= 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return hasTailFill
 }
 
 func rawSharedTallASCIITextDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
@@ -537,6 +577,15 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 					reverseIndexScrollDowns--
 					applied = true
 					continue
+				}
+				if op.TailFill != nil {
+					if err := pipeline.track.Apply(history.HistoryEvent{
+						Kind:  history.EventSetActiveLineTailFill,
+						Style: historyStyleFromVTermStyle(*op.TailFill),
+					}); err != nil {
+						return applied, err
+					}
+					applied = true
 				}
 				if err := pipeline.applyVTermControlEventLocked(op); err != nil {
 					return applied, err

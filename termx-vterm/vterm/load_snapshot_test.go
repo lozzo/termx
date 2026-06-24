@@ -1415,6 +1415,19 @@ func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testin
 	}
 }
 
+func TestVTermWriteWithDamageSemanticLinefeedCarriesTailFill(t *testing.T) {
+	vt := New(8, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("seed1\nseed2\n\x1b[48;5;24mabcdefghij\x1b[0m\n"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	semanticLF := lastSemanticControlOp(t, damage, "lf")
+	if semanticLF.TailFill == nil || semanticLF.TailFill.BG != "idx:24" {
+		t.Fatalf("semantic LF should carry row tail fill background, got %#v damage=%#v", semanticLF, damage.SemanticOps)
+	}
+}
+
 func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
 	vt := New(80, 24, 100, nil)
 	prevWithDamage := safeEmulatorWriteWithDamage
@@ -2395,6 +2408,18 @@ func firstControlOp(t *testing.T, damage WriteDamage, control string) DamageOp {
 func firstSemanticControlOp(t *testing.T, damage WriteDamage, control string) DamageOp {
 	t.Helper()
 	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl && op.Control == control {
+			return op
+		}
+	}
+	t.Fatalf("expected semantic control op %q in damage, got %#v", control, damage)
+	return DamageOp{}
+}
+
+func lastSemanticControlOp(t *testing.T, damage WriteDamage, control string) DamageOp {
+	t.Helper()
+	for i := len(damage.SemanticOps) - 1; i >= 0; i-- {
+		op := damage.SemanticOps[i]
 		if op.Code == ScreenOpControl && op.Control == control {
 			return op
 		}

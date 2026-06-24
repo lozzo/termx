@@ -258,6 +258,7 @@ type DamageOp struct {
 	Cells      []Cell
 	Runs       []CellRun
 	Size       Size
+	TailFill   *CellStyle
 	Timestamp  time.Time
 	RowKind    string
 	Wrapped    bool
@@ -396,7 +397,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 	case ScreenOpModes:
 		return DamageOp{Code: op.Code, Mode: op.Mode, Private: op.Private, Enabled: op.Enabled}
 	case ScreenOpControl:
-		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode, Bottom: op.Bottom, Cells: op.Cells}
+		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode, Bottom: op.Bottom, Cells: op.Cells, TailFill: cloneCellStylePointer(op.TailFill)}
 	}
 	return op
 }
@@ -3156,6 +3157,7 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 		return nil
 	}
 	ops := make([]DamageOp, 0, len(damages))
+	tailRows := make(map[int]*CellStyle)
 	for _, raw := range damages {
 		switch d := raw.(type) {
 		case charmvt.TextDamage:
@@ -3172,6 +3174,7 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 				Col:   maxInt(0, d.X),
 				Cells: cells,
 			})
+			recordSemanticTailFill(tailRows, d.X, d.Y, cells)
 		case charmvt.ControlDamage:
 			if d.Kind == "" {
 				continue
@@ -3187,7 +3190,13 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 			if d.HasCell {
 				op.Cells = uvCellsToVTermDamageCells(v, []uv.Cell{d.Cell})
 			}
+			if semanticControlMayCarryTailFill(d.Kind) {
+				op.TailFill = cloneCellStylePointer(tailRows[d.Y])
+			}
 			ops = append(ops, op)
+			if semanticControlEndsPhysicalRow(d.Kind) {
+				delete(tailRows, d.Y)
+			}
 		case charmvt.ModeDamage:
 			ops = append(ops, DamageOp{
 				Code:    ScreenOpModes,
@@ -3198,6 +3207,61 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 		}
 	}
 	return ops
+}
+
+func recordSemanticTailFill(rows map[int]*CellStyle, x int, y int, cells []Cell) {
+	if rows == nil || len(cells) == 0 {
+		return
+	}
+	width := 0
+	var lastStyled *CellStyle
+	for _, cell := range cells {
+		if cell.Width == 0 {
+			continue
+		}
+		if style, ok := semanticTailFillStyle(cell); ok {
+			cloned := style
+			lastStyled = &cloned
+		} else if cell.Content != "" {
+			lastStyled = nil
+		}
+		width += maxInt(1, cell.Width)
+	}
+	if width <= 0 {
+		return
+	}
+	// 中文说明：TextDamage 记录的是同一 parser transaction 的真实写入；
+	// 尾部背景延伸作为行语义 metadata 传给下游，不能当作文本空格 payload。
+	if lastStyled != nil {
+		rows[y] = lastStyled
+		return
+	}
+	delete(rows, y)
+}
+
+func semanticTailFillStyle(cell Cell) (CellStyle, bool) {
+	if cell.Style.BG == "" || cell.LinkURL != "" || cell.LinkParams != "" {
+		return CellStyle{}, false
+	}
+	return CellStyle{BG: cell.Style.BG}, true
+}
+
+func semanticControlMayCarryTailFill(kind string) bool {
+	switch kind {
+	case "lf", "ind", "soft-wrap":
+		return true
+	default:
+		return false
+	}
+}
+
+func semanticControlEndsPhysicalRow(kind string) bool {
+	switch kind {
+	case "lf", "ind", "soft-wrap":
+		return true
+	default:
+		return false
+	}
 }
 
 func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, semanticOps []DamageOp, plan rowCacheReconcilePlan) WriteDamage {

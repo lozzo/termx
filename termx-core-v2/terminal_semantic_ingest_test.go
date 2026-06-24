@@ -965,6 +965,56 @@ func TestTerminalSemanticProjectorConsumesRealVTermGraphemeTextRawBatch(t *testi
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesStyledScrollOutFootprintRawBatch(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.ScrollbackAppends += next.ScrollbackAppends
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(8, 3, 100, nil)
+	raw := "seed1\nseed2\n\x1b[48;5;24mabcdefghij\x1b[0m\n"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if len(damage.ScrollbackAppend) == 0 {
+		t.Fatalf("styled scroll-out batch should expose primary ownership exit, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(8, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            8,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 || stats.ScrollbackAppends == 0 {
+		t.Fatalf("styled scroll-out footprint should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(8, 6)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) < 3 || window.Rows[len(window.Rows)-2].Text != "abcdefgh" || window.Rows[len(window.Rows)-1].Text != "ij" {
+		t.Fatalf("styled scroll-out semantic batch should preserve wrapped text, got %#v damage=%#v", window.Rows, damage)
+	}
+	tailRow := window.Rows[len(window.Rows)-1]
+	if len(tailRow.Cells) != 2 || tailRow.Cells[0].Style.BG != "idx:24" || tailRow.Cells[1].Style.BG != "idx:24" {
+		t.Fatalf("styled continuation cells should keep bg without materialized blanks, got %#v row=%#v", tailRow.Cells, tailRow)
+	}
+	if tailRow.TailFill == nil || tailRow.TailFill.Style.BG != "idx:24" {
+		t.Fatalf("styled scroll-out tail footprint should be row tail fill metadata, got %#v row=%#v damage=%#v", tailRow.TailFill, tailRow, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.T) {
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)
