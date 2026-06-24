@@ -3016,6 +3016,41 @@ func TestVTermWriteWithDamageSemanticScrollRegionAndRI(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSIScrollRegionAndRIKeepSemanticOrder(t *testing.T) {
+	vt := New(16, 6, 100, nil)
+	c1 := string([]byte{0x9b})
+
+	raw := c1 + "2;5r" + c1 + "2;1H\x8dregion"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	region := firstSemanticControlOp(t, damage, "decstbm")
+	if region.Mode != 2 || region.Bottom != 5 {
+		t.Fatalf("expected C1 scroll region top=2 bottom=5, got %#v", region)
+	}
+	ri := firstSemanticControlOp(t, damage, "ri")
+	if ri.Row != 1 || ri.Col != 0 {
+		t.Fatalf("expected C1 RI at scroll-region top, got %#v", ri)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"control:decstbm", "control:cup", "control:ri", "write:region"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 CSI scroll-region/RI ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if firstOpWithCode(t, damage, ScreenOpScrollRect).Dy <= 0 {
+		t.Fatalf("expected C1 RI to produce down-scroll screen op, got %#v", damage.Ops)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticOriginModeCursorPosition(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -3054,6 +3089,39 @@ func TestVTermWriteWithDamageSemanticOriginModeCursorPosition(t *testing.T) {
 				t.Fatalf("semantic origin-mode ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
 			}
 		})
+	}
+}
+
+func TestVTermWriteWithDamageC1CSIOriginModeCursorPosition(t *testing.T) {
+	vt := New(16, 6, 100, nil)
+	c1 := string([]byte{0x9b})
+
+	raw := c1 + "2;4r" + c1 + "?6h" + c1 + "1;1HX"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if firstSemanticModeOp(t, damage, 6).Code != ScreenOpModes {
+		t.Fatalf("expected C1 origin mode semantic op, got %#v", damage.SemanticOps)
+	}
+	cup := firstSemanticControlOp(t, damage, "cup")
+	if cup.Row != 1 || cup.Col != 0 {
+		t.Fatalf("expected C1 CUP to be resolved relative to scroll-region origin, got %#v damage=%#v", cup, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"control:decstbm", "mode:6:on", "control:cup", "write:X"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 CSI origin-mode ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
 	}
 }
 
@@ -3162,6 +3230,48 @@ func TestVTermWriteWithDamageSemanticLeftRightMargins(t *testing.T) {
 	}
 	if row := rowText(vt.ScreenRowView(0), 10); row != "  AX      " {
 		t.Fatalf("left/right margin CBT should place A at left margin before X, got %q damage=%#v", row, damage)
+	}
+}
+
+func TestVTermWriteWithDamageC1CSILeftRightMarginsKeepSemanticOrder(t *testing.T) {
+	vt := New(10, 1, 100, nil)
+	c1 := string([]byte{0x9b})
+
+	raw := c1 + "?5W" + c1 + "?6h" + c1 + "?69h" + c1 + "3;6s" + c1 + "1;2HX" + c1 + "ZA"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if firstSemanticModeOp(t, damage, 69).Code != ScreenOpModes {
+		t.Fatalf("expected C1 left/right margin mode semantic op, got %#v", damage.SemanticOps)
+	}
+	region := firstSemanticControlOp(t, damage, "decslrm")
+	if region.Mode != 3 || region.Bottom != 6 {
+		t.Fatalf("expected C1 DECSLRM left=3 right=6, got %#v damage=%#v", region, damage)
+	}
+	cbt := firstSemanticControlOp(t, damage, "cbt")
+	if cbt.Col != 2 {
+		t.Fatalf("C1 CBT should clamp to left margin final col 2, got %#v damage=%#v", cbt, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			if op.Mode == 6 || op.Mode == 69 {
+				got = append(got, modeOpLabel(op))
+			}
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"control:decst8c", "mode:6:on", "mode:69:on", "control:decslrm", "control:cup", "write:X", "control:cbt", "write:A"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 CSI left/right margin ops must preserve vterm-owned margin state order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if row := rowText(vt.ScreenRowView(0), 10); row != "  AX      " {
+		t.Fatalf("C1 left/right margin CBT should place A at left margin before X, got %q damage=%#v", row, damage)
 	}
 }
 

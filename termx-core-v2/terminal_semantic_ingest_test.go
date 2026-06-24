@@ -3343,6 +3343,109 @@ func TestTerminalSemanticProjectorConsumesOriginModeRawWithoutFallback(t *testin
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSIMarginOriginRawWithoutFallback(t *testing.T) {
+	c1 := string([]byte{0x9b})
+
+	t.Run("scroll-region-origin-ri", func(t *testing.T) {
+		resetTerminalSemanticIngestTestHooks()
+		var stats terminalSemanticProjectorStats
+		terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+			stats.SemanticProjectors += next.SemanticProjectors
+			stats.RawFallbacks += next.RawFallbacks
+			stats.ModeOps += next.ModeOps
+			stats.ControlOps += next.ControlOps
+			stats.WriteSpanOps += next.WriteSpanOps
+		}
+		defer resetTerminalSemanticIngestTestHooks()
+
+		raw := c1 + "2;5r" + c1 + "?6h" + c1 + "1;1HX" + c1 + "2;1H\x8dregion"
+		term := vterm.New(16, 6, 100, nil)
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write: %v", err)
+		}
+		if firstDamageMode(damage, 6).Code != vterm.ScreenOpModes {
+			t.Fatalf("C1 origin mode should expose vterm semantic mode, damage=%#v", damage)
+		}
+		region := firstDamageControl(damage, "decstbm")
+		ri := firstDamageControl(damage, "ri")
+		if region.Mode != 2 || region.Bottom != 5 || ri.Control != "ri" {
+			t.Fatalf("C1 margin/origin batch should expose decstbm and ri controls, region=%#v ri=%#v damage=%#v", region, ri, damage)
+		}
+		pipeline := newTerminalHistoryPipeline(16, 6)
+		if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            16,
+			Rows:            6,
+			FromSharedVTerm: true,
+		}); err != nil {
+			t.Fatalf("ingest semantic batch: %v", err)
+		}
+		if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps == 0 || stats.ControlOps < 4 || stats.WriteSpanOps == 0 {
+			t.Fatalf("C1 scroll-region/origin raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+		}
+		window, err := pipeline.LatestWindow(16, 8)
+		if err != nil {
+			t.Fatalf("latest: %v", err)
+		}
+		if !historyWindowContainsText(window, "region") {
+			t.Fatalf("C1 margin/origin text should remain visible through vterm semantic projector, rows=%#v damage=%#v", window.Rows, damage)
+		}
+	})
+
+	t.Run("left-right-margin", func(t *testing.T) {
+		resetTerminalSemanticIngestTestHooks()
+		var stats terminalSemanticProjectorStats
+		terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+			stats.SemanticProjectors += next.SemanticProjectors
+			stats.RawFallbacks += next.RawFallbacks
+			stats.ModeOps += next.ModeOps
+			stats.ControlOps += next.ControlOps
+			stats.WriteSpanOps += next.WriteSpanOps
+		}
+		defer resetTerminalSemanticIngestTestHooks()
+
+		raw := c1 + "?5W" + c1 + "?6h" + c1 + "?69h" + c1 + "3;6s" + c1 + "1;2HX" + c1 + "ZA"
+		term := vterm.New(10, 1, 100, nil)
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write: %v", err)
+		}
+		if firstDamageMode(damage, 69).Code != vterm.ScreenOpModes {
+			t.Fatalf("C1 left/right margin mode should be exposed as vterm mode op, damage=%#v", damage)
+		}
+		region := firstDamageControl(damage, "decslrm")
+		if region.Mode != 3 || region.Bottom != 6 {
+			t.Fatalf("C1 DECSLRM should expose vterm-owned horizontal margins, got %#v damage=%#v", region, damage)
+		}
+		cbt := firstDamageControl(damage, "cbt")
+		if cbt.Col != 2 {
+			t.Fatalf("C1 CBT should expose final left-margin column from vterm, got %#v damage=%#v", cbt, damage)
+		}
+		pipeline := newTerminalHistoryPipeline(10, 1)
+		if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            10,
+			Rows:            1,
+			FromSharedVTerm: true,
+		}); err != nil {
+			t.Fatalf("ingest semantic batch: %v", err)
+		}
+		if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 2 || stats.ControlOps < 4 || stats.WriteSpanOps == 0 {
+			t.Fatalf("C1 left/right margin raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+		}
+		window, err := pipeline.LatestWindow(10, 1)
+		if err != nil {
+			t.Fatalf("latest: %v", err)
+		}
+		if !historyWindowContainsText(window, "AX") {
+			t.Fatalf("C1 left/right margin text should follow vterm-resolved CBT coordinates, rows=%#v damage=%#v", window.Rows, damage)
+		}
+	})
+}
+
 func TestTerminalSemanticProjectorConsumesAutowrapModeRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
