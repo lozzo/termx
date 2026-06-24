@@ -138,7 +138,7 @@ func TestTerminalSemanticProjectorCodexRawDamageSignals(t *testing.T) {
 	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
-	if stats.DamageBatches == 0 || stats.WriteSpanOps == 0 || stats.ClearToEOLOps == 0 {
+	if stats.DamageBatches == 0 || stats.WriteSpanOps == 0 {
 		t.Fatalf("projector must observe Codex vterm damage ops, got %#v", stats)
 	}
 	window, err := server.LatestWindow("term-1", 160, 20)
@@ -304,6 +304,37 @@ func TestTerminalSemanticProjectorPrefersOrderedSemanticOps(t *testing.T) {
 	}
 	if !historyWindowContainsText(window, "abcXYZ") || historyWindowContainsText(window, "stale-screen-diff") {
 		t.Fatalf("history projector must prefer ordered semantic ops over screen diff ops, got %#v", window.Rows)
+	}
+}
+
+func TestTerminalSemanticProjectorUsesSemanticClearControl(t *testing.T) {
+	pipeline := newTerminalHistoryPipeline(12, 3)
+	batch := terminalSemanticBatch{
+		Damages: []vterm.WriteDamage{{
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("abcdef")},
+				{Code: vterm.ScreenOpControl, Control: "cub", Row: 0, Col: 2, Mode: 4},
+				{Code: vterm.ScreenOpControl, Control: "el", Row: 0, Col: 2, Mode: 0},
+			},
+			Ops: []vterm.DamageOp{
+				{Code: vterm.ScreenOpClearToEOL, Row: 0, Col: 0},
+			},
+			SizeCols: 12,
+			SizeRows: 3,
+		}},
+		Cols:            12,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(12, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "ab") || historyWindowContainsText(window, "abcdef") {
+		t.Fatalf("semantic clear control should drive erase without using screen diff clear, got %#v", window.Rows)
 	}
 }
 

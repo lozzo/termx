@@ -3205,7 +3205,7 @@ func semanticOpsFromDirectOps(ops []DamageOp) []DamageOp {
 	out := make([]DamageOp, 0, len(ops))
 	for _, op := range ops {
 		switch op.Code {
-		case ScreenOpWriteSpan, ScreenOpClearToEOL, ScreenOpClearRect, ScreenOpScrollRect, ScreenOpControl, ScreenOpModes:
+		case ScreenOpWriteSpan, ScreenOpScrollRect, ScreenOpControl, ScreenOpModes:
 			out = append(out, op)
 		}
 	}

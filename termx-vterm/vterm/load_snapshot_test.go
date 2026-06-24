@@ -1224,6 +1224,27 @@ func TestVTermWriteWithDamageEmitsCursorControlOps(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abcdef\x1b[4D\x1b[K"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if firstOpWithCode(t, damage, ScreenOpClearToEOL).Code != ScreenOpClearToEOL {
+		t.Fatalf("expected screen diff clear op, got %#v", damage.Ops)
+	}
+	semanticEL := firstSemanticControlOp(t, damage, "el")
+	if semanticEL.Mode != 0 {
+		t.Fatalf("expected semantic EL mode 0, got %#v", semanticEL)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpClearToEOL || op.Code == ScreenOpClearRect {
+			t.Fatalf("screen diff clear must not be semantic op, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+}
+
 func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
 	vt := New(80, 24, 100, nil)
 	prevWithDamage := safeEmulatorWriteWithDamage
