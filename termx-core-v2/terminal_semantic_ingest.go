@@ -107,7 +107,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 				stats.ClearToEOLOps++
 			case vterm.ScreenOpControl:
 				stats.ControlOps++
-				if op.Control == "el" {
+				if op.Control == "el" || op.Control == "ech" {
 					stats.ClearToEOLOps++
 				} else if op.Control == "ed" {
 					stats.EraseDisplayOps++
@@ -321,7 +321,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
+	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
 		return true
 	default:
 		return false
@@ -852,6 +852,12 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorHorizontalAbsolute, Count: op.Col + 1})
 	case "cup", "vpa":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorPosition, Row: op.Row + 1, Column: op.Col + 1})
+	case "ech":
+		return pipeline.track.Apply(history.HistoryEvent{
+			Kind:  history.EventEraseCharacters,
+			Count: op.Mode,
+			Style: historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
+		})
 	case "el":
 		return pipeline.track.Apply(history.HistoryEvent{
 			Kind:      history.EventEraseInLine,

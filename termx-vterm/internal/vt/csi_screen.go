@@ -18,5 +18,6 @@ func (e *Emulator) eraseCharacterWithBlank(n int, blank *uv.Cell) {
 	rect := uv.Rect(x, y, n, 1)
 	e.scr.FillArea(blank, rect)
 	e.atPhantom = false
+	e.scr.damage.recordControlWithCell("ech", x, y, n, blank)
 	// ECH does not move the cursor.
 }

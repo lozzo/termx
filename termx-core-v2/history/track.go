@@ -93,6 +93,8 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 		return track.cursorDown(event.Count)
 	case EventCursorPosition:
 		return track.cursorPosition(event.Row, event.Column)
+	case EventEraseCharacters:
+		return track.eraseCharacters(event.Count, eraseBlankStyle(event.Style))
 	case EventEraseInLine:
 		return track.eraseInLine(event.EraseMode, event.EraseCols, eraseBlankStyle(event.Style))
 	case EventEraseInDisplay:
@@ -650,6 +652,36 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 	track.activeLine = line.ID
 	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
 	track.overwrite = false
+	track.setGeneration(nextGeneration)
+	return nil
+}
+
+func (track *HistoryTrack) eraseCharacters(count int, style CellStyle) error {
+	if track.altScreen || count <= 0 || track.activeLine == 0 {
+		return nil
+	}
+	if !track.frontier.Contains(track.activeLine) && !track.committed.Contains(track.activeLine) {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return nil
+	}
+	line, ok := track.store.Line(track.activeLine)
+	if !ok {
+		return nil
+	}
+	line.Cells = eraseCharacterCellsAtColumn(line.Cells, track.activeCol, count, style)
+	line.TailFill = nil
+	line.Dirty = true
+	nextGeneration := track.nextGeneration()
+	line.ContentGeneration = nextGeneration
+	line, err := track.replaceOwnedLine(line)
+	if err != nil {
+		return err
+	}
+	track.activeLine = line.ID
+	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
+	track.overwrite = true
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -1679,6 +1711,27 @@ func eraseLineCellsAtColumn(existing []Cell, column int, mode int, screenCols in
 		eraseFrom = eraseTo
 	}
 	for i := eraseFrom; i < eraseTo; i++ {
+		base[i] = Cell{Text: " ", Width: 1, Style: style}
+	}
+	return compactMutationCells(base)
+}
+
+func eraseCharacterCellsAtColumn(existing []Cell, column int, count int, style CellStyle) []Cell {
+	base := expandUnmeasuredCellsForMutation(existing)
+	if len(base) == 0 || count <= 0 {
+		return base
+	}
+	if column < 0 {
+		column = 0
+	}
+	if column >= len(base) {
+		return compactMutationCells(base)
+	}
+	eraseTo := column + count
+	if eraseTo > len(base) {
+		eraseTo = len(base)
+	}
+	for i := column; i < eraseTo; i++ {
 		base[i] = Cell{Text: " ", Width: 1, Style: style}
 	}
 	return compactMutationCells(base)

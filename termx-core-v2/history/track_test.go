@@ -341,6 +341,23 @@ func TestHistoryTrackEraseInLineMutatesCurrentMutableLine(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackEraseCharactersMutatesFixedCellRange(t *testing.T) {
+	track := NewHistoryTrack()
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ABCDE")},
+		HistoryEvent{Kind: EventCursorHorizontalAbsolute, Count: 2},
+		HistoryEvent{Kind: EventEraseCharacters, Count: 2},
+	)
+
+	line := requireLine(t, track, 1)
+	if got := lineText(line); got != "A  DE" {
+		t.Fatalf("ECH should blank exactly two cells from cursor, got %q cells=%#v", got, line.Cells)
+	}
+	if got := track.CommittedIDs(); len(got) != 0 {
+		t.Fatalf("erase-characters must stay in mutable frontier, got committed %v", got)
+	}
+}
+
 func TestHistoryTrackEraseInLinePreservesStyledBlankToVisualRowEnd(t *testing.T) {
 	track := NewHistoryTrack()
 	style := CellStyle{BG: "idx:24"}
