@@ -39,6 +39,9 @@ func (QuitMsg) isMsg() {}
 // InputMsg 是 TerminalHost 输入事件进入 message path 的边界消息。
 type InputMsg struct {
 	Event input.InputEvent
+	// 中文说明：runtime 命中测试已经确认 raw mouse 属于前台 terminal；
+	// UI/copy reducer 必须避让，交给 terminal input router 发送给子进程。
+	TerminalMousePassthrough bool
 }
 
 func (InputMsg) isMsg() {}
@@ -1050,6 +1053,12 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		if msg, ok := runtime.overlayMouseSelectMsg(inputMsg.Event, resolution); ok {
 			return msg
 		}
+		// 中文说明：前台程序启用 mouse tracking 后，raw 鼠标事件归子进程所有；
+		// 只有未被 terminal 接管的滚轮才作为 TermX infinite history 入口。
+		if inputMsg.Event.RawSeq != "" && runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
+			inputMsg.TerminalMousePassthrough = true
+			return inputMsg
+		}
 		if msg, ok := runtime.copyModeMouseWheelEnterMsg(inputMsg.Event, resolution); ok {
 			return msg
 		}
@@ -1057,9 +1066,6 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 			return msg
 		}
 		if inputMsg.Event.RawSeq != "" {
-			if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
-				return msg
-			}
 			if runtime.mouseWheelCanRouteToCopyMode(inputMsg.Event, resolution) {
 				return msg
 			}
@@ -1131,7 +1137,8 @@ func (runtime *AppRuntime) dispatchMouseHitRegion(msg Msg) Msg {
 		return activationMsg
 	}
 	if runtime.mouseEventCanPassthrough(inputMsg.Event, resolution) {
-		return msg
+		inputMsg.TerminalMousePassthrough = true
+		return inputMsg
 	}
 	// 中文说明：history row 是内容前景命中区；点击非 active pane 的历史文本时必须先切焦点，
 	// 不能直接进入 copy selection，否则文本区域会吞掉 panel focus。

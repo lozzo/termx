@@ -308,6 +308,15 @@ func TestUIModesSwallowUnboundKeysAndMouseRequiresTracking(t *testing.T) {
 	if intent.Kind != IntentTerminalInput || !intent.RawMouse || string(intent.Bytes) != mouse.RawSeq {
 		t.Fatalf("mouse tracking should raw passthrough, got %#v", intent)
 	}
+	wheel := InputEvent{Kind: EventKindMouse, Mouse: MouseWheelUp, RawSeq: "\x1b[<64;10;5M"}
+	intent = RouteWithOptions(wheel, RouteOptions{TerminalMousePassthrough: true})
+	if intent.Kind != IntentTerminalInput || !intent.RawMouse || string(intent.Bytes) != wheel.RawSeq {
+		t.Fatalf("tracked wheel should passthrough before entering copy mode, got %#v", intent)
+	}
+	intent = RouteWithOptions(wheel, RouteOptions{CopyModeActive: true, TerminalMousePassthrough: true})
+	if intent.Kind != IntentRequestOlder {
+		t.Fatalf("active copy mode should keep wheel for history, got %#v", intent)
+	}
 }
 
 func boolKey(value bool) string {

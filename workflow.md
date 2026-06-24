@@ -238,6 +238,8 @@
 | R198. SK 终端慢流不可能三角备忘 | 完成 | `workflow.md`、`terminal-live-stream-tradeoff.md` | 记录完整 PTY、本地不丢和不反压程序三者不能同时成立；后续实时展示回到 core latest screen，完整历史走 core logical-line history |
 | R199. SK App local Hub JSON 响应诊断修复 | 完成 | `remote-ui/`、`termx-app/`、`termx-remote/localweb/static`、按需 `workflow.md` | 已修复 local/hub 连接中 `pair_...` pairing id 或损坏 runtime token 暴露 JSON.parse/invalid token 原始错误的问题；按真实 protobuf session token 解析 answer proof session id，缓存 token 失效会自动重新配对，配对后刷新 terminal inventory，并已用 Chrome 跑通 localweb 配对和打开 terminal |
 | R200. SK localweb 终端打开链路收口 | 完成 | `remote-ui/`、`termx-app/`、`termx-remote/localweb/static`、`workflow.md` | 浏览器 localweb 打开 terminal 链路已收口：Web/Native session 生命周期统一为 `ManagedRtcSession`，浏览器 API datachannel lease close 不再关闭共享 session，raw API channel close 可恢复重建；桌面端 terminal body 固定在 grid 1fr 行避免 xterm 0 高，初始 untrusted fit 不会把 core PTY resize 成 1 行；Chrome 验收已看到输出并能输入回显 |
+| R201A. SK TUI 前台程序鼠标滚轮透传 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复 Codex、Claude Code、opencode 等前台 TUI 已启用 terminal mouse tracking 时，raw 鼠标滚轮被 TermX 抢先进入无限历史的问题；前台 terminal 内容区优先透传 raw mouse，未启用 tracking 时才进入 TermX copy/history |
+| R201. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入
 
@@ -299,7 +301,8 @@
 - `R198` 已完成：`terminal-live-stream-tradeoff.md` 已记录终端慢消费者不可能三角，明确最新屏用于实时展示，完整历史必须走 core-v2 logical-line history，客户端本地 scrollback 只允许作为缓存。
 - `R199` 已完成：App/local web 会把缓存里的 `pair_...` pairing session id 视为错误 runtime token 并清理；损坏或服务端拒绝的 runtime token 会走 auth failure，清缓存并打开重新配对；Hub 成功响应若不是 JSON 会带 endpoint/status/body preview；answer-proof 验证按 Go `tokenpb.Claims` protobuf payload 读取 `session_id`，不再把合法 `session_token` 当 JSON 解析失败；配对成功后会刷新 terminal inventory。准入已通过 `remote-ui` focused tests/typecheck/test/build:localweb、`termx-app` build、`termx-remote` 全量 Go tests、CLI remote focused tests、`git diff --check`，并用 Chrome DevTools Protocol 跑通隔离 local runtime：坏 token -> 重新配对 -> terminal inventory 刷新 -> 打开 `browser-smoke-final`，页面无 `Unexpected token` 或 `invalid session token`。
 - `R200` 已完成：`remote-ui`/`termx-app` 现在共享 `ManagedRtcSession` 生命周期接口，Browser/Native 两套实现都必须提供 `subscribeConnectionState`、`onDisconnect`、`isAlive`、`handleAppResume`、`waitUntilConnected` 和 `closeTerminalDataChannel`；浏览器 API datachannel lease close 不再关闭底层共享 channel，raw API channel close 只清缓存并按需重建，不再误判为整条 WebRTC session 失败。localweb 桌面端 terminal header/body/keybar 使用显式 grid row，body 固定在 1fr 行并保持 `h-full`，解决 `md:hidden` header 让 xterm 落入 auto 行导致 0 高的问题；初始 1-row fit 仍被拦截，避免 core PTY 被压扁。准入已通过 `remote-ui` typecheck/test/build:localweb、`termx-app` build、`git diff --check`；Chrome DevTools Protocol 隔离验证 `http://127.0.0.1:58955/localweb.html`：配对 -> 打开 `r200-final`，桌面截图可见 `R200_FINAL_READY` 和 `R200_FINAL_ECHO:keyevent...`，terminal rect 约 `886x912`，无 `session_failed`、`connect_failed`、`Unexpected token` 或 `browser WebRTC api channel closed`。
-- 当前任务队列已无 `待开始`、`进行中` 或 `阻塞` 切片；后续新增目标必须先更新本文件。
+- `R201A` 已完成：TUI 鼠标路由现在在 runtime 命中测试确认 active terminal 内容区且前台程序启用 mouse tracking 时，为 raw mouse 标记 terminal passthrough；UI/copy reducer 避让，terminal input router 发送 raw seq 给子进程。未启用 tracking 的滚轮仍进入 authoritative logical-line copy/history，已通过 `cd termx-tui-v3 && go test ./... -count=1`。
+- `R201` 待开始：Web 桌面 terminal 可视区修复保留在后续切片；已有 remote-ui/localweb 未提交改动不纳入当前 TUI 鼠标修复。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
 - 当前已知环境缺口：本机没有 Android SDK，`termx-app/android/local.properties` 指向的 `/Users/lozzow/Library/Android/sdk` 不存在；OpenJDK 21 已通过 Homebrew 安装。Android/Kotlin 编译未作为当前 checkpoint 的通过条件。

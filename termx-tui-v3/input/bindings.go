@@ -227,6 +227,11 @@ func routeKey(event InputEvent, options RouteOptions) Intent {
 }
 
 func routeMouse(event InputEvent, options RouteOptions) Intent {
+	// 中文说明：copy/history 尚未接管时，前台 terminal 的 mouse tracking 优先于滚轮进历史；
+	// 一旦 copy/history 已经激活，滚轮仍属于 TermX history。
+	if !options.CopyModeActive && options.TerminalMousePassthrough && event.RawSeq != "" {
+		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte(event.RawSeq), RawMouse: true}
+	}
 	switch event.Mouse {
 	case MouseWheelUp:
 		if options.CopyModeActive {
@@ -237,9 +242,6 @@ func routeMouse(event InputEvent, options RouteOptions) Intent {
 		if options.CopyModeActive {
 			return Intent{Kind: IntentMouseSelect, Event: event}
 		}
-	}
-	if options.TerminalMousePassthrough && event.RawSeq != "" {
-		return Intent{Kind: IntentTerminalInput, Event: event, Bytes: []byte(event.RawSeq), RawMouse: true}
 	}
 	return Intent{Kind: IntentNone, Event: event}
 }

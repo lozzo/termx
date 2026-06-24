@@ -3577,6 +3577,63 @@ func TestInteractiveRuntimeTerminalMouseTrackingPassthroughOnlyFromContent(t *te
 	}
 }
 
+func TestInteractiveRuntimeTrackedWheelPassthroughDoesNotEnterCopyMode(t *testing.T) {
+	core := &services.FakeCoreClient{
+		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
+			state.HistoryWindowReplace,
+			"term-1",
+			"tok-1",
+			78,
+			7,
+			[]state.HistoryRow{{Text: "history", LineID: 20}},
+		)}},
+	}
+	terminal := &services.FakeTerminalService{
+		AttachResult: services.TerminalAttachResult{TerminalID: "term-1", Channel: 4, Cols: 80, Rows: 24},
+	}
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	runtime := NewInteractiveRuntime(
+		state.Root{},
+		host,
+		NewSyncEffectRunner(),
+		LiveDeps{Terminal: terminal},
+		CopyModeDeps{Core: core},
+	)
+	if err := runtime.Post(LiveAttachMsg{Config: LiveConfig{TerminalID: "term-1", Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("post attach: %v", err)
+	}
+	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
+		TerminalID: "term-1",
+		Cols:       78,
+		Rows:       22,
+		Lines:      []string{"tracked wheel"},
+		Modes:      state.LiveTerminalModes{MouseTracking: true, MouseSGR: true},
+	}}); err != nil {
+		t.Fatalf("post live surface: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain setup: %v", err)
+	}
+	content := frameHitRegion(t, lastRuntimeFrame(t, host), render.HitRegionPaneContent, state.DefaultPaneID)
+	wheel := mouseEventAt(content.Rect)
+	wheel.Mouse = input.MouseWheelUp
+	wheel.RawSeq = "\x1b[<64;10;5M"
+
+	if err := host.SendInput(wheel); err != nil {
+		t.Fatalf("send tracked wheel: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain tracked wheel: %v", err)
+	}
+	if len(terminal.Inputs) != 1 || string(terminal.Inputs[0].Bytes) != wheel.RawSeq {
+		t.Fatalf("tracked wheel should passthrough raw SGR, got %#v", terminal.Inputs)
+	}
+	if len(core.LatestRequests) != 0 || runtime.State().CopyMode.Active || runtime.State().CopyMode.Entering {
+		t.Fatalf("tracked wheel must not enter copy/history, latest=%#v copy=%#v", core.LatestRequests, runtime.State().CopyMode)
+	}
+}
+
 func TestAppRuntimeAutoDismissesToastsOnRuntimeTick(t *testing.T) {
 	host := NewFakeTerminalHost(8)
 	host.SetSize(80, 20)

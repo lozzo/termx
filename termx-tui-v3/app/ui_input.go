@@ -53,6 +53,9 @@ func NewUIInputReducer() Reducer {
 			root.Shell = shell.CloseOverlay()
 			return root.Advance(), []Effect{handledEffect{}}
 		}
+		if inputMsg.TerminalMousePassthrough {
+			return root, nil
+		}
 		if shell.Overlay.Open && shell.Overlay.Kind == state.OverlayTerminalPicker {
 			return reduceTerminalPickerInput(root, inputMsg.Event)
 		}

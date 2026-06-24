@@ -233,6 +233,9 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 	return func(root state.Root, msg Msg) (state.Root, []Effect) {
 		switch msg := msg.(type) {
 		case InputMsg:
+			if msg.TerminalMousePassthrough {
+				return root, nil
+			}
 			root, activeViewID := rootWithActiveCopyHistorySession(root)
 			copyOwnsInput := copyModeOwnsActiveInput(root)
 			intent := input.Route(msg.Event, copyOwnsInput)

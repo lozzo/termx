@@ -68,7 +68,7 @@ func reduceTerminalInputRoute(root state.Root, msg InputMsg, deps LiveDeps) (sta
 	}
 	intent := input.RouteWithOptions(msg.Event, input.RouteOptions{
 		CopyModeActive:           false,
-		TerminalMousePassthrough: liveMousePassthroughEnabled(root, msg.Event, target),
+		TerminalMousePassthrough: msg.TerminalMousePassthrough || liveMousePassthroughEnabled(root, msg.Event, target),
 	})
 	if intent.Kind != input.IntentTerminalInput || len(intent.Bytes) == 0 {
 		logTerminalInputRoute(deps, root, terminalInputRouteLog{
