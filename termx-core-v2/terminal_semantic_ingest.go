@@ -19,15 +19,15 @@ var terminalSemanticIngestBatchHook func(terminalSemanticBatch)
 var terminalSemanticProjectorHook func(terminalSemanticProjectorStats)
 
 type terminalSemanticProjectorStats struct {
-	DamageBatches     int
-	WriteSpanOps      int
-	ClearToEOLOps     int
-	EraseDisplayOps   int
-	ModeOps           int
-	ControlOps        int
-	ScrollbackAppends int
-	AltExitFrames     int
-	FullReplaceOnly   int
+	DamageBatches      int
+	WriteSpanOps       int
+	ClearToEOLOps      int
+	EraseDisplayOps    int
+	ModeOps            int
+	ControlOps         int
+	ScrollbackAppends  int
+	AltExitFrames      int
+	FullReplaceOnly    int
 	SemanticProjectors int
 	RawFallbacks       int
 }
@@ -198,8 +198,9 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 			return false
 		}
 		lowRows := damage.SizeRows > 0 && damage.SizeRows <= 2
+		tallPlainScrollOut := rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage)
 		if len(damage.ScrollbackAppend) > 0 {
-			if !lowRows {
+			if !lowRows && !tallPlainScrollOut {
 				return false
 			}
 			scrollbackAppends += len(damage.ScrollbackAppend)
@@ -220,7 +221,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows {
+					if !lowRows && !tallPlainScrollOut {
 						return false
 					}
 					linefeedControls++
@@ -236,7 +237,10 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Dy < 0 {
-					if !lowRows || len(damage.ScrollbackAppend) == 0 {
+					if len(damage.ScrollbackAppend) == 0 {
+						return false
+					}
+					if !lowRows && !tallPlainScrollOut {
 						return false
 					}
 					hasOps = true
@@ -276,6 +280,57 @@ func rawSharedModeCanUseSemanticOp(op vterm.DamageOp) bool {
 	default:
 		return false
 	}
+}
+
+func rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	// 中文说明：R201Z 只放开大高度普通 primary scroll-out；
+	// styled/link/宽字符 footprint 仍留给后续语义切片，不能被这里抢走。
+	if damage.SizeRows <= 2 || len(damage.ScrollbackAppend) == 0 || damage.RequiresFullReplace || len(damage.AlternateAppend) > 0 {
+		return false
+	}
+	for _, op := range damage.ScrollbackAppend {
+		for _, cell := range op.Cells {
+			if !rawSharedPlainHistoryCell(cell) {
+				return false
+			}
+		}
+		for _, run := range op.Runs {
+			if run.Style != (vterm.CellStyle{}) || containsNonSingleWidthRune(run.Text) {
+				return false
+			}
+		}
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code != vterm.ScreenOpWriteSpan {
+			continue
+		}
+		for _, cell := range op.Cells {
+			if !rawSharedPlainHistoryCell(cell) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func rawSharedPlainHistoryCell(cell vterm.Cell) bool {
+	return cell.Style == (vterm.CellStyle{}) &&
+		cell.LinkURL == "" &&
+		cell.LinkParams == "" &&
+		(cell.Width == 0 || cell.Width == 1) &&
+		!containsNonSingleWidthRune(cell.Content)
+}
+
+func containsNonSingleWidthRune(text string) bool {
+	for _, r := range text {
+		if r == '\t' || r == '\n' || r == '\r' {
+			return true
+		}
+		if r < 0x20 || r >= 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []vterm.WriteDamage) (bool, error) {

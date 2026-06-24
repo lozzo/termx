@@ -821,6 +821,51 @@ func TestTerminalSemanticProjectorConsumesLowRowsMultiScrollRawBatch(t *testing.
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesTallRowsPrimaryScrollOutRawBatch(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.ScrollbackAppends += next.ScrollbackAppends
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(12, 5, 100, nil)
+	raw := "one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\nseven"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if len(damage.ScrollbackAppend) < 2 {
+		t.Fatalf("tall rows batch should expose primary scrollback ownership exits, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(12, 5)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            12,
+		Rows:            5,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ScrollbackAppends < 2 {
+		t.Fatalf("tall primary scroll-out batch should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(12, 12)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, want := range []string{"one", "two", "three", "four", "five", "six", "seven"} {
+		if strings.Count(text, want) != 1 {
+			t.Fatalf("tall primary scroll-out semantic batch should preserve %q once, got %q rows=%#v damage=%#v", want, text, window.Rows, damage)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.T) {
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)
