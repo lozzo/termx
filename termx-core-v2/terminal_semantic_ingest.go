@@ -212,6 +212,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		tallLinkScrollOut := rawSharedTallLinkScrollOutDamageCanUseSemanticOps(damage)
 		tallASCIIText := rawSharedTallASCIITextDamageCanUseSemanticOps(damage)
 		tallGraphemeText := rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage)
+		tallLinefeedNewlineText := rawSharedTallLinefeedNewlineTextDamageCanUseSemanticOps(damage)
 		if len(damage.ScrollbackAppend) > 0 {
 			if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut {
 				return false
@@ -234,7 +235,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut && !tallASCIIText && !tallGraphemeText && !fullReplaceSemantic && !altScreenRunning {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut && !tallASCIIText && !tallGraphemeText && !tallLinefeedNewlineText && !fullReplaceSemantic && !altScreenRunning {
 						return false
 					}
 					linefeedControls++
@@ -330,7 +331,7 @@ func rawSharedControlCanUseSemanticOp(control string) bool {
 
 func rawSharedModeCanUseSemanticOp(op vterm.DamageOp) bool {
 	if !op.Private {
-		return false
+		return op.Mode == 20
 	}
 	switch op.Mode {
 	case 25, 47, 1047, 1049, 1000, 1002, 1003, 1004, 1006, 2004, 2026:
@@ -563,6 +564,42 @@ func rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 		}
 	}
 	return hasText
+}
+
+func rawSharedTallLinefeedNewlineTextDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	// 中文说明：ANSI LNM mode 20 只影响同批 vterm 如何把 LF 解码为 LF/CR；
+	// history 不保存 mode truth，只消费 vterm 已输出的 ordered control/text 语义。
+	if damage.SizeRows <= 2 || len(damage.ScrollbackAppend) > 0 || damage.RequiresFullReplace || len(damage.AlternateAppend) > 0 {
+		return false
+	}
+	hasMode20 := false
+	hasText := false
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) == 0 {
+				continue
+			}
+			for _, cell := range op.Cells {
+				if !rawSharedGraphemeTextCell(cell) {
+					return false
+				}
+			}
+			hasText = true
+		case vterm.ScreenOpControl:
+			if op.Control != "lf" && op.Control != "ind" && op.Control != "soft-wrap" && op.Control != "cr" {
+				return false
+			}
+		case vterm.ScreenOpModes:
+			if op.Private || op.Mode != 20 {
+				return false
+			}
+			hasMode20 = true
+		default:
+			return false
+		}
+	}
+	return hasMode20 && hasText
 }
 
 func rawSharedPlainHistoryCell(cell vterm.Cell) bool {

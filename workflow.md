@@ -275,6 +275,7 @@
 | R201AI. SK OSC8 scroll-out raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 rows>2 primary scroll-out 中带 OSC8 link footprint 的 raw batch：shared vterm semantic text/link cells 与 scroll-out ownership 驱动 history，不回退 `historyANSIParser`，不把 vterm scrollback row 当 history truth |
 | R201AJ. SK backward tab raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI Z` backward tab cursor movement：vterm 在 ordered semantic stream 记录 CBT，core-v2 用 shared vterm control 投影 cursor column，不回退 `historyANSIParser` |
 | R201AK. SK erase-character raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI X` erase character：vterm 在 ordered semantic stream 记录 ECH，core-v2 用精确 erase-character history event 擦除 N 个 cells，不回退 `historyANSIParser`，不把 ECH 混同为 EL |
+| R201AL. SK linefeed-newline mode raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 ANSI LNM mode 20 raw shared batch：vterm 负责解释 LF 是否附带 CR，core-v2 放行同批 ordered mode/control/text 语义，不回退 `historyANSIParser`，不把 mode 20 写成 history truth |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入
@@ -367,6 +368,7 @@
 - `R201AI` 已完成：raw shared semantic gate 新增 OSC8 link scroll-out 专用边界，只有 ordered `SemanticOps` 中出现 link cell 且同批 scrollback append 只作为 primary screen ownership 证据时才放行；focused harness 证明 rows>2 OSC8 scroll-out 使用 shared vterm semantic projector、`RawFallbacks == 0`，link metadata 保留在 logical-line history，准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R201AJ` 已完成：vterm `CSI Z`/CBT 现在在 ordered semantic stream 中记录最终 cursor column，core-v2 raw shared semantic gate 放行 `cbt` 并投影为 cursor horizontal absolute；focused harness 证明 `123456789 CSI Z XY` 使用 shared vterm semantic projector、`RawFallbacks == 0`，按真实 tab stop 在 col 8 覆盖。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
 - `R201AK` 已完成：vterm `CSI X`/ECH 现在在 ordered semantic stream 中记录精确 count 和 blank style，core-v2 新增 `EventEraseCharacters` 并在 raw shared projector 中擦除固定 cell range；focused harness 证明 `ABCDE CSI 2G CSI 2X` 使用 shared vterm semantic projector、`RawFallbacks == 0`，结果为 `A  DE`，不会扩大成 erase-to-EOL。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
+- `R201AL` 已完成：raw shared gate 现在允许 ANSI LNM mode 20 专用 batch，vterm 同批 mode/text/LF/CR 语义决定换行后 cursor 位置，core-v2 对 mode 20 本身保持 history no-op；focused harness 证明 `CSI 20h abc LF Z CSI 20l` 使用 shared vterm semantic projector、`RawFallbacks == 0`，下一行 `Z` 从行首写入。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R202` 待开始：Web 桌面 terminal 可视区修复保留在后续切片；已有 remote-ui/localweb 未提交改动不纳入当前 core-v2 semantic ingest 切片。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
