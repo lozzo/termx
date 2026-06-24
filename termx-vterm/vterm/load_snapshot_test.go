@@ -1285,6 +1285,27 @@ func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[48;5;24mBG\x1b[K\x1b[0m"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	semanticEL := firstSemanticControlOp(t, damage, "el")
+	if semanticEL.Mode != 0 {
+		t.Fatalf("expected semantic EL mode 0, got %#v", semanticEL)
+	}
+	if len(semanticEL.Cells) != 1 || semanticEL.Cells[0].Style.BG != "idx:24" {
+		t.Fatalf("semantic EL should carry erase blank background, got %#v damage=%#v", semanticEL, damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpClearToEOL || op.Code == ScreenOpClearRect {
+			t.Fatalf("screen diff clear must not be semantic op, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+}
+
 func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
 	vt := New(80, 24, 100, nil)
 	prevWithDamage := safeEmulatorWriteWithDamage

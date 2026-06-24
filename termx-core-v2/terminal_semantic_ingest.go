@@ -96,6 +96,10 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 				stats.WriteSpanOps++
 			case vterm.ScreenOpClearToEOL:
 				stats.ClearToEOLOps++
+			case vterm.ScreenOpControl:
+				if op.Control == "el" {
+					stats.ClearToEOLOps++
+				}
 			}
 		}
 		stats.ScrollbackAppends += len(damage.ScrollbackAppend)
@@ -185,7 +189,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa":
+	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el":
 		return true
 	default:
 		return false
@@ -327,6 +331,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 			Kind:      history.EventEraseInLine,
 			EraseMode: op.Mode,
 			EraseCols: pipeline.cols,
+			Style:     historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
 		})
 	case "ed":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInDisplay, EraseMode: op.Mode})

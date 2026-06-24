@@ -400,6 +400,81 @@ func TestTerminalSemanticProjectorConsumesRealVTermRawSharedBatch(t *testing.T) 
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesRealVTermStyledErase(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.DamageBatches += next.DamageBatches
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.ClearToEOLOps += next.ClearToEOLOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(8, 2, 100, nil)
+	raw := "\x1b[48;5;24mBG\x1b[K\x1b[0m"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(8, 2)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            8,
+		Rows:            2,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.ClearToEOLOps == 0 {
+		t.Fatalf("styled EL raw batch should be consumed as vterm semantic clear, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(8, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "BG      " {
+		t.Fatalf("history latest should include styled erase blank footprint, got %#v damage=%#v", window.Rows, damage)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) != 8 {
+		t.Fatalf("history erase footprint should project as 8 cells, got %#v", cells)
+	}
+	for index, cell := range cells {
+		if cell.Width != 1 || cell.Style.BG != "idx:24" {
+			t.Fatalf("expected semantic styled erase cell %d to keep bg, got %#v rows=%#v", index, cell, window.Rows)
+		}
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesRealVTermPlainErase(t *testing.T) {
+	term := vterm.New(8, 2, 100, nil)
+	raw := "abcdef\x1b[4D\x1b[K"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(8, 2)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            8,
+		Rows:            2,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(8, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "ab") || historyWindowContainsText(window, "abcdef") {
+		t.Fatalf("plain raw EL should be driven by vterm semantic control, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorShadowParsesRawTextState(t *testing.T) {
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)

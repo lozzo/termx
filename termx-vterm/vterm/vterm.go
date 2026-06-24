@@ -395,7 +395,7 @@ func normalizeScreenOp(op DamageOp) DamageOp {
 	case ScreenOpModes:
 		return DamageOp{Code: op.Code, Mode: op.Mode, Private: op.Private, Enabled: op.Enabled}
 	case ScreenOpControl:
-		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode}
+		return DamageOp{Code: op.Code, Control: op.Control, Row: op.Row, Col: op.Col, Mode: op.Mode, Cells: op.Cells}
 	}
 	return op
 }
@@ -3175,13 +3175,17 @@ func (v *VTerm) semanticControlOpsFromCharmVTDamagesLocked(damages []charmvt.Dam
 			if d.Kind == "" {
 				continue
 			}
-			ops = append(ops, DamageOp{
+			op := DamageOp{
 				Code:    ScreenOpControl,
 				Control: d.Kind,
 				Row:     d.Y,
 				Col:     d.X,
 				Mode:    d.Mode,
-			})
+			}
+			if d.HasCell {
+				op.Cells = uvCellsToVTermDamageCells(v, []uv.Cell{d.Cell})
+			}
+			ops = append(ops, op)
 		case charmvt.ModeDamage:
 			ops = append(ops, DamageOp{
 				Code:    ScreenOpModes,
@@ -4263,13 +4267,17 @@ func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidt
 			if d.Kind == "" {
 				continue
 			}
-			ops = append(ops, DamageOp{
+			op := DamageOp{
 				Code:    ScreenOpControl,
 				Control: d.Kind,
 				Row:     d.Y,
 				Col:     d.X,
 				Mode:    d.Mode,
-			})
+			}
+			if d.HasCell {
+				op.Cells = uvCellsToVTermDamageCells(v, []uv.Cell{d.Cell})
+			}
+			ops = append(ops, op)
 		case charmvt.ModeDamage:
 			ops = append(ops, DamageOp{
 				Code:    ScreenOpModes,

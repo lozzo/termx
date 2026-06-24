@@ -596,20 +596,21 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		// bg color.
 		x, y := e.scr.CursorPosition()
 		w := e.scr.Width()
+		blank := e.scr.blankCell()
 
 		switch n {
 		case 0: // Erase from cursor to end of line
-			e.eraseCharacter(w - x)
+			e.eraseCharacterWithBlank(w-x, blank)
 		case 1: // Erase from start of line to cursor
 			rect := uv.Rect(0, y, x+1, 1)
-			e.scr.FillArea(e.scr.blankCell(), rect)
+			e.scr.FillArea(blank, rect)
 		case 2: // Erase entire line
 			rect := uv.Rect(0, y, w, 1)
-			e.scr.FillArea(e.scr.blankCell(), rect)
+			e.scr.FillArea(blank, rect)
 		default:
 			return false
 		}
-		e.scr.damage.recordControl("el", x, y, n)
+		e.scr.damage.recordControlWithCell("el", x, y, n, blank)
 		return true
 	})
 
