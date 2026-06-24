@@ -852,6 +852,9 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			damage.DirectDamageCells = directStats.Cells
 		} else {
 			damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "screen_shape_changed")
+			if hasDirectDamage {
+				damage.SemanticOps = v.semanticControlOpsFromCharmVTDamagesLocked(directDamages)
+			}
 		}
 		damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
 		traceCount("vterm.write.changed_rows", damageChangedRowCount(damage))

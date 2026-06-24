@@ -1620,6 +1620,10 @@ func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
 	if !damage.RequiresFullReplace {
 		t.Fatalf("expected full replace damage on alt-screen switch, got %#v", damage)
 	}
+	mode := firstSemanticModeOp(t, damage, 1049)
+	if !mode.Private || !mode.Enabled {
+		t.Fatalf("expected alt-screen enter semantic mode to survive full replace, got %#v ops=%#v", mode, damage.SemanticOps)
+	}
 	screen := vt.ScreenContent()
 	for row := range screen.Cells {
 		if strings.TrimSpace(rowToString(screen.Cells[row])) != "" {
@@ -1636,6 +1640,10 @@ func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
 	}
 	if !damage.RequiresFullReplace {
 		t.Fatalf("expected full replace damage when restoring main screen, got %#v", damage)
+	}
+	mode = firstSemanticModeOp(t, damage, 1049)
+	if !mode.Private || mode.Enabled {
+		t.Fatalf("expected alt-screen exit semantic mode to survive full replace, got %#v ops=%#v", mode, damage.SemanticOps)
 	}
 	screen = vt.ScreenContent()
 	if got := strings.TrimSpace(rowToString(screen.Cells[0])) + strings.TrimSpace(rowToString(screen.Cells[1])) + strings.TrimSpace(rowToString(screen.Cells[2])); got != "abc" {
@@ -2425,6 +2433,17 @@ func lastSemanticControlOp(t *testing.T, damage WriteDamage, control string) Dam
 		}
 	}
 	t.Fatalf("expected semantic control op %q in damage, got %#v", control, damage)
+	return DamageOp{}
+}
+
+func firstSemanticModeOp(t *testing.T, damage WriteDamage, mode int) DamageOp {
+	t.Helper()
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpModes && op.Mode == mode {
+			return op
+		}
+	}
+	t.Fatalf("expected semantic mode op %d in damage, got %#v", mode, damage)
 	return DamageOp{}
 }
 

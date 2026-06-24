@@ -28,6 +28,7 @@ type terminalSemanticProjectorStats struct {
 	ModeOps            int
 	ControlOps         int
 	ScrollbackAppends  int
+	AlternateAppends   int
 	AltExitFrames      int
 	FullReplaceOnly    int
 	SemanticProjectors int
@@ -116,6 +117,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			}
 		}
 		stats.ScrollbackAppends += len(damage.ScrollbackAppend)
+		stats.AlternateAppends += len(damage.AlternateAppend)
 	}
 	if len(batch.AltExitFrame) > 0 {
 		stats.AltExitFrames++
@@ -196,7 +198,8 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 	linefeedControls := 0
 	scrollbackAppends := 0
 	for _, damage := range damages {
-		if len(damage.AlternateAppend) > 0 {
+		altScreenRunning := rawSharedAltScreenRunningDamageCanUseSemanticOps(damage)
+		if len(damage.AlternateAppend) > 0 && !altScreenRunning {
 			return false
 		}
 		fullReplaceSemantic := rawSharedFullReplaceDamageCanUseSemanticOps(damage)
@@ -230,7 +233,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallASCIIText && !tallGraphemeText && !fullReplaceSemantic {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallASCIIText && !tallGraphemeText && !fullReplaceSemantic && !altScreenRunning {
 						return false
 					}
 					linefeedControls++
@@ -247,6 +250,10 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 				}
 				if op.Dy < 0 {
 					if len(damage.ScrollbackAppend) == 0 {
+						if altScreenRunning {
+							hasOps = true
+							continue
+						}
 						return false
 					}
 					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut {
@@ -268,6 +275,47 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		return false
 	}
 	return hasOps
+}
+
+func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	// 中文说明：AlternateAppend 只作为“这批结束后仍在 alt-screen”的边界证据；
+	// history 仍只消费同批 ordered SemanticOps，不能把 alt append 行当 primary truth。
+	if len(damage.AlternateAppend) == 0 || len(damage.ScrollbackAppend) > 0 || damage.RequiresFullReplace {
+		return false
+	}
+	hasSemantic := false
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) == 0 {
+				continue
+			}
+			for _, cell := range op.Cells {
+				if !rawSharedGraphemeTextCell(cell) {
+					return false
+				}
+			}
+			hasSemantic = true
+		case vterm.ScreenOpControl:
+			if !rawSharedControlCanUseSemanticOp(op.Control) {
+				return false
+			}
+			hasSemantic = true
+		case vterm.ScreenOpModes:
+			if !rawSharedModeCanUseSemanticOp(op) {
+				return false
+			}
+			hasSemantic = true
+		case vterm.ScreenOpScrollRect:
+			if op.Dx != 0 || op.Dy == 0 {
+				return false
+			}
+			hasSemantic = true
+		default:
+			return false
+		}
+	}
+	return hasSemantic
 }
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
