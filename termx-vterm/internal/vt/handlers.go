@@ -419,6 +419,12 @@ func (e *Emulator) registerDefaultEscHandlers() {
 		return true
 	})
 
+	e.RegisterEscHandler('E', func() bool {
+		// 中文说明：7-bit ESC E 与 C1 NEL 等价，统一暴露为 CR+LF 语义。
+		e.nextLine()
+		return true
+	})
+
 	e.RegisterEscHandler('H', func() bool {
 		// Horizontal Tab Set [ansi.HTS]
 		e.horizontalTabSet()

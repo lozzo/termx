@@ -1974,6 +1974,43 @@ func TestVTermWriteWithDamageC1NELKeepsSemanticOrder(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageESCNELKeepsSemanticOrder(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	raw := "abc\x1bEZ"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	cr := firstSemanticControlOp(t, damage, "cr")
+	if cr.Col != 3 || cr.Row != 0 {
+		t.Fatalf("expected ESC NEL to record CR from row=0 col=3, got %#v damage=%#v", cr, damage)
+	}
+	lf := firstSemanticControlOp(t, damage, "lf")
+	if lf.Row != 0 {
+		t.Fatalf("expected ESC NEL to record LF from row=0 after CR, got %#v damage=%#v", lf, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		}
+	}
+	want := []string{"write:abc", "control:cr", "control:lf", "write:Z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("ESC NEL semantic ops must preserve CR/LF raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if row0 := strings.TrimRight(rowText(vt.ScreenRowView(0), 16), " "); row0 != "abc" {
+		t.Fatalf("expected ESC NEL to keep first row text, got %q damage=%#v", row0, damage)
+	}
+	if row1 := strings.TrimRight(rowText(vt.ScreenRowView(1), 16), " "); row1 != "Z" {
+		t.Fatalf("expected ESC NEL to move next text to row start, got %q damage=%#v", row1, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticTabClear(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
