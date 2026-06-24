@@ -1452,8 +1452,11 @@ func TestProtocolServiceHistoryWindowPreservesStressTailAcrossFullscreenHomeClea
 	if latest.LogicalTotal < 100 {
 		t.Fatalf("fullscreen clear should commit stress primary page, got total=%d window=%#v", latest.LogicalTotal, latest)
 	}
-	if protocolHistoryWindowContainsText(latest, "CODEX_FULLSCREEN_MARK") {
-		t.Fatalf("active primary fullscreen frame must stay out of protocol history.window until exit, got %#v", latest.Rows)
+	if !protocolHistoryWindowContainsText(latest, "CODEX_FULLSCREEN_MARK") {
+		t.Fatalf("active primary fullscreen current frame should stay visible in protocol history.window, got %#v", latest.Rows)
+	}
+	if latest.LogicalTotal != 100 {
+		t.Fatalf("active primary fullscreen current frame must not count as committed logical history, got total=%d window=%#v", latest.LogicalTotal, latest)
 	}
 }
 

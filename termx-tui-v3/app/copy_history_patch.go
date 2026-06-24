@@ -331,9 +331,14 @@ func copyHistoryPatchCursor(history state.HistoryStore, copyMode state.CopyModeS
 		return render.Cursor{}
 	}
 	row := clampColumn(copyMode.Cursor.Row, 0, len(history.Rows)-1)
-	visibleRow := row - copyMode.ViewportTop
+	visibleTop := clampColumn(copyMode.ViewportTop, 0, len(history.Rows)-1)
+	visibleRow := row - visibleTop
 	if visibleRow < 0 {
 		visibleRow = 0
+	}
+	visibleRows := copyHistoryPatchVisibleRows(history, copyMode)
+	if visibleRows > 0 && visibleRow >= visibleRows {
+		visibleRow = visibleRows - 1
 	}
 	col := clampColumn(copyMode.Cursor.Col, 0, state.HistoryRowDisplayWidth(history.Rows[row]))
 	return render.Cursor{
@@ -342,6 +347,24 @@ func copyHistoryPatchCursor(history state.HistoryStore, copyMode state.CopyModeS
 		Col:     copyHistoryPatchPrefixWidth(history.Rows[row]) + col,
 		Shape:   render.CursorShapeBlock,
 	}
+}
+
+func copyHistoryPatchVisibleRows(history state.HistoryStore, copyMode state.CopyModeStore) int {
+	if len(history.Rows) == 0 {
+		return 0
+	}
+	top := clampColumn(copyMode.ViewportTop, 0, len(history.Rows)-1)
+	height := copyMode.ViewRows
+	if height <= 0 {
+		height = 8
+	}
+	if height <= 0 || top+height > len(history.Rows) {
+		height = len(history.Rows) - top
+	}
+	if height < 0 {
+		return 0
+	}
+	return height
 }
 
 func copyHistoryPatchCursorRect(history state.HistoryStore, copyMode state.CopyModeStore, rect render.Rect) render.Rect {

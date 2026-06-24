@@ -422,9 +422,13 @@ func copyHistoryCursor(history state.HistoryStore, copyMode state.CopyModeStore)
 	}
 	row := clampCopyColumn(copyMode.Cursor.Row, 0, len(history.Rows)-1)
 	visibleTop := copyHistoryViewportTop(history, copyMode)
+	visibleRows := copyVisibleRows(history, copyMode)
 	visibleRow := row - visibleTop
 	if visibleRow < 0 {
 		visibleRow = 0
+	}
+	if len(visibleRows) > 0 && visibleRow >= len(visibleRows) {
+		visibleRow = len(visibleRows) - 1
 	}
 	col := clampCopyColumn(copyMode.Cursor.Col, 0, state.HistoryRowDisplayWidth(history.Rows[row]))
 	return Cursor{

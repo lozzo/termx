@@ -247,9 +247,8 @@ func (track *HistoryTrack) latestLineIDs() []LogicalLineID {
 }
 
 func (track *HistoryTrack) appendLatestHistoryFrontierIDs(ids []LogicalLineID) []LogicalLineID {
-	if track.primaryFullscreenFrame {
-		return ids
-	}
+	// 中文说明：primary fullscreen frame 的 frontier 是当前帧投影，可以在
+	// latest/history 中可见；是否计入滚动历史只由 committed index 决定。
 	for _, id := range track.frontier.IDs() {
 		if !track.frontier.IsHidden(id) && !containsLineID(ids, id) {
 			ids = append(ids, id)

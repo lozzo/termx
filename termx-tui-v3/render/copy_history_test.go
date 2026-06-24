@@ -102,3 +102,25 @@ func TestCopyHistoryContentANSILineAnchorsAfterStyledWideCells(t *testing.T) {
 		t.Fatalf("tail fill should start after wide text footprint, got %q", ansi)
 	}
 }
+
+func TestCopyHistoryCursorClampsToVisibleViewport(t *testing.T) {
+	history := state.HistoryStore{
+		Cols: 10,
+		Rows: []state.HistoryRow{
+			{Text: "one", LineID: 1},
+			{Text: "two", LineID: 2},
+			{Text: "three", LineID: 3},
+			{Text: "four", LineID: 4},
+			{Text: "five", LineID: 5},
+		},
+	}
+	cursor := copyHistoryCursor(history, state.CopyModeStore{
+		Active:      true,
+		ViewportTop: 1,
+		ViewRows:    2,
+		Cursor:      state.CopyPosition{Row: 4, Col: 2},
+	})
+	if !cursor.Visible || cursor.Row != 1 {
+		t.Fatalf("copy cursor must stay inside visible viewport, got %#v", cursor)
+	}
+}

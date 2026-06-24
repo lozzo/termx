@@ -397,7 +397,7 @@ func TestLatestWindowIncludesEligibleMutableFrontier(t *testing.T) {
 	}
 }
 
-func TestLatestWindowExcludesActivePrimaryFullscreenFrame(t *testing.T) {
+func TestLatestWindowShowsActivePrimaryFullscreenFrameAsMutableTail(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(5)
 	applyHistoryEvents(t, track,
@@ -419,15 +419,26 @@ func TestLatestWindowExcludesActivePrimaryFullscreenFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"shell"}) {
-		t.Fatalf("active fullscreen frame must stay out of history latest, got %v rows=%#v", got, window.Rows)
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"shell", "header", "body", "prompt new"}) {
+		t.Fatalf("active fullscreen current frame should be visible as mutable latest tail, got %v rows=%#v", got, window.Rows)
 	}
-	if got := rowLineIDs(window.Rows); !reflect.DeepEqual(got, []LogicalLineID{1}) {
-		t.Fatalf("latest should keep only committed shell tail, got %v", got)
+	if got := rowLineIDs(window.Rows); !reflect.DeepEqual(got, []LogicalLineID{1, 2, 3, 4}) {
+		t.Fatalf("latest should keep committed shell plus current frame line ids, got %v", got)
+	}
+	if !window.Rows[0].Committed {
+		t.Fatalf("shell row should remain committed, rows=%#v", window.Rows)
+	}
+	for _, row := range window.Rows[1:] {
+		if row.Committed {
+			t.Fatalf("fullscreen current frame rows must stay mutable, rows=%#v", window.Rows)
+		}
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("mutable current frame must not increase committed history depth, total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
 }
 
-func TestFreezeSnapshotExcludesActivePrimaryFullscreenFrame(t *testing.T) {
+func TestFreezeSnapshotPinsActivePrimaryFullscreenFrameAsMutableTail(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(4)
 	applyHistoryEvents(t, track,
@@ -441,12 +452,19 @@ func TestFreezeSnapshotExcludesActivePrimaryFullscreenFrame(t *testing.T) {
 	snapshot := track.FreezePinnedSnapshot()
 	defer snapshot.ReleaseObserver()
 
-	if snapshot.VisibleLineCount() != 1 {
-		t.Fatalf("active fullscreen frame must not be frozen into copy snapshot, got count=%d", snapshot.VisibleLineCount())
+	if snapshot.VisibleLineCount() != 2 {
+		t.Fatalf("active fullscreen current frame should be frozen as mutable tail, got count=%d", snapshot.VisibleLineCount())
 	}
 	line, ok := snapshot.LineAt(0)
 	if !ok || lineText(line.Line) != "shell" || !line.Committed {
 		t.Fatalf("snapshot should only expose committed shell history, got line=%#v ok=%v", line, ok)
+	}
+	line, ok = snapshot.LineAt(1)
+	if !ok || lineText(line.Line) != "codex input" || line.Committed {
+		t.Fatalf("snapshot should expose mutable fullscreen current frame without committing it, got line=%#v ok=%v", line, ok)
+	}
+	if snapshot.CommittedLines != 1 {
+		t.Fatalf("fullscreen current frame must not count as committed history, got committed=%d", snapshot.CommittedLines)
 	}
 }
 

@@ -249,3 +249,30 @@ func TestCopyHistoryCursorOnlyMoveUsesCursorPatch(t *testing.T) {
 		t.Fatalf("cursor-only patch should carry visible cursor metadata, frame=%#v", copyHistoryPerfFrame)
 	}
 }
+
+func TestCopyHistoryPatchCursorClampsToVisibleViewport(t *testing.T) {
+	history := state.HistoryStore{
+		Cols: 10,
+		Rows: []state.HistoryRow{
+			{Text: "one", LineID: 1},
+			{Text: "two", LineID: 2},
+			{Text: "three", LineID: 3},
+			{Text: "four", LineID: 4},
+			{Text: "five", LineID: 5},
+		},
+	}
+	copyMode := state.CopyModeStore{
+		Active:      true,
+		ViewportTop: 1,
+		ViewRows:    2,
+		Cursor:      state.CopyPosition{Row: 4, Col: 2},
+	}
+	cursor := copyHistoryPatchCursor(history, copyMode)
+	if !cursor.Visible || cursor.Row != 1 {
+		t.Fatalf("patch cursor must stay inside visible viewport, got %#v", cursor)
+	}
+	rect := copyHistoryPatchCursorRect(history, copyMode, render.Rect{X: 4, Y: 6, W: 10, H: 2})
+	if rect != (render.Rect{X: 6, Y: 7, W: 1, H: 1}) {
+		t.Fatalf("patch cursor rect should remain inside content rect, got %#v", rect)
+	}
+}

@@ -1044,8 +1044,11 @@ func TestTerminalIngestOutputFullscreenHomeClearPreservesStressTail(t *testing.T
 	if window.TotalLines < 100 {
 		t.Fatalf("fullscreen home clear must commit all primary stress lines, got total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
-	if historyWindowContainsText(window, "CODEX_FULLSCREEN_MARK") {
-		t.Fatalf("active primary fullscreen frame must stay out of history latest until exit, got %#v", window.Rows)
+	if !historyWindowContainsText(window, "CODEX_FULLSCREEN_MARK") {
+		t.Fatalf("active primary fullscreen current frame should stay visible in latest, got %#v", window.Rows)
+	}
+	if window.TotalLines != 100 {
+		t.Fatalf("active primary fullscreen current frame must not count as committed history, got total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
 }
 
@@ -1076,17 +1079,22 @@ func TestTerminalIngestOutputRepeatedFullscreenHomeClearKeepsLatestFrameOnly(t *
 			t.Fatalf("latest should contain %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
 		}
 	}
-	for _, stale := range []string{"frame-one", "frame-old", "frame-two", "frame-new"} {
+	for _, stale := range []string{"frame-one", "frame-old"} {
 		if historyWindowContainsText(window, stale) {
-			t.Fatalf("latest should not contain active fullscreen frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+			t.Fatalf("latest should not contain stale fullscreen repaint %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+		}
+	}
+	for _, want := range []string{"frame-two", "frame-new"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("latest should contain current fullscreen frame %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
 		}
 	}
 	if window.TotalLines != 2 {
-		t.Fatalf("only pre-fullscreen page should be committed, got total=%d rows=%#v", window.TotalLines, window.Rows)
+		t.Fatalf("only pre-fullscreen page should count as committed history, got total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
 }
 
-func TestTerminalIngestOutputPrimaryFullscreenCursorShowKeepsRunningFrameOutOfHistory(t *testing.T) {
+func TestTerminalIngestOutputPrimaryFullscreenCursorShowKeepsRunningFrameMutable(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -1113,13 +1121,13 @@ func TestTerminalIngestOutputPrimaryFullscreenCursorShowKeepsRunningFrameOutOfHi
 			t.Fatalf("latest should preserve pre-fullscreen shell history %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
 		}
 	}
-	for _, stale := range []string{"frame-header", "frame-body", "Summarize recent commits"} {
-		if historyWindowContainsText(window, stale) {
-			t.Fatalf("cursor-show inside primary fullscreen must not expose running frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+	for _, want := range []string{"frame-header", "frame-body", "Summarize recent commits"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("cursor-show inside primary fullscreen should expose current frame %q as mutable latest tail, total=%d rows=%#v", want, window.TotalLines, window.Rows)
 		}
 	}
 	if window.TotalLines != 2 {
-		t.Fatalf("running primary fullscreen frame should stay outside logical history, got total=%d rows=%#v", window.TotalLines, window.Rows)
+		t.Fatalf("running primary fullscreen frame should stay outside committed history depth, got total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
 }
 
@@ -1145,13 +1153,18 @@ func TestTerminalIngestOutputPrimaryFullscreenNewlinesDoNotCommitRunningFrame(t 
 	if err != nil {
 		t.Fatalf("latest after fullscreen frame newlines: %v", err)
 	}
-	for _, stale := range []string{"frame-a", "frame-b", "frame-c", "frame-d", "frame-e"} {
+	for _, stale := range []string{"frame-a", "frame-b", "frame-c"} {
 		if historyWindowContainsText(window, stale) {
-			t.Fatalf("primary fullscreen newlines must not commit running frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+			t.Fatalf("primary fullscreen newlines must not keep stale repaint frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+		}
+	}
+	for _, want := range []string{"frame-d", "frame-e"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("primary fullscreen latest should show current repaint frame %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
 		}
 	}
 	if window.TotalLines != 2 {
-		t.Fatalf("only pre-fullscreen shell history should be committed, got total=%d rows=%#v", window.TotalLines, window.Rows)
+		t.Fatalf("only pre-fullscreen shell history should count as committed, got total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
 }
 
