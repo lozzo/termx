@@ -1366,6 +1366,55 @@ func TestTerminalSemanticProjectorConsumesOriginModeRawWithoutFallback(t *testin
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesAutowrapModeRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ModeOps += next.ModeOps
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b[?7l123456789Z"
+	term := vterm.New(6, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageMode(damage, 7).Code != vterm.ScreenOpModes || firstDamageMode(damage, 7).Enabled {
+		t.Fatalf("autowrap mode should be exposed as disabled vterm mode op, damage=%#v", damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == vterm.ScreenOpControl && op.Control == "soft-wrap" {
+			t.Fatalf("autowrap disabled raw should rely on vterm-resolved print path without soft-wrap, damage=%#v", damage)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(6, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            6,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps == 0 || stats.ControlOps != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("autowrap raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(6, 3)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if historyWindowContainsText(window, "123456") || !historyWindowContainsText(window, "12345Z") {
+		t.Fatalf("autowrap disabled text should follow vterm overwrite semantics, rows=%#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesLinefeedNewlineModeRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

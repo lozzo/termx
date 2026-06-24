@@ -1796,6 +1796,40 @@ func TestVTermWriteWithDamageSemanticOriginModeCursorPosition(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticAutowrapMode(t *testing.T) {
+	vt := New(6, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?7l123456789Z"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	mode := firstSemanticModeOp(t, damage, 7)
+	if mode.Code != ScreenOpModes || !mode.Private || mode.Enabled {
+		t.Fatalf("expected autowrap disable semantic op, got %#v in %#v", mode, damage.SemanticOps)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl && op.Control == "soft-wrap" {
+			t.Fatalf("autowrap disabled batch must not emit soft-wrap semantic control, damage=%#v", damage)
+		}
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:7:off", "write:123456", "write:7", "write:8", "write:9", "write:Z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic autowrap ops must use vterm-resolved print path, got %v want %v damage=%#v", got, want, damage)
+	}
+	if text := rowText(vt.ScreenRowView(0), 6); text != "12345Z" {
+		t.Fatalf("autowrap disabled should overwrite final column without wrapping, got %q damage=%#v", text, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
