@@ -1483,6 +1483,49 @@ func TestTerminalSemanticProjectorConsumesUTF8MouseModeRawWithoutFallback(t *tes
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesExtendedMouseEncodingModesRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ModeOps += next.ModeOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b[?1015h\x1b[?1016hext-mouse\x1b[?1016l\x1b[?1015l"
+	term := vterm.New(20, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageMode(damage, 1015).Code != vterm.ScreenOpModes || firstDamageMode(damage, 1016).Code != vterm.ScreenOpModes {
+		t.Fatalf("extended mouse encoding modes should be exposed as vterm semantic modes, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            20,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 4 || stats.WriteSpanOps == 0 {
+		t.Fatalf("extended mouse encoding modes raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(20, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if window.TotalLines != 0 || !historyWindowContainsText(window, "ext-mouse") {
+		t.Fatalf("extended mouse encoding modes must not become history truth or suppress text, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesOriginModeRawWithoutFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

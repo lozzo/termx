@@ -1430,6 +1430,28 @@ func TestVTermWriteWithDamageSemanticUTF8MouseMode(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticExtendedMouseEncodingModes(t *testing.T) {
+	vt := New(20, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?1015h\x1b[?1016hext-mouse\x1b[?1016l\x1b[?1015l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:1015:on", "mode:1016:on", "write:ext-mouse", "mode:1016:off", "mode:1015:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic extended mouse encoding modes must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
