@@ -418,6 +418,18 @@ func (e *Emulator) registerDefaultEscHandlers() {
 		return true
 	})
 
+	e.RegisterEscHandler('N', func() bool {
+		// Single Shift 2 [ansi.SS2].
+		e.gsingle = 2
+		return true
+	})
+
+	e.RegisterEscHandler('O', func() bool {
+		// Single Shift 3 [ansi.SS3].
+		e.gsingle = 3
+		return true
+	})
+
 	e.RegisterEscHandler('c', func() bool {
 		// Reset Initial State [ansi.RIS]
 		e.fullReset()

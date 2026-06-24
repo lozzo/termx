@@ -1408,6 +1408,25 @@ func TestVTermWriteWithDamageSemanticLockingShiftCharset(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticSingleShiftCharset(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b*0\x1bNqq"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpWriteSpan {
+			got = append(got, rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"─", "q"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic single shift text must map only the next byte through vterm G2 charset state, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
