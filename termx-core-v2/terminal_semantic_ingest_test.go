@@ -2,6 +2,7 @@ package termxcorev2
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -2421,6 +2422,104 @@ func TestTerminalSemanticProjectorConsumesInBandResizeModeRawWithoutFallback(t *
 	}
 	if window.TotalLines != 0 || !historyWindowContainsText(window, "resize") {
 		t.Fatalf("in-band resize mode should stay vterm-owned no-op while text remains visible, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesInputReportPrivateModesRawWithoutFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode int
+		text string
+	}{
+		{name: "backarrow-key", mode: 67, text: "backarrow"},
+		{name: "light-dark-report", mode: 2031, text: "theme"},
+		{name: "win32-input", mode: 9001, text: "win32"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ModeOps += next.ModeOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			raw := "\x1b[?" + strconv.Itoa(tc.mode) + "h" + tc.text + "\x1b[?" + strconv.Itoa(tc.mode) + "l"
+			term := vterm.New(16, 3, 100, nil)
+			_, err, damage := term.WriteWithDamage([]byte(raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			if firstDamageMode(damage, tc.mode).Code != vterm.ScreenOpModes {
+				t.Fatalf("input/report mode should be exposed as vterm mode op, mode=%d damage=%#v", tc.mode, damage)
+			}
+			pipeline := newTerminalHistoryPipeline(16, 3)
+			batch := terminalSemanticBatch{
+				Raw:             raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            16,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 2 || stats.WriteSpanOps == 0 {
+				t.Fatalf("input/report private mode raw should use vterm semantic projector without parser fallback, mode=%d stats=%#v damage=%#v", tc.mode, stats, damage)
+			}
+			window, err := pipeline.LatestWindow(16, 4)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			if window.TotalLines != 0 || !historyWindowContainsText(window, tc.text) {
+				t.Fatalf("input/report mode should stay vterm-owned no-op while text remains visible, mode=%d total=%d rows=%#v damage=%#v", tc.mode, window.TotalLines, window.Rows, damage)
+			}
+		})
+	}
+}
+
+func TestTerminalSemanticProjectorRejectsUnknownPrivateModeRaw(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ModeOps += next.ModeOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b[?7777hunknown"
+	term := vterm.New(16, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageMode(damage, 7777).Code != vterm.ScreenOpModes {
+		t.Fatalf("unknown private mode should still be visible as vterm mode op, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(16, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            16,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors != 0 || stats.RawFallbacks == 0 {
+		t.Fatalf("unknown private mode should keep parser fallback boundary, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(16, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "unknown") {
+		t.Fatalf("fallback should still preserve raw text, rows=%#v damage=%#v", window.Rows, damage)
 	}
 }
 
