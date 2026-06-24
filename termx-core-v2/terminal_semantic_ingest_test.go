@@ -1433,6 +1433,51 @@ func TestTerminalSemanticProjectorConsumesRealVTermStyledLinkTextRawBatch(t *tes
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesOSCTitleAndWorkingDirectoryRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(40, 4, 100, nil)
+	raw := "\x1b]2;termx-title\x07\x1b]7;file://host/srv/app\x1b\\prompt$ "
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(40, 4)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            40,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("OSC title/cwd batch should use shared vterm semantic text without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(40, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if !strings.Contains(text, "prompt$ ") {
+		t.Fatalf("expected prompt text from semantic projector, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+	for _, forbidden := range []string{"termx-title", "file://host/srv/app"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("OSC title/cwd state must not enter history text %q, got %q rows=%#v", forbidden, text, window.Rows)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesOSC8ScrollOutRawBatch(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

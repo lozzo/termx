@@ -77,6 +77,37 @@ func TestVTermLongTitleWithinParserBuffer(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageOSCTitleAndWorkingDirectoryKeepSemanticText(t *testing.T) {
+	var capturedTitle string
+	var capturedCWD string
+	vt := New(80, 24, 1000, nil)
+	vt.SetTitleHandler(func(title string) {
+		capturedTitle = title
+	})
+	vt.SetWorkingDirectoryHandler(func(path string) {
+		capturedCWD = path
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b]2;termx-title\x07\x1b]7;file://host/srv/app\x1b\\prompt$ "))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if capturedTitle != "termx-title" {
+		t.Fatalf("expected title callback, got %q", capturedTitle)
+	}
+	if capturedCWD != "file://host/srv/app" {
+		t.Fatalf("expected working directory callback, got %q", capturedCWD)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "prompt$ ") {
+		t.Fatalf("OSC title/cwd batch should keep following prompt as semantic text, ops=%#v damage=%#v", damage.SemanticOps, damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpTitle {
+			t.Fatalf("OSC title is vterm-owned state, not a history semantic op, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+}
+
 func TestVTermWorkingDirectoryCallback(t *testing.T) {
 	var captured string
 	vt := New(80, 24, 1000, nil)
