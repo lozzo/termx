@@ -201,7 +201,7 @@ func appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Build
 }
 
 func appendSurfaceWriteDamage(damages []vterm.WriteDamage, damage vterm.WriteDamage) []vterm.WriteDamage {
-	if damage.SizeCols == 0 && damage.SizeRows == 0 && len(damage.Ops) == 0 && len(damage.ScrollbackAppend) == 0 && len(damage.AlternateAppend) == 0 && !damage.RequiresFullReplace {
+	if damage.SizeCols == 0 && damage.SizeRows == 0 && len(damage.Ops) == 0 && len(damage.SemanticOps) == 0 && len(damage.ScrollbackAppend) == 0 && len(damage.AlternateAppend) == 0 && !damage.RequiresFullReplace {
 		return damages
 	}
 	return append(damages, damage)

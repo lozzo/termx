@@ -81,6 +81,15 @@ func TestSurfaceTrackLargeWriteKeepsLatestScreen(t *testing.T) {
 	}
 }
 
+func TestAppendSurfaceWriteDamageKeepsSemanticOnlyOps(t *testing.T) {
+	damages := appendSurfaceWriteDamage(nil, vterm.WriteDamage{
+		SemanticOps: []vterm.DamageOp{{Code: vterm.ScreenOpControl, Control: "cup", Row: 1, Col: 2}},
+	})
+	if len(damages) != 1 || len(damages[0].SemanticOps) != 1 {
+		t.Fatalf("expected semantic-only damage to be retained, got %#v", damages)
+	}
+}
+
 func BenchmarkSurfaceTrackFastSGRStressWrite(b *testing.B) {
 	output := benchmarkSurfaceFastSGROutput(2048)
 	b.ReportAllocs()

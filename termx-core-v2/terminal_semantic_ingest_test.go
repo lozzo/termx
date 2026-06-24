@@ -276,6 +276,37 @@ func TestTerminalSemanticProjectorConsumesRealVTermCursorDamage(t *testing.T) {
 	}
 }
 
+func TestTerminalSemanticProjectorPrefersOrderedSemanticOps(t *testing.T) {
+	pipeline := newTerminalHistoryPipeline(12, 3)
+	batch := terminalSemanticBatch{
+		Damages: []vterm.WriteDamage{{
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("abcdef")},
+				{Code: vterm.ScreenOpControl, Control: "cub", Row: 0, Col: 3, Mode: 3},
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 3, Cells: vtermCells("XYZ")},
+			},
+			Ops: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("stale-screen-diff")},
+			},
+			SizeCols: 12,
+			SizeRows: 3,
+		}},
+		Cols:            12,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(12, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "abcXYZ") || historyWindowContainsText(window, "stale-screen-diff") {
+		t.Fatalf("history projector must prefer ordered semantic ops over screen diff ops, got %#v", window.Rows)
+	}
+}
+
 func historyWindowContainsAll(window history.HistoryWindow, wants ...string) bool {
 	for _, want := range wants {
 		if !historyWindowContainsText(window, want) {

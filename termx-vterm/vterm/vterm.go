@@ -451,6 +451,7 @@ type CellRun struct {
 
 type WriteDamage struct {
 	Ops                 []DamageOp
+	SemanticOps         []DamageOp
 	ScrollbackAppend    []DamageOp
 	LiveTailAppendRows  int
 	ResizeLiveTailRows  int
@@ -821,7 +822,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
 			if reason, broad := directStats.fullReplaceReason(); broad {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
-				damage.Ops = semanticOpsFromCharmVTDamages(directDamages)
+				damage.SemanticOps = semanticOpsFromCharmVTDamages(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -835,7 +836,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 				}
 			} else {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "direct_damage_unsupported")
-				damage.Ops = semanticOpsFromCharmVTDamages(directDamages)
+				damage.SemanticOps = semanticOpsFromCharmVTDamages(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -3182,6 +3183,7 @@ func semanticOpsFromCharmVTDamages(damages []charmvt.Damage) []DamageOp {
 func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, plan rowCacheReconcilePlan) WriteDamage {
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.Ops = ops
+	damage.SemanticOps = semanticOpsFromDirectOps(ops)
 	v.appendScrollbackDamageLocked(&damage, plan)
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
@@ -3194,6 +3196,23 @@ func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan,
 	v.appendScrollbackDamageLocked(&damage, plan)
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
+}
+
+func semanticOpsFromDirectOps(ops []DamageOp) []DamageOp {
+	if len(ops) == 0 {
+		return nil
+	}
+	out := make([]DamageOp, 0, len(ops))
+	for _, op := range ops {
+		switch op.Code {
+		case ScreenOpWriteSpan, ScreenOpClearToEOL, ScreenOpClearRect, ScreenOpScrollRect, ScreenOpControl, ScreenOpModes:
+			out = append(out, op)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (v *VTerm) writeDamageHeaderLocked(plan rowCacheReconcilePlan) WriteDamage {

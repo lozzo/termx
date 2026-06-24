@@ -1197,6 +1197,10 @@ func TestVTermWriteWithDamageUsesDirectSpanOps(t *testing.T) {
 	if got := span.Cells[0].Content + span.Cells[1].Content + span.Cells[2].Content; got != "abc" {
 		t.Fatalf("unexpected direct span contents: %#v", span.Cells)
 	}
+	semanticSpan := firstSemanticOpWithCode(t, damage, ScreenOpWriteSpan)
+	if got := semanticSpan.Cells[0].Content + semanticSpan.Cells[1].Content + semanticSpan.Cells[2].Content; got != "abc" {
+		t.Fatalf("unexpected semantic span contents: %#v", semanticSpan.Cells)
+	}
 }
 
 func TestVTermWriteWithDamageEmitsCursorControlOps(t *testing.T) {
@@ -1213,6 +1217,10 @@ func TestVTermWriteWithDamageEmitsCursorControlOps(t *testing.T) {
 	cup := firstControlOp(t, damage, "cup")
 	if cup.Row != 1 || cup.Col != 4 {
 		t.Fatalf("expected CUP cursor position row=1 col=4, got %#v", cup)
+	}
+	semanticCUB := firstSemanticControlOp(t, damage, "cub")
+	if semanticCUB.Mode != 3 {
+		t.Fatalf("expected semantic CUB count 3, got %#v", semanticCUB)
 	}
 }
 
@@ -1248,6 +1256,9 @@ func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
 	if len(damage.Ops) != 0 {
 		t.Fatalf("expected no expanded span ops for broad damage, got %#v", damage.Ops)
 	}
+	if len(damage.SemanticOps) != 0 {
+		t.Fatalf("expected no semantic text ops for broad screen diff, got %#v", damage.SemanticOps)
+	}
 	if damage.DirectDamageItems != 24 || damage.DirectDamageRows != 24 || damage.DirectDamageCells != 1920 {
 		t.Fatalf("unexpected direct damage stats: items=%d rows=%d cells=%d", damage.DirectDamageItems, damage.DirectDamageRows, damage.DirectDamageCells)
 	}
@@ -1281,6 +1292,9 @@ func TestVTermWriteWithDamageRepeatedDirectSpanUsesFullReplace(t *testing.T) {
 	}
 	if len(damage.Ops) != 0 {
 		t.Fatalf("expected no expanded span ops for repeated damage, got %#v", damage.Ops)
+	}
+	if len(damage.SemanticOps) != 0 {
+		t.Fatalf("expected no semantic text ops for repeated screen diff, got %#v", damage.SemanticOps)
 	}
 	if damage.DirectDamageItems != 6000 || damage.DirectDamageRows != 1 || damage.DirectDamageCells != 6000 {
 		t.Fatalf("unexpected direct damage stats: items=%d rows=%d cells=%d", damage.DirectDamageItems, damage.DirectDamageRows, damage.DirectDamageCells)
@@ -2165,6 +2179,17 @@ func firstOpWithCode(t *testing.T, damage WriteDamage, code ScreenOpCode) Damage
 	return DamageOp{}
 }
 
+func firstSemanticOpWithCode(t *testing.T, damage WriteDamage, code ScreenOpCode) DamageOp {
+	t.Helper()
+	for _, op := range damage.SemanticOps {
+		if op.Code == code {
+			return op
+		}
+	}
+	t.Fatalf("expected semantic op %v in damage, got %#v", code, damage)
+	return DamageOp{}
+}
+
 func firstControlOp(t *testing.T, damage WriteDamage, control string) DamageOp {
 	t.Helper()
 	for _, op := range damage.Ops {
@@ -2173,5 +2198,16 @@ func firstControlOp(t *testing.T, damage WriteDamage, control string) DamageOp {
 		}
 	}
 	t.Fatalf("expected control op %q in damage, got %#v", control, damage)
+	return DamageOp{}
+}
+
+func firstSemanticControlOp(t *testing.T, damage WriteDamage, control string) DamageOp {
+	t.Helper()
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl && op.Control == control {
+			return op
+		}
+	}
+	t.Fatalf("expected semantic control op %q in damage, got %#v", control, damage)
 	return DamageOp{}
 }

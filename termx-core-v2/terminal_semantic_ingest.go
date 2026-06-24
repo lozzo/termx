@@ -83,13 +83,14 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 	// raw parser 临时只负责把文本/SGR/OSC8 辅助投影成 HistoryEvent cells。
 	stats := terminalSemanticProjectorStats{}
 	for _, damage := range batch.Damages {
-		if damage.SizeCols > 0 || damage.SizeRows > 0 || len(damage.Ops) > 0 || len(damage.ScrollbackAppend) > 0 || len(damage.AlternateAppend) > 0 || damage.RequiresFullReplace {
+		ops := semanticOpsForHistoryDamage(damage)
+		if damage.SizeCols > 0 || damage.SizeRows > 0 || len(ops) > 0 || len(damage.ScrollbackAppend) > 0 || len(damage.AlternateAppend) > 0 || damage.RequiresFullReplace {
 			stats.DamageBatches++
 		}
-		if damage.RequiresFullReplace && len(damage.Ops) == 0 && len(damage.ScrollbackAppend) == 0 && len(damage.AlternateAppend) == 0 {
+		if damage.RequiresFullReplace && len(ops) == 0 && len(damage.ScrollbackAppend) == 0 && len(damage.AlternateAppend) == 0 {
 			stats.FullReplaceOnly++
 		}
-		for _, op := range damage.Ops {
+		for _, op := range ops {
 			switch op.Code {
 			case vterm.ScreenOpWriteSpan:
 				stats.WriteSpanOps++
@@ -135,11 +136,12 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []vterm.WriteDamage) (bool, error) {
 	applied := false
 	for _, damage := range damages {
-		if len(damage.Ops) == 0 && len(damage.ScrollbackAppend) == 0 {
+		ops := semanticOpsForHistoryDamage(damage)
+		if len(ops) == 0 && len(damage.ScrollbackAppend) == 0 {
 			continue
 		}
 		scrollbackApplied := 0
-		for _, op := range damage.Ops {
+		for _, op := range ops {
 			switch op.Code {
 			case vterm.ScreenOpWriteSpan:
 				cells := historyCellsFromVTermCells(op.Cells)
@@ -211,6 +213,13 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		}
 	}
 	return applied, nil
+}
+
+func semanticOpsForHistoryDamage(damage vterm.WriteDamage) []vterm.DamageOp {
+	if len(damage.SemanticOps) > 0 {
+		return damage.SemanticOps
+	}
+	return damage.Ops
 }
 
 func primaryScrollOutCountForDamageOp(op vterm.DamageOp, maxCount int) int {
