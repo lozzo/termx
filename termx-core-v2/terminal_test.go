@@ -1049,6 +1049,43 @@ func TestTerminalIngestOutputFullscreenHomeClearPreservesStressTail(t *testing.T
 	}
 }
 
+func TestTerminalIngestOutputRepeatedFullscreenHomeClearKeepsLatestFrameOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 80, Rows: 8},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := strings.Join([]string{
+		"shell-one\nshell-two",
+		"\x1b[?25l\x1b[H\x1b[Jframe-one\nframe-old",
+		"\x1b[H\x1b[Jframe-two\nframe-new",
+	}, "")
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 80, 10)
+	if err != nil {
+		t.Fatalf("latest after repeated fullscreen clear: %v", err)
+	}
+	for _, want := range []string{"shell-one", "shell-two", "frame-two", "frame-new"} {
+		if !historyWindowContainsText(window, want) {
+			t.Fatalf("latest should contain %q, total=%d rows=%#v", want, window.TotalLines, window.Rows)
+		}
+	}
+	for _, stale := range []string{"frame-one", "frame-old"} {
+		if historyWindowContainsText(window, stale) {
+			t.Fatalf("latest should not contain stale fullscreen frame %q, total=%d rows=%#v", stale, window.TotalLines, window.Rows)
+		}
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("only pre-fullscreen page should be committed, got total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
 func stressHistoryLine(n int) string {
 	return fmt.Sprintf("%06d [DEBUG ] stream pending id=%06d path=/var/tmp/alpha/beta/gamma wrap============================================== tail-marker", n, n)
 }

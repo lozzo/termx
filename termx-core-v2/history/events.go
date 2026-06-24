@@ -17,6 +17,8 @@ const (
 	EventEraseInLine              EventKind = "erase-in-line"
 	EventEraseInDisplay           EventKind = "erase-in-display"
 	EventSetActiveLineTailFill    EventKind = "set-active-line-tail-fill"
+	EventEnterPrimaryFullscreen   EventKind = "enter-primary-fullscreen"
+	EventExitPrimaryFullscreen    EventKind = "exit-primary-fullscreen"
 	EventAppendAltScreenFrame     EventKind = "append-alt-screen-frame"
 	EventSealLogicalLine          EventKind = "seal-logical-line"
 	EventMutateFrontier           EventKind = "mutate-frontier"
@@ -57,6 +59,7 @@ type HistoryEvent struct {
 	EraseMode       int
 	EraseCols       int
 	EnterAltScreen  bool
+	PrimaryMode     int
 	ResizeDirection ResizeDirection
 }
 

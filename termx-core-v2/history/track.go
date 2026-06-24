@@ -11,10 +11,16 @@ type HistoryTrack struct {
 	activeCol  int
 	overwrite  bool
 	altScreen  bool
-	generation Generation
-	screenRows int
-	screenRow  int
-	screen     primaryScreenLineMap
+	// 中文说明：有些前台 TUI 不进入 alt-screen，而是在 primary screen 上隐藏光标、
+	// 开启鼠标追踪后反复 home-clear repaint。intent 只表示已看到这类控制序列；
+	// 第一次 home-clear 仍是 page-break，之后才进入可替换 fullscreen frame。
+	primaryFullscreenIntent bool
+	primaryFullscreenFrame  bool
+	primaryFullscreenModes  map[int]struct{}
+	generation              Generation
+	screenRows              int
+	screenRow               int
+	screen                  primaryScreenLineMap
 }
 
 func NewHistoryTrack() *HistoryTrack {
@@ -93,6 +99,10 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 		return track.eraseInDisplay(event.EraseMode)
 	case EventSetActiveLineTailFill:
 		return track.setActiveLineTailFill(eraseBlankStyle(event.Style))
+	case EventEnterPrimaryFullscreen:
+		return track.enterPrimaryFullscreen(event.PrimaryMode)
+	case EventExitPrimaryFullscreen:
+		return track.exitPrimaryFullscreen(event.PrimaryMode)
 	case EventAppendAltScreenFrame:
 		return track.appendAltScreenFrame(event.Rows)
 	case EventSealLogicalLine:
@@ -628,6 +638,12 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 	switch mode {
 	case 0:
 		if track.screenRow == 0 && track.activeCol == 0 {
+			if track.primaryFullscreenFrame {
+				return track.replacePrimaryFullscreenFrame()
+			}
+			if track.primaryFullscreenIntent {
+				return track.startPrimaryFullscreenFrame()
+			}
 			// 中文说明：全屏程序常见入口是先把 cursor 放到左上角再 ED0 清屏；
 			// 这不是行编辑删除，必须保留进入前的 primary logical line 页面。
 			return track.clearPrimaryScreenPageBreak()
@@ -636,6 +652,12 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 	case 1:
 		return track.eraseDisplayToCursor()
 	case 2:
+		if track.primaryFullscreenFrame {
+			return track.replacePrimaryFullscreenFrame()
+		}
+		if track.primaryFullscreenIntent {
+			return track.startPrimaryFullscreenFrame()
+		}
 		return track.clearPrimaryScreenPageBreak()
 	case 3:
 		return track.truncateCommittedHistory(HistoryEvent{
@@ -645,6 +667,66 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 	default:
 		return nil
 	}
+}
+
+func (track *HistoryTrack) enterPrimaryFullscreen(mode int) error {
+	if track.altScreen {
+		return nil
+	}
+	if mode != 0 {
+		if track.primaryFullscreenModes == nil {
+			track.primaryFullscreenModes = make(map[int]struct{})
+		}
+		track.primaryFullscreenModes[mode] = struct{}{}
+	}
+	if track.primaryFullscreenIntent {
+		return nil
+	}
+	track.primaryFullscreenIntent = true
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) exitPrimaryFullscreen(mode int) error {
+	if mode != 0 && track.primaryFullscreenModes != nil {
+		delete(track.primaryFullscreenModes, mode)
+		if len(track.primaryFullscreenModes) > 0 {
+			return nil
+		}
+	}
+	if !track.primaryFullscreenIntent && !track.primaryFullscreenFrame {
+		return nil
+	}
+	track.clearPrimaryFullscreenState()
+	track.bumpGeneration()
+	return nil
+}
+
+func (track *HistoryTrack) startPrimaryFullscreenFrame() error {
+	if err := track.clearPrimaryScreenPageBreak(); err != nil {
+		return err
+	}
+	track.primaryFullscreenFrame = true
+	return nil
+}
+
+// replacePrimaryFullscreenFrame 清掉当前未提交 fullscreen frame，让下一帧在同一位置重建。
+// 它不能碰 committed history；进入 fullscreen 前的页面已经由第一次 page-break 保留。
+func (track *HistoryTrack) replacePrimaryFullscreenFrame() error {
+	modes := track.primaryFullscreenModes
+	if err := track.resetFrontier(); err != nil {
+		return err
+	}
+	track.primaryFullscreenModes = modes
+	track.primaryFullscreenIntent = true
+	track.primaryFullscreenFrame = true
+	return nil
+}
+
+func (track *HistoryTrack) clearPrimaryFullscreenState() {
+	track.primaryFullscreenIntent = false
+	track.primaryFullscreenFrame = false
+	track.primaryFullscreenModes = nil
 }
 
 // clearPrimaryScreenPageBreak 处理真实终端里的 CSI 2J：它不是从 live
@@ -850,6 +932,7 @@ func (track *HistoryTrack) resetFrontier() error {
 		track.activeCol = 0
 		track.overwrite = false
 		track.screen.clearAll()
+		track.clearPrimaryFullscreenState()
 		return nil
 	}
 	for _, id := range ids {
@@ -862,6 +945,7 @@ func (track *HistoryTrack) resetFrontier() error {
 	track.activeCol = 0
 	track.overwrite = false
 	track.screen.clearAll()
+	track.clearPrimaryFullscreenState()
 	track.bumpGeneration()
 	return nil
 }
@@ -927,6 +1011,9 @@ func (track *HistoryTrack) deleteFrontierLinesWithoutBump(ids []LogicalLineID) (
 func (track *HistoryTrack) commitFrontier(force bool) error {
 	if track.altScreen && !force {
 		return nil
+	}
+	if force {
+		track.clearPrimaryFullscreenState()
 	}
 	ids := track.frontier.IDs()
 	if len(ids) == 0 {
@@ -1099,6 +1186,7 @@ func (track *HistoryTrack) switchAltScreen(enter bool) error {
 		if err := track.clearPrimaryScreenPageBreak(); err != nil {
 			return err
 		}
+		track.clearPrimaryFullscreenState()
 	}
 	track.altScreen = enter
 	track.bumpGeneration()

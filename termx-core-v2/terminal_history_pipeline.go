@@ -433,6 +433,22 @@ func (pipeline *terminalHistoryPipeline) applySegment(segment historyOutputSegme
 			return err
 		}
 	}
+	if segment.EnterPrimaryFullscreen {
+		if err := pipeline.track.Apply(history.HistoryEvent{
+			Kind:        history.EventEnterPrimaryFullscreen,
+			PrimaryMode: segment.PrimaryMode,
+		}); err != nil {
+			return err
+		}
+	}
+	if segment.ExitPrimaryFullscreen {
+		if err := pipeline.track.Apply(history.HistoryEvent{
+			Kind:        history.EventExitPrimaryFullscreen,
+			PrimaryMode: segment.PrimaryMode,
+		}); err != nil {
+			return err
+		}
+	}
 	if segment.SwitchAltScreen {
 		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventSwitchAltScreen, EnterAltScreen: segment.EnterAltScreen}); err != nil {
 			return err

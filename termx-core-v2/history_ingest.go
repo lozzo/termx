@@ -23,6 +23,9 @@ type historyOutputSegment struct {
 	EraseInLine              bool
 	EraseInDisplay           bool
 	SetTailFill              bool
+	EnterPrimaryFullscreen   bool
+	ExitPrimaryFullscreen    bool
+	PrimaryMode              int
 	SwitchAltScreen          bool
 	EnterAltScreen           bool
 	Count                    int
@@ -212,6 +215,18 @@ func (parser *historyANSIParser) consumeCSI(input string) int {
 				SwitchAltScreen: true,
 				EnterAltScreen:  enter,
 			})
+		} else if primary, mode, ok := parsePrimaryFullscreenMode(input[2:end], final); ok {
+			if primary {
+				parser.segments = append(parser.segments, historyOutputSegment{
+					EnterPrimaryFullscreen: true,
+					PrimaryMode:            mode,
+				})
+			} else {
+				parser.segments = append(parser.segments, historyOutputSegment{
+					ExitPrimaryFullscreen: true,
+					PrimaryMode:           mode,
+				})
+			}
 		}
 		return end + 1
 	}
@@ -795,6 +810,19 @@ func parseAltScreenMode(text string, final byte) (bool, bool) {
 		}
 	}
 	return false, false
+}
+
+func parsePrimaryFullscreenMode(text string, final byte) (bool, int, bool) {
+	modes := parseSGRParams(strings.TrimPrefix(text, "?"))
+	for _, mode := range modes {
+		switch mode {
+		case 25:
+			return final == 'l', mode, true
+		case 1000, 1002, 1003, 1006:
+			return final == 'h', mode, true
+		}
+	}
+	return false, 0, false
 }
 
 func firstCSIParam(text string, fallback int) int {

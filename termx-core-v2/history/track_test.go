@@ -492,6 +492,52 @@ func TestHistoryTrackEraseDisplayFromHomeCommitsCurrentScreenPage(t *testing.T) 
 	}
 }
 
+func TestHistoryTrackRepeatedFullscreenHomeClearReplacesMutableFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(3)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell-one")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell-two")},
+		HistoryEvent{Kind: EventEnterPrimaryFullscreen},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("frame-one")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("frame-old")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("frame-two")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("frame-new")},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
+		t.Fatalf("repeated fullscreen clear should only commit pre-fullscreen page, got %v", got)
+	}
+	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{5, 6}) {
+		t.Fatalf("fullscreen frame should be a replaceable mutable frontier, got %v", got)
+	}
+	if got := lineText(requireLine(t, track, 1)); got != "shell-one" {
+		t.Fatalf("pre-fullscreen committed line changed, got %q", got)
+	}
+	if got := lineText(requireLine(t, track, 2)); got != "shell-two" {
+		t.Fatalf("pre-fullscreen committed line changed, got %q", got)
+	}
+	if _, ok := track.Line(3); ok {
+		t.Fatal("old fullscreen frame line should not survive repeated clear")
+	}
+	if _, ok := track.Line(4); ok {
+		t.Fatal("old fullscreen frame line should not survive repeated clear")
+	}
+	if got := lineText(requireLine(t, track, 5)); got != "frame-two" {
+		t.Fatalf("latest fullscreen frame first row mismatch: %q", got)
+	}
+	if got := lineText(requireLine(t, track, 6)); got != "frame-new" {
+		t.Fatalf("latest fullscreen frame second row mismatch: %q", got)
+	}
+}
+
 func TestHistoryTrackEraseDisplayFromCursorClearsMutableTailOnly(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "kept")
