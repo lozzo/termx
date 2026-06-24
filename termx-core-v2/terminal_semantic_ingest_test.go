@@ -2191,6 +2191,64 @@ func TestTerminalSemanticProjectorConsumesOSCClipboardRawWithoutFallback(t *test
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1StringControlsRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := string([]byte{0x9d}) + "52;c;SGVsbG8=" + string([]byte{0x9c}) +
+		string([]byte{0x90}) + "1;2+qignored-c1-dcs" + string([]byte{0x9c}) +
+		string([]byte{0x9f}) + "ignored-c1-apc" + string([]byte{0x9c}) +
+		string([]byte{0x98}) + "ignored-c1-sos" + string([]byte{0x9c}) +
+		string([]byte{0x9e}) + "ignored-c1-pm" + string([]byte{0x9c}) +
+		"c1-ok"
+	term := vterm.New(40, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if !damageOpsContainTextSpan(damage.SemanticOps, "c1-ok") {
+		t.Fatalf("C1 string controls should expose following text through vterm semantic ops, damage=%#v", damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == vterm.ScreenOpControl || op.Code == vterm.ScreenOpTitle {
+			t.Fatalf("C1 string controls must remain vterm parser-owned state, got history semantic op %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(40, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            40,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("C1 string-control raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(40, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, forbidden := range []string{"ignored-c1-dcs", "ignored-c1-apc", "ignored-c1-sos", "ignored-c1-pm", "SGVsbG8", "52;"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("C1 string control payload must not enter history text %q, got %q rows=%#v", forbidden, text, window.Rows)
+		}
+	}
+	if !strings.Contains(text, "c1-ok") {
+		t.Fatalf("expected text after C1 string controls from semantic projector, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

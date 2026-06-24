@@ -1583,6 +1583,38 @@ func TestVTermWriteWithDamageOSCClipboardKeepSemanticText(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1StringControlsKeepSemanticText(t *testing.T) {
+	vt := New(40, 3, 100, nil)
+
+	raw := string([]byte{0x9d}) + "52;c;SGVsbG8=" + string([]byte{0x9c}) +
+		string([]byte{0x90}) + "1;2+qignored-c1-dcs" + string([]byte{0x9c}) +
+		string([]byte{0x9f}) + "ignored-c1-apc" + string([]byte{0x9c}) +
+		string([]byte{0x98}) + "ignored-c1-sos" + string([]byte{0x9c}) +
+		string([]byte{0x9e}) + "ignored-c1-pm" + string([]byte{0x9c}) +
+		"c1-ok"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "c1-ok") {
+		t.Fatalf("C1 string controls should keep following text as semantic text, ops=%#v damage=%#v", damage.SemanticOps, damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl || op.Code == ScreenOpTitle {
+			t.Fatalf("C1 string controls are vterm parser-owned state, not history semantic ops, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	text := rowText(vt.ScreenRowView(0), 40)
+	for _, forbidden := range []string{"ignored-c1-dcs", "ignored-c1-apc", "ignored-c1-sos", "ignored-c1-pm", "SGVsbG8"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("C1 string control payload must not render as text %q, got %q damage=%#v", forbidden, text, damage)
+		}
+	}
+	if !strings.Contains(text, "c1-ok") {
+		t.Fatalf("text after C1 string controls must remain visible, got %q damage=%#v", text, damage)
+	}
+}
+
 func collectVTermResponses(ch <-chan string, want int) []string {
 	responses := make([]string, 0, want)
 	timer := time.NewTimer(200 * time.Millisecond)
