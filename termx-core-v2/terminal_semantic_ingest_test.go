@@ -579,6 +579,86 @@ func TestTerminalSemanticProjectorConsumesRealVTermEraseDisplay(t *testing.T) {
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesRealVTermPrimaryScrollOut(t *testing.T) {
+	for _, rows := range []int{1, 2} {
+		t.Run("rows_"+string(rune('0'+rows)), func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.DamageBatches += next.DamageBatches
+				stats.WriteSpanOps += next.WriteSpanOps
+				stats.ClearToEOLOps += next.ClearToEOLOps
+				stats.EraseDisplayOps += next.EraseDisplayOps
+				stats.ModeOps += next.ModeOps
+				stats.ScrollbackAppends += next.ScrollbackAppends
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			term := vterm.New(16, rows, 100, nil)
+			pipeline := newTerminalHistoryPipeline(16, rows)
+			for _, raw := range []string{"alpha\n", "beta\n", "gamma"} {
+				_, err, damage := term.WriteWithDamage([]byte(raw))
+				if err != nil {
+					t.Fatalf("vterm write %q: %v", raw, err)
+				}
+				batch := terminalSemanticBatch{
+					Raw:             raw,
+					Damages:         []vterm.WriteDamage{damage},
+					Cols:            16,
+					Rows:            rows,
+					FromSharedVTerm: true,
+				}
+				if err := pipeline.IngestSemanticBatch(batch); err != nil {
+					t.Fatalf("ingest semantic batch %q: %v", raw, err)
+				}
+			}
+			if stats.ScrollbackAppends == 0 {
+				t.Fatalf("raw primary scroll-out should be consumed from vterm semantic scrollback, rows=%d stats=%#v", rows, stats)
+			}
+			window, err := pipeline.LatestWindow(16, 8)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			text := historyWindowJoinedText(window)
+			for _, want := range []string{"alpha", "beta", "gamma"} {
+				if strings.Count(text, want) != 1 {
+					t.Fatalf("rows=%d should contain %q once via semantic scroll-out, got %q rows=%#v", rows, want, text, window.Rows)
+				}
+			}
+		})
+	}
+}
+
+func TestTerminalSemanticProjectorLeavesMultiScrollRawBatchToParser(t *testing.T) {
+	term := vterm.New(10, 2, 100, nil)
+	raw := "one\ntwo\nthree\nfour\nfive"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(10, 2)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            10,
+		Rows:            2,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(10, 10)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, want := range []string{"one", "two", "three", "four", "five"} {
+		if strings.Count(text, want) != 1 {
+			t.Fatalf("multi-scroll parser-assisted batch should preserve %q once, got %q rows=%#v", want, text, window.Rows)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.T) {
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)

@@ -166,9 +166,22 @@ func semanticBatchHasHistoryOps(damages []vterm.WriteDamage) bool {
 
 func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 	hasOps := false
+	linefeedControls := 0
+	scrollbackAppends := 0
 	for _, damage := range damages {
-		if damage.RequiresFullReplace || len(damage.ScrollbackAppend) > 0 || len(damage.AlternateAppend) > 0 {
+		if damage.RequiresFullReplace || len(damage.AlternateAppend) > 0 {
 			return false
+		}
+		lowRows := damage.SizeRows > 0 && damage.SizeRows <= 2
+		if len(damage.ScrollbackAppend) > 0 {
+			if !lowRows {
+				return false
+			}
+			scrollbackAppends += len(damage.ScrollbackAppend)
+			if scrollbackAppends > 1 {
+				return false
+			}
+			hasOps = true
 		}
 		if len(damage.SemanticOps) == 0 {
 			continue
@@ -184,9 +197,23 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 				if !rawSharedControlCanUseSemanticOp(op.Control) {
 					return false
 				}
+				if op.Control == "lf" || op.Control == "ind" {
+					if !lowRows {
+						return false
+					}
+					linefeedControls++
+					if linefeedControls > 1 {
+						return false
+					}
+				}
 				hasOps = true
 			case vterm.ScreenOpModes:
 				if !rawSharedModeCanUseSemanticOp(op) {
+					return false
+				}
+				hasOps = true
+			case vterm.ScreenOpScrollRect:
+				if !lowRows || len(damage.ScrollbackAppend) == 0 || op.Dy >= 0 {
 					return false
 				}
 				hasOps = true
@@ -200,7 +227,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed":
+	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind":
 		return true
 	default:
 		return false
@@ -227,6 +254,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 			continue
 		}
 		scrollbackApplied := 0
+		controlLinefeedInDamage := semanticOpsContainLinefeedControl(ops)
 		for _, op := range ops {
 			switch op.Code {
 			case vterm.ScreenOpWriteSpan:
@@ -268,6 +296,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 					applied = true
 				}
 			case vterm.ScreenOpScrollRect:
+				if controlLinefeedInDamage {
+					continue
+				}
 				// 中文说明：screen scroll rect 本身只是屏幕移动；只有同批
 				// primary scrollback append 证明有行离开 ownership 时才提交历史。
 				count := primaryScrollOutCountForDamageOp(op, len(damage.ScrollbackAppend)-scrollbackApplied)
@@ -282,6 +313,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 			case vterm.ScreenOpControl:
 				if err := pipeline.applyVTermControlEventLocked(op); err != nil {
 					return applied, err
+				}
+				if op.Control == "lf" || op.Control == "ind" {
+					scrollbackApplied = len(damage.ScrollbackAppend)
 				}
 				applied = true
 			case vterm.ScreenOpModes:
@@ -299,6 +333,15 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		}
 	}
 	return applied, nil
+}
+
+func semanticOpsContainLinefeedControl(ops []vterm.DamageOp) bool {
+	for _, op := range ops {
+		if op.Code == vterm.ScreenOpControl && (op.Control == "lf" || op.Control == "ind") {
+			return true
+		}
+	}
+	return false
 }
 
 func semanticOpsForHistoryDamage(damage vterm.WriteDamage) []vterm.DamageOp {
