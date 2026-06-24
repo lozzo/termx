@@ -1529,6 +1529,47 @@ func TestTerminalSemanticProjectorConsumesRepeatCharacterRawWithoutFallback(t *t
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesSaveRestoreCursorRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "abc\x1b7\x1b[2;5HZZ\x1b8X"
+	term := vterm.New(12, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(12, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            12,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("save/restore cursor raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(12, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if !strings.Contains(text, "abcX") || !strings.Contains(text, "ZZ") || strings.Contains(text, "abcZZX") {
+		t.Fatalf("save/restore cursor semantic projector should use restored vterm write positions, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesLineOperationsRawWithoutFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

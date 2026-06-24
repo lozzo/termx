@@ -1459,6 +1459,28 @@ func TestVTermWriteWithDamageSemanticRepeatCharacter(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticSaveRestoreCursor(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abc\x1b7\x1b[2;5HZZ\x1b8X"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		if op.Code != ScreenOpWriteSpan {
+			continue
+		}
+		got = append(got, rowText(op.Cells, len(op.Cells)))
+		if rowText(op.Cells, len(op.Cells)) == "X" && (op.Row != 0 || op.Col != 3) {
+			t.Fatalf("restore cursor should write X at saved row=0 col=3, got %#v damage=%#v", op, damage)
+		}
+	}
+	if strings.Join(got, "|") != "abc|ZZ|X" {
+		t.Fatalf("save/restore cursor should preserve ordered write semantics, got %v damage=%#v", got, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticLineOperations(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
