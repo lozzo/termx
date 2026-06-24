@@ -403,6 +403,65 @@ func TestTerminalSemanticProjectorConsumesRealVTermVerticalCursorRawWithoutFallb
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesVerticalAbsoluteRawWithoutFallback(t *testing.T) {
+	term := vterm.New(12, 4, 100, nil)
+	pipeline := newTerminalHistoryPipeline(12, 4)
+	seed := "top\r\nmiddle\r\nbottom"
+	_, err, damage := term.WriteWithDamage([]byte(seed))
+	if err != nil {
+		t.Fatalf("seed vterm write: %v", err)
+	}
+	if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+		Raw:             seed,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            12,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}); err != nil {
+		t.Fatalf("seed ingest: %v", err)
+	}
+
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b[2d\x1b[1GROW"
+	_, err, damage = term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	vpa := firstDamageControl(damage, "vpa")
+	if vpa.Control != "vpa" || vpa.Row != 1 {
+		t.Fatalf("vertical absolute raw should expose vterm VPA semantic row 1, got %#v damage=%#v", vpa, damage)
+	}
+	if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            12,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 2 || stats.WriteSpanOps == 0 {
+		t.Fatalf("vertical absolute raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(12, 6)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if !strings.Contains(text, "ROWdle") || strings.Contains(text, "ROWbottom") {
+		t.Fatalf("vertical absolute semantic projector should rewrite row 2, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorPrefersOrderedSemanticOps(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(12, 3)
 	batch := terminalSemanticBatch{
