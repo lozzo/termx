@@ -400,6 +400,42 @@ func TestTerminalSemanticProjectorConsumesRealVTermRawSharedBatch(t *testing.T) 
 	}
 }
 
+func TestTerminalSemanticProjectorShadowParsesRawTextState(t *testing.T) {
+	term := vterm.New(20, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	for _, raw := range []string{"\x1b[", "31mred ", "tail\x1b[0m"} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            20,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+	}
+	window, err := pipeline.LatestWindow(20, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "red tail" {
+		t.Fatalf("vterm semantic text should own raw text projection, got %#v", window.Rows)
+	}
+	for _, cell := range window.Rows[0].Cells {
+		if cell.Style.FG != "ansi:1" {
+			t.Fatalf("shadow parser must not corrupt vterm styled text projection, got %#v", window.Rows[0].Cells)
+		}
+	}
+	if len(window.Rows[0].Cells) == 0 {
+		t.Fatalf("shadow parser must not corrupt vterm styled text projection, got %#v", window.Rows[0].Cells)
+	}
+}
+
 func historyWindowContainsAll(window history.HistoryWindow, wants ...string) bool {
 	for _, want := range wants {
 		if !historyWindowContainsText(window, want) {

@@ -101,6 +101,9 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		stats.ScrollbackAppends += len(damage.ScrollbackAppend)
 	}
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
+		if batch.Raw != "" {
+			pipeline.shadowParsePrimaryOutputLocked(batch.Raw)
+		}
 		_, err := pipeline.applyVTermDamageEventsLocked(batch.Damages)
 		if err != nil {
 			return err
@@ -132,6 +135,16 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 	return nil
 }
 
+func (pipeline *terminalHistoryPipeline) shadowParsePrimaryOutputLocked(output string) {
+	if output == "" {
+		return
+	}
+	// 中文说明：vterm 已经提供可消费语义时，parser 只能维护 pending/style/OSC8
+	// 辅助状态，不能再把 raw 文本或控制事件写入 HistoryTrack。
+	_ = pipeline.ingest.Parse(output)
+	pipeline.ingest.clearSegments()
+}
+
 func semanticBatchHasHistoryOps(damages []vterm.WriteDamage) bool {
 	for _, damage := range damages {
 		if len(semanticOpsForHistoryDamage(damage)) > 0 || len(damage.ScrollbackAppend) > 0 {
@@ -143,7 +156,6 @@ func semanticBatchHasHistoryOps(damages []vterm.WriteDamage) bool {
 
 func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 	hasOps := false
-	hasInlineControl := false
 	for _, damage := range damages {
 		if damage.RequiresFullReplace || len(damage.ScrollbackAppend) > 0 || len(damage.AlternateAppend) > 0 {
 			return false
@@ -163,13 +175,12 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				hasOps = true
-				hasInlineControl = true
 			default:
 				return false
 			}
 		}
 	}
-	return hasOps && hasInlineControl
+	return hasOps
 }
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
