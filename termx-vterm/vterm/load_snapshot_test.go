@@ -1268,6 +1268,71 @@ func TestVTermWriteWithDamageC1CSIControlsKeepSemanticOrder(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder(t *testing.T) {
+	c1 := string([]byte{0x9b})
+
+	t.Run("page break", func(t *testing.T) {
+		vt := New(12, 3, 100, nil)
+		_, err, _ := vt.WriteWithDamage([]byte("shell\r\npage"))
+		if err != nil {
+			t.Fatalf("seed write with damage: %v", err)
+		}
+		_, err, damage := vt.WriteWithDamage([]byte(c1 + "2Jframe"))
+		if err != nil {
+			t.Fatalf("write with damage: %v", err)
+		}
+		ed := firstSemanticControlOp(t, damage, "ed")
+		if ed.Mode != 2 {
+			t.Fatalf("expected C1 CSI ED2 control mode 2, got %#v damage=%#v", ed, damage)
+		}
+		var got []string
+		for _, op := range damage.SemanticOps {
+			switch op.Code {
+			case ScreenOpControl:
+				got = append(got, "control:"+op.Control)
+			case ScreenOpWriteSpan:
+				got = append(got, "write:"+semanticCellsContent(op.Cells))
+			}
+		}
+		want := []string{"control:ed", "write:frame"}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("C1 CSI ED2 semantic ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+		}
+		if len(damage.ScrollbackAppend) == 0 {
+			t.Fatalf("C1 CSI ED2 should keep live scrollback append as boundary signal, damage=%#v", damage)
+		}
+	})
+
+	t.Run("clear scrollback", func(t *testing.T) {
+		vt := New(12, 3, 100, nil)
+		_, err, _ := vt.WriteWithDamage([]byte("old\r\nline"))
+		if err != nil {
+			t.Fatalf("seed write with damage: %v", err)
+		}
+		_, err, damage := vt.WriteWithDamage([]byte(c1 + "3Jafter"))
+		if err != nil {
+			t.Fatalf("write with damage: %v", err)
+		}
+		ed := firstSemanticControlOp(t, damage, "ed")
+		if ed.Mode != 3 {
+			t.Fatalf("expected C1 CSI ED3 control mode 3, got %#v damage=%#v", ed, damage)
+		}
+		var got []string
+		for _, op := range damage.SemanticOps {
+			switch op.Code {
+			case ScreenOpControl:
+				got = append(got, "control:"+op.Control)
+			case ScreenOpWriteSpan:
+				got = append(got, "write:"+semanticCellsContent(op.Cells))
+			}
+		}
+		want := []string{"control:ed", "write:after"}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("C1 CSI ED3 semantic ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+		}
+	})
+}
+
 func TestVTermWriteWithDamageC1CSIMovementAliasesKeepSemanticOrder(t *testing.T) {
 	vt := New(16, 5, 100, nil)
 	c1 := string([]byte{0x9b})

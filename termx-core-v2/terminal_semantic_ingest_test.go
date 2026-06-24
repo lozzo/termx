@@ -1110,6 +1110,151 @@ func TestTerminalSemanticProjectorConsumesEraseDisplayModesRawWithoutFallback(t 
 	})
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSIEraseDisplayModesRawWithoutFallback(t *testing.T) {
+	c1 := string([]byte{0x9b})
+
+	t.Run("page break", func(t *testing.T) {
+		term := vterm.New(24, 3, 100, nil)
+		pipeline := newTerminalHistoryPipeline(24, 3)
+		for _, raw := range []string{"shell-one\n", "draft-page"} {
+			_, err, damage := term.WriteWithDamage([]byte(raw))
+			if err != nil {
+				t.Fatalf("vterm write %q: %v", raw, err)
+			}
+			batch := terminalSemanticBatch{
+				Raw:             raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            24,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch %q: %v", raw, err)
+			}
+		}
+
+		resetTerminalSemanticIngestTestHooks()
+		var stats terminalSemanticProjectorStats
+		terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+			stats.SemanticProjectors += next.SemanticProjectors
+			stats.RawFallbacks += next.RawFallbacks
+			stats.WriteSpanOps += next.WriteSpanOps
+			stats.EraseDisplayOps += next.EraseDisplayOps
+			stats.ControlOps += next.ControlOps
+		}
+		defer resetTerminalSemanticIngestTestHooks()
+
+		raw := c1 + "2Jframe-current"
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		ed := firstDamageControl(damage, "ed")
+		if ed.Control != "ed" || ed.Mode != 2 {
+			t.Fatalf("C1 CSI ED2 raw batch should expose vterm ed mode 2 control, got %#v damage=%#v", ed, damage)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            24,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+		if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.EraseDisplayOps == 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+			t.Fatalf("C1 CSI ED2 raw batch should use vterm semantic projector without parser fallback, stats=%#v", stats)
+		}
+		window, err := pipeline.LatestWindow(24, 8)
+		if err != nil {
+			t.Fatalf("latest: %v", err)
+		}
+		if window.TotalLines != 2 || !historyWindowContainsAll(window, "shell-one", "draft-page", "frame-current") {
+			t.Fatalf("C1 CSI ED2 semantic page-break should commit current page and start fresh frame, total=%d rows=%#v", window.TotalLines, window.Rows)
+		}
+	})
+
+	t.Run("clear scrollback", func(t *testing.T) {
+		term := vterm.New(24, 3, 100, nil)
+		pipeline := newTerminalHistoryPipeline(24, 3)
+		for _, raw := range []string{"first\nsecond\n"} {
+			_, err, damage := term.WriteWithDamage([]byte(raw))
+			if err != nil {
+				t.Fatalf("vterm write %q: %v", raw, err)
+			}
+			batch := terminalSemanticBatch{
+				Raw:             raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            24,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch %q: %v", raw, err)
+			}
+		}
+		if err := pipeline.ForceCommitFrontier(); err != nil {
+			t.Fatalf("force commit seed: %v", err)
+		}
+		_, err, damage := term.WriteWithDamage([]byte("draft"))
+		if err != nil {
+			t.Fatalf("vterm write draft: %v", err)
+		}
+		if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+			Raw:             "draft",
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            24,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}); err != nil {
+			t.Fatalf("ingest draft batch: %v", err)
+		}
+
+		resetTerminalSemanticIngestTestHooks()
+		var stats terminalSemanticProjectorStats
+		terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+			stats.SemanticProjectors += next.SemanticProjectors
+			stats.RawFallbacks += next.RawFallbacks
+			stats.WriteSpanOps += next.WriteSpanOps
+			stats.EraseDisplayOps += next.EraseDisplayOps
+			stats.ControlOps += next.ControlOps
+		}
+		defer resetTerminalSemanticIngestTestHooks()
+
+		raw := c1 + "3Jafter"
+		_, err, damage = term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		ed := firstDamageControl(damage, "ed")
+		if ed.Control != "ed" || ed.Mode != 3 {
+			t.Fatalf("C1 CSI ED3 raw batch should expose vterm ed mode 3 control, got %#v damage=%#v", ed, damage)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            24,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+		if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.EraseDisplayOps == 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+			t.Fatalf("C1 CSI ED3 raw batch should use vterm semantic projector without parser fallback, stats=%#v", stats)
+		}
+		window, err := pipeline.LatestWindow(24, 8)
+		if err != nil {
+			t.Fatalf("latest: %v", err)
+		}
+		text := historyWindowJoinedText(window)
+		if window.TotalLines != 0 || strings.Contains(text, "first") || strings.Contains(text, "second") || !strings.Contains(text, "draft") || !strings.Contains(text, "after") {
+			t.Fatalf("C1 CSI ED3 semantic clear-scrollback should truncate committed history and preserve mutable frontier, total=%d text=%q rows=%#v", window.TotalLines, text, window.Rows)
+		}
+	})
+}
+
 func TestTerminalSemanticProjectorConsumesRepeatedPrimaryRepaintRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
