@@ -2205,6 +2205,82 @@ func TestVTermWriteWithDamageSemanticTabReset(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSITabControlsKeepSemanticOrder(t *testing.T) {
+	c1CSI := string([]byte{0x9b})
+	tests := []struct {
+		name   string
+		cols   int
+		raw    string
+		want   []string
+		checks map[string]int
+		modes  map[string]int
+	}{
+		{
+			name:   "backward-tab",
+			cols:   16,
+			raw:    "123456789" + c1CSI + "ZXY",
+			want:   []string{"write:123456789", "control:cbt", "write:XY"},
+			checks: map[string]int{"cbt": 8},
+		},
+		{
+			name:   "forward-tab",
+			cols:   24,
+			raw:    "ab" + c1CSI + "2IZ",
+			want:   []string{"write:ab", "control:ht", "write:Z"},
+			checks: map[string]int{"ht": 16},
+		},
+		{
+			name:   "tab-clear",
+			cols:   16,
+			raw:    "ab\r" + c1CSI + "3g\tZ",
+			want:   []string{"write:ab", "control:cr", "control:tbc", "control:ht", "write:Z"},
+			checks: map[string]int{"ht": 15},
+			modes:  map[string]int{"tbc": 3},
+		},
+		{
+			name:   "tab-reset",
+			cols:   16,
+			raw:    "ab\x1bH" + c1CSI + "?5W\r\tZ",
+			want:   []string{"write:ab", "control:hts", "control:decst8c", "control:cr", "control:ht", "write:Z"},
+			checks: map[string]int{"ht": 8},
+			modes:  map[string]int{"decst8c": 5},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vt := New(tc.cols, 3, 100, nil)
+			_, err, damage := vt.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("write with damage: %v", err)
+			}
+			var got []string
+			for _, op := range damage.SemanticOps {
+				switch op.Code {
+				case ScreenOpWriteSpan:
+					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+				case ScreenOpControl:
+					got = append(got, "control:"+op.Control)
+				}
+			}
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Fatalf("C1 CSI tab semantic ops must preserve raw order, got %v want %v damage=%#v", got, tc.want, damage)
+			}
+			for control, wantCol := range tc.checks {
+				op := firstSemanticControlOp(t, damage, control)
+				if op.Col != wantCol {
+					t.Fatalf("%s should expose vterm-resolved column %d, got %#v damage=%#v", control, wantCol, op, damage)
+				}
+			}
+			for control, wantMode := range tc.modes {
+				op := firstSemanticControlOp(t, damage, control)
+				if op.Mode != wantMode {
+					t.Fatalf("%s should expose mode %d, got %#v damage=%#v", control, wantMode, op, damage)
+				}
+			}
+		})
+	}
+}
+
 func TestVTermWriteWithDamageSemanticSpecialDrawingCharset(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

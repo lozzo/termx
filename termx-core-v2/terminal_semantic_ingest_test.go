@@ -3423,6 +3423,106 @@ func TestTerminalSemanticProjectorConsumesTabResetRawWithoutFallback(t *testing.
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSITabControlsRawWithoutFallback(t *testing.T) {
+	c1CSI := string([]byte{0x9b})
+	tests := []struct {
+		name       string
+		cols       int
+		raw        string
+		wantText   string
+		controls   map[string]int
+		modes      map[string]int
+		minControl int
+	}{
+		{
+			name:       "backward-tab",
+			cols:       16,
+			raw:        "123456789" + c1CSI + "ZXY",
+			wantText:   "12345678XY",
+			controls:   map[string]int{"cbt": 8},
+			minControl: 1,
+		},
+		{
+			name:       "forward-tab",
+			cols:       24,
+			raw:        "ab" + c1CSI + "2IZ",
+			wantText:   "ab              Z",
+			controls:   map[string]int{"ht": 16},
+			minControl: 1,
+		},
+		{
+			name:       "tab-clear",
+			cols:       16,
+			raw:        "ab\r" + c1CSI + "3g\tZ",
+			wantText:   "ab             Z",
+			controls:   map[string]int{"ht": 15},
+			modes:      map[string]int{"tbc": 3},
+			minControl: 3,
+		},
+		{
+			name:       "tab-reset",
+			cols:       16,
+			raw:        "ab\x1bH" + c1CSI + "?5W\r\tZ",
+			wantText:   "ab      Z",
+			controls:   map[string]int{"ht": 8},
+			modes:      map[string]int{"decst8c": 5},
+			minControl: 4,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ControlOps += next.ControlOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			t.Cleanup(resetTerminalSemanticIngestTestHooks)
+
+			term := vterm.New(tc.cols, 3, 100, nil)
+			_, err, damage := term.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			for control, wantCol := range tc.controls {
+				op := firstDamageControl(damage, control)
+				if op.Control != control || op.Col != wantCol {
+					t.Fatalf("C1 CSI tab raw should expose %s at resolved col %d, got %#v damage=%#v", control, wantCol, op, damage)
+				}
+			}
+			for control, wantMode := range tc.modes {
+				op := firstDamageControl(damage, control)
+				if op.Control != control || op.Mode != wantMode {
+					t.Fatalf("C1 CSI tab raw should expose %s mode %d, got %#v damage=%#v", control, wantMode, op, damage)
+				}
+			}
+			pipeline := newTerminalHistoryPipeline(tc.cols, 3)
+			batch := terminalSemanticBatch{
+				Raw:             tc.raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            tc.cols,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < tc.minControl || stats.WriteSpanOps == 0 {
+				t.Fatalf("C1 CSI tab raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+			}
+			window, err := pipeline.LatestWindow(tc.cols, 4)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			if len(window.Rows) != 1 || window.Rows[0].Text != tc.wantText {
+				t.Fatalf("C1 CSI tab semantic projector should use vterm tab state, got %#v want %q damage=%#v", window.Rows, tc.wantText, damage)
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesEraseCharacterRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
