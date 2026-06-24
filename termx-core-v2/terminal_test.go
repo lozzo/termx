@@ -73,6 +73,36 @@ func TestTerminalLifecycleAndPipeline(t *testing.T) {
 	}
 }
 
+func TestTerminalLiveSurfaceRepliesToOSCBackgroundQuery(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-osc-query",
+		Command: []string{"codex"},
+		Size:    Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	process := factory.process("term-osc-query")
+	if process == nil {
+		t.Fatal("expected process to be spawned")
+	}
+
+	if err := server.IngestOutput(context.Background(), "term-osc-query", "\x1b]11;?\x1b\\"); err != nil {
+		t.Fatalf("ingest OSC background query: %v", err)
+	}
+
+	assertEventually(t, time.Second, func() bool {
+		inputs, _, _, _ := process.snapshot()
+		for _, input := range inputs {
+			if strings.Contains(string(input), "\x1b]11;") {
+				return true
+			}
+		}
+		return false
+	}, "expected live terminal query response to be written back to process input")
+}
+
 func TestTerminalHistoryPipelineClearsParserSegmentsAfterIngest(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(20, 4)
 	if err := pipeline.Ingest("\x1b[31mstyled\x1b[0m\nplain\n"); err != nil {

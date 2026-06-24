@@ -23,12 +23,14 @@ func (s SurfaceSize) Valid() bool {
 type SurfaceTrack struct {
 	size                         SurfaceSize
 	vt                           *vterm.VTerm
+	onResponse                   vterm.ResponseHandler
 	pending                      string
 	preserveAltScreenFrameOnExit bool
 }
 
 type SurfaceTrackOptions struct {
 	PreserveAltScreenFrameOnExit bool
+	OnResponse                   vterm.ResponseHandler
 }
 
 type SurfaceWriteResult struct {
@@ -64,7 +66,8 @@ func NewSurfaceTrackWithOptions(size SurfaceSize, options SurfaceTrackOptions) *
 	}
 	return &SurfaceTrack{
 		size:                         size,
-		vt:                           vterm.New(size.Cols, size.Rows, 0, nil),
+		vt:                           vterm.New(size.Cols, size.Rows, 0, options.OnResponse),
+		onResponse:                   options.OnResponse,
 		preserveAltScreenFrameOnExit: options.PreserveAltScreenFrameOnExit,
 	}
 }
@@ -91,7 +94,7 @@ func (surface *SurfaceTrack) ResetForRestartPreservingScreen() {
 	// 中文说明：重启的是外部进程，不是 terminal identity。保留可见 tail，
 	// 但用全新 VTerm 丢弃旧程序的 mouse/bracketed paste/alt-screen/pending escape 状态。
 	_ = surface.vt.Close()
-	surface.vt = vterm.New(size.Cols, size.Rows, 0, nil)
+	surface.vt = vterm.New(size.Cols, size.Rows, 0, surface.onResponse)
 	surface.pending = ""
 	if len(rows) == 0 {
 		return
@@ -263,7 +266,7 @@ func (surface *SurfaceTrack) ensureVTerm() {
 	if !surface.size.Valid() {
 		surface.size = SurfaceSize{Cols: 80, Rows: 24}
 	}
-	surface.vt = vterm.New(surface.size.Cols, surface.size.Rows, 0, nil)
+	surface.vt = vterm.New(surface.size.Cols, surface.size.Rows, 0, surface.onResponse)
 }
 
 type privateModeAltAction int

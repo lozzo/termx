@@ -39,12 +39,14 @@ func newTerminal(info TerminalInfo, options TerminalCreateOptions, process Termi
 		info:         info.Clone(),
 		options:      cloneTerminalCreateOptions(options),
 		process:      process,
-		live:         live.NewSurfaceTrack(size),
 		history:      newTerminalHistoryPipelineWithStorage(int(info.Size.Cols), int(info.Size.Rows), historyBackend),
 		historyClose: historyClose,
 		events:       events,
 		update:       update,
 	}
+	liveOptions := live.DefaultSurfaceTrackOptions()
+	liveOptions.OnResponse = terminal.handleLiveSurfaceResponse
+	terminal.live = live.NewSurfaceTrackWithOptions(size, liveOptions)
 	terminal.watchProcess(process)
 	return terminal
 }
@@ -75,6 +77,22 @@ func (terminal *Terminal) Input(data []byte) error {
 	}
 	terminal.mu.Unlock()
 	return process.Input(data)
+}
+
+func (terminal *Terminal) handleLiveSurfaceResponse(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	terminal.mu.Lock()
+	process := terminal.process
+	state := terminal.info.State
+	terminal.mu.Unlock()
+	if process == nil || state == TerminalStateExited || state == TerminalStateRemoved {
+		return
+	}
+	// 中文说明：OSC/DSR/DA 等终端查询的响应必须回写到当前 PTY，
+	// 否则 Codex 这类 TUI 会误判颜色/能力并降级渲染。
+	_ = process.Input(data)
 }
 
 func (terminal *Terminal) IngestOutput(output string) error {
