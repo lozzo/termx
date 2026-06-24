@@ -2811,6 +2811,61 @@ func TestTerminalSemanticProjectorConsumesC1CSIRawWithoutFallback(t *testing.T) 
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSIEraseLineModesRawWithoutFallback(t *testing.T) {
+	c1 := string([]byte{0x9b})
+	for _, tc := range []struct {
+		name string
+		raw  string
+		mode int
+		want string
+	}{
+		{name: "erase to start", raw: "abcdef" + c1 + "4G" + c1 + "1KZ", mode: 1, want: "   Zef"},
+		{name: "erase whole line", raw: "abcdef" + c1 + "4G" + c1 + "2KZ", mode: 2, want: "   Z  "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ControlOps += next.ControlOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			term := vterm.New(12, 3, 100, nil)
+			_, err, damage := term.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			el := firstDamageControl(damage, "el")
+			if el.Mode != tc.mode || el.Col != 3 {
+				t.Fatalf("C1 CSI EL mode %d raw should expose vterm erase-line control at col=3, got %#v damage=%#v", tc.mode, el, damage)
+			}
+			pipeline := newTerminalHistoryPipeline(12, 3)
+			if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+				Raw:             tc.raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            12,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 2 || stats.WriteSpanOps == 0 {
+				t.Fatalf("C1 CSI EL mode %d raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", tc.mode, stats, damage)
+			}
+			window, err := pipeline.LatestWindow(12, 4)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			if len(window.Rows) != 1 || window.Rows[0].Text != tc.want {
+				t.Fatalf("C1 CSI EL mode %d semantic projector should mutate current line, got %#v want %q damage=%#v", tc.mode, window.Rows, tc.want, damage)
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesC1CSIMovementAliasesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

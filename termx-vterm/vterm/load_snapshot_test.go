@@ -1268,6 +1268,60 @@ func TestVTermWriteWithDamageC1CSIControlsKeepSemanticOrder(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSIEraseLineModesKeepSemanticOrder(t *testing.T) {
+	c1 := string([]byte{0x9b})
+
+	for _, tc := range []struct {
+		name      string
+		mode      int
+		raw       string
+		wantOrder []string
+		wantRow   string
+	}{
+		{
+			name:      "erase to start",
+			mode:      1,
+			raw:       "abcdef" + c1 + "4G" + c1 + "1KZ",
+			wantOrder: []string{"write:abcdef", "control:cha", "control:el", "write:Z"},
+			wantRow:   "   Zef",
+		},
+		{
+			name:      "erase whole line",
+			mode:      2,
+			raw:       "abcdef" + c1 + "4G" + c1 + "2KZ",
+			wantOrder: []string{"write:abcdef", "control:cha", "control:el", "write:Z"},
+			wantRow:   "   Z",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vt := New(12, 3, 100, nil)
+			_, err, damage := vt.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("write with damage: %v", err)
+			}
+			el := firstSemanticControlOp(t, damage, "el")
+			if el.Mode != tc.mode || el.Col != 3 {
+				t.Fatalf("expected C1 EL mode=%d at col=3, got %#v damage=%#v", tc.mode, el, damage)
+			}
+			var got []string
+			for _, op := range damage.SemanticOps {
+				switch op.Code {
+				case ScreenOpWriteSpan:
+					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+				case ScreenOpControl:
+					got = append(got, "control:"+op.Control)
+				}
+			}
+			if strings.Join(got, "|") != strings.Join(tc.wantOrder, "|") {
+				t.Fatalf("C1 CSI EL mode %d semantic ops must preserve raw order, got %v want %v damage=%#v", tc.mode, got, tc.wantOrder, damage)
+			}
+			if row := strings.TrimRight(rowText(vt.ScreenRowView(0), 12), " "); row != tc.wantRow {
+				t.Fatalf("C1 CSI EL mode %d should mutate line via vterm erase semantics, got %q want %q damage=%#v", tc.mode, row, tc.wantRow, damage)
+			}
+		})
+	}
+}
+
 func TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder(t *testing.T) {
 	c1 := string([]byte{0x9b})
 
