@@ -1701,6 +1701,49 @@ func TestTerminalSemanticProjectorConsumesSingleShiftCharsetRawWithoutFallback(t
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesResetInitialStateRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "abc\x1bcZ"
+	term := vterm.New(16, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageControl(damage, "ris").Code != vterm.ScreenOpControl {
+		t.Fatalf("RIS raw should expose reset semantic control, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(16, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            16,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("RIS raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(16, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "Z" {
+		t.Fatalf("RIS semantic projector should reset mutable frontier before later text, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesSaveRestoreCursorRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

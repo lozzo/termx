@@ -1427,6 +1427,35 @@ func TestVTermWriteWithDamageSemanticSingleShiftCharset(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticResetInitialState(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abc\x1bcZ"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !damage.RequiresFullReplace {
+		t.Fatalf("RIS resets the terminal screen and should require live full replace, damage=%#v", damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		}
+	}
+	want := []string{"write:abc", "control:ris", "write:Z"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic RIS ops must preserve raw reset order, got %v want %v damage=%#v", got, want, damage)
+	}
+	screen := vt.ScreenContent()
+	if got := strings.TrimRight(rowText(screen.Cells[0], 16), " "); got != "Z" {
+		t.Fatalf("expected RIS to clear previous screen content before Z, got %q screen=%#v", got, screen.Cells[0])
+	}
+}
+
 func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 

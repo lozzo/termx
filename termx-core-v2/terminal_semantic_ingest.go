@@ -363,7 +363,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
+	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm", "ris":
 		return true
 	default:
 		return false
@@ -935,6 +935,10 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		// 中文说明：DECSTBM 只改变 vterm 的滚动区域；history 不保存第二份
 		// scroll-region truth，后续 cursor/write/scroll-out 语义会显式投影。
 		return nil
+	case "ris":
+		// 中文说明：RIS 丢弃当前 primary mutable frontier，但不能从清屏后的
+		// vterm screen 反推 committed history。
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventResetFrontier})
 	case "cuu":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: op.Mode})
 	case "cud":
