@@ -265,6 +265,7 @@
 | R201Y. SK 低高度 multi-scroll vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 rows=1/2 普通 primary raw batch 中的多次 LF/IND、自动换行 soft-wrap、多个 primary scrollback append 和向上 scroll rect 直接走 vterm semantic projector；vterm 明确区分自动换行 soft-wrap 与显式 IND，core-v2 不再回退 parser 且不丢不重复 |
 | R201Z. SK 大高度 primary scroll-out vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已让 rows>2 普通 primary raw batch 中的 plain LF/IND/soft-wrap、primary scrollback append 和向上 scroll rect 直接走 shared vterm semantic projector；样式/link/宽字符 footprint 仍留给后续专门切片，避免把未建模语义抢进 projector |
 | R201AA. SK ASCII SGR/OSC8 文本语义 vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已让 rows>2 的单批 ASCII SGR 与 OSC8 link 文本加 hard newline 直接由 shared vterm semantic text cells 投影；parser 只 shadow pending 状态，不再重放这些文本/样式语义 |
+| R201AB. SK 宽字符/combining 文本语义 vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已让 rows>2 的单批宽字符和 combining grapheme 文本加 hard newline 直接由 shared vterm semantic text cells 投影；保持 logical cell width/style/link，不回退 parser |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入
@@ -347,6 +348,7 @@
 - `R201Y` 已完成：vterm semantic ops 明确区分自动换行 `soft-wrap` 与显式 `IND`，core-v2 `HistoryTrack` 用 `EventSoftWrapLine` 表达 visual row ownership 前进但 logical line 仍 open；rows=1/2 同一 raw batch 内多次 LF/soft-wrap/scrollback append 可直接走 vterm semantic projector，不再回退 parser，且普通 primary 输出不丢不重复。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
 - `R201Z` 已完成：rows>2 的普通 plain primary scroll-out raw batch 现在可直接使用 shared vterm semantic projector，vterm 的 primary scrollback append 只证明 screen ownership 离开，最终仍由 `HistoryTrack` 合并 logical-line history；focused harness 证明 semantic projector 命中、`RawFallbacks == 0`、plain 行不丢不重复。样式、OSC8 link、宽字符/combining 和 styled tail footprint 仍由后续专门语义切片收口，避免在本切片误把未建模 footprint 交给 projector。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。
 - `R201AA` 已完成：vterm semantic text cells 已承接 rows>2 单批 ASCII SGR/OSC8 hard-newline 输出，focused harness 证明 styled/link raw batch 使用 semantic projector、`RawFallbacks == 0`，红色 SGR、OSC8 link metadata 与后续 plain line 都来自 shared vterm cells；HistoryTrack append 路径会合并相邻同 style/link ASCII run，避免 vterm 逐 cell text damage 改变 logical cell run 形态，overwrite 路径仍保持精确列替换。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
+- `R201AB` 已完成：vterm semantic text cells 已承接 rows>2 单批 combining grapheme 和宽字符 hard-newline 输出，projector 会在同一 damage 内聚合连续 write span，并把跨 span 的零宽 combining mark 合并到前一个 logical cell；focused harness 证明 `é好` 使用 semantic projector、`RawFallbacks == 0`，窄列投影仍保持 combining grapheme 与宽字符边界。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R202` 待开始：Web 桌面 terminal 可视区修复保留在后续切片；已有 remote-ui/localweb 未提交改动不纳入当前 core-v2 semantic ingest 切片。
 - `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
 - `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。

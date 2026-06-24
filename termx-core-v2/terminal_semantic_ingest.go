@@ -1,6 +1,8 @@
 package termxcorev2
 
 import (
+	"unicode"
+
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-core-v2/live"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
@@ -200,6 +202,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		lowRows := damage.SizeRows > 0 && damage.SizeRows <= 2
 		tallPlainScrollOut := rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage)
 		tallASCIIText := rawSharedTallASCIITextDamageCanUseSemanticOps(damage)
+		tallGraphemeText := rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage)
 		if len(damage.ScrollbackAppend) > 0 {
 			if !lowRows && !tallPlainScrollOut {
 				return false
@@ -222,7 +225,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows && !tallPlainScrollOut && !tallASCIIText {
+					if !lowRows && !tallPlainScrollOut && !tallASCIIText && !tallGraphemeText {
 						return false
 					}
 					linefeedControls++
@@ -344,6 +347,36 @@ func rawSharedTallASCIITextDamageCanUseSemanticOps(damage vterm.WriteDamage) boo
 	return hasText
 }
 
+func rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	// 中文说明：R201AB 只接管无 scroll-out 的真实 grapheme 文本；
+	// scrollback 和 full-replace 的 ownership 边界仍由独立切片证明。
+	if damage.SizeRows <= 2 || len(damage.ScrollbackAppend) > 0 || damage.RequiresFullReplace || len(damage.AlternateAppend) > 0 {
+		return false
+	}
+	hasText := false
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) == 0 {
+				continue
+			}
+			for _, cell := range op.Cells {
+				if !rawSharedGraphemeTextCell(cell) {
+					return false
+				}
+			}
+			hasText = true
+		case vterm.ScreenOpControl:
+			if op.Control != "lf" && op.Control != "ind" && op.Control != "cr" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return hasText
+}
+
 func rawSharedPlainHistoryCell(cell vterm.Cell) bool {
 	return cell.Style == (vterm.CellStyle{}) &&
 		cell.LinkURL == "" &&
@@ -354,6 +387,21 @@ func rawSharedPlainHistoryCell(cell vterm.Cell) bool {
 
 func rawSharedASCIITextCell(cell vterm.Cell) bool {
 	return (cell.Width == 0 || cell.Width == 1) && !containsNonSingleWidthRune(cell.Content)
+}
+
+func rawSharedGraphemeTextCell(cell vterm.Cell) bool {
+	if cell.Content == "" && cell.Width == 0 {
+		return true
+	}
+	if cell.Content == "" {
+		return false
+	}
+	for _, r := range cell.Content {
+		if r == '\t' || r == '\n' || r == '\r' || r < 0x20 {
+			return false
+		}
+	}
+	return cell.Width >= 0
 }
 
 func containsNonSingleWidthRune(text string) bool {
@@ -381,6 +429,31 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		softWrapContinuation := false
 		lastWriteRow := -1
 		lastWriteEndCol := -1
+		var pendingWriteCells []history.Cell
+		pendingWriteRow := -1
+		pendingWriteCol := -1
+		flushPendingWrite := func() error {
+			if len(pendingWriteCells) == 0 {
+				return nil
+			}
+			if softWrapContinuation {
+				softWrapContinuation = false
+			} else if pendingWriteRow != lastWriteRow || pendingWriteCol != lastWriteEndCol {
+				if err := pipeline.applyCursorPositionFromVTerm(pendingWriteRow, pendingWriteCol); err != nil {
+					return err
+				}
+			}
+			if err := pipeline.track.ApplyOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: pendingWriteCells}); err != nil {
+				return err
+			}
+			lastWriteRow = pendingWriteRow
+			lastWriteEndCol = pendingWriteCol + historyCellsDisplayWidth(pendingWriteCells)
+			pendingWriteCells = nil
+			pendingWriteRow = -1
+			pendingWriteCol = -1
+			applied = true
+			return nil
+		}
 		for _, op := range ops {
 			switch op.Code {
 			case vterm.ScreenOpWriteSpan:
@@ -388,20 +461,20 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if len(cells) == 0 {
 					continue
 				}
-				if softWrapContinuation {
-					softWrapContinuation = false
-				} else if op.Row != lastWriteRow || op.Col != lastWriteEndCol {
-					if err := pipeline.applyCursorPositionFromVTerm(op.Row, op.Col); err != nil {
-						return applied, err
-					}
+				if len(pendingWriteCells) > 0 && op.Row == pendingWriteRow && op.Col == pendingWriteCol+historyCellsDisplayWidth(pendingWriteCells) {
+					pendingWriteCells = appendMergedHistoryCells(pendingWriteCells, cells)
+					continue
 				}
-				if err := pipeline.track.ApplyOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: cells}); err != nil {
+				if err := flushPendingWrite(); err != nil {
 					return applied, err
 				}
-				lastWriteRow = op.Row
-				lastWriteEndCol = op.Col + historyCellsDisplayWidth(cells)
-				applied = true
+				pendingWriteCells = cells
+				pendingWriteRow = op.Row
+				pendingWriteCol = op.Col
 			case vterm.ScreenOpClearToEOL:
+				if err := flushPendingWrite(); err != nil {
+					return applied, err
+				}
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				if err := pipeline.applyCursorPositionFromVTerm(op.Row, op.Col); err != nil {
@@ -417,6 +490,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				}
 				applied = true
 			case vterm.ScreenOpClearRect:
+				if err := flushPendingWrite(); err != nil {
+					return applied, err
+				}
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				if op.Rect.Width <= 0 || op.Rect.Height <= 0 {
@@ -432,6 +508,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 					applied = true
 				}
 			case vterm.ScreenOpScrollRect:
+				if err := flushPendingWrite(); err != nil {
+					return applied, err
+				}
 				if controlLinefeedInDamage {
 					continue
 				}
@@ -447,6 +526,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				scrollbackApplied += count
 				applied = true
 			case vterm.ScreenOpControl:
+				if err := flushPendingWrite(); err != nil {
+					return applied, err
+				}
 				if op.Control != "soft-wrap" {
 					lastWriteRow = -1
 					lastWriteEndCol = -1
@@ -467,6 +549,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				}
 				applied = true
 			case vterm.ScreenOpModes:
+				if err := flushPendingWrite(); err != nil {
+					return applied, err
+				}
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				if err := pipeline.applyVTermModeEventLocked(op); err != nil {
@@ -474,6 +559,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				}
 				applied = true
 			}
+		}
+		if err := flushPendingWrite(); err != nil {
+			return applied, err
 		}
 		for ; scrollbackApplied < len(damage.ScrollbackAppend); scrollbackApplied++ {
 			if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventPrimaryScrollOut, Count: 1}); err != nil {
@@ -634,6 +722,18 @@ func historyCellsFromVTermCells(cells []vterm.Cell) []history.Cell {
 		if cell.Content == "" && cell.Width == 0 {
 			continue
 		}
+		if cell.Width == 0 && len(out) > 0 && cell.Content != "" {
+			next := history.Cell{
+				Text:       cell.Content,
+				Style:      historyStyleFromVTermStyle(cell.Style),
+				LinkURL:    cell.LinkURL,
+				LinkParams: cell.LinkParams,
+			}
+			if canMergeVTermCombiningHistoryCell(out[len(out)-1], next) {
+				out[len(out)-1].Text += next.Text
+				continue
+			}
+		}
 		text := cell.Content
 		width := cell.Width
 		if width <= 0 {
@@ -659,6 +759,35 @@ func historyCellsFromVTermCells(cells []vterm.Cell) []history.Cell {
 	return out
 }
 
+func appendMergedHistoryCells(left []history.Cell, right []history.Cell) []history.Cell {
+	if len(left) == 0 {
+		return right
+	}
+	for _, cell := range right {
+		if canMergeVTermCombiningHistoryCell(left[len(left)-1], cell) {
+			left[len(left)-1].Text += cell.Text
+			continue
+		}
+		if canMergeVTermTextHistoryCells(left[len(left)-1], cell) {
+			left[len(left)-1].Text += cell.Text
+			left[len(left)-1].Width += cell.Width
+			continue
+		}
+		left = append(left, cell)
+	}
+	return left
+}
+
+func canMergeVTermCombiningHistoryCell(left history.Cell, right history.Cell) bool {
+	return left.Style == right.Style &&
+		left.LinkURL == right.LinkURL &&
+		left.LinkParams == right.LinkParams &&
+		left.Text != "" &&
+		right.Text != "" &&
+		right.Width <= 1 &&
+		containsOnlyCombiningMarks(right.Text)
+}
+
 func canMergeVTermTextHistoryCells(left history.Cell, right history.Cell) bool {
 	return left.Style == right.Style &&
 		left.LinkURL == right.LinkURL &&
@@ -679,6 +808,18 @@ func historyCellsDisplayWidth(cells []history.Cell) int {
 		width += len([]rune(cell.Text))
 	}
 	return width
+}
+
+func containsOnlyCombiningMarks(text string) bool {
+	if text == "" {
+		return false
+	}
+	for _, r := range text {
+		if !unicode.Is(unicode.Mn, r) && !unicode.Is(unicode.Me, r) && !unicode.Is(unicode.Mc, r) {
+			return false
+		}
+	}
+	return true
 }
 
 func opStyleFromClearToEOL(op vterm.DamageOp) vterm.CellStyle {

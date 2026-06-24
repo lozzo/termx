@@ -918,6 +918,53 @@ func TestTerminalSemanticProjectorConsumesRealVTermStyledLinkTextRawBatch(t *tes
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesRealVTermGraphemeTextRawBatch(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(20, 4, 100, nil)
+	raw := "\x1b[35;1me\u0301好\x1b[0m\nx"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(20, 4)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            20,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("wide/combining raw batch should use vterm semantic text cells without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(2, 8)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 3 || window.Rows[0].Text != "e\u0301" || window.Rows[1].Text != "好" || window.Rows[2].Text != "x" {
+		t.Fatalf("grapheme semantic text should keep combining/wide boundaries, got %#v damage=%#v", window.Rows, damage)
+	}
+	first := window.Rows[0].Cells
+	if len(first) != 1 || first[0].Text != "e\u0301" || first[0].Style.FG != "ansi:5" || !first[0].Style.Bold {
+		t.Fatalf("expected styled combining grapheme cell from vterm semantic text, got %#v rows=%#v", first, window.Rows)
+	}
+	second := window.Rows[1].Cells
+	if len(second) != 1 || second[0].Text != "好" || second[0].Width != 2 || second[0].Style.FG != "ansi:5" || !second[0].Style.Bold {
+		t.Fatalf("expected styled wide grapheme cell from vterm semantic text, got %#v rows=%#v", second, window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.T) {
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)
