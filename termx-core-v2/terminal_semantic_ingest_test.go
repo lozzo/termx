@@ -338,6 +338,68 @@ func TestTerminalSemanticProjectorUsesSemanticClearControl(t *testing.T) {
 	}
 }
 
+func TestTerminalSemanticProjectorUsesSemanticOpsForRawSharedBatch(t *testing.T) {
+	pipeline := newTerminalHistoryPipeline(16, 3)
+	batch := terminalSemanticBatch{
+		Raw: "parser-would-write-this\x1b[2D!!",
+		Damages: []vterm.WriteDamage{{
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("semantic")},
+				{Code: vterm.ScreenOpControl, Control: "bs", Row: 0, Col: 7, Mode: 1},
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 7, Cells: vtermCells("X")},
+				{Code: vterm.ScreenOpControl, Control: "ht", Row: 0, Col: 15},
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 15, Cells: vtermCells("Z")},
+			},
+			SizeCols: 16,
+			SizeRows: 3,
+		}},
+		Cols:            16,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(16, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if !strings.Contains(text, "semantiX") || !strings.Contains(text, "Z") {
+		t.Fatalf("raw shared batch should use vterm semantic ops, got %q rows=%#v", text, window.Rows)
+	}
+	if strings.Contains(text, "parser-would-write-this") || strings.Contains(text, "!!") {
+		t.Fatalf("raw parser should not reapply terminal/text semantics when semantic ops exist, got %q rows=%#v", text, window.Rows)
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesRealVTermRawSharedBatch(t *testing.T) {
+	term := vterm.New(16, 3, 100, nil)
+	raw := "ab\bX\tZ"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(16, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            16,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(16, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "aX") || !historyWindowContainsText(window, "Z") || historyWindowContainsText(window, "abX") {
+		t.Fatalf("real raw shared batch should be driven by vterm semantic ops, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func historyWindowContainsAll(window history.HistoryWindow, wants ...string) bool {
 	for _, want := range wants {
 		if !historyWindowContainsText(window, want) {

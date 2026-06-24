@@ -822,7 +822,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
 			if reason, broad := directStats.fullReplaceReason(); broad {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
-				damage.SemanticOps = semanticOpsFromCharmVTDamages(directDamages)
+				damage.SemanticOps = semanticControlOpsFromCharmVTDamages(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -836,7 +836,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 				}
 			} else {
 				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "direct_damage_unsupported")
-				damage.SemanticOps = semanticOpsFromCharmVTDamages(directDamages)
+				damage.SemanticOps = semanticControlOpsFromCharmVTDamages(directDamages)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
@@ -3150,7 +3150,7 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 	v.scrollbackRowCache = nextScrollbackCache
 }
 
-func semanticOpsFromCharmVTDamages(damages []charmvt.Damage) []DamageOp {
+func semanticControlOpsFromCharmVTDamages(damages []charmvt.Damage) []DamageOp {
 	if len(damages) == 0 {
 		return nil
 	}

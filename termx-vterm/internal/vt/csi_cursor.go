@@ -25,6 +25,7 @@ func (e *Emulator) nextTab(n int) {
 	// NOTE: We use t.scr.setCursor here because we don't want to reset the
 	// phantom state.
 	e.scr.setCursor(x, y, false)
+	e.scr.damage.recordControl("ht", x, y, 0)
 }
 
 // prevTab moves the cursor to the previous tab stop n times. This respects the

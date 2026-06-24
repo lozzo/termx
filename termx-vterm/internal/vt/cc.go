@@ -66,4 +66,6 @@ func (e *Emulator) reverseIndex() {
 func (e *Emulator) backspace() {
 	// This acts like [ansi.CUB]
 	e.moveCursor(-1, 0)
+	x, y := e.scr.CursorPosition()
+	e.scr.damage.recordControl("bs", x, y, 1)
 }

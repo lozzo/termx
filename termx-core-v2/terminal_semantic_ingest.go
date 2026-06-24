@@ -100,17 +100,16 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		}
 		stats.ScrollbackAppends += len(damage.ScrollbackAppend)
 	}
-	if batch.FromSharedVTerm && batch.Raw == "" {
+	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
 		_, err := pipeline.applyVTermDamageEventsLocked(batch.Damages)
 		if err != nil {
 			return err
 		}
-	}
-	if batch.Raw != "" {
+	} else if batch.Raw != "" {
 		var err error
 		if batch.FromSharedVTerm {
 			// 中文说明：shared vterm 已经给出 alt-screen final-frame 和 damage；
-			// raw parser 暂时只作为文本/style 与尚未完全结构化的控制语义投影。
+			// 只有 vterm 暂未产出可消费语义时才允许 raw parser 作为迁移辅助。
 			err = pipeline.ingestPrimaryOutputLocked(batch.Raw)
 		} else {
 			err = pipeline.ingestOutputLocked(batch.Raw)
@@ -131,6 +130,55 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		terminalSemanticProjectorHook(stats)
 	}
 	return nil
+}
+
+func semanticBatchHasHistoryOps(damages []vterm.WriteDamage) bool {
+	for _, damage := range damages {
+		if len(semanticOpsForHistoryDamage(damage)) > 0 || len(damage.ScrollbackAppend) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
+	hasOps := false
+	hasInlineControl := false
+	for _, damage := range damages {
+		if damage.RequiresFullReplace || len(damage.ScrollbackAppend) > 0 || len(damage.AlternateAppend) > 0 {
+			return false
+		}
+		if len(damage.SemanticOps) == 0 {
+			continue
+		}
+		for _, op := range damage.SemanticOps {
+			switch op.Code {
+			case vterm.ScreenOpWriteSpan:
+				if len(op.Cells) == 0 {
+					continue
+				}
+				hasOps = true
+			case vterm.ScreenOpControl:
+				if !rawSharedControlCanUseSemanticOp(op.Control) {
+					return false
+				}
+				hasOps = true
+				hasInlineControl = true
+			default:
+				return false
+			}
+		}
+	}
+	return hasOps && hasInlineControl
+}
+
+func rawSharedControlCanUseSemanticOp(control string) bool {
+	switch control {
+	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el":
+		return true
+	default:
+		return false
+	}
 }
 
 func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []vterm.WriteDamage) (bool, error) {
@@ -255,6 +303,10 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorForward, Count: op.Mode})
 	case "cub":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorBackward, Count: op.Mode})
+	case "bs":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorBackward, Count: 1})
+	case "ht":
+		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorHorizontalAbsolute, Count: op.Col + 1})
 	case "cha":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorHorizontalAbsolute, Count: op.Col + 1})
 	case "cup", "vpa":
