@@ -3594,6 +3594,93 @@ func TestTerminalSemanticProjectorConsumesRepeatCharacterRawWithoutFallback(t *t
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSIInlineEditRawWithoutFallback(t *testing.T) {
+	c1 := string([]byte{0x9b})
+	for _, tc := range []struct {
+		name        string
+		raw         string
+		control     string
+		wantText    string
+		minControls int
+	}{
+		{
+			name:        "erase-character",
+			raw:         "ABCDE" + c1 + "2G" + c1 + "2X",
+			control:     "ech",
+			wantText:    "A  DE",
+			minControls: 2,
+		},
+		{
+			name:        "delete-character",
+			raw:         "ABCDE" + c1 + "2G" + c1 + "2P",
+			control:     "dch",
+			wantText:    "ADE",
+			minControls: 2,
+		},
+		{
+			name:        "insert-character",
+			raw:         "ABCDE" + c1 + "2G" + c1 + "2@",
+			control:     "ich",
+			wantText:    "A  BCDE",
+			minControls: 2,
+		},
+		{
+			name:     "repeat-character",
+			raw:      "AB" + c1 + "3bC",
+			wantText: "ABBBBC",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ControlOps += next.ControlOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			term := vterm.New(12, 3, 100, nil)
+			_, err, damage := term.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			if tc.control != "" {
+				if firstDamageControl(damage, tc.control).Control != tc.control {
+					t.Fatalf("C1 CSI inline edit raw should expose vterm %s semantic control, damage=%#v", tc.control, damage)
+				}
+			} else if !damageOpsContainText(damage.SemanticOps, "B") {
+				t.Fatalf("C1 CSI REP should expose repeated vterm text semantic ops, damage=%#v", damage)
+			}
+			pipeline := newTerminalHistoryPipeline(12, 3)
+			batch := terminalSemanticBatch{
+				Raw:             tc.raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            12,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+				t.Fatalf("C1 CSI inline edit raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+			}
+			if stats.ControlOps < tc.minControls {
+				t.Fatalf("C1 CSI inline edit raw should consume controls from vterm, stats=%#v damage=%#v", stats, damage)
+			}
+			window, err := pipeline.LatestWindow(12, 4)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			if len(window.Rows) != 1 || window.Rows[0].Text != tc.wantText {
+				t.Fatalf("C1 CSI inline edit semantic projector got %#v want %q damage=%#v", window.Rows, tc.wantText, damage)
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesInBandResizeModeRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

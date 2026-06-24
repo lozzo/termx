@@ -2439,6 +2439,60 @@ func TestVTermWriteWithDamageSemanticRepeatCharacter(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSIInlineEditKeepSemanticOrder(t *testing.T) {
+	c1 := string([]byte{0x9b})
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{
+			name: "erase-character",
+			raw:  "ABCDE" + c1 + "2G" + c1 + "2X",
+			want: []string{"write:ABCDE", "control:cha", "control:ech"},
+		},
+		{
+			name: "delete-character",
+			raw:  "ABCDE" + c1 + "2G" + c1 + "2P",
+			want: []string{"write:ABCDE", "control:cha", "control:dch"},
+		},
+		{
+			name: "insert-character",
+			raw:  "ABCDE" + c1 + "2G" + c1 + "2@",
+			want: []string{"write:ABCDE", "control:cha", "control:ich"},
+		},
+		{
+			name: "repeat-character",
+			raw:  "AB" + c1 + "3bC",
+			want: []string{"write:AB", "write:B", "write:B", "write:B", "write:C"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vt := New(12, 3, 100, nil)
+
+			_, err, damage := vt.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("write with damage: %v", err)
+			}
+			var got []string
+			for _, op := range damage.SemanticOps {
+				switch op.Code {
+				case ScreenOpWriteSpan:
+					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+				case ScreenOpControl:
+					got = append(got, "control:"+op.Control)
+					if (op.Control == "ech" || op.Control == "dch" || op.Control == "ich") && (op.Col != 1 || op.Mode != 2) {
+						t.Fatalf("expected C1 %s at col 1 count 2, got %#v", op.Control, op)
+					}
+				}
+			}
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Fatalf("C1 CSI inline edit semantic order mismatch, got %v want %v damage=%#v", got, tc.want, damage)
+			}
+		})
+	}
+}
+
 func TestVTermWriteWithDamageSemanticSaveRestoreCursor(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
