@@ -1342,6 +1342,28 @@ func TestVTermWriteWithDamageSemanticLegacyMouseModes(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?1h\x1b[?66hkeys\x1b[?66l\x1b[?1l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:1:on", "mode:66:on", "write:keys", "mode:66:off", "mode:1:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic application key modes must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
