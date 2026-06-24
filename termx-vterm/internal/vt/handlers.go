@@ -771,6 +771,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			6,  // Selective Erase
 			22, // ANSI color
 		))
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("da", x, y, 0)
 		return true
 	})
 
@@ -787,6 +789,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			10, // Version 1.0
 			0,  // ROM Cartridge is always zero
 		))
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("da2", x, y, 0)
 		return true
 	})
 

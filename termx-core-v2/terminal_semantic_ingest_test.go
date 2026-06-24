@@ -1971,6 +1971,57 @@ func TestTerminalSemanticProjectorConsumesReportRequestsRawWithoutFallback(t *te
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesDeviceAttributesRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b[c\x1b[>cframe"
+	term := vterm.New(20, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	for _, control := range []string{"da", "da2"} {
+		if firstDamageControl(damage, control).Code != vterm.ScreenOpControl {
+			t.Fatalf("device attributes should expose vterm semantic control %q, damage=%#v", control, damage)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            20,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 2 || stats.WriteSpanOps == 0 {
+		t.Fatalf("device attributes raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(20, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, forbidden := range []string{"[c", "[>c"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("device attributes request must not enter history text %q, got %q rows=%#v", forbidden, text, window.Rows)
+		}
+	}
+	if !strings.Contains(text, "frame") {
+		t.Fatalf("expected text after device attributes from semantic projector, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

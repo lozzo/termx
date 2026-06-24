@@ -1418,9 +1418,9 @@ func TestVTermWriteWithDamageSemanticCursorStyle(t *testing.T) {
 }
 
 func TestVTermWriteWithDamageSemanticReportRequests(t *testing.T) {
-	var responses []string
+	responses := make(chan string, 4)
 	vt := New(20, 3, 100, func(data []byte) {
-		responses = append(responses, string(data))
+		responses <- string(data)
 	})
 
 	_, err, damage := vt.WriteWithDamage([]byte("\x1b[6n\x1b[?6n\x1b[?25$pframe"))
@@ -1443,12 +1443,61 @@ func TestVTermWriteWithDamageSemanticReportRequests(t *testing.T) {
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("semantic report requests must preserve raw order, got %v want %v damage=%#v", got, want, damage)
 	}
-	if len(responses) < 3 {
-		t.Fatalf("expected DSR/DECRQM responses from vterm, got %#v damage=%#v", responses, damage)
+	if gotResponses := collectVTermResponses(responses, 3); len(gotResponses) < 3 {
+		t.Fatalf("expected DSR/DECRQM responses from vterm, got %#v damage=%#v", gotResponses, damage)
 	}
 	if row := rowText(vt.ScreenRowView(0), len("frame")); row != "frame" {
 		t.Fatalf("terminal report requests must not render as text, got %q damage=%#v", row, damage)
 	}
+}
+
+func TestVTermWriteWithDamageSemanticDeviceAttributes(t *testing.T) {
+	responses := make(chan string, 4)
+	vt := New(20, 3, 100, func(data []byte) {
+		responses <- string(data)
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[c\x1b[>cframe"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpControl:
+			switch op.Control {
+			case "da", "da2":
+				got = append(got, "control:"+op.Control)
+			}
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"control:da", "control:da2", "write:frame"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic device attributes must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if gotResponses := collectVTermResponses(responses, 2); len(gotResponses) < 2 {
+		t.Fatalf("expected DA1/DA2 responses from vterm, got %#v damage=%#v", gotResponses, damage)
+	}
+	if row := rowText(vt.ScreenRowView(0), len("frame")); row != "frame" {
+		t.Fatalf("device attribute requests must not render as text, got %q damage=%#v", row, damage)
+	}
+}
+
+func collectVTermResponses(ch <-chan string, want int) []string {
+	responses := make([]string, 0, want)
+	timer := time.NewTimer(200 * time.Millisecond)
+	defer timer.Stop()
+	for len(responses) < want {
+		select {
+		case response := <-ch:
+			responses = append(responses, response)
+		case <-timer.C:
+			return responses
+		}
+	}
+	return responses
 }
 
 func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
