@@ -1236,7 +1236,7 @@ func TestVTermWriteWithDamageSemanticOpsPreserveRawOrder(t *testing.T) {
 	for _, op := range damage.SemanticOps {
 		switch op.Code {
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+semanticCellsContent(op.Cells))
 		case ScreenOpControl:
 			got = append(got, "control:"+op.Control)
 		}
@@ -1355,7 +1355,7 @@ func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
 		case ScreenOpModes:
 			got = append(got, modeOpLabel(op))
 		case ScreenOpWriteSpan:
-			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+			got = append(got, "write:"+semanticCellsContent(op.Cells))
 		}
 	}
 	want := []string{"mode:1:on", "mode:66:on", "write:keys", "mode:66:off", "mode:1:off"}
@@ -1450,6 +1450,39 @@ func TestVTermWriteWithDamageSemanticExtendedMouseEncodingModes(t *testing.T) {
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("semantic extended mouse encoding modes must preserve raw order, got %v want %v damage=%#v", got, want, damage)
 	}
+}
+
+func TestVTermWriteWithDamageSemanticUnicodeCoreMode(t *testing.T) {
+	vt := New(20, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?2027he\u0301好\x1b[?2027l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+semanticCellsContent(op.Cells))
+		}
+	}
+	want := []string{"mode:2027:on", "write:e", "write:́", "write:好", "mode:2027:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic Unicode Core mode must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
+func semanticCellsContent(cells []Cell) string {
+	var b strings.Builder
+	for _, cell := range cells {
+		if cell.Content == "" {
+			continue
+		}
+		b.WriteString(cell.Content)
+	}
+	return b.String()
 }
 
 func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
