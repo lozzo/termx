@@ -936,12 +936,6 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 	}
 	switch mode {
 	case 0:
-		if track.activeCol == 0 && track.primaryFullscreenFrame {
-			return track.replacePrimaryFullscreenFrame()
-		}
-		if track.activeCol == 0 && track.primaryFullscreenIntent {
-			return track.startPrimaryFullscreenFrame()
-		}
 		if track.screenRow == 0 && track.activeCol == 0 {
 			if track.primaryFullscreenFrame {
 				return track.replacePrimaryFullscreenFrame()
@@ -952,6 +946,9 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 			// 中文说明：全屏程序常见入口是先把 cursor 放到左上角再 ED0 清屏；
 			// 这不是行编辑删除，必须保留进入前的 primary logical line 页面。
 			return track.clearPrimaryScreenPageBreak()
+		}
+		if track.activeCol == 0 && track.primaryFullscreenIntent && !track.primaryFullscreenFrame {
+			return track.startPrimaryFullscreenFrame()
 		}
 		return track.eraseDisplayFromCursor()
 	case 1:

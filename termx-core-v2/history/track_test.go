@@ -787,6 +787,50 @@ func TestHistoryTrackEraseDisplayFromCursorClearsMutableTailOnly(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackFullscreenEraseDisplayFromNonTopRowKeepsUpperFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(8)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell")},
+		HistoryEvent{Kind: EventEnterPrimaryFullscreen},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("Update available! 0.141.0 -> 0.142.0")},
+		HistoryEvent{Kind: EventSealLogicalLine},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("Run brew upgrade --cask codex to update.")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 4, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("OpenAI Codex")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 6, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("> Write tests for @filename")},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 80, Rows: 12})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := strings.Join(rowTextsFromWindow(window.Rows), "\n")
+	for _, want := range []string{
+		"shell",
+		"Update available! 0.141.0 -> 0.142.0",
+		"Run brew upgrade --cask codex to update.",
+		"OpenAI Codex",
+		"> Write tests for @filename",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("fullscreen ED0 from non-top row should keep %q, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("current frame must remain mutable and not increase committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	for _, row := range window.Rows[1:] {
+		if row.Committed {
+			t.Fatalf("fullscreen current frame rows must stay mutable, rows=%#v", window.Rows)
+		}
+	}
+}
+
 func TestHistoryTrackEraseDisplayToCursorClearsMutablePrefixOnly(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "kept")
