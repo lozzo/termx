@@ -458,6 +458,51 @@ func TestTerminalSemanticProjectorConsumesSyntheticFullReplaceSemanticOps(t *tes
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesFullReplaceRawSemanticOpsWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	pipeline := newTerminalHistoryPipeline(20, 4)
+	batch := terminalSemanticBatch{
+		Raw: "parser-duplicate\n",
+		Damages: []vterm.WriteDamage{{
+			RequiresFullReplace: true,
+			FullReplaceReason:   "test",
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("semantic-full")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 0, Col: 13},
+			},
+			Ops: []vterm.DamageOp{
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("screen-diff")},
+			},
+			SizeCols: 20,
+			SizeRows: 4,
+		}},
+		Cols:            20,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest full replace raw semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("full-replace raw semantic batch should use vterm projector without parser fallback, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(20, 5)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "semantic-full") || historyWindowContainsText(window, "parser-duplicate") || historyWindowContainsText(window, "screen-diff") {
+		t.Fatalf("full-replace raw semantic ops should not append parser or screen diff history, rows=%#v", window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorUsesSemanticClearControl(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(12, 3)
 	batch := terminalSemanticBatch{
