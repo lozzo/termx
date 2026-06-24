@@ -4461,6 +4461,46 @@ func TestTerminalSemanticProjectorConsumesUnknownPrivateModeRawWithoutFallback(t
 	}
 }
 
+func TestTerminalSemanticProjectorDoesNotFallbackSharedUnsupportedRaw(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	pipeline := newTerminalHistoryPipeline(8, 3)
+	batch := terminalSemanticBatch{
+		Raw: "raw-parser-must-not-write",
+		Damages: []vterm.WriteDamage{{
+			SizeCols: 8,
+			SizeRows: 3,
+			SemanticOps: []vterm.DamageOp{{
+				Code: vterm.ScreenOpClearRect,
+				Rect: vterm.DamageRect{X: 1, Y: 1, Width: 2, Height: 1},
+			}},
+		}},
+		Cols:            8,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors != 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps != 0 {
+		t.Fatalf("unsupported shared raw must not use semantic projector or parser fallback, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(8, 3)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if historyWindowContainsText(window, "raw-parser-must-not-write") || len(window.Rows) != 0 {
+		t.Fatalf("shared unsupported raw must not be replayed by historyANSIParser, rows=%#v", window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesSpecialDrawingCharsetRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

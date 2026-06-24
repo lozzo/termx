@@ -132,18 +132,13 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		if err != nil {
 			return err
 		}
-	} else if batch.Raw != "" && !(batch.FromSharedVTerm && fullReplaceOnly) {
+	} else if batch.Raw != "" && batch.FromSharedVTerm {
+		// 中文说明：真实 PTY raw 已经被 shared vterm 解码一次；即使本批语义
+		// 暂不可消费，也不能回退 historyANSIParser 重放终端控制。
+		pipeline.shadowParsePrimaryOutputLocked(batch.Raw)
+	} else if batch.Raw != "" && !fullReplaceOnly {
 		stats.RawFallbacks++
-		var err error
-		if batch.FromSharedVTerm {
-			// 中文说明：shared vterm 已经给出 alt-screen final-frame 和 damage；
-			// 只有 vterm 暂未产出可消费语义、且不是 full-replace/stale 边界时
-			// 才允许 raw parser 作为迁移辅助。
-			err = pipeline.ingestPrimaryOutputLocked(batch.Raw)
-		} else {
-			err = pipeline.ingestOutputLocked(batch.Raw)
-		}
-		if err != nil {
+		if err := pipeline.ingestOutputLocked(batch.Raw); err != nil {
 			return err
 		}
 	}
@@ -173,7 +168,7 @@ func (pipeline *terminalHistoryPipeline) shadowParsePrimaryOutputLocked(output s
 
 func semanticBatchHasHistoryOps(damages []vterm.WriteDamage) bool {
 	for _, damage := range damages {
-		if len(semanticOpsForHistoryDamage(damage)) > 0 || len(damage.ScrollbackAppend) > 0 {
+		if len(semanticOpsForHistoryDamage(damage)) > 0 || len(damage.ScrollbackAppend) > 0 || len(damage.AlternateAppend) > 0 {
 			return true
 		}
 	}
@@ -214,7 +209,12 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		tallASCIIText := rawSharedTallASCIITextDamageCanUseSemanticOps(damage)
 		tallGraphemeText := rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage)
 		tallLinefeedNewlineText := rawSharedTallLinefeedNewlineTextDamageCanUseSemanticOps(damage)
+		directPrimaryText := rawSharedDirectPrimaryTextDamageCanUseSemanticOps(damage)
 		eraseDisplaySemantic := semanticOpsContainControl(damage.SemanticOps, "ed")
+		if directPrimaryText {
+			hasOps = true
+			continue
+		}
 		if len(damage.ScrollbackAppend) > 0 {
 			if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut {
 				if !semanticOpsContainControl(damage.SemanticOps, "su") {
@@ -655,6 +655,48 @@ func rawSharedTallLinefeedNewlineTextDamageCanUseSemanticOps(damage vterm.WriteD
 	return hasMode20 && hasText
 }
 
+func rawSharedDirectPrimaryTextDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	if len(damage.SemanticOps) == 0 || damage.RequiresFullReplace || len(damage.AlternateAppend) > 0 {
+		return false
+	}
+	hasText := false
+	hasControlOrMode := false
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) == 0 {
+				continue
+			}
+			for _, cell := range op.Cells {
+				if !rawSharedGraphemeTextCell(cell) {
+					return false
+				}
+			}
+			hasText = true
+		case vterm.ScreenOpControl:
+			if !rawSharedControlCanUseSemanticOp(op.Control) {
+				return false
+			}
+			hasControlOrMode = true
+		case vterm.ScreenOpModes:
+			if !rawSharedModeCanUseSemanticOp(op) {
+				return false
+			}
+			hasControlOrMode = true
+		case vterm.ScreenOpScrollRect:
+			if len(damage.ScrollbackAppend) == 0 || op.Dx != 0 || op.Dy >= 0 {
+				return false
+			}
+			hasControlOrMode = true
+		default:
+			// 中文说明：这条捷径只允许 vterm print path 的 ordered 文本/控制；
+			// screen diff clear/copy 或无 scroll-out 证据的 scroll 不能被提升为 history 语义。
+			return false
+		}
+	}
+	return hasText || hasControlOrMode
+}
+
 func rawSharedPlainHistoryCell(cell vterm.Cell) bool {
 	return cell.Style == (vterm.CellStyle{}) &&
 		cell.LinkURL == "" &&
@@ -707,7 +749,12 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		eraseDisplayInDamage := semanticOpsContainControl(ops, "ed")
 		reverseIndexScrollDowns := semanticOpsReverseIndexScrollDownCount(ops)
 		softWrapContinuation := false
+		hardLineBreakPending := false
 		nextWritePreserveLeadingColumns := false
+		nextWriteUseActiveLogicalColumn := false
+		logicalColumnOffsetActive := false
+		logicalColumnOffsetRow := -1
+		logicalColumnOffset := 0
 		lastWriteRow := -1
 		lastWriteEndCol := -1
 		var pendingWriteCells []history.Cell
@@ -718,28 +765,46 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 			if len(pendingWriteCells) == 0 {
 				return nil
 			}
-			if pendingWritePreserveLeadingColumns && pipeline.track.ActiveLineID() == 0 && pendingWriteCol > 0 {
+			targetCol := pendingWriteCol
+			if hardLineBreakPending && !pendingWritePreserveLeadingColumns {
+				// 中文说明：shared vterm 的 Row/Col 是当前屏幕坐标；普通 LF 后的
+				// 下一条 logical line 必须从历史列 0 开始，不能继承上一行屏幕列。
+				if pendingWriteCol > 0 {
+					logicalColumnOffsetActive = true
+					logicalColumnOffsetRow = pendingWriteRow
+					logicalColumnOffset = pendingWriteCol
+				}
+				targetCol = 0
+			} else if !pendingWritePreserveLeadingColumns && logicalColumnOffsetActive && pendingWriteRow == logicalColumnOffsetRow {
+				targetCol = pendingWriteCol - logicalColumnOffset
+				if targetCol < 0 {
+					targetCol = 0
+				}
+			}
+			if pendingWritePreserveLeadingColumns && pipeline.track.ActiveLineID() == 0 && targetCol > 0 {
 				// 中文说明：vterm semantic write span 携带的是真实屏幕列；
 				// 只有显式 cursor control 后的新行定位需要保留前导空白，普通换行不能借此继承屏幕列。
-				padding := make([]history.Cell, pendingWriteCol)
+				padding := make([]history.Cell, targetCol)
 				for i := range padding {
 					padding[i] = history.Cell{Text: " ", Width: 1}
 				}
 				pendingWriteCells = append(padding, pendingWriteCells...)
-				pendingWriteCol = 0
+				targetCol = 0
 			}
 			if softWrapContinuation {
 				softWrapContinuation = false
-			} else if pendingWriteRow != lastWriteRow || pendingWriteCol != lastWriteEndCol {
-				if err := pipeline.applyCursorPositionFromVTerm(pendingWriteRow, pendingWriteCol); err != nil {
+			} else if !nextWriteUseActiveLogicalColumn && (pendingWriteRow != lastWriteRow || targetCol != lastWriteEndCol) {
+				if err := pipeline.applyCursorPositionFromVTerm(pendingWriteRow, targetCol); err != nil {
 					return err
 				}
 			}
+			hardLineBreakPending = false
+			nextWriteUseActiveLogicalColumn = false
 			if err := pipeline.track.ApplyOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: pendingWriteCells}); err != nil {
 				return err
 			}
 			lastWriteRow = pendingWriteRow
-			lastWriteEndCol = pendingWriteCol + historyCellsDisplayWidth(pendingWriteCells)
+			lastWriteEndCol = targetCol + historyCellsDisplayWidth(pendingWriteCells)
 			pendingWriteCells = nil
 			pendingWriteRow = -1
 			pendingWriteCol = -1
@@ -839,6 +904,18 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 					return applied, err
 				}
 				nextWritePreserveLeadingColumns = false
+				nextWriteUseActiveLogicalColumn = false
+				if vtermControlPreservesExplicitColumnForNextWrite(op.Control) || op.Control == "cuf" || op.Control == "cub" || op.Control == "bs" || op.Control == "cr" {
+					hardLineBreakPending = false
+				}
+				if logicalColumnOffsetActive && op.Row == logicalColumnOffsetRow {
+					if handled, err := pipeline.applyOffsetVTermControlEventLocked(op, logicalColumnOffset, &lastWriteEndCol, &nextWriteUseActiveLogicalColumn); err != nil {
+						return applied, err
+					} else if handled {
+						applied = true
+						continue
+					}
+				}
 				if op.Control != "soft-wrap" {
 					lastWriteRow = -1
 					lastWriteEndCol = -1
@@ -866,6 +943,12 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 						scrollbackApplied++
 					}
 					softWrapContinuation = op.Control == "soft-wrap"
+					hardLineBreakPending = op.Control != "soft-wrap"
+					if hardLineBreakPending {
+						logicalColumnOffsetActive = false
+						logicalColumnOffsetRow = -1
+						logicalColumnOffset = 0
+					}
 				}
 				applied = true
 			case vterm.ScreenOpModes:
@@ -875,6 +958,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				nextWritePreserveLeadingColumns = false
+				nextWriteUseActiveLogicalColumn = false
 				if err := pipeline.applyVTermModeEventLocked(op); err != nil {
 					return applied, err
 				}
@@ -1065,6 +1149,81 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInDisplay, EraseMode: op.Mode})
 	default:
 		return nil
+	}
+}
+
+func (pipeline *terminalHistoryPipeline) applyOffsetVTermControlEventLocked(op vterm.DamageOp, offset int, lastWriteEndCol *int, nextWriteUseActiveLogicalColumn *bool) (bool, error) {
+	if lastWriteEndCol == nil || nextWriteUseActiveLogicalColumn == nil || *lastWriteEndCol < 0 {
+		return false, nil
+	}
+	switch op.Control {
+	case "cuf":
+		count := op.Mode
+		if count <= 0 {
+			count = 1
+		}
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorForward, Count: count}); err != nil {
+			return true, err
+		}
+		*lastWriteEndCol += count
+		*nextWriteUseActiveLogicalColumn = true
+		return true, nil
+	case "cub":
+		count := op.Mode
+		if count <= 0 {
+			count = 1
+		}
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorBackward, Count: count}); err != nil {
+			return true, err
+		}
+		*lastWriteEndCol -= count
+		if *lastWriteEndCol < 0 {
+			*lastWriteEndCol = 0
+		}
+		*nextWriteUseActiveLogicalColumn = true
+		return true, nil
+	case "bs":
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorBackward, Count: 1}); err != nil {
+			return true, err
+		}
+		if *lastWriteEndCol > 0 {
+			*lastWriteEndCol--
+		}
+		*nextWriteUseActiveLogicalColumn = true
+		return true, nil
+	case "ht", "cha", "cbt":
+		targetCol := op.Col - offset
+		if targetCol < 0 {
+			targetCol = 0
+		}
+		if op.Control == "ht" {
+			// 中文说明：LF 后 history logical line 从 0 列开始，但真实 vterm
+			// tabstop 仍按屏幕绝对列计算；offset 映射后若落在 logical tabstop
+			// 之前，需要对齐到 history line 自身的下一个默认 tabstop。
+			defaultTabCol := ((*lastWriteEndCol / 8) + 1) * 8
+			if targetCol > *lastWriteEndCol && targetCol < defaultTabCol {
+				targetCol = defaultTabCol
+			}
+		}
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorHorizontalAbsolute, Count: targetCol + 1}); err != nil {
+			return true, err
+		}
+		*lastWriteEndCol = targetCol
+		*nextWriteUseActiveLogicalColumn = true
+		return true, nil
+	case "cup", "vpa":
+		targetCol := op.Col - offset
+		if targetCol < 0 {
+			targetCol = 0
+		}
+		if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorPosition, Row: op.Row + 1, Column: targetCol + 1}); err != nil {
+			return true, err
+		}
+		*lastWriteEndCol = targetCol
+		*nextWriteUseActiveLogicalColumn = true
+		return true, nil
+	default:
+		return false, nil
 	}
 }
 
