@@ -1830,6 +1830,39 @@ func TestVTermWriteWithDamageSemanticAutowrapMode(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticPrivateSaveRestoreCursor(t *testing.T) {
+	vt := New(10, 4, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abc\x1b[?1048h\x1b[2;1HZZ\x1b[?1048lX"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if firstSemanticModeOp(t, damage, 1048).Code != ScreenOpModes {
+		t.Fatalf("expected private save cursor mode semantic op, got %#v", damage.SemanticOps)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"write:abc", "mode:1048:on", "control:cup", "write:ZZ", "mode:1048:off", "write:X"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic private save/restore ops must preserve vterm cursor state order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if row := strings.TrimSpace(rowText(vt.ScreenRowView(0), 10)); row != "abcX" {
+		t.Fatalf("restore should place X after saved cursor on first row, got %q damage=%#v", row, damage)
+	}
+	if row := strings.TrimSpace(rowText(vt.ScreenRowView(1), 10)); row != "ZZ" {
+		t.Fatalf("intermediate cursor move/write should stay on second row, got %q damage=%#v", row, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 

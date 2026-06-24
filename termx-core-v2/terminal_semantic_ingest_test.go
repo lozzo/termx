@@ -1415,6 +1415,50 @@ func TestTerminalSemanticProjectorConsumesAutowrapModeRawWithoutFallback(t *test
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesPrivateSaveRestoreCursorRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ModeOps += next.ModeOps
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "abc\x1b[?1048h\x1b[2;1HZZ\x1b[?1048lX"
+	term := vterm.New(10, 4, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if firstDamageMode(damage, 1048).Code != vterm.ScreenOpModes {
+		t.Fatalf("private save cursor mode should be exposed as vterm mode op, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(10, 4)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            10,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 2 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("private save/restore cursor raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(10, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "abcX") || !historyWindowContainsText(window, "ZZ") {
+		t.Fatalf("private save/restore cursor should use vterm-restored write positions, rows=%#v damage=%#v", window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesLinefeedNewlineModeRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
