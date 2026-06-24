@@ -1056,6 +1056,52 @@ func TestTerminalSemanticProjectorConsumesRealVTermStyledLinkTextRawBatch(t *tes
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesOSC8ScrollOutRawBatch(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.ScrollbackAppends += next.ScrollbackAppends
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(20, 3, 100, nil)
+	raw := "\x1b]8;id=termx;https://example.test\aLINK\x1b]8;;\a\r\nplain\r\nthird\r\nfourth"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if len(damage.ScrollbackAppend) == 0 {
+		t.Fatalf("expected OSC8 batch to produce primary scroll-out, damage=%#v", damage)
+	}
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            20,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 || stats.ScrollbackAppends == 0 {
+		t.Fatalf("OSC8 scroll-out raw batch should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(20, 6)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsAll(window, "LINK", "plain", "third", "fourth") {
+		t.Fatalf("OSC8 scroll-out semantic batch should preserve logical rows, got %#v damage=%#v", window.Rows, damage)
+	}
+	if len(window.Rows) == 0 || len(window.Rows[0].Cells) == 0 || window.Rows[0].Cells[0].LinkURL != "https://example.test" || window.Rows[0].Cells[0].LinkParams != "id=termx" {
+		t.Fatalf("expected OSC8 link metadata from vterm semantic scroll-out, got %#v rows=%#v", window.Rows[0].Cells, window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermGraphemeTextRawBatch(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

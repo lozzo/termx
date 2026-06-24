@@ -209,10 +209,11 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 		lowRows := damage.SizeRows > 0 && damage.SizeRows <= 2
 		tallPlainScrollOut := rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage)
 		tallStyledScrollOut := rawSharedTallStyledScrollOutDamageCanUseSemanticOps(damage)
+		tallLinkScrollOut := rawSharedTallLinkScrollOutDamageCanUseSemanticOps(damage)
 		tallASCIIText := rawSharedTallASCIITextDamageCanUseSemanticOps(damage)
 		tallGraphemeText := rawSharedTallGraphemeTextDamageCanUseSemanticOps(damage)
 		if len(damage.ScrollbackAppend) > 0 {
-			if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut {
+			if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut {
 				return false
 			}
 			scrollbackAppends += len(damage.ScrollbackAppend)
@@ -233,7 +234,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallASCIIText && !tallGraphemeText && !fullReplaceSemantic && !altScreenRunning {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut && !tallASCIIText && !tallGraphemeText && !fullReplaceSemantic && !altScreenRunning {
 						return false
 					}
 					linefeedControls++
@@ -256,7 +257,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 						}
 						return false
 					}
-					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut {
 						return false
 					}
 					hasOps = true
@@ -358,13 +359,23 @@ func rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage vterm.WriteDamage
 		}
 	}
 	for _, op := range damage.SemanticOps {
-		if op.Code != vterm.ScreenOpWriteSpan {
-			continue
-		}
-		for _, cell := range op.Cells {
-			if !rawSharedPlainHistoryCell(cell) {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			for _, cell := range op.Cells {
+				if !rawSharedPlainHistoryCell(cell) {
+					return false
+				}
+			}
+		case vterm.ScreenOpControl:
+			if op.Control != "lf" && op.Control != "ind" && op.Control != "soft-wrap" && op.Control != "cr" {
 				return false
 			}
+		case vterm.ScreenOpScrollRect:
+			if op.Dx != 0 || op.Dy >= 0 {
+				return false
+			}
+		default:
+			return false
 		}
 	}
 	return true
@@ -407,6 +418,55 @@ func rawSharedTallStyledScrollOutDamageCanUseSemanticOps(damage vterm.WriteDamag
 		}
 	}
 	return hasTailFill
+}
+
+func rawSharedTallLinkScrollOutDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	// 中文说明：OSC8 scroll-out 只信任 ordered SemanticOps 中的 link cell；
+	// ScrollbackAppend 只证明 primary screen ownership 离开，不提供 history payload。
+	if damage.SizeRows <= 2 || len(damage.ScrollbackAppend) == 0 || damage.RequiresFullReplace || len(damage.AlternateAppend) > 0 {
+		return false
+	}
+	for _, op := range damage.ScrollbackAppend {
+		if len(op.Runs) > 0 {
+			return false
+		}
+		for _, cell := range op.Cells {
+			if !rawSharedGraphemeTextCell(cell) {
+				return false
+			}
+		}
+	}
+	hasLink := false
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) == 0 {
+				continue
+			}
+			for _, cell := range op.Cells {
+				if !rawSharedGraphemeTextCell(cell) {
+					return false
+				}
+				if cell.LinkURL != "" || cell.LinkParams != "" {
+					hasLink = true
+				}
+			}
+		case vterm.ScreenOpControl:
+			if op.Control != "lf" && op.Control != "ind" && op.Control != "soft-wrap" && op.Control != "cr" {
+				return false
+			}
+			if op.TailFill != nil {
+				return false
+			}
+		case vterm.ScreenOpScrollRect:
+			if op.Dx != 0 || op.Dy >= 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return hasLink
 }
 
 func rawSharedFullReplaceDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
