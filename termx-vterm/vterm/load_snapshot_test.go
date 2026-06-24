@@ -1333,6 +1333,41 @@ func TestVTermWriteWithDamageSemanticTextComesFromPrintPath(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSISGRKeepsSemanticStyledText(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	raw := string([]byte{0x9b}) + "1;31mERR" + string([]byte{0x9b}) + "0m plain"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var spans []DamageOp
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpWriteSpan {
+			spans = append(spans, op)
+		}
+	}
+	if len(spans) != 2 {
+		t.Fatalf("expected C1 CSI SGR text to produce styled/plain semantic spans, got %#v damage=%#v", spans, damage)
+	}
+	if rowText(spans[0].Cells, len(spans[0].Cells)) != "ERR" {
+		t.Fatalf("expected first C1 CSI SGR span text ERR, got %#v damage=%#v", spans[0], damage)
+	}
+	for _, cell := range spans[0].Cells {
+		if cell.Style.FG != "ansi:1" || !cell.Style.Bold {
+			t.Fatalf("expected C1 CSI SGR styled cell from vterm print path, got %#v damage=%#v", cell, damage)
+		}
+	}
+	if rowText(spans[1].Cells, len(spans[1].Cells)) != " plain" {
+		t.Fatalf("expected reset plain span, got %#v damage=%#v", spans[1], damage)
+	}
+	for _, cell := range spans[1].Cells {
+		if cell.Style != (CellStyle{}) {
+			t.Fatalf("expected C1 CSI reset to clear style for following text, got %#v damage=%#v", cell, damage)
+		}
+	}
+}
+
 func TestVTermWriteWithDamageSemanticModesComeFromParserTransaction(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
