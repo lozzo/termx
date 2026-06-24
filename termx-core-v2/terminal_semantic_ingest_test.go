@@ -1604,6 +1604,60 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesAltScreenModeVariantsRawWithoutFallback(t *testing.T) {
+	for _, mode := range []int{47, 1047, 1049} {
+		t.Run("mode_"+strconv.Itoa(mode), func(t *testing.T) {
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ModeOps += next.ModeOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			term := vterm.New(20, 3, 100, nil)
+			pipeline := newTerminalHistoryPipeline(20, 3)
+			for _, raw := range []string{
+				"primary\n",
+				"\x1b[?" + strconv.Itoa(mode) + "h",
+				"alt-hidden",
+				"\x1b[?" + strconv.Itoa(mode) + "l",
+				"after",
+			} {
+				_, err, damage := term.WriteWithDamage([]byte(raw))
+				if err != nil {
+					t.Fatalf("vterm write %q: %v", raw, err)
+				}
+				if strings.Contains(raw, "?"+strconv.Itoa(mode)) && firstDamageMode(damage, mode).Code != vterm.ScreenOpModes {
+					t.Fatalf("alt-screen mode %d should be exposed as vterm semantic mode, raw=%q damage=%#v", mode, raw, damage)
+				}
+				batch := terminalSemanticBatch{
+					Raw:             raw,
+					Damages:         []vterm.WriteDamage{damage},
+					Cols:            20,
+					Rows:            3,
+					FromSharedVTerm: true,
+				}
+				if err := pipeline.IngestSemanticBatch(batch); err != nil {
+					t.Fatalf("ingest semantic batch %q: %v", raw, err)
+				}
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 2 || stats.WriteSpanOps < 2 {
+				t.Fatalf("alt-screen mode %d raw should use vterm semantic projector without parser fallback, stats=%#v", mode, stats)
+			}
+			window, err := pipeline.LatestWindow(20, 5)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			if !historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "after") || historyWindowContainsText(window, "alt-hidden") {
+				t.Fatalf("alt-screen mode %d should route alt content away from primary history, rows=%#v", mode, window.Rows)
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesBracketedPasteModeRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

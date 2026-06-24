@@ -6,6 +6,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+const legacyModeAltScreen = ansi.DECMode(47)
+
 func (e *Emulator) handleMode(params ansi.Params, set, isAnsi bool) {
 	for _, p := range params {
 		param := p.Param(-1)
@@ -75,7 +77,9 @@ func (e *Emulator) setMode(mode ansi.Mode, setting ansi.ModeSetting) {
 	switch mode {
 	case ansi.ModeTextCursorEnable:
 		e.scr.setCursorHidden(!setting.IsSet())
-	case ansi.ModeAltScreen:
+	case legacyModeAltScreen, ansi.ModeAltScreen:
+		// 中文说明：DEC private mode 47 是旧 alt-screen alias；它也必须
+		// 改变真实 screen 状态，不能只记录 mode op 给上层猜测。
 		e.setAltScreenMode(setting.IsSet())
 	case ansi.ModeSaveCursor:
 		if setting.IsSet() {

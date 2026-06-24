@@ -2474,6 +2474,38 @@ func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticAltScreenModeVariants(t *testing.T) {
+	for _, mode := range []int{47, 1047, 1049} {
+		t.Run("mode_"+strconv.Itoa(mode), func(t *testing.T) {
+			vt := New(8, 3, 100, nil)
+
+			_, err, damage := vt.WriteWithDamage([]byte("\x1b[?" + strconv.Itoa(mode) + "h"))
+			if err != nil {
+				t.Fatalf("enter alt-screen mode %d: %v", mode, err)
+			}
+			enter := firstSemanticModeOp(t, damage, mode)
+			if enter.Code != ScreenOpModes || !enter.Private || !enter.Enabled {
+				t.Fatalf("expected alt-screen mode %d enter semantic op, got %#v ops=%#v", mode, enter, damage.SemanticOps)
+			}
+			if !damage.RequiresFullReplace {
+				t.Fatalf("alt-screen mode %d enter should keep full-replace live boundary, damage=%#v", mode, damage)
+			}
+
+			_, err, damage = vt.WriteWithDamage([]byte("\x1b[?" + strconv.Itoa(mode) + "l"))
+			if err != nil {
+				t.Fatalf("exit alt-screen mode %d: %v", mode, err)
+			}
+			exit := firstSemanticModeOp(t, damage, mode)
+			if exit.Code != ScreenOpModes || !exit.Private || exit.Enabled {
+				t.Fatalf("expected alt-screen mode %d exit semantic op, got %#v ops=%#v", mode, exit, damage.SemanticOps)
+			}
+			if !damage.RequiresFullReplace {
+				t.Fatalf("alt-screen mode %d exit should keep full-replace live boundary, damage=%#v", mode, damage)
+			}
+		})
+	}
+}
+
 func TestVTermTracksMouseModesFromEscapeSequences(t *testing.T) {
 	vt := New(20, 5, 100, nil)
 
