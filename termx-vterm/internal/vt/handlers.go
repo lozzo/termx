@@ -978,6 +978,7 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			}
 
 			e.scr.setHorizontalMargins(left-1, right)
+			e.scr.damage.recordHorizontalScrollRegion(left, right)
 
 			// Move the cursor to the top-left of the screen or scroll region
 			// depending on [ansi.DECOM].

@@ -363,7 +363,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm", "ris":
+	case "cr", "bs", "ht", "cbt", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "ech", "dch", "ich", "il", "dl", "su", "sd", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm", "decslrm", "ris":
 		return true
 	default:
 		return false
@@ -375,7 +375,7 @@ func rawSharedModeCanUseSemanticOp(op vterm.DamageOp) bool {
 		return op.Mode == 20
 	}
 	switch op.Mode {
-	case 6, 7, 9, 25, 47, 1047, 1048, 1049, 1000, 1001, 1002, 1003, 1004, 1006, 2004, 2026:
+	case 6, 7, 9, 25, 47, 69, 1047, 1048, 1049, 1000, 1001, 1002, 1003, 1004, 1006, 2004, 2026:
 		return true
 	default:
 		return false
@@ -694,14 +694,26 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		lineOperationInDamage := semanticOpsContainAnyControl(ops, "il", "dl", "su", "sd")
 		reverseIndexScrollDowns := semanticOpsReverseIndexScrollDownCount(ops)
 		softWrapContinuation := false
+		nextWritePreserveLeadingColumns := false
 		lastWriteRow := -1
 		lastWriteEndCol := -1
 		var pendingWriteCells []history.Cell
 		pendingWriteRow := -1
 		pendingWriteCol := -1
+		pendingWritePreserveLeadingColumns := false
 		flushPendingWrite := func() error {
 			if len(pendingWriteCells) == 0 {
 				return nil
+			}
+			if pendingWritePreserveLeadingColumns && pipeline.track.ActiveLineID() == 0 && pendingWriteCol > 0 {
+				// 中文说明：vterm semantic write span 携带的是真实屏幕列；
+				// 只有显式 cursor control 后的新行定位需要保留前导空白，普通换行不能借此继承屏幕列。
+				padding := make([]history.Cell, pendingWriteCol)
+				for i := range padding {
+					padding[i] = history.Cell{Text: " ", Width: 1}
+				}
+				pendingWriteCells = append(padding, pendingWriteCells...)
+				pendingWriteCol = 0
 			}
 			if softWrapContinuation {
 				softWrapContinuation = false
@@ -718,6 +730,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 			pendingWriteCells = nil
 			pendingWriteRow = -1
 			pendingWriteCol = -1
+			pendingWritePreserveLeadingColumns = false
 			applied = true
 			return nil
 		}
@@ -738,10 +751,13 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				pendingWriteCells = cells
 				pendingWriteRow = op.Row
 				pendingWriteCol = op.Col
+				pendingWritePreserveLeadingColumns = nextWritePreserveLeadingColumns
+				nextWritePreserveLeadingColumns = false
 			case vterm.ScreenOpClearToEOL:
 				if err := flushPendingWrite(); err != nil {
 					return applied, err
 				}
+				nextWritePreserveLeadingColumns = false
 				if lineOperationInDamage {
 					continue
 				}
@@ -763,6 +779,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if err := flushPendingWrite(); err != nil {
 					return applied, err
 				}
+				nextWritePreserveLeadingColumns = false
 				if lineOperationInDamage {
 					continue
 				}
@@ -784,6 +801,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if err := flushPendingWrite(); err != nil {
 					return applied, err
 				}
+				nextWritePreserveLeadingColumns = false
 				if lineOperationInDamage {
 					// 中文说明：IL/DL/SU/SD 已作为 ordered control 投影；
 					// accompanying scroll rect 只是 live diff，不能再当 scroll-out 语义。
@@ -807,6 +825,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if err := flushPendingWrite(); err != nil {
 					return applied, err
 				}
+				nextWritePreserveLeadingColumns = false
 				if op.Control != "soft-wrap" {
 					lastWriteRow = -1
 					lastWriteEndCol = -1
@@ -828,6 +847,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				if err := pipeline.applyVTermControlEventLocked(op); err != nil {
 					return applied, err
 				}
+				nextWritePreserveLeadingColumns = vtermControlPreservesExplicitColumnForNextWrite(op.Control)
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
 					if scrollbackApplied < len(damage.ScrollbackAppend) {
 						scrollbackApplied++
@@ -841,6 +861,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				}
 				lastWriteRow = -1
 				lastWriteEndCol = -1
+				nextWritePreserveLeadingColumns = false
 				if err := pipeline.applyVTermModeEventLocked(op); err != nil {
 					return applied, err
 				}
@@ -882,6 +903,15 @@ func semanticOpsContainAnyControl(ops []vterm.DamageOp, controls ...string) bool
 		}
 	}
 	return false
+}
+
+func vtermControlPreservesExplicitColumnForNextWrite(control string) bool {
+	switch control {
+	case "cup", "cha", "vpa", "ht", "cbt":
+		return true
+	default:
+		return false
+	}
 }
 
 func semanticOpsReverseIndexScrollDownCount(ops []vterm.DamageOp) int {
@@ -931,9 +961,9 @@ func (pipeline *terminalHistoryPipeline) applyVTermControlEventLocked(op vterm.D
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCommitFrontier})
 	case "ri":
 		return pipeline.track.Apply(history.HistoryEvent{Kind: history.EventCursorUp, Count: 1})
-	case "decstbm":
-		// 中文说明：DECSTBM 只改变 vterm 的滚动区域；history 不保存第二份
-		// scroll-region truth，后续 cursor/write/scroll-out 语义会显式投影。
+	case "decstbm", "decslrm":
+		// 中文说明：DECSTBM/DECSLRM 只改变 vterm 的滚动区域；
+		// history 不保存第二份 margin truth，后续 cursor/write/scroll-out 语义会显式投影。
 		return nil
 	case "ris":
 		// 中文说明：RIS 丢弃当前 primary mutable frontier，但不能从清屏后的

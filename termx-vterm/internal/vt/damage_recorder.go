@@ -53,6 +53,13 @@ func (r *screenDamageRecorder) recordScrollRegion(top int, bottom int) {
 	r.record(ControlDamage{Kind: "decstbm", Mode: top, Bottom: bottom})
 }
 
+func (r *screenDamageRecorder) recordHorizontalScrollRegion(left int, right int) {
+	if r == nil || r.scrollbackOnly {
+		return
+	}
+	r.record(ControlDamage{Kind: "decslrm", Mode: left, Bottom: right})
+}
+
 func (r *screenDamageRecorder) recordControlWithCell(kind string, x int, y int, mode int, cell *uv.Cell) {
 	if r == nil || r.scrollbackOnly || kind == "" {
 		return

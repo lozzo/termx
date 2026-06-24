@@ -1863,6 +1863,47 @@ func TestVTermWriteWithDamageSemanticPrivateSaveRestoreCursor(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticLeftRightMargins(t *testing.T) {
+	vt := New(10, 1, 100, nil)
+
+	raw := "\x1b[?W\x1b[?6h\x1b[?69h\x1b[3;6s\x1b[1;2HX\x1b[ZA"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if firstSemanticModeOp(t, damage, 69).Code != ScreenOpModes {
+		t.Fatalf("expected left/right margin mode semantic op, got %#v", damage.SemanticOps)
+	}
+	region := firstSemanticControlOp(t, damage, "decslrm")
+	if region.Mode != 3 || region.Bottom != 6 {
+		t.Fatalf("expected DECSLRM left=3 right=6, got %#v damage=%#v", region, damage)
+	}
+	cbt := firstSemanticControlOp(t, damage, "cbt")
+	if cbt.Col != 2 {
+		t.Fatalf("CBT should clamp to left margin final col 2, got %#v damage=%#v", cbt, damage)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			if op.Mode == 69 {
+				got = append(got, modeOpLabel(op))
+			}
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:69:on", "control:decslrm", "control:cup", "write:X", "control:cbt", "write:A"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic left/right margin ops must preserve vterm-owned margin state order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if row := rowText(vt.ScreenRowView(0), 10); row != "  AX      " {
+		t.Fatalf("left/right margin CBT should place A at left margin before X, got %q damage=%#v", row, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
