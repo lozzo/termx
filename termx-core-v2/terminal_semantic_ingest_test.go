@@ -83,6 +83,7 @@ func TestTerminalSemanticProjectorConsumesVTermDamage(t *testing.T) {
 		stats.DamageBatches += next.DamageBatches
 		stats.WriteSpanOps += next.WriteSpanOps
 		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.EraseDisplayOps += next.EraseDisplayOps
 		stats.ModeOps += next.ModeOps
 		stats.ScrollbackAppends += next.ScrollbackAppends
 		stats.FullReplaceOnly += next.FullReplaceOnly
@@ -112,6 +113,7 @@ func TestTerminalSemanticProjectorCodexRawDamageSignals(t *testing.T) {
 		stats.DamageBatches += next.DamageBatches
 		stats.WriteSpanOps += next.WriteSpanOps
 		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.EraseDisplayOps += next.EraseDisplayOps
 		stats.ModeOps += next.ModeOps
 		stats.ScrollbackAppends += next.ScrollbackAppends
 		stats.FullReplaceOnly += next.FullReplaceOnly
@@ -409,6 +411,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermStyledErase(t *testing.T) {
 		stats.DamageBatches += next.DamageBatches
 		stats.WriteSpanOps += next.WriteSpanOps
 		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.EraseDisplayOps += next.EraseDisplayOps
 		stats.ModeOps += next.ModeOps
 	}
 	defer resetTerminalSemanticIngestTestHooks()
@@ -485,6 +488,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOps(t *testing.T) {
 		stats.DamageBatches += next.DamageBatches
 		stats.WriteSpanOps += next.WriteSpanOps
 		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.EraseDisplayOps += next.EraseDisplayOps
 		stats.ModeOps += next.ModeOps
 	}
 	defer resetTerminalSemanticIngestTestHooks()
@@ -515,6 +519,63 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOps(t *testing.T) {
 	}
 	if window.TotalLines != 0 || !historyWindowContainsText(window, "running-frame") {
 		t.Fatalf("primary fullscreen mode should expose mutable frame without committed depth, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesRealVTermEraseDisplay(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.DamageBatches += next.DamageBatches
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.EraseDisplayOps += next.EraseDisplayOps
+		stats.ModeOps += next.ModeOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(24, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(24, 3)
+	for _, raw := range []string{"shell-one\n", "shell-two\n"} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm seed write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            24,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest seed batch %q: %v", raw, err)
+		}
+	}
+	raw := "\x1b[?2026h\x1b[H\x1b[Jframe-current"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            24,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.EraseDisplayOps == 0 {
+		t.Fatalf("raw ED should be consumed from vterm semantic control, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(24, 6)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if window.TotalLines != 2 || !historyWindowContainsAll(window, "shell-one", "shell-two", "frame-current") {
+		t.Fatalf("Codex-style ED0 should preserve committed shell page and mutable frame, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
 	}
 }
 

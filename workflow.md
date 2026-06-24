@@ -257,6 +257,7 @@
 | R201Q. SK raw 文本语义 shadow parser 边界 | 完成 | `termx-core-v2/`、按需 `termx-vterm/`、`workflow.md` | 已允许安全纯文本/SGR/OSC raw batch 使用 vterm `TextDamage` projector，同时让 parser 只 shadow 更新 pending/style/OSC 状态，不再向 HistoryTrack 重放文本或终端控制 |
 | R201R. SK vterm styled erase 语义边界 | 完成 | `termx-vterm/`、`termx-core-v2/`、`workflow.md` | 已让 vterm 在真实 EL clear 语义里携带当前 SGR 背景 footprint，core-v2 projector 直接消费 plain/styled EL，不再为了 styled blank 回退 raw parser；ED/scroll/alt/full-replace 仍留给后续语义切片 |
 | R201S. SK raw mode 语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 raw shared batch 中的 vterm `ScreenOpModes` 直接驱动 primary fullscreen intent 和 mode-only alt-screen 边界，parser 只 shadow pending/style/OSC 状态，不再重放 private mode CSI；带 alt 内容/final-frame、ED、scroll-out 仍留给后续语义切片 |
+| R201T. SK raw ED 语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 raw shared batch 中的 vterm `ed` control 直接驱动 `EventEraseInDisplay`，Codex-style mode/CUP/ED0 repaint 不再回退 parser；scroll-out、alt final-frame 和 full-replace 仍留给后续切片 |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入

@@ -1315,6 +1315,27 @@ func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticEraseDisplayComesFromControl(t *testing.T) {
+	vt := New(12, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abcdef\x1b[H\x1b[Jframe"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	semanticED := firstSemanticControlOp(t, damage, "ed")
+	if semanticED.Mode != 0 {
+		t.Fatalf("expected semantic ED mode 0, got %#v", semanticED)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "frame") {
+		t.Fatalf("expected frame text in semantic ops, got %#v", damage.SemanticOps)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpClearToEOL || op.Code == ScreenOpClearRect {
+			t.Fatalf("screen diff clear must not be semantic op, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+}
+
 func TestVTermWriteWithDamageSemanticStyledClearCarriesEraseBlankStyle(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
@@ -2322,4 +2343,13 @@ func firstSemanticControlOp(t *testing.T, damage WriteDamage, control string) Da
 	}
 	t.Fatalf("expected semantic control op %q in damage, got %#v", control, damage)
 	return DamageOp{}
+}
+
+func semanticOpsContainText(ops []DamageOp, text string) bool {
+	for _, op := range ops {
+		if op.Code == ScreenOpWriteSpan && strings.Contains(rowText(op.Cells, len(op.Cells)), text) {
+			return true
+		}
+	}
+	return false
 }
