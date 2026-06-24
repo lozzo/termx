@@ -2557,6 +2557,86 @@ func TestTerminalSemanticProjectorConsumesC1CSIRawWithoutFallback(t *testing.T) 
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSIMovementAliasesRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	c1 := string([]byte{0x9b})
+	seed := "row0\r\nrow1\r\nrow2\r\nrow3"
+	raw := c1 + "2FUP" +
+		c1 + "2ELOW" +
+		c1 + "3aR" +
+		c1 + "2eD" +
+		c1 + "4`H" +
+		c1 + "1dV" +
+		c1 + "5;2fP"
+	term := vterm.New(16, 5, 100, nil)
+	pipeline := newTerminalHistoryPipeline(16, 5)
+
+	// 中文说明：seed 只建立当前 screen/frontier；本测试的 no-fallback 断言只覆盖后续 C1 movement alias 批次。
+	_, err, seedDamage := term.WriteWithDamage([]byte(seed))
+	if err != nil {
+		t.Fatalf("seed vterm write: %v", err)
+	}
+	if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+		Raw:             seed,
+		Damages:         []vterm.WriteDamage{seedDamage},
+		Cols:            16,
+		Rows:            5,
+		FromSharedVTerm: true,
+	}); err != nil {
+		t.Fatalf("seed ingest semantic batch: %v", err)
+	}
+
+	resetTerminalSemanticIngestTestHooks()
+	stats = terminalSemanticProjectorStats{}
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	for _, control := range []string{"cuu", "cud", "cuf", "cha", "vpa", "cup"} {
+		if firstDamageControl(damage, control).Control != control {
+			t.Fatalf("C1 CSI movement aliases should expose vterm %s semantic control, damage=%#v", control, damage)
+		}
+	}
+	if err := pipeline.IngestSemanticBatch(terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            16,
+		Rows:            5,
+		FromSharedVTerm: true,
+	}); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps < 9 || stats.WriteSpanOps == 0 {
+		t.Fatalf("C1 CSI movement aliases raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(16, 6)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, want := range []string{"row0V", "UPw1", "row2", "LOW3  R", "DP H"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("C1 CSI movement aliases should rewrite rows through vterm cursor ops, missing %q in %q rows=%#v damage=%#v", want, text, window.Rows, damage)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesC1ControlsRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

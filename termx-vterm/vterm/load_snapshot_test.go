@@ -1268,6 +1268,83 @@ func TestVTermWriteWithDamageC1CSIControlsKeepSemanticOrder(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSIMovementAliasesKeepSemanticOrder(t *testing.T) {
+	vt := New(16, 5, 100, nil)
+	c1 := string([]byte{0x9b})
+
+	raw := "row0\r\nrow1\r\nrow2\r\nrow3" +
+		c1 + "2FUP" +
+		c1 + "2ELOW" +
+		c1 + "3aR" +
+		c1 + "2eD" +
+		c1 + "4`H" +
+		c1 + "1dV" +
+		c1 + "5;2fP"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	var cuu, cuf, vpa, cup bool
+	cudCount := 0
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+			switch op.Control {
+			case "cuu":
+				cuu = true
+				if op.Mode != 2 || op.Row != 1 || op.Col != 4 {
+					t.Fatalf("expected C1 CPL to expose CUU count=2 at row=1 col=4, got %#v", op)
+				}
+			case "cud":
+				cudCount++
+				if cudCount == 1 && (op.Mode != 2 || op.Row != 3 || op.Col != 2) {
+					t.Fatalf("expected C1 CNL to expose CUD count=2 at row=3 col=2, got %#v", op)
+				}
+				if cudCount == 2 && (op.Mode != 2 || op.Row != 4 || op.Col != 7) {
+					t.Fatalf("expected C1 VPR to expose CUD count=2 clamped to bottom, got %#v", op)
+				}
+			case "cuf":
+				cuf = true
+				if op.Mode != 3 || op.Col != 6 || op.Row != 3 {
+					t.Fatalf("expected C1 HPR to expose CUF count=3 at row=3 col=6, got %#v", op)
+				}
+			case "vpa":
+				vpa = true
+				if op.Row != 0 || op.Col != 4 || op.Mode != 1 {
+					t.Fatalf("expected C1 VPA to expose row=0 col=4 mode=1, got %#v", op)
+				}
+			case "cup":
+				cup = true
+				if op.Row != 4 || op.Col != 1 {
+					t.Fatalf("expected C1 HVP to expose row=4 col=1, got %#v", op)
+				}
+			}
+		}
+	}
+	want := []string{
+		"write:row0", "control:cr", "control:lf",
+		"write:row1", "control:cr", "control:lf",
+		"write:row2", "control:cr", "control:lf",
+		"write:row3", "control:cuu", "control:cr", "write:UP",
+		"control:cud", "control:cr", "write:LOW",
+		"control:cuf", "write:R",
+		"control:cud", "write:D",
+		"control:cha", "write:H",
+		"control:vpa", "write:V",
+		"control:cup", "write:P",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("C1 CSI movement aliases must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if !cuu || cudCount != 2 || !cuf || !vpa || !cup {
+		t.Fatalf("expected C1 movement aliases to expose all normalized cursor controls, got cuu=%v cud=%d cuf=%v vpa=%v cup=%v damage=%#v", cuu, cudCount, cuf, vpa, cup, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticOpsPreserveRawOrder(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
