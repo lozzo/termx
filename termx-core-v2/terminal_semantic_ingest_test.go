@@ -2135,6 +2135,62 @@ func TestTerminalSemanticProjectorConsumesStringControlsRawWithoutFallback(t *te
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesOSCClipboardRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b]52;c;SGVsbG8=\x07" +
+		"\x1b]52;p;?\x07" +
+		"\x1b]52;c;\x07" +
+		"clip-ok"
+	term := vterm.New(30, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if !damageOpsContainTextSpan(damage.SemanticOps, "clip-ok") {
+		t.Fatalf("OSC clipboard should expose following text through vterm semantic ops, damage=%#v", damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == vterm.ScreenOpControl || op.Code == vterm.ScreenOpTitle {
+			t.Fatalf("OSC clipboard must remain vterm parser-owned state, got history semantic op %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(30, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            30,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("OSC clipboard raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(30, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, forbidden := range []string{"]52;", "SGVsbG8", "c;", "p;"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("OSC clipboard control must not enter history text %q, got %q rows=%#v", forbidden, text, window.Rows)
+		}
+	}
+	if !strings.Contains(text, "clip-ok") {
+		t.Fatalf("expected text after OSC clipboard from semantic projector, got %q rows=%#v damage=%#v", text, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

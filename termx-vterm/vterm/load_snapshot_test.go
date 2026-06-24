@@ -1553,6 +1553,36 @@ func TestVTermWriteWithDamageStringControlsKeepSemanticText(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageOSCClipboardKeepSemanticText(t *testing.T) {
+	vt := New(30, 3, 100, nil)
+
+	raw := "\x1b]52;c;SGVsbG8=\x07" +
+		"\x1b]52;p;?\x07" +
+		"\x1b]52;c;\x07" +
+		"clip-ok"
+	_, err, damage := vt.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !semanticOpsContainText(damage.SemanticOps, "clip-ok") {
+		t.Fatalf("OSC clipboard should keep following text as semantic text, ops=%#v damage=%#v", damage.SemanticOps, damage)
+	}
+	for _, op := range damage.SemanticOps {
+		if op.Code == ScreenOpControl || op.Code == ScreenOpTitle {
+			t.Fatalf("OSC clipboard is vterm parser-owned state, not history semantic ops, got %#v in %#v", op, damage.SemanticOps)
+		}
+	}
+	text := rowText(vt.ScreenRowView(0), 30)
+	for _, forbidden := range []string{"52;", "SGVsbG8", "?"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("OSC clipboard payload must not render as text %q, got %q damage=%#v", forbidden, text, damage)
+		}
+	}
+	if !strings.Contains(text, "clip-ok") {
+		t.Fatalf("text after OSC clipboard must remain visible, got %q damage=%#v", text, damage)
+	}
+}
+
 func collectVTermResponses(ch <-chan string, want int) []string {
 	responses := make([]string, 0, want)
 	timer := time.NewTimer(200 * time.Millisecond)
