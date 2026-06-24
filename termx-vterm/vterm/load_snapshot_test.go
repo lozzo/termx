@@ -1408,6 +1408,28 @@ func TestVTermWriteWithDamageSemanticAlternateScrollMode(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticUTF8MouseMode(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?1005hutf8-mouse\x1b[?1005l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode:1005:on", "write:utf8-mouse", "mode:1005:off"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic UTF-8 mouse mode must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 
