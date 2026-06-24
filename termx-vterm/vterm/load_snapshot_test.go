@@ -1319,6 +1319,31 @@ func TestVTermWriteWithDamageSemanticModesComeFromParserTransaction(t *testing.T
 	}
 }
 
+func TestVTermWriteWithDamageSemanticBackwardTab(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("123456789\x1b[ZXY"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
+			if op.Control == "cbt" && op.Col != 8 {
+				t.Fatalf("expected CBT to land on previous tab stop col 8, got %#v", op)
+			}
+		}
+	}
+	want := []string{"write:123456789", "control:cbt", "write:XY"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic CBT must preserve raw cursor order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 

@@ -33,7 +33,7 @@ func (e *Emulator) nextTab(n int) {
 // move past the leftmost valid column, the cursor remains at the leftmost
 // valid column and the operation completes.
 func (e *Emulator) prevTab(n int) {
-	x, _ := e.scr.CursorPosition()
+	x, y := e.scr.CursorPosition()
 	leftmargin := 0
 	scroll := e.scr.ScrollRegion()
 	if e.isModeSet(ansi.DECOM) {
@@ -55,6 +55,7 @@ func (e *Emulator) prevTab(n int) {
 	// NOTE: We use t.scr.setCursorX here because we don't want to reset the
 	// phantom state.
 	e.scr.setCursorX(x, false)
+	e.scr.damage.recordControl("cbt", x, y, n)
 }
 
 // moveCursor moves the cursor by the given x and y deltas. If the cursor
