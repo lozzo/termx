@@ -1342,6 +1342,32 @@ func TestVTermWriteWithDamageSemanticLegacyMouseModes(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticFocusAndSGRMouseModes(t *testing.T) {
+	vt := New(24, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1004h\x1b[?1006hframe\x1b[?1006l\x1b[?1004l\x1b[?1003l\x1b[?1002l\x1b[?1000l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, modeOpLabel(op))
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{
+		"mode:1000:on", "mode:1002:on", "mode:1003:on", "mode:1004:on", "mode:1006:on",
+		"write:frame",
+		"mode:1006:off", "mode:1004:off", "mode:1003:off", "mode:1002:off", "mode:1000:off",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic focus/SGR mouse modes must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

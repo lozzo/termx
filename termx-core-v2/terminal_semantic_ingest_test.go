@@ -1615,6 +1615,51 @@ func TestTerminalSemanticProjectorConsumesLegacyMouseModesRawWithoutFallback(t *
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesFocusAndSGRMouseModesRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ModeOps += next.ModeOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1004h\x1b[?1006hframe\x1b[?1006l\x1b[?1004l\x1b[?1003l\x1b[?1002l\x1b[?1000l"
+	term := vterm.New(24, 3, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	for _, mode := range []int{1000, 1002, 1003, 1004, 1006} {
+		if firstDamageMode(damage, mode).Code != vterm.ScreenOpModes {
+			t.Fatalf("focus/SGR mouse mode %d should be exposed as vterm semantic mode, damage=%#v", mode, damage)
+		}
+	}
+	pipeline := newTerminalHistoryPipeline(24, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            24,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps < 10 || stats.WriteSpanOps == 0 {
+		t.Fatalf("focus/SGR mouse modes raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(24, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if window.TotalLines != 0 || !historyWindowContainsText(window, "frame") {
+		t.Fatalf("focus/SGR mouse modes should expose mutable primary frame without committed depth, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
