@@ -1609,13 +1609,16 @@ func TestVTermWriteWithDamageSemanticSpecialDrawingCharset(t *testing.T) {
 	}
 	var got []string
 	for _, op := range damage.SemanticOps {
-		if op.Code == ScreenOpWriteSpan {
+		switch op.Code {
+		case ScreenOpWriteSpan:
 			got = append(got, rowText(op.Cells, len(op.Cells)))
+		case ScreenOpControl:
+			got = append(got, "control:"+op.Control)
 		}
 	}
-	want := []string{"┌", "─", "┐", "ok"}
+	want := []string{"control:scs", "┌", "─", "┐", "control:scs", "ok"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Fatalf("semantic SCS text must come from mapped vterm print cells, got %v want %v damage=%#v", got, want, damage)
+		t.Fatalf("semantic SCS ops must preserve charset state order and mapped text, got %v want %v damage=%#v", got, want, damage)
 	}
 }
 

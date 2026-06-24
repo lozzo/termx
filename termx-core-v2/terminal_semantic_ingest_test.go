@@ -2620,6 +2620,7 @@ func TestTerminalSemanticProjectorConsumesSpecialDrawingCharsetRawWithoutFallbac
 	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
 		stats.SemanticProjectors += next.SemanticProjectors
 		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
 		stats.WriteSpanOps += next.WriteSpanOps
 	}
 	defer resetTerminalSemanticIngestTestHooks()
@@ -2635,6 +2636,9 @@ func TestTerminalSemanticProjectorConsumesSpecialDrawingCharsetRawWithoutFallbac
 			t.Fatalf("SCS raw should expose mapped vterm text %q, damage=%#v", want, damage)
 		}
 	}
+	if firstDamageControl(damage, "scs").Control != "scs" {
+		t.Fatalf("SCS raw should expose ordered charset designation control, damage=%#v", damage)
+	}
 	pipeline := newTerminalHistoryPipeline(16, 3)
 	batch := terminalSemanticBatch{
 		Raw:             raw,
@@ -2646,7 +2650,7 @@ func TestTerminalSemanticProjectorConsumesSpecialDrawingCharsetRawWithoutFallbac
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
 	}
-	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
 		t.Fatalf("SCS raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
 	}
 	window, err := pipeline.LatestWindow(16, 4)

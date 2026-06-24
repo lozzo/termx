@@ -400,6 +400,10 @@ func (e *Emulator) registerDefaultEscHandlers() {
 			default:
 				return false
 			}
+			x, y := e.scr.CursorPosition()
+			// 中文说明：SCS 只改变 shared vterm 的 charset 状态；history
+			// 后续只消费 print path 已映射的 text cells，不保存第二份 charset truth。
+			e.scr.damage.recordControl("scs", x, y, int(set))
 			return true
 		})
 	}
