@@ -22,6 +22,7 @@ type terminalSemanticProjectorStats struct {
 	DamageBatches     int
 	WriteSpanOps      int
 	ClearToEOLOps     int
+	ModeOps           int
 	ScrollbackAppends int
 	FullReplaceOnly   int
 }
@@ -100,6 +101,8 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 				if op.Control == "el" {
 					stats.ClearToEOLOps++
 				}
+			case vterm.ScreenOpModes:
+				stats.ModeOps++
 			}
 		}
 		stats.ScrollbackAppends += len(damage.ScrollbackAppend)
@@ -179,6 +182,11 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				hasOps = true
+			case vterm.ScreenOpModes:
+				if !rawSharedModeCanUseSemanticOp(op) {
+					return false
+				}
+				hasOps = true
 			default:
 				return false
 			}
@@ -190,6 +198,18 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
 	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el":
+		return true
+	default:
+		return false
+	}
+}
+
+func rawSharedModeCanUseSemanticOp(op vterm.DamageOp) bool {
+	if !op.Private {
+		return false
+	}
+	switch op.Mode {
+	case 25, 47, 1047, 1049, 1000, 1002, 1003, 1004, 1006, 2026:
 		return true
 	default:
 		return false

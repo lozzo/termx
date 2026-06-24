@@ -83,6 +83,7 @@ func TestTerminalSemanticProjectorConsumesVTermDamage(t *testing.T) {
 		stats.DamageBatches += next.DamageBatches
 		stats.WriteSpanOps += next.WriteSpanOps
 		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.ModeOps += next.ModeOps
 		stats.ScrollbackAppends += next.ScrollbackAppends
 		stats.FullReplaceOnly += next.FullReplaceOnly
 	}
@@ -111,6 +112,7 @@ func TestTerminalSemanticProjectorCodexRawDamageSignals(t *testing.T) {
 		stats.DamageBatches += next.DamageBatches
 		stats.WriteSpanOps += next.WriteSpanOps
 		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.ModeOps += next.ModeOps
 		stats.ScrollbackAppends += next.ScrollbackAppends
 		stats.FullReplaceOnly += next.FullReplaceOnly
 	}
@@ -407,6 +409,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermStyledErase(t *testing.T) {
 		stats.DamageBatches += next.DamageBatches
 		stats.WriteSpanOps += next.WriteSpanOps
 		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.ModeOps += next.ModeOps
 	}
 	defer resetTerminalSemanticIngestTestHooks()
 
@@ -472,6 +475,74 @@ func TestTerminalSemanticProjectorConsumesRealVTermPlainErase(t *testing.T) {
 	}
 	if !historyWindowContainsText(window, "ab") || historyWindowContainsText(window, "abcdef") {
 		t.Fatalf("plain raw EL should be driven by vterm semantic control, got %#v damage=%#v", window.Rows, damage)
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesRealVTermModeOps(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.DamageBatches += next.DamageBatches
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.ClearToEOLOps += next.ClearToEOLOps
+		stats.ModeOps += next.ModeOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(20, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	raw := "\x1b[?2026hrunning-frame"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            20,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.ModeOps == 0 {
+		t.Fatalf("raw private mode should be consumed from vterm semantic modes, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(20, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if window.TotalLines != 0 || !historyWindowContainsText(window, "running-frame") {
+		t.Fatalf("primary fullscreen mode should expose mutable frame without committed depth, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
+	}
+}
+
+func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.T) {
+	term := vterm.New(20, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(20, 3)
+	for _, raw := range []string{"primary\n", "\x1b[?1049h", "\x1b[?1049l", "after"} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            20,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+	}
+	window, err := pipeline.LatestWindow(20, 5)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "after") {
+		t.Fatalf("mode-only alt-screen boundary should be driven by vterm semantic modes, got %#v", window.Rows)
 	}
 }
 

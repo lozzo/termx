@@ -1264,6 +1264,36 @@ func TestVTermWriteWithDamageSemanticTextComesFromPrintPath(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticModesComeFromParserTransaction(t *testing.T) {
+	vt := New(16, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?2026htext\x1b[?2026l"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	var enabled []bool
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpModes:
+			got = append(got, "mode")
+			if op.Mode != 2026 || !op.Private {
+				t.Fatalf("unexpected semantic mode op: %#v damage=%#v", op, damage)
+			}
+			enabled = append(enabled, op.Enabled)
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"mode", "write:text", "mode"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic mode ops must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if len(enabled) != 2 || !enabled[0] || enabled[1] {
+		t.Fatalf("expected mode enable then disable, got enabled=%v ops=%#v", enabled, damage.SemanticOps)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticClearComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
