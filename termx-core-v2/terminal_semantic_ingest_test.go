@@ -1433,6 +1433,62 @@ func TestTerminalSemanticProjectorConsumesRealVTermStyledLinkTextRawBatch(t *tes
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1OSC8RawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	raw := string([]byte{0x9d}) + "8;id=c1;https://example.test/c1" + string([]byte{0x9c}) +
+		"LINK" +
+		string([]byte{0x9d}) + "8;;" + string([]byte{0x9c}) +
+		" plain"
+	term := vterm.New(32, 4, 100, nil)
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	if !damageOpsContainTextSpan(damage.SemanticOps, "LINK") || !damageOpsContainTextSpan(damage.SemanticOps, " plain") {
+		t.Fatalf("C1 OSC8 should expose linked/plain text through vterm semantic ops, damage=%#v", damage)
+	}
+
+	pipeline := newTerminalHistoryPipeline(32, 4)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            32,
+		Rows:            4,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("C1 OSC8 raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+	}
+	window, err := pipeline.LatestWindow(32, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 || window.Rows[0].Text != "LINK plain" {
+		t.Fatalf("C1 OSC8 semantic text should preserve one logical row, got %#v damage=%#v", window.Rows, damage)
+	}
+	cells := window.Rows[0].Cells
+	if len(cells) != 2 {
+		t.Fatalf("expected linked/plain cells from C1 OSC8 vterm semantic text, got %#v rows=%#v", cells, window.Rows)
+	}
+	if cells[0].Text != "LINK" || cells[0].LinkURL != "https://example.test/c1" || cells[0].LinkParams != "id=c1" {
+		t.Fatalf("expected C1 OSC8 link metadata from vterm semantic text, got %#v rows=%#v", cells[0], window.Rows)
+	}
+	if cells[1].Text != " plain" || cells[1].LinkURL != "" || cells[1].LinkParams != "" {
+		t.Fatalf("expected following text to reset C1 OSC8 link, got %#v rows=%#v", cells[1], window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesOSCTitleAndWorkingDirectoryRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
