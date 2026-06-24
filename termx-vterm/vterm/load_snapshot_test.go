@@ -1390,6 +1390,33 @@ func TestVTermWriteWithDamageSemanticCursorVisibilityMode(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageSemanticCursorStyle(t *testing.T) {
+	vt := New(20, 3, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[5 qframe\x1b[2 q"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	var got []string
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case ScreenOpControl:
+			if op.Control == "decscusr" {
+				got = append(got, "control:"+op.Control+":"+strconv.Itoa(op.Mode))
+			}
+		case ScreenOpWriteSpan:
+			got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+		}
+	}
+	want := []string{"control:decscusr:5", "write:frame", "control:decscusr:2"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("semantic cursor style must preserve raw order, got %v want %v damage=%#v", got, want, damage)
+	}
+	if row := rowText(vt.ScreenRowView(0), len("frame")); row != "frame" {
+		t.Fatalf("cursor style state must not render as text, got %q damage=%#v", row, damage)
+	}
+}
+
 func TestVTermWriteWithDamageSemanticApplicationKeyModes(t *testing.T) {
 	vt := New(16, 3, 100, nil)
 

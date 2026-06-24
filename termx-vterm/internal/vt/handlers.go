@@ -938,6 +938,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			style--
 		}
 		e.scr.setCursorStyle(CursorStyle(style), blink)
+		x, y := e.scr.CursorPosition()
+		e.scr.damage.recordControl("decscusr", x, y, n)
 		return true
 	})
 
