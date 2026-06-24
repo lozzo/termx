@@ -357,6 +357,52 @@ func TestTerminalSemanticProjectorConsumesRealVTermCursorDamage(t *testing.T) {
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesRealVTermVerticalCursorRawWithoutFallback(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ControlOps += next.ControlOps
+		stats.WriteSpanOps += next.WriteSpanOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(12, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(12, 3)
+	for _, raw := range []string{
+		"top\r\nmiddle\r\nbottom\r",
+		"\x1b[2AX",
+		"\x1b[BY",
+		"\x1b[EZ",
+	} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            12,
+			Rows:            3,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("vertical cursor raw should use vterm semantic projector without parser fallback, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(12, 6)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsAll(window, "Xop", "mYddle", "Zottom") {
+		t.Fatalf("vertical cursor semantic ops should mutate primary screen ownership, rows=%#v", window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorPrefersOrderedSemanticOps(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(12, 3)
 	batch := terminalSemanticBatch{

@@ -320,7 +320,7 @@ func rawSharedAltScreenRunningDamageCanUseSemanticOps(damage vterm.WriteDamage) 
 
 func rawSharedControlCanUseSemanticOp(control string) bool {
 	switch control {
-	case "cr", "bs", "ht", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
+	case "cr", "bs", "ht", "cuu", "cud", "cuf", "cub", "cha", "cup", "vpa", "el", "ed", "lf", "ind", "soft-wrap", "ri", "decstbm":
 		return true
 	default:
 		return false
