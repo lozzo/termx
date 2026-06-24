@@ -388,7 +388,9 @@ func rawSharedModeCanUseSemanticOp(op vterm.DamageOp) bool {
 	case 1, 6, 7, 9, 25, 47, 66, 67, 69, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1015, 1016, 1047, 1048, 1049, 2004, 2026, 2027, 2031, 2048, 9001:
 		return true
 	default:
-		return false
+		// 中文说明：未知 private mode 已由 shared vterm 解码；history 不保存
+		// 第二份 mode truth，也不能因此回退 raw parser 重放同批终端语义。
+		return true
 	}
 }
 

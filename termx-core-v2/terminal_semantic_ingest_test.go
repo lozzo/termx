@@ -4418,7 +4418,7 @@ func TestTerminalSemanticProjectorConsumesInputReportPrivateModesRawWithoutFallb
 	}
 }
 
-func TestTerminalSemanticProjectorRejectsUnknownPrivateModeRaw(t *testing.T) {
+func TestTerminalSemanticProjectorConsumesUnknownPrivateModeRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
 	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
@@ -4449,15 +4449,15 @@ func TestTerminalSemanticProjectorRejectsUnknownPrivateModeRaw(t *testing.T) {
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
 	}
-	if stats.SemanticProjectors != 0 || stats.RawFallbacks == 0 {
-		t.Fatalf("unknown private mode should keep parser fallback boundary, stats=%#v damage=%#v", stats, damage)
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ModeOps == 0 || stats.WriteSpanOps == 0 {
+		t.Fatalf("unknown private mode raw should stay on vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
 	}
 	window, err := pipeline.LatestWindow(16, 4)
 	if err != nil {
 		t.Fatalf("latest: %v", err)
 	}
 	if !historyWindowContainsText(window, "unknown") {
-		t.Fatalf("fallback should still preserve raw text, rows=%#v damage=%#v", window.Rows, damage)
+		t.Fatalf("semantic projector should still preserve vterm text, rows=%#v damage=%#v", window.Rows, damage)
 	}
 }
 
