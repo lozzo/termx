@@ -4102,6 +4102,97 @@ func TestTerminalSemanticProjectorConsumesLineOperationsRawWithoutFallback(t *te
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesC1CSILineOperationsRawWithoutFallback(t *testing.T) {
+	c1 := string([]byte{0x9b})
+	for _, tc := range []struct {
+		name     string
+		raw      string
+		control  string
+		expected []string
+	}{
+		{
+			name:     "insert-line",
+			raw:      c1 + "2;1H" + c1 + "1Lafter",
+			control:  "il",
+			expected: []string{"top", "after", "middle"},
+		},
+		{
+			name:     "delete-line",
+			raw:      c1 + "2;1H" + c1 + "1MAFTER!",
+			control:  "dl",
+			expected: []string{"top", "AFTER!"},
+		},
+		{
+			name:     "scroll-up",
+			raw:      c1 + "1S" + c1 + "3;1Hafter",
+			control:  "su",
+			expected: []string{"top", "middle", "bottom", "after"},
+		},
+		{
+			name:     "scroll-down",
+			raw:      c1 + "1T" + c1 + "1;1Hafter",
+			control:  "sd",
+			expected: []string{"after", "top", "middle"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			term := vterm.New(12, 3, 100, nil)
+			pipeline := newTerminalHistoryPipeline(12, 3)
+			seedRaw := "top\r\nmiddle\r\nbottom"
+			_, err := term.Write([]byte(seedRaw))
+			if err != nil {
+				t.Fatalf("seed vterm write: %v", err)
+			}
+			// 中文说明：seed 用普通 parser 建立同一 primary screen ownership；
+			// 本测试只验证后续 C1 CSI line-control 批次不会回退 parser。
+			if err := pipeline.Ingest(seedRaw); err != nil {
+				t.Fatalf("seed ingest: %v", err)
+			}
+
+			resetTerminalSemanticIngestTestHooks()
+			var stats terminalSemanticProjectorStats
+			terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+				stats.SemanticProjectors += next.SemanticProjectors
+				stats.RawFallbacks += next.RawFallbacks
+				stats.ControlOps += next.ControlOps
+				stats.WriteSpanOps += next.WriteSpanOps
+			}
+			defer resetTerminalSemanticIngestTestHooks()
+
+			_, err, damage := term.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("vterm write: %v", err)
+			}
+			if firstDamageControl(damage, tc.control).Control != tc.control {
+				t.Fatalf("C1 CSI line operation raw should expose vterm %s semantic control, damage=%#v", tc.control, damage)
+			}
+			batch := terminalSemanticBatch{
+				Raw:             tc.raw,
+				Damages:         []vterm.WriteDamage{damage},
+				Cols:            12,
+				Rows:            3,
+				FromSharedVTerm: true,
+			}
+			if err := pipeline.IngestSemanticBatch(batch); err != nil {
+				t.Fatalf("ingest semantic batch: %v", err)
+			}
+			if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ControlOps == 0 || stats.WriteSpanOps == 0 {
+				t.Fatalf("C1 CSI line operation raw should use vterm semantic projector without parser fallback, stats=%#v damage=%#v", stats, damage)
+			}
+			window, err := pipeline.LatestWindow(12, 6)
+			if err != nil {
+				t.Fatalf("latest: %v", err)
+			}
+			text := historyWindowJoinedText(window)
+			for _, want := range tc.expected {
+				if strings.Count(text, want) != 1 {
+					t.Fatalf("C1 %s semantic projector should contain %q once, got %q rows=%#v damage=%#v", tc.control, want, text, window.Rows, damage)
+				}
+			}
+		})
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesAltScreenRunningRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats

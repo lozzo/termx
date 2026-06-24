@@ -2546,6 +2546,92 @@ func TestVTermWriteWithDamageSemanticLineOperations(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageC1CSILineOperationsKeepSemanticOrder(t *testing.T) {
+	c1 := string([]byte{0x9b})
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		control string
+		row     int
+		col     int
+		count   int
+		dy      int
+		want    []string
+	}{
+		{
+			name:    "insert-line",
+			raw:     "top\r\nmiddle\r\nbottom" + c1 + "2;1H" + c1 + "1Lafter",
+			control: "il",
+			row:     1,
+			col:     0,
+			count:   1,
+			dy:      1,
+			want:    []string{"write:top", "control:cr", "control:lf", "write:middle", "control:cr", "control:lf", "write:bottom", "control:cup", "control:il", "write:after"},
+		},
+		{
+			name:    "delete-line",
+			raw:     "top\r\nmiddle\r\nbottom" + c1 + "2;1H" + c1 + "1Mafter",
+			control: "dl",
+			row:     1,
+			col:     0,
+			count:   1,
+			dy:      -1,
+			want:    []string{"write:top", "control:cr", "control:lf", "write:middle", "control:cr", "control:lf", "write:bottom", "control:cup", "control:dl", "write:after"},
+		},
+		{
+			name:    "scroll-up",
+			raw:     "top\r\nmiddle\r\nbottom" + c1 + "1Safter",
+			control: "su",
+			row:     0,
+			col:     6,
+			count:   1,
+			dy:      -1,
+			want:    []string{"write:top", "control:cr", "control:lf", "write:middle", "control:cr", "control:lf", "write:bottom", "control:su", "write:after"},
+		},
+		{
+			name:    "scroll-down",
+			raw:     "top\r\nmiddle\r\nbottom" + c1 + "1Tafter",
+			control: "sd",
+			row:     0,
+			col:     6,
+			count:   1,
+			dy:      1,
+			want:    []string{"write:top", "control:cr", "control:lf", "write:middle", "control:cr", "control:lf", "write:bottom", "control:sd", "write:after"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vt := New(12, 3, 100, nil)
+
+			_, err, damage := vt.WriteWithDamage([]byte(tc.raw))
+			if err != nil {
+				t.Fatalf("write with damage: %v", err)
+			}
+			op := firstSemanticControlOp(t, damage, tc.control)
+			if op.Row != tc.row || op.Col != tc.col || op.Mode != tc.count {
+				t.Fatalf("unexpected C1 %s control op: %#v damage=%#v", tc.control, op, damage)
+			}
+			if op.Bottom != 3 {
+				t.Fatalf("C1 %s should carry scroll-region bottom, got %#v", tc.control, op)
+			}
+			if firstOpWithCode(t, damage, ScreenOpScrollRect).Dy != tc.dy {
+				t.Fatalf("expected C1 accompanying vertical scroll diff dy=%d, got ops=%#v", tc.dy, damage.Ops)
+			}
+			var got []string
+			for _, op := range damage.SemanticOps {
+				switch op.Code {
+				case ScreenOpWriteSpan:
+					got = append(got, "write:"+rowText(op.Cells, len(op.Cells)))
+				case ScreenOpControl:
+					got = append(got, "control:"+op.Control)
+				}
+			}
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Fatalf("C1 CSI semantic line operation order mismatch, got %v want %v damage=%#v", got, tc.want, damage)
+			}
+		})
+	}
+}
+
 func TestVTermWriteWithDamageSemanticEraseDisplayComesFromControl(t *testing.T) {
 	vt := New(12, 3, 100, nil)
 
