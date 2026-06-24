@@ -23,6 +23,13 @@ func (e *Emulator) linefeed() {
 	}
 }
 
+func (e *Emulator) nextLine() {
+	// 中文说明：NEL 是 CR+LF 语义；按 ordered control 暴露给 history，
+	// 避免 history parser 另存一份 next-line 状态。
+	e.carriageReturn()
+	e.linefeed()
+}
+
 // index moves the cursor down one line, scrolling up if necessary. This
 // always resets the phantom state i.e. pending wrap state.
 func (e *Emulator) index() {

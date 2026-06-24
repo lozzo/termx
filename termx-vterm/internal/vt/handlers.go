@@ -287,6 +287,11 @@ func (e *Emulator) registerDefaultCcHandlers() {
 				e.index()
 				return true
 			})
+		case ansi.NEL: // Next Line [ansi.NEL]
+			e.registerCcHandler(i, func() bool {
+				e.nextLine()
+				return true
+			})
 		case ansi.SS2: // Single Shift 2 [ansi.SS2]
 			e.registerCcHandler(i, func() bool {
 				e.gsingle = 2
