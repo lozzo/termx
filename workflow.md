@@ -260,6 +260,7 @@
 | R201T. SK raw ED 语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 raw shared batch 中的 vterm `ed` control 直接驱动 `EventEraseInDisplay`，Codex-style mode/CUP/ED0 repaint 不再回退 parser；scroll-out、alt final-frame 和 full-replace 仍留给后续切片 |
 | R201U. SK raw primary scroll-out vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 rows=1/2 raw shared batch 中的 primary `ScrollbackAppend`、向上 `ScrollRect` 和 LF/IND control 直接驱动 HistoryTrack screen ownership 提交；大高度多 scroll、RI、alt final-frame 和 full-replace 仍留给后续切片 |
 | R201V. SK scroll-region/RI 语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 vterm 暴露 DECSTBM scroll-region semantic control，并让 raw shared batch 中的 scroll-region、RI down-scroll 和 absolute cursor 由 vterm semantic ops 驱动；Codex-style 局部滚动不会破坏已 committed pre-existing lines，alt final-frame 和 full-replace 仍留给后续切片 |
+| R201W. SK alt final-frame shared vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已删除 history pipeline 的 altCap 第二套 vterm，alt final-frame 只从真实 shared live vterm `WriteWithResult` semantic batch 进入 history，alt-screen 运行中不写 primary history、退出 final frame 只追加一次；full-replace 和 parser 职责收缩仍留给后续切片 |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入

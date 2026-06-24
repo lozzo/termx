@@ -764,6 +764,42 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOnlyAltScreen(t *testing.
 	}
 }
 
+func TestTerminalSemanticProjectorUsesSharedVTermAltExitFrameOnce(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.ModeOps += next.ModeOps
+		stats.AltExitFrames += next.AltExitFrames
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-alt-shared",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 3},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-alt-shared", "primary\n\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	if stats.AltExitFrames != 1 {
+		t.Fatalf("shared vterm alt final frame should reach projector once, stats=%#v", stats)
+	}
+	window, err := server.LatestWindow("term-alt-shared", 20, 10)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if strings.Count(text, "alt-final") != 1 || strings.Count(text, "primary") != 1 {
+		t.Fatalf("alt final frame should be appended once from shared vterm batch, got %q rows=%#v", text, window.Rows)
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("alt final frame should commit exactly once with primary page, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorShadowParsesRawTextState(t *testing.T) {
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)

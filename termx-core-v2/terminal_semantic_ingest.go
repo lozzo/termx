@@ -26,6 +26,7 @@ type terminalSemanticProjectorStats struct {
 	ModeOps           int
 	ControlOps        int
 	ScrollbackAppends int
+	AltExitFrames     int
 	FullReplaceOnly   int
 }
 
@@ -111,6 +112,9 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			}
 		}
 		stats.ScrollbackAppends += len(damage.ScrollbackAppend)
+	}
+	if len(batch.AltExitFrame) > 0 {
+		stats.AltExitFrames++
 	}
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
 		if batch.Raw != "" {
