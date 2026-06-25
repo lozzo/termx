@@ -831,6 +831,69 @@ func TestHistoryTrackFullscreenEraseDisplayFromNonTopRowKeepsUpperFrame(t *testi
 	}
 }
 
+func TestHistoryTrackPrimaryPseudoTUIKeepsUpperFrameAcrossSplitMiddleUpdate(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(16)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell")},
+		HistoryEvent{Kind: EventEnterPrimaryFullscreen},
+		HistoryEvent{Kind: EventCursorPosition, Row: 1, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventCursorPosition, Row: 3, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("Update available! 0.141.0 -> 0.142.0")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 4, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("Run brew upgrade --cask codex to update.")},
+	)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventCursorPosition, Row: 7, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("OpenAI Codex")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 10, Column: 1},
+		HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 0},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("> Improve documentation in @filename")},
+		HistoryEvent{Kind: EventCursorPosition, Row: 12, Column: 1},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("gpt-5.5 xhigh . ~/Documents/workdir/termx")},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 96, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := strings.Join(rowTextsFromWindow(window.Rows), "\n")
+	for _, want := range []string{
+		"shell",
+		"Update available! 0.141.0 -> 0.142.0",
+		"Run brew upgrade --cask codex to update.",
+		"OpenAI Codex",
+		"> Improve documentation in @filename",
+		"gpt-5.5 xhigh",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("primary pseudo-TUI middle update should keep %q, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	updateIndex := -1
+	openAIIndex := -1
+	for i, row := range window.Rows {
+		if strings.Contains(row.Text, "Update available!") {
+			updateIndex = i
+		}
+		if strings.Contains(row.Text, "OpenAI Codex") {
+			openAIIndex = i
+		}
+	}
+	if updateIndex < 0 || openAIIndex < 0 || updateIndex >= openAIIndex {
+		t.Fatalf("update card must stay before OpenAI card in screen ownership order, update=%d openai=%d rows=%#v", updateIndex, openAIIndex, window.Rows)
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("primary pseudo-TUI current frame must not increase committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	for _, row := range window.Rows[1:] {
+		if row.Committed {
+			t.Fatalf("primary pseudo-TUI current frame rows must stay mutable live-tail, rows=%#v", window.Rows)
+		}
+	}
+}
+
 func TestHistoryTrackEraseDisplayToCursorClearsMutablePrefixOnly(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "kept")

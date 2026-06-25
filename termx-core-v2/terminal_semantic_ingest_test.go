@@ -1495,6 +1495,82 @@ func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossLowerED0(t *testing.
 	}
 }
 
+func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossSplitMiddleUpdate(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.EraseDisplayOps += next.EraseDisplayOps
+		stats.ModeOps += next.ModeOps
+		stats.ControlOps += next.ControlOps
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(96, 16, 100, nil)
+	pipeline := newTerminalHistoryPipeline(96, 16)
+	for _, raw := range []string{
+		"lozzow@RedmiBook: ~/Documents/workdir/termx\ncodex --yolo\n",
+		"\x1b[?2026h\x1b[H\x1b[J",
+		"\x1b[3;1HUpdate available! 0.141.0 -> 0.142.0",
+		"\x1b[4;1HRun brew upgrade --cask codex to update.",
+		"\x1b[7;1HOpenAI Codex",
+		"\x1b[10;1H\x1b[J",
+		"\x1b[10;1H> Improve documentation in @filename",
+		"\x1b[12;1Hgpt-5.5 xhigh . ~/Documents/workdir/termx",
+	} {
+		_, err, damage := term.WriteWithDamage([]byte(raw))
+		if err != nil {
+			t.Fatalf("vterm write %q: %v", raw, err)
+		}
+		batch := terminalSemanticBatch{
+			Raw:             raw,
+			Damages:         []vterm.WriteDamage{damage},
+			Cols:            96,
+			Rows:            16,
+			FromSharedVTerm: true,
+		}
+		if err := pipeline.IngestSemanticBatch(batch); err != nil {
+			t.Fatalf("ingest semantic batch %q: %v", raw, err)
+		}
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 || stats.EraseDisplayOps < 2 || stats.ModeOps == 0 || stats.ControlOps == 0 {
+		t.Fatalf("Codex split middle update should use vterm semantic projector without parser fallback, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(96, 32)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, want := range []string{
+		"lozzow@RedmiBook",
+		"codex --yolo",
+		"Update available! 0.141.0 -> 0.142.0",
+		"Run brew upgrade --cask codex to update.",
+		"OpenAI Codex",
+		"> Improve documentation in @filename",
+		"gpt-5.5 xhigh",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("latest should keep %q across split middle update, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	updateIndex := historyWindowRowIndexContaining(window, "Update available!")
+	openAIIndex := historyWindowRowIndexContaining(window, "OpenAI Codex")
+	if updateIndex < 0 || openAIIndex < 0 || updateIndex >= openAIIndex {
+		t.Fatalf("update card must stay before OpenAI card, update=%d openai=%d rows=%#v", updateIndex, openAIIndex, window.Rows)
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("Codex split middle update frame must stay mutable without committed depth growth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "Update available!") && row.Committed {
+			t.Fatalf("update card current frame row must stay mutable, rows=%#v", window.Rows)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesRealVTermPrimaryScrollOut(t *testing.T) {
 	for _, rows := range []int{1, 2} {
 		t.Run("rows_"+string(rune('0'+rows)), func(t *testing.T) {
@@ -5163,4 +5239,13 @@ func historyWindowJoinedText(window history.HistoryWindow) string {
 		builder.WriteByte('\n')
 	}
 	return builder.String()
+}
+
+func historyWindowRowIndexContaining(window history.HistoryWindow, text string) int {
+	for i, row := range window.Rows {
+		if strings.Contains(row.Text, text) {
+			return i
+		}
+	}
+	return -1
 }

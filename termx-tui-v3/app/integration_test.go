@@ -6191,11 +6191,11 @@ func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
 		t.Fatalf("drain latest: %v", err)
 	}
 
-	if runtime.State().CopyMode.ViewportTop != 4 || runtime.State().CopyMode.Cursor.Row != 4 {
-		t.Fatalf("copy mode should anchor at Codex live-tail frame head, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.ViewportTop != 2 || runtime.State().CopyMode.Cursor.Row != 4 {
+		t.Fatalf("copy mode should keep Codex live-tail with lead-in context, got %#v", runtime.State().CopyMode)
 	}
 	lines := activeCopyContentLines(runtime)
-	if !copyHistoryLinesContain(lines, "Update available!") || !copyHistoryLinesContain(lines, "See full release notes:") {
+	if !copyHistoryLinesContain(lines, "Update available!") || !copyHistoryLinesContain(lines, "Run brew upgrade") {
 		t.Fatalf("copy history should render Codex update card after entry, got %#v", lines)
 	}
 }

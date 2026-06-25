@@ -635,8 +635,33 @@ func TestCopyModeAcceptLatestAnchorsLiveTailCurrentFrame(t *testing.T) {
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
 	copyMode := CopyModeStore{ViewRows: 3}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.Cursor != (CopyPosition{Row: 2}) || copyMode.ViewportTop != 2 {
-		t.Fatalf("latest should start at live-tail current frame head, got %#v", copyMode)
+	if copyMode.Cursor != (CopyPosition{Row: 2}) || copyMode.ViewportTop != 1 {
+		t.Fatalf("latest should keep live-tail current frame with lead-in context, got %#v", copyMode)
+	}
+}
+
+func TestCopyModeAcceptLatestKeepsPseudoTUILeadInContext(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "shell prompt", LineID: 1},
+		{Text: "codex --yolo", LineID: 2},
+		{Text: "", LineID: 3},
+		{Text: "prelude", LineID: 4},
+		{Text: "Update available! 0.141.0 -> 0.142.0", LineID: 5},
+		{Text: "Run brew upgrade --cask codex to update.", LineID: 6},
+		{Text: "See full release notes:", LineID: 7},
+		{Text: "https://github.com/openai/codex/releases/latest", LineID: 8},
+		{Text: "OpenAI Codex", LineID: 9, LiveTail: true},
+		{Text: "model: gpt-5.5 xhigh", LineID: 10, LiveTail: true},
+		{Text: "directory: ~/Documents/workdir/termx", LineID: 11, LiveTail: true},
+		{Text: "permissions: YOLO mode", LineID: 12, LiveTail: true},
+		{Text: "Tip: Use /compact when the conversation gets long.", LineID: 13, LiveTail: true},
+		{Text: "> Improve documentation in @filename", LineID: 14, LiveTail: true},
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	copyMode := CopyModeStore{ViewRows: 8}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	if copyMode.Cursor != (CopyPosition{Row: 8}) || copyMode.ViewportTop != 4 {
+		t.Fatalf("latest should keep pseudo-TUI lead-in context visible, got %#v", copyMode)
 	}
 }
 

@@ -129,8 +129,8 @@ func TestCopyModeProtocolCodexLatestDoesNotUseLiveRevisionBoundary(t *testing.T)
 	if len(got) < 25 || got[0] != "lozzow@RedmiBook: ~/Documents/workdir/termx" || got[1] != "codex --yolo" || got[4] != "Update available! 0.141.0 -> 0.142.0" {
 		t.Fatalf("expected Codex update card at live-tail history boundary, got %v", got)
 	}
-	if runtime.State().CopyMode.ViewportTop != 4 {
-		t.Fatalf("copy latest should anchor at first Codex live-tail row, got viewport=%d rows=%v", runtime.State().CopyMode.ViewportTop, got)
+	if runtime.State().CopyMode.Cursor.Row != 4 || runtime.State().CopyMode.ViewportTop != 0 {
+		t.Fatalf("copy latest should keep Codex live-tail with lead-in context, got copy=%#v rows=%v", runtime.State().CopyMode, got)
 	}
 
 	_ = clientTransport.Close()

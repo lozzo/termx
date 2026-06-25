@@ -862,12 +862,14 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 	if totalRows > 0 {
 		// 中文说明：latest window 内部仍按旧->新排列；普通日志进入 copy/history 仍锚到页尾。
 		// Codex 这类 primary current frame 属于 core 标记的 live-tail，入口必须先展示
-		// current frame 起点，不能只露出 frame 尾部导致上半屏看起来“丢失”。
+		// current frame 起点附近；但 live-tail 前的 rows 可能仍是用户看到的同一块
+		// primary-screen 上下文，不能把第一条 live-tail 硬顶到顶部吞掉 update card。
 		cursorRow := totalRows - 1
 		viewportTop := maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
 		if liveTailTop, ok := firstLiveTailRow(window.Rows, totalRows); ok {
 			cursorRow = liveTailTop
-			viewportTop = clampCopyInt(liveTailTop, 0, maxCopyInt(0, totalRows-copyVisibleRowsForStore(store)))
+			visibleRows := copyVisibleRowsForStore(store)
+			viewportTop = clampCopyInt(liveTailTop-visibleRows/2, 0, maxCopyInt(0, totalRows-visibleRows))
 		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop

@@ -1473,9 +1473,8 @@ func TestProtocolServiceHistoryWindowCodexCurrentFrameKeepsUpdateCard(t *testing
 		t.Fatalf("create: %v", err)
 	}
 	process := serverProcess(t, server, "term-1")
-	process.emitOutput(strings.Join([]string{
-		"lozzow@RedmiBook: ~/Documents/workdir/termx\n",
-		"codex --yolo\n",
+	for _, output := range []string{
+		"lozzow@RedmiBook: ~/Documents/workdir/termx\ncodex --yolo\n",
 		"\x1b[?2026h\x1b[H\x1b[J",
 		"\x1b[3;1HUpdate available! 0.141.0 -> 0.142.0",
 		"\x1b[4;1HRun brew upgrade --cask codex to update.",
@@ -1483,8 +1482,9 @@ func TestProtocolServiceHistoryWindowCodexCurrentFrameKeepsUpdateCard(t *testing
 		"\x1b[10;1H\x1b[J",
 		"\x1b[10;1H> Improve documentation in @filename",
 		"\x1b[12;1Hgpt-5.5 xhigh . ~/Documents/workdir/termx",
-		"\x1b[?2026l",
-	}, ""))
+	} {
+		process.emitOutput(output)
+	}
 
 	var latest *protocol.HistoryWindow
 	assertEventually(t, time.Second, func() bool {
