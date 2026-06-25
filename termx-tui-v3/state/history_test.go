@@ -692,9 +692,75 @@ func TestCopyModeAcceptLatestMatchesEnteringLiveScreenWhenHistoryHasOlderContext
 	}
 	copyMode := CopyModeStore{ViewRows: 5, EnteringLive: &entering}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.ViewportTop != 3 || copyMode.Cursor != (CopyPosition{Row: 5}) {
+	if copyMode.ViewportTop != 5 || copyMode.Cursor != (CopyPosition{Row: 5}) {
 		t.Fatalf("latest should align first history viewport to entering live screen when matched, got %#v", copyMode)
 	}
+}
+
+func TestCopyModeAcceptLatestMatchesVisibleTailOfEnteringLiveScreenFrame(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)", LineID: 1},
+		{Text: "ζ", LineID: 2},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)", LineID: 3},
+		{Text: "ζ", LineID: 4},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)", LineID: 5},
+		{Text: "ζ codex --yolo", LineID: 6},
+		{Text: "Update available! 0.141.0 -> 0.142.0", LineID: 20, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "Run brew upgrade --cask codex to update.", LineID: 21, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "", LineID: 22, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "OpenAI Codex (v0.141.0)", LineID: 23, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "model: gpt-5.5 xhigh /model to change", LineID: 24, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "directory: ~/Documents/workdir/termx", LineID: 25, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "permissions: YOLO mode", LineID: 26, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "", LineID: 27, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "Tip: New Build faster with the Codex App.", LineID: 28, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "> Run /review on my current changes", LineID: 29, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+		{Text: "gpt-5.5 xhigh . ~/Documents/workdir/termx", LineID: 30, Kind: HistoryRowKindScreenFrame, LiveTail: true},
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	entering := LiveSurfaceSnapshot{
+		Lines: []string{
+			"lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)",
+			"ζ",
+			"lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)",
+			"ζ",
+			"lozzow@RedmiBook: ~/Documents/workdir/termx < pty-base-remote*> default (homeapp)",
+			"ζ codex --yolo",
+			"Update available! 0.141.0 -> 0.142.0",
+			"Run brew upgrade --cask codex to update.",
+			"",
+			"OpenAI Codex (v0.141.0)",
+			"model: gpt-5.5 xhigh /model to change",
+			"directory: ~/Documents/workdir/termx",
+			"permissions: YOLO mode",
+			"",
+			"Tip: New Build faster with the Codex App.",
+			"> Run /review on my current changes",
+			"gpt-5.5 xhigh . ~/Documents/workdir/termx",
+		},
+	}
+	copyMode := CopyModeStore{ViewRows: 10, EnteringLive: &entering}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	end := copyMode.ViewportTop + copyMode.ViewRows
+	if end > len(rows) {
+		end = len(rows)
+	}
+	visible := rows[copyMode.ViewportTop:end]
+	if !historyRowsContainText(visible, "Tip: New Build faster with the Codex App.") || !historyRowsContainText(visible, "> Run /review on my current changes") {
+		t.Fatalf("latest should align to visible live screen tail and keep Tip/input visible, top=%d visible=%#v", copyMode.ViewportTop, visible)
+	}
+	if historyRowsContainText(visible, "ζ codex --yolo") {
+		t.Fatalf("older shell context should stay scrollback-only on initial history entry, top=%d visible=%#v", copyMode.ViewportTop, visible)
+	}
+}
+
+func historyRowsContainText(rows []HistoryRow, text string) bool {
+	for _, row := range rows {
+		if row.Text == text {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCopyModeAcceptOldestStartsAtOldestHead(t *testing.T) {

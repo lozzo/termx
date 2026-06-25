@@ -100,7 +100,8 @@ opencode 或其他 alt-screen/近似 alt-screen 应用运行中不写 primary co
 
 - 普通 primary 输出：真实滚出的 logical lines 进入 committed history。
 - Codex primary-screen TUI：真实 primary scroll-out 的 transcript/context 进入 history；当前 input/status frame 只作为 mutable current frame。
-- opencode/alt-screen TUI：只展示当前屏幕语义，运行中不写 primary history。
+- opencode/alt-screen TUI：只展示当前屏幕语义，运行中不写 primary history；
+  退出 alt-screen 时默认恢复 primary，不把 final frame 写入 authoritative history。
 
 不能为了让 history “看起来更多”把 semantic vterm rows 设大。假高度会改变 scroll region、reverse index、wrap、cursor position 和 mouse hit testing，产生假的历史。
 
@@ -124,7 +125,7 @@ styled blank 是终端语义，不是普通文本空格的简单变体。project
 2. 在 EventRouter 边界引入 shared vterm semantic batch，让 live/history 消费同一批解码结果。
 3. 为 primary scroll-out 建立 row-to-logical-line projector。
 4. 为 primary-screen TUI 建立 current mutable frame projector。
-5. 保留 alt-screen final frame 策略，并证明不写 primary history。
+5. 收口 alt-screen 退出边界：默认丢弃 final frame；显式调试保留也不能进入 primary history。
 6. 用新 projector 替换 `historyANSIParser` 的 terminal semantic 职责。
 7. 删除或收缩 `historyANSIParser`，只保留仍有必要的文本/style 辅助逻辑。
 

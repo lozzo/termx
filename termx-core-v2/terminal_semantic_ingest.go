@@ -146,14 +146,8 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			return err
 		}
 	}
-	if len(batch.AltExitFrame) > 0 {
-		if err := pipeline.track.Apply(history.HistoryEvent{
-			Kind: history.EventAppendAltScreenFrame,
-			Rows: historyRowsFromVTermRows(batch.AltExitFrame),
-		}); err != nil {
-			return err
-		}
-	}
+	// 中文说明：alt-screen 是独立的临时屏幕，退出时恢复 primary；
+	// final frame 只允许 live surface 显示，不写入 authoritative primary history。
 	if publishSynchronizedFrame {
 		if err := pipeline.track.Apply(history.HistoryEvent{
 			Kind: history.EventReplacePrimaryFrame,

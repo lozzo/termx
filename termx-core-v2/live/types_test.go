@@ -110,17 +110,20 @@ func benchmarkSurfaceFastSGROutput(lines int) string {
 	return builder.String()
 }
 
-func TestSurfaceTrackPreservesAltScreenFrameOnExit(t *testing.T) {
+func TestSurfaceTrackRestoresPrimaryOnAltScreenExitByDefault(t *testing.T) {
 	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
 	surface.Write("primary")
-	surface.Write("\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l")
+	result := surface.WriteWithResult("\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l")
 
 	snapshot := surface.Snapshot()
 	if snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen {
-		t.Fatalf("expected preserved frame to become primary live screen, got modes=%#v screen=%#v", snapshot.Modes, snapshot.Screen)
+		t.Fatalf("expected alt exit to restore primary live screen, got modes=%#v screen=%#v", snapshot.Modes, snapshot.Screen)
 	}
-	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
-		t.Fatalf("expected alt final frame to append after restored primary, got %q", got)
+	if got := strings.Join(surface.Rows(), "\n"); strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
+		t.Fatalf("expected default alt exit to drop final frame and restore primary, got %q", got)
+	}
+	if len(result.Segments) != 1 || len(result.Segments[0].AltScreenExitFrame) != 0 {
+		t.Fatalf("expected default alt exit to avoid captured frame, got %#v", result)
 	}
 }
 
@@ -170,20 +173,20 @@ func TestSurfaceTrackPreservesAltScreenFrameStyledBlankLayoutRows(t *testing.T) 
 	}
 }
 
-func TestSurfaceTrackAltScreenFramePreserveCanBeDisabledByEnv(t *testing.T) {
-	t.Setenv(preserveAltScreenOnExitEnv, "0")
+func TestSurfaceTrackAltScreenFramePreserveCanBeEnabledByEnv(t *testing.T) {
+	t.Setenv(preserveAltScreenOnExitEnv, "1")
 	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
 	surface.Write("primary")
 	result := surface.WriteWithResult("\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l")
 
-	if got := strings.Join(surface.Rows(), "\n"); strings.Contains(got, "alt-final") {
-		t.Fatalf("expected disabled preserve policy to let alt exit clear final frame, got %q", got)
+	if got := strings.Join(surface.Rows(), "\n"); !strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
+		t.Fatalf("expected enabled preserve policy to append alt final frame after restored primary, got %q", got)
 	}
 	if surface.Snapshot().Modes.AlternateScreen {
-		t.Fatal("expected disabled preserve policy to still leave alternate screen mode")
+		t.Fatal("expected enabled preserve policy to still leave alternate screen mode")
 	}
-	if len(result.Segments) != 1 || len(result.Segments[0].AltScreenExitFrame) != 0 {
-		t.Fatalf("expected no captured frames after disabled preserve policy, got %#v", result)
+	if len(result.Segments) != 1 || len(result.Segments[0].AltScreenExitFrame) == 0 {
+		t.Fatalf("expected captured frame after enabled preserve policy, got %#v", result)
 	}
 }
 
@@ -205,7 +208,9 @@ func TestSurfaceTrackWriteResultKeepsRawOrderAroundAltExitFrame(t *testing.T) {
 }
 
 func TestSurfaceTrackPreservesAltScreenFrameWhenExitSequenceIsSplit(t *testing.T) {
-	surface := NewSurfaceTrack(SurfaceSize{Cols: 20, Rows: 3})
+	surface := NewSurfaceTrackWithOptions(SurfaceSize{Cols: 20, Rows: 3}, SurfaceTrackOptions{
+		PreserveAltScreenFrameOnExit: true,
+	})
 	surface.Write("\x1b[?1049h\x1b[2Jsplit-final")
 	surface.Write("\x1b[?104")
 	surface.Write("9l")

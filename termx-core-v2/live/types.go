@@ -54,7 +54,7 @@ type SurfaceSnapshot struct {
 
 func DefaultSurfaceTrackOptions() SurfaceTrackOptions {
 	return SurfaceTrackOptions{
-		PreserveAltScreenFrameOnExit: boolEnvDefault(preserveAltScreenOnExitEnv, true),
+		PreserveAltScreenFrameOnExit: boolEnvDefault(preserveAltScreenOnExitEnv, false),
 	}
 }
 

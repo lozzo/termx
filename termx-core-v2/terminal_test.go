@@ -847,7 +847,7 @@ func TestTerminalIngestOutputClearScrollbackKeepsAuthoritativeHistory(t *testing
 	}
 }
 
-func TestTerminalIngestOutputAltScreenExitAppendsFinalFrameToHistory(t *testing.T) {
+func TestTerminalIngestOutputAltScreenExitDoesNotAppendFinalFrameToHistory(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -864,12 +864,12 @@ func TestTerminalIngestOutputAltScreenExitAppendsFinalFrameToHistory(t *testing.
 	if err != nil {
 		t.Fatalf("latest after alt-screen: %v", err)
 	}
-	if len(window.Rows) != 3 || window.Rows[0].Text != "one" || window.Rows[1].Text != "alt-tail" || window.Rows[2].Text != "after" || window.TotalLines != 2 {
-		t.Fatalf("alt-screen final frame should enter primary history before following primary output, got %#v", window)
+	if len(window.Rows) != 2 || window.Rows[0].Text != "one" || window.Rows[1].Text != "after" || window.TotalLines != 1 {
+		t.Fatalf("alt-screen final frame must not enter primary history before following primary output, got %#v", window)
 	}
 }
 
-func TestTerminalIngestOutputAltScreenExitAppendsLastLiveFrame(t *testing.T) {
+func TestTerminalIngestOutputAltScreenExitRestoresPrimaryLiveFrame(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -887,22 +887,22 @@ func TestTerminalIngestOutputAltScreenExitAppendsLastLiveFrame(t *testing.T) {
 		t.Fatalf("live snapshot: %v", err)
 	}
 	if liveSnapshot.Modes.AlternateScreen || liveSnapshot.Screen.IsAlternateScreen {
-		t.Fatalf("alt exit should keep final frame as primary live screen, got modes=%#v screen=%#v", liveSnapshot.Modes, liveSnapshot.Screen)
+		t.Fatalf("alt exit should restore primary live screen, got modes=%#v screen=%#v", liveSnapshot.Modes, liveSnapshot.Screen)
 	}
 	liveRows, err := server.LiveRows("term-1")
 	if err != nil {
 		t.Fatalf("live rows: %v", err)
 	}
-	if got := strings.Join(liveRows, "\n"); !strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
-		t.Fatalf("live surface should keep primary tail and append alt final frame, got %q", got)
+	if got := strings.Join(liveRows, "\n"); strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
+		t.Fatalf("live surface should restore primary screen without alt final frame, got %q", got)
 	}
 
 	window, err := server.LatestWindow("term-1", 20, 10)
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if len(window.Rows) != 2 || window.Rows[0].Text != "primary" || window.Rows[1].Text != "alt-final" || window.TotalLines != 2 {
-		t.Fatalf("alt final frame should enter primary history, got %#v", window)
+	if len(window.Rows) != 1 || window.Rows[0].Text != "primary" || window.TotalLines != 1 {
+		t.Fatalf("alt final frame must not enter primary history, got %#v", window)
 	}
 }
 
@@ -923,15 +923,15 @@ func TestTerminalIngestOutputEnterAltScreenCommitsPrimaryPageFirst(t *testing.T)
 	if err != nil {
 		t.Fatalf("latest after alt-screen: %v", err)
 	}
-	if len(window.Rows) != 6 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || window.Rows[3].Text != "four" || window.Rows[4].Text != "halt-tail" || window.Rows[5].Text != "after" {
-		t.Fatalf("enter alt-screen should preserve primary tail, append alt final frame, then continue primary, got %#v", window)
+	if len(window.Rows) != 5 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || window.Rows[3].Text != "four" || window.Rows[4].Text != "after" {
+		t.Fatalf("enter alt-screen should preserve primary tail, drop alt final frame, then continue primary, got %#v", window)
 	}
-	if window.TotalLines != 5 {
-		t.Fatalf("enter alt-screen should commit primary page and alt final frame, got total=%d", window.TotalLines)
+	if window.TotalLines != 4 {
+		t.Fatalf("enter alt-screen should only commit primary page, got total=%d", window.TotalLines)
 	}
 }
 
-func TestTerminalIngestOutputAltScreenFinalFrameKeepsHistoryStyle(t *testing.T) {
+func TestTerminalIngestOutputAltScreenFinalFrameDoesNotEnterHistoryStyle(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -948,16 +948,12 @@ func TestTerminalIngestOutputAltScreenFinalFrameKeepsHistoryStyle(t *testing.T) 
 	if err != nil {
 		t.Fatalf("latest after styled alt-screen: %v", err)
 	}
-	if len(window.Rows) != 2 || window.Rows[1].Text != "ALT" {
-		t.Fatalf("expected styled alt final frame in history, got %#v", window.Rows)
-	}
-	cells := window.Rows[1].Cells
-	if len(cells) < 1 || cells[0].Style.FG != "ansi:1" || cells[0].Style.BG != "ansi:4" {
-		t.Fatalf("expected alt final frame style in history, got %#v", cells)
+	if len(window.Rows) != 1 || window.Rows[0].Text != "primary" || historyWindowContainsText(window, "ALT") {
+		t.Fatalf("styled alt final frame must not enter history, got %#v", window.Rows)
 	}
 }
 
-func TestTerminalIngestOutputSplitAltScreenCSIStillCapturesFinalFrame(t *testing.T) {
+func TestTerminalIngestOutputSplitAltScreenCSIDoesNotCaptureFinalFrame(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -976,8 +972,8 @@ func TestTerminalIngestOutputSplitAltScreenCSIStillCapturesFinalFrame(t *testing
 	if err != nil {
 		t.Fatalf("latest after split alt-screen CSI: %v", err)
 	}
-	if len(window.Rows) != 2 || window.Rows[0].Text != "primary" || window.Rows[1].Text != "alt-final" {
-		t.Fatalf("split alt-screen CSI should preserve final frame, got %#v", window.Rows)
+	if len(window.Rows) != 1 || window.Rows[0].Text != "primary" || historyWindowContainsText(window, "alt-final") {
+		t.Fatalf("split alt-screen CSI should drop final frame, got %#v", window.Rows)
 	}
 }
 
@@ -1007,8 +1003,8 @@ func TestTerminalIngestOutputEnterAltScreenPreservesStressTail(t *testing.T) {
 	if !historyWindowContainsText(window, "000100") {
 		t.Fatalf("enter alt-screen must preserve primary stress tail in history, got %#v", window.Rows)
 	}
-	if !historyWindowContainsText(window, "ALT_SCREEN_MARK") {
-		t.Fatalf("alt-screen final frame should enter primary history on exit, got %#v", window.Rows)
+	if historyWindowContainsText(window, "ALT_SCREEN_MARK") {
+		t.Fatalf("alt-screen final frame must not enter primary history on exit, got %#v", window.Rows)
 	}
 }
 

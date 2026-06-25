@@ -1849,29 +1849,8 @@ func (track *HistoryTrack) switchAltScreen(enter bool) error {
 }
 
 func (track *HistoryTrack) appendAltScreenFrame(rows [][]Cell) error {
-	if len(rows) == 0 {
-		return nil
-	}
-	wasAlt := track.altScreen
-	track.altScreen = false
-	defer func() {
-		track.altScreen = wasAlt
-	}()
-	// 中文说明：这是 alt-screen 退出边界的显式保留策略，不从普通 live
-	// snapshot 反推历史；每一行作为新的 logical line 追加并立即提交。
-	for _, row := range rows {
-		if len(row) > 0 {
-			if err := track.writePrimaryCells(row, false); err != nil {
-				return err
-			}
-		}
-		if err := track.sealActiveLine(); err != nil {
-			return err
-		}
-		if err := track.commitFrontier(true); err != nil {
-			return err
-		}
-	}
+	// 中文说明：alt-screen final frame 是临时 UI 的最后画面，不属于 primary
+	// authoritative history；primary 历史只保留进入 alt 前已提交的内容和退出后的新输出。
 	return nil
 }
 

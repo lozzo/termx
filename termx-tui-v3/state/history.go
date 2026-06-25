@@ -1515,6 +1515,11 @@ func liveSurfaceMatchedViewportTop(rows []HistoryRow, enteringLive *LiveSurfaceS
 	if len(liveRows) == 0 {
 		return 0, false
 	}
+	if len(liveRows) > visibleRows {
+		// 中文说明：进入 history 时 pane 只能显示 visibleRows 行；live screen
+		// 更高时用用户实际可见的尾部对齐，older context 仍通过向上滚动加载。
+		liveRows = liveRows[len(liveRows)-visibleRows:]
+	}
 	historyRows := make([]string, len(rows))
 	for i, row := range rows {
 		historyRows[i] = normalizeHistoryViewportRow(row.Text)
