@@ -1087,11 +1087,11 @@ func TestHistoryTrackResizeSemantics(t *testing.T) {
 	if track.Generation() == before {
 		t.Fatal("grow resize should invalidate generation")
 	}
-	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
-		t.Fatalf("grow resize should reclaim committed suffix, got %v", got)
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
+		t.Fatalf("grow resize must keep committed history stable, got %v", got)
 	}
-	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
-		t.Fatalf("grow resize should expose reclaimed frontier, got %v", got)
+	if got := track.FrontierIDs(); len(got) != 0 {
+		t.Fatalf("grow resize must not reclaim committed suffix, got %v", got)
 	}
 
 	before = track.Generation()
@@ -1099,8 +1099,8 @@ func TestHistoryTrackResizeSemantics(t *testing.T) {
 	if track.Generation() == before {
 		t.Fatal("shrink resize should invalidate generation")
 	}
-	if got := track.HiddenFrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
-		t.Fatalf("shrink resize should hide frontier tail, got %v", got)
+	if got := track.HiddenFrontierIDs(); len(got) != 0 {
+		t.Fatalf("shrink resize without frontier should not hide committed history, got %v", got)
 	}
 
 	before = track.Generation()
@@ -1111,8 +1111,8 @@ func TestHistoryTrackResizeSemantics(t *testing.T) {
 	if got := track.HiddenFrontierIDs(); len(got) != 0 {
 		t.Fatalf("grow resize should reveal hidden frontier before reclaiming committed suffix, got %v", got)
 	}
-	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{2}) {
-		t.Fatalf("grow resize should keep revealed frontier mutable, got %v", got)
+	if got := track.FrontierIDs(); len(got) != 0 {
+		t.Fatalf("grow resize should keep committed history out of frontier, got %v", got)
 	}
 
 	before = track.Generation()
@@ -1120,18 +1120,18 @@ func TestHistoryTrackResizeSemantics(t *testing.T) {
 	if track.Generation() == before {
 		t.Fatal("same-size resize should still invalidate active windows")
 	}
-	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
 		t.Fatalf("same-size resize must not create history, got %v", got)
 	}
 }
 
-func TestHistoryTrackGrowResizeReclaimsCommittedSuffixInOrder(t *testing.T) {
+func TestHistoryTrackExplicitReclaimCommittedSuffixKeepsLogicalOrder(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "one")
 	commitLine(t, track, "two")
 	commitLine(t, track, "three")
 
-	applyHistoryEvents(t, track, HistoryEvent{Kind: EventResize, ResizeDirection: ResizeGrow, Count: 2})
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventReclaimCommittedSuffix, Count: 2})
 
 	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
 		t.Fatalf("grow resize should keep older committed prefix, got %v", got)

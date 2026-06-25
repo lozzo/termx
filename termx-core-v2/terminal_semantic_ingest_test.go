@@ -178,7 +178,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermScrollRegionRIAndAbsoluteCurs
 		batch := terminalSemanticBatch{
 			Raw:               raw,
 			Damages:           []vterm.WriteDamage{damage},
-			PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+			PrimaryScreenRows: term.UsedScreenContent().Cells,
 			Cols:              80,
 			Rows:              12,
 			FromSharedVTerm:   true,
@@ -209,7 +209,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermScrollRegionRIAndAbsoluteCurs
 	batch := terminalSemanticBatch{
 		Raw:               raw,
 		Damages:           []vterm.WriteDamage{damage},
-		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
 		Cols:              80,
 		Rows:              12,
 		FromSharedVTerm:   true,
@@ -893,7 +893,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOps(t *testing.T) {
 	batch := terminalSemanticBatch{
 		Raw:               raw,
 		Damages:           []vterm.WriteDamage{damage},
-		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
 		Cols:              20,
 		Rows:              3,
 		FromSharedVTerm:   true,
@@ -951,7 +951,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermEraseDisplay(t *testing.T) {
 	batch := terminalSemanticBatch{
 		Raw:               raw,
 		Damages:           []vterm.WriteDamage{damage},
-		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
 		Cols:              24,
 		Rows:              3,
 		FromSharedVTerm:   true,
@@ -1449,7 +1449,7 @@ func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossLowerED0(t *testing.
 	batch := terminalSemanticBatch{
 		Raw:               raw,
 		Damages:           []vterm.WriteDamage{damage},
-		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
 		Cols:              96,
 		Rows:              14,
 		FromSharedVTerm:   true,
@@ -1640,6 +1640,34 @@ func TestTerminalSemanticProjectorKeepsPublishedFrameVisibleDuringNextBSU(t *tes
 	}
 	if window.TotalLines != 2 {
 		t.Fatalf("synchronized repaint must not grow committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
+func TestTerminalSemanticProjectorPreservesDefaultBlankColumnsInPublishedFrame(t *testing.T) {
+	term := vterm.New(72, 6, 100, nil)
+	pipeline := newTerminalHistoryPipeline(72, 6)
+	raw := strings.Join([]string{
+		"\x1b[?2026h\x1b[H\x1b[J",
+		"\x1b[2;1Hmodel:",
+		"\x1b[2;20Hgpt-5.5 xhigh",
+		"\x1b[3;1Hdirectory:",
+		"\x1b[3;20H~/Documents/workdir/termx",
+		"\x1b[?2026l",
+	}, "")
+
+	ingestSharedVTermRawForTest(t, term, pipeline, raw, 72, 6)
+	window, err := pipeline.LatestWindow(72, 10)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	for _, want := range []string{
+		"model:" + strings.Repeat(" ", 13) + "gpt-5.5 xhigh",
+		"directory:" + strings.Repeat(" ", 9) + "~/Documents/workdir/termx",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("published frame must preserve default blank columns %q, text=%q rows=%#v", want, text, window.Rows)
+		}
 	}
 }
 
@@ -2324,7 +2352,7 @@ func TestTerminalSemanticProjectorConsumesFocusAndSGRMouseModesRawWithoutFallbac
 	batch := terminalSemanticBatch{
 		Raw:               raw,
 		Damages:           []vterm.WriteDamage{damage},
-		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
 		Cols:              24,
 		Rows:              3,
 		FromSharedVTerm:   true,
@@ -2374,7 +2402,7 @@ func TestTerminalSemanticProjectorConsumesC1CSIPrivateModesRawWithoutFallback(t 
 	batch := terminalSemanticBatch{
 		Raw:               raw,
 		Damages:           []vterm.WriteDamage{damage},
-		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
 		Cols:              24,
 		Rows:              3,
 		FromSharedVTerm:   true,
@@ -5241,7 +5269,7 @@ func ingestSharedVTermRawForTest(t *testing.T, term *vterm.VTerm, pipeline *term
 	batch := terminalSemanticBatch{
 		Raw:               raw,
 		Damages:           []vterm.WriteDamage{damage},
-		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
 		Cols:              cols,
 		Rows:              rows,
 		FromSharedVTerm:   true,

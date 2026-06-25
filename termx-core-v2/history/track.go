@@ -1518,11 +1518,19 @@ func (track *HistoryTrack) isPublishedFrameLine(id LogicalLineID) bool {
 	return false
 }
 
-func trimHistoryFrameRow(row []Cell) []Cell {
-	end := len(row)
-	for end > 0 && cellIsDefaultBlank(row[end-1]) {
-		end--
+func historyFrameRowRightEdge(row []Cell) int {
+	right := 0
+	for idx, cell := range row {
+		if cellIsDefaultBlank(cell) {
+			continue
+		}
+		right = idx + 1
 	}
+	return right
+}
+
+func trimHistoryFrameRow(row []Cell) []Cell {
+	end := historyFrameRowRightEdge(row)
 	if end == 0 {
 		return nil
 	}
@@ -1935,23 +1943,14 @@ func (track *HistoryTrack) visibleFrontierIDs() []LogicalLineID {
 	return visible
 }
 
-// growResize 先把 shrink 时藏起来的 frontier 恢复成 visible ownership，
-// 只有恢复不够时才按完整 logical line reclaim committed suffix。
+// growResize 只恢复 shrink 时藏起来的 frontier。Resize 不是历史重写事件，
+// 不能把已经 committed 的历史重新拉回 current frame，否则 TUI repaint 会删掉旧历史。
 func (track *HistoryTrack) growResize(count int) error {
 	remaining := count
 	hidden := track.frontier.HiddenIDs()
 	for i := len(hidden) - 1; i >= 0 && remaining > 0; i-- {
 		if track.frontier.Reveal(hidden[i]) {
 			remaining--
-		}
-	}
-	if remaining > 0 {
-		if err := track.reclaimCommittedSuffix(HistoryEvent{
-			Kind:    EventReclaimCommittedSuffix,
-			Count:   remaining,
-			LineIDs: nil,
-		}); err != nil {
-			return err
 		}
 	}
 	return nil

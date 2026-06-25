@@ -1575,8 +1575,8 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after grow: %v", err)
 	}
-	if grown.TotalLines != 0 || len(grown.Rows) != 2 || grown.Rows[0].Text != "one" || grown.Rows[1].Text != "two" {
-		t.Fatalf("grow resize should reveal hidden/visible frontier without manufacturing committed rows, got %#v", grown)
+	if grown.TotalLines != 1 || len(grown.Rows) != 2 || grown.Rows[0].Text != "one" || grown.Rows[1].Text != "two" {
+		t.Fatalf("grow resize should keep committed history stable while preserving visible frontier, got %#v", grown)
 	}
 	if err := server.ResizeTerminal(context.Background(), "term-1", 10, 2); err != nil {
 		t.Fatalf("shrink resize: %v", err)
@@ -1585,8 +1585,61 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after shrink: %v", err)
 	}
-	if shrunk.TotalLines != 0 || len(shrunk.Rows) != 1 || shrunk.Rows[0].Text != "two" {
-		t.Fatalf("shrink resize should hide the oldest visible frontier row, got %#v", shrunk)
+	if shrunk.TotalLines != 1 || len(shrunk.Rows) != 1 || shrunk.Rows[0].Text != "one" || !shrunk.Rows[0].Committed {
+		t.Fatalf("shrink resize should hide only visible frontier and keep committed history stable, got %#v", shrunk)
+	}
+}
+
+func TestTerminalResizeDoesNotLetSynchronizedFrameDeleteCommittedHistory(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server := NewServer(WithProcessFactory(factory))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 40, Rows: 6},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "shell-one\nshell-two\n"); err != nil {
+		t.Fatalf("seed shell history: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[?2026h\x1b[H\x1b[Jframe-one\x1b[6;1Hinput-one\x1b[?2026l"); err != nil {
+		t.Fatalf("publish first frame: %v", err)
+	}
+	if err := server.ResizeTerminal(context.Background(), "term-1", 40, 9); err != nil {
+		t.Fatalf("grow resize: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[?2026h\x1b[H\x1b[Jframe-two\x1b[9;1Hinput-two\x1b[?2026l"); err != nil {
+		t.Fatalf("publish second frame: %v", err)
+	}
+
+	latest, err := server.LatestWindow("term-1", 40, 3)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	latestText := historyWindowText(latest.Rows)
+	for _, want := range []string{"shell-two", "frame-two", "input-two"} {
+		if !strings.Contains(latestText, want) {
+			t.Fatalf("latest after resize/repaint should contain %q, text=%q rows=%#v", want, latestText, latest.Rows)
+		}
+	}
+	if latest.TotalLines != 2 {
+		t.Fatalf("resize/repaint must keep committed history depth, total=%d rows=%#v", latest.TotalLines, latest.Rows)
+	}
+	older, err := server.OlderWindow("term-1", 40, 10, latest.Cursor)
+	if err != nil {
+		t.Fatalf("older: %v", err)
+	}
+	olderText := historyWindowText(older.Rows)
+	for _, want := range []string{"shell-one"} {
+		if !strings.Contains(olderText, want) {
+			t.Fatalf("older after resize/repaint should keep committed %q, cursor=%#v text=%q rows=%#v", want, latest.Cursor, olderText, older.Rows)
+		}
+	}
+	for _, forbidden := range []string{"frame-one", "frame-two", "input-one", "input-two"} {
+		if strings.Contains(olderText, forbidden) {
+			t.Fatalf("older after resize/repaint must not page current frame %q, text=%q rows=%#v", forbidden, olderText, older.Rows)
+		}
 	}
 }
 

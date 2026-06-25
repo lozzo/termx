@@ -1646,8 +1646,12 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterResizeReprojection(t *testing.
 	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "two" || rowText(reloaded.Rows[1]) != "three" || rowText(reloaded.Rows[2]) != "four" || rowText(reloaded.Rows[3]) != "five" {
 		t.Fatalf("new latest after resize should see resized frontier projection, got %#v", reloaded)
 	}
-	if len(reloaded.RowOwnership) != 4 || reloaded.RowOwnership[0] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[1] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[2] != protocol.RowOwnershipLiveTailLive || reloaded.RowOwnership[3] != protocol.RowOwnershipLiveTailLive {
-		t.Fatalf("grow resize should expose a larger live tail in the new snapshot, got %#v", reloaded.RowOwnership)
+	if len(reloaded.RowOwnership) != 4 ||
+		reloaded.RowOwnership[0] != protocol.RowOwnershipPersisted ||
+		reloaded.RowOwnership[1] != protocol.RowOwnershipLiveTailLive ||
+		reloaded.RowOwnership[2] != protocol.RowOwnershipLiveTailLive ||
+		reloaded.RowOwnership[3] != protocol.RowOwnershipLiveTailLive {
+		t.Fatalf("grow resize must not turn committed history into live tail, got %#v", reloaded.RowOwnership)
 	}
 }
 

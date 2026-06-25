@@ -207,7 +207,7 @@ func (surface *SurfaceTrack) primaryScreenFrameRows() [][]vterm.Cell {
 	if surface == nil || surface.vt == nil || surface.vt.IsAltScreen() {
 		return nil
 	}
-	return cloneVTermCellRows(surface.vt.TrimmedScreenContent().Cells)
+	return cloneVTermCellRows(surface.vt.UsedScreenContent().Cells)
 }
 
 func appendSurfaceWriteDamage(damages []vterm.WriteDamage, damage vterm.WriteDamage) []vterm.WriteDamage {
