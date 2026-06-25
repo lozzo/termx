@@ -2224,8 +2224,8 @@ func frozenSnapshotWindow(snapshot history.FrozenSnapshot, cols int, rows int, c
 		rows = 24
 	}
 	if op == history.HistoryWindowReplace {
-		selected, hasMore := projectFrozenSnapshotLatestTailRows(snapshot, cols, rows)
-		return buildFrozenSnapshotWindow(snapshot, cols, op, selected, latestCursorSnapshotTail(selected, hasMore), hasMore)
+		selected, hasMore, cursor := projectFrozenSnapshotLatestTailRows(snapshot, cols, rows)
+		return buildFrozenSnapshotWindow(snapshot, cols, op, selected, cursor, hasMore)
 	}
 	selected, nextCursor, hasMore, ok := projectFrozenSnapshotOlderRowsBeforeCursor(snapshot, cols, rows, cursor)
 	if !ok {
@@ -2320,13 +2320,15 @@ func projectFrozenSnapshotLatestRows(snapshot history.FrozenSnapshot, cols int) 
 	return rows
 }
 
-func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols int, maxRows int) ([]snapshotProjectedRow, bool) {
+func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols int, maxRows int) ([]snapshotProjectedRow, bool, history.HistoryCursor) {
 	if start, ok := frozenSnapshotAltScreenFrameTailStart(snapshot); ok {
 		// 中文说明：frozen latest 也要保持 alt-screen current frame 隔离；
 		// 上方 committed history 只通过 older cursor 暴露，不能自动回填到首屏。
-		return projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, start)
+		selected, hasMore := projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, start)
+		return selected, hasMore, latestCursorSnapshotAltScreenTail(snapshot, selected, hasMore)
 	}
-	return projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, 0)
+	selected, hasMore := projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, 0)
+	return selected, hasMore, latestCursorSnapshotTail(selected, hasMore)
 }
 
 func projectFrozenSnapshotTailRowsFromLineIndex(snapshot history.FrozenSnapshot, cols int, maxRows int, minLineIndex int) ([]snapshotProjectedRow, bool) {
@@ -2475,12 +2477,24 @@ func latestCursorSnapshotTail(rows []snapshotProjectedRow, hasMore bool) history
 	return cursorFromSnapshotRow(rows[0])
 }
 
+func latestCursorSnapshotAltScreenTail(snapshot history.FrozenSnapshot, rows []snapshotProjectedRow, hasMore bool) history.HistoryCursor {
+	if !hasMore || len(rows) == 0 {
+		return history.HistoryCursor{}
+	}
+	// 中文说明：alt-screen current frame 只是一块 transient UI。older 分页应回到
+	// committed history 尾部，不能扫过同一个 frozen snapshot 里上一轮 primary frame。
+	if countCommittedSnapshotLines(snapshot) > 0 {
+		return history.HistoryCursor{Valid: true}
+	}
+	return history.HistoryCursor{}
+}
+
 func snapshotCursorStartPosition(snapshot history.FrozenSnapshot, cols int, cursor history.HistoryCursor) (int, int, bool) {
 	if !cursor.Valid {
 		return -1, -1, false
 	}
 	if cursor.BeforeLineID == 0 {
-		lineCount := snapshot.VisibleLineCount()
+		lineCount := countCommittedSnapshotLines(snapshot)
 		if lineCount == 0 {
 			return -1, -1, false
 		}
@@ -2619,7 +2633,7 @@ func projectFrozenSnapshotRows(lines []history.SnapshotLine, cols int) []snapsho
 func projectFrozenSnapshotLine(line history.LogicalLine, cols int) []history.VisualRow {
 	cells := normalizeProjectionCellsSnapshot(line.Cells)
 	if len(cells) == 0 {
-		row := history.VisualRow{LineID: line.ID, LineGeneration: line.Generation}
+		row := history.VisualRow{LineID: line.ID, LineGeneration: line.Generation, Kind: line.Kind}
 		if line.TailFill != nil {
 			fill := *line.TailFill
 			row.TailFill = &fill
@@ -2634,6 +2648,7 @@ func projectFrozenSnapshotLine(line history.LogicalLine, cols int) []history.Vis
 			Cells:          cloneHistoryCellsSnapshot(chunk),
 			LineID:         line.ID,
 			RowInLine:      rowIndex,
+			Kind:           line.Kind,
 			LineGeneration: line.Generation,
 		})
 		rowIndex++

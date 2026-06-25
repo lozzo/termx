@@ -1258,6 +1258,73 @@ func (track *HistoryTrack) clearPrimaryScreenPageBreak() error {
 	return nil
 }
 
+func (track *HistoryTrack) enterAltScreenPrimaryBoundary() error {
+	changed, err := track.dropPublishedPrimaryFrameWithoutBump()
+	if err != nil {
+		return err
+	}
+	committed, err := track.commitAltEnterPrimaryFrontierWithoutBump()
+	if err != nil {
+		return err
+	}
+	changed = changed || committed
+	if track.activeLine != 0 || track.activeCol != 0 || track.overwrite {
+		changed = true
+	}
+	track.activeLine = 0
+	track.activeCol = 0
+	track.overwrite = false
+	track.screen.clearAll()
+	track.clearPrimaryFullscreenState()
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) commitAltEnterPrimaryFrontierWithoutBump() (bool, error) {
+	ids := track.frontier.IDs()
+	changed := false
+	for _, id := range ids {
+		line, ok := track.store.Line(id)
+		if !ok {
+			return changed, ErrUnknownLine
+		}
+		if track.frontier.IsHidden(id) || line.Kind == RowKindScreenFrame || line.Kind == RowKindAltScreenFrame || track.isPublishedFrameLine(id) {
+			if track.frontier.Remove(id) {
+				changed = true
+			}
+			if !track.committed.Contains(id) && track.store.DeleteLine(id) {
+				changed = true
+			}
+			track.screen.removeLine(id)
+			continue
+		}
+		if line.Seal != SealStateSealed {
+			line.Seal = SealStateSealed
+			line.Dirty = true
+		}
+		if line.Dirty {
+			line.Dirty = false
+			if _, err := track.replaceOwnedLine(line); err != nil {
+				return changed, err
+			}
+			changed = true
+		}
+		if !track.committed.Contains(id) {
+			if err := track.committed.Append(id); err != nil {
+				return changed, err
+			}
+			changed = true
+		}
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		track.screen.removeLine(id)
+	}
+	return changed, nil
+}
+
 // eraseDisplayFromCursor 只作用于当前 primary mutable frontier：它会擦掉
 // active open line 从 cursor 到尾部的内容，并清掉 cursor 之下仍可变的行；
 // 它不能借机创建或截断 committed history。
@@ -1462,6 +1529,17 @@ func (track *HistoryTrack) resetFrontier() error {
 }
 
 func (track *HistoryTrack) dropCurrentPrimaryFrame() error {
+	changed, err := track.dropNonCommittedFrontierWithoutBump()
+	if err != nil {
+		return err
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) dropNonCommittedFrontierWithoutBump() (bool, error) {
 	ids := track.frontier.IDs()
 	if len(ids) == 0 {
 		track.activeLine = 0
@@ -1469,7 +1547,7 @@ func (track *HistoryTrack) dropCurrentPrimaryFrame() error {
 		track.overwrite = false
 		track.screen.clearAll()
 		track.publishedFrameLineIDs = nil
-		return nil
+		return false, nil
 	}
 	changed := false
 	for _, id := range ids {
@@ -1491,10 +1569,41 @@ func (track *HistoryTrack) dropCurrentPrimaryFrame() error {
 	}
 	track.publishedFrameLineIDs = nil
 	track.screen.clearAll()
-	if changed {
-		track.bumpGeneration()
+	return changed, nil
+}
+
+func (track *HistoryTrack) dropPublishedPrimaryFrameWithoutBump() (bool, error) {
+	ids := cloneLineIDs(track.publishedFrameLineIDs)
+	if len(ids) == 0 {
+		if track.primaryFullscreenFrame {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+			track.screen.clearAll()
+		}
+		track.publishedFrameLineIDs = nil
+		return false, nil
 	}
-	return nil
+	changed := false
+	for _, id := range ids {
+		if id == 0 || track.committed.Contains(id) {
+			continue
+		}
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		if track.store.DeleteLine(id) {
+			changed = true
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+		}
+		track.screen.removeLine(id)
+	}
+	track.publishedFrameLineIDs = nil
+	return changed, nil
 }
 
 func (track *HistoryTrack) dropTransientFrame() error {
@@ -1919,10 +2028,9 @@ func (track *HistoryTrack) switchAltScreen(enter bool) error {
 		return nil
 	}
 	if enter {
-		if err := track.clearPrimaryScreenPageBreak(); err != nil {
+		if err := track.enterAltScreenPrimaryBoundary(); err != nil {
 			return err
 		}
-		track.clearPrimaryFullscreenState()
 	}
 	track.altScreen = enter
 	track.bumpGeneration()

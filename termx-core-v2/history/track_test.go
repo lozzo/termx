@@ -1090,6 +1090,43 @@ func TestHistoryTrackEnterAltScreenCommitsPrimaryFrontierFirst(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackEnterAltScreenDoesNotCommitPublishedPrimaryFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "shell")
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("pending resume frame")},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{
+			cells("current resume frame"),
+		}},
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
+		HistoryEvent{Kind: EventAppendAltScreenFrame, Rows: [][]Cell{cells("/resume")}},
+	)
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
+		t.Fatalf("alt-screen enter must not commit published primary frame, got %v", got)
+	}
+	if _, ok := track.Line(2); ok {
+		t.Fatal("pending synchronized frame should be dropped before alt-screen")
+	}
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 40, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"/resume"}) {
+		t.Fatalf("latest should show only alt-screen current frame, got %v", got)
+	}
+	older, err := track.OlderWindow(HistoryWindowRequest{Cols: 40, Rows: 10, Cursor: window.Cursor})
+	if err != nil {
+		t.Fatalf("older: %v", err)
+	}
+	if got := rowTexts(older.Rows); !reflect.DeepEqual(got, []string{"shell"}) {
+		t.Fatalf("older should return committed shell history only, got %v", got)
+	}
+}
+
 func TestHistoryTrackProcessExitForceCommitsPrimaryFrontier(t *testing.T) {
 	track := NewHistoryTrack()
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("tail")})

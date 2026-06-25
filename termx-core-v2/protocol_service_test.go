@@ -1623,6 +1623,184 @@ func TestProtocolServiceAltScreenTransientFrameDoesNotBackfillCommittedHistory(t
 	}
 }
 
+func TestFrozenSnapshotAltScreenOlderSkipsPreviousMutableFrames(t *testing.T) {
+	track := history.NewHistoryTrack()
+	for _, event := range []history.HistoryEvent{
+		{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{Text: "committed shell"}}},
+		{Kind: history.EventSealLogicalLine},
+		{Kind: history.EventCommitFrontier},
+		{Kind: history.EventReplacePrimaryFrame, Rows: [][]history.Cell{
+			{{Text: "previous primary frame"}},
+		}},
+		{Kind: history.EventSwitchAltScreen, EnterAltScreen: true},
+		{Kind: history.EventAppendAltScreenFrame, Rows: [][]history.Cell{
+			{{Text: "/resume picker"}},
+		}},
+	} {
+		if err := track.Apply(event); err != nil {
+			t.Fatalf("apply %s: %v", event.Kind, err)
+		}
+	}
+	snapshot := track.FreezePinnedSnapshot()
+	defer snapshot.ReleaseObserver()
+
+	latest := frozenSnapshotLatestWindow(snapshot, 80, 10)
+	if got := protocolWindowRowTexts(protocolHistoryWindowFromCore("term-1", Size{Cols: 80, Rows: 10}, latest)); !reflect.DeepEqual(got, []string{"/resume picker"}) {
+		t.Fatalf("alt-screen latest should contain only picker frame, got %v", got)
+	}
+	if latest.Cursor != (history.HistoryCursor{Valid: true}) {
+		t.Fatalf("alt-screen latest cursor should point at committed tail boundary, got %#v", latest.Cursor)
+	}
+	older := frozenSnapshotOlderWindow(snapshot, 80, 10, latest.Cursor)
+	if got := protocolWindowRowTexts(protocolHistoryWindowFromCore("term-1", Size{Cols: 80, Rows: 10}, older)); !reflect.DeepEqual(got, []string{"committed shell"}) {
+		t.Fatalf("older should skip previous mutable frame and return committed history, got %v", got)
+	}
+}
+
+func TestProtocolServiceAltScreenResumeRawDoesNotSplicePreviousFrames(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	defer resetTerminalSemanticIngestTestHooks()
+	var stats []terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats = append(stats, next)
+	}
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	const terminalID = "term-raw-resume"
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      terminalID,
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 80, Rows: 8},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ingest := func(output string) {
+		t.Helper()
+		if err := server.IngestOutput(context.Background(), terminalID, output); err != nil {
+			t.Fatalf("ingest output: %v", err)
+		}
+	}
+	latest := func() *protocol.HistoryWindow {
+		t.Helper()
+		window, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID: terminalID,
+			Cols:       80,
+			Limit:      20,
+		})
+		if err != nil {
+			t.Fatalf("latest history.window: %v", err)
+		}
+		return window
+	}
+	older := func(window *protocol.HistoryWindow) *protocol.HistoryWindow {
+		t.Helper()
+		if !window.HasMore || !window.CursorValid {
+			t.Fatalf("expected cursor to older committed history, got %#v", window)
+		}
+		older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID:          terminalID,
+			Cols:                80,
+			Limit:               20,
+			Token:               window.Token,
+			Generation:          window.Generation,
+			BoundaryFirstLineID: window.FirstLineID,
+			BoundaryLastLineID:  window.LastLineID,
+			CursorValid:         window.CursorValid,
+			BeforeLineID:        window.CursorLineID,
+			BeforeRowInLine:     window.CursorRow,
+		})
+		if err != nil {
+			t.Fatalf("older history.window: %v", err)
+		}
+		return older
+	}
+
+	ingest("shell before first resume\r\n")
+	// 中文说明：真实 Codex /resume 会进 DECSET 1049 alt-screen 后重绘 picker；
+	// latest 只能展示当前 alt frame，不能为填满窗口拼回 primary 历史。
+	ingest("\x1b[?1049h\x1b[H\x1b[2J/resume first\r\nfirst restored row\x1b[?1049l")
+	first := latest()
+	for _, want := range []string{"/resume first", "first restored row"} {
+		if !protocolHistoryWindowContainsText(first, want) {
+			t.Fatalf("first alt-screen frame should contain %q, got %#v", want, first.Rows)
+		}
+	}
+	if protocolHistoryWindowContainsText(first, "shell before first resume") {
+		t.Fatalf("first alt-screen latest must not backfill primary history, got %#v", first.Rows)
+	}
+	firstOlder := older(first)
+	if !protocolHistoryWindowContainsText(firstOlder, "shell before first resume") {
+		t.Fatalf("first older window should preserve primary shell history, got %#v", firstOlder.Rows)
+	}
+
+	ingest("\x1b[?2026h\x1b[H\x1b[Jcurrent resume one\x1b[3;1Hfirst transcript line\x1b[8;1H> first prompt\x1b[?2026l")
+	firstPrimary := latest()
+	for _, want := range []string{"current resume one", "first transcript line", "> first prompt"} {
+		if !protocolHistoryWindowContainsText(firstPrimary, want) {
+			t.Fatalf("first restored primary frame should contain %q, got %#v", want, firstPrimary.Rows)
+		}
+	}
+	for _, stale := range []string{"/resume first", "first restored row"} {
+		if protocolHistoryWindowContainsText(firstPrimary, stale) {
+			t.Fatalf("first restored primary frame must replace picker content %q, got %#v", stale, firstPrimary.Rows)
+		}
+	}
+	if kind := protocolWindowRowKindContaining(firstPrimary, "first transcript line"); kind != history.RowKindScreenFrame {
+		t.Fatalf("restored primary row should be screen-frame, got %q window=%#v stats=%#v", kind, firstPrimary, stats)
+	}
+
+	ingest("\x1b[?1049h\x1b[H\x1b[2J/resume second\r\nsecond restored row\x1b[?1049l")
+	second := latest()
+	for _, want := range []string{"/resume second", "second restored row"} {
+		if !protocolHistoryWindowContainsText(second, want) {
+			t.Fatalf("second alt-screen frame should contain %q, got %#v", want, second.Rows)
+		}
+	}
+	for _, stale := range []string{"/resume first", "first restored row", "current resume one", "first transcript line", "> first prompt", "shell before first resume"} {
+		if protocolHistoryWindowContainsText(second, stale) {
+			t.Fatalf("second alt-screen latest must not splice stale content %q, got %#v", stale, second.Rows)
+		}
+	}
+	secondOlder := older(second)
+	if !protocolHistoryWindowContainsText(secondOlder, "shell before first resume") {
+		t.Fatalf("second older window should preserve committed primary shell history, got %#v", secondOlder.Rows)
+	}
+	for _, stale := range []string{"first restored row", "first transcript line"} {
+		if protocolHistoryWindowContainsText(secondOlder, stale) {
+			t.Fatalf("previous resume frame must not become committed history %q, got %#v", stale, secondOlder.Rows)
+		}
+	}
+
+	ingest("\x1b[?2026h\x1b[H\x1b[Jcurrent resume two\x1b[3;1Hsecond transcript line\x1b[8;1H> second prompt\x1b[?2026l")
+	secondPrimary := latest()
+	for _, want := range []string{"current resume two", "second transcript line", "> second prompt"} {
+		if !protocolHistoryWindowContainsText(secondPrimary, want) {
+			t.Fatalf("second restored primary frame should contain %q, got %#v", want, secondPrimary.Rows)
+		}
+	}
+	for _, stale := range []string{"/resume second", "second restored row", "current resume one", "first transcript line", "> first prompt"} {
+		if protocolHistoryWindowContainsText(secondPrimary, stale) {
+			t.Fatalf("second restored primary frame must not splice stale content %q, got %#v", stale, secondPrimary.Rows)
+		}
+	}
+	if secondPrimary.LogicalTotal != 1 {
+		t.Fatalf("resume primary frames must not grow committed history depth, total=%d rows=%#v", secondPrimary.LogicalTotal, secondPrimary.Rows)
+	}
+	if !protocolHistoryWindowContainsText(secondPrimary, "shell before first resume") {
+		if !secondPrimary.HasMore || !secondPrimary.CursorValid {
+			t.Fatalf("restored primary frame should keep committed shell visible or page-able, got %#v", secondPrimary)
+		}
+		secondPrimaryOlder := older(secondPrimary)
+		if !protocolHistoryWindowContainsText(secondPrimaryOlder, "shell before first resume") {
+			t.Fatalf("older window after restored primary frame should preserve committed shell history, got %#v", secondPrimaryOlder.Rows)
+		}
+	}
+	if protocolHistoryWindowContainsText(secondOlder, "second transcript line") {
+		t.Fatalf("restored primary frame must not become older committed history, got %#v", secondOlder.Rows)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestPreservesHistory(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
@@ -3385,6 +3563,21 @@ func protocolHistoryWindowContainsText(window *protocol.HistoryWindow, want stri
 		}
 	}
 	return false
+}
+
+func protocolWindowRowKindContaining(window *protocol.HistoryWindow, want string) string {
+	if window == nil {
+		return ""
+	}
+	for index, row := range window.Rows {
+		if strings.Contains(rowText(row), want) {
+			if index < len(window.RowKinds) {
+				return window.RowKinds[index]
+			}
+			return ""
+		}
+	}
+	return ""
 }
 
 func waitForTerminalState(t *testing.T, server *Server, terminalID string, want TerminalState) {

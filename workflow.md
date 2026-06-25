@@ -351,6 +351,7 @@
 | R201DH. SK history live 锚点与 alt-screen 边界 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复 Codex history 入口把 older shell prompt 挤进当前屏、Tip 行消失，以及 `/resume` 等 alt-screen UI 退出后污染 authoritative history 的问题；alt-screen 运行和退出 final frame 不写 primary history，history 入口优先对齐进入前 live screen |
 | R201DI. SK alt-screen 退出当前帧保留 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 Codex `/resume` 这类 alt-screen/current-frame 内容进入 history/copy 后丢失的问题；running/exit alt-screen 当前帧作为 transient mutable frame 进入 latest/frozen，不计 committed depth，后续 primary 输出会替换它 |
 | R201DJ. SK alt-screen current frame 隔离 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已按 tmux raw PTY 抓包确认 Codex `/resume` 使用 DECSET 1049 alt-screen，不发 ED2/ED3 清 scrollback；修复 latest/frozen 为填满视口把旧 committed transcript 回填到 alt-screen transient current frame 上方的问题。alt-screen transient frame 首屏只展示当前帧，旧 history 只能通过 older cursor 显式加载；`alt-screen-frame` 继续按 fixed-grid frame 保留空白和样式 |
+| R201DK. SK alt-screen resume raw harness | 完成 | `termx-core-v2/`、`workflow.md` | 已新增真实 raw PTY harness 覆盖连续 Codex `/resume`：1049 alt-screen picker 与随后 2026 primary restored frame 反复切换时，latest 不拼接旧 frame，older 只返回 committed shell history；修复 alt-enter 不再把上一轮 published/pending primary frame 固化成 committed history |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入
