@@ -126,7 +126,6 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 	if len(batch.AltScreenRows) > 0 || len(batch.AltExitFrame) > 0 {
 		stats.AltExitFrames++
 	}
-	fullReplaceOnly := sharedBatchFullReplaceOnly(batch.Damages)
 	publishSynchronizedFrame := false
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
 		stats.SemanticProjectors++
@@ -142,11 +141,6 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		// 中文说明：真实 PTY raw 已经被 shared vterm 解码一次；即使本批语义
 		// 暂不可消费，也不能回退 historyANSIParser 重放终端控制。
 		pipeline.shadowParsePrimaryOutputLocked(batch.Raw)
-	} else if batch.Raw != "" && !fullReplaceOnly {
-		stats.RawFallbacks++
-		if err := pipeline.ingestOutputLocked(batch.Raw); err != nil {
-			return err
-		}
 	}
 	// 中文说明：alt-screen 不写 committed primary history，但运行中/退出时的
 	// 当前可见帧需要进入 latest/frozen 作为 transient current frame，避免 history 模式丢内容。
