@@ -22,7 +22,7 @@ func (s SurfaceSize) Valid() bool {
 
 type SurfaceTrack struct {
 	size                         SurfaceSize
-	vt                           *vterm.VTerm
+	source                       *vterm.SemanticSource
 	onResponse                   vterm.ResponseHandler
 	pending                      string
 	preserveAltScreenFrameOnExit bool
@@ -69,7 +69,7 @@ func NewSurfaceTrackWithOptions(size SurfaceSize, options SurfaceTrackOptions) *
 	}
 	return &SurfaceTrack{
 		size:                         size,
-		vt:                           vterm.New(size.Cols, size.Rows, 0, options.OnResponse),
+		source:                       vterm.NewSemanticSource(size.Cols, size.Rows, 0, options.OnResponse),
 		onResponse:                   options.OnResponse,
 		preserveAltScreenFrameOnExit: options.PreserveAltScreenFrameOnExit,
 	}
@@ -84,25 +84,27 @@ func (surface *SurfaceTrack) Resize(size SurfaceSize) {
 		return
 	}
 	surface.size = size
-	surface.ensureVTerm()
-	surface.vt.ResizeWithDamage(size.Cols, size.Rows)
+	surface.ensureSemanticSource()
+	_, _ = surface.source.Resize(vterm.TerminalSemanticSize{Cols: size.Cols, Rows: size.Rows})
 }
 
 func (surface *SurfaceTrack) ResetForRestartPreservingScreen() {
-	surface.ensureVTerm()
+	surface.ensureSemanticSource()
 	snapshot := surface.Snapshot()
 	rows := cloneVTermCellRows(snapshot.Screen.Cells)
 	size := surface.size
 	rows, cursor := restartPreservedScreenRows(rows, size.Rows)
 	// 中文说明：重启的是外部进程，不是 terminal identity。保留可见 tail，
 	// 但用全新 VTerm 丢弃旧程序的 mouse/bracketed paste/alt-screen/pending escape 状态。
-	_ = surface.vt.Close()
-	surface.vt = vterm.New(size.Cols, size.Rows, 0, surface.onResponse)
+	if vt := surface.vterm(); vt != nil {
+		_ = vt.Close()
+	}
+	surface.source = vterm.NewSemanticSource(size.Cols, size.Rows, 0, surface.onResponse)
 	surface.pending = ""
 	if len(rows) == 0 {
 		return
 	}
-	surface.vt.LoadSizedSnapshotWithExtendedMetadata(
+	surface.vterm().LoadSizedSnapshotWithExtendedMetadata(
 		size.Cols,
 		size.Rows,
 		nil,
@@ -129,7 +131,7 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 	if text == "" && surface.pending == "" {
 		return result
 	}
-	surface.ensureVTerm()
+	surface.ensureSemanticSource()
 	text = surface.pending + text
 	surface.pending = ""
 	for text != "" {
@@ -158,7 +160,7 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 			text = text[1:]
 			continue
 		}
-		if action == privateModeAltExit && surface.vt.IsAltScreen() {
+		if action == privateModeAltExit && surface.vterm().IsAltScreen() {
 			altFrame := surface.altScreenFrameCells()
 			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:consumed]))
 			raw.WriteString(text[:consumed])
@@ -203,14 +205,16 @@ func (surface *SurfaceTrack) appendSurfaceWriteRawSegment(result *SurfaceWriteRe
 }
 
 func (surface *SurfaceTrack) primaryScreenFrameRows() [][]vterm.Cell {
-	if surface == nil || surface.vt == nil || surface.vt.IsAltScreen() {
+	vt := surface.vterm()
+	if vt == nil || vt.IsAltScreen() {
 		return nil
 	}
-	return cloneVTermCellRows(surface.vt.UsedScreenContent().Cells)
+	return cloneVTermCellRows(vt.UsedScreenContent().Cells)
 }
 
 func (surface *SurfaceTrack) altScreenFrameRows() [][]vterm.Cell {
-	if surface == nil || surface.vt == nil || !surface.vt.IsAltScreen() {
+	vt := surface.vterm()
+	if vt == nil || !vt.IsAltScreen() {
 		return nil
 	}
 	return surface.altScreenFrameCells()
@@ -238,8 +242,11 @@ func (surface *SurfaceTrack) writeRaw(text string) vterm.WriteDamage {
 	}
 	// 中文说明：同一批 PTY bytes 只在 core 持有的 vterm 中解码一次；返回的
 	// damage 是 EventRouter 的语义输入，不是 history truth 或 live snapshot。
-	_, _, damage := surface.vt.WriteWithDamage([]byte(text))
-	return damage
+	tx, err := surface.source.ApplyPTYWrite([]byte(text))
+	if err != nil {
+		return vterm.WriteDamage{}
+	}
+	return tx.SourceDamage
 }
 
 func (surface *SurfaceTrack) altScreenFrameCells() [][]vterm.Cell {
@@ -284,30 +291,39 @@ func (surface *SurfaceTrack) Rows() []string {
 }
 
 func (surface *SurfaceTrack) Snapshot() SurfaceSnapshot {
-	surface.ensureVTerm()
+	surface.ensureSemanticSource()
+	vt := surface.vterm()
 	return SurfaceSnapshot{
 		Size: surface.size,
 		// 中文说明：live snapshot 是协议/渲染高频路径，保留行数和 styled footprint，
 		// 但不克隆每行尾部的纯默认空白，避免压力输出反复搬运整屏空白。
-		Screen: surface.vt.TrimmedScreenContent(),
-		Cursor: surface.vt.CursorState(),
-		Modes:  surface.vt.Modes(),
+		Screen: vt.TrimmedScreenContent(),
+		Cursor: vt.CursorState(),
+		Modes:  vt.Modes(),
 	}
 }
 
 func (surface *SurfaceTrack) VisitTrimmedScreenRows(visit func(rowIndex int, cellCount int, cellAt func(int) vterm.Cell)) vterm.TrimmedScreenRowsInfo {
-	surface.ensureVTerm()
-	return surface.vt.VisitTrimmedScreenRows(visit)
+	surface.ensureSemanticSource()
+	return surface.vterm().VisitTrimmedScreenRows(visit)
 }
 
-func (surface *SurfaceTrack) ensureVTerm() {
-	if surface.vt != nil {
+func (surface *SurfaceTrack) ensureSemanticSource() {
+	if surface.source != nil {
 		return
 	}
 	if !surface.size.Valid() {
 		surface.size = SurfaceSize{Cols: 80, Rows: 24}
 	}
-	surface.vt = vterm.New(surface.size.Cols, surface.size.Rows, 0, surface.onResponse)
+	surface.source = vterm.NewSemanticSource(surface.size.Cols, surface.size.Rows, 0, surface.onResponse)
+}
+
+func (surface *SurfaceTrack) vterm() *vterm.VTerm {
+	if surface == nil {
+		return nil
+	}
+	surface.ensureSemanticSource()
+	return surface.source.VTerm()
 }
 
 type privateModeAltAction int

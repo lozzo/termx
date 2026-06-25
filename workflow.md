@@ -190,7 +190,7 @@
 | --- | --- | --- | --- |
 | R300. SK 无限历史工作流重置与定案纳入 | 完成 | `AGENTS.md`、`workflow.md`、`termx-core-v2/docs/screen-app-infinite-history-final-plan.md` | 旧 remote + app 队列退出当前主线；screen app 无限历史定案成为当前实现基准 |
 | R301. SK 旧历史实现清场审计与最小隔离 | 完成 | `termx-core-v2/`、只读 `termx-vterm/`、相关 docs | 找出旧 screen app/history 补丁路径、raw parser fallback、snapshot 拼接和程序名特殊逻辑；只删除或隔离会继续误导后续实现的入口，保留可编译骨架和清场 harness，大规模删除等 R302/R303 接口站稳后再做 |
-| R302. SK terminal semantic transaction 接口 | 待开始 | `termx-core-v2/`、`termx-vterm/` | 先立 vterm 到 core-v2 的语义事件接口：普通写入、cursor move、erase、scroll、alt enter/leave、resize、SGR 属性、flush/transaction boundary |
+| R302. SK terminal semantic transaction 接口 | 完成 | `termx-core-v2/`、`termx-vterm/` | 先立 vterm 到 core-v2 的语义事件接口：普通写入、cursor move、erase、scroll、alt enter/leave、resize、SGR 属性、flush/transaction boundary |
 | R303. SK history projector domain harness | 待开始 | `termx-core-v2/` | 用 fake semantic transaction 驱动 projector，锁定普通输出 commit、mutable session、segment cursor、final screen-frame、alt transient 的基本语义 |
 | R304. SK 普通输出最小实现 | 待开始 | `termx-core-v2/`、按需 `termx-vterm/` | shell/stdout 输出完整 logical line 后直接进入 committed history；process exit force commit primary mutable frontier |
 | R305. SK primary screen app session 最小实现 | 待开始 | `termx-core-v2/`、按需 `termx-vterm/` | 支持 Codex/Claude Code 这类 primary screen app 在退出前修改 session 内文本；历史模式看到一致的当前 session projection |
@@ -223,3 +223,4 @@
 ## 9. 当前状态
 
 - `R301` 已完成：新增 `termx-core-v2/docs/r301-history-cleanup-audit.md` 记录清场审计结论；真实 PTY 输出路径确认经 `live.SurfaceTrack.WriteWithResult` 进入 shared-vterm semantic batch，`historyANSIParser` 仅保留为 `Ingest` / `IngestBatch` legacy skeleton。`terminal_semantic_ingest.go` 删除 semantic batch 的 raw parser fallback 分支；新增 `TestR301HistoryCleanupGuard` 防止 production Go 源码重新按程序名分支、semantic batch projector 调 `ingestOutputLocked(batch.Raw)` 或真实 PTY chunk 直接 `historyQueue.Enqueue(text)`。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。
+- `R302` 已完成：`termx-vterm/vterm/semantic_source.go` 新增 `TerminalSemanticSource`、`TerminalSemanticTransaction`、`TerminalSemanticSize`、frame/scroll-out contract 和 `SemanticSource` adapter；`ApplyPTYWrite` / `Resize` 产出 ordered ops、primary scroll-out proof、primary/alt frame、alt enter/exit、synchronized output、full replace/resize boundary。`termx-core-v2/terminal_semantic_contract.go` 以 alias 消费 vterm contract，并把现有 semantic batch 投影成 transaction；`live.SurfaceTrack` 改为通过 `SemanticSource.ApplyPTYWrite` 生成当前真实 PTY damage。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`。
