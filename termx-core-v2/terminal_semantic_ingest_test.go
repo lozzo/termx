@@ -1586,6 +1586,37 @@ func TestTerminalSemanticProjectorPublishesSynchronizedFrameOnlyAfterESU(t *test
 	}
 }
 
+func TestTerminalSemanticProjectorKeepsSynchronizedScrollbackBeforePublishedFrame(t *testing.T) {
+	term := vterm.New(24, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(24, 3)
+
+	ingestSharedVTermRawForTest(t, term, pipeline, "shell-one\r\nshell-two\r\nshell-three", 24, 3)
+	ingestSharedVTermRawForTest(t, term, pipeline, "\x1b[?2026h\r\nframe-bottom\x1b[?2026l", 24, 3)
+
+	window, err := pipeline.LatestWindow(24, 10)
+	if err != nil {
+		t.Fatalf("latest after synchronized scrollback: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if !strings.Contains(text, "frame-bottom") {
+		t.Fatalf("published frame should remain latest, text=%q rows=%#v", text, window.Rows)
+	}
+	if !strings.Contains(text, "shell-one") && !window.HasMore {
+		t.Fatalf("scrollback before published frame must remain visible or page-able, text=%q rows=%#v", text, window.Rows)
+	}
+	if strings.Contains(text, "shell-one") {
+		return
+	}
+	older, err := pipeline.OlderWindow(24, 10, window.Cursor)
+	if err != nil {
+		t.Fatalf("older after synchronized scrollback: %v", err)
+	}
+	olderText := historyWindowJoinedText(older)
+	if !strings.Contains(olderText, "shell-one") {
+		t.Fatalf("synchronized frame publish must not drop primary scrollback, text=%q rows=%#v latest=%#v", olderText, older.Rows, window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorKeepsPublishedFrameVisibleDuringNextBSU(t *testing.T) {
 	term := vterm.New(40, 6, 100, nil)
 	pipeline := newTerminalHistoryPipeline(40, 6)

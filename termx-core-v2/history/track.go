@@ -181,12 +181,48 @@ func (track *HistoryTrack) primaryScrollOut(count int) error {
 			if err := track.ensureScrolledOutLineSealed(owner.LineID); err != nil {
 				return err
 			}
+			if err := track.commitScrolledOutLine(owner.LineID); err != nil {
+				return err
+			}
 		}
 		if track.screenRow > 0 {
 			track.screenRow--
 		}
 	}
 	return track.commitFrontier(false)
+}
+
+// commitScrolledOutLine 只提交真实离开 primary screen ownership 的普通行；
+// synchronized published frame 仍保持 latest-only，不能进入 committed depth。
+func (track *HistoryTrack) commitScrolledOutLine(id LogicalLineID) error {
+	if id == 0 || !track.frontier.Contains(id) || track.committed.Contains(id) {
+		return nil
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return ErrUnknownLine
+	}
+	if line.Kind == RowKindScreenFrame || line.Kind == RowKindAltScreenFrame || track.isPublishedFrameLine(id) {
+		return nil
+	}
+	if line.Seal != SealStateSealed {
+		return nil
+	}
+	if line.Dirty {
+		if err := track.markLineClean(id); err != nil {
+			return err
+		}
+	}
+	if err := track.committed.Append(id); err != nil {
+		return err
+	}
+	track.frontier.Remove(id)
+	if track.activeLine == id {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+	}
+	return nil
 }
 
 func (track *HistoryTrack) ensureScrolledOutLineSealed(id LogicalLineID) error {
@@ -1850,7 +1886,7 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 		return nil
 	}
 	if track.primaryFullscreenFrame && !force {
-		return nil
+		return track.commitHiddenScrolledOutFrontier()
 	}
 	if force {
 		if err := track.dropTransientFrame(); err != nil {
@@ -1897,6 +1933,50 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 			}
 			changed = true
 		}
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+		}
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+// commitHiddenScrolledOutFrontier 处理 BSU 期间被隐藏但已经滚出屏幕的普通行；
+// 它不能提交 current frame，否则连续 /resume 会把旧帧和新帧拼接起来。
+func (track *HistoryTrack) commitHiddenScrolledOutFrontier() error {
+	ids := track.frontier.IDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	changed := false
+	for _, id := range ids {
+		if !track.hiddenLineMayCommit(id) || track.screen.containsLine(id) || track.committed.Contains(id) {
+			continue
+		}
+		seal, dirty, ok := track.lineCommitState(id)
+		if !ok {
+			return ErrUnknownLine
+		}
+		if seal != SealStateSealed {
+			continue
+		}
+		if dirty {
+			if err := track.markLineClean(id); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if err := track.committed.Append(id); err != nil {
+			return err
+		}
+		changed = true
 		if track.frontier.Remove(id) {
 			changed = true
 		}
@@ -2147,8 +2227,19 @@ func (track *HistoryTrack) lineCommittableLoaded(id LogicalLineID, line LogicalL
 
 func (track *HistoryTrack) lineCommittableID(id LogicalLineID) bool {
 	return track.frontier.Contains(id) &&
-		!track.frontier.IsHidden(id) &&
+		(!track.frontier.IsHidden(id) || track.hiddenLineMayCommit(id)) &&
 		!track.screen.containsLine(id)
+}
+
+func (track *HistoryTrack) hiddenLineMayCommit(id LogicalLineID) bool {
+	if !track.frontier.IsHidden(id) || track.isPublishedFrameLine(id) {
+		return false
+	}
+	line, ok := track.store.Line(id)
+	if !ok {
+		return false
+	}
+	return line.Kind != RowKindScreenFrame && line.Kind != RowKindAltScreenFrame
 }
 
 func (track *HistoryTrack) visibleFrontierIDs() []LogicalLineID {

@@ -1801,6 +1801,93 @@ func TestProtocolServiceAltScreenResumeRawDoesNotSplicePreviousFrames(t *testing
 	}
 }
 
+func TestProtocolServiceResumeSynchronizedScrollbackSurvivesPublishedFrame(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	const terminalID = "term-resume-scrollback"
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      terminalID,
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 40, Rows: 4},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ingest := func(output string) {
+		t.Helper()
+		if err := server.IngestOutput(context.Background(), terminalID, output); err != nil {
+			t.Fatalf("ingest output: %v", err)
+		}
+	}
+	latest := func() *protocol.HistoryWindow {
+		t.Helper()
+		window, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID: terminalID,
+			Cols:       40,
+			Limit:      4,
+		})
+		if err != nil {
+			t.Fatalf("latest history.window: %v", err)
+		}
+		return window
+	}
+	older := func(window *protocol.HistoryWindow) *protocol.HistoryWindow {
+		t.Helper()
+		if !window.HasMore || !window.CursorValid {
+			t.Fatalf("expected older cursor, got %#v", window)
+		}
+		older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID:          terminalID,
+			Cols:                40,
+			Limit:               12,
+			Token:               window.Token,
+			Generation:          window.Generation,
+			BoundaryFirstLineID: window.FirstLineID,
+			BoundaryLastLineID:  window.LastLineID,
+			CursorValid:         window.CursorValid,
+			BeforeLineID:        window.CursorLineID,
+			BeforeRowInLine:     window.CursorRow,
+		})
+		if err != nil {
+			t.Fatalf("older history.window: %v", err)
+		}
+		return older
+	}
+
+	ingest("shell before resume\r\n")
+	ingest("\x1b[?1049h\x1b[H\x1b[2J/resume picker one\x1b[?1049l")
+	ingest("\x1b[?2026h\x1b[H\x1b[Jfirst transcript top\r\nfirst transcript mid\r\nfirst transcript bottom\r\nfirst transcript tail\r\n> first prompt\x1b[?2026l")
+	first := latest()
+	if !protocolHistoryWindowContainsText(first, "> first prompt") {
+		t.Fatalf("first current frame should contain prompt, got %#v", first.Rows)
+	}
+	firstOlder := older(first)
+	if !protocolHistoryWindowContainsText(firstOlder, "first transcript top") {
+		t.Fatalf("first synchronized scrollback should be page-able, got %#v latest=%#v", firstOlder.Rows, first.Rows)
+	}
+
+	ingest("\x1b[?1049h\x1b[H\x1b[2J/resume picker two\x1b[?1049l")
+	ingest("\x1b[?2026h\x1b[H\x1b[Jsecond transcript top\r\nsecond transcript mid\r\nsecond transcript bottom\r\nsecond transcript tail\r\n> second prompt\x1b[?2026l")
+	second := latest()
+	for _, want := range []string{"second transcript tail", "> second prompt"} {
+		if !protocolHistoryWindowContainsText(second, want) {
+			t.Fatalf("second current frame should contain %q, got %#v", want, second.Rows)
+		}
+	}
+	for _, stale := range []string{"first transcript tail", "> first prompt", "/resume picker one"} {
+		if protocolHistoryWindowContainsText(second, stale) {
+			t.Fatalf("second current frame must not splice stale resume content %q, got %#v", stale, second.Rows)
+		}
+	}
+	secondOlder := older(second)
+	if !protocolHistoryWindowContainsText(secondOlder, "second transcript top") {
+		t.Fatalf("second synchronized scrollback should be page-able before shell, got %#v", secondOlder.Rows)
+	}
+	if protocolHistoryWindowContainsText(secondOlder, "/resume picker one") {
+		t.Fatalf("alt-screen picker must not become committed history, got %#v", secondOlder.Rows)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestPreservesHistory(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
