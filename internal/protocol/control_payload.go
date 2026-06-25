@@ -1789,17 +1789,21 @@ func timePtrToUnixNano(value *time.Time) int64 {
 }
 
 const (
-	terminalInfoExitedAtFieldNumber          protowire.Number = 13
-	terminalStateChangedExitedAtFieldNumber  protowire.Number = 4
-	historyWindowModeFieldNumber             protowire.Number = 12
-	historyWindowAfterCursorValidFieldNumber protowire.Number = 13
-	historyWindowAfterLineIDFieldNumber      protowire.Number = 14
-	historyWindowAfterRowInLineFieldNumber   protowire.Number = 15
-	historyWindowRangeValidFieldNumber       protowire.Number = 16
-	historyWindowRangeStartLineIDFieldNumber protowire.Number = 17
-	historyWindowRangeStartColFieldNumber    protowire.Number = 18
-	historyWindowRangeEndLineIDFieldNumber   protowire.Number = 19
-	historyWindowRangeEndColFieldNumber      protowire.Number = 20
+	terminalInfoExitedAtFieldNumber               protowire.Number = 13
+	terminalStateChangedExitedAtFieldNumber       protowire.Number = 4
+	historyWindowModeFieldNumber                  protowire.Number = 12
+	historyWindowAfterCursorValidFieldNumber      protowire.Number = 13
+	historyWindowAfterLineIDFieldNumber           protowire.Number = 14
+	historyWindowAfterRowInLineFieldNumber        protowire.Number = 15
+	historyWindowRangeValidFieldNumber            protowire.Number = 16
+	historyWindowRangeStartLineIDFieldNumber      protowire.Number = 17
+	historyWindowRangeStartColFieldNumber         protowire.Number = 18
+	historyWindowRangeEndLineIDFieldNumber        protowire.Number = 19
+	historyWindowRangeEndColFieldNumber           protowire.Number = 20
+	historyWindowCursorSegmentFieldNumber         protowire.Number = 21
+	historyWindowAfterCursorSegmentFieldNumber    protowire.Number = 22
+	historyWindowResponseCursorSegmentFieldNumber protowire.Number = 31
+	historyWindowResponseRowSegmentsFieldNumber   protowire.Number = 32
 )
 
 func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params HistoryWindowParams) {
@@ -1814,6 +1818,8 @@ func encodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, par
 	setInt32ProtoFieldOrUnknown(msg, historyWindowRangeStartColFieldNumber, int32(params.RangeStartCol))
 	setUint64ProtoFieldOrUnknown(msg, historyWindowRangeEndLineIDFieldNumber, params.RangeEndLineID)
 	setInt32ProtoFieldOrUnknown(msg, historyWindowRangeEndColFieldNumber, int32(params.RangeEndCol))
+	setStringProtoFieldOrUnknown(msg, historyWindowCursorSegmentFieldNumber, params.CursorSegment)
+	setStringProtoFieldOrUnknown(msg, historyWindowAfterCursorSegmentFieldNumber, params.AfterCursorSegment)
 }
 
 func decodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, params *HistoryWindowParams) {
@@ -1829,6 +1835,8 @@ func decodeHistoryWindowParamsUnknownFields(msg *wirepb.HistoryWindowParams, par
 	params.RangeStartCol = int(int32ProtoFieldOrUnknown(msg, historyWindowRangeStartColFieldNumber))
 	params.RangeEndLineID = uint64ProtoFieldOrUnknown(msg, historyWindowRangeEndLineIDFieldNumber)
 	params.RangeEndCol = int(int32ProtoFieldOrUnknown(msg, historyWindowRangeEndColFieldNumber))
+	params.CursorSegment = stringProtoFieldOrUnknown(msg, historyWindowCursorSegmentFieldNumber)
+	params.AfterCursorSegment = stringProtoFieldOrUnknown(msg, historyWindowAfterCursorSegmentFieldNumber)
 }
 
 func setStringProtoFieldOrUnknown(msg proto.Message, field protowire.Number, value string) {

@@ -52,6 +52,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryOlder(ctx context.Context, req H
 		CursorValid:         req.Cursor.Valid,
 		BeforeLineID:        req.Cursor.BeforeLineID,
 		BeforeRowInLine:     req.Cursor.BeforeRowInLine,
+		CursorSegment:       req.Cursor.Segment,
 		BoundaryFirstLineID: req.Boundary.FirstLineID,
 		BoundaryLastLineID:  req.Boundary.LastLineID,
 	})
@@ -72,6 +73,7 @@ func (adapter ProtocolCoreClientAdapter) HistoryNewer(ctx context.Context, req H
 		AfterCursorValid:    req.Cursor.Valid,
 		AfterLineID:         req.Cursor.BeforeLineID,
 		AfterRowInLine:      req.Cursor.BeforeRowInLine,
+		AfterCursorSegment:  req.Cursor.Segment,
 		BoundaryFirstLineID: req.Boundary.FirstLineID,
 		BoundaryLastLineID:  req.Boundary.LastLineID,
 	})
@@ -172,6 +174,7 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow, requestedCols int
 			Valid:           window.CursorValid,
 			BeforeLineID:    window.CursorLineID,
 			BeforeRowInLine: window.CursorRow,
+			Segment:         window.CursorSegment,
 		},
 		HasMore:    window.HasMore,
 		Generation: window.Generation,
@@ -215,6 +218,7 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 			Cells:         cells,
 			LineID:        lineID,
 			Kind:          historyProtocolRowKind(window, i, span, hasSpan),
+			Segment:       stringAt(window.RowSegments, i),
 			TailFill:      historyTailFillFromProtocol(row.TailFill),
 			LiveTail:      historyProtocolRowIsLiveTail(window, i),
 			ClippedBefore: hasSpan && span.ClippedBefore,
@@ -257,6 +261,7 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 			LineID:    uint64At(window.RowLineIDs, i),
 			RowInLine: intAt(window.RowInLine, i),
 			Kind:      stringAt(window.RowKinds, i),
+			Segment:   stringAt(window.RowSegments, i),
 			LiveTail:  historyProtocolRowIsLiveTail(window, i),
 		})
 	}

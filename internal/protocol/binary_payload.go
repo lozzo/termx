@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-proto/wirepb"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -237,7 +238,7 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 		lineTimestampStart[i] = timeToUnixNano(span.TimestampStart)
 		lineTimestampEnd[i] = timeToUnixNano(span.TimestampEnd)
 	}
-	return &wirepb.HistoryWindow{
+	msg := &wirepb.HistoryWindow{
 		TerminalId:                 window.TerminalID,
 		Token:                      window.Token,
 		Op:                         string(window.Op),
@@ -269,6 +270,11 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 		RowInLine:                  encodeWireInt32Slice(window.RowInLine),
 		TimestampUnixNano:          timeToUnixNano(window.Timestamp),
 	}
+	// 中文说明：cursor segment 是 history.window 的 truth-source 边界字段；
+	// pb 生成物未同步时先走正式 field number 的 unknown field，避免 TUI 猜测行段。
+	setStringProtoFieldOrUnknown(msg, historyWindowResponseCursorSegmentFieldNumber, window.CursorSegment)
+	setStringSliceUnknownField(msg, historyWindowResponseRowSegmentsFieldNumber, window.RowSegments)
+	return msg
 }
 
 func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) {
@@ -323,6 +329,7 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 		RowKinds:      rowKinds,
 		RowWrapped:    wrapped,
 		RowOwnership:  ownership,
+		RowSegments:   stringSliceUnknownField(msg, historyWindowResponseRowSegmentsFieldNumber),
 		Lines:         lines,
 		BeforeOffset:  int(msg.GetBeforeOffset()),
 		LoadedRows:    int(msg.GetLoadedRows()),
@@ -338,6 +345,7 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 		CursorValid:   msg.GetCursorValid(),
 		CursorLineID:  msg.GetCursorBeforeLineId(),
 		CursorRow:     int(msg.GetCursorBeforeRowInLine()),
+		CursorSegment: stringProtoFieldOrUnknown(msg, historyWindowResponseCursorSegmentFieldNumber),
 		RowLineIDs:    append([]uint64(nil), msg.GetRowLogicalLineIds()...),
 		RowInLine:     decodeWireInt32Slice(msg.GetRowInLine()),
 		Timestamp:     unixNanoToTime(msg.GetTimestampUnixNano()),
@@ -695,6 +703,47 @@ func encodeWireStringSlice(values []string) []string {
 		return nil
 	}
 	return out
+}
+
+func setStringSliceUnknownField(msg proto.Message, field protowire.Number, values []string) {
+	if msg == nil || len(values) == 0 {
+		return
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		setStringUnknownField(msg, field, value)
+	}
+}
+
+func stringSliceUnknownField(msg proto.Message, field protowire.Number) []string {
+	if msg == nil {
+		return nil
+	}
+	unknown := msg.ProtoReflect().GetUnknown()
+	var values []string
+	for len(unknown) > 0 {
+		num, typ, n := protowire.ConsumeTag(unknown)
+		if n < 0 {
+			return nil
+		}
+		unknown = unknown[n:]
+		valueStart := unknown
+		n = protowire.ConsumeFieldValue(num, typ, unknown)
+		if n < 0 {
+			return nil
+		}
+		if num == field && typ == protowire.BytesType {
+			value, consumed := protowire.ConsumeBytes(valueStart)
+			if consumed >= 0 {
+				values = append(values, string(value))
+			}
+		}
+		unknown = unknown[n:]
+	}
+	return values
 }
 
 func encodeWireBoolSlice(values []bool) []bool {

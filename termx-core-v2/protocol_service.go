@@ -904,6 +904,9 @@ func (session *protocolSession) validateOlderWindowRequest(params protocol.Histo
 		if !frozenSnapshotCursorValid(snapshot, cols, cursor) {
 			return ErrStaleHistoryWindow
 		}
+		if !frozenSnapshotCursorSegmentValid(snapshot, cursor, params.CursorSegment) {
+			return ErrStaleHistoryWindow
+		}
 	}
 	return nil
 }
@@ -916,7 +919,11 @@ func (session *protocolSession) validateNewerWindowRequest(params protocol.Histo
 		return ErrStaleHistoryWindow
 	}
 	snapshot, _ := session.frozenSnapshot(params.TerminalID, params.Token)
-	if !frozenSnapshotAfterCursorValid(snapshot, cols, protocolAfterCursorToCore(params)) {
+	cursor := protocolAfterCursorToCore(params)
+	if !frozenSnapshotAfterCursorValid(snapshot, cols, cursor) {
+		return ErrStaleHistoryWindow
+	}
+	if !frozenSnapshotCursorSegmentValid(snapshot, cursor, params.AfterCursorSegment) {
 		return ErrStaleHistoryWindow
 	}
 	return nil
@@ -1594,6 +1601,7 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 	rows := make([]protocol.CompactRow, len(window.Rows))
 	rowKinds := make([]string, len(window.Rows))
 	rowOwnership := make([]string, len(window.Rows))
+	rowSegments := make([]string, len(window.Rows))
 	rowLineIDs := make([]uint64, len(window.Rows))
 	rowInLine := make([]int, len(window.Rows))
 	for i, row := range window.Rows {
@@ -1603,6 +1611,7 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 			rows[i].TailFill = &style
 		}
 		rowKinds[i] = row.Kind
+		rowSegments[i] = protocolHistoryCursorSegmentFromKind(row.Kind, row.Committed)
 		rowLineIDs[i] = uint64(row.LineID)
 		rowInLine[i] = row.RowInLine
 		if row.Committed {
@@ -1623,28 +1632,69 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 		}
 	}
 	return &protocol.HistoryWindow{
-		TerminalID:   terminalID,
-		Token:        string(window.Token),
-		Op:           protocol.HistoryWindowOp(window.Op),
-		Size:         protocolSizeFromCore(size),
-		Rows:         rows,
-		RowKinds:     rowKinds,
-		RowOwnership: rowOwnership,
-		Lines:        lines,
-		LoadedRows:   len(rows),
-		TotalRows:    window.TotalRows,
-		LoadedLines:  window.LoadedLines,
-		LogicalTotal: window.TotalLines,
-		HasMore:      window.HasMore,
-		Generation:   uint64(window.Generation),
-		FirstLineID:  uint64(window.FirstLineID),
-		LastLineID:   uint64(window.LastLineID),
-		CursorValid:  window.Cursor.Valid,
-		CursorLineID: uint64(window.Cursor.BeforeLineID),
-		CursorRow:    window.Cursor.BeforeRowInLine,
-		RowLineIDs:   rowLineIDs,
-		RowInLine:    rowInLine,
-		Timestamp:    time.Now().UTC(),
+		TerminalID:    terminalID,
+		Token:         string(window.Token),
+		Op:            protocol.HistoryWindowOp(window.Op),
+		Size:          protocolSizeFromCore(size),
+		Rows:          rows,
+		RowKinds:      rowKinds,
+		RowOwnership:  rowOwnership,
+		RowSegments:   rowSegments,
+		Lines:         lines,
+		LoadedRows:    len(rows),
+		TotalRows:     window.TotalRows,
+		LoadedLines:   window.LoadedLines,
+		LogicalTotal:  window.TotalLines,
+		HasMore:       window.HasMore,
+		Generation:    uint64(window.Generation),
+		FirstLineID:   uint64(window.FirstLineID),
+		LastLineID:    uint64(window.LastLineID),
+		CursorValid:   window.Cursor.Valid,
+		CursorLineID:  uint64(window.Cursor.BeforeLineID),
+		CursorRow:     window.Cursor.BeforeRowInLine,
+		CursorSegment: protocolHistoryCursorSegment(window),
+		RowLineIDs:    rowLineIDs,
+		RowInLine:     rowInLine,
+		Timestamp:     time.Now().UTC(),
+	}
+}
+
+func protocolHistoryCursorSegment(window history.HistoryWindow) string {
+	if !window.Cursor.Valid {
+		return ""
+	}
+	if window.Cursor.BeforeLineID == 0 {
+		return protocol.HistoryCursorSegmentCommitted
+	}
+	for _, row := range window.Rows {
+		if row.LineID == window.Cursor.BeforeLineID {
+			return protocolHistoryCursorSegmentFromKind(row.Kind, row.Committed)
+		}
+	}
+	for _, span := range window.Spans {
+		if span.LineID == window.Cursor.BeforeLineID {
+			return protocolHistoryCursorSegmentFromKind(span.Kind, false)
+		}
+	}
+	return ""
+}
+
+func protocolHistoryCursorSegmentFromKind(kind string, committed bool) string {
+	switch kind {
+	case history.RowKindArchivedScreenFrame:
+		return protocol.HistoryCursorSegmentArchivedPrimaryFrame
+	case history.RowKindAltScreenFrame:
+		return protocol.HistoryCursorSegmentCurrentAltFrame
+	case history.RowKindScreenFrame:
+		if committed {
+			return protocol.HistoryCursorSegmentCommitted
+		}
+		return protocol.HistoryCursorSegmentCurrentPrimaryFrame
+	default:
+		if committed {
+			return protocol.HistoryCursorSegmentCommitted
+		}
+		return protocol.HistoryCursorSegmentCurrentPrimaryFrame
 	}
 }
 
@@ -2185,6 +2235,35 @@ func frozenSnapshotAfterCursorValid(snapshot history.FrozenSnapshot, cols int, c
 	}
 	_, _, ok := snapshotCursorEndPosition(snapshot, cols, cursor)
 	return ok
+}
+
+func frozenSnapshotCursorSegmentValid(snapshot history.FrozenSnapshot, cursor history.HistoryCursor, segment string) bool {
+	if segment == "" {
+		return true
+	}
+	if !cursor.Valid {
+		return false
+	}
+	expected := frozenSnapshotCursorSegment(snapshot, cursor)
+	return expected != "" && expected == segment
+}
+
+func frozenSnapshotCursorSegment(snapshot history.FrozenSnapshot, cursor history.HistoryCursor) string {
+	if !cursor.Valid {
+		return ""
+	}
+	if cursor.BeforeLineID == 0 {
+		return protocol.HistoryCursorSegmentCommitted
+	}
+	lineIndex, ok := snapshotLineIndex(snapshot, cursor.BeforeLineID)
+	if !ok {
+		return ""
+	}
+	line, ok := snapshot.LineAt(lineIndex)
+	if !ok {
+		return ""
+	}
+	return protocolHistoryCursorSegmentFromKind(line.Line.Kind, line.Committed)
 }
 
 func frozenSnapshotBoundaryValid(snapshot history.FrozenSnapshot, cols int, firstLineID uint64, lastLineID uint64) bool {

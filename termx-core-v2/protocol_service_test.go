@@ -280,6 +280,9 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if !latest.HasMore || !latest.CursorValid {
 		t.Fatalf("latest tail should still expose older rows from the same frozen snapshot, got %#v", latest)
 	}
+	if latest.CursorSegment != protocol.HistoryCursorSegmentCommitted {
+		t.Fatalf("ordinary latest cursor should carry committed segment, got %#v", latest)
+	}
 
 	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:      "term-1",
@@ -288,6 +291,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 		CursorValid:     latest.CursorValid,
 		BeforeLineID:    latest.CursorLineID,
 		BeforeRowInLine: latest.CursorRow,
+		CursorSegment:   latest.CursorSegment,
 		Token:           latest.Token,
 		Generation:      latest.Generation,
 	})
@@ -299,6 +303,9 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	}
 	if len(older.RowOwnership) != 1 || older.RowOwnership[0] != protocol.RowOwnershipPersisted {
 		t.Fatalf("older complete logical line should stay persisted, got %#v", older.RowOwnership)
+	}
+	if older.CursorValid && older.CursorSegment != protocol.HistoryCursorSegmentCommitted {
+		t.Fatalf("older cursor should keep committed segment, got %#v", older)
 	}
 
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -323,6 +330,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 		CursorValid:         true,
 		BeforeLineID:        latest.CursorLineID,
 		BeforeRowInLine:     latest.CursorRow,
+		CursorSegment:       latest.CursorSegment,
 		Token:               latest.Token,
 		Generation:          latest.Generation,
 		BoundaryFirstLineID: latest.FirstLineID,
@@ -333,6 +341,22 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	}
 	if olderAtReflowCols.Op != protocol.HistoryWindowPrepend || len(olderAtReflowCols.Rows) != 1 || rowText(olderAtReflowCols.Rows[0]) != "three" {
 		t.Fatalf("unexpected older window at reflow cols %#v", olderAtReflowCols)
+	}
+	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                10,
+		Limit:               1,
+		CursorValid:         true,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+		CursorSegment:       protocol.HistoryCursorSegmentCurrentAltFrame,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+	})
+	if err == nil || !strings.Contains(err.Error(), ErrStaleHistoryWindow.Error()) {
+		t.Fatalf("expected cursor segment stale history window error, got %v", err)
 	}
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:          "term-1",

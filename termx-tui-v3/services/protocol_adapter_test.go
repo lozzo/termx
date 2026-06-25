@@ -399,23 +399,25 @@ func TestProtocolClipboardStorageAdapterWatchesClipboardKeyPrefix(t *testing.T) 
 func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{
-			TerminalID:   "term-1",
-			Token:        "tok-1",
-			Op:           protocol.HistoryWindowReplace,
-			Size:         protocol.Size{Cols: 80, Rows: 24},
-			Rows:         []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "h"}, {Content: "i"}})},
-			Lines:        []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
-			RowLineIDs:   []uint64{42},
-			RowInLine:    []int{0},
-			CursorValid:  true,
-			CursorLineID: 42,
-			CursorRow:    1,
-			HasMore:      true,
-			Generation:   7,
-			FirstLineID:  42,
-			LastLineID:   43,
-			LoadedLines:  1,
-			LogicalTotal: 2,
+			TerminalID:    "term-1",
+			Token:         "tok-1",
+			Op:            protocol.HistoryWindowReplace,
+			Size:          protocol.Size{Cols: 80, Rows: 24},
+			Rows:          []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "h"}, {Content: "i"}})},
+			Lines:         []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0}},
+			RowLineIDs:    []uint64{42},
+			RowInLine:     []int{0},
+			RowSegments:   []string{protocol.HistoryCursorSegmentArchivedPrimaryFrame},
+			CursorValid:   true,
+			CursorLineID:  42,
+			CursorRow:     1,
+			CursorSegment: protocol.HistoryCursorSegmentArchivedPrimaryFrame,
+			HasMore:       true,
+			Generation:    7,
+			FirstLineID:   42,
+			LastLineID:    43,
+			LoadedLines:   1,
+			LogicalTotal:  2,
 		},
 	}
 	adapter := ProtocolCoreClientAdapter{Client: client}
@@ -426,6 +428,12 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 	}
 	if latest.RequestID != 1 || latest.Window.Rows[0].Text != "hi" || latest.Window.Rows[0].LineID != 42 {
 		t.Fatalf("unexpected latest result %#v", latest)
+	}
+	if latest.Window.Cursor.Segment != state.HistoryCursorSegmentArchivedPrimaryFrame {
+		t.Fatalf("latest must preserve authoritative cursor segment, got %#v", latest.Window.Cursor)
+	}
+	if latest.Window.Rows[0].Segment != state.HistoryCursorSegmentArchivedPrimaryFrame || latest.Window.SourceLines[0].Segment != state.HistoryCursorSegmentArchivedPrimaryFrame {
+		t.Fatalf("latest must preserve authoritative row segment, rows=%#v source=%#v", latest.Window.Rows, latest.Window.SourceLines)
 	}
 	if len(client.requests) != 1 || client.requests[0].Token != "" || client.requests[0].Cols != 80 {
 		t.Fatalf("unexpected latest params %#v", client.requests)
@@ -439,7 +447,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		Rows:       10,
 		Token:      "tok-1",
 		Generation: 7,
-		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 42, BeforeRowInLine: 1},
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 42, BeforeRowInLine: 1, Segment: state.HistoryCursorSegmentArchivedPrimaryFrame},
 		Boundary:   state.HistoryBoundary{FirstLineID: 42, LastLineID: 43},
 	})
 	if err != nil {
@@ -449,7 +457,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		t.Fatalf("unexpected older result %#v", older)
 	}
 	params := client.requests[1]
-	if params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.BoundaryLastLineID != 43 {
+	if params.Token != "tok-1" || params.Generation != 7 || !params.CursorValid || params.BeforeLineID != 42 || params.BeforeRowInLine != 1 || params.CursorSegment != protocol.HistoryCursorSegmentArchivedPrimaryFrame || params.BoundaryLastLineID != 43 {
 		t.Fatalf("unexpected older params %#v", params)
 	}
 
@@ -461,7 +469,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		Rows:       10,
 		Token:      "tok-1",
 		Generation: 7,
-		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 43, BeforeRowInLine: 2},
+		Cursor:     state.HistoryCursor{Valid: true, BeforeLineID: 43, BeforeRowInLine: 2, Segment: state.HistoryCursorSegmentCurrentAltFrame},
 		Boundary:   state.HistoryBoundary{FirstLineID: 40, LastLineID: 50},
 	})
 	if err != nil {
@@ -471,7 +479,7 @@ func TestProtocolCoreClientAdapterMapsLatestAndOlder(t *testing.T) {
 		t.Fatalf("unexpected newer result %#v", newer)
 	}
 	params = client.requests[2]
-	if params.Mode != "newer" || params.Token != "tok-1" || params.Generation != 7 || !params.AfterCursorValid || params.AfterLineID != 43 || params.AfterRowInLine != 2 || params.BoundaryFirstLineID != 40 || params.BoundaryLastLineID != 50 {
+	if params.Mode != "newer" || params.Token != "tok-1" || params.Generation != 7 || !params.AfterCursorValid || params.AfterLineID != 43 || params.AfterRowInLine != 2 || params.AfterCursorSegment != protocol.HistoryCursorSegmentCurrentAltFrame || params.BoundaryFirstLineID != 40 || params.BoundaryLastLineID != 50 {
 		t.Fatalf("unexpected newer params %#v", params)
 	}
 

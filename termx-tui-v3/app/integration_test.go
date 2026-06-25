@@ -6674,6 +6674,7 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 	for i := 1000; i < 1128; i++ {
 		loadedRows = append(loadedRows, state.HistoryRow{Text: fmt.Sprintf("old-%04d", i), LineID: uint64(i)})
 	}
+	loadedRows[len(loadedRows)-1].Segment = state.HistoryCursorSegmentArchivedPrimaryFrame
 	newerRows := make([]state.HistoryRow, 0, 64)
 	for i := 1128; i < 1192; i++ {
 		newerRows = append(newerRows, state.HistoryRow{Text: fmt.Sprintf("new-%04d", i), LineID: uint64(i)})
@@ -6725,6 +6726,9 @@ func TestCopyModeScrollsBackToTrimmedNewerWindowFromBackend(t *testing.T) {
 	}
 	if req.Cursor.BeforeLineID != loadedRows[len(loadedRows)-1].LineID || req.Cursor.BeforeRowInLine != loadedRows[len(loadedRows)-1].RowInLine {
 		t.Fatalf("newer request should start after local tail, got %#v", req.Cursor)
+	}
+	if req.Cursor.Segment != state.HistoryCursorSegmentArchivedPrimaryFrame {
+		t.Fatalf("newer request must use authoritative tail row segment, got %#v", req.Cursor)
 	}
 	if got := len(runtime.State().History.Rows); got > copyModeHistoryMaxRequestRows {
 		t.Fatalf("newer append should keep a bounded local window, got %d", got)
@@ -7299,6 +7303,8 @@ func historyLogicalLinesForApp(rows []state.HistoryRow) []state.HistoryLogicalLi
 			Text:     row.Text,
 			Cells:    append([]state.HistoryCell(nil), row.Cells...),
 			LineID:   row.LineID,
+			Kind:     row.Kind,
+			Segment:  row.Segment,
 			LiveTail: row.LiveTail,
 		}
 	}

@@ -528,9 +528,11 @@ type HistoryWindowParams struct {
 	CursorValid         bool
 	BeforeLineID        uint64
 	BeforeRowInLine     int
+	CursorSegment       string
 	AfterCursorValid    bool
 	AfterLineID         uint64
 	AfterRowInLine      int
+	AfterCursorSegment  string
 	BoundaryFirstLineID uint64
 	BoundaryLastLineID  uint64
 	RangeValid          bool
@@ -2117,6 +2119,13 @@ const (
 	HistoryWindowAppend  HistoryWindowOp = "append"
 )
 
+const (
+	HistoryCursorSegmentCommitted            = "committed"
+	HistoryCursorSegmentCurrentPrimaryFrame  = "current-primary-frame"
+	HistoryCursorSegmentArchivedPrimaryFrame = "archived-primary-frame"
+	HistoryCursorSegmentCurrentAltFrame      = "current-alt-frame"
+)
+
 type HistoryLineSpan struct {
 	StartRow       int
 	EndRow         int
@@ -2143,6 +2152,7 @@ type HistoryWindow struct {
 	RowKinds      []string
 	RowWrapped    []bool
 	RowOwnership  []string
+	RowSegments   []string
 	Lines         []HistoryLineSpan
 	BeforeOffset  int
 	LoadedRows    int
@@ -2158,6 +2168,7 @@ type HistoryWindow struct {
 	CursorValid   bool
 	CursorLineID  uint64
 	CursorRow     int
+	CursorSegment string
 	RowLineIDs    []uint64
 	RowInLine     []int
 	Timestamp     time.Time

@@ -614,6 +614,7 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 		RowKinds:      []string{"output"},
 		RowWrapped:    []bool{false},
 		RowOwnership:  []string{RowOwnershipPersisted},
+		RowSegments:   []string{HistoryCursorSegmentArchivedPrimaryFrame},
 		RowTimestamps: []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
 		Lines: []HistoryLineSpan{{
 			StartRow:       0,
@@ -625,23 +626,24 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 			ClippedBefore:  true,
 			ClippedAfter:   true,
 		}},
-		BeforeOffset: 3,
-		LoadedRows:   9,
-		TotalRows:    12,
-		LoadedLines:  2,
-		LogicalTotal: 4,
-		HasMore:      true,
-		Generation:   7,
-		FirstRowID:   0,
-		LastRowID:    2,
-		FirstLineID:  42,
-		LastLineID:   43,
-		CursorValid:  true,
-		CursorLineID: 42,
-		CursorRow:    1,
-		RowLineIDs:   []uint64{42},
-		RowInLine:    []int{1},
-		Timestamp:    time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
+		BeforeOffset:  3,
+		LoadedRows:    9,
+		TotalRows:     12,
+		LoadedLines:   2,
+		LogicalTotal:  4,
+		HasMore:       true,
+		Generation:    7,
+		FirstRowID:    0,
+		LastRowID:     2,
+		FirstLineID:   42,
+		LastLineID:    43,
+		CursorValid:   true,
+		CursorLineID:  42,
+		CursorRow:     1,
+		CursorSegment: HistoryCursorSegmentArchivedPrimaryFrame,
+		RowLineIDs:    []uint64{42},
+		RowInLine:     []int{1},
+		Timestamp:     time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
 	}
 	window.Rows[0].TailFill = &CompactRowStyle{BG: "idx:24"}
 	payload, err := EncodeHistoryWindowPayload(window)
@@ -661,7 +663,7 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 || decoded.FirstLineID != 42 || decoded.LastLineID != 43 {
 		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
 	}
-	if !decoded.CursorValid || decoded.CursorLineID != 42 || decoded.CursorRow != 1 {
+	if !decoded.CursorValid || decoded.CursorLineID != 42 || decoded.CursorRow != 1 || decoded.CursorSegment != HistoryCursorSegmentArchivedPrimaryFrame {
 		t.Fatalf("unexpected decoded history cursor: %#v", decoded)
 	}
 	if !reflect.DeepEqual(decoded.RowLineIDs, []uint64{42}) || !reflect.DeepEqual(decoded.RowInLine, []int{1}) {
@@ -672,6 +674,9 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	}
 	if len(decoded.RowOwnership) != 1 || decoded.RowOwnership[0] != RowOwnershipPersisted {
 		t.Fatalf("unexpected decoded history ownership: %#v", decoded.RowOwnership)
+	}
+	if !reflect.DeepEqual(decoded.RowSegments, []string{HistoryCursorSegmentArchivedPrimaryFrame}) {
+		t.Fatalf("unexpected decoded row segments: %#v", decoded.RowSegments)
 	}
 	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ERR 好 " {
 		t.Fatalf("unexpected decoded history row: %q", got)
@@ -706,9 +711,11 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		CursorValid:         true,
 		BeforeLineID:        42,
 		BeforeRowInLine:     1,
+		CursorSegment:       HistoryCursorSegmentArchivedPrimaryFrame,
 		AfterCursorValid:    true,
 		AfterLineID:         43,
 		AfterRowInLine:      2,
+		AfterCursorSegment:  HistoryCursorSegmentCurrentAltFrame,
 		BoundaryFirstLineID: 42,
 		BoundaryLastLineID:  43,
 		RangeValid:          true,
@@ -739,9 +746,11 @@ func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
 		CursorValid:         true,
 		BeforeLineID:        42,
 		BeforeRowInLine:     1,
+		CursorSegment:       HistoryCursorSegmentArchivedPrimaryFrame,
 		AfterCursorValid:    true,
 		AfterLineID:         43,
 		AfterRowInLine:      2,
+		AfterCursorSegment:  HistoryCursorSegmentCurrentAltFrame,
 		BoundaryFirstLineID: 42,
 		BoundaryLastLineID:  43,
 		RangeValid:          true,

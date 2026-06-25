@@ -871,6 +871,7 @@ func beginCopyModeNewer(root state.Root, deps CopyModeDeps, scrollDeltaAfterAppe
 			Valid:           tail.LineID != 0,
 			BeforeLineID:    tail.LineID,
 			BeforeRowInLine: tail.RowInLine,
+			Segment:         tail.Segment,
 		},
 		Boundary:                root.History.Boundary,
 		ScrollDeltaAfterPrepend: scrollDeltaAfterAppend,

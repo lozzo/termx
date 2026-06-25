@@ -36,11 +36,19 @@ const (
 	HistoryRowKindAltScreenFrame      = "alt-screen-frame"
 )
 
+const (
+	HistoryCursorSegmentCommitted            = "committed"
+	HistoryCursorSegmentCurrentPrimaryFrame  = "current-primary-frame"
+	HistoryCursorSegmentArchivedPrimaryFrame = "archived-primary-frame"
+	HistoryCursorSegmentCurrentAltFrame      = "current-alt-frame"
+)
+
 // HistoryCursor 是 older pagination 的 logical boundary。
 type HistoryCursor struct {
 	Valid           bool
 	BeforeLineID    uint64
 	BeforeRowInLine int
+	Segment         string
 }
 
 // HistoryBoundary 绑定 window 的 logical line 边界。
@@ -74,6 +82,7 @@ type HistoryRow struct {
 	LineID       uint64
 	RowInLine    int
 	Kind         string
+	Segment      string
 	ClippedStart bool
 	ClippedEnd   bool
 	LiveTail     bool
@@ -107,6 +116,7 @@ type HistoryLogicalLine struct {
 	Cells    []HistoryCell
 	LineID   uint64
 	Kind     string
+	Segment  string
 	TailFill *HistoryCellStyle
 	LiveTail bool
 	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
@@ -712,6 +722,9 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 			if row.TailFill != nil {
 				lines[len(lines)-1].TailFill = cloneHistoryCellStyle(row.TailFill)
 			}
+			if row.Segment != "" {
+				lines[len(lines)-1].Segment = row.Segment
+			}
 			lines[len(lines)-1].LiveTail = lines[len(lines)-1].LiveTail || row.LiveTail
 			continue
 		}
@@ -720,6 +733,8 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 			Text:          row.Text,
 			Cells:         cloneHistoryCells(row.Cells),
 			LineID:        row.LineID,
+			Kind:          row.Kind,
+			Segment:       row.Segment,
 			TailFill:      cloneHistoryCellStyle(row.TailFill),
 			LiveTail:      row.LiveTail,
 			ClippedBefore: hasSpan && span.ClippedBefore,
@@ -788,6 +803,8 @@ func (store HistoryStore) TrimRows(startRow int, endRow int) (HistoryStore, Hist
 			boundaryLast = store.Rows[len(store.Rows)-1].LineID
 		}
 		store.Boundary.LastLineID = boundaryLast
+		// 中文说明：cursor segment 来自 core authoritative row metadata；本地裁剪
+		// 只能把保留下来的首行 segment 带回 cursor，不能按 row kind 重新推导 truth。
 		store.Cursor = cursorBeforeFirstLocalRow(store.Rows)
 	}
 	return store, result
@@ -801,7 +818,7 @@ func cursorBeforeFirstLocalRow(rows []HistoryRow) HistoryCursor {
 	if first.LineID == 0 {
 		return HistoryCursor{}
 	}
-	return HistoryCursor{Valid: true, BeforeLineID: first.LineID, BeforeRowInLine: first.RowInLine}
+	return HistoryCursor{Valid: true, BeforeLineID: first.LineID, BeforeRowInLine: first.RowInLine, Segment: first.Segment}
 }
 
 func historyFirstRowIndexByLineID(rows []HistoryRow, lineID uint64) int {
@@ -1685,7 +1702,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		cells = normalizeHistoryLogicalLineCells(cells, cols)
 	}
 	if len(cells) == 0 {
-		return []HistoryRow{{LineID: line.LineID, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Segment: line.Segment, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	current := make([]HistoryCell, 0, len(cells))
@@ -1696,6 +1713,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 			Cells:     cloneHistoryCells(current),
 			LineID:    line.LineID,
 			RowInLine: len(rows),
+			Segment:   line.Segment,
 			LiveTail:  line.LiveTail,
 		}
 		rows = append(rows, row)
@@ -1751,6 +1769,7 @@ func fixedGridHistoryRows(line HistoryLogicalLine, cells []HistoryCell) []Histor
 		Cells:    cloneHistoryCells(cells),
 		LineID:   line.LineID,
 		Kind:     line.Kind,
+		Segment:  line.Segment,
 		LiveTail: line.LiveTail,
 		TailFill: cloneHistoryCellStyle(line.TailFill),
 	}
@@ -1766,7 +1785,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	}
 	clusters := textGraphemeClusters(line.Text)
 	if len(clusters) == 0 {
-		return []HistoryRow{{LineID: line.LineID, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Segment: line.Segment, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	var builder strings.Builder
@@ -1776,6 +1795,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 			Text:      builder.String(),
 			LineID:    line.LineID,
 			RowInLine: len(rows),
+			Segment:   line.Segment,
 			LiveTail:  line.LiveTail,
 		}
 		rows = append(rows, row)
@@ -1805,7 +1825,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 
 func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	if line.Text == "" {
-		return []HistoryRow{{LineID: line.LineID, LiveTail: line.LiveTail}}
+		return []HistoryRow{{LineID: line.LineID, Segment: line.Segment, LiveTail: line.LiveTail}}
 	}
 	if cols <= 0 {
 		cols = 80
@@ -1820,6 +1840,7 @@ func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []His
 			Text:      line.Text[start:end],
 			LineID:    line.LineID,
 			RowInLine: len(rows),
+			Segment:   line.Segment,
 			LiveTail:  line.LiveTail,
 		})
 	}

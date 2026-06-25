@@ -923,6 +923,27 @@ func TestHistoryStoreTrimRowsReleasesWindowButKeepsFrozenTailBoundary(t *testing
 	}
 }
 
+func TestHistoryStoreTrimRowsKeepsAuthoritativeCursorSegment(t *testing.T) {
+	source := []HistoryLogicalLine{
+		{Text: "one", LineID: 1, Segment: HistoryCursorSegmentCommitted},
+		{Text: "two", LineID: 2, Segment: HistoryCursorSegmentArchivedPrimaryFrame},
+		{Text: "three", LineID: 3, Segment: HistoryCursorSegmentArchivedPrimaryFrame},
+	}
+	store := HistoryStore{
+		Cols:        80,
+		SourceLines: source,
+		Cursor:      HistoryCursor{Valid: true, BeforeLineID: 1, Segment: HistoryCursorSegmentArchivedPrimaryFrame},
+		Boundary:    HistoryBoundary{FirstLineID: 1, LastLineID: 3},
+	}
+	store.Rows, store.Lines = ReflowHistoryLogicalLines(store.SourceLines, store.Cols)
+
+	trimmed, _ := store.TrimRows(1, 2)
+
+	if trimmed.Cursor != (HistoryCursor{Valid: true, BeforeLineID: 2, Segment: HistoryCursorSegmentArchivedPrimaryFrame}) {
+		t.Fatalf("trim must keep core cursor segment while moving local boundary, got %#v", trimmed.Cursor)
+	}
+}
+
 func TestHistoryStoreTrimRowsDetachesDroppedBackingArrays(t *testing.T) {
 	source := make([]HistoryLogicalLine, 0, 64)
 	for i := 0; i < 64; i++ {

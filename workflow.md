@@ -198,7 +198,7 @@
 | R307. SK resize 与 final screen-frame harness | 完成 | `termx-core-v2/`、按需 `termx-vterm/` | 覆盖运行中 resize、final screen-frame 固定宽度、committed logical line 不被 resize 重写 |
 | R308. SK 色彩属性与主题解析边界 | 完成 | `termx-core-v2/`、按需 `termx-tui-v3/` | 保存 default fg/bg 语义属性而不是提前烘焙主题 RGB；明确 RGB/256 色/默认色在历史里的存储和渲染规则 |
 | R309. SK storage backend 无限历史接口 | 完成 | `termx-core-v2/` | 以 append/update transaction、segment cursor、index/window 为边界接文件存储；不得让文件格式成为第二份历史模型 |
-| R310. SK protocol/TUI history window 接入 | 待开始 | `termx-core-v2/`、`termx-tui-v3/`、按需 `internal/protocol/`、`termx-proto/` | tui-v3 copy/history 只消费 authoritative history window；live display 和 history surface 分层 |
+| R310. SK protocol/TUI history window 接入 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、按需 `internal/protocol/`、`termx-proto/` | tui-v3 copy/history 只消费 authoritative history window；live display 和 history surface 分层 |
 
 ## 7. 测试准入
 
