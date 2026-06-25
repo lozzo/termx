@@ -901,8 +901,14 @@ func TestTerminalIngestOutputAltScreenExitRestoresPrimaryLiveFrame(t *testing.T)
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "primary" || window.TotalLines != 1 {
-		t.Fatalf("alt final frame must not enter primary history, got %#v", window)
+	text := historyWindowText(window.Rows)
+	if !strings.Contains(text, "primary") || !strings.Contains(text, "alt-final") || window.TotalLines != 1 {
+		t.Fatalf("alt final frame should be latest-only current frame without committed depth growth, text=%q window=%#v", text, window)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "alt-final") && row.Committed {
+			t.Fatalf("alt final frame must stay mutable, got %#v", window.Rows)
+		}
 	}
 }
 
@@ -931,7 +937,7 @@ func TestTerminalIngestOutputEnterAltScreenCommitsPrimaryPageFirst(t *testing.T)
 	}
 }
 
-func TestTerminalIngestOutputAltScreenFinalFrameDoesNotEnterHistoryStyle(t *testing.T) {
+func TestTerminalIngestOutputAltScreenFinalFramePreservesStyleAsMutableOnly(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -948,12 +954,120 @@ func TestTerminalIngestOutputAltScreenFinalFrameDoesNotEnterHistoryStyle(t *test
 	if err != nil {
 		t.Fatalf("latest after styled alt-screen: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "primary" || historyWindowContainsText(window, "ALT") {
-		t.Fatalf("styled alt final frame must not enter history, got %#v", window.Rows)
+	if !historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "ALT") || window.TotalLines != 1 {
+		t.Fatalf("styled alt final frame should be latest-only, got %#v", window)
+	}
+	var altRow history.VisualRow
+	for _, row := range window.Rows {
+		if row.Text == "ALT" {
+			altRow = row
+			break
+		}
+	}
+	if altRow.Text == "" || altRow.Committed || altRow.Kind != history.RowKindScreenFrame {
+		t.Fatalf("styled alt final row should be mutable screen-frame, got %#v rows=%#v", altRow, window.Rows)
+	}
+	if len(altRow.Cells) != 3 || altRow.Cells[0].Style.FG != "ansi:1" || altRow.Cells[0].Style.BG != "ansi:4" {
+		t.Fatalf("styled alt final frame should preserve cell style, got %#v", altRow.Cells)
 	}
 }
 
-func TestTerminalIngestOutputSplitAltScreenCSIDoesNotCaptureFinalFrame(t *testing.T) {
+func TestTerminalIngestOutputRunningAltScreenFrameIsLatestMutableOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "primary\n\x1b[?1049h\x1b[2J/resume\r\nrestored conversation"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 24, 10)
+	if err != nil {
+		t.Fatalf("latest while alt-screen runs: %v", err)
+	}
+	text := historyWindowText(window.Rows)
+	for _, want := range []string{"primary", "/resume", "restored conversation"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("running alt-screen should preserve visible current frame %q, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("running alt-screen current frame must not grow committed history, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "/resume") && row.Committed {
+			t.Fatalf("running alt-screen current frame must stay mutable, rows=%#v", window.Rows)
+		}
+	}
+}
+
+func TestTerminalIngestOutputAltScreenExitFrameIsLatestMutableOnly(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "primary\n\x1b[?1049h\x1b[2J/resume\r\nrestored conversation\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 24, 10)
+	if err != nil {
+		t.Fatalf("latest after alt-screen: %v", err)
+	}
+	text := historyWindowText(window.Rows)
+	for _, want := range []string{"primary", "/resume", "restored conversation"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("latest should preserve visible alt exit frame %q, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("alt exit current frame must not grow committed history, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "/resume") && row.Committed {
+			t.Fatalf("alt exit current frame must stay mutable, rows=%#v", window.Rows)
+		}
+	}
+}
+
+func TestTerminalIngestOutputPrimaryAfterAltScreenReplacesTransientFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 24, Rows: 4},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "primary\n\x1b[?1049h\x1b[2Jpicker-only\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest alt output: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "after primary"); err != nil {
+		t.Fatalf("ingest primary output: %v", err)
+	}
+
+	window, err := server.LatestWindow("term-1", 24, 10)
+	if err != nil {
+		t.Fatalf("latest after primary output: %v", err)
+	}
+	text := historyWindowText(window.Rows)
+	if !strings.Contains(text, "primary") || !strings.Contains(text, "after primary") || strings.Contains(text, "picker-only") {
+		t.Fatalf("primary output should replace transient alt frame, text=%q rows=%#v", text, window.Rows)
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("transient alt frame must not affect committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
+func TestTerminalIngestOutputSplitAltScreenCSIPreservesFinalFrameAsMutableOnly(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -972,8 +1086,13 @@ func TestTerminalIngestOutputSplitAltScreenCSIDoesNotCaptureFinalFrame(t *testin
 	if err != nil {
 		t.Fatalf("latest after split alt-screen CSI: %v", err)
 	}
-	if len(window.Rows) != 1 || window.Rows[0].Text != "primary" || historyWindowContainsText(window, "alt-final") {
-		t.Fatalf("split alt-screen CSI should drop final frame, got %#v", window.Rows)
+	if !historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "alt-final") || window.TotalLines != 1 {
+		t.Fatalf("split alt-screen CSI should keep final frame latest-only, got %#v", window)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "alt-final") && row.Committed {
+			t.Fatalf("split alt-screen final frame must stay mutable, rows=%#v", window.Rows)
+		}
 	}
 }
 
@@ -1003,8 +1122,13 @@ func TestTerminalIngestOutputEnterAltScreenPreservesStressTail(t *testing.T) {
 	if !historyWindowContainsText(window, "000100") {
 		t.Fatalf("enter alt-screen must preserve primary stress tail in history, got %#v", window.Rows)
 	}
-	if historyWindowContainsText(window, "ALT_SCREEN_MARK") {
-		t.Fatalf("alt-screen final frame must not enter primary history on exit, got %#v", window.Rows)
+	if !historyWindowContainsText(window, "ALT_SCREEN_MARK") {
+		t.Fatalf("alt-screen final frame should remain visible as latest current frame, got %#v", window.Rows)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "ALT_SCREEN_MARK") && row.Committed {
+			t.Fatalf("alt-screen final frame must not enter committed history, got %#v", window.Rows)
+		}
 	}
 }
 

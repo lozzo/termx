@@ -159,7 +159,7 @@ type HistoryEvent struct {
 
 第一阶段可以先复用 `Rows [][]Cell`，但文档层面必须明确它不是 committed visual-row truth，而是 current-frame replacement payload。
 
-alt-screen exit final frame 是另一条既有策略，不走 `ReplacePrimaryFrame`。running alt-screen 仍不写 primary history；如果后续保留 alt-screen 退出画面，也必须通过 alt-screen 专用事件一次性处理，不能混入 primary frame frontier。
+alt-screen current/final frame 是另一条既有策略，不走 `ReplacePrimaryFrame`。running/exit alt-screen 仍不写 committed primary history；如果保留 alt-screen 当前画面，必须通过 alt-screen 专用 transient frame 处理，不能混入 primary frame frontier 或 committed depth。
 
 ### 7.2 发布隔离
 
@@ -262,7 +262,7 @@ process exit 语义不留开放解释：primary `MutableFrontier` 必须 force c
 - 然后把当前 published frame 转成普通 committed logical lines，只提交最终 frame 一次。
 - frame 转 committed 时清除 ephemeral/frame membership，分配或稳定普通 logical line id，进入 `CommittedHistoryIndex`。
 - 这个 force commit 与 lifecycle marker 必须在同一个 history transaction 中产生 generation 变化。
-- 如果退出时仍在 alt-screen，alt 内容按既有 alt-screen 退出/丢弃策略处理；primary frame force commit 只作用于 primary-screen frontier。
+- 如果退出时仍在 alt-screen，alt 内容只按 alt-screen transient current-frame 策略处理，不 force commit；primary frame force commit 只作用于 primary-screen frontier。
 
 这条规则避免两种错误：运行中 repaint 不会污染 older history，进程退出后用户仍能在历史里看到最终 primary screen。
 
@@ -440,7 +440,7 @@ chunk 3: ESU
 
 - resize 只让 latest token/generation 失效，不提交 frame。
 - attach/reattach 只重新请求 latest，不创建 committed history。
-- running alt-screen 输出不通过 `ReplacePrimaryFrame` 写 primary history。
+- running alt-screen 输出不通过 `ReplacePrimaryFrame` 写 primary history，只能作为 transient latest/frozen frame。
 
 ### 11.7 真实 Codex raw dump 回归
 
@@ -482,7 +482,7 @@ chunk 3: ESU
 - frame rows 进入 older pagination 或污染 `LogicalTotal`。
 - stale input/status 出现在 older history。
 - resize 或 attach/reattach 触发 frame committed。
-- alt-screen running frame 写入 primary history。
+- alt-screen running frame 写入 committed primary history 或增加 `LogicalTotal`。
 
 ## 14. 明确不做
 

@@ -122,8 +122,8 @@ func TestSurfaceTrackRestoresPrimaryOnAltScreenExitByDefault(t *testing.T) {
 	if got := strings.Join(surface.Rows(), "\n"); strings.Contains(got, "alt-final") || !strings.Contains(got, "primary") {
 		t.Fatalf("expected default alt exit to drop final frame and restore primary, got %q", got)
 	}
-	if len(result.Segments) != 1 || len(result.Segments[0].AltScreenExitFrame) != 0 {
-		t.Fatalf("expected default alt exit to avoid captured frame, got %#v", result)
+	if len(result.Segments) != 1 || len(result.Segments[0].AltScreenExitFrame) == 0 {
+		t.Fatalf("expected default alt exit to expose semantic current frame without replaying it to live, got %#v", result)
 	}
 }
 

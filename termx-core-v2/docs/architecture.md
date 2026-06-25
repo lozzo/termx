@@ -373,8 +373,8 @@ copy mode frozen snapshot 要落地，不能只停在 `MutableFrontier` 这个�
 ### 6.5 alt-screen 与 process exit 组合语义
 
 - 进入 alt-screen 前，primary `HistoryTrack` 必须先执行 page-break：把 core 已持有的 primary frontier 封口提交，再清空 primary screen ownership。
-- 进入 alt-screen 后，primary `HistoryTrack` 冻结；alt-screen 内部的清屏、光标移动和绘制不会持续进入 primary history。
-- 退出 alt-screen 时，live surface 可以保留 alt-screen 的最后一帧作为实时显示，history 也可以把同一最后一帧追加成新的 authoritative history page，避免全屏程序退出后 copy/history 里看不到这次 UI。当前默认开启，可用 `TERMX_PRESERVE_ALT_SCREEN_ON_EXIT=0` 临时关闭，后续迁到配置系统时仍只控制“退出时保留最后一帧”这一策略。
+- 进入 alt-screen 后，primary committed history 冻结；alt-screen 内部的清屏、光标移动和绘制不会进入 committed primary history。
+- running/exit alt-screen 的当前可见 frame 可以作为 transient latest/frozen frame 暴露给 history/copy，`Committed=false`，不增加 `CommittedHistoryIndex` depth，后续 primary 输出会替换它。live surface 是否把退出最后一帧 replay 到 primary 实时显示仍由 `TERMX_PRESERVE_ALT_SCREEN_ON_EXIT` 控制；默认只恢复 primary live screen，但 history/copy 仍能看到 transient 当前帧。
 
 ### 6.6 frozen snapshot / pagination contract
 

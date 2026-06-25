@@ -5231,7 +5231,7 @@ func TestTerminalSemanticProjectorConsumesAltScreenRunningRawWithoutFallback(t *
 	}
 }
 
-func TestTerminalSemanticProjectorDropsSharedVTermAltExitFrameFromHistory(t *testing.T) {
+func TestTerminalSemanticProjectorKeepsSharedVTermAltExitFrameAsLatestOnly(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
 	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
@@ -5251,19 +5251,24 @@ func TestTerminalSemanticProjectorDropsSharedVTermAltExitFrameFromHistory(t *tes
 	if err := server.IngestOutput(context.Background(), "term-alt-shared", "primary\n\x1b[?1049h\x1b[2Jalt-final\x1b[?1049l"); err != nil {
 		t.Fatalf("ingest output: %v", err)
 	}
-	if stats.AltExitFrames != 0 {
-		t.Fatalf("default shared vterm alt final frame should not be captured for history, stats=%#v", stats)
+	if stats.AltExitFrames == 0 {
+		t.Fatalf("shared vterm alt final frame should be exposed as transient latest frame, stats=%#v", stats)
 	}
 	window, err := server.LatestWindow("term-alt-shared", 20, 10)
 	if err != nil {
 		t.Fatalf("latest: %v", err)
 	}
 	text := historyWindowJoinedText(window)
-	if strings.Contains(text, "alt-final") || strings.Count(text, "primary") != 1 {
-		t.Fatalf("alt final frame must not be appended from shared vterm batch, got %q rows=%#v", text, window.Rows)
+	if !strings.Contains(text, "alt-final") || strings.Count(text, "primary") != 1 {
+		t.Fatalf("alt final frame should be visible as latest-only frame, got %q rows=%#v", text, window.Rows)
 	}
 	if window.TotalLines != 1 {
 		t.Fatalf("alt final frame must not add committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "alt-final") && row.Committed {
+			t.Fatalf("alt final frame must stay mutable, rows=%#v", window.Rows)
+		}
 	}
 }
 

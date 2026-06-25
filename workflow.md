@@ -349,6 +349,7 @@
 | R201DF. SK fixed-grid frame 与 ED3 soft boundary | 完成 | `termx-core-v2/`、`termx-tui-v3/`、按需 `workflow.md` | 已按真实 Codex/tmux raw 语义收口 fixed-grid frame 和清屏边界：vterm 默认空白列端到端保真，Codex screen frame 不走普通 text reflow；`ED0/ED2` 只做 viewport/page-break，`ED3` 记录 soft clear-scrollback boundary，不物理删除 authoritative history |
 | R201DG. SK fixed-grid frame 空物理行保真 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、按需 `workflow.md` | 已修复 Codex synchronized screen-frame 中间空物理行被 `replacePrimaryFrame` 当成空 payload 过滤的问题；空 screen-frame 行现在和非空行一样进入 authoritative latest/protocol/TUI reflow，避免 history/copy 里卡片间距消失 |
 | R201DH. SK history live 锚点与 alt-screen 边界 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复 Codex history 入口把 older shell prompt 挤进当前屏、Tip 行消失，以及 `/resume` 等 alt-screen UI 退出后污染 authoritative history 的问题；alt-screen 运行和退出 final frame 不写 primary history，history 入口优先对齐进入前 live screen |
+| R201DI. SK alt-screen 退出当前帧保留 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 Codex `/resume` 这类 alt-screen/current-frame 内容进入 history/copy 后丢失的问题；running/exit alt-screen 当前帧作为 transient mutable frame 进入 latest/frozen，不计 committed depth，后续 primary 输出会替换它 |
 | R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
 
 ## 6. 测试准入

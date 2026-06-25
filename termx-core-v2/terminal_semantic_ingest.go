@@ -12,6 +12,7 @@ type terminalSemanticBatch struct {
 	Raw               string
 	Damages           []vterm.WriteDamage
 	PrimaryScreenRows [][]vterm.Cell
+	AltScreenRows     [][]vterm.Cell
 	AltExitFrame      [][]vterm.Cell
 	Cols              int
 	Rows              int
@@ -47,13 +48,14 @@ func terminalSemanticBatchesFromSurfaceResult(result live.SurfaceWriteResult, si
 	}
 	batches := make([]terminalSemanticBatch, 0, len(result.Segments))
 	for _, segment := range result.Segments {
-		if segment.Raw == "" && len(segment.Damages) == 0 && len(segment.AltScreenExitFrame) == 0 {
+		if segment.Raw == "" && len(segment.Damages) == 0 && len(segment.AltScreenRows) == 0 && len(segment.AltScreenExitFrame) == 0 {
 			continue
 		}
 		batch := terminalSemanticBatch{
 			Raw:               segment.Raw,
 			Damages:           segment.Damages,
 			PrimaryScreenRows: segment.PrimaryScreenRows,
+			AltScreenRows:     segment.AltScreenRows,
 			AltExitFrame:      segment.AltScreenExitFrame,
 			Cols:              size.Cols,
 			Rows:              size.Rows,
@@ -68,7 +70,7 @@ func (pipeline *terminalHistoryPipeline) IngestSemanticBatch(batch terminalSeman
 	if terminalSemanticIngestBatchHook != nil {
 		terminalSemanticIngestBatchHook(batch)
 	}
-	if batch.Raw == "" && len(batch.Damages) == 0 && len(batch.AltExitFrame) == 0 {
+	if batch.Raw == "" && len(batch.Damages) == 0 && len(batch.AltScreenRows) == 0 && len(batch.AltExitFrame) == 0 {
 		return nil
 	}
 	if terminalHistoryPipelineBeforeIngestHook != nil {
@@ -121,7 +123,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		stats.ScrollbackAppends += len(damage.ScrollbackAppend)
 		stats.AlternateAppends += len(damage.AlternateAppend)
 	}
-	if len(batch.AltExitFrame) > 0 {
+	if len(batch.AltScreenRows) > 0 || len(batch.AltExitFrame) > 0 {
 		stats.AltExitFrames++
 	}
 	fullReplaceOnly := sharedBatchFullReplaceOnly(batch.Damages)
@@ -146,8 +148,24 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			return err
 		}
 	}
-	// 中文说明：alt-screen 是独立的临时屏幕，退出时恢复 primary；
-	// final frame 只允许 live surface 显示，不写入 authoritative primary history。
+	// 中文说明：alt-screen 不写 committed primary history，但运行中/退出时的
+	// 当前可见帧需要进入 latest/frozen 作为 transient current frame，避免 history 模式丢内容。
+	if len(batch.AltScreenRows) > 0 {
+		if err := pipeline.track.Apply(history.HistoryEvent{
+			Kind: history.EventAppendAltScreenFrame,
+			Rows: historyRowsFromVTermRows(batch.AltScreenRows),
+		}); err != nil {
+			return err
+		}
+	}
+	if len(batch.AltExitFrame) > 0 {
+		if err := pipeline.track.Apply(history.HistoryEvent{
+			Kind: history.EventAppendAltScreenFrame,
+			Rows: historyRowsFromVTermRows(batch.AltExitFrame),
+		}); err != nil {
+			return err
+		}
+	}
 	if publishSynchronizedFrame {
 		if err := pipeline.track.Apply(history.HistoryEvent{
 			Kind: history.EventReplacePrimaryFrame,

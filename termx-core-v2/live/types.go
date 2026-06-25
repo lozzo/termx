@@ -41,6 +41,7 @@ type SurfaceWriteSegment struct {
 	Raw                string
 	Damages            []vterm.WriteDamage
 	PrimaryScreenRows  [][]vterm.Cell
+	AltScreenRows      [][]vterm.Cell
 	AltScreenExitFrame [][]vterm.Cell
 }
 
@@ -158,24 +159,21 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 			continue
 		}
 		if action == privateModeAltExit && surface.vt.IsAltScreen() {
-			var altFrame [][]vterm.Cell
-			if surface.preserveAltScreenFrameOnExit {
-				altFrame = surface.altScreenFrameCells()
-			}
+			altFrame := surface.altScreenFrameCells()
 			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text[:consumed]))
 			raw.WriteString(text[:consumed])
 			if surface.preserveAltScreenFrameOnExit {
 				surface.appendAltScreenFrameCells(altFrame)
-				if len(altFrame) > 0 {
-					result.Segments = append(result.Segments, SurfaceWriteSegment{
-						Raw:                raw.String(),
-						Damages:            cloneSurfaceWriteDamages(damages),
-						PrimaryScreenRows:  surface.primaryScreenFrameRows(),
-						AltScreenExitFrame: cloneVTermCellRows(altFrame),
-					})
-					raw.Reset()
-					damages = nil
-				}
+			}
+			if len(altFrame) > 0 {
+				result.Segments = append(result.Segments, SurfaceWriteSegment{
+					Raw:                raw.String(),
+					Damages:            cloneSurfaceWriteDamages(damages),
+					PrimaryScreenRows:  surface.primaryScreenFrameRows(),
+					AltScreenExitFrame: cloneVTermCellRows(altFrame),
+				})
+				raw.Reset()
+				damages = nil
 			}
 			text = text[consumed:]
 			continue
@@ -198,6 +196,7 @@ func (surface *SurfaceTrack) appendSurfaceWriteRawSegment(result *SurfaceWriteRe
 		Raw:               raw.String(),
 		Damages:           cloneSurfaceWriteDamages(*damages),
 		PrimaryScreenRows: surface.primaryScreenFrameRows(),
+		AltScreenRows:     surface.altScreenFrameRows(),
 	})
 	raw.Reset()
 	*damages = nil
@@ -208,6 +207,13 @@ func (surface *SurfaceTrack) primaryScreenFrameRows() [][]vterm.Cell {
 		return nil
 	}
 	return cloneVTermCellRows(surface.vt.UsedScreenContent().Cells)
+}
+
+func (surface *SurfaceTrack) altScreenFrameRows() [][]vterm.Cell {
+	if surface == nil || surface.vt == nil || !surface.vt.IsAltScreen() {
+		return nil
+	}
+	return surface.altScreenFrameCells()
 }
 
 func appendSurfaceWriteDamage(damages []vterm.WriteDamage, damage vterm.WriteDamage) []vterm.WriteDamage {

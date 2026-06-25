@@ -1405,8 +1405,18 @@ func TestProtocolServiceHistoryWindowFlushesStressTailBeforeAltScreenFreeze(t *t
 	if !protocolHistoryWindowContainsText(latest, "000100") {
 		t.Fatalf("history.window latest must preserve primary stress tail before alt-screen, got %#v", latest.Rows)
 	}
-	if protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK") {
-		t.Fatalf("alt-screen final frame must not enter frozen primary history, got %#v", latest.Rows)
+	if !protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK") {
+		t.Fatalf("alt-screen final frame should remain visible as live-tail current frame, got %#v", latest.Rows)
+	}
+	if latest.LogicalTotal != 100 {
+		t.Fatalf("alt-screen final frame must not increase committed logical total, total=%d rows=%#v", latest.LogicalTotal, latest.Rows)
+	}
+	for index, row := range latest.Rows {
+		if strings.Contains(rowText(row), "ALT_SCREEN_MARK") {
+			if index >= len(latest.RowOwnership) || latest.RowOwnership[index] != protocol.RowOwnershipLiveTailLive {
+				t.Fatalf("alt-screen final frame should be live-tail-owned, row=%d ownership=%#v", index, latest.RowOwnership)
+			}
+		}
 	}
 }
 
@@ -3135,8 +3145,19 @@ func TestProtocolServiceSnapshotRestoresPrimaryOnAltScreenExit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history window: %v", err)
 	}
-	if len(latest.Rows) != 1 || rowText(latest.Rows[0]) != "primary" || protocolHistoryWindowContainsText(latest, "alt-final") || latest.LogicalTotal != 1 {
-		t.Fatalf("alt final frame must not enter primary history, got %#v", latest)
+	text := ""
+	for _, row := range latest.Rows {
+		text += rowText(row) + "\n"
+	}
+	if !strings.Contains(text, "primary") || !strings.Contains(text, "alt-final") || latest.LogicalTotal != 1 {
+		t.Fatalf("alt final frame should be latest-only current frame, text=%q window=%#v", text, latest)
+	}
+	for index, row := range latest.Rows {
+		if strings.Contains(rowText(row), "alt-final") {
+			if index >= len(latest.RowOwnership) || latest.RowOwnership[index] != protocol.RowOwnershipLiveTailLive {
+				t.Fatalf("alt final frame should be live-tail-owned, row=%d ownership=%#v", index, latest.RowOwnership)
+			}
+		}
 	}
 }
 

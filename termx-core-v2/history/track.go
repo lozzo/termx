@@ -19,6 +19,7 @@ type HistoryTrack struct {
 	primaryFullscreenModes   map[int]struct{}
 	pendingSynchronizedFrame bool
 	publishedFrameLineIDs    []LogicalLineID
+	transientFrameLineIDs    []LogicalLineID
 	generation               Generation
 	screenRows               int
 	screenRow                int
@@ -78,6 +79,11 @@ func (track *HistoryTrack) ApplyOwned(event HistoryEvent) error {
 }
 
 func (track *HistoryTrack) apply(event HistoryEvent) error {
+	if shouldDropTransientFrameBeforeEvent(event.Kind) {
+		if err := track.dropTransientFrame(); err != nil {
+			return err
+		}
+	}
 	switch event.Kind {
 	case EventWritePrimaryCells:
 		return track.writePrimaryCells(event.Cells, event.ownedCells)
@@ -1138,6 +1144,49 @@ func (track *HistoryTrack) replacePrimaryFrame(rows [][]Cell) error {
 	return nil
 }
 
+func (track *HistoryTrack) replaceTransientFrame(rows [][]Cell) error {
+	if err := track.dropTransientFrame(); err != nil {
+		return err
+	}
+	changed := false
+	frameRows := trimTrailingBlankHistoryFrameRows(rows)
+	for screenRow, row := range frameRows {
+		row = trimHistoryFrameRow(row)
+		nextGeneration := track.nextGeneration()
+		line, err := track.createLine(CreateLineRequest{
+			Seal:              SealStateSealed,
+			CreatedGeneration: nextGeneration,
+			ContentGeneration: nextGeneration,
+			Kind:              RowKindScreenFrame,
+			Cells:             row,
+			Dirty:             true,
+			Residency:         ResidencyMemory,
+		})
+		if err != nil {
+			return err
+		}
+		if err := track.frontier.Add(line.ID); err != nil {
+			return err
+		}
+		track.transientFrameLineIDs = append(track.transientFrameLineIDs, line.ID)
+		if line.Dirty {
+			if err := track.markLineClean(line.ID); err != nil {
+				return err
+			}
+		}
+		track.activeLine = line.ID
+		track.activeCol = logicalLineWidth(row)
+		track.overwrite = false
+		track.screenRow = clampFrameScreenRow(screenRow, track.screenRows)
+		track.setGeneration(nextGeneration)
+		changed = true
+	}
+	if !changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
 // replacePrimaryFullscreenFrame 清掉当前未提交 fullscreen frame，让下一帧在同一位置重建。
 // 它不能碰 committed history；进入 fullscreen 前的页面已经由第一次 page-break 保留。
 func (track *HistoryTrack) replacePrimaryFullscreenFrame() error {
@@ -1161,6 +1210,7 @@ func (track *HistoryTrack) clearPrimaryFullscreenState() {
 	track.primaryFullscreenModes = nil
 	track.pendingSynchronizedFrame = false
 	track.publishedFrameLineIDs = nil
+	track.transientFrameLineIDs = nil
 }
 
 // clearPrimaryScreenPageBreak 处理真实终端里的 CSI 2J：它不是从 live
@@ -1447,6 +1497,32 @@ func (track *HistoryTrack) dropCurrentPrimaryFrame() error {
 	return nil
 }
 
+func (track *HistoryTrack) dropTransientFrame() error {
+	if len(track.transientFrameLineIDs) == 0 {
+		return nil
+	}
+	changed := false
+	for _, id := range track.transientFrameLineIDs {
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		if !track.committed.Contains(id) && track.store.DeleteLine(id) {
+			changed = true
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+		}
+		track.screen.removeLine(id)
+	}
+	track.transientFrameLineIDs = nil
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
 func (track *HistoryTrack) dropPendingPrimaryFrame() error {
 	ids := track.frontier.IDs()
 	if len(ids) == 0 {
@@ -1668,6 +1744,11 @@ func (track *HistoryTrack) commitFrontier(force bool) error {
 		return nil
 	}
 	if force {
+		if err := track.dropTransientFrame(); err != nil {
+			return err
+		}
+	}
+	if force {
 		track.clearPrimaryFullscreenState()
 	}
 	ids := track.frontier.IDs()
@@ -1849,9 +1930,52 @@ func (track *HistoryTrack) switchAltScreen(enter bool) error {
 }
 
 func (track *HistoryTrack) appendAltScreenFrame(rows [][]Cell) error {
-	// 中文说明：alt-screen final frame 是临时 UI 的最后画面，不属于 primary
-	// authoritative history；primary 历史只保留进入 alt 前已提交的内容和退出后的新输出。
-	return nil
+	// 中文说明：alt-screen 内容不进入 committed primary history；这里仅把
+	// 当前可见画面投成 transient latest frame，供 history/copy 模式和 live 对齐。
+	return track.replaceTransientFrame(rows)
+}
+
+func shouldDropTransientFrameBeforeEvent(kind EventKind) bool {
+	switch kind {
+	case EventWritePrimaryCells,
+		EventCarriageReturn,
+		EventCursorForward,
+		EventCursorBackward,
+		EventCursorHorizontalAbsolute,
+		EventCursorUp,
+		EventCursorDown,
+		EventCursorPosition,
+		EventEraseCharacters,
+		EventDeleteCharacters,
+		EventInsertCharacters,
+		EventDeleteLines,
+		EventInsertLines,
+		EventScrollUpLines,
+		EventScrollDownLines,
+		EventEraseInLine,
+		EventEraseInDisplay,
+		EventSetActiveLineTailFill,
+		EventEnterPrimaryFullscreen,
+		EventExitPrimaryFullscreen,
+		EventBeginSynchronizedFrame,
+		EventEndSynchronizedFrame,
+		EventReplacePrimaryFrame,
+		EventPrimaryScrollOut,
+		EventSealLogicalLine,
+		EventSoftWrapLine,
+		EventMutateFrontier,
+		EventResetFrontier,
+		EventCommitFrontier,
+		EventForceCommitFrontier,
+		EventReclaimCommittedSuffix,
+		EventHideFrontier,
+		EventTruncateCommittedHistory,
+		EventSwitchAltScreen,
+		EventResize:
+		return true
+	default:
+		return false
+	}
 }
 
 func (track *HistoryTrack) resize(event HistoryEvent) error {

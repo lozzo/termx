@@ -1008,19 +1008,53 @@ func TestHistoryTrackAppendAltScreenFrameDoesNotCommitExitFrame(t *testing.T) {
 	applyHistoryEvents(t, track,
 		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
 		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ignored-live-alt")},
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: false},
 		HistoryEvent{Kind: EventAppendAltScreenFrame, Rows: [][]Cell{
 			cells("alt-one"),
 			cells("alt-two"),
 		}},
-		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: false},
-		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("after")},
 	)
 
 	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1}) {
 		t.Fatalf("expected only primary history to be committed, got %v", got)
 	}
-	if got := lineText(requireLine(t, track, 2)); got != "after" {
-		t.Fatalf("expected following primary output after alt exit, got %q", got)
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"primary", "alt-one", "alt-two"}) {
+		t.Fatalf("expected alt frame as latest-only current frame, got %v", got)
+	}
+	if window.TotalLines != 1 {
+		t.Fatalf("alt frame must not count as committed history, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("after")})
+	window, err = track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window after primary: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"primary", "after"}) {
+		t.Fatalf("expected following primary output to replace transient alt frame, got %v", got)
+	}
+}
+
+func TestHistoryTrackSwitchAltScreenDropsStaleTransientFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "primary")
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
+		HistoryEvent{Kind: EventAppendAltScreenFrame, Rows: [][]Cell{cells("old-alt")}},
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: false},
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 20, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"primary"}) {
+		t.Fatalf("new alt-screen boundary should drop stale transient frame, got %v", got)
 	}
 }
 

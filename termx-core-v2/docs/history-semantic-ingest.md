@@ -83,15 +83,15 @@ Codex 这类程序不能简单归类成“全屏只保最后一帧”。正确�
 
 - primary scrollback append -> logical-line history。
 - primary screen direct damage / repaint -> mutable current frame。
-- alt-screen damage -> 不写 primary history。
+- alt-screen damage -> 不写 committed primary history；当前可见 frame 可作为 transient latest frame。
 
 ### 5.3 alt-screen / 当前屏幕应用
 
 opencode 或其他 alt-screen/近似 alt-screen 应用运行中不写 primary committed history。
 
 - enter alt-screen 前必须先提交 primary page。
-- alt-screen 内部 scroll、direct damage、alternate append 不进入 primary history。
-- exit alt-screen 时按现有策略捕获 final frame，一次性 append 或保留。
+- alt-screen 内部 scroll、direct damage、alternate append 不进入 committed primary history。
+- running/exit alt-screen 的当前可见 frame 作为 transient latest/frozen frame 暴露，`Committed=false`，不增加 committed depth，后续 primary 输出会替换它。
 - 进程死在 alt-screen 时，不凭空合成未输出的内部历史。
 
 ## 6. 小高度终端
@@ -100,8 +100,8 @@ opencode 或其他 alt-screen/近似 alt-screen 应用运行中不写 primary co
 
 - 普通 primary 输出：真实滚出的 logical lines 进入 committed history。
 - Codex primary-screen TUI：真实 primary scroll-out 的 transcript/context 进入 history；当前 input/status frame 只作为 mutable current frame。
-- opencode/alt-screen TUI：只展示当前屏幕语义，运行中不写 primary history；
-  退出 alt-screen 时默认恢复 primary，不把 final frame 写入 authoritative history。
+- opencode/alt-screen TUI：展示当前屏幕语义，运行中不写 committed primary history；
+  运行中或退出时的当前 frame 可以作为 transient latest/frozen frame，退出时 live 默认恢复 primary。
 
 不能为了让 history “看起来更多”把 semantic vterm rows 设大。假高度会改变 scroll region、reverse index、wrap、cursor position 和 mouse hit testing，产生假的历史。
 
@@ -125,7 +125,7 @@ styled blank 是终端语义，不是普通文本空格的简单变体。project
 2. 在 EventRouter 边界引入 shared vterm semantic batch，让 live/history 消费同一批解码结果。
 3. 为 primary scroll-out 建立 row-to-logical-line projector。
 4. 为 primary-screen TUI 建立 current mutable frame projector。
-5. 收口 alt-screen 退出边界：默认丢弃 final frame；显式调试保留也不能进入 primary history。
+5. 收口 alt-screen 当前帧边界：running/exit frame 只进 transient latest/frozen，不进 committed primary history；live replay 仍由显式调试策略控制。
 6. 用新 projector 替换 `historyANSIParser` 的 terminal semantic 职责。
 7. 删除或收缩 `historyANSIParser`，只保留仍有必要的文本/style 辅助逻辑。
 
@@ -139,7 +139,7 @@ styled blank 是终端语义，不是普通文本空格的简单变体。project
 - primary scroll region + reverse index + absolute cursor：不会破坏已 committed 的 pre-existing lines。
 - primary scroll-out：vterm primary scrollback append 只转成 logical-line history 一次，wrapped rows 合并为同一 logical line。
 - styled blank：行尾背景 footprint 保留，但 default blank 不写成历史；后续真实写入清掉 stale tail fill。
-- alt-screen：alternate append/screen ops 不进 primary history；退出 final frame 只追加一次；进程死在 alt-screen 不合成额外历史。
+- alt-screen：alternate append/screen ops 不进 committed primary history；running/exit 当前 frame 只保留一份 transient latest/frozen；进程死在 alt-screen 不合成额外历史。
 - latest/history window：running primary-screen current frame 的底部 input/status 行可见，且 `Committed=false`。
 
 ## 10. 禁止事项
