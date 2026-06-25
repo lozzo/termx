@@ -60,6 +60,7 @@ type VisualRow struct {
 	TailFill       *RowTailFill
 	LineID         LogicalLineID
 	RowInLine      int
+	Kind           string
 	Committed      bool
 	ClippedBefore  bool
 	ClippedAfter   bool
@@ -71,6 +72,7 @@ type LogicalLineSpan struct {
 	LineID         LogicalLineID
 	FirstRow       int
 	LastRow        int
+	Kind           string
 	ClippedBefore  bool
 	ClippedAfter   bool
 	LineGeneration Generation
@@ -422,6 +424,7 @@ func buildWindowRows(rows []projectedRow) ([]LogicalLineSpan, []VisualRow, Logic
 			LineID:         lineID,
 			FirstRow:       start,
 			LastRow:        end,
+			Kind:           rows[start].row.Kind,
 			ClippedBefore:  clippedBefore,
 			ClippedAfter:   clippedAfter,
 			LineGeneration: rows[start].row.LineGeneration,
@@ -433,9 +436,13 @@ func buildWindowRows(rows []projectedRow) ([]LogicalLineSpan, []VisualRow, Logic
 
 func projectLine(line LogicalLine, cols int) []VisualRow {
 	cells := normalizeProjectionCells(line.Cells, cols)
+	if line.Kind == RowKindScreenFrame {
+		return projectScreenFrameLine(line, cells)
+	}
 	if len(cells) == 0 {
 		return []VisualRow{{
 			LineID:         line.ID,
+			Kind:           line.Kind,
 			LineGeneration: line.Generation,
 		}}
 	}
@@ -452,6 +459,19 @@ func projectLine(line LogicalLine, cols int) []VisualRow {
 		rows[len(rows)-1].TailFill = cloneRowTailFill(line.TailFill)
 	}
 	return rows
+}
+
+func projectScreenFrameLine(line LogicalLine, cells []Cell) []VisualRow {
+	row := visualRowFromCells(line, 0, cells)
+	if len(cells) == 0 {
+		row.LineID = line.ID
+		row.Kind = line.Kind
+		row.LineGeneration = line.Generation
+	}
+	if line.TailFill != nil {
+		row.TailFill = cloneRowTailFill(line.TailFill)
+	}
+	return []VisualRow{row}
 }
 
 func appendCellToVisualRows(
@@ -509,6 +529,7 @@ func visualRowFromCells(line LogicalLine, rowIndex int, cells []Cell) VisualRow 
 		Cells:          cloneCells(cells),
 		LineID:         line.ID,
 		RowInLine:      rowIndex,
+		Kind:           line.Kind,
 		LineGeneration: line.Generation,
 	}
 	return row

@@ -30,6 +30,8 @@ const (
 	HistoryWindowAppend  HistoryWindowOp = "append"
 )
 
+const HistoryRowKindScreenFrame = "screen-frame"
+
 // HistoryCursor 是 older pagination 的 logical boundary。
 type HistoryCursor struct {
 	Valid           bool
@@ -67,6 +69,7 @@ type HistoryRow struct {
 	TailFill     *HistoryCellStyle
 	LineID       uint64
 	RowInLine    int
+	Kind         string
 	ClippedStart bool
 	ClippedEnd   bool
 	LiveTail     bool
@@ -99,6 +102,7 @@ type HistoryLogicalLine struct {
 	Text     string
 	Cells    []HistoryCell
 	LineID   uint64
+	Kind     string
 	TailFill *HistoryCellStyle
 	LiveTail bool
 	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
@@ -112,6 +116,7 @@ type HistoryLineSpan struct {
 	LineID        uint64
 	StartRow      int
 	EndRow        int
+	Kind          string
 	ClippedBefore bool
 	ClippedAfter  bool
 }
@@ -1361,6 +1366,14 @@ func HistoryCellDisplayWidth(cell HistoryCell) int {
 	return textDisplayWidth(cell.Text)
 }
 
+func HistoryCellDisplayWidthSum(cells []HistoryCell) int {
+	width := 0
+	for _, cell := range cells {
+		width += HistoryCellDisplayWidth(cell)
+	}
+	return width
+}
+
 func HistoryRowSliceDisplay(row HistoryRow, from int, to int) string {
 	width := HistoryRowDisplayWidth(row)
 	from = clampCopyInt(from, 0, width)
@@ -1644,6 +1657,7 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 			LineID:        line.LineID,
 			StartRow:      start,
 			EndRow:        end,
+			Kind:          line.Kind,
 			ClippedBefore: line.ClippedBefore,
 			ClippedAfter:  line.ClippedAfter,
 		})
@@ -1653,6 +1667,9 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 
 func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	cells := cloneHistoryCells(line.Cells)
+	if line.Kind == HistoryRowKindScreenFrame {
+		return fixedGridHistoryRows(line, cells)
+	}
 	if len(cells) == 0 && line.Text != "" {
 		return reflowPlainHistoryLogicalLine(line, cols)
 	} else if len(cells) > 0 {
@@ -1707,6 +1724,27 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)
 	return rows
+}
+
+func fixedGridHistoryRows(line HistoryLogicalLine, cells []HistoryCell) []HistoryRow {
+	if len(cells) == 0 && line.Text != "" {
+		cells = []HistoryCell{{Text: line.Text, Width: textDisplayWidth(line.Text)}}
+	}
+	if len(cells) > 0 {
+		cells = normalizeHistoryLogicalLineCells(cells, HistoryCellDisplayWidthSum(cells))
+	}
+	row := HistoryRow{
+		Text:     historyCellsPlainTextForState(cells),
+		Cells:    cloneHistoryCells(cells),
+		LineID:   line.LineID,
+		Kind:     line.Kind,
+		LiveTail: line.LiveTail,
+		TailFill: cloneHistoryCellStyle(line.TailFill),
+	}
+	if row.Text == "" && line.Text != "" {
+		row.Text = line.Text
+	}
+	return []HistoryRow{row}
 }
 
 func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {

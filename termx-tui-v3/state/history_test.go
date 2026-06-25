@@ -1149,6 +1149,29 @@ func TestHistoryStoreReflowPreservesAuthoritativeCellPadding(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreDoesNotReflowScreenFrameRows(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		LineID: 10,
+		Kind:   HistoryRowKindScreenFrame,
+		Cells: []HistoryCell{
+			{Text: "model:", Width: 6},
+			{Text: "             ", Width: 13},
+			{Text: "gpt-5.5 xhigh", Width: 13},
+		},
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 12)
+
+	if len(rows) != 1 || rows[0].Kind != HistoryRowKindScreenFrame || rows[0].Text != "model:             gpt-5.5 xhigh" {
+		t.Fatalf("screen frame row must remain one fixed-grid row with padding, rows=%#v", rows)
+	}
+	if got := HistoryRowDisplayWidth(rows[0]); got != 32 {
+		t.Fatalf("screen frame row should keep authoritative width, got %d row=%#v", got, rows[0])
+	}
+	if len(spans) != 1 || spans[0].Kind != HistoryRowKindScreenFrame || spans[0].StartRow != 0 || spans[0].EndRow != 0 {
+		t.Fatalf("screen frame span should stay single-row, got %#v", spans)
+	}
+}
+
 func TestHistoryStoreReflowSplitsLongCellsAndKeepsLsSpacing(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		LineID: 10,

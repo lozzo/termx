@@ -983,7 +983,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 			return publishSynchronizedFrame, err
 		}
 		if eraseDisplayInDamage {
-			// 中文说明：ED2 page-break / ED3 clear-scrollback 的 history 语义只由
+			// 中文说明：ED2 page-break / ED3 soft boundary 的 history 语义只由
 			// ordered ed control 承接；vterm 伴随 scrollback append 只是 live surface 信号。
 			continue
 		}

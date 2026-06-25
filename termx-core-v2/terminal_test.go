@@ -822,7 +822,7 @@ func TestTerminalIngestOutputEraseDisplayToCursorClearsMutablePrefixOnly(t *test
 	}
 }
 
-func TestTerminalIngestOutputClearScrollbackTruncatesCommittedHistory(t *testing.T) {
+func TestTerminalIngestOutputClearScrollbackKeepsAuthoritativeHistory(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -842,8 +842,8 @@ func TestTerminalIngestOutputClearScrollbackTruncatesCommittedHistory(t *testing
 	if err != nil {
 		t.Fatalf("latest after clear scrollback: %v", err)
 	}
-	if len(window.Rows) != 2 || window.Rows[0].Text != "three" || window.Rows[1].Text != "four" || window.TotalLines != 0 {
-		t.Fatalf("ED 3 should clear committed history but keep mutable tail, got %#v", window)
+	if len(window.Rows) != 4 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || window.Rows[3].Text != "four" || window.TotalLines != 2 {
+		t.Fatalf("ED 3 should keep authoritative history and mutable tail, got %#v", window)
 	}
 }
 

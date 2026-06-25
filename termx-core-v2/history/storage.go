@@ -209,6 +209,7 @@ type compactLogicalLine struct {
 	Generation        Generation
 	CreatedGeneration Generation
 	ContentGeneration Generation
+	Kind              string
 	TailFill          *RowTailFill
 	Residency         compactResidency
 	EncodedCells      []byte
@@ -228,6 +229,7 @@ const (
 	compactLineHeaderContentDifferent
 	compactLineHeaderResidencyDifferent
 	compactLineHeaderTailFill
+	compactLineHeaderKind
 )
 
 func compactLogicalLineEligible(line LogicalLine) bool {
@@ -255,6 +257,7 @@ func compactLogicalLineMetadataFromLine(line LogicalLine) compactLogicalLine {
 		Generation:        line.Generation,
 		CreatedGeneration: line.CreatedGeneration,
 		ContentGeneration: line.ContentGeneration,
+		Kind:              line.Kind,
 		TailFill:          cloneRowTailFill(line.TailFill),
 		Residency:         compactResidencyFrom(line.Residency),
 	}
@@ -268,6 +271,7 @@ func (line compactLogicalLine) Line() LogicalLine {
 		CreatedGeneration: line.CreatedGeneration,
 		ContentGeneration: line.ContentGeneration,
 		Seal:              SealStateSealed,
+		Kind:              line.Kind,
 		Cells:             cells,
 		TailFill:          cloneRowTailFill(line.TailFill),
 		Dirty:             false,
@@ -319,6 +323,13 @@ func decodeCompactLineParts(id LogicalLineID, data []byte) (LogicalLine, []byte,
 		}
 		tailFill = &RowTailFill{Style: style}
 	}
+	var kind string
+	if flags&compactLineHeaderKind != 0 {
+		kind, ok = readCompactString(data, &offset)
+		if !ok {
+			return LogicalLine{}, nil, false
+		}
+	}
 	encodedCells := data[offset:]
 	return LogicalLine{
 		ID:                id,
@@ -326,6 +337,7 @@ func decodeCompactLineParts(id LogicalLineID, data []byte) (LogicalLine, []byte,
 		CreatedGeneration: Generation(createdGeneration),
 		ContentGeneration: Generation(contentGeneration),
 		Seal:              SealStateSealed,
+		Kind:              kind,
 		Cells:             decodeCompactCells(encodedCells),
 		TailFill:          tailFill,
 		Dirty:             false,
@@ -343,6 +355,7 @@ func compactLogicalLineFromEncodedLine(id LogicalLineID, data []byte) (compactLo
 		Generation:        line.Generation,
 		CreatedGeneration: line.CreatedGeneration,
 		ContentGeneration: line.ContentGeneration,
+		Kind:              line.Kind,
 		TailFill:          cloneRowTailFill(line.TailFill),
 		Residency:         compactResidencyFrom(line.Residency),
 		EncodedCells:      encodedCells,
@@ -710,6 +723,9 @@ func appendCompactLogicalLineHeader(out []byte, line compactLogicalLine, flags u
 	if flags&compactLineHeaderTailFill != 0 {
 		out = appendCompactCellStyle(out, line.TailFill.Style)
 	}
+	if flags&compactLineHeaderKind != 0 {
+		out = appendCompactString(out, line.Kind)
+	}
 	return out
 }
 
@@ -726,6 +742,9 @@ func compactLogicalLineHeaderFlags(line compactLogicalLine) uint64 {
 	}
 	if line.TailFill != nil {
 		flags |= compactLineHeaderTailFill
+	}
+	if line.Kind != "" {
+		flags |= compactLineHeaderKind
 	}
 	return flags
 }
@@ -751,6 +770,9 @@ func compactLogicalLineHeaderEncodedCapacity(line compactLogicalLine, flags uint
 	if flags&compactLineHeaderTailFill != 0 {
 		capacity += compactCellStyleEncodedSize(line.TailFill.Style)
 		capacity += len(line.TailFill.Style.FG) + len(line.TailFill.Style.BG)
+	}
+	if flags&compactLineHeaderKind != 0 {
+		capacity += compactStringEncodedSize(line.Kind)
 	}
 	return capacity
 }

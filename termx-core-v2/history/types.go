@@ -22,7 +22,7 @@ const (
 
 // Residency describes where the logical line payload currently lives.
 // It is not a mutability state: persisted lines can still be replaced or
-// deleted by history semantics such as truncate or clear scrollback.
+// deleted by explicit history semantics such as truncate.
 type Residency string
 
 const (
@@ -53,6 +53,8 @@ type CellStyle struct {
 	Strikethrough bool
 }
 
+const RowKindScreenFrame = "screen-frame"
+
 // RowTailFill 表达 terminal 物理行从已有内容末尾到 visual row 行尾的背景。
 // 它不属于 logical text，也不增加 logical line 宽度。
 type RowTailFill struct {
@@ -67,6 +69,7 @@ type LogicalLine struct {
 	CreatedGeneration Generation
 	ContentGeneration Generation
 	Seal              SealState
+	Kind              string
 	Cells             []Cell
 	TailFill          *RowTailFill
 	Dirty             bool
@@ -95,6 +98,7 @@ type CreateLineRequest struct {
 	Seal              SealState
 	CreatedGeneration Generation
 	ContentGeneration Generation
+	Kind              string
 	Cells             []Cell
 	TailFill          *RowTailFill
 	Dirty             bool

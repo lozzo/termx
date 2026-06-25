@@ -1108,8 +1108,8 @@ func TestTerminalSemanticProjectorConsumesEraseDisplayModesRawWithoutFallback(t 
 			t.Fatalf("latest: %v", err)
 		}
 		text := historyWindowJoinedText(window)
-		if window.TotalLines != 0 || strings.Contains(text, "first") || strings.Contains(text, "second") || !strings.Contains(text, "draft") || !strings.Contains(text, "after") {
-			t.Fatalf("ED3 semantic clear-scrollback should truncate committed history and preserve mutable frontier, total=%d text=%q rows=%#v", window.TotalLines, text, window.Rows)
+		if window.TotalLines != 2 || !strings.Contains(text, "first") || !strings.Contains(text, "second") || !strings.Contains(text, "draft") || !strings.Contains(text, "after") {
+			t.Fatalf("ED3 semantic clear-scrollback should keep authoritative history and preserve mutable frontier, total=%d text=%q rows=%#v", window.TotalLines, text, window.Rows)
 		}
 	})
 }
@@ -1253,8 +1253,8 @@ func TestTerminalSemanticProjectorConsumesC1CSIEraseDisplayModesRawWithoutFallba
 			t.Fatalf("latest: %v", err)
 		}
 		text := historyWindowJoinedText(window)
-		if window.TotalLines != 0 || strings.Contains(text, "first") || strings.Contains(text, "second") || !strings.Contains(text, "draft") || !strings.Contains(text, "after") {
-			t.Fatalf("C1 CSI ED3 semantic clear-scrollback should truncate committed history and preserve mutable frontier, total=%d text=%q rows=%#v", window.TotalLines, text, window.Rows)
+		if window.TotalLines != 2 || !strings.Contains(text, "first") || !strings.Contains(text, "second") || !strings.Contains(text, "draft") || !strings.Contains(text, "after") {
+			t.Fatalf("C1 CSI ED3 semantic clear-scrollback should keep authoritative history and preserve mutable frontier, total=%d text=%q rows=%#v", window.TotalLines, text, window.Rows)
 		}
 	})
 }
@@ -1667,6 +1667,32 @@ func TestTerminalSemanticProjectorPreservesDefaultBlankColumnsInPublishedFrame(t
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("published frame must preserve default blank columns %q, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+}
+
+func TestTerminalSemanticProjectorMarksPublishedFrameRowsAsScreenFrame(t *testing.T) {
+	term := vterm.New(72, 6, 100, nil)
+	pipeline := newTerminalHistoryPipeline(72, 6)
+	raw := strings.Join([]string{
+		"\x1b[?2026h\x1b[H\x1b[J",
+		"\x1b[2;1Hmodel:",
+		"\x1b[2;20Hgpt-5.5 xhigh",
+		"\x1b[?2026l",
+	}, "")
+
+	ingestSharedVTermRawForTest(t, term, pipeline, raw, 72, 6)
+	window, err := pipeline.LatestWindow(12, 10)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if !strings.Contains(text, "model:             gpt-5.5 xhigh") {
+		t.Fatalf("screen frame row should preserve grid padding before protocol/TUI reflow, text=%q rows=%#v", text, window.Rows)
+	}
+	for _, row := range window.Rows {
+		if strings.Contains(row.Text, "model:") && row.Kind != history.RowKindScreenFrame {
+			t.Fatalf("published frame row should be tagged screen-frame, got %#v", row)
 		}
 	}
 }

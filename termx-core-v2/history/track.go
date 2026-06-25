@@ -1002,10 +1002,10 @@ func (track *HistoryTrack) eraseInDisplay(mode int) error {
 		}
 		return track.clearPrimaryScreenPageBreak()
 	case 3:
-		return track.truncateCommittedHistory(HistoryEvent{
-			Kind:    EventTruncateCommittedHistory,
-			LineIDs: track.committed.IDs(),
-		})
+		// 中文说明：ED3 是终端 scrollback 的显示边界，不是 core-v2
+		// authoritative history 的物理删除。真正删除仍走显式 truncate 事件。
+		track.bumpGeneration()
+		return nil
 	default:
 		return nil
 	}
@@ -1103,6 +1103,7 @@ func (track *HistoryTrack) replacePrimaryFrame(rows [][]Cell) error {
 			Seal:              SealStateSealed,
 			CreatedGeneration: nextGeneration,
 			ContentGeneration: nextGeneration,
+			Kind:              RowKindScreenFrame,
 			Cells:             row,
 			Dirty:             true,
 			Residency:         ResidencyMemory,

@@ -214,6 +214,7 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 			Text:          text,
 			Cells:         cells,
 			LineID:        lineID,
+			Kind:          historyProtocolRowKind(window, i, span, hasSpan),
 			TailFill:      historyTailFillFromProtocol(row.TailFill),
 			LiveTail:      historyProtocolRowIsLiveTail(window, i),
 			ClippedBefore: hasSpan && span.ClippedBefore,
@@ -255,6 +256,7 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 			TailFill:  historyTailFillFromProtocol(row.TailFill),
 			LineID:    uint64At(window.RowLineIDs, i),
 			RowInLine: intAt(window.RowInLine, i),
+			Kind:      stringAt(window.RowKinds, i),
 			LiveTail:  historyProtocolRowIsLiveTail(window, i),
 		})
 	}
@@ -264,6 +266,7 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 			LineID:        span.LogicalLineID,
 			StartRow:      span.StartRow,
 			EndRow:        span.EndRow,
+			Kind:          span.RowKind,
 			ClippedBefore: span.ClippedBefore,
 			ClippedAfter:  span.ClippedAfter,
 		})
@@ -279,6 +282,16 @@ func historyProtocolRowIsLiveTail(window *protocol.HistoryWindow, index int) boo
 		return false
 	}
 	return protocol.RowOwnershipIsLiveTailLive(window.RowOwnership[index])
+}
+
+func historyProtocolRowKind(window *protocol.HistoryWindow, index int, span protocol.HistoryLineSpan, hasSpan bool) string {
+	if kind := stringAt(window.RowKinds, index); kind != "" {
+		return kind
+	}
+	if hasSpan {
+		return span.RowKind
+	}
+	return ""
 }
 
 func historyLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.HistoryLogicalLine) []state.HistoryLineSpan {
@@ -301,20 +314,24 @@ func historyLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.Histo
 		if rows[row].LineID == current {
 			continue
 		}
-		spans = append(spans, historyLineSpanFromRowGroup(current, start, row-1, clipped))
+		spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, row-1, clipped))
 		start = row
 		current = rows[row].LineID
 	}
-	spans = append(spans, historyLineSpanFromRowGroup(current, start, len(rows)-1, clipped))
+	spans = append(spans, historyLineSpanFromRowGroup(rows, current, start, len(rows)-1, clipped))
 	return spans
 }
 
-func historyLineSpanFromRowGroup(lineID uint64, start int, end int, clipped map[uint64]state.HistoryLogicalLine) state.HistoryLineSpan {
+func historyLineSpanFromRowGroup(rows []state.HistoryRow, lineID uint64, start int, end int, clipped map[uint64]state.HistoryLogicalLine) state.HistoryLineSpan {
 	span := state.HistoryLineSpan{LineID: lineID, StartRow: start, EndRow: end}
+	if start >= 0 && start < len(rows) {
+		span.Kind = rows[start].Kind
+	}
 	if lineID == 0 {
 		return span
 	}
 	if line, ok := clipped[lineID]; ok {
+		span.Kind = line.Kind
 		span.ClippedBefore = line.ClippedBefore
 		span.ClippedAfter = line.ClippedAfter
 	}
@@ -450,6 +467,13 @@ func uint64At(values []uint64, index int) uint64 {
 func intAt(values []int, index int) int {
 	if index < 0 || index >= len(values) {
 		return 0
+	}
+	return values[index]
+}
+
+func stringAt(values []string, index int) string {
+	if index < 0 || index >= len(values) {
+		return ""
 	}
 	return values[index]
 }

@@ -948,21 +948,25 @@ func TestHistoryTrackTruncateDeletesCommittedOnlyButKeepsMutablePayload(t *testi
 	}
 }
 
-func TestHistoryTrackEraseDisplayClearScrollbackTruncatesCommittedHistory(t *testing.T) {
+func TestHistoryTrackEraseDisplayClearScrollbackKeepsCommittedHistory(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "first")
 	commitLine(t, track, "second")
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("draft")})
+	before := track.Generation()
 
 	applyHistoryEvents(t, track, HistoryEvent{Kind: EventEraseInDisplay, EraseMode: 3})
-	if got := track.CommittedIDs(); len(got) != 0 {
-		t.Fatalf("ED 3 should clear committed history, got %v", got)
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, []LogicalLineID{1, 2}) {
+		t.Fatalf("ED 3 should keep authoritative committed history, got %v", got)
 	}
 	if got := track.FrontierIDs(); !reflect.DeepEqual(got, []LogicalLineID{3}) {
 		t.Fatalf("ED 3 must not delete current mutable frontier, got %v", got)
 	}
 	if got := lineText(requireLine(t, track, 3)); got != "draft" {
 		t.Fatalf("ED 3 must preserve mutable payload, got %q", got)
+	}
+	if track.Generation() <= before {
+		t.Fatalf("ED 3 should still invalidate active history windows, before=%d after=%d", before, track.Generation())
 	}
 }
 
@@ -1141,6 +1145,32 @@ func TestHistoryTrackExplicitReclaimCommittedSuffixKeepsLogicalOrder(t *testing.
 	}
 	if got := lineText(requireLine(t, track, 2)) + "," + lineText(requireLine(t, track, 3)); got != "two,three" {
 		t.Fatalf("unexpected reclaimed line order %q", got)
+	}
+}
+
+func TestHistoryTrackReplacePrimaryFrameProjectsFixedGridRows(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	row := append(cells("model:"), cells(strings.Repeat(" ", 13)+"gpt-5.5 xhigh")...)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{row}},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 12, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 1 {
+		t.Fatalf("fixed-grid frame row must not reflow, got %#v", window.Rows)
+	}
+	got := window.Rows[0]
+	if got.Kind != RowKindScreenFrame || got.Text != "model:             gpt-5.5 xhigh" {
+		t.Fatalf("frame row should keep screen-frame kind and padding, got %#v", got)
+	}
+	if len(window.Spans) != 1 || window.Spans[0].Kind != RowKindScreenFrame {
+		t.Fatalf("frame span should carry screen-frame kind, got %#v", window.Spans)
 	}
 }
 

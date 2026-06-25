@@ -93,6 +93,7 @@ func (store *MemoryLogicalLineStore) createLineLocked(req CreateLineRequest) (Lo
 		CreatedGeneration: req.CreatedGeneration,
 		ContentGeneration: req.ContentGeneration,
 		Seal:              seal,
+		Kind:              req.Kind,
 		Cells:             cells,
 		TailFill:          cloneRowTailFill(req.TailFill),
 		Dirty:             req.Dirty,
@@ -171,6 +172,9 @@ func (store *MemoryLogicalLineStore) replaceOwnedLine(line LogicalLine) (Logical
 	}
 	if line.ContentGeneration == 0 {
 		line.ContentGeneration = current.ContentGeneration
+	}
+	if line.Kind == "" {
+		line.Kind = current.Kind
 	}
 	line.TailFill = cloneRowTailFill(line.TailFill)
 	if err := store.saveOwnedLineLocked(line); err != nil {

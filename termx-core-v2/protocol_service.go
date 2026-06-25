@@ -1592,6 +1592,7 @@ func (session *protocolSession) sendFrame(channel uint16, typ uint8, payload []b
 
 func protocolHistoryWindowFromCore(terminalID string, size Size, window history.HistoryWindow) *protocol.HistoryWindow {
 	rows := make([]protocol.CompactRow, len(window.Rows))
+	rowKinds := make([]string, len(window.Rows))
 	rowOwnership := make([]string, len(window.Rows))
 	rowLineIDs := make([]uint64, len(window.Rows))
 	rowInLine := make([]int, len(window.Rows))
@@ -1601,6 +1602,7 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 			style := protocolCompactRowStyleFromHistory(row.TailFill.Style)
 			rows[i].TailFill = &style
 		}
+		rowKinds[i] = row.Kind
 		rowLineIDs[i] = uint64(row.LineID)
 		rowInLine[i] = row.RowInLine
 		if row.Committed {
@@ -1614,6 +1616,7 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 		lines[i] = protocol.HistoryLineSpan{
 			StartRow:      span.FirstRow,
 			EndRow:        span.LastRow,
+			RowKind:       span.Kind,
 			LogicalLineID: uint64(span.LineID),
 			ClippedBefore: span.ClippedBefore,
 			ClippedAfter:  span.ClippedAfter,
@@ -1625,6 +1628,7 @@ func protocolHistoryWindowFromCore(terminalID string, size Size, window history.
 		Op:           protocol.HistoryWindowOp(window.Op),
 		Size:         protocolSizeFromCore(size),
 		Rows:         rows,
+		RowKinds:     rowKinds,
 		RowOwnership: rowOwnership,
 		Lines:        lines,
 		LoadedRows:   len(rows),

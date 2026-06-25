@@ -778,6 +778,43 @@ func TestProtocolCoreClientAdapterMaterializesAuthoritativeCellPadding(t *testin
 	}
 }
 
+func TestProtocolCoreClientAdapterDoesNotReflowScreenFrameRows(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Rows: []protocol.CompactRow{protocol.CompactRowFromCellsPreserveTrailingBlankCells(screenFrameProtocolCellsForTest(
+				"model:",
+				13,
+				"gpt-5.5 xhigh",
+			), true)},
+			RowKinds:    []string{state.HistoryRowKindScreenFrame},
+			Lines:       []protocol.HistoryLineSpan{{LogicalLineID: 42, StartRow: 0, EndRow: 0, RowKind: state.HistoryRowKindScreenFrame}},
+			RowLineIDs:  []uint64{42},
+			RowInLine:   []int{0},
+			LoadedLines: 1,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 12, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(result.Window.Rows) != 1 {
+		t.Fatalf("screen frame row should not reflow at narrower TUI cols, got %#v", result.Window.Rows)
+	}
+	row := result.Window.Rows[0]
+	if row.Kind != state.HistoryRowKindScreenFrame || row.Text != "model:             gpt-5.5 xhigh" || state.HistoryRowDisplayWidth(row) != 32 {
+		t.Fatalf("adapter should preserve fixed-grid padding and width, got %#v", row)
+	}
+	if len(result.Window.SourceLines) != 1 || result.Window.SourceLines[0].Kind != state.HistoryRowKindScreenFrame {
+		t.Fatalf("source line should carry screen-frame kind, got %#v", result.Window.SourceLines)
+	}
+}
+
 func TestProtocolCoreClientAdapterMergesSameLogicalLineRowsIntoFrozenSource(t *testing.T) {
 	client := &fakeProtocolHistoryClient{
 		window: &protocol.HistoryWindow{
@@ -980,6 +1017,15 @@ func rowTextsForProtocolAdapter(rows []state.HistoryRow) []string {
 		texts[i] = row.Text
 	}
 	return texts
+}
+
+func screenFrameProtocolCellsForTest(left string, blanks int, right string) []protocol.Cell {
+	cells := []protocol.Cell{{Content: left, Width: len(left)}}
+	for i := 0; i < blanks; i++ {
+		cells = append(cells, protocol.Cell{Content: " ", Width: 1})
+	}
+	cells = append(cells, protocol.Cell{Content: right, Width: len(right)})
+	return cells
 }
 
 func TestProtocolWorkbenchStorageAdapterUsesOpaqueStorageMethods(t *testing.T) {

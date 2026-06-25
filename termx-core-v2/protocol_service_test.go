@@ -468,7 +468,7 @@ func TestProtocolServiceFrozenSnapshotSurvivesClearScrollbackForOldObserver(t *t
 		t.Fatalf("older after clear scrollback: %v", err)
 	}
 	if len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
-		t.Fatalf("old observer should still page deleted committed history, got %#v", older)
+		t.Fatalf("old observer should still page authoritative committed history, got %#v", older)
 	}
 
 	reloaded, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -479,13 +479,11 @@ func TestProtocolServiceFrozenSnapshotSurvivesClearScrollbackForOldObserver(t *t
 	if err != nil {
 		t.Fatalf("latest after clear scrollback: %v", err)
 	}
-	if reloaded.LogicalTotal != 0 {
-		t.Fatalf("new observer must not count cleared committed history, got %#v", reloaded)
+	if reloaded.LogicalTotal != 2 {
+		t.Fatalf("new observer should keep authoritative committed history after ED3, got %#v", reloaded)
 	}
-	for _, row := range reloaded.Rows {
-		if got := rowText(row); got == "one" || got == "two" {
-			t.Fatalf("new latest should not expose cleared committed row %q in %#v", got, reloaded.Rows)
-		}
+	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "one" || rowText(reloaded.Rows[1]) != "two" || rowText(reloaded.Rows[2]) != "three" || rowText(reloaded.Rows[3]) != "four" {
+		t.Fatalf("new latest should expose preserved authoritative history after ED3, got %#v", reloaded.Rows)
 	}
 }
 
@@ -516,13 +514,13 @@ func TestProtocolServiceSessionCloseReleasesFrozenObserver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("terminal: %v", err)
 	}
-	if got := terminal.RetainedHistoryLineCount(); got == 0 {
-		t.Fatal("expected clear to retain deleted payload for active frozen observer")
+	if got := terminal.RetainedHistoryLineCount(); got != 0 {
+		t.Fatalf("ED3 should not delete authoritative history or retain payloads, got %d", got)
 	}
 
 	closeClient()
 	if got := terminal.RetainedHistoryLineCount(); got != 0 {
-		t.Fatalf("session close should release frozen observer and cleanup payloads, got %d", got)
+		t.Fatalf("session close should leave no retained payloads after ED3 soft boundary, got %d", got)
 	}
 }
 
@@ -551,14 +549,14 @@ func TestProtocolServiceHistoryReleaseDropsFrozenObserver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("terminal: %v", err)
 	}
-	if got := terminal.RetainedHistoryLineCount(); got == 0 {
-		t.Fatal("expected clear to retain deleted payload for active frozen observer")
+	if got := terminal.RetainedHistoryLineCount(); got != 0 {
+		t.Fatalf("ED3 should not delete authoritative history or retain payloads, got %d", got)
 	}
 	if err := client.ReleaseHistory(context.Background(), protocol.HistoryWindowParams{TerminalID: "term-1", Token: latest.Token}); err != nil {
 		t.Fatalf("history release: %v", err)
 	}
 	if got := terminal.RetainedHistoryLineCount(); got != 0 {
-		t.Fatalf("history release should cleanup retained payloads, got %d", got)
+		t.Fatalf("history release should leave no retained payloads after ED3 soft boundary, got %d", got)
 	}
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
 		TerminalID:      "term-1",
@@ -1317,8 +1315,8 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	if err != nil {
 		t.Fatalf("latest after clear scrollback via new snapshot: %v", err)
 	}
-	if len(reloaded.Rows) != 2 || rowText(reloaded.Rows[0]) != "three" || rowText(reloaded.Rows[1]) != "four" || reloaded.LogicalTotal != 0 {
-		t.Fatalf("new snapshot should see empty committed history after clear scrollback, got %#v", reloaded)
+	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "one" || rowText(reloaded.Rows[1]) != "two" || rowText(reloaded.Rows[2]) != "three" || rowText(reloaded.Rows[3]) != "four" || reloaded.LogicalTotal != 2 {
+		t.Fatalf("new snapshot should see preserved authoritative history after clear scrollback, got %#v", reloaded)
 	}
 }
 

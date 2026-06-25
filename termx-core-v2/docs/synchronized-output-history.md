@@ -185,7 +185,7 @@ BSU 只打开 pending frame staging，不改 published frame。BSU 到 ESU 之�
 事务内仍允许即时处理不可逆历史语义：
 
 - vterm 明确上报的 primary scroll-out rows 可以按现有 ownership 规则提交。
-- `ED3` / clear scrollback 仍可以裁剪 committed index。
+- `ED3` / clear scrollback 只作为 scrollback soft boundary，不裁剪 committed index；真正删除历史仍必须走显式 `truncate-committed-history`。
 - `CSI 2J` 这类 page-break 语义可以提交 BSU 前已经存在的 frontier，但清屏后的新 visible frame 仍停留在 pending frame，直到 ESU 发布。
 
 也就是说，发布隔离只隔离“当前可见 primary frame 的中间 repaint”，不阻止真实离开 screen ownership 的 transcript/history 事件进入 committed history。
