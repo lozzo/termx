@@ -467,6 +467,7 @@ func TestCompactCellsRunEncodingPreservesStylesLinksAndWidths(t *testing.T) {
 		{Text: "beta", Width: 4, Style: CellStyle{FG: "idx:42", BG: "ansi:4", Bold: true}, LinkURL: "file://build.log", LinkParams: "line=7"},
 		{Text: "好", Width: 2, Style: CellStyle{FG: "#ffcc00", Underline: true}},
 		{Text: "literal", Width: 7, Style: CellStyle{FG: "theme:accent", Reverse: true}},
+		{Text: "default", Width: 7, Style: CellStyle{FG: ColorTokenDefaultFG, BG: ColorTokenDefaultBG}},
 	}
 
 	encoded := encodeCompactCells(cells)

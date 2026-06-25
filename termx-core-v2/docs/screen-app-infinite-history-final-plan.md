@@ -458,6 +458,18 @@ FrameRecord
 - 相同 frame hash 不重复归档。
 - retention 必须有最大帧数、最大字节数和 snapshot pin/stale 规则。
 
+### 4.3.1 style / color token
+
+历史 payload 只保存 terminal 内容语义，不保存查看端主题解析结果：
+
+- default fg/bg 用空 `CellStyle.FG` / `CellStyle.BG` 表达；查看历史时才按当前
+  `HistoryTheme.DefaultFG` / `HistoryTheme.DefaultBG` 解析。
+- `ansi:N` 表达 16 色 SGR token，`idx:N` 表达 256 色 SGR token；如果查看端提供 palette，
+  可以在 view-time 解析成 RGB，否则必须原样保留 terminal token。
+- 明确 truecolor SGR 写入的 `#rrggbb` 是内容属性，后续主题或默认色变化不能替换。
+- OSC 10/11/12 只改变 terminal 默认颜色状态或响应查询，不得把当时默认色 RGB 烘焙进
+  ordinary history、screen-frame 或 archived frame payload。
+
 ### 4.4 alt transient frame
 
 alt transient frame 是 current-only 默认策略。

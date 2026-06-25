@@ -3146,6 +3146,93 @@ func TestTerminalSemanticProjectorConsumesOSCDefaultColorsRawWithoutFallback(t *
 	}
 }
 
+func TestTerminalSemanticProjectorKeepsDefaultColorsSemantic(t *testing.T) {
+	term := vterm.New(30, 3, 100, nil)
+	raw := "\x1b]10;#112233\x07\x1b]11;#445566\x07" +
+		"default " +
+		"\x1b[38;2;1;2;3mtruefg\x1b[39m " +
+		"\x1b[48;2;4;5;6mtruebg\x1b[49m"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(30, 3)
+	batch := terminalSemanticBatch{
+		Raw:             raw,
+		Damages:         []vterm.WriteDamage{damage},
+		Cols:            30,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(30, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	row := historyWindowCellsByText(t, window, "default truefg truebg")
+	byText := func(text string) history.Cell {
+		t.Helper()
+		for _, cell := range row {
+			if cell.Text == text {
+				return cell
+			}
+		}
+		t.Fatalf("missing cell %q in %#v", text, row)
+		return history.Cell{}
+	}
+	if got := byText("default ").Style; got != (history.CellStyle{}) {
+		t.Fatalf("default fg/bg must stay semantic and theme-resolved at view time, got %#v", got)
+	}
+	if got := byText("truefg").Style; got.FG != "#010203" || got.BG != "" {
+		t.Fatalf("explicit truecolor foreground belongs to content, got %#v", got)
+	}
+	if got := byText("truebg").Style; got.FG != "" || got.BG != "#040506" {
+		t.Fatalf("explicit truecolor background belongs to content, got %#v", got)
+	}
+}
+
+func TestTerminalSemanticProjectorKeepsFrameDefaultColorsSemantic(t *testing.T) {
+	term := vterm.New(30, 4, 100, nil)
+	raw := "\x1b]10;#112233\x07\x1b]11;#445566\x07" +
+		"\x1b[?2026h\x1b[H\x1b[Jdefault-frame" +
+		"\x1b[2;1H\x1b[48;2;4;5;6mtrue-bg\x1b[49m" +
+		"\x1b[?2026l"
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write: %v", err)
+	}
+	pipeline := newTerminalHistoryPipeline(30, 4)
+	batch := terminalSemanticBatch{
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.UsedScreenContent().Cells,
+		Cols:              30,
+		Rows:              4,
+		FromSharedVTerm:   true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch: %v", err)
+	}
+	window, err := pipeline.LatestWindow(30, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	defaultCells := historyWindowCellsByText(t, window, "default-frame")
+	for index, cell := range defaultCells {
+		if cell.Style != (history.CellStyle{}) {
+			t.Fatalf("primary frame default fg/bg must stay semantic at cell %d, got %#v rows=%#v", index, defaultCells, window.Rows)
+		}
+	}
+	trueBGCells := historyWindowCellsByText(t, window, "true-bg")
+	for index, cell := range trueBGCells {
+		if cell.Style.BG != "#040506" || cell.Style.FG != "" {
+			t.Fatalf("primary frame explicit RGB bg belongs to content at cell %d, got %#v rows=%#v", index, trueBGCells, window.Rows)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorConsumesStringControlsRawWithoutFallback(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
@@ -5739,6 +5826,17 @@ func historyWindowJoinedText(window history.HistoryWindow) string {
 		builder.WriteByte('\n')
 	}
 	return builder.String()
+}
+
+func historyWindowCellsByText(t *testing.T, window history.HistoryWindow, text string) []history.Cell {
+	t.Helper()
+	for _, row := range window.Rows {
+		if row.Text == text {
+			return row.Cells
+		}
+	}
+	t.Fatalf("missing row %q in %#v", text, window.Rows)
+	return nil
 }
 
 func historyWindowRowIndexContaining(window history.HistoryWindow, text string) int {
