@@ -9,12 +9,13 @@ import (
 )
 
 type terminalSemanticBatch struct {
-	Raw             string
-	Damages         []vterm.WriteDamage
-	AltExitFrame    [][]vterm.Cell
-	Cols            int
-	Rows            int
-	FromSharedVTerm bool
+	Raw               string
+	Damages           []vterm.WriteDamage
+	PrimaryScreenRows [][]vterm.Cell
+	AltExitFrame      [][]vterm.Cell
+	Cols              int
+	Rows              int
+	FromSharedVTerm   bool
 }
 
 var terminalSemanticIngestBatchHook func(terminalSemanticBatch)
@@ -50,12 +51,13 @@ func terminalSemanticBatchesFromSurfaceResult(result live.SurfaceWriteResult, si
 			continue
 		}
 		batch := terminalSemanticBatch{
-			Raw:             segment.Raw,
-			Damages:         segment.Damages,
-			AltExitFrame:    segment.AltScreenExitFrame,
-			Cols:            size.Cols,
-			Rows:            size.Rows,
-			FromSharedVTerm: true,
+			Raw:               segment.Raw,
+			Damages:           segment.Damages,
+			PrimaryScreenRows: segment.PrimaryScreenRows,
+			AltExitFrame:      segment.AltScreenExitFrame,
+			Cols:              size.Cols,
+			Rows:              size.Rows,
+			FromSharedVTerm:   true,
 		}
 		batches = append(batches, batch)
 	}
@@ -123,12 +125,14 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		stats.AltExitFrames++
 	}
 	fullReplaceOnly := sharedBatchFullReplaceOnly(batch.Damages)
+	publishSynchronizedFrame := false
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
 		stats.SemanticProjectors++
 		if batch.Raw != "" {
 			pipeline.shadowParsePrimaryOutputLocked(batch.Raw)
 		}
-		_, err := pipeline.applyVTermDamageEventsLocked(batch.Damages)
+		var err error
+		publishSynchronizedFrame, err = pipeline.applyVTermDamageEventsLocked(batch.Damages)
 		if err != nil {
 			return err
 		}
@@ -146,6 +150,14 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		if err := pipeline.track.Apply(history.HistoryEvent{
 			Kind: history.EventAppendAltScreenFrame,
 			Rows: historyRowsFromVTermRows(batch.AltExitFrame),
+		}); err != nil {
+			return err
+		}
+	}
+	if publishSynchronizedFrame {
+		if err := pipeline.track.Apply(history.HistoryEvent{
+			Kind: history.EventReplacePrimaryFrame,
+			Rows: historyRowsFromVTermRows(batch.PrimaryScreenRows),
 		}); err != nil {
 			return err
 		}
@@ -737,7 +749,7 @@ func containsNonSingleWidthRune(text string) bool {
 }
 
 func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []vterm.WriteDamage) (bool, error) {
-	applied := false
+	publishSynchronizedFrame := false
 	for _, damage := range damages {
 		ops := semanticOpsForHistoryDamage(damage)
 		if len(ops) == 0 && len(damage.ScrollbackAppend) == 0 {
@@ -809,7 +821,6 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 			pendingWriteRow = -1
 			pendingWriteCol = -1
 			pendingWritePreserveLeadingColumns = false
-			applied = true
 			return nil
 		}
 		for _, op := range ops {
@@ -824,7 +835,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 					continue
 				}
 				if err := flushPendingWrite(); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				pendingWriteCells = cells
 				pendingWriteRow = op.Row
@@ -833,7 +844,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				nextWritePreserveLeadingColumns = false
 			case vterm.ScreenOpClearToEOL:
 				if err := flushPendingWrite(); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				nextWritePreserveLeadingColumns = false
 				if lineOperationInDamage {
@@ -842,7 +853,7 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				if err := pipeline.applyCursorPositionFromVTerm(op.Row, op.Col); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				if err := pipeline.track.Apply(history.HistoryEvent{
 					Kind:      history.EventEraseInLine,
@@ -850,12 +861,11 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 					EraseCols: pipeline.cols,
 					Style:     historyStyleFromVTermStyle(opStyleFromClearToEOL(op)),
 				}); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
-				applied = true
 			case vterm.ScreenOpClearRect:
 				if err := flushPendingWrite(); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				nextWritePreserveLeadingColumns = false
 				if lineOperationInDamage {
@@ -868,16 +878,15 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				}
 				if op.Rect.X == 0 && op.Rect.Width >= pipeline.cols {
 					if err := pipeline.applyCursorPositionFromVTerm(op.Rect.Y, op.Rect.X); err != nil {
-						return applied, err
+						return publishSynchronizedFrame, err
 					}
 					if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEraseInDisplay, EraseMode: 0}); err != nil {
-						return applied, err
+						return publishSynchronizedFrame, err
 					}
-					applied = true
 				}
 			case vterm.ScreenOpScrollRect:
 				if err := flushPendingWrite(); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				nextWritePreserveLeadingColumns = false
 				if lineOperationInDamage {
@@ -895,13 +904,12 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 					continue
 				}
 				if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventPrimaryScrollOut, Count: count}); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				scrollbackApplied += count
-				applied = true
 			case vterm.ScreenOpControl:
 				if err := flushPendingWrite(); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				nextWritePreserveLeadingColumns = false
 				nextWriteUseActiveLogicalColumn = false
@@ -910,9 +918,8 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				}
 				if logicalColumnOffsetActive && op.Row == logicalColumnOffsetRow {
 					if handled, err := pipeline.applyOffsetVTermControlEventLocked(op, logicalColumnOffset, &lastWriteEndCol, &nextWriteUseActiveLogicalColumn); err != nil {
-						return applied, err
+						return publishSynchronizedFrame, err
 					} else if handled {
-						applied = true
 						continue
 					}
 				}
@@ -922,7 +929,6 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 				}
 				if op.Control == "ri" && reverseIndexScrollDowns > 0 {
 					reverseIndexScrollDowns--
-					applied = true
 					continue
 				}
 				if op.TailFill != nil {
@@ -930,12 +936,11 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 						Kind:  history.EventSetActiveLineTailFill,
 						Style: historyStyleFromVTermStyle(*op.TailFill),
 					}); err != nil {
-						return applied, err
+						return publishSynchronizedFrame, err
 					}
-					applied = true
 				}
 				if err := pipeline.applyVTermControlEventLocked(op); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				nextWritePreserveLeadingColumns = vtermControlPreservesExplicitColumnForNextWrite(op.Control)
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
@@ -950,23 +955,32 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 						logicalColumnOffset = 0
 					}
 				}
-				applied = true
 			case vterm.ScreenOpModes:
 				if err := flushPendingWrite(); err != nil {
-					return applied, err
+					return publishSynchronizedFrame, err
 				}
 				lastWriteRow = -1
 				lastWriteEndCol = -1
 				nextWritePreserveLeadingColumns = false
 				nextWriteUseActiveLogicalColumn = false
-				if err := pipeline.applyVTermModeEventLocked(op); err != nil {
-					return applied, err
+				if op.Private && op.Mode == 2026 {
+					if op.Enabled {
+						if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventBeginSynchronizedFrame}); err != nil {
+							return publishSynchronizedFrame, err
+						}
+					} else {
+						if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventEndSynchronizedFrame}); err != nil {
+							return publishSynchronizedFrame, err
+						}
+						publishSynchronizedFrame = true
+					}
+				} else if err := pipeline.applyVTermModeEventLocked(op); err != nil {
+					return publishSynchronizedFrame, err
 				}
-				applied = true
 			}
 		}
 		if err := flushPendingWrite(); err != nil {
-			return applied, err
+			return publishSynchronizedFrame, err
 		}
 		if eraseDisplayInDamage {
 			// 中文说明：ED2 page-break / ED3 clear-scrollback 的 history 语义只由
@@ -975,12 +989,11 @@ func (pipeline *terminalHistoryPipeline) applyVTermDamageEventsLocked(damages []
 		}
 		for ; scrollbackApplied < len(damage.ScrollbackAppend); scrollbackApplied++ {
 			if err := pipeline.track.Apply(history.HistoryEvent{Kind: history.EventPrimaryScrollOut, Count: 1}); err != nil {
-				return applied, err
+				return publishSynchronizedFrame, err
 			}
-			applied = true
 		}
 	}
-	return applied, nil
+	return publishSynchronizedFrame, nil
 }
 
 func semanticOpsContainLinefeedControl(ops []vterm.DamageOp) bool {

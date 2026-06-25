@@ -176,11 +176,12 @@ func TestTerminalSemanticProjectorConsumesRealVTermScrollRegionRIAndAbsoluteCurs
 			t.Fatalf("seed vterm write %q: %v", raw, err)
 		}
 		batch := terminalSemanticBatch{
-			Raw:             raw,
-			Damages:         []vterm.WriteDamage{damage},
-			Cols:            80,
-			Rows:            12,
-			FromSharedVTerm: true,
+			Raw:               raw,
+			Damages:           []vterm.WriteDamage{damage},
+			PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+			Cols:              80,
+			Rows:              12,
+			FromSharedVTerm:   true,
 		}
 		if err := pipeline.IngestSemanticBatch(batch); err != nil {
 			t.Fatalf("seed ingest %q: %v", raw, err)
@@ -206,11 +207,12 @@ func TestTerminalSemanticProjectorConsumesRealVTermScrollRegionRIAndAbsoluteCurs
 		t.Fatalf("test requires real vterm scroll-region and RI semantic controls, damage=%#v", damage)
 	}
 	batch := terminalSemanticBatch{
-		Raw:             raw,
-		Damages:         []vterm.WriteDamage{damage},
-		Cols:            80,
-		Rows:            12,
-		FromSharedVTerm: true,
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		Cols:              80,
+		Rows:              12,
+		FromSharedVTerm:   true,
 	}
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
@@ -883,17 +885,18 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOps(t *testing.T) {
 
 	term := vterm.New(20, 3, 100, nil)
 	pipeline := newTerminalHistoryPipeline(20, 3)
-	raw := "\x1b[?2026hrunning-frame"
+	raw := "\x1b[?2026hrunning-frame\x1b[?2026l"
 	_, err, damage := term.WriteWithDamage([]byte(raw))
 	if err != nil {
 		t.Fatalf("vterm write: %v", err)
 	}
 	batch := terminalSemanticBatch{
-		Raw:             raw,
-		Damages:         []vterm.WriteDamage{damage},
-		Cols:            20,
-		Rows:            3,
-		FromSharedVTerm: true,
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		Cols:              20,
+		Rows:              3,
+		FromSharedVTerm:   true,
 	}
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
@@ -906,7 +909,7 @@ func TestTerminalSemanticProjectorConsumesRealVTermModeOps(t *testing.T) {
 		t.Fatalf("latest: %v", err)
 	}
 	if window.TotalLines != 0 || !historyWindowContainsText(window, "running-frame") {
-		t.Fatalf("primary fullscreen mode should expose mutable frame without committed depth, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
+		t.Fatalf("synchronized primary frame should publish on ESU without committed depth, total=%d rows=%#v damage=%#v", window.TotalLines, window.Rows, damage)
 	}
 }
 
@@ -940,17 +943,18 @@ func TestTerminalSemanticProjectorConsumesRealVTermEraseDisplay(t *testing.T) {
 			t.Fatalf("ingest seed batch %q: %v", raw, err)
 		}
 	}
-	raw := "\x1b[?2026h\x1b[H\x1b[Jframe-current"
+	raw := "\x1b[?2026h\x1b[H\x1b[Jframe-current\x1b[?2026l"
 	_, err, damage := term.WriteWithDamage([]byte(raw))
 	if err != nil {
 		t.Fatalf("vterm write: %v", err)
 	}
 	batch := terminalSemanticBatch{
-		Raw:             raw,
-		Damages:         []vterm.WriteDamage{damage},
-		Cols:            24,
-		Rows:            3,
-		FromSharedVTerm: true,
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		Cols:              24,
+		Rows:              3,
+		FromSharedVTerm:   true,
 	}
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
@@ -1384,20 +1388,7 @@ func TestTerminalSemanticProjectorConsumesRepeatedPrimaryRepaintRawWithoutFallba
 		"\x1b[?2026h\x1b[H\x1b[Jframe-one\x1b[6;1Hinput-old",
 		"\x1b[H\x1b[Jframe-two\x1b[6;1Hinput-new\x1b[?2026l",
 	} {
-		_, err, damage := term.WriteWithDamage([]byte(raw))
-		if err != nil {
-			t.Fatalf("vterm write %q: %v", raw, err)
-		}
-		batch := terminalSemanticBatch{
-			Raw:             raw,
-			Damages:         []vterm.WriteDamage{damage},
-			Cols:            40,
-			Rows:            6,
-			FromSharedVTerm: true,
-		}
-		if err := pipeline.IngestSemanticBatch(batch); err != nil {
-			t.Fatalf("ingest semantic batch %q: %v", raw, err)
-		}
+		ingestSharedVTermRawForTest(t, term, pipeline, raw, 40, 6)
 	}
 	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 || stats.EraseDisplayOps < 2 || stats.ModeOps < 2 || stats.ControlOps == 0 {
 		t.Fatalf("repeated primary repaint should use vterm semantic projector without parser fallback, stats=%#v", stats)
@@ -1456,11 +1447,12 @@ func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossLowerED0(t *testing.
 		t.Fatalf("test requires real vterm ED semantic control, damage=%#v", damage)
 	}
 	batch := terminalSemanticBatch{
-		Raw:             raw,
-		Damages:         []vterm.WriteDamage{damage},
-		Cols:            96,
-		Rows:            14,
-		FromSharedVTerm: true,
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		Cols:              96,
+		Rows:              14,
+		FromSharedVTerm:   true,
 	}
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
@@ -1495,7 +1487,7 @@ func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossLowerED0(t *testing.
 	}
 }
 
-func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossSplitMiddleUpdate(t *testing.T) {
+func TestTerminalSemanticProjectorPublishesSynchronizedFrameOnlyAfterESU(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	var stats terminalSemanticProjectorStats
 	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
@@ -1520,20 +1512,7 @@ func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossSplitMiddleUpdate(t 
 		"\x1b[10;1H> Improve documentation in @filename",
 		"\x1b[12;1Hgpt-5.5 xhigh . ~/Documents/workdir/termx",
 	} {
-		_, err, damage := term.WriteWithDamage([]byte(raw))
-		if err != nil {
-			t.Fatalf("vterm write %q: %v", raw, err)
-		}
-		batch := terminalSemanticBatch{
-			Raw:             raw,
-			Damages:         []vterm.WriteDamage{damage},
-			Cols:            96,
-			Rows:            16,
-			FromSharedVTerm: true,
-		}
-		if err := pipeline.IngestSemanticBatch(batch); err != nil {
-			t.Fatalf("ingest semantic batch %q: %v", raw, err)
-		}
+		ingestSharedVTermRawForTest(t, term, pipeline, raw, 96, 16)
 	}
 	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 || stats.EraseDisplayOps < 2 || stats.ModeOps == 0 || stats.ControlOps == 0 {
 		t.Fatalf("Codex split middle update should use vterm semantic projector without parser fallback, stats=%#v", stats)
@@ -1541,6 +1520,32 @@ func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossSplitMiddleUpdate(t 
 	window, err := pipeline.LatestWindow(96, 32)
 	if err != nil {
 		t.Fatalf("latest: %v", err)
+	}
+	partialText := historyWindowJoinedText(window)
+	for _, forbidden := range []string{
+		"Update available! 0.141.0 -> 0.142.0",
+		"Run brew upgrade --cask codex to update.",
+		"OpenAI Codex",
+		"> Improve documentation in @filename",
+		"gpt-5.5 xhigh",
+	} {
+		if strings.Contains(partialText, forbidden) {
+			t.Fatalf("BSU/ESU middle repaint must stay pending until ESU, leaked %q text=%q rows=%#v", forbidden, partialText, window.Rows)
+		}
+	}
+	for _, want := range []string{"lozzow@RedmiBook", "codex --yolo"} {
+		if !strings.Contains(partialText, want) {
+			t.Fatalf("latest before ESU should still preserve committed shell line %q, text=%q rows=%#v", want, partialText, window.Rows)
+		}
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("pending synchronized frame must not change committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+
+	ingestSharedVTermRawForTest(t, term, pipeline, "\x1b[?2026l", 96, 16)
+	window, err = pipeline.LatestWindow(96, 32)
+	if err != nil {
+		t.Fatalf("latest after ESU: %v", err)
 	}
 	text := historyWindowJoinedText(window)
 	for _, want := range []string{
@@ -1568,6 +1573,73 @@ func TestTerminalSemanticProjectorKeepsCodexUpdateCardAcrossSplitMiddleUpdate(t 
 		if strings.Contains(row.Text, "Update available!") && row.Committed {
 			t.Fatalf("update card current frame row must stay mutable, rows=%#v", window.Rows)
 		}
+	}
+	older, err := pipeline.OlderWindow(96, 32, window.Cursor)
+	if err != nil {
+		t.Fatalf("older after ESU: %v", err)
+	}
+	olderText := historyWindowJoinedText(older)
+	for _, forbidden := range []string{"Update available!", "OpenAI Codex", "> Improve documentation"} {
+		if strings.Contains(olderText, forbidden) {
+			t.Fatalf("older pagination must not return synchronized frame row %q, text=%q rows=%#v", forbidden, olderText, older.Rows)
+		}
+	}
+}
+
+func TestTerminalSemanticProjectorKeepsPublishedFrameVisibleDuringNextBSU(t *testing.T) {
+	term := vterm.New(40, 6, 100, nil)
+	pipeline := newTerminalHistoryPipeline(40, 6)
+
+	for _, raw := range []string{
+		"shell-one\nshell-two\n",
+		"\x1b[?2026h\x1b[H\x1b[Jframe-one\x1b[6;1Hinput-one\x1b[?2026l",
+	} {
+		ingestSharedVTermRawForTest(t, term, pipeline, raw, 40, 6)
+	}
+	window, err := pipeline.LatestWindow(40, 10)
+	if err != nil {
+		t.Fatalf("latest after first ESU: %v", err)
+	}
+	text := historyWindowJoinedText(window)
+	if !strings.Contains(text, "frame-one") || !strings.Contains(text, "input-one") {
+		t.Fatalf("first synchronized frame should publish, text=%q rows=%#v", text, window.Rows)
+	}
+
+	ingestSharedVTermRawForTest(t, term, pipeline, "\x1b[?2026h\x1b[H\x1b[Jframe-two\x1b[6;1Hinput-two", 40, 6)
+	window, err = pipeline.LatestWindow(40, 10)
+	if err != nil {
+		t.Fatalf("latest during second BSU: %v", err)
+	}
+	text = historyWindowJoinedText(window)
+	for _, want := range []string{"shell-one", "shell-two", "frame-one", "input-one"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("pending BSU should keep previous published frame %q visible, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	for _, forbidden := range []string{"frame-two", "input-two"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("pending BSU must not leak next frame %q, text=%q rows=%#v", forbidden, text, window.Rows)
+		}
+	}
+
+	ingestSharedVTermRawForTest(t, term, pipeline, "\x1b[?2026l", 40, 6)
+	window, err = pipeline.LatestWindow(40, 10)
+	if err != nil {
+		t.Fatalf("latest after second ESU: %v", err)
+	}
+	text = historyWindowJoinedText(window)
+	for _, want := range []string{"shell-one", "shell-two", "frame-two", "input-two"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("second ESU should publish final frame %q, text=%q rows=%#v", want, text, window.Rows)
+		}
+	}
+	for _, stale := range []string{"frame-one", "input-one"} {
+		if strings.Contains(text, stale) {
+			t.Fatalf("second ESU should replace stale frame %q, text=%q rows=%#v", stale, text, window.Rows)
+		}
+	}
+	if window.TotalLines != 2 {
+		t.Fatalf("synchronized repaint must not grow committed depth, total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
 }
 
@@ -2250,11 +2322,12 @@ func TestTerminalSemanticProjectorConsumesFocusAndSGRMouseModesRawWithoutFallbac
 	}
 	pipeline := newTerminalHistoryPipeline(24, 3)
 	batch := terminalSemanticBatch{
-		Raw:             raw,
-		Damages:         []vterm.WriteDamage{damage},
-		Cols:            24,
-		Rows:            3,
-		FromSharedVTerm: true,
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		Cols:              24,
+		Rows:              3,
+		FromSharedVTerm:   true,
 	}
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
@@ -2299,11 +2372,12 @@ func TestTerminalSemanticProjectorConsumesC1CSIPrivateModesRawWithoutFallback(t 
 	}
 	pipeline := newTerminalHistoryPipeline(24, 3)
 	batch := terminalSemanticBatch{
-		Raw:             raw,
-		Damages:         []vterm.WriteDamage{damage},
-		Cols:            24,
-		Rows:            3,
-		FromSharedVTerm: true,
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		Cols:              24,
+		Rows:              3,
+		FromSharedVTerm:   true,
 	}
 	if err := pipeline.IngestSemanticBatch(batch); err != nil {
 		t.Fatalf("ingest semantic batch: %v", err)
@@ -5156,6 +5230,25 @@ func historyWindowContainsAll(window history.HistoryWindow, wants ...string) boo
 		}
 	}
 	return true
+}
+
+func ingestSharedVTermRawForTest(t *testing.T, term *vterm.VTerm, pipeline *terminalHistoryPipeline, raw string, cols int, rows int) {
+	t.Helper()
+	_, err, damage := term.WriteWithDamage([]byte(raw))
+	if err != nil {
+		t.Fatalf("vterm write %q: %v", raw, err)
+	}
+	batch := terminalSemanticBatch{
+		Raw:               raw,
+		Damages:           []vterm.WriteDamage{damage},
+		PrimaryScreenRows: term.TrimmedScreenContent().Cells,
+		Cols:              cols,
+		Rows:              rows,
+		FromSharedVTerm:   true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest semantic batch %q: %v", raw, err)
+	}
 }
 
 func firstDamageControl(damage vterm.WriteDamage, control string) vterm.DamageOp {

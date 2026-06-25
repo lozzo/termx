@@ -40,6 +40,7 @@ type SurfaceWriteResult struct {
 type SurfaceWriteSegment struct {
 	Raw                string
 	Damages            []vterm.WriteDamage
+	PrimaryScreenRows  [][]vterm.Cell
 	AltScreenExitFrame [][]vterm.Cell
 }
 
@@ -135,7 +136,7 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 		if idx < 0 {
 			damages = appendSurfaceWriteDamage(damages, surface.writeRaw(text))
 			raw.WriteString(text)
-			appendSurfaceWriteRawSegment(&result, &raw, &damages)
+			surface.appendSurfaceWriteRawSegment(&result, &raw, &damages)
 			return result
 		}
 		if idx > 0 {
@@ -147,7 +148,7 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 		consumed, action, _, complete := consumePrivateModeCSI(text)
 		if !complete {
 			surface.pending = text
-			appendSurfaceWriteRawSegment(&result, &raw, &damages)
+			surface.appendSurfaceWriteRawSegment(&result, &raw, &damages)
 			return result
 		}
 		if consumed <= 0 {
@@ -169,6 +170,7 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 					result.Segments = append(result.Segments, SurfaceWriteSegment{
 						Raw:                raw.String(),
 						Damages:            cloneSurfaceWriteDamages(damages),
+						PrimaryScreenRows:  surface.primaryScreenFrameRows(),
 						AltScreenExitFrame: cloneVTermCellRows(altFrame),
 					})
 					raw.Reset()
@@ -183,21 +185,29 @@ func (surface *SurfaceTrack) WriteWithResult(text string) SurfaceWriteResult {
 		text = text[consumed:]
 	}
 	if raw.Len() > 0 {
-		appendSurfaceWriteRawSegment(&result, &raw, &damages)
+		surface.appendSurfaceWriteRawSegment(&result, &raw, &damages)
 	}
 	return result
 }
 
-func appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Builder, damages *[]vterm.WriteDamage) {
+func (surface *SurfaceTrack) appendSurfaceWriteRawSegment(result *SurfaceWriteResult, raw *strings.Builder, damages *[]vterm.WriteDamage) {
 	if result == nil || raw == nil || raw.Len() == 0 {
 		return
 	}
 	result.Segments = append(result.Segments, SurfaceWriteSegment{
-		Raw:     raw.String(),
-		Damages: cloneSurfaceWriteDamages(*damages),
+		Raw:               raw.String(),
+		Damages:           cloneSurfaceWriteDamages(*damages),
+		PrimaryScreenRows: surface.primaryScreenFrameRows(),
 	})
 	raw.Reset()
 	*damages = nil
+}
+
+func (surface *SurfaceTrack) primaryScreenFrameRows() [][]vterm.Cell {
+	if surface == nil || surface.vt == nil || surface.vt.IsAltScreen() {
+		return nil
+	}
+	return cloneVTermCellRows(surface.vt.TrimmedScreenContent().Cells)
 }
 
 func appendSurfaceWriteDamage(damages []vterm.WriteDamage, damage vterm.WriteDamage) []vterm.WriteDamage {

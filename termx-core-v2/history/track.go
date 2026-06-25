@@ -14,13 +14,15 @@ type HistoryTrack struct {
 	// 中文说明：有些前台 TUI 不进入 alt-screen，而是在 primary screen 上隐藏光标、
 	// 开启鼠标追踪后反复 home-clear repaint。intent 只表示已看到这类控制序列；
 	// 第一次 home-clear 仍是 page-break，之后才进入可替换 fullscreen frame。
-	primaryFullscreenIntent bool
-	primaryFullscreenFrame  bool
-	primaryFullscreenModes  map[int]struct{}
-	generation              Generation
-	screenRows              int
-	screenRow               int
-	screen                  primaryScreenLineMap
+	primaryFullscreenIntent  bool
+	primaryFullscreenFrame   bool
+	primaryFullscreenModes   map[int]struct{}
+	pendingSynchronizedFrame bool
+	publishedFrameLineIDs    []LogicalLineID
+	generation               Generation
+	screenRows               int
+	screenRow                int
+	screen                   primaryScreenLineMap
 }
 
 func NewHistoryTrack() *HistoryTrack {
@@ -117,6 +119,12 @@ func (track *HistoryTrack) apply(event HistoryEvent) error {
 		return track.enterPrimaryFullscreen(event.PrimaryMode)
 	case EventExitPrimaryFullscreen:
 		return track.exitPrimaryFullscreen(event.PrimaryMode)
+	case EventBeginSynchronizedFrame:
+		return track.beginSynchronizedFrame()
+	case EventEndSynchronizedFrame:
+		return track.endSynchronizedFrame()
+	case EventReplacePrimaryFrame:
+		return track.replacePrimaryFrame(event.Rows)
 	case EventPrimaryScrollOut:
 		return track.primaryScrollOut(event.Count)
 	case EventAppendAltScreenFrame:
@@ -256,6 +264,9 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) erro
 		track.activeCol = incomingWidth
 		track.activeLine = line.ID
 		track.overwrite = false
+		if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+			return err
+		}
 		if _, err := track.reorderVisibleFrontierFromScreen(); err != nil {
 			return err
 		}
@@ -277,6 +288,9 @@ func (track *HistoryTrack) writePrimaryCells(cells []Cell, ownedCells bool) erro
 	track.activeLine = line.ID
 	track.activeCol += incomingWidth
 	track.overwrite = track.activeCol < lineWidth
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	if _, err := track.reorderVisibleFrontierFromScreen(); err != nil {
 		return err
 	}
@@ -474,6 +488,9 @@ func (track *HistoryTrack) ensureWritableActiveLine() (LogicalLine, error) {
 	track.activeCol = 0
 	track.overwrite = false
 	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return LogicalLine{}, err
+	}
 	return line, nil
 }
 
@@ -579,6 +596,14 @@ func (track *HistoryTrack) bindActiveLineFromScreenRow() error {
 		track.overwrite = false
 		return nil
 	}
+	if track.pendingSynchronizedFrame && track.isPublishedFrameLine(owner.LineID) {
+		// 中文说明：BSU 期间的新 repaint 必须写入隐藏 pending 行，不能回写上一帧
+		// 已发布的 logical line；否则 history 模式会先丢掉用户仍在 live 看到的旧帧。
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		return nil
+	}
 	if _, ok := track.store.Line(owner.LineID); !ok {
 		track.screen.clear(track.screenRow)
 		track.activeLine = 0
@@ -670,6 +695,9 @@ func (track *HistoryTrack) eraseInLine(mode int, screenCols int, style CellStyle
 	track.activeLine = line.ID
 	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
 	track.overwrite = false
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -700,6 +728,9 @@ func (track *HistoryTrack) eraseCharacters(count int, style CellStyle) error {
 	track.activeLine = line.ID
 	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
 	track.overwrite = true
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -730,6 +761,9 @@ func (track *HistoryTrack) deleteCharacters(count int, style CellStyle) error {
 	track.activeLine = line.ID
 	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
 	track.overwrite = true
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -760,6 +794,9 @@ func (track *HistoryTrack) insertCharacters(count int, style CellStyle) error {
 	track.activeLine = line.ID
 	track.activeCol = minInt(track.activeCol, logicalLineWidth(line.Cells))
 	track.overwrite = true
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -926,6 +963,9 @@ func (track *HistoryTrack) setActiveLineTailFill(style CellStyle) error {
 		return err
 	}
 	track.activeLine = line.ID
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -1011,6 +1051,26 @@ func (track *HistoryTrack) exitPrimaryFullscreen(mode int) error {
 	return nil
 }
 
+func (track *HistoryTrack) beginSynchronizedFrame() error {
+	if track.altScreen {
+		return nil
+	}
+	track.pendingSynchronizedFrame = true
+	if err := track.enterPrimaryFullscreen(2026); err != nil {
+		return err
+	}
+	return track.hidePendingSynchronizedFrontier()
+}
+
+func (track *HistoryTrack) endSynchronizedFrame() error {
+	if !track.pendingSynchronizedFrame {
+		return nil
+	}
+	track.pendingSynchronizedFrame = false
+	track.bumpGeneration()
+	return nil
+}
+
 func (track *HistoryTrack) startPrimaryFullscreenFrame() error {
 	if err := track.clearPrimaryScreenPageBreak(); err != nil {
 		return err
@@ -1019,11 +1079,78 @@ func (track *HistoryTrack) startPrimaryFullscreenFrame() error {
 	return nil
 }
 
+func (track *HistoryTrack) replacePrimaryFrame(rows [][]Cell) error {
+	if track.altScreen {
+		return nil
+	}
+	if err := track.dropCurrentPrimaryFrame(); err != nil {
+		return err
+	}
+	track.pendingSynchronizedFrame = false
+	track.primaryFullscreenIntent = true
+	track.primaryFullscreenFrame = true
+	changed := false
+	for screenRow, row := range rows {
+		row = trimHistoryFrameRow(row)
+		if len(row) == 0 {
+			if screenRow < track.screenRows {
+				track.screen.clear(screenRow)
+			}
+			continue
+		}
+		nextGeneration := track.nextGeneration()
+		line, err := track.createLine(CreateLineRequest{
+			Seal:              SealStateSealed,
+			CreatedGeneration: nextGeneration,
+			ContentGeneration: nextGeneration,
+			Cells:             row,
+			Dirty:             true,
+			Residency:         ResidencyMemory,
+		})
+		if err != nil {
+			return err
+		}
+		if err := track.frontier.Add(line.ID); err != nil {
+			return err
+		}
+		track.publishedFrameLineIDs = append(track.publishedFrameLineIDs, line.ID)
+		if screenRow < track.screenRows {
+			track.screen.set(screenRow, primaryScreenLineOwner{LineID: line.ID})
+		}
+		if line.Dirty {
+			if err := track.markLineClean(line.ID); err != nil {
+				return err
+			}
+		}
+		track.activeLine = line.ID
+		track.activeCol = logicalLineWidth(row)
+		track.overwrite = false
+		track.screenRow = clampFrameScreenRow(screenRow, track.screenRows)
+		track.setGeneration(nextGeneration)
+		changed = true
+	}
+	if !changed {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		track.bumpGeneration()
+		return nil
+	}
+	if _, err := track.reorderVisibleFrontierFromScreen(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // replacePrimaryFullscreenFrame 清掉当前未提交 fullscreen frame，让下一帧在同一位置重建。
 // 它不能碰 committed history；进入 fullscreen 前的页面已经由第一次 page-break 保留。
 func (track *HistoryTrack) replacePrimaryFullscreenFrame() error {
 	modes := track.primaryFullscreenModes
-	if err := track.resetFrontier(); err != nil {
+	if track.pendingSynchronizedFrame {
+		if err := track.dropPendingPrimaryFrame(); err != nil {
+			return err
+		}
+	} else if err := track.dropCurrentPrimaryFrame(); err != nil {
 		return err
 	}
 	track.primaryFullscreenModes = modes
@@ -1036,6 +1163,8 @@ func (track *HistoryTrack) clearPrimaryFullscreenState() {
 	track.primaryFullscreenIntent = false
 	track.primaryFullscreenFrame = false
 	track.primaryFullscreenModes = nil
+	track.pendingSynchronizedFrame = false
+	track.publishedFrameLineIDs = nil
 }
 
 // clearPrimaryScreenPageBreak 处理真实终端里的 CSI 2J：它不是从 live
@@ -1191,6 +1320,9 @@ func (track *HistoryTrack) sealBlankLine() error {
 		return err
 	}
 	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	track.advanceScreenCursorLine()
 	track.setGeneration(nextGeneration)
 	return nil
@@ -1248,6 +1380,9 @@ func (track *HistoryTrack) mutateFrontierLine(event HistoryEvent) error {
 	track.activeCol = logicalLineWidth(line.Cells)
 	track.overwrite = false
 	track.screen.set(track.screenRow, primaryScreenLineOwner{LineID: line.ID})
+	if err := track.hidePendingSynchronizedLine(line.ID); err != nil {
+		return err
+	}
 	track.setGeneration(nextGeneration)
 	return nil
 }
@@ -1280,14 +1415,141 @@ func (track *HistoryTrack) resetFrontier() error {
 	return nil
 }
 
+func (track *HistoryTrack) dropCurrentPrimaryFrame() error {
+	ids := track.frontier.IDs()
+	if len(ids) == 0 {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		track.screen.clearAll()
+		track.publishedFrameLineIDs = nil
+		return nil
+	}
+	changed := false
+	for _, id := range ids {
+		if track.committed.Contains(id) {
+			continue
+		}
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		if track.store.DeleteLine(id) {
+			changed = true
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+		}
+		track.screen.removeLine(id)
+	}
+	track.publishedFrameLineIDs = nil
+	track.screen.clearAll()
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) dropPendingPrimaryFrame() error {
+	ids := track.frontier.IDs()
+	if len(ids) == 0 {
+		track.activeLine = 0
+		track.activeCol = 0
+		track.overwrite = false
+		track.screen.clearAll()
+		return nil
+	}
+	changed := false
+	for _, id := range ids {
+		if track.committed.Contains(id) || track.isPublishedFrameLine(id) || !track.frontier.IsHidden(id) {
+			continue
+		}
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		if track.store.DeleteLine(id) {
+			changed = true
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+		}
+		track.screen.removeLine(id)
+	}
+	track.screen.clearAll()
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) hidePendingSynchronizedLine(id LogicalLineID) error {
+	if !track.pendingSynchronizedFrame || id == 0 || !track.frontier.Contains(id) || track.isPublishedFrameLine(id) {
+		return nil
+	}
+	// 中文说明：BSU/ESU 中间 repaint 只更新 pending frame；hidden frontier
+	// 仍可被 projector 继续修改，但 latest/frozen 看不到半帧。
+	return track.frontier.Hide(id)
+}
+
+func (track *HistoryTrack) hidePendingSynchronizedFrontier() error {
+	if !track.pendingSynchronizedFrame {
+		return nil
+	}
+	for _, id := range track.frontier.IDs() {
+		if track.committed.Contains(id) {
+			continue
+		}
+		if err := track.hidePendingSynchronizedLine(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (track *HistoryTrack) isPublishedFrameLine(id LogicalLineID) bool {
+	for _, existing := range track.publishedFrameLineIDs {
+		if existing == id {
+			return true
+		}
+	}
+	return false
+}
+
+func trimHistoryFrameRow(row []Cell) []Cell {
+	end := len(row)
+	for end > 0 && cellIsDefaultBlank(row[end-1]) {
+		end--
+	}
+	if end == 0 {
+		return nil
+	}
+	return cloneCells(row[:end])
+}
+
+func clampFrameScreenRow(row int, rows int) int {
+	if rows <= 0 || row < 0 {
+		return 0
+	}
+	if row >= rows {
+		return rows - 1
+	}
+	return row
+}
+
 func (track *HistoryTrack) activeVisibleFrontierIndex(visible []LogicalLineID) (int, bool) {
-	if track.activeLine == 0 || !track.frontier.Contains(track.activeLine) || track.frontier.IsHidden(track.activeLine) {
+	if track.activeLine == 0 || !track.frontier.Contains(track.activeLine) {
 		return -1, false
 	}
 	for idx, id := range visible {
 		if id == track.activeLine {
 			return idx, true
 		}
+	}
+	if track.pendingSynchronizedFrame && track.frontier.IsHidden(track.activeLine) {
+		return len(visible), true
 	}
 	return -1, false
 }
@@ -2112,6 +2374,13 @@ func eraseBlankStyle(style CellStyle) CellStyle {
 
 func styleCreatesVisibleBlank(style CellStyle) bool {
 	return style.BG != ""
+}
+
+func cellIsDefaultBlank(cell Cell) bool {
+	return (cell.Text == "" || cell.Text == " ") &&
+		cell.Style == (CellStyle{}) &&
+		cell.LinkURL == "" &&
+		cell.LinkParams == ""
 }
 
 func ensureMutationCellLen(cells []Cell, target int) []Cell {

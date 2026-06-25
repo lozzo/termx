@@ -1482,6 +1482,7 @@ func TestProtocolServiceHistoryWindowCodexCurrentFrameKeepsUpdateCard(t *testing
 		"\x1b[10;1H\x1b[J",
 		"\x1b[10;1H> Improve documentation in @filename",
 		"\x1b[12;1Hgpt-5.5 xhigh . ~/Documents/workdir/termx",
+		"\x1b[?2026l",
 	} {
 		process.emitOutput(output)
 	}
