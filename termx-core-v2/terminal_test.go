@@ -1194,7 +1194,7 @@ func TestTerminalIngestOutputCodexTmuxRawFrameKeepsCurrentInputAndStatus(t *test
 		t.Fatalf("ingest output: %v", err)
 	}
 
-	window, err := server.LatestWindow("term-1", 160, 20)
+	window, err := server.LatestWindow("term-1", 160, 48)
 	if err != nil {
 		t.Fatalf("latest after codex tmux raw frame: %v", err)
 	}
@@ -1219,7 +1219,7 @@ func TestTerminalIngestOutputCodexTmuxRawFrameKeepsCurrentInputAndStatus(t *test
 	if err := server.IngestOutput(context.Background(), "term-1", repaint); err != nil {
 		t.Fatalf("ingest repaint: %v", err)
 	}
-	window, err = server.LatestWindow("term-1", 160, 20)
+	window, err = server.LatestWindow("term-1", 160, 48)
 	if err != nil {
 		t.Fatalf("latest after codex tmux repaint: %v", err)
 	}
@@ -1613,12 +1613,12 @@ func TestTerminalResizeDoesNotLetSynchronizedFrameDeleteCommittedHistory(t *test
 		t.Fatalf("publish second frame: %v", err)
 	}
 
-	latest, err := server.LatestWindow("term-1", 40, 3)
+	latest, err := server.LatestWindow("term-1", 40, 9)
 	if err != nil {
 		t.Fatalf("latest: %v", err)
 	}
 	latestText := historyWindowText(latest.Rows)
-	for _, want := range []string{"shell-two", "frame-two", "input-two"} {
+	for _, want := range []string{"frame-two", "input-two"} {
 		if !strings.Contains(latestText, want) {
 			t.Fatalf("latest after resize/repaint should contain %q, text=%q rows=%#v", want, latestText, latest.Rows)
 		}
@@ -1631,7 +1631,7 @@ func TestTerminalResizeDoesNotLetSynchronizedFrameDeleteCommittedHistory(t *test
 		t.Fatalf("older: %v", err)
 	}
 	olderText := historyWindowText(older.Rows)
-	for _, want := range []string{"shell-one"} {
+	for _, want := range []string{"shell-one", "shell-two"} {
 		if !strings.Contains(olderText, want) {
 			t.Fatalf("older after resize/repaint should keep committed %q, cursor=%#v text=%q rows=%#v", want, latest.Cursor, olderText, older.Rows)
 		}

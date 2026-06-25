@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -812,6 +813,47 @@ func TestProtocolCoreClientAdapterDoesNotReflowScreenFrameRows(t *testing.T) {
 	}
 	if len(result.Window.SourceLines) != 1 || result.Window.SourceLines[0].Kind != state.HistoryRowKindScreenFrame {
 		t.Fatalf("source line should carry screen-frame kind, got %#v", result.Window.SourceLines)
+	}
+}
+
+func TestProtocolCoreClientAdapterPreservesBlankScreenFrameRows(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 80, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "Update available!", Width: 17}}),
+				{},
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "OpenAI Codex", Width: 12}}),
+			},
+			RowKinds: []string{
+				state.HistoryRowKindScreenFrame,
+				state.HistoryRowKindScreenFrame,
+				state.HistoryRowKindScreenFrame,
+			},
+			Lines: []protocol.HistoryLineSpan{
+				{LogicalLineID: 41, StartRow: 0, EndRow: 0, RowKind: state.HistoryRowKindScreenFrame},
+				{LogicalLineID: 42, StartRow: 1, EndRow: 1, RowKind: state.HistoryRowKindScreenFrame},
+				{LogicalLineID: 43, StartRow: 2, EndRow: 2, RowKind: state.HistoryRowKindScreenFrame},
+			},
+			RowLineIDs:  []uint64{41, 42, 43},
+			RowInLine:   []int{0, 0, 0},
+			LoadedLines: 3,
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 12, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got := rowTextsForProtocolAdapter(result.Window.Rows); !reflect.DeepEqual(got, []string{"Update available!", "", "OpenAI Codex"}) {
+		t.Fatalf("blank screen frame row should survive protocol adapter, got %q rows=%#v", got, result.Window.Rows)
+	}
+	if len(result.Window.SourceLines) != 3 || result.Window.SourceLines[1].Kind != state.HistoryRowKindScreenFrame {
+		t.Fatalf("blank source line should carry screen-frame kind, got %#v", result.Window.SourceLines)
 	}
 }
 

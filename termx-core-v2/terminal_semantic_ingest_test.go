@@ -147,7 +147,7 @@ func TestTerminalSemanticProjectorCodexRawDamageSignals(t *testing.T) {
 	if stats.DamageBatches == 0 || stats.WriteSpanOps == 0 {
 		t.Fatalf("projector must observe Codex vterm damage ops, got %#v", stats)
 	}
-	window, err := server.LatestWindow("term-1", 160, 20)
+	window, err := server.LatestWindow("term-1", 160, 48)
 	if err != nil {
 		t.Fatalf("latest: %v", err)
 	}
@@ -1694,6 +1694,32 @@ func TestTerminalSemanticProjectorMarksPublishedFrameRowsAsScreenFrame(t *testin
 		if strings.Contains(row.Text, "model:") && row.Kind != history.RowKindScreenFrame {
 			t.Fatalf("published frame row should be tagged screen-frame, got %#v", row)
 		}
+	}
+}
+
+func TestTerminalSemanticProjectorPreservesBlankRowsInPublishedFrame(t *testing.T) {
+	term := vterm.New(72, 6, 100, nil)
+	pipeline := newTerminalHistoryPipeline(72, 6)
+	raw := strings.Join([]string{
+		"\x1b[?2026h\x1b[H\x1b[J",
+		"\x1b[1;1HUpdate available!",
+		"\x1b[3;1HOpenAI Codex",
+		"\x1b[?2026l",
+	}, "")
+
+	ingestSharedVTermRawForTest(t, term, pipeline, raw, 72, 6)
+	window, err := pipeline.LatestWindow(72, 10)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	updateIndex := historyWindowRowIndexContaining(window, "Update available!")
+	openAIIndex := historyWindowRowIndexContaining(window, "OpenAI Codex")
+	if updateIndex < 0 || openAIIndex < 0 || openAIIndex-updateIndex != 2 {
+		t.Fatalf("published frame should preserve blank row between cards, update=%d openai=%d rows=%#v", updateIndex, openAIIndex, window.Rows)
+	}
+	blank := window.Rows[updateIndex+1]
+	if blank.Text != "" || blank.Kind != history.RowKindScreenFrame {
+		t.Fatalf("blank physical row should survive as screen-frame row, got %#v rows=%#v", blank, window.Rows)
 	}
 }
 

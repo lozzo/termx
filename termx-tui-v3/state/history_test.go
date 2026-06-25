@@ -1172,6 +1172,27 @@ func TestHistoryStoreDoesNotReflowScreenFrameRows(t *testing.T) {
 	}
 }
 
+func TestHistoryStorePreservesBlankScreenFrameRows(t *testing.T) {
+	lines := []HistoryLogicalLine{
+		{LineID: 10, Kind: HistoryRowKindScreenFrame, Cells: []HistoryCell{{Text: "Update available!", Width: 17}}},
+		{LineID: 11, Kind: HistoryRowKindScreenFrame},
+		{LineID: 12, Kind: HistoryRowKindScreenFrame, Cells: []HistoryCell{{Text: "OpenAI Codex", Width: 12}}},
+	}
+	rows, spans := ReflowHistoryLogicalLines(lines, 12)
+
+	if got := rowTexts(rows); !reflect.DeepEqual(got, []string{"Update available!", "", "OpenAI Codex"}) {
+		t.Fatalf("blank screen frame row should survive reflow, got %q rows=%#v", got, rows)
+	}
+	for index, row := range rows {
+		if row.Kind != HistoryRowKindScreenFrame {
+			t.Fatalf("row %d should stay screen-frame, got %#v", index, rows)
+		}
+	}
+	if len(spans) != 3 || spans[1].Kind != HistoryRowKindScreenFrame || spans[1].StartRow != 1 || spans[1].EndRow != 1 {
+		t.Fatalf("blank screen-frame span should stay single-row, got %#v", spans)
+	}
+}
+
 func TestHistoryStoreReflowSplitsLongCellsAndKeepsLsSpacing(t *testing.T) {
 	lines := []HistoryLogicalLine{{
 		LineID: 10,

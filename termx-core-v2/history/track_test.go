@@ -1174,6 +1174,36 @@ func TestHistoryTrackReplacePrimaryFrameProjectsFixedGridRows(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackReplacePrimaryFramePreservesBlankPhysicalRows(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{
+			cells("Update available!"),
+			nil,
+			cells("OpenAI Codex"),
+		}},
+	)
+
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 80, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) != 3 {
+		t.Fatalf("screen-frame must preserve blank physical rows, got %#v", window.Rows)
+	}
+	if window.Rows[0].Text != "Update available!" || window.Rows[1].Text != "" || window.Rows[2].Text != "OpenAI Codex" {
+		t.Fatalf("unexpected frame rows %#v", window.Rows)
+	}
+	for _, row := range window.Rows {
+		if row.Kind != RowKindScreenFrame {
+			t.Fatalf("blank and nonblank frame rows should all be screen-frame, got %#v", window.Rows)
+		}
+	}
+}
+
 func TestHistoryTrackNonHistoryBoundaryDoesNotCreateCommittedHistory(t *testing.T) {
 	track := NewHistoryTrack()
 	before := track.Generation()

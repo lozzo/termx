@@ -1090,14 +1090,9 @@ func (track *HistoryTrack) replacePrimaryFrame(rows [][]Cell) error {
 	track.primaryFullscreenIntent = true
 	track.primaryFullscreenFrame = true
 	changed := false
-	for screenRow, row := range rows {
+	frameRows := trimTrailingBlankHistoryFrameRows(rows)
+	for screenRow, row := range frameRows {
 		row = trimHistoryFrameRow(row)
-		if len(row) == 0 {
-			if screenRow < track.screenRows {
-				track.screen.clear(screenRow)
-			}
-			continue
-		}
 		nextGeneration := track.nextGeneration()
 		line, err := track.createLine(CreateLineRequest{
 			Seal:              SealStateSealed,
@@ -1536,6 +1531,19 @@ func trimHistoryFrameRow(row []Cell) []Cell {
 		return nil
 	}
 	return cloneCells(row[:end])
+}
+
+func trimTrailingBlankHistoryFrameRows(rows [][]Cell) [][]Cell {
+	last := -1
+	for idx, row := range rows {
+		if historyFrameRowRightEdge(row) > 0 {
+			last = idx
+		}
+	}
+	if last < 0 {
+		return nil
+	}
+	return rows[:last+1]
 }
 
 func clampFrameScreenRow(row int, rows int) int {
