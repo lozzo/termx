@@ -665,6 +665,38 @@ func TestCopyModeAcceptLatestKeepsPseudoTUILeadInContext(t *testing.T) {
 	}
 }
 
+func TestCopyModeAcceptLatestMatchesEnteringLiveScreenWhenHistoryHasOlderContext(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "shell prompt", LineID: 1},
+		{Text: "codex --yolo", LineID: 2},
+		{Text: "previous command output", LineID: 3},
+		{Text: "Update available! 0.141.0 -> 0.142.0", LineID: 4},
+		{Text: "Run brew upgrade --cask codex to update.", LineID: 5},
+		{Text: "OpenAI Codex", LineID: 6, LiveTail: true},
+		{Text: "Tip: Use /compact when the conversation gets long.", LineID: 7, LiveTail: true},
+		{Text: "> Improve documentation in @filename", LineID: 8, LiveTail: true},
+		{Text: "gpt-5.5 xhigh . ~/Documents/workdir/termx", LineID: 9, LiveTail: true},
+		{Text: "status: running", LineID: 10, LiveTail: true},
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	entering := LiveSurfaceSnapshot{
+		Lines: []string{
+			"Update available! 0.141.0 -> 0.142.0",
+			"Run brew upgrade --cask codex to update.",
+			"OpenAI Codex",
+			"Tip: Use /compact when the conversation gets long.",
+			"> Improve documentation in @filename",
+			"gpt-5.5 xhigh . ~/Documents/workdir/termx",
+			"status: running",
+		},
+	}
+	copyMode := CopyModeStore{ViewRows: 5, EnteringLive: &entering}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	if copyMode.ViewportTop != 3 || copyMode.Cursor != (CopyPosition{Row: 5}) {
+		t.Fatalf("latest should align first history viewport to entering live screen when matched, got %#v", copyMode)
+	}
+}
+
 func TestCopyModeAcceptOldestStartsAtOldestHead(t *testing.T) {
 	rows := []HistoryRow{
 		{Text: "one", LineID: 1},

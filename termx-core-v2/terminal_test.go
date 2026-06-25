@@ -1236,6 +1236,53 @@ func TestTerminalIngestOutputCodexTmuxRawFrameKeepsCurrentInputAndStatus(t *test
 	}
 }
 
+func TestTerminalIngestOutputLatestWindowCoversCurrentLiveScreenFrame(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 96, Rows: 10},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	output := strings.Join([]string{
+		"lozzow@RedmiBook: ~/Documents/workdir/termx\ncodex --yolo\n",
+		"\x1b[?2026h\x1b[H\x1b[J",
+		"\x1b[1;1HUpdate available! 0.141.0 -> 0.142.0",
+		"\x1b[2;1HRun brew upgrade --cask codex to update.",
+		"\x1b[3;1HOpenAI Codex",
+		"\x1b[4;1HTip: old",
+		"\x1b[5;1H> Summarize recent commits",
+		"\x1b[6;1Hgpt-5.5 xhigh",
+		"\x1b[4;1H\x1b[J",
+		"\x1b[4;1HTip: Use /compact when the conversation gets long.",
+		"\x1b[5;1H> Improve documentation in @filename",
+		"\x1b[6;1Hgpt-5.5 xhigh . ~/Documents/workdir/termx",
+		"\x1b[?2026l",
+	}, "")
+	if err := server.IngestOutput(context.Background(), "term-1", output); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	liveRows, err := server.LiveRows("term-1")
+	if err != nil {
+		t.Fatalf("live rows: %v", err)
+	}
+	if len(liveRows) == 0 || !strings.Contains(strings.Join(liveRows, "\n"), "Update available!") {
+		t.Fatalf("test requires current live screen rows, got %#v", liveRows)
+	}
+
+	window, err := server.LatestWindow("term-1", 96, 32)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsContiguousRows(window, liveRows) {
+		t.Fatalf("latest window should cover current live screen frame, live=%#v rows=%#v", liveRows, window.Rows)
+	}
+	if historyWindowContainsText(window, "Tip: old") || historyWindowContainsText(window, "Summarize recent commits") {
+		t.Fatalf("latest window must not retain stale middle repaint rows, live=%#v rows=%#v", liveRows, window.Rows)
+	}
+}
+
 func stressHistoryLine(n int) string {
 	return fmt.Sprintf("%06d [DEBUG ] stream pending id=%06d path=/var/tmp/alpha/beta/gamma wrap============================================== tail-marker", n, n)
 }
@@ -1247,6 +1294,49 @@ func historyWindowContainsText(window history.HistoryWindow, want string) bool {
 		}
 	}
 	return false
+}
+
+func historyWindowContainsContiguousRows(window history.HistoryWindow, want []string) bool {
+	want = normalizeTerminalTextRows(want)
+	if len(want) == 0 || len(want) > len(window.Rows) {
+		return false
+	}
+	rows := make([]string, len(window.Rows))
+	for i, row := range window.Rows {
+		rows[i] = strings.TrimRight(row.Text, " ")
+	}
+	for start := 0; start <= len(rows)-len(want); start++ {
+		matched := true
+		for offset := range want {
+			if rows[start+offset] != want[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeTerminalTextRows(rows []string) []string {
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		out[i] = strings.TrimRight(row, " ")
+	}
+	start := 0
+	for start < len(out) && out[start] == "" {
+		start++
+	}
+	end := len(out)
+	for end > start && out[end-1] == "" {
+		end--
+	}
+	if start == end {
+		return nil
+	}
+	return out[start:end]
 }
 
 func TestTerminalIngestOutputPreservesANSIStylesInHistoryCells(t *testing.T) {

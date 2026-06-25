@@ -845,6 +845,7 @@ func (store CopyModeStore) BindLatest(paneID string, viewID string, terminalID s
 func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRows int) CopyModeStore {
 	store.Active = true
 	store.Entering = false
+	enteringLive := store.EnteringLive
 	store.EnteringLive = nil
 	pendingScroll := store.EnteringScrollDelta
 	store.EnteringScrollDelta = 0
@@ -870,6 +871,14 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 			cursorRow = liveTailTop
 			visibleRows := copyVisibleRowsForStore(store)
 			viewportTop = clampCopyInt(liveTailTop-visibleRows/2, 0, maxCopyInt(0, totalRows-visibleRows))
+		}
+		if liveViewportTop, ok := liveSurfaceMatchedViewportTop(window.Rows, enteringLive, copyVisibleRowsForStore(store)); ok {
+			// 中文说明：live snapshot 只作为进入 copy/history 前的屏幕锚点参照；
+			// 真正渲染、复制和搜索仍全部使用 authoritative HistoryWindow rows。
+			viewportTop = liveViewportTop
+			if cursorRow < viewportTop || cursorRow >= viewportTop+copyVisibleRowsForStore(store) {
+				cursorRow = viewportTop
+			}
 		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
@@ -1480,6 +1489,81 @@ func firstLiveTailRow(rows []HistoryRow, totalRows int) (int, bool) {
 	for i := 0; i < totalRows; i++ {
 		if rows[i].LiveTail {
 			return i, true
+		}
+	}
+	return 0, false
+}
+
+func liveSurfaceMatchedViewportTop(rows []HistoryRow, enteringLive *LiveSurfaceSnapshot, visibleRows int) (int, bool) {
+	if enteringLive == nil || visibleRows <= 0 || len(rows) == 0 {
+		return 0, false
+	}
+	liveRows := normalizedEnteringLiveRows(*enteringLive)
+	if len(liveRows) == 0 {
+		return 0, false
+	}
+	historyRows := make([]string, len(rows))
+	for i, row := range rows {
+		historyRows[i] = normalizeHistoryViewportRow(row.Text)
+	}
+	start, ok := latestContiguousRowMatch(historyRows, liveRows)
+	if !ok {
+		return 0, false
+	}
+	return clampCopyInt(start, 0, maxCopyInt(0, len(rows)-visibleRows)), true
+}
+
+func normalizedEnteringLiveRows(snapshot LiveSurfaceSnapshot) []string {
+	rows := cloneStrings(snapshot.Lines)
+	if len(rows) == 0 && len(snapshot.Screen) > 0 {
+		rows = make([]string, 0, len(snapshot.Screen))
+		for _, row := range snapshot.Screen {
+			var builder strings.Builder
+			for _, cell := range row {
+				builder.WriteString(cell.Text)
+			}
+			rows = append(rows, builder.String())
+		}
+	}
+	for i := range rows {
+		rows[i] = normalizeHistoryViewportRow(rows[i])
+	}
+	return trimOuterEmptyHistoryViewportRows(rows)
+}
+
+func trimOuterEmptyHistoryViewportRows(rows []string) []string {
+	start := 0
+	for start < len(rows) && rows[start] == "" {
+		start++
+	}
+	end := len(rows)
+	for end > start && rows[end-1] == "" {
+		end--
+	}
+	if start == end {
+		return nil
+	}
+	return rows[start:end]
+}
+
+func normalizeHistoryViewportRow(row string) string {
+	return strings.TrimRight(row, " ")
+}
+
+func latestContiguousRowMatch(rows []string, pattern []string) (int, bool) {
+	if len(pattern) == 0 || len(pattern) > len(rows) {
+		return 0, false
+	}
+	for start := len(rows) - len(pattern); start >= 0; start-- {
+		matched := true
+		for offset := range pattern {
+			if rows[start+offset] != pattern[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return start, true
 		}
 	}
 	return 0, false
