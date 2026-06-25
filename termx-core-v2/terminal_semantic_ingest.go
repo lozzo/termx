@@ -23,18 +23,19 @@ var terminalSemanticIngestBatchHook func(terminalSemanticBatch)
 var terminalSemanticProjectorHook func(terminalSemanticProjectorStats)
 
 type terminalSemanticProjectorStats struct {
-	DamageBatches      int
-	WriteSpanOps       int
-	ClearToEOLOps      int
-	EraseDisplayOps    int
-	ModeOps            int
-	ControlOps         int
-	ScrollbackAppends  int
-	AlternateAppends   int
-	AltExitFrames      int
-	FullReplaceOnly    int
-	SemanticProjectors int
-	RawFallbacks       int
+	DamageBatches             int
+	WriteSpanOps              int
+	ClearToEOLOps             int
+	EraseDisplayOps           int
+	ModeOps                   int
+	ControlOps                int
+	ScrollbackAppends         int
+	AlternateAppends          int
+	AltExitFrames             int
+	FullReplaceOnly           int
+	SemanticProjectors        int
+	PrimaryScreenTransactions int
+	RawFallbacks              int
 }
 
 func resetTerminalSemanticIngestTestHooks() {
@@ -144,6 +145,13 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			if _, err := NewHistoryTrackProjector(pipeline.track).Apply(tx, decision); err != nil {
 				return err
 			}
+		} else if terminalSemanticTransactionCanUsePrimaryScreenProjector(tx, decision) {
+			stats.PrimaryScreenTransactions++
+			// 中文说明：primary screen app session 的 truth 是 vterm transaction +
+			// 当前 primary frame；repaint 只替换 current frame，不增加 ordinary depth。
+			if _, err := NewHistoryTrackProjector(pipeline.track).Apply(tx, decision); err != nil {
+				return err
+			}
 		} else {
 			var err error
 			publishSynchronizedFrame, err = pipeline.applyVTermDamageEventsLocked(batch.Damages)
@@ -226,6 +234,16 @@ func terminalSemanticTransactionCanUseOrdinaryProjector(tx TerminalSemanticTrans
 		}
 	}
 	return hasHistoryOp && hasHardLineEnd
+}
+
+func terminalSemanticTransactionCanUsePrimaryScreenProjector(tx TerminalSemanticTransaction, decision ScreenAppDecision) bool {
+	if decision.Mode != ScreenOutputModePrimaryScreen || !decision.PublishFrame || tx.PrimaryFrame == nil {
+		return false
+	}
+	if tx.AltFrame != nil || tx.AltExitFrame != nil || tx.AltEntered || tx.AltExited || tx.RequiresFullReplace {
+		return false
+	}
+	return tx.SynchronizedEnd || transactionHasSyncMode(tx, false)
 }
 
 func terminalSemanticOrdinaryProjectorControlAllowed(control string) bool {

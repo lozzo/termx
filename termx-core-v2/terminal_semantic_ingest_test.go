@@ -1818,6 +1818,68 @@ func TestTerminalSemanticProjectorKeepsPublishedFrameVisibleDuringNextBSU(t *tes
 	}
 }
 
+func TestTerminalSemanticProjectorPrimaryScreenSessionArchivesRepaintViaProjector(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.PrimaryScreenTransactions += next.PrimaryScreenTransactions
+		stats.RawFallbacks += next.RawFallbacks
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	term := vterm.New(40, 6, 100, nil)
+	pipeline := newTerminalHistoryPipeline(40, 6)
+	ingestSharedVTermRawForTest(t, term, pipeline, "shell-one\nshell-two\n", 40, 6)
+	ingestSharedVTermRawForTest(t, term, pipeline, "\x1b[?2026h\x1b[H\x1b[Jframe-one\x1b[6;1Hprompt-one\x1b[?2026l", 40, 6)
+	ingestSharedVTermRawForTest(t, term, pipeline, "\x1b[?2026h\x1b[H\x1b[Jframe-two\x1b[6;1Hprompt-two\x1b[?2026l", 40, 6)
+
+	if stats.SemanticProjectors == 0 || stats.PrimaryScreenTransactions < 2 || stats.RawFallbacks != 0 {
+		t.Fatalf("primary screen app session should be projected from semantic transactions, stats=%#v", stats)
+	}
+	latest, err := pipeline.LatestWindow(40, 8)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	latestText := historyWindowJoinedText(latest)
+	for _, want := range []string{"shell-one", "shell-two", "frame-two", "prompt-two"} {
+		if !strings.Contains(latestText, want) {
+			t.Fatalf("latest should contain current primary frame %q, text=%q rows=%#v", want, latestText, latest.Rows)
+		}
+	}
+	for _, stale := range []string{"frame-one", "prompt-one"} {
+		if strings.Contains(latestText, stale) {
+			t.Fatalf("latest must not keep stale primary repaint %q, text=%q rows=%#v", stale, latestText, latest.Rows)
+		}
+	}
+	if latest.TotalLines != 2 {
+		t.Fatalf("primary screen repaint must not grow ordinary committed depth, total=%d rows=%#v", latest.TotalLines, latest.Rows)
+	}
+
+	latestTail, err := pipeline.LatestWindow(40, 1)
+	if err != nil {
+		t.Fatalf("latest tail: %v", err)
+	}
+	if !latestTail.HasMore || !latestTail.Cursor.Valid {
+		t.Fatalf("latest tail should expose cursor to archived session frames, window=%#v", latestTail)
+	}
+	older, err := pipeline.OlderWindow(40, 20, latestTail.Cursor)
+	if err != nil {
+		t.Fatalf("older: %v", err)
+	}
+	olderText := historyWindowJoinedText(older)
+	for _, want := range []string{"frame-one", "prompt-one"} {
+		if !strings.Contains(olderText, want) {
+			t.Fatalf("older should expose archived primary frame %q, text=%q rows=%#v", want, olderText, older.Rows)
+		}
+	}
+	for _, row := range older.Rows {
+		if strings.Contains(row.Text, "frame-one") && (row.Committed || row.Kind != history.RowKindArchivedScreenFrame) {
+			t.Fatalf("archived primary repaint should remain non-committed archived frame, row=%#v", row)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorPreservesDefaultBlankColumnsInPublishedFrame(t *testing.T) {
 	term := vterm.New(72, 6, 100, nil)
 	pipeline := newTerminalHistoryPipeline(72, 6)
