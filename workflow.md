@@ -1,18 +1,21 @@
-# 工作流：termx remote + app 端到端迁移主线
+# 工作流：screen app 无限历史清场与重建主线
 
-本文件是当前分支唯一有效的活动驱动文件。后续分析、实现、测试、提交都先看这里；如果本文件与旧说明、聊天记录、旧代码行为冲突，以本文件为准。
+本文件是当前分支唯一有效的活动驱动文件。后续分析、实现、测试、提交都先看这里；如果本文件与旧说明、聊天记录、旧代码行为或局部假设冲突，以本文件为准。
 
-本文件已经从旧 history/copy 长队列压缩为 remote + app 端到端迁移队列。旧队列和完成记录不再在这里重复备份，按 git 历史追溯；本文件只保留当前阶段需要执行和约束的内容。
+本文件已经从旧 remote + app 迁移队列重置为 screen app 无限历史主线。旧队列、旧完成记录和旧补丁路径只通过 git 历史追溯，不再作为当前实现依据。
 
 ## 0. 怎么读
 
 开始任何工作前只看这几段：
 
 - `1. 当前目标`
+- `2. 技术设计基准`
 - `3. 工作范围`
 - `4. 不可违反的语义`
-- `5. 扫描结论和任务队列`
-- `6. 测试准入`
+- `5. 清场规则`
+- `6. 任务队列`
+- `7. 测试准入`
+- `8. 提交规则`
 
 如果用户请求和任务队列冲突，先更新本文件，再改代码；不要靠口头约定跳过范围和顺序。
 
@@ -20,44 +23,36 @@
 
 ### 1.1 一句话目标
 
-把 `termx remote ...`、core-v2 remote runtime 和真实 `termx-app/` 打通：CLI 启动和管理 remote，App 连接该 runtime 打开 terminal；App 可以持有自己的显示/滚动历史缓存，但复制模式和历史真值必须走 core-v2 authoritative logical-line history。
+实现接近 tmux/普通终端体验的无限历史：只要内容真实经过 PTY 并被终端语义解释到 primary/history 轨道，就应能在历史模式中回看、搜索和复制；实现方式必须以 core-v2 logical line 为唯一历史真值。
 
 ### 1.2 这轮只关心什么
 
-当前阶段先迁 remote 的后端控制链路，再接真实 App：
+当前阶段先清掉旧的补丁式历史实现，再立接口和 harness，最后按接口推进实现：
 
-1. 明确 remote 现有 method、service、storage、transport 和 CLI fallback 边界。
-2. 把 `termx-proto` wire contract 与 `internal/protocol` Go contract 迁到 core-v2 domain 结构，而不是为旧 core 保留兼容层。
-3. 在 core-v2 补齐 remote 所需的 typed protocol、transport scope、terminal create、storage/events 和 service hook。
-4. 用 core-v2 adapter 接上 `termx-remote` public service，而不是把默认入口退回旧 core。
-5. 分步迁移 `remote.status`、`remote.local.*`、`remote.pair.start` 和 remote terminal/storage routing。
-6. 切换 CLI remote client/config 到 core-v2 默认 daemon，并清理旧 fallback 边界。
-7. 保留 remote terminal/storage routing 的 core-v2 truth，不新增第二份 terminal truth。
-8. 让 `termx-app/` 通过当前 CLI remote runtime 连接、列出、创建、进入 terminal。
-9. 把 App 侧 live terminal display 和 infinite history surface 分层：live display 可以有本地短缓存，history/copy 必须通过 core-v2 logical-line window。
-10. 后续无限历史回滚、窗口化渲染、选择和复制可以参考 `termx-app-history-ref/`，但不得把参考实现升级成新的历史真值。
+1. 删除或隔离旧的 screen app/history 补丁路径，避免后续 Agent 顺着旧逻辑继续打补丁。
+2. 定义 core-v2 与 termx-vterm 之间的 terminal semantic transaction 接口。
+3. 定义普通输出、primary screen app、alt-screen transient、final screen-frame、segment cursor、resize、色彩属性和文件存储的边界。
+4. 先补小 harness 锁住边界，再接真实 PTY/vterm/protocol/TUI。
+5. tui-v3 和 App 只消费 core-v2 authoritative history window，不从本地 VTerm scrollback、snapshot、DOM/canvas rows 或 live cache 推断历史真值。
 
 ### 1.3 不在当前阶段做什么
 
-- 不迁 `web-control/`、`termx-hub/`。
-- 不把 `termx-remote-v2/` 纳入实现范围；它当前只作为未跟踪实验目录存在。
+- 不修旧历史代码上的单点 bug。
+- 不为旧 storage、旧 protocol、旧 snapshot/workbench schema 或旧运行时行为做兼容。
 - 不恢复旧 `termx-core/` 或 `tuiv2/`。
-- 不对旧 core 协议、旧 storage 格式、旧 daemon method 或旧 remote fallback 做任何兼容；冲突时直接迁到 core-v2 contract。
-- 不借 remote/App 迁移重开 TUI floating 的长尾问题；除非当前切片直接触发回归。
-- 不把 App 本地显示缓存、xterm scrollback、DOM/canvas rows 或 native bridge backlog 当作 copy/history truth。
+- 不把 Codex、Claude Code、htop、vim 这类程序名写成特殊分支；只能通过终端语义和屏幕行为分类。
+- 不保证读取程序没有输出到 PTY 的内部状态。目标是 tmux/终端级别的可观察历史，不是读取 Codex 内部 session 数据库。
+- 不迁 `web-control/`、`termx-hub/`、`termx-remote-v2/`。
+- 不继续推进旧 remote + app 队列里的 Web desktop 可见性问题；那条线已退出当前主线。
 
 ## 2. 技术设计基准
 
-- core-v2：`termx-core-v2/docs/architecture.md`
-- tui-v3：`termx-tui-v3/docs/architecture.md`
-- CLI 切换审计：`termx-cli/docs/v2-v3-switch-audit.md`
-- remote public service：`termx-remote/`
-- wire protocol contract：`termx-proto/`
-- protocol contract：`internal/protocol/`
-- real app：`termx-app/`
-- app shared UI/runtime package：`remote-ui/`
-- infinite history UI reference：`termx-app-history-ref/`
-- terminal live stream tradeoff memo：`terminal-live-stream-tradeoff.md`
+- 当前 screen app 无限历史定案：`termx-core-v2/docs/screen-app-infinite-history-final-plan.md`
+  - 其中 `2.1 架构图与接口绑定` 是后续代码边界准入；R302-R310 必须按图上的 interface 和 owner 落地，不能绕过图里的边界直接补旧实现。
+- core-v2 架构：`termx-core-v2/docs/architecture.md`
+- tui-v3 架构：`termx-tui-v3/docs/architecture.md`
+- vterm terminal 语义来源：`termx-vterm/`
+- 旧 history 说明、session history 说明和同步输出说明只能作为问题背景；如果与本文件或定案冲突，以本文件和定案为准。
 
 如果实现发现设计文档过期，必须和当前切片一起更新；不要代码先跑偏，文档以后再补。
 
@@ -67,23 +62,18 @@
 
 - `workflow.md`
 - `AGENTS.md`
-- `termx-cli/cmd/termx/remote_*.go`
-- `termx-cli/cmd/termx/default_dependency_guard_test.go`
-- `termx-cli/docs/v2-v3-switch-audit.md`
 - `termx-core-v2/`
-- `termx-remote/`
-- `termx-proto/`
-- `internal/protocol/`
-- `termx-app/`，仅当当前切片进入真实 App remote/runtime/history 集成阶段
+- `termx-core-v2/docs/screen-app-infinite-history-final-plan.md`
+- `termx-vterm/`，仅限提供 terminal semantic transaction 所需的最小接口、事件和 harness
 
 ### 3.2 受限联动范围
 
 只有当前切片确实需要时，才允许最小化触及：
 
-- `termx-cli/cmd/termx/` 内非 `remote_*.go` 的必要 glue、旧 fallback 删除或测试
-- `termx-tui-v3/` 中受 protocol/service adapter 影响的 smoke 或 harness
-- `remote-ui/`，仅当 `termx-app/` 的 terminal/runtime/history/copy contract 必须调整
-- `termx-shared/`，仅当 transport/session contract 必须调整
+- `termx-tui-v3/`，只接 authoritative history window、copy mode、scroll/selection/render harness
+- `internal/protocol/` 与 `termx-proto/`，只在 `history.window`、history copy 或 semantic history contract 需要跨进程时修改
+- `termx-cli/`，只在默认入口守卫、smoke 或必要 CLI glue 需要时修改
+- `termx-shared/`
 - `termx-testkit/`
 - `scripts/`
 - `Makefile`
@@ -98,17 +88,14 @@
 - `termx-core/`
 - `tuiv2/`
 
-### 3.4 只读参考范围
-
-默认不得修改：
-
-- `termx-remote-v2/`
-- `termx-app-history-ref/`，当前作为未跟踪本地参考目录，只读参考无限历史回滚和 history surface 设计
-
-### 3.5 冻结范围
+### 3.4 冻结范围
 
 不得主动触碰，除非本文件先明确解冻：
 
+- `termx-remote/`
+- `termx-remote-v2/`
+- `termx-app/`
+- `remote-ui/`
 - `web-control/`
 - `termx-hub/`
 - `bin/`
@@ -118,87 +105,82 @@
 
 ## 4. 不可违反的语义
 
-### 4.1 默认本地入口不能回退
+### 4.1 历史真值
 
-- 默认 `termx`、`daemon`、`attach`、`new`、`ls`、`kill`、`rm` 仍必须走 `termx-core-v2/` 和 `termx-tui-v3/`。
-- 旧 `termx-core/` 和 `tuiv2/` 不得通过 `termx legacy ...`、remote fallback、test helper 或 go.mod replace 间接存在。
-- 默认入口依赖守卫不能放松，任何 CLI 源文件都不得 import 旧 core/TUI。
-- remote/protocol 迁移不得保留旧 core wire format、storage format、method adapter、双 handler、fallback 读写或兼容 shim。
-- 跨进程、daemon client 或 remote service 需要共享的 payload 字段必须先进入 `termx-proto/wirepb/terminal.proto`，再由 `internal/protocol` 映射为 core-v2 Go domain；不能只在 CLI adapter 或反射 helper 里临时承接。
+- 历史 truth 的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback、grid viewport 或 xterm buffer row。
+- core-v2 的 logical-line history 是唯一历史数据模型。
+- `CommittedHistoryIndex`、`MutableFrontier`、segment cursor、storage backend、cache、adapter、TUI/App projection 都不能演变成第二份历史 truth。
+- `persisted` 或落盘不表示不可修改；是否可修改由 session/segment/finalization 语义决定。
 
-### 4.2 remote 不能拥有第二份 terminal truth
+### 4.2 terminal 语义来源
 
-- terminal lifecycle、PTY size、attachment、events、history 和 storage 必须来自 core-v2 daemon/protocol。
-- remote 只负责授权、配对、transport/session 和请求路由。
-- remote storage 只能走 core-v2 storage API，不得把 TUI workbench、terminal lifecycle、copy/history 交互态写成 remote 私有 truth。
+- 不能把 raw PTY bytes parser 作为 terminal 语义 owner；raw parser 不能 fallback 出第二套历史。
+- core-v2 应消费 termx-vterm 解释过程中的语义 transaction，而不是消费最终屏幕快照。
+- vterm 的当前屏幕不是无限历史来源；它最多证明“终端语义解释过程可以产生可记录事件”。
+- 与 tmux 一样，只有程序真实输出到 PTY 的内容才能进入历史；没有输出过的程序内部状态不在目标内。
 
-### 4.3 remote migration 必须分层
+### 4.3 普通输出
 
-- 先审计 method/contract，再接 core-v2 extension hook，再接 service adapter，再启用 CLI flow。
-- remote management request 必须通过清晰 adapter 路由到 core-v2 public/protocol 方法。
-- 新 protocol structure 必须直接表达 core-v2 的 terminal、attachment、history、storage 和 event 模型；不得先模拟旧 core 协议再翻译到 core-v2。
-- `.proto` 是 wire contract，不是旧 core contract；字段命名、optional/repeated 语义、时间单位、枚举和 scope 必须向 core-v2 domain 对齐。
-- 不得直接读写 TUI reducer state、renderer、TerminalHost 或旧 core runtime。
-- 不得用 storage scrub、定时刷新、重复 attach、局部 fallback 分支掩盖状态错乱。
-- 禁止补丁式迁移：不能为了让某个 remote 命令暂时可用而叠加临时 if、重复同步、隐式状态修正或旧路径兜底；每个切片必须先明确 domain owner、truth source、消息链路和失败条件，再用契约测试或 harness 锁住语义。
+- 普通 shell/程序 stdout 一旦形成完整 logical line，就可以 commit 到 history。
+- 普通输出不应长时间持有 screen app session。
+- 进程退出必须 force commit primary mutable frontier。
 
-### 4.4 tui-v3 和 history/copy 基线不能被破坏
+### 4.4 screen app session
 
-- tui-v3 不以 Bubble Tea 作为主运行时。
+- pseudo-TUI 类程序在 primary screen 上反复改写时，必须有一个可变 session。
+- session 内允许程序修改从 session 开始到当前的可变内容。
+- session 暴露给历史模式前，必须先通过 segment cursor/archive 形成一致视图，不能展示半更新状态。
+- session 最终退出或模式切换时，按分类决定 commit：普通 primary screen app 可以 commit final screen-frame；纯 alt-screen transient 不写 primary history。
+
+### 4.5 alt-screen
+
+- alt-screen 不写入 primary history。
+- htop/vim 这类纯 alt-screen transient：运行期间可在当前屏幕选择；退出时不把屏幕内容 commit 到 primary history。
+- Codex/Claude Code 这类 primary screen app 临时进入 alt-screen 选择器时：进入 alt 前必须 archive/hide 当前 primary frame；alt 内容作为 live transient 展示和选择；退出 alt 后如果出现新的 primary 输出，必须作为新的 primary frame publish，可以接回同一 session journal，但不得复活 pre-alt current frame，也不得凭空 commit alt 屏幕。
+- 如果程序运行期间用户进入历史模式，当前 session 的文本内容必须作为历史视图的一部分，但仍需标记为 mutable/frozen projection，而不是当成 committed truth。
+
+### 4.6 final screen-frame
+
+- primary screen app 退出时允许把最后一屏作为固定宽度 screen-frame commit。
+- final screen-frame 是为了保存“屏幕程序最终展示的内容”，不是普通 logical line reflow。
+- final screen-frame 后续不随 resize 重排。
+
+### 4.7 resize
+
+- resize 不得重写 committed history。
+- 普通 logical line 可以在展示层按新宽度重新 wrap。
+- mutable screen app session 在 resize 时必须保留可变语义，不能凭空产生 committed history。
+- final screen-frame 必须固定生成时的列宽。
+- Codex/Claude Code 运行中 resize 是硬 harness，不能靠程序名特殊适配。
+
+### 4.8 色彩和主题
+
+- 历史应保存终端语义属性，不应把“当时主题下的默认前景/背景 RGB”提前烘焙成不可变颜色。
+- SGR 明确指定的颜色可以作为具体颜色或调色板索引保存。
+- default fg/bg、bold、dim、inverse 等应尽量保存为语义属性，由查看历史时的主题解析。
+- 如果终端应用写入明确 RGB 背景，则该 RGB 属于内容属性，不能被后续主题替换。
+
+### 4.9 TUI/App 边界
+
+- tui-v3 不拥有 committed history truth，只消费 core-v2 authoritative `HistoryWindow`。
+- tui-v3 copy mode 不得从本地 VTerm scrollback、snapshot totals、row ownership、LoadedRows、wrapped 拼接结果推断历史。
+- App/Web/native live display 可以有本地短缓存，但 copy/search/history truth 必须走 core-v2 logical-line window。
 - renderer 只消费 view-model，不读 core client、history source、runtime service 或 protocol client。
-- copy/history 仍只消费 core-v2 authoritative history，不从 live/snapshot/VTerm scrollback fallback。
-- panel/pane 只表达工作台槽位和连接意图，不表达 terminal running/exited 或 copy/history 交互态。
 
-### 4.5 App remote/history/copy 边界
+## 5. 清场规则
 
-- `termx-app/` 是真实 App 入口，必须连接 CLI 启动的 remote/core-v2 runtime；不得另起一套 App 私有 terminal lifecycle、PTY、history 或 storage truth。
-- `remote-ui/` 可以承载 App/Web 共享 UI、运行时接口、terminal live surface、history surface 和缓存，但不能反向定义 core-v2 protocol truth。
-- App 允许自己持有显示历史、短 scrollback、render window、离线滚动缓存和 native bridge 状态；这些只能是 projection/cache，不能作为 copy mode、search、selection text 或历史窗口的权威来源。
-- App 的 copy mode 必须通过 core-v2 logical-line history/window contract 取数；不得从 xterm buffer、snapshot scrollback、DOM/canvas rows、native bridge backlog 或 App 本地 append log 拼接最终文本。
-- 无限历史回滚使用 logical-line cursor/token/generation 这类后端窗口语义；不得以 visual row、wrapped row、像素 offset 或 xterm scrollback index 作为后端 contract。
-- `LiveSurface` 和 `HistorySurface` 必须分层：live surface 展示实时终端和短上下文，history surface 显式进入后按 frozen/tokenized history window 渲染、选择、复制、搜索。
-- `termx-app-history-ref/` 只作为无限历史回滚、窗口化渲染、overscan、WebGL/Canvas/DOM renderer 的参考；参考实现里的 mock source、visual row 逻辑和 demo 数据不得成为新协议或历史真值。
+这条主线允许先删后写，但删除必须有边界。R301 的“清场”是审计和最小隔离优先，
+只删除会继续误导实现的补丁入口；大规模删除旧 raw parser / fallback 必须等 R302/R303
+接口和 harness 站稳后再做。
 
-### 4.6 实现纪律
+- 可以删除旧补丁式 screen app/history 代码、raw parser fallback、程序名分支、snapshot/history 拼接 fallback、重复同步和隐式状态修正。
+- 删除后必须保留可编译的最小骨架，或者在当前切片内补上替代 interface/harness。
+- 不要为了保留旧测试而保留错误模型；旧测试若表达的是旧补丁语义，应删除或改写成新模型 harness。
+- 任何“先兼容旧路径，后面再切”的方案默认不合格，除非本文件明确列为当前切片。
+- 不得用 storage scrub、定时刷新、重复 attach、局部 fallback 分支掩盖状态错乱。
+- 关键代码需要写简短中文注释，说明 domain owner、truth source、消息链路或失败条件。
 
-- 先写 domain model、小 harness 或契约测试，再接真实 protocol、terminal 或 CLI。
-- 代码必须按正确模型写完整；如果方案依赖“再刷一次状态”“失败就 fallback”“先 scrub storage”“兼容旧内部格式”才能成立，默认不合格，需要回到状态归属和 contract 重做。
-- 关键代码写简短中文注释，只解释不自明的边界或约束。
-- 手工编辑文件必须使用 `apply_patch`。
-- 不得覆盖用户或其他代理的未提交改动。
-- 不得 amend commit，除非用户明确要求。
-
-## 5. 扫描结论和任务队列
-
-### 5.1 代码扫描结论
-
-这次扫描到的当前边界如下，后续切片必须按这些边界拆，不得用补丁式兼容绕过去：
-
-- R175 后旧 `remote_runtime.go`、旧 CLI 私有 `remote_protocol_codec.go`、legacy daemon auto-start 和旧 `termx-core/tuiv2` fallback 已删除；`termx-cli/cmd/termx/remote_client.go` 现在只保留 `remote.status`、`remote.local.*`、`remote.pair.start` client 调用骨架，等待 core-v2 daemon 承接这些 method。
-- `termx-cli/cmd/termx/remote_config.go` 已不再依赖旧 TUI，但 remote config path 与 v3 config policy 仍需要单独锁定，避免 App/CLI/local runtime 后续形成多套配置入口。
-- `termx-remote.Service` 的边界是合理的：它只需要 daemon 提供 terminal management、storage、events、transport/session，不应拥有 terminal lifecycle/history/storage truth。
-- `termx-remote` 的 `runtimepb` 是 remote runtime/localweb/WebRTC API，可保留；不能把它当成 core daemon protocol truth，也不能让 core-v2 模拟旧 core protocol 后再翻译。
-- `internal/protocol` 已有 remote wire protobuf，但当前用反射/getter/wirepb 指针承接 remote params/results；迁移目标是新增显式 `protocol.Remote*` domain structs，移除反射和 legacy getter 兼容。
-- `termx-core-v2` 已有 storage/events 和 protocol dispatch，但没有 remote service hook，也没有 public `ServeTransport/ServeScopedTransport`；remote WebRTC datachannel 需要 core-v2 自己的 transport scope API。
-- `termx-core-v2` 的 `ProcessSpec` 当前只包含 `TerminalID/Command/Size`，而 `protocol.CreateParams` 和 remote terminal management 会传 `Dir/Env/Scrollback*`；这些字段必须进入 core-v2 create/process contract，不能在 remote adapter 里丢弃。
-- `termx-proto/wirepb/terminal.proto` 是 remote/core-v2 跨进程 wire contract 的入口。当前已包含 `CreateParams` 的 `dir/env/scrollback_*` 和 `RemoteStatus/RemotePairStart*/RemoteLocal*`，但后续必须先审计这些字段是否完整表达 core-v2 domain；需要共享的新字段必须写入 `.proto` 并同步生成 `terminal.pb.go`，不能只补在 Go 侧反射/adapter。
-- `termx-app/` 是 Capacitor React 真实 App：`TermxApp.tsx` 挂载 `RemoteControlApp`，注入 Native HTTP/storage/QR、`createNativeMachineRuntime` 和 native file transfer context。
-- `termx-app/src/NativeConnectionProxy.ts` 通过 Capacitor `NativeConnection` 插件做控制面，通过本地 WebSocket bridge 承载 WebRTC/datachannel 二进制帧，并把 `terminal:${machineId}:${terminalId}` channel 映射成 `RtcSession.openTerminal`；它不是 terminal/history truth。
-- `termx-app/src/plugins/nativeConnection.ts` 的 native contract 是 machine/session/bridge/transfer 维度，当前没有 logical-line history/copy contract；后续如需 App history 必须通过 remote/core-v2 runtime API 补齐，而不是塞进 native bridge 私有状态。
-- `remote-ui/` 是 `termx-app` 当前依赖的共享 UI/runtime 包。它现在的 terminal 路径仍包含 snapshot/scrollback、xterm scrollback、`loadScrollback` 和本地 text prefix 拼接逻辑；这些可以作为 live display/cache 参考，但 copy/history 迁移时必须改成 core-v2 logical-line source。
-- `termx-app-history-ref/` 当前是未跟踪本地参考目录，包含 `MockHistorySource`、`HistoryCacheWindow`、`HistorySurfaceApp` 与 WebGL/Canvas/DOM renderer demo；只能参考其 window/cache/overscan/renderer 结构，不能照搬 mock source 或 visual-row truth。
-- R189 已补 `remote-ui/docs/app-core-v2-contract.md`：`termx-app` 注入 native runtime adapter，`remote-ui` 保持 TypeScript interface 边界；runtime API、terminal live datachannel、logical-line `CoreV2HistorySource`/`HistorySurface` 分层；现有 snapshot、`loadScrollback`、xterm buffer、native bridge backlog 和 App 本地 append/cache 明确只能作为 live display/cache，不得作为 App copy/search/selection truth。
-- R190 已在 `remote-ui/src/terminal/coreV2TerminalProtocol.ts` 建立 core-v2 terminal/history TypeScript domain contract：`history.window`、`history.copy`、`history.release` 使用 logical-line cursor/token/generation/range 参数；`HistoryWindow` payload 归一为 logical-line render rows/line spans；旧 snapshot、visual scrollback、xterm buffer 和 `loadScrollback` 明确只能作为 live display cache。当前 `termx-proto/wirepb/terminal.proto` 已包含 `HistoryWindow*`，但 `remote-ui/src/generated/wirepb/terminal_pb.ts` 仍缺这些生成类型，本机缺 `protoc` 且先不手写生成文件；后续如需 wirepb TS codec，必须先同步生成物。
-- R191 已让真实 App/native runtime 只通过 CLI remote 暴露的 local/hub Hub API 建立连接：`remote-ui` 删除旧 `createLocalAgentApi` 与 `/api/local/status` caller，legacy cleanup harness 锁定不得恢复 `/api/local/status`、`/api/local/rtc/offer`、`/api/local/pair`、`/api/local/terminals`；Android native local connector 使用标准 `/api/v1/sessions/ice` 探测本地 Hub 并复用返回的 ICE 配置进入 `WebRTCTransport.connectHub`，不再先访问 App 私有 local status。R191 已通过 `remote-ui` typecheck/test/build、`termx-app` build、`termx-app` cap:sync、旧 local API 静态搜索和 `git diff --check`；已用 Homebrew 安装 OpenJDK 21 并重试 Android Kotlin 编译，当前阻塞于本机缺失 Android SDK：`termx-app/android/local.properties` 指向的 `/Users/lozzow/Library/Android/sdk` 不存在。
-- R192 已补 `remote-ui/src/integration/appTerminalRuntimeContract.test.ts`，用同一个 core-v2 App session 锁定 terminal inventory/list、create/restart/remove 管理 API 与 live terminal attach/input/resize 都经由 session API channel 和 terminal datachannel；App live surface 继续允许 xterm/snapshot/短 scrollback 作为显示缓存，但 terminal lifecycle、resize owner、input 和管理操作由 core-v2 runtime session 承接。R192 已通过 `remote-ui` focused test/typecheck/test/build、`termx-app` build、旧 local/fallback 静态搜索和 `git diff --check`；已用 OpenJDK 21 重试 Android/Kotlin 编译确认，当前阻塞于本机缺失 Android SDK。
-- R193 已补 `remote-ui/src/terminal/coreV2HistorySource.ts`，让 App/shared UI 通过 machine-scoped `RtcSession.openApi()` 调用 core-v2 `history.window`，并归一化为 logical-line `CoreV2HistoryWindow`；focused harness 证明 latest/older window 使用 token、generation、logical cursor、line boundary，不打开 terminal datachannel、不调用 `loadScrollback`、不从 snapshot/xterm/live cache 取历史。R193 已通过 `remote-ui` focused test/typecheck/test/build、`termx-app` build、旧 local/fallback 静态搜索和 `git diff --check`。
-- R194 已补 `remote-ui/src/terminal/coreV2HistorySurface.ts`，在 `CoreV2HistorySource` 之上建立 App infinite history surface/cache：latest window 建立 frozen token/generation，older/newer 只能通过 logical cursor 与 line boundary 继续分页，render window/overscan/cache trim 只是 App 投影，token/generation 变化会让 surface stale 并清空本地 cache。focused harness 证明 window 合并、overscan render window、cache trim 后的方向重载和 stale 失效语义；R194 已通过 `remote-ui` focused test/typecheck/test/build 与 `termx-app` build。
-- R195 已补 `remote-ui/src/terminal/coreV2HistoryInteraction.ts`，把 App history selection/range/search/copy 都绑定到 `CoreV2HistorySurfaceSnapshot` 的 logical line/cell 坐标；`CoreV2HistorySource.copy()` 通过 machine-scoped API 调 `history.copy`，最终文本由 core-v2 frozen logical-line snapshot 生成。focused harness 证明 copy 不调用 xterm selection、visual scrollback、DOM/canvas renderer text 或 App append log，search 只返回 logical-line range；R195 已通过 `remote-ui` focused test/typecheck/test/build 与 `termx-app` build。
-- R196 已补 `remote-ui/src/integration/appCoreV2EndToEndSmoke.test.ts`，用同一个 core-v2 App session 串起 terminal create、terminal datachannel attach/input/resize、logical-line history latest/older rollback 和 `history.copy`；smoke 断言 rollback/copy 不走旧 terminal history replay/live scrollback。R196 已通过 `remote-ui` focused test/typecheck/test/build、`termx-app` build、`termx-cli` remote/default focused Go tests、`termx-core-v2` scoped transport/history copy focused Go tests 和 `termx-remote` 全量 Go tests；Android/Kotlin 编译仍因本机缺 Android SDK 未运行。
-- R197 已更新 `termx-cli/docs/v2-v3-switch-audit.md` 与 `remote-ui/docs/app-core-v2-contract.md`，把 remote + App 迁移从“后续 App 集成”收口为当前完成状态：记录 App 连接 CLI remote runtime 的方式、terminal/live/history/copy truth 边界、`CoreV2HistorySource/Surface/Interaction` 分层、`termx-app-history-ref/` 只读参考取舍、完整测试证据和 Android SDK 缺失说明。R197 为 docs-only，准入 `git diff --check`。
-- R198 已补 `terminal-live-stream-tradeoff.md`：记录完整连续客户端 PTY bytes、慢客户端不丢、不反压程序三者不能同时成立；后续默认回到 core-v2 维护 latest screen 和 logical-line history，App/TUI 本地 scrollback 只能作为显示缓存，copy/search/history truth 必须走 core history。
-
-### 5.2 任务队列
+## 6. 任务队列
 
 状态只能使用：`待开始`、`进行中`、`完成`、`阻塞`。同一时间只能有一个切片处于 `进行中`。
 
@@ -206,328 +188,34 @@
 
 | 切片 | 状态 | 范围 | 白话说明 |
 | --- | --- | --- | --- |
-| 背景里程碑：local v2/v3 切换与 history/copy/floating 收口 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`termx-cli/`、`internal/protocol/`、相关文档 | 默认本地入口、TerminalView/Attachment、authoritative history、copy/history、floating、owner/attachment 计数已经收口；细节按 git 历史追溯 |
-| R173. SK remote 迁移工作流重置 | 完成 | `AGENTS.md`、`workflow.md` | 已收紧 AGENTS 的 remote 迁移边界，压缩 workflow 为 remote 主线，并保留测试/提交准入 |
-| R173B. SK 禁止补丁式实现准入 | 完成 | `AGENTS.md`、`workflow.md` | 已把禁止补丁式实现写成硬语义：先定位 truth/source/message chain，再按模型和 harness 实现 |
-| R173C. SK core-v2 protocol-only 准入 | 完成 | `AGENTS.md`、`workflow.md` | 已明确 remote/protocol 迁移不对旧 core 做任何兼容，协议结构必须迁到 core-v2 domain contract |
-| R174. SK remote 迁移代码扫描与队列设计 | 完成 | `workflow.md`、只读扫描 `termx-cli/`、`termx-remote/`、`termx-core-v2/`、`internal/protocol/`、`termx-proto/`、旧 `termx-core/` | 已定位 CLI legacy daemon 入口、旧 core adapter、remote service 边界、core-v2 缺口和后续切片顺序 |
-| R175. SK 删除旧 core/tuiv2 fallback | 完成 | `termx-core/`、`tuiv2/`、`AGENTS.md`、`workflow.md`、`go.work`、`go.work.sum`、`termx-cli/`、`termx-testkit/`、`termx-remote/`、按需 `termx-hub/go.mod` | 已删除 `termx-core/` 与 `tuiv2/`，移除 legacy command、旧 daemon auto-start、remote fallback adapter 和所有构建引用；remote 命令只连 core-v2 daemon，未迁 hook 时由 core-v2 contract 明确失败 |
-| R175B. SK 真实 App 和历史参考并入工作流 | 完成 | `workflow.md`、只读扫描 `termx-app/`、`remote-ui/`、`termx-app-history-ref/` | 已把目标扩展为 CLI remote + core-v2 + 真实 App 端到端；`termx-app` 解冻到后续 App 切片，`remote-ui` 作为受限联动，`termx-app-history-ref` 作为只读无限历史参考；写明 App 本地历史只能是显示缓存，copy/history truth 必须走 core-v2 logical-line |
-| R176. SK termx-proto core-v2 wire contract | 完成 | `termx-proto/`、`internal/protocol/` 只读参照、`termx-core-v2/` 只读参照、`termx-remote/` 只读参照 | 已用本机 `buf` + `protoc-gen-go` 重新生成 `terminal.pb.go`，让 `HistoryWindowParams` 的 `mode/after_cursor/range` 等 core-v2 logical-line history 字段进入生成类型；新增 wirepb descriptor contract test 锁定 create、terminal info、history window、remote status/local/pair、storage 字段号 |
-| R177. SK remote protocol typed contract | 完成 | `internal/protocol/`、按需 `termx-proto/` | 已新增显式 `protocol.RemoteStatus`、`RemotePairStartParams/Result`、`RemoteLocalEnableParams`、`RemoteLocalStatus`；`Encode/DecodeMethod*` 不再用反射/getter/wirepb 指针作为 remote domain，并补 protocol tests |
-| R178. SK core-v2 create/process remote contract | 完成 | `termx-core-v2/`、`internal/protocol/`、按需 `termx-proto/` | 已让 core-v2 terminal create/process contract 承载 `Dir`、`Env`、CWD metadata 和 remote create 需要的 scrollback 参数；process spawn 与 restart 复用同一 create options，不在 remote adapter 里静默丢字段 |
-| R179. SK core-v2 transport scope API | 完成 | `termx-core-v2/`、`internal/protocol/`、`termx-proto/` 按需、`termx-shared/` 按需 | 已给 core-v2 提供 public `ServeTransport` / `ServeScopedTransport` / `TransportScope` 能力；scope 在 protocol session 边界约束 terminal method、stream channel 和事件订阅，不创建第二份 terminal truth |
-| R180. SK core-v2 remote method hook | 完成 | `termx-core-v2/`、`internal/protocol/` | 已在 core-v2 protocol dispatch 中接入 typed `RemoteService` hook，用 fake service 证明 `remote.status`、`remote.pair.start`、`remote.local.*` 经过 core-v2；未恢复旧 `ProtocolMethodHandler` wire bytes contract |
-| R181. SK core-v2 remote daemon adapter | 完成 | `termx-cli/cmd/termx/remote_*.go`、`termx-core-v2/`、`termx-remote/` | 已用 core-v2 server/domain 实现 `termx-remote.Service` 需要的 Daemon/StorageDaemon/ScopedDaemon adapter；CLI remote client 已切到 `protocol.Remote*` typed contract，remote terminal datachannel 优先进入 scoped daemon，不恢复旧 `remote_runtime.go` |
-| R182. SK core-v2 daemon remote lifecycle | 完成 | `termx-cli/cmd/termx/`、`termx-core-v2/`、`termx-remote/` | 默认 `termx daemon` 已装配 remote config/service/start/close/local auto-enable；remote runtime 生命周期跟随 core-v2 daemon，未回退 legacy daemon |
-| R183. SK remote config path 独立策略 | 完成 | `termx-cli/cmd/termx/remote_config.go`、按需共享 config helper | 已让默认 `daemon`、`v3 daemon`、remote CLI auto-start 和 remote config bootstrap 共用同一 remote config path 策略：显式 `--config` 优先，否则走当前 v3 config 默认路径；remote 文件未引入旧 TUI |
-| R184. SK remote status/local/pair core-v2 smoke | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-remote/` | 已补真实 CLI/core-v2 smoke：`remote.status`、`remote.local.enable/status/disable`、`remote.pair.start` 经由 core-v2 daemon socket 和真实 `termx-remote.Service`，不经过旧 core |
-| R185. SK remote terminal management/storage/events routing | 完成 | `termx-remote/`、`termx-core-v2/`、`termx-cli/`、`termx-testkit/` 按需 | 已验证 remote runtime API 的 terminal list/create/get_directory/set_metadata/restart/remove、storage get/put/delete/list、events subscription 都经 `termx-remote.Service` 路由到 core-v2 truth |
-| R186. SK remote transport session core-v2 routing | 完成 | `termx-core-v2/`、`termx-remote/`、`termx-shared/`、`termx-testkit/` 按需 | 已验证 remote WebRTC/datachannel transport 通过 `termx-remote.Service` 进入 core-v2 `ServeScopedTransport` protocol session，terminal scope 与 machine-events-only scope 行为正确 |
-| R187. SK remote backend contract smoke | 完成 | `termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/`、必要文档 | 已用后端 contract smoke 验证 remote status/local/pair、terminal/storage/events、transport session 全部经过 core-v2 truth，并守卫旧 fallback 目录/文件不得恢复 |
-| R188. SK remote backend docs checkpoint | 完成 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、必要顶层文档 | 已更新审计文档和当前状态，记录 remote 后端已迁 core-v2 contract、旧 fallback 已删除边界和 backend smoke 证据；后续继续 App 集成 |
-| R189. SK App/remote-ui contract 准入设计 | 完成 | `termx-app/`、`remote-ui/`、`workflow.md`、按需 `remote-ui/AGENTS.md` | 已基于现有 `TermxApp`、Native bridge、`RemoteControlApp` 和 terminal client 明确 App 连接 CLI remote runtime 的 TypeScript runtime/history contract；`remote-ui/AGENTS.md` 已允许 workflow 切片内维护 App/native runtime adapter contract，同时锁定 copy/history 必须走 core-v2 logical-line |
-| R190. SK remote-ui core-v2 terminal protocol contract | 完成 | `remote-ui/`、按需 `termx-proto/` 生成产物只读参照、`internal/protocol/` 只读参照 | 已在 shared UI/runtime 层建立 core-v2 remote terminal/history method/event contract；旧 snapshot/scrollback API 被限定为 live display/cache，不再作为 copy/history 数据源 |
-| R191. SK termx-app 连接 CLI remote runtime | 完成 | `termx-app/`、`remote-ui/`、按需 `termx-cli/`、`termx-remote/` | 已删除 App/remote-ui 旧 local status 私有 API caller，native 本地连接探测改走 CLI remote local/hub 的 `/api/v1/sessions/ice`，真实 App 继续复用 session token、native bridge、API/events/terminal datachannel 连接当前 remote runtime |
-| R192. SK App terminal 管理与 live surface | 完成 | `termx-app/`、`remote-ui/`、按需 `termx-remote/`、`termx-core-v2/` | 已用 focused contract 证明 App terminal list/create/attach/input/resize/restart/remove 都经同一个 core-v2 runtime session 的 API/datachannel；live surface 只保留 xterm/snapshot/短 scrollback 显示缓存 |
-| R193. SK App logical-line HistorySource | 完成 | `remote-ui/`、`termx-app/`、按需 `termx-proto/`、`internal/protocol/` | 已新增 core-v2 `HistorySource` adapter，经 `history.window` 返回 logical-line window、cursor/token/generation 和 cell/style footprint；不返回 xterm scrollback truth |
-| R194. SK App infinite history surface/cache | 完成 | `remote-ui/`、`termx-app/`、只读参考 `termx-app-history-ref/` | 基于 `termx-app-history-ref` 的窗口化渲染、overscan、缓存和 renderer 思路实现 App history surface；App 可持有 render/cache window，但必须用 core-v2 cursor/token/generation 校验和失效 |
-| R195. SK App copy/search/selection logical-line 化 | 完成 | `remote-ui/`、`termx-app/`、按需 `termx-testkit/` | App 复制模式、搜索和选择都从 logical-line history surface 组装文本；测试必须证明不会从 xterm selection、snapshot rows、DOM/canvas rows 或 App 本地 append log 返回最终 copy 文本 |
-| R196. SK App 端到端 smoke | 完成 | `termx-app/`、`remote-ui/`、`termx-cli/`、`termx-core-v2/`、`termx-remote/`、`termx-testkit/` 按需 | 验证 CLI daemon/remote local enable -> App 配对/连接 -> terminal 创建/附着/输入输出 -> history rollback -> logical-line copy 的端到端路径 |
-| R197. SK remote + App migration docs finalization | 完成 | `workflow.md`、`termx-cli/docs/v2-v3-switch-audit.md`、`remote-ui/docs/` 或必要顶层文档 | 更新最终迁移记录、App 连接方式、history/copy truth 边界、无限历史参考取舍和完整测试证据 |
-| R198. SK 终端慢流不可能三角备忘 | 完成 | `workflow.md`、`terminal-live-stream-tradeoff.md` | 记录完整 PTY、本地不丢和不反压程序三者不能同时成立；后续实时展示回到 core latest screen，完整历史走 core logical-line history |
-| R199. SK App local Hub JSON 响应诊断修复 | 完成 | `remote-ui/`、`termx-app/`、`termx-remote/localweb/static`、按需 `workflow.md` | 已修复 local/hub 连接中 `pair_...` pairing id 或损坏 runtime token 暴露 JSON.parse/invalid token 原始错误的问题；按真实 protobuf session token 解析 answer proof session id，缓存 token 失效会自动重新配对，配对后刷新 terminal inventory，并已用 Chrome 跑通 localweb 配对和打开 terminal |
-| R200. SK localweb 终端打开链路收口 | 完成 | `remote-ui/`、`termx-app/`、`termx-remote/localweb/static`、`workflow.md` | 浏览器 localweb 打开 terminal 链路已收口：Web/Native session 生命周期统一为 `ManagedRtcSession`，浏览器 API datachannel lease close 不再关闭共享 session，raw API channel close 可恢复重建；桌面端 terminal body 固定在 grid 1fr 行避免 xterm 0 高，初始 untrusted fit 不会把 core PTY resize 成 1 行；Chrome 验收已看到输出并能输入回显 |
-| R201A. SK TUI 前台程序鼠标滚轮透传 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复 Codex、Claude Code、opencode 等前台 TUI 已启用 terminal mouse tracking 时，raw 鼠标滚轮被 TermX 抢先进入无限历史的问题；前台 terminal 内容区优先透传 raw mouse，未启用 tracking 时才进入 TermX copy/history |
-| R201B. SK core primary fullscreen 帧历史收口 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 Codex 这类不进 alt-screen、但在 primary screen 上反复 `CSI H/J` 全屏刷新的程序被当成普通滚动历史累计的问题；进入 fullscreen 时保留前一页，后续 fullscreen 帧只替换 mutable frame，copy/history 不展示每一帧刷新日志 |
-| R201C. SK core primary fullscreen 运行帧排除 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 Codex 运行中的 primary fullscreen UI frame 被当成 committed 滚动历史重复累计的问题；运行帧不提交 committed history，后续由 R201F 收口为 mutable current frame 可见 |
-| R201D. SK TUI history styled 宽字符渲染收口 | 完成 | `termx-tui-v3/`、`workflow.md` | 已修复 TUI copy/history 渲染 Codex 日志时 styled compact run 内中文宽度被当成 1 列，导致 ANSI 列锚点回退、背景块覆盖、底部文本缺字和宽度错乱的问题；history 仍只消费 core-v2 logical-line window |
-| R201E. SK Codex history TTY 帧回归收口 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复 Codex primary-screen TUI 在运行中输入框/运行帧进入 copy/history，以及真实 TTY/tmux 下 copy/history 增量绘制背景块和行尾清理不等价的问题；运行帧只在 force commit/进程退出时提交，TUI FrameSink 对带绝对列定位的 ANSI 行先清整行再写 |
-| R201F. SK primary fullscreen 当前帧历史可见 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复 Codex primary-screen TUI 在 copy/history 模式中底部当前帧行不可见的问题；running fullscreen frame 作为 mutable current frame 出现在 latest/frozen window，但不计入 committed history depth，重复 repaint 仍只保留最新帧 |
-| R201G. SK daemon remote local 启动失败降级 | 完成 | `termx-cli/`、`workflow.md` | 已修复 remote local 配置绑定到当前机器不存在地址时，默认 core-v2 daemon auto-start 直接退出，CLI 只看到等待 socket 超时的问题；remote local auto-enable 失败会降级记录日志，core daemon socket 继续启动 |
-| R201H. SK Codex tmux raw 输出历史回放 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已基于 tmux pipe-pane/capture-pane dump 复现 Codex primary-screen 输出真实序列；core-v2 现在识别同步输出/focus tracking 作为 primary TUI intent，intent 下 ED0 可在非首行启动或替换 mutable fullscreen frame |
-| R201I. SK core-v2 history semantic ingest 设计 | 完成 | `termx-core-v2/docs/`、`workflow.md` | 已新增 history semantic ingest 设计文档，明确后续不再给 `historyANSIParser` 叠终端语义补丁；core 里已有 vterm 应作为 EventRouter 唯一 semantic source，共用同一批 PTY 解码 damage，但 history 只能消费语义事件并写 `HistoryTrack` logical-line truth |
-| R201J. SK core-v2 shared vterm semantic batch 边界 | 完成 | `termx-core-v2/`、`workflow.md` | 已把 `Terminal` 输出入口改成 live surface 持有的同一个 vterm write transaction 产出 semantic batch，history queue 消费该 batch；真实 process 路径不再把 PTY bytes 同时送进 live vterm 和独立 history vterm/altCap 捕获，`FlushHistory` 先等 live batch 生成再等 history 落库；本切片只建立 EventRouter/shared batch 边界，`historyANSIParser` 的终端语义 projector 收缩留给 R201K |
-| R201K. SK core-v2 vterm damage history projector | 完成 | `termx-core-v2/`、`termx-vterm/`、按需 `termx-tui-v3/`、`workflow.md` | 已接入 shared vterm damage/control/mode projector：primary scroll-out 只通过 screen ownership 提交 logical line，damage-only batch 可转换 write/clear/scroll/control/mode `HistoryEvent`；raw parser 收缩为文本/style/OSC8 和迁移期控制辅助，覆盖 rows=1/2 普通输出、Codex raw repaint signal、styled blank、alt-screen final frame |
-| R201L. SK core-v2 raw 控制语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 vterm 基础 cursor control damage，并让 core damage-only projector 消费 CUU/CUD/CUF/CUB/CHA/CUP/VPA；真实 vterm damage harness 证明 cursor overwrite 可不经 parser 投影，parser 仍保留文本/style/OSC8 与缺少 byte-offset ordered event 的迁移期辅助 |
-| R201M. SK vterm ordered semantic ops 边界 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已从 `WriteDamage.Ops` 的 screen-diff 职责中拆出 `SemanticOps`，vterm 同一 write transaction 明确携带文本写入、控制、mode 的有序语义序列；core history projector 优先消费 semantic ops，避免用 screen diff 顺序猜 history 事件 |
-| R201N. SK vterm semantic clear 边界 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已修正 `SemanticOps` 只承载真实终端语义 clear/control/mode/text，不把 scroll 后屏幕填充、diff clear 或 full-replace screen cleanup 伪装成 history semantic clear |
-| R201O. SK raw shared-vterm history projector 收口 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已把 raw shared-vterm inline 编辑类 batch 切到同批 ordered `SemanticOps`：backspace/tab/cursor/EL 与文本按 vterm 顺序投影，不再让 parser 重放这些终端控制；纯文本/SGR/OSC、scroll-out、alt-screen 和 full-replace 仍保留 parser/现有 projector 迁移辅助 |
-| R201P. SK vterm 文本语义 damage 边界 | 完成 | `termx-vterm/`、`termx-core-v2/`、`workflow.md` | 已让 vterm 在真实 print 路径输出独立 `TextDamage`，`SemanticOps` 文本只来自 print path，不再从 screen diff span 派生；screen diff span、clear fill、scroll fill 仍只服务 live/damage，不作为 history 文本语义 |
-| R201Q. SK raw 文本语义 shadow parser 边界 | 完成 | `termx-core-v2/`、按需 `termx-vterm/`、`workflow.md` | 已允许安全纯文本/SGR/OSC raw batch 使用 vterm `TextDamage` projector，同时让 parser 只 shadow 更新 pending/style/OSC 状态，不再向 HistoryTrack 重放文本或终端控制 |
-| R201R. SK vterm styled erase 语义边界 | 完成 | `termx-vterm/`、`termx-core-v2/`、`workflow.md` | 已让 vterm 在真实 EL clear 语义里携带当前 SGR 背景 footprint，core-v2 projector 直接消费 plain/styled EL，不再为了 styled blank 回退 raw parser；ED/scroll/alt/full-replace 仍留给后续语义切片 |
-| R201S. SK raw mode 语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 raw shared batch 中的 vterm `ScreenOpModes` 直接驱动 primary fullscreen intent 和 mode-only alt-screen 边界，parser 只 shadow pending/style/OSC 状态，不再重放 private mode CSI；带 alt 内容/final-frame、ED、scroll-out 仍留给后续语义切片 |
-| R201T. SK raw ED 语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 raw shared batch 中的 vterm `ed` control 直接驱动 `EventEraseInDisplay`，Codex-style mode/CUP/ED0 repaint 不再回退 parser；scroll-out、alt final-frame 和 full-replace 仍留给后续切片 |
-| R201U. SK raw primary scroll-out vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 rows=1/2 raw shared batch 中的 primary `ScrollbackAppend`、向上 `ScrollRect` 和 LF/IND control 直接驱动 HistoryTrack screen ownership 提交；大高度多 scroll、RI、alt final-frame 和 full-replace 仍留给后续切片 |
-| R201V. SK scroll-region/RI 语义 vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 vterm 暴露 DECSTBM scroll-region semantic control，并让 raw shared batch 中的 scroll-region、RI down-scroll 和 absolute cursor 由 vterm semantic ops 驱动；Codex-style 局部滚动不会破坏已 committed pre-existing lines，alt final-frame 和 full-replace 仍留给后续切片 |
-| R201W. SK alt final-frame shared vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已删除 history pipeline 的 altCap 第二套 vterm，alt final-frame 只从真实 shared live vterm `WriteWithResult` semantic batch 进入 history，alt-screen 运行中不写 primary history、退出 final frame 只追加一次；full-replace 和 parser 职责收缩仍留给后续切片 |
-| R201X. SK full-replace history 边界 vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已让 shared vterm `RequiresFullReplace` 只作为 live/stale 边界，不让 full-replace-only raw batch 触发 parser history append；带 raw 的 full-replace text semantic ops 仍需后续证明 ownership/alt 边界后再放开 |
-| R201Y. SK 低高度 multi-scroll vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已让 rows=1/2 普通 primary raw batch 中的多次 LF/IND、自动换行 soft-wrap、多个 primary scrollback append 和向上 scroll rect 直接走 vterm semantic projector；vterm 明确区分自动换行 soft-wrap 与显式 IND，core-v2 不再回退 parser 且不丢不重复 |
-| R201Z. SK 大高度 primary scroll-out vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已让 rows>2 普通 primary raw batch 中的 plain LF/IND/soft-wrap、primary scrollback append 和向上 scroll rect 直接走 shared vterm semantic projector；样式/link/宽字符 footprint 仍留给后续专门切片，避免把未建模语义抢进 projector |
-| R201AA. SK ASCII SGR/OSC8 文本语义 vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已让 rows>2 的单批 ASCII SGR 与 OSC8 link 文本加 hard newline 直接由 shared vterm semantic text cells 投影；parser 只 shadow pending 状态，不再重放这些文本/样式语义 |
-| R201AB. SK 宽字符/combining 文本语义 vterm 化 | 完成 | `termx-core-v2/`、`workflow.md` | 已让 rows>2 的单批宽字符和 combining grapheme 文本加 hard newline 直接由 shared vterm semantic text cells 投影；保持 logical cell width/style/link，不回退 parser |
-| R201AC. SK styled scroll-out footprint vterm 化 | 完成 | `termx-core-v2/`、按需 `termx-vterm/`、`workflow.md` | 已收口 rows>2 primary scroll-out 中带 SGR 背景 footprint 的 raw batch：shared vterm semantic projector 承接文字、ownership 离屏和行尾 tail fill，不再回退 `historyANSIParser`；vterm scrollback/damage row 不能成为 history truth |
-| R201AD. SK full-replace semantic raw vterm 化 | 完成 | `termx-core-v2/`、按需 `termx-vterm/`、`workflow.md` | 已收口带 `RequiresFullReplace` 的 raw shared batch：full-replace 只能作为 live/stale 边界，若同批已有 vterm semantic ops，history 只消费这些 ops，不得回退 raw parser 或把当前 screen 当 history append |
-| R201AE. SK alt-screen running raw vterm 化 | 完成 | `termx-core-v2/`、按需 `termx-vterm/`、`workflow.md` | 已收口 alt-screen 运行期 raw shared batch：alt enter 的 mode/text 与运行期 alternate append 由 shared vterm ordered semantic ops 驱动，alt 内 text/scroll 不写 primary history，也不回退 `historyANSIParser`；退出 final frame 仍只走 shared `AltExitFrame` |
-| R201AF. SK vertical cursor raw vterm 化 | 完成 | `termx-core-v2/`、按需 `termx-vterm/`、`workflow.md` | 已收口 raw shared batch 中已由 vterm/projector 支持但 gate 未放行的 vertical cursor controls：CUU/CUD 及由 CNL/CPL/VPR 归一出来的上下移动走 shared vterm semantic ops，不回退 `historyANSIParser` |
-| R201AG. SK bracketed paste mode raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 raw shared batch 中 vterm 已记录的 bracketed paste private mode `?2004h/l`：mode-only 或 mode+text batch 走 shared vterm semantic ops，不回退 `historyANSIParser`，且不把该 mode 当 primary fullscreen intent |
-| R201AH. SK full-replace control gate 同步 | 完成 | `termx-core-v2/`、workflow.md | 已同步 full-replace raw semantic batch 的 control allowlist：RequiresFullReplace 仍只作 live/stale 信号，但同批 ordered cuu/cud/ri/decstbm 等已支持 controls 不会因 gate 缺口回退 `historyANSIParser` |
-| R201AI. SK OSC8 scroll-out raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 rows>2 primary scroll-out 中带 OSC8 link footprint 的 raw batch：shared vterm semantic text/link cells 与 scroll-out ownership 驱动 history，不回退 `historyANSIParser`，不把 vterm scrollback row 当 history truth |
-| R201AJ. SK backward tab raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI Z` backward tab cursor movement：vterm 在 ordered semantic stream 记录 CBT，core-v2 用 shared vterm control 投影 cursor column，不回退 `historyANSIParser` |
-| R201AK. SK erase-character raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI X` erase character：vterm 在 ordered semantic stream 记录 ECH，core-v2 用精确 erase-character history event 擦除 N 个 cells，不回退 `historyANSIParser`，不把 ECH 混同为 EL |
-| R201AL. SK linefeed-newline mode raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 ANSI LNM mode 20 raw shared batch：vterm 负责解释 LF 是否附带 CR，core-v2 放行同批 ordered mode/control/text 语义，不回退 `historyANSIParser`，不把 mode 20 写成 history truth |
-| R201AM. SK delete-character raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI P` delete character：vterm 在 ordered semantic stream 记录 DCH，core-v2 用精确 delete-character history event 左移当前 logical line cells，不回退 `historyANSIParser`，不从 screen diff 推断行内删除 |
-| R201AN. SK insert-character raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI @` insert character：vterm 在 ordered semantic stream 记录 ICH，core-v2 用精确 insert-character history event 在当前 logical line 插入 blank cells，不回退 `historyANSIParser`，不从 screen diff 推断行内插入 |
-| R201AO. SK line operation raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI L/M/S/T` insert/delete line 与 scroll up/down：vterm 在 ordered semantic stream 记录 `il/dl/su/sd`，core-v2 用显式 line-control 更新 primary screen ownership/frontier，不从垂直 screen scroll diff 推断历史 |
-| R201AP. SK repeat-character raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI b` REP repeat previous character：vterm print path 产出重复字符 text semantic ops，core-v2 raw shared batch 直接消费这些文本，不给 `historyANSIParser` 增加 REP 语义补丁 |
-| R201AQ. SK save-restore cursor raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `ESC 7/8` save/restore cursor：history 不保存第二份 saved cursor，core-v2 raw shared batch 依赖 vterm 同批恢复后的 ordered write/cursor 语义，不回退 `historyANSIParser` |
-| R201AR. SK tab stop raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `ESC H`/`CSI g` 影响的 custom tab stop：tab stop 状态只由 shared vterm 持有，core-v2 raw shared batch 依赖后续 `ht` semantic control 的最终列，不让 `historyANSIParser` 固定 8 列 tab 成为历史语义来源 |
-| R201AS. SK charset raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 SCS charset 影响的 printable bytes：字符集状态只由 shared vterm 持有，core-v2 raw shared batch 直接消费 vterm print path 产出的 mapped text cells，不让 `historyANSIParser` 把 special drawing bytes 当普通 ASCII 历史 |
-| R201AT. SK locking-shift raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 locking shift / SI-SO 影响的 charset 选择：GL/GR 选择状态只由 shared vterm 持有，core-v2 raw shared batch 直接消费 vterm print path 的 mapped text cells，不让 `historyANSIParser` 把 shift 后 bytes 当普通 ASCII 历史 |
-| R201AU. SK single-shift raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `SS2/SS3` single shift 影响的下一 printable byte：临时 charset 选择只由 shared vterm 持有，core-v2 raw shared batch 直接消费 vterm print path 的 mapped text cells，不让 `historyANSIParser` 把 single-shift 后 bytes 当普通 ASCII 历史 |
-| R201AV. SK RIS reset raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `ESC c` Reset Initial State：terminal reset 语义只由 shared vterm 产出 ordered semantic control，core-v2 projector 将其映射为 reset-frontier，不让 `historyANSIParser` 吞掉 reset 后把 reset 前 mutable 内容继续留在 history |
-| R201AW. SK legacy mouse mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `?9/?1001` legacy mouse tracking modes：mouse mode 状态只由 shared vterm 持有，core-v2 raw shared batch 只把它们作为 primary TUI intent semantic mode 消费，不让 `historyANSIParser` 吞掉 mode 后回退文本/控制语义 |
-| R201AX. SK origin mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 DEC origin mode `?6h/l`：origin 状态只由 shared vterm 持有，后续 CUP/HVP 控制使用 vterm 已归一的最终坐标进入 core-v2 projector，不让 `historyANSIParser` 维护第二份 origin/scroll-region truth |
-| R201AY. SK autowrap mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 DEC autowrap mode `?7h/l`：wrap 状态只由 shared vterm 持有，print path 已归一的 text/soft-wrap 语义进入 core-v2 projector，不让 `historyANSIParser` 按默认自动换行维护第二份 wrap truth |
-| R201AZ. SK private save-cursor raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 DEC private save/restore cursor mode `?1048h/l`：saved cursor 状态只由 shared vterm 持有，恢复后的后续写入位置由 vterm ordered text/cursor 语义进入 core-v2 projector，不让 `historyANSIParser` 维护第二份 saved cursor truth |
-| R201BA. SK left/right margin raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 DEC left/right margin mode `?69h/l` 与 `DECSLRM`：左右边界状态只由 shared vterm 持有，后续 CR/TAB/CUP/write 使用 vterm 已归一的最终坐标进入 core-v2 projector，不让 `historyANSIParser` 维护第二份 horizontal margin truth |
-| R201BB. SK application key mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 application cursor/keypad modes `?1h/l` 与 `?66h/l`：按键编码 mode 状态只由 shared vterm 持有，core-v2 raw shared batch 消费 mode/text semantic ops 但不把这些 mode 写成 history truth，不让 `historyANSIParser` 因未知 private mode 重新承接同批文本 |
-| R201BC. SK alternate scroll mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 alternate scroll mode `?1007h/l`：滚轮替代滚动状态只由 shared vterm 持有，core-v2 raw shared batch 消费 mode/text semantic ops 但不把该 mode 写成 history truth，不让 `historyANSIParser` 因未知 private mode 重新承接同批文本 |
-| R201BD. SK keypad ESC mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `ESC =`/`ESC >` keypad application/numeric mode：keypad mode 状态只由 shared vterm 持有，vterm 在 ordered semantic stream 记录 mode 66，core-v2 raw shared batch 消费 mode/text semantic ops 但不把该 mode 写成 history truth |
-| R201BE. SK UTF8 mouse mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 UTF-8 extended mouse encoding mode `?1005h/l`：鼠标编码 mode 状态只由 shared vterm 持有，core-v2 raw shared batch 消费 mode/text semantic ops 但不把该 mode 写成 history truth |
-| R201BF. SK extended mouse encoding raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 URXVT / SGR pixel mouse encoding modes `?1015h/l`、`?1016h/l`：鼠标编码 mode 状态只由 shared vterm 持有，core-v2 raw shared batch 消费 mode/text semantic ops 但不把这些 mode 写成 history truth |
-| R201BG. SK Unicode Core mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 Unicode Core mode `?2027h/l`：Unicode/grapheme mode 状态只由 shared vterm 持有，core-v2 raw shared batch 消费 mode/text semantic ops 但不把该 mode 写成 history truth |
-| R201BH. SK repeated primary repaint raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 Codex-style repeated home+ED repaint 只替换 current mutable frame，不把旧 frame/input 写入 committed history，也不回退 `historyANSIParser` |
-| R201BI. SK vertical absolute raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 `CSI d` / VPA 垂直绝对定位只消费 shared vterm 已归一坐标，不让 `historyANSIParser` 忽略该控制后承接同批文本 |
-| R201BJ. SK horizontal position absolute raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 `CSI \`` / HPA 水平绝对定位只消费 shared vterm 已归一列，不让 `historyANSIParser` 忽略该控制后承接同批文本 |
-| R201BK. SK erase display modes raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已补 raw shared-vterm projector harness，锁住 `CSI 2J/3J` 的 page-break 与 clear-scrollback 语义由 vterm `ed` control 进入 `HistoryTrack`，不让 `historyANSIParser` 承接清屏/截断历史语义 |
-| R201BL. SK in-band resize mode raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 `CSI ?2048h/l`：in-band resize mode 属于 shared vterm/input-report 状态，history projector 只消费同批文本语义，不把该 mode 写成第二份 history truth，也不回退 `historyANSIParser` |
-| R201BM. SK input/report private modes raw vterm 化 | 完成 | `termx-core-v2/`、workflow.md | 已收口 `CSI ?67/?2031/?9001 h/l`：这些 input/report private modes 由 shared vterm 持有，history projector 只消费同批文本并保持未知 mode 拒绝边界 |
-| R201BN. SK tab clear raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI g` / TBC：tab stop 清理状态由 shared vterm 持有，后续 `TAB` 通过 vterm resolved `ht` 坐标进入 history projector，不让 `historyANSIParser` 固定 8 列 tab 语义承接 |
-| R201BO. SK G2/G3 locking shift raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `ESC n/o` G2/G3 locking shift：GL charset 选择只由 shared vterm 持有，core-v2 raw shared batch 直接消费 print path 映射后的 cells，不让 `historyANSIParser` 把 shift 后 bytes 当普通 ASCII 历史 |
-| R201BP. SK tab set raw vterm 语义显式化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `ESC H` / HTS：tab stop 设置状态由 shared vterm 持有，并在 ordered semantic stream 中显式记录 `hts`，core-v2 只放行 no-op control 并消费后续 resolved `ht` 坐标 |
-| R201BQ. SK tab reset raw vterm 语义显式化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI ?5W` / DECST8C：tab stop 重置状态由 shared vterm 持有，并在 ordered semantic stream 中显式记录 `decst8c`，core-v2 只放行 no-op control 并消费后续 resolved `ht` 坐标 |
-| R201BR. SK charset designation raw vterm 语义显式化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 SCS charset designation：字符集选择状态由 shared vterm 持有，并在 ordered semantic stream 中显式记录 `scs`，core-v2 只放行 no-op control 并消费后续 mapped text cells |
-| R201BS. SK CHT forward tab raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 `CSI I` / CHT：forward tab 状态和目标列由 shared vterm tab stop 解析，core-v2 raw shared batch 消费 resolved `ht` control，不让 `historyANSIParser` 吞掉未知 CSI 后承接同批文本 |
-| R201BT. SK focus/SGR mouse mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、workflow.md | 已收口 Codex 常见 focus 与 SGR mouse modes：`?1000/?1002/?1003/?1004/?1006` 由 shared vterm mode semantic ops 进入 core-v2 raw shared projector，不让 `historyANSIParser` 因 private mode 同批文本回退 |
-| R201BU. SK TUI Codex primary update card 帧保留 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复用户在 TUI 测试中观察到的 Codex primary-screen 首屏 update available card 后续消失问题：根因是 core-v2 fullscreen frame 内非首行行首 `ED0` 被误判为整帧 repaint reset；现在只有真正左上角 home-clear 才替换整帧，非首行 `ED0` 只清 cursor 以下 mutable tail |
-| R201BV. SK cursor visibility mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 DEC cursor visibility mode `?25h/l`：cursor visibility 状态由 shared vterm 持有，core-v2 只把 mode 25 作为 primary fullscreen intent 消费，不让 `historyANSIParser` 因 private mode 同批文本回退 |
-| R201BW. SK alt-screen mode variants raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 DEC alt-screen private modes `?47/?1047/?1049`：alt-screen 状态由 shared vterm mode semantic ops 驱动 core-v2 `SwitchAltScreen`，不让 `historyANSIParser` 因 alt mode-only/full-replace batch 回退 |
-| R201BX. SK OSC title/cwd raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已用 harness 收口 OSC title 与 working directory 这类 vterm-owned 状态：history 不保存第二份 title/cwd truth，同批后续 prompt 文本继续走 shared vterm semantic projector，不回退 `historyANSIParser` |
-| R201BY. SK cursor style raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 DECSCUSR cursor style：cursor shape/blink 状态只由 shared vterm 持有，history 不保存第二份 cursor style truth，同批文本继续走 semantic projector |
-| R201BZ. SK terminal report request raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 DSR/DECRQM 这类 terminal report request：响应由 shared vterm 回写 PTY，history 不保存第二份 report truth，同批文本继续走 semantic projector |
-| R201CA. SK device attributes raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 DA1/DA2 device attributes 查询：响应由 shared vterm 回写 PTY，history 不保存第二份 device-attributes truth，同批文本继续走 semantic projector |
-| R201CB. SK OSC default color raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 OSC 10/11/12/110/111/112 default color 状态：颜色 truth 只由 shared vterm 持有，history 不保存第二份 default color truth，同批文本继续走 semantic projector |
-| R201CC. SK string control raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 DCS/APC/SOS/PM string controls：这些字符串控制只由 shared vterm parser 消费，history 不保存第二份 string-control truth，同批文本继续走 semantic projector |
-| R201CD. SK OSC clipboard raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 OSC 52 clipboard set/request/reset：clipboard 控制串只由 shared vterm parser 消费，history 不保存第二份 clipboard truth，同批文本继续走 semantic projector |
-| R201CE. SK C1 string control raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 形式的 OSC/DCS/APC/SOS/PM 控制串：这些控制只由 shared vterm parser 消费，history 不保存第二份 string/control truth，同批后续文本继续走 semantic projector，不让只认识 7-bit ESC 形式的 `historyANSIParser` 承接 |
-| R201CF. SK C1 CSI raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 形式的 CSI cursor/erase 控制：这些控制由 shared vterm parser 归一为 ordered semantic ops，history projector 消费同批语义，不让只认识 7-bit `ESC [` 的 `historyANSIParser` 承接 |
-| R201CG. SK C1 control raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 单字节 IND/RI/HTS 控制：这些控制由 shared vterm parser 归一为 ordered semantic ops，history projector 消费同批语义，不让 `historyANSIParser` 承接 |
-| R201CH. SK C1 OSC8 link raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 OSC8 hyperlink：link 状态和 text cell metadata 来自 shared vterm semantic text，core-v2 直接写入 logical-line history，`RawFallbacks == 0`，不让只认识 7-bit OSC8 的 `historyANSIParser` 承接 |
-| R201CI. SK C1 NEL raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 NEL / Next Line：vterm 把 NEL 归一为同批 ordered CR/LF 语义，core-v2 直接消费这些 semantic ops，`RawFallbacks == 0`，不让 `historyANSIParser` 维护第二份 next-line 语义 |
-| R201CJ. SK ESC NEL raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 7-bit `ESC E` / NEL：vterm 归一为同批 ordered CR/LF 语义，core-v2 直接消费这些 semantic ops，`RawFallbacks == 0`，不让 `historyANSIParser` 维护第二份 next-line 语义 |
-| R201CK. SK C1 CSI SGR raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 CSI SGR：样式状态和后续 text cell metadata 来自 shared vterm semantic text，core-v2 直接写入 logical-line history，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 承接 |
-| R201CL. SK C1 CSI private mode raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 CSI private modes：同步输出、focus/mouse mode 状态由 shared vterm semantic mode ops 承接，core-v2 不保存第二份 mode truth，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 承接 |
-| R201CM. SK C1 CSI report raw vterm no-op 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 CSI 形式的 DSR/DECXCPR/DECRQM 与 DA1/DA2 查询：响应由 shared vterm 回写 PTY，history 不保存第二份 report/device truth，同批文本继续走 semantic projector，不让只认识 7-bit CSI 的 `historyANSIParser` 承接 |
-| R201CN. SK C1 CSI line operation raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 CSI 形式的 insert/delete line 与 scroll up/down：line-control 与伴随 scroll rect 由 shared vterm ordered semantic ops 承接，history 只更新 screen ownership/frontier，不让只认识 7-bit CSI 的 `historyANSIParser` 承接 |
-| R201CO. SK C1 CSI inline edit raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已收口 8-bit C1 CSI 形式的 ECH/DCH/ICH/REP 行内编辑：erase/delete/insert/repeat 由 shared vterm ordered semantic ops 或 print path 承接，history 只 mutate current logical line，不让只认识 7-bit CSI 的 `historyANSIParser` 承接 |
-| R201CP. SK C1 CSI tab raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 8-bit C1 CSI 形式的 CHT/CBT/TBC/DECST8C tab 控制 harness：tab stop 状态和 resolved tab 目标列由 shared vterm semantic ops 承接，history projector 不让只认识 7-bit CSI 的 `historyANSIParser` 固定 8 列 tab 语义回退 |
-| R201CQ. SK C1 CSI movement alias raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 8-bit C1 CSI 形式的 CNL/CPL/HPR/VPR/HPA/VPA/HVP movement/position alias harness：这些别名由 shared vterm 归一为 ordered cursor semantic ops，history projector 不让只认识 7-bit CSI 的 `historyANSIParser` 承接 |
-| R201CR. SK C1 CSI erase display raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 8-bit C1 CSI 形式的 `ED2/ED3` 清屏/清 scrollback harness，证明 page-break 与 clear-scrollback 由 shared vterm `ed` control 承接，不让只认识 7-bit CSI 的 `historyANSIParser` 回退 |
-| R201CS. SK C1 CSI erase display partial raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 8-bit C1 CSI 形式的 `ED0/ED1` 局部清屏 harness，证明 cursor 以下/以上 mutable frontier 修改由 shared vterm `ed` control 承接，不让只认识 7-bit CSI 的 `historyANSIParser` 回退 |
-| R201CT. SK C1 CSI margin/origin raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 8-bit C1 CSI 形式的 DECSTBM/DECOM/DECSLRM margin 与 origin harness，证明滚动区域和左右边界状态只由 shared vterm 持有，后续 cursor/RI/TAB/write 不回退 `historyANSIParser` |
-| R201CU. SK C1 CSI LNM raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 8-bit C1 CSI 形式的 ANSI LNM mode 20 harness，证明 LF 是否附带 CR 只由 shared vterm mode/control 语义决定，不让只认识 7-bit CSI 的 `historyANSIParser` 承接 |
-| R201CV. SK C1 CSI erase line modes raw vterm 化 | 完成 | `termx-core-v2/`、`termx-vterm/`、`workflow.md` | 已补齐 8-bit C1 CSI 形式的 `EL1/EL2` harness，证明行内 prefix/whole-line erase 由 shared vterm `el` control 承接，不让只认识 7-bit CSI 的 `historyANSIParser` 回退 |
-| R201CW. SK unknown mode raw fallback 收口 | 完成 | `termx-core-v2/`、`workflow.md` | 已收口 shared-vterm raw batch 遇到未知 private mode 时的 parser fallback：未知 mode 只作为 vterm-owned no-op，同批文本继续由 vterm semantic projector 投影，`RawFallbacks == 0`，不允许手写 parser 因未知终端状态重新解释同批 raw bytes |
-| R201CX. SK shared-vterm raw parser fallback 禁止 | 完成 | `termx-core-v2/`、`workflow.md` | 已禁止真实 shared-vterm semantic batch 回退到 `historyANSIParser` 重放 raw 终端语义；parser 仅 shadow pending/style/OSC8 状态，非 shared harness fallback 单独保留 |
-| R201CY. SK TUI Codex history current frame 完整性 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复用户复测确认的进入 history/copy 后 Codex primary current frame 上半部分仍丢失的问题：TUI 现在保留 core-v2 `history.window` row ownership，把 `live-tail-live` 传入 frozen source/reflow rows，并在 latest 入口锚到 live-tail current frame 起点；普通 persisted 日志仍锚到最新尾部，不引入 live snapshot 或 VTerm scrollback fallback |
-| R201CZ. SK Codex history live-tail 边界复测收口 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复用户复测确认的进入 history/copy 后 Codex update card 仍不显示的问题：TUI latest 不再用 live surface revision 作为 core frozen snapshot generation 上界，进入等待态仍只冻结 live display；core/protocol harness 证明真实 Codex 风格 current frame 的 update card 保留为 `live-tail-live`，TUI/protocol harness 证明请求 `Generation=0` 且入口锚到 update card |
-| R201DA. SK TUI logical-line history 吞帧修复 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复用户复测发现的进入 TUI logic-line/history 模式后 Codex update card 等 current frame 顶部内容被吞掉的问题；primary-screen pseudo-TUI 中间更新继续由 core logical-line/screen-row ownership 承接，TUI latest 入口保留 live-tail 前的可见上下文，不从 live snapshot 或 VTerm scrollback fallback |
-| R201DC. SK synchronized output history 设计 | 完成 | `termx-core-v2/docs/`、`workflow.md` | 已新增 synchronized output 与 primary frame history 设计文档，按 ECMA-48/xterm/DECSET 2026 语义定义 BSU/ESU 发布隔离、primary frame replacement、process exit force commit、resize/attach 边界和后续 harness 计划；已由子 Agent review 并按阻断意见修订 |
-| R201DD. SK synchronized output frame harness | 完成 | `termx-core-v2/`、按需 `termx-vterm/`、`workflow.md` | 已实现 BSU/ESU final primary frame 发布隔离：pending frame 不进 latest/frozen，ESU 后用 shared vterm final primary screen 原子替换 published frame，older 不分页 frame；重复 BSU 期间继续暴露上一帧，不泄漏半帧 |
-| R201DE. SK synchronized frame 空白和 resize 历史稳定 | 完成 | `termx-core-v2/`、按需 `workflow.md` | 已修复复测发现的 synchronized frame 默认空白列丢失、resize 后 Codex current frame 把已有历史吞掉的问题；published frame 保留屏幕列空白，resize 不再让 TUI current frame 删除已生成 committed history |
-| R201DF. SK fixed-grid frame 与 ED3 soft boundary | 完成 | `termx-core-v2/`、`termx-tui-v3/`、按需 `workflow.md` | 已按真实 Codex/tmux raw 语义收口 fixed-grid frame 和清屏边界：vterm 默认空白列端到端保真，Codex screen frame 不走普通 text reflow；`ED0/ED2` 只做 viewport/page-break，`ED3` 记录 soft clear-scrollback boundary，不物理删除 authoritative history |
-| R201DG. SK fixed-grid frame 空物理行保真 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、按需 `workflow.md` | 已修复 Codex synchronized screen-frame 中间空物理行被 `replacePrimaryFrame` 当成空 payload 过滤的问题；空 screen-frame 行现在和非空行一样进入 authoritative latest/protocol/TUI reflow，避免 history/copy 里卡片间距消失 |
-| R201DH. SK history live 锚点与 alt-screen 边界 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已修复 Codex history 入口把 older shell prompt 挤进当前屏、Tip 行消失，以及 `/resume` 等 alt-screen UI 退出后污染 authoritative history 的问题；alt-screen 运行和退出 final frame 不写 primary history，history 入口优先对齐进入前 live screen |
-| R201DI. SK alt-screen 退出当前帧保留 | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 Codex `/resume` 这类 alt-screen/current-frame 内容进入 history/copy 后丢失的问题；running/exit alt-screen 当前帧作为 transient mutable frame 进入 latest/frozen，不计 committed depth，后续 primary 输出会替换它 |
-| R201DJ. SK alt-screen current frame 隔离 | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已按 tmux raw PTY 抓包确认 Codex `/resume` 使用 DECSET 1049 alt-screen，不发 ED2/ED3 清 scrollback；修复 latest/frozen 为填满视口把旧 committed transcript 回填到 alt-screen transient current frame 上方的问题。alt-screen transient frame 首屏只展示当前帧，旧 history 只能通过 older cursor 显式加载；`alt-screen-frame` 继续按 fixed-grid frame 保留空白和样式 |
-| R201DK. SK alt-screen resume raw harness | 完成 | `termx-core-v2/`、`workflow.md` | 已新增真实 raw PTY harness 覆盖连续 Codex `/resume`：1049 alt-screen picker 与随后 2026 primary restored frame 反复切换时，latest 不拼接旧 frame，older 只返回 committed shell history；修复 alt-enter 不再把上一轮 published/pending primary frame 固化成 committed history |
-| R201DL. SK full-replace synchronized scrollback | 完成 | `termx-core-v2/`、`workflow.md` | 已修复 shared-vterm full-replace 批次同时携带 ordered semantic ops 和 primary scrollback append 时被 history projector 整批 shadow 的问题；Codex `/resume` 大块 2026 repaint 触发 full-replace 后，滚出当前屏的同轮 transcript 仍通过 semantic ops 进入 committed history，raw parser 不回放，scrollback append 只作为 ownership scroll-out 证据 |
-| R201DM. SK screen app 会话历史设计 | 完成 | `termx-core-v2/docs/`、`workflow.md` | 已新增 screen app session history 设计文档，把 Codex/htop 类 TUI 或 semi-TUI 建模为 core-v2 screen app session：运行中 current frame 可变、旧 frame 进入 bounded frame journal、ordinary committed history 独立、primary session close 只提交最终 primary frame 一次，alt-screen 永不写 primary committed history，并由子 Agent review 后修订 |
-| R201DN. SK primary screen frame journal harness | 完成 | `termx-core-v2/`、`termx-tui-v3/`、`workflow.md` | 已实现 primary screen-frame replace/alt boundary 前归档旧 frame，新增 `archived-screen-frame` fixed-grid kind；history older 先返回当前 screen app session 的 archived frames，再回 ordinary committed history；final primary frame commit 后仍可继续翻到 archived frame，Codex 长会话不会只剩最后一屏 |
-| R202. SK Web 桌面 terminal 可视区修复 | 待开始 | `remote-ui/`、`termx-remote/localweb/static`、`workflow.md` | 修复 Web 桌面状态右侧 terminal 内容不可见、移动端可见的问题；桌面断点 terminal body 必须占据唯一 1fr 行，Chrome 验收需证明桌面宽度可见并可输入回显 |
+| R300. SK 无限历史工作流重置与定案纳入 | 完成 | `AGENTS.md`、`workflow.md`、`termx-core-v2/docs/screen-app-infinite-history-final-plan.md` | 旧 remote + app 队列退出当前主线；screen app 无限历史定案成为当前实现基准 |
+| R301. SK 旧历史实现清场审计与最小隔离 | 待开始 | `termx-core-v2/`、只读 `termx-vterm/`、相关 docs | 找出旧 screen app/history 补丁路径、raw parser fallback、snapshot 拼接和程序名特殊逻辑；只删除或隔离会继续误导后续实现的入口，保留可编译骨架和清场 harness，大规模删除等 R302/R303 接口站稳后再做 |
+| R302. SK terminal semantic transaction 接口 | 待开始 | `termx-core-v2/`、`termx-vterm/` | 先立 vterm 到 core-v2 的语义事件接口：普通写入、cursor move、erase、scroll、alt enter/leave、resize、SGR 属性、flush/transaction boundary |
+| R303. SK history projector domain harness | 待开始 | `termx-core-v2/` | 用 fake semantic transaction 驱动 projector，锁定普通输出 commit、mutable session、segment cursor、final screen-frame、alt transient 的基本语义 |
+| R304. SK 普通输出最小实现 | 待开始 | `termx-core-v2/`、按需 `termx-vterm/` | shell/stdout 输出完整 logical line 后直接进入 committed history；process exit force commit primary mutable frontier |
+| R305. SK primary screen app session 最小实现 | 待开始 | `termx-core-v2/`、按需 `termx-vterm/` | 支持 Codex/Claude Code 这类 primary screen app 在退出前修改 session 内文本；历史模式看到一致的当前 session projection |
+| R306. SK alt-screen transient 与 primary archive | 待开始 | `termx-core-v2/`、按需 `termx-vterm/` | htop/vim 纯 alt 不进 primary history；primary app 临时进 alt 前 archive/hide 当前 frame，退出 alt 后的新 primary 输出作为新 frame publish，不能复活 pre-alt current frame |
+| R307. SK resize 与 final screen-frame harness | 待开始 | `termx-core-v2/`、按需 `termx-vterm/` | 覆盖运行中 resize、final screen-frame 固定宽度、committed logical line 不被 resize 重写 |
+| R308. SK 色彩属性与主题解析边界 | 待开始 | `termx-core-v2/`、按需 `termx-tui-v3/` | 保存 default fg/bg 语义属性而不是提前烘焙主题 RGB；明确 RGB/256 色/默认色在历史里的存储和渲染规则 |
+| R309. SK storage backend 无限历史接口 | 待开始 | `termx-core-v2/` | 以 append/update transaction、segment cursor、index/window 为边界接文件存储；不得让文件格式成为第二份历史模型 |
+| R310. SK protocol/TUI history window 接入 | 待开始 | `termx-core-v2/`、`termx-tui-v3/`、按需 `internal/protocol/`、`termx-proto/` | tui-v3 copy/history 只消费 authoritative history window；live display 和 history surface 分层 |
 
-## 6. 测试准入
+## 7. 测试准入
 
-每个有效切片提交前，至少跑和改动范围相符的测试：
+每个切片提交前必须运行本切片相关命令。测试无法运行时，最终说明必须写清原因。
 
-- 文档-only 改动：`git diff --check`
+- 文档-only：`git diff --check`
 - core-v2 改动：`cd termx-core-v2 && go test ./... -count=1`
-- remote 改动：`cd termx-remote && go test ./... -count=1`
-- CLI remote 改动：`cd termx-cli && go test ./cmd/termx -count=1`
-- protocol 改动：`cd internal && go test ./protocol/... -count=1`
-- proto 改动：`cd termx-proto && go test ./... -count=1`
-- `.proto` 改动：必须同步更新对应生成文件；如果本机缺少 `protoc` 或 `protoc-gen-go`，不得手写生成文件，当前切片应标 `阻塞` 并写清缺口。
-- remote-ui 改动：`cd remote-ui && npm run typecheck && npm run test`；涉及 public entry、terminal renderer、protocol 或打包行为时加跑 `npm run build`
-- termx-app 改动：`cd termx-app && npm run build`
-- termx-app native/Capacitor 改动：在 App build 外按需跑 `cd termx-app && npm run cap:sync`；若本机缺 Android/Capacitor 环境，最终说明必须写清
-- App history/copy 改动：必须有 focused harness 证明 copy/search/selection 使用 core-v2 logical-line source，不从 xterm/snapshot/DOM/cache 拼最终文本
-- 默认入口或依赖边界改动：`cd termx-cli && go test ./cmd/termx -run TestDefaultRuntimeSourceDoesNotImportLegacyCoreOrTUI -count=1`
-- remote fallback/旧依赖清理改动：除 CLI 测试外，必须确认 `termx-cli/cmd/termx/remote_*.go` 不再 import `termx-core` 或 `tuiv2`，且默认依赖守卫不再把 remote 文件作为旧依赖豁免。
-- 跨模块迁移改动：按需加跑 `make test-v2-migration`
-- CLI 编译入口相关改动：按需确认 `go run ./termx-cli/cmd/termx --help` 能编译运行
+- vterm 改动：`cd termx-vterm && go test ./... -count=1`
+- tui-v3 改动：`cd termx-tui-v3 && go test ./... -count=1`
+- protocol 改动：`go test ./internal/protocol/... -count=1`，如果修改 `.proto` 还必须同步生成物并运行相关生成/descriptor 测试
+- CLI 守卫改动：运行对应 focused Go test；如果不确定，用 `cd termx-cli && go test ./cmd/termx -count=1`
+- 任意提交前都要运行：`git diff --check`
 
-如果测试无法运行，最终说明必须写清原因。
+## 8. 提交规则
 
-## 7. 自动推进和提交规则
-
-- 每次开始工作先读本文件，再跑 `git status --short --branch`。
-- 只执行任务队列里最早未完成的切片。
-- 如果最早未完成切片是 `阻塞`，必须停下说明原因，不能跳到后面。
-- 如果最早未完成切片是 `待开始`，先把它标成 `进行中`，再开始做。
-- 一个小阶段收口后，更新本文件状态和当前状态说明，跑准入，提交一个 `SK:` 中文提交。
-- 不要长期堆未提交改动，也不要把多个小阶段硬塞进一个提交。
+- `/goal` 自动模式下，每个完成切片必须使用中文提交信息提交。
+- 用户明确要求不要提交时，按用户最新指令执行，并在最终说明未提交。
 - 不得 amend commit，除非用户明确要求。
-- 不得覆盖用户或其他代理的未提交改动；如果冲突，先停下说明。
-
-## 8. 当前状态
-
-- 当前分支已经完成本地默认入口 v2/v3 切换；最近收口提交为 `c9d133d4 SK: 修复启动重复附件计数`。
-- `R173` 已完成：`AGENTS.md` 明确 remote 迁移不能退回旧 daemon/TUI，`workflow.md` 已压缩为 remote 迁移队列。
-- `R173B` 已完成：禁止补丁式实现成为 AGENTS 与 workflow 的硬准入，后续 remote 切片必须先讲清状态归属和 contract。
-- `R173C` 已完成：remote/protocol 迁移只面向 core-v2 contract，不对旧 core 保留兼容层或 fallback。
-- `R174` 已完成：已扫描 CLI remote、`termx-remote.Service`、core-v2 protocol/server/storage/events、旧 core extension/transport 源边界，并把迁移队列细化到 R175-R188。
-- `R175` 已完成：已按用户确认删除旧 `termx-core/` 与 `tuiv2/`，清理 legacy/fallback 入口和构建引用，压缩 CLI 切换审计文档。
-- `R175B` 已完成：已扫描 `termx-app/`、`remote-ui/`、`termx-app-history-ref/`，并把工作流扩展为 remote backend + 真实 App 端到端；App 本地历史只允许作为显示/cache，copy/history truth 必须走 core-v2 logical-line。
-- `termx remote ...` 后端已迁到 core-v2 remote service hook、runtime API 和 scoped transport；旧 fallback 已删除。
-- `R176` 已完成：`termx-proto/wirepb/terminal.pb.go` 已与 `terminal.proto` 的 core-v2 logical-line history/window 字段对齐，并新增 descriptor contract test 防止生成文件再次落后。
-- `R177` 已完成：`internal/protocol` remote codec 已切到显式 `protocol.Remote*` domain contract，参数/结果不再接受 getter、任意 struct 反射或 `wirepb` 指针作为业务类型；准入 `cd internal && go test ./protocol/... -count=1` 已通过。
-- `R178` 已完成：`TerminalRecord`/`ProcessSpec` 已承接 `Dir`、`Env`、`Scrollback*`，protocol create 不再丢这些字段；core-v2 list/get 暴露创建 CWD，PTY spawn 使用 create dir/env，restart 复用原 create options；准入 `cd termx-core-v2 && go test ./... -count=1` 与 `cd internal && go test ./protocol/... -count=1` 已通过。
-- `R179` 已完成：core-v2 已公开 `ServeTransport` / `ServeScopedTransport` / `TransportScope`；terminal scope 会约束 terminal-bound method、stream channel 并把空事件订阅收窄到目标 terminal，machine-events-only scope 只允许 terminal 事件流；focused scope harness 已通过，完整 core-v2/protocol 准入在本切片提交前运行。
-- `R180` 已完成：core-v2 新增 typed `RemoteService` hook 与 `WithRemoteService` 注入点，protocol dispatch 已承接 `remote.status`、`remote.pair.start`、`remote.local.enable/status/disable`；未配置 remote service 时返回明确 unavailable 错误，fake harness 证明请求参数和结果都走 `protocol.Remote*` domain 类型。
-- `R181` 已完成：新增 core-v2 remote daemon adapter，覆盖 terminal create/list/get/metadata/restart/remove、storage get/put/delete/list、events 和 `ServeScopedTransport`；core-v2 支持构造后 `SetRemoteService` 注入真实 remote hook，CLI remote client 只向 daemon 发送 `internal/protocol.Remote*` typed payload；remote create 的 env/retention 字段完整传入 core-v2 create params；准入 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-remote && go test ./... -count=1`、`cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫与 `git diff --check` 已通过。
-- `R182` 已完成：默认 `termx daemon` 会加载 remote config，基于同一个 core-v2 server 构造 `termx-remote.Service`，注入 typed remote hook，随 daemon context start/close，并在 local/both 模式下按 config/env 自动 `LocalEnable`；focused harness 证明 hook 注入、local auto-enable、close 清理和 daemon env 配置装配。准入 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-remote && go test ./... -count=1`、`cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫与 `git diff --check` 已通过。
-- `R183` 已完成：新增 remote config path helper，默认 `daemon` 与 `v3 daemon` 都读取 root `--config` 指定的 remote 配置；`remote status/local/pair/open` 等 remote CLI 命令通过 context 把显式 config path 传给 core-v2 daemon auto-start；config bootstrap 也统一走 remote path helper。准入 `cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫与 `git diff --check` 已通过。
-- `R184` 已完成：新增真实 CLI/core-v2 remote smoke，启动 core-v2 server，注入真实 `termx-remote.Service`，通过 Cobra `termx remote status`、`remote enable --mode local`、`remote pair --json`、`remote disable --json` 验证 status/local/pair 请求经 daemon socket 到达 remote service，并确认 disable 后 core-v2 hook 的 `remote.local.status` 已关闭。准入 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-remote && go test ./... -count=1`、`cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫与 `git diff --check` 已通过。
-- `R185` 已完成：`termx-remote.Service` 新增 runtime API 路由入口，terminal management、storage 和 events subscription 都通过 core-v2 daemon adapter 访问 truth；focused harness 覆盖 terminal create/list/get_directory/set_metadata/restart/remove、storage put/get/list/delete 和 terminal created/metadata/removed events，remote create 的 ID 生成也收敛到 core-v2 adapter 边界。准入 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-remote && go test ./... -count=1`、`cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫、remote 旧 import 检查与 `git diff --check` 已通过。
-- `R186` 已完成：`termx-remote.Service` 成为真实 runtime manager 的 transport sink，terminal datachannel 和新的 `machine-events` protocol datachannel 都经 Service 路由到 core-v2 scoped protocol session；focused harness 覆盖 `webrtc:terminal:<machine>:<terminal>` 只允许目标 terminal、`webrtc:machine-events` 拒绝 terminal/storage 方法但允许 terminal lifecycle/metadata events，RTC offer handler 也验证 `machine-events` datachannel 会进入 transport sink。准入 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-remote && go test ./... -count=1`、`cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫、remote 旧 import 检查与 `git diff --check` 已通过。
-- `R187` 已完成：新增 remote backend contract smoke，启动真实 core-v2 daemon socket 并注入真实 `termx-remote.Service` hook，串联验证 `remote.status`、`remote.local.status/enable/disable`、`remote.pair.start`、runtime API terminal create/storage put/events、remote service scoped transport 都落到 core-v2 truth；同时守卫旧 `termx-core/`、`tuiv2/`、`remote_runtime.go`、`remote_protocol_codec.go`、`legacy_commands.go` 不得恢复。准入 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-remote && go test ./... -count=1`、`cd termx-cli && go test ./cmd/termx -count=1`、默认依赖守卫、remote 旧 import 检查与 `git diff --check` 已通过。
-- `R188` 已完成：`termx-cli/docs/v2-v3-switch-audit.md` 已更新为 remote 后端迁移完成 checkpoint，记录 `termx remote ...` 只连 core-v2 daemon、status/local/pair 经 typed hook、runtime API terminal/storage/events 与 WebRTC/datachannel transport 经 `termx-remote.Service` 路由到 core-v2 truth、旧 fallback 不得恢复，并把 App/remote-ui history/copy 边界写为当时的后续阶段。准入 `git diff --check` 已通过。
-- `R189-R197` 已完成：真实 `termx-app/` 与 `remote-ui/` 已建立 CLI remote runtime 连接方式、terminal management/live surface、logical-line `CoreV2HistorySource`、infinite history surface/cache、logical-line copy/search/selection 和 App end-to-end smoke；迁移文档已记录最终边界和测试证据。
-- `R198` 已完成：`terminal-live-stream-tradeoff.md` 已记录终端慢消费者不可能三角，明确最新屏用于实时展示，完整历史必须走 core-v2 logical-line history，客户端本地 scrollback 只允许作为缓存。
-- `R199` 已完成：App/local web 会把缓存里的 `pair_...` pairing session id 视为错误 runtime token 并清理；损坏或服务端拒绝的 runtime token 会走 auth failure，清缓存并打开重新配对；Hub 成功响应若不是 JSON 会带 endpoint/status/body preview；answer-proof 验证按 Go `tokenpb.Claims` protobuf payload 读取 `session_id`，不再把合法 `session_token` 当 JSON 解析失败；配对成功后会刷新 terminal inventory。准入已通过 `remote-ui` focused tests/typecheck/test/build:localweb、`termx-app` build、`termx-remote` 全量 Go tests、CLI remote focused tests、`git diff --check`，并用 Chrome DevTools Protocol 跑通隔离 local runtime：坏 token -> 重新配对 -> terminal inventory 刷新 -> 打开 `browser-smoke-final`，页面无 `Unexpected token` 或 `invalid session token`。
-- `R200` 已完成：`remote-ui`/`termx-app` 现在共享 `ManagedRtcSession` 生命周期接口，Browser/Native 两套实现都必须提供 `subscribeConnectionState`、`onDisconnect`、`isAlive`、`handleAppResume`、`waitUntilConnected` 和 `closeTerminalDataChannel`；浏览器 API datachannel lease close 不再关闭底层共享 channel，raw API channel close 只清缓存并按需重建，不再误判为整条 WebRTC session 失败。localweb 桌面端 terminal header/body/keybar 使用显式 grid row，body 固定在 1fr 行并保持 `h-full`，解决 `md:hidden` header 让 xterm 落入 auto 行导致 0 高的问题；初始 1-row fit 仍被拦截，避免 core PTY 被压扁。准入已通过 `remote-ui` typecheck/test/build:localweb、`termx-app` build、`git diff --check`；Chrome DevTools Protocol 隔离验证 `http://127.0.0.1:58955/localweb.html`：配对 -> 打开 `r200-final`，桌面截图可见 `R200_FINAL_READY` 和 `R200_FINAL_ECHO:keyevent...`，terminal rect 约 `886x912`，无 `session_failed`、`connect_failed`、`Unexpected token` 或 `browser WebRTC api channel closed`。
-- `R201A` 已完成：TUI 鼠标路由现在在 runtime 命中测试确认 active terminal 内容区且前台程序启用 mouse tracking 时，为 raw mouse 标记 terminal passthrough；UI/copy reducer 避让，terminal input router 发送 raw seq 给子进程。未启用 tracking 的滚轮仍进入 authoritative logical-line copy/history，已通过 `cd termx-tui-v3 && go test ./... -count=1`。
-- `R201B` 已完成：core-v2 history 现在把 primary-screen 前台 TUI 的控制序列拆成 fullscreen intent 与可替换 mutable frame；第一次 home-clear 仍按 page-break 提交进入前的 shell 页面，后续 repeated home-clear 只 reset 当前 fullscreen frame，不再把 Codex repaint 帧累计到 committed history。准入已通过 focused history/terminal ingest tests、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check -- ...`。
-- `R201C` 已完成：运行中的 primary fullscreen frame 不再作为 committed 滚动历史重复累计，因此 Codex 输入框、footer、局部 repaint UI 不会被滚进 TermX 无限历史；进入 fullscreen 前的 shell/logical-line 历史仍保留，process exit/force commit 仍会把最终帧写入历史。R201F 已把最终展示语义调整为 mutable current frame 可见但不计入 committed depth。准入已通过 focused history/protocol/terminal 回归、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check -- ...`。
-- `R201D` 已完成：TUI protocol history adapter 现在按 grapheme display width 解析 styled compact run，copy/history renderer 增加 styled 宽字符 ANSI 锚点回归，避免中文日志行按 1 列推进造成背景块覆盖、缺字和底部宽度错乱。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、`git diff --check -- ...`；已有 remote-ui/localweb 未提交改动未纳入本切片。
-- `R201E` 已完成：core-v2 在 primary fullscreen frame 运行期间不会因为 cursor/mouse mode 退出或 frame 内换行把 Codex 输入框、footer、运行帧暴露到 latest/copy history；普通 commit 对运行帧 no-op，process exit/force commit 仍会提交最终帧。tui-v3 FrameSink 在真实 TTY patch 擦除前先 `ANSIReset`，对含 `CSI G/H/f/C/D/X` 的 ANSI addressed 行改为 reset+clear-line+rewrite，避免 StringWidth 补空格导致黑块、旧尾巴和底部缺字。准入已通过 focused core/FrameSink 回归、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、tmux 最小 ANSI capture 验证和 `git diff --check -- ...`；已有 remote-ui/localweb 未提交改动未纳入本切片。
-- `R201F` 已完成：core-v2 latest/frozen snapshot 重新投影 running primary fullscreen mutable frontier，让 Codex 当前输入/状态底行进入 copy/history 时仍可见；这些行保持 `Committed=false`，`TotalLines/LogicalTotal` 仍只计算 committed history，重复 repaint 只保留最新 frame，process exit/force commit 仍提交最终帧。tui-v3 同步夹紧 copy/history 全量和 patch cursor 的可见行，避免 cursor row/rect 越过 content viewport。准入已通过 focused core/protocol/TUI cursor 回归、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check -- ...`。
-- `R201G` 已完成：`go run ./termx-cli/cmd/termx ls` 的 daemon auto-start timeout 根因是 remote local 配置尝试监听当前机器不存在的 `192.168.0.103:18888`，daemon 启动时把 LocalEnable 错误当硬失败并退出。现在 remote service `Start` 仍是硬失败，但 daemon startup 内的 local auto-enable 失败只写 warning，remote hook 保持安装，core daemon socket 继续启动；真实坏地址验证已看到 `ls` 返回成功、日志记录 auto-enable warning 和 daemon ready。准入已通过 focused runtime harness、`cd termx-cli && go test ./cmd/termx -count=1`、`git diff --check -- termx-cli workflow.md`。
-- `R201H` 已完成：tmux raw dump 显示真实 Codex 0.141.0 没有进入 alt-screen，也不是单纯 `CSI H/J` repaint；它使用 `CSI ?2026h/l` 同步输出、`CSI ?1004h` focus tracking、`CSI 5;48r`/`CSI 1;11r` 滚动区域、连续 `ESC M` reverse-index，以及局部绝对定位绘制输入框和底部状态行。core-v2 replay harness 已固化该序列：进入 Codex 前的 shell 行会 page-break 提交，当前输入/状态底行作为 mutable frame 可见，第二帧 repaint 会替换第一帧输入框且不增加 committed history depth。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check -- termx-core-v2 workflow.md`。
-- `R201I` 已完成：`termx-core-v2/docs/history-semantic-ingest.md` 记录后续 history ingest 的设计基准：不再按进程名特判或继续扩写手写 parser；真实 PTY bytes 只由 core 已持有的 vterm 解码一次，EventRouter 分发同一批 semantic damage 给 live/history；vterm scrollback、live snapshot、damage rows 不能成为 history truth，最终必须转换成 `HistoryEvent` 写入 `HistoryTrack` logical-line 模型。文档同时明确 Codex primary scrollback/context 与 current-frame repaint 要分开处理，opencode/alt-screen 运行中不写 primary history。准入 `git diff --check` 已通过。
-- `R201J` 已完成：`live.SurfaceTrack.WriteWithResult` 现在返回同一次 vterm `WriteWithDamage` 的 semantic damage，`Terminal.IngestOutput` 和真实 process output 都把 shared vterm batch 投给 history pipeline；history queue 支持 semantic batch，`FlushHistory` 先 flush live queue 再 flush history queue，避免 copy/history 冻结漏掉已读但尚未转成 batch 的 PTY 输出。shared batch 路径禁止旧 altCap 二次捕获 final frame，alt-screen final frame 只追加一次。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。
-- `R201K` 已完成：history queue 现在接收含 damage 的 shared vterm batch，projector 统计并消费 vterm write/clear/scroll/control/mode 语义；新增 `EventPrimaryScrollOut`，只用 vterm primary scrollback append 证明“有行离开 screen ownership”，最终提交仍由 `HistoryTrack` 按 logical line ownership 完成，不能把 vterm scrollback row 或 screen diff 当 history truth。`termx-vterm` 同批补出 CR/LF/IND/RI、ED/EL 和 mode change damage，full-replace 分支也保留这些语义 ops；raw parser 仍作为文本/style/OSC8 与迁移期控制辅助，不再扩大成新的终端语义补丁。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`。
-- `R201L` 已完成：`termx-vterm` 现在为 CUU/CUD/CUF/CUB/CNL/CPL/CHA/HPA/VPA/CUP/HVP 输出 ordered control damage，core-v2 damage projector 将这些 control ops 映射到已有 cursor `HistoryEvent`；focused harness 使用真实 vterm `WriteWithDamage` 证明 `abcdef CSI 3D XYZ` 可只靠 damage projector 得到 `abcXYZ`，不依赖 raw parser 控制语义。当前仍未把 raw shared-vterm path 全量切到 vterm projector，因为 vterm damage 尚未携带 PTY byte offset/完整 ordered semantic text event；不能用 screen diff 猜测 parser 文本顺序。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201M` 已完成：`termx-vterm.WriteDamage` 新增 `SemanticOps`，direct write/clear/scroll/control/mode 会作为有序语义序列输出，broad/repeated full-replace screen diff 不会伪装成 semantic text；full-replace 中的 control/mode 语义保留在 `SemanticOps`。core-v2 live surface 不会丢弃 semantic-only damage，history projector 优先消费 `SemanticOps`，没有时才回退旧 `Ops`。focused harness 证明 screen diff `Ops` 与 semantic ops 冲突时 history 只消费 semantic ops。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201N` 已完成：`SemanticOps` 不再从 screen diff clear 派生，真实 EL/ED 只能通过 vterm `ControlDamage` 的 `el/ed` 进入 semantic stream；focused harness 证明 screen diff clear 仍保留给 live/screen update，但 history semantic projector 只消费 `el` control，不把 scroll/fill clear 当成 erase。Codex raw damage 统计同步改为不要求 clear diff 进入 semantic ops。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201O` 已完成：vterm 现在为裸 backspace 与 tab 输出 ordered control damage，`SemanticOps` 可覆盖 `write -> bs/ht/cursor/EL -> write` 这类 raw inline 编辑事务；core-v2 raw shared batch 在确认只包含安全 inline semantic ops 且无 scrollback/alt/full-replace 时直接走 vterm projector，避免 parser 重新执行终端控制。纯文本/SGR/OSC8 跨 chunk 样式、scroll-out、alt-screen final frame、fullscreen/full-replace 仍按现有迁移辅助路径处理，后续不能用 screen diff 猜 history truth。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201P` 已完成：vterm 内部新增 `TextDamage`，只由真实 ASCII/grapheme print path 产生；screen `SpanDamage` 继续服务 live diff，styled erase/fill 不会被伪装成文本语义。`WriteDamage.SemanticOps` 的 text span 现在来自 `TextDamage`，full-replace 分支也不会从 screen diff 推导文本；focused harness 覆盖 print text 样式、ordered write/control 语义、broad/repeated full-replace 不产生 semantic text、wide rune screen span 不回归。core raw shortcut 仍不放开纯文本/SGR/OSC 跨 chunk 和 styled EL，等待后续切片处理 pending/style/control 完整边界。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201Q` 已完成：core-v2 raw shared batch 在仅包含 vterm text semantic ops 与允许的 inline cursor/backspace/tab/control 时，先 shadow parse raw 以维护 parser pending/style/OSC 辅助状态，再只把 vterm `SemanticOps` 写入 `HistoryTrack`；纯文本/SGR 跨 chunk 已可由 vterm text cells 投影，parser 不再重放文本。scroll-out、alt-screen、full-replace 和 styled EL 仍走现有迁移辅助，避免把 screen diff/fill 当 history truth。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201Y` 已完成：vterm semantic ops 明确区分自动换行 `soft-wrap` 与显式 `IND`，core-v2 `HistoryTrack` 用 `EventSoftWrapLine` 表达 visual row ownership 前进但 logical line 仍 open；rows=1/2 同一 raw batch 内多次 LF/soft-wrap/scrollback append 可直接走 vterm semantic projector，不再回退 parser，且普通 primary 输出不丢不重复。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201Z` 已完成：rows>2 的普通 plain primary scroll-out raw batch 现在可直接使用 shared vterm semantic projector，vterm 的 primary scrollback append 只证明 screen ownership 离开，最终仍由 `HistoryTrack` 合并 logical-line history；focused harness 证明 semantic projector 命中、`RawFallbacks == 0`、plain 行不丢不重复。样式、OSC8 link、宽字符/combining 和 styled tail footprint 仍由后续专门语义切片收口，避免在本切片误把未建模 footprint 交给 projector。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。
-- `R201AA` 已完成：vterm semantic text cells 已承接 rows>2 单批 ASCII SGR/OSC8 hard-newline 输出，focused harness 证明 styled/link raw batch 使用 semantic projector、`RawFallbacks == 0`，红色 SGR、OSC8 link metadata 与后续 plain line 都来自 shared vterm cells；HistoryTrack append 路径会合并相邻同 style/link ASCII run，避免 vterm 逐 cell text damage 改变 logical cell run 形态，overwrite 路径仍保持精确列替换。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201AB` 已完成：vterm semantic text cells 已承接 rows>2 单批 combining grapheme 和宽字符 hard-newline 输出，projector 会在同一 damage 内聚合连续 write span，并把跨 span 的零宽 combining mark 合并到前一个 logical cell；focused harness 证明 `é好` 使用 semantic projector、`RawFallbacks == 0`，窄列投影仍保持 combining grapheme 与宽字符边界。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201AC` 已完成：vterm `DamageOp` 的行结束 semantic control 现在可携带 `TailFill` 背景 metadata，core-v2 在 LF/IND/soft-wrap 前把它投影为 `EventSetActiveLineTailFill`，不把尾部空白写成 logical payload，也不从 vterm scrollback row 反推 history truth。focused harness 证明 rows>2 styled scroll-out raw batch 使用 shared vterm semantic projector、`RawFallbacks == 0`、`ij` 续行尾部保留 `idx:24` tail fill。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`。
-- `R201AD` 已完成：raw shared batch 即使带 `RequiresFullReplace`，只要同批没有 scrollback/alt append 且包含已证明安全的 ordered semantic text/control/mode ops，history projector 会 shadow parser 状态后只消费 vterm semantic ops；full-replace 标记仍只作为 live/stale 边界，不触发 screen/history append，也不回退 `historyANSIParser`。focused harness 证明 full-replace raw semantic batch `SemanticProjectors > 0`、`RawFallbacks == 0`，并且 parser raw 与 screen diff 文本都不会进入 history。准入已通过 `cd termx-core-v2 && go test ./... -count=1`。
-- `R201AE` 已完成：vterm full-replace alt-screen switch 现在保留 `?1049h/l` mode semantic op；core-v2 对带 `AlternateAppend` 的 alt-screen running raw batch 只消费同批 ordered `SemanticOps`，`AlternateAppend` 只作为仍处于 alt-screen 的边界证据，不成为 primary history truth。focused harness 证明 alt enter text 与 alt 内滚动 append 均 `RawFallbacks == 0`、`AlternateAppends > 0`，且 alt 内容不进入 primary latest/history；退出 final frame 仍由 shared `AltExitFrame` 单独处理。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AF` 已完成：raw shared semantic gate 已放行 vterm 已产出、core projector 已消费的 `cuu/cud` vertical cursor controls；真实 vterm raw harness 覆盖 `CSI A/B/E`，证明 CUU/CUD 及 CNL/VPR 归一出的上下移动使用 shared vterm semantic projector、`RawFallbacks == 0`，并正确 mutate primary screen ownership。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201AG` 已完成：raw shared semantic gate 已放行 vterm 已记录的 private mode `?2004h/l`，但 `applyVTermModeEventLocked` 不把 bracketed paste 当 primary fullscreen intent；真实 vterm raw harness 证明 mode-only enter/exit 与中间文本同批路径使用 shared vterm semantic projector、`RawFallbacks == 0`，普通 primary text 仍进入 logical-line history。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201AH` 已完成：full-replace raw semantic batch 现在复用普通 raw semantic control allowlist；`RequiresFullReplace` 仍只作为 live/stale 边界，仍拒绝 scrollback/alt append，但同批 ordered cursor/control ops 不会因 full-replace allowlist 缺口回退 parser。focused harness 证明带 `cuu/cr` 的 full-replace raw semantic batch `RawFallbacks == 0`，只消费 semantic ops，不写入 parser raw。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201AI` 已完成：raw shared semantic gate 新增 OSC8 link scroll-out 专用边界，只有 ordered `SemanticOps` 中出现 link cell 且同批 scrollback append 只作为 primary screen ownership 证据时才放行；focused harness 证明 rows>2 OSC8 scroll-out 使用 shared vterm semantic projector、`RawFallbacks == 0`，link metadata 保留在 logical-line history，准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201AJ` 已完成：vterm `CSI Z`/CBT 现在在 ordered semantic stream 中记录最终 cursor column，core-v2 raw shared semantic gate 放行 `cbt` 并投影为 cursor horizontal absolute；focused harness 证明 `123456789 CSI Z XY` 使用 shared vterm semantic projector、`RawFallbacks == 0`，按真实 tab stop 在 col 8 覆盖。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AK` 已完成：vterm `CSI X`/ECH 现在在 ordered semantic stream 中记录精确 count 和 blank style，core-v2 新增 `EventEraseCharacters` 并在 raw shared projector 中擦除固定 cell range；focused harness 证明 `ABCDE CSI 2G CSI 2X` 使用 shared vterm semantic projector、`RawFallbacks == 0`，结果为 `A  DE`，不会扩大成 erase-to-EOL。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AL` 已完成：raw shared gate 现在允许 ANSI LNM mode 20 专用 batch，vterm 同批 mode/text/LF/CR 语义决定换行后 cursor 位置，core-v2 对 mode 20 本身保持 history no-op；focused harness 证明 `CSI 20h abc LF Z CSI 20l` 使用 shared vterm semantic projector、`RawFallbacks == 0`，下一行 `Z` 从行首写入。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201AM` 已完成：vterm `CSI P`/DCH 现在在 ordered semantic stream 中记录 cursor column、count 和 blank style，core-v2 新增 `EventDeleteCharacters` 并在 raw shared projector 中左移当前 logical line cells；focused harness 证明 `ABCDE CSI 2G CSI 2P` 使用 shared vterm semantic projector、`RawFallbacks == 0`，结果为 `ADE`，横向 screen scroll diff 只作为 live damage 伴随项。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AN` 已完成：vterm `CSI @`/ICH 现在在 ordered semantic stream 中记录 cursor column、count 和 blank style，core-v2 新增 `EventInsertCharacters` 并在 raw shared projector 中向当前 logical line 插入 blank cells；focused harness 证明 `ABCDE CSI 2G CSI 2@` 使用 shared vterm semantic projector、`RawFallbacks == 0`，结果为 `A  BCDE`，横向 screen scroll diff 只作为 live damage 伴随项。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AO` 已完成：vterm `CSI L/M/S/T` 现在输出 ordered `il/dl/su/sd` line-control semantic op，并携带 row/count/scroll-region bottom/blank style；core-v2 新增 line operation history events，只按显式 control 更新 primary screen ownership 与 mutable frontier，伴随 clear/scroll screen diff 仅作为 live damage。focused harness 证明 raw line operation batch 使用 shared vterm semantic projector、`RawFallbacks == 0`；准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AP` 已完成：`CSI b` REP 不再需要扩展 `historyANSIParser`；vterm 通过 print path 把重复字符产出为 ordered text semantic ops，core-v2 raw shared batch 直接消费这些文本，focused harness 证明 `AB CSI 3b C` 使用 semantic projector、`RawFallbacks == 0` 且 latest 为 `ABBBBC`。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AQ` 已完成：`ESC 7/8` save/restore cursor 不让 `historyANSIParser` 维护第二份 saved cursor，也不在 history 里保存 cursor truth；vterm 同批恢复 cursor 后产出 ordered write positions，core-v2 raw shared batch 直接消费这些语义。focused harness 证明 `abc ESC7 CUP ZZ ESC8 X` 使用 semantic projector、`RawFallbacks == 0`，latest 按恢复位置得到 `abcX` 与 `ZZ`。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AR` 已完成：custom tab stop 状态仍只在 shared vterm 内维护，后续 `TAB` 通过 ordered `ht` semantic control 携带最终列进入 core-v2 projector；focused harness 证明 `ab ESC H CR TAB Z` 使用 semantic projector、`RawFallbacks == 0`，latest 为 `abZ`，不会落到 `historyANSIParser` 固定 8 列 tab 语义。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesCustomTabStopRawWithoutFallback -count=1`、`go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticCustomTabStop -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AS` 已完成：SCS charset 状态仍只在 shared vterm 内维护，special drawing printable bytes 由 vterm print path 映射为真实 glyph 后进入 core-v2 projector；focused harness 证明 `ESC ( 0 lqk ESC ( B ok` 使用 semantic projector、`RawFallbacks == 0`，latest 为 `┌─┐ok`，不会落到 `historyANSIParser` 的普通 ASCII `lqkok` 投影。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticSpecialDrawingCharset -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesSpecialDrawingCharsetRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AT` 已完成：vterm 将 C0 `SO/SI` 注册到正确 control handler，GL charset 状态由 shared vterm 维护；core-v2 raw shared batch 只消费 vterm print path 映射后的 cells。focused harness 证明 `ESC ) 0 SO q SI q` 使用 semantic projector、`RawFallbacks == 0`，latest 为 `─q`，不会落到 `historyANSIParser` 的普通 ASCII `qq` 投影。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticLockingShiftCharset -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesLockingShiftCharsetRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AU` 已完成：vterm 补齐 ESC `N/O` single-shift handler，`SS2/SS3` 临时 charset 状态只影响下一个 printable byte；core-v2 raw shared batch 只消费 vterm print path 映射后的 cells。focused harness 证明 `ESC * 0 ESC N q q` 使用 semantic projector、`RawFallbacks == 0`，latest 为 `─q`，不会落到 `historyANSIParser` 的普通 ASCII `qq` 投影。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticSingleShiftCharset -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesSingleShiftCharsetRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AV` 已完成：vterm RIS (`ESC c`) 现在在 ordered semantic stream 中记录 `ris` control，screen reset/full-replace 仍只作为 live/stale 边界；core-v2 raw shared batch 将 `ris` 映射为 `reset-frontier`，focused harness 证明 `abc ESC c Z` 使用 semantic projector、`RawFallbacks == 0`，latest 只保留 reset 后的 `Z`，不会落到 `historyANSIParser` 吞掉 reset 后的 `abcZ` 投影。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticResetInitialState -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesResetInitialStateRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AW` 已完成：vterm 已产出的 legacy mouse tracking modes `?9/?1001` 现在可被 core-v2 raw shared semantic gate 消费；core 只把这些 mode 当作 primary TUI intent，不保存第二份 mouse truth。focused harness 证明 `CSI ?9h / ?1001h` 与文本同批时使用 shared vterm semantic projector、`RawFallbacks == 0`、当前 frame 可见且不增加 committed depth。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticLegacyMouseModes -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesLegacyMouseModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AX` 已完成：DEC origin mode `?6h/l` 只由 shared vterm 持有，vterm `CUP/HVP` semantic control 现在记录 origin/scroll-region 归一后的最终坐标；core-v2 raw shared gate 放行 mode 6 但不保存第二份 origin truth，后续 cursor/write ops 驱动 history。focused harness 证明 `CSI 2;4r CSI ?6h CSI 1;1H/f X` 使用 semantic projector、`RawFallbacks == 0`，不会让 `historyANSIParser` 按普通绝对定位重放到错误位置。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticOriginModeCursorPosition -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesOriginModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AY` 已完成：DEC autowrap mode `?7h/l` 只由 shared vterm 持有，core-v2 raw shared gate 放行 mode 7 但不保存第二份 wrap truth，history 只消费 vterm print path 已归一的 ordered text/soft-wrap 语义。focused harness 证明 `CSI ?7l 123456789Z` 使用 semantic projector、`RawFallbacks == 0`，最终按 vterm nowrap 语义连续覆写最后一列为 `12345Z`，不会让 `historyANSIParser` 按默认自动换行重放成多行历史。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticAutowrapMode -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesAutowrapModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201AZ` 已完成：DEC private save/restore cursor mode `?1048h/l` 只由 shared vterm 持有，core-v2 raw shared gate 放行 mode 1048 但不保存第二份 saved cursor truth，history 只消费 vterm 恢复 cursor 后的 ordered text/cursor 语义。focused harness 证明 `abc CSI ?1048h CSI 2;1H ZZ CSI ?1048l X` 使用 semantic projector、`RawFallbacks == 0`，latest 得到 `abcX` 与 `ZZ`，不会让 `historyANSIParser` 吞掉 private mode 后失去 restore cursor 语义。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticPrivateSaveRestoreCursor -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesPrivateSaveRestoreCursorRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BA` 已完成：DEC left/right margin mode `?69h/l` 与 `DECSLRM` 只由 shared vterm 持有，vterm 记录 `decslrm` ordered control 并让后续 CUP/CBT/write 输出最终坐标；core-v2 raw shared gate 放行 mode 69/`decslrm` 但不保存第二份 horizontal margin truth。focused harness 证明 `CSI ?6h CSI ?69h CSI 3;6s CSI 1;2H X CSI Z A` 使用 semantic projector、`RawFallbacks == 0`，latest 以 vterm 归一后的坐标得到 `AX`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticLeftRightMargins -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesLeftRightMarginsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BB` 已完成：application cursor/keypad modes `?1h/l` 与 `?66h/l` 只由 shared vterm 持有，core-v2 raw shared gate 放行 mode 1/66 但 `applyVTermModeEventLocked` 不把它们写成 history truth；同批文本仍由 vterm ordered text cells 投影。focused harness 证明 `CSI ?1h CSI ?66h keys CSI ?66l CSI ?1l` 使用 semantic projector、`RawFallbacks == 0`，latest 只包含 `keys` 且 committed depth 不增加。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticApplicationKeyModes -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesApplicationKeyModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BC` 已完成：alternate scroll mode `?1007h/l` 只由 shared vterm 持有，core-v2 raw shared gate 放行 mode 1007 但不把滚轮替代滚动状态写成 history truth；同批文本仍由 vterm ordered text cells 投影。focused harness 证明 `CSI ?1007h scroll CSI ?1007l` 使用 semantic projector、`RawFallbacks == 0`，latest 只包含 `scroll` 且 committed depth 不增加。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticAlternateScrollMode -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesAlternateScrollModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BD` 已完成：`ESC =`/`ESC >` keypad application/numeric mode 现在由 shared vterm 在 ordered semantic stream 中记录 mode 66，core-v2 raw shared batch 直接消费 mode/text semantic ops，不把 keypad 状态写成 history truth，也不让 `historyANSIParser` 因 ESC mode 同批文本回退。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticKeypadEscModes -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesKeypadEscModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BE` 已完成：UTF-8 extended mouse encoding mode `?1005h/l` 现在由 shared vterm mode semantic ops 进入 core-v2 raw shared projector；core 只消费该 mode/text 顺序，不把鼠标编码状态写成 history truth，也不让未知 private mode 触发 parser fallback。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticUTF8MouseMode -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesUTF8MouseModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BF` 已完成：URXVT / SGR pixel mouse encoding modes `?1015h/l`、`?1016h/l` 现在由 shared vterm mode semantic ops 进入 core-v2 raw shared projector；core 只消费这些 mode/text 顺序，不把鼠标编码状态写成 history truth，也不放开未知 private mode。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticExtendedMouseEncodingModes -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesExtendedMouseEncodingModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BG` 已完成：Unicode Core mode `?2027h/l` 现在由 shared vterm mode semantic ops 进入 core-v2 raw shared projector；core 只消费该 mode/text 顺序，不把 Unicode/grapheme mode 写成 history truth，同批 combining/wide 文本仍由 vterm text cells 和 core projector 保持 logical cell 边界。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticUnicodeCoreMode -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesUnicodeCoreModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BH` 已完成：补 raw shared-vterm repeated primary repaint harness，验证第二次 home+ED repaint 只替换 current mutable frame，不把旧 frame/input 写入 committed history，并保持 `RawFallbacks == 0`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesRepeatedPrimaryRepaintRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201BI` 已完成：补 raw shared-vterm VPA harness，验证 `CSI d` 垂直绝对定位使用 vterm 已归一 row/col 进入 projector，后续同批文本不回退 `historyANSIParser`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesVerticalAbsoluteRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201BJ` 已完成：补 raw shared-vterm HPA harness，验证 `CSI \`` 水平绝对定位使用 vterm 已归一 column 进入 projector，后续同批文本不回退 `historyANSIParser`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesHorizontalPositionAbsoluteRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201BK` 已完成：raw shared-vterm gate 现在允许同批 ordered `ed` control 承接 `CSI 2J/3J`，并把 vterm 伴随 scrollback append 保持为 live signal 而非 history truth；focused harness 证明 ED2 page-break 和 ED3 clear-scrollback 均使用 shared vterm semantic projector、`RawFallbacks == 0`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesEraseDisplayModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201BL` 已完成：raw shared-vterm gate 现在允许 `CSI ?2048h/l` in-band resize mode；core-v2 只消费该 mode/text 顺序，不把 resize-report/input mode 写成 history truth，也不让同批文本回退 `historyANSIParser`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesInBandResizeModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201BM` 已完成：raw shared-vterm gate 现在允许 `CSI ?67/?2031/?9001 h/l` input/report private modes；core-v2 只消费这些 mode/text 顺序，不把输入/报告状态写成 history truth，同时新增未知 private mode 负例守住 parser fallback 边界。准入已通过 `go test ./termx-core-v2 -run 'TestTerminalSemanticProjector(ConsumesInputReportPrivateModesRawWithoutFallback|RejectsUnknownPrivateModeRaw)' -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201BN` 已完成：vterm 现在为 `CSI g` / TBC 输出 ordered `tbc` control，core-v2 raw shared gate 放行该 no-op 控制并继续消费后续 vterm-resolved `ht` 坐标；focused harness 证明清掉 tab stops 后 `TAB` 跳到末列，`historyANSIParser` 固定 8 列 tab 语义不再承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticTabClear -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesTabClearRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BO` 已完成：补齐 `ESC n/o` G2/G3 locking shift raw shared-vterm harness，证明 GL charset 选择仍只由 shared vterm 持有，core-v2 直接消费 print path 映射后的 text cells，`historyANSIParser` 不把 shift 后 bytes 当普通 ASCII 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticG2G3LockingShiftCharset -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesG2G3LockingShiftRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BP` 已完成：vterm 现在为 `ESC H` / HTS 输出 ordered `hts` control，core-v2 raw shared gate 放行该 no-op 控制并继续消费后续 vterm-resolved `ht` 坐标；focused harness 证明 custom tab stop 设置、回车、TAB、文本写入保持 raw 顺序，`historyANSIParser` 固定 8 列 tab 语义不再承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticCustomTabStop -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesCustomTabStopRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BQ` 已完成：vterm 现在为 `CSI ?5W` / DECST8C 输出 ordered `decst8c` control，core-v2 raw shared gate 放行该 no-op 控制并继续消费后续 vterm-resolved `ht` 坐标；focused harness 证明 custom tab stop 被重置为默认 8 列 tab stops，`historyANSIParser` 不再承接 tab reset 语义。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticTabReset -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesTabResetRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BR` 已完成：vterm 现在为 SCS charset designation 输出 ordered `scs` control，core-v2 raw shared gate 放行该 no-op 控制并继续消费后续 mapped text cells；focused harness 证明 `ESC ( 0 ... ESC ( B ...` 保持 charset 状态顺序，`historyANSIParser` 不把 special drawing bytes 当普通 ASCII 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticSpecialDrawingCharset -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesSpecialDrawingCharsetRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BS` 已完成：补齐 `CSI I` / CHT forward tab raw shared-vterm harness，证明 forward tab 目标列由 shared vterm tab stop 状态解析为 resolved `ht` control，core-v2 直接消费该控制并写入后续文本，`historyANSIParser` 不再因未知 CSI 吞掉控制后承接同批文本。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticForwardTab -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesForwardTabRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BT` 已完成：补齐 Codex 常见 focus 与 SGR mouse private modes raw shared-vterm harness，证明 `?1000/?1002/?1003/?1004/?1006` 由 vterm ordered mode semantic ops 保持顺序进入 core-v2 projector，当前 frame 可见但不增加 committed depth，`historyANSIParser` 不因 private mode 同批文本回退。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticFocusAndSGRMouseModes -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesFocusAndSGRMouseModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BU` 已完成：用户确认问题是在 TermX TUI 测试中出现；截图显示 Codex 0.141.0 primary-screen 首屏包含 `Update available! 0.141.0 -> 0.142.0` 卡片，随后同一 UI 的 current frame/history 视图只剩 main card、Tip、input 与 footer，上方 update card 区域消失或被裁掉。根因定位在 core-v2 authoritative `HistoryWindow` mutable current frame：`HistoryTrack` 把 primary fullscreen frame 中任意行首 `ED0` 都当成整帧 repaint reset，导致 Codex 在下方区域局部 `CUP + ED0` 时删掉上方 update card。已收窄为只有真正左上角 home-clear 才替换整帧；非首行 `ED0` 只清 cursor 以下 mutable tail。已补 `HistoryTrack` harness 和 raw shared-vterm projector harness，证明 update card、main card、input/status 同时留在 mutable latest frame，`RawFallbacks == 0`，committed depth 不增长。准入已通过 focused tests、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201BV` 已完成：补齐 DEC cursor visibility `?25h/l` raw shared-vterm harness，证明 mode 25 由 vterm ordered mode semantic ops 保持顺序进入 core-v2 projector；core-v2 只把它作为 primary fullscreen intent，不保存第二份 cursor visibility truth，当前 frame 可见但不增加 committed depth，`historyANSIParser` 不因 private mode 同批文本回退。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticCursorVisibilityMode -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesCursorVisibilityModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BW` 已完成：补齐 DEC alt-screen private mode variants `?47/?1047/?1049` raw shared-vterm harness；发现并修复 vterm 只记录 `?47` mode op、但未真正切换 alt-screen 的缺口。现在 `?47` 作为 legacy alt-screen alias 改变 shared vterm screen 状态并保留 full-replace live 边界；core-v2 通过同批 ordered mode semantic ops 驱动 `SwitchAltScreen`，alt-screen 运行内容不写入 primary history，`RawFallbacks == 0`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticAltScreenModeVariants -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesAltScreenModeVariantsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BX` 已完成：补齐 OSC title 与 OSC 7 working directory raw shared-vterm harness，证明 title/cwd 是 shared vterm 持有的终端状态，不进入 core-v2 logical-line history；同批后续 prompt 文本仍由 vterm semantic text ops 投影，`RawFallbacks == 0`，无需给 `historyANSIParser` 增加 OSC title/cwd 语义。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageOSCTitleAndWorkingDirectoryKeepSemanticText -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesOSCTitleAndWorkingDirectoryRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BY` 已完成：vterm 现在为 DECSCUSR cursor style 输出 ordered `decscusr` control；core-v2 raw shared gate 放行该 no-op 控制并继续消费同批文本，不保存第二份 cursor style truth，也不让 `historyANSIParser` 因 cursor style CSI 回退承接文本。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticCursorStyle -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesCursorStyleRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201BZ` 已完成：vterm 现在为 DSR / DECXCPR / DECRQM terminal report request 输出 ordered no-op controls `dsr`、`decxcpr`、`decrqm`；core-v2 raw shared gate 放行并忽略这些 report 状态，响应仍由 shared vterm 回写 PTY，同批文本不回退 `historyANSIParser`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticReportRequests -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesReportRequestsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CA` 已完成：vterm 现在为 DA1/DA2 device attributes 查询输出 ordered no-op controls `da`、`da2`；core-v2 raw shared gate 放行并忽略这些 device-attributes 状态，响应仍由 shared vterm 回写 PTY，同批文本不回退 `historyANSIParser`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageSemanticDeviceAttributes -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesDeviceAttributesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CB` 已完成：OSC 10/11/12 default foreground/background/cursor color set/query 与 110/111/112 reset 只由 shared vterm 持有；颜色 query 响应仍由 shared vterm 回写 PTY，core-v2 history 不保存第二份 default color truth，同批后续文本继续走 semantic projector，`RawFallbacks == 0`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageOSCDefaultColorsKeepSemanticText -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesOSCDefaultColorsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CC` 已完成：DCS/APC/SOS/PM string controls 只由 shared vterm parser 消费，payload 不渲染、不进入 logical-line history；core-v2 history 不保存第二份 string-control truth，同批后续文本继续走 semantic projector，`RawFallbacks == 0`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageStringControlsKeepSemanticText -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesStringControlsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CD` 已完成：OSC 52 clipboard set/request/reset 只由 shared vterm parser 消费，clipboard payload 不渲染、不进入 logical-line history；core-v2 history 不保存第二份 clipboard truth，同批后续文本继续走 semantic projector，`RawFallbacks == 0`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageOSCClipboardKeepSemanticText -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesOSCClipboardRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CE` 已完成：8-bit C1 形式的 OSC/DCS/APC/SOS/PM 控制串只由 shared vterm parser 消费，payload 不渲染、不进入 logical-line history；core-v2 history 不保存第二份 C1 string/control truth，同批后续文本继续走 semantic projector，`RawFallbacks == 0`，不让只认识 7-bit ESC 形式的 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1StringControlsKeepSemanticText -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1StringControlsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CF` 已完成：8-bit C1 形式的 CSI cursor/erase 控制由 shared vterm parser 归一为 ordered semantic ops，vterm harness 证明 C1 CUB/CUP/EL 保持 raw 顺序并暴露 ECH/EL erase 语义；core-v2 history projector 消费同批语义，`RawFallbacks == 0`，不让只认识 7-bit `ESC [` 的 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSIControlsKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CG` 已完成：8-bit C1 单字节 IND/RI/HTS 控制由 shared vterm parser 归一为 ordered semantic ops；vterm harness 证明 C1 HTS/IND/RI 保持 raw 顺序并让后续 HT 使用 vterm-resolved tab stop；core-v2 小高度 rows=2 harness 证明同批语义由 semantic projector 消费，`RawFallbacks == 0`，不让 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1ControlsKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1ControlsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CH` 已完成：8-bit C1 OSC8 hyperlink 由 shared vterm parser 与 semantic text cells 承接；vterm harness 证明 C1 OSC8 payload 不渲染，linked/plain text 进入 semantic ops 且 linked cells 携带 `LinkURL/LinkParams`；core-v2 harness 证明 link metadata 直接进入 authoritative `HistoryWindow` logical-line cells，`RawFallbacks == 0`，不让只认识 7-bit OSC8 的 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermC1OSC8HyperlinkKeepsSemanticLinkText -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1OSC8RawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CI` 已完成：8-bit C1 NEL / Next Line 现在由 shared vterm 归一为同批 ordered `cr` + `lf` controls；vterm harness 证明 `abc NEL Z` 保持 `write/cr/lf/write` 顺序且 `Z` 从下一行行首写入；core-v2 harness 证明同批 CR/LF semantic ops 直接写入 logical-line history，`RawFallbacks == 0`，不让 `historyANSIParser` 维护第二份 next-line 语义。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1NELKeepsSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1NELRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CJ` 已完成：7-bit `ESC E` / NEL 现在由 shared vterm 归一为同批 ordered `cr` + `lf` controls；vterm harness 证明 `abc ESC E Z` 保持 `write/cr/lf/write` 顺序且 `Z` 从下一行行首写入；core-v2 harness 证明同批 CR/LF semantic ops 直接写入 logical-line history，`RawFallbacks == 0`，不让 `historyANSIParser` 维护第二份 next-line 语义。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageESCNELKeepsSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesESCNELRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CK` 已完成：8-bit C1 CSI SGR styled text 由 shared vterm print path 写入 semantic text cells；vterm harness 证明 C1 `CSI 1;31m` / `CSI 0m` 保持 styled/plain text cell metadata，core-v2 harness 证明 authoritative `HistoryWindow` 直接保留 styled/plain logical cells，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSISGRKeepsSemanticStyledText -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSISGRRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CL` 已完成：8-bit C1 CSI private mode 由 shared vterm mode semantic ops 承接；vterm harness 证明 C1 `CSI ?2026h/l` 与 `?1004h/l` 保持 mode/text raw 顺序，core-v2 harness 证明同批 mode/text semantic ops 直接进入 projector，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSIPrivateModesKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIPrivateModesRawWithoutFallback -count=1`、`cd termx-vterm && go test ./... -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`git diff --check`；core-v2 全量首次遇到 `TestProtocolServiceHistoryWindowPreservesProcessOutputANSIStyles` 一次性失败，单测和全量重跑均通过。
-- `R201CM` 已完成：补齐 8-bit C1 CSI 形式的 DSR/DECXCPR/DECRQM 与 DA1/DA2 查询 harness；vterm 证明 C1 report/device 查询输出 ordered no-op controls 并由 shared vterm 回写 PTY response，core-v2 证明同批文本继续走 semantic projector、`RawFallbacks == 0`，查询串不进入 logical-line history。准入已通过 `go test ./termx-vterm/vterm -run 'TestVTermWriteWithDamageC1CSI(ReportRequests|DeviceAttributes)KeepSemanticText' -count=1`、`go test ./termx-core-v2 -run 'TestTerminalSemanticProjectorConsumesC1CSI(ReportRequests|DeviceAttributes)RawWithoutFallback' -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CN` 已完成：补齐 8-bit C1 CSI `IL/DL/SU/SD` line operation harness；vterm 证明 C1 line-control 与伴随 scroll rect 保持 ordered semantic ops，core-v2 证明 shared vterm line-control 直接驱动 screen ownership/frontier、同批文本不回退 `historyANSIParser`，`RawFallbacks == 0`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSILineOperationsKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSILineOperationsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CO` 已完成：补齐 8-bit C1 CSI `ECH/DCH/ICH/REP` 行内编辑 harness；vterm 证明 C1 erase/delete/insert/repeat 保持 ordered semantic ops 或 print-path repeated text，core-v2 证明这些批次只 mutate current logical line、同批文本不回退 `historyANSIParser`，`RawFallbacks == 0`。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSIInlineEditKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIInlineEditRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CP` 已完成：补齐 8-bit C1 CSI `CHT/CBT/TBC/DECST8C` tab 控制 harness；vterm 证明 C1 CSI tab 控制保持 ordered semantic ops，并携带 vterm-resolved tab 目标列或 tab mode；core-v2 证明同批 tab 状态和后续文本直接走 semantic projector，`RawFallbacks == 0`，不让 `historyANSIParser` 的固定 8 列 tab 语义回退。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSITabControlsKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSITabControlsRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CQ` 已完成：补齐 8-bit C1 CSI `CNL/CPL/HPR/VPR/HPA/VPA/HVP` movement/position alias harness；vterm 证明 C1 aliases 保持 ordered cursor semantic ops、CR 归一和关键坐标/计数，core-v2 证明拆出 seed 后的 alias 批次直接走 semantic projector，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSIMovementAliasesKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIMovementAliasesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CR` 已完成：补齐 8-bit C1 CSI `ED2/ED3` 清屏与 clear scrollback harness；vterm 证明 C1 ED2/ED3 输出 ordered `ed` control 并保持同批后续文本顺序，core-v2 证明 page-break 与 clear-scrollback 直接由 shared vterm semantic projector 承接，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 回退。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIEraseDisplayModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CS` 已完成：补齐 8-bit C1 CSI `ED0/ED1` 局部清屏 harness；vterm 证明 C1 ED0/ED1 输出 ordered `ed` control 并保持 cursor/text 顺序，core-v2 证明 cursor 以下/以上 mutable frontier 修改由 shared vterm semantic projector 承接，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 回退。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSIEraseDisplayModesKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIPartialEraseDisplayRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CT` 已完成：补齐 8-bit C1 CSI `DECSTBM/DECOM/DECSLRM` margin/origin harness；vterm 证明 C1 scroll-region、origin mode、left/right margin、RI/CBT/CUP/write 语义保持 ordered semantic ops，core-v2 证明这些 vterm-owned 状态驱动后续 cursor/text 投影，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 维护第二份 margin/origin truth。准入已通过 `go test ./termx-vterm/vterm -run 'TestVTermWriteWithDamageC1CSI(ScrollRegionAndRIKeepSemanticOrder|OriginModeCursorPosition|LeftRightMarginsKeepSemanticOrder)' -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIMarginOriginRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CU` 已完成：补齐 8-bit C1 CSI `CSI 20h/l` ANSI LNM harness；vterm 证明 C1 mode 20、LF、CR、后续 text 按 raw 顺序进入 ordered semantic ops，core-v2 证明同批 mode/control/text 直接走 shared vterm projector，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 承接。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSILinefeedNewlineModeKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSILinefeedNewlineModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CV` 已完成：补齐 8-bit C1 CSI `EL1/EL2` erase-line harness；vterm 证明 C1 `CSI 1K/2K` 输出 ordered `el` control 并保持 cursor/text 顺序，core-v2 证明 prefix/whole-line erase 直接由 shared vterm semantic projector 修改 mutable logical line，`RawFallbacks == 0`，不让只认识 7-bit CSI 的 `historyANSIParser` 回退。准入已通过 `go test ./termx-vterm/vterm -run TestVTermWriteWithDamageC1CSIEraseLineModesKeepSemanticOrder -count=1`、`go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesC1CSIEraseLineModesRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CW` 已完成：unknown private mode 已由 shared vterm 解码为 mode semantic op，但 core-v2 history 不保存第二份 mode truth，也不允许因此回退 raw parser；同批文本继续由 vterm semantic projector 写入 mutable logical line，`RawFallbacks == 0`。准入已通过 `go test ./termx-core-v2 -run TestTerminalSemanticProjectorConsumesUnknownPrivateModeRawWithoutFallback -count=1`、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CX` 已完成：真实 shared-vterm batch 即使遇到暂不可消费的 raw/screen-diff 语义，也只 shadow parser 状态，不再调用 `historyANSIParser` 写入 HistoryTrack；新增 unsupported shared raw 负例证明 raw 文本不会被 replay，直接 primary text/control/scrollback batch 继续由 semantic projector 承接，并修正 LF 后 shared vterm 屏幕列到 logical-line 列的映射，避免普通 history 输出继承上一行物理列。准入已通过 focused semantic ingest tests、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-vterm && go test ./... -count=1`、`git diff --check`。
-- `R201CY` 已完成：TUI protocol adapter 不再丢弃 core-v2 `RowOwnership`，`live-tail-live` 会进入 `HistoryLogicalLine` 与本地 reflow 后的 `HistoryRow`；copy/history latest 入口使用 reducer 后的本地 rows 做锚点，看到 live-tail current frame 时从 frame 起点显示，避免 Codex update card/main frame 上半部分在进入 history 后被尾部锚点遮掉。新增 state、adapter 和 app integration harness 覆盖 live-tail ownership、reflow 传播和 Codex 类 current frame 入口渲染；未使用 live snapshot 或 VTerm scrollback fallback。准入已通过 `go test ./termx-tui-v3/... -count=1`、`go test ./termx-core-v2/... -count=1`、`git diff --check`。
-- `R201CZ` 已完成：根因是 TUI copy latest 把 live surface `Revision` 当成 core history generation 上界传给 `history.window`；在 Codex 这类实时 TUI 下该 live revision 可能滞后于可见 current frame，导致 core 按旧 generation 冻结时截掉 update card。现在 `EnteringLive` 只用于等待态显示冻结，latest frozen snapshot 边界由 core 请求时建立；新增 core/protocol 真实 Codex 输出 harness 和 TUI/protocol harness，锁住 update card 作为 `live-tail-live` 进入 copy/history 并锚到 frame 起点。准入已通过 focused Codex tests、`go test ./termx-tui-v3/... -count=1`、`go test ./termx-core-v2/... -count=1`、`git diff --check`。
-- `R201DA` 已完成：Codex 这类不进 alt-screen、在 primary screen 中间局部更新的 pseudo-TUI 不走特殊应用名分支；core 继续以 logical-line + primary screen-row ownership 表达 current frame，新增 domain/shared-vterm/protocol 分批中间更新 harness 证明 update card 不被吞且不回退 live snapshot/VTerm scrollback。TUI latest 入口不再把第一条 `live-tail-live` 硬顶到视口顶部，而是保留 live-tail 前的可见上下文，避免进入 logic-line/history 后把 update card 和 release note 上半块滚出视口。准入已通过 `go test ./termx-tui-v3/... -count=1`、`go test ./termx-core-v2/... -count=1`、`git diff --check`。
-- `R201DB` 已完成：补齐 live screen 与 history latest 入口一致性契约；core latest window 必须覆盖当前 live screen frame，TUI 只在 authoritative rows 匹配 entering live 时用它锚定 viewport，不把 live snapshot/VTerm scrollback 当作 history truth。准入已通过 `go test ./termx-tui-v3/... -count=1`、`go test ./termx-core-v2/... -count=1`、`git diff --check`。
-- `R201DC` 已完成：新增 `termx-core-v2/docs/synchronized-output-history.md`，把 Codex 类 primary-screen synchronized output 按 ECMA-48/xterm/DECSET 2026 事实标准语义建模为 BSU/ESU 发布事务；设计明确 pending frame 不进入 latest/frozen、ESU 原子替换 published primary frame、frame rows 不计 committed depth/older pagination、process exit 只提交最终帧一次、resize/attach 不提交 frame、alt-screen 不混入 primary frame event。子 Agent review 发现的发布隔离、force commit、visual-row truth、alt-screen、resize/attach 和文本完整性测试问题已修订；准入为 docs-only `git diff --check`。
-- `R201DD` 已完成：core-v2 现在把 DECSET 2026/DECRST 2026 投影为 synchronized output 发布事务；BSU 后写入隐藏 pending frame，history latest/frozen 继续显示 committed history 或上一 published frame，ESU 后以同一 shared vterm 写事务的 final primary screen rows 原子替换 published frame。frame rows 不进入 committed depth，older pagination 不返回 frame；重复 repaint、Codex lower ED0、C1 CSI private mode 与 protocol frozen latest harness 均覆盖。准入已通过 focused synchronized/Codex tests、`go test ./termx-core-v2/... -count=1`。
-- `R201DE` 已完成：published synchronized frame 改用 shared vterm 的完整 used screen cells，并只裁掉每行最后一个非默认空白 cell 之后的尾部空白，保留 Codex 面板内部默认空白列；resize grow 只恢复 hidden frontier，不再 reclaim committed suffix，避免 resize 后 Codex repaint 把已生成历史吞进 current frame。准入已通过 focused synchronized/resize tests、`go test ./termx-core-v2/history -run 'TestHistoryTrack.*Resize|TestHistoryTrackExplicitReclaimCommittedSuffixKeepsLogicalOrder|TestHistoryWindowTokenChangesAfterResizeGenerationInvalidation' -count=1`、`go test ./termx-core-v2/... -count=1`、`git diff --check`。
-- `R201DF` 已完成：core-v2 为 synchronized published frame 打上 `screen-frame` row kind，并让 compact storage、history window、protocol、tui-v3 adapter/source/reflow 全链路保留该 kind 和默认空白列；fixed-grid frame 在窄 cols 下不再按普通 logical text reflow。`ED3` 从物理 truncate 改为 soft clear-scrollback boundary，只 bump generation/失效 projection，不删除 authoritative committed history；显式 `truncate-committed-history` 仍保留真正删除能力。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
-- `R201DG` 已完成：`replacePrimaryFrame` 现在按最后一个非默认内容物理行裁掉 frame 尾部空白，但保留裁剪范围内的空物理行，并为这些空行创建 `screen-frame` logical line；新增 core history、真实 shared-vterm semantic、tui-v3 reflow 和 protocol adapter harness，锁住 Codex 卡片之间的空行不再消失。准入已通过 focused blank screen-frame tests、`cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
-- `R201DH` 已完成：alt-screen 默认退出恢复 primary，不捕获 final frame，也不把显式 alt final frame 写入 authoritative history；core/protocol/semantic ingest harness 证明 `/resume` 这类 alt UI 不污染 history。TUI latest 入口在 entering live screen 高于 copy viewport 时按用户实际可见尾部对齐，older shell prompt 保持为向上滚动内容，Tip/input 不会被挤出首屏。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`cd termx-tui-v3 && go test ./... -count=1`、`git diff --check`。
-- `R201DI` 已完成：Codex `/resume` 后 synchronized primary frame 如果通过 LF/IND 产生真实 primary scrollback，core-v2 现在允许 BSU 隐藏的普通 logical line 在离开 screen ownership 后提交 committed history；published `screen-frame` 仍只作为 latest current frame，不进入 committed depth，不会与前一次 `/resume` frame 拼接。新增 shared-vterm synchronized scrollback harness 和 protocol `/resume` raw harness 覆盖 older 可回到同轮滚出 transcript、alt-screen picker 不进历史。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201DL` 已完成：shared-vterm `RequiresFullReplace` 批次如果仍携带完整 ordered semantic ops 和 primary `ScrollbackAppend`，core-v2 现在继续使用 semantic projector；`ScrollbackAppend` 只证明真实 primary scroll-out，不作为 history payload，raw parser 不回放。新增 full-replace synchronized scrollback semantic/protocol harness，覆盖 Codex `/resume` 大块 2026 repaint 后 older 可回到同轮滚出 transcript，latest 仍只展示 published current frame。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
-- `R201DM` 已完成：新增 `termx-core-v2/docs/screen-app-session-history.md`，在 synchronized output latest-only 设计之上补 screen app session history 模型；设计把运行中 repaint 归入 current frame 和 bounded frame journal，ordinary committed history 不被 repaint 污染，primary session close 只 force commit 最终 primary frame，alt-screen 永不写 primary committed history，history.window older 先遍历 archived frame segment 再回到 committed segment。子 Agent review 后已修订风险边界和 harness 计划；准入为 docs-only `git diff --check`。
-- `R201DN` 已完成：core-v2 新增 primary screen frame journal 第一版，current `screen-frame` 被替换或进入 alt-screen boundary 前改为 `archived-screen-frame` 并移出 ordinary frontier；latest 仍只显示当前 frame，older 先翻 archived frame，再回 committed shell history，primary final frame force commit 后也能从 final frame 继续翻回 archived frame。frozen snapshot/protocol 投影和 tui-v3 本地 reflow 均识别 archived fixed-grid row，避免空格和空行丢失；focused harness 覆盖 running frame、final commit、raw `/resume`、full replace scrollback 和 TUI fixed-grid reflow。
-- `R202` 待开始：Web 桌面 terminal 可视区修复保留在后续切片；已有 remote-ui/localweb 未提交改动不纳入当前 core-v2 semantic ingest 切片。
-- `termx-remote-v2/` 当前是未跟踪目录，本工作流默认不触碰。
-- `termx-app-history-ref/` 当前是未跟踪本地参考目录，本工作流只读参考，不纳入提交内容，除非后续切片明确要求。
-- 当前已知环境缺口：本机没有 Android SDK，`termx-app/android/local.properties` 指向的 `/Users/lozzow/Library/Android/sdk` 不存在；OpenJDK 21 已通过 Homebrew 安装。Android/Kotlin 编译未作为当前 checkpoint 的通过条件。
-- 额外检查记录：R177 已把 `Client.Detach` 纳入 protocol public boundary 守卫，避免现有公开方法继续造成 protocol 准入失败。
+- 不得使用 destructive git 命令。
+- 不得覆盖用户或其他代理的未提交改动；发现冲突时停下说明。
