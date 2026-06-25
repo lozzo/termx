@@ -1880,6 +1880,91 @@ func TestTerminalSemanticProjectorPrimaryScreenSessionArchivesRepaintViaProjecto
 	}
 }
 
+func TestTerminalSemanticProjectorAltScreenArchivesPrimaryBeforeTransient(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.PrimaryScreenTransactions += next.PrimaryScreenTransactions
+		stats.AltScreenTransactions += next.AltScreenTransactions
+		stats.RawFallbacks += next.RawFallbacks
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r306-alt",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 48, Rows: 6},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	ingest := func(raw string) {
+		t.Helper()
+		if err := server.IngestOutput(context.Background(), "term-r306-alt", raw); err != nil {
+			t.Fatalf("ingest %q: %v", raw, err)
+		}
+	}
+	ingest("shell-before\n")
+	ingest("\x1b[?2026h\x1b[H\x1b[Jprimary-before-alt\x1b[6;1Hprompt-before-alt\x1b[?2026l")
+	ingest("\x1b[?1049h\x1b[H\x1b[2J/resume transient\x1b[?1049l")
+
+	if stats.PrimaryScreenTransactions == 0 || stats.AltScreenTransactions == 0 || stats.RawFallbacks != 0 {
+		t.Fatalf("primary/alt session should be projected from semantic transactions, stats=%#v", stats)
+	}
+	latestAlt, err := server.LatestWindow("term-r306-alt", 48, 8)
+	if err != nil {
+		t.Fatalf("latest alt: %v", err)
+	}
+	latestAltText := historyWindowJoinedText(latestAlt)
+	if !strings.Contains(latestAltText, "/resume transient") || strings.Contains(latestAltText, "primary-before-alt") {
+		t.Fatalf("alt transient latest should show picker without pre-alt primary current, text=%q rows=%#v", latestAltText, latestAlt.Rows)
+	}
+	if latestAlt.TotalLines != 1 {
+		t.Fatalf("alt transient must not grow ordinary committed depth, total=%d rows=%#v", latestAlt.TotalLines, latestAlt.Rows)
+	}
+	for _, row := range latestAlt.Rows {
+		if strings.Contains(row.Text, "/resume transient") && (row.Committed || row.Kind != history.RowKindAltScreenFrame) {
+			t.Fatalf("alt transient row should be mutable alt-screen frame, row=%#v", row)
+		}
+	}
+	olderAlt, err := server.OlderWindow("term-r306-alt", 48, 20, latestAlt.Cursor)
+	if err != nil {
+		t.Fatalf("older alt: %v", err)
+	}
+	olderAltText := historyWindowJoinedText(olderAlt)
+	for _, want := range []string{"shell-before", "primary-before-alt", "prompt-before-alt"} {
+		if !strings.Contains(olderAltText, want) {
+			t.Fatalf("older should expose pre-alt committed/archive history %q, text=%q rows=%#v", want, olderAltText, olderAlt.Rows)
+		}
+	}
+	for _, row := range olderAlt.Rows {
+		if strings.Contains(row.Text, "primary-before-alt") && (row.Committed || row.Kind != history.RowKindArchivedScreenFrame) {
+			t.Fatalf("pre-alt primary frame should be archived, not committed or current, row=%#v", row)
+		}
+	}
+
+	ingest("\x1b[?2026h\x1b[H\x1b[Jprimary-after-alt\x1b[6;1Hprompt-after-alt\x1b[?2026l")
+	latestPrimary, err := server.LatestWindow("term-r306-alt", 48, 8)
+	if err != nil {
+		t.Fatalf("latest primary: %v", err)
+	}
+	latestPrimaryText := historyWindowJoinedText(latestPrimary)
+	for _, want := range []string{"primary-after-alt", "prompt-after-alt"} {
+		if !strings.Contains(latestPrimaryText, want) {
+			t.Fatalf("post-alt primary frame should publish fresh content %q, text=%q rows=%#v", want, latestPrimaryText, latestPrimary.Rows)
+		}
+	}
+	for _, stale := range []string{"/resume transient", "primary-before-alt", "prompt-before-alt"} {
+		if strings.Contains(latestPrimaryText, stale) {
+			t.Fatalf("post-alt primary frame must not revive or splice stale content %q, text=%q rows=%#v", stale, latestPrimaryText, latestPrimary.Rows)
+		}
+	}
+	if latestPrimary.TotalLines != 1 {
+		t.Fatalf("post-alt primary publish must not add ordinary depth, total=%d rows=%#v", latestPrimary.TotalLines, latestPrimary.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorPreservesDefaultBlankColumnsInPublishedFrame(t *testing.T) {
 	term := vterm.New(72, 6, 100, nil)
 	pipeline := newTerminalHistoryPipeline(72, 6)

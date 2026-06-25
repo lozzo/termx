@@ -129,12 +129,14 @@ func (projector *HistoryTrackProjector) Apply(tx TerminalSemanticTransaction, de
 	if tx.Size.Rows > 0 {
 		projector.track.SetPrimaryScreenRows(tx.Size.Rows)
 	}
-	if decision.ArchivePrimaryBeforeAlt || decision.ClearPrimaryCurrentForAlt || tx.AltEntered {
+	hasAltEnterMode := transactionHasAltMode(tx, true)
+	hasAltExitMode := transactionHasAltMode(tx, false)
+	if (decision.ArchivePrimaryBeforeAlt || decision.ClearPrimaryCurrentForAlt || tx.AltEntered) && !hasAltEnterMode {
 		if err := emit(history.HistoryEvent{Kind: history.EventSwitchAltScreen, EnterAltScreen: true}); err != nil {
 			return mutation, err
 		}
 	}
-	if decision.ExitAltTransientFrame || tx.AltExited {
+	if (decision.ExitAltTransientFrame || tx.AltExited) && !hasAltExitMode {
 		if err := emit(history.HistoryEvent{Kind: history.EventSwitchAltScreen, EnterAltScreen: false}); err != nil {
 			return mutation, err
 		}

@@ -35,6 +35,7 @@ type terminalSemanticProjectorStats struct {
 	FullReplaceOnly           int
 	SemanticProjectors        int
 	PrimaryScreenTransactions int
+	AltScreenTransactions     int
 	RawFallbacks              int
 }
 
@@ -133,6 +134,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		HasActivePrimarySession: false,
 	})
 	publishSynchronizedFrame := false
+	handledByHistoryProjector := false
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
 		stats.SemanticProjectors++
 		if batch.Raw != "" {
@@ -145,6 +147,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			if _, err := NewHistoryTrackProjector(pipeline.track).Apply(tx, decision); err != nil {
 				return err
 			}
+			handledByHistoryProjector = true
 		} else if terminalSemanticTransactionCanUsePrimaryScreenProjector(tx, decision) {
 			stats.PrimaryScreenTransactions++
 			// 中文说明：primary screen app session 的 truth 是 vterm transaction +
@@ -152,6 +155,15 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			if _, err := NewHistoryTrackProjector(pipeline.track).Apply(tx, decision); err != nil {
 				return err
 			}
+			handledByHistoryProjector = true
+		} else if terminalSemanticTransactionCanUseAltScreenProjector(tx, decision) {
+			stats.AltScreenTransactions++
+			// 中文说明：alt-screen 是 transient current frame；进入 alt 前由
+			// projector 归档/隐藏 primary current，alt frame 不写 primary history。
+			if _, err := NewHistoryTrackProjector(pipeline.track).Apply(tx, decision); err != nil {
+				return err
+			}
+			handledByHistoryProjector = true
 		} else {
 			var err error
 			publishSynchronizedFrame, err = pipeline.applyVTermDamageEventsLocked(batch.Damages)
@@ -166,7 +178,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 	}
 	// 中文说明：alt-screen 不写 committed primary history，但运行中/退出时的
 	// 当前可见帧需要进入 latest/frozen 作为 transient current frame，避免 history 模式丢内容。
-	if len(batch.AltScreenRows) > 0 {
+	if len(batch.AltScreenRows) > 0 && !handledByHistoryProjector {
 		if err := pipeline.track.Apply(history.HistoryEvent{
 			Kind: history.EventAppendAltScreenFrame,
 			Rows: historyRowsFromVTermRows(batch.AltScreenRows),
@@ -174,7 +186,7 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 			return err
 		}
 	}
-	if len(batch.AltExitFrame) > 0 {
+	if len(batch.AltExitFrame) > 0 && !handledByHistoryProjector {
 		if err := pipeline.track.Apply(history.HistoryEvent{
 			Kind: history.EventAppendAltScreenFrame,
 			Rows: historyRowsFromVTermRows(batch.AltExitFrame),
@@ -244,6 +256,15 @@ func terminalSemanticTransactionCanUsePrimaryScreenProjector(tx TerminalSemantic
 		return false
 	}
 	return tx.SynchronizedEnd || transactionHasSyncMode(tx, false)
+}
+
+func terminalSemanticTransactionCanUseAltScreenProjector(tx TerminalSemanticTransaction, decision ScreenAppDecision) bool {
+	hasAltBoundary := tx.AltEntered || tx.AltExited || transactionHasAltMode(tx, true) || transactionHasAltMode(tx, false)
+	hasAltFrame := tx.AltFrame != nil || tx.AltExitFrame != nil
+	if !hasAltBoundary && !hasAltFrame && decision.Mode != ScreenOutputModeAltTransient {
+		return false
+	}
+	return true
 }
 
 func terminalSemanticOrdinaryProjectorControlAllowed(control string) bool {
