@@ -13,15 +13,15 @@ func TestHistoryProjectorOrdinaryOutputCommitsLogicalLines(t *testing.T) {
 	projector := NewHistoryTrackProjector(track)
 	tx := fakeTransaction(24, 4,
 		writeOp(0, 0, "hello"),
+		controlOp("lf", 0, 5),
 	)
-	tx.PrimaryScrollOut = []TerminalSemanticScrollOut{{}}
 	decision := SimpleScreenAppClassifier{}.Classify(tx, ScreenSessionState{})
 	mutation, err := projector.Apply(tx, decision)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if !mutationContains(mutation, history.EventPrimaryScrollOut) {
-		t.Fatalf("ordinary output should commit from primary scroll-out proof, mutation=%#v", mutation)
+	if !mutationContains(mutation, history.EventForceCommitFrontier) {
+		t.Fatalf("ordinary complete logical line should force commit without waiting for scroll-out, mutation=%#v", mutation)
 	}
 	window, err := track.LatestWindow(history.HistoryWindowRequest{Cols: 24, Rows: 4})
 	if err != nil {

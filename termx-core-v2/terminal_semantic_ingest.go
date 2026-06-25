@@ -126,16 +126,30 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 	if len(batch.AltScreenRows) > 0 || len(batch.AltExitFrame) > 0 {
 		stats.AltExitFrames++
 	}
+	tx := terminalSemanticTransactionFromBatch(batch)
+	decision := SimpleScreenAppClassifier{}.Classify(tx, ScreenSessionState{
+		InAltScreen:             pipeline.track.InAltScreen(),
+		HasActivePrimarySession: false,
+	})
 	publishSynchronizedFrame := false
 	if batch.FromSharedVTerm && (batch.Raw == "" || rawSharedBatchCanUseSemanticOps(batch.Damages)) && semanticBatchHasHistoryOps(batch.Damages) {
 		stats.SemanticProjectors++
 		if batch.Raw != "" {
 			pipeline.shadowParsePrimaryOutputLocked(batch.Raw)
 		}
-		var err error
-		publishSynchronizedFrame, err = pipeline.applyVTermDamageEventsLocked(batch.Damages)
-		if err != nil {
-			return err
+		if terminalSemanticTransactionCanUseOrdinaryProjector(tx, decision) {
+			// 中文说明：ordinary stdout 的 truth 来自 vterm ordered transaction，
+			// 由 HistoryTrackProjector 直接提交完整 logical line；复杂 screen app
+			// 语义继续留给后续切片和既有 damage projector。
+			if _, err := NewHistoryTrackProjector(pipeline.track).Apply(tx, decision); err != nil {
+				return err
+			}
+		} else {
+			var err error
+			publishSynchronizedFrame, err = pipeline.applyVTermDamageEventsLocked(batch.Damages)
+			if err != nil {
+				return err
+			}
 		}
 	} else if batch.Raw != "" && batch.FromSharedVTerm {
 		// 中文说明：真实 PTY raw 已经被 shared vterm 解码一次；即使本批语义
@@ -172,6 +186,64 @@ func (pipeline *terminalHistoryPipeline) projectSemanticBatchLocked(batch termin
 		terminalSemanticProjectorHook(stats)
 	}
 	return nil
+}
+
+func terminalSemanticTransactionCanUseOrdinaryProjector(tx TerminalSemanticTransaction, decision ScreenAppDecision) bool {
+	if decision.Mode != ScreenOutputModeOrdinary || tx.RequiresFullReplace || tx.AltEntered || tx.AltExited || tx.SynchronizedBegin || tx.SynchronizedEnd {
+		return false
+	}
+	if tx.PrimaryFrame == nil || tx.AltFrame != nil || tx.AltExitFrame != nil {
+		return false
+	}
+	if transactionHasAltMode(tx, true) || transactionHasAltMode(tx, false) || transactionHasSyncMode(tx, true) || transactionHasSyncMode(tx, false) {
+		return false
+	}
+	hasHistoryOp := false
+	hasHardLineEnd := false
+	for _, op := range tx.Ops {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) > 0 {
+				if !terminalSemanticOrdinaryProjectorCellsAllowed(op.Cells) {
+					return false
+				}
+				hasHistoryOp = true
+			}
+		case vterm.ScreenOpControl:
+			if !terminalSemanticOrdinaryProjectorControlAllowed(op.Control) {
+				return false
+			}
+			if op.Control == "lf" || op.Control == "ind" {
+				hasHardLineEnd = true
+			}
+			hasHistoryOp = true
+		case vterm.ScreenOpScrollRect:
+			if op.Dx != 0 || op.Dy >= 0 || len(tx.PrimaryScrollOut) == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return hasHistoryOp && hasHardLineEnd
+}
+
+func terminalSemanticOrdinaryProjectorControlAllowed(control string) bool {
+	switch control {
+	case "cr", "lf", "ind", "soft-wrap":
+		return true
+	default:
+		return false
+	}
+}
+
+func terminalSemanticOrdinaryProjectorCellsAllowed(cells []vterm.Cell) bool {
+	for _, cell := range cells {
+		if !rawSharedPlainHistoryCell(cell) {
+			return false
+		}
+	}
+	return true
 }
 
 func (pipeline *terminalHistoryPipeline) shadowParsePrimaryOutputLocked(output string) {

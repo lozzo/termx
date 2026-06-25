@@ -107,6 +107,41 @@ func TestTerminalSemanticProjectorConsumesVTermDamage(t *testing.T) {
 	}
 }
 
+func TestTerminalSemanticProjectorOrdinaryLineCommitsBeforeScrollOut(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	t.Cleanup(resetTerminalSemanticIngestTestHooks)
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.WriteSpanOps += next.WriteSpanOps
+		stats.ControlOps += next.ControlOps
+		stats.ScrollbackAppends += next.ScrollbackAppends
+	}
+
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 20, Rows: 10},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-1", "alpha\n"); err != nil {
+		t.Fatalf("ingest output: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.WriteSpanOps == 0 || stats.ControlOps == 0 || stats.ScrollbackAppends != 0 {
+		t.Fatalf("ordinary stdout should use vterm semantic projector without scroll-out/raw fallback, stats=%#v", stats)
+	}
+	window, err := server.LatestWindow("term-1", 20, 4)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if window.TotalLines != 1 || !historyWindowContainsAll(window, "alpha") {
+		t.Fatalf("ordinary complete logical line should be committed before scroll-out, total=%d rows=%#v", window.TotalLines, window.Rows)
+	}
+}
+
 func TestTerminalSemanticProjectorCodexRawDamageSignals(t *testing.T) {
 	resetTerminalSemanticIngestTestHooks()
 	t.Cleanup(resetTerminalSemanticIngestTestHooks)

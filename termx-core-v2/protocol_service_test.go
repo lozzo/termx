@@ -265,7 +265,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest history.window: %v", err)
 	}
-	if latest.Op != protocol.HistoryWindowReplace || latest.Size.Cols != 10 || latest.LogicalTotal != 2 || len(latest.Rows) != 2 {
+	if latest.Op != protocol.HistoryWindowReplace || latest.Size.Cols != 10 || latest.LogicalTotal != 4 || len(latest.Rows) != 2 {
 		t.Fatalf("unexpected latest window %#v", latest)
 	}
 	if rowText(latest.Rows[0]) != "four" || rowText(latest.Rows[1]) != "five" {
@@ -274,7 +274,7 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if latest.RowLineIDs[0] == 0 || latest.RowInLine[0] != 0 || latest.Generation == 0 || latest.Token == "" {
 		t.Fatalf("expected line mapping, generation and token, got %#v", latest)
 	}
-	if latest.RowOwnership[0] != protocol.RowOwnershipLiveTailLive || latest.RowOwnership[1] != protocol.RowOwnershipLiveTailLive {
+	if latest.RowOwnership[0] != protocol.RowOwnershipPersisted || latest.RowOwnership[1] != protocol.RowOwnershipLiveTailLive {
 		t.Fatalf("unexpected row ownership %#v", latest.RowOwnership)
 	}
 	if !latest.HasMore || !latest.CursorValid {
@@ -297,8 +297,8 @@ func TestProtocolServiceHistoryWindowUsesCoreTruth(t *testing.T) {
 	if older.Op != protocol.HistoryWindowPrepend || older.Token != latest.Token || len(older.Rows) != 1 || rowText(older.Rows[0]) != "three" {
 		t.Fatalf("unexpected older window %#v", older)
 	}
-	if len(older.RowOwnership) != 1 || older.RowOwnership[0] != protocol.RowOwnershipLiveTailLive {
-		t.Fatalf("older frozen live-tail row should stay live-tail-owned, got %#v", older.RowOwnership)
+	if len(older.RowOwnership) != 1 || older.RowOwnership[0] != protocol.RowOwnershipPersisted {
+		t.Fatalf("older complete logical line should stay persisted, got %#v", older.RowOwnership)
 	}
 
 	_, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
@@ -481,7 +481,7 @@ func TestProtocolServiceFrozenSnapshotSurvivesClearScrollbackForOldObserver(t *t
 	if err != nil {
 		t.Fatalf("latest after clear scrollback: %v", err)
 	}
-	if reloaded.LogicalTotal != 2 {
+	if reloaded.LogicalTotal != 3 {
 		t.Fatalf("new observer should keep authoritative committed history after ED3, got %#v", reloaded)
 	}
 	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "one" || rowText(reloaded.Rows[1]) != "two" || rowText(reloaded.Rows[2]) != "three" || rowText(reloaded.Rows[3]) != "four" {
@@ -1317,7 +1317,7 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterClearScrollback(t *testing.T) 
 	if err != nil {
 		t.Fatalf("latest after clear scrollback via new snapshot: %v", err)
 	}
-	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "one" || rowText(reloaded.Rows[1]) != "two" || rowText(reloaded.Rows[2]) != "three" || rowText(reloaded.Rows[3]) != "four" || reloaded.LogicalTotal != 2 {
+	if len(reloaded.Rows) != 4 || rowText(reloaded.Rows[0]) != "one" || rowText(reloaded.Rows[1]) != "two" || rowText(reloaded.Rows[2]) != "three" || rowText(reloaded.Rows[3]) != "four" || reloaded.LogicalTotal != 3 {
 		t.Fatalf("new snapshot should see preserved authoritative history after clear scrollback, got %#v", reloaded)
 	}
 }
@@ -2119,8 +2119,8 @@ func TestProtocolServiceFrozenSnapshotIgnoresLaterResizeReprojection(t *testing.
 	}
 	if len(reloaded.RowOwnership) != 4 ||
 		reloaded.RowOwnership[0] != protocol.RowOwnershipPersisted ||
-		reloaded.RowOwnership[1] != protocol.RowOwnershipLiveTailLive ||
-		reloaded.RowOwnership[2] != protocol.RowOwnershipLiveTailLive ||
+		reloaded.RowOwnership[1] != protocol.RowOwnershipPersisted ||
+		reloaded.RowOwnership[2] != protocol.RowOwnershipPersisted ||
 		reloaded.RowOwnership[3] != protocol.RowOwnershipLiveTailLive {
 		t.Fatalf("grow resize must not turn committed history into live tail, got %#v", reloaded.RowOwnership)
 	}

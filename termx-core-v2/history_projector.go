@@ -140,14 +140,17 @@ func (projector *HistoryTrackProjector) Apply(tx TerminalSemanticTransaction, de
 		}
 	}
 
+	ordinaryDirectCommit := decision.Mode == ScreenOutputModeOrdinary
 	for _, op := range tx.Ops {
-		if err := projector.applyOp(op, emit, emitOwned); err != nil {
+		if err := projector.applyOp(op, ordinaryDirectCommit, emit, emitOwned); err != nil {
 			return mutation, err
 		}
 	}
-	for range tx.PrimaryScrollOut {
-		if err := emit(history.HistoryEvent{Kind: history.EventPrimaryScrollOut, Count: 1}); err != nil {
-			return mutation, err
+	if !ordinaryDirectCommit {
+		for range tx.PrimaryScrollOut {
+			if err := emit(history.HistoryEvent{Kind: history.EventPrimaryScrollOut, Count: 1}); err != nil {
+				return mutation, err
+			}
 		}
 	}
 	if decision.PublishFrame && tx.PrimaryFrame != nil && decision.Mode == ScreenOutputModePrimaryScreen {
@@ -182,6 +185,7 @@ func (projector *HistoryTrackProjector) ForceClose(reason CloseReason) (HistoryM
 
 func (projector *HistoryTrackProjector) applyOp(
 	op TerminalSemanticOp,
+	ordinaryDirectCommit bool,
 	emit func(history.HistoryEvent) error,
 	emitOwned func(history.HistoryEvent) error,
 ) error {
@@ -192,20 +196,25 @@ func (projector *HistoryTrackProjector) applyOp(
 		}
 		return emitOwned(history.HistoryEvent{Kind: history.EventWritePrimaryCells, Cells: historyCellsFromVTermCells(op.Cells)})
 	case vterm.ScreenOpControl:
-		return projector.applyControl(op, emit)
+		return projector.applyControl(op, ordinaryDirectCommit, emit)
 	case vterm.ScreenOpModes:
 		return projector.applyMode(op, emit)
 	}
 	return nil
 }
 
-func (projector *HistoryTrackProjector) applyControl(op TerminalSemanticOp, emit func(history.HistoryEvent) error) error {
+func (projector *HistoryTrackProjector) applyControl(op TerminalSemanticOp, ordinaryDirectCommit bool, emit func(history.HistoryEvent) error) error {
 	switch op.Control {
 	case "cr":
 		return emit(history.HistoryEvent{Kind: history.EventCarriageReturn})
 	case "lf", "ind":
 		if err := emit(history.HistoryEvent{Kind: history.EventSealLogicalLine}); err != nil {
 			return err
+		}
+		if ordinaryDirectCommit {
+			// 中文说明：ordinary stdout 的完整 logical line 以 core history 为 truth，
+			// 不等待 primary screen scroll-out 才进入 committed history。
+			return emit(history.HistoryEvent{Kind: history.EventForceCommitFrontier})
 		}
 		return emit(history.HistoryEvent{Kind: history.EventCommitFrontier})
 	case "soft-wrap":

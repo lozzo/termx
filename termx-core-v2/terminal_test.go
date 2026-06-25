@@ -254,7 +254,7 @@ func TestTerminalIngestOutputExpandsTabsForHistoryColumns(t *testing.T) {
 	}
 }
 
-func TestTerminalIngestOutputNewlineOnlySealsUntilLineLeavesPrimaryScreen(t *testing.T) {
+func TestTerminalIngestOutputNewlineCommitsCompleteLogicalLines(t *testing.T) {
 	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
 	if _, err := server.RegisterTerminal(TerminalRecord{
 		ID:      "term-1",
@@ -277,14 +277,14 @@ func TestTerminalIngestOutputNewlineOnlySealsUntilLineLeavesPrimaryScreen(t *tes
 	committable := terminal.history.CommittableIDs()
 	terminal.mu.Unlock()
 
-	if got := committed; !reflect.DeepEqual(got, []history.LogicalLineID{1, 2}) {
-		t.Fatalf("bottom newline should scroll out older sealed lines, got %v", got)
+	if got := committed; !reflect.DeepEqual(got, []history.LogicalLineID{1, 2, 3}) {
+		t.Fatalf("ordinary complete logical lines should commit without waiting for scroll-out, got %v", got)
 	}
-	if got := frontier; !reflect.DeepEqual(got, []history.LogicalLineID{3}) {
-		t.Fatalf("newest sealed line should remain screen-owned frontier, got %v", got)
+	if len(frontier) != 0 {
+		t.Fatalf("ordinary complete logical lines should not remain mutable frontier, got %v", frontier)
 	}
 	if len(committable) != 0 {
-		t.Fatalf("after commit, visible sealed lines must not remain committable, got %v", committable)
+		t.Fatalf("after direct commit, visible sealed lines must not remain committable, got %v", committable)
 	}
 }
 
@@ -842,7 +842,7 @@ func TestTerminalIngestOutputClearScrollbackKeepsAuthoritativeHistory(t *testing
 	if err != nil {
 		t.Fatalf("latest after clear scrollback: %v", err)
 	}
-	if len(window.Rows) != 4 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || window.Rows[3].Text != "four" || window.TotalLines != 2 {
+	if len(window.Rows) != 4 || window.Rows[0].Text != "one" || window.Rows[1].Text != "two" || window.Rows[2].Text != "three" || window.Rows[3].Text != "four" || window.TotalLines != 3 {
 		t.Fatalf("ED 3 should keep authoritative history and mutable tail, got %#v", window)
 	}
 }
@@ -1712,8 +1712,8 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest before grow: %v", err)
 	}
-	if beforeGrow.TotalLines != 1 || len(beforeGrow.Rows) != 2 || beforeGrow.Rows[0].Text != "one" || beforeGrow.Rows[1].Text != "two" {
-		t.Fatalf("bottom newline should scroll out oldest line before grow, got %#v", beforeGrow)
+	if beforeGrow.TotalLines != 2 || len(beforeGrow.Rows) != 2 || beforeGrow.Rows[0].Text != "one" || beforeGrow.Rows[1].Text != "two" {
+		t.Fatalf("ordinary newline should commit complete logical lines before grow, got %#v", beforeGrow)
 	}
 	if err := server.ResizeTerminal(context.Background(), "term-1", 10, 3); err != nil {
 		t.Fatalf("grow resize: %v", err)
@@ -1722,7 +1722,7 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after grow: %v", err)
 	}
-	if grown.TotalLines != 1 || len(grown.Rows) != 2 || grown.Rows[0].Text != "one" || grown.Rows[1].Text != "two" {
+	if grown.TotalLines != 2 || len(grown.Rows) != 2 || grown.Rows[0].Text != "one" || grown.Rows[1].Text != "two" {
 		t.Fatalf("grow resize should keep committed history stable while preserving visible frontier, got %#v", grown)
 	}
 	if err := server.ResizeTerminal(context.Background(), "term-1", 10, 2); err != nil {
@@ -1732,7 +1732,7 @@ func TestTerminalResizeAppliesHistoryDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after shrink: %v", err)
 	}
-	if shrunk.TotalLines != 1 || len(shrunk.Rows) != 1 || shrunk.Rows[0].Text != "one" || !shrunk.Rows[0].Committed {
+	if shrunk.TotalLines != 2 || len(shrunk.Rows) != 2 || shrunk.Rows[0].Text != "one" || shrunk.Rows[1].Text != "two" || !shrunk.Rows[0].Committed || !shrunk.Rows[1].Committed {
 		t.Fatalf("shrink resize should hide only visible frontier and keep committed history stable, got %#v", shrunk)
 	}
 }
