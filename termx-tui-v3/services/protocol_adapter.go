@@ -207,6 +207,7 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 			if tail := historyTailFillFromProtocol(row.TailFill); tail != nil {
 				lines[len(lines)-1].TailFill = tail
 			}
+			lines[len(lines)-1].LiveTail = lines[len(lines)-1].LiveTail || historyProtocolRowIsLiveTail(window, i)
 			continue
 		}
 		lines = append(lines, state.HistoryLogicalLine{
@@ -214,6 +215,7 @@ func historySourceLinesFromProtocol(window *protocol.HistoryWindow) []state.Hist
 			Cells:         cells,
 			LineID:        lineID,
 			TailFill:      historyTailFillFromProtocol(row.TailFill),
+			LiveTail:      historyProtocolRowIsLiveTail(window, i),
 			ClippedBefore: hasSpan && span.ClippedBefore,
 			ClippedAfter:  hasSpan && span.ClippedAfter,
 		})
@@ -253,6 +255,7 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 			TailFill:  historyTailFillFromProtocol(row.TailFill),
 			LineID:    uint64At(window.RowLineIDs, i),
 			RowInLine: intAt(window.RowInLine, i),
+			LiveTail:  historyProtocolRowIsLiveTail(window, i),
 		})
 	}
 	lines := make([]state.HistoryLineSpan, 0, len(window.Lines))
@@ -269,6 +272,13 @@ func historyRowsFromProtocol(window *protocol.HistoryWindow, sourceLines []state
 		lines = historyLineSpansFromRows(rows, sourceLines)
 	}
 	return rows, lines
+}
+
+func historyProtocolRowIsLiveTail(window *protocol.HistoryWindow, index int) bool {
+	if window == nil || index < 0 || index >= len(window.RowOwnership) {
+		return false
+	}
+	return protocol.RowOwnershipIsLiveTailLive(window.RowOwnership[index])
 }
 
 func historyLineSpansFromRows(rows []state.HistoryRow, sourceLines []state.HistoryLogicalLine) []state.HistoryLineSpan {

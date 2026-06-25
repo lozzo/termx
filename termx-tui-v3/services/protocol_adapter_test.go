@@ -919,6 +919,49 @@ func TestProtocolCoreClientAdapterPreservesClippedLogicalLineSource(t *testing.T
 	}
 }
 
+func TestProtocolCoreClientAdapterPreservesLiveTailOwnership(t *testing.T) {
+	client := &fakeProtocolHistoryClient{
+		window: &protocol.HistoryWindow{
+			TerminalID: "term-1",
+			Token:      "tok-1",
+			Op:         protocol.HistoryWindowReplace,
+			Size:       protocol.Size{Cols: 6, Rows: 24},
+			Rows: []protocol.CompactRow{
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "old", Width: 3}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "Update", Width: 6}}),
+				protocol.CompactRowFromCells([]protocol.Cell{{Content: "card", Width: 4}}),
+			},
+			RowOwnership: []string{
+				protocol.RowOwnershipPersisted,
+				protocol.RowOwnershipLiveTailLive,
+				protocol.RowOwnershipLiveTailLive,
+			},
+			Lines: []protocol.HistoryLineSpan{
+				{LogicalLineID: 10, StartRow: 0, EndRow: 0},
+				{LogicalLineID: 20, StartRow: 1, EndRow: 2},
+			},
+			RowLineIDs: []uint64{10, 20, 20},
+			RowInLine:  []int{0, 0, 1},
+		},
+	}
+	adapter := ProtocolCoreClientAdapter{Client: client}
+
+	result, err := adapter.HistoryLatest(context.Background(), HistoryLatestRequest{RequestID: 1, TerminalID: "term-1", Cols: 6, Rows: 20})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if result.Window.Rows[0].LiveTail || !result.Window.Rows[1].LiveTail || !result.Window.Rows[2].LiveTail {
+		t.Fatalf("adapter should preserve row live-tail ownership, got %#v", result.Window.Rows)
+	}
+	if len(result.Window.SourceLines) != 2 || result.Window.SourceLines[0].LiveTail || !result.Window.SourceLines[1].LiveTail {
+		t.Fatalf("adapter should merge live-tail ownership into source lines, got %#v", result.Window.SourceLines)
+	}
+	reflowedRows, _ := state.ReflowHistoryLogicalLines(result.Window.SourceLines, 10)
+	if len(reflowedRows) != 2 || reflowedRows[0].LiveTail || !reflowedRows[1].LiveTail {
+		t.Fatalf("local reflow should preserve live-tail ownership, got %#v", reflowedRows)
+	}
+}
+
 func TestProtocolTerminalServiceAdapterMapsRemove(t *testing.T) {
 	client := &fakeProtocolTerminalClient{}
 	adapter := ProtocolTerminalServiceAdapter{Client: client}

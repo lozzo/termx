@@ -69,6 +69,7 @@ type HistoryRow struct {
 	RowInLine    int
 	ClippedStart bool
 	ClippedEnd   bool
+	LiveTail     bool
 }
 
 // HistoryCell 是 core-v2 authoritative HistoryWindow 的 styled cell 投影。
@@ -99,6 +100,7 @@ type HistoryLogicalLine struct {
 	Cells    []HistoryCell
 	LineID   uint64
 	TailFill *HistoryCellStyle
+	LiveTail bool
 	// clipped 标记表达这条 frozen source 是否只是 authoritative logical line
 	// 的局部片段；本地 reflow 时必须继续保留，不能把 partial 片段误当成完整行。
 	ClippedBefore bool
@@ -628,6 +630,7 @@ func mergePrependedHistoryLogicalLines(older []HistoryLogicalLine, existing []Hi
 		if firstExisting.TailFill != nil {
 			lastOlder.TailFill = cloneHistoryCellStyle(firstExisting.TailFill)
 		}
+		lastOlder.LiveTail = lastOlder.LiveTail || firstExisting.LiveTail
 		// 中文说明：boundary overlap 代表 older partial 的尾部和 existing partial 的头部
 		// 正好拼上了同一 logical line 的中缝；合并后只保留真正外侧还没补齐的 clipped 边。
 		lastOlder.ClippedBefore = lastOlder.ClippedBefore
@@ -657,6 +660,7 @@ func mergeAppendedHistoryLogicalLines(existing []HistoryLogicalLine, newer []His
 		if firstNewer.TailFill != nil {
 			lastExisting.TailFill = cloneHistoryCellStyle(firstNewer.TailFill)
 		}
+		lastExisting.LiveTail = lastExisting.LiveTail || firstNewer.LiveTail
 		lastExisting.ClippedAfter = firstNewer.ClippedAfter
 		rest = rest[1:]
 	}
@@ -699,6 +703,7 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 			if row.TailFill != nil {
 				lines[len(lines)-1].TailFill = cloneHistoryCellStyle(row.TailFill)
 			}
+			lines[len(lines)-1].LiveTail = lines[len(lines)-1].LiveTail || row.LiveTail
 			continue
 		}
 		span, hasSpan := spansByLineID[row.LineID]
@@ -707,6 +712,7 @@ func historyRowsToLogicalLines(rows []HistoryRow, spans []HistoryLineSpan) []His
 			Cells:         cloneHistoryCells(row.Cells),
 			LineID:        row.LineID,
 			TailFill:      cloneHistoryCellStyle(row.TailFill),
+			LiveTail:      row.LiveTail,
 			ClippedBefore: hasSpan && span.ClippedBefore,
 			ClippedAfter:  hasSpan && span.ClippedAfter,
 		})
@@ -854,10 +860,17 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 		totalRows = len(window.Rows)
 	}
 	if totalRows > 0 {
-		// 中文说明：latest window 内部仍按旧->新排列；进入 copy/history 时默认锚到页尾，
-		// 否则一页内容超过 pane 高度时用户会看不到刚输出的最新日志。
-		store.Cursor = CopyPosition{Row: totalRows - 1}
-		store.ViewportTop = maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
+		// 中文说明：latest window 内部仍按旧->新排列；普通日志进入 copy/history 仍锚到页尾。
+		// Codex 这类 primary current frame 属于 core 标记的 live-tail，入口必须先展示
+		// current frame 起点，不能只露出 frame 尾部导致上半屏看起来“丢失”。
+		cursorRow := totalRows - 1
+		viewportTop := maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
+		if liveTailTop, ok := firstLiveTailRow(window.Rows, totalRows); ok {
+			cursorRow = liveTailTop
+			viewportTop = clampCopyInt(liveTailTop, 0, maxCopyInt(0, totalRows-copyVisibleRowsForStore(store)))
+		}
+		store.Cursor = CopyPosition{Row: cursorRow}
+		store.ViewportTop = viewportTop
 		if pendingScroll != 0 {
 			store = store.ScrollCursor(pendingScroll, totalRows)
 		}
@@ -1458,6 +1471,18 @@ func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
 	return store
 }
 
+func firstLiveTailRow(rows []HistoryRow, totalRows int) (int, bool) {
+	if totalRows > len(rows) {
+		totalRows = len(rows)
+	}
+	for i := 0; i < totalRows; i++ {
+		if rows[i].LiveTail {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
 func cloneHistoryRows(rows []HistoryRow) []HistoryRow {
 	if len(rows) == 0 {
 		return nil
@@ -1548,7 +1573,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 		cells = normalizeHistoryLogicalLineCells(cells, cols)
 	}
 	if len(cells) == 0 {
-		return []HistoryRow{{LineID: line.LineID}}
+		return []HistoryRow{{LineID: line.LineID, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	current := make([]HistoryCell, 0, len(cells))
@@ -1559,6 +1584,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 			Cells:     cloneHistoryCells(current),
 			LineID:    line.LineID,
 			RowInLine: len(rows),
+			LiveTail:  line.LiveTail,
 		}
 		rows = append(rows, row)
 		current = current[:0]
@@ -1603,7 +1629,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 	}
 	clusters := textGraphemeClusters(line.Text)
 	if len(clusters) == 0 {
-		return []HistoryRow{{LineID: line.LineID}}
+		return []HistoryRow{{LineID: line.LineID, LiveTail: line.LiveTail}}
 	}
 	rows := make([]HistoryRow, 0, 1)
 	var builder strings.Builder
@@ -1613,6 +1639,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 			Text:      builder.String(),
 			LineID:    line.LineID,
 			RowInLine: len(rows),
+			LiveTail:  line.LiveTail,
 		}
 		rows = append(rows, row)
 		builder.Reset()
@@ -1641,7 +1668,7 @@ func reflowPlainHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryR
 
 func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	if line.Text == "" {
-		return []HistoryRow{{LineID: line.LineID}}
+		return []HistoryRow{{LineID: line.LineID, LiveTail: line.LiveTail}}
 	}
 	if cols <= 0 {
 		cols = 80
@@ -1656,6 +1683,7 @@ func reflowPlainASCIIHistoryLogicalLine(line HistoryLogicalLine, cols int) []His
 			Text:      line.Text[start:end],
 			LineID:    line.LineID,
 			RowInLine: len(rows),
+			LiveTail:  line.LiveTail,
 		})
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)

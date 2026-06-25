@@ -623,6 +623,23 @@ func TestCopyModeAcceptLatestStartsAtNewestTail(t *testing.T) {
 	}
 }
 
+func TestCopyModeAcceptLatestAnchorsLiveTailCurrentFrame(t *testing.T) {
+	rows := []HistoryRow{
+		{Text: "shell prompt 1", LineID: 1},
+		{Text: "shell prompt 2", LineID: 2},
+		{Text: "Update available", LineID: 10, LiveTail: true},
+		{Text: "OpenAI Codex", LineID: 11, LiveTail: true},
+		{Text: "Tip: Visit the Codex community forum", LineID: 12, LiveTail: true},
+		{Text: "> Explain this codebase", LineID: 13, LiveTail: true},
+	}
+	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	copyMode := CopyModeStore{ViewRows: 3}.AcceptLatest(latest, latest.Cols, len(rows))
+
+	if copyMode.Cursor != (CopyPosition{Row: 2}) || copyMode.ViewportTop != 2 {
+		t.Fatalf("latest should start at live-tail current frame head, got %#v", copyMode)
+	}
+}
+
 func TestCopyModeAcceptOldestStartsAtOldestHead(t *testing.T) {
 	rows := []HistoryRow{
 		{Text: "one", LineID: 1},

@@ -6160,6 +6160,46 @@ func TestCopyModeSearchScrollAndMouseSelection(t *testing.T) {
 	}
 }
 
+func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
+	rows := []state.HistoryRow{
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx", LineID: 1},
+		{Text: "ζ", LineID: 2},
+		{Text: "lozzow@RedmiBook: ~/Documents/workdir/termx", LineID: 3},
+		{Text: "ζ codex --yolo", LineID: 4},
+		{Text: "Update available! 0.141.0 -> 0.142.0", LineID: 10, LiveTail: true},
+		{Text: "Run brew upgrade --cask codex to update.", LineID: 11, LiveTail: true},
+		{Text: "See full release notes:", LineID: 12, LiveTail: true},
+		{Text: "https://github.com/openai/codex/releases/latest", LineID: 13, LiveTail: true},
+		{Text: "OpenAI Codex (v0.141.0)", LineID: 14, LiveTail: true},
+		{Text: "model: gpt-5.5 xhigh", LineID: 15, LiveTail: true},
+		{Text: "directory: ~/Documents/workdir/termx", LineID: 16, LiveTail: true},
+		{Text: "permissions: YOLO mode", LineID: 17, LiveTail: true},
+		{Text: "Tip: Visit the Codex community forum", LineID: 18, LiveTail: true},
+		{Text: "> Explain this codebase", LineID: 19, LiveTail: true},
+		{Text: "gpt-5.5 xhigh · ~/Documents/workdir/termx", LineID: 20, LiveTail: true},
+	}
+	latest := historyWindowForApp(state.HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
+	core := &services.FakeCoreClient{LatestResponses: []services.HistoryResult{{Window: latest}}}
+	host := NewFakeTerminalHost(32)
+	host.SetSize(80, 8)
+	runtime := newCopyModeRuntime(host, core, nil)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send copy enter: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+
+	if runtime.State().CopyMode.ViewportTop != 4 || runtime.State().CopyMode.Cursor.Row != 4 {
+		t.Fatalf("copy mode should anchor at Codex live-tail frame head, got %#v", runtime.State().CopyMode)
+	}
+	lines := activeCopyContentLines(runtime)
+	if !copyHistoryLinesContain(lines, "Update available!") || !copyHistoryLinesContain(lines, "See full release notes:") {
+		t.Fatalf("copy history should render Codex update card after entry, got %#v", lines)
+	}
+}
+
 func TestCopyModeSearchMatchesAcrossReflowRows(t *testing.T) {
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: state.HistoryWindow{
@@ -7256,9 +7296,10 @@ func historyLogicalLinesForApp(rows []state.HistoryRow) []state.HistoryLogicalLi
 	lines := make([]state.HistoryLogicalLine, len(rows))
 	for i, row := range rows {
 		lines[i] = state.HistoryLogicalLine{
-			Text:   row.Text,
-			Cells:  append([]state.HistoryCell(nil), row.Cells...),
-			LineID: row.LineID,
+			Text:     row.Text,
+			Cells:    append([]state.HistoryCell(nil), row.Cells...),
+			LineID:   row.LineID,
+			LiveTail: row.LiveTail,
 		}
 	}
 	return lines
@@ -7353,6 +7394,15 @@ func activeCopyContentLines(runtime *AppRuntime) []string {
 		lines[i] = line.PlainString()
 	}
 	return lines
+}
+
+func copyHistoryLinesContain(lines []string, needle string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func activeCopyContent(runtime *AppRuntime) render.ContentVM {

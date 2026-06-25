@@ -992,7 +992,7 @@ func reduceCopyModeHistoryResult(root state.Root, msg CopyModeHistoryResultMsg, 
 	root.History = nextHistory
 	remainingEnteringOlderRows := 0
 	if pending != nil && pending.Kind == state.HistoryRequestLatest {
-		root.CopyMode = root.CopyMode.AcceptLatest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
+		root.CopyMode = root.CopyMode.AcceptLatest(historyWindowForCopyModeAnchor(msg.Result.Window, nextHistory), nextHistory.Cols, len(nextHistory.Rows))
 		remainingEnteringOlderRows = copyModeEnteringOlderRemainder(enteringScrollDelta, len(nextHistory.Rows))
 	} else if pending != nil && pending.Kind == state.HistoryRequestOldest {
 		root.CopyMode = root.CopyMode.AcceptOldest(msg.Result.Window, nextHistory.Cols, len(nextHistory.Rows))
@@ -1280,6 +1280,12 @@ func reduceCopyModePaste(root state.Root, deps CopyModeDeps, readSystemClipboard
 		},
 	})
 	return root, effects
+}
+
+func historyWindowForCopyModeAnchor(window state.HistoryWindow, history state.HistoryStore) state.HistoryWindow {
+	window.Rows = history.Rows
+	window.Cols = history.Cols
+	return window
 }
 
 func latestClipboardHistoryText(store state.ClipboardStore) string {
