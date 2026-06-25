@@ -24,6 +24,12 @@ CSI ? 2026 l     end synchronized update
 
 本设计把 `DECSET 2026` / `DECRST 2026` 作为终端语义事务处理：事务期间 vterm 继续处理所有控制序列，history 不把中间 repaint 逐条沉淀为用户历史；事务结束时，core 从同一 vterm write transaction 的最终 primary screen 状态生成 authoritative mutable frame。
 
+### 1.1 后续扩展
+
+本文描述的是 `screen-frame` latest-only 阶段：frame 可进入 latest/frozen，但 older 默认只回 committed history。后续 `screen-app-session-history.md` 会在这个基础上增加 `ScreenFrameJournal`，让 older 先遍历同一 screen app session 的 archived frame，再回 committed history。
+
+因此本文中“older 不返回 frame rows”的规则是当前阶段规则，不是永久禁止 archived frame segment。实现 frame journal 时，必须同步更新本文、history.window cursor/protocol contract 和相关 harness，不能让 latest-only 预期和 archived-frame older 预期同时作为有效准入。
+
 ## 2. 标准和事实标准来源
 
 这不是 RFC 领域。终端控制语义主要来自 ECMA-48 / ISO 6429、DEC VT 系列手册、xterm control sequences 和现代终端事实标准扩展。
@@ -211,7 +217,7 @@ PendingPrimaryFrame
 - frame logical lines `Committed=false`。
 - `TotalLines` 仍只统计 `CommittedHistoryIndex`。
 - latest/frozen window 可以包含 frame logical lines。
-- older window 默认只基于 committed lines，不从 frame lines 继续分页。
+- 当前 latest-only 阶段，older window 默认只基于 committed lines，不从 frame lines 继续分页。`screen-app-session-history.md` 引入 `ScreenFrameJournal` 后，older 可以先分页 archived frame segment，但这些 frame 仍不进入 `CommittedHistoryIndex`，也不计入 `TotalLines`。
 - 如果已有 frozen snapshot 引用了旧 frame line，替换时必须按 line-level copy-on-write 保留旧版本，不能让旧 copy 会话看到新 frame。
 
 ### 7.4 与 primary screen ownership 的关系
