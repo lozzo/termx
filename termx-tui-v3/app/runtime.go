@@ -1394,7 +1394,7 @@ func (runtime *AppRuntime) copyModeMouseWheelEnterMsg(event input.InputEvent, re
 	}
 	// 中文说明：滚轮上滑是 copy/history 入口，必须绑定鼠标命中的 TerminalView；
 	// 不能先丢给 active pane，否则非 active sibling 要等下一次事件才进入 copy。
-	return CopyModeEnterViewMsg{Binding: binding, Cols: rect.W, Rows: rect.H}, true
+	return CopyModeEnterViewMsg{Binding: binding, Cols: rect.W, Rows: rect.H, InitialScrollDelta: -copyModeLineScrollRows()}, true
 }
 
 func (runtime *AppRuntime) copyModeMouseWheelMsg(event input.InputEvent, resolution mouseHitResolution) (Msg, bool) {

@@ -37,9 +37,10 @@ type CopyModeHistoryResultMsg struct {
 func (CopyModeHistoryResultMsg) isMsg() {}
 
 type CopyModeEnterViewMsg struct {
-	Binding state.TerminalViewBinding
-	Cols    int
-	Rows    int
+	Binding            state.TerminalViewBinding
+	Cols               int
+	Rows               int
+	InitialScrollDelta int
 }
 
 func (CopyModeEnterViewMsg) isMsg() {}
@@ -249,6 +250,8 @@ func NewCopyModeReducer(deps CopyModeDeps) Reducer {
 			return saveCopyHistorySessionForView(next, activeViewID), effects
 		case CopyModeEnterViewMsg:
 			next, effects := beginCopyModeLatestForView(root, deps, msg.Binding, msg.Cols, msg.Rows)
+			next = applyCopyModeEnteringScrollDelta(next, msg.InitialScrollDelta)
+			next = saveCopyHistorySessionForView(next, msg.Binding.ViewID)
 			return next, append([]Effect{handledEffect{}}, effects...)
 		case CopyModeHistoryResultMsg:
 			root, viewID := rootWithCopyHistorySessionForResult(root, msg)
@@ -397,6 +400,9 @@ func reduceCopyModeIntent(root state.Root, intent input.Intent, deps CopyModeDep
 	switch intent.Kind {
 	case input.IntentEnterCopyMode:
 		next, effects := beginCopyModeLatest(root, deps)
+		if delta, ok := copyModeEnteringScrollDelta(next.CopyMode, intent); ok {
+			next = applyCopyModeEnteringScrollDelta(next, delta)
+		}
 		return next, append([]Effect{handledEffect{}}, effects...)
 	case input.IntentRequestOlder:
 		next, effects := reduceCopyModeScrollOlder(root, deps, intent.Event)
@@ -480,6 +486,11 @@ func reduceCopyModeEnteringIntent(root state.Root, intent input.Intent) (state.R
 
 func copyModeEnteringScrollDelta(copyMode state.CopyModeStore, intent input.Intent) (int, bool) {
 	switch intent.Kind {
+	case input.IntentEnterCopyMode:
+		if intent.Event.Kind == input.EventKindMouse && intent.Event.Mouse == input.MouseWheelUp {
+			return -copyModeLineScrollRows(), true
+		}
+		return 0, false
 	case input.IntentRequestOlder:
 		rows := copyModeOlderScrollRows(copyMode, intent.Event)
 		if rows <= 0 {
@@ -495,6 +506,14 @@ func copyModeEnteringScrollDelta(copyMode state.CopyModeStore, intent input.Inte
 		}
 		return 0, false
 	}
+}
+
+func applyCopyModeEnteringScrollDelta(root state.Root, delta int) state.Root {
+	if delta == 0 || !root.CopyMode.Entering {
+		return root
+	}
+	root.CopyMode.EnteringScrollDelta += delta
+	return root.Advance()
 }
 
 func reduceCopyModeMouseInput(root state.Root, event input.InputEvent, deps CopyModeDeps) (state.Root, []Effect, bool) {

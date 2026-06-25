@@ -1782,6 +1782,9 @@ func TestProtocolServiceAltScreenResumeRawDoesNotSplicePreviousFrames(t *testing
 			t.Fatalf("second alt-screen frame should contain %q, got %#v", want, second.Rows)
 		}
 	}
+	if count := protocolHistoryWindowTextCount(second, "/resume second"); count != 1 {
+		t.Fatalf("second alt-screen frame must contain one resume picker row, count=%d rows=%#v", count, second.Rows)
+	}
 	for _, stale := range []string{"/resume first", "first restored row", "current resume one", "first transcript line", "> first prompt", "shell before first resume"} {
 		if protocolHistoryWindowContainsText(second, stale) {
 			t.Fatalf("second alt-screen latest must not splice stale content %q, got %#v", stale, second.Rows)
@@ -1898,6 +1901,9 @@ func TestProtocolServiceResumeSynchronizedScrollbackSurvivesPublishedFrame(t *te
 		if !protocolHistoryWindowContainsText(second, want) {
 			t.Fatalf("second current frame should contain %q, got %#v", want, second.Rows)
 		}
+	}
+	if count := protocolHistoryWindowTextCount(second, "> second prompt"); count != 1 {
+		t.Fatalf("second current frame must contain one prompt row, count=%d rows=%#v", count, second.Rows)
 	}
 	for _, stale := range []string{"first transcript tail", "> first prompt", "/resume picker one"} {
 		if protocolHistoryWindowContainsText(second, stale) {
@@ -2553,14 +2559,21 @@ func TestProtocolServiceHistoryWindowPreservesProcessOutputANSIStyles(t *testing
 
 	latest := waitForProtocolHistoryRow(t, client, "term-1", "ERR LINK")
 	cells := latest.Rows[0].DecodeCells()
-	if len(cells) != 3 {
-		t.Fatalf("expected styled cells from process output reader, got %#v", cells)
+	var styled strings.Builder
+	var linked strings.Builder
+	for _, cell := range cells {
+		if cell.Style.FG == "ansi:1" && cell.Style.Bold {
+			styled.WriteString(cell.Content)
+		}
+		if cell.LinkURL == "https://example.test" && cell.LinkParams == "id=termx" {
+			linked.WriteString(cell.Content)
+		}
 	}
-	if cells[0].Content != "ERR" || cells[0].Style.FG != "ansi:1" || !cells[0].Style.Bold {
-		t.Fatalf("expected process output SGR through protocol path, got %#v", cells[0])
+	if styled.String() != "ERR" {
+		t.Fatalf("expected process output SGR through protocol path, styled=%q cells=%#v", styled.String(), cells)
 	}
-	if cells[2].Content != "LINK" || cells[2].LinkURL != "https://example.test" || cells[2].LinkParams != "id=termx" {
-		t.Fatalf("expected process output OSC 8 link through protocol path, got %#v", cells[2])
+	if linked.String() != "LINK" {
+		t.Fatalf("expected process output OSC 8 link through protocol path, linked=%q cells=%#v", linked.String(), cells)
 	}
 }
 
@@ -3775,6 +3788,19 @@ func protocolHistoryWindowContainsText(window *protocol.HistoryWindow, want stri
 		}
 	}
 	return false
+}
+
+func protocolHistoryWindowTextCount(window *protocol.HistoryWindow, want string) int {
+	if window == nil {
+		return 0
+	}
+	count := 0
+	for _, row := range window.Rows {
+		if strings.Contains(rowText(row), want) {
+			count++
+		}
+	}
+	return count
 }
 
 func protocolWindowRowKindContaining(window *protocol.HistoryWindow, want string) string {

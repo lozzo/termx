@@ -748,7 +748,7 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 			"tok-1",
 			78,
 			7,
-			[]state.HistoryRow{{Text: "new", LineID: 20}},
+			[]state.HistoryRow{{Text: "new-1", LineID: 19}, {Text: "new-2", LineID: 20}},
 		)}},
 		OlderResponses: []services.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowPrepend,
@@ -783,6 +783,14 @@ func TestCopyModeMouseWheelRequestsOlderAfterLatest(t *testing.T) {
 }
 
 func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
+	latestRows := make([]state.HistoryRow, 0, 30)
+	for i := 1; i <= 30; i++ {
+		latestRows = append(latestRows, state.HistoryRow{
+			Text:     fmt.Sprintf("live-tail-%02d", i),
+			LineID:   uint64(i),
+			LiveTail: true,
+		})
+	}
 	core := &services.FakeCoreClient{
 		LatestResponses: []services.HistoryResult{{Window: historyWindowForApp(
 			state.HistoryWindowReplace,
@@ -790,7 +798,7 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 			"tok-1",
 			78,
 			7,
-			[]state.HistoryRow{{Text: "new", LineID: 20}},
+			latestRows,
 		)}},
 	}
 	terminal := &services.FakeTerminalService{
@@ -825,6 +833,12 @@ func TestCopyModeMouseWheelRawSeqEntersCopyMode(t *testing.T) {
 	}
 	if len(core.LatestRequests) != 1 || !runtime.State().CopyMode.Active {
 		t.Fatalf("raw wheel up should enter copy mode, latest=%#v copy=%#v", core.LatestRequests, runtime.State().CopyMode)
+	}
+	if runtime.State().CopyMode.Cursor.Row != len(latestRows)-2 {
+		t.Fatalf("initial wheel up should move from newest tail by one row, got copy=%#v", runtime.State().CopyMode)
+	}
+	if runtime.State().CopyMode.ViewportTop == 0 {
+		t.Fatalf("initial live-tail wheel should not anchor cursor at current frame top, got copy=%#v", runtime.State().CopyMode)
 	}
 }
 
@@ -6191,12 +6205,12 @@ func TestCopyModeLatestShowsCodexLiveTailFrameHead(t *testing.T) {
 		t.Fatalf("drain latest: %v", err)
 	}
 
-	if runtime.State().CopyMode.ViewportTop != 2 || runtime.State().CopyMode.Cursor.Row != 4 {
-		t.Fatalf("copy mode should keep Codex live-tail with lead-in context, got %#v", runtime.State().CopyMode)
+	if runtime.State().CopyMode.ViewportTop != 11 || runtime.State().CopyMode.Cursor.Row != 14 {
+		t.Fatalf("copy mode should start at Codex live-tail newest rows, got %#v", runtime.State().CopyMode)
 	}
 	lines := activeCopyContentLines(runtime)
-	if !copyHistoryLinesContain(lines, "Update available!") || !copyHistoryLinesContain(lines, "Run brew upgrade") {
-		t.Fatalf("copy history should render Codex update card after entry, got %#v", lines)
+	if !copyHistoryLinesContain(lines, "> Explain this codebase") || !copyHistoryLinesContain(lines, "gpt-5.5 xhigh") {
+		t.Fatalf("copy history should render Codex newest tail after entry, got %#v", lines)
 	}
 }
 

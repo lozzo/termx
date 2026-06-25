@@ -623,7 +623,7 @@ func TestCopyModeAcceptLatestStartsAtNewestTail(t *testing.T) {
 	}
 }
 
-func TestCopyModeAcceptLatestAnchorsLiveTailCurrentFrame(t *testing.T) {
+func TestCopyModeAcceptLatestKeepsCursorAtNewestLiveTail(t *testing.T) {
 	rows := []HistoryRow{
 		{Text: "shell prompt 1", LineID: 1},
 		{Text: "shell prompt 2", LineID: 2},
@@ -635,8 +635,8 @@ func TestCopyModeAcceptLatestAnchorsLiveTailCurrentFrame(t *testing.T) {
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
 	copyMode := CopyModeStore{ViewRows: 3}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.Cursor != (CopyPosition{Row: 2}) || copyMode.ViewportTop != 1 {
-		t.Fatalf("latest should keep live-tail current frame with lead-in context, got %#v", copyMode)
+	if copyMode.Cursor != (CopyPosition{Row: 5}) || copyMode.ViewportTop != 3 {
+		t.Fatalf("latest should start from newest live-tail row, got %#v", copyMode)
 	}
 }
 
@@ -660,8 +660,8 @@ func TestCopyModeAcceptLatestKeepsPseudoTUILeadInContext(t *testing.T) {
 	latest := historyWindow(HistoryWindowReplace, "term-1", "tok-1", 80, 7, rows)
 	copyMode := CopyModeStore{ViewRows: 8}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.Cursor != (CopyPosition{Row: 8}) || copyMode.ViewportTop != 4 {
-		t.Fatalf("latest should keep pseudo-TUI lead-in context visible, got %#v", copyMode)
+	if copyMode.Cursor != (CopyPosition{Row: 13}) || copyMode.ViewportTop != 6 {
+		t.Fatalf("latest should keep pseudo-TUI newest tail visible, got %#v", copyMode)
 	}
 }
 
@@ -692,8 +692,8 @@ func TestCopyModeAcceptLatestMatchesEnteringLiveScreenWhenHistoryHasOlderContext
 	}
 	copyMode := CopyModeStore{ViewRows: 5, EnteringLive: &entering}.AcceptLatest(latest, latest.Cols, len(rows))
 
-	if copyMode.ViewportTop != 5 || copyMode.Cursor != (CopyPosition{Row: 5}) {
-		t.Fatalf("latest should align first history viewport to entering live screen when matched, got %#v", copyMode)
+	if copyMode.ViewportTop != 5 || copyMode.Cursor != (CopyPosition{Row: 9}) {
+		t.Fatalf("latest should align live viewport only when newest tail stays visible, got %#v", copyMode)
 	}
 }
 

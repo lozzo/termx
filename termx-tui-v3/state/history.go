@@ -887,24 +887,17 @@ func (store CopyModeStore) AcceptLatest(window HistoryWindow, cols int, totalRow
 		totalRows = len(window.Rows)
 	}
 	if totalRows > 0 {
-		// 中文说明：latest window 内部仍按旧->新排列；普通日志进入 copy/history 仍锚到页尾。
-		// Codex 这类 primary current frame 属于 core 标记的 live-tail，入口必须先展示
-		// current frame 起点附近；但 live-tail 前的 rows 可能仍是用户看到的同一块
-		// primary-screen 上下文，不能把第一条 live-tail 硬顶到顶部吞掉 update card。
+		// 中文说明：copy cursor 的 truth 是 authoritative latest window 的最新尾行；
+		// live snapshot 只能在仍包含尾行时修正首屏 viewport，不能把 cursor 改锚到
+		// primary current frame 的第一行，否则鼠标轻滚会从顶部开始走。
+		visibleRows := copyVisibleRowsForStore(store)
 		cursorRow := totalRows - 1
-		viewportTop := maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
-		if liveTailTop, ok := firstLiveTailRow(window.Rows, totalRows); ok {
-			cursorRow = liveTailTop
-			visibleRows := copyVisibleRowsForStore(store)
-			viewportTop = clampCopyInt(liveTailTop-visibleRows/2, 0, maxCopyInt(0, totalRows-visibleRows))
-		}
-		if liveViewportTop, ok := liveSurfaceMatchedViewportTop(window.Rows, enteringLive, copyVisibleRowsForStore(store)); ok {
+		viewportTop := maxCopyInt(0, totalRows-visibleRows)
+		if liveViewportTop, ok := liveSurfaceMatchedViewportTop(window.Rows, enteringLive, visibleRows); ok &&
+			cursorRow >= liveViewportTop && cursorRow < liveViewportTop+visibleRows {
 			// 中文说明：live snapshot 只作为进入 copy/history 前的屏幕锚点参照；
 			// 真正渲染、复制和搜索仍全部使用 authoritative HistoryWindow rows。
 			viewportTop = liveViewportTop
-			if cursorRow < viewportTop || cursorRow >= viewportTop+copyVisibleRowsForStore(store) {
-				cursorRow = viewportTop
-			}
 		}
 		store.Cursor = CopyPosition{Row: cursorRow}
 		store.ViewportTop = viewportTop
@@ -1514,18 +1507,6 @@ func (store CopyModeStore) Scroll(delta int, totalRows int) CopyModeStore {
 	maxTop := maxCopyInt(0, totalRows-copyVisibleRowsForStore(store))
 	store.ViewportTop = clampCopyInt(store.ViewportTop+delta, 0, maxTop)
 	return store
-}
-
-func firstLiveTailRow(rows []HistoryRow, totalRows int) (int, bool) {
-	if totalRows > len(rows) {
-		totalRows = len(rows)
-	}
-	for i := 0; i < totalRows; i++ {
-		if rows[i].LiveTail {
-			return i, true
-		}
-	}
-	return 0, false
 }
 
 func liveSurfaceMatchedViewportTop(rows []HistoryRow, enteringLive *LiveSurfaceSnapshot, visibleRows int) (int, bool) {
