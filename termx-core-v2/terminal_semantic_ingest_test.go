@@ -701,6 +701,81 @@ func TestTerminalSemanticProjectorConsumesFullReplaceRawCursorControlsWithoutFal
 	}
 }
 
+func TestTerminalSemanticProjectorConsumesFullReplaceSynchronizedScrollbackOps(t *testing.T) {
+	resetTerminalSemanticIngestTestHooks()
+	var stats terminalSemanticProjectorStats
+	terminalSemanticProjectorHook = func(next terminalSemanticProjectorStats) {
+		stats.SemanticProjectors += next.SemanticProjectors
+		stats.RawFallbacks += next.RawFallbacks
+		stats.ScrollbackAppends += next.ScrollbackAppends
+	}
+	defer resetTerminalSemanticIngestTestHooks()
+
+	pipeline := newTerminalHistoryPipeline(24, 3)
+	batch := terminalSemanticBatch{
+		Raw: "parser-duplicate\n",
+		Damages: []vterm.WriteDamage{{
+			RequiresFullReplace: true,
+			FullReplaceReason:   "broad_direct_cell_damage",
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: true},
+				{Code: vterm.ScreenOpControl, Control: "cup", Row: 0, Col: 0},
+				{Code: vterm.ScreenOpControl, Control: "ed", Row: 0, Col: 0, Mode: 0},
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("resume line 01")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 0, Col: 14},
+				{Code: vterm.ScreenOpWriteSpan, Row: 1, Col: 0, Cells: vtermCells("resume line 02")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 1, Col: 14},
+				{Code: vterm.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: vtermCells("resume line 03")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 2, Col: 14},
+				{Code: vterm.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: vtermCells("resume line 04")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 2, Col: 14},
+				{Code: vterm.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: vtermCells("> prompt")},
+				{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: false},
+			},
+			ScrollbackAppend: []vterm.DamageOp{
+				{Cells: vtermCells("resume line 01")},
+				{Cells: vtermCells("resume line 02")},
+			},
+			SizeCols: 24,
+			SizeRows: 3,
+		}},
+		PrimaryScreenRows: [][]vterm.Cell{
+			vtermCells("resume line 03"),
+			vtermCells("resume line 04"),
+			vtermCells("> prompt"),
+		},
+		Cols:            24,
+		Rows:            3,
+		FromSharedVTerm: true,
+	}
+	if err := pipeline.IngestSemanticBatch(batch); err != nil {
+		t.Fatalf("ingest full-replace synchronized scrollback batch: %v", err)
+	}
+	if stats.SemanticProjectors == 0 || stats.RawFallbacks != 0 || stats.ScrollbackAppends != 2 {
+		t.Fatalf("full-replace synchronized scrollback should use semantic projector, stats=%#v", stats)
+	}
+	window, err := pipeline.LatestWindow(24, 3)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if !historyWindowContainsText(window, "> prompt") || historyWindowContainsText(window, "parser-duplicate") {
+		t.Fatalf("latest should expose published frame without parser fallback, rows=%#v", window.Rows)
+	}
+	if !window.HasMore {
+		t.Fatalf("published frame should keep synchronized scrollback page-able, got %#v", window)
+	}
+	older, err := pipeline.OlderWindow(24, 8, window.Cursor)
+	if err != nil {
+		t.Fatalf("older: %v", err)
+	}
+	olderText := historyWindowJoinedText(older)
+	for _, want := range []string{"resume line 01", "resume line 02"} {
+		if !strings.Contains(olderText, want) {
+			t.Fatalf("older should contain ordered scroll-out %q, text=%q rows=%#v latest=%#v", want, olderText, older.Rows, window.Rows)
+		}
+	}
+}
+
 func TestTerminalSemanticProjectorUsesSemanticClearControl(t *testing.T) {
 	pipeline := newTerminalHistoryPipeline(12, 3)
 	batch := terminalSemanticBatch{
@@ -1614,6 +1689,40 @@ func TestTerminalSemanticProjectorKeepsSynchronizedScrollbackBeforePublishedFram
 	olderText := historyWindowJoinedText(older)
 	if !strings.Contains(olderText, "shell-one") {
 		t.Fatalf("synchronized frame publish must not drop primary scrollback, text=%q rows=%#v latest=%#v", olderText, older.Rows, window.Rows)
+	}
+}
+
+func TestTerminalSemanticProjectorCommitsEverySynchronizedLinefeedScrollOut(t *testing.T) {
+	term := vterm.New(32, 3, 100, nil)
+	pipeline := newTerminalHistoryPipeline(32, 3)
+
+	ingestSharedVTermRawForTest(t, term, pipeline, "\x1b[?2026h\x1b[H\x1b[J"+
+		"resume line 01\r\n"+
+		"resume line 02\r\n"+
+		"resume line 03\r\n"+
+		"resume line 04\r\n"+
+		"resume line 05\r\n"+
+		"> prompt\x1b[?2026l", 32, 3)
+
+	window, err := pipeline.LatestWindow(32, 3)
+	if err != nil {
+		t.Fatalf("latest after tall synchronized frame: %v", err)
+	}
+	if !strings.Contains(historyWindowJoinedText(window), "> prompt") {
+		t.Fatalf("latest should expose final synchronized frame, got %#v", window.Rows)
+	}
+	if !window.HasMore {
+		t.Fatalf("tall synchronized frame should keep scrolled transcript page-able, got %#v", window)
+	}
+	older, err := pipeline.OlderWindow(32, 16, window.Cursor)
+	if err != nil {
+		t.Fatalf("older after tall synchronized frame: %v", err)
+	}
+	olderText := historyWindowJoinedText(older)
+	for _, want := range []string{"resume line 01", "resume line 02", "resume line 03"} {
+		if !strings.Contains(olderText, want) {
+			t.Fatalf("older synchronized scrollback should contain %q, text=%q rows=%#v latest=%#v", want, olderText, older.Rows, window.Rows)
+		}
 	}
 }
 

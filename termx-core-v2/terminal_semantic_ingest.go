@@ -223,8 +223,11 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 			return false
 		}
 		fullReplaceSemantic := rawSharedFullReplaceDamageCanUseSemanticOps(damage)
+		fullReplaceScrollOutSemantic := rawSharedFullReplaceScrollOutDamageCanUseSemanticOps(damage)
 		if damage.RequiresFullReplace && !fullReplaceSemantic {
-			return false
+			if !fullReplaceScrollOutSemantic {
+				return false
+			}
 		}
 		lowRows := damage.SizeRows > 0 && damage.SizeRows <= 2
 		tallPlainScrollOut := rawSharedTallPlainScrollOutDamageCanUseSemanticOps(damage)
@@ -281,7 +284,7 @@ func rawSharedBatchCanUseSemanticOps(damages []vterm.WriteDamage) bool {
 					return false
 				}
 				if op.Control == "lf" || op.Control == "ind" || op.Control == "soft-wrap" {
-					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut && !tallASCIIText && !tallGraphemeText && !tallLinefeedNewlineText && !fullReplaceSemantic && !altScreenRunning && !eraseDisplaySemantic {
+					if !lowRows && !tallPlainScrollOut && !tallStyledScrollOut && !tallLinkScrollOut && !tallASCIIText && !tallGraphemeText && !tallLinefeedNewlineText && !fullReplaceSemantic && !fullReplaceScrollOutSemantic && !altScreenRunning && !eraseDisplaySemantic {
 						return false
 					}
 					// 中文说明：ED 后的文本可能从清屏前 cursor 继续写并 soft-wrap；
@@ -573,6 +576,47 @@ func rawSharedFullReplaceDamageCanUseSemanticOps(damage vterm.WriteDamage) bool 
 			hasSemantic = true
 		case vterm.ScreenOpModes:
 			if !rawSharedModeCanUseSemanticOp(op) {
+				return false
+			}
+			hasSemantic = true
+		default:
+			return false
+		}
+	}
+	return hasSemantic
+}
+
+func rawSharedFullReplaceScrollOutDamageCanUseSemanticOps(damage vterm.WriteDamage) bool {
+	// 中文说明：full-replace + scrollback append 仍可能携带完整 ordered semantic ops；
+	// append row 只作为真实 primary scroll-out 证据，history payload 仍来自 semantic ops。
+	if !damage.RequiresFullReplace || len(damage.ScrollbackAppend) == 0 || len(damage.AlternateAppend) > 0 {
+		return false
+	}
+	hasSemantic := false
+	for _, op := range damage.SemanticOps {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			if len(op.Cells) == 0 {
+				continue
+			}
+			for _, cell := range op.Cells {
+				if !rawSharedGraphemeTextCell(cell) {
+					return false
+				}
+			}
+			hasSemantic = true
+		case vterm.ScreenOpControl:
+			if !rawSharedControlCanUseSemanticOp(op.Control) {
+				return false
+			}
+			hasSemantic = true
+		case vterm.ScreenOpModes:
+			if !rawSharedModeCanUseSemanticOp(op) {
+				return false
+			}
+			hasSemantic = true
+		case vterm.ScreenOpScrollRect:
+			if op.Dx != 0 || op.Dy >= 0 {
 				return false
 			}
 			hasSemantic = true

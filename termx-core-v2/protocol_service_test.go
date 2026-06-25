@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/termx-core-v2/history"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestProtocolServiceCreateListMetadataRestartRemove(t *testing.T) {
@@ -1885,6 +1886,100 @@ func TestProtocolServiceResumeSynchronizedScrollbackSurvivesPublishedFrame(t *te
 	}
 	if protocolHistoryWindowContainsText(secondOlder, "/resume picker one") {
 		t.Fatalf("alt-screen picker must not become committed history, got %#v", secondOlder.Rows)
+	}
+}
+
+func TestProtocolServiceFullReplaceSynchronizedScrollbackSurvivesPublishedFrame(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	const terminalID = "term-full-replace-resume-scrollback"
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      terminalID,
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 24, Rows: 3},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	terminal, err := server.Terminal(terminalID)
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	pipeline := terminal.historyPipeline()
+	pipeline.mu.Lock()
+	err = pipeline.projectSemanticBatchLocked(terminalSemanticBatch{
+		Raw: "parser-duplicate\n",
+		Damages: []vterm.WriteDamage{{
+			RequiresFullReplace: true,
+			FullReplaceReason:   "broad_direct_cell_damage",
+			SemanticOps: []vterm.DamageOp{
+				{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: true},
+				{Code: vterm.ScreenOpControl, Control: "cup", Row: 0, Col: 0},
+				{Code: vterm.ScreenOpControl, Control: "ed", Row: 0, Col: 0, Mode: 0},
+				{Code: vterm.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: vtermCells("resume line 01")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 0, Col: 14},
+				{Code: vterm.ScreenOpWriteSpan, Row: 1, Col: 0, Cells: vtermCells("resume line 02")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 1, Col: 14},
+				{Code: vterm.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: vtermCells("resume line 03")},
+				{Code: vterm.ScreenOpControl, Control: "lf", Row: 2, Col: 14},
+				{Code: vterm.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: vtermCells("> prompt")},
+				{Code: vterm.ScreenOpModes, Private: true, Mode: 2026, Enabled: false},
+			},
+			ScrollbackAppend: []vterm.DamageOp{
+				{Cells: vtermCells("resume line 01")},
+			},
+			SizeCols: 24,
+			SizeRows: 3,
+		}},
+		PrimaryScreenRows: [][]vterm.Cell{
+			vtermCells("resume line 02"),
+			vtermCells("resume line 03"),
+			vtermCells("> prompt"),
+		},
+		Cols:            24,
+		Rows:            3,
+		FromSharedVTerm: true,
+	})
+	pipeline.publishGenerationLocked()
+	pipeline.mu.Unlock()
+	if err != nil {
+		t.Fatalf("project full-replace semantic batch: %v", err)
+	}
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: terminalID,
+		Cols:       24,
+		Limit:      3,
+	})
+	if err != nil {
+		t.Fatalf("latest history.window: %v", err)
+	}
+	if !protocolHistoryWindowContainsText(latest, "> prompt") || protocolHistoryWindowContainsText(latest, "parser-duplicate") {
+		t.Fatalf("latest should expose published frame without parser fallback, got %#v", latest.Rows)
+	}
+	if !latest.HasMore || !latest.CursorValid {
+		t.Fatalf("latest should keep older synchronized scrollback reachable, got %#v", latest)
+	}
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          terminalID,
+		Cols:                24,
+		Limit:               8,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+	})
+	if err != nil {
+		t.Fatalf("older history.window: %v", err)
+	}
+	if !protocolHistoryWindowContainsText(older, "resume line 01") {
+		t.Fatalf("older should contain full-replace synchronized scrollback, got %#v latest=%#v", older.Rows, latest.Rows)
+	}
+	if protocolHistoryWindowContainsText(older, "parser-duplicate") {
+		t.Fatalf("older must not come from raw fallback, got %#v", older.Rows)
 	}
 }
 
