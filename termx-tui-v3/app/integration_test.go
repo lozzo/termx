@@ -544,8 +544,8 @@ func TestCopyModeEnteringFreezesVisibleLiveFrameDuringOutput(t *testing.T) {
 		t.Fatalf("expected copy entering with frozen live frame, got %#v", runtime.State().CopyMode)
 	}
 	requests := core.latestRequests()
-	if len(requests) != 1 || requests[0].GenerationBoundary != 1 {
-		t.Fatalf("copy latest should carry entering live generation boundary, got %#v", requests)
+	if len(requests) != 1 || requests[0].GenerationBoundary != 0 {
+		t.Fatalf("copy latest should not cap frozen history by live display revision, got %#v", requests)
 	}
 	if err := runtime.Post(LiveSurfaceMsg{Snapshot: state.LiveSurfaceSnapshot{
 		TerminalID: "term-1",

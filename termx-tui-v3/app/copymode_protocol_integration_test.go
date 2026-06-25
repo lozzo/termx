@@ -77,6 +77,73 @@ func TestCopyModeUsesProtocolHistoryWindowClient(t *testing.T) {
 	}
 }
 
+func TestCopyModeProtocolCodexLatestDoesNotUseLiveRevisionBoundary(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	errCh := make(chan error, 1)
+	go func() {
+		defer func() { _ = serverTransport.Close() }()
+		errCh <- runCopyModeCodexLatestProtocolServer(serverTransport)
+	}()
+	client := protocol.NewClient(clientTransport)
+	defer func() { _ = client.Close() }()
+	if err := client.Hello(context.Background(), protocol.Hello{Version: wire.Version, Client: "tui-v3-copy-codex"}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+
+	host := NewFakeTerminalHost(16)
+	host.SetSize(80, 24)
+	builder := render.NewRenderVMBuilder()
+	renderer := render.NewRenderer(render.DefaultTheme())
+	runtime := NewAppRuntime(
+		state.Root{
+			Shell:   state.DefaultShell(),
+			Session: state.TerminalSessionStore{TerminalID: "term-1", Attached: true, Cols: 80, Rows: 24},
+			Surface: state.TerminalSurfaceStore{
+				TerminalID: "term-1",
+				Revision:   1,
+				Cols:       80,
+				Rows:       24,
+				Lines:      []string{"lozzow@RedmiBook: ~/Documents/workdir/termx", "codex --yolo", "OpenAI Codex"},
+				State:      state.TerminalLiveAttached,
+			},
+			TerminalViews: state.TerminalViewStore{}.BindPane(state.NewPaneTerminalView(state.DefaultPaneID, "term-1", 4, 78, 20, state.TerminalResizeRoleOwner, "surface", state.TerminalPaneViewID(state.DefaultPaneID), true)),
+		},
+		ComposeReducers(
+			NewCopyModeReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+			NewCopyModeResizeRebindReducer(CopyModeDeps{Core: services.ProtocolCoreClientAdapter{Client: client}, Rows: 20}),
+		),
+		func(root state.Root) render.Frame {
+			return renderer.Render(builder.Build(root))
+		},
+		host,
+		NewSyncEffectRunner(),
+	)
+
+	if err := host.SendInput(input.InputEvent{Kind: input.EventKindKey, Key: input.KeyPageUp}); err != nil {
+		t.Fatalf("send latest page up: %v", err)
+	}
+	if err := runtime.Drain(context.Background()); err != nil {
+		t.Fatalf("drain latest: %v", err)
+	}
+	got := historyRowTexts(runtime.State().History.Rows)
+	if len(got) < 25 || got[0] != "lozzow@RedmiBook: ~/Documents/workdir/termx" || got[1] != "codex --yolo" || got[4] != "Update available! 0.141.0 -> 0.142.0" {
+		t.Fatalf("expected Codex update card at live-tail history boundary, got %v", got)
+	}
+	if runtime.State().CopyMode.ViewportTop != 4 {
+		t.Fatalf("copy latest should anchor at first Codex live-tail row, got viewport=%d rows=%v", runtime.State().CopyMode.ViewportTop, got)
+	}
+
+	_ = clientTransport.Close()
+	select {
+	case err := <-errCh:
+		if err != nil && err != io.EOF {
+			t.Fatalf("server returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not stop")
+	}
+}
+
 func TestCopyModeProtocolHistorySearchMatchesAcrossReflowRows(t *testing.T) {
 	clientTransport, serverTransport := memory.NewPair()
 	errCh := make(chan error, 1)
@@ -324,6 +391,88 @@ func runCopyModeHistoryProtocolServer(tr *memory.Transport) error {
 		Generation:   7,
 		FirstLineID:  10,
 		LastLineID:   20,
+	})
+}
+
+func runCopyModeCodexLatestProtocolServer(tr *memory.Transport) error {
+	if err := expectCopyModeProtocolHello(tr); err != nil {
+		return err
+	}
+	if err := sendCopyModeProtocolHello(tr); err != nil {
+		return err
+	}
+	req, err := expectCopyModeProtocolRequest(tr, "history.window")
+	if err != nil {
+		return err
+	}
+	params, err := copyModeProtocolRequestParams[protocol.HistoryWindowParams](req)
+	if err != nil {
+		return err
+	}
+	if params.TerminalID != "term-1" || params.Token != "" || params.Cols != 78 || params.Limit != 120 || params.Generation != 0 {
+		return fmt.Errorf("unexpected Codex latest params %#v", params)
+	}
+	rows := []protocol.CompactRow{
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "lozzow@RedmiBook: ~/Documents/workdir/termx"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "codex --yolo"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "lozzow@RedmiBook: ~/Documents/workdir/termx"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "codex --yolo"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "Update available! 0.141.0 -> 0.142.0"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "Run brew upgrade --cask codex to update."}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "See full release notes:"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "https://github.com/openai/codex/releases/latest"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: ""}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "OpenAI Codex"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: ""}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "model: gpt-5.5 xhigh"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "directory: ~/Documents/workdir/termx"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "permissions: YOLO mode"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: ""}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "Tip: Use /compact when the conversation gets long."}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: ""}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "> Improve documentation in @filename"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "gpt-5.5 xhigh . ~/Documents/workdir/termx"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: ""}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "status: running"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "tokens: 123"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "owner: default"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "footer: ready"}}),
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "input cursor"}}),
+	}
+	latchedLines := make([]protocol.HistoryLineSpan, 0, len(rows))
+	rowLineIDs := make([]uint64, 0, len(rows))
+	rowInLine := make([]int, 0, len(rows))
+	rowOwnership := make([]string, 0, len(rows))
+	for index := range rows {
+		lineID := uint64(10 + index)
+		latchedLines = append(latchedLines, protocol.HistoryLineSpan{LogicalLineID: lineID, StartRow: index, EndRow: index})
+		rowLineIDs = append(rowLineIDs, lineID)
+		rowInLine = append(rowInLine, 0)
+		ownership := protocol.RowOwnershipPersisted
+		if index >= 4 {
+			ownership = protocol.RowOwnershipLiveTailLive
+		}
+		rowOwnership = append(rowOwnership, ownership)
+	}
+	return sendCopyModeHistoryWindow(tr, req, protocol.HistoryWindow{
+		TerminalID: "term-1",
+		Token:      "tok-codex",
+		Op:         protocol.HistoryWindowReplace,
+		Size:       protocol.Size{Cols: 78, Rows: 20},
+		Rows:       rows,
+		Lines:      latchedLines,
+		RowLineIDs: rowLineIDs,
+		RowInLine:  rowInLine,
+		// 中文说明：Codex 全屏当前帧从 update card 开始，TUI 必须用这个 ownership
+		// 锚定 copy/history 入口，不能落到 current frame 尾部。
+		RowOwnership: rowOwnership,
+		CursorValid:  true,
+		CursorLineID: 14,
+		Generation:   7,
+		FirstLineID:  10,
+		LastLineID:   34,
+		LoadedLines:  len(rows),
+		LogicalTotal: 2,
 	})
 }
 

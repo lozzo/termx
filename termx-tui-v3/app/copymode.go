@@ -785,9 +785,8 @@ func beginCopyModeLatestForView(root state.Root, deps CopyModeDeps, binding stat
 				TerminalID: binding.TerminalID,
 				Cols:       cols,
 				Rows:       rows,
-				// 中文说明：真实 protocol live snapshot 的 Revision 承载 core history generation；
-				// latest 只能冻结到用户进入 copy 时已经观察到的 generation，避免混入未来日志。
-				GenerationBoundary: enteringLive.Revision,
+				// 中文说明：EnteringLive 只冻结等待态显示；history.window 的 frozen
+				// logical-line 边界由 core 请求时建立，不能用可能滞后的 live revision 截断。
 			})
 			result.Window.PaneID = binding.PaneID
 			result.Window.ViewID = binding.ViewID

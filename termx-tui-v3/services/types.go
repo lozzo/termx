@@ -28,8 +28,8 @@ type HistoryLatestRequest struct {
 	TerminalID string
 	Cols       int
 	Rows       int
-	// GenerationBoundary 是进入 copy 时 TUI 已观察到的 core history generation；
-	// latest 只能冻结到这个边界，避免把进入后的输出混进旧 copy 会话。
+	// GenerationBoundary 是显式请求历史 generation 上界的可选参数；
+	// copy 入口不能用 live surface revision 填它，frozen snapshot 边界由 core 建立。
 	GenerationBoundary uint64
 }
 

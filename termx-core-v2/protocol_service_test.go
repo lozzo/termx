@@ -1460,6 +1460,63 @@ func TestProtocolServiceHistoryWindowPreservesStressTailAcrossFullscreenHomeClea
 	}
 }
 
+func TestProtocolServiceHistoryWindowCodexCurrentFrameKeepsUpdateCard(t *testing.T) {
+	factory := newRecordingProcessFactory()
+	server, client, closeClient := newProtocolClientWithProcessFactory(t, factory)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 96, Rows: 16},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	process := serverProcess(t, server, "term-1")
+	process.emitOutput(strings.Join([]string{
+		"lozzow@RedmiBook: ~/Documents/workdir/termx\n",
+		"codex --yolo\n",
+		"\x1b[?2026h\x1b[H\x1b[J",
+		"\x1b[3;1HUpdate available! 0.141.0 -> 0.142.0",
+		"\x1b[4;1HRun brew upgrade --cask codex to update.",
+		"\x1b[7;1HOpenAI Codex",
+		"\x1b[10;1H\x1b[J",
+		"\x1b[10;1H> Improve documentation in @filename",
+		"\x1b[12;1Hgpt-5.5 xhigh . ~/Documents/workdir/termx",
+		"\x1b[?2026l",
+	}, ""))
+
+	var latest *protocol.HistoryWindow
+	assertEventually(t, time.Second, func() bool {
+		var err error
+		latest, err = client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+			TerminalID: "term-1",
+			Cols:       96,
+			Limit:      16,
+		})
+		return err == nil &&
+			latest != nil &&
+			protocolHistoryWindowContainsText(latest, "Update available!") &&
+			protocolHistoryWindowContainsText(latest, "OpenAI Codex") &&
+			protocolHistoryWindowContainsText(latest, "Improve documentation")
+	}, "Codex current frame should be present in protocol frozen latest after real process output")
+
+	text := historyWindowRowsText(latest.Rows)
+	if !strings.Contains(text, "Update available!") || !strings.Contains(text, "OpenAI Codex") || !strings.Contains(text, "Improve documentation") {
+		t.Fatalf("Codex frozen latest should contain the whole current frame, got:\n%s", text)
+	}
+	updateRow := -1
+	for index, row := range latest.Rows {
+		if strings.Contains(rowText(row), "Update available!") {
+			updateRow = index
+			break
+		}
+	}
+	if updateRow < 0 || updateRow >= len(latest.RowOwnership) || latest.RowOwnership[updateRow] != protocol.RowOwnershipLiveTailLive {
+		t.Fatalf("Codex update card should be marked as live-tail row, row=%d ownership=%#v", updateRow, latest.RowOwnership)
+	}
+}
+
 func TestProtocolServiceFrozenSnapshotSurvivesRestartWhileNewLatestPreservesHistory(t *testing.T) {
 	server, client, closeClient := newProtocolClient(t)
 	defer closeClient()
