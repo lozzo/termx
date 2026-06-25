@@ -53,7 +53,10 @@ type CellStyle struct {
 	Strikethrough bool
 }
 
-const RowKindScreenFrame = "screen-frame"
+const (
+	RowKindScreenFrame    = "screen-frame"
+	RowKindAltScreenFrame = "alt-screen-frame"
+)
 
 // RowTailFill 表达 terminal 物理行从已有内容末尾到 visual row 行尾的背景。
 // 它不属于 logical text，也不增加 logical line 宽度。

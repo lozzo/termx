@@ -1022,10 +1022,10 @@ func TestHistoryTrackAppendAltScreenFrameDoesNotCommitExitFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest window: %v", err)
 	}
-	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"primary", "alt-one", "alt-two"}) {
+	if got := rowTexts(window.Rows); !reflect.DeepEqual(got, []string{"alt-one", "alt-two"}) {
 		t.Fatalf("expected alt frame as latest-only current frame, got %v", got)
 	}
-	if window.TotalLines != 1 {
+	if window.TotalLines != 1 || !window.HasMore || !window.Cursor.Valid {
 		t.Fatalf("alt frame must not count as committed history, total=%d rows=%#v", window.TotalLines, window.Rows)
 	}
 

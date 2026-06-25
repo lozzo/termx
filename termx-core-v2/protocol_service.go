@@ -2321,9 +2321,19 @@ func projectFrozenSnapshotLatestRows(snapshot history.FrozenSnapshot, cols int) 
 }
 
 func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols int, maxRows int) ([]snapshotProjectedRow, bool) {
+	if start, ok := frozenSnapshotAltScreenFrameTailStart(snapshot); ok {
+		// 中文说明：frozen latest 也要保持 alt-screen current frame 隔离；
+		// 上方 committed history 只通过 older cursor 暴露，不能自动回填到首屏。
+		return projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, start)
+	}
+	return projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, 0)
+}
+
+func projectFrozenSnapshotTailRowsFromLineIndex(snapshot history.FrozenSnapshot, cols int, maxRows int, minLineIndex int) ([]snapshotProjectedRow, bool) {
 	rows := make([]snapshotProjectedRow, 0, maxRows)
-	hasMore := false
-	for i := snapshot.VisibleLineCount() - 1; i >= 0; i-- {
+	hasMore := minLineIndex > 0
+	stop := false
+	for i := snapshot.VisibleLineCount() - 1; i >= minLineIndex; i-- {
 		line, ok := snapshot.LineAt(i)
 		if !ok {
 			continue
@@ -2332,16 +2342,37 @@ func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols i
 		for rowIndex := len(lineRows) - 1; rowIndex >= 0; rowIndex-- {
 			if len(rows) >= maxRows {
 				hasMore = true
+				stop = true
 				break
 			}
 			rows = append(rows, lineRows[rowIndex])
 		}
-		if hasMore {
+		if stop {
 			break
 		}
 	}
 	reverseSnapshotProjectedRows(rows)
 	return rows, hasMore
+}
+
+func frozenSnapshotAltScreenFrameTailStart(snapshot history.FrozenSnapshot) (int, bool) {
+	lineCount := snapshot.VisibleLineCount()
+	if lineCount == 0 {
+		return 0, false
+	}
+	last, ok := snapshot.LineAt(lineCount - 1)
+	if !ok || last.Line.Kind != history.RowKindAltScreenFrame {
+		return 0, false
+	}
+	start := lineCount - 1
+	for start > 0 {
+		line, ok := snapshot.LineAt(start - 1)
+		if !ok || line.Line.Kind != history.RowKindAltScreenFrame {
+			break
+		}
+		start--
+	}
+	return start, true
 }
 
 func projectFrozenSnapshotOldestHeadRows(snapshot history.FrozenSnapshot, cols int, maxRows int) ([]snapshotProjectedRow, bool) {

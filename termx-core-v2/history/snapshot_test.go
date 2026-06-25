@@ -30,6 +30,33 @@ func TestPinnedFrozenSnapshotDoesNotMaterializeCommittedPayloadLines(t *testing.
 	snapshot.ReleaseObserver()
 }
 
+func TestPinnedFrozenSnapshotKeepsWholeAltScreenTransientFrame(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "committed")
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
+		HistoryEvent{Kind: EventAppendAltScreenFrame, Rows: [][]Cell{
+			cells("/resume"),
+			cells("restored conversation"),
+		}},
+	)
+
+	snapshot := track.FreezePinnedSnapshot()
+	defer snapshot.ReleaseObserver()
+
+	if snapshot.VisibleLineCount() != 3 || snapshot.CommittedLines != 1 || len(snapshot.FrozenFrontier) != 2 {
+		t.Fatalf("snapshot should pin committed history plus whole transient frame, count=%d committed=%d frontier=%d", snapshot.VisibleLineCount(), snapshot.CommittedLines, len(snapshot.FrozenFrontier))
+	}
+	first, ok := snapshot.LineAt(1)
+	if !ok || lineText(first.Line) != "/resume" || first.Committed {
+		t.Fatalf("expected first transient frame line, got %#v ok=%v", first, ok)
+	}
+	second, ok := snapshot.LineAt(2)
+	if !ok || lineText(second.Line) != "restored conversation" || second.Committed {
+		t.Fatalf("expected second transient frame line, got %#v ok=%v", second, ok)
+	}
+}
+
 func TestPinnedFrozenSnapshotSeesDeletedCommittedLineUntilReleased(t *testing.T) {
 	store := NewMemoryLogicalLineStore(nil)
 	track := NewHistoryTrackWith(store, nil, nil)

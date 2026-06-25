@@ -1238,6 +1238,29 @@ func TestHistoryStoreDoesNotReflowScreenFrameRows(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreDoesNotReflowAltScreenFrameRows(t *testing.T) {
+	lines := []HistoryLogicalLine{{
+		LineID: 10,
+		Kind:   HistoryRowKindAltScreenFrame,
+		Cells: []HistoryCell{
+			{Text: "Resume", Width: 6},
+			{Text: "        ", Width: 8},
+			{Text: "previous session", Width: 16},
+		},
+	}}
+	rows, spans := ReflowHistoryLogicalLines(lines, 10)
+
+	if len(rows) != 1 || rows[0].Kind != HistoryRowKindAltScreenFrame || rows[0].Text != "Resume        previous session" {
+		t.Fatalf("alt-screen frame row must remain one fixed-grid row with padding, rows=%#v", rows)
+	}
+	if got := HistoryRowDisplayWidth(rows[0]); got != 30 {
+		t.Fatalf("alt-screen frame row should keep authoritative width, got %d row=%#v", got, rows[0])
+	}
+	if len(spans) != 1 || spans[0].Kind != HistoryRowKindAltScreenFrame || spans[0].StartRow != 0 || spans[0].EndRow != 0 {
+		t.Fatalf("alt-screen frame span should stay single-row, got %#v", spans)
+	}
+}
+
 func TestHistoryStorePreservesBlankScreenFrameRows(t *testing.T) {
 	lines := []HistoryLogicalLine{
 		{LineID: 10, Kind: HistoryRowKindScreenFrame, Cells: []HistoryCell{{Text: "Update available!", Width: 17}}},

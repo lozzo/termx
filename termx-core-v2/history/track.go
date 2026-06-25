@@ -1157,7 +1157,7 @@ func (track *HistoryTrack) replaceTransientFrame(rows [][]Cell) error {
 			Seal:              SealStateSealed,
 			CreatedGeneration: nextGeneration,
 			ContentGeneration: nextGeneration,
-			Kind:              RowKindScreenFrame,
+			Kind:              RowKindAltScreenFrame,
 			Cells:             row,
 			Dirty:             true,
 			Residency:         ResidencyMemory,

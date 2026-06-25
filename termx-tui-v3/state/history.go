@@ -30,7 +30,10 @@ const (
 	HistoryWindowAppend  HistoryWindowOp = "append"
 )
 
-const HistoryRowKindScreenFrame = "screen-frame"
+const (
+	HistoryRowKindScreenFrame    = "screen-frame"
+	HistoryRowKindAltScreenFrame = "alt-screen-frame"
+)
 
 // HistoryCursor 是 older pagination 的 logical boundary。
 type HistoryCursor struct {
@@ -1672,7 +1675,7 @@ func ReflowHistoryLogicalLines(lines []HistoryLogicalLine, cols int) ([]HistoryR
 
 func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	cells := cloneHistoryCells(line.Cells)
-	if line.Kind == HistoryRowKindScreenFrame {
+	if isFixedGridHistoryRowKind(line.Kind) {
 		return fixedGridHistoryRows(line, cells)
 	}
 	if len(cells) == 0 && line.Text != "" {
@@ -1729,6 +1732,10 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 	}
 	applyTailFillToLastHistoryRow(rows, line.TailFill)
 	return rows
+}
+
+func isFixedGridHistoryRowKind(kind string) bool {
+	return kind == HistoryRowKindScreenFrame || kind == HistoryRowKindAltScreenFrame
 }
 
 func fixedGridHistoryRows(line HistoryLogicalLine, cells []HistoryCell) []HistoryRow {

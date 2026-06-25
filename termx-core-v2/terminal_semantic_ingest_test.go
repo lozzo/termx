@@ -5259,7 +5259,7 @@ func TestTerminalSemanticProjectorKeepsSharedVTermAltExitFrameAsLatestOnly(t *te
 		t.Fatalf("latest: %v", err)
 	}
 	text := historyWindowJoinedText(window)
-	if !strings.Contains(text, "alt-final") || strings.Count(text, "primary") != 1 {
+	if !strings.Contains(text, "alt-final") || strings.Contains(text, "primary") {
 		t.Fatalf("alt final frame should be visible as latest-only frame, got %q rows=%#v", text, window.Rows)
 	}
 	if window.TotalLines != 1 {

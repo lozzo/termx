@@ -514,6 +514,41 @@ func TestLatestWindowCursorCanPageBackFromMutableOnlyTail(t *testing.T) {
 	}
 }
 
+func TestLatestWindowAltScreenTransientFrameDoesNotBackfillCommittedHistory(t *testing.T) {
+	track := NewHistoryTrack()
+	commitLine(t, track, "previous resume transcript")
+	commitLine(t, track, "older shell prompt")
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventSwitchAltScreen, EnterAltScreen: true},
+		HistoryEvent{Kind: EventAppendAltScreenFrame, Rows: [][]Cell{
+			cells("Resume a previous session"),
+			cells("now current picker item"),
+		}},
+	)
+
+	latest, err := track.LatestWindow(HistoryWindowRequest{Cols: 40, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest window: %v", err)
+	}
+	if got := rowTexts(latest.Rows); !reflect.DeepEqual(got, []string{"Resume a previous session", "now current picker item"}) {
+		t.Fatalf("alt-screen current frame should not backfill committed history, got %v", got)
+	}
+	if !latest.HasMore || !latest.Cursor.Valid {
+		t.Fatalf("expected older cursor for committed history, got hasMore=%v cursor=%#v", latest.HasMore, latest.Cursor)
+	}
+	if latest.TotalLines != 2 || latest.LoadedLines != 2 {
+		t.Fatalf("unexpected line counts total=%d loaded=%d rows=%#v", latest.TotalLines, latest.LoadedLines, latest.Rows)
+	}
+
+	older, err := track.OlderWindow(HistoryWindowRequest{Cols: 40, Rows: 10, Cursor: latest.Cursor})
+	if err != nil {
+		t.Fatalf("older window: %v", err)
+	}
+	if got := rowTexts(older.Rows); !reflect.DeepEqual(got, []string{"previous resume transcript", "older shell prompt"}) {
+		t.Fatalf("older history should remain accessible explicitly, got %v", got)
+	}
+}
+
 func TestHistoryWindowTokenChangesAfterResizeGenerationInvalidation(t *testing.T) {
 	track := NewHistoryTrack()
 	commitLine(t, track, "alpha")

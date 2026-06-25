@@ -902,13 +902,20 @@ func TestTerminalIngestOutputAltScreenExitRestoresPrimaryLiveFrame(t *testing.T)
 		t.Fatalf("latest window: %v", err)
 	}
 	text := historyWindowText(window.Rows)
-	if !strings.Contains(text, "primary") || !strings.Contains(text, "alt-final") || window.TotalLines != 1 {
+	if strings.Contains(text, "primary") || !strings.Contains(text, "alt-final") || window.TotalLines != 1 || !window.HasMore || !window.Cursor.Valid {
 		t.Fatalf("alt final frame should be latest-only current frame without committed depth growth, text=%q window=%#v", text, window)
 	}
 	for _, row := range window.Rows {
 		if strings.Contains(row.Text, "alt-final") && row.Committed {
 			t.Fatalf("alt final frame must stay mutable, got %#v", window.Rows)
 		}
+	}
+	older, err := server.OlderWindow("term-1", 20, 10, window.Cursor)
+	if err != nil {
+		t.Fatalf("older primary history: %v", err)
+	}
+	if !historyWindowContainsText(older, "primary") {
+		t.Fatalf("primary history should remain reachable through older, got %#v", older.Rows)
 	}
 }
 
@@ -954,7 +961,7 @@ func TestTerminalIngestOutputAltScreenFinalFramePreservesStyleAsMutableOnly(t *t
 	if err != nil {
 		t.Fatalf("latest after styled alt-screen: %v", err)
 	}
-	if !historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "ALT") || window.TotalLines != 1 {
+	if historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "ALT") || window.TotalLines != 1 {
 		t.Fatalf("styled alt final frame should be latest-only, got %#v", window)
 	}
 	var altRow history.VisualRow
@@ -964,8 +971,8 @@ func TestTerminalIngestOutputAltScreenFinalFramePreservesStyleAsMutableOnly(t *t
 			break
 		}
 	}
-	if altRow.Text == "" || altRow.Committed || altRow.Kind != history.RowKindScreenFrame {
-		t.Fatalf("styled alt final row should be mutable screen-frame, got %#v rows=%#v", altRow, window.Rows)
+	if altRow.Text == "" || altRow.Committed || altRow.Kind != history.RowKindAltScreenFrame {
+		t.Fatalf("styled alt final row should be mutable alt-screen frame, got %#v rows=%#v", altRow, window.Rows)
 	}
 	if len(altRow.Cells) != 3 || altRow.Cells[0].Style.FG != "ansi:1" || altRow.Cells[0].Style.BG != "ansi:4" {
 		t.Fatalf("styled alt final frame should preserve cell style, got %#v", altRow.Cells)
@@ -990,10 +997,13 @@ func TestTerminalIngestOutputRunningAltScreenFrameIsLatestMutableOnly(t *testing
 		t.Fatalf("latest while alt-screen runs: %v", err)
 	}
 	text := historyWindowText(window.Rows)
-	for _, want := range []string{"primary", "/resume", "restored conversation"} {
+	for _, want := range []string{"/resume", "restored conversation"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("running alt-screen should preserve visible current frame %q, text=%q rows=%#v", want, text, window.Rows)
 		}
+	}
+	if strings.Contains(text, "primary") {
+		t.Fatalf("running alt-screen latest should not backfill committed primary history, text=%q rows=%#v", text, window.Rows)
 	}
 	if window.TotalLines != 1 {
 		t.Fatalf("running alt-screen current frame must not grow committed history, total=%d rows=%#v", window.TotalLines, window.Rows)
@@ -1023,10 +1033,13 @@ func TestTerminalIngestOutputAltScreenExitFrameIsLatestMutableOnly(t *testing.T)
 		t.Fatalf("latest after alt-screen: %v", err)
 	}
 	text := historyWindowText(window.Rows)
-	for _, want := range []string{"primary", "/resume", "restored conversation"} {
+	for _, want := range []string{"/resume", "restored conversation"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("latest should preserve visible alt exit frame %q, text=%q rows=%#v", want, text, window.Rows)
 		}
+	}
+	if strings.Contains(text, "primary") {
+		t.Fatalf("alt exit latest should not backfill committed primary history, text=%q rows=%#v", text, window.Rows)
 	}
 	if window.TotalLines != 1 {
 		t.Fatalf("alt exit current frame must not grow committed history, total=%d rows=%#v", window.TotalLines, window.Rows)
@@ -1086,13 +1099,20 @@ func TestTerminalIngestOutputSplitAltScreenCSIPreservesFinalFrameAsMutableOnly(t
 	if err != nil {
 		t.Fatalf("latest after split alt-screen CSI: %v", err)
 	}
-	if !historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "alt-final") || window.TotalLines != 1 {
+	if historyWindowContainsText(window, "primary") || !historyWindowContainsText(window, "alt-final") || window.TotalLines != 1 || !window.HasMore || !window.Cursor.Valid {
 		t.Fatalf("split alt-screen CSI should keep final frame latest-only, got %#v", window)
 	}
 	for _, row := range window.Rows {
 		if strings.Contains(row.Text, "alt-final") && row.Committed {
 			t.Fatalf("split alt-screen final frame must stay mutable, rows=%#v", window.Rows)
 		}
+	}
+	older, err := server.OlderWindow("term-1", 20, 10, window.Cursor)
+	if err != nil {
+		t.Fatalf("older split primary history: %v", err)
+	}
+	if !historyWindowContainsText(older, "primary") {
+		t.Fatalf("split alt-screen primary history should remain reachable through older, got %#v", older.Rows)
 	}
 }
 
@@ -1119,8 +1139,8 @@ func TestTerminalIngestOutputEnterAltScreenPreservesStressTail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("latest after stress alt-screen: %v", err)
 	}
-	if !historyWindowContainsText(window, "000100") {
-		t.Fatalf("enter alt-screen must preserve primary stress tail in history, got %#v", window.Rows)
+	if historyWindowContainsText(window, "000100") {
+		t.Fatalf("latest alt-screen current frame should not backfill primary stress tail, got %#v", window.Rows)
 	}
 	if !historyWindowContainsText(window, "ALT_SCREEN_MARK") {
 		t.Fatalf("alt-screen final frame should remain visible as latest current frame, got %#v", window.Rows)
@@ -1129,6 +1149,13 @@ func TestTerminalIngestOutputEnterAltScreenPreservesStressTail(t *testing.T) {
 		if strings.Contains(row.Text, "ALT_SCREEN_MARK") && row.Committed {
 			t.Fatalf("alt-screen final frame must not enter committed history, got %#v", window.Rows)
 		}
+	}
+	older, err := server.OlderWindow("term-1", 120, 30, window.Cursor)
+	if err != nil {
+		t.Fatalf("older stress history: %v", err)
+	}
+	if !historyWindowContainsText(older, "000100") {
+		t.Fatalf("primary stress tail should remain reachable through older, got %#v", older.Rows)
 	}
 }
 

@@ -168,6 +168,9 @@ func (track *HistoryTrack) projectLatestRows(cols int) []projectedRow {
 }
 
 func (track *HistoryTrack) projectLatestTailRows(cols int, maxRows int) ([]projectedRow, bool) {
+	if len(track.transientFrameLineIDs) > 0 {
+		return track.projectTransientFrameTailRows(cols, maxRows)
+	}
 	ids := track.latestLineIDs()
 	rows := make([]projectedRow, 0, maxRows)
 	hasMore := false
@@ -184,6 +187,31 @@ func (track *HistoryTrack) projectLatestTailRows(cols int, maxRows int) ([]proje
 			rows = append(rows, lineRows[rowIndex])
 		}
 		if hasMore {
+			break
+		}
+	}
+	reverseProjectedRows(rows)
+	return rows, hasMore
+}
+
+func (track *HistoryTrack) projectTransientFrameTailRows(cols int, maxRows int) ([]projectedRow, bool) {
+	// 中文说明：alt-screen current frame 是一整块当前画面；latest 首屏不能为了
+	// 填满视口向上回填 committed history，否则连续 /resume 会把新旧会话拼在一起。
+	rows := make([]projectedRow, 0, maxRows)
+	hasMore := track.committed.Len() > 0
+	for i := len(track.transientFrameLineIDs) - 1; i >= 0; i-- {
+		lineRows, ok := track.projectLineRows(track.transientFrameLineIDs[i], cols)
+		if !ok {
+			continue
+		}
+		for rowIndex := len(lineRows) - 1; rowIndex >= 0; rowIndex-- {
+			if len(rows) >= maxRows {
+				hasMore = true
+				break
+			}
+			rows = append(rows, lineRows[rowIndex])
+		}
+		if len(rows) >= maxRows {
 			break
 		}
 	}
@@ -436,7 +464,7 @@ func buildWindowRows(rows []projectedRow) ([]LogicalLineSpan, []VisualRow, Logic
 
 func projectLine(line LogicalLine, cols int) []VisualRow {
 	cells := normalizeProjectionCells(line.Cells, cols)
-	if line.Kind == RowKindScreenFrame {
+	if isFixedGridFrameKind(line.Kind) {
 		return projectScreenFrameLine(line, cells)
 	}
 	if len(cells) == 0 {
@@ -459,6 +487,10 @@ func projectLine(line LogicalLine, cols int) []VisualRow {
 		rows[len(rows)-1].TailFill = cloneRowTailFill(line.TailFill)
 	}
 	return rows
+}
+
+func isFixedGridFrameKind(kind string) bool {
+	return kind == RowKindScreenFrame || kind == RowKindAltScreenFrame
 }
 
 func projectScreenFrameLine(line LogicalLine, cells []Cell) []VisualRow {

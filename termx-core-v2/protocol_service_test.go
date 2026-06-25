@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -1400,13 +1401,34 @@ func TestProtocolServiceHistoryWindowFlushesStressTailBeforeAltScreenFreeze(t *t
 			Cols:       120,
 			Limit:      30,
 		})
-		return err == nil && latest != nil && protocolHistoryWindowContainsText(latest, "000100")
-	}, "history.window should observe stress tail after async output reaches history queue")
-	if !protocolHistoryWindowContainsText(latest, "000100") {
-		t.Fatalf("history.window latest must preserve primary stress tail before alt-screen, got %#v", latest.Rows)
+		return err == nil && latest != nil && protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK")
+	}, "history.window should observe alt-screen current frame after async output reaches history queue")
+	if protocolHistoryWindowContainsText(latest, "000100") {
+		t.Fatalf("history.window latest must not backfill primary stress tail before alt-screen, got %#v", latest.Rows)
 	}
 	if !protocolHistoryWindowContainsText(latest, "ALT_SCREEN_MARK") {
 		t.Fatalf("alt-screen final frame should remain visible as live-tail current frame, got %#v", latest.Rows)
+	}
+	if !latest.HasMore || !latest.CursorValid {
+		t.Fatalf("alt-screen latest should expose cursor to older stress tail, got %#v", latest)
+	}
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                120,
+		Limit:               30,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+	})
+	if err != nil {
+		t.Fatalf("older stress tail: %v", err)
+	}
+	if !protocolHistoryWindowContainsText(older, "000100") {
+		t.Fatalf("older window should preserve primary stress tail before alt-screen, got %#v", older.Rows)
 	}
 	if latest.LogicalTotal != 100 {
 		t.Fatalf("alt-screen final frame must not increase committed logical total, total=%d rows=%#v", latest.LogicalTotal, latest.Rows)
@@ -1523,6 +1545,81 @@ func TestProtocolServiceHistoryWindowCodexCurrentFrameKeepsUpdateCard(t *testing
 	}
 	if updateRow < 0 || updateRow >= len(latest.RowOwnership) || latest.RowOwnership[updateRow] != protocol.RowOwnershipLiveTailLive {
 		t.Fatalf("Codex update card should be marked as live-tail row, row=%d ownership=%#v", updateRow, latest.RowOwnership)
+	}
+}
+
+func TestProtocolServiceAltScreenTransientFrameDoesNotBackfillCommittedHistory(t *testing.T) {
+	server, client, closeClient := newProtocolClient(t)
+	defer closeClient()
+
+	if _, err := client.Create(context.Background(), protocol.CreateParams{
+		ID:      "term-1",
+		Command: []string{"shell"},
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	terminal, err := server.Terminal("term-1")
+	if err != nil {
+		t.Fatalf("terminal: %v", err)
+	}
+	terminal.historyPipeline().mu.Lock()
+	for _, event := range []history.HistoryEvent{
+		{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{Text: "previous resume transcript"}}},
+		{Kind: history.EventSealLogicalLine},
+		{Kind: history.EventCommitFrontier},
+		{Kind: history.EventWritePrimaryCells, Cells: []history.Cell{{Text: "older shell prompt"}}},
+		{Kind: history.EventSealLogicalLine},
+		{Kind: history.EventCommitFrontier},
+		{Kind: history.EventSwitchAltScreen, EnterAltScreen: true},
+		{Kind: history.EventAppendAltScreenFrame, Rows: [][]history.Cell{
+			{{Text: "/resume"}},
+			{{Text: "restored conversation"}},
+		}},
+	} {
+		if err := terminal.historyPipeline().track.Apply(event); err != nil {
+			terminal.historyPipeline().mu.Unlock()
+			t.Fatalf("apply %s: %v", event.Kind, err)
+		}
+	}
+	terminal.historyPipeline().publishGenerationLocked()
+	terminal.historyPipeline().mu.Unlock()
+
+	latest, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID: "term-1",
+		Cols:       80,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("history latest: %v", err)
+	}
+	if got := protocolWindowRowTexts(latest); !reflect.DeepEqual(got, []string{"/resume", "restored conversation"}) {
+		t.Fatalf("alt-screen frozen latest should only expose current frame, got %v", got)
+	}
+	if !latest.HasMore || !latest.CursorValid {
+		t.Fatalf("expected cursor to older committed history, got hasMore=%v cursorValid=%v window=%#v", latest.HasMore, latest.CursorValid, latest)
+	}
+	if latest.LogicalTotal != 2 || latest.LoadedLines != 2 {
+		t.Fatalf("unexpected counts logical=%d loadedLines=%d window=%#v", latest.LogicalTotal, latest.LoadedLines, latest)
+	}
+
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                80,
+		Limit:               10,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+	})
+	if err != nil {
+		t.Fatalf("history older: %v", err)
+	}
+	if got := protocolWindowRowTexts(older); !reflect.DeepEqual(got, []string{"previous resume transcript", "older shell prompt"}) {
+		t.Fatalf("older committed history should remain explicitly reachable, got %v", got)
 	}
 }
 
@@ -3149,7 +3246,7 @@ func TestProtocolServiceSnapshotRestoresPrimaryOnAltScreenExit(t *testing.T) {
 	for _, row := range latest.Rows {
 		text += rowText(row) + "\n"
 	}
-	if !strings.Contains(text, "primary") || !strings.Contains(text, "alt-final") || latest.LogicalTotal != 1 {
+	if strings.Contains(text, "primary") || !strings.Contains(text, "alt-final") || latest.LogicalTotal != 1 || !latest.HasMore || !latest.CursorValid {
 		t.Fatalf("alt final frame should be latest-only current frame, text=%q window=%#v", text, latest)
 	}
 	for index, row := range latest.Rows {
@@ -3158,6 +3255,24 @@ func TestProtocolServiceSnapshotRestoresPrimaryOnAltScreenExit(t *testing.T) {
 				t.Fatalf("alt final frame should be live-tail-owned, row=%d ownership=%#v", index, latest.RowOwnership)
 			}
 		}
+	}
+	older, err := client.HistoryWindow(context.Background(), protocol.HistoryWindowParams{
+		TerminalID:          "term-1",
+		Cols:                20,
+		Limit:               10,
+		Token:               latest.Token,
+		Generation:          latest.Generation,
+		BoundaryFirstLineID: latest.FirstLineID,
+		BoundaryLastLineID:  latest.LastLineID,
+		CursorValid:         latest.CursorValid,
+		BeforeLineID:        latest.CursorLineID,
+		BeforeRowInLine:     latest.CursorRow,
+	})
+	if err != nil {
+		t.Fatalf("older primary history: %v", err)
+	}
+	if !protocolHistoryWindowContainsText(older, "primary") {
+		t.Fatalf("primary history should remain reachable through older, got %#v", older.Rows)
 	}
 }
 
@@ -3369,6 +3484,17 @@ func rowText(row protocol.CompactRow) string {
 		builder.WriteString(cell.Content)
 	}
 	return builder.String()
+}
+
+func protocolWindowRowTexts(window *protocol.HistoryWindow) []string {
+	if window == nil {
+		return nil
+	}
+	texts := make([]string, len(window.Rows))
+	for index, row := range window.Rows {
+		texts[index] = rowText(row)
+	}
+	return texts
 }
 
 func historyWindowRowsText(rows []protocol.CompactRow) string {
