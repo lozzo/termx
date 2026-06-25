@@ -1756,6 +1756,26 @@ func TestTerminalResizeDoesNotLetSynchronizedFrameDeleteCommittedHistory(t *test
 	if err := server.ResizeTerminal(context.Background(), "term-1", 40, 9); err != nil {
 		t.Fatalf("grow resize: %v", err)
 	}
+	resizedCurrent, err := server.LatestWindow("term-1", 40, 9)
+	if err != nil {
+		t.Fatalf("latest after running resize: %v", err)
+	}
+	resizedText := historyWindowText(resizedCurrent.Rows)
+	for _, want := range []string{"frame-one", "input-one"} {
+		if !strings.Contains(resizedText, want) {
+			t.Fatalf("running resize should preserve current frame %q, text=%q rows=%#v", want, resizedText, resizedCurrent.Rows)
+		}
+	}
+	if resizedCurrent.TotalLines != 2 {
+		t.Fatalf("running resize must not grow committed history depth, total=%d rows=%#v", resizedCurrent.TotalLines, resizedCurrent.Rows)
+	}
+	for _, row := range resizedCurrent.Rows {
+		if strings.Contains(row.Text, "frame-one") || strings.Contains(row.Text, "input-one") {
+			if row.Committed || row.Kind != history.RowKindScreenFrame {
+				t.Fatalf("running resize should keep current frame mutable screen-frame, got %#v", row)
+			}
+		}
+	}
 	if err := server.IngestOutput(context.Background(), "term-1", "\x1b[?2026h\x1b[H\x1b[Jframe-two\x1b[9;1Hinput-two\x1b[?2026l"); err != nil {
 		t.Fatalf("publish second frame: %v", err)
 	}

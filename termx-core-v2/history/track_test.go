@@ -1242,6 +1242,54 @@ func TestHistoryTrackReplacePrimaryFrameProjectsFixedGridRows(t *testing.T) {
 	}
 }
 
+func TestHistoryTrackResizeKeepsFinalScreenFrameFixedGrid(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("ordinary logical line")},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{
+			cells("final frame row 0123456789"),
+		}},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+	)
+	beforeIDs := track.CommittedIDs()
+	beforeFrameLine := requireLine(t, track, beforeIDs[len(beforeIDs)-1])
+	beforeGeneration := beforeFrameLine.Generation
+
+	applyHistoryEvents(t, track, HistoryEvent{Kind: EventResize, ResizeDirection: ResizeShrink, Count: 1})
+
+	if got := track.CommittedIDs(); !reflect.DeepEqual(got, beforeIDs) {
+		t.Fatalf("resize must not rewrite committed history order, got %v want %v", got, beforeIDs)
+	}
+	afterFrameLine := requireLine(t, track, beforeFrameLine.ID)
+	if afterFrameLine.Generation != beforeGeneration || lineText(afterFrameLine) != "final frame row 0123456789" {
+		t.Fatalf("resize must not mutate committed final frame, before=%#v after=%#v", beforeFrameLine, afterFrameLine)
+	}
+	window, err := track.LatestWindow(HistoryWindowRequest{Cols: 8, Rows: 10})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if len(window.Rows) < 4 {
+		t.Fatalf("expected ordinary line to reproject while final frame stays fixed, rows=%#v", window.Rows)
+	}
+	final := window.Rows[len(window.Rows)-1]
+	if final.Text != "final frame row 0123456789" || final.Kind != RowKindScreenFrame || !final.Committed || final.RowInLine != 0 {
+		t.Fatalf("final screen-frame must remain one committed fixed-grid row after resize, got %#v", final)
+	}
+	ordinaryRows := window.Rows[:len(window.Rows)-1]
+	if got := rowTexts(ordinaryRows); !reflect.DeepEqual(got, []string{"ordinary", " logical", " line"}) {
+		t.Fatalf("ordinary committed logical line should reproject at new cols, got %v", got)
+	}
+	for _, row := range ordinaryRows {
+		if !row.Committed || row.Kind == RowKindScreenFrame {
+			t.Fatalf("ordinary rows should stay committed logical-line projection, got %#v", row)
+		}
+	}
+}
+
 func TestHistoryTrackReplacePrimaryFramePreservesBlankPhysicalRows(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(4)
