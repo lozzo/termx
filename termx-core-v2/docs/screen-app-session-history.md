@@ -69,6 +69,8 @@ core-v2 对一个前台 screen app 输出阶段的 domain 表达。它可以发�
 
 primary screen app session 关闭时，把最后一个 primary current frame 转成普通 committed logical lines 的动作。它只发生一次，不提交中间 repaint。alt-screen current frame 不执行 final frame commit。
 
+它不是 screen app 会话历史的唯一保存点。Codex 聊了一晚上后，长期可浏览内容必须来自 `ScreenFrameJournal` / session history；final frame commit 只是在 ordinary history 里留下一个“程序退出时最后画面”的收尾，不能替代 session journal。
+
 ### frame journal
 
 `HistoryTrack` 内部的 frame 索引。它只索引 `LogicalLineStore` 中的 frame logical line 版本，不是第二份 payload store，也不是 `CommittedHistoryIndex` 的替代品。
@@ -318,7 +320,7 @@ ordinary committed history before session
 
 ### 9.2 cursor
 
-必须新增 internal domain cursor：
+目标模型需要 internal domain cursor：
 
 ```text
 HistoryWindowCursor
@@ -331,7 +333,9 @@ HistoryWindowCursor
   Generation
 ```
 
-现有 `HistoryWindowParams` 的 `before_line_id/before_row_in_line` 只够表达 committed logical boundary，不能稳定表达 current-frame、archived-frame、committed 三段之间的跳转。实现本设计前，protocol contract 必须先扩展，不能靠 TUI 根据 row kind 猜，也不能把 segment 塞进现有 line id 语义。
+第一版实现可以沿用现有 `before_line_id/before_row_in_line`，但前提是 segment 判定完全在 core-v2 内完成：`screen-frame`、`archived-screen-frame`、committed line id 都来自同一个 `LogicalLineStore`，line id 全局唯一，core 在 `HistoryTrack` / frozen snapshot 里按 journal membership 组装 older 顺序。TUI 只能回传 core 给出的 cursor，不能根据 row kind 自己推断下一段。
+
+这种做法不是把 segment 塞给 TUI；它只是把 line id 当作 core-owned boundary key。后续如果需要跨进程长期稳定 cursor、newer 双向分页、retention stale 诊断或多 session frame journal，再升级为显式 segment cursor 或 opaque cursor blob。
 
 建议 wire 增量：
 
@@ -343,7 +347,7 @@ cursor_line_id
 cursor_row_in_line
 ```
 
-或者使用一个 core-v2 opaque cursor blob，但 blob 必须由 core 生成和校验，且 protocol/TUI/App harness 要证明跨 segment older/newer 不依赖本地推断。`token` 只 pin frozen snapshot，不替代 cursor segment。
+也可以直接使用一个 core-v2 opaque cursor blob，但 blob 必须由 core 生成和校验，且 protocol/TUI/App harness 要证明跨 segment older/newer 不依赖本地推断。`token` 只 pin frozen snapshot，不替代 cursor segment。
 
 ### 9.3 row ownership
 
@@ -438,7 +442,7 @@ htop 这类程序可能每秒多次 repaint。frame journal 必须 bounded。
 - 普通 shell 输出不进入 screen app session，LF 后 committed depth 增长。
 - primary screen app 三次 repaint：latest 显示第三帧，older 先返回第二帧、第一帧，再返回进入 app 前的 shell history。
 - repeated identical frame 不产生 archived frame。
-- primary session close 后 final frame committed 一次，archived frames 不进入 ordinary committed depth。
+- primary session close 后 final frame committed 一次，但 archived frames 仍作为 screen app session history 可浏览；它们不进入 ordinary committed depth。
 - alt-screen session close 和 terminal lifecycle exit 都不把 alt current frame 写入 primary committed history。
 - `codex frame -> shell prompt -> ls output`：screen app close boundary 先提交 primary final frame，再让 prompt/`ls` 走 ordinary committed history。
 - screen app session 内 `ED2/ED3` 不删除 ordinary committed history。
@@ -456,8 +460,8 @@ htop 这类程序可能每秒多次 repaint。frame journal 必须 bounded。
 ### 13.3 protocol harness
 
 - `history.window latest` 返回 current frame rows 和 segment-aware cursor。
-- older cursor 先走 archived-frame segment，再走 committed segment；cursor segment 必须由 core 生成和校验。
-- 现有 `before_line_id/before_row_in_line` 无法表达 frame segment 时，协议扩展测试必须先失败并驱动 `.proto` / `internal/protocol` 更新。
+- older cursor 先走 archived-frame segment，再走 committed segment；segment 边界必须由 core 生成和校验。
+- 第一版可以使用 core-owned `before_line_id/before_row_in_line` 作为 boundary key；如果后续无法稳定表达 frame segment，协议扩展测试必须先失败并驱动 `.proto` / `internal/protocol` 更新。
 - row ownership、line kind、fixed-grid metadata 端到端保留。
 - stale token 不允许 fallback 到 local cache。
 - frozen token pin 住 archived frame 后，`history.copy` 和 `history.release` 生命周期正确释放 observer。

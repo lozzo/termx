@@ -19,6 +19,7 @@ type HistoryTrack struct {
 	primaryFullscreenModes   map[int]struct{}
 	pendingSynchronizedFrame bool
 	publishedFrameLineIDs    []LogicalLineID
+	archivedFrameLineIDs     []LogicalLineID
 	transientFrameLineIDs    []LogicalLineID
 	generation               Generation
 	screenRows               int
@@ -202,7 +203,7 @@ func (track *HistoryTrack) commitScrolledOutLine(id LogicalLineID) error {
 	if !ok {
 		return ErrUnknownLine
 	}
-	if line.Kind == RowKindScreenFrame || line.Kind == RowKindAltScreenFrame || track.isPublishedFrameLine(id) {
+	if line.Kind == RowKindScreenFrame || line.Kind == RowKindArchivedScreenFrame || line.Kind == RowKindAltScreenFrame || track.isPublishedFrameLine(id) {
 		return nil
 	}
 	if line.Seal != SealStateSealed {
@@ -1125,6 +1126,9 @@ func (track *HistoryTrack) replacePrimaryFrame(rows [][]Cell) error {
 	if track.altScreen {
 		return nil
 	}
+	if err := track.archiveCurrentPrimaryFrame(); err != nil {
+		return err
+	}
 	if err := track.dropCurrentPrimaryFrame(); err != nil {
 		return err
 	}
@@ -1223,20 +1227,33 @@ func (track *HistoryTrack) replaceTransientFrame(rows [][]Cell) error {
 	return nil
 }
 
-// replacePrimaryFullscreenFrame 清掉当前未提交 fullscreen frame，让下一帧在同一位置重建。
+// replacePrimaryFullscreenFrame 归档当前 fullscreen frame，再让下一帧在同一位置重建。
 // 它不能碰 committed history；进入 fullscreen 前的页面已经由第一次 page-break 保留。
 func (track *HistoryTrack) replacePrimaryFullscreenFrame() error {
 	modes := track.primaryFullscreenModes
+	changed := false
 	if track.pendingSynchronizedFrame {
 		if err := track.dropPendingPrimaryFrame(); err != nil {
 			return err
 		}
-	} else if err := track.dropCurrentPrimaryFrame(); err != nil {
-		return err
+	} else {
+		archived, err := track.archivePublishedPrimaryFrameWithoutBump()
+		if err != nil {
+			return err
+		}
+		changed = changed || archived
+		dropped, err := track.dropNonCommittedFrontierWithoutBump()
+		if err != nil {
+			return err
+		}
+		changed = changed || dropped
 	}
 	track.primaryFullscreenModes = modes
 	track.primaryFullscreenIntent = true
 	track.primaryFullscreenFrame = true
+	if changed {
+		track.bumpGeneration()
+	}
 	return nil
 }
 
@@ -1295,7 +1312,7 @@ func (track *HistoryTrack) clearPrimaryScreenPageBreak() error {
 }
 
 func (track *HistoryTrack) enterAltScreenPrimaryBoundary() error {
-	changed, err := track.dropPublishedPrimaryFrameWithoutBump()
+	changed, err := track.archivePublishedPrimaryFrameWithoutBump()
 	if err != nil {
 		return err
 	}
@@ -1326,7 +1343,7 @@ func (track *HistoryTrack) commitAltEnterPrimaryFrontierWithoutBump() (bool, err
 		if !ok {
 			return changed, ErrUnknownLine
 		}
-		if track.frontier.IsHidden(id) || line.Kind == RowKindScreenFrame || line.Kind == RowKindAltScreenFrame || track.isPublishedFrameLine(id) {
+		if track.frontier.IsHidden(id) || line.Kind == RowKindScreenFrame || line.Kind == RowKindArchivedScreenFrame || line.Kind == RowKindAltScreenFrame || track.isPublishedFrameLine(id) {
 			if track.frontier.Remove(id) {
 				changed = true
 			}
@@ -1575,6 +1592,59 @@ func (track *HistoryTrack) dropCurrentPrimaryFrame() error {
 	return nil
 }
 
+func (track *HistoryTrack) archiveCurrentPrimaryFrame() error {
+	changed, err := track.archivePublishedPrimaryFrameWithoutBump()
+	if err != nil {
+		return err
+	}
+	if changed {
+		track.bumpGeneration()
+	}
+	return nil
+}
+
+func (track *HistoryTrack) archivePublishedPrimaryFrameWithoutBump() (bool, error) {
+	ids := cloneLineIDs(track.publishedFrameLineIDs)
+	if len(ids) == 0 {
+		return false, nil
+	}
+	changed := false
+	for _, id := range ids {
+		if id == 0 || track.committed.Contains(id) {
+			continue
+		}
+		line, ok := track.store.Line(id)
+		if !ok {
+			return changed, ErrUnknownLine
+		}
+		if line.Kind != RowKindScreenFrame {
+			continue
+		}
+		// 中文说明：screen app 重绘替换 current frame 时，旧 frame 是本会话历史；
+		// 它不进 ordinary committed history，但必须继续由 core authoritative older 暴露。
+		line.Kind = RowKindArchivedScreenFrame
+		if _, err := track.replaceOwnedLine(line); err != nil {
+			return changed, err
+		}
+		changed = true
+		if track.frontier.Remove(id) {
+			changed = true
+		}
+		if !containsLineID(track.archivedFrameLineIDs, id) {
+			track.archivedFrameLineIDs = append(track.archivedFrameLineIDs, id)
+			changed = true
+		}
+		if track.activeLine == id {
+			track.activeLine = 0
+			track.activeCol = 0
+			track.overwrite = false
+		}
+		track.screen.removeLine(id)
+	}
+	track.publishedFrameLineIDs = nil
+	return changed, nil
+}
+
 func (track *HistoryTrack) dropNonCommittedFrontierWithoutBump() (bool, error) {
 	ids := track.frontier.IDs()
 	if len(ids) == 0 {
@@ -1733,6 +1803,10 @@ func (track *HistoryTrack) isPublishedFrameLine(id LogicalLineID) bool {
 		}
 	}
 	return false
+}
+
+func (track *HistoryTrack) isArchivedFrameLine(id LogicalLineID) bool {
+	return containsLineID(track.archivedFrameLineIDs, id)
 }
 
 func historyFrameRowRightEdge(row []Cell) int {
@@ -2239,7 +2313,7 @@ func (track *HistoryTrack) hiddenLineMayCommit(id LogicalLineID) bool {
 	if !ok {
 		return false
 	}
-	return line.Kind != RowKindScreenFrame && line.Kind != RowKindAltScreenFrame
+	return line.Kind != RowKindScreenFrame && line.Kind != RowKindArchivedScreenFrame && line.Kind != RowKindAltScreenFrame
 }
 
 func (track *HistoryTrack) visibleFrontierIDs() []LogicalLineID {

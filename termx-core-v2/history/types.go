@@ -54,8 +54,9 @@ type CellStyle struct {
 }
 
 const (
-	RowKindScreenFrame    = "screen-frame"
-	RowKindAltScreenFrame = "alt-screen-frame"
+	RowKindScreenFrame         = "screen-frame"
+	RowKindArchivedScreenFrame = "archived-screen-frame"
+	RowKindAltScreenFrame      = "alt-screen-frame"
 )
 
 // RowTailFill 表达 terminal 物理行从已有内容末尾到 visual row 行尾的背景。

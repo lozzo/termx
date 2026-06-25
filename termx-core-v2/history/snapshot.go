@@ -61,6 +61,7 @@ func (track *HistoryTrack) freezeSnapshotAtGeneration(detach bool, generation Ge
 	var committedIDs []LogicalLineID
 	committedIDs, committedFirst, committedUpper, committedLines, committedRange := track.committedSnapshotBounds(generation)
 	frontierIDs := make([]LogicalLineID, 0)
+	frontierIDs = append(frontierIDs, track.archivedFrameLineIDsAtOrBeforeGeneration(generation)...)
 	// 中文说明：冻结 copy/latest 时要 pin 住当前可见 fullscreen frame；
 	// 这些行仍是 mutable tail，不进入 committed history depth 或 older truth。
 	for _, id := range track.frontier.IDs() {
@@ -103,6 +104,20 @@ func (track *HistoryTrack) freezeSnapshotAtGeneration(detach bool, generation Ge
 		snapshot.materializeDetachedLines()
 	}
 	return snapshot
+}
+
+func (track *HistoryTrack) archivedFrameLineIDsAtOrBeforeGeneration(generation Generation) []LogicalLineID {
+	if len(track.archivedFrameLineIDs) == 0 {
+		return nil
+	}
+	ids := make([]LogicalLineID, 0, len(track.archivedFrameLineIDs))
+	for _, id := range track.archivedFrameLineIDs {
+		if id == 0 || !track.lineAtOrBeforeGeneration(id, generation) {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (track *HistoryTrack) committedSnapshotBounds(generation Generation) ([]LogicalLineID, LogicalLineID, LogicalLineID, int, bool) {

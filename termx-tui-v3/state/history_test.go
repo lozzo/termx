@@ -1261,6 +1261,26 @@ func TestHistoryStoreDoesNotReflowAltScreenFrameRows(t *testing.T) {
 	}
 }
 
+func TestHistoryStoreDoesNotReflowArchivedScreenFrameRows(t *testing.T) {
+	line := HistoryLogicalLine{
+		LineID: 7,
+		Kind:   HistoryRowKindArchivedScreenFrame,
+		Cells: []HistoryCell{
+			{Text: "model:", Width: 6},
+			{Text: "             ", Width: 13},
+			{Text: "gpt-5.5 xhigh", Width: 13},
+		},
+	}
+
+	rows, spans := ReflowHistoryLogicalLines([]HistoryLogicalLine{line}, 12)
+	if len(rows) != 1 || rows[0].Kind != HistoryRowKindArchivedScreenFrame || rows[0].Text != "model:             gpt-5.5 xhigh" {
+		t.Fatalf("archived screen frame row must remain fixed-grid with padding, rows=%#v", rows)
+	}
+	if len(spans) != 1 || spans[0].Kind != HistoryRowKindArchivedScreenFrame || spans[0].StartRow != 0 || spans[0].EndRow != 0 {
+		t.Fatalf("archived screen frame span should stay single-row, got %#v", spans)
+	}
+}
+
 func TestHistoryStorePreservesBlankScreenFrameRows(t *testing.T) {
 	lines := []HistoryLogicalLine{
 		{LineID: 10, Kind: HistoryRowKindScreenFrame, Cells: []HistoryCell{{Text: "Update available!", Width: 17}}},

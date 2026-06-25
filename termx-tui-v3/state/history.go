@@ -31,8 +31,9 @@ const (
 )
 
 const (
-	HistoryRowKindScreenFrame    = "screen-frame"
-	HistoryRowKindAltScreenFrame = "alt-screen-frame"
+	HistoryRowKindScreenFrame         = "screen-frame"
+	HistoryRowKindArchivedScreenFrame = "archived-screen-frame"
+	HistoryRowKindAltScreenFrame      = "alt-screen-frame"
 )
 
 // HistoryCursor 是 older pagination 的 logical boundary。
@@ -1735,7 +1736,7 @@ func reflowHistoryLogicalLine(line HistoryLogicalLine, cols int) []HistoryRow {
 }
 
 func isFixedGridHistoryRowKind(kind string) bool {
-	return kind == HistoryRowKindScreenFrame || kind == HistoryRowKindAltScreenFrame
+	return kind == HistoryRowKindScreenFrame || kind == HistoryRowKindArchivedScreenFrame || kind == HistoryRowKindAltScreenFrame
 }
 
 func fixedGridHistoryRows(line HistoryLogicalLine, cells []HistoryCell) []HistoryRow {

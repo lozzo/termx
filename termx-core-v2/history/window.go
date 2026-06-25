@@ -223,7 +223,7 @@ func (track *HistoryTrack) projectOlderRowsBeforeCursor(cols int, maxRows int, c
 	if !cursor.Valid {
 		return nil, HistoryCursor{}, false, false
 	}
-	ids := track.committed.IDs()
+	ids := track.olderLineIDsForCursor(cursor)
 	rows := make([]projectedRow, 0, maxRows)
 	hasMore := false
 	startLineIndex, startRowIndex, ok := track.cursorStartPosition(ids, cols, cursor)
@@ -258,12 +258,105 @@ func (track *HistoryTrack) projectOlderRowsBeforeCursor(cols int, maxRows int, c
 	return rows, nextCursor, hasMore, true
 }
 
+func (track *HistoryTrack) olderLineIDsForCursor(cursor HistoryCursor) []LogicalLineID {
+	committed := track.committed.IDs()
+	if !cursor.Valid {
+		return committed
+	}
+	if cursor.BeforeLineID != 0 {
+		if track.isPublishedFrameLine(cursor.BeforeLineID) {
+			ids := append(cloneLineIDs(committed), cloneLineIDs(track.archivedFrameLineIDs)...)
+			return append(ids, cloneLineIDs(track.publishedFrameLineIDs)...)
+		}
+		if track.isArchivedFrameLine(cursor.BeforeLineID) {
+			if len(track.publishedFrameLineIDs) == 0 {
+				return track.committedIDsWithArchivedBeforeLastScreenFrameBlock(committed)
+			}
+			return append(cloneLineIDs(committed), cloneLineIDs(track.archivedFrameLineIDs)...)
+		}
+		if ids, ok := track.committedScreenFrameIDsWithArchivedBefore(cursor.BeforeLineID, committed); ok {
+			return ids
+		}
+		return committed
+	}
+	if len(track.archivedFrameLineIDs) == 0 {
+		return committed
+	}
+	if len(track.transientFrameLineIDs) > 0 || len(track.publishedFrameLineIDs) > 0 {
+		return append(cloneLineIDs(committed), cloneLineIDs(track.archivedFrameLineIDs)...)
+	}
+	return committed
+}
+
+func (track *HistoryTrack) committedScreenFrameIDsWithArchivedBefore(cursorLineID LogicalLineID, committed []LogicalLineID) ([]LogicalLineID, bool) {
+	if len(track.archivedFrameLineIDs) == 0 || cursorLineID == 0 {
+		return nil, false
+	}
+	line, ok := track.store.Line(cursorLineID)
+	if !ok || line.Kind != RowKindScreenFrame {
+		return nil, false
+	}
+	cursorIndex := -1
+	for index, id := range committed {
+		if id == cursorLineID {
+			cursorIndex = index
+			break
+		}
+	}
+	if cursorIndex < 0 {
+		return nil, false
+	}
+	insertIndex := track.screenFrameBlockStart(committed, cursorIndex)
+	// 中文说明：primary screen app 退出后，最后一帧会进入 ordinary committed。
+	// older 必须在这帧之前先走会话归档帧，否则长 Codex 会话只剩最后一屏。
+	ids := make([]LogicalLineID, 0, len(committed)+len(track.archivedFrameLineIDs))
+	ids = append(ids, committed[:insertIndex]...)
+	ids = append(ids, track.archivedFrameLineIDs...)
+	ids = append(ids, committed[insertIndex:]...)
+	return ids, true
+}
+
+func (track *HistoryTrack) committedIDsWithArchivedBeforeLastScreenFrameBlock(committed []LogicalLineID) []LogicalLineID {
+	if len(track.archivedFrameLineIDs) == 0 {
+		return committed
+	}
+	insertIndex := len(committed)
+	for index := len(committed) - 1; index >= 0; index-- {
+		line, ok := track.store.Line(committed[index])
+		if !ok || line.Kind != RowKindScreenFrame {
+			continue
+		}
+		insertIndex = track.screenFrameBlockStart(committed, index)
+		break
+	}
+	ids := make([]LogicalLineID, 0, len(committed)+len(track.archivedFrameLineIDs))
+	ids = append(ids, committed[:insertIndex]...)
+	ids = append(ids, track.archivedFrameLineIDs...)
+	ids = append(ids, committed[insertIndex:]...)
+	return ids
+}
+
+func (track *HistoryTrack) screenFrameBlockStart(ids []LogicalLineID, index int) int {
+	if index < 0 || index >= len(ids) {
+		return index
+	}
+	start := index
+	for start > 0 {
+		line, ok := track.store.Line(ids[start-1])
+		if !ok || line.Kind != RowKindScreenFrame {
+			break
+		}
+		start--
+	}
+	return start
+}
+
 func latestTailCursor(rows []projectedRow, hasMore bool) HistoryCursor {
 	if !hasMore || len(rows) == 0 {
 		return HistoryCursor{}
 	}
 	for _, row := range rows {
-		if row.committed {
+		if row.committed || row.row.Kind == RowKindScreenFrame {
 			return cursorFromRow(row)
 		}
 	}
@@ -490,7 +583,7 @@ func projectLine(line LogicalLine, cols int) []VisualRow {
 }
 
 func isFixedGridFrameKind(kind string) bool {
-	return kind == RowKindScreenFrame || kind == RowKindAltScreenFrame
+	return kind == RowKindScreenFrame || kind == RowKindArchivedScreenFrame || kind == RowKindAltScreenFrame
 }
 
 func projectScreenFrameLine(line LogicalLine, cells []Cell) []VisualRow {

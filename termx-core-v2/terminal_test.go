@@ -1783,7 +1783,19 @@ func TestTerminalResizeDoesNotLetSynchronizedFrameDeleteCommittedHistory(t *test
 			t.Fatalf("older after resize/repaint should keep committed %q, cursor=%#v text=%q rows=%#v", want, latest.Cursor, olderText, older.Rows)
 		}
 	}
-	for _, forbidden := range []string{"frame-one", "frame-two", "input-one", "input-two"} {
+	for _, want := range []string{"frame-one", "input-one"} {
+		if !strings.Contains(olderText, want) {
+			t.Fatalf("older after resize/repaint should keep archived previous frame %q, text=%q rows=%#v", want, olderText, older.Rows)
+		}
+	}
+	for _, row := range older.Rows {
+		if strings.Contains(row.Text, "frame-one") || strings.Contains(row.Text, "input-one") {
+			if row.Committed || row.Kind != history.RowKindArchivedScreenFrame {
+				t.Fatalf("previous frame rows should be archived, got %#v", row)
+			}
+		}
+	}
+	for _, forbidden := range []string{"frame-two", "input-two"} {
 		if strings.Contains(olderText, forbidden) {
 			t.Fatalf("older after resize/repaint must not page current frame %q, text=%q rows=%#v", forbidden, olderText, older.Rows)
 		}

@@ -1122,8 +1122,11 @@ func TestHistoryTrackEnterAltScreenDoesNotCommitPublishedPrimaryFrame(t *testing
 	if err != nil {
 		t.Fatalf("older: %v", err)
 	}
-	if got := rowTexts(older.Rows); !reflect.DeepEqual(got, []string{"shell"}) {
-		t.Fatalf("older should return committed shell history only, got %v", got)
+	if got := rowTexts(older.Rows); !reflect.DeepEqual(got, []string{"shell", "current resume frame"}) {
+		t.Fatalf("older should return committed shell then archived primary frame, got %v", got)
+	}
+	if older.Rows[1].Committed || older.Rows[1].Kind != RowKindArchivedScreenFrame {
+		t.Fatalf("published primary frame should be archived, not committed, got %#v", older.Rows[1])
 	}
 }
 

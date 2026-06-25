@@ -2299,6 +2299,7 @@ func buildSnapshotWindowRows(rows []snapshotProjectedRow) ([]history.LogicalLine
 			LineID:         lineID,
 			FirstRow:       start,
 			LastRow:        end,
+			Kind:           rows[start].row.Kind,
 			ClippedBefore:  clippedBefore,
 			ClippedAfter:   clippedAfter,
 			LineGeneration: rows[start].row.LineGeneration,
@@ -2326,6 +2327,12 @@ func projectFrozenSnapshotLatestTailRows(snapshot history.FrozenSnapshot, cols i
 		// 上方 committed history 只通过 older cursor 暴露，不能自动回填到首屏。
 		selected, hasMore := projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, start)
 		return selected, hasMore, latestCursorSnapshotAltScreenTail(snapshot, selected, hasMore)
+	}
+	if start, ok := frozenSnapshotPrimaryFrameTailStart(snapshot); ok {
+		// 中文说明：primary screen app 的 archived frames 属于同一会话历史，
+		// 但 latest 首屏只能显示 current frame；旧帧通过 older cursor 进入。
+		selected, hasMore := projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, start)
+		return selected, hasMore, latestCursorSnapshotTail(selected, hasMore)
 	}
 	selected, hasMore := projectFrozenSnapshotTailRowsFromLineIndex(snapshot, cols, maxRows, 0)
 	return selected, hasMore, latestCursorSnapshotTail(selected, hasMore)
@@ -2370,6 +2377,26 @@ func frozenSnapshotAltScreenFrameTailStart(snapshot history.FrozenSnapshot) (int
 	for start > 0 {
 		line, ok := snapshot.LineAt(start - 1)
 		if !ok || line.Line.Kind != history.RowKindAltScreenFrame {
+			break
+		}
+		start--
+	}
+	return start, true
+}
+
+func frozenSnapshotPrimaryFrameTailStart(snapshot history.FrozenSnapshot) (int, bool) {
+	lineCount := snapshot.VisibleLineCount()
+	if lineCount == 0 {
+		return 0, false
+	}
+	last, ok := snapshot.LineAt(lineCount - 1)
+	if !ok || last.Line.Kind != history.RowKindScreenFrame {
+		return 0, false
+	}
+	start := lineCount - 1
+	for start > 0 {
+		line, ok := snapshot.LineAt(start - 1)
+		if !ok || line.Line.Kind != history.RowKindScreenFrame {
 			break
 		}
 		start--
@@ -2632,6 +2659,20 @@ func projectFrozenSnapshotRows(lines []history.SnapshotLine, cols int) []snapsho
 
 func projectFrozenSnapshotLine(line history.LogicalLine, cols int) []history.VisualRow {
 	cells := normalizeProjectionCellsSnapshot(line.Cells)
+	if isFixedGridSnapshotLineKind(line.Kind) {
+		row := history.VisualRow{
+			Text:           lineTextFromSnapshotCells(cells),
+			Cells:          cloneHistoryCellsSnapshot(cells),
+			LineID:         line.ID,
+			Kind:           line.Kind,
+			LineGeneration: line.Generation,
+		}
+		if line.TailFill != nil {
+			fill := *line.TailFill
+			row.TailFill = &fill
+		}
+		return []history.VisualRow{row}
+	}
 	if len(cells) == 0 {
 		row := history.VisualRow{LineID: line.ID, LineGeneration: line.Generation, Kind: line.Kind}
 		if line.TailFill != nil {
@@ -2658,6 +2699,10 @@ func projectFrozenSnapshotLine(line history.LogicalLine, cols int) []history.Vis
 		rows[len(rows)-1].TailFill = &fill
 	}
 	return rows
+}
+
+func isFixedGridSnapshotLineKind(kind string) bool {
+	return kind == history.RowKindScreenFrame || kind == history.RowKindArchivedScreenFrame || kind == history.RowKindAltScreenFrame
 }
 
 func normalizeProjectionCellsSnapshot(cells []history.Cell) []history.Cell {

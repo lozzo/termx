@@ -468,6 +468,142 @@ func TestFreezeSnapshotPinsActivePrimaryFullscreenFrameAsMutableTail(t *testing.
 	}
 }
 
+func TestPrimaryScreenFrameJournalPagesArchivedFramesBeforeCommittedHistory(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell before codex")},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{cells("codex frame one")}},
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{cells("codex frame two")}},
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{cells("codex frame three")}},
+	)
+
+	latest, err := track.LatestWindow(HistoryWindowRequest{Cols: 80, Rows: 1})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got := rowTexts(latest.Rows); !reflect.DeepEqual(got, []string{"codex frame three"}) {
+		t.Fatalf("latest should show current frame, got %v rows=%#v", got, latest.Rows)
+	}
+	if !latest.HasMore || !latest.Cursor.Valid {
+		t.Fatalf("latest should expose older archived frames, hasMore=%v cursor=%#v", latest.HasMore, latest.Cursor)
+	}
+	if latest.TotalLines != 1 {
+		t.Fatalf("archived frames must not increase ordinary committed depth, total=%d", latest.TotalLines)
+	}
+
+	older, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 2, Cursor: latest.Cursor})
+	if err != nil {
+		t.Fatalf("older archived: %v", err)
+	}
+	if got := rowTexts(older.Rows); !reflect.DeepEqual(got, []string{"codex frame one", "codex frame two"}) {
+		t.Fatalf("older should return archived frames before shell history, got %v rows=%#v", got, older.Rows)
+	}
+	for _, row := range older.Rows {
+		if row.Committed || row.Kind != RowKindArchivedScreenFrame {
+			t.Fatalf("archived frame rows must not be ordinary committed rows, rows=%#v", older.Rows)
+		}
+	}
+	if !older.HasMore || !older.Cursor.Valid {
+		t.Fatalf("older archived page should still point to shell history, hasMore=%v cursor=%#v", older.HasMore, older.Cursor)
+	}
+
+	shell, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: older.Cursor})
+	if err != nil {
+		t.Fatalf("older shell: %v", err)
+	}
+	if got := rowTexts(shell.Rows); !reflect.DeepEqual(got, []string{"shell before codex"}) {
+		t.Fatalf("after archived frames older should return committed shell history, got %v rows=%#v", got, shell.Rows)
+	}
+	if shell.HasMore {
+		t.Fatalf("shell page should exhaust history, cursor=%#v rows=%#v", shell.Cursor, shell.Rows)
+	}
+}
+
+func TestPrimaryScreenFrameJournalSurvivesFinalCommit(t *testing.T) {
+	track := NewHistoryTrack()
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventWritePrimaryCells, Cells: cells("shell before codex")},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{cells("codex frame one")}},
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{cells("codex frame two")}},
+		HistoryEvent{Kind: EventForceCommitFrontier},
+	)
+
+	latest, err := track.LatestWindow(HistoryWindowRequest{Cols: 80, Rows: 1})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got := rowTexts(latest.Rows); !reflect.DeepEqual(got, []string{"codex frame two"}) {
+		t.Fatalf("latest should show final committed frame, got %v rows=%#v", got, latest.Rows)
+	}
+	if !latest.Rows[0].Committed || latest.Rows[0].Kind != RowKindScreenFrame {
+		t.Fatalf("final frame should be ordinary committed screen-frame tail, got %#v", latest.Rows[0])
+	}
+	if !latest.HasMore || !latest.Cursor.Valid {
+		t.Fatalf("latest should expose archived session frames before shell, hasMore=%v cursor=%#v", latest.HasMore, latest.Cursor)
+	}
+
+	archived, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: latest.Cursor})
+	if err != nil {
+		t.Fatalf("older archived: %v", err)
+	}
+	if got := rowTexts(archived.Rows); !reflect.DeepEqual(got, []string{"codex frame one"}) {
+		t.Fatalf("older should return archived frame after final commit, got %v rows=%#v", got, archived.Rows)
+	}
+	if archived.Rows[0].Committed || archived.Rows[0].Kind != RowKindArchivedScreenFrame {
+		t.Fatalf("archived row after final commit should remain non-committed archived frame, got %#v", archived.Rows[0])
+	}
+
+	shell, err := track.OlderWindow(HistoryWindowRequest{Cols: 80, Rows: 1, Cursor: archived.Cursor})
+	if err != nil {
+		t.Fatalf("older shell: %v", err)
+	}
+	if got := rowTexts(shell.Rows); !reflect.DeepEqual(got, []string{"shell before codex"}) {
+		t.Fatalf("older after archived frame should reach shell history, got %v rows=%#v", got, shell.Rows)
+	}
+}
+
+func TestFrozenSnapshotPinsPrimaryArchivedFrames(t *testing.T) {
+	store := NewMemoryLogicalLineStore(nil)
+	track := NewHistoryTrackWith(store, nil, nil)
+	track.SetPrimaryScreenRows(4)
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{cells("old codex frame")}},
+	)
+	snapshot := track.FreezePinnedSnapshot()
+	defer snapshot.ReleaseObserver()
+
+	applyHistoryEvents(t, track,
+		HistoryEvent{Kind: EventBeginSynchronizedFrame},
+		HistoryEvent{Kind: EventEndSynchronizedFrame},
+		HistoryEvent{Kind: EventReplacePrimaryFrame, Rows: [][]Cell{cells("new codex frame")}},
+	)
+
+	line, ok := snapshot.LineAt(0)
+	if !ok || lineText(line.Line) != "old codex frame" || line.Line.Kind != RowKindScreenFrame || line.Committed {
+		t.Fatalf("frozen snapshot should keep old current frame after replacement, got %#v ok=%v", line, ok)
+	}
+	snapshot.ReleaseObserver()
+	if got := store.RetainedLineCount(); got != 0 {
+		t.Fatalf("release should cleanup retained old frame payload, got %d", got)
+	}
+}
+
 func TestForceCommitIncludesPrimaryFullscreenFrameOnExit(t *testing.T) {
 	track := NewHistoryTrack()
 	track.SetPrimaryScreenRows(4)

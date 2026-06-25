@@ -1884,6 +1884,12 @@ func TestProtocolServiceResumeSynchronizedScrollbackSurvivesPublishedFrame(t *te
 	if !protocolHistoryWindowContainsText(secondOlder, "second transcript top") {
 		t.Fatalf("second synchronized scrollback should be page-able before shell, got %#v", secondOlder.Rows)
 	}
+	if !protocolHistoryWindowContainsText(secondOlder, "first transcript tail") || !protocolHistoryWindowContainsText(secondOlder, "> first prompt") {
+		t.Fatalf("previous primary frame should be archived and page-able, got %#v", secondOlder.Rows)
+	}
+	if kind := protocolWindowRowKindContaining(secondOlder, "first transcript tail"); kind != history.RowKindArchivedScreenFrame {
+		t.Fatalf("previous primary frame should be archived-screen-frame, got kind=%q window=%#v", kind, secondOlder)
+	}
 	if protocolHistoryWindowContainsText(secondOlder, "/resume picker one") {
 		t.Fatalf("alt-screen picker must not become committed history, got %#v", secondOlder.Rows)
 	}
