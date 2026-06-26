@@ -319,14 +319,26 @@ func TestR303PrimaryArchiveBeforeAltAndNewPrimaryFrameDoesNotRevivePreAltCurrent
 	})
 
 	duringAlt := latestR303(t, store)
-	if got := plainRowsBySegment(duringAlt, HistorySegmentArchivedPrimaryFrame); len(got) != 1 || got[0] != "pre alt primary" {
-		t.Fatalf("alt enter should archive the previous primary current frame, got %#v", got)
-	}
 	if got := plainRowsBySegment(duringAlt, HistorySegmentCurrentPrimaryFrame); len(got) != 0 {
 		t.Fatalf("alt enter should hide pre-alt primary current frame, got %#v", got)
 	}
 	if got := plainRowsBySegment(duringAlt, HistorySegmentCurrentAltFrame); len(got) != 1 || got[0] != "transient picker" {
 		t.Fatalf("alt transient frame should be current selectable state, got %#v", got)
+	}
+	olderDuringAlt, err := store.OlderWindow(HistoryWindowRequest{
+		TerminalID: "term",
+		Mode:       HistoryWindowModeOlder,
+		Cols:       24,
+		Limit:      10,
+		Cursor:     duringAlt.Boundary.Cursor,
+		Boundary:   duringAlt.Boundary,
+		Token:      duringAlt.Token,
+	})
+	if err != nil {
+		t.Fatalf("older during alt: %v", err)
+	}
+	if got := plainRowsBySegment(olderDuringAlt, HistorySegmentArchivedPrimaryFrame); len(got) != 1 || got[0] != "pre alt primary" {
+		t.Fatalf("alt enter should make the previous primary current available through older archive segment, got %#v", got)
 	}
 
 	leaveAlt := fakeTx(3, 24, 3)
@@ -377,6 +389,91 @@ func TestR303AltExitDoesNotCommitAltFrame(t *testing.T) {
 	}
 	if window.LogicalTotal != 0 {
 		t.Fatalf("pure alt transient must not commit on exit, total=%d", window.LogicalTotal)
+	}
+}
+
+func TestR317ArchivedPrimaryFrameReturnsThroughOlderBeforeLaterCommittedTail(t *testing.T) {
+	store, projector := newR303Harness()
+
+	for seq, text := range []string{"shell before", "codex banner"} {
+		tx := fakeTx(uint64(seq+1), 24, 4)
+		tx.PrimaryScrollOut = []TerminalSemanticScrollOut{{Cells: fakeTerminalCells(text)}}
+		applyR303(t, store, projector, tx, ScreenAppDecision{Mode: ScreenOutputModeOrdinary})
+	}
+	primary := fakeTx(3, 24, 4)
+	primary.PrimaryFrame = fakeTerminalFrame(24, "codex banner", "resume prompt")
+	applyR303(t, store, projector, primary, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+	enterAlt := fakeTx(4, 24, 4)
+	enterAlt.AltEntered = true
+	enterAlt.AltFrame = fakeTerminalFrame(24, "resume picker")
+	applyR303(t, store, projector, enterAlt, ScreenAppDecision{
+		Mode:                      ScreenOutputModeAltTransient,
+		ArchivePrimaryBeforeAlt:   true,
+		ClearPrimaryCurrentForAlt: true,
+		EnterAltTransientFrame:    true,
+		PublishFrame:              true,
+	})
+	leaveAlt := fakeTx(5, 24, 4)
+	leaveAlt.AltExited = true
+	applyR303(t, store, projector, leaveAlt, ScreenAppDecision{
+		Mode:                  ScreenOutputModeAltTransient,
+		ExitAltTransientFrame: true,
+	})
+	for seq, text := range []string{"later committed one", "later committed two"} {
+		tx := fakeTx(uint64(seq+6), 24, 4)
+		tx.PrimaryScrollOut = []TerminalSemanticScrollOut{{Cells: fakeTerminalCells(text)}}
+		applyR303(t, store, projector, tx, ScreenAppDecision{Mode: ScreenOutputModeOrdinary})
+	}
+	current := fakeTx(8, 24, 4)
+	current.PrimaryFrame = fakeTerminalFrame(24, "latest current")
+	applyR303(t, store, projector, current, ScreenAppDecision{
+		Mode:         ScreenOutputModePrimaryScreenSession,
+		PublishFrame: true,
+	})
+
+	latest, err := store.LatestWindow(HistoryWindowRequest{TerminalID: "term", Mode: HistoryWindowModeLatest, Cols: 24, Limit: 2})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got := plainRowsBySegment(latest, HistorySegmentArchivedPrimaryFrame); len(got) != 0 {
+		t.Fatalf("latest must not append archived frame after later committed tail, got %#v", got)
+	}
+	if got := committedPlainRows(latest); len(got) != 2 || got[0] != "later committed one" || got[1] != "later committed two" {
+		t.Fatalf("latest should keep later committed tail before current frame, got %#v", got)
+	}
+
+	olderArchive, err := store.OlderWindow(HistoryWindowRequest{
+		TerminalID: "term",
+		Mode:       HistoryWindowModeOlder,
+		Cols:       24,
+		Limit:      1,
+		Cursor:     latest.Boundary.Cursor,
+		Boundary:   latest.Boundary,
+		Token:      latest.Token,
+	})
+	if err != nil {
+		t.Fatalf("older archive: %v", err)
+	}
+	if got := allPlainRows(olderArchive); !reflect.DeepEqual(got, []string{"codex banner", "resume prompt"}) {
+		t.Fatalf("first older page should return archived frame before earlier committed history, got %#v rows=%#v", got, olderArchive.Rows)
+	}
+	olderCommitted, err := store.OlderWindow(HistoryWindowRequest{
+		TerminalID: "term",
+		Mode:       HistoryWindowModeOlder,
+		Cols:       24,
+		Limit:      10,
+		Cursor:     olderArchive.Boundary.Cursor,
+		Boundary:   olderArchive.Boundary,
+		Token:      latest.Token,
+	})
+	if err != nil {
+		t.Fatalf("older committed: %v", err)
+	}
+	if got := committedPlainRows(olderCommitted); !reflect.DeepEqual(got, []string{"shell before", "codex banner"}) {
+		t.Fatalf("second older page should continue to earlier committed history, got %#v", got)
 	}
 }
 

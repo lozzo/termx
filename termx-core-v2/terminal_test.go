@@ -302,15 +302,27 @@ func TestR306PrimaryCurrentArchivesBeforeAltAndPostAltPrimaryIsNewFrame(t *testi
 		t.Fatalf("ingest alt enter: %v", err)
 	}
 	duringAlt := latestTerminalHistory(t, server, "term-primary-alt")
-	archived := terminalHistoryRowsBySegment(duringAlt, history.HistorySegmentArchivedPrimaryFrame)
-	if len(archived) == 0 || !strings.Contains(terminalHistoryPlainText(archived[0].Cells), "pre alt primary") {
-		t.Fatalf("alt enter should archive pre-alt primary frame, got %#v", archived)
-	}
 	if current := terminalHistoryRowsBySegment(duringAlt, history.HistorySegmentCurrentPrimaryFrame); len(current) != 0 {
 		t.Fatalf("alt enter should hide pre-alt current primary frame, got %#v", current)
 	}
 	if alt := terminalHistoryRowsBySegment(duringAlt, history.HistorySegmentCurrentAltFrame); len(alt) == 0 {
 		t.Fatalf("alt enter should publish transient alt frame, window=%#v", duringAlt)
+	}
+	olderDuringAlt, err := server.TerminalHistoryWindow(context.Background(), "term-primary-alt", history.HistoryWindowRequest{
+		TerminalID: "term-primary-alt",
+		Mode:       history.HistoryWindowModeOlder,
+		Cols:       80,
+		Limit:      100,
+		Cursor:     duringAlt.Boundary.Cursor,
+		Boundary:   duringAlt.Boundary,
+		Token:      duringAlt.Token,
+	})
+	if err != nil {
+		t.Fatalf("older during alt: %v", err)
+	}
+	archived := terminalHistoryRowsBySegment(olderDuringAlt, history.HistorySegmentArchivedPrimaryFrame)
+	if len(archived) == 0 || !strings.Contains(terminalHistoryPlainText(archived[0].Cells), "pre alt primary") {
+		t.Fatalf("alt enter should expose pre-alt primary archive through older, got %#v", archived)
 	}
 
 	if err := server.IngestOutput(context.Background(), "term-primary-alt", "\x1b[?1049l"); err != nil {
@@ -326,6 +338,64 @@ func TestR306PrimaryCurrentArchivesBeforeAltAndPostAltPrimaryIsNewFrame(t *testi
 	}
 	if current[0].FrameID == archived[0].FrameID {
 		t.Fatalf("post-alt current frame must be a new frame, archived=%#v current=%#v", archived[0], current[0])
+	}
+}
+
+func TestR317TerminalHistoryDoesNotAppendArchiveAfterLaterCommittedTail(t *testing.T) {
+	server := NewServer(WithProcessFactory(newRecordingProcessFactory()))
+	if _, err := server.RegisterTerminal(TerminalRecord{
+		ID:      "term-r317-order",
+		Command: []string{"shell"},
+		Size:    Size{Cols: 32, Rows: 2},
+	}); err != nil {
+		t.Fatalf("register terminal: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r317-order", "early one\r\nearly two\r\nearly three\r\n"); err != nil {
+		t.Fatalf("ingest early committed: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r317-order", "\x1b[?2026hpre alt primary\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest pre-alt primary: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r317-order", "\x1b[?1049halt choice"); err != nil {
+		t.Fatalf("ingest alt enter: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r317-order", "\x1b[?1049l"); err != nil {
+		t.Fatalf("ingest alt exit: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r317-order", "later one\r\nlater two\r\nlater three\r\n"); err != nil {
+		t.Fatalf("ingest later committed: %v", err)
+	}
+	if err := server.IngestOutput(context.Background(), "term-r317-order", "\x1b[?2026hlatest current\x1b[?2026l"); err != nil {
+		t.Fatalf("ingest current primary: %v", err)
+	}
+
+	latest, err := server.TerminalHistoryWindow(context.Background(), "term-r317-order", history.HistoryWindowRequest{
+		TerminalID: "term-r317-order",
+		Mode:       history.HistoryWindowModeLatest,
+		Cols:       32,
+		Limit:      2,
+	})
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got := terminalHistoryRowsBySegment(latest, history.HistorySegmentArchivedPrimaryFrame); len(got) != 0 {
+		t.Fatalf("latest must not append archived primary frame after later committed tail, got %#v", got)
+	}
+	older, err := server.TerminalHistoryWindow(context.Background(), "term-r317-order", history.HistoryWindowRequest{
+		TerminalID: "term-r317-order",
+		Mode:       history.HistoryWindowModeOlder,
+		Cols:       32,
+		Limit:      100,
+		Cursor:     latest.Boundary.Cursor,
+		Boundary:   latest.Boundary,
+		Token:      latest.Token,
+	})
+	if err != nil {
+		t.Fatalf("older: %v", err)
+	}
+	archive := terminalHistoryRowsBySegment(older, history.HistorySegmentArchivedPrimaryFrame)
+	if len(archive) == 0 || !strings.Contains(strings.Join(terminalHistoryRowsText(archive), "\n"), "pre alt primary") {
+		t.Fatalf("older from current frame should return pre-alt archive through authoritative timeline, got %#v", older.Rows)
 	}
 }
 

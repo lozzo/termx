@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -458,6 +459,24 @@ type memoryScreenSession struct {
 	closed   bool
 }
 
+type memoryHistoryTimelineEntryKind string
+
+const (
+	memoryHistoryTimelineCommitted memoryHistoryTimelineEntryKind = "committed"
+	memoryHistoryTimelineFrame     memoryHistoryTimelineEntryKind = "frame"
+)
+
+type memoryHistoryTimelineEntry struct {
+	kind      memoryHistoryTimelineEntryKind
+	sequence  uint64
+	order     int
+	lineID    LogicalLineID
+	line      LogicalLine
+	committed bool
+	frame     ScreenFrame
+	segment   HistorySegment
+}
+
 func (store *memoryHistoryStore) ApplyMutation(mutation HistoryMutation) error {
 	if store == nil {
 		return nil
@@ -610,41 +629,25 @@ func (store *memoryHistoryStore) LatestWindow(req HistoryWindowRequest) (History
 	if limit <= 0 {
 		limit = len(store.committed) + len(store.frontier) + 32
 	}
-	ids := append([]LogicalLineID(nil), store.committed...)
+	entries := store.liveCommittedTimelineEntries()
+	allEntries := store.liveTimelineEntries()
+	frames := store.liveCurrentFrameTimelineEntries()
 	if frozen {
-		ids = committedIDsThrough(ids, snapshot.CommittedUpperBound)
-		ids = append(ids, snapshot.FrozenFrontierLineIDs...)
-	} else {
-		ids = append(ids, store.frontier...)
+		entries = store.frozenCommittedTimelineEntries(snapshot)
+		allEntries = store.frozenTimelineEntries(snapshot)
+		frames = store.frozenCurrentFrameTimelineEntries(snapshot)
 	}
-	if len(ids) > limit {
+	if len(entries) > limit {
 		window.HasMore = true
-		ids = ids[len(ids)-limit:]
+		entries = entries[len(entries)-limit:]
 	}
-	for _, id := range ids {
-		line, ok := store.lines[id]
-		if !ok {
-			continue
-		}
-		committed := containsLineID(store.committed, id)
-		window.Rows = append(window.Rows, historyRowFromLine(line, committed))
-		window.Lines = append(window.Lines, historySpanFromLine(len(window.Rows)-1, line, committed))
-		window.Boundary.LastLineID = id
-		if window.Boundary.FirstLineID == 0 {
-			window.Boundary.FirstLineID = id
-		}
+	if !window.HasMore && len(allEntries) > len(entries)+len(frames) {
+		window.HasMore = true
 	}
-	cursor := HistoryCursor{
-		Segment:    HistorySegmentCommitted,
-		LineID:     window.Boundary.FirstLineID,
-		Generation: store.generation,
-		Token:      window.Token,
-		Valid:      window.Boundary.FirstLineID != 0,
-	}
+	entries = append(entries, frames...)
+	cursor := store.appendTimelineEntries(&window, entries, store.generation, window.Token, false)
 	if frozen {
-		cursor = store.appendFrozenFrameRows(&window, snapshot, cursor)
-	} else {
-		cursor = store.appendLiveFrameRows(&window, cursor)
+		cursor.Generation = snapshot.Generation
 	}
 	window.Boundary.Cursor = cursor
 	window.LogicalTotal = len(store.committed)
@@ -655,30 +658,32 @@ func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryW
 	if store == nil {
 		return HistoryWindow{}, nil
 	}
-	ids := append([]LogicalLineID(nil), store.committed...)
+	entries := store.liveTimelineEntries()
 	if req.Token != "" {
 		snapshot, ok := store.frozen[req.Token]
 		if !ok {
 			return HistoryWindow{}, fmt.Errorf("%w: unknown frozen token", ErrHistoryInvalidMutation)
 		}
-		ids = committedIDsThrough(ids, snapshot.CommittedUpperBound)
+		entries = store.frozenTimelineEntries(snapshot)
 	}
-	end := len(ids)
-	if req.Cursor.Valid && req.Cursor.Segment != "" && req.Cursor.Segment != HistorySegmentCommitted {
-		// 中文说明：current/archive frame 是 latest window 尾部的可选片段；
-		// older 从这些 segment 往前翻时必须接回 latest 已加载 committed
-		// 边界之前的历史，不能重复返回 latest 中已经带下来的 tail。
-		if req.Boundary.FirstLineID != 0 {
-			if index := lineIDIndex(ids, req.Boundary.FirstLineID); index >= 0 {
+	end := len(entries)
+	if req.Cursor.Valid {
+		if req.Cursor.Segment != "" && req.Cursor.Segment != HistorySegmentCommitted && req.Boundary.FirstLineID != 0 {
+			// 中文说明：latest 已经返回了 committed visible tail + current frame；
+			// 从 current/alt frame 往 older 翻页时必须从 latest 的 oldest
+			// committed boundary 之前继续，不能把已加载 tail 再返回一遍。
+			if index := timelineFirstLineIndex(entries, req.Boundary.FirstLineID); index >= 0 {
+				end = index
+			}
+		} else if index := timelineCursorIndex(entries, req.Cursor); index >= 0 {
+			end = index
+		} else if req.Boundary.FirstLineID != 0 {
+			if index := timelineFirstLineIndex(entries, req.Boundary.FirstLineID); index >= 0 {
 				end = index
 			}
 		}
-	} else if req.Cursor.Valid && req.Cursor.LineID != 0 {
-		if index := lineIDIndex(ids, req.Cursor.LineID); index >= 0 {
-			end = index
-		}
 	} else if req.Boundary.FirstLineID != 0 {
-		if index := lineIDIndex(ids, req.Boundary.FirstLineID); index >= 0 {
+		if index := timelineFirstLineIndex(entries, req.Boundary.FirstLineID); index >= 0 {
 			end = index
 		}
 	}
@@ -687,13 +692,13 @@ func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryW
 	}
 	limit := req.Limit
 	if limit <= 0 {
-		limit = len(ids)
+		limit = len(entries)
 	}
 	start := end - limit
 	if start < 0 {
 		start = 0
 	}
-	page := ids[start:end]
+	page := entries[start:end]
 	window := HistoryWindow{
 		TerminalID:   store.windowTerminalID(req.TerminalID),
 		Token:        req.Token,
@@ -710,27 +715,7 @@ func (store *memoryHistoryStore) OlderWindow(req HistoryWindowRequest) (HistoryW
 		// response 仍属于同一个 authoritative window。
 		window.Boundary.LastLineID = req.Boundary.LastLineID
 	}
-	for _, id := range page {
-		line, ok := store.lines[id]
-		if !ok {
-			continue
-		}
-		window.Rows = append(window.Rows, historyRowFromLine(line, true))
-		window.Lines = append(window.Lines, historySpanFromLine(len(window.Rows)-1, line, true))
-		if window.Boundary.LastLineID == 0 {
-			window.Boundary.LastLineID = id
-		}
-		if window.Boundary.FirstLineID == 0 {
-			window.Boundary.FirstLineID = id
-		}
-	}
-	window.Boundary.Cursor = HistoryCursor{
-		Segment:    HistorySegmentCommitted,
-		LineID:     window.Boundary.FirstLineID,
-		Generation: store.generation,
-		Token:      req.Token,
-		Valid:      window.Boundary.FirstLineID != 0,
-	}
+	window.Boundary.Cursor = store.appendTimelineEntries(&window, page, store.generation, req.Token, true)
 	return window, nil
 }
 
@@ -792,38 +777,296 @@ func (store *memoryHistoryStore) Freeze(req FreezeHistoryRequest) (FrozenHistory
 	return snapshot, nil
 }
 
-func (store *memoryHistoryStore) appendLiveFrameRows(window *HistoryWindow, cursor HistoryCursor) HistoryCursor {
-	for _, session := range store.sessionsInOrder() {
-		for _, frame := range session.archives {
-			window.appendFrameRows(frame, HistorySegmentArchivedPrimaryFrame)
-			cursor = historyCursorForFrame(frame, HistorySegmentArchivedPrimaryFrame, store.generation, window.Token)
-		}
-		if session.current != nil {
-			window.appendFrameRows(*session.current, HistorySegmentCurrentPrimaryFrame)
-			cursor = historyCursorForFrame(*session.current, HistorySegmentCurrentPrimaryFrame, store.generation, window.Token)
-		}
-	}
-	if store.currentAlt != nil {
-		window.appendFrameRows(*store.currentAlt, HistorySegmentCurrentAltFrame)
-		cursor = historyCursorForFrame(*store.currentAlt, HistorySegmentCurrentAltFrame, store.generation, window.Token)
-	}
-	return cursor
+func (store *memoryHistoryStore) liveTimelineEntries() []memoryHistoryTimelineEntry {
+	entries := store.liveCommittedTimelineEntries()
+	entries = append(entries, store.livePrimaryFrameTimelineEntries()...)
+	sortTimelineEntries(entries)
+	return entries
 }
 
-func (store *memoryHistoryStore) appendFrozenFrameRows(window *HistoryWindow, snapshot FrozenHistorySnapshot, cursor HistoryCursor) HistoryCursor {
-	for _, frame := range snapshot.FrozenPrimaryFrames {
+func (store *memoryHistoryStore) liveCommittedTimelineEntries() []memoryHistoryTimelineEntry {
+	var entries []memoryHistoryTimelineEntry
+	for order, id := range store.committed {
+		line, ok := store.lines[id]
+		if !ok {
+			continue
+		}
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:      memoryHistoryTimelineCommitted,
+			sequence:  uint64(line.CreatedGeneration),
+			order:     order,
+			lineID:    id,
+			line:      line,
+			committed: true,
+		})
+	}
+	for order, id := range store.frontier {
+		line, ok := store.lines[id]
+		if !ok {
+			continue
+		}
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:      memoryHistoryTimelineCommitted,
+			sequence:  uint64(line.CreatedGeneration),
+			order:     len(store.committed) + order,
+			lineID:    id,
+			line:      line,
+			committed: false,
+		})
+	}
+	sortTimelineEntries(entries)
+	return entries
+}
+
+func (store *memoryHistoryStore) frozenTimelineEntries(snapshot FrozenHistorySnapshot) []memoryHistoryTimelineEntry {
+	entries := store.frozenCommittedTimelineEntries(snapshot)
+	for order, frame := range snapshot.FrozenPrimaryFrames {
 		segment := HistorySegmentArchivedPrimaryFrame
 		if frame.Kind == LineKindScreenFrame {
 			segment = HistorySegmentCurrentPrimaryFrame
 		}
-		window.appendFrameRows(frame, segment)
-		cursor = historyCursorForFrame(frame, segment, snapshot.Generation, window.Token)
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:     memoryHistoryTimelineFrame,
+			sequence: frame.SourceSeq,
+			order:    order,
+			frame:    frame,
+			segment:  segment,
+		})
 	}
 	if snapshot.FrozenAltFrame != nil {
-		window.appendFrameRows(*snapshot.FrozenAltFrame, HistorySegmentCurrentAltFrame)
-		cursor = historyCursorForFrame(*snapshot.FrozenAltFrame, HistorySegmentCurrentAltFrame, snapshot.Generation, window.Token)
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:     memoryHistoryTimelineFrame,
+			sequence: snapshot.FrozenAltFrame.SourceSeq,
+			order:    len(snapshot.FrozenPrimaryFrames),
+			frame:    *snapshot.FrozenAltFrame,
+			segment:  HistorySegmentCurrentAltFrame,
+		})
 	}
-	return cursor
+	sortTimelineEntries(entries)
+	return entries
+}
+
+func (store *memoryHistoryStore) frozenCommittedTimelineEntries(snapshot FrozenHistorySnapshot) []memoryHistoryTimelineEntry {
+	var entries []memoryHistoryTimelineEntry
+	committed := committedIDsThrough(store.committed, snapshot.CommittedUpperBound)
+	for order, id := range committed {
+		line, ok := store.lines[id]
+		if !ok {
+			continue
+		}
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:      memoryHistoryTimelineCommitted,
+			sequence:  uint64(line.CreatedGeneration),
+			order:     order,
+			lineID:    id,
+			line:      line,
+			committed: true,
+		})
+	}
+	for order, id := range snapshot.FrozenFrontierLineIDs {
+		line, ok := store.lines[id]
+		if !ok {
+			continue
+		}
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:      memoryHistoryTimelineCommitted,
+			sequence:  uint64(line.CreatedGeneration),
+			order:     len(committed) + order,
+			lineID:    id,
+			line:      line,
+			committed: containsLineID(store.committed, id),
+		})
+	}
+	sortTimelineEntries(entries)
+	return entries
+}
+
+func (store *memoryHistoryStore) liveCurrentFrameTimelineEntries() []memoryHistoryTimelineEntry {
+	var entries []memoryHistoryTimelineEntry
+	for order, session := range store.sessionsInOrder() {
+		if session.current == nil {
+			continue
+		}
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:     memoryHistoryTimelineFrame,
+			sequence: session.current.SourceSeq,
+			order:    order,
+			frame:    *session.current,
+			segment:  HistorySegmentCurrentPrimaryFrame,
+		})
+	}
+	if store.currentAlt != nil {
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:     memoryHistoryTimelineFrame,
+			sequence: store.currentAlt.SourceSeq,
+			order:    len(entries),
+			frame:    *store.currentAlt,
+			segment:  HistorySegmentCurrentAltFrame,
+		})
+	}
+	sortTimelineEntries(entries)
+	return entries
+}
+
+func (store *memoryHistoryStore) frozenCurrentFrameTimelineEntries(snapshot FrozenHistorySnapshot) []memoryHistoryTimelineEntry {
+	var entries []memoryHistoryTimelineEntry
+	for order, frame := range snapshot.FrozenPrimaryFrames {
+		if frame.Kind != LineKindScreenFrame {
+			continue
+		}
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:     memoryHistoryTimelineFrame,
+			sequence: frame.SourceSeq,
+			order:    order,
+			frame:    frame,
+			segment:  HistorySegmentCurrentPrimaryFrame,
+		})
+	}
+	if snapshot.FrozenAltFrame != nil {
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:     memoryHistoryTimelineFrame,
+			sequence: snapshot.FrozenAltFrame.SourceSeq,
+			order:    len(entries),
+			frame:    *snapshot.FrozenAltFrame,
+			segment:  HistorySegmentCurrentAltFrame,
+		})
+	}
+	sortTimelineEntries(entries)
+	return entries
+}
+
+func (store *memoryHistoryStore) livePrimaryFrameTimelineEntries() []memoryHistoryTimelineEntry {
+	var entries []memoryHistoryTimelineEntry
+	order := 0
+	for _, session := range store.sessionsInOrder() {
+		for _, frame := range session.archives {
+			entries = append(entries, memoryHistoryTimelineEntry{
+				kind:     memoryHistoryTimelineFrame,
+				sequence: frame.SourceSeq,
+				order:    order,
+				frame:    frame,
+				segment:  HistorySegmentArchivedPrimaryFrame,
+			})
+			order++
+		}
+		if session.current != nil {
+			entries = append(entries, memoryHistoryTimelineEntry{
+				kind:     memoryHistoryTimelineFrame,
+				sequence: session.current.SourceSeq,
+				order:    order,
+				frame:    *session.current,
+				segment:  HistorySegmentCurrentPrimaryFrame,
+			})
+			order++
+		}
+	}
+	if store.currentAlt != nil {
+		entries = append(entries, memoryHistoryTimelineEntry{
+			kind:     memoryHistoryTimelineFrame,
+			sequence: store.currentAlt.SourceSeq,
+			order:    order,
+			frame:    *store.currentAlt,
+			segment:  HistorySegmentCurrentAltFrame,
+		})
+	}
+	return entries
+}
+
+func sortTimelineEntries(entries []memoryHistoryTimelineEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].sequence != entries[j].sequence {
+			return entries[i].sequence < entries[j].sequence
+		}
+		if entries[i].kind != entries[j].kind {
+			return entries[i].kind == memoryHistoryTimelineCommitted
+		}
+		return entries[i].order < entries[j].order
+	})
+}
+
+func (store *memoryHistoryStore) appendTimelineEntries(window *HistoryWindow, entries []memoryHistoryTimelineEntry, generation Generation, token HistoryToken, preserveTailBoundary bool) HistoryCursor {
+	var firstCursor HistoryCursor
+	var lastCursor HistoryCursor
+	for _, entry := range entries {
+		var entryCursor HistoryCursor
+		switch entry.kind {
+		case memoryHistoryTimelineCommitted:
+			row := historyRowFromLine(entry.line, entry.committed)
+			window.Rows = append(window.Rows, row)
+			window.Lines = append(window.Lines, historySpanFromLine(len(window.Rows)-1, entry.line, entry.committed))
+			if window.Boundary.FirstLineID == 0 {
+				window.Boundary.FirstLineID = entry.lineID
+			}
+			if !preserveTailBoundary || window.Boundary.LastLineID == 0 {
+				window.Boundary.LastLineID = entry.lineID
+			}
+			entryCursor = HistoryCursor{
+				Segment:    HistorySegmentCommitted,
+				LineID:     entry.lineID,
+				Generation: generation,
+				Token:      token,
+				Valid:      true,
+			}
+		case memoryHistoryTimelineFrame:
+			window.appendFrameRows(entry.frame, entry.segment)
+			if window.Boundary.FirstLineID == 0 {
+				window.Boundary.FirstLineID = LogicalLineID(entry.frame.ID)*100000 + 1
+			}
+			entryCursor = historyCursorForFrame(entry.frame, entry.segment, generation, token)
+		}
+		if entryCursor.Valid {
+			if !firstCursor.Valid {
+				firstCursor = entryCursor
+			}
+			lastCursor = entryCursor
+		}
+	}
+	if preserveTailBoundary {
+		return firstCursor
+	}
+	if lastCursor.Segment == HistorySegmentCurrentPrimaryFrame || lastCursor.Segment == HistorySegmentCurrentAltFrame {
+		return lastCursor
+	}
+	return firstCursor
+}
+
+func timelineCursorIndex(entries []memoryHistoryTimelineEntry, cursor HistoryCursor) int {
+	for index, entry := range entries {
+		switch entry.kind {
+		case memoryHistoryTimelineCommitted:
+			if cursor.Segment == HistorySegmentCommitted && entry.lineID == cursor.LineID {
+				return index
+			}
+		case memoryHistoryTimelineFrame:
+			if entry.segment == cursor.Segment && entry.frame.ID == cursor.FrameID {
+				return index
+			}
+			if entry.segment == cursor.Segment && cursor.LineID != 0 {
+				firstLineID := LogicalLineID(entry.frame.ID)*100000 + 1
+				lastLineID := firstLineID + LogicalLineID(len(entry.frame.Rows))
+				if cursor.LineID >= firstLineID && cursor.LineID < lastLineID {
+					return index
+				}
+			}
+		}
+	}
+	return -1
+}
+
+func timelineFirstLineIndex(entries []memoryHistoryTimelineEntry, lineID LogicalLineID) int {
+	for index, entry := range entries {
+		if entry.kind == memoryHistoryTimelineCommitted && entry.lineID == lineID {
+			return index
+		}
+		if entry.kind == memoryHistoryTimelineFrame {
+			firstLineID := LogicalLineID(entry.frame.ID)*100000 + 1
+			lastLineID := firstLineID + LogicalLineID(len(entry.frame.Rows))
+			if lineID >= firstLineID && lineID < lastLineID {
+				return index
+			}
+		}
+	}
+	return -1
 }
 
 func (store *memoryHistoryStore) cloneVisiblePrimaryFrames() []ScreenFrame {
@@ -1287,15 +1530,6 @@ func committedIDsThrough(ids []LogicalLineID, upper LogicalLineID) []LogicalLine
 		}
 	}
 	return out
-}
-
-func lineIDIndex(ids []LogicalLineID, target LogicalLineID) int {
-	for index, id := range ids {
-		if id == target {
-			return index
-		}
-	}
-	return -1
 }
 
 func nextStoreLineID(lines map[LogicalLineID]LogicalLine) LogicalLineID {
