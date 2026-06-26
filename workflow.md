@@ -47,8 +47,12 @@
 
 ## 2. 技术设计基准
 
-- 当前 screen app 无限历史定案：`termx-core-v2/docs/screen-app-infinite-history-final-plan.md`
-  - 其中 `2.1 架构图与接口绑定` 是后续代码边界准入；R302-R310 必须按图上的 interface 和 owner 落地，不能绕过图里的边界直接补旧实现。
+- 当前 history 语义设计基准：`termx-core-v2/docs/history-logical-renderer-design.md`
+  - R318 后，history 被定义为消费 vterm terminal semantic transaction 的 logical-line renderer。
+  - 新模型使用 `mutable` / `sealed` / `timeline` / `frame journal` 语义，不再把 `commit` / `committed` 作为领域概念。
+  - 如果旧文档、旧代码类型名、历史聊天记录或旧测试描述仍使用 `commit/committed`，默认按新文档翻译为 sealed/timeline/lifecycle close 语义。
+- 旧 screen app 无限历史定案：`termx-core-v2/docs/screen-app-infinite-history-final-plan.md`
+  - 该文档保留 R300-R317 的问题背景、vterm transaction 边界和已完成切片记录；其中 `commit/committed` 术语和 projector/store 分层若与新文档冲突，以 `history-logical-renderer-design.md` 为准。
 - core-v2 架构：`termx-core-v2/docs/architecture.md`
 - tui-v3 架构：`termx-tui-v3/docs/architecture.md`
 - vterm terminal 语义来源：`termx-vterm/`
@@ -109,8 +113,10 @@
 
 - 历史 truth 的基本单位是 logical line，不是 visual row、wrapped row、snapshot scrollback、grid viewport 或 xterm buffer row。
 - core-v2 的 logical-line history 是唯一历史数据模型。
-- `CommittedHistoryIndex`、`MutableFrontier`、segment cursor、storage backend、cache、adapter、TUI/App projection 都不能演变成第二份历史 truth。
-- `persisted` 或落盘不表示不可修改；是否可修改由 session/segment/finalization 语义决定。
+- R318 后，历史领域语义使用 `mutable` / `sealed`：`mutable` 表示仍可被当前 open line 或 current frame 改写，`sealed` 表示已按 terminal/session 语义离开当前可变区域。
+- `commit` / `committed` 不再是新模型的领域概念；旧代码名若尚未迁移，只能按 sealed/timeline/lifecycle close 语义理解。
+- sealed timeline、open line、mutable/current frame、frame journal、segment cursor、storage backend、cache、adapter、TUI/App projection 都不能演变成第二份历史 truth。
+- `persisted` 或落盘不表示 sealed，也不表示不可修改；是否可修改由 terminal/session 语义决定。
 
 ### 4.2 terminal 语义来源
 
@@ -121,35 +127,35 @@
 
 ### 4.3 普通输出
 
-- 普通 shell/程序 stdout 一旦形成完整 logical line，就可以 commit 到 history。
+- 普通 shell/程序 stdout 一旦按终端语义形成完整 logical line，就可以 seal 进 history timeline。
 - 普通输出不应长时间持有 screen app session。
-- 进程退出必须 force commit primary mutable frontier。
+- 进程退出必须 seal 普通输出 open line。
 
 ### 4.4 screen app session
 
 - pseudo-TUI 类程序在 primary screen 上反复改写时，必须有一个可变 session。
 - session 内允许程序修改从 session 开始到当前的可变内容。
 - session 暴露给历史模式前，必须先通过 segment cursor/archive 形成一致视图，不能展示半更新状态。
-- session 最终退出或模式切换时，按分类决定 commit：普通 primary screen app 可以 commit final screen-frame；纯 alt-screen transient 不写 primary history。
+- session 最终退出或模式切换时，按分类决定 seal 或丢弃：普通 primary screen app 可以 seal final screen-frame；纯 alt-screen transient 不写 primary history。
 
 ### 4.5 alt-screen
 
 - alt-screen 不写入 primary history。
 - htop/vim 这类纯 alt-screen transient：运行期间可在当前屏幕选择；退出时不把屏幕内容 commit 到 primary history。
 - Codex/Claude Code 这类 primary screen app 临时进入 alt-screen 选择器时：进入 alt 前必须 archive/hide 当前 primary frame；alt 内容作为 live transient 展示和选择；退出 alt 后如果出现新的 primary 输出，必须作为新的 primary frame publish，可以接回同一 session journal，但不得复活 pre-alt current frame，也不得凭空 commit alt 屏幕。
-- 如果程序运行期间用户进入历史模式，当前 session 的文本内容必须作为历史视图的一部分，但仍需标记为 mutable/frozen projection，而不是当成 committed truth。
+- 如果程序运行期间用户进入历史模式，当前 session 的文本内容必须作为历史视图的一部分，但仍需标记为 mutable/frozen projection，而不是当成 sealed truth。
 
 ### 4.6 final screen-frame
 
-- primary screen app 退出时允许把最后一屏作为固定宽度 screen-frame commit。
+- primary screen app 退出时允许把最后一屏作为固定宽度 screen-frame seal。
 - final screen-frame 是为了保存“屏幕程序最终展示的内容”，不是普通 logical line reflow。
 - final screen-frame 后续不随 resize 重排。
 
 ### 4.7 resize
 
-- resize 不得重写 committed history。
+- resize 不得重写 sealed history。
 - 普通 logical line 可以在展示层按新宽度重新 wrap。
-- mutable screen app session 在 resize 时必须保留可变语义，不能凭空产生 committed history。
+- mutable screen app session 在 resize 时必须保留可变语义，不能凭空产生 sealed history。
 - final screen-frame 必须固定生成时的列宽。
 - Codex/Claude Code 运行中 resize 是硬 harness，不能靠程序名特殊适配。
 
@@ -162,7 +168,7 @@
 
 ### 4.9 TUI/App 边界
 
-- tui-v3 不拥有 committed history truth，只消费 core-v2 authoritative `HistoryWindow`。
+- tui-v3 不拥有 sealed history truth，只消费 core-v2 authoritative `HistoryWindow`。
 - tui-v3 copy mode 不得从本地 VTerm scrollback、snapshot totals、row ownership、LoadedRows、wrapped 拼接结果推断历史。
 - App/Web/native live display 可以有本地短缓存，但 copy/search/history truth 必须走 core-v2 logical-line window。
 - renderer 只消费 view-model，不读 core client、history source、runtime service 或 protocol client。
@@ -206,6 +212,7 @@
 | R315. SK screen-frame trailing blank rows 裁剪 | 完成 | `termx-core-v2/` | 对比 tmux 与 authoritative dump，修复 archived/current screen-frame 将整屏尾部默认空白行当作历史 rows 返回，导致 TUI 上滑大片黑/空的问题 |
 | R316. SK copy/history PageUp 翻页与 frame 空白展示修复 | 完成 | `termx-tui-v3/`、按需 `termx-cli/` | 用 tmux 自测和 authoritative dump 对比确认 core 已有 committed 历史；修复 TUI copy/history 连续 PageUp 仍停在最新 frame/空白区域的问题，并避免默认空白 frame row 被渲染成黑块 |
 | R317. SK archived frame 与 committed 投影顺序修复 | 完成 | `termx-core-v2/` | authoritative dump 显示早期 archived primary frame 被直接追加到全部 committed 日志之后，导致历史顺序错乱；修复 latest/older 的 segment 投影，让 archive 通过 current-frame older cursor 返回并按事务顺序夹在 committed 历史中 |
+| R318. SK history logical renderer 设计重写 | 完成 | `workflow.md`、`termx-core-v2/docs/history-logical-renderer-design.md`、相关旧设计文档标注 | 去掉 commit/committed 领域概念，把 history 明确定义为消费同一份 vterm terminal semantic transaction 的 logical-line renderer；列出对象、接口、timeline、frame journal、mutable/sealed、freeze/window/storage 边界 |
 
 ## 7. 测试准入
 
@@ -246,5 +253,6 @@
 - `R315` 已完成：`/tmp/termx-history.dump` 显示 core authoritative history 有 3 个 windows、1413 rows、1226 committed rows 和 35 current frame rows；同一 `codex resume 019efc61-417a-7682-9ce6-fa8da10ad9e3` 的 tmux capture 只有 71 行可见正文。dump 中 `archived-primary-frame` 有 152 行，其中 90 行是 trailing default blank rows，说明黑/空区域来自 core frame projection 把整屏尾部默认空白当作 history rows 发给 TUI。现在 semantic screen-frame 进入 core history payload 时裁掉 trailing default blank rows，但保留中间空行和带显式样式/链接的空白行。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
 - `R316` 已完成：本轮先用 tmux 跑真实 `codex resume 019efc61-417a-7682-9ce6-fa8da10ad9e3` 并抓 `history-pageup-*.txt`，确认最新代码下 6 次 PageUp 均有 30-35 行正文，不再是黑/空屏；再用受控长历史 PTY harness 生成 260 行 committed 输出后进入 history，确认 TUI PageUp 能从 latest frame 翻进 older committed 行。根因在 TUI copy/history 把 PageUp/wheel 当 cursor 移动，容易停在最新 frame 内部；现在新增 `CopyModeStore.ScrollViewport`，PageUp/wheel/进入 pending scroll 均移动 viewport，cursor 只跟随保持可见。renderer 侧同时把 default blank frame cell 交给 viewport 背景，不再固化成终端 ANSI 背景；明确 styled blank/TailFill 仍保留。准入已通过 `cd termx-tui-v3 && go test ./... -count=1`、真实 tmux Codex resume harness、受控长历史 tmux harness。
 - `R317` 已完成：分析 `/tmp/termx-history.dump` 确认 core authoritative dump 本身存在投影顺序问题：`archived-primary-frame` 来自早期 `/resume` 前 primary frame，却被 latest 直接追加在全部 committed 日志之后，造成历史看起来乱序。现在 core-v2 memory store 按 transaction sequence 组装 committed/archive/current timeline，latest 只返回 committed tail + active current/alt frame，不再把 archived frame 挂在最新尾部；older 从 current/alt cursor 回翻时按 timeline 返回 archive 再回 committed。新增 domain 和 terminal 链路 harness。准入已通过 `cd termx-core-v2 && go test ./... -count=1`、`git diff --check`。
+- `R318` 已完成：新增 `termx-core-v2/docs/history-logical-renderer-design.md` 作为新的 history 语义基准，明确 history 是消费同一份 vterm terminal semantic transaction 的 logical-line renderer；去掉 `commit/committed` 领域概念，改用 `mutable` / `sealed` / `timeline` / `frame journal` / `frozen projection` / storage residency 边界。`workflow.md` 已把该文档列为当前设计基准，旧 screen app final plan 与 core-v2 architecture 已标注为历史背景或待迁移旧词。准入已通过 `git diff --check`。
 - 此前按用户明确要求清空旧 history 实现：旧 `HistoryTrack`、frontier/index/window/snapshot/storage/style、旧 raw parser、旧 projector、旧 terminal history pipeline 和相关 harness 均已删除。core/server/terminal/protocol/CLI 已切断旧 history storage、pipeline 和 window 投影入口；当前 `history.window` / `history.copy` / `history.release` 已接 core-v2 authoritative history window，后续不得沿用已删除补丁路径，也不得通过 stub、fallback 或桥接代码恢复旧模型。
 - `termx-core-v2/docs/history-rebuild-goal-prompt.md` 是给 `/goal` 使用的 R303-R310 连续推进 prompt；它要求每轮只处理最早未完成切片，完成 harness、实现、准入、`workflow.md` 更新和中文提交后再进入下一切片。

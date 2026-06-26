@@ -1,5 +1,10 @@
 # termx-core-v2 历史模型架构设计
 
+R318 说明：本文早于 `termx-core-v2/docs/history-logical-renderer-design.md`。
+历史语义、对象命名和接口边界以 R318 新文档为准；本文中 `commit/committed`、
+`CommittedHistoryIndex`、`MutableFrontier` 等旧词只作为历史背景或待迁移类型名，
+不得继续解释为新的领域概念。
+
 ## 1. 背景
 
 当前终端历史相关问题的核心不在实时当前屏幕如何显示，而在历史记录的真相单位不稳定：旧实现长期混用 visual row、wrapped row、snapshot scrollback、grid viewport 与局部 metadata 来表达历史边界。这样会导致滚动、copy mode、older prepend、latest replace、resize、reclaim、process exit、clear scrollback 等路径在不同层各自推断历史真相。

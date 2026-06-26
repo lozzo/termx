@@ -1,7 +1,11 @@
 # screen app 无限历史定案
 
-状态：定案指导，已纳入 `workflow.md` R300；后续 R301-R310 以本文架构图、
-接口绑定和任务切片推进。
+状态：历史背景。R318 后，history 语义设计基准已切换到
+`termx-core-v2/docs/history-logical-renderer-design.md`。
+
+本文保留 R300-R317 的问题背景、vterm transaction 边界和旧切片记录；其中
+`commit/committed` 术语、`CommittedHistoryIndex` / `MutableFrontier` 分层或
+projector/store 边界若与 R318 新文档冲突，以新文档为准。
 
 本文把之前的未确认预案升级为后续删代码、重建边界和补接口的技术定案。它不替代
 `workflow.md` 的任务队列和提交准入；真正动代码前，仍必须先把对应切片写入
